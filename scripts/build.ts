@@ -6,7 +6,7 @@
 //         .tsx/.ts reachable from the app entry (content-hash cached),
 //         collecting candidate class strings + text codepoints from the AST.
 // compile tailwind.ts -> styles.bin + src/styles.generated.ts;
-//         bake-font.ts -> font atlas per used slot; demo images (PNG or a
+//         bake-font.ts -> font atlas per used slot; demo images (PNG/SVG or a
 //         placeholder); dcpak.ts packs it all -> dist/<app>.dcpak.
 // pass 2  Bun.build (plugin serves the CACHED pass-1 transforms, iife,
 //         target browser, minify false) -> dist/<app>.js.
@@ -19,6 +19,7 @@ import { PSM } from "../spec/spec.ts";
 import { RENDERER_PATH, solidUniversalPlugin, transformFile } from "../compiler/solid-plugin.ts";
 import { compileClasses, generateStylesModule } from "../compiler/tailwind.ts";
 import { bakeAtlases } from "../compiler/bake-font.ts";
+import { bakeSvg } from "../compiler/bake-svg.ts";
 import {
   DCPAK_DTYPE,
   KEY_STYLES,
@@ -146,20 +147,25 @@ for (const a of atlases) {
   );
 }
 
-// demo images: any collected literal ending .png is a candidate asset name
+// demo images: any collected literal ending .png/.svg is a candidate asset name
 const blobs: PakBlob[] = [
   { key: KEY_STYLES, dtype: DCPAK_DTYPE.u8, data: styles.bin },
   ...atlases.map((a) => ({ key: keyFont(a.slot), dtype: DCPAK_DTYPE.u8, data: a.bytes })),
 ];
 const appDir = entry.slice(0, entry.lastIndexOf("/") + 1);
-const imageNames = classStrings.filter((s) => /^[\w./-]+\.png$/i.test(s));
+const imageNames = classStrings.filter((s) => /^[\w./-]+\.(?:png|svg)$/i.test(s));
 for (const name of imageNames) {
   const candidates = [appDir + name, ROOT + "assets/images/" + name, ROOT + "assets/" + name];
   const found = candidates.find((c) => existsSync(c));
   let img;
   if (found) {
-    img = decodePng(new Uint8Array(await Bun.file(found).arrayBuffer()));
-    console.log(`  image: ${name} <- ${found} (${img.width}x${img.height})`);
+    if (/\.svg$/i.test(found)) {
+      img = bakeSvg(await Bun.file(found).text());
+      console.log(`  image: ${name} <- ${found} (${img.width}x${img.height}, svg)`);
+    } else {
+      img = decodePng(new Uint8Array(await Bun.file(found).arrayBuffer()));
+      console.log(`  image: ${name} <- ${found} (${img.width}x${img.height})`);
+    }
   } else {
     img = placeholderImage();
     console.log(`  image: ${name} not found (tried ${candidates.join(", ")}) — baking a 32x32 placeholder`);

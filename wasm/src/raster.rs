@@ -326,7 +326,7 @@ fn tri(fb: &mut [u8], clip: Clip, p: &[u32]) {
     }
 }
 
-// ---- GLYPH_RUN: 1-bit atlas cells ---------------------------------------------------
+// ---- GLYPH_RUN: coverage atlas cells -----------------------------------------------
 
 fn glyph_run(ui: &Ui, fb: &mut [u8], clip: Clip, slot: u8, color: u32, glyphs: &[u32]) {
     let Some(atlas) = ui.font_atlas(slot) else { return };
@@ -356,9 +356,9 @@ fn glyph_run(ui: &Ui, fb: &mut [u8], clip: Clip, slot: u8, color: u32, glyphs: &
             let row = &rows[((py - gy) as usize) * bpr..];
             for px in x0..x1 {
                 let cx = (px - gx) as usize;
-                // Row bits: MSB = leftmost pixel (bit 7 of byte 0 is x=0).
-                if row[cx >> 3] & (0x80 >> (cx & 7)) != 0 {
-                    blend_px(fb, px, py, r, g, b, a);
+                let cov = row[cx] as u32;
+                if cov != 0 {
+                    blend_px(fb, px, py, r, g, b, (a * cov + 127) / 255);
                 }
             }
         }

@@ -23,9 +23,9 @@ and everything is packed into `dist/<app>.dcpak`. Pass 2 bundles with Bun
 
 ```tsx
 // demos/hero.tsx — the only intrinsics are <view>, <text>, <image>
-<view class="flex-col items-center gap-4 p-4 bg-slate-900">
-  <text class="text-xl text-white">Count: {count()}</text>
-  <view class="p-2 rounded-md bg-indigo-500 focus:bg-indigo-300 transition-colors duration-150"
+<view class="flex-col items-center gap-4 p-4 bg-slate-50">
+  <text class="text-xl text-slate-950">Count: {count()}</text>
+  <view class="p-2 rounded-md bg-blue-600 focus:bg-blue-500 transition-colors duration-150"
         focusable onPress={() => setCount(count() + 1)} />
 </view>
 ```

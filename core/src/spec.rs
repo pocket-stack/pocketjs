@@ -288,7 +288,7 @@ pub mod style_table {
 /// FONT ATLAS blob format constants — full layout in spec.ts.
 pub mod font_atlas {
     pub const MAGIC: u32 = 0x41464344; // 'DCFA' LE
-    pub const VERSION: u16 = 1;
+    pub const VERSION: u16 = 2;
     pub const HEADER_SIZE: usize = 16;
     pub const CMAP_ENTRY_SIZE: usize = 8;
     pub const FLAG_BOLD: u8 = 1;

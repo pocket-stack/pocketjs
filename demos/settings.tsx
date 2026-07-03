@@ -2,55 +2,161 @@
 // toggles (spring-sliding pill knobs — first demo use of `rounded-full`,
 // build-time-fixed w/h per DESIGN.md so the compiler can bake the exact
 // corner radius), a brightness control CIRCLE cycles through 5 steps (a
-// spring width tween, same mechanism as stats.tsx's bars but driven by
-// presses instead of mount), and a row of theme swatches whose SELECTED
-// state (a persistent signal) is a separate visual layer from FOCUSED (the
-// transient native focus: variant) — pressing one live-recolors the header
-// title, the simplest possible demonstration of cross-component reactivity.
+// direct style width/translate update, and a row of theme swatches whose
+// SELECTED state (a persistent signal) drives one small design-token table:
+// page wash, header text, focus colors, switches, slider, and theme panel.
 //
 // No custom frame wiring: every interaction is UP/DOWN navigation + CIRCLE
 // press, entirely covered by the engine's default input pass (src/input.ts)
 // — unlike stats.tsx/library.tsx this entry needs no beforeFrame.
 
-import { createEffect, createSignal } from "solid-js";
-import { spring } from "../src/anim.ts";
+import { createEffect, createSignal, Show } from "solid-js";
+import { animate } from "../src/anim.ts";
 import type { NodeMirror } from "../src/renderer.ts";
 
 type ThemeName = "indigo" | "emerald" | "amber" | "rose";
 
-function titleCls(t: ThemeName): string {
-  if (t === "emerald") return "text-2xl text-emerald-300 font-bold";
-  if (t === "amber") return "text-2xl text-amber-300 font-bold";
-  if (t === "rose") return "text-2xl text-rose-300 font-bold";
-  return "text-2xl text-indigo-300 font-bold";
+interface ThemeOption {
+  name: ThemeName;
+  pageCls: string;
+  eyebrowCls: string;
+  titleCls: string;
+  optionsCls: string;
+  rowCls: string;
+  rowLabelCls: string;
+  switchOnCls: string;
+  switchOffCls: string;
+  knobCls: string;
+  sliderTrackCls: string;
+  sliderFillCls: string;
+  sliderThumbCls: string;
+  valueCls: string;
+  panelCls: string;
+  footerCls: string;
+  swatchCls: string;
+  selectedCls: string;
+}
+
+const THEMES: ThemeOption[] = [
+  {
+    name: "indigo",
+    pageCls: "flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-indigo-50 to-slate-100",
+    eyebrowCls: "text-xs text-indigo-600 tracking-wide",
+    titleCls: "text-2xl text-indigo-700 font-bold",
+    optionsCls: "text-xs text-indigo-700",
+    rowCls: "flex-row items-center justify-between px-2 py-1 bg-white border-indigo-200 rounded-lg shadow focus:bg-indigo-50 focus:border-indigo-500 transition-colors duration-150",
+    rowLabelCls: "text-sm text-indigo-950",
+    switchOnCls: "w-9 h-5 rounded-full bg-gradient-to-r from-indigo-500 to-indigo-600 border-indigo-500 shadow flex-row items-center",
+    switchOffCls: "w-9 h-5 rounded-full bg-gradient-to-r from-indigo-100 to-indigo-200 border-indigo-200 shadow flex-row items-center",
+    knobCls: "w-4 h-4 rounded-full bg-white border-indigo-200 shadow-md m-[2] translate-x-[0.5]",
+    sliderTrackCls: "relative w-[120] h-3 rounded-full bg-indigo-100 border-indigo-200 shadow overflow-hidden",
+    sliderFillCls: "absolute left-0 top-0 h-3 w-[72] rounded-full bg-gradient-to-r from-indigo-400 to-indigo-600",
+    sliderThumbCls: "absolute left-0 top-[2] w-2 h-2 rounded-full bg-white border-indigo-500 shadow-md translate-x-[64]",
+    valueCls: "text-xs text-indigo-700",
+    panelCls: "flex-col gap-2 px-2 py-2 bg-white border-indigo-200 rounded-xl shadow-md",
+    footerCls: "text-xs text-indigo-700",
+    swatchCls: "w-8 h-6 rounded-lg shadow bg-gradient-to-b from-indigo-500 to-indigo-700 border-indigo-300 focus:border-indigo-950 transition-colors duration-150 items-center justify-center",
+    selectedCls: "w-8 h-6 rounded-lg shadow-md bg-gradient-to-b from-indigo-500 to-indigo-700 border-indigo-950 transition-colors duration-150 items-center justify-center",
+  },
+  {
+    name: "emerald",
+    pageCls: "flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-emerald-50 to-slate-100",
+    eyebrowCls: "text-xs text-emerald-600 tracking-wide",
+    titleCls: "text-2xl text-emerald-700 font-bold",
+    optionsCls: "text-xs text-emerald-700",
+    rowCls: "flex-row items-center justify-between px-2 py-1 bg-white border-emerald-200 rounded-lg shadow focus:bg-emerald-50 focus:border-emerald-500 transition-colors duration-150",
+    rowLabelCls: "text-sm text-emerald-950",
+    switchOnCls: "w-9 h-5 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600 border-emerald-500 shadow flex-row items-center",
+    switchOffCls: "w-9 h-5 rounded-full bg-gradient-to-r from-emerald-100 to-emerald-200 border-emerald-200 shadow flex-row items-center",
+    knobCls: "w-4 h-4 rounded-full bg-white border-emerald-200 shadow-md m-[2] translate-x-[0.5]",
+    sliderTrackCls: "relative w-[120] h-3 rounded-full bg-emerald-100 border-emerald-200 shadow overflow-hidden",
+    sliderFillCls: "absolute left-0 top-0 h-3 w-[72] rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600",
+    sliderThumbCls: "absolute left-0 top-[2] w-2 h-2 rounded-full bg-white border-emerald-500 shadow-md translate-x-[64]",
+    valueCls: "text-xs text-emerald-700",
+    panelCls: "flex-col gap-2 px-2 py-2 bg-white border-emerald-200 rounded-xl shadow-md",
+    footerCls: "text-xs text-emerald-700",
+    swatchCls: "w-8 h-6 rounded-lg shadow bg-gradient-to-b from-emerald-400 to-emerald-600 border-emerald-300 focus:border-emerald-950 transition-colors duration-150 items-center justify-center",
+    selectedCls: "w-8 h-6 rounded-lg shadow-md bg-gradient-to-b from-emerald-400 to-emerald-600 border-emerald-950 transition-colors duration-150 items-center justify-center",
+  },
+  {
+    name: "amber",
+    pageCls: "flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-amber-50 to-slate-100",
+    eyebrowCls: "text-xs text-amber-600 tracking-wide",
+    titleCls: "text-2xl text-amber-700 font-bold",
+    optionsCls: "text-xs text-amber-700",
+    rowCls: "flex-row items-center justify-between px-2 py-1 bg-white border-amber-200 rounded-lg shadow focus:bg-amber-50 focus:border-amber-500 transition-colors duration-150",
+    rowLabelCls: "text-sm text-amber-950",
+    switchOnCls: "w-9 h-5 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 border-amber-500 shadow flex-row items-center",
+    switchOffCls: "w-9 h-5 rounded-full bg-gradient-to-r from-amber-100 to-amber-200 border-amber-200 shadow flex-row items-center",
+    knobCls: "w-4 h-4 rounded-full bg-white border-amber-200 shadow-md m-[2] translate-x-[0.5]",
+    sliderTrackCls: "relative w-[120] h-3 rounded-full bg-amber-100 border-amber-200 shadow overflow-hidden",
+    sliderFillCls: "absolute left-0 top-0 h-3 w-[72] rounded-full bg-gradient-to-r from-amber-400 to-amber-600",
+    sliderThumbCls: "absolute left-0 top-[2] w-2 h-2 rounded-full bg-white border-amber-500 shadow-md translate-x-[64]",
+    valueCls: "text-xs text-amber-700",
+    panelCls: "flex-col gap-2 px-2 py-2 bg-white border-amber-200 rounded-xl shadow-md",
+    footerCls: "text-xs text-amber-700",
+    swatchCls: "w-8 h-6 rounded-lg shadow bg-gradient-to-b from-amber-400 to-amber-600 border-amber-300 focus:border-amber-950 transition-colors duration-150 items-center justify-center",
+    selectedCls: "w-8 h-6 rounded-lg shadow-md bg-gradient-to-b from-amber-400 to-amber-600 border-amber-950 transition-colors duration-150 items-center justify-center",
+  },
+  {
+    name: "rose",
+    pageCls: "flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-rose-50 to-slate-100",
+    eyebrowCls: "text-xs text-rose-600 tracking-wide",
+    titleCls: "text-2xl text-rose-700 font-bold",
+    optionsCls: "text-xs text-rose-700",
+    rowCls: "flex-row items-center justify-between px-2 py-1 bg-white border-rose-200 rounded-lg shadow focus:bg-rose-50 focus:border-rose-500 transition-colors duration-150",
+    rowLabelCls: "text-sm text-rose-950",
+    switchOnCls: "w-9 h-5 rounded-full bg-gradient-to-r from-rose-400 to-rose-600 border-rose-500 shadow flex-row items-center",
+    switchOffCls: "w-9 h-5 rounded-full bg-gradient-to-r from-rose-100 to-rose-200 border-rose-200 shadow flex-row items-center",
+    knobCls: "w-4 h-4 rounded-full bg-white border-rose-200 shadow-md m-[2] translate-x-[0.5]",
+    sliderTrackCls: "relative w-[120] h-3 rounded-full bg-rose-100 border-rose-200 shadow overflow-hidden",
+    sliderFillCls: "absolute left-0 top-0 h-3 w-[72] rounded-full bg-gradient-to-r from-rose-400 to-rose-600",
+    sliderThumbCls: "absolute left-0 top-[2] w-2 h-2 rounded-full bg-white border-rose-500 shadow-md translate-x-[64]",
+    valueCls: "text-xs text-rose-700",
+    panelCls: "flex-col gap-2 px-2 py-2 bg-white border-rose-200 rounded-xl shadow-md",
+    footerCls: "text-xs text-rose-700",
+    swatchCls: "w-8 h-6 rounded-lg shadow bg-gradient-to-b from-rose-400 to-rose-600 border-rose-300 focus:border-rose-950 transition-colors duration-150 items-center justify-center",
+    selectedCls: "w-8 h-6 rounded-lg shadow-md bg-gradient-to-b from-rose-400 to-rose-600 border-rose-950 transition-colors duration-150 items-center justify-center",
+  },
+];
+
+function themeByName(name: ThemeName): ThemeOption {
+  return THEMES.find((t) => t.name === name) ?? THEMES[0];
 }
 
 // ---------------------------------------------------------------------------
 // Toggle row
 // ---------------------------------------------------------------------------
 
-function Toggle(props: { label: string; value: boolean; onToggle: () => void }) {
+function Toggle(props: { label: string; value: boolean; theme: ThemeOption; onToggle: () => void }) {
   let knob: NodeMirror | undefined;
+  let initialized = false;
   createEffect(() => {
-    if (knob) spring(knob, "translateX", props.value ? 16 : 0);
+    if (!knob) return;
+    const x = props.value ? 15.5 : 0.5;
+    animate(knob, "translateX", x, {
+      dur: initialized ? 160 : 1,
+      easing: "out",
+    });
+    initialized = true;
   });
   return (
     <view
-      class="flex-row items-center justify-between p-1 bg-slate-800 border-slate-700 focus:bg-slate-700 focus:border-indigo-400 transition-colors duration-150"
+      class={props.theme.rowCls}
       focusable
       onPress={props.onToggle}
     >
-      <text class="text-sm text-slate-200">{props.label}</text>
+      <text class={props.theme.rowLabelCls}>{props.label}</text>
       <view
         class={
           props.value
-            ? "w-9 h-5 rounded-full bg-indigo-500 flex-row items-center"
-            : "w-9 h-5 rounded-full bg-slate-700 flex-row items-center"
+            ? props.theme.switchOnCls
+            : props.theme.switchOffCls
         }
       >
         <view
           ref={knob}
-          class={props.value ? "w-4 h-4 rounded-full bg-white m-[2] translate-x-4" : "w-4 h-4 rounded-full bg-white m-[2] translate-x-0"}
+          class={props.theme.knobCls}
         />
       </view>
     </view>
@@ -63,24 +169,22 @@ function Toggle(props: { label: string; value: boolean; onToggle: () => void }) 
 
 const BRIGHTNESS_TRACK_W = 120;
 
-function Brightness() {
+function Brightness(props: { theme: ThemeOption }) {
   const [level, setLevel] = createSignal(3);
-  let fill: NodeMirror | undefined;
-  createEffect(() => {
-    if (fill) spring(fill, "width", (level() / 5) * BRIGHTNESS_TRACK_W);
-  });
+  const fillW = () => (level() / 5) * BRIGHTNESS_TRACK_W;
   return (
     <view
-      class="flex-row items-center justify-between p-1 bg-slate-800 border-slate-700 focus:bg-slate-700 focus:border-amber-400 transition-colors duration-150"
+      class={props.theme.rowCls}
       focusable
       onPress={() => setLevel(level() >= 5 ? 1 : level() + 1)}
     >
-      <text class="text-sm text-slate-200">BRIGHTNESS</text>
+      <text class={props.theme.rowLabelCls}>BRIGHTNESS</text>
       <view class="flex-row items-center gap-2">
-        <view class="w-[120] h-2 bg-slate-900">
-          <view ref={fill} class="h-2 w-0 bg-gradient-to-r from-amber-400 to-amber-600" />
+        <view class={props.theme.sliderTrackCls}>
+          <view class={props.theme.sliderFillCls} style={{ width: fillW() }} />
+          <view class={props.theme.sliderThumbCls} style={{ translateX: fillW() - 8 }} />
         </view>
-        <text class="text-xs text-slate-500">{level()}/5</text>
+        <text class={props.theme.valueCls}>{level()}/5</text>
       </view>
     </view>
   );
@@ -90,46 +194,21 @@ function Brightness() {
 // Theme swatches
 // ---------------------------------------------------------------------------
 
-interface ThemeOption {
-  name: ThemeName;
-  swatchCls: string;
-  selectedCls: string;
-}
-
-const THEMES: ThemeOption[] = [
-  {
-    name: "indigo",
-    swatchCls: "w-6 h-6 bg-indigo-500 border-slate-800 focus:border-slate-300 transition-colors duration-150",
-    selectedCls: "w-6 h-6 bg-indigo-500 border-white transition-colors duration-150",
-  },
-  {
-    name: "emerald",
-    swatchCls: "w-6 h-6 bg-emerald-500 border-slate-800 focus:border-slate-300 transition-colors duration-150",
-    selectedCls: "w-6 h-6 bg-emerald-500 border-white transition-colors duration-150",
-  },
-  {
-    name: "amber",
-    swatchCls: "w-6 h-6 bg-amber-500 border-slate-800 focus:border-slate-300 transition-colors duration-150",
-    selectedCls: "w-6 h-6 bg-amber-500 border-white transition-colors duration-150",
-  },
-  {
-    name: "rose",
-    swatchCls: "w-6 h-6 bg-rose-500 border-slate-800 focus:border-slate-300 transition-colors duration-150",
-    selectedCls: "w-6 h-6 bg-rose-500 border-white transition-colors duration-150",
-  },
-];
-
-function ThemeRow(props: { value: ThemeName; onPick: (t: ThemeName) => void }) {
+function ThemeRow(props: { value: ThemeName; theme: ThemeOption; onPick: (t: ThemeName) => void }) {
   return (
-    <view class="flex-col gap-1 p-1 bg-slate-800 border-slate-700">
-      <text class="text-sm text-slate-200">THEME</text>
-      <view class="flex-row gap-3">
+    <view class={props.theme.panelCls}>
+      <text class={props.theme.rowLabelCls}>THEME</text>
+      <view class="flex-row gap-2">
         {THEMES.map((t) => (
           <view
             class={props.value === t.name ? t.selectedCls : t.swatchCls}
             focusable
             onPress={() => props.onPick(t.name)}
-          />
+          >
+            <Show when={props.value === t.name}>
+              <view class="w-2 h-2 rounded-full bg-white shadow" />
+            </Show>
+          </view>
         ))}
       </view>
     </view>
@@ -144,25 +223,26 @@ export default function Settings() {
   const [sfx, setSfx] = createSignal(true);
   const [vibration, setVibration] = createSignal(false);
   const [theme, setTheme] = createSignal<ThemeName>("indigo");
+  const currentTheme = () => themeByName(theme());
 
   return (
-    <view class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-900 to-slate-950">
+    <view class={currentTheme().pageCls}>
       <view class="flex-row items-end justify-between">
         <view class="flex-col">
-          <text class="text-xs text-indigo-300 tracking-wide">PSP-UI SHOWCASE</text>
-          <text class={titleCls(theme())}>Settings</text>
+          <text class={currentTheme().eyebrowCls}>PSP-UI SHOWCASE</text>
+          <text class={currentTheme().titleCls}>Settings</text>
         </view>
-        <text class="text-xs text-slate-500">4 OPTIONS</text>
+        <text class={currentTheme().optionsCls}>4 OPTIONS</text>
       </view>
 
-      <view class="flex-col gap-1">
-        <Toggle label="SOUND EFFECTS" value={sfx()} onToggle={() => setSfx(!sfx())} />
-        <Toggle label="VIBRATION" value={vibration()} onToggle={() => setVibration(!vibration())} />
-        <Brightness />
-        <ThemeRow value={theme()} onPick={setTheme} />
+      <view class="flex-col gap-2">
+        <Toggle label="SOUND EFFECTS" value={sfx()} theme={currentTheme()} onToggle={() => setSfx(!sfx())} />
+        <Toggle label="VIBRATION" value={vibration()} theme={currentTheme()} onToggle={() => setVibration(!vibration())} />
+        <Brightness theme={currentTheme()} />
+        <ThemeRow value={theme()} theme={currentTheme()} onPick={setTheme} />
       </view>
 
-      <text class="text-xs text-slate-500">UP / DOWN move focus · CIRCLE toggle / cycle / select</text>
+      <text class={currentTheme().footerCls}>UP / DOWN move focus · CIRCLE toggle / cycle / select</text>
     </view>
   );
 }

@@ -64,7 +64,7 @@ fn encode_styles(styles: &[StyleSpec]) -> Vec<u8> {
 }
 
 /// Synthetic font atlas: `glyphs` are (codepoint, gid, advance), sorted by
-/// codepoint. Bitmaps are all-zero (metrics are what the tests exercise).
+/// codepoint. Coverage cells are all-zero (metrics are what the tests exercise).
 fn encode_atlas(
     slot: u8,
     cell_w: u8,
@@ -92,7 +92,7 @@ fn encode_atlas(
         out.push(adv);
         out.push(0);
     }
-    let bytes_per_row = (cell_w as usize + 7) / 8;
+    let bytes_per_row = cell_w as usize;
     out.extend_from_slice(&alloc::vec![0u8; glyph_count as usize * cell_h as usize * bytes_per_row]);
     out
 }
@@ -473,6 +473,65 @@ fn drawlist_clip_invariant_offscreen_rects() {
 }
 
 #[test]
+fn rounded_boxes_emit_subpixel_edge_coverage() {
+    let mut ui = Ui::new();
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 36.0);
+    ui.set_prop(n, spec::prop::HEIGHT, 20.0);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_T, 10.5);
+    ui.set_prop(n, spec::prop::INSET_L, 10.5);
+    ui.set_prop(n, spec::prop::RADIUS, 10.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(37, 99, 235, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.tick();
+    let words = ui.draw().words.clone();
+    let counts = validate_drawlist(&words);
+    assert!(counts[spec::draw_op::RECT as usize] > 0);
+    let mut edge_alpha = false;
+    let mut i = 0usize;
+    while i < words.len() {
+        match words[i] {
+            spec::draw_op::RECT => {
+                let a = words[i + 3] >> 24;
+                edge_alpha |= a > 0 && a < 255;
+                i += 4;
+            }
+            spec::draw_op::GRAD_RECT => i += 6,
+            spec::draw_op::TRI => i += 7,
+            spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
+            spec::draw_op::TEX_QUAD => i += 9,
+            spec::draw_op::SCISSOR => i += 3,
+            _ => i += 1,
+        }
+    }
+    assert!(edge_alpha, "rounded pill edges should be alpha-covered, not hard 1-bit spans");
+}
+
+#[test]
+fn rounded_gradients_emit_rect_coverage_spans() {
+    let mut ui = Ui::new();
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 120.0);
+    ui.set_prop(n, spec::prop::HEIGHT, 12.0);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_T, 20.0);
+    ui.set_prop(n, spec::prop::INSET_L, 20.0);
+    ui.set_prop(n, spec::prop::RADIUS, 6.0);
+    ui.set_prop(n, spec::prop::GRAD_FROM, abgr(251, 191, 36, 255) as f64);
+    ui.set_prop(n, spec::prop::GRAD_TO, abgr(217, 119, 6, 255) as f64);
+    ui.set_prop(n, spec::prop::GRAD_DIR, spec::GradDir::ToRight as u32 as f64);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert!(counts[spec::draw_op::RECT as usize] > 0);
+    assert_eq!(
+        counts[spec::draw_op::GRAD_RECT as usize], 0,
+        "rounded gradients must not rely on 1px-high GRAD_RECT triangle strips"
+    );
+}
+
+#[test]
 fn overflow_hidden_emits_balanced_intersected_scissors() {
     let mut ui = Ui::new();
     let outer = ui.create_node(0);
@@ -575,7 +634,7 @@ fn text_measurement_against_synthetic_atlas() {
     // Atlas accessor exposes glyph bitmaps for the backends.
     let atlas = ui.font_atlas(2).unwrap();
     assert_eq!(atlas.lookup('B' as u32), Some((2, 5)));
-    assert_eq!(atlas.glyph_rows(1).len(), 8); // cellH * 1 byte per row
+    assert_eq!(atlas.glyph_rows(1).len(), 64); // cellH * cellW coverage bytes
 }
 
 #[test]

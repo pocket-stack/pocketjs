@@ -9,8 +9,8 @@
 // driven timer (beforeFrame, same shape as stats.tsx/library.tsx) removes it
 // from the list once the tween has had time to finish.
 //
-// v1-aware design notes: p-1 rows / p-3 root — 4 cards is already a tight fit
-// in 480x272 (DESIGN.md punts kinetic scroll, so the list can't overflow the
+// Design notes: p-1 rows / p-3 root — 4 cards is already a tight fit in
+// 480x272 (DESIGN.md punts kinetic scroll, so the list can't overflow the
 // screen); every class a FULL literal.
 
 import { createSignal, For, onMount, Show } from "solid-js";
@@ -33,28 +33,28 @@ const INITIAL: Notice[] = [
     title: "UPDATE AVAILABLE",
     message: "Firmware 6.61 is ready to install.",
     time: "2m ago",
-    dotCls: "w-2 h-2 rounded-full bg-sky-400",
+    dotCls: "w-2 h-2 rounded-full bg-sky-500",
   },
   {
     id: "friend",
     title: "FRIEND REQUEST",
     message: "RIDGE_FOX wants to join your session.",
     time: "14m ago",
-    dotCls: "w-2 h-2 rounded-full bg-emerald-400",
+    dotCls: "w-2 h-2 rounded-full bg-emerald-500",
   },
   {
     id: "battery",
     title: "LOW BATTERY",
     message: "12% remaining — plug in soon.",
     time: "35m ago",
-    dotCls: "w-2 h-2 rounded-full bg-amber-400",
+    dotCls: "w-2 h-2 rounded-full bg-amber-500",
   },
   {
     id: "trophy",
     title: "TROPHY UNLOCKED",
     message: '"First Contact" — Iron Vanguard.',
     time: "1h ago",
-    dotCls: "w-2 h-2 rounded-full bg-indigo-400",
+    dotCls: "w-2 h-2 rounded-full bg-blue-500",
   },
 ];
 
@@ -95,11 +95,11 @@ function dismiss(id: string, el: NodeMirror | undefined): void {
 
 export default function Notifications() {
   return (
-    <view class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-900 to-slate-950">
+    <view class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
       <view class="flex-row items-end justify-between">
         <view class="flex-col">
-          <text class="text-xs text-indigo-300 tracking-wide">PSP-UI SHOWCASE</text>
-          <text class="text-2xl text-white font-bold">Notifications</text>
+          <text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</text>
+          <text class="text-2xl text-slate-950 font-bold">Notifications</text>
         </view>
         <text class="text-xs text-slate-500">{items().length} UNREAD</text>
       </view>
@@ -118,14 +118,14 @@ export default function Notifications() {
               <view
                 ref={el}
                 style={{ opacity: 0, translateX: 16 }}
-                class="flex-row items-center gap-3 p-1 bg-slate-800 border-slate-700 focus:bg-slate-700 focus:border-indigo-400 transition-colors duration-150"
+                class="flex-row items-center gap-3 p-1 rounded-lg shadow bg-white border-slate-200 focus:bg-blue-50 focus:border-blue-500 transition-colors duration-150"
                 focusable
                 onPress={() => dismiss(item.id, el)}
               >
                 <view class={item.dotCls} />
                 <view class="flex-col grow">
-                  <text class="text-xs text-white font-bold">{item.title}</text>
-                  <text class="text-xs text-slate-400">{item.message}</text>
+                  <text class="text-xs text-slate-950 font-bold">{item.title}</text>
+                  <text class="text-xs text-slate-600">{item.message}</text>
                 </view>
                 <text class="text-xs text-slate-500">{item.time}</text>
               </view>
@@ -135,7 +135,7 @@ export default function Notifications() {
       </view>
 
       <Show when={items().length === 0}>
-        <view class="grow flex-col items-center justify-center">
+        <view class="grow flex-col items-center justify-center rounded-xl shadow bg-white border-slate-200">
           <text class="text-sm text-slate-500">ALL CLEAR</text>
         </view>
       </Show>

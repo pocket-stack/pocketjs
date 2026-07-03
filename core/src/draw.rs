@@ -14,10 +14,9 @@
 //!   - glyph cells position along the rotated/scaled frame but stay upright
 //!     and unscaled (bitmap cells); glyphs whose cell top-left leaves the
 //!     screen range or whose cell leaves the clip rect are dropped;
-//!   - rounded corners and shadows need pre-baked atlas textures which no
-//!     host registers yet, so `radius`/`shadow` are skipped gracefully
-//!     (backgrounds draw square, shadows don't draw) rather than emitting
-//!     TexQuads against unregistered atlas handles;
+//!   - rounded corners and shadows are emitted for axis-aligned boxes as
+//!     deterministic alpha-covered RECT spans; rotated rounded boxes degrade
+//!     to square fills;
 //!   - opacity multiplies vertex alpha down the subtree (wrong on overlap,
 //!     per DESIGN.md punt list).
 
@@ -187,6 +186,22 @@ fn alpha(color: u32) -> u32 {
     color >> 24
 }
 
+#[inline]
+fn with_alpha_abgr(color: u32, a: u32) -> u32 {
+    (color & 0x00ff_ffff) | ((a & 0xff) << 24)
+}
+
+#[inline]
+fn scale_alpha_coverage(color: u32, coverage: u32) -> u32 {
+    let a = ((alpha(color) * coverage.min(255) + 127) / 255).min(255);
+    with_alpha_abgr(color, a)
+}
+
+#[inline]
+fn ceilf(x: f32) -> f32 {
+    -floorf(-x)
+}
+
 // ---- fills ---------------------------------------------------------------------
 
 #[derive(Clone, Copy)]
@@ -219,6 +234,74 @@ fn corner_color(fill: &Fill, corner: usize) -> u32 {
 
 fn lerp_color(a: u32, b: u32, f: f32) -> u32 {
     crate::anim::interp(a, b, f, true)
+}
+
+#[inline]
+fn sqrtf(x: f32) -> f32 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let mut y = f32::from_bits((x.to_bits() >> 1) + 0x1fc0_0000);
+    y = 0.5 * (y + x / y);
+    y = 0.5 * (y + x / y);
+    y = 0.5 * (y + x / y);
+    y
+}
+
+#[inline]
+fn coverage_from_unit(x: f32) -> u32 {
+    let v = clampf(x, 0.0, 1.0);
+    (v * 255.0 + 0.5) as u32
+}
+
+#[inline]
+fn coverage_mul(a: u32, b: u32) -> u32 {
+    ((a.min(255) * b.min(255) + 127) / 255).min(255)
+}
+
+fn pixel_interval_coverage(pixel: i32, start: f32, end: f32) -> u32 {
+    let a = (pixel as f32).max(start);
+    let b = ((pixel + 1) as f32).min(end);
+    if b <= a {
+        0
+    } else {
+        coverage_from_unit(b - a)
+    }
+}
+
+fn gradient_run_limit(fill: &Fill) -> i32 {
+    match *fill {
+        Fill::Grad { dir, .. } if dir == spec::GradDir::ToLeft as u32 || dir == spec::GradDir::ToRight as u32 => 4,
+        _ => 1_000_000,
+    }
+}
+
+fn vertical_gradient(fill: &Fill) -> bool {
+    match *fill {
+        Fill::Grad { dir, .. } => dir == spec::GradDir::ToTop as u32 || dir == spec::GradDir::ToBottom as u32,
+        _ => false,
+    }
+}
+
+fn fill_color_at(fill: &Fill, x0: f32, y0: f32, x1: f32, y1: f32, sx0: i32, sy: i32, sx1: i32, coverage: u32) -> u32 {
+    let color = match *fill {
+        Fill::Flat(color) => color,
+        Fill::Grad { from, to, dir } => {
+            let horizontal = dir == spec::GradDir::ToLeft as u32 || dir == spec::GradDir::ToRight as u32;
+            let (p, denom) = if horizontal {
+                (((sx0 + sx1) as f32 * 0.5) - x0, x1 - x0)
+            } else {
+                (sy as f32 + 0.5 - y0, y1 - y0)
+            };
+            let f = if denom <= 0.0 { 0.0 } else { clampf(p / denom, 0.0, 1.0) };
+            if dir == spec::GradDir::ToTop as u32 || dir == spec::GradDir::ToLeft as u32 {
+                lerp_color(to, from, f)
+            } else {
+                lerp_color(from, to, f)
+            }
+        }
+    };
+    scale_alpha_coverage(color, coverage)
 }
 
 // ---- the walker ------------------------------------------------------------------
@@ -274,24 +357,55 @@ impl<'a> Walker<'a> {
             return;
         }
 
-        // -- background (rect / gradrect; `radius`/`shadow` skipped: no baked
-        //    corner/shadow atlases are registered by any v1 host) ------------
+        // -- background + shadow --------------------------------------------
         let has_grad = r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32;
-        if has_grad {
+        let bg_color = scale_alpha(r.bg_color, op);
+        let border_color = scale_alpha(r.border_color, op);
+        let rounded_ring =
+            r.radius > 0.0 && r.border_width > 0.0 && alpha(border_color) > 0 && (has_grad || alpha(bg_color) > 0);
+
+        if r.shadow > 0 && (alpha(bg_color) > 0 || has_grad) {
+            self.emit_shadow(dl, &world, l.w, l.h, r.radius, r.shadow, op, &clip);
+        }
+
+        if rounded_ring {
+            self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, Fill::Flat(border_color), &clip);
+            let bw = r.border_width.min(l.w * 0.5).min(l.h * 0.5);
+            if has_grad {
+                let fill = Fill::Grad {
+                    from: scale_alpha(r.grad_from, op),
+                    to: scale_alpha(r.grad_to, op),
+                    dir: r.grad_dir,
+                };
+                self.emit_rounded_box(dl, &world, bw, bw, l.w - bw, l.h - bw, (r.radius - bw).max(0.0), fill, &clip);
+            } else {
+                self.emit_rounded_box(
+                    dl,
+                    &world,
+                    bw,
+                    bw,
+                    l.w - bw,
+                    l.h - bw,
+                    (r.radius - bw).max(0.0),
+                    Fill::Flat(bg_color),
+                    &clip,
+                );
+            }
+        } else if has_grad {
             let fill = Fill::Grad {
                 from: scale_alpha(r.grad_from, op),
                 to: scale_alpha(r.grad_to, op),
                 dir: r.grad_dir,
             };
-            self.emit_box(dl, &world, 0.0, 0.0, l.w, l.h, fill, &clip);
-        } else if alpha(scale_alpha(r.bg_color, op)) > 0 {
-            self.emit_box(dl, &world, 0.0, 0.0, l.w, l.h, Fill::Flat(scale_alpha(r.bg_color, op)), &clip);
+            self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, fill, &clip);
+        } else if alpha(bg_color) > 0 {
+            self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, Fill::Flat(bg_color), &clip);
         }
 
         // -- border: 4 inset strips ------------------------------------------
         let bw = r.border_width;
-        if bw > 0.0 && alpha(scale_alpha(r.border_color, op)) > 0 {
-            let bc = Fill::Flat(scale_alpha(r.border_color, op));
+        if !rounded_ring && bw > 0.0 && alpha(border_color) > 0 {
+            let bc = Fill::Flat(border_color);
             let bwx = bw.min(l.w * 0.5);
             let bwy = bw.min(l.h * 0.5);
             self.emit_box(dl, &world, 0.0, 0.0, l.w, bwy, bc, &clip); // top
@@ -366,7 +480,6 @@ impl<'a> Walker<'a> {
             c.y1 = c.y1.max(y);
         }
         // Conservative integer AABB: floor mins, ceil maxes.
-        let ceilf = |x: f32| -floorf(-x);
         Clip {
             x0: floorf(clampf(c.x0, 0.0, SCREEN_W)),
             y0: floorf(clampf(c.y0, 0.0, SCREEN_H)),
@@ -449,6 +562,237 @@ impl<'a> Walker<'a> {
             for i in 1..clipped.len() - 1 {
                 emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip);
             }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit_rounded_span(
+        &self,
+        dl: &mut DrawList,
+        fill: &Fill,
+        sx0: f32,
+        sy0: f32,
+        sx1: f32,
+        sy1: f32,
+        py: i32,
+        h: i32,
+        x0: i32,
+        x1: i32,
+        coverage: u32,
+    ) {
+        if coverage == 0 || h <= 0 || x1 <= x0 {
+            return;
+        }
+        let max_run = gradient_run_limit(fill);
+        let mut x = x0;
+        while x < x1 {
+            let next = (x + max_run).min(x1);
+            let color = fill_color_at(fill, sx0, sy0, sx1, sy1, x, py, next, coverage);
+            if alpha(color) > 0 {
+                dl.words.push(spec::draw_op::RECT);
+                dl.words.push(xy_word(x as f32, py as f32));
+                dl.words.push(wh_word((next - x) as f32, h as f32));
+                dl.words.push(color);
+            }
+            x = next;
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit_rounded_box(
+        &self,
+        dl: &mut DrawList,
+        world: &Affine,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        radius: f32,
+        fill: Fill,
+        clip: &Clip,
+    ) {
+        if radius <= 0.0 || !world.is_axis_aligned() {
+            self.emit_box(dl, world, x0, y0, x1, y1, fill, clip);
+            return;
+        }
+        let (sx0, sy0) = world.apply(x0, y0);
+        let (sx1, sy1) = world.apply(x1, y1);
+        if sx1 <= sx0 || sy1 <= sy0 {
+            return;
+        }
+        let w = sx1 - sx0;
+        let h = sy1 - sy0;
+        let scale = ((world.a + world.d) * 0.5).max(0.0);
+        let r = (radius * scale).min(w * 0.5).min(h * 0.5);
+        if r <= 0.5 {
+            self.emit_box(dl, world, x0, y0, x1, y1, fill, clip);
+            return;
+        }
+        let ix0 = floorf(sx0).max(floorf(clip.x0)).max(0.0) as i32;
+        let iy0 = floorf(sy0).max(floorf(clip.y0)).max(0.0) as i32;
+        let ix1 = ceilf(sx1).min(ceilf(clip.x1)).min(SCREEN_W) as i32;
+        let iy1 = ceilf(sy1).min(ceilf(clip.y1)).min(SCREEN_H) as i32;
+        if ix1 <= ix0 || iy1 <= iy0 {
+            return;
+        }
+        let rr = r * r;
+        let tall_middle = !vertical_gradient(&fill);
+        let mid_y0 = if tall_middle {
+            (ceilf(sy0 + r) as i32).max(iy0).min(iy1)
+        } else {
+            iy0
+        };
+        let mid_y1 = if tall_middle {
+            (floorf(sy1 - r) as i32).max(iy0).min(iy1)
+        } else {
+            iy0
+        };
+        if tall_middle && mid_y1 > mid_y0 {
+            let span_x0 = sx0.max(ix0 as f32);
+            let span_x1 = sx1.min(ix1 as f32);
+            if span_x1 > span_x0 {
+                let left_edge = floorf(span_x0) as i32;
+                let full_start = ceilf(span_x0) as i32;
+                let full_end = floorf(span_x1) as i32;
+                let right_edge = ceilf(span_x1) as i32;
+                let h = mid_y1 - mid_y0;
+                let mut emitted_left_edge = false;
+                if left_edge < full_start && left_edge >= ix0 && left_edge < ix1 {
+                    let x_coverage = pixel_interval_coverage(left_edge, span_x0, span_x1);
+                    self.emit_rounded_span(
+                        dl,
+                        &fill,
+                        sx0,
+                        sy0,
+                        sx1,
+                        sy1,
+                        mid_y0,
+                        h,
+                        left_edge,
+                        left_edge + 1,
+                        x_coverage,
+                    );
+                    emitted_left_edge = true;
+                }
+                let inner_x0 = full_start.max(ix0);
+                let inner_x1 = full_end.min(ix1);
+                self.emit_rounded_span(dl, &fill, sx0, sy0, sx1, sy1, mid_y0, h, inner_x0, inner_x1, 255);
+                if full_end < right_edge
+                    && full_end >= ix0
+                    && full_end < ix1
+                    && !(emitted_left_edge && full_end == left_edge)
+                {
+                    let x_coverage = pixel_interval_coverage(full_end, span_x0, span_x1);
+                    self.emit_rounded_span(
+                        dl,
+                        &fill,
+                        sx0,
+                        sy0,
+                        sx1,
+                        sy1,
+                        mid_y0,
+                        h,
+                        full_end,
+                        full_end + 1,
+                        x_coverage,
+                    );
+                }
+            }
+        }
+        for py in iy0..iy1 {
+            if tall_middle && py >= mid_y0 && py < mid_y1 {
+                continue;
+            }
+            let y_coverage = pixel_interval_coverage(py, sy0, sy1);
+            if y_coverage == 0 {
+                continue;
+            }
+
+            let row_y = clampf(py as f32 + 0.5, sy0, sy1);
+            let inset = if row_y < sy0 + r {
+                let dy = sy0 + r - row_y;
+                r - sqrtf((rr - dy * dy).max(0.0))
+            } else if row_y > sy1 - r {
+                let dy = row_y - (sy1 - r);
+                r - sqrtf((rr - dy * dy).max(0.0))
+            } else {
+                0.0
+            };
+            let span_x0 = (sx0 + inset).max(ix0 as f32);
+            let span_x1 = (sx1 - inset).min(ix1 as f32);
+            if span_x1 <= span_x0 {
+                continue;
+            }
+
+            let left_edge = floorf(span_x0) as i32;
+            let full_start = ceilf(span_x0) as i32;
+            let full_end = floorf(span_x1) as i32;
+            let right_edge = ceilf(span_x1) as i32;
+
+            let mut emitted_left_edge = false;
+            if left_edge < full_start && left_edge >= ix0 && left_edge < ix1 {
+                let x_coverage = pixel_interval_coverage(left_edge, span_x0, span_x1);
+                self.emit_rounded_span(
+                    dl,
+                    &fill,
+                    sx0,
+                    sy0,
+                    sx1,
+                    sy1,
+                    py,
+                    1,
+                    left_edge,
+                    left_edge + 1,
+                    coverage_mul(x_coverage, y_coverage),
+                );
+                emitted_left_edge = true;
+            }
+
+            let inner_x0 = full_start.max(ix0);
+            let inner_x1 = full_end.min(ix1);
+            self.emit_rounded_span(dl, &fill, sx0, sy0, sx1, sy1, py, 1, inner_x0, inner_x1, y_coverage);
+
+            if full_end < right_edge && full_end >= ix0 && full_end < ix1 && !(emitted_left_edge && full_end == left_edge) {
+                let x_coverage = pixel_interval_coverage(full_end, span_x0, span_x1);
+                self.emit_rounded_span(
+                    dl,
+                    &fill,
+                    sx0,
+                    sy0,
+                    sx1,
+                    sy1,
+                    py,
+                    1,
+                    full_end,
+                    full_end + 1,
+                    coverage_mul(x_coverage, y_coverage),
+                );
+            }
+        }
+    }
+
+    fn emit_shadow(&self, dl: &mut DrawList, world: &Affine, w: f32, h: f32, radius: f32, level: u32, opacity: f32, clip: &Clip) {
+        if !world.is_axis_aligned() {
+            return;
+        }
+        let layers: &[(f32, f32, f32, u32)] = match level {
+            1 => &[(0.0, 1.0, 0.0, 22), (0.0, 2.0, 1.0, 10)],
+            2 => &[(0.0, 2.0, 1.0, 24), (0.0, 4.0, 2.0, 12), (0.0, 6.0, 3.0, 6)],
+            _ => &[(0.0, 2.0, 1.0, 28), (0.0, 5.0, 3.0, 14), (0.0, 9.0, 5.0, 7)],
+        };
+        for &(dx, dy, spread, alpha) in layers {
+            let color = scale_alpha(with_alpha_abgr(0x0000_0000, alpha), opacity);
+            self.emit_rounded_box(
+                dl,
+                world,
+                -spread + dx,
+                -spread + dy,
+                w + spread + dx,
+                h + spread + dy,
+                radius + spread,
+                Fill::Flat(color),
+                clip,
+            );
         }
     }
 

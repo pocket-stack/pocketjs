@@ -65,8 +65,8 @@ interface Spec {
 const SPECS: Spec[] = [
   {
     // hero: underline sweep = 150 ms delay + 700 ms tween ≈ settled by frame
-    // 52. DOWN@58 focuses the CTA (focus:bg-indigo-300, 150 ms), CIRCLE@76
-    // increments Count and nudges the underline (translateX = count*2).
+    // 52; SVG-baked spinner cycles beside the headline. DOWN@58 focuses the
+    // CTA, CIRCLE@76 increments Count and nudges the underline.
     app: "hero",
     inputScript: "0:0,58:0x40,62:0,76:0x2000,80:0",
     capStart: 48,
@@ -80,8 +80,8 @@ const SPECS: Spec[] = [
   {
     // cards: nothing focused at boot; RIGHT@20 focuses card 1 (enter-from-end),
     // RIGHT@28 moves to card 2 "Motion" (lift + border transition, 150 ms),
-    // CIRCLE@44 opens its detail panel (mount fade + translateY spring,
-    // ~30-40 frames to settle). Ambient gradient streaks drift for 20+ s —
+    // CIRCLE@44 opens its detail panel (translateY spring, no color fade).
+    // Ambient gradient streaks drift for 20+ s —
     // never "settled", but deterministic per frame index.
     app: "cards",
     inputScript: "0:0,20:0x20,24:0,28:0x20,32:0,44:0x2000,48:0",
@@ -90,27 +90,27 @@ const SPECS: Spec[] = [
     shots: [
       { name: "layout", frame: 18 }, // three cards, header, no focus
       { name: "focused", frame: 40 }, // 2nd card lifted + emerald border
+      { name: "opening", frame: 52 }, // detail just opened: white panel, no gray fade
       { name: "detail", frame: 88 }, // detail panel sprung into place
     ],
   },
   {
     // stats: counters count up over 75 frames from mount (capped signal),
-    // bars stagger-grow (600 ms + i*90 ms → last settles ≈ frame 53).
-    // DOWN@84 switches to the SYSTEMS tab (panel translateY spring + row
-    // mount fades, ~30-40 frames).
+    // bars stagger-grow from the capped frame signal. RIGHT@84 switches to
+    // the SYSTEMS tab (short row reveal, no default gray flash).
     app: "stats",
-    inputScript: "0:0,84:0x40,88:0",
+    inputScript: "0:0,84:0x20,88:0",
     capStart: 28,
     capN: 100, // window 28..127
     shots: [
       { name: "midcount", frame: 30 }, // counters mid-count-up, bars part-grown
       { name: "overview", frame: 80 }, // OVERVIEW settled (count-up + bars done)
-      { name: "systems", frame: 124 }, // SYSTEMS tab settled after DOWN
+      { name: "systems", frame: 124 }, // SYSTEMS tab settled after RIGHT
     ],
   },
   {
     // library: RIGHT@8/16 walks focus to tile 1, CIRCLE@32 opens it — the
-    // loading spinner (native `rotate` tween) auto-advances to the detail
+    // SVG-baked loading spinner auto-advances to the detail
     // screen after LOADING_FRAMES=48 (at frame 80), which then springs into
     // place (~30-40 frames to settle).
     app: "library",
@@ -120,6 +120,7 @@ const SPECS: Spec[] = [
     shots: [
       { name: "grid", frame: 6 }, // icon row settled, nothing focused
       { name: "focused", frame: 28 }, // tile 1 (IRON VANGUARD) focused: lift + scale-110
+      { name: "loading", frame: 44 }, // SVG-baked spinner, not a rotating rectangle
       { name: "detail", frame: 112 }, // detail panel settled after the loading screen
     ],
   },

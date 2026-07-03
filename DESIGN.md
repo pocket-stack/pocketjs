@@ -62,10 +62,10 @@ artifacts: `$JOB_TMP/map-*.json`).
 - **Native animation**: tweens/springs tick in Rust per vblank with **fixed
   dt = 1/60 s** (frame content is a pure function of frame index — this is
   what makes byte-exact goldens possible **[R]**). JS only declares motion.
-- **Baked text**: opentype.js atlas baker → 1-bit row-bitmask cells (MSB=left)
-  + proportional advances + cmap; native draw = run-length extraction into
-  batched GE sprites (WA2-proven at 60 fps). Font: **Inter** (OFL), vendored
-  in `assets/fonts/`.
+- **Baked text**: opentype.js atlas baker → horizontally-supersampled 8-bit
+  coverage cells + proportional advances + cmap; native draw = alpha run-length
+  extraction into batched GE sprites. Font: **Inter** (OFL), vendored in
+  `assets/fonts/`.
 
 ## Repository layout
 
@@ -262,10 +262,12 @@ Utilities (Tailwind default scales; `w-[123]` arbitrary px supported):
   `absolute|relative`, `inset/top/right/bottom/left-N`, `hidden`,
   `overflow-hidden` (scissor), `z-N`
 - **visual**: `bg-{palette}`, `bg-gradient-to-t|b|l|r` + `from-{c}`/`to-{c}`
-  (per-vertex gouraud), `rounded|-sm|-md|-lg|-xl` (pre-baked corner arcs,
-  PSM4444; **`rounded-full` only on nodes whose w/h are build-time known**
-  from `w-N h-N`, compiler bakes the exact radius, else compile error **[R]**),
-  `opacity-N`, `shadow|-md|-lg` (pre-baked blurred 9-slice), `border`+`border-{c}`
+  (per-vertex gouraud for square boxes; alpha-covered RECT spans for rounded
+  boxes), `rounded|-sm|-md|-lg|-xl` (axis-aligned boxes get deterministic
+  subpixel edge coverage; **`rounded-full` only on nodes whose w/h are
+  build-time known** from `w-N h-N`, compiler bakes the exact radius, else
+  compile error **[R]**), `opacity-N`, `shadow|-md|-lg` (layered rounded alpha
+  spans), `border`+`border-{c}`
 - **text**: `text-{palette}`, `text-xs|sm|base|lg|xl|2xl|4xl` → baked slots
   **12/14/16/18/20/24/36 px** (slots derived from the utility list, both
   weights **[R]**), `font-bold`, `text-left|center|right`, `leading-N`,

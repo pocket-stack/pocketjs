@@ -1,11 +1,11 @@
 // demos/cards.tsx — "card carousel" showcase: three feature cards in a row,
 // LEFT/RIGHT d-pad moves focus (native focus: variants lift + brighten the
 // focused card — zero JS on focus change), CIRCLE flips a <Show> detail panel
-// that fades in (mount transition) and springs up into place. Two slow
+// that springs up into place without color fades. Two slow
 // gradient streaks drift behind everything (long native tweens started once
 // on mount — deterministic fixed-dt, no per-frame JS).
 //
-// v1-aware design notes: no rounded corners/shadows (they don't render),
+// Design notes: rounded/shadowed surfaces are emitted by the core itself,
 // focus emphasis = translate-y lift + bg/border color (never scale — glyphs
 // don't scale), all text single-line, every class a FULL literal.
 
@@ -30,30 +30,30 @@ const CARDS: Card[] = [
     title: "Layout",
     caption: "Flexbox via Taffy",
     detail: "Rows, columns, gaps and insets — solved natively in Rust.",
-    cls: "flex-col gap-1 p-3 w-[136] bg-slate-800 border-slate-700 translate-y-1 focus:bg-slate-700 focus:border-indigo-400 focus:translate-y-0 transition-all duration-150 ease-out",
-    strip: "h-1 w-full bg-gradient-to-r from-indigo-400 to-indigo-600",
-    bar: "w-1 h-7 bg-indigo-400",
+    cls: "flex-col gap-1 p-3 w-[136] rounded-xl shadow-md overflow-hidden bg-white border-slate-200 translate-y-1 focus:bg-blue-50 focus:border-blue-500 focus:translate-y-0 transition-all duration-150 ease-out",
+    strip: "h-1 w-full rounded-sm bg-gradient-to-r from-blue-500 to-blue-600",
+    bar: "w-1 h-7 bg-blue-500",
   },
   {
     title: "Motion",
     caption: "Springs and tweens",
     detail: "Fixed-dt springs and tweens tick natively at 60 FPS.",
-    cls: "flex-col gap-1 p-3 w-[136] bg-slate-800 border-slate-700 translate-y-1 focus:bg-slate-700 focus:border-emerald-400 focus:translate-y-0 transition-all duration-150 ease-out",
-    strip: "h-1 w-full bg-gradient-to-r from-emerald-400 to-emerald-600",
-    bar: "w-1 h-7 bg-emerald-400",
+    cls: "flex-col gap-1 p-3 w-[136] rounded-xl shadow-md overflow-hidden bg-white border-slate-200 translate-y-1 focus:bg-emerald-50 focus:border-emerald-500 focus:translate-y-0 transition-all duration-150 ease-out",
+    strip: "h-1 w-full rounded-sm bg-gradient-to-r from-emerald-500 to-emerald-600",
+    bar: "w-1 h-7 bg-emerald-500",
   },
   {
     title: "Input",
     caption: "D-pad and focus",
     detail: "Native focus variants respond before JS even wakes up.",
-    cls: "flex-col gap-1 p-3 w-[136] bg-slate-800 border-slate-700 translate-y-1 focus:bg-slate-700 focus:border-amber-400 focus:translate-y-0 transition-all duration-150 ease-out",
-    strip: "h-1 w-full bg-gradient-to-r from-amber-400 to-amber-600",
-    bar: "w-1 h-7 bg-amber-400",
+    cls: "flex-col gap-1 p-3 w-[136] rounded-xl shadow-md overflow-hidden bg-white border-slate-200 translate-y-1 focus:bg-amber-50 focus:border-amber-500 focus:translate-y-0 transition-all duration-150 ease-out",
+    strip: "h-1 w-full rounded-sm bg-gradient-to-r from-amber-500 to-amber-600",
+    bar: "w-1 h-7 bg-amber-500",
   },
 ];
 
-/** Detail panel — remounts (keyed <Show>) per card, so the mount fade
- *  (transition-opacity) and the translate-y spring replay on every open. */
+/** Detail panel — remounts (keyed <Show>) per card, so the translate-y spring
+ *  replays on every open; colors are static on the first visible frame. */
 function Detail(props: { card: Card }) {
   let el: NodeMirror | undefined;
   onMount(() => {
@@ -63,12 +63,12 @@ function Detail(props: { card: Card }) {
     <view
       ref={el}
       style={{ translateY: 22 }}
-      class="flex-row items-center gap-3 p-3 bg-slate-800 border-slate-600 transition-colors duration-200 ease-out"
+      class="flex-row items-center gap-3 p-3 rounded-xl shadow-md bg-white border-slate-200"
     >
       <view class={props.card.bar} />
       <view class="flex-col gap-1">
-        <text class="text-sm text-white font-bold">{props.card.title}</text>
-        <text class="text-xs text-slate-400">{props.card.detail}</text>
+        <text class="text-sm text-slate-950 font-bold">{props.card.title}</text>
+        <text class="text-xs text-slate-600">{props.card.detail}</text>
       </view>
     </view>
   );
@@ -88,22 +88,22 @@ export default function Cards() {
   });
 
   return (
-    <view class="relative flex-col w-full h-full p-4 gap-3 bg-slate-900 overflow-hidden">
+    <view class="relative flex-col w-full h-full p-4 gap-3 bg-slate-50 overflow-hidden">
       <view
         ref={streakA}
-        class="absolute left-0 top-[58] w-64 h-1 opacity-50 bg-gradient-to-r from-indigo-500 to-transparent"
+        class="absolute left-0 top-[58] w-64 h-1 rounded-full opacity-50 bg-gradient-to-r from-blue-300 to-transparent"
         style={{ translateX: 24 }}
       />
       <view
         ref={streakB}
-        class="absolute left-[210] top-[246] w-56 h-1 opacity-40 bg-gradient-to-l from-fuchsia-500 to-transparent"
+        class="absolute left-[210] top-[246] w-56 h-1 rounded-full opacity-40 bg-gradient-to-l from-cyan-300 to-transparent"
         style={{ translateX: 0 }}
       />
 
       <view class="flex-row items-end justify-between">
         <view class="flex-col">
-          <text class="text-xs text-indigo-300 tracking-wide">PSP-UI SHOWCASE</text>
-          <text class="text-2xl text-white font-bold">Feature Cards</text>
+          <text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</text>
+          <text class="text-2xl text-slate-950 font-bold">Feature Cards</text>
         </view>
         <text class="text-xs text-slate-500">3 MODULES</text>
       </view>
@@ -116,8 +116,8 @@ export default function Cards() {
             onPress={() => setOpen(open() === i ? -1 : i)}
           >
             <view class={card.strip} />
-            <text class="text-sm text-white font-bold">{card.title}</text>
-            <text class="text-xs text-slate-400">{card.caption}</text>
+            <text class="text-sm text-slate-950 font-bold">{card.title}</text>
+            <text class="text-xs text-slate-600">{card.caption}</text>
           </view>
         ))}
       </view>

@@ -8,8 +8,8 @@
 // tracks (the one button pair none of the other three demos touch); CIRCLE
 // on the cover toggles play/pause, CIRCLE on a track row selects it.
 //
-// v1-aware design notes: every class a FULL literal (per-track cover accent
-// baked per entry); text single-line.
+// Design notes: every class a FULL literal (per-track cover accent baked per
+// entry); text single-line.
 
 import { createSignal } from "solid-js";
 import { BTN } from "../spec/spec.ts";
@@ -27,19 +27,19 @@ const TRACKS: Track[] = [
     title: "MIDNIGHT REPLAY",
     artist: "SYNC PULSE",
     coverCls:
-      "w-16 h-16 items-center justify-center bg-gradient-to-b from-indigo-400 to-indigo-700 border-indigo-300 focus:border-white transition-colors duration-150",
+      "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-blue-500 to-blue-700 border-blue-300 focus:border-slate-900 transition-colors duration-150",
   },
   {
     title: "GLASS HORIZON",
     artist: "AMBER TIDE",
     coverCls:
-      "w-16 h-16 items-center justify-center bg-gradient-to-b from-amber-400 to-amber-700 border-amber-300 focus:border-white transition-colors duration-150",
+      "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-amber-400 to-amber-700 border-amber-300 focus:border-slate-900 transition-colors duration-150",
   },
   {
     title: "STATIC BLOOM",
     artist: "NEON DRIFTERS",
     coverCls:
-      "w-16 h-16 items-center justify-center bg-gradient-to-b from-fuchsia-400 to-fuchsia-700 border-fuchsia-300 focus:border-white transition-colors duration-150",
+      "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-cyan-500 to-cyan-700 border-cyan-300 focus:border-slate-900 transition-colors duration-150",
   },
 ];
 
@@ -103,11 +103,11 @@ export default function Music() {
   const pct = () => Math.round((position() / TRACK_FRAMES) * 100);
 
   return (
-    <view class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-900 to-slate-950">
+    <view class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
       <view class="flex-row items-end justify-between">
         <view class="flex-col">
-          <text class="text-xs text-indigo-300 tracking-wide">PSP-UI SHOWCASE</text>
-          <text class="text-2xl text-white font-bold">Now Playing</text>
+          <text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</text>
+          <text class="text-2xl text-slate-950 font-bold">Now Playing</text>
         </view>
         <text class="text-xs text-slate-500">TRACK {trackIndex() + 1} / {TRACKS.length}</text>
       </view>
@@ -118,12 +118,12 @@ export default function Music() {
         </view>
 
         <view class="flex-col grow gap-1">
-          <text class="text-base text-white font-bold">{track().title}</text>
-          <text class="text-xs text-slate-400">{track().artist}</text>
+          <text class="text-base text-slate-950 font-bold">{track().title}</text>
+          <text class="text-xs text-slate-600">{track().artist}</text>
           <view class="flex-row items-center gap-2">
-            <view class="w-[160] h-2 bg-slate-800">
+            <view class="w-[160] h-2 rounded-full shadow bg-slate-200 overflow-hidden">
               <view
-                class="h-2 bg-gradient-to-r from-emerald-400 to-emerald-600"
+                class="h-2 w-0 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600"
                 style={{ width: (position() / TRACK_FRAMES) * PROGRESS_TRACK_W }}
               />
             </view>
@@ -133,7 +133,7 @@ export default function Music() {
 
         <view class="flex-row items-end gap-1 h-16">
           {([0, 1, 2, 3] as const).map((i) => (
-            <view class="w-2 bg-gradient-to-b from-emerald-400 to-emerald-600" style={{ height: barHeight(i) }} />
+            <view class="w-2 rounded-md shadow bg-gradient-to-b from-emerald-500 to-emerald-600" style={{ height: barHeight(i) }} />
           ))}
         </view>
       </view>
@@ -143,13 +143,13 @@ export default function Music() {
           <view
             class={
               trackIndex() === i
-                ? "flex-row items-center justify-between p-1 bg-slate-700 border-indigo-400 focus:border-indigo-300 transition-colors duration-150"
-                : "flex-row items-center justify-between p-1 bg-slate-800 border-slate-700 focus:border-indigo-400 transition-colors duration-150"
+                ? "flex-row items-center justify-between p-1 rounded-lg shadow bg-blue-50 border-blue-500 focus:border-blue-600 transition-colors duration-150"
+                : "flex-row items-center justify-between p-1 rounded-lg shadow bg-white border-slate-200 focus:border-blue-500 transition-colors duration-150"
             }
             focusable
             onPress={() => selectTrack(i)}
           >
-            <text class="text-xs text-white">{t.title}</text>
+            <text class="text-xs text-slate-900">{t.title}</text>
             <text class="text-xs text-slate-500">{t.artist}</text>
           </view>
         ))}

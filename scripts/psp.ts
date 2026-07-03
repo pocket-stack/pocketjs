@@ -4,8 +4,8 @@
 // inside native/, with the exact env block from dreamcart runtime/build.ts
 // (LLVM PATH, TARGET_CFLAGS, AR_mipsel_sony_psp=llvm-ar,
 //  RUST_PSP_TARGET=native/targets/mipsel-sony-psp.json, RUST_PSP_ABORT_ONLY=1,
-//  RUSTFLAGS "-A linker-messages …"). Needs the repo-root mipsel-sony-psp/
-// SDK (bun run bootstrap in the dreamcart repo).
+//  RUSTFLAGS "-A linker-messages …"). Needs a rust-psp SDK: set PSP_SDK or
+// keep mipsel-sony-psp next to this checkout / in a sibling dreamcart checkout.
 //
 // Demo entries: `bun scripts/psp.ts hero` prefers demos/hero-main.tsx (the
 // mounting entry — hero.tsx only exports the component) when it exists.
@@ -19,8 +19,16 @@ import { existsSync } from "node:fs";
 
 const pspUiDir = new URL("..", import.meta.url).pathname; // psp-ui/
 const nativeDir = pspUiDir + "native/";
-const root = new URL("../..", import.meta.url).pathname; // dreamcart repo root
-const sdk = root + "mipsel-sony-psp";
+const root = new URL("../..", import.meta.url).pathname; // parent of psp-ui checkout
+const sdkCandidates = [
+  process.env.PSP_SDK,
+  root + "mipsel-sony-psp",
+  root + "dreamcart/mipsel-sony-psp",
+].filter((p): p is string => !!p);
+const sdk =
+  sdkCandidates.find((p) => existsSync(`${p}/psp/lib/libc.a`)) ??
+  sdkCandidates[0] ??
+  root + "mipsel-sony-psp";
 const llvm = existsSync("/opt/homebrew/opt/llvm/bin")
   ? "/opt/homebrew/opt/llvm/bin"
   : "/usr/local/opt/llvm/bin";
@@ -56,7 +64,9 @@ if (!rustup) {
   process.exit(1);
 }
 if (!existsSync(`${sdk}/psp/lib/libc.a`)) {
-  console.error(`psp-ui psp: PSP SDK missing at ${sdk} — run \`bun run bootstrap\` in the dreamcart repo`);
+  console.error(
+    `psp-ui psp: PSP SDK missing (looked in ${sdkCandidates.join(", ")}) — set PSP_SDK or run \`bun run bootstrap\` in the dreamcart repo`,
+  );
   process.exit(1);
 }
 if (!existsSync(`${llvm}/clang`)) {

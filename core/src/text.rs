@@ -53,7 +53,7 @@ pub struct Atlas {
     pub flags: u8,
     pub glyph_count: u16,
     cmap: Vec<CmapEntry>,
-    /// 1-bit row bitmasks: glyphCount x cellH x bytesPerRow, MSB = leftmost.
+    /// Coverage cells: glyphCount x cellH x cellW alpha bytes, left-to-right.
     pub bitmap: Vec<u8>,
 }
 
@@ -77,7 +77,7 @@ impl Atlas {
         }
         let cmap_off = fa::HEADER_SIZE;
         let bitmap_off = cmap_off + glyph_count as usize * fa::CMAP_ENTRY_SIZE;
-        let bytes_per_row = (cell_w as usize + 7) / 8;
+        let bytes_per_row = cell_w as usize;
         let bitmap_len = glyph_count as usize * cell_h as usize * bytes_per_row;
         if bytes.len() < bitmap_off + bitmap_len {
             return None;
@@ -127,10 +127,10 @@ impl Atlas {
 
     #[inline]
     pub fn bytes_per_row(&self) -> usize {
-        (self.cell_w as usize + 7) / 8
+        self.cell_w as usize
     }
 
-    /// The row-bitmask bytes of one glyph (top row first).
+    /// The row coverage bytes of one glyph (top row first).
     pub fn glyph_rows(&self, gid: u16) -> &[u8] {
         let per_glyph = self.cell_h as usize * self.bytes_per_row();
         let start = gid as usize * per_glyph;

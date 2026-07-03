@@ -7,14 +7,14 @@
 // out — the core resolves cmap misses to gid 0 (tofu) at runtime.
 //
 // Rasterization: opentype.js outlines, flattened to polylines, scanline
-// even-odd fill with 3x3 supersampling, 1-bit threshold at coverage >= 0.5
-// (the WA2-proven approach). Cells are tight: cellW = max inked width over
-// the slot's glyphs. Row bits MSB = LEFTMOST pixel. Proportional advances
-// (font units * px/upm, rounded) live in the cmap entries. Glyphs with ink
-// LEFT of the pen origin (negative left side bearing: î ï ĥ ǰ) are shifted
-// right at bake and carry the shift in cmap byte +7 (xoff) so no ink is
-// clipped; renderers place the cell at penX - xoff. gid 0 is a drawn hollow
-// "tofu" box and is also mapped from U+FFFD so it has a discoverable advance.
+// even-odd fill with horizontally-biased supersampling into 8-bit coverage
+// cells. Cells are tight: cellW = max inked width over the slot's glyphs.
+// Proportional advances (font units * px/upm, rounded) live in the cmap
+// entries. Glyphs with ink LEFT of the pen origin (negative left side bearing:
+// î ï ĥ ǰ) are shifted right at bake and carry the shift in cmap byte +7
+// (xoff) so no ink is clipped; renderers place the cell at penX - xoff. gid 0
+// is a drawn hollow "tofu" box and is also mapped from U+FFFD so it has a
+// discoverable advance.
 
 import { parse as parseFont, type Font, type Path } from "opentype.js";
 import {
@@ -53,7 +53,7 @@ export interface BakeOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Outline -> 1-bit cell rasterizer
+// Outline -> coverage cell rasterizer
 // ---------------------------------------------------------------------------
 
 type Pt = { x: number; y: number };
@@ -122,23 +122,25 @@ function flatten(path: Path): Contour[] {
   return contours;
 }
 
-const SS = 3; // supersample factor (3x3 grid per pixel)
+const SS_X = 9; // horizontal subpixel samples per pixel
+const SS_Y = 3; // vertical samples per pixel
 
 /**
- * Rasterize contours into a 1-bit cell bitmap (MSB = leftmost pixel).
- * Coverage per pixel = covered subsamples / 9; ink at >= 0.5.
+ * Rasterize contours into a grayscale coverage cell. Horizontal sampling is
+ * intentionally denser than vertical sampling so thin glyph stems can land on
+ * subpixel boundaries without collapsing to a hard 1-bit edge.
  */
 function rasterize(contours: Contour[], cellW: number, cellH: number): Uint8Array {
-  const bpr = (cellW + 7) >> 3;
-  const out = new Uint8Array(cellH * bpr);
+  const out = new Uint8Array(cellH * cellW);
   if (contours.length === 0) return out;
-  const sw = cellW * SS;
-  const counts = new Uint8Array(cellW); // covered subsamples per pixel column, one row at a time
+  const sw = cellW * SS_X;
+  const samplesPerPixel = SS_X * SS_Y;
+  const counts = new Uint16Array(cellW); // covered subsamples per pixel column, one row at a time
   const xs: number[] = [];
   for (let row = 0; row < cellH; row++) {
     counts.fill(0);
-    for (let sub = 0; sub < SS; sub++) {
-      const y = row + (sub + 0.5) / SS;
+    for (let sub = 0; sub < SS_Y; sub++) {
+      const y = row + (sub + 0.5) / SS_Y;
       xs.length = 0;
       for (const c of contours) {
         for (let i = 0; i < c.length - 1; i++) {
@@ -153,27 +155,26 @@ function rasterize(contours: Contour[], cellW: number, cellH: number): Uint8Arra
       xs.sort((a, b) => a - b);
       for (let k = 0; k + 1 < xs.length; k += 2) {
         // subcolumn centers inside [xs[k], xs[k+1])
-        let s0 = Math.ceil(xs[k] * SS - 0.5);
-        let s1 = Math.floor(xs[k + 1] * SS - 0.5);
+        let s0 = Math.ceil(xs[k] * SS_X - 0.5);
+        let s1 = Math.floor(xs[k + 1] * SS_X - 0.5);
         if (s0 < 0) s0 = 0;
         if (s1 >= sw) s1 = sw - 1;
         for (let s = s0; s <= s1; s++) {
-          const center = (s + 0.5) / SS;
-          if (center >= xs[k] && center < xs[k + 1]) counts[(s / SS) | 0]++;
+          const center = (s + 0.5) / SS_X;
+          if (center >= xs[k] && center < xs[k + 1]) counts[(s / SS_X) | 0]++;
         }
       }
     }
     for (let x = 0; x < cellW; x++) {
-      if (counts[x] >= 5) out[row * bpr + (x >> 3)] |= 0x80 >> (x & 7); // 5/9 >= 0.5
+      out[row * cellW + x] = Math.round((counts[x] * 255) / samplesPerPixel);
     }
   }
   return out;
 }
 
-/** Hollow tofu box bitmap for gid 0. Returns [bitmap rows, advance]. */
+/** Hollow tofu box coverage cell for gid 0. Returns [coverage rows, advance]. */
 function tofu(cellW: number, cellH: number, baseline: number, px: number): [Uint8Array, number] {
-  const bpr = (cellW + 7) >> 3;
-  const out = new Uint8Array(cellH * bpr);
+  const out = new Uint8Array(cellH * cellW);
   const w = Math.max(4, Math.min(cellW, Math.round(px * 0.55)));
   const h = Math.max(5, Math.round(px * 0.7));
   const y1 = Math.min(cellH - 1, baseline - 1);
@@ -181,7 +182,7 @@ function tofu(cellW: number, cellH: number, baseline: number, px: number): [Uint
   const x0 = 0;
   const x1 = w - 1;
   const set = (x: number, y: number) => {
-    out[y * bpr + (x >> 3)] |= 0x80 >> (x & 7);
+    out[y * cellW + x] = 255;
   };
   for (let x = x0; x <= x1; x++) {
     set(x, y0);
@@ -258,13 +259,12 @@ export function bakeSlot(font: Font, slot: number, px: number, bold: boolean, ch
   let cellW = tofuW;
   for (const g of glyphs) cellW = Math.max(cellW, Math.ceil(g.maxX));
   cellW = Math.min(255, Math.max(1, cellW));
-  const bpr = (cellW + 7) >> 3;
 
   // gid 0 = tofu; gid k+1 = k-th glyph (chars arrive sorted ascending)
   const glyphCount = glyphs.length + 1;
   if (glyphCount > 0xffff) throw new Error("psp-ui bake-font: too many glyphs");
-  const bitmapBytes = glyphCount * cellH * bpr;
-  const size = FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE + bitmapBytes;
+  const coverageBytes = glyphCount * cellH * cellW;
+  const size = FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE + coverageBytes;
   const out = new Uint8Array(size);
   const dv = new DataView(out.buffer);
 
@@ -289,7 +289,7 @@ export function bakeSlot(font: Font, slot: number, px: number, bold: boolean, ch
       xoff: g.xoff,
     }),
   );
-  const [tofuBits, tofuAdvance] = tofu(cellW, cellH, baseline, px);
+  const [tofuCoverage, tofuAdvance] = tofu(cellW, cellH, baseline, px);
   entries.push({ cp: TOFU_CODEPOINT, gid: 0, advance: tofuAdvance, xoff: 0 });
   entries.sort((a, b) => a.cp - b.cp);
   let o = FONT_HEADER_SIZE;
@@ -301,12 +301,12 @@ export function bakeSlot(font: Font, slot: number, px: number, bold: boolean, ch
     o += FONT_CMAP_ENTRY_SIZE;
   }
 
-  // bitmap region, indexed by gid
-  const bitmapOff = FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE;
-  const cellBytes = cellH * bpr;
-  out.set(tofuBits, bitmapOff); // gid 0
+  // coverage region, indexed by gid
+  const coverageOff = FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE;
+  const cellBytes = cellH * cellW;
+  out.set(tofuCoverage, coverageOff); // gid 0
   glyphs.forEach((g, i) => {
-    out.set(rasterize(g.contours, cellW, cellH), bitmapOff + (i + 1) * cellBytes);
+    out.set(rasterize(g.contours, cellW, cellH), coverageOff + (i + 1) * cellBytes);
   });
 
   return { slot, px, bold, bytes: out, glyphCount, cellW, cellH };

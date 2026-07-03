@@ -14,7 +14,7 @@
     "serve": "bun host-web/serve.ts",
     "golden": "bun test/golden.ts",
     "e2e": "bun test/e2e-ppsspp.ts",
-    "test": "bun scripts/build.ts demos/hero.tsx >/dev/null && bun test/contract.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts",
+    "test": "bun scripts/build.ts demos/hero.tsx >/dev/null && bun test/contract.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/svg-bake.test.ts",
     "test:tailwind": "bun test test/tailwind.test.ts",
     "contract": "bun test/contract.ts",
     "gen": "bun spec/gen-rust.ts"

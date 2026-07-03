@@ -191,18 +191,35 @@ unsafe fn apply_texture(pixels: &[u8], w: u32, h: u32, psm: u32) {
     sys::sceGuTexFilter(TextureFilter::Linear, TextureFilter::Linear);
 }
 
-/// Count the horizontal 1-bit runs in one glyph's rows (MSB = leftmost).
-fn count_glyph_runs(rows: &[u8], bpr: usize, cell_w: usize, cell_h: usize) -> usize {
+#[inline]
+fn glyph_alpha(color: u32, coverage: u8) -> u8 {
+    if coverage == 0 {
+        return 0;
+    }
+    let base = (color >> 24) & 0xff;
+    let alpha = (base * coverage as u32 + 127) / 255;
+    // Quantize to 16 levels so antialiased text stays smooth enough while
+    // keeping PSP sprite batches bounded.
+    (((alpha + 8) / 17) * 17).min(255) as u8
+}
+
+#[inline]
+fn with_alpha(color: u32, alpha: u8) -> u32 {
+    (color & 0x00ff_ffff) | ((alpha as u32) << 24)
+}
+
+/// Count horizontal coverage runs in one glyph's rows.
+fn count_glyph_runs(rows: &[u8], bpr: usize, cell_w: usize, cell_h: usize, color: u32) -> usize {
     let mut runs = 0usize;
     for y in 0..cell_h {
         let row = &rows[y * bpr..y * bpr + bpr];
-        let mut in_run = false;
+        let mut cur = 0u8;
         for x in 0..cell_w {
-            let on = row[x >> 3] & (0x80 >> (x & 7)) != 0;
-            if on && !in_run {
+            let a = glyph_alpha(color, row[x]);
+            if a != 0 && a != cur {
                 runs += 1;
             }
-            in_run = on;
+            cur = a;
         }
     }
     runs
@@ -214,7 +231,7 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
     sys::sceGuClearColor(0xff00_0000);
     sys::sceGuClear(ClearBuffer::COLOR_BUFFER_BIT);
 
-    // Pass state: alpha blending on for everything (opacity, text AA-less
+    // Pass state: alpha blending on for everything (opacity, coverage text
     // cells with alpha colors, texture alpha).
     sys::sceGuEnable(GuState::Blend);
     sys::sceGuBlendFunc(BlendOp::Add, BlendFactor::SrcAlpha, BlendFactor::OneMinusSrcAlpha, 0, 0);
@@ -310,8 +327,8 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
                     break; // truncated list — bail
                 }
                 if let Some(atlas) = ui.font_atlas(slot) {
-                    // WA2 pattern: bit-scan each glyph cell into horizontal
-                    // solid runs, batched as sprite pairs in ONE draw.
+                    // Scan each glyph coverage cell into horizontal alpha
+                    // runs, batched as sprite pairs in ONE draw.
                     let bpr = atlas.bytes_per_row();
                     let (cw, ch) = (atlas.cell_w as usize, atlas.cell_h as usize);
                     // Pass 1: exact vertex count for the bump alloc.
@@ -319,7 +336,7 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
                     for g in 0..count {
                         let gid = (words[body + g * 2 + 1] & 0xffff) as u16;
                         if gid < atlas.glyph_count {
-                            rects += count_glyph_runs(atlas.glyph_rows(gid), bpr, cw, ch);
+                            rects += count_glyph_runs(atlas.glyph_rows(gid), bpr, cw, ch, color);
                         }
                     }
                     if rects > 0 {
@@ -338,20 +355,27 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
                                 let row = &rows[y * bpr..y * bpr + bpr];
                                 let mut x = 0usize;
                                 while x < cw {
-                                    if row[x >> 3] & (0x80 >> (x & 7)) == 0 {
+                                    let a = glyph_alpha(color, row[x]);
+                                    if a == 0 {
                                         x += 1;
                                         continue;
                                     }
                                     let start = x;
-                                    while x < cw && row[x >> 3] & (0x80 >> (x & 7)) != 0 {
+                                    while x < cw && glyph_alpha(color, row[x]) == a {
                                         x += 1;
                                     }
                                     let rx = gx as i32 + start as i32;
                                     let ry = gy as i32 + y as i32;
-                                    *verts.add(vi) =
-                                        VertC { color, x: rx as i16, y: ry as i16, z: 0, _pad: 0 };
+                                    let run_color = with_alpha(color, a);
+                                    *verts.add(vi) = VertC {
+                                        color: run_color,
+                                        x: rx as i16,
+                                        y: ry as i16,
+                                        z: 0,
+                                        _pad: 0,
+                                    };
                                     *verts.add(vi + 1) = VertC {
-                                        color,
+                                        color: run_color,
                                         x: (rx + (x - start) as i32) as i16,
                                         y: (ry + 1) as i16,
                                         z: 0,
@@ -407,8 +431,12 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
             spec::draw_op::SCISSOR if i + 3 <= n => {
                 let (x, y) = xy(words[i + 1]);
                 let (w, h) = wh(words[i + 2]);
-                scissors.push((x as i32, y as i32, w, h));
-                sys::sceGuScissor(x as i32, y as i32, w, h);
+                // rust-psp's wrapper names the last two parameters `w`/`h`,
+                // but forwards them as the absolute scissor end coordinates.
+                let x1 = x as i32 + w;
+                let y1 = y as i32 + h;
+                scissors.push((x as i32, y as i32, x1, y1));
+                sys::sceGuScissor(x as i32, y as i32, x1, y1);
                 i += 3;
             }
             spec::draw_op::SCISSOR_POP => {

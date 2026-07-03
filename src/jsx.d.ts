@@ -37,6 +37,8 @@ interface TextProps {
 interface ImageProps {
   class?: string;
   src?: string;
+  style?: Record<string, number | string>;
+  ref?: any;
 }
 
 declare global {

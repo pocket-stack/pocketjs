@@ -517,16 +517,18 @@ export function decodeStyleTable(bytes: Uint8Array): StyleRecord[] {
 }
 
 // ---------------------------------------------------------------------------
-// FONT ATLAS binary format  (version 1)
+// FONT ATLAS binary format  (version 2)
 // ---------------------------------------------------------------------------
 // One blob per font slot, baked by compiler/bake-font.ts, parsed by
-// core/src/text.rs. 1-bit glyph bitmaps in fixed-size cells.
+// core/src/text.rs. Glyph coverage is stored in fixed-size cells as one
+// alpha byte per pixel, generated from horizontally-biased supersampling for
+// smoother subpixel positioning.
 //
 //   Header (16 bytes):
 //     off  0  u32  magic      = 0x41464344  bytes 'D','C','F','A'
-//     off  4  u16  version    = 1
+//     off  4  u16  version    = 2
 //     off  6  u16  glyphCount (including gid 0 = tofu box)
-//     off  8  u8   cellW      cell width in px  (glyph bitmaps are cellW x cellH)
+//     off  8  u8   cellW      cell width in px  (coverage cells are cellW x cellH)
 //     off  9  u8   cellH      cell height in px
 //     off 10  u8   baseline   px from cell TOP to the baseline
 //     off 11  u8   lineHeight default line advance in px
@@ -546,16 +548,15 @@ export function decodeStyleTable(bytes: Uint8Array): StyleRecord[] {
 //                         penX - xoff. 0 for most glyphs (was reserved; old
 //                         atlases with 0 here remain valid).
 //
-//   bitmap region at FONT_HEADER_SIZE + glyphCount*FONT_CMAP_ENTRY_SIZE:
-//     glyphCount x cellH x bytesPerRow bytes, where
-//       bytesPerRow = ceil(cellW / 8)
-//     Row bits: MSB = LEFTMOST pixel (bit 7 of byte 0 is x=0). Glyph g's rows
-//     start at bitmapOffset + g * cellH * bytesPerRow, top row first.
+//   coverage region at FONT_HEADER_SIZE + glyphCount*FONT_CMAP_ENTRY_SIZE:
+//     glyphCount x cellH x cellW bytes. Each byte is alpha coverage 0..255
+//     for one pixel, left-to-right, top row first. Glyph g's rows start at
+//     coverageOffset + g * cellH * cellW.
 //
 //   gid 0 MUST be the tofu box (drawn for unmapped codepoints).
 
 export const FONT_MAGIC = 0x41464344; // 'DCFA' LE
-export const FONT_VERSION = 1;
+export const FONT_VERSION = 2;
 export const FONT_HEADER_SIZE = 16;
 export const FONT_CMAP_ENTRY_SIZE = 8;
 export const FONT_FLAG_BOLD = 1 << 0;
