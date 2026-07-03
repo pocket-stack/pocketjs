@@ -1,3 +1,10 @@
 // Hook-facing public API.
 
-export { useFrame, useButtonPress, useSpriteAnimation, type SpriteAnimationOptions } from "./frame.ts";
+export {
+  pushButtonHandlerBlock,
+  useFrame,
+  useButtonPress,
+  useSpriteAnimation,
+  type ButtonPressOptions,
+  type SpriteAnimationOptions,
+} from "./frame.ts";

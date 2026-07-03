@@ -54,6 +54,16 @@ dynamic styling is ternaries of full literals, `style={{...}}`, or `animate()`.
 `classList`, `hover:` and template-interpolated classes are compile errors.
 `rounded-full` requires `w-N h-N` in the same literal.
 
+`psp-ui/components` also exposes small app-shell primitives used by
+`demos/launcher`: `Screen`, `Focusable`, `FocusScope`, `ActionHandler`,
+`FocusGrid`, `Portal`, `Modal`, and `ActionBar`. `FocusGrid` gives a subtree
+explicit row/column d-pad traversal today; a virtualized grid can sit behind the
+same focus contract later. `Portal` mounts into the runtime overlay root, so
+modal/action-bar UI never participates in the active screen's flex layout.
+`Modal` owns a focus scope and blocks background button handlers while leaving
+frame animation hooks running; route switching is still ordinary app state, not
+a required router package.
+
 ## Commands
 
 ```sh

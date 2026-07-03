@@ -2,11 +2,10 @@
 // list (the other three demos only ever .map() a fixed-length array — this
 // is the one demo whose array actually shrinks, so it's the one that
 // exercises <For>'s per-item mount/unmount identity instead of just reorder).
-// Each item staggers in with a delayed opacity+translateX tween on mount;
-// CIRCLE dismisses the focused card — an imperative fade+slide (native
-// `opacity`/`translateX` tweens fired straight from onPress, not a reactive
-// class, so they can't be clobbered by an unrelated re-render) — a local
-// frame hook removes it from the list once the tween has had time to finish.
+// Each item staggers in with a delayed opacity+translateX tween on mount.
+// CIRCLE dismisses the focused card with an imperative fade+slide, then the
+// retained rows below it get a short FLIP-style translateY rise so layout
+// collapse reads as motion instead of an instant snap.
 //
 // Design notes: p-1 rows / p-3 root — 4 cards is already a tight fit in
 // 480x272 (DESIGN.md punts kinetic scroll, so the list can't overflow the
@@ -59,6 +58,8 @@ const INITIAL: Notice[] = [
 ];
 
 const DISMISS_FRAMES = 16; // >= the 200ms fade tween (~12 frames), plus margin
+const ROW_RISE_PX = 42; // row height + list gap; used as the collapse offset
+const ROW_RISE_FRAMES = 16; // >= the 180ms rise tween, plus margin
 
 // ---------------------------------------------------------------------------
 // App
@@ -68,21 +69,52 @@ export default function Notifications() {
   const [items, setItems] = createSignal<Notice[]>(INITIAL);
   const [dismissingId, setDismissingId] = createSignal<string | null>(null);
   const [dismissFrame, setDismissFrame] = createSignal(0);
+  const [riseOffsets, setRiseOffsets] = createSignal<Record<string, number>>({});
+  const [riseQueued, setRiseQueued] = createSignal<string[]>([]);
+  const [riseFrame, setRiseFrame] = createSignal(0);
+  const rowRefs = new Map<string, NodeMirror>();
+
+  const hasRise = () => Object.keys(riseOffsets()).length > 0 || riseQueued().length > 0;
 
   useFrame(() => {
+    const queued = riseQueued();
+    if (queued.length > 0) {
+      for (const id of queued) {
+        const row = rowRefs.get(id);
+        if (row) animate(row, "translateY", 0, { dur: 180, easing: "out" });
+      }
+      setRiseQueued([]);
+      setRiseFrame(0);
+    } else if (Object.keys(riseOffsets()).length > 0) {
+      const n = riseFrame() + 1;
+      setRiseFrame(n);
+      if (n >= ROW_RISE_FRAMES) {
+        setRiseOffsets({});
+        setRiseFrame(0);
+      }
+    }
+
     const id = dismissingId();
     if (id === null) return;
     const n = dismissFrame() + 1;
     setDismissFrame(n);
     if (n >= DISMISS_FRAMES) {
-      setItems(items().filter((it) => it.id !== id));
+      const before = items();
+      const removedIndex = before.findIndex((it) => it.id === id);
+      const rising = removedIndex < 0 ? [] : before.slice(removedIndex + 1).map((it) => it.id);
+      if (rising.length > 0) {
+        setRiseOffsets(Object.fromEntries(rising.map((rid) => [rid, ROW_RISE_PX])));
+        setRiseQueued(rising);
+      }
+      rowRefs.delete(id);
+      setItems(before.filter((it) => it.id !== id));
       setDismissingId(null);
       setDismissFrame(0);
     }
   });
 
   const dismiss = (id: string, el: NodeMirror | undefined) => {
-    if (dismissingId() !== null || !el) return;
+    if (dismissingId() !== null || hasRise() || !el) return;
     setDismissingId(id);
     setDismissFrame(0);
     animate(el, "opacity", 0, { dur: 200, easing: "out" });
@@ -111,18 +143,26 @@ export default function Notifications() {
             });
             return (
               <View
-                ref={el}
-                style={{ opacity: 0, translateX: 16 }}
-                class="flex-row items-center gap-3 p-1 rounded-lg shadow bg-white border-slate-200 focus:bg-blue-50 focus:border-blue-500 transition-colors duration-150"
-                focusable
-                onPress={() => dismiss(item.id, el)}
+                ref={(row) => {
+                  rowRefs.set(item.id, row);
+                }}
+                class="flex-col"
+                style={{ translateY: riseOffsets()[item.id] ?? 0 }}
               >
-                <View class={item.dotCls} />
-                <View class="flex-col grow">
-                  <Text class="text-xs text-slate-950 font-bold">{item.title}</Text>
-                  <Text class="text-xs text-slate-600">{item.message}</Text>
+                <View
+                  ref={el}
+                  style={{ opacity: 0, translateX: 16 }}
+                  class="flex-row items-center gap-3 p-1 rounded-lg shadow bg-white border-slate-200 focus:bg-blue-50 focus:border-blue-500 transition-colors duration-150"
+                  focusable
+                  onPress={() => dismiss(item.id, el)}
+                >
+                  <View class={item.dotCls} />
+                  <View class="flex-col grow">
+                    <Text class="text-xs text-slate-950 font-bold">{item.title}</Text>
+                    <Text class="text-xs text-slate-600">{item.message}</Text>
+                  </View>
+                  <Text class="text-xs text-slate-500">{item.time}</Text>
                 </View>
-                <Text class="text-xs text-slate-500">{item.time}</Text>
               </View>
             );
           }}

@@ -50,7 +50,7 @@ const THEMES: ThemeOption[] = [
     switchOffCls: "w-9 h-5 rounded-full bg-gradient-to-r from-indigo-100 to-indigo-200 border-indigo-200 shadow flex-row items-center",
     knobCls: "w-4 h-4 rounded-full bg-white border-indigo-200 shadow-md m-[2] translate-x-[0.5]",
     sliderTrackCls: "relative w-[120] h-3 rounded-full bg-indigo-100 border-indigo-200 shadow overflow-hidden",
-    sliderFillCls: "absolute left-0 top-0 h-3 w-[72] rounded-full bg-gradient-to-r from-indigo-400 to-indigo-600",
+    sliderFillCls: "absolute left-0 top-0 h-3 w-[120] rounded-full bg-gradient-to-r from-indigo-400 to-indigo-600",
     sliderThumbCls: "absolute left-0 top-[2] w-2 h-2 rounded-full bg-white border-indigo-500 shadow-md translate-x-[64]",
     valueCls: "text-xs text-indigo-700",
     panelCls: "flex-col gap-2 px-2 py-2 bg-white border-indigo-200 rounded-xl shadow-md",
@@ -70,7 +70,7 @@ const THEMES: ThemeOption[] = [
     switchOffCls: "w-9 h-5 rounded-full bg-gradient-to-r from-emerald-100 to-emerald-200 border-emerald-200 shadow flex-row items-center",
     knobCls: "w-4 h-4 rounded-full bg-white border-emerald-200 shadow-md m-[2] translate-x-[0.5]",
     sliderTrackCls: "relative w-[120] h-3 rounded-full bg-emerald-100 border-emerald-200 shadow overflow-hidden",
-    sliderFillCls: "absolute left-0 top-0 h-3 w-[72] rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600",
+    sliderFillCls: "absolute left-0 top-0 h-3 w-[120] rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600",
     sliderThumbCls: "absolute left-0 top-[2] w-2 h-2 rounded-full bg-white border-emerald-500 shadow-md translate-x-[64]",
     valueCls: "text-xs text-emerald-700",
     panelCls: "flex-col gap-2 px-2 py-2 bg-white border-emerald-200 rounded-xl shadow-md",
@@ -90,7 +90,7 @@ const THEMES: ThemeOption[] = [
     switchOffCls: "w-9 h-5 rounded-full bg-gradient-to-r from-amber-100 to-amber-200 border-amber-200 shadow flex-row items-center",
     knobCls: "w-4 h-4 rounded-full bg-white border-amber-200 shadow-md m-[2] translate-x-[0.5]",
     sliderTrackCls: "relative w-[120] h-3 rounded-full bg-amber-100 border-amber-200 shadow overflow-hidden",
-    sliderFillCls: "absolute left-0 top-0 h-3 w-[72] rounded-full bg-gradient-to-r from-amber-400 to-amber-600",
+    sliderFillCls: "absolute left-0 top-0 h-3 w-[120] rounded-full bg-gradient-to-r from-amber-400 to-amber-600",
     sliderThumbCls: "absolute left-0 top-[2] w-2 h-2 rounded-full bg-white border-amber-500 shadow-md translate-x-[64]",
     valueCls: "text-xs text-amber-700",
     panelCls: "flex-col gap-2 px-2 py-2 bg-white border-amber-200 rounded-xl shadow-md",
@@ -110,7 +110,7 @@ const THEMES: ThemeOption[] = [
     switchOffCls: "w-9 h-5 rounded-full bg-gradient-to-r from-rose-100 to-rose-200 border-rose-200 shadow flex-row items-center",
     knobCls: "w-4 h-4 rounded-full bg-white border-rose-200 shadow-md m-[2] translate-x-[0.5]",
     sliderTrackCls: "relative w-[120] h-3 rounded-full bg-rose-100 border-rose-200 shadow overflow-hidden",
-    sliderFillCls: "absolute left-0 top-0 h-3 w-[72] rounded-full bg-gradient-to-r from-rose-400 to-rose-600",
+    sliderFillCls: "absolute left-0 top-0 h-3 w-[120] rounded-full bg-gradient-to-r from-rose-400 to-rose-600",
     sliderThumbCls: "absolute left-0 top-[2] w-2 h-2 rounded-full bg-white border-rose-500 shadow-md translate-x-[64]",
     valueCls: "text-xs text-rose-700",
     panelCls: "flex-col gap-2 px-2 py-2 bg-white border-rose-200 rounded-xl shadow-md",
@@ -168,10 +168,47 @@ function Toggle(props: { label: string; value: boolean; theme: ThemeOption; onTo
 // ---------------------------------------------------------------------------
 
 const BRIGHTNESS_TRACK_W = 120;
+const BRIGHTNESS_INITIAL_LEVEL = 3;
+const BRIGHTNESS_THUMB_W = 8;
+
+function brightnessWidth(level: number): number {
+  return (level / 5) * BRIGHTNESS_TRACK_W;
+}
+
+function brightnessScale(level: number): number {
+  return level / 5;
+}
+
+function brightnessFillOffset(level: number): number {
+  return -(BRIGHTNESS_TRACK_W * (1 - brightnessScale(level))) / 2;
+}
 
 function Brightness(props: { theme: ThemeOption }) {
-  const [level, setLevel] = createSignal(3);
-  const fillW = () => (level() / 5) * BRIGHTNESS_TRACK_W;
+  const [level, setLevel] = createSignal(BRIGHTNESS_INITIAL_LEVEL);
+  let fill: NodeMirror | undefined;
+  let thumb: NodeMirror | undefined;
+  let initialized = false;
+
+  createEffect(() => {
+    const target = brightnessWidth(level());
+    const scale = brightnessScale(level());
+    const fillOffset = brightnessFillOffset(level());
+    if (!fill || !thumb) return;
+    animate(fill, "scaleX", scale, {
+      dur: initialized ? 150 : 1,
+      easing: "out",
+    });
+    animate(fill, "translateX", fillOffset, {
+      dur: initialized ? 150 : 1,
+      easing: "out",
+    });
+    animate(thumb, "translateX", target - BRIGHTNESS_THUMB_W, {
+      dur: initialized ? 150 : 1,
+      easing: "out",
+    });
+    initialized = true;
+  });
+
   return (
     <View
       class={props.theme.rowCls}
@@ -181,10 +218,23 @@ function Brightness(props: { theme: ThemeOption }) {
       <Text class={props.theme.rowLabelCls}>BRIGHTNESS</Text>
       <View class="flex-row items-center gap-2">
         <View class={props.theme.sliderTrackCls}>
-          <View class={props.theme.sliderFillCls} style={{ width: fillW() }} />
-          <View class={props.theme.sliderThumbCls} style={{ translateX: fillW() - 8 }} />
+          <View
+            ref={fill}
+            class={props.theme.sliderFillCls}
+            style={{
+              scaleX: brightnessScale(BRIGHTNESS_INITIAL_LEVEL),
+              translateX: brightnessFillOffset(BRIGHTNESS_INITIAL_LEVEL),
+            }}
+          />
+          <View
+            ref={thumb}
+            class={props.theme.sliderThumbCls}
+            style={{ translateX: brightnessWidth(BRIGHTNESS_INITIAL_LEVEL) - BRIGHTNESS_THUMB_W }}
+          />
         </View>
-        <Text class={props.theme.valueCls}>{level()}/5</Text>
+        <View class="w-9 flex-row justify-end">
+          <Text class={props.theme.valueCls}>{level()}/5</Text>
+        </View>
       </View>
     </View>
   );

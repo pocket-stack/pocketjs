@@ -160,10 +160,12 @@ describe("text", () => {
 
 describe("transform", () => {
   test("translate/scale/rotate", () => {
-    const m = props(parseClassLiteral("translate-x-2 translate-y-[10px] scale-95 rotate-45"));
+    const m = props(parseClassLiteral("translate-x-2 translate-y-[10px] scale-95 scale-x-50 scale-y-125 rotate-45"));
     expect(f32Of(m, PROP.translateX)).toBe(8);
     expect(f32Of(m, PROP.translateY)).toBe(10);
     expect(f32Of(m, PROP.scale)).toBeCloseTo(0.95, 5);
+    expect(f32Of(m, PROP.scaleX)).toBeCloseTo(0.5, 5);
+    expect(f32Of(m, PROP.scaleY)).toBeCloseTo(1.25, 5);
     expect(f32Of(m, PROP.rotate)).toBe(45);
   });
 });
@@ -201,7 +203,7 @@ describe("motion", () => {
   test("plain transition covers colors+opacity+transform", () => {
     const rec = parseClassLiteral("transition")!;
     const mask = rec.transition!.mask;
-    for (const p of ["bgColor", "textColor", "opacity", "scale", "rotate"] as const) {
+    for (const p of ["bgColor", "textColor", "opacity", "scale", "scaleX", "scaleY", "rotate"] as const) {
       expect(mask & (1 << animBit(p))).not.toBe(0);
     }
     for (const p of ["width", "gap", "radius"] as const) {

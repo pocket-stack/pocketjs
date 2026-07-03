@@ -45,13 +45,17 @@ import {
 import { registerStyles, resetStyles, resolveStyle } from "../src/styles.ts";
 import {
   getFocused,
+  focusNode,
   handleFrame,
+  pushFocusGrid,
+  pushFocusScope,
   resetInput,
   setInputRoot,
 } from "../src/input.ts";
 import { mount as publicMount, render as publicRender } from "../src/index.ts";
-import { useFrame } from "../src/hooks.ts";
+import { pushButtonHandlerBlock, useButtonPress, useFrame } from "../src/hooks.ts";
 import { rootMirror } from "../src/renderer.ts";
+import { ActionBar, ActionHandler, FocusGrid, Modal, Portal, Text, View } from "../src/components.ts";
 import { resetPack } from "../src/dcpak.ts";
 import { encodeImageEntry, pack } from "../compiler/dcpak.ts";
 import { BTN, DCPAK_DTYPE, NODE_TYPE, PSM, ROOT_ID, PROP, STYLE_ID_NONE } from "../spec/spec.ts";
@@ -632,6 +636,85 @@ describe("focus + onPress (input.ts)", () => {
 
     dispose();
   });
+
+  test("focus scope traps traversal/press and restores previous focus", () => {
+    setInputRoot(root);
+    let backgroundPresses = 0;
+    let modalPresses = 0;
+    let background!: NodeMirror;
+    let modalRoot!: NodeMirror;
+    let modalItem!: NodeMirror;
+
+    const dispose = render(() => {
+      const page = createElement("view");
+      background = createElement("view");
+      setProp(background, "focusable", true, undefined);
+      setProp(background, "onPress", () => backgroundPresses++, undefined);
+      insertNode(page, background);
+
+      modalRoot = createElement("view");
+      modalItem = createElement("view");
+      setProp(modalItem, "focusable", true, undefined);
+      setProp(modalItem, "onPress", () => modalPresses++, undefined);
+      insertNode(modalRoot, modalItem);
+      insertNode(page, modalRoot);
+      return page;
+    }, root);
+
+    handleFrame(BTN.DOWN);
+    expect(getFocused()).toBe(background);
+
+    const releaseScope = pushFocusScope(modalRoot);
+    expect(getFocused()).toBe(modalItem);
+
+    handleFrame(0);
+    handleFrame(BTN.CIRCLE);
+    expect(modalPresses).toBe(1);
+    expect(backgroundPresses).toBe(0);
+
+    handleFrame(0);
+    handleFrame(BTN.DOWN);
+    expect(getFocused()).toBe(modalItem);
+
+    releaseScope();
+    expect(getFocused()).toBe(background);
+    handleFrame(0);
+    handleFrame(BTN.CIRCLE);
+    expect(backgroundPresses).toBe(1);
+
+    dispose();
+  });
+
+  test("focus grid maps d-pad directions by row and column", () => {
+    setInputRoot(root);
+    const grid = createElement("view");
+    const cells = ["a", "b", "c", "d", "e"].map(() => {
+      const cell = createElement("view");
+      setProp(cell, "focusable", true, undefined);
+      insertNode(grid, cell);
+      return cell;
+    });
+    insertNode(root, grid);
+    const releaseGrid = pushFocusGrid(grid, { columns: 2 });
+
+    focusNode(cells[0]);
+    handleFrame(BTN.RIGHT);
+    expect(getFocused()).toBe(cells[1]);
+    handleFrame(0);
+    handleFrame(BTN.DOWN);
+    expect(getFocused()).toBe(cells[3]);
+    handleFrame(0);
+    handleFrame(BTN.LEFT);
+    expect(getFocused()).toBe(cells[2]);
+    handleFrame(0);
+    handleFrame(BTN.DOWN);
+    expect(getFocused()).toBe(cells[4]);
+    handleFrame(0);
+    handleFrame(BTN.RIGHT);
+    expect(getFocused()).toBe(cells[4]);
+
+    releaseGrid();
+  });
 });
 
 describe("host detection (host.ts)", () => {
@@ -711,15 +794,195 @@ describe("public render() (index.ts)", () => {
       { ops: host.ops, styles: { "p-2": 0 } },
     );
 
-    expect(rootMirror.children.length).toBe(1);
-    const el = rootMirror.children[0];
+    expect(rootMirror.children.length).toBe(2);
+    const appLayer = rootMirror.children[0];
+    const overlayLayer = rootMirror.children[1];
+    const el = appLayer.children[0];
+    expect(overlayLayer.children.length).toBe(0);
     expect(typeof (globalThis as { frame?: unknown }).frame).toBe("function");
     host.clear();
 
     dispose();
     expect(rootMirror.children.length).toBe(0);
-    // subtree root destroyed once (native destroy recurses)
-    expect(host.of("destroyNode")).toEqual([["destroyNode", el.id]]);
+    // layer roots are destroyed once each (native destroy recurses).
+    expect(host.of("destroyNode").map((c) => c[1])).toEqual([appLayer.id, overlayLayer.id]);
+  });
+
+  test("Portal mounts overlay content outside the app layer", () => {
+    const dispose = publicRender(
+      () =>
+        View({
+          children: [
+            Text({ children: "app" }),
+            Portal({ children: () => Text({ children: "overlay" }) }),
+          ],
+        }),
+      { ops: host.ops },
+    );
+
+    const [appLayer, overlayLayer] = rootMirror.children;
+    expect(appLayer.children.length).toBe(1);
+    expect(overlayLayer.children.length).toBe(1);
+    expect(appLayer.children[0].children.length).toBe(1);
+    expect(overlayLayer.children[0].children.length).toBe(1);
+
+    dispose();
+  });
+
+  test("ActionBar uses the overlay layer instead of app layout", () => {
+    const dispose = publicRender(
+      () =>
+        View({
+          children: [
+            View({ class: "w-full h-full" }),
+            ActionBar({ children: Text({ children: "SELECT" }) }),
+          ],
+        }),
+      {
+        ops: host.ops,
+        styles: {
+          "w-full h-full": 1,
+          "absolute left-3 right-3 bottom-3 flex-row items-center justify-between px-2 py-1 rounded-lg shadow-md bg-white border-slate-200": 2,
+        },
+      },
+    );
+
+    const [appLayer, overlayLayer] = rootMirror.children;
+    expect(appLayer.children[0].children.length).toBe(1);
+    expect(overlayLayer.children.length).toBe(1);
+
+    dispose();
+  });
+
+  test("Modal stays mounted while open state toggles overlay props without animation", () => {
+    const [open, setOpen] = createSignal(true);
+    const dispose = publicRender(
+      () =>
+        View({
+          children: Modal({
+            open,
+            class: "modal-frame",
+            panelClass: "modal-panel",
+            children: Text({ children: "dialog" }),
+          }),
+        }),
+      {
+        ops: host.ops,
+        styles: {
+          "modal-frame": 1,
+          "modal-panel": 2,
+          "absolute inset-0 bg-slate-950": 3,
+        },
+      },
+    );
+
+    const overlayLayer = rootMirror.children[1];
+    expect(overlayLayer.children.length).toBe(1);
+    const portalHost = overlayLayer.children[0];
+    const modalFrame = portalHost.children[0];
+    const [backdrop, panel] = modalFrame.children;
+    host.clear();
+
+    setOpen(false);
+    expect(overlayLayer.children).toEqual([portalHost]);
+    expect(portalHost.children).toEqual([modalFrame]);
+    expect(modalFrame.children).toEqual([backdrop, panel]);
+    expect(host.of("removeChild")).toEqual([]);
+    expect(host.of("destroyNode")).toEqual([]);
+    expect(host.of("animate")).toEqual([]);
+    expect(host.of("setProp").map((call) => [call[1], call[2], call[3]])).toEqual(
+      expect.arrayContaining([
+        [backdrop.id, PROP.opacity, 0],
+        [panel.id, PROP.opacity, 0],
+        [panel.id, PROP.translateY, 0],
+        [panel.id, PROP.scale, 1],
+      ]),
+    );
+
+    host.clear();
+    setOpen(true);
+    expect(overlayLayer.children).toEqual([portalHost]);
+    expect(host.of("removeChild")).toEqual([]);
+    expect(host.of("destroyNode")).toEqual([]);
+    expect(host.of("animate")).toEqual([]);
+    expect(host.of("setProp").map((call) => [call[1], call[2], call[3]])).toEqual(
+      expect.arrayContaining([
+        [backdrop.id, PROP.opacity, 0.62],
+        [panel.id, PROP.opacity, 1],
+        [panel.id, PROP.translateY, 0],
+        [panel.id, PROP.scale, 1],
+      ]),
+    );
+
+    dispose();
+  });
+
+  test("closed modal content is excluded from default app focus traversal", () => {
+    let background!: NodeMirror;
+    let hiddenModalItem!: NodeMirror;
+
+    const dispose = publicRender(
+      () =>
+        View({
+          children: [
+            View({ ref: (node) => (background = node), focusable: true }),
+            Modal({
+              open: false,
+              class: "modal-frame",
+              panelClass: "modal-panel",
+              children: View({ ref: (node) => (hiddenModalItem = node), focusable: true }),
+            }),
+          ],
+        }),
+      {
+        ops: host.ops,
+        styles: {
+          "modal-frame": 1,
+          "modal-panel": 2,
+          "absolute inset-0 bg-slate-950": 3,
+        },
+      },
+    );
+
+    handleFrame(BTN.DOWN);
+    expect(getFocused()).toBe(background);
+    handleFrame(0);
+    handleFrame(BTN.DOWN);
+    expect(getFocused()).toBe(background);
+    expect(getFocused()).not.toBe(hiddenModalItem);
+
+    dispose();
+  });
+
+  test("FocusGrid component registers row and column traversal", () => {
+    let first!: NodeMirror;
+    let second!: NodeMirror;
+    let third!: NodeMirror;
+
+    const dispose = publicRender(
+      () =>
+        FocusGrid({
+          columns: 2,
+          children: [
+            View({ ref: (node) => (first = node), focusable: true }),
+            View({ ref: (node) => (second = node), focusable: true }),
+            View({ ref: (node) => (third = node), focusable: true }),
+          ],
+        }),
+      { ops: host.ops },
+    );
+
+    focusNode(first);
+    handleFrame(BTN.RIGHT);
+    expect(getFocused()).toBe(second);
+    handleFrame(0);
+    handleFrame(BTN.LEFT);
+    expect(getFocused()).toBe(first);
+    handleFrame(0);
+    handleFrame(BTN.DOWN);
+    expect(getFocused()).toBe(third);
+
+    dispose();
   });
 
   test("mount() hides host, dcpak image, and frame boilerplate", () => {
@@ -747,6 +1010,69 @@ describe("public render() (index.ts)", () => {
     expect(typeof g.frame).toBe("function");
     g.frame?.(BTN.CIRCLE);
     expect(before).toEqual([BTN.CIRCLE]);
+
+    dispose();
+  });
+
+  test("button handler blocks suppress background actions but not frame ticks", () => {
+    const g = globalThis as { ui?: HostOps; frame?: (buttons: number) => void };
+    g.ui = host.ops;
+    let frames = 0;
+    let backgroundPresses = 0;
+    let systemPresses = 0;
+
+    const dispose = publicMount(
+      () => {
+        useFrame(() => frames++);
+        useButtonPress(BTN.SELECT, () => backgroundPresses++);
+        useButtonPress(BTN.SELECT, () => systemPresses++, { allowWhenBlocked: true });
+        return createElement("view");
+      },
+    );
+    const unblock = pushButtonHandlerBlock();
+
+    g.frame?.(BTN.SELECT);
+    expect(frames).toBe(1);
+    expect(backgroundPresses).toBe(0);
+    expect(systemPresses).toBe(1);
+
+    g.frame?.(0);
+    unblock();
+    g.frame?.(BTN.SELECT);
+    expect(frames).toBe(3);
+    expect(backgroundPresses).toBe(1);
+    expect(systemPresses).toBe(2);
+
+    dispose();
+  });
+
+  test("ActionHandler active=false tracks held buttons without firing later", () => {
+    const g = globalThis as { ui?: HostOps; frame?: (buttons: number) => void };
+    const [enabled, setEnabled] = createSignal(false);
+    g.ui = host.ops;
+    let presses = 0;
+
+    const dispose = publicMount(
+      () =>
+        View({
+          children: ActionHandler({
+            button: BTN.SELECT,
+            active: enabled,
+            onPress: () => presses++,
+          }),
+        }),
+    );
+
+    g.frame?.(BTN.SELECT);
+    expect(presses).toBe(0);
+
+    setEnabled(true);
+    g.frame?.(BTN.SELECT);
+    expect(presses).toBe(0);
+
+    g.frame?.(0);
+    g.frame?.(BTN.SELECT);
+    expect(presses).toBe(1);
 
     dispose();
   });

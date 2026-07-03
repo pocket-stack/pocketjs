@@ -177,6 +177,8 @@ export const PROP = {
   translateY: 129, //   f32 px
   scale: 130, //        f32 (1 = identity, about the node center)
   rotate: 131, //       f32 degrees (about the node center)
+  scaleX: 132, //       f32 (1 = identity, about the node center)
+  scaleY: 133, //       f32 (1 = identity, about the node center)
 } as const;
 
 export type PropName = keyof typeof PROP;
@@ -221,6 +223,8 @@ export const ANIMATABLE: readonly PropName[] = [
   "translateY", //  27
   "scale", //       28
   "rotate", //      29
+  "scaleX", //      30
+  "scaleY", //      31
 ];
 
 /** Anim bit index for a prop, or -1 if not animatable. */
@@ -285,6 +289,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
   textAlign: VALUE_KIND.int, lineHeight: VALUE_KIND.f32, tracking: VALUE_KIND.f32,
   translateX: VALUE_KIND.f32, translateY: VALUE_KIND.f32,
   scale: VALUE_KIND.f32, rotate: VALUE_KIND.f32,
+  scaleX: VALUE_KIND.f32, scaleY: VALUE_KIND.f32,
 };
 
 // ---------------------------------------------------------------------------

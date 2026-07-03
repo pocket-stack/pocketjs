@@ -18,18 +18,23 @@ if (typeof (globalThis as { queueMicrotask?: unknown }).queueMicrotask !== "func
 
 import { detectHost, installFrameHandler, installHost, type HostOps } from "./host.ts";
 import {
+  createElement,
   registerTexture as rendererRegisterTexture,
+  setProp,
+  insertNode,
   render as rendererRender,
   rootMirror,
   runSweep,
   setStyleResolver,
   type NodeMirror,
 } from "./renderer.ts";
+import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
 import { resetFrameHooks, runFrameHooks } from "./frame.ts";
 import { entries as dcpakEntries, get as dcpakGet, hasPack, loadPack } from "./dcpak.ts";
 import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
+import { ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 
 export interface RenderOptions {
   /** web/wasm/test hosts inject their ops here; omit on PSP (globalThis.ui). */
@@ -65,6 +70,12 @@ function uploadDcpakImages(ops: HostOps): void {
     const handle = ops.uploadTexture(blob.subarray(8), w, h, psm);
     if (handle >= 0) rendererRegisterTexture(key.slice(IMG_PREFIX.length), handle);
   }
+}
+
+function createLayer(style: Record<string, number>): NodeMirror {
+  const layer = createElement("view");
+  setProp(layer, "style", style, undefined);
+  return layer;
 }
 
 /**
@@ -108,7 +119,26 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     }
   }
 
-  setInputRoot(rootMirror);
+  const appRoot = createLayer({
+    width: SCREEN_W,
+    height: SCREEN_H,
+    overflow: ENUMS.Overflow.Hidden,
+  });
+  const overlayRoot = createLayer({
+    width: SCREEN_W,
+    height: SCREEN_H,
+    posType: ENUMS.PosType.Absolute,
+    insetT: 0,
+    insetR: 0,
+    insetB: 0,
+    insetL: 0,
+    zIndex: 1000,
+  });
+  insertNode(rootMirror, appRoot);
+  insertNode(rootMirror, overlayRoot);
+  setOverlayRoot(overlayRoot);
+
+  setInputRoot(appRoot);
   resetFrameHooks();
   installFrameHandler((buttons: number) => {
     runFrameHooks(buttons); // app hooks: useFrame/useButtonPress/etc.
@@ -116,10 +146,11 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     runSweep(); // then destroy subtrees still detached [R]
   });
 
-  const dispose = rendererRender(code as () => NodeMirror, rootMirror);
+  const dispose = rendererRender(code as () => NodeMirror, appRoot);
   return () => {
     dispose(); // tears down reactivity only — universal keeps the nodes
     setInputRoot(null); // drops focus state (native focus dies with the nodes)
+    setOverlayRoot(null);
     for (const child of rootMirror.children.splice(0)) {
       child.parent = null;
       host.ops.destroyNode(child.id); // recursive native destroy

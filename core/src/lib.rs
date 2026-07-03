@@ -147,17 +147,22 @@ impl Ui {
     // ---- styling ----------------------------------------------------------
 
     /// Apply style-table record `style_id` (spec::STYLE_ID_NONE clears).
-    /// Starts transitions for the animatable old→new diff if the (new)
-    /// record carries a transition block.
+    /// Starts transitions for the animatable old→new diff if the node already
+    /// had an established style and the new record carries a transition block.
     pub fn set_style(&mut self, id: i32, style_id: i32) {
         let Some(slot) = self.tree.resolve(id) else { return };
         let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
-        self.tree.slots[slot as usize].style_id = if style_id < 0 {
-            spec::STYLE_ID_NONE
-        } else {
-            style_id
-        };
-        self.retarget(slot, &old);
+        let was_initialized = self.tree.slots[slot as usize].style_initialized;
+        {
+            let node = &mut self.tree.slots[slot as usize];
+            node.style_id = if style_id < 0 {
+                spec::STYLE_ID_NONE
+            } else {
+                style_id
+            };
+            node.style_initialized = true;
+        }
+        self.retarget(slot, &old, was_initialized);
         self.layout.dirty = true;
     }
 
@@ -367,12 +372,12 @@ impl Ui {
         if let Some(slot) = self.tree.resolve(old_focused) {
             let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
             self.tree.slots[slot as usize].focused = false;
-            self.retarget(slot, &old);
+            self.retarget(slot, &old, true);
         }
         if let Some(slot) = self.tree.resolve(target) {
             let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
             self.tree.slots[slot as usize].focused = true;
-            self.retarget(slot, &old);
+            self.retarget(slot, &old, true);
         }
         self.layout.dirty = true;
     }
@@ -386,7 +391,7 @@ impl Ui {
         }
         let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
         self.tree.slots[slot as usize].active = active;
-        self.retarget(slot, &old);
+        self.retarget(slot, &old, true);
         self.layout.dirty = true;
     }
 
@@ -490,7 +495,7 @@ impl Ui {
     /// the masked animatable props that changed (from = `old` appearance,
     /// to = the new resolved target sans animation values), and drop stale
     /// anim values so the new style shows through.
-    fn retarget(&mut self, slot: u32, old: &style::Resolved) {
+    fn retarget(&mut self, slot: u32, old: &style::Resolved, allow_transition: bool) {
         let node_id = self.tree.slots[slot as usize].id(slot);
         let target = style::resolve(&self.tree.slots[slot as usize], &self.styles, false);
         let transition = self
@@ -499,46 +504,48 @@ impl Ui {
             .and_then(|r| r.transition);
         // Which props spawn tweens?
         let mut spawned: [bool; 256] = [false; 256];
-        if let Some(tr) = transition {
-            for prop in 0u16..=255 {
-                let prop = prop as u8;
-                let bit = spec::ANIM_BIT[prop as usize];
-                if bit == 0xff || tr.mask & (1u32 << bit) == 0 {
-                    continue;
-                }
-                let from = old.get_bits(prop);
-                let to = target.get_bits(prop);
-                if from == to {
-                    continue;
-                }
-                let is_color = spec::PROP_VALUE_KIND[prop as usize] == spec::value_kind::COLOR;
-                if !is_color {
-                    let (f, t) = (f32::from_bits(from), f32::from_bits(to));
-                    // SIZE_FULL (any negative width/height) is NOT animatable
-                    // (spec.ts), and NaN (auto) endpoints cannot tween: spawn
-                    // nothing — the new resolved style shows through
-                    // immediately (snap), matching browser transitions.
-                    let sentinel = (prop == spec::prop::WIDTH || prop == spec::prop::HEIGHT)
-                        && (f < 0.0 || t < 0.0);
-                    if sentinel || f.is_nan() || t.is_nan() {
+        if allow_transition {
+            if let Some(tr) = transition {
+                for prop in 0u16..=255 {
+                    let prop = prop as u8;
+                    let bit = spec::ANIM_BIT[prop as usize];
+                    if bit == 0xff || tr.mask & (1u32 << bit) == 0 {
                         continue;
                     }
-                }
-                let aid = self.anims.spawn(
-                    node_id,
-                    prop,
-                    is_color,
-                    anim::TrackKind::Transition,
-                    from,
-                    to,
-                    tr.dur_ms as u32,
-                    tr.easing,
-                    tr.delay_ms as u32,
-                );
-                if aid > 0 {
-                    spawned[prop as usize] = true;
-                    let node = &mut self.tree.slots[slot as usize];
-                    tree::Node::put_entry(&mut node.anim_values, prop, from);
+                    let from = old.get_bits(prop);
+                    let to = target.get_bits(prop);
+                    if from == to {
+                        continue;
+                    }
+                    let is_color = spec::PROP_VALUE_KIND[prop as usize] == spec::value_kind::COLOR;
+                    if !is_color {
+                        let (f, t) = (f32::from_bits(from), f32::from_bits(to));
+                        // SIZE_FULL (any negative width/height) is NOT animatable
+                        // (spec.ts), and NaN (auto) endpoints cannot tween: spawn
+                        // nothing — the new resolved style shows through
+                        // immediately (snap), matching browser transitions.
+                        let sentinel = (prop == spec::prop::WIDTH || prop == spec::prop::HEIGHT)
+                            && (f < 0.0 || t < 0.0);
+                        if sentinel || f.is_nan() || t.is_nan() {
+                            continue;
+                        }
+                    }
+                    let aid = self.anims.spawn(
+                        node_id,
+                        prop,
+                        is_color,
+                        anim::TrackKind::Transition,
+                        from,
+                        to,
+                        tr.dur_ms as u32,
+                        tr.easing,
+                        tr.delay_ms as u32,
+                    );
+                    if aid > 0 {
+                        spawned[prop as usize] = true;
+                        let node = &mut self.tree.slots[slot as usize];
+                        tree::Node::put_entry(&mut node.anim_values, prop, from);
+                    }
                 }
             }
         }

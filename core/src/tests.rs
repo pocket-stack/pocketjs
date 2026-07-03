@@ -306,6 +306,34 @@ fn set_style_diff_spawns_transition() {
 }
 
 #[test]
+fn first_style_assignment_skips_transition_from_defaults() {
+    let mut ui = Ui::new();
+    let blue = abgr(0, 0, 255, 255);
+    let green = abgr(0, 255, 0, 255);
+    let bg_bit = spec::ANIM_BIT[spec::prop::BG_COLOR as usize] as u32;
+
+    let mut s0 = StyleSpec::new();
+    s0.base = alloc::vec![(spec::prop::BG_COLOR, blue)];
+    s0.transition = Some((1 << bg_bit, 300, 0, spec::Easing::Linear as u8));
+    let mut s1 = StyleSpec::new();
+    s1.base = alloc::vec![(spec::prop::BG_COLOR, green)];
+    s1.transition = Some((1 << bg_bit, 300, 0, spec::Easing::Linear as u8));
+    assert!(ui.load_styles(&encode_styles(&[s0, s1])));
+
+    let n = ui.create_node(0);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.set_style(n, 0);
+    assert_eq!(ui.resolved_style(n).unwrap().bg_color, blue);
+
+    ui.set_style(n, 1);
+    assert_eq!(
+        ui.resolved_style(n).unwrap().bg_color,
+        blue,
+        "subsequent style changes still transition from the old appearance",
+    );
+}
+
+#[test]
 fn fixed_dt_animation_is_deterministic() {
     fn run() -> Vec<Vec<u32>> {
         let mut ui = Ui::new();
@@ -358,6 +386,29 @@ fn gap_column_layout_matches_hand_computed() {
     assert_eq!(ui.layout_of(kids[0]).unwrap(), (7.0, 5.0, 100.0, 40.0));
     assert_eq!(ui.layout_of(kids[1]).unwrap(), (7.0, 55.0, 100.0, 50.0));
     assert_eq!(ui.layout_of(kids[2]).unwrap(), (7.0, 115.0, 100.0, 60.0));
+}
+
+#[test]
+fn absolute_child_does_not_consume_flex_space() {
+    let mut ui = Ui::new();
+    ui.set_prop(spec::ROOT_ID, spec::prop::FLEX_DIR, spec::FlexDir::Row as u32 as f64);
+
+    let app = ui.create_node(0);
+    ui.set_prop(app, spec::prop::WIDTH, 480.0);
+    ui.set_prop(app, spec::prop::HEIGHT, 272.0);
+    ui.insert_before(spec::ROOT_ID, app, 0);
+
+    let overlay = ui.create_node(0);
+    ui.set_prop(overlay, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(overlay, spec::prop::INSET_T, 0.0);
+    ui.set_prop(overlay, spec::prop::INSET_R, 0.0);
+    ui.set_prop(overlay, spec::prop::INSET_B, 0.0);
+    ui.set_prop(overlay, spec::prop::INSET_L, 0.0);
+    ui.insert_before(spec::ROOT_ID, overlay, 0);
+
+    ui.tick();
+    assert_eq!(ui.layout_of(app).unwrap(), (0.0, 0.0, 480.0, 272.0));
+    assert_eq!(ui.layout_of(overlay).unwrap(), (0.0, 0.0, 480.0, 272.0));
 }
 
 #[test]
@@ -506,6 +557,60 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
         }
     }
     assert!(edge_alpha, "rounded pill edges should be alpha-covered, not hard 1-bit spans");
+}
+
+#[test]
+fn transparent_rounded_border_draws_an_outline_not_square_strips() {
+    let mut ui = Ui::new();
+    let blue = abgr(37, 99, 235, 255);
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 20.0);
+    ui.set_prop(n, spec::prop::HEIGHT, 12.0);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_T, 10.0);
+    ui.set_prop(n, spec::prop::INSET_L, 10.0);
+    ui.set_prop(n, spec::prop::RADIUS, 6.0);
+    ui.set_prop(n, spec::prop::BORDER_COLOR, blue as f64);
+    ui.set_prop(n, spec::prop::BORDER_WIDTH, 1.0);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.tick();
+
+    let words = ui.draw().words.clone();
+    let counts = validate_drawlist(&words);
+    assert!(counts[spec::draw_op::RECT as usize] > 0);
+
+    let mut covers_top_mid = false;
+    let mut covers_left_mid = false;
+    let mut covers_outer_corner = false;
+    let mut covers_center = false;
+    let mut i = 0usize;
+    while i < words.len() {
+        match words[i] {
+            spec::draw_op::RECT => {
+                let (x, y) = decode_xy(words[i + 1]);
+                let (w, h) = decode_wh(words[i + 2]);
+                let c = words[i + 3];
+                let covers = |px: i32, py: i32| px >= x && px < x + w && py >= y && py < y + h;
+                if c & 0x00ff_ffff == blue & 0x00ff_ffff && c >> 24 > 0 {
+                    covers_top_mid |= covers(20, 10);
+                    covers_left_mid |= covers(10, 16);
+                    covers_outer_corner |= covers(10, 10);
+                    covers_center |= covers(20, 16);
+                }
+                i += 4;
+            }
+            spec::draw_op::GRAD_RECT => i += 6,
+            spec::draw_op::TRI => i += 7,
+            spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
+            spec::draw_op::TEX_QUAD => i += 9,
+            spec::draw_op::SCISSOR => i += 3,
+            _ => i += 1,
+        }
+    }
+    assert!(covers_top_mid, "top edge should be present");
+    assert!(covers_left_mid, "left edge should be present");
+    assert!(!covers_outer_corner, "rounded transparent border must not draw square outer corners");
+    assert!(!covers_center, "transparent border must not fill the center");
 }
 
 #[test]
@@ -711,6 +816,36 @@ fn explicit_animate_lifecycle() {
 }
 
 #[test]
+fn explicit_animate_retargets_same_prop_from_current_value() {
+    let mut ui = Ui::new();
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 0.0);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+
+    let first = ui.animate(n, spec::prop::WIDTH, 100.0, 600, spec::Easing::Linear as u8, 0);
+    assert!(first > 0);
+    for _ in 0..9 {
+        ui.tick();
+    }
+    let mid = ui.resolved_style(n).unwrap().width;
+    assert_eq!(mid, 25.0);
+
+    let second = ui.animate(n, spec::prop::WIDTH, 200.0, 600, spec::Easing::Linear as u8, 0);
+    assert!(second > 0);
+    assert_eq!(ui.resolved_style(n).unwrap().width, mid);
+    ui.cancel_anim(first); // stale id: the second animation killed the first.
+
+    for _ in 0..18 {
+        ui.tick();
+    }
+    let retargeted_mid = ui.resolved_style(n).unwrap().width;
+    assert!(
+        (retargeted_mid - 112.5).abs() < 0.001,
+        "second animation must start from the interrupted value, got {retargeted_mid}",
+    );
+}
+
+#[test]
 fn destroy_subtree_frees_anims_and_slots() {
     let mut ui = Ui::new();
     let parent = ui.create_node(0);
@@ -889,6 +1024,29 @@ fn scale_only_transform_stays_axis_aligned() {
     // Scaled 0.5 about center: 100x50 -> 50x25 at (25, 12.5->13 rounded).
     assert_eq!(decode_xy(words[i + 1]), (25, 13));
     assert_eq!(decode_wh(words[i + 2]), (50, 25));
+}
+
+#[test]
+fn scale_x_transform_is_paint_only_and_can_anchor_left() {
+    let mut ui = Ui::new();
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 100.0);
+    ui.set_prop(n, spec::prop::HEIGHT, 20.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(1, 2, 3, 255) as f64);
+    ui.set_prop(n, spec::prop::SCALE_X, 0.5);
+    // Scaling is about center. Offset left by half the lost width to keep the
+    // progress fill anchored at x=0 while the right edge moves.
+    ui.set_prop(n, spec::prop::TRANSLATE_X, -25.0);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.tick();
+    assert_eq!(ui.layout_of(n).unwrap().2, 100.0);
+
+    let words = ui.draw().words.clone();
+    let counts = validate_drawlist(&words);
+    assert_eq!(counts[spec::draw_op::TRI as usize], 0);
+    let i = words.iter().position(|&w| w == spec::draw_op::RECT).unwrap();
+    assert_eq!(decode_xy(words[i + 1]), (0, 0));
+    assert_eq!(decode_wh(words[i + 2]), (50, 20));
 }
 
 #[test]

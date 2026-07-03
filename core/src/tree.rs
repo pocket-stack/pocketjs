@@ -52,6 +52,9 @@ pub struct Node {
     pub children: Vec<i32>,
     /// Style-table record id (spec::STYLE_ID_NONE = unstyled).
     pub style_id: i32,
+    /// Whether set_style has established an initial computed style. The first
+    /// style application snaps instead of transitioning from default values.
+    pub style_initialized: bool,
     /// Dynamic `set_prop` overrides: (prop id, raw u32 payload), applied on
     /// top of the style variants. At most one entry per prop.
     pub overrides: Vec<(u8, u32)>,
@@ -80,6 +83,7 @@ impl Node {
             parent: 0,
             children: Vec::new(),
             style_id: spec::STYLE_ID_NONE,
+            style_initialized: false,
             overrides: Vec::new(),
             anim_values: Vec::new(),
             text: String::new(),

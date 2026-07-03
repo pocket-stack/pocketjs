@@ -1,15 +1,16 @@
 // demos/stats/app.tsx — "animated dashboard" showcase: three stat tiles whose
-// numbers count up over the first ~1.2 s, horizontal bars that grow to their
-// value from the capped frame signal, and LEFT/RIGHT switching two horizontally
-// arranged tabs. The SYSTEMS tab uses a short staggered row reveal so rows never
-// flash through the style-table default before becoming white.
+// numbers count up over the first ~1.2 s, horizontal bars that grow through
+// native transform-only tweens, and LEFT/RIGHT switching two horizontally
+// arranged tabs. The SYSTEMS tab uses a short staggered row reveal so rows
+// never flash through the style-table default before becoming white.
 //
 // Frame driving stays component-scoped through psp-ui hooks: button presses
 // switch tabs, while a capped frame hook advances deterministic counters.
 
-import { Show, Text, View } from "psp-ui/components";
+import { Show, Text, View, type NodeMirror } from "psp-ui/components";
+import { animate } from "psp-ui/animation";
 import { useButtonPress, useFrame } from "psp-ui/hooks";
-import { createMemo, createSignal } from "psp-ui/reactivity";
+import { createMemo, createSignal, onMount } from "psp-ui/reactivity";
 import { BTN } from "psp-ui/input";
 
 const COUNT_FRAMES = 75;
@@ -42,13 +43,15 @@ interface Bar {
   fill: string;
 }
 
-const BAR_W = 280; // track px — fill animates to pct/100 * BAR_W
+const BAR_W = 280; // track px — fill is fixed-width and transform-scaled.
+const BAR_ANIM_MS = Math.round((BAR_ANIM_FRAMES / 60) * 1000);
+const BAR_STAGGER_MS = Math.round((BAR_STAGGER_FRAMES / 60) * 1000);
 
 const BARS: Bar[] = [
-  { label: "CPU", pct: 42, fill: "h-2 w-0 rounded-full bg-gradient-to-r from-blue-500 to-blue-600" },
-  { label: "GPU", pct: 71, fill: "h-2 w-0 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600" },
-  { label: "RAM", pct: 63, fill: "h-2 w-0 rounded-full bg-gradient-to-r from-amber-500 to-amber-600" },
-  { label: "I/O", pct: 28, fill: "h-2 w-0 rounded-full bg-gradient-to-r from-sky-500 to-sky-600" },
+  { label: "CPU", pct: 42, fill: "h-2 w-[280] rounded-full bg-gradient-to-r from-blue-500 to-blue-600" },
+  { label: "GPU", pct: 71, fill: "h-2 w-[280] rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600" },
+  { label: "RAM", pct: 63, fill: "h-2 w-[280] rounded-full bg-gradient-to-r from-amber-500 to-amber-600" },
+  { label: "I/O", pct: 28, fill: "h-2 w-[280] rounded-full bg-gradient-to-r from-sky-500 to-sky-600" },
 ];
 
 interface Sys {
@@ -79,13 +82,30 @@ function easeOutCubic(x: number): number {
 // Panels
 // ---------------------------------------------------------------------------
 
-/** OVERVIEW tab: bars grow from the capped frame signal, not a stack of native
- *  width tweens, so there is no transition from default dark style values. */
-function Overview(props: { frame: () => number }) {
-  const fillW = (bar: Bar, i: number) => {
-    const local = (props.frame() - i * BAR_STAGGER_FRAMES) / BAR_ANIM_FRAMES;
-    return easeOutCubic(local) * (bar.pct / 100) * BAR_W;
-  };
+function barScale(bar: Bar): number {
+  return bar.pct / 100;
+}
+
+function barFillOffset(scale: number): number {
+  return -(BAR_W * (1 - scale)) / 2;
+}
+
+/** OVERVIEW tab: bars use native transform-only tweens, matching switch/slider
+ *  motion without triggering per-frame layout work. */
+function Overview() {
+  const fills: Array<NodeMirror | undefined> = [];
+
+  onMount(() => {
+    BARS.forEach((bar, i) => {
+      const fill = fills[i];
+      if (!fill) return;
+      const scale = barScale(bar);
+      const delay = i * BAR_STAGGER_MS;
+      animate(fill, "scaleX", scale, { dur: BAR_ANIM_MS, delay, easing: "out" });
+      animate(fill, "translateX", barFillOffset(scale), { dur: BAR_ANIM_MS, delay, easing: "out" });
+    });
+  });
+
   return (
     <View class="flex-col gap-1">
       {BARS.map((bar, i) => (
@@ -94,7 +114,13 @@ function Overview(props: { frame: () => number }) {
             <Text class="text-xs text-slate-600">{bar.label}</Text>
           </View>
           <View class="w-[280] h-2 rounded-full shadow bg-slate-200 overflow-hidden">
-            <View class={bar.fill} style={{ width: fillW(bar, i) }} />
+            <View
+              ref={(node) => {
+                fills[i] = node;
+              }}
+              class={bar.fill}
+              style={{ scaleX: 0, translateX: barFillOffset(0) }}
+            />
           </View>
           <Text class="text-xs text-slate-500">{bar.pct + "%"}</Text>
         </View>
@@ -212,7 +238,7 @@ export default function Stats() {
 
       <View class="grow flex-col">
         <Show when={tab() === 0}>
-          <Overview frame={frameN} />
+          <Overview />
         </Show>
         <Show when={tab() === 1}>
           <Systems frame={systemsFrame} />

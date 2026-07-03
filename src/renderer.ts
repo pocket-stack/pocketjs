@@ -202,6 +202,10 @@ function removeNodeImpl(parent: NodeMirror, node: NodeMirror): void {
   sweepSet.add(node); // destroyed at frame end unless re-attached/retained
 }
 
+export function detachNode(parent: NodeMirror, node: NodeMirror): void {
+  removeNodeImpl(parent, node);
+}
+
 function getParentNodeImpl(node: NodeMirror): NodeMirror | undefined {
   return node.parent ?? undefined;
 }

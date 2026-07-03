@@ -179,6 +179,8 @@ pub struct Resolved {
     pub translate_y: f32,
     pub scale: f32,
     pub rotate: f32,
+    pub scale_x: f32,
+    pub scale_y: f32,
 }
 
 impl Default for Resolved {
@@ -223,6 +225,8 @@ impl Default for Resolved {
             translate_y: 0.0,
             scale: 1.0,
             rotate: 0.0,
+            scale_x: 1.0,
+            scale_y: 1.0,
         }
     }
 }
@@ -281,6 +285,8 @@ impl Resolved {
             p::TRANSLATE_Y => self.translate_y = f,
             p::SCALE => self.scale = f,
             p::ROTATE => self.rotate = f,
+            p::SCALE_X => self.scale_x = f,
+            p::SCALE_Y => self.scale_y = f,
             _ => {}
         }
     }
@@ -338,6 +344,8 @@ impl Resolved {
             p::TRANSLATE_Y => self.translate_y.to_bits(),
             p::SCALE => self.scale.to_bits(),
             p::ROTATE => self.rotate.to_bits(),
+            p::SCALE_X => self.scale_x.to_bits(),
+            p::SCALE_Y => self.scale_y.to_bits(),
             _ => 0,
         }
     }

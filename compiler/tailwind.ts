@@ -153,7 +153,7 @@ const maskOf = (props: PropName[]): number => {
 };
 const COLOR_MASK = maskOf(["bgColor", "gradFrom", "gradTo", "borderColor", "textColor"]);
 const OPACITY_MASK = maskOf(["opacity"]);
-const TRANSFORM_MASK = maskOf(["translateX", "translateY", "scale", "rotate"]);
+const TRANSFORM_MASK = maskOf(["translateX", "translateY", "scale", "rotate", "scaleX", "scaleY"]);
 /** Plain `transition` (Tailwind's default property set, minus what we can't animate). */
 const DEFAULT_MASK = (COLOR_MASK | OPACITY_MASK | TRANSFORM_MASK) >>> 0;
 
@@ -192,6 +192,10 @@ const SPACING_PROPS: Record<string, number[]> = {
   top: [PROP.insetT], right: [PROP.insetR], bottom: [PROP.insetB], left: [PROP.insetL],
   "min-w": [PROP.minW], "min-h": [PROP.minH], "max-w": [PROP.maxW], "max-h": [PROP.maxH],
   "translate-x": [PROP.translateX], "translate-y": [PROP.translateY],
+};
+const SCALE_PROPS: Record<string, number> = {
+  "scale-x": PROP.scaleX,
+  "scale-y": PROP.scaleY,
 };
 
 /**
@@ -237,6 +241,14 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
       const v = spacing(tok.slice(prefix.length + 1));
       if (v === null) continue;
       for (const p of SPACING_PROPS[prefix]) D.push([p, px(v)]);
+      return true;
+    }
+  }
+  for (const prefix of Object.keys(SCALE_PROPS)) {
+    if (tok.startsWith(prefix + "-")) {
+      const v = plainNum(tok.slice(prefix.length + 1));
+      if (v === null) continue;
+      D.push([SCALE_PROPS[prefix], px(v / 100)]);
       return true;
     }
   }

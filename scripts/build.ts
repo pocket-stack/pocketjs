@@ -36,6 +36,23 @@ import {
 const ROOT = new URL("..", import.meta.url).pathname; // psp-ui/
 const DIST = ROOT + "dist/";
 
+type PackageExportTarget = string | { default?: string; browser?: string; import?: string };
+interface PackageJson {
+  exports?: Record<string, PackageExportTarget>;
+}
+
+const packageJson = await Bun.file(ROOT + "package.json").json() as PackageJson;
+const packageExports = new Map<string, string>();
+for (const [key, target] of Object.entries(packageJson.exports ?? {})) {
+  const file =
+    typeof target === "string"
+      ? target
+      : (target.browser ?? target.import ?? target.default);
+  if (!file) continue;
+  const subpath = key === "." ? "" : key.replace(/^\.\//, "");
+  packageExports.set(subpath, file.replace(/^\.\//, ""));
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -111,7 +128,12 @@ function importSpecifiers(src: string): string[] {
  *  remapping like `./card.js` -> card.tsx included), so the two passes agree
  *  on the module graph by construction. */
 function resolveImport(fromFile: string, spec: string): string | null {
-  if (!spec.startsWith("./") && !spec.startsWith("../") && !spec.startsWith("/")) return null; // bare
+  if (spec === "psp-ui" || spec.startsWith("psp-ui/")) {
+    const subpath = spec === "psp-ui" ? "" : spec.slice("psp-ui/".length);
+    const exported = packageExports.get(subpath);
+    return exported && /\.tsx?$/.test(exported) ? ROOT + exported : null;
+  }
+  if (!spec.startsWith("./") && !spec.startsWith("../") && !spec.startsWith("/")) return null; // external bare
   let resolved: string;
   try {
     resolved = Bun.resolveSync(spec, fromFile.slice(0, fromFile.lastIndexOf("/")));

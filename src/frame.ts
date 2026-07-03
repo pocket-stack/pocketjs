@@ -9,9 +9,11 @@ import { createSignal, onCleanup, type Accessor } from "solid-js";
 type FrameCallback = (buttons: number) => void;
 
 const callbacks = new Set<FrameCallback>();
+let buttonHandlerBlockDepth = 0;
 
 export function resetFrameHooks(): void {
   callbacks.clear();
+  buttonHandlerBlockDepth = 0;
 }
 
 export function runFrameHooks(buttons: number): void {
@@ -23,11 +25,37 @@ export function useFrame(callback: FrameCallback): void {
   onCleanup(() => callbacks.delete(callback));
 }
 
-export function useButtonPress(mask: number, callback: (pressed: number, buttons: number) => void): void {
+export interface ButtonPressOptions {
+  /**
+   * Modal/system handlers can opt out of the background action block. Normal
+   * app handlers should stay blocked while a modal owns input.
+   */
+  allowWhenBlocked?: boolean;
+  active?: boolean | (() => boolean);
+}
+
+export function pushButtonHandlerBlock(): () => void {
+  buttonHandlerBlockDepth++;
+  let disposed = false;
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    buttonHandlerBlockDepth = Math.max(0, buttonHandlerBlockDepth - 1);
+  };
+}
+
+export function useButtonPress(
+  mask: number,
+  callback: (pressed: number, buttons: number) => void,
+  opts: ButtonPressOptions = {},
+): void {
   let prevButtons = 0;
   useFrame((buttons) => {
     const pressed = buttons & ~prevButtons;
     prevButtons = buttons;
+    const active = typeof opts.active === "function" ? opts.active() : opts.active ?? true;
+    if (!active) return;
+    if (buttonHandlerBlockDepth > 0 && !opts.allowWhenBlocked) return;
     if (pressed & mask) callback(pressed, buttons);
   });
 }

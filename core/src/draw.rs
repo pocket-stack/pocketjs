@@ -332,22 +332,23 @@ impl<'a> Walker<'a> {
         // Local frame: layout position + translate, then rotate/scale about
         // the node center.
         let mut local = Affine::translate(l.x + r.translate_x, l.y + r.translate_y);
-        if r.rotate != 0.0 || r.scale != 1.0 {
+        if r.rotate != 0.0 || r.scale != 1.0 || r.scale_x != 1.0 || r.scale_y != 1.0 {
             let (cx, cy) = (l.w * 0.5, l.h * 0.5);
             let rad = r.rotate * (PI / 180.0);
             // rotate == 0 keeps EXACT axis alignment (the trig polyfill is a
             // few ulp off at multiples of pi/2, which would silently demote
             // scale-only transforms to the TRI path).
             let (s, c) = if r.rotate == 0.0 { (0.0, 1.0) } else { (sinf(rad), cosf(rad)) };
-            let sc = r.scale;
+            let sx = r.scale * r.scale_x;
+            let sy = r.scale * r.scale_y;
             // translate(c) * rotate * scale * translate(-c)
             let m = Affine {
-                a: c * sc,
-                b: s * sc,
-                c: -s * sc,
-                d: c * sc,
-                tx: cx - (c * sc * cx - s * sc * cy),
-                ty: cy - (s * sc * cx + c * sc * cy),
+                a: c * sx,
+                b: s * sx,
+                c: -s * sy,
+                d: c * sy,
+                tx: cx - (c * sx * cx - s * sy * cy),
+                ty: cy - (s * sx * cx + c * sy * cy),
             };
             local = local.then(&m);
         }
@@ -361,8 +362,8 @@ impl<'a> Walker<'a> {
         let has_grad = r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32;
         let bg_color = scale_alpha(r.bg_color, op);
         let border_color = scale_alpha(r.border_color, op);
-        let rounded_ring =
-            r.radius > 0.0 && r.border_width > 0.0 && alpha(border_color) > 0 && (has_grad || alpha(bg_color) > 0);
+        let rounded_border = r.radius > 0.0 && r.border_width > 0.0 && alpha(border_color) > 0;
+        let rounded_ring = rounded_border && (has_grad || alpha(bg_color) > 0);
 
         if r.shadow > 0 && (alpha(bg_color) > 0 || has_grad) {
             self.emit_shadow(dl, &world, l.w, l.h, r.radius, r.shadow, op, &clip);
@@ -405,13 +406,17 @@ impl<'a> Walker<'a> {
         // -- border: 4 inset strips ------------------------------------------
         let bw = r.border_width;
         if !rounded_ring && bw > 0.0 && alpha(border_color) > 0 {
-            let bc = Fill::Flat(border_color);
-            let bwx = bw.min(l.w * 0.5);
-            let bwy = bw.min(l.h * 0.5);
-            self.emit_box(dl, &world, 0.0, 0.0, l.w, bwy, bc, &clip); // top
-            self.emit_box(dl, &world, 0.0, l.h - bwy, l.w, l.h, bc, &clip); // bottom
-            self.emit_box(dl, &world, 0.0, bwy, bwx, l.h - bwy, bc, &clip); // left
-            self.emit_box(dl, &world, l.w - bwx, bwy, l.w, l.h - bwy, bc, &clip); // right
+            if rounded_border {
+                self.emit_rounded_border(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, bw, Fill::Flat(border_color), &clip);
+            } else {
+                let bc = Fill::Flat(border_color);
+                let bwx = bw.min(l.w * 0.5);
+                let bwy = bw.min(l.h * 0.5);
+                self.emit_box(dl, &world, 0.0, 0.0, l.w, bwy, bc, &clip); // top
+                self.emit_box(dl, &world, 0.0, l.h - bwy, l.w, l.h, bc, &clip); // bottom
+                self.emit_box(dl, &world, 0.0, bwy, bwx, l.h - bwy, bc, &clip); // left
+                self.emit_box(dl, &world, l.w - bwx, bwy, l.w, l.h - bwy, bc, &clip); // right
+            }
         }
 
         // -- text run ----------------------------------------------------------
@@ -565,6 +570,123 @@ impl<'a> Walker<'a> {
         }
     }
 
+    fn rounded_interval_at_row(
+        &self,
+        sx0: f32,
+        sy0: f32,
+        sx1: f32,
+        sy1: f32,
+        radius: f32,
+        row_y: f32,
+    ) -> Option<(f32, f32)> {
+        if sx1 <= sx0 || sy1 <= sy0 || row_y < sy0 || row_y > sy1 {
+            return None;
+        }
+        let w = sx1 - sx0;
+        let h = sy1 - sy0;
+        let r = radius.min(w * 0.5).min(h * 0.5);
+        if r <= 0.5 {
+            return Some((sx0, sx1));
+        }
+        let rr = r * r;
+        let inset = if row_y < sy0 + r {
+            let dy = sy0 + r - row_y;
+            r - sqrtf((rr - dy * dy).max(0.0))
+        } else if row_y > sy1 - r {
+            let dy = row_y - (sy1 - r);
+            r - sqrtf((rr - dy * dy).max(0.0))
+        } else {
+            0.0
+        };
+        Some((sx0 + inset, sx1 - inset))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit_fractional_span(
+        &self,
+        dl: &mut DrawList,
+        fill: &Fill,
+        sx0: f32,
+        sy0: f32,
+        sx1: f32,
+        sy1: f32,
+        py: i32,
+        h: i32,
+        span_x0: f32,
+        span_x1: f32,
+        clip_x0: i32,
+        clip_x1: i32,
+        y_coverage: u32,
+    ) {
+        if y_coverage == 0 || span_x1 <= span_x0 {
+            return;
+        }
+        let span_x0 = span_x0.max(clip_x0 as f32);
+        let span_x1 = span_x1.min(clip_x1 as f32);
+        if span_x1 <= span_x0 {
+            return;
+        }
+
+        let left_edge = floorf(span_x0) as i32;
+        let full_start = ceilf(span_x0) as i32;
+        let full_end = floorf(span_x1) as i32;
+        let right_edge = ceilf(span_x1) as i32;
+
+        let mut emitted_left_edge = false;
+        if left_edge < full_start && left_edge >= clip_x0 && left_edge < clip_x1 {
+            let x_coverage = pixel_interval_coverage(left_edge, span_x0, span_x1);
+            self.emit_rounded_span(
+                dl,
+                fill,
+                sx0,
+                sy0,
+                sx1,
+                sy1,
+                py,
+                h,
+                left_edge,
+                left_edge + 1,
+                coverage_mul(x_coverage, y_coverage),
+            );
+            emitted_left_edge = true;
+        }
+
+        self.emit_rounded_span(
+            dl,
+            fill,
+            sx0,
+            sy0,
+            sx1,
+            sy1,
+            py,
+            h,
+            full_start.max(clip_x0),
+            full_end.min(clip_x1),
+            y_coverage,
+        );
+
+        if full_end < right_edge
+            && full_end >= clip_x0
+            && full_end < clip_x1
+            && !(emitted_left_edge && full_end == left_edge)
+        {
+            let x_coverage = pixel_interval_coverage(full_end, span_x0, span_x1);
+            self.emit_rounded_span(
+                dl,
+                fill,
+                sx0,
+                sy0,
+                sx1,
+                sy1,
+                py,
+                h,
+                full_end,
+                full_end + 1,
+                coverage_mul(x_coverage, y_coverage),
+            );
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn emit_rounded_span(
         &self,
@@ -599,6 +721,134 @@ impl<'a> Walker<'a> {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn emit_rounded_border(
+        &self,
+        dl: &mut DrawList,
+        world: &Affine,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        radius: f32,
+        border_width: f32,
+        fill: Fill,
+        clip: &Clip,
+    ) {
+        if radius <= 0.0 || border_width <= 0.0 || !world.is_axis_aligned() {
+            let bwx = border_width.min((x1 - x0) * 0.5);
+            let bwy = border_width.min((y1 - y0) * 0.5);
+            self.emit_box(dl, world, x0, y0, x1, y0 + bwy, fill, clip);
+            self.emit_box(dl, world, x0, y1 - bwy, x1, y1, fill, clip);
+            self.emit_box(dl, world, x0, y0 + bwy, x0 + bwx, y1 - bwy, fill, clip);
+            self.emit_box(dl, world, x1 - bwx, y0 + bwy, x1, y1 - bwy, fill, clip);
+            return;
+        }
+
+        let (sx0, sy0) = world.apply(x0, y0);
+        let (sx1, sy1) = world.apply(x1, y1);
+        if sx1 <= sx0 || sy1 <= sy0 {
+            return;
+        }
+        let w = sx1 - sx0;
+        let h = sy1 - sy0;
+        let scale_y = world.d.max(0.0);
+        let bw = (border_width * scale_y).min(w * 0.5).min(h * 0.5);
+        let r = (radius * scale_y).min(w * 0.5).min(h * 0.5);
+        if bw <= 0.0 || r <= 0.5 {
+            let local_bw = if scale_y > 0.0 { bw / scale_y } else { border_width };
+            let bwx = local_bw.min((x1 - x0) * 0.5);
+            let bwy = local_bw.min((y1 - y0) * 0.5);
+            self.emit_box(dl, world, x0, y0, x1, y0 + bwy, fill, clip);
+            self.emit_box(dl, world, x0, y1 - bwy, x1, y1, fill, clip);
+            self.emit_box(dl, world, x0, y0 + bwy, x0 + bwx, y1 - bwy, fill, clip);
+            self.emit_box(dl, world, x1 - bwx, y0 + bwy, x1, y1 - bwy, fill, clip);
+            return;
+        }
+
+        let ix0 = floorf(sx0).max(floorf(clip.x0)).max(0.0) as i32;
+        let iy0 = floorf(sy0).max(floorf(clip.y0)).max(0.0) as i32;
+        let ix1 = ceilf(sx1).min(ceilf(clip.x1)).min(SCREEN_W) as i32;
+        let iy1 = ceilf(sy1).min(ceilf(clip.y1)).min(SCREEN_H) as i32;
+        if ix1 <= ix0 || iy1 <= iy0 {
+            return;
+        }
+
+        let inner_sx0 = sx0 + bw;
+        let inner_sy0 = sy0 + bw;
+        let inner_sx1 = sx1 - bw;
+        let inner_sy1 = sy1 - bw;
+        let inner_r = (r - bw).max(0.0);
+        let has_inner = inner_sx1 > inner_sx0 && inner_sy1 > inner_sy0;
+
+        for py in iy0..iy1 {
+            let y_coverage = pixel_interval_coverage(py, sy0, sy1);
+            if y_coverage == 0 {
+                continue;
+            }
+            let row_y = clampf(py as f32 + 0.5, sy0, sy1);
+            let Some((outer_x0, outer_x1)) = self.rounded_interval_at_row(sx0, sy0, sx1, sy1, r, row_y) else {
+                continue;
+            };
+
+            let inner = if has_inner && pixel_interval_coverage(py, inner_sy0, inner_sy1) > 0 {
+                let inner_row_y = clampf(py as f32 + 0.5, inner_sy0, inner_sy1);
+                self.rounded_interval_at_row(inner_sx0, inner_sy0, inner_sx1, inner_sy1, inner_r, inner_row_y)
+            } else {
+                None
+            };
+
+            if let Some((inner_x0, inner_x1)) = inner {
+                self.emit_fractional_span(
+                    dl,
+                    &fill,
+                    sx0,
+                    sy0,
+                    sx1,
+                    sy1,
+                    py,
+                    1,
+                    outer_x0,
+                    inner_x0.min(outer_x1),
+                    ix0,
+                    ix1,
+                    y_coverage,
+                );
+                self.emit_fractional_span(
+                    dl,
+                    &fill,
+                    sx0,
+                    sy0,
+                    sx1,
+                    sy1,
+                    py,
+                    1,
+                    inner_x1.max(outer_x0),
+                    outer_x1,
+                    ix0,
+                    ix1,
+                    y_coverage,
+                );
+            } else {
+                self.emit_fractional_span(
+                    dl,
+                    &fill,
+                    sx0,
+                    sy0,
+                    sx1,
+                    sy1,
+                    py,
+                    1,
+                    outer_x0,
+                    outer_x1,
+                    ix0,
+                    ix1,
+                    y_coverage,
+                );
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn emit_rounded_box(
         &self,
         dl: &mut DrawList,
@@ -622,8 +872,8 @@ impl<'a> Walker<'a> {
         }
         let w = sx1 - sx0;
         let h = sy1 - sy0;
-        let scale = ((world.a + world.d) * 0.5).max(0.0);
-        let r = (radius * scale).min(w * 0.5).min(h * 0.5);
+        let scale_y = world.d.max(0.0);
+        let r = (radius * scale_y).min(w * 0.5).min(h * 0.5);
         if r <= 0.5 {
             self.emit_box(dl, world, x0, y0, x1, y1, fill, clip);
             return;
