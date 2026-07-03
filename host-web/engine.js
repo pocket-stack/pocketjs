@@ -164,7 +164,7 @@ export async function load(name) {
   stop();
   frameCb = null;
   wasm.init(); // fresh Ui: tree/styles/atlases/textures all reset
-  // Host contract (see demos/hero-main.tsx): both globals BEFORE eval, reset
+  // Host contract (see demos/hero/main.tsx): both globals BEFORE eval, reset
   // EVERY load so nothing stale leaks across reloads.
   globalThis.ui = wasm.ops;
   globalThis.frame = undefined;
@@ -172,14 +172,14 @@ export async function load(name) {
     const pak = await fetch("dist/" + name + ".dcpak");
     globalThis.__dcpak = pak.ok ? await pak.arrayBuffer() : undefined;
     const srcRes = await fetch("dist/" + name + ".js");
-    if (!srcRes.ok) throw new Error("dist/" + name + ".js not found — run: bun scripts/build.ts demos/" + name + ".tsx");
+    if (!srcRes.ok) throw new Error("dist/" + name + ".js not found — run: bun scripts/build.ts " + name);
     const src = await srcRes.text();
     // Fresh function scope per reload (top-level vars must not collide).
     new Function(src + "\n//# sourceURL=" + name + ".js")();
     if (typeof globalThis.frame !== "function") {
       throw new Error(
         "bundle did not install globalThis.frame — the demo entry must call render() " +
-          "(use the *-main.tsx mounting entry, not the bare component module)",
+          "(use the <demo>/main.tsx mounting entry, not the bare component module)",
       );
     }
     frameCb = globalThis.frame;

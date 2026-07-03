@@ -81,7 +81,7 @@
 
   const demos = await listDemos();
   if (demos.length === 0) {
-    log("no bundles in dist/ — run: bun scripts/build.ts demos/hero-main.tsx");
+    log("no bundles in dist/ — run: bun scripts/build.ts hero-main");
   }
   for (const d of demos) {
     const opt = document.createElement("option");

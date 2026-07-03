@@ -1,4 +1,4 @@
-// demos/settings.tsx — "settings menu" showcase: a grouped list of system
+// demos/settings/app.tsx — "settings menu" showcase: a grouped list of system
 // toggles (spring-sliding pill knobs — first demo use of `rounded-full`,
 // build-time-fixed w/h per DESIGN.md so the compiler can bake the exact
 // corner radius), a brightness control CIRCLE cycles through 5 steps (a
@@ -10,9 +10,7 @@
 // press, entirely covered by the engine's default input pass (src/input.ts)
 // — unlike stats.tsx/library.tsx this entry needs no beforeFrame.
 
-import { createEffect, createSignal, Show } from "solid-js";
-import { animate } from "../src/anim.ts";
-import type { NodeMirror } from "../src/renderer.ts";
+import { Text, View, animate, createEffect, createSignal, Show, type NodeMirror } from "psp-ui";
 
 type ThemeName = "indigo" | "emerald" | "amber" | "rose";
 
@@ -141,25 +139,25 @@ function Toggle(props: { label: string; value: boolean; theme: ThemeOption; onTo
     initialized = true;
   });
   return (
-    <view
+    <View
       class={props.theme.rowCls}
       focusable
       onPress={props.onToggle}
     >
-      <text class={props.theme.rowLabelCls}>{props.label}</text>
-      <view
+      <Text class={props.theme.rowLabelCls}>{props.label}</Text>
+      <View
         class={
           props.value
             ? props.theme.switchOnCls
             : props.theme.switchOffCls
         }
       >
-        <view
+        <View
           ref={knob}
           class={props.theme.knobCls}
         />
-      </view>
-    </view>
+      </View>
+    </View>
   );
 }
 
@@ -173,20 +171,20 @@ function Brightness(props: { theme: ThemeOption }) {
   const [level, setLevel] = createSignal(3);
   const fillW = () => (level() / 5) * BRIGHTNESS_TRACK_W;
   return (
-    <view
+    <View
       class={props.theme.rowCls}
       focusable
       onPress={() => setLevel(level() >= 5 ? 1 : level() + 1)}
     >
-      <text class={props.theme.rowLabelCls}>BRIGHTNESS</text>
-      <view class="flex-row items-center gap-2">
-        <view class={props.theme.sliderTrackCls}>
-          <view class={props.theme.sliderFillCls} style={{ width: fillW() }} />
-          <view class={props.theme.sliderThumbCls} style={{ translateX: fillW() - 8 }} />
-        </view>
-        <text class={props.theme.valueCls}>{level()}/5</text>
-      </view>
-    </view>
+      <Text class={props.theme.rowLabelCls}>BRIGHTNESS</Text>
+      <View class="flex-row items-center gap-2">
+        <View class={props.theme.sliderTrackCls}>
+          <View class={props.theme.sliderFillCls} style={{ width: fillW() }} />
+          <View class={props.theme.sliderThumbCls} style={{ translateX: fillW() - 8 }} />
+        </View>
+        <Text class={props.theme.valueCls}>{level()}/5</Text>
+      </View>
+    </View>
   );
 }
 
@@ -196,22 +194,22 @@ function Brightness(props: { theme: ThemeOption }) {
 
 function ThemeRow(props: { value: ThemeName; theme: ThemeOption; onPick: (t: ThemeName) => void }) {
   return (
-    <view class={props.theme.panelCls}>
-      <text class={props.theme.rowLabelCls}>THEME</text>
-      <view class="flex-row gap-2">
+    <View class={props.theme.panelCls}>
+      <Text class={props.theme.rowLabelCls}>THEME</Text>
+      <View class="flex-row gap-2">
         {THEMES.map((t) => (
-          <view
+          <View
             class={props.value === t.name ? t.selectedCls : t.swatchCls}
             focusable
             onPress={() => props.onPick(t.name)}
           >
             <Show when={props.value === t.name}>
-              <view class="w-2 h-2 rounded-full bg-white shadow" />
+              <View class="w-2 h-2 rounded-full bg-white shadow" />
             </Show>
-          </view>
+          </View>
         ))}
-      </view>
-    </view>
+      </View>
+    </View>
   );
 }
 
@@ -226,23 +224,23 @@ export default function Settings() {
   const currentTheme = () => themeByName(theme());
 
   return (
-    <view class={currentTheme().pageCls}>
-      <view class="flex-row items-end justify-between">
-        <view class="flex-col">
-          <text class={currentTheme().eyebrowCls}>PSP-UI SHOWCASE</text>
-          <text class={currentTheme().titleCls}>Settings</text>
-        </view>
-        <text class={currentTheme().optionsCls}>4 OPTIONS</text>
-      </view>
+    <View class={currentTheme().pageCls}>
+      <View class="flex-row items-end justify-between">
+        <View class="flex-col">
+          <Text class={currentTheme().eyebrowCls}>PSP-UI SHOWCASE</Text>
+          <Text class={currentTheme().titleCls}>Settings</Text>
+        </View>
+        <Text class={currentTheme().optionsCls}>4 OPTIONS</Text>
+      </View>
 
-      <view class="flex-col gap-2">
+      <View class="flex-col gap-2">
         <Toggle label="SOUND EFFECTS" value={sfx()} theme={currentTheme()} onToggle={() => setSfx(!sfx())} />
         <Toggle label="VIBRATION" value={vibration()} theme={currentTheme()} onToggle={() => setVibration(!vibration())} />
         <Brightness theme={currentTheme()} />
         <ThemeRow value={theme()} theme={currentTheme()} onPick={setTheme} />
-      </view>
+      </View>
 
-      <text class={currentTheme().footerCls}>UP / DOWN move focus · CIRCLE toggle / cycle / select</text>
-    </view>
+      <Text class={currentTheme().footerCls}>UP / DOWN move focus · CIRCLE toggle / cycle / select</Text>
+    </View>
   );
 }

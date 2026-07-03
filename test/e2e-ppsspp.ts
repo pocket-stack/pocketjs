@@ -38,7 +38,7 @@ const update = process.env.UPDATE === "1";
 // ---------------------------------------------------------------------------
 // Spec table. One entry per demo; one headless run per entry.
 //
-//   app          scripts/psp.ts app name (hero -> demos/hero-main.tsx)
+//   app          scripts/psp.ts app name (hero -> demos/hero/main.tsx)
 //   inputScript  "frame:mask,frame:mask" (spec/spec.ts BTN values), indexed by
 //                the RUST frame counter; the active mask is the last threshold
 //                at or before the current frame, so press = set, release = 0.

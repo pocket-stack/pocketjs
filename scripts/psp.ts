@@ -7,8 +7,8 @@
 //  RUSTFLAGS "-A linker-messages …"). Needs a rust-psp SDK: set PSP_SDK or
 // keep mipsel-sony-psp next to this checkout / in a sibling dreamcart checkout.
 //
-// Demo entries: `bun scripts/psp.ts hero` prefers demos/hero-main.tsx (the
-// mounting entry — hero.tsx only exports the component) when it exists.
+// Demo entries: `bun scripts/psp.ts hero` prefers demos/hero/main.tsx (the
+// mounting entry — demos/hero/app.tsx only exports the component) when it exists.
 //
 // --capture builds the E2E frame-dump EBOOT (cargo psp --features capture)
 // and bakes the PSPUI_CAPTURE_INPUT env ("frame:mask,…") into the binary —
@@ -74,9 +74,17 @@ if (!existsSync(`${llvm}/clang`)) {
   process.exit(1);
 }
 
-// A bare component demo (demos/<app>.tsx exporting the component) needs the
-// mounting entry demos/<app>-main.tsx (imports render() + STYLE_IDS).
-const app = existsSync(`${pspUiDir}demos/${appArg}-main.tsx`) ? `${appArg}-main` : appArg;
+// A bare component demo (demos/<app>/app.tsx exporting the component) needs
+// the mounting entry demos/<app>/main.tsx (imports mount() + STYLE_IDS).
+function mountedAppName(arg: string): string {
+  const bare = arg.replace(/\.tsx?$/, "").replace(/-main$/, "");
+  if (existsSync(`${pspUiDir}demos/${bare}/main.tsx`) || existsSync(`${pspUiDir}demos/${bare}-main.tsx`)) {
+    return `${bare}-main`;
+  }
+  return arg;
+}
+
+const app = mountedAppName(appArg);
 
 // ---------------------------------------------------------------------------
 // 1. Build the app bundle + dcpak -> dist/<app>.js + dist/<app>.dcpak

@@ -1,4 +1,4 @@
-// demos/music.tsx — "music player" showcase: the one demo with a genuinely
+// demos/music/app.tsx — "music player" showcase: the one demo with a genuinely
 // continuous animation. The other three only ever tween TO a resting value
 // (mount fades, focus transitions, a capped count-up); here the equalizer
 // bars and the progress fill are DIRECT signal-driven style bindings
@@ -11,9 +11,7 @@
 // Design notes: every class a FULL literal (per-track cover accent baked per
 // entry); text single-line.
 
-import { createSignal } from "solid-js";
-import { BTN } from "../spec/spec.ts";
-import type { NodeMirror } from "../src/renderer.ts";
+import { BTN, Text, View, createSignal, type NodeMirror } from "psp-ui";
 
 interface Track {
   title: string;
@@ -47,7 +45,7 @@ const TRACK_FRAMES = 300; // 5s per track at 60 Hz (demo-length, not the real so
 const PROGRESS_TRACK_W = 160; // progress track px — matches the w-[160] track class
 
 // ---------------------------------------------------------------------------
-// Transport state + frame driver (wired by music-main.tsx)
+// Transport state + frame driver (wired by music/main.tsx)
 // ---------------------------------------------------------------------------
 
 const [trackIndex, setTrackIndex] = createSignal(0);
@@ -103,44 +101,44 @@ export default function Music() {
   const pct = () => Math.round((position() / TRACK_FRAMES) * 100);
 
   return (
-    <view class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
-      <view class="flex-row items-end justify-between">
-        <view class="flex-col">
-          <text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</text>
-          <text class="text-2xl text-slate-950 font-bold">Now Playing</text>
-        </view>
-        <text class="text-xs text-slate-500">TRACK {trackIndex() + 1} / {TRACKS.length}</text>
-      </view>
+    <View class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
+      <View class="flex-row items-end justify-between">
+        <View class="flex-col">
+          <Text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</Text>
+          <Text class="text-2xl text-slate-950 font-bold">Now Playing</Text>
+        </View>
+        <Text class="text-xs text-slate-500">TRACK {trackIndex() + 1} / {TRACKS.length}</Text>
+      </View>
 
-      <view class="flex-row items-center gap-3">
-        <view class={track().coverCls} focusable onPress={() => setPlaying(!playing())}>
-          <text class="text-base text-white font-bold">{playing() ? ">" : "II"}</text>
-        </view>
+      <View class="flex-row items-center gap-3">
+        <View class={track().coverCls} focusable onPress={() => setPlaying(!playing())}>
+          <Text class="text-base text-white font-bold">{playing() ? ">" : "II"}</Text>
+        </View>
 
-        <view class="flex-col grow gap-1">
-          <text class="text-base text-slate-950 font-bold">{track().title}</text>
-          <text class="text-xs text-slate-600">{track().artist}</text>
-          <view class="flex-row items-center gap-2">
-            <view class="w-[160] h-2 rounded-full shadow bg-slate-200 overflow-hidden">
-              <view
+        <View class="flex-col grow gap-1">
+          <Text class="text-base text-slate-950 font-bold">{track().title}</Text>
+          <Text class="text-xs text-slate-600">{track().artist}</Text>
+          <View class="flex-row items-center gap-2">
+            <View class="w-[160] h-2 rounded-full shadow bg-slate-200 overflow-hidden">
+              <View
                 class="h-2 w-0 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600"
                 style={{ width: (position() / TRACK_FRAMES) * PROGRESS_TRACK_W }}
               />
-            </view>
-            <text class="text-xs text-slate-500">{pct()}%</text>
-          </view>
-        </view>
+            </View>
+            <Text class="text-xs text-slate-500">{pct()}%</Text>
+          </View>
+        </View>
 
-        <view class="flex-row items-end gap-1 h-16">
+        <View class="flex-row items-end gap-1 h-16">
           {([0, 1, 2, 3] as const).map((i) => (
-            <view class="w-2 rounded-md shadow bg-gradient-to-b from-emerald-500 to-emerald-600" style={{ height: barHeight(i) }} />
+            <View class="w-2 rounded-md shadow bg-gradient-to-b from-emerald-500 to-emerald-600" style={{ height: barHeight(i) }} />
           ))}
-        </view>
-      </view>
+        </View>
+      </View>
 
-      <view class="flex-col gap-1">
+      <View class="flex-col gap-1">
         {TRACKS.map((t, i) => (
-          <view
+          <View
             class={
               trackIndex() === i
                 ? "flex-row items-center justify-between p-1 rounded-lg shadow bg-blue-50 border-blue-500 focus:border-blue-600 transition-colors duration-150"
@@ -149,13 +147,13 @@ export default function Music() {
             focusable
             onPress={() => selectTrack(i)}
           >
-            <text class="text-xs text-slate-900">{t.title}</text>
-            <text class="text-xs text-slate-500">{t.artist}</text>
-          </view>
+            <Text class="text-xs text-slate-900">{t.title}</Text>
+            <Text class="text-xs text-slate-500">{t.artist}</Text>
+          </View>
         ))}
-      </view>
+      </View>
 
-      <text class="text-xs text-slate-500">UP / DOWN focus · CIRCLE play/select · L/R skip track</text>
-    </view>
+      <Text class="text-xs text-slate-500">UP / DOWN focus · CIRCLE play/select · L/R skip track</Text>
+    </View>
   );
 }

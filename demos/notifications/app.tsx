@@ -1,4 +1,4 @@
-// demos/notifications.tsx — "notification center" showcase: a real <For>
+// demos/notifications/app.tsx — "notification center" showcase: a real <For>
 // list (the other three demos only ever .map() a fixed-length array — this
 // is the one demo whose array actually shrinks, so it's the one that
 // exercises <For>'s per-item mount/unmount identity instead of just reorder).
@@ -13,9 +13,7 @@
 // 480x272 (DESIGN.md punts kinetic scroll, so the list can't overflow the
 // screen); every class a FULL literal.
 
-import { createSignal, For, onMount, Show } from "solid-js";
-import { animate } from "../src/anim.ts";
-import type { NodeMirror } from "../src/renderer.ts";
+import { For, Text, View, animate, createSignal, onMount, Show, type NodeMirror } from "psp-ui";
 
 interface Notice {
   id: string;
@@ -61,7 +59,7 @@ const INITIAL: Notice[] = [
 const DISMISS_FRAMES = 16; // >= the 200ms fade tween (~12 frames), plus margin
 
 // ---------------------------------------------------------------------------
-// Frame driver (wired by notifications-main.tsx): once a dismiss is in
+// Frame driver (wired by notifications/main.tsx): once a dismiss is in
 // flight, counts down and splices the item out when its tween has settled.
 // ---------------------------------------------------------------------------
 
@@ -95,16 +93,16 @@ function dismiss(id: string, el: NodeMirror | undefined): void {
 
 export default function Notifications() {
   return (
-    <view class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
-      <view class="flex-row items-end justify-between">
-        <view class="flex-col">
-          <text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</text>
-          <text class="text-2xl text-slate-950 font-bold">Notifications</text>
-        </view>
-        <text class="text-xs text-slate-500">{items().length} UNREAD</text>
-      </view>
+    <View class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
+      <View class="flex-row items-end justify-between">
+        <View class="flex-col">
+          <Text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</Text>
+          <Text class="text-2xl text-slate-950 font-bold">Notifications</Text>
+        </View>
+        <Text class="text-xs text-slate-500">{items().length} UNREAD</Text>
+      </View>
 
-      <view class="flex-col gap-1">
+      <View class="flex-col gap-1">
         <For each={items()}>
           {(item, i) => {
             let el: NodeMirror | undefined;
@@ -115,32 +113,32 @@ export default function Notifications() {
               }
             });
             return (
-              <view
+              <View
                 ref={el}
                 style={{ opacity: 0, translateX: 16 }}
                 class="flex-row items-center gap-3 p-1 rounded-lg shadow bg-white border-slate-200 focus:bg-blue-50 focus:border-blue-500 transition-colors duration-150"
                 focusable
                 onPress={() => dismiss(item.id, el)}
               >
-                <view class={item.dotCls} />
-                <view class="flex-col grow">
-                  <text class="text-xs text-slate-950 font-bold">{item.title}</text>
-                  <text class="text-xs text-slate-600">{item.message}</text>
-                </view>
-                <text class="text-xs text-slate-500">{item.time}</text>
-              </view>
+                <View class={item.dotCls} />
+                <View class="flex-col grow">
+                  <Text class="text-xs text-slate-950 font-bold">{item.title}</Text>
+                  <Text class="text-xs text-slate-600">{item.message}</Text>
+                </View>
+                <Text class="text-xs text-slate-500">{item.time}</Text>
+              </View>
             );
           }}
         </For>
-      </view>
+      </View>
 
       <Show when={items().length === 0}>
-        <view class="grow flex-col items-center justify-center rounded-xl shadow bg-white border-slate-200">
-          <text class="text-sm text-slate-500">ALL CLEAR</text>
-        </view>
+        <View class="grow flex-col items-center justify-center rounded-xl shadow bg-white border-slate-200">
+          <Text class="text-sm text-slate-500">ALL CLEAR</Text>
+        </View>
       </Show>
 
-      <text class="text-xs text-slate-500">UP / DOWN move focus · CIRCLE dismiss</text>
-    </view>
+      <Text class="text-xs text-slate-500">UP / DOWN move focus · CIRCLE dismiss</Text>
+    </View>
   );
 }

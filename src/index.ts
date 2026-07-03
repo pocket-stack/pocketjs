@@ -180,6 +180,7 @@ export {
 } from "solid-js";
 
 export { animate, spring, cancelAnim, type AnimateOptions, type EasingName } from "./anim.ts";
+export { View, Text, Image, type ViewProps, type TextProps, type ImageProps } from "./primitives.ts";
 export { BTN, PROP, ENUMS, SCREEN_W, SCREEN_H } from "../spec/spec.ts";
 export type { HostOps, Host } from "./host.ts";
 export { detectHost, installHost, getOps } from "./host.ts";

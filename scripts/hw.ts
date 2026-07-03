@@ -10,7 +10,7 @@
 // It serves native/target/... as host0: through usbhostfs_pc, then ldstart's
 // the raw PRX through PSPLINK. Each reload is reset + ldstart.
 import { $ } from "bun";
-import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 
@@ -28,9 +28,13 @@ const trace = flags.has("--trace");
 const profile = release ? "release" : "debug";
 
 function listDemos(): string[] {
-  return readdirSync(pspUiDir + "demos")
-    .filter((f) => f.endsWith(MAIN_SUFFIX))
-    .map((f) => f.slice(0, -MAIN_SUFFIX.length))
+  const names = new Set<string>();
+  for (const f of readdirSync(pspUiDir + "demos")) {
+    const path = pspUiDir + "demos/" + f;
+    if (statSync(path).isDirectory() && existsSync(path + "/main.tsx")) names.add(f);
+    else if (f.endsWith(MAIN_SUFFIX)) names.add(f.slice(0, -MAIN_SUFFIX.length));
+  }
+  return [...names]
     .sort();
 }
 

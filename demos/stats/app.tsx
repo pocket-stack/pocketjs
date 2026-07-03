@@ -1,20 +1,19 @@
-// demos/stats.tsx — "animated dashboard" showcase: three stat tiles whose
+// demos/stats/app.tsx — "animated dashboard" showcase: three stat tiles whose
 // numbers count up over the first ~1.2 s, horizontal bars that grow to their
 // value from the capped frame signal, and LEFT/RIGHT switching two horizontally
 // arranged tabs. The SYSTEMS tab uses a short staggered row reveal so rows never
 // flash through the style-table default before becoming white.
 //
 // Frame driving: statsFrame(buttons) is called once per frame by the
-// stats-main entry (it wraps globalThis.frame). It edge-detects LEFT/RIGHT for
+// stats/main entry (it wraps globalThis.frame). It edge-detects LEFT/RIGHT for
 // the tab switch and steps capped frame-counter signals; after the current
 // choreography settles, steady-state JS work is zero. Content stays a pure
 // function of the frame index (byte-exact goldens).
 
-import { createMemo, createSignal, Show } from "solid-js";
-import { BTN } from "../spec/spec.ts";
+import { BTN, Text, View, createMemo, createSignal, Show } from "psp-ui";
 
 // ---------------------------------------------------------------------------
-// Frame driver (wired by stats-main.tsx)
+// Frame driver (wired by stats/main.tsx)
 // ---------------------------------------------------------------------------
 
 const COUNT_FRAMES = 75;
@@ -111,19 +110,19 @@ function Overview() {
     return easeOutCubic(local) * (bar.pct / 100) * BAR_W;
   };
   return (
-    <view class="flex-col gap-1">
+    <View class="flex-col gap-1">
       {BARS.map((bar, i) => (
-        <view class="flex-row items-center gap-2">
-          <view class="w-9 flex-row justify-end">
-            <text class="text-xs text-slate-600">{bar.label}</text>
-          </view>
-          <view class="w-[280] h-2 rounded-full shadow bg-slate-200 overflow-hidden">
-            <view class={bar.fill} style={{ width: fillW(bar, i) }} />
-          </view>
-          <text class="text-xs text-slate-500">{bar.pct + "%"}</text>
-        </view>
+        <View class="flex-row items-center gap-2">
+          <View class="w-9 flex-row justify-end">
+            <Text class="text-xs text-slate-600">{bar.label}</Text>
+          </View>
+          <View class="w-[280] h-2 rounded-full shadow bg-slate-200 overflow-hidden">
+            <View class={bar.fill} style={{ width: fillW(bar, i) }} />
+          </View>
+          <Text class="text-xs text-slate-500">{bar.pct + "%"}</Text>
+        </View>
       ))}
-    </view>
+    </View>
   );
 }
 
@@ -132,20 +131,20 @@ function Overview() {
 function Systems() {
   const rowT = (i: number) => easeOutCubic((systemsFrame() - i * SYSTEMS_STAGGER_FRAMES) / SYSTEMS_REVEAL_FRAMES);
   return (
-    <view class="flex-col gap-1">
+    <View class="flex-col gap-1">
       {SYSTEMS.map((sys, i) => (
-        <view
+        <View
           class="flex-row items-center justify-between px-2 py-[2] rounded-lg shadow bg-white border-slate-200"
           style={{ opacity: rowT(i), translateY: (1 - rowT(i)) * 8 }}
         >
-          <view class="flex-row items-center gap-2">
-            <view class={sys.led} />
-            <text class="text-xs text-slate-700 tracking-wide">{sys.name}</text>
-          </view>
-          <text class={sys.statusCls}>{sys.status}</text>
-        </view>
+          <View class="flex-row items-center gap-2">
+            <View class={sys.led} />
+            <Text class="text-xs text-slate-700 tracking-wide">{sys.name}</Text>
+          </View>
+          <Text class={sys.statusCls}>{sys.status}</Text>
+        </View>
       ))}
-    </view>
+    </View>
   );
 }
 
@@ -162,21 +161,21 @@ export default function Stats() {
   });
 
   return (
-    <view class="flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
-      <view class="flex-row items-end justify-between">
-        <view class="flex-col">
-          <text class="text-xs text-emerald-600 tracking-wide">LIVE TELEMETRY</text>
-          <text class="text-2xl text-slate-950 font-bold">Mission Control</text>
-        </view>
-        <view class="flex-row gap-2">
-          <view
+    <View class="flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
+      <View class="flex-row items-end justify-between">
+        <View class="flex-col">
+          <Text class="text-xs text-emerald-600 tracking-wide">LIVE TELEMETRY</Text>
+          <Text class="text-2xl text-slate-950 font-bold">Mission Control</Text>
+        </View>
+        <View class="flex-row gap-2">
+          <View
             class={
               tab() === 0
                 ? "px-2 py-1 rounded-lg shadow-md bg-blue-600 border-blue-500 transition-colors duration-150"
                 : "px-2 py-1 rounded-lg shadow bg-white border-slate-200 transition-colors duration-150"
             }
           >
-            <text
+            <Text
               class={
                 tab() === 0
                   ? "text-xs text-white font-bold tracking-wide"
@@ -184,16 +183,16 @@ export default function Stats() {
               }
             >
               OVERVIEW
-            </text>
-          </view>
-          <view
+            </Text>
+          </View>
+          <View
             class={
               tab() === 1
                 ? "px-2 py-1 rounded-lg shadow-md bg-blue-600 border-blue-500 transition-colors duration-150"
                 : "px-2 py-1 rounded-lg shadow bg-white border-slate-200 transition-colors duration-150"
             }
           >
-            <text
+            <Text
               class={
                 tab() === 1
                   ? "text-xs text-white font-bold tracking-wide"
@@ -201,33 +200,33 @@ export default function Stats() {
               }
             >
               SYSTEMS
-            </text>
-          </view>
-        </view>
-      </view>
+            </Text>
+          </View>
+        </View>
+      </View>
 
-      <view class="flex-row gap-3">
+      <View class="flex-row gap-3">
         {STATS.map((stat) => (
-          <view class="flex-1 flex-col gap-1 p-2 rounded-xl shadow-md bg-white border-slate-200">
-            <text class="text-xs text-slate-500 tracking-wide">{stat.label}</text>
-            <view class="flex-row items-end gap-1">
-              <text class={stat.valueCls}>{fmt(Math.round(stat.target * t()))}</text>
-              <text class="text-xs text-emerald-600">{stat.delta}</text>
-            </view>
-          </view>
+          <View class="flex-1 flex-col gap-1 p-2 rounded-xl shadow-md bg-white border-slate-200">
+            <Text class="text-xs text-slate-500 tracking-wide">{stat.label}</Text>
+            <View class="flex-row items-end gap-1">
+              <Text class={stat.valueCls}>{fmt(Math.round(stat.target * t()))}</Text>
+              <Text class="text-xs text-emerald-600">{stat.delta}</Text>
+            </View>
+          </View>
         ))}
-      </view>
+      </View>
 
-      <view class="grow flex-col">
+      <View class="grow flex-col">
         <Show when={tab() === 0}>
           <Overview />
         </Show>
         <Show when={tab() === 1}>
           <Systems />
         </Show>
-      </view>
+      </View>
 
-      <text class="text-xs text-slate-500">LEFT / RIGHT switch tab</text>
-    </view>
+      <Text class="text-xs text-slate-500">LEFT / RIGHT switch tab</Text>
+    </View>
   );
 }

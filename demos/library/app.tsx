@@ -1,4 +1,4 @@
-// demos/library.tsx — "game library" showcase: an XMB-style icon row (the PSP's
+// demos/library/app.tsx — "game library" showcase: an XMB-style icon row (the PSP's
 // own home menu made real). LEFT/RIGHT move focus (focus:scale-110 + lift —
 // the icon quad scales, its label stays crisp: draw.rs keeps glyph cells
 // unscaled even inside a scaled parent frame), CIRCLE opens the selected
@@ -8,14 +8,10 @@
 // unused elsewhere — the other demos rely purely on d-pad-driven focus).
 //
 // Design notes: text single-line (DESIGN.md: no auto word-wrap — the blurb is
-// pre-split into <text> lines), every class a FULL literal (the per-tile accent
+// pre-split into <Text> lines), every class a FULL literal (the per-tile accent
 // border/gradient is baked per entry, never synthesized).
 
-import { createMemo, createSignal, onMount, Show } from "solid-js";
-import { spring } from "../src/anim.ts";
-import { BTN } from "../spec/spec.ts";
-import { focusNode } from "../src/input.ts";
-import type { NodeMirror } from "../src/renderer.ts";
+import { BTN, Image, Text, View, createMemo, createSignal, focusNode, onMount, Show, spring, type NodeMirror } from "psp-ui";
 
 type Screen = "library" | "loading" | "detail";
 
@@ -97,7 +93,7 @@ const SPINNER_FRAMES = [
 ];
 
 // ---------------------------------------------------------------------------
-// Frame driver (wired by library-main.tsx): edge-detects TRIANGLE (back) and
+// Frame driver (wired by library/main.tsx): edge-detects TRIANGLE (back) and
 // steps the loading screen's frame-capped auto-advance. Runs BEFORE the
 // engine's own input/focus/onPress pass (mount-main.tsx wraps frame).
 // ---------------------------------------------------------------------------
@@ -146,18 +142,18 @@ function Grid() {
     if (i >= 0) focusNode(refs[i] ?? null);
   });
   return (
-    <view class="flex-row gap-4 justify-center items-center grow">
+    <View class="flex-row gap-4 justify-center items-center grow">
       {GAMES.map((game, i) => (
-        <view class="flex-col items-center gap-2">
-          <view ref={refs[i]} class={game.tileCls} focusable onPress={() => openGame(game, i)}>
+        <View class="flex-col items-center gap-2">
+          <View ref={refs[i]} class={game.tileCls} focusable onPress={() => openGame(game, i)}>
             <Show when={game.about}>
-              <image class="w-9 h-9" src="logo.png" />
+              <Image class="w-9 h-9" src="logo.png" />
             </Show>
-          </view>
-          <text class="text-xs text-slate-900 font-bold">{game.title}</text>
-        </view>
+          </View>
+          <Text class="text-xs text-slate-900 font-bold">{game.title}</Text>
+        </View>
       ))}
-    </view>
+    </View>
   );
 }
 
@@ -169,19 +165,19 @@ function Loading(props: { title: string }) {
     return SPINNER_FRAMES[i];
   });
   return (
-    <view class="flex-col items-center justify-center gap-3 grow">
-      <image class="w-10 h-10" src={src()} />
-      <text class="text-sm text-slate-600 tracking-wide">LOADING {props.title}...</text>
-    </view>
+    <View class="flex-col items-center justify-center gap-3 grow">
+      <Image class="w-10 h-10" src={src()} />
+      <Text class="text-sm text-slate-600 tracking-wide">LOADING {props.title}...</Text>
+    </View>
   );
 }
 
 function DetailStat(props: { label: string; value: string }) {
   return (
-    <view class="flex-col items-end">
-      <text class="text-lg text-blue-600 font-bold">{props.value}</text>
-      <text class="text-xs text-slate-500 tracking-wide">{props.label}</text>
-    </view>
+    <View class="flex-col items-end">
+      <Text class="text-lg text-blue-600 font-bold">{props.value}</Text>
+      <Text class="text-xs text-slate-500 tracking-wide">{props.label}</Text>
+    </View>
   );
 }
 
@@ -193,30 +189,30 @@ function Detail(props: { game: Game }) {
     if (panel) spring(panel, "translateY", 0);
   });
   return (
-    <view
+    <View
       ref={panel}
       style={{ translateY: 18 }}
       class="flex-col gap-3 p-4 grow rounded-xl shadow-md bg-white border-slate-200"
     >
-      <view class="flex-row items-end justify-between">
-        <view class="flex-col gap-1">
-          <text class="text-xs text-blue-600 tracking-wide">{props.game.genre}</text>
-          <text class="text-2xl text-slate-950 font-bold">{props.game.title}</text>
-        </view>
+      <View class="flex-row items-end justify-between">
+        <View class="flex-col gap-1">
+          <Text class="text-xs text-blue-600 tracking-wide">{props.game.genre}</Text>
+          <Text class="text-2xl text-slate-950 font-bold">{props.game.title}</Text>
+        </View>
         <Show when={!props.game.about}>
-          <view class="flex-row gap-4">
+          <View class="flex-row gap-4">
             <DetailStat label="PLAYTIME" value={props.game.playtime} />
             <DetailStat label="TROPHIES" value={props.game.trophies} />
-          </view>
+          </View>
         </Show>
-      </view>
-      <view class="flex-col gap-1">
+      </View>
+      <View class="flex-col gap-1">
         {props.game.blurb.map((line) => (
-          <text class="text-sm text-slate-600">{line}</text>
+          <Text class="text-sm text-slate-600">{line}</Text>
         ))}
-      </view>
-      <text class="text-xs text-slate-500">TRIANGLE back to library</text>
-    </view>
+      </View>
+      <Text class="text-xs text-slate-500">TRIANGLE back to library</Text>
+    </View>
   );
 }
 
@@ -226,18 +222,18 @@ function Detail(props: { game: Game }) {
 
 export default function Library() {
   return (
-    <view class="relative flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
-      <view class="flex-row items-end justify-between">
-        <view class="flex-col">
-          <text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</text>
-          <text class="text-2xl text-slate-950 font-bold">Game Library</text>
-        </view>
-        <text class="text-xs text-slate-500">5 TITLES</text>
-      </view>
+    <View class="relative flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
+      <View class="flex-row items-end justify-between">
+        <View class="flex-col">
+          <Text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</Text>
+          <Text class="text-2xl text-slate-950 font-bold">Game Library</Text>
+        </View>
+        <Text class="text-xs text-slate-500">5 TITLES</Text>
+      </View>
 
       <Show when={screen() === "library"}>
         <Grid />
-        <text class="text-xs text-slate-500">LEFT / RIGHT move focus · CIRCLE open</text>
+        <Text class="text-xs text-slate-500">LEFT / RIGHT move focus · CIRCLE open</Text>
       </Show>
 
       <Show when={screen() === "loading" && selected()}>
@@ -247,6 +243,6 @@ export default function Library() {
       <Show when={screen() === "detail" && selected()}>
         <Detail game={selected()!} />
       </Show>
-    </view>
+    </View>
   );
 }

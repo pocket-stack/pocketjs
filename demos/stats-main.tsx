@@ -1,5 +1,0 @@
-// @title psp-ui: Mission Control
-import Stats, { statsFrame } from "./stats.tsx";
-import { mount } from "../src/index.ts";
-
-mount(() => <Stats />, { beforeFrame: statsFrame });

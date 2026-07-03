@@ -1,6 +1,7 @@
 // scripts/build.ts <app> — the TWO-PASS app build (DESIGN.md "Build pipeline").
 //
-//   bun scripts/build.ts demos/hero.tsx        (or just `hero`)
+//   bun scripts/build.ts demos/hero/app.tsx    (or just `hero`)
+//   bun scripts/build.ts hero-main             (mounted demo entry)
 //
 // pass 1  transform & collect: babel (solid universal + TS) over every
 //         .tsx/.ts reachable from the app entry (content-hash cached),
@@ -52,13 +53,19 @@ if (!appArg) {
 }
 
 function resolveEntry(arg: string): string {
+  const bare = arg.replace(/\.tsx?$/, "");
+  const isBareName = !arg.includes("/") && !arg.startsWith(".");
+  const demoName = bare.endsWith("-main") ? bare.slice(0, -"-main".length) : bare;
   const tries = [
     resolvePath(arg),
     resolvePath(ROOT, arg),
+    isBareName && bare.endsWith("-main") ? resolvePath(ROOT, "demos", demoName, "main.tsx") : "",
+    isBareName && !bare.endsWith("-main") ? resolvePath(ROOT, "demos", demoName, "app.tsx") : "",
+    isBareName && !bare.endsWith("-main") ? resolvePath(ROOT, "demos", demoName, "main.tsx") : "",
     resolvePath(ROOT, "demos", arg),
     resolvePath(ROOT, "demos", arg + ".tsx"),
     resolvePath(ROOT, "demos", arg + ".ts"),
-  ];
+  ].filter(Boolean);
   for (const t of tries) {
     if (/\.tsx?$/.test(t) && existsSync(t) && statSync(t).isFile()) return t;
   }
@@ -67,7 +74,14 @@ function resolveEntry(arg: string): string {
 }
 
 const entry = resolveEntry(appArg);
-const appName = entry.split("/").pop()!.replace(/\.tsx?$/, "");
+function outputName(file: string): string {
+  const rel = file.startsWith(ROOT) ? file.slice(ROOT.length) : file;
+  const demo = rel.match(/^demos\/([^/]+)\/(app|main)\.tsx?$/);
+  if (demo) return demo[2] === "main" ? `${demo[1]}-main` : demo[1];
+  return file.split("/").pop()!.replace(/\.tsx?$/, "");
+}
+
+const appName = outputName(entry);
 console.log(`psp-ui build: ${appName} (${entry})`);
 
 // ---------------------------------------------------------------------------
@@ -197,7 +211,10 @@ const result = await Bun.build({
   // solid-js MUST resolve via its "browser" export condition — the "node"
   // condition serves dist/server.js (SSR build) where reactive updates
   // silently no-op. See test/renderer.test.ts for the fail-fast guard.
+  // Bun's bundler otherwise also enables the "development" condition, which
+  // pulls Solid's dev builds and duplicates the root + universal runtimes.
   conditions: ["browser"],
+  define: { "process.env.NODE_ENV": '"production"' },
   minify: false,
   sourcemap: "none",
   plugins: [solidUniversalPlugin()],

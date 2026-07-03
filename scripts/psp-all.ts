@@ -8,12 +8,12 @@
 //   bun scripts/psp-all.ts [--release|-r]   # default: --release (memory
 //                                            # stick builds should be small)
 //
-// Output: dist/psp/PSP/GAME/psp-ui-<demo>/EBOOT.PBP (one per demos/<demo>
-// -main.tsx found). Copy dist/psp/PSP to a memory stick's root to install
+// Output: dist/psp/PSP/GAME/psp-ui-<demo>/EBOOT.PBP (one per
+// demos/<demo>/main.tsx found). Copy dist/psp/PSP to a memory stick's root to install
 // all of them at once. This script only writes under dist/ — it never
 // touches a mounted memory stick itself.
 //
-// Metadata convention: a demo's mounting entry (demos/<name>-main.tsx)
+// Metadata convention: a demo's mounting entry (demos/<name>/main.tsx)
 // carries a `// @title <Display Name>` comment (matches the exact tag the
 // main dreamcart repo's scripts/build-psp-all.ts already uses for its own
 // games — same convention, ported standalone since psp-ui stays independent
@@ -31,7 +31,7 @@
 // is 100% a pure function of its text.
 
 import { $ } from "bun";
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
@@ -58,9 +58,13 @@ const MAIN_SUFFIX = "-main.tsx";
 // ---------------------------------------------------------------------------
 
 function listDemos(): string[] {
-  return readdirSync(demosDir)
-    .filter((f) => f.endsWith(MAIN_SUFFIX))
-    .map((f) => f.slice(0, -MAIN_SUFFIX.length))
+  const names = new Set<string>();
+  for (const f of readdirSync(demosDir)) {
+    const path = join(demosDir, f);
+    if (statSync(path).isDirectory() && existsSync(join(path, "main.tsx"))) names.add(f);
+    else if (f.endsWith(MAIN_SUFFIX)) names.add(f.slice(0, -MAIN_SUFFIX.length));
+  }
+  return [...names]
     .sort();
 }
 
@@ -69,7 +73,10 @@ function parseTitle(src: string): string | undefined {
 }
 
 async function demoTitle(name: string): Promise<string> {
-  const src = await Bun.file(join(demosDir, `${name}${MAIN_SUFFIX}`)).text();
+  const main = existsSync(join(demosDir, name, "main.tsx"))
+    ? join(demosDir, name, "main.tsx")
+    : join(demosDir, `${name}${MAIN_SUFFIX}`);
+  const src = await Bun.file(main).text();
   return (parseTitle(src) ?? name).slice(0, 127);
 }
 
@@ -561,7 +568,7 @@ async function repackEboot(name: string, title: string, eboot: string, destDir: 
 if (import.meta.main) {
   if (Bun.argv.includes("--help") || Bun.argv.includes("-h")) {
     console.log("Usage: bun scripts/psp-all.ts [--debug]\n");
-    console.log("Builds every demos/<name>-main.tsx into a PSP memory-stick layout:");
+    console.log("Builds every demos/<name>/main.tsx into a PSP memory-stick layout:");
     console.log("  dist/psp/PSP/GAME/psp-ui-<name>/EBOOT.PBP\n");
     console.log("Each gets a PARAM.SFO title (from that demo's `// @title` comment,");
     console.log("falling back to the bare demo name) plus a procedurally rendered");
@@ -572,7 +579,7 @@ if (import.meta.main) {
 
   const demos = listDemos();
   if (demos.length === 0) {
-    console.error(`no demos found under ${demosDir} (looking for *-main.tsx)`);
+    console.error(`no demos found under ${demosDir} (looking for <name>/main.tsx)`);
     process.exit(1);
   }
 

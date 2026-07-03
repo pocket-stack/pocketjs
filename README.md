@@ -10,7 +10,7 @@ Full design + contracts: [DESIGN.md](./DESIGN.md).
 
 ```sh
 bun install
-bun scripts/build.ts demos/hero.tsx   # -> dist/hero.js + dist/hero.dcpak
+bun scripts/build.ts hero             # -> dist/hero.js + dist/hero.dcpak
 ```
 
 The build is two-pass: pass 1 babel-transforms every module reachable from the
@@ -22,12 +22,18 @@ and everything is packed into `dist/<app>.dcpak`. Pass 2 bundles with Bun
 (iife, unminified) from the cached transforms.
 
 ```tsx
-// demos/hero.tsx — the only intrinsics are <view>, <text>, <image>
-<view class="flex-col items-center gap-4 p-4 bg-slate-50">
-  <text class="text-xl text-slate-950">Count: {count()}</text>
-  <view class="p-2 rounded-md bg-blue-600 focus:bg-blue-500 transition-colors duration-150"
-        focusable onPress={() => setCount(count() + 1)} />
-</view>
+import { Text, View, createSignal } from "psp-ui";
+
+const [count, setCount] = createSignal(0);
+
+<View class="flex-col items-center gap-4 p-4 bg-slate-50">
+  <Text class="text-xl text-slate-950">Count: {count()}</Text>
+  <View
+    class="p-2 rounded-md bg-blue-600 focus:bg-blue-500 transition-colors duration-150"
+    focusable
+    onPress={() => setCount(count() + 1)}
+  />
+</View>
 ```
 
 Mounting entries should look like ordinary app bootstrap code; the framework
@@ -35,7 +41,7 @@ handles host detection, the generated style table, dcpak image uploads and the
 host frame callback:
 
 ```tsx
-import { mount } from "../src/index.ts";
+import { mount } from "psp-ui";
 import App from "./app.tsx";
 
 mount(() => <App />);

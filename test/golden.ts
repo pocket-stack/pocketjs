@@ -269,7 +269,7 @@ const SPECS: Spec[] = [
 
 ensureBuilt(WASM_PATH, ["bun", "scripts/wasm.ts"]);
 for (const spec of SPECS) {
-  ensureBuilt(DIST + spec.name + ".js", ["bun", "scripts/build.ts", `demos/${spec.name}.tsx`]);
+  ensureBuilt(DIST + spec.name + ".js", ["bun", "scripts/build.ts", spec.name]);
 }
 mkdirSync(GOLDEN_DIR, { recursive: true });
 

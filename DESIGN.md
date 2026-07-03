@@ -76,7 +76,7 @@ psp-ui/
                        @babel/core@^7 (Babel 8 breaks preset-solid [R]),
                        @babel/preset-typescript@^7 (required for .tsx [R]), opentype.js, typescript
   tsconfig.json        jsx:'preserve' (babel owns the transform); editors typecheck only [R]
-  src/jsx.d.ts         JSX.IntrinsicElements: view/text/image [R]
+  src/jsx.d.ts         JSX component typing only; public primitives live in src/primitives.ts [R]
   assets/fonts/        Inter-Regular.ttf, Inter-Bold.ttf (+ OFL LICENSE)
   spec/
     spec.ts            SINGLE SOURCE OF TRUTH: op codes, prop ids, enums,
@@ -153,7 +153,8 @@ psp-ui/
     engine.js          loads wasm, HostOps, rAF loop (fixed-step), keyboard map
     serve.ts           static Bun.serve dev server (no livereload; rebuild + reload manually)
   demos/
-    hero.tsx, cards.tsx, stats.tsx, library.tsx, settings.tsx, notifications.tsx, music.tsx
+    hero/, cards/, stats/, library/, settings/, notifications/, music/
+                       each demo has app.tsx + main.tsx (mount entry)
   test/
     contract.ts        spec drift guard (regen + byte-compare) + engine constants
     golden.ts          headless Bun: wasm rasterizer, scripted input, byte-exact PNGs
@@ -220,6 +221,11 @@ the resolved text style (font slot, color, tracking, align) from the nearest
 ancestor that sets text props; bare strings under `<view>` get the inherited
 default. Empty text nodes (Solid's `<Show>` markers) are excluded from layout
 until `replaceText` makes them non-empty.
+
+Application code should not write those lower-case host tags directly. The
+public SDK surface is imported from `psp-ui` and uses React Native-style
+`View`, `Text`, and `Image` primitives; the lower-case tags remain an internal
+renderer target for `src/primitives.ts` and low-level tests.
 
 **Frame order (PSP).** `sceCtrlRead → sceGuStart → JS frame(buttons) → drain
 jobs (while JS_ExecutePendingJob(rt,&mut ctx)>0 — declare the symbol in a local

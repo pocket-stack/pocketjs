@@ -1,4 +1,4 @@
-// demos/cards.tsx — "card carousel" showcase: three feature cards in a row,
+// demos/cards/app.tsx — "card carousel" showcase: three feature cards in a row,
 // LEFT/RIGHT d-pad moves focus (native focus: variants lift + brighten the
 // focused card — zero JS on focus change), CIRCLE flips a <Show> detail panel
 // that springs up into place without color fades. Two slow
@@ -9,9 +9,7 @@
 // focus emphasis = translate-y lift + bg/border color (never scale — glyphs
 // don't scale), all text single-line, every class a FULL literal.
 
-import { createSignal, onMount, Show } from "solid-js";
-import { spring, animate } from "../src/anim.ts";
-import type { NodeMirror } from "../src/renderer.ts";
+import { Text, View, animate, createSignal, onMount, Show, spring, type NodeMirror } from "psp-ui";
 
 interface Card {
   title: string;
@@ -60,17 +58,17 @@ function Detail(props: { card: Card }) {
     if (el) spring(el, "translateY", 0);
   });
   return (
-    <view
+    <View
       ref={el}
       style={{ translateY: 22 }}
       class="flex-row items-center gap-3 p-3 rounded-xl shadow-md bg-white border-slate-200"
     >
-      <view class={props.card.bar} />
-      <view class="flex-col gap-1">
-        <text class="text-sm text-slate-950 font-bold">{props.card.title}</text>
-        <text class="text-xs text-slate-600">{props.card.detail}</text>
-      </view>
-    </view>
+      <View class={props.card.bar} />
+      <View class="flex-col gap-1">
+        <Text class="text-sm text-slate-950 font-bold">{props.card.title}</Text>
+        <Text class="text-xs text-slate-600">{props.card.detail}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -88,47 +86,47 @@ export default function Cards() {
   });
 
   return (
-    <view class="relative flex-col w-full h-full p-4 gap-3 bg-slate-50 overflow-hidden">
-      <view
+    <View class="relative flex-col w-full h-full p-4 gap-3 bg-slate-50 overflow-hidden">
+      <View
         ref={streakA}
         class="absolute left-0 top-[58] w-64 h-1 rounded-full opacity-50 bg-gradient-to-r from-blue-300 to-transparent"
         style={{ translateX: 24 }}
       />
-      <view
+      <View
         ref={streakB}
         class="absolute left-[210] top-[246] w-56 h-1 rounded-full opacity-40 bg-gradient-to-l from-cyan-300 to-transparent"
         style={{ translateX: 0 }}
       />
 
-      <view class="flex-row items-end justify-between">
-        <view class="flex-col">
-          <text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</text>
-          <text class="text-2xl text-slate-950 font-bold">Feature Cards</text>
-        </view>
-        <text class="text-xs text-slate-500">3 MODULES</text>
-      </view>
+      <View class="flex-row items-end justify-between">
+        <View class="flex-col">
+          <Text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE</Text>
+          <Text class="text-2xl text-slate-950 font-bold">Feature Cards</Text>
+        </View>
+        <Text class="text-xs text-slate-500">3 MODULES</Text>
+      </View>
 
-      <view class="flex-row gap-3">
+      <View class="flex-row gap-3">
         {CARDS.map((card, i) => (
-          <view
+          <View
             class={card.cls}
             focusable
             onPress={() => setOpen(open() === i ? -1 : i)}
           >
-            <view class={card.strip} />
-            <text class="text-sm text-slate-950 font-bold">{card.title}</text>
-            <text class="text-xs text-slate-600">{card.caption}</text>
-          </view>
+            <View class={card.strip} />
+            <Text class="text-sm text-slate-950 font-bold">{card.title}</Text>
+            <Text class="text-xs text-slate-600">{card.caption}</Text>
+          </View>
         ))}
-      </view>
+      </View>
 
-      <view class="grow flex-col">
+      <View class="grow flex-col">
         <Show when={selected()} keyed>
           {(card) => <Detail card={card} />}
         </Show>
-      </view>
+      </View>
 
-      <text class="text-xs text-slate-500">LEFT / RIGHT move focus · CIRCLE toggle details</text>
-    </view>
+      <Text class="text-xs text-slate-500">LEFT / RIGHT move focus · CIRCLE toggle details</Text>
+    </View>
   );
 }
