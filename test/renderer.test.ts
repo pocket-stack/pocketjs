@@ -50,6 +50,7 @@ import {
   setInputRoot,
 } from "../src/input.ts";
 import { mount as publicMount, render as publicRender } from "../src/index.ts";
+import { useFrame } from "../src/hooks.ts";
 import { rootMirror } from "../src/renderer.ts";
 import { resetPack } from "../src/dcpak.ts";
 import { encodeImageEntry, pack } from "../compiler/dcpak.ts";
@@ -734,11 +735,11 @@ describe("public render() (index.ts)", () => {
     const before: number[] = [];
     const dispose = publicMount(
       () => {
+        useFrame((buttons) => before.push(buttons));
         const img = createElement("image");
         setProp(img, "src", "logo.png", undefined);
         return img;
       },
-      { beforeFrame: (buttons) => before.push(buttons) },
     );
 
     expect(host.of("uploadTexture")).toEqual([["uploadTexture"]]);

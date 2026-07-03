@@ -1,10 +1,10 @@
-// psp-ui public entry: render(<App/>) + the re-exported app-facing surface.
+// psp-ui runtime entry: render(<App/>) / mount(<App/>).
 //
 // Frame contract (every host): once per vblank/rAF tick the host calls
 // `globalThis.frame(buttons)` (spec BTN bitmask). render() installs that
-// handler as input edge-detection + focus + onPress, THEN the renderer's
-// end-of-frame sweep [R] — so Solid effects triggered by input run before
-// detached subtrees are destroyed.
+// handler as app frame hooks, input edge-detection + focus + onPress, THEN the
+// renderer's end-of-frame sweep [R] — so Solid effects triggered by input run
+// before detached subtrees are destroyed.
 
 // queueMicrotask polyfill (QuickJS lacks it; Solid's resource/transition paths
 // reference it lazily, so installing at module-eval time is early enough).
@@ -27,6 +27,7 @@ import {
 } from "./renderer.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
+import { resetFrameHooks, runFrameHooks } from "./frame.ts";
 import { entries as dcpakEntries, get as dcpakGet, hasPack, loadPack } from "./dcpak.ts";
 import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
 
@@ -39,10 +40,7 @@ export interface RenderOptions {
   dcpak?: ArrayBuffer;
 }
 
-export interface MountOptions extends RenderOptions {
-  /** Runs once per host frame before built-in focus/onPress/sweep handling. */
-  beforeFrame?: (buttons: number) => void;
-}
+export type MountOptions = RenderOptions;
 
 /** dcpak entry keys the runtime understands when it loads a pack JS-side.
  * Must match compiler/dcpak.ts (KEY_STYLES / keyFont). */
@@ -67,18 +65,6 @@ function uploadDcpakImages(ops: HostOps): void {
     const handle = ops.uploadTexture(blob.subarray(8), w, h, psm);
     if (handle >= 0) rendererRegisterTexture(key.slice(IMG_PREFIX.length), handle);
   }
-}
-
-function prependFrameHandler(fn: (buttons: number) => void): void {
-  const g = globalThis as { frame?: (buttons: number) => void };
-  const engineFrame = g.frame;
-  if (typeof engineFrame !== "function") {
-    throw new Error("psp-ui: mount() expected render() to install globalThis.frame");
-  }
-  g.frame = (buttons: number) => {
-    fn(buttons);
-    engineFrame(buttons);
-  };
 }
 
 /**
@@ -123,7 +109,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   }
 
   setInputRoot(rootMirror);
+  resetFrameHooks();
   installFrameHandler((buttons: number) => {
+    runFrameHooks(buttons); // app hooks: useFrame/useButtonPress/etc.
     handleFrame(buttons); // edge-detect, focus nav, onPress (runs effects)
     runSweep(); // then destroy subtrees still detached [R]
   });
@@ -143,8 +131,8 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
 /**
  * App-level entry point for demo/application bundles. It mirrors a web-style
  * mount call: pick the current host, feed the current generated style table,
- * upload dcpak images for injected hosts, mount the component, and optionally
- * prepend app frame logic before the built-in input/focus/sweep frame.
+ * upload dcpak images for injected hosts, and mount the component. Per-frame
+ * app behavior belongs in component hooks such as useFrame/useButtonPress.
  */
 export function mount(code: () => unknown, opts: MountOptions = {}): () => void {
   const ops = opts.ops ?? globalOps();
@@ -158,34 +146,14 @@ export function mount(code: () => unknown, opts: MountOptions = {}): () => void 
     styles: opts.styles ?? DEFAULT_STYLE_IDS,
     dcpak: opts.dcpak,
   });
-  if (opts.beforeFrame) prependFrameHandler(opts.beforeFrame);
   return dispose;
 }
 
-// ---- app-facing re-exports ----------------------------------------------------
+// ---- runtime re-exports -------------------------------------------------------
 
-export {
-  createSignal,
-  createEffect,
-  createMemo,
-  onMount,
-  onCleanup,
-  batch,
-  untrack,
-  For,
-  Show,
-  Index,
-  Switch,
-  Match,
-} from "solid-js";
-
-export { animate, spring, cancelAnim, type AnimateOptions, type EasingName } from "./anim.ts";
-export { View, Text, Image, type ViewProps, type TextProps, type ImageProps } from "./primitives.ts";
-export { BTN, PROP, ENUMS, SCREEN_W, SCREEN_H } from "../spec/spec.ts";
 export type { HostOps, Host } from "./host.ts";
 export { detectHost, installHost, getOps } from "./host.ts";
 export type { NodeMirror } from "./renderer.ts";
 export { retain, release, runSweep, registerTexture, missCounters } from "./renderer.ts";
 export { registerStyles, resolveStyle } from "./styles.ts";
-export { handleFrame, focusNode, getFocused } from "./input.ts";
 export { entries as dcpakEntries, get as dcpakGet, loadPack, resetPack } from "./dcpak.ts";

@@ -11,7 +11,10 @@
 // Design notes: every class a FULL literal (per-track cover accent baked per
 // entry); text single-line.
 
-import { BTN, Text, View, createSignal, type NodeMirror } from "psp-ui";
+import { Text, View } from "psp-ui/components";
+import { useButtonPress, useFrame } from "psp-ui/hooks";
+import { createSignal } from "psp-ui/reactivity";
+import { BTN } from "psp-ui/input";
 
 interface Track {
   title: string;
@@ -45,58 +48,47 @@ const TRACK_FRAMES = 300; // 5s per track at 60 Hz (demo-length, not the real so
 const PROGRESS_TRACK_W = 160; // progress track px — matches the w-[160] track class
 
 // ---------------------------------------------------------------------------
-// Transport state + frame driver (wired by music/main.tsx)
-// ---------------------------------------------------------------------------
-
-const [trackIndex, setTrackIndex] = createSignal(0);
-const [playing, setPlaying] = createSignal(true);
-const [position, setPosition] = createSignal(0); // frames into the current track
-const [barsFrame, setBarsFrame] = createSignal(0);
-let prevButtons = 0;
-
-function selectTrack(i: number): void {
-  setTrackIndex(i);
-  setPosition(0);
-  setPlaying(true);
-}
-
-function nextTrack(): void {
-  setTrackIndex((trackIndex() + 1) % TRACKS.length);
-  setPosition(0);
-}
-
-function prevTrack(): void {
-  setTrackIndex((trackIndex() - 1 + TRACKS.length) % TRACKS.length);
-  setPosition(0);
-}
-
-/** height in px — a resting flat line when paused, a bounded pseudo-random
- *  bounce (per-bar phase offset) while playing. Pure function of barsFrame,
- *  so goldens stay byte-exact for a fixed frame index. */
-function barHeight(i: number): number {
-  if (!playing()) return 6;
-  const v = Math.abs(Math.sin(barsFrame() * 0.15 + i * 1.7));
-  return 6 + Math.round(v * 20);
-}
-
-export function musicFrame(buttons: number): void {
-  const pressed = buttons & ~prevButtons;
-  prevButtons = buttons;
-  if (pressed & BTN.LTRIGGER) prevTrack();
-  if (pressed & BTN.RTRIGGER) nextTrack();
-  if (playing()) {
-    setBarsFrame(barsFrame() + 1);
-    const p = position() + 1;
-    if (p >= TRACK_FRAMES) nextTrack();
-    else setPosition(p);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
 export default function Music() {
+  const [trackIndex, setTrackIndex] = createSignal(0);
+  const [playing, setPlaying] = createSignal(true);
+  const [position, setPosition] = createSignal(0); // frames into the current track
+  const [barsFrame, setBarsFrame] = createSignal(0);
+
+  const selectTrack = (i: number) => {
+    setTrackIndex(i);
+    setPosition(0);
+    setPlaying(true);
+  };
+
+  const nextTrack = () => {
+    setTrackIndex((trackIndex() + 1) % TRACKS.length);
+    setPosition(0);
+  };
+
+  const prevTrack = () => {
+    setTrackIndex((trackIndex() - 1 + TRACKS.length) % TRACKS.length);
+    setPosition(0);
+  };
+
+  useButtonPress(BTN.LTRIGGER, prevTrack);
+  useButtonPress(BTN.RTRIGGER, nextTrack);
+  useFrame(() => {
+    if (!playing()) return;
+    setBarsFrame(barsFrame() + 1);
+    const p = position() + 1;
+    if (p >= TRACK_FRAMES) nextTrack();
+    else setPosition(p);
+  });
+
+  const barHeight = (i: number): number => {
+    if (!playing()) return 6;
+    const v = Math.abs(Math.sin(barsFrame() * 0.15 + i * 1.7));
+    return 6 + Math.round(v * 20);
+  };
+
   const track = () => TRACKS[trackIndex()];
   const pct = () => Math.round((position() / TRACK_FRAMES) * 100);
 

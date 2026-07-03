@@ -22,7 +22,8 @@ and everything is packed into `dist/<app>.dcpak`. Pass 2 bundles with Bun
 (iife, unminified) from the cached transforms.
 
 ```tsx
-import { Text, View, createSignal } from "psp-ui";
+import { Text, View } from "psp-ui/components";
+import { createSignal } from "psp-ui/reactivity";
 
 const [count, setCount] = createSignal(0);
 

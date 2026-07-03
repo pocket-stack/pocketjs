@@ -5,15 +5,17 @@
 // Each item staggers in with a delayed opacity+translateX tween on mount;
 // CIRCLE dismisses the focused card — an imperative fade+slide (native
 // `opacity`/`translateX` tweens fired straight from onPress, not a reactive
-// class, so they can't be clobbered by an unrelated re-render) — a frame-
-// driven timer (beforeFrame, same shape as stats.tsx/library.tsx) removes it
-// from the list once the tween has had time to finish.
+// class, so they can't be clobbered by an unrelated re-render) — a local
+// frame hook removes it from the list once the tween has had time to finish.
 //
 // Design notes: p-1 rows / p-3 root — 4 cards is already a tight fit in
 // 480x272 (DESIGN.md punts kinetic scroll, so the list can't overflow the
 // screen); every class a FULL literal.
 
-import { For, Text, View, animate, createSignal, onMount, Show, type NodeMirror } from "psp-ui";
+import { For, Show, Text, View, type NodeMirror } from "psp-ui/components";
+import { animate } from "psp-ui/animation";
+import { useFrame } from "psp-ui/hooks";
+import { createSignal, onMount } from "psp-ui/reactivity";
 
 interface Notice {
   id: string;
@@ -59,39 +61,34 @@ const INITIAL: Notice[] = [
 const DISMISS_FRAMES = 16; // >= the 200ms fade tween (~12 frames), plus margin
 
 // ---------------------------------------------------------------------------
-// Frame driver (wired by notifications/main.tsx): once a dismiss is in
-// flight, counts down and splices the item out when its tween has settled.
-// ---------------------------------------------------------------------------
-
-const [items, setItems] = createSignal<Notice[]>(INITIAL);
-const [dismissingId, setDismissingId] = createSignal<string | null>(null);
-const [dismissFrame, setDismissFrame] = createSignal(0);
-
-export function notificationsFrame(): void {
-  const id = dismissingId();
-  if (id === null) return;
-  const n = dismissFrame() + 1;
-  setDismissFrame(n);
-  if (n >= DISMISS_FRAMES) {
-    setItems(items().filter((it) => it.id !== id));
-    setDismissingId(null);
-    setDismissFrame(0);
-  }
-}
-
-function dismiss(id: string, el: NodeMirror | undefined): void {
-  if (dismissingId() !== null || !el) return;
-  setDismissingId(id);
-  setDismissFrame(0);
-  animate(el, "opacity", 0, { dur: 200, easing: "out" });
-  animate(el, "translateX", 24, { dur: 200, easing: "out" });
-}
-
-// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
 export default function Notifications() {
+  const [items, setItems] = createSignal<Notice[]>(INITIAL);
+  const [dismissingId, setDismissingId] = createSignal<string | null>(null);
+  const [dismissFrame, setDismissFrame] = createSignal(0);
+
+  useFrame(() => {
+    const id = dismissingId();
+    if (id === null) return;
+    const n = dismissFrame() + 1;
+    setDismissFrame(n);
+    if (n >= DISMISS_FRAMES) {
+      setItems(items().filter((it) => it.id !== id));
+      setDismissingId(null);
+      setDismissFrame(0);
+    }
+  });
+
+  const dismiss = (id: string, el: NodeMirror | undefined) => {
+    if (dismissingId() !== null || !el) return;
+    setDismissingId(id);
+    setDismissFrame(0);
+    animate(el, "opacity", 0, { dur: 200, easing: "out" });
+    animate(el, "translateX", 24, { dur: 200, easing: "out" });
+  };
+
   return (
     <View class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
       <View class="flex-row items-end justify-between">

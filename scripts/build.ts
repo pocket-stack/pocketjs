@@ -53,15 +53,25 @@ if (!appArg) {
 }
 
 function resolveEntry(arg: string): string {
-  const bare = arg.replace(/\.tsx?$/, "");
+  const normalized = arg.replace(/\\/g, "/").replace(/\.tsx?$/, "");
+  const bare = normalized.includes("/") ? normalized.slice(normalized.lastIndexOf("/") + 1) : normalized;
   const isBareName = !arg.includes("/") && !arg.startsWith(".");
-  const demoName = bare.endsWith("-main") ? bare.slice(0, -"-main".length) : bare;
+  const demoRel = normalized.replace(/^.*?demos\//, "");
+  const demoName =
+    demoRel.endsWith("/main")
+      ? demoRel.slice(0, -"/main".length)
+      : demoRel.endsWith("/app")
+        ? demoRel.slice(0, -"/app".length)
+        : bare.endsWith("-main")
+          ? bare.slice(0, -"-main".length)
+          : bare;
+  const wantsMain = demoRel.endsWith("/main") || bare.endsWith("-main");
   const tries = [
     resolvePath(arg),
     resolvePath(ROOT, arg),
-    isBareName && bare.endsWith("-main") ? resolvePath(ROOT, "demos", demoName, "main.tsx") : "",
-    isBareName && !bare.endsWith("-main") ? resolvePath(ROOT, "demos", demoName, "app.tsx") : "",
-    isBareName && !bare.endsWith("-main") ? resolvePath(ROOT, "demos", demoName, "main.tsx") : "",
+    wantsMain ? resolvePath(ROOT, "demos", demoName, "main.tsx") : "",
+    !wantsMain ? resolvePath(ROOT, "demos", demoName, "app.tsx") : "",
+    isBareName && !wantsMain ? resolvePath(ROOT, "demos", demoName, "main.tsx") : "",
     resolvePath(ROOT, "demos", arg),
     resolvePath(ROOT, "demos", arg + ".tsx"),
     resolvePath(ROOT, "demos", arg + ".ts"),

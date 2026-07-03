@@ -4,17 +4,13 @@
 // arranged tabs. The SYSTEMS tab uses a short staggered row reveal so rows never
 // flash through the style-table default before becoming white.
 //
-// Frame driving: statsFrame(buttons) is called once per frame by the
-// stats/main entry (it wraps globalThis.frame). It edge-detects LEFT/RIGHT for
-// the tab switch and steps capped frame-counter signals; after the current
-// choreography settles, steady-state JS work is zero. Content stays a pure
-// function of the frame index (byte-exact goldens).
+// Frame driving stays component-scoped through psp-ui hooks: button presses
+// switch tabs, while a capped frame hook advances deterministic counters.
 
-import { BTN, Text, View, createMemo, createSignal, Show } from "psp-ui";
-
-// ---------------------------------------------------------------------------
-// Frame driver (wired by stats/main.tsx)
-// ---------------------------------------------------------------------------
+import { Show, Text, View } from "psp-ui/components";
+import { useButtonPress, useFrame } from "psp-ui/hooks";
+import { createMemo, createSignal } from "psp-ui/reactivity";
+import { BTN } from "psp-ui/input";
 
 const COUNT_FRAMES = 75;
 const BAR_ANIM_FRAMES = 26;
@@ -22,25 +18,6 @@ const BAR_STAGGER_FRAMES = 4;
 const SYSTEMS_REVEAL_FRAMES = 12;
 const SYSTEMS_STAGGER_FRAMES = 5;
 const SYSTEMS_MAX_FRAMES = SYSTEMS_REVEAL_FRAMES + SYSTEMS_STAGGER_FRAMES * 3;
-const [frameN, setFrameN] = createSignal(0);
-const [tab, setTab] = createSignal(0);
-const [systemsFrame, setSystemsFrame] = createSignal(0);
-let prevButtons = 0;
-
-/** Once per frame, BEFORE the engine's own handler (stats-main wraps frame). */
-export function statsFrame(buttons: number): void {
-  const pressed = buttons & ~prevButtons;
-  prevButtons = buttons;
-  if (pressed & BTN.RIGHT) {
-    setTab(1);
-    setSystemsFrame(0);
-  }
-  if (pressed & BTN.LEFT) setTab(0);
-  if (frameN() < COUNT_FRAMES) setFrameN(frameN() + 1); // settles, then silence
-  if (tab() === 1 && systemsFrame() < SYSTEMS_MAX_FRAMES) {
-    setSystemsFrame(systemsFrame() + 1);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Data
@@ -104,9 +81,9 @@ function easeOutCubic(x: number): number {
 
 /** OVERVIEW tab: bars grow from the capped frame signal, not a stack of native
  *  width tweens, so there is no transition from default dark style values. */
-function Overview() {
+function Overview(props: { frame: () => number }) {
   const fillW = (bar: Bar, i: number) => {
-    const local = (frameN() - i * BAR_STAGGER_FRAMES) / BAR_ANIM_FRAMES;
+    const local = (props.frame() - i * BAR_STAGGER_FRAMES) / BAR_ANIM_FRAMES;
     return easeOutCubic(local) * (bar.pct / 100) * BAR_W;
   };
   return (
@@ -128,8 +105,8 @@ function Overview() {
 
 /** SYSTEMS tab: status board. Rows appear one after another with short delays;
  *  opacity starts at 0, so there is no visible flash from default gray. */
-function Systems() {
-  const rowT = (i: number) => easeOutCubic((systemsFrame() - i * SYSTEMS_STAGGER_FRAMES) / SYSTEMS_REVEAL_FRAMES);
+function Systems(props: { frame: () => number }) {
+  const rowT = (i: number) => easeOutCubic((props.frame() - i * SYSTEMS_STAGGER_FRAMES) / SYSTEMS_REVEAL_FRAMES);
   return (
     <View class="flex-col gap-1">
       {SYSTEMS.map((sys, i) => (
@@ -153,6 +130,22 @@ function Systems() {
 // ---------------------------------------------------------------------------
 
 export default function Stats() {
+  const [frameN, setFrameN] = createSignal(0);
+  const [tab, setTab] = createSignal(0);
+  const [systemsFrame, setSystemsFrame] = createSignal(0);
+
+  useButtonPress(BTN.RIGHT, () => {
+    setTab(1);
+    setSystemsFrame(0);
+  });
+  useButtonPress(BTN.LEFT, () => setTab(0));
+  useFrame(() => {
+    if (frameN() < COUNT_FRAMES) setFrameN(frameN() + 1);
+    if (tab() === 1 && systemsFrame() < SYSTEMS_MAX_FRAMES) {
+      setSystemsFrame(systemsFrame() + 1);
+    }
+  });
+
   // Count-up: eased share of the capped frame counter — pure per-frame math,
   // silent once frameN stops at COUNT_FRAMES.
   const t = createMemo(() => {
@@ -219,10 +212,10 @@ export default function Stats() {
 
       <View class="grow flex-col">
         <Show when={tab() === 0}>
-          <Overview />
+          <Overview frame={frameN} />
         </Show>
         <Show when={tab() === 1}>
-          <Systems />
+          <Systems frame={systemsFrame} />
         </Show>
       </View>
 

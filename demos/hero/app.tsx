@@ -2,7 +2,10 @@
 // Uses all three public primitives, class literals, a dynamic style object,
 // focus + onPress, and a signal in text — the exact surface phase v1 supports.
 
-import { Image, Text, View, animate, createMemo, createSignal, onMount, Show, type NodeMirror } from "psp-ui";
+import { Image, Show, Text, View, type NodeMirror } from "psp-ui/components";
+import { animate } from "psp-ui/animation";
+import { useSpriteAnimation } from "psp-ui/hooks";
+import { createSignal, onMount } from "psp-ui/reactivity";
 
 const SPINNER_FRAME_STEP = 3;
 const SPINNER_FRAMES = [
@@ -16,12 +19,6 @@ const SPINNER_FRAMES = [
   "spinner-07.svg",
 ];
 
-const [spinnerFrame, setSpinnerFrame] = createSignal(0);
-
-export function heroFrame(): void {
-  setSpinnerFrame((spinnerFrame() + 1) % (SPINNER_FRAMES.length * SPINNER_FRAME_STEP));
-}
-
 function Stat(props: { label: string; value: string; cls: string }) {
   return (
     <View class="flex-col items-end">
@@ -33,10 +30,7 @@ function Stat(props: { label: string; value: string; cls: string }) {
 
 export default function Hero() {
   const [count, setCount] = createSignal(0);
-  const spinnerSrc = createMemo(() => {
-    const i = Math.floor(spinnerFrame() / SPINNER_FRAME_STEP) % SPINNER_FRAMES.length;
-    return SPINNER_FRAMES[i];
-  });
+  const spinnerSrc = useSpriteAnimation(SPINNER_FRAMES, { frameStep: SPINNER_FRAME_STEP });
   let underline: NodeMirror | undefined;
   onMount(() => {
     // Underline sweeps in once on mount — native tween, zero steady-state JS.

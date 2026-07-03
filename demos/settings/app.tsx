@@ -8,9 +8,11 @@
 //
 // No custom frame wiring: every interaction is UP/DOWN navigation + CIRCLE
 // press, entirely covered by the engine's default input pass (src/input.ts)
-// — unlike stats.tsx/library.tsx this entry needs no beforeFrame.
+// — unlike continuous demos, this entry needs no frame hook.
 
-import { Text, View, animate, createEffect, createSignal, Show, type NodeMirror } from "psp-ui";
+import { Show, Text, View, type NodeMirror } from "psp-ui/components";
+import { animate } from "psp-ui/animation";
+import { createEffect, createSignal } from "psp-ui/reactivity";
 
 type ThemeName = "indigo" | "emerald" | "amber" | "rose";
 

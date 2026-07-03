@@ -11,7 +11,11 @@
 // pre-split into <Text> lines), every class a FULL literal (the per-tile accent
 // border/gradient is baked per entry, never synthesized).
 
-import { BTN, Image, Text, View, createMemo, createSignal, focusNode, onMount, Show, spring, type NodeMirror } from "psp-ui";
+import { Image, Show, Text, View, type NodeMirror } from "psp-ui/components";
+import { spring } from "psp-ui/animation";
+import { useButtonPress, useFrame } from "psp-ui/hooks";
+import { createMemo, createSignal, onMount } from "psp-ui/reactivity";
+import { BTN, focusNode } from "psp-ui/input";
 
 type Screen = "library" | "loading" | "detail";
 
@@ -93,59 +97,22 @@ const SPINNER_FRAMES = [
 ];
 
 // ---------------------------------------------------------------------------
-// Frame driver (wired by library/main.tsx): edge-detects TRIANGLE (back) and
-// steps the loading screen's frame-capped auto-advance. Runs BEFORE the
-// engine's own input/focus/onPress pass (mount-main.tsx wraps frame).
-// ---------------------------------------------------------------------------
-
-const [screen, setScreen] = createSignal<Screen>("library");
-const [selected, setSelected] = createSignal<Game | null>(null);
-const [selectedIndex, setSelectedIndex] = createSignal(-1);
-const [loadFrame, setLoadFrame] = createSignal(0);
-let prevButtons = 0;
-
-export function libraryFrame(buttons: number): void {
-  const pressed = buttons & ~prevButtons;
-  prevButtons = buttons;
-  if (screen() === "loading") {
-    const n = loadFrame() + 1;
-    setLoadFrame(n);
-    if (n >= LOADING_FRAMES) setScreen("detail");
-    return;
-  }
-  if (screen() === "detail" && pressed & BTN.TRIANGLE) {
-    setScreen("library");
-  }
-}
-
-function openGame(game: Game, index: number): void {
-  setSelected(game);
-  setSelectedIndex(index);
-  if (game.about) {
-    setScreen("detail");
-  } else {
-    setLoadFrame(0);
-    setScreen("loading");
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Screens
 // ---------------------------------------------------------------------------
 
 /** Icon row. Remounts on every return to "library" — onMount restores focus
  *  to the tile that was open (focusNode over the d-pad's own traversal). */
-function Grid() {
+function Grid(props: { selectedIndex: () => number; onOpen: (game: Game, index: number) => void }) {
   const refs: (NodeMirror | undefined)[] = [];
   onMount(() => {
-    const i = selectedIndex();
+    const i = props.selectedIndex();
     if (i >= 0) focusNode(refs[i] ?? null);
   });
   return (
     <View class="flex-row gap-4 justify-center items-center grow">
       {GAMES.map((game, i) => (
         <View class="flex-col items-center gap-2">
-          <View ref={refs[i]} class={game.tileCls} focusable onPress={() => openGame(game, i)}>
+          <View ref={refs[i]} class={game.tileCls} focusable onPress={() => props.onOpen(game, i)}>
             <Show when={game.about}>
               <Image class="w-9 h-9" src="logo.png" />
             </Show>
@@ -159,9 +126,9 @@ function Grid() {
 
 /** SVG-baked spinner — frame-cycled instead of rotating an image quad, because
  *  the v1 texture op is axis-aligned and should stay cheap on PSP. */
-function Loading(props: { title: string }) {
+function Loading(props: { title: string; frame: () => number }) {
   const src = createMemo(() => {
-    const i = Math.floor(loadFrame() / SPINNER_FRAME_STEP) % SPINNER_FRAMES.length;
+    const i = Math.floor(props.frame() / SPINNER_FRAME_STEP) % SPINNER_FRAMES.length;
     return SPINNER_FRAMES[i];
   });
   return (
@@ -221,6 +188,32 @@ function Detail(props: { game: Game }) {
 // ---------------------------------------------------------------------------
 
 export default function Library() {
+  const [screen, setScreen] = createSignal<Screen>("library");
+  const [selected, setSelected] = createSignal<Game | null>(null);
+  const [selectedIndex, setSelectedIndex] = createSignal(-1);
+  const [loadFrame, setLoadFrame] = createSignal(0);
+
+  const openGame = (game: Game, index: number) => {
+    setSelected(game);
+    setSelectedIndex(index);
+    if (game.about) {
+      setScreen("detail");
+    } else {
+      setLoadFrame(0);
+      setScreen("loading");
+    }
+  };
+
+  useButtonPress(BTN.TRIANGLE, () => {
+    if (screen() === "detail") setScreen("library");
+  });
+  useFrame(() => {
+    if (screen() !== "loading") return;
+    const n = loadFrame() + 1;
+    setLoadFrame(n);
+    if (n >= LOADING_FRAMES) setScreen("detail");
+  });
+
   return (
     <View class="relative flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
       <View class="flex-row items-end justify-between">
@@ -232,12 +225,12 @@ export default function Library() {
       </View>
 
       <Show when={screen() === "library"}>
-        <Grid />
+        <Grid selectedIndex={selectedIndex} onOpen={openGame} />
         <Text class="text-xs text-slate-500">LEFT / RIGHT move focus · CIRCLE open</Text>
       </Show>
 
       <Show when={screen() === "loading" && selected()}>
-        <Loading title={selected()!.title} />
+        <Loading title={selected()!.title} frame={loadFrame} />
       </Show>
 
       <Show when={screen() === "detail" && selected()}>

@@ -143,7 +143,7 @@ const SPECS: Spec[] = [
   {
     // notifications: DOWN@10/16 focuses item 1 (FRIEND REQUEST), CIRCLE@24
     // dismisses it — an imperative 200ms fade+slide fired from onPress, then
-    // the beforeFrame timer splices it out of the <For> list at frame 40
+    // the local frame hook splices it out of the <For> list at frame 40
     // (focus repairs to the next sibling, BATTERY).
     app: "notifications",
     inputScript: "0:0,10:0x40,14:0,16:0x40,20:0,24:0x2000,28:0",

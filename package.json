@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./animation": "./src/animation.ts",
+    "./components": "./src/components.ts",
+    "./hooks": "./src/hooks.ts",
+    "./input": "./src/input-api.ts",
+    "./reactivity": "./src/reactivity.ts"
   },
   "description": "JSX UI stack for the Sony PSP (and beyond): Solid universal renderer over a no_std Rust core. See DESIGN.md.",
   "scripts": {

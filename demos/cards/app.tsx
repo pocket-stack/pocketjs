@@ -9,7 +9,9 @@
 // focus emphasis = translate-y lift + bg/border color (never scale — glyphs
 // don't scale), all text single-line, every class a FULL literal.
 
-import { Text, View, animate, createSignal, onMount, Show, spring, type NodeMirror } from "psp-ui";
+import { Show, Text, View, type NodeMirror } from "psp-ui/components";
+import { animate, spring } from "psp-ui/animation";
+import { createSignal, onMount } from "psp-ui/reactivity";
 
 interface Card {
   title: string;
