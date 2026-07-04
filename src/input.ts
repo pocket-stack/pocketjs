@@ -16,7 +16,7 @@
 
 import { BTN } from "../spec/spec.ts";
 import { getOps } from "./host.ts";
-import type { NodeMirror } from "./renderer.ts";
+import type { NodeMirror } from "./native-tree.ts";
 
 let root: NodeMirror | null = null;
 let focused: NodeMirror | null = null;

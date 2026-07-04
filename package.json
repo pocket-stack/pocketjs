@@ -6,12 +6,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./animation": "./src/animation.ts",
-    "./components": "./src/components.ts",
-    "./lifecycle": "./src/lifecycle.ts",
+    "./components": "./src/components.tsx",
     "./input": "./src/input-api.ts",
+    "./lifecycle": "./src/lifecycle.ts",
+    "./prelude": "./src/prelude.ts",
     "./reactivity": "./src/reactivity.ts"
   },
-  "description": "JSX UI stack for the Sony PSP (and beyond): Solid universal renderer over a no_std Rust core. See DESIGN.md.",
+  "description": "JSX UI stack for the Sony PSP (and beyond): React-compatible and Vue renderers over a no_std Rust core. See DESIGN.md.",
   "scripts": {
     "build": "bun scripts/build.ts",
     "psp": "bun scripts/psp.ts",
@@ -22,16 +23,21 @@
     "serve": "bun host-web/serve.ts",
     "golden": "bun test/golden.ts",
     "e2e": "bun test/e2e-ppsspp.ts",
+    "bench:ppsspp": "bun scripts/bench-ppsspp.ts",
     "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/svg-bake.test.ts",
     "test:tailwind": "bun test test/tailwind.test.ts",
     "contract": "bun test/contract.ts",
     "gen": "bun spec/gen-rust.ts"
   },
   "dependencies": {
-    "solid-js": "^1.9"
+    "@vue/compiler-vapor": "3.6.0-beta.17",
+    "react": "18.2.0",
+    "vue": "3.6.0-beta.17",
+    "vue-jsx-vapor": "3.2.17"
   },
   "devDependencies": {
     "@babel/core": "^7",
+    "@babel/preset-react": "^7",
     "@babel/preset-typescript": "^7",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/state": "^6.7.0",
@@ -41,12 +47,11 @@
     "@types/babel__core": "^7.20.5",
     "@types/bun": "^1.2",
     "@types/opentype.js": "^1.3.10",
-    "babel-preset-solid": "^1.9",
-    "codemirror": "^6.0.2",
-    "marked": "^18.0.5",
+    "@types/react": "18",
+    "@vue/babel-plugin-jsx": "^3.0.0",
+    "babel-preset-solid": "^1.9.12",
     "opentype.js": "^1.3",
-    "shiki": "^4.3.1",
-    "tailwindcss": "^4.3.2",
+    "solid-js": "^1.9.14",
     "typescript": "^5"
   },
   "trustedDependencies": [

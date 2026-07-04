@@ -11,11 +11,12 @@
 // pre-split into <Text> lines), every class a FULL literal (the per-tile accent
 // border/gradient is baked per entry, never synthesized).
 
-import { Image, Show, Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { Image, Show, Text, View, defineComponent, type NodeMirror } from "@pocketjs/framework/components";
 import { spring } from "@pocketjs/framework/animation";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { createMemo, createSignal, onMount } from "@pocketjs/framework/reactivity";
 import { BTN, focusNode } from "@pocketjs/framework/input";
+import { frameworkName } from "@pocketjs/framework";
 
 type Screen = "library" | "loading" | "detail";
 
@@ -76,7 +77,7 @@ const GAMES: Game[] = [
     genre: "POCKETJS ENGINE",
     playtime: "",
     trophies: "",
-    blurb: ["Solid universal renderer over a no_std Rust core.", "One JSX app — PSP hardware, PPSSPP or a browser."],
+    blurb: ["React-compatible/Vue JSX over a no_std Rust core.", "One JSX app — PSP hardware, PPSSPP or a browser."],
     tileCls:
       "w-14 h-14 rounded-xl shadow-md items-center justify-center translate-y-2 focus:translate-y-0 focus:scale-110 transition-all duration-150 ease-out bg-white border-slate-300 focus:border-slate-900",
     about: true,
@@ -102,7 +103,7 @@ const SPINNER_FRAMES = [
 
 /** Icon row. Remounts on every return to "library" — onMount restores focus
  *  to the tile that was open (focusNode over the d-pad's own traversal). */
-function Grid(props: { selectedIndex: () => number; onOpen: (game: Game, index: number) => void }) {
+const Grid = defineComponent(function Grid(props: { selectedIndex: () => number; onOpen: (game: Game, index: number) => void }) {
   const refs: (NodeMirror | undefined)[] = [];
   onMount(() => {
     const i = props.selectedIndex();
@@ -112,7 +113,14 @@ function Grid(props: { selectedIndex: () => number; onOpen: (game: Game, index: 
     <View class="flex-row gap-4 justify-center items-center grow">
       {GAMES.map((game, i) => (
         <View class="flex-col items-center gap-2">
-          <View ref={refs[i]} class={game.tileCls} focusable onPress={() => props.onOpen(game, i)}>
+          <View
+            nodeRef={(node) => {
+              refs[i] = node ?? undefined;
+            }}
+            class={game.tileCls}
+            focusable
+            onPress={() => props.onOpen(game, i)}
+          >
             <Show when={game.about}>
               <Image class="w-9 h-9" src="logo.png" />
             </Show>
@@ -122,11 +130,11 @@ function Grid(props: { selectedIndex: () => number; onOpen: (game: Game, index: 
       ))}
     </View>
   );
-}
+});
 
 /** SVG-baked spinner — frame-cycled instead of rotating an image quad, because
  *  the v1 texture op is axis-aligned and should stay cheap on PSP. */
-function Loading(props: { title: string; frame: () => number }) {
+const Loading = defineComponent(function Loading(props: { title: string; frame: () => number }) {
   const src = createMemo(() => {
     const i = Math.floor(props.frame() / SPINNER_FRAME_STEP) % SPINNER_FRAMES.length;
     return SPINNER_FRAMES[i];
@@ -137,7 +145,7 @@ function Loading(props: { title: string; frame: () => number }) {
       <Text class="text-sm text-slate-600 tracking-wide">LOADING {props.title}...</Text>
     </View>
   );
-}
+});
 
 function DetailStat(props: { label: string; value: string }) {
   return (
@@ -150,14 +158,16 @@ function DetailStat(props: { label: string; value: string }) {
 
 /** Springs up into place on open; colors are static from the first frame so the
  *  panel never fades through the default dark style. */
-function Detail(props: { game: Game }) {
+const Detail = defineComponent(function Detail(props: { game: Game }) {
   let panel: NodeMirror | undefined;
   onMount(() => {
     if (panel) spring(panel, "translateY", 0);
   });
   return (
     <View
-      ref={panel}
+      nodeRef={(node) => {
+        panel = node ?? undefined;
+      }}
       style={{ translateY: 18 }}
       class="flex-col gap-3 p-4 grow rounded-xl shadow-md bg-white border-slate-200"
     >
@@ -181,13 +191,13 @@ function Detail(props: { game: Game }) {
       <Text class="text-xs text-slate-500">TRIANGLE back to library</Text>
     </View>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
-export default function Library() {
+export default defineComponent(function Library() {
   const [screen, setScreen] = createSignal<Screen>("library");
   const [selected, setSelected] = createSignal<Game | null>(null);
   const [selectedIndex, setSelectedIndex] = createSignal(-1);
@@ -218,7 +228,7 @@ export default function Library() {
     <View class="relative flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
       <View class="flex-row items-end justify-between">
         <View class="flex-col">
-          <Text class="text-xs text-blue-600 tracking-wide">POCKETJS SHOWCASE</Text>
+          <Text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE · {frameworkName()}</Text>
           <Text class="text-2xl text-slate-950 font-bold">Game Library</Text>
         </View>
         <Text class="text-xs text-slate-500">5 TITLES</Text>
@@ -229,13 +239,13 @@ export default function Library() {
         <Text class="text-xs text-slate-500">LEFT / RIGHT move focus · CIRCLE open</Text>
       </Show>
 
-      <Show when={screen() === "loading" && selected()}>
-        <Loading title={selected()!.title} frame={loadFrame} />
+      <Show when={screen() === "loading" ? selected() : null}>
+        {(game) => <Loading title={game.title} frame={loadFrame} />}
       </Show>
 
-      <Show when={screen() === "detail" && selected()}>
-        <Detail game={selected()!} />
+      <Show when={screen() === "detail" ? selected() : null}>
+        {(game) => <Detail game={game} />}
       </Show>
     </View>
   );
-}
+});

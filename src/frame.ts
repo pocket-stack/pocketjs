@@ -4,7 +4,8 @@
 // but application code should register component-scoped lifecycle callbacks instead of
 // patching mount() with a global per-frame callback.
 
-import { createSignal, onCleanup, type Accessor } from "solid-js";
+import { createSignal, onCleanup, type Accessor } from "./reactivity.ts";
+import { useRuntimeSlot } from "./runtime.ts";
 
 type FrameCallback = (buttons: number) => void;
 
@@ -21,8 +22,18 @@ export function runFrameHooks(buttons: number): void {
 }
 
 export function onFrame(callback: FrameCallback): void {
-  callbacks.add(callback);
-  onCleanup(() => callbacks.delete(callback));
+  const slot = useRuntimeSlot("frame", () => {
+    const state = {
+      callback,
+      wrapper(buttons: number) {
+        state.callback(buttons);
+      },
+    };
+    callbacks.add(state.wrapper);
+    return state;
+  });
+  slot.callback = callback;
+  onCleanup(() => callbacks.delete(slot.wrapper));
 }
 
 export interface ButtonPressOptions {
@@ -49,10 +60,10 @@ export function onButtonPress(
   callback: (pressed: number, buttons: number) => void,
   opts: ButtonPressOptions = {},
 ): void {
-  let prevButtons = 0;
+  const state = useRuntimeSlot("press", () => ({ prevButtons: 0 }));
   onFrame((buttons) => {
-    const pressed = buttons & ~prevButtons;
-    prevButtons = buttons;
+    const pressed = buttons & ~state.prevButtons;
+    state.prevButtons = buttons;
     const active = typeof opts.active === "function" ? opts.active() : opts.active ?? true;
     if (!active) return;
     if (buttonHandlerBlockDepth > 0 && !opts.allowWhenBlocked) return;

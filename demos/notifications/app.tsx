@@ -11,10 +11,11 @@
 // 480x272 (DESIGN.md punts kinetic scroll, so the list can't overflow the
 // screen); every class a FULL literal.
 
-import { For, Show, Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { For, Show, Text, View, defineComponent, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { createSignal, onMount } from "@pocketjs/framework/reactivity";
+import { frameworkName } from "@pocketjs/framework";
 
 interface Notice {
   id: string;
@@ -65,7 +66,7 @@ const ROW_RISE_FRAMES = 16; // >= the 180ms rise tween, plus margin
 // App
 // ---------------------------------------------------------------------------
 
-export default function Notifications() {
+export default defineComponent(function Notifications() {
   const [items, setItems] = createSignal<Notice[]>(INITIAL);
   const [dismissingId, setDismissingId] = createSignal<string | null>(null);
   const [dismissFrame, setDismissFrame] = createSignal(0);
@@ -125,7 +126,7 @@ export default function Notifications() {
     <View class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
       <View class="flex-row items-end justify-between">
         <View class="flex-col">
-          <Text class="text-xs text-blue-600 tracking-wide">POCKETJS SHOWCASE</Text>
+          <Text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE · {frameworkName()}</Text>
           <Text class="text-2xl text-slate-950 font-bold">Notifications</Text>
         </View>
         <Text class="text-xs text-slate-500">{items().length} UNREAD</Text>
@@ -143,14 +144,17 @@ export default function Notifications() {
             });
             return (
               <View
-                ref={(row) => {
-                  rowRefs.set(item.id, row);
+                nodeRef={(row) => {
+                  if (row) rowRefs.set(item.id, row);
+                  else rowRefs.delete(item.id);
                 }}
                 class="flex-col"
                 style={{ translateY: riseOffsets()[item.id] ?? 0 }}
               >
                 <View
-                  ref={el}
+                  nodeRef={(node) => {
+                    el = node ?? undefined;
+                  }}
                   style={{ opacity: 0, translateX: 16 }}
                   class="flex-row items-center gap-3 p-1 rounded-lg shadow bg-white border-slate-200 focus:bg-blue-50 focus:border-blue-500 transition-colors duration-150"
                   focusable
@@ -178,4 +182,4 @@ export default function Notifications() {
       <Text class="text-xs text-slate-500">UP / DOWN move focus · CIRCLE dismiss</Text>
     </View>
   );
-}
+});

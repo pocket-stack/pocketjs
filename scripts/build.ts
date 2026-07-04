@@ -3,7 +3,7 @@
 //   bun scripts/build.ts demos/hero/app.tsx    (or just `hero`)
 //   bun scripts/build.ts hero-main             (mounted demo entry)
 //
-// pass 1  transform & collect: babel (solid universal + TS) over every
+// pass 1  transform & collect: babel (React or Vue JSX + TS) over every
 //         .tsx/.ts reachable from the app entry (content-hash cached),
 //         collecting candidate class strings + text codepoints from the AST.
 // compile tailwind.ts -> styles.bin + src/styles.generated.ts;
@@ -17,7 +17,26 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { PSM } from "../spec/spec.ts";
-import { RENDERER_PATH, solidUniversalPlugin, transformFile } from "../compiler/solid-plugin.ts";
+import {
+  COMPONENTS_PATH,
+  COMPONENTS_SOLID_PATH,
+  COMPONENTS_VUE_PATH,
+  COMPONENTS_VUE_VAPOR_PATH,
+  FRAME_PATH,
+  FRAME_SOLID_PATH,
+  LIFECYCLE_PATH,
+  LIFECYCLE_SOLID_PATH,
+  REACTIVITY_PATH,
+  REACTIVITY_SOLID_PATH,
+  REACTIVITY_VUE_VAPOR_PATH,
+  RENDERER_PATH,
+  RENDERER_SOLID_PATH,
+  RENDERER_VUE_PATH,
+  RENDERER_VUE_VAPOR_PATH,
+  jsxPlugin,
+  transformFile,
+  type JsxEngine,
+} from "../compiler/jsx-plugin.ts";
 import { compileClasses, generateStylesModule } from "../compiler/tailwind.ts";
 import { bakeAtlases } from "../compiler/bake-font.ts";
 import { bakeSvg } from "../compiler/bake-svg.ts";
@@ -62,12 +81,21 @@ for (const [key, target] of Object.entries(packageJson.exports ?? {})) {
 const args = process.argv.slice(2);
 let extraChars = "";
 let appArg = "";
+let engine: JsxEngine = "react";
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
+  else if (a.startsWith("--engine=")) {
+    const value = a.slice("--engine=".length);
+    if (value !== "react" && value !== "vue" && value !== "vue-vapor" && value !== "solid") {
+      console.error("PocketJS build: --engine must be react, vue, vue-vapor, or solid");
+      process.exit(1);
+    }
+    engine = value;
+  }
   else if (!a.startsWith("-")) appArg = a;
 }
 if (!appArg) {
-  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--extra-chars=...]");
+  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--engine=react|vue|vue-vapor|solid] [--extra-chars=...]");
   process.exit(1);
 }
 
@@ -111,7 +139,8 @@ function outputName(file: string): string {
 }
 
 const appName = outputName(entry);
-console.log(`PocketJS build: ${appName} (${entry})`);
+const outName = engine === "react" ? appName : `${appName}.${engine}`;
+console.log(`PocketJS build: ${appName} (${entry}, engine=${engine})`);
 
 // ---------------------------------------------------------------------------
 // pass 1 — transform & collect over the entry's import graph
@@ -132,8 +161,19 @@ function importSpecifiers(src: string): string[] {
 function resolveImport(fromFile: string, spec: string): string | null {
   if (spec === packageName || spec.startsWith(packageName + "/")) {
     const subpath = spec === packageName ? "" : spec.slice(packageName.length + 1);
-    const exported = packageExports.get(subpath);
-    return exported && /\.tsx?$/.test(exported) ? ROOT + exported : null;
+    let exported = packageExports.get(subpath);
+    if (engine === "vue" && subpath === "components") exported = COMPONENTS_VUE_PATH;
+    if (engine === "vue-vapor") {
+      if (subpath === "components") exported = COMPONENTS_VUE_VAPOR_PATH;
+      else if (subpath === "reactivity") exported = REACTIVITY_VUE_VAPOR_PATH;
+    }
+    if (engine === "solid") {
+      if (subpath === "components") exported = COMPONENTS_SOLID_PATH;
+      else if (subpath === "lifecycle") exported = LIFECYCLE_SOLID_PATH;
+      else if (subpath === "reactivity") exported = REACTIVITY_SOLID_PATH;
+    }
+    if (!exported || !/\.tsx?$/.test(exported)) return null;
+    return exported.startsWith("/") ? exported : ROOT + exported;
   }
   if (!spec.startsWith("./") && !spec.startsWith("../") && !spec.startsWith("/")) return null; // external bare
   let resolved: string;
@@ -141,6 +181,22 @@ function resolveImport(fromFile: string, spec: string): string | null {
     resolved = Bun.resolveSync(spec, fromFile.slice(0, fromFile.lastIndexOf("/")));
   } catch {
     return null;
+  }
+  if (engine === "vue") {
+    if (resolved === RENDERER_PATH) return RENDERER_VUE_PATH;
+    if (resolved === COMPONENTS_PATH) return COMPONENTS_VUE_PATH;
+  }
+  if (engine === "vue-vapor") {
+    if (resolved === RENDERER_PATH) return RENDERER_VUE_VAPOR_PATH;
+    if (resolved === COMPONENTS_PATH) return COMPONENTS_VUE_VAPOR_PATH;
+    if (resolved === REACTIVITY_PATH) return REACTIVITY_VUE_VAPOR_PATH;
+  }
+  if (engine === "solid") {
+    if (resolved === RENDERER_PATH) return RENDERER_SOLID_PATH;
+    if (resolved === COMPONENTS_PATH) return COMPONENTS_SOLID_PATH;
+    if (resolved === FRAME_PATH) return FRAME_SOLID_PATH;
+    if (resolved === LIFECYCLE_PATH) return LIFECYCLE_SOLID_PATH;
+    if (resolved === REACTIVITY_PATH) return REACTIVITY_SOLID_PATH;
   }
   return /\.tsx?$/.test(resolved) && !resolved.endsWith(".d.ts") ? resolved : null;
 }
@@ -155,7 +211,7 @@ async function walk(file: string): Promise<void> {
   visited.add(file);
   if (file.endsWith(".generated.ts")) return; // never scan generated output [R]
   const src = await Bun.file(file).text();
-  const res = await transformFile(file, src); // throws with code frame on lint errors
+  const res = await transformFile(file, src, engine); // throws with code frame on lint errors
   for (const s of res.classStrings) {
     if (!seenClass.has(s)) {
       seenClass.add(s);
@@ -222,8 +278,8 @@ for (const name of imageNames) {
 }
 
 const pak = pack(blobs);
-await Bun.write(DIST + appName + ".dcpak", pak);
-console.log(`  dcpak: ${blobs.length} entries, ${pak.length} bytes -> dist/${appName}.dcpak`);
+await Bun.write(DIST + outName + ".dcpak", pak);
+console.log(`  dcpak: ${blobs.length} entries, ${pak.length} bytes -> dist/${outName}.dcpak`);
 
 // ---------------------------------------------------------------------------
 // pass 2 — bundle (served from the pass-1 cache)
@@ -239,19 +295,14 @@ if (!existsSync(RENDERER_PATH)) {
 const result = await Bun.build({
   entrypoints: [entry],
   outdir: DIST,
-  naming: `${appName}.js`,
+  naming: `${outName}.js`,
   format: "iife",
   target: "browser",
-  // solid-js MUST resolve via its "browser" export condition — the "node"
-  // condition serves dist/server.js (SSR build) where reactive updates
-  // silently no-op. See test/renderer.test.ts for the fail-fast guard.
-  // Bun's bundler otherwise also enables the "development" condition, which
-  // pulls Solid's dev builds and duplicates the root + universal runtimes.
   conditions: ["browser"],
-  define: { "process.env.NODE_ENV": '"production"' },
-  minify: false,
+  define: { "process.env.NODE_ENV": '"production"', __POCKETJS_ENGINE__: JSON.stringify(engine) },
+  minify: true,
   sourcemap: "none",
-  plugins: [solidUniversalPlugin()],
+  plugins: [jsxPlugin(engine, { entry })],
 });
 if (!result.success) {
   for (const log of result.logs) console.error(log);
@@ -259,7 +310,7 @@ if (!result.success) {
   process.exit(1);
 }
 const bundle = result.outputs.find((o) => o.path.endsWith(".js"));
-console.log(`  pass 2: dist/${appName}.js (${bundle ? (await bundle.arrayBuffer()).byteLength : 0} bytes)`);
+console.log(`  pass 2: dist/${outName}.js (${bundle ? (await bundle.arrayBuffer()).byteLength : 0} bytes)`);
 console.log("PocketJS build: done");
 
 // ---------------------------------------------------------------------------
@@ -270,7 +321,7 @@ function placeholderRenderer(): string {
   return `\
 // placeholder, impl:js-runtime owns this — written by scripts/build.ts so
 // pass-2 bundling links before src/renderer.ts is implemented. Every export
-// is the no-op shape of Solid's universal-renderer output (createRenderer).
+// is the no-op shape of the renderer compatibility surface.
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 type Node = { type?: string; text?: string; children: Node[]; props: Record<string, unknown> };

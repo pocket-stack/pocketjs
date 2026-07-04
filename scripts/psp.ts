@@ -1,4 +1,4 @@
-// scripts/psp.ts <app> [cargo args…] — build the app JS+dcpak (scripts/
+// scripts/psp.ts <app> [--engine=react|vue|vue-vapor|solid] [cargo args…] — build the app JS+dcpak (scripts/
 // build.ts), then the EBOOT:
 //   POCKETJS_APP=<app> rustup run nightly-2026-05-28 cargo psp
 // inside native/, with the exact env block from dreamcart runtime/build.ts
@@ -13,6 +13,8 @@
 // --capture builds the E2E frame-dump EBOOT (cargo psp --features capture)
 // and bakes the POCKETJS_CAPTURE_INPUT env ("frame:mask,…") into the binary —
 // used by test/e2e-ppsspp.ts, never by normal builds.
+// --bench additionally enables native microsecond timing output to
+// ms0:/PocketJS-bench.jsonl and implies --capture.
 
 import { $ } from "bun";
 import { existsSync } from "node:fs";
@@ -45,16 +47,39 @@ const rustup =
 
 const argv = Bun.argv.slice(2);
 let appArg = "";
+let engine: "react" | "vue" | "vue-vapor" | "solid" = "react";
 let capture = false;
+let bench = false;
 const cargoArgs: string[] = [];
-for (const a of argv) {
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
   if (a === "--capture") capture = true; // E2E frame-dump build (test/e2e-ppsspp.ts)
+  else if (a === "--bench") {
+    bench = true;
+    capture = true;
+  }
+  else if (a.startsWith("--engine=")) {
+    const value = a.slice("--engine=".length);
+    if (value !== "react" && value !== "vue" && value !== "vue-vapor" && value !== "solid") {
+      console.error("PocketJS psp: --engine must be react, vue, vue-vapor, or solid");
+      process.exit(1);
+    }
+    engine = value;
+  } else if (a === "--engine") {
+    const value = argv[++i];
+    if (value !== "react" && value !== "vue" && value !== "vue-vapor" && value !== "solid") {
+      console.error("PocketJS psp: --engine must be react, vue, vue-vapor, or solid");
+      process.exit(1);
+    }
+    engine = value;
+  }
   else if (!appArg && !a.startsWith("-")) appArg = a;
   else cargoArgs.push(a);
 }
-if (capture) cargoArgs.push("--features", "capture");
+const features = [capture ? "capture" : "", bench ? "bench" : ""].filter(Boolean);
+if (features.length > 0) cargoArgs.push("--features", features.join(","));
 if (!appArg) {
-  console.error("usage: bun scripts/psp.ts <app> [--capture] [cargo args…]   e.g. bun scripts/psp.ts hero --release");
+  console.error("usage: bun scripts/psp.ts <app> [--engine=react|vue|vue-vapor|solid] [--capture|--bench] [cargo args…]   e.g. bun scripts/psp.ts hero --release");
   process.exit(1);
 }
 
@@ -85,13 +110,14 @@ function mountedAppName(arg: string): string {
 }
 
 const app = mountedAppName(appArg);
+const embeddedApp = engine === "react" ? app : `${app}.${engine}`;
 
 // ---------------------------------------------------------------------------
 // 1. Build the app bundle + dcpak -> dist/<app>.js + dist/<app>.dcpak
 // ---------------------------------------------------------------------------
 
-console.log(`PocketJS psp: building app "${app}"`);
-await $`bun scripts/build.ts ${app}`.cwd(pspUiDir);
+console.log(`PocketJS psp: building app "${app}" (engine=${engine})`);
+await $`bun scripts/build.ts ${app} --engine=${engine}`.cwd(pspUiDir);
 
 // ---------------------------------------------------------------------------
 // 2. cargo psp with the dreamcart cross env (copied from runtime/build.ts)
@@ -128,7 +154,8 @@ const env = {
   RUST_PSP_ABORT_ONLY: "1",
   // Keep PSP dev builds fast (opt-level 0 is unusably slow on hardware).
   CARGO_PROFILE_DEV_OPT_LEVEL: process.env.CARGO_PROFILE_DEV_OPT_LEVEL ?? "3",
-  POCKETJS_APP: app,
+  POCKETJS_APP: embeddedApp,
+  POCKETJS_ENGINE: engine,
   // Scripted capture input + per-demo capture window, baked into the EBOOT
   // by native/build.rs (only consumed under --capture; harmless otherwise).
   // Explicit so stale values never linger in the cargo fingerprint.
@@ -146,7 +173,7 @@ function outputProfile(args: string[]): string {
   return args.includes("--release") || args.includes("-r") ? "release" : "debug";
 }
 
-console.log(`PocketJS psp: cargo psp (app=${app})`);
+console.log(`PocketJS psp: cargo psp (app=${embeddedApp}, engine=${engine})`);
 await $`${rustup} run ${TOOLCHAIN} cargo psp ${cargoArgs}`.cwd(nativeDir).env(env);
 
 const profile = outputProfile(cargoArgs);

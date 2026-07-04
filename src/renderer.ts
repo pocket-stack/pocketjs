@@ -1,375 +1,302 @@
-// Solid universal renderer over the native `ui.*` tree.
+// Lightweight React-compatible JSX renderer over the native `ui.*` tree.
 //
-// This module is the babel-preset-solid {generate:'universal'} moduleName
-// target: compiled JSX imports render/effect/memo/createComponent/
-// createElement/createTextNode/insertNode/insert/spread/setProp/mergeProps/use
-// from HERE (all produced by solid-js/universal's createRenderer).
-//
-// The renderer keeps a JS MIRROR TREE (NodeMirror) of the native tree so every
-// reconciler READ (getParentNode/getFirstChild/getNextSibling/isTextNode) is a
-// pure JS object walk — zero FFI crossings. Writes go through HostOps.
-//
-// NODE RECLAMATION [R]: Solid's reconciler calls removeNode for nodes that may
-// be re-inserted within the same frame (moves across <For> rows, <Show> arms).
-// removeChild therefore keeps native nodes alive; nodes still DETACHED at the
-// end of the frame are destroyed by runSweep() (called from globalThis.frame
-// after user code ran). retain()/release() opt a detached subtree out of/back
-// into the sweep.
+// The PSP path cannot afford react-reconciler's update machinery inside
+// QuickJS, so the default React-compatible engine consumes React-shaped JSX elements
+// directly and lets PocketJS own the native tree lifecycle.
 
-import { createRenderer } from "solid-js/universal";
-import { NODE_TYPE, ROOT_ID, PROP, STYLE_ID_NONE, type PropName } from "../spec/spec.ts";
-import { encodePropValue, getHost, getOps } from "./host.ts";
-import { notifyDetached, registerFocusable, registerPress } from "./input.ts";
+import {
+  applyProps,
+  clearContainer,
+  createElement as createNativeElement,
+  createTextNode,
+  detachNode,
+  getFirstChild,
+  getNextSibling,
+  getParentNode,
+  insertNode,
+  isTextNode,
+  missCounters,
+  registerTexture,
+  release,
+  removeNode,
+  replaceText,
+  resetRendererState,
+  resetTextures,
+  retain,
+  rootMirror,
+  runSweep,
+  setProp,
+  setStyleResolver,
+  type HostProps,
+  type NodeMirror,
+} from "./native-tree.ts";
+import {
+  createRuntimeInstance,
+  runCleanups,
+  runEffects,
+  runMounts,
+  withRuntime,
+  type RuntimeInstance,
+} from "./runtime.ts";
 
-// ---------------------------------------------------------------------------
-// Mirror tree
-// ---------------------------------------------------------------------------
-
-export interface NodeMirror {
-  /** Native generation-tagged node id. */
-  id: number;
-  /** spec NODE_TYPE ordinal. */
-  type: number;
-  parent: NodeMirror | null;
-  children: NodeMirror[];
-  /** Current text (text nodes only). */
-  text?: string;
-  /** Focus traversal membership (input.ts). */
-  focusable?: boolean;
-  /** CIRCLE handler while focused (input.ts). */
-  onPress?: (() => void) | undefined;
-}
-
-/** Mirror of the pre-created native root (full-screen flex column, id 1). */
-export const rootMirror: NodeMirror = {
-  id: ROOT_ID,
-  type: NODE_TYPE.view,
-  parent: null,
-  children: [],
+export {
+  createTextNode,
+  detachNode,
+  getFirstChild,
+  getNextSibling,
+  getParentNode,
+  insertNode,
+  isTextNode,
+  missCounters,
+  registerTexture,
+  release,
+  replaceText,
+  resetRendererState,
+  resetTextures,
+  retain,
+  rootMirror,
+  runSweep,
+  setProp,
+  setStyleResolver,
+  type NodeMirror,
 };
 
-// ---------------------------------------------------------------------------
-// Style resolver injection (avoids a hard dep on styles.generated.ts)
-// ---------------------------------------------------------------------------
+const REACT_ELEMENT = Symbol.for("react.element");
+const REACT_FRAGMENT = Symbol.for("react.fragment");
+const REACT_FORWARD_REF = Symbol.for("react.forward_ref");
 
-let styleResolver: ((cls: string) => number | undefined) | null = null;
-
-/** Wire the class→styleId lookup (index.ts injects styles.ts's resolveStyle). */
-export function setStyleResolver(fn: (cls: string) => number | undefined): void {
-  styleResolver = fn;
+interface VNode {
+  $$typeof?: symbol;
+  type?: unknown;
+  key?: string | number | null;
+  ref?: unknown;
+  props?: HostProps;
 }
 
-/** Non-strict-host miss counters (PSP: don't crash, count). */
-export const missCounters = { unknownClass: 0, unknownTexture: 0 };
-
-// ---------------------------------------------------------------------------
-// Texture registry ('src' prop → uploaded texture handle)
-// ---------------------------------------------------------------------------
-
-const textures = new Map<string, number>();
-
-/** Bind an image key (the `src` string) to an uploadTexture handle. */
-export function registerTexture(key: string, handle: number): void {
-  textures.set(key, handle);
+interface ComponentSlot {
+  instance: RuntimeInstance;
+  active: boolean;
 }
 
-export function resetTextures(): void {
-  textures.clear();
+interface RenderState {
+  root: NodeMirror;
+  current: unknown;
+  components: Map<string, ComponentSlot>;
+  scheduled: boolean;
+  disposed: boolean;
+  updateNow(node: unknown): void;
+  requestUpdate(): void;
 }
 
-// ---------------------------------------------------------------------------
-// End-of-frame sweep [R]
-// ---------------------------------------------------------------------------
-
-const sweepSet = new Set<NodeMirror>();
-const retained = new Set<NodeMirror>();
-
-/** Keep a detached subtree alive across frames (skip the sweep). */
-export function retain(node: NodeMirror): void {
-  retained.add(node);
-  sweepSet.delete(node);
+export interface RenderRoot {
+  update(node: unknown): void;
+  dispose(): void;
 }
 
-/** Undo retain(); a still-detached node re-enters the next sweep. */
-export function release(node: NodeMirror): void {
-  retained.delete(node);
-  if (node.parent === null && node !== rootMirror) sweepSet.add(node);
+export function createElement(type: string): NodeMirror {
+  return createNativeElement(type);
 }
 
-function subtreeHasRetained(node: NodeMirror): boolean {
-  if (retained.has(node)) return true;
-  for (let i = 0; i < node.children.length; i++) {
-    if (subtreeHasRetained(node.children[i])) return true;
-  }
-  return false;
+function isVNode(value: unknown): value is VNode {
+  return !!value && typeof value === "object" && (value as VNode).$$typeof === REACT_ELEMENT;
 }
 
-/**
- * Destroy every subtree removed during the frame and still detached. Called
- * once per frame by globalThis.frame (index.ts) AFTER user code ran, so
- * remove-then-reinsert (Solid moves) never destroys live nodes.
- */
-export function runSweep(): void {
-  if (sweepSet.size === 0) return;
-  const ops = getOps();
-  const keep: NodeMirror[] = [];
-  for (const node of sweepSet) {
-    if (node.parent !== null) continue; // re-attached (defensive)
-    if (subtreeHasRetained(node)) {
-      keep.push(node); // stays pending until released/re-attached
-      continue;
+function childrenToArray(value: unknown): unknown[] {
+  const out: unknown[] = [];
+  const visit = (child: unknown) => {
+    if (child == null || typeof child === "boolean") return;
+    if (Array.isArray(child)) {
+      for (let i = 0; i < child.length; i++) visit(child[i]);
+      return;
     }
-    ops.destroyNode(node.id); // native destroy is recursive
+    out.push(child);
+  };
+  visit(value);
+  return out;
+}
+
+function pathFor(parent: string, child: unknown, index: number): string {
+  if (isVNode(child) && (child.key || child.key === 0)) {
+    return `${parent}/k:${String(child.key)}`;
   }
-  sweepSet.clear();
-  for (let i = 0; i < keep.length; i++) sweepSet.add(keep[i]);
+  return `${parent}/i:${index}`;
 }
 
-/** Tests: drop sweep/retain state without touching the native tree. */
-export function resetRendererState(): void {
-  sweepSet.clear();
-  retained.clear();
-  rootMirror.children.length = 0;
-}
-
-// ---------------------------------------------------------------------------
-// Renderer options
-// ---------------------------------------------------------------------------
-
-function createElementImpl(tag: string): NodeMirror {
-  const type = (NODE_TYPE as Record<string, number>)[tag];
-  if (type === undefined) {
-    throw new Error(
-      `PocketJS: unknown element <${tag}> — only view/text/image exist`,
-    );
-  }
-  return { id: getOps().createNode(type), type, parent: null, children: [] };
-}
-
-function createTextNodeImpl(value: string): NodeMirror {
-  const ops = getOps();
-  const id = ops.createNode(NODE_TYPE.text);
-  ops.setText(id, value);
-  return { id, type: NODE_TYPE.text, parent: null, children: [], text: value };
-}
-
-function replaceTextImpl(textNode: NodeMirror, value: string): void {
-  getOps().replaceText(textNode.id, value);
-  textNode.text = value;
-}
-
-function isTextNodeImpl(node: NodeMirror): boolean {
-  return node.type === NODE_TYPE.text;
-}
-
-/** Unlink from the current mirror parent (native insertBefore self-unlinks). */
-function unlink(node: NodeMirror): void {
-  const p = node.parent;
-  if (!p) return;
-  const i = p.children.indexOf(node);
-  if (i >= 0) p.children.splice(i, 1);
-  node.parent = null;
-}
-
-function insertNodeImpl(
-  parent: NodeMirror,
-  node: NodeMirror,
-  anchor?: NodeMirror,
-): void {
-  const ops = getOps();
-  // DOM move semantics [R]: an attached node is unlinked first — natively by
-  // insertBefore itself, and here in the mirror.
-  unlink(node);
-  sweepSet.delete(node); // re-attached before the sweep: not garbage
-  ops.insertBefore(parent.id, node.id, anchor ? anchor.id : 0);
-  if (anchor) {
-    const i = parent.children.indexOf(anchor);
-    if (i < 0) {
-      throw new Error("PocketJS: insert anchor is not a child of parent");
-    }
-    parent.children.splice(i, 0, node);
-  } else {
-    parent.children.push(node);
-  }
-  node.parent = parent;
-}
-
-function removeNodeImpl(parent: NodeMirror, node: NodeMirror): void {
-  // Focus repair [R] runs BEFORE the unlink so sibling order is still known.
-  notifyDetached(node);
-  getOps().removeChild(parent.id, node.id);
-  unlink(node);
-  sweepSet.add(node); // destroyed at frame end unless re-attached/retained
-}
-
-export function detachNode(parent: NodeMirror, node: NodeMirror): void {
-  removeNodeImpl(parent, node);
-}
-
-function getParentNodeImpl(node: NodeMirror): NodeMirror | undefined {
-  return node.parent ?? undefined;
-}
-
-function getFirstChildImpl(node: NodeMirror): NodeMirror | undefined {
-  return node.children[0];
-}
-
-function getNextSiblingImpl(node: NodeMirror): NodeMirror | undefined {
-  const p = node.parent;
-  if (!p) return undefined;
-  const i = p.children.indexOf(node);
-  return i >= 0 ? p.children[i + 1] : undefined;
-}
-
-// ---- setProperty dispatch table [R] ----------------------------------------
-
-function setClass(node: NodeMirror, value: unknown): void {
-  const ops = getOps();
-  if (value == null || value === "") {
-    ops.setStyle(node.id, STYLE_ID_NONE);
+function assignRef(ref: unknown, node: NodeMirror | null): void {
+  if (!ref) return;
+  if (typeof ref === "function") {
+    (ref as (node: NodeMirror | null) => void)(node);
     return;
   }
-  if (typeof value !== "string") {
-    throw new Error("PocketJS: class must be a string literal of utilities");
+  if (typeof ref === "object" && "current" in ref) {
+    (ref as { current: NodeMirror | null }).current = node;
   }
-  const styleId = styleResolver ? styleResolver(value) : undefined;
-  if (styleId === undefined) {
-    if (getHost().strict) {
-      throw new Error(
-        `PocketJS: unknown class "${value}" — not in the compiled style table ` +
-          "(dynamic classes must be ternaries of full literals)",
-      );
+}
+
+function cleanHostProps(props: HostProps): HostProps {
+  const out: HostProps = {};
+  for (const key in props) {
+    if (key === "children" || key === "key" || key === "ref") continue;
+    out[key] = props[key];
+  }
+  return out;
+}
+
+function componentSlot(state: RenderState, path: string): RuntimeInstance {
+  let slot = state.components.get(path);
+  if (!slot) {
+    slot = {
+      instance: createRuntimeInstance(() => state.requestUpdate()),
+      active: false,
+    };
+    state.components.set(path, slot);
+  }
+  slot.active = true;
+  return slot.instance;
+}
+
+function callComponent(type: unknown, props: HostProps, ref: unknown): unknown {
+  if (typeof type === "function") {
+    return (type as (props: HostProps) => unknown)(ref ? { ...props, ref } : props);
+  }
+  if (
+    type &&
+    typeof type === "object" &&
+    (type as { $$typeof?: symbol }).$$typeof === REACT_FORWARD_REF
+  ) {
+    const render = (type as { render: (props: HostProps, ref: unknown) => unknown }).render;
+    return render(props, ref);
+  }
+  throw new Error("PocketJS: unsupported JSX component type");
+}
+
+function appendBuilt(parent: NodeMirror, nodes: NodeMirror[]): void {
+  for (let i = 0; i < nodes.length; i++) insertNode(parent, nodes[i]);
+}
+
+function buildNode(value: unknown, path: string, state: RenderState): NodeMirror[] {
+  if (value == null || typeof value === "boolean") return [];
+  if (Array.isArray(value)) {
+    const out: NodeMirror[] = [];
+    for (let i = 0; i < value.length; i++) {
+      out.push(...buildNode(value[i], pathFor(path, value[i], i), state));
     }
-    missCounters.unknownClass++;
-    return;
+    return out;
   }
-  ops.setStyle(node.id, styleId);
-}
+  if (typeof value === "string" || typeof value === "number") {
+    return [createTextNode(String(value))];
+  }
+  if (!isVNode(value)) {
+    return [];
+  }
 
-function setSrc(node: NodeMirror, value: unknown): void {
-  const ops = getOps();
-  if (value == null || value === "") {
-    // -1 clears: texture handles are 0-BASED (0 is the first upload), so the
-    // node-id "0 = none" convention does not apply here.
-    ops.setImage(node.id, -1);
-    return;
-  }
-  if (typeof value !== "string") {
-    throw new Error("PocketJS: src must be a string key");
-  }
-  const handle = textures.get(value);
-  if (handle === undefined) {
-    if (getHost().strict) {
-      throw new Error(
-        `PocketJS: unknown image src "${value}" — no texture registered under that key`,
-      );
+  const type = value.type;
+  const props = value.props ?? {};
+  if (type === REACT_FRAGMENT) {
+    const children = childrenToArray(props.children);
+    const out: NodeMirror[] = [];
+    for (let i = 0; i < children.length; i++) {
+      out.push(...buildNode(children[i], pathFor(path, children[i], i), state));
     }
-    missCounters.unknownTexture++;
-    return;
+    return out;
   }
-  ops.setImage(node.id, handle);
-}
 
-type StyleObject = Record<string, number | string>;
-
-function setStyleObject(node: NodeMirror, value: unknown, prev: unknown): void {
-  const ops = getOps();
-  const next = (value ?? {}) as StyleObject;
-  const before = (prev ?? {}) as StyleObject;
-  for (const key in next) {
-    const v = next[key];
-    if (before[key] === v) continue; // prev-diff: only changed keys cross FFI
-    const propId = (PROP as Record<string, number>)[key];
-    if (propId === undefined) {
-      throw new Error(`PocketJS: unknown style prop '${key}' (see spec PROP)`);
+  if (typeof type === "string") {
+    const node = createNativeElement(type);
+    applyProps(node, cleanHostProps(props));
+    const children = childrenToArray(props.children);
+    for (let i = 0; i < children.length; i++) {
+      appendBuilt(node, buildNode(children[i], pathFor(path, children[i], i), state));
     }
-    ops.setProp(node.id, propId, encodePropValue(key as PropName, v));
+    assignRef(value.ref ?? props.nodeRef, node);
+    return [node];
   }
-  // Keys present before but absent now keep their last value — there is no
-  // native "clear prop" op in v1. Set an explicit default instead of deleting.
+
+  const instance = componentSlot(state, `${path}/c`);
+  const rendered = withRuntime(instance, () => callComponent(type, props, value.ref));
+  return buildNode(rendered, `${path}/r`, state);
 }
 
-function setPropertyImpl<T>(
-  node: NodeMirror,
-  name: string,
-  value: T,
-  prev?: T,
-): void {
-  if (value === prev && name !== "style") return;
-  switch (name) {
-    case "class":
-      setClass(node, value);
-      return;
-    case "onPress":
-    case "on:press":
-      registerPress(node, value as (() => void) | undefined);
-      return;
-    case "src":
-      setSrc(node, value);
-      return;
-    case "style":
-      setStyleObject(node, value, prev);
-      return;
-    case "focusable":
-      registerFocusable(node, !!value);
-      return;
-    case "ref":
-      // spread() handles ref itself; compiled templates use use(). Support a
-      // stray function ref defensively.
-      if (typeof value === "function") (value as (n: NodeMirror) => void)(node);
-      return;
-    default:
-      break;
+function commit(state: RenderState, node: unknown): void {
+  if (state.disposed) return;
+  state.current = node;
+  for (const slot of state.components.values()) slot.active = false;
+
+  clearContainer(state.root);
+  runSweep();
+  appendBuilt(state.root, buildNode(node, "root", state));
+
+  for (const [path, slot] of [...state.components]) {
+    if (!slot.active) {
+      runCleanups(slot.instance);
+      state.components.delete(path);
+    }
   }
-  if (name === "classList") {
-    throw new Error(
-      "PocketJS: classList is not supported [R] — use ternaries of full class literals",
-    );
-  }
-  if (name.startsWith("on:") || name.startsWith("bool:") || name.startsWith("prop:")) {
-    throw new Error(`PocketJS: unsupported namespaced attribute '${name}'`);
-  }
-  throw new Error(`PocketJS: unknown property '${name}' on <${tagName(node)}>`);
+  for (const slot of state.components.values()) runMounts(slot.instance);
+  for (const slot of state.components.values()) runEffects(slot.instance);
 }
 
-function tagName(node: NodeMirror): string {
-  for (const key of Object.keys(NODE_TYPE)) {
-    if ((NODE_TYPE as Record<string, number>)[key] === node.type) return key;
-  }
-  return String(node.type);
+export function createRenderRoot(root: NodeMirror): RenderRoot {
+  const state: RenderState = {
+    root,
+    current: null,
+    components: new Map(),
+    scheduled: false,
+    disposed: false,
+    updateNow(node: unknown) {
+      commit(state, node);
+    },
+    requestUpdate() {
+      if (state.scheduled || state.disposed) return;
+      state.scheduled = true;
+      queueMicrotask(() => {
+        state.scheduled = false;
+        state.updateNow(state.current);
+      });
+    },
+  };
+
+  return {
+    update(node: unknown) {
+      state.updateNow(node);
+    },
+    dispose() {
+      state.disposed = true;
+      clearContainer(root);
+      runSweep();
+      for (const slot of state.components.values()) runCleanups(slot.instance);
+      state.components.clear();
+    },
+  };
 }
 
-// ---------------------------------------------------------------------------
-// The renderer (everything compiled JSX imports)
-// ---------------------------------------------------------------------------
+export function render(code: () => unknown, root: NodeMirror): () => void {
+  const renderRoot = createRenderRoot(root);
+  renderRoot.update(code());
+  return () => renderRoot.dispose();
+}
 
-const renderer = createRenderer<NodeMirror>({
-  createElement: createElementImpl,
-  createTextNode: createTextNodeImpl,
-  replaceText: replaceTextImpl,
-  isTextNode: isTextNodeImpl,
-  setProperty: setPropertyImpl,
-  insertNode: insertNodeImpl,
-  removeNode: removeNodeImpl,
-  getParentNode: getParentNodeImpl,
-  getFirstChild: getFirstChildImpl,
-  getNextSibling: getNextSiblingImpl,
-});
+// Compatibility helpers retained for low-level tests and older handwritten
+// renderer calls. JSX builds use the React-shaped element runtime directly.
+export function createComponent<T>(Comp: (props: T) => unknown, props: T): unknown {
+  return { $$typeof: REACT_ELEMENT, type: Comp, key: null, ref: null, props: props as HostProps };
+}
 
-// effect/memo/createComponent come back from createRenderer wrapping solid-js's
-// createRenderEffect/createMemo/createComponent — re-exported from the result
-// so compiled code has ONE import source (this module).
-export const {
-  render,
-  effect,
-  memo,
-  createComponent,
-  createElement,
-  createTextNode,
-  insertNode,
-  insert,
-  spread,
-  setProp,
-  mergeProps,
-  use,
-} = renderer;
+export function effect<T>(fn: (prev?: T) => T, init?: T): void {
+  fn(init);
+}
+
+export function memo<T>(fn: () => T): () => T {
+  return fn;
+}
+
+export function insert(_parent: NodeMirror, _accessor: unknown, _marker?: NodeMirror | null): void {}
+export function spread(node: NodeMirror, props: HostProps): void {
+  applyProps(node, props);
+}
+export function mergeProps(...sources: unknown[]): unknown {
+  return Object.assign({}, ...sources);
+}
+export function use(fn: (el: NodeMirror) => void, el: NodeMirror): void {
+  fn(el);
+}

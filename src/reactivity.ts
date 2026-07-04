@@ -1,4 +1,4 @@
-// Solid reactivity public API.
+// Engine-neutral component-local reactivity API.
 
 export {
   createSignal,
@@ -8,4 +8,6 @@ export {
   onCleanup,
   batch,
   untrack,
-} from "solid-js";
+  type Accessor,
+  type Setter,
+} from "./runtime.ts";

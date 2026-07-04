@@ -1,6 +1,6 @@
 {
-  // Editors + `bunx tsc --noEmit` typecheck ONLY — babel-preset-solid owns the
-  // actual JSX transform (jsx must stay "preserve"; see DESIGN.md [R]).
+  // Editors + `bunx tsc --noEmit` typecheck ONLY — the engine-aware Babel pass
+  // owns the actual JSX transform (jsx must stay "preserve"; see DESIGN.md [R]).
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
@@ -24,5 +24,6 @@
       "@pocketjs/framework/reactivity": ["./src/reactivity.ts"]
     }
   },
-  "include": ["src", "compiler", "demos", "test", "spec", "host-web"]
+  "include": ["src", "compiler", "demos", "test", "spec", "host-web"],
+  "exclude": ["src/components-vue.tsx"]
 }

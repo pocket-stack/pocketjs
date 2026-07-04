@@ -4,26 +4,37 @@
 
 # PocketJS
 
-A JSX UI stack for the Sony PSP (and beyond): **Solid** (universal renderer) +
-a **build-time Tailwind-subset compiler** + **baked font atlases**, driving one
-`no_std` Rust core (flexbox layout, styling, animation, text, DrawList) that
-runs on real PSP hardware, PPSSPP, the browser (WASM) and headless Bun.
+A JSX UI stack for the Sony PSP (and beyond): a **React-compatible JSX shim**,
+a **Vue JSX renderer**, a **build-time Tailwind-subset compiler** and
+**baked font atlases**, driving one `no_std` Rust core (flexbox layout,
+styling, animation, text, DrawList) that runs on real PSP hardware, PPSSPP, the
+browser (WASM) and headless Bun.
 Full design + contracts: [DESIGN.md](./DESIGN.md).
 
 ## Quickstart
 
 ```sh
 bun install
-bun scripts/build.ts hero             # -> dist/hero.js + dist/hero.dcpak
+bun scripts/build.ts hero             # React-compatible shim -> dist/hero.js + dist/hero.dcpak
+bun scripts/build.ts hero --engine=vue # Vue -> dist/hero.vue.js + dist/hero.vue.dcpak
 ```
 
+Original React did not reach a runnable PSP/PPSSPP path in this investigation.
+The `--engine=react` path exists only as a local React-shaped compatibility
+runtime. It is not official React, and its PPSSPP smoke tests or measurements
+must not be treated as React performance results.
+
+The current `--engine=vue` path is Vue's VDOM/custom-renderer route, not Vue
+Vapor Mode. Vapor uses a different compiler/runtime substrate and needs a
+separate implementation and PPSSPP benchmark before drawing conclusions.
+
 The build is two-pass: pass 1 babel-transforms every module reachable from the
-entry (babel-preset-solid `generate:'universal'`, content-hash cached in
-`.cache/`) while collecting class strings + text codepoints from the AST; then
-the Tailwind compiler writes `styles.bin` + `src/styles.generated.ts`, the font
-baker rasterizes Inter atlas slots for exactly the characters your app uses,
-and everything is packed into `dist/<app>.dcpak`. Pass 2 bundles with Bun
-(iife, unminified) from the cached transforms.
+entry for the selected JSX engine, content-hash cached in `.cache/`, while
+collecting class strings + text codepoints from the AST; then the Tailwind
+compiler writes `styles.bin` + `src/styles.generated.ts`, the font baker
+rasterizes Inter atlas slots for exactly the characters your app uses, and
+everything is packed into `dist/<app>.dcpak`. Pass 2 bundles with Bun as a
+minified IIFE from the cached transforms.
 
 ```tsx
 import { Text, View } from "@pocketjs/framework/components";
@@ -72,10 +83,14 @@ a required router package.
 
 ```sh
 bun run test                          # spec contract + tailwind parser tests
-bun scripts/build.ts <app> [--extra-chars=…]  # extra codepoints for the atlases
+bun scripts/build.ts <app> [--engine=react|vue|solid] [--extra-chars=…]
 bun run psp / bun run dev / bun run wasm      # EBOOT / web host / wasm core
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
+bun run bench:ppsspp -- --engines=vue,solid --samples=7
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
 ```
+
+`bench:ppsspp` builds capture+bench EBOOTs, runs PPSSPPHeadless repeatedly, and
+writes raw samples plus JSON/Markdown summaries under `dist/bench/`.
 
 Fonts: Inter (OFL), vendored in `assets/fonts/`.

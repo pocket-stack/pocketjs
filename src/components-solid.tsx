@@ -1,12 +1,11 @@
-// Component-facing public API.
-
 import type { JSX as SolidJSX } from "solid-js";
 import { createEffect, onCleanup, onMount, splitProps } from "solid-js";
+import { For, Index, Match, Show, Switch } from "solid-js";
 import { ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
-import { pushButtonHandlerBlock, onButtonPress, type ButtonPressOptions } from "./frame.ts";
+import { pushButtonHandlerBlock, onButtonPress, type ButtonPressOptions } from "./frame-solid.ts";
 import { pushFocusGrid, pushFocusScope, type FocusGridOptions, type FocusScopeOptions } from "./input.ts";
 import { getOverlayRoot } from "./overlay.ts";
-import { View, type ViewProps } from "./primitives.ts";
+import { View, type ViewProps } from "./primitives-solid.ts";
 import {
   createElement,
   detachNode,
@@ -14,16 +13,22 @@ import {
   render as rendererRender,
   setProp,
   type NodeMirror,
-} from "./renderer.ts";
+} from "./renderer-solid.ts";
 
-export { View, Text, Image, type ViewProps, type TextProps, type ImageProps } from "./primitives.ts";
-export { For, Show, Index, Switch, Match } from "solid-js";
-export type { NodeMirror } from "./renderer.ts";
+export { View, Text, Image, type ViewProps, type TextProps, type ImageProps } from "./primitives-solid.ts";
+export { For, Show, Index, Switch, Match };
+export type { NodeMirror } from "./renderer-solid.ts";
 
-type RefProp = ViewProps["ref"];
+type NodeRef = ViewProps["nodeRef"];
 
-function callRef(ref: RefProp | undefined, node: NodeMirror): void {
+function callRef(ref: NodeRef | undefined, node: NodeMirror | null): void {
+  if (!ref) return;
   if (typeof ref === "function") ref(node);
+  else ref.current = node;
+}
+
+export function defineComponent<P extends object>(fn: (props: P) => SolidJSX.Element): (props: P) => SolidJSX.Element {
+  return fn;
 }
 
 function resolveActive(active: boolean | (() => boolean) | undefined): boolean {
@@ -65,9 +70,9 @@ export function FocusScope(props: FocusScopeProps): SolidJSX.Element {
   });
   return View({
     ...viewProps,
-    ref: (node) => {
-      root = node;
-      callRef(viewProps.ref, node);
+    nodeRef: (node) => {
+      root = node ?? undefined;
+      callRef(viewProps.nodeRef, node);
     },
   });
 }
@@ -89,9 +94,9 @@ export function FocusGrid(props: FocusGridProps): SolidJSX.Element {
   });
   return View({
     ...viewProps,
-    ref: (node) => {
-      root = node;
-      callRef(viewProps.ref, node);
+    nodeRef: (node) => {
+      root = node ?? undefined;
+      callRef(viewProps.nodeRef, node);
     },
   });
 }
@@ -163,7 +168,6 @@ function ModalFrame(props: ModalProps): SolidJSX.Element {
   let backdrop: NodeMirror | undefined;
   let panel: NodeMirror | undefined;
   let unblockButtons: (() => void) | undefined;
-
   const open = () => resolveActive(props.open);
 
   createEffect(() => {
@@ -195,16 +199,16 @@ function ModalFrame(props: ModalProps): SolidJSX.Element {
     class: props.class ?? "absolute inset-0 z-50 flex-col items-center justify-center",
     children: [
       View({
-        ref: (node) => {
-          backdrop = node;
+        nodeRef: (node) => {
+          backdrop = node ?? undefined;
         },
         class: "absolute inset-0 bg-slate-950",
         style: { opacity: 0 },
       }),
       FocusScope({
         active: open,
-        ref: (node) => {
-          panel = node;
+        nodeRef: (node) => {
+          panel = node ?? undefined;
         },
         class:
           props.panelClass ??

@@ -39,12 +39,29 @@ import { parse as parseFont, type Font, type Path } from "opentype.js";
 
 const pspUiDir = fileURLToPath(new URL("..", import.meta.url));
 const demosDir = join(pspUiDir, "demos");
-const outRoot = join(pspUiDir, "dist/psp");
+const argv = Bun.argv.slice(2);
+let engine: "react" | "vue" | "vue-vapor" | "solid" = "react";
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a.startsWith("--engine=")) {
+    const value = a.slice("--engine=".length);
+    if (value !== "react" && value !== "vue" && value !== "vue-vapor" && value !== "solid") {
+      throw new Error("--engine must be react, vue, vue-vapor, or solid");
+    }
+    engine = value;
+  } else if (a === "--engine") {
+    const value = argv[++i];
+    if (value !== "react" && value !== "vue" && value !== "vue-vapor" && value !== "solid") {
+      throw new Error("--engine must be react, vue, vue-vapor, or solid");
+    }
+    engine = value;
+  }
+}
+const outRoot = join(pspUiDir, engine === "react" ? "dist/psp" : `dist/psp-${engine}`);
 const pspGameRoot = join(outRoot, "PSP/GAME");
 const workRoot = join(outRoot, ".work");
 const home = process.env.HOME ?? "";
 
-const argv = Bun.argv.slice(2);
 const release = !argv.includes("--debug"); // memory-stick packaging defaults to --release
 
 const W = 480;
@@ -567,13 +584,13 @@ async function repackEboot(name: string, title: string, eboot: string, destDir: 
 
 if (import.meta.main) {
   if (Bun.argv.includes("--help") || Bun.argv.includes("-h")) {
-    console.log("Usage: bun scripts/psp-all.ts [--debug]\n");
+    console.log("Usage: bun scripts/psp-all.ts [--engine=react|vue|vue-vapor|solid] [--debug]\n");
     console.log("Builds every demos/<name>/main.tsx into a PSP memory-stick layout:");
     console.log("  dist/psp/PSP/GAME/PocketJS-<name>/EBOOT.PBP\n");
     console.log("Each gets a PARAM.SFO title (from that demo's `// @title` comment,");
     console.log("falling back to the bare demo name) plus a procedurally rendered");
     console.log("ICON0.PNG/PIC1.PNG (hash(title) -> gradient + Inter title text).");
-    console.log("Defaults to --release; pass --debug for unstripped debug builds.");
+    console.log("Defaults to React + --release; pass --engine=vue, --engine=vue-vapor, or --engine=solid and --debug for unstripped debug builds.");
     process.exit(0);
   }
 
@@ -597,7 +614,7 @@ if (import.meta.main) {
     console.log(`[${index + 1}/${demos.length}] building ${name} (${title})`);
 
     rmSync(eboot, { force: true });
-    await $`bun scripts/psp.ts ${name} ${release ? "--release" : ""}`.cwd(pspUiDir);
+    await $`bun scripts/psp.ts ${name} --engine=${engine} ${release ? "--release" : ""}`.cwd(pspUiDir);
 
     if (!existsSync(eboot)) {
       console.error(`expected PSP output was not created: ${eboot}`);

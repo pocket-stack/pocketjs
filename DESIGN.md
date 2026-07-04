@@ -4,25 +4,26 @@
 
 PocketJS is a standalone cross-platform UI engine: a retained-mode native UI tree
 (Rust: flexbox layout, styling, animation, text, rendering) driven from
-JavaScript (QuickJS on PSP, the host JS engine elsewhere) by **Solid** through
-its universal renderer, styled with a **build-time Tailwind-subset compiler**,
+JavaScript (QuickJS on PSP, the host JS engine elsewhere) by a
+**React-compatible JSX shim** or **Vue JSX** renderer, styled with a
+**build-time Tailwind-subset compiler**,
 with **baked font atlases** for text. It lives in `PocketJS/` and deliberately
 shares no code with the dreamcart game framework — it will be extracted into
 its own repository later. (It *does* copy proven low-level patterns from the
 dreamcart runtime; every copy is noted below.)
 
 This design was adversarially reviewed by three independent audits (PSP-native
-feasibility, Solid-universal correctness, compiler/pipeline); every confirmed
+feasibility, JSX-renderer correctness, compiler/pipeline); every confirmed
 finding is folded in below and marked **[R]**.
 
 ```
-        app.tsx  (Solid + Tailwind classes)
-           │  babel-preset-solid {generate:'universal'}  (two-pass build)
+        app.tsx  (React-compatible/Vue JSX + Tailwind classes)
+           │  Babel JSX transform for --engine=react|vue  (two-pass build)
            ▼
         bundle.js      styles.bin + font atlases + images ──► app.dcpak
            │
    ┌── QuickJS (PSP) ──────────┐   ┌── browser / Bun ────────┐
-   │ Solid runtime             │   │ Solid runtime           │
+   │ React-compatible/Vue JSX  │   │ React-compatible/Vue JSX│
    │   │ createNode/setStyle…  │   │   │ same ui.* ops       │
    │   ▼                       │   │   ▼                     │
    │ ui-core (Rust, no_std)    │   │ ui-core (same Rust,     │
@@ -39,19 +40,24 @@ finding is folded in below and marked **[R]**.
 Decisions grounded in a full audit of the dreamcart runtime (research
 artifacts: `$JOB_TMP/map-*.json`).
 
-- **Solid + universal renderer** (`solid-js@1.9.x`, `babel-preset-solid@1.9.x`
-  `{generate:'universal', moduleName:<ABSOLUTE path to src/renderer.ts>}` —
-  moduleName is emitted verbatim into every file, so it must be absolute or a
-  bundler-aliased bare specifier **[R]**): no VDOM — updates run only the
-  effect closures of changed signals. Verified: Solid's dist references no
-  `window`/`document`/`setTimeout`/`WeakRef`; needs Proxy, WeakMap, Promise.
-  Prior art: Lightning TV, `@opentui/solid`. Preact+DOM-shim is the fallback.
+- **Original React failure, then React-compatible/Vue JSX renderers.** The
+  primary negative finding is that original React did not reach a runnable
+  PSP/PPSSPP path in this investigation; the full `react-reconciler` is too
+  slow to bootstrap inside PSP QuickJS. The `--engine=react` build is therefore
+  only a local React-shaped JSX compatibility shim plus PocketJS native-tree
+  reconciliation. It is not official React, and its measurements must not be
+  reported as React performance. The current Vue build uses Vue 3's
+  VDOM/custom-renderer route over the same native-tree contract; it is not Vue
+  Vapor Mode. Vapor's compiler emits a different DOM-helper/runtime shape, so
+  it must be evaluated as a separate engine path before any Vue performance
+  conclusion is generalized. Both runnable engine paths keep application code
+  in JSX and Tailwind literals, with PocketJS signals/lifecycle callbacks providing the
+  app-facing reactive API.
 - **QuickJS reality [R]**: the linked engine (quickjs-rs submodule) is
   **Bellard 2025 (VERSION 2026-06-04), ~ES2023** — logical assignment, WeakRef
   and **FinalizationRegistry are available**. Still absent: `queueMicrotask`
   (polyfill via `Promise.resolve().then`), `setTimeout`, `MessageChannel`,
-  `performance` — so Solid's `createResource`/transitions/`enableScheduling`
-  remain off-limits on PSP (compiler lints on import).
+  `performance` — runtime code must not depend on browser scheduling APIs.
 - **taffy 0.11** (`default-features=false, features=["alloc","taffy_tree","flexbox","content_size"]`):
   verified `no_std`+alloc, f32-only, no libm. Fallback: hand-rolled flexbox
   subset — only if code size or hardware measurement disqualifies it.
@@ -72,9 +78,10 @@ artifacts: `$JOB_TMP/map-*.json`).
 ```
 PocketJS/
   DESIGN.md, README.md
-  package.json         self-contained; PINNED: solid-js@^1.9, babel-preset-solid@^1.9,
-                       @babel/core@^7 (Babel 8 breaks preset-solid [R]),
-                       @babel/preset-typescript@^7 (required for .tsx [R]), opentype.js, typescript
+  package.json         self-contained; React-compatible JSX types/runtime shim,
+                       Vue 3 renderer, @babel/core@^7, @babel/preset-react,
+                       @vue/babel-plugin-jsx, @babel/preset-typescript@^7,
+                       opentype.js, typescript
   tsconfig.json        jsx:'preserve' (babel owns the transform); editors typecheck only [R]
   src/jsx.d.ts         JSX component typing only; public primitives live in src/primitives.ts [R]
   assets/fonts/        Inter-Regular.ttf, Inter-Bold.ttf (+ OFL LICENSE)
@@ -121,7 +128,7 @@ PocketJS/
     src/lib.rs         extern "C" op mirror + render() → RGBA8 480×272
     src/raster.rs      deterministic scanline rasterizer (blend, gradients, glyphs)
   src/                 TS/JS runtime shared by all hosts
-    renderer.ts        Solid universal createRenderer; JS mirror tree; setProperty
+    renderer.ts        React-compatible JSX renderer; JS mirror tree; setProperty
                        DISPATCH TABLE [R]: class→styleId, on*→input registry,
                        src→texture registry, style object→per-key propId (prev-diffed);
                        classList / on: / bool: / unknown → loud dev error.
@@ -137,11 +144,11 @@ PocketJS/
     anim.ts            animate()/spring() typed API
     index.ts           render(), signals re-export
   compiler/
-    solid-plugin.ts    babel transformAsync: [[babel-preset-solid,{generate:'universal',
-                       moduleName}], [@babel/preset-typescript]]; ALSO collects, per file,
+    jsx-plugin.ts      engine-aware babel transformAsync: React-compatible runtime
+                       or Vue JSX plus @babel/preset-typescript; ALSO collects, per file,
                        class strings + text codepoints FROM THE AST (StringLiteral +
                        TemplateLiteral quasis — JSX text compiles to template literals [R]);
-                       lints: classList attr, solid createResource/transition imports
+                       lints: classList attr and dynamic class fragments
     tailwind.ts        token parser + style-table compiler → styles.bin + styles.generated.ts;
                        a literal becomes a style record iff EVERY whitespace-separated
                        token parses as a supported utility (else ignored) [R]
@@ -183,7 +190,7 @@ PocketJS/
    `<app>.dcpak`.
 3. **Pass 2 — bundle.** `Bun.build` with an onLoad plugin that serves the
    *cached* pass-1 transforms (styles.generated.ts now exists), `format:
-   "iife"`, `minify:false`, `target:"browser"`. Output `<app>.js` next to the
+   "iife"`, `minify:true`, `target:"browser"`. Output `<app>.js` next to the
    dcpak.
 
 The PSP build (`scripts/psp.ts`) then runs `rustup run nightly-2026-05-28
@@ -193,7 +200,7 @@ RUSTFLAGS `-A linker-messages …`), `POCKETJS_APP=<app>` consumed by `build.rs`
 
 ## The native contract (`ui.*`)
 
-Mutation-only ops; the Solid renderer keeps a JS mirror tree (`{id, parent,
+Mutation-only ops; the JS renderer keeps a mirror tree (`{id, parent,
 children[], …}`) so reconciler *reads* never cross the FFI. Handles are `i32`
 **generation-tagged** ids; node 1 = pre-created root (full-screen flex column).
 
@@ -202,11 +209,11 @@ children[], …}`) so reconciler *reads* never cross the FFI. Handles are `i32`
 | createNode | `(type:i32) → id` | 0=view 1=text 2=image |
 | destroyNode | `(id)` | subtree; frees anim tracks; clears focus if inside **[R]** |
 | insertBefore | `(parent, child, anchorOr0)` | **DOM move semantics: if child is attached anywhere, unlink first** (core tree + taffy + JS mirror) **[R]**; append when anchor=0; silently no-ops past `MAX_TREE_DEPTH` (spec, 64) so recursive tree walks stay stack-bounded on PSP |
-| removeChild | `(parent, child)` | keeps node alive (Solid re-inserts); renderer sweep destroys it at frame end if still detached |
+| removeChild | `(parent, child)` | keeps node alive for possible re-insert; renderer sweep destroys it at frame end if still detached |
 | setStyle | `(id, styleId)` | triggers transitions (old→new animatable diff) |
 | setProp | `(id, propId:i32, value:f64)` | dynamic single prop (colors as u32 bits) |
 | setText | `(id, str)` | UTF-8; text nodes only |
-| replaceText | `(id, str)` | Solid universal calls this on text updates |
+| replaceText | `(id, str)` | renderer text-update helper |
 | uploadTexture | `(buf, w, h, psm) → handle` | pow2 ≤512, copied + 16B-aligned |
 | setImage | `(id, texHandle)` | texHandle < 0 clears (handles are 0-based: 0 is the first upload) |
 | animate | `(id, propId, to:f64, durMs, easing, delayMs) → animId` | from = current |
@@ -219,7 +226,7 @@ children[], …}`) so reconciler *reads* never cross the FFI. Handles are `i32`
 concatenated inline run (single measure, not N flex items). Text nodes inherit
 the resolved text style (font slot, color, tracking, align) from the nearest
 ancestor that sets text props; bare strings under `<view>` get the inherited
-default. Empty text nodes (Solid's `<Show>` markers) are excluded from layout
+default. Empty text nodes from conditional rendering are excluded from layout
 until `replaceText` makes them non-empty.
 
 Application code should not write those lower-case host tags directly. The
@@ -309,8 +316,8 @@ literals, `style={{…}}` objects, or `animate()`.
 
 One FFI crossing per steady-state frame; DrawList ≤ ~40 sceGuDrawArray calls,
 ≤ ~2000 quads; per-frame vertex bytes ≈48 KB from the bump pool; layout-prop
-animations relayout that frame (prefer transforms); Solid effects only on
-interaction. Boot: unminified but tree-shaken bundle; all binary assets in the
+animations relayout that frame (prefer transforms); app effects should run on
+interaction or explicit frame hooks. Boot: minified tree-shaken bundle; all binary assets in the
 dcpak (base64-in-JS is the known QuickJS boot killer).
 
 ## What v1 explicitly punts

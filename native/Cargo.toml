@@ -28,3 +28,5 @@ pocketjs-core = { path = "../core" }
 [features]
 # E2E frame-dump build for test/e2e-ppsspp.ts (dumps frames to ms0:/dc_cap).
 capture = []
+# PSP-side microsecond timing summary for scripts/bench-ppsspp.ts.
+bench = []

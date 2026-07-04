@@ -7,11 +7,12 @@
 // Frame driving stays component-scoped through PocketJS lifecycle callbacks: button presses
 // switch tabs, while a capped frame hook advances deterministic counters.
 
-import { Show, Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { Show, Text, View, defineComponent, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { createMemo, createSignal, onMount } from "@pocketjs/framework/reactivity";
 import { BTN } from "@pocketjs/framework/input";
+import { frameworkName } from "@pocketjs/framework";
 
 const COUNT_FRAMES = 75;
 const BAR_ANIM_FRAMES = 26;
@@ -92,7 +93,7 @@ function barFillOffset(scale: number): number {
 
 /** OVERVIEW tab: bars use native transform-only tweens, matching switch/slider
  *  motion without triggering per-frame layout work. */
-function Overview() {
+const Overview = defineComponent(function Overview() {
   const fills: Array<NodeMirror | undefined> = [];
 
   onMount(() => {
@@ -115,8 +116,8 @@ function Overview() {
           </View>
           <View class="w-[280] h-2 rounded-full shadow bg-slate-200 overflow-hidden">
             <View
-              ref={(node) => {
-                fills[i] = node;
+              nodeRef={(node) => {
+                fills[i] = node ?? undefined;
               }}
               class={bar.fill}
               style={{ scaleX: 0, translateX: barFillOffset(0) }}
@@ -127,7 +128,7 @@ function Overview() {
       ))}
     </View>
   );
-}
+});
 
 /** SYSTEMS tab: status board. Rows appear one after another with short delays;
  *  opacity starts at 0, so there is no visible flash from default gray. */
@@ -155,7 +156,7 @@ function Systems(props: { frame: () => number }) {
 // App
 // ---------------------------------------------------------------------------
 
-export default function Stats() {
+export default defineComponent(function Stats() {
   const [frameN, setFrameN] = createSignal(0);
   const [tab, setTab] = createSignal(0);
   const [systemsFrame, setSystemsFrame] = createSignal(0);
@@ -183,7 +184,7 @@ export default function Stats() {
     <View class="flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
       <View class="flex-row items-end justify-between">
         <View class="flex-col">
-          <Text class="text-xs text-emerald-600 tracking-wide">LIVE TELEMETRY</Text>
+          <Text class="text-xs text-emerald-600 tracking-wide">LIVE TELEMETRY · {frameworkName()}</Text>
           <Text class="text-2xl text-slate-950 font-bold">Mission Control</Text>
         </View>
         <View class="flex-row gap-2">
@@ -248,4 +249,4 @@ export default function Stats() {
       <Text class="text-xs text-slate-500">LEFT / RIGHT switch tab</Text>
     </View>
   );
-}
+});

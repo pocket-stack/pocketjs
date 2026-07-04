@@ -11,10 +11,11 @@
 // Design notes: every class a FULL literal (per-track cover accent baked per
 // entry); text single-line.
 
-import { Text, View } from "@pocketjs/framework/components";
+import { Text, View, defineComponent } from "@pocketjs/framework/components";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { createSignal } from "@pocketjs/framework/reactivity";
 import { BTN } from "@pocketjs/framework/input";
+import { frameworkName } from "@pocketjs/framework";
 
 interface Track {
   title: string;
@@ -51,7 +52,7 @@ const PROGRESS_TRACK_W = 160; // progress track px — matches the w-[160] track
 // App
 // ---------------------------------------------------------------------------
 
-export default function Music() {
+export default defineComponent(function Music() {
   const [trackIndex, setTrackIndex] = createSignal(0);
   const [playing, setPlaying] = createSignal(true);
   const [position, setPosition] = createSignal(0); // frames into the current track
@@ -96,7 +97,7 @@ export default function Music() {
     <View class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
       <View class="flex-row items-end justify-between">
         <View class="flex-col">
-          <Text class="text-xs text-blue-600 tracking-wide">POCKETJS SHOWCASE</Text>
+          <Text class="text-xs text-blue-600 tracking-wide">PSP-UI SHOWCASE · {frameworkName()}</Text>
           <Text class="text-2xl text-slate-950 font-bold">Now Playing</Text>
         </View>
         <Text class="text-xs text-slate-500">TRACK {trackIndex() + 1} / {TRACKS.length}</Text>
@@ -148,4 +149,4 @@ export default function Music() {
       <Text class="text-xs text-slate-500">UP / DOWN focus · CIRCLE play/select · L/R skip track</Text>
     </View>
   );
-}
+});

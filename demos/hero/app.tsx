@@ -2,10 +2,11 @@
 // Uses all three public primitives, class literals, a dynamic style object,
 // focus + onPress, and a signal in text — the exact surface phase v1 supports.
 
-import { Image, Show, Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { Image, Show, Text, View, defineComponent, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
 import { createSignal, onMount } from "@pocketjs/framework/reactivity";
+import { frameworkName } from "@pocketjs/framework";
 
 const SPINNER_FRAME_STEP = 3;
 const SPINNER_FRAMES = [
@@ -28,7 +29,7 @@ function Stat(props: { label: string; value: string; cls: string }) {
   );
 }
 
-export default function Hero() {
+export default defineComponent(function Hero() {
   const [count, setCount] = createSignal(0);
   const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, { frameStep: SPINNER_FRAME_STEP });
   let underline: NodeMirror | undefined;
@@ -43,7 +44,7 @@ export default function Hero() {
           <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
           <View class="flex-col">
             <Text class="text-base text-slate-950 font-bold tracking-wide">PocketJS</Text>
-            <Text class="text-xs text-slate-500 tracking-wide">SOLID + RUST + SCEGU</Text>
+            <Text class="text-xs text-slate-500 tracking-wide">{frameworkName()} + RUST + SCEGU</Text>
           </View>
         </View>
         <View class="flex-row gap-4">
@@ -60,7 +61,9 @@ export default function Hero() {
           <Image class="w-10 h-10" src={spinnerSrc()} />
         </View>
         <View
-          ref={underline}
+          nodeRef={(node) => {
+            underline = node ?? undefined;
+          }}
           class="h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"
           style={{ translateX: count() * 2 }}
         />
@@ -84,4 +87,4 @@ export default function Hero() {
       </View>
     </View>
   );
-}
+});

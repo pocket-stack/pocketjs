@@ -1,21 +1,16 @@
 // JSX typings for PocketJS application code.
-//
-// The public UI surface is imported components (`View`, `Text`, `Image`) from
-// `PocketJS`. Lower-case host tags (`view`, `text`, `image`) are renderer
-// implementation details and are intentionally not declared as global JSX
-// intrinsics; accidental app usage should fail typecheck.
-
-import type { JSX as SolidJSX } from "solid-js";
 
 declare global {
   namespace JSX {
-    // What a component/JSX expression evaluates to: Solid's union of nodes,
-    // strings, numbers, arrays and accessors.
-    type Element = SolidJSX.Element;
+    type Element = unknown;
     interface ElementChildrenAttribute {
       children: {};
     }
-    interface IntrinsicElements {}
+    interface IntrinsicElements {
+      view: Record<string, unknown>;
+      text: Record<string, unknown>;
+      image: Record<string, unknown>;
+    }
   }
 }
 

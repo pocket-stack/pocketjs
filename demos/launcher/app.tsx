@@ -1,17 +1,17 @@
 import {
   ActionHandler,
-  Match,
   Modal,
   Screen,
   Show,
-  Switch,
   Text,
   View,
+  defineComponent,
   type NodeMirror,
 } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { BTN } from "@pocketjs/framework/input";
 import { createEffect, createSignal } from "@pocketjs/framework/reactivity";
+import { frameworkName } from "@pocketjs/framework";
 
 import Cards from "../cards/app.tsx";
 import Hero from "../hero/app.tsx";
@@ -98,37 +98,18 @@ function cursorY(index: number): number {
 }
 
 function ActiveDemo(props: { index: number | null }) {
-  return (
-    <Switch>
-      <Match when={props.index === null}>
-        <View class="w-full h-full bg-slate-950" />
-      </Match>
-      <Match when={props.index === 0}>
-        <Hero />
-      </Match>
-      <Match when={props.index === 1}>
-        <Cards />
-      </Match>
-      <Match when={props.index === 2}>
-        <Library />
-      </Match>
-      <Match when={props.index === 3}>
-        <Music />
-      </Match>
-      <Match when={props.index === 4}>
-        <Notifications />
-      </Match>
-      <Match when={props.index === 5}>
-        <Settings />
-      </Match>
-      <Match when={props.index === 6}>
-        <Stats />
-      </Match>
-    </Switch>
-  );
+  if (props.index === null) return <View class="w-full h-full bg-slate-950" />;
+  if (props.index === 0) return <Hero />;
+  if (props.index === 1) return <Cards />;
+  if (props.index === 2) return <Library />;
+  if (props.index === 3) return <Music />;
+  if (props.index === 4) return <Notifications />;
+  if (props.index === 5) return <Settings />;
+  if (props.index === 6) return <Stats />;
+  return null;
 }
 
-function DemoPicker(props: {
+const DemoPicker = defineComponent(function DemoPicker(props: {
   open: boolean;
   current: number | null;
   onPick: (index: number) => void;
@@ -176,7 +157,7 @@ function DemoPicker(props: {
 
       <View class="flex-row items-start justify-between">
         <View class="flex-col gap-1">
-          <Text class="text-xs text-blue-600 tracking-wide">DEMO SWITCHER</Text>
+          <Text class="text-xs text-blue-600 tracking-wide">DEMO SWITCHER · {frameworkName()}</Text>
           <Text class="text-xl text-slate-950 font-bold">Choose Demo</Text>
         </View>
         <Text class="text-xs text-slate-500">
@@ -186,7 +167,9 @@ function DemoPicker(props: {
 
       <View class="relative flex-col gap-1">
         <View
-          ref={ring}
+          nodeRef={(node) => {
+            ring = node ?? undefined;
+          }}
           class="absolute top-0 left-0 z-5 w-[202] h-8 rounded-lg border-blue-500 shadow-md bg-transparent"
           style={{ translateX: cursorX(initialCursor), translateY: cursorY(initialCursor) }}
         />
@@ -216,9 +199,9 @@ function DemoPicker(props: {
       </View>
     </Modal>
   );
-}
+});
 
-export default function Launcher() {
+export default defineComponent(function Launcher() {
   const [active, setActive] = createSignal<number | null>(null);
   const [pickerOpen, setPickerOpen] = createSignal(true);
 
@@ -248,4 +231,4 @@ export default function Launcher() {
       />
     </Screen>
   );
-}
+});

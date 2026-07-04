@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1850" viewBox="0 0 1600 1850">
+<rect width="1600" height="1850" fill="#f8fafc"/>
+<style>
+.title{font-family:Arial,Helvetica,sans-serif;font-size:30px;font-weight:700;fill:#0f172a;}
+.sub{font-family:Arial,Helvetica,sans-serif;font-size:18px;fill:#475569;}
+.label{font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;fill:#1f2937;}
+.small{font-family:Arial,Helvetica,sans-serif;font-size:15px;fill:#64748b;}
+.value{font-family:Arial,Helvetica,sans-serif;font-size:15px;fill:#334155;}
+.mono{font-family:Menlo,Consolas,monospace;font-size:14px;fill:#64748b;}
+</style>
+<text x="70" y="72" class="title">Valid Vue Vapor vs Vue vs Solid on PPSSPP</text>
+<text x="70" y="108" class="sub">React note: original React is not runnable here, so it is intentionally absent. Feature parity was fixed before this run.</text>
+<text x="70" y="136" class="mono">source: dist/bench/ppsspp-bench-2026-07-04T13-16-19-386Z.json · samples/app/engine=7 · PPSSPP 676724ee5e02 · git e824ea858673 dirty=true</text>
+<rect x="1010" y="173" width="22" height="22" rx="4" fill="#2563eb"/>
+<text x="1042" y="191" class="label">Vue Vapor</text>
+<rect x="1180" y="173" width="22" height="22" rx="4" fill="#059669"/>
+<text x="1212" y="191" class="label">Vue</text>
+<rect x="1350" y="173" width="22" height="22" rx="4" fill="#111827"/>
+<text x="1382" y="191" class="label">Solid</text>
+<text x="100" y="249" class="label">Cross-demo geometric means</text>
+<text x="100" y="279" class="small">Bars are normalized within each row; labels show actual geometric means across the seven PPSSPP demo specs.</text>
+<text x="100" y="345" class="label">JS eval / startup</text>
+<text x="100" y="364" class="small">eval_us</text>
+<rect x="450" y="325" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="325" width="760.0" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="337" class="value">Vue Vapor 2323 ms</text>
+<rect x="450" y="344" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="344" width="537.5" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="356" class="value">Vue 1643 ms</text>
+<rect x="450" y="363" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="363" width="217.9" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="375" class="value">Solid 666 ms</text>
+<text x="100" y="405" class="label">boot to first frame</text>
+<text x="100" y="424" class="small">boot_to_frame0_us</text>
+<rect x="450" y="385" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="385" width="760.0" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="397" class="value">Vue Vapor 2438 ms</text>
+<rect x="450" y="404" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="404" width="560.0" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="416" class="value">Vue 1797 ms</text>
+<rect x="450" y="423" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="423" width="242.0" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="435" class="value">Solid 777 ms</text>
+<text x="100" y="465" class="label">frame JS callback</text>
+<text x="100" y="484" class="small">avg_js_us</text>
+<rect x="450" y="445" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="445" width="760.0" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="457" class="value">Vue Vapor 402 us</text>
+<rect x="450" y="464" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="464" width="635.0" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="476" class="value">Vue 336 us</text>
+<rect x="450" y="483" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="483" width="475.3" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="495" class="value">Solid 252 us</text>
+<text x="100" y="525" class="label">promise/jobs drain</text>
+<text x="100" y="544" class="small">avg_jobs_us</text>
+<rect x="450" y="505" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="505" width="48.3" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="517" class="value">Vue Vapor 1692 us</text>
+<rect x="450" y="524" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="524" width="760.0" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="536" class="value">Vue 26600 us</text>
+<rect x="450" y="543" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="543" width="1.0" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="555" class="value">Solid near 0 us</text>
+<text x="100" y="585" class="label">UI tick</text>
+<text x="100" y="604" class="small">avg_tick_us</text>
+<rect x="450" y="565" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="565" width="760.0" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="577" class="value">Vue Vapor 2.64 ms</text>
+<rect x="450" y="584" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="584" width="757.6" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="596" class="value">Vue 2.63 ms</text>
+<rect x="450" y="603" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="603" width="113.9" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="615" class="value">Solid 395 us</text>
+<text x="100" y="645" class="label">draw</text>
+<text x="100" y="664" class="small">avg_draw_us</text>
+<rect x="450" y="625" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="625" width="760.0" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="637" class="value">Vue Vapor 6.42 ms</text>
+<rect x="450" y="644" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="644" width="741.1" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="656" class="value">Vue 6.26 ms</text>
+<rect x="450" y="663" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="663" width="716.3" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="675" class="value">Solid 6.05 ms</text>
+<text x="100" y="705" class="label">render submit</text>
+<text x="100" y="724" class="small">avg_render_us</text>
+<rect x="450" y="685" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="685" width="760.0" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="697" class="value">Vue Vapor 9.22 ms</text>
+<rect x="450" y="704" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="704" width="743.7" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="716" class="value">Vue 9.02 ms</text>
+<rect x="450" y="723" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="723" width="670.3" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="735" class="value">Solid 8.13 ms</text>
+<text x="100" y="765" class="label">total frame work</text>
+<text x="100" y="784" class="small">avg_work_us</text>
+<rect x="450" y="745" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="745" width="298.9" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="757" class="value">Vue Vapor 23.4 ms</text>
+<rect x="450" y="764" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="764" width="760.0" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="776" class="value">Vue 59.6 ms</text>
+<rect x="450" y="783" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="783" width="203.7" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="795" class="value">Solid 16.0 ms</text>
+<text x="100" y="825" class="label">worst frame work</text>
+<text x="100" y="844" class="small">max_work_us</text>
+<rect x="450" y="805" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="805" width="369.0" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="817" class="value">Vue Vapor 99.5 ms</text>
+<rect x="450" y="824" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="824" width="760.0" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="836" class="value">Vue 205 ms</text>
+<rect x="450" y="843" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="843" width="154.6" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="855" class="value">Solid 41.7 ms</text>
+<text x="100" y="885" class="label">PPSSPP wall time</text>
+<text x="100" y="904" class="small">host_wall_ms</text>
+<rect x="450" y="865" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="865" width="521.1" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="877" class="value">Vue Vapor 471 ms</text>
+<rect x="450" y="884" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="884" width="760.0" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="896" class="value">Vue 687 ms</text>
+<rect x="450" y="903" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="903" width="352.0" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="915" class="value">Solid 318 ms</text>
+<text x="100" y="945" class="label">JS bundle size</text>
+<text x="100" y="964" class="small">bundle_bytes</text>
+<rect x="450" y="925" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="925" width="760.0" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="937" class="value">Vue Vapor 135 KB</text>
+<rect x="450" y="944" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="944" width="508.3" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="956" class="value">Vue 90 KB</text>
+<rect x="450" y="963" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="963" width="208.2" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="975" class="value">Solid 37 KB</text>
+<text x="100" y="1005" class="label">DCPAK asset pack</text>
+<text x="100" y="1024" class="small">dcpak_bytes</text>
+<rect x="450" y="985" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="985" width="760.0" height="14" rx="3" fill="#2563eb"/>
+<text x="1236" y="997" class="value">Vue Vapor 199 KB</text>
+<rect x="450" y="1004" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="1004" width="760.0" height="14" rx="3" fill="#059669"/>
+<text x="1236" y="1016" class="value">Vue 199 KB</text>
+<rect x="450" y="1023" width="760" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="450" y="1023" width="760.0" height="14" rx="3" fill="#111827"/>
+<text x="1236" y="1035" class="value">Solid 199 KB</text>
+<rect x="70" y="1043" width="1460" height="86" rx="8" fill="#e0f2fe" stroke="#bae6fd"/>
+<text x="100" y="1073" class="label">Key ratios after visual parity: avg_work Vapor/Solid 1.47x · Vue/Solid 3.73x · Vapor/Vue 0.39x · eval Vapor/Solid 3.49x · bundle Vapor/Solid 3.65x</text>
+<text x="100" y="1101" class="small">Interpretation: Vapor is still much faster than plain Vue in frame work, but it is no longer below Solid after fixing the invalid black-screen/top-text render.</text>
+<text x="100" y="1187" class="label">Per-demo total frame work (avg_work_us)</text>
+<text x="100" y="1217" class="small">This row explains the rollup: stats and music are the expensive valid Vue Vapor cases; hero/cards/settings are close to Solid.</text>
+<text x="100" y="1284" class="label">hero</text>
+<rect x="260" y="1262" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1262" width="104.9" height="14" rx="3" fill="#2563eb"/>
+<text x="1186" y="1274" class="value">Vue Vapor 16.7 ms</text>
+<rect x="260" y="1281" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1281" width="568.9" height="14" rx="3" fill="#059669"/>
+<text x="1186" y="1293" class="value">Vue 90.8 ms</text>
+<rect x="260" y="1300" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1300" width="95.0" height="14" rx="3" fill="#111827"/>
+<text x="1186" y="1312" class="value">Solid 15.1 ms</text>
+<text x="100" y="1356" class="label">cards</text>
+<rect x="260" y="1334" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1334" width="121.9" height="14" rx="3" fill="#2563eb"/>
+<text x="1186" y="1346" class="value">Vue Vapor 19.4 ms</text>
+<rect x="260" y="1353" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1353" width="127.3" height="14" rx="3" fill="#059669"/>
+<text x="1186" y="1365" class="value">Vue 20.3 ms</text>
+<rect x="260" y="1372" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1372" width="116.6" height="14" rx="3" fill="#111827"/>
+<text x="1186" y="1384" class="value">Solid 18.6 ms</text>
+<text x="100" y="1428" class="label">stats</text>
+<rect x="260" y="1406" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1406" width="275.1" height="14" rx="3" fill="#2563eb"/>
+<text x="1186" y="1418" class="value">Vue Vapor 43.9 ms</text>
+<rect x="260" y="1425" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1425" width="900.0" height="14" rx="3" fill="#059669"/>
+<text x="1186" y="1437" class="value">Vue 143.6 ms</text>
+<rect x="260" y="1444" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1444" width="126.4" height="14" rx="3" fill="#111827"/>
+<text x="1186" y="1456" class="value">Solid 20.2 ms</text>
+<text x="100" y="1500" class="label">library</text>
+<rect x="260" y="1478" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1478" width="90.3" height="14" rx="3" fill="#2563eb"/>
+<text x="1186" y="1490" class="value">Vue Vapor 14.4 ms</text>
+<rect x="260" y="1497" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1497" width="205.6" height="14" rx="3" fill="#059669"/>
+<text x="1186" y="1509" class="value">Vue 32.8 ms</text>
+<rect x="260" y="1516" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1516" width="46.8" height="14" rx="3" fill="#111827"/>
+<text x="1186" y="1528" class="value">Solid 7.5 ms</text>
+<text x="100" y="1572" class="label">settings</text>
+<rect x="260" y="1550" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1550" width="154.8" height="14" rx="3" fill="#2563eb"/>
+<text x="1186" y="1562" class="value">Vue Vapor 24.7 ms</text>
+<rect x="260" y="1569" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1569" width="174.4" height="14" rx="3" fill="#059669"/>
+<text x="1186" y="1581" class="value">Vue 27.8 ms</text>
+<rect x="260" y="1588" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1588" width="142.7" height="14" rx="3" fill="#111827"/>
+<text x="1186" y="1600" class="value">Solid 22.8 ms</text>
+<text x="100" y="1644" class="label">notifications</text>
+<rect x="260" y="1622" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1622" width="115.3" height="14" rx="3" fill="#2563eb"/>
+<text x="1186" y="1634" class="value">Vue Vapor 18.4 ms</text>
+<rect x="260" y="1641" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1641" width="583.8" height="14" rx="3" fill="#059669"/>
+<text x="1186" y="1653" class="value">Vue 93.1 ms</text>
+<rect x="260" y="1660" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1660" width="99.4" height="14" rx="3" fill="#111827"/>
+<text x="1186" y="1672" class="value">Solid 15.9 ms</text>
+<text x="100" y="1716" class="label">music</text>
+<rect x="260" y="1694" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1694" width="259.5" height="14" rx="3" fill="#2563eb"/>
+<text x="1186" y="1706" class="value">Vue Vapor 41.4 ms</text>
+<rect x="260" y="1713" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1713" width="742.0" height="14" rx="3" fill="#059669"/>
+<text x="1186" y="1725" class="value">Vue 118.4 ms</text>
+<rect x="260" y="1732" width="900" height="14" rx="3" fill="#e2e8f0"/>
+<rect x="260" y="1732" width="108.0" height="14" rx="3" fill="#111827"/>
+<text x="1186" y="1744" class="value">Solid 17.2 ms</text>
+<text x="100" y="1792" class="small">Reading: React is intentionally absent from the scorecard because original React does not run in this PSP QuickJS host; the prior React-compatible shim is not original React.</text>
+</svg>

@@ -28,7 +28,7 @@ export interface HostOps {
   destroyNode(id: number): void;
   /** DOM move semantics (attached child is unlinked first); anchor 0 = append. */
   insertBefore(parent: number, child: number, anchorOr0: number): void;
-  /** Detaches but keeps the node alive (Solid may re-insert it this frame). */
+  /** Detaches but keeps the node alive for possible re-insert this frame. */
   removeChild(parent: number, child: number): void;
   /** styleId from the compiled style table; STYLE_ID_NONE (-1) clears. */
   setStyle(id: number, styleId: number): void;
@@ -36,7 +36,7 @@ export interface HostOps {
   setProp(id: number, propId: number, value: number): void;
   /** UTF-8 text; text nodes only. */
   setText(id: number, str: string): void;
-  /** Solid universal calls this on reactive text updates. */
+  /** Renderer text-update helper. */
   replaceText(id: number, str: string): void;
   /** pow2 dims ≤ 512; psm: spec PSM. Returns a texture handle. */
   uploadTexture(buf: Uint8Array, w: number, h: number, psm: number): number;

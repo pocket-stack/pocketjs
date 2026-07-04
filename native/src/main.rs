@@ -56,6 +56,8 @@ static APP_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/game.js"));
 // the core natively (dcpak.rs) BEFORE JS eval; also exposed read-only to JS
 // as __dcpak. Aliases .rodata — JS must never write through it.
 static APP_DCPAK: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/app.dcpak"));
+static POCKETJS_APP_NAME: &str = env!("POCKETJS_APP");
+static POCKETJS_ENGINE: &str = env!("POCKETJS_ENGINE");
 static POCKETJS_TRACE: &str = env!("POCKETJS_TRACE");
 
 // Build-time scripted input for deterministic PPSSPPHeadless captures
@@ -110,14 +112,16 @@ fn trace_enabled() -> bool {
 }
 
 unsafe fn trace_write(bytes: &[u8]) {
-    let fd = sys::sceIoOpen(
-        b"host0:/PocketJS-trace.txt\0".as_ptr(),
-        IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::APPEND,
-        0o777,
-    );
-    if fd.0 >= 0 {
-        sys::sceIoWrite(fd, bytes.as_ptr() as *const c_void, bytes.len());
-        sys::sceIoClose(fd);
+    for path in [b"host0:/PocketJS-trace.txt\0".as_ptr(), b"ms0:/PocketJS-trace.txt\0".as_ptr()] {
+        let fd = sys::sceIoOpen(
+            path,
+            IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::APPEND,
+            0o777,
+        );
+        if fd.0 >= 0 {
+            sys::sceIoWrite(fd, bytes.as_ptr() as *const c_void, bytes.len());
+            sys::sceIoClose(fd);
+        }
     }
 }
 
@@ -125,13 +129,15 @@ unsafe fn trace_reset() {
     if !trace_enabled() {
         return;
     }
-    let fd = sys::sceIoOpen(
-        b"host0:/PocketJS-trace.txt\0".as_ptr(),
-        IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::TRUNC,
-        0o777,
-    );
-    if fd.0 >= 0 {
-        sys::sceIoClose(fd);
+    for path in [b"host0:/PocketJS-trace.txt\0".as_ptr(), b"ms0:/PocketJS-trace.txt\0".as_ptr()] {
+        let fd = sys::sceIoOpen(
+            path,
+            IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::TRUNC,
+            0o777,
+        );
+        if fd.0 >= 0 {
+            sys::sceIoClose(fd);
+        }
     }
 }
 
@@ -150,6 +156,177 @@ unsafe fn trace_pair(prefix: &[u8], msg: &str) {
         trace_write(msg.as_bytes());
         trace_write(b"\n");
     }
+}
+
+#[cfg(feature = "bench")]
+#[derive(Clone, Copy)]
+struct BenchState {
+    run_start_us: u64,
+    eval_begin_us: u64,
+    eval_end_us: u64,
+    frame0_complete_us: u64,
+    frames: u32,
+    js_sum_us: u64,
+    jobs_sum_us: u64,
+    tick_sum_us: u64,
+    draw_sum_us: u64,
+    render_sum_us: u64,
+    work_sum_us: u64,
+    max_work_us: u64,
+}
+
+#[cfg(feature = "bench")]
+impl BenchState {
+    const fn new() -> Self {
+        Self {
+            run_start_us: 0,
+            eval_begin_us: 0,
+            eval_end_us: 0,
+            frame0_complete_us: 0,
+            frames: 0,
+            js_sum_us: 0,
+            jobs_sum_us: 0,
+            tick_sum_us: 0,
+            draw_sum_us: 0,
+            render_sum_us: 0,
+            work_sum_us: 0,
+            max_work_us: 0,
+        }
+    }
+}
+
+#[cfg(feature = "bench")]
+static mut BENCH: BenchState = BenchState::new();
+
+#[cfg(feature = "bench")]
+#[inline]
+unsafe fn bench_now_us() -> u64 {
+    sys::sceKernelGetSystemTimeWide() as u64
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_write(bytes: &[u8]) {
+    for path in [b"host0:/PocketJS-bench.jsonl\0".as_ptr(), b"ms0:/PocketJS-bench.jsonl\0".as_ptr()] {
+        let fd = sys::sceIoOpen(
+            path,
+            IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::APPEND,
+            0o777,
+        );
+        if fd.0 >= 0 {
+            sys::sceIoWrite(fd, bytes.as_ptr() as *const c_void, bytes.len());
+            sys::sceIoClose(fd);
+        }
+    }
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_reset_file() {
+    for path in [b"host0:/PocketJS-bench.jsonl\0".as_ptr(), b"ms0:/PocketJS-bench.jsonl\0".as_ptr()] {
+        let fd = sys::sceIoOpen(
+            path,
+            IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::TRUNC,
+            0o777,
+        );
+        if fd.0 >= 0 {
+            sys::sceIoClose(fd);
+        }
+    }
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_init() {
+    bench_reset_file();
+    BENCH = BenchState::new();
+    BENCH.run_start_us = bench_now_us();
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_eval_begin() {
+    BENCH.eval_begin_us = bench_now_us();
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_eval_end() {
+    BENCH.eval_end_us = bench_now_us();
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_window() -> (u32, u32) {
+    #[cfg(feature = "capture")]
+    {
+      (capture_env_u32(POCKETJS_CAP_START, 16), capture_env_u32(POCKETJS_CAP_N, 32))
+    }
+    #[cfg(not(feature = "capture"))]
+    {
+      (0, 120)
+    }
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_record_frame(
+    frame_count: u32,
+    t0: u64,
+    after_js: u64,
+    after_jobs: u64,
+    after_tick: u64,
+    after_draw: u64,
+    after_render: u64,
+) {
+    let (start, n) = bench_window();
+    if frame_count < start || frame_count >= start + n {
+        return;
+    }
+    let js_us = after_js.saturating_sub(t0);
+    let jobs_us = after_jobs.saturating_sub(after_js);
+    let tick_us = after_tick.saturating_sub(after_jobs);
+    let draw_us = after_draw.saturating_sub(after_tick);
+    let render_us = after_render.saturating_sub(after_draw);
+    let work_us = after_render.saturating_sub(t0);
+    BENCH.frames = BENCH.frames.saturating_add(1);
+    BENCH.js_sum_us = BENCH.js_sum_us.saturating_add(js_us);
+    BENCH.jobs_sum_us = BENCH.jobs_sum_us.saturating_add(jobs_us);
+    BENCH.tick_sum_us = BENCH.tick_sum_us.saturating_add(tick_us);
+    BENCH.draw_sum_us = BENCH.draw_sum_us.saturating_add(draw_us);
+    BENCH.render_sum_us = BENCH.render_sum_us.saturating_add(render_us);
+    BENCH.work_sum_us = BENCH.work_sum_us.saturating_add(work_us);
+    if work_us > BENCH.max_work_us {
+        BENCH.max_work_us = work_us;
+    }
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_record_frame0_complete() {
+    BENCH.frame0_complete_us = bench_now_us();
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_maybe_flush(frame_count: u32) {
+    let (start, n) = bench_window();
+    if n == 0 || frame_count != start + n - 1 || BENCH.frames == 0 {
+        return;
+    }
+    let frames = BENCH.frames as u64;
+    let line = alloc::format!(
+        "{{\"app\":\"{}\",\"engine\":\"{}\",\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"bundle_bytes\":{},\"dcpak_bytes\":{}}}\n",
+        POCKETJS_APP_NAME,
+        POCKETJS_ENGINE,
+        BENCH.frames,
+        start,
+        n,
+        BENCH.eval_end_us.saturating_sub(BENCH.eval_begin_us),
+        BENCH.eval_begin_us.saturating_sub(BENCH.run_start_us),
+        BENCH.frame0_complete_us.saturating_sub(BENCH.run_start_us),
+        BENCH.js_sum_us / frames,
+        BENCH.jobs_sum_us / frames,
+        BENCH.tick_sum_us / frames,
+        BENCH.draw_sum_us / frames,
+        BENCH.render_sum_us / frames,
+        BENCH.work_sum_us / frames,
+        BENCH.max_work_us,
+        APP_JS.len().saturating_sub(1),
+        APP_DCPAK.len(),
+    );
+    bench_write(line.as_bytes());
 }
 
 /// The `psp::module!` main thread has only a 256 KB stack; QuickJS compiling
@@ -199,6 +376,8 @@ unsafe fn log_exception(ctx: *mut JSContext) {
 }
 
 unsafe fn run() {
+    #[cfg(feature = "bench")]
+    bench_init();
     trace("run: entered");
     psp::enable_home_button();
     trace("run: home button enabled");
@@ -259,6 +438,8 @@ unsafe fn run() {
     }
 
     trace("run: JS_Eval begin");
+    #[cfg(feature = "bench")]
+    bench_eval_begin();
     let res = JS_Eval(
         ctx,
         APP_JS.as_ptr() as *const _,
@@ -271,6 +452,8 @@ unsafe fn run() {
         halt("JS_Eval threw");
     }
     JS_FreeValue(ctx, res);
+    #[cfg(feature = "bench")]
+    bench_eval_end();
     trace("run: JS_Eval ok");
 
     let frame_fn = JS_GetPropertyStr(ctx, global, b"frame\0".as_ptr() as *const _);
@@ -287,6 +470,8 @@ unsafe fn run() {
     #[cfg_attr(not(feature = "capture"), allow(unused_variables, unused_mut))]
     let mut frame_count: u32 = 0;
     loop {
+        #[cfg(feature = "bench")]
+        let bench_frame_start = bench_now_us();
         if frame_count == 0 {
             trace("frame 0: begin");
         }
@@ -307,6 +492,8 @@ unsafe fn run() {
 
         let mut args = [JS_NewInt32(ctx, mask)];
         let r = JS_Call(ctx, frame_fn, global, 1, args.as_mut_ptr());
+        #[cfg(feature = "bench")]
+        let bench_after_js = bench_now_us();
         if frame_count == 0 {
             trace("frame 0: JS_Call returned");
         }
@@ -325,6 +512,8 @@ unsafe fn run() {
                 break;
             }
         }
+        #[cfg(feature = "bench")]
+        let bench_after_jobs = bench_now_us();
         if frame_count == 0 {
             trace("frame 0: pending jobs drained");
         }
@@ -335,6 +524,8 @@ unsafe fn run() {
         // only reads atlases/textures, never the DrawList's owner mutably).
         let ui = ffi::ui();
         ui.tick();
+        #[cfg(feature = "bench")]
+        let bench_after_tick = bench_now_us();
         if frame_count == 0 {
             trace("frame 0: ui tick ok");
         }
@@ -342,10 +533,24 @@ unsafe fn run() {
             let dl = ui.draw();
             (dl.words.as_ptr(), dl.words.len())
         };
+        #[cfg(feature = "bench")]
+        let bench_after_draw = bench_now_us();
         if frame_count == 0 {
             trace("frame 0: ui draw ok");
         }
         ge::render(ffi::ui(), core::slice::from_raw_parts(words_ptr, words_len));
+        #[cfg(feature = "bench")]
+        let bench_after_render = bench_now_us();
+        #[cfg(feature = "bench")]
+        bench_record_frame(
+            frame_count,
+            bench_frame_start,
+            bench_after_js,
+            bench_after_jobs,
+            bench_after_tick,
+            bench_after_draw,
+            bench_after_render,
+        );
         if frame_count == 0 {
             trace("frame 0: rendered");
         }
@@ -373,14 +578,19 @@ unsafe fn run() {
             trace("frame 0: pool reset ok");
         }
 
+        if frame_count == 0 {
+            trace("frame 0: complete");
+            #[cfg(feature = "bench")]
+            bench_record_frame0_complete();
+        }
+        #[cfg(feature = "bench")]
+        bench_maybe_flush(frame_count);
+
         // Capture build only (test/e2e-ppsspp.ts): dump the just-presented
         // display framebuffer for frames CAP_START..CAP_START+CAP_N to
         // ms0:/dc_cap/fNNNN.raw. No-op everywhere but PPSSPPHeadless.
         #[cfg(feature = "capture")]
         cap_dump_frame(frame_count);
-        if frame_count == 0 {
-            trace("frame 0: complete");
-        }
 
         frame_count = frame_count.wrapping_add(1);
     }
