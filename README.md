@@ -1,3 +1,7 @@
+<p>
+  <img src="./site/assets/favicon.svg" width="56" height="56" alt="PocketJS">
+</p>
+
 # PocketJS
 
 A JSX UI stack for the Sony PSP (and beyond): **Solid** (universal renderer) +
