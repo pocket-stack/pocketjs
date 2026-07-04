@@ -16,7 +16,7 @@ Every host reports the controller as one integer per frame: a bitmask of the but
 currently held. The bit values live in the spec and never change across hosts.
 
 ```ts
-import { BTN } from "@pocketjs/input";
+import { BTN } from "@pocketjs/framework/input";
 ```
 
 | Member | Bit | Notes |
@@ -73,7 +73,7 @@ with `onPress`. The [`Focusable`](/docs/app-shell/) component is just a `View` w
 `focusable` preset to `true`.
 
 ```tsx
-import { Focusable, Text } from "@pocketjs/components";
+import { Focusable, Text } from "@pocketjs/framework/components";
 
 function PlayButton(props: { onStart: () => void }) {
   return (
@@ -111,9 +111,9 @@ variants and how they compile.
 Grab a node with `ref` (refs hand you the `NodeMirror`) and move focus imperatively.
 
 ```tsx
-import { focusNode, getFocused } from "@pocketjs/input";
-import { onMount } from "@pocketjs/reactivity";
-import { Focusable, type NodeMirror } from "@pocketjs/components";
+import { focusNode, getFocused } from "@pocketjs/framework/input";
+import { onMount } from "@pocketjs/framework/reactivity";
+import { Focusable, type NodeMirror } from "@pocketjs/framework/components";
 
 function Menu() {
   let first: NodeMirror | undefined;
@@ -138,8 +138,8 @@ The declarative [`FocusScope`](/docs/app-shell/) component (and
 primitive underneath is `pushFocusScope`.
 
 ```ts
-import { pushFocusScope } from "@pocketjs/input";
-import { onCleanup } from "@pocketjs/reactivity";
+import { pushFocusScope } from "@pocketjs/framework/input";
+import { onCleanup } from "@pocketjs/framework/reactivity";
 
 // `panel` is a NodeMirror captured from a ref.
 const dispose = pushFocusScope(panel, { autoFocus: true, restoreFocus: true });
@@ -164,8 +164,8 @@ semantics on a subtree: `LEFT`/`RIGHT` move within a row, `UP`/`DOWN` move betwe
 Use the [`FocusGrid`](/docs/app-shell/) component, or the primitive:
 
 ```ts
-import { pushFocusGrid } from "@pocketjs/input";
-import { onCleanup } from "@pocketjs/reactivity";
+import { pushFocusGrid } from "@pocketjs/framework/input";
+import { onCleanup } from "@pocketjs/framework/reactivity";
 
 const dispose = pushFocusGrid(gridRoot, { columns: 4, wrap: true });
 onCleanup(dispose);
@@ -204,9 +204,9 @@ bitmask. It cleans itself up when the owning component unmounts. Use it for held
 behavior (movement, charging) or anything that must sample input every frame.
 
 ```tsx
-import { onFrame } from "@pocketjs/lifecycle";
-import { BTN } from "@pocketjs/input";
-import { createSignal } from "@pocketjs/reactivity";
+import { onFrame } from "@pocketjs/framework/lifecycle";
+import { BTN } from "@pocketjs/framework/input";
+import { createSignal } from "@pocketjs/framework/reactivity";
 
 function Player() {
   const [x, setX] = createSignal(0);
@@ -225,8 +225,8 @@ presses. It fires your callback on the frame a matching button transitions from 
 down.
 
 ```tsx
-import { onButtonPress } from "@pocketjs/lifecycle";
-import { BTN } from "@pocketjs/input";
+import { onButtonPress } from "@pocketjs/framework/lifecycle";
+import { BTN } from "@pocketjs/framework/input";
 
 // Fires once per press of TRIANGLE.
 onButtonPress(BTN.TRIANGLE, () => openMenu());
@@ -258,8 +258,8 @@ The declarative equivalent is the [`ActionHandler`](/docs/app-shell/) component,
 wraps `onButtonPress`:
 
 ```tsx
-import { ActionHandler } from "@pocketjs/components";
-import { BTN } from "@pocketjs/input";
+import { ActionHandler } from "@pocketjs/framework/components";
+import { BTN } from "@pocketjs/framework/input";
 
 <ActionHandler button={BTN.START} onPress={() => togglePause()} />;
 ```
@@ -273,8 +273,8 @@ When a modal or overlay owns input, the buttons behind it should go quiet.
 the depth.
 
 ```ts
-import { pushButtonHandlerBlock } from "@pocketjs/lifecycle";
-import { onCleanup } from "@pocketjs/reactivity";
+import { pushButtonHandlerBlock } from "@pocketjs/framework/lifecycle";
+import { onCleanup } from "@pocketjs/framework/reactivity";
 
 const release = pushButtonHandlerBlock();
 onCleanup(release);

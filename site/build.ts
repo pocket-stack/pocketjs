@@ -222,16 +222,16 @@ async function compileCss() {
   console.log(`  assets/site.css  (${(bytes / 1024).toFixed(0)} KiB)`);
 }
 
-// import-map so compiled apps + the homepage resolve @pocketjs/* to the one runtime
+// import-map so compiled apps + the homepage resolve @pocketjs/framework/* to the one runtime
 const IMPORT_MAP = `<script type="importmap">
 {"imports":{
-  "@pocketjs":"/pg/runtime.js",
-  "@pocketjs/components":"/pg/runtime.js",
-  "@pocketjs/reactivity":"/pg/runtime.js",
-  "@pocketjs/animation":"/pg/runtime.js",
-  "@pocketjs/lifecycle":"/pg/runtime.js",
-  "@pocketjs/input":"/pg/runtime.js",
-  "@pocketjs/renderer":"/pg/runtime.js"
+  "@pocketjs/framework":"/pg/runtime.js",
+  "@pocketjs/framework/components":"/pg/runtime.js",
+  "@pocketjs/framework/reactivity":"/pg/runtime.js",
+  "@pocketjs/framework/animation":"/pg/runtime.js",
+  "@pocketjs/framework/lifecycle":"/pg/runtime.js",
+  "@pocketjs/framework/input":"/pg/runtime.js",
+  "@pocketjs/framework/renderer":"/pg/runtime.js"
 }}
 </script>`;
 

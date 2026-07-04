@@ -9,9 +9,9 @@
 // focus emphasis = translate-y lift + bg/border color (never scale — glyphs
 // don't scale), all text single-line, every class a FULL literal.
 
-import { Show, Text, View, type NodeMirror } from "@pocketjs/components";
-import { animate, spring } from "@pocketjs/animation";
-import { createSignal, onMount } from "@pocketjs/reactivity";
+import { Show, Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { animate, spring } from "@pocketjs/framework/animation";
+import { createSignal, onMount } from "@pocketjs/framework/reactivity";
 
 interface Card {
   title: string;

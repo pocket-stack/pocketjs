@@ -22,8 +22,8 @@ and everything is packed into `dist/<app>.dcpak`. Pass 2 bundles with Bun
 (iife, unminified) from the cached transforms.
 
 ```tsx
-import { Text, View } from "@pocketjs/components";
-import { createSignal } from "@pocketjs/reactivity";
+import { Text, View } from "@pocketjs/framework/components";
+import { createSignal } from "@pocketjs/framework/reactivity";
 
 const [count, setCount] = createSignal(0);
 
@@ -42,7 +42,7 @@ handles host detection, the generated style table, dcpak image uploads and the
 host frame callback:
 
 ```tsx
-import { mount } from "@pocketjs";
+import { mount } from "@pocketjs/framework";
 import App from "./app.tsx";
 
 mount(() => <App />);
@@ -54,7 +54,7 @@ dynamic styling is ternaries of full literals, `style={{...}}`, or `animate()`.
 `classList`, `hover:` and template-interpolated classes are compile errors.
 `rounded-full` requires `w-N h-N` in the same literal.
 
-`@pocketjs/components` also exposes small app-shell primitives used by
+`@pocketjs/framework/components` also exposes small app-shell primitives used by
 `demos/launcher`: `Screen`, `Focusable`, `FocusScope`, `ActionHandler`,
 `FocusGrid`, `Portal`, `Modal`, and `ActionBar`. `FocusGrid` gives a subtree
 explicit row/column d-pad traversal today; a virtualized grid can sit behind the

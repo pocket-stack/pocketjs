@@ -16,12 +16,12 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@pocketjs": ["./src/index.ts"],
-      "@pocketjs/animation": ["./src/animation.ts"],
-      "@pocketjs/components": ["./src/components.ts"],
-      "@pocketjs/input": ["./src/input-api.ts"],
-      "@pocketjs/lifecycle": ["./src/lifecycle.ts"],
-      "@pocketjs/reactivity": ["./src/reactivity.ts"]
+      "@pocketjs/framework": ["./src/index.ts"],
+      "@pocketjs/framework/animation": ["./src/animation.ts"],
+      "@pocketjs/framework/components": ["./src/components.ts"],
+      "@pocketjs/framework/input": ["./src/input-api.ts"],
+      "@pocketjs/framework/lifecycle": ["./src/lifecycle.ts"],
+      "@pocketjs/framework/reactivity": ["./src/reactivity.ts"]
     }
   },
   "include": ["src", "compiler", "demos", "test", "spec", "host-web"]

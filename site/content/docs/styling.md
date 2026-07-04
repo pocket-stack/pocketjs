@@ -107,8 +107,8 @@ There are exactly three ways to make styling dynamic:
 the compiler can see:
 
 ```tsx
-import { View } from "@pocketjs/components";
-import { createSignal } from "@pocketjs/reactivity";
+import { View } from "@pocketjs/framework/components";
+import { createSignal } from "@pocketjs/framework/reactivity";
 
 const [armed, setArmed] = createSignal(false);
 

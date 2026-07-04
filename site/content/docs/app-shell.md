@@ -2,7 +2,7 @@
 
 Screens, focus regions, and floating UI (modals, action bars) are the pieces you
 assemble a whole app out of. PocketJS ships these as small, unopinionated
-primitives from `@pocketjs/components` — thin wrappers over the same
+primitives from `@pocketjs/framework/components` — thin wrappers over the same
 [`View`](/docs/components/), [focus manager](/docs/input-focus/), and frame
 hooks you already use. Nothing here is a framework-within-a-framework: there is
 no router, no navigation stack, no global store. Screen switching is ordinary
@@ -18,7 +18,7 @@ import {
   Portal,
   Modal,
   ActionBar,
-} from "@pocketjs/components";
+} from "@pocketjs/framework/components";
 ```
 
 ## The primitives at a glance
@@ -112,7 +112,7 @@ right edge, LEFT to `i - 1` unless at the left edge, DOWN to `i + columns`, UP t
 row/column instead of clamping.
 
 ```tsx
-import { FocusGrid, Focusable, Text, For } from "@pocketjs/components";
+import { FocusGrid, Focusable, Text, For } from "@pocketjs/framework/components";
 
 <FocusGrid class="flex-row flex-wrap gap-2 w-[440]" columns={3} wrap>
   <For each={games()}>
@@ -149,8 +149,8 @@ value on a shoulder button.
 It renders its `children` (or nothing), so drop it anywhere in the tree.
 
 ```tsx
-import { ActionHandler } from "@pocketjs/components";
-import { BTN } from "@pocketjs/input";
+import { ActionHandler } from "@pocketjs/framework/components";
+import { BTN } from "@pocketjs/framework/input";
 
 <ActionHandler button={BTN.SELECT} onPress={() => setMenuOpen((v) => !v)} />;
 
@@ -164,7 +164,7 @@ import { BTN } from "@pocketjs/input";
 />;
 ```
 
-`BTN` is imported from [`@pocketjs/input`](/docs/input-focus/) and covers
+`BTN` is imported from [`@pocketjs/framework/input`](/docs/input-focus/) and covers
 every PSP button (`SELECT`, `START`, `UP`/`DOWN`/`LEFT`/`RIGHT`, `LTRIGGER`,
 `RTRIGGER`, `TRIANGLE`, `CIRCLE`, `CROSS`, `SQUARE`).
 
@@ -177,7 +177,7 @@ portalled UI never pushes your layout around: a modal or action bar floats on
 top regardless of what the page underneath is doing.
 
 ```tsx
-import { Portal, View, Text } from "@pocketjs/components";
+import { Portal, View, Text } from "@pocketjs/framework/components";
 
 <Portal>
   <View class="absolute top-3 right-3 px-2 py-1 rounded-md bg-white border-slate-200">
@@ -207,8 +207,8 @@ closes, so the page behind can't react to input it can't see.
 | `children`   | `Element`                     | The panel contents.                                                         |
 
 ```tsx
-import { Modal, Focusable, Text, View } from "@pocketjs/components";
-import { createSignal } from "@pocketjs/reactivity";
+import { Modal, Focusable, Text, View } from "@pocketjs/framework/components";
+import { createSignal } from "@pocketjs/framework/reactivity";
 
 function DeletePrompt(props: { onConfirm: () => void }) {
   const [open, setOpen] = createSignal(false);
@@ -256,7 +256,7 @@ default class is
 override `class` for a different look. It takes ordinary `ViewProps` children.
 
 ```tsx
-import { ActionBar, Text, View } from "@pocketjs/components";
+import { ActionBar, Text, View } from "@pocketjs/framework/components";
 
 <ActionBar>
   <View class="flex-row gap-3">
@@ -284,9 +284,9 @@ import {
   Screen,
   Switch,
   View,
-} from "@pocketjs/components";
-import { BTN } from "@pocketjs/input";
-import { createSignal } from "@pocketjs/reactivity";
+} from "@pocketjs/framework/components";
+import { BTN } from "@pocketjs/framework/input";
+import { createSignal } from "@pocketjs/framework/reactivity";
 
 export default function Launcher() {
   const [active, setActive] = createSignal<number | null>(null);

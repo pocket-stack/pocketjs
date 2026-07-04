@@ -44,8 +44,8 @@ and why each choice was made.
 Reading it top to bottom:
 
 1. **`app.tsx`** is ordinary Solid JSX — components from
-   [`@pocketjs/components`](/docs/components/), signals from
-   [`@pocketjs/reactivity`](/docs/reactivity/), and `className` strings from
+   [`@pocketjs/framework/components`](/docs/components/), signals from
+   [`@pocketjs/framework/reactivity`](/docs/reactivity/), and `className` strings from
    the Tailwind subset.
 2. The **build** (`bun scripts/build.ts <app>`) runs `babel-preset-solid` in
    *universal* mode, compiles the class strings to a binary style table
@@ -136,7 +136,7 @@ reimplemented per platform.
 
 Tweens and springs tick inside Rust, once per vblank, at a **fixed
 `dt = 1/60 s`**. JavaScript only *declares* motion (via
-[`@pocketjs/animation`](/docs/animation/) or `transition-*` classes); it
+[`@pocketjs/framework/animation`](/docs/animation/) or `transition-*` classes); it
 never drives it frame by frame.
 
 The fixed timestep has a powerful consequence: **frame content is a pure
@@ -238,7 +238,7 @@ pocketjs/
     anim.ts             animate() / spring() implementation
     primitives.ts       lower-case host tags → View/Text/Image primitives
     components.ts        ┐
-    reactivity.ts        ├ the public @pocketjs/* subpath modules
+    reactivity.ts        ├ the public @pocketjs/framework/* subpath modules
     animation.ts         │
     hooks.ts, input-api.ts, overlay.ts, index.ts  ┘
 

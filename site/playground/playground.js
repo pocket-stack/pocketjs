@@ -6,10 +6,10 @@
 //   host.reset()                    fresh wasm core + globalThis.ui
 //   blob module A = transformed app (default export = the component)
 //   blob module B = `import App from A; mount(() => App(), {styles, dcpak})`
-//   import(B) via the page import-map (@pocketjs -> /pg/runtime.js)
+//   import(B) via the page import-map (@pocketjs/framework -> /pg/runtime.js)
 //   host.begin()                    grab globalThis.frame, drive 60 Hz
 //
-// runtime.js is a singleton (import-map points every @pocketjs specifier at the
+// runtime.js is a singleton (import-map points every @pocketjs/framework specifier at the
 // one URL), so between runs the bootstrap calls __resetAll() to wipe it.
 
 import { EditorView, basicSetup } from "codemirror";
@@ -127,7 +127,7 @@ async function main() {
       const appUrl = URL.createObjectURL(new Blob([result.code], { type: "text/javascript" }));
       const boot =
         `import App from ${JSON.stringify(appUrl)};\n` +
-        `import { mount, __resetAll } from "@pocketjs";\n` +
+        `import { mount, __resetAll } from "@pocketjs/framework";\n` +
         `__resetAll();\n` +
         `globalThis.__pgDispose = mount(() => App(), ` +
         `{ styles: globalThis.__pgStyles, dcpak: globalThis.__pgDcpak });\n`;

@@ -3,9 +3,9 @@
 // site/dist/pg/runtime.js, and the playground import-map points EVERY PocketJS
 // specifier at that one file:
 //
-//   "@pocketjs"            -> /pg/runtime.js
-//   "@pocketjs/components" -> /pg/runtime.js   (etc.)
-//   "@pocketjs/renderer"   -> /pg/runtime.js   (babel `moduleName` target)
+//   "@pocketjs/framework"            -> /pg/runtime.js
+//   "@pocketjs/framework/components" -> /pg/runtime.js   (etc.)
+//   "@pocketjs/framework/renderer"   -> /pg/runtime.js   (babel `moduleName` target)
 //
 // Because all specifiers resolve to the SAME module URL, the compiled app and
 // its bootstrap share ONE runtime instance — one renderer mirror tree, one

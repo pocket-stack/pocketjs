@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@pocketjs/core",
+      "name": "@pocketjs/framework",
       "dependencies": {
         "solid-js": "^1.9",
       },

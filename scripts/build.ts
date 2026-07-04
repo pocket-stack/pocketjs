@@ -38,10 +38,12 @@ const DIST = ROOT + "dist/";
 
 type PackageExportTarget = string | { default?: string; browser?: string; import?: string };
 interface PackageJson {
+  name?: string;
   exports?: Record<string, PackageExportTarget>;
 }
 
 const packageJson = await Bun.file(ROOT + "package.json").json() as PackageJson;
+const packageName = packageJson.name ?? "@pocketjs/framework";
 const packageExports = new Map<string, string>();
 for (const [key, target] of Object.entries(packageJson.exports ?? {})) {
   const file =
@@ -128,8 +130,8 @@ function importSpecifiers(src: string): string[] {
  *  remapping like `./card.js` -> card.tsx included), so the two passes agree
  *  on the module graph by construction. */
 function resolveImport(fromFile: string, spec: string): string | null {
-  if (spec === "@pocketjs" || spec.startsWith("@pocketjs/")) {
-    const subpath = spec === "@pocketjs" ? "" : spec.slice("@pocketjs/".length);
+  if (spec === packageName || spec.startsWith(packageName + "/")) {
+    const subpath = spec === packageName ? "" : spec.slice(packageName.length + 1);
     const exported = packageExports.get(subpath);
     return exported && /\.tsx?$/.test(exported) ? ROOT + exported : null;
   }

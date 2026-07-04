@@ -5,7 +5,7 @@ PocketJS has two ways to move things:
 - **Declarative motion utilities** — Tailwind-subset classes (`transition`, `duration-N`,
   `ease-*`, `delay-N`) that tween a node whenever its style is swapped.
 - **The imperative API** — `animate()`, `spring()` and `cancelAnim()` from
-  [`@pocketjs/animation`](/docs/api/), for one-off tweens you kick off from code.
+  [`@pocketjs/framework/animation`](/docs/api/), for one-off tweens you kick off from code.
 
 Both compile down to the same native machinery. **You declare motion once in JS; the
 Rust core owns the tween from there.**
@@ -27,7 +27,7 @@ That has two consequences worth internalizing:
 ## Imperative: `animate()`
 
 ```ts
-import { animate } from "@pocketjs/animation";
+import { animate } from "@pocketjs/framework/animation";
 
 animate(node, prop, to, { dur, easing, delay }): number
 ```
@@ -64,9 +64,9 @@ Give any component a `ref` and Solid assigns the underlying `NodeMirror` to your
 variable. Kick the tween off in `onMount`, once the node exists:
 
 ```tsx
-import { View, type NodeMirror } from "@pocketjs/components";
-import { animate } from "@pocketjs/animation";
-import { onMount } from "@pocketjs/reactivity";
+import { View, type NodeMirror } from "@pocketjs/framework/components";
+import { animate } from "@pocketjs/framework/animation";
+import { onMount } from "@pocketjs/framework/reactivity";
 
 function Underline() {
   let el: NodeMirror | undefined;
@@ -107,7 +107,7 @@ For non-color props you pass the raw native value:
 ## Imperative: `spring()`
 
 ```ts
-import { spring } from "@pocketjs/animation";
+import { spring } from "@pocketjs/framework/animation";
 
 spring(node, prop, to, preset): number
 ```
@@ -121,9 +121,9 @@ then springs into place on mount. Because the panel is a keyed `<Show>` child it
 remounts per card, so the spring replays on every open:
 
 ```tsx
-import { View, Text, type NodeMirror } from "@pocketjs/components";
-import { spring } from "@pocketjs/animation";
-import { onMount } from "@pocketjs/reactivity";
+import { View, Text, type NodeMirror } from "@pocketjs/framework/components";
+import { spring } from "@pocketjs/framework/animation";
+import { onMount } from "@pocketjs/framework/reactivity";
 
 function Detail(props: { title: string; detail: string }) {
   let el: NodeMirror | undefined;
@@ -147,7 +147,7 @@ mount is the canonical "enter" pattern.
 Stop a running tween with the id `animate()` / `spring()` returned:
 
 ```ts
-import { animate, cancelAnim } from "@pocketjs/animation";
+import { animate, cancelAnim } from "@pocketjs/framework/animation";
 
 const id = animate(streak, "translateX", 300, { dur: 20000, easing: "linear" });
 // …later:

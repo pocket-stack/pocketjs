@@ -31,7 +31,7 @@ import { PSM } from "../../spec/spec.ts";
 
 /** babel `moduleName` — the specifier the universal transform imports its
  *  runtime helpers from. The playground import-map points it at runtime.js. */
-const RENDERER_MODULE = "@pocketjs/renderer";
+const RENDERER_MODULE = "@pocketjs/framework/renderer";
 
 export interface CompileResult {
   /** ESM: JSX compiled to universal-renderer calls, default export = the app. */

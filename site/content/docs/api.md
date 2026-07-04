@@ -1,19 +1,19 @@
 # API reference
 
-Every public export of `@pocketjs`, grouped by import path. Signatures are TypeScript-style; defaults are noted in parentheses. For conceptual walkthroughs see [Components](/docs/components/), [Reactivity](/docs/reactivity/), [Animation](/docs/animation/), and [Input & focus](/docs/input-focus/).
+Every public export of `@pocketjs/framework`, grouped by import path. Signatures are TypeScript-style; defaults are noted in parentheses. For conceptual walkthroughs see [Components](/docs/components/), [Reactivity](/docs/reactivity/), [Animation](/docs/animation/), and [Input & focus](/docs/input-focus/).
 
 | Import path | Exports |
 | --- | --- |
-| `@pocketjs` | `mount`, `render`, host/runtime helpers, types |
-| `@pocketjs/components` | `View`, `Text`, `Image`, `Show`, `For`, `Index`, `Switch`, `Match`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar` |
-| `@pocketjs/reactivity` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack` |
-| `@pocketjs/animation` | `animate`, `spring`, `cancelAnim` |
-| `@pocketjs/lifecycle` | `onFrame`, `onButtonPress`, `createSpriteAnimation`, `pushButtonHandlerBlock` |
-| `@pocketjs/input` | `BTN`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
+| `@pocketjs/framework` | `mount`, `render`, host/runtime helpers, types |
+| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Show`, `For`, `Index`, `Switch`, `Match`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar` |
+| `@pocketjs/framework/reactivity` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack` |
+| `@pocketjs/framework/animation` | `animate`, `spring`, `cancelAnim` |
+| `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `createSpriteAnimation`, `pushButtonHandlerBlock` |
+| `@pocketjs/framework/input` | `BTN`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
 
 ---
 
-## `@pocketjs`
+## `@pocketjs/framework`
 
 The runtime entry point: mount an app, tear it down, and reach the lower-level host, sweep, style, and pack utilities.
 
@@ -151,7 +151,7 @@ The JS mirror of a native node. A `ref` receives one; `animate`, `spring`, `focu
 
 ---
 
-## `@pocketjs/components`
+## `@pocketjs/framework/components`
 
 Platform primitives and higher-level components. Control-flow components (`Show`, `For`, `Index`, `Switch`, `Match`) are re-exported from Solid unchanged.
 
@@ -275,7 +275,7 @@ See the [Solid control-flow docs](https://www.solidjs.com/docs/latest/api#contro
 
 ---
 
-## `@pocketjs/reactivity`
+## `@pocketjs/framework/reactivity`
 
 Solid's reactivity, re-exported unchanged. Full docs live at [solidjs.com](https://www.solidjs.com/docs/latest/api); summary below.
 
@@ -293,7 +293,7 @@ See [Reactivity](/docs/reactivity/).
 
 ---
 
-## `@pocketjs/animation`
+## `@pocketjs/framework/animation`
 
 Typed motion over `ops.animate`. JS declares the tween once; the Rust core ticks it per vblank at a fixed `dt = 1/60 s`. `prop` is a spec `PROP` name and must be animatable (e.g. `opacity`, `translateY`, `scale`, and color props) — non-animatable props throw. See [Animation](/docs/animation/).
 
@@ -343,7 +343,7 @@ Stops a running animation by the id `animate`/`spring` returned.
 
 ---
 
-## `@pocketjs/lifecycle`
+## `@pocketjs/framework/lifecycle`
 
 Component-scoped per-frame hooks. Each cleans up on owner disposal via `onCleanup`. See [Reactivity](/docs/reactivity/) and [Input & focus](/docs/input-focus/).
 
@@ -395,7 +395,7 @@ Pushes a global block so background `onButtonPress` handlers (those without `all
 
 ---
 
-## `@pocketjs/input`
+## `@pocketjs/framework/input`
 
 Programmatic focus, the button bitmask, and the imperative focus-scope/grid stack. Prefer the `FocusScope` / `FocusGrid` components in app code. See [Input & focus](/docs/input-focus/).
 

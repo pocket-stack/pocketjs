@@ -11,11 +11,11 @@
 // pre-split into <Text> lines), every class a FULL literal (the per-tile accent
 // border/gradient is baked per entry, never synthesized).
 
-import { Image, Show, Text, View, type NodeMirror } from "@pocketjs/components";
-import { spring } from "@pocketjs/animation";
-import { onButtonPress, onFrame } from "@pocketjs/lifecycle";
-import { createMemo, createSignal, onMount } from "@pocketjs/reactivity";
-import { BTN, focusNode } from "@pocketjs/input";
+import { Image, Show, Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { spring } from "@pocketjs/framework/animation";
+import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
+import { createMemo, createSignal, onMount } from "@pocketjs/framework/reactivity";
+import { BTN, focusNode } from "@pocketjs/framework/input";
 
 type Screen = "library" | "loading" | "detail";
 

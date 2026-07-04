@@ -11,10 +11,10 @@
 // Design notes: every class a FULL literal (per-track cover accent baked per
 // entry); text single-line.
 
-import { Text, View } from "@pocketjs/components";
-import { onButtonPress, onFrame } from "@pocketjs/lifecycle";
-import { createSignal } from "@pocketjs/reactivity";
-import { BTN } from "@pocketjs/input";
+import { Text, View } from "@pocketjs/framework/components";
+import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
+import { createSignal } from "@pocketjs/framework/reactivity";
+import { BTN } from "@pocketjs/framework/input";
 
 interface Track {
   title: string;

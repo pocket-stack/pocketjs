@@ -33,8 +33,8 @@ bun install
 
 That pulls `solid-js` plus the build-time tooling (the Babel + Tailwind-subset
 compiler, the font baker, and the dev host). There is no separate runtime to
-install — the framework is the `@pocketjs` package in this repo, exposed
-through subpath imports like `@pocketjs/components`.
+install — the framework is the `@pocketjs/framework` package in this repo, exposed
+through subpath imports like `@pocketjs/framework/components`.
 
 ## Write your first component
 
@@ -45,8 +45,8 @@ runtime CSS. State comes from `createSignal`, exactly like Solid.
 Here's a focusable counter. Put it in `demos/hero/app.tsx`:
 
 ```tsx
-import { Show, Text, View } from "@pocketjs/components";
-import { createSignal } from "@pocketjs/reactivity";
+import { Show, Text, View } from "@pocketjs/framework/components";
+import { createSignal } from "@pocketjs/framework/reactivity";
 
 export default function App() {
   const [count, setCount] = createSignal(0);
@@ -96,12 +96,12 @@ entry** does that. Keep it tiny — this is just app bootstrap. Put it in
 ```tsx
 // @title PocketJS: Hero
 import App from "./app.tsx";
-import { mount } from "@pocketjs";
+import { mount } from "@pocketjs/framework";
 
 mount(() => <App />);
 ```
 
-`mount` is imported from the package root, `@pocketjs`. It handles host
+`mount` is imported from the package root, `@pocketjs/framework`. It handles host
 detection (PSP vs. PPSSPP vs. browser vs. Bun), wiring the generated style table,
 uploading images from the packed asset file, and installing the per-frame host
 callback — you don't manage any of that yourself. (`mount` builds on the

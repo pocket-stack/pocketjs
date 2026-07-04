@@ -7,7 +7,7 @@ all imported from a single entry point:
 import {
   View, Text, Image,
   Show, For, Index, Switch, Match,
-} from "@pocketjs/components";
+} from "@pocketjs/framework/components";
 ```
 
 There are exactly **three host primitives** — `View`, `Text`, and `Image` —
@@ -111,7 +111,7 @@ the texture in place (via `setImage`), which is exactly how sprite animation
 works:
 
 ```tsx
-import { createSpriteAnimation } from "@pocketjs/lifecycle";
+import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
 
 const frame = createSpriteAnimation(
   ["spinner-00.svg", "spinner-01.svg", "spinner-02.svg"],
@@ -127,7 +127,7 @@ how images become dcpak textures.
 ## Props
 
 Each primitive has a small, explicit prop interface. `ViewProps`, `TextProps`,
-and `ImageProps` are exported from `@pocketjs/components` for typing your
+and `ImageProps` are exported from `@pocketjs/framework/components` for typing your
 own wrapper components.
 
 | Prop        | `View` | `Text` | `Image` | Type                                       | Notes |
@@ -164,9 +164,9 @@ APIs like [`animate()`](/docs/animation/). Both Solid ref forms work — a plain
 variable (Solid assigns it) or a callback:
 
 ```tsx
-import { animate } from "@pocketjs/animation";
-import { onMount } from "@pocketjs/reactivity";
-import type { NodeMirror } from "@pocketjs/components";
+import { animate } from "@pocketjs/framework/animation";
+import { onMount } from "@pocketjs/framework/reactivity";
+import type { NodeMirror } from "@pocketjs/framework/components";
 
 let underline: NodeMirror | undefined;
 onMount(() => {
@@ -251,7 +251,7 @@ renders.
 
 ## App-shell primitives
 
-`@pocketjs/components` also exports a layer of higher-level primitives that
+`@pocketjs/framework/components` also exports a layer of higher-level primitives that
 compose `View` with focus and overlay behavior:
 
 | Primitive        | Purpose                                                  |

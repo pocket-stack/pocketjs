@@ -192,8 +192,8 @@
               <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
               <span class="lp-codecard__name">Counter.tsx</span>
             </div>
-            <pre class="lp-code"><code><span class="lp-k">import</span> { <span class="lp-t">Text</span>, <span class="lp-t">View</span> } <span class="lp-k">from</span> <span class="lp-s">"@pocketjs/components"</span>;
-<span class="lp-k">import</span> { <span class="lp-f">createSignal</span> } <span class="lp-k">from</span> <span class="lp-s">"@pocketjs/reactivity"</span>;
+            <pre class="lp-code"><code><span class="lp-k">import</span> { <span class="lp-t">Text</span>, <span class="lp-t">View</span> } <span class="lp-k">from</span> <span class="lp-s">"@pocketjs/framework/components"</span>;
+<span class="lp-k">import</span> { <span class="lp-f">createSignal</span> } <span class="lp-k">from</span> <span class="lp-s">"@pocketjs/framework/reactivity"</span>;
 
 <span class="lp-k">export</span> <span class="lp-k">default</span> <span class="lp-k">function</span> <span class="lp-t">Counter</span>() {
   <span class="lp-k">const</span> [n, setN] = <span class="lp-f">createSignal</span>(<span class="lp-n">0</span>);

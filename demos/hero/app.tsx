@@ -2,10 +2,10 @@
 // Uses all three public primitives, class literals, a dynamic style object,
 // focus + onPress, and a signal in text — the exact surface phase v1 supports.
 
-import { Image, Show, Text, View, type NodeMirror } from "@pocketjs/components";
-import { animate } from "@pocketjs/animation";
-import { createSpriteAnimation } from "@pocketjs/lifecycle";
-import { createSignal, onMount } from "@pocketjs/reactivity";
+import { Image, Show, Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { animate } from "@pocketjs/framework/animation";
+import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
+import { createSignal, onMount } from "@pocketjs/framework/reactivity";
 
 const SPINNER_FRAME_STEP = 3;
 const SPINNER_FRAMES = [

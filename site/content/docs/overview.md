@@ -76,8 +76,8 @@ A complete app: a counter you bump by pressing a focusable button.
 
 ```tsx
 // app.tsx
-import { Text, View } from "@pocketjs/components";
-import { createSignal } from "@pocketjs/reactivity";
+import { Text, View } from "@pocketjs/framework/components";
+import { createSignal } from "@pocketjs/framework/reactivity";
 
 export default function App() {
   const [count, setCount] = createSignal(0);
@@ -101,7 +101,7 @@ callback:
 
 ```tsx
 // main.tsx
-import { mount } from "@pocketjs";
+import { mount } from "@pocketjs/framework";
 import App from "./app.tsx";
 
 mount(() => <App />);

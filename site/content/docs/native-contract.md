@@ -169,7 +169,7 @@ If the same node is inserted again before the frame ends, `insertNode` removes i
 Sometimes you want to detach a subtree and keep it alive across frames — cache an offscreen panel, hold a pooled row. That opts out of the sweep:
 
 ```ts
-import { retain, release } from "@pocketjs";
+import { retain, release } from "@pocketjs/framework";
 
 retain(node);   // detached but preserved; the sweep skips it (and any subtree containing it)
 // ... later ...

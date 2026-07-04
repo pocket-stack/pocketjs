@@ -10,7 +10,7 @@ For how styling fits into the pipeline, see [/docs/styling/](/docs/styling/) and
 [/docs/build-pipeline/](/docs/build-pipeline/).
 
 ```tsx
-import { View, Text } from "@pocketjs/components";
+import { View, Text } from "@pocketjs/framework/components";
 
 function Card() {
   return (

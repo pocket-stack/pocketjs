@@ -37,6 +37,7 @@ const COMPONENTS_PATH = new URL("../src/components.ts", import.meta.url).pathnam
 const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
 const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
 const REACTIVITY_PATH = new URL("../src/reactivity.ts", import.meta.url).pathname;
+const PACKAGE_NAME = "@pocketjs/framework";
 
 const CACHE_DIR = new URL("../.cache/transforms/", import.meta.url).pathname;
 /** Bump to invalidate every cached transform (changes to this file's
@@ -175,8 +176,8 @@ interface CacheEntry {
 }
 
 function resolvePackageSubpath(spec: string): string | null {
-  if (spec === "@pocketjs") return "";
-  if (spec.startsWith("@pocketjs/")) return spec.slice("@pocketjs/".length);
+  if (spec === PACKAGE_NAME) return "";
+  if (spec.startsWith(PACKAGE_NAME + "/")) return spec.slice(PACKAGE_NAME.length + 1);
   return null;
 }
 
@@ -251,7 +252,7 @@ export function solidUniversalPlugin(): BunPlugin {
   return {
     name: "pocketjs-solid-universal",
     setup(build) {
-      build.onResolve({ filter: /^@pocketjs(?:\/.*)?$/ }, (args) => {
+      build.onResolve({ filter: /^@pocketjs\/framework(?:\/.*)?$/ }, (args) => {
         const path = packagePath(args.path);
         return path ? { path } : undefined;
       });
