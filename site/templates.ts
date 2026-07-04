@@ -3,7 +3,7 @@
 // Tailwind (utilities inline + a few component classes in assets/tailwind.css).
 
 const YEAR = 2026;
-const GH = "https://github.com/doodlewind/pocketjs";
+const GH = "https://github.com/pocket-stack/pocketjs";
 
 export interface PageOpts {
   title: string | null; // null uses the bare wordmark (homepage)
