@@ -18,6 +18,10 @@
       <nav class="lp-nav__links" aria-label="Primary">
         <a class="lp-nav__link" href="/docs/overview/">Docs</a>
         <a class="lp-nav__link" href="/playground/">Playground</a>
+        <a class="lp-nav__link lp-nav__3d" href="/3d/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="M12 12 21 7M12 12v10M12 12 3 7"/></svg>
+          <span>3D</span>
+        </a>
         <a class="lp-nav__link lp-nav__gh" href="https://github.com/pocket-stack/pocketjs" target="_blank" rel="noreferrer">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 4.7 18 5 18 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
           <span class="lp-nav__ghlabel">GitHub</span>
@@ -247,41 +251,6 @@
             <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg></span>
             <h3>One portable core</h3>
             <p>Layout, style resolution, animation, text and draw lists live in a <code>no_std</code> Rust core compiled for PSP and WebAssembly.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 3D / RUNTIME FAMILY -->
-    <section class="lp-section" style="padding-top: clamp(2rem, 5vw, 3.5rem);">
-      <div class="lp-container">
-        <div class="lp-split">
-          <div class="lp-split__copy lp-reveal">
-            <span class="lp-kicker">Now in three dimensions</span>
-            <h2 class="lp-h2">Pocket3D: small engines, freely scriptable.</h2>
-            <p>PocketJS is growing into a family of specialized runtimes: a Rust core owns simulation and rendering, a QuickJS guest owns the product. The 2D UI stack was the first runtime; <span class="lp-mono">pocket3d</span> — a lean wgpu renderer with GoldSrc BSP maps as a first-class world format — is the native base for the next ones.</p>
-            <p>Its first proof is <a href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">OpenStrike</a>, a CS-like FPS: round rules and weapon tables are JavaScript mods, and the HUD is this very JSX stack, composited over the 3D scene. Apps, games and mods are the same kind of artifact here — guest programs customizing native cores.</p>
-            <ul class="lp-checklist">
-              <li>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
-                <span>BSP worlds, lightmaps and hull collision as first-class citizens.</span>
-              </li>
-              <li>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
-                <span>Gameplay mods and the Solid JSX HUD share one QuickJS guest.</span>
-              </li>
-            </ul>
-            <a class="lp-btn lp-btn--primary" href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">
-              Explore OpenStrike
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-            </a>
-          </div>
-          <div class="lp-codecard lp-reveal">
-            <div class="lp-codecard__bar">
-              <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
-              <span class="lp-codecard__name">openstrike — de_dust2</span>
-            </div>
-            <img class="lp-shot" src="/assets/openstrike.jpg" alt="OpenStrike rendering de_dust2 in Pocket3D with the JSX HUD overlay" decoding="async" width="1280" height="720" />
           </div>
         </div>
       </div>

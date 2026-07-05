@@ -243,6 +243,16 @@ a.lp-btn--primary:hover {
 .lp-nav__link:hover { color: var(--ink); background: rgba(20, 29, 49, 0.9); }
 .lp-nav__gh { display: inline-flex; align-items: center; gap: 0.45rem; }
 .lp-nav__gh svg { width: 18px; height: 18px; }
+/* 3D entry: a standout pill with an accent tint + hairline. */
+.lp-nav__3d {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  color: #a9e7ff;
+  background: linear-gradient(180deg, rgba(56, 152, 224, 0.16), rgba(56, 152, 224, 0.06));
+  border: 1px solid rgba(120, 190, 240, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.lp-nav__3d svg { width: 16px; height: 16px; }
+.lp-nav__3d:hover { color: #e4f5ff; background: linear-gradient(180deg, rgba(56, 152, 224, 0.28), rgba(56, 152, 224, 0.12)); border-color: rgba(150, 210, 250, 0.55); }
 @media (max-width: 480px) {
   .lp-nav__ghlabel { display: none; }
   .lp-nav__link { padding: 0.5rem 0.5rem; font-size: 13px; }

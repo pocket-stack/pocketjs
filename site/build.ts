@@ -349,8 +349,8 @@ async function main() {
   for (const asset of ["favicon.svg", "og-image.svg", "og-image.png"]) {
     if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, asset);
   }
-  // Section imagery (referenced from home.html).
-  for (const asset of ["openstrike.jpg"]) {
+  // Pocket3D landing-page imagery (OpenStrike screenshots).
+  for (const asset of ["os-inferno.jpg", "os-dust2.jpg", "os-office.jpg", "os-dust.jpg", "os-dust2-arch.jpg"]) {
     if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, "assets/" + asset);
   }
 
@@ -373,6 +373,11 @@ async function main() {
   copy(SITE + "assets/home.css", "assets/home.css");
   copy(SITE + "assets/screen.css", "assets/screen.css");
   await bundle("assets/home.js", "assets/home.js");
+
+  // 7b. Pocket3D — a standalone cinematic landing page (its own chrome,
+  //     reuses home.css design tokens + a small pocket3d.css). No API docs.
+  write("3d/index.html", renderPocket3dHome());
+  copy(SITE + "assets/pocket3d.css", "assets/pocket3d.css");
 
   // 8. AOT product line. This is intentionally separate from the framework
   //    playground and docs tree.
@@ -452,6 +457,55 @@ function renderHome(): string {
 <body>
 ${body}
 <script type="module" src="/assets/home.js"></script>
+</body>
+</html>`;
+}
+
+const P3D_TITLE = "Pocket3D — Native 3D, scripted in TypeScript";
+const P3D_DESC =
+  "Pocket3D is a small, fast Rust renderer for 3D worlds — with the PocketJS UI stack rendering your game's HUD on top and gameplay written as TypeScript mods. OpenStrike, a CS-like FPS on classic BSP maps, is the proof.";
+const P3D_OG = `${SITE_URL}/assets/os-inferno.jpg`;
+function renderPocket3dHome(): string {
+  const body = readFileSync(SITE + "3d.html", "utf8");
+  const jsonLd = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    name: "Pocket3D",
+    description: P3D_DESC,
+    url: `${SITE_URL}/3d/`,
+    codeRepository: "https://github.com/pocket-stack/open-strike",
+    programmingLanguage: ["TypeScript", "Rust", "WGSL"],
+  });
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${P3D_TITLE}</title>
+<meta name="description" content="${P3D_DESC}">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="${SITE_URL}/3d/">
+<meta property="og:title" content="${P3D_TITLE}">
+<meta property="og:description" content="${P3D_DESC}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="PocketJS">
+<meta property="og:url" content="${SITE_URL}/3d/">
+<meta property="og:image" content="${P3D_OG}">
+<meta property="og:image:width" content="1600">
+<meta property="og:image:height" content="900">
+<meta property="og:image:alt" content="OpenStrike rendering de_inferno in Pocket3D with the PocketJS HUD">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${P3D_TITLE}">
+<meta name="twitter:description" content="${P3D_DESC}">
+<meta name="twitter:image" content="${P3D_OG}">
+<meta name="theme-color" content="#05070d">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/home.css">
+<link rel="stylesheet" href="/assets/pocket3d.css">
+<script type="application/ld+json">${jsonLd}</script>
+</head>
+<body>
+${body}
 </body>
 </html>`;
 }

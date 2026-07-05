@@ -1,0 +1,229 @@
+<div class="lp p3d">
+  <header class="lp-nav">
+    <div class="lp-container lp-nav__in">
+      <a class="lp-brand" href="/" aria-label="PocketJS home">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <defs>
+            <linearGradient id="lp-pgn-edge" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#eef6ff"/><stop offset="0.38" stop-color="#b7c8e2"/><stop offset="0.58" stop-color="#7487a0"/><stop offset="0.78" stop-color="#aec0d6"/><stop offset="1" stop-color="#dbe8f6"/></linearGradient>
+            <linearGradient id="lp-pgn-lens" x1="7" y1="13" x2="13" y2="19" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e4edf8"/><stop offset="0.55" stop-color="#a7b8cf"/><stop offset="1" stop-color="#53677f"/></linearGradient>
+            <linearGradient id="lp-pgn-bar" x1="16" y1="12" x2="24" y2="20" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#d7e3f1"/><stop offset="1" stop-color="#71849d"/></linearGradient>
+          </defs>
+          <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="url(#lp-pgn-edge)" stroke-width="2.6" stroke-linejoin="round"/>
+          <circle cx="10" cy="16" r="3.1" fill="url(#lp-pgn-lens)"/>
+          <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="url(#lp-pgn-bar)"/>
+          <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="url(#lp-pgn-bar)"/>
+        </svg>
+        <span>PocketJS</span>
+      </a>
+      <nav class="lp-nav__links" aria-label="Primary">
+        <a class="lp-nav__link" href="/docs/overview/">Docs</a>
+        <a class="lp-nav__link" href="/playground/">Playground</a>
+        <a class="lp-nav__link lp-nav__3d is-on" href="/3d/" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="M12 12 21 7M12 12v10M12 12 3 7"/></svg>
+          <span>3D</span>
+        </a>
+        <a class="lp-nav__link lp-nav__gh" href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 4.7 18 5 18 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          <span class="lp-nav__ghlabel">GitHub</span>
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- HERO -->
+    <section class="lp-hero">
+      <div class="lp-hero__grid" aria-hidden="true"></div>
+      <div class="lp-hero__aurora p3d-aurora" aria-hidden="true"></div>
+      <div class="lp-container lp-hero__in">
+        <span class="lp-eyebrow p3d-eyebrow">
+          <span class="lp-eyebrow__tag">Pocket3D</span>
+          The scriptable 3D runtime
+        </span>
+        <h1 class="lp-h1">Native 3D<span class="lp-grad">scripted in TypeScript</span></h1>
+        <p class="lp-sub">
+          Pocket3D is a small, fast Rust renderer for 3D worlds — and the same
+          PocketJS stack that runs on a PSP renders your game's UI on top of it.
+          Cores are native; gameplay and overlays are JavaScript. OpenStrike, a
+          CS-like FPS on classic BSP maps, is the proof.
+        </p>
+        <div class="lp-hero__cta">
+          <a class="lp-btn lp-btn--primary" href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">
+            Explore OpenStrike
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="lp-btn lp-btn--ghost" href="https://github.com/pocket-stack/pocketjs/blob/jealous-burn/RUNTIMES.md" target="_blank" rel="noreferrer">
+            How it works
+          </a>
+        </div>
+
+        <figure class="p3d-hero-figure">
+          <div class="p3d-hero-glow" aria-hidden="true"></div>
+          <img class="p3d-hero-shot" src="/assets/os-inferno.jpg" width="1600" height="900" decoding="async"
+               alt="OpenStrike rendering de_inferno in Pocket3D — three enemies advancing across a stone courtyard, muzzle flash, and the PocketJS HUD (health, ammo, hostiles)." />
+          <figcaption class="p3d-hero-cap">OpenStrike · <span class="lp-mono">de_inferno</span> · Pocket3D world + PocketJS HUD, one frame</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- PILLAR 1 — PocketJS as the game's UI -->
+    <section class="lp-section" style="padding-top: clamp(2rem, 5vw, 3.5rem);">
+      <div class="lp-container">
+        <div class="lp-split">
+          <div class="lp-split__copy lp-reveal">
+            <span class="lp-kicker">The overlay is a PocketJS app</span>
+            <h2 class="lp-h2">Your HUD is JSX, not engine code.</h2>
+            <p>Every heads-up element in OpenStrike — crosshair, health, ammo, kill feed, round banners, the damage flash — is a Solid component in the PocketJS framework, the very same stack that renders UI on a Sony PSP. Pocket3D composites it over the 3D frame in one pass.</p>
+            <p>So a 3D app gets a real, reactive UI layer for free: you author overlays as components with Tailwind classes and signals, and the native side handles the pixels. No immediate-mode bitmap fiddling, no bespoke text renderer.</p>
+            <ul class="lp-checklist">
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
+                <span>Solid / Vue Vapor components, Tailwind styling, native animation.</span>
+              </li>
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
+                <span>Composited over the scene — the same UI runtime, from 3D games to PSP handhelds.</span>
+              </li>
+            </ul>
+          </div>
+          <div class="lp-codecard lp-reveal">
+            <div class="lp-codecard__bar">
+              <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
+              <span class="lp-codecard__name">hud.tsx over de_dust2</span>
+            </div>
+            <img class="lp-shot" src="/assets/os-dust2.jpg" width="1600" height="900" decoding="async"
+                 alt="OpenStrike on de_dust2: a shaft of light, three advancing enemies, muzzle flash, and the PocketJS HUD showing HP 100 and ammo 29/90." />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PILLAR 2 — low-cost renderer + TS mod runtime -->
+    <section class="lp-section" style="padding-top: clamp(1rem, 3vw, 2rem);">
+      <div class="lp-container">
+        <div class="lp-split p3d-split--rev">
+          <div class="lp-codecard lp-reveal">
+            <div class="lp-codecard__bar">
+              <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
+              <span class="lp-codecard__name">rules.ts — the base game, as a mod</span>
+            </div>
+            <pre class="lp-code"><code><span class="lp-code-mut">// Rust simulates; TypeScript owns the rules.</span>
+<span class="lp-t">strike</span>.<span class="lp-f">configureWeapon</span>({ <span class="lp-a">magSize</span>: <span class="lp-n">30</span> });
+<span class="lp-t">strike</span>.<span class="lp-f">configureBots</span>({ <span class="lp-a">count</span>: <span class="lp-n">3</span>, <span class="lp-a">speed</span>: <span class="lp-n">190</span> });
+
+<span class="lp-t">strike</span>.<span class="lp-f">on</span>(<span class="lp-s">"playerDied"</span>, () <span class="lp-k">=&gt;</span> {
+  <span class="lp-t">strike</span>.<span class="lp-f">addLoss</span>();
+  <span class="lp-t">strike</span>.<span class="lp-f">setPhase</span>(<span class="lp-s">"lost"</span>); <span class="lp-code-mut">// the HUD reacts</span>
+});</code></pre>
+          </div>
+          <div class="lp-split__copy lp-reveal">
+            <span class="lp-kicker">A tiny renderer with a scripting seam</span>
+            <h2 class="lp-h2">Low-cost 3D, freely modded.</h2>
+            <p>Pocket3D is a lean <span class="lp-mono">wgpu</span> forward renderer: GoldSrc BSP worlds are a first-class format — lightmaps, hull-trace collision, skeletal animation — loaded and drawn without a heavyweight engine. The whole runtime is small enough to read in an afternoon.</p>
+            <p>On top of it sits a QuickJS mod runtime. A Rust core owns simulation and rendering for speed; a JavaScript guest owns the product for freedom. In OpenStrike the round flow, scoring and weapon tables are all TypeScript — change a number, rebuild the bundle, and you've made a mod. This scripting seam is meant to generalize to any kind of 3D app.</p>
+            <ul class="lp-checklist">
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
+                <span>BSP maps, lightmaps and clipnode collision as native data — no physics engine.</span>
+              </li>
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
+                <span>Gameplay as TypeScript mods — apps, games and mods are the same kind of artifact.</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- GALLERY -->
+    <section class="lp-section">
+      <div class="lp-container">
+        <div class="lp-secthead lp-reveal">
+          <span class="lp-kicker">One runtime, many maps</span>
+          <h2 class="lp-h2">Classic BSP worlds, rendered cheaply.</h2>
+          <p class="lp-lead">Point OpenStrike at any GoldSrc-era map. Everything below is a single Pocket3D frame — geometry, lightmaps and the procedural viewmodel — at 1600&times;900.</p>
+        </div>
+        <div class="p3d-gallery lp-reveal">
+          <figure class="p3d-shot p3d-shot--wide">
+            <img src="/assets/os-dust.jpg" width="1600" height="900" decoding="async" alt="OpenStrike on de_dust — a wide sunlit desert courtyard with arches, crates and a blue sky." />
+            <figcaption><span class="lp-mono">de_dust</span> · open desert vista</figcaption>
+          </figure>
+          <figure class="p3d-shot">
+            <img src="/assets/os-dust2-arch.jpg" width="1600" height="900" decoding="async" alt="OpenStrike on de_dust2 — a stone tunnel with a carved arch, crates and lightmapped walls." />
+            <figcaption><span class="lp-mono">de_dust2</span> · carved arches</figcaption>
+          </figure>
+          <figure class="p3d-shot">
+            <img src="/assets/os-office.jpg" width="1600" height="900" decoding="async" alt="OpenStrike on cs_office — a dark concrete interior lit by a fluorescent strip, two enemies advancing, muzzle flash and the HUD." />
+            <figcaption><span class="lp-mono">cs_office</span> · fluorescent interior</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- CLOSING CTA -->
+    <section class="lp-section lp-cta">
+      <div class="lp-cta__glow" aria-hidden="true"></div>
+      <div class="lp-container lp-cta__in lp-reveal">
+        <span class="lp-kicker">Rust core, TypeScript everything else</span>
+        <h2 class="lp-h2" style="margin-top: 0.9rem;">Bring a 3D world. Script the rest.</h2>
+        <p>OpenStrike is the first specialized runtime on the Pocket3D base — its own repo, its rules and HUD in TypeScript, the engine pinned as a submodule.</p>
+        <div class="lp-cta__btns">
+          <a class="lp-btn lp-btn--primary" href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">OpenStrike on GitHub</a>
+          <a class="lp-btn lp-btn--ghost" href="https://github.com/pocket-stack/pocketjs/blob/jealous-burn/RUNTIMES.md" target="_blank" rel="noreferrer">The runtime family</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="lp-footer">
+    <div class="lp-container">
+      <div class="lp-footer__grid">
+        <div class="lp-footer__brand">
+          <a class="lp-brand" href="/" aria-label="PocketJS home">
+            <svg viewBox="0 0 32 32" aria-hidden="true">
+              <defs>
+                <linearGradient id="lp-p3f-edge" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#eef6ff"/><stop offset="0.38" stop-color="#b7c8e2"/><stop offset="0.58" stop-color="#7487a0"/><stop offset="0.78" stop-color="#aec0d6"/><stop offset="1" stop-color="#dbe8f6"/></linearGradient>
+                <linearGradient id="lp-p3f-lens" x1="7" y1="13" x2="13" y2="19" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e4edf8"/><stop offset="0.55" stop-color="#a7b8cf"/><stop offset="1" stop-color="#53677f"/></linearGradient>
+                <linearGradient id="lp-p3f-bar" x1="16" y1="12" x2="24" y2="20" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#d7e3f1"/><stop offset="1" stop-color="#71849d"/></linearGradient>
+              </defs>
+              <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="url(#lp-p3f-edge)" stroke-width="2.6" stroke-linejoin="round"/>
+              <circle cx="10" cy="16" r="3.1" fill="url(#lp-p3f-lens)"/>
+              <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="url(#lp-p3f-bar)"/>
+              <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="url(#lp-p3f-bar)"/>
+            </svg>
+            <span>PocketJS</span>
+          </a>
+          <p>Native cores, TypeScript products. From PSP UI to 3D games.</p>
+        </div>
+        <div>
+          <h4>3D</h4>
+          <ul>
+            <li><a href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">OpenStrike</a></li>
+            <li><a href="https://github.com/pocket-stack/pocketjs/tree/jealous-burn/pocket3d" target="_blank" rel="noreferrer">Pocket3D</a></li>
+            <li><a href="https://github.com/pocket-stack/pocketjs/blob/jealous-burn/RUNTIMES.md" target="_blank" rel="noreferrer">Runtime family</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Framework</h4>
+          <ul>
+            <li><a href="/">Home</a></li>
+            <li><a href="/docs/overview/">Docs</a></li>
+            <li><a href="/playground/">Playground</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Project</h4>
+          <ul>
+            <li><a href="https://github.com/pocket-stack/pocketjs" target="_blank" rel="noreferrer">GitHub</a></li>
+            <li><a href="/docs/architecture/">Architecture</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="lp-footer__bar">
+        <span>Rust cores, native pixels</span>
+        <span>© 2026 PocketJS · MIT</span>
+      </div>
+    </div>
+  </footer>
+</div>
