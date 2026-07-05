@@ -700,6 +700,11 @@ a.lp-btn--primary:hover {
   font-size: 12px;
   color: var(--muted);
 }
+.lp-shot {
+  display: block;
+  width: 100%;
+  height: auto;
+}
 .lp-code-tabs {
   display: inline-flex;
   align-items: center;

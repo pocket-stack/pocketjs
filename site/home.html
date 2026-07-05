@@ -252,13 +252,48 @@
       </div>
     </section>
 
+    <!-- 3D / RUNTIME FAMILY -->
+    <section class="lp-section" style="padding-top: clamp(2rem, 5vw, 3.5rem);">
+      <div class="lp-container">
+        <div class="lp-split">
+          <div class="lp-split__copy lp-reveal">
+            <span class="lp-kicker">Now in three dimensions</span>
+            <h2 class="lp-h2">Pocket3D: small engines, freely scriptable.</h2>
+            <p>PocketJS is growing into a family of specialized runtimes: a Rust core owns simulation and rendering, a QuickJS guest owns the product. The 2D UI stack was the first runtime; <span class="lp-mono">pocket3d</span> — a lean wgpu renderer with GoldSrc BSP maps as a first-class world format — is the native base for the next ones.</p>
+            <p>Its first proof is <a href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">OpenStrike</a>, a CS-like FPS: round rules and weapon tables are JavaScript mods, and the HUD is this very JSX stack, composited over the 3D scene. Apps, games and mods are the same kind of artifact here — guest programs customizing native cores.</p>
+            <ul class="lp-checklist">
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
+                <span>BSP worlds, lightmaps and hull collision as first-class citizens.</span>
+              </li>
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
+                <span>Gameplay mods and the Solid JSX HUD share one QuickJS guest.</span>
+              </li>
+            </ul>
+            <a class="lp-btn lp-btn--primary" href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">
+              Explore OpenStrike
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+          </div>
+          <div class="lp-codecard lp-reveal">
+            <div class="lp-codecard__bar">
+              <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
+              <span class="lp-codecard__name">openstrike — de_dust2</span>
+            </div>
+            <img class="lp-shot" src="/assets/openstrike.jpg" alt="OpenStrike rendering de_dust2 in Pocket3D with the JSX HUD overlay" decoding="async" width="1280" height="720" />
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- TARGETS -->
     <section class="lp-section lp-targets">
       <div class="lp-container">
         <div class="lp-secthead lp-reveal">
           <span class="lp-kicker">One core, many devices</span>
           <h2 class="lp-h2">The same core, retargeted device by device.</h2>
-          <p class="lp-lead">The <span class="lp-mono">no_std</span> Rust core needs only a framebuffer and a few buttons, so it travels. The PSP path ships today; the rest come online as their native backends land — and the list keeps growing.</p>
+          <p class="lp-lead">The <span class="lp-mono">no_std</span> Rust core needs only a framebuffer and a few buttons, so it travels. The PSP and macOS paths ship today; the rest come online as their native backends land — and the list keeps growing.</p>
         </div>
         <ul class="lp-targets__grid" aria-label="Supported and planned devices">
           <li class="lp-target is-live lp-reveal">
@@ -269,6 +304,16 @@
                 <span class="lp-target__status lp-target__status--live">Available now</span>
               </div>
               <p class="lp-target__desc">The reference MIPS handheld, rendering through the native core today.</p>
+            </div>
+          </li>
+          <li class="lp-target is-live lp-reveal">
+            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M2 20h20"/></svg></span>
+            <div class="lp-target__body">
+              <div class="lp-target__head">
+                <h3 class="lp-target__name">macOS</h3>
+                <span class="lp-target__status lp-target__status--live">Available now</span>
+              </div>
+              <p class="lp-target__desc">The same apps in a native window through wgpu — and the desktop home of the Pocket3D game runtimes.</p>
             </div>
           </li>
           <li class="lp-target lp-reveal">

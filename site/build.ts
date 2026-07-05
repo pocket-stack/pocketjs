@@ -349,6 +349,10 @@ async function main() {
   for (const asset of ["favicon.svg", "og-image.svg", "og-image.png"]) {
     if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, asset);
   }
+  // Section imagery (referenced from home.html).
+  for (const asset of ["openstrike.jpg"]) {
+    if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, "assets/" + asset);
+  }
 
   // 6. playground page
   write("playground/index.html", renderPage({

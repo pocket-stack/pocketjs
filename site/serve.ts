@@ -7,7 +7,8 @@ const PORT = Number(process.env.PORT ?? 8140);
 const MIME: Record<string, string> = {
   html: "text/html; charset=utf-8", js: "text/javascript; charset=utf-8",
   css: "text/css; charset=utf-8", json: "application/json", wasm: "application/wasm",
-  svg: "image/svg+xml", png: "image/png", ttf: "font/ttf", map: "application/json",
+  svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  ttf: "font/ttf", map: "application/json",
   pak: "application/octet-stream",
 };
 const SECURITY_HEADERS = {
