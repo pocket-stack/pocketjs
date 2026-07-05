@@ -54,28 +54,33 @@
           <div class="lp-stage__glow" aria-hidden="true"></div>
           <div class="lp-stage__frame">
             <div class="screen-emu">
-              <canvas id="hero-canvas" width="480" height="272" tabindex="0"></canvas>
-              <div id="hero-loading" class="emu-loading">booting core…</div>
-              <div class="emu-shoulders">
+              <div class="emu-top">
                 <button class="emu-shoulder l" data-btn="0x0100" aria-label="Left shoulder — previous page">L</button>
+                <span class="emu-brand" aria-hidden="true">PocketJS</span>
                 <button class="emu-shoulder r" data-btn="0x0200" aria-label="Right shoulder — next page">R</button>
               </div>
-              <div class="emu-dpad">
-                <svg class="emu-cross" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M36 3 H64 V36 H97 V64 H64 V97 H36 V64 H3 V36 H36 Z" fill="rgba(20,29,49,0.68)" stroke="rgba(255,255,255,0.28)" stroke-width="2.5" stroke-linejoin="round"/></svg>
-                <button class="emu-key up" data-btn="0x0010" aria-label="Up"><svg viewBox="0 0 24 24"><path d="M12 8 l6 8 h-12 z" fill="currentColor"/></svg></button>
-                <button class="emu-key down" data-btn="0x0040" aria-label="Down"><svg viewBox="0 0 24 24"><path d="M12 16 l6 -8 h-12 z" fill="currentColor"/></svg></button>
-                <button class="emu-key left" data-btn="0x0080" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M8 12 l8 -6 v12 z" fill="currentColor"/></svg></button>
-                <button class="emu-key right" data-btn="0x0020" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M16 12 l-8 -6 v12 z" fill="currentColor"/></svg></button>
+              <div class="emu-screen">
+                <canvas id="hero-canvas" width="480" height="272" tabindex="0"></canvas>
+                <div id="hero-loading" class="emu-loading">booting core…</div>
               </div>
-              <div class="emu-faces">
-                <button class="emu-key tri" data-btn="0x1000" aria-label="Triangle"><svg viewBox="0 0 24 24"><path d="M12 5 L19.5 18.5 L4.5 18.5 Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg></button>
-                <button class="emu-key sq" data-btn="0x8000" aria-label="Square"><svg viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="1.6" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
-                <button class="emu-key ci" data-btn="0x2000" aria-label="Circle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.2" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
-                <button class="emu-key cross" data-btn="0x4000" aria-label="Cross"><svg viewBox="0 0 24 24"><path d="M6.5 6.5 L17.5 17.5 M17.5 6.5 L6.5 17.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
-              </div>
-              <div class="emu-sys">
-                <button class="emu-sys-btn" data-btn="0x0001">SELECT</button>
-                <button class="emu-sys-btn" data-btn="0x0008">START</button>
+              <div class="emu-deck">
+                <div class="emu-dpad">
+                  <svg class="emu-cross" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M36 3 H64 V36 H97 V64 H64 V97 H36 V64 H3 V36 H36 Z" fill="rgba(20,29,49,0.68)" stroke="rgba(255,255,255,0.28)" stroke-width="2.5" stroke-linejoin="round"/></svg>
+                  <button class="emu-key up" data-btn="0x0010" aria-label="Up"><svg viewBox="0 0 24 24"><path d="M12 8 l6 8 h-12 z" fill="currentColor"/></svg></button>
+                  <button class="emu-key down" data-btn="0x0040" aria-label="Down"><svg viewBox="0 0 24 24"><path d="M12 16 l6 -8 h-12 z" fill="currentColor"/></svg></button>
+                  <button class="emu-key left" data-btn="0x0080" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M8 12 l8 -6 v12 z" fill="currentColor"/></svg></button>
+                  <button class="emu-key right" data-btn="0x0020" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M16 12 l-8 -6 v12 z" fill="currentColor"/></svg></button>
+                </div>
+                <div class="emu-sys">
+                  <button class="emu-sys-btn" data-btn="0x0001">SELECT</button>
+                  <button class="emu-sys-btn" data-btn="0x0008">START</button>
+                </div>
+                <div class="emu-faces">
+                  <button class="emu-key tri" data-btn="0x1000" aria-label="Triangle"><svg viewBox="0 0 24 24"><path d="M12 5 L19.5 18.5 L4.5 18.5 Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg></button>
+                  <button class="emu-key sq" data-btn="0x8000" aria-label="Square"><svg viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="1.6" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
+                  <button class="emu-key ci" data-btn="0x2000" aria-label="Circle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.2" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
+                  <button class="emu-key cross" data-btn="0x4000" aria-label="Cross"><svg viewBox="0 0 24 24"><path d="M6.5 6.5 L17.5 17.5 M17.5 6.5 L6.5 17.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+                </div>
               </div>
             </div>
           </div>

@@ -360,21 +360,11 @@ a.lp-btn--primary:hover {
   filter: blur(48px);
   pointer-events: none;
 }
+/* The handheld shell (.screen-emu, in screen.css) is now the frame — this
+   wrapper just holds it above the ambient glow, no second bezel. */
 .lp-stage__frame {
   position: relative;
   z-index: 1;
-  padding: clamp(9px, 1.6vw, 15px);
-  border-radius: 24px;
-  background:
-    linear-gradient(160deg, rgba(20, 29, 49, 0.92), #0b0f1a),
-    var(--panel);
-  border: 1px solid var(--line-2);
-  box-shadow:
-    0 48px 96px -44px rgba(0, 0, 0, 0.94),
-    0 0 0 1px rgba(255, 255, 255, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 0 1px rgba(56, 189, 248, 0.05),
-    inset 0 -22px 30px rgba(3, 9, 20, 0.2);
 }
 /* ---- Section scaffolding -------------------------------------------------- */
 .lp-section { padding: clamp(4.5rem, 10vw, 8rem) 0; }
