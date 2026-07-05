@@ -1,0 +1,10 @@
+[package]
+name = "pocket3d-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+pocket3d-core.workspace = true
+pocket3d-render.workspace = true

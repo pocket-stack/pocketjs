@@ -1,0 +1,10 @@
+[package]
+name = "pocket3d-anim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glam.workspace = true
+gltf.workspace = true
+thiserror.workspace = true

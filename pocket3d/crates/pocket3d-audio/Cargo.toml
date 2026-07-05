@@ -1,0 +1,8 @@
+[package]
+name = "pocket3d-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glam.workspace = true

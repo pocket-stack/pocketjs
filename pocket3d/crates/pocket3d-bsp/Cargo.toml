@@ -1,0 +1,15 @@
+[package]
+name = "pocket3d-bsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+glam.workspace = true
+qbsp.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3.20"

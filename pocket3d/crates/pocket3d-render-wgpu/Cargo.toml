@@ -1,0 +1,16 @@
+[package]
+name = "pocket3d-render-wgpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bytemuck.workspace = true
+glam.workspace = true
+log.workspace = true
+pollster.workspace = true
+pocket3d-core.workspace = true
+pocket3d-render.workspace = true
+wgpu.workspace = true
+winit.workspace = true

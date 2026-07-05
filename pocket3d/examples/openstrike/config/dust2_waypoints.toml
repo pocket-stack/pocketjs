@@ -1,0 +1,14 @@
+[[waypoints]]
+id = "local_spawn"
+pos = [0.0, 0.0, 0.0]
+links = ["local_contact"]
+
+[[waypoints]]
+id = "local_contact"
+pos = [128.0, 0.0, 0.0]
+links = ["local_spawn", "local_flank"]
+
+[[waypoints]]
+id = "local_flank"
+pos = [128.0, 96.0, 0.0]
+links = ["local_contact"]

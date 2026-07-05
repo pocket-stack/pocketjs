@@ -1,0 +1,21 @@
+[weapon]
+id = "os_rifle"
+display_name = "OS Rifle"
+damage = 35.0
+fire_interval_ms = 120
+magazine_size = 30
+reload_ms = 1800
+range = 4096.0
+spread_degrees = 0.5
+headshot_multiplier = 2.0
+
+[round]
+pre_round_ms = 1000
+intermission_ms = 3000
+player_health = 100
+bot_health = 100
+
+[bot]
+speed = 120.0
+capsule_radius = 16.0
+capsule_height = 72.0

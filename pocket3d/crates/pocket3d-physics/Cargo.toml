@@ -1,0 +1,10 @@
+[package]
+name = "pocket3d-physics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glam.workspace = true
+pocket3d-core.workspace = true
+pocket3d-bsp.workspace = true

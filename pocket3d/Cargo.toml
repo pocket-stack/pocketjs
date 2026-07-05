@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/pocket3d-core",
+  "crates/pocket3d-app",
+  "crates/pocket3d-render",
+  "crates/pocket3d-render-wgpu",
+  "crates/pocket3d-assets",
+  "crates/pocket3d-bsp",
+  "crates/pocket3d-physics",
+  "crates/pocket3d-kcc",
+  "crates/pocket3d-anim",
+  "crates/pocket3d-audio",
+  "crates/pocket3d-script",
+  "tools/p3d",
+  "examples/openstrike",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+anyhow = "1.0"
+bytemuck = { version = "1.24", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+env_logger = "0.11"
+glam = { version = "0.32", features = ["serde"] }
+gltf = "1.4"
+log = "0.4"
+pollster = "0.4"
+qbsp = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+toml = "0.9"
+wgpu = "30.0"
+winit = "0.30.12"
+
+pocket3d-core = { path = "crates/pocket3d-core" }
+pocket3d-app = { path = "crates/pocket3d-app" }
+pocket3d-render = { path = "crates/pocket3d-render" }
+pocket3d-render-wgpu = { path = "crates/pocket3d-render-wgpu" }
+pocket3d-assets = { path = "crates/pocket3d-assets" }
+pocket3d-bsp = { path = "crates/pocket3d-bsp" }
+pocket3d-physics = { path = "crates/pocket3d-physics" }
+pocket3d-kcc = { path = "crates/pocket3d-kcc" }
+pocket3d-anim = { path = "crates/pocket3d-anim" }
+pocket3d-audio = { path = "crates/pocket3d-audio" }
+pocket3d-script = { path = "crates/pocket3d-script" }
