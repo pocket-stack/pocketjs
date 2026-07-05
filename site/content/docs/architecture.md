@@ -272,6 +272,12 @@ global allocator (`native/src/alloc.rs`) backed by a single arena
 retained core buffers live in that arena too. JS runs on the 2 MB `USER|VFPU`
 worker; a 2 MB margin is kept for the GE display list and stack safety.
 
+Clarification: the public "8 MB heap" line describes this PocketJS application
+arena with safety headroom, not the PSP's whole main-memory budget. Code and
+embedded `.pak`/JS bytes live in the EBOOT image, the worker stack is separate,
+and PSP display framebuffers are allocated from VRAM. On a unified memory
+machine you would add those pieces back to estimate total process memory.
+
 The full allocator setup, the per-frame vertex bump pool, and the exact PSP
 frame order are covered on the [Native contract](/docs/native-contract/) page.
 
