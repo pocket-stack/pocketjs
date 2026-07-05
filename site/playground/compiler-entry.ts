@@ -12,6 +12,7 @@
 import { transformAsync, type PluginObj } from "@babel/core";
 import solidPreset from "babel-preset-solid";
 import tsPreset from "@babel/preset-typescript";
+import { transformVueJsxVapor } from "vue-jsx-vapor/api";
 import { parse as parseFont, type Font } from "opentype.js";
 
 import { compileClasses, fontSlotInfo } from "../../compiler/tailwind.ts";
@@ -20,8 +21,10 @@ import {
   PAK_DTYPE,
   KEY_STYLES,
   encodeImageEntry,
+  encodeSpriteEntry,
   keyFont,
   keyImage,
+  keySprite,
   pack,
   placeholderImage,
   type DecodedImage,
@@ -31,7 +34,17 @@ import { PSM } from "../../spec/spec.ts";
 
 /** babel `moduleName` — the specifier the universal transform imports its
  *  runtime helpers from. The playground import-map points it at runtime.js. */
-const RENDERER_MODULE = "@pocketjs/framework/renderer";
+const SOLID_RENDERER_MODULE = "@pocketjs/framework/solid/renderer";
+
+type PlaygroundFramework = "solid" | "vue-vapor";
+
+interface SpriteMeta {
+  cols: number;
+  rows: number;
+  frames: number;
+  step: number;
+  psm?: number;
+}
 
 export interface CompileResult {
   /** ESM: JSX compiled to universal-renderer calls, default export = the app. */
@@ -58,7 +71,7 @@ interface Collected {
   codepoints: Set<number>;
 }
 
-function collectorPlugin(out: Collected): PluginObj {
+function collectorPlugin(out: Collected, framework: PlaygroundFramework): PluginObj {
   const seen = new Set<string>();
   const add = (s: string) => {
     if (!s) return;
@@ -113,6 +126,7 @@ function collectorPlugin(out: Collected): PluginObj {
               }
             },
             ImportDeclaration(path) {
+              if (framework !== "solid") return;
               const src = path.node.source.value;
               if (src !== "solid-js" && !src.startsWith("solid-js/")) return;
               for (const spec of path.node.specifiers) {
@@ -136,20 +150,56 @@ function collectorPlugin(out: Collected): PluginObj {
 
 /** Run the exact build transform in the browser. Throws with a code frame on
  *  lint/syntax errors (message carries the frame). */
-async function transform(source: string): Promise<{ code: string; collected: Collected }> {
+async function transform(
+  source: string,
+  framework: PlaygroundFramework,
+): Promise<{ code: string; collected: Collected }> {
   const collected: Collected = { classStrings: [], codepoints: new Set() };
-  const res = await transformAsync(source, {
-    filename: "app.tsx",
-    presets: [
-      [solidPreset, { generate: "universal", moduleName: RENDERER_MODULE }],
-      [tsPreset, {}],
-    ],
-    parserOpts: { plugins: ["jsx"] },
-    plugins: [collectorPlugin(collected)],
-    babelrc: false,
-    configFile: false,
-    sourceMaps: false,
-  });
+  let res;
+  if (framework === "vue-vapor") {
+    await transformAsync(source, {
+      filename: "app.tsx",
+      presets: [[tsPreset, {}]],
+      parserOpts: { plugins: ["jsx"] },
+      plugins: [collectorPlugin(collected, framework)],
+      babelrc: false,
+      configFile: false,
+      sourceMaps: false,
+    });
+    const vapor = transformVueJsxVapor(
+      source,
+      "app.tsx",
+      {
+        compiler: {
+          runtimeModuleName: new URL("/pg/vue-jsx-vapor/vapor.js", location.href).href,
+        },
+      },
+      false,
+      false,
+      false,
+    );
+    res = await transformAsync(vapor.code, {
+      filename: "app.tsx",
+      presets: [[tsPreset, {}]],
+      parserOpts: { plugins: ["jsx"] },
+      babelrc: false,
+      configFile: false,
+      sourceMaps: false,
+    });
+  } else {
+    res = await transformAsync(source, {
+      filename: "app.tsx",
+      presets: [
+        [solidPreset, { generate: "universal", moduleName: SOLID_RENDERER_MODULE }],
+        [tsPreset, {}],
+      ],
+      parserOpts: { plugins: ["jsx"] },
+      plugins: [collectorPlugin(collected, framework)],
+      babelrc: false,
+      configFile: false,
+      sourceMaps: false,
+    });
+  }
   if (!res?.code && res?.code !== "") throw new Error("PocketJS: transform produced no output");
   return { code: res.code!, collected };
 }
@@ -244,9 +294,14 @@ export function configure(opts: { fontBaseUrl?: string; assetBaseUrl?: string })
 
 export async function compileApp(
   source: string,
-  opts: { extraChars?: string } = {},
+  opts: {
+    extraChars?: string;
+    framework?: PlaygroundFramework;
+    spriteMeta?: Record<string, SpriteMeta>;
+  } = {},
 ): Promise<CompileResult> {
-  const { code, collected } = await transform(source);
+  const framework = opts.framework ?? "solid";
+  const { code, collected } = await transform(source, framework);
 
   const styles = compileClasses(collected.classStrings);
   const atlases = await bakeAtlases(collected.codepoints, styles.usedFontSlots, opts.extraChars ?? "");
@@ -259,7 +314,26 @@ export async function compileApp(
   const imageNames = [...new Set(collected.classStrings.filter((s) => IMAGE_RE.test(s)))];
   for (const name of imageNames) {
     const img = await rasterizeImage(name);
-    blobs.push({ key: keyImage(name), dtype: PAK_DTYPE.u8, data: encodeImageEntry(img, PSM.PSM_8888) });
+    const sprite = opts.spriteMeta?.[name];
+    if (sprite) {
+      blobs.push({
+        key: keySprite(name),
+        dtype: PAK_DTYPE.u8,
+        data: encodeSpriteEntry(
+          {
+            atlasW: img.width,
+            atlasH: img.height,
+            frameCount: sprite.frames,
+            cols: sprite.cols,
+            frameStep: sprite.step,
+            rgba: img.rgba,
+          },
+          sprite.psm ?? PSM.PSM_8888,
+        ),
+      });
+    } else {
+      blobs.push({ key: keyImage(name), dtype: PAK_DTYPE.u8, data: encodeImageEntry(img, PSM.PSM_8888) });
+    }
   }
 
   const packed = pack(blobs);

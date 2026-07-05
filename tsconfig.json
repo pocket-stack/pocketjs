@@ -29,7 +29,9 @@
       "@pocketjs/framework/solid/lifecycle": ["./src/lifecycle.ts"],
       "@pocketjs/framework/solid/renderer": ["./src/renderer-solid.ts"],
       "@pocketjs/framework/vue-vapor": ["./src/index-vue-vapor.ts"],
+      "@pocketjs/framework/vue-vapor/animation": ["./src/animation.ts"],
       "@pocketjs/framework/vue-vapor/components": ["./src/components-vue-vapor.ts"],
+      "@pocketjs/framework/vue-vapor/input": ["./src/input-api.ts"],
       "@pocketjs/framework/vue-vapor/lifecycle": ["./src/lifecycle-vue-vapor.ts"],
       "@pocketjs/framework/vue-vapor/renderer": ["./src/renderer-vue-vapor.ts"]
     }

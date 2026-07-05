@@ -114,7 +114,8 @@ right edge, LEFT to `i - 1` unless at the left edge, DOWN to `i + columns`, UP t
 `i - columns`. With `wrap`, edge moves loop to the other side of the same
 row/column instead of clamping.
 
-```tsx
+:::framework-code
+```tsx solid
 import { For } from "solid-js";
 import { FocusGrid, Focusable, Text } from "@pocketjs/framework/components";
 
@@ -131,6 +132,22 @@ import { FocusGrid, Focusable, Text } from "@pocketjs/framework/components";
   </For>
 </FocusGrid>;
 ```
+
+```tsx vue-vapor
+import { FocusGrid, Focusable, Text } from "@pocketjs/framework/components";
+
+<FocusGrid class="flex-row flex-wrap gap-2 w-[440]" columns={3} wrap>
+  {games.value.map((game) => (
+    <Focusable
+      class="w-[140] h-[72] rounded-lg bg-white border-slate-200 focus:border-blue-500"
+      onPress={() => launch(game)}
+    >
+      <Text class="text-sm text-slate-950">{game.title}</Text>
+    </Focusable>
+  ))}
+</FocusGrid>;
+```
+:::
 
 Because the grid keys off document order, it stays correct after a
 [`For`](/docs/components/) reorders or filters its rows. It is a traversal
@@ -210,7 +227,8 @@ closes, so the page behind can't react to input it can't see.
 | `class`      | `string`                      | `absolute inset-0 z-50 flex-col items-center justify-center` (the layer)    |
 | `children`   | `Element`                     | The panel contents.                                                         |
 
-```tsx
+:::framework-code
+```tsx solid
 import { Modal, Focusable, Text, View } from "@pocketjs/framework/components";
 import { createSignal } from "solid-js";
 
@@ -237,6 +255,37 @@ function DeletePrompt(props: { onConfirm: () => void }) {
   );
 }
 ```
+
+```tsx vue-vapor
+import { ref } from "vue";
+import { Modal, Focusable, Text, View } from "@pocketjs/framework/components";
+
+function DeletePrompt(props: { onConfirm: () => void }) {
+  const open = ref(false);
+  return () => (
+    <Modal open={() => open.value}>
+      <Text class="text-lg text-slate-950 font-bold">Delete save?</Text>
+      <View class="flex-row gap-2">
+        <Focusable
+          class="px-3 py-1 rounded-md bg-slate-100 border-slate-200 focus:border-blue-500"
+          onPress={() => {
+            open.value = false;
+          }}
+        >
+          <Text class="text-sm text-slate-950">Cancel</Text>
+        </Focusable>
+        <Focusable
+          class="px-3 py-1 rounded-md bg-rose-600 border-rose-500 focus:border-rose-300"
+          onPress={props.onConfirm}
+        >
+          <Text class="text-sm text-white">Delete</Text>
+        </Focusable>
+      </View>
+    </Modal>
+  );
+}
+```
+:::
 
 Two behaviors worth internalizing:
 
@@ -361,7 +410,8 @@ page indicator, a title) can read it. It reads L/R itself and calls
 tween per press (paint-only, no relayout), and pages outside the `window` are not
 built at all, so a many-page gallery stays within the draw budget.
 
-```tsx
+:::framework-code
+```tsx solid
 import { Gallery, Screen } from "@pocketjs/framework/components";
 import { createSignal } from "solid-js";
 
@@ -380,6 +430,28 @@ function Photos() {
 }
 ```
 
+```tsx vue-vapor
+import { ref } from "vue";
+import { Gallery, Screen } from "@pocketjs/framework/components";
+
+function Photos() {
+  const page = ref(0);
+  return () => (
+    <Screen class="relative w-full h-full bg-slate-950 overflow-hidden">
+      <Gallery
+        count={4}
+        page={page.value}
+        onPageChange={(next) => {
+          page.value = next;
+        }}
+        renderPage={(i) => <PhotoPage index={i} current={() => page.value} />}
+      />
+    </Screen>
+  );
+}
+```
+:::
+
 Under the hood `Gallery` is a **static `overflow-hidden` viewport** wrapping an
 **animated strip** of absolutely-positioned page cells. The split matters: the
 scissor is taken from the clip node's own box, so the clipping viewport must not
@@ -391,10 +463,11 @@ first-visit loading, and a page-dot [`ActionBar`](#actionbar)); build it with
 ## Worked example: the launcher
 
 `demos/launcher` is a small app built entirely from these primitives. It holds
-two signals — the active demo index and whether the picker is open — and that is
-the whole "router":
+two reactive values — the active demo index and whether the picker is open — and
+that is the whole "router":
 
-```tsx
+:::framework-code
+```tsx solid
 import { Match, Switch } from "solid-js";
 import {
   ActionHandler,
@@ -432,10 +505,55 @@ export default function Launcher() {
 }
 ```
 
+```tsx vue-vapor
+import { ref } from "vue";
+import {
+  ActionHandler,
+  Modal,
+  Screen,
+  View,
+} from "@pocketjs/framework/components";
+import { BTN } from "@pocketjs/framework/input";
+
+export default function Launcher() {
+  const active = ref<number | null>(null);
+  const pickerOpen = ref(true);
+
+  const togglePicker = () => {
+    if (active.value === null) {
+      pickerOpen.value = true;
+      return;
+    }
+    pickerOpen.value = !pickerOpen.value;
+  };
+
+  return () => (
+    <Screen class="relative w-full h-full bg-slate-950 overflow-hidden">
+      <ActionHandler button={BTN.SELECT} allowWhenBlocked onPress={togglePicker} />
+
+      <ActiveDemo index={active.value} />
+
+      <DemoPicker
+        open={pickerOpen.value}
+        current={active.value}
+        onPick={(next) => {
+          active.value = next;
+        }}
+        onClose={() => {
+          pickerOpen.value = false;
+        }}
+      />
+    </Screen>
+  );
+}
+```
+:::
+
 `ActiveDemo` is just a [`Switch`/`Match`](/docs/components/) over the index —
 swapping the whole screen is nothing more than a signal write:
 
-```tsx
+:::framework-code
+```tsx solid
 function ActiveDemo(props: { index: number | null }) {
   return (
     <Switch>
@@ -450,6 +568,17 @@ function ActiveDemo(props: { index: number | null }) {
   );
 }
 ```
+
+```tsx vue-vapor
+function ActiveDemo(props: { index: number | null }) {
+  return props.index === null ? (
+    <View class="w-full h-full bg-slate-950" />
+  ) : props.index === 0 ? (
+    <Hero />
+  ) : null;
+}
+```
+:::
 
 The picker itself is a `Modal`. Its cursor is driven by an `ActionHandler` that
 reads the d-pad + CIRCLE edge bits — and because the modal blocks background

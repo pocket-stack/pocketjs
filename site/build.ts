@@ -18,6 +18,16 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync
 import { dirname, join } from "node:path";
 import { marked } from "marked";
 import { createHighlighter } from "shiki";
+import {
+  propsHelperCode,
+  propsHelperId,
+  ssrHelperCode,
+  ssrHelperId,
+  vaporHelperCode,
+  vaporHelperId,
+  vdomHelperCode,
+  vdomHelperId,
+} from "@vue-jsx-vapor/runtime/raw";
 import { OG_IMAGE_URL, SITE_DESC, SITE_TITLE, SITE_URL, renderPage } from "./templates.ts";
 import { DOC_NAV } from "./nav.ts";
 
@@ -75,6 +85,9 @@ const shimPlugin: import("bun").BunPlugin = {
   name: "node-shims",
   setup(b) {
     b.onResolve({ filter: /.*/ }, (a) => {
+      if (a.path === "@vue-jsx-vapor/compiler-rs-wasm32-wasi") {
+        return { path: SITE + "playground/vue-vapor-wasi.ts" };
+      }
       if (SHIM_MAP[a.path]) return { path: SHIMS + SHIM_MAP[a.path] };
       if (SHIM_EMPTY.has(a.path)) return { path: SHIMS + "empty.js" };
       return undefined;
@@ -92,13 +105,18 @@ const PROCESS_PRELUDE =
   `removeListener:function(){},emit:function(){},emitWarning:function(){},exit:function(){},` +
   `hrtime:function(){return[0,0]},browser:true});globalThis.global||=globalThis;\n`;
 
-async function bundle(entry: string, outfile: string, opts: { shims?: boolean; prelude?: string } = {}) {
+async function bundle(
+  entry: string,
+  outfile: string,
+  opts: { shims?: boolean; prelude?: string; external?: string[] } = {},
+) {
   const res = await Bun.build({
     entrypoints: [SITE + entry],
     target: "browser",
     format: "esm",
     conditions: ["browser"],
     define: { "process.env.NODE_ENV": '"production"', "process.env.BABEL_ENV": '"production"', "process.platform": '"browser"' },
+    external: opts.external,
     minify: true,
     sourcemap: "none",
     plugins: opts.shims ? [shimPlugin] : [],
@@ -139,16 +157,99 @@ async function bundleSolid(outfile: string) {
   console.log(`  ${outfile}  (${(code.length / 1024).toFixed(0)} KiB)`);
 }
 
-// --- editable single-file demos (launcher imports siblings -> excluded)
+async function bundleVueVapor(outfile: string) {
+  const entry = Bun.resolveSync("vue/dist/vue.runtime-with-vapor.esm-browser.prod.js", ROOT);
+  const res = await Bun.build({
+    entrypoints: [entry],
+    target: "browser",
+    format: "esm",
+    conditions: ["browser"],
+    define: { "process.env.NODE_ENV": '"production"' },
+    minify: true,
+    sourcemap: "none",
+  });
+  if (!res.success) {
+    for (const l of res.logs) console.error(String(l));
+    throw new Error("bundle failed: vue-vapor");
+  }
+  const code = await res.outputs[0].text();
+  write(outfile, code);
+  console.log(`  ${outfile}  (${(code.length / 1024).toFixed(0)} KiB)`);
+}
+
+function patchVaporHelperCode(code: string): string {
+  return code.replace(
+    `if (i && i.appContext.vapor && p === "__vapor") {
+          return true;
+        }
+        return Reflect.get`,
+    `if (i && i.appContext.vapor && p === "__vapor") {
+          return true;
+        }
+        if (i && i.appContext.vapor && p === "inheritAttrs") {
+          return false;
+        }
+        return Reflect.get`,
+  );
+}
+
+function writeVueVaporHelpers(): void {
+  const helpers = new Map([
+    [propsHelperId, propsHelperCode],
+    [vdomHelperId, vdomHelperCode],
+    [vaporHelperId, patchVaporHelperCode(vaporHelperCode)],
+    [ssrHelperId, ssrHelperCode],
+  ]);
+  for (const [id, code] of helpers) {
+    const name = id.split("/").pop();
+    if (!name) continue;
+    write(`pg/vue-jsx-vapor/${name}.js`, code);
+  }
+  console.log("  pg/vue-jsx-vapor/*  (4 helpers)");
+}
+
+function writeStaticHeaders(): void {
+  write(
+    "_headers",
+    `/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+`,
+  );
+}
+
+// --- editable demos (mostly single-file; gallery inlines generated tile data)
+type SpriteMeta = Record<string, { cols: number; rows: number; frames: number; step: number; psm?: number }>;
+type DemoVariant = { framework: "solid" | "vue-vapor"; source: string; spriteMeta?: SpriteMeta };
+type DemoEntry = { name: string; title: string; variants: DemoVariant[] };
+
+function inlinePlaygroundImports(name: string, source: string): string | null {
+  if (!/from\s+["']\.\.?\//.test(source)) return source;
+  if (name !== "gallery") return null;
+  const tilesPath = ROOT + "demos/gallery/tiles.ts";
+  const tiles = readFileSync(tilesPath, "utf8").replace(/^export\s+/gm, "");
+  return source.replace(
+    /import\s+\{\s*GALLERY_PAGES,\s*TILES_PER_PAGE,\s*TILE_SRCS\s*\}\s+from\s+["']\.\/tiles\.ts["'];\n?/,
+    tiles + "\n",
+  );
+}
+
+function demoSpriteMeta(name: string): SpriteMeta | undefined {
+  const path = ROOT + "demos/" + name + "/sprites.json";
+  if (!existsSync(path)) return undefined;
+  return JSON.parse(readFileSync(path, "utf8")) as SpriteMeta;
+}
+
 function demoManifest() {
   const dir = ROOT + "demos/";
-  const out: { name: string; title: string; source: string }[] = [];
+  const out: DemoEntry[] = [];
   for (const name of readdirSync(dir).sort()) {
     const app = dir + name + "/app.tsx";
+    const vueApp = dir + name + "/app.vue-vapor.tsx";
     const main = dir + name + "/main.tsx";
     if (!existsSync(app)) continue;
-    const source = readFileSync(app, "utf8");
-    if (/from\s+["']\.\.?\//.test(source)) continue; // multi-file demo (launcher)
+    const source = inlinePlaygroundImports(name, readFileSync(app, "utf8"));
+    if (source === null) continue; // multi-file demo (launcher)
     let title = name[0].toUpperCase() + name.slice(1);
     if (existsSync(main)) {
       const mainSource = readFileSync(main, "utf8");
@@ -156,19 +257,42 @@ function demoManifest() {
       const m = mainSource.match(/@title\s+PocketJS:\s*(.+)/);
       if (m) title = m[1].trim();
     }
-    out.push({ name, title, source });
+    const spriteMeta = demoSpriteMeta(name);
+    const variants: DemoVariant[] = [{ framework: "solid", source, spriteMeta }];
+    if (existsSync(vueApp)) {
+      const vueSource = inlinePlaygroundImports(name, readFileSync(vueApp, "utf8"));
+      if (vueSource !== null) {
+        variants.push({ framework: "vue-vapor", source: vueSource, spriteMeta });
+      }
+    }
+    out.push({ name, title, variants });
   }
   return out;
+}
+
+function copyDemoAssets(): void {
+  const demosDir = ROOT + "demos/";
+  for (const name of readdirSync(demosDir)) {
+    const dir = demosDir + name + "/";
+    if (!existsSync(dir)) continue;
+    for (const file of readdirSync(dir)) {
+      if (/\.(?:png|svg)$/i.test(file)) copy(dir + file, "demo-assets/" + file);
+    }
+  }
 }
 
 async function main() {
   console.log("pocketjs.dev build:");
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
+  writeStaticHeaders();
 
   // 1. bundles
   await bundleSolid("pg/solid.js");
+  await bundleVueVapor("pg/vue-vapor.js");
+  writeVueVaporHelpers();
   await bundle("playground/runtime-entry.ts", "pg/runtime.js");
+  await bundle("playground/runtime-vue-vapor-entry.ts", "pg/runtime-vue-vapor.js", { external: ["vue"] });
   await bundle("playground/compiler-entry.ts", "pg/compiler.js", { shims: true, prelude: PROCESS_PRELUDE });
   await bundle("playground/playground.js", "pg/playground.bundle.js");
 
@@ -177,6 +301,7 @@ async function main() {
   copy(ROOT + "assets/fonts/Inter-Regular.ttf", "pg/fonts/Inter-Regular.ttf");
   copy(ROOT + "assets/fonts/Inter-Bold.ttf", "pg/fonts/Inter-Bold.ttf");
   for (const f of readdirSync(ROOT + "assets/images/")) copy(ROOT + "assets/images/" + f, "demo-assets/" + f);
+  copyDemoAssets();
 
   // 3. demos manifest
   const demos = demoManifest();
@@ -309,12 +434,27 @@ async function compileCss() {
 const IMPORT_MAP = `<script type="importmap">
 {"imports":{
   "solid-js":"/pg/solid.js",
+  "vue":"/pg/vue-vapor.js",
+  "/vue-jsx-vapor/props":"/pg/vue-jsx-vapor/props.js",
+  "/vue-jsx-vapor/vdom":"/pg/vue-jsx-vapor/vdom.js",
+  "/vue-jsx-vapor/vapor":"/pg/vue-jsx-vapor/vapor.js",
+  "/vue-jsx-vapor/ssr":"/pg/vue-jsx-vapor/ssr.js",
   "@pocketjs/framework":"/pg/runtime.js",
   "@pocketjs/framework/components":"/pg/runtime.js",
   "@pocketjs/framework/animation":"/pg/runtime.js",
   "@pocketjs/framework/lifecycle":"/pg/runtime.js",
   "@pocketjs/framework/input":"/pg/runtime.js",
-  "@pocketjs/framework/renderer":"/pg/runtime.js"
+  "@pocketjs/framework/renderer":"/pg/runtime.js",
+  "@pocketjs/framework/solid":"/pg/runtime.js",
+  "@pocketjs/framework/solid/components":"/pg/runtime.js",
+  "@pocketjs/framework/solid/lifecycle":"/pg/runtime.js",
+  "@pocketjs/framework/solid/renderer":"/pg/runtime.js",
+  "@pocketjs/framework/vue-vapor":"/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/animation":"/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/components":"/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/input":"/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/lifecycle":"/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/renderer":"/pg/runtime-vue-vapor.js"
 }}
 </script>`;
 
@@ -331,14 +471,58 @@ async function buildDocs() {
   });
   const LANG_ALIAS: Record<string, string> = { ts: "typescript", js: "javascript", sh: "bash", shell: "bash", console: "bash", jsonc: "json", rs: "rust", text: "text", txt: "text" };
   const loaded = new Set(highlighter.getLoadedLanguages());
+  const highlight = (text: string, rawLang: string) => {
+    const raw = rawLang.trim().split(/\s+/)[0].toLowerCase();
+    const lang = LANG_ALIAS[raw] ?? raw;
+    const use = loaded.has(lang) ? lang : "text";
+    return highlighter.codeToHtml(text, { theme: "one-dark-pro", lang: use });
+  };
+  let frameworkCodeId = 0;
+  const renderFrameworkCode = (markdown: string) =>
+    markdown.replace(/:::framework-code\n([\s\S]*?)\n:::/g, (_match, body: string) => {
+      const variants: { framework: "solid" | "vue-vapor"; code: string; lang: string; label: string }[] = [];
+      body.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_fence, meta: string, code: string) => {
+        const parts = meta.trim().split(/\s+/);
+        const framework = parts.find((part: string) => part === "solid" || part === "vue-vapor") as
+          | "solid"
+          | "vue-vapor"
+          | undefined;
+        if (!framework) return "";
+        variants.push({
+          framework,
+          code: code.replace(/\n$/, ""),
+          lang: parts[0] || "text",
+          label: framework === "solid" ? "Solid" : "Vue Vapor",
+        });
+        return "";
+      });
+      if (variants.length === 0) return body;
+      const id = frameworkCodeId++;
+      const group = `doc-fw-code-${id}`;
+      const inputs = variants
+        .map((variant, i) =>
+          `<input class="doc-fw-radio doc-fw-radio-${variant.framework}" type="radio" name="${group}" id="${group}-${variant.framework}"${i === 0 ? " checked" : ""}>`,
+        )
+        .join("");
+      const tabs = variants
+        .map(
+          (variant) =>
+            `<label class="doc-fw-tab doc-fw-tab-${variant.framework}" for="${group}-${variant.framework}">${variant.label}</label>`,
+        )
+        .join("");
+      const panels = variants
+        .map(
+          (variant) =>
+            `<div class="doc-fw-panel doc-fw-panel-${variant.framework}" data-framework="${variant.framework}">${highlight(variant.code, variant.lang)}</div>`,
+        )
+        .join("");
+      return `<div class="doc-fw-code">${inputs}<div class="doc-fw-tabs" role="tablist">${tabs}</div><div class="doc-fw-panels">${panels}</div></div>`;
+    });
   marked.use({
     renderer: {
       code(token: { text?: string; lang?: string }) {
         const text = token.text ?? "";
-        const raw = (token.lang ?? "").trim().split(/\s+/)[0].toLowerCase();
-        const lang = LANG_ALIAS[raw] ?? raw;
-        const use = loaded.has(lang) ? lang : "text";
-        return highlighter.codeToHtml(text, { theme: "one-dark-pro", lang: use });
+        return highlight(text, token.lang ?? "");
       },
     },
   });
@@ -359,7 +543,7 @@ async function buildDocs() {
       console.warn(`  docs: MISSING ${slug}.md`);
       continue;
     }
-    const html = await marked.parse(readFileSync(md, "utf8"));
+    const html = await marked.parse(renderFrameworkCode(readFileSync(md, "utf8")));
     const prev = allSlugs[i - 1];
     const next = allSlugs[i + 1];
     const pager =

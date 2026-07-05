@@ -68,6 +68,31 @@ function makeDomClass(predicate: (value: unknown) => boolean): unknown {
   };
 }
 
+function installDomClass(
+  target: Record<string, unknown>,
+  name: "Node" | "Element" | "HTMLElement" | "Text" | "Comment",
+  predicate: (value: unknown) => boolean,
+): void {
+  const existing = target[name];
+  if (!existing) {
+    target[name] = makeDomClass(predicate);
+    return;
+  }
+  if (typeof existing !== "function") return;
+  const nativeHasInstance = Function.prototype[Symbol.hasInstance].bind(existing);
+  try {
+    Object.defineProperty(existing, Symbol.hasInstance, {
+      configurable: true,
+      value(value: unknown) {
+        return predicate(value) || nativeHasInstance(value);
+      },
+    });
+  } catch {
+    // Some hosts may lock native constructors. In that case QuickJS still uses
+    // the synthetic classes above, and browser DOM nodes keep their native path.
+  }
+}
+
 export function installVueVaporDom(): void {
   const g = globalThis as unknown as {
     document?: unknown;
@@ -79,11 +104,12 @@ export function installVueVaporDom(): void {
     window?: unknown;
   };
 
-  if (!g.Node) g.Node = makeDomClass(isNativeNode);
-  if (!g.Element) g.Element = makeDomClass((value) => isNativeNode(value) && value.domNodeType === 1);
+  installDomClass(g as Record<string, unknown>, "Node", isNativeNode);
+  installDomClass(g as Record<string, unknown>, "Element", (value) => isNativeNode(value) && value.domNodeType === 1);
   if (!g.HTMLElement) g.HTMLElement = g.Element;
-  if (!g.Text) g.Text = makeDomClass((value) => isNativeNode(value) && value.domNodeType === 3);
-  if (!g.Comment) g.Comment = makeDomClass((value) => isNativeNode(value) && value.domNodeType === 8);
+  else installDomClass(g as Record<string, unknown>, "HTMLElement", (value) => isNativeNode(value) && value.domNodeType === 1);
+  installDomClass(g as Record<string, unknown>, "Text", (value) => isNativeNode(value) && value.domNodeType === 3);
+  installDomClass(g as Record<string, unknown>, "Comment", (value) => isNativeNode(value) && value.domNodeType === 8);
   if (!g.window) g.window = globalThis;
 
   if (!g.document) {

@@ -429,8 +429,14 @@ export function Gallery(props: GalleryProps): SolidJSX.Element {
     const index = i;
     cells.push(
       View({
-        class: "absolute inset-0",
-        style: { translateX: index * SCREEN_W },
+        style: {
+          posType: ENUMS.PosType.Absolute,
+          insetT: 0,
+          insetR: 0,
+          insetB: 0,
+          insetL: 0,
+          translateX: index * SCREEN_W,
+        },
         children: SolidShow({
           get when() {
             return Math.abs(index - props.page()) <= win;
@@ -444,13 +450,19 @@ export function Gallery(props: GalleryProps): SolidJSX.Element {
   }
 
   return View({
-    class: props.class ?? "relative w-full h-full overflow-hidden",
+    class: props.class,
+    style: props.class
+      ? undefined
+      : {
+          width: SCREEN_W,
+          height: SCREEN_H,
+          overflow: ENUMS.Overflow.Hidden,
+        },
     children: View({
       ref: (node) => {
         strip = node;
       },
-      class: "relative w-full h-full",
-      style: { translateX: -initialPage * SCREEN_W },
+      style: { width: SCREEN_W, height: SCREEN_H, translateX: -initialPage * SCREEN_W },
       children: cells,
     }),
   });

@@ -71,7 +71,9 @@ function activeFocusRoot(): NodeMirror | null {
 }
 
 function collectFocusables(node: NodeMirror, out: NodeMirror[]): void {
+  if (!node) return;
   if (node.focusable) out.push(node);
+  if (!Array.isArray(node.children)) return;
   for (let i = 0; i < node.children.length; i++) {
     collectFocusables(node.children[i], out);
   }
@@ -196,6 +198,7 @@ function firePress(): void {
 // ---- removal repair [R] ------------------------------------------------------
 
 function isWithin(node: NodeMirror, ancestor: NodeMirror): boolean {
+  if (!node || !ancestor) return false;
   let n: NodeMirror | null = node;
   while (n) {
     if (n === ancestor) return true;
@@ -210,7 +213,9 @@ export interface FocusScopeOptions {
 }
 
 function firstFocusable(node: NodeMirror): NodeMirror | null {
+  if (!node) return null;
   if (node.focusable) return node;
+  if (!Array.isArray(node.children)) return null;
   for (let i = 0; i < node.children.length; i++) {
     const f = firstFocusable(node.children[i]);
     if (f) return f;

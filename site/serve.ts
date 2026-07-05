@@ -10,6 +10,10 @@ const MIME: Record<string, string> = {
   svg: "image/svg+xml", png: "image/png", ttf: "font/ttf", map: "application/json",
   pak: "application/octet-stream",
 };
+const SECURITY_HEADERS = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "require-corp",
+} as const;
 function resolve(path: string): string | null {
   let p = DIST + path.replace(/^\/+/, "").replace(/\.\.+/g, "");
   if (p.endsWith("/")) p += "index.html";
@@ -27,7 +31,11 @@ Bun.serve({
     if (!file) return new Response("not found: " + url.pathname, { status: 404 });
     const ext = file.slice(file.lastIndexOf(".") + 1);
     return new Response(Bun.file(file), {
-      headers: { "content-type": MIME[ext] ?? "application/octet-stream", "cache-control": "no-store" },
+      headers: {
+        "content-type": MIME[ext] ?? "application/octet-stream",
+        "cache-control": "no-store",
+        ...SECURITY_HEADERS,
+      },
     });
   },
 });

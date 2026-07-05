@@ -337,6 +337,7 @@ export function release(node: NodeMirror): void {
 }
 
 function subtreeHasRetained(node: NodeMirror): boolean {
+  if (!node) return false;
   if (retained.has(node)) return true;
   for (let i = 0; i < node.children.length; i++) {
     if (subtreeHasRetained(node.children[i])) return true;
@@ -353,6 +354,7 @@ export function runSweep(): void {
   const ops = getOps();
   const keep: NodeMirror[] = [];
   for (const node of sweepSet) {
+    if (!node) continue;
     if (node.parent !== null) continue;
     if (subtreeHasRetained(node)) {
       keep.push(node);
@@ -443,6 +445,7 @@ export function insertNode(parent: NodeMirror, node: NodeMirror, anchor?: NodeMi
 }
 
 export function removeNode(parent: NodeMirror, node: NodeMirror): void {
+  if (!node) return;
   notifyDetached(node);
   getOps().removeChild(parent.id, node.id);
   unlink(node);

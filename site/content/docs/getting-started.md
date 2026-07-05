@@ -39,17 +39,19 @@ in this repo, exposed through subpath imports like
 
 ## Write your first component
 
-A component is a function that returns JSX. You lay out with `View`, draw text
-with `Text`, and style with `class` — a **build-time subset of Tailwind**, not
-runtime CSS. State comes from `createSignal`, exactly like Solid.
+A component returns JSX. You lay out with `View`, draw text with `Text`, and
+style with `class` — a **build-time subset of Tailwind**, not runtime CSS.
+State comes directly from the selected framework: `createSignal` in Solid,
+`ref` in Vue Vapor.
 
 Solid is the default framework. Vue Vapor is selected with `pocket.config.ts` or
-`--framework=vue-vapor`; see [Frameworks](/docs/frameworks/) after the Solid
-quickstart below.
+`--framework=vue-vapor`; see [Frameworks](/docs/frameworks/) for the full
+selection model.
 
 Here's a focusable counter. Put it in `demos/hero/app.tsx`:
 
-```tsx
+:::framework-code
+```tsx solid
 import { createSignal, Show } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 
@@ -75,6 +77,35 @@ export default function App() {
 }
 ```
 
+```tsx vue-vapor
+import { ref } from "vue";
+import { Text, View } from "@pocketjs/framework/components";
+
+export default function App() {
+  const count = ref(0);
+  return () => (
+    <View class="w-full h-full flex-col items-center gap-4 p-4 bg-slate-50">
+      <Text class="text-xl text-slate-950 font-bold">Count: {count.value}</Text>
+
+      <View
+        class="px-4 py-2 rounded-xl shadow-md bg-blue-600 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
+        focusable
+        onPress={() => {
+          count.value++;
+        }}
+      >
+        <Text class="text-base text-white font-bold">Press Circle</Text>
+      </View>
+
+      {count.value > 3 ? (
+        <Text class="text-sm text-emerald-600">Reactive on real hardware.</Text>
+      ) : null}
+    </View>
+  );
+}
+```
+:::
+
 What's happening:
 
 - **Layout** is flexbox. `flex-col`, `items-center`, `gap-4`, `p-4` compile to a
@@ -88,9 +119,9 @@ What's happening:
 - **`focusable`** opts the `View` into d-pad focus, and **`onPress`** fires when
   the focused node is confirmed (the Circle button on a PSP). Focus and input
   are covered in [Input & focus](/docs/input-focus/).
-- **`{count()}`** is a reactive read. When `setCount` runs, only that `Text`
-  updates — no re-render of the tree. `Show` mounts its children only while
-  `when` is truthy. More in [Reactivity](/docs/reactivity/).
+- **`{count()}` / `{count.value}`** is a reactive read. When the setter or ref
+  write runs, only that `Text` updates — no re-render of the whole native tree.
+  More in [Reactivity](/docs/reactivity/).
 
 ## The mount entry
 
@@ -98,13 +129,23 @@ What's happening:
 entry** does that. Keep it tiny — this is just app bootstrap. Put it in
 `demos/hero/main.tsx`:
 
-```tsx
+:::framework-code
+```tsx solid
 // @title PocketJS: Hero
 import App from "./app.tsx";
 import { mount } from "@pocketjs/framework";
 
 mount(() => <App />);
 ```
+
+```tsx vue-vapor
+// @title PocketJS: Hero Vue Vapor
+import App from "./app.tsx";
+import { mount } from "@pocketjs/framework";
+
+mount(App);
+```
+:::
 
 `mount` is imported from the package root, `@pocketjs/framework`. It handles host
 detection (PSP vs. PPSSPP vs. browser vs. Bun), wiring the generated style table,
@@ -122,12 +163,27 @@ the glyphs it actually renders, and bundles everything:
 bun scripts/build.ts hero
 ```
 
+For Vue Vapor, select the framework explicitly or put it in `pocket.config.ts`:
+
+:::framework-code
+```sh solid
+bun scripts/build.ts hero
+```
+
+```sh vue-vapor
+bun scripts/build.ts hero --framework=vue-vapor
+```
+:::
+
 This produces two files in `dist/`:
 
 | File              | What it is                                                                 |
 | ----------------- | ------------------------------------------------------------------------- |
 | `dist/hero.js`    | Your app bundled to a single IIFE (unminified) that any host loads        |
 | `dist/hero.pak` | The packed asset file: the compiled style table, font atlases, and images |
+
+Vue Vapor builds use the `.vue-vapor` suffix, for example
+`dist/hero.vue-vapor.js` and `dist/hero.vue-vapor.pak`.
 
 A few notes on the command:
 
@@ -154,6 +210,16 @@ bun scripts/dev.ts          # builds the wasm core + hero-main, then serves
 # or: bun run dev
 ```
 
+:::framework-code
+```sh solid
+bun scripts/dev.ts hero-main
+```
+
+```sh vue-vapor
+bun scripts/dev.ts --framework=vue-vapor hero-main
+```
+:::
+
 Open the printed URL, **http://127.0.0.1:8130/**. Pass demo names to build
 specific ones, or set `PORT`:
 
@@ -170,9 +236,9 @@ subsequent runs are fast.
 ### In the Playground
 
 No local build at all: open the [Playground](/playground/), which loads the same
-wasm core in your browser. Edit JSX in the editor and it renders live — the
-quickest way to explore the component and styling surface before wiring up a
-local project.
+wasm core in your browser. Pick Solid or Vue Vapor in the toolbar, edit JSX in
+the editor, and it renders live — the quickest way to explore the component and
+styling surface before wiring up a local project.
 
 ## What the build just did
 

@@ -5,10 +5,14 @@ import {
   insert as vaporInsert,
   onScopeDispose,
   renderEffect,
+  shallowRef,
   watchEffect,
 } from "vue";
+import type { JSX as SolidJSX } from "solid-js";
 import { ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
-import { pushButtonHandlerBlock, onButtonPress, type ButtonPressOptions } from "./frame-vue-vapor.ts";
+import { animate, type EasingName } from "./animation.ts";
+import { pushButtonHandlerBlock, onButtonPress, onFrame, type ButtonPressOptions } from "./frame-vue-vapor.ts";
+import { BTN } from "./input-api.ts";
 import { pushFocusGrid, pushFocusScope, type FocusGridOptions, type FocusScopeOptions } from "./input.ts";
 import { getOverlayRoot } from "./overlay.ts";
 import {
@@ -29,14 +33,14 @@ type NodeRef = ((node: NodeMirror | null) => void) | { current: NodeMirror | nul
 type SlotFn = (...args: unknown[]) => unknown;
 type SlotBag = Record<string, SlotFn | undefined> | SlotFn | undefined;
 
-export type VNodeChild = unknown;
+export type VNodeChild = SolidJSX.Element | (() => SolidJSX.Element);
 const NO_FALLTHROUGH = { inheritAttrs: false } as const;
 type VaporCtx = { slots: SlotBag; attrs: Record<string, unknown> };
 type VaporSetup<P extends object> = (props: P, ctx: VaporCtx) => unknown;
 const definePocketVaporComponent = defineVaporComponent as unknown as <P extends object>(
   setup: VaporSetup<P>,
   extraOptions?: typeof NO_FALLTHROUGH,
-) => (props: P) => unknown;
+) => (props: P) => SolidJSX.Element;
 const insertVaporBlock = vaporInsert as unknown as (
   block: unknown,
   parent: NodeMirror,
@@ -64,6 +68,14 @@ export interface ImageProps {
   class?: string;
   className?: string;
   src?: string;
+  style?: StyleObject;
+  nodeRef?: NodeRef;
+}
+
+export interface SpriteProps {
+  class?: string;
+  className?: string;
+  sprite?: string;
   style?: StyleObject;
   nodeRef?: NodeRef;
 }
@@ -206,6 +218,7 @@ function primitive(tag: "view" | "text" | "image") {
 export const View = primitive("view");
 export const Text = primitive("text");
 export const Image = primitive("image");
+export const Sprite = primitive("image");
 
 function resolveActive(active: unknown): boolean {
   const resolved = valueOf(active);
@@ -400,4 +413,173 @@ export const ActionBar = definePocketVaporComponent((_props: ActionBarProps, { a
     if (state.host.parent) detachNode(state.host.parent, state.host);
   });
   return state.marker;
+}, NO_FALLTHROUGH);
+
+export interface GridProps extends ViewProps, Partial<FocusGridOptions> {
+  gap?: number;
+  active?: boolean | (() => boolean);
+}
+
+export const Grid = definePocketVaporComponent((_props: GridProps, { attrs, slots }: VaporCtx) => {
+  let root: NodeMirror | undefined;
+  const hasColumns = attrs.columns != null;
+  const node = createPrimitiveNode("view", attrs, slots, {
+    omit: ["active", "columns", "wrap", "gap"],
+    onNode(next) {
+      root = next;
+    },
+    extra: () => {
+      const style = attrs.gap != null
+        ? { ...((normalizeStyleValue(attrs.style) as StyleObject | undefined) ?? {}), gap: valueOf(attrs.gap) as number }
+        : normalizeStyleValue(attrs.style);
+      return {
+        class: attrs.class ?? "flex-row flex-wrap",
+        style: style as HostProps["style"],
+      };
+    },
+  });
+  if (hasColumns) {
+    watchEffect((registerCleanup) => {
+      if (!root || !resolveActive(attrs.active)) return;
+      const dispose = pushFocusGrid(root, {
+        columns: valueOf(attrs.columns) as number,
+        wrap: booleanOption(attrs.wrap),
+      });
+      registerCleanup(dispose);
+    });
+  }
+  return node;
+}, NO_FALLTHROUGH);
+
+export interface LazyProps extends Omit<ViewProps, "children"> {
+  when: boolean | (() => boolean);
+  reveal?: number;
+  fallback?: VNodeChild | (() => VNodeChild);
+  children: () => VNodeChild;
+}
+
+export const Lazy = definePocketVaporComponent((_props: LazyProps, { attrs, slots }: VaporCtx) => {
+  const reveal = Math.max(0, Math.floor((valueOf(attrs.reveal) as number | undefined) ?? 0));
+  const ready = shallowRef(reveal === 0);
+  let elapsed = 0;
+  const root = createPrimitiveNode("view", attrs, undefined, {
+    omit: ["when", "reveal", "fallback", "children"],
+    extra: () =>
+      attrs.class
+        ? {}
+        : {
+            style: {
+              grow: 1,
+              width: SCREEN_W,
+              flexDir: ENUMS.FlexDir.Col,
+            },
+          },
+  });
+  const renderRoot = createRenderRoot(root);
+  const active = () => resolveActive(attrs.when);
+
+  if (reveal > 0) {
+    onFrame(() => {
+      if (ready.value || !active()) return;
+      if (++elapsed >= reveal) ready.value = true;
+    });
+  }
+
+  renderEffect(() => {
+    if (!active()) {
+      renderRoot.update(null);
+      return;
+    }
+    if (!ready.value) {
+      const fallback = attrs.fallback;
+      renderRoot.update(typeof fallback === "function" ? (fallback as () => VNodeChild)() : fallback);
+      return;
+    }
+    renderRoot.update(slotDefault(slots));
+  });
+  onScopeDispose(() => renderRoot.dispose());
+  return root;
+}, NO_FALLTHROUGH);
+
+export interface GalleryProps {
+  count: number;
+  page: number | (() => number);
+  onPageChange?: (next: number) => void;
+  renderPage: (index: number) => VNodeChild;
+  window?: number;
+  duration?: number;
+  easing?: EasingName;
+  bindTriggers?: boolean;
+  wrap?: boolean;
+  class?: string;
+}
+
+export const Gallery = definePocketVaporComponent((_props: GalleryProps, { attrs }: VaporCtx) => {
+  const count = () => Math.max(0, Math.floor((valueOf(attrs.count) as number | undefined) ?? 0));
+  const page = () => Math.max(0, Math.floor((valueOf(attrs.page) as number | undefined) ?? 0));
+  const win = () => Math.max(0, Math.floor((valueOf(attrs.window) as number | undefined) ?? 1));
+  const dur = () => (valueOf(attrs.duration) as number | undefined) ?? 300;
+  const easing = () => (valueOf(attrs.easing) as EasingName | undefined) ?? "out";
+  const renderPage = () => callbackOf<GalleryProps["renderPage"]>(attrs.renderPage);
+  const onPageChange = () => callbackOf<NonNullable<GalleryProps["onPageChange"]>>(attrs.onPageChange);
+  const clampPage = (n: number): number =>
+    booleanOption(attrs.wrap)
+      ? ((n % count()) + count()) % count()
+      : Math.max(0, Math.min(count() - 1, n));
+  const go = (delta: number): void => {
+    const next = clampPage(page() + delta);
+    if (next !== page()) onPageChange()?.(next);
+  };
+
+  if (attrs.bindTriggers !== false) {
+    onButtonPress(BTN.LTRIGGER, () => go(-1));
+    onButtonPress(BTN.RTRIGGER, () => go(1));
+  }
+
+  const viewport = createElement("view");
+  const strip = createElement("view");
+  const cells: NodeMirror[] = [];
+  const roots: RenderRoot[] = [];
+  if (attrs.class) {
+    setProp(viewport, "class", attrs.class, undefined);
+  } else {
+    setProp(viewport, "style", { width: SCREEN_W, height: SCREEN_H, overflow: ENUMS.Overflow.Hidden }, undefined);
+  }
+  setProp(strip, "style", { width: SCREEN_W, height: SCREEN_H, translateX: -page() * SCREEN_W }, undefined);
+  insertNode(viewport, strip);
+
+  for (let i = 0; i < count(); i++) {
+    const cell = createElement("view");
+    setProp(
+      cell,
+      "style",
+      {
+        posType: ENUMS.PosType.Absolute,
+        insetT: 0,
+        insetR: 0,
+        insetB: 0,
+        insetL: 0,
+        translateX: i * SCREEN_W,
+      },
+      undefined,
+    );
+    insertNode(strip, cell);
+    cells.push(cell);
+    roots.push(createRenderRoot(cell));
+  }
+
+  let prevPage = page();
+  renderEffect(() => {
+    const current = page();
+    if (current !== prevPage) {
+      prevPage = current;
+      animate(strip, "translateX", -current * SCREEN_W, { dur: dur(), easing: easing() });
+    }
+    const render = renderPage();
+    for (let i = 0; i < cells.length; i++) {
+      roots[i].update(render && Math.abs(i - current) <= win() ? render(i) : null);
+    }
+  });
+  onScopeDispose(() => roots.forEach((root) => root.dispose()));
+  return viewport;
 }, NO_FALLTHROUGH);

@@ -77,7 +77,8 @@ rasterizer on the device; drawing text is compositing pre-baked coverage. See
 
 A complete app: a counter you bump by pressing a focusable button.
 
-```tsx
+:::framework-code
+```tsx solid
 // app.tsx
 import { createSignal } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
@@ -98,11 +99,36 @@ export default function App() {
 }
 ```
 
+```tsx vue-vapor
+// app.tsx
+import { ref } from "vue";
+import { Text, View } from "@pocketjs/framework/components";
+
+export default function App() {
+  const count = ref(0);
+
+  return () => (
+    <View class="flex-col items-center gap-4 p-4 bg-slate-50">
+      <Text class="text-xl text-slate-950">Count: {count.value}</Text>
+      <View
+        class="p-2 rounded-md bg-blue-600 focus:bg-blue-500 transition-colors duration-150"
+        focusable
+        onPress={() => {
+          count.value++;
+        }}
+      />
+    </View>
+  );
+}
+```
+:::
+
 The mount entry is ordinary bootstrap code — the framework detects the host,
 loads the generated style table and pak assets, and wires up the frame
 callback:
 
-```tsx
+:::framework-code
+```tsx solid
 // main.tsx
 import { mount } from "@pocketjs/framework";
 import App from "./app.tsx";
@@ -110,11 +136,27 @@ import App from "./app.tsx";
 mount(() => <App />);
 ```
 
+```tsx vue-vapor
+// main.tsx
+import { mount } from "@pocketjs/framework";
+import App from "./app.tsx";
+
+mount(App);
+```
+:::
+
 Build it with Bun:
 
-```sh
+:::framework-code
+```sh solid
 bun scripts/build.ts hero      # -> dist/hero.js + dist/hero.pak
 ```
+
+```sh vue-vapor
+bun scripts/build.ts hero --framework=vue-vapor
+# -> dist/hero.vue-vapor.js + dist/hero.vue-vapor.pak
+```
+:::
 
 A few things worth noticing in that example:
 
@@ -122,8 +164,9 @@ A few things worth noticing in that example:
   changes swap styles natively, with zero JS on the focus transition.
 - `transition-colors duration-150` declares motion; the tween ticks in Rust at
   a fixed `dt = 1/60 s`. JS only declares it.
-- `Count: {count()}` is a mixed text run — a static string and a reactive
-  expression laid out as one inline run, not two flex items.
+- `Count: {count()}` / `Count: {count.value}` is a mixed text run — a static
+  string and a reactive expression laid out as one inline run, not two flex
+  items.
 
 ## The same runtime, everywhere
 

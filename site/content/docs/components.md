@@ -3,10 +3,17 @@
 Everything you render in a PocketJS app is built from a tiny set of components,
 all imported from a single entry point:
 
-```tsx
+:::framework-code
+```tsx solid
 import { Show, For, Index, Switch, Match } from "solid-js";
 import { View, Text, Image } from "@pocketjs/framework/components";
 ```
+
+```tsx vue-vapor
+import { ref, computed, onMounted } from "vue";
+import { View, Text, Image } from "@pocketjs/framework/components";
+```
+:::
 
 There are exactly **three host primitives** — `View`, `Text`, and `Image`.
 Solid apps import control-flow helpers (`Show`, `For`, `Index`, `Switch`,
@@ -42,7 +49,8 @@ A `View` becomes interactive by adding `focusable` and an `onPress` handler.
 `onPress` fires when the node is focused and the user presses the confirm
 button (Circle):
 
-```tsx
+:::framework-code
+```tsx solid
 <View
   class="px-4 py-2 rounded-xl bg-blue-600 focus:bg-blue-500 active:bg-blue-700"
   focusable
@@ -51,6 +59,19 @@ button (Circle):
   <Text class="text-base text-white font-bold">Press Circle</Text>
 </View>
 ```
+
+```tsx vue-vapor
+<View
+  class="px-4 py-2 rounded-xl bg-blue-600 focus:bg-blue-500 active:bg-blue-700"
+  focusable
+  onPress={() => {
+    count.value++;
+  }}
+>
+  <Text class="text-base text-white font-bold">Press Circle</Text>
+</View>
+```
+:::
 
 Pair `onPress` with `focusable` — an unfocusable node never receives input. See
 [Input & focus](/docs/input-focus/) for how focus moves between nodes.
@@ -61,13 +82,20 @@ Pair `onPress` with `focusable` — an unfocusable node never receives input. Se
 run** — a single measured line, not N separate flex items — so you can freely
 mix static text and reactive expressions:
 
-```tsx
+:::framework-code
+```tsx solid
 <Text class="text-sm text-slate-600">Count: {count()}</Text>
 ```
 
-`Count: ` and `{count()}` are concatenated and measured together. When the
-signal changes, only the text content is updated (via the native `replaceText`
-op); no relayout happens unless the measured width actually changes.
+```tsx vue-vapor
+<Text class="text-sm text-slate-600">Count: {count.value}</Text>
+```
+:::
+
+`Count: ` and the reactive value are concatenated and measured together. When
+the signal/ref changes, only the text content is updated (via the native
+`replaceText` op); no relayout happens unless the measured width actually
+changes.
 
 ### Text style inheritance
 
@@ -109,7 +137,8 @@ layout, `src` controls pixels. `src` is reactive — assigning a new name swaps
 the texture in place (via `setImage`), which is exactly how sprite animation
 works:
 
-```tsx
+:::framework-code
+```tsx solid
 import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
 
 const frame = createSpriteAnimation(
@@ -119,6 +148,18 @@ const frame = createSpriteAnimation(
 
 <Image class="w-10 h-10" src={frame()} />;
 ```
+
+```tsx vue-vapor
+import { createSpriteAnimation } from "@pocketjs/framework/vue-vapor/lifecycle";
+
+const frame = createSpriteAnimation(
+  ["spinner-00.svg", "spinner-01.svg", "spinner-02.svg"],
+  { frameStep: 3 },
+);
+
+<Image class="w-10 h-10" src={frame.value} />;
+```
+:::
 
 `Image` takes no children. See the [Build pipeline](/docs/build-pipeline/) for
 how images become pak textures.
@@ -145,12 +186,21 @@ own wrapper components.
 escape hatch for values you only know at runtime — it sets individual style
 keys directly, prev-diffed per key. Use it for signal-driven values:
 
-```tsx
+:::framework-code
+```tsx solid
 <View
   class="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600"
   style={{ width: (position() / TRACK_FRAMES) * 160 }}
 />
 ```
+
+```tsx vue-vapor
+<View
+  class="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-600"
+  style={{ width: (position.value / TRACK_FRAMES) * 160 }}
+/>
+```
+:::
 
 Prefer transform keys (`translateX`, `translateY`, `scale`, `rotate`) for motion
 where you can — they animate without triggering relayout. Full details are on
@@ -162,7 +212,8 @@ the [Styling](/docs/styling/) page.
 APIs like [`animate()`](/docs/animation/). Both Solid ref forms work — a plain
 variable (Solid assigns it) or a callback:
 
-```tsx
+:::framework-code
+```tsx solid
 import { animate } from "@pocketjs/framework/animation";
 import { onMount } from "solid-js";
 import type { NodeMirror } from "@pocketjs/framework/components";
@@ -174,6 +225,25 @@ onMount(() => {
 
 <View ref={underline} class="h-1 w-0 rounded-full bg-blue-500" />;
 ```
+
+```tsx vue-vapor
+import { animate } from "@pocketjs/framework/animation";
+import { onMounted } from "vue";
+import type { NodeMirror } from "@pocketjs/framework/components";
+
+let underline: NodeMirror | undefined;
+onMounted(() => {
+  if (underline) animate(underline, "width", 210, { dur: 700, easing: "out" });
+});
+
+<View
+  nodeRef={(node) => {
+    underline = node ?? undefined;
+  }}
+  class="h-1 w-0 rounded-full bg-blue-500"
+/>;
+```
+:::
 
 ## Control flow
 
@@ -187,11 +257,21 @@ native JSX control-flow patterns instead.
 
 Toggles a subtree on a boolean condition, with an optional `fallback`:
 
-```tsx
+:::framework-code
+```tsx solid
 <Show when={count() > 3} fallback={<Text class="text-sm text-slate-500">Keep going…</Text>}>
   <Text class="text-sm text-emerald-600">Reactive on real hardware.</Text>
 </Show>
 ```
+
+```tsx vue-vapor
+{count.value > 3 ? (
+  <Text class="text-sm text-emerald-600">Reactive on real hardware.</Text>
+) : (
+  <Text class="text-sm text-slate-500">Keep going...</Text>
+)}
+```
+:::
 
 When `when` flips, the children are inserted or removed from the native tree.
 While hidden, `Show` leaves behind only an empty text marker, which — as noted
@@ -202,7 +282,8 @@ above — takes up no layout space.
 `For` renders a list keyed **by reference**. Its callback receives the item and
 an index *accessor*:
 
-```tsx
+:::framework-code
+```tsx solid
 <For each={tracks()}>
   {(track, i) => (
     <View class="flex-row justify-between p-1" focusable onPress={() => select(i())}>
@@ -212,6 +293,16 @@ an index *accessor*:
   )}
 </For>
 ```
+
+```tsx vue-vapor
+{tracks.value.map((track, i) => (
+  <View class="flex-row justify-between p-1" focusable onPress={() => select(i)}>
+    <Text class="text-xs text-slate-900">{track.title}</Text>
+    <Text class="text-xs text-slate-500">{track.artist}</Text>
+  </View>
+))}
+```
+:::
 
 When the array is reordered, `For` **moves** existing nodes to their new
 positions instead of destroying and recreating them (the native `insertBefore`
@@ -224,11 +315,19 @@ items have stable identity.
 `Index` is the counterpart keyed **by position**. Here the item is an accessor
 and the index is a plain number:
 
-```tsx
+:::framework-code
+```tsx solid
 <Index each={bars()}>
   {(bar, i) => <View class="w-2 rounded-md bg-emerald-500" style={{ height: bar() }} />}
 </Index>
 ```
+
+```tsx vue-vapor
+{bars.value.map((bar) => (
+  <View class="w-2 rounded-md bg-emerald-500" style={{ height: bar }} />
+))}
+```
+:::
 
 Use `Index` when the list length is stable and it's the *values at each slot*
 that change (equalizer bars, a fixed set of rows). It never moves nodes — it
@@ -238,12 +337,24 @@ just updates the value at each position.
 
 Pick one of several branches — the JSX form of a `switch` statement:
 
-```tsx
+:::framework-code
+```tsx solid
 <Switch fallback={<Text>Idle</Text>}>
   <Match when={state() === "loading"}><Text>Loading…</Text></Match>
   <Match when={state() === "ready"}><Text>Ready.</Text></Match>
 </Switch>
 ```
+
+```tsx vue-vapor
+{state.value === "loading" ? (
+  <Text>Loading...</Text>
+) : state.value === "ready" ? (
+  <Text>Ready.</Text>
+) : (
+  <Text>Idle</Text>
+)}
+```
+:::
 
 The first `Match` whose `when` is truthy renders; if none match, `fallback`
 renders.

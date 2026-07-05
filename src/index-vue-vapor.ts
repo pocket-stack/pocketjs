@@ -5,6 +5,7 @@ import "./prelude.ts";
 import { detectHost, installFrameHandler, installHost, type HostOps } from "./host.ts";
 import {
   createElement,
+  registerSprite as rendererRegisterSprite,
   registerTexture as rendererRegisterTexture,
   setProp,
   insertNode,
@@ -36,6 +37,7 @@ export type MountOptions = RenderOptions;
 const STYLES_KEY = "ui:styles";
 const FONT_PREFIX = "ui:font.";
 const IMG_PREFIX = "ui:img.";
+const SPRITE_PREFIX = "ui:sprite.";
 
 export function frameworkName(): "Vue Vapor" {
   return "Vue Vapor";
@@ -58,6 +60,24 @@ function uploadPakImages(ops: HostOps): void {
   }
 }
 
+function uploadPakSprites(ops: HostOps): void {
+  if ((ops as HostOps & { __sprites?: unknown }).__sprites) return;
+  for (const key of pakEntries(SPRITE_PREFIX)) {
+    const blob = pakGet(key);
+    const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+    const w = dv.getUint16(0, true);
+    const h = dv.getUint16(2, true);
+    const psm = blob[4];
+    const frames = dv.getUint16(6, true);
+    const cols = dv.getUint16(8, true);
+    const step = dv.getUint16(10, true);
+    const handle = ops.uploadTexture(blob.subarray(16), w, h, psm);
+    if (handle >= 0) {
+      rendererRegisterSprite(key.slice(SPRITE_PREFIX.length), { handle, frames, cols, step });
+    }
+  }
+}
+
 function createLayer(style: Record<string, number>): NodeMirror {
   const layer = createElement("view");
   setProp(layer, "style", style, undefined);
@@ -75,6 +95,14 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     const tex = (host.ops as HostOps & { __textures?: Record<string, number> }).__textures;
     if (tex) {
       for (const key in tex) rendererRegisterTexture(key, tex[key]);
+    }
+    const spr = (
+      host.ops as HostOps & {
+        __sprites?: Record<string, { handle: number; frames: number; cols: number; step: number }>;
+      }
+    ).__sprites;
+    if (spr) {
+      for (const key in spr) rendererRegisterSprite(key, spr[key]);
     }
   }
 
@@ -138,6 +166,7 @@ export function mount(code: () => unknown, opts: MountOptions = {}): () => void 
   }
   if (opts.pak) loadPack(opts.pak);
   uploadPakImages(ops);
+  uploadPakSprites(ops);
   return render(code, {
     ops,
     styles: opts.styles ?? DEFAULT_STYLE_IDS,
@@ -148,6 +177,6 @@ export function mount(code: () => unknown, opts: MountOptions = {}): () => void 
 export type { HostOps, Host } from "./host.ts";
 export { detectHost, installHost, getOps } from "./host.ts";
 export type { NodeMirror } from "./renderer-vue-vapor.ts";
-export { retain, release, runSweep, registerTexture, missCounters } from "./renderer-vue-vapor.ts";
+export { retain, release, runSweep, registerTexture, registerSprite, missCounters } from "./renderer-vue-vapor.ts";
 export { registerStyles, resolveStyle } from "./styles.ts";
 export { entries as pakEntries, get as pakGet, loadPack, resetPack } from "./pak.ts";

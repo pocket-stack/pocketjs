@@ -34,6 +34,7 @@ async function main() {
   const statusEl = $("#pg-status");
   const errorEl = $("#pg-error");
   const demoSel = $("#pg-demo");
+  const frameworkBtns = [...document.querySelectorAll("[data-framework]")];
   const runBtn = $("#pg-run");
   const resetBtn = $("#pg-reset");
 
@@ -82,6 +83,7 @@ async function main() {
 
   // --- demos ----------------------------------------------------------------
   let demos = [];
+  let framework = "solid";
   try {
     demos = await (await fetch(PG + "demos.json")).json();
   } catch {
@@ -96,6 +98,30 @@ async function main() {
   const setDoc = (src) =>
     editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: src } });
   const currentDemo = () => demos.find((d) => d.name === demoSel.value) || demos[0];
+  const variantFor = (demo, fw) => {
+    if (!demo) return null;
+    if (Array.isArray(demo.variants)) return demo.variants.find((v) => v.framework === fw) || null;
+    return fw === "solid" && demo.source ? { framework: "solid", source: demo.source } : null;
+  };
+  const currentVariant = () => variantFor(currentDemo(), framework);
+  const setFramework = (next) => {
+    const demo = currentDemo();
+    if (!variantFor(demo, next)) return;
+    framework = next;
+    updateFrameworkButtons();
+    const v = currentVariant();
+    if (v) setDoc(v.source);
+  };
+  const updateFrameworkButtons = () => {
+    const demo = currentDemo();
+    for (const btn of frameworkBtns) {
+      const fw = btn.dataset.framework;
+      const available = !!variantFor(demo, fw);
+      btn.disabled = !available;
+      btn.classList.toggle("is-active", fw === framework);
+      btn.setAttribute("aria-selected", fw === framework ? "true" : "false");
+    }
+  };
 
   // --- compile + run --------------------------------------------------------
   let running = false;
@@ -110,9 +136,14 @@ async function main() {
     showError("");
     try {
       const { compileApp, configure } = await loadCompiler();
-      configure({ fontBaseUrl: PG + "fonts/", assetBaseUrl: PG + "demo-assets/" });
+      configure({ fontBaseUrl: PG + "fonts/", assetBaseUrl: "/demo-assets/" });
       const t0 = performance.now();
-      const result = await compileApp(source);
+      const v = currentVariant();
+      const activeFramework = v?.framework || framework;
+      const result = await compileApp(source, {
+        framework: activeFramework,
+        spriteMeta: v?.spriteMeta,
+      });
       // dispose previous app while the old core is still valid, then reset.
       try {
         globalThis.__pgDispose?.();
@@ -123,11 +154,15 @@ async function main() {
       globalThis.__pgPak = result.pak;
 
       const appUrl = URL.createObjectURL(new Blob([result.code], { type: "text/javascript" }));
+      const runtime = activeFramework === "vue-vapor"
+        ? "@pocketjs/framework/vue-vapor"
+        : "@pocketjs/framework/solid";
+      const mountExpr = activeFramework === "vue-vapor" ? "App" : "() => App()";
       const boot =
         `import App from ${JSON.stringify(appUrl)};\n` +
-        `import { mount, __resetAll } from "@pocketjs/framework";\n` +
+        `import { mount, __resetAll } from ${JSON.stringify(runtime)};\n` +
         `__resetAll();\n` +
-        `globalThis.__pgDispose = mount(() => App(), ` +
+        `globalThis.__pgDispose = mount(${mountExpr}, ` +
         `{ styles: globalThis.__pgStyles, pak: globalThis.__pgPak });\n`;
       const bootUrl = URL.createObjectURL(new Blob([boot], { type: "text/javascript" }));
       try {
@@ -135,7 +170,7 @@ async function main() {
         host.begin();
         const ms = Math.round(performance.now() - t0);
         setStatus(
-          `ok · ${result.classCount} styles · ${result.slotCount} atlases` +
+          `${activeFramework === "vue-vapor" ? "Vue Vapor" : "Solid"} · ok · ${result.classCount} styles · ${result.slotCount} atlases` +
             (result.imageNames.length ? ` · ${result.imageNames.length} img` : "") +
             ` · ${ms} ms`,
           "ok",
@@ -160,12 +195,18 @@ async function main() {
   // --- controls -------------------------------------------------------------
   demoSel.addEventListener("change", () => {
     const d = currentDemo();
-    if (d) setDoc(d.source);
+    if (d && !variantFor(d, framework)) framework = "solid";
+    updateFrameworkButtons();
+    const v = currentVariant();
+    if (v) setDoc(v.source);
   });
+  for (const btn of frameworkBtns) {
+    btn.addEventListener("click", () => setFramework(btn.dataset.framework));
+  }
   runBtn.addEventListener("click", () => run(editor.state.doc.toString()));
   resetBtn.addEventListener("click", () => {
-    const d = currentDemo();
-    if (d) setDoc(d.source);
+    const v = currentVariant();
+    if (v) setDoc(v.source);
   });
 
   // virtual gamepad
@@ -187,13 +228,17 @@ async function main() {
 
   // boot with the first demo (or a fallback), honoring ?demo=
   const boot = new URLSearchParams(location.search).get("demo");
+  const bootFramework = new URLSearchParams(location.search).get("framework");
   if (boot && demos.some((d) => d.name === boot)) demoSel.value = boot;
+  if (bootFramework === "vue-vapor" && variantFor(currentDemo(), "vue-vapor")) framework = "vue-vapor";
   const first = currentDemo();
-  if (first) {
-    setDoc(first.source);
+  updateFrameworkButtons();
+  const firstVariant = currentVariant();
+  if (first && firstVariant) {
+    setDoc(firstVariant.source);
     // setDoc triggers scheduleCompile; run immediately instead of waiting.
     clearTimeout(compileTimer);
-    run(first.source);
+    run(firstVariant.source);
   } else {
     setStatus("no demos found", "err");
   }

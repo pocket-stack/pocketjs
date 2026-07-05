@@ -341,6 +341,34 @@
     padding: 0.4rem 0.6rem;
     font-size: 0.85rem;
   }
+  .pg-framework {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.18rem;
+    border: 1px solid var(--color-line-2);
+    border-radius: 0.55rem;
+    background: var(--color-surface);
+  }
+  .pg-framework-btn {
+    border: 0;
+    border-radius: 0.4rem;
+    background: transparent;
+    color: var(--color-slate-400);
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 650;
+    line-height: 1;
+    padding: 0.45rem 0.65rem;
+  }
+  .pg-framework-btn.is-active {
+    color: #04121b;
+    background: linear-gradient(112deg, #eef3fa 0%, #d2dbe7 42%, #e8edf4 100%);
+  }
+  .pg-framework-btn:disabled {
+    cursor: not-allowed;
+    color: var(--color-slate-600);
+  }
   .pg-status { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-slate-500); }
   .pg-status[data-kind="ok"] { color: #34d399; }
   .pg-status[data-kind="err"] { color: #f87171; }
@@ -427,4 +455,49 @@
   .doc-pager a:hover { border-color: var(--color-brand); }
   .doc-pager a.next { text-align: right; margin-left: auto; }
   .doc-pager span { font-size: 0.72rem; font-weight: 600; color: var(--color-slate-500); }
+  .doc-fw-code {
+    margin: 1.25rem 0;
+  }
+  .doc-fw-radio {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .doc-fw-tabs {
+    display: inline-flex;
+    gap: 0.15rem;
+    margin-bottom: -1px;
+    padding: 0.2rem;
+    border: 1px solid var(--color-line);
+    border-bottom: 0;
+    border-radius: 0.65rem 0.65rem 0 0;
+    background: var(--color-surface);
+  }
+  .doc-fw-tab {
+    border-radius: 0.45rem;
+    color: var(--color-slate-400);
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 650;
+    line-height: 1;
+    padding: 0.5rem 0.7rem;
+  }
+  .doc-fw-panel {
+    display: none;
+  }
+  .doc-fw-panel pre {
+    margin-top: 0;
+    border-top-left-radius: 0;
+  }
+  .doc-fw-radio-solid:checked ~ .doc-fw-tabs .doc-fw-tab-solid,
+  .doc-fw-radio-vue-vapor:checked ~ .doc-fw-tabs .doc-fw-tab-vue-vapor {
+    color: #04121b;
+    background: linear-gradient(112deg, #eef3fa 0%, #d2dbe7 42%, #e8edf4 100%);
+  }
+  .doc-fw-radio-solid:checked ~ .doc-fw-panels .doc-fw-panel-solid,
+  .doc-fw-radio-vue-vapor:checked ~ .doc-fw-panels .doc-fw-panel-vue-vapor {
+    display: block;
+  }
 }

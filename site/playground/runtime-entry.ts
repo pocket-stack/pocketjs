@@ -24,6 +24,7 @@ export {
   View,
   Text,
   Image,
+  Sprite,
   Screen,
   Focusable,
   FocusScope,
@@ -32,6 +33,9 @@ export {
   Portal,
   Modal,
   ActionBar,
+  Grid,
+  Lazy,
+  Gallery,
 } from "../../src/components.ts";
 export { animate, spring, cancelAnim } from "../../src/animation.ts";
 export {
@@ -65,7 +69,7 @@ export {
 } from "../../src/renderer.ts";
 
 // ---- reset between live-recompiles -----------------------------------------
-import { resetRendererState, resetTextures } from "../../src/renderer.ts";
+import { resetRendererState, resetSprites, resetTextures } from "../../src/renderer.ts";
 import { resetStyles } from "../../src/styles.ts";
 import { resetPack } from "../../src/pak.ts";
 
@@ -76,6 +80,7 @@ import { resetPack } from "../../src/pak.ts";
 export function __resetAll(): void {
   resetRendererState();
   resetTextures();
+  resetSprites();
   resetStyles();
   resetPack();
   // A fresh run installs a new globalThis.frame via installFrameHandler; drop

@@ -90,11 +90,11 @@ mount(() => <App />);
 Vue Vapor app:
 
 ```tsx
-import { mount, frameworkName } from "@pocketjs/framework";
-import { View, Text, type NodeMirror } from "@pocketjs/framework/components";
-import { defineComponent, onMounted, ref } from "vue";
+import { mount, frameworkName } from "@pocketjs/framework/vue-vapor";
+import { View, Text, type NodeMirror } from "@pocketjs/framework/vue-vapor/components";
+import { onMounted, ref } from "vue";
 
-export default defineComponent(() => {
+export default function App() {
   const count = ref(0);
   let marker: NodeMirror | undefined;
 
@@ -102,7 +102,7 @@ export default defineComponent(() => {
     console.log(frameworkName(), marker?.id);
   });
 
-  return () => (
+  return (
     <View class="p-4 flex-col gap-2">
       <Text class="text-base text-slate-950">Framework: {frameworkName()}</Text>
       <View nodeRef={(node) => (marker = node ?? undefined)} focusable onPress={() => count.value++}>
@@ -113,10 +113,13 @@ export default defineComponent(() => {
       ) : null}
     </View>
   );
-});
+}
+
+mount(App);
 ```
 
-The build remaps these public subpaths to the selected implementation:
+The generic public subpaths remain Solid-first defaults. Use explicit framework
+subpaths when an example or app is tied to a framework:
 
 | Import | Solid build | Vue Vapor build |
 |---|---|---|

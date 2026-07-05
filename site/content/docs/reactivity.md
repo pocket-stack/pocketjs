@@ -1,16 +1,12 @@
 # Reactivity
 
-This page documents the default **Solid** runtime. PocketJS uses Solid's
-reactive system directly — the same `createSignal` / `createEffect` /
-`createMemo` you'd use in a Solid web app. Vue Vapor apps import Vue's
-Composition API directly from `vue`; see [Frameworks](/docs/frameworks/).
-There is no PocketJS reactivity wrapper.
+PocketJS uses the selected framework's reactive system directly. Solid apps
+import signals and lifecycle from `solid-js`; Vue Vapor apps import refs,
+computed values, watchers, and lifecycle from `vue`. There is no PocketJS
+reactivity wrapper.
 
-Import these primitives directly from `solid-js`; PocketJS does not provide a
-reactivity layer. The PocketJS compiler only checks that the Solid primitives
-you import can run on the target hosts:
-
-```ts
+:::framework-code
+```ts solid
 import {
   createSignal,
   createEffect,
@@ -22,16 +18,27 @@ import {
 } from "solid-js";
 ```
 
-If you already know Solid, you know this API. If you're coming from React: these
-are fine-grained signals, not hooks. They aren't tied to a component render, they
-don't re-run a component function, and there are no dependency arrays.
+```ts vue-vapor
+import {
+  ref,
+  computed,
+  watchEffect,
+  onMounted,
+  onScopeDispose,
+} from "vue";
+```
+:::
+
+If you already know either framework, you know the API. These are fine-grained
+reactive primitives, not React hooks: they aren't dependency-array driven, and a
+state write updates the native nodes that read it.
 
 ## The no-VDOM model
 
 React re-renders a component, builds a new virtual tree, and diffs it against the
-old one. Solid does none of that. A component function runs **once**, wiring up
-signals and effects. After that, the only things that ever run again are the
-effect closures whose signals changed.
+old one. PocketJS's supported frameworks avoid that per-update component rerender
+path: setup wires reactive reads to native mutations, and after that the work is
+limited to the effects or bindings whose dependencies changed.
 
 That property is what makes PocketJS viable on a 2005 handheld:
 
@@ -46,12 +53,13 @@ That property is what makes PocketJS viable on a 2005 handheld:
   JS side does essentially nothing; the Rust core still ticks animations and
   layout at a fixed 1/60 s. Idle screens cost no JS work.
 
-## createSignal
+## Signal / ref
 
-A signal is a getter/setter pair. Call the getter to read (and, inside a tracking
-scope, subscribe); call the setter to write.
+A Solid signal is a getter/setter pair. A Vue ref is an object with a `.value`.
+Both represent one reactive value.
 
-```tsx
+:::framework-code
+```tsx solid
 import { View, Text } from "@pocketjs/framework/components";
 import { createSignal } from "solid-js";
 
@@ -69,28 +77,48 @@ function Counter() {
 }
 ```
 
-The setter also accepts an updater function — `setCount((n) => n + 1)` — which
-is handy when the next value depends on the previous one.
+```tsx vue-vapor
+import { View, Text } from "@pocketjs/framework/components";
+import { ref } from "vue";
+
+function Counter() {
+  const count = ref(0);
+  return () => (
+    <View
+      class="px-4 py-2 rounded-xl bg-blue-600 focus:bg-blue-500"
+      focusable
+      onPress={() => {
+        count.value++;
+      }}
+    >
+      <Text class="text-base text-white font-bold">Count: {count.value}</Text>
+    </View>
+  );
+}
+```
+:::
 
 ### Signals in text
 
-`Count: {count()}` is not a special construct — it's a `<Text>` element with two
-children: a static string `"Count: "` and a dynamic expression `count()`. The
-renderer lays both out as a **single concatenated inline run** (one measure, not
-two flex items), and when `count()` changes, Solid calls `replaceText` on just
-the dynamic segment. The static prefix never re-measures unless it too changes.
+`Count: {count()}` / `Count: {count.value}` is not a special construct — it's a
+`<Text>` element with a static string and a dynamic expression. The renderer lays
+both out as a **single concatenated inline run** (one measure, not two flex
+items), and when the reactive value changes the renderer calls `replaceText` on
+just the dynamic segment. The static prefix never re-measures unless it too
+changes.
 
 You can mix as many static and dynamic segments as you like inside one `<Text>`;
 they all fold into one inline run. See [Components](/docs/components/) for the
 text model.
 
-## createEffect
+## Effect / watcher
 
-An effect runs immediately, tracks every signal it reads, and re-runs whenever any
-of them changes. Use it for side effects — driving an animation, logging, imperative
-work — not for producing values you render (use a signal or memo for that).
+An effect/watcher runs immediately, tracks every reactive value it reads, and
+re-runs whenever any of them changes. Use it for side effects — driving an
+animation, logging, imperative work — not for producing values you render.
 
-```tsx
+:::framework-code
+```tsx solid
 import { createSignal, createEffect } from "solid-js";
 
 const [level, setLevel] = createSignal(0);
@@ -101,17 +129,29 @@ createEffect(() => {
 });
 ```
 
+```tsx vue-vapor
+import { ref, watchEffect } from "vue";
+
+const level = ref(0);
+
+watchEffect(() => {
+  // Re-runs every time level.value changes.
+  if (level.value >= 100) console.log("charged");
+});
+```
+:::
+
 Effects are the right place to bridge reactive state to imperative APIs like
 [`animate()`](/docs/animation/): read a signal, and when it changes, kick a
 native tween.
 
-## createMemo
+## Memo / computed
 
-A memo is a derived, cached signal. It re-computes only when one of its inputs
-changes, and downstream readers only re-run when the memo's *result* actually
-changes. Reach for it when a derivation is expensive or read in several places.
+A memo/computed value is a derived, cached reactive value. It re-computes only
+when one of its inputs changes.
 
-```tsx
+:::framework-code
+```tsx solid
 import { createSignal, createMemo } from "solid-js";
 
 const [items, setItems] = createSignal<string[]>([]);
@@ -120,13 +160,24 @@ const total = createMemo(() => items().length);
 // total() is cached; it recomputes only when items() changes.
 ```
 
-## onMount and onCleanup
+```tsx vue-vapor
+import { computed, ref } from "vue";
 
-`onMount` runs a callback once, after the component's initial render — the place
-to do one-time imperative setup. It's exactly where the hero demo starts its
-underline sweep:
+const items = ref<string[]>([]);
+const total = computed(() => items.value.length);
 
-```tsx
+// total.value is cached; it recomputes only when items.value changes.
+```
+:::
+
+## Mount and cleanup
+
+`onMount` / `onMounted` runs a callback once, after the component's initial
+render — the place to do one-time imperative setup. It's exactly where the hero
+demo starts its underline sweep:
+
+:::framework-code
+```tsx solid
 import { View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { onMount } from "solid-js";
@@ -141,11 +192,35 @@ function Underline() {
 }
 ```
 
-`onCleanup` registers a callback that runs when the enclosing scope is disposed —
-a component unmounting, or an effect re-running. Use it to release anything you
+```tsx vue-vapor
+import { View, type NodeMirror } from "@pocketjs/framework/components";
+import { animate } from "@pocketjs/framework/animation";
+import { onMounted } from "vue";
+
+function Underline() {
+  let underline: NodeMirror | undefined;
+  onMounted(() => {
+    // Runs once; the tween ticks natively - zero steady-state JS.
+    if (underline) animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
+  });
+  return () => (
+    <View
+      nodeRef={(node) => {
+        underline = node ?? undefined;
+      }}
+      class="h-1 w-0 rounded-full bg-blue-500"
+    />
+  );
+}
+```
+:::
+
+Cleanup callbacks run when the enclosing scope is disposed — a component
+unmounting, or an effect/watcher re-running. Use them to release anything you
 acquired imperatively.
 
-```tsx
+:::framework-code
+```tsx solid
 import { createEffect, onCleanup } from "solid-js";
 import { animate, cancelAnim } from "@pocketjs/framework/animation";
 
@@ -154,6 +229,21 @@ createEffect(() => {
   onCleanup(() => cancelAnim(anim)); // runs before the next re-run / on dispose
 });
 ```
+
+```tsx vue-vapor
+import { onScopeDispose, watchEffect } from "vue";
+import { animate, cancelAnim } from "@pocketjs/framework/animation";
+
+watchEffect((onCleanup) => {
+  const anim = animate(node, "opacity", 1, { dur: 300 });
+  onCleanup(() => cancelAnim(anim)); // runs before the next re-run
+});
+
+onScopeDispose(() => {
+  // runs when the component scope is disposed
+});
+```
+:::
 
 ## batch and untrack
 
