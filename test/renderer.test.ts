@@ -55,10 +55,10 @@ import {
 import { mount as publicMount, render as publicRender } from "../src/index.ts";
 import { pushButtonHandlerBlock, onButtonPress, onFrame } from "../src/lifecycle.ts";
 import { rootMirror } from "../src/renderer.ts";
-import { ActionBar, ActionHandler, FocusGrid, Modal, Portal, Text, View } from "../src/components.ts";
+import { ActionBar, ActionHandler, FocusGrid, Modal, Portal, Text, Video, View } from "../src/components.ts";
 import { resetPack } from "../src/pak.ts";
 import { encodeImageEntry, pack } from "../compiler/pak.ts";
-import { BTN, PAK_DTYPE, NODE_TYPE, PSM, ROOT_ID, PROP, STYLE_ID_NONE } from "../spec/spec.ts";
+import { BTN, PAK_DTYPE, NODE_TYPE, PSM, ROOT_ID, PROP, STYLE_ID_NONE, VIDEO_CMD } from "../spec/spec.ts";
 
 // ---------------------------------------------------------------------------
 // Mock host
@@ -118,6 +118,17 @@ function makeMockHost(strict = true): MockHost {
     loadStyles: rec("loadStyles"),
     loadFontAtlas: rec("loadFontAtlas"),
     measureText: () => 0,
+    videoOpen(path: string, w: number, h: number, loopFlag: number): number {
+      const handle = 500 + calls.length;
+      calls.push(["videoOpen", path, w, h, loopFlag, handle]);
+      return handle;
+    },
+    videoControl: rec("videoControl"),
+    videoBind: rec("videoBind"),
+    videoState() {
+      calls.push(["videoState"]);
+      return 0;
+    },
   };
   return {
     ops,
@@ -189,6 +200,67 @@ describe("basic mount", () => {
 
   test("unknown tag throws", () => {
     expect(() => createElement("div")).toThrow(/unknown element/);
+  });
+});
+
+describe("<Video> native component", () => {
+  test("mount opens + binds a decoder; unmount closes it", () => {
+    const dispose = render(
+      () => comp(Video, { src: "host0:/clip.pmf", loop: true, autoplay: true }),
+      root,
+    );
+
+    // A video node (NODE_TYPE.video = 3) is created...
+    const created = host.of("createNode").map((c) => c[1]);
+    expect(created).toContain(NODE_TYPE.video);
+    const videoId = (host.of("createNode").find((c) => c[1] === NODE_TYPE.video) as Call)[2] as number;
+
+    // ...the decoder is opened for the host path with loop=1...
+    const open = host.of("videoOpen");
+    expect(open.length).toBe(1);
+    expect(open[0].slice(1, 5)).toEqual(["host0:/clip.pmf", 480, 272, 1]);
+    const handle = open[0][5] as number;
+
+    // ...and bound to that exact node.
+    expect(host.of("videoBind")).toEqual([["videoBind", videoId, handle]]);
+    // Autoplay (default) => no pause command issued.
+    expect(host.of("videoControl")).toEqual([]);
+
+    dispose();
+    // Cleanup tears the decoder down BEFORE the node is destroyed.
+    expect(host.of("videoControl")).toEqual([["videoControl", handle, VIDEO_CMD.close, 0]]);
+  });
+
+  test("paused prop pauses on mount and toggles reactively", () => {
+    const [paused, setPaused] = createSignal(true);
+    const dispose = render(() => comp(Video, { src: "host0:/clip.pmf", paused }), root);
+
+    const handle = (host.of("videoOpen")[0] as Call)[5] as number;
+    // Mounted paused => a pause command.
+    expect(host.of("videoControl")).toContainEqual(["videoControl", handle, VIDEO_CMD.pause, 0]);
+
+    host.clear();
+    setPaused(false); // resume
+    expect(host.of("videoControl")).toEqual([["videoControl", handle, VIDEO_CMD.play, 0]]);
+    dispose();
+  });
+
+  test("host without video support still lays out the node (no throw)", () => {
+    // Strip the optional decode ops (wasm/test host that cannot decode).
+    const stripped = host.ops as Record<string, unknown>;
+    delete stripped.videoOpen;
+    delete stripped.videoBind;
+    delete stripped.videoControl;
+
+    let disposed = false;
+    expect(() => {
+      const dispose = render(() => comp(Video, { src: "host0:/clip.pmf" }), root);
+      dispose();
+      disposed = true;
+    }).not.toThrow();
+    expect(disposed).toBe(true);
+    // The node was still created (it composites as an empty box / placeholder).
+    expect(host.of("createNode").map((c) => c[1])).toContain(NODE_TYPE.video);
   });
 });
 

@@ -140,7 +140,7 @@ function createElementImpl(tag: string): NodeMirror {
   const type = (NODE_TYPE as Record<string, number>)[tag];
   if (type === undefined) {
     throw new Error(
-      `PocketJS: unknown element <${tag}> — only view/text/image exist`,
+      `PocketJS: unknown element <${tag}> — only view/text/image/video exist`,
     );
   }
   return { id: getOps().createNode(type), type, parent: null, children: [] };

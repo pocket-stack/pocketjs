@@ -43,6 +43,7 @@ mod pak;
 mod ffi;
 mod ge;
 mod qjs_alloc;
+mod video;
 
 psp::module!("pocketjs", 1, 1);
 
@@ -204,6 +205,8 @@ unsafe fn run() {
     trace("run: home button enabled");
     init_graphics();
     trace("run: graphics initialized");
+    init_media();
+    trace("run: media modules loaded");
 
     // ---- Controller ----
     sys::sceCtrlSetSamplingCycle(0);
@@ -545,6 +548,17 @@ unsafe fn halt(msg: &str) -> ! {
     loop {
         sys::sceDisplayWaitVblankStart();
     }
+}
+
+/// Load the AV codec modules the native <Video> component (video.rs) needs and
+/// init the MPEG library. MANDATORY on real hardware — PPSSPP HLEs these for
+/// free, but the metal will fail scePsmfPlayerCreate/decode without them.
+/// Order matters: Atrac3Plus + MpegBase both require AvCodec first.
+unsafe fn init_media() {
+    sys::sceUtilityLoadAvModule(sys::AvModule::AvCodec);
+    sys::sceUtilityLoadAvModule(sys::AvModule::MpegBase);
+    sys::sceUtilityLoadAvModule(sys::AvModule::Atrac3Plus);
+    sys::sceMpegInit();
 }
 
 /// Double-buffered 480x272 PSM8888 GU init — copied from dreamcart

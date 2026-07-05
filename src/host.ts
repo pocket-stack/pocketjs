@@ -60,6 +60,17 @@ export interface HostOps {
   loadFontAtlas?(buf: Uint8Array): void;
   /** JS-side convenience; layout measures natively. → width in px. */
   measureText(str: string, fontSlot: number): number;
+
+  // -- native <Video> (optional: wasm/test hosts may omit these) -------------
+  /** Open a decoder for a host-fs stream. `loopFlag` 1 = loop. Returns a
+   *  handle (≥ 0) or -1 on failure. w/h are advisory (native is 480×272). */
+  videoOpen?(path: string, w: number, h: number, loopFlag: number): number;
+  /** Control a decoder: cmd = spec VIDEO_CMD (play/pause/stop/seek/close). */
+  videoControl?(handle: number, cmd: number, arg: number): void;
+  /** Attach a decoder to a video node (handle < 0 clears). */
+  videoBind?(nodeId: number, handle: number): void;
+  /** Packed playback status: spec VIDEO_STATE | (ptsMs << 8). */
+  videoState?(handle: number): number;
 }
 
 export interface Host {

@@ -72,6 +72,7 @@ function safeFrame() {
 
 function blit() {
   if (!wasm || !ctx) return;
+  wasm.pumpVideos?.(); // feed HTML5 <video> frames to the raster surfaces first
   imageData.data.set(wasm.render());
   ctx.putImageData(imageData, 0, 0);
 }

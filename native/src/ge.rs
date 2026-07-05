@@ -32,7 +32,7 @@ use core::ffi::c_void;
 use core::ptr::null;
 
 use psp::sys::{
-    self, BlendFactor, BlendOp, ClearBuffer, GuPrimitive, GuState, MipmapLevel,
+    self, BlendFactor, BlendOp, ClearBuffer, GuPrimitive, GuState, GuTexWrapMode, MipmapLevel,
     TextureColorComponent, TextureEffect, TextureFilter, TexturePixelFormat, VertexType,
 };
 use psp::{SCREEN_HEIGHT, SCREEN_WIDTH};
@@ -425,6 +425,70 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
                     };
                     flush(GuPrimitive::Sprites, VTYPE_TC, 2, verts as *const c_void, bytes);
                     sys::sceGuDisable(GuState::Texture2D);
+                }
+                i += 9;
+            }
+            spec::draw_op::VIDEO_QUAD if i + 9 <= n => {
+                // Same 9-word shape as TEX_QUAD, but the handle resolves to the
+                // native decoder's CURRENT front frame buffer (video.rs), bound
+                // zero-copy. No frame yet (surface == None) => draw nothing.
+                let handle = words[i + 1] as i32;
+                let (x, y) = xy(words[i + 2]);
+                let (w, h) = wh(words[i + 3]);
+                let u0 = f32::from_bits(words[i + 4]);
+                let v0 = f32::from_bits(words[i + 5]);
+                let u1 = f32::from_bits(words[i + 6]);
+                let v1 = f32::from_bits(words[i + 7]);
+                let color = words[i + 8];
+                if let Some(s) = crate::video::surface(handle) {
+                    sys::sceGuEnable(GuState::Texture2D);
+                    sys::sceGuTexMode(TexturePixelFormat::Psm8888, 0, 0, 0);
+                    // Declared pow2 (512x512), texture-buffer-width = 512 stride,
+                    // sampling only the 480x272 active sub-rect below.
+                    sys::sceGuTexImage(
+                        MipmapLevel::None,
+                        s.tex_dim as i32,
+                        s.tex_dim as i32,
+                        s.stride_px as i32,
+                        s.ptr as *const c_void,
+                    );
+                    // RGB modulate + white/opaque vertex: the frame's texture
+                    // alpha (which the decoder may leave 0x00) is ignored; alpha
+                    // comes from the vertex color (node opacity) => opaque video.
+                    sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgb);
+                    // Nearest + Clamp: no bilinear/edge bleed across the
+                    // 480/272 seam, and clamp stops a bottom/right tap wrapping
+                    // modulo the declared 512 into unrelated memory.
+                    sys::sceGuTexFilter(TextureFilter::Nearest, TextureFilter::Nearest);
+                    sys::sceGuTexWrap(GuTexWrapMode::Clamp, GuTexWrapMode::Clamp);
+                    // TRANSFORM_2D UVs are TEXELS: scale normalized UVs by the
+                    // ACTIVE dims (480x272), not the declared 512.
+                    let (aw, ah) = (s.active_w as f32, s.active_h as f32);
+                    let bytes = 2 * core::mem::size_of::<VertTC>();
+                    let verts = pool_alloc(bytes) as *mut VertTC;
+                    *verts.add(0) = VertTC {
+                        u: (u0 * aw) as i16,
+                        v: (v0 * ah) as i16,
+                        color,
+                        x,
+                        y,
+                        z: 0,
+                        _pad: 0,
+                    };
+                    *verts.add(1) = VertTC {
+                        u: (u1 * aw) as i16,
+                        v: (v1 * ah) as i16,
+                        color,
+                        x: (x as i32 + w) as i16,
+                        y: (y as i32 + h) as i16,
+                        z: 0,
+                        _pad: 0,
+                    };
+                    flush(GuPrimitive::Sprites, VTYPE_TC, 2, verts as *const c_void, bytes);
+                    sys::sceGuDisable(GuState::Texture2D);
+                    // Restore the default wrap so a later image TEX_QUAD (which
+                    // never sets wrap) doesn't inherit this Clamp.
+                    sys::sceGuTexWrap(GuTexWrapMode::Repeat, GuTexWrapMode::Repeat);
                 }
                 i += 9;
             }

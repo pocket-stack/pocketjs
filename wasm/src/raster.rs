@@ -212,6 +212,13 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 tri(fb, clip, &words[i + 1..i + 7]);
                 i += 7;
             }
+            draw_op::VIDEO_QUAD => {
+                if i + 9 > words.len() {
+                    return;
+                }
+                video_quad(fb, clip, &words[i + 1..i + 9]);
+                i += 9;
+            }
             // The op set is closed per DrawList version; anything else means
             // corrupt data — stop instead of misinterpreting the stream.
             _ => return,
@@ -359,6 +366,97 @@ fn glyph_run(ui: &Ui, fb: &mut [u8], clip: Clip, slot: u8, color: u32, glyphs: &
                 let cov = row[cx] as u32;
                 if cov != 0 {
                     blend_px(fb, px, py, r, g, b, (a * cov + 127) / 255);
+                }
+            }
+        }
+    }
+}
+
+// ---- VIDEO_QUAD: host-fed frame surface (web fallback) --------------------------------
+// The web/wasm host cannot Media-Engine-decode; host-web/engine.js feeds each
+// active HTML5 <video> frame as a tightly-packed RGBA8888 surface via
+// ui_video_surface() (wasm/src/lib.rs). If no surface is registered (goldens /
+// no decode) we draw a neutral checker placeholder so the laid-out box is still
+// visible AND the draw stream stays in sync — the op set is closed, so this arm
+// must never fall through to `_ => return`.
+
+const MAX_VIDEO_SURFACES: usize = 4;
+
+#[derive(Clone, Copy)]
+struct VideoSurface {
+    ptr: *const u8,
+    w: u32,
+    h: u32,
+}
+
+static mut VIDEO_SURFACES: [Option<VideoSurface>; MAX_VIDEO_SURFACES] = [None; MAX_VIDEO_SURFACES];
+
+/// Register/replace a host RGBA8888 surface for `handle` (w*h*4 bytes at `ptr`,
+/// in wasm linear memory). ptr null / zero dims clears it. Single-threaded wasm,
+/// so `static mut` matches the crate style.
+pub fn set_video_surface(handle: i32, ptr: *const u8, w: u32, h: u32) {
+    let Ok(idx) = usize::try_from(handle) else { return };
+    if idx >= MAX_VIDEO_SURFACES {
+        return;
+    }
+    unsafe {
+        VIDEO_SURFACES[idx] = if ptr.is_null() || w == 0 || h == 0 {
+            None
+        } else {
+            Some(VideoSurface { ptr, w, h })
+        };
+    }
+}
+
+fn video_quad(fb: &mut [u8], clip: Clip, p: &[u32]) {
+    let handle = p[0] as i32;
+    let (x, y) = xy(p[1]);
+    let (w, h) = wh(p[2]);
+    let u0 = f32::from_bits(p[3]);
+    let v0 = f32::from_bits(p[4]);
+    let u1 = f32::from_bits(p[5]);
+    let v1 = f32::from_bits(p[6]);
+    let modulate = p[7];
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    let c = clip.intersect(Clip { x0: x, y0: y, x1: x + w, y1: y + h });
+    if c.x0 >= c.x1 || c.y0 >= c.y1 {
+        return;
+    }
+    // Opaque video: alpha comes from the vertex (node opacity), not the frame.
+    let (_mr, _mg, _mb, ma) = channels(modulate);
+    let surface = usize::try_from(handle)
+        .ok()
+        .filter(|idx| *idx < MAX_VIDEO_SURFACES)
+        .and_then(|idx| unsafe { VIDEO_SURFACES[idx] });
+
+    match surface {
+        Some(s) => {
+            let bytes = (s.w * s.h * 4) as usize;
+            let pixels = unsafe { core::slice::from_raw_parts(s.ptr, bytes) };
+            let (swf, shf) = (s.w as f32, s.h as f32);
+            let (sw_max, sh_max) = (s.w as i32 - 1, s.h as i32 - 1);
+            let inv_w = 1.0f32 / w as f32;
+            let inv_h = 1.0f32 / h as f32;
+            for py in c.y0..c.y1 {
+                let v = v0 + (v1 - v0) * ((py - y) as f32 + 0.5) * inv_h;
+                let ty = ((v * shf) as i32).clamp(0, sh_max);
+                for px in c.x0..c.x1 {
+                    let u = u0 + (u1 - u0) * ((px - x) as f32 + 0.5) * inv_w;
+                    let tx = ((u * swf) as i32).clamp(0, sw_max);
+                    let o = ((ty * s.w as i32 + tx) as usize) * 4;
+                    blend_px(fb, px, py, pixels[o] as u32, pixels[o + 1] as u32, pixels[o + 2] as u32, ma);
+                }
+            }
+        }
+        None => {
+            // 16px two-tone slate checker so the box reads as a video surface.
+            for py in c.y0..c.y1 {
+                for px in c.x0..c.x1 {
+                    let checker = (((px >> 4) ^ (py >> 4)) & 1) == 1;
+                    let (r, g, b) = if checker { (30, 41, 59) } else { (51, 65, 85) };
+                    blend_px(fb, px, py, r, g, b, ma);
                 }
             }
         }

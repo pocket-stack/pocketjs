@@ -66,6 +66,10 @@ pub struct Node {
     pub text: String,
     /// Uploaded texture handle (image nodes only; -1 = none).
     pub tex: i32,
+    /// Opaque host decoder handle (video nodes only; -1 = none). The core
+    /// never dereferences it — it is emitted verbatim in VIDEO_QUAD for the
+    /// backend to resolve to a live frame buffer. See DESIGN.md "Video".
+    pub vid: i32,
     pub focused: bool,
     pub active: bool,
     /// taffy handle of the last layout build (None = excluded from layout).
@@ -88,6 +92,7 @@ impl Node {
             anim_values: Vec::new(),
             text: String::new(),
             tex: -1,
+            vid: -1,
             focused: false,
             active: false,
             taffy: None,

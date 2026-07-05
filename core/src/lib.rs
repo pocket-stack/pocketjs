@@ -102,7 +102,7 @@ impl Ui {
     /// Create a detached node of `node_type` (spec::NodeType value).
     /// Returns its generation-tagged id, or 0 on failure.
     pub fn create_node(&mut self, node_type: u8) -> i32 {
-        if node_type > spec::NodeType::Image as u8 {
+        if node_type > spec::NodeType::Video as u8 {
             return 0;
         }
         self.tree.alloc(node_type)
@@ -251,6 +251,19 @@ impl Ui {
         let node = &mut self.tree.slots[slot as usize];
         if node.node_type == spec::NodeType::Image as u8 {
             node.tex = if tex < 0 { -1 } else { tex };
+        }
+    }
+
+    /// Bind an opaque host decoder handle to a video node (mirrors set_image).
+    /// The core never dereferences `handle` — it is emitted in VIDEO_QUAD for
+    /// the backend to resolve to a live frame buffer. handle < 0 clears.
+    /// Unknown positive handles are accepted verbatim (validity is the host's
+    /// concern, same as any FFI handle).
+    pub fn set_video(&mut self, id: i32, handle: i32) {
+        let Some(slot) = self.tree.resolve(id) else { return };
+        let node = &mut self.tree.slots[slot as usize];
+        if node.node_type == spec::NodeType::Video as u8 {
+            node.vid = if handle < 0 { -1 } else { handle };
         }
     }
 

@@ -311,6 +311,69 @@ unsafe extern "C" fn js_load_font_atlas(
     JS_NewBool(ctx, ok)
 }
 
+// ---------------------------------------------------------------------------
+// video ops (native/src/video.rs — the <Video> component)
+// ---------------------------------------------------------------------------
+
+/// videoOpen(path, w, h, loopFlag) -> handle (>= 0) or -1. w/h are advisory
+/// (native geometry is fixed 480x272); they exist for the web/wasm fallback.
+unsafe extern "C" fn js_video_open(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc < 1 {
+        return JS_NewInt32(ctx, -1);
+    }
+    let mut len: size_t = 0;
+    // JS_ToCStringLen2 returns a NUL-terminated C string — usable straight as
+    // the host-fs path (e.g. "host0:/clip.pmf"). video::open reads it before we
+    // free it (scePsmfPlayerSetPsmf copies the path internally).
+    let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+    if s.is_null() {
+        return JS_NewInt32(ctx, -1);
+    }
+    let loop_flag = arg_i32(ctx, argc, argv, 3) != 0;
+    let handle = crate::video::open(s as *const u8, loop_flag);
+    JS_FreeCString(ctx, s);
+    JS_NewInt32(ctx, handle)
+}
+
+unsafe extern "C" fn js_video_control(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    crate::video::control(
+        arg_i32(ctx, argc, argv, 0),
+        arg_i32(ctx, argc, argv, 1) as u32,
+        arg_i32(ctx, argc, argv, 2),
+    );
+    JS_UNDEFINED
+}
+
+/// videoBind(nodeId, handle): attach a decoder to a video node (handle < 0 clears).
+unsafe extern "C" fn js_video_bind(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().set_video(arg_i32(ctx, argc, argv, 0), arg_i32(ctx, argc, argv, 1));
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_video_state(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, crate::video::state(arg_i32(ctx, argc, argv, 0)) as i32)
+}
+
 unsafe extern "C" fn js_measure_text(
     ctx: *mut JSContext,
     _this: JSValue,
@@ -370,6 +433,10 @@ pub unsafe fn register(ctx: *mut JSContext, global: JSValue, textures: &[(String
     add_fn(ctx, ui_obj, b"loadStyles\0", js_load_styles, 1);
     add_fn(ctx, ui_obj, b"loadFontAtlas\0", js_load_font_atlas, 1);
     add_fn(ctx, ui_obj, b"measureText\0", js_measure_text, 2);
+    add_fn(ctx, ui_obj, b"videoOpen\0", js_video_open, 4);
+    add_fn(ctx, ui_obj, b"videoControl\0", js_video_control, 3);
+    add_fn(ctx, ui_obj, b"videoBind\0", js_video_bind, 2);
+    add_fn(ctx, ui_obj, b"videoState\0", js_video_state, 1);
 
     // ui.__textures: pak image name -> texture handle (see module docs).
     let tex_obj = JS_NewObject(ctx);

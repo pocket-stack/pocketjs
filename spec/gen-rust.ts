@@ -53,6 +53,8 @@ import {
   TEX_MAX_DIM,
   TRANSITION_MASK_ALL,
   VALUE_KIND,
+  VIDEO_CMD,
+  VIDEO_STATE,
   type PropName,
 } from "./spec.ts";
 
@@ -151,6 +153,21 @@ export function generateRust(): string {
   put("pub mod op {");
   for (const [name, v] of Object.entries(OP)) {
     put(`    pub const ${screaming(name)}: u8 = ${v};`);
+  }
+  put("}");
+  put("");
+
+  // --- video control codes ----------------------------------------------------
+  put("/// `videoControl` command codes (host decoder contract; core is agnostic).");
+  put("pub mod video_cmd {");
+  for (const [name, v] of Object.entries(VIDEO_CMD)) {
+    put(`    pub const ${screaming(name)}: u32 = ${v};`);
+  }
+  put("}");
+  put("/// `videoState` low-byte playback state (high bits carry ptsMs).");
+  put("pub mod video_state {");
+  for (const [name, v] of Object.entries(VIDEO_STATE)) {
+    put(`    pub const ${screaming(name)}: u32 = ${v};`);
   }
   put("}");
   put("");
@@ -265,7 +282,7 @@ export function generateRust(): string {
   // --- drawlist ------------------------------------------------------------------
   put("/// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).");
   put("/// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,");
-  put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7.");
+  put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, VIDEO_QUAD 9.");
   put("pub mod draw_op {");
   for (const [name, v] of Object.entries(DRAW_OP)) {
     put(`    pub const ${screaming(name)}: u32 = ${v};`);

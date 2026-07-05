@@ -125,6 +125,22 @@ pub extern "C" fn ui_set_image(id: i32, tex: i32) {
     ui().set_image(id, tex)
 }
 
+// ---- native <Video> (web fallback) ------------------------------------------
+// The wasm host can't Media-Engine-decode; host-web/engine.js drives an HTML5
+// <video> and feeds its frames here. `ui_set_video` binds a node to a decoder
+// handle (the JS-side <video> id); `ui_video_surface` hands raster.rs the
+// current RGBA8888 frame for that handle. See DESIGN.md "Video".
+
+#[no_mangle]
+pub extern "C" fn ui_set_video(id: i32, handle: i32) {
+    ui().set_video(id, handle)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_video_surface(handle: i32, ptr: *const u8, w: u32, h: u32) {
+    raster::set_video_surface(handle, ptr, w, h)
+}
+
 #[no_mangle]
 pub extern "C" fn ui_animate(
     id: i32,

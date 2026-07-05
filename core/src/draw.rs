@@ -428,7 +428,15 @@ impl<'a> Walker<'a> {
 
         // -- image --------------------------------------------------------------
         if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
-            self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip);
+            self.emit_sampled_quad(dl, &world, l.w, l.h, node.tex as u32, spec::draw_op::TEX_QUAD, op, &clip);
+        }
+
+        // -- video --------------------------------------------------------------
+        // Same axis-aligned quad as an image, but the handle is an opaque host
+        // decoder handle (node.vid) emitted as VIDEO_QUAD; the backend samples
+        // the decoder's current frame buffer. See DESIGN.md "Video".
+        if node.node_type == spec::NodeType::Video as u8 && node.vid >= 0 {
+            self.emit_sampled_quad(dl, &world, l.w, l.h, node.vid as u32, spec::draw_op::VIDEO_QUAD, op, &clip);
         }
 
         // -- children (overflow-hidden scissor around them; z-index stable
@@ -1046,9 +1054,12 @@ impl<'a> Walker<'a> {
         }
     }
 
-    /// Emit an image TEX_QUAD (axis-aligned only; rotated images are
-    /// conservatively culled — no textured-triangle op in the DrawList v1).
-    fn emit_tex_quad(&self, dl: &mut DrawList, world: &Affine, w: f32, h: f32, tex: u32, op: f32, clip: &Clip) {
+    /// Emit a sampled quad (axis-aligned only; rotated quads are conservatively
+    /// culled — no textured-triangle op in the DrawList v1). `draw_op` selects
+    /// TEX_QUAD (core texture handle) vs VIDEO_QUAD (opaque host decoder handle);
+    /// the geometry, clip and UV re-interpolation are identical.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_sampled_quad(&self, dl: &mut DrawList, world: &Affine, w: f32, h: f32, handle: u32, draw_op: u32, op: f32, clip: &Clip) {
         if !world.is_axis_aligned() {
             return;
         }
@@ -1071,8 +1082,8 @@ impl<'a> Walker<'a> {
         let u1 = (c.x1 - sx0) / (sx1 - sx0);
         let v0 = (c.y0 - sy0) / (sy1 - sy0);
         let v1 = (c.y1 - sy0) / (sy1 - sy0);
-        dl.words.push(spec::draw_op::TEX_QUAD);
-        dl.words.push(tex);
+        dl.words.push(draw_op);
+        dl.words.push(handle);
         dl.words.push(xy_word(c.x0, c.y0));
         dl.words.push(wh_word(c.x1 - c.x0, c.y1 - c.y0));
         dl.words.push(u0.to_bits());

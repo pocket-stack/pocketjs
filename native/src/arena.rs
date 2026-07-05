@@ -2,9 +2,11 @@
 // change [R]: ensure_init calls sceKernelAllocPartitionMemory /
 // sceKernelGetBlockHeadAddr DIRECTLY. In this crate the arena IS the
 // #[global_allocator] (src/alloc.rs), so the original's alloc::alloc::alloc
-// route would recurse infinitely. Margin shrunk 4 MB -> 2 MB: retained core
-// buffers/textures now live inside the arena, so the margin only covers
-// late kernel allocations (utility thread stacks) + safety.
+// route would recurse infinitely. Margin is 6 MB (raised from 2 MB for the
+// native <Video> component): most retained buffers/textures live inside the
+// arena, but the scePsmfPlayer create-buffer + ME EDRAM may draw from the same
+// primary user partition, so the margin covers those + late kernel allocations
+// (utility thread stacks) + safety. See DESIGN.md "Video".
 
 
 //! A single-arena sub-allocator for QuickJS + newlib `malloc` + Rust `alloc`.
@@ -58,7 +60,12 @@ unsafe fn ensure_init() {
     }
     INITED = true;
     let free = sys::sceKernelMaxFreeMemSize() as usize;
-    let margin = 2 * 1024 * 1024;
+    // 2 MB covered late kernel allocations (utility thread stacks) + safety.
+    // Raised to 6 MB for the native <Video> component (video.rs): the
+    // scePsmfPlayer create-buffer (~3 MB) + ME EDRAM (~2 MB) may draw from this
+    // same primary user partition (UNCERTAIN — validate on hardware; DESIGN.md
+    // "Video"). Video frame buffers themselves come FROM the arena.
+    let margin = 6 * 1024 * 1024;
     let size = if free > margin + 1024 * 1024 { free - margin } else { free / 2 };
     if size == 0 {
         return;

@@ -153,8 +153,9 @@ PocketJS/
     engine.js          loads wasm, HostOps, rAF loop (fixed-step), keyboard map
     serve.ts           static Bun.serve dev server (no livereload; rebuild + reload manually)
   demos/
-    hero/, cards/, stats/, library/, settings/, notifications/, music/
-                       each demo has app.tsx + main.tsx (mount entry)
+    hero/, cards/, stats/, library/, settings/, notifications/, music/, video/
+                       each demo has app.tsx + main.tsx (mount entry);
+                       video/ = the native <Video> end-to-end demo (see "Video")
   test/
     contract.ts        spec drift guard (regen + byte-compare) + engine constants
     golden.ts          headless Bun: wasm rasterizer, scripted input, byte-exact PNGs
@@ -199,7 +200,7 @@ children[], …}`) so reconciler *reads* never cross the FFI. Handles are `i32`
 
 | op | signature | notes |
 |---|---|---|
-| createNode | `(type:i32) → id` | 0=view 1=text 2=image |
+| createNode | `(type:i32) → id` | 0=view 1=text 2=image 3=video |
 | destroyNode | `(id)` | subtree; frees anim tracks; clears focus if inside **[R]** |
 | insertBefore | `(parent, child, anchorOr0)` | **DOM move semantics: if child is attached anywhere, unlink first** (core tree + taffy + JS mirror) **[R]**; append when anchor=0; silently no-ops past `MAX_TREE_DEPTH` (spec, 64) so recursive tree walks stay stack-bounded on PSP |
 | removeChild | `(parent, child)` | keeps node alive (Solid re-inserts); renderer sweep destroys it at frame end if still detached |
@@ -214,6 +215,10 @@ children[], …}`) so reconciler *reads* never cross the FFI. Handles are `i32`
 | setFocus | `(idOr0)` | applies `focus:` variant natively |
 | loadStyles / loadFontAtlas | `(buf …)` | **web/test hosts only** — on PSP, native/src/pak.rs feeds core directly from include_bytes! **[R]** |
 | measureText | `(str, fontSlot) → width` | JS convenience; layout measures natively |
+| videoOpen | `(path, w, h, loopFlag) → handle` | **optional op** (see "Video"); open a host-fs decoder; handle < 0 = failure |
+| videoControl | `(handle, cmd, arg)` | cmd = spec `VIDEO_CMD` (play/pause/stop/seek/close) |
+| videoBind | `(nodeId, handle)` | attach a decoder to a video node (handle < 0 clears → `Ui::set_video`) |
+| videoState | `(handle) → status` | packed `VIDEO_STATE \| (ptsMs << 8)` for `onEnded` |
 
 **Text model [R].** A `<text>` element lays out its text-node children as one
 concatenated inline run (single measure, not N flex items). Text nodes inherit
@@ -224,8 +229,8 @@ until `replaceText` makes them non-empty.
 
 Application code should not write those lower-case host tags directly. The
 public SDK surface is imported from `PocketJS` and uses React Native-style
-`View`, `Text`, and `Image` primitives; the lower-case tags remain an internal
-renderer target for `src/primitives.ts` and low-level tests.
+`View`, `Text`, `Image` and `Video` primitives; the lower-case tags remain an
+internal renderer target for `src/primitives.ts` and low-level tests.
 
 **Frame order (PSP).** `sceCtrlRead → sceGuStart → JS frame(buttons) → drain
 jobs (while JS_ExecutePendingJob(rt,&mut ctx)>0 — declare the symbol in a local
@@ -312,6 +317,83 @@ One FFI crossing per steady-state frame; DrawList ≤ ~40 sceGuDrawArray calls,
 animations relayout that frame (prefer transforms); Solid effects only on
 interaction. Boot: unminified but tree-shaken bundle; all binary assets in the
 pak (base64-in-JS is the known QuickJS boot killer).
+
+## Video (native Media-Engine decode)
+
+`<Video>` composites a streamed video as a native node in the flexbox tree —
+not a fullscreen takeover. Pixels come from the host's hardware decoder each
+frame; decode runs **off** the render thread so the 60 Hz UI never stalls on
+host I/O or decode. (Research + path comparison: the video-decode dossier.)
+
+**Path (PSP): `scePsmfPlayer` on the Media Engine.** The ME (the PSP's second
+core + fixed-function AVC/CSC hardware) does demux + H.264 + colorspace-convert;
+`scePsmfPlayer` wraps all of it — it opens a `.pmf` by filename (incl.
+`host0:/…` over PSPLink), runs its own read/demux/decode threads, and
+`GetVideoData` writes a linear ABGR8888 frame into a caller-supplied buffer at a
+caller-chosen stride. We add ONE dedicated poll thread (`native/src/video.rs`);
+the vblank worker only does an atomic load + pointer read. Runner-up if
+`scePsmfPlayer` streaming proves rough or the source is live: low-level
+`sceMpeg` with our own `sceIoRead` ring (same `.pmf` input — no re-encode).
+`sceVideocodec` was rejected (its AVCC framing + CSC pairing is unbound/wrong in
+this rust-psp fork); MJPEG (`sceJpeg`) rejected (intra-only bitrate > PSPLink).
+
+**Node model (codec-agnostic core).** `NODE_TYPE.video = 3`; `tree.rs` `Node.vid`
+is an **opaque host decoder handle** (never a core texture id). `draw.rs` emits
+`DRAW_OP.videoQuad` at the node's laid-out rect (same 9-word shape as TEX_QUAD,
+axis-aligned only — rotated video is culled). The core never learns pixel dims;
+the backend resolves the handle to a live frame buffer.
+
+**GE bind (`ge.rs`, zero-copy).** The `VIDEO_QUAD` arm binds the decoder's
+current **front** buffer via `sceGuTexImage` as a declared 512×512 (pow2),
+`tbw = 512`, sampling only the 480×272 active sub-rect (UV texels =
+normalized × active dims). **Nearest + Clamp** (no bilinear/edge bleed; clamp
+stops a bottom/right tap wrapping modulo 512 into unrelated RAM). **Modulate +
+`Rgb`** so the frame's (possibly 0x00) alpha is ignored and alpha comes from the
+vertex → opaque, while node opacity still works.
+
+**Threading + buffers.** `video.rs` triple-buffers frames (512×288×4 each, guard
+rows past 272) in the arena. The poll thread decodes into a BACK buffer,
+`sceKernelDcacheWritebackInvalidateRange`s it (ME wrote via DMA behind the CPU
+cache), then release-stores a `ready` index; the worker acquire-loads it as
+FRONT — so the GE never samples a buffer mid-decode. `videoControl(Close)` (from
+the JS component's `onCleanup`) joins the thread + frees buffers *before* the
+node is destroyed. Boot loads the AV modules (`sceUtilityLoadAvModule` AvCodec →
+MpegBase → Atrac3Plus) + `sceMpegInit` (mandatory on hardware; PPSSPP HLEs them
+for free). The arena margin is raised 2 MB → 6 MB for the player create-buffer +
+ME EDRAM.
+
+**JS + web.** `Video` (`src/components.ts`) is a managed component: opens/binds
+on mount, drives play/pause reactively, closes on cleanup, polls `videoState`
+for `onEnded`. The video ops are **optional** on `HostOps` — the wasm/web host
+omits ME decode and instead drives a hidden HTML5 `<video>`, blitting frames
+into a raster surface (`raster.rs` `VIDEO_QUAD` arm); a headless golden host has
+no `document`, so `raster.rs` draws its deterministic checker placeholder (video
+goldens stay byte-stable). One draw path, three hosts.
+
+**Wire format.** 480×272 (both /16 = the ME AVC max, no padding), H.264 Main +
+CABAC, Level 3.0, 30 fps, no B-frames (one AU = one frame, PTS=DTS), closed 1 s
+GOP (clean loop/seek joins), ~1–1.5 Mbps CBR (well within PSPLink). Produce with
+`bun scripts/video-encode.ts <input>` (ffmpeg → `.h264` + a web-preview `.mp4`),
+then mux the `.h264` to a PSMF `.pmf` (ffmpeg has **no** game-`.pmf` muxer — use
+a PSMF muxer or the byte layout below) and drop it in the `usbhostfs_pc` host
+dir so it resolves as `host0:/clip.pmf`.
+
+```
+.pmf: [0x000] PSMF header 0x800B: magic "PSMF", version, mpegOffset=0x800,
+              streamSize, stream table @0x82 (video 0xE0, codec 0x0E AVC),
+              EP-map (nEntries, {ptsHi, offset, id}…)
+      [0x800] MPEG-PS: repeating 2048-byte packs — pack_start(0x000001BA),
+              PES(0xE0){ PTS/DTS, AVC AU: SPS/PPS on IDR, then slice NALs }
+              (audio v2: private_stream_1 ATRAC3+ AUs interleaved)
+```
+
+**Hardware-gate (validate first — cannot be checked in the emulator/CI):**
+PMF acceptance of the exact x264 settings; `scePsmfPlayer` real-time smoothness
+over `host0:`/PSPLink; per-frame ME decode budget; whether the player + ME EDRAM
+draw from the primary user partition (arena margin); GE texture-cache freshness
+without `sceGuTexFlush` (address ping-pong + dcache invalidate). Demo v1 is
+**silent** (video-only PMF); audio (ATRAC3+ via `GetAudioData` →
+`sceAudioOutput2OutputBlocking`, audio-clock master) is v2.
 
 ## What v1 explicitly punts
 

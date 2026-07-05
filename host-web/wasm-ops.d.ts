@@ -15,6 +15,8 @@ export interface WasmUi {
   tick(): void;
   /** Rasterize and return the RGBA8 480x272 framebuffer as a fresh view. */
   render(): Uint8Array;
+  /** Blit active HTML5 <video> frames into the wasm surfaces; call before render(). */
+  pumpVideos(): void;
 }
 
 export declare function createWasmUi(

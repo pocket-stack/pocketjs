@@ -35,6 +35,12 @@ export const NODE_TYPE = {
   view: 0,
   text: 1,
   image: 2,
+  // A native video surface: an image-like box whose pixels are supplied every
+  // frame by the host's decoder (PSP Media Engine), not the core texture table.
+  // The core stays codec-agnostic — a video node carries an opaque decoder
+  // handle (node.vid) and emits a VIDEO_QUAD at its laid-out rect; the backend
+  // binds the decoder's current frame buffer. See DESIGN.md "Video".
+  video: 3,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -91,6 +97,14 @@ export const SIZE_FULL = -1;
 //   loadStyles(buf) / loadFontAtlas(buf)   [web/test hosts only; PSP feeds core
 //                                           natively from the pak]
 //   measureText(str, fontSlot) -> width:f32
+//   videoOpen(path, w, h, loopFlag) -> handle   [open a native decoder for a
+//                                           host-fs stream; handle < 0 = failure]
+//   videoControl(handle, cmd:VIDEO_CMD, arg)    [play/pause/stop/seek/close]
+//   videoBind(nodeId, handle)              [attach a decoder to a video node —
+//                                           handle < 0 clears]
+//   videoState(handle) -> packed status    [VIDEO_STATE bits | (ptsMs << 8)]
+//   These four are OPTIONAL on HostOps: wasm/test hosts that cannot decode omit
+//   them and render a placeholder for VIDEO_QUAD instead.
 
 export const OP = {
   createNode: 1,
@@ -109,6 +123,35 @@ export const OP = {
   loadStyles: 14,
   loadFontAtlas: 15,
   measureText: 16,
+  videoOpen: 17,
+  videoControl: 18,
+  videoBind: 19,
+  videoState: 20,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Video decoder control (native Video component — DESIGN.md "Video")
+// ---------------------------------------------------------------------------
+// `videoControl(handle, cmd, arg)` command codes. The core never interprets
+// these — they cross straight to the host decoder (native/src/video.rs on PSP).
+// Append-only.
+
+export const VIDEO_CMD = {
+  play: 0,
+  pause: 1,
+  stop: 2, // stop + rewind to the start (stays open)
+  seek: 3, // arg = target position in ms
+  close: 4, // tear the decoder down (frees buffers + the decode thread)
+} as const;
+
+// `videoState(handle)` low byte: coarse playback state. High bits carry the
+// current presentation timestamp in ms (state | (ptsMs << 8)).
+export const VIDEO_STATE = {
+  idle: 0,
+  playing: 1,
+  paused: 2,
+  ended: 3,
+  error: 4,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -597,6 +640,12 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //                                      word: bits 0-15 gid, bits 16-31 reserved(0) }
 //   TEX_QUAD    (9 words):  op, texHandle, xy, wh, u0, v0, u1, v1 (f32 bits,
 //                           normalized 0..1), color (modulate; 0xFFFFFFFF = none)
+//   VIDEO_QUAD  (9 words):  op, vidHandle, xy, wh, u0, v0, u1, v1 (f32 bits,
+//                           normalized 0..1), color — identical shape to TEX_QUAD
+//                           but the handle is an OPAQUE host decoder handle, not
+//                           a core texture id. The backend samples the decoder's
+//                           current frame buffer (PSP: the front video surface).
+//                           A backend that cannot decode draws a placeholder.
 //   SCISSOR     (3 words):  op, xy, wh — push clip rect. The core emits rects
 //                           already intersected with every enclosing scissor,
 //                           so backends just SET the rect (a depth counter,
@@ -619,6 +668,7 @@ export const DRAW_OP = {
   scissor: 5,
   scissorPop: 6,
   tri: 7,
+  videoQuad: 8,
 } as const;
 
 // ---------------------------------------------------------------------------

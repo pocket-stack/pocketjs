@@ -44,6 +44,7 @@ pub enum NodeType {
     View = 0,
     Text = 1,
     Image = 2,
+    Video = 3,
 }
 
 /// UI op codes (the wasm/FFI ABI identity of each `ui.*` op; 0 reserved).
@@ -65,6 +66,27 @@ pub mod op {
     pub const LOAD_STYLES: u8 = 14;
     pub const LOAD_FONT_ATLAS: u8 = 15;
     pub const MEASURE_TEXT: u8 = 16;
+    pub const VIDEO_OPEN: u8 = 17;
+    pub const VIDEO_CONTROL: u8 = 18;
+    pub const VIDEO_BIND: u8 = 19;
+    pub const VIDEO_STATE: u8 = 20;
+}
+
+/// `videoControl` command codes (host decoder contract; core is agnostic).
+pub mod video_cmd {
+    pub const PLAY: u32 = 0;
+    pub const PAUSE: u32 = 1;
+    pub const STOP: u32 = 2;
+    pub const SEEK: u32 = 3;
+    pub const CLOSE: u32 = 4;
+}
+/// `videoState` low-byte playback state (high bits carry ptsMs).
+pub mod video_state {
+    pub const IDLE: u32 = 0;
+    pub const PLAYING: u32 = 1;
+    pub const PAUSED: u32 = 2;
+    pub const ENDED: u32 = 3;
+    pub const ERROR: u32 = 4;
 }
 
 /// Property ids (u8, stable, append-only). Groups:
@@ -298,7 +320,7 @@ pub mod font_atlas {
 
 /// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).
 /// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,
-/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7.
+/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, VIDEO_QUAD 9.
 pub mod draw_op {
     pub const RECT: u32 = 1;
     pub const GRAD_RECT: u32 = 2;
@@ -307,6 +329,7 @@ pub mod draw_op {
     pub const SCISSOR: u32 = 5;
     pub const SCISSOR_POP: u32 = 6;
     pub const TRI: u32 = 7;
+    pub const VIDEO_QUAD: u32 = 8;
 }
 
 /// .pak container constants (byte-compatible with dreamcart's format;

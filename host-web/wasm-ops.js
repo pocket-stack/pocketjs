@@ -41,6 +41,94 @@ export async function createWasmUi(wasm) {
   }
   const withStr = (s, fn) => withBytes(encoder.encode(String(s)), fn);
 
+  // --- native <Video> (web fallback) ---------------------------------------
+  // Drive HTML5 <video> elements and feed their frames to the wasm rasterizer
+  // as RGBA8888 surfaces. In a HEADLESS host (Bun goldens: no `document`),
+  // videoOpen tracks the handle but uploads NO surface, so raster.rs draws its
+  // deterministic checker placeholder — keeping goldens byte-stable.
+  const hasDOM = typeof document !== "undefined";
+  const videos = new Map();
+  let nextVideoHandle = 0;
+
+  // "host0:/clip.pmf" -> "/clip.mp4": browsers can't play PMF, so the dev
+  // server serves a web-friendly encode next to the demo. Missing file => the
+  // <video> never yields frames => raster draws the checker placeholder.
+  const webUrlForPath = (path) =>
+    "/" + (String(path).split(/[\\/]/).pop() || "clip").replace(/\.pmf$/i, ".mp4");
+
+  function videoOpen(path, w, h, loopFlag) {
+    const handle = nextVideoHandle++;
+    if (handle >= 4) return -1; // raster.rs MAX_VIDEO_SURFACES
+    const entry = { w, h, ptr: 0, el: null, ctx: null, ended: false };
+    if (hasDOM) {
+      const el = document.createElement("video");
+      el.src = webUrlForPath(path);
+      el.loop = !!loopFlag;
+      el.muted = true; // v1 is silent; also unblocks autoplay
+      el.playsInline = true;
+      el.autoplay = true;
+      el.addEventListener("ended", () => {
+        entry.ended = true;
+      });
+      el.play?.().catch(() => {});
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      entry.el = el;
+      entry.ctx = canvas.getContext("2d", { willReadFrequently: true });
+      entry.ptr = ex.ui_alloc(w * h * 4);
+    }
+    videos.set(handle, entry);
+    return handle;
+  }
+
+  function videoControl(handle, cmd, _arg) {
+    const v = videos.get(handle);
+    if (!v) return;
+    if (cmd === 0) v.el?.play?.().catch(() => {}); // play
+    else if (cmd === 1) v.el?.pause?.(); // pause
+    else if (cmd === 2) {
+      if (v.el) {
+        v.el.pause();
+        v.el.currentTime = 0;
+      }
+    } else if (cmd === 4) {
+      // close
+      v.el?.pause?.();
+      if (v.ptr) {
+        ex.ui_video_surface(handle, 0, 0, 0);
+        ex.ui_free(v.ptr, v.w * v.h * 4);
+      }
+      videos.delete(handle);
+    }
+  }
+
+  function videoState(handle) {
+    const v = videos.get(handle);
+    if (!v) return 4; // VIDEO_STATE.error
+    if (v.ended) return 3; // ended
+    if (v.el && v.el.paused) return 2; // paused
+    return 1; // playing
+  }
+
+  // Blit each active <video>'s current frame into its wasm RGBA surface. Called
+  // once per frame by engine.js BEFORE render(). No-op in a headless host.
+  function pumpVideos() {
+    if (!hasDOM) return;
+    for (const [handle, v] of videos) {
+      if (!v.el || !v.ptr || v.el.readyState < 2) continue;
+      try {
+        v.ctx.drawImage(v.el, 0, 0, v.w, v.h);
+        const img = v.ctx.getImageData(0, 0, v.w, v.h);
+        // Rebuilt each call: memory.buffer detaches whenever linear memory grows.
+        new Uint8Array(ex.memory.buffer, v.ptr, v.w * v.h * 4).set(img.data);
+        ex.ui_video_surface(handle, v.ptr, v.w, v.h);
+      } catch {
+        /* frame not decodable yet */
+      }
+    }
+  }
+
   /** @type {import("../src/host.ts").HostOps} */
   const ops = {
     createNode: (type) => ex.ui_create_node(type),
@@ -64,11 +152,17 @@ export async function createWasmUi(wasm) {
       withBytes(buf, (p, l) => ex.ui_load_font_atlas(p, l));
     },
     measureText: (str, fontSlot) => withStr(str, (p, l) => ex.ui_measure_text(p, l, fontSlot)),
+    videoOpen,
+    videoControl,
+    videoBind: (nodeId, handle) => ex.ui_set_video(nodeId, handle),
+    videoState,
   };
 
   return {
     ops,
     exports: ex,
+    /** Blit active <video> frames into wasm surfaces; call before render(). */
+    pumpVideos,
     /** Reset the core to a fresh Ui (fresh tree/styles/atlases/textures). */
     init: () => ex.ui_init(),
     /** Advance exactly one fixed-dt (1/60 s) frame. */

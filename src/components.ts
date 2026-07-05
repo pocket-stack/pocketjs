@@ -2,8 +2,9 @@
 
 import type { JSX as SolidJSX } from "solid-js";
 import { createEffect, onCleanup, onMount, splitProps } from "solid-js";
-import { ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
-import { pushButtonHandlerBlock, onButtonPress, type ButtonPressOptions } from "./frame.ts";
+import { ENUMS, SCREEN_H, SCREEN_W, VIDEO_CMD, VIDEO_STATE } from "../spec/spec.ts";
+import { getOps } from "./host.ts";
+import { onFrame, pushButtonHandlerBlock, onButtonPress, type ButtonPressOptions } from "./frame.ts";
 import { pushFocusGrid, pushFocusScope, type FocusGridOptions, type FocusScopeOptions } from "./input.ts";
 import { getOverlayRoot } from "./overlay.ts";
 import { View, type ViewProps } from "./primitives.ts";
@@ -218,6 +219,100 @@ function ModalFrame(props: ModalProps): SolidJSX.Element {
 
 export function Modal(props: ModalProps): SolidJSX.Element {
   return Portal({ children: () => ModalFrame(props) });
+}
+
+// ---------------------------------------------------------------------------
+// Video — a native, Media-Engine-decoded video surface (DESIGN.md "Video")
+// ---------------------------------------------------------------------------
+// Composites like an <Image>, but its pixels come from the host's decoder
+// (PSP: scePsmfPlayer on the Media Engine) each frame, streamed from the host
+// filesystem. The decode runs off the render thread, so the 60 fps UI never
+// stalls on host I/O or decode.
+
+type StyleObject = Record<string, number | string>;
+
+export interface VideoProps {
+  /** Host-fs stream path, e.g. `host0:/clip.pmf`. */
+  src: string;
+  class?: string;
+  style?: StyleObject;
+  /** Loop at end of stream (default false). */
+  loop?: boolean;
+  /** Begin playing on mount (default true). */
+  autoplay?: boolean;
+  /** Reactive pause control (boolean or accessor; default false = playing). */
+  paused?: boolean | (() => boolean);
+  /** Fires once when a non-looping stream reaches its end. */
+  onEnded?: () => void;
+  ref?: RefProp;
+}
+
+/** Native decode geometry — the PSP Media Engine's max / the panel size. */
+const VIDEO_NATIVE_W = 480;
+const VIDEO_NATIVE_H = 272;
+
+export function Video(props: VideoProps): SolidJSX.Element {
+  const el = createElement("video");
+  callRef(props.ref, el);
+
+  // class + style behave exactly as on any node (class may be a ternary of
+  // full literals; style is prev-diffed).
+  createEffect(() => setProp(el, "class", props.class, undefined));
+  let prevStyle: StyleObject | undefined;
+  createEffect(() => {
+    setProp(el, "style", props.style, prevStyle);
+    prevStyle = props.style;
+  });
+
+  let handle = -1;
+  // The decoder begins playing the moment it opens (scePsmfPlayerStart), so we
+  // track the last-known transport state and only send a command on an ACTUAL
+  // change — autoplay therefore needs no command at all.
+  let playing = true;
+  let firstRun = true;
+  const isPaused = () =>
+    typeof props.paused === "function" ? props.paused() : props.paused ?? false;
+
+  onMount(() => {
+    const ops = getOps();
+    // Hosts without decode support (wasm/test) omit videoOpen — the box still
+    // lays out and the backend draws a placeholder for VIDEO_QUAD.
+    if (!ops.videoOpen || !ops.videoBind) return;
+    handle = ops.videoOpen(props.src, VIDEO_NATIVE_W, VIDEO_NATIVE_H, props.loop ? 1 : 0);
+    if (handle < 0) return;
+    ops.videoBind(el.id, handle);
+  });
+
+  // Single owner of play/pause (runs after onMount, so `handle` is set). On the
+  // first run `autoplay === false` starts it paused; thereafter `paused` drives.
+  createEffect(() => {
+    const wantPlaying = !(isPaused() || (firstRun && props.autoplay === false));
+    if (handle < 0) return;
+    firstRun = false;
+    if (wantPlaying === playing) return; // no transport change → no command
+    playing = wantPlaying;
+    getOps().videoControl?.(handle, wantPlaying ? VIDEO_CMD.play : VIDEO_CMD.pause, 0);
+  });
+
+  // onEnded: poll native playback state once per frame (only if wanted).
+  if (props.onEnded) {
+    let fired = false;
+    onFrame(() => {
+      if (handle < 0 || fired) return;
+      const state = getOps().videoState?.(handle) ?? 0;
+      if ((state & 0xff) === VIDEO_STATE.ended) {
+        fired = true;
+        props.onEnded!();
+      }
+    });
+  }
+
+  // Tear the decoder down (poll thread + frame buffers) before the node dies.
+  onCleanup(() => {
+    if (handle >= 0) getOps().videoControl?.(handle, VIDEO_CMD.close, 0);
+  });
+
+  return el as unknown as SolidJSX.Element;
 }
 
 export interface ActionBarProps extends ViewProps {}
