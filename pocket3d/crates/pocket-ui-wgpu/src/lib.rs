@@ -13,10 +13,12 @@
 //!
 //! 2D and 3D share one base: the same `pocket3d::Gpu` device drives both.
 
+mod blit;
 mod pak;
 mod render;
 mod surface;
 
+pub use blit::Blit;
 pub use pak::{PakEntry, walk_pak};
 pub use render::UiRenderer;
 pub use surface::UiSurface;

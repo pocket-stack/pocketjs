@@ -299,6 +299,11 @@ if (!existsSync(frameworkConfig.rendererPath)) {
   console.warn("  pass 2: renderer missing — wrote the no-op placeholder (js-runtime phase owns the real one)");
 }
 
+// NOTE for external app repos (see open-strike): framework-runtime imports
+// (solid-js, vue) must resolve to the ONE copy installed next to the
+// framework — symlink `node_modules/solid-js` in your repo at the vendored
+// framework's copy, or you will bundle a second reactive runtime and break
+// reactivity across the two.
 const result = await Bun.build({
   entrypoints: [entry],
   outdir: DIST,

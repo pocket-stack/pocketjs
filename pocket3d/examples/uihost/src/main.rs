@@ -24,7 +24,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, anyhow};
 use pocket3d::gpu::{Gpu, OffscreenTarget};
 use pocket_mod::Guest;
-use pocket_ui_wgpu::{UiRenderer, UiSurface};
+use pocket_ui_wgpu::{Blit, UiRenderer, UiSurface};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -196,110 +196,6 @@ fn windowed(args: Args) -> Result<()> {
     }
 }
 
-struct Blit {
-    pipeline: wgpu::RenderPipeline,
-    bind: wgpu::BindGroup,
-}
-
-impl Blit {
-    fn new(gpu: &Gpu, src: &wgpu::TextureView, format: wgpu::TextureFormat) -> Blit {
-        let shader = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("uihost blit"),
-            source: wgpu::ShaderSource::Wgsl(BLIT_WGSL.into()),
-        });
-        let layout = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("uihost blit layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("uihost blit sampler"),
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
-        let bind = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("uihost blit bind"),
-            layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(src),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
-        let pl = gpu.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("uihost blit pl"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
-        });
-        let pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("uihost blit pipeline"),
-            layout: Some(&pl),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(format.into())],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
-        Blit { pipeline, bind }
-    }
-}
-
-const BLIT_WGSL: &str = r#"
-struct VsOut { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
-
-@vertex
-fn vs_main(@builtin(vertex_index) i: u32) -> VsOut {
-    // Fullscreen triangle.
-    var out: VsOut;
-    let x = f32(i32(i % 2u) * 4 - 1);
-    let y = f32(i32(i / 2u) * 4 - 1);
-    out.pos = vec4f(x, y, 0.0, 1.0);
-    out.uv = vec2f((x + 1.0) * 0.5, (1.0 - y) * 0.5);
-    return out;
-}
-
-@group(0) @binding(0) var tex: texture_2d<f32>;
-@group(0) @binding(1) var samp: sampler;
-
-@fragment
-fn fs_main(in: VsOut) -> @location(0) vec4f {
-    return textureSample(tex, samp, in.uv);
-}
-"#;
 
 struct State {
     window: Arc<Window>,
@@ -343,7 +239,7 @@ impl App {
 
         let offscreen = OffscreenTarget::new(&gpu, UI_W, UI_H);
         let ui_renderer = UiRenderer::new(&gpu, pocket3d::gpu::OFFSCREEN_FORMAT);
-        let blit = Blit::new(&gpu, &offscreen.view, surface_config.format);
+        let blit = Blit::new(&gpu, &offscreen.view, surface_config.format, wgpu::FilterMode::Nearest, false);
         Ok(State {
             window,
             surface,
@@ -406,9 +302,7 @@ impl App {
             let (vw, vh) = (UI_W * scale, UI_H * scale);
             let (vx, vy) = (sw.saturating_sub(vw) / 2, sh.saturating_sub(vh) / 2);
             pass.set_viewport(vx as f32, vy as f32, vw as f32, vh as f32, 0.0, 1.0);
-            pass.set_pipeline(&s.blit.pipeline);
-            pass.set_bind_group(0, &s.blit.bind, &[]);
-            pass.draw(0..3, 0..1);
+            s.blit.draw(&mut pass);
         }
         s.gpu.queue.submit([encoder.finish()]);
         s.window.pre_present_notify();
