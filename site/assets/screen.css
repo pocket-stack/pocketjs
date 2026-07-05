@@ -11,19 +11,29 @@
 .screen-emu {
   --emu-amber: #e6a94b;
   --emu-amber-hi: #ffc766;
+  /* ONE fixed radius shared by the body and the shoulders' outer corners.
+     MUST be a fixed unit (px), NOT cqw: cqw on the body (a container) resolves
+     against the viewport, but on the shoulders (descendants) against this
+     container — so a cqw value renders as two different pixel radii. */
+  --emu-radius: 26px;
   container-type: inline-size;
+  position: relative; /* L/R shoulders are absolutely pinned to the top corners */
   display: grid;
+  /* side columns are `auto` (sized by the .emu-pad / .emu-faces clusters, which
+     are equal width so the screen stays centered) — do NOT use cqw here, it
+     resolves against the ancestor/viewport, not this container. The shoulders
+     are NOT a grid row (they float over the top corners), so there's no tall
+     empty band above the screen. */
   grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-rows: auto auto auto;
+  grid-template-rows: auto auto;
   grid-template-areas:
-    "sl    .        sr"
     "dpad  screen   faces"
     "sys   sys      sys";
   align-items: center;
   column-gap: 2.4cqw;
-  row-gap: 1.6cqw;
-  padding: 1.8cqw 2cqw 2cqw;
-  border-radius: 3.6cqw;
+  row-gap: 0.7cqw;
+  padding: 2cqw 2cqw 0.9cqw;
+  border-radius: var(--emu-radius);
   /* molded navy body: top-lit gradient + faint vertical brushed sheen */
   background:
     radial-gradient(122% 60% at 50% -8%, rgba(96, 116, 156, 0.32), transparent 58%),
@@ -37,50 +47,44 @@
     0 0 0 1px rgba(43, 58, 85, 0.8);
 }
 
-/* ---- shoulder bumpers (top corners) --------------------------------------- */
+/* ---- shoulder bumpers — flush in the top corners, outer corner radius EXACTLY
+   matching the body's so the two curves coincide (no double curve). Kept flush
+   at top:0 / left|right:0; the button is tall enough that CSS never scales the
+   3.6cqw corner down. Body border-radius is 3.6cqw (keep them equal). --------- */
 .emu-shoulder {
-  min-width: 12cqw;
-  padding: 1.2cqw 2.6cqw;
+  position: absolute;
+  top: 0.6cqw; /* nudged in a few px; radius below drops to stay concentric */
+  min-width: 11cqw;
+  padding: 1cqw 2.4cqw;
   cursor: pointer;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 2.5cqw;
+  font-size: 2.2cqw;
   font-weight: 700;
   letter-spacing: 0.16em;
   color: var(--emu-amber);
   background: linear-gradient(180deg, #333b5a, #1d2338);
   border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 1.8cqw;
+  border-radius: 1cqw; /* inner corners */
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 2px 4px rgba(0, 0, 0, 0.4);
   transition: color 0.1s ease, background 0.1s ease, transform 0.06s ease, box-shadow 0.1s ease, border-color 0.1s ease;
 }
-.emu-shoulder.l { grid-area: sl; justify-self: start; border-top-left-radius: 3cqw; }
-.emu-shoulder.r { grid-area: sr; justify-self: end; border-top-right-radius: 3cqw; }
+.emu-shoulder.l { left: 0.6cqw; border-top-left-radius: var(--emu-radius); border-bottom-left-radius: 0.4cqw; }
+.emu-shoulder.r { right: 0.6cqw; border-top-right-radius: var(--emu-radius); border-bottom-right-radius: 0.4cqw; }
 .emu-shoulder:hover { background: linear-gradient(180deg, #3a4363, #222941); }
 
-/* ---- d-pad + analog nub (left) -------------------------------------------- */
+/* ---- d-pad (left) --------------------------------------------------------- */
 .emu-pad {
   grid-area: dpad;
   justify-self: center;
+  width: 18cqw; /* match .emu-faces so the two side columns are equal */
   display: flex;
-  flex-direction: column;
+  justify-content: center;
   align-items: center;
-  gap: 2.6cqw;
 }
 .emu-dpad {
   position: relative;
   width: 16cqw;
   aspect-ratio: 1;
-}
-.emu-nub {
-  width: 6.4cqw;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(58% 54% at 42% 34%, #3d4a68, #212a41 68%, #131a29);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow:
-    inset 0 1.5px 2px rgba(255, 255, 255, 0.16),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.5),
-    0 2px 5px rgba(0, 0, 0, 0.45);
 }
 
 /* ---- the recessed screen (center) ----------------------------------------- */
@@ -181,14 +185,15 @@
   grid-area: faces;
   justify-self: center;
   position: relative;
-  width: 16cqw;
+  width: 18cqw;
   aspect-ratio: 1;
 }
-.emu-faces .emu-key { width: 40%; aspect-ratio: 1; border-radius: 50%; }
-.emu-faces .tri   { top: 0;    left: 30%; }
-.emu-faces .sq    { top: 30%;  left: 0;   }
-.emu-faces .ci    { top: 30%;  right: 0;  }
-.emu-faces .cross { bottom: 0; left: 30%; }
+/* smaller buttons pushed out to the corners → wider gaps between the diamond */
+.emu-faces .emu-key { width: 33%; aspect-ratio: 1; border-radius: 50%; }
+.emu-faces .tri   { top: 0;    left: 33.5%; }
+.emu-faces .sq    { top: 33.5%;  left: 0;   }
+.emu-faces .ci    { top: 33.5%;  right: 0;  }
+.emu-faces .cross { bottom: 0; left: 33.5%; }
 
 /* SELECT / START — centered below the screen */
 .emu-sys {
@@ -202,11 +207,11 @@
 .emu-sys-btn {
   cursor: pointer;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 1.9cqw;
+  font-size: 1.4cqw;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   color: var(--emu-amber);
-  padding: 1.2cqw 3.4cqw;
+  padding: 0.6cqw 2cqw;
   border-radius: 999px;
   background: linear-gradient(180deg, #2c3450, #1a2033);
   border: 1px solid rgba(255, 255, 255, 0.08);
