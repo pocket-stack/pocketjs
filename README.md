@@ -12,6 +12,12 @@ styling, text and animation into a tiny `no_std` Rust core.
 It runs on real PSP hardware, PPSSPP, the browser (WASM) and headless Bun.
 Full design + contracts: [DESIGN.md](./DESIGN.md).
 
+## Screenshots
+
+| Gallery | Settings |
+| --- | --- |
+| ![Gallery demo UI showing a paged texture grid](./assets/screenshots/gallery.png) | ![Settings demo UI showing toggles, a slider and theme swatches](./assets/screenshots/settings.png) |
+
 ## Quickstart
 
 ```sh
