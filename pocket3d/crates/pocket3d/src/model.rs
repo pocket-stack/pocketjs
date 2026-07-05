@@ -48,9 +48,14 @@ pub struct ModelAsset {
     pub ibuf: wgpu::Buffer,
     pub primitives: Vec<Primitive>,
     pub skeleton: Skeleton,
-    pub skin: Option<Skin>,
+    /// All skins in the file. The joint palette concatenates them in order;
+    /// vertex joint indices were remapped at load to address the combined
+    /// palette (multi-skin characters: body + visor etc.).
+    pub skins: Vec<Skin>,
     pub clips: Vec<Clip>,
-    /// Rest-pose bounds (object space).
+    /// Rest-pose bounds (object space; skinned primitives measured through
+    /// their rest-pose joint matrices, so units/orientation baked into the
+    /// rig — cm exports, Z-up meshes — are already resolved).
     pub aabb: (Vec3, Vec3),
     #[allow(dead_code)]
     textures: Vec<GpuTexture>,
@@ -66,19 +71,20 @@ impl ModelAsset {
     }
 
     /// Joint palette for the given animation state (identity if no skin).
+    /// Skins concatenate in file order, matching the load-time joint remap.
     pub fn joint_palette(&self, anim: &AnimState, out: &mut Vec<Mat4>) {
         let mut globals = Vec::new();
         let clip = self.clips.get(anim.clip);
         self.skeleton
             .global_transforms(clip, anim.time, anim.looping, &mut globals);
         out.clear();
-        match &self.skin {
-            Some(skin) => {
-                for (i, &node) in skin.joints.iter().enumerate() {
-                    out.push(globals[node] * skin.inverse_bind[i]);
-                }
+        for skin in &self.skins {
+            for (i, &node) in skin.joints.iter().enumerate() {
+                out.push(globals[node] * skin.inverse_bind[i]);
             }
-            None => out.push(Mat4::IDENTITY),
+        }
+        if out.is_empty() {
+            out.push(Mat4::IDENTITY);
         }
     }
 
@@ -169,7 +175,7 @@ impl ModelAsset {
                 rest: Vec::new(),
                 order: Vec::new(),
             },
-            skin: None,
+            skins: Vec::new(),
             clips: Vec::new(),
             aabb,
             textures: vec![tex],
@@ -239,24 +245,38 @@ impl ModelAsset {
             order,
         };
 
-        // --- skin ------------------------------------------------------------
-        let skin = doc.skins().next().map(|s| {
-            let reader = s.reader(|b| buffers.get(b.index()).map(|d| d.0.as_slice()));
-            let inverse_bind: Vec<Mat4> = reader
-                .read_inverse_bind_matrices()
-                .map(|it| it.map(|m| Mat4::from_cols_array_2d(&m)).collect())
-                .unwrap_or_default();
-            let joints: Vec<usize> = s.joints().map(|j| j.index()).collect();
-            let inverse_bind = if inverse_bind.len() == joints.len() {
-                inverse_bind
-            } else {
-                vec![Mat4::IDENTITY; joints.len()]
-            };
-            Skin {
-                joints,
-                inverse_bind,
-            }
-        });
+        // --- skins -----------------------------------------------------------
+        // All of them: multi-skin characters (body + visor) address one
+        // concatenated joint palette, so each skin gets a base offset and the
+        // vertex joint indices are remapped below.
+        let skins: Vec<Skin> = doc
+            .skins()
+            .map(|s| {
+                let reader = s.reader(|b| buffers.get(b.index()).map(|d| d.0.as_slice()));
+                let inverse_bind: Vec<Mat4> = reader
+                    .read_inverse_bind_matrices()
+                    .map(|it| it.map(|m| Mat4::from_cols_array_2d(&m)).collect())
+                    .unwrap_or_default();
+                let joints: Vec<usize> = s.joints().map(|j| j.index()).collect();
+                let inverse_bind = if inverse_bind.len() == joints.len() {
+                    inverse_bind
+                } else {
+                    vec![Mat4::IDENTITY; joints.len()]
+                };
+                Skin {
+                    joints,
+                    inverse_bind,
+                }
+            })
+            .collect();
+        let skin_base: Vec<u32> = skins
+            .iter()
+            .scan(0u32, |acc, s| {
+                let base = *acc;
+                *acc += s.joints.len() as u32;
+                Some(base)
+            })
+            .collect();
 
         // --- meshes ----------------------------------------------------------
         // Global transforms of the rest pose, to bake node placement into
@@ -271,13 +291,26 @@ impl ModelAsset {
 
         for node in doc.nodes() {
             let Some(mesh) = node.mesh() else { continue };
-            let skinned = node.skin().is_some() && skin.is_some();
-            let bake = if skinned {
+            let node_skin = node.skin().map(|s| s.index()).filter(|&i| i < skins.len());
+            let bake = if node_skin.is_some() {
                 Mat4::IDENTITY
             } else {
                 rest_globals[node.index()]
             };
             let normal_bake = bake.inverse().transpose();
+            // Rest-pose joint matrices for measuring skinned bounds: raw
+            // vertices can live in an arbitrary rig space (cm, Z-up); only
+            // the skinned result is in object space.
+            let rest_palette: Vec<Mat4> = node_skin
+                .map(|si| {
+                    let s = &skins[si];
+                    s.joints
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &n)| rest_globals[n] * s.inverse_bind[i])
+                        .collect()
+                })
+                .unwrap_or_default();
 
             for prim in mesh.primitives() {
                 let reader = prim.reader(|b| buffers.get(b.index()).map(|d| d.0.as_slice()));
@@ -309,18 +342,41 @@ impl ModelAsset {
                     let n = normal_bake
                         .transform_vector3(Vec3::from(normals[i]))
                         .normalize_or_zero();
-                    aabb.0 = aabb.0.min(p);
-                    aabb.1 = aabb.1.max(p);
-                    let (j, w) = if skinned {
-                        (joints[i], weights[i])
-                    } else {
-                        ([0; 4], [1.0, 0.0, 0.0, 0.0])
+                    let (j, w) = match node_skin {
+                        Some(si) => {
+                            // Bounds from the rest-pose skinned position.
+                            let raw = Vec3::from(positions[i]);
+                            let mut rest = Vec3::ZERO;
+                            for k in 0..4 {
+                                let m = rest_palette.get(joints[i][k] as usize);
+                                if let Some(m) = m {
+                                    rest += m.transform_point3(raw) * weights[i][k];
+                                }
+                            }
+                            aabb.0 = aabb.0.min(rest);
+                            aabb.1 = aabb.1.max(rest);
+                            let base = skin_base[si];
+                            (
+                                [
+                                    base + joints[i][0] as u32,
+                                    base + joints[i][1] as u32,
+                                    base + joints[i][2] as u32,
+                                    base + joints[i][3] as u32,
+                                ],
+                                weights[i],
+                            )
+                        }
+                        None => {
+                            aabb.0 = aabb.0.min(p);
+                            aabb.1 = aabb.1.max(p);
+                            ([0; 4], [1.0, 0.0, 0.0, 0.0])
+                        }
                     };
                     vertices.push(ModelVertex {
                         pos: p.to_array(),
                         normal: n.to_array(),
                         uv: uvs[i],
-                        joints: [j[0] as u32, j[1] as u32, j[2] as u32, j[3] as u32],
+                        joints: j,
                         weights: w,
                     });
                 }
@@ -389,12 +445,13 @@ impl ModelAsset {
             });
         }
         log::info!(
-            "{}: {} verts, {} clips {:?}, skin joints {}",
+            "{}: {} verts, {} clips {:?}, {} skin(s), {} joints",
             path.display(),
             vertices.len(),
             clips.len(),
             clips.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
-            skin.as_ref().map(|s| s.joints.len()).unwrap_or(0)
+            skins.len(),
+            skins.iter().map(|s| s.joints.len()).sum::<usize>()
         );
 
         // --- upload ------------------------------------------------------------
@@ -449,7 +506,7 @@ impl ModelAsset {
             ibuf,
             primitives,
             skeleton,
-            skin,
+            skins,
             clips,
             aabb,
             textures,
