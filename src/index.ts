@@ -158,14 +158,20 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     }
   }
 
+  // Desktop hosts publish their logical UI size as ui.__viewport (the core
+  // root is already sized to it via Ui::set_viewport); PSP/web hosts omit it
+  // and keep the 480x272 contract.
+  const viewport = (host.ops as HostOps & { __viewport?: { w: number; h: number } }).__viewport;
+  const layerW = viewport?.w ?? SCREEN_W;
+  const layerH = viewport?.h ?? SCREEN_H;
   const appRoot = createLayer({
-    width: SCREEN_W,
-    height: SCREEN_H,
+    width: layerW,
+    height: layerH,
     overflow: ENUMS.Overflow.Hidden,
   });
   const overlayRoot = createLayer({
-    width: SCREEN_W,
-    height: SCREEN_H,
+    width: layerW,
+    height: layerH,
     posType: ENUMS.PosType.Absolute,
     insetT: 0,
     insetR: 0,

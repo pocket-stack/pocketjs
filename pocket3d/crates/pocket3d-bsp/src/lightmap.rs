@@ -30,7 +30,7 @@ impl LightmapAtlas {
     fn blank_page() -> Vec<u8> {
         // Mid-grey default so unlit faces are visible, not black holes.
         let mut p = vec![128u8; (PAGE_SIZE * PAGE_SIZE * 4) as usize];
-        p.chunks_exact_mut(4).for_each(|c| c[3] = 255);
+        p.as_chunks_mut::<4>().0.iter_mut().for_each(|c| c[3] = 255);
         p
     }
 

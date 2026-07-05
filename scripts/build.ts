@@ -17,6 +17,9 @@
 //   --config=<path>              load a Pocket config file (default: pocket.config.ts)
 //   --no-config                  ignore pocket.config.ts
 //   --extra-chars=<string>       force extra codepoints into every atlas
+//   --outdir=<path>              write <app>.js/.pak here instead of dist/
+//                                (external repos build their apps against a
+//                                vendored PocketJS and keep outputs local)
 
 import { existsSync, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
@@ -50,7 +53,7 @@ import {
 } from "../compiler/pak.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // pocketjs/
-const DIST = ROOT + "dist/";
+let DIST = ROOT + "dist/";
 
 interface PackageJson {
   name?: string;
@@ -74,6 +77,7 @@ for (const a of args) {
   else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
   else if (a.startsWith("--config=")) configPath = resolvePath(ROOT, a.slice("--config=".length));
   else if (a === "--no-config") useConfig = false;
+  else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
   else if (!a.startsWith("-")) appArg = a;
 }
 if (!appArg) {
@@ -282,7 +286,7 @@ for (const name of imageNames) {
 
 const pak = pack(blobs);
 await Bun.write(DIST + outName + ".pak", pak);
-console.log(`  pak: ${blobs.length} entries, ${pak.length} bytes -> dist/${outName}.pak`);
+console.log(`  pak: ${blobs.length} entries, ${pak.length} bytes -> ${DIST}${outName}.pak`);
 
 // ---------------------------------------------------------------------------
 // pass 2 — bundle (served from the pass-1 cache)
@@ -318,7 +322,7 @@ if (!result.success) {
   process.exit(1);
 }
 const bundle = result.outputs.find((o) => o.path.endsWith(".js"));
-console.log(`  pass 2: dist/${outName}.js (${bundle ? (await bundle.arrayBuffer()).byteLength : 0} bytes)`);
+console.log(`  pass 2: ${DIST}${outName}.js (${bundle ? (await bundle.arrayBuffer()).byteLength : 0} bytes)`);
 console.log("PocketJS build: done");
 
 // ---------------------------------------------------------------------------

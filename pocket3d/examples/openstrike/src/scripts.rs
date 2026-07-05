@@ -460,8 +460,10 @@ fn model_script(mut game: OpenStrike, args: &Args) -> Result<()> {
 
     // The two poses must differ on a meaningful number of pixels.
     let diff = shots[0]
-        .chunks_exact(4)
-        .zip(shots[1].chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(shots[1].as_chunks::<4>().0)
         .filter(|(a, b)| (a[0] as i32 - b[0] as i32).abs() + (a[1] as i32 - b[1] as i32).abs() > 24)
         .count();
     let total = (args.size.0 * args.size.1) as usize;

@@ -35,6 +35,9 @@ pub struct MeasureCtx {
 pub struct LayoutEngine {
     pub taffy: TaffyTree<MeasureCtx>,
     pub dirty: bool,
+    /// Layout viewport in px. Defaults to the PSP screen; desktop hosts set it
+    /// through `Ui::set_viewport` (the draw clip stage uses the same bounds).
+    pub viewport: (f32, f32),
 }
 
 impl Default for LayoutEngine {
@@ -48,6 +51,7 @@ impl LayoutEngine {
         LayoutEngine {
             taffy: TaffyTree::new(),
             dirty: true,
+            viewport: (spec::SCREEN_W as f32, spec::SCREEN_H as f32),
         }
     }
 }
@@ -263,8 +267,8 @@ pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut L
     let _ = eng.taffy.compute_layout_with_measure(
         root_nid,
         Size {
-            width: AvailableSpace::Definite(spec::SCREEN_W as f32),
-            height: AvailableSpace::Definite(spec::SCREEN_H as f32),
+            width: AvailableSpace::Definite(eng.viewport.0),
+            height: AvailableSpace::Definite(eng.viewport.1),
         },
         |known, _available, _id, ctx, _style| -> Size<f32> {
             match ctx {

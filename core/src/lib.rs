@@ -486,8 +486,35 @@ impl Ui {
         if self.layout.dirty {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
-        draw::build(&self.tree, &self.styles, &self.fonts, self.frame, &mut self.draw_list);
+        draw::build(
+            &self.tree,
+            &self.styles,
+            &self.fonts,
+            self.frame,
+            self.layout.viewport,
+            &mut self.draw_list,
+        );
         &self.draw_list
+    }
+
+    /// Resize the logical viewport (root node + layout bounds + draw clip).
+    /// Defaults to the PSP's 480x272; desktop hosts call this with their
+    /// surface size. Values are clamped to the DrawList's i16 coordinate
+    /// range. PSP/wasm hosts never call this, so goldens are unaffected.
+    pub fn set_viewport(&mut self, w: f32, h: f32) {
+        let w = w.clamp(1.0, 32000.0);
+        let h = h.clamp(1.0, 32000.0);
+        if self.layout.viewport == (w, h) {
+            return;
+        }
+        self.layout.viewport = (w, h);
+        self.set_prop(spec::ROOT_ID, spec::prop::WIDTH, w as f64);
+        self.set_prop(spec::ROOT_ID, spec::prop::HEIGHT, h as f64);
+    }
+
+    /// The current logical viewport (w, h) in px.
+    pub fn viewport(&self) -> (f32, f32) {
+        self.layout.viewport
     }
 
     // ---- introspection (hosts/backends/tests; not spec ops) -----------------

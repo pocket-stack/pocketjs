@@ -2,7 +2,7 @@
 //!
 //! Word/byte layout is pinned in spec/spec.ts ("DRAWLIST op format"); op
 //! codes in spec::draw_op. GUARANTEE upheld here: every coordinate emitted is
-//! inside [0, SCREEN_W] x [0, SCREEN_H] — never negative, never off-screen —
+//! inside [0, viewport w] x [0, viewport h] — never negative, never off-screen —
 //! because the PSP GE wraps i16 coordinates. Clipping re-interpolates UVs
 //! (TEX_QUAD) and gradient endpoint colors (GRAD_RECT).
 //!
@@ -50,8 +50,6 @@ impl Default for DrawList {
 
 // ---- small math (no_std: no libm, no micromath — local polyfills) -----------
 
-const SCREEN_W: f32 = spec::SCREEN_W as f32;
-const SCREEN_H: f32 = spec::SCREEN_H as f32;
 const PI: f32 = core::f32::consts::PI;
 
 #[inline]
@@ -139,7 +137,11 @@ struct Clip {
 }
 
 impl Clip {
-    const SCREEN: Clip = Clip { x0: 0.0, y0: 0.0, x1: SCREEN_W, y1: SCREEN_H };
+    /// The full-viewport clip (the PSP screen, or whatever `Ui::set_viewport`
+    /// established).
+    fn viewport(screen: (f32, f32)) -> Clip {
+        Clip { x0: 0.0, y0: 0.0, x1: screen.0, y1: screen.1 }
+    }
 
     fn intersect(&self, o: &Clip) -> Clip {
         Clip {
@@ -312,16 +314,27 @@ struct Walker<'a> {
     fonts: &'a Fonts,
     /// Global vblank counter — drives deterministic sprite frame selection.
     frame: u64,
+    /// Viewport bounds in px — every emitted coordinate is clipped to
+    /// [0, screen.0] x [0, screen.1] (i16-safe; hosts cap it well under 32k).
+    screen: (f32, f32),
     glyph_scratch: Vec<crate::text::GlyphPos>,
 }
 
 /// Build the full DrawList for the current (laid-out) tree. `frame` is the
 /// core's vblank counter (Ui.frame); animated sprites pick their cell from it.
-pub fn build(tree: &Tree, styles: &StyleTable, fonts: &Fonts, frame: u64, dl: &mut DrawList) {
+/// `screen` is the viewport every coordinate is clipped to.
+pub fn build(
+    tree: &Tree,
+    styles: &StyleTable,
+    fonts: &Fonts,
+    frame: u64,
+    screen: (f32, f32),
+    dl: &mut DrawList,
+) {
     dl.words.clear();
-    let mut w = Walker { tree, styles, fonts, frame, glyph_scratch: Vec::new() };
+    let mut w = Walker { tree, styles, fonts, frame, screen, glyph_scratch: Vec::new() };
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
-    w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::SCREEN, dl);
+    w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), dl);
 }
 
 impl<'a> Walker<'a> {
@@ -507,10 +520,10 @@ impl<'a> Walker<'a> {
         }
         // Conservative integer AABB: floor mins, ceil maxes.
         Clip {
-            x0: floorf(clampf(c.x0, 0.0, SCREEN_W)),
-            y0: floorf(clampf(c.y0, 0.0, SCREEN_H)),
-            x1: ceilf(clampf(c.x1, 0.0, SCREEN_W)),
-            y1: ceilf(clampf(c.y1, 0.0, SCREEN_H)),
+            x0: floorf(clampf(c.x0, 0.0, self.screen.0)),
+            y0: floorf(clampf(c.y0, 0.0, self.screen.1)),
+            x1: ceilf(clampf(c.x1, 0.0, self.screen.0)),
+            y1: ceilf(clampf(c.y1, 0.0, self.screen.1)),
         }
     }
 
@@ -586,7 +599,7 @@ impl<'a> Walker<'a> {
                 return;
             }
             for i in 1..clipped.len() - 1 {
-                emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip);
+                emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
             }
         }
     }
@@ -788,8 +801,8 @@ impl<'a> Walker<'a> {
 
         let ix0 = floorf(sx0).max(floorf(clip.x0)).max(0.0) as i32;
         let iy0 = floorf(sy0).max(floorf(clip.y0)).max(0.0) as i32;
-        let ix1 = ceilf(sx1).min(ceilf(clip.x1)).min(SCREEN_W) as i32;
-        let iy1 = ceilf(sy1).min(ceilf(clip.y1)).min(SCREEN_H) as i32;
+        let ix1 = ceilf(sx1).min(ceilf(clip.x1)).min(self.screen.0) as i32;
+        let iy1 = ceilf(sy1).min(ceilf(clip.y1)).min(self.screen.1) as i32;
         if ix1 <= ix0 || iy1 <= iy0 {
             return;
         }
@@ -901,8 +914,8 @@ impl<'a> Walker<'a> {
         }
         let ix0 = floorf(sx0).max(floorf(clip.x0)).max(0.0) as i32;
         let iy0 = floorf(sy0).max(floorf(clip.y0)).max(0.0) as i32;
-        let ix1 = ceilf(sx1).min(ceilf(clip.x1)).min(SCREEN_W) as i32;
-        let iy1 = ceilf(sy1).min(ceilf(clip.y1)).min(SCREEN_H) as i32;
+        let ix1 = ceilf(sx1).min(ceilf(clip.x1)).min(self.screen.0) as i32;
+        let iy1 = ceilf(sy1).min(ceilf(clip.y1)).min(self.screen.1) as i32;
         if ix1 <= ix0 || iy1 <= iy0 {
             return;
         }
@@ -1163,7 +1176,7 @@ impl<'a> Walker<'a> {
             // [0,SCREEN]; cells that can't be represented are dropped, and
             // cells fully outside the clip are dropped (backend scissor
             // pixel-clips partial overlap inside overflow-hidden regions).
-            if rx < 0.0 || ry < 0.0 || rx > SCREEN_W || ry > SCREEN_H {
+            if rx < 0.0 || ry < 0.0 || rx > self.screen.0 || ry > self.screen.1 {
                 continue;
             }
             if rx + cell_w <= clip.x0 || rx >= clip.x1 || ry + cell_h <= clip.y0 || ry >= clip.y1 {
@@ -1280,13 +1293,20 @@ fn sutherland_hodgman(poly: &[ClipVert], clip: &Clip) -> Vec<ClipVert> {
 }
 
 /// Emit one TRI op (degenerate triangles after rounding are dropped).
-fn emit_tri(dl: &mut DrawList, v0: &ClipVert, v1: &ClipVert, v2: &ClipVert, clip: &Clip) {
+fn emit_tri(
+    dl: &mut DrawList,
+    v0: &ClipVert,
+    v1: &ClipVert,
+    v2: &ClipVert,
+    clip: &Clip,
+    screen: (f32, f32),
+) {
     // Round + final clamp (interpolation is exact at clip bounds but stay
     // paranoid about float dust).
     let px = |v: &ClipVert| {
         (
-            clampf(roundf(clampf(v.x, clip.x0, clip.x1)), 0.0, SCREEN_W),
-            clampf(roundf(clampf(v.y, clip.y0, clip.y1)), 0.0, SCREEN_H),
+            clampf(roundf(clampf(v.x, clip.x0, clip.x1)), 0.0, screen.0),
+            clampf(roundf(clampf(v.y, clip.y0, clip.y1)), 0.0, screen.1),
         )
     };
     let (x0, y0) = px(v0);

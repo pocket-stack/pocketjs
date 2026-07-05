@@ -477,7 +477,7 @@ fn strip_cubic<T: Copy>(v: Vec<T>, cubic: bool) -> Vec<T> {
     if !cubic {
         return v;
     }
-    v.chunks_exact(3).map(|c| c[1]).collect()
+    v.as_chunks::<3>().0.iter().map(|c| c[1]).collect()
 }
 
 fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
@@ -487,7 +487,7 @@ fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
         Format::R8G8B8A8 => img.pixels.clone(),
         Format::R8G8B8 => {
             let mut out = Vec::with_capacity(n * 4);
-            for c in img.pixels.chunks_exact(3) {
+            for c in img.pixels.as_chunks::<3>().0 {
                 out.extend_from_slice(&[c[0], c[1], c[2], 255]);
             }
             out
@@ -501,7 +501,7 @@ fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
         }
         Format::R8G8 => {
             let mut out = Vec::with_capacity(n * 4);
-            for c in img.pixels.chunks_exact(2) {
+            for c in img.pixels.as_chunks::<2>().0 {
                 out.extend_from_slice(&[c[0], c[1], 0, 255]);
             }
             out

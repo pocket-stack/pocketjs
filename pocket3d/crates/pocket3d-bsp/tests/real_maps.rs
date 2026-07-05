@@ -32,7 +32,7 @@ fn dust2_loads_and_traces() {
     let placeholders = map
         .textures
         .iter()
-        .filter(|t| t.rgba.chunks_exact(4).next() == Some(&[200, 0, 200, 255]))
+        .filter(|t| t.rgba.as_chunks::<4>().0.iter().next() == Some(&[200, 0, 200, 255]))
         .count();
     assert!(
         placeholders * 10 < map.textures.len(),

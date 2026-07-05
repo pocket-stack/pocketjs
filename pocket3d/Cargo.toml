@@ -3,7 +3,10 @@ resolver = "2"
 members = [
     "crates/pocket3d",
     "crates/pocket3d-bsp",
+    "crates/pocket-mod",
+    "crates/pocket-ui-wgpu",
     "examples/openstrike",
+    "examples/uihost",
 ]
 
 [workspace.package]
@@ -15,6 +18,10 @@ repository = "https://github.com/pocketjs/pocketjs"
 [workspace.dependencies]
 pocket3d = { path = "crates/pocket3d" }
 pocket3d-bsp = { path = "crates/pocket3d-bsp" }
+pocket-mod = { path = "crates/pocket-mod" }
+pocket-ui-wgpu = { path = "crates/pocket-ui-wgpu" }
+pocketjs-core = { path = "../core", features = ["std"] }
+rquickjs = "0.12"
 
 wgpu = "25"
 winit = "0.30"
