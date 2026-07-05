@@ -58,7 +58,7 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
     <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <div class="flex items-center gap-2 font-semibold text-slate-100">${LOGO}<span>PocketJS</span></div>
-        <p class="mt-3 max-w-xs text-sm text-slate-400">Solid and Tailwind UI in an 8 MB app heap, rendered through a tiny native core.</p>
+        <p class="mt-3 max-w-xs text-sm text-slate-400">Solid and Tailwind UI under 8MB RAM, rendered through a tiny native core.</p>
       </div>
       <div class="text-sm">
         <h4 class="mb-3 font-semibold text-slate-200">Docs</h4>
