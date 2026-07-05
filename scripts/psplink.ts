@@ -30,6 +30,8 @@ const DEMOS_DIR = join(ROOT, "demos");
 const OUT_ROOT = join(ROOT, "dist/psplink");
 const MAIN_SUFFIX = "-main.tsx";
 const DEFAULT_PORT = 10000;
+const EXIT_HELPER_BIN = "exit-to-xmb";
+const EXIT_HELPER_PRX = join(OUT_ROOT, "PocketJS-exit-to-xmb.prx");
 
 const BTN_UP = "\x1b[A";
 const BTN_DOWN = "\x1b[B";
@@ -54,7 +56,7 @@ function usageText(): string {
     "  Up/Down                 Move selection",
     "  Enter                   Reset PSPLINK and start the selected game",
     "  r                       Rebuild selected game PRX",
-    "  q                       Quit",
+    "  q                       Return PSP to XMB and quit",
   ].join("\n");
 }
 
@@ -149,17 +151,34 @@ async function buildDemo(demo: Demo, opts: Options): Promise<void> {
   await Bun.write(demo.prx, await Bun.file(source).arrayBuffer());
 }
 
+async function buildExitHelper(opts: Options): Promise<void> {
+  const profile = opts.release ? "release" : "debug";
+  const source = join(ROOT, "native/target/mipsel-sony-psp", profile, `${EXIT_HELPER_BIN}.prx`);
+  await $`bun scripts/psp.ts --native-bin=${EXIT_HELPER_BIN} ${opts.release ? "--release" : ""}`.cwd(ROOT);
+  if (!existsSync(source)) throw new Error(`expected PSP exit helper PRX was not created: ${source}`);
+  mkdirSync(OUT_ROOT, { recursive: true });
+  await Bun.write(EXIT_HELPER_PRX, await Bun.file(source).arrayBuffer());
+}
+
 async function prepareCache(demos: Demo[], opts: Options, render?: (status: string) => void): Promise<void> {
   if (opts.rebuild) rmSync(OUT_ROOT, { recursive: true, force: true });
   mkdirSync(OUT_ROOT, { recursive: true });
-  if (!opts.buildAll && !opts.noBuild) return;
   if (opts.noBuild) {
-    const missing = demos.filter((demo) => !existsSync(demo.prx));
+    const missing = [
+      ...demos.filter((demo) => !existsSync(demo.prx)).map((demo) => basename(demo.prx)),
+      ...(!existsSync(EXIT_HELPER_PRX) ? [basename(EXIT_HELPER_PRX)] : []),
+    ];
     if (missing.length > 0) {
-      throw new Error(`--no-build requested, but missing PRX files: ${missing.map((demo) => basename(demo.prx)).join(", ")}`);
+      throw new Error(`--no-build requested, but missing PRX files: ${missing.join(", ")}`);
     }
     return;
   }
+
+  if (opts.rebuild || !existsSync(EXIT_HELPER_PRX)) {
+    render?.("building exit-to-XMB helper");
+    await buildExitHelper(opts);
+  }
+  if (!opts.buildAll) return;
 
   for (const [index, demo] of demos.entries()) {
     if (!opts.rebuild && existsSync(demo.prx)) continue;
@@ -244,6 +263,16 @@ class PsplinkSession {
     return true;
   }
 
+  async exitToXmb(helperPrx: string, render: (status: string) => void): Promise<void> {
+    render("starting XMB exit helper");
+    const out = await this.runPspsh(`ldstart host0:/${basename(helperPrx)}`, 8000);
+    if (!out.timedOut && /Failed|Error/i.test(out.text)) {
+      render(out.text || "XMB exit helper failed");
+      return;
+    }
+    render("XMB exit helper launched");
+  }
+
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
@@ -293,8 +322,8 @@ class PsplinkSession {
       child.kill();
     }, timeoutMs);
     const [stdout, stderr] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
+      new Response(child.stdout).text().catch((error) => String(error)),
+      new Response(child.stderr).text().catch((error) => String(error)),
       child.exited,
     ]);
     clearTimeout(timer);
@@ -310,8 +339,9 @@ class Picker {
 
   constructor(
     private readonly demos: Demo[],
-  private readonly onPick: (demo: Demo, index: number, render: (status: string) => void) => Promise<boolean>,
+    private readonly onPick: (demo: Demo, index: number, render: (status: string) => void) => Promise<boolean>,
     private readonly onRebuild: (demo: Demo, render: (status: string) => void) => Promise<void>,
+    private readonly onQuit: (render: (status: string) => void) => Promise<void>,
   ) {}
 
   async run(initialStatus: string): Promise<void> {
@@ -321,9 +351,15 @@ class Picker {
     process.stdin.resume();
     process.stdin.setEncoding("utf8");
     for await (const key of process.stdin) {
-      if (key === "\u0003") break;
+      if (key === "\u0003") {
+        await this.quit();
+        break;
+      }
       if (this.busy) continue;
-      if (key === "q") break;
+      if (key === "q") {
+        await this.quit();
+        break;
+      }
       if (key === BTN_UP || key === "k") this.move(-1);
       else if (key === BTN_DOWN || key === "j") this.move(1);
       else if (key === "\r" || key === "\n") await this.pick();
@@ -353,6 +389,12 @@ class Picker {
     });
   }
 
+  private async quit(): Promise<void> {
+    await this.withBusy(async (render) => {
+      await this.onQuit(render);
+    });
+  }
+
   private async withBusy(fn: (render: (status: string) => void) => Promise<void>): Promise<void> {
     this.busy = true;
     const render = (status: string) => {
@@ -372,7 +414,7 @@ class Picker {
     process.stdout.write("\x1b[2J\x1b[H");
     console.log("PocketJS PSPLINK Switcher");
     console.log("");
-    console.log("Use Up/Down, Enter to launch, r to rebuild selected, q to quit.");
+    console.log("Use Up/Down, Enter to launch, r to rebuild selected, q to return to XMB and quit.");
     console.log("");
     for (const [index, demo] of this.demos.entries()) {
       const cursor = index === this.cursor ? ">" : " ";
@@ -437,6 +479,9 @@ async function main(): Promise<void> {
       render(`rebuilding ${demo.name}`);
       await buildDemo(demo, opts);
       render(`rebuilt ${demo.name}`);
+    },
+    async (render) => {
+      await session.exitToXmb(EXIT_HELPER_PRX, render);
     },
   );
   await picker.run(`PSP connected on port ${basePort}; host0: ${OUT_ROOT}`);
