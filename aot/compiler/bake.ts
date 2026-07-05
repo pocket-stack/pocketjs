@@ -73,6 +73,8 @@ export function bake(ctx: Ctx, registry: Registry): void {
   for (const [name, decl] of registry.sprites) {
     const [w, h] = decl.size;
     if (w !== 16 || h !== 16) throw new Error(`v1 sprites must be 16x16 ("${name}" is ${w}x${h})`);
+    // v1 gives each sprite its own OBJ palette bank; hardware has only 16.
+    if (spriteIdx >= 16) throw new Error(`v1 supports at most 16 sprites (one OBJ palette bank each); "${name}" is #${spriteIdx}`);
     const palbank = spriteIdx; // one OBJ palette bank per sprite
     decl.palette.forEach((rgb, i) => {
       if (i < 16) ctx.objPalette[palbank * 16 + i] = rgb555(rgb[0], rgb[1], rgb[2]);

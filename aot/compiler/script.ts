@@ -40,8 +40,11 @@ class Emitter {
     return at;
   }
   private patch(at: number): void {
-    // rel is measured from the byte AFTER the 2-byte operand
-    const rel = this.code.length - (at + 2);
+    this.patchTo(at, this.code.length);
+  }
+  /** Patch a rel16 operand at `at` to jump to absolute code offset `target`. */
+  private patchTo(at: number, target: number): void {
+    const rel = target - (at + 2); // rel is measured from AFTER the 2-byte operand
     this.code[at] = rel & 0xff;
     this.code[at + 1] = (rel >> 8) & 0xff;
   }
@@ -133,7 +136,12 @@ class Emitter {
     }
   }
 
-  private emitChoice(options: string[]): void {
+  private emitChoice(options: string[], node: ts.Node): void {
+    // The textbox renders choice rows TEXT_ROW0(13)..BOX_ROW1(19) = 7 rows, so
+    // an 8th option would be selectable but never shown. Cap at 7.
+    if (options.length < 1 || options.length > 7) {
+      throw new ScriptError(node, this.sf, `choose() needs 1..7 options (got ${options.length})`);
+    }
     this.u8(OP.CHOICE);
     this.u8(options.length);
     for (const o of options) this.u16(this.ctx.internText(o));
@@ -150,7 +158,7 @@ class Emitter {
         if (!next || !ts.isSwitchStatement(next) || !this.isRef(next.expression, choice.name)) {
           throw new ScriptError(s, this.sf, "`const x = yield choose(...)` must be immediately followed by `switch (x)`");
         }
-        this.emitChoice(choice.options);
+        this.emitChoice(choice.options, s);
         this.compileChoiceSwitch(next, choice.options);
         i++; // consume the switch
         continue;
@@ -192,36 +200,58 @@ class Emitter {
     }
   }
 
-  // switch over a choice index (value already on stack); consumes it.
+  // Switch over a choice index (value already on stack); consumes it.
+  //
+  // Proper switch lowering so `default` may appear anywhere and empty
+  // fall-through case labels share the next clause's body (JS semantics):
+  //   dispatch: for each case  DUP; PUSH idx; NE; JUMP_IF_FALSE bodyN  (jump if ==)
+  //             default -> JUMP bodyDefault ;  else -> JUMP end
+  //   bodies:   clause statements in source order (break -> JUMP end;
+  //             no break -> falls into the next clause's body)
+  //   end:      POP (drop the choice index)
   private compileChoiceSwitch(sw: ts.SwitchStatement, options: string[]): void {
-    const ends: number[] = [];
-    for (const clause of sw.caseBlock.clauses) {
+    const clauses = sw.caseBlock.clauses;
+    const caseJumps = new globalThis.Map<number, number>(); // clauseIndex -> JUMP_IF_FALSE operand
+    let defaultIndex = -1;
+
+    // Dispatch: test every CASE (default is skipped here — it is the fallthrough).
+    clauses.forEach((clause, i) => {
       if (ts.isDefaultClause(clause)) {
-        this.compileClauseBody(clause.statements);
-        ends.push(this.emitJump(OP.JUMP));
-        continue;
+        if (defaultIndex >= 0) throw new ScriptError(clause, this.sf, "duplicate default clause");
+        defaultIndex = i;
+        return;
       }
-      const label = this.staticVal(clause.expression);
-      const idx = options.indexOf(String(label));
-      if (idx < 0) throw new ScriptError(clause, this.sf, `case "${label}" is not one of the choose() options`);
+      const idx = options.indexOf(String(this.staticVal(clause.expression)));
+      if (idx < 0) throw new ScriptError(clause, this.sf, `case is not one of the choose() options`);
       this.u8(OP.DUP);
       this.u8(OP.PUSH_CONST);
       this.i16(idx);
-      this.u8(OP.EQ);
-      const nextCase = this.emitJump(OP.JUMP_IF_FALSE);
-      this.compileClauseBody(clause.statements);
-      ends.push(this.emitJump(OP.JUMP));
-      this.patch(nextCase);
-    }
-    for (const e of ends) this.patch(e);
-    this.u8(OP.POP); // drop the choice index
-  }
+      this.u8(OP.NE);
+      caseJumps.set(i, this.emitJump(OP.JUMP_IF_FALSE)); // NE==0 (equal) -> jump to this body
+    });
+    // No case matched -> default body if present, else end.
+    const fallJump = this.emitJump(OP.JUMP);
 
-  private compileClauseBody(stmts: readonly ts.Statement[]): void {
-    for (const st of stmts) {
-      if (ts.isBreakStatement(st)) break;
-      this.compileStatement(st);
-    }
+    // Bodies in source order; a clause without `break` falls into the next.
+    const endJumps: number[] = [];
+    clauses.forEach((clause, i) => {
+      const bodyOffset = this.code.length;
+      const cj = caseJumps.get(i);
+      if (cj !== undefined) this.patchTo(cj, bodyOffset);
+      if (i === defaultIndex) this.patchTo(fallJump, bodyOffset);
+      for (const st of clause.statements) {
+        if (ts.isBreakStatement(st)) {
+          endJumps.push(this.emitJump(OP.JUMP));
+          break;
+        }
+        this.compileStatement(st);
+      }
+    });
+
+    const end = this.code.length;
+    if (defaultIndex < 0) this.patchTo(fallJump, end); // no default -> fall through to end
+    for (const e of endJumps) this.patchTo(e, end);
+    this.u8(OP.POP); // drop the choice index
   }
 
   // --- pattern helpers -----------------------------------------------------

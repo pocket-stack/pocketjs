@@ -156,9 +156,12 @@ export const varId = <T extends string>(id: T): VarId => id as unknown as VarId;
 export type ScriptBody = () => Generator<unknown, void, unknown>;
 
 export function script(bodyOrId: ScriptBody | number): ScriptRef {
+  // The compiler rewrites every `script(function*(){...})` to `script(<id>)`
+  // before executing this module, so we only ever see a number here.
   if (typeof bodyOrId === "number") return { __pjgbScript: bodyOrId };
-  // Fallback (un-rewritten execution): assign a sequential id.
-  return { __pjgbScript: REGISTRY.scriptCount++ };
+  throw new Error(
+    "script() must be compiled by @pocketjs/aot, not executed directly — the generator body is lowered from its AST.",
+  );
 }
 
 // Op wrappers — recognized by name in the residualizer. Runtime bodies unused.

@@ -103,6 +103,10 @@ async function main(): Promise<void> {
       press("A", 1, 12), // dismiss -> END
       rd("end_script", R.SCRIPT, 1),
       rd("end_text", R.TEXT, 1),
+      // talk AGAIN: beat_rival_1 is now set, so the folded THEN branch runs.
+      press("A", 1, 8),
+      rd("again_cur", R.CUR, 2),
+      rd("again_text", R.TEXT, 1),
     ]);
     check("faces right at rival", r.faceDir, 3);
     check("blocked (x stays 11)", r.faceX, 11);
@@ -115,6 +119,8 @@ async function main(): Promise<void> {
     check('reward shows "Take this Potion"', r.won_cur, tid("Take this Potion. You will need it."));
     check("script ends after reward", r.end_script, 0);
     check("textbox closed at end", r.end_text, 0);
+    check("re-talk: flag branch shows post-win line", r.again_cur, tid("The road ahead is tougher than it looks."));
+    check("re-talk: textbox up", r.again_text, 1);
   }
 
   // === Scenario 3: warp town -> route101 ===

@@ -17,6 +17,7 @@ export function validate(ctx: Ctx, model: GameModel): void {
   if (model.maps.length > BUDGET.MAX_MAPS) err.push(`too many maps (${model.maps.length} > ${BUDGET.MAX_MAPS})`);
   if (ctx.spriteProtos.length > BUDGET.MAX_SPRITES) err.push(`too many sprites`);
   if (ctx.flags.size > BUDGET.MAX_FLAGS) err.push(`too many flags (${ctx.flags.size} > ${BUDGET.MAX_FLAGS})`);
+  if (ctx.vars.size > BUDGET.MAX_VARS) err.push(`too many vars (${ctx.vars.size} > ${BUDGET.MAX_VARS})`);
   if (ctx.texts.size > BUDGET.MAX_TEXTS) err.push(`too many texts`);
   if (ctx.scripts.length > BUDGET.MAX_SCRIPTS) err.push(`too many scripts`);
   if (ctx.bgTiles.length > BUDGET.MAX_BG_TILES) err.push(`BG tiles ${ctx.bgTiles.length} > ${BUDGET.MAX_BG_TILES}`);

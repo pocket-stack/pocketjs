@@ -35,6 +35,7 @@ function findScriptCalls(sf: ts.SourceFile): ts.CallExpression[] {
       n.arguments.length === 1
     ) {
       out.push(n);
+      return; // do not recurse into the generator body (no nested script())
     }
     ts.forEachChild(n, visit);
   };

@@ -276,13 +276,15 @@ export const flagAddr = (flagId: number): { addr: number; bit: number } => ({
 export const BUDGET = {
   MAX_ACTORS_PER_MAP: 24,
   MAX_MAPS: 32,
-  MAX_SPRITES: 32,
+  MAX_SPRITES: 16, // one OBJ palette bank per sprite; hardware has 16 banks
   MAX_FLAGS: 128,
   MAX_VARS: 16,
   MAX_TEXTS: 512,
   MAX_SCRIPTS: 256,
-  MAX_BG_TILES: 1024, // one 4bpp charblock = 512 tiles; we allow 2 charblocks
-  MAX_OBJ_TILES: 1024,
+  // BG char data lives in charblock 0 (512 4bpp tiles); the map screenblock
+  // sits at SBB 8 = the start of charblock 1, so BG tiles must fit in 512.
+  MAX_BG_TILES: 512,
+  MAX_OBJ_TILES: 1024, // OBJ VRAM 0x06010000..0x06018000 = 1024 4bpp tiles
   MAX_MAP_TILES: 128 * 128,
 } as const;
 
