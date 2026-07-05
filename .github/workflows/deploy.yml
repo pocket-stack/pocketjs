@@ -5,7 +5,7 @@ name: Deploy pocketjs.dev
 # Workers" token) and CLOUDFLARE_ACCOUNT_ID.
 on:
   push:
-    branches: [main]
+    branches: [main, ci-cloudflare-deploy]
   workflow_dispatch: {}
 
 concurrency:
