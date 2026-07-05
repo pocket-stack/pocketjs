@@ -7,6 +7,7 @@
   "exports": {
     ".": "./dsl/index.ts",
     "./jsx-runtime": "./dsl/jsx-runtime.ts",
+    "./jsx-dev-runtime": "./dsl/jsx-dev-runtime.ts",
     "./compiler": "./compiler/index.ts",
     "./spec": "./spec/pjgb.ts"
   },

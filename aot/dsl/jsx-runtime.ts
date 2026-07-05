@@ -6,26 +6,79 @@
 // walks. Pure user components (e.g. TownSign) are just called and expanded here;
 // they never ship to the GBA.
 
+import type { Direction, MovementKind, ScriptRef, SpriteId, TileCoord } from "./types.ts";
+
 export interface PjgbNode {
   host: string; // host element name, or "#fragment"
   props: Record<string, unknown>;
   children: PjgbNode[];
 }
 
+export type PjgbChild = PjgbNode | readonly PjgbChild[] | boolean | null | undefined;
+
 /** Marker for a host element (Map, Layer, Npc, ...). */
-export interface HostMarker {
+export interface HostMarker<Props extends object = Record<string, unknown>> {
   readonly __pjgbHost: true;
-  readonly name: string;
+  readonly hostName: string;
+  (props: Props & { children?: PjgbChild }): PjgbNode;
 }
 
-export const Fragment: HostMarker = { __pjgbHost: true, name: "#fragment" };
+export interface LayerProps {
+  rows: readonly string[];
+  legend: Record<string, string>;
+}
 
-export function hostElement(name: string): HostMarker {
-  return { __pjgbHost: true, name };
+export interface PlayerSpawnProps {
+  id?: string;
+  at: TileCoord;
+  facing: Direction;
+}
+
+export interface EntranceProps {
+  id: string;
+  at: TileCoord;
+  facing: Direction;
+}
+
+export interface NpcProps {
+  id: string;
+  sprite: SpriteId | string;
+  at: TileCoord;
+  facing: Direction;
+  movement?: MovementKind;
+  onTalk?: ScriptRef;
+}
+
+export interface SignProps {
+  text: string;
+  at: TileCoord;
+}
+
+export interface WarpProps {
+  to: `${string}:${string}` | string;
+  at: TileCoord;
+}
+
+export const Fragment = hostElement("#fragment");
+
+export function hostElement<Props extends object = Record<string, unknown>>(
+  name: string,
+): HostMarker<Props> {
+  const marker = ((props: Props & { children?: PjgbChild }) => {
+    const { children, ...rest } = props ?? {};
+    const kids = normalizeChildren(children);
+    if (name === "#fragment") return { host: "#fragment", props: {}, children: kids };
+    return { host: name, props: rest, children: kids };
+  }) as HostMarker<Props>;
+  Object.defineProperties(marker, {
+    __pjgbHost: { value: true },
+    hostName: { value: name },
+  });
+  return marker;
 }
 
 function isHost(t: unknown): t is HostMarker {
-  return typeof t === "object" && t !== null && (t as HostMarker).__pjgbHost === true;
+  return (typeof t === "object" || typeof t === "function") && t !== null && (t as HostMarker).__pjgbHost === true;
 }
 
 /** Flatten fragments/arrays/falsy into a flat list of real element nodes. */
@@ -53,13 +106,17 @@ function normalizeChildren(raw: unknown): PjgbNode[] {
   return out;
 }
 
+export function normalizeSceneChildren(raw: unknown): PjgbNode[] {
+  return normalizeChildren(raw);
+}
+
 export function jsx(type: unknown, props: Record<string, unknown>): PjgbNode {
   const { children, ...rest } = props ?? {};
   const kids = normalizeChildren(children);
 
   if (isHost(type)) {
-    if (type.name === "#fragment") return { host: "#fragment", props: {}, children: kids };
-    return { host: type.name, props: rest, children: kids };
+    if (type.hostName === "#fragment") return { host: "#fragment", props: {}, children: kids };
+    return { host: type.hostName, props: rest, children: kids };
   }
   if (typeof type === "function") {
     // Pure build-time component: execute and expand.
@@ -74,3 +131,10 @@ export function jsx(type: unknown, props: Record<string, unknown>): PjgbNode {
 
 export const jsxs = jsx;
 export const jsxDEV = jsx;
+
+export namespace JSX {
+  export type Element = PjgbNode;
+  export interface ElementChildrenAttribute {
+    children: {};
+  }
+}

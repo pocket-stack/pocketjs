@@ -46,6 +46,7 @@ export const AOT_DOC_NAV: DocSection[] = [
     title: "Product line",
     items: [
       { slug: "overview", title: "Overview" },
+      { slug: "getting-started", title: "Getting started" },
       { slug: "authoring", title: "Authoring model" },
       { slug: "compiler", title: "Compiler pipeline" },
     ],

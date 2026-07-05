@@ -78,7 +78,9 @@ export async function evaluateGame(entryPath: string): Promise<EvalResult> {
       target: ts.ScriptTarget.ES2020,
       esModuleInterop: true,
     },
-  }).outputText;
+  }).outputText
+    .replace(/(["'])@pocketjs\/aot\/jsx-runtime\1/g, JSON.stringify(DSL_DIR + "/jsx-runtime.ts"))
+    .replace(/(["'])@pocketjs\/aot\/jsx-dev-runtime\1/g, JSON.stringify(DSL_DIR + "/jsx-dev-runtime.ts"));
 
   // Execute: write to a sibling temp file so relative/abs imports resolve, then
   // import it. Import the DSL via the SAME absolute path to share REGISTRY.

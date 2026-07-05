@@ -10,7 +10,18 @@
 // The op wrappers (say/choose/hasFlag/...) exist for typing + AST recognition;
 // their runtime bodies never run on host or GBA.
 
-import { hostElement, type PjgbNode } from "./jsx-runtime.ts";
+import {
+  hostElement,
+  normalizeSceneChildren,
+  type EntranceProps,
+  type LayerProps,
+  type NpcProps,
+  type PjgbChild,
+  type PjgbNode,
+  type PlayerSpawnProps,
+  type SignProps,
+  type WarpProps,
+} from "./jsx-runtime.ts";
 import type {
   BattleId,
   Direction,
@@ -26,7 +37,16 @@ import type {
 
 export * from "./types.ts";
 export { Fragment } from "./jsx-runtime.ts";
-export type { PjgbNode } from "./jsx-runtime.ts";
+export type {
+  EntranceProps,
+  LayerProps,
+  NpcProps,
+  PjgbChild,
+  PjgbNode,
+  PlayerSpawnProps,
+  SignProps,
+  WarpProps,
+} from "./jsx-runtime.ts";
 
 type Rgb = readonly [number, number, number];
 type Whitespace = " " | "\t" | "\r";
@@ -145,12 +165,12 @@ export function __getRegistry(): Registry {
 // Host elements (design §18). These are markers; the IR builder walks them.
 // ---------------------------------------------------------------------------
 export const Map = hostElement("Map");
-export const Layer = hostElement("Layer");
-export const Npc = hostElement("Npc");
-export const Warp = hostElement("Warp");
-export const Sign = hostElement("Sign");
-export const PlayerSpawn = hostElement("PlayerSpawn");
-export const Entrance = hostElement("Entrance");
+export const Layer = hostElement<LayerProps>("Layer");
+export const Npc = hostElement<NpcProps>("Npc");
+export const Warp = hostElement<WarpProps>("Warp");
+export const Sign = hostElement<SignProps>("Sign");
+export const PlayerSpawn = hostElement<PlayerSpawnProps>("PlayerSpawn");
+export const Entrance = hostElement<EntranceProps>("Entrance");
 export const Trigger = hostElement("Trigger");
 export const Collision = hostElement("Collision");
 
@@ -184,6 +204,7 @@ type ExtractTileNames<Legend> = Extract<
   }[keyof Legend],
   string
 >;
+const ENTITY_HOSTS = new Set(["PlayerSpawn", "Entrance", "Npc", "Sign", "Warp"]);
 
 function node(host: string, props: Record<string, unknown>, children: PjgbNode[] = []): PjgbNode {
   return { host, props, children };
@@ -388,6 +409,18 @@ export class MapBuilder<Name extends string = string, Tileset extends TilesetDec
 
   layer<const Layer extends LayerSpec>(layer: CompatibleLayer<Tileset, Layer>): this {
     this.append(node("Layer", { rows: [...layer.rows], legend: { ...layer.legend } }));
+    return this;
+  }
+
+  entities(...children: PjgbChild[]): this {
+    for (const child of normalizeSceneChildren(children)) {
+      if (!ENTITY_HOSTS.has(child.host)) {
+        throw new Error(
+          `defineMap("${this.name}").entities(...) does not accept <${child.host}>; use .layer(...) for tile layers`,
+        );
+      }
+      this.append(child);
+    }
     return this;
   }
 

@@ -39,7 +39,9 @@ The **two zones** (design §8):
 ## The DSL
 
 ```tsx
+/** @jsxImportSource @pocketjs/aot */
 import { ascii, defineGame, defineMap, tile,
+         Entrance, Npc, PlayerSpawn, Sign, Warp,
          script, say, choose, hasFlag, setFlag, battle, giveItem,
          lockPlayer, releasePlayer, facePlayer } from "@pocketjs/aot";
 import { hero, town } from "./assets";
@@ -66,6 +68,18 @@ const RivalTalk = script(function* () {
   yield releasePlayer();
 });
 
+function LittlerootEntities() {
+  return (
+    <>
+      <PlayerSpawn id="spawn" at={[2, 2]} facing="down" />
+      <Entrance id="south" at={[3, 0]} facing="up" />
+      <Npc id="rival" sprite={hero} at={[4, 2]} facing="left" onTalk={RivalTalk} />
+      <Sign text="LITTLEROOT TOWN" at={[3, 1]} />
+      <Warp to="route101:north" at={[3, 0]} />
+    </>
+  );
+}
+
 const Littleroot = defineMap("littleroot")
   .tileset(town)
   .layer(
@@ -80,14 +94,16 @@ const Littleroot = defineMap("littleroot")
       H: tile("wall"),
     }),
   )
-  .spawn("spawn").at(2, 2).facing("down")
-  .npc("rival").sprite(hero).at(4, 2).facing("left").talk(RivalTalk)
-  .sign("LITTLEROOT TOWN").at(3, 1)
-  .warp("route101:north").at(3, 0)
+  .entities(<LittlerootEntities />)
   .done();
 
 export default defineGame({ title: "POCKET TOWN", start: "littleroot:spawn", maps: [Littleroot] });
 ```
+
+Tile layers stay on the builder path so `.tileset(town).layer(...)` can type-check
+legend tile names against the selected tileset. JSX is used one layer later for
+build-time scene prefabs: pure components expand into static `Npc`/`Sign`/`Warp`
+nodes and never ship to the cartridge.
 
 See `demo/game.tsx` (the town + route), `demo/assets.ts` (DSL declarations), and `demo/imagegen/` (the source sheet plus deterministic GBA 4bpp extractor).
 

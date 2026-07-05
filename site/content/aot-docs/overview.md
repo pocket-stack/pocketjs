@@ -12,7 +12,7 @@ it targets tile maps, sprites, palettes, dialogue, flags, choices, and warps.
 
 ## Current slice
 
-- Author maps, layers, NPCs, warps, and scripts in TypeScript/JSX.
+- Author typed ASCII tile layers with the map builder and compose entities with build-time JSX prefabs.
 - Bake GBA-native 4bpp graphics, BGR555 palettes, and packed glyph data.
 - Lower supported generator scripts into bytecode for a small runtime VM.
 - Preview captured cartridge states in the independent [web demo](/aot/#demo).
