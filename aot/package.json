@@ -14,11 +14,12 @@
     "pocket-aot": "./compiler/cli.ts"
   },
   "scripts": {
-    "build": "bun compiler/cli.ts build demo/game.tsx --out dist/pocket-town.gba",
+    "assets": "bun demo/imagegen/build-assets.ts",
+    "build": "bun run assets && bun compiler/cli.ts build demo/game.tsx --out dist/pocket-town.gba",
     "play": "bash play.sh",
     "gen": "bun spec/gen-c.ts",
     "handcart": "bun test/handcart.ts",
-    "test": "bun test/e2e.ts"
+    "test": "bun run assets && bun test/e2e.ts"
   },
   "devDependencies": {
     "typescript": "^5"

@@ -10,12 +10,12 @@ This is not a TypeScript-to-GBA compiler. It is a domain-aware partial evaluator
 
 ## Status
 
-A complete **vertical slice** runs end-to-end: a Pokémon-like overworld authored in TSX compiles to a real `.gba` ROM and passes a headless mGBA E2E suite (17 assertions on real emulated hardware) covering boot, grid movement, collision, NPC dialogue, a choice menu, a battle→flag→item reward, and warping between maps.
+A complete **vertical slice** runs end-to-end: a retro monster-RPG-style overworld authored in TSX compiles to a real `.gba` ROM and passes a headless mGBA E2E suite (19 assertions on real emulated hardware) covering boot, grid movement, collision, NPC dialogue, a choice menu, a battle→flag→item reward, and warping between maps.
 
 | ![town](docs/town.png) | ![dialogue](docs/dialogue.png) | ![choice](docs/choice.png) |
 |---|---|---|
 
-*Left: the Littleroot-style town (houses, pond, sign, NPCs, player). Middle: NPC dialogue in a tile-font textbox. Right: the `choose()` menu with cursor. All rendered by the C runtime from compiled PJGB data — no JS on the cartridge.*
+*Left: the Littleroot-style town (houses, pond, sign, NPCs, player). Middle: NPC dialogue in a palette-shaded, subpixel-covered textbox. Right: the `choose()` menu with cursor. All rendered by the C runtime from compiled PJGB data — no JS on the cartridge.*
 
 ## Architecture
 
@@ -68,7 +68,7 @@ const RivalTalk = script(function* () {
 export default defineGame({ title: "POCKET TOWN", start: "littleroot:spawn", maps: [/* ... */] });
 ```
 
-See `demo/game.tsx` (the town + route) and `demo/assets.ts` (tileset + procedural hero sprite).
+See `demo/game.tsx` (the town + route), `demo/assets.ts` (DSL declarations), and `demo/imagegen/` (the source sheet plus deterministic GBA 4bpp extractor).
 
 ## Binary contract
 
@@ -76,7 +76,7 @@ See `demo/game.tsx` (the town + route) and `demo/assets.ts` (tileset + procedura
 
 ## The GBA runtime (`runtime/`)
 
-A small, no-allocation native engine in C: bare-metal `crt0.s` + `gba.ld`, a chunk loader, Mode-0 tiled BG + hardware-sprite OAM with VBlank DMA, grid movement/collision, a suspendable stack-VM (`script_vm.c`), and a tile-font textbox/choice menu. It writes live game state into a fixed EWRAM debug block so the emulator harness can assert without symbols. Cross-compiles with `arm-none-eabi-gcc`; boots in mGBA (and is structured for real hardware, pending a Nintendo-logo header pass — see design §26.6).
+A small, no-allocation native engine in C: bare-metal `crt0.s` + `gba.ld`, a chunk loader, Mode-0 tiled BG + hardware-sprite OAM with VBlank DMA, grid movement/collision, a suspendable stack-VM (`script_vm.c`), and a subpixel-covered tile textbox/choice menu. It writes live game state into a fixed EWRAM debug block so the emulator harness can assert without symbols. Cross-compiles with `arm-none-eabi-gcc`; boots in mGBA (and is structured for real hardware, pending a Nintendo-logo header pass — see design §26.6).
 
 ## Build & test
 
@@ -84,8 +84,9 @@ A small, no-allocation native engine in C: bare-metal `crt0.s` + `gba.ld`, a chu
 # prerequisites: bun, arm-none-eabi-gcc + binutils, mgba (libmgba)
 bun aot/spec/gen-c.ts                       # regenerate runtime/pjgb_gen.h
 bash aot/test/harness/build.sh              # build the headless mGBA runner (once)
-bun aot/compiler/cli.ts build aot/demo/game.tsx --out aot/dist/pocket-town.gba
-bun aot/test/e2e.ts                         # build ROM + run the headless mGBA E2E suite
+cd aot
+bun run build                               # refresh imagegen assets + build ROM
+bun run test                                # refresh assets + run the headless mGBA E2E suite
 ```
 
 Outputs: `dist/pocket-town.gba`, `.pjgb` (cartridge blob), `.ir.json` (inspectable IR), `.debug.json` (flag/text/map symbol map for the harness).

@@ -31,9 +31,11 @@ function parseRows(rows: string[], w: number, h: number): number[] {
   return px;
 }
 
-// Textbox palette (BG bank 15): 0 transparent, 1 ink/white, 2 box background.
-const TEXT_INK = 1;
-const TEXT_BG = 2;
+// Textbox palette (BG bank 15): 1..5 are subpixel coverage ink shades,
+// 6 is the opaque textbox background.
+const TEXT_INK_START = 1;
+const TEXT_INK_LEVELS = 5;
+const TEXT_BG = 6;
 
 export function bake(ctx: Ctx, registry: Registry): void {
   const game = registry.game!;
@@ -55,7 +57,7 @@ export function bake(ctx: Ctx, registry: Registry): void {
 
   ctx.fontBase = ctx.bgTiles.length;
   for (let ch = FIRST_CHAR; ch <= LAST_CHAR; ch++) {
-    ctx.bgTiles.push(tile4(glyphPixels(ch, TEXT_INK, TEXT_BG)));
+    ctx.bgTiles.push(tile4(glyphPixels(ch, TEXT_INK_START, TEXT_BG, TEXT_INK_LEVELS)));
   }
   ctx.boxTile = ctx.bgTiles.length;
   ctx.bgTiles.push(tile4(new Array(64).fill(TEXT_BG)));
@@ -65,7 +67,11 @@ export function bake(ctx: Ctx, registry: Registry): void {
     if (i < 16) ctx.bgPalette[i] = rgb555(rgb[0], rgb[1], rgb[2]);
   });
   ctx.bgPalette[240 + 0] = rgb555(0, 0, 0);
-  ctx.bgPalette[240 + TEXT_INK] = rgb555(248, 248, 248);
+  ctx.bgPalette[240 + 1] = rgb555(76, 88, 132);
+  ctx.bgPalette[240 + 2] = rgb555(116, 128, 168);
+  ctx.bgPalette[240 + 3] = rgb555(160, 170, 204);
+  ctx.bgPalette[240 + 4] = rgb555(206, 214, 238);
+  ctx.bgPalette[240 + 5] = rgb555(248, 248, 248);
   ctx.bgPalette[240 + TEXT_BG] = rgb555(24, 32, 72);
 
   // --- sprites: OBJ tiles + palette bank per sprite ---
