@@ -1,0 +1,37 @@
+# pocketjs-3ds-ffi — bridges pocketjs-core to the 3DS C host (native-3ds/source).
+#
+# A `staticlib`: cargo-3ds/build-std compiles it for `armv6k-nintendo-3ds` and
+# the devkitARM Makefile links the resulting libpocketjs_3ds_ffi.a into the C
+# host. It exposes the SAME op surface as the wasm host (extern "C" `pj_*`), and
+# — the v1 render path — the SAME deterministic software rasterizer that
+# produces the byte-exact wasm/Bun goldens, so the 3DS shows pixel-identical
+# output. The C host just uploads pj_render()'s framebuffer as one citro texture
+# and blits it scaled to the 400×240 top screen (see native-3ds/source/main.c).
+#
+# STANDALONE (not in a workspace) — same rule as ../core and ../native. Build it
+# for the 3DS via scripts/3ds.ts; it also builds on the HOST (a plain staticlib)
+# which is how its Rust is unit-checked without the cross toolchain.
+
+[package]
+name = "pocketjs-3ds-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+pocketjs-core = { path = "../../core" }
+
+# no_std + panic=abort: no unwinder (no rust_eh_personality), links cleanly into
+# the devkitARM C host. build-std stays core+alloc (no std → no pthread-3ds).
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+# LTO MUST stay off: it emits LLVM-bitcode objects into the .a, which the
+# devkitARM C linker (arm-none-eabi-ld, no LTO plugin) cannot consume — the
+# pj_* symbols would be invisible at link time.
+lto = false

@@ -15,3 +15,13 @@ host-web/pocketjs.wasm
 test/goldens/*.actual.png
 # golden-mismatch dumps written by test/e2e-ppsspp.ts
 test/goldens-psp/*.actual.png
+# 3DS build artifacts + generated embeds (scripts/3ds.ts); target/ covers ffi/
+native-3ds/build/
+native-3ds/source/game_js.h
+native-3ds/source/game_pak.h
+native-3ds/*.3dsx
+native-3ds/*.elf
+native-3ds/*.smdh
+native-3ds/*.map
+# vendored QuickJS fork — copy from dreamcart runtime-3ds/quickjs (see native-3ds/README.md)
+native-3ds/quickjs/

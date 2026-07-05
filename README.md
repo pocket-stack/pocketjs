@@ -71,11 +71,19 @@ a required router package.
 ## Commands
 
 ```sh
-bun run test                          # spec contract + tailwind parser tests
-bun scripts/build.ts <app> [--extra-chars=…]  # extra codepoints for the atlases
+bun run test                          # spec contract + tailwind/devices parser tests
+bun scripts/build.ts <app> [--device=psp|3ds|web] [--extra-chars=…]
 bun run psp / bun run dev / bun run wasm      # EBOOT / web host / wasm core
+bun run 3ds hero                     # Nintendo 3DS .3dsx → runs on Azahar (see native-3ds/README.md)
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
 ```
+
+**Device profiles.** One app source adapts to many device sizes at build time
+(`spec/devices.ts`): `--device` selects a profile (PSP 480×272, 3DS 400×240, …)
+that drives the core screen size and resolves compile-time responsive/device
+variants — width breakpoints `sm:`/`md:`/`lg:` and capability flags `3ds:`/`psp:`
+fold into the style record for that build (zero runtime cost), while flexbox
+handles the fluid reflow. See DESIGN.md "Device profiles".
 
 Fonts: Inter (OFL), vendored in `assets/fonts/`.

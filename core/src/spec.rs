@@ -7,9 +7,12 @@
 #![allow(dead_code)]
 #![allow(clippy::all)]
 
-/// Logical (and physical PSP) screen size.
-pub const SCREEN_W: u32 = 480;
-pub const SCREEN_H: u32 = 272;
+// Logical screen size — a DEVICE-PROFILE knob (spec/devices.ts), NOT a
+// fixed constant. Provided at build time by core/build.rs from
+// POCKETJS_SCREEN_W/H (default 480x272 = the PSP); each backend build
+// (scripts/psp.ts, scripts/3ds.ts) sets them for its target. The whole
+// core reads only these, so one knob reflows layout + clip + root.
+include!(concat!(env!("OUT_DIR"), "/screen.rs"));
 
 /// Node ids are generation-tagged: id = (generation << ID_SLOT_BITS) | slot.
 /// Bit 31 stays 0; id 0 = "no node" (append anchor / clear focus).

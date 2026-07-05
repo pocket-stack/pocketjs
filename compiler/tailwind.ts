@@ -13,6 +13,14 @@
 // folded into the record's transition block, and `w-[123px]` / `w-[123]`
 // arbitrary pixel values for every numeric utility.
 //
+// BUILD-TIME variants (spec/devices.ts): a token may also carry breakpoint
+// prefixes (`sm:`/`md:`/`lg:`/`xl:`, gated on the active device profile's WIDTH)
+// and device-capability prefixes (`3ds:`/`psp:`/`touch:`…, gated on its caps).
+// These are resolved AT COMPILE TIME against the profile passed to
+// compileClasses — a matching variant folds into the record, a non-matching one
+// is validated then dropped (zero runtime cost). One app source thus adapts to
+// many device sizes; see DESIGN.md "Device profiles".
+//
 // Output: encodeStyleTable(records) -> styles.bin bytes + the generated TS
 // module (STYLE_IDS + font-slot metadata) the renderer imports.
 
@@ -20,6 +28,7 @@ import {
   ENUMS,
   PROP,
   SIZE_FULL,
+  STYLE_ID_NONE,
   TRANSITION_MASK_ALL,
   abgr,
   animBit,
@@ -30,6 +39,11 @@ import {
   type StyleRecord,
   type StyleTransition,
 } from "../spec/spec.ts";
+import {
+  classifyBuildVariant,
+  resolveProfile,
+  type DeviceProfile,
+} from "../spec/devices.ts";
 
 // ---------------------------------------------------------------------------
 // Font slots (build-assigned, pinned here — bake-font.ts uses the same table)
@@ -375,13 +389,41 @@ function dedupe(decls: Decl[]): StyleProp[] {
     .map(([prop, value]) => ({ prop, value }));
 }
 
+/** Fold a scratch variant accumulator (one gated-in token) into its bucket. */
+function mergeVariant(dst: VariantAcc, src: VariantAcc): void {
+  dst.decls.push(...src.decls);
+  if (src.sizePx !== undefined) dst.sizePx = src.sizePx;
+  if (src.bold !== undefined) dst.bold = src.bold;
+  if (src.trackingWide) dst.trackingWide = true;
+  if (src.roundedFull) dst.roundedFull = true;
+  if (src.pinnedW !== undefined) dst.pinnedW = src.pinnedW;
+  if (src.pinnedH !== undefined) dst.pinnedH = src.pinnedH;
+}
+
+/** Fold a scratch transition accumulator (one gated-in motion token) in. */
+function mergeTransition(dst: TransitionAcc, src: TransitionAcc): void {
+  if (src.mask !== undefined) dst.mask = src.mask;
+  if (src.durMs !== undefined) dst.durMs = src.durMs;
+  if (src.delayMs !== undefined) dst.delayMs = src.delayMs;
+  if (src.easing !== undefined) dst.easing = src.easing;
+}
+
 /**
- * Parse one candidate class literal.
+ * Parse one candidate class literal against a device profile.
  * Returns the StyleRecord, or null when the literal is NOT a class string
- * (any unsupported token). Throws only for the `rounded-full` [R] rule (and
- * `hover:`, which DESIGN pins as a loud error) in otherwise-valid literals.
+ * (any unsupported token). Build-time variant prefixes (breakpoints `sm:`/`md:`
+ * gated on the profile width, device flags `3ds:`/`touch:` gated on its caps)
+ * are resolved HERE: a matching variant folds its token into the record, a
+ * non-matching one validates the token then drops it (so a device-specific
+ * literal is still a valid, known class — it may resolve to an EMPTY record on
+ * a device it doesn't target, which compileClasses maps to STYLE_ID_NONE).
+ * Throws only for the `rounded-full` [R] rule (and `hover:`, which DESIGN pins
+ * as a loud error) in otherwise-valid literals.
  */
-export function parseClassLiteral(literal: string): StyleRecord | null {
+export function parseClassLiteral(
+  literal: string,
+  profile: DeviceProfile = resolveProfile(),
+): StyleRecord | null {
   const tokens = literal.trim().split(/\s+/).filter((t) => t.length > 0);
   if (tokens.length === 0) return null;
 
@@ -393,24 +435,53 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
   let sawHover = false;
 
   for (const tok of tokens) {
+    // A token is a prefix chain + a body utility, e.g. `md:focus:bg-blue-500`
+    // -> prefixes ["md","focus"], body "bg-blue-500". Prefixes are order-
+    // independent here (Tailwind writes responsive-outermost; we don't require
+    // it). State variants (focus/active) pick the bucket; breakpoint/device
+    // variants gate whether the token applies on THIS build.
+    const segs = tok.split(":");
+    const body = segs.pop()!;
+    if (body.length === 0) return null;
+
     let variant: "base" | "focus" | "active" = "base";
-    let body = tok;
-    const colon = tok.indexOf(":");
-    if (colon > 0) {
-      const prefix = tok.slice(0, colon);
+    let gateOk = true; // AND over every build-time (breakpoint/device) prefix
+    let hover = false;
+    for (const prefix of segs) {
       if (prefix === "focus" || prefix === "active") {
         variant = prefix;
-        body = tok.slice(colon + 1);
-      } else if (prefix === "hover") {
-        sawHover = true; // decided after the rest of the literal parses
-        body = tok.slice(colon + 1);
-      } else {
-        return null; // not a utility (arbitrary text with a colon)
+        continue;
       }
+      if (prefix === "hover") {
+        hover = true;
+        continue;
+      }
+      const bv = classifyBuildVariant(prefix, profile);
+      if (bv === null) return null; // unknown prefix => not a class string
+      if (!bv.matches) gateOk = false;
     }
-    if (body.length === 0) return null;
-    if (variant === "base" && parseMotion(body, tr)) { sawMotion = true; continue; }
-    if (!parseUtility(body, acc[variant])) return null;
+
+    // Validate the body REGARDLESS of the gate — so `3ds:flex-row` on a psp
+    // build keeps the literal a class string (valid, just inert), while
+    // `3ds:notautility` still disqualifies it. Parse into scratch; commit into
+    // the real accumulator only when every build-time prefix matched.
+    const scratchV: VariantAcc = { decls: [] };
+    const scratchT: TransitionAcc = {};
+    let isMotion = false;
+    if (variant === "base" && parseMotion(body, scratchT)) {
+      isMotion = true;
+    } else if (!parseUtility(body, scratchV)) {
+      return null;
+    }
+
+    if (!gateOk) continue; // valid token, gated out on this device — drop it
+    if (hover) sawHover = true; // only an error when it would actually apply
+    if (isMotion) {
+      sawMotion = true;
+      mergeTransition(tr, scratchT);
+    } else {
+      mergeVariant(acc[variant], scratchV);
+    }
   }
 
   // Every token parsed => this IS a class literal; unsupported-by-design
@@ -464,7 +535,11 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
       easing: tr.easing ?? ENUMS.Easing.EaseInOut,
     } satisfies StyleTransition;
   }
-  if (!rec.base && !rec.focus && !rec.active && !rec.transition) return null;
+  // Reaching here means EVERY token parsed as a utility, so this IS a class
+  // literal. The record may still be empty when all tokens were gated out for
+  // this device (e.g. only `3ds:` tokens on a psp build): return the empty
+  // record — compileClasses maps it to STYLE_ID_NONE so it stays a known class
+  // (clears to default) rather than tripping the renderer's unknown-class path.
   return rec;
 }
 
@@ -483,8 +558,12 @@ export interface CompiledStyles {
   usedFontSlots: number[];
 }
 
-/** Compile candidate literals: keep the ones that parse, dedupe identical records. */
-export function compileClasses(literals: Iterable<string>): CompiledStyles {
+/** Compile candidate literals for a device profile: keep the ones that parse,
+ *  dedupe identical records. Default profile preserves today's PSP behaviour. */
+export function compileClasses(
+  literals: Iterable<string>,
+  profile: DeviceProfile = resolveProfile(),
+): CompiledStyles {
   const records: StyleRecord[] = [];
   const ids: Record<string, number> = {};
   const byCanon = new Map<string, number>();
@@ -492,8 +571,15 @@ export function compileClasses(literals: Iterable<string>): CompiledStyles {
 
   for (const lit of literals) {
     if (lit in ids) continue;
-    const rec = parseClassLiteral(lit);
+    const rec = parseClassLiteral(lit, profile);
     if (rec === null) continue;
+    if (!rec.base && !rec.focus && !rec.active && !rec.transition) {
+      // Valid class literal, but every token was gated out for this device
+      // (e.g. `3ds:flex-row` on a psp build). Register it as a known class that
+      // clears to the default style, so the renderer never sees it as unknown.
+      ids[lit] = STYLE_ID_NONE;
+      continue;
+    }
     const canon = JSON.stringify(rec);
     let id = byCanon.get(canon);
     if (id === undefined) {
