@@ -1,11 +1,7 @@
-// Demo app + the jsx.d.ts typecheck fixture (bunx tsc --noEmit must pass).
-// Uses all three public primitives, class literals, a dynamic style object,
-// focus + onPress, and a signal in text — the exact surface phase v1 supports.
-
-import { createSignal, onMount, Show } from "solid-js";
+import { defineComponent, onMounted, ref } from "vue";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
-import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
+import { createSpriteAnimation } from "@pocketjs/framework/vue-vapor/lifecycle";
 import { frameworkName } from "@pocketjs/framework";
 
 const SPINNER_FRAME_STEP = 3;
@@ -29,19 +25,23 @@ function Stat(props: { label: string; value: string; cls: string }) {
   );
 }
 
-export default function Hero() {
-  const [count, setCount] = createSignal(0);
+type PocketVueComponent = (props?: Record<string, unknown>) => JSX.Element;
+const definePocketComponent = defineComponent as unknown as (setup: () => () => JSX.Element) => PocketVueComponent;
+
+export default definePocketComponent(() => {
+  const count = ref(0);
   const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, { frameStep: SPINNER_FRAME_STEP });
   let underline: NodeMirror | undefined;
-  onMount(() => {
-    // Underline sweeps in once on mount — native tween, zero steady-state JS.
+
+  onMounted(() => {
     if (underline) animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
   });
-  return (
+
+  return () => (
     <View class="w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100">
       <View class="flex-row items-center justify-between">
         <View class="flex-row items-center gap-3">
-            <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
+          <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
           <View class="flex-col">
             <Text class="text-base text-slate-950 font-bold tracking-wide">PocketJS</Text>
             <Text class="text-xs text-slate-500 tracking-wide">{frameworkName()} + RUST + SCEGU</Text>
@@ -55,18 +55,20 @@ export default function Hero() {
       </View>
 
       <View class="flex-col gap-2">
-        <Text class="text-xs text-blue-600 tracking-wide">ONE RUST CORE · ONE JSX APP</Text>
+        <Text class="text-xs text-blue-600 tracking-wide">ONE RUST CORE - ONE VUE VAPOR APP</Text>
         <View class="flex-row items-center justify-between">
           <Text class="text-4xl text-slate-950 font-bold">JSX at 60 FPS.</Text>
-          <Image class="w-10 h-10" src={spinnerSrc()} />
+          <Image class="w-10 h-10" src={spinnerSrc.value} />
         </View>
         <View
-          ref={underline}
+          nodeRef={(node) => {
+            underline = node ?? undefined;
+          }}
           class="h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"
-          style={{ translateX: count() * 2 }}
+          style={{ translateX: count.value * 2 }}
         />
         <Text class="text-sm text-slate-600">
-          Flexbox, springs and baked type — running on a 2005 handheld.
+          Flexbox, springs and baked type - running through Vue Vapor.
         </Text>
       </View>
 
@@ -74,15 +76,17 @@ export default function Hero() {
         <View
           class="px-4 py-2 rounded-xl shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
           focusable
-          onPress={() => setCount(count() + 1)}
+          onPress={() => {
+            count.value++;
+          }}
         >
           <Text class="text-base text-white font-bold">Press Circle</Text>
         </View>
-        <Text class="text-sm text-slate-600">Count: {count()}</Text>
-        <Show when={count() > 3}>
+        <Text class="text-sm text-slate-600">Count: {count.value}</Text>
+        {count.value > 3 ? (
           <Text class="text-sm text-emerald-600">Reactive on real hardware.</Text>
-        </Show>
+        ) : null}
       </View>
     </View>
   );
-}
+});

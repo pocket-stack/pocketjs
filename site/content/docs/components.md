@@ -8,11 +8,12 @@ import { Show, For, Index, Switch, Match } from "solid-js";
 import { View, Text, Image } from "@pocketjs/framework/components";
 ```
 
-There are exactly **three host primitives** — `View`, `Text`, and `Image` —
-and Solid's control-flow helpers (`Show`, `For`, `Index`, `Switch`, `Match`)
-come straight from `solid-js`. Higher-level app-shell primitives (`Screen`,
-`Focusable`, `Modal`, and friends) build on `View` and are covered on the
-[App shell](/docs/app-shell/) page.
+There are exactly **three host primitives** — `View`, `Text`, and `Image`.
+Solid apps import control-flow helpers (`Show`, `For`, `Index`, `Switch`,
+`Match`) from `solid-js`; Vue Vapor apps use Vue's own JSX and Composition API
+from `vue`. Higher-level app-shell primitives (`Screen`, `Focusable`, `Modal`,
+and friends) build on `View` and are covered on the [App shell](/docs/app-shell/)
+page.
 
 If you know React Native, the mental model is familiar: `View` is your box,
 `Text` is your typography, `Image` is your picture. The capitalized names are
@@ -176,11 +177,11 @@ onMount(() => {
 
 ## Control flow
 
-Because PocketJS is [Solid](/docs/reactivity/) under the hood, you render lists
-and conditionals with Solid's control-flow components rather than
-`array.map` + `&&`. Import them directly from `solid-js`; their semantics are
-exactly Solid's, and PocketJS's renderer turns their updates into native
-tree-mutation ops on the PSP.
+In Solid apps, render lists and conditionals with Solid's control-flow
+components rather than `array.map` + `&&`. Import them directly from `solid-js`;
+their semantics are exactly Solid's, and PocketJS's Solid renderer turns their
+updates into native tree-mutation ops on the PSP. Vue Vapor apps use Vue's
+native JSX control-flow patterns instead.
 
 ### `Show`
 

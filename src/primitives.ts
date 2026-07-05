@@ -10,7 +10,11 @@ import { createElement, spread } from "./renderer.ts";
 import type { NodeMirror } from "./renderer.ts";
 
 type StyleObject = Record<string, number | string>;
-type RefProp = ((node: NodeMirror) => void) | NodeMirror | undefined;
+type RefProp =
+  | ((node: NodeMirror) => void)
+  | { current: NodeMirror | null }
+  | NodeMirror
+  | undefined;
 
 export interface ViewProps {
   class?: string;
@@ -18,6 +22,7 @@ export interface ViewProps {
   onPress?: () => void;
   focusable?: boolean;
   ref?: RefProp;
+  nodeRef?: RefProp;
   children?: SolidJSX.Element;
 }
 
@@ -25,6 +30,7 @@ export interface TextProps {
   class?: string;
   style?: StyleObject;
   ref?: RefProp;
+  nodeRef?: RefProp;
   children?: SolidJSX.Element;
 }
 
@@ -33,11 +39,19 @@ export interface ImageProps {
   src?: string;
   style?: StyleObject;
   ref?: RefProp;
+  nodeRef?: RefProp;
+}
+
+function callRef(ref: RefProp, node: NodeMirror): void {
+  if (!ref) return;
+  if (typeof ref === "function") ref(node);
+  else if ("current" in ref) ref.current = node;
 }
 
 function primitive(tag: "view" | "text" | "image", props: Record<string, unknown>): SolidJSX.Element {
   const el = createElement(tag);
   spread(el, props, false);
+  callRef(props.nodeRef as RefProp, el);
   return el as unknown as SolidJSX.Element;
 }
 

@@ -31,16 +31,21 @@ cd pocketjs
 bun install
 ```
 
-That pulls `solid-js` plus the build-time tooling (the Babel + Tailwind-subset
-compiler, the font baker, and the dev host). There is no separate runtime to
-install — the framework is the `@pocketjs/framework` package in this repo, exposed
-through subpath imports like `@pocketjs/framework/components`.
+That pulls `solid-js`, Vue Vapor dependencies, and the build-time tooling (the
+Babel + Tailwind-subset compiler, the font baker, and the dev host). There is no
+separate runtime to install — the framework is the `@pocketjs/framework` package
+in this repo, exposed through subpath imports like
+`@pocketjs/framework/components`.
 
 ## Write your first component
 
 A component is a function that returns JSX. You lay out with `View`, draw text
 with `Text`, and style with `class` — a **build-time subset of Tailwind**, not
 runtime CSS. State comes from `createSignal`, exactly like Solid.
+
+Solid is the default framework. Vue Vapor is selected with `pocket.config.ts` or
+`--framework=vue-vapor`; see [Frameworks](/docs/frameworks/) after the Solid
+quickstart below.
 
 Here's a focusable counter. Put it in `demos/hero/app.tsx`:
 
@@ -191,6 +196,7 @@ pak format — are in [Build pipeline](/docs/build-pipeline/).
 ## Next steps
 
 - [Architecture](/docs/architecture/) — how one Rust core drives every host.
+- [Frameworks](/docs/frameworks/) — switch between Solid and Vue Vapor.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, control flow, and the app-shell primitives.
 - [Styling](/docs/styling/) and [Tailwind subset](/docs/tailwind/) — the compile-time class rules.
 - [Reactivity](/docs/reactivity/) and [Animation](/docs/animation/) — signals, effects, and native tweens.

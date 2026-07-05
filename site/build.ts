@@ -151,7 +151,9 @@ function demoManifest() {
     if (/from\s+["']\.\.?\//.test(source)) continue; // multi-file demo (launcher)
     let title = name[0].toUpperCase() + name.slice(1);
     if (existsSync(main)) {
-      const m = readFileSync(main, "utf8").match(/@title\s+PocketJS:\s*(.+)/);
+      const mainSource = readFileSync(main, "utf8");
+      if (/@playground\s+false\b/.test(mainSource)) continue;
+      const m = mainSource.match(/@title\s+PocketJS:\s*(.+)/);
       if (m) title = m[1].trim();
     }
     out.push({ name, title, source });

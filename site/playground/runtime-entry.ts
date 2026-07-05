@@ -19,7 +19,7 @@
 // a bare `export *` would hit, e.g. app-`render` vs universal-`render`).
 
 // ---- public app surface -----------------------------------------------------
-export { mount, render } from "../../src/index.ts";
+export { frameworkName, mount, render } from "../../src/index.ts";
 export {
   View,
   Text,
