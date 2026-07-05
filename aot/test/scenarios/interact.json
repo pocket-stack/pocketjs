@@ -1,0 +1,16 @@
+{
+  "steps": [
+    { "op": "advance", "frames": 12 },
+    { "op": "press", "buttons": ["RIGHT"], "frames": 6 },
+    { "op": "press", "buttons": ["A"], "frames": 1, "release": 4 },
+    { "op": "read", "name": "script_active", "addr": 33554443, "size": 1 },
+    { "op": "read", "name": "text_active", "addr": 33554442, "size": 1 },
+    { "op": "read", "name": "cur_text", "addr": 33554448, "size": 2 },
+    { "op": "press", "buttons": ["A"], "frames": 1, "release": 4 },
+    { "op": "read", "name": "flags0", "addr": 33554452, "size": 1 },
+    { "op": "read", "name": "cur_text2", "addr": 33554448, "size": 2 },
+    { "op": "press", "buttons": ["A"], "frames": 1, "release": 4 },
+    { "op": "read", "name": "script_active2", "addr": 33554443, "size": 1 },
+    { "op": "read", "name": "text_active2", "addr": 33554442, "size": 1 }
+  ]
+}
