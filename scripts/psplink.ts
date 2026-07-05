@@ -30,8 +30,7 @@ const DEMOS_DIR = join(ROOT, "demos");
 const OUT_ROOT = join(ROOT, "dist/psplink");
 const MAIN_SUFFIX = "-main.tsx";
 const DEFAULT_PORT = 10000;
-const EXIT_HELPER_BIN = "exit-to-xmb";
-const EXIT_HELPER_PRX = join(OUT_ROOT, "PocketJS-exit-to-xmb.prx");
+const VSH_MAIN = "flash0:/vsh/module/vshmain.prx";
 
 const BTN_UP = "\x1b[A";
 const BTN_DOWN = "\x1b[B";
@@ -151,33 +150,17 @@ async function buildDemo(demo: Demo, opts: Options): Promise<void> {
   await Bun.write(demo.prx, await Bun.file(source).arrayBuffer());
 }
 
-async function buildExitHelper(opts: Options): Promise<void> {
-  const profile = opts.release ? "release" : "debug";
-  const source = join(ROOT, "native/target/mipsel-sony-psp", profile, `${EXIT_HELPER_BIN}.prx`);
-  await $`bun scripts/psp.ts --native-bin=${EXIT_HELPER_BIN} ${opts.release ? "--release" : ""}`.cwd(ROOT);
-  if (!existsSync(source)) throw new Error(`expected PSP exit helper PRX was not created: ${source}`);
-  mkdirSync(OUT_ROOT, { recursive: true });
-  await Bun.write(EXIT_HELPER_PRX, await Bun.file(source).arrayBuffer());
-}
-
 async function prepareCache(demos: Demo[], opts: Options, render?: (status: string) => void): Promise<void> {
   if (opts.rebuild) rmSync(OUT_ROOT, { recursive: true, force: true });
   mkdirSync(OUT_ROOT, { recursive: true });
   if (opts.noBuild) {
-    const missing = [
-      ...demos.filter((demo) => !existsSync(demo.prx)).map((demo) => basename(demo.prx)),
-      ...(!existsSync(EXIT_HELPER_PRX) ? [basename(EXIT_HELPER_PRX)] : []),
-    ];
+    const missing = demos.filter((demo) => !existsSync(demo.prx)).map((demo) => basename(demo.prx));
     if (missing.length > 0) {
       throw new Error(`--no-build requested, but missing PRX files: ${missing.join(", ")}`);
     }
     return;
   }
 
-  if (opts.rebuild || !existsSync(EXIT_HELPER_PRX)) {
-    render?.("building exit-to-XMB helper");
-    await buildExitHelper(opts);
-  }
   if (!opts.buildAll) return;
 
   for (const [index, demo] of demos.entries()) {
@@ -263,14 +246,14 @@ class PsplinkSession {
     return true;
   }
 
-  async exitToXmb(helperPrx: string, render: (status: string) => void): Promise<void> {
-    render("starting XMB exit helper");
-    const out = await this.runPspsh(`ldstart host0:/${basename(helperPrx)}`, 8000);
-    if (!out.timedOut && /Failed|Error/i.test(out.text)) {
-      render(out.text || "XMB exit helper failed");
+  async exitToXmb(render: (status: string) => void): Promise<void> {
+    render("loading XMB through PSPLINK");
+    const out = await this.runPspshScript(["reset vsh", VSH_MAIN], 15_000);
+    if (/Failed|Error|Unknown command|connect:/i.test(out.text)) {
+      render(out.text || "XMB load failed");
       return;
     }
-    render("XMB exit helper launched");
+    render("XMB load requested");
   }
 
   stop(): void {
@@ -316,6 +299,29 @@ class PsplinkSession {
       stdout: "pipe",
       stderr: "pipe",
     });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
+    const [stdout, stderr] = await Promise.all([
+      new Response(child.stdout).text().catch((error) => String(error)),
+      new Response(child.stderr).text().catch((error) => String(error)),
+      child.exited,
+    ]);
+    clearTimeout(timer);
+    return { text: (stdout + stderr).trim(), timedOut };
+  }
+
+  private async runPspshScript(commands: string[], timeoutMs = 15_000): Promise<{ text: string; timedOut: boolean }> {
+    const child = Bun.spawn([this.pspsh, "-p", String(this.basePort), "-n", "-"], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    child.stdin.write(`${commands.join("\n")}\n`);
+    child.stdin.end();
+
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -481,7 +487,7 @@ async function main(): Promise<void> {
       render(`rebuilt ${demo.name}`);
     },
     async (render) => {
-      await session.exitToXmb(EXIT_HELPER_PRX, render);
+      await session.exitToXmb(render);
     },
   );
   await picker.run(`PSP connected on port ${basePort}; host0: ${OUT_ROOT}`);
