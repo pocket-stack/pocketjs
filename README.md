@@ -1,4 +1,4 @@
-# <img src="./site/assets/favicon.svg" width="40" height="40" alt=""> PocketJS
+<h1><img src="./site/assets/favicon.svg" width="40" height="40" alt="" align="absmiddle" /> PocketJS</h1>
 
 High-performance JSX UI outside the browser, with native rendering, standard
 Vue Vapor and Solid support, a Tailwind design system, and 60 FPS animation
