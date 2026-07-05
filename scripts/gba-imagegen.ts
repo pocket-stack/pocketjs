@@ -43,7 +43,7 @@ const DEFAULT_TIMEOUT_MS = 6 * 60 * 1000;
 function usageText(): string {
   return [
     "usage:",
-    "  bun scripts/gba-imagegen.ts --out <path.png> [options]",
+    "  bun imagegen --out <path.png> [options]",
     "",
     "options:",
     "  --kind <sprite-sheet|tileset|character|items>  Asset prompt profile (default: sprite-sheet)",
@@ -56,8 +56,8 @@ function usageText(): string {
     "  --json                                        Emit machine-readable JSON on stdout",
     "",
     "examples:",
-    "  bun scripts/gba-imagegen.ts --out aot/demo/imagegen/gba-source.png",
-    "  bun scripts/gba-imagegen.ts --out /tmp/gba-sheet.png --theme \"rainy port town\" --json",
+    "  bun imagegen --out aot/demo/imagegen/gba-source.png",
+    "  bun imagegen --out /tmp/gba-sheet.png --theme \"rainy port town\" --json",
   ].join("\n");
 }
 

@@ -7,7 +7,7 @@ description: Generate original GBA-friendly pixel-art asset source sheets throug
 
 ## Overview
 
-Use this skill when a PocketJS or local Codex agent needs GBA-class pixel-art source images without hand-driving the built-in ImageGen tool. The standard entrypoint is `scripts/gba-imagegen.ts`; it starts a temporary Codex app-server on localhost, sends a single ImageGen turn, captures the `image_generation` result from the app-server event stream, and writes the PNG requested by `--out`.
+Use this skill when a PocketJS or local Codex agent needs GBA-class pixel-art source images without hand-driving the built-in ImageGen tool. The standard entrypoint is `bun imagegen`; it starts a temporary Codex app-server on localhost, sends a single ImageGen turn, captures the `image_generation` result from the app-server event stream, and writes the PNG requested by `--out`.
 
 The prompt is intentionally generic to the platform category. It must not ask for a specific existing game, franchise, creature, character, logo, or visual style clone.
 
@@ -22,19 +22,19 @@ git status --short --branch
 2. Generate a source sheet with the Bun TypeScript CLI:
 
 ```text
-bun scripts/gba-imagegen.ts --out aot/demo/imagegen/gba-source.png
+bun imagegen --out aot/demo/imagegen/gba-source.png
 ```
 
 3. Add an art-direction seed only when the user asks for one:
 
 ```text
-bun scripts/gba-imagegen.ts --out aot/demo/imagegen/rainy-port-source.png --theme "rainy port town with stone quays and lanterns"
+bun imagegen --out aot/demo/imagegen/rainy-port-source.png --theme "rainy port town with stone quays and lanterns"
 ```
 
 4. Use `--json` when another coding agent needs machine-readable output:
 
 ```text
-bun scripts/gba-imagegen.ts --out /tmp/gba-sheet.png --json
+bun imagegen --out /tmp/gba-sheet.png --json
 ```
 
 5. If replacing the AOT demo source sheet, rerun the deterministic extractor:
