@@ -51,15 +51,17 @@ pub trait Game {
     /// Provide the frame to draw. `time` is seconds since launch.
     fn compose(&mut self, alpha: f32, time: f32, size: (u32, u32)) -> (&Scene, &Camera, &Hud);
     /// Record extra passes over the finished frame (UI overlays, composite
-    /// effects) before present. Default: nothing.
+    /// effects) before present. `format` is the target's texture format.
+    /// Default: nothing.
     fn overlay(
         &mut self,
         gpu: &Gpu,
         encoder: &mut wgpu::CommandEncoder,
         view: &wgpu::TextureView,
+        format: wgpu::TextureFormat,
         size: (u32, u32),
     ) {
-        let (_, _, _, _) = (gpu, encoder, view, size);
+        let (_, _, _, _, _) = (gpu, encoder, view, format, size);
     }
     /// Return true to quit.
     fn wants_exit(&self) -> bool {
@@ -193,7 +195,7 @@ impl<G: Game> WinitApp<G> {
             .gpu
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("overlay") });
-        self.game.overlay(&state.gpu, &mut encoder, &view, size);
+        self.game.overlay(&state.gpu, &mut encoder, &view, state.surface_config.format, size);
         state.gpu.queue.submit([encoder.finish()]);
         state.window.pre_present_notify();
         frame.present();
