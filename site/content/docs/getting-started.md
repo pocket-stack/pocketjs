@@ -26,7 +26,7 @@ stay on the JS side and let the dev host compile the wasm core for us.
 ## Install
 
 ```sh
-git clone https://github.com/pocketjs/pocketjs
+git clone https://github.com/pocket-stack/pocketjs
 cd pocketjs
 bun install
 ```
