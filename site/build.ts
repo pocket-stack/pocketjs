@@ -29,7 +29,7 @@ import {
   vdomHelperId,
 } from "@vue-jsx-vapor/runtime/raw";
 import { OG_IMAGE_URL, SITE_DESC, SITE_TITLE, SITE_URL, renderPage } from "./templates.ts";
-import { DOC_NAV } from "./nav.ts";
+import { AOT_DOC_NAV, DOC_NAV, type DocSection } from "./nav.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // repo root
 const SITE = ROOT + "site/";
@@ -281,6 +281,13 @@ function copyDemoAssets(): void {
   }
 }
 
+function copyAotAssets(): void {
+  const docsDir = ROOT + "aot/docs/";
+  for (const file of ["town.png", "dialogue.png", "choice.png", "route.png"]) {
+    copy(docsDir + file, "aot/assets/" + file);
+  }
+}
+
 async function main() {
   console.log("pocketjs.dev build:");
   rmSync(OUT, { recursive: true, force: true });
@@ -341,10 +348,17 @@ async function main() {
   copy(SITE + "assets/screen.css", "assets/screen.css");
   await bundle("assets/home.js", "assets/home.js");
 
-  // 8. docs
+  // 8. AOT product line. This is intentionally separate from the framework
+  //    playground and docs tree.
+  write("aot/index.html", renderAotHome());
+  copy(SITE + "assets/aot.css", "assets/aot.css");
+  copy(SITE + "assets/aot-demo.js", "assets/aot-demo.js");
+  copyAotAssets();
+
+  // 9. docs
   await buildDocs();
 
-  // 8b. 404
+  // 9b. 404
   write("404.html", renderPage({
     title: "Not found",
     active: "",
@@ -360,7 +374,7 @@ async function main() {
     </section>`,
   }));
 
-  // 9. Tailwind CSS (@source in tailwind.css scans the site/ SOURCE for classes)
+  // 10. Tailwind CSS (@source in tailwind.css scans the site/ SOURCE for classes)
   await compileCss();
 
   console.log("pocketjs.dev build: done -> site/dist/");
@@ -416,6 +430,20 @@ ${body}
 </html>`;
 }
 
+const AOT_DESC = "PocketJS AOT turns a TypeScript/JSX cartridge DSL into GBA-native game data and a fixed runtime.";
+function renderAotHome(): string {
+  return renderPage({
+    title: "PocketJS AOT",
+    active: "aot",
+    body: readFileSync(SITE + "aot.html", "utf8"),
+    bodyClass: "aot-page",
+    head: '<link rel="stylesheet" href="/assets/aot.css">',
+    scripts: ['<script type="module" src="/assets/aot-demo.js"></script>'],
+    path: "/aot/",
+    description: AOT_DESC,
+  });
+}
+
 async function compileCss() {
   const proc = Bun.spawnSync(
     ["bunx", "@tailwindcss/cli", "-i", SITE + "assets/tailwind.css", "-o", OUT + "assets/site.css", "--minify"],
@@ -459,9 +487,6 @@ const IMPORT_MAP = `<script type="importmap">
 </script>`;
 
 async function buildDocs() {
-  const docsDir = SITE + "content/docs/";
-  if (!existsSync(docsDir)) return;
-
   // Syntax highlighting: Shiki (build-time, self-contained themed HTML) matched
   // to the playground editor's one-dark-pro. Override marked's code renderer so
   // every fenced block becomes a highlighted <pre class="shiki">.
@@ -526,39 +551,80 @@ async function buildDocs() {
       },
     },
   });
-  const sidebarFor = (active: string) =>
-    DOC_NAV.map(
-      (sec) =>
-        `<div class="doc-sec"><div class="doc-sec-t">${sec.title}</div>` +
-        sec.items
-          .map((it) => `<a href="/docs/${it.slug}/" class="${it.slug === active ? "on" : ""}">${it.title}</a>`)
-          .join("") +
-        `</div>`,
-    ).join("");
-  const allSlugs = DOC_NAV.flatMap((s) => s.items);
-  for (let i = 0; i < allSlugs.length; i++) {
-    const { slug, title } = allSlugs[i];
-    const md = docsDir + slug + ".md";
-    if (!existsSync(md)) {
-      console.warn(`  docs: MISSING ${slug}.md`);
-      continue;
+
+  type DocsTree = {
+    active: string;
+    docsDir: string;
+    head: string;
+    nav: DocSection[];
+    outPrefix: string;
+    transformFrameworkCode: boolean;
+  };
+  const buildTree = async (tree: DocsTree) => {
+    if (!existsSync(tree.docsDir)) return;
+    const hrefFor = (slug: string) => `/${tree.outPrefix}/${slug}/`;
+    const sidebarFor = (active: string) =>
+      tree.nav.map(
+        (sec) =>
+          `<div class="doc-sec"><div class="doc-sec-t">${sec.title}</div>` +
+          sec.items
+            .map((it) => `<a href="${hrefFor(it.slug)}" class="${it.slug === active ? "on" : ""}">${it.title}</a>`)
+            .join("") +
+          `</div>`,
+      ).join("");
+    const allSlugs = tree.nav.flatMap((s) => s.items);
+    for (let i = 0; i < allSlugs.length; i++) {
+      const { slug, title } = allSlugs[i];
+      const md = tree.docsDir + slug + ".md";
+      if (!existsSync(md)) {
+        console.warn(`  ${tree.outPrefix}: MISSING ${slug}.md`);
+        continue;
+      }
+      const source = readFileSync(md, "utf8");
+      const html = await marked.parse(tree.transformFrameworkCode ? renderFrameworkCode(source) : source);
+      const prev = allSlugs[i - 1];
+      const next = allSlugs[i + 1];
+      const pager =
+        `<nav class="doc-pager">` +
+        (prev ? `<a href="${hrefFor(prev.slug)}" class="prev"><span>Previous</span>${prev.title}</a>` : `<span></span>`) +
+        (next ? `<a href="${hrefFor(next.slug)}" class="next"><span>Next</span>${next.title}</a>` : `<span></span>`) +
+        `</nav>`;
+      const body =
+        `<div class="doc-shell"><aside class="doc-nav">${sidebarFor(slug)}</aside>` +
+        `<article class="doc-body" data-slug="${slug}"><div class="prose prose-invert max-w-none doc-content">${html}</div>${pager}</article></div>`;
+      write(`${tree.outPrefix}/${slug}/index.html`, renderPage({
+        title,
+        active: tree.active,
+        body,
+        bodyClass: "doc-page",
+        head: tree.head,
+        scripts: [],
+        path: hrefFor(slug),
+        description: tree.active === "aot" ? AOT_DESC : undefined,
+      }));
     }
-    const html = await marked.parse(renderFrameworkCode(readFileSync(md, "utf8")));
-    const prev = allSlugs[i - 1];
-    const next = allSlugs[i + 1];
-    const pager =
-      `<nav class="doc-pager">` +
-      (prev ? `<a href="/docs/${prev.slug}/" class="prev"><span>Previous</span>${prev.title}</a>` : `<span></span>`) +
-      (next ? `<a href="/docs/${next.slug}/" class="next"><span>Next</span>${next.title}</a>` : `<span></span>`) +
-      `</nav>`;
-    const body =
-      `<div class="doc-shell"><aside class="doc-nav">${sidebarFor(slug)}</aside>` +
-      `<article class="doc-body" data-slug="${slug}"><div class="prose prose-invert max-w-none doc-content">${html}</div>${pager}</article></div>`;
-    write(`docs/${slug}/index.html`, renderPage({ title, active: "docs", body, bodyClass: "doc-page", head: IMPORT_MAP, scripts: [], path: `/docs/${slug}/` }));
-  }
-  // /docs -> first doc
-  write("docs/index.html", `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=/docs/${allSlugs[0].slug}/">`);
-  console.log(`  docs  (${allSlugs.length} pages)`);
+    if (allSlugs.length > 0) {
+      write(`${tree.outPrefix}/index.html`, `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=${hrefFor(allSlugs[0].slug)}">`);
+    }
+    console.log(`  ${tree.outPrefix}  (${allSlugs.length} pages)`);
+  };
+
+  await buildTree({
+    active: "docs",
+    docsDir: SITE + "content/docs/",
+    head: IMPORT_MAP,
+    nav: DOC_NAV,
+    outPrefix: "docs",
+    transformFrameworkCode: true,
+  });
+  await buildTree({
+    active: "aot",
+    docsDir: SITE + "content/aot-docs/",
+    head: "",
+    nav: AOT_DOC_NAV,
+    outPrefix: "aot/docs",
+    transformFrameworkCode: false,
+  });
 }
 
 await main();

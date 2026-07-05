@@ -12,7 +12,7 @@ export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 
 export interface PageOpts {
   title: string | null; // null uses the bare wordmark (homepage)
-  active: string; // "home" | "docs" | "playground"
+  active: string; // "home" | "docs" | "aot" | "playground"
   body: string;
   bodyClass?: string;
   head?: string;
@@ -46,6 +46,7 @@ function header(active: string): string {
     </a>
     <nav class="site-nav__links" aria-label="Primary">
       ${link("/docs/overview/", "Docs", "docs")}
+      ${link("/aot/", "AOT", "aot")}
       ${link("/playground/", "Playground", "playground")}
       <a href="${GH}" target="_blank" rel="noreferrer" class="site-nav__link site-nav__gh">${ghIcon}<span class="site-nav__ghlabel">GitHub</span></a>
     </nav>
@@ -55,7 +56,7 @@ function header(active: string): string {
 
 const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
   <div class="mx-auto max-w-6xl px-5 py-12">
-    <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
       <div>
         <div class="flex items-center gap-2 font-semibold text-slate-100">${LOGO}<span>PocketJS</span></div>
         <p class="mt-3 max-w-xs text-sm text-slate-400">Solid or Vue Vapor UI under 8MB RAM, rendered through a tiny native core.</p>
@@ -70,7 +71,16 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
         </ul>
       </div>
       <div class="text-sm">
-        <h4 class="mb-3 font-semibold text-slate-200">Explore</h4>
+        <h4 class="mb-3 font-semibold text-slate-200">AOT</h4>
+        <ul class="space-y-2 text-slate-400">
+          <li><a class="hover:text-brand-2" href="/aot/">AOT product</a></li>
+          <li><a class="hover:text-brand-2" href="/aot/docs/overview/">AOT docs</a></li>
+          <li><a class="hover:text-brand-2" href="/aot/#demo">Web demo</a></li>
+          <li><a class="hover:text-brand-2" href="/aot/docs/compiler/">Compiler pipeline</a></li>
+        </ul>
+      </div>
+      <div class="text-sm">
+        <h4 class="mb-3 font-semibold text-slate-200">Framework</h4>
         <ul class="space-y-2 text-slate-400">
           <li><a class="hover:text-brand-2" href="/playground/">Playground</a></li>
           <li><a class="hover:text-brand-2" href="/docs/components/">Components</a></li>

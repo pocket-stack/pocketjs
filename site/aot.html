@@ -1,0 +1,100 @@
+<section class="aot-hero">
+  <div class="aot-shell">
+    <div class="aot-hero__copy">
+      <p class="aot-kicker">PocketJS product line</p>
+      <h1>PocketJS AOT</h1>
+      <p class="aot-hero__lead">
+        TypeScript and JSX author cartridge RPGs. The build emits GBA-native
+        tiles, sprites, palettes and bytecode instead of shipping JavaScript.
+      </p>
+      <div class="aot-actions">
+        <a class="aot-btn aot-btn--primary" href="/aot/docs/overview/">Read AOT docs</a>
+        <a class="aot-btn" href="#demo">Open web demo</a>
+      </div>
+    </div>
+
+    <div id="demo" class="aot-console" data-aot-demo>
+      <div class="aot-console__top">
+        <span>AOT-01</span>
+        <span>GBA data path</span>
+      </div>
+      <div class="aot-console__body">
+        <div class="aot-dpad" aria-label="Map controls">
+          <button type="button" data-aot-input="up" aria-label="Previous scene"></button>
+          <button type="button" data-aot-input="left" aria-label="Town"></button>
+          <button type="button" data-aot-input="right" aria-label="Route"></button>
+          <button type="button" data-aot-input="down" aria-label="Next scene"></button>
+        </div>
+        <div class="aot-screen">
+          <canvas id="aot-demo-canvas" width="240" height="160"></canvas>
+          <div class="aot-screen__status" data-aot-status>booting cartridge</div>
+        </div>
+        <div class="aot-face" aria-label="Action controls">
+          <button type="button" data-aot-input="a">A</button>
+          <button type="button" data-aot-input="b">B</button>
+        </div>
+      </div>
+      <div class="aot-console__rail">
+        <span data-aot-label>town</span>
+        <span>240×160</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="aot-band">
+  <div class="aot-shell">
+    <div class="aot-section-head">
+      <p class="aot-kicker">Separate from the framework line</p>
+      <h2>AOT is not the PSP UI runtime.</h2>
+      <p>
+        The main PocketJS framework keeps Solid and Vue Vapor running on
+        QuickJS. AOT instead partially evaluates a cartridge DSL at build time
+        and ships a fixed native runtime plus compact game data.
+      </p>
+    </div>
+    <div class="aot-tiles">
+      <article>
+        <span>01</span>
+        <h3>Static declaration zone</h3>
+        <p>Maps, layers, NPCs, warps, tilesets and sprites execute in Bun during the build.</p>
+      </article>
+      <article>
+        <span>02</span>
+        <h3>Residual script zone</h3>
+        <p>Generator scripts lower to a small stack VM for dialogue, choices, flags and warps.</p>
+      </article>
+      <article>
+        <span>03</span>
+        <h3>Native cartridge output</h3>
+        <p>GBA 4bpp tiles, BGR555 palettes and bytecode are packed into PJGB chunks.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="aot-flow">
+  <div class="aot-shell">
+    <div class="aot-section-head">
+      <p class="aot-kicker">Build shape</p>
+      <h2>Author in TSX. Ship binary game data.</h2>
+    </div>
+    <ol class="aot-pipeline">
+      <li><strong>Evaluate</strong><span>Run the static DSL and collect scene declarations.</span></li>
+      <li><strong>Bake</strong><span>Quantize tiles, sprites and subpixel dialogue glyphs for GBA.</span></li>
+      <li><strong>Residualize</strong><span>Lower supported script control flow into VM bytecode.</span></li>
+      <li><strong>Link</strong><span>Embed the PJGB blob into the fixed C runtime and build a ROM.</span></li>
+    </ol>
+  </div>
+</section>
+
+<section class="aot-doc-callout">
+  <div class="aot-shell aot-doc-callout__in">
+    <div>
+      <p class="aot-kicker">Documentation branch</p>
+      <h2>AOT has its own docs tree.</h2>
+      <p>The framework docs stay focused on PSP-class UI. AOT docs cover the cartridge DSL, compiler stages, PJGB data model and browser demo surface.</p>
+    </div>
+    <a class="aot-btn aot-btn--primary" href="/aot/docs/overview/">Enter AOT docs</a>
+  </div>
+</section>
