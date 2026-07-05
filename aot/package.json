@@ -15,6 +15,7 @@
   },
   "scripts": {
     "build": "bun compiler/cli.ts build demo/game.tsx --out dist/pocket-town.gba",
+    "play": "bash play.sh",
     "gen": "bun spec/gen-c.ts",
     "handcart": "bun test/handcart.ts",
     "test": "bun test/e2e.ts"
