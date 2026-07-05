@@ -237,7 +237,7 @@ describe("all-or-nothing rejection [R]", () => {
     "p-[4rem]", // unsupported arbitrary unit
     "justify-evenly", // not in the v1 enum
     "focus:", // empty variant body
-    "sm:p-2", // responsive variants unsupported
+    "wide:p-2", // unknown variant prefix (not a breakpoint or device flag)
     "", // empty string
     "   ", // whitespace only
   ];

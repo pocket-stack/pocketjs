@@ -37,8 +37,6 @@ import {
   PROP_VALUE_KIND,
   PSM,
   ROOT_ID,
-  SCREEN_H,
-  SCREEN_W,
   SIZE_FULL,
   STYLE_HAS_TRANSITION,
   STYLE_HEADER_SIZE,
@@ -101,9 +99,14 @@ export function generateRust(): string {
   put("");
 
   // --- scalars ---------------------------------------------------------------
-  put("/// Logical (and physical PSP) screen size.");
-  put(`pub const SCREEN_W: u32 = ${SCREEN_W};`);
-  put(`pub const SCREEN_H: u32 = ${SCREEN_H};`);
+  // Plain `//` (not `///`): a doc comment cannot attach to a macro invocation
+  // (`include!`), which would warn `unused_doc_comments`.
+  put("// Logical screen size — a DEVICE-PROFILE knob (spec/devices.ts), NOT a");
+  put("// fixed constant. Provided at build time by core/build.rs from");
+  put("// POCKETJS_SCREEN_W/H (default 480x272 = the PSP); each backend build");
+  put("// (scripts/psp.ts, scripts/3ds.ts) sets them for its target. The whole");
+  put("// core reads only these, so one knob reflows layout + clip + root.");
+  put('include!(concat!(env!("OUT_DIR"), "/screen.rs"));');
   put("");
   put("/// Node ids are generation-tagged: id = (generation << ID_SLOT_BITS) | slot.");
   put("/// Bit 31 stays 0; id 0 = \"no node\" (append anchor / clear focus).");

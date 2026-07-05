@@ -10,6 +10,9 @@
 name = "pocketjs-core"
 version = "0.1.0"
 edition = "2021"
+# Emits SCREEN_W/H (device-profile knob) from POCKETJS_SCREEN_W/H env; spec.rs
+# include!s it. Default 480×272 keeps PSP/wasm/goldens unchanged. See build.rs.
+build = "build.rs"
 
 [dependencies]
 # no_std + alloc flexbox layout. Feature set verified to resolve; f32-only,

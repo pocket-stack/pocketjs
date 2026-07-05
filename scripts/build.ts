@@ -19,6 +19,7 @@ import { resolve as resolvePath } from "node:path";
 import { PSM } from "../spec/spec.ts";
 import { RENDERER_PATH, solidUniversalPlugin, transformFile } from "../compiler/solid-plugin.ts";
 import { compileClasses, generateStylesModule } from "../compiler/tailwind.ts";
+import { resolveProfile } from "../spec/devices.ts";
 import { bakeAtlases } from "../compiler/bake-font.ts";
 import { bakeSvg } from "../compiler/bake-svg.ts";
 import {
@@ -62,14 +63,21 @@ for (const [key, target] of Object.entries(packageJson.exports ?? {})) {
 const args = process.argv.slice(2);
 let extraChars = "";
 let appArg = "";
+let deviceArg = "";
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
+  else if (a.startsWith("--device=")) deviceArg = a.slice("--device=".length);
   else if (!a.startsWith("-")) appArg = a;
 }
 if (!appArg) {
-  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--extra-chars=...]");
+  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--device=psp|3ds|web] [--extra-chars=...]");
   process.exit(1);
 }
+
+// The device profile (spec/devices.ts) resolves compile-time responsive/device
+// variants and, via the per-target build scripts (scripts/psp.ts, scripts/3ds.ts),
+// the core's screen size. Default "psp" reproduces today's 480×272 behaviour.
+const profile = resolveProfile(deviceArg || undefined);
 
 function resolveEntry(arg: string): string {
   const normalized = arg.replace(/\\/g, "/").replace(/\.tsx?$/, "");
@@ -111,7 +119,9 @@ function outputName(file: string): string {
 }
 
 const appName = outputName(entry);
-console.log(`PocketJS build: ${appName} (${entry})`);
+console.log(
+  `PocketJS build: ${appName} (${entry}) — device ${profile.name} (${profile.width}x${profile.height})`,
+);
 
 // ---------------------------------------------------------------------------
 // pass 1 — transform & collect over the entry's import graph
@@ -176,7 +186,7 @@ console.log(`  pass 1: ${visited.size} module(s), ${classStrings.length} candida
 // compile styles + fonts + images
 // ---------------------------------------------------------------------------
 
-const styles = compileClasses(classStrings);
+const styles = compileClasses(classStrings, profile);
 if (styles.records.length === 0) {
   console.warn("  tailwind: no class literals compiled — is the app unstyled?");
 }

@@ -284,10 +284,41 @@ Utilities (Tailwind default scales; `w-[123]` arbitrary px supported):
   `ease-linear|in|out|in-out|spring|out-back`, `delay-N`
 - **variants**: `focus:`, `active:` — variant blocks in the style record,
   switched natively (zero JS on focus change)
+- **build-time variants** (device profiles, below): width breakpoints
+  `sm:`/`md:`/`lg:`/`xl:` and device/capability flags `psp:`/`3ds:`/`touch:`…,
+  resolved at COMPILE time against the active profile and folded into the record
 
 Not supported v1 (loud compile/dev errors, not silent): `classList`, template-
 interpolated class fragments, `hover:`. Dynamic styling = ternaries of full
 literals, `style={{…}}` objects, or `animate()`.
+
+## Device profiles (one app source, many device sizes)
+
+Screen size is not a hardwired constant — it is a **build-time device profile**
+(`spec/devices.ts`: `{ name, width, height, caps[], fontScale }`). One profile is
+selected per build (`scripts/build.ts --device=<name>`, default `psp`) and it is
+the single knob that adapts an app to a physical target:
+
+- **Core screen size.** `spec::SCREEN_W/H` is no longer baked into the generated
+  `spec.rs`; `core/build.rs` emits it from `POCKETJS_SCREEN_W/H` (default 480×272
+  = PSP, so PSP/wasm/goldens are byte-unchanged), and each backend build script
+  sets it for its target (PSP 480×272, 3DS 400×240). The whole core reads only
+  `spec::SCREEN_W/H`, so one knob reflows layout + the CPU clip stage + the root.
+- **Responsive resolution, statically.** The Tailwind compiler resolves the
+  build-time variants above against the profile — a matching `md:`/`3ds:` token
+  folds into the style record, a non-matching one is validated then dropped (zero
+  runtime cost, unlike a web media query). `md:` deliberately sits between the
+  3DS (400) and PSP (480) so the two diverge; breakpoints are tuned for handheld
+  screens, NOT Tailwind's 640/768 web defaults. A literal that is entirely gated
+  out on the current device (e.g. only `3ds:` tokens on a PSP build) is still a
+  known class — it maps to `STYLE_ID_NONE`, never the unknown-class path.
+- Flexbox already does the fluid reflow (`flex-1`/`grow`/`justify-between`/`gap`/
+  `w-full`), so a cleanly-authored app mostly "just works" at a new width; the
+  variants cover the cases pure reflow can't. `fontScale` is a reserved future
+  density knob (v1 pins it to 1.0 — absolute-px utilities + flex reflow).
+
+Adding a device = adding a profile; the app source never changes. `native-3ds/`
+is the first new target built this way (see `native-3ds/README.md`).
 
 ## Testing (definition of done)
 
@@ -317,5 +348,8 @@ pak (base64-in-JS is the known QuickJS boot killer).
 
 Kinetic scroll views, CLUT/swizzled textures, render-to-texture opacity groups
 (per-vertex alpha propagation instead — wrong on overlap, fine for demos),
-kerning, `hover:`, percentage sizes beyond `-full`, 3DS/Android hosts,
-`rounded-full` on runtime-sized nodes.
+kerning, `hover:`, percentage sizes beyond `-full`, Android hosts,
+`rounded-full` on runtime-sized nodes. (The 3DS is no longer punted: `native-3ds/`
+is a working target — `bun run 3ds hero` builds a `.3dsx` that runs the hero demo
+on the Azahar emulator at the `3ds` profile's native 400×240. See
+`native-3ds/README.md`.)
