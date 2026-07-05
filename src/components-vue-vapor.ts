@@ -18,6 +18,7 @@ import { getOverlayRoot } from "./overlay.ts";
 import {
   createCommentNode,
   createElement,
+  createTextNode,
   detachNode,
   insertNode,
   setProp,
@@ -84,8 +85,14 @@ function valueOf<T>(value: T): T {
   return typeof value === "function" ? (value as () => T)() : value;
 }
 
-function callbackOf<T extends (...args: never[]) => unknown>(value: unknown): T | undefined {
-  return typeof value === "function" ? (value as T) : undefined;
+function callbackOf<T extends (...args: any[]) => unknown>(value: unknown): T | undefined {
+  if (typeof value !== "function") return undefined;
+  return ((...args: unknown[]) => {
+    const resolved = (value as (...innerArgs: unknown[]) => unknown)(...args);
+    return typeof resolved === "function"
+      ? (resolved as (...innerArgs: unknown[]) => unknown)(...args)
+      : resolved;
+  }) as T;
 }
 
 function booleanOption(value: unknown): boolean | undefined {
@@ -96,13 +103,41 @@ function booleanOption(value: unknown): boolean | undefined {
 function assignRef(refValue: unknown, node: NodeMirror | null): void {
   const ref = refValue as NodeRef;
   if (!ref) return;
-  if (typeof ref === "function") ref(node);
-  else ref.current = node;
+  if (typeof ref === "function") {
+    const resolved = (ref as (node: NodeMirror | null) => unknown)(node);
+    if (typeof resolved === "function") resolved(node);
+  } else {
+    ref.current = node;
+  }
 }
 
 function slotDefault(slots: SlotBag, ...args: unknown[]): unknown {
-  if (typeof slots === "function") return slots(...args);
-  return slots?.default?.(...args);
+  return withNativeTextDocument(() => {
+    if (typeof slots === "function") return slots(...args);
+    return slots?.default?.(...args);
+  });
+}
+
+function withNativeTextDocument<T>(fn: () => T): T {
+  const doc = (globalThis as { document?: unknown }).document as
+    | {
+        createTextNode?: (value?: string) => unknown;
+        createComment?: (value?: string) => unknown;
+      }
+    | undefined;
+  if (!doc) return fn();
+  const prevCreateTextNode = doc.createTextNode;
+  const prevCreateComment = doc.createComment;
+  try {
+    doc.createTextNode = (value = "") => createTextNode(String(value));
+    doc.createComment = (value = "") => createCommentNode(String(value));
+    return fn();
+  } finally {
+    if (prevCreateTextNode) doc.createTextNode = prevCreateTextNode;
+    else delete doc.createTextNode;
+    if (prevCreateComment) doc.createComment = prevCreateComment;
+    else delete doc.createComment;
+  }
 }
 
 function normalizeVaporBlock(block: unknown): unknown | null {
@@ -155,7 +190,7 @@ function cleanProps(props: Record<string, unknown>, omit: Set<string>): HostProp
     if (omit.has(key)) continue;
     if (key === "class" || key === "className") out[key] = normalizeClassValue(props[key]);
     else if (key === "style") out[key] = normalizeStyleValue(props[key]);
-    else if (key === "onPress" || key === "on:press") out[key] = props[key];
+    else if (key === "onPress" || key === "on:press") out[key] = callbackOf<() => void>(props[key]);
     else out[key] = valueOf(props[key]);
   }
   if (out.class == null && out.className != null) out.class = out.className;

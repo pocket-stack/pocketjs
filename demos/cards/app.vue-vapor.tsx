@@ -11,6 +11,10 @@ interface Card {
   bar: string;
 }
 
+function propValue<T>(value: T | (() => T)): T {
+  return typeof value === "function" ? (value as () => T)() : value;
+}
+
 const CARDS: Card[] = [
   {
     title: "Layout",
@@ -38,7 +42,8 @@ const CARDS: Card[] = [
   },
 ];
 
-const Detail = defineVaporComponent((props: { card: Card }) => {
+const Detail = defineVaporComponent((_props: unknown, { attrs }: { attrs: { card: Card | (() => Card) } }) => {
+  const card = () => propValue(attrs.card);
   let el: NodeMirror | undefined;
   onMounted(() => {
     if (el) spring(el, "translateY", 0);
@@ -51,10 +56,10 @@ const Detail = defineVaporComponent((props: { card: Card }) => {
       style={{ translateY: 22 }}
       class="flex-row items-center gap-3 p-3 rounded-xl shadow-md bg-white border-slate-200"
     >
-      <View class={props.card.bar} />
+      <View class={card().bar} />
       <View class="flex-col gap-1">
-        <Text class="text-sm text-slate-950 font-bold">{props.card.title}</Text>
-        <Text class="text-xs text-slate-600">{props.card.detail}</Text>
+        <Text class="text-sm text-slate-950 font-bold">{card().title}</Text>
+        <Text class="text-xs text-slate-600">{card().detail}</Text>
       </View>
     </View>
   );
