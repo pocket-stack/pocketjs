@@ -50,6 +50,17 @@ pub trait Game {
     fn tick(&mut self, dt: f32, input: &Input);
     /// Provide the frame to draw. `time` is seconds since launch.
     fn compose(&mut self, alpha: f32, time: f32, size: (u32, u32)) -> (&Scene, &Camera, &Hud);
+    /// Record extra passes over the finished frame (UI overlays, composite
+    /// effects) before present. Default: nothing.
+    fn overlay(
+        &mut self,
+        gpu: &Gpu,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        size: (u32, u32),
+    ) {
+        let (_, _, _, _) = (gpu, encoder, view, size);
+    }
     /// Return true to quit.
     fn wants_exit(&self) -> bool {
         false
@@ -178,6 +189,12 @@ impl<G: Game> WinitApp<G> {
         state
             .renderer
             .render(&state.gpu, &view, size, scene, camera, hud);
+        let mut encoder = state
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("overlay") });
+        self.game.overlay(&state.gpu, &mut encoder, &view, size);
+        state.gpu.queue.submit([encoder.finish()]);
         state.window.pre_present_notify();
         frame.present();
     }
