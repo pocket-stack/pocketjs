@@ -1,6 +1,6 @@
 // site/assets/home.js — boots the homepage hero's LIVE demo: a prebuilt
-// PocketJS bundle (the multi-screen launcher) rendered by the Rust core in
-// WebAssembly. Bundled by site/build.ts (pulls in ../playground/host.js).
+// PocketJS bundle rendered by the Rust core in WebAssembly. Bundled by
+// site/build.ts (pulls in ../playground/host.js).
 import { PocketHost } from "../playground/host.js";
 
 const PG = "/pg/";

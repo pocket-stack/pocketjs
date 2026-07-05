@@ -17,7 +17,7 @@
 // ms0:/PocketJS-bench.jsonl and implies --capture.
 
 import { $ } from "bun";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -30,10 +30,25 @@ import type { PocketConfig } from "../src/config.ts";
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
 const nativeDir = pspUiDir + "native/";
 const root = new URL("../..", import.meta.url).pathname; // parent of PocketJS checkout
+const home = process.env.HOME ?? "";
+
+function dreamcartWorktreeSdkCandidates(): string[] {
+  const base = root + "../dreamcart/";
+  try {
+    return readdirSync(base, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => `${base}${entry.name}/mipsel-sony-psp`);
+  } catch {
+    return [];
+  }
+}
+
 const sdkCandidates = [
   process.env.PSP_SDK,
   root + "mipsel-sony-psp",
   root + "dreamcart/mipsel-sony-psp",
+  home ? `${home}/code/dreamcart/mipsel-sony-psp` : "",
+  ...dreamcartWorktreeSdkCandidates(),
 ].filter((p): p is string => !!p);
 const sdk =
   sdkCandidates.find((p) => existsSync(`${p}/psp/lib/libc.a`)) ??
@@ -42,7 +57,6 @@ const sdk =
 const llvm = existsSync("/opt/homebrew/opt/llvm/bin")
   ? "/opt/homebrew/opt/llvm/bin"
   : "/usr/local/opt/llvm/bin";
-const home = process.env.HOME ?? "";
 const pspTarget = nativeDir + "targets/mipsel-sony-psp.json";
 
 const TOOLCHAIN = "nightly-2026-05-28";
