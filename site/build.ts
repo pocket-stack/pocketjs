@@ -349,6 +349,7 @@ async function main() {
   for (const asset of ["favicon.svg", "og-image.svg", "og-image.png"]) {
     if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, asset);
   }
+  copy(SITE + "assets/pocketjs-hardware-demo.mp4", "assets/pocketjs-hardware-demo.mp4");
 
   // 6. playground page
   write("playground/index.html", renderPage({
