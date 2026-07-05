@@ -1,4 +1,4 @@
-import { defineVaporComponent, ref, watchEffect } from "vue";
+import { defineVaporComponent, ref } from "vue";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/vue-vapor/components";
 import { animate } from "@pocketjs/framework/vue-vapor/animation";
 
@@ -112,20 +112,54 @@ function themeByName(name: ThemeName): ThemeOption {
   return THEMES.find((t) => t.name === name) ?? THEMES[0];
 }
 
-const Toggle = defineVaporComponent((props: { label: string; value: boolean; themeName: ThemeName; onToggle: () => void }) => {
+function propValue<T>(value: T | (() => T)): T {
+  return typeof value === "function" ? (value as () => T)() : value;
+}
+
+function callbackProp<T extends (...args: any[]) => unknown>(value: T | (() => T)): T {
+  if (typeof value !== "function") return value;
+  if (value.length === 0) {
+    const resolved = (value as () => T)();
+    if (typeof resolved === "function") return resolved;
+  }
+  return value as T;
+}
+
+const Toggle = defineVaporComponent((
+  _props: { label: string; value: boolean; themeName: ThemeName; onToggle: () => void },
+  { attrs },
+) => {
   let knob: NodeMirror | undefined;
-  let initialized = false;
-  const palette = () => themeByName(props.themeName);
-  watchEffect(() => {
+  const label = () => propValue(attrs.label as string | (() => string));
+  const value = () => propValue(attrs.value as boolean | (() => boolean));
+  const current = ref(value());
+  const themeName = () => propValue(attrs.themeName as ThemeName | (() => ThemeName));
+  const onToggle = () => callbackProp(attrs.onToggle as (() => void) | (() => () => void));
+  const palette = () => themeByName(themeName());
+  const moveKnob = (dur: number) => {
     if (!knob) return;
-    animate(knob, "translateX", props.value ? 15.5 : 0.5, { dur: initialized ? 160 : 1, easing: "out" });
-    initialized = true;
-  });
+    animate(knob, "translateX", current.value ? 15.5 : 0.5, { dur, easing: "out" });
+  };
   return (
-    <View class={palette().rowCls} focusable onPress={props.onToggle}>
-      <Text class={palette().rowLabelCls}>{props.label}</Text>
-      <View class={props.value ? palette().switchOnCls : palette().switchOffCls}>
-        <View nodeRef={(node: NodeMirror | null) => { knob = node ?? undefined; }} class={palette().knobCls} />
+    <View
+      class={palette().rowCls}
+      focusable
+      onPress={() => {
+        current.value = !current.value;
+        moveKnob(160);
+        onToggle()();
+      }}
+    >
+      <Text class={palette().rowLabelCls}>{label()}</Text>
+      <View class={current.value ? palette().switchOnCls : palette().switchOffCls}>
+        <View
+          nodeRef={(node: NodeMirror | null) => {
+            knob = node ?? undefined;
+            moveKnob(1);
+          }}
+          class={palette().knobCls}
+          style={{ translateX: current.value ? 15.5 : 0.5 }}
+        />
       </View>
     </View>
   );
@@ -138,30 +172,50 @@ const brightnessWidth = (level: number): number => (level / 5) * BRIGHTNESS_TRAC
 const brightnessScale = (level: number): number => level / 5;
 const brightnessFillOffset = (level: number): number => -(BRIGHTNESS_TRACK_W * (1 - brightnessScale(level))) / 2;
 
-const Brightness = defineVaporComponent((props: { themeName: ThemeName }) => {
+const Brightness = defineVaporComponent((_props: { themeName: ThemeName }, { attrs }) => {
   const level = ref(BRIGHTNESS_INITIAL_LEVEL);
-  const palette = () => themeByName(props.themeName);
+  const themeName = () => propValue(attrs.themeName as ThemeName | (() => ThemeName));
+  const palette = () => themeByName(themeName());
   let fill: NodeMirror | undefined;
   let thumb: NodeMirror | undefined;
-  let initialized = false;
-  watchEffect(() => {
+  const moveLevel = (dur: number) => {
     const target = brightnessWidth(level.value);
     const scale = brightnessScale(level.value);
     const fillOffset = brightnessFillOffset(level.value);
     if (!fill || !thumb) return;
-    animate(fill, "scaleX", scale, { dur: initialized ? 150 : 1, easing: "out" });
-    animate(fill, "translateX", fillOffset, { dur: initialized ? 150 : 1, easing: "out" });
-    animate(thumb, "translateX", target - BRIGHTNESS_THUMB_W, { dur: initialized ? 150 : 1, easing: "out" });
-    initialized = true;
-  });
+    animate(fill, "scaleX", scale, { dur, easing: "out" });
+    animate(fill, "translateX", fillOffset, { dur, easing: "out" });
+    animate(thumb, "translateX", target - BRIGHTNESS_THUMB_W, { dur, easing: "out" });
+  };
 
   return (
-    <View class={palette().rowCls} focusable onPress={() => { level.value = level.value >= 5 ? 1 : level.value + 1; }}>
+    <View
+      class={palette().rowCls}
+      focusable
+      onPress={() => {
+        level.value = level.value >= 5 ? 1 : level.value + 1;
+        moveLevel(150);
+      }}
+    >
       <Text class={palette().rowLabelCls}>BRIGHTNESS</Text>
       <View class="flex-row items-center gap-2">
         <View class={palette().sliderTrackCls}>
-          <View nodeRef={(node: NodeMirror | null) => { fill = node ?? undefined; }} class={palette().sliderFillCls} style={{ scaleX: brightnessScale(BRIGHTNESS_INITIAL_LEVEL), translateX: brightnessFillOffset(BRIGHTNESS_INITIAL_LEVEL) }} />
-          <View nodeRef={(node: NodeMirror | null) => { thumb = node ?? undefined; }} class={palette().sliderThumbCls} style={{ translateX: brightnessWidth(BRIGHTNESS_INITIAL_LEVEL) - BRIGHTNESS_THUMB_W }} />
+          <View
+            nodeRef={(node: NodeMirror | null) => {
+              fill = node ?? undefined;
+              moveLevel(1);
+            }}
+            class={palette().sliderFillCls}
+            style={{ scaleX: brightnessScale(BRIGHTNESS_INITIAL_LEVEL), translateX: brightnessFillOffset(BRIGHTNESS_INITIAL_LEVEL) }}
+          />
+          <View
+            nodeRef={(node: NodeMirror | null) => {
+              thumb = node ?? undefined;
+              moveLevel(1);
+            }}
+            class={palette().sliderThumbCls}
+            style={{ translateX: brightnessWidth(BRIGHTNESS_INITIAL_LEVEL) - BRIGHTNESS_THUMB_W }}
+          />
         </View>
         <View class="w-9 flex-row justify-end">
           <Text class={palette().valueCls}>{level.value}/5</Text>
@@ -171,15 +225,21 @@ const Brightness = defineVaporComponent((props: { themeName: ThemeName }) => {
   );
 });
 
-const ThemeRow = defineVaporComponent((props: { value: ThemeName; themeName: ThemeName; onPick: (t: ThemeName) => void }) => {
-  const palette = () => themeByName(props.themeName);
+const ThemeRow = defineVaporComponent((
+  _props: { value: ThemeName; themeName: ThemeName; onPick: (t: ThemeName) => void },
+  { attrs },
+) => {
+  const value = () => propValue(attrs.value as ThemeName | (() => ThemeName));
+  const themeName = () => propValue(attrs.themeName as ThemeName | (() => ThemeName));
+  const onPick = () => callbackProp(attrs.onPick as ((t: ThemeName) => void) | (() => (t: ThemeName) => void));
+  const palette = () => themeByName(themeName());
   return (
     <View class={palette().panelCls}>
       <Text class={palette().rowLabelCls}>THEME</Text>
       <View class="flex-row gap-2">
         {THEMES.map((t) => (
-          <View class={props.value === t.name ? t.selectedCls : t.swatchCls} focusable onPress={() => props.onPick(t.name)}>
-            {props.value === t.name ? <View class="w-2 h-2 rounded-full bg-white shadow" /> : null}
+          <View class={value() === t.name ? t.selectedCls : t.swatchCls} focusable onPress={() => onPick()(t.name)}>
+            {value() === t.name ? <View class="w-2 h-2 rounded-full bg-white shadow" /> : null}
           </View>
         ))}
       </View>

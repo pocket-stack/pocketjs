@@ -4,7 +4,6 @@ import {
   defineVaporComponent,
   insert as vaporInsert,
   onScopeDispose,
-  renderEffect,
   shallowRef,
   watchEffect,
 } from "vue";
@@ -233,7 +232,7 @@ function createPrimitiveNode(
   mountChildren(node, slots);
   const omit = new Set(["children", "key", "ref", "nodeRef", ...(opts.omit ?? [])]);
   let prev: HostProps = {};
-  renderEffect(() => {
+  const apply = () => {
     const extra = typeof opts.extra === "function" ? opts.extra() : (opts.extra ?? {});
     const next = { ...cleanProps(rawProps, omit), ...cleanExtraProps(extra) };
     for (const key of Object.keys(next)) setProp(node, key, next[key], prev[key]);
@@ -242,7 +241,12 @@ function createPrimitiveNode(
     }
     prev = next;
     assignRef(rawProps.nodeRef ?? rawProps.ref, node);
-  });
+  };
+  const hasFrameDynamicProps =
+    typeof opts.extra === "function" ||
+    Object.keys(rawProps).some((key) => !omit.has(key) && typeof rawProps[key] === "function");
+  watchEffect(apply);
+  if (hasFrameDynamicProps) onFrame(apply);
   return node;
 }
 
@@ -375,7 +379,7 @@ function createPortalRoot(): { marker: NodeMirror; host: NodeMirror; root: Rende
 
 export const Portal = definePocketVaporComponent((_props: PortalProps, { slots }: { slots: SlotBag }) => {
   const state = createPortalRoot();
-  renderEffect(() => {
+  watchEffect(() => {
     state.root.update(defaultBlock(slots));
   });
   onScopeDispose(() => {
@@ -510,31 +514,42 @@ export const Lazy = definePocketVaporComponent((_props: LazyProps, { attrs, slot
               grow: 1,
               width: SCREEN_W,
               flexDir: ENUMS.FlexDir.Col,
+              justify: ENUMS.Justify.Center,
+              align: ENUMS.Align.Center,
             },
           },
   });
   const renderRoot = createRenderRoot(root);
   const active = () => resolveActive(attrs.when);
-
-  if (reveal > 0) {
-    onFrame(() => {
-      if (ready.value || !active()) return;
-      if (++elapsed >= reveal) ready.value = true;
-    });
-  }
-
-  renderEffect(() => {
-    if (!active()) {
+  let renderedState: "hidden" | "fallback" | "ready" | undefined;
+  const renderLazy = (): void => {
+    const nextState = !active() ? "hidden" : ready.value ? "ready" : "fallback";
+    if (nextState === renderedState) return;
+    renderedState = nextState;
+    if (nextState === "hidden") {
       renderRoot.update(null);
       return;
     }
-    if (!ready.value) {
+    if (nextState === "fallback") {
       const fallback = attrs.fallback;
       renderRoot.update(typeof fallback === "function" ? (fallback as () => VNodeChild)() : fallback);
       return;
     }
     renderRoot.update(slotDefault(slots));
-  });
+  };
+
+  if (reveal > 0) {
+    onFrame(() => {
+      if (!ready.value && active()) {
+        if (++elapsed >= reveal) ready.value = true;
+      }
+      renderLazy();
+    });
+  } else {
+    onFrame(renderLazy);
+  }
+
+  renderLazy();
   onScopeDispose(() => renderRoot.dispose());
   return root;
 }, NO_FALLTHROUGH);
@@ -564,9 +579,13 @@ export const Gallery = definePocketVaporComponent((_props: GalleryProps, { attrs
     booleanOption(attrs.wrap)
       ? ((n % count()) + count()) % count()
       : Math.max(0, Math.min(count() - 1, n));
+  let currentPage = page();
   const go = (delta: number): void => {
-    const next = clampPage(page() + delta);
-    if (next !== page()) onPageChange()?.(next);
+    const next = clampPage(currentPage + delta);
+    if (next === currentPage) return;
+    currentPage = next;
+    renderCurrent(currentPage, true);
+    onPageChange()?.(next);
   };
 
   if (attrs.bindTriggers !== false) {
@@ -583,7 +602,7 @@ export const Gallery = definePocketVaporComponent((_props: GalleryProps, { attrs
   } else {
     setProp(viewport, "style", { width: SCREEN_W, height: SCREEN_H, overflow: ENUMS.Overflow.Hidden }, undefined);
   }
-  setProp(strip, "style", { width: SCREEN_W, height: SCREEN_H, translateX: -page() * SCREEN_W }, undefined);
+  setProp(strip, "style", { width: SCREEN_W, height: SCREEN_H, translateX: -currentPage * SCREEN_W }, undefined);
   insertNode(viewport, strip);
 
   for (let i = 0; i < count(); i++) {
@@ -606,17 +625,24 @@ export const Gallery = definePocketVaporComponent((_props: GalleryProps, { attrs
     roots.push(createRenderRoot(cell));
   }
 
-  let prevPage = page();
-  renderEffect(() => {
-    const current = page();
-    if (current !== prevPage) {
-      prevPage = current;
+  const renderCurrent = (current: number, animated: boolean): void => {
+    if (animated) {
       animate(strip, "translateX", -current * SCREEN_W, { dur: dur(), easing: easing() });
+    } else {
+      setProp(strip, "style", { width: SCREEN_W, height: SCREEN_H, translateX: -current * SCREEN_W }, undefined);
     }
     const render = renderPage();
     for (let i = 0; i < cells.length; i++) {
       roots[i].update(render && Math.abs(i - current) <= win() ? render(i) : null);
     }
+  };
+
+  renderCurrent(currentPage, false);
+  onFrame(() => {
+    const externalPage = page();
+    if (externalPage === currentPage) return;
+    currentPage = externalPage;
+    renderCurrent(currentPage, true);
   });
   onScopeDispose(() => roots.forEach((root) => root.dispose()));
   return viewport;

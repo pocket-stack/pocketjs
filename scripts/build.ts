@@ -24,6 +24,7 @@ import { pathToFileURL } from "node:url";
 import { PSM } from "../spec/spec.ts";
 import {
   FRAMEWORKS,
+  frameworkVariantPath,
   jsxPlugin,
   packagePath,
   parseFramework,
@@ -125,7 +126,8 @@ function resolveEntry(arg: string): string {
   process.exit(1);
 }
 
-const entry = resolveEntry(appArg);
+const requestedEntry = resolveEntry(appArg);
+const entry = frameworkVariantPath(requestedEntry, framework);
 function outputName(file: string): string {
   const rel = file.startsWith(ROOT) ? file.slice(ROOT.length) : file;
   const demo = rel.match(/^demos\/([^/]+)\/(app|main)\.tsx?$/);
@@ -133,7 +135,7 @@ function outputName(file: string): string {
   return file.split("/").pop()!.replace(/\.tsx?$/, "");
 }
 
-const appName = outputName(entry);
+const appName = outputName(requestedEntry);
 const outName = `${appName}${frameworkConfig.outputSuffix}`;
 console.log(`PocketJS build: ${appName} (${entry}, framework=${framework})`);
 
@@ -165,7 +167,7 @@ function resolveImport(fromFile: string, spec: string): string | null {
   } catch {
     return null;
   }
-  return /\.tsx?$/.test(resolved) && !resolved.endsWith(".d.ts") ? resolved : null;
+  return /\.tsx?$/.test(resolved) && !resolved.endsWith(".d.ts") ? frameworkVariantPath(resolved, framework) : null;
 }
 
 const classStrings: string[] = [];

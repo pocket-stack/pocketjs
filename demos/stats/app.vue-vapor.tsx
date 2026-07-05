@@ -104,8 +104,9 @@ const Overview = defineVaporComponent(() => {
   );
 });
 
-const Systems = defineVaporComponent((props: { frame: number }) => {
-  const rowT = (i: number) => easeOutCubic((props.frame - i * SYSTEMS_STAGGER_FRAMES) / SYSTEMS_REVEAL_FRAMES);
+const Systems = defineVaporComponent((_props: { frame: number }, { attrs }) => {
+  const frame = () => (typeof attrs.frame === "function" ? (attrs.frame as () => number)() : (attrs.frame as number));
+  const rowT = (i: number) => easeOutCubic((frame() - i * SYSTEMS_STAGGER_FRAMES) / SYSTEMS_REVEAL_FRAMES);
   return (
     <View class="flex-col gap-1">
       {SYSTEMS.map((sys, i) => (

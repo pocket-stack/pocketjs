@@ -5,6 +5,7 @@ import type { ParserOptions } from "@babel/parser";
 import solidPreset from "babel-preset-solid";
 import tsPreset from "@babel/preset-typescript"; // untyped - see compiler/ambient.d.ts
 import { transformVueJsxVapor } from "vue-jsx-vapor/api";
+import { existsSync } from "node:fs";
 import {
   propsHelperCode,
   propsHelperId,
@@ -276,6 +277,12 @@ export function packagePath(spec: string, framework: PocketFramework): string | 
   return FRAMEWORKS[framework].subpaths[subpath] ?? null;
 }
 
+export function frameworkVariantPath(path: string, framework: PocketFramework): string {
+  if (framework !== "vue-vapor" || path.includes("/node_modules/") || path.endsWith(".d.ts")) return path;
+  const variant = path.replace(/(\.tsx?)$/, ".vue-vapor$1");
+  return variant !== path && existsSync(variant) ? variant : path;
+}
+
 function transformOptions(framework: PocketFramework) {
   if (framework === "solid") {
     return {
@@ -363,6 +370,16 @@ export function jsxPlugin(framework: PocketFramework, opts: { entry?: string } =
         return path ? { path } : undefined;
       });
       if (framework === "vue-vapor") {
+        build.onResolve({ filter: /^\.{1,2}\// }, (args) => {
+          let resolved: string;
+          try {
+            resolved = Bun.resolveSync(args.path, args.resolveDir);
+          } catch {
+            return undefined;
+          }
+          const variant = frameworkVariantPath(resolved, framework);
+          return variant !== resolved ? { path: variant } : undefined;
+        });
         build.onResolve({ filter: /^vue$/ }, () => ({ path: VUE_VAPOR_RUNTIME_PATH }));
         build.onResolve({ filter: /^\/vue-jsx-vapor\/(?:props|vdom|vapor|ssr)$/ }, (args) => ({
           path: args.path,
