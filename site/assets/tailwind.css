@@ -345,7 +345,6 @@
   .pg-status[data-kind="ok"] { color: #34d399; }
   .pg-status[data-kind="err"] { color: #f87171; }
   .pg-status[data-kind="busy"] { color: var(--color-brand-2); }
-  .pg-fps { font-family: var(--font-mono); font-size: 0.75rem; color: #34d399; min-width: 3.5rem; text-align: right; }
   .pg-split { flex: 1; display: grid; grid-template-columns: 1fr; min-height: 0; }
   @media (min-width: 900px) { .pg-split { grid-template-columns: 1fr 1fr; } }
   .pg-editor-pane { min-height: 0; border-bottom: 1px solid var(--color-line); overflow: hidden; }

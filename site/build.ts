@@ -185,7 +185,7 @@ async function main() {
 
   // 4. prebuilt showcase bundles for the homepage hero. Reuse dist/ when
   //    present, and build missing bundles so the site never emits 404 demos.
-  const showcase = ["settings-main", "launcher-main", "music-main"];
+  const showcase = ["gallery-main", "settings-main", "launcher-main", "music-main"];
   for (const s of showcase) {
     copyShowcaseBundle(s);
   }

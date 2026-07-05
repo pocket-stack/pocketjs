@@ -11,6 +11,7 @@
 // Both end up driving the same globalThis.frame(buttons) contract.
 
 import { createWasmUi, FB_W, FB_H } from "../../host-web/wasm-ops.js";
+import { drawHud, wasmMemoryBytes } from "../../host-web/hud.js";
 
 // spec/spec.ts BTN — the PSP button bitmask.
 export const BTN = {
@@ -44,6 +45,8 @@ export class PocketHost {
     this.onError = () => {};
     this._statsFrames = 0;
     this._statsT = 0;
+    this._hudFps = 0; // on-canvas HUD, sampled once/second (see hud.js)
+    this._hudMem = 0;
   }
 
   /** Bind to a canvas + instantiate the wasm. Call once. `wasmUrl` defaults to
@@ -110,6 +113,7 @@ export class PocketHost {
       );
     }
     this.frameCb = globalThis.frame;
+    this._hudMem = wasmMemoryBytes(this.wasm); // so MEM shows before the first 1s sample
     this._safeFrame();
     this._blit();
     this._start();
@@ -140,6 +144,7 @@ export class PocketHost {
     if (!this.wasm || !this.ctx) return;
     this.imageData.data.set(this.wasm.render());
     this.ctx.putImageData(this.imageData, 0, 0);
+    drawHud(this.ctx, FB_W, FB_H, this._hudFps, this._hudMem); // built-in on-canvas overlay
   }
 
   _tick = (now) => {
@@ -159,7 +164,10 @@ export class PocketHost {
     if (steps > 0) this._blit();
     this._statsT += dt;
     if (this._statsT >= 1000) {
-      this.onFps(Math.round((this._statsFrames * 1000) / this._statsT));
+      // Sample FPS + memory once per second for the on-canvas HUD.
+      this._hudFps = Math.round((this._statsFrames * 1000) / this._statsT);
+      this._hudMem = wasmMemoryBytes(this.wasm);
+      this.onFps(this._hudFps);
       this._statsFrames = 0;
       this._statsT = 0;
     }

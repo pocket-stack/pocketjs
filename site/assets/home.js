@@ -4,7 +4,8 @@
 import { PocketHost } from "../playground/host.js";
 
 const PG = "/pg/";
-const SHOWCASE = "settings-main";
+// The hero runs the animated gallery — L/R (or Q/E) pages between shader covers.
+const SHOWCASE = "gallery-main";
 
 function setupCodeTabs() {
   const tabs = [...document.querySelectorAll("[data-code-tab]")];
@@ -30,15 +31,12 @@ async function boot() {
 
   const canvas = document.getElementById("hero-canvas");
   if (!canvas) return;
-  const fpsEl = document.getElementById("hero-fps");
   const loadEl = document.getElementById("hero-loading");
 
+  // FPS + memory are drawn on the canvas by the host (see host-web/hud.js).
   const host = new PocketHost();
   await host.mount(canvas, {
     wasmUrl: PG + "pocketjs.wasm",
-    onFps: (f) => {
-      if (fpsEl) fpsEl.textContent = f ? f + " fps" : "";
-    },
     onError: () => {},
   });
 

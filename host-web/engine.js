@@ -15,6 +15,7 @@
 //   A = SQUARE         S = TRIANGLE        Shift = SELECT   Space = START
 
 import { createWasmUi, FB_W, FB_H } from "./wasm-ops.js";
+import { drawHud, wasmMemoryBytes } from "./hud.js";
 
 // spec/spec.ts BTN (plain module — keep the literal in sync with the spec).
 export const BTN = {
@@ -66,6 +67,8 @@ let logSink = () => {};
 let fpsSink = () => {};
 let statsFrames = 0;
 let statsT = 0;
+let hudFps = 0; // on-canvas HUD, sampled once/second (see hud.js)
+let hudMem = 0;
 
 function safeFrame() {
   if (!frameCb) return;
@@ -82,6 +85,7 @@ function blit() {
   if (!wasm || !ctx) return;
   imageData.data.set(wasm.render());
   ctx.putImageData(imageData, 0, 0);
+  drawHud(ctx, FB_W, FB_H, hudFps, hudMem); // built-in on-canvas overlay
 }
 
 function tick(now) {
@@ -101,7 +105,10 @@ function tick(now) {
   if (steps > 0) blit();
   statsT += dt;
   if (statsT >= 1000) {
-    fpsSink(Math.round((statsFrames * 1000) / statsT));
+    // Sample FPS + memory once per second for the on-canvas HUD.
+    hudFps = Math.round((statsFrames * 1000) / statsT);
+    hudMem = wasmMemoryBytes(wasm);
+    fpsSink(hudFps);
     statsFrames = 0;
     statsT = 0;
   }
@@ -197,6 +204,7 @@ export async function load(name) {
     return e;
   }
   logSink("loaded " + name);
+  hudMem = wasmMemoryBytes(wasm); // so MEM shows before the first 1s sample
   safeFrame(); // one immediate frame so the canvas isn't blank
   blit();
   start();

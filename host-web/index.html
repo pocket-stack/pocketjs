@@ -33,7 +33,6 @@
     background: #0f172a; border: 1px solid #1e293b; border-radius: 6px;
     padding: 8px; white-space: pre-wrap; font-size: 12px; color: #94a3b8;
   }
-  #fps { color: #34d399; min-width: 60px; }
 </style>
 </head>
 <body>
@@ -41,7 +40,6 @@
 <div class="row">
   <select id="demo"></select>
   <button id="run">Run</button>
-  <span id="fps"></span>
 </div>
 <canvas id="screen" width="480" height="272"></canvas>
 <div class="row pad">
@@ -69,7 +67,6 @@
   import { mount, load, listDemos, pressVirtual } from "./engine.js";
 
   const logEl = document.getElementById("log");
-  const fpsEl = document.getElementById("fps");
   const demoEl = document.getElementById("demo");
 
   function log(msg) {
@@ -77,10 +74,8 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  await mount(document.getElementById("screen"), {
-    onLog: log,
-    onFps: (f) => (fpsEl.textContent = f ? f + " fps" : ""),
-  });
+  // FPS + memory are drawn on the canvas by the host (see host-web/hud.js).
+  await mount(document.getElementById("screen"), { onLog: log });
 
   const demos = await listDemos();
   if (demos.length === 0) {

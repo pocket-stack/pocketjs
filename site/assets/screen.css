@@ -107,6 +107,38 @@
 .emu-faces .ci    { top: 32%; right: 0;    }
 .emu-faces .cross { bottom: 0;  left: 32%; }
 
+/* L / R shoulder buttons — page the gallery. Sit just below the top corners
+   so they clear the in-canvas FPS / MEM HUD pills (see host-web/hud.js). */
+.emu-shoulder {
+  position: absolute;
+  top: 7%;
+  z-index: 2;
+  width: 13%;
+  height: 8.5%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 2.4cqw;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(20, 29, 49, 0.56);
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: background 0.1s ease, transform 0.05s ease, border-color 0.1s ease;
+}
+.emu-shoulder.l { left: 3.5%; border-radius: 7px 7px 13px 5px; }
+.emu-shoulder.r { right: 3.5%; border-radius: 7px 7px 5px 13px; }
+.emu-shoulder:hover { background: rgba(30, 41, 59, 0.68); }
+.emu-shoulder.is-down,
+.emu-shoulder:active {
+  background: rgba(96, 165, 250, 0.3);
+  border-color: rgba(147, 197, 253, 0.68);
+  color: #fff;
+  transform: scale(0.94);
+}
+
 /* SELECT / START */
 .emu-sys {
   position: absolute;

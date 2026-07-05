@@ -33,7 +33,6 @@ async function main() {
   const canvas = $("#pg-canvas");
   const statusEl = $("#pg-status");
   const errorEl = $("#pg-error");
-  const fpsEl = $("#pg-fps");
   const demoSel = $("#pg-demo");
   const runBtn = $("#pg-run");
   const resetBtn = $("#pg-reset");
@@ -51,7 +50,6 @@ async function main() {
   const host = new PocketHost();
   await host.mount(canvas, {
     wasmUrl: PG + "pocketjs.wasm",
-    onFps: (f) => (fpsEl.textContent = f ? f + " fps" : ""),
     onError: (e) => showError(String(e && e.stack ? e.stack : e)),
     onLog: () => {},
   });
