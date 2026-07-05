@@ -104,10 +104,10 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    max-width: 72rem;
+    max-width: 1160px;
     height: 62px;
     margin: 0 auto;
-    padding: 0 1.25rem;
+    padding: 0 clamp(1.25rem, 4vw, 2.75rem);
   }
   .site-brand {
     display: inline-flex;
