@@ -157,6 +157,27 @@ async function bundleSolid(outfile: string) {
   console.log(`  ${outfile}  (${(code.length / 1024).toFixed(0)} KiB)`);
 }
 
+async function bundleSolidUniversal(outfile: string) {
+  const entry = Bun.resolveSync("solid-js/universal", ROOT);
+  const res = await Bun.build({
+    entrypoints: [entry],
+    target: "browser",
+    format: "esm",
+    conditions: ["browser"],
+    define: { "process.env.NODE_ENV": '"production"' },
+    external: ["solid-js"],
+    minify: true,
+    sourcemap: "none",
+  });
+  if (!res.success) {
+    for (const l of res.logs) console.error(String(l));
+    throw new Error("bundle failed: solid-js/universal");
+  }
+  const code = await res.outputs[0].text();
+  write(outfile, code);
+  console.log(`  ${outfile}  (${(code.length / 1024).toFixed(0)} KiB)`);
+}
+
 async function bundleVueVapor(outfile: string) {
   const entry = Bun.resolveSync("vue/dist/vue.runtime-with-vapor.esm-browser.prod.js", ROOT);
   const res = await Bun.build({
@@ -289,9 +310,10 @@ async function main() {
 
   // 1. bundles
   await bundleSolid("pg/solid.js");
+  await bundleSolidUniversal("pg/solid-universal.js");
   await bundleVueVapor("pg/vue-vapor.js");
   writeVueVaporHelpers();
-  await bundle("playground/runtime-entry.ts", "pg/runtime.js");
+  await bundle("playground/runtime-entry.ts", "pg/runtime.js", { external: ["solid-js", "solid-js/universal"] });
   await bundle("playground/runtime-vue-vapor-entry.ts", "pg/runtime-vue-vapor.js", { external: ["vue"] });
   await bundle("playground/compiler-entry.ts", "pg/compiler.js", { shims: true, prelude: PROCESS_PRELUDE });
   await bundle("playground/playground.js", "pg/playground.bundle.js");
@@ -434,6 +456,7 @@ async function compileCss() {
 const IMPORT_MAP = `<script type="importmap">
 {"imports":{
   "solid-js":"/pg/solid.js",
+  "solid-js/universal":"/pg/solid-universal.js",
   "vue":"/pg/vue-vapor.js",
   "/vue-jsx-vapor/props":"/pg/vue-jsx-vapor/props.js",
   "/vue-jsx-vapor/vdom":"/pg/vue-jsx-vapor/vdom.js",

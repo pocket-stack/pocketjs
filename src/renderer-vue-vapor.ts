@@ -68,6 +68,9 @@ export interface RenderRoot {
 }
 
 function normalizeVaporBlock(block: unknown): unknown | undefined {
+  while (typeof block === "function" && block.length === 0) {
+    block = (block as () => unknown)();
+  }
   if (block == null || typeof block === "boolean") return undefined;
   if (!Array.isArray(block)) return block;
   const out: unknown[] = [];

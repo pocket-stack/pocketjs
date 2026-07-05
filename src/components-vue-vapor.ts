@@ -141,6 +141,9 @@ function withNativeTextDocument<T>(fn: () => T): T {
 }
 
 function normalizeVaporBlock(block: unknown): unknown | null {
+  while (typeof block === "function" && block.length === 0) {
+    block = withNativeTextDocument(() => (block as () => unknown)());
+  }
   if (block == null || typeof block === "boolean") return null;
   if (!Array.isArray(block)) return block;
   const out: unknown[] = [];

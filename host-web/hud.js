@@ -21,11 +21,11 @@ function fmtMem(bytes) {
 /** Draw one pill (translucent plate + colored label) anchored at a corner. */
 function pill(ctx, x, y, text, color, alignRight) {
   const w = Math.ceil(ctx.measureText(text).width);
-  const px = alignRight ? x - w - 6 : x;
-  ctx.fillStyle = "rgba(8, 11, 20, 0.6)";
-  ctx.fillRect(px, y, w + 6, 13);
+  const px = alignRight ? x - w - 8 : x;
+  ctx.fillStyle = "rgba(8, 11, 20, 0.68)";
+  ctx.fillRect(px, y, w + 8, 16);
   ctx.fillStyle = color;
-  ctx.fillText(text, px + 3, y + 2);
+  ctx.fillText(text, px + 4, y + 2);
 }
 
 /**
@@ -36,7 +36,7 @@ function pill(ctx, x, y, text, color, alignRight) {
  */
 export function drawHud(ctx, w, _h, fps, memBytes) {
   ctx.save();
-  ctx.font = "700 9px ui-monospace, SFMono-Regular, Menlo, monospace";
+  ctx.font = "700 11px ui-monospace, SFMono-Regular, Menlo, monospace";
   ctx.textBaseline = "top";
   pill(ctx, 3, 3, "FPS " + (fps | 0), "#34d399", false); // top-left
   pill(ctx, w - 3, 3, "MEM " + fmtMem(memBytes), "#60a5fa", true); // top-right
