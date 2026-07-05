@@ -299,9 +299,12 @@ The browser host and the [playground](/playground/) map the keyboard onto the sa
 | S | `TRIANGLE` |
 | Left/Right Shift | `SELECT` |
 | Space | `START` |
+| L or Q | `LTRIGGER` (left shoulder) |
+| R or E | `RTRIGGER` (right shoulder) |
 
-There is no default key for `LTRIGGER` / `RTRIGGER` in the browser host. Everything
-else behaves identically to hardware: arrows drive focus, Enter/Z confirms, and your
+The shoulder triggers map to the literal `L` / `R` keys (with `Q` / `E` as a
+left-hand alternate). Everything behaves identically to hardware: arrows drive
+focus, Enter/Z confirms, `L` / `R` page the shoulder-driven UI, and your
 `onButtonPress` handlers fire on the mapped presses.
 
 ## Related

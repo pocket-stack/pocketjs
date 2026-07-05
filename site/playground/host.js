@@ -16,6 +16,7 @@ import { createWasmUi, FB_W, FB_H } from "../../host-web/wasm-ops.js";
 export const BTN = {
   SELECT: 0x0001, START: 0x0008,
   UP: 0x0010, RIGHT: 0x0020, DOWN: 0x0040, LEFT: 0x0080,
+  LTRIGGER: 0x0100, RTRIGGER: 0x0200,
   TRIANGLE: 0x1000, CIRCLE: 0x2000, CROSS: 0x4000, SQUARE: 0x8000,
 };
 
@@ -23,6 +24,8 @@ const KEYMAP = {
   ArrowUp: BTN.UP, ArrowRight: BTN.RIGHT, ArrowDown: BTN.DOWN, ArrowLeft: BTN.LEFT,
   KeyX: BTN.CROSS, Enter: BTN.CIRCLE, KeyZ: BTN.CIRCLE, KeyA: BTN.SQUARE,
   KeyS: BTN.TRIANGLE, ShiftLeft: BTN.SELECT, ShiftRight: BTN.SELECT, Space: BTN.START,
+  // Shoulder triggers: literal L / R keys, plus Q / E as a left-hand alternate.
+  KeyL: BTN.LTRIGGER, KeyR: BTN.RTRIGGER, KeyQ: BTN.LTRIGGER, KeyE: BTN.RTRIGGER,
 };
 
 export class PocketHost {

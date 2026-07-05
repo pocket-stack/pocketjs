@@ -5,7 +5,7 @@ Every public export of `@pocketjs/framework`, grouped by import path. Signatures
 | Import path | Exports |
 | --- | --- |
 | `@pocketjs/framework` | `mount`, `render`, host/runtime helpers, types |
-| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar` |
+| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar`, `Grid`, `Lazy`, `Gallery` |
 | `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
 | `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
 | `@pocketjs/framework/animation` | `animate`, `spring`, `cancelAnim` |
@@ -164,9 +164,10 @@ directly from `solid-js`.
 function View(props: ViewProps): JSX.Element
 function Text(props: TextProps): JSX.Element
 function Image(props: ImageProps): JSX.Element
+function Sprite(props: SpriteProps): JSX.Element
 ```
 
-The three host tags, wrapped React Native-style. `View` is the flex container/box, `Text` renders baked-font text, `Image` draws an uploaded texture by `src` key.
+The host primitives, wrapped React Native-style. `View` is the flex container/box, `Text` renders baked-font text, `Image` draws an uploaded texture by `src` key, and `Sprite` draws an auto-playing animation from a baked sprite atlas by `sprite` key.
 
 **`ViewProps`**
 
@@ -181,6 +182,9 @@ The three host tags, wrapped React Native-style. `View` is the flex container/bo
 
 **`TextProps`** — `class`, `style`, `ref`, `children`.
 **`ImageProps`** — `class`, `src` (`string`), `style`, `ref`.
+**`SpriteProps`** — `class`, `sprite` (`string` — a `ui:sprite.<name>` atlas key), `style`, `ref`.
+
+`Sprite` is a native animated primitive: its atlas (a pow2 texture holding a grid of frames) is baked into the pak, and the Rust core cycles the frame cells per vblank — deterministic and with **zero per-frame JS**. It auto-plays from the first frame the moment it is displayed, so a sprite revealed by paging or a `Show`/`Lazy` starts animating on its own. Bake atlases by listing them in a demo's `sprites.json` (`{ "<atlas>.png": { cols, rows, frames, step } }`); `step` is vblanks per frame (fps = 60/step). See `demos/gallery` (its covers are shader-baked animated sprites).
 
 ### `Screen`
 
@@ -264,6 +268,52 @@ function ActionBar(props: ActionBarProps): JSX.Element  // ActionBarProps extend
 ```
 
 A portalled bottom bar. Defaults to a pinned `left-3 right-3 bottom-3` row when no `class` is given.
+
+### `Grid`
+
+```ts
+interface GridProps extends ViewProps, Partial<FocusGridOptions> {
+  gap?: number;                            // cross-axis gap px (via style)
+  active?: boolean | (() => boolean);      // enable FocusGrid traversal (needs columns)
+}
+function Grid(props: GridProps): JSX.Element
+```
+
+A wrapping tile layout (`flex-row flex-wrap`). With `columns` + `active` it delegates row/column d-pad traversal to [`FocusGrid`](#focusgrid); `columns` drives traversal only — layout stays flexbox. `gap` is a number so `class` can stay a single compiled literal.
+
+### `Lazy`
+
+```ts
+interface LazyProps {
+  when: boolean | (() => boolean);         // mount while truthy; destroy when false
+  reveal?: number;                         // host frames to show fallback first (0)
+  fallback?: JSX.Element | (() => JSX.Element);
+  children: () => JSX.Element;             // deferred content factory
+}
+function Lazy(props: LazyProps): JSX.Element
+```
+
+On-demand mount: builds `children` only while `when` is truthy (the sweep destroys the subtree when it goes false). `reveal` shows `fallback` for N frames the first time it activates, then latches revealed for its lifetime (no replay). Models on-demand *content build* — textures are still uploaded eagerly at pak load.
+
+### `Gallery`
+
+```ts
+interface GalleryProps {
+  count: number;                           // total pages
+  page: () => number;                      // controlled current-page accessor
+  onPageChange?: (next: number) => void;
+  renderPage: (index: number) => JSX.Element;  // called only for in-window pages
+  window?: number;                         // pages kept mounted each side (1)
+  duration?: number;                       // slide ms (300)
+  easing?: EasingName;                     // slide easing ("out")
+  bindTriggers?: boolean;                  // bind LTRIGGER/RTRIGGER (true)
+  wrap?: boolean;                          // wrap past the ends (false)
+  class?: string;                          // outer viewport class
+}
+function Gallery(props: GalleryProps): JSX.Element
+```
+
+A full-screen L/R-paged strip: `LTRIGGER`/`RTRIGGER` slide one whole screen at a time. Controlled (`page` + `onPageChange`); the slide is one native `translateX` tween per press (paint-only), and pages outside `window` are not built, keeping many-page galleries inside the draw budget. See `demos/gallery`.
 
 ## `solid-js`
 

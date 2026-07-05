@@ -170,6 +170,83 @@ export function encodeImageEntry(img: DecodedImage, psm: number = PSM.PSM_8888):
   return out;
 }
 
+export interface SpriteAtlas {
+  /** Atlas texture dims (pow2, <= TEX_MAX_DIM). */
+  atlasW: number;
+  atlasH: number;
+  /** Frames played (indices 0..frameCount-1, laid out in a `cols`-wide grid). */
+  frameCount: number;
+  /** Atlas grid columns; rows = ceil(frameCount/cols). */
+  cols: number;
+  /** Host frames (vblanks) each sprite frame stays on screen (>=1). */
+  frameStep: number;
+  /** RGBA atlas pixels, 4 bytes/px, row-major. */
+  rgba: Uint8Array;
+}
+
+/**
+ * Encode a SPRITE ATLAS pak entry — an animation the core auto-plays by
+ * cycling UV sub-rects of one atlas texture. Header (16 bytes) then RGBA pixels:
+ *   off 0  u16  atlasW      (pow2)
+ *   off 2  u16  atlasH      (pow2)
+ *   off 4  u8   psm         (spec PSM; 3 = 8888)
+ *   off 5  u8   reserved (0)
+ *   off 6  u16  frameCount
+ *   off 8  u16  cols
+ *   off 10 u16  frameStep
+ *   off 12 u16  reserved (0)
+ *   off 14 u16  reserved (0)
+ *   off 16 ...  atlas pixels (8888: RGBA bytes == ABGR u32 LE)
+ */
+export function encodeSpriteEntry(a: SpriteAtlas, psm: number = PSM.PSM_8888): Uint8Array {
+  const { atlasW: w, atlasH: h, rgba } = a;
+  const pow2 = (n: number) => n > 0 && (n & (n - 1)) === 0;
+  if (!pow2(w) || !pow2(h) || w > TEX_MAX_DIM || h > TEX_MAX_DIM) {
+    throw new Error(`pak sprite: atlas dims must be pow2 <= ${TEX_MAX_DIM}, got ${w}x${h}`);
+  }
+  if (psm !== PSM.PSM_8888 && psm !== PSM.PSM_4444) {
+    throw new Error(`pak sprite: unsupported psm ${psm} (8888 or 4444)`);
+  }
+  if (rgba.length !== w * h * 4) throw new Error("pak sprite: rgba length mismatch");
+  if (a.frameCount < 1 || a.cols < 1 || a.frameStep < 1) {
+    throw new Error("pak sprite: frameCount/cols/frameStep must be >= 1");
+  }
+  if (a.frameCount > 0xffff || a.cols > 0xffff || a.frameStep > 0xffff) {
+    throw new Error("pak sprite: frame metadata exceeds u16");
+  }
+  // The core tiles a UNIFORM cols x rows grid; the atlas must divide evenly or
+  // UV cell edges land mid-texel (breaks clean sampling + byte-exactness).
+  const rows = Math.ceil(a.frameCount / a.cols);
+  if (w % a.cols !== 0 || h % rows !== 0) {
+    throw new Error(`pak sprite: atlas ${w}x${h} not divisible by grid ${a.cols}x${rows}`);
+  }
+  if (a.frameCount > a.cols * rows) {
+    throw new Error(`pak sprite: frameCount ${a.frameCount} exceeds grid ${a.cols}x${rows}`);
+  }
+  const bpp = psm === PSM.PSM_8888 ? 4 : 2;
+  const out = new Uint8Array(16 + w * h * bpp);
+  const dv = new DataView(out.buffer);
+  dv.setUint16(0, w, true);
+  dv.setUint16(2, h, true);
+  out[4] = psm;
+  dv.setUint16(6, a.frameCount, true);
+  dv.setUint16(8, a.cols, true);
+  dv.setUint16(10, a.frameStep, true);
+  if (psm === PSM.PSM_8888) {
+    out.set(rgba, 16); // RGBA byte order IS the ABGR u32 LE layout
+  } else {
+    // PSM_4444 (16-bit) — halves texmem for PSP; the GE ABGR4444 nibble layout.
+    for (let i = 0, n = w * h; i < n; i++) {
+      const r = rgba[i * 4] >> 4;
+      const g = rgba[i * 4 + 1] >> 4;
+      const b = rgba[i * 4 + 2] >> 4;
+      const av = rgba[i * 4 + 3] >> 4;
+      dv.setUint16(16 + i * 2, (av << 12) | (b << 8) | (g << 4) | r, true);
+    }
+  }
+  return out;
+}
+
 /** Procedural placeholder texture (missing demo image): 32x32 checkerboard. */
 export function placeholderImage(): DecodedImage {
   const w = 32;
@@ -284,4 +361,5 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
 export const KEY_STYLES = "ui:styles";
 export const keyFont = (slot: number): string => `ui:font.${slot}`;
 export const keyImage = (name: string): string => `ui:img.${name}`;
+export const keySprite = (name: string): string => `ui:sprite.${name}`;
 export { PAK_DTYPE };

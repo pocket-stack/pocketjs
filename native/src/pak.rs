@@ -39,20 +39,32 @@ fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
 
 /// Walk `pak` and feed every recognized entry to `ui`. Returns the image
 /// name -> texture-handle table for ffi.rs.
-pub fn feed(ui: &mut Ui, pak: &[u8]) -> Vec<(String, i32)> {
+/// One animated sprite atlas registered from the pak (exposed to JS as
+/// `ui.__sprites[name] = { handle, frames, cols, step }`, the sprite analog of
+/// `ui.__textures`).
+pub struct SpriteReg {
+    pub name: String,
+    pub handle: i32,
+    pub frames: u16,
+    pub cols: u16,
+    pub step: u16,
+}
+
+pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
     let mut textures: Vec<(String, i32)> = Vec::new();
+    let mut sprites: Vec<SpriteReg> = Vec::new();
     let Some(()) = (|| {
         if rd_u32(pak, 0)? != spec::pak::MAGIC || rd_u16(pak, 4)? != spec::pak::VERSION {
             return None;
         }
         Some(())
     })() else {
-        return textures;
+        return (textures, sprites);
     };
     let (Some(count), Some(dir_off), Some(names_off)) =
         (rd_u32(pak, 8), rd_u32(pak, 12), rd_u32(pak, 16))
     else {
-        return textures;
+        return (textures, sprites);
     };
     // Clamp the walk to what the pack can actually hold: a corrupt count word
     // must not stall boot for ~4.3e9 iterations (or overflow `i * ENTRY_SIZE`
@@ -106,8 +118,38 @@ pub fn feed(ui: &mut Ui, pak: &[u8]) -> Vec<(String, i32)> {
             } else {
                 psp::dprintln!("[PocketJS pak] bad image {} ({}x{} psm {})", key, w, h, psm);
             }
+        } else if let Some(name) = key.strip_prefix("ui:sprite.") {
+            // SPRITE entry: 16-byte header {u16 atlasW, u16 atlasH, u8 psm, u8
+            // pad, u16 frameCount, u16 cols, u16 frameStep, 4B pad} + atlas
+            // pixels (compiler/pak.ts encodeSpriteEntry). The atlas uploads as a
+            // normal texture; the core auto-plays the frame cells.
+            let (Some(w), Some(h), Some(&psm), Some(frames), Some(cols), Some(step)) = (
+                rd_u16(blob, 0),
+                rd_u16(blob, 2),
+                blob.get(4),
+                rd_u16(blob, 6),
+                rd_u16(blob, 8),
+                rd_u16(blob, 10),
+            ) else {
+                continue;
+            };
+            let Some(pixels) = blob.get(16..) else { continue };
+            let handle = ui.upload_texture(pixels, w as u32, h as u32, psm as u32);
+            if handle >= 0 {
+                if let Some((px, _, _, _)) = ui.texture(handle) {
+                    unsafe {
+                        psp::sys::sceKernelDcacheWritebackRange(
+                            px.as_ptr() as *const c_void,
+                            px.len() as u32,
+                        );
+                    }
+                }
+                sprites.push(SpriteReg { name: String::from(name), handle, frames, cols, step });
+            } else {
+                psp::dprintln!("[PocketJS pak] bad sprite {} ({}x{} psm {})", key, w, h, psm);
+            }
         }
         // unknown keys: ignored (forward compatible)
     }
-    textures
+    (textures, sprites)
 }

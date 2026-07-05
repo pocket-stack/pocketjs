@@ -64,8 +64,19 @@ pub struct Node {
     pub anim_values: Vec<(u8, u32)>,
     /// UTF-8 content (text nodes only).
     pub text: String,
-    /// Uploaded texture handle (image nodes only; -1 = none).
+    /// Uploaded texture handle (image nodes only; -1 = none). For an animated
+    /// sprite this is the ATLAS texture; the drawn frame is a UV sub-rect of it.
     pub tex: i32,
+    /// Animated-sprite frame count over `tex` (0 = plain image, no animation).
+    pub sprite_frames: u16,
+    /// Atlas grid columns (frame i sits at col i%cols, row i/cols).
+    pub sprite_cols: u16,
+    /// Host frames (vblanks) each sprite frame stays on screen (>=1).
+    pub sprite_step: u16,
+    /// Global frame counter captured when the sprite was bound — the animation
+    /// plays from frame 0 the moment the node is displayed, and is a pure
+    /// function of (Ui.frame - sprite_start), so goldens stay byte-exact.
+    pub sprite_start: u64,
     pub focused: bool,
     pub active: bool,
     /// taffy handle of the last layout build (None = excluded from layout).
@@ -88,6 +99,10 @@ impl Node {
             anim_values: Vec::new(),
             text: String::new(),
             tex: -1,
+            sprite_frames: 0,
+            sprite_cols: 0,
+            sprite_step: 0,
+            sprite_start: 0,
             focused: false,
             active: false,
             taffy: None,

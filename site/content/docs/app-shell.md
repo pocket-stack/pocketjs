@@ -33,6 +33,9 @@ import {
 | `Portal`        | Mounts children into the overlay root, outside the screen's flex layout.   |
 | `Modal`         | A portalled panel that owns a focus scope and blocks background input.     |
 | `ActionBar`     | A portalled, bottom-anchored hint/button strip.                            |
+| `Grid`          | A wrapping tile layout that can hand its tiles row/column d-pad traversal.  |
+| `Lazy`          | Mounts a subtree on demand, with an optional reveal (loading) delay.        |
+| `Gallery`       | A full-screen L/R-paged strip — one whole screen slides in per shoulder press. |
 
 Every one of these except `ActionHandler` and `Portal` extends
 [`ViewProps`](/docs/components/) (`class`, `style`, `ref`, `children`,
@@ -270,6 +273,120 @@ import { ActionBar, Text, View } from "@pocketjs/framework/components";
 
 Because it lives in the overlay layer, the bar stays put no matter how the
 underlying screen scrolls or reflows.
+
+## Grid
+
+`Grid` lays a wall of fixed-width tiles out as a wrapping row and — when you give
+it `columns` and turn `focus` on — hands them the same row/column d-pad traversal
+as [`FocusGrid`](#focusgrid). Layout stays pure flexbox: the visible column count
+emerges from the tile width vs. the container width, and `columns` drives
+*traversal only*.
+
+| Prop      | Type                         | Default | Effect                                                        |
+| --------- | ---------------------------- | ------- | ------------------------------------------------------------- |
+| `columns` | `number`                     | —       | Column count for d-pad traversal (only used when `active` is on). |
+| `gap`     | `number`                     | —       | Cross-axis gap in px, applied via `style` (keeps `class` a single literal). |
+| `wrap`    | `boolean`                    | `false` | Wrap traversal around row/column edges.                       |
+| `active`  | `boolean \| (() => boolean)` | —       | Enable `FocusGrid` traversal (needs `columns`). Accepts a signal — same `active` convention as `FocusScope`/`FocusGrid`. |
+
+It otherwise takes ordinary [`ViewProps`](/docs/components/); pass a fixed width
+so the tiles wrap where you want them to.
+
+```tsx
+import { Grid, Image, Text, View } from "@pocketjs/framework/components";
+
+<Grid columns={3} active gap={10} class="flex-row flex-wrap items-start justify-center w-[264]">
+  {tiles.map((t) => (
+    <View class="flex-col items-center gap-1 w-[78]">
+      <View class="w-[68] h-[68] rounded-xl bg-slate-900 border-slate-700 focus:border-white items-center justify-center" focusable onPress={() => open(t)}>
+        <Image class="w-[56] h-[56] rounded-lg" src={t.src} />
+      </View>
+      <Text class="text-xs text-slate-200 font-bold">{t.name}</Text>
+    </View>
+  ))}
+</Grid>;
+```
+
+## Lazy
+
+`Lazy` mounts a subtree **on demand**. While `when` is false nothing is built —
+the native subtree is destroyed by the end-of-frame [sweep](/docs/architecture/)
+(one recursive `destroyNode`), so an off-screen region costs nothing. When `when`
+turns true the content is created, optionally after a short `reveal` delay that
+shows a `fallback` (a spinner or skeleton). The reveal is a **one-shot latch**:
+it runs the first time the subtree activates and then stays revealed for the
+component's lifetime, so re-activating shows the content immediately (no replayed
+spinner). With `reveal` at its `0` default `Lazy` is a plain gate with no
+per-frame cost.
+
+| Prop       | Type                         | Default | Effect                                                             |
+| ---------- | ---------------------------- | ------- | ------------------------------------------------------------------ |
+| `when`     | `boolean \| (() => boolean)` | —       | Mount the content while truthy; unmount (destroy) when false.      |
+| `reveal`   | `number`                     | `0`     | Host frames to show `fallback` before revealing content the first time it activates. |
+| `fallback` | `Element \| (() => Element)` | —       | Shown during the reveal delay.                                     |
+| `children` | `() => Element`              | —       | Deferred content — only built once active and past the reveal.     |
+
+> **What "lazy" means here.** Textures are uploaded eagerly at pak load (there is
+> no runtime texture streaming), so `Lazy` defers *content build/layout/draw*, not
+> texture residency. The `reveal` delay models an on-demand load for the demo's
+> sake — it is a frame counter, not real I/O.
+
+```tsx
+<Lazy when={isOpen} reveal={16} fallback={() => <Spinner />}>
+  {() => <HeavyPanel />}
+</Lazy>;
+```
+
+## Gallery
+
+`Gallery` is a horizontally paged, full-screen strip: pressing `LTRIGGER` /
+`RTRIGGER` slides one whole screen at a time. It is the natural shell for a photo
+wall, an app launcher, or any "screen-by-screen" browse.
+
+| Prop           | Type                          | Default | Effect                                                       |
+| -------------- | ----------------------------- | ------- | ------------------------------------------------------------ |
+| `count`        | `number`                      | —       | Total number of pages.                                       |
+| `page`         | `() => number`                | —       | Controlled current-page accessor (0-based).                  |
+| `onPageChange` | `(next: number) => void`      | —       | Called with the next page when L/R paging is requested.      |
+| `renderPage`   | `(index: number) => Element`  | —       | Page factory — invoked only for pages inside the mount window (lazy). |
+| `window`       | `number`                      | `1`     | Pages kept mounted on each side of the current one.          |
+| `duration`     | `number`                      | `300`   | Slide duration in ms.                                        |
+| `easing`       | `EasingName`                  | `"out"` | Slide easing.                                                |
+| `bindTriggers` | `boolean`                     | `true`  | Bind `LTRIGGER`/`RTRIGGER` to page(-/+1) internally.         |
+| `wrap`         | `boolean`                     | `false` | Wrap past the ends instead of clamping.                      |
+
+`Gallery` is **controlled** — you own the `page` signal, so the rest of the UI (a
+page indicator, a title) can read it. It reads L/R itself and calls
+`onPageChange`; the slide is a single native [`translateX`](/docs/animation/)
+tween per press (paint-only, no relayout), and pages outside the `window` are not
+built at all, so a many-page gallery stays within the draw budget.
+
+```tsx
+import { Gallery, Screen } from "@pocketjs/framework/components";
+import { createSignal } from "solid-js";
+
+function Photos() {
+  const [page, setPage] = createSignal(0);
+  return (
+    <Screen class="relative w-full h-full bg-slate-950 overflow-hidden">
+      <Gallery
+        count={4}
+        page={page}
+        onPageChange={setPage}
+        renderPage={(i) => <PhotoPage index={i} current={page} />}
+      />
+    </Screen>
+  );
+}
+```
+
+Under the hood `Gallery` is a **static `overflow-hidden` viewport** wrapping an
+**animated strip** of absolutely-positioned page cells. The split matters: the
+scissor is taken from the clip node's own box, so the clipping viewport must not
+move — only the inner strip's `translateX` animates. `demos/gallery` is a full
+worked example (L/R paging, a [`Grid`](#grid) of baked tiles, [`Lazy`](#lazy)
+first-visit loading, and a page-dot [`ActionBar`](#actionbar)); build it with
+`bun scripts/build.ts gallery-main` and press **L / R** (or **Q / E**).
 
 ## Worked example: the launcher
 

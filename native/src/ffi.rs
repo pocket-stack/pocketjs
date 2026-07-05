@@ -242,6 +242,22 @@ unsafe extern "C" fn js_set_image(
     JS_UNDEFINED
 }
 
+unsafe extern "C" fn js_set_sprite(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().set_sprite(
+        arg_i32(ctx, argc, argv, 0),
+        arg_i32(ctx, argc, argv, 1),
+        arg_i32(ctx, argc, argv, 2) as u32,
+        arg_i32(ctx, argc, argv, 3) as u32,
+        arg_i32(ctx, argc, argv, 4) as u32,
+    );
+    JS_UNDEFINED
+}
+
 unsafe extern "C" fn js_animate(
     ctx: *mut JSContext,
     _this: JSValue,
@@ -349,9 +365,14 @@ unsafe fn add_fn(
     JS_SetPropertyStr(ctx, obj, name.as_ptr() as *const _, v);
 }
 
-/// Install `globalThis.ui` (full HostOps surface + `__textures`).
-/// `textures` comes from pak::feed.
-pub unsafe fn register(ctx: *mut JSContext, global: JSValue, textures: &[(String, i32)]) {
+/// Install `globalThis.ui` (full HostOps surface + `__textures` + `__sprites`).
+/// `textures` and `sprites` come from pak::feed.
+pub unsafe fn register(
+    ctx: *mut JSContext,
+    global: JSValue,
+    textures: &[(String, i32)],
+    sprites: &[crate::pak::SpriteReg],
+) {
     let ui_obj = JS_NewObject(ctx);
 
     add_fn(ctx, ui_obj, b"createNode\0", js_create_node, 1);
@@ -364,6 +385,7 @@ pub unsafe fn register(ctx: *mut JSContext, global: JSValue, textures: &[(String
     add_fn(ctx, ui_obj, b"replaceText\0", js_replace_text, 2);
     add_fn(ctx, ui_obj, b"uploadTexture\0", js_upload_texture, 4);
     add_fn(ctx, ui_obj, b"setImage\0", js_set_image, 2);
+    add_fn(ctx, ui_obj, b"setSprite\0", js_set_sprite, 5);
     add_fn(ctx, ui_obj, b"animate\0", js_animate, 6);
     add_fn(ctx, ui_obj, b"cancelAnim\0", js_cancel_anim, 1);
     add_fn(ctx, ui_obj, b"setFocus\0", js_set_focus, 1);
@@ -385,6 +407,23 @@ pub unsafe fn register(ctx: *mut JSContext, global: JSValue, textures: &[(String
         );
     }
     JS_SetPropertyStr(ctx, ui_obj, b"__textures\0".as_ptr() as *const _, tex_obj);
+
+    // ui.__sprites: pak sprite name -> { handle, frames, cols, step }. The JS
+    // runtime (src/index.ts) reads these and registerSprite()s them; <Sprite>
+    // then binds via setSprite. Same feed-once-at-boot pattern as __textures.
+    let spr_obj = JS_NewObject(ctx);
+    for s in sprites {
+        let mut cname: Vec<u8> = Vec::with_capacity(s.name.len() + 1);
+        cname.extend_from_slice(s.name.as_bytes());
+        cname.push(0);
+        let meta = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, meta, b"handle\0".as_ptr() as *const _, JS_NewInt32(ctx, s.handle));
+        JS_SetPropertyStr(ctx, meta, b"frames\0".as_ptr() as *const _, JS_NewInt32(ctx, s.frames as i32));
+        JS_SetPropertyStr(ctx, meta, b"cols\0".as_ptr() as *const _, JS_NewInt32(ctx, s.cols as i32));
+        JS_SetPropertyStr(ctx, meta, b"step\0".as_ptr() as *const _, JS_NewInt32(ctx, s.step as i32));
+        JS_SetPropertyStr(ctx, spr_obj, cname.as_ptr() as *const _, meta);
+    }
+    JS_SetPropertyStr(ctx, ui_obj, b"__sprites\0".as_ptr() as *const _, spr_obj);
 
     // JS_SetPropertyStr consumes ownership of ui_obj.
     JS_SetPropertyStr(ctx, global, b"ui\0".as_ptr() as *const _, ui_obj);

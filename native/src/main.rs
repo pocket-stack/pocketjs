@@ -399,7 +399,7 @@ unsafe fn run() {
     // Feed styles.bin + font atlases + images straight from .rodata to the
     // core BEFORE any JS runs (zero QuickJS-heap transit) [R].
     trace("run: pak feed begin");
-    let textures = pak::feed(ui, APP_PAK);
+    let (textures, sprites) = pak::feed(ui, APP_PAK);
     trace("run: pak feed ok");
 
     // ---- QuickJS ----
@@ -420,7 +420,7 @@ unsafe fn run() {
 
     // globalThis.ui — the full HostOps surface + the __textures table.
     trace("run: register ui begin");
-    ffi::register(ctx, global, &textures);
+    ffi::register(ctx, global, &textures, &sprites);
     trace("run: register ui ok");
 
     // Expose the asset pack read-only as globalThis.__pak (zero-copy over

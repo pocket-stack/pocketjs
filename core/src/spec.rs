@@ -65,6 +65,7 @@ pub mod op {
     pub const LOAD_STYLES: u8 = 14;
     pub const LOAD_FONT_ATLAS: u8 = 15;
     pub const MEASURE_TEXT: u8 = 16;
+    pub const SET_SPRITE: u8 = 17;
 }
 
 /// Property ids (u8, stable, append-only). Groups:

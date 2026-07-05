@@ -319,7 +319,11 @@ unsafe fn apply_texture(pixels: &[u8], w: u32, h: u32, psm: u32) {
     sys::sceGuTexMode(fmt, 0, 0, 0);
     sys::sceGuTexImage(MipmapLevel::None, w as i32, h as i32, w as i32, pixels.as_ptr() as *const c_void);
     sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgba);
-    sys::sceGuTexFilter(TextureFilter::Linear, TextureFilter::Linear);
+    // NEAREST matches the wasm software rasterizer (wasm/src/raster.rs) that the
+    // byte-exact goldens are defined against — keeping PSP consistent with the
+    // reference — AND it avoids bilinear bleed across sprite-atlas cell edges,
+    // where adjacent texels belong to a DIFFERENT animation frame.
+    sys::sceGuTexFilter(TextureFilter::Nearest, TextureFilter::Nearest);
 }
 
 unsafe fn apply_font_texture(tex: &FontTexture) {

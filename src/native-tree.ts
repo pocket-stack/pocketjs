@@ -300,6 +300,27 @@ export function resetTextures(): void {
   textures.clear();
 }
 
+/** A `sprite` key → its atlas texture handle + animation metadata. */
+export interface SpriteMeta {
+  /** uploadTexture handle of the atlas. */
+  handle: number;
+  frames: number;
+  cols: number;
+  /** vblanks per frame. */
+  step: number;
+}
+
+const sprites = new Map<string, SpriteMeta>();
+
+/** Bind a sprite key (the `sprite` string) to its atlas handle + meta. */
+export function registerSprite(key: string, meta: SpriteMeta): void {
+  sprites.set(key, meta);
+}
+
+export function resetSprites(): void {
+  sprites.clear();
+}
+
 const sweepSet = new Set<NodeMirror>();
 const retained = new Set<NodeMirror>();
 
@@ -492,6 +513,30 @@ function setSrc(node: NodeMirror, value: unknown): void {
   ops.setImage(node.id, handle);
 }
 
+/** `sprite` prop → bind an animated sprite atlas. Auto-play is native; JS never
+ *  touches it per frame. Clearing reverts the node to a plain (empty) image. */
+function setSpriteSrc(node: NodeMirror, value: unknown): void {
+  const ops = getOps();
+  if (value == null || value === "") {
+    ops.setSprite(node.id, -1, 0, 0, 0);
+    return;
+  }
+  if (typeof value !== "string") {
+    throw new Error("PocketJS: sprite must be a string key");
+  }
+  const meta = sprites.get(value);
+  if (meta === undefined) {
+    if (getHost().strict) {
+      throw new Error(
+        `PocketJS: unknown sprite "${value}" - no sprite atlas registered under that key`,
+      );
+    }
+    missCounters.unknownTexture++;
+    return;
+  }
+  ops.setSprite(node.id, meta.handle, meta.frames, meta.cols, meta.step);
+}
+
 type StyleObject = Record<string, number | string>;
 
 function setStyleObject(node: NodeMirror, value: unknown, prev: unknown): void {
@@ -526,6 +571,9 @@ export function setProp<T>(node: NodeMirror, name: string, value: T, prev?: T): 
       return value;
     case "src":
       setSrc(node, value);
+      return value;
+    case "sprite":
+      setSpriteSrc(node, value);
       return value;
     case "style":
       setStyleObject(node, value, prev);
