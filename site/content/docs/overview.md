@@ -1,11 +1,10 @@
 # Overview
 
-PocketJS is a JSX UI stack for the Sony PSP (and beyond). You write components
-with **Solid** and style them with a **Tailwind subset**; a build step compiles
-your styles and bakes your fonts, and the whole thing runs on top of a single
-`no_std` Rust core that does flexbox layout, styling, animation, text, and
-rendering. The same `app.tsx` runs on real PSP hardware, in the PPSSPP
-emulator, in the browser, and headless under Bun.
+PocketJS lets you build **Solid** and **Tailwind** interfaces for the Sony PSP
+and similarly constrained hardware. It compiles class strings and font glyphs at
+build time, then renders real flexbox, sub-pixel text and native animation
+through a compact `no_std` Rust core. The same `app.tsx` runs on real PSP
+hardware, in the PPSSPP emulator, in the browser, and headless under Bun.
 
 If you know React or Solid, you already know most of PocketJS. The primitives
 are `View`, `Text`, and `Image`; state is `createSignal` / `createEffect`;

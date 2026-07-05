@@ -14,9 +14,9 @@
   overflow: hidden;
   background: #05070d;
   box-shadow:
-    0 0 0 1px rgba(120, 160, 230, 0.16),
+    0 0 0 1px rgba(43, 58, 85, 0.95),
     0 28px 56px -22px rgba(0, 0, 0, 0.7),
-    0 0 70px -26px rgba(56, 189, 248, 0.32);
+    0 0 42px -28px rgba(56, 189, 248, 0.24);
 }
 .screen-emu canvas {
   display: block;
@@ -55,17 +55,17 @@
   display: grid;
   place-items: center;
   color: rgba(255, 255, 255, 0.92);
-  background: rgba(51, 66, 97, 0.32);
+  background: rgba(20, 29, 49, 0.56);
   border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: inset 0 0 6px rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
   transition: background 0.1s ease, transform 0.05s ease, border-color 0.1s ease;
 }
 .emu-key svg { width: 46%; height: 46%; }
-.emu-key:hover { background: rgba(51, 66, 97, 0.44); }
+.emu-key:hover { background: rgba(30, 41, 59, 0.68); }
 .emu-key.is-down,
 .emu-key:active {
-  background: rgba(96, 165, 250, 0.6);
-  border-color: rgba(191, 219, 254, 0.9);
+  background: rgba(96, 165, 250, 0.3);
+  border-color: rgba(147, 197, 253, 0.68);
   transform: scale(0.9);
 }
 
@@ -91,17 +91,21 @@
 .emu-dpad .right { right: 2%;  top: 35%;  height: 30%; width: 34%; }
 .emu-dpad .emu-key.is-down,
 .emu-dpad .emu-key:active {
-  background: rgba(96, 165, 250, 0.42);
+  background: rgba(96, 165, 250, 0.24);
   border-radius: 6px;
   transform: none;
 }
 
 /* face buttons diamond */
 .emu-faces .emu-key { width: 36%; aspect-ratio: 1; border-radius: 50%; }
-.emu-faces .tri   { top: 0;     left: 32%; color: #9ff2c6; }
-.emu-faces .sq    { top: 32%; left: 0;     color: #f8bfe0; }
-.emu-faces .ci    { top: 32%; right: 0;    color: #ffbcc2; }
-.emu-faces .cross { bottom: 0;  left: 32%; color: #b3ccff; }
+.emu-faces .tri,
+.emu-faces .sq,
+.emu-faces .ci,
+.emu-faces .cross { color: rgba(255, 255, 255, 0.92); }
+.emu-faces .tri   { top: 0;     left: 32%; }
+.emu-faces .sq    { top: 32%; left: 0;     }
+.emu-faces .ci    { top: 32%; right: 0;    }
+.emu-faces .cross { bottom: 0;  left: 32%; }
 
 /* SELECT / START */
 .emu-sys {
@@ -122,12 +126,12 @@
   padding: 1cqw 2.4cqw;
   border-radius: 999px;
   color: rgba(255, 255, 255, 0.82);
-  background: rgba(51, 66, 97, 0.34);
+  background: rgba(20, 29, 49, 0.56);
   border: 1px solid rgba(255, 255, 255, 0.34);
   transition: background 0.1s ease;
 }
 .emu-sys-btn.is-down,
 .emu-sys-btn:active {
-  background: rgba(96, 165, 250, 0.6);
+  background: rgba(96, 165, 250, 0.3);
   color: #fff;
 }

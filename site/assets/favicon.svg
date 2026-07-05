@@ -1,20 +1,20 @@
 <svg viewBox="0 0 32 32" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="pj-edge" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#f1f5f9"/>
-      <stop offset="0.35" stop-color="#94a3b8"/>
-      <stop offset="0.55" stop-color="#475569"/>
-      <stop offset="0.75" stop-color="#94a3b8"/>
-      <stop offset="1" stop-color="#e2e8f0"/>
+      <stop offset="0" stop-color="#eef6ff"/>
+      <stop offset="0.38" stop-color="#b7c8e2"/>
+      <stop offset="0.58" stop-color="#7487a0"/>
+      <stop offset="0.78" stop-color="#aec0d6"/>
+      <stop offset="1" stop-color="#dbe8f6"/>
     </linearGradient>
     <linearGradient id="pj-lens" x1="7" y1="13" x2="13" y2="19" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#e2e8f0"/>
-      <stop offset="0.5" stop-color="#94a3b8"/>
-      <stop offset="1" stop-color="#475569"/>
+      <stop offset="0" stop-color="#e4edf8"/>
+      <stop offset="0.55" stop-color="#a7b8cf"/>
+      <stop offset="1" stop-color="#53677f"/>
     </linearGradient>
     <linearGradient id="pj-bar" x1="16" y1="12" x2="24" y2="20" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#cbd5e1"/>
-      <stop offset="1" stop-color="#64748b"/>
+      <stop offset="0" stop-color="#d7e3f1"/>
+      <stop offset="1" stop-color="#71849d"/>
     </linearGradient>
   </defs>
 

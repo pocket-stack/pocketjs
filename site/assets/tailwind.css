@@ -4,18 +4,34 @@
 /* Scan every place a class can appear (TS template strings, HTML, JS glue). */
 @source "../**/*.{ts,html,js}";
 
+@font-face {
+  font-family: "Inter";
+  src: url("/pg/fonts/Inter-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/pg/fonts/Inter-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ---- brand theme ---------------------------------------------------------- */
 @theme {
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+    Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono:
     ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
 
   /* near-black navy base + layered surfaces */
-  --color-ink: #090c14;
-  --color-ink-2: #0b0f1a;
-  --color-surface: #0f1626;
-  --color-surface-2: #141d31;
+  --color-ink: #05070d;
+  --color-ink-2: #070a11;
+  --color-surface: #0b0f1a;
+  --color-surface-2: #101827;
   --color-line: #1e293b;
   --color-line-2: #2b3a55;
 
@@ -32,7 +48,10 @@
     -webkit-text-size-adjust: 100%;
   }
   body {
-    background: var(--color-ink);
+    background:
+      radial-gradient(42% 72% at 0% 6%, color-mix(in oklab, var(--color-brand-3) 10%, transparent), transparent 66%),
+      radial-gradient(36% 70% at 100% 12%, color-mix(in oklab, var(--color-brand-2) 6%, transparent), transparent 68%),
+      linear-gradient(180deg, #070a11 0%, var(--color-ink) 48%, #070a11 100%);
     color: var(--color-slate-300);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -46,7 +65,7 @@
     color: inherit;
     text-decoration: none;
   }
-  /* subtle top-of-page aurora */
+  /* Edge-only page glow, shared with the landing page direction. */
   body::before {
     content: "";
     position: fixed;
@@ -55,14 +74,14 @@
     pointer-events: none;
     z-index: -1;
     background:
-      radial-gradient(60% 90% at 22% -10%, color-mix(in oklab, var(--color-brand-3) 20%, transparent), transparent 70%),
-      radial-gradient(50% 80% at 90% -20%, color-mix(in oklab, var(--color-brand-2) 16%, transparent), transparent 70%);
+      radial-gradient(42% 72% at 0% 6%, color-mix(in oklab, var(--color-brand-3) 9%, transparent), transparent 66%),
+      radial-gradient(36% 70% at 100% 12%, color-mix(in oklab, var(--color-brand-2) 5%, transparent), transparent 68%);
   }
 }
 
 /* ---- reusable brand bits -------------------------------------------------- */
 @utility text-gradient {
-  background: linear-gradient(120deg, var(--color-brand-3), var(--color-brand-2));
+  background: linear-gradient(120deg, #f3f7fd 0%, #d6e0ec 36%, #8d9bb0 67%, #c5d4e6 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -91,9 +110,11 @@
     transform: translateY(-1px);
   }
   .btn-primary {
-    border-color: transparent;
-    color: #04121b;
-    background: linear-gradient(120deg, var(--color-brand-3), var(--color-brand-2));
+    border-color: rgba(226, 232, 240, 0.44);
+    color: #05070d;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 40%),
+      linear-gradient(112deg, #eef3fa 0%, #d2dbe7 26%, #b3becc 45%, #e8edf4 67%, #c2ccd9 100%);
   }
   .btn-primary:hover {
     filter: brightness(1.06);
@@ -156,7 +177,7 @@
     box-shadow:
       0 1px 0 rgba(255, 255, 255, 0.05) inset,
       0 30px 60px -30px rgba(0, 0, 0, 0.7),
-      0 0 0 1px rgba(56, 189, 248, 0.06);
+      0 0 0 1px rgba(56, 189, 248, 0.05);
   }
   .pocket-screen {
     position: relative;
@@ -164,7 +185,7 @@
     overflow: hidden;
     background: #000;
     border: 1px solid #05070d;
-    box-shadow: 0 0 0 6px #05070d, 0 0 24px -4px rgba(56, 189, 248, 0.25) inset;
+    box-shadow: 0 0 0 6px #05070d, 0 0 18px -8px rgba(56, 189, 248, 0.22) inset;
     aspect-ratio: 480 / 272;
   }
   .pocket-screen canvas,
@@ -240,7 +261,7 @@
   }
   .pg-tb-left { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
   .pg-tb-right { display: flex; align-items: center; gap: 0.9rem; }
-  .pg-tb-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-slate-500); }
+  .pg-tb-label { font-size: 0.78rem; font-weight: 600; color: var(--color-slate-500); }
   #pg-demo {
     background: var(--color-surface-2);
     color: var(--color-slate-100);
@@ -270,7 +291,8 @@
     align-items: center;
     gap: 1rem;
     background:
-      radial-gradient(80% 50% at 50% 0%, color-mix(in oklab, var(--color-brand-3) 8%, transparent), transparent 70%),
+      radial-gradient(42% 60% at 0% 8%, color-mix(in oklab, var(--color-brand-3) 7%, transparent), transparent 70%),
+      radial-gradient(36% 58% at 100% 12%, color-mix(in oklab, var(--color-brand-2) 4%, transparent), transparent 72%),
       var(--color-ink);
   }
   .pg-device { width: 100%; max-width: 460px; }
@@ -304,7 +326,7 @@
   .pad:hover { border-color: var(--color-brand); }
   .pad.held, .pad:active { background: var(--color-brand); color: #04121b; transform: scale(0.94); }
   .pg-sys { display: flex; gap: 0.75rem; }
-  .pad.sys { width: auto; padding: 0 0.7rem; height: 24px; font-size: 0.62rem; letter-spacing: 0.05em; }
+  .pad.sys { width: auto; padding: 0 0.7rem; height: 24px; font-size: 0.66rem; }
   .pg-error {
     width: 100%; max-width: 620px; margin: 0; padding: 0.75rem 0.9rem;
     background: color-mix(in oklab, #7f1d1d 30%, var(--color-ink-2));
@@ -324,7 +346,7 @@
   }
   @media (min-width: 1000px) { .doc-nav { display: block; } }
   .doc-sec { margin-bottom: 1.4rem; }
-  .doc-sec-t { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-slate-500); margin-bottom: 0.5rem; }
+  .doc-sec-t { font-size: 0.78rem; font-weight: 600; color: var(--color-slate-500); margin-bottom: 0.5rem; }
   .doc-nav a { display: block; padding: 0.3rem 0.6rem; border-radius: 0.4rem; font-size: 0.88rem; color: var(--color-slate-400); }
   .doc-nav a:hover { color: var(--color-slate-100); background: var(--color-surface); }
   .doc-nav a.on { color: var(--color-brand-2); background: color-mix(in oklab, var(--color-brand) 12%, transparent); font-weight: 600; }
@@ -334,5 +356,5 @@
   .doc-pager a { display: flex; flex-direction: column; padding: 0.75rem 1rem; border: 1px solid var(--color-line); border-radius: 0.6rem; font-size: 0.9rem; color: var(--color-slate-200); max-width: 48%; }
   .doc-pager a:hover { border-color: var(--color-brand); }
   .doc-pager a.next { text-align: right; margin-left: auto; }
-  .doc-pager span { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-slate-500); }
+  .doc-pager span { font-size: 0.72rem; font-weight: 600; color: var(--color-slate-500); }
 }

@@ -15,13 +15,15 @@ export interface PageOpts {
 }
 
 export const LOGO = `<svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-  <rect x="1.5" y="5.5" width="29" height="21" rx="5" fill="none" stroke="url(#pg)" stroke-width="2"/>
-  <circle cx="9" cy="16" r="3.2" fill="url(#pg)"/>
-  <rect x="18.5" y="12.6" width="7.5" height="1.9" rx=".95" fill="url(#pg)"/>
-  <rect x="18.5" y="17.6" width="7.5" height="1.9" rx=".95" fill="url(#pg)"/>
-  <defs><linearGradient id="pg" x1="0" y1="0" x2="32" y2="32">
-    <stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#22d3ee"/>
-  </linearGradient></defs>
+  <defs>
+    <linearGradient id="pj-shell-edge" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#eef6ff"/><stop offset="0.38" stop-color="#b7c8e2"/><stop offset="0.58" stop-color="#7487a0"/><stop offset="0.78" stop-color="#aec0d6"/><stop offset="1" stop-color="#dbe8f6"/></linearGradient>
+    <linearGradient id="pj-shell-lens" x1="7" y1="13" x2="13" y2="19" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e4edf8"/><stop offset="0.55" stop-color="#a7b8cf"/><stop offset="1" stop-color="#53677f"/></linearGradient>
+    <linearGradient id="pj-shell-bar" x1="16" y1="12" x2="24" y2="20" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#d7e3f1"/><stop offset="1" stop-color="#71849d"/></linearGradient>
+  </defs>
+  <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="url(#pj-shell-edge)" stroke-width="2.6" stroke-linejoin="round"/>
+  <circle cx="10" cy="16" r="3.1" fill="url(#pj-shell-lens)"/>
+  <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="url(#pj-shell-bar)"/>
+  <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="url(#pj-shell-bar)"/>
 </svg>`;
 
 function header(active: string): string {
@@ -48,7 +50,7 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
     <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <div class="flex items-center gap-2 font-semibold text-slate-100">${LOGO}<span>PocketJS</span></div>
-        <p class="mt-3 max-w-xs text-sm text-slate-400">Bare Metal Modern Web — the full Solid frontend, rendered natively at 60 FPS in 32 MB of RAM.</p>
+        <p class="mt-3 max-w-xs text-sm text-slate-400">Solid and Tailwind UI for a 32 MB Sony PSP, rendered through a tiny native core.</p>
       </div>
       <div class="text-sm">
         <h4 class="mb-3 font-semibold text-slate-200">Docs</h4>
@@ -78,7 +80,7 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
       </div>
     </div>
     <div class="mt-10 flex flex-col gap-2 border-t border-line/60 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-      <span>Bare Metal Modern Web</span>
+      <span>Solid UI, native pixels</span>
       <span>© ${YEAR} PocketJS · MIT</span>
     </div>
   </div>
@@ -87,7 +89,7 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
 export function renderPage(o: PageOpts): string {
   const fullTitle = o.title ? `${o.title} · PocketJS` : "PocketJS — Bare Metal Modern Web";
   const desc =
-    "PocketJS runs the full Solid frontend — JSX, Tailwind, signals, TypeScript, flexbox and native animation — natively on the metal, at 60 FPS in 32 MB of RAM. Bare Metal Modern Web, starting on the Sony PSP.";
+    "PocketJS builds Solid and Tailwind interfaces for a 32 MB Sony PSP, with native flexbox, sub-pixel text, animation and deterministic rendering.";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -98,7 +100,7 @@ export function renderPage(o: PageOpts): string {
 <meta property="og:title" content="${fullTitle}">
 <meta property="og:description" content="${desc}">
 <meta property="og:type" content="website">
-<meta name="theme-color" content="#090c14">
+<meta name="theme-color" content="#05070d">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/site.css">
 ${o.head ?? ""}

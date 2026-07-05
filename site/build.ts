@@ -13,6 +13,7 @@
 //   /playground/          the live editor page
 //   /docs/*, /index.html  rendered from site/content (added below)
 
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { marked } from "marked";
@@ -35,6 +36,33 @@ const copy = (from: string, toRel: string) => {
   mkdirSync(dirname(p), { recursive: true });
   cpSync(from, p, { recursive: true });
 };
+
+function ensureShowcaseBundle(name: string): void {
+  const js = ROOT + "dist/" + name + ".js";
+  const pak = ROOT + "dist/" + name + ".pak";
+  const legacyPak = ROOT + "dist/" + name + ".dcpak";
+  if (existsSync(js) && (existsSync(pak) || existsSync(legacyPak))) return;
+
+  console.log(`  dist/${name}.js + dist/${name}.pak missing; building showcase`);
+  const res = spawnSync("bun", ["scripts/build.ts", name], { cwd: ROOT, stdio: "inherit" });
+  if (res.status !== 0) throw new Error(`showcase build failed: ${name}`);
+}
+
+function copyShowcaseBundle(name: string): void {
+  ensureShowcaseBundle(name);
+
+  const js = ROOT + "dist/" + name + ".js";
+  const pak = ROOT + "dist/" + name + ".pak";
+  const legacyPak = ROOT + "dist/" + name + ".dcpak";
+  const pakSource = existsSync(pak) ? pak : legacyPak;
+
+  if (!existsSync(js) || !existsSync(pakSource)) {
+    throw new Error(`missing showcase bundle: dist/${name}.js + dist/${name}.pak`);
+  }
+
+  copy(js, "pg/demo-bundles/" + name + ".js");
+  copy(pakSource, "pg/demo-bundles/" + name + ".pak");
+}
 
 // --- node-builtin shims: let @babel/core + preset-solid bundle for the browser
 const SHIM_MAP: Record<string, string> = { assert: "assert.js", "node:assert": "assert.js", path: "path.js", "node:path": "path.js" };
@@ -125,13 +153,11 @@ async function main() {
   write("pg/demos.json", JSON.stringify(demos));
   console.log(`  pg/demos.json  (${demos.length} demos: ${demos.map((d) => d.name).join(", ")})`);
 
-  // 4. prebuilt showcase bundles for the homepage hero (no compiler needed)
+  // 4. prebuilt showcase bundles for the homepage hero. Reuse dist/ when
+  //    present, and build missing bundles so the site never emits 404 demos.
   const showcase = ["settings-main", "launcher-main", "music-main"];
   for (const s of showcase) {
-    const js = ROOT + "dist/" + s + ".js";
-    const pak = ROOT + "dist/" + s + ".pak";
-    if (existsSync(js)) copy(js, "pg/demo-bundles/" + s + ".js");
-    if (existsSync(pak)) copy(pak, "pg/demo-bundles/" + s + ".pak");
+    copyShowcaseBundle(s);
   }
 
   // 5. static assets + Tailwind CSS (compiled AFTER pages exist so the content
