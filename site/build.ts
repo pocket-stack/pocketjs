@@ -441,6 +441,7 @@ function renderAotHome(): string {
     scripts: ['<script type="module" src="/assets/aot-demo.js"></script>'],
     path: "/aot/",
     description: AOT_DESC,
+    robots: "noindex,nofollow",
   });
 }
 
@@ -558,6 +559,7 @@ async function buildDocs() {
     head: string;
     nav: DocSection[];
     outPrefix: string;
+    robots?: string;
     transformFrameworkCode: boolean;
   };
   const buildTree = async (tree: DocsTree) => {
@@ -601,10 +603,15 @@ async function buildDocs() {
         scripts: [],
         path: hrefFor(slug),
         description: tree.active === "aot" ? AOT_DESC : undefined,
+        robots: tree.robots,
       }));
     }
     if (allSlugs.length > 0) {
-      write(`${tree.outPrefix}/index.html`, `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=${hrefFor(allSlugs[0].slug)}">`);
+      const robotsMeta = tree.robots ? `<meta name="robots" content="${tree.robots}">` : "";
+      write(
+        `${tree.outPrefix}/index.html`,
+        `<!doctype html><meta charset="utf-8">${robotsMeta}<meta http-equiv="refresh" content="0; url=${hrefFor(allSlugs[0].slug)}">`,
+      );
     }
     console.log(`  ${tree.outPrefix}  (${allSlugs.length} pages)`);
   };
@@ -623,6 +630,7 @@ async function buildDocs() {
     head: "",
     nav: AOT_DOC_NAV,
     outPrefix: "aot/docs",
+    robots: "noindex,nofollow",
     transformFrameworkCode: false,
   });
 }

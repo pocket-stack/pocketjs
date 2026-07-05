@@ -19,6 +19,7 @@ export interface PageOpts {
   scripts?: string[];
   path?: string;
   description?: string;
+  robots?: string;
 }
 
 export const LOGO = `<svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
@@ -46,7 +47,6 @@ function header(active: string): string {
     </a>
     <nav class="site-nav__links" aria-label="Primary">
       ${link("/docs/overview/", "Docs", "docs")}
-      ${link("/aot/", "AOT", "aot")}
       ${link("/playground/", "Playground", "playground")}
       <a href="${GH}" target="_blank" rel="noreferrer" class="site-nav__link site-nav__gh">${ghIcon}<span class="site-nav__ghlabel">GitHub</span></a>
     </nav>
@@ -56,7 +56,7 @@ function header(active: string): string {
 
 const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
   <div class="mx-auto max-w-6xl px-5 py-12">
-    <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
+    <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <div class="flex items-center gap-2 font-semibold text-slate-100">${LOGO}<span>PocketJS</span></div>
         <p class="mt-3 max-w-xs text-sm text-slate-400">Solid or Vue Vapor UI under 8MB RAM, rendered through a tiny native core.</p>
@@ -68,15 +68,6 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
           <li><a class="hover:text-brand-2" href="/docs/getting-started/">Getting started</a></li>
           <li><a class="hover:text-brand-2" href="/docs/architecture/">Architecture</a></li>
           <li><a class="hover:text-brand-2" href="/docs/api/">API reference</a></li>
-        </ul>
-      </div>
-      <div class="text-sm">
-        <h4 class="mb-3 font-semibold text-slate-200">AOT</h4>
-        <ul class="space-y-2 text-slate-400">
-          <li><a class="hover:text-brand-2" href="/aot/">AOT product</a></li>
-          <li><a class="hover:text-brand-2" href="/aot/docs/overview/">AOT docs</a></li>
-          <li><a class="hover:text-brand-2" href="/aot/#demo">Web demo</a></li>
-          <li><a class="hover:text-brand-2" href="/aot/docs/compiler/">Compiler pipeline</a></li>
         </ul>
       </div>
       <div class="text-sm">
@@ -108,6 +99,7 @@ export function renderPage(o: PageOpts): string {
   const fullTitle = o.title ? `${o.title} · PocketJS` : SITE_TITLE;
   const desc = o.description ?? SITE_DESC;
   const canonical = `${SITE_URL}${o.path ?? "/"}`;
+  const robots = o.robots ?? "index,follow";
   const jsonLd = JSON.stringify({
     "@context": "https://schema.org",
     "@type": "SoftwareSourceCode",
@@ -125,7 +117,7 @@ export function renderPage(o: PageOpts): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${fullTitle}</title>
 <meta name="description" content="${desc}">
-<meta name="robots" content="index,follow">
+<meta name="robots" content="${robots}">
 <link rel="canonical" href="${canonical}">
 <meta property="og:title" content="${fullTitle}">
 <meta property="og:description" content="${desc}">
