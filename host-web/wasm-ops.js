@@ -53,6 +53,7 @@ export async function createWasmUi(wasm) {
     replaceText: (id, str) => withStr(str, (p, l) => ex.ui_replace_text(id, p, l)),
     uploadTexture: (buf, w, h, psm) => withBytes(buf, (p, l) => ex.ui_upload_texture(p, l, w, h, psm)),
     setImage: (id, tex) => ex.ui_set_image(id, tex),
+    setSprite: (id, atlas, frames, cols, step) => ex.ui_set_sprite(id, atlas, frames, cols, step),
     animate: (id, propId, to, durMs, easing, delayMs) =>
       ex.ui_animate(id, propId, to, durMs, easing, delayMs),
     cancelAnim: (animId) => ex.ui_cancel_anim(animId),

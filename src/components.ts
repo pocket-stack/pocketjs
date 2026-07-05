@@ -1,9 +1,10 @@
 // Component-facing public API.
 
 import type { JSX as SolidJSX } from "solid-js";
-import { createEffect, onCleanup, onMount, splitProps } from "solid-js";
-import { ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
-import { pushButtonHandlerBlock, onButtonPress, type ButtonPressOptions } from "./frame.ts";
+import { createEffect, createSignal, onCleanup, onMount, Show as SolidShow, splitProps } from "solid-js";
+import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
+import { animate, type EasingName } from "./anim.ts";
+import { pushButtonHandlerBlock, onButtonPress, onFrame, type ButtonPressOptions } from "./frame.ts";
 import { pushFocusGrid, pushFocusScope, type FocusGridOptions, type FocusScopeOptions } from "./input.ts";
 import { getOverlayRoot } from "./overlay.ts";
 import { View, type ViewProps } from "./primitives.ts";
@@ -16,7 +17,7 @@ import {
   type NodeMirror,
 } from "./renderer.ts";
 
-export { View, Text, Image, type ViewProps, type TextProps, type ImageProps } from "./primitives.ts";
+export { View, Text, Image, Sprite, type ViewProps, type TextProps, type ImageProps, type SpriteProps } from "./primitives.ts";
 export type { NodeMirror } from "./renderer.ts";
 
 type RefProp = ViewProps["ref"];
@@ -230,5 +231,227 @@ export function ActionBar(props: ActionBarProps): SolidJSX.Element {
           props.class ??
           "absolute left-3 right-3 bottom-3 flex-row items-center justify-between px-2 py-1 rounded-lg shadow-md bg-white border-slate-200",
       }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Grid — a wrapping tile layout with optional d-pad grid traversal
+// ---------------------------------------------------------------------------
+
+export interface GridProps extends ViewProps, Partial<FocusGridOptions> {
+  /** Cross-axis gap in px, applied via the style object (stays a full literal). */
+  gap?: number;
+  /**
+   * Enable FocusGrid d-pad traversal (needs `columns`). Accepts a signal —
+   * same `active` convention as FocusScope / FocusGrid / ActionHandler.
+   */
+  active?: boolean | (() => boolean);
+}
+
+/**
+ * Lay tiles out as a wrapping row (`flex-row flex-wrap`) and, when `columns`
+ * is given, hand its focusables row/column d-pad traversal via [`FocusGrid`].
+ * Layout stays pure flexbox — `columns` drives *traversal only* (the same
+ * contract FocusGrid already documents); the visible column count emerges from
+ * the fixed tile width vs. the container width. Pass `gap` as a number so the
+ * caller's `class` can stay a single compiled literal.
+ */
+export function Grid(props: GridProps): SolidJSX.Element {
+  const [g, rest] = splitProps(props, ["gap", "columns", "wrap", "active", "class", "style"]);
+  const style = g.gap != null ? { ...(g.style ?? {}), gap: g.gap } : g.style;
+  const cls = g.class ?? "flex-row flex-wrap";
+  if (g.columns != null) {
+    return FocusGrid({
+      ...rest,
+      class: cls,
+      style,
+      columns: g.columns,
+      wrap: g.wrap,
+      active: g.active,
+    });
+  }
+  return View({ ...rest, class: cls, style });
+}
+
+// ---------------------------------------------------------------------------
+// Lazy — on-demand mount with an optional reveal (loading) delay
+// ---------------------------------------------------------------------------
+
+export interface LazyProps {
+  /** Mount the content while this is truthy; unmount (destroy) when false. */
+  when: boolean | (() => boolean);
+  /**
+   * Host frames to show `fallback` before revealing `children` the first time
+   * this becomes active (default 0 = reveal immediately). Simulates an
+   * asset/decode load — note textures themselves are uploaded eagerly at pak
+   * load, so this models on-demand *content build*, not texture residency.
+   */
+  reveal?: number;
+  /** Shown during the reveal delay (a spinner/skeleton). */
+  fallback?: SolidJSX.Element | (() => SolidJSX.Element);
+  /** Deferred content — only built once `when` is truthy AND the reveal elapsed. */
+  children: () => SolidJSX.Element;
+}
+
+/**
+ * Gate a subtree on demand. While `when` is false nothing is built (the native
+ * subtree is destroyed by the end-of-frame sweep — one recursive `destroyNode`
+ * [R]); when it turns true the content is created, optionally after a short
+ * `reveal` delay that shows `fallback`. The reveal is a ONE-SHOT latch: it runs
+ * the first time the subtree activates and, once elapsed, the content stays
+ * revealed for this component's lifetime — a later re-activation shows it
+ * immediately (no replayed spinner). There is no per-frame work when `reveal`
+ * is 0.
+ */
+export function Lazy(props: LazyProps): SolidJSX.Element {
+  const active = () => resolveActive(props.when);
+  const reveal = Math.max(0, Math.floor(props.reveal ?? 0));
+  const [ready, setReady] = createSignal(reveal === 0);
+
+  if (reveal > 0) {
+    let elapsed = 0;
+    onFrame(() => {
+      if (ready() || !active()) return; // count only while active; latch once ready
+      if (++elapsed >= reveal) setReady(true);
+    });
+  }
+
+  const fallback = (): SolidJSX.Element =>
+    typeof props.fallback === "function"
+      ? (props.fallback as () => SolidJSX.Element)()
+      : (props.fallback ?? null);
+
+  // Two nested <Show>s, with reactive getters for when/fallback and a lazy
+  // `get children()` (deferred exactly like the Solid JSX compiler's output),
+  // invoked directly as Modal calls FocusScope here. Owner = the demo's <Lazy>.
+  const content = (): SolidJSX.Element =>
+    SolidShow({
+      get when() {
+        return ready();
+      },
+      get fallback() {
+        return fallback();
+      },
+      get children() {
+        return props.children();
+      },
+    });
+
+  return SolidShow({
+    get when() {
+      return active();
+    },
+    get children() {
+      return content();
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Gallery — full-screen L/R paged strip (the "screen-by-screen" pager)
+// ---------------------------------------------------------------------------
+
+export interface GalleryProps {
+  /** Total number of pages. */
+  count: number;
+  /** Controlled current page accessor (0-based). */
+  page: () => number;
+  /** Called with the next page when L/R paging is requested. */
+  onPageChange?: (next: number) => void;
+  /** Page factory — only invoked for pages inside the mount window (lazy). */
+  renderPage: (index: number) => SolidJSX.Element;
+  /** Pages kept mounted on each side of the current one (default 1). */
+  window?: number;
+  /** Slide duration in ms (default 300). */
+  duration?: number;
+  /** Slide easing (default "out"). */
+  easing?: EasingName;
+  /** Bind LTRIGGER/RTRIGGER to page(-/+1) internally (default true). */
+  bindTriggers?: boolean;
+  /** Wrap past the ends instead of clamping (default false). */
+  wrap?: boolean;
+  /** Override the outer viewport class (must keep it untransformed — see below). */
+  class?: string;
+}
+
+/**
+ * A horizontally paged, full-screen strip: pressing LTRIGGER/RTRIGGER slides a
+ * whole screen at a time.
+ *
+ * Structure (two nodes for a reason):
+ *   - an **untransformed** `overflow-hidden` viewport — the scissor is taken
+ *     from the node's OWN world box (draw.rs), so the clipping node must not
+ *     move, or it would clip the wrong region;
+ *   - an inner **strip** whose `translateX` is animated to `-page*SCREEN_W`.
+ *     Each page cell is `absolute inset-0` with a static `translateX = i*SCREEN_W`;
+ *     a parent's animated transform composes with each child's static one
+ *     (world = parent ∘ local), so page `i` lands on screen exactly when the
+ *     strip reaches `-i*SCREEN_W`. translateX is paint-only + native-ticked, so
+ *     the slide costs no relayout and one FFI crossing per press.
+ *
+ * Off-window pages are not built (see [`Lazy`]/`<Show>`), so a many-page gallery
+ * stays within the PSP draw budget.
+ */
+export function Gallery(props: GalleryProps): SolidJSX.Element {
+  let strip: NodeMirror | undefined;
+  const win = Math.max(0, Math.floor(props.window ?? 1));
+  const dur = props.duration ?? 300;
+  const easing = props.easing ?? "out";
+  const bind = props.bindTriggers ?? true;
+  const initialPage = props.page();
+
+  const clampPage = (n: number): number =>
+    props.wrap
+      ? ((n % props.count) + props.count) % props.count
+      : Math.max(0, Math.min(props.count - 1, n));
+
+  const go = (delta: number): void => {
+    const next = clampPage(props.page() + delta);
+    if (next !== props.page()) props.onPageChange?.(next);
+  };
+
+  if (bind) {
+    onButtonPress(BTN.LTRIGGER, () => go(-1));
+    onButtonPress(BTN.RTRIGGER, () => go(1));
+  }
+
+  // Slide on every page change; skip the mount run so the strip starts in place.
+  let prevPage = initialPage;
+  createEffect(() => {
+    const p = props.page();
+    if (!strip || p === prevPage) return;
+    prevPage = p;
+    animate(strip, "translateX", -p * SCREEN_W, { dur, easing });
+  });
+
+  const cells: SolidJSX.Element[] = [];
+  for (let i = 0; i < props.count; i++) {
+    const index = i;
+    cells.push(
+      View({
+        class: "absolute inset-0",
+        style: { translateX: index * SCREEN_W },
+        children: SolidShow({
+          get when() {
+            return Math.abs(index - props.page()) <= win;
+          },
+          get children() {
+            return props.renderPage(index);
+          },
+        }),
+      }),
+    );
+  }
+
+  return View({
+    class: props.class ?? "relative w-full h-full overflow-hidden",
+    children: View({
+      ref: (node) => {
+        strip = node;
+      },
+      class: "relative w-full h-full",
+      style: { translateX: -initialPage * SCREEN_W },
+      children: cells,
+    }),
   });
 }

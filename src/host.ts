@@ -42,6 +42,12 @@ export interface HostOps {
   uploadTexture(buf: Uint8Array, w: number, h: number, psm: number): number;
   /** texHandle < 0 clears the image (handles are 0-based: 0 is a real one). */
   setImage(id: number, texHandle: number): void;
+  /**
+   * Bind an animated sprite atlas to an image node: `atlas` is an uploaded
+   * texture (a `cols`-wide grid of `frames` cells); the core auto-plays it,
+   * one cell every `step` vblanks. `frames <= 0` clears it. Zero per-frame JS.
+   */
+  setSprite(id: number, atlas: number, frames: number, cols: number, step: number): void;
   /** from = current value; easing: spec ENUMS.Easing ordinal → animId. */
   animate(
     id: number,

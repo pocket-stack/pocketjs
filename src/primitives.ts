@@ -48,6 +48,14 @@ function callRef(ref: RefProp, node: NodeMirror): void {
   else if ("current" in ref) ref.current = node;
 }
 
+export interface SpriteProps {
+  class?: string;
+  /** Sprite-atlas key (a `ui:sprite.<name>` entry baked into the pak). */
+  sprite?: string;
+  style?: StyleObject;
+  ref?: RefProp;
+}
+
 function primitive(tag: "view" | "text" | "image", props: Record<string, unknown>): SolidJSX.Element {
   const el = createElement(tag);
   spread(el, props, false);
@@ -64,5 +72,15 @@ export function Text(props: TextProps): SolidJSX.Element {
 }
 
 export function Image(props: ImageProps): SolidJSX.Element {
+  return primitive("image", props as Record<string, unknown>);
+}
+
+/**
+ * An auto-playing animated sprite — a native primitive alongside View/Text/Image.
+ * Backed by an image node whose `sprite` atlas the Rust core cycles per vblank
+ * (deterministic, zero per-frame JS). It plays from the first frame the moment
+ * it is displayed, so revealing/paging one starts its animation automatically.
+ */
+export function Sprite(props: SpriteProps): SolidJSX.Element {
   return primitive("image", props as Record<string, unknown>);
 }

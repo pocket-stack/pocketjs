@@ -114,9 +114,10 @@ PocketJS/
     src/ge.rs          DrawList → sceGu; PER-FRAME BUMP VERTEX ARENA (Vec<Chunk16>
                        pool allocated at boot, reset after sceGuSync — never reuse
                        a region within a frame; GE reads async in Direct mode) [R]
-    src/pak.rs       native read-only .pak walker: styles + atlases + images
-                       are fed to core DIRECTLY from include_bytes! before JS eval
-                       (zero QuickJS-heap transit) [R]
+    src/pak.rs       native read-only .pak walker: styles + atlases + images +
+                       sprite atlases are fed to core DIRECTLY from include_bytes!
+                       before JS eval (zero QuickJS-heap transit); image + sprite
+                       handles are exposed as ui.__textures / ui.__sprites [R]
   wasm/                Rust cdylib `pocketjs-wasm` — core + rasterizer, no wasm-bindgen
     src/lib.rs         extern "C" op mirror + render() → RGBA8 480×272
     src/raster.rs      deterministic scanline rasterizer (blend, gradients, glyphs)
@@ -208,7 +209,8 @@ children[], …}`) so reconciler *reads* never cross the FFI. Handles are `i32`
 | setText | `(id, str)` | UTF-8; text nodes only |
 | replaceText | `(id, str)` | Solid universal calls this on text updates |
 | uploadTexture | `(buf, w, h, psm) → handle` | pow2 ≤512, copied + 16B-aligned |
-| setImage | `(id, texHandle)` | texHandle < 0 clears (handles are 0-based: 0 is the first upload) |
+| setImage | `(id, texHandle)` | texHandle < 0 clears (handles are 0-based: 0 is the first upload); also clears any sprite binding |
+| setSprite | `(id, atlas, frames, cols, step)` | binds an ANIMATED SPRITE ATLAS to an image node: the atlas texture holds a `cols`-wide grid of `frames` cells; the core auto-plays it, drawing cell `(frame−start)/step % frames` as a TEX_QUAD UV sub-rect — derived at draw time from the vblank counter, so zero per-frame JS and byte-exact goldens. `frames ≤ 0` clears **[R]** |
 | animate | `(id, propId, to:f64, durMs, easing, delayMs) → animId` | from = current |
 | cancelAnim | `(animId)` | |
 | setFocus | `(idOr0)` | applies `focus:` variant natively |

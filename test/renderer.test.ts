@@ -109,6 +109,7 @@ function makeMockHost(strict = true): MockHost {
       return 900 + calls.length;
     },
     setImage: rec("setImage"),
+    setSprite: rec("setSprite"),
     animate(...args: number[]) {
       calls.push(["animate", ...args]);
       return 1;

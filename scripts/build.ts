@@ -39,8 +39,10 @@ import {
   KEY_STYLES,
   decodePng,
   encodeImageEntry,
+  encodeSpriteEntry,
   keyFont,
   keyImage,
+  keySprite,
   pack,
   placeholderImage,
   type PakBlob,
@@ -222,6 +224,20 @@ const blobs: PakBlob[] = [
   ...atlases.map((a) => ({ key: keyFont(a.slot), dtype: PAK_DTYPE.u8, data: a.bytes })),
 ];
 const appDir = entry.slice(0, entry.lastIndexOf("/") + 1);
+// Optional per-app sprite manifest: images listed here are baked as animated
+// sprite-atlas entries (ui:sprite.<name>) instead of static images.
+interface SpriteMeta {
+  cols: number;
+  rows: number;
+  frames: number;
+  step: number;
+  /** spec PSM (default 8888); set 2 (PSM_4444) to halve atlas texmem on PSP. */
+  psm?: number;
+}
+const spriteManifestPath = appDir + "sprites.json";
+const spriteMeta: Record<string, SpriteMeta> = existsSync(spriteManifestPath)
+  ? (JSON.parse(await Bun.file(spriteManifestPath).text()) as Record<string, SpriteMeta>)
+  : {};
 const imageNames = classStrings.filter((s) => /^[\w./-]+\.(?:png|svg)$/i.test(s));
 for (const name of imageNames) {
   const candidates = [appDir + name, ROOT + "assets/images/" + name, ROOT + "assets/" + name];
@@ -239,7 +255,27 @@ for (const name of imageNames) {
     img = placeholderImage();
     console.log(`  image: ${name} not found (tried ${candidates.join(", ")}) — baking a 32x32 placeholder`);
   }
-  blobs.push({ key: keyImage(name), dtype: PAK_DTYPE.u8, data: encodeImageEntry(img, PSM.PSM_8888) });
+  const sp = spriteMeta[name];
+  if (sp) {
+    blobs.push({
+      key: keySprite(name),
+      dtype: PAK_DTYPE.u8,
+      data: encodeSpriteEntry(
+        {
+          atlasW: img.width,
+          atlasH: img.height,
+          frameCount: sp.frames,
+          cols: sp.cols,
+          frameStep: sp.step,
+          rgba: img.rgba,
+        },
+        sp.psm ?? PSM.PSM_8888,
+      ),
+    });
+    console.log(`  sprite: ${name} (${sp.frames} frames, ${sp.cols} cols, step ${sp.step}, psm ${sp.psm ?? PSM.PSM_8888})`);
+  } else {
+    blobs.push({ key: keyImage(name), dtype: PAK_DTYPE.u8, data: encodeImageEntry(img, PSM.PSM_8888) });
+  }
 }
 
 const pak = pack(blobs);

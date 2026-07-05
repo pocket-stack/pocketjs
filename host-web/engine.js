@@ -24,6 +24,8 @@ export const BTN = {
   RIGHT: 0x0020,
   DOWN: 0x0040,
   LEFT: 0x0080,
+  LTRIGGER: 0x0100,
+  RTRIGGER: 0x0200,
   TRIANGLE: 0x1000,
   CIRCLE: 0x2000,
   CROSS: 0x4000,
@@ -43,6 +45,12 @@ const KEYMAP = {
   ShiftLeft: BTN.SELECT,
   ShiftRight: BTN.SELECT,
   Space: BTN.START,
+  // Shoulder triggers: the literal L / R keys the shoulders are named after,
+  // plus Q / E as an ergonomic left-hand alternate.
+  KeyL: BTN.LTRIGGER,
+  KeyR: BTN.RTRIGGER,
+  KeyQ: BTN.LTRIGGER,
+  KeyE: BTN.RTRIGGER,
 };
 
 let wasm = null; // createWasmUi result

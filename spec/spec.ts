@@ -109,6 +109,7 @@ export const OP = {
   loadStyles: 14,
   loadFontAtlas: 15,
   measureText: 16,
+  setSprite: 17,
 } as const;
 
 // ---------------------------------------------------------------------------

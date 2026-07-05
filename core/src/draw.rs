@@ -310,13 +310,16 @@ struct Walker<'a> {
     tree: &'a Tree,
     styles: &'a StyleTable,
     fonts: &'a Fonts,
+    /// Global vblank counter — drives deterministic sprite frame selection.
+    frame: u64,
     glyph_scratch: Vec<crate::text::GlyphPos>,
 }
 
-/// Build the full DrawList for the current (laid-out) tree.
-pub fn build(tree: &Tree, styles: &StyleTable, fonts: &Fonts, dl: &mut DrawList) {
+/// Build the full DrawList for the current (laid-out) tree. `frame` is the
+/// core's vblank counter (Ui.frame); animated sprites pick their cell from it.
+pub fn build(tree: &Tree, styles: &StyleTable, fonts: &Fonts, frame: u64, dl: &mut DrawList) {
     dl.words.clear();
-    let mut w = Walker { tree, styles, fonts, glyph_scratch: Vec::new() };
+    let mut w = Walker { tree, styles, fonts, frame, glyph_scratch: Vec::new() };
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
     w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::SCREEN, dl);
 }
@@ -426,9 +429,27 @@ impl<'a> Walker<'a> {
             return;
         }
 
-        // -- image --------------------------------------------------------------
+        // -- image / animated sprite -------------------------------------------
         if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
-            self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip);
+            // Plain image samples the whole texture; a sprite samples the
+            // current frame's atlas cell (auto-played from the vblank counter).
+            let (fu0, fv0, fu1, fv1) = if node.sprite_frames > 0 {
+                let cols = node.sprite_cols.max(1) as u32;
+                let rows = (node.sprite_frames as u32).div_ceil(cols);
+                let step = node.sprite_step.max(1) as u64;
+                let elapsed = self.frame.wrapping_sub(node.sprite_start);
+                let idx = ((elapsed / step) % node.sprite_frames as u64) as u32;
+                let (cx, cy) = (idx % cols, idx / cols);
+                (
+                    cx as f32 / cols as f32,
+                    cy as f32 / rows as f32,
+                    (cx + 1) as f32 / cols as f32,
+                    (cy + 1) as f32 / rows as f32,
+                )
+            } else {
+                (0.0, 0.0, 1.0, 1.0)
+            };
+            self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip, fu0, fv0, fu1, fv1);
         }
 
         // -- children (overflow-hidden scissor around them; z-index stable
@@ -1048,7 +1069,21 @@ impl<'a> Walker<'a> {
 
     /// Emit an image TEX_QUAD (axis-aligned only; rotated images are
     /// conservatively culled — no textured-triangle op in the DrawList v1).
-    fn emit_tex_quad(&self, dl: &mut DrawList, world: &Affine, w: f32, h: f32, tex: u32, op: f32, clip: &Clip) {
+    #[allow(clippy::too_many_arguments)]
+    fn emit_tex_quad(
+        &self,
+        dl: &mut DrawList,
+        world: &Affine,
+        w: f32,
+        h: f32,
+        tex: u32,
+        op: f32,
+        clip: &Clip,
+        fu0: f32,
+        fv0: f32,
+        fu1: f32,
+        fv1: f32,
+    ) {
         if !world.is_axis_aligned() {
             return;
         }
@@ -1066,11 +1101,14 @@ impl<'a> Walker<'a> {
         if c.is_empty() || roundf(c.x1 - c.x0) <= 0.0 || roundf(c.y1 - c.y0) <= 0.0 {
             return;
         }
-        // UV re-interpolation over the clipped span (normalized 0..1).
-        let u0 = (c.x0 - sx0) / (sx1 - sx0);
-        let u1 = (c.x1 - sx0) / (sx1 - sx0);
-        let v0 = (c.y0 - sy0) / (sy1 - sy0);
-        let v1 = (c.y1 - sy0) / (sy1 - sy0);
+        // UV re-interpolation over the clipped span, remapped into the frame's
+        // atlas sub-rect [fu0,fu1] x [fv0,fv1] (the whole texture for images).
+        let du = fu1 - fu0;
+        let dv = fv1 - fv0;
+        let u0 = fu0 + (c.x0 - sx0) / (sx1 - sx0) * du;
+        let u1 = fu0 + (c.x1 - sx0) / (sx1 - sx0) * du;
+        let v0 = fv0 + (c.y0 - sy0) / (sy1 - sy0) * dv;
+        let v1 = fv0 + (c.y1 - sy0) / (sy1 - sy0) * dv;
         dl.words.push(spec::draw_op::TEX_QUAD);
         dl.words.push(tex);
         dl.words.push(xy_word(c.x0, c.y0));

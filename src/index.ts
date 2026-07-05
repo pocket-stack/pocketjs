@@ -20,6 +20,7 @@ import { detectHost, installFrameHandler, installHost, type HostOps } from "./ho
 import {
   createElement,
   registerTexture as rendererRegisterTexture,
+  registerSprite as rendererRegisterSprite,
   setProp,
   insertNode,
   render as rendererRender,
@@ -52,6 +53,7 @@ export type MountOptions = RenderOptions;
 const STYLES_KEY = "ui:styles";
 const FONT_PREFIX = "ui:font.";
 const IMG_PREFIX = "ui:img.";
+const SPRITE_PREFIX = "ui:sprite.";
 
 export function frameworkName(): "Solid" {
   return "Solid";
@@ -73,6 +75,31 @@ function uploadPakImages(ops: HostOps): void {
     const psm = blob[4];
     const handle = ops.uploadTexture(blob.subarray(8), w, h, psm);
     if (handle >= 0) rendererRegisterTexture(key.slice(IMG_PREFIX.length), handle);
+  }
+}
+
+/**
+ * Upload every ui:sprite.<name> atlas and register its animation metadata.
+ * Same as uploadPakImages but for the SPRITE ATLAS entry (compiler/pak.ts
+ * encodeSpriteEntry): 16-byte header {u16 atlasW, u16 atlasH, u8 psm, u8 pad,
+ * u16 frameCount, u16 cols, u16 frameStep, 4B pad} + atlas pixels. The core
+ * auto-plays the animation — nothing per-frame happens here.
+ */
+function uploadPakSprites(ops: HostOps): void {
+  if ((ops as HostOps & { __sprites?: unknown }).__sprites) return; // PSP fed natively
+  for (const key of pakEntries(SPRITE_PREFIX)) {
+    const blob = pakGet(key);
+    const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+    const w = dv.getUint16(0, true);
+    const h = dv.getUint16(2, true);
+    const psm = blob[4];
+    const frames = dv.getUint16(6, true);
+    const cols = dv.getUint16(8, true);
+    const step = dv.getUint16(10, true);
+    const handle = ops.uploadTexture(blob.subarray(16), w, h, psm);
+    if (handle >= 0) {
+      rendererRegisterSprite(key.slice(SPRITE_PREFIX.length), { handle, frames, cols, step });
+    }
   }
 }
 
@@ -105,6 +132,14 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     const tex = (host.ops as HostOps & { __textures?: Record<string, number> }).__textures;
     if (tex) {
       for (const key in tex) rendererRegisterTexture(key, tex[key]);
+    }
+    const spr = (
+      host.ops as HostOps & {
+        __sprites?: Record<string, { handle: number; frames: number; cols: number; step: number }>;
+      }
+    ).__sprites;
+    if (spr) {
+      for (const key in spr) rendererRegisterSprite(key, spr[key]);
     }
   }
 
@@ -176,6 +211,7 @@ export function mount(code: () => unknown, opts: MountOptions = {}): () => void 
   }
   if (opts.pak) loadPack(opts.pak);
   uploadPakImages(ops);
+  uploadPakSprites(ops);
   const dispose = render(code, {
     ops,
     styles: opts.styles ?? DEFAULT_STYLE_IDS,

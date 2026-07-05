@@ -259,7 +259,36 @@ impl Ui {
         let node = &mut self.tree.slots[slot as usize];
         if node.node_type == spec::NodeType::Image as u8 {
             node.tex = if tex < 0 { -1 } else { tex };
+            node.sprite_frames = 0; // set_image reverts a sprite to a static image
         }
+    }
+
+    /// Bind an ANIMATED SPRITE to an image node: `atlas` is an uploaded texture
+    /// holding a `cols`-wide grid of `frames` cells; the core auto-plays it,
+    /// advancing one cell every `step` vblanks (drawn as a UV sub-rect of the
+    /// atlas). `frames == 0` clears the sprite (back to a plain/no image). The
+    /// animation is deterministic — frame = (Ui.frame - start) / step % frames —
+    /// and starts at frame 0 the moment the node is displayed.
+    pub fn set_sprite(&mut self, id: i32, atlas: i32, frames: u32, cols: u32, step: u32) {
+        if atlas >= 0 && atlas as usize >= self.textures.len() {
+            return;
+        }
+        let frame = self.frame;
+        let Some(slot) = self.tree.resolve(id) else { return };
+        let node = &mut self.tree.slots[slot as usize];
+        if node.node_type != spec::NodeType::Image as u8 {
+            return;
+        }
+        if frames == 0 || atlas < 0 {
+            node.sprite_frames = 0;
+            node.tex = -1;
+            return;
+        }
+        node.tex = atlas;
+        node.sprite_frames = frames.min(u16::MAX as u32) as u16;
+        node.sprite_cols = cols.clamp(1, u16::MAX as u32) as u16;
+        node.sprite_step = step.clamp(1, u16::MAX as u32) as u16;
+        node.sprite_start = frame;
     }
 
     /// Parse a styles.bin blob (spec.ts STYLE TABLE format). Replaces the
@@ -457,7 +486,7 @@ impl Ui {
         if self.layout.dirty {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
-        draw::build(&self.tree, &self.styles, &self.fonts, &mut self.draw_list);
+        draw::build(&self.tree, &self.styles, &self.fonts, self.frame, &mut self.draw_list);
         &self.draw_list
     }
 

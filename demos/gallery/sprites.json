@@ -1,0 +1,146 @@
+{
+  "tile-00.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-01.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-02.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-03.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-04.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-05.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-06.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-07.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-08.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-09.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-10.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-11.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-12.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-13.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-14.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-15.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-16.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-17.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-18.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-19.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-20.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-21.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-22.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  },
+  "tile-23.png": {
+    "cols": 4,
+    "rows": 2,
+    "frames": 8,
+    "step": 4
+  }
+}
