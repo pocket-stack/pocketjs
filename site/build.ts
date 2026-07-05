@@ -210,7 +210,7 @@ async function main() {
 // The homepage is a standalone document (cinematic design owns its own header +
 // footer + CSS). site/home.html holds the body; site/assets/home.css the styles.
 const HOME_DESC =
-  "PocketJS renders a real Solid app — JSX, Tailwind, signals and full TypeScript — natively on the metal: real flexbox, sub-pixel text and hardware-accelerated animation, at a fluid 60 FPS in 32 MB of RAM. Bare Metal Modern Web, starting on the Sony PSP.";
+  "PocketJS makes browser-style UI practical off the browser: familiar JSX, Tailwind utilities and native rendering on PSP-class hardware.";
 function renderHome(): string {
   const body = readFileSync(SITE + "home.html", "utf8");
   return `<!doctype html>
