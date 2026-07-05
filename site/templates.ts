@@ -7,7 +7,7 @@ const GH = "https://github.com/pocket-stack/pocketjs";
 export const SITE_URL = "https://pocketjs.dev";
 export const SITE_TITLE = "PocketJS — Bare Metal Modern Web";
 export const SITE_DESC =
-  "PocketJS makes browser-style UI practical off the browser: familiar JSX, Tailwind utilities and native rendering on PSP-class hardware.";
+  "High-performance JSX UI outside the browser, with native rendering, standard Vue Vapor and Solid support, a Tailwind design system, and 60 FPS animation under an 8 MB memory budget.";
 export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 
 export interface PageOpts {
@@ -59,7 +59,7 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
     <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <div class="flex items-center gap-2 font-semibold text-slate-100">${LOGO}<span>PocketJS</span></div>
-        <p class="mt-3 max-w-xs text-sm text-slate-400">Solid or Vue Vapor UI under 8MB RAM, rendered through a tiny native core.</p>
+        <p class="mt-3 max-w-xs text-sm text-slate-400">Vue Vapor and Solid UI under 8 MB RAM, rendered through a tiny native core.</p>
       </div>
       <div class="text-sm">
         <h4 class="mb-3 font-semibold text-slate-200">Docs</h4>

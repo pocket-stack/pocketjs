@@ -23,7 +23,7 @@
     "./vue-vapor/lifecycle": "./src/lifecycle-vue-vapor.ts",
     "./vue-vapor/renderer": "./src/renderer-vue-vapor.ts"
   },
-  "description": "Browser-style UI off the browser: Solid or Vue Vapor JSX, Tailwind utilities and native rendering on PSP-class hardware.",
+  "description": "High-performance JSX UI outside the browser, with native rendering, standard Vue Vapor and Solid support, a Tailwind design system, and 60 FPS animation under an 8 MB memory budget.",
   "scripts": {
     "build": "bun scripts/build.ts",
     "psp": "bun scripts/psp.ts",

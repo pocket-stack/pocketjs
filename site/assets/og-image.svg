@@ -57,9 +57,9 @@
     <tspan x="76" dy="90">Modern Web</tspan>
   </text>
   <text x="82" y="466" fill="#b9c3d4" font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="34" font-weight="500" letter-spacing="0">
-    <tspan x="82" dy="0">Browser-style UI off the browser:</tspan>
-    <tspan x="82" dy="46">JSX, Tailwind utilities and native pixels</tspan>
-    <tspan x="82" dy="46">on PSP-class hardware.</tspan>
+    <tspan x="82" dy="0">High-performance JSX UI outside the browser:</tspan>
+    <tspan x="82" dy="46">native rendering, Vue Vapor and Solid,</tspan>
+    <tspan x="82" dy="46">Tailwind design system, 60 FPS under 8 MB.</tspan>
   </text>
 
   <g transform="translate(760 476)">

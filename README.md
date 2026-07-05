@@ -1,18 +1,18 @@
-<p>
-  <img src="./site/assets/favicon.svg" width="56" height="56" alt="PocketJS">
-</p>
+# <img src="./site/assets/favicon.svg" width="40" height="40" alt=""> PocketJS
 
-# PocketJS
-
-PocketJS makes browser-style UI practical off the browser: familiar JSX,
-Tailwind utilities and native rendering on PSP-class hardware. Write Solid or
-Vue Vapor components, run them on QuickJS, and let PocketJS move layout,
-styling, text and animation into a tiny `no_std` Rust core.
+High-performance JSX UI outside the browser, with native rendering, standard
+Vue Vapor and Solid support, a Tailwind design system, and 60 FPS animation
+under an 8 MB memory budget. Write Solid or Vue Vapor components, run them on
+QuickJS, and let PocketJS move layout, styling, text and animation into a tiny
+`no_std` Rust core.
 
 It runs on real PSP hardware, PPSSPP, the browser (WASM) and headless Bun.
 Full design + contracts: [DESIGN.md](./DESIGN.md).
 
 ## Screenshots
+
+These PocketJS UIs run smoothly at 60 FPS on a Sony PSP within an 8 MB memory
+budget, including animated transitions and input feedback.
 
 | Gallery | Settings |
 | --- | --- |
