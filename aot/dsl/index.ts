@@ -28,26 +28,69 @@ export * from "./types.ts";
 export { Fragment } from "./jsx-runtime.ts";
 export type { PjgbNode } from "./jsx-runtime.ts";
 
+type Rgb = readonly [number, number, number];
+type Whitespace = " " | "\t" | "\r";
+
+type TrimLineLeft<S extends string> = S extends `${Whitespace}${infer Rest}` ? TrimLineLeft<Rest> : S;
+type TrimLineRight<S extends string> = S extends `${infer Rest}${Whitespace}` ? TrimLineRight<Rest> : S;
+type TrimLine<S extends string> = TrimLineRight<TrimLineLeft<S>>;
+type SplitLines<S extends string> = S extends `${infer Head}\n${infer Rest}` ? [Head, ...SplitLines<Rest>] : [S];
+type NonEmptyTrimmedLines<Lines extends readonly string[]> = Lines extends readonly [
+  infer Head extends string,
+  ...infer Rest extends readonly string[],
+]
+  ? TrimLine<Head> extends ""
+    ? NonEmptyTrimmedLines<Rest>
+    : [TrimLine<Head>, ...NonEmptyTrimmedLines<Rest>]
+  : [];
+type RowsOf<Source extends string> = NonEmptyTrimmedLines<SplitLines<Source>>;
+type Chars<S extends string> = S extends `${infer Head}${infer Rest}` ? Head | Chars<Rest> : never;
+type RowChars<Rows extends readonly string[]> = Rows[number] extends infer Row extends string ? Chars<Row> : never;
+type RowLength<S extends string, Acc extends unknown[] = []> = S extends `${infer _Head}${infer Rest}`
+  ? RowLength<Rest, [unknown, ...Acc]>
+  : Acc["length"];
+type SameWidth<Rows extends readonly string[], Width extends number | null = null> = Rows extends readonly [
+  infer Head extends string,
+  ...infer Rest extends readonly string[],
+]
+  ? Width extends number
+    ? RowLength<Head> extends Width
+      ? [Head, ...SameWidth<Rest, Width>]
+      : never
+    : [Head, ...SameWidth<Rest, RowLength<Head>>]
+  : [];
+type RowsForLegend<Source extends string> = string extends Source ? readonly string[] : SameWidth<RowsOf<Source>>;
+type TileNameOf<Tileset> = Tileset extends TilesetDecl<string, infer Tiles> ? Extract<keyof Tiles, string> : string;
+type LayerTileNames<Layer> = Layer extends LayerSpec<readonly string[], infer TileName> ? TileName : string;
+type CompatibleLayer<Tileset, Layer> = string extends LayerTileNames<Layer>
+  ? Layer
+  : Exclude<LayerTileNames<Layer>, TileNameOf<Tileset>> extends never
+    ? Layer
+    : never;
+
 // ---------------------------------------------------------------------------
 // Registry — module-level, shared between the executed game module and the
 // compiler (both import this exact module instance).
 // ---------------------------------------------------------------------------
 export interface TileDecl {
-  px: string[]; // 8 rows of 8 hex-nibble palette indices (0-f)
+  px: readonly string[]; // 8 rows of 8 hex-nibble palette indices (0-f)
   solid?: boolean;
 }
-export interface TilesetDecl {
-  name: string;
-  palette: [number, number, number][]; // up to 16 rgb triples; index 0 = transparent/backdrop
-  tiles: Record<string, TileDecl>;
+export interface TilesetDecl<
+  Name extends string = string,
+  Tiles extends Record<string, TileDecl> = Record<string, TileDecl>,
+> {
+  name: Name;
+  palette: readonly Rgb[]; // up to 16 rgb triples; index 0 = transparent/backdrop
+  tiles: Tiles;
 }
-export interface SpriteDecl {
-  name: string;
+export interface SpriteDecl<Name extends string = string> {
+  name: Name;
   size: [number, number];
-  palette: [number, number, number][];
+  palette: readonly Rgb[];
   // one entry per facing (down,up,left,right); each is `frames` grids of
   // `w*h` hex-nibble palette indices (rows joined). v1: 16x16, 1-2 frames.
-  facings: Record<Direction, string[][]>;
+  facings: Record<Direction, readonly (readonly string[])[]>;
 }
 export interface MapDecl {
   name: string;
@@ -112,24 +155,303 @@ export const Trigger = hostElement("Trigger");
 export const Collision = hostElement("Collision");
 
 // ---------------------------------------------------------------------------
-// Static builders
+// Static builders + strongly-typed map DSL
 // ---------------------------------------------------------------------------
-export function defineTileset(name: string, decl: Omit<TilesetDecl, "name">): TilesetDecl {
+export interface TileRef<Name extends string = string> {
+  readonly __pjgbTile: true;
+  readonly name: Name;
+}
+type TileInput<Name extends string = string> = TileRef<Name> | Name;
+
+export interface LayerSpec<Rows extends readonly string[] = readonly string[], TileName extends string = string> {
+  readonly __pjgbLayer: true;
+  readonly rows: Rows;
+  readonly legend: Record<string, TileName>;
+}
+
+export interface AsciiLayer<Source extends string = string> {
+  readonly __pjgbAscii: true;
+  readonly source: Source;
+  readonly rows: string[];
+  legend<const Legend extends Record<RowChars<RowsForLegend<Source>>, TileInput>>(
+    legend: RowsForLegend<Source> extends never ? never : Legend,
+  ): LayerSpec<RowsForLegend<Source>, ExtractTileNames<Legend>>;
+}
+
+type ExtractTileNames<Legend> = Extract<
+  {
+    [K in keyof Legend]: Legend[K] extends TileRef<infer Name> ? Name : Legend[K] extends string ? Legend[K] : never;
+  }[keyof Legend],
+  string
+>;
+
+function node(host: string, props: Record<string, unknown>, children: PjgbNode[] = []): PjgbNode {
+  return { host, props, children };
+}
+
+function isTileRef(v: unknown): v is TileRef {
+  return typeof v === "object" && v !== null && (v as TileRef).__pjgbTile === true;
+}
+
+function tileName(v: TileInput): string {
+  return isTileRef(v) ? v.name : String(v);
+}
+
+function normalizeAscii(source: string): string[] {
+  const lines = source.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  while (lines.length && lines[0]!.trim() === "") lines.shift();
+  while (lines.length && lines[lines.length - 1]!.trim() === "") lines.pop();
+  if (!lines.length) throw new Error("ascii map must contain at least one row");
+
+  let indent = Infinity;
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+    indent = Math.min(indent, line.match(/^[ \t]*/)![0].length);
+  }
+  const cut = Number.isFinite(indent) ? indent : 0;
+  return lines.map((line) => line.slice(cut).trimEnd());
+}
+
+function makeLayerSpec(rows: readonly string[], legendInput: Record<string, TileInput>): LayerSpec {
+  const width = rows[0]?.length ?? 0;
+  if (!width) throw new Error("ascii map must contain non-empty rows");
+  rows.forEach((row, i) => {
+    if (row.length !== width) throw new Error(`ascii map row ${i} width ${row.length} != ${width}`);
+  });
+
+  const legend: Record<string, string> = {};
+  for (const [symbol, value] of Object.entries(legendInput)) {
+    if (symbol.length !== 1) throw new Error(`ascii legend key "${symbol}" must be exactly one character`);
+    legend[symbol] = tileName(value);
+  }
+  for (const row of rows) {
+    for (const symbol of row) {
+      if (legend[symbol] === undefined) throw new Error(`ascii legend missing entry for "${symbol}"`);
+    }
+  }
+  return { __pjgbLayer: true, rows: [...rows], legend };
+}
+
+class AsciiLayerImpl<Source extends string> implements AsciiLayer<Source> {
+  readonly __pjgbAscii = true;
+  readonly rows: string[];
+
+  constructor(readonly source: Source) {
+    this.rows = normalizeAscii(source);
+  }
+
+  legend<const Legend extends Record<RowChars<RowsForLegend<Source>>, TileInput>>(
+    legend: RowsForLegend<Source> extends never ? never : Legend,
+  ): LayerSpec<RowsForLegend<Source>, ExtractTileNames<Legend>> {
+    return makeLayerSpec(this.rows, legend as Record<string, TileInput>) as LayerSpec<
+      RowsForLegend<Source>,
+      ExtractTileNames<Legend>
+    >;
+  }
+}
+
+export function tile<const Name extends string>(name: Name): TileRef<Name> {
+  return { __pjgbTile: true, name };
+}
+
+export function ascii<const Source extends string>(
+  strings: TemplateStringsArray,
+  ...values: never[]
+): AsciiLayer<Source> {
+  if (values.length) throw new Error("ascii maps do not support interpolation");
+  return new AsciiLayerImpl(String.raw({ raw: strings.raw }) as Source);
+}
+
+class MapBuilderStart<Name extends string> {
+  constructor(private readonly name: Name) {}
+
+  tileset<const Tileset extends TilesetDecl>(tileset: Tileset): MapBuilder<Name, Tileset> {
+    return new MapBuilder(this.name, tileset);
+  }
+}
+
+class FacingPlacement<Parent> {
+  private position: [number, number] | null = null;
+
+  constructor(
+    private readonly parent: Parent,
+    private readonly host: string,
+    private readonly props: Record<string, unknown>,
+    private readonly append: (node: PjgbNode) => void,
+  ) {}
+
+  at(x: number, y: number): this {
+    this.position = [x, y];
+    return this;
+  }
+
+  facing(dir: Direction): Parent {
+    if (!this.position) throw new Error(`<${this.host}> needs .at(x, y) before .facing(...)`);
+    this.append(node(this.host, { ...this.props, at: this.position, facing: dir }));
+    return this.parent;
+  }
+}
+
+class AtPlacement<Parent> {
+  constructor(
+    private readonly parent: Parent,
+    private readonly host: string,
+    private readonly props: Record<string, unknown>,
+    private readonly append: (node: PjgbNode) => void,
+  ) {}
+
+  at(x: number, y: number): Parent {
+    this.append(node(this.host, { ...this.props, at: [x, y] }));
+    return this.parent;
+  }
+}
+
+class NpcBuilder<Parent> {
+  private spriteName: string | null = null;
+
+  constructor(
+    private readonly parent: Parent,
+    private readonly id: string,
+    private readonly append: (node: PjgbNode) => void,
+  ) {}
+
+  sprite(spriteRef: SpriteId | string): NpcAfterSprite<Parent> {
+    this.spriteName = String(spriteRef);
+    return new NpcAfterSprite(this.parent, this.id, this.spriteName, this.append);
+  }
+}
+
+class NpcAfterSprite<Parent> {
+  private position: [number, number] | null = null;
+
+  constructor(
+    private readonly parent: Parent,
+    private readonly id: string,
+    private readonly spriteName: string,
+    private readonly append: (node: PjgbNode) => void,
+  ) {}
+
+  at(x: number, y: number): NpcAfterAt<Parent> {
+    this.position = [x, y];
+    return new NpcAfterAt(this.parent, this.id, this.spriteName, this.position, this.append);
+  }
+}
+
+class NpcAfterAt<Parent> {
+  constructor(
+    private readonly parent: Parent,
+    private readonly id: string,
+    private readonly spriteName: string,
+    private readonly position: [number, number],
+    private readonly append: (node: PjgbNode) => void,
+  ) {}
+
+  facing(dir: Direction): NpcAfterFacing<Parent> {
+    return new NpcAfterFacing(this.parent, {
+      id: this.id,
+      sprite: this.spriteName,
+      at: this.position,
+      facing: dir,
+    }, this.append);
+  }
+}
+
+class NpcAfterFacing<Parent> {
+  constructor(
+    private readonly parent: Parent,
+    private readonly props: Record<string, unknown>,
+    private readonly append: (node: PjgbNode) => void,
+  ) {}
+
+  movement(kind: MovementKind): this {
+    this.props.movement = kind;
+    return this;
+  }
+
+  talk(scriptRef: ScriptRef): Parent {
+    this.append(node("Npc", { ...this.props, onTalk: scriptRef }));
+    return this.parent;
+  }
+}
+
+export class MapBuilder<Name extends string = string, Tileset extends TilesetDecl = TilesetDecl> {
+  private readonly children: PjgbNode[] = [];
+
+  constructor(
+    private readonly name: Name,
+    private readonly tilesetDecl: Tileset,
+  ) {}
+
+  private append = (child: PjgbNode): void => {
+    this.children.push(child);
+  };
+
+  layer<const Layer extends LayerSpec>(layer: CompatibleLayer<Tileset, Layer>): this {
+    this.append(node("Layer", { rows: [...layer.rows], legend: { ...layer.legend } }));
+    return this;
+  }
+
+  spawn<const Id extends string>(_id: Id): FacingPlacement<this> {
+    return new FacingPlacement(this, "PlayerSpawn", { id: _id }, this.append);
+  }
+
+  entrance<const Id extends string>(id: Id): FacingPlacement<this> {
+    return new FacingPlacement(this, "Entrance", { id }, this.append);
+  }
+
+  npc<const Id extends string>(id: Id): NpcBuilder<this> {
+    return new NpcBuilder(this, id, this.append);
+  }
+
+  sign(text: string): AtPlacement<this> {
+    return new AtPlacement(this, "Sign", { text }, this.append);
+  }
+
+  warp(to: `${string}:${string}` | string): AtPlacement<this> {
+    return new AtPlacement(this, "Warp", { to }, this.append);
+  }
+
+  done(): MapDecl {
+    const firstLayer = this.children.find((c) => c.host === "Layer");
+    const rows = firstLayer?.props.rows as string[] | undefined;
+    const root = node("Map", {}, this.children);
+    const decl: MapDecl = {
+      name: this.name,
+      tileset: this.tilesetDecl.name,
+      root,
+      size: rows ? [rows[0]?.length ?? 0, rows.length] : undefined,
+    };
+    REGISTRY.maps.push(decl);
+    return decl;
+  }
+}
+
+export function defineTileset<
+  const Name extends string,
+  const Tiles extends Record<string, TileDecl>,
+>(name: Name, decl: { palette: readonly Rgb[]; tiles: Tiles }): TilesetDecl<Name, Tiles> {
   const full: TilesetDecl = { name, ...decl };
   REGISTRY.tilesets.set(name, full);
-  return full;
+  return full as TilesetDecl<Name, Tiles>;
 }
 
-export function defineSprite(name: string, decl: Omit<SpriteDecl, "name">): SpriteId {
+export function defineSprite<const Name extends string>(name: Name, decl: Omit<SpriteDecl<Name>, "name">): SpriteId {
   REGISTRY.sprites.set(name, { name, ...decl });
-  return name as SpriteId;
+  return name as unknown as SpriteId;
 }
 
-export function defineMap(
-  name: string,
+export function defineMap<const Name extends string>(name: Name): MapBuilderStart<Name>;
+export function defineMap<const Name extends string>(
+  name: Name,
   opts: { size?: [number, number]; tileset: string },
   build: () => PjgbNode,
-): MapDecl {
+): MapDecl;
+export function defineMap(
+  name: string,
+  opts?: { size?: [number, number]; tileset: string },
+  build?: () => PjgbNode,
+): MapDecl | MapBuilderStart<string> {
+  if (!opts || !build) return new MapBuilderStart(name);
   const root = build();
   const decl: MapDecl = { name, tileset: opts.tileset, root, size: opts.size };
   REGISTRY.maps.push(decl);

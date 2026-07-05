@@ -14,8 +14,13 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
+      "@pocketjs/aot": ["./aot/dsl/index.ts"],
+      "@pocketjs/aot/compiler": ["./aot/compiler/index.ts"],
+      "@pocketjs/aot/jsx-runtime": ["./aot/dsl/jsx-runtime.ts"],
+      "@pocketjs/aot/spec": ["./aot/spec/pjgb.ts"],
       "@pocketjs/framework": ["./src/index.ts"],
       "@pocketjs/framework/animation": ["./src/animation.ts"],
       "@pocketjs/framework/config": ["./src/config.ts"],
@@ -36,5 +41,5 @@
       "@pocketjs/framework/vue-vapor/renderer": ["./src/renderer-vue-vapor.ts"]
     }
   },
-  "include": ["src", "compiler", "demos", "test", "spec", "host-web"]
+  "include": ["src", "compiler", "demos", "test", "spec", "host-web", "aot"]
 }

@@ -29,7 +29,7 @@ type Pt = { x: number; y: number };
 type Contour = Pt[];
 
 let font: Font | null = null;
-const coverageCache = new Map<number, Uint8Array>();
+const coverageCache = new Map<number, Uint8Array<ArrayBufferLike>>();
 
 function loadFont(): Font {
   if (!font) {
@@ -101,7 +101,7 @@ function flatten(path: Path): Contour[] {
   return contours;
 }
 
-function rasterize(contours: Contour[]): Uint8Array {
+function rasterize(contours: Contour[]): Uint8Array<ArrayBufferLike> {
   const out = new Uint8Array(GLYPH_WIDTH * GLYPH_HEIGHT);
   if (contours.length === 0) return out;
 
@@ -143,11 +143,11 @@ function rasterize(contours: Contour[]): Uint8Array {
   return out;
 }
 
-function glyphCoverage(c: number): Uint8Array {
+function glyphCoverage(c: number): Uint8Array<ArrayBufferLike> {
   const cached = coverageCache.get(c);
   if (cached) return cached;
 
-  let coverage = new Uint8Array(GLYPH_WIDTH * GLYPH_HEIGHT);
+  let coverage: Uint8Array<ArrayBufferLike> = new Uint8Array(GLYPH_WIDTH * GLYPH_HEIGHT);
   if (c >= FIRST_CHAR && c <= LAST_CHAR && c !== 0x20) {
     const f = loadFont();
     const glyphIndex = f.charToGlyphIndex(String.fromCharCode(c));

@@ -1,6 +1,7 @@
 // aot/demo/game.tsx — a Pokemon-like overworld vertical slice, authored in TSX.
 // Compiled by @pocketjs/aot into a GBA-native ROM (no JS engine on the cart).
 import {
+  ascii,
   battle,
   choose,
   defineGame,
@@ -9,19 +10,13 @@ import {
   giveItem,
   hasFlag,
   lockPlayer,
-  Layer,
-  Map,
-  Npc,
-  PlayerSpawn,
-  Entrance,
   releasePlayer,
   say,
   script,
   setFlag,
-  Sign,
-  Warp,
+  tile,
 } from "@pocketjs/aot";
-import "./assets.ts"; // registers the "town" tileset + "hero" sprite
+import { hero, town } from "./assets.ts";
 
 // --- scripts (residual zone: compiled from AST to bytecode) -----------------
 const RivalTalk = script(function* () {
@@ -61,92 +56,84 @@ const RouteNpcTalk = script(function* () {
 // --- town map ---------------------------------------------------------------
 // legend: . grass  , grass2  * flower  # tree  ~ water  = path
 //         H wall    ^ roof   D door    F fence
-const townRows = [
-  "####################",
-  "#....,.....,......##",
-  "#.^^HH^^..,...####.#",
-  "#.HHDHH.......#~~#.#",
-  "#.....=......,#~~#.#",
-  "#..*..=..,......,..#",
-  "#.,...=....^^HH^^..#",
-  "#.....=....HHDHH...#",
-  "#..,..======......,#",
-  "#........,..=....*.#",
-  "#.,....*....=..,...#",
-  "#....F.F.F..=......#",
-  "#..,........=...,..#",
-  "#......,....=......#",
-  "#.*......,..=..*...#",
-  "#..........=.......#",
-  "#,........===......#",
-  "#########==#########",
-] as const;
-
-export const Littleroot = defineMap("littleroot", { size: [20, 18], tileset: "town" }, () => (
-  <Map>
-    <Layer
-      rows={townRows as unknown as string[]}
-      legend={{
-        ".": "grass",
-        ",": "grass2",
-        "*": "flower",
-        "#": "tree",
-        "~": "water",
-        "=": "path",
-        H: "wall",
-        "^": "roof",
-        D: "door",
-        F: "fence",
-      }}
-    />
-    <PlayerSpawn id="spawn" at={[9, 14]} facing="up" />
-    <Entrance id="south" at={[9, 15]} facing="up" />
-    <Npc id="rival" sprite="hero" at={[12, 9]} facing="down" onTalk={RivalTalk} />
-    <Npc id="mom" sprite="hero" at={[5, 8]} facing="right" movement="static" onTalk={MomTalk} />
-    <Sign at={[8, 4]} text="LITTLEROOT TOWN. Home of new trainers." />
-    <Warp at={[9, 17]} to="route101:north" />
-  </Map>
-));
+export const Littleroot = defineMap("littleroot")
+  .tileset(town)
+  .layer(
+    ascii`
+      ####################
+      #....,.....,......##
+      #.^^HH^^..,...####.#
+      #.HHDHH.......#~~#.#
+      #.....=......,#~~#.#
+      #..*..=..,......,..#
+      #.,...=....^^HH^^..#
+      #.....=....HHDHH...#
+      #..,..======......,#
+      #........,..=....*.#
+      #.,....*....=..,...#
+      #....F.F.F..=......#
+      #..,........=...,..#
+      #......,....=......#
+      #.*......,..=..*...#
+      #..........=.......#
+      #,........===......#
+      #########==#########
+    `.legend({
+      ".": tile("grass"),
+      ",": tile("grass2"),
+      "*": tile("flower"),
+      "#": tile("tree"),
+      "~": tile("water"),
+      "=": tile("path"),
+      H: tile("wall"),
+      "^": tile("roof"),
+      D: tile("door"),
+      F: tile("fence"),
+    }),
+  )
+  .spawn("spawn").at(9, 14).facing("up")
+  .entrance("south").at(9, 15).facing("up")
+  .npc("rival").sprite(hero).at(12, 9).facing("down").talk(RivalTalk)
+  .npc("mom").sprite(hero).at(5, 8).facing("right").movement("static").talk(MomTalk)
+  .sign("LITTLEROOT TOWN. Home of new trainers.").at(8, 4)
+  .warp("route101:north").at(9, 17)
+  .done();
 
 // --- route map --------------------------------------------------------------
-const routeRows = [
-  "#########==#########",
-  "#........==.......,#",
-  "#..###...==...###..#",
-  "#..###...==...###..#",
-  "#.,......==........#",
-  "#....*...==...*....#",
-  "#........==........#",
-  "#..~~~...==...,....#",
-  "#..~~~...==.......,#",
-  "#..~~~...=====....##",
-  "#...,........==....#",
-  "#.......,.....==*..#",
-  "#..*.........,==...#",
-  "#,..............==,#",
-  "#..###...,....###..#",
-  "####################",
-] as const;
-
-export const Route101 = defineMap("route101", { size: [20, 16], tileset: "town" }, () => (
-  <Map>
-    <Layer
-      rows={routeRows as unknown as string[]}
-      legend={{
-        ".": "grass",
-        ",": "grass2",
-        "*": "flower",
-        "#": "tree",
-        "~": "water",
-        "=": "path",
-      }}
-    />
-    <Entrance id="north" at={[9, 1]} facing="down" />
-    <PlayerSpawn id="spawn" at={[9, 1]} facing="down" />
-    <Npc id="hiker" sprite="hero" at={[6, 7]} facing="down" onTalk={RouteNpcTalk} />
-    <Warp at={[9, 0]} to="littleroot:south" />
-  </Map>
-));
+export const Route101 = defineMap("route101")
+  .tileset(town)
+  .layer(
+    ascii`
+      #########==#########
+      #........==.......,#
+      #..###...==...###..#
+      #..###...==...###..#
+      #.,......==........#
+      #....*...==...*....#
+      #........==........#
+      #..~~~...==...,....#
+      #..~~~...==.......,#
+      #..~~~...=====....##
+      #...,........==....#
+      #.......,.....==*..#
+      #..*.........,==...#
+      #,..............==,#
+      #..###...,....###..#
+      ####################
+    `.legend({
+      ".": tile("grass"),
+      ",": tile("grass2"),
+      "*": tile("flower"),
+      "#": tile("tree"),
+      "~": tile("water"),
+      "=": tile("path"),
+    }),
+  )
+  .entrance("north").at(9, 1).facing("down")
+  .spawn("spawn").at(9, 1).facing("down")
+  .npc("hiker").sprite(hero).at(6, 7).facing("down").talk(RouteNpcTalk)
+  .warp("littleroot:south").at(9, 0)
+  .done();
 
 export default defineGame({
   title: "POCKET TOWN",

@@ -20,7 +20,7 @@ export function tile4(px: number[]): Uint8Array {
   return out;
 }
 
-function parseRows(rows: string[], w: number, h: number): number[] {
+function parseRows(rows: readonly string[], w: number, h: number): number[] {
   if (rows.length !== h) throw new Error(`tile grid: expected ${h} rows, got ${rows.length}`);
   const px: number[] = [];
   for (let y = 0; y < h; y++) {

@@ -39,9 +39,10 @@ The **two zones** (design §8):
 ## The DSL
 
 ```tsx
-import { defineGame, defineMap, Map, Layer, Npc, Warp, Sign, PlayerSpawn,
+import { ascii, defineGame, defineMap, tile,
          script, say, choose, hasFlag, setFlag, battle, giveItem,
          lockPlayer, releasePlayer, facePlayer } from "@pocketjs/aot";
+import { hero, town } from "./assets";
 
 const RivalTalk = script(function* () {
   yield lockPlayer();
@@ -65,7 +66,27 @@ const RivalTalk = script(function* () {
   yield releasePlayer();
 });
 
-export default defineGame({ title: "POCKET TOWN", start: "littleroot:spawn", maps: [/* ... */] });
+const Littleroot = defineMap("littleroot")
+  .tileset(town)
+  .layer(
+    ascii`
+      ########
+      #......#
+      #..HH..#
+      ########
+    `.legend({
+      "#": tile("tree"),
+      ".": tile("grass"),
+      H: tile("wall"),
+    }),
+  )
+  .spawn("spawn").at(2, 2).facing("down")
+  .npc("rival").sprite(hero).at(4, 2).facing("left").talk(RivalTalk)
+  .sign("LITTLEROOT TOWN").at(3, 1)
+  .warp("route101:north").at(3, 0)
+  .done();
+
+export default defineGame({ title: "POCKET TOWN", start: "littleroot:spawn", maps: [Littleroot] });
 ```
 
 See `demo/game.tsx` (the town + route), `demo/assets.ts` (DSL declarations), and `demo/imagegen/` (the source sheet plus deterministic GBA 4bpp extractor).
