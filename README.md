@@ -6,8 +6,13 @@ under an 8 MB memory budget. Write Solid or Vue Vapor components, run them on
 QuickJS, and let PocketJS move layout, styling, text and animation into a tiny
 `no_std` Rust core.
 
-It runs on real PSP hardware, PPSSPP, the browser (WASM) and headless Bun.
-Full design + contracts: [DESIGN.md](./DESIGN.md).
+It runs on real PSP hardware, PPSSPP, the browser (WASM), native macOS
+windows (wgpu) and headless Bun. Full design + contracts:
+[DESIGN.md](./DESIGN.md). PocketJS is growing into a family of specialized
+runtimes — Rust cores, spec-pinned surfaces, one QuickJS guest — documented
+in [RUNTIMES.md](./RUNTIMES.md); the 3D base lives in
+[pocket3d/](./pocket3d/), and its first game runtime is
+[OpenStrike](https://github.com/pocket-stack/open-strike).
 
 ## Screenshots
 
