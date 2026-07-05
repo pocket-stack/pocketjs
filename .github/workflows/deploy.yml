@@ -47,9 +47,19 @@ jobs:
         run: bun scripts/wasm.ts
 
       # The site's runtime bundle imports src/styles.generated.ts, a gitignored
-      # artifact that scripts/build.ts writes. Build one demo first so it exists.
+      # artifact that scripts/build.ts writes. On a fresh checkout Bun's bundler
+      # negatively-caches the missing module during pass 1 and then fails pass 2
+      # even after pass 1 writes it, so seed a stub FIRST (positive resolution),
+      # then build a demo to overwrite it with the real table.
       - name: Generate runtime style table
-        run: bun scripts/build.ts hero
+        run: |
+          cat > src/styles.generated.ts <<'STUB'
+          export const STYLE_IDS: Record<string, number> = {};
+          export const STYLE_COUNT = 0;
+          export const FONT_SLOTS: Record<number, { px: number; bold: boolean }> = {};
+          export const DEFAULT_FONT_SLOT = 2;
+          STUB
+          bun scripts/build.ts hero
 
       - name: Build site (docs + playground + showcase bundles)
         run: bun site/build.ts
