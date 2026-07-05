@@ -71,6 +71,7 @@ const argv = Bun.argv.slice(2);
 let appArg = "";
 let capture = false;
 let bench = false;
+let nativeBin: string | undefined;
 let frameworkFlag: string | undefined;
 let configPath = pspUiDir + "pocket.config.ts";
 let useConfig = true;
@@ -86,6 +87,9 @@ for (const a of argv) {
     frameworkFlag = a.slice("--framework=".length);
     buildFlags.push(a);
   }
+  else if (a.startsWith("--native-bin=")) {
+    nativeBin = a.slice("--native-bin=".length);
+  }
   else if (a.startsWith("--config=")) {
     configPath = resolvePath(pspUiDir, a.slice("--config=".length));
     buildFlags.push(a);
@@ -99,8 +103,13 @@ for (const a of argv) {
 }
 const features = [capture ? "capture" : "", bench ? "bench" : ""].filter(Boolean);
 if (features.length > 0) cargoArgs.push("--features", features.join(","));
-if (!appArg) {
+if (nativeBin && appArg) {
+  console.error("PocketJS psp: --native-bin builds a standalone PSP bin and cannot be combined with an app name");
+  process.exit(1);
+}
+if (!appArg && !nativeBin) {
   console.error("usage: bun scripts/psp.ts <app> [--capture|--bench] [cargo args…]   e.g. bun scripts/psp.ts hero --release");
+  console.error("       bun scripts/psp.ts --native-bin=<bin> [cargo args…]");
   process.exit(1);
 }
 
@@ -130,7 +139,7 @@ function mountedAppName(arg: string): string {
   return arg;
 }
 
-const app = mountedAppName(appArg);
+const app = appArg ? mountedAppName(appArg) : "";
 
 async function loadConfig(): Promise<PocketConfig> {
   if (!useConfig || !existsSync(configPath)) return {};
@@ -140,18 +149,26 @@ async function loadConfig(): Promise<PocketConfig> {
   return mod.default ?? mod.config ?? {};
 }
 
-const config = await loadConfig();
-const framework: PocketFramework = frameworkFlag
-  ? parseFramework(frameworkFlag, "--framework")
-  : parseFramework(config.framework, "pocket.config.ts");
-const outputApp = `${app}${FRAMEWORKS[framework].outputSuffix}`;
+const config = nativeBin ? {} : await loadConfig();
+const framework: PocketFramework | undefined = nativeBin
+  ? undefined
+  : frameworkFlag
+    ? parseFramework(frameworkFlag, "--framework")
+    : parseFramework(config.framework, "pocket.config.ts");
+const outputApp = nativeBin ? "" : `${app}${FRAMEWORKS[framework].outputSuffix}`;
 
 // ---------------------------------------------------------------------------
 // 1. Build the app bundle + pak -> dist/<app>.js + dist/<app>.pak
 // ---------------------------------------------------------------------------
 
-console.log(`PocketJS psp: building app "${app}" (framework=${framework})`);
-await $`bun scripts/build.ts ${app} ${buildFlags}`.cwd(pspUiDir);
+if (nativeBin) {
+  console.log(`PocketJS psp: building native bin "${nativeBin}"`);
+  cargoArgs.push("--bin", nativeBin);
+} else {
+  console.log(`PocketJS psp: building app "${app}" (framework=${framework})`);
+  await $`bun scripts/build.ts ${app} ${buildFlags}`.cwd(pspUiDir);
+  cargoArgs.push("--bin", "pocketjs-psp");
+}
 
 // ---------------------------------------------------------------------------
 // 2. cargo psp with the dreamcart cross env (copied from runtime/build.ts)
@@ -208,9 +225,18 @@ function outputProfile(args: string[]): string {
   return args.includes("--release") || args.includes("-r") ? "release" : "debug";
 }
 
-console.log(`PocketJS psp: cargo psp (app=${outputApp})`);
+console.log(nativeBin ? `PocketJS psp: cargo psp (bin=${nativeBin})` : `PocketJS psp: cargo psp (app=${outputApp})`);
 await $`${rustup} run ${TOOLCHAIN} cargo psp ${cargoArgs}`.cwd(nativeDir).env(env);
 
 const profile = outputProfile(cargoArgs);
-const eboot = `${nativeDir}target/mipsel-sony-psp/${profile}/EBOOT.PBP`;
+const binName = nativeBin ?? "pocketjs-psp";
+const binEboot = `${nativeDir}target/mipsel-sony-psp/${profile}/${binName}.EBOOT.PBP`;
+const conventionalEboot = `${nativeDir}target/mipsel-sony-psp/${profile}/EBOOT.PBP`;
+if (!nativeBin && existsSync(binEboot)) {
+  await Bun.write(conventionalEboot, await Bun.file(binEboot).arrayBuffer());
+}
+const eboot = nativeBin ? binEboot : conventionalEboot;
+if (nativeBin) {
+  console.log(`prx: ${nativeDir}target/mipsel-sony-psp/${profile}/${nativeBin}.prx`);
+}
 console.log(`output: ${eboot}`);
