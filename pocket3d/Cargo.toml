@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pocket3d",
+    "crates/pocket3d-bsp",
+    "examples/openstrike",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/pocketjs/pocketjs"
+
+[workspace.dependencies]
+pocket3d = { path = "crates/pocket3d" }
+pocket3d-bsp = { path = "crates/pocket3d-bsp" }
+
+wgpu = "25"
+winit = "0.30"
+glam = "0.33"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+gltf = "1.4"
+png = "0.18"
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+font8x8 = "0.3"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

@@ -1,0 +1,11 @@
+[package]
+name = "pocket3d-bsp"
+description = "GoldSrc BSP v30 + WAD3 loader: geometry, lightmaps, entities, and hull collision"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glam = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
