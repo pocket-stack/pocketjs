@@ -31,6 +31,7 @@
     "hw": "bun scripts/hw.ts",
     "dev": "bun scripts/dev.ts",
     "wasm": "bun scripts/wasm.ts",
+    "gba:imagegen": "bun scripts/gba-imagegen.ts",
     "serve": "bun host-web/serve.ts",
     "golden": "bun test/golden.ts",
     "e2e": "bun test/e2e-ppsspp.ts",
