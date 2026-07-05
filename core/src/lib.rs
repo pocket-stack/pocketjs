@@ -193,13 +193,21 @@ impl Ui {
     /// from layout until they become non-empty.
     pub fn set_text(&mut self, id: i32, text: &str) {
         let Some(slot) = self.tree.resolve(id) else { return };
-        let node = &mut self.tree.slots[slot as usize];
-        if node.node_type != spec::NodeType::Text as u8 || node.text == text {
+        if self.tree.slots[slot as usize].node_type != spec::NodeType::Text as u8
+            || self.tree.slots[slot as usize].text == text
+        {
             return;
         }
-        node.text.clear();
-        node.text.push_str(text);
-        self.layout.dirty = true;
+        let root_slot = self.text_layout_root(slot);
+        let old_size = self.measure_text_layout(root_slot);
+        {
+            let node = &mut self.tree.slots[slot as usize];
+            node.text.clear();
+            node.text.push_str(text);
+        }
+        if old_size != self.measure_text_layout(root_slot) {
+            self.layout.dirty = true;
+        }
     }
 
     /// Solid universal calls this on text updates; same semantics as
@@ -490,6 +498,39 @@ impl Ui {
     }
 
     // ---- internals -----------------------------------------------------------
+
+    /// The taffy leaf affected by a text-node content update. Text children
+    /// are absorbed into the nearest top-level text ancestor instead of being
+    /// laid out independently.
+    fn text_layout_root(&self, mut slot: u32) -> u32 {
+        loop {
+            let parent = self.tree.slots[slot as usize].parent;
+            let Some(parent_slot) = self.tree.resolve(parent) else { return slot };
+            if self.tree.slots[parent_slot as usize].node_type != spec::NodeType::Text as u8 {
+                return slot;
+            }
+            slot = parent_slot;
+        }
+    }
+
+    fn measure_text_layout(&self, slot: u32) -> (f32, f32) {
+        let node = &self.tree.slots[slot as usize];
+        if node.node_type != spec::NodeType::Text as u8 {
+            return (0.0, 0.0);
+        }
+        let resolved = style::resolve(node, &self.styles, true);
+        let mut run = alloc::string::String::new();
+        self.tree.collect_run(slot, &mut run);
+        if run.is_empty() {
+            return (0.0, 0.0);
+        }
+        self.fonts.measure_run(
+            &run,
+            resolved.font_slot as u8,
+            resolved.tracking,
+            resolved.line_height,
+        )
+    }
 
     /// After a style/variant mutation on `slot`: spawn transition tweens for
     /// the masked animatable props that changed (from = `old` appearance,

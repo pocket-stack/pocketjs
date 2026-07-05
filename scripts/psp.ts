@@ -13,6 +13,8 @@
 // --capture builds the E2E frame-dump EBOOT (cargo psp --features capture)
 // and bakes the POCKETJS_CAPTURE_INPUT env ("frame:mask,…") into the binary —
 // used by test/e2e-ppsspp.ts, never by normal builds.
+// --bench additionally enables native microsecond timing output to
+// ms0:/PocketJS-bench.jsonl and implies --capture.
 
 import { $ } from "bun";
 import { existsSync } from "node:fs";
@@ -46,15 +48,21 @@ const rustup =
 const argv = Bun.argv.slice(2);
 let appArg = "";
 let capture = false;
+let bench = false;
 const cargoArgs: string[] = [];
 for (const a of argv) {
   if (a === "--capture") capture = true; // E2E frame-dump build (test/e2e-ppsspp.ts)
+  else if (a === "--bench") {
+    bench = true;
+    capture = true;
+  }
   else if (!appArg && !a.startsWith("-")) appArg = a;
   else cargoArgs.push(a);
 }
-if (capture) cargoArgs.push("--features", "capture");
+const features = [capture ? "capture" : "", bench ? "bench" : ""].filter(Boolean);
+if (features.length > 0) cargoArgs.push("--features", features.join(","));
 if (!appArg) {
-  console.error("usage: bun scripts/psp.ts <app> [--capture] [cargo args…]   e.g. bun scripts/psp.ts hero --release");
+  console.error("usage: bun scripts/psp.ts <app> [--capture|--bench] [cargo args…]   e.g. bun scripts/psp.ts hero --release");
   process.exit(1);
 }
 

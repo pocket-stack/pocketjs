@@ -36,7 +36,7 @@ use psp::sys::{
     TextureColorComponent, TextureEffect, TextureFilter, TexturePixelFormat, VertexType,
 };
 use psp::{SCREEN_HEIGHT, SCREEN_WIDTH};
-use pocketjs_core::{spec, Ui};
+use pocketjs_core::{spec, text::Atlas, Ui};
 
 // ---------------------------------------------------------------------------
 // Vertex formats (GE fixed component order: [uv][color][pos])
@@ -96,6 +96,20 @@ struct Pool {
 
 static mut POOL: Option<Pool> = None;
 
+struct FontTexture {
+    source_ptr: usize,
+    source_len: usize,
+    glyph_count: u16,
+    cell_w: u32,
+    cell_h: u32,
+    cols: u32,
+    tex_w: u32,
+    tex_h: u32,
+    pixels: Vec<u128>,
+}
+
+static mut FONT_TEXTURES: Option<Vec<Option<FontTexture>>> = None;
+
 /// Bump-allocate `bytes` (16-byte aligned) valid until `reset_pool()`.
 unsafe fn pool_alloc(bytes: usize) -> *mut u8 {
     if POOL.is_none() {
@@ -128,6 +142,123 @@ pub unsafe fn reset_pool() {
         pool.cur = 0;
         pool.off = 0;
     }
+}
+
+unsafe fn font_texture_slots() -> &'static mut Vec<Option<FontTexture>> {
+    if FONT_TEXTURES.is_none() {
+        let mut slots = Vec::new();
+        for _ in 0..spec::MAX_FONT_SLOTS {
+            slots.push(None);
+        }
+        FONT_TEXTURES = Some(slots);
+    }
+    FONT_TEXTURES.as_mut().unwrap()
+}
+
+#[inline]
+fn next_pow2(mut v: u32) -> u32 {
+    if v <= 1 {
+        return 1;
+    }
+    v -= 1;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v + 1
+}
+
+fn font_grid(atlas: &Atlas) -> Option<(u32, u32, u32)> {
+    let glyph_count = atlas.glyph_count as u32;
+    let cell_w = atlas.cell_w.max(1);
+    let cell_h = atlas.cell_h.max(1);
+    if glyph_count == 0 || cell_w > spec::TEX_MAX_DIM || cell_h > spec::TEX_MAX_DIM {
+        return None;
+    }
+    let max_cols = (spec::TEX_MAX_DIM / cell_w).max(1);
+    let mut cols = 1u32;
+    while cols < max_cols && cols.saturating_mul(cols) < glyph_count {
+        cols += 1;
+    }
+    let mut rows = (glyph_count + cols - 1) / cols;
+    let mut tex_w = next_pow2(cols * cell_w);
+    let mut tex_h = next_pow2(rows * cell_h);
+    if tex_w > spec::TEX_MAX_DIM || tex_h > spec::TEX_MAX_DIM {
+        cols = max_cols;
+        rows = (glyph_count + cols - 1) / cols;
+        tex_w = next_pow2(cols * cell_w);
+        tex_h = next_pow2(rows * cell_h);
+    }
+    if tex_w > spec::TEX_MAX_DIM || tex_h > spec::TEX_MAX_DIM {
+        return None;
+    }
+    Some((cols, tex_w, tex_h))
+}
+
+unsafe fn build_font_texture(atlas: &Atlas) -> Option<FontTexture> {
+    let (cols, tex_w, tex_h) = font_grid(atlas)?;
+    let byte_len = tex_w as usize * tex_h as usize * 2;
+    let mut pixels = alloc::vec![0u128; (byte_len + 15) / 16];
+    let dst = pixels.as_mut_ptr() as *mut u8;
+    let (cell_w, cell_h) = (atlas.cell_w as usize, atlas.cell_h as usize);
+    let bpr = atlas.bytes_per_row();
+    for gid in 0..atlas.glyph_count {
+        let src = atlas.glyph_rows(gid);
+        let gx = (gid as u32 % cols) as usize * cell_w;
+        let gy = (gid as u32 / cols) as usize * cell_h;
+        for y in 0..cell_h {
+            let row = &src[y * bpr..y * bpr + bpr];
+            for x in 0..cell_w {
+                let a4 = ((row[x] as u32 + 8) / 17).min(15) as u16;
+                if a4 == 0 {
+                    continue;
+                }
+                // PSM_4444 little-endian: ABBB GGGG RRRR nibbles. White
+                // color lets TextureEffect::Modulate carry the vertex color.
+                let px = (a4 << 12) | 0x0fff;
+                let off = ((gy + y) * tex_w as usize + (gx + x)) * 2;
+                *dst.add(off) = px as u8;
+                *dst.add(off + 1) = (px >> 8) as u8;
+            }
+        }
+    }
+    sys::sceKernelDcacheWritebackRange(dst as *const c_void, byte_len as u32);
+    Some(FontTexture {
+        source_ptr: atlas.bitmap.as_ptr() as usize,
+        source_len: atlas.bitmap.len(),
+        glyph_count: atlas.glyph_count,
+        cell_w: atlas.cell_w,
+        cell_h: atlas.cell_h,
+        cols,
+        tex_w,
+        tex_h,
+        pixels,
+    })
+}
+
+unsafe fn font_texture(atlas: &Atlas) -> Option<&'static FontTexture> {
+    let slots = font_texture_slots();
+    let idx = atlas.slot as usize;
+    if idx >= slots.len() {
+        return None;
+    }
+    let source_ptr = atlas.bitmap.as_ptr() as usize;
+    let source_len = atlas.bitmap.len();
+    let stale = match slots[idx].as_ref() {
+        Some(tex) => {
+            tex.source_ptr != source_ptr
+                || tex.source_len != source_len
+                || tex.glyph_count != atlas.glyph_count
+                || tex.cell_w != atlas.cell_w
+                || tex.cell_h != atlas.cell_h
+        }
+        None => true,
+    };
+    if stale {
+        slots[idx] = build_font_texture(atlas);
+    }
+    slots[idx].as_ref()
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +320,20 @@ unsafe fn apply_texture(pixels: &[u8], w: u32, h: u32, psm: u32) {
     sys::sceGuTexImage(MipmapLevel::None, w as i32, h as i32, w as i32, pixels.as_ptr() as *const c_void);
     sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgba);
     sys::sceGuTexFilter(TextureFilter::Linear, TextureFilter::Linear);
+}
+
+unsafe fn apply_font_texture(tex: &FontTexture) {
+    sys::sceGuEnable(GuState::Texture2D);
+    sys::sceGuTexMode(TexturePixelFormat::Psm4444, 0, 0, 0);
+    sys::sceGuTexImage(
+        MipmapLevel::None,
+        tex.tex_w as i32,
+        tex.tex_h as i32,
+        tex.tex_w as i32,
+        tex.pixels.as_ptr() as *const c_void,
+    );
+    sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgba);
+    sys::sceGuTexFilter(TextureFilter::Nearest, TextureFilter::Nearest);
 }
 
 #[inline]
@@ -327,6 +472,52 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
                     break; // truncated list — bail
                 }
                 if let Some(atlas) = ui.font_atlas(slot) {
+                    if let Some(tex) = font_texture(atlas) {
+                        apply_font_texture(tex);
+                        let bytes = count * 2 * core::mem::size_of::<VertTC>();
+                        let verts = pool_alloc(bytes) as *mut VertTC;
+                        let mut vi = 0usize;
+                        for g in 0..count {
+                            let (gx, gy) = xy(words[body + g * 2]);
+                            let gid = (words[body + g * 2 + 1] & 0xffff) as u16;
+                            if gid >= atlas.glyph_count {
+                                continue;
+                            }
+                            let sx = (gid as u32 % tex.cols) * tex.cell_w;
+                            let sy = (gid as u32 / tex.cols) * tex.cell_h;
+                            *verts.add(vi) = VertTC {
+                                u: sx as i16,
+                                v: sy as i16,
+                                color,
+                                x: gx,
+                                y: gy,
+                                z: 0,
+                                _pad: 0,
+                            };
+                            *verts.add(vi + 1) = VertTC {
+                                u: (sx + tex.cell_w) as i16,
+                                v: (sy + tex.cell_h) as i16,
+                                color,
+                                x: (gx as i32 + tex.cell_w as i32) as i16,
+                                y: (gy as i32 + tex.cell_h as i32) as i16,
+                                z: 0,
+                                _pad: 0,
+                            };
+                            vi += 2;
+                        }
+                        if vi > 0 {
+                            flush(
+                                GuPrimitive::Sprites,
+                                VTYPE_TC,
+                                vi as i32,
+                                verts as *const c_void,
+                                vi * core::mem::size_of::<VertTC>(),
+                            );
+                        }
+                        sys::sceGuDisable(GuState::Texture2D);
+                        i = next;
+                        continue;
+                    }
                     // Scan each glyph coverage cell into horizontal alpha
                     // runs, batched as sprite pairs in ONE draw.
                     let bpr = atlas.bytes_per_row();

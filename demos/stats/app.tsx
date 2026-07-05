@@ -14,6 +14,7 @@ import { createMemo, createSignal, onMount } from "@pocketjs/framework/reactivit
 import { BTN } from "@pocketjs/framework/input";
 
 const COUNT_FRAMES = 75;
+const COUNT_TEXT_STEP = 8;
 const BAR_ANIM_FRAMES = 26;
 const BAR_STAGGER_FRAMES = 4;
 const SYSTEMS_REVEAL_FRAMES = 12;
@@ -173,9 +174,11 @@ export default function Stats() {
   });
 
   // Count-up: eased share of the capped frame counter — pure per-frame math,
-  // silent once frameN stops at COUNT_FRAMES.
+  // but quantized so PSP text nodes do not relayout at 60 Hz.
   const t = createMemo(() => {
-    const x = Math.min(1, frameN() / COUNT_FRAMES);
+    const f = frameN();
+    const visibleFrame = f >= COUNT_FRAMES ? COUNT_FRAMES : Math.floor(f / COUNT_TEXT_STEP) * COUNT_TEXT_STEP;
+    const x = Math.min(1, visibleFrame / COUNT_FRAMES);
     return easeOutCubic(x);
   });
 
