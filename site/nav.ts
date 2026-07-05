@@ -15,6 +15,7 @@ export const DOC_NAV: DocSection[] = [
     items: [
       { slug: "overview", title: "Overview" },
       { slug: "getting-started", title: "Getting started" },
+      { slug: "frameworks", title: "Frameworks" },
       { slug: "architecture", title: "Architecture" },
     ],
   },

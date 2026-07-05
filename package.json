@@ -6,11 +6,22 @@
   "exports": {
     ".": "./src/index.ts",
     "./animation": "./src/animation.ts",
+    "./config": "./src/config.ts",
     "./components": "./src/components.ts",
     "./lifecycle": "./src/lifecycle.ts",
-    "./input": "./src/input-api.ts"
+    "./input": "./src/input-api.ts",
+    "./prelude": "./src/prelude.ts",
+    "./renderer": "./src/renderer.ts",
+    "./solid": "./src/index.ts",
+    "./solid/components": "./src/components.ts",
+    "./solid/lifecycle": "./src/lifecycle.ts",
+    "./solid/renderer": "./src/renderer-solid.ts",
+    "./vue-vapor": "./src/index-vue-vapor.ts",
+    "./vue-vapor/components": "./src/components-vue-vapor.ts",
+    "./vue-vapor/lifecycle": "./src/lifecycle-vue-vapor.ts",
+    "./vue-vapor/renderer": "./src/renderer-vue-vapor.ts"
   },
-  "description": "Browser-style UI off the browser: familiar JSX, Tailwind utilities and native rendering on PSP-class hardware.",
+  "description": "Browser-style UI off the browser: Solid or Vue Vapor JSX, Tailwind utilities and native rendering on PSP-class hardware.",
   "scripts": {
     "build": "bun scripts/build.ts",
     "psp": "bun scripts/psp.ts",
@@ -27,7 +38,10 @@
     "gen": "bun spec/gen-rust.ts"
   },
   "dependencies": {
-    "solid-js": "^1.9"
+    "@vue/compiler-vapor": "3.6.0-beta.17",
+    "solid-js": "^1.9",
+    "vue": "3.6.0-beta.17",
+    "vue-jsx-vapor": "3.2.17"
   },
   "devDependencies": {
     "@babel/core": "^7",

@@ -17,7 +17,15 @@
 // ms0:/PocketJS-bench.jsonl and implies --capture.
 
 import { $ } from "bun";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  FRAMEWORKS,
+  parseFramework,
+  type PocketFramework,
+} from "../compiler/jsx-plugin.ts";
+import type { PocketConfig } from "../src/config.ts";
 
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
 const nativeDir = pspUiDir + "native/";
@@ -49,12 +57,28 @@ const argv = Bun.argv.slice(2);
 let appArg = "";
 let capture = false;
 let bench = false;
+let frameworkFlag: string | undefined;
+let configPath = pspUiDir + "pocket.config.ts";
+let useConfig = true;
 const cargoArgs: string[] = [];
+const buildFlags: string[] = [];
 for (const a of argv) {
   if (a === "--capture") capture = true; // E2E frame-dump build (test/e2e-ppsspp.ts)
   else if (a === "--bench") {
     bench = true;
     capture = true;
+  }
+  else if (a.startsWith("--framework=")) {
+    frameworkFlag = a.slice("--framework=".length);
+    buildFlags.push(a);
+  }
+  else if (a.startsWith("--config=")) {
+    configPath = resolvePath(pspUiDir, a.slice("--config=".length));
+    buildFlags.push(a);
+  }
+  else if (a === "--no-config") {
+    useConfig = false;
+    buildFlags.push(a);
   }
   else if (!appArg && !a.startsWith("-")) appArg = a;
   else cargoArgs.push(a);
@@ -94,12 +118,26 @@ function mountedAppName(arg: string): string {
 
 const app = mountedAppName(appArg);
 
+async function loadConfig(): Promise<PocketConfig> {
+  if (!useConfig || !existsSync(configPath)) return {};
+  const url = pathToFileURL(configPath);
+  url.searchParams.set("mtime", String(statSync(configPath).mtimeMs));
+  const mod = await import(url.href) as { default?: PocketConfig; config?: PocketConfig };
+  return mod.default ?? mod.config ?? {};
+}
+
+const config = await loadConfig();
+const framework: PocketFramework = frameworkFlag
+  ? parseFramework(frameworkFlag, "--framework")
+  : parseFramework(config.framework, "pocket.config.ts");
+const outputApp = `${app}${FRAMEWORKS[framework].outputSuffix}`;
+
 // ---------------------------------------------------------------------------
 // 1. Build the app bundle + pak -> dist/<app>.js + dist/<app>.pak
 // ---------------------------------------------------------------------------
 
-console.log(`PocketJS psp: building app "${app}"`);
-await $`bun scripts/build.ts ${app}`.cwd(pspUiDir);
+console.log(`PocketJS psp: building app "${app}" (framework=${framework})`);
+await $`bun scripts/build.ts ${app} ${buildFlags}`.cwd(pspUiDir);
 
 // ---------------------------------------------------------------------------
 // 2. cargo psp with the dreamcart cross env (copied from runtime/build.ts)
@@ -136,7 +174,7 @@ const env = {
   RUST_PSP_ABORT_ONLY: "1",
   // Keep PSP dev builds fast (opt-level 0 is unusably slow on hardware).
   CARGO_PROFILE_DEV_OPT_LEVEL: process.env.CARGO_PROFILE_DEV_OPT_LEVEL ?? "3",
-  POCKETJS_APP: app,
+  POCKETJS_APP: outputApp,
   // Scripted capture input + per-demo capture window, baked into the EBOOT
   // by native/build.rs (only consumed under --capture; harmless otherwise).
   // Explicit so stale values never linger in the cargo fingerprint.
@@ -156,7 +194,7 @@ function outputProfile(args: string[]): string {
   return args.includes("--release") || args.includes("-r") ? "release" : "debug";
 }
 
-console.log(`PocketJS psp: cargo psp (app=${app})`);
+console.log(`PocketJS psp: cargo psp (app=${outputApp})`);
 await $`${rustup} run ${TOOLCHAIN} cargo psp ${cargoArgs}`.cwd(nativeDir).env(env);
 
 const profile = outputProfile(cargoArgs);

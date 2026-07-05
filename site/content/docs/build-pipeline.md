@@ -11,6 +11,14 @@ atlases, and images packed into a single binary container). Those two artifacts
 are everything a host needs — the same pair loads on real PSP hardware, in
 PPSSPP, in the browser dev host, and in headless Bun.
 
+Solid is the default framework. Vue Vapor builds beside the Solid artifacts by
+adding a suffix:
+
+```sh
+bun scripts/build.ts hero-vue-vapor-main --framework=vue-vapor
+# -> dist/hero-vue-vapor-main.vue-vapor.js + dist/hero-vue-vapor-main.vue-vapor.pak
+```
+
 The build is **two passes over the same module graph**. Pass 1 transforms every
 reachable source file and, in the same traversal, *collects* the class strings
 and text codepoints the app actually uses — so styles and fonts can be compiled
@@ -28,10 +36,13 @@ bun scripts/build.ts hero-main               # the mounted entry (demos/hero/mai
 ```
 
 A bare name resolves against `demos/`: `hero` finds `demos/hero/app.tsx`, and a
-name ending in `-main` finds `demos/hero/main.tsx`. There is exactly one flag:
+name ending in `-main` finds `demos/hero/main.tsx`.
 
 | Flag | Effect |
 |---|---|
+| `--framework=solid\|vue-vapor` | Select the framework for this build, overriding `pocket.config.ts`. |
+| `--config=<path>` | Load a different Pocket config file. |
+| `--no-config` | Ignore `pocket.config.ts`; defaults to Solid unless `--framework` is set. |
 | `--extra-chars=<string>` | Force these codepoints into **every** baked atlas, on top of the collected charset and ASCII. |
 
 ```sh
@@ -47,6 +58,7 @@ The output name is derived from the entry path, and both artifacts share it:
 | `demos/hero/app.tsx` | `hero.js`, `hero.pak` | the app component |
 | `demos/hero/main.tsx` | `hero-main.js`, `hero-main.pak` | the mounted entry — calls `mount()` |
 | `foo/bar.tsx` | `bar.js`, `bar.pak` | non‑demo path: basename |
+| `--framework=vue-vapor` | `<name>.vue-vapor.js`, `<name>.vue-vapor.pak` | Vue Vapor artifacts coexist with Solid artifacts |
 
 A demo typically has `app.tsx` (the exported UI) and `main.tsx` (a tiny file
 that imports the app and mounts it). You build `hero-main` when you want a
@@ -60,30 +72,34 @@ Pass 1 starts at the entry file and walks its import graph. For each `.tsx`/`.ts
 module it calls `transformFile(path, src)`, which runs Babel and, in the *same*
 AST traversal, harvests two things the later stages need.
 
-### The Babel transform
+### The JSX transform
 
-Every source file goes through two presets, in this order (Babel runs presets
-last‑to‑first, so TypeScript strips types first, then Solid compiles the JSX):
+The selected framework owns the JSX transform:
 
 ```ts
-presets: [
-  [solidPreset, { generate: "universal", moduleName: RENDERER_PATH }],
-  [tsPreset,    {}],
-],
-parserOpts: { plugins: ["jsx"] },
+// Solid
+[solidPreset, { generate: "universal", moduleName: RENDERER_SOLID_PATH }]
+
+// Vue Vapor
+transformVueJsxVapor(source, path)
 ```
 
-`babel-preset-solid` with `generate: "universal"` compiles JSX into calls
-against the universal renderer (`createElement`, `insertNode`, `setProp`, …)
-rather than DOM operations. `moduleName` is the **absolute** path to
-`src/renderer.ts` — the preset emits it verbatim into every generated import, so
-it must be absolute. `@babel/preset-typescript` handles type stripping;
-`parserOpts` enables JSX parsing without relying on Babel 7-only preset flags.
+Solid compiles JSX into calls against `src/renderer-solid.ts`. Vue Vapor
+compiles JSX with `vue-jsx-vapor` and bundles against `src/renderer-vue-vapor.ts`
+plus the small DOM facade needed by Vue's Vapor helpers. `@babel/preset-typescript`
+still strips types in both cases, and the same collector/lints run before JSX is
+lowered.
+
+Package imports are framework-aware during both pass 1 and pass 2. For example,
+`@pocketjs/framework/components` resolves to `src/components.ts` for Solid and
+`src/components-vue-vapor.ts` for Vue Vapor. The mapping is centralized in
+`compiler/jsx-plugin.ts`; see [Frameworks](/docs/frameworks/) for the public
+contract.
 
 ### What it collects
 
-While the pristine AST is still in the author's shape (before the Solid preset
-rewrites JSX subtrees), a collector visitor records:
+While the pristine AST is still in the author's shape (before the framework JSX
+lowerer rewrites subtrees), a collector visitor records:
 
 - **Candidate class strings** — every `StringLiteral` value, every
   `TemplateLiteral` quasi (the static chunks), and every `JSXText` run. It never
@@ -110,9 +126,9 @@ so the transform **throws with a code frame** rather than silently miscompiling:
 ### The transform cache
 
 Each transform result is cached in `.cache/transforms/`, keyed by a SHA‑256 of
-the file contents **plus** the toolchain identity — the versions of
-`babel-preset-solid`, `@babel/core`, and `@babel/preset-typescript`, the
-renderer path, and an internal cache version. Bumping any dependency invalidates
+the file contents **plus** the toolchain identity — the selected framework, the
+versions of the JSX/compiler packages, the renderer path, and an internal cache
+version. Bumping any dependency invalidates
 the cache automatically. Because pass 2 loads through the *same* `transformFile`,
 the expensive Babel work runs once per file per build and pass 2 gets it for
 free.
@@ -242,14 +258,14 @@ With `styles.generated.ts` now written, `Bun.build` bundles the app:
 ```ts
 Bun.build({
   entrypoints: [entry],
-  naming: `${appName}.js`,
+  naming: `${outName}.js`,
   format: "iife",
   target: "browser",
   conditions: ["browser"],
   define: { "process.env.NODE_ENV": '"production"' },
   minify: false,
   sourcemap: "none",
-  plugins: [solidUniversalPlugin()],
+  plugins: [jsxPlugin(framework, { entry })],
 });
 ```
 
@@ -263,10 +279,10 @@ A few settings are deliberate:
 
 - **`format: "iife"`** — a single self‑contained script, the shape QuickJS
   evaluates on the PSP.
-- **`conditions: ["browser"]`** — forces `solid-js` to resolve through its
-  browser export. The `node` condition would pull Solid's SSR build (where
-  reactive updates no‑op), and Bun's default `development` condition would pull
-  Solid's dev builds and duplicate the runtimes.
+- **`conditions: ["browser"]`** — forces browser runtime exports for framework
+  packages. For Solid, the `node` condition would pull the SSR build (where
+  reactive updates no‑op); Bun's default `development` condition can also pull
+  dev builds and duplicate runtimes.
 - **`minify: false`** — the bundle ships unminified but tree‑shaken; base64 blobs
   in JS are the known QuickJS boot killer, which is why all binary assets live in
   the pak instead.

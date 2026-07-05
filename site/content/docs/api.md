@@ -7,6 +7,7 @@ Every public export of `@pocketjs/framework`, grouped by import path. Signatures
 | `@pocketjs/framework` | `mount`, `render`, host/runtime helpers, types |
 | `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar` |
 | `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
+| `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
 | `@pocketjs/framework/animation` | `animate`, `spring`, `cancelAnim` |
 | `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `createSpriteAnimation`, `pushButtonHandlerBlock` |
 | `@pocketjs/framework/input` | `BTN`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
@@ -296,6 +297,13 @@ See [Reactivity](/docs/reactivity/).
 
 PocketJS's renderer maps these updates onto the native tree, but the component
 APIs and semantics are Solid's.
+
+## `vue`
+
+Vue Vapor apps import Vue's Composition API directly from `vue`; PocketJS does
+not wrap refs, computed values, effects, or component definitions. Use
+`@pocketjs/framework/vue-vapor/components` explicitly, or set
+`framework: "vue-vapor"` and import generic `@pocketjs/framework/components`.
 
 ---
 

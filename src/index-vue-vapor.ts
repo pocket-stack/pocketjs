@@ -1,20 +1,6 @@
-// PocketJS runtime entry: render(<App/>) / mount(<App/>).
-//
-// Frame contract (every host): once per vblank/rAF tick the host calls
-// `globalThis.frame(buttons)` (spec BTN bitmask). render() installs that
-// handler as app frame hooks, input edge-detection + focus + onPress, THEN the
-// renderer's end-of-frame sweep [R] — so Solid effects triggered by input run
-// before detached subtrees are destroyed.
+// Vue Vapor runtime entry: render(<App/>) / mount(<App/>).
 
-// queueMicrotask polyfill (QuickJS lacks it; Solid's resource/transition paths
-// reference it lazily, so installing at module-eval time is early enough).
-if (typeof (globalThis as { queueMicrotask?: unknown }).queueMicrotask !== "function") {
-  (globalThis as { queueMicrotask?: (fn: () => void) => void }).queueMicrotask = (
-    fn: () => void,
-  ) => {
-    Promise.resolve().then(fn);
-  };
-}
+import "./prelude.ts";
 
 import { detectHost, installFrameHandler, installHost, type HostOps } from "./host.ts";
 import {
@@ -27,11 +13,11 @@ import {
   runSweep,
   setStyleResolver,
   type NodeMirror,
-} from "./renderer.ts";
+} from "./renderer-vue-vapor.ts";
 import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
-import { resetFrameHooks, runFrameHooks } from "./frame.ts";
+import { resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.ts";
 import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
 import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
 import { ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
@@ -39,7 +25,7 @@ import { ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 export interface RenderOptions {
   /** web/wasm/test hosts inject their ops here; omit on PSP (globalThis.ui). */
   ops?: HostOps;
-  /** STYLE_IDS table (styles.generated.ts) — class literal → styleId. */
+  /** STYLE_IDS table (styles.generated.ts) - class literal -> styleId. */
   styles?: Record<string, number>;
   /** App pack; defaults to globalThis.__pak when present. */
   pak?: ArrayBuffer;
@@ -47,14 +33,12 @@ export interface RenderOptions {
 
 export type MountOptions = RenderOptions;
 
-/** pak entry keys the runtime understands when it loads a pack JS-side.
- * Must match compiler/pak.ts (KEY_STYLES / keyFont). */
 const STYLES_KEY = "ui:styles";
 const FONT_PREFIX = "ui:font.";
 const IMG_PREFIX = "ui:img.";
 
-export function frameworkName(): "Solid" {
-  return "Solid";
+export function frameworkName(): "Vue Vapor" {
+  return "Vue Vapor";
 }
 
 function globalOps(): HostOps | undefined {
@@ -62,8 +46,6 @@ function globalOps(): HostOps | undefined {
 }
 
 function uploadPakImages(ops: HostOps): void {
-  // PSP native pak.rs already uploaded pack images and exposed the handle
-  // table through ui.__textures; web/wasm/test hosts need the JS-side upload.
   if ((ops as HostOps & { __textures?: unknown }).__textures) return;
   for (const key of pakEntries(IMG_PREFIX)) {
     const blob = pakGet(key);
@@ -82,14 +64,6 @@ function createLayer(style: Record<string, number>): NodeMirror {
   return layer;
 }
 
-/**
- * Mount the app into the native root node and wire the frame loop. Returns a
- * disposer that unmounts and destroys the app subtree.
- *
- * On PSP the native bin has already fed styles/atlases to the core from the
- * pak (zero QuickJS transit); on injected hosts (web/test) render() pushes
- * them through ops.loadStyles/loadFontAtlas here.
- */
 export function render(code: () => unknown, opts: RenderOptions = {}): () => void {
   const host = detectHost(opts.ops);
   installHost(host);
@@ -98,10 +72,6 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   if (opts.styles) registerStyles(opts.styles);
 
   if (host.kind === "psp") {
-    // PSP native host: native/src/pak.rs already fed styles/atlases to the
-    // core and uploaded the pack's images at boot, leaving a name -> texture-
-    // handle table on the ui namespace (ffi.rs). Bind it so <image src="name">
-    // resolves through the renderer's texture registry.
     const tex = (host.ops as HostOps & { __textures?: Record<string, number> }).__textures;
     if (tex) {
       for (const key in tex) rendererRegisterTexture(key, tex[key]);
@@ -117,8 +87,6 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
         } else if (key.startsWith(FONT_PREFIX)) {
           host.ops.loadFontAtlas?.(pakGet(key));
         }
-        // images: hosts upload + registerTexture() themselves (w/h/psm live
-        // in host-specific metadata, not in the runtime).
       }
     }
   }
@@ -145,30 +113,24 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   setInputRoot(appRoot);
   resetFrameHooks();
   installFrameHandler((buttons: number) => {
-    runFrameHooks(buttons); // app lifecycle callbacks: onFrame/onButtonPress/etc.
-    handleFrame(buttons); // edge-detect, focus nav, onPress (runs effects)
-    runSweep(); // then destroy subtrees still detached [R]
+    runFrameHooks(buttons);
+    handleFrame(buttons);
+    runSweep();
   });
 
-  const dispose = rendererRender(code as () => NodeMirror, appRoot);
+  const dispose = rendererRender(code, appRoot);
   return () => {
-    dispose(); // tears down reactivity only — universal keeps the nodes
-    setInputRoot(null); // drops focus state (native focus dies with the nodes)
+    dispose();
+    setInputRoot(null);
     setOverlayRoot(null);
     for (const child of rootMirror.children.splice(0)) {
       child.parent = null;
-      host.ops.destroyNode(child.id); // recursive native destroy
+      host.ops.destroyNode(child.id);
     }
-    runSweep(); // anything already detached this frame is garbage too
+    runSweep();
   };
 }
 
-/**
- * App-level entry point for demo/application bundles. It mirrors a web-style
- * mount call: pick the current host, feed the current generated style table,
- * upload pak images for injected hosts, and mount the component. Per-frame
- * app behavior belongs in component lifecycle callbacks such as onFrame/onButtonPress.
- */
 export function mount(code: () => unknown, opts: MountOptions = {}): () => void {
   const ops = opts.ops ?? globalOps();
   if (!ops) {
@@ -176,19 +138,16 @@ export function mount(code: () => unknown, opts: MountOptions = {}): () => void 
   }
   if (opts.pak) loadPack(opts.pak);
   uploadPakImages(ops);
-  const dispose = render(code, {
+  return render(code, {
     ops,
     styles: opts.styles ?? DEFAULT_STYLE_IDS,
     pak: opts.pak,
   });
-  return dispose;
 }
-
-// ---- runtime re-exports -------------------------------------------------------
 
 export type { HostOps, Host } from "./host.ts";
 export { detectHost, installHost, getOps } from "./host.ts";
-export type { NodeMirror } from "./renderer.ts";
-export { retain, release, runSweep, registerTexture, missCounters } from "./renderer.ts";
+export type { NodeMirror } from "./renderer-vue-vapor.ts";
+export { retain, release, runSweep, registerTexture, missCounters } from "./renderer-vue-vapor.ts";
 export { registerStyles, resolveStyle } from "./styles.ts";
 export { entries as pakEntries, get as pakGet, loadPack, resetPack } from "./pak.ts";

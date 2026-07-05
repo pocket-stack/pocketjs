@@ -1,13 +1,13 @@
 # Reactivity
 
-PocketJS uses **Solid**'s reactive system directly — the same `createSignal` /
-`createEffect` / `createMemo` you'd use in a Solid web app. There is no virtual
-DOM and no diffing pass. When a signal changes, Solid re-runs exactly the effect
-closures that read it, and those effects call native mutation ops that cross the
-FFI boundary into the Rust core.
+This page documents the default **Solid** runtime. PocketJS uses Solid's
+reactive system directly — the same `createSignal` / `createEffect` /
+`createMemo` you'd use in a Solid web app. Vue Vapor apps import Vue's
+Composition API directly from `vue`; see [Frameworks](/docs/frameworks/).
+There is no PocketJS reactivity wrapper.
 
 Import these primitives directly from `solid-js`; PocketJS does not provide a
-reactivity facade. The PocketJS compiler only checks that the Solid primitives
+reactivity layer. The PocketJS compiler only checks that the Solid primitives
 you import can run on the target hosts:
 
 ```ts

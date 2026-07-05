@@ -6,7 +6,28 @@ import { PocketHost } from "../playground/host.js";
 const PG = "/pg/";
 const SHOWCASE = "settings-main";
 
+function setupCodeTabs() {
+  const tabs = [...document.querySelectorAll("[data-code-tab]")];
+  if (tabs.length === 0) return;
+  const panels = [...document.querySelectorAll("[data-code-panel]")];
+  const select = (name) => {
+    for (const tab of tabs) {
+      const active = tab.dataset.codeTab === name;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-selected", active ? "true" : "false");
+    }
+    for (const panel of panels) {
+      panel.hidden = panel.dataset.codePanel !== name;
+    }
+  };
+  for (const tab of tabs) {
+    tab.addEventListener("click", () => select(tab.dataset.codeTab));
+  }
+}
+
 async function boot() {
+  setupCodeTabs();
+
   const canvas = document.getElementById("hero-canvas");
   if (!canvas) return;
   const fpsEl = document.getElementById("hero-fps");

@@ -84,7 +84,7 @@
       <div class="lp-container">
         <div class="lp-secthead lp-reveal">
           <span class="lp-kicker">Familiar tools, constrained hardware</span>
-          <h2 class="lp-h2">Tailwind, flexbox and Solid signals under 8MB RAM.</h2>
+          <h2 class="lp-h2">Tailwind, flexbox, Solid and Vue Vapor under 8MB RAM.</h2>
           <p class="lp-lead">PocketJS keeps the authoring model modern while moving the expensive work to build time and to a tiny Rust core. The result is a real interface stack that can run smoothly on a Sony PSP.</p>
         </div>
         <div class="lp-tools__row lp-reveal" aria-label="PocketJS frontend stack">
@@ -102,6 +102,12 @@
               <path fill="url(#lp-solid-b)" opacity=".3" d="M23,15.11l-1.71.48c-7.9,2.55-10.6,9.94-6.06,16.42a21.12,21.12,0,0,0,22.54,7.1L67.29,29.5S42.39,10.71,23,15.11Z"/>
               <path fill="url(#lp-solid-c)" d="M61.89,36.42a21.11,21.11,0,0,0-22.58-7.15L9.82,38.83.54,55.35l52.83,9,9.47-16.85C64.73,44.27,64.54,40.2,61.89,36.42Z"/>
               <path fill="url(#lp-solid-d)" d="M52.61,52.94a21.14,21.14,0,0,0-22.53-7.15L.54,55.35s25,18.84,44.31,14.44l1.7-.47C54.46,66.81,57.16,59.42,52.61,52.94Z"/>
+            </svg>
+          </span>
+          <span class="lp-tool" aria-label="Vue Vapor">
+            <svg width="32" height="28" viewBox="0 0 256 221" aria-hidden="true">
+              <path fill="#41b883" d="M204.8 0H256L128 220.8 0 0h97.9L128 51.2 157.2 0h47.6z"/>
+              <path fill="#35495e" d="M157.2 0 128 51.2 97.9 0H48.6L128 137.6 207.4 0h-50.2z"/>
             </svg>
           </span>
           <span class="lp-tool" aria-label="JSX">
@@ -137,8 +143,8 @@
         <div class="lp-split">
           <div class="lp-split__copy lp-reveal">
             <span class="lp-kicker">Business logic stays intact</span>
-            <h2 class="lp-h2">Full Solid on a tiny machine.</h2>
-            <p>Write standard Solid components, run them on QuickJS, and let PocketJS handle the native pixels.</p>
+            <h2 class="lp-h2">Native framework imports on a tiny machine.</h2>
+            <p>Write Solid or Vue Vapor components with their own reactivity APIs, run them on QuickJS, and let PocketJS handle the native pixels.</p>
             <ul class="lp-checklist">
               <li>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m20 6-11 11-5-5"/></svg>
@@ -158,8 +164,12 @@
             <div class="lp-codecard__bar">
               <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
               <span class="lp-codecard__name">Counter.tsx</span>
+              <div class="lp-code-tabs" role="tablist" aria-label="Counter framework">
+                <button class="lp-code-tab is-active" type="button" role="tab" id="lp-code-tab-solid" aria-selected="true" aria-controls="lp-code-solid" data-code-tab="solid">Solid</button>
+                <button class="lp-code-tab" type="button" role="tab" id="lp-code-tab-vue" aria-selected="false" aria-controls="lp-code-vue" data-code-tab="vue">Vue Vapor</button>
+              </div>
             </div>
-            <pre class="lp-code"><code><span class="lp-k">import</span> { <span class="lp-t">Text</span>, <span class="lp-t">View</span> } <span class="lp-k">from</span> <span class="lp-s">"@pocketjs/framework/components"</span>;
+            <pre class="lp-code" id="lp-code-solid" role="tabpanel" aria-labelledby="lp-code-tab-solid" data-code-panel="solid"><code><span class="lp-k">import</span> { <span class="lp-t">Text</span>, <span class="lp-t">View</span> } <span class="lp-k">from</span> <span class="lp-s">"@pocketjs/framework/components"</span>;
 <span class="lp-k">import</span> { <span class="lp-f">createSignal</span> } <span class="lp-k">from</span> <span class="lp-s">"solid-js"</span>;
 
 <span class="lp-k">export</span> <span class="lp-k">default</span> <span class="lp-k">function</span> <span class="lp-t">Counter</span>() {
@@ -173,6 +183,20 @@
     <span class="lp-code-mut">&lt;/</span><span class="lp-t">View</span><span class="lp-code-mut">&gt;</span>
   );
 }</code></pre>
+            <pre class="lp-code" id="lp-code-vue" role="tabpanel" aria-labelledby="lp-code-tab-vue" data-code-panel="vue" hidden><code><span class="lp-k">import</span> { <span class="lp-t">Text</span>, <span class="lp-t">View</span> } <span class="lp-k">from</span> <span class="lp-s">"@pocketjs/framework/components"</span>;
+<span class="lp-k">import</span> { <span class="lp-f">defineComponent</span>, <span class="lp-f">ref</span> } <span class="lp-k">from</span> <span class="lp-s">"vue"</span>;
+
+<span class="lp-k">export</span> <span class="lp-k">default</span> <span class="lp-f">defineComponent</span>(() =&gt; {
+  <span class="lp-k">const</span> n = <span class="lp-f">ref</span>(<span class="lp-n">0</span>);
+  <span class="lp-k">return</span> () =&gt; (
+    <span class="lp-code-mut">&lt;</span><span class="lp-t">View</span> <span class="lp-a">class</span>=<span class="lp-s">"flex-col items-center gap-4 p-6 bg-slate-950"</span><span class="lp-code-mut">&gt;</span>
+      <span class="lp-code-mut">&lt;</span><span class="lp-t">Text</span> <span class="lp-a">class</span>=<span class="lp-s">"text-2xl text-slate-50 font-bold"</span><span class="lp-code-mut">&gt;</span>Count: {n.value}<span class="lp-code-mut">&lt;/</span><span class="lp-t">Text</span><span class="lp-code-mut">&gt;</span>
+      <span class="lp-code-mut">&lt;</span><span class="lp-t">View</span> <span class="lp-a">class</span>=<span class="lp-s">"px-4 py-2 rounded-xl bg-slate-700 focus:bg-slate-500"</span> <span class="lp-a">focusable</span> <span class="lp-a">onPress</span>={() =&gt; n.value++}<span class="lp-code-mut">&gt;</span>
+        <span class="lp-code-mut">&lt;</span><span class="lp-t">Text</span> <span class="lp-a">class</span>=<span class="lp-s">"text-base text-slate-50 font-bold"</span><span class="lp-code-mut">&gt;</span>Press Circle<span class="lp-code-mut">&lt;/</span><span class="lp-t">Text</span><span class="lp-code-mut">&gt;</span>
+      <span class="lp-code-mut">&lt;/</span><span class="lp-t">View</span><span class="lp-code-mut">&gt;</span>
+    <span class="lp-code-mut">&lt;/</span><span class="lp-t">View</span><span class="lp-code-mut">&gt;</span>
+  );
+});</code></pre>
           </div>
         </div>
       </div>
@@ -190,7 +214,7 @@
           <div class="lp-card lp-reveal">
             <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
             <h3>Fine-grained reactivity</h3>
-            <p>Solid updates the closures touched by changed signals. Mutations go straight to the core tree &mdash; no VDOM diff pass in between.</p>
+            <p>Solid and Vue Vapor keep app state in their native runtimes. PocketJS adapters send mutations straight to the core tree.</p>
           </div>
           <div class="lp-card lp-reveal">
             <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg></span>
@@ -210,7 +234,7 @@
           <div class="lp-card lp-reveal">
             <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
             <h3>Deterministic flexbox</h3>
-            <p>taffy 0.11 does layout inside the Rust core. The same source positions pixels on PSP hardware, browser canvas and golden tests.</p>
+            <p>taffy 0.11 does layout inside the Rust core. The same core positions pixels on PSP hardware, browser canvas and golden tests.</p>
           </div>
           <div class="lp-card lp-reveal">
             <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg></span>
@@ -255,7 +279,7 @@
             </svg>
             <span>PocketJS</span>
           </a>
-          <p>Solid and Tailwind UI under 8MB RAM, rendered through a tiny native core.</p>
+          <p>Solid or Vue Vapor UI under 8MB RAM, rendered through a tiny native core.</p>
         </div>
         <div>
           <h4>Docs</h4>
@@ -285,7 +309,7 @@
         </div>
       </div>
       <div class="lp-footer__bar">
-        <span>Solid UI, native pixels</span>
+        <span>Solid/Vue Vapor UI, native pixels</span>
         <span>&copy; 2026 PocketJS &middot; MIT</span>
       </div>
     </div>

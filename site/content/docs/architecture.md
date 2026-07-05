@@ -1,23 +1,23 @@
 # Architecture
 
-PocketJS is a JSX UI stack that runs the *same* app on real Sony PSP hardware,
-in PPSSPP, in the browser, and under headless Bun. It gets there with one
-principle: **one Rust core, one JSX app, one layout engine everywhere.**
+PocketJS is a JSX UI stack that runs apps on real Sony PSP hardware, in PPSSPP,
+in the browser, and under headless Bun. It gets there with one principle:
+**one Rust core, framework-specific JS adapters, one layout engine everywhere.**
 
-The JavaScript side is [Solid](/docs/reactivity/) driven through its *universal*
-renderer — no DOM, no virtual DOM. The rendering, layout, styling, animation,
-and text engine is a single `no_std` Rust crate (`pocketjs-core`) that is
-compiled twice: once to MIPS for the PSP, once to `wasm32` for the browser and
-tests. Styling is a build-time [Tailwind subset](/docs/tailwind/); fonts are
-baked into atlases at build time. This page explains how the pieces fit together
-and why each choice was made.
+The JavaScript side can be Solid or Vue Vapor. Solid uses its universal renderer;
+Vue Vapor uses a Vapor renderer adapter and a tiny DOM-shaped facade for Vue's
+helpers. The rendering, layout, styling, animation, and text engine is a single
+`no_std` Rust crate (`pocketjs-core`) compiled twice: once to MIPS for the PSP,
+once to `wasm32` for the browser and tests. Styling is a build-time
+[Tailwind subset](/docs/tailwind/); fonts are baked into atlases at build time.
+This page explains how the pieces fit together and why each choice was made.
 
 ## The pipeline
 
 ```
-        app.tsx  (Solid components + Tailwind-subset classes)
+        app.tsx  (Solid or Vue Vapor + Tailwind-subset classes)
            │
-           │  babel-preset-solid { generate: 'universal' }   (two-pass build)
+           │  framework JSX transform   (two-pass build)
            ▼
    ┌────────────────────────────────────────────────┐
    │  bundle.js   +   styles.bin + atlases + images  │
@@ -27,7 +27,7 @@ and why each choice was made.
           │
    ┌──────┴──────────────────┐   ┌──────────────────────────┐
    │  QuickJS (PSP)          │   │  browser / headless Bun   │
-   │    Solid runtime        │   │    Solid runtime          │
+   │    framework runtime    │   │    framework runtime      │
    │      │ ui.* ops         │   │      │ same ui.* ops      │
    │      ▼                  │   │      ▼                    │
    │  pocketjs-core          │   │  pocketjs-core            │
@@ -43,19 +43,18 @@ and why each choice was made.
 
 Reading it top to bottom:
 
-1. **`app.tsx`** is ordinary Solid JSX — components from
-   [`@pocketjs/framework/components`](/docs/components/), signals from
-   [`solid-js`](/docs/reactivity/), and `class` strings from
-   the Tailwind subset.
-2. The **build** (`bun scripts/build.ts <app>`) runs `babel-preset-solid` in
-   *universal* mode, compiles the class strings to a binary style table
-   (`styles.bin`), bakes the exact glyphs the app uses into font atlases, and
-   packs the styles + atlases + images into a single container, `app.pak`. The
-   JS is bundled to `bundle.js`. See [Build pipeline](/docs/build-pipeline/) for
-   the two-pass details.
-3. At **runtime**, the Solid runtime executes on whichever JS engine the host
-   provides — QuickJS on the PSP, the host engine in the browser or Bun — and
-   emits mutation ops (`ui.*`) into `pocketjs-core`.
+1. **`app.tsx`** is ordinary framework JSX: PocketJS components from
+   [`@pocketjs/framework/components`](/docs/components/), state/lifecycle from
+   `solid-js` or `vue`, and `class` strings from the Tailwind subset.
+2. The **build** (`bun scripts/build.ts <app>`) selects a framework from
+   `pocket.config.ts` or `--framework=...`, runs that JSX transform, compiles
+   class strings to a binary style table (`styles.bin`), bakes the exact glyphs
+   the app uses into font atlases, and packs styles + atlases + images into
+   `app.pak`. The JS is bundled to `bundle.js`. See
+   [Build pipeline](/docs/build-pipeline/) for the two-pass details.
+3. At **runtime**, the selected framework runtime executes on whichever JS
+   engine the host provides — QuickJS on the PSP, the host engine in the browser
+   or Bun — and emits mutation ops (`ui.*`) into `pocketjs-core`.
 4. **`pocketjs-core`** owns the retained UI tree: it runs flexbox layout,
    ticks animations, measures and lays out text, and produces a flat
    **DrawList** each frame.
@@ -70,13 +69,13 @@ runs on the handheld.
 
 ## Why these choices
 
-### Solid + a universal renderer (no VDOM)
+### Framework adapters over HostOps
 
-PocketJS uses `solid-js` with `babel-preset-solid` configured for
-`generate: 'universal'`. Solid compiles your JSX into direct, fine-grained
-updates: when a signal changes, only the effect closures that read it re-run.
-There is no diffing pass and no virtual tree to reconcile — which matters a lot
-when your target is a 333 MHz MIPS CPU.
+PocketJS keeps framework code above a small renderer adapter boundary. Solid
+uses `babel-preset-solid` with `generate: 'universal'`; Vue Vapor uses
+`vue-jsx-vapor` and `renderer-vue-vapor.ts`. Both adapters target the same JS
+mirror tree and `ui.*` HostOps, so the Rust core, input manager, style table,
+animation system, `.pak` format, and native targets do not fork by framework.
 
 The universal renderer means Solid never touches the DOM. Instead it calls a
 small set of node operations (`createNode`, `insertBefore`, `setProperty`,
@@ -287,8 +286,10 @@ frame order are covered on the [Native contract](/docs/native-contract/) page.
   compilation, and font baking in detail.
 - [Native contract](/docs/native-contract/) — the `ui.*` ops, node lifecycle,
   generation-tagged handles, and per-frame ordering.
-- [Reactivity](/docs/reactivity/) — how Solid signals and effects behave on this
-  runtime.
+- [Frameworks](/docs/frameworks/) — Solid and Vue Vapor selection, imports, and
+  output naming.
+- [Reactivity](/docs/reactivity/) — how Solid signals and effects behave on the
+  default runtime.
 - [Styling](/docs/styling/) and [Tailwind subset](/docs/tailwind/) — the
   supported utilities and how classes become the binary style table.
 - [Getting started](/docs/getting-started/) — build and run your first app in

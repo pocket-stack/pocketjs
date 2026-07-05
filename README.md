@@ -5,9 +5,9 @@
 # PocketJS
 
 PocketJS makes browser-style UI practical off the browser: familiar JSX,
-Tailwind utilities and native rendering on PSP-class hardware. Write standard
-Solid components, run them on QuickJS, and let PocketJS move layout, styling,
-text and animation into a tiny `no_std` Rust core.
+Tailwind utilities and native rendering on PSP-class hardware. Write Solid or
+Vue Vapor components, run them on QuickJS, and let PocketJS move layout,
+styling, text and animation into a tiny `no_std` Rust core.
 
 It runs on real PSP hardware, PPSSPP, the browser (WASM) and headless Bun.
 Full design + contracts: [DESIGN.md](./DESIGN.md).
@@ -17,10 +17,11 @@ Full design + contracts: [DESIGN.md](./DESIGN.md).
 ```sh
 bun install
 bun scripts/build.ts hero             # -> dist/hero.js + dist/hero.pak
+bun scripts/build.ts hero-vue-vapor-main --framework=vue-vapor
 ```
 
 The build is two-pass: pass 1 babel-transforms every module reachable from the
-entry (babel-preset-solid `generate:'universal'`, content-hash cached in
+entry (framework-specific JSX + TypeScript, content-hash cached in
 `.cache/`) while collecting class strings + text codepoints from the AST; then
 the Tailwind compiler writes `styles.bin` + `src/styles.generated.ts`, the font
 baker rasterizes Inter atlas slots for exactly the characters your app uses,
@@ -28,19 +29,23 @@ and everything is packed into `dist/<app>.pak`. Pass 2 bundles with Bun
 (iife, unminified) from the cached transforms.
 
 ```tsx
-import { Text, View } from "@pocketjs/framework/components";
 import { createSignal } from "solid-js";
+import { Text, View } from "@pocketjs/framework/components";
 
-const [count, setCount] = createSignal(0);
+export default function Counter() {
+  const [count, setCount] = createSignal(0);
 
-<View class="flex-col items-center gap-4 p-4 bg-slate-50">
-  <Text class="text-xl text-slate-950">Count: {count()}</Text>
-  <View
-    class="p-2 rounded-md bg-blue-600 focus:bg-blue-500 transition-colors duration-150"
-    focusable
-    onPress={() => setCount(count() + 1)}
-  />
-</View>
+  return (
+    <View class="flex-col items-center gap-4 p-4 bg-slate-50">
+      <Text class="text-xl text-slate-950">Count: {count()}</Text>
+      <View
+        class="p-2 rounded-md bg-blue-600 focus:bg-blue-500 transition-colors duration-150"
+        focusable
+        onPress={() => setCount(count() + 1)}
+      />
+    </View>
+  );
+}
 ```
 
 Mounting entries should look like ordinary app bootstrap code; the framework
@@ -60,6 +65,13 @@ dynamic styling is ternaries of full literals, `style={{...}}`, or `animate()`.
 `classList`, `hover:` and template-interpolated classes are compile errors.
 `rounded-full` requires `w-N h-N` in the same literal.
 
+Framework selection is explicit: set `framework: "solid"` or
+`framework: "vue-vapor"` in `pocket.config.ts`, or pass `--framework=...` to
+`scripts/build.ts`, `scripts/dev.ts`, or `scripts/psp.ts`. App state and
+component lifecycle come from the native framework package (`solid-js` or
+`vue`); PocketJS supplies host components, input, animation, assets and native
+runtime wiring.
+
 `@pocketjs/framework/components` also exposes small app-shell primitives used by
 `demos/launcher`: `Screen`, `Focusable`, `FocusScope`, `ActionHandler`,
 `FocusGrid`, `Portal`, `Modal`, and `ActionBar`. `FocusGrid` gives a subtree
@@ -74,7 +86,7 @@ a required router package.
 
 ```sh
 bun run test                          # spec contract + tailwind parser tests
-bun scripts/build.ts <app> [--extra-chars=…]  # extra codepoints for the atlases
+bun scripts/build.ts <app> [--framework=solid|vue-vapor] [--extra-chars=…]
 bun run psp / bun run dev / bun run wasm      # EBOOT / web host / wasm core
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)

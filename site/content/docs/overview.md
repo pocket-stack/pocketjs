@@ -1,16 +1,19 @@
 # Overview
 
-PocketJS lets you build **Solid** and **Tailwind** interfaces for the Sony PSP
+PocketJS lets you build **Solid** or **Vue Vapor** interfaces for the Sony PSP
 and similarly constrained hardware. It compiles class strings and font glyphs at
 build time, then renders real flexbox, sub-pixel text and native animation
-through a compact `no_std` Rust core. The same `app.tsx` runs on real PSP
-hardware, in the PPSSPP emulator, in the browser, and headless under Bun.
+through a compact `no_std` Rust core. Solid and Vue Vapor apps share the same
+PocketJS host components, asset pipeline and native runtime, and their built
+artifacts run on real PSP hardware, in the PPSSPP emulator, in the browser, and
+headless under Bun.
 
-If you know React or Solid, you already know most of PocketJS. The primitives
-are `View`, `Text`, and `Image`; state is `createSignal` / `createEffect`;
-layout and color come from class strings like `flex-col items-center gap-4
-bg-slate-50`. What is different is what happens underneath: there is no DOM, no
-VDOM, and no runtime CSS.
+If you know Solid or Vue, you already know most of PocketJS. The primitives are
+`View`, `Text`, and `Image`; state comes from the native framework package
+(`solid-js` or `vue`); layout and color come from class strings like
+`flex-col items-center gap-4 bg-slate-50`.
+What is different is what happens underneath: there is no browser DOM and no
+runtime CSS.
 
 ## One core, four hosts
 
@@ -45,11 +48,12 @@ callback for you.
 
 ## Three pillars
 
-**1. Solid, with no VDOM.** PocketJS drives Solid through its *universal
-renderer* (`babel-preset-solid` with `generate: 'universal'`). Solid has no
-virtual DOM: when a signal changes, only the effect closures that read it
-re-run, and those closures issue mutation ops straight to the core tree. There
-is no diffing pass. See [Reactivity](/docs/reactivity/).
+**1. Framework adapters over one native tree.** Solid is the default adapter and
+uses `babel-preset-solid` universal mode. Vue Vapor uses `vue-jsx-vapor`. Both
+target the same retained native tree and HostOps surface, so switching framework
+changes the JS component/reactivity layer, not the Rust core, styling pipeline,
+input model, or asset pack. See [Frameworks](/docs/frameworks/) and
+[Reactivity](/docs/reactivity/).
 
 **2. A build-time Tailwind-subset compiler, with zero runtime CSS.** Class
 strings are parsed at build time. A literal like `class="p-2 rounded-md
@@ -75,8 +79,8 @@ A complete app: a counter you bump by pressing a focusable button.
 
 ```tsx
 // app.tsx
-import { Text, View } from "@pocketjs/framework/components";
 import { createSignal } from "solid-js";
+import { Text, View } from "@pocketjs/framework/components";
 
 export default function App() {
   const [count, setCount] = createSignal(0);
@@ -121,9 +125,9 @@ A few things worth noticing in that example:
 - `Count: {count()}` is a mixed text run — a static string and a reactive
   expression laid out as one inline run, not two flex items.
 
-## The same source, everywhere
+## The same runtime, everywhere
 
-That one `app.tsx` is what runs on every host:
+That one built app artifact is what runs on every host:
 
 - **PSP hardware** — bundled into an EBOOT, QuickJS evaluating your JS, the core
   driving sceGu.
@@ -160,6 +164,8 @@ list in the [Tailwind subset](/docs/tailwind/) reference.
 
 - [Getting started](/docs/getting-started/) — install, build, and run your first
   app.
+- [Frameworks](/docs/frameworks/) — switch between Solid and Vue Vapor without
+  environment-variable hacks.
 - [Architecture](/docs/architecture/) — how the JS runtime, the Rust core, and
   the four backends fit together.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, control flow, and
