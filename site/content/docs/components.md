@@ -35,7 +35,8 @@ the capitalized components.
 (via [taffy](/docs/architecture/)), carries styling, and can take focus and
 input.
 
-```tsx
+:::framework-code
+```tsx solid
 <View class="flex-row items-center gap-3 p-5 bg-slate-50">
   <Image class="w-10 h-10 rounded-lg" src="logo.png" />
   <View class="flex-col">
@@ -44,6 +45,17 @@ input.
   </View>
 </View>
 ```
+
+```tsx vue-vapor
+<View class="flex-row items-center gap-3 p-5 bg-slate-50">
+  <Image class="w-10 h-10 rounded-lg" src="logo.png" />
+  <View class="flex-col">
+    <Text class="text-base text-slate-950 font-bold">PocketJS</Text>
+    <Text class="text-xs text-slate-500">VUE VAPOR + RUST + SCEGU</Text>
+  </View>
+</View>
+```
+:::
 
 A `View` becomes interactive by adding `focusable` and an `onPress` handler.
 `onPress` fires when the node is focused and the user presses the confirm
@@ -104,9 +116,15 @@ alignment — from the nearest ancestor that sets text props. In practice this
 means you put text utilities (`text-*`, `font-bold`, `tracking-wide`, …) on the
 `<Text>` element itself:
 
-```tsx
+:::framework-code
+```tsx solid
 <Text class="text-4xl text-slate-950 font-bold">JSX at 60 FPS.</Text>
 ```
+
+```tsx vue-vapor
+<Text class="text-4xl text-slate-950 font-bold">JSX at 60 FPS.</Text>
+```
+:::
 
 The available text sizes, weights, colors and alignment utilities are baked at
 build time — see [Styling](/docs/styling/) and [Tailwind subset](/docs/tailwind/)
@@ -128,9 +146,15 @@ build time the pipeline scans your `src` strings, packs the referenced images
 into the app's `.pak`, and the renderer resolves the name to the uploaded
 texture at runtime.
 
-```tsx
+:::framework-code
+```tsx solid
 <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
 ```
+
+```tsx vue-vapor
+<Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
+```
+:::
 
 Set the drawn size with box utilities (`w-10 h-10` above); the class controls
 layout, `src` controls pixels. `src` is reactive — assigning a new name swaps
