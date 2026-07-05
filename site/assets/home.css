@@ -346,7 +346,7 @@ a.lp-btn--primary:hover {
 .lp-stage {
   position: relative;
   width: 100%;
-  max-width: 660px;
+  max-width: 760px;
   margin: clamp(2.75rem, 7vw, 5rem) auto 0;
 }
 .lp-stage__glow {
