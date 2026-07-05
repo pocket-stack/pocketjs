@@ -6,7 +6,7 @@ PjGame g;
 volatile u8 pj_nmi_flag;
 volatile u8 pj_ppu_off;
 u8 pj_ppuctrl;
-u8 pj_vbuf[84];
+u8 pj_vbuf[72];
 static u8 vbuf_len;
 
 #define PPUCTRL (*(volatile u8 *)0x2000)

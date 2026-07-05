@@ -35,6 +35,8 @@ const VALUE_OPS = new Set([
 
 class Emitter {
   code: number[] = [];
+  /** Open while-loops: each entry collects break-JUMP operand offsets. */
+  private loopBreaks: number[][] = [];
   constructor(
     private ctx: Ctx,
     private sf: ts.SourceFile,
@@ -245,6 +247,20 @@ class Emitter {
     }
     if (ts.isIfStatement(s)) return this.compileIf(s);
     if (ts.isWhileStatement(s)) return this.compileWhile(s);
+    if (ts.isBreakStatement(s)) {
+      // NOTE: inside a choose+switch clause, top-level `break` exits the
+      // switch (handled by compileChoiceSwitch); this path is for breaks in
+      // while-loop bodies (e.g. `if (yield varLe(...)) break;`).
+      const loop = this.loopBreaks[this.loopBreaks.length - 1];
+      if (!loop) throw new ScriptError(s, this.sf, "break outside a while loop");
+      loop.push(this.emitJump(OP.JUMP));
+      return;
+    }
+    if (ts.isReturnStatement(s)) {
+      if (s.expression) throw new ScriptError(s, this.sf, "scripts cannot return a value; use plain `return;`");
+      this.u8(OP.END);
+      return;
+    }
     if (ts.isBlock(s)) return this.compileBlock(s.statements);
     if (s.kind === ts.SyntaxKind.EmptyStatement) return;
     throw new ScriptError(s, this.sf, "unsupported statement in a script (yield-ops, if/else, while, choose+switch)");
@@ -252,27 +268,45 @@ class Emitter {
 
   // while (yield <predicate>) { ... } — loops over a runtime value.
   private compileWhile(s: ts.WhileStatement): void {
-    if (!ts.isYieldExpression(s.expression)) {
-      throw new ScriptError(s.expression, this.sf, "while condition must be `yield <predicate>` (e.g. yield varGt(...))");
-    }
-    const { name, args, call } = this.opCall(s.expression.expression!);
-    if (!VALUE_OPS.has(name)) throw new ScriptError(call, this.sf, `"${name}" does not yield a testable value`);
     const loopStart = this.code.length;
-    this.emitOp(name, args, call); // leaves value
+    this.emitCondition(s.expression);
     const toEnd = this.emitJump(OP.JUMP_IF_FALSE);
+    this.loopBreaks.push([]);
     this.compileStatement(s.statement);
     const back = this.emitJump(OP.JUMP);
     this.patchTo(back, loopStart);
     this.patch(toEnd);
+    for (const b of this.loopBreaks.pop()!) this.patch(b);
+  }
+
+  /**
+   * Emit a testable condition: `yield <valueop>` optionally wrapped in any
+   * number of `!` negations / parens. Leaves 0/1 on the VM stack.
+   */
+  private emitCondition(expr: ts.Expression): void {
+    let e = expr;
+    let negs = 0;
+    for (;;) {
+      if (ts.isParenthesizedExpression(e)) {
+        e = e.expression;
+      } else if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.ExclamationToken) {
+        negs++;
+        e = e.operand;
+      } else {
+        break;
+      }
+    }
+    if (!ts.isYieldExpression(e)) {
+      throw new ScriptError(expr, this.sf, "condition must be `yield <predicate>` (e.g. yield hasFlag(...)), optionally negated with !");
+    }
+    const { name, args, call } = this.opCall(e.expression!);
+    if (!VALUE_OPS.has(name)) throw new ScriptError(call, this.sf, `"${name}" does not yield a testable value`);
+    this.emitOp(name, args, call); // leaves value
+    for (let i = 0; i < negs; i++) this.u8(OP.NOT);
   }
 
   private compileIf(s: ts.IfStatement): void {
-    if (!ts.isYieldExpression(s.expression)) {
-      throw new ScriptError(s.expression, this.sf, "if condition must be `yield <predicate>` (e.g. yield hasFlag(...))");
-    }
-    const { name, args, call } = this.opCall(s.expression.expression!);
-    if (!VALUE_OPS.has(name)) throw new ScriptError(call, this.sf, `"${name}" does not yield a testable value`);
-    this.emitOp(name, args, call); // leaves value
+    this.emitCondition(s.expression);
     const toElse = this.emitJump(OP.JUMP_IF_FALSE);
     this.compileStatement(s.thenStatement);
     if (s.elseStatement) {
@@ -306,8 +340,10 @@ class Emitter {
         defaultIndex = i;
         return;
       }
-      const idx = options.indexOf(String(this.staticVal(clause.expression)));
-      if (idx < 0) throw new ScriptError(clause, this.sf, `case is not one of the choose() options`);
+      // Case labels may be option strings or option indices (0-based).
+      const label = this.staticVal(clause.expression);
+      const idx = typeof label === "number" ? label : options.indexOf(String(label));
+      if (idx < 0 || idx >= options.length) throw new ScriptError(clause, this.sf, `case is not one of the choose() options`);
       this.u8(OP.DUP);
       this.u8(OP.PUSH_CONST);
       this.i16(idx);

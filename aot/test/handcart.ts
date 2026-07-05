@@ -207,13 +207,15 @@ code.u8(OP.END);
 const scriptTable = new ByteWriter();
 scriptTable.u32(0); // script 0 at byte 0
 
-// --- GAME header ------------------------------------------------------------
+// --- GAME header (v2: 48 bytes, ascii8 text mode, no glyph slot region) ------
 const game = new ByteWriter();
 game
   .ascii("POCKET TEST", 24)
   .u8(0).u8(DIR.DOWN).u16(4).u16(4)
   .u8(1).u8(1).u16(4).u16(texts.length).u16(1)
-  .u16(FONT_BASE).u16(BOX_TILE).u16(0);
+  .u16(FONT_BASE).u16(BOX_TILE)
+  .u8(0).u8(0) // text_mode ascii8, rsv
+  .u16(0).u16(0); // glyph_slot_base/count
 
 // --- assemble ---------------------------------------------------------------
 function u16buf(a: Uint16Array): Uint8Array {

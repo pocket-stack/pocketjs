@@ -148,6 +148,25 @@ export function buildModel(ctx: Ctx, registry: Registry, mode: TextMode = "ascii
           });
           break;
         }
+        case "Trigger": {
+          // A sprite-less interactable: solid tile the player can face and
+          // press A on to run a script (stone doors, cliff edges, steles...).
+          const [x, y] = at(c);
+          const ref = prop(c, "onTalk") as { __pjgbScript: number } | undefined;
+          if (!ref) throw new Error(`map "${mapDecl.name}": <Trigger> needs onTalk={script(...)}`);
+          collision[y * w + x] = 1;
+          actors.push({
+            name: (prop(c, "id") as string) ?? `trigger_${x}_${y}`,
+            x,
+            y,
+            spriteId: NO_SPRITE,
+            facing: DIR.DOWN,
+            movement: 0,
+            flags: ACTOR_FLAG.SOLID,
+            onTalk: ref.__pjgbScript,
+          });
+          break;
+        }
         case "Warp": {
           const [x, y] = at(c);
           const to = String(prop(c, "to"));

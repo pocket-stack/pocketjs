@@ -50,6 +50,9 @@ static u8 work_row; /* fill/restore progress */
 static u8 attr_i;
 static u8 cursor_slot_ready;
 static u8 cursor_row_prev;
+/* right half of a fullwidth glyph awaiting the next frame's vbuf budget */
+static u16 pend_id;
+static u8 pend_row, pend_col, pend_on;
 
 /* --- helpers ----------------------------------------------------------------- */
 static u16 nt_addr(u8 row, u8 col) { return (u16)(NT0 + (u16)row * 32 + col); }
@@ -72,7 +75,7 @@ static void load_tokens(u16 text_id) {
  * Returns 0 if the vbuf is full this frame (caller retries next frame). */
 static u8 draw_halfcell(const u8 *src, u8 bank, u8 row, u8 col, u16 slot) {
   u8 tile;
-  if (!vbuf_room(32 + 8)) return 0;
+  if (!vbuf_room(32 + 11)) return 0; /* CHR entry + two 1-byte NT entries */
   tile = (u8)(PJ_SLOT_BASE + slot * 2);
   pj_bank_switch(bank);
   vbuf_copy((u16)tile * 16, src, 32);
@@ -126,6 +129,7 @@ static void open_box(u8 rows_used) {
   attr_i = 0;
   cur_job = 0;
   tok_loaded = 0;
+  pend_on = 0;
   g.slot_next = 0;
   cursor_slot_ready = 0;
   attr_plan(1);
@@ -198,9 +202,17 @@ void choice_tick(void) {
   }
 }
 
-/* --- token streaming --------------------------------------------------------------- */
+/* --- token streaming ---------------------------------------------------------------
+ * The vbuf is deliberately small (NMI budget), so a fullwidth glyph streams
+ * as two halfcells that may land on consecutive frames (pend_*). */
 static u8 pump_token(void) {
   u8 tok;
+  if (pend_on) {
+    if (!draw_halfcell(pj_glyphs_full + (pend_id << 6) + 32, PJ_BANK_GLYPHS_FULL, pend_row, pend_col, alloc_slot()))
+      return 2;
+    pend_on = 0;
+    return 1;
+  }
   if (!tok_loaded) return 0;
   tok = tokbuf[tok_pos];
   if (tok == TOK_END) return 0;
@@ -212,20 +224,17 @@ static u8 pump_token(void) {
   }
   if (tok & TOK_FULL_FLAG) {
     u16 id = (((u16)(tok & 0x3f)) << 8) | tokbuf[tok_pos + 1];
-    u16 off = id << 6;
-    u16 s0, s1;
-    if (!vbuf_room(80)) return 2; /* try again next frame (2 halfcells) */
-    s0 = alloc_slot();
-    s1 = alloc_slot();
-    draw_halfcell(pj_glyphs_full + off, PJ_BANK_GLYPHS_FULL, cur_row, cur_col, s0);
-    draw_halfcell(pj_glyphs_full + off + 32, PJ_BANK_GLYPHS_FULL, cur_row, cur_col + 1, s1);
+    if (!draw_halfcell(pj_glyphs_full + (id << 6), PJ_BANK_GLYPHS_FULL, cur_row, cur_col, alloc_slot()))
+      return 2;
+    pend_id = id;
+    pend_row = cur_row;
+    pend_col = (u8)(cur_col + 1);
+    pend_on = 1;
     tok_pos += 2;
     cur_col += 2;
   } else {
-    u16 s0;
-    if (!vbuf_room(40)) return 2;
-    s0 = alloc_slot();
-    draw_halfcell(pj_glyphs_half + (u16)(tok - TOK_ASCII_MIN) * 32, PJ_BANK_GLYPHS_HALF, cur_row, cur_col, s0);
+    if (!draw_halfcell(pj_glyphs_half + (u16)(tok - TOK_ASCII_MIN) * 32, PJ_BANK_GLYPHS_HALF, cur_row, cur_col, alloc_slot()))
+      return 2;
     tok_pos++;
     cur_col += 1;
   }

@@ -286,6 +286,6 @@ export function lowerGba(out: CompileOutput): { chunks: Chunk[]; blob: Uint8Arra
 
 export async function buildGba(out: CompileOutput, outPath: string): Promise<BuildRomResult & { blob: Uint8Array }> {
   const { blob } = lowerGba(out);
-  const r = await buildRom(blob, outPath);
+  const r = await buildRom(blob, outPath, out.game.title);
   return { ...r, blob };
 }

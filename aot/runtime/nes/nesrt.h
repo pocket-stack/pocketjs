@@ -97,7 +97,7 @@ extern PjGame g;
 extern volatile u8 pj_nmi_flag;
 extern volatile u8 pj_ppu_off;
 extern u8 pj_ppuctrl;
-extern u8 pj_vbuf[84]; /* capped so the NMI flush + OAM DMA always fit in vblank */
+extern u8 pj_vbuf[72]; /* sized so the NMI flush + OAM DMA always fit in vblank; CJK glyphs stream one halfcell per frame */
 void __fastcall__ pj_bank_switch(u8 bank);
 
 /* nesrt.c */

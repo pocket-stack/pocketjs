@@ -20,6 +20,7 @@ import {
   type PjgbNode,
   type PlayerSpawnProps,
   type SignProps,
+  type TriggerProps,
   type WarpProps,
 } from "./jsx-runtime.ts";
 import type {
@@ -45,6 +46,7 @@ export type {
   PjgbNode,
   PlayerSpawnProps,
   SignProps,
+  TriggerProps,
   WarpProps,
 } from "./jsx-runtime.ts";
 
@@ -185,7 +187,7 @@ export const Warp = hostElement<WarpProps>("Warp");
 export const Sign = hostElement<SignProps>("Sign");
 export const PlayerSpawn = hostElement<PlayerSpawnProps>("PlayerSpawn");
 export const Entrance = hostElement<EntranceProps>("Entrance");
-export const Trigger = hostElement("Trigger");
+export const Trigger = hostElement<TriggerProps>("Trigger");
 export const Collision = hostElement("Collision");
 
 // ---------------------------------------------------------------------------
@@ -218,7 +220,7 @@ type ExtractTileNames<Legend> = Extract<
   }[keyof Legend],
   string
 >;
-const ENTITY_HOSTS = new Set(["PlayerSpawn", "Entrance", "Npc", "Sign", "Warp"]);
+const ENTITY_HOSTS = new Set(["PlayerSpawn", "Entrance", "Npc", "Sign", "Warp", "Trigger"]);
 
 function node(host: string, props: Record<string, unknown>, children: PjgbNode[] = []): PjgbNode {
   return { host, props, children };

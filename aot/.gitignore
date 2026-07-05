@@ -6,3 +6,16 @@ runtime/gba/gen_cart.c
 test/harness/mgba_runner
 # Transient transpiled game modules from the static evaluator
 demo/*.__pjgb.*.mjs
+# GB backend build artifacts (generated per game build)
+runtime/gb/gen/
+runtime/gb/gen_data.h
+runtime/gb/*.o
+runtime/gb/*.lst
+runtime/gb/*.asm
+runtime/gb/*.sym
+runtime/gb/*.rel
+runtime/gb/*.ihx
+runtime/gb/*.map
+runtime/gb/*.noi
+# Transient transpiled game modules (any demo dir)
+demo-shendiao/*.__pjgb.*.mjs

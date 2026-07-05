@@ -16,11 +16,18 @@
   },
   "scripts": {
     "assets": "bun demo/imagegen/build-assets.ts",
+    "assets:shendiao": "bun demo-shendiao/imagegen/build-assets.ts",
     "build": "bun run assets && bun compiler/cli.ts build demo/game.tsx --out dist/pocket-town.gba",
+    "build:gb": "bun run assets && bun compiler/cli.ts build demo/game.tsx --target gb --out dist/pocket-town.gb",
+    "build:nes": "bun run assets && bun compiler/cli.ts build demo/game.tsx --target nes --out dist/pocket-town.nes",
+    "shendiao": "bun run assets:shendiao && bun compiler/cli.ts build demo-shendiao/game.tsx --out dist/shendiao.gba && bun compiler/cli.ts build demo-shendiao/game.tsx --target gb --out dist/shendiao.gb && bun compiler/cli.ts build demo-shendiao/game.tsx --target nes --out dist/shendiao.nes",
     "play": "bash play.sh",
     "gen": "bun spec/gen-c.ts",
     "handcart": "bun test/handcart.ts",
-    "test": "bun run assets && bun test/e2e.ts"
+    "test": "bun run assets && bun test/e2e.ts",
+    "test:multi": "bun run assets && bun test/e2e-multi.ts gba gb nes",
+    "test:shendiao": "bun run assets:shendiao && bun test/e2e-shendiao.ts",
+    "test:all": "bun run test:multi && bun run test:shendiao"
   },
   "devDependencies": {
     "jsnes": "^2.1.0",

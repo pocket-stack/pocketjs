@@ -59,6 +59,14 @@ export interface WarpProps {
   at: TileCoord;
 }
 
+/** Sprite-less interactable (stone door, cliff edge, stele...): a solid
+ * tile the player faces and presses A on to run a script. */
+export interface TriggerProps {
+  id?: string;
+  at: TileCoord;
+  onTalk: ScriptRef;
+}
+
 export const Fragment = hostElement("#fragment");
 
 export function hostElement<Props extends object = Record<string, unknown>>(

@@ -46,14 +46,41 @@ export function shadeOf(c: Rgb): number {
   return 3;
 }
 
+const BAYER2 = [
+  [-9, 3],
+  [9, -3],
+];
+function shadeOfLum(l: number): number {
+  if (l >= 192) return 0;
+  if (l >= 128) return 1;
+  if (l >= 64) return 2;
+  return 3;
+}
+
+/**
+ * Per-tile 4-shade mapper for downsampled art: pixels near the tile's mean
+ * luminance flatten TO the mean (killing row-banding from averaged texture),
+ * distinct features keep their own level, and a Bayer 2x2 offset turns the
+ * remaining threshold noise into the classic handheld dither.
+ */
+export function tileShadeMapper(px: number[], palette: Rgb[]): (v: number, x: number, y: number) => number {
+  const lums = px.map((v) => lum(palette[v] ?? [0, 0, 0]));
+  const mean = lums.reduce((a, b) => a + b, 0) / lums.length;
+  return (v, x, y) => {
+    const own = lum(palette[v] ?? [0, 0, 0]);
+    const l = Math.abs(own - mean) < 26 ? mean : own;
+    return shadeOfLum(l + BAYER2[y & 1][x & 1]);
+  };
+}
+
 /** GB 2bpp tile: 16 bytes; per row, byte0 = low bitplane, byte1 = high. */
-export function tile2gb(px: number[], toShade: (v: number) => number): Uint8Array {
+export function tile2gb(px: number[], toShade: (v: number, x: number, y: number) => number): Uint8Array {
   const out = new Uint8Array(TILE_2BPP_BYTES);
   for (let row = 0; row < 8; row++) {
     let lo = 0;
     let hi = 0;
     for (let x = 0; x < 8; x++) {
-      const s = toShade(px[row * 8 + x]) & 3;
+      const s = toShade(px[row * 8 + x], x, row) & 3;
       lo |= (s & 1) << (7 - x);
       hi |= ((s >> 1) & 1) << (7 - x);
     }
@@ -119,8 +146,7 @@ export function lowerGb(out: CompileOutput): GbFiles {
   }
 
   // --- BG tiles: blank + tileset + box; glyph slots are VRAM-only ---
-  const tilesetShade = (v: number): number => shadeOf(ctx.bgPaletteRgb[v] ?? [0, 0, 0]);
-  const bgTiles: Uint8Array[] = ctx.bgTilePx.map((px) => tile2gb(px, tilesetShade));
+  const bgTiles: Uint8Array[] = ctx.bgTilePx.map((px) => tile2gb(px, tileShadeMapper(px, ctx.bgPaletteRgb)));
   const boxTile = bgTiles.length;
   bgTiles.push(tile2gb(new Array(64).fill(0), () => GLYPH_BG));
   const slotBase = bgTiles.length;
@@ -202,9 +228,9 @@ export function lowerGb(out: CompileOutput): GbFiles {
       "",
       cBytes(`pj_map${m.index}_coll`, m.collision, { banked: true }),
       "",
-      cBytes(`pj_map${m.index}_actors`, actors, { banked: true }),
+      cBytes(`pj_map${m.index}_actors`, actors.length ? actors : [0], { banked: true }),
       "",
-      cBytes(`pj_map${m.index}_warps`, warps, { banked: true }),
+      cBytes(`pj_map${m.index}_warps`, warps.length ? warps : [0], { banked: true }),
     ]);
     mapInfos.push(
       `  { ${m.w}, ${m.h}, 0x${m.onEnter.toString(16)}, ${m.actors.length}, ${m.warps.length}, ` +

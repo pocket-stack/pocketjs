@@ -24,7 +24,7 @@ import {
 } from "../../spec/pjgb.ts";
 import { halfcellPixels, unifontGlyph } from "../cjk.ts";
 import { tokenize } from "../text.ts";
-import { shadeOf } from "./gb.ts";
+import { shadeOf, tileShadeMapper } from "./gb.ts";
 import type { CompileOutput } from "../index.ts";
 import type { Rgb } from "../context.ts";
 import type { TargetBuildResult } from "./index.ts";
@@ -67,13 +67,13 @@ function avg(colors: Rgb[]): Rgb {
 }
 
 /** NES planar 2bpp tile: 8 bytes plane 0 then 8 bytes plane 1. */
-export function tile2nes(px: number[], toVal: (v: number) => number): Uint8Array {
+export function tile2nes(px: number[], toVal: (v: number, x: number, y: number) => number): Uint8Array {
   const out = new Uint8Array(TILE_2BPP_BYTES);
   for (let row = 0; row < 8; row++) {
     let p0 = 0;
     let p1 = 0;
     for (let x = 0; x < 8; x++) {
-      const v = toVal(px[row * 8 + x]) & 3;
+      const v = toVal(px[row * 8 + x], x, row) & 3;
       p0 |= (v & 1) << (7 - x);
       p1 |= ((v >> 1) & 1) << (7 - x);
     }
@@ -190,8 +190,10 @@ export async function buildNes(out: CompileOutput, outPath: string): Promise<Tar
   ];
 
   // --- BG tiles ---
-  const bgVal = (v: number): number => 3 - shadeOf(ctx.bgPaletteRgb[v] ?? [0, 0, 0]);
-  const bgTiles: Uint8Array[] = ctx.bgTilePx.map((px) => tile2nes(px, bgVal));
+  const bgTiles: Uint8Array[] = ctx.bgTilePx.map((px) => {
+    const shade = tileShadeMapper(px, ctx.bgPaletteRgb);
+    return tile2nes(px, (v, x, y) => 3 - shade(v, x, y));
+  });
   const boxTile = bgTiles.length;
   bgTiles.push(tile2nes(new Array(64).fill(0), () => GLYPH_BG));
   const slotBase = bgTiles.length;
