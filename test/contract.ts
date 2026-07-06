@@ -13,6 +13,8 @@ import { generateRust } from "../spec/gen-rust.ts";
 import {
   abgr,
   animBit,
+  ANIM_FILL_BACKWARDS,
+  ANIM_FILL_FORWARDS,
   BTN,
   PAK_MAGIC,
   decodeStyleTable,
@@ -21,6 +23,7 @@ import {
   f32Bits,
   PROP,
   TRANSITION_MASK_ALL,
+  type AnimTimeline,
   type StyleRecord,
 } from "../spec/spec.ts";
 
@@ -71,35 +74,96 @@ const table: StyleRecord[] = [
     focus: [{ prop: PROP.translateX, value: f32Bits(8) }],
     transition: { mask: TRANSITION_MASK_ALL, durMs: 300, delayMs: 0, easing: ENUMS.Easing.Spring },
   },
+  // animated record: baked-timeline refs + whole-choreography loop
+  {
+    base: [{ prop: PROP.width, value: f32Bits(64) }],
+    animation: { anims: [0, 1], loopFrames: 240 },
+  },
   // empty record (valid: flags = 0)
   {},
 ];
 
+const anims: AnimTimeline[] = [
+  // two-track timeline, plain easing + a cubic-bezier segment
+  {
+    delayFrames: 12,
+    periodFrames: 36,
+    iterations: 1,
+    fill: ANIM_FILL_BACKWARDS | ANIM_FILL_FORWARDS,
+    tracks: [
+      {
+        prop: PROP.translateY,
+        segments: [
+          { t0: 0, t1: 22, from: f32Bits(60), to: f32Bits(-3), easing: ENUMS.Easing.CubicBezier, bezier: [0.42, 0, 0.58, 1] },
+          { t0: 22, t1: 36, from: f32Bits(-3), to: f32Bits(0), easing: ENUMS.Easing.Linear },
+        ],
+      },
+      {
+        prop: PROP.bgColor,
+        segments: [
+          { t0: 0, t1: 36, from: abgr(119, 119, 119), to: abgr(204, 204, 204), easing: ENUMS.Easing.EaseInOut },
+        ],
+      },
+    ],
+  },
+  // infinite spin
+  {
+    delayFrames: 0,
+    periodFrames: 60,
+    iterations: 0,
+    fill: 0,
+    tracks: [
+      {
+        prop: PROP.rotate,
+        segments: [{ t0: 0, t1: 60, from: f32Bits(0), to: f32Bits(360), easing: ENUMS.Easing.Linear }],
+      },
+    ],
+  },
+];
+
 // Key order differs between literal input and decoder output; compare a
 // canonical projection instead of raw JSON.
-function canon(t: StyleRecord[]) {
-  return JSON.stringify(
+function canon(t: StyleRecord[], a: AnimTimeline[]) {
+  return JSON.stringify([
     t.map((s) => ({
       base: s.base ?? null,
       focus: s.focus ?? null,
       active: s.active ?? null,
       transition: s.transition ?? null,
+      animation: s.animation ?? null,
     })),
-  );
+    a.map((tl) => ({
+      ...tl,
+      tracks: tl.tracks.map((tr) => ({
+        prop: tr.prop,
+        segments: tr.segments.map((seg) => ({
+          t0: seg.t0,
+          t1: seg.t1,
+          from: seg.from,
+          to: seg.to,
+          easing: seg.easing,
+          // bezier params travel as f32 bits — fround the f64 input side too
+          bezier: seg.bezier ? seg.bezier.map(Math.fround) : null,
+        })),
+      })),
+    })),
+  ]);
 }
 
 try {
-  const bytes = encodeStyleTable(table);
+  const bytes = encodeStyleTable(table, anims);
   const back = decodeStyleTable(bytes);
   check(
-    canon(back) === canon(table),
+    canon(back.styles, back.anims) === canon(table, anims),
     "styles.bin encode/decode round-trip",
     "decoded table differs from input",
   );
   // spot-check the pinned header bytes
   const dv = new DataView(bytes.buffer);
   check(dv.getUint32(0, true) === 0x54534344, "styles.bin magic bytes 'DCST'");
+  check(dv.getUint16(4, true) === 2, "styles.bin version 2");
   check(dv.getUint16(6, true) === table.length, "styles.bin styleCount");
+  check(dv.getUint16(8, true) === anims.length, "styles.bin animCount");
 } catch (e) {
   check(false, "styles.bin encode/decode round-trip", String(e));
 }

@@ -10,6 +10,8 @@ import {
   parseClassLiteral,
 } from "../compiler/tailwind.ts";
 import {
+  ANIM_FILL_BACKWARDS,
+  ANIM_FILL_FORWARDS,
   ENUMS,
   PROP,
   SIZE_FULL,
@@ -22,6 +24,11 @@ import {
   type StyleProp,
   type StyleRecord,
 } from "../spec/spec.ts";
+import {
+  bakedTimelines,
+  registerAnimationTheme,
+  resetAnimationBake,
+} from "../compiler/animation.ts";
 
 function props(rec: StyleRecord | null, variant: "base" | "focus" | "active" = "base"): Map<number, number> {
   expect(rec).not.toBeNull();
@@ -262,8 +269,8 @@ describe("compileClasses", () => {
     expect("Press Circle" in c.ids).toBeFalse();
 
     const decoded = decodeStyleTable(c.bin);
-    expect(decoded.length).toBe(2);
-    const m = new Map(decoded[c.ids["p-4"]].base!.map((p) => [p.prop, p.value]));
+    expect(decoded.styles.length).toBe(2);
+    const m = new Map(decoded.styles[c.ids["p-4"]].base!.map((p) => [p.prop, p.value]));
     expect(bitsF32(m.get(PROP.paddingT)!)).toBe(16);
   });
   test("always includes the default font slot", () => {
@@ -278,5 +285,145 @@ describe("compileClasses", () => {
     const c = compileClasses(["opacity-50"]);
     const rec = c.records[c.ids["opacity-50"]];
     expect(rec.base![0].value).toBe(f32Bits(0.5));
+  });
+});
+
+describe("transform origin", () => {
+  test("origin-bottom = (0, +0.5) fractions", () => {
+    const m = props(parseClassLiteral("origin-bottom"));
+    expect(bitsF32(m.get(PROP.originX)!)).toBe(0);
+    expect(bitsF32(m.get(PROP.originY)!)).toBe(0.5);
+  });
+  test("origin-top-left = (-0.5, -0.5)", () => {
+    const m = props(parseClassLiteral("origin-top-left"));
+    expect(bitsF32(m.get(PROP.originX)!)).toBe(-0.5);
+    expect(bitsF32(m.get(PROP.originY)!)).toBe(-0.5);
+  });
+  test("unknown origin rejects the literal", () => {
+    expect(parseClassLiteral("origin-diagonal")).toBeNull();
+  });
+});
+
+describe("baked keyframe animations", () => {
+  test("built-in animate-spin bakes an infinite linear rotate timeline", () => {
+    resetAnimationBake();
+    const rec = parseClassLiteral("animate-spin");
+    expect(rec).not.toBeNull();
+    expect(rec!.animation!.anims.length).toBe(1);
+    expect(rec!.animation!.loopFrames).toBe(0);
+    const tl = bakedTimelines()[rec!.animation!.anims[0]];
+    expect(tl.periodFrames).toBe(60);
+    expect(tl.iterations).toBe(0); // infinite
+    expect(tl.tracks.length).toBe(1);
+    expect(tl.tracks[0].prop).toBe(PROP.rotate);
+    expect(tl.tracks[0].segments[0].from).toBe(f32Bits(0));
+    expect(tl.tracks[0].segments[0].to).toBe(f32Bits(360));
+    expect(tl.tracks[0].segments[0].easing).toBe(ENUMS.Easing.Linear);
+  });
+
+  test("theme keyframes bake per-prop segments with frame-exact stops", () => {
+    registerAnimationTheme({
+      keyframes: {
+        pop: {
+          from: { transform: "translateY(40px) scale(0.8)", opacity: 0 },
+          "60%": { transform: "translateY(-3px) scale(1.05)", opacity: 1 },
+          to: { transform: "translateY(0px) scale(1)", opacity: 1 },
+        },
+      },
+      animation: { pop: "pop 0.5s ease-in-out 0.2s both" },
+    });
+    const rec = parseClassLiteral("animate-pop");
+    expect(rec).not.toBeNull();
+    const tl = bakedTimelines()[rec!.animation!.anims[0]];
+    expect(tl.delayFrames).toBe(12); // 0.2s
+    expect(tl.periodFrames).toBe(30); // 0.5s
+    expect(tl.fill).toBe(ANIM_FILL_BACKWARDS | ANIM_FILL_FORWARDS);
+    // transform decomposes into translateY + scaleX + scaleY; opacity rides along
+    const propsAnimated = tl.tracks.map((t) => t.prop).sort((a, b) => a - b);
+    expect(propsAnimated).toEqual(
+      [PROP.opacity, PROP.translateY, PROP.scaleX, PROP.scaleY].sort((a, b) => a - b),
+    );
+    const ty = tl.tracks.find((t) => t.prop === PROP.translateY)!;
+    expect(ty.segments.length).toBe(2);
+    expect(ty.segments[0].t0).toBe(0);
+    expect(ty.segments[0].t1).toBe(18); // 60% of 30
+    expect(ty.segments[1].t1).toBe(30);
+    // named CSS easings bake to their canonical bezier params
+    expect(ty.segments[0].easing).toBe(ENUMS.Easing.CubicBezier);
+    expect(ty.segments[0].bezier).toEqual([0.42, 0, 0.58, 1]);
+    registerAnimationTheme(undefined);
+  });
+
+  test("comma lists + loop bake multiple timeline refs on one record", () => {
+    registerAnimationTheme({
+      keyframes: {
+        "in": { from: { opacity: 0 }, to: { opacity: 1 } },
+        "out": { from: { opacity: 1 }, to: { opacity: 0 } },
+      },
+      animation: { blink: "in 0.3s linear both, out 0.3s linear 1s forwards" },
+    });
+    const rec = parseClassLiteral("animate-blink animate-loop-[2s]");
+    expect(rec).not.toBeNull();
+    expect(rec!.animation!.anims.length).toBe(2);
+    expect(rec!.animation!.loopFrames).toBe(120);
+    const [a, b] = rec!.animation!.anims.map((id) => bakedTimelines()[id]);
+    expect(a.delayFrames).toBe(0);
+    expect(b.delayFrames).toBe(60);
+    expect(b.fill).toBe(ANIM_FILL_FORWARDS);
+    registerAnimationTheme(undefined);
+  });
+
+  test("direction: reverse bakes flipped segments", () => {
+    registerAnimationTheme({
+      keyframes: { slide: { from: { translateX: 0 }, "75%": { translateX: 30 }, to: { translateX: 40 } } },
+      animation: { slideBack: "slide 1s linear reverse" },
+    });
+    const rec = parseClassLiteral("animate-slideBack");
+    const tl = bakedTimelines()[rec!.animation!.anims[0]];
+    const segs = tl.tracks[0].segments;
+    expect(segs[0].t0).toBe(0);
+    expect(segs[0].t1).toBe(15); // reversed 75%..100% -> 0%..25%
+    expect(segs[0].from).toBe(f32Bits(40));
+    expect(segs[0].to).toBe(f32Bits(30));
+    expect(segs[1].from).toBe(f32Bits(30));
+    expect(segs[1].to).toBe(f32Bits(0));
+    registerAnimationTheme(undefined);
+  });
+
+  test("unknown animation name rejects the literal (prose safety)", () => {
+    expect(parseClassLiteral("animate-imagination")).toBeNull();
+  });
+
+  test("percentage keyframe values are a hard error (bake-ability rule)", () => {
+    registerAnimationTheme({
+      keyframes: { bad: { from: { transform: "translateX(-50%)" }, to: { transform: "translateX(0%)" } } },
+      animation: { bad: "bad 1s linear" },
+    });
+    expect(() => parseClassLiteral("animate-bad")).toThrow(/percentages are not bakeable/);
+    registerAnimationTheme(undefined);
+  });
+
+  test("a prop missing at from/to is a hard error", () => {
+    registerAnimationTheme({
+      keyframes: { half: { "50%": { opacity: 0.5 }, to: { opacity: 1 }, from: {} } },
+      animation: { half: "half 1s linear" },
+    });
+    expect(() => parseClassLiteral("animate-half")).toThrow(/pinned at BOTH/);
+    registerAnimationTheme(undefined);
+  });
+
+  test("animate-loop without an animation is a hard error", () => {
+    expect(() => parseClassLiteral("animate-loop-[2s]")).toThrow(/needs an `animate-<name>`/);
+  });
+
+  test("identical timelines dedupe in the ANIM TABLE", () => {
+    registerAnimationTheme({
+      keyframes: { fade: { from: { opacity: 0 }, to: { opacity: 1 } } },
+      animation: { fadeA: "fade 1s linear", fadeB: "fade 1s linear" },
+    });
+    const a = parseClassLiteral("animate-fadeA")!;
+    const b = parseClassLiteral("animate-fadeB")!;
+    expect(a.animation!.anims[0]).toBe(b.animation!.anims[0]);
+    registerAnimationTheme(undefined);
   });
 });

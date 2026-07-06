@@ -287,6 +287,19 @@ const SPECS: Spec[] = [
   },
 ];
 
+SPECS.push({
+  // motions: baked keyframe timelines (yui540 studies). Scene 0 (APP LAUNCH)
+  // plays a 3-entry choreography with a 156-frame loop: f8 = press pulse
+  // (backwards-fill start states), f60 = expanded full-stage hold, f120 =
+  // returned card (forwards fill), f170 = second loop iteration mid-expand
+  // (the style-level loop wraps every node's animation clock). RIGHT@200
+  // remounts onto scene 1 (LAYOUT SWAP) — f236 is its split-pane phase.
+  name: "motions-main",
+  frames: 240,
+  capture: [8, 60, 120, 170, 236],
+  input: (f) => (f === 200 ? BTN.RIGHT : 0),
+});
+
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------

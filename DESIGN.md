@@ -261,7 +261,10 @@ coords i16 with the CPU clip stage guaranteeing in-range values; textures pow2
 
 ## Tailwind subset (v1 — pinned)
 
-Utilities (Tailwind default scales; `w-[123]` arbitrary px supported):
+Utilities (Tailwind default scales; `w-[123]` arbitrary px supported —
+negative in arbitrary form, e.g. `inset-[-10]`; `bg-[#8899aa]`-style arbitrary
+hex on every color utility; `rounded-[N]` arbitrary radius; `border-2|4|8|[N]`
+widths):
 
 - **flex**: `flex`, `flex-row|col`, `justify-start|center|end|between|around`,
   `items-start|center|end|stretch`, `gap-N`, `grow`, `grow-0`, `shrink-0`,
@@ -281,9 +284,22 @@ Utilities (Tailwind default scales; `w-[123]` arbitrary px supported):
   weights **[R]**), `font-bold`, `text-left|center|right`, `leading-N`,
   `tracking-wide`
 - **transform** (animatable, no relayout): `translate-x/y-N`, `scale-N`,
-  `rotate-N`
+  `rotate-N`, `scale-x/y-N`, `origin-center|top|bottom|left|right|top-left|…`
+  (transform origin as size fractions; rotation/scale pivot)
 - **motion**: `transition[-transform|colors|opacity|all]`, `duration-N`,
   `ease-linear|in|out|in-out|spring|out-back`, `delay-N`
+- **keyframe animations (baked)**: `animate-<name>` resolves against
+  `theme.keyframes`/`theme.animation` in pocket.config.ts (Tailwind config
+  shape; built-ins `spin|ping|pulse|bounce`). The compiler bakes every CSS
+  `animation` shorthand (comma lists, `cubic-bezier(…)`, named easings as
+  their canonical beziers, delays, `forwards|backwards|both` fills,
+  `reverse`, `infinite`) into frame-precise per-prop segment timelines in
+  styles.bin — the core plays them at fixed dt with zero per-frame JS.
+  Keyframe values must be build-time absolute (px/deg/colors; percentages,
+  `calc()`, `var()` are loud errors **[R]**), and every animated prop must be
+  pinned at 0% and 100%. `animate-loop-[4s]` (or `{ value, loop }` in the
+  config) replays the node's whole choreography — delays included — every N
+  ms: the style-level loop plain CSS can't express without a remount.
 - **variants**: `focus:`, `active:` — variant blocks in the style record,
   switched natively (zero JS on focus change)
 

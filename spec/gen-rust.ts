@@ -9,6 +9,11 @@
 
 import {
   ANIMATABLE,
+  ANIM_BEZIER_EXTRA_SIZE,
+  ANIM_ENTRY_HEADER_SIZE,
+  ANIM_FILL_BACKWARDS,
+  ANIM_FILL_FORWARDS,
+  ANIM_SEGMENT_SIZE,
   BTN,
   PAK_ALIGN,
   PAK_DTYPE,
@@ -40,6 +45,7 @@ import {
   SCREEN_H,
   SCREEN_W,
   SIZE_FULL,
+  STYLE_HAS_ANIMATION,
   STYLE_HAS_TRANSITION,
   STYLE_HEADER_SIZE,
   STYLE_ID_NONE,
@@ -248,6 +254,12 @@ export function generateRust(): string {
   put(`    pub const VARIANT_FOCUS: u8 = ${STYLE_VARIANT_FOCUS};`);
   put(`    pub const VARIANT_ACTIVE: u8 = ${STYLE_VARIANT_ACTIVE};`);
   put(`    pub const HAS_TRANSITION: u8 = ${STYLE_HAS_TRANSITION};`);
+  put(`    pub const HAS_ANIMATION: u8 = ${STYLE_HAS_ANIMATION};`);
+  put(`    pub const ANIM_ENTRY_HEADER_SIZE: usize = ${ANIM_ENTRY_HEADER_SIZE};`);
+  put(`    pub const ANIM_SEGMENT_SIZE: usize = ${ANIM_SEGMENT_SIZE};`);
+  put(`    pub const ANIM_BEZIER_EXTRA_SIZE: usize = ${ANIM_BEZIER_EXTRA_SIZE};`);
+  put(`    pub const ANIM_FILL_BACKWARDS: u8 = ${ANIM_FILL_BACKWARDS};`);
+  put(`    pub const ANIM_FILL_FORWARDS: u8 = ${ANIM_FILL_FORWARDS};`);
   put("}");
   put("");
 

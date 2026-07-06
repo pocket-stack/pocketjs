@@ -60,12 +60,30 @@ impl Texture {
     }
 }
 
+/// One playing baked-timeline instance: a node's style carries an animation
+/// block, so timeline `anim` (styles.bin ANIM TABLE index) runs on `node`.
+/// Instances of one style application are pushed contiguously in CSS
+/// comma-list order — later instances override earlier ones while both write
+/// a prop (retain() keeps the order stable).
+struct TimelineInst {
+    alive: bool,
+    node: i32,
+    /// styles.bin ANIM TABLE index.
+    anim: u16,
+    /// Frames since the style was applied (the node's animation clock).
+    clock: u32,
+    /// Whole-choreography loop period (style-level `animate-loop-[..]`);
+    /// the clock wraps modulo this. 0 = play once.
+    loop_frames: u16,
+}
+
 /// The retained UI core. One per host/screen.
 pub struct Ui {
     tree: tree::Tree,
     styles: style::StyleTable,
     fonts: text::Fonts,
     anims: anim::Anims,
+    timelines: Vec<TimelineInst>,
     layout: layout::LayoutEngine,
     textures: Vec<Texture>,
     focused: i32,
@@ -89,6 +107,7 @@ impl Ui {
             styles: style::StyleTable::new(),
             fonts: text::Fonts::new(),
             anims: anim::Anims::new(),
+            timelines: Vec::new(),
             layout: layout::LayoutEngine::new(),
             textures: Vec::new(),
             focused: 0,
@@ -163,6 +182,7 @@ impl Ui {
             node.style_initialized = true;
         }
         self.retarget(slot, &old, was_initialized);
+        self.restart_timelines(slot);
         self.layout.dirty = true;
     }
 
@@ -475,8 +495,134 @@ impl Ui {
                 self.layout.dirty = true;
             }
         }
+        self.tick_timelines();
         if self.layout.dirty {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
+        }
+    }
+
+    /// Advance every playing baked timeline one frame and write the sampled
+    /// values into the nodes' `anim_values`. Instances of one node are
+    /// processed as one contiguous batch so CSS comma-list precedence holds:
+    /// the LAST animation currently writing a prop wins; an animation that is
+    /// not applying (delay without backwards fill / finished without forwards
+    /// fill) yields to earlier list entries, and the prop entry is dropped
+    /// when nothing writes it.
+    fn tick_timelines(&mut self) {
+        use spec::style_table as st;
+        // (prop, Some(bits) = write | None = drop) fold buffer, list order.
+        let mut writes: Vec<(u8, Option<u32>)> = Vec::new();
+        let mut i = 0usize;
+        while i < self.timelines.len() {
+            if !self.timelines[i].alive {
+                i += 1;
+                continue;
+            }
+            let node_id = self.timelines[i].node;
+            let mut end = i;
+            while end < self.timelines.len() && self.timelines[end].node == node_id {
+                end += 1;
+            }
+            let Some(slot) = self.tree.resolve(node_id) else {
+                for inst in &mut self.timelines[i..end] {
+                    inst.alive = false;
+                }
+                i = end;
+                continue;
+            };
+            writes.clear();
+            for j in i..end {
+                let inst = &mut self.timelines[j];
+                if !inst.alive {
+                    continue;
+                }
+                let Some(tl) = self.styles.anims.get(inst.anim as usize) else {
+                    inst.alive = false;
+                    continue;
+                };
+                let t_abs = if inst.loop_frames > 0 {
+                    inst.clock % inst.loop_frames as u32
+                } else {
+                    inst.clock
+                };
+                inst.clock = inst.clock.wrapping_add(1);
+                let rel = t_abs as i64 - tl.delay_frames as i64;
+                let total = tl.period_frames as i64 * tl.iterations as i64; // 0 = infinite
+                for track in &tl.tracks {
+                    let is_color =
+                        spec::PROP_VALUE_KIND[track.prop as usize] == spec::value_kind::COLOR;
+                    let value: Option<u32> = if rel < 0 {
+                        (tl.fill & st::ANIM_FILL_BACKWARDS != 0)
+                            .then(|| anim::sample_track(track, 0, is_color))
+                    } else if tl.iterations != 0 && rel >= total {
+                        (tl.fill & st::ANIM_FILL_FORWARDS != 0)
+                            .then(|| anim::sample_track(track, tl.period_frames as u32, is_color))
+                    } else {
+                        let lt = (rel % tl.period_frames as i64) as u32;
+                        Some(anim::sample_track(track, lt, is_color))
+                    };
+                    match writes.iter_mut().find(|(p, _)| *p == track.prop) {
+                        // Later list entries override — but only while writing.
+                        Some(entry) => {
+                            if value.is_some() {
+                                entry.1 = value;
+                            }
+                        }
+                        None => writes.push((track.prop, value)),
+                    }
+                }
+            }
+            let node = &mut self.tree.slots[slot as usize];
+            for &(prop, value) in &writes {
+                let prev = tree::Node::find_entry(&node.anim_values, prop);
+                match value {
+                    Some(bits) => {
+                        if prev != Some(bits) {
+                            tree::Node::put_entry(&mut node.anim_values, prop, bits);
+                            if spec::is_layout_dirtying(prop) {
+                                self.layout.dirty = true;
+                            }
+                        }
+                    }
+                    None => {
+                        if prev.is_some() {
+                            tree::Node::remove_entry(&mut node.anim_values, prop);
+                            if spec::is_layout_dirtying(prop) {
+                                self.layout.dirty = true;
+                            }
+                        }
+                    }
+                }
+            }
+            i = end;
+        }
+        self.timelines.retain(|t| t.alive);
+    }
+
+    /// After a style application on `slot`: stop the node's playing timelines
+    /// and start the new record's animation block (if any) from frame 0.
+    fn restart_timelines(&mut self, slot: u32) {
+        let node_id = self.tree.slots[slot as usize].id(slot);
+        for inst in self.timelines.iter_mut() {
+            if inst.alive && inst.node == node_id {
+                inst.alive = false;
+            }
+        }
+        let style_id = self.tree.slots[slot as usize].style_id;
+        let Some(animation) = self.styles.record(style_id).and_then(|r| r.animation.clone())
+        else {
+            return;
+        };
+        for &aid in &animation.anims {
+            if (aid as usize) < self.styles.anims.len() {
+                self.timelines.push(TimelineInst {
+                    alive: true,
+                    node: node_id,
+                    anim: aid,
+                    clock: 0,
+                    loop_frames: animation.loop_frames,
+                });
+            }
         }
     }
 

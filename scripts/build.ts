@@ -35,6 +35,7 @@ import {
   type PocketFramework,
 } from "../compiler/jsx-plugin.ts";
 import type { PocketConfig } from "../src/config.ts";
+import { registerAnimationTheme } from "../compiler/animation.ts";
 import { compileClasses, generateStylesModule } from "../compiler/tailwind.ts";
 import { bakeAtlases } from "../compiler/bake-font.ts";
 import { bakeSvg } from "../compiler/bake-svg.ts";
@@ -71,11 +72,12 @@ let extraChars = "";
 let appArg = "";
 let frameworkFlag: string | undefined;
 let configPath = ROOT + "pocket.config.ts";
+let configFlagged = false;
 let useConfig = true;
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
   else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
-  else if (a.startsWith("--config=")) configPath = resolvePath(ROOT, a.slice("--config=".length));
+  else if (a.startsWith("--config=")) { configPath = resolvePath(ROOT, a.slice("--config=".length)); configFlagged = true; }
   else if (a === "--no-config") useConfig = false;
   else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
   else if (!a.startsWith("-")) appArg = a;
@@ -92,12 +94,6 @@ async function loadConfig(): Promise<PocketConfig> {
   const mod = await import(url.href) as { default?: PocketConfig; config?: PocketConfig };
   return mod.default ?? mod.config ?? {};
 }
-
-const config = await loadConfig();
-const framework: PocketFramework = frameworkFlag
-  ? parseFramework(frameworkFlag, "--framework")
-  : parseFramework(config.framework, "pocket.config.ts");
-const frameworkConfig = FRAMEWORKS[framework];
 
 function resolveEntry(arg: string): string {
   const normalized = arg.replace(/\\/g, "/").replace(/\.tsx?$/, "");
@@ -131,6 +127,17 @@ function resolveEntry(arg: string): string {
 }
 
 const requestedEntry = resolveEntry(appArg);
+// An app directory can carry its own pocket.config.ts (theme/keyframes local
+// to the app); it wins over the repo root config unless --config was given.
+if (!configFlagged && useConfig) {
+  const appConfig = requestedEntry.slice(0, requestedEntry.lastIndexOf("/") + 1) + "pocket.config.ts";
+  if (existsSync(appConfig)) configPath = appConfig;
+}
+const config = await loadConfig();
+const framework: PocketFramework = frameworkFlag
+  ? parseFramework(frameworkFlag, "--framework")
+  : parseFramework(config.framework, "pocket.config.ts");
+const frameworkConfig = FRAMEWORKS[framework];
 const entry = frameworkVariantPath(requestedEntry, framework);
 function outputName(file: string): string {
   const rel = file.startsWith(ROOT) ? file.slice(ROOT.length) : file;
@@ -205,13 +212,17 @@ console.log(`  pass 1: ${visited.size} module(s), ${classStrings.length} candida
 // compile styles + fonts + images
 // ---------------------------------------------------------------------------
 
+registerAnimationTheme(config.theme);
 const styles = compileClasses(classStrings);
 if (styles.records.length === 0) {
   console.warn("  tailwind: no class literals compiled — is the app unstyled?");
 }
 const generatedPath = ROOT + "src/styles.generated.ts";
 await Bun.write(generatedPath, generateStylesModule(styles));
-console.log(`  tailwind: ${styles.records.length} style record(s), ${Object.keys(styles.ids).length} literal(s) -> src/styles.generated.ts`);
+console.log(
+  `  tailwind: ${styles.records.length} style record(s), ${styles.anims.length} baked timeline(s), ` +
+    `${Object.keys(styles.ids).length} literal(s) -> src/styles.generated.ts`,
+);
 
 const atlases = await bakeAtlases({
   codepoints,

@@ -86,11 +86,12 @@ fn dim(v: f32) -> taffy::Dimension {
     }
 }
 
+/// margin/inset value: NAN = auto, else px. Unlike `dim`, negatives are REAL
+/// offsets (CSS negative margins / `inset-[-10]` outsets), not the SIZE_FULL
+/// sentinel — that sentinel is pinned to width/height only (spec.ts).
 fn lpa(v: f32) -> taffy::LengthPercentageAuto {
     if v.is_nan() {
         taffy::LengthPercentageAuto::auto()
-    } else if v < 0.0 {
-        taffy::LengthPercentageAuto::percent(1.0)
     } else {
         taffy::LengthPercentageAuto::length(v)
     }

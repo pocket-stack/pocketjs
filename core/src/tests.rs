@@ -13,19 +13,45 @@ struct StyleSpec {
     active: Vec<(u8, u32)>,
     /// (mask, dur_ms, delay_ms, easing)
     transition: Option<(u32, u16, u16, u8)>,
+    /// (loop_frames, anim ids)
+    animation: Option<(u16, Vec<u16>)>,
 }
 
 impl StyleSpec {
     fn new() -> StyleSpec {
-        StyleSpec { base: Vec::new(), focus: Vec::new(), active: Vec::new(), transition: None }
+        StyleSpec {
+            base: Vec::new(),
+            focus: Vec::new(),
+            active: Vec::new(),
+            transition: None,
+            animation: None,
+        }
     }
 }
 
+/// One baked-timeline segment: (t0, t1, from, to, easing, bezier).
+struct SegSpec(u16, u16, u32, u32, u8, Option<[f32; 4]>);
+
+/// One ANIM TABLE entry: header + (prop, segments) tracks.
+struct AnimSpec {
+    delay_frames: u16,
+    period_frames: u16,
+    iterations: u16,
+    fill: u8,
+    tracks: Vec<(u8, Vec<SegSpec>)>,
+}
+
 fn encode_styles(styles: &[StyleSpec]) -> Vec<u8> {
+    encode_styles_with_anims(styles, &[])
+}
+
+fn encode_styles_with_anims(styles: &[StyleSpec], anims: &[AnimSpec]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&spec::style_table::MAGIC.to_le_bytes());
     out.extend_from_slice(&spec::style_table::VERSION.to_le_bytes());
     out.extend_from_slice(&(styles.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(anims.len() as u16).to_le_bytes());
+    out.extend_from_slice(&[0, 0]); // reserved
     for s in styles {
         let mut flags = 0u8;
         if !s.base.is_empty() {
@@ -40,6 +66,9 @@ fn encode_styles(styles: &[StyleSpec]) -> Vec<u8> {
         if s.transition.is_some() {
             flags |= spec::style_table::HAS_TRANSITION;
         }
+        if s.animation.is_some() {
+            flags |= spec::style_table::HAS_ANIMATION;
+        }
         out.push(flags);
         if let Some((mask, dur, delay, easing)) = s.transition {
             out.extend_from_slice(&mask.to_le_bytes());
@@ -47,6 +76,13 @@ fn encode_styles(styles: &[StyleSpec]) -> Vec<u8> {
             out.extend_from_slice(&delay.to_le_bytes());
             out.push(easing);
             out.extend_from_slice(&[0, 0, 0]);
+        }
+        if let Some((loop_frames, ids)) = &s.animation {
+            out.push(ids.len() as u8);
+            out.extend_from_slice(&loop_frames.to_le_bytes());
+            for id in ids {
+                out.extend_from_slice(&id.to_le_bytes());
+            }
         }
         for v in [&s.base, &s.focus, &s.active] {
             if v.is_empty() {
@@ -57,6 +93,30 @@ fn encode_styles(styles: &[StyleSpec]) -> Vec<u8> {
                 out.push(prop);
                 out.push(0);
                 out.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+    }
+    for a in anims {
+        out.extend_from_slice(&a.delay_frames.to_le_bytes());
+        out.extend_from_slice(&a.period_frames.to_le_bytes());
+        out.extend_from_slice(&a.iterations.to_le_bytes());
+        out.push(a.fill);
+        out.push(a.tracks.len() as u8);
+        for (prop, segs) in &a.tracks {
+            out.push(*prop);
+            out.push(segs.len() as u8);
+            for SegSpec(t0, t1, from, to, easing, bezier) in segs {
+                out.extend_from_slice(&t0.to_le_bytes());
+                out.extend_from_slice(&t1.to_le_bytes());
+                out.extend_from_slice(&from.to_le_bytes());
+                out.extend_from_slice(&to.to_le_bytes());
+                out.push(*easing);
+                out.push(0);
+                if let Some(bz) = bezier {
+                    for v in bz {
+                        out.extend_from_slice(&v.to_bits().to_le_bytes());
+                    }
+                }
             }
         }
     }
@@ -1300,4 +1360,204 @@ fn end_to_end_determinism_script() {
     let a = run();
     assert!(!a.is_empty());
     assert_eq!(a, run());
+}
+
+// ---- baked keyframe timelines ------------------------------------------------
+
+/// translateX 0 -> 60 px over 60 frames (linear), 30-frame delay, fill both.
+fn slide_anim() -> AnimSpec {
+    AnimSpec {
+        delay_frames: 30,
+        period_frames: 60,
+        iterations: 1,
+        fill: spec::style_table::ANIM_FILL_BACKWARDS | spec::style_table::ANIM_FILL_FORWARDS,
+        tracks: alloc::vec![(
+            spec::prop::TRANSLATE_X,
+            alloc::vec![SegSpec(0, 60, 0f32.to_bits(), 60f32.to_bits(), spec::Easing::Linear as u8, None)],
+        )],
+    }
+}
+
+#[test]
+fn baked_timeline_plays_delays_and_fills() {
+    let mut ui = Ui::new();
+    let mut s = StyleSpec::new();
+    s.base = alloc::vec![(spec::prop::WIDTH, 10f32.to_bits())];
+    s.animation = Some((0, alloc::vec![0]));
+    assert!(ui.load_styles(&encode_styles_with_anims(&[s], &[slide_anim()])));
+    let n = ui.create_node(0);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.set_style(n, 0);
+    // t = 0 (during the delay): backwards fill pins the first-frame value.
+    ui.tick();
+    assert_eq!(ui.resolved_style(n).unwrap().translate_x, 0.0);
+    // t = 60 = delay + 30: halfway through the 60-frame linear segment.
+    for _ in 0..60 {
+        ui.tick();
+    }
+    assert_eq!(ui.resolved_style(n).unwrap().translate_x, 30.0);
+    // Way past the end: forwards fill holds the final value.
+    for _ in 0..120 {
+        ui.tick();
+    }
+    assert_eq!(ui.resolved_style(n).unwrap().translate_x, 60.0);
+}
+
+#[test]
+fn timeline_loop_restarts_the_choreography() {
+    let mut ui = Ui::new();
+    let mut s = StyleSpec::new();
+    s.animation = Some((120, alloc::vec![0])); // loop every 120 frames
+    assert!(ui.load_styles(&encode_styles_with_anims(&[s], &[slide_anim()])));
+    let n = ui.create_node(0);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.set_style(n, 0);
+    for _ in 0..100 {
+        ui.tick(); // t = 99: finished (delay 30 + period 60), forwards-filled
+    }
+    assert_eq!(ui.resolved_style(n).unwrap().translate_x, 60.0);
+    for _ in 0..22 {
+        ui.tick(); // t = 121 -> wrapped clock t = 1: back in the delay phase
+    }
+    assert_eq!(ui.resolved_style(n).unwrap().translate_x, 0.0);
+    for _ in 0..59 {
+        ui.tick(); // last eval at wrapped t = 60: halfway through the segment again
+    }
+    assert_eq!(ui.resolved_style(n).unwrap().translate_x, 30.0);
+}
+
+#[test]
+fn timeline_list_precedence_matches_css() {
+    // A: opacity 0 -> 1 over frames 0..30 (fill both).
+    // B: opacity 1 -> 0 over 30 frames, delayed 60, fill forwards only.
+    let fade_in = AnimSpec {
+        delay_frames: 0,
+        period_frames: 30,
+        iterations: 1,
+        fill: spec::style_table::ANIM_FILL_BACKWARDS | spec::style_table::ANIM_FILL_FORWARDS,
+        tracks: alloc::vec![(
+            spec::prop::OPACITY,
+            alloc::vec![SegSpec(0, 30, 0f32.to_bits(), 1f32.to_bits(), spec::Easing::Linear as u8, None)],
+        )],
+    };
+    let fade_out = AnimSpec {
+        delay_frames: 60,
+        period_frames: 30,
+        iterations: 1,
+        fill: spec::style_table::ANIM_FILL_FORWARDS,
+        tracks: alloc::vec![(
+            spec::prop::OPACITY,
+            alloc::vec![SegSpec(0, 30, 1f32.to_bits(), 0f32.to_bits(), spec::Easing::Linear as u8, None)],
+        )],
+    };
+    let mut s = StyleSpec::new();
+    s.animation = Some((0, alloc::vec![0, 1]));
+    let mut ui = Ui::new();
+    assert!(ui.load_styles(&encode_styles_with_anims(&[s], &[fade_in, fade_out])));
+    let n = ui.create_node(0);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.set_style(n, 0);
+    // t = 15: A halfway (0.5); B inactive (delay, no backwards fill) -> A wins.
+    for _ in 0..16 {
+        ui.tick();
+    }
+    assert_eq!(ui.resolved_style(n).unwrap().opacity, 0.5);
+    // t = 45: A finished (fill 1.0); B still inactive -> A's fill shows.
+    for _ in 0..30 {
+        ui.tick();
+    }
+    assert_eq!(ui.resolved_style(n).unwrap().opacity, 1.0);
+    // t = 75: B halfway (0.5) and later in the list -> B wins over A's fill.
+    for _ in 0..30 {
+        ui.tick();
+    }
+    assert_eq!(ui.resolved_style(n).unwrap().opacity, 0.5);
+    // t = 120: both filled -> the later entry (B, 0.0) wins.
+    for _ in 0..45 {
+        ui.tick();
+    }
+    assert_eq!(ui.resolved_style(n).unwrap().opacity, 0.0);
+}
+
+#[test]
+fn set_style_restarts_timelines() {
+    let mut ui = Ui::new();
+    let mut s = StyleSpec::new();
+    s.animation = Some((0, alloc::vec![0]));
+    assert!(ui.load_styles(&encode_styles_with_anims(&[s], &[slide_anim()])));
+    let n = ui.create_node(0);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.set_style(n, 0);
+    for _ in 0..70 {
+        ui.tick();
+    }
+    assert!(ui.resolved_style(n).unwrap().translate_x > 0.0);
+    // Re-applying the style restarts the choreography from frame 0.
+    ui.set_style(n, 0);
+    ui.tick();
+    assert_eq!(ui.resolved_style(n).unwrap().translate_x, 0.0);
+}
+
+#[test]
+fn cubic_bezier_is_sane() {
+    use crate::anim::cubic_bezier;
+    assert_eq!(cubic_bezier(0.42, 0.0, 0.58, 1.0, 0.0), 0.0);
+    assert_eq!(cubic_bezier(0.42, 0.0, 0.58, 1.0, 1.0), 1.0);
+    // ease-in-out is symmetric: y(0.5) = 0.5.
+    let mid = cubic_bezier(0.42, 0.0, 0.58, 1.0, 0.5);
+    assert!((mid - 0.5).abs() < 1e-3, "mid = {mid}");
+    // Monotonic over a coarse sweep.
+    let mut prev = 0.0f32;
+    for i in 0..=20 {
+        let y = cubic_bezier(0.25, 0.1, 0.25, 1.0, i as f32 / 20.0);
+        assert!(y >= prev - 1e-4, "not monotonic at {i}: {y} < {prev}");
+        prev = y;
+    }
+}
+
+#[test]
+fn negative_insets_are_offsets_not_size_full() {
+    // inset: -10 on an auto-sized absolute child must OUTSET the parent box
+    // by 10px per side (CSS stretch), not resolve to the SIZE_FULL sentinel.
+    let mut ui = Ui::new();
+    let mut wrapper = StyleSpec::new();
+    wrapper.base = alloc::vec![
+        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
+        (spec::prop::INSET_L, 130f32.to_bits()),
+        (spec::prop::INSET_T, 50f32.to_bits()),
+        (spec::prop::WIDTH, 60f32.to_bits()),
+        (spec::prop::HEIGHT, 60f32.to_bits()),
+    ];
+    let mut pulse = StyleSpec::new();
+    pulse.base = alloc::vec![
+        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
+        (spec::prop::INSET_T, (-10f32).to_bits()),
+        (spec::prop::INSET_R, (-10f32).to_bits()),
+        (spec::prop::INSET_B, (-10f32).to_bits()),
+        (spec::prop::INSET_L, (-10f32).to_bits()),
+    ];
+    let mut mark = StyleSpec::new();
+    mark.base = alloc::vec![
+        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
+        (spec::prop::INSET_R, 0f32.to_bits()),
+        (spec::prop::INSET_T, 0f32.to_bits()),
+        (spec::prop::WIDTH, 20f32.to_bits()),
+        (spec::prop::HEIGHT, 10f32.to_bits()),
+    ];
+    assert!(ui.load_styles(&encode_styles(&[wrapper, pulse, mark])));
+    let w = ui.create_node(0);
+    let p = ui.create_node(0);
+    let m = ui.create_node(0);
+    ui.insert_before(spec::ROOT_ID, w, 0);
+    ui.insert_before(w, p, 0);
+    ui.insert_before(p, m, 0);
+    ui.set_style(w, 0);
+    ui.set_style(p, 1);
+    ui.set_style(m, 2);
+    ui.tick();
+    assert_eq!(ui.layout_of(w).unwrap(), (130.0, 50.0, 60.0, 60.0));
+    // stretched: 60 + 10px outset per side, positioned at (-10, -10)
+    assert_eq!(ui.layout_of(p).unwrap(), (-10.0, -10.0, 80.0, 80.0));
+    // right-anchored mark: x = 80 - 20
+    assert_eq!(ui.layout_of(m).unwrap(), (60.0, 0.0, 20.0, 10.0));
 }

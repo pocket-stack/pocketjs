@@ -176,10 +176,14 @@ export const PROP = {
   // -- transform (128..159) — paint-only, never relayouts ---------------------
   translateX: 128, //   f32 px
   translateY: 129, //   f32 px
-  scale: 130, //        f32 (1 = identity, about the node center)
-  rotate: 131, //       f32 degrees (about the node center)
-  scaleX: 132, //       f32 (1 = identity, about the node center)
-  scaleY: 133, //       f32 (1 = identity, about the node center)
+  scale: 130, //        f32 (1 = identity, about the transform origin)
+  rotate: 131, //       f32 degrees (about the transform origin)
+  scaleX: 132, //       f32 (1 = identity, about the transform origin)
+  scaleY: 133, //       f32 (1 = identity, about the transform origin)
+  originX: 134, //      f32 fraction of node width offsetting the transform
+  //                    origin from the node center (-0.5 = left edge, 0 =
+  //                    center, +0.5 = right edge). NOT animatable.
+  originY: 135, //      f32 fraction of node height (-0.5 top .. +0.5 bottom)
 } as const;
 
 export type PropName = keyof typeof PROP;
@@ -291,6 +295,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
   translateX: VALUE_KIND.f32, translateY: VALUE_KIND.f32,
   scale: VALUE_KIND.f32, rotate: VALUE_KIND.f32,
   scaleX: VALUE_KIND.f32, scaleY: VALUE_KIND.f32,
+  originX: VALUE_KIND.f32, originY: VALUE_KIND.f32,
 };
 
 // ---------------------------------------------------------------------------
@@ -311,10 +316,13 @@ export const ENUMS = {
   /**
    * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
    * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
+   * CubicBezier is only valid inside baked animation segments (the four
+   * control values ride along in the segment record — see ANIM TABLE); the
+   * `animate()` op rejects it.
    */
   Easing: {
     Linear: 0, EaseIn: 1, EaseOut: 2, EaseInOut: 3,
-    OutBack: 4, Spring: 5, SpringBouncy: 6,
+    OutBack: 4, Spring: 5, SpringBouncy: 6, CubicBezier: 7,
   },
 } as const;
 
@@ -345,17 +353,19 @@ export const TEX_MAX_DIM = 512;
 export const MAX_FONT_SLOTS = 16;
 
 // ---------------------------------------------------------------------------
-// STYLE TABLE binary format — styles.bin  (version 1)
+// STYLE TABLE binary format — styles.bin  (version 2)
 // ---------------------------------------------------------------------------
 // Compiled by compiler/tailwind.ts; parsed by core/src/style.rs and (for
 // tests) by decodeStyleTable below. Little-endian. Records are variable-size
 // and written back-to-back with NO padding between fields or records; readers
 // must use unaligned LE reads.
 //
-//   Header (8 bytes):
+//   Header (12 bytes):
 //     off 0  u32  magic      = 0x54534344  bytes 'D','C','S','T'
-//     off 4  u16  version    = 1
+//     off 4  u16  version    = 2
 //     off 6  u16  styleCount
+//     off 8  u16  animCount  baked animation timelines (ANIM TABLE below)
+//     off 10 u16  reserved   (0)
 //
 //   Then styleCount records, back-to-back. styleId = record index (0-based).
 //
@@ -365,7 +375,8 @@ export const MAX_FONT_SLOTS = 16;
 //              bit 1  STYLE_VARIANT_FOCUS   focus: variant present
 //              bit 2  STYLE_VARIANT_ACTIVE  active: variant present
 //              bit 3  STYLE_HAS_TRANSITION  transition block present
-//              bits 4-7 reserved (0)
+//              bit 4  STYLE_HAS_ANIMATION   animation block present
+//              bits 5-7 reserved (0)
 //     [if STYLE_HAS_TRANSITION] transition block (12 bytes):
 //       +0  u32  mask     anim-bit mask of props that transition (see
 //                         ANIMATABLE order; TRANSITION_MASK_ALL = all)
@@ -373,16 +384,63 @@ export const MAX_FONT_SLOTS = 16;
 //       +6  u16  delayMs
 //       +8  u8   easing   (ENUMS.Easing ordinal)
 //       +9  u8[3] reserved (0)
+//     [if STYLE_HAS_ANIMATION] animation block (3 + 2n bytes):
+//       +0  u8   animRefCount (n >= 1; CSS comma-list order — later entries
+//                              override earlier ones while both write a prop)
+//       +1  u16  loopFrames   whole-choreography loop period in frames; the
+//                             node's animation clock wraps modulo this. 0 =
+//                             play once (CSS semantics: fills decide the end
+//                             state). This is the PocketJS `animate-loop-[..]`
+//                             extension — plain CSS cannot loop a multi-
+//                             animation choreography without a remount.
+//       then n x u16 animId (index into the ANIM TABLE)
 //     Then, for each PRESENT variant in order base, focus, active:
 //       +0  u8   propCount
 //       then propCount x 6-byte prop records:
 //         +0  u8   propId    (PROP value)
 //         +1  u8   reserved  (0)
 //         +2  u32  value     (per PROP_VALUE_KIND: f32 bits | ABGR | int)
+//
+// ---------------------------------------------------------------------------
+// ANIM TABLE — baked keyframe timelines (appended after the style records)
+// ---------------------------------------------------------------------------
+// The compiler bakes each `theme.animation` entry (one CSS `animation`
+// shorthand: keyframes x duration/easing/delay/fill/direction/iterations)
+// into per-prop SEGMENT lists with frame-precise endpoints (60 Hz fixed dt),
+// so the core never sees percentages, calc() or cubic-bezier strings — only
+// "prop P goes from bits A to bits B over frames [t0, t1) under easing E".
+//
+//   animCount entries, back-to-back. animId = entry index (0-based).
+//
+//   Anim entry:
+//     +0  u16  delayFrames   frames to wait after the node's animation clock
+//                            starts (style applied / loop wrap)
+//     +2  u16  periodFrames  one iteration's length in frames (>= 1)
+//     +4  u16  iterations    0 = infinite
+//     +6  u8   fill          bit 0 ANIM_FILL_BACKWARDS (apply first-frame
+//                            values during the delay — CSS backwards/both),
+//                            bit 1 ANIM_FILL_FORWARDS (hold final values
+//                            after the last iteration — CSS forwards/both)
+//     +7  u8   trackCount
+//     then trackCount x Track:
+//       +0  u8   propId      (PROP value; must be ANIMATABLE)
+//       +1  u8   segCount    (>= 1)
+//       then segCount x Segment (14 bytes, +16 when easing == CubicBezier):
+//         +0  u16  t0        segment start frame (within the iteration)
+//         +2  u16  t1        segment end frame (t1 > t0)
+//         +4  u32  from      raw payload (f32 bits | ABGR per the prop kind)
+//         +8  u32  to
+//         +12 u8   easing    ENUMS.Easing ordinal (CubicBezier = params follow)
+//         +13 u8   reserved  (0)
+//         [if easing == CubicBezier] 4 x u32: x1, y1, x2, y2 as f32 bits
+//
+// Segments are sorted by t0 and non-overlapping per track. Between segments
+// the value holds at the previous segment's `to`; before the first segment it
+// holds at segments[0].from; after the last it holds at last.to.
 
 export const STYLE_MAGIC = 0x54534344; // 'DCST' LE
-export const STYLE_VERSION = 1;
-export const STYLE_HEADER_SIZE = 8;
+export const STYLE_VERSION = 2;
+export const STYLE_HEADER_SIZE = 12;
 export const STYLE_TRANSITION_SIZE = 12;
 export const STYLE_PROP_RECORD_SIZE = 6;
 
@@ -390,6 +448,13 @@ export const STYLE_VARIANT_BASE = 1 << 0;
 export const STYLE_VARIANT_FOCUS = 1 << 1;
 export const STYLE_VARIANT_ACTIVE = 1 << 2;
 export const STYLE_HAS_TRANSITION = 1 << 3;
+export const STYLE_HAS_ANIMATION = 1 << 4;
+
+export const ANIM_ENTRY_HEADER_SIZE = 8;
+export const ANIM_SEGMENT_SIZE = 14;
+export const ANIM_BEZIER_EXTRA_SIZE = 16;
+export const ANIM_FILL_BACKWARDS = 1 << 0;
+export const ANIM_FILL_FORWARDS = 1 << 1;
 
 // ---- style table TS encoder/decoder (used by compiler + tests) ------------
 
@@ -409,11 +474,50 @@ export interface StyleTransition {
   easing: number;
 }
 
+export interface StyleAnimation {
+  /** ANIM TABLE indices, CSS comma-list order (later wins while writing). */
+  anims: number[];
+  /** Whole-choreography loop period in frames (0 = play once). */
+  loopFrames: number;
+}
+
 export interface StyleRecord {
   base?: StyleProp[];
   focus?: StyleProp[];
   active?: StyleProp[];
   transition?: StyleTransition;
+  animation?: StyleAnimation;
+}
+
+/** One baked animation segment: prop goes from→to over frames [t0, t1). */
+export interface AnimSegment {
+  t0: number;
+  t1: number;
+  /** Raw u32 payloads (f32Bits()/abgr()). */
+  from: number;
+  to: number;
+  /** ENUMS.Easing ordinal. */
+  easing: number;
+  /** cubic-bezier(x1, y1, x2, y2) — required iff easing == CubicBezier. */
+  bezier?: [number, number, number, number];
+}
+
+export interface AnimTrack {
+  /** PROP id (must be ANIMATABLE). */
+  prop: number;
+  /** Sorted by t0, non-overlapping. */
+  segments: AnimSegment[];
+}
+
+/** One baked timeline (one CSS animation shorthand entry). */
+export interface AnimTimeline {
+  delayFrames: number;
+  periodFrames: number;
+  /** 0 = infinite. */
+  iterations: number;
+  /** ANIM_FILL_BACKWARDS | ANIM_FILL_FORWARDS. */
+  fill: number;
+  tracks: AnimTrack[];
 }
 
 /** IEEE-754 f32 bits of a number, as u32 (round-trips through Math.fround). */
@@ -435,18 +539,44 @@ export function abgr(r: number, g: number, b: number, a = 255): number {
   return (((a & 255) << 24) | ((b & 255) << 16) | ((g & 255) << 8) | (r & 255)) >>> 0;
 }
 
-/** Encode a style table to styles.bin bytes (see format comment above). */
-export function encodeStyleTable(styles: readonly StyleRecord[]): Uint8Array {
+/** Byte size of one baked segment (bezier params ride inline). */
+function segmentSize(seg: AnimSegment): number {
+  return ANIM_SEGMENT_SIZE + (seg.easing === ENUMS.Easing.CubicBezier ? ANIM_BEZIER_EXTRA_SIZE : 0);
+}
+
+/** Encode a style table (+ baked animation timelines) to styles.bin bytes. */
+export function encodeStyleTable(
+  styles: readonly StyleRecord[],
+  anims: readonly AnimTimeline[] = [],
+): Uint8Array {
   if (styles.length > 0xffff) throw new Error("styles.bin: too many styles");
+  if (anims.length > 0xffff) throw new Error("styles.bin: too many animations");
   // size pass
   let size = STYLE_HEADER_SIZE;
   for (const s of styles) {
     size += 1; // flags
     if (s.transition) size += STYLE_TRANSITION_SIZE;
+    if (s.animation) {
+      if (s.animation.anims.length === 0 || s.animation.anims.length > 0xff) {
+        throw new Error("styles.bin: animation block needs 1..255 anim refs");
+      }
+      size += 3 + s.animation.anims.length * 2;
+    }
     for (const v of [s.base, s.focus, s.active]) {
       if (!v) continue;
       if (v.length > 0xff) throw new Error("styles.bin: >255 props in a variant");
       size += 1 + v.length * STYLE_PROP_RECORD_SIZE;
+    }
+  }
+  for (const a of anims) {
+    if (a.tracks.length > 0xff) throw new Error("styles.bin: >255 tracks in an animation");
+    size += ANIM_ENTRY_HEADER_SIZE;
+    for (const t of a.tracks) {
+      if (t.segments.length === 0 || t.segments.length > 0xff) {
+        throw new Error("styles.bin: animation track needs 1..255 segments");
+      }
+      size += 2;
+      for (const seg of t.segments) size += segmentSize(seg);
     }
   }
   const out = new Uint8Array(size);
@@ -454,6 +584,8 @@ export function encodeStyleTable(styles: readonly StyleRecord[]): Uint8Array {
   dv.setUint32(0, STYLE_MAGIC, true);
   dv.setUint16(4, STYLE_VERSION, true);
   dv.setUint16(6, styles.length, true);
+  dv.setUint16(8, anims.length, true);
+  // off 10 reserved, already 0
   let o = STYLE_HEADER_SIZE;
   for (const s of styles) {
     let flags = 0;
@@ -461,6 +593,7 @@ export function encodeStyleTable(styles: readonly StyleRecord[]): Uint8Array {
     if (s.focus) flags |= STYLE_VARIANT_FOCUS;
     if (s.active) flags |= STYLE_VARIANT_ACTIVE;
     if (s.transition) flags |= STYLE_HAS_TRANSITION;
+    if (s.animation) flags |= STYLE_HAS_ANIMATION;
     out[o++] = flags;
     if (s.transition) {
       dv.setUint32(o, s.transition.mask >>> 0, true);
@@ -469,6 +602,16 @@ export function encodeStyleTable(styles: readonly StyleRecord[]): Uint8Array {
       out[o + 8] = s.transition.easing & 0xff;
       // +9..+12 reserved, already 0
       o += STYLE_TRANSITION_SIZE;
+    }
+    if (s.animation) {
+      out[o] = s.animation.anims.length;
+      dv.setUint16(o + 1, s.animation.loopFrames, true);
+      o += 3;
+      for (const id of s.animation.anims) {
+        if (id < 0 || id >= anims.length) throw new Error(`styles.bin: bad anim id ${id}`);
+        dv.setUint16(o, id, true);
+        o += 2;
+      }
     }
     for (const v of [s.base, s.focus, s.active]) {
       if (!v) continue;
@@ -481,15 +624,49 @@ export function encodeStyleTable(styles: readonly StyleRecord[]): Uint8Array {
       }
     }
   }
+  for (const a of anims) {
+    dv.setUint16(o, a.delayFrames, true);
+    dv.setUint16(o + 2, a.periodFrames, true);
+    dv.setUint16(o + 4, a.iterations, true);
+    out[o + 6] = a.fill & 0xff;
+    out[o + 7] = a.tracks.length;
+    o += ANIM_ENTRY_HEADER_SIZE;
+    for (const t of a.tracks) {
+      out[o] = t.prop & 0xff;
+      out[o + 1] = t.segments.length;
+      o += 2;
+      for (const seg of t.segments) {
+        dv.setUint16(o, seg.t0, true);
+        dv.setUint16(o + 2, seg.t1, true);
+        dv.setUint32(o + 4, seg.from >>> 0, true);
+        dv.setUint32(o + 8, seg.to >>> 0, true);
+        out[o + 12] = seg.easing & 0xff;
+        out[o + 13] = 0;
+        o += ANIM_SEGMENT_SIZE;
+        if (seg.easing === ENUMS.Easing.CubicBezier) {
+          const bz = seg.bezier;
+          if (!bz) throw new Error("styles.bin: CubicBezier segment without params");
+          for (let i = 0; i < 4; i++) dv.setUint32(o + i * 4, f32Bits(bz[i]), true);
+          o += ANIM_BEZIER_EXTRA_SIZE;
+        }
+      }
+    }
+  }
   return out;
 }
 
+export interface DecodedStyleTable {
+  styles: StyleRecord[];
+  anims: AnimTimeline[];
+}
+
 /** Decode styles.bin (round-trips encodeStyleTable; used by tests). */
-export function decodeStyleTable(bytes: Uint8Array): StyleRecord[] {
+export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (dv.getUint32(0, true) !== STYLE_MAGIC) throw new Error("styles.bin: bad magic");
   if (dv.getUint16(4, true) !== STYLE_VERSION) throw new Error("styles.bin: bad version");
   const count = dv.getUint16(6, true);
+  const animCount = dv.getUint16(8, true);
   const styles: StyleRecord[] = [];
   let o = STYLE_HEADER_SIZE;
   for (let i = 0; i < count; i++) {
@@ -503,6 +680,17 @@ export function decodeStyleTable(bytes: Uint8Array): StyleRecord[] {
         easing: bytes[o + 8],
       };
       o += STYLE_TRANSITION_SIZE;
+    }
+    if (flags & STYLE_HAS_ANIMATION) {
+      const n = bytes[o];
+      const loopFrames = dv.getUint16(o + 1, true);
+      o += 3;
+      const ids: number[] = [];
+      for (let j = 0; j < n; j++) {
+        ids.push(dv.getUint16(o, true));
+        o += 2;
+      }
+      s.animation = { anims: ids, loopFrames };
     }
     const variants: Array<"base" | "focus" | "active"> = [];
     if (flags & STYLE_VARIANT_BASE) variants.push("base");
@@ -519,7 +707,47 @@ export function decodeStyleTable(bytes: Uint8Array): StyleRecord[] {
     }
     styles.push(s);
   }
-  return styles;
+  const anims: AnimTimeline[] = [];
+  for (let i = 0; i < animCount; i++) {
+    const a: AnimTimeline = {
+      delayFrames: dv.getUint16(o, true),
+      periodFrames: dv.getUint16(o + 2, true),
+      iterations: dv.getUint16(o + 4, true),
+      fill: bytes[o + 6],
+      tracks: [],
+    };
+    const trackCount = bytes[o + 7];
+    o += ANIM_ENTRY_HEADER_SIZE;
+    for (let t = 0; t < trackCount; t++) {
+      const prop = bytes[o];
+      const segCount = bytes[o + 1];
+      o += 2;
+      const segments: AnimSegment[] = [];
+      for (let sIdx = 0; sIdx < segCount; sIdx++) {
+        const seg: AnimSegment = {
+          t0: dv.getUint16(o, true),
+          t1: dv.getUint16(o + 2, true),
+          from: dv.getUint32(o + 4, true),
+          to: dv.getUint32(o + 8, true),
+          easing: bytes[o + 12],
+        };
+        o += ANIM_SEGMENT_SIZE;
+        if (seg.easing === ENUMS.Easing.CubicBezier) {
+          seg.bezier = [
+            bitsF32(dv.getUint32(o, true)),
+            bitsF32(dv.getUint32(o + 4, true)),
+            bitsF32(dv.getUint32(o + 8, true)),
+            bitsF32(dv.getUint32(o + 12, true)),
+          ];
+          o += ANIM_BEZIER_EXTRA_SIZE;
+        }
+        segments.push(seg);
+      }
+      a.tracks.push({ prop, segments });
+    }
+    anims.push(a);
+  }
+  return { styles, anims };
 }
 
 // ---------------------------------------------------------------------------

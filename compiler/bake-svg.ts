@@ -1,20 +1,40 @@
 // compiler/bake-svg.ts — tiny offline SVG rasterizer for baked UI icons.
 //
 // This is deliberately scoped to the assets we want to ship in pak today:
-// pow2-sized SVGs containing filled <circle> elements. Edges are supersampled
-// before being written as straight-alpha RGBA, so icons keep subpixel coverage
-// on both the wasm rasterizer and the PSP texture path.
+// pow2-sized SVGs containing filled <circle> and axis-aligned <rect>
+// elements, composited in document order. Edges are supersampled before
+// being written as straight-alpha RGBA, so icons keep subpixel coverage on
+// both the wasm rasterizer and the PSP texture path.
+//
+// `fill="hole"` on any shape ERASES instead of painting (alpha-subtract with
+// the same antialiased coverage) — that is how mask textures are baked, e.g.
+// an opaque card with a transparent circle punched out for a circular-reveal
+// animation (scale the mask up and the hole grows).
 
 import type { DecodedImage } from "./pak.ts";
 
 export const SVG_SUPERSAMPLE = 4;
 
 interface Circle {
+  kind: "circle";
   cx: number;
   cy: number;
   r: number;
+  hole: boolean;
   rgba: [number, number, number, number];
 }
+
+interface Rect {
+  kind: "rect";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  hole: boolean;
+  rgba: [number, number, number, number];
+}
+
+type Shape = Circle | Rect;
 
 function attrs(tag: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -70,6 +90,12 @@ function sourceOver(px: Uint8Array, i: number, src: [number, number, number, num
   px[i + 3] = Math.round(outA * 255);
 }
 
+/** `fill="hole"`: alpha-subtract by coverage (colors untouched). */
+function erase(px: Uint8Array, i: number, cov01: number): void {
+  if (cov01 <= 0) return;
+  px[i + 3] = Math.round(px[i + 3] * (1 - cov01));
+}
+
 export function bakeSvg(svg: string): DecodedImage {
   const svgTag = svg.match(/<svg\b[^>]*>/i)?.[0];
   if (!svgTag) throw new Error("svg bake: missing <svg>");
@@ -85,46 +111,78 @@ export function bakeSvg(svg: string): DecodedImage {
   const sx = width / vbW;
   const sy = height / vbH;
 
-  const circles: Circle[] = [];
-  const circleRe = /<circle\b[^>]*\/?>/gi;
+  const shapes: Shape[] = [];
+  const shapeRe = /<(circle|rect)\b[^>]*\/?>/gi;
   let m: RegExpExecArray | null;
-  while ((m = circleRe.exec(svg))) {
+  while ((m = shapeRe.exec(svg))) {
     const a = attrs(m[0]);
-    const rgba = parseColor(a.fill);
+    const hole = a.fill === "hole";
+    const rgba = hole ? ([0, 0, 0, 255] as [number, number, number, number]) : parseColor(a.fill);
     const op = parseOpacity(a.opacity) * parseOpacity(a["fill-opacity"]);
     rgba[3] = Math.round(rgba[3] * op);
-    circles.push({
-      cx: (num(a.cx, "cx") - vbX) * sx,
-      cy: (num(a.cy, "cy") - vbY) * sy,
-      r: num(a.r, "r") * Math.min(sx, sy),
-      rgba,
-    });
+    if (m[1].toLowerCase() === "circle") {
+      shapes.push({
+        kind: "circle",
+        cx: (num(a.cx, "cx") - vbX) * sx,
+        cy: (num(a.cy, "cy") - vbY) * sy,
+        r: num(a.r, "r") * Math.min(sx, sy),
+        hole,
+        rgba,
+      });
+    } else {
+      shapes.push({
+        kind: "rect",
+        x: (num(a.x ?? "0", "x") - vbX) * sx,
+        y: (num(a.y ?? "0", "y") - vbY) * sy,
+        w: num(a.width, "width") * sx,
+        h: num(a.height, "height") * sy,
+        hole,
+        rgba,
+      });
+    }
   }
-  if (circles.length === 0) throw new Error("svg bake: no supported shapes");
+  if (shapes.length === 0) throw new Error("svg bake: no supported shapes");
 
   const rgba = new Uint8Array(width * height * 4);
   const ss = SVG_SUPERSAMPLE;
   const samples = ss * ss;
-  for (const c of circles) {
-    const x0 = Math.max(0, Math.floor(c.cx - c.r - 1));
-    const y0 = Math.max(0, Math.floor(c.cy - c.r - 1));
-    const x1 = Math.min(width, Math.ceil(c.cx + c.r + 1));
-    const y1 = Math.min(height, Math.ceil(c.cy + c.r + 1));
-    const rr = c.r * c.r;
+  for (const s of shapes) {
+    const [bx0, by0, bx1, by1] =
+      s.kind === "circle"
+        ? [s.cx - s.r - 1, s.cy - s.r - 1, s.cx + s.r + 1, s.cy + s.r + 1]
+        : [s.x - 1, s.y - 1, s.x + s.w + 1, s.y + s.h + 1];
+    const x0 = Math.max(0, Math.floor(bx0));
+    const y0 = Math.max(0, Math.floor(by0));
+    const x1 = Math.min(width, Math.ceil(bx1));
+    const y1 = Math.min(height, Math.ceil(by1));
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
         let covered = 0;
-        for (let yy = 0; yy < ss; yy++) {
-          const py = y + (yy + 0.5) / ss;
-          for (let xx = 0; xx < ss; xx++) {
-            const px = x + (xx + 0.5) / ss;
-            const dx = px - c.cx;
-            const dy = py - c.cy;
-            if (dx * dx + dy * dy <= rr) covered++;
+        if (s.kind === "circle") {
+          const rr = s.r * s.r;
+          for (let yy = 0; yy < ss; yy++) {
+            const py = y + (yy + 0.5) / ss;
+            for (let xx = 0; xx < ss; xx++) {
+              const px = x + (xx + 0.5) / ss;
+              const dx = px - s.cx;
+              const dy = py - s.cy;
+              if (dx * dx + dy * dy <= rr) covered++;
+            }
           }
+        } else {
+          // Axis-aligned rect: exact analytic pixel coverage.
+          const ox = Math.max(0, Math.min(x + 1, s.x + s.w) - Math.max(x, s.x));
+          const oy = Math.max(0, Math.min(y + 1, s.y + s.h) - Math.max(y, s.y));
+          covered = ox * oy * samples;
         }
         if (covered > 0) {
-          sourceOver(rgba, (y * width + x) * 4, c.rgba, (c.rgba[3] / 255) * (covered / samples));
+          const cov01 = covered / samples;
+          const i = (y * width + x) * 4;
+          if (s.hole) {
+            erase(rgba, i, cov01);
+          } else {
+            sourceOver(rgba, i, s.rgba, (s.rgba[3] / 255) * cov01);
+          }
         }
       }
     }

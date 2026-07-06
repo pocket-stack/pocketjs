@@ -349,7 +349,9 @@ impl<'a> Walker<'a> {
         // the node center.
         let mut local = Affine::translate(l.x + r.translate_x, l.y + r.translate_y);
         if r.rotate != 0.0 || r.scale != 1.0 || r.scale_x != 1.0 || r.scale_y != 1.0 {
-            let (cx, cy) = (l.w * 0.5, l.h * 0.5);
+            // Transform origin: node center offset by the origin fractions
+            // (`origin-*` utilities; e.g. origin-bottom = (0, +0.5)).
+            let (cx, cy) = (l.w * (0.5 + r.origin_x), l.h * (0.5 + r.origin_y));
             let rad = r.rotate * (PI / 180.0);
             // rotate == 0 keeps EXACT axis alignment (the trig polyfill is a
             // few ulp off at multiples of pi/2, which would silently demote

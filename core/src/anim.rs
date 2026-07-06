@@ -89,6 +89,88 @@ fn ease(easing: u8, t: f32) -> f32 {
     }
 }
 
+/// CSS cubic-bezier(x1, y1, x2, y2) sampled at time-progress `x` in [0,1].
+/// Solves x(t) = x by deterministic Newton iterations with a bisection
+/// fallback (control xs are inside [0,1] so x(t) is monotonic), then returns
+/// y(t). Pure f32 — same result on every host.
+pub fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, x: f32) -> f32 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+    // Polynomial coefficients: b(t) = ((a*t + b)*t + c)*t  with p0=0, p3=1.
+    let cx = 3.0 * x1;
+    let bx = 3.0 * (x2 - x1) - cx;
+    let ax = 1.0 - cx - bx;
+    let cy = 3.0 * y1;
+    let by = 3.0 * (y2 - y1) - cy;
+    let ay = 1.0 - cy - by;
+    let sample_x = |t: f32| ((ax * t + bx) * t + cx) * t;
+    let sample_dx = |t: f32| (3.0 * ax * t + 2.0 * bx) * t + cx;
+
+    // Newton from t = x (good seed for near-diagonal curves).
+    let mut t = x;
+    for _ in 0..8 {
+        let e = sample_x(t) - x;
+        if absf(e) < 1e-5 {
+            return ((ay * t + by) * t + cy) * t;
+        }
+        let d = sample_dx(t);
+        if absf(d) < 1e-6 {
+            break;
+        }
+        t -= e / d;
+        if !(0.0..=1.0).contains(&t) {
+            break;
+        }
+    }
+    // Bisection fallback (monotonic x(t) on [0,1]).
+    let (mut lo, mut hi) = (0.0f32, 1.0f32);
+    t = x;
+    for _ in 0..24 {
+        let e = sample_x(t) - x;
+        if absf(e) < 1e-5 {
+            break;
+        }
+        if e > 0.0 {
+            hi = t;
+        } else {
+            lo = t;
+        }
+        t = (lo + hi) * 0.5;
+    }
+    ((ay * t + by) * t + cy) * t
+}
+
+/// Sample one baked timeline track at `lt` frames into the iteration.
+/// Holds segments[0].from before the first segment, the previous segment's
+/// `to` in gaps, and last.to at/after the final segment end.
+pub fn sample_track(track: &crate::style::TimelineTrack, lt: u32, is_color: bool) -> u32 {
+    let segs = &track.segments;
+    let mut value = segs[0].from;
+    for seg in segs.iter() {
+        if lt < seg.t0 as u32 {
+            break;
+        }
+        if lt >= seg.t1 as u32 {
+            value = seg.to;
+            continue;
+        }
+        let t = (lt - seg.t0 as u32) as f32 / (seg.t1 - seg.t0) as f32;
+        const BEZIER: u8 = spec::Easing::CubicBezier as u8;
+        let f = if seg.easing == BEZIER {
+            let [x1, y1, x2, y2] = seg.bezier;
+            cubic_bezier(x1, y1, x2, y2, t)
+        } else {
+            ease(seg.easing, t)
+        };
+        return interp(seg.from, seg.to, f, is_color);
+    }
+    value
+}
+
 /// Interpolate between two raw payloads by eased progress `f` (may exceed
 /// [0,1] for OutBack/springs). Colors lerp per ABGR channel, clamped.
 pub fn interp(from: u32, to: u32, f: f32, is_color: bool) -> u32 {

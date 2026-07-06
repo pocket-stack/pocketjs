@@ -25,11 +25,14 @@ import {
   animBit,
   encodeStyleTable,
   f32Bits,
+  type AnimTimeline,
   type PropName,
+  type StyleAnimation,
   type StyleProp,
   type StyleRecord,
   type StyleTransition,
 } from "../spec/spec.ts";
+import { bakedTimelines, loopToFrames, resolveAnimation } from "./animation.ts";
 
 // ---------------------------------------------------------------------------
 // Font slots (build-assigned, pinned here — bake-font.ts uses the same table)
@@ -102,13 +105,32 @@ export function paletteColor(name: string): number | null {
   return abgr((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
 }
 
+/** Arbitrary color value: `[#777]` | `[#8899aa]` | `[#8899aaff]` -> ABGR, or null. */
+function arbitraryColor(part: string): number | null {
+  const m = /^\[#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\]$/.exec(part);
+  if (!m) return null;
+  let h = m[1];
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const a = h.length === 8 ? parseInt(h.slice(6, 8), 16) : 255;
+  return abgr(r, g, b, a);
+}
+
+/** Palette name OR arbitrary hex (`bg-[#888]`-style color utilities). */
+function colorValue(part: string): number | null {
+  return paletteColor(part) ?? arbitraryColor(part);
+}
+
 // ---------------------------------------------------------------------------
 // Token parser
 // ---------------------------------------------------------------------------
 
-/** Spacing-scale token part: `2` -> 8 (N*4 px), `[123px]`/`[123]` -> 123. */
+/** Spacing-scale token part: `2` -> 8 (N*4 px), `[123px]`/`[123]` -> 123.
+ *  Arbitrary values may be negative (`top-[-10px]`), scale steps may not. */
 function spacing(part: string): number | null {
-  const arb = /^\[(\d+(?:\.\d+)?)(?:px)?\]$/.exec(part);
+  const arb = /^\[(-?\d+(?:\.\d+)?)(?:px)?\]$/.exec(part);
   if (arb) return parseFloat(arb[1]);
   if (/^\d+(?:\.\d+)?$/.test(part)) return parseFloat(part) * 4;
   return null;
@@ -177,6 +199,13 @@ const EASE: Record<string, number> = {
 };
 const TEXT_ALIGN: Record<string, number> = {
   left: ENUMS.TextAlign.Left, center: ENUMS.TextAlign.Center, right: ENUMS.TextAlign.Right,
+};
+/** `origin-*` -> transform-origin as (x, y) fractions from the node center. */
+const ORIGINS: Record<string, [number, number]> = {
+  center: [0, 0],
+  top: [0, -0.5], bottom: [0, 0.5], left: [-0.5, 0], right: [0.5, 0],
+  "top-left": [-0.5, -0.5], "top-right": [0.5, -0.5],
+  "bottom-left": [-0.5, 0.5], "bottom-right": [0.5, 0.5],
 };
 
 /** Spacing-family prefixes -> prop ids (a single value may fan out to 2/4 props). */
@@ -281,21 +310,23 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
     case "bg": {
       const grad = /^gradient-to-([tblr])$/.exec(rest);
       if (grad) { D.push([PROP.gradDir, int(GRAD_DIR[grad[1]])]); return true; }
-      const c = paletteColor(rest);
+      const c = colorValue(rest);
       if (c === null) return false;
       D.push([PROP.bgColor, c]);
       return true;
     }
     case "from": case "to": {
-      const c = paletteColor(rest);
+      const c = colorValue(rest);
       if (c === null) return false;
       D.push([head === "from" ? PROP.gradFrom : PROP.gradTo, c]);
       return true;
     }
-    case "rounded":
-      if (!(rest in ROUNDED)) return false;
-      D.push([PROP.radius, px(ROUNDED[rest])]);
-      return true;
+    case "rounded": {
+      if (rest in ROUNDED) { D.push([PROP.radius, px(ROUNDED[rest])]); return true; }
+      const v = spacing(rest);
+      if (v !== null && rest.startsWith("[")) { D.push([PROP.radius, px(v)]); return true; }
+      return false;
+    }
     case "opacity": {
       const v = plainNum(rest);
       if (v === null || v > 100) return false;
@@ -303,7 +334,19 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
       return true;
     }
     case "border": {
-      const c = paletteColor(rest);
+      // Tailwind width steps (border-2/4/8) + arbitrary `border-[5]`;
+      // `border-[#...]` is an arbitrary color, not a width.
+      if (rest === "2" || rest === "4" || rest === "8") {
+        D.push([PROP.borderWidth, px(parseFloat(rest))]);
+        return true;
+      }
+      if (rest.startsWith("[") && !rest.startsWith("[#")) {
+        const w = spacing(rest);
+        if (w === null) return false;
+        D.push([PROP.borderWidth, px(w)]);
+        return true;
+      }
+      const c = colorValue(rest);
       if (c === null) return false;
       D.push([PROP.borderColor, c], [PROP.borderWidth, px(1)]);
       return true;
@@ -311,7 +354,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
     case "text": {
       if (rest in TEXT_ALIGN) { D.push([PROP.textAlign, int(TEXT_ALIGN[rest])]); return true; }
       if (rest in TEXT_SIZE_PX) { acc.sizePx = TEXT_SIZE_PX[rest]; return true; }
-      const c = paletteColor(rest);
+      const c = colorValue(rest);
       if (c === null) return false;
       D.push([PROP.textColor, c]);
       return true;
@@ -334,8 +377,41 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
       D.push([PROP.rotate, px(v)]);
       return true;
     }
+    case "origin": {
+      if (!(rest in ORIGINS)) return false;
+      const [ox, oy] = ORIGINS[rest];
+      D.push([PROP.originX, px(ox)], [PROP.originY, px(oy)]);
+      return true;
+    }
   }
   return false;
+}
+
+/** Literal-level animation accumulator (`animate-*` binds to the base style). */
+interface AnimAcc {
+  ids: number[];
+  loopFrames: number;
+}
+
+/**
+ * Parse an `animate-*` token. `animate-<name>` bakes the theme animation
+ * (comma list) into the ANIM TABLE; `animate-loop-[4s]`/`animate-loop-[4000ms]`
+ * sets the whole-choreography loop period (PocketJS extension). Unknown names
+ * make the literal a non-class string, like every other utility.
+ */
+function parseAnimation(tok: string, acc: AnimAcc): boolean {
+  if (!tok.startsWith("animate-")) return false;
+  const rest = tok.slice("animate-".length);
+  const loop = /^loop-\[([\d.]+m?s)\]$/.exec(rest);
+  if (loop) {
+    acc.loopFrames = loopToFrames(loop[1], `\`${tok}\``);
+    return true;
+  }
+  const resolved = resolveAnimation(rest);
+  if (resolved === null) return false;
+  acc.ids.push(...resolved.anims);
+  if (resolved.loopFrames > 0) acc.loopFrames = resolved.loopFrames;
+  return true;
 }
 
 /** Parse a motion token into the transition accumulator (base variant only). */
@@ -389,6 +465,7 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
     base: { decls: [] }, focus: { decls: [] }, active: { decls: [] },
   };
   const tr: TransitionAcc = {};
+  const anim: AnimAcc = { ids: [], loopFrames: 0 };
   let sawMotion = false;
   let sawHover = false;
 
@@ -410,6 +487,7 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
     }
     if (body.length === 0) return null;
     if (variant === "base" && parseMotion(body, tr)) { sawMotion = true; continue; }
+    if (variant === "base" && parseAnimation(body, anim)) continue;
     if (!parseUtility(body, acc[variant])) return null;
   }
 
@@ -464,7 +542,15 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
       easing: tr.easing ?? ENUMS.Easing.EaseInOut,
     } satisfies StyleTransition;
   }
-  if (!rec.base && !rec.focus && !rec.active && !rec.transition) return null;
+  if (anim.loopFrames > 0 && anim.ids.length === 0) {
+    throw new Error(
+      `PocketJS tailwind: \`animate-loop-[..]\` needs an \`animate-<name>\` in the same literal ("${literal}").`,
+    );
+  }
+  if (anim.ids.length > 0) {
+    rec.animation = { anims: anim.ids, loopFrames: anim.loopFrames } satisfies StyleAnimation;
+  }
+  if (!rec.base && !rec.focus && !rec.active && !rec.transition && !rec.animation) return null;
   return rec;
 }
 
@@ -475,6 +561,8 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
 export interface CompiledStyles {
   /** styleId = index into this list (styles.bin record order). */
   records: StyleRecord[];
+  /** Baked keyframe timelines (styles.bin ANIM TABLE; records reference indices). */
+  anims: AnimTimeline[];
   /** Raw class literal (as written in source) -> styleId. */
   ids: Record<string, number>;
   /** styles.bin bytes (encodeStyleTable). */
@@ -508,10 +596,12 @@ export function compileClasses(literals: Iterable<string>): CompiledStyles {
     }
   }
 
+  const anims = bakedTimelines();
   return {
     records,
+    anims,
     ids,
-    bin: encodeStyleTable(records),
+    bin: encodeStyleTable(records, anims),
     usedFontSlots: [...slots].sort((a, b) => a - b),
   };
 }
