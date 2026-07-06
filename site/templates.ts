@@ -13,7 +13,7 @@ export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 
 export interface PageOpts {
   title: string | null; // null uses the bare wordmark (homepage)
-  active: string; // "home" | "docs" | "aot" | "playground"
+  active: string; // "home" | "docs" | "aot" | "playground" | "blog"
   body: string;
   bodyClass?: string;
   head?: string;
@@ -51,6 +51,7 @@ function header(active: string): string {
     <nav class="site-nav__links" aria-label="Primary">
       ${link("/docs/overview/", "Docs", "docs")}
       ${link("/playground/", "Playground", "playground")}
+      ${link("/blog/", "Blog", "blog")}
       <a href="/3d/" class="site-nav__link site-nav__3d ${active === "3d" ? "on" : ""}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="M12 12 21 7M12 12v10M12 12 3 7"/></svg><span>3D</span></a>
       <a href="${GH}" target="_blank" rel="noreferrer" class="site-nav__link site-nav__gh">${ghIcon}<span class="site-nav__ghlabel">GitHub</span></a>
       <a href="${X_URL}" target="_blank" rel="noreferrer" class="site-nav__link site-nav__x" aria-label="PocketJS on X">${xIcon}</a>
@@ -87,6 +88,7 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
       <div class="text-sm">
         <h4 class="mb-3 font-semibold text-slate-200">Project</h4>
         <ul class="space-y-2 text-slate-400">
+          <li><a class="hover:text-brand-2" href="/blog/">Blog</a></li>
           <li><a class="hover:text-brand-2" href="${GH}" target="_blank" rel="noreferrer">GitHub</a></li>
           <li><a class="hover:text-brand-2" href="${X_URL}" target="_blank" rel="noreferrer">X (Twitter)</a></li>
           <li><a class="hover:text-brand-2" href="/docs/native-contract/">Native contract</a></li>

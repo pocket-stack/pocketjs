@@ -29,7 +29,7 @@ import {
   vdomHelperId,
 } from "@vue-jsx-vapor/runtime/raw";
 import { OG_IMAGE_URL, SITE_DESC, SITE_TITLE, SITE_URL, renderPage } from "./templates.ts";
-import { AOT_DOC_NAV, DOC_NAV, type DocSection } from "./nav.ts";
+import { AOT_DOC_NAV, BLOG_POSTS, DOC_NAV, type DocSection } from "./nav.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // repo root
 const SITE = ROOT + "site/";
@@ -387,8 +387,10 @@ async function main() {
   copy(SITE + "assets/aot-demo.js", "assets/aot-demo.js");
   copyAotAssets();
 
-  // 9. docs
-  await buildDocs();
+  // 9. docs + blog (setupMarkdown installs the shared marked/shiki renderer)
+  const highlight = await setupMarkdown();
+  await buildDocs(highlight);
+  await buildBlog();
 
   // 9b. 404
   write("404.html", renderPage({
@@ -569,10 +571,12 @@ const IMPORT_MAP = `<script type="importmap">
 }}
 </script>`;
 
-async function buildDocs() {
-  // Syntax highlighting: Shiki (build-time, self-contained themed HTML) matched
-  // to the playground editor's one-dark-pro. Override marked's code renderer so
-  // every fenced block becomes a highlighted <pre class="shiki">.
+type Highlight = (text: string, rawLang: string) => string;
+
+// Syntax highlighting: Shiki (build-time, self-contained themed HTML) matched
+// to the playground editor's one-dark-pro. Installs marked's code renderer so
+// every fenced block (docs + blog) becomes a highlighted <pre class="shiki">.
+async function setupMarkdown(): Promise<Highlight> {
   const highlighter = await createHighlighter({
     themes: ["one-dark-pro"],
     langs: ["tsx", "typescript", "jsx", "javascript", "json", "bash", "rust", "toml", "html", "css", "diff"],
@@ -585,6 +589,18 @@ async function buildDocs() {
     const use = loaded.has(lang) ? lang : "text";
     return highlighter.codeToHtml(text, { theme: "one-dark-pro", lang: use });
   };
+  marked.use({
+    renderer: {
+      code(token: { text?: string; lang?: string }) {
+        const text = token.text ?? "";
+        return highlight(text, token.lang ?? "");
+      },
+    },
+  });
+  return highlight;
+}
+
+async function buildDocs(highlight: Highlight) {
   let frameworkCodeId = 0;
   const renderFrameworkCode = (markdown: string) =>
     markdown.replace(/:::framework-code\n([\s\S]*?)\n:::/g, (_match, body: string) => {
@@ -626,15 +642,6 @@ async function buildDocs() {
         .join("");
       return `<div class="doc-fw-code">${inputs}<div class="doc-fw-tabs" role="tablist">${tabs}</div><div class="doc-fw-panels">${panels}</div></div>`;
     });
-  marked.use({
-    renderer: {
-      code(token: { text?: string; lang?: string }) {
-        const text = token.text ?? "";
-        return highlight(text, token.lang ?? "");
-      },
-    },
-  });
-
   type DocsTree = {
     active: string;
     docsDir: string;
@@ -715,6 +722,77 @@ async function buildDocs() {
     robots: "noindex,nofollow",
     transformFrameworkCode: false,
   });
+}
+
+// --- blog: /blog/ index + one page per post from site/content/blog/<slug>.md.
+// Relies on the marked/shiki renderer installed by setupMarkdown().
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function formatPostDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${MONTHS[m - 1]} ${d}, ${y}`;
+}
+
+const BLOG_DESC = "Announcements and engineering notes from the PocketJS team.";
+async function buildBlog() {
+  const dir = SITE + "content/blog/";
+  const posts = [...BLOG_POSTS].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const rendered: typeof posts = [];
+  for (const post of posts) {
+    const md = dir + post.slug + ".md";
+    if (!existsSync(md)) {
+      console.warn(`  blog: MISSING ${post.slug}.md`);
+      continue;
+    }
+    const html = await marked.parse(readFileSync(md, "utf8"));
+    const body =
+      `<article class="mx-auto max-w-3xl px-5 py-14">` +
+      `<a href="/blog/" class="text-sm text-slate-400 hover:text-brand-2">&larr; Blog</a>` +
+      `<header class="mt-4 border-b border-line pb-8">` +
+      `<time datetime="${post.date}" class="font-mono text-xs uppercase tracking-wide text-slate-500">${formatPostDate(post.date)}</time>` +
+      `<h1 class="mt-3 text-4xl font-bold tracking-tight text-slate-100">${post.title}</h1>` +
+      `<p class="mt-4 text-lg text-slate-400">${post.description}</p>` +
+      `</header>` +
+      `<div class="prose prose-invert max-w-none doc-content mt-8">${html}</div>` +
+      `</article>`;
+    write(`blog/${post.slug}/index.html`, renderPage({
+      title: post.title,
+      active: "blog",
+      body,
+      bodyClass: "",
+      head: "",
+      scripts: [],
+      path: `/blog/${post.slug}/`,
+      description: post.description,
+    }));
+    rendered.push(post);
+  }
+  const cards = rendered
+    .map(
+      (p) =>
+        `<a href="/blog/${p.slug}/" class="group block rounded-xl border border-line bg-surface/60 p-6 transition-colors hover:border-brand">` +
+        `<time datetime="${p.date}" class="font-mono text-xs uppercase tracking-wide text-slate-500">${formatPostDate(p.date)}</time>` +
+        `<h2 class="mt-2 text-2xl font-bold text-slate-100 group-hover:text-brand-2">${p.title}</h2>` +
+        `<p class="mt-2 text-slate-400">${p.description}</p>` +
+        `<span class="mt-4 inline-block text-sm font-semibold text-brand-2">Read post &rarr;</span>` +
+        `</a>`,
+    )
+    .join("");
+  write("blog/index.html", renderPage({
+    title: "Blog",
+    active: "blog",
+    body:
+      `<section class="mx-auto max-w-3xl px-5 pb-20 pt-14">` +
+      `<h1 class="text-4xl font-bold tracking-tight text-slate-100">Blog</h1>` +
+      `<p class="mt-3 text-slate-400">${BLOG_DESC}</p>` +
+      `<div class="mt-10 grid gap-5">${cards}</div>` +
+      `</section>`,
+    bodyClass: "",
+    head: "",
+    scripts: [],
+    path: "/blog/",
+    description: BLOG_DESC,
+  }));
+  console.log(`  blog  (${rendered.length} posts)`);
 }
 
 await main();

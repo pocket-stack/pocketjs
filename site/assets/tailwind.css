@@ -1,8 +1,9 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-/* Scan every place a class can appear (TS template strings, HTML, JS glue). */
-@source "../**/*.{ts,html,js}";
+/* Scan every place a class can appear (TS template strings, HTML, JS glue,
+   raw HTML embedded in blog/docs markdown). */
+@source "../**/*.{ts,html,js,md}";
 
 @font-face {
   font-family: "Inter";

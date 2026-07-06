@@ -41,6 +41,25 @@ export const DOC_NAV: DocSection[] = [
   },
 ];
 
+// The blog registry. build.ts renders one page per post from
+// site/content/blog/<slug>.md plus the /blog/ index (newest first).
+export interface BlogPost {
+  slug: string;
+  title: string;
+  date: string; // ISO yyyy-mm-dd
+  description: string;
+}
+
+export const BLOG_POSTS: BlogPost[] = [
+  {
+    slug: "introducing-pocketjs",
+    title: "Introducing PocketJS",
+    date: "2026-07-06",
+    description:
+      "Real Solid and Vue Vapor components, a compile-time Tailwind design system, and 60 FPS native animation on a 2004 handheld — inside 8 MB. What PocketJS is, and what's actually new in it.",
+  },
+];
+
 export const AOT_DOC_NAV: DocSection[] = [
   {
     title: "Product line",
