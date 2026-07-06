@@ -26,6 +26,9 @@
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 4.7 18 5 18 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
           <span class="lp-nav__ghlabel">GitHub</span>
         </a>
+        <a class="lp-nav__link lp-nav__x" href="https://x.com/pocket_js" target="_blank" rel="noreferrer" aria-label="PocketJS on X">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        </a>
       </nav>
     </div>
   </header>
@@ -52,16 +55,16 @@
             Explore OpenStrike
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </a>
-          <a class="lp-btn lp-btn--ghost" href="https://github.com/pocket-stack/pocketjs/blob/jealous-burn/RUNTIMES.md" target="_blank" rel="noreferrer">
+          <a class="lp-btn lp-btn--ghost" href="https://github.com/pocket-stack/pocketjs/blob/main/RUNTIMES.md" target="_blank" rel="noreferrer">
             How it works
           </a>
         </div>
 
         <figure class="p3d-hero-figure">
           <div class="p3d-hero-glow" aria-hidden="true"></div>
-          <img class="p3d-hero-shot" src="/assets/os-inferno.jpg" width="1600" height="900" decoding="async"
-               alt="OpenStrike rendering de_inferno in Pocket3D — three enemies advancing across a stone courtyard, muzzle flash, and the PocketJS HUD (health, ammo, hostiles)." />
-          <figcaption class="p3d-hero-cap">OpenStrike · <span class="lp-mono">de_inferno</span> · Pocket3D world + PocketJS HUD, one frame</figcaption>
+          <img class="p3d-hero-shot" src="/assets/os-dust.jpg" width="1600" height="900" decoding="async"
+               alt="OpenStrike rendering de_dust in Pocket3D — a wide sunlit desert courtyard with arches, crates and an open blue sky." />
+          <figcaption class="p3d-hero-cap">OpenStrike · <span class="lp-mono">de_dust</span> · a single Pocket3D frame — BSP world, lightmaps, viewmodel</figcaption>
         </figure>
       </div>
     </section>
@@ -86,13 +89,35 @@
               </li>
             </ul>
           </div>
-          <div class="lp-codecard lp-reveal">
-            <div class="lp-codecard__bar">
-              <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
-              <span class="lp-codecard__name">hud.tsx over de_dust2</span>
+          <div class="p3d-hud-stack lp-reveal">
+            <div class="lp-codecard">
+              <div class="lp-codecard__bar">
+                <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
+                <span class="lp-codecard__name">game/hud.tsx</span>
+              </div>
+              <pre class="lp-code"><code><span class="lp-code-mut">// hud.tsx — a PocketJS app, drawn over the 3D frame.</span>
+<span class="lp-k">const</span> [<span class="lp-t">st</span>, <span class="lp-f">setSt</span>] = <span class="lp-f">createSignal</span>(<span class="lp-t">strike</span>.<span class="lp-f">state</span>());
+<span class="lp-f">onFrame</span>(() <span class="lp-k">=&gt;</span> <span class="lp-f">setSt</span>({ ...<span class="lp-t">strike</span>.<span class="lp-f">state</span>() }));
+
+<span class="lp-k">return</span> (
+  <span class="lp-code-mut">&lt;</span><span class="lp-t">View</span> <span class="lp-a">class</span>=<span class="lp-s">"absolute inset-0 flex-col p-6"</span><span class="lp-code-mut">&gt;</span>
+    <span class="lp-code-mut">{/* live hostile count, top-right */}</span>
+    <span class="lp-code-mut">&lt;</span><span class="lp-t">Text</span> <span class="lp-a">style</span>={{ <span class="lp-a">textColor</span>: <span class="lp-t">AMBER</span> }}<span class="lp-code-mut">&gt;</span>
+      {<span class="lp-s">"HOSTILES "</span> + <span class="lp-t">st</span>().aliveBots + <span class="lp-s">"/"</span> + <span class="lp-t">st</span>().totalBots}
+    <span class="lp-code-mut">&lt;/</span><span class="lp-t">Text</span><span class="lp-code-mut">&gt;</span>
+    <span class="lp-code-mut">{/* health, bottom-left */}</span>
+    <span class="lp-code-mut">&lt;</span><span class="lp-t">Text</span> <span class="lp-a">class</span>=<span class="lp-s">"text-4xl font-bold"</span>
+          <span class="lp-a">style</span>={{ <span class="lp-a">textColor</span>: <span class="lp-f">hpColor</span>() }}<span class="lp-code-mut">&gt;</span>
+      {<span class="lp-t">Math</span>.<span class="lp-f">max</span>(<span class="lp-n">0</span>, <span class="lp-t">st</span>().hp)}
+    <span class="lp-code-mut">&lt;/</span><span class="lp-t">Text</span><span class="lp-code-mut">&gt;</span>
+  <span class="lp-code-mut">&lt;/</span><span class="lp-t">View</span><span class="lp-code-mut">&gt;</span>
+);</code></pre>
             </div>
-            <img class="lp-shot" src="/assets/os-dust2.jpg" width="1600" height="900" decoding="async"
-                 alt="OpenStrike on de_dust2: a shaft of light, three advancing enemies, muzzle flash, and the PocketJS HUD showing HP 100 and ammo 29/90." />
+            <figure class="p3d-shot">
+              <img src="/assets/os-dust2.jpg" width="1600" height="900" decoding="async"
+                   alt="OpenStrike on de_dust2: a shaft of light, three advancing enemies, muzzle flash, and the PocketJS HUD showing HP and ammo." />
+              <figcaption>…and that's the HUD, composited over <span class="lp-mono">de_dust2</span></figcaption>
+            </figure>
           </div>
         </div>
       </div>
@@ -146,8 +171,8 @@
         </div>
         <div class="p3d-gallery lp-reveal">
           <figure class="p3d-shot p3d-shot--wide">
-            <img src="/assets/os-dust.jpg" width="1600" height="900" decoding="async" alt="OpenStrike on de_dust — a wide sunlit desert courtyard with arches, crates and a blue sky." />
-            <figcaption><span class="lp-mono">de_dust</span> · open desert vista</figcaption>
+            <img src="/assets/os-inferno.jpg" width="1600" height="900" decoding="async" alt="OpenStrike on de_inferno — three enemies advancing across a lightmapped stone courtyard, muzzle flash, and the PocketJS HUD." />
+            <figcaption><span class="lp-mono">de_inferno</span> · courtyard firefight, HUD live</figcaption>
           </figure>
           <figure class="p3d-shot">
             <img src="/assets/os-dust2-arch.jpg" width="1600" height="900" decoding="async" alt="OpenStrike on de_dust2 — a stone tunnel with a carved arch, crates and lightmapped walls." />
@@ -170,7 +195,7 @@
         <p>OpenStrike is the first specialized runtime on the Pocket3D base — its own repo, its rules and HUD in TypeScript, the engine pinned as a submodule.</p>
         <div class="lp-cta__btns">
           <a class="lp-btn lp-btn--primary" href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">OpenStrike on GitHub</a>
-          <a class="lp-btn lp-btn--ghost" href="https://github.com/pocket-stack/pocketjs/blob/jealous-burn/RUNTIMES.md" target="_blank" rel="noreferrer">The runtime family</a>
+          <a class="lp-btn lp-btn--ghost" href="https://github.com/pocket-stack/pocketjs/blob/main/RUNTIMES.md" target="_blank" rel="noreferrer">The runtime family</a>
         </div>
       </div>
     </section>
@@ -200,8 +225,8 @@
           <h4>3D</h4>
           <ul>
             <li><a href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">OpenStrike</a></li>
-            <li><a href="https://github.com/pocket-stack/pocketjs/tree/jealous-burn/pocket3d" target="_blank" rel="noreferrer">Pocket3D</a></li>
-            <li><a href="https://github.com/pocket-stack/pocketjs/blob/jealous-burn/RUNTIMES.md" target="_blank" rel="noreferrer">Runtime family</a></li>
+            <li><a href="https://github.com/pocket-stack/pocketjs/tree/main/pocket3d" target="_blank" rel="noreferrer">Pocket3D</a></li>
+            <li><a href="https://github.com/pocket-stack/pocketjs/blob/main/RUNTIMES.md" target="_blank" rel="noreferrer">Runtime family</a></li>
           </ul>
         </div>
         <div>
@@ -216,6 +241,7 @@
           <h4>Project</h4>
           <ul>
             <li><a href="https://github.com/pocket-stack/pocketjs" target="_blank" rel="noreferrer">GitHub</a></li>
+            <li><a href="https://x.com/pocket_js" target="_blank" rel="noreferrer">X (Twitter)</a></li>
             <li><a href="/docs/architecture/">Architecture</a></li>
           </ul>
         </div>

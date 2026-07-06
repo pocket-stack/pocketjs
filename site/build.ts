@@ -464,7 +464,7 @@ ${body}
 const P3D_TITLE = "Pocket3D — Native 3D, scripted in TypeScript";
 const P3D_DESC =
   "Pocket3D is a small, fast Rust renderer for 3D worlds — with the PocketJS UI stack rendering your game's HUD on top and gameplay written as TypeScript mods. OpenStrike, a CS-like FPS on classic BSP maps, is the proof.";
-const P3D_OG = `${SITE_URL}/assets/os-inferno.jpg`;
+const P3D_OG = `${SITE_URL}/assets/os-dust.jpg`;
 function renderPocket3dHome(): string {
   const body = readFileSync(SITE + "3d.html", "utf8");
   const jsonLd = JSON.stringify({
@@ -493,7 +493,7 @@ function renderPocket3dHome(): string {
 <meta property="og:image" content="${P3D_OG}">
 <meta property="og:image:width" content="1600">
 <meta property="og:image:height" content="900">
-<meta property="og:image:alt" content="OpenStrike rendering de_inferno in Pocket3D with the PocketJS HUD">
+<meta property="og:image:alt" content="OpenStrike rendering de_dust in Pocket3D — a Pocket3D world with the PocketJS HUD">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${P3D_TITLE}">
 <meta name="twitter:description" content="${P3D_DESC}">

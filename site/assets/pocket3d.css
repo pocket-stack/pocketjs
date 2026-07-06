@@ -25,9 +25,10 @@
 }
 
 /* ---- Hero screenshot ------------------------------------------------------ */
-.p3d-hero-figure {
+/* .p3d scope beats the `.lp figure { margin: 0 }` reset in home.css. */
+.p3d .p3d-hero-figure {
   position: relative;
-  margin: clamp(2.2rem, 5vw, 3.6rem) auto 0;
+  margin: clamp(2.5rem, 4.3vw, 4rem) auto 0;
   max-width: 1040px;
 }
 .p3d-hero-glow {
@@ -52,6 +53,16 @@
   color: var(--muted);
 }
 .p3d-hero-cap .lp-mono { color: var(--ink-2); }
+
+/* Pillar 1 stacks the HUD source over the screenshot it produces, so the code
+   and the pixels it draws read as one column. */
+.p3d-hud-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+.p3d-hud-stack .p3d-shot { box-shadow: 0 30px 60px -44px rgba(3, 9, 20, 0.9); }
 
 /* Pillar 2 places the code card first in the DOM, so it naturally sits on
    the left — an alternating rhythm against pillar 1's right-hand screenshot. */
@@ -84,14 +95,17 @@
   width: 100%;
   height: auto;
 }
+/* Caption rides the top-left: these frames carry their in-game HUD (HP, ammo)
+   along the bottom, so a bottom caption would occlude it. Scores sit top-right,
+   leaving the top-left clear. */
 .p3d-shot figcaption {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
-  padding: 1.6rem 1rem 0.75rem;
+  top: 0;
+  padding: 0.8rem 1rem 1.8rem;
   font-size: 12.5px;
   color: var(--ink-2);
-  background: linear-gradient(180deg, transparent, rgba(5, 7, 13, 0.86));
+  background: linear-gradient(180deg, rgba(5, 7, 13, 0.9), transparent);
 }
 .p3d-shot figcaption .lp-mono { color: #a9e7ff; }
