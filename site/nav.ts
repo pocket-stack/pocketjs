@@ -48,6 +48,7 @@ export interface BlogPost {
   title: string;
   date: string; // ISO yyyy-mm-dd
   description: string;
+  author: { name: string; url: string };
 }
 
 export const BLOG_POSTS: BlogPost[] = [
@@ -57,6 +58,7 @@ export const BLOG_POSTS: BlogPost[] = [
     date: "2026-07-06",
     description:
       "Real Solid and Vue Vapor components, a compile-time Tailwind design system, and 60 FPS native animation on a 2004 handheld — inside 8 MB. What PocketJS is, and what's actually new in it.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
   },
 ];
 

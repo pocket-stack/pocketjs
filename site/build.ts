@@ -751,6 +751,7 @@ async function buildBlog() {
       `<time datetime="${post.date}" class="font-mono text-xs uppercase tracking-wide text-slate-500">${formatPostDate(post.date)}</time>` +
       `<h1 class="mt-3 text-4xl font-bold tracking-tight text-slate-100">${post.title}</h1>` +
       `<p class="mt-4 text-lg text-slate-400">${post.description}</p>` +
+      `<p class="mt-4 text-sm text-slate-400">Written by <a class="font-semibold text-slate-200 hover:text-brand-2" href="${post.author.url}" target="_blank" rel="noreferrer">${post.author.name}</a></p>` +
       `</header>` +
       `<div class="prose prose-invert max-w-none doc-content mt-8">${html}</div>` +
       `</article>`;
