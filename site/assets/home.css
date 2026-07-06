@@ -359,6 +359,27 @@ a.lp-btn--primary:hover {
   gap: 0.85rem;
   margin-top: 2.1rem;
 }
+.lp-hero__pip {
+  position: absolute;
+  top: clamp(1.25rem, 2.8vw, 2.5rem);
+  right: clamp(1rem, 3vw, 3rem);
+  z-index: 2;
+  width: clamp(250px, 23vw, 390px);
+  aspect-ratio: 1280 / 684;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: #05070d;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+.lp-hero__pip-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.92;
+  filter: saturate(0.98) contrast(1.02);
+}
 
 /* ---- Live-demo stage ------------------------------------------------------ */
 .lp-stage {
@@ -383,6 +404,15 @@ a.lp-btn--primary:hover {
 .lp-stage__frame {
   position: relative;
   z-index: 1;
+}
+@media (max-width: 1120px) {
+  .lp-hero__pip {
+    position: relative;
+    top: auto;
+    right: auto;
+    width: min(420px, 86vw);
+    margin: 1.6rem auto 0.8rem;
+  }
 }
 /* ---- Section scaffolding -------------------------------------------------- */
 .lp-section { padding: clamp(4.5rem, 10vw, 8rem) 0; }

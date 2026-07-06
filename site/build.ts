@@ -270,7 +270,7 @@ function demoManifest() {
     const main = dir + name + "/main.tsx";
     if (!existsSync(app)) continue;
     const source = inlinePlaygroundImports(name, readFileSync(app, "utf8"));
-    if (source === null) continue; // multi-file demo (launcher)
+    if (source === null) continue; // multi-file demo
     let title = name[0].toUpperCase() + name.slice(1);
     if (existsSync(main)) {
       const mainSource = readFileSync(main, "utf8");
@@ -339,7 +339,7 @@ async function main() {
 
   // 4. prebuilt showcase bundles for the homepage hero. Reuse dist/ when
   //    present, and build missing bundles so the site never emits 404 demos.
-  const showcase = ["gallery-main", "settings-main", "launcher-main", "music-main"];
+  const showcase = ["gallery-main", "settings-main", "hero-main", "music-main"];
   for (const s of showcase) {
     copyShowcaseBundle(s);
   }
@@ -353,6 +353,7 @@ async function main() {
   for (const asset of ["os-inferno.jpg", "os-dust2.jpg", "os-office.jpg", "os-dust.jpg", "os-dust2-arch.jpg"]) {
     if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, "assets/" + asset);
   }
+  copy(SITE + "assets/pocketjs-hardware-demo.mp4", "assets/pocketjs-hardware-demo.mp4");
 
   // 6. playground page
   write("playground/index.html", renderPage({

@@ -17,7 +17,7 @@
 // ms0:/PocketJS-bench.jsonl and implies --capture.
 
 import { $ } from "bun";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -30,10 +30,25 @@ import type { PocketConfig } from "../src/config.ts";
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
 const nativeDir = pspUiDir + "native/";
 const root = new URL("../..", import.meta.url).pathname; // parent of PocketJS checkout
+const home = process.env.HOME ?? "";
+
+function dreamcartWorktreeSdkCandidates(): string[] {
+  const base = root + "../dreamcart/";
+  try {
+    return readdirSync(base, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => `${base}${entry.name}/mipsel-sony-psp`);
+  } catch {
+    return [];
+  }
+}
+
 const sdkCandidates = [
   process.env.PSP_SDK,
   root + "mipsel-sony-psp",
   root + "dreamcart/mipsel-sony-psp",
+  home ? `${home}/code/dreamcart/mipsel-sony-psp` : "",
+  ...dreamcartWorktreeSdkCandidates(),
 ].filter((p): p is string => !!p);
 const sdk =
   sdkCandidates.find((p) => existsSync(`${p}/psp/lib/libc.a`)) ??
@@ -42,7 +57,6 @@ const sdk =
 const llvm = existsSync("/opt/homebrew/opt/llvm/bin")
   ? "/opt/homebrew/opt/llvm/bin"
   : "/usr/local/opt/llvm/bin";
-const home = process.env.HOME ?? "";
 const pspTarget = nativeDir + "targets/mipsel-sony-psp.json";
 
 const TOOLCHAIN = "nightly-2026-05-28";
@@ -116,7 +130,7 @@ function mountedAppName(arg: string): string {
   return arg;
 }
 
-const app = mountedAppName(appArg);
+const app = appArg ? mountedAppName(appArg) : "";
 
 async function loadConfig(): Promise<PocketConfig> {
   if (!useConfig || !existsSync(configPath)) return {};
@@ -138,6 +152,7 @@ const outputApp = `${app}${FRAMEWORKS[framework].outputSuffix}`;
 
 console.log(`PocketJS psp: building app "${app}" (framework=${framework})`);
 await $`bun scripts/build.ts ${app} ${buildFlags}`.cwd(pspUiDir);
+cargoArgs.push("--bin", "pocketjs-psp");
 
 // ---------------------------------------------------------------------------
 // 2. cargo psp with the dreamcart cross env (copied from runtime/build.ts)
@@ -198,5 +213,9 @@ console.log(`PocketJS psp: cargo psp (app=${outputApp})`);
 await $`${rustup} run ${TOOLCHAIN} cargo psp ${cargoArgs}`.cwd(nativeDir).env(env);
 
 const profile = outputProfile(cargoArgs);
-const eboot = `${nativeDir}target/mipsel-sony-psp/${profile}/EBOOT.PBP`;
-console.log(`output: ${eboot}`);
+const binEboot = `${nativeDir}target/mipsel-sony-psp/${profile}/pocketjs-psp.EBOOT.PBP`;
+const conventionalEboot = `${nativeDir}target/mipsel-sony-psp/${profile}/EBOOT.PBP`;
+if (existsSync(binEboot)) {
+  await Bun.write(conventionalEboot, await Bun.file(binEboot).arrayBuffer());
+}
+console.log(`output: ${conventionalEboot}`);

@@ -16,6 +16,8 @@ in [RUNTIMES.md](./RUNTIMES.md); the 3D base lives in
 
 ## Screenshots
 
+https://github.com/user-attachments/assets/dbbf656f-a3b2-411d-ab52-fece6a10f68a
+
 These PocketJS UIs run smoothly at 60 FPS on a Sony PSP within an 8 MB memory
 budget, including animated transitions and input feedback.
 
@@ -83,15 +85,15 @@ component lifecycle come from the native framework package (`solid-js` or
 `vue`); PocketJS supplies host components, input, animation, assets and native
 runtime wiring.
 
-`@pocketjs/framework/components` also exposes small app-shell primitives used by
-`demos/launcher`: `Screen`, `Focusable`, `FocusScope`, `ActionHandler`,
-`FocusGrid`, `Portal`, `Modal`, and `ActionBar`. `FocusGrid` gives a subtree
-explicit row/column d-pad traversal today; a virtualized grid can sit behind the
-same focus contract later. `Portal` mounts into the runtime overlay root, so
-modal/action-bar UI never participates in the active screen's flex layout.
-`Modal` owns a focus scope and blocks background button handlers while leaving
-frame animation lifecycle callbacks running; route switching is still ordinary app state, not
-a required router package.
+`@pocketjs/framework/components` also exposes small app-shell primitives:
+`Screen`, `Focusable`, `FocusScope`, `ActionHandler`, `FocusGrid`, `Portal`,
+`Modal`, and `ActionBar`. `FocusGrid` gives a subtree explicit row/column d-pad
+traversal today; a virtualized grid can sit behind the same focus contract
+later. `Portal` mounts into the runtime overlay root, so modal/action-bar UI
+never participates in the active screen's flex layout. `Modal` owns a focus
+scope and blocks background button handlers while leaving frame animation
+lifecycle callbacks running; route switching is still ordinary app state, not a
+required router package.
 
 ## Commands
 
@@ -99,6 +101,7 @@ a required router package.
 bun run test                          # spec contract + tailwind parser tests
 bun scripts/build.ts <app> [--framework=solid|vue-vapor] [--extra-chars=…]
 bun run psp / bun run dev / bun run wasm      # EBOOT / web host / wasm core
+bun psplink                           # interactive real PSP switcher over PSPLINK
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
 ```
