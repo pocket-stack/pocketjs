@@ -1,0 +1,20 @@
+[package]
+name = "pocketjs-vita"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Vita dependencies
+vitasdk-sys = { version = "0.3.3", features = ["SceCtrl_stub"] }
+vita2d-sys = "0.1.1"
+
+libquickjs-sys = { path = "../../quickjs-rs/libquickjs-sys" }
+pocketjs-core = { path = "../core", features = ["std"] }
+
+[features]
+capture = []
+bench = []
+
+[package.metadata.vita]
+title_id = "PCKT00001"
+title_name = "PocketJS"

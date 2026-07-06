@@ -29,6 +29,7 @@
     "psp": "bun scripts/psp.ts",
     "psp:all": "bun scripts/psp-all.ts",
     "psp:switch": "bun psplink",
+    "vita": "bun scripts/vita.ts",
     "hw": "bun scripts/hw.ts",
     "dev": "bun scripts/dev.ts",
     "wasm": "bun scripts/wasm.ts",
