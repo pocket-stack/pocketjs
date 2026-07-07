@@ -150,6 +150,48 @@ async function buildDemo(demo: Demo, opts: Options): Promise<void> {
   await Bun.write(demo.prx, await Bun.file(source).arrayBuffer());
 }
 
+/** Newest mtime (ms) under `dir`, skipping build outputs and caches. */
+function newestMtime(dir: string): number {
+  if (!existsSync(dir)) return 0;
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "target") continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      newest = Math.max(newest, newestMtime(path));
+    } else if (/\.(tsx?|rs|json|svg|toml)$/.test(entry.name) && !entry.name.endsWith(".generated.ts")) {
+      newest = Math.max(newest, statSync(path).mtimeMs);
+    }
+  }
+  return newest;
+}
+
+/** A cached PRX is stale when any input that bakes into it is newer: the
+ *  demo's sources, the TS runtime/compiler/spec, the Rust core or the PSP
+ *  host. (The old exists-only check kept serving builds from hours ago.) */
+function prxStale(demo: Demo): boolean {
+  if (!existsSync(demo.prx)) return true;
+  const built = statSync(demo.prx).mtimeMs;
+  const inputs = [
+    join(DEMOS_DIR, demo.name),
+    join(DEMOS_DIR, `${demo.name}${MAIN_SUFFIX}`),
+    join(ROOT, "src"),
+    join(ROOT, "compiler"),
+    join(ROOT, "spec"),
+    join(ROOT, "core/src"),
+    join(ROOT, "native/src"),
+    join(ROOT, "native/build.rs"),
+    join(ROOT, "pocket.config.ts"),
+  ];
+  for (const input of inputs) {
+    const newest = existsSync(input) && statSync(input).isFile()
+      ? statSync(input).mtimeMs
+      : newestMtime(input);
+    if (newest > built) return true;
+  }
+  return false;
+}
+
 async function prepareCache(demos: Demo[], opts: Options, render?: (status: string) => void): Promise<void> {
   if (opts.rebuild) rmSync(OUT_ROOT, { recursive: true, force: true });
   mkdirSync(OUT_ROOT, { recursive: true });
@@ -164,7 +206,7 @@ async function prepareCache(demos: Demo[], opts: Options, render?: (status: stri
   if (!opts.buildAll) return;
 
   for (const [index, demo] of demos.entries()) {
-    if (!opts.rebuild && existsSync(demo.prx)) continue;
+    if (!opts.rebuild && !prxStale(demo)) continue;
     render?.(`building ${demo.name} (${index + 1}/${demos.length})`);
     await buildDemo(demo, opts);
   }
@@ -474,8 +516,9 @@ async function main(): Promise<void> {
   const picker = new Picker(
     demos,
     async (demo, _index, render) => {
-      if (!existsSync(demo.prx)) {
-        if (opts.noBuild) throw new Error(`missing ${basename(demo.prx)} and --no-build was set`);
+      if (opts.noBuild) {
+        if (!existsSync(demo.prx)) throw new Error(`missing ${basename(demo.prx)} and --no-build was set`);
+      } else if (prxStale(demo)) {
         render(`building ${demo.name}`);
         await buildDemo(demo, opts);
       }
