@@ -170,6 +170,8 @@ struct BenchState {
     render_sum_us: u64,
     work_sum_us: u64,
     max_work_us: u64,
+    gpu_sum_us: u64,
+    max_gpu_us: u64,
 }
 
 #[cfg(feature = "bench")]
@@ -188,6 +190,8 @@ impl BenchState {
             render_sum_us: 0,
             work_sum_us: 0,
             max_work_us: 0,
+            gpu_sum_us: 0,
+            max_gpu_us: 0,
         }
     }
 }
@@ -268,6 +272,7 @@ unsafe fn bench_record_frame(
     after_tick: u64,
     after_draw: u64,
     after_render: u64,
+    present_us: u64,
 ) {
     let (start, n) = bench_window();
     if frame_count < start || frame_count >= start + n {
@@ -277,8 +282,8 @@ unsafe fn bench_record_frame(
     let jobs_us = after_jobs.saturating_sub(after_js);
     let tick_us = after_tick.saturating_sub(after_jobs);
     let draw_us = after_draw.saturating_sub(after_tick);
-    let render_us = after_render.saturating_sub(after_draw);
-    let work_us = after_render.saturating_sub(t0);
+    let render_us = after_render.saturating_sub(after_draw).saturating_sub(present_us);
+    let work_us = after_render.saturating_sub(t0).saturating_sub(present_us);
     BENCH.frames = BENCH.frames.saturating_add(1);
     BENCH.js_sum_us = BENCH.js_sum_us.saturating_add(js_us);
     BENCH.jobs_sum_us = BENCH.jobs_sum_us.saturating_add(jobs_us);
@@ -288,6 +293,18 @@ unsafe fn bench_record_frame(
     BENCH.work_sum_us = BENCH.work_sum_us.saturating_add(work_us);
     if work_us > BENCH.max_work_us {
         BENCH.max_work_us = work_us;
+    }
+}
+
+#[cfg(feature = "bench")]
+unsafe fn bench_record_gpu(frame_count: u32, gpu_us: u64) {
+    let (start, n) = bench_window();
+    if frame_count < start || frame_count >= start + n {
+        return;
+    }
+    BENCH.gpu_sum_us = BENCH.gpu_sum_us.saturating_add(gpu_us);
+    if gpu_us > BENCH.max_gpu_us {
+        BENCH.max_gpu_us = gpu_us;
     }
 }
 
@@ -305,7 +322,7 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
     let frames = BENCH.frames as u64;
     let arena_stats = arena::stats();
     let line = alloc::format!(
-        "{{\"app\":\"{}\",\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"bundle_bytes\":{},\"pak_bytes\":{},\"arena_capacity_bytes\":{},\"arena_bump_bytes\":{},\"arena_tail_free_bytes\":{},\"arena_init_free_bytes\":{},\"arena_configured_bytes\":{}}}\n",
+        "{{\"app\":\"{}\",\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"avg_gpu_us\":{},\"max_gpu_us\":{},\"bundle_bytes\":{},\"pak_bytes\":{},\"arena_capacity_bytes\":{},\"arena_bump_bytes\":{},\"arena_tail_free_bytes\":{},\"arena_init_free_bytes\":{},\"arena_configured_bytes\":{}}}\n",
         POCKETJS_APP_NAME,
         BENCH.frames,
         start,
@@ -320,6 +337,8 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
         BENCH.render_sum_us / frames,
         BENCH.work_sum_us / frames,
         BENCH.max_work_us,
+        BENCH.gpu_sum_us / frames,
+        BENCH.max_gpu_us,
         APP_JS.len().saturating_sub(1),
         APP_PAK.len(),
         arena_stats.capacity_bytes,
@@ -487,11 +506,6 @@ unsafe fn run() {
         #[cfg(feature = "capture")]
         let mask = capture_input_mask(frame_count, mask);
 
-        sys::sceGuStart(GuContextType::Direct, &mut LIST as *mut _ as *mut c_void);
-        if frame_count == 0 {
-            trace("frame 0: gu start ok");
-        }
-
         let mut args = [JS_NewInt32(ctx, mask)];
         let r = JS_Call(ctx, frame_fn, global, 1, args.as_mut_ptr());
         #[cfg(feature = "bench")]
@@ -540,6 +554,50 @@ unsafe fn run() {
         if frame_count == 0 {
             trace("frame 0: ui draw ok");
         }
+
+        // ---- PIPELINED PRESENT: the GE has been executing frame N-1's list
+        // while the JS/tick/draw above ran. Only NOW wait for it, present it,
+        // then kick frame N's list and loop straight into frame N+1's CPU
+        // work. Wall time ~= max(CPU, GE) instead of CPU + GE; one frame of
+        // latency, the standard PSP double-buffered-list pattern. The vertex
+        // pool and the display-list buffer are reused only after the sync, so
+        // single instances of both stay sufficient.
+        #[cfg(feature = "bench")]
+        let bench_before_sync = bench_now_us();
+        sys::sceGuSync(GuSyncMode::Finish, GuSyncBehavior::Wait);
+        #[cfg(feature = "bench")]
+        bench_record_gpu(frame_count, bench_now_us().saturating_sub(bench_before_sync));
+        if frame_count == 0 {
+            trace("frame 0: gu sync (previous list) ok");
+        }
+        sys::sceDisplayWaitVblankStart();
+        if frame_count == 0 {
+            trace("frame 0: vblank ok");
+        }
+        sys::sceGuSwapBuffers();
+        #[cfg(feature = "bench")]
+        let bench_after_present = bench_now_us();
+        if frame_count == 0 {
+            trace("frame 0: swap ok");
+        }
+        // Capture build only (test/e2e-ppsspp.ts): the buffer just presented
+        // holds frame N-1 (the pipeline is one frame deep), so dump under
+        // that index — file fN keeps meaning "simulated frame N", and the
+        // baked input identity (input at frame N -> file fN) is preserved.
+        #[cfg(feature = "capture")]
+        if frame_count > 0 {
+            cap_dump_frame(frame_count.wrapping_sub(1));
+        }
+        // GE idle (sceGuSync above): rewind the per-frame bump vertex
+        // arena [R] and open frame N's list.
+        ge::reset_pool();
+        if frame_count == 0 {
+            trace("frame 0: pool reset ok");
+        }
+        sys::sceGuStart(GuContextType::Direct, &mut LIST as *mut _ as *mut c_void);
+        if frame_count == 0 {
+            trace("frame 0: gu start ok");
+        }
         ge::render(ffi::ui(), core::slice::from_raw_parts(words_ptr, words_len));
         #[cfg(feature = "bench")]
         let bench_after_render = bench_now_us();
@@ -552,32 +610,14 @@ unsafe fn run() {
             bench_after_tick,
             bench_after_draw,
             bench_after_render,
+            bench_after_present.saturating_sub(bench_before_sync),
         );
         if frame_count == 0 {
             trace("frame 0: rendered");
         }
-
-        sys::sceGuFinish();
+        sys::sceGuFinish(); // kick list N — the GE draws while frame N+1's CPU runs
         if frame_count == 0 {
-            trace("frame 0: gu finish ok");
-        }
-        sys::sceGuSync(GuSyncMode::Finish, GuSyncBehavior::Wait);
-        if frame_count == 0 {
-            trace("frame 0: gu sync ok");
-        }
-        sys::sceDisplayWaitVblankStart();
-        if frame_count == 0 {
-            trace("frame 0: vblank ok");
-        }
-        sys::sceGuSwapBuffers();
-        if frame_count == 0 {
-            trace("frame 0: swap ok");
-        }
-        // GE has finished reading (sceGuSync above): rewind the per-frame
-        // bump vertex arena [R].
-        ge::reset_pool();
-        if frame_count == 0 {
-            trace("frame 0: pool reset ok");
+            trace("frame 0: gu finish (kicked) ok");
         }
         if frame_count == 0 {
             #[cfg(feature = "bench")]
@@ -585,12 +625,6 @@ unsafe fn run() {
         }
         #[cfg(feature = "bench")]
         bench_maybe_flush(frame_count);
-
-        // Capture build only (test/e2e-ppsspp.ts): dump the just-presented
-        // display framebuffer for frames CAP_START..CAP_START+CAP_N to
-        // ms0:/dc_cap/fNNNN.raw. No-op everywhere but PPSSPPHeadless.
-        #[cfg(feature = "capture")]
-        cap_dump_frame(frame_count);
         if frame_count == 0 {
             trace("frame 0: complete");
         }

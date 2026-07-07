@@ -395,8 +395,8 @@ fn fill_color_at(fill: &Fill, x0: f32, y0: f32, x1: f32, y1: f32, sx0: i32, sy: 
 
 /// Baked antialiased disc sprites keyed by integer radius — rounded corners
 /// render as four O(1) corner TEX_QUADs + three RECTs instead of per-row
-/// coverage spans (measured 7 ms/frame of CPU on real PSP hardware for the
-/// motions demo before this).
+/// coverage spans (the spans measured ~7 ms/frame of CPU on real PSP
+/// hardware for rounded-heavy screens).
 pub struct DiscCache {
     /// (radius px, texture handle)
     entries: Vec<(u32, u32)>,

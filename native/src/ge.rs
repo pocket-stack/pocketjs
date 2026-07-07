@@ -594,60 +594,106 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
                 let u1 = f32::from_bits(words[i + 6]);
                 let v1 = f32::from_bits(words[i + 7]);
                 let color = words[i + 8];
+                let _ = (x, y, w, u0, v0, u1, v1, color, h);
+                // Batch every following TEX_QUAD with the SAME texture into
+                // one Sprites draw (rounded-corner discs emit 4 in a row per
+                // box; per-quad bind + texture-disable churn cost ~5 ms of GE
+                // tail on real hardware).
+                let mut end = i;
+                while end + 9 <= n
+                    && words[end] == spec::draw_op::TEX_QUAD
+                    && words[end + 1] == handle as u32
+                {
+                    end += 9;
+                }
+                let count = (end - i) / 9;
                 if let Some((pixels, tw, th, psm)) = ui.texture(handle) {
                     apply_texture(pixels, tw, th, psm);
                     // TRANSFORM_2D UVs are TEXELS (see module docs): scale the
                     // normalized DrawList UVs by the texture dimensions.
-                    let bytes = 2 * core::mem::size_of::<VertTC>();
+                    let bytes = count * 2 * core::mem::size_of::<VertTC>();
                     let verts = pool_alloc(bytes) as *mut VertTC;
-                    *verts.add(0) = VertTC {
-                        u: (u0 * tw as f32) as i16,
-                        v: (v0 * th as f32) as i16,
-                        color,
-                        x,
-                        y,
-                        z: 0,
-                        _pad: 0,
-                    };
-                    *verts.add(1) = VertTC {
-                        u: (u1 * tw as f32) as i16,
-                        v: (v1 * th as f32) as i16,
-                        color,
-                        x: (x as i32 + w) as i16,
-                        y: (y as i32 + h) as i16,
-                        z: 0,
-                        _pad: 0,
-                    };
-                    flush(GuPrimitive::Sprites, VTYPE_TC, 2, verts as *const c_void, bytes);
-                    sys::sceGuDisable(GuState::Texture2D);
-                }
-                i += 9;
-            }
-            spec::draw_op::TEX_TRI if i + 12 <= n => {
-                let handle = words[i + 1] as i32;
-                if let Some((pixels, tw, th, psm)) = ui.texture(handle) {
-                    apply_texture(pixels, tw, th, psm);
-                    let modulate = words[i + 11];
-                    let bytes = 3 * core::mem::size_of::<VertTC>();
-                    let verts = pool_alloc(bytes) as *mut VertTC;
-                    for k in 0..3usize {
-                        let (x, y) = xy(words[i + 2 + k * 3]);
-                        let u = f32::from_bits(words[i + 3 + k * 3]);
-                        let v = f32::from_bits(words[i + 4 + k * 3]);
-                        *verts.add(k) = VertTC {
-                            u: (u * tw as f32) as i16,
-                            v: (v * th as f32) as i16,
-                            color: modulate,
-                            x,
-                            y,
+                    for k in 0..count {
+                        let o = i + k * 9;
+                        let (qx, qy) = xy(words[o + 2]);
+                        let (qw, qh) = wh(words[o + 3]);
+                        let qu0 = f32::from_bits(words[o + 4]);
+                        let qv0 = f32::from_bits(words[o + 5]);
+                        let qu1 = f32::from_bits(words[o + 6]);
+                        let qv1 = f32::from_bits(words[o + 7]);
+                        let qcolor = words[o + 8];
+                        *verts.add(k * 2) = VertTC {
+                            u: (qu0 * tw as f32) as i16,
+                            v: (qv0 * th as f32) as i16,
+                            color: qcolor,
+                            x: qx,
+                            y: qy,
+                            z: 0,
+                            _pad: 0,
+                        };
+                        *verts.add(k * 2 + 1) = VertTC {
+                            u: (qu1 * tw as f32) as i16,
+                            v: (qv1 * th as f32) as i16,
+                            color: qcolor,
+                            x: (qx as i32 + qw) as i16,
+                            y: (qy as i32 + qh) as i16,
                             z: 0,
                             _pad: 0,
                         };
                     }
-                    flush(GuPrimitive::Triangles, VTYPE_TC, 3, verts as *const c_void, bytes);
+                    flush(
+                        GuPrimitive::Sprites,
+                        VTYPE_TC,
+                        (count * 2) as i32,
+                        verts as *const c_void,
+                        bytes,
+                    );
                     sys::sceGuDisable(GuState::Texture2D);
                 }
-                i += 12;
+                i = end;
+            }
+            spec::draw_op::TEX_TRI if i + 12 <= n => {
+                let handle = words[i + 1] as i32;
+                let mut end = i;
+                while end + 12 <= n
+                    && words[end] == spec::draw_op::TEX_TRI
+                    && words[end + 1] == handle as u32
+                {
+                    end += 12;
+                }
+                let count = (end - i) / 12;
+                if let Some((pixels, tw, th, psm)) = ui.texture(handle) {
+                    apply_texture(pixels, tw, th, psm);
+                    let bytes = count * 3 * core::mem::size_of::<VertTC>();
+                    let verts = pool_alloc(bytes) as *mut VertTC;
+                    for t in 0..count {
+                        let o = i + t * 12;
+                        let modulate = words[o + 11];
+                        for k in 0..3usize {
+                            let (x, y) = xy(words[o + 2 + k * 3]);
+                            let u = f32::from_bits(words[o + 3 + k * 3]);
+                            let v = f32::from_bits(words[o + 4 + k * 3]);
+                            *verts.add(t * 3 + k) = VertTC {
+                                u: (u * tw as f32) as i16,
+                                v: (v * th as f32) as i16,
+                                color: modulate,
+                                x,
+                                y,
+                                z: 0,
+                                _pad: 0,
+                            };
+                        }
+                    }
+                    flush(
+                        GuPrimitive::Triangles,
+                        VTYPE_TC,
+                        (count * 3) as i32,
+                        verts as *const c_void,
+                        bytes,
+                    );
+                    sys::sceGuDisable(GuState::Texture2D);
+                }
+                i = end;
             }
             spec::draw_op::SCISSOR if i + 3 <= n => {
                 let (x, y) = xy(words[i + 1]);
