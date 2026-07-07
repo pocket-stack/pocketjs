@@ -1,0 +1,4 @@
+dist/
+runtime/gen_data.c
+test/art/
+*.__saga.*.mjs

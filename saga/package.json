@@ -1,0 +1,24 @@
+{
+  "name": "@pocketjs/saga",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GBA interactive-biography DSL: cine's whole cinematic vocabulary (Mode-0 parallax, raster FX, typewriter captions) plus top-down walkable world scenes, NPC/trigger cues, encounter meters and a Breakout set piece — one TypeScript source, one flashcart-ready ROM.",
+  "exports": {
+    ".": "./dsl/index.ts",
+    "./compiler": "./compiler/index.ts",
+    "./spec": "./spec/saga.ts"
+  },
+  "scripts": {
+    "gen": "bun spec/gen-c.ts",
+    "build": "bun compiler/cli.ts build game/reality-distortion.ts --out dist/reality-distortion.gba --title REALDISTORT",
+    "smoke": "bun test/gen-placeholder-art.ts && bun compiler/cli.ts build test/smoke-film.ts --out dist/smoke.gba --title SAGASMOKE",
+    "test:engine": "bun test/engine-e2e.ts",
+    "art": "bun pixellab/generate.ts",
+    "test": "bun test/e2e.ts",
+    "play": "bash play.sh"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

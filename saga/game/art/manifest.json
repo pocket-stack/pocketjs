@@ -1,0 +1,236 @@
+{
+  "map_garage68": {
+    "prompt": "top-down 2D RPG interior map of a 1960s American suburban garage, seen directly from above like a Game Boy RPG town map, clean 16x16 tile alignment, top-down 2D RPG interior map, brown wooden plank walls forming the room border, smooth gray concrete floor, a long wooden workbench with hand tools and a vise along the top wall, a pegboard, an old sedan car parked on the right half, cardboard boxes and an oil can in a corner, a wall telephone near the top left door",
+    "seed": 62010,
+    "w": 320,
+    "h": 240
+  },
+  "map_garage76": {
+    "prompt": "top-down 2D RPG interior map of a 1970s American garage turned into a tiny electronics workshop, seen directly from above like a Game Boy RPG town map, clean 16x16 tile alignment, top-down 2D RPG interior map, brown wooden plank walls forming the room border, gray concrete floor, two long assembly tables covered with bare green circuit boards and soldering irons, a burn-in rack of boards along one wall, stacked cardboard shipping boxes, a wall telephone near the top left door, warm work lamps",
+    "seed": 62011,
+    "w": 320,
+    "h": 240
+  },
+  "map_parc": {
+    "prompt": "top-down 2D RPG interior map of a 1970s corporate research laboratory, seen directly from above like a Game Boy RPG town map, clean 16x16 tile alignment, top-down 2D RPG interior map, clean beige walls, light gray carpet floor, several white desks in an open plan, on one central desk a tall white computer with a vertical portrait monitor and a small box mouse on a pad, bookshelves along the top wall, a beanbag corner, potted plants",
+    "seed": 62012,
+    "w": 320,
+    "h": 240
+  },
+  "map_bandley": {
+    "prompt": "top-down 2D RPG interior map of an early 1980s open-plan software office, seen directly from above like a Game Boy RPG town map, clean 16x16 tile alignment, top-down 2D RPG interior map, white walls, blue-gray carpet, desks with small beige computers and keyboards, a whiteboard on the top wall, a couch and coffee table corner with a rubber plant, pizza boxes on one desk, a tall flag pole in one corner",
+    "seed": 62013,
+    "w": 320,
+    "h": 240
+  },
+  "bg_title": {
+    "prompt": "quiet California suburban street at dusk, side view: a modest ranch house with its garage door half open and glowing warm from inside, silhouetted fruit trees, purple-orange sky, first stars, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62020,
+    "w": 240,
+    "h": 160
+  },
+  "bg_dorm": {
+    "prompt": "1971 college dorm room at night, side view: a narrow bed, a wooden desk crowded with electronic parts, a soldering iron, loose wires and a small blue metal box, one desk lamp, a rotary phone on the wall, posters, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62021,
+    "w": 240,
+    "h": 160
+  },
+  "bg_reed": {
+    "prompt": "sunlit college calligraphy classroom, side view: tall windows with dust motes, wooden drafting desks with ink pots and wide paper sheets showing flowing black pen strokes, a blackboard with elegant swash strokes drawn in chalk, warm morning light, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62022,
+    "w": 240,
+    "h": 160
+  },
+  "bg_atari": {
+    "prompt": "1970s video game company workshop at night, side view: a row of dark arcade cabinets along the back wall, a workbench with an oscilloscope and circuit boards, one bright desk lamp pool of light, dark blue shadows, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62023,
+    "w": 240,
+    "h": 160
+  },
+  "bg_faire": {
+    "prompt": "1977 computer trade show hall, side view: a convention booth with a clean beige home computer with integrated keyboard on a draped table, colorful pennant banners overhead, crowd barriers, bright show lighting, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62024,
+    "w": 240,
+    "h": 160
+  },
+  "bg_penthouse": {
+    "prompt": "Manhattan penthouse balcony at dusk, side view: stone balustrade in the foreground, vast city skyline with lit windows below, hazy orange-to-blue gradient sky, two empty chairs and a small table with glasses, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62025,
+    "w": 240,
+    "h": 160
+  },
+  "bg_stage84": {
+    "prompt": "dark auditorium stage, side view: one strong spotlight cone on a small table at center stage with a canvas bag on it, huge dark projection screen behind, front rows of audience as black silhouettes, deep blue darkness, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62026,
+    "w": 240,
+    "h": 160
+  },
+  "bg_orchard": {
+    "prompt": "rolling green orchard hills at sunrise, side view: rows of small fruit trees on soft hills, morning mist in the valley, pale gold sky with a rising sun, one dirt path, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62027,
+    "w": 240,
+    "h": 160
+  },
+  "walk_hero_s": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a young man in his early twenties, shoulder-length dark brown hair, short beard, white collared shirt, blue jeans, brown sandals, standing still, arms at sides, facing the viewer",
+    "seed": 62030,
+    "w": 32,
+    "h": 32
+  },
+  "walk_hero_n": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a young man in his early twenties, shoulder-length dark brown hair, short beard, white collared shirt, blue jeans, brown sandals, standing still, seen from behind",
+    "seed": 62031,
+    "w": 32,
+    "h": 32
+  },
+  "walk_hero_e": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a young man in his early twenties, shoulder-length dark brown hair, short beard, white collared shirt, blue jeans, brown sandals, standing still, side profile facing right",
+    "seed": 62032,
+    "w": 32,
+    "h": 32
+  },
+  "walk_kid_s": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a twelve year old boy, short dark hair, orange striped t-shirt, blue shorts, sneakers, standing still, arms at sides, facing the viewer",
+    "seed": 62133,
+    "w": 32,
+    "h": 32
+  },
+  "walk_kid_n": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a twelve year old boy, short dark hair, orange striped t-shirt, blue shorts, sneakers, standing still, seen from behind",
+    "seed": 62234,
+    "w": 32,
+    "h": 32
+  },
+  "walk_kid_e": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a twelve year old boy, short dark hair, orange striped t-shirt, blue shorts, sneakers, standing still, side profile facing right",
+    "seed": 62135,
+    "w": 32,
+    "h": 32
+  },
+  "walk_dad_s": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a man in his fifties, short crew cut hair, plaid work shirt, gray trousers, standing still, arms at sides, facing the viewer",
+    "seed": 62036,
+    "w": 32,
+    "h": 32
+  },
+  "walk_dad_n": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a man in his fifties, short crew cut hair, plaid work shirt, gray trousers, standing still, seen from behind",
+    "seed": 62037,
+    "w": 32,
+    "h": 32
+  },
+  "walk_dad_e": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a man in his fifties, short crew cut hair, plaid work shirt, gray trousers, standing still, side profile facing right",
+    "seed": 62038,
+    "w": 32,
+    "h": 32
+  },
+  "walk_woz_s": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a stocky young man, dark shaggy hair, full beard, square glasses, dark green shirt, jeans, standing still, arms at sides, facing the viewer",
+    "seed": 62039,
+    "w": 32,
+    "h": 32
+  },
+  "walk_woz_n": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a stocky young man, dark shaggy hair, full beard, square glasses, dark green shirt, jeans, standing still, seen from behind",
+    "seed": 62040,
+    "w": 32,
+    "h": 32
+  },
+  "walk_woz_e": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a stocky young man, dark shaggy hair, full beard, square glasses, dark green shirt, jeans, standing still, side profile facing right",
+    "seed": 62041,
+    "w": 32,
+    "h": 32
+  },
+  "walk_res_s": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a man in his thirties, brown mustache, light blue button-up shirt, dark slacks, standing still, arms at sides, facing the viewer",
+    "seed": 62042,
+    "w": 32,
+    "h": 32
+  },
+  "walk_res_n": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a man in his thirties, brown mustache, light blue button-up shirt, dark slacks, standing still, seen from behind",
+    "seed": 62043,
+    "w": 32,
+    "h": 32
+  },
+  "walk_res_e": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a man in his thirties, brown mustache, light blue button-up shirt, dark slacks, standing still, side profile facing right",
+    "seed": 62044,
+    "w": 32,
+    "h": 32
+  },
+  "walk_team_s": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a young woman, dark bobbed 80s hair, red sweater, dark skirt, standing still, arms at sides, facing the viewer",
+    "seed": 62045,
+    "w": 32,
+    "h": 32
+  },
+  "walk_team_n": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a young woman, dark bobbed 80s hair, red sweater, dark skirt, standing still, seen from behind",
+    "seed": 62046,
+    "w": 32,
+    "h": 32
+  },
+  "walk_team_e": {
+    "prompt": "tiny pixel art RPG overworld sprite, full body head to toe, Game Boy Advance RPG overworld style of a young woman, dark bobbed 80s hair, red sweater, dark skirt, standing still, side profile facing right",
+    "seed": 62047,
+    "w": 32,
+    "h": 32
+  },
+  "port_sculley": {
+    "prompt": "pixel art bust portrait of a confident American executive in his mid forties, neat side-parted light brown hair, navy suit, striped tie, slight guarded smile, plain dark background, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62050,
+    "w": 64,
+    "h": 64
+  },
+  "port_supplier": {
+    "prompt": "pixel art bust portrait of a skeptical older parts salesman, balding with gray temples, thick glasses, short-sleeve white shirt with a pen in the pocket, plain dark background, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62051,
+    "w": 64,
+    "h": 64
+  },
+  "port_hero": {
+    "prompt": "pixel art bust portrait of a young man in his early twenties, shoulder-length dark brown hair, short beard, white collared shirt, blue jeans, brown sandals, intense dark eyes, faint smile, plain dark background, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62052,
+    "w": 64,
+    "h": 64
+  },
+  "spr_bluebox": {
+    "prompt": "one small handheld blue metal electronic box with a white keypad of round buttons, top-down slight angle, transparent background, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62060,
+    "w": 32,
+    "h": 32
+  },
+  "spr_board": {
+    "prompt": "one bare green computer circuit board with rows of black chips and golden traces, slight angle, transparent background, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62061,
+    "w": 32,
+    "h": 32
+  },
+  "spr_alto": {
+    "prompt": "one 1970s white research computer with a tall vertical portrait monitor and a small keyboard, front view, transparent background, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62062,
+    "w": 32,
+    "h": 32
+  },
+  "spr_mac": {
+    "prompt": "one small friendly beige all-in-one computer, compact vertical case with a small built-in screen glowing soft white and a detached keyboard in front, front view, transparent background, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62063,
+    "w": 32,
+    "h": 32
+  },
+  "spr_flag": {
+    "prompt": "one black pirate flag with a white skull, waving on a short pole, transparent background, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62064,
+    "w": 32,
+    "h": 32
+  },
+  "spr_phone": {
+    "prompt": "one 1960s black rotary desk telephone with a coiled cord, slight angle, transparent background, clean 16-bit pixel art, limited palette, crisp pixels",
+    "seed": 62065,
+    "w": 32,
+    "h": 32
+  }
+}
