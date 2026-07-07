@@ -54,7 +54,7 @@ export interface BlogPost {
 export const BLOG_POSTS: BlogPost[] = [
   {
     slug: "baking-motion",
-    title: "Baking Motion: Keyframes, Arcs, and 3D in the Style Engine",
+    title: "Baking Motion into PocketJS: Keyframes, Arcs, and a 3D Pipeline",
     date: "2026-07-07",
     description:
       "The style table learns motion: compile-time keyframe timelines, an animatable stroke-arc primitive, and a painter-sorted 3D pipeline — plus the four hardware performance lessons a one-to-one port of yui540's motion studies forced out of the engine.",

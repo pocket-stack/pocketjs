@@ -1,8 +1,44 @@
 {
   "name": "@pocketjs/framework",
   "version": "0.2.0",
-  "private": true,
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pocket-stack/pocketjs.git"
+  },
+  "homepage": "https://pocketjs.dev",
+  "keywords": [
+    "pocketjs",
+    "psp",
+    "solid",
+    "vue-vapor",
+    "tailwind",
+    "jsx",
+    "embedded-ui",
+    "wasm"
+  ],
+  "files": [
+    "src",
+    "compiler",
+    "spec",
+    "scripts",
+    "host-web",
+    "assets/fonts",
+    "core/src",
+    "core/Cargo.toml",
+    "wasm/src",
+    "wasm/Cargo.toml",
+    "native/src",
+    "native/targets",
+    "native/build.rs",
+    "native/Cargo.toml",
+    "pocket.config.ts",
+    "tsconfig.json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": "./src/index.ts",
     "./animation": "./src/animation.ts",

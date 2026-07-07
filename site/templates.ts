@@ -52,7 +52,7 @@ function header(active: string): string {
       ${link("/docs/overview/", "Docs", "docs")}
       ${link("/playground/", "Playground", "playground")}
       ${link("/blog/", "Blog", "blog")}
-      <a href="/3d/" class="site-nav__link site-nav__3d ${active === "3d" ? "on" : ""}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z"/><path d="M12 12 21 7M12 12v10M12 12 3 7"/></svg><span>3D</span></a>
+      ${link("/changelog/", "Changelog", "changelog")}
       <a href="${GH}" target="_blank" rel="noreferrer" class="site-nav__link site-nav__gh">${ghIcon}<span class="site-nav__ghlabel">GitHub</span></a>
       <a href="${X_URL}" target="_blank" rel="noreferrer" class="site-nav__link site-nav__x" aria-label="PocketJS on X">${xIcon}</a>
     </nav>

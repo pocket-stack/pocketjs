@@ -395,6 +395,7 @@ async function main() {
   const highlight = await setupMarkdown();
   await buildDocs(highlight);
   await buildBlog();
+  buildChangelog();
 
   // 9b. 404
   write("404.html", renderPage({
@@ -737,6 +738,23 @@ function formatPostDate(iso: string): string {
 }
 
 const BLOG_DESC = "Announcements and engineering notes from the PocketJS team.";
+function buildChangelog() {
+  const md = SITE + "content/changelog.md";
+  if (!existsSync(md)) return;
+  const html = marked.parse(readFileSync(md, "utf8")) as string;
+  write("changelog/index.html", renderPage({
+    title: "Changelog",
+    active: "changelog",
+    desc: "Engine and site milestones — what shipped in each PocketJS release.",
+    path: "/changelog/",
+    body:
+      `<main class="mx-auto w-full max-w-3xl px-6 py-14">` +
+      `<article class="prose prose-invert max-w-none doc-content">${html}</article>` +
+      `</main>`,
+  }));
+  console.log("  changelog  (1 page)");
+}
+
 async function buildBlog() {
   const dir = SITE + "content/blog/";
   const posts = [...BLOG_POSTS].sort((a, b) => (a.date < b.date ? 1 : -1));

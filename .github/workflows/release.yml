@@ -1,0 +1,82 @@
+name: Release to npm
+
+# Publish @pocketjs/framework and @pocketjs/cli when a v* tag is pushed
+# (e.g. `git tag v0.2.0 && git push origin v0.2.0`). Requires the NPM_TOKEN
+# repo secret (an npm automation token with publish rights on @pocketjs).
+# Publishing is idempotent: versions already on the registry are skipped, so
+# re-running a tag or bumping only one package is safe.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # npm --provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # npm (not bun) does the publishing — provenance support + registry auth.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # host-web/pocketjs.wasm is a gitignored build artifact shipped in the
+      # framework tarball, so build it from core/wasm. Stable Rust suffices.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo + wasm target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            wasm/target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('wasm/Cargo.toml', 'core/Cargo.toml', 'wasm/src/**', 'core/src/**') }}
+          restore-keys: ${{ runner.os }}-wasm-
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build wasm (core + software rasterizer)
+        run: bun scripts/wasm.ts
+
+      - name: Test
+        run: bun run test
+
+      - name: Publish @pocketjs/framework
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version already published — skipping"
+          else
+            npm publish --access public --provenance
+          fi
+
+      - name: Publish @pocketjs/cli
+        working-directory: cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version already published — skipping"
+          else
+            npm publish --access public --provenance
+          fi
