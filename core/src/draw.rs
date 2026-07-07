@@ -206,6 +206,8 @@ impl Mat34 {
 enum Item3 {
     /// Projected flat-color quad (screen space, pre-clip).
     Quad { pts: [(f32, f32); 4], color: u32 },
+    /// Projected textured quad (an image node; UVs ride the corners).
+    TexQuad { pts: [(f32, f32); 4], uv: [(f32, f32); 4], tex: u32, modulate: u32 },
     /// A text node's glyph run, anchored at its projected origin.
     Run { slot: u32, origin: (f32, f32), opacity: f32 },
 }
@@ -640,11 +642,22 @@ impl<'a> Walker<'a> {
                 Item3::Quad { pts, color } => {
                     let poly: Vec<ClipVert> = pts
                         .iter()
-                        .map(|&(x, y)| ClipVert { x, y, color: unpack(color) })
+                        .map(|&(x, y)| ClipVert { x, y, color: unpack(color), u: 0.0, v: 0.0 })
                         .collect();
                     let clipped = sutherland_hodgman(&poly, clip);
                     for i in 1..clipped.len().saturating_sub(1) {
                         emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
+                    }
+                }
+                Item3::TexQuad { pts, uv, tex, modulate } => {
+                    let poly: Vec<ClipVert> = pts
+                        .iter()
+                        .zip(uv.iter())
+                        .map(|(&(x, y), &(u, v))| ClipVert { x, y, color: [255.0; 4], u, v })
+                        .collect();
+                    let clipped = sutherland_hodgman(&poly, clip);
+                    for i in 1..clipped.len().saturating_sub(1) {
+                        emit_tex_tri(dl, tex, modulate, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
                     }
                 }
                 Item3::Run { slot, origin, opacity } => {
@@ -731,6 +744,38 @@ impl<'a> Walker<'a> {
             let c3 = project(0.0, l.h);
             let depth = (c0.1 + c1.1 + c2.1 + c3.1) * 0.25;
             items.push((depth, Item3::Quad { pts: [c0.0, c1.0, c2.0, c3.0], color }));
+        }
+        if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 && l.w > 0.0 && l.h > 0.0 {
+            let (fu0, fv0, fu1, fv1) = if node.sprite_frames > 0 {
+                let cols = node.sprite_cols.max(1) as u32;
+                let rows = (node.sprite_frames as u32).div_ceil(cols);
+                let step = node.sprite_step.max(1) as u64;
+                let elapsed = self.frame.wrapping_sub(node.sprite_start);
+                let idx = ((elapsed / step) % node.sprite_frames as u64) as u32;
+                let (cx2, cy2) = (idx % cols, idx / cols);
+                (
+                    cx2 as f32 / cols as f32,
+                    cy2 as f32 / rows as f32,
+                    (cx2 + 1) as f32 / cols as f32,
+                    (cy2 + 1) as f32 / rows as f32,
+                )
+            } else {
+                (0.0, 0.0, 1.0, 1.0)
+            };
+            let c0 = project(0.0, 0.0);
+            let c1 = project(l.w, 0.0);
+            let c2 = project(l.w, l.h);
+            let c3 = project(0.0, l.h);
+            let depth = (c0.1 + c1.1 + c2.1 + c3.1) * 0.25 + 0.005;
+            items.push((
+                depth,
+                Item3::TexQuad {
+                    pts: [c0.0, c1.0, c2.0, c3.0],
+                    uv: [(fu0, fv0), (fu1, fv0), (fu1, fv1), (fu0, fv1)],
+                    tex: node.tex as u32,
+                    modulate: scale_alpha(0xffff_ffff, op),
+                },
+            ));
         }
         if node.node_type == spec::NodeType::Text as u8 {
             // Glyphs anchor at the projected text origin and stay upright
@@ -942,7 +987,7 @@ impl<'a> Walker<'a> {
             let mut poly: Vec<ClipVert> = Vec::with_capacity(8);
             for (i, &(lx, ly)) in corners.iter().enumerate() {
                 let (sx, sy) = world.apply(lx, ly);
-                poly.push(ClipVert { x: sx, y: sy, color: unpack(corner_color(&fill, i)) });
+                poly.push(ClipVert { x: sx, y: sy, color: unpack(corner_color(&fill, i)), u: 0.0, v: 0.0 });
             }
             let clipped = sutherland_hodgman(&poly, clip);
             if clipped.len() < 3 {
@@ -1448,6 +1493,24 @@ impl<'a> Walker<'a> {
         fv1: f32,
     ) {
         if !world.is_axis_aligned() {
+            // Rotated image: transform corners with their UVs, clip, fan into
+            // TEX_TRIs (affine screen-space sampling).
+            let corners = [
+                (0.0, 0.0, fu0, fv0),
+                (w, 0.0, fu1, fv0),
+                (w, h, fu1, fv1),
+                (0.0, h, fu0, fv1),
+            ];
+            let mut poly: Vec<ClipVert> = Vec::with_capacity(8);
+            for &(lx, ly, u, v) in corners.iter() {
+                let (sx, sy) = world.apply(lx, ly);
+                poly.push(ClipVert { x: sx, y: sy, color: [255.0; 4], u, v });
+            }
+            let clipped = sutherland_hodgman(&poly, clip);
+            let modulate = scale_alpha(0xffff_ffff, op);
+            for i in 1..clipped.len().saturating_sub(1) {
+                emit_tex_tri(dl, tex, modulate, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
+            }
             return;
         }
         let (sx0, sy0) = world.apply(0.0, 0.0);
@@ -1569,6 +1632,10 @@ struct ClipVert {
     x: f32,
     y: f32,
     color: [f32; 4], // r, g, b, a (ABGR channel order irrelevant: symmetric)
+    /// Normalized texture coords (only meaningful on TEX_TRI paths; solid
+    /// paths carry zeros).
+    u: f32,
+    v: f32,
 }
 
 fn unpack(c: u32) -> [f32; 4] {
@@ -1595,7 +1662,43 @@ fn lerp_vert(a: &ClipVert, b: &ClipVert, t: f32) -> ClipVert {
             a.color[2] + (b.color[2] - a.color[2]) * t,
             a.color[3] + (b.color[3] - a.color[3]) * t,
         ],
+        u: a.u + (b.u - a.u) * t,
+        v: a.v + (b.v - a.v) * t,
     }
+}
+
+/// Emit one TEX_TRI op (degenerate triangles after rounding are dropped).
+fn emit_tex_tri(
+    dl: &mut DrawList,
+    tex: u32,
+    modulate: u32,
+    v0: &ClipVert,
+    v1: &ClipVert,
+    v2: &ClipVert,
+    clip: &Clip,
+    screen: (f32, f32),
+) {
+    let px = |v: &ClipVert| {
+        (
+            clampf(roundf(clampf(v.x, clip.x0, clip.x1)), 0.0, screen.0),
+            clampf(roundf(clampf(v.y, clip.y0, clip.y1)), 0.0, screen.1),
+        )
+    };
+    let (x0, y0) = px(v0);
+    let (x1, y1) = px(v1);
+    let (x2, y2) = px(v2);
+    let area2 = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+    if area2 == 0.0 {
+        return;
+    }
+    dl.words.push(spec::draw_op::TEX_TRI);
+    dl.words.push(tex);
+    for (xy, vert) in [((x0, y0), v0), ((x1, y1), v1), ((x2, y2), v2)] {
+        dl.words.push(xy_word(xy.0, xy.1));
+        dl.words.push(vert.u.to_bits());
+        dl.words.push(vert.v.to_bits());
+    }
+    dl.words.push(modulate);
 }
 
 /// Clip a convex polygon against the 4 half-planes of `clip`, interpolating

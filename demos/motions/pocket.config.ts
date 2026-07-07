@@ -2,7 +2,7 @@
 //
 // Keyframes ported 1:1 from yui540's motion studies (motions/53, /56, /30 and
 // /64): durations, delays, easings and keyframe percentages match the
-// extracted @emotion CSS; geometry is rebaked into absolute px for 150x116
+// extracted @emotion CSS; geometry is rebaked into absolute px for 154x121
 // tiles laid out six-per-page like the original 2x3 grid (ours is 3x2 for the
 // PSP's landscape screen).
 //
@@ -43,105 +43,106 @@ export default definePocketConfig({
       "fade-out": { from: { opacity: 1 }, to: { opacity: 0 } },
 
       // ================= motions/53 =========================================
-      // menu (メニュー): 30px pill opens to 107px revealing T/B/I items.
-      "m53-menu-open": { from: { width: 30 }, "60%": { width: 109 }, to: { width: 107 } },
-      "m53-menu-close": { from: { width: 107 }, "60%": { width: 26 }, to: { width: 30 } },
+      // menu (メニュー): 38px pill opens to 128px revealing T/B/I items.
+      "m53-menu-open": { from: { width: 38 }, "60%": { width: 131 }, to: { width: 128 } },
+      "m53-menu-close": { from: { width: 128 }, "60%": { width: 31 }, to: { width: 38 } },
       "m53-menu-x-left": {
-        from: { left: 5, rotate: 0 },
-        "40%": { left: 13, rotate: 45 },
-        to: { left: 13, rotate: 45 },
+        from: { left: 7, rotate: 0 },
+        "40%": { left: 17, rotate: 45 },
+        to: { left: 17, rotate: 45 },
       },
       "m53-menu-x-right": {
-        from: { left: 21, rotate: 0 },
-        "40%": { left: 13, rotate: -45 },
-        to: { left: 13, rotate: -45 },
+        from: { left: 27, rotate: 0 },
+        "40%": { left: 17, rotate: -45 },
+        to: { left: 17, rotate: -45 },
       },
       "m53-menu-x-grow": {
-        from: { top: 13, height: 4, backgroundColor: "#777" },
-        "40%": { top: 13, height: 4 },
+        from: { top: 17, height: 5, backgroundColor: "#777" },
+        "40%": { top: 17, height: 5 },
         "50%": { backgroundColor: "#ccc" },
-        "70%": { top: 6, height: 17 },
-        to: { top: 7, height: 16, backgroundColor: "#ccc" },
+        "70%": { top: 8, height: 23 },
+        to: { top: 9, height: 21, backgroundColor: "#ccc" },
       },
       "m53-menu-x-left-out": {
-        from: { left: 13, rotate: 45 },
-        "50%": { left: 13, rotate: 45 },
-        to: { left: 5, rotate: 0 },
+        from: { left: 17, rotate: 45 },
+        "50%": { left: 17, rotate: 45 },
+        to: { left: 7, rotate: 0 },
       },
       "m53-menu-x-right-out": {
-        from: { left: 13, rotate: -45 },
-        "50%": { left: 13, rotate: -45 },
-        to: { left: 21, rotate: 0 },
+        from: { left: 17, rotate: -45 },
+        "50%": { left: 17, rotate: -45 },
+        to: { left: 27, rotate: 0 },
       },
       "m53-menu-x-shrink": {
-        from: { top: 7, height: 16, backgroundColor: "#ccc" },
-        "50%": { top: 13, height: 4, backgroundColor: "#777" },
-        to: { top: 13, height: 4, backgroundColor: "#777" },
+        from: { top: 9, height: 21, backgroundColor: "#ccc" },
+        "50%": { top: 17, height: 5, backgroundColor: "#777" },
+        to: { top: 17, height: 5, backgroundColor: "#777" },
       },
       "m53-menu-item-in": {
-        from: { translateY: 30 },
-        "50%": { translateY: -1.5 },
+        from: { translateY: 38 },
+        "50%": { translateY: -2 },
         "75%": { translateY: 1 },
         to: { translateY: 0 },
       },
-      "m53-menu-item-out": { from: { translateY: 0 }, to: { translateY: 36 } },
+      "m53-menu-item-out": { from: { translateY: 0 }, to: { translateY: 46 } },
 
-      // d-pad (十字キー): separated caps stretch away from the center.
+      // d-pad (十字キー): pentagon keys (cap + same-color trapezoid base);
+      // caps stretch away from the center, inner edges pinned.
       "m53-dpad-up": {
-        "from,to": { top: 20, height: 19 },
-        "50%": { top: 13, height: 26 },
-        "75%": { top: 21, height: 18 },
+        "from,to": { top: 10, height: 24 },
+        "50%": { top: 1, height: 33 },
+        "75%": { top: 12, height: 22 },
       },
       "m53-dpad-down": {
-        "from,to": { top: 53, height: 19 },
-        "50%": { height: 26 },
-        "75%": { height: 18 },
+        "from,to": { top: 70, height: 24 },
+        "50%": { height: 33 },
+        "75%": { height: 22 },
       },
       "m53-dpad-right": {
-        "from,to": { left: 82, width: 19 },
-        "50%": { width: 26 },
-        "75%": { width: 18 },
+        "from,to": { left: 95, width: 24 },
+        "50%": { width: 33 },
+        "75%": { width: 22 },
       },
       "m53-dpad-left": {
-        "from,to": { left: 49, width: 19 },
-        "50%": { left: 42, width: 26 },
-        "75%": { left: 50, width: 18 },
+        "from,to": { left: 35, width: 24 },
+        "50%": { left: 26, width: 33 },
+        "75%": { left: 37, width: 22 },
       },
 
-      // share (共有): the white bg inflates from its bottom edge; the icon
+      // share (共有): the white card inflates from its bottom edge; the icon
       // box is FIXED (original keeps the logo pinned while the card grows).
       "m53-share-grow-a": {
-        from: { left: 34, top: 30, width: 32, height: 32 },
-        "50%": { left: 24, top: 10, width: 52, height: 52 },
-        "75%": { left: 26, top: 13, width: 49, height: 49 },
-        to: { left: 25, top: 12, width: 50, height: 50 },
+        from: { left: 33, top: 34, width: 38, height: 38 },
+        "50%": { left: 21, top: 10, width: 62, height: 62 },
+        "75%": { left: 23, top: 14, width: 58, height: 58 },
+        to: { left: 22, top: 12, width: 60, height: 60 },
       },
       "m53-share-shrink-a": {
-        from: { left: 25, top: 12, width: 50, height: 50 },
-        "50%": { left: 35, top: 32, width: 30, height: 30 },
-        "75%": { left: 34, top: 29, width: 33, height: 33 },
-        to: { left: 34, top: 30, width: 32, height: 32 },
+        from: { left: 22, top: 12, width: 60, height: 60 },
+        "50%": { left: 34, top: 36, width: 36, height: 36 },
+        "75%": { left: 32, top: 33, width: 39, height: 39 },
+        to: { left: 33, top: 34, width: 38, height: 38 },
       },
       "m53-share-grow-b": {
-        from: { left: 84, top: 30, width: 32, height: 32 },
-        "50%": { left: 74, top: 10, width: 52, height: 52 },
-        "75%": { left: 76, top: 13, width: 49, height: 49 },
-        to: { left: 75, top: 12, width: 50, height: 50 },
+        from: { left: 83, top: 34, width: 38, height: 38 },
+        "50%": { left: 71, top: 10, width: 62, height: 62 },
+        "75%": { left: 73, top: 14, width: 58, height: 58 },
+        to: { left: 72, top: 12, width: 60, height: 60 },
       },
       "m53-share-shrink-b": {
-        from: { left: 75, top: 12, width: 50, height: 50 },
-        "50%": { left: 85, top: 32, width: 30, height: 30 },
-        "75%": { left: 84, top: 29, width: 33, height: 33 },
-        to: { left: 84, top: 30, width: 32, height: 32 },
+        from: { left: 72, top: 12, width: 60, height: 60 },
+        "50%": { left: 84, top: 36, width: 36, height: 36 },
+        "75%": { left: 82, top: 33, width: 39, height: 39 },
+        to: { left: 83, top: 34, width: 38, height: 38 },
       },
       "m53-share-label-in": {
-        from: { translateY: 14, opacity: 0 },
+        from: { translateY: 16, opacity: 0 },
         "60%": { translateY: -1, opacity: 1 },
         to: { translateY: 0, opacity: 1 },
       },
       "m53-share-label-out": {
         from: { translateY: 0, opacity: 1 },
-        to: { translateY: 14, opacity: 0 },
+        to: { translateY: 16, opacity: 0 },
       },
 
       // hover button (ホバー)
@@ -149,12 +150,12 @@ export default definePocketConfig({
       "m53-hover-drop": { from: { translateY: -1 }, to: { translateY: 0 } },
       "m53-hover-arrow-in": {
         from: { width: 0 },
-        "50%": { width: 23 },
-        "75%": { width: 21 },
-        to: { width: 22 },
+        "50%": { width: 27 },
+        "75%": { width: 25 },
+        to: { width: 26 },
       },
       "m53-hover-arrow-out": {
-        from: { width: 22 },
+        from: { width: 26 },
         "50%": { width: 0 },
         "75%": { width: 2 },
         to: { width: 0 },
@@ -171,91 +172,97 @@ export default definePocketConfig({
         to: { opacity: 0 },
       },
 
-      // keypad (キーパッド)
+      // keypad (キーパッド): center-preserving squish + inset top shadow
+      // (approximated by a top gradient overlay fading in with the squish).
       "m53-key-squish": {
-        "from,to": { left: 0, top: 0, width: 28, height: 28, borderRadius: 8 },
-        "50%": { left: -6, top: 2, width: 40, height: 25, borderRadius: 14 },
-        "75%": { left: 2, top: 0, width: 25, height: 28, borderRadius: 8 },
+        "from,to": { left: 0, top: 0, width: 34, height: 34, borderRadius: 10 },
+        "50%": { left: -7, top: 2, width: 48, height: 30, borderRadius: 17 },
+        "75%": { left: 2, top: 0, width: 31, height: 33, borderRadius: 10 },
       },
       "m53-key-digit": {
         "from,to": { translateY: 0 },
         "50%": { translateY: 2 },
         "75%": { translateY: -1 },
       },
+      "m53-key-shade": {
+        "from,to": { opacity: 0 },
+        "50%": { opacity: 1 },
+        "75%": { opacity: 0 },
+      },
 
       // ================= motions/56 =========================================
       "m56-applaunch-in": {
-        from: { top: 28, left: 62, width: 26 },
-        to: { top: 0, left: 0, width: 150 },
+        from: { top: 31, left: 62, width: 31 },
+        to: { top: 0, left: 0, width: 154 },
       },
-      "m56-applaunch-grow": { from: { height: 26 }, to: { height: 100 } },
+      "m56-applaunch-grow": { from: { height: 31 }, to: { height: 105 } },
       "m56-applaunch-back": {
-        from: { top: 0, left: 0, width: 150, height: 100 },
-        "50%": { top: 30, left: 64, width: 23, height: 23 },
-        "75%": { top: 28, left: 62, width: 27, height: 27 },
-        to: { top: 28, left: 62, width: 26, height: 26 },
+        from: { top: 0, left: 0, width: 154, height: 105 },
+        "50%": { top: 33, left: 63, width: 28, height: 28 },
+        "75%": { top: 31, left: 61, width: 32, height: 32 },
+        to: { top: 31, left: 62, width: 31, height: 31 },
       },
       "m56-applaunch-press": { "from,to": { scale: 1 }, "50%": { scale: 0.85 } },
 
-      "m56-layout-left": { from: { width: 48 }, "60%": { width: 41 }, to: { width: 43 } },
-      "m56-layout-left-close": { from: { width: 43 }, to: { width: 48 } },
+      "m56-layout-left": { from: { width: 58 }, "60%": { width: 49 }, to: { width: 52 } },
+      "m56-layout-left-close": { from: { width: 52 }, to: { width: 58 } },
       "m56-layout-right": {
-        from: { left: 46, width: 48 },
-        "60%": { left: 52, width: 42 },
-        to: { left: 50, width: 44 },
+        from: { left: 55, width: 58 },
+        "60%": { left: 62, width: 50 },
+        to: { left: 60, width: 53 },
       },
       "m56-layout-right-close": {
-        from: { left: 50, width: 44 },
-        to: { left: 46, width: 48 },
+        from: { left: 60, width: 53 },
+        to: { left: 55, width: 58 },
       },
       "m56-layout-half-top": {
-        from: { height: 31, borderRadius: 0 },
-        "60%": { height: 25, borderRadius: 8 },
-        to: { height: 27, borderRadius: 8 },
+        from: { height: 37, borderRadius: 0 },
+        "60%": { height: 30, borderRadius: 10 },
+        to: { height: 32, borderRadius: 10 },
       },
       "m56-layout-half-top-close": {
-        from: { height: 27, borderRadius: 8 },
-        to: { height: 31, borderRadius: 0 },
+        from: { height: 32, borderRadius: 10 },
+        to: { height: 37, borderRadius: 0 },
       },
       "m56-layout-half-bottom": {
-        from: { top: 30, height: 31, borderRadius: 0 },
-        "60%": { top: 36, height: 25, borderRadius: 8 },
-        to: { top: 34, height: 27, borderRadius: 8 },
+        from: { top: 36, height: 37, borderRadius: 0 },
+        "60%": { top: 43, height: 30, borderRadius: 10 },
+        to: { top: 41, height: 32, borderRadius: 10 },
       },
       "m56-layout-half-bottom-close": {
-        from: { top: 34, height: 27, borderRadius: 8 },
-        to: { top: 30, height: 31, borderRadius: 0 },
+        from: { top: 41, height: 32, borderRadius: 10 },
+        to: { top: 36, height: 37, borderRadius: 0 },
       },
       "m56-layout-row-top": {
-        from: { height: 21, borderRadius: 0 },
-        "60%": { height: 16, borderRadius: 8 },
-        to: { height: 17, borderRadius: 8 },
+        from: { height: 25, borderRadius: 0 },
+        "60%": { height: 19, borderRadius: 10 },
+        to: { height: 20, borderRadius: 10 },
       },
       "m56-layout-row-top-close": {
-        from: { height: 17, borderRadius: 8 },
-        to: { height: 21, borderRadius: 0 },
+        from: { height: 20, borderRadius: 10 },
+        to: { height: 25, borderRadius: 0 },
       },
       "m56-layout-row-mid": {
-        from: { top: 20, height: 21, borderRadius: 0 },
-        "60%": { top: 23, height: 16, borderRadius: 8 },
-        to: { top: 22, height: 17, borderRadius: 8 },
+        from: { top: 24, height: 25, borderRadius: 0 },
+        "60%": { top: 28, height: 19, borderRadius: 10 },
+        to: { top: 26, height: 20, borderRadius: 10 },
       },
       "m56-layout-row-mid-close": {
-        from: { top: 22, height: 17, borderRadius: 8 },
-        to: { top: 20, height: 21, borderRadius: 0 },
+        from: { top: 26, height: 20, borderRadius: 10 },
+        to: { top: 24, height: 25, borderRadius: 0 },
       },
       "m56-layout-row-bottom": {
-        from: { top: 40, height: 21, borderRadius: 0 },
-        "60%": { top: 45, height: 16, borderRadius: 8 },
-        to: { top: 44, height: 17, borderRadius: 8 },
+        from: { top: 48, height: 25, borderRadius: 0 },
+        "60%": { top: 54, height: 19, borderRadius: 10 },
+        to: { top: 53, height: 20, borderRadius: 10 },
       },
       "m56-layout-row-bottom-close": {
-        from: { top: 44, height: 17, borderRadius: 8 },
-        to: { top: 40, height: 21, borderRadius: 0 },
+        from: { top: 53, height: 20, borderRadius: 10 },
+        to: { top: 48, height: 25, borderRadius: 0 },
       },
 
-      "m56-shutter-open": { from: { height: 4 }, "60%": { height: 14 }, to: { height: 13 } },
-      "m56-shutter-close": { from: { height: 13 }, "60%": { height: 3 }, to: { height: 4 } },
+      "m56-shutter-open": { from: { height: 5 }, "60%": { height: 17 }, to: { height: 16 } },
+      "m56-shutter-close": { from: { height: 16 }, "60%": { height: 4 }, to: { height: 5 } },
 
       "m56-fan-l2": { from: { rotate: 0 }, "60%": { rotate: -55 }, to: { rotate: -50 } },
       "m56-fan-l1": { from: { rotate: 0 }, "60%": { rotate: -27.5 }, to: { rotate: -25 } },
@@ -268,37 +275,37 @@ export default definePocketConfig({
       "m56-fan-pulse": { "from,to": { scale: 1 }, "60%": { scale: 1.06 } },
 
       "m56-heave-1": {
-        from: { width: 28, height: 24, top: 0, translateX: 0, backgroundColor: "#bbb" },
-        "50%": { width: 56, height: 14, top: 10, translateX: 0, backgroundColor: "#ccc" },
-        to: { width: 28, height: 24, top: 0, translateX: 28, backgroundColor: "#bbb" },
+        from: { width: 34, height: 29, top: 0, translateX: 0, backgroundColor: "#bbb" },
+        "50%": { width: 67, height: 17, top: 12, translateX: 0, backgroundColor: "#ccc" },
+        to: { width: 34, height: 29, top: 0, translateX: 34, backgroundColor: "#bbb" },
       },
       "m56-heave-2": {
-        from: { width: 28, height: 24, top: 0, translateX: 28, backgroundColor: "#bbb" },
-        "50%": { width: 56, height: 14, top: 10, translateX: 28, backgroundColor: "#ccc" },
-        to: { width: 28, height: 24, top: 0, translateX: 56, backgroundColor: "#bbb" },
+        from: { width: 34, height: 29, top: 0, translateX: 34, backgroundColor: "#bbb" },
+        "50%": { width: 67, height: 17, top: 12, translateX: 34, backgroundColor: "#ccc" },
+        to: { width: 34, height: 29, top: 0, translateX: 67, backgroundColor: "#bbb" },
       },
 
-      "m56-focus-hop-right": { from: { left: 0 }, to: { left: 42 } },
-      "m56-focus-hop-left": { from: { left: 42 }, to: { left: -42 } },
-      "m56-focus-stretch": { from: { left: -42, width: 28 }, to: { left: -42, width: 112 } },
-      "m56-focus-snap": { from: { left: -42, width: 112 }, to: { left: 0, width: 28 } },
-      "m56-focus-pulse": { "from,to": { inset: -5 }, "50%": { inset: -3 } },
+      "m56-focus-hop-right": { from: { left: 0 }, to: { left: 50 } },
+      "m56-focus-hop-left": { from: { left: 50 }, to: { left: -50 } },
+      "m56-focus-stretch": { from: { left: -50, width: 34 }, to: { left: -50, width: 134 } },
+      "m56-focus-snap": { from: { left: -50, width: 134 }, to: { left: 0, width: 34 } },
+      "m56-focus-pulse": { "from,to": { inset: -6 }, "50%": { inset: -4 } },
 
       // ================= motions/30 =========================================
-      "m30-reveal": { from: { scale: 1 }, to: { scale: 17 } },
+      "m30-reveal": { from: { scale: 1 }, to: { scale: 18 } },
       "m30-pop": { from: { scale: 0.2, opacity: 0 }, to: { scale: 1, opacity: 1 } },
       "m30-cell": { from: { opacity: 0, scale: 0.3 }, to: { opacity: 1, scale: 1 } },
-      "m30-slide-down": { from: { translateY: -14 }, to: { translateY: 0 } },
-      "m30-slide-up": { from: { translateY: 12 }, to: { translateY: 0 } },
+      "m30-slide-down": { from: { translateY: -17 }, to: { translateY: 0 } },
+      "m30-slide-up": { from: { translateY: 14 }, to: { translateY: 0 } },
       "m30-expand-w": {
-        from: { left: 75, width: 0 },
-        "50%": { left: 26, width: 99 },
-        to: { left: 28, width: 94 },
+        from: { left: 77, width: 0 },
+        "50%": { left: 18, width: 119 },
+        to: { left: 20, width: 113 },
       },
       "m30-expand-h": {
-        from: { top: 37, height: 13 },
-        "50%": { top: 12, height: 63 },
-        to: { top: 14, height: 59 },
+        from: { top: 44, height: 16 },
+        "50%": { top: 10, height: 76 },
+        to: { top: 12, height: 71 },
       },
       "m30-modal-pop": {
         from: { scale: 0.5, opacity: 0 },
@@ -312,14 +319,14 @@ export default definePocketConfig({
         "80%": { scale: 1.05, opacity: 1 },
         to: { scale: 1, opacity: 1 },
       },
-      "m30-line": { from: { translateX: 12 }, to: { translateX: -12 } },
+      "m30-line": { from: { translateX: 14 }, to: { translateX: -14 } },
       "m30-comment": {
         from: { scale: 0.4, opacity: 0 },
         "50%": { scale: 1.15, opacity: 1 },
         to: { scale: 1, opacity: 1 },
       },
       "m30-slidein": {
-        from: { translateY: 61, scale: 1.25, rotate: 20 },
+        from: { translateY: 73, scale: 1.25, rotate: 20 },
         to: { translateY: 0, scale: 1, rotate: 0 },
       },
       "m30-zoom-in": {
@@ -329,7 +336,6 @@ export default definePocketConfig({
       },
 
       // ================= motions/64 (3D) ====================================
-      // door (扉): swings 110deg open about its right edge, then shuts.
       "m64-door-open": {
         from: { rotateY: 0 },
         "60%": { rotateY: 110 },
@@ -346,7 +352,6 @@ export default definePocketConfig({
         "60%": { rotate: -2 },
         to: { rotate: 0 },
       },
-      // spinning cube (まわる)
       "m64-spin": { from: { rotateY: 0 }, to: { rotateY: 360 } },
       "m64-tumble": {
         from: { rotateX: -40 },
@@ -358,52 +363,45 @@ export default definePocketConfig({
         "60%": { rotateX: -35 },
         to: { rotateX: -40 },
       },
-      // pop-out slab (飛び出す・引っ込む): rises from the floor plane.
       "m64-rise": {
-        from: { top: 40, height: 0 },
-        "50%": { top: 5, height: 33 },
-        "75%": { top: 15, height: 26 },
-        to: { top: 12, height: 28 },
+        from: { top: 48, height: 0 },
+        "50%": { top: 8, height: 40 },
+        "75%": { top: 17, height: 31 },
+        to: { top: 14, height: 34 },
       },
-      "m64-sink": {
-        from: { top: 12, height: 28 },
-        to: { top: 40, height: 0 },
-      },
+      "m64-sink": { from: { top: 14, height: 34 }, to: { top: 48, height: 0 } },
       "m64-cap-rise": {
-        from: { top: 33 },
-        "50%": { top: -2 },
-        "75%": { top: 8 },
-        to: { top: 5 },
+        from: { top: 31 },
+        "50%": { top: -9 },
+        "75%": { top: 0 },
+        to: { top: -3 },
       },
-      "m64-cap-sink": { from: { top: 5 }, to: { top: 33 } },
-      // stretch cube (伸び縮み): width stretches while it yaws 30deg.
+      "m64-cap-sink": { from: { top: -3 }, to: { top: 31 } },
       "m64-stretch": {
-        from: { rotateY: 0, left: 47, width: 28 },
-        "60%": { rotateY: 33, left: 19, width: 85 },
-        to: { rotateY: 30, left: 24, width: 75 },
+        from: { rotateY: 0, left: 60, width: 34 },
+        "60%": { rotateY: 33, left: 26, width: 102 },
+        to: { rotateY: 30, left: 32, width: 90 },
       },
       "m64-shrink": {
-        from: { rotateY: 30, left: 24, width: 75 },
-        "60%": { rotateY: 0, left: 50, width: 23 },
-        to: { rotateY: 0, left: 47, width: 28 },
+        from: { rotateY: 30, left: 32, width: 90 },
+        "60%": { rotateY: 0, left: 63, width: 28 },
+        to: { rotateY: 0, left: 60, width: 34 },
       },
-      // page flip (パラパラ)
       "m64-flip-1": {
         from: { translateX: 0, rotate: 0, rotateY: 110, opacity: 0 },
         "30%": { opacity: 1 },
-        to: { translateX: -30, rotate: 8, rotateY: 0, opacity: 1 },
+        to: { translateX: -36, rotate: 8, rotateY: 0, opacity: 1 },
       },
       "m64-flip-2": {
-        from: { translateX: 23, rotate: 0, rotateY: 110, opacity: 0 },
+        from: { translateX: 28, rotate: 0, rotateY: 110, opacity: 0 },
         "30%": { opacity: 1 },
-        to: { translateX: -8, rotate: -4, rotateY: 0, opacity: 1 },
+        to: { translateX: -10, rotate: -4, rotateY: 0, opacity: 1 },
       },
       "m64-flip-3": {
-        from: { translateX: 46, rotate: 0, rotateY: 110, opacity: 0 },
+        from: { translateX: 55, rotate: 0, rotateY: 110, opacity: 0 },
         "30%": { opacity: 1 },
-        to: { translateX: 15, rotate: 10, rotateY: 0, opacity: 1 },
+        to: { translateX: 18, rotate: 10, rotateY: 0, opacity: 1 },
       },
-      // room transition (トランジション): camera inside a rotating box.
       "m64-room-shrink-1": { from: { scale: 1 }, "60%": { scale: 0.78 }, to: { scale: 0.8 } },
       "m64-room-turn-1": {
         from: { rotateY: 0 },
@@ -522,6 +520,9 @@ export default definePocketConfig({
       "m53-key-digit-1": { value: "m53-key-digit 0.6s ease-in-out 0.2s both", loop: LOOP53 },
       "m53-key-digit-2": { value: "m53-key-digit 0.6s ease-in-out 0.8s both", loop: LOOP53 },
       "m53-key-digit-3": { value: "m53-key-digit 0.6s ease-in-out 1.4s both", loop: LOOP53 },
+      "m53-key-shade-1": { value: "m53-key-shade 0.6s ease-in-out 0.2s both", loop: LOOP53 },
+      "m53-key-shade-2": { value: "m53-key-shade 0.6s ease-in-out 0.8s both", loop: LOOP53 },
+      "m53-key-shade-3": { value: "m53-key-shade 0.6s ease-in-out 1.4s both", loop: LOOP53 },
 
       // ================= motions/56 (loop 4400ms) ===========================
       "m56-applaunch-box": {

@@ -460,6 +460,33 @@ impl UiRenderer {
                     flush!(cur_tex, restored);
                     i += 1;
                 }
+                spec::draw_op::TEX_TRI => {
+                    if i + 12 > words.len() {
+                        break;
+                    }
+                    let handle = words[i + 1] as i32;
+                    if cur_tex != TexBind::Image(handle) {
+                        flush!(TexBind::Image(handle), scissor);
+                    }
+                    let modulate = words[i + 11];
+                    let mut v = [UiVertex {
+                        pos: [0.0, 0.0],
+                        uv: [0.0, 0.0],
+                        color: 0,
+                        mode: MODE_IMAGE,
+                    }; 3];
+                    for k in 0..3 {
+                        let (x, y) = xy(words[i + 2 + k * 3]);
+                        v[k].pos = ndc(x, y);
+                        v[k].uv = [
+                            f32::from_bits(words[i + 3 + k * 3]),
+                            f32::from_bits(words[i + 4 + k * 3]),
+                        ];
+                        v[k].color = modulate;
+                    }
+                    self.verts.extend_from_slice(&v);
+                    i += 12;
+                }
                 spec::draw_op::TRI => {
                     if i + 7 > words.len() {
                         break;

@@ -291,9 +291,11 @@ widths):
   through N px about the root center and painter-sorts by camera depth into
   TRIs. `rotate-x-[N]`, `rotate-y-[N]`, `translate-z-[N]` (arbitrary, signed;
   keyframe props rotateX/rotateY/translateZ + the same functions in
-  `transform:` strings). Glyph runs anchor at their projected origin and stay
-  upright/unscaled; images and box decoration (radius/border/shadow) are
-  outside the 3D contract.
+  `transform:` strings). IMAGE nodes project as TEX_TRIs (affine screen-space
+  UVs, PSP-authentic) — bake text that must ride a surface as an SVG texture;
+  glyph runs anchor at their projected origin and stay upright/unscaled. Box
+  decoration (radius/border/shadow) is outside the 3D contract. The same
+  TEX_TRI path renders 2D-ROTATED images (previously culled).
 - **arc primitive**: `arc-start-[deg]`, `arc-sweep-[deg]`, `arc-width-[px]` —
   with width > 0 and sweep != 0 the bg color strokes a round-capped annular
   sector (center = node center, outer radius = min(w,h)/2) instead of filling

@@ -212,6 +212,13 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 tri(fb, clip, &words[i + 1..i + 7]);
                 i += 7;
             }
+            draw_op::TEX_TRI => {
+                if i + 12 > words.len() {
+                    return;
+                }
+                tex_tri(ui, fb, clip, &words[i + 1..i + 12]);
+                i += 12;
+            }
             // The op set is closed per DrawList version; anything else means
             // corrupt data — stop instead of misinterpreting the stream.
             _ => return,
@@ -361,6 +368,90 @@ fn glyph_run(ui: &Ui, fb: &mut [u8], clip: Clip, slot: u8, color: u32, glyphs: &
                     blend_px(fb, px, py, r, g, b, (a * cov + 127) / 255);
                 }
             }
+        }
+    }
+}
+
+// ---- TEX_TRI: barycentric textured triangle (nearest-neighbor, affine UV) -----------
+
+fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
+    let handle = p[0] as i32;
+    let (x0, y0) = xy(p[1]);
+    let (u0, v0) = (f32::from_bits(p[2]), f32::from_bits(p[3]));
+    let (x1, y1) = xy(p[4]);
+    let (mut u1, mut v1) = (f32::from_bits(p[5]), f32::from_bits(p[6]));
+    let (x2, y2) = xy(p[7]);
+    let (mut u2, mut v2) = (f32::from_bits(p[8]), f32::from_bits(p[9]));
+    let modulate = p[10];
+    let Some((pixels, tw, th, psm)) = ui.texture(handle) else { return };
+    let (ax, ay) = (2 * x0 as i64, 2 * y0 as i64);
+    let (mut bx, mut by) = (2 * x1 as i64, 2 * y1 as i64);
+    let (mut cx, mut cy) = (2 * x2 as i64, 2 * y2 as i64);
+    let mut area = orient(ax, ay, bx, by, cx, cy);
+    if area == 0 {
+        return;
+    }
+    if area < 0 {
+        core::mem::swap(&mut bx, &mut cx);
+        core::mem::swap(&mut by, &mut cy);
+        core::mem::swap(&mut u1, &mut u2);
+        core::mem::swap(&mut v1, &mut v2);
+        area = -area;
+    }
+    let min_x = x0.min(x1).min(x2).max(clip.x0);
+    let max_x = x0.max(x1).max(x2).min(clip.x1);
+    let min_y = y0.min(y1).min(y2).max(clip.y0);
+    let max_y = y0.max(y1).max(y2).min(clip.y1);
+    let (mr, mg, mb, ma) = channels(modulate);
+    let identity = modulate == 0xffff_ffff;
+    let (twf, thf) = (tw as f32, th as f32);
+    let (tw_max, th_max) = (tw as i32 - 1, th as i32 - 1);
+    let inv_area = 1.0f32 / area as f32;
+    for py in min_y..max_y {
+        let sy = 2 * py as i64 + 1;
+        for px in min_x..max_x {
+            let sx = 2 * px as i64 + 1;
+            let w0 = orient(bx, by, cx, cy, sx, sy);
+            let w1 = orient(cx, cy, ax, ay, sx, sy);
+            let w2 = orient(ax, ay, bx, by, sx, sy);
+            if w0 < 0 || w1 < 0 || w2 < 0 {
+                continue;
+            }
+            let (f0, f1, f2) = (w0 as f32 * inv_area, w1 as f32 * inv_area, w2 as f32 * inv_area);
+            let u = u0 * f0 + u1 * f1 + u2 * f2;
+            let v = v0 * f0 + v1 * f1 + v2 * f2;
+            let tx = ((u * twf) as i32).clamp(0, tw_max);
+            let ty = ((v * thf) as i32).clamp(0, th_max);
+            let idx = (ty * tw as i32 + tx) as usize;
+            let (mut r, mut g, mut b, mut a) = match psm {
+                spec::psm::PSM_8888 => {
+                    let o = idx * 4;
+                    (
+                        pixels[o] as u32,
+                        pixels[o + 1] as u32,
+                        pixels[o + 2] as u32,
+                        pixels[o + 3] as u32,
+                    )
+                }
+                spec::psm::PSM_4444 => {
+                    let o = idx * 2;
+                    let px16 = pixels[o] as u32 | ((pixels[o + 1] as u32) << 8);
+                    (
+                        (px16 & 0xf) * 17,
+                        ((px16 >> 4) & 0xf) * 17,
+                        ((px16 >> 8) & 0xf) * 17,
+                        ((px16 >> 12) & 0xf) * 17,
+                    )
+                }
+                _ => return,
+            };
+            if !identity {
+                r = (r * mr + 127) / 255;
+                g = (g * mg + 127) / 255;
+                b = (b * mb + 127) / 255;
+                a = (a * ma + 127) / 255;
+            }
+            blend_px(fb, px, py, r, g, b, a);
         }
     }
 }

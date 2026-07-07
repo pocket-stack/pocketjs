@@ -871,6 +871,14 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //                           emits these only for ROTATED solid/gradient boxes
 //                           after Sutherland-Hodgman clipping; axis-aligned
 //                           content always uses RECT/GRAD_RECT.
+//   TEX_TRI     (12 words): op, texHandle, then 3 x { xy, u, v } (u/v = f32
+//                           bits, normalized 0..1), color (modulate;
+//                           0xFFFFFFFF = none). One CPU-clipped textured
+//                           triangle — the core emits these for ROTATED image
+//                           quads and for image nodes inside 3D (perspective)
+//                           subtrees, UVs interpolated through the clip.
+//                           Texture sampling is affine in screen space
+//                           (PSP-authentic; no perspective-correct divide).
 
 export const DRAW_OP = {
   rect: 1,
@@ -880,6 +888,7 @@ export const DRAW_OP = {
   scissor: 5,
   scissorPop: 6,
   tri: 7,
+  texTri: 8,
 } as const;
 
 // ---------------------------------------------------------------------------

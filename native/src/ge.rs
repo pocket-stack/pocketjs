@@ -623,6 +623,32 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
                 }
                 i += 9;
             }
+            spec::draw_op::TEX_TRI if i + 12 <= n => {
+                let handle = words[i + 1] as i32;
+                if let Some((pixels, tw, th, psm)) = ui.texture(handle) {
+                    apply_texture(pixels, tw, th, psm);
+                    let modulate = words[i + 11];
+                    let bytes = 3 * core::mem::size_of::<VertTC>();
+                    let verts = pool_alloc(bytes) as *mut VertTC;
+                    for k in 0..3usize {
+                        let (x, y) = xy(words[i + 2 + k * 3]);
+                        let u = f32::from_bits(words[i + 3 + k * 3]);
+                        let v = f32::from_bits(words[i + 4 + k * 3]);
+                        *verts.add(k) = VertTC {
+                            u: (u * tw as f32) as i16,
+                            v: (v * th as f32) as i16,
+                            color: modulate,
+                            x,
+                            y,
+                            z: 0,
+                            _pad: 0,
+                        };
+                    }
+                    flush(GuPrimitive::Triangles, VTYPE_TC, 3, verts as *const c_void, bytes);
+                    sys::sceGuDisable(GuState::Texture2D);
+                }
+                i += 12;
+            }
             spec::draw_op::SCISSOR if i + 3 <= n => {
                 let (x, y) = xy(words[i + 1]);
                 let (w, h) = wh(words[i + 2]);
