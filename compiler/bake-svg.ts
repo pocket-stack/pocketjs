@@ -34,7 +34,215 @@ interface Rect {
   rgba: [number, number, number, number];
 }
 
-type Shape = Circle | Rect;
+interface PathShape {
+  kind: "path";
+  /** Flattened closed contours in PIXEL coords (curves subdivided). */
+  contours: [number, number][][];
+  evenOdd: boolean;
+  hole: boolean;
+  rgba: [number, number, number, number];
+  /** Pixel-space AABB (clamped later). */
+  bbox: [number, number, number, number];
+}
+
+type Shape = Circle | Rect | PathShape;
+
+// ---- SVG path data (`d`) parsing + flattening ------------------------------------
+
+const CURVE_STEPS = 16;
+
+/** Tokenize path data into commands + numbers. */
+function pathTokens(d: string): (string | number)[] {
+  const out: (string | number)[] = [];
+  const re = /([MmLlHhVvCcSsQqTtZz])|(-?\d*\.?\d+(?:e[+-]?\d+)?)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(d))) {
+    if (m[1]) out.push(m[1]);
+    else out.push(parseFloat(m[2]));
+  }
+  return out;
+}
+
+/**
+ * Flatten path data into closed polygonal contours (viewBox coords).
+ * Supports M/L/H/V/C/S/Q/T/Z (absolute + relative) — the fill-icon subset;
+ * elliptical arcs (A) are a loud error.
+ */
+function flattenPath(d: string): [number, number][][] {
+  const toks = pathTokens(d);
+  const contours: [number, number][][] = [];
+  let cur: [number, number][] = [];
+  let x = 0;
+  let y = 0;
+  let startX = 0;
+  let startY = 0;
+  let prevC: [number, number] | null = null; // last cubic control (for S)
+  let prevQ: [number, number] | null = null; // last quadratic control (for T)
+  let i = 0;
+  let cmd = "";
+  const num = () => {
+    const v = toks[i++];
+    if (typeof v !== "number") throw new Error(`svg bake: expected number in path data (got ${v})`);
+    return v;
+  };
+  const close = () => {
+    if (cur.length >= 3) contours.push(cur);
+    cur = [];
+  };
+  const lineTo = (nx: number, ny: number) => {
+    x = nx;
+    y = ny;
+    cur.push([x, y]);
+  };
+  const cubicTo = (c1x: number, c1y: number, c2x: number, c2y: number, ex: number, ey: number) => {
+    const sx = x;
+    const sy = y;
+    for (let s = 1; s <= CURVE_STEPS; s++) {
+      const t = s / CURVE_STEPS;
+      const u = 1 - t;
+      const px = u * u * u * sx + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * ex;
+      const py = u * u * u * sy + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * ey;
+      cur.push([px, py]);
+    }
+    x = ex;
+    y = ey;
+    prevC = [c2x, c2y];
+  };
+  while (i < toks.length) {
+    const t = toks[i];
+    if (typeof t === "string") {
+      cmd = t;
+      i++;
+    }
+    // (implicit command repetition: keep the previous cmd)
+    switch (cmd) {
+      case "M": case "m": {
+        const rel = cmd === "m";
+        const nx = num();
+        const ny = num();
+        close();
+        x = rel ? x + nx : nx;
+        y = rel ? y + ny : ny;
+        startX = x;
+        startY = y;
+        cur.push([x, y]);
+        cmd = rel ? "l" : "L"; // subsequent pairs are implicit lineTos
+        prevC = prevQ = null;
+        break;
+      }
+      case "L": case "l": {
+        const rel = cmd === "l";
+        const nx = num();
+        const ny = num();
+        lineTo(rel ? x + nx : nx, rel ? y + ny : ny);
+        prevC = prevQ = null;
+        break;
+      }
+      case "H": case "h": {
+        const nx = num();
+        lineTo(cmd === "h" ? x + nx : nx, y);
+        prevC = prevQ = null;
+        break;
+      }
+      case "V": case "v": {
+        const ny = num();
+        lineTo(x, cmd === "v" ? y + ny : ny);
+        prevC = prevQ = null;
+        break;
+      }
+      case "C": case "c": {
+        const rel = cmd === "c";
+        const c1x = rel ? x + num() : num();
+        const c1y = rel ? y + num() : num();
+        const c2x = rel ? x + num() : num();
+        const c2y = rel ? y + num() : num();
+        const ex = rel ? x + num() : num();
+        const ey = rel ? y + num() : num();
+        cubicTo(c1x, c1y, c2x, c2y, ex, ey);
+        prevQ = null;
+        break;
+      }
+      case "S": case "s": {
+        const rel = cmd === "s";
+        const c1x = prevC ? 2 * x - prevC[0] : x;
+        const c1y = prevC ? 2 * y - prevC[1] : y;
+        const c2x = rel ? x + num() : num();
+        const c2y = rel ? y + num() : num();
+        const ex = rel ? x + num() : num();
+        const ey = rel ? y + num() : num();
+        cubicTo(c1x, c1y, c2x, c2y, ex, ey);
+        prevQ = null;
+        break;
+      }
+      case "Q": case "q": {
+        const rel = cmd === "q";
+        const qx = rel ? x + num() : num();
+        const qy = rel ? y + num() : num();
+        const ex = rel ? x + num() : num();
+        const ey = rel ? y + num() : num();
+        // quadratic -> cubic
+        cubicTo(x + (2 / 3) * (qx - x), y + (2 / 3) * (qy - y), ex + (2 / 3) * (qx - ex), ey + (2 / 3) * (qy - ey), ex, ey);
+        prevQ = [qx, qy];
+        prevC = null;
+        break;
+      }
+      case "T": case "t": {
+        const rel = cmd === "t";
+        const qx: number = prevQ ? 2 * x - prevQ[0] : x;
+        const qy: number = prevQ ? 2 * y - prevQ[1] : y;
+        const ex = rel ? x + num() : num();
+        const ey = rel ? y + num() : num();
+        cubicTo(x + (2 / 3) * (qx - x), y + (2 / 3) * (qy - y), ex + (2 / 3) * (qx - ex), ey + (2 / 3) * (qy - ey), ex, ey);
+        prevQ = [qx, qy];
+        prevC = null;
+        break;
+      }
+      case "Z": case "z":
+        lineTo(startX, startY);
+        close();
+        prevC = prevQ = null;
+        break;
+      case "A": case "a":
+        throw new Error("svg bake: elliptical arcs (A) are not supported — convert to beziers.");
+      default:
+        throw new Error(`svg bake: unsupported path command \`${cmd}\`.`);
+    }
+  }
+  close();
+  return contours;
+}
+
+/** `transform="rotate(a [cx cy])"` / translate / scale, composed left→right. */
+function parseSvgTransform(value: string | undefined): (p: [number, number]) => [number, number] {
+  if (!value) return (p) => p;
+  const ops: Array<(p: [number, number]) => [number, number]> = [];
+  const re = /(rotate|translate|scale)\(([^)]*)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(value))) {
+    const args = m[2].split(/[\s,]+/).filter((s) => s.length > 0).map(Number);
+    if (m[1] === "rotate") {
+      const rad = ((args[0] ?? 0) * Math.PI) / 180;
+      const cx = args[1] ?? 0;
+      const cy = args[2] ?? 0;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      ops.push(([px, py]) => {
+        const dx = px - cx;
+        const dy = py - cy;
+        return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+      });
+    } else if (m[1] === "translate") {
+      const tx = args[0] ?? 0;
+      const ty = args[1] ?? 0;
+      ops.push(([px, py]) => [px + tx, py + ty]);
+    } else {
+      const sx = args[0] ?? 1;
+      const sy = args[1] ?? sx;
+      ops.push(([px, py]) => [px * sx, py * sy]);
+    }
+  }
+  return (p) => ops.reduce((acc, op) => op(acc), p);
+}
 
 function attrs(tag: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -52,7 +260,9 @@ function num(v: string | undefined, name: string): number {
 }
 
 function parseColor(value: string | undefined): [number, number, number, number] {
-  const s = value ?? "#000000";
+  let s = value ?? "#000000";
+  if (s === "white") s = "#ffffff";
+  else if (s === "black") s = "#000000";
   if (/^#[0-9a-fA-F]{3}$/.test(s)) {
     return [
       parseInt(s[1] + s[1], 16),
@@ -111,16 +321,58 @@ export function bakeSvg(svg: string): DecodedImage {
   const sx = width / vbW;
   const sy = height / vbH;
 
+  // <defs> content (clipPaths, masks) is never painted directly.
+  const svgBody = svg.replace(/<defs[\s\S]*?<\/defs>/gi, "");
   const shapes: Shape[] = [];
-  const shapeRe = /<(circle|rect)\b[^>]*\/?>/gi;
+  const shapeRe = /<(circle|rect|path)\b[^>]*\/?>/gi;
   let m: RegExpExecArray | null;
-  while ((m = shapeRe.exec(svg))) {
+  while ((m = shapeRe.exec(svgBody))) {
     const a = attrs(m[0]);
+    const tag = m[1].toLowerCase();
+    if (tag === "path") {
+      // Paths need an explicit paint: fill="none"/absent skips (clipPath
+      // defs, stroke-only art) — the icon subset this bakes is fill-based.
+      if (!a.fill || a.fill === "none") continue;
+      const hole = a.fill === "hole";
+      const rgba = hole ? ([0, 0, 0, 255] as [number, number, number, number]) : parseColor(a.fill);
+      const op = parseOpacity(a.opacity) * parseOpacity(a["fill-opacity"]);
+      rgba[3] = Math.round(rgba[3] * op);
+      if (!a.d) continue;
+      const xf = parseSvgTransform(a.transform);
+      const contours = flattenPath(a.d).map((c) =>
+        c.map((p) => {
+          const [tx, ty] = xf(p);
+          return [(tx - vbX) * sx, (ty - vbY) * sy] as [number, number];
+        }),
+      );
+      if (contours.length === 0) continue;
+      let bx0 = Infinity;
+      let by0 = Infinity;
+      let bx1 = -Infinity;
+      let by1 = -Infinity;
+      for (const c of contours) {
+        for (const [px, py] of c) {
+          bx0 = Math.min(bx0, px);
+          by0 = Math.min(by0, py);
+          bx1 = Math.max(bx1, px);
+          by1 = Math.max(by1, py);
+        }
+      }
+      shapes.push({
+        kind: "path",
+        contours,
+        evenOdd: a["fill-rule"] === "evenodd" || a["clip-rule"] === "evenodd",
+        hole,
+        rgba,
+        bbox: [bx0, by0, bx1, by1],
+      });
+      continue;
+    }
     const hole = a.fill === "hole";
     const rgba = hole ? ([0, 0, 0, 255] as [number, number, number, number]) : parseColor(a.fill);
     const op = parseOpacity(a.opacity) * parseOpacity(a["fill-opacity"]);
     rgba[3] = Math.round(rgba[3] * op);
-    if (m[1].toLowerCase() === "circle") {
+    if (tag === "circle") {
       shapes.push({
         kind: "circle",
         cx: (num(a.cx, "cx") - vbX) * sx,
@@ -150,7 +402,9 @@ export function bakeSvg(svg: string): DecodedImage {
     const [bx0, by0, bx1, by1] =
       s.kind === "circle"
         ? [s.cx - s.r - 1, s.cy - s.r - 1, s.cx + s.r + 1, s.cy + s.r + 1]
-        : [s.x - 1, s.y - 1, s.x + s.w + 1, s.y + s.h + 1];
+        : s.kind === "rect"
+          ? [s.x - 1, s.y - 1, s.x + s.w + 1, s.y + s.h + 1]
+          : [s.bbox[0] - 1, s.bbox[1] - 1, s.bbox[2] + 1, s.bbox[3] + 1];
     const x0 = Math.max(0, Math.floor(bx0));
     const y0 = Math.max(0, Math.floor(by0));
     const x1 = Math.min(width, Math.ceil(bx1));
@@ -169,11 +423,19 @@ export function bakeSvg(svg: string): DecodedImage {
               if (dx * dx + dy * dy <= rr) covered++;
             }
           }
-        } else {
+        } else if (s.kind === "rect") {
           // Axis-aligned rect: exact analytic pixel coverage.
           const ox = Math.max(0, Math.min(x + 1, s.x + s.w) - Math.max(x, s.x));
           const oy = Math.max(0, Math.min(y + 1, s.y + s.h) - Math.max(y, s.y));
           covered = ox * oy * samples;
+        } else {
+          for (let yy = 0; yy < ss; yy++) {
+            const py = y + (yy + 0.5) / ss;
+            for (let xx = 0; xx < ss; xx++) {
+              const px = x + (xx + 0.5) / ss;
+              if (pointInContours(s.contours, px, py, s.evenOdd)) covered++;
+            }
+          }
         }
         if (covered > 0) {
           const cov01 = covered / samples;
@@ -189,4 +451,26 @@ export function bakeSvg(svg: string): DecodedImage {
   }
 
   return { width, height, rgba };
+}
+
+/** Winding test over flattened contours (nonzero or even-odd fill rule). */
+function pointInContours(contours: [number, number][][], px: number, py: number, evenOdd: boolean): boolean {
+  let winding = 0;
+  let crossings = 0;
+  for (const c of contours) {
+    for (let i = 0; i < c.length; i++) {
+      const [ax, ay] = c[i];
+      const [bx, by] = c[(i + 1) % c.length];
+      if (ay <= py ? by > py : by <= py) {
+        // Edge crosses the horizontal ray at py; x of the intersection:
+        const t = (py - ay) / (by - ay);
+        const ix = ax + (bx - ax) * t;
+        if (ix > px) {
+          crossings++;
+          winding += by > ay ? 1 : -1;
+        }
+      }
+    }
+  }
+  return evenOdd ? (crossings & 1) === 1 : winding !== 0;
 }

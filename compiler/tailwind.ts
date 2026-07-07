@@ -226,6 +226,15 @@ const SCALE_PROPS: Record<string, number> = {
   "scale-x": PROP.scaleX,
   "scale-y": PROP.scaleY,
 };
+/** Arbitrary-only f32 utilities (3D transforms + the arc primitive). */
+const ARBITRARY_F32_PROPS: Record<string, number> = {
+  "rotate-x": PROP.rotateX,
+  "rotate-y": PROP.rotateY,
+  "translate-z": PROP.translateZ,
+  "arc-start": PROP.arcStart,
+  "arc-sweep": PROP.arcSweep,
+  "arc-width": PROP.arcWidth,
+};
 
 /**
  * Parse ONE utility token (variant prefix already stripped) into the
@@ -278,6 +287,18 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
       const v = plainNum(tok.slice(prefix.length + 1));
       if (v === null) continue;
       D.push([SCALE_PROPS[prefix], px(v / 100)]);
+      return true;
+    }
+  }
+  // 3D rotations / arc utilities: arbitrary (possibly negative) values only —
+  // `rotate-x-[N]`, `rotate-y-[N]`, `translate-z-[N]`, `arc-start-[N]`,
+  // `arc-sweep-[N]`, `arc-width-[N]`. Checked before the head switch so
+  // `rotate-x-…` never falls into the 2D `rotate-N` case.
+  for (const prefix of Object.keys(ARBITRARY_F32_PROPS)) {
+    if (tok.startsWith(prefix + "-[")) {
+      const v = spacing(tok.slice(prefix.length + 1));
+      if (v === null) return false;
+      D.push([ARBITRARY_F32_PROPS[prefix], px(v)]);
       return true;
     }
   }
@@ -381,6 +402,13 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
       if (!(rest in ORIGINS)) return false;
       const [ox, oy] = ORIGINS[rest];
       D.push([PROP.originX, px(ox)], [PROP.originY, px(oy)]);
+      return true;
+    }
+    case "perspective": {
+      // 3D context root: `perspective-[800]` (px distance).
+      const v = spacing(rest);
+      if (v === null || !rest.startsWith("[") || v <= 0) return false;
+      D.push([PROP.perspective, px(v)]);
       return true;
     }
   }

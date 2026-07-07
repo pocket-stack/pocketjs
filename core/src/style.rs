@@ -284,6 +284,16 @@ pub struct Resolved {
     /// (-0.5 = left/top edge, 0 = center, +0.5 = right/bottom edge).
     pub origin_x: f32,
     pub origin_y: f32,
+    /// 3D transform (degrees / px; meaningful under a perspective root).
+    pub rotate_x: f32,
+    pub rotate_y: f32,
+    pub translate_z: f32,
+    /// > 0 makes this node a 3D context root (see spec.ts PROP.perspective).
+    pub perspective: f32,
+    /// Arc primitive (annular sector; see spec.ts PROP.arcStart/Sweep/Width).
+    pub arc_start: f32,
+    pub arc_sweep: f32,
+    pub arc_width: f32,
 }
 
 impl Default for Resolved {
@@ -332,6 +342,13 @@ impl Default for Resolved {
             scale_y: 1.0,
             origin_x: 0.0,
             origin_y: 0.0,
+            rotate_x: 0.0,
+            rotate_y: 0.0,
+            translate_z: 0.0,
+            perspective: 0.0,
+            arc_start: 0.0,
+            arc_sweep: 0.0,
+            arc_width: 0.0,
         }
     }
 }
@@ -394,6 +411,13 @@ impl Resolved {
             p::SCALE_Y => self.scale_y = f,
             p::ORIGIN_X => self.origin_x = f,
             p::ORIGIN_Y => self.origin_y = f,
+            p::ROTATE_X => self.rotate_x = f,
+            p::ROTATE_Y => self.rotate_y = f,
+            p::TRANSLATE_Z => self.translate_z = f,
+            p::PERSPECTIVE => self.perspective = f,
+            p::ARC_START => self.arc_start = f,
+            p::ARC_SWEEP => self.arc_sweep = f,
+            p::ARC_WIDTH => self.arc_width = f,
             _ => {}
         }
     }
@@ -455,6 +479,13 @@ impl Resolved {
             p::SCALE_Y => self.scale_y.to_bits(),
             p::ORIGIN_X => self.origin_x.to_bits(),
             p::ORIGIN_Y => self.origin_y.to_bits(),
+            p::ROTATE_X => self.rotate_x.to_bits(),
+            p::ROTATE_Y => self.rotate_y.to_bits(),
+            p::TRANSLATE_Z => self.translate_z.to_bits(),
+            p::PERSPECTIVE => self.perspective.to_bits(),
+            p::ARC_START => self.arc_start.to_bits(),
+            p::ARC_SWEEP => self.arc_sweep.to_bits(),
+            p::ARC_WIDTH => self.arc_width.to_bits(),
             _ => 0,
         }
     }

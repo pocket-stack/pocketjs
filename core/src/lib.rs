@@ -752,7 +752,9 @@ impl Ui {
                 for prop in 0u16..=255 {
                     let prop = prop as u8;
                     let bit = spec::ANIM_BIT[prop as usize];
-                    if bit == 0xff || tr.mask & (1u32 << bit) == 0 {
+                    // bits >= 32 are timeline/animate()-only (beyond the u32
+                    // transition mask — see spec.ts ANIMATABLE).
+                    if bit >= 32 || tr.mask & (1u32 << bit) == 0 {
                         continue;
                     }
                     let from = old.get_bits(prop);

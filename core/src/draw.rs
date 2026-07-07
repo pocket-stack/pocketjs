@@ -127,6 +127,89 @@ impl Affine {
     }
 }
 
+// ---- 3D transforms (perspective subtrees) ---------------------------------------
+//
+// A node with `perspective > 0` becomes a 3D CONTEXT ROOT: its subtree
+// composes 3x4 affine matrices (implicit preserve-3d), every painted box is
+// projected through the root's perspective distance about the root center,
+// and the projected quads are painter-sorted by camera-space depth before
+// being clipped and emitted as TRIs. Glyph runs project their anchor and draw
+// upright/unscaled (same contract as 2D rotation); images and box decoration
+// (radius/border/shadow) are not part of the 3D contract.
+
+/// Row-major 3x4 affine 3D matrix (the w row is implicitly [0,0,0,1] — all
+/// composed ops are affine; perspective happens at projection time).
+#[derive(Clone, Copy)]
+struct Mat34 {
+    m: [f32; 12],
+}
+
+impl Mat34 {
+    const IDENTITY: Mat34 = Mat34 { m: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0] };
+
+    /// self ∘ other (apply `other` first, then `self`).
+    fn then(&self, o: &Mat34) -> Mat34 {
+        let a = &self.m;
+        let b = &o.m;
+        let mut out = [0.0f32; 12];
+        for row in 0..3 {
+            for col in 0..4 {
+                let mut v = a[row * 4] * b[col] + a[row * 4 + 1] * b[4 + col] + a[row * 4 + 2] * b[8 + col];
+                if col == 3 {
+                    v += a[row * 4 + 3];
+                }
+                out[row * 4 + col] = v;
+            }
+        }
+        Mat34 { m: out }
+    }
+
+    #[inline]
+    fn apply(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
+        let m = &self.m;
+        (
+            m[0] * x + m[1] * y + m[2] * z + m[3],
+            m[4] * x + m[5] * y + m[6] * z + m[7],
+            m[8] * x + m[9] * y + m[10] * z + m[11],
+        )
+    }
+
+    fn translate(x: f32, y: f32, z: f32) -> Mat34 {
+        Mat34 { m: [1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z] }
+    }
+
+    fn rot_x(deg: f32) -> Mat34 {
+        let r = deg * (PI / 180.0);
+        let (s, c) = (sinf(r), cosf(r));
+        // Screen y grows DOWN: positive rotateX tips the top edge away, like CSS.
+        Mat34 { m: [1.0, 0.0, 0.0, 0.0, 0.0, c, s, 0.0, 0.0, -s, c, 0.0] }
+    }
+
+    fn rot_y(deg: f32) -> Mat34 {
+        let r = deg * (PI / 180.0);
+        let (s, c) = (sinf(r), cosf(r));
+        Mat34 { m: [c, 0.0, s, 0.0, 0.0, 1.0, 0.0, 0.0, -s, 0.0, c, 0.0] }
+    }
+
+    fn rot_z(deg: f32) -> Mat34 {
+        let r = deg * (PI / 180.0);
+        let (s, c) = (sinf(r), cosf(r));
+        Mat34 { m: [c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0] }
+    }
+
+    fn scale(sx: f32, sy: f32) -> Mat34 {
+        Mat34 { m: [sx, 0.0, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0] }
+    }
+}
+
+/// One depth-sorted paintable inside a 3D context.
+enum Item3 {
+    /// Projected flat-color quad (screen space, pre-clip).
+    Quad { pts: [(f32, f32); 4], color: u32 },
+    /// A text node's glyph run, anchored at its projected origin.
+    Run { slot: u32, origin: (f32, f32), opacity: f32 },
+}
+
 /// Screen-space clip rect (x0 <= x1, y0 <= y1), f32 but integer-valued.
 #[derive(Clone, Copy, Debug)]
 struct Clip {
@@ -387,7 +470,14 @@ impl<'a> Walker<'a> {
             self.emit_shadow(dl, &world, l.w, l.h, r.radius, r.shadow, op, &clip);
         }
 
-        if rounded_ring {
+        let is_arc = r.arc_width > 0.0 && r.arc_sweep != 0.0;
+        if is_arc {
+            // Arc primitive: the bg color strokes an annular sector instead
+            // of filling the box (spec.ts PROP.arcStart/arcSweep/arcWidth).
+            if alpha(bg_color) > 0 {
+                self.emit_arc(dl, &world, l.w, l.h, &r, bg_color, &clip);
+            }
+        } else if rounded_ring {
             self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, Fill::Flat(border_color), &clip);
             let bw = r.border_width.min(l.w * 0.5).min(l.h * 0.5);
             if has_grad {
@@ -485,6 +575,16 @@ impl<'a> Walker<'a> {
             scissored = true;
         }
 
+        if r.perspective > 0.0 {
+            // 3D context root: the subtree composes 3x4 matrices, projects
+            // through r.perspective about this node's center and painter-sorts.
+            self.paint_3d(slot, &world, op, &child_clip, dl, r.perspective, l.w, l.h);
+            if scissored {
+                dl.words.push(spec::draw_op::SCISSOR_POP);
+            }
+            return;
+        }
+
         let node = &self.tree.slots[slot as usize];
         let mut order: Vec<(i32, u32)> = Vec::with_capacity(node.children.len());
         for &cid in &node.children {
@@ -502,6 +602,254 @@ impl<'a> Walker<'a> {
 
         if scissored {
             dl.words.push(spec::draw_op::SCISSOR_POP);
+        }
+    }
+
+    // ---- 3D context ---------------------------------------------------------
+
+    /// Paint the subtree of a perspective root: collect projected quads and
+    /// glyph runs depth-first, painter-sort by camera-space depth (far first),
+    /// then clip + emit. `w`/`h` are the root's layout size (the perspective
+    /// origin sits at its center, CSS default).
+    #[allow(clippy::too_many_arguments)]
+    fn paint_3d(
+        &mut self,
+        root_slot: u32,
+        root_world: &Affine,
+        opacity: f32,
+        clip: &Clip,
+        dl: &mut DrawList,
+        distance: f32,
+        w: f32,
+        h: f32,
+    ) {
+        let (cx, cy) = (w * 0.5, h * 0.5);
+        let mut items: Vec<(f32, Item3)> = Vec::new();
+        let root = &self.tree.slots[root_slot as usize];
+        let children: Vec<i32> = root.children.clone();
+        for cid in children {
+            if let Some(cs) = self.tree.resolve(cid) {
+                self.collect_3d(cs, &Mat34::IDENTITY, opacity, root_world, distance, cx, cy, &mut items);
+            }
+        }
+        // Painter's algorithm: farthest (smallest camera z) first. total_cmp
+        // keeps this deterministic; stable sort preserves tree order for ties.
+        items.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (_, item) in items {
+            match item {
+                Item3::Quad { pts, color } => {
+                    let poly: Vec<ClipVert> = pts
+                        .iter()
+                        .map(|&(x, y)| ClipVert { x, y, color: unpack(color) })
+                        .collect();
+                    let clipped = sutherland_hodgman(&poly, clip);
+                    for i in 1..clipped.len().saturating_sub(1) {
+                        emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
+                    }
+                }
+                Item3::Run { slot, origin, opacity } => {
+                    // (borrows through the walker's &'a Tree field, so the
+                    // node ref is not tied to &mut self)
+                    let node = &self.tree.slots[slot as usize];
+                    let r = style::resolve(node, self.styles, true);
+                    let anchor = Affine::translate(origin.0, origin.1);
+                    self.emit_text(dl, node, &r, &anchor, opacity, clip, node.layout.w);
+                }
+            }
+        }
+    }
+
+    /// Depth-first 3D collection. `m` maps node-local 3D coords into the
+    /// context root's local space; projection happens here so every painted
+    /// box becomes one flat screen quad + depth key.
+    #[allow(clippy::too_many_arguments)]
+    fn collect_3d(
+        &self,
+        slot: u32,
+        m: &Mat34,
+        opacity: f32,
+        root_world: &Affine,
+        distance: f32,
+        cx: f32,
+        cy: f32,
+        items: &mut Vec<(f32, Item3)>,
+    ) {
+        let node = &self.tree.slots[slot as usize];
+        let r = style::resolve(node, self.styles, true);
+        if r.display == spec::Display::None as u8 {
+            return;
+        }
+        let op = opacity * clampf(r.opacity, 0.0, 1.0);
+        if op <= 0.0 {
+            return;
+        }
+        let l = node.layout;
+        // Local matrix, canonical function order (matches the CSS transform
+        // lists this models: translate/translateZ leftmost, then rotate,
+        // rotateX, rotateY, with 2D scale innermost), conjugated around the
+        // transform origin.
+        let (ox, oy) = (l.w * (0.5 + r.origin_x), l.h * (0.5 + r.origin_y));
+        let mut local = Mat34::translate(l.x + r.translate_x, l.y + r.translate_y, r.translate_z)
+            .then(&Mat34::translate(ox, oy, 0.0));
+        if r.rotate != 0.0 {
+            local = local.then(&Mat34::rot_z(r.rotate));
+        }
+        if r.rotate_x != 0.0 {
+            local = local.then(&Mat34::rot_x(r.rotate_x));
+        }
+        if r.rotate_y != 0.0 {
+            local = local.then(&Mat34::rot_y(r.rotate_y));
+        }
+        let (sx, sy) = (r.scale * r.scale_x, r.scale * r.scale_y);
+        if sx != 1.0 || sy != 1.0 {
+            local = local.then(&Mat34::scale(sx, sy));
+        }
+        local = local.then(&Mat34::translate(-ox, -oy, 0.0));
+        let m2 = m.then(&local);
+
+        let project = |x: f32, y: f32| -> ((f32, f32), f32) {
+            let (px, py, pz) = m2.apply(x, y, 0.0);
+            let denom = (distance - pz).max(1.0); // near guard
+            let f = distance / denom;
+            let lx = cx + (px - cx) * f;
+            let ly = cy + (py - cy) * f;
+            (root_world.apply(lx, ly), pz)
+        };
+
+        // Background -> one flat quad (gradients flatten to the mid-blend;
+        // radius/border/shadow are outside the 3D contract).
+        let color = if r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32 {
+            lerp_color(r.grad_from, r.grad_to, 0.5)
+        } else {
+            r.bg_color
+        };
+        let color = scale_alpha(color, op);
+        if alpha(color) > 0 && l.w > 0.0 && l.h > 0.0 {
+            let c0 = project(0.0, 0.0);
+            let c1 = project(l.w, 0.0);
+            let c2 = project(l.w, l.h);
+            let c3 = project(0.0, l.h);
+            let depth = (c0.1 + c1.1 + c2.1 + c3.1) * 0.25;
+            items.push((depth, Item3::Quad { pts: [c0.0, c1.0, c2.0, c3.0], color }));
+        }
+        if node.node_type == spec::NodeType::Text as u8 {
+            // Glyphs anchor at the projected text origin and stay upright
+            // (the 2D rotation contract). Depth = the anchor's z.
+            let ((sx, sy), z) = project(0.0, 0.0);
+            items.push((z + 0.01, Item3::Run { slot, origin: (sx, sy), opacity: op }));
+            return; // text children are absorbed into the run
+        }
+        for &cid in &node.children {
+            if let Some(cs) = self.tree.resolve(cid) {
+                self.collect_3d(cs, &m2, op, root_world, distance, cx, cy, items);
+            }
+        }
+    }
+
+    /// Rasterize an annular sector ("stroke arc" with round caps) as
+    /// alpha-covered RECT runs — deterministic 2x2 supersampled coverage.
+    /// Axis-aligned worlds only; rotation belongs in arcStart.
+    fn emit_arc(
+        &self,
+        dl: &mut DrawList,
+        world: &Affine,
+        w: f32,
+        h: f32,
+        r: &style::Resolved,
+        color: u32,
+        clip: &Clip,
+    ) {
+        if !world.is_axis_aligned() {
+            return;
+        }
+        let (cx, cy) = world.apply(w * 0.5, h * 0.5);
+        let s = world.d.max(0.0);
+        let outer = (w.min(h) * 0.5) * s;
+        let width = (r.arc_width * s).min(outer);
+        if outer <= 0.0 || width <= 0.0 {
+            return;
+        }
+        let rmid = outer - width * 0.5;
+        let half = width * 0.5;
+        let sweep = clampf(r.arc_sweep, -360.0, 360.0);
+        let (a0, asweep) = if sweep < 0.0 { (r.arc_start + sweep, -sweep) } else { (r.arc_start, sweep) };
+        let full = asweep >= 360.0;
+        let major = asweep > 180.0;
+        // 0 deg = 12 o'clock, clockwise positive.
+        let dir = |deg: f32| {
+            let rad = deg * (PI / 180.0);
+            (sinf(rad), -cosf(rad))
+        };
+        let (svx, svy) = dir(a0);
+        let (evx, evy) = dir(a0 + asweep);
+        let cap0 = (cx + svx * rmid, cy + svy * rmid);
+        let cap1 = (cx + evx * rmid, cy + evy * rmid);
+        let half2 = half * half;
+
+        let x0 = floorf(clampf(cx - outer, clip.x0, clip.x1)) as i32;
+        let x1 = ceilf(clampf(cx + outer, clip.x0, clip.x1)) as i32;
+        let y0 = floorf(clampf(cy - outer, clip.y0, clip.y1)) as i32;
+        let y1 = ceilf(clampf(cy + outer, clip.y0, clip.y1)) as i32;
+
+        let covered = |px: f32, py: f32| -> bool {
+            let dx = px - cx;
+            let dy = py - cy;
+            let d = sqrtf(dx * dx + dy * dy);
+            let in_ring = (d - rmid) * (d - rmid) <= half2;
+            if in_ring {
+                let in_angle = full || {
+                    let cross_s = svx * dy - svy * dx;
+                    let cross_e = evx * dy - evy * dx;
+                    if major { cross_s >= 0.0 || cross_e <= 0.0 } else { cross_s >= 0.0 && cross_e <= 0.0 }
+                };
+                if in_angle {
+                    return true;
+                }
+            }
+            if full {
+                return false;
+            }
+            // Round caps at both endpoints.
+            let d0x = px - cap0.0;
+            let d0y = py - cap0.1;
+            if d0x * d0x + d0y * d0y <= half2 {
+                return true;
+            }
+            let d1x = px - cap1.0;
+            let d1y = py - cap1.1;
+            d1x * d1x + d1y * d1y <= half2
+        };
+
+        for row in y0..y1 {
+            let mut run_start = x0;
+            let mut run_cov = 0u32;
+            let flush = |dl: &mut DrawList, start: i32, end: i32, cov: u32| {
+                if cov == 0 || end <= start {
+                    return;
+                }
+                let c = scale_alpha(color, cov as f32 / 4.0);
+                if alpha(c) == 0 {
+                    return;
+                }
+                dl.words.push(spec::draw_op::RECT);
+                dl.words.push(xy_word(start as f32, row as f32));
+                dl.words.push(wh_word((end - start) as f32, 1.0));
+                dl.words.push(c);
+            };
+            for col in x0..x1 {
+                let mut cov = 0u32;
+                for (ox, oy) in [(0.25f32, 0.25f32), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)] {
+                    if covered(col as f32 + ox, row as f32 + oy) {
+                        cov += 1;
+                    }
+                }
+                if cov != run_cov {
+                    flush(dl, run_start, col, run_cov);
+                    run_start = col;
+                    run_cov = cov;
+                }
+            }
+            flush(dl, run_start, x1, run_cov);
         }
     }
 

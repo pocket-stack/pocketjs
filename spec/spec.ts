@@ -184,6 +184,23 @@ export const PROP = {
   //                    origin from the node center (-0.5 = left edge, 0 =
   //                    center, +0.5 = right edge). NOT animatable.
   originY: 135, //      f32 fraction of node height (-0.5 top .. +0.5 bottom)
+  rotateX: 136, //      f32 degrees about the X axis (3D; needs a perspective root)
+  rotateY: 137, //      f32 degrees about the Y axis (3D)
+  translateZ: 138, //   f32 px along Z (+ toward the viewer; 3D)
+  perspective: 139, //  f32 px perspective distance; > 0 makes this node a 3D
+  //                    CONTEXT ROOT: its whole subtree composes 4x4 transforms
+  //                    (implicit preserve-3d), projects through this distance
+  //                    about the node center and painter-sorts by depth.
+  //                    NOT animatable.
+
+  // -- arc (paint-only annular sector; the "stroke arc" primitive) ------------
+  arcStart: 140, //     f32 degrees, 0 = 12 o'clock, clockwise positive
+  arcSweep: 141, //     f32 degrees of arc extent (negative = counterclockwise)
+  arcWidth: 142, //     f32 px stroke thickness; > 0 (with sweep != 0) draws an
+  //                    annular sector with ROUND CAPS instead of the bg box:
+  //                    center = node center, outer radius = min(w,h)/2, color
+  //                    = bgColor. Axis-aligned worlds only (rotation belongs
+  //                    in arcStart).
 } as const;
 
 export type PropName = keyof typeof PROP;
@@ -193,8 +210,13 @@ export type PropName = keyof typeof PROP;
 // ---------------------------------------------------------------------------
 // ANIMATABLE is an ORDERED list: the index of a prop in this list is its
 // "anim bit" — the bit used in the style-table transition `mask` (u32) and in
-// core anim bookkeeping. Append-only; never reorder. 30/32 bits used.
+// core anim bookkeeping. Append-only; never reorder.
 // Everything not listed here is NOT animatable (enums, focus, shadow index...).
+//
+// Entries at index >= 32 are BEYOND the u32 transition mask: they animate via
+// baked keyframe timelines and the `animate()` op (both gate on the 256-bit
+// ANIMATABLE_BITS set), but `transition-*` classes can never target them —
+// the transition spawn loop skips bits >= 32.
 
 export const ANIMATABLE: readonly PropName[] = [
   // bit 0..
@@ -230,6 +252,13 @@ export const ANIMATABLE: readonly PropName[] = [
   "rotate", //      29
   "scaleX", //      30
   "scaleY", //      31
+  // -- timeline/animate()-only from here on (no transition-mask bit) ---------
+  "rotateX", //     32
+  "rotateY", //     33
+  "translateZ", //  34
+  "arcStart", //    35
+  "arcSweep", //    36
+  "arcWidth", //    37
 ];
 
 /** Anim bit index for a prop, or -1 if not animatable. */
@@ -296,6 +325,9 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
   scale: VALUE_KIND.f32, rotate: VALUE_KIND.f32,
   scaleX: VALUE_KIND.f32, scaleY: VALUE_KIND.f32,
   originX: VALUE_KIND.f32, originY: VALUE_KIND.f32,
+  rotateX: VALUE_KIND.f32, rotateY: VALUE_KIND.f32,
+  translateZ: VALUE_KIND.f32, perspective: VALUE_KIND.f32,
+  arcStart: VALUE_KIND.f32, arcSweep: VALUE_KIND.f32, arcWidth: VALUE_KIND.f32,
 };
 
 // ---------------------------------------------------------------------------

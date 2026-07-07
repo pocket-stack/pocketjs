@@ -288,6 +288,45 @@ describe("compileClasses", () => {
   });
 });
 
+describe("3D + arc utilities", () => {
+  test("perspective-[N] and 3D rotations parse (arbitrary, signed)", () => {
+    const m = props(parseClassLiteral("perspective-[380] rotate-x-[-40] rotate-y-[90] translate-z-[-12]"));
+    expect(bitsF32(m.get(PROP.perspective)!)).toBe(380);
+    expect(bitsF32(m.get(PROP.rotateX)!)).toBe(-40);
+    expect(bitsF32(m.get(PROP.rotateY)!)).toBe(90);
+    expect(bitsF32(m.get(PROP.translateZ)!)).toBe(-12);
+  });
+  test("arc utilities parse", () => {
+    const m = props(parseClassLiteral("arc-start-[45] arc-sweep-[-315] arc-width-[5]"));
+    expect(bitsF32(m.get(PROP.arcStart)!)).toBe(45);
+    expect(bitsF32(m.get(PROP.arcSweep)!)).toBe(-315);
+    expect(bitsF32(m.get(PROP.arcWidth)!)).toBe(5);
+  });
+  test("non-arbitrary 3D values reject the literal", () => {
+    expect(parseClassLiteral("rotate-x-40")).toBeNull();
+    expect(parseClassLiteral("perspective-400")).toBeNull();
+  });
+  test("keyframes animate rotateY / arcSweep (timeline-only props)", () => {
+    registerAnimationTheme({
+      keyframes: {
+        flip3d: { from: { rotateY: 110, opacity: 0 }, to: { rotateY: 0, opacity: 1 } },
+        draw: { from: { arcSweep: 0 }, to: { arcSweep: 315 } },
+      },
+      animation: { flip3d: "flip3d 1.2s linear", draw: "draw 1s linear" },
+    });
+    const f = parseClassLiteral("animate-flip3d")!;
+    const tlF = bakedTimelines()[f.animation!.anims[0]];
+    expect(tlF.tracks.map((t) => t.prop).sort((a, b) => a - b)).toEqual(
+      [PROP.opacity, PROP.rotateY].sort((a, b) => a - b),
+    );
+    const d = parseClassLiteral("animate-draw")!;
+    const tlD = bakedTimelines()[d.animation!.anims[0]];
+    expect(tlD.tracks[0].prop).toBe(PROP.arcSweep);
+    expect(tlD.tracks[0].segments[0].to).toBe(f32Bits(315));
+    registerAnimationTheme(undefined);
+  });
+});
+
 describe("transform origin", () => {
   test("origin-bottom = (0, +0.5) fractions", () => {
     const m = props(parseClassLiteral("origin-bottom"));

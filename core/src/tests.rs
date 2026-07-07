@@ -1561,3 +1561,103 @@ fn negative_insets_are_offsets_not_size_full() {
     // right-anchored mark: x = 80 - 20
     assert_eq!(ui.layout_of(m).unwrap(), (60.0, 0.0, 20.0, 10.0));
 }
+
+// ---- 3D + arc rendering smoke tests --------------------------------------------
+
+#[test]
+fn perspective_subtree_emits_depth_sorted_tris() {
+    let mut ui = Ui::new();
+    let mut root = StyleSpec::new();
+    root.base = alloc::vec![
+        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
+        (spec::prop::WIDTH, 100f32.to_bits()),
+        (spec::prop::HEIGHT, 100f32.to_bits()),
+        (spec::prop::PERSPECTIVE, 200f32.to_bits()),
+    ];
+    let mut face = StyleSpec::new();
+    face.base = alloc::vec![
+        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
+        (spec::prop::WIDTH, 50f32.to_bits()),
+        (spec::prop::HEIGHT, 50f32.to_bits()),
+        (spec::prop::INSET_L, 25f32.to_bits()),
+        (spec::prop::INSET_T, 25f32.to_bits()),
+        (spec::prop::BG_COLOR, 0xff88_8888u32),
+        (spec::prop::ROTATE_Y, 45f32.to_bits()),
+    ];
+    assert!(ui.load_styles(&encode_styles(&[root, face])));
+    let r = ui.create_node(0);
+    let f = ui.create_node(0);
+    ui.insert_before(spec::ROOT_ID, r, 0);
+    ui.insert_before(r, f, 0);
+    ui.set_style(r, 0);
+    ui.set_style(f, 1);
+    ui.tick();
+    let words = ui.draw().words.clone();
+    // A rotateY'd face must land on the TRI path (perspective projection).
+    let mut i = 0;
+    let mut tris = 0;
+    while i < words.len() {
+        let op = words[i];
+        i += match op {
+            x if x == spec::draw_op::RECT => 4,
+            x if x == spec::draw_op::GRAD_RECT => 6,
+            x if x == spec::draw_op::TRI => {
+                tris += 1;
+                7
+            }
+            x if x == spec::draw_op::GLYPH_RUN => {
+                let n = (words[i + 1] >> 16) as usize;
+                3 + 2 * n
+            }
+            x if x == spec::draw_op::TEX_QUAD => 9,
+            x if x == spec::draw_op::SCISSOR => 3,
+            _ => 1, // SCISSOR_POP
+        };
+    }
+    assert!(tris >= 2, "expected projected face triangles, got {tris}");
+}
+
+#[test]
+fn arc_primitive_emits_coverage_rects() {
+    let mut ui = Ui::new();
+    let mut arc = StyleSpec::new();
+    arc.base = alloc::vec![
+        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
+        (spec::prop::WIDTH, 40f32.to_bits()),
+        (spec::prop::HEIGHT, 40f32.to_bits()),
+        (spec::prop::INSET_L, 10f32.to_bits()),
+        (spec::prop::INSET_T, 10f32.to_bits()),
+        (spec::prop::BG_COLOR, 0xffff_ffffu32),
+        (spec::prop::ARC_START, 45f32.to_bits()),
+        (spec::prop::ARC_SWEEP, 180f32.to_bits()),
+        (spec::prop::ARC_WIDTH, 5f32.to_bits()),
+    ];
+    assert!(ui.load_styles(&encode_styles(&[arc])));
+    let n = ui.create_node(0);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.set_style(n, 0);
+    ui.tick();
+    let words = ui.draw().words.clone();
+    let mut rects = 0;
+    let mut i = 0;
+    while i < words.len() {
+        let op = words[i];
+        i += match op {
+            x if x == spec::draw_op::RECT => {
+                rects += 1;
+                4
+            }
+            x if x == spec::draw_op::GRAD_RECT => 6,
+            x if x == spec::draw_op::TRI => 7,
+            x if x == spec::draw_op::GLYPH_RUN => {
+                let c = (words[i + 1] >> 16) as usize;
+                3 + 2 * c
+            }
+            x if x == spec::draw_op::TEX_QUAD => 9,
+            x if x == spec::draw_op::SCISSOR => 3,
+            _ => 1,
+        };
+    }
+    // The half-ring rasterizes into many small coverage runs (not one box).
+    assert!(rects > 20, "expected arc coverage runs, got {rects}");
+}
