@@ -339,7 +339,7 @@ async function main() {
 
   // 4. prebuilt showcase bundles for the homepage hero. Reuse dist/ when
   //    present, and build missing bundles so the site never emits 404 demos.
-  const showcase = ["gallery-main", "settings-main", "hero-main", "music-main"];
+  const showcase = ["motions-main", "gallery-main", "settings-main", "hero-main", "music-main"];
   for (const s of showcase) {
     copyShowcaseBundle(s);
   }
@@ -354,6 +354,10 @@ async function main() {
     if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, "assets/" + asset);
   }
   copy(SITE + "assets/pocketjs-hardware-demo.mp4", "assets/pocketjs-hardware-demo.mp4");
+  // Blog illustration loops (animated GIFs rendered by the engine itself).
+  if (existsSync(SITE + "assets/blog/")) {
+    for (const f of readdirSync(SITE + "assets/blog/")) copy(SITE + "assets/blog/" + f, "assets/blog/" + f);
+  }
 
   // 6. playground page
   write("playground/index.html", renderPage({

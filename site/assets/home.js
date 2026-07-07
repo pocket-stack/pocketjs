@@ -4,8 +4,9 @@
 import { PocketHost } from "../playground/host.js";
 
 const PG = "/pg/";
-// The hero runs the animated gallery — L/R (or Q/E) pages between shader covers.
-const SHOWCASE = "gallery-main";
+// The hero runs the yui540 motion studies — L/R (or Q/E) switch pages of
+// baked keyframe / 3D animations, all played by the Rust core.
+const SHOWCASE = "motions-main";
 
 function setupCodeTabs() {
   const tabs = [...document.querySelectorAll("[data-code-tab]")];

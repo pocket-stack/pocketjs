@@ -95,6 +95,8 @@ async function main() {
     opt.textContent = d.title || d.name;
     demoSel.appendChild(opt);
   }
+  // Default to the motion-studies demo (the animation engine showcase).
+  if (demos.some((d) => d.name === "motions")) demoSel.value = "motions";
   const setDoc = (src) =>
     editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: src } });
   const currentDemo = () => demos.find((d) => d.name === demoSel.value) || demos[0];

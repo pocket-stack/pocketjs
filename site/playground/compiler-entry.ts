@@ -16,6 +16,14 @@ import { transformVueJsxVapor } from "vue-jsx-vapor/api";
 import { parse as parseFont, type Font } from "opentype.js";
 
 import { compileClasses, fontSlotInfo } from "../../compiler/tailwind.ts";
+import { registerAnimationTheme } from "../../compiler/animation.ts";
+import motionsConfig from "../../demos/motions/pocket.config.ts";
+
+// The playground compiles single-file demos without their app-dir
+// pocket.config.ts, so install the motions demo's keyframe/animation theme
+// (superset of the built-ins) as the playground-wide default — this is what
+// lets the homepage/blog motion studies stay live-editable.
+registerAnimationTheme(motionsConfig.theme);
 import { bakeSlot } from "../../compiler/bake-font.ts";
 import {
   PAK_DTYPE,
