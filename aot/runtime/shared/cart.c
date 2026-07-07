@@ -1,4 +1,4 @@
-// aot/runtime/cart.c — PJGB cartridge container access.
+// aot/runtime/shared/cart.c — PJGB cartridge container access.
 //
 // The blob layout (little-endian):
 //   header (PJGB_HEADER_SIZE bytes): magic[4], u16 version, u16 chunk_count,

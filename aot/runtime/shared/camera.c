@@ -1,4 +1,4 @@
-// aot/runtime/camera.c — follow the player, clamped to the map bounds.
+// aot/runtime/shared/camera.c — follow the player, clamped to the map bounds.
 #include "runtime.h"
 
 static s32 clampi(s32 v, s32 lo, s32 hi) {

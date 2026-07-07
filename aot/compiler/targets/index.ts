@@ -22,5 +22,13 @@ export async function buildTarget(out: CompileOutput, outPath: string): Promise<
       const { buildNes } = await import("./nes.ts");
       return buildNes(out, outPath);
     }
+    case "3ds": {
+      const { build3ds } = await import("./3ds.ts");
+      return build3ds(out, outPath);
+    }
+    case "nds": {
+      const { buildNds } = await import("./nds.ts");
+      return buildNds(out, outPath);
+    }
   }
 }

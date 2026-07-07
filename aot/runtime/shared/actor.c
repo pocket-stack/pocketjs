@@ -1,4 +1,4 @@
-// aot/runtime/actor.c — per-frame NPC updates.
+// aot/runtime/shared/actor.c — per-frame NPC updates.
 //
 // v1 ships MOVE_STATIC actors (the world's NPCs stand still and are turned
 // only by scripts via FACE_PLAYER). Wander/patrol movement kinds are reserved

@@ -4,10 +4,14 @@
 
 import { resolve } from "node:path";
 import { compile, debugInfo, irJson } from "./index.ts";
-import type { TargetName } from "../spec/pjgb.ts";
+import { TARGETS, type TargetName } from "../spec/pjgb.ts";
+
+// The target list, its ROM extensions, and everything else target-shaped come
+// straight from spec TARGETS — adding a console never touches this file.
+const TARGET_NAMES = Object.keys(TARGETS) as TargetName[];
 
 function usage(): never {
-  console.error("usage: pocket-aot build <entry.tsx> [--target gba|gb|nes] [--out <file>] [--no-rom]");
+  console.error(`usage: pocket-aot build <entry.tsx> [--target ${TARGET_NAMES.join("|")}] [--out <file>] [--no-rom]`);
   process.exit(2);
 }
 
@@ -21,17 +25,17 @@ for (let i = 0; i < rest.length; i++) {
   if (rest[i] === "--out") out = rest[++i];
   else if (rest[i] === "--target") {
     const t = rest[++i];
-    if (t !== "gba" && t !== "gb" && t !== "nes") usage();
-    target = t;
+    if (!TARGET_NAMES.includes(t as TargetName)) usage();
+    target = t as TargetName;
   } else if (rest[i] === "--no-rom") doRom = false;
   else usage();
 }
-const EXT: Record<TargetName, string> = { gba: ".gba", gb: ".gb", nes: ".nes" };
-if (!out) out = `aot/dist/game${EXT[target]}`;
+if (!out) out = `aot/dist/game${TARGETS[target].ext}`;
 
 const entry = resolve(entryArg);
 const outAbs = resolve(out);
-const base = outAbs.replace(/\.(gba|gb|nes)$/, "");
+const extPattern = new RegExp(`\\.(${TARGET_NAMES.map((t) => TARGETS[t].ext.slice(1)).join("|")})$`);
+const base = outAbs.replace(extPattern, "");
 
 const t0 = performance.now();
 const built = await compile(entry, target);

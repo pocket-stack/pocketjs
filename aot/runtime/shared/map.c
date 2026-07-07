@@ -1,4 +1,4 @@
-// aot/runtime/map.c — map load, collision, actor lookup.
+// aot/runtime/shared/map.c — map load, collision, actor lookup.
 #include "runtime.h"
 
 void map_enter(int map_id, int tx, int ty, int dir) {

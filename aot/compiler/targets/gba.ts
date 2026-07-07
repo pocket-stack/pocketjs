@@ -152,8 +152,8 @@ function validate(out: CompileOutput, enc: GbaEncoded): void {
   if (ctx.texts.size > BUDGET.MAX_TEXTS) err.push(`too many texts`);
   if (ctx.scripts.length > BUDGET.MAX_SCRIPTS) err.push(`too many scripts`);
   if (ctx.fullGlyphs.size > BUDGET.MAX_FULL_GLYPHS) err.push(`too many unique CJK glyphs (${ctx.fullGlyphs.size})`);
-  if (enc.bgTileIndexCount > BG_TILE_BUDGET.gba) err.push(`BG tiles ${enc.bgTileIndexCount} > ${BG_TILE_BUDGET.gba}`);
-  if (enc.objTiles.length > OBJ_TILE_BUDGET.gba) err.push(`OBJ tiles ${enc.objTiles.length} > ${OBJ_TILE_BUDGET.gba}`);
+  if (enc.bgTileIndexCount > BG_TILE_BUDGET[t.name]) err.push(`BG tiles ${enc.bgTileIndexCount} > ${BG_TILE_BUDGET[t.name]}`);
+  if (enc.objTiles.length > OBJ_TILE_BUDGET[t.name]) err.push(`OBJ tiles ${enc.objTiles.length} > ${OBJ_TILE_BUDGET[t.name]}`);
   for (const m of model.maps) {
     if (m.w > t.maxMapW || m.h > t.maxMapH) err.push(`map "${m.name}" ${m.w}x${m.h} exceeds ${t.maxMapW}x${t.maxMapH}`);
     if (m.actors.length > BUDGET.MAX_ACTORS_PER_MAP) err.push(`map "${m.name}" has ${m.actors.length} actors`);

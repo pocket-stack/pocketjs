@@ -11,13 +11,11 @@ import { $ } from "bun";
 import { compile, debugInfo, type CompileOutput } from "../compiler/index.ts";
 import { buildTarget } from "../compiler/targets/index.ts";
 import { wrapPages } from "../compiler/text.ts";
+import { runScenario } from "./harness/run_scenario.ts";
 import { DBG, TARGETS, type TargetName } from "../spec/pjgb.ts";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
-const RUNNER = ROOT + "aot/test/harness/mgba_runner";
-const NES_RUNNER = ROOT + "aot/test/harness/nes_runner.ts";
 const SHOTS = ROOT + "aot/dist/shots";
-const EXT: Record<TargetName, string> = { gba: ".gba", gb: ".gb", nes: ".nes" };
 
 type Step =
   | { op: "advance"; frames: number }
@@ -48,21 +46,13 @@ interface TargetCtx {
 async function run(t: TargetCtx, steps: Step[]): Promise<Record<string, number>> {
   const scenario = ROOT + `aot/dist/scenario-${t.target}.json`;
   await Bun.write(scenario, JSON.stringify({ steps }));
-  const out =
-    t.target === "nes"
-      ? await $`bun ${NES_RUNNER} ${t.rom} ${scenario}`.text()
-      : await $`${RUNNER} ${t.rom} ${scenario}`.text();
-  const line = out.trim().split("\n").reverse().find((l) => l.trim().startsWith("{"));
-  if (!line) throw new Error("runner produced no JSON:\n" + out);
-  const parsed = JSON.parse(line);
-  if (!parsed.ok) throw new Error("runner error: " + JSON.stringify(parsed));
-  return parsed.reads ?? {};
+  return runScenario(t.target, t.rom, scenario);
 }
 
 async function testTarget(target: TargetName): Promise<void> {
   console.log(`\n=== ${target.toUpperCase()} ===`);
   const built = await compile(ROOT + "aot/demo/game.tsx", target);
-  const rom = ROOT + `aot/dist/pocket-town${EXT[target]}`;
+  const rom = ROOT + `aot/dist/pocket-town${TARGETS[target].ext}`;
   await buildTarget(built, rom);
   const di = debugInfo(built) as TargetCtx["di"];
   const t: TargetCtx = { target, rom, built, di };

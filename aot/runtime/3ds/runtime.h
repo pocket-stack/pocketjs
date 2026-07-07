@@ -1,34 +1,60 @@
-// aot/runtime/runtime.h — internal contract for the PocketJS-AOT GBA runtime.
+// aot/runtime/3ds/runtime.h — internal contract for the PocketJS-AOT 3DS
+// runtime.
 //
-// This is the shared header every runtime .c module includes. It defines the
-// global game state, the ROM record structs (mirroring the PJGB binary layout
-// from pjgb_gen.h), and every module's function signatures. The runtime never
-// allocates during gameplay; all state lives in these globals (EWRAM/IWRAM).
+// The 3DS target reuses the GBA-format PJGB blob verbatim (4bpp tiles,
+// BGR555 palettes) and renders it IN SOFTWARE. The runtime is split in two:
 //
-// MEMORY MAP / VRAM PLAN (see gba.h):
-//   Mode 0. BG0 = map (32x32 screen, 4bpp, charblock 0, screenblock 8).
-//           BG1 = textbox/menu (charblock 0, screenblock 9, higher priority).
-//   BG char data (map tiles + font glyphs) -> charblock 0 (tiles 0..511).
-//   OBJ tiles (sprites) -> OBJ_VRAM, 1D mapping, 16x16 sprites (4 tiles each).
-//   BG palette bank 0 = map tileset; bank 15 = textbox/font.
-//   OBJ palette bank 0 = sprites.
-//   v1 caps maps at 32x32 tiles so the whole map fits one screenblock.
-#ifndef PJGB_RUNTIME_H
-#define PJGB_RUNTIME_H
-#include "gba.h"
+//   core (runtime/shared/*.c compiled against this header) — platform-free
+//     game logic + the shared software renderer. No libctru, no hardware
+//     registers. Input comes in through pj_frame(keys); video goes out
+//     through two BGR555 buffers:
+//       top    200x120  world view (the ctru shell upscales 2x -> 400x240)
+//       bottom 320x240  textbox / choice UI (1:1)
+//     The same core compiles as a host dylib for the E2E harness
+//     (test/harness/host_runner.ts), so every scenario assertion runs
+//     against the exact code that ships on the console.
+//
+//   shell (ctru_main.c, device build only) — libctru main loop: hidKeysHeld
+//     -> pj_frame, core buffers -> rotated 3DS framebuffers. It talks to the
+//     core only through the pj_* surface (libctru owns the KEY_* names,
+//     hence the core's PJ_KEY_* prefix).
+//
+// Dual-screen plan: the world always owns the whole top screen; dialogue and
+// choices own the bottom screen, so text never covers the map.
+#ifndef PJGB_RUNTIME_3DS_H
+#define PJGB_RUNTIME_3DS_H
+#include <stdint.h>
 #include "pjgb_gen.h"
 
-// The platform-free modules in runtime/shared/ use PJ_KEY_* so targets whose
-// SDK owns the KEY_* names (libctru/libnds) can share them; on the GBA they
-// alias the hardware bits from gba.h.
-#define PJ_KEY_A KEY_A
-#define PJ_KEY_B KEY_B
-#define PJ_KEY_SELECT KEY_SELECT
-#define PJ_KEY_START KEY_START
-#define PJ_KEY_RIGHT KEY_RIGHT
-#define PJ_KEY_LEFT KEY_LEFT
-#define PJ_KEY_UP KEY_UP
-#define PJ_KEY_DOWN KEY_DOWN
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef int8_t s8;
+typedef int16_t s16;
+typedef int32_t s32;
+
+// Key bits: same layout as the GBA KEYINPUT (and libctru's hidKeysHeld low
+// byte, which matches bit-for-bit: A,B,SELECT,START,RIGHT,LEFT,UP,DOWN).
+#define PJ_KEY_A 0x0001
+#define PJ_KEY_B 0x0002
+#define PJ_KEY_SELECT 0x0004
+#define PJ_KEY_START 0x0008
+#define PJ_KEY_RIGHT 0x0010
+#define PJ_KEY_LEFT 0x0020
+#define PJ_KEY_UP 0x0040
+#define PJ_KEY_DOWN 0x0080
+
+// Screen geometry (world view is PJGB_SCREEN_W/H from pjgb_gen.h = 200x120).
+#define PJ_TOP_W PJGB_SCREEN_W
+#define PJ_TOP_H PJGB_SCREEN_H
+#define PJ_BOTTOM_W 320
+#define PJ_BOTTOM_H 240
+
+// Bottom-screen text layout (px) for the shared software renderer.
+#define PJ_TX_Y0 32
+#define PJ_TX_CHOICE_Y0 32
+#define PJ_TX_LINE_PITCH 24 // 16px glyphs on a 24px rhythm
+#define PJ_TX_CHOICE_DX 16  // cursor halfcell + one cell gap
 
 // The cartridge blob, emitted by the compiler as gen_cart.c and linked in.
 extern const unsigned char pjgb_cart[];
@@ -135,12 +161,10 @@ typedef struct {
   u8 flags[16]; // 128 bits
   s16 vars[16];
 
-  // deferred map on-enter script (set by map_enter, started by the main loop —
-  // map_enter can run from inside OP_WARP, where vm_start would clobber the VM)
+  // deferred map on-enter script (set by map_enter, started by the main loop)
   s16 pending_enter; // script id or -1
 
-  // cjk16 glyph slot allocator + OP_RND state
-  u16 slot_next;
+  // OP_RND state
   u16 rng;
 
   u16 keys, keys_prev;
@@ -149,64 +173,55 @@ typedef struct {
 
 extern Game g;
 
-// --- cart.c -----------------------------------------------------------------
-void cart_load(const void *blob);
-// Returns pointer to chunk data (or 0) and writes its size.
-const u8 *cart_chunk(u32 kind, u32 id, u32 *out_size);
+// --- core.c — the embeddable frame interface --------------------------------
+void pj_init(void);
+void pj_frame(u32 keys); // one logic+render tick
+const u16 *pj_top_fb(void);    // BGR555, PJ_TOP_W x PJ_TOP_H
+const u16 *pj_bottom_fb(void); // BGR555, PJ_BOTTOM_W x PJ_BOTTOM_H
+const u8 *pj_debug_block(void); // PJGB_DEBUG_BLOCK_SIZE bytes
 
-// --- video.c ----------------------------------------------------------------
-void video_init(void);      // DISPCNT, BG regs, load OBJ tiles + palettes once
-void video_load_palettes(void);
-void video_load_obj_tiles(void);
-
-// --- bg.c -------------------------------------------------------------------
-void bg_load_map(void);     // load current map's tiles->charblock + screenblock + BG palette
-void bg_set_scroll(void);   // write BG0 HOFS/VOFS from camera
-
-// --- obj.c ------------------------------------------------------------------
-void obj_reset(void);                 // hide all sprites in shadow OAM
-void obj_commit(void);                // DMA shadow OAM -> hardware OAM (at vblank)
-void obj_draw_scene(void);            // place player + visible actors into shadow OAM
-// low-level: set one 16x16 sprite slot (screen px). tile = OBJ tile index.
-void obj_put(int slot, int sx, int sy, int tile, int palbank);
-
-// --- input.c ----------------------------------------------------------------
-void input_poll(void);
 int key_held(int mask);
 int key_pressed(int mask); // held this frame, not last
 
-// --- map.c ------------------------------------------------------------------
-void map_enter(int map_id, int tx, int ty, int dir); // switch map + place player
-int map_solid(int tx, int ty);            // 1 if tile blocks, incl. actors + bounds
-int map_actor_at(int tx, int ty);         // actor slot index at tile, or -1
+// --- cart.c -----------------------------------------------------------------
+void cart_load(const void *blob);
+const u8 *cart_chunk(u32 kind, u32 id, u32 *out_size);
 
-// --- player.c / movement.c --------------------------------------------------
-void player_update(void); // input -> grid move w/ collision, camera follow, A=interact
+// --- shared/render_soft.c ----------------------------------------------------
+void render_init(void);   // no-op in the software backend
+void render_frame(void);  // world -> top buffer, textbox/choice -> bottom
+void bg_load_map(void);   // no-op (render reads the map each frame); kept so
+void bg_set_scroll(void); // map.c stays line-identical with the GBA runtime
+
+// --- map.c ------------------------------------------------------------------
+void map_enter(int map_id, int tx, int ty, int dir);
+int map_solid(int tx, int ty);
+int map_actor_at(int tx, int ty);
+
+// --- player.c ----------------------------------------------------------------
+void player_update(void);
 
 // --- actor.c ----------------------------------------------------------------
 void actors_update(void);
 
 // --- camera.c ---------------------------------------------------------------
-void camera_follow(void); // clamp camera to player + map bounds
+void camera_follow(void);
 
 // --- script_vm.c ------------------------------------------------------------
 void vm_start(int script_id, int actor_slot);
-void vm_tick(void);       // run/resume the VM this frame (until suspended/END)
+void vm_tick(void);
 int vm_active(void);
 
-// --- textbox.c --------------------------------------------------------------
+// --- textbox.c — pure state machine; the renderer draws it ------------------
 void textbox_init(void);
 void textbox_show(int text_id);
 void textbox_hide(void);
 int textbox_active(void);
-void textbox_tick(void);  // handle A to advance; clears active when dismissed
-// choice menu (rendered in the textbox area)
+void textbox_tick(void);
 void choice_show(int n, const u16 *text_ids);
 int choice_active(void);
-void choice_tick(void);   // up/down + A; sets result and clears active when chosen
+void choice_tick(void);
 int choice_result(void);
-
-// text bank access
 const char *text_get(int text_id);
 
 // --- flags/vars -------------------------------------------------------------
@@ -218,6 +233,6 @@ static inline void flag_set(int id, int v) {
 
 // --- debug.c ----------------------------------------------------------------
 void debug_init(void);
-void debug_update(void); // mirror game state into the fixed EWRAM debug block
+void debug_update(void); // mirror game state into the debug block buffer
 
-#endif // PJGB_RUNTIME_H
+#endif // PJGB_RUNTIME_3DS_H

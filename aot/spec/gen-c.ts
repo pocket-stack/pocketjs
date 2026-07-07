@@ -129,7 +129,7 @@ function header(target: TargetName): string {
   return lines.join("\n");
 }
 
-for (const target of ["gba", "gb", "nes"] as const) {
+for (const target of Object.keys(TARGETS) as TargetName[]) {
   const out = new URL(`../runtime/${target}/pjgb_gen.h`, import.meta.url).pathname;
   await Bun.write(out, header(target));
   console.log("wrote", out);

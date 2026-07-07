@@ -10,13 +10,11 @@ import { $ } from "bun";
 import { compile, debugInfo, type CompileOutput } from "../compiler/index.ts";
 import { buildTarget } from "../compiler/targets/index.ts";
 import { wrapPages } from "../compiler/text.ts";
+import { runScenario } from "./harness/run_scenario.ts";
 import { DBG, TARGETS, type TargetName } from "../spec/pjgb.ts";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
-const RUNNER = ROOT + "aot/test/harness/mgba_runner";
-const NES_RUNNER = ROOT + "aot/test/harness/nes_runner.ts";
 const SHOTS = ROOT + "aot/dist/shots";
-const EXT: Record<TargetName, string> = { gba: ".gba", gb: ".gb", nes: ".nes" };
 
 type Step =
   | { op: "advance"; frames: number }
@@ -35,7 +33,7 @@ function check(name: string, got: unknown, want: unknown): void {
 async function testTarget(target: TargetName): Promise<void> {
   console.log(`\n=== ${target.toUpperCase()} — 神雕旧事 ===`);
   const built: CompileOutput = await compile(ROOT + "aot/demo-shendiao/game.tsx", target);
-  const rom = ROOT + `aot/dist/shendiao${EXT[target]}`;
+  const rom = ROOT + `aot/dist/shendiao${TARGETS[target].ext}`;
   await buildTarget(built, rom);
   const di = debugInfo(built) as {
     debugAddr: number;
@@ -207,15 +205,7 @@ async function testTarget(target: TargetName): Promise<void> {
   // ---- run ----
   const scenario = ROOT + `aot/dist/sd-scenario-${target}.json`;
   await Bun.write(scenario, JSON.stringify({ steps }));
-  const out =
-    target === "nes"
-      ? await $`bun ${NES_RUNNER} ${rom} ${scenario}`.text()
-      : await $`${RUNNER} ${rom} ${scenario}`.quiet().text();
-  const line = out.trim().split("\n").reverse().find((l) => l.trim().startsWith("{"));
-  if (!line) throw new Error("runner produced no JSON:\n" + out.slice(-2000));
-  const parsed = JSON.parse(line);
-  if (!parsed.ok) throw new Error("runner error: " + JSON.stringify(parsed));
-  const r = parsed.reads as Record<string, number>;
+  const r = await runScenario(target, rom, scenario);
 
   const M = di.maps;
   const bit = (v: number, f: { bit: number }): number => (v >> f.bit) & 1;

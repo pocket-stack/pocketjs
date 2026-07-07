@@ -59,11 +59,13 @@ export async function buildRom(blob: Uint8Array, outPath: string, title = "POCKE
     "-fno-strict-aliasing",
     "-Wall",
   ];
+  // Platform-free modules come from runtime/shared/ (compiled against the
+  // GBA's runtime.h via -I); the hardware-facing modules stay GBA-local.
+  const SHARED = ROOT + "aot/runtime/shared";
   const sources = [
     `${RT}/crt0.s`,
-    ...["cart", "video", "bg", "obj", "input", "map", "player", "actor", "camera", "script_vm", "textbox", "debug", "main", "gen_cart"].map(
-      (m) => `${RT}/${m}.c`,
-    ),
+    ...["cart", "map", "player", "actor", "camera", "script_vm"].map((m) => `${SHARED}/${m}.c`),
+    ...["video", "bg", "obj", "input", "textbox", "debug", "main", "gen_cart"].map((m) => `${RT}/${m}.c`),
   ];
 
   await $`arm-none-eabi-gcc ${CFLAGS} -I${RT} -T${RT}/gba.ld ${sources} -lgcc -o ${elf}`.quiet();

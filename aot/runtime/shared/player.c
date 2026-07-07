@@ -1,4 +1,4 @@
-// aot/runtime/player.c — grid movement, collision, and A-to-interact.
+// aot/runtime/shared/player.c — grid movement, collision, and A-to-interact.
 #include "runtime.h"
 
 #define SPEED 2   // pixels per frame while sliding between tiles
@@ -14,7 +14,7 @@ void player_update(void) {
   // Decide a new action only when standing still (and not script-locked).
   if (!p->moving && !p->locked) {
     // A pressed (edge) -> interact with the tile we face.
-    if (key_pressed(KEY_A)) {
+    if (key_pressed(PJ_KEY_A)) {
       int tx = (int)(p->px >> 3), ty = (int)(p->py >> 3);
       int fx = tx + DX[p->dir], fy = ty + DY[p->dir];
       int slot = map_actor_at(fx, fy);
@@ -26,10 +26,10 @@ void player_update(void) {
 
     // Directional input: always turn, move if the target tile is free.
     int dir = -1;
-    if (key_held(KEY_DOWN)) dir = DIR_DOWN;
-    else if (key_held(KEY_UP)) dir = DIR_UP;
-    else if (key_held(KEY_LEFT)) dir = DIR_LEFT;
-    else if (key_held(KEY_RIGHT)) dir = DIR_RIGHT;
+    if (key_held(PJ_KEY_DOWN)) dir = DIR_DOWN;
+    else if (key_held(PJ_KEY_UP)) dir = DIR_UP;
+    else if (key_held(PJ_KEY_LEFT)) dir = DIR_LEFT;
+    else if (key_held(PJ_KEY_RIGHT)) dir = DIR_RIGHT;
 
     if (dir >= 0) {
       p->dir = (u8)dir;

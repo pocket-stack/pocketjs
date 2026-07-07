@@ -1,4 +1,4 @@
-// aot/runtime/script_vm.c — the event-script stack machine.
+// aot/runtime/shared/script_vm.c — the event-script stack machine.
 #include "runtime.h"
 
 // --- operand readers (little-endian, advance ip) ---------------------------
