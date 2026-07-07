@@ -26,6 +26,28 @@ export interface NodeMirror {
   focusable?: boolean;
   /** CIRCLE handler while focused (input.ts). */
   onPress?: (() => void) | undefined;
+  /** DevTools semantic name (`debugName` prop / <Named> wrapper). */
+  debugName?: string;
+}
+
+// DevTools (DEVTOOLS.md): one nullable hook, pinged on any structural or
+// content mutation of the mirror tree so the shim can re-snapshot lazily.
+// A single branch per mutation when devtools is off.
+let treeMutationHook: (() => void) | null = null;
+
+export function setTreeMutationHook(fn: (() => void) | null): void {
+  treeMutationHook = fn;
+}
+
+function treeMutated(): void {
+  if (treeMutationHook) treeMutationHook();
+}
+
+/** Set a node's DevTools semantic name (the `debugName` prop and the
+ *  <Named> wrapper both land here). */
+export function setDebugName(node: NodeMirror, name: string | undefined): void {
+  node.debugName = name || undefined;
+  treeMutated();
 }
 
 /** Mirror of the pre-created native root (full-screen flex column, id 1). */
@@ -50,6 +72,7 @@ const NATIVE_ATTRIBUTE_NAMES = new Set([
   "onPress",
   "on:press",
   "focusable",
+  "debugName",
   "ref",
   "nodeRef",
   "key",
@@ -414,6 +437,7 @@ export function createCommentNode(data = ""): NodeMirror {
 export function replaceText(node: NodeMirror, value: string): void {
   getOps().replaceText(node.id, value);
   node.text = value;
+  treeMutated();
 }
 
 export function isTextNode(node: NodeMirror): boolean {
@@ -442,6 +466,7 @@ export function insertNode(parent: NodeMirror, node: NodeMirror, anchor?: NodeMi
     parent.children.push(node);
   }
   node.parent = parent;
+  treeMutated();
 }
 
 export function removeNode(parent: NodeMirror, node: NodeMirror): void {
@@ -450,6 +475,7 @@ export function removeNode(parent: NodeMirror, node: NodeMirror): void {
   getOps().removeChild(parent.id, node.id);
   unlink(node);
   sweepSet.add(node);
+  treeMutated();
 }
 
 export function detachNode(parent: NodeMirror, node: NodeMirror): void {
@@ -473,6 +499,7 @@ export function getNextSibling(node: NodeMirror): NodeMirror | undefined {
 
 function setClass(node: NodeMirror, value: unknown): void {
   const ops = getOps();
+  treeMutated();
   if (value == null || value === "") {
     ops.setStyle(node.id, STYLE_ID_NONE);
     return;
@@ -583,6 +610,9 @@ export function setProp<T>(node: NodeMirror, name: string, value: T, prev?: T): 
       return value;
     case "focusable":
       registerFocusable(node, !!value);
+      return value;
+    case "debugName":
+      setDebugName(node, value == null ? undefined : String(value));
       return value;
     case "ref":
     case "nodeRef":

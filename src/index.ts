@@ -17,6 +17,7 @@ if (typeof (globalThis as { queueMicrotask?: unknown }).queueMicrotask !== "func
 }
 
 import { detectHost, installFrameHandler, installHost, type HostOps } from "./host.ts";
+import { initDevtools, wrapFrameHandler } from "./devtools.ts";
 import {
   createElement,
   registerTexture as rendererRegisterTexture,
@@ -185,11 +186,15 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
 
   setInputRoot(appRoot);
   resetFrameHooks();
-  installFrameHandler((buttons: number) => {
-    runFrameHooks(buttons); // app lifecycle callbacks: onFrame/onButtonPress/etc.
-    handleFrame(buttons); // edge-detect, focus nav, onPress (runs effects)
-    runSweep(); // then destroy subtrees still detached [R]
-  });
+  initDevtools(host.ops); // DevTools shim (DEVTOOLS.md): flight recorder +
+  // debug channel; one branch per frame when no transport is connected.
+  installFrameHandler(
+    wrapFrameHandler((buttons: number) => {
+      runFrameHooks(buttons); // app lifecycle callbacks: onFrame/onButtonPress/etc.
+      handleFrame(buttons); // edge-detect, focus nav, onPress (runs effects)
+      runSweep(); // then destroy subtrees still detached [R]
+    }),
+  );
 
   const dispose = rendererRender(code as () => NodeMirror, appRoot);
   return () => {
@@ -230,6 +235,7 @@ export function mount(code: () => unknown, opts: MountOptions = {}): () => void 
 
 export type { HostOps, Host } from "./host.ts";
 export { detectHost, installHost, getOps } from "./host.ts";
+export { expandTape, type Tape, type DevtoolsTransport } from "./devtools.ts";
 export type { NodeMirror } from "./renderer.ts";
 export { retain, release, runSweep, registerTexture, missCounters } from "./renderer.ts";
 export { registerStyles, resolveStyle } from "./styles.ts";

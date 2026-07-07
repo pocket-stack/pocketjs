@@ -92,6 +92,13 @@ pub struct Ui {
     draw_list: DrawList,
     /// Frame counter advanced by `tick()` (drives fixed-dt animation).
     frame: u64,
+    /// DevTools (spec ops 18..22, DEVTOOLS.md). All default-off.
+    inspect_id: i32,
+    /// World AABB (x, y, w, h) of the inspected node, captured by the last
+    /// `draw()` that painted it.
+    inspect_rect: Option<(f32, f32, f32, f32)>,
+    paused: bool,
+    step_pending: bool,
 }
 
 impl Default for Ui {
@@ -116,6 +123,10 @@ impl Ui {
             focused: 0,
             draw_list: DrawList::new(),
             frame: 0,
+            inspect_id: 0,
+            inspect_rect: None,
+            paused: false,
+            step_pending: false,
         }
     }
 
@@ -461,6 +472,12 @@ impl Ui {
     /// Advance one frame: tick animations by exactly spec::FIXED_DT, then
     /// re-run layout if dirty. Call once per vblank, BEFORE `draw()`.
     pub fn tick(&mut self) {
+        if self.paused {
+            if !self.step_pending {
+                return;
+            }
+            self.step_pending = false;
+        }
         self.frame = self.frame.wrapping_add(1);
         // Advance every live track (index loop: tracks may be killed inside).
         for tslot in 0..self.anims.tracks.len() as u32 {
@@ -636,7 +653,7 @@ impl Ui {
         if self.layout.needs() {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
-        draw::build(
+        let inspect_hit = draw::build(
             &self.tree,
             &self.styles,
             &self.fonts,
@@ -645,7 +662,11 @@ impl Ui {
             &mut self.textures,
             &mut self.discs,
             &mut self.draw_list,
+            self.inspect_id,
         );
+        if self.inspect_id != 0 {
+            self.inspect_rect = inspect_hit;
+        }
         &self.draw_list
     }
 
@@ -679,6 +700,54 @@ impl Ui {
     /// cmap-miss count (unmapped codepoints rendered as tofu).
     pub fn glyph_misses(&self) -> u32 {
         self.fonts.misses.get()
+    }
+
+    // ---- DevTools ops (spec ops 18..22, DEVTOOLS.md) ------------------------
+
+    /// Set (0 = clear) the inspected node. The next `draw()` that paints it
+    /// captures its world AABB and appends the highlight overlay on top.
+    pub fn debug_inspect(&mut self, id: i32) {
+        self.inspect_id = id;
+        self.inspect_rect = None;
+    }
+
+    /// Packed `x | y << 16` (i16 halves) of the inspected node's last-drawn
+    /// world AABB; -1 if it hasn't been painted since `debug_inspect`.
+    pub fn debug_rect_xy(&self) -> i32 {
+        match self.inspect_rect {
+            Some((x, y, _, _)) => (x as i32 & 0xffff) | ((y as i32) << 16),
+            None => -1,
+        }
+    }
+
+    /// Packed `w | h << 16` of the same AABB; -1 if none.
+    pub fn debug_rect_wh(&self) -> i32 {
+        match self.inspect_rect {
+            Some((_, _, w, h)) => (w as i32 & 0xffff) | ((h as i32) << 16),
+            None => -1,
+        }
+    }
+
+    /// Freeze (or resume) the world: while paused `tick()` is a no-op — the
+    /// frame counter, tracks, timelines and sprite clocks all hold. `draw()`
+    /// still runs so the highlight overlay stays live.
+    pub fn debug_pause(&mut self, on: bool) {
+        self.paused = on;
+        if !on {
+            self.step_pending = false;
+        }
+    }
+
+    /// Arm exactly one `tick()` while paused (no-op when running).
+    pub fn debug_step(&mut self) {
+        if self.paused {
+            self.step_pending = true;
+        }
+    }
+
+    /// Whether the world is frozen by `debug_pause`.
+    pub fn debug_paused(&self) -> bool {
+        self.paused
     }
 
     /// Rounded layout rect of a node, relative to its parent: (x, y, w, h).

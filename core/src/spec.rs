@@ -66,6 +66,11 @@ pub mod op {
     pub const LOAD_FONT_ATLAS: u8 = 15;
     pub const MEASURE_TEXT: u8 = 16;
     pub const SET_SPRITE: u8 = 17;
+    pub const DEBUG_INSPECT: u8 = 18;
+    pub const DEBUG_RECT_X_Y: u8 = 19;
+    pub const DEBUG_RECT_W_H: u8 = 20;
+    pub const DEBUG_PAUSE: u8 = 21;
+    pub const DEBUG_STEP: u8 = 22;
 }
 
 /// Property ids (u8, stable, append-only). Groups:

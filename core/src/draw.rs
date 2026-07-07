@@ -488,6 +488,10 @@ struct Walker<'a> {
     /// Core texture list (baked corner discs append lazily during the walk).
     textures: &'a mut Vec<crate::Texture>,
     discs: &'a mut DiscCache,
+    /// DevTools: slot to capture the world AABB of (u32::MAX = none).
+    inspect_slot: u32,
+    /// World AABB of `inspect_slot`, set when the walk reaches it.
+    inspect_hit: Option<Clip>,
 }
 
 /// Build the full DrawList for the current (laid-out) tree. `frame` is the
@@ -503,11 +507,35 @@ pub fn build(
     textures: &mut Vec<crate::Texture>,
     discs: &mut DiscCache,
     dl: &mut DrawList,
-) {
+    inspect_id: i32,
+) -> Option<(f32, f32, f32, f32)> {
     dl.words.clear();
-    let mut w = Walker { tree, styles, fonts, frame, screen, glyph_scratch: Vec::new(), textures, discs };
+    // DevTools (DEVTOOLS.md): slot of the inspected node, u32::MAX = none.
+    // Nodes inside a perspective subtree take the paint_3d path and are not
+    // captured (only the 2D walk composes a world Affine per node).
+    let inspect_slot = if inspect_id != 0 {
+        tree.resolve(inspect_id).unwrap_or(u32::MAX)
+    } else {
+        u32::MAX
+    };
+    let mut w = Walker {
+        tree,
+        styles,
+        fonts,
+        frame,
+        screen,
+        glyph_scratch: Vec::new(),
+        textures,
+        discs,
+        inspect_slot,
+        inspect_hit: None,
+    };
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
     w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), dl);
+    if let Some(hit) = w.inspect_hit {
+        w.emit_highlight(dl, &hit);
+    }
+    w.inspect_hit.map(|c| (c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0))
 }
 
 impl<'a> Walker<'a> {
@@ -544,6 +572,11 @@ impl<'a> Walker<'a> {
             local = local.then(&m);
         }
         let world = parent_world.then(&local);
+        // DevTools: capture the inspected node's border-box world AABB
+        // (before the opacity cull so transparent nodes still highlight).
+        if slot == self.inspect_slot {
+            self.inspect_hit = Some(self.world_aabb(&world, l.w, l.h));
+        }
         let op = clampf(opacity * r.opacity, 0.0, 1.0);
         if op <= 0.0 {
             return;
@@ -1144,6 +1177,21 @@ impl<'a> Walker<'a> {
                 emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
             }
         }
+    }
+
+    /// DevTools highlight overlay (DEVTOOLS.md): translucent fill + 2 px
+    /// edges over the inspected node's world AABB. Appended after the whole
+    /// walk, so it renders on top and outside any scissor.
+    fn emit_highlight(&self, dl: &mut DrawList, c: &Clip) {
+        let vp = Clip::viewport(self.screen);
+        const FILL: u32 = 0x4DF5B04B; // #4bb0f5 at ~30% alpha (ABGR)
+        const EDGE: u32 = 0xFFF5B04B; // #4bb0f5 solid
+        const T: f32 = 2.0;
+        self.emit_screen_rect(dl, c.x0, c.y0, c.x1, c.y1, Fill::Flat(FILL), &vp);
+        self.emit_screen_rect(dl, c.x0 - T, c.y0 - T, c.x1 + T, c.y0, Fill::Flat(EDGE), &vp);
+        self.emit_screen_rect(dl, c.x0 - T, c.y1, c.x1 + T, c.y1 + T, Fill::Flat(EDGE), &vp);
+        self.emit_screen_rect(dl, c.x0 - T, c.y0, c.x0, c.y1, Fill::Flat(EDGE), &vp);
+        self.emit_screen_rect(dl, c.x1, c.y0, c.x1 + T, c.y1, Fill::Flat(EDGE), &vp);
     }
 
     /// Screen-space flat/grad rect helper (already-transformed coords).

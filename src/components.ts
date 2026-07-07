@@ -1,7 +1,16 @@
 // Component-facing public API.
 
 import type { JSX as SolidJSX } from "solid-js";
-import { createEffect, createSignal, onCleanup, onMount, Show as SolidShow, splitProps } from "solid-js";
+import {
+  children as resolveChildren,
+  createEffect,
+  createRenderEffect,
+  createSignal,
+  onCleanup,
+  onMount,
+  Show as SolidShow,
+  splitProps,
+} from "solid-js";
 import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 import { animate, type EasingName } from "./anim.ts";
 import { pushButtonHandlerBlock, onButtonPress, onFrame, type ButtonPressOptions } from "./frame.ts";
@@ -16,6 +25,7 @@ import {
   setProp,
   type NodeMirror,
 } from "./renderer.ts";
+import { setDebugName } from "./native-tree.ts";
 
 export { View, Text, Image, Sprite, type ViewProps, type TextProps, type ImageProps, type SpriteProps } from "./primitives.ts";
 export type { NodeMirror } from "./renderer.ts";
@@ -46,6 +56,32 @@ export interface FocusableProps extends ViewProps {
 
 export function Focusable(props: FocusableProps): SolidJSX.Element {
   return View({ ...props, focusable: true });
+}
+
+export interface NamedProps {
+  /** Semantic name shown in the DevTools component tree (DEVTOOLS.md). */
+  name: string;
+  children?: SolidJSX.Element;
+}
+
+/**
+ * DevTools semantic scope: tags the host nodes it renders with `name`, so a
+ * wrapped component subtree reads as one thing in the component tree
+ * (`<Named name="MessageCard"><Card …/></Named>`). A node's own `debugName`
+ * prop wins over the wrapper. Renders nothing itself — zero native nodes.
+ */
+export function Named(props: NamedProps): SolidJSX.Element {
+  const resolved = resolveChildren(() => props.children);
+  createRenderEffect(() => {
+    const items = resolved.toArray();
+    for (const item of items) {
+      if (item && typeof item === "object" && "id" in item && "children" in item) {
+        const node = item as unknown as NodeMirror;
+        if (!node.debugName) setDebugName(node, props.name);
+      }
+    }
+  });
+  return resolved as unknown as SolidJSX.Element;
 }
 
 export interface FocusScopeProps extends ViewProps, FocusScopeOptions {

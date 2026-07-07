@@ -66,6 +66,25 @@ export interface HostOps {
   loadFontAtlas?(buf: Uint8Array): void;
   /** JS-side convenience; layout measures natively. → width in px. */
   measureText(str: string, fontSlot: number): number;
+
+  // -- DevTools ops (spec ops 18..22, DEVTOOLS.md). Optional: debug-only,
+  //    default-off; hosts that predate them (e.g. pocket-mod) simply lack
+  //    them and the shim feature-detects. ---------------------------------
+  /** Set (0 = clear) the inspected node: the core captures its world AABB
+   *  during paint and appends a highlight overlay on top. */
+  debugInspect?(id: number): void;
+  /** Packed x|y<<16 (i16 halves) of the last captured AABB; -1 if none. */
+  debugRectXY?(): number;
+  /** Packed w|h<<16 of the same AABB; -1 if none. */
+  debugRectWH?(): number;
+  /** Freeze the world: tick() no-ops (draw still runs). */
+  debugPause?(on: boolean | number): void;
+  /** Arm exactly one tick while paused. */
+  debugStep?(): void;
+  /** PSP mailbox transport (native/src/dbg.rs); absent elsewhere. */
+  __dbgActive?(): boolean;
+  __dbgPoll?(): string | undefined;
+  __dbgSend?(line: string): void;
 }
 
 export interface Host {

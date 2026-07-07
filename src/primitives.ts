@@ -21,6 +21,8 @@ export interface ViewProps {
   style?: StyleObject;
   onPress?: () => void;
   focusable?: boolean;
+  /** DevTools semantic name shown in the component tree (DEVTOOLS.md). */
+  debugName?: string;
   ref?: RefProp;
   nodeRef?: RefProp;
   children?: SolidJSX.Element;
@@ -29,6 +31,8 @@ export interface ViewProps {
 export interface TextProps {
   class?: string;
   style?: StyleObject;
+  /** DevTools semantic name shown in the component tree (DEVTOOLS.md). */
+  debugName?: string;
   ref?: RefProp;
   nodeRef?: RefProp;
   children?: SolidJSX.Element;
@@ -38,6 +42,8 @@ export interface ImageProps {
   class?: string;
   src?: string;
   style?: StyleObject;
+  /** DevTools semantic name shown in the component tree (DEVTOOLS.md). */
+  debugName?: string;
   ref?: RefProp;
   nodeRef?: RefProp;
 }
@@ -50,6 +56,8 @@ function callRef(ref: RefProp, node: NodeMirror): void {
 
 export interface SpriteProps {
   class?: string;
+  /** DevTools semantic name shown in the component tree (DEVTOOLS.md). */
+  debugName?: string;
   /** Sprite-atlas key (a `ui:sprite.<name>` entry baked into the pak). */
   sprite?: string;
   style?: StyleObject;

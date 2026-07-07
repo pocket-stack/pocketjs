@@ -38,8 +38,11 @@ export default function Hero() {
     if (underline) animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
   });
   return (
-    <View class="w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100">
-      <View class="flex-row items-center justify-between">
+    <View
+      debugName="HeroScreen"
+      class="w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100"
+    >
+      <View debugName="Header" class="flex-row items-center justify-between">
         <View class="flex-row items-center gap-3">
             <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
           <View class="flex-col">

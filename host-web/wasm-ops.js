@@ -65,6 +65,12 @@ export async function createWasmUi(wasm) {
       withBytes(buf, (p, l) => ex.ui_load_font_atlas(p, l));
     },
     measureText: (str, fontSlot) => withStr(str, (p, l) => ex.ui_measure_text(p, l, fontSlot)),
+    // DevTools ops (spec ops 18..22, DEVTOOLS.md) — debug-only, default-off.
+    debugInspect: (id) => ex.ui_debug_inspect(id),
+    debugRectXY: () => ex.ui_debug_rect_xy(),
+    debugRectWH: () => ex.ui_debug_rect_wh(),
+    debugPause: (on) => ex.ui_debug_pause(on ? 1 : 0),
+    debugStep: () => ex.ui_debug_step(),
   };
 
   return {

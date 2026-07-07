@@ -110,6 +110,15 @@ export const OP = {
   loadFontAtlas: 15,
   measureText: 16,
   setSprite: 17,
+  // -- DevTools (DEVTOOLS.md; debug-only, default-off, never used by
+  //    tests/goldens — shipped behavior is unchanged when untouched) --------
+  debugInspect: 18, // set (0 = clear) the inspected node: core captures its
+  //                   world AABB during paint and draws a highlight overlay
+  debugRectXY: 19, //  packed x|y<<16 (i16 halves) of the last captured world
+  //                   AABB; -1 if the node wasn't painted
+  debugRectWH: 20, //  packed w|h<<16 of the same AABB
+  debugPause: 21, //   freeze the world: tick() no-ops (draw still runs)
+  debugStep: 22, //    arm exactly one tick while paused
 } as const;
 
 // ---------------------------------------------------------------------------

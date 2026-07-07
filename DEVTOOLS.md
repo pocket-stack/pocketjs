@@ -1,0 +1,176 @@
+# Pocket DevTools — time travel + inspection as framework primitives
+
+PocketJS is a **closed, deterministic world**: the core ticks a fixed 1/60 s
+step (`spec.FIXED_DT`), animation clocks count frames (never wall time), the
+runtime bans schedulers/RNG/wall-clock, and the *entire* per-frame input is one
+PSP button bitmask passed through `globalThis.frame(buttons)`. Frame content is
+a pure function of frame index — that is already what byte-exact goldens rely
+on.
+
+DevTools turns that property into debugging capabilities that open-world
+frameworks (browser, RN, Flutter) structurally cannot offer:
+
+- **The input tape IS the app state.** Record one `u16` per frame (10 min ≈
+  70 KB) and any session is reproducible byte-for-byte — on another host, on
+  another build, in CI.
+- **A bug report is executable.** `pak + tape + frame index` replays to the
+  exact pixel; the same artifact becomes a regression test.
+- **Inspection works on the real device.** The highlight overlay is emitted by
+  the core into the DrawList, so every backend (sceGu on hardware, the wasm
+  software rasterizer, wgpu) renders it for free.
+
+```
+┌ DevTools panel (host-web/devtools.html) ┐
+│ tree · highlight · tape · REPL · logs   │
+└──────────────┬──────────────────────────┘
+               │ WebSocket  ws://127.0.0.1:8130/ws  (role=panel)
+        ┌──────┴──────┐
+        │  WS hub     │  host-web/serve.ts (dumb JSON-line relay)
+        └──────┬──────┘
+               │ (role=device)
+   ┌───────────┼─────────────────────────────┐
+   │ browser   │ headless Bun                │ real PSP
+   │ engine.js │ in-process transport        │ scripts/devtools-psp.ts bridge
+   │ WS client │ (tests + scripts/tape.ts)   │   ⇅ usbhostfs (PSPLINK USB)
+   │           │                             │ host0:/pocketjs-dbg/{in,out}.jsonl
+   └───────────┴─────────────────────────────┘
+        all three feed the same runtime shim: src/devtools.ts
+```
+
+## Layers
+
+### 1. Core (Rust, spec ops 18–22)
+
+New spec ops — added to `spec/spec.ts` `OP`, regenerated into
+`core/src/spec.rs`, implemented on `Ui`, and exposed by both host bindings
+(`native/src/ffi.rs`, `wasm/src/lib.rs`). All are **debug-only, default-off,
+and unused by tests/goldens**, so shipped behavior is unchanged.
+
+| op | JS (`ui.*`) | semantics |
+|---|---|---|
+| 18 | `debugInspect(id)` | set (0 = clear) the inspected node. During the next paint walk the core captures the node's **world AABB** (transforms, 3D-adjacent 2.5D path, scroll — whatever the walker composed) and appends a highlight overlay (translucent fill + 2 px edges, screen-space `RECT` ops) after all normal emission, on top, outside any scissor. |
+| 19 | `debugRectXY() -> i32` | packed `x \| y<<16` (i16 halves) of the last captured world AABB; `-1` if none was painted. |
+| 20 | `debugRectWH() -> i32` | packed `w \| h<<16` of the same AABB. |
+| 21 | `debugPause(on)` | freeze the world: `Ui::tick()` becomes a no-op (frame counter, tracks, timelines, sprites all hold). `draw()` still runs, so the highlight stays live while paused. |
+| 22 | `debugStep()` | arm exactly one tick while paused. |
+
+Pause lives in the core because hosts call `tick()` unconditionally (the PSP
+main loop is Rust; JS cannot intercept it). The JS shim gates its side (frame
+hooks, input dispatch, tape) symmetrically, so a paused world is *fully*
+quiescent and a step advances everything by exactly one frame.
+
+### 2. Runtime shim (`src/devtools.ts`)
+
+Compiled into every bundle (a few KB, zero-cost branches when disabled).
+`mount()` wraps its frame handler through the shim:
+
+```
+poll transport → flush outbox → (paused? maybe step : record + run frame)
+```
+
+- **Flight recorder (always on, even with no transport):** every frame's mask
+  goes into a `Uint16Array` ring (36 000 frames ≈ 10 min ≈ 72 KB). Any crash
+  or "what just happened?" moment can be exported after the fact.
+- **Component tree:** serialized from the existing JS mirror tree
+  (`NodeMirror`), so reads never cross FFI. Semantic names come from
+  (a) a `debugName` prop on any host component and (b) the `<Named
+  name="MessageCard">` wrapper (tags the mirror nodes it renders) — both
+  first-class framework API, exported from `@pocketjs/framework`.
+  Mutation hooks in `native-tree.ts` mark the tree dirty; snapshots are
+  throttled (≥ 30 frames apart) and sent only when dirty.
+- **REPL:** `eval` runs in the app's global scope between frames — the world
+  is quiescent there (microtasks drained), which is the honest granularity for
+  a retained-mode UI. Results are safe-stringified (depth-capped).
+- **Console bridge:** when a transport is up, `console.log/warn/error` mirror
+  to the channel. On PSP — which has *no* console today (`src/prelude.ts`
+  stubs it) — this is the first working `console.log` on hardware.
+- **Errors:** exceptions thrown inside the frame are reported to the channel
+  (with the current frame index — which, with the tape, makes them
+  reproducible), then rethrown.
+
+### 3. Transports
+
+The shim needs only `{ send(line), recv() -> line | null }`:
+
+- **Browser / desktop:** `host-web/engine.js` connects a WebSocket to the dev
+  server (`/ws?role=device`) and injects the transport before the bundle
+  evaluates. Latency: same-frame.
+- **Real PSP over the PSPLINK USB cable:** a file mailbox on the usbhostfs
+  share — the exact channel trace/bench already use. `native/src/dbg.rs`
+  reads `host0:/pocketjs-dbg/in.jsonl` from a running offset and appends to
+  `out.jsonl`; QuickJS sees `ui.__dbgPoll()` / `ui.__dbgSend()`. Enabled only
+  if `host0:/pocketjs-dbg/enable` exists at boot (one failed `sceIoOpen` and
+  the app never touches IO again — zero cost without PSPLINK). The shim polls
+  every 10 frames on PSP (~166 ms hover latency; each poll is a few USB
+  round-trips). `scripts/devtools-psp.ts` bridges the mailbox to the WS hub.
+  The same mailbox works under the PPSSPP GUI via the `ms0:` fallback path.
+- **Headless (tests, `scripts/tape.ts`):** an in-process queue pair. The CLI
+  and the test suite are just DevTools clients — the whole protocol is
+  drivable without a screen.
+
+### 4. Protocol (JSON lines, panel ⇄ device via the hub)
+
+Panel → device:
+`{t:"inspect", id}` · `{t:"pause"}` · `{t:"resume"}` · `{t:"step"}` ·
+`{t:"getTree"}` · `{t:"eval", id, code}` · `{t:"dumpTape"}` ·
+`{t:"seek", frame}` / `{t:"replay", tape}` (handled by the *host*, not the
+shim: the browser host reloads the demo and fast-forwards tick-only — no
+render — to the target frame, then pauses).
+
+Device → panel:
+`{t:"hello", app, host, frame}` ·
+`{t:"tree", frame, root:{i,t,n?,c?,x?,k:[…]}}` (id/type/name/class/text/kids) ·
+`{t:"inspect", id, rect:[x,y,w,h]|null}` ·
+`{t:"stats", frame, nodes, tapeLen, paused}` ·
+`{t:"log", level, args}` · `{t:"error", frame, message, stack?}` ·
+`{t:"evalResult", id, ok, value}` ·
+`{t:"tape", tape:{v:1, app, frames, masks:[[mask,count],…]}}` (RLE).
+
+The hub (`host-web/serve.ts`) is a dumb relay: device lines go to every panel,
+panel lines to every device, plus join/leave notices. No state, no parsing.
+
+### 5. Panel (`host-web/devtools.html`)
+
+Component tree (hover → `inspect` → the region lights up **on the device
+screen**, PSP included; click → pin + details: type, `debugName`, classes,
+world rect) · pause/step/resume · tape strip (input activity per frame, click
+→ seek on browser hosts) · record/export/import-replay · REPL with log/error
+stream. Served at `http://127.0.0.1:8130/devtools`.
+
+## The agent story (why this is core infrastructure)
+
+An AI agent working on PocketJS cannot look at the screen or feel the d-pad.
+Every capability here exists to make debugging questions *answerable from a
+terminal*:
+
+- `bun scripts/tape.ts replay <app> <tape> --hashes` — deterministic per-frame
+  framebuffer hashes; `--png N` renders any frame to a PNG I can actually read.
+- `bun scripts/tape.ts diff <app> <tape> --against hashes.json` — first
+  divergent frame between two builds: a regression bisected to the exact frame
+  *and* the exact input history that reaches it.
+- `bun scripts/tape.ts tree <app> <tape> --at N` — the component tree as JSON
+  at any frame, via the same protocol the panel uses.
+- Tapes checked into `test/` become **session goldens**: real interaction
+  sequences replayed against every future build.
+
+## Breakpoint feasibility (assessed, deferred)
+
+True line breakpoints in QuickJS on PSP require a bytecode-level debugger hook
+(upstream QuickJS has none; the known patches — e.g. quickjs-debugger — add an
+opcode-dispatch callback), a DAP-ish protocol on top of the mailbox, and
+source maps through the two-pass Babel+Bun build (currently `sourcemap:none`).
+All three are tractable (the mailbox transport built here would carry DAP
+fine), but it's a multi-week vendored-interpreter change with per-opcode
+overhead when armed. **Deferred.** What ships instead covers most UI
+debugging at the honest granularity of a retained-mode framework:
+frame-boundary pause (the world is quiescent between frames), single-step,
+REPL eval over live state, tape time-travel, and console/error streaming from
+hardware.
+
+## Roadmap (designed for, not yet built)
+
+I-frame memory snapshots (wasm linear-memory copies every N frames → O(1)
+scrubbing; tape frames are the P-frames) · seek-on-PSP (multiple tick-only
+steps per vblank ≈ 10× fast-forward) · tape-in-URL for the playground
+(replays as shareable content) · causality index (pixel → DrawList op → node →
+signal → input edge) · cross-device state teleport (PSP heap → browser wasm).

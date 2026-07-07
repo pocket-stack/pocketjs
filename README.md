@@ -118,4 +118,20 @@ bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
 ```
 
+## DevTools + time travel
+
+Pocket DevTools ([DEVTOOLS.md](DEVTOOLS.md)) is built into every bundle: a
+component tree with semantic names (`debugName` / `<Named>`), hover-to-
+highlight **on the device screen** (real PSP included, over the PSPLINK USB
+cable), pause/step, a REPL, `console.log` from hardware, and an always-on
+input-tape flight recorder — sessions replay byte-exactly because the whole
+runtime is fixed-dt deterministic.
+
+```sh
+bun run dev                           # panel at http://127.0.0.1:8130/devtools
+bun run devtools:psp                  # bridge a PSPLINK-connected PSP into the hub
+bun run tape replay <app> <tape.json> --png 60   # render any frame headlessly
+bun run tape:check                    # session-golden replay regression
+```
+
 Fonts: Inter (OFL), vendored in `assets/fonts/`.

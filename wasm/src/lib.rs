@@ -175,6 +175,33 @@ pub extern "C" fn ui_tick() {
     ui().tick()
 }
 
+// ---- DevTools ops (spec ops 18..22, DEVTOOLS.md) -----------------------------
+
+#[no_mangle]
+pub extern "C" fn ui_debug_inspect(id: i32) {
+    ui().debug_inspect(id)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_debug_rect_xy() -> i32 {
+    ui().debug_rect_xy()
+}
+
+#[no_mangle]
+pub extern "C" fn ui_debug_rect_wh() -> i32 {
+    ui().debug_rect_wh()
+}
+
+#[no_mangle]
+pub extern "C" fn ui_debug_pause(on: i32) {
+    ui().debug_pause(on != 0)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_debug_step() {
+    ui().debug_step()
+}
+
 /// Rasterize the current tree and return the RGBA8 480x272 framebuffer
 /// pointer (stable; SCREEN_W * SCREEN_H * 4 bytes).
 #[no_mangle]

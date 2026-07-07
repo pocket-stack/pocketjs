@@ -39,6 +39,7 @@ use psp::{Align16, BUF_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH};
 mod allocator;
 mod arena;
 mod c_heap;
+mod dbg;
 mod pak;
 mod ffi;
 mod ge;
@@ -436,6 +437,13 @@ unsafe fn run() {
     trace("run: JS_NewContext ok");
     let global = JS_GetGlobalObject(ctx);
     trace("run: global object ok");
+
+    // DevTools mailbox (DEVTOOLS.md): active only if pocketjs-dbg/enable
+    // exists on host0: (PSPLINK) or ms0: (PPSSPP GUI) — else two failed
+    // opens here and never again.
+    if dbg::init() {
+        trace("run: devtools mailbox active");
+    }
 
     // globalThis.ui — the full HostOps surface + the __textures table.
     trace("run: register ui begin");

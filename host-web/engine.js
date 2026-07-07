@@ -69,6 +69,82 @@ let statsFrames = 0;
 let statsT = 0;
 let hudFps = 0; // on-canvas HUD, sampled once/second (see hud.js)
 let hudMem = 0;
+let currentName = null; // demo currently loaded (devtools seek/replay reloads it)
+
+// ---- DevTools device channel (DEVTOOLS.md) ---------------------------------
+// This host is a DevTools "device": it connects to the dev server's WS hub
+// and injects a transport into the runtime shim (src/devtools.ts) before the
+// bundle evals. Host-level messages (seek/replay need a from-boot reload +
+// deterministic fast-forward — only the host can do that) are intercepted
+// here; everything else is queued for the shim to poll each frame.
+
+let dtWs = null;
+let dtInbox = []; // lines waiting for the shim's recv()
+let dtOutbox = []; // lines buffered while the WS is (re)connecting
+let dtBackoff = 500;
+
+function dtSend(line) {
+  if (dtWs && dtWs.readyState === 1) dtWs.send(line);
+  else if (dtOutbox.length < 200) dtOutbox.push(line);
+}
+
+function connectDevtools() {
+  let url;
+  try {
+    url = new URL("/ws?role=device", location.href);
+  } catch {
+    return; // not served over http (file://) — no devtools
+  }
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  try {
+    dtWs = new WebSocket(url);
+  } catch {
+    return;
+  }
+  dtWs.onopen = () => {
+    dtBackoff = 500;
+    while (dtOutbox.length) dtWs.send(dtOutbox.shift());
+  };
+  dtWs.onmessage = (e) => {
+    const line = typeof e.data === "string" ? e.data : "";
+    let msg = null;
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (msg && msg.t === "seek") return void devtoolsSeek(msg.frame);
+    if (msg && msg.t === "replay") return void devtoolsReplay(msg.tape);
+    dtInbox.push(line);
+  };
+  dtWs.onclose = () => {
+    dtWs = null;
+    setTimeout(connectDevtools, dtBackoff);
+    dtBackoff = Math.min(dtBackoff * 2, 8000);
+  };
+  dtWs.onerror = () => {};
+}
+
+/** Replay a tape from boot at normal speed: fresh core + bundle, the shim
+ *  overrides live input with the tape's masks. */
+async function devtoolsReplay(tape) {
+  if (!currentName || !tape) return;
+  await load(currentName, { tape });
+}
+
+/** Time-travel seek: reload from boot and deterministically fast-forward
+ *  (tick-only, no render) to `frame` using the current session's own
+ *  flight-recorder tape, then freeze the world there. */
+async function devtoolsSeek(frame) {
+  const shim = globalThis.__pocketDevtools;
+  if (!currentName || !shim) return;
+  const tape = shim.dumpTape();
+  if (tape.startFrame > 0) {
+    logSink(`seek: recorder wrapped — earliest reachable frame is ${tape.startFrame}`);
+  }
+  const target = Math.max(0, Math.min(frame | 0, tape.frames));
+  await load(currentName, { tape, pauseAt: target });
+}
 
 function safeFrame() {
   if (!frameCb) return;
@@ -166,6 +242,7 @@ export async function mount(theCanvas, opts = {}) {
   const res = await fetch("pocketjs.wasm");
   if (!res.ok) throw new Error("pocketjs.wasm not found — run: bun scripts/wasm.ts");
   wasm = await createWasmUi(await res.arrayBuffer());
+  connectDevtools();
   logSink("PocketJS wasm ready");
 }
 
@@ -174,7 +251,7 @@ export async function mount(theCanvas, opts = {}) {
  * fresh function scope per reload, then start the loop. Returns null on
  * success, the error otherwise.
  */
-export async function load(name) {
+export async function load(name, opts = {}) {
   if (!wasm) throw new Error("mount() first");
   stop();
   frameCb = null;
@@ -183,6 +260,13 @@ export async function load(name) {
   // EVERY load so nothing stale leaks across reloads.
   globalThis.ui = wasm.ops;
   globalThis.frame = undefined;
+  // DevTools: identity + transport BEFORE eval; render() picks them up.
+  globalThis.__pocketApp = name;
+  dtInbox = [];
+  globalThis.__pocketDevtoolsTransport = {
+    send: dtSend,
+    recv: () => (dtInbox.length ? dtInbox.shift() : null),
+  };
   try {
     const pak = await fetch("dist/" + name + ".pak");
     globalThis.__pak = pak.ok ? await pak.arrayBuffer() : undefined;
@@ -204,7 +288,21 @@ export async function load(name) {
     return e;
   }
   logSink("loaded " + name);
+  currentName = name;
   hudMem = wasmMemoryBytes(wasm); // so MEM shows before the first 1s sample
+  if (opts.tape) {
+    // Hand the tape to the shim: it overrides live input mask-for-mask.
+    dtInbox.push(JSON.stringify({ t: "replay", tape: opts.tape }));
+    if (opts.pauseAt > 0) {
+      // Deterministic fast-forward: frame+tick only, no render, yielding to
+      // the event loop so a long seek doesn't freeze the tab.
+      for (let i = 0; i < opts.pauseAt && frameCb; i++) {
+        safeFrame();
+        if (i % 1200 === 1199) await new Promise((r) => setTimeout(r, 0));
+      }
+      dtInbox.push(JSON.stringify({ t: "pause" }));
+    }
+  }
   safeFrame(); // one immediate frame so the canvas isn't blank
   blit();
   start();

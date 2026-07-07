@@ -6,6 +6,13 @@
 // Serves host-web/ at /, dist/ at /dist/, plus a /demos JSON manifest
 // (every dist/*.js bundle; `mounts` marks bundles that actually call
 // render() and install globalThis.frame — i.e. the *-main entries).
+//
+// DevTools (DEVTOOLS.md): /devtools serves the panel and /ws is the hub —
+// a dumb relay between roles: every device line goes to every panel and
+// vice versa (plus deviceConnected/deviceGone notices). No state, no
+// parsing; the runtime shim (src/devtools.ts) and the panel own the
+// protocol.
+//
 // Dev-tool only: binds 127.0.0.1, no cache, no livereload (reload the page
 // after `bun scripts/build.ts <demo>` / `bun scripts/wasm.ts`).
 
@@ -55,18 +62,61 @@ function demoManifest(): { name: string; hasPak: boolean; mounts: boolean }[] {
     });
 }
 
-const server = Bun.serve({
+// ---- DevTools WS hub ---------------------------------------------------
+
+type Role = "panel" | "device";
+type DevWS = Bun.ServerWebSocket<{ role: Role }>;
+const peers: Record<Role, Set<DevWS>> = {
+  panel: new Set(),
+  device: new Set(),
+};
+
+function relay(from: Role, data: string | Buffer): void {
+  const to: Role = from === "device" ? "panel" : "device";
+  const text = typeof data === "string" ? data : data.toString("utf8");
+  for (const ws of peers[to]) ws.send(text);
+}
+
+function notifyPanels(msg: object): void {
+  const text = JSON.stringify(msg);
+  for (const ws of peers.panel) ws.send(text);
+}
+
+const server = Bun.serve<{ role: Role }>({
   hostname: "127.0.0.1",
   port: PORT,
-  fetch(req) {
-    const path = new URL(req.url).pathname.replace(/\.\.+/g, ""); // no traversal
+  fetch(req, srv) {
+    const url = new URL(req.url);
+    const path = url.pathname.replace(/\.\.+/g, ""); // no traversal
+    if (path === "/ws") {
+      const role: Role = url.searchParams.get("role") === "device" ? "device" : "panel";
+      if (srv.upgrade(req, { data: { role } })) return undefined as unknown as Response;
+      return new Response("websocket upgrade failed", { status: 400 });
+    }
     if (path === "/" || path === "/index.html") return fileResponse(HOST_DIR + "index.html");
+    if (path === "/devtools" || path === "/devtools/") {
+      return fileResponse(HOST_DIR + "devtools.html");
+    }
     if (path === "/demos") {
       return Response.json(demoManifest(), { headers: { "cache-control": "no-store" } });
     }
     if (path.startsWith("/dist/")) return fileResponse(DIST_DIR + path.slice("/dist/".length));
     return fileResponse(HOST_DIR + path.slice(1));
   },
+  websocket: {
+    open(ws) {
+      peers[ws.data.role].add(ws);
+      if (ws.data.role === "device") notifyPanels({ t: "deviceConnected" });
+    },
+    message(ws, data) {
+      relay(ws.data.role, data as string | Buffer);
+    },
+    close(ws) {
+      peers[ws.data.role].delete(ws);
+      if (ws.data.role === "device") notifyPanels({ t: "deviceGone" });
+    },
+  },
 });
 
 console.log(`PocketJS host-web: http://127.0.0.1:${server.port}/  (demos: ${demoManifest().map((d) => d.name).join(", ") || "none — build one first"})`);
+console.log(`Pocket DevTools:   http://127.0.0.1:${server.port}/devtools`);

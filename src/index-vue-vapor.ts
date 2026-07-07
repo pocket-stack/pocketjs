@@ -3,6 +3,7 @@
 import "./prelude.ts";
 
 import { detectHost, installFrameHandler, installHost, type HostOps } from "./host.ts";
+import { initDevtools, wrapFrameHandler } from "./devtools.ts";
 import {
   createElement,
   registerSprite as rendererRegisterSprite,
@@ -140,11 +141,14 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
 
   setInputRoot(appRoot);
   resetFrameHooks();
-  installFrameHandler((buttons: number) => {
-    runFrameHooks(buttons);
-    handleFrame(buttons);
-    runSweep();
-  });
+  initDevtools(host.ops); // DevTools shim (DEVTOOLS.md), same as the Solid path.
+  installFrameHandler(
+    wrapFrameHandler((buttons: number) => {
+      runFrameHooks(buttons);
+      handleFrame(buttons);
+      runSweep();
+    }),
+  );
 
   const dispose = rendererRender(code, appRoot);
   return () => {

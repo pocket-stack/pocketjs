@@ -351,6 +351,108 @@ unsafe extern "C" fn js_measure_text(
 }
 
 // ---------------------------------------------------------------------------
+// DevTools (spec ops 18..22 + the mailbox transport; DEVTOOLS.md)
+// ---------------------------------------------------------------------------
+
+// libquickjs-sys omits JS_NewStringLen; the linked QuickJS C library provides
+// it (same local-extern pattern as main.rs's JS_NewArrayBuffer).
+extern "C" {
+    fn JS_NewStringLen(ctx: *mut JSContext, str1: *const u8, len1: usize) -> JSValue;
+}
+
+unsafe extern "C" fn js_debug_inspect(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().debug_inspect(arg_i32(ctx, argc, argv, 0));
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_debug_rect_xy(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, ui().debug_rect_xy())
+}
+
+unsafe extern "C" fn js_debug_rect_wh(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, ui().debug_rect_wh())
+}
+
+unsafe extern "C" fn js_debug_pause(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().debug_pause(arg_i32(ctx, argc, argv, 0) != 0);
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_debug_step(
+    _ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    ui().debug_step();
+    JS_UNDEFINED
+}
+
+/// ui.__dbgActive() -> bool: whether the PSPLINK/memstick mailbox was found
+/// at boot (dbg::init). The JS shim only builds a transport when true.
+unsafe extern "C" fn js_dbg_active(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewBool(ctx, crate::dbg::active())
+}
+
+/// ui.__dbgPoll() -> string | undefined: new complete JSON lines from the
+/// bridge (may batch several). The shim rate-limits calls to ~every 10
+/// frames; each call is a few sceIo round trips over usbhostfs.
+unsafe extern "C" fn js_dbg_poll(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    match crate::dbg::poll() {
+        Some(s) => JS_NewStringLen(ctx, s.as_ptr(), s.len()),
+        None => JS_UNDEFINED,
+    }
+}
+
+/// ui.__dbgSend(line): append one JSON line to the outbound mailbox.
+unsafe extern "C" fn js_dbg_send(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc >= 1 {
+        let mut len: size_t = 0;
+        let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+        if !s.is_null() {
+            crate::dbg::send(core::slice::from_raw_parts(s as *const u8, len));
+            JS_FreeCString(ctx, s);
+        }
+    }
+    JS_UNDEFINED
+}
+
+// ---------------------------------------------------------------------------
 // registration
 // ---------------------------------------------------------------------------
 
@@ -392,6 +494,15 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"loadStyles\0", js_load_styles, 1);
     add_fn(ctx, ui_obj, b"loadFontAtlas\0", js_load_font_atlas, 1);
     add_fn(ctx, ui_obj, b"measureText\0", js_measure_text, 2);
+    // DevTools ops + mailbox transport (DEVTOOLS.md; debug-only, default-off).
+    add_fn(ctx, ui_obj, b"debugInspect\0", js_debug_inspect, 1);
+    add_fn(ctx, ui_obj, b"debugRectXY\0", js_debug_rect_xy, 0);
+    add_fn(ctx, ui_obj, b"debugRectWH\0", js_debug_rect_wh, 0);
+    add_fn(ctx, ui_obj, b"debugPause\0", js_debug_pause, 1);
+    add_fn(ctx, ui_obj, b"debugStep\0", js_debug_step, 0);
+    add_fn(ctx, ui_obj, b"__dbgActive\0", js_dbg_active, 0);
+    add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
+    add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);
 
     // ui.__textures: pak image name -> texture handle (see module docs).
     let tex_obj = JS_NewObject(ctx);
