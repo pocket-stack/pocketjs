@@ -1,10 +1,12 @@
 name: Release to npm
 
 # Publish @pocketjs/framework and @pocketjs/cli when a v* tag is pushed
-# (e.g. `git tag v0.2.0 && git push origin v0.2.0`). Requires the NPM_TOKEN
-# repo secret (an npm automation token with publish rights on @pocketjs).
-# Publishing is idempotent: versions already on the registry are skipped, so
-# re-running a tag or bumping only one package is safe.
+# (e.g. `git tag v0.2.0 && git push origin v0.2.0`). Auth is npm Trusted
+# Publishing (OIDC): each package's npm Settings names this repo + workflow
+# file as a trusted publisher, so no token or secret is involved and npm
+# attaches provenance automatically. Publishing is idempotent: versions
+# already on the registry are skipped, so re-running a tag or bumping only
+# one package is safe.
 on:
   push:
     tags: ["v*"]
@@ -25,11 +27,15 @@ jobs:
         with:
           bun-version: latest
 
-      # npm (not bun) does the publishing — provenance support + registry auth.
+      # npm (not bun) does the publishing. Trusted Publishing needs npm >=
+      # 11.5.1 (Node 22 bundles 10.x), and no registry-url: setup-node's
+      # auth-token .npmrc placeholder would fail without a token env var.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm for Trusted Publishing
+        run: npm install -g npm@latest
 
       # host-web/pocketjs.wasm is a gitignored build artifact shipped in the
       # framework tarball, so build it from core/wasm. Stable Rust suffices.
@@ -57,8 +63,6 @@ jobs:
         run: bun run test
 
       - name: Publish @pocketjs/framework
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
@@ -70,8 +74,6 @@ jobs:
 
       - name: Publish @pocketjs/cli
         working-directory: cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
