@@ -29,7 +29,7 @@ const LOOP64 = "5000ms";
 // linear.
 // ---------------------------------------------------------------------------
 const ARC_PCTS = ["0%", "16.7%", "33.3%", "50%", "66.7%", "83.3%", "100%"];
-const ARC_START = [45, -20, -77, -123, -161, -195, -152];
+const ARC_START = [45, 129, 221, 323, 435, 547, 637];
 const ARC_SWEEP = [0, 63, 126, 189, 252, 315, 315];
 const arcKeyframes = (values: number[], prop: "arcStart" | "arcSweep") =>
   Object.fromEntries(ARC_PCTS.map((pct, i) => [pct, { [prop]: values[i] }]));
@@ -44,8 +44,8 @@ export default definePocketConfig({
 
       // ================= motions/53 =========================================
       // menu (メニュー): 38px pill opens to 128px revealing T/B/I items.
-      "m53-menu-open": { from: { width: 38 }, "60%": { width: 131 }, to: { width: 128 } },
-      "m53-menu-close": { from: { width: 128 }, "60%": { width: 31 }, to: { width: 38 } },
+      "m53-menu-open": { from: { width: 38 }, "60%": { width: 144 }, to: { width: 141 } },
+      "m53-menu-close": { from: { width: 141 }, "60%": { width: 31 }, to: { width: 38 } },
       "m53-menu-x-left": {
         from: { left: 7, rotate: 0 },
         "40%": { left: 17, rotate: 45 },
@@ -164,6 +164,7 @@ export default definePocketConfig({
       // reload (リロード): the arc draws on while winding 45 -> 220deg.
       "m53-arc-start": arcKeyframes(ARC_START, "arcStart"),
       "m53-arc-sweep": arcKeyframes(ARC_SWEEP, "arcSweep"),
+      "m53-reload-icon": { from: { rotate: 0 }, to: { rotate: 360 } },
       "m53-arc-fade": {
         from: { opacity: 0 },
         "25%": { opacity: 1 },
@@ -502,6 +503,8 @@ export default definePocketConfig({
           "m53-arc-fade 1.2s linear 0.2s both",
         loop: LOOP53,
       },
+      "m53-reload-icon-a": { value: "m53-reload-icon 0.8s ease-in-out 0.2s both", loop: LOOP53 },
+      "m53-reload-icon-b": { value: "m53-reload-icon 0.8s ease-in-out 1.4s both", loop: LOOP53 },
       "m53-arc-b": {
         value:
           "m53-arc-start 1.2s linear 1.4s both, " +

@@ -982,7 +982,26 @@ impl<'a> Walker<'a> {
         };
 
         for row in y0..y1 {
-            let mut run_start = x0;
+            // Row clamp: only columns whose pixel can touch the OUTER circle
+            // matter; the ring's inner hole is skipped analytically too (cap
+            // discs sit ON the ring so they never reach into the hole). This
+            // cuts the scanned pixels ~3x — the arc rasterizer runs every
+            // frame on the PSP CPU.
+            let dy = row as f32 + 0.5 - cy;
+            let dy2 = dy * dy;
+            if dy2 > ring_out2 + ring_out + 1.0 {
+                continue;
+            }
+            let half_span = sqrtf((ring_out2 - dy2).max(0.0)) + 1.0;
+            let row_x0 = (floorf(cx - half_span) as i32).max(x0);
+            let row_x1 = (ceilf(cx + half_span) as i32).min(x1);
+            let hole_span = if dy2 < ring_in2 { sqrtf(ring_in2 - dy2) - 1.0 } else { -1.0 };
+            let (hole_x0, hole_x1) = if hole_span > 1.0 {
+                ((cx - hole_span) as i32, (cx + hole_span) as i32)
+            } else {
+                (i32::MAX, i32::MIN)
+            };
+            let mut run_start = row_x0;
             let mut run_cov = 0u32;
             let flush = |dl: &mut DrawList, start: i32, end: i32, cov: u32| {
                 if cov == 0 || end <= start {
@@ -997,7 +1016,18 @@ impl<'a> Walker<'a> {
                 dl.words.push(wh_word((end - start) as f32, 1.0));
                 dl.words.push(c);
             };
-            for col in x0..x1 {
+            let mut col = row_x0;
+            while col < row_x1 {
+                if col >= hole_x0 && col < hole_x1 {
+                    // Fully inside the ring hole: flush and jump across.
+                    if run_cov != 0 {
+                        flush(dl, run_start, col, run_cov);
+                        run_cov = 0;
+                    }
+                    run_start = hole_x1;
+                    col = hole_x1;
+                    continue;
+                }
                 let mut cov = 0u32;
                 for (ox, oy) in [(0.25f32, 0.25f32), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)] {
                     if covered(col as f32 + ox, row as f32 + oy) {
@@ -1009,8 +1039,9 @@ impl<'a> Walker<'a> {
                     run_start = col;
                     run_cov = cov;
                 }
+                col += 1;
             }
-            flush(dl, run_start, x1, run_cov);
+            flush(dl, run_start, row_x1, run_cov);
         }
     }
 

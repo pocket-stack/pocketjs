@@ -156,12 +156,12 @@ function Reload53() {
   return (
     <>
       <View class="absolute left-[41] top-[30] w-[38] h-[38] bg-white arc-width-[6] animate-m53-arc-a" />
-      <View class="absolute left-[50] top-[39] w-[20] h-[20] flex-row justify-center items-center">
+      <View class="absolute left-[50] top-[39] w-[20] h-[20] flex-row justify-center items-center animate-m53-reload-icon-a">
         <Image class="w-[20] h-[20]" src="icon-reload.svg" />
       </View>
       <View class="absolute left-[80] top-[25] w-[48] h-[48] rounded-full bg-white" />
       <View class="absolute left-[80] top-[25] w-[48] h-[48] bg-[#777] arc-width-[2] animate-m53-arc-b" />
-      <View class="absolute left-[92] top-[37] w-[24] h-[24] flex-row justify-center items-center">
+      <View class="absolute left-[92] top-[37] w-[24] h-[24] flex-row justify-center items-center animate-m53-reload-icon-b">
         <Image class="w-[24] h-[24]" src="icon-reload.svg" />
       </View>
       <Caption label="RELOAD" />
@@ -344,9 +344,9 @@ function Focus56() {
 function Reveal30() {
   return (
     <>
-      <View class="absolute left-[20] top-[12] w-[113] h-[71] rounded-[7px] bg-[#ccc] overflow-hidden shadow">
+      <View class="absolute left-[20] top-[12] w-[113] h-[71] bg-[#ccc] overflow-hidden shadow">
         <View class="absolute left-[83] top-[50] w-[14] h-[14] rounded-full bg-white animate-m30-reveal" />
-        <View class="absolute inset-0 rounded-[7px] bg-white animate-m30-reveal-cap" />
+        <View class="absolute inset-0 bg-white animate-m30-reveal-cap" />
         <View class="absolute left-0 top-0 w-full h-[50] flex-col justify-center items-center gap-1 animate-m30-reveal-logo">
           <View class="w-[16] h-[16] rounded-full bg-[#e0e0e0]" />
           <View class="w-[36] h-[5] rounded-[2px] bg-[#e0e0e0]" />
