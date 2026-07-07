@@ -31,6 +31,19 @@ cd pocketjs
 bun install
 ```
 
+The [`@pocketjs/cli`](https://www.npmjs.com/package/@pocketjs/cli) package can
+check (and mostly install) the toolchain for you, flutter-doctor style:
+
+```sh
+npm install -g @pocketjs/cli
+pocketjs doctor   # diagnoses bun, the Rust targets, and the PSP toolchain
+pocketjs setup    # installs whatever doctor flagged as missing
+```
+
+It also wraps the day-to-day commands — `pocketjs create <name>` scaffolds a
+demo app, and `pocketjs dev|build|psp|hw|psplink` run the build scripts from
+anywhere inside the checkout.
+
 That pulls `solid-js`, Vue Vapor dependencies, and the build-time tooling (the
 Babel + Tailwind-subset compiler, the font baker, and the dev host). There is no
 separate runtime to install — the framework is the `@pocketjs/framework` package

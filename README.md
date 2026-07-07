@@ -1,5 +1,9 @@
 <h1><img src="./site/assets/favicon.svg" width="40" height="40" alt="" align="absmiddle" /> PocketJS</h1>
 
+[![@pocketjs/framework](https://img.shields.io/npm/v/%40pocketjs%2Fframework?label=%40pocketjs%2Fframework)](https://www.npmjs.com/package/@pocketjs/framework)
+[![@pocketjs/cli](https://img.shields.io/npm/v/%40pocketjs%2Fcli?label=%40pocketjs%2Fcli)](https://www.npmjs.com/package/@pocketjs/cli)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+
 High-performance JSX UI outside the browser, with native rendering, standard
 Vue Vapor and Solid support, a Tailwind design system, and 60 FPS animation
 under an 8 MB memory budget. Write Solid or Vue Vapor components, run them on
@@ -34,6 +38,12 @@ bun install
 bun scripts/build.ts hero             # -> dist/hero.js + dist/hero.pak
 bun scripts/build.ts hero-vue-vapor-main --framework=vue-vapor
 ```
+
+Or drive everything through the [`pocketjs` CLI](https://www.npmjs.com/package/@pocketjs/cli):
+`npm i -g @pocketjs/cli`, then `pocketjs doctor` checks the bun / Rust / PSP
+toolchain (`pocketjs setup` installs what's missing), `pocketjs create <name>`
+scaffolds an app, and `pocketjs dev|build|psp|hw|psplink` wrap the scripts
+below.
 
 The build is two-pass: pass 1 babel-transforms every module reachable from the
 entry (framework-specific JSX + TypeScript, content-hash cached in

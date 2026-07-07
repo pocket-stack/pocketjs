@@ -3,6 +3,19 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.2.1 — July 7, 2026
+
+**On npm.** PocketJS is now installable.
+
+- [`@pocketjs/framework`](https://www.npmjs.com/package/@pocketjs/framework)
+  and [`@pocketjs/cli`](https://www.npmjs.com/package/@pocketjs/cli) published
+  under the MIT license.
+- New `pocketjs` CLI — flutter-style `doctor` / `setup` for the bun + Rust +
+  PSP toolchain, `create` app scaffolding, and `dev` / `build` / `psp` / `hw` /
+  `psplink` passthrough.
+- Releases are automated: pushing a version tag publishes both packages from
+  GitHub Actions via npm trusted publishing (OIDC), with provenance.
+
 ## 0.2.0 — July 7, 2026
 
 **The animation engine.** The Tailwind style table learned motion —
