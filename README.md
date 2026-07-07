@@ -24,6 +24,8 @@ budget, including animated transitions and input feedback.
 | Gallery | Settings |
 | --- | --- |
 | ![Gallery demo UI showing a paged texture grid](./assets/screenshots/gallery.png) | ![Settings demo UI showing toggles, a slider and theme swatches](./assets/screenshots/settings.png) |
+| **Motion Lab — baked keyframe timelines** | **Motion Lab — 3D pipeline** |
+| ![Motion studies: menu, d-pad, share, hover, reload and keypad animating from compile-time keyframe timelines](./assets/screenshots/motions-53.gif) | ![3D motion studies: a swinging door, spinning cubes, page flips and a room transition, painter-sorted by the core](./assets/screenshots/motions-3d.gif) |
 
 ## Quickstart
 

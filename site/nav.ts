@@ -54,10 +54,10 @@ export interface BlogPost {
 export const BLOG_POSTS: BlogPost[] = [
   {
     slug: "baking-motion",
-    title: "Baking Motion: Keyframes, 3D and a Locked 60 FPS on a 2004 Handheld",
+    title: "Baking Motion: Keyframes, Arcs, and 3D in the Style Engine",
     date: "2026-07-07",
     description:
-      "PocketJS grew a compile-time keyframe engine, a stroke-arc primitive and a real 3D transform pipeline — and a fidelity port of yui540's motion studies forced four hardware lessons: baked disc corners, incremental layout, cache-key discipline, and a pipelined frame loop.",
+      "The style table learns motion: compile-time keyframe timelines, an animatable stroke-arc primitive, and a painter-sorted 3D pipeline — plus the four hardware performance lessons a one-to-one port of yui540's motion studies forced out of the engine.",
     author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
   },
   {
