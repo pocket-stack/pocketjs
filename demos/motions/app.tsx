@@ -89,16 +89,16 @@ function DPad53() {
       <Image class="absolute left-[64] top-[59] w-[26] h-[11]" src="icon-base-up.svg" />
       <Image class="absolute left-[84] top-[39] w-[11] h-[26]" src="icon-base-left.svg" />
       <Image class="absolute left-[59] top-[39] w-[11] h-[26]" src="icon-base-right.svg" />
-      <View class="absolute left-[64] top-[10] w-[26] h-[24] rounded-[5px] bg-[#888] animate-m53-dpad-up">
+      <View class="absolute left-[64] top-[13] w-[26] h-[24] rounded-[5px] bg-[#888] animate-m53-dpad-up">
         <Image class="absolute left-[6] top-[4] w-[15] h-[15]" src="icon-arrow-up.svg" />
       </View>
-      <View class="absolute left-[95] top-[39] w-[24] h-[26] rounded-[5px] bg-[#888] animate-m53-dpad-right">
+      <View class="absolute left-[92] top-[39] w-[24] h-[26] rounded-[5px] bg-[#888] animate-m53-dpad-right">
         <Image class="absolute right-[4] top-[5] w-[15] h-[15]" src="icon-arrow-right.svg" />
       </View>
-      <View class="absolute left-[64] top-[70] w-[26] h-[24] rounded-[5px] bg-[#888] animate-m53-dpad-down">
+      <View class="absolute left-[64] top-[67] w-[26] h-[24] rounded-[5px] bg-[#888] animate-m53-dpad-down">
         <Image class="absolute left-[6] bottom-[4] w-[15] h-[15]" src="icon-arrow-down.svg" />
       </View>
-      <View class="absolute left-[35] top-[39] w-[24] h-[26] rounded-[5px] bg-[#888] animate-m53-dpad-left">
+      <View class="absolute left-[38] top-[39] w-[24] h-[26] rounded-[5px] bg-[#888] animate-m53-dpad-left">
         <Image class="absolute left-[4] top-[5] w-[15] h-[15]" src="icon-arrow-left.svg" />
       </View>
       <Caption label="D-PAD" />
@@ -175,7 +175,6 @@ function Keypad53() {
     <>
       <View class="absolute left-[16] top-[32] w-[34] h-[34]">
         <View class="absolute left-0 top-0 w-[34] h-[34] rounded-[10px] bg-[#e0e0e0] flex-row justify-center items-center animate-m53-key-1">
-          <View class="absolute left-0 top-0 w-full h-[12] rounded-[10px] bg-gradient-to-b from-[#00000030] to-[#00000000] animate-m53-key-shade-1" />
           <View class="animate-m53-key-digit-1">
             <Text class="text-lg font-bold text-[#777]">1</Text>
           </View>
@@ -183,7 +182,6 @@ function Keypad53() {
       </View>
       <View class="absolute left-[60] top-[32] w-[34] h-[34]">
         <View class="absolute left-0 top-0 w-[34] h-[34] rounded-[10px] bg-[#e0e0e0] flex-row justify-center items-center animate-m53-key-2">
-          <View class="absolute left-0 top-0 w-full h-[12] rounded-[10px] bg-gradient-to-b from-[#00000030] to-[#00000000] animate-m53-key-shade-2" />
           <View class="animate-m53-key-digit-2">
             <Text class="text-lg font-bold text-[#777]">2</Text>
           </View>
@@ -191,7 +189,6 @@ function Keypad53() {
       </View>
       <View class="absolute left-[104] top-[32] w-[34] h-[34]">
         <View class="absolute left-0 top-0 w-[34] h-[34] rounded-[10px] bg-[#e0e0e0] flex-row justify-center items-center animate-m53-key-3">
-          <View class="absolute left-0 top-0 w-full h-[12] rounded-[10px] bg-gradient-to-b from-[#00000030] to-[#00000000] animate-m53-key-shade-3" />
           <View class="animate-m53-key-digit-3">
             <Text class="text-lg font-bold text-[#777]">3</Text>
           </View>

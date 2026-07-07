@@ -34,7 +34,19 @@ pub struct MeasureCtx {
 /// The layout engine: one TaffyTree + the dirty flag.
 pub struct LayoutEngine {
     pub taffy: TaffyTree<MeasureCtx>,
+    /// STRUCTURE dirty: the taffy tree must be rebuilt from scratch (node
+    /// inserts/removes/destroys, text content changes, table/font swaps).
     pub dirty: bool,
+    /// STYLE dirty slots: nodes whose resolved style changed but whose place
+    /// in the tree did not — relayout restyles just these in the live taffy
+    /// tree and lets taffy recompute the affected subtrees (per-frame
+    /// keyframe animations of layout props stay incremental instead of
+    /// rebuilding ~everything at 60 Hz).
+    pub style_dirty: Vec<u32>,
+    /// True once `relayout` has built a taffy tree for the current structure.
+    pub built: bool,
+    /// Root taffy node of the built tree.
+    pub root: Option<taffy::NodeId>,
     /// Layout viewport in px. Defaults to the PSP screen; desktop hosts set it
     /// through `Ui::set_viewport` (the draw clip stage uses the same bounds).
     pub viewport: (f32, f32),
@@ -47,10 +59,23 @@ impl Default for LayoutEngine {
 }
 
 impl LayoutEngine {
+    /// Mark one node style-dirty (cheap; deduped at relayout).
+    pub fn mark_style(&mut self, slot: u32) {
+        self.style_dirty.push(slot);
+    }
+
+    /// Anything for `relayout` to do?
+    pub fn needs(&self) -> bool {
+        self.dirty || !self.style_dirty.is_empty()
+    }
+
     pub fn new() -> LayoutEngine {
         LayoutEngine {
             taffy: TaffyTree::new(),
             dirty: true,
+            style_dirty: Vec::new(),
+            built: false,
+            root: None,
             viewport: (spec::SCREEN_W as f32, spec::SCREEN_H as f32),
         }
     }
@@ -230,41 +255,30 @@ fn build(tree: &mut Tree, styles: &StyleTable, taffy: &mut TaffyTree<MeasureCtx>
     Some(nid)
 }
 
-/// Copy rounded layout output back into the node tree.
-fn readback(tree: &mut Tree, taffy: &TaffyTree<MeasureCtx>, slot: u32) {
-    match tree.slots[slot as usize].taffy {
-        Some(nid) => {
-            if let Ok(l) = taffy.layout(nid) {
-                tree.slots[slot as usize].layout = LayoutRect {
-                    x: roundf(l.location.x),
-                    y: roundf(l.location.y),
-                    w: roundf(l.size.width),
-                    h: roundf(l.size.height),
-                };
-            }
+/// Copy rounded layout output back into the node tree (flat pass — layouts
+/// are parent-relative, so order does not matter; no per-node allocations).
+fn readback(tree: &mut Tree, taffy: &TaffyTree<MeasureCtx>) {
+    for node in tree.slots.iter_mut() {
+        if !node.alive {
+            continue;
         }
-        None => tree.slots[slot as usize].layout = LayoutRect::default(),
-    }
-    let children = tree.slots[slot as usize].children.clone();
-    for c in children {
-        if let Some(cs) = tree.resolve(c) {
-            readback(tree, taffy, cs);
+        match node.taffy {
+            Some(nid) => {
+                if let Ok(l) = taffy.layout(nid) {
+                    node.layout = LayoutRect {
+                        x: roundf(l.location.x),
+                        y: roundf(l.location.y),
+                        w: roundf(l.size.width),
+                        h: roundf(l.size.height),
+                    };
+                }
+            }
+            None => node.layout = LayoutRect::default(),
         }
     }
 }
 
-/// Full relayout: rebuild the taffy tree, compute with text measurement,
-/// read the rounded results back, clear the dirty flag.
-pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut LayoutEngine) {
-    eng.taffy.clear();
-    for n in tree.slots.iter_mut() {
-        n.taffy = None;
-    }
-    let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
-    let Some(root_nid) = build(tree, styles, &mut eng.taffy, root_slot) else {
-        eng.dirty = false;
-        return;
-    };
+fn compute(tree: &mut Tree, fonts: &Fonts, eng: &mut LayoutEngine, root_nid: taffy::NodeId) {
     let _ = eng.taffy.compute_layout_with_measure(
         root_nid,
         Size {
@@ -284,8 +298,67 @@ pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut L
             }
         },
     );
-    readback(tree, &eng.taffy, root_slot);
+    readback(tree, &eng.taffy);
+}
+
+/// Relayout. STYLE-only dirt restyles the dirty nodes in the LIVE taffy tree
+/// (taffy recomputes just the affected subtrees — this is what keeps
+/// layout-prop keyframe animations 60 Hz on the PSP); STRUCTURE dirt rebuilds
+/// the tree from scratch.
+pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut LayoutEngine) {
+    if !eng.dirty && eng.built {
+        if eng.style_dirty.is_empty() {
+            return;
+        }
+        eng.style_dirty.sort_unstable();
+        eng.style_dirty.dedup();
+        let dirty = core::mem::take(&mut eng.style_dirty);
+        for &slot in &dirty {
+            if !tree.slots[slot as usize].alive {
+                continue;
+            }
+            let Some(nid) = tree.slots[slot as usize].taffy else {
+                // Not part of the built tree: detached subtrees relayout on
+                // re-insert (structure dirty), and excluded empty text runs
+                // only re-enter through set_text (also structure dirty).
+                continue;
+            };
+            let resolved = style::resolve(&tree.slots[slot as usize], styles, true);
+            if tree.slots[slot as usize].node_type == spec::NodeType::Text as u8 {
+                let mut run = String::new();
+                tree.collect_run(slot, &mut run);
+                let ctx = MeasureCtx {
+                    text: run,
+                    slot: resolved.font_slot as u8,
+                    tracking: resolved.tracking,
+                    line_height: resolved.line_height,
+                };
+                let _ = eng.taffy.set_node_context(nid, Some(ctx));
+            }
+            let _ = eng.taffy.set_style(nid, to_taffy(&resolved));
+        }
+        if let Some(root_nid) = eng.root {
+            compute(tree, fonts, eng, root_nid);
+            return;
+        }
+        eng.dirty = true; // no built root (should not happen) — full rebuild
+    }
+    eng.taffy.clear();
+    eng.style_dirty.clear();
+    for n in tree.slots.iter_mut() {
+        n.taffy = None;
+    }
+    let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
+    let Some(root_nid) = build(tree, styles, &mut eng.taffy, root_slot) else {
+        eng.dirty = false;
+        eng.built = false;
+        eng.root = None;
+        return;
+    };
+    eng.root = Some(root_nid);
+    eng.built = true;
     eng.dirty = false;
+    compute(tree, fonts, eng, root_nid);
 }
 
 /// Smoke helper proving the pinned taffy feature set

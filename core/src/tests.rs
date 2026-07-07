@@ -599,24 +599,39 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
     let words = ui.draw().words.clone();
     let counts = validate_drawlist(&words);
     assert!(counts[spec::draw_op::RECT as usize] > 0);
-    let mut edge_alpha = false;
+    // Flat rounded boxes now render their corners as four baked-disc
+    // TEX_QUAD sprites (O(1) per box; the AA lives in the disc texture) +
+    // solid RECT bands. Assert the corner sprites and that the baked disc
+    // actually carries partial coverage alpha.
+    let mut corner_quads = 0usize;
+    let mut disc_tex = None;
     let mut i = 0usize;
     while i < words.len() {
         match words[i] {
-            spec::draw_op::RECT => {
-                let a = words[i + 3] >> 24;
-                edge_alpha |= a > 0 && a < 255;
-                i += 4;
-            }
+            spec::draw_op::RECT => i += 4,
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
-            spec::draw_op::TEX_QUAD => i += 9,
+            spec::draw_op::TEX_QUAD => {
+                corner_quads += 1;
+                disc_tex = Some(words[i + 1] as i32);
+                i += 9;
+            }
             spec::draw_op::SCISSOR => i += 3,
             _ => i += 1,
         }
     }
-    assert!(edge_alpha, "rounded pill edges should be alpha-covered, not hard 1-bit spans");
+    assert_eq!(corner_quads, 4, "four corner sprites per rounded box");
+    let (pixels, tw, _th, psm) = ui.texture(disc_tex.unwrap()).expect("baked disc texture");
+    assert_eq!(psm, spec::psm::PSM_8888);
+    let mut partial = false;
+    for px in pixels.chunks_exact(4).take((tw * tw) as usize) {
+        if px[3] > 0 && px[3] < 255 {
+            partial = true;
+            break;
+        }
+    }
+    assert!(partial, "the baked disc must carry antialiased coverage alpha");
 }
 
 #[test]

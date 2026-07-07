@@ -86,6 +86,8 @@ pub struct Ui {
     timelines: Vec<TimelineInst>,
     layout: layout::LayoutEngine,
     textures: Vec<Texture>,
+    /// Baked rounded-corner disc sprites (see draw::DiscCache).
+    discs: draw::DiscCache,
     focused: i32,
     draw_list: DrawList,
     /// Frame counter advanced by `tick()` (drives fixed-dt animation).
@@ -110,6 +112,7 @@ impl Ui {
             timelines: Vec::new(),
             layout: layout::LayoutEngine::new(),
             textures: Vec::new(),
+            discs: draw::DiscCache::new(),
             focused: 0,
             draw_list: DrawList::new(),
             frame: 0,
@@ -183,7 +186,7 @@ impl Ui {
         }
         self.retarget(slot, &old, was_initialized);
         self.restart_timelines(slot);
-        self.layout.dirty = true;
+        self.layout.mark_style(slot);
     }
 
     /// Set a single dynamic prop. `value` carries the payload per
@@ -203,7 +206,7 @@ impl Ui {
         tree::Node::remove_entry(&mut node.anim_values, prop);
         tree::Node::put_entry(&mut node.overrides, prop, bits);
         if spec::is_layout_dirtying(prop) {
-            self.layout.dirty = true;
+            self.layout.mark_style(slot);
         }
     }
 
@@ -373,7 +376,7 @@ impl Ui {
                 tree::Node::remove_entry(&mut node.anim_values, prop);
                 tree::Node::put_entry(&mut node.overrides, prop, to_bits);
                 if spec::is_layout_dirtying(prop) {
-                    self.layout.dirty = true;
+                    self.layout.mark_style(slot);
                 }
                 return -1;
             }
@@ -430,13 +433,14 @@ impl Ui {
             let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
             self.tree.slots[slot as usize].focused = false;
             self.retarget(slot, &old, true);
+            self.layout.mark_style(slot);
         }
         if let Some(slot) = self.tree.resolve(target) {
             let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
             self.tree.slots[slot as usize].focused = true;
             self.retarget(slot, &old, true);
+            self.layout.mark_style(slot);
         }
-        self.layout.dirty = true;
     }
 
     /// Set the `active:` pressed state (same native variant machinery as
@@ -449,7 +453,7 @@ impl Ui {
         let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
         self.tree.slots[slot as usize].active = active;
         self.retarget(slot, &old, true);
-        self.layout.dirty = true;
+        self.layout.mark_style(slot);
     }
 
     // ---- frame -------------------------------------------------------------
@@ -492,11 +496,11 @@ impl Ui {
                 tree::Node::put_entry(&mut node.anim_values, prop, value);
             }
             if spec::is_layout_dirtying(prop) {
-                self.layout.dirty = true;
+                self.layout.mark_style(slot);
             }
         }
         self.tick_timelines();
-        if self.layout.dirty {
+        if self.layout.needs() {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
     }
@@ -580,7 +584,7 @@ impl Ui {
                         if prev != Some(bits) {
                             tree::Node::put_entry(&mut node.anim_values, prop, bits);
                             if spec::is_layout_dirtying(prop) {
-                                self.layout.dirty = true;
+                                self.layout.mark_style(slot);
                             }
                         }
                     }
@@ -588,7 +592,7 @@ impl Ui {
                         if prev.is_some() {
                             tree::Node::remove_entry(&mut node.anim_values, prop);
                             if spec::is_layout_dirtying(prop) {
-                                self.layout.dirty = true;
+                                self.layout.mark_style(slot);
                             }
                         }
                     }
@@ -629,7 +633,7 @@ impl Ui {
     /// Walk the tree into the DrawList (spec.ts DRAWLIST format) and return
     /// it. Output is valid until the next mutating call.
     pub fn draw(&mut self) -> &DrawList {
-        if self.layout.dirty {
+        if self.layout.needs() {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
         draw::build(
@@ -638,6 +642,8 @@ impl Ui {
             &self.fonts,
             self.frame,
             self.layout.viewport,
+            &mut self.textures,
+            &mut self.discs,
             &mut self.draw_list,
         );
         &self.draw_list

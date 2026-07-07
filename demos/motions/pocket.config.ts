@@ -89,24 +89,24 @@ export default definePocketConfig({
       // d-pad (十字キー): pentagon keys (cap + same-color trapezoid base);
       // caps stretch away from the center, inner edges pinned.
       "m53-dpad-up": {
-        "from,to": { top: 10, height: 24 },
-        "50%": { top: 1, height: 33 },
-        "75%": { top: 12, height: 22 },
+        "from,to": { top: 13, height: 24 },
+        "50%": { top: 4, height: 33 },
+        "75%": { top: 15, height: 22 },
       },
       "m53-dpad-down": {
-        "from,to": { top: 70, height: 24 },
+        "from,to": { top: 67, height: 24 },
         "50%": { height: 33 },
         "75%": { height: 22 },
       },
       "m53-dpad-right": {
-        "from,to": { left: 95, width: 24 },
+        "from,to": { left: 92, width: 24 },
         "50%": { width: 33 },
         "75%": { width: 22 },
       },
       "m53-dpad-left": {
-        "from,to": { left: 35, width: 24 },
-        "50%": { left: 26, width: 33 },
-        "75%": { left: 37, width: 22 },
+        "from,to": { left: 38, width: 24 },
+        "50%": { left: 29, width: 33 },
+        "75%": { left: 40, width: 22 },
       },
 
       // share (共有): the white card inflates from its bottom edge; the icon
@@ -183,11 +183,6 @@ export default definePocketConfig({
         "from,to": { translateY: 0 },
         "50%": { translateY: 2 },
         "75%": { translateY: -1 },
-      },
-      "m53-key-shade": {
-        "from,to": { opacity: 0 },
-        "50%": { opacity: 1 },
-        "75%": { opacity: 0 },
       },
 
       // ================= motions/56 =========================================
@@ -285,10 +280,10 @@ export default definePocketConfig({
         to: { width: 34, height: 29, top: 0, translateX: 67, backgroundColor: "#bbb" },
       },
 
-      "m56-focus-hop-right": { from: { left: 0 }, to: { left: 50 } },
-      "m56-focus-hop-left": { from: { left: 50 }, to: { left: -50 } },
-      "m56-focus-stretch": { from: { left: -50, width: 34 }, to: { left: -50, width: 134 } },
-      "m56-focus-snap": { from: { left: -50, width: 134 }, to: { left: 0, width: 34 } },
+      "m56-focus-hop-right": { from: { left: 0 }, to: { left: 37 } },
+      "m56-focus-hop-left": { from: { left: 37 }, to: { left: -37 } },
+      "m56-focus-stretch": { from: { left: -37, width: 34 }, to: { left: -37, width: 108 } },
+      "m56-focus-snap": { from: { left: -37, width: 108 }, to: { left: 0, width: 34 } },
       "m56-focus-pulse": { "from,to": { inset: -6 }, "50%": { inset: -4 } },
 
       // ================= motions/30 =========================================
@@ -520,9 +515,6 @@ export default definePocketConfig({
       "m53-key-digit-1": { value: "m53-key-digit 0.6s ease-in-out 0.2s both", loop: LOOP53 },
       "m53-key-digit-2": { value: "m53-key-digit 0.6s ease-in-out 0.8s both", loop: LOOP53 },
       "m53-key-digit-3": { value: "m53-key-digit 0.6s ease-in-out 1.4s both", loop: LOOP53 },
-      "m53-key-shade-1": { value: "m53-key-shade 0.6s ease-in-out 0.2s both", loop: LOOP53 },
-      "m53-key-shade-2": { value: "m53-key-shade 0.6s ease-in-out 0.8s both", loop: LOOP53 },
-      "m53-key-shade-3": { value: "m53-key-shade 0.6s ease-in-out 1.4s both", loop: LOOP53 },
 
       // ================= motions/56 (loop 4400ms) ===========================
       "m56-applaunch-box": {

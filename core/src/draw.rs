@@ -393,6 +393,88 @@ fn fill_color_at(fill: &Fill, x0: f32, y0: f32, x1: f32, y1: f32, sx0: i32, sy: 
 
 // ---- the walker ------------------------------------------------------------------
 
+/// Baked antialiased disc sprites keyed by integer radius — rounded corners
+/// render as four O(1) corner TEX_QUADs + three RECTs instead of per-row
+/// coverage spans (measured 7 ms/frame of CPU on real PSP hardware for the
+/// motions demo before this).
+pub struct DiscCache {
+    /// (radius px, texture handle)
+    entries: Vec<(u32, u32)>,
+}
+
+impl DiscCache {
+    pub const fn new() -> DiscCache {
+        DiscCache { entries: Vec::new() }
+    }
+}
+
+impl Default for DiscCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Get (or bake + upload) the AA disc texture for `r_px`. The disc is a
+/// 2r x 2r circle, supersampled 4x4, white RGB with coverage alpha
+/// (PSM_8888), padded to pow2 — corners sample their quadrant and modulate
+/// by the fill color, which matches the old span math's scale_alpha exactly
+/// up to AA rounding.
+fn disc_texture(cache: &mut DiscCache, textures: &mut Vec<crate::Texture>, r_px: u32) -> Option<(u32, u32)> {
+    if let Some(&(_, handle)) = cache.entries.iter().find(|&&(r, _)| r == r_px) {
+        let dim = pow2_at_least(2 * r_px);
+        return Some((handle, dim));
+    }
+    let size = 2 * r_px;
+    let dim = pow2_at_least(size);
+    if dim > spec::TEX_MAX_DIM {
+        return None;
+    }
+    let byte_len = (dim * dim * 4) as usize;
+    let mut px = alloc::vec![0u8; byte_len];
+    let c = r_px as f32; // disc center (r, r)
+    let rr = c * c;
+    for y in 0..size {
+        for x in 0..size {
+            let mut covered = 0u32;
+            for sy in 0..4u32 {
+                for sx in 0..4u32 {
+                    let fx = x as f32 + (sx as f32 + 0.5) / 4.0;
+                    let fy = y as f32 + (sy as f32 + 0.5) / 4.0;
+                    let dx = fx - c;
+                    let dy = fy - c;
+                    if dx * dx + dy * dy <= rr {
+                        covered += 1;
+                    }
+                }
+            }
+            if covered > 0 {
+                let o = ((y * dim + x) * 4) as usize;
+                px[o] = 255;
+                px[o + 1] = 255;
+                px[o + 2] = 255;
+                px[o + 3] = ((covered * 255 + 8) / 16) as u8;
+            }
+        }
+    }
+    let mut chunks = alloc::vec![0u128; byte_len.div_ceil(16)];
+    unsafe {
+        core::ptr::copy_nonoverlapping(px.as_ptr(), chunks.as_mut_ptr() as *mut u8, byte_len);
+    }
+    textures.push(crate::Texture { data: chunks, byte_len, w: dim, h: dim, psm: spec::psm::PSM_8888 });
+    let handle = (textures.len() - 1) as u32;
+    cache.entries.push((r_px, handle));
+    Some((handle, dim))
+}
+
+#[inline]
+fn pow2_at_least(n: u32) -> u32 {
+    let mut p = 1u32;
+    while p < n {
+        p <<= 1;
+    }
+    p
+}
+
 struct Walker<'a> {
     tree: &'a Tree,
     styles: &'a StyleTable,
@@ -403,21 +485,27 @@ struct Walker<'a> {
     /// [0, screen.0] x [0, screen.1] (i16-safe; hosts cap it well under 32k).
     screen: (f32, f32),
     glyph_scratch: Vec<crate::text::GlyphPos>,
+    /// Core texture list (baked corner discs append lazily during the walk).
+    textures: &'a mut Vec<crate::Texture>,
+    discs: &'a mut DiscCache,
 }
 
 /// Build the full DrawList for the current (laid-out) tree. `frame` is the
 /// core's vblank counter (Ui.frame); animated sprites pick their cell from it.
 /// `screen` is the viewport every coordinate is clipped to.
+#[allow(clippy::too_many_arguments)]
 pub fn build(
     tree: &Tree,
     styles: &StyleTable,
     fonts: &Fonts,
     frame: u64,
     screen: (f32, f32),
+    textures: &mut Vec<crate::Texture>,
+    discs: &mut DiscCache,
     dl: &mut DrawList,
 ) {
     dl.words.clear();
-    let mut w = Walker { tree, styles, fonts, frame, screen, glyph_scratch: Vec::new() };
+    let mut w = Walker { tree, styles, fonts, frame, screen, glyph_scratch: Vec::new(), textures, discs };
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
     w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), dl);
 }
@@ -587,19 +675,42 @@ impl<'a> Walker<'a> {
             return;
         }
 
+        // z-index is rare: detect it with the cheap z-only resolve, and only
+        // allocate + sort when a child actually carries one (the hot path is
+        // a straight index walk with zero allocations).
         let node = &self.tree.slots[slot as usize];
-        let mut order: Vec<(i32, u32)> = Vec::with_capacity(node.children.len());
+        let child_count = node.children.len();
+        let mut needs_sort = false;
         for &cid in &node.children {
             if let Some(cs) = self.tree.resolve(cid) {
-                let z = style::resolve(&self.tree.slots[cs as usize], self.styles, true).z_index;
-                order.push((z, cs));
+                if style::resolve_z(&self.tree.slots[cs as usize], self.styles) != 0 {
+                    needs_sort = true;
+                    break;
+                }
             }
         }
-        // Stable by construction: sort_by_key on Vec preserves insertion
-        // order of equal keys (alloc's stable merge sort).
-        order.sort_by_key(|&(z, _)| z);
-        for (_, cs) in order {
-            self.paint(cs, world, op, child_clip, dl);
+        if !needs_sort {
+            for i in 0..child_count {
+                let cid = self.tree.slots[slot as usize].children[i];
+                if let Some(cs) = self.tree.resolve(cid) {
+                    self.paint(cs, world, op, child_clip, dl);
+                }
+            }
+        } else {
+            let node = &self.tree.slots[slot as usize];
+            let mut order: Vec<(i32, u32)> = Vec::with_capacity(node.children.len());
+            for &cid in &node.children {
+                if let Some(cs) = self.tree.resolve(cid) {
+                    let z = style::resolve_z(&self.tree.slots[cs as usize], self.styles);
+                    order.push((z, cs));
+                }
+            }
+            // Stable by construction: sort_by_key on Vec preserves insertion
+            // order of equal keys (alloc's stable merge sort).
+            order.sort_by_key(|&(z, _)| z);
+            for (_, cs) in order {
+                self.paint(cs, world, op, child_clip, dl);
+            }
         }
 
         if scissored {
@@ -816,6 +927,11 @@ impl<'a> Walker<'a> {
         }
         let rmid = outer - width * 0.5;
         let half = width * 0.5;
+        // Ring test in squared space (|d - rmid| <= half without the sqrt).
+        let ring_in = (rmid - half).max(0.0);
+        let ring_in2 = ring_in * ring_in;
+        let ring_out = rmid + half;
+        let ring_out2 = ring_out * ring_out;
         let sweep = clampf(r.arc_sweep, -360.0, 360.0);
         let (a0, asweep) = if sweep < 0.0 { (r.arc_start + sweep, -sweep) } else { (r.arc_start, sweep) };
         let full = asweep >= 360.0;
@@ -839,8 +955,8 @@ impl<'a> Walker<'a> {
         let covered = |px: f32, py: f32| -> bool {
             let dx = px - cx;
             let dy = py - cy;
-            let d = sqrtf(dx * dx + dy * dy);
-            let in_ring = (d - rmid) * (d - rmid) <= half2;
+            let d2 = dx * dx + dy * dy;
+            let in_ring = d2 >= ring_in2 && d2 <= ring_out2;
             if in_ring {
                 let in_angle = full || {
                     let cross_s = svx * dy - svy * dx;
@@ -999,6 +1115,55 @@ impl<'a> Walker<'a> {
         }
     }
 
+    /// Screen-space flat/grad rect helper (already-transformed coords).
+    #[allow(clippy::too_many_arguments)]
+    fn emit_screen_rect(&self, dl: &mut DrawList, x0: f32, y0: f32, x1: f32, y1: f32, fill: Fill, clip: &Clip) {
+        if x1 <= x0 || y1 <= y0 {
+            return;
+        }
+        self.emit_box(dl, &Affine::IDENTITY, x0, y0, x1, y1, fill, clip);
+    }
+
+    /// One rounded-corner sprite: an r x r quadrant of the baked disc,
+    /// clipped, with UVs re-interpolated over the visible part.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_corner_quad(
+        &self,
+        dl: &mut DrawList,
+        tex: u32,
+        x: f32,
+        y: f32,
+        r: f32,
+        u0: f32,
+        v0: f32,
+        du: f32,
+        color: u32,
+        clip: &Clip,
+    ) {
+        let c = Clip {
+            x0: x.max(clip.x0),
+            y0: y.max(clip.y0),
+            x1: (x + r).min(clip.x1),
+            y1: (y + r).min(clip.y1),
+        };
+        if c.is_empty() || roundf(c.x1 - c.x0) <= 0.0 || roundf(c.y1 - c.y0) <= 0.0 {
+            return;
+        }
+        let cu0 = u0 + (c.x0 - x) / r * du;
+        let cu1 = u0 + (c.x1 - x) / r * du;
+        let cv0 = v0 + (c.y0 - y) / r * du;
+        let cv1 = v0 + (c.y1 - y) / r * du;
+        dl.words.push(spec::draw_op::TEX_QUAD);
+        dl.words.push(tex);
+        dl.words.push(xy_word(c.x0, c.y0));
+        dl.words.push(wh_word(c.x1 - c.x0, c.y1 - c.y0));
+        dl.words.push(cu0.to_bits());
+        dl.words.push(cv0.to_bits());
+        dl.words.push(cu1.to_bits());
+        dl.words.push(cv1.to_bits());
+        dl.words.push(color);
+    }
+
     fn rounded_interval_at_row(
         &self,
         sx0: f32,
@@ -1151,7 +1316,7 @@ impl<'a> Walker<'a> {
 
     #[allow(clippy::too_many_arguments)]
     fn emit_rounded_border(
-        &self,
+        &mut self,
         dl: &mut DrawList,
         world: &Affine,
         x0: f32,
@@ -1279,7 +1444,7 @@ impl<'a> Walker<'a> {
 
     #[allow(clippy::too_many_arguments)]
     fn emit_rounded_box(
-        &self,
+        &mut self,
         dl: &mut DrawList,
         world: &Affine,
         x0: f32,
@@ -1306,6 +1471,32 @@ impl<'a> Walker<'a> {
         if r <= 0.5 {
             self.emit_box(dl, world, x0, y0, x1, y1, fill, clip);
             return;
+        }
+        // Flat fills: four baked-disc corner sprites + three rects — O(1)
+        // ops per box instead of per-row coverage spans (the spans cost
+        // ~7 ms/frame of PSP CPU on rounded-heavy screens). Gradients keep
+        // the exact span path below.
+        if let Fill::Flat(color) = fill {
+            let r_px = roundf(r).max(1.0) as u32;
+            if let Some((tex, dim)) = disc_texture(self.discs, self.textures, r_px) {
+                let rf = r_px as f32;
+                let du = rf / dim as f32; // one corner quadrant in UV space
+                let corners = [
+                    (sx0, sy0, 0.0, 0.0),               // TL quadrant
+                    (sx1 - rf, sy0, du, 0.0),           // TR
+                    (sx0, sy1 - rf, 0.0, du),           // BL
+                    (sx1 - rf, sy1 - rf, du, du),       // BR
+                ];
+                for &(cx, cy, u0, v0) in corners.iter() {
+                    self.emit_corner_quad(dl, tex, cx, cy, rf, u0, v0, du, color, clip);
+                }
+                let mid = Fill::Flat(color);
+                // middle band (full width) + top/bottom strips between corners
+                self.emit_screen_rect(dl, sx0, sy0 + rf, sx1, sy1 - rf, mid, clip);
+                self.emit_screen_rect(dl, sx0 + rf, sy0, sx1 - rf, sy0 + rf, mid, clip);
+                self.emit_screen_rect(dl, sx0 + rf, sy1 - rf, sx1 - rf, sy1, mid, clip);
+                return;
+            }
         }
         let ix0 = floorf(sx0).max(floorf(clip.x0)).max(0.0) as i32;
         let iy0 = floorf(sy0).max(floorf(clip.y0)).max(0.0) as i32;
@@ -1450,7 +1641,7 @@ impl<'a> Walker<'a> {
         }
     }
 
-    fn emit_shadow(&self, dl: &mut DrawList, world: &Affine, w: f32, h: f32, radius: f32, level: u32, opacity: f32, clip: &Clip) {
+    fn emit_shadow(&mut self, dl: &mut DrawList, world: &Affine, w: f32, h: f32, radius: f32, level: u32, opacity: f32, clip: &Clip) {
         if !world.is_axis_aligned() {
             return;
         }

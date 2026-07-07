@@ -491,6 +491,40 @@ impl Resolved {
     }
 }
 
+/// z-index only, WITHOUT building a full `Resolved` — the paint walk asks
+/// for every child's z each frame, and a full resolve there doubled the
+/// per-node style work (measured: the largest single cost in `draw` on PSP).
+pub fn resolve_z(node: &Node, table: &StyleTable) -> i32 {
+    let mut z = 0i32;
+    if let Some(rec) = table.record(node.style_id) {
+        for &(p, v) in &rec.base {
+            if p == spec::prop::Z_INDEX {
+                z = v as i32;
+            }
+        }
+        if node.focused {
+            for &(p, v) in &rec.focus {
+                if p == spec::prop::Z_INDEX {
+                    z = v as i32;
+                }
+            }
+        }
+        if node.active {
+            for &(p, v) in &rec.active {
+                if p == spec::prop::Z_INDEX {
+                    z = v as i32;
+                }
+            }
+        }
+    }
+    for &(p, v) in &node.overrides {
+        if p == spec::prop::Z_INDEX {
+            z = v as i32;
+        }
+    }
+    z
+}
+
 /// Resolve a node's effective style. `with_anim` controls whether live
 /// animation values participate (they do for painting/"from = current"; they
 /// don't when computing a transition's target).
