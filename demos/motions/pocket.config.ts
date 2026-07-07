@@ -456,10 +456,28 @@ export default definePocketConfig({
           "m53-menu-item-out 0.25s ease-in-out 1.2s forwards",
         loop: LOOP53,
       },
-      "m53-dpad-up": { value: "m53-dpad-up 0.55s ease-in-out 0.2s both", loop: LOOP53 },
-      "m53-dpad-right": { value: "m53-dpad-right 0.55s ease-in-out 0.7s both", loop: LOOP53 },
-      "m53-dpad-down": { value: "m53-dpad-down 0.55s ease-in-out 1.2s both", loop: LOOP53 },
-      "m53-dpad-left": { value: "m53-dpad-left 0.55s ease-in-out 1.7s both", loop: LOOP53 },
+      // Faster than the original 0.55s/0.5s stagger (one pass felt sluggish);
+      // two passes fill the 4s page loop.
+      "m53-dpad-up": {
+        value:
+          "m53-dpad-up 0.4s ease-in-out 0.2s both, m53-dpad-up 0.4s ease-in-out 1.8s forwards",
+        loop: LOOP53,
+      },
+      "m53-dpad-right": {
+        value:
+          "m53-dpad-right 0.4s ease-in-out 0.55s both, m53-dpad-right 0.4s ease-in-out 2.15s forwards",
+        loop: LOOP53,
+      },
+      "m53-dpad-down": {
+        value:
+          "m53-dpad-down 0.4s ease-in-out 0.9s both, m53-dpad-down 0.4s ease-in-out 2.5s forwards",
+        loop: LOOP53,
+      },
+      "m53-dpad-left": {
+        value:
+          "m53-dpad-left 0.4s ease-in-out 1.25s both, m53-dpad-left 0.4s ease-in-out 2.85s forwards",
+        loop: LOOP53,
+      },
       "m53-share-a": {
         value:
           "m53-share-grow-a 0.6s ease-in-out 0.2s both, " +
