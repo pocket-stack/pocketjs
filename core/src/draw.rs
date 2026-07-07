@@ -1509,24 +1509,32 @@ impl<'a> Walker<'a> {
         // the exact span path below.
         if let Fill::Flat(color) = fill {
             let r_px = roundf(r).max(1.0) as u32;
-            if let Some((tex, dim)) = disc_texture(self.discs, self.textures, r_px) {
-                let rf = r_px as f32;
-                let du = rf / dim as f32; // one corner quadrant in UV space
-                let corners = [
-                    (sx0, sy0, 0.0, 0.0),               // TL quadrant
-                    (sx1 - rf, sy0, du, 0.0),           // TR
-                    (sx0, sy1 - rf, 0.0, du),           // BL
-                    (sx1 - rf, sy1 - rf, du, du),       // BR
-                ];
-                for &(cx, cy, u0, v0) in corners.iter() {
-                    self.emit_corner_quad(dl, tex, cx, cy, rf, u0, v0, du, color, clip);
+            // Bake discs only for small radii: UI corner radii recur and
+            // cache forever, but ANIMATED radii (a scaling rounded-full
+            // splash) mint a new radius every frame — baking those spiked a
+            // real-PSP frame to 118 ms and grew the texture list unboundedly.
+            // Large radii take the analytic span path below instead.
+            const DISC_MAX_R: u32 = 32;
+            if r_px <= DISC_MAX_R {
+                if let Some((tex, dim)) = disc_texture(self.discs, self.textures, r_px) {
+                    let rf = r_px as f32;
+                    let du = rf / dim as f32; // one corner quadrant in UV space
+                    let corners = [
+                        (sx0, sy0, 0.0, 0.0),           // TL quadrant
+                        (sx1 - rf, sy0, du, 0.0),       // TR
+                        (sx0, sy1 - rf, 0.0, du),       // BL
+                        (sx1 - rf, sy1 - rf, du, du),   // BR
+                    ];
+                    for &(cx, cy, u0, v0) in corners.iter() {
+                        self.emit_corner_quad(dl, tex, cx, cy, rf, u0, v0, du, color, clip);
+                    }
+                    let mid = Fill::Flat(color);
+                    // middle band (full width) + top/bottom strips between corners
+                    self.emit_screen_rect(dl, sx0, sy0 + rf, sx1, sy1 - rf, mid, clip);
+                    self.emit_screen_rect(dl, sx0 + rf, sy0, sx1 - rf, sy0 + rf, mid, clip);
+                    self.emit_screen_rect(dl, sx0 + rf, sy1 - rf, sx1 - rf, sy1, mid, clip);
+                    return;
                 }
-                let mid = Fill::Flat(color);
-                // middle band (full width) + top/bottom strips between corners
-                self.emit_screen_rect(dl, sx0, sy0 + rf, sx1, sy1 - rf, mid, clip);
-                self.emit_screen_rect(dl, sx0 + rf, sy0, sx1 - rf, sy0 + rf, mid, clip);
-                self.emit_screen_rect(dl, sx0 + rf, sy1 - rf, sx1 - rf, sy1, mid, clip);
-                return;
             }
         }
         let ix0 = floorf(sx0).max(floorf(clip.x0)).max(0.0) as i32;

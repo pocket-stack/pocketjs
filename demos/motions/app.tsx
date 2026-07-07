@@ -156,13 +156,13 @@ function Reload53() {
   return (
     <>
       <View class="absolute left-[41] top-[30] w-[38] h-[38] bg-white arc-width-[6] animate-m53-arc-a" />
-      <View class="absolute left-[50] top-[39] w-[20] h-[20] flex-row justify-center items-center animate-m53-reload-icon-a">
-        <Image class="w-[20] h-[20]" src="icon-reload.svg" />
+      <View class="absolute left-[48] top-[37] w-[24] h-[24] flex-row justify-center items-center animate-m53-reload-icon-a">
+        <Image class="w-[24] h-[24]" src="icon-reload.svg" />
       </View>
       <View class="absolute left-[80] top-[25] w-[48] h-[48] rounded-full bg-white" />
       <View class="absolute left-[80] top-[25] w-[48] h-[48] bg-[#777] arc-width-[2] animate-m53-arc-b" />
-      <View class="absolute left-[92] top-[37] w-[24] h-[24] flex-row justify-center items-center animate-m53-reload-icon-b">
-        <Image class="w-[24] h-[24]" src="icon-reload.svg" />
+      <View class="absolute left-[90] top-[35] w-[28] h-[28] flex-row justify-center items-center animate-m53-reload-icon-b">
+        <Image class="w-[28] h-[28]" src="icon-reload.svg" />
       </View>
       <Caption label="RELOAD" />
     </>
