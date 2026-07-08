@@ -1,11 +1,19 @@
 [package]
 name = "pocket3d-bsp"
-description = "GoldSrc BSP v30 + WAD3 loader: geometry, lightmaps, entities, and hull collision"
+description = "GoldSrc BSP v30 + WAD3 loader: geometry, lightmaps, entities, hull collision, PVS, and the cooked .p3d map format"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["std"]
+# Parsing, WADs, load_map, and the .p3d cooker. Without it the crate is
+# no_std + alloc: collision tracing, PVS visibility, the .p3d reader.
+std = ["glam/std", "dep:anyhow", "dep:log"]
+# Math backend for no_std targets (mutually exclusive with std in practice).
+libm = ["glam/libm"]
+
 [dependencies]
 glam = { workspace = true }
-anyhow = { workspace = true }
-log = { workspace = true }
+anyhow = { workspace = true, optional = true }
+log = { workspace = true, optional = true }

@@ -47,6 +47,61 @@ impl DecodedTexture {
     }
 }
 
+/// A miptex kept in its native indexed form: 8-bit palette indices for the
+/// four stored mip levels plus the 256-color RGB palette. This is what the
+/// cooked-map pipeline wants — the PSP consumes palettes natively (CLUT8).
+pub struct IndexedTexture {
+    pub name: String,
+    pub width: u32,
+    pub height: u32,
+    /// Mip levels 0..4 at w>>l x h>>l, 8-bit palette indices, row-major.
+    pub mips: Vec<Vec<u8>>,
+    /// 256 RGB entries (768 bytes).
+    pub palette: Vec<u8>,
+    /// True for `{` textures (palette index 255 = transparent).
+    pub masked: bool,
+}
+
+/// Decode a raw miptex block without palette expansion.
+pub fn decode_miptex_indexed(block: &[u8]) -> Result<IndexedTexture> {
+    let mut r = Reader::new(block);
+    let name = r.name(16)?;
+    let width = r.u32()?;
+    let height = r.u32()?;
+    let offsets = [r.u32()?, r.u32()?, r.u32()?, r.u32()?];
+    if width == 0 || height == 0 || width > 4096 || height > 4096 {
+        bail!("miptex {name}: bad dimensions {width}x{height}");
+    }
+    if offsets[0] == 0 {
+        bail!("miptex {name}: no embedded data");
+    }
+    let mut mips = Vec::with_capacity(4);
+    for (level, &off) in offsets.iter().enumerate() {
+        let (w, h) = ((width >> level).max(1), (height >> level).max(1));
+        let len = (w * h) as usize;
+        let off = off as usize;
+        if off + len > block.len() {
+            bail!("miptex {name}: mip {level} out of range");
+        }
+        mips.push(block[off..off + len].to_vec());
+    }
+    let pixel_count = (width * height) as usize;
+    let pal_off = offsets[3] as usize + pixel_count / 64 + 2;
+    if pal_off + 256 * 3 > block.len() {
+        bail!("miptex {name}: palette out of range");
+    }
+    let palette = block[pal_off..pal_off + 256 * 3].to_vec();
+    let masked = name.starts_with('{');
+    Ok(IndexedTexture {
+        name,
+        width,
+        height,
+        mips,
+        palette,
+        masked,
+    })
+}
+
 /// Decode a raw miptex block (name/dims/mip offsets, 8-bit indexed pixels,
 /// 256-color RGB palette after the smallest mip).
 pub fn decode_miptex(block: &[u8]) -> Result<DecodedTexture> {
@@ -188,9 +243,7 @@ impl WadSet {
     }
 
     pub fn find(&self, name: &str) -> Option<DecodedTexture> {
-        let entry = self.entries.get(&name.to_ascii_lowercase())?;
-        let (_, data) = &self.files[entry.file];
-        let block = data.get(entry.offset..entry.offset + entry.size)?;
+        let block = self.find_block(name)?;
         match decode_miptex(block) {
             Ok(t) => Some(t),
             Err(e) => {
@@ -198,6 +251,13 @@ impl WadSet {
                 None
             }
         }
+    }
+
+    /// The raw miptex block for a texture, if present in any loaded WAD.
+    pub fn find_block(&self, name: &str) -> Option<&[u8]> {
+        let entry = self.entries.get(&name.to_ascii_lowercase())?;
+        let (_, data) = &self.files[entry.file];
+        data.get(entry.offset..entry.offset + entry.size)
     }
 }
 

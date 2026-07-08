@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/pocket3d",
     "crates/pocket3d-bsp",
+    "crates/pocket3d-cook",
     "crates/pocket-mod",
     "crates/pocket-ui-wgpu",
     "examples/uihost",
@@ -24,7 +25,9 @@ rquickjs = "0.12"
 
 wgpu = "25"
 winit = "0.30"
-glam = "0.33"
+# default-features off so pocket3d-bsp can build no_std (libm) for the PSP;
+# desktop crates re-enable "std" per member.
+glam = { version = "0.33", default-features = false }
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"
 gltf = "1.4"

@@ -8,6 +8,11 @@
 use anyhow::{Context, Result, bail, ensure};
 use glam::Vec3;
 
+pub use crate::types::{
+    CONTENTS_EMPTY, CONTENTS_LAVA, CONTENTS_SKY, CONTENTS_SLIME, CONTENTS_SOLID, CONTENTS_WATER,
+    ClipNode, Leaf, Model, Node, Plane, convert_bounds, q2y, y2q,
+};
+
 pub const BSP_VERSION: i32 = 30;
 
 pub const LUMP_ENTITIES: usize = 0;
@@ -26,25 +31,6 @@ pub const LUMP_EDGES: usize = 12;
 pub const LUMP_SURFEDGES: usize = 13;
 pub const LUMP_MODELS: usize = 14;
 pub const LUMP_COUNT: usize = 15;
-
-pub const CONTENTS_EMPTY: i32 = -1;
-pub const CONTENTS_SOLID: i32 = -2;
-pub const CONTENTS_WATER: i32 = -3;
-pub const CONTENTS_SLIME: i32 = -4;
-pub const CONTENTS_LAVA: i32 = -5;
-pub const CONTENTS_SKY: i32 = -6;
-
-/// Quake space -> Pocket3D space (+Y up). Proper rotation, det = +1.
-#[inline]
-pub fn q2y(v: Vec3) -> Vec3 {
-    Vec3::new(v.x, v.z, -v.y)
-}
-
-/// Pocket3D space -> Quake space.
-#[inline]
-pub fn y2q(v: Vec3) -> Vec3 {
-    Vec3::new(v.x, -v.z, v.y)
-}
 
 pub struct Reader<'a> {
     data: &'a [u8],
@@ -107,12 +93,6 @@ pub struct Lump {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Plane {
-    pub normal: Vec3,
-    pub dist: f32,
-}
-
-#[derive(Clone, Copy, Debug)]
 pub struct TexInfo {
     pub s: Vec3,
     pub s_shift: f32,
@@ -133,35 +113,6 @@ pub struct Face {
     pub lightmap_offset: i32,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct ClipNode {
-    pub plane: u32,
-    /// Node index if >= 0, otherwise a CONTENTS_* value.
-    pub children: [i32; 2],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Node {
-    pub plane: u32,
-    /// Positive: node index. Negative: -(leaf_index + 1).
-    pub children: [i16; 2],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Leaf {
-    pub contents: i32,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Model {
-    pub mins: Vec3,
-    pub maxs: Vec3,
-    pub origin: Vec3,
-    pub headnodes: [i32; 4],
-    pub first_face: usize,
-    pub num_faces: usize,
-}
-
 /// Metadata for one entry of the textures lump. Pixel data (if embedded)
 /// is kept as the raw miptex block for the shared decoder in `wad.rs`.
 #[derive(Clone, Debug)]
@@ -178,12 +129,16 @@ pub struct RawBsp {
     pub planes: Vec<Plane>,
     pub textures: Vec<MipTexEntry>,
     pub vertices: Vec<Vec3>,
+    /// Compressed (RLE) potentially-visible-set data, indexed by
+    /// `Leaf::vis_offset`.
+    pub visibility: Vec<u8>,
     pub nodes: Vec<Node>,
     pub texinfos: Vec<TexInfo>,
     pub faces: Vec<Face>,
     pub lighting: Vec<u8>,
     pub clipnodes: Vec<ClipNode>,
     pub leaves: Vec<Leaf>,
+    pub marksurfaces: Vec<u16>,
     pub edges: Vec<[u16; 2]>,
     pub surfedges: Vec<i32>,
     pub models: Vec<Model>,
@@ -280,10 +235,28 @@ pub fn parse(data: &[u8]) -> Result<RawBsp> {
 
     let leaves = parse_array(lump(LUMP_LEAVES), 28, |r| {
         let contents = r.i32()?;
-        let _rest = r.bytes(24)?;
-        Ok(Leaf { contents })
+        let vis_offset = r.i32()?;
+        let mins_q = Vec3::new(r.i16()? as f32, r.i16()? as f32, r.i16()? as f32);
+        let maxs_q = Vec3::new(r.i16()? as f32, r.i16()? as f32, r.i16()? as f32);
+        let (mins, maxs) = convert_bounds(mins_q, maxs_q);
+        let first_marksurface = r.u16()?;
+        let num_marksurfaces = r.u16()?;
+        let _ambient = r.bytes(4)?;
+        Ok(Leaf {
+            contents,
+            vis_offset,
+            mins,
+            maxs,
+            first_marksurface,
+            num_marksurfaces,
+        })
     })
     .context("leaves")?;
+
+    let marksurfaces =
+        parse_array(lump(LUMP_MARKSURFACES), 2, |r| r.u16()).context("marksurfaces")?;
+
+    let visibility = lump(LUMP_VISIBILITY).to_vec();
 
     let edges = parse_array(lump(LUMP_EDGES), 4, |r| Ok([r.u16()?, r.u16()?])).context("edges")?;
     let surfedges = parse_array(lump(LUMP_SURFEDGES), 4, |r| r.i32()).context("surfedges")?;
@@ -294,7 +267,7 @@ pub fn parse(data: &[u8]) -> Result<RawBsp> {
         let (mins, maxs) = convert_bounds(mins_q, maxs_q);
         let origin = q2y(r.vec3_raw()?);
         let headnodes = [r.i32()?, r.i32()?, r.i32()?, r.i32()?];
-        let _visleafs = r.i32()?;
+        let visleafs = r.i32()?.max(0) as usize;
         let first_face = r.i32()? as usize;
         let num_faces = r.i32()? as usize;
         Ok(Model {
@@ -302,6 +275,7 @@ pub fn parse(data: &[u8]) -> Result<RawBsp> {
             maxs,
             origin,
             headnodes,
+            visleafs,
             first_face,
             num_faces,
         })
@@ -361,24 +335,18 @@ pub fn parse(data: &[u8]) -> Result<RawBsp> {
         planes,
         textures,
         vertices,
+        visibility,
         nodes,
         texinfos,
         faces,
         lighting,
         clipnodes,
         leaves,
+        marksurfaces,
         edges,
         surfedges,
         models,
     })
-}
-
-/// Convert a Quake-space AABB to Y-up (the Y/Z swap flips one axis, so
-/// min/max must be recomputed on that axis).
-pub fn convert_bounds(mins_q: Vec3, maxs_q: Vec3) -> (Vec3, Vec3) {
-    let a = q2y(mins_q);
-    let b = q2y(maxs_q);
-    (a.min(b), a.max(b))
 }
 
 fn parse_array<T>(

@@ -8,9 +8,11 @@
 //! - Large  (hull 2): 32 x 32 x 32
 //! - Crouch (hull 3): 16 x 18 x 16
 
+use alloc::vec::Vec;
+
 use glam::Vec3;
 
-use crate::raw::{CONTENTS_EMPTY, CONTENTS_SOLID, ClipNode, Plane, RawBsp};
+use crate::types::{CONTENTS_EMPTY, CONTENTS_SOLID, ClipNode, Plane};
 
 pub const DIST_EPSILON: f32 = 0.03125;
 
@@ -72,9 +74,9 @@ impl TraceResult {
 
 /// One brush model's hull entry points.
 #[derive(Clone, Copy, Debug)]
-struct ModelHulls {
-    headnodes: [i32; 4],
-    origin: Vec3,
+pub struct ModelHulls {
+    pub headnodes: [i32; 4],
+    pub origin: Vec3,
 }
 
 pub struct MapCollision {
@@ -89,28 +91,9 @@ pub struct MapCollision {
 }
 
 impl MapCollision {
-    pub fn build(bsp: &RawBsp, solid_entities: &[(usize, Vec3)]) -> Self {
-        // MakeHull0: mirror the render nodes; leaf children become contents.
-        let hull0 = bsp
-            .nodes
-            .iter()
-            .map(|n| {
-                let child = |c: i16| -> i32 {
-                    if c >= 0 {
-                        c as i32
-                    } else {
-                        bsp.leaves
-                            .get((-1 - c as i32) as usize)
-                            .map(|l| l.contents)
-                            .unwrap_or(CONTENTS_SOLID)
-                    }
-                };
-                ClipNode {
-                    plane: n.plane,
-                    children: [child(n.children[0]), child(n.children[1])],
-                }
-            })
-            .collect();
+    #[cfg(feature = "std")]
+    pub fn build(bsp: &crate::raw::RawBsp, solid_entities: &[(usize, Vec3)]) -> Self {
+        let hull0 = make_hull0(&bsp.nodes, &bsp.leaves);
         let models = bsp
             .models
             .iter()
@@ -119,13 +102,34 @@ impl MapCollision {
                 origin: m.origin,
             })
             .collect();
-        Self {
-            planes: bsp.planes.clone(),
+        Self::from_parts(
+            bsp.planes.clone(),
             hull0,
-            clipnodes: bsp.clipnodes.clone(),
+            bsp.clipnodes.clone(),
             models,
-            solids: solid_entities.to_vec(),
+            solid_entities.to_vec(),
+        )
+    }
+
+    /// Assemble collision from pre-built parts (the cooked-map path).
+    pub fn from_parts(
+        planes: Vec<Plane>,
+        hull0: Vec<ClipNode>,
+        clipnodes: Vec<ClipNode>,
+        models: Vec<ModelHulls>,
+        solids: Vec<(usize, Vec3)>,
+    ) -> Self {
+        Self {
+            planes,
+            hull0,
+            clipnodes,
+            models,
+            solids,
         }
+    }
+
+    pub fn planes(&self) -> &[Plane] {
+        &self.planes
     }
 
     fn tree(&self, hull: Hull, model: usize) -> Option<(&[ClipNode], i32)> {
@@ -217,6 +221,37 @@ impl MapCollision {
         };
         ht.contents(head, p)
     }
+}
+
+/// MakeHull0: mirror the render nodes into a clipnode tree; leaf children
+/// become their CONTENTS_* value. `leaf_contents` maps a leaf index to its
+/// contents (out-of-range leaves are treated as solid).
+pub fn make_hull0(nodes: &[crate::types::Node], leaves: &[crate::types::Leaf]) -> Vec<ClipNode> {
+    make_hull0_with(nodes, |i| {
+        leaves.get(i).map(|l| l.contents).unwrap_or(CONTENTS_SOLID)
+    })
+}
+
+pub fn make_hull0_with(
+    nodes: &[crate::types::Node],
+    leaf_contents: impl Fn(usize) -> i32,
+) -> Vec<ClipNode> {
+    nodes
+        .iter()
+        .map(|n| {
+            let child = |c: i16| -> i32 {
+                if c >= 0 {
+                    c as i32
+                } else {
+                    leaf_contents((-1 - c as i32) as usize)
+                }
+            };
+            ClipNode {
+                plane: n.plane,
+                children: [child(n.children[0]), child(n.children[1])],
+            }
+        })
+        .collect()
 }
 
 struct HullTree<'a> {

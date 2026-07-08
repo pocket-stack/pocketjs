@@ -148,7 +148,11 @@ impl UiRenderer {
         // 1x1 opaque white for untextured geometry.
         let white_tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("pocket-ui white"),
-            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -159,8 +163,16 @@ impl UiRenderer {
         gpu.queue.write_texture(
             white_tex.as_image_copy(),
             &[255u8, 255, 255, 255],
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: None },
-            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
         );
         let white_view = white_tex.create_view(&Default::default());
         let white = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -222,7 +234,8 @@ impl UiRenderer {
                 }));
                 self.vbuf_capacity = cap;
             }
-            gpu.queue.write_buffer(self.vbuf.as_ref().unwrap(), 0, bytes);
+            gpu.queue
+                .write_buffer(self.vbuf.as_ref().unwrap(), 0, bytes);
         }
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -230,7 +243,10 @@ impl UiRenderer {
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view,
                 resolve_target: None,
-                ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },
+                ops: wgpu::Operations {
+                    load,
+                    store: wgpu::StoreOp::Store,
+                },
             })],
             depth_stencil_attachment: None,
             timestamp_writes: None,
@@ -287,7 +303,12 @@ impl UiRenderer {
             ($new_tex:expr, $new_scissor:expr) => {{
                 let end = self.verts.len() as u32;
                 if end > cur_start {
-                    self.cmds.push(DrawCmd { scissor, tex: cur_tex, start: cur_start, end });
+                    self.cmds.push(DrawCmd {
+                        scissor,
+                        tex: cur_tex,
+                        start: cur_start,
+                        end,
+                    });
                     cur_start = end;
                 }
                 cur_tex = $new_tex;
@@ -297,24 +318,45 @@ impl UiRenderer {
 
         let ndc = |x: f32, y: f32| -> [f32; 2] { [x / tw * 2.0 - 1.0, 1.0 - y / th * 2.0] };
         let xy = |w: u32| -> (f32, f32) {
-            (((w & 0xffff) as u16 as i16) as f32, ((w >> 16) as u16 as i16) as f32)
+            (
+                ((w & 0xffff) as u16 as i16) as f32,
+                ((w >> 16) as u16 as i16) as f32,
+            )
         };
         let wh = |w: u32| -> (f32, f32) { ((w & 0xffff) as f32, ((w >> 16) & 0xffff) as f32) };
 
         let quad = |verts: &mut Vec<UiVertex>,
-                        p0: [f32; 2],
-                        p1: [f32; 2],
-                        uv0: [f32; 2],
-                        uv1: [f32; 2],
-                        colors: [u32; 4],
-                        mode: u32| {
+                    p0: [f32; 2],
+                    p1: [f32; 2],
+                    uv0: [f32; 2],
+                    uv1: [f32; 2],
+                    colors: [u32; 4],
+                    mode: u32| {
             // Corner order TL, TR, BR, BL; two CCW triangles.
-            let tl = UiVertex { pos: ndc(p0[0], p0[1]), uv: uv0, color: colors[0], mode };
-            let tr =
-                UiVertex { pos: ndc(p1[0], p0[1]), uv: [uv1[0], uv0[1]], color: colors[1], mode };
-            let br = UiVertex { pos: ndc(p1[0], p1[1]), uv: uv1, color: colors[2], mode };
-            let bl =
-                UiVertex { pos: ndc(p0[0], p1[1]), uv: [uv0[0], uv1[1]], color: colors[3], mode };
+            let tl = UiVertex {
+                pos: ndc(p0[0], p0[1]),
+                uv: uv0,
+                color: colors[0],
+                mode,
+            };
+            let tr = UiVertex {
+                pos: ndc(p1[0], p0[1]),
+                uv: [uv1[0], uv0[1]],
+                color: colors[1],
+                mode,
+            };
+            let br = UiVertex {
+                pos: ndc(p1[0], p1[1]),
+                uv: uv1,
+                color: colors[2],
+                mode,
+            };
+            let bl = UiVertex {
+                pos: ndc(p0[0], p1[1]),
+                uv: [uv0[0], uv1[1]],
+                color: colors[3],
+                mode,
+            };
             verts.extend_from_slice(&[tl, tr, br, tl, br, bl]);
         };
 
@@ -452,7 +494,10 @@ impl UiRenderer {
                     let y0 = (y.max(0.0) as u32).min(target_px.1);
                     let x1 = ((x + w).max(0.0) as u32).min(target_px.0);
                     let y1 = ((y + h).max(0.0) as u32).min(target_px.1);
-                    flush!(cur_tex, (x0, y0, x1.saturating_sub(x0), y1.saturating_sub(y0)));
+                    flush!(
+                        cur_tex,
+                        (x0, y0, x1.saturating_sub(x0), y1.saturating_sub(y0))
+                    );
                     i += 3;
                 }
                 spec::draw_op::SCISSOR_POP => {
@@ -515,7 +560,12 @@ impl UiRenderer {
         }
         let end = self.verts.len() as u32;
         if end > cur_start {
-            self.cmds.push(DrawCmd { scissor, tex: cur_tex, start: cur_start, end });
+            self.cmds.push(DrawCmd {
+                scissor,
+                tex: cur_tex,
+                start: cur_start,
+                end,
+            });
         }
     }
 
@@ -532,14 +582,17 @@ impl UiRenderer {
             if self.fonts[slot as usize].is_some() {
                 continue;
             }
-            let Some(atlas) = ui.font_atlas(slot) else { continue };
+            let Some(atlas) = ui.font_atlas(slot) else {
+                continue;
+            };
             self.fonts[slot as usize] = Some(self.upload_font(gpu, atlas));
         }
         // Image textures (handles are dense 0..n).
         let mut handle = self.images.len() as i32;
         while let Some((pixels, w, h, psm)) = ui.texture(handle) {
             let rgba = to_rgba8(pixels, w, h, psm);
-            self.images.push(rgba.map(|rgba| self.upload_image(gpu, &rgba, w, h)));
+            self.images
+                .push(rgba.map(|rgba| self.upload_image(gpu, &rgba, w, h)));
             handle += 1;
         }
     }
@@ -563,7 +616,11 @@ impl UiRenderer {
         }
         let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("pocket-ui font atlas"),
-            size: wgpu::Extent3d { width: tex_w, height: tex_h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: tex_w,
+                height: tex_h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -579,7 +636,11 @@ impl UiRenderer {
                 bytes_per_row: Some(tex_w),
                 rows_per_image: None,
             },
-            wgpu::Extent3d { width: tex_w, height: tex_h, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: tex_w,
+                height: tex_h,
+                depth_or_array_layers: 1,
+            },
         );
         let view = tex.create_view(&Default::default());
         let bind = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -610,7 +671,11 @@ impl UiRenderer {
     fn upload_image(&self, gpu: &Gpu, rgba: &[u8], w: u32, h: u32) -> wgpu::BindGroup {
         let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("pocket-ui image"),
-            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -626,7 +691,11 @@ impl UiRenderer {
                 bytes_per_row: Some(w * 4),
                 rows_per_image: None,
             },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
         let view = tex.create_view(&Default::default());
         gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {

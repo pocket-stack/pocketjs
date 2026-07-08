@@ -49,7 +49,11 @@ impl UiSurface {
         let mut ui = Ui::new();
         ui.set_viewport(viewport.0, viewport.1);
         UiSurface {
-            inner: Rc::new(RefCell::new(Inner { ui, textures: Vec::new(), sprites: Vec::new() })),
+            inner: Rc::new(RefCell::new(Inner {
+                ui,
+                textures: Vec::new(),
+                sprites: Vec::new(),
+            })),
         }
     }
 
@@ -77,7 +81,13 @@ impl UiSurface {
                     let name = name.to_string();
                     inner.textures.push((name, handle));
                 } else {
-                    log::warn!("pocket-ui: image {} rejected ({}x{} psm {})", entry.key, w, h, psm);
+                    log::warn!(
+                        "pocket-ui: image {} rejected ({}x{} psm {})",
+                        entry.key,
+                        w,
+                        h,
+                        psm
+                    );
                 }
             } else if let Some(name) = entry.key.strip_prefix("ui:sprite.") {
                 // SPRITE entry: 16-byte header {u16 w, u16 h, u8 psm, u8 pad,
@@ -86,15 +96,23 @@ impl UiSurface {
                     log::warn!("pocket-ui: bad sprite entry {}", entry.key);
                     continue;
                 };
-                let (Some(frames), Some(cols), Some(step)) =
-                    (rd_u16(entry.blob, 6), rd_u16(entry.blob, 8), rd_u16(entry.blob, 10))
-                else {
+                let (Some(frames), Some(cols), Some(step)) = (
+                    rd_u16(entry.blob, 6),
+                    rd_u16(entry.blob, 8),
+                    rd_u16(entry.blob, 10),
+                ) else {
                     continue;
                 };
                 let handle = inner.ui.upload_texture(pixels, w, h, psm);
                 if handle >= 0 {
                     let name = name.to_string();
-                    inner.sprites.push(SpriteReg { name, handle, frames, cols, step });
+                    inner.sprites.push(SpriteReg {
+                        name,
+                        handle,
+                        frames,
+                        cols,
+                        step,
+                    });
                 } else {
                     log::warn!("pocket-ui: sprite {} rejected", entry.key);
                 }
@@ -126,10 +144,16 @@ impl UiSurface {
             }
 
             let ui = self.inner.clone();
-            op!("createNode", move |t: i32| ui.borrow_mut().ui.create_node(t as u8));
+            op!("createNode", move |t: i32| ui
+                .borrow_mut()
+                .ui
+                .create_node(t as u8));
 
             let ui = self.inner.clone();
-            op!("destroyNode", move |id: i32| ui.borrow_mut().ui.destroy_node(id));
+            op!("destroyNode", move |id: i32| ui
+                .borrow_mut()
+                .ui
+                .destroy_node(id));
 
             let ui = self.inner.clone();
             op!("insertBefore", move |p: i32, c: i32, a: i32| {
@@ -137,10 +161,16 @@ impl UiSurface {
             });
 
             let ui = self.inner.clone();
-            op!("removeChild", move |p: i32, c: i32| ui.borrow_mut().ui.remove_child(p, c));
+            op!("removeChild", move |p: i32, c: i32| ui
+                .borrow_mut()
+                .ui
+                .remove_child(p, c));
 
             let ui = self.inner.clone();
-            op!("setStyle", move |id: i32, style: i32| ui.borrow_mut().ui.set_style(id, style));
+            op!("setStyle", move |id: i32, style: i32| ui
+                .borrow_mut()
+                .ui
+                .set_style(id, style));
 
             let ui = self.inner.clone();
             op!("setProp", move |id: i32, prop: i32, v: f64| {
@@ -150,7 +180,10 @@ impl UiSurface {
             // Text ops coerce like the PSP FFI does (JS_ToCString semantics —
             // Solid legitimately passes numbers through replaceText).
             let ui = self.inner.clone();
-            op!("setText", move |id: i32, s: Coerced<String>| ui.borrow_mut().ui.set_text(id, &s.0));
+            op!("setText", move |id: i32, s: Coerced<String>| ui
+                .borrow_mut()
+                .ui
+                .set_text(id, &s.0));
 
             let ui = self.inner.clone();
             op!("replaceText", move |id: i32, s: Coerced<String>| {
@@ -158,16 +191,30 @@ impl UiSurface {
             });
 
             let ui = self.inner.clone();
-            op!("uploadTexture", move |buf: TypedArray<u8>, w: i32, h: i32, psm: i32| {
-                let Some(bytes) = buf.as_bytes() else { return -1 };
-                ui.borrow_mut().ui.upload_texture(bytes, w as u32, h as u32, psm as u32)
-            });
+            op!(
+                "uploadTexture",
+                move |buf: TypedArray<u8>, w: i32, h: i32, psm: i32| {
+                    let Some(bytes) = buf.as_bytes() else {
+                        return -1;
+                    };
+                    ui.borrow_mut()
+                        .ui
+                        .upload_texture(bytes, w as u32, h as u32, psm as u32)
+                }
+            );
 
             let ui = self.inner.clone();
-            op!("setImage", move |id: i32, tex: i32| ui.borrow_mut().ui.set_image(id, tex));
+            op!("setImage", move |id: i32, tex: i32| ui
+                .borrow_mut()
+                .ui
+                .set_image(id, tex));
 
             let ui = self.inner.clone();
-            op!("setSprite", move |id: i32, atlas: i32, frames: i32, cols: i32, step: i32| {
+            op!("setSprite", move |id: i32,
+                                   atlas: i32,
+                                   frames: i32,
+                                   cols: i32,
+                                   step: i32| {
                 ui.borrow_mut().ui.set_sprite(
                     id,
                     atlas,
@@ -178,35 +225,44 @@ impl UiSurface {
             });
 
             let ui = self.inner.clone();
-            op!(
-                "animate",
-                move |id: i32, prop: i32, to: f64, dur_ms: f64, easing: i32, delay_ms: f64| {
-                    ui.borrow_mut().ui.animate(
-                        id,
-                        prop as u8,
-                        to,
-                        dur_ms.max(0.0) as u32,
-                        easing as u8,
-                        delay_ms.max(0.0) as u32,
-                    )
-                }
-            );
+            op!("animate", move |id: i32,
+                                 prop: i32,
+                                 to: f64,
+                                 dur_ms: f64,
+                                 easing: i32,
+                                 delay_ms: f64| {
+                ui.borrow_mut().ui.animate(
+                    id,
+                    prop as u8,
+                    to,
+                    dur_ms.max(0.0) as u32,
+                    easing as u8,
+                    delay_ms.max(0.0) as u32,
+                )
+            });
 
             let ui = self.inner.clone();
-            op!("cancelAnim", move |id: i32| ui.borrow_mut().ui.cancel_anim(id));
+            op!("cancelAnim", move |id: i32| ui
+                .borrow_mut()
+                .ui
+                .cancel_anim(id));
 
             let ui = self.inner.clone();
             op!("setFocus", move |id: i32| ui.borrow_mut().ui.set_focus(id));
 
             let ui = self.inner.clone();
             op!("loadStyles", move |buf: TypedArray<u8>| {
-                let Some(bytes) = buf.as_bytes() else { return false };
+                let Some(bytes) = buf.as_bytes() else {
+                    return false;
+                };
                 ui.borrow_mut().ui.load_styles(bytes)
             });
 
             let ui = self.inner.clone();
             op!("loadFontAtlas", move |buf: TypedArray<u8>| {
-                let Some(bytes) = buf.as_bytes() else { return false };
+                let Some(bytes) = buf.as_bytes() else {
+                    return false;
+                };
                 ui.borrow_mut().ui.load_font_atlas(bytes)
             });
 

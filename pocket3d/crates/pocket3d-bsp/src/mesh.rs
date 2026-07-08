@@ -5,14 +5,7 @@ use glam::Vec3;
 use crate::lightmap::{LightmapAtlas, PAGE_SIZE};
 use crate::raw::RawBsp;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum SurfaceKind {
-    Opaque,
-    /// `{`-prefixed cutout textures (fences, grates); alpha-tested.
-    AlphaTest,
-    Water,
-    Sky,
-}
+pub use crate::types::SurfaceKind;
 
 /// Classification for one texture name.
 pub fn classify(name: &str) -> Option<SurfaceKind> {

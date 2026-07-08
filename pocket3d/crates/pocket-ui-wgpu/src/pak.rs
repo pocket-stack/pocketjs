@@ -44,9 +44,12 @@ pub fn walk_pak(pak: &[u8]) -> Vec<PakEntry<'_>> {
         (count as usize).min(pak.len().saturating_sub(dir_off as usize) / spec::pak::ENTRY_SIZE);
     for i in 0..count {
         let e = dir_off as usize + i * spec::pak::ENTRY_SIZE;
-        let (Some(blob_off), Some(blob_len), Some(name_off), Some(name_len)) =
-            (rd_u32(pak, e + 4), rd_u32(pak, e + 8), rd_u32(pak, e + 12), rd_u16(pak, e + 16))
-        else {
+        let (Some(blob_off), Some(blob_len), Some(name_off), Some(name_len)) = (
+            rd_u32(pak, e + 4),
+            rd_u32(pak, e + 8),
+            rd_u32(pak, e + 12),
+            rd_u16(pak, e + 16),
+        ) else {
             continue;
         };
         let ns = names_off as usize + name_off as usize;
@@ -56,7 +59,9 @@ pub fn walk_pak(pak: &[u8]) -> Vec<PakEntry<'_>> {
         ) else {
             continue;
         };
-        let Ok(key) = core::str::from_utf8(name_bytes) else { continue };
+        let Ok(key) = core::str::from_utf8(name_bytes) else {
+            continue;
+        };
         out.push(PakEntry { key, blob });
     }
     out

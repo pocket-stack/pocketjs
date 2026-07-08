@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use glam::Vec3;
 
-use crate::raw::q2y;
+use crate::types::{SunLight, q2y};
 
 #[derive(Clone, Debug, Default)]
 pub struct Entity {
@@ -58,6 +58,84 @@ impl Entity {
 pub fn quake_yaw_to_pocket(deg: f32) -> f32 {
     let rad = deg.to_radians();
     (-rad.cos()).atan2(rad.sin())
+}
+
+/// A brush model reference: (model index, world offset).
+pub type BrushModelRef = (usize, Vec3);
+
+/// How brush-model entities enter the map: `(include, solids)` — models to
+/// bake into render geometry (with world offset) and models registered for
+/// collision. Model 0 (worldspawn) is always included.
+pub fn brush_entity_layout(
+    ents: &[Entity],
+    model_count: usize,
+) -> (Vec<BrushModelRef>, Vec<BrushModelRef>) {
+    let mut include: Vec<BrushModelRef> = vec![(0, Vec3::ZERO)];
+    let mut solids: Vec<BrushModelRef> = Vec::new();
+    for e in ents {
+        let Some(mi) = e.brush_model() else { continue };
+        if mi == 0 || mi >= model_count {
+            continue;
+        }
+        let cls = e.classname();
+        let hidden = cls.starts_with("trigger")
+            || matches!(
+                cls,
+                "func_buyzone"
+                    | "func_bomb_target"
+                    | "func_hostage_rescue"
+                    | "func_escapezone"
+                    | "func_vip_safetyzone"
+                    | "func_ladder"
+                    | "env_bubbles"
+            );
+        let offset = e.origin().unwrap_or(Vec3::ZERO);
+        if !hidden {
+            include.push((mi, offset));
+        }
+        if !hidden && cls != "func_illusionary" {
+            solids.push((mi, offset));
+        }
+    }
+    (include, solids)
+}
+
+/// Interpret a `light_environment` entity as a directional sun.
+pub fn parse_sun(e: &Entity) -> Option<SunLight> {
+    // Light travel direction in Quake space from pitch/yaw; pitch usually
+    // negative (downwards). "pitch" overrides angles[0] when present.
+    let angles = e.get("angles").unwrap_or("0 0 0");
+    let mut it = angles
+        .split_ascii_whitespace()
+        .map(|v| v.parse::<f32>().unwrap_or(0.0));
+    let mut pitch = it.next().unwrap_or(0.0);
+    let yaw = it.next().unwrap_or(0.0);
+    if let Some(p) = e.get("pitch").and_then(|p| p.parse::<f32>().ok()) {
+        pitch = p;
+    }
+    let (pr, yr) = (pitch.to_radians(), yaw.to_radians());
+    let travel_q = Vec3::new(pr.cos() * yr.cos(), pr.cos() * yr.sin(), pr.sin());
+    let dir = q2y(-travel_q).normalize_or_zero();
+
+    let color = e
+        .get("_light")
+        .map(|l| {
+            let v: Vec<f32> = l
+                .split_ascii_whitespace()
+                .filter_map(|x| x.parse().ok())
+                .collect();
+            match v.len() {
+                0 => Vec3::ONE,
+                1 | 2 => Vec3::splat(v[0] / 255.0),
+                _ => Vec3::new(v[0], v[1], v[2]) / 255.0,
+            }
+        })
+        .unwrap_or(Vec3::ONE);
+    if dir.y <= 0.0 {
+        // Sun below the horizon — treat as absent.
+        return None;
+    }
+    Some(SunLight { dir, color })
 }
 
 pub fn parse_entities(text: &str) -> Vec<Entity> {

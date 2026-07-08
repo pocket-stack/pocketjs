@@ -2,38 +2,55 @@
 //!
 //! Parses map geometry, baked lightmaps, entities, and clipnode collision
 //! hulls into renderer-agnostic data. No GPU or windowing dependencies.
+//!
+//! The crate is split along the `std` feature:
+//! - **no_std + alloc** (always): the plain data [`types`], hull collision
+//!   ([`trace`]), PVS visibility ([`vis`]) and the cooked-map reader
+//!   ([`cooked`]) — everything a constrained runtime (the PSP) consumes.
+//! - **std** (default): BSP/WAD parsing, lightmap atlases, desktop geometry
+//!   building, [`load_map`], and the cooked-map writer ([`cook`]).
 
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
+
+#[cfg(feature = "std")]
+pub mod cook;
+pub mod cooked;
+#[cfg(feature = "std")]
 pub mod entities;
+#[cfg(feature = "std")]
 pub mod lightmap;
+#[cfg(feature = "std")]
 pub mod mesh;
+#[cfg(feature = "std")]
 pub mod raw;
 pub mod trace;
+pub mod types;
+pub mod vis;
+#[cfg(feature = "std")]
 pub mod wad;
 
-use std::path::{Path, PathBuf};
-
-use anyhow::{Context, Result};
-use glam::Vec3;
-
-pub use entities::Entity;
-pub use mesh::{Batch, MapGeometry, SurfaceKind, WorldVertexData};
 pub use trace::{Hull, MapCollision, TraceResult};
+pub use types::{SpawnPoint, SunLight, SurfaceKind};
+
+#[cfg(feature = "std")]
+pub use entities::Entity;
+#[cfg(feature = "std")]
+pub use mesh::{Batch, MapGeometry, WorldVertexData};
+#[cfg(feature = "std")]
 pub use wad::{DecodedTexture, WadSet};
 
-#[derive(Clone, Copy, Debug)]
-pub struct SpawnPoint {
-    pub pos: Vec3,
-    pub yaw: f32,
-}
+#[cfg(feature = "std")]
+use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, Debug)]
-pub struct SunLight {
-    /// Direction pointing from the scene towards the sun (Y-up space).
-    pub dir: Vec3,
-    pub color: Vec3,
-}
+#[cfg(feature = "std")]
+use anyhow::{Context, Result};
+#[cfg(feature = "std")]
+use glam::Vec3;
 
 /// Everything a game needs from one map.
+#[cfg(feature = "std")]
 pub struct MapData {
     pub name: String,
     pub geometry: MapGeometry,
@@ -50,6 +67,7 @@ pub struct MapData {
 }
 
 /// Load a `.bsp` plus any `.wad` texture archives found in `wad_dirs`.
+#[cfg(feature = "std")]
 pub fn load_map(bsp_path: &Path, wad_dirs: &[PathBuf]) -> Result<MapData> {
     let data =
         std::fs::read(bsp_path).with_context(|| format!("reading {}", bsp_path.display()))?;
@@ -100,34 +118,7 @@ pub fn load_map(bsp_path: &Path, wad_dirs: &[PathBuf]) -> Result<MapData> {
 
     // Brush entities: bake visible ones into geometry, register solid ones
     // for collision.
-    let mut include_models: Vec<(usize, Vec3)> = vec![(0, Vec3::ZERO)];
-    let mut solid_entities: Vec<(usize, Vec3)> = Vec::new();
-    for e in &ents {
-        let Some(mi) = e.brush_model() else { continue };
-        if mi == 0 || mi >= bsp.models.len() {
-            continue;
-        }
-        let cls = e.classname();
-        let hidden = cls.starts_with("trigger")
-            || matches!(
-                cls,
-                "func_buyzone"
-                    | "func_bomb_target"
-                    | "func_hostage_rescue"
-                    | "func_escapezone"
-                    | "func_vip_safetyzone"
-                    | "func_ladder"
-                    | "env_bubbles"
-            );
-        let offset = e.origin().unwrap_or(Vec3::ZERO);
-        if !hidden {
-            include_models.push((mi, offset));
-        }
-        let solid = !hidden && cls != "func_illusionary";
-        if solid {
-            solid_entities.push((mi, offset));
-        }
-    }
+    let (include_models, solid_entities) = entities::brush_entity_layout(&ents, bsp.models.len());
 
     let tex_sizes: Vec<(u32, u32)> = textures.iter().map(|t| (t.width, t.height)).collect();
     let geometry = mesh::build_geometry(&bsp, &include_models, &tex_sizes);
@@ -161,8 +152,7 @@ pub fn load_map(bsp_path: &Path, wad_dirs: &[PathBuf]) -> Result<MapData> {
     let sun = ents
         .iter()
         .find(|e| e.classname() == "light_environment")
-        .map(parse_sun)
-        .unwrap_or(None);
+        .and_then(entities::parse_sun);
 
     let bounds = bsp
         .models
@@ -181,41 +171,4 @@ pub fn load_map(bsp_path: &Path, wad_dirs: &[PathBuf]) -> Result<MapData> {
         sun,
         bounds,
     })
-}
-
-fn parse_sun(e: &Entity) -> Option<SunLight> {
-    // Light travel direction in Quake space from pitch/yaw; pitch usually
-    // negative (downwards). "pitch" overrides angles[0] when present.
-    let angles = e.get("angles").unwrap_or("0 0 0");
-    let mut it = angles
-        .split_ascii_whitespace()
-        .map(|v| v.parse::<f32>().unwrap_or(0.0));
-    let mut pitch = it.next().unwrap_or(0.0);
-    let yaw = it.next().unwrap_or(0.0);
-    if let Some(p) = e.get("pitch").and_then(|p| p.parse::<f32>().ok()) {
-        pitch = p;
-    }
-    let (pr, yr) = (pitch.to_radians(), yaw.to_radians());
-    let travel_q = Vec3::new(pr.cos() * yr.cos(), pr.cos() * yr.sin(), pr.sin());
-    let dir = raw::q2y(-travel_q).normalize_or_zero();
-
-    let color = e
-        .get("_light")
-        .map(|l| {
-            let v: Vec<f32> = l
-                .split_ascii_whitespace()
-                .filter_map(|x| x.parse().ok())
-                .collect();
-            match v.len() {
-                0 => Vec3::ONE,
-                1 | 2 => Vec3::splat(v[0] / 255.0),
-                _ => Vec3::new(v[0], v[1], v[2]) / 255.0,
-            }
-        })
-        .unwrap_or(Vec3::ONE);
-    if dir.y <= 0.0 {
-        // Sun below the horizon — treat as absent.
-        return None;
-    }
-    Some(SunLight { dir, color })
 }

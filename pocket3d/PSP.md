@@ -96,11 +96,11 @@ Container: `P3D1` magic, LE, a section table of `(tag, offset, len)` with all
 section payloads 16-byte aligned. World sections:
 
 - `WVTX` — world vertices, final GE layout `[u,v:f32][color:u32 ABGR][x,y,z:i16][pad]`
-  (16 B/vertex, `GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_16BIT`).
-  GoldSrc coordinates fit i16 natively; UVs are normalized-tiled floats.
-  **Vertex color = baked lighting** (see §5). Coordinates stay in the map's
-  native Quake Z-up space — `q2y` is a wgpu-side convention; the GU view
-  matrix absorbs the axis swap instead of touching 6 500 vertices.
+  (20 B/vertex, `GU_TEXTURE_32BITF | GU_COLOR_8888 | GU_VERTEX_16BIT`).
+  GoldSrc coordinates fit i16 natively; UVs are normalized-tiled floats
+  (dropping to `GU_TEXTURE_16BIT` + `sceGuTexScale` is a reserved 4 B/vertex
+  lever). **Vertex color = baked lighting** (see §5). Coordinates are Y-up —
+  the same space as collision, the character controller, and the game.
 - `WIDX` — u16 triangle indices, grouped per *face run* so visibility can
   splice face-granular ranges.
 - `WBAT` — batches keyed by (texture, SurfaceKind), each an array of face

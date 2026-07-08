@@ -116,11 +116,8 @@ impl Guest {
 
     /// Whether the evaluated bundle installed `globalThis.frame`.
     pub fn has_frame(&self) -> bool {
-        self.ctx.with(|ctx| {
-            ctx.globals()
-                .get::<_, Function>("frame")
-                .is_ok()
-        })
+        self.ctx
+            .with(|ctx| ctx.globals().get::<_, Function>("frame").is_ok())
     }
 }
 
@@ -156,33 +153,48 @@ fn install_console(ctx: &Ctx) -> rquickjs::Result<()> {
 
     console.set(
         "log",
-        Function::new(ctx.clone(), |args: rquickjs::function::Rest<rquickjs::Value>| {
-            log::info!(target: "guest", "{}", join(args));
-        })?,
+        Function::new(
+            ctx.clone(),
+            |args: rquickjs::function::Rest<rquickjs::Value>| {
+                log::info!(target: "guest", "{}", join(args));
+            },
+        )?,
     )?;
     console.set(
         "info",
-        Function::new(ctx.clone(), |args: rquickjs::function::Rest<rquickjs::Value>| {
-            log::info!(target: "guest", "{}", join(args));
-        })?,
+        Function::new(
+            ctx.clone(),
+            |args: rquickjs::function::Rest<rquickjs::Value>| {
+                log::info!(target: "guest", "{}", join(args));
+            },
+        )?,
     )?;
     console.set(
         "debug",
-        Function::new(ctx.clone(), |args: rquickjs::function::Rest<rquickjs::Value>| {
-            log::debug!(target: "guest", "{}", join(args));
-        })?,
+        Function::new(
+            ctx.clone(),
+            |args: rquickjs::function::Rest<rquickjs::Value>| {
+                log::debug!(target: "guest", "{}", join(args));
+            },
+        )?,
     )?;
     console.set(
         "warn",
-        Function::new(ctx.clone(), |args: rquickjs::function::Rest<rquickjs::Value>| {
-            log::warn!(target: "guest", "{}", join(args));
-        })?,
+        Function::new(
+            ctx.clone(),
+            |args: rquickjs::function::Rest<rquickjs::Value>| {
+                log::warn!(target: "guest", "{}", join(args));
+            },
+        )?,
     )?;
     console.set(
         "error",
-        Function::new(ctx.clone(), |args: rquickjs::function::Rest<rquickjs::Value>| {
-            log::error!(target: "guest", "{}", join(args));
-        })?,
+        Function::new(
+            ctx.clone(),
+            |args: rquickjs::function::Rest<rquickjs::Value>| {
+                log::error!(target: "guest", "{}", join(args));
+            },
+        )?,
     )?;
     ctx.globals().set("console", console)?;
     Ok(())
@@ -195,8 +207,11 @@ mod tests {
     #[test]
     fn eval_and_frame_turn() {
         let g = Guest::new().unwrap();
-        g.eval("boot", "globalThis.n = 0; globalThis.frame = (b) => { globalThis.n += b; };")
-            .unwrap();
+        g.eval(
+            "boot",
+            "globalThis.n = 0; globalThis.frame = (b) => { globalThis.n += b; };",
+        )
+        .unwrap();
         assert!(g.has_frame());
         g.frame(3).unwrap();
         g.frame(4).unwrap();
@@ -233,7 +248,10 @@ mod tests {
     #[test]
     fn exceptions_carry_js_stack() {
         let g = Guest::new().unwrap();
-        let err = g.eval("boom", "function inner(){ throw new Error('kaboom'); } inner();");
+        let err = g.eval(
+            "boom",
+            "function inner(){ throw new Error('kaboom'); } inner();",
+        );
         let msg = format!("{:#}", err.unwrap_err());
         assert!(msg.contains("kaboom"), "got: {msg}");
     }

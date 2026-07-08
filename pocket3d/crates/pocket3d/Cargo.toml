@@ -15,7 +15,7 @@ pocket3d-bsp = { workspace = true, optional = true }
 
 wgpu = { workspace = true }
 winit = { workspace = true }
-glam = { workspace = true }
+glam = { workspace = true, features = ["std"] }
 bytemuck = { workspace = true }
 pollster = { workspace = true }
 gltf = { workspace = true }
