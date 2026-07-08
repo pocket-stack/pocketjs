@@ -1,19 +1,15 @@
 #![no_std]
 #![no_main]
-#![feature(alloc_error_handler)]
-#![feature(asm_experimental_arch)]
 #![allow(static_mut_refs)]
 
 //! PocketJS PSP host: boots QuickJS on a 2 MB worker thread, evaluates the
 //! embedded app bundle, then drives frame(buttons) per vblank while the Rust
 //! core ticks animations/layout and the GE backend draws the DrawList.
 //!
-//! Boot skeleton COPIED from the proven dreamcart runtime/src/main.rs with the
-//! gfx/gfx3d/bridge registrations replaced by the PocketJS stack:
-//!   - allocator.rs (src/alloc.rs): arena-backed #[global_allocator] [R]
-//!   - pak.rs: feeds styles/atlases/images to the core BEFORE JS eval
-//!   - ffi.rs: globalThis.ui — the HostOps surface over the single core Ui
-//!   - ge.rs: DrawList -> sceGu with a per-frame bump vertex arena [R]
+//! This bin is one composition of the `pocketjs-psp` library (see lib.rs):
+//! the mechanism modules (allocator trio, ffi, ge, pak, dbg, host) live
+//! there; everything app-flavored — trace, bench, capture, and the 2D frame
+//! loop — lives here.
 //!
 //! Frame order (DESIGN.md): sceCtrlRead -> sceGuStart -> JS frame(buttons)
 //! -> drain jobs (JS_ExecutePendingJob, local extern) -> core.tick(1/60) ->
@@ -24,31 +20,17 @@ extern crate alloc;
 use core::ffi::c_void;
 
 use libquickjs_sys::*;
-use psp::sys::{
-    self, CtrlMode, DisplayPixelFormat, GuContextType, GuState, GuSyncBehavior, GuSyncMode,
-    IoOpenFlags, SceCtrlData, ShadingModel, TexturePixelFormat, ThreadAttributes,
-};
 #[cfg(feature = "capture")]
 use psp::sys::DisplaySetBufSync;
-use psp::vram_alloc::get_vram_allocator;
-use psp::{Align16, BUF_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH};
+#[cfg(feature = "capture")]
+use psp::sys::DisplayPixelFormat;
+use psp::sys::{self, CtrlMode, GuContextType, GuSyncBehavior, GuSyncMode, IoOpenFlags, SceCtrlData};
 
-// A crate-root module literally named `alloc` would collide with
-// `extern crate alloc` — keep the DESIGN.md file name, alias the module.
-#[path = "alloc.rs"]
-mod allocator;
-mod arena;
-mod c_heap;
-mod dbg;
-mod pak;
-mod ffi;
-mod ge;
-mod qjs_alloc;
+use pocketjs_psp::{dbg, ffi, ge, host, pak};
+#[cfg(feature = "bench")]
+use pocketjs_psp::arena;
 
 psp::module!("pocketjs", 1, 1);
-
-// GE display list buffer (1 MB), 16-byte aligned.
-static mut LIST: Align16<[u32; 0x40000]> = Align16([0; 0x40000]);
 
 // App bundle selected by POCKETJS_APP (see build.rs), NUL-terminated there for
 // JS_Eval (which wants input[len] == '\0'). Empty when built with no app.
@@ -57,6 +39,7 @@ static APP_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/game.js"));
 // the core natively (pak.rs) BEFORE JS eval; also exposed read-only to JS
 // as __pak. Aliases .rodata — JS must never write through it.
 static APP_PAK: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/app.pak"));
+#[cfg(feature = "bench")]
 static POCKETJS_APP_NAME: &str = env!("POCKETJS_APP");
 static POCKETJS_TRACE: &str = env!("POCKETJS_TRACE");
 
@@ -75,9 +58,9 @@ static POCKETJS_CAP_N: &str = env!("POCKETJS_CAP_N");
 #[cfg(feature = "bench")]
 static POCKETJS_BENCH_DUMP_FRAMES: &str = env!("POCKETJS_BENCH_DUMP_FRAMES");
 
-// libquickjs-sys omits JS_NewArrayBuffer + JS_ExecutePendingJob; the linked
-// QuickJS C library provides both (same local-extern pattern as dreamcart
-// runtime/src/main.rs). size_t stays usize (MIPS o32).
+// libquickjs-sys omits JS_NewArrayBuffer; the linked QuickJS C library
+// provides it (same local-extern pattern as dreamcart runtime/src/main.rs).
+// size_t stays usize (MIPS o32).
 extern "C" {
     fn JS_NewArrayBuffer(
         ctx: *mut JSContext,
@@ -87,25 +70,13 @@ extern "C" {
         opaque: *mut c_void,
         is_shared: i32,
     ) -> JSValue;
-    fn JS_ExecutePendingJob(rt: *mut JSRuntime, pctx: *mut *mut JSContext) -> i32;
 }
 
 fn psp_main() {
     unsafe {
-        reset_fpu_status();
+        host::reset_fpu_status();
         boot()
     }
-}
-
-/// Real PSP hardware can start a PSPLINK-loaded user thread with FPU
-/// exceptions enabled. Taffy intentionally uses NaN sentinels for auto/
-/// undefined dimensions; with invalid-operation traps enabled, ordinary
-/// flexbox math over those sentinels raises FPE and the screen stays black.
-/// Clear FCSR so exceptions are masked and NaNs propagate as the layout engine
-/// expects. PPSSPP's software renderer path did not expose this.
-#[inline]
-unsafe fn reset_fpu_status() {
-    core::arch::asm!("ctc1 $zero, $31", options(nostack, nomem));
 }
 
 #[inline]
@@ -208,7 +179,10 @@ unsafe fn bench_now_us() -> u64 {
 
 #[cfg(feature = "bench")]
 unsafe fn bench_write(bytes: &[u8]) {
-    for path in [b"host0:/PocketJS-bench.jsonl\0".as_ptr(), b"ms0:/PocketJS-bench.jsonl\0".as_ptr()] {
+    for path in [
+        b"host0:/PocketJS-bench.jsonl\0".as_ptr(),
+        b"ms0:/PocketJS-bench.jsonl\0".as_ptr(),
+    ] {
         let fd = sys::sceIoOpen(
             path,
             IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::APPEND,
@@ -223,7 +197,10 @@ unsafe fn bench_write(bytes: &[u8]) {
 
 #[cfg(feature = "bench")]
 unsafe fn bench_reset_file() {
-    for path in [b"host0:/PocketJS-bench.jsonl\0".as_ptr(), b"ms0:/PocketJS-bench.jsonl\0".as_ptr()] {
+    for path in [
+        b"host0:/PocketJS-bench.jsonl\0".as_ptr(),
+        b"ms0:/PocketJS-bench.jsonl\0".as_ptr(),
+    ] {
         let fd = sys::sceIoOpen(
             path,
             IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::TRUNC,
@@ -256,7 +233,10 @@ unsafe fn bench_eval_end() {
 unsafe fn bench_window() -> (u32, u32) {
     #[cfg(feature = "capture")]
     {
-        (capture_env_u32(POCKETJS_CAP_START, 16), capture_env_u32(POCKETJS_CAP_N, 32))
+        (
+            capture_env_u32(POCKETJS_CAP_START, 16),
+            capture_env_u32(POCKETJS_CAP_N, 32),
+        )
     }
     #[cfg(not(feature = "capture"))]
     {
@@ -265,6 +245,7 @@ unsafe fn bench_window() -> (u32, u32) {
 }
 
 #[cfg(feature = "bench")]
+#[allow(clippy::too_many_arguments)]
 unsafe fn bench_record_frame(
     frame_count: u32,
     t0: u64,
@@ -351,50 +332,27 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
     bench_write(line.as_bytes());
 }
 
-/// The `psp::module!` main thread has only a 256 KB stack; QuickJS compiling
-/// a bundle overflows it. All real work runs on a 2 MB USER|VFPU worker
-/// (VFPU flag required for sceGum on hardware).
 unsafe fn boot() {
     trace_reset();
     trace("boot: creating worker thread");
-    let id = sys::sceKernelCreateThread(
-        b"pocketjs_main\0".as_ptr(),
-        worker_main,
-        32,              // priority
-        2 * 1024 * 1024, // 2 MB stack
-        ThreadAttributes::USER | ThreadAttributes::VFPU,
-        core::ptr::null_mut(),
-    );
-    if id.0 >= 0 {
-        trace("boot: starting worker thread");
-        sys::sceKernelStartThread(id, 0, core::ptr::null_mut());
-        sys::sceKernelWaitThreadEnd(id, core::ptr::null_mut());
-    } else {
-        trace("boot: create worker failed, running inline");
-        run(); // fallback: small-stack inline
-    }
+    host::run_on_worker(worker_main, run);
 }
 
 unsafe extern "C" fn worker_main(_argc: usize, _argv: *mut c_void) -> i32 {
-    reset_fpu_status();
+    host::reset_fpu_status();
     trace("worker: entered");
     run();
     0
 }
 
-/// Print the pending JS exception via the debug screen.
+/// Print the pending JS exception via the debug screen (+ trace file).
 unsafe fn log_exception(ctx: *mut JSContext) {
-    let e = JS_GetException(ctx);
-    let mut len: size_t = 0;
-    let s = JS_ToCStringLen2(ctx, &mut len, e, 0);
-    if !s.is_null() {
-        if let Ok(msg) = core::str::from_utf8(core::slice::from_raw_parts(s as *const u8, len)) {
-            trace_pair(b"[PocketJS js error] ", msg);
-            psp::dprintln!("[PocketJS js error] {}", msg);
-        }
-        JS_FreeCString(ctx, s);
-    }
-    JS_FreeValue(ctx, e);
+    host::log_exception_with(ctx, |msg| trace_pair(b"[PocketJS js error] ", msg));
+}
+
+unsafe fn halt(msg: &str) -> ! {
+    trace_pair(b"[PocketJS halt] ", msg);
+    host::halt(msg)
 }
 
 unsafe fn run() {
@@ -403,7 +361,7 @@ unsafe fn run() {
     trace("run: entered");
     psp::enable_home_button();
     trace("run: home button enabled");
-    init_graphics();
+    host::init_graphics(host::GfxConfig::default());
     trace("run: graphics initialized");
 
     // ---- Controller ----
@@ -424,7 +382,7 @@ unsafe fn run() {
 
     // ---- QuickJS ----
     trace("run: JS_NewRuntime begin");
-    let rt = qjs_alloc::new_runtime();
+    let rt = pocketjs_psp::qjs_alloc::new_runtime();
     if rt.is_null() {
         halt("JS_NewRuntime returned null");
     }
@@ -529,13 +487,7 @@ unsafe fn run() {
             trace("frame 0: JS return freed");
         }
 
-        // Drain queued microtask jobs (queueMicrotask polyfill = promise jobs).
-        loop {
-            let mut pctx: *mut JSContext = core::ptr::null_mut();
-            if JS_ExecutePendingJob(rt, &mut pctx) <= 0 {
-                break;
-            }
-        }
+        host::drain_jobs(rt);
         #[cfg(feature = "bench")]
         let bench_after_jobs = bench_now_us();
         if frame_count == 0 {
@@ -602,7 +554,7 @@ unsafe fn run() {
         if frame_count == 0 {
             trace("frame 0: pool reset ok");
         }
-        sys::sceGuStart(GuContextType::Direct, &mut LIST as *mut _ as *mut c_void);
+        sys::sceGuStart(GuContextType::Direct, host::list_ptr());
         if frame_count == 0 {
             trace("frame 0: gu start ok");
         }
@@ -798,49 +750,4 @@ unsafe fn cap_dump_frame(frame_count: u32) {
     if idx + 1 == cap_n {
         sys::sceKernelExitGame();
     }
-}
-
-unsafe fn halt(msg: &str) -> ! {
-    trace_pair(b"[PocketJS halt] ", msg);
-    psp::dprintln!("[PocketJS halt] {}", msg);
-    psp::dprintln!("HOME exits. Last stage stays on screen.");
-    loop {
-        sys::sceDisplayWaitVblankStart();
-    }
-}
-
-/// Double-buffered 480x272 PSM8888 GU init — copied from dreamcart
-/// runtime/src/main.rs init_graphics with the 3D-pass state trimmed to what a
-/// 2D UI needs (scissor + smooth shading for gradient gouraud; depth test off).
-unsafe fn init_graphics() {
-    let allocator = match get_vram_allocator() {
-        Ok(a) => a,
-        Err(_) => halt("get_vram_allocator failed"),
-    };
-    let fbp0 = allocator
-        .alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888)
-        .as_mut_ptr_from_zero();
-    let fbp1 = allocator
-        .alloc_texture_pixels(BUF_WIDTH, SCREEN_HEIGHT, TexturePixelFormat::Psm8888)
-        .as_mut_ptr_from_zero();
-
-    sys::sceGuInit();
-    sys::sceGuStart(GuContextType::Direct, &mut LIST as *mut _ as *mut c_void);
-    sys::sceGuDrawBuffer(DisplayPixelFormat::Psm8888, fbp0 as _, BUF_WIDTH as i32);
-    sys::sceGuDispBuffer(
-        SCREEN_WIDTH as i32,
-        SCREEN_HEIGHT as i32,
-        fbp1 as _,
-        BUF_WIDTH as i32,
-    );
-    sys::sceGuOffset(2048 - (SCREEN_WIDTH / 2), 2048 - (SCREEN_HEIGHT / 2));
-    sys::sceGuViewport(2048, 2048, SCREEN_WIDTH as i32, SCREEN_HEIGHT as i32);
-    sys::sceGuScissor(0, 0, SCREEN_WIDTH as i32, SCREEN_HEIGHT as i32);
-    sys::sceGuEnable(GuState::ScissorTest);
-    // Smooth shading: gradient rects gouraud-interpolate per-vertex color.
-    sys::sceGuShadeModel(ShadingModel::Smooth);
-    sys::sceGuFinish();
-    sys::sceGuSync(GuSyncMode::Finish, GuSyncBehavior::Wait);
-    sys::sceDisplayWaitVblankStart();
-    sys::sceGuDisplay(true);
 }
