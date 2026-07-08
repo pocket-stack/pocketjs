@@ -53,6 +53,14 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "time-travel-devtools",
+    title: "Time Travel over a USB Cable: PocketJS DevTools",
+    date: "2026-07-08",
+    description:
+      "A component inspector that highlights on the PSP's physical screen, pause/step for the whole world, a REPL into the handheld — and time-travel debugging where a session is two bytes per frame, carried over PSPLINK, the homebrew scene's answer to the GDB remote stub.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "baking-motion",
     title: "Baking Motion into PocketJS: Keyframes, Arcs, and a 3D Pipeline",
     date: "2026-07-07",
