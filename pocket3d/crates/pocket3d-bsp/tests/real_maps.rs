@@ -89,10 +89,18 @@ fn dust2_cooks_and_reads_back() {
     assert_eq!(map.t_spawns.len(), 20);
     assert!(map.sun.is_some());
 
-    // Every texture decodes with plausible mips (dims down to >= 8, all
+    // Every texture decodes with plausible mips (pow2 dims for the GE, all
     // swizzled sizes as promised).
     for t in &map.textures {
-        assert!(t.levels >= 4, "{}: only {} mips", t.name, t.levels);
+        assert!(
+            t.width.is_power_of_two() && t.height.is_power_of_two(),
+            "{}: non-pow2 {}x{}",
+            t.name,
+            t.width,
+            t.height
+        );
+        assert!(t.width <= 512 && t.height <= 512, "{}: too large", t.name);
+        assert!(t.levels >= 2, "{}: only {} mips", t.name, t.levels);
         assert_eq!(t.palette.len(), 1024);
         for (l, m) in t.mips.iter().enumerate() {
             let expect =

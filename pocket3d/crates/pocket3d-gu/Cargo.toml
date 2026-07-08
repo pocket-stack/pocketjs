@@ -1,0 +1,21 @@
+# pocket3d-gu — the sceGu (PSP GE) renderer backend for pocket3d.
+#
+# STANDALONE CRATE: excluded from the pocket3d workspace — it only compiles
+# for mipsel-sony-psp (tier-3, cargo-psp toolchain), and workspace membership
+# would break desktop `cargo check/test`. Consumed as a path dep by PSP game
+# EBOOTs (e.g. OpenStrike's), next to the `pocketjs-psp` host library.
+#
+# The `psp` path mirrors native/Cargo.toml: the doodlewind/rust-psp fork
+# checked out as a sibling of the repo (open-strike vendors it the same way).
+
+[package]
+name = "pocket3d-gu"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+psp = { path = "../../../../rust-psp/psp" }
+pocket3d-bsp = { path = "../pocket3d-bsp", default-features = false, features = ["libm"] }
+glam = { version = "0.33", default-features = false, features = ["libm"] }
+libm = "0.2"

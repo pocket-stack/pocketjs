@@ -8,6 +8,9 @@ members = [
     "crates/pocket-ui-wgpu",
     "examples/uihost",
 ]
+# PSP-only crates (tier-3 target, cargo-psp toolchain) — kept out of the
+# desktop workspace on purpose, like the repo-root native/ crate.
+exclude = ["crates/pocket3d-gu", "crates/gu-demo"]
 
 [workspace.package]
 version = "0.1.0"

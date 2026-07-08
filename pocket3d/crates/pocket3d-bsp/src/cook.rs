@@ -550,35 +550,49 @@ fn placeholder_indexed(name: &str) -> IndexedTexture {
 
 /// Extend the 4 stored mips down to 8x8 (box filter in RGB, requantized to
 /// the texture's own palette), swizzle every level, and serialize `WTEX`.
+///
+/// The GE requires power-of-two dimensions; non-pow2 WAD textures (96x96,
+/// 240x240, ...) are resampled to the nearest pow2 (capped at 512) and their
+/// mip chain regenerated. UVs are normalized against the *original* dims at
+/// geometry time, so the resample is invisible to sampling.
 fn cook_textures_section(textures: &[IndexedTexture]) -> Result<Vec<u8>> {
     let mut blobs = Vec::with_capacity(textures.len());
     for tex in textures {
+        let (pw, ph) = (nearest_pow2(tex.width), nearest_pow2(tex.height));
         let mut mips: Vec<Vec<u8>> = Vec::new();
-        for (level, m) in tex.mips.iter().enumerate() {
-            let (w, h) = (
-                (tex.width >> level).max(1) as usize,
-                (tex.height >> level).max(1) as usize,
-            );
-            if m.len() == w * h {
-                mips.push(m.clone());
+        if (pw, ph) == (tex.width, tex.height) {
+            for (level, m) in tex.mips.iter().enumerate() {
+                let (w, h) = (
+                    (tex.width >> level).max(1) as usize,
+                    (tex.height >> level).max(1) as usize,
+                );
+                if m.len() == w * h {
+                    mips.push(m.clone());
+                }
             }
+        } else if tex.mips[0].len() == (tex.width * tex.height) as usize {
+            mips.push(resample_indexed(
+                &tex.mips[0],
+                tex.width as usize,
+                tex.height as usize,
+                pw as usize,
+                ph as usize,
+            ));
         }
         if mips.is_empty() {
             anyhow::bail!("texture {} has no usable mips", tex.name);
         }
-        // Extend below the stored chain while both dims stay >= 8.
+        // Extend the chain (or regenerate it, in the resampled case) while
+        // both dims stay >= 8.
         while mips.len() < cooked::MAX_MIPS {
             let level = mips.len() as u32;
-            let (w, h) = (tex.width >> level, tex.height >> level);
+            let (w, h) = (pw >> level, ph >> level);
             if w < 8 || h < 8 {
                 break;
             }
             let prev = &mips[mips.len() - 1];
-            let (pw, ph) = (
-                (tex.width >> (level - 1)) as usize,
-                (tex.height >> (level - 1)) as usize,
-            );
-            mips.push(downsample_indexed(prev, pw, ph, &tex.palette, tex.masked));
+            let (lw, lh) = ((pw >> (level - 1)) as usize, (ph >> (level - 1)) as usize);
+            mips.push(downsample_indexed(prev, lw, lh, &tex.palette, tex.masked));
         }
 
         let levels = mips.len();
@@ -588,8 +602,8 @@ fn cook_textures_section(textures: &[IndexedTexture]) -> Result<Vec<u8>> {
         let nb = tex.name.as_bytes();
         name16[..nb.len().min(16)].copy_from_slice(&nb[..nb.len().min(16)]);
         blob.extend_from_slice(&name16);
-        blob.extend_from_slice(&(tex.width as u16).to_le_bytes());
-        blob.extend_from_slice(&(tex.height as u16).to_le_bytes());
+        blob.extend_from_slice(&(pw as u16).to_le_bytes());
+        blob.extend_from_slice(&(ph as u16).to_le_bytes());
         blob.extend_from_slice(&(levels as u16).to_le_bytes());
         blob.push(u8::from(tex.masked));
         blob.push(0);
@@ -622,10 +636,7 @@ fn cook_textures_section(textures: &[IndexedTexture]) -> Result<Vec<u8>> {
             let off = blob.len() as u32;
             blob[mip_off_pos + level * 4..mip_off_pos + level * 4 + 4]
                 .copy_from_slice(&off.to_le_bytes());
-            let (w, h) = (
-                (tex.width >> level).max(1) as usize,
-                (tex.height >> level).max(1) as usize,
-            );
+            let (w, h) = ((pw >> level).max(1) as usize, (ph >> level).max(1) as usize);
             blob.extend_from_slice(&swizzle8(m, w, h));
         }
         blobs.push(blob);
@@ -646,6 +657,33 @@ fn cook_textures_section(textures: &[IndexedTexture]) -> Result<Vec<u8>> {
         out.extend_from_slice(blob);
     }
     Ok(out)
+}
+
+/// Nearest power of two in log space (96 -> 128, 320 -> 256), clamped to
+/// the GE's limits.
+fn nearest_pow2(dim: u32) -> u32 {
+    let dim = dim.clamp(1, 512);
+    let up = dim.next_power_of_two().min(512);
+    let down = (up / 2).max(16);
+    // Round up when dim is past the geometric mean of the two candidates.
+    if (dim as u64) * (dim as u64) * 2 >= (up as u64) * (up as u64) {
+        up
+    } else {
+        down
+    }
+}
+
+/// Nearest-neighbor resample of indexed texels (pow2 conversion).
+fn resample_indexed(src: &[u8], sw: usize, sh: usize, dw: usize, dh: usize) -> Vec<u8> {
+    let mut out = vec![0u8; dw * dh];
+    for y in 0..dh {
+        let sy = (y * sh / dh).min(sh - 1);
+        for x in 0..dw {
+            let sx = (x * sw / dw).min(sw - 1);
+            out[y * dw + x] = src[sy * sw + sx];
+        }
+    }
+    out
 }
 
 /// 2x2 box downsample of indexed texels via the palette, requantized to the
