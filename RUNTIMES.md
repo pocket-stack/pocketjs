@@ -148,7 +148,10 @@ The grammar is implemented once, as infrastructure every runtime reuses:
 | `pocket-mod` | Guest hosting: QuickJS realm lifecycle, surface mounting (`mount("ui", ops)`), per-tick pump (frame call + job drain + timers), console, hot reload. The "mod runtime" capability, as a library. |
 | `pocket-ui-wgpu` | The `ui` surface, desktop edition: feeds paks to `pocketjs-core`, exposes the 17 `HostOps` ops to the guest, renders the DrawList through wgpu into any render target — a window (standalone app host) or an overlay pass over a 3D scene (game HUD). |
 | `pocketjs-core` | The 2D UI core (unchanged; now viewport-parameterized). |
-| `pocket3d` | Native substrate: GPU bootstrap, forward renderer, BSP worlds, collision, skeletal animation, headless capture. |
+| `pocket3d` | Native substrate, desktop edition: wgpu bootstrap, forward renderer, glTF models, headless capture. |
+| `pocket3d-bsp` | The portable half of the 3D substrate (no_std + alloc): GoldSrc maps, hull collision, the character controller, PVS visibility, and the cooked `.p3d` world format. Runs identically under wgpu and on the PSP. |
+| `pocket3d-gu` | The 3D substrate, PSP edition: renders cooked worlds through the GE (sceGu) with PVS culling, CLUT8 textures, and dynamic meshes. |
+| `pocketjs-psp` (lib) | Guest hosting + `ui` surface, PSP edition: the arena allocator, the QuickJS embedding, the DrawList GE backend (with an overlay mode for 3D compositing), pak feeding, and the DevTools mailbox — everything the 2D EBOOT proved, linkable by game EBOOTs. |
 
 A specialized runtime is then a thin composition. OpenStrike is:
 
@@ -167,6 +170,12 @@ product bundle (JS, built by the PocketJS two-pass pipeline)
 The PSP UI runtime, in the same notation: a QuickJS guest + the `ui` surface
 + the sceGu backend. It was the first instance of the pattern all along; the
 architecture names it and makes it repeatable.
+
+And the composition is now proven portable: **OpenStrike runs on a real PSP**
+as `openstrike-core` (the same FPS simulation) + `pocket3d-gu` over a cooked
+map + the `pocketjs-psp` host library + the same `strike` surface mounted
+through the raw QuickJS API — executing the identical product bundle (rules
+mod + JSX HUD) that the desktop runs, at 60 fps on the handheld.
 
 Note what composition buys: the HUD is not "game UI code" — it is a full
 PocketJS app, running unmodified on the same framework that drives PSP
