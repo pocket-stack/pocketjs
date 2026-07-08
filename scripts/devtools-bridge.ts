@@ -88,7 +88,9 @@ export function startBridge(opts: BridgeOptions): Bridge {
   }
   connect();
 
-  /** shot.raw -> data URL PNG (crop the 512-px stride to w x h). */
+  /** shot.raw -> data URL PNG (crop the 512-px stride to w x h). The GE
+   *  writes the framebuffer with alpha 0 (the PSP display ignores it), so
+   *  force it opaque — same reason e2e converts with `-alpha off`. */
   function convertShot(file: string, w: number, h: number, stride: number): string | null {
     const raw = readFileSync(join(boxDir, file));
     if (raw.length < stride * h * 4) return null;
@@ -96,6 +98,7 @@ export function startBridge(opts: BridgeOptions): Bridge {
     for (let y = 0; y < h; y++) {
       raw.copy(rgba, y * w * 4, y * stride * 4, y * stride * 4 + w * 4);
     }
+    for (let i = 3; i < rgba.length; i += 4) rgba[i] = 255;
     return "data:image/png;base64," + encodePNG(rgba, w, h).toString("base64");
   }
 

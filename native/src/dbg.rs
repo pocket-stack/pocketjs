@@ -87,6 +87,14 @@ pub unsafe fn poll() -> Option<String> {
 /// via the uncached VRAM mirror — same technique as main.rs cap_dump_frame).
 /// The desktop bridge converts it to PNG; the ~550 KB never crosses the
 /// JSON mailbox. Returns true on success.
+///
+/// The pixels MUST bounce through main RAM: usbhostfs's send path runs
+/// sceKernelDcacheWritebackRange + USB bulk DMA straight on the caller's
+/// buffer (psplinkusb usbhostfs/main.c), and neither survives a VRAM
+/// address — writing the 0x4xxxxxxx mirror directly wedges the first 64 KB
+/// block and hangs the device (verified on hardware: shot.raw created,
+/// zero bytes ever arrived). cap_dump_frame gets away with VRAM-direct
+/// writes only because ms0: is the Memory Stick driver, not usbhostfs.
 pub unsafe fn shot() -> bool {
     if !ACTIVE {
         return false;
@@ -109,9 +117,28 @@ pub unsafe fn shot() -> bool {
     if fd.0 < 0 {
         return false;
     }
-    let written = sys::sceIoWrite(fd, addr as *const c_void, 512 * 272 * 4);
+    // 16 rows per chunk: a 32 KB cached-RAM bounce buffer, 17 writes total.
+    const ROW: usize = 512 * 4;
+    const CHUNK_ROWS: usize = 16;
+    let mut buf: Vec<u8> = alloc::vec![0u8; ROW * CHUNK_ROWS];
+    let mut row = 0usize;
+    let mut ok = true;
+    while row < 272 {
+        let rows = CHUNK_ROWS.min(272 - row);
+        let n = ROW * rows;
+        core::ptr::copy_nonoverlapping(
+            (addr as usize + row * ROW) as *const u8,
+            buf.as_mut_ptr(),
+            n,
+        );
+        if sys::sceIoWrite(fd, buf.as_ptr() as *const c_void, n) != n as i32 {
+            ok = false;
+            break;
+        }
+        row += rows;
+    }
     sys::sceIoClose(fd);
-    written == 512 * 272 * 4
+    ok
 }
 
 /// Append one JSON line to out.jsonl (the newline is added here).

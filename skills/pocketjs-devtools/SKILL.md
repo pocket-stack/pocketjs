@@ -97,3 +97,16 @@ Device→panel: `hello{app,host,frame}` · `tree{root:{i,t,n,c,x,k}}` ·
   `core/src/tests.rs`.
 - Missing QuickJS symbols (vendored libquickjs-sys is minimal): declare a
   local `extern "C"` block — precedent in `native/src/main.rs` and `ffi.rs`.
+- NEVER hand VRAM addresses (`0x4xxxxxxx` uncached mirror) to usbhostfs IO:
+  its send path runs dcache writeback + USB bulk DMA on the caller's buffer
+  and hangs the device on the first 64 KB block (frozen PSP, 0-byte file).
+  Bounce through a cached-RAM buffer in chunks (`dbg::shot`). ms0: (Memory
+  Stick driver) tolerates VRAM-direct writes — that's why cap_dump_frame
+  gets away with it and why PPSSPP won't reproduce the hang.
+- The GE writes framebuffer alpha as 0: any raw-framebuffer consumer must
+  force alpha opaque (bridge `convertShot`, e2e's `-alpha off`) or the PNG
+  renders fully transparent.
+- The native screenshot path is testable without hardware: pre-create the
+  `~/.ppsspp/pocketjs-dbg` mailbox (ms0: fallback), run PPSSPPHeadless with
+  a timeout, append `{"t":"screenshot"}` to in.jsonl mid-run, then check
+  shot.raw + out.jsonl.
