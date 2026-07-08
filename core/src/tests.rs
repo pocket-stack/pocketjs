@@ -1753,3 +1753,54 @@ fn debug_inspect_overlays_and_reports_world_rect() {
     assert_eq!(ui.debug_rect_xy(), -1);
     assert_eq!(ui.debug_rect_wh(), -1);
 }
+
+#[test]
+fn debug_inspect_glides_between_targets() {
+    let mut ui = Ui::new();
+    let mk = |x: f32| {
+        let mut s = StyleSpec::new();
+        s.base = alloc::vec![
+            (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
+            (spec::prop::WIDTH, 40f32.to_bits()),
+            (spec::prop::HEIGHT, 40f32.to_bits()),
+            (spec::prop::INSET_L, x.to_bits()),
+            (spec::prop::INSET_T, 10f32.to_bits()),
+            (spec::prop::BG_COLOR, 0xff20_4060u32),
+        ];
+        s
+    };
+    assert!(ui.load_styles(&encode_styles(&[mk(10.0), mk(200.0)])));
+    let a = ui.create_node(0);
+    let b = ui.create_node(0);
+    ui.insert_before(spec::ROOT_ID, a, 0);
+    ui.insert_before(spec::ROOT_ID, b, 0);
+    ui.set_style(a, 0);
+    ui.set_style(b, 1);
+    ui.tick();
+
+    // Decode the fill rect (first overlay op) X from the appended words.
+    let overlay_x = |ui: &mut Ui, baseline: usize| -> i32 {
+        let words = &ui.draw().words;
+        assert!(words.len() > baseline, "overlay must be present");
+        let xy = words[baseline + 1]; // [RECT, xy, wh, color]
+        ((xy & 0xffff) as u16) as i16 as i32
+    };
+    let baseline = ui.draw().words.len();
+
+    ui.debug_inspect(a);
+    assert_eq!(overlay_x(&mut ui, baseline), 10, "first appearance is instant");
+
+    ui.debug_inspect(b);
+    let x1 = overlay_x(&mut ui, baseline);
+    assert!(x1 > 10 && x1 < 200, "glide starts between the boxes, got {x1}");
+    let x2 = overlay_x(&mut ui, baseline);
+    assert!(x2 > x1, "glide advances every draw, got {x1} -> {x2}");
+    for _ in 0..30 {
+        ui.draw();
+    }
+    assert_eq!(overlay_x(&mut ui, baseline), 200, "glide converges exactly");
+    assert_eq!(ui.debug_rect_xy(), 200 | (10 << 16), "readback is the target, not the animation");
+
+    ui.debug_inspect(0);
+    assert_eq!(ui.draw().words.len(), baseline, "clear hides the overlay");
+}

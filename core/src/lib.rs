@@ -97,6 +97,9 @@ pub struct Ui {
     /// World AABB (x, y, w, h) of the inspected node, captured by the last
     /// `draw()` that painted it.
     inspect_rect: Option<(f32, f32, f32, f32)>,
+    /// The highlight box as actually drawn last frame — glides toward
+    /// `inspect_rect` (draw::build lerps it); purely visual state.
+    inspect_drawn: Option<(f32, f32, f32, f32)>,
     paused: bool,
     step_pending: bool,
 }
@@ -125,6 +128,7 @@ impl Ui {
             frame: 0,
             inspect_id: 0,
             inspect_rect: None,
+            inspect_drawn: None,
             paused: false,
             step_pending: false,
         }
@@ -653,7 +657,7 @@ impl Ui {
         if self.layout.needs() {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
-        let inspect_hit = draw::build(
+        let (target, drawn) = draw::build(
             &self.tree,
             &self.styles,
             &self.fonts,
@@ -663,9 +667,11 @@ impl Ui {
             &mut self.discs,
             &mut self.draw_list,
             self.inspect_id,
+            self.inspect_drawn,
         );
+        self.inspect_drawn = drawn;
         if self.inspect_id != 0 {
-            self.inspect_rect = inspect_hit;
+            self.inspect_rect = target;
         }
         &self.draw_list
     }
@@ -709,6 +715,11 @@ impl Ui {
     pub fn debug_inspect(&mut self, id: i32) {
         self.inspect_id = id;
         self.inspect_rect = None;
+        // Keep inspect_drawn: switching targets glides the box from the old
+        // node to the new one. Clearing (id 0) hides it via the draw path.
+        if id == 0 {
+            self.inspect_drawn = None;
+        }
     }
 
     /// Packed `x | y << 16` (i16 halves) of the inspected node's last-drawn

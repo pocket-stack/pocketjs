@@ -508,7 +508,8 @@ pub fn build(
     discs: &mut DiscCache,
     dl: &mut DrawList,
     inspect_id: i32,
-) -> Option<(f32, f32, f32, f32)> {
+    inspect_prev: Option<(f32, f32, f32, f32)>,
+) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
     dl.words.clear();
     // DevTools (DEVTOOLS.md): slot of the inspected node, u32::MAX = none.
     // Nodes inside a perspective subtree take the paint_3d path and are not
@@ -532,10 +533,34 @@ pub fn build(
     };
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
     w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), dl);
-    if let Some(hit) = w.inspect_hit {
-        w.emit_highlight(dl, &hit);
+    let target = w.inspect_hit.map(|c| (c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0));
+    // Highlight glide: the drawn box exponentially approaches the target
+    // (~0.35/draw ≈ converged in 6 draws), so switching the inspected node
+    // slides the box across the screen instead of teleporting it. draw()
+    // runs every vblank even while debug-paused, so the glide stays live in
+    // a frozen world. Purely visual — debugRectXY/WH report the target.
+    let drawn = match (target, inspect_prev) {
+        (Some(t), Some(p)) => {
+            const K: f32 = 0.35;
+            let d = (
+                p.0 + (t.0 - p.0) * K,
+                p.1 + (t.1 - p.1) * K,
+                p.2 + (t.2 - p.2) * K,
+                p.3 + (t.3 - p.3) * K,
+            );
+            let close = (d.0 - t.0).abs() < 0.5
+                && (d.1 - t.1).abs() < 0.5
+                && (d.2 - t.2).abs() < 0.5
+                && (d.3 - t.3).abs() < 0.5;
+            Some(if close { t } else { d })
+        }
+        (Some(t), None) => Some(t), // first appearance: no glide-from-nowhere
+        (None, _) => None,
+    };
+    if let Some((x, y, bw, bh)) = drawn {
+        w.emit_highlight(dl, &Clip { x0: x, y0: y, x1: x + bw, y1: y + bh });
     }
-    w.inspect_hit.map(|c| (c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0))
+    (target, drawn)
 }
 
 impl<'a> Walker<'a> {

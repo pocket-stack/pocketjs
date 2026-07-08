@@ -4,9 +4,9 @@ PocketJS just grew a DevTools. Not a log viewer — a component inspector that h
 bun run devtools cards
 ```
 
-<img class="w-full rounded-xl border border-line" src="/assets/blog/devtools-highlight.png" alt="The hero demo with a DevTools highlight overlay: a translucent blue fill and solid border over the headline block — rendered by the engine itself, not composited on top" />
+<img class="w-full rounded-xl border border-line" src="/assets/blog/devtools-panel-device.png" alt="The DevTools panel with the Header node pinned in the component tree and its details — debugName, classes, world rect — while the device screen next to it shows the same header region highlighted in blue" />
 
-That screenshot was not taken in a browser. It is the engine's own output: the highlight is drawn *by the renderer*, which is why the same hover works identically on the PSP's GPU, in WebAssembly, and headless under Bun. This post is about the three ideas underneath — a world small enough to record, a debugger that draws with the engine, and a 20-year-old USB protocol doing the job GDB stubs have always done.
+Pin `Header` in the component tree on the left, and the header lights up on the device on the right. The device side of that image was not composited in an image editor — it is the engine's own output: the highlight is drawn *by the renderer*, which is why the same hover works identically on the PSP's GPU, in WebAssembly, and headless under Bun. This post is about the three ideas underneath — a world small enough to record, a debugger that draws with the engine, and a 20-year-old USB protocol doing the job GDB stubs have always done.
 
 ## The world in two bytes a frame
 
@@ -32,6 +32,10 @@ Open-world frameworks cannot follow here — not because their tooling is worse,
 The inspector's data side was almost free: the reconciler already maintains a JavaScript mirror of the native tree (reads never cross the FFI), so the component tree, classes and text were sitting there waiting to be serialized. Components tag themselves with semantic names — a `debugName` prop on any primitive, or a `<Named>` wrapper around a subtree — so the panel reads like your source, not like DOM soup.
 
 The interesting half is the highlight. DevTools overlays in browsers are separate DOM layered on top. Ours is four rectangles and a translucent fill appended to the engine's own DrawList, after the paint walk captures the hovered node's world-space bounding box — transforms and all. Because it rides the normal command stream, every backend renders it with zero extra code: the sceGu path on hardware, the software rasterizer in wasm, the wgpu desktop window. Hover a node in the desktop panel and the region lights up on the handheld in your hands.
+
+<img class="w-full rounded-xl border border-line" src="/assets/blog/devtools-highlight-glide.gif" alt="Clicking through three nodes in the tree: the highlight box glides from the header, down to the button, then expands to the full screen — while the demo keeps animating underneath" />
+
+And it moves. Click a different node and the box *glides* there — an exponential ease computed in the renderer, one lerp per frame, converging in about a hundred milliseconds. It costs nothing (the box was being re-emitted every frame anyway), it tracks nodes that are themselves animating, and because it lives in `draw()` rather than `tick()`, it keeps gliding even while the world is frozen at a breakpoint. Your eyes follow the motion to the new region instead of scanning for a teleported outline — the same trick Android Studio's Layout Inspector plays, running on a machine with 32 MB of RAM.
 
 Pause works the same way — in the core, not in JavaScript. The PSP's main loop is Rust; it calls `tick()` whether or not scripts approve. So `debugPause` makes `tick()` itself a no-op: the frame counter, every timeline, every spring and sprite clock freeze as one, and `draw()` keeps running so the highlight stays live inside the frozen frame. Step advances the universe by exactly 1/60 s. Between frames the world is quiescent — microtasks drained, layout settled — which makes the REPL honest: `eval` inspects real state, not a race.
 
@@ -78,4 +82,4 @@ There is a second audience for all of this. A meaningful share of PocketJS is wr
 
 The determinism that makes the PSP build reproducible is the same determinism that makes a bug report executable, a session a test, and an agent a competent debugger. One property, compounding.
 
-The design doc — including what's next: memory-snapshot I-frames for O(1) scrubbing, tapes in playground URLs, a causality index from pixel back to input edge — lives in [`DEVTOOLS.md`](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md). The code is on [GitHub](https://github.com/pocket-stack/pocketjs), MIT, and `npm install -g @pocketjs/cli` gets you `pocketjs devtools`.
+The design doc — including what's next: memory-snapshot I-frames for O(1) scrubbing, tapes in playground URLs, a causality index from pixel back to input edge — lives in [`DEVTOOLS.md`](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md). The code is on [GitHub](https://github.com/pocket-stack/pocketjs), MIT, and `npm install -g @pocketjs/cli` gets you `pocket devtools`.
