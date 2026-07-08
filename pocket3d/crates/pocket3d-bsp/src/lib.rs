@@ -14,6 +14,7 @@
 
 extern crate alloc;
 
+pub mod collide;
 #[cfg(feature = "std")]
 pub mod cook;
 pub mod cooked;
