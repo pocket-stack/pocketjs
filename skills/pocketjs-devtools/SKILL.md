@@ -108,6 +108,14 @@ Device→panel: `hello{app,host,frame}` · `tree{root:{i,t,n,c,x,k}}` ·
 - The GE writes framebuffer alpha as 0: any raw-framebuffer consumer must
   force alpha opaque (bridge `convertShot`, e2e's `-alpha off`) or the PNG
   renders fully transparent.
+- When hardware behavior "mysteriously regresses" after running e2e scripts,
+  check WHICH build is on disk before debugging anything else: e2e capture
+  specs rebuild the EBOOT/PRX in place, and capture builds
+  `sceKernelExitGame()` after their window — reloading one on the PSP looks
+  exactly like a freeze/hang a few seconds after boot. Rebuild your intended
+  feature set first; only then trust symptoms. (Cost an hour on the
+  OpenStrike bring-up: a phantom "mailbox freeze" was a self-exiting e2e
+  build the whole time.)
 - The whole device-side path (eval, console, screenshot) is testable
   without hardware, at host0: fidelity: **PPSSPP maps the EBOOT's own
   directory as `host0:`**, so a mailbox in
