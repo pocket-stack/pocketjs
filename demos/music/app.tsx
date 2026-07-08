@@ -93,8 +93,8 @@ export default function Music() {
   const pct = () => Math.round((position() / TRACK_FRAMES) * 100);
 
   return (
-    <View class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
-      <View class="flex-row items-end justify-between">
+    <View debugName="MusicScreen" class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
+      <View debugName="Header" class="flex-row items-end justify-between">
         <View class="flex-col">
           <Text class="text-xs text-blue-600 tracking-wide">POCKETJS SHOWCASE</Text>
           <Text class="text-2xl text-slate-950 font-bold">Now Playing</Text>
@@ -102,7 +102,7 @@ export default function Music() {
         <Text class="text-xs text-slate-500">TRACK {trackIndex() + 1} / {TRACKS.length}</Text>
       </View>
 
-      <View class="flex-row items-center gap-3">
+      <View debugName="NowPlaying" class="flex-row items-center gap-3">
         <View class={track().coverCls} focusable onPress={() => setPlaying(!playing())}>
           <Text class="text-base text-white font-bold">{playing() ? ">" : "II"}</Text>
         </View>
@@ -121,14 +121,14 @@ export default function Music() {
           </View>
         </View>
 
-        <View class="flex-row items-end gap-1 h-16">
+        <View debugName="Equalizer" class="flex-row items-end gap-1 h-16">
           {([0, 1, 2, 3] as const).map((i) => (
             <View class="w-2 rounded-md shadow bg-gradient-to-b from-emerald-500 to-emerald-600" style={{ height: barHeight(i) }} />
           ))}
         </View>
       </View>
 
-      <View class="flex-col gap-1">
+      <View debugName="TrackList" class="flex-col gap-1">
         {TRACKS.map((t, i) => (
           <View
             class={

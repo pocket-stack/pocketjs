@@ -3,8 +3,10 @@
 // object per WebSocket message, relayed verbatim by the hub in serve.ts.
 //
 // Panel → device : inspect(id) · pause · resume · step · getTree ·
-//                  eval(id, code) · dumpTape · seek(frame) · replay(tape)
-// Device → panel : hello · tree · inspect · stats · log · error · evalResult · tape
+//                  eval(id, code) · dumpTape · seek(frame) · replay(tape) ·
+//                  screenshot
+// Device → panel : hello · tree · inspect · stats · log · error · evalResult ·
+//                  tape · screenshot(frame, data:image/png;base64 URL)
 // Hub notices    : deviceConnected · deviceGone
 
 const $ = (id) => document.getElementById(id);
@@ -41,6 +43,8 @@ const replHistory = [];
 let histIdx = 0;
 let histDraft = "";
 
+let shotTimer = null; // pending-screenshot timeout id (null = not pending)
+
 // ------------------------------------------------------------ websocket ----
 
 function connect() {
@@ -75,6 +79,7 @@ function connect() {
   ws.onclose = () => {
     hubUp = false;
     deviceUp = false;
+    endShot();
     renderStatus();
     scheduleReconnect();
   };
@@ -142,6 +147,14 @@ const HANDLERS = {
   tape(m) {
     if (m.tape) setTape(m.tape);
   },
+  screenshot(m) {
+    endShot(); // clear pending regardless of payload shape
+    if (typeof m.data !== "string" || !m.data.startsWith("data:image/")) return;
+    const frame = typeof m.frame === "number" ? m.frame : 0;
+    const name = `${(appInfo && appInfo.app) || "device"}-f${frame}.png`;
+    downloadDataUrl(m.data, name);
+    addShot(m.data, frame, name);
+  },
   deviceConnected() {
     deviceUp = true;
     lastInspectSent = null; // fresh device knows nothing of our selection
@@ -151,6 +164,7 @@ const HANDLERS = {
   deviceGone() {
     deviceUp = false;
     appInfo = null;
+    endShot(); // no response is coming
     renderStatus();
   },
 };
@@ -449,6 +463,65 @@ document.addEventListener("keydown", (e) => {
   }
   if (pinnedId !== null) unpin();
 });
+
+// ------------------------------------------------------------ screenshots ----
+// On-demand capture (no streaming): send {t:"screenshot"}, device answers with
+// {t:"screenshot", frame, data:"data:image/png;base64,…"}. PSP pushes ~550 KB
+// over USB, so the pending state times out after 15 s. Unsupported hosts may
+// only reply with a warn log — the timeout covers that too.
+
+const SHOT_TIMEOUT_MS = 15000;
+const MAX_SHOTS = 6; // thumbnails kept; oldest drops
+
+$("btnShot").addEventListener("click", () => {
+  if (shotTimer !== null) return; // one in flight at a time
+  send({ t: "screenshot" });
+  $("btnShot").disabled = true;
+  shotTimer = setTimeout(endShot, SHOT_TIMEOUT_MS);
+});
+
+function endShot() {
+  if (shotTimer !== null) {
+    clearTimeout(shotTimer);
+    shotTimer = null;
+  }
+  $("btnShot").disabled = false;
+}
+
+function downloadDataUrl(dataUrl, name) {
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = name;
+  a.click();
+}
+
+function addShot(dataUrl, frame, name) {
+  const strip = $("shots");
+  const a = document.createElement("a");
+  a.className = "shot";
+  a.href = dataUrl;
+  a.target = "_blank"; // middle/ctrl-click: browser default opens a new tab
+  a.rel = "noopener";
+  a.title = name + " — click to download, ctrl/middle-click to open";
+  a.addEventListener("click", (e) => {
+    // Plain left-click re-downloads; modified clicks keep browser behavior.
+    if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      downloadDataUrl(dataUrl, name);
+    }
+  });
+  const img = document.createElement("img");
+  img.src = dataUrl;
+  img.alt = name;
+  const cap = document.createElement("span");
+  cap.className = "cap";
+  cap.textContent = "f" + frame;
+  a.append(img, cap);
+  strip.appendChild(a);
+  while (strip.children.length > MAX_SHOTS) strip.firstChild.remove();
+  strip.classList.remove("hidden");
+  strip.scrollLeft = strip.scrollWidth; // newest visible
+}
 
 // -------------------------------------------------- time travel / tape bar ----
 

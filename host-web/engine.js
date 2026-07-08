@@ -115,6 +115,7 @@ function connectDevtools() {
     }
     if (msg && msg.t === "seek") return void devtoolsSeek(msg.frame);
     if (msg && msg.t === "replay") return void devtoolsReplay(msg.tape);
+    if (msg && msg.t === "screenshot") return void devtoolsScreenshot();
     dtInbox.push(line);
   };
   dtWs.onclose = () => {
@@ -123,6 +124,22 @@ function connectDevtools() {
     dtBackoff = Math.min(dtBackoff * 2, 8000);
   };
   dtWs.onerror = () => {};
+}
+
+/** On-demand screenshot (host-level: the framebuffer lives here). Renders
+ *  the current core output clean — no HUD overlay — and ships a PNG data
+ *  URL back to the panel. */
+function devtoolsScreenshot() {
+  if (!wasm) return;
+  const shot = document.createElement("canvas");
+  shot.width = FB_W;
+  shot.height = FB_H;
+  const sctx = shot.getContext("2d");
+  const img = sctx.createImageData(FB_W, FB_H);
+  img.data.set(wasm.render());
+  sctx.putImageData(img, 0, 0);
+  const frame = globalThis.__pocketDevtools ? globalThis.__pocketDevtools.frame : 0;
+  dtSend(JSON.stringify({ t: "screenshot", frame, data: shot.toDataURL("image/png") }));
 }
 
 /** Replay a tape from boot at normal speed: fresh core + bundle, the shim

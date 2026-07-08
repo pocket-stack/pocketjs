@@ -12,7 +12,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::ffi::c_void;
 
-use psp::sys::{self, IoOpenFlags, IoWhence};
+use psp::sys::{self, DisplayPixelFormat, DisplaySetBufSync, IoOpenFlags, IoWhence};
 
 const H0_ENABLE: &[u8] = b"host0:/pocketjs-dbg/enable\0";
 const H0_IN: &[u8] = b"host0:/pocketjs-dbg/in.jsonl\0";
@@ -20,6 +20,8 @@ const H0_OUT: &[u8] = b"host0:/pocketjs-dbg/out.jsonl\0";
 const MS_ENABLE: &[u8] = b"ms0:/pocketjs-dbg/enable\0";
 const MS_IN: &[u8] = b"ms0:/pocketjs-dbg/in.jsonl\0";
 const MS_OUT: &[u8] = b"ms0:/pocketjs-dbg/out.jsonl\0";
+const H0_SHOT: &[u8] = b"host0:/pocketjs-dbg/shot.raw\0";
+const MS_SHOT: &[u8] = b"ms0:/pocketjs-dbg/shot.raw\0";
 
 /// Max bytes consumed per poll; longer backlogs drain over several polls.
 const POLL_BUF: usize = 4096;
@@ -78,6 +80,38 @@ pub unsafe fn poll() -> Option<String> {
     };
     READ_OFF += complete as i64;
     Some(String::from_utf8_lossy(&read[..complete]).into_owned())
+}
+
+/// On-demand screenshot (DEVTOOLS.md): dump the just-presented display
+/// framebuffer to `pocketjs-dbg/shot.raw` (512-stride RGBA top-down, read
+/// via the uncached VRAM mirror — same technique as main.rs cap_dump_frame).
+/// The desktop bridge converts it to PNG; the ~550 KB never crosses the
+/// JSON mailbox. Returns true on success.
+pub unsafe fn shot() -> bool {
+    if !ACTIVE {
+        return false;
+    }
+    let mut top: *mut c_void = core::ptr::null_mut();
+    let mut bw: usize = 0;
+    let mut fmt = DisplayPixelFormat::Psm8888;
+    sys::sceDisplayGetFrameBuf(&mut top, &mut bw, &mut fmt, DisplaySetBufSync::Immediate);
+    let mut addr = top as u32;
+    if addr < 0x0400_0000 {
+        addr += 0x0400_0000;
+    }
+    addr |= 0x4000_0000;
+    let path = if USE_MS0 { MS_SHOT } else { H0_SHOT };
+    let fd = sys::sceIoOpen(
+        path.as_ptr(),
+        IoOpenFlags::CREAT | IoOpenFlags::WR_ONLY | IoOpenFlags::TRUNC,
+        0o777,
+    );
+    if fd.0 < 0 {
+        return false;
+    }
+    let written = sys::sceIoWrite(fd, addr as *const c_void, 512 * 272 * 4);
+    sys::sceIoClose(fd);
+    written == 512 * 272 * 4
 }
 
 /// Append one JSON line to out.jsonl (the newline is added here).

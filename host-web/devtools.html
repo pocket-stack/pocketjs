@@ -37,6 +37,25 @@
     background: #f59e0b22; color: #fbbf24; border: 1px solid #f59e0b55;
     border-radius: 4px; padding: 0 6px; font-size: 11px; letter-spacing: .06em;
   }
+  #btnShot { font-size: 12px; padding: 3px 10px; }
+
+  /* ---- screenshot thumbnail strip ---- */
+  #shots {
+    flex: none; display: flex; gap: 10px; align-items: flex-start;
+    padding: 6px 12px; background: #0f172a; border-top: 1px solid #1e293b;
+    overflow-x: auto;
+  }
+  .shot {
+    flex: none; display: flex; flex-direction: column; align-items: center;
+    gap: 2px; cursor: pointer; text-decoration: none;
+  }
+  .shot img {
+    display: block; width: 120px; height: 68px; /* 480x272 aspect */
+    image-rendering: pixelated; background: #000;
+    border: 1px solid #334155; border-radius: 4px;
+  }
+  .shot:hover img { border-color: #818cf8; }
+  .shot .cap { font-size: 11px; color: #64748b; }
 
   /* ---- main split ---- */
   main { flex: 1; display: grid; grid-template-columns: minmax(300px, 38%) 1fr; min-height: 0; }
@@ -121,6 +140,7 @@
   <span class="chip">nodes <b id="statNodes">–</b></span>
   <span class="chip">tape <b id="statTape">–</b></span>
   <span class="chip hidden" id="statPaused">PAUSED</span>
+  <button id="btnShot" title="capture the device screen as PNG">&#128247; Screenshot</button>
 </header>
 
 <main>
@@ -147,6 +167,8 @@
     </section>
   </div>
 </main>
+
+<div id="shots" class="hidden"></div>
 
 <footer>
   <div class="tbBtns">

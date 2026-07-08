@@ -85,6 +85,9 @@ export interface HostOps {
   __dbgActive?(): boolean;
   __dbgPoll?(): string | undefined;
   __dbgSend?(line: string): void;
+  /** PSP on-demand screenshot: dump the displayed framebuffer to
+   *  pocketjs-dbg/shot.raw (bridge converts to PNG). → success. */
+  __dbgShot?(): boolean;
 }
 
 export interface Host {

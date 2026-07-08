@@ -109,7 +109,7 @@ function Grid(props: { selectedIndex: () => number; onOpen: (game: Game, index: 
     if (i >= 0) focusNode(refs[i] ?? null);
   });
   return (
-    <View class="flex-row gap-4 justify-center items-center grow">
+    <View debugName="Grid" class="flex-row gap-4 justify-center items-center grow">
       {GAMES.map((game, i) => (
         <View class="flex-col items-center gap-2">
           <View ref={refs[i]} class={game.tileCls} focusable onPress={() => props.onOpen(game, i)}>
@@ -132,7 +132,7 @@ function Loading(props: { title: string; frame: () => number }) {
     return SPINNER_FRAMES[i];
   });
   return (
-    <View class="flex-col items-center justify-center gap-3 grow">
+    <View debugName="Loading" class="flex-col items-center justify-center gap-3 grow">
       <Image class="w-10 h-10" src={src()} />
       <Text class="text-sm text-slate-600 tracking-wide">LOADING {props.title}...</Text>
     </View>
@@ -141,7 +141,7 @@ function Loading(props: { title: string; frame: () => number }) {
 
 function DetailStat(props: { label: string; value: string }) {
   return (
-    <View class="flex-col items-end">
+    <View debugName="DetailStat" class="flex-col items-end">
       <Text class="text-lg text-blue-600 font-bold">{props.value}</Text>
       <Text class="text-xs text-slate-500 tracking-wide">{props.label}</Text>
     </View>
@@ -158,6 +158,7 @@ function Detail(props: { game: Game }) {
   return (
     <View
       ref={panel}
+      debugName="Detail"
       style={{ translateY: 18 }}
       class="flex-col gap-3 p-4 grow rounded-xl shadow-md bg-white border-slate-200"
     >
@@ -215,8 +216,8 @@ export default function Library() {
   });
 
   return (
-    <View class="relative flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
-      <View class="flex-row items-end justify-between">
+    <View debugName="LibraryScreen" class="relative flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
+      <View debugName="Header" class="flex-row items-end justify-between">
         <View class="flex-col">
           <Text class="text-xs text-blue-600 tracking-wide">POCKETJS SHOWCASE</Text>
           <Text class="text-2xl text-slate-950 font-bold">Game Library</Text>

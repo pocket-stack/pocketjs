@@ -307,6 +307,18 @@ function handleMessage(line: string): void {
     case "dumpTape":
       send({ t: "tape", tape: exportTape() });
       break;
+    case "screenshot": {
+      // PSP path only — the browser host intercepts this message itself
+      // (canvas.toDataURL) and it never reaches the shim there. The native
+      // side dumps raw VRAM next to the mailbox; the desktop bridge turns
+      // it into the {t:"screenshot", data} PNG the panel expects.
+      if (ops?.__dbgShot?.()) {
+        send({ t: "screenshotRaw", file: "shot.raw", w: 480, h: 272, stride: 512, frame: state.frame });
+      } else {
+        send({ t: "log", level: "warn", args: ["screenshot: not supported on this host"] });
+      }
+      break;
+    }
     case "replay": {
       // Shim-level replay: feed the tape's masks from NOW. For byte-exact
       // sessions replay from boot (the browser host intercepts this message

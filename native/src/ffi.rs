@@ -434,6 +434,17 @@ unsafe extern "C" fn js_dbg_poll(
     }
 }
 
+/// ui.__dbgShot() -> bool: dump the displayed framebuffer to
+/// pocketjs-dbg/shot.raw (the bridge converts it to PNG panel-side).
+unsafe extern "C" fn js_dbg_shot(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewBool(ctx, crate::dbg::shot())
+}
+
 /// ui.__dbgSend(line): append one JSON line to the outbound mailbox.
 unsafe extern "C" fn js_dbg_send(
     ctx: *mut JSContext,
@@ -503,6 +514,7 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"__dbgActive\0", js_dbg_active, 0);
     add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
     add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);
+    add_fn(ctx, ui_obj, b"__dbgShot\0", js_dbg_shot, 0);
 
     // ui.__textures: pak image name -> texture handle (see module docs).
     let tex_obj = JS_NewObject(ctx);

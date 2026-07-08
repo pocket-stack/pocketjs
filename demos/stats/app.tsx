@@ -108,7 +108,7 @@ function Overview() {
   });
 
   return (
-    <View class="flex-col gap-1">
+    <View debugName="Overview" class="flex-col gap-1">
       {BARS.map((bar, i) => (
         <View class="flex-row items-center gap-2">
           <View class="w-9 flex-row justify-end">
@@ -135,7 +135,7 @@ function Overview() {
 function Systems(props: { frame: () => number }) {
   const rowT = (i: number) => easeOutCubic((props.frame() - i * SYSTEMS_STAGGER_FRAMES) / SYSTEMS_REVEAL_FRAMES);
   return (
-    <View class="flex-col gap-1">
+    <View debugName="Systems" class="flex-col gap-1">
       {SYSTEMS.map((sys, i) => (
         <View
           class="flex-row items-center justify-between px-2 py-[2] rounded-lg shadow bg-white border-slate-200"
@@ -183,13 +183,13 @@ export default function Stats() {
   });
 
   return (
-    <View class="flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
-      <View class="flex-row items-end justify-between">
+    <View debugName="StatsScreen" class="flex-col w-full h-full p-4 gap-3 bg-gradient-to-b from-slate-50 to-slate-100">
+      <View debugName="Header" class="flex-row items-end justify-between">
         <View class="flex-col">
           <Text class="text-xs text-emerald-600 tracking-wide">LIVE TELEMETRY</Text>
           <Text class="text-2xl text-slate-950 font-bold">Mission Control</Text>
         </View>
-        <View class="flex-row gap-2">
+        <View debugName="TabBar" class="flex-row gap-2">
           <View
             class={
               tab() === 0
@@ -227,7 +227,7 @@ export default function Stats() {
         </View>
       </View>
 
-      <View class="flex-row gap-3">
+      <View debugName="StatTiles" class="flex-row gap-3">
         {STATS.map((stat) => (
           <View class="flex-1 flex-col gap-1 p-2 rounded-xl shadow-md bg-white border-slate-200">
             <Text class="text-xs text-slate-500 tracking-wide">{stat.label}</Text>

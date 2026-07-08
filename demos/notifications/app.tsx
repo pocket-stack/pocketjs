@@ -122,8 +122,8 @@ export default function Notifications() {
   };
 
   return (
-    <View class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
-      <View class="flex-row items-end justify-between">
+    <View debugName="NotificationsScreen" class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
+      <View debugName="Header" class="flex-row items-end justify-between">
         <View class="flex-col">
           <Text class="text-xs text-blue-600 tracking-wide">POCKETJS SHOWCASE</Text>
           <Text class="text-2xl text-slate-950 font-bold">Notifications</Text>
@@ -131,7 +131,7 @@ export default function Notifications() {
         <Text class="text-xs text-slate-500">{items().length} UNREAD</Text>
       </View>
 
-      <View class="flex-col gap-1">
+      <View debugName="NoticeList" class="flex-col gap-1">
         <For each={items()}>
           {(item, i) => {
             let el: NodeMirror | undefined;
@@ -146,6 +146,7 @@ export default function Notifications() {
                 ref={(row) => {
                   rowRefs.set(item.id, row);
                 }}
+                debugName="NoticeRow"
                 class="flex-col"
                 style={{ translateY: riseOffsets()[item.id] ?? 0 }}
               >
@@ -170,7 +171,7 @@ export default function Notifications() {
       </View>
 
       <Show when={items().length === 0}>
-        <View class="grow flex-col items-center justify-center rounded-xl shadow bg-white border-slate-200">
+        <View debugName="EmptyState" class="grow flex-col items-center justify-center rounded-xl shadow bg-white border-slate-200">
           <Text class="text-sm text-slate-500">ALL CLEAR</Text>
         </View>
       </Show>

@@ -62,6 +62,7 @@ function Detail(props: { card: Card }) {
   return (
     <View
       ref={el}
+      debugName="Detail"
       style={{ translateY: 22 }}
       class="flex-row items-center gap-3 p-3 rounded-xl shadow-md bg-white border-slate-200"
     >
@@ -88,7 +89,7 @@ export default function Cards() {
   });
 
   return (
-    <View class="relative flex-col w-full h-full p-4 gap-3 bg-slate-50 overflow-hidden">
+    <View debugName="CardsScreen" class="relative flex-col w-full h-full p-4 gap-3 bg-slate-50 overflow-hidden">
       <View
         ref={streakA}
         class="absolute left-0 top-[58] w-64 h-1 rounded-full opacity-50 bg-gradient-to-r from-blue-300 to-transparent"
@@ -100,7 +101,7 @@ export default function Cards() {
         style={{ translateX: 0 }}
       />
 
-      <View class="flex-row items-end justify-between">
+      <View debugName="Header" class="flex-row items-end justify-between">
         <View class="flex-col">
           <Text class="text-xs text-blue-600 tracking-wide">POCKETJS SHOWCASE</Text>
           <Text class="text-2xl text-slate-950 font-bold">Feature Cards</Text>
@@ -108,7 +109,7 @@ export default function Cards() {
         <Text class="text-xs text-slate-500">3 MODULES</Text>
       </View>
 
-      <View class="flex-row gap-3">
+      <View debugName="CardRow" class="flex-row gap-3">
         {CARDS.map((card, i) => (
           <View
             class={card.cls}
@@ -122,7 +123,7 @@ export default function Cards() {
         ))}
       </View>
 
-      <View class="grow flex-col">
+      <View debugName="DetailPane" class="grow flex-col">
         <Show when={selected()} keyed>
           {(card) => <Detail card={card} />}
         </Show>

@@ -33,7 +33,7 @@ const TILE_POS = [
 
 function Caption(props: { label: string; light?: boolean }) {
   return (
-    <View class="absolute left-0 bottom-[4] w-full flex-row justify-center">
+    <View debugName="Caption" class="absolute left-0 bottom-[4] w-full flex-row justify-center">
       <Show
         when={props.light}
         fallback={<Text class="text-xs font-bold text-[#888] tracking-wide">{props.label}</Text>}
@@ -52,7 +52,7 @@ function Caption(props: { label: string; light?: boolean }) {
 function Menu53() {
   return (
     <>
-      <View class="absolute left-[10] top-[32] w-[38] h-[38] rounded-[19px] bg-white overflow-hidden animate-m53-menu-pill">
+      <View debugName="Menu53" class="absolute left-[10] top-[32] w-[38] h-[38] rounded-[19px] bg-white overflow-hidden animate-m53-menu-pill">
         <View class="absolute left-[34] top-0 w-[38] h-[38]">
           <View class="absolute left-[4] top-[4] w-[30] h-[30] rounded-full bg-[#f1f1f1] flex-row justify-center items-center animate-m53-menu-item-1">
             <Image class="w-[18] h-[18]" src="icon-text.svg" />
@@ -85,7 +85,7 @@ function Menu53() {
 function DPad53() {
   return (
     <>
-      <Image class="absolute left-[64] top-[34] w-[26] h-[11]" src="icon-base-down.svg" />
+      <Image debugName="DPad53" class="absolute left-[64] top-[34] w-[26] h-[11]" src="icon-base-down.svg" />
       <Image class="absolute left-[64] top-[59] w-[26] h-[11]" src="icon-base-up.svg" />
       <Image class="absolute left-[84] top-[39] w-[11] h-[26]" src="icon-base-left.svg" />
       <Image class="absolute left-[59] top-[39] w-[11] h-[26]" src="icon-base-right.svg" />
@@ -110,7 +110,7 @@ function DPad53() {
 function Share53() {
   return (
     <>
-      <View class="absolute left-[33] top-[34] w-[38] h-[38] rounded-[11px] bg-white animate-m53-share-a" />
+      <View debugName="Share53" class="absolute left-[33] top-[34] w-[38] h-[38] rounded-[11px] bg-white animate-m53-share-a" />
       <View class="absolute left-[83] top-[34] w-[38] h-[38] rounded-[11px] bg-white animate-m53-share-b" />
       <View class="absolute left-[33] top-[34] w-[38] h-[38] flex-row justify-center items-center">
         <Image class="w-[24] h-[24]" src="icon-x.svg" />
@@ -137,7 +137,7 @@ function Share53() {
 function Hover53() {
   return (
     <>
-      <View class="absolute left-[23] top-[34] w-[108] h-[32] rounded-[9px] bg-white shadow overflow-hidden flex-row animate-m53-hover-btn">
+      <View debugName="Hover53" class="absolute left-[23] top-[34] w-[108] h-[32] rounded-[9px] bg-white shadow overflow-hidden flex-row animate-m53-hover-btn">
         <View class="flex-1 h-full flex-row justify-center items-center">
           <Text class="text-sm font-bold text-[#777] tracking-wide">BUTTON</Text>
         </View>
@@ -155,7 +155,7 @@ function Hover53() {
 function Reload53() {
   return (
     <>
-      <View class="absolute left-[41] top-[30] w-[38] h-[38] bg-white arc-width-[6] animate-m53-arc-a" />
+      <View debugName="Reload53" class="absolute left-[41] top-[30] w-[38] h-[38] bg-white arc-width-[6] animate-m53-arc-a" />
       <View class="absolute left-[48] top-[37] w-[24] h-[24] flex-row justify-center items-center animate-m53-reload-icon-a">
         <Image class="w-[24] h-[24]" src="icon-reload.svg" />
       </View>
@@ -173,7 +173,7 @@ function Reload53() {
 function Keypad53() {
   return (
     <>
-      <View class="absolute left-[16] top-[32] w-[34] h-[34]">
+      <View debugName="Keypad53" class="absolute left-[16] top-[32] w-[34] h-[34]">
         <View class="absolute left-0 top-0 w-[34] h-[34] rounded-[10px] bg-[#e0e0e0] flex-row justify-center items-center animate-m53-key-1">
           <View class="animate-m53-key-digit-1">
             <Text class="text-lg font-bold text-[#777]">1</Text>
@@ -206,7 +206,7 @@ function Keypad53() {
 function Launch56() {
   return (
     <>
-      <View class="absolute left-[62] top-[31] w-[31] h-[31] overflow-hidden animate-m56-applaunch-box">
+      <View debugName="Launch56" class="absolute left-[62] top-[31] w-[31] h-[31] overflow-hidden animate-m56-applaunch-box">
         <View class="absolute inset-0 rounded-[11px] bg-[#888] animate-m56-applaunch-press" />
       </View>
       <Caption label="LAUNCH" />
@@ -217,7 +217,7 @@ function Launch56() {
 function Layout56() {
   return (
     <>
-      <View class="absolute left-[20] top-[12] w-[113] h-[73]">
+      <View debugName="Layout56" class="absolute left-[20] top-[12] w-[113] h-[73]">
         <View class="absolute inset-0 animate-m56-layout-p1">
           <View class="absolute left-0 top-0 h-full w-[58] rounded-[10px] bg-white animate-m56-layout-left" />
           <View class="absolute left-[55] top-0 h-full w-[58] animate-m56-layout-right">
@@ -239,7 +239,7 @@ function Layout56() {
 function Shutter56() {
   return (
     <>
-      <View class="absolute left-[20] top-0 w-[113] flex-col">
+      <View debugName="Shutter56" class="absolute left-[20] top-0 w-[113] flex-col">
         <View class="w-full h-[5] bg-[#bbb] animate-m56-shutter-1" />
         <View class="w-full h-[5] bg-[#ccc] animate-m56-shutter-2" />
         <View class="w-full h-[5] bg-[#bbb] animate-m56-shutter-3" />
@@ -256,7 +256,7 @@ function Shutter56() {
 function Cards56() {
   return (
     <>
-      <View class="absolute left-[56] top-[4] w-[42] h-[96]">
+      <View debugName="Cards56" class="absolute left-[56] top-[4] w-[42] h-[96]">
         <View class="absolute inset-0 origin-bottom animate-m56-fan-l2">
           <View class="absolute left-[4] top-0 w-[35] h-[54] rounded-[7px] bg-[#e0e0e0]" />
         </View>
@@ -281,7 +281,7 @@ function Cards56() {
 function Heave56() {
   return (
     <>
-      <View class="absolute left-[26] top-[34] w-[108] h-[29]">
+      <View debugName="Heave56" class="absolute left-[26] top-[34] w-[108] h-[29]">
         <View class="absolute left-0 top-0 w-[34] h-[29] rounded-[999px] bg-[#bbb] animate-m56-heave" />
       </View>
       <Caption label="HEAVE-HO" />
@@ -292,7 +292,7 @@ function Heave56() {
 function RingCorner(props: { cls1: string; cls2: string }) {
   return (
     <>
-      <View class={props.cls1} />
+      <View debugName="RingCorner" class={props.cls1} />
       <View class={props.cls2} />
     </>
   );
@@ -301,7 +301,7 @@ function RingCorner(props: { cls1: string; cls2: string }) {
 function Focus56() {
   return (
     <>
-      <View class="absolute left-[23] top-[32] w-[34] h-[34] flex-row justify-center items-center">
+      <View debugName="Focus56" class="absolute left-[23] top-[32] w-[34] h-[34] flex-row justify-center items-center">
         <Text class="text-xl font-bold text-[#888]">A</Text>
       </View>
       <View class="absolute left-[60] top-[32] w-[34] h-[34] flex-row justify-center items-center">
@@ -344,7 +344,7 @@ function Focus56() {
 function Reveal30() {
   return (
     <>
-      <View class="absolute left-[20] top-[12] w-[113] h-[71] bg-[#ccc] overflow-hidden shadow">
+      <View debugName="Reveal30" class="absolute left-[20] top-[12] w-[113] h-[71] bg-[#ccc] overflow-hidden shadow">
         <View class="absolute left-[83] top-[50] w-[14] h-[14] rounded-full bg-white animate-m30-reveal" />
         <View class="absolute inset-0 bg-white animate-m30-reveal-cap" />
         <View class="absolute left-0 top-0 w-full h-[50] flex-col justify-center items-center gap-1 animate-m30-reveal-logo">
@@ -376,7 +376,7 @@ const GRID30_CELLS = [
 function Grid30() {
   return (
     <>
-      <View class="absolute left-[20] top-[12] w-[113] h-[71]">
+      <View debugName="Grid30" class="absolute left-[20] top-[12] w-[113] h-[71]">
         {GRID30_CELLS.map((cls) => (
           <View class={cls} />
         ))}
@@ -398,7 +398,7 @@ function Grid30() {
 function Expand30() {
   return (
     <>
-      <View class="absolute left-[20] top-[12] w-[113] h-[71] rounded-[6px] bg-white border-[#ccc] border-2 overflow-hidden flex-col animate-m30-expand">
+      <View debugName="Expand30" class="absolute left-[20] top-[12] w-[113] h-[71] rounded-[6px] bg-white border-[#ccc] border-2 overflow-hidden flex-col animate-m30-expand">
         <View class="w-full h-[16] bg-[#ccc] flex-row items-center gap-1 pl-1">
           <View class="w-[6] h-[6] rounded-full bg-white" />
           <View class="w-[6] h-[6] rounded-full bg-white" />
@@ -417,7 +417,7 @@ function Expand30() {
 function Modal30() {
   return (
     <>
-      <View class="absolute left-[119] top-[17] w-[11] flex-col gap-2 rotate-140">
+      <View debugName="Modal30" class="absolute left-[119] top-[17] w-[11] flex-col gap-2 rotate-140">
         <View class="w-[11] h-[4] rounded-[999px] overflow-hidden rotate-28">
           <View class="w-full h-full rounded-[999px] bg-[#ccc] animate-m30-line-1" />
         </View>
@@ -447,7 +447,7 @@ function Modal30() {
 function Comments30() {
   return (
     <>
-      <View class="absolute left-[40] top-[26] w-[40] h-[28] rounded-[5px] bg-white shadow origin-bottom flex-col gap-1 p-1 animate-m30-comment-1">
+      <View debugName="Comments30" class="absolute left-[40] top-[26] w-[40] h-[28] rounded-[5px] bg-white shadow origin-bottom flex-col gap-1 p-1 animate-m30-comment-1">
         <View class="flex-row items-center gap-1">
           <View class="w-[6] h-[6] rounded-full bg-[#e0e0e0]" />
           <View class="w-[16] h-[3] rounded-[2px] bg-[#e0e0e0]" />
@@ -476,7 +476,7 @@ function Comments30() {
 function SlideIn30() {
   return (
     <>
-      <View class="absolute left-[59] top-[26] w-[73] h-[48] rotate-8">
+      <View debugName="SlideIn30" class="absolute left-[59] top-[26] w-[73] h-[48] rotate-8">
         <View class="w-full h-full rounded-[5px] bg-[#e0e0e0] animate-m30-slidein-back" />
       </View>
       <View class="absolute left-[54] top-[20] w-[73] h-[48]">
@@ -500,7 +500,7 @@ function SlideIn30() {
 function Door64() {
   return (
     <>
-      <View class="absolute left-[35] top-[14] w-[84] h-[62] bg-[#e0e0e0]">
+      <View debugName="Door64" class="absolute left-[35] top-[14] w-[84] h-[62] bg-[#e0e0e0]">
         <View class="absolute left-[15] top-[10] w-[54] h-[41] bg-[#999]" />
         <View class="absolute left-[15] top-[10] w-[54] h-[41] perspective-[460]">
           <View class="absolute inset-0 bg-[#aaa] translate-z-[-8]" />
@@ -521,7 +521,7 @@ function Door64() {
 function CubeFaces() {
   return (
     <>
-      <View class="absolute inset-0 bg-[#888] translate-z-[-14]" />
+      <View debugName="CubeFaces" class="absolute inset-0 bg-[#888] translate-z-[-14]" />
       <View class="absolute inset-0 bg-[#999] translate-y-[-14] rotate-x-[90]" />
       <View class="absolute inset-0 bg-[#bbb] translate-y-[14] rotate-x-[90]" />
       <View class="absolute inset-0 bg-[#aaa] translate-x-[14] rotate-y-[90]" />
@@ -535,7 +535,7 @@ function CubeFaces() {
 function Spin64() {
   return (
     <>
-      <View class="absolute inset-0 opacity-70 perspective-[190]">
+      <View debugName="Spin64" class="absolute inset-0 opacity-70 perspective-[190]">
         <View class="absolute left-[32] top-[36] w-[28] h-[28] rotate-x-[-40] translate-z-[-14] animate-m64-spin">
           <CubeFaces />
         </View>
@@ -552,7 +552,7 @@ function Spin64() {
 function PopOut64() {
   return (
     <>
-      <View class="absolute inset-0 opacity-70 perspective-[190]">
+      <View debugName="PopOut64" class="absolute inset-0 opacity-70 perspective-[190]">
         <View class="absolute left-[43] top-[10] w-[67] h-[67] rotate-x-[-45]">
           <View class="absolute left-[10] top-[26] w-[48] h-[48] rotate-x-[90] bg-[#ccc]" />
           <View class="absolute left-[17] top-[48] w-[34] h-[0] bg-[#aaa] animate-m64-rise" />
@@ -568,7 +568,7 @@ function PopOut64() {
 function Stretch64() {
   return (
     <>
-      <View class="absolute inset-0 opacity-70 perspective-[190]">
+      <View debugName="Stretch64" class="absolute inset-0 opacity-70 perspective-[190]">
         <View class="absolute left-[60] top-[33] w-[34] h-[34] rotate-x-[-30] translate-z-[-17] animate-m64-stretch">
           <View class="absolute inset-0 bg-[#888] translate-z-[-17]" />
           <View class="absolute inset-0 bg-[#bbb] translate-y-[-17] rotate-x-[90]" />
@@ -587,7 +587,7 @@ function Stretch64() {
 function Flip64() {
   return (
     <>
-      <View class="absolute left-[63] top-[14] w-[46] h-[56] perspective-[230]">
+      <View debugName="Flip64" class="absolute left-[63] top-[14] w-[46] h-[56] perspective-[230]">
         <View class="absolute inset-0 bg-[#ccc] origin-right animate-m64-flip-1" />
         <View class="absolute inset-0 bg-[#aaa] origin-right animate-m64-flip-2" />
         <View class="absolute inset-0 bg-[#888] origin-right animate-m64-flip-3" />
@@ -602,7 +602,7 @@ function Flip64() {
 function Room64() {
   return (
     <>
-      <View class="absolute inset-0 perspective-[280]">
+      <View debugName="Room64" class="absolute inset-0 perspective-[280]">
         <View class="absolute inset-0 translate-z-[-77] animate-m64-room">
           <View class="absolute inset-0 bg-[#ccc] translate-z-[77]">
             <Image class="absolute left-[51] top-[32] w-[52] h-[52]" src="letter-a.svg" />
@@ -656,8 +656,8 @@ export default function Motions() {
   onButtonPress(BTN.RIGHT | BTN.RTRIGGER, () => setIndex((i) => (i + 1) % PAGES.length));
   onButtonPress(BTN.LEFT | BTN.LTRIGGER, () => setIndex((i) => (i + PAGES.length - 1) % PAGES.length));
   return (
-    <View class="w-full h-full bg-[#191919]">
-      <View class="absolute left-0 top-[1] w-full flex-row justify-between px-[8]">
+    <View debugName="MotionsScreen" class="w-full h-full bg-[#191919]">
+      <View debugName="Header" class="absolute left-0 top-[1] w-full flex-row justify-between px-[8]">
         <Text class="text-xs font-bold text-[#888] tracking-wide">{page().title}</Text>
         <Text class="text-xs font-bold text-[#666]">{`${index() + 1}/4 · L/R`}</Text>
       </View>
@@ -665,14 +665,14 @@ export default function Motions() {
         {(p) => (
           <>
             {p.tiles.map((Tile, i) => (
-              <View class={TILE_POS[i]}>
+              <View debugName="Tile" class={TILE_POS[i]}>
                 <Tile />
               </View>
             ))}
           </>
         )}
       </Show>
-      <View class="absolute left-[8] bottom-[1] flex-row">
+      <View debugName="Footer" class="absolute left-[8] bottom-[1] flex-row">
         <Text class="text-xs text-[#555]">{page().source}</Text>
       </View>
     </View>

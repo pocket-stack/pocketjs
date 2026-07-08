@@ -142,6 +142,7 @@ function Toggle(props: { label: string; value: boolean; theme: ThemeOption; onTo
   });
   return (
     <View
+      debugName="Toggle"
       class={props.theme.rowCls}
       focusable
       onPress={props.onToggle}
@@ -211,6 +212,7 @@ function Brightness(props: { theme: ThemeOption }) {
 
   return (
     <View
+      debugName="Brightness"
       class={props.theme.rowCls}
       focusable
       onPress={() => setLevel(level() >= 5 ? 1 : level() + 1)}
@@ -246,7 +248,7 @@ function Brightness(props: { theme: ThemeOption }) {
 
 function ThemeRow(props: { value: ThemeName; theme: ThemeOption; onPick: (t: ThemeName) => void }) {
   return (
-    <View class={props.theme.panelCls}>
+    <View debugName="ThemeRow" class={props.theme.panelCls}>
       <Text class={props.theme.rowLabelCls}>THEME</Text>
       <View class="flex-row gap-2">
         {THEMES.map((t) => (
@@ -276,8 +278,8 @@ export default function Settings() {
   const currentTheme = () => themeByName(theme());
 
   return (
-    <View class={currentTheme().pageCls}>
-      <View class="flex-row items-end justify-between">
+    <View debugName="SettingsScreen" class={currentTheme().pageCls}>
+      <View debugName="Header" class="flex-row items-end justify-between">
         <View class="flex-col">
           <Text class={currentTheme().eyebrowCls}>POCKETJS SHOWCASE</Text>
           <Text class={currentTheme().titleCls}>Settings</Text>
@@ -285,7 +287,7 @@ export default function Settings() {
         <Text class={currentTheme().optionsCls}>4 OPTIONS</Text>
       </View>
 
-      <View class="flex-col gap-2">
+      <View debugName="OptionsList" class="flex-col gap-2">
         <Toggle label="SOUND EFFECTS" value={sfx()} theme={currentTheme()} onToggle={() => setSfx(!sfx())} />
         <Toggle label="VIBRATION" value={vibration()} theme={currentTheme()} onToggle={() => setVibration(!vibration())} />
         <Brightness theme={currentTheme()} />

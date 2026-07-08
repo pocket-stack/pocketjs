@@ -76,6 +76,7 @@
     "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/svg-bake.test.ts test/devtools.test.ts",
     "tape": "bun scripts/tape.ts",
     "tape:check": "bun scripts/tape.ts replay hero-main test/tapes/hero-main.tape.json --assert test/tapes/hero-main.hashes.json",
+    "devtools": "bun scripts/devtools.ts",
     "devtools:psp": "bun scripts/devtools-psp.ts",
     "test:tailwind": "bun test test/tailwind.test.ts",
     "contract": "bun test/contract.ts",

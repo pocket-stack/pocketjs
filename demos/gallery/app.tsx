@@ -87,7 +87,7 @@ const TILE_FRAME =
 function Loading(props: { title: string }) {
   const frame = createSpriteAnimation(SPINNER_FRAMES, { frameStep: 3 });
   return (
-    <View class="flex-col items-center justify-center gap-2 grow">
+    <View debugName="Loading" class="flex-col items-center justify-center gap-2 grow">
       <Image class="w-9 h-9" src={frame()} />
       <Text class="text-xs text-slate-300 tracking-wide">LOADING {props.title}</Text>
     </View>
@@ -109,7 +109,7 @@ function TileGrid(props: {
     if (props.current() === props.page) focusNode(refs[0] ?? null);
   });
   return (
-    <Grid active columns={3} gap={8} class="flex-row flex-wrap items-start justify-center w-[264]">
+    <Grid debugName="TileGrid" active columns={3} gap={8} class="flex-row flex-wrap items-start justify-center w-[264]">
       {srcs.map((src, k) => (
         <View class="flex-col items-center gap-1 w-[78]">
           <View
@@ -137,8 +137,8 @@ function Page(props: {
 }) {
   const isCurrent = () => props.current() === props.index;
   return (
-    <View class={PAGE_BG[props.index]}>
-      <View class="w-full flex-row items-end justify-between px-4 pt-2 pb-1">
+    <View debugName="Page" class={PAGE_BG[props.index]}>
+      <View debugName="PageHeader" class="w-full flex-row items-end justify-between px-4 pt-2 pb-1">
         <View class="flex-col">
           <Text class="text-xs text-slate-300 tracking-wide">{PAGE_SUB[props.index]}</Text>
           <Text class="text-xl text-white font-bold">{PAGE_TITLE[props.index]}</Text>
@@ -169,7 +169,7 @@ export default function GalleryDemo() {
   const [viewing, setViewing] = createSignal<string | null>(null);
 
   return (
-    <Screen class="relative w-full h-full bg-slate-950 overflow-hidden">
+    <Screen debugName="GalleryScreen" class="relative w-full h-full bg-slate-950 overflow-hidden">
       <Gallery
         count={GALLERY_PAGES}
         page={page}
@@ -182,8 +182,8 @@ export default function GalleryDemo() {
         renderPage={(i) => <Page index={i} current={page} onSelect={setViewing} />}
       />
 
-      <ActionBar class="absolute left-3 right-3 bottom-2 flex-row items-center justify-between px-3 py-1 rounded-lg shadow-md bg-slate-900 border-slate-700">
-        <View class="flex-row items-center gap-2">
+      <ActionBar debugName="HintBar" class="absolute left-3 right-3 bottom-2 flex-row items-center justify-between px-3 py-1 rounded-lg shadow-md bg-slate-900 border-slate-700">
+        <View debugName="PageDots" class="flex-row items-center gap-2">
           {Array.from({ length: GALLERY_PAGES }).map((_, i) => (
             <View
               class={

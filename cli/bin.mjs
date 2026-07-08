@@ -5,7 +5,7 @@
 //   pocketjs doctor          diagnose the local toolchain
 //   pocketjs setup [--yes]   install what doctor found missing (best effort)
 //   pocketjs create <name>   scaffold a demo app inside a PocketJS checkout
-//   pocketjs dev|build|psp|hw|psplink [...args]
+//   pocketjs dev|build|psp|hw|psplink|devtools|tape [...args]
 //                            passthrough to the checkout's bun scripts
 //
 // The PSP toolchain pin below MUST match scripts/psp.ts in the framework
@@ -262,7 +262,7 @@ function create(name) {
 // passthrough
 // ---------------------------------------------------------------------------
 
-const SCRIPTS = { dev: "scripts/dev.ts", build: "scripts/build.ts", psp: "scripts/psp.ts", hw: "scripts/hw.ts", psplink: "scripts/psplink.ts" };
+const SCRIPTS = { dev: "scripts/dev.ts", build: "scripts/build.ts", psp: "scripts/psp.ts", hw: "scripts/hw.ts", psplink: "scripts/psplink.ts", devtools: "scripts/devtools.ts", tape: "scripts/tape.ts" };
 
 function passthrough(cmd, args) {
   const root = findCheckout();
@@ -293,6 +293,8 @@ const HELP = `${C.bold("pocketjs")} — the PocketJS toolchain CLI
   pocketjs psp <app>         build the PSP EBOOT
   pocketjs hw <app>          build + run on a real PSP over PSPLINK
   pocketjs psplink           interactive multi-app switcher on a real PSP
+  pocketjs devtools [app]    DevTools panel + USB debug bridge (one command)
+  pocketjs tape <cmd> …      record / replay / inspect input tapes headlessly
 `;
 
 switch (cmd) {
@@ -310,6 +312,8 @@ switch (cmd) {
   case "psp":
   case "hw":
   case "psplink":
+  case "devtools":
+  case "tape":
     passthrough(cmd, rest);
     break;
   case "--version":

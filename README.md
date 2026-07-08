@@ -128,10 +128,14 @@ input-tape flight recorder — sessions replay byte-exactly because the whole
 runtime is fixed-dt deterministic.
 
 ```sh
-bun run dev                           # panel at http://127.0.0.1:8130/devtools
-bun run devtools:psp                  # bridge a PSPLINK-connected PSP into the hub
+bun run devtools                      # panel + hub + USB bridge, one process
+bun run devtools cards                # + build, link and launch cards on a real PSP
 bun run tape replay <app> <tape.json> --png 60   # render any frame headlessly
 bun run tape:check                    # session-golden replay regression
 ```
+
+On-demand device screenshots (📷 in the panel) work on every host — on real
+hardware the raw VRAM rides the usbhostfs mount and the bridge encodes the
+PNG desktop-side.
 
 Fonts: Inter (OFL), vendored in `assets/fonts/`.

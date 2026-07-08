@@ -14,9 +14,11 @@ pocketjs dev my-app-main   # build + serve in the browser
 pocketjs psp my-app        # build the PSP EBOOT
 pocketjs hw my-app         # build + run on a real PSP over PSPLINK
 pocketjs psplink           # interactive multi-app switcher on a real PSP
+pocketjs devtools my-app   # DevTools panel + USB debug bridge, one command
+pocketjs tape replay …     # record / replay / inspect input tapes headlessly
 ```
 
-`create`, `dev`, `build`, `psp`, `hw` and `psplink` run inside a PocketJS
+`create`, `dev`, `build`, `psp`, `hw`, `psplink`, `devtools` and `tape` run inside a PocketJS
 checkout (the CLI finds it by walking up from the current directory):
 
 ```sh

@@ -135,7 +135,21 @@ Component tree (hover → `inspect` → the region lights up **on the device
 screen**, PSP included; click → pin + details: type, `debugName`, classes,
 world rect) · pause/step/resume · tape strip (input activity per frame, click
 → seek on browser hosts) · record/export/import-replay · REPL with log/error
-stream. Served at `http://127.0.0.1:8130/devtools`.
+stream · 📷 on-demand screenshot (`{t:"screenshot"}` → browser hosts answer
+with a canvas PNG; the PSP dumps raw VRAM to `pocketjs-dbg/shot.raw` +
+`{t:"screenshotRaw"}`, and the bridge converts to the `{t:"screenshot",
+frame, data}` the panel expects — pixels ride usbhostfs, not the JSON
+channel). Served at `http://127.0.0.1:8130/devtools`.
+
+### 6. One command (`bun run devtools [app]`)
+
+`scripts/devtools.ts` owns the whole loop in one process: the dev server
+(panel + hub), the mailbox bridge, and — given an app — the PSP session
+itself (build the EBOOT, serve `host0:` over usbhostfs, `ldstart` via
+pspsh). An already-running `bun psplink` / `bun run hw` session is detected
+(pgrep + ps args) and bridged into instead of fought for the cable.
+Shortcuts: `o` open panel · `r` rebuild + relaunch · `q` quit. Also exposed
+as `pocketjs devtools` in @pocketjs/cli.
 
 ## The agent story (why this is core infrastructure)
 
