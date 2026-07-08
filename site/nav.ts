@@ -54,6 +54,14 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "shipping-openstrike",
+    title: "Shipping OpenStrike: a Counter-Strike-Shaped FPS on a 2004 Handheld",
+    date: "2026-07-09",
+    description:
+      "OpenStrike is out — classic BSP maps, bots, tracers, and a Solid JSX HUD holding a locked 60 FPS on a real Sony PSP: 333 MHz, 32 MB, no shaders. A field guide for JavaScript developers to how it works: rules and HUD in TypeScript on QuickJS, a bundler for 1999's geometry, and a 16.7 ms budget with receipts.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "time-travel-devtools",
     title: "Time Travel over a USB Cable: PocketJS DevTools",
     date: "2026-07-08",
