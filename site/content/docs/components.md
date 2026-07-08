@@ -203,6 +203,7 @@ own wrapper components.
 | `onPress`   |   ✓    |        |         | `() => void`                               | Fires when focused and confirmed. |
 | `ref`       |   ✓    |   ✓    |   ✓     | `(node: NodeMirror) => void \| NodeMirror` | Handle to the mirror node. |
 | `src`       |        |        |   ✓     | `string`                                   | Baked texture name. |
+| `debugName` |   ✓    |   ✓    |   ✓     | `string`                                   | Semantic name in the [DevTools](/docs/devtools/) component tree. Mirror-only: zero pixel/native cost. |
 
 ### `style` vs `class`
 
@@ -398,6 +399,7 @@ compose `View` with focus and overlay behavior:
 | `Portal`         | Renders children into the overlay root.                  |
 | `Modal`          | Backdrop + focus-trapped panel over the overlay.         |
 | `ActionBar`      | Docked bottom bar in the overlay layer.                  |
+| `Named`          | Tags its subtree with a [DevTools](/docs/devtools/) name (`<Named name="MessageCard">…`); renders no node. |
 
 These are documented in full — with focus semantics and examples — on the
 [App shell](/docs/app-shell/) and [Input & focus](/docs/input-focus/) pages.

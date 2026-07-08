@@ -156,7 +156,10 @@ Two literals that produce byte‑identical records share a single styleId, so
 compiler emits:
 
 - **`styles.bin`** — the encoded style table, packed into the pak as
-  `ui:styles`.
+  `ui:styles`. Any `theme.keyframes` / `theme.animation` entries referenced by
+  an `animate-<name>` class are baked into it too, as frame-precise
+  per-property segment timelines (the ANIM TABLE) — see
+  [Animation → baked keyframe timelines](/docs/animation/#baked-keyframe-timelines).
 - **`src/styles.generated.ts`** — a TypeScript module the renderer imports,
   mapping each source class literal to its styleId, plus the font‑slot metadata
   and record count:

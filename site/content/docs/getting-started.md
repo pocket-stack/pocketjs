@@ -41,8 +41,9 @@ pocket setup    # installs whatever doctor flagged as missing
 ```
 
 It also wraps the day-to-day commands — `pocket create <name>` scaffolds a
-demo app, and `pocket dev|build|psp|hw|psplink` run the build scripts from
-anywhere inside the checkout.
+demo app, `pocket dev|build|psp|hw|psplink` run the build scripts from
+anywhere inside the checkout, and `pocket devtools [app]` opens the
+[DevTools](/docs/devtools/) panel with the USB debug bridge.
 
 That pulls `solid-js`, Vue Vapor dependencies, and the build-time tooling (the
 Babel + Tailwind-subset compiler, the font baker, and the dev host). There is no

@@ -5,7 +5,7 @@ Every public export of `@pocketjs/framework`, grouped by import path. Signatures
 | Import path | Exports |
 | --- | --- |
 | `@pocketjs/framework` | `mount`, `render`, host/runtime helpers, types |
-| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar`, `Grid`, `Lazy`, `Gallery` |
+| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar`, `Named`, `Grid`, `Lazy`, `Gallery` |
 | `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
 | `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
 | `@pocketjs/framework/animation` | `animate`, `spring`, `cancelAnim` |
@@ -179,10 +179,11 @@ The host primitives, wrapped React Native-style. `View` is the flex container/bo
 | `focusable` | `boolean` | Joins d-pad focus traversal. |
 | `ref` | `(node: NodeMirror) => void \| NodeMirror` | Node handle. |
 | `children` | `JSX.Element` | Child nodes. |
+| `debugName` | `string` | Semantic name in the [DevTools](/docs/devtools/) tree (mirror-only, zero native cost). |
 
-**`TextProps`** — `class`, `style`, `ref`, `children`.
-**`ImageProps`** — `class`, `src` (`string`), `style`, `ref`.
-**`SpriteProps`** — `class`, `sprite` (`string` — a `ui:sprite.<name>` atlas key), `style`, `ref`.
+**`TextProps`** — `class`, `style`, `ref`, `children`, `debugName`.
+**`ImageProps`** — `class`, `src` (`string`), `style`, `ref`, `debugName`.
+**`SpriteProps`** — `class`, `sprite` (`string` — a `ui:sprite.<name>` atlas key), `style`, `ref`, `debugName`.
 
 `Sprite` is a native animated primitive: its atlas (a pow2 texture holding a grid of frames) is baked into the pak, and the Rust core cycles the frame cells per vblank — deterministic and with **zero per-frame JS**. It auto-plays from the first frame the moment it is displayed, so a sprite revealed by paging or a `Show`/`Lazy` starts animating on its own. Bake atlases by listing them in a demo's `sprites.json` (`{ "<atlas>.png": { cols, rows, frames, step } }`); `step` is vblanks per frame (fps = 60/step). See `demos/gallery` (its covers are shader-baked animated sprites).
 
@@ -260,6 +261,16 @@ function Modal(props: ModalProps): JSX.Element
 ```
 
 A portalled backdrop + focus-scoped panel. While `open`, it blocks background button handlers (`pushButtonHandlerBlock`) and fades/scales the panel in. `class` styles the centering frame; `panelClass` styles the panel.
+
+### `Named`
+
+```ts
+function Named(props: { name: string; children?: JSX.Element }): JSX.Element
+```
+
+Tags the host nodes it renders with a semantic name for the
+[DevTools](/docs/devtools/) component tree (`<Named name="MessageCard"><Card/></Named>`).
+Renders no node of its own; a child's explicit `debugName` prop wins.
 
 ### `ActionBar`
 

@@ -224,9 +224,27 @@ motion.
 | `scale-x-N` | X scale, `N/100` |
 | `scale-y-N` | Y scale, `N/100` |
 | `rotate-N` | rotation in degrees (e.g. `rotate-45`) |
+| `rotate-x-[N]` | 3D rotation about X, degrees (bracket-only, negatives ok) |
+| `rotate-y-[N]` | 3D rotation about Y, degrees (bracket-only, negatives ok) |
+| `translate-z-[N]` | 3D depth translation, px (bracket-only, negatives ok) |
+| `perspective-[N]` | makes the node a 3D context root; distance in px |
 
 `scale-*` and `rotate-*` take plain numbers only (no bracket syntax, no
-negatives).
+negatives); the 3D utilities are bracket-only. A `perspective-[N]` root
+projects its subtree through that distance and painter-sorts the result —
+see [Animation → 3D transforms](/docs/animation/#3d-transforms).
+
+## Arc
+
+`arc-*` strokes a round-capped annular sector from the node's background
+color — a native stroke-arc primitive (all three animatable via timelines
+and `animate()`):
+
+| Utility | Effect |
+|---|---|
+| `arc-start-[N]` | start angle, degrees |
+| `arc-sweep-[N]` | sweep angle, degrees |
+| `arc-width-[N]` | stroke width, px |
 
 ## Motion / transition
 
@@ -240,7 +258,9 @@ and interpolate the animatable properties in the mask.
 | `transition-all` | animate all animatable properties |
 | `transition-colors` | animate bg / text / border / gradient colors |
 | `transition-opacity` | animate opacity |
-| `transition-transform` | animate translate / scale / rotate |
+| `transition-transform` | animate translate / scale / rotate (2D only — 3D/arc props exceed the u32 transition mask; use timelines or `animate()`) |
+| `animate-<name>` | apply a baked keyframe timeline from `theme.animation` (built-ins: `spin`, `ping`, `pulse`, `bounce`) |
+| `animate-loop-[Nms]` \| `[Ns]` | whole-choreography loop period (needs `animate-<name>` in the same literal) |
 | `duration-N` | duration in ms (0–65535) |
 | `delay-N` | delay in ms (0–65535) |
 | `ease-linear` \| `-in` \| `-out` \| `-in-out` \| `-spring` \| `-out-back` | easing curve |

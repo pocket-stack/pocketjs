@@ -600,6 +600,20 @@ async function setupMarkdown(): Promise<Highlight> {
         const text = token.text ?? "";
         return highlight(text, token.lang ?? "");
       },
+      // GitHub-style heading slugs so in-page anchors (#3d-transforms) and
+      // deep links into docs sections work.
+      heading(token: { tokens?: unknown[]; depth?: number; text?: string }) {
+        const depth = token.depth ?? 1;
+        const html = this.parser!.parseInline(token.tokens as never);
+        const slug = (token.text ?? "")
+          .toLowerCase()
+          .replace(/<[^>]+>/g, "")
+          .replace(/[`*_]/g, "")
+          .replace(/[^a-z0-9\s-]/g, "")
+          .trim()
+          .replace(/\s+/g, "-");
+        return `<h${depth} id="${slug}">${html}</h${depth}>\n`;
+      },
     },
   });
   return highlight;
