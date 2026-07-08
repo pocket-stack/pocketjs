@@ -379,7 +379,13 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
     // Frame clear: uncovered framebuffer regions must not show stale VRAM.
     sys::sceGuClearColor(0xff00_0000);
     sys::sceGuClear(ClearBuffer::COLOR_BUFFER_BIT);
+    render_over(ui, words);
+}
 
+/// Render the DrawList WITHOUT clearing — the overlay-pass variant for game
+/// runtimes compositing the 2D UI over an already-drawn 3D frame (the sceGu
+/// analogue of pocket-ui-wgpu's `LoadOp::Load` mode).
+pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
     // Pass state: alpha blending on for everything (opacity, coverage text
     // cells with alpha colors, texture alpha).
     sys::sceGuEnable(GuState::Blend);
