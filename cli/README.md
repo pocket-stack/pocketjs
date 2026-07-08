@@ -7,15 +7,15 @@ build/run passthrough.
 ```sh
 npm install -g @pocketjs/cli
 
-pocketjs doctor            # diagnose bun / Rust / PSP toolchain / PSPLINK
-pocketjs setup             # install what doctor found missing
-pocketjs create my-app     # scaffold demos/my-app in a PocketJS checkout
-pocketjs dev my-app-main   # build + serve in the browser
-pocketjs psp my-app        # build the PSP EBOOT
-pocketjs hw my-app         # build + run on a real PSP over PSPLINK
-pocketjs psplink           # interactive multi-app switcher on a real PSP
-pocketjs devtools my-app   # DevTools panel + USB debug bridge, one command
-pocketjs tape replay …     # record / replay / inspect input tapes headlessly
+pocket doctor            # diagnose bun / Rust / PSP toolchain / PSPLINK
+pocket setup             # install what doctor found missing
+pocket create my-app     # scaffold demos/my-app in a PocketJS checkout
+pocket dev my-app-main   # build + serve in the browser
+pocket psp my-app        # build the PSP EBOOT
+pocket hw my-app         # build + run on a real PSP over PSPLINK
+pocket psplink           # interactive multi-app switcher on a real PSP
+pocket devtools my-app   # DevTools panel + USB debug bridge, one command
+pocket tape replay …     # record / replay / inspect input tapes headlessly
 ```
 
 `create`, `dev`, `build`, `psp`, `hw`, `psplink`, `devtools` and `tape` run inside a PocketJS
@@ -24,7 +24,7 @@ checkout (the CLI finds it by walking up from the current directory):
 ```sh
 git clone https://github.com/pocket-stack/pocketjs
 cd pocketjs && bun install
-pocketjs doctor
+pocket doctor
 ```
 
 Only Node ≥ 18 is required for the CLI itself; everything it diagnoses or

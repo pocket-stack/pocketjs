@@ -1,11 +1,11 @@
 {
   "name": "@pocketjs/cli",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "The PocketJS toolchain CLI — doctor/setup for the bun + Rust + PSP toolchain, app scaffolding, and build/run passthrough.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "pocketjs": "./bin.mjs"
+    "pocket": "./bin.mjs"
   },
   "files": [
     "bin.mjs",

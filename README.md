@@ -39,10 +39,10 @@ bun scripts/build.ts hero             # -> dist/hero.js + dist/hero.pak
 bun scripts/build.ts hero-vue-vapor-main --framework=vue-vapor
 ```
 
-Or drive everything through the [`pocketjs` CLI](https://www.npmjs.com/package/@pocketjs/cli):
-`npm i -g @pocketjs/cli`, then `pocketjs doctor` checks the bun / Rust / PSP
-toolchain (`pocketjs setup` installs what's missing), `pocketjs create <name>`
-scaffolds an app, and `pocketjs dev|build|psp|hw|psplink` wrap the scripts
+Or drive everything through the [`pocket` CLI](https://www.npmjs.com/package/@pocketjs/cli):
+`npm i -g @pocketjs/cli`, then `pocket doctor` checks the bun / Rust / PSP
+toolchain (`pocket setup` installs what's missing), `pocket create <name>`
+scaffolds an app, and `pocket dev|build|psp|hw|psplink` wrap the scripts
 below.
 
 The build is two-pass: pass 1 babel-transforms every module reachable from the

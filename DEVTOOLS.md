@@ -149,7 +149,7 @@ itself (build the EBOOT, serve `host0:` over usbhostfs, `ldstart` via
 pspsh). An already-running `bun psplink` / `bun run hw` session is detected
 (pgrep + ps args) and bridged into instead of fought for the cable.
 Shortcuts: `o` open panel · `r` rebuild + relaunch · `q` quit. Also exposed
-as `pocketjs devtools` in @pocketjs/cli.
+as `pocket devtools` in @pocketjs/cli.
 
 ## The agent story (why this is core infrastructure)
 

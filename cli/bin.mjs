@@ -2,10 +2,10 @@
 // @pocketjs/cli — the PocketJS toolchain CLI (flutter/react-native doctor
 // style). Zero dependencies; plain Node >= 18.
 //
-//   pocketjs doctor          diagnose the local toolchain
-//   pocketjs setup [--yes]   install what doctor found missing (best effort)
-//   pocketjs create <name>   scaffold a demo app inside a PocketJS checkout
-//   pocketjs dev|build|psp|hw|psplink|devtools|tape [...args]
+//   pocket doctor          diagnose the local toolchain
+//   pocket setup [--yes]   install what doctor found missing (best effort)
+//   pocket create <name>   scaffold a demo app inside a PocketJS checkout
+//   pocket dev|build|psp|hw|psplink|devtools|tape [...args]
 //                            passthrough to the checkout's bun scripts
 //
 // The PSP toolchain pin below MUST match scripts/psp.ts in the framework
@@ -155,7 +155,7 @@ function doctor() {
     "\n" +
       (missing === 0
         ? C.ok("Everything looks good.")
-        : C.warn(`${missing} issue(s) found — run ${C.bold("pocketjs setup")} to fix the installable ones.`)),
+        : C.warn(`${missing} issue(s) found — run ${C.bold("pocket setup")} to fix the installable ones.`)),
   );
   process.exitCode = 0;
 }
@@ -191,14 +191,14 @@ async function setup() {
     console.log("\n" + C.bold("Manual steps remaining:"));
     for (const it of manual) console.log("  " + C.warn(it.name) + "\n      " + C.dim(it.hint ?? ""));
   }
-  console.log("\nRe-run " + C.bold("pocketjs doctor") + " to verify.");
+  console.log("\nRe-run " + C.bold("pocket doctor") + " to verify.");
 }
 
 // ---------------------------------------------------------------------------
 // create
 // ---------------------------------------------------------------------------
 
-const APP_TSX = (title) => `// ${title} — scaffolded by \`pocketjs create\`.
+const APP_TSX = (title) => `// ${title} — scaffolded by \`pocket create\`.
 import { createSignal } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { onButtonPress } from "@pocketjs/framework/lifecycle";
@@ -235,7 +235,7 @@ export default definePocketConfig({
 
 function create(name) {
   if (!name || !/^[a-z][a-z0-9-]*$/.test(name)) {
-    console.error(C.bad("usage: pocketjs create <kebab-case-name>"));
+    console.error(C.bad("usage: pocket create <kebab-case-name>"));
     process.exit(1);
   }
   const root = findCheckout();
@@ -254,8 +254,8 @@ function create(name) {
   writeFileSync(join(dir, "main.tsx"), MAIN_TSX(title));
   writeFileSync(join(dir, "pocket.config.ts"), CONFIG_TS);
   console.log(C.ok(`demos/${name} scaffolded`));
-  console.log(C.dim(`  pocketjs dev ${name}-main     # browser at http://127.0.0.1:8130/`));
-  console.log(C.dim(`  pocketjs psp ${name} --release  # PSP EBOOT`));
+  console.log(C.dim(`  pocket dev ${name}-main     # browser at http://127.0.0.1:8130/`));
+  console.log(C.dim(`  pocket psp ${name} --release  # PSP EBOOT`));
 }
 
 // ---------------------------------------------------------------------------
@@ -267,11 +267,11 @@ const SCRIPTS = { dev: "scripts/dev.ts", build: "scripts/build.ts", psp: "script
 function passthrough(cmd, args) {
   const root = findCheckout();
   if (!root) {
-    console.error(C.bad(`\`pocketjs ${cmd}\` must run inside a PocketJS checkout`));
+    console.error(C.bad(`\`pocket ${cmd}\` must run inside a PocketJS checkout`));
     process.exit(1);
   }
   if (!which("bun")) {
-    console.error(C.bad("bun not found — run `pocketjs setup`"));
+    console.error(C.bad("bun not found — run `pocket setup`"));
     process.exit(1);
   }
   const r = spawnSync("bun", [join(root, SCRIPTS[cmd]), ...args], { stdio: "inherit", cwd: root });
@@ -283,18 +283,18 @@ function passthrough(cmd, args) {
 // ---------------------------------------------------------------------------
 
 const [, , cmd, ...rest] = process.argv;
-const HELP = `${C.bold("pocketjs")} — the PocketJS toolchain CLI
+const HELP = `${C.bold("pocket")} — the PocketJS toolchain CLI
 
-  pocketjs doctor            diagnose bun / Rust / PSP toolchain / PSPLINK
-  pocketjs setup [--yes]     install what doctor found missing
-  pocketjs create <name>     scaffold demos/<name> in a PocketJS checkout
-  pocketjs dev <app>-main    build + serve an app in the browser
-  pocketjs build <app>       build an app bundle + pak
-  pocketjs psp <app>         build the PSP EBOOT
-  pocketjs hw <app>          build + run on a real PSP over PSPLINK
-  pocketjs psplink           interactive multi-app switcher on a real PSP
-  pocketjs devtools [app]    DevTools panel + USB debug bridge (one command)
-  pocketjs tape <cmd> …      record / replay / inspect input tapes headlessly
+  pocket doctor            diagnose bun / Rust / PSP toolchain / PSPLINK
+  pocket setup [--yes]     install what doctor found missing
+  pocket create <name>     scaffold demos/<name> in a PocketJS checkout
+  pocket dev <app>-main    build + serve an app in the browser
+  pocket build <app>       build an app bundle + pak
+  pocket psp <app>         build the PSP EBOOT
+  pocket hw <app>          build + run on a real PSP over PSPLINK
+  pocket psplink           interactive multi-app switcher on a real PSP
+  pocket devtools [app]    DevTools panel + USB debug bridge (one command)
+  pocket tape <cmd> …      record / replay / inspect input tapes headlessly
 `;
 
 switch (cmd) {
