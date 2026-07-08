@@ -214,8 +214,16 @@ for (const spec of SPECS) {
   // 2. One headless run; frames land in ms0:/dc_cap (stale files persist
   //    across runs — clean first). Generous timeout: QuickJS evaluating the
   //    bundle takes ~8-10 emulated seconds before frame 0.
+  //    PPSSPP maps the EBOOT's own directory as host0:, so a DevTools
+  //    mailbox left in the target dir by a hardware session (bun devtools)
+  //    would activate mid-golden and could feed the app stale commands —
+  //    remove it for determinism.
   console.log("# PPSSPPHeadless (software renderer) ...");
   rmSync(dccap, { recursive: true, force: true });
+  rmSync(`${pspUiDir}native/target/mipsel-sony-psp/debug/pocketjs-dbg`, {
+    recursive: true,
+    force: true,
+  });
   const timeout = Number(process.env.E2E_PPSSPP_TIMEOUT || 45);
   const run =
     await $`${headless} --graphics=software --timeout=${timeout} ${eboot}`.cwd("/tmp").nothrow().quiet();

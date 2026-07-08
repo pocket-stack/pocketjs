@@ -65,10 +65,12 @@ usbhostfs, converted by the bridge — pixels never cross the JSON channel).
   launching the app, or relaunch after. No PSPLINK → zero cost.
 - Shim polls every 10 frames on PSP (~166 ms hover latency); every frame on
   other hosts.
-- `console.log` works on PSP only while a transport is attached (prelude
-  stubs it otherwise).
-- PPSSPP GUI works via the `ms0:` fallback: point `--dir` at the memstick
-  root.
+- `console.log` on PSP: the shim installs a safe no-op console at mount
+  (QuickJS has none) and upgrades it to a channel mirror when a transport
+  attaches.
+- PPSSPP finds the mailbox via `host0:` = the EBOOT's own directory (so
+  `bun run devtools <app>` bridging the target dir works for PPSSPP loading
+  that EBOOT too); the `ms0:` fallback also exists (memstick root).
 
 ## Protocol quick reference (JSON lines)
 
@@ -106,7 +108,11 @@ Device→panel: `hello{app,host,frame}` · `tree{root:{i,t,n,c,x,k}}` ·
 - The GE writes framebuffer alpha as 0: any raw-framebuffer consumer must
   force alpha opaque (bridge `convertShot`, e2e's `-alpha off`) or the PNG
   renders fully transparent.
-- The native screenshot path is testable without hardware: pre-create the
-  `~/.ppsspp/pocketjs-dbg` mailbox (ms0: fallback), run PPSSPPHeadless with
-  a timeout, append `{"t":"screenshot"}` to in.jsonl mid-run, then check
-  shot.raw + out.jsonl.
+- The whole device-side path (eval, console, screenshot) is testable
+  without hardware, at host0: fidelity: **PPSSPP maps the EBOOT's own
+  directory as `host0:`**, so a mailbox in
+  `native/target/mipsel-sony-psp/debug/pocketjs-dbg/` is found by the SAME
+  probe hardware uses. Create enable/in/out there, run PPSSPPHeadless with
+  a timeout, append commands to in.jsonl mid-run, read out.jsonl. (This
+  also means a stale hardware-session mailbox hijacks emulator runs —
+  e2e-ppsspp.ts removes it before each golden run.)

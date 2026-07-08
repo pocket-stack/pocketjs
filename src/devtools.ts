@@ -99,6 +99,11 @@ const state: DevtoolsState = {
  * the PSP mailbox bindings on the ui namespace (native/src/dbg.rs).
  */
 export function initDevtools(ops: HostOps): void {
+  // QuickJS (Solid path) ships no console at all — app code calling
+  // console.log must never throw, transport or not. The bridge upgrades
+  // these to channel mirrors when one attaches.
+  const g = globalThis as unknown as { console?: Record<string, (...a: unknown[]) => void> };
+  if (!g.console) g.console = { log() {}, warn() {}, error() {} };
   state.ops = ops;
   state.frame = 0;
   state.tapeStart = 0;
@@ -424,9 +429,13 @@ function countNodes(node: NodeMirror): number {
 // ---------------------------------------------------------------------------
 
 function bridgeConsole(): void {
-  const c = (globalThis as unknown as { console?: Record<string, (...a: unknown[]) => void> })
-    .console;
-  if (!c || (c as { __pocketBridged?: boolean }).__pocketBridged) return;
+  const g = globalThis as unknown as { console?: Record<string, (...a: unknown[]) => void> };
+  // On QuickJS (Solid path) there is NO global console at all — the prelude
+  // stub only ships with the Vue Vapor entry. With a transport attached the
+  // channel IS the console, so create one from scratch.
+  if (!g.console) g.console = {};
+  const c = g.console;
+  if ((c as { __pocketBridged?: boolean }).__pocketBridged) return;
   (c as { __pocketBridged?: boolean }).__pocketBridged = true;
   for (const level of ["log", "warn", "error"] as const) {
     const original = c[level];

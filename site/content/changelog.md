@@ -3,6 +3,37 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.3.0 — July 8, 2026
+
+**Pocket DevTools.** Time travel + inspection as framework primitives —
+[read the deep-dive](/blog/time-travel-devtools/), design in
+[DEVTOOLS.md](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md).
+
+- **Component inspector with on-device highlight** — a desktop panel
+  (`/devtools`) shows the component tree with semantic names (`debugName`
+  prop, `<Named>` wrapper; all demos annotated); hovering a node draws a
+  highlight overlay **on the device screen** — the core emits it into the
+  DrawList, so real PSP hardware, the wasm rasterizer and wgpu all render
+  it. Switching nodes glides the box across the screen.
+- **Time travel on an always-on flight recorder** — every bundle records
+  its input tape (one `u16`/frame, 10 min ≈ 70 KB); sessions replay
+  byte-exactly. Pause / single-step freeze the whole world in the core;
+  click the tape strip to seek (reload + deterministic fast-forward).
+  `bun run tape` replays headlessly: per-frame hashes,
+  first-divergent-frame asserts (session goldens, `bun run tape:check`),
+  PNG of any frame, component tree as JSON at any frame.
+- **Real PSP debugging over the PSPLINK USB cable** — a `host0:` file
+  mailbox (the trace/bench channel, formalized): REPL `eval` into the
+  running handheld, the first working `console.log` on PSP, frame-stamped
+  error reports, and on-demand 📷 screenshots (raw VRAM rides usbhostfs;
+  the desktop bridge encodes the PNG). Verified on hardware.
+- **One command** — `bun run devtools [app]` runs the panel, WS hub, USB
+  bridge and (optionally) the whole PSP session; detects an existing
+  psplink/hw link and bridges into it. Also via the CLI: `pocket devtools`.
+- **Breaking:** the `@pocketjs/cli` binary is renamed `pocketjs` → `pocket`.
+- New spec ops 18–22 (`debugInspect/RectXY/RectWH/Pause/Step`), all
+  debug-only and default-off — shipped rendering is byte-identical.
+
 ## 0.2.1 — July 7, 2026
 
 **On npm.** PocketJS is now installable.
