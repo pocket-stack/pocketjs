@@ -41,7 +41,7 @@ pub unsafe fn ui() -> &'static mut Ui {
 // ---------------------------------------------------------------------------
 
 #[inline]
-unsafe fn arg_i32(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) -> i32 {
+pub unsafe fn arg_i32(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) -> i32 {
     if (i as i32) >= argc {
         return 0;
     }
@@ -51,7 +51,7 @@ unsafe fn arg_i32(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) 
 }
 
 #[inline]
-unsafe fn arg_f64(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) -> f64 {
+pub unsafe fn arg_f64(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) -> f64 {
     if (i as i32) >= argc {
         return 0.0;
     }
@@ -467,7 +467,9 @@ unsafe extern "C" fn js_dbg_send(
 // registration
 // ---------------------------------------------------------------------------
 
-unsafe fn add_fn(
+/// Register one C function onto a JS object (shared by extra surfaces
+/// like OpenStrike's `strike` namespace).
+pub unsafe fn add_fn(
     ctx: *mut JSContext,
     obj: JSValue,
     name: &'static [u8], // NUL-terminated
