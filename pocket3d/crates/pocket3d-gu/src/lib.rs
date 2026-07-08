@@ -77,7 +77,11 @@ pub unsafe fn begin_3d(cam: &Camera3d) {
     sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgba);
     sys::sceGuTexFilter(TextureFilter::LinearMipmapNearest, TextureFilter::Linear);
     sys::sceGuTexWrap(sys::GuTexWrapMode::Repeat, sys::GuTexWrapMode::Repeat);
-    sys::sceGuTexLevelMode(sys::TextureLevelMode::Auto, 0.0);
+    // Negative LOD bias: hold mip 0 roughly one distance ring longer. The
+    // GE has no anisotropic filtering, so unbiased auto-LOD blurs floors at
+    // glancing angles well before texel density demands it; -1.0 trades a
+    // little far-field shimmer for visibly crisper near geometry at 480x272.
+    sys::sceGuTexLevelMode(sys::TextureLevelMode::Auto, -1.0);
     sys::sceGuTexScale(1.0, 1.0);
     sys::sceGuTexOffset(0.0, 0.0);
 }

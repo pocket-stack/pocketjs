@@ -577,6 +577,8 @@ fn cook_textures_section(textures: &[IndexedTexture]) -> Result<Vec<u8>> {
                 tex.height as usize,
                 pw as usize,
                 ph as usize,
+                &tex.palette,
+                tex.masked,
             ));
         }
         if mips.is_empty() {
@@ -659,28 +661,84 @@ fn cook_textures_section(textures: &[IndexedTexture]) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Nearest power of two in log space (96 -> 128, 320 -> 256), clamped to
-/// the GE's limits.
+/// Power-of-two policy: always round UP (clamped to the GE's 512 limit) —
+/// pow2 conversion must never discard native texel detail. Memory is not
+/// the constraint (textures ship as 8-bit CLUT).
 fn nearest_pow2(dim: u32) -> u32 {
-    let dim = dim.clamp(1, 512);
-    let up = dim.next_power_of_two().min(512);
-    let down = (up / 2).max(16);
-    // Round up when dim is past the geometric mean of the two candidates.
-    if (dim as u64) * (dim as u64) * 2 >= (up as u64) * (up as u64) {
-        up
-    } else {
-        down
-    }
+    dim.clamp(1, 512).next_power_of_two().min(512)
 }
 
-/// Nearest-neighbor resample of indexed texels (pow2 conversion).
-fn resample_indexed(src: &[u8], sw: usize, sh: usize, dw: usize, dh: usize) -> Vec<u8> {
+/// Bilinear resample of indexed texels (pow2 conversion): sample in RGB
+/// space through the palette, requantize to the nearest palette entry.
+/// Nearest-neighbor here produced visible duplicated-texel banding on every
+/// non-pow2 WAD texture (96x96, 240x240, ...).
+fn resample_indexed(
+    src: &[u8],
+    sw: usize,
+    sh: usize,
+    dw: usize,
+    dh: usize,
+    palette: &[u8],
+    masked: bool,
+) -> Vec<u8> {
+    let texel = |x: usize, y: usize| -> (u8, [f32; 3]) {
+        let idx = src[y.min(sh - 1) * sw + x.min(sw - 1)];
+        let p = idx as usize * 3;
+        (
+            idx,
+            [
+                palette[p] as f32,
+                palette[p + 1] as f32,
+                palette[p + 2] as f32,
+            ],
+        )
+    };
     let mut out = vec![0u8; dw * dh];
     for y in 0..dh {
-        let sy = (y * sh / dh).min(sh - 1);
         for x in 0..dw {
-            let sx = (x * sw / dw).min(sw - 1);
-            out[y * dw + x] = src[sy * sw + sx];
+            // Destination texel center mapped into source texel space.
+            let su = ((x as f32 + 0.5) * sw as f32 / dw as f32 - 0.5).max(0.0);
+            let sv = ((y as f32 + 0.5) * sh as f32 / dh as f32 - 0.5).max(0.0);
+            let (x0, y0) = (su as usize, sv as usize);
+            let (fx, fy) = (su - x0 as f32, sv - y0 as f32);
+            let taps = [
+                (texel(x0, y0), (1.0 - fx) * (1.0 - fy)),
+                (texel(x0 + 1, y0), fx * (1.0 - fy)),
+                (texel(x0, y0 + 1), (1.0 - fx) * fy),
+                (texel(x0 + 1, y0 + 1), fx * fy),
+            ];
+            // Masked textures: transparency wins where it dominates the taps;
+            // otherwise blend only the opaque taps.
+            let transparent: f32 = taps
+                .iter()
+                .filter(|((idx, _), _)| masked && *idx == 255)
+                .map(|(_, w)| w)
+                .sum();
+            out[y * dw + x] = if transparent >= 0.5 {
+                255
+            } else {
+                let mut rgb = [0f32; 3];
+                let mut total = 0f32;
+                for ((idx, c), w) in &taps {
+                    if masked && *idx == 255 {
+                        continue;
+                    }
+                    for i in 0..3 {
+                        rgb[i] += c[i] * w;
+                    }
+                    total += w;
+                }
+                let t = total.max(1e-6);
+                nearest_palette(
+                    palette,
+                    [
+                        (rgb[0] / t) as i32,
+                        (rgb[1] / t) as i32,
+                        (rgb[2] / t) as i32,
+                    ],
+                    masked,
+                )
+            };
         }
     }
     out
