@@ -17,7 +17,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createWasmUi } from "../host-web/wasm-ops.js";
-import { expandTape, type Tape } from "../src/devtools.ts";
+import { expandTape, expandTapeAnalog, type Tape } from "../src/devtools.ts";
 import { encodePNG } from "../test/png.ts";
 import { SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 
@@ -51,7 +51,7 @@ function fnv1a(bytes: Uint8Array): string {
 }
 
 interface BootResult {
-  frame: (buttons: number) => void;
+  frame: (buttons: number, lx?: number, ly?: number) => void;
   tick: () => void;
   render: () => Uint8Array;
   outbox: string[];
@@ -79,7 +79,7 @@ async function boot(app: string): Promise<BootResult> {
   };
   const src = await Bun.file(DIST + app + ".js").text();
   (0, eval)(src);
-  const frame = g.frame as ((buttons: number) => void) | undefined;
+  const frame = g.frame as ((buttons: number, lx?: number, ly?: number) => void) | undefined;
   if (typeof frame !== "function") {
     throw new Error("bundle did not install globalThis.frame (does the entry call render()?)");
   }
@@ -99,7 +99,7 @@ function loadTape(path: string): Tape {
   }
   const tape = JSON.parse(readFileSync(path, "utf8")) as Tape;
   if (!Array.isArray(tape.masks)) {
-    console.error(`tape: ${path} is not a tape (expected {v:1, masks:[[mask,count],…]})`);
+    console.error(`tape: ${path} is not a tape (expected {v:2, masks:[[mask,count],…], lx?, ly?})`);
     process.exit(1);
   }
   if ((tape.startFrame ?? 0) > 0) {
@@ -120,6 +120,8 @@ const [, , cmd, app, tapePathArg] = process.argv;
 async function cmdReplay(): Promise<void> {
   const tape = loadTape(tapePathArg);
   const masks = expandTape(tape);
+  const lx = expandTapeAnalog(tape, "lx");
+  const ly = expandTapeAnalog(tape, "ly");
   const hashesOut = argValue("--hashes");
   const assertPath = argValue("--assert");
   const pngFrames = new Set(
@@ -134,7 +136,7 @@ async function cmdReplay(): Promise<void> {
   if (pngFrames.size) mkdirSync(outdir, { recursive: true });
   const hashes: string[] = [];
   for (let f = 0; f < masks.length; f++) {
-    b.frame(masks[f]);
+    b.frame(masks[f], lx[f], ly[f]);
     b.tick();
     const fb = b.render();
     const h = fnv1a(fb);
@@ -169,16 +171,18 @@ async function cmdReplay(): Promise<void> {
 async function cmdTree(): Promise<void> {
   const tape = loadTape(tapePathArg);
   const masks = expandTape(tape);
+  const lx = expandTapeAnalog(tape, "lx");
+  const ly = expandTapeAnalog(tape, "ly");
   const at = Number(argValue("--at") ?? masks.length);
   const upTo = Math.min(at, masks.length);
   const b = await boot(app);
   for (let f = 0; f < upTo; f++) {
-    b.frame(masks[f]);
+    b.frame(masks[f], lx[f], ly[f]);
     b.tick();
   }
   b.outbox.length = 0;
   b.pushCommand(JSON.stringify({ t: "getTree" }));
-  b.frame(0); // poll runs at wrapper start: tree reflects state after frame `at`
+  b.frame(0, 128, 128); // poll runs at wrapper start: tree reflects state after frame `at`
   for (const line of b.outbox) {
     const msg = JSON.parse(line);
     if (msg.t === "tree") {
@@ -193,24 +197,37 @@ async function cmdTree(): Promise<void> {
 async function cmdRecord(): Promise<void> {
   const frames = Number(argValue("--frames") ?? 300);
   const out = argValue("--out") ?? `${app}.tape.json`;
-  // e2e-style input script: "frame:mask,frame:mask" — mask holds until the
-  // next scripted frame releases/changes it? No: a pulse model matches
-  // test/golden.ts input closures better; each entry sets THAT frame's mask.
-  const script = new Map<number, number>();
-  for (const pair of (argValue("--input") ?? "").split(",").filter(Boolean)) {
-    const [f, m] = pair.split(":");
-    script.set(Number(f), Number(m));
+  // Input script: "frame:mask" or "frame:mask:lx:ly" (OpenStrike-compatible).
+  // Each entry sets THAT frame's input; unscripted frames are idle (mask=0,
+  // lx=128, ly=128). lx/ly are deadzone-snapped u8 (0..255, 128 = neutral).
+  interface ScriptEntry { m: number; lx: number; ly: number }
+  const script = new Map<number, ScriptEntry>();
+  for (const entry of (argValue("--input") ?? "").split(",").filter(Boolean)) {
+    const parts = entry.split(":");
+    const f = Number(parts[0]);
+    const m = Number(parts[1] ?? 0);
+    const lx = parts[2] !== undefined ? Number(parts[2]) : 128;
+    const ly = parts[3] !== undefined ? Number(parts[3]) : 128;
+    script.set(f, { m, lx, ly });
   }
   const masks: [number, number][] = [];
+  const lxRle: [number, number][] = [];
+  const lyRle: [number, number][] = [];
   for (let f = 0; f < frames; f++) {
-    const m = script.get(f) ?? 0;
-    const last = masks[masks.length - 1];
-    if (last && last[0] === m) last[1]++;
-    else masks.push([m, 1]);
+    const e = script.get(f) ?? { m: 0, lx: 128, ly: 128 };
+    const lm = masks[masks.length - 1];
+    if (lm && lm[0] === e.m) lm[1]++;
+    else masks.push([e.m, 1]);
+    const llx = lxRle[lxRle.length - 1];
+    if (llx && llx[0] === e.lx) llx[1]++;
+    else lxRle.push([e.lx, 1]);
+    const lly = lyRle[lyRle.length - 1];
+    if (lly && lly[0] === e.ly) lly[1]++;
+    else lyRle.push([e.ly, 1]);
   }
-  const tape: Tape = { v: 1, app, frames, masks, startFrame: 0 };
+  const tape: Tape = { v: 2, app, frames, masks, lx: lxRle, ly: lyRle, startFrame: 0 };
   writeFileSync(out, JSON.stringify(tape) + "\n");
-  console.log(`tape: wrote ${out} (${frames} frames)`);
+  console.log(`tape: wrote ${out} (${frames} frames, v2)`);
 }
 
 if (cmd === "replay" && app && tapePathArg) await cmdReplay();

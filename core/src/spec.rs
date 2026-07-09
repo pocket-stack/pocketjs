@@ -37,6 +37,13 @@ pub const TRANSITION_MASK_ALL: u32 = 0xffffffff;
 /// Core tick timestep: exactly 1/60 s (fixed — enables byte-exact goldens).
 pub const FIXED_DT: f32 = 1.0 / 60.0;
 
+/// Analog stick range and deadzone. The host snaps |v-128| < DEADZONE to
+/// 128 before passing lx/ly to frame() and before recording to tape.
+pub const ANALOG_MIN: i32 = 0;
+pub const ANALOG_MAX: i32 = 255;
+pub const ANALOG_NEUTRAL: i32 = 128;
+pub const ANALOG_DEADZONE: i32 = 24;
+
 /// Element kinds — the `create_node` argument.
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

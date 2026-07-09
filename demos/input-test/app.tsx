@@ -12,7 +12,7 @@ import type { Accessor } from "solid-js";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { getOps } from "@pocketjs/framework";
-import { BTN, ANALOG_NEUTRAL, normalizeAnalog } from "@pocketjs/framework/input";
+import { BTN, normalizeAnalog } from "@pocketjs/framework/input";
 import { PROP } from "../../spec/spec.ts";
 
 function abgr(hex: string): number {
@@ -81,13 +81,15 @@ export default function InputTest() {
       if (bs.get() !== held) bs.set(held);
     }
 
-    const nx = lax !== undefined ? normalizeAnalog(lax) : ANALOG_NEUTRAL;
-    const ny = lay !== undefined ? normalizeAnalog(lay) : ANALOG_NEUTRAL;
+    // normalizeAnalog returns -1..1 (deadzone + rescale). Host already
+    // snapped deadzone, so 0 = truly idle.
+    const adx = lax !== undefined ? normalizeAnalog(lax) : 0;
+    const ady = lay !== undefined ? normalizeAnalog(lay) : 0;
 
-    // Throttled visual updates — use fixed strings to avoid allocation.
+    // Throttled visual updates — stick dot in 0..1 space.
     if (frameCount % 8 === 0) {
-      setSx(nx / 255);
-      setSy(ny / 255);
+      setSx(0.5 + adx * 0.5);
+      setSy(0.5 + ady * 0.5);
     }
 
     // Movement.
@@ -96,8 +98,6 @@ export default function InputTest() {
     let speed = SPEED;
     let m = 0;
 
-    const adx = (nx - ANALOG_NEUTRAL) / ANALOG_NEUTRAL;
-    const ady = (ny - ANALOG_NEUTRAL) / ANALOG_NEUTRAL;
     if (adx > 0.01 || adx < -0.01 || ady > 0.01 || ady < -0.01) {
       const amag = Math.sqrt(adx * adx + ady * ady);
       dx = adx / amag;

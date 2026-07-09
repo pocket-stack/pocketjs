@@ -22,14 +22,21 @@ export interface DevtoolsTransport {
   everyFrames?: number;
 }
 
-/** Input tape: the complete session input, RLE-encoded (DEVTOOLS.md §4). */
+/** Input tape: the complete session input, RLE-encoded (DEVTOOLS.md §4).
+ *  v2 adds lx/ly (analog stick) as parallel RLE streams — the host snaps
+ *  deadzone before recording, so an idle stick compresses as well as an
+ *  idle d-pad. v1 tapes (no lx/ly) replay with neutral analog. */
 export interface Tape {
-  v: 1;
+  v: 2;
   app?: string;
-  /** Total frames represented by `masks`. */
+  /** Total frames represented by `masks`/`lx`/`ly`. */
   frames: number;
   /** [buttonMask, runLength] pairs, in order. */
   masks: [number, number][];
+  /** [analogX, runLength] pairs (u8, 128 = neutral). Omitted in v1 tapes. */
+  lx?: [number, number][];
+  /** [analogY, runLength] pairs (u8, 128 = neutral). Omitted in v1 tapes. */
+  ly?: [number, number][];
   /** Absolute frame index of masks[0] (0 unless the ring wrapped). */
   startFrame?: number;
 }
@@ -44,13 +51,17 @@ interface DevtoolsState {
   transport: DevtoolsTransport | null;
   app: string | undefined;
   frame: number; // frames actually executed (== core frame counter)
-  // tape ring
+  // tape ring (mask + analog axes — three parallel rings)
   tape: Uint16Array;
+  tapeLx: Uint8Array;
+  tapeLy: Uint8Array;
   tapeStart: number; // ring index of the oldest frame
   tapeLen: number;
   tapeFirstFrame: number; // absolute frame index of the oldest entry
   // replay
   replayMasks: Uint16Array | null;
+  replayLx: Uint8Array | null;
+  replayLy: Uint8Array | null;
   replayAt: number;
   // pause
   paused: boolean;
@@ -73,10 +84,14 @@ const state: DevtoolsState = {
   app: undefined,
   frame: 0,
   tape: new Uint16Array(TAPE_CAP),
+  tapeLx: new Uint8Array(TAPE_CAP),
+  tapeLy: new Uint8Array(TAPE_CAP),
   tapeStart: 0,
   tapeLen: 0,
   tapeFirstFrame: 0,
   replayMasks: null,
+  replayLx: null,
+  replayLy: null,
   replayAt: 0,
   paused: false,
   stepQueued: 0,
@@ -110,6 +125,8 @@ export function initDevtools(ops: HostOps): void {
   state.tapeLen = 0;
   state.tapeFirstFrame = 0;
   state.replayMasks = null;
+  state.replayLx = null;
+  state.replayLy = null;
   state.paused = false;
   state.stepQueued = 0;
   state.inspectReportId = null;
@@ -158,11 +175,18 @@ export function wrapFrameHandler(
       flushInspectReport();
     }
     let mask = buttons;
+    let ax = lx ?? 128;
+    let ay = ly ?? 128;
     if (state.replayMasks) {
       if (state.replayAt < state.replayMasks.length) {
-        mask = state.replayMasks[state.replayAt++];
+        mask = state.replayMasks[state.replayAt];
+        if (state.replayLx) ax = state.replayLx[state.replayAt];
+        if (state.replayLy) ay = state.replayLy[state.replayAt];
+        state.replayAt++;
       } else {
         state.replayMasks = null; // tape exhausted: back to live input
+        state.replayLx = null;
+        state.replayLy = null;
         send({ t: "replayDone", frame: state.frame });
       }
     }
@@ -171,10 +195,10 @@ export function wrapFrameHandler(
       state.stepQueued--;
       state.ops?.debugStep?.(); // arm exactly one core tick
     }
-    recordMask(mask);
+    recordInput(mask, ax, ay);
     state.frame++;
     try {
-      h(mask, lx, ly);
+      h(mask, ax, ay);
     } catch (e) {
       send({
         t: "error",
@@ -192,12 +216,18 @@ export function wrapFrameHandler(
 // tape
 // ---------------------------------------------------------------------------
 
-function recordMask(mask: number): void {
+/** Record one frame's input (mask + analog) into the flight-recorder ring. */
+function recordInput(mask: number, lx: number, ly: number): void {
   if (state.tapeLen < TAPE_CAP) {
-    state.tape[(state.tapeStart + state.tapeLen) % TAPE_CAP] = mask;
+    const i = (state.tapeStart + state.tapeLen) % TAPE_CAP;
+    state.tape[i] = mask;
+    state.tapeLx[i] = lx;
+    state.tapeLy[i] = ly;
     state.tapeLen++;
   } else {
     state.tape[state.tapeStart] = mask;
+    state.tapeLx[state.tapeStart] = lx;
+    state.tapeLy[state.tapeStart] = ly;
     state.tapeStart = (state.tapeStart + 1) % TAPE_CAP;
     state.tapeFirstFrame++;
   }
@@ -205,22 +235,36 @@ function recordMask(mask: number): void {
 
 function exportTape(): Tape {
   const masks: [number, number][] = [];
+  const lx: [number, number][] = [];
+  const ly: [number, number][] = [];
   for (let i = 0; i < state.tapeLen; i++) {
-    const m = state.tape[(state.tapeStart + i) % TAPE_CAP];
-    const last = masks[masks.length - 1];
-    if (last && last[0] === m) last[1]++;
+    const idx = (state.tapeStart + i) % TAPE_CAP;
+    const m = state.tape[idx];
+    const x = state.tapeLx[idx];
+    const y = state.tapeLy[idx];
+    const lm = masks[masks.length - 1];
+    if (lm && lm[0] === m) lm[1]++;
     else masks.push([m, 1]);
+    const llx = lx[lx.length - 1];
+    if (llx && llx[0] === x) llx[1]++;
+    else lx.push([x, 1]);
+    const lly = ly[ly.length - 1];
+    if (lly && lly[0] === y) lly[1]++;
+    else ly.push([y, 1]);
   }
   return {
-    v: 1,
+    v: 2,
     app: state.app,
     frames: state.tapeLen,
     masks,
+    lx,
+    ly,
     startFrame: state.tapeFirstFrame,
   };
 }
 
 /** Expand a tape's RLE mask list into one mask per frame. */
+/** Expand the tape's button masks into a flat per-frame array. */
 export function expandTape(tape: Tape): Uint16Array {
   let total = 0;
   for (const [, n] of tape.masks) total += n;
@@ -228,6 +272,22 @@ export function expandTape(tape: Tape): Uint16Array {
   let at = 0;
   for (const [mask, n] of tape.masks) {
     out.fill(mask, at, at + n);
+    at += n;
+  }
+  return out;
+}
+
+/** Expand the tape's analog axis (lx or ly) into a flat per-frame array.
+ *  Returns all-128 if the tape has no analog data (v1 compatibility). */
+export function expandTapeAnalog(tape: Tape, axis: "lx" | "ly"): Uint8Array {
+  const rle = tape[axis];
+  let total = 0;
+  for (const [, n] of tape.masks) total += n;
+  const out = new Uint8Array(total).fill(128);
+  if (!rle) return out; // v1 tape: neutral analog
+  let at = 0;
+  for (const [v, n] of rle) {
+    out.fill(v, at, at + n);
     at += n;
   }
   return out;
@@ -327,12 +387,14 @@ function handleMessage(line: string): void {
       break;
     }
     case "replay": {
-      // Shim-level replay: feed the tape's masks from NOW. For byte-exact
-      // sessions replay from boot (the browser host intercepts this message
-      // and reloads; scripts/tape.ts drives fresh instances).
+      // Shim-level replay: feed the tape's masks + analog from NOW. For byte-
+      // exact sessions replay from boot (the browser host intercepts this
+      // message and reloads; scripts/tape.ts drives fresh instances).
       const tape = msg.tape as Tape | undefined;
       if (tape && Array.isArray(tape.masks)) {
         state.replayMasks = expandTape(tape);
+        state.replayLx = expandTapeAnalog(tape, "lx");
+        state.replayLy = expandTapeAnalog(tape, "ly");
         state.replayAt = 0;
       }
       break;

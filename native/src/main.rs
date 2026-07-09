@@ -26,6 +26,7 @@ use psp::sys::DisplaySetBufSync;
 use psp::sys::DisplayPixelFormat;
 use psp::sys::{self, CtrlMode, GuContextType, GuSyncBehavior, GuSyncMode, IoOpenFlags, SceCtrlData};
 
+use pocketjs_core::spec;
 use pocketjs_psp::{dbg, ffi, ge, host, pak};
 #[cfg(feature = "bench")]
 use pocketjs_psp::arena;
@@ -469,15 +470,24 @@ unsafe fn run() {
             trace("frame 0: ctrl read ok");
         }
         let mask = pad.buttons.bits() as i32;
-        let lx = pad.lx as i32;
-        let ly = pad.ly as i32;
+        // Host-side deadzone snap: |v - 128| < DEADZONE → 128, BEFORE passing
+        // to JS and before tape recording. This keeps idle sticks exact-neutral
+        // (center drift is a hardware artifact) so RLE tape compression works
+        // and replays are console-independent. Constants from spec.rs (gen-rust).
+        let lx = snap_analog(pad.lx as i32);
+        let ly = snap_analog(pad.ly as i32);
+        // In capture builds, the baked input script overrides live input so
+        // replays are deterministic. lx/ly override too, or analog apps diverge.
         #[cfg(feature = "capture")]
         let mask = capture_input_mask(frame_count, mask);
+        #[cfg(feature = "capture")]
+        let lx = snap_analog(capture_input_lx(frame_count, lx));
+        #[cfg(feature = "capture")]
+        let ly = snap_analog(capture_input_ly(frame_count, ly));
 
         // frame(buttons, lx, ly): trailing analog args are optional on the JS
-        // side — existing apps ignore them. lx/ly are raw u8 (0..255, 128 = center);
-        // deadzoning is the host's job (spec ANALOG_DEADZONE), done in JS so
-        // every host applies it identically.
+        // side — existing apps ignore them. lx/ly are deadzone-snapped u8
+        // (0..255, 128 = center); JS-side normalizeAnalog() layers rescale.
         let mut args = [JS_NewInt32(ctx, mask), JS_NewInt32(ctx, lx), JS_NewInt32(ctx, ly)];
         let r = JS_Call(ctx, frame_fn, global, 3, args.as_mut_ptr());
         #[cfg(feature = "bench")]
@@ -609,6 +619,18 @@ unsafe fn run() {
 // each demo needs a different settle horizon.
 // ---------------------------------------------------------------------------
 
+/// Host-side analog deadzone snap: |v - NEUTRAL| < DEADZONE → NEUTRAL.
+/// Applied before lx/ly reach JS and before tape recording, so idle sticks
+/// are exact-neutral and replays are console-independent.
+fn snap_analog(raw: i32) -> i32 {
+    let delta = raw - spec::ANALOG_NEUTRAL;
+    if delta >= -spec::ANALOG_DEADZONE && delta <= spec::ANALOG_DEADZONE {
+        spec::ANALOG_NEUTRAL
+    } else {
+        raw
+    }
+}
+
 #[cfg(feature = "capture")]
 fn parse_capture_u32(s: &[u8], mut i: usize, end: usize) -> Option<u32> {
     while i < end && (s[i] == b' ' || s[i] == b'\t') {
@@ -658,42 +680,85 @@ fn capture_env_u32(s: &str, default: u32) -> u32 {
 /// `0:0,20:0x40,24:0` means idle, press DOWN at frame 20, release at 24.
 #[cfg(feature = "capture")]
 fn capture_input_mask(frame_count: u32, fallback: i32) -> i32 {
+    capture_parse(frame_count).0
+}
+
+/// Parse the capture input for analog lx (falls back to 128/neutral).
+#[cfg(feature = "capture")]
+fn capture_input_lx(frame_count: u32, fallback: i32) -> i32 {
+    let (_, lx, _) = capture_parse(frame_count);
+    if lx >= 0 { lx } else { fallback }
+}
+
+/// Parse the capture input for analog ly (falls back to 128/neutral).
+#[cfg(feature = "capture")]
+fn capture_input_ly(frame_count: u32, fallback: i32) -> i32 {
+    let (_, _, ly) = capture_parse(frame_count);
+    if ly >= 0 { ly } else { fallback }
+}
+
+/// Parse "frame:mask:lx:ly,frame:mask:lx:ly,…" — returns (mask, lx, ly).
+/// lx/ly default to -1 (meaning "not specified → use fallback") when absent.
+/// Finds the entry with the largest frame <= frame_count.
+#[cfg(feature = "capture")]
+fn capture_parse(frame_count: u32) -> (i32, i32, i32) {
     let s = POCKETJS_CAPTURE_INPUT.as_bytes();
     if s.is_empty() {
-        return fallback;
+        return (-1, -1, -1);
     }
     let mut i = 0usize;
     let mut best_frame: Option<u32> = None;
-    let mut best_mask = fallback as u32;
+    let mut best_mask: i32 = -1;
+    let mut best_lx: i32 = -1;
+    let mut best_ly: i32 = -1;
     while i < s.len() {
-        while i < s.len() && (s[i] == b',' || s[i] == b';' || s[i] == b' ' || s[i] == b'\t') {
+        // Skip separators.
+        while i < s.len() && matches!(s[i], b',' | b';' | b' ' | b'\t') {
             i += 1;
         }
+        // frame
         let frame_start = i;
-        while i < s.len() && s[i] != b':' && s[i] != b',' && s[i] != b';' {
+        while i < s.len() && !matches!(s[i], b':' | b',' | b';') {
             i += 1;
         }
-        if i >= s.len() || s[i] != b':' {
-            break;
-        }
+        if i >= s.len() || s[i] != b':' { break; }
         let frame_end = i;
         i += 1;
+        // mask
         let mask_start = i;
-        while i < s.len() && s[i] != b',' && s[i] != b';' {
+        while i < s.len() && !matches!(s[i], b':' | b',' | b';') {
             i += 1;
         }
         let mask_end = i;
+        // lx (optional)
+        let mut lx: i32 = -1;
+        if i < s.len() && s[i] == b':' {
+            i += 1;
+            let lx_start = i;
+            while i < s.len() && !matches!(s[i], b':' | b',' | b';') { i += 1; }
+            if let Some(v) = parse_capture_u32(s, lx_start, i) { lx = v as i32; }
+        }
+        // ly (optional)
+        let mut ly: i32 = -1;
+        if i < s.len() && s[i] == b':' {
+            i += 1;
+            let ly_start = i;
+            while i < s.len() && !matches!(s[i], b',' | b';') { i += 1; }
+            if let Some(v) = parse_capture_u32(s, ly_start, i) { ly = v as i32; }
+        }
         if let (Some(frame), Some(mask)) = (
             parse_capture_u32(s, frame_start, frame_end),
             parse_capture_u32(s, mask_start, mask_end),
         ) {
             if frame <= frame_count && best_frame.map_or(true, |best| frame >= best) {
                 best_frame = Some(frame);
-                best_mask = mask;
+                best_mask = mask as i32;
+                best_lx = lx;
+                best_ly = ly;
             }
         }
     }
-    best_mask as i32
+    (best_mask, best_lx, best_ly)
 }
 
 /// Dump the just-presented display framebuffer to `ms0:/dc_cap/fNNNN.raw`

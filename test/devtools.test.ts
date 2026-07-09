@@ -298,7 +298,7 @@ describe("tape", () => {
   });
 
   test("expandTape unrolls RLE pairs", () => {
-    const tape: Tape = { v: 1, frames: 4, masks: [[5, 1], [0, 2], [9, 1]] };
+    const tape: Tape = { v: 2, frames: 4, masks: [[5, 1], [0, 2], [9, 1]] };
     expect(Array.from(expandTape(tape))).toEqual([5, 0, 0, 9]);
   });
 });

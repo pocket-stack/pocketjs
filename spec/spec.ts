@@ -960,16 +960,38 @@ export const BTN = {
 export const ANALOG_MIN = 0;
 export const ANALOG_MAX = 255;
 export const ANALOG_NEUTRAL = 128;
-/** Deadzone radius: values within ±ANALOG_DEADZONE of neutral snap to neutral. */
-export const ANALOG_DEADZONE = 16;
+/** Deadzone radius: values within ±ANALOG_DEADZONE of neutral snap to neutral.
+ *  Matches OpenStrike's 0.19 normalized ≈ 24 raw. Hosts snap BEFORE exposing
+ *  to JS and before recording to tape, so idle sticks compress well and
+ *  replays are console-independent. */
+export const ANALOG_DEADZONE = 24;
 
-/** Clamp + deadzone a raw u8 axis reading to ANALOG_NEUTRAL near center. */
-export function normalizeAnalog(raw: number): number {
-  if (raw < ANALOG_MIN) return ANALOG_NEUTRAL;
-  if (raw > ANALOG_MAX) return ANALOG_NEUTRAL;
+/**
+ * Snap a raw u8 axis to neutral inside the deadzone. This is the HOST-SIDE
+ * operation: main.rs applies it before passing lx/ly to frame(), so JS and
+ * the tape never see center drift. Modeled on OpenStrike's deadzone check.
+ * `normalizeAnalog` (below) layers rescale on top for JS consumers.
+ */
+export function snapAnalog(raw: number): number {
+  if (raw < ANALOG_MIN || raw > ANALOG_MAX) return ANALOG_NEUTRAL;
   const delta = raw - ANALOG_NEUTRAL;
   if (delta >= -ANALOG_DEADZONE && delta <= ANALOG_DEADZONE) return ANALOG_NEUTRAL;
   return raw;
+}
+
+/**
+ * JS-side deadzone + rescale (modeled on OpenStrike's `axis()` closure).
+ * Returns a normalized float in [-1, 1]: 0 at neutral, ±1 at full deflection.
+ * Movement starts at 0 just past the deadzone — the analog-stick "ramp" that
+ * makes gentle pushes usable. The host already snapped deadzone, so the input
+ * is either exactly 128 or outside the deadzone.
+ */
+export function normalizeAnalog(raw: number): number {
+  const v = (raw - ANALOG_NEUTRAL) / ANALOG_NEUTRAL; // -1..1
+  if (v === 0) return 0; // host-snapped neutral
+  const dz = ANALOG_DEADZONE / ANALOG_NEUTRAL; // ~0.188
+  // Rescale so movement starts at 0 just past the deadzone.
+  return Math.max(-1, Math.min(1, (v - dz * Math.sign(v)) / (1 - dz)));
 }
 
 // ---------------------------------------------------------------------------

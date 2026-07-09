@@ -14,6 +14,10 @@ import {
   ANIM_FILL_BACKWARDS,
   ANIM_FILL_FORWARDS,
   ANIM_SEGMENT_SIZE,
+  ANALOG_DEADZONE,
+  ANALOG_MAX,
+  ANALOG_MIN,
+  ANALOG_NEUTRAL,
   BTN,
   PAK_ALIGN,
   PAK_DTYPE,
@@ -138,6 +142,14 @@ export function generateRust(): string {
   put("/// Core tick timestep: exactly 1/60 s (fixed — enables byte-exact goldens).");
   if (FIXED_DT !== 1 / 60) throw new Error("FIXED_DT changed; update gen-rust.ts emission");
   put("pub const FIXED_DT: f32 = 1.0 / 60.0;");
+  put("");
+  // --- analog stick constants (single-sourced from spec.ts) ------------------
+  put("/// Analog stick range and deadzone. The host snaps |v-128| < DEADZONE to");
+  put("/// 128 before passing lx/ly to frame() and before recording to tape.");
+  put(`pub const ANALOG_MIN: i32 = ${ANALOG_MIN};`);
+  put(`pub const ANALOG_MAX: i32 = ${ANALOG_MAX};`);
+  put(`pub const ANALOG_NEUTRAL: i32 = ${ANALOG_NEUTRAL};`);
+  put(`pub const ANALOG_DEADZONE: i32 = ${ANALOG_DEADZONE};`);
   put("");
 
   // --- node type enum ---------------------------------------------------------

@@ -6,6 +6,7 @@ export {
   ANALOG_MAX,
   ANALOG_NEUTRAL,
   ANALOG_DEADZONE,
+  snapAnalog,
   normalizeAnalog,
 } from "../spec/spec.ts";
 export {
