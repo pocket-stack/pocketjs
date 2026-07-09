@@ -58,6 +58,20 @@ fast-forwards); REPL evals in the app global scope between frames; 📷
 screenshot button downloads a PNG (browser: canvas; PSP: raw VRAM dump over
 usbhostfs, converted by the bridge — pixels never cross the JSON channel).
 
+## Native desktop (macOS) specifics
+
+- `pocket-ui-wgpu` hosts (OpenStrike desktop, `pocket3d/examples/uihost`)
+  carry the same file-mailbox transport as the PSP, pointed at
+  `$POCKETJS_DBG_DIR` (else the process cwd). Workflow: `bun run devtools
+  --dir <root> --port 8131` FIRST (explicit `--dir` wins over a running
+  PSPLINK session, so a PSP panel and a desktop panel can run side by
+  side), then launch the app with that cwd — e.g. `cargo run -p openstrike`
+  from the open-strike repo root. The app probes `pocketjs-dbg/enable`
+  once at mount, like the PSP boot probe.
+- Everything except 📷 screenshots works identically (desktop `__dbgShot`
+  is unimplemented; the panel button logs a warning). `hello` reports
+  `host:"desktop"` via `ui.__host`.
+
 ## Real-PSP specifics
 
 - Transport = `pocketjs-dbg/{enable,in,out}.jsonl` on the usbhostfs share

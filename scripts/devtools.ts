@@ -221,8 +221,15 @@ const server = startDevServer({ port: wantedPort, portRetries: 10 });
 let bridge: Bridge;
 let pspLine: string;
 
-const external = await detectUsbhostfs();
-if (external) {
+const dirFlag = argValue("--dir");
+const external = dirFlag ? null : await detectUsbhostfs();
+if (dirFlag) {
+  // An explicit --dir always wins: it targets a desktop-host mailbox
+  // (pocket-ui-wgpu) and must not be hijacked by a running PSP session.
+  bridge = startBridge({ dir: dirFlag, port: server.port, onEvent });
+  const rel = dirFlag.startsWith(ROOT) ? dirFlag.slice(ROOT.length) : dirFlag;
+  pspLine = `mailbox armed at ${rel} — launch the desktop host with this cwd (or POCKETJS_DBG_DIR) to attach`;
+} else if (external) {
   bridge = startBridge({ dir: external.dir, port: server.port, onEvent });
   const rel = external.dir.startsWith(ROOT) ? external.dir.slice(ROOT.length) : external.dir;
   pspLine = `external PSPLINK session (pid ${external.pid}, ${rel}) — relaunch the app there to attach`;
@@ -236,7 +243,7 @@ if (external) {
   bridge = startBridge({ dir: targetDir, port: server.port, onEvent });
   pspLine = `waiting for the PSP on USB… launch PSPLINK on it (XMB → Game)`;
 } else {
-  const dir = argValue("--dir") ?? join(ROOT, "dist", "psplink");
+  const dir = join(ROOT, "dist", "psplink");
   bridge = startBridge({ dir, port: server.port, onEvent });
   const rel = dir.startsWith(ROOT) ? dir.slice(ROOT.length) : dir;
   pspLine = `no device — mailbox armed at ${rel} (bun psplink / bun run devtools <app> to launch)`;

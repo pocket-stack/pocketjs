@@ -18,6 +18,7 @@ use pocket_mod::Guest;
 use pocket_mod::qjs::{Coerced, Function, Object, TypedArray};
 use pocketjs_core::Ui;
 
+use crate::dbg::DbgMailbox;
 use crate::pak::walk_pak;
 
 /// One sprite-atlas registration from the pak (`ui.__sprites[name]`).
@@ -271,6 +272,47 @@ impl UiSurface {
                 ui.borrow_mut().ui.measure_text(&s.0, slot as u8) as f64
             });
 
+            // ---- DevTools ops (spec ops 18..22) + mailbox transport ------
+            // Same names and semantics as the PSP FFI (native/src/ffi.rs +
+            // native/src/dbg.rs): the shim's transport resolution and the
+            // devtools bridge work against this host unchanged.
+            let ui = self.inner.clone();
+            op!("debugInspect", move |id: i32| ui
+                .borrow_mut()
+                .ui
+                .debug_inspect(id));
+
+            let ui = self.inner.clone();
+            op!("debugRectXY", move || ui.borrow().ui.debug_rect_xy());
+
+            let ui = self.inner.clone();
+            op!("debugRectWH", move || ui.borrow().ui.debug_rect_wh());
+
+            let ui = self.inner.clone();
+            op!("debugPause", move |on: bool| ui
+                .borrow_mut()
+                .ui
+                .debug_pause(on));
+
+            let ui = self.inner.clone();
+            op!("debugStep", move || ui.borrow_mut().ui.debug_step());
+
+            let mbox = Rc::new(RefCell::new(DbgMailbox::probe()));
+            let m = mbox.clone();
+            op!("__dbgActive", move || m.borrow().is_some());
+
+            let m = mbox.clone();
+            op!("__dbgPoll", move || -> Option<String> {
+                m.borrow_mut().as_mut().and_then(|b| b.poll())
+            });
+
+            let m = mbox;
+            op!("__dbgSend", move |line: Coerced<String>| {
+                if let Some(b) = m.borrow().as_ref() {
+                    b.send(&line.0);
+                }
+            });
+
             // ---- boot tables (PSP contract) + desktop viewport ----------
             let inner = self.inner.borrow();
             let textures = Object::new(ctx.clone())?;
@@ -295,6 +337,11 @@ impl UiSurface {
             viewport.set("w", vw as f64)?;
             viewport.set("h", vh as f64)?;
             ns.set("__viewport", viewport)?;
+
+            // Honest host label for DevTools' hello (the shim would
+            // otherwise report "psp" — this namespace passes its PSP-shaped
+            // host detection on purpose).
+            ns.set("__host", "desktop")?;
 
             Ok(())
         })
