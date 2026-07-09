@@ -3,6 +3,7 @@
 [![@pocketjs/framework](https://img.shields.io/npm/v/%40pocketjs%2Fframework?label=%40pocketjs%2Fframework)](https://www.npmjs.com/package/@pocketjs/framework)
 [![@pocketjs/cli](https://img.shields.io/npm/v/%40pocketjs%2Fcli?label=%40pocketjs%2Fcli)](https://www.npmjs.com/package/@pocketjs/cli)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/cTce4eXzSK)
 
 High-performance JSX UI outside the browser, with native rendering, standard
 Vue Vapor and Solid support, a Tailwind design system, and 60 FPS animation

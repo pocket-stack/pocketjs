@@ -182,9 +182,12 @@
     .site-nav__ghlabel {
       display: none;
     }
+    .site-nav__optional {
+      display: none;
+    }
     .site-nav__link {
-      padding: 0.5rem;
-      font-size: 13px;
+      padding: 0.5rem 0.38rem;
+      font-size: 12px;
     }
   }
 
@@ -253,16 +256,27 @@
     border: 1px solid var(--color-line);
     border-radius: 0.7rem;
     padding: 0.95rem 1.1rem;
+    max-width: 100%;
     overflow-x: auto;
     font-size: 12.5px;
     line-height: 1.65;
   }
   .prose pre.shiki code {
+    display: block;
+    min-width: max-content;
     font-family: var(--font-mono);
     background: transparent;
     padding: 0;
     border: 0;
     color: inherit;
+  }
+  .prose :where(table) {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .prose :where(th, td) {
+    white-space: nowrap;
   }
 
   /* ---- handheld device frame (hero + playground) ------------------------- */
@@ -465,7 +479,7 @@
   .pg-hint code { font-family: var(--font-mono); color: var(--color-brand-2); }
 
   /* ---- docs layout ------------------------------------------------------- */
-  .doc-shell { display: grid; grid-template-columns: 1fr; gap: 0; max-width: 80rem; margin: 0 auto; }
+  .doc-shell { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; width: 100%; max-width: 80rem; min-width: 0; margin: 0 auto; }
   @media (min-width: 1000px) { .doc-shell { grid-template-columns: 250px minmax(0, 1fr); } }
   .doc-nav {
     display: none; padding: 2rem 1.25rem; border-right: 1px solid var(--color-line);
@@ -477,8 +491,9 @@
   .doc-nav a { display: block; padding: 0.3rem 0.6rem; border-radius: 0.4rem; font-size: 0.88rem; color: var(--color-slate-400); }
   .doc-nav a:hover { color: var(--color-slate-100); background: var(--color-surface); }
   .doc-nav a.on { color: var(--color-brand-2); background: color-mix(in oklab, var(--color-brand) 12%, transparent); font-weight: 600; }
-  .doc-body { padding: 2.5rem 1.5rem 4rem; max-width: 52rem; }
+  .doc-body { width: 100%; min-width: 0; padding: 2.5rem 1.5rem 4rem; max-width: 52rem; }
   @media (min-width: 1000px) { .doc-body { padding: 2.5rem 3rem 5rem; } }
+  .doc-content { min-width: 0; overflow-wrap: anywhere; }
   .doc-pager { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--color-line); }
   .doc-pager a { display: flex; flex-direction: column; padding: 0.75rem 1rem; border: 1px solid var(--color-line); border-radius: 0.6rem; font-size: 0.9rem; color: var(--color-slate-200); max-width: 48%; }
   .doc-pager a:hover { border-color: var(--color-brand); }
@@ -486,6 +501,8 @@
   .doc-pager span { font-size: 0.72rem; font-weight: 600; color: var(--color-slate-500); }
   .doc-fw-code {
     margin: 1.25rem 0;
+    max-width: 100%;
+    min-width: 0;
   }
   .doc-fw-radio {
     position: absolute;
@@ -515,6 +532,7 @@
   }
   .doc-fw-panel {
     display: none;
+    min-width: 0;
   }
   .doc-fw-panel pre {
     margin-top: 0;
