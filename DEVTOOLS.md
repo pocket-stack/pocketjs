@@ -104,6 +104,15 @@ The shim needs only `{ send(line), recv() -> line | null }`:
   every 10 frames on PSP (~166 ms hover latency; each poll is a few USB
   round-trips). `scripts/devtools-psp.ts` bridges the mailbox to the WS hub.
   The same mailbox works under the PPSSPP GUI via the `ms0:` fallback path.
+- **Native desktop (macOS et al., `pocket-ui-wgpu`):** the same file mailbox,
+  minus the USB cable — `pocket3d/crates/pocket-ui-wgpu/src/dbg.rs` is the
+  std twin of the PSP transport. Probed once at `UiSurface::mount`: root =
+  `$POCKETJS_DBG_DIR`, else the process cwd; active only if
+  `pocketjs-dbg/enable` exists. Arm it with `bun run devtools --dir <root>`
+  (an explicit `--dir` always beats a detected PSPLINK session), then launch
+  the host from that cwd. Tree, highlight, pause/step, eval, and tapes work
+  identically; `__dbgShot` is PSP-only for now (the panel's 📷 degrades to a
+  warning).
 - **Headless (tests, `scripts/tape.ts`):** an in-process queue pair. The CLI
   and the test suite are just DevTools clients — the whole protocol is
   drivable without a screen.
