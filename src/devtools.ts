@@ -480,6 +480,9 @@ function clip(s: string): string {
 
 function hostKind(): string {
   const ops = state.ops as (HostOps & { __textures?: unknown }) | null;
+  // Native hosts may self-identify (pocket-ui-wgpu sets "desktop"); the
+  // PSP host predates the field and falls through to the tables check.
+  if (typeof ops?.__host === "string") return ops.__host;
   if (ops?.__textures !== undefined) return "psp";
   if (typeof (globalThis as { document?: unknown }).document !== "undefined") return "web";
   return "headless";

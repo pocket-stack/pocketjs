@@ -14,6 +14,7 @@
 //! 2D and 3D share one base: the same `pocket3d::Gpu` device drives both.
 
 mod blit;
+mod dbg;
 mod pak;
 mod render;
 mod surface;

@@ -88,6 +88,9 @@ export interface HostOps {
   /** PSP on-demand screenshot: dump the displayed framebuffer to
    *  pocketjs-dbg/shot.raw (bridge converts to PNG). → success. */
   __dbgShot?(): boolean;
+  /** Host self-identification for DevTools' hello (e.g. "desktop"); hosts
+   *  without it are inferred from the boot tables. */
+  __host?: string;
 }
 
 export interface Host {
