@@ -32,6 +32,14 @@ import {
   PAK_VERSION,
   PSM,
   TEX_MAX_DIM,
+  TILESET_ABSENT,
+  TILESET_DIR_ENTRY_SIZE,
+  TILESET_FLAG_RLE,
+  TILESET_HEADER_SIZE,
+  TILESET_MAGIC,
+  TILESET_VERSION,
+  keyTileset,
+  packbitsEncode,
 } from "../spec/spec.ts";
 
 export interface PakBlob {
@@ -247,6 +255,117 @@ export function encodeSpriteEntry(a: SpriteAtlas, psm: number = PSM.PSM_8888): U
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Tileset entries (spec.ts "TILESET pak entry")
+// ---------------------------------------------------------------------------
+
+/** One tile of a tileset, row-major grid order. */
+export type TilesetTile =
+  | { kind: "absent" } //                        no content: dir off = ABSENT
+  | { kind: "solid"; paletteIndex: number } //   uniform color: dir len = 0
+  | { kind: "pixels"; indices: Uint8Array }; //  tileW*tileH CLUT8 indices
+
+export interface Tileset {
+  /** Tile dims (pow2, <= TEX_MAX_DIM — each tile becomes one core texture). */
+  tileW: number;
+  tileH: number;
+  /** Grid dims; tiles.length must equal cols*rows. */
+  cols: number;
+  rows: number;
+  /** spec TILESET_FLAG_* (RLE applied here when the RLE bit is set). */
+  flags: number;
+  /** 256 x u32 ABGR shared palette (index 0 conventionally the background). */
+  palette: Uint32Array;
+  tiles: TilesetTile[];
+}
+
+/**
+ * Encode a TILESET pak entry EXACTLY per spec/spec.ts: 32-byte 'PKTS' header,
+ * 1024-byte shared palette, cols*rows x 8-byte directory, then the pixel
+ * streams (PackBits-RLE when flags bit 0 is set). Solid and absent tiles cost
+ * only their directory entry — which is the whole point: whitespace-heavy
+ * deep-zoom canvases pay for ink, not area.
+ */
+export function encodeTilesetEntry(ts: Tileset): Uint8Array {
+  const { tileW, tileH, cols, rows, flags, palette, tiles } = ts;
+  const pow2 = (n: number) => n > 0 && (n & (n - 1)) === 0;
+  if (!pow2(tileW) || !pow2(tileH) || tileW > TEX_MAX_DIM || tileH > TEX_MAX_DIM) {
+    throw new Error(`pak tileset: tile dims must be pow2 <= ${TEX_MAX_DIM}, got ${tileW}x${tileH}`);
+  }
+  if (cols < 1 || rows < 1 || cols > 0xffff || rows > 0xffff) {
+    throw new Error(`pak tileset: bad grid ${cols}x${rows}`);
+  }
+  if (palette.length !== 256) throw new Error("pak tileset: palette must be 256 entries");
+  if (tiles.length !== cols * rows) {
+    throw new Error(`pak tileset: ${tiles.length} tiles != grid ${cols}x${rows}`);
+  }
+  const rle = (flags & TILESET_FLAG_RLE) !== 0;
+
+  // Encode streams first so directory offsets (relative to dataOff) are known.
+  // Identical tiles SHARE one stream: directory offsets are arbitrary, so two
+  // entries may point at the same bytes — free wins on repetitive canvases
+  // (component grids, ruled whitespace) at zero runtime cost.
+  const streams: Uint8Array[] = [];
+  const streamByContent = new Map<string, number>(); // exact bytes -> data offset
+  const dir = new Uint32Array(tiles.length * 2); // [off, len] pairs
+  let dataCursor = 0;
+  for (let i = 0; i < tiles.length; i++) {
+    const t = tiles[i];
+    if (t.kind === "absent") {
+      dir[i * 2] = TILESET_ABSENT;
+      dir[i * 2 + 1] = 0;
+    } else if (t.kind === "solid") {
+      if (t.paletteIndex < 0 || t.paletteIndex > 255) {
+        throw new Error(`pak tileset: solid tile ${i} palette index ${t.paletteIndex} out of range`);
+      }
+      dir[i * 2] = t.paletteIndex; // len == 0 disambiguates from a stream
+      dir[i * 2 + 1] = 0;
+    } else {
+      if (t.indices.length !== tileW * tileH) {
+        throw new Error(`pak tileset: tile ${i} has ${t.indices.length} indices, want ${tileW * tileH}`);
+      }
+      const stream = rle ? packbitsEncode(t.indices) : t.indices;
+      if (stream.length === 0) throw new Error(`pak tileset: tile ${i} produced an empty stream`);
+      const contentKey = Buffer.from(stream).toString("base64");
+      const shared = streamByContent.get(contentKey);
+      if (shared !== undefined) {
+        dir[i * 2] = shared;
+      } else {
+        streamByContent.set(contentKey, dataCursor);
+        dir[i * 2] = dataCursor;
+        streams.push(stream);
+        dataCursor += stream.length;
+      }
+      dir[i * 2 + 1] = stream.length;
+    }
+  }
+
+  const paletteOff = TILESET_HEADER_SIZE;
+  const dirOff = paletteOff + 256 * 4;
+  const dataOff = dirOff + tiles.length * TILESET_DIR_ENTRY_SIZE;
+  const out = new Uint8Array(dataOff + dataCursor);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, TILESET_MAGIC, true);
+  dv.setUint16(4, TILESET_VERSION, true);
+  dv.setUint16(6, flags, true);
+  dv.setUint16(8, tileW, true);
+  dv.setUint16(10, tileH, true);
+  dv.setUint16(12, cols, true);
+  dv.setUint16(14, rows, true);
+  dv.setUint32(16, paletteOff, true);
+  dv.setUint32(20, dirOff, true);
+  dv.setUint32(24, dataOff, true);
+  dv.setUint32(28, 0, true);
+  for (let i = 0; i < 256; i++) dv.setUint32(paletteOff + i * 4, palette[i], true);
+  for (let i = 0; i < dir.length; i++) dv.setUint32(dirOff + i * 4, dir[i], true);
+  let o = dataOff;
+  for (const s of streams) {
+    out.set(s, o);
+    o += s.length;
+  }
+  return out;
+}
+
 /** Procedural placeholder texture (missing demo image): 32x32 checkerboard. */
 export function placeholderImage(): DecodedImage {
   const w = 32;
@@ -362,4 +481,4 @@ export const KEY_STYLES = "ui:styles";
 export const keyFont = (slot: number): string => `ui:font.${slot}`;
 export const keyImage = (name: string): string => `ui:img.${name}`;
 export const keySprite = (name: string): string => `ui:sprite.${name}`;
-export { PAK_DTYPE };
+export { PAK_DTYPE, keyTileset };

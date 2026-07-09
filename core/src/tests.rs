@@ -622,10 +622,10 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
         }
     }
     assert_eq!(corner_quads, 4, "four corner sprites per rounded box");
-    let (pixels, tw, _th, psm) = ui.texture(disc_tex.unwrap()).expect("baked disc texture");
-    assert_eq!(psm, spec::psm::PSM_8888);
+    let view = ui.texture(disc_tex.unwrap()).expect("baked disc texture");
+    assert_eq!(view.psm, spec::psm::PSM_8888);
     let mut partial = false;
-    for px in pixels.chunks_exact(4).take((tw * tw) as usize) {
+    for px in view.pixels.chunks_exact(4).take((view.w * view.w) as usize) {
         if px[3] > 0 && px[3] < 255 {
             partial = true;
             break;
@@ -1015,9 +1015,13 @@ fn image_tex_quad_clips_with_uv_reinterpolation() {
     assert_eq!(ui.upload_texture(&pixels, 1024, 16, spec::psm::PSM_8888), -1);
     assert_eq!(ui.upload_texture(&pixels[..8], 16, 16, spec::psm::PSM_8888), -1);
     assert_eq!(ui.upload_texture(&pixels, 16, 16, 99), -1);
-    let (px, w, h, psm) = ui.texture(tex).unwrap();
-    assert_eq!((px.len(), w, h, psm), (1024, 16, 16, spec::psm::PSM_8888));
-    assert_eq!(px.as_ptr() as usize % 16, 0, "texture pixels must be 16-byte aligned");
+    let view = ui.texture(tex).unwrap();
+    assert_eq!(
+        (view.pixels.len(), view.w, view.h, view.psm),
+        (1024, 16, 16, spec::psm::PSM_8888)
+    );
+    assert!(view.palette.is_none() && !view.linear);
+    assert_eq!(view.pixels.as_ptr() as usize % 16, 0, "texture pixels must be 16-byte aligned");
 
     let img = ui.create_node(spec::NodeType::Image as u8);
     ui.set_prop(img, spec::prop::WIDTH, 100.0);
@@ -1855,4 +1859,343 @@ fn set_text_relayout_scope() {
     ui.set_text(fixed_t, "A");
     assert!(ui.layout.dirty, "empty -> non-empty is structural");
     ui.tick();
+}
+
+// ---- streamed textures: PackBits codec, CLUT8, IMG/TILESET entries, slots --
+
+/// Test-local mirror of spec.ts packbitsEncode (runs >= 2 become run records
+/// capped at 129; literal stretches break before the next run of >= 3).
+fn packbits_encode(src: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < src.len() {
+        let mut run = 1usize;
+        while run < 129 && i + run < src.len() && src[i + run] == src[i] {
+            run += 1;
+        }
+        if run >= 2 {
+            out.push((126 + run) as u8);
+            out.push(src[i]);
+            i += run;
+            continue;
+        }
+        let mut end = i + 1;
+        while end < src.len() && end - i < 128 {
+            let mut r = 1usize;
+            while r < 3 && end + r < src.len() && src[end + r] == src[end] {
+                r += 1;
+            }
+            if r >= 3 {
+                break;
+            }
+            end += 1;
+        }
+        out.push((end - i - 1) as u8);
+        out.extend_from_slice(&src[i..end]);
+        i = end;
+    }
+    out
+}
+
+#[test]
+fn packbits_decodes_hand_built_spec_vectors() {
+    use crate::codec::packbits_decode;
+    // Each vector is the exact spec.ts packbitsEncode output for its plain text.
+    let mut one = [0u8; 1];
+    assert!(packbits_decode(&[0, 5], &mut one)); // single literal
+    assert_eq!(one, [5]);
+    let mut run3 = [0u8; 3];
+    assert!(packbits_decode(&[129, 7], &mut run3)); // run of 3
+    assert_eq!(run3, [7, 7, 7]);
+    let mut lits = [0u8; 3];
+    assert!(packbits_decode(&[2, 1, 2, 3], &mut lits)); // 3-literal stretch
+    assert_eq!(lits, [1, 2, 3]);
+    // 2-runs stay literal (spec.ts: "2-runs are cheaper literal").
+    let mut two_run = [0u8; 4];
+    assert!(packbits_decode(&[3, 1, 2, 2, 3], &mut two_run));
+    assert_eq!(two_run, [1, 2, 2, 3]);
+    // Run capped at 129, then the leftover byte as a literal.
+    let mut long = [0u8; 130];
+    assert!(packbits_decode(&[255, 9, 0, 9], &mut long));
+    assert!(long.iter().all(|&b| b == 9));
+    // Mixed run + literal tail.
+    let mut mixed = [0u8; 6];
+    assert!(packbits_decode(&[130, 1, 1, 2, 3], &mut mixed));
+    assert_eq!(mixed, [1, 1, 1, 1, 2, 3]);
+    // Empty stream <-> empty output.
+    assert!(packbits_decode(&[], &mut []));
+    assert!(!packbits_decode(&[], &mut one));
+}
+
+#[test]
+fn packbits_round_trips_against_the_encoder_mirror() {
+    use crate::codec::packbits_decode;
+    // Deterministic LCG pixel-ish data: long runs + noise, both paths hit.
+    let mut src = Vec::new();
+    let mut state = 0x1234_5678u32;
+    while src.len() < 4096 {
+        state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+        let b = (state >> 24) as u8;
+        let n = if state & 7 == 0 { (state >> 16 & 0xff) as usize + 1 } else { 1 };
+        for _ in 0..n {
+            src.push(b);
+        }
+    }
+    src.truncate(4096);
+    // Sanity-check the mirror against one spec.ts hand vector.
+    assert_eq!(packbits_encode(&[1, 1, 1, 1, 2, 3]), alloc::vec![130, 1, 1, 2, 3]);
+    let enc = packbits_encode(&src);
+    assert!(enc.len() < src.len(), "the vector must actually compress");
+    let mut dec = alloc::vec![0u8; src.len()];
+    assert!(packbits_decode(&enc, &mut dec));
+    assert_eq!(dec, src);
+}
+
+#[test]
+fn packbits_rejects_malformed_streams_without_panicking() {
+    use crate::codec::packbits_decode;
+    let mut out = [0u8; 4];
+    assert!(!packbits_decode(&[3, 1, 2], &mut out), "truncated literal payload");
+    assert!(!packbits_decode(&[130], &mut out), "run without a value byte");
+    assert!(!packbits_decode(&[255, 1], &mut out), "run overruns dst");
+    assert!(!packbits_decode(&[5, 1, 2, 3, 4, 5, 6], &mut out), "literal overruns dst");
+    assert!(!packbits_decode(&[128, 1], &mut out), "src exhausted before dst full");
+    let mut two = [0u8; 2];
+    assert!(!packbits_decode(&[128, 5, 0, 1], &mut two), "trailing bytes after exact fit");
+    assert!(packbits_decode(&[128, 5], &mut two));
+    assert_eq!(two, [5, 5]);
+}
+
+#[test]
+fn t8_upload_carries_an_aligned_palette_and_raw_indices() {
+    let mut ui = Ui::new();
+    let mut data = Vec::new();
+    let mut palette = [0u8; 1024];
+    for i in 0..256 {
+        palette[i * 4] = i as u8; // r = index
+        palette[i * 4 + 3] = 255;
+    }
+    data.extend_from_slice(&palette);
+    let indices: Vec<u8> = (0..64u32).map(|i| (i * 3 % 256) as u8).collect(); // 8x8
+    data.extend_from_slice(&indices);
+    let tex = ui.upload_texture(&data, 8, 8, spec::psm::PSM_T8);
+    assert_eq!(tex, 0, "first slot at gen 0 is handle 0");
+    let view = ui.texture(tex).unwrap();
+    assert_eq!((view.w, view.h, view.psm, view.linear), (8, 8, spec::psm::PSM_T8, false));
+    assert_eq!(view.pixels, &indices[..]);
+    assert_eq!(view.pixels.as_ptr() as usize % 16, 0, "indices must be 16-byte aligned");
+    let pal = view.palette.expect("T8 textures carry a palette");
+    assert_eq!(pal.len(), 1024);
+    assert_eq!(pal.as_ptr() as usize % 16, 0, "palette must be 16-byte aligned");
+    assert_eq!((pal[4], pal[7]), (1, 255));
+    // Undersized: palette alone, or palette + short index stream.
+    assert_eq!(ui.upload_texture(&data[..1023], 8, 8, spec::psm::PSM_T8), -1);
+    assert_eq!(ui.upload_texture(&data[..1024 + 63], 8, 8, spec::psm::PSM_T8), -1);
+}
+
+#[test]
+fn upload_texture_flags_decodes_rle_and_marks_linear() {
+    let mut ui = Ui::new();
+    // T8: raw palette + RLE index stream (16 x byte 7 -> [140, 7]).
+    let indices = [7u8; 16];
+    let mut data = alloc::vec![0u8; 1024];
+    data.extend_from_slice(&packbits_encode(&indices));
+    let flags = spec::img::FLAG_RLE | spec::img::FLAG_LINEAR;
+    let tex = ui.upload_texture_flags(&data, 4, 4, spec::psm::PSM_T8, flags);
+    assert!(tex >= 0);
+    let view = ui.texture(tex).unwrap();
+    assert!(view.linear);
+    assert_eq!(view.pixels, &indices[..]);
+    // Truncated RLE stream -> -1 (must decode to EXACTLY w*h bytes).
+    assert_eq!(
+        ui.upload_texture_flags(&data[..1025], 4, 4, spec::psm::PSM_T8, spec::img::FLAG_RLE),
+        -1
+    );
+    // Non-T8 RLE: the whole payload is the compressed pixel stream.
+    let px8888 = [0xabu8; 2 * 2 * 4];
+    let enc = packbits_encode(&px8888);
+    let tex2 = ui.upload_texture_flags(&enc, 2, 2, spec::psm::PSM_8888, spec::img::FLAG_RLE);
+    assert!(tex2 >= 0);
+    let view2 = ui.texture(tex2).unwrap();
+    assert_eq!(view2.pixels, &px8888[..]);
+    assert!(view2.palette.is_none() && !view2.linear);
+}
+
+#[test]
+fn img_entry_uploads_v1_and_v2_blobs_and_rejects_malformed() {
+    let mut ui = Ui::new();
+    // v2 T8 entry: header (w, h, psm, flags, reserved) + palette + RLE stream.
+    let mut blob = Vec::new();
+    blob.extend_from_slice(&4u16.to_le_bytes());
+    blob.extend_from_slice(&4u16.to_le_bytes());
+    blob.push(spec::psm::PSM_T8 as u8);
+    blob.push(spec::img::FLAG_RLE);
+    blob.extend_from_slice(&[0, 0]); // reserved
+    blob.extend_from_slice(&[0u8; 1024]); // palette (never compressed)
+    blob.extend_from_slice(&[142, 3]); // run of 16 x index 3
+    let tex = ui.upload_img_entry(&blob);
+    assert!(tex >= 0);
+    let view = ui.texture(tex).unwrap();
+    assert_eq!((view.w, view.h, view.psm), (4, 4, spec::psm::PSM_T8));
+    assert_eq!(view.pixels, &[3u8; 16][..]);
+    assert!(!view.linear);
+    // v1 8888 entry (flags byte was reserved/0) still decodes identically.
+    let mut v1 = Vec::new();
+    v1.extend_from_slice(&2u16.to_le_bytes());
+    v1.extend_from_slice(&2u16.to_le_bytes());
+    v1.push(spec::psm::PSM_8888 as u8);
+    v1.push(0);
+    v1.extend_from_slice(&[0, 0]);
+    v1.extend_from_slice(&[0xcdu8; 16]);
+    let tex1 = ui.upload_img_entry(&v1);
+    assert!(tex1 >= 0);
+    assert_eq!(ui.texture(tex1).unwrap().pixels, &[0xcdu8; 16][..]);
+    // Malformed: short header, truncated payload, bogus psm.
+    assert_eq!(ui.upload_img_entry(&v1[..7]), -1);
+    assert_eq!(ui.upload_img_entry(&v1[..20]), -1);
+    let mut bad = v1.clone();
+    bad[4] = 99;
+    assert_eq!(ui.upload_img_entry(&bad), -1);
+}
+
+/// Build a tiny 2x2-tile TILESET blob (4x4 CLUT8 tiles, RLE + linear):
+/// tile 0 = stream of index 5, tile 1 = ABSENT, tile 2 = SOLID(index 9),
+/// tile 3 = stream of index 6.
+fn tiny_tileset() -> Vec<u8> {
+    use spec::tileset as ts;
+    let mut blob = Vec::new();
+    blob.extend_from_slice(&ts::MAGIC.to_le_bytes());
+    blob.extend_from_slice(&ts::VERSION.to_le_bytes());
+    blob.extend_from_slice(&(ts::FLAG_RLE | ts::FLAG_LINEAR).to_le_bytes());
+    blob.extend_from_slice(&4u16.to_le_bytes()); // tileW
+    blob.extend_from_slice(&4u16.to_le_bytes()); // tileH
+    blob.extend_from_slice(&2u16.to_le_bytes()); // cols
+    blob.extend_from_slice(&2u16.to_le_bytes()); // rows
+    let palette_off = ts::HEADER_SIZE as u32;
+    let dir_off = palette_off + 1024;
+    let data_off = dir_off + 4 * ts::DIR_ENTRY_SIZE as u32;
+    blob.extend_from_slice(&palette_off.to_le_bytes());
+    blob.extend_from_slice(&dir_off.to_le_bytes());
+    blob.extend_from_slice(&data_off.to_le_bytes());
+    blob.extend_from_slice(&0u32.to_le_bytes()); // reserved
+    assert_eq!(blob.len(), ts::HEADER_SIZE);
+    let mut palette = [0u8; 1024];
+    palette[5 * 4] = 0xaa; // distinctive red channel at index 5
+    blob.extend_from_slice(&palette);
+    for (off, len) in [(0u32, 2u32), (ts::ABSENT, 0), (9, 0), (2, 2)] {
+        blob.extend_from_slice(&off.to_le_bytes());
+        blob.extend_from_slice(&len.to_le_bytes());
+    }
+    blob.extend_from_slice(&[142, 5, 142, 6]); // two RLE streams: 16 x 5, 16 x 6
+    blob
+}
+
+#[test]
+fn tileset_tile_materializes_pixel_stream_tiles_only() {
+    let mut ui = Ui::new();
+    let blob = tiny_tileset();
+    let t0 = ui.upload_tileset_tile(&blob, 0);
+    assert!(t0 >= 0);
+    let view = ui.texture(t0).unwrap();
+    assert_eq!((view.w, view.h, view.psm), (4, 4, spec::psm::PSM_T8));
+    assert!(view.linear, "tileset flags bit 1 maps to bilinear sampling");
+    assert_eq!(view.pixels, &[5u8; 16][..]);
+    assert_eq!(view.palette.unwrap()[5 * 4], 0xaa, "shared entry palette rides along");
+    // ABSENT and SOLID tiles are the host's job (drawn as background/RECTs).
+    assert_eq!(ui.upload_tileset_tile(&blob, 1), -1);
+    assert_eq!(ui.upload_tileset_tile(&blob, 2), -1);
+    let t3 = ui.upload_tileset_tile(&blob, 3);
+    assert_eq!(ui.texture(t3).unwrap().pixels, &[6u8; 16][..]);
+    assert_ne!(t0, t3, "each tile is its own slot");
+}
+
+#[test]
+fn tileset_tile_rejects_malformed_blobs_without_panicking() {
+    use spec::tileset as ts;
+    let mut ui = Ui::new();
+    let blob = tiny_tileset();
+    assert_eq!(ui.upload_tileset_tile(&blob, 4), -1, "index out of range");
+    assert_eq!(ui.upload_tileset_tile(&blob, u32::MAX), -1);
+    assert_eq!(ui.upload_tileset_tile(&blob[..blob.len() - 1], 3), -1, "truncated stream");
+    assert_eq!(ui.upload_tileset_tile(&blob[..ts::HEADER_SIZE], 0), -1, "header only");
+    assert_eq!(ui.upload_tileset_tile(&[], 0), -1);
+    let mut bad_magic = blob.clone();
+    bad_magic[0] ^= 0xff;
+    assert_eq!(ui.upload_tileset_tile(&bad_magic, 0), -1);
+    let mut bad_version = blob.clone();
+    bad_version[4] = 99;
+    assert_eq!(ui.upload_tileset_tile(&bad_version, 0), -1);
+    // Hostile offsets must be caught by bounds checks, not wrap/panic.
+    let mut bad_pal = blob.clone();
+    bad_pal[16..20].copy_from_slice(&u32::MAX.to_le_bytes()); // paletteOff
+    assert_eq!(ui.upload_tileset_tile(&bad_pal, 0), -1);
+    let mut bad_dir = blob.clone();
+    bad_dir[20..24].copy_from_slice(&u32::MAX.to_le_bytes()); // dirOff
+    assert_eq!(ui.upload_tileset_tile(&bad_dir, 0), -1);
+    let mut bad_data = blob.clone();
+    bad_data[24..28].copy_from_slice(&u32::MAX.to_le_bytes()); // dataOff
+    assert_eq!(ui.upload_tileset_tile(&bad_data, 0), -1);
+}
+
+#[test]
+fn freed_handles_go_stale_and_slots_reuse_under_a_new_generation() {
+    let mut ui = Ui::new();
+    let px = alloc::vec![0xffu8; 8 * 8 * 4];
+    let a = ui.upload_texture(&px, 8, 8, spec::psm::PSM_8888);
+    let b = ui.upload_texture(&px, 8, 8, spec::psm::PSM_8888);
+    assert_eq!((a, b), (0, 1), "sequential uploads keep the old 0-based numbering");
+    ui.free_texture(a);
+    assert!(ui.texture(a).is_none(), "freed handle resolves to None");
+    ui.free_texture(a); // double free: silent no-op
+    assert!(ui.texture(b).is_some(), "other slots unaffected");
+    // LIFO reuse of slot 0 under generation 1 -> a DIFFERENT handle.
+    let c = ui.upload_texture(&px, 8, 8, spec::psm::PSM_8888);
+    assert_ne!(c, a, "reused slot must not resurrect the old handle");
+    assert!(c > 0, "handles stay positive (bit 31 clear)");
+    assert_eq!(c as u32 & spec::TEX_SLOT_MASK, 0, "slot 0 reused LIFO");
+    assert_eq!(c as u32 >> spec::TEX_SLOT_BITS, 1, "generation bumped");
+    assert!(ui.texture(a).is_none(), "the stale handle stays dead after reuse");
+    assert!(ui.texture(c).is_some());
+    // set_image ignores the stale handle but honors the live one.
+    let img = ui.create_node(spec::NodeType::Image as u8);
+    ui.set_image(img, a);
+    ui.set_image(img, c);
+    // The wgpu sync walk sees live slots under their CURRENT handles.
+    assert_eq!(ui.texture_slot_count(), 2);
+    let (h0, _) = ui.texture_at(0).unwrap();
+    assert_eq!(h0, c);
+    let (h1, _) = ui.texture_at(1).unwrap();
+    assert_eq!(h1, b);
+    ui.free_texture(c);
+    assert!(ui.texture_at(0).is_none(), "free slots are skipped by the walk");
+    assert_eq!(ui.texture_slot_count(), 2, "slot storage never shrinks");
+    assert!(ui.texture_at(2).is_none());
+}
+
+#[test]
+fn disc_cache_survives_js_freeing_its_texture() {
+    let mut ui = Ui::new();
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 36.0);
+    ui.set_prop(n, spec::prop::HEIGHT, 20.0);
+    ui.set_prop(n, spec::prop::RADIUS, 8.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 0, 0, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.tick();
+    let find_disc = |words: &[u32]| -> i32 {
+        let i = words.iter().position(|&w| w == spec::draw_op::TEX_QUAD).unwrap();
+        words[i + 1] as i32
+    };
+    let disc = find_disc(&ui.draw().words.clone());
+    assert!(ui.texture(disc).is_some(), "corner disc is a live texture");
+    // JS misuse: freeTexture on the internal disc slot. Must not panic; the
+    // next draw re-validates, re-bakes, and emits a live handle again.
+    ui.free_texture(disc);
+    let disc2 = find_disc(&ui.draw().words.clone());
+    assert_ne!(disc2, disc, "rebaked disc lives under a new generation");
+    assert!(ui.texture(disc2).is_some());
+    assert!(ui.texture(disc).is_none());
+    // Steady state: the rebaked handle is reused, not rebaked per frame.
+    assert_eq!(find_disc(&ui.draw().words.clone()), disc2);
+    assert_eq!(ui.texture_slot_count(), 1, "the freed slot was reused LIFO");
 }

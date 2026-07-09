@@ -8,9 +8,9 @@
 //!   - realm lifecycle: create, mount surfaces, eval the bundle;
 //!   - surface mounting: a named namespace object on `globalThis`
 //!     (`ui`, `strike`, …) populated with native op functions;
-//!   - the guest turn: `frame(buttons)` once per fixed-step tick, then the
-//!     job queue drains (Law 3: one guest turn per host tick — the guest
-//!     never owns a timer or a thread);
+//!   - the guest turn: `frame(buttons, analog)` once per fixed-step tick,
+//!     then the job queue drains (Law 3: one guest turn per host tick — the
+//!     guest never owns a timer or a thread);
 //!   - `console.*` routed to the host's `log` output.
 //!
 //! Cores never call the guest mid-tick; surfaces deliver facts as per-tick
@@ -82,15 +82,23 @@ impl Guest {
         Ok(())
     }
 
-    /// One guest turn: call `globalThis.frame(buttons)` if the bundle
-    /// installed it, then drain the job queue. Call exactly once per
-    /// fixed-step tick.
+    /// One guest turn at a centered analog nub — hosts without a stick call
+    /// this and the guest sees `spec::ANALOG_CENTER`, so pre-analog tapes
+    /// and goldens hold.
     pub fn frame(&self, buttons: u32) -> Result<()> {
+        self.frame_with_analog(buttons, pocketjs_core::spec::ANALOG_CENTER)
+    }
+
+    /// One guest turn: call `globalThis.frame(buttons, analog)` if the
+    /// bundle installed it, then drain the job queue. `analog` packs the nub
+    /// as (x << 8) | y, each axis 0..255 with 128 = center. Call exactly
+    /// once per fixed-step tick.
+    pub fn frame_with_analog(&self, buttons: u32, analog: u32) -> Result<()> {
         self.ctx.with(|ctx| -> Result<()> {
             let frame: Option<Function> = ctx.globals().get("frame").ok();
             if let Some(frame) = frame {
                 frame
-                    .call::<_, ()>((buttons,))
+                    .call::<_, ()>((buttons, analog))
                     .catch(&ctx)
                     .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
             }
@@ -243,6 +251,22 @@ mod tests {
         let out: i32 = g.with(|ctx| ctx.globals().get("out").unwrap());
         assert_eq!(out, 42);
         assert_eq!(*hits.borrow(), vec![21]);
+    }
+
+    #[test]
+    fn frame_passes_analog_and_defaults_to_center() {
+        let g = Guest::new().unwrap();
+        g.eval(
+            "boot",
+            "globalThis.a = -1; globalThis.frame = (b, analog) => { globalThis.a = analog; };",
+        )
+        .unwrap();
+        g.frame_with_analog(0, 0x20e0).unwrap();
+        let a: u32 = g.with(|ctx| ctx.globals().get("a").unwrap());
+        assert_eq!(a, 0x20e0);
+        g.frame(0).unwrap();
+        let a: u32 = g.with(|ctx| ctx.globals().get("a").unwrap());
+        assert_eq!(a, pocketjs_core::spec::ANALOG_CENTER);
     }
 
     #[test]

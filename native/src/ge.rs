@@ -32,11 +32,11 @@ use core::ffi::c_void;
 use core::ptr::null;
 
 use psp::sys::{
-    self, BlendFactor, BlendOp, ClearBuffer, GuPrimitive, GuState, MipmapLevel,
+    self, BlendFactor, BlendOp, ClearBuffer, ClutPixelFormat, GuPrimitive, GuState, MipmapLevel,
     TextureColorComponent, TextureEffect, TextureFilter, TexturePixelFormat, VertexType,
 };
 use psp::{SCREEN_HEIGHT, SCREEN_WIDTH};
-use pocketjs_core::{spec, text::Atlas, Ui};
+use pocketjs_core::{spec, text::Atlas, TexView, Ui};
 
 // ---------------------------------------------------------------------------
 // Vertex formats (GE fixed component order: [uv][color][pos])
@@ -308,22 +308,61 @@ unsafe fn flush(prim: GuPrimitive, vtype: VertexType, count: i32, verts: *const 
     }
 }
 
-/// Program the sampler for one core texture (pixels were dcache-written-back
-/// at upload). tbw = width (pow2 >= 8 from the compiler's pow2<=512 check).
-unsafe fn apply_texture(pixels: &[u8], w: u32, h: u32, psm: u32) {
-    let fmt = match psm {
-        spec::psm::PSM_4444 => TexturePixelFormat::Psm4444,
-        _ => TexturePixelFormat::Psm8888,
-    };
+/// dcache-writeback one texture's pixel plane AND its CLUT (PSM_T8): the GE
+/// samples RAM, not the dcache — call ONCE per upload (pak::feed and the JS
+/// upload ops in ffi.rs).
+pub fn writeback_texture(ui: &Ui, handle: i32) {
+    let Some(view) = ui.texture(handle) else { return };
+    unsafe {
+        sys::sceKernelDcacheWritebackRange(
+            view.pixels.as_ptr() as *const c_void,
+            view.pixels.len() as u32,
+        );
+        if let Some(pal) = view.palette {
+            sys::sceKernelDcacheWritebackRange(pal.as_ptr() as *const c_void, pal.len() as u32);
+        }
+    }
+}
+
+/// Program the sampler for one core texture (pixels + CLUT were dcache-
+/// written-back at upload). tbw = width (pow2 >= 8 from the compiler's
+/// pow2<=512 check).
+unsafe fn apply_texture(view: &TexView) {
     sys::sceGuEnable(GuState::Texture2D);
-    sys::sceGuTexMode(fmt, 0, 0, 0);
-    sys::sceGuTexImage(MipmapLevel::None, w as i32, h as i32, w as i32, pixels.as_ptr() as *const c_void);
+    match view.psm {
+        spec::psm::PSM_T8 => {
+            // CLUT8: upload the 256 x u32 ABGR palette (32 blocks of 8
+            // entries), then sample the 8-bit index plane. The core
+            // guarantees palette is Some exactly when psm == PSM_T8.
+            if let Some(pal) = view.palette {
+                sys::sceGuClutMode(ClutPixelFormat::Psm8888, 0, 0xff, 0);
+                sys::sceGuClutLoad(32, pal.as_ptr() as *const c_void);
+            }
+            sys::sceGuTexMode(TexturePixelFormat::PsmT8, 0, 0, 0);
+        }
+        spec::psm::PSM_4444 => sys::sceGuTexMode(TexturePixelFormat::Psm4444, 0, 0, 0),
+        _ => sys::sceGuTexMode(TexturePixelFormat::Psm8888, 0, 0, 0),
+    }
+    sys::sceGuTexImage(
+        MipmapLevel::None,
+        view.w as i32,
+        view.h as i32,
+        view.w as i32,
+        view.pixels.as_ptr() as *const c_void,
+    );
     sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgba);
-    // NEAREST matches the wasm software rasterizer (wasm/src/raster.rs) that the
-    // byte-exact goldens are defined against — keeping PSP consistent with the
-    // reference — AND it avoids bilinear bleed across sprite-atlas cell edges,
-    // where adjacent texels belong to a DIFFERENT animation frame.
-    sys::sceGuTexFilter(TextureFilter::Nearest, TextureFilter::Nearest);
+    // NEAREST remains the golden-parity default: it matches the wasm software
+    // rasterizer (wasm/src/raster.rs) that the byte-exact goldens are defined
+    // against — keeping PSP consistent with the reference — AND it avoids
+    // bilinear bleed across sprite-atlas cell edges, where adjacent texels
+    // belong to a DIFFERENT animation frame. LINEAR is opt-in per texture
+    // (spec::img::FLAG_LINEAR) for the deep-zoom tiles, which magnify one
+    // texel far past 1:1 and want smoothing, not cell fidelity.
+    if view.linear {
+        sys::sceGuTexFilter(TextureFilter::Linear, TextureFilter::Linear);
+    } else {
+        sys::sceGuTexFilter(TextureFilter::Nearest, TextureFilter::Nearest);
+    }
 }
 
 unsafe fn apply_font_texture(tex: &FontTexture) {
@@ -613,8 +652,9 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                     end += 9;
                 }
                 let count = (end - i) / 9;
-                if let Some((pixels, tw, th, psm)) = ui.texture(handle) {
-                    apply_texture(pixels, tw, th, psm);
+                if let Some(view) = ui.texture(handle) {
+                    apply_texture(&view);
+                    let (tw, th) = (view.w, view.h);
                     // TRANSFORM_2D UVs are TEXELS (see module docs): scale the
                     // normalized DrawList UVs by the texture dimensions.
                     let bytes = count * 2 * core::mem::size_of::<VertTC>();
@@ -668,8 +708,9 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                     end += 12;
                 }
                 let count = (end - i) / 12;
-                if let Some((pixels, tw, th, psm)) = ui.texture(handle) {
-                    apply_texture(pixels, tw, th, psm);
+                if let Some(view) = ui.texture(handle) {
+                    apply_texture(&view);
+                    let (tw, th) = (view.w, view.h);
                     let bytes = count * 3 * core::mem::size_of::<VertTC>();
                     let verts = pool_alloc(bytes) as *mut VertTC;
                     for t in 0..count {

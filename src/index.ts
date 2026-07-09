@@ -33,7 +33,7 @@ import {
 import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
-import { resetFrameHooks, runFrameHooks } from "./frame.ts";
+import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
 import { __drainEffects, resetEffects } from "./effects.ts";
 import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
@@ -193,8 +193,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   initDevtools(host.ops); // DevTools shim (DEVTOOLS.md): flight recorder +
   // debug channel; one branch per frame when no transport is connected.
   installFrameHandler(
-    wrapFrameHandler((buttons: number) => {
+    wrapFrameHandler((buttons: number, analog: number) => {
       __advanceClock(); // virtual frame++, fire due after() timers
+      __setAnalog(analog); // latch the nub before any app code reads it
       __drainEffects(); // frame-boundary deliveries enter the world first
       runFrameHooks(buttons); // app lifecycle callbacks: onFrame/onButtonPress/etc.
       handleFrame(buttons); // edge-detect, focus nav, onPress (runs effects)

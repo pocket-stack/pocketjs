@@ -67,6 +67,20 @@ export interface HostOps {
   /** JS-side convenience; layout measures natively. → width in px. */
   measureText(str: string, fontSlot: number): number;
 
+  // -- streamed textures (spec ops 23..25) — deep-zoom tile canvases. Native
+  //    hosts (PSP, uihost) implement loadTileTexture so tile bytes never
+  //    transit the JS heap; hosts without it fall back to __pak +
+  //    uploadTexture in src/tiles.ts. -------------------------------------
+  /** Decode tile `index` of a TILESET pak entry (`key`) into a texture.
+   *  → generation-tagged handle, or -1 (absent/solid/malformed tile). */
+  loadTileTexture?(key: string, index: number): number;
+  /** Release a texture slot. The handle is dead afterwards (stale handles
+   *  draw nothing — handles are generation-tagged, spec TEX_SLOT_BITS). */
+  freeTexture?(handle: number): void;
+  /** Upload a self-contained IMG entry blob (compiler/pak.ts layout, incl.
+   *  PSM_T8 palette + RLE/filter flags). → handle or -1. */
+  uploadImgEntry?(blob: Uint8Array): number;
+
   // -- DevTools ops (spec ops 18..22, DEVTOOLS.md). Optional: debug-only,
   //    default-off; hosts that predate them (e.g. pocket-mod) simply lack
   //    them and the shim feature-detects. ---------------------------------
@@ -147,12 +161,16 @@ export function getOps(): HostOps {
 // Frame hookup
 // ---------------------------------------------------------------------------
 // Every host drives frames the same way: once per vblank/rAF tick it calls
-// `globalThis.frame(buttons)` with the PSP button bitmask (spec BTN). index.ts
-// composes input edge-detection + the renderer's end-of-frame sweep into that
-// entry point via installFrameHandler.
+// `globalThis.frame(buttons, analog?)` with the PSP button bitmask (spec BTN)
+// and, when the host has an analog stick, the packed nub value
+// (x << 8 | y, each axis 0..255, 128 = center — spec ANALOG_CENTER). Hosts
+// without a stick pass one argument; the runtime defaults to center, so every
+// pre-analog host, tape and golden is unchanged. index.ts composes input
+// edge-detection + the renderer's end-of-frame sweep into that entry point
+// via installFrameHandler.
 
-export function installFrameHandler(fn: (buttons: number) => void): void {
-  (globalThis as { frame?: (buttons: number) => void }).frame = fn;
+export function installFrameHandler(fn: (buttons: number, analog?: number) => void): void {
+  (globalThis as { frame?: (buttons: number, analog?: number) => void }).frame = fn;
 }
 
 // ---------------------------------------------------------------------------

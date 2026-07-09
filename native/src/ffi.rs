@@ -17,7 +17,6 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::ffi::c_void;
 
 use libquickjs_sys::*;
 use pocketjs_core::Ui;
@@ -224,10 +223,77 @@ unsafe extern "C" fn js_upload_texture(
     let bytes = core::slice::from_raw_parts(p, len);
     let handle = ui().upload_texture(bytes, w as u32, h as u32, psm as u32);
     if handle >= 0 {
-        // GE samples RAM: write the core's aligned copy back once at upload.
-        if let Some((px, _, _, _)) = ui().texture(handle) {
-            psp::sys::sceKernelDcacheWritebackRange(px.as_ptr() as *const c_void, px.len() as u32);
-        }
+        // GE samples RAM: write the core's aligned copy (pixels + CLUT) back
+        // once at upload.
+        crate::ge::writeback_texture(ui(), handle);
+    }
+    JS_NewInt32(ctx, handle)
+}
+
+/// loadTileTexture(key, index) -> handle | -1 (spec op 23): decode ONE tile
+/// of a TILESET pak entry, looked up by key in the embedded pak at runtime
+/// (pak::feed skips `ui:tile.*` — tiles stream on demand, they never bulk-
+/// load at boot). Missing pak/key and malformed entries all surface as -1.
+unsafe extern "C" fn js_load_tile_texture(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc < 2 {
+        return JS_NewInt32(ctx, -1);
+    }
+    let mut len: size_t = 0;
+    let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+    if s.is_null() {
+        return JS_NewInt32(ctx, -1);
+    }
+    // Pak keys are UTF-8 by construction (compiler/pak.ts); a WTF-8 lone
+    // surrogate from JS can't match any entry, so treat it as a miss.
+    let handle = match core::str::from_utf8(core::slice::from_raw_parts(s as *const u8, len)) {
+        Ok(key) => match crate::pak::find(crate::pak::installed(), key) {
+            Some(blob) => ui().upload_tileset_tile(blob, arg_i32(ctx, argc, argv, 1) as u32),
+            None => -1,
+        },
+        Err(_) => -1,
+    };
+    JS_FreeCString(ctx, s);
+    if handle >= 0 {
+        crate::ge::writeback_texture(ui(), handle);
+    }
+    JS_NewInt32(ctx, handle)
+}
+
+/// freeTexture(handle) (spec op 24). Stale/unknown handles are no-ops in the
+/// core, so no validation here.
+unsafe extern "C" fn js_free_texture(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().free_texture(arg_i32(ctx, argc, argv, 0));
+    JS_UNDEFINED
+}
+
+/// uploadImgEntry(blob) -> handle | -1 (spec op 25): a self-contained IMG
+/// pak entry (header + flags + pixel stream), the dynamic-image counterpart
+/// of the boot-time `ui:img.*` feed.
+unsafe extern "C" fn js_upload_img_entry(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc < 1 {
+        return JS_NewInt32(ctx, -1);
+    }
+    let Some((p, len)) = buffer_bytes(ctx, *argv.offset(0)) else {
+        return JS_NewInt32(ctx, -1);
+    };
+    let handle = ui().upload_img_entry(core::slice::from_raw_parts(p, len));
+    if handle >= 0 {
+        crate::ge::writeback_texture(ui(), handle);
     }
     JS_NewInt32(ctx, handle)
 }
@@ -513,6 +579,10 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"debugRectWH\0", js_debug_rect_wh, 0);
     add_fn(ctx, ui_obj, b"debugPause\0", js_debug_pause, 1);
     add_fn(ctx, ui_obj, b"debugStep\0", js_debug_step, 0);
+    // Texture streaming ops (spec ops 23..25: deep-zoom tiles + dynamic IMGs).
+    add_fn(ctx, ui_obj, b"loadTileTexture\0", js_load_tile_texture, 2);
+    add_fn(ctx, ui_obj, b"freeTexture\0", js_free_texture, 1);
+    add_fn(ctx, ui_obj, b"uploadImgEntry\0", js_upload_img_entry, 1);
     add_fn(ctx, ui_obj, b"__dbgActive\0", js_dbg_active, 0);
     add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
     add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);

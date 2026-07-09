@@ -295,6 +295,27 @@ for (const name of imageNames) {
   }
 }
 
+// Optional per-app raw-blob manifest: <appDir>/pak.json lists PREBAKED binary
+// entries (e.g. demos/figma's committed TILESET pyramids from gen-assets.ts)
+// appended verbatim as u8 blobs. This keeps expensive offline bakes out of the
+// build: the build just splices bytes it can't (and needn't) regenerate.
+const pakManifestPath = appDir + "pak.json";
+if (existsSync(pakManifestPath)) {
+  const rawEntries = JSON.parse(await Bun.file(pakManifestPath).text()) as Array<{ key: string; file: string }>;
+  let rawBytes = 0;
+  for (const e of rawEntries) {
+    const path = appDir + e.file;
+    if (!existsSync(path)) {
+      console.error(`  pak.json: ${e.key} -> ${path} missing (re-run the app's gen-assets baker?)`);
+      process.exit(1);
+    }
+    const data = new Uint8Array(await Bun.file(path).arrayBuffer());
+    blobs.push({ key: e.key, dtype: PAK_DTYPE.u8, data });
+    rawBytes += data.length;
+  }
+  console.log(`  raw: ${rawEntries.length} prebaked blob(s) from pak.json, ${rawBytes} bytes`);
+}
+
 const pak = pack(blobs);
 await Bun.write(DIST + outName + ".pak", pak);
 console.log(`  pak: ${blobs.length} entries, ${pak.length} bytes -> ${DIST}${outName}.pak`);

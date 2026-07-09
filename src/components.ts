@@ -28,6 +28,13 @@ import {
 import { setDebugName } from "./native-tree.ts";
 
 export { View, Text, Image, Sprite, type ViewProps, type TextProps, type ImageProps, type SpriteProps } from "./primitives.ts";
+export {
+  DeepZoom,
+  type DeepZoomProps,
+  type DeepZoomView,
+  type TileDoc,
+  type TileLevel,
+} from "./deepzoom.ts";
 export type { NodeMirror } from "./renderer.ts";
 
 type RefProp = ViewProps["ref"];

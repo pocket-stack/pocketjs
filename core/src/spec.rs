@@ -30,6 +30,10 @@ pub const SIZE_FULL: f32 = -1.0;
 
 /// Textures must be power-of-two and no larger than this per side.
 pub const TEX_MAX_DIM: u32 = 512;
+/// Texture handles are generation-tagged like node ids:
+/// handle = (generation << TEX_SLOT_BITS) | slot; bit 31 stays 0.
+pub const TEX_SLOT_BITS: u32 = 20;
+pub const TEX_SLOT_MASK: u32 = 0xfffff;
 /// Max baked font-atlas slots.
 pub const MAX_FONT_SLOTS: usize = 16;
 /// Transition mask value meaning "every animatable prop".
@@ -71,6 +75,9 @@ pub mod op {
     pub const DEBUG_RECT_W_H: u8 = 20;
     pub const DEBUG_PAUSE: u8 = 21;
     pub const DEBUG_STEP: u8 = 22;
+    pub const LOAD_TILE_TEXTURE: u8 = 23;
+    pub const FREE_TEXTURE: u8 = 24;
+    pub const UPLOAD_IMG_ENTRY: u8 = 25;
 }
 
 /// Property ids (u8, stable, append-only). Groups:
@@ -285,9 +292,30 @@ pub enum Easing {
 
 /// PSM texture pixel formats — MUST equal rust-psp TexturePixelFormat
 /// (sceGuTexMode arg; verified against rust-psp/psp/src/sys/gu.rs).
+/// PSM_T8 (CLUT8) uploads as: 1024-byte palette (256 x u32 ABGR), then
+/// w*h index bytes.
 pub mod psm {
     pub const PSM_4444: u32 = 2;
     pub const PSM_8888: u32 = 3;
+    pub const PSM_T8: u32 = 5;
+}
+
+/// IMG entry flags (compiler/pak.ts IMG entry byte 5; v1 wrote 0).
+pub mod img {
+    pub const FLAG_RLE: u8 = 1; // pixel stream is PackBits-RLE
+    pub const FLAG_LINEAR: u8 = 2; // bilinear sampling
+}
+
+/// TILESET pak entry (deep-zoom tile grids; full layout in spec.ts).
+/// One shared 256-color palette per entry; solid tiles live in the dir.
+pub mod tileset {
+    pub const MAGIC: u32 = 0x53544b50; // 'PKTS' LE
+    pub const VERSION: u16 = 1;
+    pub const HEADER_SIZE: usize = 32;
+    pub const DIR_ENTRY_SIZE: usize = 8;
+    pub const ABSENT: u32 = 0xffffffff;
+    pub const FLAG_RLE: u16 = 1;
+    pub const FLAG_LINEAR: u16 = 2;
 }
 
 /// STYLE TABLE (styles.bin) format constants — full layout in spec.ts.
@@ -368,3 +396,8 @@ pub mod btn {
     pub const CROSS: u32 = 0x4000;
     pub const SQUARE: u32 = 0x8000;
 }
+
+/// frame(buttons, analog): analog packs the nub as (x << 8) | y, each
+/// axis 0..255 with 128 = center. Hosts without a stick omit the arg;
+/// the runtime defaults to this value (so old tapes/goldens hold).
+pub const ANALOG_CENTER: u32 = 0x8080;

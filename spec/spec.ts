@@ -119,6 +119,18 @@ export const OP = {
   debugRectWH: 20, //  packed w|h<<16 of the same AABB
   debugPause: 21, //   freeze the world: tick() no-ops (draw still runs)
   debugStep: 22, //    arm exactly one tick while paused
+  // -- streamed textures (deep-zoom tile canvases; see TILESET below) -------
+  loadTileTexture: 23, // (pakKey: string, tileIndex: i32) -> handle | -1.
+  //                      Decode ONE tile of a TILESET pak entry into a core
+  //                      texture, host-side (PSP reads .rodata directly; no
+  //                      JS-heap transit). Hosts without it: the framework
+  //                      falls back to __pak + uploadImgEntry.
+  freeTexture: 24, //     (handle) — release a texture slot. Handles are
+  //                      generation-tagged (below); a freed handle is dead
+  //                      and draws nothing if still referenced.
+  uploadImgEntry: 25, //  (blob) -> handle | -1. Upload a self-contained IMG
+  //                      entry (compiler/pak.ts layout, v2: PSM_T8 palette +
+  //                      optional RLE + filter flags parsed core-side).
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -378,10 +390,134 @@ export const ENUMS = {
 export const PSM = {
   PSM_4444: 2, // RGBA 4444, 16-bit
   PSM_8888: 3, // RGBA 8888, 32-bit
+  PSM_T8: 5, //   CLUT8: one palette index/px + a 256 x u32 ABGR palette
+  //              (rust-psp TexturePixelFormat::PsmT8 — the GE CLUT8 mode).
+  //              upload_texture data layout: 1024-byte palette, then w*h
+  //              index bytes. 4x smaller than 8888 — the tile-canvas format.
 } as const;
 
 /** Textures must be power-of-two and no larger than this per side. */
 export const TEX_MAX_DIM = 512;
+
+// Texture handles are generation-tagged like node ids:
+//   handle = (generation << TEX_SLOT_BITS) | slot, bit 31 stays 0.
+// `freeTexture` bumps the slot's generation, so a stale handle held by JS (or
+// by a still-mounted image node) resolves to nothing and draws nothing —
+// instead of silently sampling whatever texture reused the slot. Slots are
+// reused LIFO via a free list.
+export const TEX_SLOT_BITS = 20;
+export const TEX_SLOT_MASK = 0xfffff;
+
+// ---------------------------------------------------------------------------
+// IMG entry flags (compiler/pak.ts IMG entry, byte 5 — was reserved/0)
+// ---------------------------------------------------------------------------
+// v1 wrote 0 there, so v1 blobs decode identically under v2 rules.
+//   bit 0  IMG_FLAG_RLE     pixel stream is PackBits-RLE (below)
+//   bit 1  IMG_FLAG_LINEAR  sample with bilinear filtering (default nearest)
+
+export const IMG_FLAG_RLE = 1 << 0;
+export const IMG_FLAG_LINEAR = 1 << 1;
+
+// PackBits-style byte RLE (the only compression the runtime knows):
+//   control byte c < 128  -> copy the next c+1 literal bytes
+//   control byte c >= 128 -> repeat the next byte (c - 126) times  [2..129]
+// Decoded length must equal the expected pixel-stream size exactly.
+
+/** Encode bytes with the runtime's PackBits RLE (compiler-side). */
+export function packbitsEncode(src: Uint8Array): Uint8Array {
+  const out: number[] = [];
+  let i = 0;
+  while (i < src.length) {
+    // find run length at i
+    let run = 1;
+    while (run < 129 && i + run < src.length && src[i + run] === src[i]) run++;
+    if (run >= 2) {
+      out.push(126 + run, src[i]);
+      i += run;
+      continue;
+    }
+    // literal stretch: until the next run of >= 3 (2-runs are cheaper literal)
+    let end = i + 1;
+    while (end < src.length && end - i < 128) {
+      let r = 1;
+      while (r < 3 && end + r < src.length && src[end + r] === src[end]) r++;
+      if (r >= 3) break;
+      end++;
+    }
+    out.push(end - i - 1);
+    for (let k = i; k < end; k++) out.push(src[k]);
+    i = end;
+  }
+  return new Uint8Array(out);
+}
+
+/** Decode the runtime's PackBits RLE. Returns null on malformed input. */
+export function packbitsDecode(src: Uint8Array, expectedLen: number): Uint8Array | null {
+  const out = new Uint8Array(expectedLen);
+  let i = 0;
+  let o = 0;
+  while (i < src.length) {
+    const c = src[i++];
+    if (c < 128) {
+      const n = c + 1;
+      if (i + n > src.length || o + n > expectedLen) return null;
+      out.set(src.subarray(i, i + n), o);
+      i += n;
+      o += n;
+    } else {
+      const n = c - 126;
+      if (i >= src.length || o + n > expectedLen) return null;
+      out.fill(src[i++], o, o + n);
+      o += n;
+    }
+  }
+  return o === expectedLen ? out : null;
+}
+
+// ---------------------------------------------------------------------------
+// TILESET pak entry — a deep-zoom tile grid (one entry per page per mip level)
+// ---------------------------------------------------------------------------
+// Baked by a cooker (e.g. demos/figma/gen-assets.ts), consumed one tile at a
+// time by the `loadTileTexture` op. All tiles of one entry share ONE palette,
+// so per-tile overhead is just the directory entry; whitespace costs nothing
+// (solid tiles are encoded in the directory and drawn as plain RECTs).
+//
+//   Header (32 bytes):
+//     off 0  u32  magic      = 0x53544b50  bytes 'P','K','T','S'
+//     off 4  u16  version    = 1
+//     off 6  u16  flags      bit 0 = pixel streams are PackBits-RLE
+//                            bit 1 = sample with bilinear filtering
+//     off 8  u16  tileW      (pow2 <= TEX_MAX_DIM)
+//     off 10 u16  tileH
+//     off 12 u16  cols
+//     off 14 u16  rows
+//     off 16 u32  paletteOff 1024 bytes, 256 x u32 ABGR
+//     off 20 u32  dirOff     cols*rows x 8-byte entries, row-major
+//     off 24 u32  dataOff
+//     off 28 u32  reserved (0)
+//
+//   Dir entry (tile i at x = i % cols, y = floor(i / cols)):
+//     +0  u32  off   TILESET_ABSENT = tile has no content (transparent — the
+//                    canvas background shows through; loadTileTexture -> -1);
+//                    if len == 0 (and off != ABSENT): SOLID tile, off is the
+//                    palette index of its uniform color;
+//                    else: pixel-stream byte offset relative to dataOff.
+//     +4  u32  len   pixel-stream byte length (0 = solid/absent).
+//
+//   Pixel stream: tileW*tileH CLUT8 palette indices, raw, or PackBits-RLE
+//   when flags bit 0 is set.
+
+export const TILESET_MAGIC = 0x53544b50; // 'PKTS' LE
+export const TILESET_VERSION = 1;
+export const TILESET_HEADER_SIZE = 32;
+export const TILESET_DIR_ENTRY_SIZE = 8;
+export const TILESET_ABSENT = 0xffffffff;
+export const TILESET_FLAG_RLE = 1 << 0;
+export const TILESET_FLAG_LINEAR = 1 << 1;
+
+/** Pak key family for TILESET entries. NOT fed to the core at boot — tiles
+ *  stream on demand through the loadTileTexture op. */
+export const keyTileset = (name: string): string => `ui:tile.${name}`;
 
 // ---------------------------------------------------------------------------
 // Font slots
@@ -946,6 +1082,18 @@ export const BTN = {
   CROSS: 0x4000,
   SQUARE: 0x8000,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Analog stick (the frame contract's second argument)
+// ---------------------------------------------------------------------------
+// Hosts call `globalThis.frame(buttons, analog)` where `analog` packs the PSP
+// nub as (x << 8) | y — each axis 0..255 with 128 = center (sceCtrlReadBuffer-
+// Positive's SceCtrlData.ax/ay). Hosts without a stick omit the argument; the
+// runtime defaults to ANALOG_CENTER, so every pre-analog host, tape and golden
+// is unchanged. Deadzone/normalization is runtime policy (src/frame.ts), not
+// host policy — hosts pass the raw value through.
+
+export const ANALOG_CENTER = 0x8080;
 
 // ---------------------------------------------------------------------------
 // Fixed timestep

@@ -15,7 +15,7 @@
 //!
 //! Input map (PSP buttons): arrows = D-pad, Z/Enter = CROSS, X = CIRCLE,
 //! A = SQUARE, S = TRIANGLE, Q/W = L/R triggers, Tab = SELECT,
-//! Space = START.
+//! Space = START. Analog nub: I/K = Y axis, J/L = X axis (full tilt).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -197,6 +197,36 @@ fn windowed(args: Args) -> Result<()> {
 }
 
 
+/// Analog-nub keys currently held (uihost has no real stick: a held key is
+/// full tilt, opposing keys cancel to center).
+#[derive(Default)]
+struct Nub {
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
+}
+
+impl Nub {
+    /// The held-flag a nub key drives (I/K = Y axis, J/L = X axis), if any.
+    fn key(&mut self, key: KeyCode) -> Option<&mut bool> {
+        Some(match key {
+            KeyCode::KeyI => &mut self.up,
+            KeyCode::KeyK => &mut self.down,
+            KeyCode::KeyJ => &mut self.left,
+            KeyCode::KeyL => &mut self.right,
+            _ => return None,
+        })
+    }
+
+    /// The spec `frame(buttons, analog)` word:
+    /// ((128 + x*127) << 8) | (128 + y*127), centered = spec::ANALOG_CENTER.
+    fn analog(&self) -> u32 {
+        let axis = |neg: bool, pos: bool| (128 + (pos as i32 - neg as i32) * 127) as u32;
+        (axis(self.left, self.right) << 8) | axis(self.up, self.down)
+    }
+}
+
 struct State {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -208,6 +238,7 @@ struct State {
     offscreen: OffscreenTarget,
     blit: Blit,
     buttons: u32,
+    nub: Nub,
 }
 
 struct App {
@@ -251,6 +282,7 @@ impl App {
             offscreen,
             blit,
             buttons: 0,
+            nub: Nub::default(),
         })
     }
 
@@ -258,7 +290,7 @@ impl App {
         let Some(s) = self.state.as_mut() else { return Ok(()) };
         // One guest turn + one core frame per vsync'd redraw (~60 Hz, the
         // PSP's cadence).
-        s.guest.frame(s.buttons)?;
+        s.guest.frame_with_analog(s.buttons, s.nub.analog())?;
         s.ui.tick();
 
         let frame = match s.surface.get_current_texture() {
@@ -362,10 +394,16 @@ impl ApplicationHandler for App {
                         event_loop.exit();
                         return;
                     }
-                    if let (Some(bit), Some(s)) = (button_for(code), self.state.as_mut()) {
-                        match event.state {
-                            ElementState::Pressed => s.buttons |= bit,
-                            ElementState::Released => s.buttons &= !bit,
+                    if let Some(s) = self.state.as_mut() {
+                        let held = event.state == ElementState::Pressed;
+                        if let Some(bit) = button_for(code) {
+                            if held {
+                                s.buttons |= bit;
+                            } else {
+                                s.buttons &= !bit;
+                            }
+                        } else if let Some(k) = s.nub.key(code) {
+                            *k = held;
                         }
                     }
                 }

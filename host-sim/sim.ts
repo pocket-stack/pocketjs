@@ -36,7 +36,14 @@ export interface ScriptEvent {
    *  times on the 0.5 s grid and they align exactly at every valid hz. */
   at: number;
   /** BTN mask held for exactly that one virtual frame (a press pulse). */
-  press: number;
+  press?: number;
+  /** BTN mask held from this frame until the next event that carries `hold`
+   *  (level-triggered — for trigger-zoom style inputs; 0 releases). */
+  hold?: number;
+  /** Packed analog nub value ((x << 8) | y, 128 = center) held from this
+   *  frame until the next event that carries `analog` (level-triggered —
+   *  a one-frame nub pulse cannot pan anything). spec ANALOG_CENTER releases. */
+  analog?: number;
 }
 
 export interface Scenario {
@@ -86,17 +93,38 @@ export function fnv1a(bytes: Uint8Array): string {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-/** Expand a virtual-seconds script into per-frame masks. */
-export function scriptToMasks(script: ScriptEvent[], hz: number, frames: number): number[] {
+/** Expand a virtual-seconds script into per-frame masks + analog values. */
+export function scriptToMasks(
+  script: ScriptEvent[],
+  hz: number,
+  frames: number,
+): { masks: number[]; analogs: number[] } {
+  const ANALOG_CENTER = 0x8080; // spec.ts (kept literal — this module stays host-side)
   const masks = new Array<number>(frames).fill(0);
+  const analogs = new Array<number>(frames).fill(ANALOG_CENTER);
+  const holds: { f: number; v: number }[] = [];
+  const nubs: { f: number; v: number }[] = [];
   for (const ev of script) {
     const f = Math.round(ev.at * hz);
     if (f < 0 || f >= frames) {
       throw new Error(`sim: script event at ${ev.at}s -> frame ${f} is outside 0..${frames - 1}`);
     }
-    masks[f] |= ev.press;
+    if (ev.press !== undefined) masks[f] |= ev.press;
+    if (ev.hold !== undefined) holds.push({ f, v: ev.hold });
+    if (ev.analog !== undefined) nubs.push({ f, v: ev.analog & 0xffff });
   }
-  return masks;
+  // Level-triggered tracks: each event holds its value until the next one.
+  holds.sort((a, b) => a.f - b.f);
+  nubs.sort((a, b) => a.f - b.f);
+  for (let i = 0; i < holds.length; i++) {
+    const end = i + 1 < holds.length ? holds[i + 1].f : frames;
+    for (let f = holds[i].f; f < end; f++) masks[f] |= holds[i].v;
+  }
+  for (let i = 0; i < nubs.length; i++) {
+    const end = i + 1 < nubs.length ? nubs[i + 1].f : frames;
+    for (let f = nubs[i].f; f < end; f++) analogs[f] = nubs[i].v;
+  }
+  return { masks, analogs };
 }
 
 function ensureBuilt(path: string, cmd: string[]): void {
@@ -110,7 +138,7 @@ function ensureBuilt(path: string, cmd: string[]): void {
 let wasmBytes: ArrayBuffer | null = null;
 
 export interface SimWorld {
-  frame: (buttons: number) => void;
+  frame: (buttons: number, analog?: number) => void;
   tick: () => void;
   render: () => Uint8Array;
   ticksPerFrame: number;
@@ -155,7 +183,7 @@ export async function bootWorld(
   if (extraGlobals) Object.assign(g, extraGlobals);
   const src = await Bun.file(DIST + app + ".js").text();
   (0, eval)(src);
-  const frame = g.frame as ((buttons: number) => void) | undefined;
+  const frame = g.frame as ((buttons: number, analog?: number) => void) | undefined;
   if (typeof frame !== "function") {
     throw new Error("sim: bundle did not install globalThis.frame (entry must call render()/mount())");
   }
@@ -190,7 +218,7 @@ export async function runScenario(scenario: Scenario, chaos?: ChaosOptions): Pro
     throw new Error(`sim: hz=${scenario.hz} does not divide ${TICKS_PER_SECOND}`);
   }
   const frames = Math.round(scenario.seconds * hz);
-  const masks = scriptToMasks(scenario.script ?? [], hz, frames);
+  const { masks, analogs } = scriptToMasks(scenario.script ?? [], hz, frames);
   const world = await bootWorld(scenario.app, hz);
   const hashes: string[] = [];
   let garbage: unknown[] = [];
@@ -203,7 +231,7 @@ export async function runScenario(scenario: Scenario, chaos?: ChaosOptions): Pro
       if (garbage.length > 64) garbage = [];
       if (chaos.gcEvery && f % chaos.gcEvery === chaos.gcEvery - 1) Bun.gc(true);
     }
-    world.frame(masks[f]); // one virtual-frame transaction (JS side)
+    world.frame(masks[f], analogs[f]); // one virtual-frame transaction (JS side)
     for (let t = 0; t < world.ticksPerFrame; t++) world.tick(); // core catch-up
     hashes.push(fnv1a(world.render()));
   }

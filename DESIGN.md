@@ -216,6 +216,9 @@ children[], …}`) so reconciler *reads* never cross the FFI. Handles are `i32`
 | setFocus | `(idOr0)` | applies `focus:` variant natively |
 | loadStyles / loadFontAtlas | `(buf …)` | **web/test hosts only** — on PSP, native/src/pak.rs feeds core directly from include_bytes! **[R]** |
 | measureText | `(str, fontSlot) → width` | JS convenience; layout measures natively |
+| loadTileTexture | `(pakKey, tileIndex) → handle` | decode ONE tile of a TILESET pak entry (spec.ts) into a CLUT8 texture, host-side — on PSP straight from `.rodata`, zero JS-heap transit. Hosts without it: the runtime falls back to `__pak` + uploadTexture (src/tiles.ts) |
+| freeTexture | `(handle)` | releases a texture slot. Texture handles are **generation-tagged** like node ids (spec `TEX_SLOT_BITS`): a stale handle resolves to nothing and draws nothing — tile churn cannot sample a stranger's texture |
+| uploadImgEntry | `(blob) → handle` | self-contained IMG entry upload (v2: PSM_T8 palette, PackBits-RLE + linear-filter flags parsed core-side) |
 
 **Text model [R].** A `<text>` element lays out its text-node children as one
 concatenated inline run (single measure, not N flex items). Text nodes inherit
@@ -228,6 +231,14 @@ Application code should not write those lower-case host tags directly. The
 public SDK surface is imported from `PocketJS` and uses React Native-style
 `View`, `Text`, and `Image` primitives; the lower-case tags remain an internal
 renderer target for `src/primitives.ts` and low-level tests.
+
+**Analog nub.** The frame entry point is `frame(buttons, analog?)`: `analog`
+packs the stick as `(x << 8) | y` (0..255 per axis, 128 center — spec
+`ANALOG_CENTER`). Stickless hosts pass one argument and the runtime holds
+center, so pre-analog tapes and goldens are unchanged; deadzone policy lives
+in the runtime (`analogX()/analogY()` from `PocketJS/lifecycle`), never in
+hosts. The DevTools flight recorder tapes the analog track alongside the
+masks (omitted while centered — old tape files stay byte-identical).
 
 **Frame order (PSP).** `sceCtrlRead → sceGuStart → JS frame(buttons) → drain
 jobs (while JS_ExecutePendingJob(rt,&mut ctx)>0 — declare the symbol in a local

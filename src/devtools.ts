@@ -10,6 +10,7 @@
 // step/inspect/eval) stay live inside a frozen world — the core side of the
 // freeze is ui.debugPause (spec op 21).
 
+import { ANALOG_CENTER } from "../spec/spec.ts";
 import type { HostOps } from "./host.ts";
 import { rootMirror, setTreeMutationHook, type NodeMirror } from "./native-tree.ts";
 
@@ -30,6 +31,10 @@ export interface Tape {
   frames: number;
   /** [buttonMask, runLength] pairs, in order. */
   masks: [number, number][];
+  /** [packedAnalog, runLength] pairs (spec ANALOG_CENTER packing), same total
+   *  frame count as `masks`. Omitted when the whole session held center —
+   *  pre-analog tapes stay byte-identical and replay as center. */
+  analog?: [number, number][];
   /** Absolute frame index of masks[0] (0 unless the ring wrapped). */
   startFrame?: number;
 }
@@ -44,13 +49,15 @@ interface DevtoolsState {
   transport: DevtoolsTransport | null;
   app: string | undefined;
   frame: number; // frames actually executed (== core frame counter)
-  // tape ring
+  // tape ring (masks + packed analog share indices/start/len)
   tape: Uint16Array;
+  tapeAnalog: Uint16Array;
   tapeStart: number; // ring index of the oldest frame
   tapeLen: number;
   tapeFirstFrame: number; // absolute frame index of the oldest entry
   // replay
   replayMasks: Uint16Array | null;
+  replayAnalog: Uint16Array | null;
   replayAt: number;
   // pause
   paused: boolean;
@@ -73,10 +80,12 @@ const state: DevtoolsState = {
   app: undefined,
   frame: 0,
   tape: new Uint16Array(TAPE_CAP),
+  tapeAnalog: new Uint16Array(TAPE_CAP),
   tapeStart: 0,
   tapeLen: 0,
   tapeFirstFrame: 0,
   replayMasks: null,
+  replayAnalog: null,
   replayAt: 0,
   paused: false,
   stepQueued: 0,
@@ -110,6 +119,7 @@ export function initDevtools(ops: HostOps): void {
   state.tapeLen = 0;
   state.tapeFirstFrame = 0;
   state.replayMasks = null;
+  state.replayAnalog = null;
   state.paused = false;
   state.stepQueued = 0;
   state.inspectReportId = null;
@@ -148,19 +158,25 @@ export function initDevtools(ops: HostOps): void {
 }
 
 /** Wrap the composed frame handler (render()'s input+hooks+sweep closure). */
-export function wrapFrameHandler(h: (buttons: number) => void): (buttons: number) => void {
-  return (buttons: number) => {
+export function wrapFrameHandler(
+  h: (buttons: number, analog: number) => void,
+): (buttons: number, analog?: number) => void {
+  return (buttons: number, analogArg?: number) => {
     state.hostCalls++;
     if (state.transport) {
       pollTransport();
       flushInspectReport();
     }
     let mask = buttons;
+    let analog = analogArg === undefined ? ANALOG_CENTER : analogArg & 0xffff;
     if (state.replayMasks) {
       if (state.replayAt < state.replayMasks.length) {
-        mask = state.replayMasks[state.replayAt++];
+        mask = state.replayMasks[state.replayAt];
+        analog = state.replayAnalog ? state.replayAnalog[state.replayAt] : ANALOG_CENTER;
+        state.replayAt++;
       } else {
         state.replayMasks = null; // tape exhausted: back to live input
+        state.replayAnalog = null;
         send({ t: "replayDone", frame: state.frame });
       }
     }
@@ -169,10 +185,10 @@ export function wrapFrameHandler(h: (buttons: number) => void): (buttons: number
       state.stepQueued--;
       state.ops?.debugStep?.(); // arm exactly one core tick
     }
-    recordMask(mask);
+    recordMask(mask, analog);
     state.frame++;
     try {
-      h(mask);
+      h(mask, analog);
     } catch (e) {
       send({
         t: "error",
@@ -190,45 +206,71 @@ export function wrapFrameHandler(h: (buttons: number) => void): (buttons: number
 // tape
 // ---------------------------------------------------------------------------
 
-function recordMask(mask: number): void {
+function recordMask(mask: number, analog: number): void {
   if (state.tapeLen < TAPE_CAP) {
-    state.tape[(state.tapeStart + state.tapeLen) % TAPE_CAP] = mask;
+    const at = (state.tapeStart + state.tapeLen) % TAPE_CAP;
+    state.tape[at] = mask;
+    state.tapeAnalog[at] = analog;
     state.tapeLen++;
   } else {
     state.tape[state.tapeStart] = mask;
+    state.tapeAnalog[state.tapeStart] = analog;
     state.tapeStart = (state.tapeStart + 1) % TAPE_CAP;
     state.tapeFirstFrame++;
   }
 }
 
-function exportTape(): Tape {
-  const masks: [number, number][] = [];
+function rlePairs(ring: Uint16Array): [number, number][] {
+  const out: [number, number][] = [];
   for (let i = 0; i < state.tapeLen; i++) {
-    const m = state.tape[(state.tapeStart + i) % TAPE_CAP];
-    const last = masks[masks.length - 1];
-    if (last && last[0] === m) last[1]++;
-    else masks.push([m, 1]);
+    const v = ring[(state.tapeStart + i) % TAPE_CAP];
+    const last = out[out.length - 1];
+    if (last && last[0] === v) last[1]++;
+    else out.push([v, 1]);
   }
-  return {
+  return out;
+}
+
+function exportTape(): Tape {
+  const tape: Tape = {
     v: 1,
     app: state.app,
     frames: state.tapeLen,
-    masks,
+    masks: rlePairs(state.tape),
     startFrame: state.tapeFirstFrame,
   };
+  // An all-center session omits the analog track entirely, keeping tapes from
+  // stickless hosts (and every pre-analog golden) byte-identical.
+  const analog = rlePairs(state.tapeAnalog);
+  if (analog.length > 1 || (analog.length === 1 && analog[0][0] !== ANALOG_CENTER)) {
+    tape.analog = analog;
+  }
+  return tape;
+}
+
+/** Expand RLE [value, run] pairs into one value per frame. */
+function expandPairs(pairs: [number, number][], fill: number, total: number): Uint16Array {
+  const out = new Uint16Array(total).fill(fill);
+  let at = 0;
+  for (const [v, n] of pairs) {
+    out.fill(v, at, Math.min(at + n, total));
+    at += n;
+  }
+  return out;
 }
 
 /** Expand a tape's RLE mask list into one mask per frame. */
 export function expandTape(tape: Tape): Uint16Array {
   let total = 0;
   for (const [, n] of tape.masks) total += n;
-  const out = new Uint16Array(total);
-  let at = 0;
-  for (const [mask, n] of tape.masks) {
-    out.fill(mask, at, at + n);
-    at += n;
-  }
-  return out;
+  return expandPairs(tape.masks, 0, total);
+}
+
+/** Expand a tape's analog track (center-filled when absent). */
+export function expandTapeAnalog(tape: Tape): Uint16Array {
+  let total = 0;
+  for (const [, n] of tape.masks) total += n;
+  return expandPairs(tape.analog ?? [], ANALOG_CENTER, total);
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +373,7 @@ function handleMessage(line: string): void {
       const tape = msg.tape as Tape | undefined;
       if (tape && Array.isArray(tape.masks)) {
         state.replayMasks = expandTape(tape);
+        state.replayAnalog = tape.analog ? expandTapeAnalog(tape) : null;
         state.replayAt = 0;
       }
       break;
@@ -502,6 +545,7 @@ const api = {
   /** Replay a tape's masks starting now (see DEVTOOLS.md on from-boot). */
   replay: (tape: Tape): void => {
     state.replayMasks = expandTape(tape);
+    state.replayAnalog = tape.analog ? expandTapeAnalog(tape) : null;
     state.replayAt = 0;
   },
 };

@@ -13,7 +13,7 @@
 
 use anyhow::Result;
 use pocket3d::gpu::Gpu;
-use pocketjs_core::{Ui, spec};
+use pocketjs_core::{TexView, Ui, spec};
 
 /// One glyph atlas uploaded as an R8 grid texture (16 cells per row).
 struct FontTexture {
@@ -24,6 +24,14 @@ struct FontTexture {
     tex_h: f32,
     cols: u32,
     glyph_count: u16,
+}
+
+/// One live image texture, cached by core SLOT. `handle` is the
+/// generation-tagged handle the upload was made for; a slot whose current
+/// handle differs (freed, then reused) is re-uploaded by `sync_textures`.
+struct ImageBind {
+    handle: i32,
+    bind: wgpu::BindGroup,
 }
 
 #[repr(C)]
@@ -57,10 +65,13 @@ struct DrawCmd {
 pub struct UiRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_layout: wgpu::BindGroupLayout,
+    /// Linear sampler: fonts, the white pixel, and `TexView::linear` images.
     sampler: wgpu::Sampler,
+    /// Nearest sampler: images without the linear hint (the PSP default).
+    sampler_nearest: wgpu::Sampler,
     white: wgpu::BindGroup,
     fonts: Vec<Option<FontTexture>>,
-    images: Vec<Option<wgpu::BindGroup>>,
+    images: Vec<Option<ImageBind>>,
     vbuf: Option<wgpu::Buffer>,
     vbuf_capacity: u64,
     verts: Vec<UiVertex>,
@@ -144,6 +155,12 @@ impl UiRenderer {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let sampler_nearest = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("pocket-ui sampler nearest"),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
 
         // 1x1 opaque white for untextured geometry.
         let white_tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -194,6 +211,7 @@ impl UiRenderer {
             pipeline,
             bind_layout,
             sampler,
+            sampler_nearest,
             white,
             fonts: Vec::new(),
             images: Vec::new(),
@@ -275,9 +293,14 @@ impl UiRenderer {
                     }
                 }
                 TexBind::Image(handle) => {
-                    match self.images.get(handle as usize).and_then(|i| i.as_ref()) {
-                        Some(b) => b,
-                        None => continue,
+                    // Generation-tagged handle → slot; draw only while the
+                    // cached entry is for this exact handle. A stale handle
+                    // (freed slot, possibly reused since) draws nothing —
+                    // mirroring the core contract.
+                    let slot = (handle as u32 & spec::TEX_SLOT_MASK) as usize;
+                    match self.images.get(slot).and_then(|i| i.as_ref()) {
+                        Some(i) if i.handle == handle => &i.bind,
+                        _ => continue,
                     }
                 }
             };
@@ -571,8 +594,11 @@ impl UiRenderer {
 
     // ---- texture sync ---------------------------------------------------------
 
-    /// Upload any core textures / font atlases this renderer hasn't seen yet
-    /// (both are append-only on the core side).
+    /// Mirror the core's textures into GPU resources. Font atlases are
+    /// append-only; image slots are not — `freeTexture` empties a slot and
+    /// a later upload reuses it under a new generation-tagged handle, so
+    /// each slot re-uploads whenever its current handle changes and drops
+    /// its cache entry when the core frees it.
     fn sync_textures(&mut self, gpu: &Gpu, ui: &Ui) {
         // Font slots.
         if self.fonts.len() < spec::MAX_FONT_SLOTS {
@@ -587,13 +613,24 @@ impl UiRenderer {
             };
             self.fonts[slot as usize] = Some(self.upload_font(gpu, atlas));
         }
-        // Image textures (handles are dense 0..n).
-        let mut handle = self.images.len() as i32;
-        while let Some((pixels, w, h, psm)) = ui.texture(handle) {
-            let rgba = to_rgba8(pixels, w, h, psm);
-            self.images
-                .push(rgba.map(|rgba| self.upload_image(gpu, &rgba, w, h)));
-            handle += 1;
+        // Image texture slots.
+        let slots = ui.texture_slot_count();
+        if self.images.len() < slots {
+            self.images.resize_with(slots, || None);
+        }
+        for slot in 0..slots {
+            match ui.texture_at(slot as u32) {
+                Some((handle, view)) => {
+                    if self.images[slot].as_ref().is_some_and(|e| e.handle == handle) {
+                        continue;
+                    }
+                    self.images[slot] = to_rgba8(&view).map(|rgba| ImageBind {
+                        handle,
+                        bind: self.upload_image(gpu, &rgba, view.w, view.h, view.linear),
+                    });
+                }
+                None => self.images[slot] = None,
+            }
         }
     }
 
@@ -668,7 +705,7 @@ impl UiRenderer {
         }
     }
 
-    fn upload_image(&self, gpu: &Gpu, rgba: &[u8], w: u32, h: u32) -> wgpu::BindGroup {
+    fn upload_image(&self, gpu: &Gpu, rgba: &[u8], w: u32, h: u32, linear: bool) -> wgpu::BindGroup {
         let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("pocket-ui image"),
             size: wgpu::Extent3d {
@@ -708,17 +745,22 @@ impl UiRenderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(if linear {
+                        &self.sampler
+                    } else {
+                        &self.sampler_nearest
+                    }),
                 },
             ],
         })
     }
 }
 
-/// Expand a core texture (PSM 8888/4444) to tightly-packed RGBA8.
-fn to_rgba8(pixels: &[u8], w: u32, h: u32, psm: u32) -> Option<Vec<u8>> {
-    let count = (w * h) as usize;
-    match psm {
+/// Expand a core texture (PSM 8888/4444/T8) to tightly-packed RGBA8.
+fn to_rgba8(view: &TexView) -> Option<Vec<u8>> {
+    let count = (view.w * view.h) as usize;
+    let pixels = view.pixels;
+    match view.psm {
         spec::psm::PSM_8888 => {
             let bytes = count * 4;
             (pixels.len() >= bytes).then(|| pixels[..bytes].to_vec())
@@ -735,6 +777,20 @@ fn to_rgba8(pixels: &[u8], w: u32, h: u32, psm: u32) -> Option<Vec<u8>> {
                 out.push((((v >> 4) & 0xf) * 17) as u8);
                 out.push((((v >> 8) & 0xf) * 17) as u8);
                 out.push((((v >> 12) & 0xf) * 17) as u8);
+            }
+            Some(out)
+        }
+        spec::psm::PSM_T8 => {
+            // Indices through the 1024-byte CLUT (256 x u32 ABGR — LE byte
+            // order is r,g,b,a in memory, i.e. exactly the 8888 layout).
+            let palette = view.palette?;
+            if palette.len() < 1024 || pixels.len() < count {
+                return None;
+            }
+            let mut out = Vec::with_capacity(count * 4);
+            for &idx in &pixels[..count] {
+                let p = idx as usize * 4;
+                out.extend_from_slice(&palette[p..p + 4]);
             }
             Some(out)
         }

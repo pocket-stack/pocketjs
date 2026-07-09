@@ -26,6 +26,12 @@ fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
     ]))
 }
 
+/// The blob for `key`, or None for absent keys (same tolerance for
+/// malformed packs as the walk).
+pub fn find_pak<'a>(pak: &'a [u8], key: &str) -> Option<&'a [u8]> {
+    walk_pak(pak).into_iter().find(|e| e.key == key).map(|e| e.blob)
+}
+
 /// Iterate every well-formed entry in `pak`.
 pub fn walk_pak(pak: &[u8]) -> Vec<PakEntry<'_>> {
     let mut out = Vec::new();

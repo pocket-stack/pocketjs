@@ -24,7 +24,7 @@
 //! destination alpha is always written back as 255.
 
 use pocketjs_core::spec::{self, draw_op, SCREEN_H, SCREEN_W};
-use pocketjs_core::Ui;
+use pocketjs_core::{TexView, Ui};
 
 const W: i32 = SCREEN_W as i32;
 const H: i32 = SCREEN_H as i32;
@@ -372,7 +372,78 @@ fn glyph_run(ui: &Ui, fb: &mut [u8], clip: Clip, slot: u8, color: u32, glyphs: &
     }
 }
 
-// ---- TEX_TRI: barycentric textured triangle (nearest-neighbor, affine UV) -----------
+// ---- texel fetch + samplers ----------------------------------------------------------
+
+/// Fetch texel `idx` (row-major) as (r, g, b, a) channels 0..255. None for
+/// an unknown psm (corrupt stream — callers abort the op, matching the old
+/// inline `_ => return` arms byte-for-byte on the known formats).
+#[inline]
+fn texel(view: &TexView, idx: usize) -> Option<(u32, u32, u32, u32)> {
+    match view.psm {
+        spec::psm::PSM_8888 => {
+            let o = idx * 4;
+            Some((
+                view.pixels[o] as u32,
+                view.pixels[o + 1] as u32,
+                view.pixels[o + 2] as u32,
+                view.pixels[o + 3] as u32,
+            ))
+        }
+        spec::psm::PSM_4444 => {
+            // u16 LE, nibbles A<<12 | B<<8 | G<<4 | R; expand n -> n*17.
+            let o = idx * 2;
+            let px16 = view.pixels[o] as u32 | ((view.pixels[o + 1] as u32) << 8);
+            Some((
+                (px16 & 0xf) * 17,
+                ((px16 >> 4) & 0xf) * 17,
+                ((px16 >> 8) & 0xf) * 17,
+                ((px16 >> 12) & 0xf) * 17,
+            ))
+        }
+        spec::psm::PSM_T8 => {
+            // CLUT8: one palette index/px; palette bytes are RGBA in memory
+            // (same byte order as 8888 pixels). Index * 4 <= 1020 < 1024, so
+            // the lookup can never leave the 1024-byte CLUT.
+            let pal = view.palette?;
+            let o = view.pixels[idx] as usize * 4;
+            Some((pal[o] as u32, pal[o + 1] as u32, pal[o + 2] as u32, pal[o + 3] as u32))
+        }
+        _ => None,
+    }
+}
+
+/// Deterministic integer bilinear sample at normalized (u, v). Texel coords
+/// are 24.8 fixed point centered on texel centers (`uf = u*w*256 - 128`);
+/// the 4 clamp-addressed neighbors blend with 8-bit weights, horizontal
+/// first then vertical — integer math only, so byte-exact on every host.
+#[inline]
+fn sample_linear(view: &TexView, u: f32, v: f32) -> Option<(u32, u32, u32, u32)> {
+    let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
+    let uf = (u * view.w as f32 * 256.0) as i32 - 128;
+    let vf = (v * view.h as f32 * 256.0) as i32 - 128;
+    let tx0 = (uf >> 8).clamp(0, tw_max);
+    let ty0 = (vf >> 8).clamp(0, th_max);
+    let tx1 = (tx0 + 1).min(tw_max);
+    let ty1 = (ty0 + 1).min(th_max);
+    let fx = (uf & 255) as u32;
+    let fy = (vf & 255) as u32;
+    let w = view.w as i32;
+    let c00 = texel(view, (ty0 * w + tx0) as usize)?;
+    let c01 = texel(view, (ty0 * w + tx1) as usize)?;
+    let c10 = texel(view, (ty1 * w + tx0) as usize)?;
+    let c11 = texel(view, (ty1 * w + tx1) as usize)?;
+    let lerp8 = |a: u32, b: u32, f: u32| (a * (256 - f) + b * f) >> 8;
+    let mix = |c0: u32, c1: u32, c2: u32, c3: u32| lerp8(lerp8(c0, c1, fx), lerp8(c2, c3, fx), fy);
+    Some((
+        mix(c00.0, c01.0, c10.0, c11.0),
+        mix(c00.1, c01.1, c10.1, c11.1),
+        mix(c00.2, c01.2, c10.2, c11.2),
+        mix(c00.3, c01.3, c10.3, c11.3),
+    ))
+}
+
+// ---- TEX_TRI: barycentric textured triangle (affine UV; nearest, or integer
+//      bilinear when the texture carries the linear flag) --------------------
 
 fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
     let handle = p[0] as i32;
@@ -383,7 +454,7 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
     let (x2, y2) = xy(p[7]);
     let (mut u2, mut v2) = (f32::from_bits(p[8]), f32::from_bits(p[9]));
     let modulate = p[10];
-    let Some((pixels, tw, th, psm)) = ui.texture(handle) else { return };
+    let Some(view) = ui.texture(handle) else { return };
     let (ax, ay) = (2 * x0 as i64, 2 * y0 as i64);
     let (mut bx, mut by) = (2 * x1 as i64, 2 * y1 as i64);
     let (mut cx, mut cy) = (2 * x2 as i64, 2 * y2 as i64);
@@ -404,8 +475,8 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
     let max_y = y0.max(y1).max(y2).min(clip.y1);
     let (mr, mg, mb, ma) = channels(modulate);
     let identity = modulate == 0xffff_ffff;
-    let (twf, thf) = (tw as f32, th as f32);
-    let (tw_max, th_max) = (tw as i32 - 1, th as i32 - 1);
+    let (twf, thf) = (view.w as f32, view.h as f32);
+    let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
     let inv_area = 1.0f32 / area as f32;
     for py in min_y..max_y {
         let sy = 2 * py as i64 + 1;
@@ -420,31 +491,16 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
             let (f0, f1, f2) = (w0 as f32 * inv_area, w1 as f32 * inv_area, w2 as f32 * inv_area);
             let u = u0 * f0 + u1 * f1 + u2 * f2;
             let v = v0 * f0 + v1 * f1 + v2 * f2;
-            let tx = ((u * twf) as i32).clamp(0, tw_max);
-            let ty = ((v * thf) as i32).clamp(0, th_max);
-            let idx = (ty * tw as i32 + tx) as usize;
-            let (mut r, mut g, mut b, mut a) = match psm {
-                spec::psm::PSM_8888 => {
-                    let o = idx * 4;
-                    (
-                        pixels[o] as u32,
-                        pixels[o + 1] as u32,
-                        pixels[o + 2] as u32,
-                        pixels[o + 3] as u32,
-                    )
-                }
-                spec::psm::PSM_4444 => {
-                    let o = idx * 2;
-                    let px16 = pixels[o] as u32 | ((pixels[o + 1] as u32) << 8);
-                    (
-                        (px16 & 0xf) * 17,
-                        ((px16 >> 4) & 0xf) * 17,
-                        ((px16 >> 8) & 0xf) * 17,
-                        ((px16 >> 12) & 0xf) * 17,
-                    )
-                }
-                _ => return,
+            // Nearest is the golden-pinned default path; linear is opt-in
+            // per texture (spec::img::FLAG_LINEAR).
+            let sample = if view.linear {
+                sample_linear(&view, u, v)
+            } else {
+                let tx = ((u * twf) as i32).clamp(0, tw_max);
+                let ty = ((v * thf) as i32).clamp(0, th_max);
+                texel(&view, (ty * view.w as i32 + tx) as usize)
             };
+            let Some((mut r, mut g, mut b, mut a)) = sample else { return };
             if !identity {
                 r = (r * mr + 127) / 255;
                 g = (g * mg + 127) / 255;
@@ -456,7 +512,8 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
     }
 }
 
-// ---- TEX_QUAD: nearest-neighbor textured rect ----------------------------------------
+// ---- TEX_QUAD: textured rect (nearest, or integer bilinear when the texture
+//      carries the linear flag) --------------------------------------------------------
 
 fn tex_quad(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
     let handle = p[0] as i32;
@@ -470,15 +527,15 @@ fn tex_quad(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
     if w <= 0 || h <= 0 {
         return;
     }
-    let Some((pixels, tw, th, psm)) = ui.texture(handle) else { return };
+    let Some(view) = ui.texture(handle) else { return };
     let c = clip.intersect(Clip { x0: x, y0: y, x1: x + w, y1: y + h });
     if c.x0 >= c.x1 || c.y0 >= c.y1 {
         return;
     }
     let (mr, mg, mb, ma) = channels(modulate);
     let identity = modulate == 0xffff_ffff;
-    let (twf, thf) = (tw as f32, th as f32);
-    let (tw_max, th_max) = (tw as i32 - 1, th as i32 - 1);
+    let (twf, thf) = (view.w as f32, view.h as f32);
+    let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
     let inv_w = 1.0f32 / w as f32;
     let inv_h = 1.0f32 / h as f32;
     for py in c.y0..c.y1 {
@@ -486,31 +543,15 @@ fn tex_quad(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
         let ty = ((v * thf) as i32).clamp(0, th_max);
         for px in c.x0..c.x1 {
             let u = u0 + (u1 - u0) * ((px - x) as f32 + 0.5) * inv_w;
-            let tx = ((u * twf) as i32).clamp(0, tw_max);
-            let idx = (ty * tw as i32 + tx) as usize;
-            let (mut r, mut g, mut b, mut a) = match psm {
-                spec::psm::PSM_8888 => {
-                    let o = idx * 4;
-                    (
-                        pixels[o] as u32,
-                        pixels[o + 1] as u32,
-                        pixels[o + 2] as u32,
-                        pixels[o + 3] as u32,
-                    )
-                }
-                spec::psm::PSM_4444 => {
-                    // u16 LE, nibbles A<<12 | B<<8 | G<<4 | R; expand n -> n*17.
-                    let o = idx * 2;
-                    let px16 = pixels[o] as u32 | ((pixels[o + 1] as u32) << 8);
-                    (
-                        (px16 & 0xf) * 17,
-                        ((px16 >> 4) & 0xf) * 17,
-                        ((px16 >> 8) & 0xf) * 17,
-                        ((px16 >> 12) & 0xf) * 17,
-                    )
-                }
-                _ => return,
+            // Nearest is the golden-pinned default path; linear is opt-in
+            // per texture (spec::img::FLAG_LINEAR).
+            let sample = if view.linear {
+                sample_linear(&view, u, v)
+            } else {
+                let tx = ((u * twf) as i32).clamp(0, tw_max);
+                texel(&view, (ty * view.w as i32 + tx) as usize)
             };
+            let Some((mut r, mut g, mut b, mut a)) = sample else { return };
             if !identity {
                 // Integer modulate, round-to-nearest (includes alpha).
                 r = (r * mr + 127) / 255;

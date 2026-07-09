@@ -16,6 +16,9 @@
 //!   - Single-threaded by construction (one wasm instance per Ui).
 
 #![allow(static_mut_refs)] // single-threaded wasm instance; one global Ui
+// Every (ptr, len) export dereferences a host-written linear-memory buffer;
+// safety IS the ABI contract (ui_alloc/ui_free above), not a Rust signature.
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 use pocketjs_core::spec::{SCREEN_H, SCREEN_W};
 use pocketjs_core::Ui;
@@ -118,6 +121,23 @@ pub extern "C" fn ui_replace_text(id: i32, ptr: *const u8, len: usize) {
 #[no_mangle]
 pub extern "C" fn ui_upload_texture(ptr: *const u8, len: usize, w: u32, h: u32, psm: u32) -> i32 {
     ui().upload_texture(unsafe { bytes(ptr, len) }, w, h, psm)
+}
+
+/// Upload a self-contained IMG pak entry (spec op uploadImgEntry;
+/// compiler/pak.ts layout — v2 PSM_T8 palette + optional RLE + filter flags
+/// parsed core-side). Returns the generation-tagged handle or -1.
+#[no_mangle]
+pub extern "C" fn ui_upload_img_entry(ptr: *const u8, len: usize) -> i32 {
+    ui().upload_img_entry(unsafe { bytes(ptr, len) })
+}
+
+/// Release a texture slot (spec op freeTexture). Stale handles are no-ops;
+/// anything still referencing the freed handle draws nothing.
+/// (No tileset op here — wasm hosts stream tiles via the JS __pak fallback
+/// and this entry point.)
+#[no_mangle]
+pub extern "C" fn ui_free_texture(handle: i32) {
+    ui().free_texture(handle)
 }
 
 #[no_mangle]

@@ -31,6 +31,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub mod anim;
+pub mod codec;
 pub mod draw;
 pub mod layout;
 pub mod spec;
@@ -39,6 +40,9 @@ pub mod text;
 pub mod tree;
 
 pub use draw::DrawList;
+
+/// CLUT byte size: 256 entries x u32 ABGR (the GE CLUT8 palette).
+const TEX_PALETTE_BYTES: usize = 1024;
 
 /// One uploaded texture. Pixels are copied into 16-byte-aligned storage so
 /// the PSP GE can sample them directly (the wasm rasterizer reads them via
@@ -51,6 +55,13 @@ pub struct Texture {
     pub h: u32,
     /// spec::psm::* pixel format.
     pub psm: u32,
+    /// CLUT (PSM_T8 only): exactly TEX_PALETTE_BYTES bytes (256 x u32 ABGR)
+    /// in a 16-byte-aligned backing like `data`, so the PSP GE can point
+    /// sceGuClutLoad at it directly. None for 4444/8888.
+    palette: Option<Vec<u128>>,
+    /// Sample with bilinear filtering (spec::img::FLAG_LINEAR). Pure sampling
+    /// hint for backends — the pixel bytes are identical either way.
+    pub linear: bool,
 }
 
 impl Texture {
@@ -58,6 +69,121 @@ impl Texture {
         // Safe: the Vec<u128> owns at least byte_len initialized bytes.
         unsafe { core::slice::from_raw_parts(self.data.as_ptr() as *const u8, self.byte_len) }
     }
+
+    /// The 1024-byte CLUT (256 x u32 ABGR); Some only when psm == PSM_T8.
+    pub fn palette(&self) -> Option<&[u8]> {
+        // Safe: the palette Vec<u128> is always TEX_PALETTE_BYTES/16 chunks
+        // (constructed only by copy_aligned(_, TEX_PALETTE_BYTES)).
+        self.palette
+            .as_ref()
+            .map(|p| unsafe { core::slice::from_raw_parts(p.as_ptr() as *const u8, TEX_PALETTE_BYTES) })
+    }
+
+    fn view(&self) -> TexView<'_> {
+        TexView {
+            pixels: self.pixels(),
+            w: self.w,
+            h: self.h,
+            psm: self.psm,
+            palette: self.palette(),
+            linear: self.linear,
+        }
+    }
+}
+
+/// Borrowed view of one live texture (what backends sample — see
+/// `Ui::texture` / `Ui::texture_at`). All byte slices are 16-byte aligned.
+#[derive(Clone, Copy)]
+pub struct TexView<'a> {
+    pub pixels: &'a [u8],
+    pub w: u32,
+    pub h: u32,
+    /// spec::psm::* pixel format.
+    pub psm: u32,
+    /// 1024-byte CLUT (256 x u32 ABGR) — Some exactly when psm == PSM_T8.
+    pub palette: Option<&'a [u8]>,
+    /// Bilinear sampling hint (spec::img::FLAG_LINEAR); nearest otherwise.
+    pub linear: bool,
+}
+
+/// One texture slot. `gen` tags outstanding handles (bumped on free, so a
+/// stale handle held by JS or a still-mounted image node resolves to nothing
+/// and draws nothing); `tex` is the live texture (None = free slot).
+pub struct TexSlot {
+    gen: u16,
+    tex: Option<Texture>,
+}
+
+/// Texture-handle generations live in bits TEX_SLOT_BITS..31 — bit 31 must
+/// stay 0 so handles are always non-negative i32s (mirrors tree::GEN_MASK).
+/// Generations wrap inside this mask (documented aliasing hazard after 2^11
+/// frees of one slot; acceptable for tile-canvas churn).
+const TEX_GEN_MASK: u32 = (1u32 << (31 - spec::TEX_SLOT_BITS)) - 1;
+
+/// Build a generation-tagged texture handle from (generation, slot). Unlike
+/// node ids, slot 0 is a real texture: slot 0 at gen 0 IS handle 0 (handles
+/// are 0-based — existing goldens pin the first upload to 0).
+#[inline]
+fn make_tex_handle(gen: u16, slot: u32) -> i32 {
+    (((gen as u32 & TEX_GEN_MASK) << spec::TEX_SLOT_BITS) | (slot & spec::TEX_SLOT_MASK)) as i32
+}
+
+/// Resolve a generation-tagged handle to its slot index; None for negative,
+/// stale or freed handles.
+pub(crate) fn tex_resolve(slots: &[TexSlot], handle: i32) -> Option<u32> {
+    if handle < 0 {
+        return None;
+    }
+    let u = handle as u32;
+    let (gen, slot) = (u >> spec::TEX_SLOT_BITS, u & spec::TEX_SLOT_MASK);
+    let s = slots.get(slot as usize)?;
+    if s.tex.is_some() && (s.gen as u32 & TEX_GEN_MASK) == gen {
+        Some(slot)
+    } else {
+        None
+    }
+}
+
+/// Store `tex` in a slot (LIFO reuse via `free`, else append) and return its
+/// generation-tagged handle, or -1 when the slot space is exhausted.
+pub(crate) fn tex_alloc(slots: &mut Vec<TexSlot>, free: &mut Vec<u32>, tex: Texture) -> i32 {
+    let slot = match free.pop() {
+        Some(s) => s,
+        None => {
+            if slots.len() as u32 > spec::TEX_SLOT_MASK {
+                return -1;
+            }
+            slots.push(TexSlot { gen: 0, tex: None });
+            (slots.len() - 1) as u32
+        }
+    };
+    let s = &mut slots[slot as usize];
+    s.tex = Some(tex);
+    make_tex_handle(s.gen, slot)
+}
+
+/// Copy `byte_len` bytes of `src` (caller guarantees `src.len() >= byte_len`)
+/// into a fresh 16-byte-aligned `u128` backing store.
+fn copy_aligned(src: &[u8], byte_len: usize) -> Vec<u128> {
+    let mut chunks = alloc::vec![0u128; byte_len.div_ceil(16)];
+    unsafe {
+        core::ptr::copy_nonoverlapping(src.as_ptr(), chunks.as_mut_ptr() as *mut u8, byte_len);
+    }
+    chunks
+}
+
+// ---- unaligned LE readers (asset blob parsing; overflow-proof offsets) ------
+
+#[inline]
+fn rd_u16(b: &[u8], off: usize) -> Option<u16> {
+    let s = b.get(off..off.checked_add(2)?)?;
+    Some(u16::from_le_bytes([s[0], s[1]]))
+}
+
+#[inline]
+fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
+    let s = b.get(off..off.checked_add(4)?)?;
+    Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 /// One playing baked-timeline instance: a node's style carries an animation
@@ -85,7 +211,10 @@ pub struct Ui {
     anims: anim::Anims,
     timelines: Vec<TimelineInst>,
     layout: layout::LayoutEngine,
-    textures: Vec<Texture>,
+    /// Generation-tagged texture slots (handles per spec.ts TEX_SLOT_BITS).
+    textures: Vec<TexSlot>,
+    /// LIFO free list of texture slots (freed most recently, reused first).
+    tex_free: Vec<u32>,
     /// Baked rounded-corner disc sprites (see draw::DiscCache).
     discs: draw::DiscCache,
     focused: i32,
@@ -122,6 +251,7 @@ impl Ui {
             timelines: Vec::new(),
             layout: layout::LayoutEngine::new(),
             textures: Vec::new(),
+            tex_free: Vec::new(),
             discs: draw::DiscCache::new(),
             focused: 0,
             draw_list: DrawList::new(),
@@ -285,34 +415,123 @@ impl Ui {
     // ---- assets ----------------------------------------------------------
 
     /// Upload a texture (raw pixels in `psm` format — spec::psm::*, pow2
-    /// dims <= spec::TEX_MAX_DIM). Bytes are copied. Returns handle or -1.
+    /// dims <= spec::TEX_MAX_DIM). Bytes are copied. Returns the
+    /// generation-tagged handle (the first upload into a fresh core is slot 0
+    /// at gen 0 == handle 0 — goldens pin this) or -1.
+    ///
+    /// PSM_T8 (CLUT8) data layout: 1024-byte palette (256 x u32 ABGR), then
+    /// w*h index bytes.
     pub fn upload_texture(&mut self, data: &[u8], w: u32, h: u32, psm: u32) -> i32 {
+        self.upload_texture_flags(data, w, h, psm, 0)
+    }
+
+    /// `upload_texture` honoring spec::img flags: FLAG_RLE marks the pixel
+    /// stream (for PSM_T8: the index bytes AFTER the palette — the palette
+    /// itself is never compressed) as PackBits-RLE, which must decode to
+    /// EXACTLY w*h*bpp bytes; FLAG_LINEAR requests bilinear sampling.
+    pub fn upload_texture_flags(&mut self, data: &[u8], w: u32, h: u32, psm: u32, flags: u8) -> i32 {
         let bpp = match psm {
             spec::psm::PSM_4444 => 2usize,
             spec::psm::PSM_8888 => 4usize,
+            spec::psm::PSM_T8 => 1usize,
             _ => return -1,
         };
         let pow2 = |v: u32| v > 0 && v <= spec::TEX_MAX_DIM && v & (v - 1) == 0;
         if !pow2(w) || !pow2(h) {
             return -1;
         }
+        // PSM_T8 leads with the raw CLUT; the pixel stream follows it.
+        let (palette, stream) = if psm == spec::psm::PSM_T8 {
+            if data.len() < TEX_PALETTE_BYTES {
+                return -1;
+            }
+            (Some(copy_aligned(data, TEX_PALETTE_BYTES)), &data[TEX_PALETTE_BYTES..])
+        } else {
+            (None, data)
+        };
         let byte_len = w as usize * h as usize * bpp;
-        if data.len() < byte_len {
-            return -1;
+        let chunks = if flags & spec::img::FLAG_RLE != 0 {
+            // Decode straight into the aligned backing store. The stream must
+            // decode to EXACTLY byte_len bytes (codec contract) — anything
+            // else is a malformed asset.
+            let mut chunks = alloc::vec![0u128; byte_len.div_ceil(16)];
+            let dst =
+                unsafe { core::slice::from_raw_parts_mut(chunks.as_mut_ptr() as *mut u8, byte_len) };
+            if !codec::packbits_decode(stream, dst) {
+                return -1;
+            }
+            chunks
+        } else {
+            if stream.len() < byte_len {
+                return -1;
+            }
+            copy_aligned(stream, byte_len)
+        };
+        let tex = Texture {
+            data: chunks,
+            byte_len,
+            w,
+            h,
+            psm,
+            palette,
+            linear: flags & spec::img::FLAG_LINEAR != 0,
+        };
+        tex_alloc(&mut self.textures, &mut self.tex_free, tex)
+    }
+
+    /// Upload a self-contained IMG pak entry (spec op uploadImgEntry;
+    /// compiler/pak.ts layout: u16 w, u16 h, u8 psm, u8 flags, u16 reserved,
+    /// then the payload — for PSM_T8 a 1024-byte palette then the pixel
+    /// stream). Returns the texture handle, or -1 on malformed blobs.
+    pub fn upload_img_entry(&mut self, blob: &[u8]) -> i32 {
+        let Some((w, h, psm, flags)) = parse_img_header(blob) else { return -1 };
+        self.upload_texture_flags(&blob[8..], w, h, psm, flags)
+    }
+
+    /// Decode ONE tile of a TILESET pak entry (spec op loadTileTexture; blob
+    /// layout in spec.ts "TILESET pak entry") and upload it as a PSM_T8
+    /// texture sharing the entry's palette. Returns the handle, or -1 for
+    /// ABSENT tiles, SOLID tiles (the host reads the directory itself and
+    /// draws those as plain RECTs — this op only materializes pixel-stream
+    /// tiles), out-of-range indices and malformed blobs. Every offset/length
+    /// read is bounds-checked: malformed blobs return -1, never panic.
+    pub fn upload_tileset_tile(&mut self, blob: &[u8], index: u32) -> i32 {
+        let Some(tile) = parse_tileset_tile(blob, index) else { return -1 };
+        // Reassemble the upload_texture_flags PSM_T8 layout (palette, then
+        // pixel stream) — palette and stream live at unrelated offsets in
+        // the entry.
+        let mut data = Vec::with_capacity(TEX_PALETTE_BYTES + tile.stream.len());
+        data.extend_from_slice(tile.palette);
+        data.extend_from_slice(tile.stream);
+        let mut img_flags = 0u8;
+        if tile.flags & spec::tileset::FLAG_RLE != 0 {
+            img_flags |= spec::img::FLAG_RLE;
         }
-        let mut chunks = alloc::vec![0u128; (byte_len + 15) / 16];
-        unsafe {
-            core::ptr::copy_nonoverlapping(data.as_ptr(), chunks.as_mut_ptr() as *mut u8, byte_len);
+        if tile.flags & spec::tileset::FLAG_LINEAR != 0 {
+            img_flags |= spec::img::FLAG_LINEAR;
         }
-        self.textures.push(Texture { data: chunks, byte_len, w, h, psm });
-        (self.textures.len() - 1) as i32
+        self.upload_texture_flags(&data, tile.tile_w, tile.tile_h, spec::psm::PSM_T8, img_flags)
+    }
+
+    /// Release a texture slot (spec op freeTexture): drop the pixels, bump
+    /// the slot's generation so every outstanding copy of the handle goes
+    /// stale (resolves to nothing, draws nothing), and push the slot on the
+    /// LIFO free list. Stale/unknown handles are silent no-ops. Freeing a
+    /// core-internal texture (a baked corner disc) is safe: the DiscCache
+    /// re-validates its handles each use and re-bakes dead ones.
+    pub fn free_texture(&mut self, handle: i32) {
+        let Some(slot) = tex_resolve(&self.textures, handle) else { return };
+        let s = &mut self.textures[slot as usize];
+        s.tex = None;
+        s.gen = ((s.gen as u32 + 1) & TEX_GEN_MASK) as u16;
+        self.tex_free.push(slot);
     }
 
     /// Bind an uploaded texture to an image node. Handles are 0-based, so
     /// tex < 0 CLEARS the binding (node.tex = -1, the "none" sentinel);
-    /// unknown positive handles are ignored.
+    /// unknown/stale positive handles are ignored.
     pub fn set_image(&mut self, id: i32, tex: i32) {
-        if tex >= 0 && tex as usize >= self.textures.len() {
+        if tex >= 0 && tex_resolve(&self.textures, tex).is_none() {
             return;
         }
         let Some(slot) = self.tree.resolve(id) else { return };
@@ -330,7 +549,7 @@ impl Ui {
     /// animation is deterministic — frame = (Ui.frame - start) / step % frames —
     /// and starts at frame 0 the moment the node is displayed.
     pub fn set_sprite(&mut self, id: i32, atlas: i32, frames: u32, cols: u32, step: u32) {
-        if atlas >= 0 && atlas as usize >= self.textures.len() {
+        if atlas >= 0 && tex_resolve(&self.textures, atlas).is_none() {
             return;
         }
         let frame = self.frame;
@@ -686,6 +905,7 @@ impl Ui {
             self.frame,
             self.layout.viewport,
             &mut self.textures,
+            &mut self.tex_free,
             &mut self.discs,
             &mut self.draw_list,
             self.inspect_id,
@@ -795,11 +1015,26 @@ impl Ui {
         Some(style::resolve(n, &self.styles, true))
     }
 
-    /// Pixels + metadata of an uploaded texture (backends sample this;
-    /// bytes are 16-byte aligned): (pixels, w, h, psm).
-    pub fn texture(&self, handle: i32) -> Option<(&[u8], u32, u32, u32)> {
-        let t = self.textures.get(usize::try_from(handle).ok()?)?;
-        Some((t.pixels(), t.w, t.h, t.psm))
+    /// Pixels + metadata of a live texture (backends sample through this;
+    /// byte slices are 16-byte aligned). Stale/freed handles resolve to None
+    /// — a freed texture "draws nothing" through exactly this path.
+    pub fn texture(&self, handle: i32) -> Option<TexView<'_>> {
+        let slot = tex_resolve(&self.textures, handle)?;
+        self.textures[slot as usize].tex.as_ref().map(Texture::view)
+    }
+
+    /// Number of texture slots ever allocated (live or free) — the walk
+    /// bound for `texture_at` (the wgpu backend's texture-sync sweep).
+    pub fn texture_slot_count(&self) -> usize {
+        self.textures.len()
+    }
+
+    /// The live texture in `slot` plus its CURRENT generation-tagged handle
+    /// (the value draw-list words reference right now). None for free slots.
+    pub fn texture_at(&self, slot: u32) -> Option<(i32, TexView<'_>)> {
+        let s = self.textures.get(slot as usize)?;
+        let t = s.tex.as_ref()?;
+        Some((make_tex_handle(s.gen, slot), t.view()))
     }
 
     /// A registered font atlas (backends read glyph bitmaps through this).
@@ -891,6 +1126,67 @@ impl Ui {
         node.anim_values
             .retain(|&(p, _)| spawned[p as usize] || anims.has_live(node_id, p));
     }
+}
+
+/// Bounds-checked IMG entry header read (compiler/pak.ts layout): returns
+/// (w, h, psm, flags); None when the blob is shorter than the 8-byte header
+/// (which also guarantees `blob[8..]` — the payload — is indexable).
+fn parse_img_header(blob: &[u8]) -> Option<(u32, u32, u32, u8)> {
+    let w = rd_u16(blob, 0)? as u32;
+    let h = rd_u16(blob, 2)? as u32;
+    let psm = *blob.get(4)? as u32;
+    let flags = *blob.get(5)?;
+    rd_u16(blob, 6)?; // reserved — read keeps the payload offset in bounds
+    Some((w, h, psm, flags))
+}
+
+/// One decoded pixel-stream tile of a TILESET entry (borrowed from the blob).
+struct TilesetTile<'a> {
+    tile_w: u32,
+    tile_h: u32,
+    /// Entry-level flags (spec::tileset::FLAG_*; shared by every tile).
+    flags: u16,
+    /// The entry's shared 1024-byte CLUT.
+    palette: &'a [u8],
+    /// This tile's pixel stream (raw or RLE per `flags` bit 0).
+    stream: &'a [u8],
+}
+
+/// Bounds-checked TILESET reader (spec.ts "TILESET pak entry"): header +
+/// directory entry `index`. Returns the tile for a pixel-stream tile; None
+/// for ABSENT tiles, SOLID tiles (len == 0: `off` holds the palette index —
+/// the host's job), out-of-range indices and malformed blobs.
+/// checked_add/checked_mul keep hostile offsets from overflowing 32-bit
+/// usize (wasm).
+fn parse_tileset_tile(blob: &[u8], index: u32) -> Option<TilesetTile<'_>> {
+    use spec::tileset as ts;
+    if rd_u32(blob, 0)? != ts::MAGIC || rd_u16(blob, 4)? != ts::VERSION {
+        return None;
+    }
+    let flags = rd_u16(blob, 6)?;
+    let tile_w = rd_u16(blob, 8)? as u32;
+    let tile_h = rd_u16(blob, 10)? as u32;
+    let cols = rd_u16(blob, 12)? as u32;
+    let rows = rd_u16(blob, 14)? as u32;
+    let palette_off = rd_u32(blob, 16)? as usize;
+    let dir_off = rd_u32(blob, 20)? as usize;
+    let data_off = rd_u32(blob, 24)? as usize;
+    if index >= cols.checked_mul(rows)? {
+        return None;
+    }
+    let entry = dir_off.checked_add((index as usize).checked_mul(ts::DIR_ENTRY_SIZE)?)?;
+    let off = rd_u32(blob, entry)?;
+    let len = rd_u32(blob, entry.checked_add(4)?)? as usize;
+    // ABSENT (transparent) and SOLID (uniform-color) tiles carry no pixel
+    // stream; the framework reads the directory itself and draws them as
+    // background/plain RECTs — this op only materializes pixel-stream tiles.
+    if off == ts::ABSENT || len == 0 {
+        return None;
+    }
+    let palette = blob.get(palette_off..palette_off.checked_add(TEX_PALETTE_BYTES)?)?;
+    let start = data_off.checked_add(off as usize)?;
+    let stream = blob.get(start..start.checked_add(len)?)?;
+    Some(TilesetTile { tile_w, tile_h, flags, palette, stream })
 }
 
 /// Convert a `set_prop`/`animate` f64 payload to raw u32 prop bits per its

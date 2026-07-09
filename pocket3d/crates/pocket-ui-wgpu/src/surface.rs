@@ -1,6 +1,6 @@
-//! The `ui` surface: one `pocketjs_core::Ui` core + the 17-op HostOps
-//! contract (spec/spec.ts OP table; JS caller in src/host.ts) mounted into a
-//! guest as `globalThis.ui`.
+//! The `ui` surface: one `pocketjs_core::Ui` core + the HostOps contract
+//! (spec/spec.ts OP table; JS caller in src/host.ts) mounted into a guest
+//! as `globalThis.ui`.
 //!
 //! Boot contract mirrors the PSP host (`native/src/ffi.rs` + `pak.rs`):
 //! styles/atlases feed the core natively BEFORE the bundle evals, pak images
@@ -32,6 +32,9 @@ struct SpriteReg {
 
 struct Inner {
     ui: Ui,
+    /// The fed pak, kept whole: `loadTileTexture` decodes TILESET entries
+    /// out of it on demand (tile bytes never transit the JS heap).
+    pak: Vec<u8>,
     /// pak image name → core texture handle (`ui.__textures`).
     textures: Vec<(String, i32)>,
     sprites: Vec<SpriteReg>,
@@ -52,6 +55,7 @@ impl UiSurface {
         UiSurface {
             inner: Rc::new(RefCell::new(Inner {
                 ui,
+                pak: Vec::new(),
                 textures: Vec::new(),
                 sprites: Vec::new(),
             })),
@@ -62,6 +66,7 @@ impl UiSurface {
     /// images/sprites upload as core textures. Call before `mount`.
     pub fn feed_pak(&self, pak: &[u8]) {
         let mut inner = self.inner.borrow_mut();
+        inner.pak = pak.to_vec();
         for entry in walk_pak(pak) {
             if entry.key == "ui:styles" {
                 if !inner.ui.load_styles(entry.blob) {
@@ -270,6 +275,34 @@ impl UiSurface {
             let ui = self.inner.clone();
             op!("measureText", move |s: Coerced<String>, slot: i32| {
                 ui.borrow_mut().ui.measure_text(&s.0, slot as u8) as f64
+            });
+
+            // ---- streamed textures (spec ops 23..25) ---------------------
+            let ui = self.inner.clone();
+            op!("loadTileTexture", move |key: Coerced<String>, index: i32| {
+                if index < 0 {
+                    return -1;
+                }
+                let mut inner = ui.borrow_mut();
+                let inner = &mut *inner; // split borrow: pak read, core write
+                match crate::pak::find_pak(&inner.pak, &key.0) {
+                    Some(blob) => inner.ui.upload_tileset_tile(blob, index as u32),
+                    None => -1,
+                }
+            });
+
+            let ui = self.inner.clone();
+            op!("freeTexture", move |handle: i32| ui
+                .borrow_mut()
+                .ui
+                .free_texture(handle));
+
+            let ui = self.inner.clone();
+            op!("uploadImgEntry", move |buf: TypedArray<u8>| {
+                let Some(bytes) = buf.as_bytes() else {
+                    return -1;
+                };
+                ui.borrow_mut().ui.upload_img_entry(bytes)
             });
 
             // ---- DevTools ops (spec ops 18..22) + mailbox transport ------

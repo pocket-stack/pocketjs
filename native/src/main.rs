@@ -379,6 +379,9 @@ unsafe fn run() {
     trace("run: pak feed begin");
     let (textures, sprites) = pak::feed(ui, APP_PAK);
     trace("run: pak feed ok");
+    // Keep the pak reachable at runtime for the streaming ops registered
+    // below (loadTileTexture pulls tile blobs straight from .rodata).
+    pak::install(APP_PAK);
 
     // ---- QuickJS ----
     trace("run: JS_NewRuntime begin");
@@ -471,9 +474,17 @@ unsafe fn run() {
         let mask = pad.buttons.bits() as i32;
         #[cfg(feature = "capture")]
         let mask = capture_input_mask(frame_count, mask);
+        // Analog nub packed (x << 8) | y, each axis 0..255 with 128 = center
+        // (spec.ts "frame(buttons, analog)"; SceCtrlData names the axes lx/ly).
+        #[cfg(not(feature = "capture"))]
+        let analog = (((pad.lx as u32) << 8) | pad.ly as u32) as i32;
+        // The baked input script has no analog track: pin the nub to center
+        // so scripted PPSSPPHeadless captures stay deterministic.
+        #[cfg(feature = "capture")]
+        let analog = pocketjs_core::spec::ANALOG_CENTER as i32;
 
-        let mut args = [JS_NewInt32(ctx, mask)];
-        let r = JS_Call(ctx, frame_fn, global, 1, args.as_mut_ptr());
+        let mut args = [JS_NewInt32(ctx, mask), JS_NewInt32(ctx, analog)];
+        let r = JS_Call(ctx, frame_fn, global, 2, args.as_mut_ptr());
         #[cfg(feature = "bench")]
         let bench_after_js = bench_now_us();
         if frame_count == 0 {

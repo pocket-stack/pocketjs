@@ -54,6 +54,31 @@ const KEYMAP = {
   KeyE: BTN.RTRIGGER,
 };
 
+// Analog nub emulation: I/K tilt the Y axis, J/O the X axis (L is taken by
+// the shoulder trigger). The packed value ((x << 8) | y, 128 = center — spec
+// ANALOG_CENTER) rides as frame()'s second argument; with no key held it
+// stays centered, so demos that ignore the nub see the pre-analog behavior.
+const NUBMAP = {
+  KeyI: [0, -1],
+  KeyK: [0, 1],
+  KeyJ: [-1, 0],
+  KeyO: [1, 0],
+};
+const nubHeld = new Set();
+
+function packedAnalog() {
+  let x = 0;
+  let y = 0;
+  for (const code of nubHeld) {
+    const [dx, dy] = NUBMAP[code];
+    x += dx;
+    y += dy;
+  }
+  const px = 128 + Math.max(-1, Math.min(1, x)) * 127;
+  const py = 128 + Math.max(-1, Math.min(1, y)) * 127;
+  return ((px & 0xff) << 8) | (py & 0xff);
+}
+
 let wasm = null; // createWasmUi result
 let canvas = null;
 let ctx = null;
@@ -172,7 +197,8 @@ async function devtoolsSeek(frame) {
 function safeFrame() {
   if (!frameCb) return;
   try {
-    frameCb(held); // JS: one virtual-frame transaction (input, effects, sweep)
+    // JS: one virtual-frame transaction (input, effects, sweep)
+    frameCb(held, packedAnalog());
     const ticks = 60 / simHz;
     for (let t = 0; t < ticks; t++) wasm.tick(); // core catch-up: 1/60 s each
   } catch (e) {
@@ -232,6 +258,12 @@ function stop() {
 
 function onKey(down) {
   return (e) => {
+    if (NUBMAP[e.code]) {
+      e.preventDefault();
+      if (down) nubHeld.add(e.code);
+      else nubHeld.delete(e.code);
+      return;
+    }
     const bit = KEYMAP[e.code];
     if (bit === undefined) return;
     e.preventDefault();
@@ -262,6 +294,7 @@ export async function mount(theCanvas, opts = {}) {
   window.addEventListener("keyup", onKey(false));
   window.addEventListener("blur", () => {
     held = 0;
+    nubHeld.clear();
   });
   const hzParam = Number(new URLSearchParams(location.search).get("hz"));
   if (VALID_HZ.includes(hzParam)) simHz = hzParam;

@@ -3,7 +3,7 @@
 //! The desktop edition of the 2D UI runtime's native half (RUNTIMES.md):
 //! it owns a [`pocketjs_core::Ui`] core, feeds it app paks (styles, font
 //! atlases, images, sprites — same walk as the PSP's `native/src/pak.rs`),
-//! mounts the 17-op `ui.*` HostOps surface into a [`pocket_mod::Guest`], and
+//! mounts the `ui.*` HostOps surface into a [`pocket_mod::Guest`], and
 //! renders the core's DrawList through wgpu into any render target:
 //!
 //!   - a window at PSP resolution → the existing PocketJS demos run natively

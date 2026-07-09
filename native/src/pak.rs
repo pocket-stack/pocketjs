@@ -12,15 +12,43 @@
 //!                       (name, handle) pairs are returned so ffi.rs can
 //!                       expose them to JS as ui.__textures (renderer
 //!                       registerTexture keys are the bare `src` names).
+//!   ui:tile.<name>   -> NOT fed (skipped as unknown): deep-zoom tilesets
+//!                       stream one tile at a time through the JS
+//!                       loadTileTexture op, which resolves the entry via
+//!                       `find` on the `install`ed pak.
 //!
 //! Malformed packs/entries are skipped, never fatal (an EBOOT with a bad
 //! pack still boots to the JS error screen instead of crashing).
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::ffi::c_void;
 
 use pocketjs_core::{spec, Ui};
+
+/// The embedded pak, installed by main.rs before ffi::register so the JS
+/// streaming ops (loadTileTexture) can pull blobs straight from .rodata at
+/// runtime. One instance, one JS thread — the same main-thread `static mut`
+/// contract as ffi::UI.
+static mut PAK: &[u8] = &[];
+
+/// Publish the embedded pak for runtime lookups (call once, before
+/// ffi::register).
+///
+/// # Safety
+/// Single-threaded main-thread contract (ffi::UI's): no concurrent
+/// `install`/`installed` calls exist.
+pub unsafe fn install(pak: &'static [u8]) {
+    PAK = pak
+}
+
+/// The installed pak (empty slice until `install` runs — every `find` on it
+/// just misses).
+///
+/// # Safety
+/// Same single-threaded contract as `install`.
+pub unsafe fn installed() -> &'static [u8] {
+    PAK
+}
 
 #[inline]
 fn rd_u16(b: &[u8], off: usize) -> Option<u16> {
@@ -106,14 +134,7 @@ pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
             if handle >= 0 {
                 // The core copied the pixels into 16-byte-aligned storage; the
                 // GE samples RAM, not the dcache — write back ONCE at upload.
-                if let Some((px, _, _, _)) = ui.texture(handle) {
-                    unsafe {
-                        psp::sys::sceKernelDcacheWritebackRange(
-                            px.as_ptr() as *const c_void,
-                            px.len() as u32,
-                        );
-                    }
-                }
+                crate::ge::writeback_texture(ui, handle);
                 textures.push((String::from(name), handle));
             } else {
                 psp::dprintln!("[PocketJS pak] bad image {} ({}x{} psm {})", key, w, h, psm);
@@ -136,14 +157,7 @@ pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
             let Some(pixels) = blob.get(16..) else { continue };
             let handle = ui.upload_texture(pixels, w as u32, h as u32, psm as u32);
             if handle >= 0 {
-                if let Some((px, _, _, _)) = ui.texture(handle) {
-                    unsafe {
-                        psp::sys::sceKernelDcacheWritebackRange(
-                            px.as_ptr() as *const c_void,
-                            px.len() as u32,
-                        );
-                    }
-                }
+                crate::ge::writeback_texture(ui, handle);
                 sprites.push(SpriteReg { name: String::from(name), handle, frames, cols, step });
             } else {
                 psp::dprintln!("[PocketJS pak] bad sprite {} ({}x{} psm {})", key, w, h, psm);
@@ -152,4 +166,33 @@ pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
         // unknown keys: ignored (forward compatible)
     }
     (textures, sprites)
+}
+
+/// Look up one entry's blob by exact key (the runtime side of the streaming
+/// ops — e.g. loadTileTexture's `ui:tile.<name>` keys, which `feed` skips as
+/// unknown). Same bounds-checked walk as `feed`: malformed packs and misses
+/// return None, never panic. O(entries) per call — callers cache the handle,
+/// not the lookup.
+pub fn find<'a>(pak: &'a [u8], key: &str) -> Option<&'a [u8]> {
+    if rd_u32(pak, 0)? != spec::pak::MAGIC || rd_u16(pak, 4)? != spec::pak::VERSION {
+        return None;
+    }
+    let (count, dir_off, names_off) = (rd_u32(pak, 8)?, rd_u32(pak, 12)?, rd_u32(pak, 16)?);
+    // Same corrupt-count clamp as `feed`.
+    let count = (count as usize)
+        .min(pak.len().saturating_sub(dir_off as usize) / spec::pak::ENTRY_SIZE);
+    for i in 0..count {
+        let e = dir_off as usize + i * spec::pak::ENTRY_SIZE;
+        let (Some(blob_off), Some(blob_len), Some(name_off), Some(name_len)) =
+            (rd_u32(pak, e + 4), rd_u32(pak, e + 8), rd_u32(pak, e + 12), rd_u16(pak, e + 16))
+        else {
+            continue;
+        };
+        let ns = names_off as usize + name_off as usize;
+        let Some(name_bytes) = pak.get(ns..ns + name_len as usize) else { continue };
+        if name_bytes == key.as_bytes() {
+            return pak.get(blob_off as usize..blob_off as usize + blob_len as usize);
+        }
+    }
+    None
 }

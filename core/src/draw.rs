@@ -398,8 +398,10 @@ fn fill_color_at(fill: &Fill, x0: f32, y0: f32, x1: f32, y1: f32, sx0: i32, sy: 
 /// coverage spans (the spans measured ~7 ms/frame of CPU on real PSP
 /// hardware for rounded-heavy screens).
 pub struct DiscCache {
-    /// (radius px, texture handle)
-    entries: Vec<(u32, u32)>,
+    /// (radius px, generation-tagged texture handle). Handles re-validate
+    /// through `tex_resolve` on every use: `free_texture` is allowed to free
+    /// a disc slot (JS misuse), which simply goes stale here and re-bakes.
+    entries: Vec<(u32, i32)>,
 }
 
 impl DiscCache {
@@ -419,15 +421,24 @@ impl Default for DiscCache {
 /// (PSM_8888), padded to pow2 — corners sample their quadrant and modulate
 /// by the fill color, which matches the old span math's scale_alpha exactly
 /// up to AA rounding.
-fn disc_texture(cache: &mut DiscCache, textures: &mut Vec<crate::Texture>, r_px: u32) -> Option<(u32, u32)> {
-    if let Some(&(_, handle)) = cache.entries.iter().find(|&&(r, _)| r == r_px) {
-        let dim = pow2_at_least(2 * r_px);
-        return Some((handle, dim));
-    }
+fn disc_texture(
+    cache: &mut DiscCache,
+    textures: &mut Vec<crate::TexSlot>,
+    tex_free: &mut Vec<u32>,
+    r_px: u32,
+) -> Option<(u32, u32)> {
     let size = 2 * r_px;
     let dim = pow2_at_least(size);
     if dim > spec::TEX_MAX_DIM {
         return None;
+    }
+    if let Some(&(_, handle)) = cache.entries.iter().find(|&&(r, _)| r == r_px) {
+        // Re-validate: a freed disc slot (free_texture on our handle) goes
+        // stale here; drop the entry and re-bake below.
+        if crate::tex_resolve(textures, handle).is_some() {
+            return Some((handle as u32, dim));
+        }
+        cache.entries.retain(|&(r, _)| r != r_px);
     }
     let byte_len = (dim * dim * 4) as usize;
     let mut px = alloc::vec![0u8; byte_len];
@@ -460,10 +471,24 @@ fn disc_texture(cache: &mut DiscCache, textures: &mut Vec<crate::Texture>, r_px:
     unsafe {
         core::ptr::copy_nonoverlapping(px.as_ptr(), chunks.as_mut_ptr() as *mut u8, byte_len);
     }
-    textures.push(crate::Texture { data: chunks, byte_len, w: dim, h: dim, psm: spec::psm::PSM_8888 });
-    let handle = (textures.len() - 1) as u32;
+    let handle = crate::tex_alloc(
+        textures,
+        tex_free,
+        crate::Texture {
+            data: chunks,
+            byte_len,
+            w: dim,
+            h: dim,
+            psm: spec::psm::PSM_8888,
+            palette: None,
+            linear: false,
+        },
+    );
+    if handle < 0 {
+        return None;
+    }
     cache.entries.push((r_px, handle));
-    Some((handle, dim))
+    Some((handle as u32, dim))
 }
 
 #[inline]
@@ -485,8 +510,10 @@ struct Walker<'a> {
     /// [0, screen.0] x [0, screen.1] (i16-safe; hosts cap it well under 32k).
     screen: (f32, f32),
     glyph_scratch: Vec<crate::text::GlyphPos>,
-    /// Core texture list (baked corner discs append lazily during the walk).
-    textures: &'a mut Vec<crate::Texture>,
+    /// Core texture slots + free list (baked corner discs allocate lazily
+    /// during the walk, through the same slot storage as uploads).
+    textures: &'a mut Vec<crate::TexSlot>,
+    tex_free: &'a mut Vec<u32>,
     discs: &'a mut DiscCache,
     /// DevTools: slot to capture the world AABB of (u32::MAX = none).
     inspect_slot: u32,
@@ -504,7 +531,8 @@ pub fn build(
     fonts: &Fonts,
     frame: u64,
     screen: (f32, f32),
-    textures: &mut Vec<crate::Texture>,
+    textures: &mut Vec<crate::TexSlot>,
+    tex_free: &mut Vec<u32>,
     discs: &mut DiscCache,
     dl: &mut DrawList,
     inspect_id: i32,
@@ -527,6 +555,7 @@ pub fn build(
         screen,
         glyph_scratch: Vec::new(),
         textures,
+        tex_free,
         discs,
         inspect_slot,
         inspect_hit: None,
@@ -1589,7 +1618,7 @@ impl<'a> Walker<'a> {
             // Large radii take the analytic span path below instead.
             const DISC_MAX_R: u32 = 32;
             if r_px <= DISC_MAX_R {
-                if let Some((tex, dim)) = disc_texture(self.discs, self.textures, r_px) {
+                if let Some((tex, dim)) = disc_texture(self.discs, self.textures, self.tex_free, r_px) {
                     let rf = r_px as f32;
                     let du = rf / dim as f32; // one corner quadrant in UV space
                     let corners = [

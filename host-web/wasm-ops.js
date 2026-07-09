@@ -73,6 +73,14 @@ export async function createWasmUi(wasm) {
     debugStep: () => ex.ui_debug_step(),
   };
 
+  // Streamed-texture ops (spec ops 24/25) — feature-detected so a stale
+  // pocketjs.wasm predating them still boots (the runtime falls back to
+  // plain uploadTexture in src/tiles.ts).
+  if (ex.ui_free_texture) ops.freeTexture = (handle) => ex.ui_free_texture(handle);
+  if (ex.ui_upload_img_entry) {
+    ops.uploadImgEntry = (blob) => withBytes(blob, (p, l) => ex.ui_upload_img_entry(p, l));
+  }
+
   return {
     ops,
     exports: ex,

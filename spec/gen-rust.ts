@@ -8,6 +8,7 @@
 // no env, no object-key sorting surprises — insertion order only).
 
 import {
+  ANALOG_CENTER,
   ANIMATABLE,
   ANIM_BEZIER_EXTRA_SIZE,
   ANIM_ENTRY_HEADER_SIZE,
@@ -15,6 +16,8 @@ import {
   ANIM_FILL_FORWARDS,
   ANIM_SEGMENT_SIZE,
   BTN,
+  IMG_FLAG_LINEAR,
+  IMG_FLAG_RLE,
   PAK_ALIGN,
   PAK_DTYPE,
   PAK_ENTRY_SIZE,
@@ -57,6 +60,15 @@ import {
   STYLE_VARIANT_FOCUS,
   STYLE_VERSION,
   TEX_MAX_DIM,
+  TEX_SLOT_BITS,
+  TEX_SLOT_MASK,
+  TILESET_ABSENT,
+  TILESET_DIR_ENTRY_SIZE,
+  TILESET_FLAG_LINEAR,
+  TILESET_FLAG_RLE,
+  TILESET_HEADER_SIZE,
+  TILESET_MAGIC,
+  TILESET_VERSION,
   TRANSITION_MASK_ALL,
   VALUE_KIND,
   type PropName,
@@ -131,6 +143,10 @@ export function generateRust(): string {
   put("");
   put("/// Textures must be power-of-two and no larger than this per side.");
   put(`pub const TEX_MAX_DIM: u32 = ${TEX_MAX_DIM};`);
+  put("/// Texture handles are generation-tagged like node ids:");
+  put("/// handle = (generation << TEX_SLOT_BITS) | slot; bit 31 stays 0.");
+  put(`pub const TEX_SLOT_BITS: u32 = ${TEX_SLOT_BITS};`);
+  put(`pub const TEX_SLOT_MASK: u32 = ${hex(TEX_SLOT_MASK, 5)};`);
   put("/// Max baked font-atlas slots.");
   put(`pub const MAX_FONT_SLOTS: usize = ${MAX_FONT_SLOTS};`);
   put("/// Transition mask value meaning \"every animatable prop\".");
@@ -235,10 +251,34 @@ export function generateRust(): string {
   // --- psm --------------------------------------------------------------------
   put("/// PSM texture pixel formats — MUST equal rust-psp TexturePixelFormat");
   put("/// (sceGuTexMode arg; verified against rust-psp/psp/src/sys/gu.rs).");
+  put("/// PSM_T8 (CLUT8) uploads as: 1024-byte palette (256 x u32 ABGR), then");
+  put("/// w*h index bytes.");
   put("pub mod psm {");
   for (const [name, v] of Object.entries(PSM)) {
     put(`    pub const ${name}: u32 = ${v};`);
   }
+  put("}");
+  put("");
+
+  // --- img entry flags ------------------------------------------------------------
+  put("/// IMG entry flags (compiler/pak.ts IMG entry byte 5; v1 wrote 0).");
+  put("pub mod img {");
+  put(`    pub const FLAG_RLE: u8 = ${IMG_FLAG_RLE}; // pixel stream is PackBits-RLE`);
+  put(`    pub const FLAG_LINEAR: u8 = ${IMG_FLAG_LINEAR}; // bilinear sampling`);
+  put("}");
+  put("");
+
+  // --- tileset ---------------------------------------------------------------------
+  put("/// TILESET pak entry (deep-zoom tile grids; full layout in spec.ts).");
+  put("/// One shared 256-color palette per entry; solid tiles live in the dir.");
+  put("pub mod tileset {");
+  put(`    pub const MAGIC: u32 = ${hex(TILESET_MAGIC)}; // 'PKTS' LE`);
+  put(`    pub const VERSION: u16 = ${TILESET_VERSION};`);
+  put(`    pub const HEADER_SIZE: usize = ${TILESET_HEADER_SIZE};`);
+  put(`    pub const DIR_ENTRY_SIZE: usize = ${TILESET_DIR_ENTRY_SIZE};`);
+  put(`    pub const ABSENT: u32 = ${hex(TILESET_ABSENT)};`);
+  put(`    pub const FLAG_RLE: u16 = ${TILESET_FLAG_RLE};`);
+  put(`    pub const FLAG_LINEAR: u16 = ${TILESET_FLAG_LINEAR};`);
   put("}");
   put("");
 
@@ -310,6 +350,11 @@ export function generateRust(): string {
     put(`    pub const ${name}: u32 = ${hex(v, 4)};`);
   }
   put("}");
+  put("");
+  put("/// frame(buttons, analog): analog packs the nub as (x << 8) | y, each");
+  put("/// axis 0..255 with 128 = center. Hosts without a stick omit the arg;");
+  put("/// the runtime defaults to this value (so old tapes/goldens hold).");
+  put(`pub const ANALOG_CENTER: u32 = ${hex(ANALOG_CENTER, 4)};`);
 
   return L.join("\n") + "\n";
 }
