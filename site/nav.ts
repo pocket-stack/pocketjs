@@ -54,6 +54,14 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "time-is-an-input",
+    title: "Time Is an Input",
+    date: "2026-07-09",
+    description:
+      "Why UI tests flake — a runtime-architecture answer, not a tooling one. Make every frame a pure state transition, quantize the network onto frame boundaries, and time becomes data: 60 runs of the same journey, one histogram bar. Then turn the clock rate into a dial and a whole user session becomes 13 replayable frames — the world an agent actually wants to live in.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "shipping-openstrike",
     title: "Shipping OpenStrike: a Counter-Strike-Shaped FPS on a 2004 Handheld",
     date: "2026-07-09",
