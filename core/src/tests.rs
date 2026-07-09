@@ -1804,3 +1804,55 @@ fn debug_inspect_glides_between_targets() {
     ui.debug_inspect(0);
     assert_eq!(ui.draw().words.len(), baseline, "clear hides the overlay");
 }
+
+/// set_text rides the incremental style path — and skips relayout entirely
+/// inside a FIXED cell (definite px width AND height), where the measure
+/// result cannot move layout. Empty <-> non-empty stays structural (the
+/// taffy leaf has to (dis)appear).
+#[test]
+fn set_text_relayout_scope() {
+    let mut ui = Ui::new();
+    assert!(ui.load_font_atlas(&encode_atlas(
+        0,
+        8,
+        8,
+        7,
+        10,
+        3,
+        &[(0xfffd, 0, 8), ('A' as u32, 1, 6), ('B' as u32, 2, 5)],
+    )));
+    let auto_t = ui.create_node(spec::NodeType::Text as u8);
+    ui.set_text(auto_t, "A");
+    ui.insert_before(spec::ROOT_ID, auto_t, 0);
+    let fixed_t = ui.create_node(spec::NodeType::Text as u8);
+    ui.set_prop(fixed_t, spec::prop::WIDTH, 40.0);
+    ui.set_prop(fixed_t, spec::prop::HEIGHT, 12.0);
+    ui.set_text(fixed_t, "A");
+    ui.insert_before(spec::ROOT_ID, fixed_t, 1);
+    ui.tick();
+    assert!(!ui.layout.needs(), "clean after tick");
+
+    // Auto-sized: a size-changing swap must schedule (incremental) relayout.
+    ui.set_text(auto_t, "AB");
+    assert!(ui.layout.needs(), "auto cell swap relayouts");
+    assert!(!ui.layout.dirty, "…but incrementally, not a full rebuild");
+    ui.tick();
+
+    // Fixed cell: the swap must NOT schedule any layout work…
+    ui.set_text(fixed_t, "AB");
+    assert!(!ui.layout.needs(), "fixed cell swap skips relayout");
+    ui.tick();
+    // …and paint still shows the new text (reads the tree, not the ctx).
+    let words = ui.draw().words.clone();
+    validate_drawlist(&words);
+    let runs = words.iter().filter(|&&w| w == spec::draw_op::GLYPH_RUN).count();
+    assert_eq!(runs, 2, "both texts painted");
+
+    // Empty <-> non-empty flips are structural (full rebuild).
+    ui.set_text(fixed_t, "");
+    assert!(ui.layout.dirty, "non-empty -> empty is structural");
+    ui.tick();
+    ui.set_text(fixed_t, "A");
+    assert!(ui.layout.dirty, "empty -> non-empty is structural");
+    ui.tick();
+}

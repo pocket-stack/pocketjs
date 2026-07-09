@@ -254,7 +254,19 @@ impl Ui {
         if was_empty != run.is_empty() {
             self.layout.dirty = true;
         } else if !run.is_empty() {
-            self.layout.mark_style(root_slot);
+            // A text swap inside a FIXED cell (definite px width AND height
+            // on the layout leaf) cannot move layout — the measure result is
+            // ignored on both axes. Skip the relayout entirely; paint reads
+            // the tree text directly, and any later relayout re-collects the
+            // run from the tree (never from the stale taffy context).
+            let r = style::resolve(&self.tree.slots[root_slot as usize], &self.styles, true);
+            let fixed = r.width.is_finite()
+                && r.width >= 0.0
+                && r.height.is_finite()
+                && r.height >= 0.0;
+            if !fixed {
+                self.layout.mark_style(root_slot);
+            }
         }
     }
 
