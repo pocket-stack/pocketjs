@@ -54,7 +54,7 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
-    slug: "time-is-an-input",
+    slug: "ui-runtime-that-cant-flake",
     title: "The UI Runtime That Can't Flake",
     date: "2026-07-09",
     description:
