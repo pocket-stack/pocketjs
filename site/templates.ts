@@ -96,8 +96,7 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
         </ul>
       </div>
     </div>
-    <div class="mt-10 flex flex-col gap-2 border-t border-line/60 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-      <span>Solid/Vue Vapor UI, native pixels</span>
+    <div class="mt-10 flex flex-col gap-2 border-t border-line/60 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-end">
       <span>© ${YEAR} PocketJS · MIT</span>
     </div>
   </div>

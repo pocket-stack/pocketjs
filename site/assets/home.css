@@ -893,7 +893,8 @@ a.lp-btn--primary:hover {
   color: var(--muted);
   font-size: 0.8rem;
 }
-.lp-footer__bar span:first-child { font-family: var(--mono); letter-spacing: 0.02em; }
+.lp-footer__bar--end { justify-content: flex-end; }
+.lp-footer__bar:not(.lp-footer__bar--end) span:first-child { font-family: var(--mono); letter-spacing: 0.02em; }
 
 /* ---- Scroll-reveal (progressive enhancement; visible by default) ---------- */
 @supports (animation-timeline: view()) {
