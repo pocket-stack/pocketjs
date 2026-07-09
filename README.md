@@ -138,4 +138,14 @@ On-demand device screenshots (📷 in the panel) work on every host — on real
 hardware the raw VRAM rides the usbhostfs mount and the bridge encodes the
 PNG desktop-side.
 
+## Determinism + the sim host
+
+Time is a frame counter, not the wall clock ([DETERMINISM.md](DETERMINISM.md)):
+the virtual clock (`@pocketjs/framework/clock`) makes the simulation rate a
+host policy (`?hz=2` on the web host runs the 2 FPS world on a real screen),
+the effect shell (`@pocketjs/framework/effects`) quantizes async results onto
+frame boundaries, and the headless sim host (`host-sim/`) replays scripted
+user journeys as byte-exact per-frame pixel traces — `test/sim.test.ts` is
+the proof, `scripts/flake-lab.ts` the wall-clock control experiment.
+
 Fonts: Inter (OFL), vendored in `assets/fonts/`.

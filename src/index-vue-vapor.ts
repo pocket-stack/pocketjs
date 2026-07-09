@@ -20,6 +20,8 @@ import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
 import { resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.ts";
+import { __advanceClock, resetClock } from "./clock.ts";
+import { __drainEffects, resetEffects } from "./effects.ts";
 import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
 import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
 import { ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
@@ -141,9 +143,13 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
 
   setInputRoot(appRoot);
   resetFrameHooks();
+  resetClock(); // clock policy + effect shell (DETERMINISM.md), same as Solid
+  resetEffects();
   initDevtools(host.ops); // DevTools shim (DEVTOOLS.md), same as the Solid path.
   installFrameHandler(
     wrapFrameHandler((buttons: number) => {
+      __advanceClock();
+      __drainEffects();
       runFrameHooks(buttons);
       handleFrame(buttons);
       runSweep();

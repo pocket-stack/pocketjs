@@ -63,6 +63,12 @@ let rafId = 0;
 let acc = 0;
 let last = 0;
 let frameCb = null;
+// Virtual clock policy (DETERMINISM.md): virtual frames per second. One
+// frame(buttons) transaction + 60/simHz core ticks per virtual frame, so
+// ms-based animations cover the same VIRTUAL time at every rate. ?hz=2
+// runs the 2 FPS world a headless agent sees — on a real screen.
+const VALID_HZ = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
+let simHz = 60;
 let logSink = () => {};
 let fpsSink = () => {};
 let statsFrames = 0;
@@ -166,8 +172,9 @@ async function devtoolsSeek(frame) {
 function safeFrame() {
   if (!frameCb) return;
   try {
-    frameCb(held); // JS: input edge-detect, effects, sweep
-    wasm.tick(); // core: anims + layout, exactly 1/60 s
+    frameCb(held); // JS: one virtual-frame transaction (input, effects, sweep)
+    const ticks = 60 / simHz;
+    for (let t = 0; t < ticks; t++) wasm.tick(); // core catch-up: 1/60 s each
   } catch (e) {
     logSink("FRAME ERROR: " + (e && e.stack ? e.stack : e));
     frameCb = null; // stop repeating the same throw 60x/s
@@ -187,7 +194,7 @@ function tick(now) {
   last = now;
   if (dt > 250) dt = 250; // avoid the catch-up spiral after tab hide
   acc += dt;
-  const STEP = 1000 / 60;
+  const STEP = 1000 / simHz;
   let steps = 0;
   while (acc >= STEP && steps < 4) {
     safeFrame();
@@ -256,6 +263,8 @@ export async function mount(theCanvas, opts = {}) {
   window.addEventListener("blur", () => {
     held = 0;
   });
+  const hzParam = Number(new URLSearchParams(location.search).get("hz"));
+  if (VALID_HZ.includes(hzParam)) simHz = hzParam;
   const res = await fetch("pocketjs.wasm");
   if (!res.ok) throw new Error("pocketjs.wasm not found — run: bun scripts/wasm.ts");
   wasm = await createWasmUi(await res.arrayBuffer());
@@ -277,6 +286,7 @@ export async function load(name, opts = {}) {
   // EVERY load so nothing stale leaks across reloads.
   globalThis.ui = wasm.ops;
   globalThis.frame = undefined;
+  globalThis.__simHz = simHz; // clock policy — before eval, like __pak
   // DevTools: identity + transport BEFORE eval; render() picks them up.
   globalThis.__pocketApp = name;
   dtInbox = [];
