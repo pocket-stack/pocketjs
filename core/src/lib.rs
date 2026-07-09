@@ -236,15 +236,25 @@ impl Ui {
         {
             return;
         }
+        // Text updates ride the incremental style-dirty path (the restyle
+        // branch re-collects the run and re-shapes ONCE). Only an empty <->
+        // non-empty flip is structural: empty runs are excluded from the
+        // taffy tree entirely, so the leaf has to (dis)appear.
         let root_slot = self.text_layout_root(slot);
-        let old_size = self.measure_text_layout(root_slot);
+        let mut run = alloc::string::String::new();
+        self.tree.collect_run(root_slot, &mut run);
+        let was_empty = run.is_empty();
         {
             let node = &mut self.tree.slots[slot as usize];
             node.text.clear();
             node.text.push_str(text);
         }
-        if old_size != self.measure_text_layout(root_slot) {
+        run.clear();
+        self.tree.collect_run(root_slot, &mut run);
+        if was_empty != run.is_empty() {
             self.layout.dirty = true;
+        } else if !run.is_empty() {
+            self.layout.mark_style(root_slot);
         }
     }
 
@@ -799,25 +809,6 @@ impl Ui {
             }
             slot = parent_slot;
         }
-    }
-
-    fn measure_text_layout(&self, slot: u32) -> (f32, f32) {
-        let node = &self.tree.slots[slot as usize];
-        if node.node_type != spec::NodeType::Text as u8 {
-            return (0.0, 0.0);
-        }
-        let resolved = style::resolve(node, &self.styles, true);
-        let mut run = alloc::string::String::new();
-        self.tree.collect_run(slot, &mut run);
-        if run.is_empty() {
-            return (0.0, 0.0);
-        }
-        self.fonts.measure_run(
-            &run,
-            resolved.font_slot as u8,
-            resolved.tracking,
-            resolved.line_height,
-        )
     }
 
     /// After a style/variant mutation on `slot`: spawn transition tweens for

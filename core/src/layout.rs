@@ -29,6 +29,23 @@ pub struct MeasureCtx {
     pub tracking: f32,
     /// NAN = atlas default.
     pub line_height: f32,
+    /// Shaped size, computed ONCE when the context is (re)built. Text
+    /// shaping is the expensive half of layout on the PSP; the taffy
+    /// measure closure must never re-shape per solve pass.
+    pub size: (f32, f32),
+}
+
+impl MeasureCtx {
+    fn shaped(
+        fonts: &Fonts,
+        text: String,
+        slot: u8,
+        tracking: f32,
+        line_height: f32,
+    ) -> MeasureCtx {
+        let size = fonts.measure_run(&text, slot, tracking, line_height);
+        MeasureCtx { text, slot, tracking, line_height, size }
+    }
 }
 
 /// The layout engine: one TaffyTree + the dirty flag.
@@ -221,7 +238,7 @@ pub fn to_taffy(r: &Resolved) -> taffy::Style {
 
 /// Build the taffy node for `slot`'s subtree. Returns None for excluded
 /// nodes (empty text runs).
-fn build(tree: &mut Tree, styles: &StyleTable, taffy: &mut TaffyTree<MeasureCtx>, slot: u32) -> Option<taffy::NodeId> {
+fn build(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, taffy: &mut TaffyTree<MeasureCtx>, slot: u32) -> Option<taffy::NodeId> {
     let resolved = style::resolve(&tree.slots[slot as usize], styles, true);
     let node_type = tree.slots[slot as usize].node_type;
     if node_type == spec::NodeType::Text as u8 {
@@ -231,12 +248,13 @@ fn build(tree: &mut Tree, styles: &StyleTable, taffy: &mut TaffyTree<MeasureCtx>
             tree.slots[slot as usize].taffy = None;
             return None; // empty text nodes never consume gap/flex space [R]
         }
-        let ctx = MeasureCtx {
-            text: run,
-            slot: resolved.font_slot as u8,
-            tracking: resolved.tracking,
-            line_height: resolved.line_height,
-        };
+        let ctx = MeasureCtx::shaped(
+            fonts,
+            run,
+            resolved.font_slot as u8,
+            resolved.tracking,
+            resolved.line_height,
+        );
         let nid = taffy.new_leaf_with_context(to_taffy(&resolved), ctx).ok()?;
         tree.slots[slot as usize].taffy = Some(nid);
         return Some(nid);
@@ -245,7 +263,7 @@ fn build(tree: &mut Tree, styles: &StyleTable, taffy: &mut TaffyTree<MeasureCtx>
     let mut kids: Vec<taffy::NodeId> = Vec::with_capacity(children.len());
     for c in children {
         if let Some(cs) = tree.resolve(c) {
-            if let Some(k) = build(tree, styles, taffy, cs) {
+            if let Some(k) = build(tree, styles, fonts, taffy, cs) {
                 kids.push(k);
             }
         }
@@ -278,7 +296,7 @@ fn readback(tree: &mut Tree, taffy: &TaffyTree<MeasureCtx>) {
     }
 }
 
-fn compute(tree: &mut Tree, fonts: &Fonts, eng: &mut LayoutEngine, root_nid: taffy::NodeId) {
+fn compute(tree: &mut Tree, _fonts: &Fonts, eng: &mut LayoutEngine, root_nid: taffy::NodeId) {
     let _ = eng.taffy.compute_layout_with_measure(
         root_nid,
         Size {
@@ -287,13 +305,10 @@ fn compute(tree: &mut Tree, fonts: &Fonts, eng: &mut LayoutEngine, root_nid: taf
         },
         |known, _available, _id, ctx, _style| -> Size<f32> {
             match ctx {
-                Some(m) => {
-                    let (w, h) = fonts.measure_run(&m.text, m.slot, m.tracking, m.line_height);
-                    Size {
-                        width: known.width.unwrap_or(w),
-                        height: known.height.unwrap_or(h),
-                    }
-                }
+                Some(m) => Size {
+                    width: known.width.unwrap_or(m.size.0),
+                    height: known.height.unwrap_or(m.size.1),
+                },
                 None => Size { width: 0.0, height: 0.0 },
             }
         },
@@ -327,12 +342,13 @@ pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut L
             if tree.slots[slot as usize].node_type == spec::NodeType::Text as u8 {
                 let mut run = String::new();
                 tree.collect_run(slot, &mut run);
-                let ctx = MeasureCtx {
-                    text: run,
-                    slot: resolved.font_slot as u8,
-                    tracking: resolved.tracking,
-                    line_height: resolved.line_height,
-                };
+                let ctx = MeasureCtx::shaped(
+                    fonts,
+                    run,
+                    resolved.font_slot as u8,
+                    resolved.tracking,
+                    resolved.line_height,
+                );
                 let _ = eng.taffy.set_node_context(nid, Some(ctx));
             }
             let _ = eng.taffy.set_style(nid, to_taffy(&resolved));
@@ -349,7 +365,7 @@ pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut L
         n.taffy = None;
     }
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
-    let Some(root_nid) = build(tree, styles, &mut eng.taffy, root_slot) else {
+    let Some(root_nid) = build(tree, styles, fonts, &mut eng.taffy, root_slot) else {
         eng.dirty = false;
         eng.built = false;
         eng.root = None;
