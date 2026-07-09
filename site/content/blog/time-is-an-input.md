@@ -9,7 +9,7 @@ It passed four times today. On the fifth run — same commit, same code, same te
 
 This post argues that flakiness is not weather. It is a *property of the runtime's model of time*, it has a precise cause, and a UI runtime can be designed so that flakiness is not merely rare but **impossible by construction** — the way a sorted list doesn't *usually* keep order, it *cannot* lose it. Then it shows the receipts: a runtime that works this way, a real app scenario with async fetches and mutations, an experiment where the same code runs under two different clocks — one produces a histogram, the other produces a single bar — and a CI suite where the assertion is byte equality on every pixel of every frame.
 
-The claim is bigger than testing, which is why the title isn't "fixing flaky tests." `ui = f(state)` — the idea React planted — made the *view* a pure function and changed how a generation thinks about interfaces. But it purified **space** and said nothing about **time**: *when* state changes, in what order, interleaved with what. Everything that still hurts — flaky tests, unreproducible bug reports, "works on my machine," debugging by staring at videos — lives in that gap. The missing half of the equation is:
+And "can't flake" is only the doorway — the claim behind it is bigger than testing. `ui = f(state)` — the idea React planted — made the *view* a pure function and changed how a generation thinks about interfaces. But it purified **space** and said nothing about **time**: *when* state changes, in what order, interleaved with what. Everything that still hurts — flaky tests, unreproducible bug reports, "works on my machine," debugging by staring at videos — lives in that gap. The missing half of the equation is:
 
 ```
 state[n+1] = F(state[n], input[n])
@@ -370,13 +370,13 @@ Boundaries, stated plainly, because a claim of "impossible" earns scrutiny.
 
 **Wall-clock runtimes are not wrong.** Flutter skipping animation frames to stay glued to real time is the right call for a phone in a hand. Sampled time buys fluidity under jitter and pays in replayability; owned time buys replayability and pays by *scheduling* its world. The mistake is not either choice — it is making the first choice and then spending two decades of test-infrastructure effort pretending you made the second.
 
-## Coda: choose your inputs
+## Determinism is a choice
 
-Strip everything else away and one design question remains: **what is allowed to be an input to your program?**
+Here is the whole post in one sentence: **tests flake because runtimes let things change your app that nobody writes down — and a runtime can refuse.**
 
-The mainstream UI stack answered expansively: the wall clock, the scheduler, the compositor's mood, the order in which packets happen to arrive. Every one of those admissions bought real capability — and every one made the program's history unrepeatable, which is why our tests retry, our bug reports say "sometimes," and our debuggers can only walk forward. Flakiness was never a tooling gap. It was the runtime answering "what is time?" with "whatever the machine was doing."
+Every UI runtime decides what is allowed to change your program. The mainstream stack allows almost everything: the wall clock, the OS scheduler, whichever network packet lands first, a GC pause. Each guest was let in for a good reason, and each one makes your app's history unrepeatable — which is why your tests retry, your bug reports say "sometimes," and your debugger can only walk forward. Flakiness was never a tooling gap. It is simply what "anything can change the program at any moment" looks like from inside a test.
 
-The alternative was sitting in the games industry the whole time. Make the frame a transaction. Make time a counter. Make the network queue at the door. Then the entire life of an interface — every animation frame, every spinner, every confirmation toast — collapses into one expression:
+The games industry showed the other choice decades ago: let *nothing* change the program except the recorded input of each frame. Make the frame a transaction. Make time a counter. Make the network queue at the door. Then the entire life of an interface — every animation frame, every spinner, every confirmation toast — collapses into one expression:
 
 ```
 history = inputs.reduce(F, state0)
