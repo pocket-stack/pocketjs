@@ -6,7 +6,7 @@
 
 import { createSignal, onCleanup, type Accessor } from "solid-js";
 
-type FrameCallback = (buttons: number) => void;
+type FrameCallback = (buttons: number, lx?: number, ly?: number) => void;
 
 const callbacks = new Set<FrameCallback>();
 let buttonHandlerBlockDepth = 0;
@@ -16,8 +16,8 @@ export function resetFrameHooks(): void {
   buttonHandlerBlockDepth = 0;
 }
 
-export function runFrameHooks(buttons: number): void {
-  for (const cb of [...callbacks]) cb(buttons);
+export function runFrameHooks(buttons: number, lx?: number, ly?: number): void {
+  for (const cb of [...callbacks]) cb(buttons, lx, ly);
 }
 
 export function onFrame(callback: FrameCallback): void {

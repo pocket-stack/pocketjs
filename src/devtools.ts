@@ -148,8 +148,10 @@ export function initDevtools(ops: HostOps): void {
 }
 
 /** Wrap the composed frame handler (render()'s input+hooks+sweep closure). */
-export function wrapFrameHandler(h: (buttons: number) => void): (buttons: number) => void {
-  return (buttons: number) => {
+export function wrapFrameHandler(
+  h: (buttons: number, lx?: number, ly?: number) => void,
+): (buttons: number, lx?: number, ly?: number) => void {
+  return (buttons: number, lx?: number, ly?: number) => {
     state.hostCalls++;
     if (state.transport) {
       pollTransport();
@@ -172,7 +174,7 @@ export function wrapFrameHandler(h: (buttons: number) => void): (buttons: number
     recordMask(mask);
     state.frame++;
     try {
-      h(mask);
+      h(mask, lx, ly);
     } catch (e) {
       send({
         t: "error",

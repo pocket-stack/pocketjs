@@ -147,12 +147,14 @@ export function getOps(): HostOps {
 // Frame hookup
 // ---------------------------------------------------------------------------
 // Every host drives frames the same way: once per vblank/rAF tick it calls
-// `globalThis.frame(buttons)` with the PSP button bitmask (spec BTN). index.ts
-// composes input edge-detection + the renderer's end-of-frame sweep into that
-// entry point via installFrameHandler.
+// `globalThis.frame(buttons, lx, ly)` with the PSP button bitmask (spec BTN)
+// and the analog stick axes (u8, 0..255, 128 = center). index.ts composes
+// input edge-detection + the renderer's end-of-frame sweep into that entry
+// point via installFrameHandler. lx/ly are optional trailing args — existing
+// apps that only read `buttons` keep working unchanged.
 
-export function installFrameHandler(fn: (buttons: number) => void): void {
-  (globalThis as { frame?: (buttons: number) => void }).frame = fn;
+export function installFrameHandler(fn: (buttons: number, lx?: number, ly?: number) => void): void {
+  (globalThis as { frame?: (buttons: number, lx?: number, ly?: number) => void }).frame = fn;
 }
 
 // ---------------------------------------------------------------------------

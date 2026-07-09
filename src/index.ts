@@ -193,10 +193,10 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   initDevtools(host.ops); // DevTools shim (DEVTOOLS.md): flight recorder +
   // debug channel; one branch per frame when no transport is connected.
   installFrameHandler(
-    wrapFrameHandler((buttons: number) => {
+    wrapFrameHandler((buttons: number, lx?: number, ly?: number) => {
       __advanceClock(); // virtual frame++, fire due after() timers
       __drainEffects(); // frame-boundary deliveries enter the world first
-      runFrameHooks(buttons); // app lifecycle callbacks: onFrame/onButtonPress/etc.
+      runFrameHooks(buttons, lx, ly); // app lifecycle callbacks: onFrame/onButtonPress/etc.
       handleFrame(buttons); // edge-detect, focus nav, onPress (runs effects)
       runSweep(); // then destroy subtrees still detached [R]
     }),

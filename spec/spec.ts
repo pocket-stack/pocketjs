@@ -947,6 +947,31 @@ export const BTN = {
   SQUARE: 0x8000,
 } as const;
 
+/**
+ * Analog stick range. The PSP analog stick reports u8 per axis (0..255);
+ * 128 is the nominal center, but real hardware drifts a few units either
+ * way. Hosts SHOULD apply a deadzone (see ANALOG_DEADZONE) before exposing
+ * the value to JS, so a resting stick reads exactly 128/128.
+ *
+ * The `frame(buttons, lx, ly)` signature passes lx/ly as the raw u8 (0..255).
+ * Apps that don't care about analog simply ignore the trailing args — full
+ * backward compatibility.
+ */
+export const ANALOG_MIN = 0;
+export const ANALOG_MAX = 255;
+export const ANALOG_NEUTRAL = 128;
+/** Deadzone radius: values within ±ANALOG_DEADZONE of neutral snap to neutral. */
+export const ANALOG_DEADZONE = 16;
+
+/** Clamp + deadzone a raw u8 axis reading to ANALOG_NEUTRAL near center. */
+export function normalizeAnalog(raw: number): number {
+  if (raw < ANALOG_MIN) return ANALOG_NEUTRAL;
+  if (raw > ANALOG_MAX) return ANALOG_NEUTRAL;
+  const delta = raw - ANALOG_NEUTRAL;
+  if (delta >= -ANALOG_DEADZONE && delta <= ANALOG_DEADZONE) return ANALOG_NEUTRAL;
+  return raw;
+}
+
 // ---------------------------------------------------------------------------
 // Fixed timestep
 // ---------------------------------------------------------------------------

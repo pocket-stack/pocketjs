@@ -469,11 +469,17 @@ unsafe fn run() {
             trace("frame 0: ctrl read ok");
         }
         let mask = pad.buttons.bits() as i32;
+        let lx = pad.lx as i32;
+        let ly = pad.ly as i32;
         #[cfg(feature = "capture")]
         let mask = capture_input_mask(frame_count, mask);
 
-        let mut args = [JS_NewInt32(ctx, mask)];
-        let r = JS_Call(ctx, frame_fn, global, 1, args.as_mut_ptr());
+        // frame(buttons, lx, ly): trailing analog args are optional on the JS
+        // side — existing apps ignore them. lx/ly are raw u8 (0..255, 128 = center);
+        // deadzoning is the host's job (spec ANALOG_DEADZONE), done in JS so
+        // every host applies it identically.
+        let mut args = [JS_NewInt32(ctx, mask), JS_NewInt32(ctx, lx), JS_NewInt32(ctx, ly)];
+        let r = JS_Call(ctx, frame_fn, global, 3, args.as_mut_ptr());
         #[cfg(feature = "bench")]
         let bench_after_js = bench_now_us();
         if frame_count == 0 {
