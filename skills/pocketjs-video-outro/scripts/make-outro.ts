@@ -1,0 +1,243 @@
+#!/usr/bin/env bun
+// make-outro.ts — append a PocketJS-branded, animated end card to a local video.
+//
+// Renders a dark brand card (logo glyph + wordmark + tagline + url) with headless
+// Chrome, then composites it onto the input with a crossfade and a staggered text
+// entrance (logo -> tagline -> url, each fades in and eases up). The input's primary
+// audio track is preserved and gently faded out under the card; the card itself is
+// silent (no voiceover).
+//
+// Usage:
+//   bun skills/pocketjs-video-outro/scripts/make-outro.ts -i input.mov [-o out.mp4]
+//        [--tagline STR] [--brand STR] [--url STR] [--outro SECS] [--xfade SECS]
+//        [--crf N] [--preset P]
+//
+// Defaults: brand "PocketJS", tagline "Bare Metal Modern Web", url "pocketjs.dev",
+// outro 5.5s, xfade 0.8s, crf 18, preset medium. Pass --url "" to hide the url.
+
+import { $ } from "bun";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve, basename, extname } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const HTML = resolve(HERE, "..", "assets", "outro.html");
+
+type Args = {
+  input: string;
+  output: string;
+  brand: string;
+  tagline: string;
+  url: string;
+  outro: number;
+  xfade: number;
+  crf: number;
+  preset: string;
+};
+
+function usage(): never {
+  console.error(
+    [
+      "usage:",
+      "  bun skills/pocketjs-video-outro/scripts/make-outro.ts -i <input> [options]",
+      "",
+      "options:",
+      "  -o, --output <path>   output file (default: <input>_outro.mp4 next to input)",
+      '  --tagline <str>       hero line (default: "Bare Metal Modern Web")',
+      '  --brand <str>         wordmark (default: "PocketJS")',
+      '  --url <str>           footer line (default: "pocketjs.dev"; "" hides it)',
+      "  --outro <secs>        end-card length (default: 5.5)",
+      "  --xfade <secs>        crossfade length (default: 0.8)",
+      "  --crf <n>             x264 quality (default: 18)",
+      "  --preset <p>          x264 preset (default: medium)",
+    ].join("\n"),
+  );
+  process.exit(2);
+}
+
+function need(v: string | undefined, flag: string): string {
+  if (v === undefined || (v.startsWith("--") && v.length > 2)) throw new Error(`${flag} requires a value`);
+  return v;
+}
+
+function parseArgs(argv: string[]): Args {
+  if (argv.includes("-h") || argv.includes("--help")) usage();
+  let input: string | undefined;
+  let output: string | undefined;
+  let brand = "PocketJS";
+  let tagline = "Bare Metal Modern Web";
+  let url = "pocketjs.dev";
+  let outro = 5.5;
+  let xfade = 0.8;
+  let crf = 18;
+  let preset = "medium";
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
+    if (a === "-i" || a === "--input") input = need(argv[++i], a);
+    else if (a === "-o" || a === "--output") output = need(argv[++i], a);
+    else if (a === "--brand") brand = need(argv[++i], a);
+    else if (a === "--tagline") tagline = need(argv[++i], a);
+    else if (a === "--url") url = argv[++i] ?? ""; // allow empty to hide
+    else if (a === "--outro") outro = Number(need(argv[++i], a));
+    else if (a === "--xfade") xfade = Number(need(argv[++i], a));
+    else if (a === "--crf") crf = Number(need(argv[++i], a));
+    else if (a === "--preset") preset = need(argv[++i], a);
+    else usage();
+  }
+
+  if (!input) usage();
+  if (!existsSync(input)) throw new Error(`input not found: ${input}`);
+  if (!Number.isFinite(outro) || outro <= 0) throw new Error("--outro must be a positive number");
+  if (!Number.isFinite(xfade) || xfade < 0) throw new Error("--xfade must be a non-negative number");
+
+  if (!output) {
+    const dir = resolve(dirname(input));
+    output = join(dir, `${basename(input, extname(input))}_outro.mp4`);
+  }
+  return { input, output, brand, tagline, url, outro, xfade, crf, preset };
+}
+
+const CHROME_CANDIDATES = [
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+];
+
+async function findChrome(): Promise<string> {
+  for (const c of CHROME_CANDIDATES) if (existsSync(c)) return c;
+  for (const name of ["google-chrome", "chromium", "chromium-browser"]) {
+    const p = (await $`command -v ${name}`.quiet().nothrow().text()).trim();
+    if (p) return p;
+  }
+  throw new Error("no Chromium-family browser found (Chrome/Chromium/Edge/Brave) for rendering");
+}
+
+async function probe(input: string) {
+  const one = async (args: string[]) => (await $`ffprobe ${args}`.quiet().text()).trim();
+  const w = Number((await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", "csv=p=0", input])).split("\n")[0]);
+  const h = Number((await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", input])).split("\n")[0]);
+  const rfr = (await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", input])).split("\n")[0];
+  const dur = Number((await one(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", input])).split("\n")[0]);
+  const aRaw = await one(["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", input]);
+  const audioStreams = aRaw ? aRaw.split("\n").filter(Boolean).length : 0;
+
+  const [num, den] = rfr.split("/");
+  const fps = den && Number(den) > 0 ? Number(num) / Number(den) : Number(rfr);
+  if (!w || !h || !dur) throw new Error("could not probe input width/height/duration");
+  return { w, h, fps, dur, audioStreams };
+}
+
+async function shotLayer(chrome: string, layer: string, out: string, w: number, h: number, params: URLSearchParams) {
+  const u = pathToFileURL(HTML);
+  u.search = new URLSearchParams({ layer, ...Object.fromEntries(params) }).toString();
+  await $`${chrome} --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --default-background-color=00000000 --window-size=${`${w},${h}`} --screenshot=${out} ${u.href}`.quiet().nothrow();
+  if (!existsSync(out)) throw new Error(`Chrome failed to render layer "${layer}" -> ${out}`);
+}
+
+function round(n: number): number {
+  return Math.round(n);
+}
+
+async function main() {
+  const a = parseArgs(process.argv.slice(2));
+  if (!existsSync(HTML)) throw new Error(`template missing: ${HTML}`);
+  await $`command -v ffmpeg`.quiet().then(undefined, () => { throw new Error("ffmpeg not found on PATH"); });
+  await $`command -v ffprobe`.quiet().then(undefined, () => { throw new Error("ffprobe not found on PATH"); });
+
+  const chrome = await findChrome();
+  const { w, h, fps, dur, audioStreams } = await probe(a.input);
+
+  // type tracks resolution across landscape & portrait
+  const scale = Math.min(w, h) / 1080;
+  const slideL = round(24 * scale);
+  const slideT = round(30 * scale);
+  const slideU = round(18 * scale);
+  const offset = Math.max(0, dur - a.xfade);
+
+  // gentle audio fade fully completing at the original end
+  let afadeDur = a.xfade + 0.6;
+  let afadeSt = dur - afadeDur;
+  if (afadeSt < 0) { afadeSt = 0; afadeDur = dur; }
+
+  // entrance keys off the crossfade: text arrives as the transition settles
+  const l0 = Math.max(0, a.xfade - 0.1);
+  const t0 = l0 + 0.35;
+  const u0 = t0 + 0.6;
+
+  console.error(`input : ${w}x${h} @ ${fps.toFixed(3)}fps  dur=${dur}s  audio-streams=${audioStreams}`);
+  console.error(`card  : scale=${scale.toFixed(4)}  outro=${a.outro}s  xfade=${a.xfade}s (offset=${offset.toFixed(3)}s)`);
+  console.error(`output: ${a.output}`);
+
+  const tmp = mkdtempSync(join(tmpdir(), "pocketjs-outro-"));
+  try {
+    const params = new URLSearchParams({
+      scale: String(scale),
+      brand: a.brand,
+      tagline: a.tagline,
+      url: a.url,
+    });
+    const layers = { bg: join(tmp, "l_bg.png"), logo: join(tmp, "l_logo.png"), tag: join(tmp, "l_tag.png"), url: join(tmp, "l_url.png") };
+    for (const [layer, out] of Object.entries(layers)) await shotLayer(chrome, layer, out, w, h, params);
+    console.error(`rendered card layers (${w}x${h})`);
+
+    const f = (n: number) => n.toFixed(2);
+    const graphLines = [
+      `[1:v]scale=${w}:${h},setsar=1,fps=${fps},format=yuv420p,setpts=PTS-STARTPTS[bg];`,
+      `[2:v]fps=${fps},format=yuva420p,fade=t=in:st=${f(l0)}:d=0.60:alpha=1,setpts=PTS-STARTPTS[lg];`,
+      `[3:v]fps=${fps},format=yuva420p,fade=t=in:st=${f(t0)}:d=0.60:alpha=1,setpts=PTS-STARTPTS[tg];`,
+      `[4:v]fps=${fps},format=yuva420p,fade=t=in:st=${f(u0)}:d=0.50:alpha=1,setpts=PTS-STARTPTS[ur];`,
+      `[bg][lg]overlay=x=0:y='${slideL}*pow(1-clip((t-${f(l0)})/0.60,0,1),3)'[o1];`,
+      `[o1][tg]overlay=x=0:y='${slideT}*pow(1-clip((t-${f(t0)})/0.60,0,1),3)'[o2];`,
+      `[o2][ur]overlay=x=0:y='${slideU}*pow(1-clip((t-${f(u0)})/0.50,0,1),3)',format=yuv420p,setpts=PTS-STARTPTS[outro];`,
+      `[0:v]fps=${fps},scale=${w}:${h},setsar=1,format=yuv420p,setpts=PTS-STARTPTS[main];`,
+      `[main][outro]xfade=transition=fade:duration=${a.xfade}:offset=${offset.toFixed(3)},format=yuv420p[v];`,
+    ];
+
+    const maps: string[] = ["-map", "[v]"];
+    let audioNote: string;
+    if (audioStreams >= 1) {
+      graphLines.push(
+        `[0:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,afade=t=out:st=${afadeSt.toFixed(3)}:d=${afadeDur.toFixed(3)},apad,asetpts=PTS-STARTPTS[a]`,
+      );
+      maps.push("-map", "[a]", "-c:a", "aac", "-b:a", "192k");
+      audioNote = "primary audio preserved + faded";
+    } else {
+      maps.push("-an");
+      audioNote = "no audio track in source (video-only output)";
+    }
+
+    const graphPath = join(tmp, "graph.txt");
+    await Bun.write(graphPath, graphLines.join("\n") + "\n");
+
+    const args = [
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-i", a.input,
+      "-loop", "1", "-t", String(a.outro), "-i", layers.bg,
+      "-loop", "1", "-t", String(a.outro), "-i", layers.logo,
+      "-loop", "1", "-t", String(a.outro), "-i", layers.tag,
+      "-loop", "1", "-t", String(a.outro), "-i", layers.url,
+      "-filter_complex_script", graphPath,
+      ...maps,
+      "-c:v", "libx264", "-profile:v", "high", "-crf", String(a.crf), "-preset", a.preset, "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart", "-shortest",
+      a.output,
+    ];
+    await $`ffmpeg ${args}`;
+
+    const outDur = (await $`ffprobe -v error -show_entries format=duration -of csv=p=0 ${a.output}`.quiet().text()).trim().split("\n")[0];
+    console.error(`done  : ${a.output}  (${outDur}s, ${audioNote})`);
+    console.log(a.output);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+try {
+  await main();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
