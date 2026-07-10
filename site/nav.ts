@@ -54,6 +54,14 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "pocket-figma",
+    title: "Pocket Figma: a Real Design File on a 2004 Handheld",
+    date: "2026-07-10",
+    description:
+      "Pocket Figma is out — a Figma viewer for the Sony PSP. What actually lives inside a .fig file (it tells you how to read itself), the two-character instance-expansion bug, baking 14,430 nodes into streamed CLUT8 tile pyramids where whitespace is free, and nub-panning a 26,000-pixel artboard at 60 FPS in 32 MB — deterministic to the byte, at any clock rate.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "ui-runtime-that-cant-flake",
     title: "The UI Runtime That Can't Flake",
     date: "2026-07-09",
