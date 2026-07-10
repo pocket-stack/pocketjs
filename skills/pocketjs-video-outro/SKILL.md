@@ -32,31 +32,31 @@ Design choices baked into the pipeline:
 
 ## Standard workflow
 
-One command produces the finished file:
+One Bun command produces the finished file (the driver is Bun TypeScript — this
+repo keeps command wrappers in Bun, not shell scripts):
 
 ```bash
-skills/pocketjs-video-outro/scripts/make-outro.sh -i ~/Downloads/clip.mov
+bun skills/pocketjs-video-outro/scripts/make-outro.ts -i ~/Downloads/clip.mov
 # writes ~/Downloads/clip_outro.mp4  (H.264 high, yuv420p, +faststart, AAC 192k)
+# prints the output path on stdout; progress/summary on stderr
 ```
 
-Then **verify visually** — extract a strip across the entrance and eyeball it
-(the card animation is the whole point; always look):
+Then **verify visually** — extract a frame near the end and eyeball the card, and
+confirm the tail is silent while the body kept its audio (the animation is the
+whole point; always look):
 
 ```bash
 V=~/Downloads/clip_outro.mp4
-D=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$V")
-# final card:
-ffmpeg -y -ss "$(echo "$D-0.6"|bc)" -i "$V" -frames:v 1 /tmp/card.png
-# and confirm the outro tail is silent while the body kept its audio:
-ffmpeg -nostats -ss "$(echo "$D-2"|bc)" -i "$V" -af volumedetect -f null - 2>&1 | grep mean_volume
+ffmpeg -y -sseof -0.6 -i "$V" -frames:v 1 /tmp/card.png            # final card
+ffmpeg -nostats -sseof -2 -i "$V" -af volumedetect -f null - 2>&1 | grep mean_volume
 ```
 
 ## Options
 
 | Flag | Default | Purpose |
 |------|---------|---------|
-| `-i` | — (required) | input video |
-| `-o` | `<input>_outro.mp4` next to input | output path |
+| `-i` / `--input` | — (required) | input video |
+| `-o` / `--output` | `<input>_outro.mp4` next to input | output path |
 | `--tagline` | `Bare Metal Modern Web` | hero line (wraps on narrow/portrait frames) |
 | `--brand` | `PocketJS` | wordmark next to the glyph |
 | `--url` | `pocketjs.dev` | footer line; pass `--url ""` to hide it |
@@ -80,11 +80,13 @@ ffmpeg -nostats -ss "$(echo "$D-2"|bc)" -i "$V" -af volumedetect -f null - 2>&1 
 - The card is `assets/outro.html`, parameterized via query string
   (`?layer=…&scale=…&brand=…&tagline=…&url=…`). Edit it to restyle; every dimension
   is in `rem` and the script sets root font-size to `10px * scale`.
-- Entrance/animation is entirely in `ffmpeg` (`scripts/make-outro.sh`): each element
-  is screenshotted as its **own transparent layer** with the *others kept in place
-  via `visibility: hidden`* (so absolute positions never shift), then composited with
-  per-layer `fade` (alpha) + `overlay` (ease-out slide). Change slide distances,
-  stagger, or easing there.
+- Entrance/animation is entirely in `ffmpeg`, orchestrated by `scripts/make-outro.ts`
+  (Bun TypeScript, `import { $ } from "bun"`): each element is screenshotted as its
+  **own transparent layer** with the *others kept in place via `visibility: hidden`*
+  (so absolute positions never shift), then composited with per-layer `fade` (alpha)
+  + `overlay` (ease-out slide). Change slide distances, stagger, or easing there.
+- Keep new wrappers/tooling for this skill in Bun TypeScript — do not add `.sh`
+  scripts (repo convention; see also `pocketjs-gba-imagegen`).
 - To preview just the card without a video, screenshot the template directly:
   `"<chrome>" --headless --screenshot=card.png --window-size=1920,1080 "file://$PWD/skills/pocketjs-video-outro/assets/outro.html"`.
 
