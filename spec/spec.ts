@@ -477,7 +477,7 @@ export function packbitsDecode(src: Uint8Array, expectedLen: number): Uint8Array
 // ---------------------------------------------------------------------------
 // TILESET pak entry — a deep-zoom tile grid (one entry per page per mip level)
 // ---------------------------------------------------------------------------
-// Baked by a cooker (e.g. demos/figma/gen-assets.ts), consumed one tile at a
+// Baked by a cooker (e.g. demos/zoomlab/gen-assets.ts), consumed one tile at a
 // time by the `loadTileTexture` op. All tiles of one entry share ONE palette,
 // so per-tile overhead is just the directory entry; whitespace costs nothing
 // (solid tiles are encoded in the directory and drawn as plain RECTs).

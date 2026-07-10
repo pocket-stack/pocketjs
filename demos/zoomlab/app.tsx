@@ -1,13 +1,14 @@
-// Figma viewer — pans and zooms the Paper Wireframe Kit (Community) file,
-// baked at compile time (gen-assets.ts) into TILESET pyramids streamed by the
-// DeepZoom engine component. Controls:
+// Zoom Lab — the DeepZoom engine's first-party demo: pans and zooms two
+// synthetic pages baked by gen-assets.ts into TILESET pyramids and streamed
+// by the DeepZoom engine component. Controls:
 //
 //   analog nub / d-pad  pan          R / L trigger  zoom in / out
 //   TRIANGLE / SQUARE   next / prev page            CROSS  fit page
 //
-// Everything on screen is a baked tile: vectors, component instances, masks,
-// the Patrick Hand glyphs and the photos were all rasterized from the .fig's
-// own derived geometry — no Figma runtime, no fonts, no network.
+// Everything on screen is a baked tile: the poster's rings, cards, numbered
+// cells and gradient bar are rasterized offline — no runtime drawing, no
+// fonts, no network. (The real-world cousin of this demo, the Figma viewer,
+// lives at github.com/pocket-stack/pocket-figma.)
 
 import { createSignal } from "solid-js";
 import { DeepZoom, Text, View, type DeepZoomView, type TileDoc } from "@pocketjs/framework/components";

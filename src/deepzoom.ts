@@ -1,8 +1,10 @@
 // DeepZoom — a pan/zoom tiled-canvas component (the "map viewer" primitive).
 //
 // Renders a baked TILESET pyramid (spec.ts; produced by a cooker like
-// demos/figma/gen-assets.ts) with smooth analog-nub panning and trigger
-// zooming, streaming tiles on demand and freeing them on the way out.
+// demos/zoomlab/gen-assets.ts, or the Figma cooker in the
+// github.com/pocket-stack/pocket-figma repo) with smooth analog-nub panning
+// and trigger zooming, streaming tiles on demand and freeing them on the way
+// out.
 //
 // Structure (three nodes, same reasoning as Gallery's two):
 //   - an untransformed overflow-hidden container (the scissor is taken from

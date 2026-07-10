@@ -296,7 +296,7 @@ for (const name of imageNames) {
 }
 
 // Optional per-app raw-blob manifest: <appDir>/pak.json lists PREBAKED binary
-// entries (e.g. demos/figma's committed TILESET pyramids from gen-assets.ts)
+// entries (e.g. demos/zoomlab's committed TILESET pyramids from gen-assets.ts)
 // appended verbatim as u8 blobs. This keeps expensive offline bakes out of the
 // build: the build just splices bytes it can't (and needn't) regenerate.
 const pakManifestPath = appDir + "pak.json";
