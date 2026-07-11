@@ -1,4 +1,9 @@
-<img class="w-full rounded-xl border border-line" src="/assets/blog/figma-psp-xmb.png" alt="The PSP's XMB game menu on real hardware: the Pocket Figma icon — the five-shape Figma mark on a dark tile — selected over the classic blue wave background, with OpenStrike and Motion Lab below" />
+<video class="w-full rounded-xl border border-line" autoplay muted loop controls playsinline preload="metadata" crossorigin="anonymous" aria-label="Pocket Figma running on a real PSP">
+  <source src="https://pub-ddde9ba138d04a9a9f922aa1fda6f855.r2.dev/pocketjs/pocket-figma-real-psp-ba960367.mp4" type="video/mp4" />
+  <a href="https://x.com/pocket_js/status/2075858786271854894?s=46" target="_blank" rel="noreferrer">Watch Pocket Figma running on a real PSP.</a>
+</video>
+
+<p class="text-sm text-slate-500 -mt-4">Pocket Figma running on a real PSP. <a href="https://x.com/pocket_js/status/2075858786271854894?s=46" target="_blank" rel="noreferrer">Watch or share it on X →</a></p>
 
 The Sony PSP is twenty-two years old: 333 MHz, 32 MB of RAM, a GPU with no shaders. For the past weeks we have been teaching it modern UI — our runtime, [PocketJS](/blog/introducing-pocketjs/), runs real Solid and Vue JSX components on it at a locked 60 FPS, and it has already [shipped a 3D shooter](/blog/shipping-openstrike/). But every screen so far was *ours*: our components, our layouts, sized to the machine. The honest test of a 2D UI runtime is a document drawn by someone who never once thought about your hardware — and the most demanding documents in the world come out of **Figma**.
 
