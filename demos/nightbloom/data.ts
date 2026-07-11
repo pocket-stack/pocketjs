@@ -400,6 +400,7 @@ export type SfxKind =
   | "shoot"
   | "unlock"
   | "heal"
+  | "stamp"
   | "boss-bird"
   | "boss-umbrella"
   | "hit"
@@ -537,6 +538,14 @@ export const ART: ArtEntry[] = [
   { name: "shot-mochi.png", prompt: `small round white mochi rice cake, ${SHOT_STYLE}`, w: SHOT, h: SHOT, seed: 3003, transparent: true },
   { name: "mote.png", prompt: `small silver-blue moonlight droplet, sparkling, ${SHOT_STYLE}`, w: SHOT, h: SHOT, seed: 3004, transparent: true },
   { name: "shot-banana.png", prompt: `curved ripe yellow banana, ${SHOT_STYLE}`, w: SHOT, h: SHOT, seed: 3005, transparent: true },
+  {
+    name: "medal.png",
+    prompt:
+      "ornate round golden medal with a laurel wreath rim and two red ribbon tails, " +
+      "smooth empty center plaque, shiny polished gold, cute pixel art game award, " +
+      "clean thick outline, single centered object",
+    w: 128, h: 128, seed: 5001, transparent: true,
+  },
   // --- boss transformation portraits (64x64, chained from the mob art) ------
   {
     name: "boss-kasa.png",

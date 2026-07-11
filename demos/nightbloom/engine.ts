@@ -236,6 +236,11 @@ export interface Nightbloom {
   graze: Accessor<number>;
   kills: Accessor<number>;
   bestStage: Accessor<number>;
+  /** The roast ledger: what the dawn medals tease you about. */
+  escaped: Accessor<number>;
+  hitsTaken: Accessor<number>;
+  motesMissed: Accessor<number>;
+  cardTimeouts: Accessor<number>;
   px: Accessor<number>;
   py: Accessor<number>;
   focus: Accessor<boolean>;
@@ -256,6 +261,8 @@ export interface Nightbloom {
   bossCardSeconds: Accessor<number>;
   /** Battle tick of the last boss entry/metamorphosis, for the flash ring. */
   bossFlash: Accessor<number>;
+  /** Ticks since the outcome settled — the end screens' own clock. */
+  endTick: Accessor<number>;
   enemyShots: Accessor<EnemyShot[]>;
   playerShots: Accessor<PlayerShot[]>;
   motes: Accessor<MoteInst[]>;
@@ -283,6 +290,10 @@ const MAX_MOTES = 24;
 
 const SWITCH_TICKS = Math.round(SWITCH_COOLDOWN * TPS);
 const HURT_TICKS = Math.round(HURT_INVULN * TPS);
+/** Dawn sequence beats (in end-screen ticks): the score gets the stage
+ *  first, then the medal slams on and lands. */
+export const STAMP_AT = 120;
+export const STAMP_IMPACT = 132;
 
 export function createNightbloom(): Nightbloom {
   const outcome = cell<Outcome>("title");
@@ -312,6 +323,7 @@ export function createNightbloom(): Nightbloom {
   const toasts = cell<Toast[]>([]);
   const fxTick = cell(0);
   const bossFlash = cell(-1);
+  const endTick = cell(0);
 
   const roster: PlantState[] = PLANT_ORDER.map((kind, i) => ({
     kind,
@@ -336,8 +348,13 @@ export function createNightbloom(): Nightbloom {
   let invulnTicks = 0;
   let midbossDone = false;
   let bossDone = false;
+  let wallTicks = 0;
   let wiltTicks = 0;
   let rescues = 0;
+  const escaped = cell(0);
+  const hitsTaken = cell(0);
+  const motesMissed = cell(0);
+  const cardTimeouts = cell(0);
   const wilting = cell(false);
   const wiltSeconds = cell(0);
   const lastDx = cell(0);
@@ -394,6 +411,7 @@ export function createNightbloom(): Nightbloom {
     invulnTicks = 0;
     midbossDone = false;
     bossDone = false;
+    wallTicks = 0;
     phase.set("dusk");
     augury.set("");
     second.set(0);
@@ -418,8 +436,13 @@ export function createNightbloom(): Nightbloom {
     toasts.set([]);
     fxTick.set(0);
     bossFlash.set(-1);
+    endTick.set(0);
     wiltTicks = 0;
     rescues = 0;
+    escaped.set(0);
+    hitsTaken.set(0);
+    motesMissed.set(0);
+    cardTimeouts.set(0);
     wilting.set(false);
     wiltSeconds.set(0);
     lastDx.set(0);
@@ -582,6 +605,7 @@ export function createNightbloom(): Nightbloom {
       toast(`SPELL CARD BROKEN: ${b.def.phases[idx].card}`);
     } else {
       toast(`THE CARD TIMES OUT: ${b.def.phases[idx].card}`);
+      cardTimeouts.set(cardTimeouts() + 1);
     }
     dropMotes(b.x(), b.y(), BOSS_PHASE_BOUNTY);
     enemyShots.set([]); // the break clears the sky
@@ -617,6 +641,7 @@ export function createNightbloom(): Nightbloom {
     const def = PLANTS[p.kind];
     const eff = Math.max(1, dmg - def.armor[p.stage() - 1]);
     p.hp.set(p.hp() - eff);
+    hitsTaken.set(hitsTaken() + 1);
     invulnTicks = HURT_TICKS;
     fx(px(), py() - 12, `-${eff}`, "hurt");
     sfx("hurt");
@@ -845,6 +870,7 @@ export function createNightbloom(): Nightbloom {
       }
       if (f.y() > FIELD.y0 + FIELD.h + 18) {
         foes.set(foes().filter((x) => x.id !== f.id)); // it drifts past the garden
+        escaped.set(escaped() + 1);
         continue;
       }
       // fire
@@ -1155,6 +1181,7 @@ export function createNightbloom(): Nightbloom {
       }
       if (m.y() > FIELD.y0 + FIELD.h + 10) {
         motes.set(motes().filter((x) => x.id !== m.id));
+        motesMissed.set(motesMissed() + 1);
         continue;
       }
       const dx = m.x() - px();
@@ -1203,6 +1230,13 @@ export function createNightbloom(): Nightbloom {
       start();
       started = true; // fall through: the first batch ticks this same frame
     } else if (o === "dawn" || o === "eternal") {
+      // The outcome screens keep their own clock as (wall ticks - the tick
+      // the outcome settled on). Both terms are rate-aligned, so the medal
+      // stamp lands at the same virtual moment at every simulationHz.
+      wallTicks += ticksPerFrame();
+      const prev = endTick();
+      endTick.set(Math.max(0, wallTicks - tick));
+      if (o === "dawn" && prev < STAMP_IMPACT && endTick() >= STAMP_IMPACT) sfx("stamp");
       if (pressed & BTN.START) toTitle();
       return;
     }
@@ -1212,9 +1246,16 @@ export function createNightbloom(): Nightbloom {
     if (codexPage() > 0) return;
 
     const k = ticksPerFrame();
+    wallTicks += k;
     for (let i = 0; i < k; i++) {
-      if (outcome() !== "battle") return;
+      if (outcome() !== "battle") break;
       stepTick(i === 0 ? pressed : 0, buttons);
+    }
+    // If the night ended inside this batch, the end clock starts NOW: the
+    // wall keeps moving through the frame the outcome settled in, so the
+    // stamp timeline is subsample-exact at every rate.
+    if (outcome() === "dawn" || outcome() === "eternal") {
+      endTick.set(Math.max(0, wallTicks - tick));
     }
   }
 
@@ -1236,6 +1277,10 @@ export function createNightbloom(): Nightbloom {
     unlockedCount: () => roster.filter((r) => r.unlocked()).length,
     wilting: () => wilting(),
     rescues: () => rescues,
+    escaped: () => escaped(),
+    hitsTaken: () => hitsTaken(),
+    motesMissed: () => motesMissed(),
+    cardTimeouts: () => cardTimeouts(),
     rosterGlow: () => roster.map((r) => ({ kind: r.kind, stage: r.stage(), hp: r.hp(), glow: Math.round(r.glow()) })),
     foesAlive: () => foes().length,
     bulletCount: () => enemyShots().length,
@@ -1258,6 +1303,10 @@ export function createNightbloom(): Nightbloom {
     graze,
     kills,
     bestStage,
+    escaped,
+    hitsTaken,
+    motesMissed,
+    cardTimeouts,
     px,
     py,
     focus,
@@ -1274,6 +1323,7 @@ export function createNightbloom(): Nightbloom {
     bossCard,
     bossCardSeconds,
     bossFlash,
+    endTick,
     enemyShots,
     playerShots,
     motes,

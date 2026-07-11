@@ -39,7 +39,7 @@ import {
   SHOTS,
   WAVES,
 } from "./data.ts";
-import { createNightbloom, FX_LIFE, type FloatFx, type Nightbloom, type PlantState } from "./engine.ts";
+import { createNightbloom, FX_LIFE, STAMP_AT, STAMP_IMPACT, type FloatFx, type Nightbloom, type PlantState } from "./engine.ts";
 
 // ---------------------------------------------------------------------------
 // Title / endings
@@ -70,32 +70,92 @@ function TitleScreen() {
   );
 }
 
+/** Chunky gold "art lettering": the same line three times, offset like a
+ *  stamped foil title. */
+function ArtTitle(props: { text: string; y: number }) {
+  return (
+    <View class="absolute left-0 right-0" style={{ insetT: props.y, height: 30 }}>
+      <Text class="absolute left-0 right-0 text-center text-2xl font-bold tracking-wide text-amber-900" style={{ translateX: 2, translateY: 2 }}>
+        {props.text}
+      </Text>
+      <Text class="absolute left-0 right-0 text-center text-2xl font-bold tracking-wide text-pink-400" style={{ translateX: -1, translateY: -1 }}>
+        {props.text}
+      </Text>
+      <Text class="absolute left-0 right-0 text-center text-2xl font-bold tracking-wide text-amber-100">
+        {props.text}
+      </Text>
+    </View>
+  );
+}
+
 function EndScreen(props: { game: Nightbloom; win: boolean }) {
   const g = props.game;
   // Only forms that ever WOKE count — a locked card never fought.
   const awakened = () => g.roster.filter((r) => r.unlocked());
   const survivors = () => awakened().filter((r) => r.hp() > 0).length;
+  /** The dawn decoration: ONE medal that congratulates you for the wrong
+   *  thing, picked in roast order; a spotless run earns suspicion. */
+  const medal = (): { title: string; detail: string } => {
+    const wilted = awakened().length - survivors();
+    if (g.escaped() > 0) return { title: "MERCY MEDAL", detail: g.escaped() + " FOES STROLLED OFF UNHARMED" };
+    if (g.hitsTaken() > 0) return { title: "PINCUSHION", detail: "STRUCK " + g.hitsTaken() + " TIMES AND PROUD" };
+    if (wilted > 0) return { title: "COMPOST AWARD", detail: wilted + " GARDENERS WILTED ON YOUR WATCH" };
+    if (g.cardTimeouts() > 0) return { title: "OUTSTAYED WELCOME", detail: g.cardTimeouts() + " CARDS DIED OF OLD AGE" };
+    if (g.motesMissed() > 0) return { title: "LITTERBUG", detail: g.motesMissed() + " MOTES LEFT IN THE GRASS" };
+    if (g.graze() === 0) return { title: "PERSONAL SPACE", detail: "NOT ONE GRAZE ALL NIGHT" };
+    return { title: "SUSPICIOUSLY PERFECT", detail: "THE NIGHT DEMANDS A REMATCH" };
+  };
+  /** The arcade count-up: the score rolls in over the first 1.2 s. */
+  const shownScore = () => Math.floor(g.score() * Math.min(1, g.endTick() / 72));
+  /** Stamp physics: appear huge and tilted, slam to rest, shake the room. */
+  const slam = () => Math.min(1, Math.max(0, (g.endTick() - STAMP_AT) / (STAMP_IMPACT - STAMP_AT)));
+  const stamped = () => props.win && g.endTick() >= STAMP_AT;
+  const SHAKE = [3, -2, 2, -2, 1, -1, 0];
+  const shake = () => {
+    const n = g.endTick() - STAMP_IMPACT;
+    return n >= 0 && n < 14 ? SHAKE[Math.min(6, n >> 1)] : 0;
+  };
   return (
-    <View debugName="End" class="absolute inset-0">
+    <View debugName="End" class="absolute inset-0" style={{ translateX: shake() }}>
       <Image class="absolute top-0 left-0 w-full h-[240]" src={props.win ? "bg-dawn.png" : "bg-eternal.png"} />
       <View class="absolute inset-0 bg-slate-950 opacity-55" />
-      <View class="absolute left-0 right-0 top-10 flex-col items-center gap-2">
+      <View class="absolute left-0 right-0 top-3 flex-col items-center gap-1">
         <Text class="text-xs text-slate-300 tracking-wide">{props.win ? "THE DIVA FALLS SILENT" : "THE GARDEN FALLS DARK"}</Text>
-        <Text class={props.win ? "text-4xl text-amber-200 font-bold tracking-wide" : "text-4xl text-red-300 font-bold tracking-wide"}>
+        <Text class={props.win ? "text-2xl text-amber-200 font-bold tracking-wide" : "text-2xl text-red-300 font-bold tracking-wide"}>
           {props.win ? "DAWN BREAKS" : "ETERNAL NIGHT"}
         </Text>
-        <View class="w-14 h-[2] bg-pink-300" />
       </View>
-      <View class="absolute left-0 right-0 top-28 flex-col items-center gap-1">
-        <View class="flex-col gap-1 p-2 rounded-md border border-slate-700 bg-[#020617cc] items-center">
-          <Text class="text-xs text-slate-300">{"SCORE: " + g.score()}</Text>
-          <Text class="text-xs text-slate-300">{"GRAZE: " + g.graze()}</Text>
-          <Text class="text-xs text-slate-300">{"FOES FELLED: " + g.kills()}</Text>
-          <Text class="text-xs text-slate-300">{"GREATEST BLOOM: STAGE " + g.bestStage()}</Text>
-          <Text class="text-xs text-slate-300">{"SURVIVING FORMS: " + survivors() + " OF " + awakened().length + " AWAKENED"}</Text>
+      {/* act one: the score takes the stage, rolling up arcade-style */}
+      <View class="absolute left-0 right-0 flex-col items-center gap-1" style={{ insetT: 74 }}>
+        <Text class="text-xs text-slate-400 tracking-wide">SCORE</Text>
+        <Text class="text-4xl text-amber-200 font-bold tracking-wide">{String(props.win ? shownScore() : g.score())}</Text>
+      </View>
+      <View class="absolute left-0 right-0 flex-col items-center gap-1" style={{ insetT: 152, opacity: stamped() ? 0.3 : 1 }}>
+        <Text class="text-xs text-slate-400">{"FOES FELLED: " + g.kills() + "   GRAZE: " + g.graze()}</Text>
+        <Text class="text-xs text-slate-400">{"GREATEST BLOOM: STAGE " + g.bestStage() + "   SURVIVING FORMS: " + survivors() + " OF " + awakened().length + " AWAKENED"}</Text>
+      </View>
+      {/* act two: the medal is slapped onto the glass */}
+      <Show when={stamped()}>
+        <View
+          class="absolute left-0 right-0 items-center"
+          style={{
+            insetT: 96,
+            height: 150,
+            scale: 3.0 - 2.0 * slam(),
+            rotate: -26 + 14 * slam(),
+            opacity: 0.3 + 0.7 * slam(),
+          }}
+        >
+          <Image class="absolute w-[120] h-[120]" src="medal.png" style={{ insetL: 180, insetT: 8 }} />
+          <ArtTitle text={medal().title} y={52} />
+          <View class="absolute left-0 right-0 flex-col items-center" style={{ insetT: 86 }}>
+            <View class="px-2 py-1 rounded-sm bg-[#0f172acc] border border-amber-700">
+              <Text class="text-xs text-amber-100 tracking-wide">{medal().detail}</Text>
+            </View>
+          </View>
         </View>
-      </View>
-      <View class="absolute left-0 right-0 bottom-4 flex-col items-center">
+      </Show>
+      <View class="absolute left-0 right-0 bottom-1 flex-col items-center">
         <Text class="text-sm text-amber-300 tracking-wide">START  RETURN TO TITLE</Text>
       </View>
     </View>
@@ -371,6 +431,29 @@ function Field(props: { game: Nightbloom }) {
 // Side panels
 // ---------------------------------------------------------------------------
 
+/** Long lines in the narrow panels scroll like a ticker instead of
+ *  clipping: two copies loop leftward, driven by the battle tick (so the
+ *  marquee subsamples exactly like everything else). Short lines hold
+ *  still. Width is estimated from the glyph count. */
+function Marquee(props: { game: Nightbloom; text: string; cls: string; width: number }) {
+  const textW = () => props.text.length * 7;
+  const scroll = () => {
+    if (textW() <= props.width) return 0;
+    const span = textW() + 24;
+    return -((props.game.fxTick() * 0.6) % span);
+  };
+  return (
+    <View class="overflow-hidden" style={{ width: props.width, height: 16 }}>
+      <View class="flex-row gap-6" style={{ translateX: scroll() }}>
+        <Text class={props.cls}>{props.text}</Text>
+        <Show when={textW() > props.width}>
+          <Text class={props.cls}>{props.text}</Text>
+        </Show>
+      </View>
+    </View>
+  );
+}
+
 function LeftPanel(props: { game: Nightbloom }) {
   const g = props.game;
   const phaseName = () => {
@@ -394,14 +477,14 @@ function LeftPanel(props: { game: Nightbloom }) {
       <Show when={g.augury() !== ""}>
         <View class="flex-col gap-1 p-2 rounded-md border border-violet-900 bg-[#020617aa]">
           <Text class="text-xs text-violet-300 tracking-wide">AUGURY</Text>
-          <Text class="text-xs text-slate-400 leading-4">{g.augury()}</Text>
+          <Marquee game={g} text={g.augury()} cls="text-xs text-slate-400" width={102} />
         </View>
       </Show>
       <Show when={g.boss()} keyed>
         {(b) => (
           <View class="flex-col gap-1 p-2 rounded-md border border-red-900 bg-[#020617aa]">
-            <Text class="text-xs text-red-300 tracking-wide">{b.def.name}</Text>
-            <Text class="text-xs text-slate-300 leading-4">{b.def.phases[b.phase()].card}</Text>
+            <Marquee game={g} text={b.def.name} cls="text-xs text-red-300 tracking-wide" width={102} />
+            <Marquee game={g} text={b.def.phases[b.phase()].card} cls="text-xs text-slate-300" width={102} />
             <Text class="text-xs text-slate-500">{"TIMEOUT " + g.bossCardSeconds() + "s"}</Text>
           </View>
         )}

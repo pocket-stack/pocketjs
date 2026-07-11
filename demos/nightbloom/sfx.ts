@@ -74,6 +74,11 @@ const SFX: Record<SfxKind, SfxDef> = {
   evolve: { voices: ARP([523.25, 659.25, 783.99], 0.07, 0.12, 0.12, "sine") },
   unlock: { voices: ARP([659.25, 880, 1174.66, 1567.98], 0.09, 0.2, 0.13, "triangle") },
   heal: { voices: [{ f0: 880, f1: 1320, dur: 0.07, type: "sine", gain: 0.05 }], throttle: 260 },
+  // the medal slamming onto the glass
+  stamp: {
+    voices: [{ f0: 150, f1: 40, dur: 0.28, type: "sawtooth", gain: 0.3 }],
+    noise: [{ dur: 0.16, gain: 0.24, cutoff: 900 }],
+  },
   // the diva's cry — three quick chirps, up, down-up, and away
   "boss-bird": {
     voices: [

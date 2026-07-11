@@ -14,9 +14,9 @@ left, the roster on the right).
 
 ![NIGHTBLOOM: the NIGHT SPARROW DIVA's first card](../../assets/screenshots/nightbloom.png)
 
-*The witching hour. The NIGHT SPARROW DIVA opens NIGHT SONG — WANDERING
-CHORUS; MOON PRIMROSE — a mountain of abs with the sweetest face — holds
-the pilot seat while the moon cat and the sakura rest.*
+*The FINALE. The diva's phoenix form sings THE ETERNAL NIGHT; the moon
+cat holds the pilot seat, NINE LIVES charging, while the long spell-card
+names scroll through the left panel like a ticker.*
 
 ## Play it
 

@@ -162,12 +162,16 @@ describe("nightbloom: the night actually happened", () => {
     for (const t of [m60, m2]) {
       expect(treeHasText(t.tree, "DAWN BREAKS")).toBe(true);
       expect(treeHasText(t.tree, "THE DIVA FALLS SILENT")).toBe(true);
-      expect(treeHasText(t.tree, "SCORE: 8575")).toBe(true);
+      // Act one: the score takes the stage (settled by the final frame).
+      expect(treeHasText(t.tree, "8575")).toBe(true);
       expect(treeHasText(t.tree, "GRAZE: 92")).toBe(true);
       expect(treeHasText(t.tree, "FOES FELLED: 33")).toBe(true);
       // The whole roster woke and every form survived to see the sun.
       expect(treeHasText(t.tree, "GREATEST BLOOM: STAGE 3")).toBe(true);
       expect(treeHasText(t.tree, "SURVIVING FORMS: 3 OF 3 AWAKENED")).toBe(true);
+      // Act two: ONE medal, stamped on and congratulating the wrong thing.
+      expect(treeHasText(t.tree, "MERCY MEDAL")).toBe(true);
+      expect(treeHasText(t.tree, "2 FOES STROLLED OFF UNHARMED")).toBe(true);
     }
   });
 
