@@ -16,7 +16,11 @@
 //   - spawnTracer/emitHitBurst return the pool objects (`.tracerLines` /
 //     `.particlePoints` keep their names). `.group` remains as a bare node
 //     for API parity; pools are freed with the scene.
-//   - constructor options gain `scene: Scene3D`.
+//   - constructor options gain `scene: Scene3D`, plus `tracerWidth` /
+//     `particleSize` (world units). The original's LineSegments were 1px
+//     screen-space and PointsMaterial size was fixed at 0.05 — as world-space
+//     quads those constants only suit character-scale worlds, so large-scale
+//     games (flight sims) must widen them. Defaults keep the old constants.
 
 import { Vector3 } from "../../../math/vector3.ts";
 import type { BeamPool, Scene3D, SceneNode, SpritePool } from "../../../scene3d/client.ts";
@@ -27,9 +31,9 @@ import { rgbFloatsToAbgr, rgbToAbgr } from "../color-utils.ts";
 import { disposeSceneNode } from "../scene-node-utils.ts";
 import type { VecLike } from "../../math/world-basis.ts";
 
-/** World-space stand-in for the original 1px additive line. */
+/** World-space stand-in for the original 1px additive line (default). */
 const TRACER_WIDTH = 0.05;
-/** PointsMaterial size 0.05. */
+/** PointsMaterial size 0.05 (default). */
 const PARTICLE_SIZE = 0.05;
 /** LineBasicMaterial/PointsMaterial opacity. */
 const POOL_OPACITY = 0.9;
@@ -49,6 +53,10 @@ export interface WeaponEffectsSystemOptions {
   scene: Scene3D;
   maxEffects?: number;
   prng?: { random(): number };
+  /** Tracer beam width in world units (default 0.05 — character scale). */
+  tracerWidth?: number;
+  /** Burst particle sprite size in world units (default 0.05). */
+  particleSize?: number;
 }
 
 export class WeaponEffectsSystem {
@@ -57,6 +65,8 @@ export class WeaponEffectsSystem {
   readonly maxTracers: number;
   readonly maxParticles: number;
   readonly prng: { random(): number };
+  readonly tracerWidth: number;
+  readonly particleSize: number;
   readonly flashes: unknown[] = [];
   readonly effects: unknown[] = [];
 
@@ -80,12 +90,20 @@ export class WeaponEffectsSystem {
   private readonly _tmpOrigin = new Vector3();
   private readonly _tmpForward = new Vector3();
 
-  constructor({ scene, maxEffects = 16, prng = DEFAULT_PRNG }: WeaponEffectsSystemOptions) {
+  constructor({
+    scene,
+    maxEffects = 16,
+    prng = DEFAULT_PRNG,
+    tracerWidth = TRACER_WIDTH,
+    particleSize = PARTICLE_SIZE,
+  }: WeaponEffectsSystemOptions) {
     this.group = scene.node();
     this.maxEffects = Math.max(8, Math.floor(maxEffects));
     this.maxTracers = this.maxEffects;
     this.maxParticles = Math.max(128, this.maxEffects * 8);
     this.prng = prng;
+    this.tracerWidth = tracerWidth;
+    this.particleSize = particleSize;
 
     const poolMat = scene.additiveMaterial(rgbToAbgr(0xffffff));
     this.tracerLines = scene.beamPool(this.maxTracers, poolMat);
@@ -280,7 +298,7 @@ export class WeaponEffectsSystem {
       pool.buf[b + 3] = this.tracerPositions[s + 3];
       pool.buf[b + 4] = this.tracerPositions[s + 4];
       pool.buf[b + 5] = this.tracerPositions[s + 5];
-      pool.buf[b + 6] = TRACER_WIDTH;
+      pool.buf[b + 6] = this.tracerWidth;
       pool.colors[n] = rgbFloatsToAbgr(
         tracer.r * tracer.fade,
         tracer.g * tracer.fade,
@@ -304,7 +322,7 @@ export class WeaponEffectsSystem {
       pool.buf[b] = this.particlePositions[offset];
       pool.buf[b + 1] = this.particlePositions[offset + 1];
       pool.buf[b + 2] = this.particlePositions[offset + 2];
-      pool.buf[b + 3] = PARTICLE_SIZE;
+      pool.buf[b + 3] = this.particleSize;
       const fade = this.particleFades[index];
       pool.colors[n] = rgbFloatsToAbgr(
         this.particleBaseColors[offset] * fade,

@@ -26,7 +26,7 @@ import {
   setStyleResolver,
   type NodeMirror,
 } from "../../src/renderer.ts";
-import { resetStyles, resolveStyle } from "../../src/styles.ts";
+import { registerStyles, resetStyles, resolveStyle } from "../../src/styles.ts";
 import { NODE_TYPE, PROP, ROOT_ID } from "../../spec/spec.ts";
 
 import { UiStateModel, createUiSignal } from "../modules/user-interface/ui-state-model.ts";
@@ -130,6 +130,10 @@ beforeEach(() => {
   installHost(host);
   resetRendererState();
   resetStyles();
+  // FlightHud's Texts carry font classes (native hosts render no text without
+  // a compiled style); in a real app the build compiles these — the mock host
+  // just needs the literals resolvable.
+  registerStyles({ "text-xs": 101, "text-sm": 102, "text-sm font-bold": 103 });
   setStyleResolver(resolveStyle);
   root = { id: ROOT_ID, type: NODE_TYPE.view, parent: null, children: [] };
 });

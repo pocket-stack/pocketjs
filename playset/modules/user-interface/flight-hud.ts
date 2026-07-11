@@ -4,15 +4,21 @@
 //
 // Ported from GameBlocks (github.com/xt4d/GameBlocks, MIT © 2026 Weihao
 // Cheng) — modules/user-interface/FlightHud.js. The state→presentation
-// mapping (renderDashboard field names, padding widths, cardinal buckets,
-// heat %, pitch-tape geometry 620×880 @ 7 px/deg, line widths 210/330) is
-// verbatim and exposed as computeFlightHudReadouts(). Deviations, all forced
-// by the DOM→PocketJS move: the injected-CSS animations, dashed negative
-// pitch lines, waterline/boresight/roll-scale pseudo-element art and vw/vh
-// responsive sizing are dropped; rgba() colors are converted to #rrggbbaa;
+// mapping (renderDashboard field names, cardinal buckets, heat %, pitch-tape
+// geometry 620×880 @ 7 px/deg, line widths 210/330) is verbatim and exposed
+// as computeFlightHudReadouts(). Deviations, all forced by the DOM→PocketJS
+// move: the injected-CSS animations, dashed negative pitch lines,
+// waterline/boresight/roll-scale pseudo-element art and vw/vh responsive
+// sizing are dropped; box paddings/margins and the status-row placement are
+// compacted so the whole cockpit fits a 480×272 screen (the original's vw/vh
+// values assumed a browser canvas); rgba() colors are converted to #rrggbbaa;
 // `pullUpWarning: null` (original: "keep previous") renders as hidden — a
 // reactive tree has no imperative latch. The component accepts either a
 // props-accessor or a UiStateModel (via createUiSignal).
+//
+// Every Text carries a font class (text-xs/text-sm) — on native hosts a text
+// node without a compiled style gets no baked font atlas slot and renders
+// nothing, so class-less Text is a blank HUD outside the mirror-tree tests.
 
 import type { JSX as SolidJSX } from "solid-js";
 import { Show, createMemo } from "solid-js";
@@ -195,6 +201,7 @@ function pitchLine(degrees: number): SolidJSX.Element {
   const labelText = String(Math.abs(degrees));
   const label = (side: "left" | "right"): SolidJSX.Element =>
     Text({
+      class: "text-xs",
       style: {
         posType: POS_ABSOLUTE,
         insetT: -9,
@@ -220,18 +227,20 @@ function dataBox(label: string, value: () => string, meter?: SolidJSX.Element): 
   return View({
     style: {
       width: 136,
-      paddingT: 8,
+      flexDir: FLEX_COL,
+      paddingT: 5,
       paddingR: 10,
-      paddingB: 8,
+      paddingB: 5,
       paddingL: 10,
-      marginB: 14,
+      marginB: 9,
       bgColor: BOX_BG,
       borderColor: BOX_BORDER,
       borderWidth: 1,
     },
     children: [
-      Text({ style: { textColor: LABEL_COLOR }, children: label }),
+      Text({ class: "text-xs", style: { textColor: LABEL_COLOR }, children: label }),
       Text({
+        class: "text-sm",
         style: { marginT: 2, textColor: HUD_BRIGHT },
         children: value as unknown as SolidJSX.Element,
       }),
@@ -277,14 +286,16 @@ export function FlightHud(props: FlightHudProps): SolidJSX.Element {
     children: [
       // -- compass heading -------------------------------------------------
       centeredColumn(18, [
-        Text({ style: { textColor: LABEL_COLOR }, children: "HDG" }),
+        Text({ class: "text-xs", style: { textColor: LABEL_COLOR }, children: "HDG" }),
         Text({
           debugName: "hud:compassHeading",
+          class: "text-sm font-bold",
           style: { textColor: HUD_BRIGHT },
           children: (() => view().compassHeading) as unknown as SolidJSX.Element,
         }),
         Text({
           debugName: "hud:cardinal",
+          class: "text-xs",
           style: { textColor: LABEL_COLOR },
           children: (() => view().cardinal) as unknown as SolidJSX.Element,
         }),
@@ -350,7 +361,7 @@ export function FlightHud(props: FlightHudProps): SolidJSX.Element {
         style: {
           posType: POS_ABSOLUTE,
           insetL: Math.round(width * 0.07),
-          insetT: Math.round(height * 0.19),
+          insetT: Math.round(height * 0.16),
           flexDir: FLEX_COL,
         },
         children: [
@@ -370,7 +381,7 @@ export function FlightHud(props: FlightHudProps): SolidJSX.Element {
         style: {
           posType: POS_ABSOLUTE,
           insetR: Math.round(width * 0.07),
-          insetT: Math.round(height * 0.19),
+          insetT: Math.round(height * 0.16),
           flexDir: FLEX_COL,
         },
         children: [
@@ -384,16 +395,17 @@ export function FlightHud(props: FlightHudProps): SolidJSX.Element {
       View({
         style: {
           posType: POS_ABSOLUTE,
-          insetB: 96,
-          insetL: Math.round(width * 0.12),
-          width: Math.round(width * 0.76),
+          insetB: 10,
+          insetL: Math.round(width * 0.07),
+          width: Math.round(width * 0.78),
           flexDir: FLEX_ROW,
           justify: JUSTIFY_BETWEEN,
-          gap: 18,
+          gap: 8,
         },
         children: (["region", "wave", "lock", "score", "time"] as const).map((key) =>
           Text({
             debugName: `hud:${key}`,
+            class: "text-xs",
             style: { textColor: STATUS_COLOR },
             children: (() => view()[key]) as unknown as SolidJSX.Element,
           }),
@@ -410,6 +422,7 @@ export function FlightHud(props: FlightHudProps): SolidJSX.Element {
             Math.round(height * 0.28),
             Text({
               debugName: "hud:warning",
+              class: "text-sm font-bold",
               style: {
                 paddingT: 9,
                 paddingR: 18,
