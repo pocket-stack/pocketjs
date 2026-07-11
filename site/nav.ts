@@ -58,7 +58,7 @@ export const BLOG_POSTS: BlogPost[] = [
     title: "Pocket Figma: Figma at 333 MHz",
     date: "2026-07-10",
     description:
-      "Pocket Figma is out — a Figma viewer for the Sony PSP. What actually lives inside a .fig file (it tells you how to read itself), the two-character instance-expansion bug, baking 14,430 nodes into streamed CLUT8 tile pyramids where whitespace is free, and nub-panning a 26,000-pixel artboard at 60 FPS in 32 MB — deterministic to the byte, at any clock rate.",
+      "The limit of 2D UI is Figma — so we made a 2004 Sony PSP open a real design file. What actually lives inside a .fig, mapped byte by byte (it tells you how to read itself), baking 14,430 nodes into streamed CLUT8 tile pyramids where whitespace is free, the anatomy of a zoom, and nub-panning a 26,000-pixel artboard at 60 FPS in 32 MB — deterministic to the byte, at any clock rate.",
     author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
   },
   {
