@@ -24,6 +24,11 @@ edition = "2021"
 psp = { path = "../../rust-psp/psp", features = ["external-c-heap", "abort-only", "external-global-alloc"] }
 libquickjs-sys = { path = "../../quickjs-rs/libquickjs-sys" }
 pocketjs-core = { path = "../core" }
+# The scene3d retained store, SHARED with the desktop core (core-only build:
+# no_std + alloc, no wgpu/rquickjs). Renderer is ge3d.rs; mount is scene3d.rs.
+pocket-scene3d = { path = "../pocket3d/crates/pocket-scene3d", default-features = false }
+glam = { version = "0.33", default-features = false, features = ["libm"] }
+libm = "0.2"
 
 [features]
 # E2E frame-dump build for test/e2e-ppsspp.ts (dumps frames to ms0:/dc_cap).

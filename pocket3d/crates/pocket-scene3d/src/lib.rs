@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! pocket-scene3d — the `scene3d` surface on the native desktop base.
 //!
 //! The 3D sibling of pocket-ui-wgpu (RUNTIMES.md): it owns the retained
@@ -7,14 +9,27 @@
 //! as `globalThis.s3`, and renders any scene into a rect of any wgpu color
 //! target — the backdrop layer under a PocketJS ui HUD (SCENE_QUAD
 //! compositing, see examples/uihost).
+//!
+//! Built with `default-features = false` the crate is no_std+alloc and
+//! exposes only [`Store`] — the PSP host (native/) mounts it over the
+//! QuickJS C API and renders through its own sceGu backend.
 
+extern crate alloc;
+
+#[cfg(feature = "std")]
 mod mount;
+#[cfg(feature = "std")]
 mod renderer;
 mod store;
 
+#[cfg(feature = "std")]
 pub use mount::Scene3dSurface;
+#[cfg(feature = "std")]
 pub use renderer::{SceneRect, SceneRenderer};
-pub use store::{CpuMesh, Material, PoolKind, Store, mat_flags};
+pub use store::{
+    BEAM_STRIDE, CameraState, CpuMesh, Env, Material, Node, Pool, PoolKind, POSE_STRIDE,
+    SPRITE_STRIDE, Scene, Store, mat_flags,
+};
 
 #[cfg(test)]
 mod tests {

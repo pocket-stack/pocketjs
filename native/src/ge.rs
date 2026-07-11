@@ -111,7 +111,8 @@ struct FontTexture {
 static mut FONT_TEXTURES: Option<Vec<Option<FontTexture>>> = None;
 
 /// Bump-allocate `bytes` (16-byte aligned) valid until `reset_pool()`.
-unsafe fn pool_alloc(bytes: usize) -> *mut u8 {
+/// Shared with ge3d.rs for its per-frame transients (sky strip, pool quads).
+pub(crate) unsafe fn pool_alloc(bytes: usize) -> *mut u8 {
     if POOL.is_none() {
         POOL = Some(Pool { blocks: Vec::new(), cur: 0, off: 0 });
     }
@@ -762,9 +763,17 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                 i += 1;
             }
             spec::draw_op::SCENE_QUAD if i + 4 <= n => {
-                // Host-composited 3D backdrop — the PSP scene3d core lands
-                // with pocket-scene3d-gu; until then the box stays empty
-                // (graceful absence, same as hosts without video decode).
+                // Host-composited 3D backdrop: ge3d renders the bound scene3d
+                // scene into the rect (viewport+scissor scoped, depth-only
+                // clear) and returns 2D-clean except viewport/scissor —
+                // re-apply the scissor stack here.
+                let (x, y) = xy(words[i + 1]);
+                let (w, h) = wh(words[i + 2]);
+                crate::ge3d::composite(words[i + 3] as i32, x as i32, y as i32, w, h);
+                match scissors.last() {
+                    Some(&(sx, sy, sx1, sy1)) => sys::sceGuScissor(sx, sy, sx1, sy1),
+                    None => sys::sceGuScissor(0, 0, SCREEN_WIDTH as i32, SCREEN_HEIGHT as i32),
+                }
                 i += 4;
             }
             _ => break, // unknown/truncated op: stop rather than desync

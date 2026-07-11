@@ -60,9 +60,10 @@ pub unsafe fn arg_f64(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isi
 }
 
 /// Borrow the bytes behind an ArrayBuffer OR a typed-array view (host.ts
-/// passes Uint8Arrays). The returned pointer is only valid until the next JS
-/// allocation — callers must consume it before returning to JS.
-unsafe fn buffer_bytes(ctx: *mut JSContext, val: JSValue) -> Option<(*const u8, usize)> {
+/// passes Uint8Arrays; scene3d.rs passes Float32/Uint32Arrays). The returned
+/// pointer is only valid until the next JS allocation — callers must consume
+/// it before returning to JS.
+pub(crate) unsafe fn buffer_bytes(ctx: *mut JSContext, val: JSValue) -> Option<(*const u8, usize)> {
     let mut len: size_t = 0;
     let p = JS_GetArrayBuffer(ctx, &mut len, val);
     if !p.is_null() {

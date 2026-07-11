@@ -1585,6 +1585,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "glam",
+ "libm",
  "log",
  "pocket-mod",
  "pocket3d",

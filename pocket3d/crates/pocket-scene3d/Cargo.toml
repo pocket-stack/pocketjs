@@ -6,11 +6,30 @@ license.workspace = true
 repository.workspace = true
 description = "The scene3d surface on the desktop base: retained 3D store, s3 HostOps for the guest, wgpu renderer (playset/scene3d/ops.ts contract)"
 
+# Feature layout: `std` (default) is the desktop crate — store + guest mount
+# + wgpu renderer. With default-features off the crate is no_std+alloc and
+# exposes ONLY the retained store, so PSP hosts (native/) share the exact
+# store semantics without pulling rquickjs/wgpu into a tier-3 build.
+[features]
+default = ["std"]
+std = [
+    "dep:pocket3d",
+    "dep:pocket-mod",
+    "dep:wgpu",
+    "dep:bytemuck",
+    "dep:anyhow",
+    "dep:log",
+    "glam/std",
+]
+
 [dependencies]
-pocket3d = { workspace = true }
-pocket-mod = { workspace = true }
-glam = { workspace = true, features = ["std"] }
-wgpu = { workspace = true }
-bytemuck = { workspace = true }
-anyhow = { workspace = true }
-log = { workspace = true }
+pocket3d = { workspace = true, optional = true }
+pocket-mod = { workspace = true, optional = true }
+glam = { workspace = true, features = ["libm"] }
+wgpu = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+# no_std float shims for the tessellator (sqrt/sin_cos/round); the std build
+# keeps the std intrinsics (see store::fmath).
+libm = "0.2"

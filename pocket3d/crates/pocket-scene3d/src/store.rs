@@ -12,9 +12,57 @@
 //! verbatim): geometries are tessellated to CPU meshes AT CREATION — the
 //! renderer uploads them once and the params are never needed again.
 
-use std::collections::HashMap;
+use alloc::collections::BTreeMap;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use glam::{Mat4, Quat, Vec3};
+
+/// Scalar float shims: std intrinsics on the desktop build (byte-identical
+/// to the pre-no_std crate), libm on no_std (PSP).
+mod fmath {
+    #[cfg(feature = "std")]
+    #[inline]
+    pub fn sqrt(x: f32) -> f32 {
+        x.sqrt()
+    }
+    #[cfg(feature = "std")]
+    #[inline]
+    pub fn sin_cos(x: f32) -> (f32, f32) {
+        x.sin_cos()
+    }
+    #[cfg(feature = "std")]
+    #[inline]
+    pub fn round(x: f32) -> f32 {
+        x.round()
+    }
+    #[cfg(feature = "std")]
+    #[inline]
+    pub fn floor64(x: f64) -> f64 {
+        x.floor()
+    }
+
+    #[cfg(not(feature = "std"))]
+    #[inline]
+    pub fn sqrt(x: f32) -> f32 {
+        libm::sqrtf(x)
+    }
+    #[cfg(not(feature = "std"))]
+    #[inline]
+    pub fn sin_cos(x: f32) -> (f32, f32) {
+        libm::sincosf(x)
+    }
+    #[cfg(not(feature = "std"))]
+    #[inline]
+    pub fn round(x: f32) -> f32 {
+        libm::roundf(x)
+    }
+    #[cfg(not(feature = "std"))]
+    #[inline]
+    pub fn floor64(x: f64) -> f64 {
+        libm::floor(x)
+    }
+}
 
 /// writePoses stride (ops.ts POSE_STRIDE): [id, p3, q4, s3].
 pub const POSE_STRIDE: usize = 11;
@@ -119,7 +167,7 @@ impl Default for Env {
             camera: CameraState {
                 p: Vec3::new(0.0, 0.0, 10.0),
                 q: Quat::IDENTITY,
-                fov_y: std::f32::consts::PI / 3.0,
+                fov_y: core::f32::consts::PI / 3.0,
                 znear: 0.1,
                 zfar: 1000.0,
             },
@@ -141,13 +189,13 @@ pub struct Scene {
 /// dispatch; each scene keeps its root list and pool list for iteration.
 #[derive(Default)]
 pub struct Store {
-    scenes: HashMap<i32, Scene>,
-    nodes: HashMap<i32, Node>,
-    pools: HashMap<i32, Pool>,
-    geoms: HashMap<i32, CpuMesh>,
-    materials: HashMap<i32, Material>,
+    scenes: BTreeMap<i32, Scene>,
+    nodes: BTreeMap<i32, Node>,
+    pools: BTreeMap<i32, Pool>,
+    geoms: BTreeMap<i32, CpuMesh>,
+    materials: BTreeMap<i32, Material>,
     /// ui node id -> scene handle (bindViewport bookkeeping).
-    viewports: HashMap<i32, i32>,
+    viewports: BTreeMap<i32, i32>,
     /// (ui node id, scene-or-0) in call order — the host drains these into
     /// PROP.scene3d writes on the ui core each frame.
     binding_events: Vec<(i32, i32)>,
@@ -200,7 +248,7 @@ impl Store {
     /// Drain the bind/unbind event queue (call once per frame; the host
     /// forwards each as a PROP.scene3d write on the ui core).
     pub fn drain_binding_events(&mut self) -> Vec<(i32, i32)> {
-        std::mem::take(&mut self.binding_events)
+        core::mem::take(&mut self.binding_events)
     }
 
     /// World transform of a node (walks up to the scene root). Test/debug
@@ -388,7 +436,7 @@ impl Store {
         let n = count.min(buf.len() / POSE_STRIDE);
         for i in 0..n {
             let b = &buf[i * POSE_STRIDE..(i + 1) * POSE_STRIDE];
-            let id = b[0].round() as i32;
+            let id = fmath::round(b[0]) as i32;
             let Some(node) = self.nodes.get_mut(&id) else { continue };
             node.p = Vec3::new(b[1], b[2], b[3]);
             node.q = Quat::from_xyzw(b[4], b[5], b[6], b[7]);
@@ -546,7 +594,7 @@ impl Store {
             Pool {
                 scene,
                 kind,
-                capacity: capacity.max(0.0).floor() as usize,
+                capacity: fmath::floor64(capacity.max(0.0)) as usize,
                 mat,
                 live: Vec::new(),
                 colors: Vec::new(),
@@ -569,7 +617,7 @@ impl Store {
         if p.kind != kind {
             return;
         }
-        let requested = count.max(0.0).floor() as usize;
+        let requested = fmath::floor64(count.max(0.0)) as usize;
         let present = requested.min(buf.len() / stride).min(colors.len());
         let kept = present.min(p.capacity);
         p.dropped_writes += requested.saturating_sub(p.capacity) as u64;
@@ -612,7 +660,10 @@ impl Store {
 // ---------------------------------------------------------------------------
 
 mod tess {
-    use super::CpuMesh;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use super::{CpuMesh, fmath};
 
     fn seg(n: i32, min: usize) -> usize {
         (n.max(0) as usize).clamp(min, 128)
@@ -658,11 +709,11 @@ mod tess {
         let mut normals = Vec::new();
         let mut indices = Vec::new();
         for r in 0..=rings {
-            let phi = std::f32::consts::PI * r as f32 / rings as f32; // 0 = +Y pole
-            let (sp, cp) = phi.sin_cos();
+            let phi = core::f32::consts::PI * r as f32 / rings as f32; // 0 = +Y pole
+            let (sp, cp) = fmath::sin_cos(phi);
             for a in 0..=around {
-                let theta = std::f32::consts::TAU * a as f32 / around as f32;
-                let (st, ct) = theta.sin_cos();
+                let theta = core::f32::consts::TAU * a as f32 / around as f32;
+                let (st, ct) = fmath::sin_cos(theta);
                 let n = [sp * ct, cp, sp * st];
                 normals.push(n);
                 positions.push([n[0] * radius, n[1] * radius, n[2] * radius]);
@@ -693,10 +744,10 @@ mod tess {
         // Side wall: slanted normal (renormalized straight from the slope).
         let slope = (r_bottom - r_top) / height.max(1e-6);
         for a in 0..=around {
-            let theta = std::f32::consts::TAU * a as f32 / around as f32;
-            let (st, ct) = theta.sin_cos();
+            let theta = core::f32::consts::TAU * a as f32 / around as f32;
+            let (st, ct) = fmath::sin_cos(theta);
             let n = {
-                let l = (1.0 + slope * slope).sqrt();
+                let l = fmath::sqrt(1.0 + slope * slope);
                 [ct / l, slope / l, st / l]
             };
             positions.push([ct * r_top, hh, st * r_top]);
@@ -721,8 +772,8 @@ mod tess {
             positions.push([0.0, y, 0.0]);
             normals.push([0.0, ny, 0.0]);
             for a in 0..=around {
-                let theta = std::f32::consts::TAU * a as f32 / around as f32;
-                let (st, ct) = theta.sin_cos();
+                let theta = core::f32::consts::TAU * a as f32 / around as f32;
+                let (st, ct) = fmath::sin_cos(theta);
                 positions.push([ct * r, y, st * r]);
                 normals.push([0.0, ny, 0.0]);
             }
@@ -763,11 +814,11 @@ mod tess {
         let mut normals = Vec::new();
         let mut indices = Vec::new();
         for j in 0..=around {
-            let u = std::f32::consts::TAU * j as f32 / around as f32;
-            let (su, cu) = u.sin_cos();
+            let u = core::f32::consts::TAU * j as f32 / around as f32;
+            let (su, cu) = fmath::sin_cos(u);
             for i in 0..=tube_around {
-                let v = std::f32::consts::TAU * i as f32 / tube_around as f32;
-                let (sv, cv) = v.sin_cos();
+                let v = core::f32::consts::TAU * i as f32 / tube_around as f32;
+                let (sv, cv) = fmath::sin_cos(v);
                 positions.push([(radius + tube * cv) * cu, (radius + tube * cv) * su, tube * sv]);
                 normals.push([cv * cu, cv * su, sv]);
             }
@@ -887,7 +938,7 @@ mod tess {
             }
         }
         for n in &mut acc {
-            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            let l = fmath::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
             if l > 1e-12 {
                 n[0] /= l;
                 n[1] /= l;
