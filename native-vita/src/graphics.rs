@@ -31,7 +31,7 @@ struct Texture {
 
 #[derive(Clone, Copy)]
 struct FontTexture {
-    ptr: *mut vita2d_texture,
+    texture: Texture,
     cell_w: u32,
     cell_h: u32,
     cols: u32,
@@ -39,6 +39,7 @@ struct FontTexture {
 
 static mut INITIALIZED: bool = false;
 static mut TEXTURES: Option<HashMap<i32, Texture>> = None;
+static mut RECYCLED_TEXTURES: Option<Vec<Texture>> = None;
 static mut FONTS: Option<HashMap<u8, FontTexture>> = None;
 
 unsafe fn textures() -> &'static mut HashMap<i32, Texture> {
@@ -46,6 +47,18 @@ unsafe fn textures() -> &'static mut HashMap<i32, Texture> {
         TEXTURES = Some(HashMap::new());
     }
     TEXTURES.as_mut().unwrap()
+}
+
+unsafe fn recycle_texture(texture: Texture) {
+    RECYCLED_TEXTURES.get_or_insert_with(Vec::new).push(texture);
+}
+
+unsafe fn take_recycled_texture(w: u32, h: u32) -> Option<Texture> {
+    let recycled = RECYCLED_TEXTURES.as_mut()?;
+    let index = recycled
+        .iter()
+        .position(|texture| texture.w == w && texture.h == h)?;
+    Some(recycled.swap_remove(index))
 }
 
 unsafe fn fonts() -> &'static mut HashMap<u8, FontTexture> {
@@ -144,11 +157,20 @@ unsafe fn upload_rgba(w: u32, h: u32, rgba: &[u8], linear: bool) -> Option<Textu
     if w == 0 || h == 0 || rgba.len() < w as usize * h as usize * 4 {
         return None;
     }
-    let ptr = vita2d_create_empty_texture_format(
-        w,
-        h,
-        SceGxmTextureFormat_SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR,
-    );
+    // Vita3K's GXM emulation can fault when a live app repeatedly destroys
+    // vita2d textures. Recycle same-sized RGBA allocations instead. This also
+    // bounds each power-of-two size bucket by its historical resident high
+    // water mark. The frame loop waits for the previous GXM submission before
+    // JS can free/upload, so a recycled allocation is no longer in flight.
+    let ptr = take_recycled_texture(w, h)
+        .map(|texture| texture.ptr)
+        .unwrap_or_else(|| {
+            vita2d_create_empty_texture_format(
+                w,
+                h,
+                SceGxmTextureFormat_SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR,
+            )
+        });
     if ptr.is_null() {
         return None;
     }
@@ -183,7 +205,7 @@ pub fn register_texture(ui: &Ui, handle: i32) {
             return;
         };
         if let Some(old) = textures().insert(handle, texture) {
-            vita2d_free_texture(old.ptr);
+            recycle_texture(old);
         }
     }
 }
@@ -203,7 +225,7 @@ unsafe fn resolve_texture(ui: &Ui, handle: i32) -> Option<Texture> {
 pub fn free_texture(handle: i32) {
     unsafe {
         if let Some(texture) = textures().remove(&handle) {
-            vita2d_free_texture(texture.ptr);
+            recycle_texture(texture);
         }
     }
 }
@@ -258,13 +280,13 @@ pub fn register_font_atlas(slot: u8, atlas: &Atlas) {
             return;
         };
         let font = FontTexture {
-            ptr: texture.ptr,
+            texture,
             cell_w: atlas.cell_w,
             cell_h: atlas.cell_h,
             cols,
         };
         if let Some(old) = fonts().insert(slot, font) {
-            vita2d_free_texture(old.ptr);
+            recycle_texture(old.texture);
         }
     }
 }
@@ -411,7 +433,7 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                         let sx = (gid % font.cols) * font.cell_w;
                         let sy = (gid / font.cols) * font.cell_h;
                         vita2d_draw_texture_tint_part_scale(
-                            font.ptr,
+                            font.texture.ptr,
                             x,
                             y,
                             sx as f32,
