@@ -146,6 +146,44 @@ describe("visual", () => {
   });
 });
 
+describe("bevel", () => {
+  test("two-color form sets the outer ring only", () => {
+    const m = props(parseClassLiteral("bevel-[#fff,#000]"));
+    expect(m.get(PROP.bevelOuterLight)).toBe(abgr(255, 255, 255));
+    expect(m.get(PROP.bevelOuterDark)).toBe(abgr(0, 0, 0));
+    expect(m.has(PROP.bevelInnerLight)).toBeFalse();
+    expect(m.has(PROP.bevelInnerDark)).toBeFalse();
+  });
+  test("four-color form sets both rings (Win98 raised order)", () => {
+    const m = props(parseClassLiteral("bevel-[#ffffff,#000000,#dfdfdf,#808080] bevel-w-[2]"));
+    expect(m.get(PROP.bevelOuterLight)).toBe(abgr(255, 255, 255));
+    expect(m.get(PROP.bevelOuterDark)).toBe(abgr(0, 0, 0));
+    expect(m.get(PROP.bevelInnerLight)).toBe(abgr(0xdf, 0xdf, 0xdf));
+    expect(m.get(PROP.bevelInnerDark)).toBe(abgr(0x80, 0x80, 0x80));
+    expect(f32Of(m, PROP.bevelWidth)).toBe(2);
+  });
+  test("active: inversion folds into the active variant", () => {
+    const rec = parseClassLiteral("bevel-[#fff,#000] active:bevel-[#000,#fff]");
+    expect(props(rec).get(PROP.bevelOuterLight)).toBe(abgr(255, 255, 255));
+    expect(props(rec, "active").get(PROP.bevelOuterLight)).toBe(abgr(0, 0, 0));
+    expect(props(rec, "active").get(PROP.bevelOuterDark)).toBe(abgr(255, 255, 255));
+  });
+  test("malformed bevel values reject the literal (all-or-nothing)", () => {
+    expect(parseClassLiteral("bevel-[#fff]")).toBeNull(); // 1 color
+    expect(parseClassLiteral("bevel-[#fff,#000,#ccc]")).toBeNull(); // 3 colors
+    expect(parseClassLiteral("bevel-[white,black]")).toBeNull(); // not hex
+    expect(parseClassLiteral("bevel-w-2")).toBeNull(); // arbitrary-only width
+    expect(parseClassLiteral("bevel-w-[0]")).toBeNull(); // width must be > 0
+  });
+  test("bevel + rounded* is a loud error", () => {
+    expect(() => parseClassLiteral("bevel-[#fff,#000] rounded")).toThrow(/square-only/);
+    expect(() => parseClassLiteral("bevel-[#fff,#000] rounded-lg")).toThrow(/square-only/);
+    expect(() => parseClassLiteral("bevel-w-[2] rounded-[3]")).toThrow(/square-only/);
+    expect(() => parseClassLiteral("active:bevel-[#fff,#000] rounded-sm")).toThrow(/square-only/);
+    expect(() => parseClassLiteral("w-8 h-8 rounded-full bevel-[#fff,#000]")).toThrow(/square-only/);
+  });
+});
+
 describe("text", () => {
   test("size + weight combine into one font slot", () => {
     const m = props(parseClassLiteral("text-2xl font-bold text-white"));

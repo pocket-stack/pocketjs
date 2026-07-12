@@ -224,6 +224,18 @@ const SPECS: Spec[] = [
 ];
 
 SPECS.push({
+  // chrome: bevel border rings (Win98 window mock, demos/chrome). f2 = initial
+  // layout: double-ring raised window frame + buttons, double-ring sunken text
+  // well, thin single-ring status cells, navy 2-stop caption gradient — every
+  // bevel form in one frame. DOWN@4 focuses OK, RIGHT@8 moves to CANCEL — f12
+  // shows the focus: face tint with the bevel rings unchanged.
+  name: "chrome-main",
+  frames: 20,
+  capture: [2, 12],
+  input: (f) => (f === 4 ? BTN.DOWN : f === 8 ? BTN.RIGHT : 0),
+});
+
+SPECS.push({
   // motions: baked keyframe timelines (yui540 studies). Scene 0 (APP LAUNCH)
   // plays a 3-entry choreography with a 156-frame loop: f8 = press pulse
   // (backwards-fill start states), f60 = expanded full-stage hold, f120 =

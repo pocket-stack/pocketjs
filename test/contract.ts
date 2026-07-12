@@ -69,6 +69,20 @@ const table: StyleRecord[] = [
   },
   // base-only record
   { base: [{ prop: PROP.opacity, value: f32Bits(0.5) }] },
+  // bevel rings: base raised + active pressed inversion (Win98 chrome)
+  {
+    base: [
+      { prop: PROP.bevelOuterLight, value: abgr(255, 255, 255) },
+      { prop: PROP.bevelOuterDark, value: abgr(0, 0, 0) },
+      { prop: PROP.bevelInnerLight, value: abgr(0xdf, 0xdf, 0xdf) },
+      { prop: PROP.bevelInnerDark, value: abgr(0x80, 0x80, 0x80) },
+      { prop: PROP.bevelWidth, value: f32Bits(2) },
+    ],
+    active: [
+      { prop: PROP.bevelOuterLight, value: abgr(0, 0, 0) },
+      { prop: PROP.bevelOuterDark, value: abgr(255, 255, 255) },
+    ],
+  },
   // transition-all, no base (focus-only)
   {
     focus: [{ prop: PROP.translateX, value: f32Bits(8) }],

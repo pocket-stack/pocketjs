@@ -186,6 +186,22 @@ export const PROP = {
   borderColor: 70, //   color u32 ABGR
   borderWidth: 71, //   f32 px — drawn INSET, purely visual, does NOT affect layout
   shadow: 72, //        i32 baked shadow index: 0 = none, 1 = shadow, 2 = md, 3 = lg
+  // ids 73..76 reserved for per-corner radius (radiusTL/TR/BR/BL).
+  //
+  // Bevel rings — the classic-chrome (Win9x-era) 3D edge. Up to two nested
+  // rings drawn INSET as plain rects (purely visual, never affects layout):
+  // the OUTER ring hugs the border box, the INNER ring sits bevelWidth
+  // inside it. Per ring, `light` paints the top+left strips and `dark` the
+  // bottom+right strips; dark is emitted after light and runs the full edge
+  // length, so DARK OWNS THE SHARED CORNERS (matches the 98.css box-shadow
+  // stack order, where the dark shadow is listed first and paints on top).
+  // Unset (alpha 0) colors emit nothing. Ignored when radius > 0 (bevels
+  // are square by definition; the compiler rejects the combination).
+  bevelOuterLight: 77, // color u32 ABGR
+  bevelOuterDark: 78, //  color u32 ABGR
+  bevelInnerLight: 79, // color u32 ABGR
+  bevelInnerDark: 80, //  color u32 ABGR
+  bevelWidth: 81, //      f32 px per ring (default 1)
 
   // -- text (96..127) --------------------------------------------------------
   textColor: 96, //     color u32 ABGR
@@ -340,6 +356,9 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
   gradDir: VALUE_KIND.int, radius: VALUE_KIND.f32, opacity: VALUE_KIND.f32,
   borderColor: VALUE_KIND.color, borderWidth: VALUE_KIND.f32,
   shadow: VALUE_KIND.int,
+  bevelOuterLight: VALUE_KIND.color, bevelOuterDark: VALUE_KIND.color,
+  bevelInnerLight: VALUE_KIND.color, bevelInnerDark: VALUE_KIND.color,
+  bevelWidth: VALUE_KIND.f32,
   textColor: VALUE_KIND.color, fontSlot: VALUE_KIND.int,
   textAlign: VALUE_KIND.int, lineHeight: VALUE_KIND.f32, tracking: VALUE_KIND.f32,
   translateX: VALUE_KIND.f32, translateY: VALUE_KIND.f32,
