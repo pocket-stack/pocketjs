@@ -808,6 +808,20 @@ describe("host detection (host.ts)", () => {
     }
   });
 
+  test("a global web/wasm namespace without native identity stays injected", () => {
+    const wasm = makeMockHost();
+    const g = globalThis as { ui?: HostOps };
+    g.ui = wasm.ops;
+    try {
+      const detected = detectHost(wasm.ops);
+      expect(detected.kind).toBe("injected");
+      expect(detected.target).toBe("injected");
+      expect(detected.strict).toBe(true);
+    } finally {
+      delete g.ui;
+    }
+  });
+
   test("injected ops stay strict (web/wasm/test hosts)", () => {
     const injected = makeMockHost();
     const detected = detectHost(injected.ops);

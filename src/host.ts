@@ -169,23 +169,27 @@ export function assertNativeHostContract(
  * QuickJS).
  * Throws when neither exists — PocketJS cannot run without a native tree.
  *
- * Exception: when the injected ops ARE the native namespace (demo entries
- * commonly pass `globalThis.ui` explicitly), object identity keeps it native
- * and non-strict. Target identity comes from `ui.__host`, not from texture
- * tables or platform-specific feature detection.
+ * Exception: when the injected ops ARE a self-identified native namespace
+ * (demo entries commonly pass `globalThis.ui` explicitly), object identity
+ * plus `ui.__host` keeps it native and non-strict. Web/wasm adapters also
+ * publish `globalThis.ui`, but intentionally omit `__host` and stay injected.
+ * No texture-table or target-specific feature detection is involved.
  */
 export function detectHost(injected?: HostOps): Host {
   const native = (globalThis as { ui?: HostOps }).ui;
   if (injected) {
-    if (native !== undefined && injected === native) {
+    if (native !== undefined && injected === native && typeof native.__host === "string") {
       assertNativeHostContract(native);
-      return { ops: injected, kind: "native", target: native.__host ?? "native", strict: false };
+      return { ops: injected, kind: "native", target: native.__host, strict: false };
     }
     return { ops: injected, kind: "injected", target: injected.__host ?? "injected", strict: true };
   }
-  if (native) {
+  if (native && typeof native.__host === "string") {
     assertNativeHostContract(native);
-    return { ops: native, kind: "native", target: native.__host ?? "native", strict: false };
+    return { ops: native, kind: "native", target: native.__host, strict: false };
+  }
+  if (native) {
+    return { ops: native, kind: "injected", target: "injected", strict: true };
   }
   throw new Error(
     "PocketJS: no host — pass HostOps to render() (web/test) or run under a native runtime (globalThis.ui)",
