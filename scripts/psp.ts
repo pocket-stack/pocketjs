@@ -226,6 +226,7 @@ const env = {
   CARGO_PROFILE_DEV_OPT_LEVEL: process.env.CARGO_PROFILE_DEV_OPT_LEVEL ?? "3",
   POCKETJS_APP_OUTPUT: outputApp,
   POCKETJS_EMBED_APP: "1",
+  POCKETJS_OUTPUT_DIR: outputDir,
   POCKETJS_TARGET: buildPlan?.target.id ?? "psp",
   POCKETJS_HOST_ABI: String(buildPlan?.target.hostAbi ?? 1),
   POCKETJS_CONTRACT_HASH: buildPlan?.contractHash ?? "",

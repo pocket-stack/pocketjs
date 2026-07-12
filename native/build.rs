@@ -11,7 +11,7 @@
 //! always resolve — an EBOOT built with no app boots to the JS-error screen
 //! rather than failing the build.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 fn main() {
@@ -32,7 +32,9 @@ fn main() {
     let target = env::var("POCKETJS_TARGET").unwrap_or_else(|_| "psp".into());
     let host_abi = env::var("POCKETJS_HOST_ABI").unwrap_or_else(|_| "1".into());
     let contract_hash = env::var("POCKETJS_CONTRACT_HASH").unwrap_or_default();
-    let dist = Path::new("../dist");
+    let dist = env::var_os("POCKETJS_OUTPUT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("../dist"));
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // App JS bundle -> $OUT_DIR/game.js, NUL-terminated for JS_Eval (which
@@ -40,8 +42,12 @@ fn main() {
     let mut code = if !embed_app {
         String::new()
     } else {
-        fs::read_to_string(dist.join(format!("{app}.js"))).unwrap_or_else(|e| {
-            panic!("could not read dist/{app}.js (run `bun run build {app}` first): {e}")
+        let path = dist.join(format!("{app}.js"));
+        fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!(
+                "could not read {} (compile the resolved plan first): {e}",
+                path.display()
+            )
         })
     };
     code.push('\0');
@@ -88,6 +94,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=POCKETJS_APP");
     println!("cargo:rerun-if-env-changed=POCKETJS_APP_OUTPUT");
     println!("cargo:rerun-if-env-changed=POCKETJS_EMBED_APP");
+    println!("cargo:rerun-if-env-changed=POCKETJS_OUTPUT_DIR");
     println!("cargo:rerun-if-env-changed=POCKETJS_TARGET");
     println!("cargo:rerun-if-env-changed=POCKETJS_HOST_ABI");
     println!("cargo:rerun-if-env-changed=POCKETJS_CONTRACT_HASH");
@@ -97,7 +104,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=POCKETJS_CAP_N");
     println!("cargo:rerun-if-env-changed=POCKETJS_ARENA_BYTES");
     println!("cargo:rerun-if-env-changed=POCKETJS_BENCH_DUMP_FRAMES");
-    if let Ok(entries) = fs::read_dir(dist) {
+    if let Ok(entries) = fs::read_dir(&dist) {
         for e in entries.flatten() {
             println!("cargo:rerun-if-changed={}", e.path().display());
         }
