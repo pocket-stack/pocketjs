@@ -13,7 +13,20 @@ fn positive_dimension(name: &str, fallback: u32) -> u32 {
 }
 
 fn main() {
-    let app = env::var("POCKETJS_APP").unwrap_or_default();
+    let legacy_app = env::var("POCKETJS_APP").unwrap_or_default();
+    let app = env::var("POCKETJS_APP_OUTPUT").unwrap_or_else(|_| legacy_app.clone());
+    let embed_app = match env::var("POCKETJS_EMBED_APP") {
+        Ok(value) => match value.as_str() {
+            "0" => false,
+            "1" => true,
+            _ => panic!("POCKETJS_EMBED_APP must be 0 or 1, got {value:?}"),
+        },
+        Err(_) => !legacy_app.is_empty(),
+    };
+    assert!(
+        !embed_app || !app.is_empty(),
+        "POCKETJS_EMBED_APP=1 requires POCKETJS_APP_OUTPUT"
+    );
     let target = env::var("POCKETJS_TARGET").unwrap_or_else(|_| "vita".into());
     let host_abi = env::var("POCKETJS_HOST_ABI").unwrap_or_else(|_| "1".into());
     let contract_hash = env::var("POCKETJS_CONTRACT_HASH").unwrap_or_default();
@@ -57,7 +70,7 @@ fn main() {
     .unwrap();
 
     // App JS bundle
-    let mut code = if app.is_empty() {
+    let mut code = if !embed_app {
         String::new()
     } else {
         fs::read_to_string(dist.join(format!("{app}.js"))).unwrap_or_else(|e| {
@@ -68,7 +81,7 @@ fn main() {
     fs::write(Path::new(&out_dir).join("game.js"), code).unwrap();
 
     // Asset pack
-    let pak = if app.is_empty() {
+    let pak = if !embed_app {
         Vec::new()
     } else {
         fs::read(dist.join(format!("{app}.pak"))).unwrap_or_default()
@@ -90,6 +103,8 @@ fn main() {
     println!("cargo:rerun-if-changed=../dist/{app}.js");
     println!("cargo:rerun-if-changed=../dist/{app}.pak");
     println!("cargo:rerun-if-env-changed=POCKETJS_APP");
+    println!("cargo:rerun-if-env-changed=POCKETJS_APP_OUTPUT");
+    println!("cargo:rerun-if-env-changed=POCKETJS_EMBED_APP");
     println!("cargo:rerun-if-env-changed=POCKETJS_TARGET");
     println!("cargo:rerun-if-env-changed=POCKETJS_HOST_ABI");
     println!("cargo:rerun-if-env-changed=POCKETJS_CONTRACT_HASH");

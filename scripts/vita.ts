@@ -147,7 +147,8 @@ const env = {
   // compiler and expose VitaSDK tools without requiring shell dotfiles.
   PATH: `${vitasdk}/bin:${home}/.cargo/bin:${process.env.PATH ?? ""}`,
   VITASDK: vitasdk,
-  POCKETJS_APP: outputApp,
+  POCKETJS_APP_OUTPUT: outputApp,
+  POCKETJS_EMBED_APP: "1",
   POCKETJS_TARGET: buildPlan?.target.id ?? "vita",
   POCKETJS_HOST_ABI: String(buildPlan?.target.hostAbi ?? 1),
   POCKETJS_CONTRACT_HASH: buildPlan?.contractHash ?? "",
