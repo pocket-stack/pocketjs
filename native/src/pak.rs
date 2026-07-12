@@ -78,7 +78,7 @@ pub struct SpriteReg {
     pub step: u16,
 }
 
-pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
+pub fn feed(ui: &mut Ui, pak: &'static [u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
     let mut textures: Vec<(String, i32)> = Vec::new();
     let mut sprites: Vec<SpriteReg> = Vec::new();
     let Some(()) = (|| {
@@ -162,10 +162,62 @@ pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
             } else {
                 psp::dprintln!("[PocketJS pak] bad sprite {} ({}x{} psm {})", key, w, h, psm);
             }
+        } else if let Some(name) = key.strip_prefix("audio:sfx.") {
+            // SND one-shot SFX entry (AUDIO.md; audio.rs owns the mixer —
+            // this crate never plays anything, it only registers the pak
+            // pointer). `name` is the bare sounds.json name JS calls
+            // audio.playSfx with, mirroring loadTileTexture's key contract.
+            register_snd_entry(name, blob, crate::audio::SoundKind::Sfx);
+        } else if let Some(name) = key.strip_prefix("audio:bgm.") {
+            register_snd_entry(name, blob, crate::audio::SoundKind::Bgm);
         }
         // unknown keys: ignored (forward compatible)
     }
     (textures, sprites)
+}
+
+/// Parse one SND pak entry (AUDIO.md / spec/spec.ts SND_* — 24-byte header +
+/// frameCount x s16 LE mono) and register it into audio.rs's sound registry.
+/// Called only from `feed`, at boot, before `audio::init()` creates the
+/// mixer thread (main.rs's ordering) — same "plain writes are fine" contract
+/// as `register_sound`'s own safety doc. Malformed entries (bad magic/
+/// version, truncated PCM, bogus loopStart) are skipped silently, same as
+/// every other pak entry kind in this file.
+fn register_snd_entry(name: &str, blob: &'static [u8], kind: crate::audio::SoundKind) {
+    let (Some(magic), Some(version), Some(flags), Some(rate), Some(frames), Some(loop_start)) = (
+        rd_u32(blob, 0),
+        rd_u16(blob, 4),
+        rd_u16(blob, 6),
+        rd_u32(blob, 8),
+        rd_u32(blob, 12),
+        rd_u32(blob, 16),
+    ) else {
+        return;
+    };
+    if magic != crate::audio::SND_MAGIC || version != crate::audio::SND_VERSION {
+        return;
+    }
+    let Some(pcm) = blob.get(crate::audio::SND_HEADER_SIZE..) else { return };
+    // frameCount x s16 LE mono must actually fit in what's left of the blob.
+    if pcm.len() < frames as usize * 2 {
+        return;
+    }
+    // The SND header's own loop flag only gates whether `loopStart` is
+    // meaningful metadata (an sfx-baked or non-looping entry may have a
+    // garbage/zero loopStart); whether a given PLAYBACK actually loops is
+    // entirely the caller's choice each time (AUDIO.md playBgm's `loop` arg),
+    // so that flag itself isn't stored — see SoundReg's doc comment.
+    let loop_flag = flags & crate::audio::SND_FLAG_LOOP != 0;
+    let loop_start = if loop_flag && loop_start < frames { loop_start } else { 0 };
+    // SAFETY: `pcm.as_ptr()` points into APP_PAK's .rodata (include_bytes!,
+    // program-lifetime 'static — `feed`'s `pak: &'static [u8]` parameter
+    // carries that lifetime through to `blob`/`pcm`). Alignment: PAK blobs
+    // are 16-byte aligned (spec.ts PAK_ALIGN) and SND_HEADER_SIZE (24) is
+    // even, so `pcm.as_ptr()` lands on an even address — valid for the
+    // `*const i16` register_sound stores and the mixer thread later reads.
+    unsafe {
+        crate::audio::register_sound(kind, name, pcm.as_ptr() as *const i16, frames, rate, loop_start);
+    }
 }
 
 /// Look up one entry's blob by exact key (the runtime side of the streaming

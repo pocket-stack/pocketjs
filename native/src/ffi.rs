@@ -530,6 +530,134 @@ unsafe extern "C" fn js_dbg_send(
 }
 
 // ---------------------------------------------------------------------------
+// Audio surface (globalThis.audio — spec ops 26..31, AUDIO.md; NOT ui.*).
+// Marshaling follows the same pattern as the ui.* shims above (JS_ToCStringLen2
+// + JS_FreeCString for strings, arg_i32/arg_f64 for numbers); the actual
+// mixer logic lives entirely in audio.rs — these shims only convert JS
+// values and forward.
+// ---------------------------------------------------------------------------
+
+/// playSfx(key, volume, pan) — spec op 26.
+unsafe extern "C" fn js_play_sfx(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc < 1 {
+        return JS_UNDEFINED;
+    }
+    let mut len: size_t = 0;
+    let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+    if s.is_null() {
+        return JS_UNDEFINED;
+    }
+    if let Ok(key) = core::str::from_utf8(core::slice::from_raw_parts(s as *const u8, len)) {
+        let volume = arg_f64(ctx, argc, argv, 1) as f32;
+        let pan = arg_f64(ctx, argc, argv, 2) as f32;
+        crate::audio::play_sfx(key, volume, pan);
+    }
+    JS_FreeCString(ctx, s);
+    JS_UNDEFINED
+}
+
+/// playSynth(wave, freq, freqEnd, durMs, attackMs, releaseMs, volume) — spec op 27.
+unsafe extern "C" fn js_play_synth(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let wave = arg_i32(ctx, argc, argv, 0);
+    let freq = arg_f64(ctx, argc, argv, 1) as f32;
+    let freq_end = arg_f64(ctx, argc, argv, 2) as f32;
+    let dur_ms = arg_f64(ctx, argc, argv, 3) as f32;
+    let attack_ms = arg_f64(ctx, argc, argv, 4) as f32;
+    let release_ms = arg_f64(ctx, argc, argv, 5) as f32;
+    let volume = arg_f64(ctx, argc, argv, 6) as f32;
+    crate::audio::play_synth(wave, freq, freq_end, dur_ms, attack_ms, release_ms, volume);
+    JS_UNDEFINED
+}
+
+/// playBgm(key, loop, fadeMs, volume) — spec op 28.
+unsafe extern "C" fn js_play_bgm(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc < 1 {
+        return JS_UNDEFINED;
+    }
+    let mut len: size_t = 0;
+    let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+    if s.is_null() {
+        return JS_UNDEFINED;
+    }
+    if let Ok(key) = core::str::from_utf8(core::slice::from_raw_parts(s as *const u8, len)) {
+        let loop_flag = arg_i32(ctx, argc, argv, 1) != 0;
+        let fade_ms = arg_f64(ctx, argc, argv, 2) as f32;
+        let volume = arg_f64(ctx, argc, argv, 3) as f32;
+        crate::audio::play_bgm(key, loop_flag, fade_ms, volume);
+    }
+    JS_FreeCString(ctx, s);
+    JS_UNDEFINED
+}
+
+/// stopBgm(fadeMs) — spec op 29.
+unsafe extern "C" fn js_stop_bgm(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let fade_ms = arg_f64(ctx, argc, argv, 0) as f32;
+    crate::audio::stop_bgm(fade_ms);
+    JS_UNDEFINED
+}
+
+/// pauseBgm(paused) — spec op 30.
+unsafe extern "C" fn js_pause_bgm(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let paused = arg_i32(ctx, argc, argv, 0) != 0;
+    crate::audio::pause_bgm(paused);
+    JS_UNDEFINED
+}
+
+/// setChannelVolume(channel, volume) — spec op 31.
+unsafe extern "C" fn js_set_channel_volume(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let channel = arg_i32(ctx, argc, argv, 0);
+    let volume = arg_f64(ctx, argc, argv, 1) as f32;
+    crate::audio::set_bus_volume(channel, volume);
+    JS_UNDEFINED
+}
+
+/// Install `globalThis.audio` (AUDIO.md). Always called, even when
+/// `audio::init()` failed — every op checks audio.rs's own `READY` flag and
+/// silently no-ops, so the guest-visible shape of `globalThis.audio` never
+/// changes with hardware availability (AUDIO.md's capability-as-surface
+/// contract, same as `ui` never varying its shape).
+pub unsafe fn register_audio(ctx: *mut JSContext, global: JSValue) {
+    let audio_obj = JS_NewObject(ctx);
+    add_fn(ctx, audio_obj, b"playSfx\0", js_play_sfx, 3);
+    add_fn(ctx, audio_obj, b"playSynth\0", js_play_synth, 7);
+    add_fn(ctx, audio_obj, b"playBgm\0", js_play_bgm, 4);
+    add_fn(ctx, audio_obj, b"stopBgm\0", js_stop_bgm, 1);
+    add_fn(ctx, audio_obj, b"pauseBgm\0", js_pause_bgm, 1);
+    add_fn(ctx, audio_obj, b"setChannelVolume\0", js_set_channel_volume, 2);
+    JS_SetPropertyStr(ctx, global, b"audio\0".as_ptr() as *const _, audio_obj);
+}
+
+// ---------------------------------------------------------------------------
 // registration
 // ---------------------------------------------------------------------------
 

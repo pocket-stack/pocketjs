@@ -139,6 +139,21 @@ On-demand device screenshots (📷 in the panel) work on every host — on real
 hardware the raw VRAM rides the usbhostfs mount and the bridge encodes the
 PNG desktop-side.
 
+## Audio
+
+Sound effects, looping BGM, per-bus volume and a tiny 8-bit synth
+([AUDIO.md](AUDIO.md)): `@pocketjs/framework/audio` speaks to an optional
+`globalThis.audio` host surface — WebAudio in the browser, a software mixer
+thread on the PSP — and stays entirely outside the deterministic core, so
+goldens and input tapes are untouched.
+
+```tsx
+import { defineSfx, playSfx, playBgm } from "@pocketjs/framework/audio";
+
+defineSfx("blip", { wave: "square", freq: 880, durMs: 40 }); // no asset needed
+playBgm("theme1", { loop: true, fadeMs: 300 });              // baked from sounds.json
+```
+
 ## Determinism + the sim host
 
 Time is a frame counter, not the wall clock ([DETERMINISM.md](DETERMINISM.md)):

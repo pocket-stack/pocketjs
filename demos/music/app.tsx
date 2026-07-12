@@ -15,12 +15,15 @@ import { createSignal } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
+import { defineSfx, pauseBgm, playBgm, playSfx, resumeBgm } from "@pocketjs/framework/audio";
 
 interface Track {
   title: string;
   artist: string;
   /** cover/play-pause control: FULL literal (fixed size + per-track accent). */
   coverCls: string;
+  /** audio:bgm.<sound> key baked by sounds.json (AUDIO.md) — playBgm target. */
+  sound: string;
 }
 
 const TRACKS: Track[] = [
@@ -29,23 +32,31 @@ const TRACKS: Track[] = [
     artist: "SYNC PULSE",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-blue-500 to-blue-700 border-blue-300 focus:border-slate-900 transition-colors duration-150",
+    sound: "midnight-replay",
   },
   {
     title: "GLASS HORIZON",
     artist: "AMBER TIDE",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-amber-400 to-amber-700 border-amber-300 focus:border-slate-900 transition-colors duration-150",
+    sound: "glass-horizon",
   },
   {
     title: "STATIC BLOOM",
     artist: "NEON DRIFTERS",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-cyan-500 to-cyan-700 border-cyan-300 focus:border-slate-900 transition-colors duration-150",
+    sound: "static-bloom",
   },
 ];
 
 const TRACK_FRAMES = 300; // 5s per track at 60 Hz (demo-length, not the real song)
 const PROGRESS_TRACK_W = 160; // progress track px — matches the w-[160] track class
+
+// Code-defined retro blip (AUDIO.md) — zero pak cost, used for d-pad/button
+// feedback below. A separate baked "click" SFX also ships via sounds.json for
+// pak-bake coverage, but interactive feedback uses this synth voice instead.
+defineSfx("blip", { wave: "square", freq: 880, durMs: 40, releaseMs: 20 });
 
 // ---------------------------------------------------------------------------
 // App
@@ -57,24 +68,57 @@ export default function Music() {
   const [position, setPosition] = createSignal(0); // frames into the current track
   const [barsFrame, setBarsFrame] = createSignal(0);
 
+  // Tracks whether playBgm() has ever been called (a plain closure flag, not
+  // reactive state — it doesn't drive rendering, only which audio op the
+  // play/pause toggle issues below).
+  let bgmStarted = false;
+
   const selectTrack = (i: number) => {
     setTrackIndex(i);
     setPosition(0);
     setPlaying(true);
+    playBgm(TRACKS[i].sound, { loop: true, fadeMs: 300 });
+    bgmStarted = true;
+    playSfx("blip");
   };
 
-  const nextTrack = () => {
-    setTrackIndex((trackIndex() + 1) % TRACKS.length);
+  // Switch to track `i` WITHOUT changing the play/pause state: the mock has
+  // always kept "switching while paused stays paused", so the new track is
+  // loaded and immediately re-frozen when the UI shows paused.
+  const switchTrack = (i: number) => {
+    setTrackIndex(i);
     setPosition(0);
+    playBgm(TRACKS[i].sound, { loop: true, fadeMs: 300 });
+    bgmStarted = true;
+    if (!playing()) pauseBgm();
   };
 
-  const prevTrack = () => {
-    setTrackIndex((trackIndex() - 1 + TRACKS.length) % TRACKS.length);
-    setPosition(0);
+  const nextTrack = () => switchTrack((trackIndex() + 1) % TRACKS.length);
+  const prevTrack = () => switchTrack((trackIndex() - 1 + TRACKS.length) % TRACKS.length);
+
+  const togglePlay = () => {
+    const next = !playing();
+    setPlaying(next);
+    if (next) {
+      if (bgmStarted) resumeBgm();
+      else {
+        playBgm(TRACKS[trackIndex()].sound, { loop: true, fadeMs: 300 });
+        bgmStarted = true;
+      }
+    } else {
+      pauseBgm();
+    }
+    playSfx("blip");
   };
 
-  onButtonPress(BTN.LTRIGGER, prevTrack);
-  onButtonPress(BTN.RTRIGGER, nextTrack);
+  onButtonPress(BTN.LTRIGGER, () => {
+    prevTrack();
+    playSfx("blip");
+  });
+  onButtonPress(BTN.RTRIGGER, () => {
+    nextTrack();
+    playSfx("blip");
+  });
   onFrame(() => {
     if (!playing()) return;
     setBarsFrame(barsFrame() + 1);
@@ -103,7 +147,7 @@ export default function Music() {
       </View>
 
       <View debugName="NowPlaying" class="flex-row items-center gap-3">
-        <View class={track().coverCls} focusable onPress={() => setPlaying(!playing())}>
+        <View class={track().coverCls} focusable onPress={togglePlay}>
           <Text class="text-base text-white font-bold">{playing() ? ">" : "II"}</Text>
         </View>
 

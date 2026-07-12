@@ -22,6 +22,7 @@ extern crate alloc;
 #[path = "alloc.rs"]
 mod allocator;
 pub mod arena;
+pub mod audio;
 pub mod c_heap;
 pub mod dbg;
 pub mod ffi;

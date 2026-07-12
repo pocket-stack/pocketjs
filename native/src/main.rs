@@ -26,7 +26,7 @@ use psp::sys::DisplaySetBufSync;
 use psp::sys::DisplayPixelFormat;
 use psp::sys::{self, CtrlMode, GuContextType, GuSyncBehavior, GuSyncMode, IoOpenFlags, SceCtrlData};
 
-use pocketjs_psp::{dbg, ffi, ge, host, pak};
+use pocketjs_psp::{audio, dbg, ffi, ge, host, pak};
 #[cfg(feature = "bench")]
 use pocketjs_psp::arena;
 
@@ -383,6 +383,19 @@ unsafe fn run() {
     // below (loadTileTexture pulls tile blobs straight from .rodata).
     pak::install(APP_PAK);
 
+    // ---- Audio mixer (AUDIO.md) ----
+    // After pak::feed (above) so the SND sound registry is already filled;
+    // before JS_Eval so globalThis.audio is ready the instant app code runs.
+    // A failure here (no hardware channel, thread create failed) is not
+    // fatal: ffi::register_audio still installs the full op surface below,
+    // it just silently no-ops forever (audio.rs's READY gate).
+    trace("run: audio init begin");
+    if audio::init() {
+        trace("run: audio init ok");
+    } else {
+        trace("run: audio init failed (no sound this run)");
+    }
+
     // ---- QuickJS ----
     trace("run: JS_NewRuntime begin");
     let rt = pocketjs_psp::qjs_alloc::new_runtime();
@@ -410,6 +423,11 @@ unsafe fn run() {
     trace("run: register ui begin");
     ffi::register(ctx, global, &textures, &sprites);
     trace("run: register ui ok");
+
+    // globalThis.audio — separate surface, never part of ui.* (AUDIO.md).
+    trace("run: register audio begin");
+    ffi::register_audio(ctx, global);
+    trace("run: register audio ok");
 
     // Expose the asset pack read-only as globalThis.__pak (zero-copy over
     // .rodata; free_func = None). Web/test hosts feed core through loadStyles/

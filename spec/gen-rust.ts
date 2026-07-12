@@ -235,6 +235,8 @@ export function generateRust(): string {
     GradDir: "gradient direction (`bg-gradient-to-t|b|l|r`).",
     Easing:
       "animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.",
+    AudioChannel: "audio bus selector for `audio.setChannelVolume` (AUDIO.md).",
+    Waveform: "procedural synth waveform for `audio.playSynth`/`SynthDesc.wave` (AUDIO.md).",
   };
   for (const [ename, variants] of Object.entries(ENUMS)) {
     put(`/// ${enumDocs[ename] ?? ename}`);

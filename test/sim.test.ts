@@ -19,7 +19,7 @@
 //                  and the settled final screen is byte-equal across rates.
 
 import { describe, expect, test } from "bun:test";
-import { runScenario, treeHasText, type Trace } from "../host-sim/sim.ts";
+import { runScenario, treeHasText, type AudioEvent, type Trace } from "../host-sim/sim.ts";
 import { BTN } from "../spec/spec.ts";
 
 // The user journey, in virtual seconds (one script drives every rate; the
@@ -53,6 +53,46 @@ describe("determinism", () => {
     const chaos = await runScenario(scenario(60), { maxSleepMs: 8, gcEvery: 60 });
     expect(chaos.hashes).toEqual(t60.hashes);
     expect(chaos.effects).toEqual(t60.effects);
+  });
+
+  test("the audio command stream is deterministic too (AUDIO.md, chaos-equal)", async () => {
+    // cafe-main never calls audio.* — its recorded stream is (and must stay)
+    // empty; the real-events case is the music-main journey below.
+    expect(Array.isArray(t60.audio)).toBe(true);
+    const chaos = await runScenario(scenario(60), { maxSleepMs: 8, gcEvery: 60 });
+    expect(JSON.stringify(chaos.audio)).toBe(JSON.stringify(t60.audio));
+  });
+
+  test("music journey: audio ops land on exact frames, chaos or clean (AUDIO.md)", async () => {
+    // R/L trigger track switches in demos/music — global button handlers, no
+    // focus dependence. Every op below is presentation-only (Trace.audio);
+    // the pixel trace itself must not know audio exists.
+    const music = {
+      app: "music-main",
+      hz: 60,
+      seconds: 3,
+      script: [
+        { at: 1.0, press: BTN.RTRIGGER }, // next track
+        { at: 2.0, press: BTN.LTRIGGER }, // back again
+      ],
+    };
+    const clean = await runScenario(music);
+    const want: AudioEvent[] = [
+      // render() boot: initAudio pushes all three bus gains (src/sound.ts).
+      { t: "audio", frame: 0, op: "setChannelVolume", args: [0, 1] },
+      { t: "audio", frame: 0, op: "setChannelVolume", args: [1, 1] },
+      { t: "audio", frame: 0, op: "setChannelVolume", args: [2, 1] },
+      // RTRIGGER: switchTrack -> playBgm + the defineSfx("blip") synth blip.
+      { t: "audio", frame: 60, op: "playBgm", args: ["glass-horizon", 1, 300, 1] },
+      { t: "audio", frame: 60, op: "playSynth", args: [0, 880, 880, 40, 0, 20, 1] },
+      // LTRIGGER: back to track 0.
+      { t: "audio", frame: 120, op: "playBgm", args: ["midnight-replay", 1, 300, 1] },
+      { t: "audio", frame: 120, op: "playSynth", args: [0, 880, 880, 40, 0, 20, 1] },
+    ];
+    expect(clean.audio).toEqual(want);
+    const chaos = await runScenario(music, { maxSleepMs: 8, gcEvery: 60 });
+    expect(chaos.audio).toEqual(want);
+    expect(chaos.hashes).toEqual(clean.hashes);
   });
 
   test("the low-rate worlds are deterministic too", async () => {

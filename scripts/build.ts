@@ -24,7 +24,7 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
-import { PSM } from "../spec/spec.ts";
+import { PSM, SND_RATE_DEFAULT, keyBgm, keySfx } from "../spec/spec.ts";
 import {
   FRAMEWORKS,
   frameworkVariantPath,
@@ -43,13 +43,16 @@ import {
   PAK_DTYPE,
   KEY_STYLES,
   decodePng,
+  decodeWav,
   encodeImageEntry,
+  encodeSoundEntry,
   encodeSpriteEntry,
   keyFont,
   keyImage,
   keySprite,
   pack,
   placeholderImage,
+  resampleMono,
   type PakBlob,
 } from "../compiler/pak.ts";
 
@@ -292,6 +295,48 @@ for (const name of imageNames) {
     console.log(`  sprite: ${name} (${sp.frames} frames, ${sp.cols} cols, step ${sp.step}, psm ${sp.psm ?? PSM.PSM_8888})`);
   } else {
     blobs.push({ key: keyImage(name), dtype: PAK_DTYPE.u8, data: encodeImageEntry(img, PSM.PSM_8888) });
+  }
+}
+
+// Optional per-app sound manifest: <appDir>/sounds.json bakes WAV files into
+// SND pak entries (AUDIO.md "Assets — sounds.json -> SND pak entries").
+// Zero-cost when absent — no manifest, no wav decoding, no extra bytes.
+interface SoundMeta {
+  name: string;
+  /** Bake as audio:bgm.<name> instead of the default audio:sfx.<name>. */
+  bgm?: boolean;
+  /** BGM loops from loopStart (spec SND_FLAG_LOOP). */
+  loop?: boolean;
+  loopStart?: number;
+  /** Output sample rate (default SND_RATE_DEFAULT = 22050; 11025 halves size). */
+  rate?: number;
+}
+const soundManifestPath = appDir + "sounds.json";
+if (existsSync(soundManifestPath)) {
+  const soundMeta = JSON.parse(await Bun.file(soundManifestPath).text()) as Record<string, SoundMeta>;
+  for (const [file, meta] of Object.entries(soundMeta)) {
+    const candidates = [appDir + file, ROOT + "assets/sounds/" + file, ROOT + "assets/" + file];
+    const found = candidates.find((c) => existsSync(c));
+    if (!found) {
+      console.error(`  sounds.json: ${file} not found (tried ${candidates.join(", ")})`);
+      process.exit(1);
+    }
+    const wav = decodeWav(new Uint8Array(await Bun.file(found).arrayBuffer()));
+    const rate = meta.rate ?? SND_RATE_DEFAULT;
+    const pcm = resampleMono(wav.samples, wav.channels, wav.rate, rate);
+    const entry = encodeSoundEntry(pcm, rate, { loop: meta.loop, loopStart: meta.loopStart });
+    const key = meta.bgm ? keyBgm(meta.name) : keySfx(meta.name);
+    blobs.push({ key, dtype: PAK_DTYPE.u8, data: entry });
+    const seconds = (pcm.length / rate).toFixed(2);
+    const kb = (entry.length / 1024).toFixed(1);
+    console.log(
+      `  sound: ${meta.name} <- ${found} (${seconds}s, ${rate}Hz${meta.bgm ? " bgm" : ""}${meta.loop ? " loop" : ""}, ${kb} KB)`,
+    );
+    if (meta.bgm && entry.length > 1024 * 1024) {
+      console.warn(
+        `  sounds.json: bgm "${meta.name}" is ${kb} KB (> 1 MB) — lower "rate" to 11025 or trim the clip (see AUDIO.md budget)`,
+      );
+    }
   }
 }
 
