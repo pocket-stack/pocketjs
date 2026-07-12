@@ -79,6 +79,22 @@ impl TouchSnapshot {
         snapshot
     }
 
+    /** Construct a deterministic snapshot from logical viewport contacts.
+     * Capture guests and custom hosts use this instead of fabricating Vita
+     * panel coordinates; production hardware continues through from_reports. */
+    pub fn from_logical(contacts: &[(u8, u16, u16)]) -> Self {
+        let mut snapshot = Self::EMPTY;
+        snapshot.len = contacts.len().min(MAX_TOUCHES);
+        let max_x = (crate::graphics::LOGICAL_W - 1).max(0) as u32;
+        let max_y = (crate::graphics::LOGICAL_H - 1).max(0) as u32;
+        for (index, (id, x, y)) in contacts.iter().take(snapshot.len).enumerate() {
+            let x = (*x as u32).min(max_x) & 0x1ff;
+            let y = (*y as u32).min(max_y) & 0x1ff;
+            snapshot.packed[index] = ((*id as u32) << 18) | (y << 9) | x;
+        }
+        snapshot
+    }
+
     pub fn packed(&self) -> &[u32] {
         &self.packed[..self.len]
     }
@@ -125,5 +141,14 @@ mod tests {
         let packed = panel.pack(report(1, -200, 2000), 480, 272);
         assert_eq!(packed & 0x1ff, 0);
         assert_eq!((packed >> 9) & 0x1ff, 271);
+    }
+
+    #[test]
+    fn logical_capture_contacts_use_the_same_wire_format() {
+        let snapshot = super::TouchSnapshot::from_logical(&[(4, 120, 80), (9, 900, 900)]);
+        assert_eq!(
+            snapshot.packed(),
+            &[4 << 18 | 80 << 9 | 120, 9 << 18 | 271 << 9 | 479]
+        );
     }
 }
