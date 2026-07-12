@@ -52,15 +52,10 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
 
 export type PocketCapabilityId = CapabilityId<typeof POCKET_CAPABILITIES>;
 
-/**
- * The only production target profile registered in the contract layer today.
- *
- * Do not register Vita here merely because native-vita exists on another
- * branch. Its stock host must first satisfy this portable PSP API baseline and
- * pass the same contract tests.
- */
+/** Production profiles advertise only capabilities delivered by stock hosts. */
 export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   readonly psp: TargetProfile<PocketCapabilityId>;
+  readonly vita: TargetProfile<PocketCapabilityId>;
 }>({
   psp: {
     hostAbi: 1,
@@ -75,6 +70,20 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "input.analog.left",
       "input.buttons",
       "text.glyphs.baked",
+    ],
+  },
+  vita: {
+    hostAbi: 1,
+    display: {
+      physicalViewport: [960, 544],
+      logicalViewports: [[480, 272]],
+      presentations: ["integer-fit", "stretch"],
+    },
+    capabilities: [
+      "input.analog.left",
+      "input.buttons",
+      "text.glyphs.baked",
+      "ui.drawlist",
     ],
   },
 });
