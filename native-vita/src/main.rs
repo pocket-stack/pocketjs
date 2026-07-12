@@ -72,11 +72,19 @@ fn main() {
         let mut frame = 0u32;
         loop {
             #[cfg(feature = "capture")]
-            let buttons = scripted_buttons(frame);
+            let (buttons, analog) = (
+                scripted_buttons(frame),
+                pocketjs_core::spec::ANALOG_CENTER as i32,
+            );
             #[cfg(not(feature = "capture"))]
-            let buttons = input::read().buttons as i32;
+            let (buttons, analog) = {
+                let pad = input::read();
+                (pad.buttons as i32, pad.left_analog())
+            };
 
-            runtime.frame(buttons).unwrap_or_else(|error| fail(&error));
+            runtime
+                .frame_with_analog(buttons, analog)
+                .unwrap_or_else(|error| fail(&error));
             runtime.tick();
             runtime.render();
 
