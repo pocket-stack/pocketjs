@@ -11,7 +11,7 @@ written for, but bakes and samples raster resources at density 2 before filling
 the Vita's native 960×544 screen. The layout stays portable; the pixels do not
 stay low resolution.
 
-<img class="w-full rounded-xl border border-line" src="https://raw.githubusercontent.com/pocket-stack/pocket-figma/0735cf2/test/goldens-vita/zoom.png" alt="Pocket Figma running at 960 by 544 for PS Vita, zoomed into a dense design-system page with the PocketJS status bar and controller hints" />
+<img class="w-full rounded-xl border border-line" src="https://raw.githubusercontent.com/pocket-stack/pocket-figma/d668fa8/test/goldens-vita/zoom.png" alt="Pocket Figma running at 960 by 544 for PS Vita, zoomed into a dense design-system page with the PocketJS status bar and controller hints" />
 
 <p class="text-sm text-slate-500 -mt-4">A 960×544 Pocket Figma Vita golden. This image is produced by the capture build's deterministic CPU renderer inside the guest; the production frame beside it still goes through vita2d and GXM, with texture residency checked separately.</p>
 
@@ -293,10 +293,12 @@ work; current text is the same deterministic baked-glyph contract as PSP.
 Those features should arrive as framework behavior with manifests, types,
 native delivery, fallback rules, and tests together—not as `if (vita)` patches.
 
-The implementation is under review in
+The first Vita runtime landed in
 [pocket-stack/pocketjs#92](https://github.com/pocket-stack/pocketjs/pull/92),
-with the build-contract foundation in
-[#98](https://github.com/pocket-stack/pocketjs/pull/98). The two downstream
+on the build-contract foundation from
+[#98](https://github.com/pocket-stack/pocketjs/pull/98). Native-density
+rendering is the focused follow-up in
+[#99](https://github.com/pocket-stack/pocketjs/pull/99). The two downstream
 proofs are [Pocket Figma](https://github.com/pocket-stack/pocket-figma/pull/1)
 and [OpenStrike](https://github.com/pocket-stack/open-strike/pull/9). If you want
 the contract rather than the port story, start with

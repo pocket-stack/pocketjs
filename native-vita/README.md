@@ -55,6 +55,24 @@ The VPK uses vita2d's precompiled shaders and does not require
 official PS Vita firmware; the isolated homebrew E2E deliberately runs HLE
 modules only so it cannot mutate a developer's normal VitaFS.
 
+## Install on a PS Vita
+
+Build the release VPK with the command above, then install it directly with
+VitaShell; Vita Toolbox is not required:
+
+1. Open VitaShell and press `SELECT` to start its configured USB or FTP
+   connection.
+2. Copy `pocketjs-vita.vpk` to a writable location such as
+   `ux0:/data/pocketjs-vita.vpk`.
+3. Stop the transfer, select the VPK in VitaShell, press `X`, and confirm the
+   install prompt.
+4. Return to LiveArea and launch the **PocketJS** bubble.
+
+All demo builds currently use title id `PCKT00001`. Installing another demo
+replaces the previous PocketJS build, which keeps the build-copy-install loop
+short. The VPK is self-contained; no separate app pak or shader file needs to
+be copied beside it.
+
 ## Golden E2E
 
 ```sh
