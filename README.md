@@ -153,6 +153,11 @@ Custom native hosts should use `extractHostBuildInputs()` and
 `hostBuildEnvironment()` from `@pocketjs/framework/manifest`; the complete
 Plan remains an internal build IR.
 
+The complete design, including authority boundaries, compatibility rules,
+typed backend dispatch, runtime hash handshake, extension points, and current
+limitations, is documented in
+[Platform contracts](./site/content/docs/platform-contracts.md).
+
 The Vita host is documented in [native-vita/README.md](./native-vita/README.md).
 It fills the native 960x544 screen by scaling PocketJS's 480x272 logical
 viewport exactly 2x. Physical controls and analog input are supported; touch
