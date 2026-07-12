@@ -1,0 +1,28 @@
+{
+  "app": {
+    "entry": "app/main.tsx",
+    "output": "main",
+    "framework": "solid"
+  },
+  "target": {
+    "id": "vita",
+    "hostAbi": 1
+  },
+  "viewport": {
+    "logical": [
+      480,
+      272
+    ],
+    "physical": [
+      960,
+      544
+    ],
+    "presentation": "integer-fit"
+  },
+  "features": {
+    "input.analog.left": true,
+    "input.buttons": true,
+    "text.glyphs.baked": true
+  },
+  "planHash": "sha256:0587f20793b3c3b7959db4d3f115ce2669c2612f48566aa23ecc79a27f36341f"
+}

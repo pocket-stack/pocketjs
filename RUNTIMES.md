@@ -152,6 +152,8 @@ The grammar is implemented once, as infrastructure every runtime reuses:
 | `pocket3d-bsp` | The portable half of the 3D substrate (no_std + alloc): GoldSrc maps, hull collision, the character controller, PVS visibility, and the cooked `.p3d` world format. Runs identically under wgpu and on the PSP. |
 | `pocket3d-gu` | The 3D substrate, PSP edition: renders cooked worlds through the GE (sceGu) with PVS culling, CLUT8 textures, and dynamic meshes. |
 | `pocketjs-psp` (lib) | Guest hosting + `ui` surface, PSP edition: the arena allocator, the QuickJS embedding, the DrawList GE backend (with an overlay mode for 3D compositing), pak feeding, and the DevTools mailbox — everything the 2D EBOOT proved, linkable by game EBOOTs. |
+| `pocket3d-vita` | The 3D substrate, Vita edition: CPU projection and six-plane clipping into vita2d/GXM at 960x544, painter-sorted so a PocketJS HUD can share the same scene. |
+| `pocketjs-vita` (lib) | Guest hosting + `ui` surface, Vita edition: QuickJS, pak textures, physical controller/analog input and an exact 2x 480x272-to-960x544 vita2d backend. Touch is intentionally outside the first port. |
 
 A specialized runtime is then a thin composition. OpenStrike is:
 

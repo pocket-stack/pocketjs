@@ -23,8 +23,8 @@
 //! format, so channel bytes map 1:1. The buffer is treated as opaque: the
 //! destination alpha is always written back as 255.
 
-use pocketjs_core::spec::{self, draw_op, SCREEN_H, SCREEN_W};
-use pocketjs_core::{TexView, Ui};
+use crate::spec::{self, draw_op, SCREEN_H, SCREEN_W};
+use crate::{TexView, Ui};
 
 const W: i32 = SCREEN_W as i32;
 const H: i32 = SCREEN_H as i32;
@@ -38,7 +38,12 @@ struct Clip {
     y1: i32,
 }
 
-const SCREEN: Clip = Clip { x0: 0, y0: 0, x1: W, y1: H };
+const SCREEN: Clip = Clip {
+    x0: 0,
+    y0: 0,
+    x1: W,
+    y1: H,
+};
 
 impl Clip {
     #[inline]
@@ -56,7 +61,10 @@ impl Clip {
 
 #[inline]
 fn xy(word: u32) -> (i32, i32) {
-    ((word & 0xffff) as u16 as i16 as i32, (word >> 16) as u16 as i16 as i32)
+    (
+        (word & 0xffff) as u16 as i16 as i32,
+        (word >> 16) as u16 as i16 as i32,
+    )
 }
 
 #[inline]
@@ -66,7 +74,12 @@ fn wh(word: u32) -> (i32, i32) {
 
 #[inline]
 fn channels(color: u32) -> (u32, u32, u32, u32) {
-    (color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff, color >> 24)
+    (
+        color & 0xff,
+        (color >> 8) & 0xff,
+        (color >> 16) & 0xff,
+        color >> 24,
+    )
 }
 
 // ---- pixel ops -----------------------------------------------------------------
@@ -148,7 +161,12 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 }
                 let (x, y) = xy(words[i + 1]);
                 let (w, h) = wh(words[i + 2]);
-                let c = clip.intersect(Clip { x0: x, y0: y, x1: x + w, y1: y + h });
+                let c = clip.intersect(Clip {
+                    x0: x,
+                    y0: y,
+                    x1: x + w,
+                    y1: y + h,
+                });
                 if c.x0 < c.x1 && c.y0 < c.y1 {
                     fill_rect(fb, c, words[i + 3]);
                 }
@@ -160,7 +178,17 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 }
                 let (x, y) = xy(words[i + 1]);
                 let (w, h) = wh(words[i + 2]);
-                grad_rect(fb, clip, x, y, w, h, words[i + 3], words[i + 4], words[i + 5]);
+                grad_rect(
+                    fb,
+                    clip,
+                    x,
+                    y,
+                    w,
+                    h,
+                    words[i + 3],
+                    words[i + 4],
+                    words[i + 5],
+                );
                 i += 6;
             }
             draw_op::GLYPH_RUN => {
@@ -193,7 +221,12 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 let (w, h) = wh(words[i + 2]);
                 // The core emits scissor rects already intersected with every
                 // enclosing scissor — SET (still guard against the screen).
-                clip = SCREEN.intersect(Clip { x0: x, y0: y, x1: x + w, y1: y + h });
+                clip = SCREEN.intersect(Clip {
+                    x0: x,
+                    y0: y,
+                    x1: x + w,
+                    y1: y + h,
+                });
                 i += 3;
             }
             draw_op::SCISSOR_POP => {
@@ -228,11 +261,26 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
 
 // ---- GRAD_RECT: per-axis gouraud lerp ---------------------------------------------
 
-fn grad_rect(fb: &mut [u8], clip: Clip, x: i32, y: i32, w: i32, h: i32, from: u32, to: u32, dir: u32) {
+fn grad_rect(
+    fb: &mut [u8],
+    clip: Clip,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    from: u32,
+    to: u32,
+    dir: u32,
+) {
     if w <= 0 || h <= 0 {
         return;
     }
-    let c = clip.intersect(Clip { x0: x, y0: y, x1: x + w, y1: y + h });
+    let c = clip.intersect(Clip {
+        x0: x,
+        y0: y,
+        x1: x + w,
+        y1: y + h,
+    });
     if c.x0 >= c.x1 || c.y0 >= c.y1 {
         return;
     }
@@ -327,7 +375,15 @@ fn tri(fb: &mut [u8], clip: Clip, p: &[u32]) {
                 let mix = |v0: u32, v1: u32, v2: u32| {
                     ((v0 as i64 * w0 + v1 as i64 * w1 + v2 as i64 * w2 + half) / area) as u32
                 };
-                blend_px(fb, px, py, mix(r0, r1, r2), mix(g0, g1, g2), mix(b0, b1, b2), mix(a0, a1, a2));
+                blend_px(
+                    fb,
+                    px,
+                    py,
+                    mix(r0, r1, r2),
+                    mix(g0, g1, g2),
+                    mix(b0, b1, b2),
+                    mix(a0, a1, a2),
+                );
             }
         }
     }
@@ -336,7 +392,9 @@ fn tri(fb: &mut [u8], clip: Clip, p: &[u32]) {
 // ---- GLYPH_RUN: coverage atlas cells -----------------------------------------------
 
 fn glyph_run(ui: &Ui, fb: &mut [u8], clip: Clip, slot: u8, color: u32, glyphs: &[u32]) {
-    let Some(atlas) = ui.font_atlas(slot) else { return };
+    let Some(atlas) = ui.font_atlas(slot) else {
+        return;
+    };
     let (r, g, b, a) = channels(color);
     if a == 0 {
         return;
@@ -406,7 +464,12 @@ fn texel(view: &TexView, idx: usize) -> Option<(u32, u32, u32, u32)> {
             // the lookup can never leave the 1024-byte CLUT.
             let pal = view.palette?;
             let o = view.pixels[idx] as usize * 4;
-            Some((pal[o] as u32, pal[o + 1] as u32, pal[o + 2] as u32, pal[o + 3] as u32))
+            Some((
+                pal[o] as u32,
+                pal[o + 1] as u32,
+                pal[o + 2] as u32,
+                pal[o + 3] as u32,
+            ))
         }
         _ => None,
     }
@@ -454,7 +517,9 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
     let (x2, y2) = xy(p[7]);
     let (mut u2, mut v2) = (f32::from_bits(p[8]), f32::from_bits(p[9]));
     let modulate = p[10];
-    let Some(view) = ui.texture(handle) else { return };
+    let Some(view) = ui.texture(handle) else {
+        return;
+    };
     let (ax, ay) = (2 * x0 as i64, 2 * y0 as i64);
     let (mut bx, mut by) = (2 * x1 as i64, 2 * y1 as i64);
     let (mut cx, mut cy) = (2 * x2 as i64, 2 * y2 as i64);
@@ -488,7 +553,11 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
             if w0 < 0 || w1 < 0 || w2 < 0 {
                 continue;
             }
-            let (f0, f1, f2) = (w0 as f32 * inv_area, w1 as f32 * inv_area, w2 as f32 * inv_area);
+            let (f0, f1, f2) = (
+                w0 as f32 * inv_area,
+                w1 as f32 * inv_area,
+                w2 as f32 * inv_area,
+            );
             let u = u0 * f0 + u1 * f1 + u2 * f2;
             let v = v0 * f0 + v1 * f1 + v2 * f2;
             // Nearest is the golden-pinned default path; linear is opt-in
@@ -500,7 +569,9 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
                 let ty = ((v * thf) as i32).clamp(0, th_max);
                 texel(&view, (ty * view.w as i32 + tx) as usize)
             };
-            let Some((mut r, mut g, mut b, mut a)) = sample else { return };
+            let Some((mut r, mut g, mut b, mut a)) = sample else {
+                return;
+            };
             if !identity {
                 r = (r * mr + 127) / 255;
                 g = (g * mg + 127) / 255;
@@ -527,8 +598,15 @@ fn tex_quad(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
     if w <= 0 || h <= 0 {
         return;
     }
-    let Some(view) = ui.texture(handle) else { return };
-    let c = clip.intersect(Clip { x0: x, y0: y, x1: x + w, y1: y + h });
+    let Some(view) = ui.texture(handle) else {
+        return;
+    };
+    let c = clip.intersect(Clip {
+        x0: x,
+        y0: y,
+        x1: x + w,
+        y1: y + h,
+    });
     if c.x0 >= c.x1 || c.y0 >= c.y1 {
         return;
     }
@@ -551,7 +629,9 @@ fn tex_quad(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
                 let tx = ((u * twf) as i32).clamp(0, tw_max);
                 texel(&view, (ty * view.w as i32 + tx) as usize)
             };
-            let Some((mut r, mut g, mut b, mut a)) = sample else { return };
+            let Some((mut r, mut g, mut b, mut a)) = sample else {
+                return;
+            };
             if !identity {
                 // Integer modulate, round-to-nearest (includes alpha).
                 r = (r * mr + 127) / 255;

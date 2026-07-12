@@ -1,5 +1,11 @@
 # Build pipeline
 
+This page describes the low-level JS/style/font/pak compiler. Product builds
+should first resolve `pocket.json` through `bun pocket check`, `compile`, or
+`build`; see [Platform contracts](/docs/platform-contracts/) for how one small,
+checksummed target plan becomes the authoritative input to this pipeline and
+native packaging.
+
 One command turns a PocketJS app into two files:
 
 ```sh

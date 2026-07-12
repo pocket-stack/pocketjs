@@ -2,9 +2,9 @@
 //! rasterizer, for wasm32-unknown-unknown (no wasm-bindgen; the JS host talks
 //! plain numbers + wasm linear memory).
 //!
-//! src/raster.rs holds the deterministic rasterizer (blend, gradients,
-//! triangles, glyphs, textures); `ui_render()` runs the core DrawList through
-//! it into FRAMEBUFFER.
+//! `pocketjs_core::raster` is the shared deterministic rasterizer (blend,
+//! gradients, triangles, glyphs, textures); `ui_render()` runs the core
+//! DrawList through it into FRAMEBUFFER.
 //!
 //! ABI (all little-endian, one exported fn per spec::op code):
 //!   - Strings/buffers cross via linear memory: the host calls
@@ -23,7 +23,7 @@
 use pocketjs_core::spec::{SCREEN_H, SCREEN_W};
 use pocketjs_core::Ui;
 
-mod raster;
+use pocketjs_core::raster;
 
 const FB_BYTES: usize = (SCREEN_W * SCREEN_H * 4) as usize;
 

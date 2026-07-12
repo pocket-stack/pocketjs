@@ -118,9 +118,19 @@ describe("pocket.json v2 schema", () => {
 });
 
 describe("platform registry", () => {
-  test("production advertises only the truthful PSP profile", () => {
-    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp"]);
+  test("production advertises only the truthful PSP and Vita profiles", () => {
+    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita"]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
+    expect(POCKET_TARGETS.vita.capabilities).toEqual([
+      "input.analog.left",
+      "input.buttons",
+      "text.glyphs.baked",
+    ]);
+    expect(POCKET_TARGETS.vita.display).toEqual({
+      physicalViewport: [960, 544],
+      logicalViewports: [[480, 272]],
+      presentations: ["integer-fit"],
+    });
   });
 
   test("TargetId and capability registries extend without changing the resolver", () => {
@@ -165,6 +175,27 @@ describe("semantic resolution", () => {
     expect(JSON.stringify(result.plan, null, 2) + "\n").toBe(committed);
   });
 
+  test("portable PSP baseline resolves to a byte-exact 2x Vita plan", async () => {
+    const result = validateAndResolveBuildPlan(portableInput, { target: "vita" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.target).toEqual({ id: "vita", hostAbi: 1 });
+    expect(result.plan.viewport).toEqual({
+      logical: [480, 272],
+      physical: [960, 544],
+      presentation: "integer-fit",
+    });
+    expect(result.plan.features).toEqual({
+      "input.analog.left": true,
+      "input.buttons": true,
+      "text.glyphs.baked": true,
+    });
+    const committed = await Bun.file(
+      new URL("./fixtures/plans/portable-vita.plan.json", import.meta.url),
+    ).text();
+    expect(JSON.stringify(result.plan, null, 2) + "\n").toBe(committed);
+  });
+
   test("plan checksum is independent of capability order and manifest identity", () => {
     const changed = structuredClone(portableInput) as Record<string, any>;
     changed.engine.capabilities.requires.reverse();
@@ -181,7 +212,7 @@ describe("semantic resolution", () => {
   });
 
   test("reports unknown targets and missing hard requirements", () => {
-    const unknownTarget = validateAndResolveBuildPlan(portableInput, { target: "vita" });
+    const unknownTarget = validateAndResolveBuildPlan(portableInput, { target: "switch" });
     expect(unknownTarget.ok).toBe(false);
     if (!unknownTarget.ok) expect(unknownTarget.diagnostics[0]?.code).toBe("target.unknown");
 
@@ -228,8 +259,8 @@ describe("semantic resolution", () => {
     expect(vita.plan.features["input.touch"]).toBe(true);
   });
 
-  test("production rejects unregistered future capabilities", () => {
-    const result = validateAndResolveBuildPlan(touchInput, { target: "psp" });
+  test("production Vita rejects future touch instead of advertising hardware without an API", () => {
+    const result = validateAndResolveBuildPlan(touchInput, { target: "vita" });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.diagnostics.some((item) => item.code === "capability.unknown")).toBe(true);

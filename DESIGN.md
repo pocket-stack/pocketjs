@@ -99,6 +99,8 @@ PocketJS/
                        with UV/color re-interpolation for textured/gradient quads;
                        rotated quads Sutherland-Hodgman-clipped (or culled) so no
                        negative/oversized coords ever reach a backend [R]
+    src/raster.rs      shared deterministic software rasterizer used by WASM
+                       goldens and Vita guest-side capture
   native/              Rust bin `pocketjs-psp` — the EBOOT (standalone dir, lone bin)
     Cargo.toml         psp {external-c-heap, abort-only, external-global-alloc},
                        libquickjs-sys, pocketjs-core (path)
@@ -120,7 +122,6 @@ PocketJS/
                        handles are exposed as ui.__textures / ui.__sprites [R]
   wasm/                Rust cdylib `pocketjs-wasm` — core + rasterizer, no wasm-bindgen
     src/lib.rs         extern "C" op mirror + render() → RGBA8 480×272
-    src/raster.rs      deterministic scanline rasterizer (blend, gradients, glyphs)
   src/                 TS/JS runtime shared by all hosts
     renderer.ts        Solid universal createRenderer; JS mirror tree; setProperty
                        DISPATCH TABLE [R]: class→styleId, on*→input registry,
@@ -193,7 +194,7 @@ TARGET_CFLAGS, AR_mipsel_sony_psp=llvm-ar, RUST_PSP_TARGET, RUST_PSP_ABORT_ONLY,
 RUSTFLAGS `-A linker-messages …`), `POCKETJS_APP_OUTPUT=<app>` and
 `POCKETJS_EMBED_APP=1` consumed by the stock runtime `build.rs`.
 `POCKETJS_OUTPUT_DIR` carries the CLI artifact directory without putting a
-machine-local path into the hashed build plan.
+machine-local path into the checksummed build plan.
 
 ## The native contract (`ui.*`)
 

@@ -359,7 +359,7 @@ unsafe fn apply_texture(view: &TexView) {
     sys::sceGuTexFlush();
     sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgba);
     // NEAREST remains the golden-parity default: it matches the wasm software
-    // rasterizer (wasm/src/raster.rs) that the byte-exact goldens are defined
+    // rasterizer (core/src/raster.rs) that the byte-exact goldens are defined
     // against — keeping PSP consistent with the reference — AND it avoids
     // bilinear bleed across sprite-atlas cell edges, where adjacent texels
     // belong to a DIFFERENT animation frame. LINEAR is opt-in per texture

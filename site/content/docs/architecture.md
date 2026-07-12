@@ -214,6 +214,7 @@ pocketjs/
     src/text.rs         atlas registry, cmap, measurement, inline-run layout
     src/anim.rs         tween/spring tracks; transitions on style swap; fixed dt
     src/draw.rs         tree walk → DrawList + CPU clip stage
+    src/raster.rs       shared deterministic software rasterizer
 
   native/               Rust bin `pocketjs-psp` — the PSP EBOOT
     Cargo.toml          psp, libquickjs-sys, pocketjs-core (path)
@@ -227,7 +228,6 @@ pocketjs/
 
   wasm/                 Rust cdylib `pocketjs-wasm` — core + rasterizer
     src/lib.rs          extern "C" op mirror + render() → RGBA8 480×272
-    src/raster.rs       deterministic scanline rasterizer
 
   src/                  TS/JS runtime shared by all hosts
     renderer.ts         Solid universal renderer; JS mirror tree; dispatch table
@@ -282,6 +282,9 @@ frame order are covered on the [Native contract](/docs/native-contract/) page.
 
 ## Where to go next
 
+- [Platform contracts](/docs/platform-contracts/) — how an app manifest and a
+  truthful target profile become one small, checksummed build plan consumed by
+  JS and native packaging.
 - [Build pipeline](/docs/build-pipeline/) — the two-pass build, style
   compilation, and font baking in detail.
 - [Native contract](/docs/native-contract/) — the `ui.*` ops, node lifecycle,
