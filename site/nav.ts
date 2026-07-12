@@ -55,14 +55,6 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
-    slug: "pocketjs-on-ps-vita",
-    title: "One App, Two PlayStations: PocketJS on PS Vita",
-    date: "2026-07-13",
-    description:
-      "PocketJS now builds native PS Vita VPKs without forking the app: one portable manifest, a 480×272 logical world rendered at native 960×544 density, a QuickJS + vita2d/GXM host, and 44 byte-exact Vita3K frames proving the same UI contract across two PlayStations.",
-    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
-  },
-  {
     slug: "pocket-figma",
     title: "Pocket Figma: Figma at 333 MHz",
     date: "2026-07-10",
