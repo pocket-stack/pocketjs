@@ -187,6 +187,18 @@ pub fn register_texture(ui: &Ui, handle: i32) {
     }
 }
 
+/// Resolve a DrawList texture in the Vita GPU cache, uploading core-owned
+/// textures (for example the baked rounded-corner discs) on first use.
+/// Pak/JS textures are registered eagerly, but textures minted internally by
+/// `Ui::draw` never cross those upload hooks.
+unsafe fn resolve_texture(ui: &Ui, handle: i32) -> Option<Texture> {
+    if let Some(texture) = textures().get(&handle).copied() {
+        return Some(texture);
+    }
+    register_texture(ui, handle);
+    textures().get(&handle).copied()
+}
+
 pub fn free_texture(handle: i32) {
     unsafe {
         if let Some(texture) = textures().remove(&handle) {
@@ -310,7 +322,7 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
 ///
 /// Call on the Vita render thread while a vita2d scene is open. `words` and
 /// every texture referenced by it must remain valid for this submission.
-pub unsafe fn render_over(_ui: &Ui, words: &[u32]) {
+pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
     let mut scissors: Vec<(i32, i32, i32, i32)> = Vec::new();
     let mut i = 0usize;
     while i < words.len() {
@@ -415,7 +427,7 @@ pub unsafe fn render_over(_ui: &Ui, words: &[u32]) {
             }
             spec::draw_op::TEX_QUAD if i + 9 <= words.len() => {
                 let handle = words[i + 1] as i32;
-                if let Some(&texture) = textures().get(&handle) {
+                if let Some(texture) = resolve_texture(ui, handle) {
                     let (x, y) = xy(words[i + 2]);
                     let (w, h) = wh(words[i + 3]);
                     let u0 = f32::from_bits(words[i + 4]);
@@ -443,7 +455,7 @@ pub unsafe fn render_over(_ui: &Ui, words: &[u32]) {
             }
             spec::draw_op::TEX_TRI if i + 12 <= words.len() => {
                 let handle = words[i + 1] as i32;
-                if let Some(&texture) = textures().get(&handle) {
+                if let Some(texture) = resolve_texture(ui, handle) {
                     let mut vertices = [vita2d_texture_vertex {
                         x: 0.0,
                         y: 0.0,
@@ -495,6 +507,53 @@ pub unsafe fn render_over(_ui: &Ui, words: &[u32]) {
     vita2d_disable_clipping();
 }
 
+#[cfg(feature = "capture")]
+fn validate_texture_residency(ui: &Ui, words: &[u32]) -> io::Result<()> {
+    let mut i = 0usize;
+    while i < words.len() {
+        let next = match words[i] {
+            spec::draw_op::RECT => i.checked_add(4),
+            spec::draw_op::GRAD_RECT => i.checked_add(6),
+            spec::draw_op::TRI => i.checked_add(7),
+            spec::draw_op::GLYPH_RUN if i + 2 < words.len() => {
+                let count = (words[i + 1] >> 16) as usize;
+                i.checked_add(3 + count.saturating_mul(2))
+            }
+            spec::draw_op::TEX_QUAD | spec::draw_op::TEX_TRI => {
+                let op = words[i];
+                let handle = *words.get(i + 1).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "truncated texture draw op")
+                })? as i32;
+                if ui.texture(handle).is_none() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("DrawList references stale texture handle {handle}"),
+                    ));
+                }
+                let resident = unsafe { textures().contains_key(&handle) };
+                if !resident {
+                    return Err(io::Error::other(format!(
+                        "Vita GPU texture {handle} was not resident after production rendering"
+                    )));
+                }
+                i.checked_add(if op == spec::draw_op::TEX_QUAD { 9 } else { 12 })
+            }
+            spec::draw_op::SCISSOR => i.checked_add(3),
+            spec::draw_op::SCISSOR_POP => i.checked_add(1),
+            op => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("unknown DrawList op {op} at word {i}"),
+                ));
+            }
+        }
+        .filter(|next| *next <= words.len())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "truncated DrawList op"))?;
+        i = next;
+    }
+    Ok(())
+}
+
 /// Render a deterministic golden at logical resolution and expand every pixel
 /// to a 2x2 block. Vita3K's Vulkan framebuffer is intentionally not read back:
 /// on current macOS builds that surface is not coherent with guest CDRAM and
@@ -503,6 +562,11 @@ pub unsafe fn render_over(_ui: &Ui, words: &[u32]) {
 /// 480x272 -> 960x544 fullscreen mapping used by the production GXM renderer.
 #[cfg(feature = "capture")]
 pub fn capture_golden(ui: &Ui, words: &[u32], path: &str) -> io::Result<()> {
+    // The pixels below come from the deterministic CPU oracle because current
+    // Vita3K/macOS GXM readback is black. Still verify that the production
+    // renderer made every core texture resident, so backend-only omissions
+    // (notably rounded-corner discs) cannot hide behind a passing CPU golden.
+    validate_texture_residency(ui, words)?;
     let mut logical = vec![0u8; LOGICAL_W as usize * LOGICAL_H as usize * 4];
     pocketjs_core::raster::render(ui, words, &mut logical);
 

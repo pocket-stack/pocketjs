@@ -260,7 +260,7 @@ for (const spec of specs) {
         throw new Error(`${label}: PNG bytes differ (see dist/e2e-vita3k/${label}.actual.png)`);
       }
       console.log(
-        `PASS ${label} (960x544, exact 2x, byte-exact${existsSync(vitaGoldenPath) ? ", Vita override" : ""})`,
+        `PASS ${label} (960x544, exact 2x, GXM textures resident, byte-exact${existsSync(vitaGoldenPath) ? ", Vita override" : ""})`,
       );
       passed++;
     } catch (error) {
