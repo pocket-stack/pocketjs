@@ -39,6 +39,7 @@ const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
 const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
 const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
 const LIFECYCLE_VUE_VAPOR_PATH = new URL("../src/lifecycle-vue-vapor.ts", import.meta.url).pathname;
+const PLATFORM_PATH = new URL("../src/platform.ts", import.meta.url).pathname;
 const PRELUDE_PATH = new URL("../src/prelude.ts", import.meta.url).pathname;
 const VUE_VAPOR_RUNTIME_PATH = new URL(
   "../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js",
@@ -47,7 +48,7 @@ const VUE_VAPOR_RUNTIME_PATH = new URL(
 
 const PACKAGE_NAME = "@pocketjs/framework";
 const CACHE_DIR = new URL("../.cache/transforms/", import.meta.url).pathname;
-const CACHE_VERSION = "1";
+const CACHE_VERSION = "2";
 const JSX_PARSER_OPTS: ParserOptions = { plugins: ["jsx"] };
 
 const BANNED_SOLID_IMPORTS = new Set(["createResource", "useTransition", "startTransition"]);
@@ -74,6 +75,7 @@ export const FRAMEWORKS: Record<
       config: CONFIG_PATH,
       input: INPUT_API_PATH,
       lifecycle: LIFECYCLE_PATH,
+      platform: PLATFORM_PATH,
       prelude: PRELUDE_PATH,
       renderer: RENDERER_SOLID_PATH,
     },
@@ -90,6 +92,7 @@ export const FRAMEWORKS: Record<
       config: CONFIG_PATH,
       input: INPUT_API_PATH,
       lifecycle: LIFECYCLE_VUE_VAPOR_PATH,
+      platform: PLATFORM_PATH,
       prelude: PRELUDE_PATH,
       renderer: RENDERER_VUE_VAPOR_PATH,
     },
@@ -137,6 +140,43 @@ export interface TransformResult {
 interface Collected {
   classStrings: string[];
   textCodepoints: Set<number>;
+}
+
+export type BuildFeatures = Readonly<Record<string, boolean>>;
+
+/** Fold only calls proven to reference the public platform import. */
+function makeFeatureFolder(features: BuildFeatures): PluginObj {
+  return {
+    name: "pocketjs-fold-features",
+    visitor: {
+      Program(program) {
+        // Run before the collector's Program visitor so pass 1 and pass 2 see
+        // the same target-specialized AST (Babel presets run after plugins).
+        program.traverse({
+          CallExpression(path) {
+            if (path.node.arguments.length !== 1) return;
+            const argument = path.node.arguments[0];
+            if (argument?.type !== "StringLiteral") return;
+
+            const callee = path.get("callee");
+            if (!callee.isIdentifier()) return;
+            const binding = path.scope.getBinding(callee.node.name);
+            if (!binding?.path.isImportSpecifier()) return;
+            const imported = binding.path.node.imported;
+            const importedName = imported.type === "Identifier" ? imported.name : imported.value;
+            const declaration = binding.path.parentPath;
+            if (
+              importedName !== "hasFeature" ||
+              !declaration?.isImportDeclaration() ||
+              declaration.node.source.value !== `${PACKAGE_NAME}/platform`
+            ) return;
+
+            path.replaceWith({ type: "BooleanLiteral", value: features[argument.value] === true });
+          },
+        });
+      },
+    },
+  };
 }
 
 function makeCollector(out: Collected, framework: PocketFramework): PluginObj {
@@ -221,6 +261,7 @@ async function hashKey(
   path: string,
   src: string,
   framework: PocketFramework,
+  features: BuildFeatures | undefined,
 ): Promise<string> {
   const h = new Bun.CryptoHasher("sha256");
   h.update(
@@ -239,6 +280,12 @@ async function hashKey(
       tsPresetPkg.version +
       "\0" +
       FRAMEWORKS[framework].rendererPath +
+      "\0" +
+      (features === undefined
+        ? "dynamic"
+        : JSON.stringify(
+            Object.entries(features).sort(([left], [right]) => left.localeCompare(right)),
+          )) +
       "\0" +
       path +
       "\0",
@@ -307,8 +354,9 @@ export async function transformFile(
   path: string,
   src: string,
   framework: PocketFramework,
+  options: { features?: BuildFeatures } = {},
 ): Promise<TransformResult> {
-  const key = await hashKey(path, src, framework);
+  const key = await hashKey(path, src, framework, options.features);
   const cacheFile = CACHE_DIR + key + ".json";
   const cached = (await Bun.file(cacheFile).json().catch(() => null)) as CacheEntry | null;
   if (cached && typeof cached.code === "string") {
@@ -321,13 +369,17 @@ export async function transformFile(
 
   const collected: Collected = { classStrings: [], textCodepoints: new Set() };
   const opts = transformOptions(framework);
+  const plugins = [
+    ...(options.features === undefined ? [] : [makeFeatureFolder(options.features)]),
+    makeCollector(collected, framework),
+  ];
   let res;
   if (framework === "vue-vapor") {
     await transformAsync(src, {
       filename: path,
       presets: opts.presets,
       parserOpts: opts.parserOpts,
-      plugins: [makeCollector(collected, framework)],
+      plugins,
       babelrc: false,
       configFile: false,
       sourceMaps: false,
@@ -337,6 +389,7 @@ export async function transformFile(
       filename: path,
       presets: opts.presets,
       parserOpts: opts.parserOpts,
+      plugins: options.features === undefined ? [] : [makeFeatureFolder(options.features)],
       babelrc: false,
       configFile: false,
       sourceMaps: false,
@@ -346,7 +399,7 @@ export async function transformFile(
       filename: path,
       presets: opts.presets,
       parserOpts: opts.parserOpts,
-      plugins: [makeCollector(collected, framework)],
+      plugins,
       babelrc: false,
       configFile: false,
       sourceMaps: false,
@@ -367,7 +420,7 @@ export async function transformFile(
 
 export function jsxPlugin(
   framework: PocketFramework,
-  opts: { entry?: string } = {},
+  opts: { entry?: string; features?: BuildFeatures } = {},
 ): BunPlugin {
   return {
     name: `pocketjs-${framework}-jsx`,
@@ -404,7 +457,7 @@ export function jsxPlugin(
         if (framework === "vue-vapor" && args.path === opts.entry) {
           src = `import "@pocketjs/framework/prelude";\n${src}`;
         }
-        const { code } = await transformFile(args.path, src, framework);
+        const { code } = await transformFile(args.path, src, framework, { features: opts.features });
         return { contents: code, loader: "js" };
       });
     },

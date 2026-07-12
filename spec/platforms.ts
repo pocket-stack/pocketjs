@@ -1,8 +1,11 @@
 // PocketJS platform capability registry.
 //
-// Capabilities name framework APIs that a stock host has implemented and
-// tested. They are deliberately plain identifiers: hardware specifications,
-// permissions, and runtime availability belong to their respective layers.
+// Capability ids name stable, public framework behavior that applications can
+// observe. Do not name hardware, permissions, runtime availability, backend
+// implementations, or wire formats. Register an id only after a stock host
+// implements and tests the whole contract. Hosts with the same observable
+// semantics share an id; a different execution level or guarantee gets a new
+// id.
 
 export type CapabilityRegistry = readonly string[];
 
@@ -45,7 +48,6 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   "input.analog.left",
   "input.buttons",
   "text.glyphs.baked",
-  "ui.drawlist",
 ] as const);
 
 export type PocketCapabilityId = CapabilityId<typeof POCKET_CAPABILITIES>;
@@ -73,7 +75,6 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "input.analog.left",
       "input.buttons",
       "text.glyphs.baked",
-      "ui.drawlist",
     ],
   },
 });

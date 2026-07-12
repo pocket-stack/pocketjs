@@ -21,6 +21,8 @@ export const platform: PocketPlatform = Object.freeze({
   features,
 });
 
+// Literal calls are folded by the PocketJS compiler. Keeping this runtime
+// lookup supports computed feature ids and non-manifest builds.
 export function hasFeature(feature: PocketCapabilityId): boolean {
   return platform.features[feature] === true;
 }

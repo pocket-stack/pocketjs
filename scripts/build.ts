@@ -222,7 +222,8 @@ async function walk(file: string): Promise<void> {
   visited.add(file);
   if (file.endsWith(".generated.ts")) return; // never scan generated output [R]
   const src = await Bun.file(file).text();
-  const res = await transformFile(file, src, framework); // throws with code frame on lint errors
+  // Throws with a code frame on lint errors.
+  const res = await transformFile(file, src, framework, { features: buildPlan?.features });
   for (const s of res.classStrings) {
     if (!seenClass.has(s)) {
       seenClass.add(s);
@@ -387,7 +388,7 @@ const result = await Bun.build({
   },
   minify: false,
   sourcemap: "none",
-  plugins: [jsxPlugin(framework, { entry })],
+  plugins: [jsxPlugin(framework, { entry, features: buildPlan?.features })],
 });
 if (!result.success) {
   for (const log of result.logs) console.error(log);

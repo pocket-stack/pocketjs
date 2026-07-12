@@ -1,4 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  jsxPlugin,
+  transformFile,
+  type PocketFramework,
+} from "../compiler/jsx-plugin.ts";
 
 async function bundlePlatform(defines: Record<string, string> = {}) {
   const result = await Bun.build({
@@ -34,3 +42,76 @@ describe("platform feature availability", () => {
     expect(runtime.hasFeature("input.buttons")).toBe(false);
   });
 });
+
+const featureSource = `
+  import { hasFeature as supports } from "@pocketjs/framework/platform";
+  export const renderer = supports("text.glyphs.baked")
+    ? "BAKED_TEXT_SENTINEL"
+    : "HOST_TEXT_SENTINEL";
+`;
+
+describe.each(["solid", "vue-vapor"] as const)("%s feature specialization", (framework) => {
+  test("cache keys include the resolved feature map", async () => {
+    const path = `/virtual/${framework}/feature-cache.ts`;
+    const available = await transformFile(path, featureSource, framework, {
+      features: { "text.glyphs.baked": true },
+    });
+    const unavailable = await transformFile(path, featureSource, framework, {
+      features: { "text.glyphs.baked": false },
+    });
+    expect(available.code).toContain("true");
+    expect(unavailable.code).toContain("false");
+    expect(available.code).not.toBe(unavailable.code);
+  });
+
+  test("Bun removes the unavailable branch even without minification", async () => {
+    const available = await bundleFeatureBranch(framework, true);
+    expect(available).toContain("BAKED_TEXT_SENTINEL");
+    expect(available).not.toContain("HOST_TEXT_SENTINEL");
+
+    const unavailable = await bundleFeatureBranch(framework, false);
+    expect(unavailable).not.toContain("BAKED_TEXT_SENTINEL");
+    expect(unavailable).toContain("HOST_TEXT_SENTINEL");
+  });
+});
+
+test("feature folding rejects dynamic and shadowed calls", async () => {
+  const source = `
+    import { hasFeature } from "@pocketjs/framework/platform";
+    const feature = "text.glyphs.baked" as const;
+    export const dynamic = hasFeature(feature);
+    export function choose(hasFeature: (id: string) => boolean) {
+      return hasFeature("text.glyphs.baked");
+    }
+  `;
+  const result = await transformFile("/virtual/feature-dynamic.ts", source, "solid", {
+    features: { "text.glyphs.baked": true },
+  });
+  expect(result.code.match(/hasFeature\(/g)).toHaveLength(2);
+});
+
+async function bundleFeatureBranch(
+  framework: PocketFramework,
+  available: boolean,
+): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "pocketjs-feature-fold-"));
+  const entry = join(directory, "main.ts");
+  try {
+    await Bun.write(entry, featureSource);
+    const result = await Bun.build({
+      entrypoints: [entry],
+      format: "esm",
+      target: "browser",
+      minify: false,
+      plugins: [
+        jsxPlugin(framework, {
+          features: { "text.glyphs.baked": available },
+        }),
+      ],
+    });
+    expect(result.success).toBe(true);
+    return result.outputs[0]!.text();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}

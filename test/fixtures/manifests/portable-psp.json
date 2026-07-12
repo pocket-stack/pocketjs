@@ -8,7 +8,6 @@
   "engine": {
     "capabilities": {
       "requires": [
-        "ui.drawlist",
         "text.glyphs.baked",
         "input.analog.left",
         "input.buttons"

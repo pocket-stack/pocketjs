@@ -8,7 +8,6 @@
   "engine": {
     "capabilities": {
       "requires": [
-        "ui.drawlist",
         "input.touch"
       ],
       "enhances": [

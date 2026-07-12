@@ -54,7 +54,6 @@ const syntheticTargetDefinitions = {
       "input.buttons",
       "input.touch",
       "text.glyphs.baked",
-      "ui.drawlist",
     ],
   },
 } as const satisfies Readonly<Record<string, TargetProfile<SyntheticCapabilityId>>>;
@@ -94,7 +93,7 @@ describe("pocket.json v2 schema", () => {
   test("accepts only relative entries and string capability ids", () => {
     const bad = structuredClone(portableInput) as Record<string, any>;
     bad.app.entry = "../outside.tsx";
-    bad.engine.capabilities.requires[0] = { id: "ui.drawlist", version: 1 };
+    bad.engine.capabilities.requires[0] = { id: "input.buttons", version: 1 };
     const result = validatePocketManifest(bad);
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -151,7 +150,6 @@ describe("semantic resolution", () => {
       "input.analog.left": true,
       "input.buttons": true,
       "text.glyphs.baked": true,
-      "ui.drawlist": true,
     });
     expect(result.plan.planHash).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(verifyPlanHash(result.plan)).toBe(true);
@@ -198,7 +196,7 @@ describe("semantic resolution", () => {
 
   test("rejects duplicate requires/enhances declarations", () => {
     const bad = structuredClone(portableInput) as Record<string, any>;
-    bad.engine.capabilities.enhances = ["ui.drawlist"];
+    bad.engine.capabilities.enhances = ["input.buttons"];
     const result = validateAndResolveBuildPlan(bad, { target: "psp" });
     expect(result.ok).toBe(false);
     if (result.ok) return;
