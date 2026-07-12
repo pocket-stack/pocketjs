@@ -42,7 +42,7 @@ transformation portrait (stage dress, flared wings, a phoenix final form
 that grows 52 -> 58 -> 66 px), announced by a flash ring and the boss's
 own cry — the diva chirps, the umbrella clangs.
 
-**The roster wakes as you play.** Only the CATNIP KIT answers at dusk — the
+**The roster wakes as you play.** Only the BLACK MOON CAT answers at dusk — the
 gorilla card shows a live moon-mote counter until 28 collected enemy drops
 wake the mountain. Its reveal no longer shares the midboss-defeat frame.
 **And no pilot switches
@@ -54,7 +54,7 @@ awake, and the night takes the run.
 
 | form | wakes | shot | the ability |
 | --- | --- | --- | --- |
-| CATNIP KIT | at dusk | homing orbs | a black-and-gold moon cat, a white moon waxing on its brow; **dances with death** — wider graze ring, double graze glow |
+| BLACK MOON CAT | at dusk | pearly prismatic homing paws | a black-and-gold moon cat, a white moon waxing on its brow; **dances with death** — wider graze ring, double graze glow |
 | MOON PRIMROSE | collect 28 enemy-drop moon motes | **banana boomerangs** | a hulking gorilla with carved abs and the sweetest little face; at most three aloft, each cuts through on the way out AND the way home, every damaging touch heals the most wounded form by 2, and only a caught banana can be thrown again (the HUD counts his hand); motes are worth double glow |
 
 Spell cards reinforce each role: NINE LIVES (homing burst and nearby clear),
@@ -105,9 +105,9 @@ browser's autoplay policy. The headless sim and the PSP never install a
 sink, and the simulation is byte-identical either way.
 
 `test/nightbloom.sim.test.ts` drives two tapes through the headless sim
-host: THE MARKSMAN, a full clear (~163 s — the catnip opens alone, the
+host: THE MARKSMAN, a full clear (~163 s — the black moon cat opens alone, the
 moon-mote gate wakes the gorilla, and both forms see the dawn),
-and THE SLEEPER, whose lone catnip falls at ~34 s with nobody awake to
+and THE SLEEPER, whose lone black moon cat falls at ~34 s with nobody awake to
 switch to. It asserts repeat-identity, chaos immunity,
 strict 4 Hz / 2 Hz subsampling of both tapes, cross-rate byte-equal outcome
 screens, augury effect timing, and the exact score / graze / kill / bloom

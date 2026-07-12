@@ -771,7 +771,7 @@ function NativePlayerShotLayer(props: { game: Nightbloom }) {
   for (let i = 0; i < batch.capacity; i++) {
     const at = i * 4;
     // The Image node's PixelLab texture is shared by the whole particle
-    // batch. White keeps its authored mint/lime palette intact; there is
+    // batch. White keeps its authored pearl/prismatic palette intact; there is
     // still only one retained node and one packed host call per repaint.
     floats[at + 2] = 10;
     words[at + 3] = 0xffffffff;
@@ -1795,7 +1795,7 @@ function CodexBestiary() {
               </View>
             )}
           </For>
-          <Text class="text-xs text-slate-400 pt-1">ONLY THE CATNIP FLIES AT DUSK.</Text>
+          <Text class="text-xs text-slate-400 pt-1">ONLY THE BLACK MOON CAT FLIES AT DUSK.</Text>
           <Text class="text-xs text-slate-400">ASCEND ONCE: THE SAPLING WAKES.</Text>
           <Text class="text-xs text-slate-400">FELL THE UMBRELLA FOR THE APE.</Text>
         </View>

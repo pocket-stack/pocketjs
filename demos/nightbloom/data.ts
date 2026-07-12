@@ -79,6 +79,10 @@ const PLANT_STYLE =
   "adorable kawaii chibi plant creature for a pixel art garden defense game, huge sparkling eyes, " +
   "tiny blushing cheeks, soft rounded shapes, pastel colors with a gentle night glow, " +
   "clean thick outline, single centered character, full body";
+const BLACK_MOON_CAT_STYLE =
+  "adorable kawaii chibi celestial cat spirit for a pixel art night defense game, huge sparkling eyes, " +
+  "tiny blushing cheeks, sleek midnight-black white and gold palette, soft rounded shapes, gentle moon glow, " +
+  "no botanical elements, no plants, no leaves, no flowers, no green, clean thick outline, single centered character, full body";
 const FOE_STYLE =
   "adorable kawaii chibi yokai spirit for a pixel art night defense game, plump rounded body, " +
   "big shiny puppy eyes, tiny stubby limbs, blushing cheeks, more cute than scary, " +
@@ -131,8 +135,8 @@ export const PLANT_ORDER: PlantId[] = ["catnip", "primrose"];
 export const PLANTS: Record<PlantId, PlantDef> = {
   catnip: {
     id: "catnip",
-    name: "CATNIP KIT",
-    stageNames: ["CATNIP KIT", "NEKOMATA", "NINELIVES"],
+    name: "BLACK MOON CAT",
+    stageNames: ["BLACK MOON CAT", "NEKOMATA", "NINELIVES"],
     hp: [110, 140, 170],
     armor: [0, 0, 0],
     speed: 120,
@@ -169,7 +173,7 @@ export const MOTE_GLOW = 8;
 export const GRAZE_GLOW = 2;
 /** Graze radius around the hitbox, px. */
 export const GRAZE_R = 11;
-/** The catnip dances with death: wider graze ring, double its glow. */
+/** The black moon cat dances with death: wider graze ring, double its glow. */
 export const CATNIP_GRAZE_R = 16;
 export const CATNIP_GRAZE_MULT = 2;
 /** The gorilla guards the garden: every damaging banana touch heals the
@@ -428,10 +432,15 @@ export const MOTE_SPRITE = "mote.png";
 // chains (stage II from I, III from II) require the base to exist first.
 // ---------------------------------------------------------------------------
 
-function plantArt(def: PlantDef, stagePrompts: [string, string, string], baseSeed: number): ArtEntry[] {
+function plantArt(
+  def: PlantDef,
+  stagePrompts: [string, string, string],
+  baseSeed: number,
+  style = PLANT_STYLE,
+): ArtEntry[] {
   return stagePrompts.map((p, i) => ({
     name: def.sprites[i],
-    prompt: `${p}, ${PLANT_STYLE}`,
+    prompt: `${p}, ${style}`,
     w: UNIT,
     h: UNIT,
     seed: baseSeed + i,
@@ -487,10 +496,10 @@ export const ART: ArtEntry[] = [
     initFrom: "p-primrose-2.png", initStrength: 320,
   },
   ...plantArt(PLANTS.catnip, [
-    "tiny baby kitten sprout, small and round, sleek black fur with golden paws chest and ear tips, a white crescent moon mark on its forehead, leaf ears, huge adorable eyes, curled leaf tail",
-    "the same black and gold cat grown into a young sleek two-tailed cat blossom, taller now, white crescent moon mark glowing on its forehead, golden bell collar, playful grin, two swishing leaf tails",
-    "the same black and gold cat fully grown, a large regal spirit cat, many glowing petal tails fanned wide, a bright white full moon mark shining on its forehead, tiny golden crown, sparkling whiskers",
-  ], 1030),
+    "tiny black moon kitten, small and round, sleek midnight-black fur with golden paws chest and ear tips, a white crescent moon mark on its forehead, natural cat ears, huge adorable eyes, curled black tail, no plants, no leaves, no green",
+    "the same black and gold moon cat grown into a young sleek two-tailed nekomata, taller now, white crescent moon mark glowing on its forehead, golden bell collar, playful grin, two swishing black tails, no plants, no leaves, no green",
+    "the same black and gold moon cat fully grown, a large regal spirit cat, nine dark celestial tails fanned wide, a bright white full moon mark shining on its forehead, tiny golden crown, sparkling whiskers, no plants, no leaves, no green",
+  ], 1030, BLACK_MOON_CAT_STYLE),
   // --- foes (32x32, transparent, walk west) --------------------------------
   ...foeArt(FOES.wisp, [
     "floating paper lantern ghost with a tiny warm flame heart, chubby cheeks and a happy grin, soft ragged paper skirt",
@@ -515,10 +524,10 @@ export const ART: ArtEntry[] = [
   // --- projectiles + mote (32x32, transparent, drawn at 16px) ---------------
   {
     name: "shot-orb.png",
-    prompt: `bright emerald cat-paw comet projectile, four tiny lime toe sparks around a mint crescent core, friendly player attack, unmistakable cat magic, no pink, no red, ${SHOT_STYLE}`,
+    prompt: `pearly white luminous cat-paw projectile, brilliant white paw-pad core, opalescent rainbow gradient only along the edges shifting through icy cyan violet and soft gold, prismatic shimmer, friendly celestial cat magic, unmistakable player attack, no green, not pink-dominant, ${SHOT_STYLE}`,
     w: SHOT,
     h: SHOT,
-    seed: 3012,
+    seed: 3021,
     transparent: true,
   },
   { name: "shot-mochi.png", prompt: `small round white mochi rice cake, ${SHOT_STYLE}`, w: SHOT, h: SHOT, seed: 3003, transparent: true },

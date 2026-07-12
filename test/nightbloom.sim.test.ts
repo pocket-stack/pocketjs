@@ -7,11 +7,11 @@
 // 1/60 s micro-ticks (ticksPerFrame() per host frame).
 //
 // Two tapes:
-//   THE MARKSMAN — a full clear (~183 s): the catnip opens the night alone,
+//   THE MARKSMAN — a full clear (~183 s): the black moon cat opens alone,
 //                  twenty-eight gathered moon motes rouse the healing gorilla,
 //                  rotation walks both forms
 //                  through the pilot seat to break the diva's last card.
-//   THE SLEEPER  — nobody home (~40 s): the lone catnip dies with no form
+//   THE SLEEPER  — nobody home (~40 s): the lone black moon cat dies with no form
 //                  awake to switch to, and the night ends on the spot.
 //
 // Claims, same as the cafe/tidelight suites but on gameplay:
@@ -39,7 +39,7 @@ import { BTN } from "../spec/spec.ts";
 import { validateContent } from "../demos/nightbloom/data.ts";
 
 const MARKSMAN_SECONDS = 190; // dawn settles at ~184.1 s
-const SLEEPER_SECONDS = 60; // the lone catnip falls at ~40 s
+const SLEEPER_SECONDS = 60; // the lone black moon cat falls at ~40 s
 
 // THE MARKSMAN — sweep-dodge and rotate. The switch presses no-op while a
 // form is still locked, then pick the gorilla up after the mote gate wakes it;
@@ -52,7 +52,7 @@ const MARKSMAN = (() => {
     T.push({ at: t, hold: BTN.CROSS | dir });
     dir = dir === BTN.LEFT ? BTN.RIGHT : BTN.LEFT;
   }
-  // dusk: the catnip hunts alone
+  // dusk: the black moon cat hunts alone
   T.push({ at: 21.0, press: BTN.TRIANGLE }); // NINE LIVES
   T.push({ at: 40.0, press: BTN.TRIANGLE }); // NINE LIVES
   // from midnight: 9 s cycles — lantern seat, STONEHEART (heal + shield),
@@ -175,7 +175,7 @@ describe("nightbloom: the night actually happened", () => {
     }
   });
 
-  test("the sleeper's lone catnip falls with nobody to switch to", () => {
+  test("the sleeper's lone black moon cat falls with nobody to switch to", () => {
     for (const t of [s60, s2]) {
       expect(treeHasText(t.tree, "ETERNAL NIGHT")).toBe(true);
       expect(treeHasText(t.tree, "THE GARDEN FALLS DARK")).toBe(true);

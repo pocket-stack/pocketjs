@@ -384,7 +384,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     glow: cell(0),
     spellReady: cell(1),
     spellCdTicks: 0,
-    unlocked: cell(i === 0), // only the catnip answers at dusk
+    unlocked: cell(i === 0), // only the black moon cat answers at dusk
     unlockedAt: cell(-1),
   }));
 
