@@ -382,7 +382,10 @@ struct Voice {
     ptr: *const i16,
     frames: u32,
     /// 16.16 fixed-point index into the source PCM (integer part = sample).
-    cursor: u32,
+    /// u64, NOT u32: a u32's integer part caps at 65535 frames (~6 s of
+    /// 11025 Hz source), which real BGM clips exceed — the cursor would wrap
+    /// and the end/loop checks would never fire.
+    cursor: u64,
     /// 16.16 per-output-sample cursor increment = `source_rate * 65536 / 44100`.
     step: u32,
     loop_flag: bool,
@@ -494,23 +497,25 @@ fn clamp_i16(v: i32) -> i16 {
     }
 }
 
-/// Per-sample ramp step from `from` to `to` over `samples` samples. Floors
-/// to +/-1 when integer division truncates a nonzero difference to 0 (a huge
-/// `samples` count with a tiny gain delta) so the ramp is still monotonic and
-/// visibly moving rather than appearing frozen; `advance_fade`/
-/// `advance_bus_ramps` clamp against overshoot, and both always snap exactly
-/// to `to` when their remaining-count reaches 0, so this floor never causes
-/// the final value to be wrong — only (rarely) to arrive a few samples early.
+/// Per-sample ramp step from `from` to `to` over `samples` samples, rounded
+/// AWAY from zero. Truncating toward zero would leave the residual as a snap
+/// at the ramp's final sample (e.g. a full-scale 300 ms fade @ 44100 Hz
+/// truncates 2.47 to 2, leaving a ~19% gain jump at the end — an audible
+/// click); rounding away from zero makes the ramp land on the target
+/// slightly EARLY instead, where `advance_fade`/`advance_bus_ramps` clamp
+/// it — monotonic, click-free, and the fade is at most a fraction shorter.
+/// Also subsumes the tiny-delta case (a nonzero diff never yields step 0).
 #[inline]
 fn fade_step(from: i32, to: i32, samples: u32) -> i32 {
     if samples == 0 {
         return 0;
     }
     let diff = to as i64 - from as i64;
-    let mut step = diff / samples as i64;
-    if step == 0 && diff != 0 {
-        step = if diff > 0 { 1 } else { -1 };
+    if diff == 0 {
+        return 0;
     }
+    let s = samples as i64;
+    let step = if diff > 0 { (diff + s - 1) / s } else { (diff - s + 1) / s };
     step as i32
 }
 
@@ -725,7 +730,7 @@ unsafe fn sample_voice(vi: usize, kind: VKind) -> Option<(i32, i32, i32)> {
 unsafe fn sample_sfx(vi: usize) -> Option<(i32, i32, i32)> {
     let v = &mut VOICES[vi];
     let idx = v.cursor >> 16;
-    if idx >= v.frames {
+    if idx >= v.frames as u64 {
         v.kind = VKind::Free;
         return None;
     }
@@ -734,7 +739,7 @@ unsafe fn sample_sfx(vi: usize) -> Option<(i32, i32, i32)> {
     // checked, and `frames` is exactly the SND header's frameCount used to
     // bound-check the entry at registration time (pak.rs's register_snd_entry).
     let raw = *v.ptr.add(idx as usize) as i32;
-    v.cursor = v.cursor.wrapping_add(v.step);
+    v.cursor += v.step as u64;
     let sample = q15_mul(raw, v.gain_cur); // constant for Sfx: no ramp
     Some((sample, v.pan_l_q15, v.pan_r_q15))
 }
@@ -746,15 +751,15 @@ unsafe fn sample_bgm(vi: usize) -> Option<(i32, i32, i32)> {
         return Some((0, Q15_ONE, Q15_ONE));
     }
     let mut idx = v.cursor >> 16;
-    if idx >= v.frames {
+    if idx >= v.frames as u64 {
         if !(v.loop_flag && v.frames > v.loop_start) {
             v.kind = VKind::Free;
             return None;
         }
-        let loop_len = v.frames - v.loop_start;
-        v.cursor = v.cursor.wrapping_sub(loop_len << 16);
+        let loop_len = (v.frames - v.loop_start) as u64;
+        v.cursor -= loop_len << 16; // u64: no overflow even for long clips
         idx = v.cursor >> 16;
-        if idx >= v.frames {
+        if idx >= v.frames as u64 {
             // Malformed loop metadata (shouldn't happen — pak.rs validates
             // loop_start < frames at registration): bail instead of spinning.
             v.kind = VKind::Free;
@@ -763,7 +768,7 @@ unsafe fn sample_bgm(vi: usize) -> Option<(i32, i32, i32)> {
     }
     // SAFETY: same .rodata contract as sample_sfx; idx bound-checked above.
     let raw = *v.ptr.add(idx as usize) as i32;
-    v.cursor = v.cursor.wrapping_add(v.step);
+    v.cursor += v.step as u64;
     advance_fade(v);
     Some((q15_mul(raw, v.gain_cur), Q15_ONE, Q15_ONE)) // BGM never pans
 }
@@ -840,8 +845,8 @@ unsafe fn waveform_sample(v: &mut Voice) -> i32 {
 }
 
 /// Advance a BGM/BgmDying voice's linear gain ramp by one sample. Clamps
-/// against overshoot (see `fade_step`'s floor-to-+/-1 comment) and, on
-/// completion, snaps exactly to `gain_target` and frees the voice if
+/// against overshoot (see `fade_step`'s round-away-from-zero comment) and,
+/// on completion, snaps exactly to `gain_target` and frees the voice if
 /// `die_at_fade_end`.
 unsafe fn advance_fade(v: &mut Voice) {
     if v.fade_remaining > 0 {
@@ -1007,6 +1012,10 @@ unsafe fn handle_stop_bgm(fade_samples: u32) {
         v.kind = VKind::Free; // instant cut + release
         return;
     }
+    // Force unpaused: a paused voice freezes its fade ramp (sample_bgm), so
+    // stopping a paused track with a fade would otherwise leave a zombie
+    // voice holding the BGM slot forever instead of fading out and freeing.
+    v.paused = false;
     v.gain_target = 0;
     v.fade_remaining = fade_samples;
     v.gain_step = fade_step(v.gain_cur, 0, fade_samples);
