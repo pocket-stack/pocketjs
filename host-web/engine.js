@@ -16,6 +16,7 @@
 
 import { createWasmUi, FB_W, FB_H } from "./wasm-ops.js";
 import { drawHud, wasmMemoryBytes } from "./hud.js";
+import { createWebAudio } from "./audio.js";
 
 // spec/spec.ts BTN (plain module — keep the literal in sync with the spec).
 export const BTN = {
@@ -66,6 +67,43 @@ const NUBMAP = {
 };
 const nubHeld = new Set();
 
+// spec/spec.ts PAK_MAGIC/PAK_HEADER_SIZE/PAK_ENTRY_SIZE — hand-rolled (like
+// BTN above): host-web has no build step for these files. Mirrors the
+// directory format src/pak.ts parses inside the guest bundle; audio.js needs
+// its OWN read of the raw pak bytes because it runs host-side, outside the
+// bundle's fresh-per-reload module scope.
+const PAK_MAGIC = 0x4b504344; // 'DCPK' LE
+const PAK_HEADER_SIZE = 32;
+const PAK_ENTRY_SIZE = 24;
+
+/** Parse a fetched .pak ArrayBuffer into a key -> raw-bytes lookup function.
+ *  Safe no-op (returns null for every key) when the pak is absent or
+ *  malformed — used to feed host-side SND lookups (audio.js). */
+function buildPakFindEntry(ab) {
+  if (!ab || ab.byteLength < PAK_HEADER_SIZE) return () => null;
+  const dv = new DataView(ab);
+  if (dv.getUint32(0, true) !== PAK_MAGIC) return () => null;
+  const entryCount = dv.getUint32(8, true);
+  const dirOff = dv.getUint32(12, true);
+  const namesOff = dv.getUint32(16, true);
+  const u8 = new Uint8Array(ab);
+  const map = new Map();
+  for (let i = 0; i < entryCount; i++) {
+    const e = dirOff + i * PAK_ENTRY_SIZE;
+    const blobOff = dv.getUint32(e + 4, true);
+    const byteLen = dv.getUint32(e + 8, true);
+    const nameOff = dv.getUint32(e + 12, true);
+    const nameLen = dv.getUint16(e + 16, true);
+    let key = "";
+    for (let k = 0; k < nameLen; k++) key += String.fromCharCode(u8[namesOff + nameOff + k]);
+    map.set(key, { off: blobOff, len: byteLen });
+  }
+  return (key) => {
+    const ent = map.get(key);
+    return ent ? u8.slice(ent.off, ent.off + ent.len) : null;
+  };
+}
+
 function packedAnalog() {
   let x = 0;
   let y = 0;
@@ -80,6 +118,7 @@ function packedAnalog() {
 }
 
 let wasm = null; // createWasmUi result
+let audio = null; // createWebAudio result (globalThis.audio); null pre-mount
 let canvas = null;
 let ctx = null;
 let imageData = null;
@@ -258,6 +297,7 @@ function stop() {
 
 function onKey(down) {
   return (e) => {
+    if (down) audio?.__unlock?.(); // first keydown unlocks the AudioContext (AUDIO.md)
     if (NUBMAP[e.code]) {
       e.preventDefault();
       if (down) nubHeld.add(e.code);
@@ -274,8 +314,10 @@ function onKey(down) {
 
 /** Virtual on-screen buttons ([data-btn] elements). */
 export function pressVirtual(bit, down) {
-  if (down) held |= bit;
-  else held &= ~bit;
+  if (down) {
+    audio?.__unlock?.(); // touch users unlock via the virtual d-pad too
+    held |= bit;
+  } else held &= ~bit;
 }
 
 // ---- lifecycle ------------------------------------------------------------------
@@ -330,6 +372,12 @@ export async function load(name, opts = {}) {
   try {
     const pak = await fetch("dist/" + name + ".pak");
     globalThis.__pak = pak.ok ? await pak.arrayBuffer() : undefined;
+    // Audio (AUDIO.md): fresh globalThis.audio BEFORE eval, same contract as
+    // globalThis.ui. Tear down the previous reload's context/BGM first — a
+    // new AudioContext per load would otherwise leak on every reload.
+    audio?.dispose?.();
+    audio = createWebAudio(buildPakFindEntry(globalThis.__pak));
+    globalThis.audio = audio;
     const srcRes = await fetch("dist/" + name + ".js");
     if (!srcRes.ok) throw new Error("dist/" + name + ".js not found — run: bun scripts/build.ts " + name);
     const src = await srcRes.text();
