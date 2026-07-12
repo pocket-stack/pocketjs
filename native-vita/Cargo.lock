@@ -40,11 +40,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b40ca9252762c466af32d0b1002e91e4e1bc5398f77455e55474deb466355ff5"
 
 [[package]]
+name = "libc"
+version = "0.2.186"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
+
+[[package]]
 name = "libquickjs-sys"
-version = "0.10.0"
+version = "0.9.0"
+source = "git+https://github.com/doodlewind/quickjs-rs.git?rev=20b758acad6fd4b10fbbfa6685123ed3e9b32483#20b758acad6fd4b10fbbfa6685123ed3e9b32483"
 dependencies = [
  "cc",
  "copy_dir",
+ "libc",
 ]
 
 [[package]]

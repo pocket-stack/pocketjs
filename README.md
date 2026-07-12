@@ -11,8 +11,8 @@ under an 8 MB memory budget. Write Solid or Vue Vapor components, run them on
 QuickJS, and let PocketJS move layout, styling, text and animation into a tiny
 `no_std` Rust core.
 
-It runs on real PSP hardware, PPSSPP, the browser (WASM), native macOS
-windows (wgpu) and headless Bun. Full design + contracts:
+It runs on real PSP and PS Vita hardware, PPSSPP, Vita3K, the browser (WASM),
+native macOS windows (wgpu) and headless Bun. Full design + contracts:
 [DESIGN.md](./DESIGN.md). PocketJS is growing into a family of specialized
 runtimes — Rust cores, spec-pinned surfaces, one QuickJS guest — documented
 in [RUNTIMES.md](./RUNTIMES.md); the 3D base lives in
@@ -121,7 +121,8 @@ bun pocket check --target psp         # validate pocket.json + resolved target c
 bun pocket compile --target psp       # typecheck and compile, for custom native hosts
 bun pocket build --target psp         # typecheck, compile, and package the target
 bun scripts/build.ts <app> [--framework=solid|vue-vapor] [--extra-chars=…]
-bun run psp / bun run dev / bun run wasm      # EBOOT / web host / wasm core
+bun run psp / bun run vita / bun run dev / bun run wasm
+bun run e2e:vita                     # Vita3K, 960x544 exact-2x golden E2E
 bun psplink                           # interactive real PSP switcher over PSPLINK
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
@@ -148,6 +149,11 @@ They describe fixed host API support, not permissions or live device state.
 Custom native hosts should use `extractHostBuildInputs()` and
 `hostBuildEnvironment()` from `@pocketjs/framework/manifest`; the complete
 Plan remains an internal build IR.
+
+The Vita host is documented in [native-vita/README.md](./native-vita/README.md).
+It fills the native 960x544 screen by scaling PocketJS's 480x272 logical
+viewport exactly 2x. Physical controls and analog input are supported; touch
+input is intentionally deferred.
 
 ## DevTools + time travel
 

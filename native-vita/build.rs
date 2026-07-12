@@ -25,7 +25,19 @@ fn main() {
     };
     fs::write(Path::new(&out_dir).join("app.pak"), pak).unwrap();
 
+    let capture_input = env::var("POCKETJS_CAPTURE_INPUT").unwrap_or_default();
+    let capture_frames = env::var("POCKETJS_CAPTURE_FRAMES").unwrap_or_default();
+    let capture_dir = env::var("POCKETJS_CAPTURE_DIR")
+        .unwrap_or_else(|_| String::from("ux0:data/pocketjs-captures"));
+
+    println!("cargo:rustc-env=POCKETJS_CAPTURE_INPUT={capture_input}");
+    println!("cargo:rustc-env=POCKETJS_CAPTURE_FRAMES={capture_frames}");
+    println!("cargo:rustc-env=POCKETJS_CAPTURE_DIR={capture_dir}");
+
     println!("cargo:rerun-if-changed=../dist/{app}.js");
     println!("cargo:rerun-if-changed=../dist/{app}.pak");
     println!("cargo:rerun-if-env-changed=POCKETJS_APP");
+    println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_INPUT");
+    println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_FRAMES");
+    println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_DIR");
 }

@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Vita dependencies
-vitasdk-sys = { version = "0.3.3", features = ["SceCtrl_stub"] }
+# Vita dependencies. vita2d ships precompiled GXM shaders, so VPKs remain
+# self-contained and do not require a separately extracted libshacccg.suprx.
+vitasdk-sys = { version = "0.3.3", features = ["SceCtrl_stub", "SceGxm_stub", "SceKernelThreadMgr_stub", "SceLibKernel_stub"] }
 vita2d-sys = "0.1.1"
 
-libquickjs-sys = { path = "../../quickjs-rs/libquickjs-sys" }
+libquickjs-sys = { git = "https://github.com/doodlewind/quickjs-rs.git", rev = "20b758acad6fd4b10fbbfa6685123ed3e9b32483" }
 pocketjs-core = { path = "../core", features = ["std"] }
 
 [features]
@@ -18,3 +19,9 @@ bench = []
 [package.metadata.vita]
 title_id = "PCKT00001"
 title_name = "PocketJS"
+
+# vita-elf-create consumes sceUserMainThreadStackSize from the ELF symbol
+# table. The release default strips that symbol before conversion and falls
+# back to Vita's 4 KiB stack, which is too small for QuickJS.
+[package.metadata.vita.profile.release]
+strip_symbols = false

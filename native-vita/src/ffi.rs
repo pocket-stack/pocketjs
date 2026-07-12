@@ -1,4 +1,4 @@
-//! QuickJS bindings: the `globalThis.ui` namespace — the PSP side of the
+//! QuickJS bindings: the `globalThis.ui` namespace — the native-console side of the
 //! HostOps contract (spec/spec.ts OP table; JS caller in src/host.ts).
 //!
 //! Registration pattern copied from dreamcart runtime/src/gfx.rs register():
@@ -15,30 +15,32 @@
 //! walks it and calls renderer.registerTexture(name, handle) so JSX
 //! `src="<name>"` resolves.
 
-use std::string::String;
-use std::vec::Vec;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use libquickjs_sys::*;
 use pocketjs_core::Ui;
-
-#[inline]
-fn JS_UNDEFINED() -> JSValue {
-    JSValue {
-        u: JSValueUnion { int32: 0 },
-        tag: JS_TAG_UNDEFINED as i64,
-    }
-}
 
 static mut UI: Option<Ui> = None;
 
 /// Create the single core instance (call once, on the worker thread, AFTER
 /// the arena-backed global allocator is linked in — Ui::new allocates).
+///
+/// # Safety
+///
+/// Call exactly once on the Vita render thread, with no outstanding reference
+/// to the process-global UI.
 pub unsafe fn init_ui() -> &'static mut Ui {
     UI = Some(Ui::new());
     ui()
 }
 
 /// The single core instance. Panics if init_ui was never called.
+///
+/// # Safety
+///
+/// The caller must stay on the Vita render thread and must not create another
+/// live mutable reference to the global UI.
 pub unsafe fn ui() -> &'static mut Ui {
     UI.as_mut().expect("ffi::init_ui not called")
 }
@@ -48,7 +50,13 @@ pub unsafe fn ui() -> &'static mut Ui {
 // ---------------------------------------------------------------------------
 
 #[inline]
-unsafe fn arg_i32(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) -> i32 {
+/// Read an integer argument from a QuickJS callback.
+///
+/// # Safety
+///
+/// `ctx` and the first `argc` entries of `argv` must be valid for the duration
+/// of the call.
+pub unsafe fn arg_i32(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) -> i32 {
     if (i as i32) >= argc {
         return 0;
     }
@@ -58,7 +66,13 @@ unsafe fn arg_i32(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) 
 }
 
 #[inline]
-unsafe fn arg_f64(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) -> f64 {
+/// Read a floating-point argument from a QuickJS callback.
+///
+/// # Safety
+///
+/// `ctx` and the first `argc` entries of `argv` must be valid for the duration
+/// of the call.
+pub unsafe fn arg_f64(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) -> f64 {
     if (i as i32) >= argc {
         return 0.0;
     }
@@ -74,12 +88,12 @@ unsafe fn buffer_bytes(ctx: *mut JSContext, val: JSValue) -> Option<(*const u8, 
     let mut len: size_t = 0;
     let p = JS_GetArrayBuffer(ctx, &mut len, val);
     if !p.is_null() {
-        return Some((p as *const u8, len as usize));
+        return Some((p as *const u8, len));
     }
     // Not an ArrayBuffer: clear the pending TypeError, try `.buffer` +
     // `.byteOffset`/`.byteLength` (typed-array view).
     JS_FreeValue(ctx, JS_GetException(ctx));
-    let buf = JS_GetPropertyStr(ctx, val, b"buffer\0".as_ptr() as *const _);
+    let buf = JS_GetPropertyStr(ctx, val, c"buffer".as_ptr());
     let mut blen: size_t = 0;
     let bp = JS_GetArrayBuffer(ctx, &mut blen, buf);
     // `val` retains its ArrayBuffer, so dropping this extra ref is safe.
@@ -88,15 +102,15 @@ unsafe fn buffer_bytes(ctx: *mut JSContext, val: JSValue) -> Option<(*const u8, 
         JS_FreeValue(ctx, JS_GetException(ctx));
         return None;
     }
-    let off_v = JS_GetPropertyStr(ctx, val, b"byteOffset\0".as_ptr() as *const _);
+    let off_v = JS_GetPropertyStr(ctx, val, c"byteOffset".as_ptr());
     let mut off: i32 = 0;
     JS_ToInt32(ctx, &mut off, off_v);
     JS_FreeValue(ctx, off_v);
-    let len_v = JS_GetPropertyStr(ctx, val, b"byteLength\0".as_ptr() as *const _);
+    let len_v = JS_GetPropertyStr(ctx, val, c"byteLength".as_ptr());
     let mut vlen: i32 = 0;
     JS_ToInt32(ctx, &mut vlen, len_v);
     JS_FreeValue(ctx, len_v);
-    if off < 0 || vlen < 0 || (off as usize) + (vlen as usize) > blen as usize {
+    if off < 0 || vlen < 0 || (off as usize) + (vlen as usize) > blen {
         return None;
     }
     Some((bp.add(off as usize) as *const u8, vlen as usize))
@@ -123,7 +137,7 @@ unsafe extern "C" fn js_destroy_node(
     argv: *mut JSValue,
 ) -> JSValue {
     ui().destroy_node(arg_i32(ctx, argc, argv, 0));
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
 unsafe extern "C" fn js_insert_before(
@@ -137,7 +151,7 @@ unsafe extern "C" fn js_insert_before(
         arg_i32(ctx, argc, argv, 1),
         arg_i32(ctx, argc, argv, 2),
     );
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
 unsafe extern "C" fn js_remove_child(
@@ -147,7 +161,7 @@ unsafe extern "C" fn js_remove_child(
     argv: *mut JSValue,
 ) -> JSValue {
     ui().remove_child(arg_i32(ctx, argc, argv, 0), arg_i32(ctx, argc, argv, 1));
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
 unsafe extern "C" fn js_set_style(
@@ -157,7 +171,7 @@ unsafe extern "C" fn js_set_style(
     argv: *mut JSValue,
 ) -> JSValue {
     ui().set_style(arg_i32(ctx, argc, argv, 0), arg_i32(ctx, argc, argv, 1));
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
 unsafe extern "C" fn js_set_prop(
@@ -171,28 +185,28 @@ unsafe extern "C" fn js_set_prop(
         arg_i32(ctx, argc, argv, 1) as u8,
         arg_f64(ctx, argc, argv, 2),
     );
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
 /// Shared body of setText/replaceText (identical core semantics).
 unsafe fn set_text_impl(ctx: *mut JSContext, argc: i32, argv: *mut JSValue) -> JSValue {
     if argc < 2 {
-        return JS_UNDEFINED();
+        return JS_UNDEFINED;
     }
     let id = arg_i32(ctx, argc, argv, 0);
     let mut len: size_t = 0;
     let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(1), 0);
     if s.is_null() {
-        return JS_UNDEFINED();
+        return JS_UNDEFINED;
     }
     // Lossy: QuickJS encodes lone UTF-16 surrogates (e.g. a string sliced
     // mid-emoji) as WTF-8 bytes that are invalid UTF-8 — they become U+FFFD
     // (matching the web host) instead of silently dropping the whole update.
     let text =
-        std::string::String::from_utf8_lossy(core::slice::from_raw_parts(s as *const u8, len as usize));
+        alloc::string::String::from_utf8_lossy(core::slice::from_raw_parts(s as *const u8, len));
     ui().set_text(id, &text);
     JS_FreeCString(ctx, s);
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
 unsafe extern "C" fn js_set_text(
@@ -231,7 +245,79 @@ unsafe extern "C" fn js_upload_texture(
     let bytes = core::slice::from_raw_parts(p, len);
     let handle = ui().upload_texture(bytes, w as u32, h as u32, psm as u32);
     if handle >= 0 {
-        crate::graphics::register_texture(handle, bytes, w as u32, h as u32, psm as u32);
+        // GE samples RAM: write the core's aligned copy (pixels + CLUT) back
+        // once at upload.
+        crate::graphics::register_texture(ui(), handle);
+    }
+    JS_NewInt32(ctx, handle)
+}
+
+/// loadTileTexture(key, index) -> handle | -1 (spec op 23): decode ONE tile
+/// of a TILESET pak entry, looked up by key in the embedded pak at runtime
+/// (pak::feed skips `ui:tile.*` — tiles stream on demand, they never bulk-
+/// load at boot). Missing pak/key and malformed entries all surface as -1.
+unsafe extern "C" fn js_load_tile_texture(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc < 2 {
+        return JS_NewInt32(ctx, -1);
+    }
+    let mut len: size_t = 0;
+    let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+    if s.is_null() {
+        return JS_NewInt32(ctx, -1);
+    }
+    // Pak keys are UTF-8 by construction (compiler/pak.ts); a WTF-8 lone
+    // surrogate from JS can't match any entry, so treat it as a miss.
+    let handle = match core::str::from_utf8(core::slice::from_raw_parts(s as *const u8, len)) {
+        Ok(key) => match crate::pak::find(crate::pak::installed(), key) {
+            Some(blob) => ui().upload_tileset_tile(blob, arg_i32(ctx, argc, argv, 1) as u32),
+            None => -1,
+        },
+        Err(_) => -1,
+    };
+    JS_FreeCString(ctx, s);
+    if handle >= 0 {
+        crate::graphics::register_texture(ui(), handle);
+    }
+    JS_NewInt32(ctx, handle)
+}
+
+/// freeTexture(handle) (spec op 24). Stale/unknown handles are no-ops in the
+/// core, so no validation here.
+unsafe extern "C" fn js_free_texture(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let handle = arg_i32(ctx, argc, argv, 0);
+    crate::graphics::free_texture(handle);
+    ui().free_texture(handle);
+    JS_UNDEFINED
+}
+
+/// uploadImgEntry(blob) -> handle | -1 (spec op 25): a self-contained IMG
+/// pak entry (header + flags + pixel stream), the dynamic-image counterpart
+/// of the boot-time `ui:img.*` feed.
+unsafe extern "C" fn js_upload_img_entry(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc < 1 {
+        return JS_NewInt32(ctx, -1);
+    }
+    let Some((p, len)) = buffer_bytes(ctx, *argv.offset(0)) else {
+        return JS_NewInt32(ctx, -1);
+    };
+    let handle = ui().upload_img_entry(core::slice::from_raw_parts(p, len));
+    if handle >= 0 {
+        crate::graphics::register_texture(ui(), handle);
     }
     JS_NewInt32(ctx, handle)
 }
@@ -243,7 +329,7 @@ unsafe extern "C" fn js_set_image(
     argv: *mut JSValue,
 ) -> JSValue {
     ui().set_image(arg_i32(ctx, argc, argv, 0), arg_i32(ctx, argc, argv, 1));
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
 unsafe extern "C" fn js_set_sprite(
@@ -259,7 +345,7 @@ unsafe extern "C" fn js_set_sprite(
         arg_i32(ctx, argc, argv, 3) as u32,
         arg_i32(ctx, argc, argv, 4) as u32,
     );
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
 unsafe extern "C" fn js_animate(
@@ -284,7 +370,7 @@ unsafe extern "C" fn js_cancel_anim(
     argv: *mut JSValue,
 ) -> JSValue {
     ui().cancel_anim(arg_i32(ctx, argc, argv, 0));
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
 unsafe extern "C" fn js_set_focus(
@@ -294,10 +380,10 @@ unsafe extern "C" fn js_set_focus(
     argv: *mut JSValue,
 ) -> JSValue {
     ui().set_focus(arg_i32(ctx, argc, argv, 0));
-    JS_UNDEFINED()
+    JS_UNDEFINED
 }
 
-/// Not used on PSP (pak.rs feeds the core natively before eval), but
+/// Normally fed natively at boot (pak.rs feeds the core natively before eval), but
 /// registered so the full HostOps surface exists. Returns bool.
 unsafe extern "C" fn js_load_styles(
     ctx: *mut JSContext,
@@ -330,7 +416,6 @@ unsafe extern "C" fn js_load_font_atlas(
     let bytes = core::slice::from_raw_parts(p, len);
     let ok = ui().load_font_atlas(bytes);
     if ok {
-        // Slot lives at byte 12 of the atlas header (text.rs Atlas::parse).
         let slot = bytes.get(12).copied().unwrap_or(0);
         if let Some(atlas) = ui().font_atlas(slot) {
             crate::graphics::register_font_atlas(slot, atlas);
@@ -356,29 +441,161 @@ unsafe extern "C" fn js_measure_text(
     let slot = arg_i32(ctx, argc, argv, 1) as u8;
     // Lossy for the same reason as set_text_impl: lone surrogates -> U+FFFD.
     let text =
-        std::string::String::from_utf8_lossy(core::slice::from_raw_parts(s as *const u8, len as usize));
+        alloc::string::String::from_utf8_lossy(core::slice::from_raw_parts(s as *const u8, len));
     let width = ui().measure_text(&text, slot);
     JS_FreeCString(ctx, s);
     JS_NewFloat64(ctx, width as f64)
 }
 
 // ---------------------------------------------------------------------------
+// DevTools (spec ops 18..22 + the mailbox transport; DEVTOOLS.md)
+// ---------------------------------------------------------------------------
+
+// libquickjs-sys omits JS_NewStringLen; the linked QuickJS C library provides
+// it (same local-extern pattern as main.rs's JS_NewArrayBuffer).
+extern "C" {
+    fn JS_NewStringLen(ctx: *mut JSContext, str1: *const u8, len1: usize) -> JSValue;
+}
+
+unsafe extern "C" fn js_debug_inspect(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().debug_inspect(arg_i32(ctx, argc, argv, 0));
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_debug_rect_xy(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, ui().debug_rect_xy())
+}
+
+unsafe extern "C" fn js_debug_rect_wh(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, ui().debug_rect_wh())
+}
+
+unsafe extern "C" fn js_debug_pause(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().debug_pause(arg_i32(ctx, argc, argv, 0) != 0);
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_debug_step(
+    _ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    ui().debug_step();
+    JS_UNDEFINED
+}
+
+/// ui.__dbgActive() -> bool: whether the PSPLINK/memstick mailbox was found
+/// at boot (dbg::init). The JS shim only builds a transport when true.
+unsafe extern "C" fn js_dbg_active(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewBool(ctx, crate::dbg::active())
+}
+
+/// ui.__dbgPoll() -> string | undefined: new complete JSON lines from the
+/// bridge (may batch several). The shim rate-limits calls to ~every 10
+/// frames; each call is a few sceIo round trips over usbhostfs.
+unsafe extern "C" fn js_dbg_poll(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    match crate::dbg::poll() {
+        Some(s) => JS_NewStringLen(ctx, s.as_ptr(), s.len()),
+        None => JS_UNDEFINED,
+    }
+}
+
+/// ui.__dbgShot() -> bool: dump the displayed framebuffer to
+/// pocketjs-dbg/shot.raw (the bridge converts it to PNG panel-side).
+unsafe extern "C" fn js_dbg_shot(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewBool(ctx, crate::dbg::shot())
+}
+
+/// ui.__dbgSend(line): append one JSON line to the outbound mailbox.
+unsafe extern "C" fn js_dbg_send(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc >= 1 {
+        let mut len: size_t = 0;
+        let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+        if !s.is_null() {
+            crate::dbg::send(core::slice::from_raw_parts(s as *const u8, len));
+            JS_FreeCString(ctx, s);
+        }
+    }
+    JS_UNDEFINED
+}
+
+// ---------------------------------------------------------------------------
 // registration
 // ---------------------------------------------------------------------------
 
-unsafe fn add_fn(
+/// Register one C function onto a JS object (shared by extra surfaces
+/// like OpenStrike's `strike` namespace).
+///
+/// # Safety
+///
+/// `ctx` and `obj` must belong to the active QuickJS realm, `name` must be
+/// NUL-terminated, and `f` must obey the QuickJS callback ABI.
+pub unsafe fn add_fn(
     ctx: *mut JSContext,
     obj: JSValue,
     name: &'static [u8], // NUL-terminated
     f: unsafe extern "C" fn(*mut JSContext, JSValue, i32, *mut JSValue) -> JSValue,
     nargs: i32,
 ) {
-    let v = JS_NewCFunction2(ctx, Some(f), name.as_ptr() as *const _, nargs, JSCFunctionEnum_JS_CFUNC_generic, 0);
+    let v = JS_NewCFunction2(
+        ctx,
+        Some(f),
+        name.as_ptr() as *const _,
+        nargs,
+        JS_CFUNC_generic,
+        0,
+    );
     JS_SetPropertyStr(ctx, obj, name.as_ptr() as *const _, v);
 }
 
 /// Install `globalThis.ui` (full HostOps surface + `__textures` + `__sprites`).
 /// `textures` and `sprites` come from pak::feed.
+///
+/// # Safety
+///
+/// `ctx` and `global` must be live values from the same QuickJS realm, and
+/// registration must run once on its owning thread.
 pub unsafe fn register(
     ctx: *mut JSContext,
     global: JSValue,
@@ -404,6 +621,20 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"loadStyles\0", js_load_styles, 1);
     add_fn(ctx, ui_obj, b"loadFontAtlas\0", js_load_font_atlas, 1);
     add_fn(ctx, ui_obj, b"measureText\0", js_measure_text, 2);
+    // DevTools ops + mailbox transport (DEVTOOLS.md; debug-only, default-off).
+    add_fn(ctx, ui_obj, b"debugInspect\0", js_debug_inspect, 1);
+    add_fn(ctx, ui_obj, b"debugRectXY\0", js_debug_rect_xy, 0);
+    add_fn(ctx, ui_obj, b"debugRectWH\0", js_debug_rect_wh, 0);
+    add_fn(ctx, ui_obj, b"debugPause\0", js_debug_pause, 1);
+    add_fn(ctx, ui_obj, b"debugStep\0", js_debug_step, 0);
+    // Texture streaming ops (spec ops 23..25: deep-zoom tiles + dynamic IMGs).
+    add_fn(ctx, ui_obj, b"loadTileTexture\0", js_load_tile_texture, 2);
+    add_fn(ctx, ui_obj, b"freeTexture\0", js_free_texture, 1);
+    add_fn(ctx, ui_obj, b"uploadImgEntry\0", js_upload_img_entry, 1);
+    add_fn(ctx, ui_obj, b"__dbgActive\0", js_dbg_active, 0);
+    add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
+    add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);
+    add_fn(ctx, ui_obj, b"__dbgShot\0", js_dbg_shot, 0);
 
     // ui.__textures: pak image name -> texture handle (see module docs).
     let tex_obj = JS_NewObject(ctx);
@@ -418,7 +649,7 @@ pub unsafe fn register(
             JS_NewInt32(ctx, *handle),
         );
     }
-    JS_SetPropertyStr(ctx, ui_obj, b"__textures\0".as_ptr() as *const _, tex_obj);
+    JS_SetPropertyStr(ctx, ui_obj, c"__textures".as_ptr(), tex_obj);
 
     // ui.__sprites: pak sprite name -> { handle, frames, cols, step }. The JS
     // runtime (src/index.ts) reads these and registerSprite()s them; <Sprite>
@@ -429,14 +660,19 @@ pub unsafe fn register(
         cname.extend_from_slice(s.name.as_bytes());
         cname.push(0);
         let meta = JS_NewObject(ctx);
-        JS_SetPropertyStr(ctx, meta, b"handle\0".as_ptr() as *const _, JS_NewInt32(ctx, s.handle));
-        JS_SetPropertyStr(ctx, meta, b"frames\0".as_ptr() as *const _, JS_NewInt32(ctx, s.frames as i32));
-        JS_SetPropertyStr(ctx, meta, b"cols\0".as_ptr() as *const _, JS_NewInt32(ctx, s.cols as i32));
-        JS_SetPropertyStr(ctx, meta, b"step\0".as_ptr() as *const _, JS_NewInt32(ctx, s.step as i32));
+        JS_SetPropertyStr(ctx, meta, c"handle".as_ptr(), JS_NewInt32(ctx, s.handle));
+        JS_SetPropertyStr(
+            ctx,
+            meta,
+            c"frames".as_ptr(),
+            JS_NewInt32(ctx, s.frames as i32),
+        );
+        JS_SetPropertyStr(ctx, meta, c"cols".as_ptr(), JS_NewInt32(ctx, s.cols as i32));
+        JS_SetPropertyStr(ctx, meta, c"step".as_ptr(), JS_NewInt32(ctx, s.step as i32));
         JS_SetPropertyStr(ctx, spr_obj, cname.as_ptr() as *const _, meta);
     }
-    JS_SetPropertyStr(ctx, ui_obj, b"__sprites\0".as_ptr() as *const _, spr_obj);
+    JS_SetPropertyStr(ctx, ui_obj, c"__sprites".as_ptr(), spr_obj);
 
     // JS_SetPropertyStr consumes ownership of ui_obj.
-    JS_SetPropertyStr(ctx, global, b"ui\0".as_ptr() as *const _, ui_obj);
+    JS_SetPropertyStr(ctx, global, c"ui".as_ptr(), ui_obj);
 }

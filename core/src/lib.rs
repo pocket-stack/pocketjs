@@ -34,6 +34,7 @@ pub mod anim;
 pub mod codec;
 pub mod draw;
 pub mod layout;
+pub mod raster;
 pub mod spec;
 pub mod style;
 pub mod text;

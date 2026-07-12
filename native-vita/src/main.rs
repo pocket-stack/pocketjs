@@ -1,157 +1,109 @@
-use std::ffi::c_void;
-use vitasdk_sys::*;
-use libquickjs_sys::*;
-
-mod ffi;
-mod graphics;
-mod pak;
+#[cfg(not(feature = "capture"))]
+use pocketjs_vita::input;
+use pocketjs_vita::{graphics, vita_log, Runtime};
 
 static APP_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/game.js"));
 static APP_PAK: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/app.pak"));
 
-/// VitaSDK reads this weak symbol to size the main thread's stack; the
-/// default (256 KB) is exactly QuickJS's default stack budget
-/// (JS_DEFAULT_STACK_SIZE), so by the time JS_NewRuntime() runs — after
-/// vita2d/ctrl init and pak::feed have already used part of it — QuickJS's
-/// shape-cloning during JS_Eval overflows the real stack and corrupts the
-/// return chain, landing PC at 0x0.
+#[cfg(feature = "capture")]
+static CAPTURE_INPUT: &str = env!("POCKETJS_CAPTURE_INPUT");
+#[cfg(feature = "capture")]
+static CAPTURE_FRAMES: &str = env!("POCKETJS_CAPTURE_FRAMES");
+#[cfg(feature = "capture")]
+static CAPTURE_DIR: &str = env!("POCKETJS_CAPTURE_DIR");
+
 #[no_mangle]
 #[used]
-pub static sceUserMainThreadStackSize: u32 = 1024 * 1024;
+pub static sceUserMainThreadStackSize: u32 = 2 * 1024 * 1024;
 
-// ---------------------------------------------------------------------------
-extern "C" {
-    fn sceIoOpen(file: *const i8, flags: i32, mode: i32) -> i32;
-    fn sceIoWrite(fd: i32, data: *const core::ffi::c_void, size: usize) -> i32;
-    fn sceIoClose(fd: i32) -> i32;
-    fn sceClibPrintf(fmt: *const i8, ...) -> i32;
-}
-
-macro_rules! vita_print {
-    ($msg:expr) => {
-        unsafe {
-            let msg = concat!($msg, "\n\0");
-            let fd = sceIoOpen(c"tty0:".as_ptr() as *const i8, 1, 0); // 1 = O_WRONLY
-            if fd >= 0 {
-                sceIoWrite(fd, msg.as_ptr() as *const _, msg.len() - 1);
-                sceIoClose(fd);
-            }
+#[cfg(feature = "capture")]
+fn scripted_buttons(frame: u32) -> i32 {
+    let mut buttons = 0;
+    let mut latest = None;
+    for item in CAPTURE_INPUT.split(',') {
+        let Some((at, mask)) = item.split_once(':') else {
+            continue;
+        };
+        let Some(at) = at.parse::<u32>().ok().filter(|at| *at <= frame) else {
+            continue;
+        };
+        if latest.is_none_or(|previous| at >= previous) {
+            latest = Some(at);
+            buttons = if let Some(hex) = mask.strip_prefix("0x") {
+                i32::from_str_radix(hex, 16).unwrap_or(0)
+            } else {
+                mask.parse::<i32>().unwrap_or(0)
+            };
         }
-    };
+    }
+    buttons
 }
 
-unsafe fn log_exception(ctx: *mut JSContext) {
-    let e = JS_GetException(ctx);
-    let mut len: size_t = 0;
-    let s = JS_ToCStringLen2(ctx, &mut len, e, 0);
-    if !s.is_null() {
-        sceClibPrintf("[PocketJS js error] %.*s\n\0".as_ptr() as *const i8, len as i32, s);
-        JS_FreeCString(ctx, s);
+#[cfg(feature = "capture")]
+fn capture_frames() -> Vec<u32> {
+    CAPTURE_FRAMES
+        .split(',')
+        .filter_map(|value| value.parse::<u32>().ok())
+        .collect()
+}
+
+fn fail(message: &str) -> ! {
+    vita_log(format_args!("[PocketJS Vita] {message}"));
+    #[cfg(feature = "capture")]
+    {
+        let _ = std::fs::create_dir_all(CAPTURE_DIR);
+        let _ = std::fs::write(format!("{CAPTURE_DIR}/error.txt"), message);
     }
-    JS_FreeValue(ctx, e);
+    loop {
+        std::thread::yield_now();
+    }
 }
 
 fn main() {
     unsafe {
-        vita_print!("[PocketJS] PS Vita Host Initialized");
+        let mut runtime = Runtime::new(APP_PAK).unwrap_or_else(|error| fail(&error));
+        runtime.eval(APP_JS).unwrap_or_else(|error| fail(&error));
 
-        vita_print!("[PocketJS] Init graphics");
-        // Init graphics
-        vita2d_sys::vita2d_init();
-        vita2d_sys::vita2d_set_clear_color(0xFF000000);
-        // Enable vsync so vita2d_swap_buffers blocks until vblank.
-        vita2d_sys::vita2d_set_vblank_wait(1);
+        #[cfg(feature = "capture")]
+        let wanted = capture_frames();
+        #[cfg(feature = "capture")]
+        let last_capture = wanted.iter().copied().max().unwrap_or(0);
 
-        // Configure SceCtrl
-        vita_print!("[PocketJS] Configure input");
-        vitasdk_sys::sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
-
-        // Init UI core
-        vita_print!("[PocketJS] Init UI core");
-        let ui = ffi::init_ui();
-
-        // Feed assets
-        vita_print!("[PocketJS] Feed assets");
-        let (textures, sprites) = pak::feed(ui, APP_PAK);
-
-        // QuickJS
-        vita_print!("[PocketJS] Init QuickJS");
-        let rt = JS_NewRuntime();
-        let ctx = JS_NewContext(rt);
-        let global = JS_GetGlobalObject(ctx);
-
-        ffi::register(ctx, global, &textures, &sprites);
-
-        if !APP_PAK.is_empty() {
-            vita_print!("[PocketJS] Exposing __pak arraybuffer");
-            let p = APP_PAK.as_ptr() as *mut c_void;
-            let ab = JS_NewArrayBuffer(
-                ctx,
-                p as *mut u8,
-                APP_PAK.len() as u32,
-                None,
-                p as *mut c_void,
-                0,
-            );
-            JS_SetPropertyStr(ctx, global, b"__pak\0".as_ptr() as *const _, ab);
-        }
-
-        vita_print!("[PocketJS] Evaluating JS");
-        let res = JS_Eval(
-            ctx,
-            APP_JS.as_ptr() as *const i8,
-            (APP_JS.len() - 1) as u32,
-            c"game.js".as_ptr(),
-            JS_EVAL_TYPE_GLOBAL as i32,
-        );
-
-        if JS_ValueGetTag(res) == JS_TAG_EXCEPTION {
-            log_exception(ctx);
-            return;
-        }
-        JS_FreeValue(ctx, res);
-
-        let frame_fn = JS_GetPropertyStr(ctx, global, b"frame\0".as_ptr() as *const _);
-        if JS_IsUndefined(frame_fn) {
-            vita_print!("[PocketJS] globalThis.frame is undefined");
-            return;
-        }
-
-        let mut pad_data: SceCtrlData = std::mem::zeroed();
-
-        vita_print!("[PocketJS] Entering main loop");
-        let mut loop_count = 0;
+        let mut frame = 0u32;
         loop {
-            if loop_count < 10 {
-                vita_print!("[PocketJS] loop start");
-            }
-            vitasdk_sys::sceCtrlPeekBufferPositive(0, &mut pad_data, 1);
-            let mask = pad_data.buttons as i32;
+            #[cfg(feature = "capture")]
+            let buttons = scripted_buttons(frame);
+            #[cfg(not(feature = "capture"))]
+            let buttons = input::read().buttons as i32;
 
-            let mut args = [JS_NewInt32(ctx, mask)];
-            let r = JS_Call(ctx, frame_fn, global, 1, args.as_mut_ptr());
-            if JS_ValueGetTag(r) == JS_TAG_EXCEPTION {
-                log_exception(ctx);
-            }
-            JS_FreeValue(ctx, r);
+            runtime.frame(buttons).unwrap_or_else(|error| fail(&error));
+            runtime.tick();
+            runtime.render();
 
-            loop {
-                let mut pctx: *mut JSContext = std::ptr::null_mut();
-                if JS_ExecutePendingJob(rt, &mut pctx) <= 0 {
-                    break;
+            graphics::present();
+
+            #[cfg(feature = "capture")]
+            if wanted.contains(&frame) {
+                let path = format!("{CAPTURE_DIR}/f{frame:04}.rgba");
+                runtime
+                    .capture_golden(&path)
+                    .unwrap_or_else(|error| fail(&error.to_string()));
+            }
+
+            #[cfg(feature = "capture")]
+            if frame >= last_capture {
+                let _ = std::fs::create_dir_all(CAPTURE_DIR);
+                let _ = std::fs::write(format!("{CAPTURE_DIR}/done"), b"ok\n");
+                // Vita3K 0.2.1/macOS can fault while tearing down GXM from
+                // sceKernelExitProcess. The E2E host owns process lifetime:
+                // leave the completed guest parked after publishing `done`,
+                // then let the driver terminate the emulator cleanly.
+                loop {
+                    std::thread::yield_now();
                 }
             }
 
-            let ui = ffi::ui();
-            ui.tick();
-
-            let dl = ui.draw();
-            graphics::render(&dl.words);
-            
-            if loop_count < 10 {
-                vita_print!("[PocketJS] loop end");
-                loop_count += 1;
-            }
+            frame = frame.wrapping_add(1);
         }
     }
 }
