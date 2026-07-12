@@ -131,6 +131,34 @@ export const OP = {
   uploadImgEntry: 25, //  (blob) -> handle | -1. Upload a self-contained IMG
   //                      entry (compiler/pak.ts layout, v2: PSM_T8 palette +
   //                      optional RLE + filter flags parsed core-side).
+  // -- Audio surface (globalThis.audio — NOT ui.*): optional, default-off,
+  //    NEVER implemented by pocketjs-core, never used by tests/goldens/tapes
+  //    (see AUDIO.md). Shares this append-only op-code registry with the
+  //    ui.* surface purely so numbers never collide; these codes never
+  //    cross the ui.* FFI — hosts mount globalThis.audio separately. -------
+  playSfx: 26, //          (key: string, volume: f32, pan: f32) — one-shot
+  //                       SFX from the pak (resolved host-side to
+  //                       audio:sfx.<key>, mirroring loadTileTexture).
+  //                       volume 0..1 (x sfx x master gain); pan -1..1
+  //                       (0 = center). Unknown key: silent no-op.
+  playSynth: 27, //        (wave: ENUMS.Waveform, freq: f32, freqEnd: f32,
+  //                       durMs: f32, attackMs: f32, releaseMs: f32,
+  //                       volume: f32) — one-shot procedural voice: linear
+  //                       frequency sweep freq -> freqEnd over durMs, linear
+  //                       attack/release envelope in ms. Routed through the
+  //                       sfx bus.
+  playBgm: 28, //          (key: string, loop: 0|1, fadeMs: f32, volume: f32)
+  //                       — start/switch the single music track (resolved
+  //                       host-side to audio:bgm.<key>). fadeMs cross-fades
+  //                       from the current track where the host can, else
+  //                       cuts. Same key as the playing track: no-op (phase
+  //                       kept).
+  stopBgm: 29, //          (fadeMs: f32) — fade the track to silence and
+  //                       release it.
+  pauseBgm: 30, //         (paused: 0|1) — freeze/resume the track cursor
+  //                       (idempotent).
+  setChannelVolume: 31, // (channel: ENUMS.AudioChannel, volume: f32) — live
+  //                       bus gain. Hosts ramp ~10ms to avoid clicks.
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -377,6 +405,18 @@ export const ENUMS = {
     Linear: 0, EaseIn: 1, EaseOut: 2, EaseInOut: 3,
     OutBack: 4, Spring: 5, SpringBouncy: 6, CubicBezier: 7,
   },
+  /**
+   * Audio bus selector for `audio.setChannelVolume` (op 31, AUDIO.md). Audio
+   * has no core implementation — this enum never crosses the ui.* FFI.
+   */
+  AudioChannel: { Master: 0, Sfx: 1, Bgm: 2 },
+  /**
+   * Procedural waveform for `audio.playSynth` (op 27) / `SynthDesc.wave`
+   * (AUDIO.md). pulse25/pulse12 are 25%/12.5% duty pulses; noise is a
+   * 15-bit LFSR. Hosts render the same waveform math so a synth sound is
+   * identical everywhere.
+   */
+  Waveform: { Square: 0, Pulse25: 1, Pulse12: 2, Triangle: 3, Saw: 4, Sine: 5, Noise: 6 },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -518,6 +558,46 @@ export const TILESET_FLAG_LINEAR = 1 << 1;
 /** Pak key family for TILESET entries. NOT fed to the core at boot — tiles
  *  stream on demand through the loadTileTexture op. */
 export const keyTileset = (name: string): string => `ui:tile.${name}`;
+
+// ---------------------------------------------------------------------------
+// SND pak entry — baked SFX/BGM audio clips (AUDIO.md)
+// ---------------------------------------------------------------------------
+// Audio surface (globalThis.audio — NOT ui.*): optional, default-off, NEVER
+// implemented by pocketjs-core, never used by tests/goldens/tapes (see
+// AUDIO.md). Baked from an app's sounds.json: each entry is decoded
+// (RIFF/WAVE, PCM 8/16-bit), downmixed to mono, resampled, and packed under
+// audio:sfx.<name> or (bgm: true) audio:bgm.<name> — see keySfx/keyBgm below,
+// mirroring the keyTileset pak-key convention above. Old hosts skip unknown
+// audio: keys, so this is forward compatible.
+//
+//   Header (24 bytes):
+//     off 0  u32  magic       = 0x44534b50  bytes 'P','K','S','D'
+//     off 4  u16  version     = 1
+//     off 6  u16  flags       bit 0 = loop (BGM loops from loopStart)
+//     off 8  u32  sampleRate  22050 default, 11025 allowed
+//     off 12 u32  frameCount  mono sample count
+//     off 16 u32  loopStart   sample index (iff loop flag)
+//     off 20 u32  reserved    (0)
+//     off 24 data frameCount x s16 LE mono
+//
+// v1 budget: BGM = loopable chiptune-length clips, <= ~1 MB per track
+// (22050 Hz s16 mono = 44.1 KB/s -> 1 MB ~= 23 s at that rate; 11025 Hz
+// halves it). ADPCM compression is future work (the version field is the
+// hinge); real streaming (ms0:/UMD IO) is explicitly out of scope.
+
+export const SND_MAGIC = 0x44534b50; // 'PKSD' LE
+export const SND_VERSION = 1;
+export const SND_HEADER_SIZE = 24;
+export const SND_FLAG_LOOP = 1 << 0;
+export const SND_RATE_DEFAULT = 22050;
+
+/** Pak key family for one-shot SND SFX entries — resolved host-side from the
+ *  bare string key passed to `audio.playSfx` (AUDIO.md), mirroring
+ *  keyTileset. */
+export const keySfx = (name: string): string => `audio:sfx.${name}`;
+/** Pak key family for looping SND BGM entries — resolved host-side from the
+ *  bare string key passed to `audio.playBgm`. */
+export const keyBgm = (name: string): string => `audio:bgm.${name}`;
 
 // ---------------------------------------------------------------------------
 // Font slots

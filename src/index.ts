@@ -18,6 +18,7 @@ if (typeof (globalThis as { queueMicrotask?: unknown }).queueMicrotask !== "func
 
 import { detectHost, installFrameHandler, installHost, type HostOps } from "./host.ts";
 import { initDevtools, wrapFrameHandler } from "./devtools.ts";
+import { initAudio, resetAudio, type AudioOps } from "./sound.ts";
 import {
   createElement,
   registerTexture as rendererRegisterTexture,
@@ -47,6 +48,9 @@ export interface RenderOptions {
   styles?: Record<string, number>;
   /** App pack; defaults to globalThis.__pak when present. */
   pak?: ArrayBuffer;
+  /** Audio surface (AUDIO.md) — optional, default-off; injected ops win over
+   *  globalThis.audio. Omitted entirely on hosts with no audio. */
+  audio?: AudioOps;
 }
 
 export type MountOptions = RenderOptions;
@@ -123,6 +127,7 @@ function createLayer(style: Record<string, number>): NodeMirror {
 export function render(code: () => unknown, opts: RenderOptions = {}): () => void {
   const host = detectHost(opts.ops);
   installHost(host);
+  initAudio(opts.audio); // AUDIO.md: globalThis.audio (or opts.audio), never ui.*
 
   setStyleResolver(resolveStyle);
   if (opts.styles) registerStyles(opts.styles);
@@ -213,6 +218,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
       host.ops.destroyNode(child.id); // recursive native destroy
     }
     runSweep(); // anything already detached this frame is garbage too
+    resetAudio(); // stop bgm + clear runtime audio state (test isolation)
   };
 }
 
@@ -234,6 +240,7 @@ export function mount(code: () => unknown, opts: MountOptions = {}): () => void 
     ops,
     styles: opts.styles ?? DEFAULT_STYLE_IDS,
     pak: opts.pak,
+    audio: opts.audio,
   });
   return dispose;
 }

@@ -78,6 +78,12 @@ pub mod op {
     pub const LOAD_TILE_TEXTURE: u8 = 23;
     pub const FREE_TEXTURE: u8 = 24;
     pub const UPLOAD_IMG_ENTRY: u8 = 25;
+    pub const PLAY_SFX: u8 = 26;
+    pub const PLAY_SYNTH: u8 = 27;
+    pub const PLAY_BGM: u8 = 28;
+    pub const STOP_BGM: u8 = 29;
+    pub const PAUSE_BGM: u8 = 30;
+    pub const SET_CHANNEL_VOLUME: u8 = 31;
 }
 
 /// Property ids (u8, stable, append-only). Groups:
@@ -288,6 +294,28 @@ pub enum Easing {
     Spring = 5,
     SpringBouncy = 6,
     CubicBezier = 7,
+}
+
+/// audio bus selector for `audio.setChannelVolume` (AUDIO.md).
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AudioChannel {
+    Master = 0,
+    Sfx = 1,
+    Bgm = 2,
+}
+
+/// procedural synth waveform for `audio.playSynth`/`SynthDesc.wave` (AUDIO.md).
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Waveform {
+    Square = 0,
+    Pulse25 = 1,
+    Pulse12 = 2,
+    Triangle = 3,
+    Saw = 4,
+    Sine = 5,
+    Noise = 6,
 }
 
 /// PSM texture pixel formats — MUST equal rust-psp TexturePixelFormat
