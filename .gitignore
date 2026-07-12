@@ -3,6 +3,9 @@ node_modules/
 target/
 .DS_Store
 
+# secrets — PIXELLAB_API_KEY for demos/*/gen-assets.ts lives here
+.env
+
 # pass-1 transform cache (content-hash keyed; safe to delete any time)
 .cache/
 # per-app build output of scripts/build.ts (dist/ is ignored repo-wide too)

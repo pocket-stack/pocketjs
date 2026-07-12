@@ -8,9 +8,9 @@
 // signal with four subscribers, every rifle shot. A per-frame game value
 // (ammo counter, health bar fill) cannot afford it.
 //
-// `hot.text` / `hot.prop` write straight to the native ops with a per-node
-// last-value gate: an unchanged value costs one comparison, a changed one
-// costs one FFI call (~50 µs on hardware). Rules:
+// `hot.text` / `hot.prop` / `hot.position` write straight to the native ops
+// with a per-node last-value gate: an unchanged value costs one comparison,
+// a changed value costs one FFI call (~50 µs on hardware). Rules:
 //
 //   - a hot-driven value must NOT also have a Solid binding (two writers,
 //     last one wins — keep the JSX side a static initial value);
@@ -25,10 +25,17 @@
 
 import { NODE_TYPE, PROP, type PropName } from "../spec/spec.ts";
 import { encodePropValue, getOps } from "./host.ts";
-import type { NodeMirror } from "./native-tree.ts";
+import { setProp as setNodeProp, type NodeMirror } from "./native-tree.ts";
 
 const lastText = new WeakMap<NodeMirror, string>();
-const lastProp = new WeakMap<NodeMirror, Record<string, number>>();
+type HotNode = NodeMirror & { __pocketHotProps?: Record<string, number>; __pocketHotImage?: string };
+
+/** Hot prop state belongs to the mirror node and dies with it. A direct field
+ *  is materially cheaper than a WeakMap lookup in QuickJS's per-frame loops. */
+function propCache(node: NodeMirror): Record<string, number> {
+  const hotNode = node as HotNode;
+  return hotNode.__pocketHotProps ??= {};
+}
 
 /** The text-run node under `node`: itself, or its first text child (the
  *  node Solid's `{expr}` insert created). */
@@ -56,11 +63,7 @@ export function text(node: NodeMirror | undefined, value: string | number): void
 /** Imperatively set a numeric style prop (opacity, scaleX, translateX, …). */
 export function prop(node: NodeMirror | undefined, name: PropName, value: number): void {
   if (!node) return;
-  let cache = lastProp.get(node);
-  if (cache === undefined) {
-    cache = {};
-    lastProp.set(node, cache);
-  }
+  const cache = propCache(node);
   if (cache[name] === value) return;
   cache[name] = value;
   const propId = PROP[name];
@@ -68,4 +71,88 @@ export function prop(node: NodeMirror | undefined, name: PropName, value: number
     throw new Error(`PocketJS: unknown style prop '${name}' (see spec PROP)`);
   }
   getOps().setProp(node.id, propId, encodePropValue(name, value));
+}
+
+/** Imperatively set paint-only translateX + translateY. PSP fuses the pair
+ *  into one QuickJS -> native call; other hosts preserve identical semantics
+ *  through the ordinary setProp path. */
+export function position(node: NodeMirror | undefined, x: number, y: number): void {
+  if (!node) return;
+  const cache = propCache(node);
+  if (cache.translateX === x && cache.translateY === y) return;
+  cache.translateX = x;
+  cache.translateY = y;
+  const ops = getOps();
+  if (ops.setTranslation) {
+    ops.setTranslation(node.id, x, y);
+    return;
+  }
+  ops.setProp(node.id, PROP.translateX, x);
+  ops.setProp(node.id, PROP.translateY, y);
+}
+
+/** Swap an image texture without involving a reactive JSX binding. Image
+ *  selection is paint-only in the retained core. */
+export function image(node: NodeMirror | undefined, src: string): void {
+  if (!node) return;
+  const hotNode = node as HotNode;
+  if (hotNode.__pocketHotImage === src) return;
+  setNodeProp(node, "src", src, hotNode.__pocketHotImage);
+  hotNode.__pocketHotImage = src;
+}
+
+export function supportsParticles(): boolean {
+  return getOps().setParticles !== undefined;
+}
+
+export interface ParticleBatch {
+  reset(): void;
+  push(x: number, y: number, size: number, color: number): void;
+  flush(node: NodeMirror | undefined): void;
+  /** Direct-write fast path for per-frame swarm loops: write particle k's
+   *  x/y/size at floats[4k..4k+2] and its ABGR color at words[4k+3], then
+   *  flushCount(node, n). Skips one closure call per particle — measurable
+   *  when a QuickJS loop repaints dozens of particles every frame. Use
+   *  either push()+flush() or direct writes+flushCount() within one frame,
+   *  not both. */
+  readonly floats: Float32Array;
+  readonly words: Uint32Array;
+  readonly capacity: number;
+  flushCount(node: NodeMirror | undefined, count: number): void;
+}
+
+/** Reusable packed particle buffer. Coordinates and size share storage with
+ *  ABGR color words; PSP copies the batch into retained core capacity once
+ *  per frame. */
+export function createParticleBatch(capacity: number): ParticleBatch {
+  const cap = Math.max(1, capacity);
+  const words = new Uint32Array(cap * 4);
+  const floats = new Float32Array(words.buffer);
+  let count = 0;
+  return {
+    floats,
+    words,
+    capacity: cap,
+    reset(): void {
+      count = 0;
+    },
+    push(x: number, y: number, size: number, color: number): void {
+      if (count >= cap) return;
+      const at = count * 4;
+      floats[at] = x;
+      floats[at + 1] = y;
+      floats[at + 2] = size;
+      words[at + 3] = color >>> 0;
+      count++;
+    },
+    flush(node: NodeMirror | undefined): void {
+      if (!node) return;
+      getOps().setParticles?.(node.id, words, count);
+    },
+    flushCount(node: NodeMirror | undefined, n: number): void {
+      if (!node) return;
+      count = n > cap ? cap : n > 0 ? n : 0;
+      getOps().setParticles?.(node.id, words, count);
+    },
+  };
 }

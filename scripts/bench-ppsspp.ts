@@ -10,13 +10,64 @@
 import { $ } from "bun";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { scriptToMasks, type ScriptEvent } from "../host-sim/sim.ts";
+import { BTN } from "../spec/spec.ts";
 
 interface Spec {
   app: string;
+  /** App bundle to build (defaults to `app`) — lets several windows share
+   *  one demo under distinct report labels. */
+  entry?: string;
   inputScript: string;
   capStart: number;
   capN: number;
 }
+
+/** Compress a sim script (virtual-seconds press/hold events) into the baked
+ *  "frame:mask,..." capture format — the PSP replays the exact per-frame mask
+ *  timeline the deterministic sim tests drive, so a bench window lands on the
+ *  same battle the suite proves. */
+function scriptToCaptureInput(script: ScriptEvent[], frames: number): string {
+  const { masks } = scriptToMasks(script, 60, frames);
+  const parts: string[] = [];
+  let last = -1;
+  for (let f = 0; f < frames; f++) {
+    if (masks[f] !== last) {
+      parts.push(`${f}:0x${masks[f].toString(16)}`);
+      last = masks[f];
+    }
+  }
+  return parts.join(",");
+}
+
+// THE MARKSMAN — the winning tape from test/nightbloom.sim.test.ts, verbatim.
+// It survives to the diva and breaks all three cards, so boss-phase bench
+// windows measure real saturated combat (the finale pegs the 48-bullet cap).
+const MARKSMAN: ScriptEvent[] = (() => {
+  const T: ScriptEvent[] = [{ at: 1.0, press: BTN.START }];
+  let dir: number = BTN.LEFT;
+  for (let t = 1.5; t < 186; t += 1.5) {
+    T.push({ at: t, hold: BTN.CROSS | dir });
+    dir = dir === BTN.LEFT ? BTN.RIGHT : BTN.LEFT;
+  }
+  T.push({ at: 21.0, press: BTN.TRIANGLE });
+  T.push({ at: 40.0, press: BTN.TRIANGLE });
+  for (let t = 44; t <= 170; t += 9) {
+    T.push({ at: t, press: BTN.RTRIGGER });
+    T.push({ at: t + 1.5, press: BTN.TRIANGLE });
+    T.push({ at: t + 2.5, press: BTN.LTRIGGER });
+    T.push({ at: t + 3.5, press: BTN.TRIANGLE });
+    T.push({ at: t + 6, press: BTN.RTRIGGER });
+  }
+  for (const t of [139.0, 157.0]) {
+    T.push({ at: t, press: BTN.RTRIGGER });
+    T.push({ at: t + 1.5, press: BTN.TRIANGLE });
+    T.push({ at: t + 3.0, press: BTN.LTRIGGER });
+  }
+  return T.sort((a, b) => a.at - b.at);
+})();
+
+const MARKSMAN_INPUT = scriptToCaptureInput(MARKSMAN, 190 * 60);
 
 interface BenchLine {
   app: string;
@@ -33,6 +84,8 @@ interface BenchLine {
   avg_render_us: number;
   avg_work_us: number;
   max_work_us: number;
+  avg_gpu_us: number;
+  max_gpu_us: number;
   bundle_bytes: number;
   pak_bytes: number;
   arena_capacity_bytes: number;
@@ -89,6 +142,45 @@ const SPECS: Spec[] = [
     capStart: 0,
     capN: 95,
   },
+  {
+    // Three trajectory families overlap here: lingering aimed wisp/usagi
+    // fire plus the 24 s kasa spread. The sweep tape keeps the pilot alive
+    // and firing so collision, player-shot and swarm rendering costs coexist.
+    app: "nightbloom",
+    inputScript:
+      "0:0,1:0x0008,2:0x40,90:0xc0,180:0x60,270:0xc0,360:0x60,450:0xc0,540:0x60,630:0xc0,720:0x60,810:0xc0,900:0x60,990:0xc0,1080:0x60,1170:0xc0,1260:0x60,1350:0xc0,1440:0x60,1530:0xc0,1620:0x60",
+    capStart: 1440,
+    capN: 180,
+  },
+  {
+    // Moon-primrose unlock window (61..64 s): the 28th collected mote flips
+    // a pre-mounted roster card. This catches regressions that reintroduce a
+    // structural reveal or collide the unlock with the midboss defeat frame.
+    app: "nightbloom-unlock",
+    entry: "nightbloom",
+    inputScript: MARKSMAN_INPUT,
+    capStart: 3660,
+    capN: 180,
+  },
+  {
+    // MIDNIGHT swarm on the marksman tape (108..111 s): the densest
+    // non-boss stretch — foes + homing player shots + ~17 enemy bullets.
+    app: "nightbloom-mid",
+    entry: "nightbloom",
+    inputScript: MARKSMAN_INPUT,
+    capStart: 6480,
+    capN: 180,
+  },
+  {
+    // THE ETERNAL NIGHT (the diva's third card, 154..157 s): twin
+    // counter-spirals + rings peg the 48-bullet cap — the worst frame the
+    // game produces, and the stretch players report as laggy.
+    app: "nightbloom-boss",
+    entry: "nightbloom",
+    inputScript: MARKSMAN_INPUT,
+    capStart: 9240,
+    capN: 180,
+  },
 ];
 
 const pspUiDir = new URL("..", import.meta.url).pathname;
@@ -98,6 +190,7 @@ let apps = ["stats"];
 let timeout = Number(process.env.BENCH_PPSSPP_TIMEOUT || 60);
 let outDir = `${pspUiDir}dist/bench`;
 let dumpFrames = false;
+let traceFrames = false;
 let memoryScan = false;
 let memoryStepBytes = 256 * KiB;
 let memorySafetyBytes = 512 * KiB;
@@ -121,6 +214,8 @@ for (let i = 0; i < argv.length; i++) {
     if (a === "--out-dir") i++;
   } else if (a === "--dump-frames") {
     dumpFrames = true;
+  } else if (a === "--trace-frames") {
+    traceFrames = true;
   } else if (a === "--memory-scan") {
     memoryScan = true;
   } else if (a.startsWith("--memory-step-kib=") || a === "--memory-step-kib") {
@@ -181,6 +276,8 @@ const METRICS = [
   "avg_render_us",
   "avg_work_us",
   "max_work_us",
+  "avg_gpu_us",
+  "max_gpu_us",
   "host_wall_ms",
   "bundle_bytes",
   "pak_bytes",
@@ -242,7 +339,7 @@ if (memoryScanReport) {
 }
 
 async function buildBenchEboot(spec: Spec, arenaBytes: number | null): Promise<void> {
-  await $`bun scripts/psp.ts ${spec.app} --bench`
+  await $`bun scripts/psp.ts ${spec.entry ?? spec.app} --bench`
     .cwd(pspUiDir)
     .env({
       ...process.env,
@@ -251,6 +348,7 @@ async function buildBenchEboot(spec: Spec, arenaBytes: number | null): Promise<v
       POCKETJS_CAP_N: String(spec.capN),
       POCKETJS_ARENA_BYTES: arenaBytes == null ? "" : String(arenaBytes),
       POCKETJS_BENCH_DUMP_FRAMES: dumpFrames ? "1" : "",
+      POCKETJS_BENCH_TRACE: traceFrames ? "1" : "",
     })
     .quiet();
 }
@@ -277,13 +375,23 @@ async function runBenchSample(spec: Spec, sample: number, arenaBytes: number | n
     throw new Error(`${spec.app} sample ${sample}: ${benchFile} missing`);
   }
   const lines = readFileSync(benchFile, "utf8").trim().split("\n").filter(Boolean);
-  if (lines.length !== 1) {
-    throw new Error(`${spec.app} sample ${sample}: expected 1 bench line, got ${lines.length}`);
-  }
   const parsed = JSON.parse(lines[0]) as BenchLine;
+  const frameLines = lines.slice(1).map((line) => JSON.parse(line) as {
+    f: number; js: number; jobs: number; tick: number; draw: number; render: number; work: number;
+  });
+  if (!traceFrames && frameLines.length !== 0) {
+    throw new Error(`${spec.app} sample ${sample}: unexpected ${frameLines.length} frame trace lines`);
+  }
+  if (traceFrames && frameLines.length !== spec.capN) {
+    throw new Error(`${spec.app} sample ${sample}: expected ${spec.capN} frame trace lines, got ${frameLines.length}`);
+  }
   if (parsed.frames !== spec.capN || parsed.window_n !== spec.capN) {
     throw new Error(`${spec.app} sample ${sample}: bench window mismatch (${parsed.frames}/${parsed.window_n}, expected ${spec.capN})`);
   }
+  // Windows sharing one entry bundle report the entry's name (baked
+  // POCKETJS_APP) — relabel with the spec's unique window label.
+  parsed.app = spec.app;
+  for (const frame of frameLines) writeRaw({ kind: "frame", app: spec.app, sample, ...frame });
   return { ...parsed, sample, host_wall_ms, arena_limit_bytes: arenaBytes };
 }
 
