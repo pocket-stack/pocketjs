@@ -239,6 +239,37 @@ SPECS.push({
 });
 
 SPECS.push({
+  // im (Pocket Talk): bootstrap lands at f30 — f40 is the conversation list
+  // (presence dots, unread badges, ellipsized previews, recency sort).
+  // CIRCLE@60 opens MAYA CHEN — f80 is the thread bottom (wrapped bubbles,
+  // lime read ticks). UP held 90..150 scrolls the virtual window up — f160
+  // shows mid-history with a day chip. SELECT@170 jumps back to latest,
+  // TRIANGLE@200 opens the on-screen keyboard, DOWN@230 walks focus to 'q',
+  // CIRCLE@260 types it — f280 is the OSK with a live draft + counter.
+  // START@300 sends; by f370 the ack and the delivery receipt have landed
+  // (gray ✓✓ on the "q" bubble, MAYA about to type).
+  name: "im-main",
+  frames: 380,
+  capture: [40, 80, 160, 280, 370],
+  input: (f) =>
+    f === 60
+      ? BTN.CIRCLE
+      : f >= 90 && f < 150
+        ? BTN.UP
+        : f === 170
+          ? BTN.SELECT
+          : f === 200
+            ? BTN.TRIANGLE
+            : f === 230
+              ? BTN.DOWN
+              : f === 260
+                ? BTN.CIRCLE
+                : f === 300
+                  ? BTN.START
+                  : 0,
+});
+
+SPECS.push({
   // motions: baked keyframe timelines (yui540 studies). Scene 0 (APP LAUNCH)
   // plays a 3-entry choreography with a 156-frame loop: f8 = press pulse
   // (backwards-fill start states), f60 = expanded full-stage hold, f120 =
