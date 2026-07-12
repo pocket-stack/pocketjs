@@ -1,0 +1,6 @@
+{
+  "sounds/midnight-replay.wav": { "name": "midnight-replay", "bgm": true, "loop": true, "loopStart": 0, "rate": 11025 },
+  "sounds/glass-horizon.wav": { "name": "glass-horizon", "bgm": true, "loop": true, "loopStart": 0, "rate": 11025 },
+  "sounds/static-bloom.wav": { "name": "static-bloom", "bgm": true, "loop": true, "loopStart": 0, "rate": 11025 },
+  "sounds/click.wav": { "name": "click" }
+}

@@ -13,6 +13,7 @@
 import { createEffect, createSignal, Show } from "solid-js";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
+import { playSynth, setVolume } from "@pocketjs/framework/audio";
 
 type ThemeName = "indigo" | "emerald" | "amber" | "rose";
 
@@ -277,6 +278,13 @@ export default function Settings() {
   const [theme, setTheme] = createSignal<ThemeName>("indigo");
   const currentTheme = () => themeByName(theme());
 
+  const toggleSfx = () => {
+    const on = !sfx();
+    setSfx(on);
+    setVolume("sfx", on ? 1 : 0);
+    playSynth({ wave: "square", freq: on ? 880 : 440, durMs: 40 });
+  };
+
   return (
     <View debugName="SettingsScreen" class={currentTheme().pageCls}>
       <View debugName="Header" class="flex-row items-end justify-between">
@@ -288,7 +296,7 @@ export default function Settings() {
       </View>
 
       <View debugName="OptionsList" class="flex-col gap-2">
-        <Toggle label="SOUND EFFECTS" value={sfx()} theme={currentTheme()} onToggle={() => setSfx(!sfx())} />
+        <Toggle label="SOUND EFFECTS" value={sfx()} theme={currentTheme()} onToggle={toggleSfx} />
         <Toggle label="VIBRATION" value={vibration()} theme={currentTheme()} onToggle={() => setVibration(!vibration())} />
         <Brightness theme={currentTheme()} />
         <ThemeRow value={theme()} theme={currentTheme()} onPick={setTheme} />
