@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 fn positive_dimension(name: &str, fallback: u32) -> u32 {
@@ -30,7 +30,9 @@ fn main() {
     let target = env::var("POCKETJS_TARGET").unwrap_or_else(|_| "vita".into());
     let host_abi = env::var("POCKETJS_HOST_ABI").unwrap_or_else(|_| "1".into());
     let contract_hash = env::var("POCKETJS_CONTRACT_HASH").unwrap_or_default();
-    let dist = Path::new("../dist");
+    let dist = env::var_os("POCKETJS_OUTPUT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("../dist"));
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // The resolved build plan supplies the logical/physical viewports. Vita's
@@ -73,8 +75,12 @@ fn main() {
     let mut code = if !embed_app {
         String::new()
     } else {
-        fs::read_to_string(dist.join(format!("{app}.js"))).unwrap_or_else(|e| {
-            panic!("could not read dist/{app}.js (run `bun run build {app}` first): {e}")
+        let path = dist.join(format!("{app}.js"));
+        fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!(
+                "could not read {} (compile the resolved plan first): {e}",
+                path.display()
+            )
         })
     };
     code.push('\0');
@@ -100,11 +106,18 @@ fn main() {
     println!("cargo:rustc-env=POCKETJS_CAPTURE_FRAMES={capture_frames}");
     println!("cargo:rustc-env=POCKETJS_CAPTURE_DIR={capture_dir}");
 
-    println!("cargo:rerun-if-changed=../dist/{app}.js");
-    println!("cargo:rerun-if-changed=../dist/{app}.pak");
+    println!(
+        "cargo:rerun-if-changed={}",
+        dist.join(format!("{app}.js")).display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        dist.join(format!("{app}.pak")).display()
+    );
     println!("cargo:rerun-if-env-changed=POCKETJS_APP");
     println!("cargo:rerun-if-env-changed=POCKETJS_APP_OUTPUT");
     println!("cargo:rerun-if-env-changed=POCKETJS_EMBED_APP");
+    println!("cargo:rerun-if-env-changed=POCKETJS_OUTPUT_DIR");
     println!("cargo:rerun-if-env-changed=POCKETJS_TARGET");
     println!("cargo:rerun-if-env-changed=POCKETJS_HOST_ABI");
     println!("cargo:rerun-if-env-changed=POCKETJS_CONTRACT_HASH");

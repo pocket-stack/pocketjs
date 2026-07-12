@@ -149,6 +149,7 @@ const env = {
   VITASDK: vitasdk,
   POCKETJS_APP_OUTPUT: outputApp,
   POCKETJS_EMBED_APP: "1",
+  POCKETJS_OUTPUT_DIR: outputDir,
   POCKETJS_TARGET: buildPlan?.target.id ?? "vita",
   POCKETJS_HOST_ABI: String(buildPlan?.target.hostAbi ?? 1),
   POCKETJS_CONTRACT_HASH: buildPlan?.contractHash ?? "",
