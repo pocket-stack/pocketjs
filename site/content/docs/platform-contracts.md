@@ -50,7 +50,7 @@ Format 2 is strict JSON data. A PSP-shaped portable app can say:
   "version": "1.0.0",
   "engine": {
     "capabilities": {
-      "requires": ["ui.drawlist", "text.glyphs.baked", "input.buttons"],
+      "requires": ["text.glyphs.baked", "input.buttons"],
       "enhances": ["input.analog.left"]
     }
   },
@@ -72,17 +72,20 @@ optional API for which the app has a fallback. Its availability becomes a
 boolean in the plan and in the compiled runtime module:
 
 ```ts
-import { platform } from "@pocketjs/framework/platform";
+import { hasFeature } from "@pocketjs/framework/platform";
 
-if (platform.features["input.analog.left"]) {
+if (hasFeature("input.analog.left")) {
   installAnalogNavigation();
 } else {
   installButtonNavigation();
 }
 ```
 
-Capability ids are plain strings, not versioned tokens or permissions passed
-through application call graphs.
+Literal `hasFeature()` calls are target-specialized during compilation, so Bun
+can remove an unavailable branch from the bundle. `platform.features` remains
+the runtime surface for computed feature ids and introspection. Capability ids
+are plain strings, not versioned tokens or permissions passed through
+application call graphs.
 
 ## What a capability means
 
@@ -118,9 +121,13 @@ vita: {
     logicalViewports: [[480, 272]],
     presentations: ["integer-fit"],
   },
-  capabilities: ["input.analog.left", "input.buttons", "text.glyphs.baked", "ui.drawlist"],
+  capabilities: ["input.analog.left", "input.buttons", "text.glyphs.baked"],
 }
 ```
+
+DrawList is intentionally absent. It is PocketJS's internal core-to-backend IR,
+not behavior an application can observe or request. GE, GXM, WGPU, and software
+raster hosts may consume that IR while offering the same public UI semantics.
 
 There is no capability-parameter comparison DSL. If PocketJS later exposes a
 meaningfully different API, it can receive a new identifier once that API is

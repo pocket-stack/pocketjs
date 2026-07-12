@@ -83,7 +83,6 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "input.analog.left",
       "input.buttons",
       "text.glyphs.baked",
-      "ui.drawlist",
     ],
   },
 });

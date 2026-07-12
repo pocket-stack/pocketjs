@@ -125,7 +125,6 @@ describe("platform registry", () => {
       "input.analog.left",
       "input.buttons",
       "text.glyphs.baked",
-      "ui.drawlist",
     ]);
     expect(POCKET_TARGETS.vita.display).toEqual({
       physicalViewport: [960, 544],
@@ -190,7 +189,6 @@ describe("semantic resolution", () => {
       "input.analog.left": true,
       "input.buttons": true,
       "text.glyphs.baked": true,
-      "ui.drawlist": true,
     });
     const committed = await Bun.file(
       new URL("./fixtures/plans/portable-vita.plan.json", import.meta.url),

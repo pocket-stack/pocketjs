@@ -22,8 +22,7 @@
   "features": {
     "input.analog.left": true,
     "input.buttons": true,
-    "text.glyphs.baked": true,
-    "ui.drawlist": true
+    "text.glyphs.baked": true
   },
-  "planHash": "sha256:95b5acf847e95c73b84bc7a72188c83b57ef7b212cea9976fb384c678bae751d"
+  "planHash": "sha256:0587f20793b3c3b7959db4d3f115ce2669c2612f48566aa23ecc79a27f36341f"
 }

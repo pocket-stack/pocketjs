@@ -142,13 +142,16 @@ selected host; `enhances` resolves to booleans available from
 `@pocketjs/framework/platform`:
 
 ```ts
-import { platform } from "@pocketjs/framework/platform";
+import { hasFeature } from "@pocketjs/framework/platform";
 
-if (platform.features["input.analog.left"]) installAnalogNavigation();
+if (hasFeature("input.analog.left")) installAnalogNavigation();
 else installButtonNavigation();
 ```
 
-They describe fixed host API support, not permissions or live device state.
+Literal `hasFeature()` calls are folded to booleans during a manifest build, so
+the unavailable branch is absent from the target bundle. `platform.features`
+remains available for computed queries and introspection. Capabilities describe
+fixed host API support, not permissions or live device state.
 Custom native hosts should use `extractHostBuildInputs()` and
 `hostBuildEnvironment()` from `@pocketjs/framework/manifest`; the complete
 Plan remains an internal build IR.
