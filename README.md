@@ -116,6 +116,9 @@ required router package.
 ## Commands
 
 ```sh
+bun play vita hero                    # build, install and launch in Vita3K
+bun play vita gallery --fullscreen    # stretch to the host's full screen
+bun play --help                       # list every runnable demo
 bun run test                          # spec contract + tailwind parser tests
 bun pocket check --target psp         # validate pocket.json + resolved target contract
 bun pocket compile --target psp       # typecheck and compile, for custom native hosts
