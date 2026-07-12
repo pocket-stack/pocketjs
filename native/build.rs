@@ -57,6 +57,9 @@ fn main() {
     // skip raw frame dumps while still using the capture window to exit.
     let arena_bytes = env::var("POCKETJS_ARENA_BYTES").unwrap_or_default();
     let bench_dump_frames = env::var("POCKETJS_BENCH_DUMP_FRAMES").unwrap_or_default();
+    // "1" -> the bench summary line is followed by one JSONL line per window
+    // frame (js/tick/draw/render/work), for locating spike frames exactly.
+    let bench_trace = env::var("POCKETJS_BENCH_TRACE").unwrap_or_default();
 
     println!("cargo:rustc-env=POCKETJS_APP={app}");
     println!("cargo:rustc-env=POCKETJS_CAPTURE_INPUT={capture_input}");
@@ -65,6 +68,7 @@ fn main() {
     println!("cargo:rustc-env=POCKETJS_CAP_N={cap_n}");
     println!("cargo:rustc-env=POCKETJS_ARENA_BYTES={arena_bytes}");
     println!("cargo:rustc-env=POCKETJS_BENCH_DUMP_FRAMES={bench_dump_frames}");
+    println!("cargo:rustc-env=POCKETJS_BENCH_TRACE={bench_trace}");
     println!("cargo:rerun-if-env-changed=POCKETJS_APP");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_INPUT");
     println!("cargo:rerun-if-env-changed=POCKETJS_TRACE");
@@ -72,6 +76,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=POCKETJS_CAP_N");
     println!("cargo:rerun-if-env-changed=POCKETJS_ARENA_BYTES");
     println!("cargo:rerun-if-env-changed=POCKETJS_BENCH_DUMP_FRAMES");
+    println!("cargo:rerun-if-env-changed=POCKETJS_BENCH_TRACE");
     if let Ok(entries) = fs::read_dir(dist) {
         for e in entries.flatten() {
             println!("cargo:rerun-if-changed={}", e.path().display());

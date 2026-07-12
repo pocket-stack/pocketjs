@@ -281,6 +281,29 @@ fn particle_layer_reuses_one_tree_node_and_cleans_up_with_it() {
 }
 
 #[test]
+fn image_particle_layer_shares_its_bound_texture() {
+    let mut ui = Ui::new();
+    let pixels = alloc::vec![0xffu8; 2 * 2 * 4];
+    let tex = ui.upload_texture(&pixels, 2, 2, spec::psm::PSM_8888);
+    let layer = ui.create_node(spec::NodeType::Image as u8);
+    ui.set_prop(layer, spec::prop::WIDTH, 0.0);
+    ui.set_prop(layer, spec::prop::HEIGHT, 0.0);
+    ui.set_image(layer, tex);
+    ui.insert_before(spec::ROOT_ID, layer, 0);
+    ui.set_particles(layer, &[Particle { x: 4.0, y: 6.0, size: 10.0, color: 0xffffffff }]);
+    ui.tick();
+
+    let words = ui.draw().words.clone();
+    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 1);
+    let i = words.iter().position(|&word| word == spec::draw_op::TEX_QUAD).unwrap();
+    assert_eq!(words[i + 1], tex as u32);
+    assert_eq!(decode_xy(words[i + 2]), (4, 6));
+    assert_eq!(decode_wh(words[i + 3]), (10, 10));
+    assert_eq!(f32::from_bits(words[i + 4]), 0.0);
+    assert_eq!(f32::from_bits(words[i + 6]), 1.0);
+}
+
+#[test]
 fn arena_id_reuse_and_stale_id_noop() {
     let mut ui = Ui::new();
     let a = ui.create_node(spec::NodeType::View as u8);

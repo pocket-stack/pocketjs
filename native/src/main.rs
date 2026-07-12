@@ -42,6 +42,11 @@ static APP_PAK: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/app.pak"));
 #[cfg(feature = "bench")]
 static POCKETJS_APP_NAME: &str = env!("POCKETJS_APP");
 static POCKETJS_TRACE: &str = env!("POCKETJS_TRACE");
+// "1" -> append one JSONL line per bench-window frame after the summary
+// (spike-frame forensics; PPSSPP timing is deterministic, so one traced run
+// names the exact frame and pipeline stage).
+#[cfg(feature = "bench")]
+static POCKETJS_BENCH_TRACE: &str = env!("POCKETJS_BENCH_TRACE");
 
 // Build-time scripted input for deterministic PPSSPPHeadless captures
 // (test/e2e-ppsspp.ts). Baked by build.rs from the POCKETJS_CAPTURE_INPUT env;
@@ -170,6 +175,10 @@ impl BenchState {
 
 #[cfg(feature = "bench")]
 static mut BENCH: BenchState = BenchState::new();
+/// Per-frame trace lines, accumulated in memory and flushed with the summary
+/// (streaming writes per frame would drag file I/O into the loop timings).
+#[cfg(feature = "bench")]
+static mut BENCH_TRACE_LINES: Option<alloc::string::String> = None;
 
 #[cfg(feature = "bench")]
 #[inline]
@@ -266,6 +275,12 @@ unsafe fn bench_record_frame(
     let draw_us = after_draw.saturating_sub(after_tick);
     let render_us = after_render.saturating_sub(after_draw).saturating_sub(present_us);
     let work_us = after_render.saturating_sub(t0).saturating_sub(present_us);
+    if POCKETJS_BENCH_TRACE == "1" {
+        let lines = BENCH_TRACE_LINES.get_or_insert_with(alloc::string::String::new);
+        lines.push_str(&alloc::format!(
+            "{{\"f\":{frame_count},\"js\":{js_us},\"jobs\":{jobs_us},\"tick\":{tick_us},\"draw\":{draw_us},\"render\":{render_us},\"work\":{work_us}}}\n",
+        ));
+    }
     BENCH.frames = BENCH.frames.saturating_add(1);
     BENCH.js_sum_us = BENCH.js_sum_us.saturating_add(js_us);
     BENCH.jobs_sum_us = BENCH.jobs_sum_us.saturating_add(jobs_us);
@@ -330,6 +345,9 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
         arena_stats.configured_bytes,
     );
     bench_write(line.as_bytes());
+    if let Some(lines) = BENCH_TRACE_LINES.take() {
+        bench_write(lines.as_bytes());
+    }
 }
 
 unsafe fn boot() {

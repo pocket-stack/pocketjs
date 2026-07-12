@@ -749,9 +749,24 @@ impl<'a> Walker<'a> {
                 {
                     continue;
                 }
+                let (x, y) = world.apply(particle.x, particle.y);
+                if node.tex >= 0 {
+                    self.emit_corner_quad(
+                        dl,
+                        node.tex as u32,
+                        x,
+                        y,
+                        particle.size,
+                        0.0,
+                        0.0,
+                        1.0,
+                        scale_alpha(particle.color, op),
+                        &clip,
+                    );
+                    continue;
+                }
                 let r = roundf(particle.size * 0.5).max(1.0) as u32;
                 if let Some((tex, dim)) = disc_texture(self.discs, self.textures, self.tex_free, r) {
-                    let (x, y) = world.apply(particle.x, particle.y);
                     let size = (r * 2) as f32;
                     self.emit_corner_quad(
                         dl,

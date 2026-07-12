@@ -109,21 +109,35 @@ export interface ParticleBatch {
   reset(): void;
   push(x: number, y: number, size: number, color: number): void;
   flush(node: NodeMirror | undefined): void;
+  /** Direct-write fast path for per-frame swarm loops: write particle k's
+   *  x/y/size at floats[4k..4k+2] and its ABGR color at words[4k+3], then
+   *  flushCount(node, n). Skips one closure call per particle — measurable
+   *  when a QuickJS loop repaints dozens of particles every frame. Use
+   *  either push()+flush() or direct writes+flushCount() within one frame,
+   *  not both. */
+  readonly floats: Float32Array;
+  readonly words: Uint32Array;
+  readonly capacity: number;
+  flushCount(node: NodeMirror | undefined, count: number): void;
 }
 
 /** Reusable packed particle buffer. Coordinates and size share storage with
  *  ABGR color words; PSP copies the batch into retained core capacity once
  *  per frame. */
 export function createParticleBatch(capacity: number): ParticleBatch {
-  const words = new Uint32Array(Math.max(1, capacity) * 4);
+  const cap = Math.max(1, capacity);
+  const words = new Uint32Array(cap * 4);
   const floats = new Float32Array(words.buffer);
   let count = 0;
   return {
+    floats,
+    words,
+    capacity: cap,
     reset(): void {
       count = 0;
     },
     push(x: number, y: number, size: number, color: number): void {
-      if (count * 4 >= words.length) return;
+      if (count >= cap) return;
       const at = count * 4;
       floats[at] = x;
       floats[at + 1] = y;
@@ -133,6 +147,11 @@ export function createParticleBatch(capacity: number): ParticleBatch {
     },
     flush(node: NodeMirror | undefined): void {
       if (!node) return;
+      getOps().setParticles?.(node.id, words, count);
+    },
+    flushCount(node: NodeMirror | undefined, n: number): void {
+      if (!node) return;
+      count = n > cap ? cap : n > 0 ? n : 0;
       getOps().setParticles?.(node.id, words, count);
     },
   };

@@ -130,6 +130,29 @@ test("particle batches pack f32 geometry and ABGR words into one host call", () 
   expect(of("setParticles")).toEqual([["setParticles", layer.id, 1, 3.5, -2, 8, 0xff112233]]);
 });
 
+test("particle batch direct writes flush through flushCount, clamped to capacity", () => {
+  const host = mockHost();
+  host.ops.setParticles = (id, words, count) => {
+    const floats = new Float32Array(words.buffer);
+    calls.push(["setParticles", id, count, floats[4], floats[5], floats[6], words[7]]);
+  };
+  installHost(host);
+  const layer = createElement("view");
+  const batch = hot.createParticleBatch(2);
+  expect(batch.capacity).toBe(2);
+  // particle 1 via the direct-write fast path (no push closure)
+  batch.floats[4] = 9.5;
+  batch.floats[5] = -1;
+  batch.floats[6] = 6;
+  batch.words[7] = 0xffaabbcc;
+  batch.flushCount(layer, 2);
+  expect(of("setParticles")).toEqual([["setParticles", layer.id, 2, 9.5, -1, 6, 0xffaabbcc]]);
+  batch.flushCount(layer, 99); // over-capacity count is clamped
+  expect(of("setParticles")[1][2]).toBe(2);
+  batch.flushCount(layer, -3); // negative clamps to zero
+  expect(of("setParticles")[2][2]).toBe(0);
+});
+
 test("hot.text on a bare text node works without a wrapper", () => {
   const run = createElement("text");
   run.text = "";

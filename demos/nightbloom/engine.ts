@@ -91,10 +91,21 @@ function sfx(kind: SfxKind): void {
 /** 64-step sine table quantized to 1/8192: far coarser than any engine's
  *  last-ulp sin() divergence, so the values are cross-engine constants. */
 const SIN: number[] = Array.from({ length: 64 }, (_, i) => Math.round(Math.sin((i / 64) * Math.PI * 2) * 8192) / 8192);
-const sinA = (a: number): number => SIN[((a % 64) + 64) % 64];
-const cosA = (a: number): number => SIN[(((a + 16) % 64) + 64) % 64];
+// Every caller supplies an integer table index. A bit mask handles positive
+// and negative angles alike and is much cheaper than two `%` operations in
+// QuickJS's interpreted boss-volley loops.
+const sinA = (a: number): number => SIN[a & 63];
+const cosA = (a: number): number => SIN[(a + 16) & 63];
 /** Angle index pointing straight down (+y). 0 = +x, quarter turn = 16. */
 const A_DOWN = 16;
+
+// Field bounds as module consts: the per-tick loops below read them per
+// bullet/foe/mote, and a QuickJS property chain (FIELD.x0) costs several
+// times a captured const on the PSP interpreter.
+const FX0 = FIELD.x0;
+const FY0 = FIELD.y0;
+const FW = FIELD.w;
+const FH = FIELD.h;
 
 // ---------------------------------------------------------------------------
 // Reactive cells — a signal dressed as a readable-callable with .set()
@@ -157,9 +168,10 @@ export interface BossInst {
   /** True for the midboss (waves resume after it breaks). */
   mid: boolean;
   phase: Cell<number>;
-  hp: Cell<number>;
-  x: Cell<number>;
-  y: Cell<number>;
+  /** Plain hot fields; renderers redraw them from the shared frame tick. */
+  hp: number;
+  x: number;
+  y: number;
   timeoutTicks: number;
   fireCd: number;
   fireCd2: number;
@@ -173,6 +185,9 @@ export type EnemyShotKind = "pink" | "cyan" | "amber" | "mochi";
 export interface EnemyShot {
   id: number;
   kind: EnemyShotKind;
+  /** Cached ABGR presentation color. Avoids a string-keyed table lookup for
+   *  every visible bullet on every PSP frame. */
+  color: number;
   x: number;
   y: number;
   /** Per-tick motion; enemy trajectories never steer after spawn. */
@@ -183,6 +198,13 @@ export interface EnemyShot {
   /** Tick-local despawn marker; avoids Set allocation/hash work in QuickJS. */
   dead?: boolean;
 }
+
+const ENEMY_SHOT_COLOR: Record<EnemyShotKind, number> = {
+  pink: 0xffd4a8f9,
+  cyan: 0xfff9e867,
+  amber: 0xff4dd3fc,
+  mochi: 0xffffffff,
+};
 
 export type PlayerShotKind = "orb" | "banana";
 
@@ -199,6 +221,10 @@ export interface PlayerShot {
   /** How many more bodies a bolt may pass through. */
   through: number;
   homing: boolean;
+  /** Steering is sampled at 30 Hz while motion remains on the 60 Hz grid. */
+  homeCd?: number;
+  /** Homing preserves speed, so its magnitude is immutable after spawn. */
+  homeSpeed?: number;
   /** Banana boomerang: true once it has turned and is flying home. */
   ret: boolean;
   /** Banana boomerang: ticks until it may damage again (it never despawns
@@ -251,6 +277,8 @@ export interface Nightbloom {
   /** The roast ledger: what the dawn medals tease you about. */
   escaped: Accessor<number>;
   hitsTaken: Accessor<number>;
+  /** Enemy-drop motes actually collected this run. */
+  motesCollected: Accessor<number>;
   motesMissed: Accessor<number>;
   cardTimeouts: Accessor<number>;
   px: Accessor<number>;
@@ -297,8 +325,12 @@ const STATION_TICKS = 8 * TPS;
 /** The world scrolls on beneath everyone: even a hovering foe sinks with it,
  *  so an unkilled monster always leaves the field eventually. */
 const WORLD_DRIFT = 10 / TPS;
-const MAX_PLAYER_SHOTS = 40;
+const MAX_PLAYER_SHOTS = 28;
 export const MAX_MOTES = 24;
+/** The moon primrose wakes from player-earned enemy drops, not a scripted
+ *  boss beat. Twenty-eight motes rewards an active pilot before the midboss
+ *  without coupling the unlock to the boss's resource-heavy entrance. */
+export const PRIMROSE_UNLOCK_MOTES = 28;
 
 const SWITCH_TICKS = Math.round(SWITCH_COOLDOWN * TPS);
 const HURT_TICKS = Math.round(HURT_INVULN * TPS);
@@ -373,6 +405,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
   let rescues = 0;
   const escaped = cell(0);
   const hitsTaken = cell(0);
+  const motesCollected = cell(0);
   const motesMissed = cell(0);
   const cardTimeouts = cell(0);
   const wilting = cell(false);
@@ -425,6 +458,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     tick = 0;
     rng = NIGHT_SEED >>> 0;
     pendingEnemyFire = [];
+    enemyShotCount = 0;
     nextWave = 0;
     nextPhase = 0;
     fireCd = 0;
@@ -462,6 +496,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     rescues = 0;
     escaped.set(0);
     hitsTaken.set(0);
+    motesCollected.set(0);
     motesMissed.set(0);
     cardTimeouts.set(0);
     wilting.set(false);
@@ -535,9 +570,9 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       def,
       mid,
       phase: cell(0),
-      hp: cell(def.phases[0].hp),
-      x: cell(FIELD.x0 + FIELD.w / 2),
-      y: cell(FIELD.y0 + 46),
+      hp: def.phases[0].hp,
+      x: FIELD.x0 + FIELD.w / 2,
+      y: FIELD.y0 + 46,
       timeoutTicks: def.phases[0].timeout * TPS,
       fireCd: TPS,
       fireCd2: 2 * TPS,
@@ -555,38 +590,55 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
   // and tickShots flushes it in ONE array set — same tick, same cap, same
   // order as the old per-bullet sets, minus the per-bullet array copies.
   let pendingEnemyFire: EnemyShot[] = [];
+  let enemyShotCount = 0;
 
   function enemyFire(x: number, y: number, vx: number, vy: number, kind: EnemyShotKind, dmg: number): void {
-    if (enemyShots().length + pendingEnemyFire.length >= MAX_ENEMY_SHOTS) return;
+    if (enemyShotCount + pendingEnemyFire.length >= MAX_ENEMY_SHOTS) return;
     // Enemy velocity never changes after spawn. Store the per-tick delta once
     // instead of dividing twice per bullet on every interpreted frame.
-    pendingEnemyFire.push({ id: ++idSeq, kind, x, y, vx: vx / TPS, vy: vy / TPS, dmg, grazed: false });
+    // `dead` is initialized here so every bullet keeps ONE QuickJS shape —
+    // adding the field later on despawn transitions the shape and defeats
+    // the interpreter's inline caches in the per-tick loops.
+    pendingEnemyFire.push({
+      id: ++idSeq, kind, color: ENEMY_SHOT_COLOR[kind], x, y,
+      vx: vx / TPS, vy: vy / TPS, dmg, grazed: false, dead: false,
+    });
   }
 
   function flushEnemyFire(): void {
     if (pendingEnemyFire.length === 0) return;
     if (paintOnlyShots) {
       const shots = enemyShots();
-      for (const shot of pendingEnemyFire) shots.push(shot);
+      for (let i = 0; i < pendingEnemyFire.length; i++) shots.push(pendingEnemyFire[i]);
+      enemyShotCount = shots.length;
       pendingEnemyFire.length = 0;
     } else {
-      enemyShots.set([...enemyShots(), ...pendingEnemyFire]);
+      const next = [...enemyShots(), ...pendingEnemyFire];
+      enemyShotCount = next.length;
+      enemyShots.set(next);
       pendingEnemyFire = [];
     }
   }
+
+  /** Scratch return cell — every caller reads it before the next aimedAt,
+   *  so one reused object replaces a per-volley allocation (QuickJS garbage
+   *  is what schedules the ~100 ms full-GC hitches on hardware). */
+  const aim = { vx: 0, vy: 0 };
 
   function aimedAt(x: number, y: number, speed: number): { vx: number; vy: number } {
     const dx = px() - x;
     const dy = py() - y;
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
-    return { vx: (dx / len) * speed, vy: (dy / len) * speed };
+    aim.vx = (dx / len) * speed;
+    aim.vy = (dy / len) * speed;
+    return aim;
   }
 
   function dropMotes(x: number, y: number, count: number): void {
     const add: MoteInst[] = [];
     for (let i = 0; i < count; i++) {
       if (motes().length + add.length >= MAX_MOTES) break;
-      add.push({ id: ++idSeq, x: x + rnd(17) - 8, y: y + rnd(9) - 4 });
+      add.push({ id: ++idSeq, x: x + rnd(17) - 8, y: y + rnd(9) - 4, dead: false });
     }
     if (add.length > 0) motes.set([...motes(), ...add]);
   }
@@ -599,7 +651,8 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     if (roster[owner]?.kind !== "primrose") return;
     let target: PlantState | null = null;
     let worst = 1;
-    for (const r of roster) {
+    for (let i = 0; i < roster.length; i++) {
+      const r = roster[i];
       if (!r.unlocked() || r.hp() <= 0) continue;
       const frac = r.hp() / PLANTS[r.kind].hp[r.stage() - 1];
       if (frac < worst) {
@@ -634,12 +687,12 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
 
   function hitBoss(b: BossInst, dmg: number, owner: number): void {
     if (boss() !== b) return;
-    b.hp.set(b.hp() - dmg);
+    b.hp -= dmg;
     sfx("hit");
     primroseMend(owner);
     const p = roster[owner];
     if (p) grantGlow(p, dmg);
-    if (b.hp() <= 0) advanceBoss(b, true);
+    if (b.hp <= 0) advanceBoss(b, true);
   }
 
   function advanceBoss(b: BossInst, broken: boolean): void {
@@ -651,12 +704,13 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       toast(`THE CARD TIMES OUT: ${b.def.phases[idx].card}`);
       cardTimeouts.set(cardTimeouts() + 1);
     }
-    dropMotes(b.x(), b.y(), BOSS_PHASE_BOUNTY);
+    dropMotes(b.x, b.y, BOSS_PHASE_BOUNTY);
+    enemyShotCount = 0;
     enemyShots.set([]); // the break clears the sky
     sfx("bossbreak");
     if (idx + 1 < b.def.phases.length) {
       b.phase.set(idx + 1);
-      b.hp.set(b.def.phases[idx + 1].hp);
+      b.hp = b.def.phases[idx + 1].hp;
       b.timeoutTicks = b.def.phases[idx + 1].timeout * TPS;
       b.spiral = 0;
       bossCard.set(b.def.phases[idx + 1].card);
@@ -669,7 +723,6 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       if (b.mid) {
         midbossDone = true;
         if (broken) kills.set(kills() + 1);
-        unlock("primrose", "THE MOUNTAIN ANSWERS -- MOON PRIMROSE JOINS");
       } else {
         bossDone = true;
         if (broken) kills.set(kills() + 1);
@@ -746,7 +799,8 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       for (let i = 0; i < streams; i++) {
         add.push({
           id: ++idSeq, kind: "orb", x: px() + (i - (streams - 1) / 2) * 10, y: py() - 10,
-          vx: 0, vy: -170, dmg: def.dmg[s], pierce: false, through: 0, homing: true, ret: false, hitCd: 0, owner,
+          vx: 0, vy: -170, dmg: def.dmg[s], pierce: false, through: 0, homing: true,
+          homeCd: 0, homeSpeed: 0, ret: false, hitCd: 0, owner, dead: false,
         });
       }
     } else {
@@ -760,7 +814,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       add.push({
         id: ++idSeq, kind: "banana", x: px(), y: py() - 12,
         vx: 0, vy: -BANANA.throwVy[s], dmg: def.dmg[s], pierce: false, through: 0,
-        homing: false, ret: false, hitCd: 0, owner,
+        homing: false, homeCd: 0, homeSpeed: 0, ret: false, hitCd: 0, owner, dead: false,
       });
     }
     if (paintOnlyShots && p.kind !== "primrose") {
@@ -785,7 +839,8 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
         add.push({
           id: ++idSeq, kind: "orb", x: px(), y: py() - 8,
           vx: cosA(-32 + i * 7) * 120, vy: sinA(-32 + i * 7) * 120 - 60,
-          dmg: 24, pierce: true, through: 0, homing: true, ret: false, hitCd: 0, owner,
+          dmg: 24, pierce: true, through: 0, homing: true,
+          homeCd: 0, homeSpeed: 0, ret: false, hitCd: 0, owner, dead: false,
         });
       }
       if (paintOnlyShots) {
@@ -794,11 +849,13 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       } else {
         playerShots.set([...playerShots(), ...add]);
       }
-      enemyShots.set(enemyShots().filter((sh) => {
+      const kept = enemyShots().filter((sh) => {
         const dx = sh.x - px();
         const dy = sh.y - py();
         return dx * dx + dy * dy > 70 * 70;
-      }));
+      });
+      enemyShotCount = kept.length;
+      enemyShots.set(kept);
     } else {
       for (const r of roster) {
         if (!ready(r)) continue;
@@ -844,7 +901,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     const p = active();
     const def = PLANTS[p.kind];
     const focusing = Boolean(held & BTN.SQUARE);
-    focus.set(focusing);
+    if (focus() !== focusing) focus.set(focusing);
     const speed = (def.speed / TPS) * (focusing ? FOCUS_RATE : 1);
     let dx = 0;
     let dy = 0;
@@ -856,14 +913,18 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       dx *= 0.7071;
       dy *= 0.7071;
     }
-    lastDx.set(Math.sign(dx));
-    if (dx !== 0) facing.set(dx < 0 ? -1 : 1); // mirror into the strafe, keep it after
-    px.set(Math.max(FIELD.x0 + PLAYER_INSET, Math.min(FIELD.x0 + FIELD.w - PLAYER_INSET, px() + dx * speed)));
-    py.set(Math.max(FIELD.y0 + PLAYER_INSET, Math.min(FIELD.y0 + FIELD.h - PLAYER_INSET, py() + dy * speed)));
+    const signedDx = Math.sign(dx);
+    if (lastDx() !== signedDx) lastDx.set(signedDx);
+    if (dx !== 0) {
+      const nextFacing = dx < 0 ? -1 : 1;
+      if (facing() !== nextFacing) facing.set(nextFacing); // mirror into the strafe, keep it after
+      px.set(Math.max(FX0 + PLAYER_INSET, Math.min(FX0 + FW - PLAYER_INSET, px() + dx * speed)));
+    }
+    if (dy !== 0) py.set(Math.max(FY0 + PLAYER_INSET, Math.min(FY0 + FH - PLAYER_INSET, py() + dy * speed)));
 
     if (wilting()) {
       wiltTicks--;
-      wiltSeconds.set(Math.max(0, Math.ceil(wiltTicks / TPS)));
+      if (wiltTicks % TPS === 0) wiltSeconds.set(Math.max(0, Math.ceil(wiltTicks / TPS)));
       if (wiltTicks <= 0) {
         outcome.set("eternal");
         sfx("eternal");
@@ -875,18 +936,32 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
 
     if (switchCd > 0) switchCd--;
     if (invulnTicks > 0) invulnTicks--;
-    invulnOn.set(invulnTicks > 0);
+    const nextInvuln = invulnTicks > 0;
+    if (invulnOn() !== nextInvuln) invulnOn.set(nextInvuln);
 
-    for (const r of roster) {
-      if (r.spellCdTicks > 0) r.spellCdTicks--;
-      r.spellReady.set(1 - r.spellCdTicks / (PLANTS[r.kind].spell.cooldown * TPS));
+    for (let i = 0; i < roster.length; i++) {
+      const r = roster[i];
+      if (r.spellCdTicks > 0) {
+        r.spellCdTicks--;
+        r.spellReady.set(1 - r.spellCdTicks / (PLANTS[r.kind].spell.cooldown * TPS));
+      }
     }
   }
 
+  // The per-tick loops below run indexed, not for-of: QuickJS allocates an
+  // iterator result object per for-of step, which at swarm/danmaku counts
+  // is both interpreter time and the dominant GC feed.
   function tickFoes(): void {
     const fs = foes(); // escape removals swap in a fresh array; fs is the tick's snapshot
-    const hasUta = fs.some((f) => f.kind === "uta");
-    for (const f of fs) {
+    let hasUta = false;
+    for (let i = 0; i < fs.length; i++) {
+      if (fs[i].kind === "uta") {
+        hasUta = true;
+        break;
+      }
+    }
+    for (let fi = 0; fi < fs.length; fi++) {
+      const f = fs[fi];
       const def = FOES[f.kind];
       const s = f.stage - 1;
       const slowed = tick < f.slowUntil;
@@ -895,8 +970,8 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       if (f.kind === "usagi") {
         f.x += f.vx * spd;
         f.y += spd * 0.35;
-        if (f.x < FIELD.x0 + 14) f.vx = 1;
-        if (f.x > FIELD.x0 + FIELD.w - 14) f.vx = -1;
+        if (f.x < FX0 + 14) f.vx = 1;
+        if (f.x > FX0 + FW - 14) f.vx = -1;
       } else if (f.kind === "wisp" || f.kind === "uta") {
         if (f.y < f.hoverY) {
           f.y += spd;
@@ -907,12 +982,12 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
         } else {
           f.y += spd * 1.4; // the song moves on
         }
-        if (f.x < FIELD.x0 + 14) f.vx = 1;
-        if (f.x > FIELD.x0 + FIELD.w - 14) f.vx = -1;
+        if (f.x < FX0 + 14) f.vx = 1;
+        if (f.x > FX0 + FW - 14) f.vx = -1;
       } else {
         f.y += spd;
       }
-      if (f.y > FIELD.y0 + FIELD.h + 18) {
+      if (f.y > FY0 + FH + 18) {
         foes.set(foes().filter((x) => x.id !== f.id)); // it drifts past the garden
         escaped.set(escaped() + 1);
         continue;
@@ -967,7 +1042,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
           if (skill === 0) {
             enemyFire(f.x, f.y + 8, v.vx, v.vy, "mochi", dmg);
           } else {
-            for (const a of [-4, 4]) {
+            for (let a = -4; a <= 4; a += 8) {
               enemyFire(
                 f.x, f.y + 8,
                 v.vx * cosA(a) - v.vy * sinA(a),
@@ -1005,10 +1080,15 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     if (!b) return;
     const idx = b.phase();
     // sway on the quantized sine
-    b.x.set(FIELD.x0 + FIELD.w / 2 + sinA(Math.floor((tick - b.born) / 24) % 64) * (FIELD.w * 0.26));
-    if (b.y() < FIELD.y0 + 46) b.y.set(b.y() + 0.8);
+    const bx = FIELD.x0 + FIELD.w / 2 + sinA(Math.floor((tick - b.born) / 24) % 64) * (FIELD.w * 0.26);
+    b.x = bx;
+    let by = b.y;
+    if (by < FIELD.y0 + 46) {
+      by += 0.8;
+      b.y = by;
+    }
     b.timeoutTicks--;
-    bossCardSeconds.set(Math.max(0, Math.ceil(b.timeoutTicks / TPS)));
+    if (b.timeoutTicks % TPS === 0) bossCardSeconds.set(Math.max(0, Math.ceil(b.timeoutTicks / TPS)));
     if (b.timeoutTicks <= 0) {
       advanceBoss(b, false);
       return;
@@ -1023,14 +1103,14 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
         b.fireCd = Math.round(1.1 * TPS);
         for (let i = 0; i < 9; i++) {
           const a = A_DOWN + (i - 4) * 3;
-          enemyFire(b.x(), b.y() + 12, cosA(a) * speed, sinA(a) * speed, "amber", dmg);
+          enemyFire(bx, by + 12, cosA(a) * speed, sinA(a) * speed, "amber", dmg);
         }
       }
       if (b.fireCd2 <= 0) {
         b.fireCd2 = Math.round(2.6 * TPS);
         for (let i = 0; i < 12; i++) {
           const a = Math.round((i * 64) / 12) + ((tick >> 5) % 64);
-          enemyFire(b.x(), b.y(), cosA(a) * 46, sinA(a) * 46, "pink", dmg);
+          enemyFire(bx, by, cosA(a) * 46, sinA(a) * 46, "pink", dmg);
         }
       }
       return;
@@ -1042,15 +1122,15 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
         b.spiral += 3;
         for (let i = 0; i < 14; i++) {
           const a = Math.round((i * 64) / 14) + b.spiral;
-          enemyFire(b.x(), b.y(), cosA(a) * speed, sinA(a) * speed, "pink", dmg);
+          enemyFire(bx, by, cosA(a) * speed, sinA(a) * speed, "pink", dmg);
         }
       }
       if (b.fireCd2 <= 0) {
         b.fireCd2 = Math.round(1.7 * TPS);
         for (let i = -1; i <= 1; i++) {
-          const v = aimedAt(b.x(), b.y(), speed + 16);
+          const v = aimedAt(bx, by, speed + 16);
           enemyFire(
-            b.x(), b.y() + 10,
+            bx, by + 10,
             v.vx * cosA(i * 3) - v.vy * sinA(i * 3),
             v.vx * sinA(i * 3) + v.vy * cosA(i * 3),
             "cyan", dmg,
@@ -1062,28 +1142,28 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       if (b.fireCd <= 0) {
         b.fireCd = 6;
         b.spiral += 5;
-        enemyFire(b.x(), b.y(), cosA(b.spiral) * speed, sinA(b.spiral) * speed, "pink", dmg);
-        enemyFire(b.x(), b.y(), cosA(b.spiral + 32) * speed, sinA(b.spiral + 32) * speed, "pink", dmg);
+        enemyFire(bx, by, cosA(b.spiral) * speed, sinA(b.spiral) * speed, "pink", dmg);
+        enemyFire(bx, by, cosA(b.spiral + 32) * speed, sinA(b.spiral + 32) * speed, "pink", dmg);
       }
       if (b.fireCd2 <= 0) {
         b.fireCd2 = Math.round(1.6 * TPS);
-        const v = aimedAt(b.x(), b.y(), speed + 30);
-        enemyFire(b.x() - 10, b.y() + 8, v.vx, v.vy, "mochi", dmg);
-        enemyFire(b.x() + 10, b.y() + 8, v.vx, v.vy, "mochi", dmg);
+        const v = aimedAt(bx, by, speed + 30);
+        enemyFire(bx - 10, by + 8, v.vx, v.vy, "mochi", dmg);
+        enemyFire(bx + 10, by + 8, v.vx, v.vy, "mochi", dmg);
       }
     } else {
       // THE ETERNAL NIGHT: twin counter-spirals + slow rings
       if (b.fireCd <= 0) {
         b.fireCd = 5;
         b.spiral += 3;
-        enemyFire(b.x(), b.y(), cosA(b.spiral) * 52, sinA(b.spiral) * 52, "pink", dmg);
-        enemyFire(b.x(), b.y(), cosA(-b.spiral) * 52, sinA(-b.spiral) * 52, "cyan", dmg);
+        enemyFire(bx, by, cosA(b.spiral) * 52, sinA(b.spiral) * 52, "pink", dmg);
+        enemyFire(bx, by, cosA(-b.spiral) * 52, sinA(-b.spiral) * 52, "cyan", dmg);
       }
       if (b.fireCd2 <= 0) {
         b.fireCd2 = Math.round(3.5 * TPS);
         for (let i = 0; i < 18; i++) {
           const a = Math.round((i * 64) / 18) + ((tick >> 5) % 64);
-          enemyFire(b.x(), b.y(), cosA(a) * 42, sinA(a) * 42, "amber", dmg);
+          enemyFire(bx, by, cosA(a) * 42, sinA(a) * 42, "amber", dmg);
         }
       }
     }
@@ -1100,9 +1180,13 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     const pShots = playerShots();
     const foeSnapshot = foes();
     let targetBoss = boss();
+    const targetBossX = targetBoss?.x ?? 0;
+    const targetBossY = targetBoss?.y ?? 0;
+    let targetBossRadius = targetBoss ? targetBoss.def.phases[targetBoss.phase()].size * 0.4 : 0;
     let removedP = false;
     let removedBanana = false;
-    for (const sh of pShots) {
+    for (let si = 0; si < pShots.length; si++) {
+      const sh = pShots[si];
       if (sh.kind === "banana") {
         // out, turn, home, and into the hand
         if (!sh.ret) {
@@ -1120,7 +1204,8 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
         if (sh.hitCd > 0) sh.hitCd--;
         if (sh.hitCd <= 0) {
           let struck = false;
-          for (const f of foeSnapshot) {
+          for (let i = 0; i < foeSnapshot.length; i++) {
+            const f = foeSnapshot[i];
             if (f.hp() <= 0) continue;
             const fdx = f.x - sh.x;
             const fdy = f.y - sh.y;
@@ -1133,12 +1218,12 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
           if (!struck) {
             const b = targetBoss;
             if (b) {
-              const br = b.def.phases[b.phase()].size * 0.4;
-              const bdx = b.x() - sh.x;
-              const bdy = b.y() - sh.y;
-              if (bdx * bdx + bdy * bdy <= br * br) {
+              const bdx = targetBossX - sh.x;
+              const bdy = targetBossY - sh.y;
+              if (bdx * bdx + bdy * bdy <= targetBossRadius * targetBossRadius) {
                 hitBoss(b, sh.dmg, sh.owner);
                 if (boss() !== b) targetBoss = null;
+                else targetBossRadius = b.def.phases[b.phase()].size * 0.4;
                 struck = true;
               }
             }
@@ -1157,12 +1242,15 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
         }
         continue; // a boomerang ignores the walls and the one-hit despawn
       }
-      if (sh.homing) {
+      if (sh.homing && (sh.homeCd ?? 0) > 0) {
+        sh.homeCd!--;
+      } else if (sh.homing) {
         // steer toward the nearest target (quantized lerp, then renormalize)
         let tx = 0;
         let ty = 0;
         let best = Infinity;
-        for (const f of foeSnapshot) {
+        for (let i = 0; i < foeSnapshot.length; i++) {
+          const f = foeSnapshot[i];
           if (f.hp() <= 0) continue;
           const dx = f.x - sh.x;
           const dy = f.y - sh.y;
@@ -1175,32 +1263,42 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
         }
         const b = targetBoss;
         if (b) {
-          const dx = b.x() - sh.x;
-          const dy = b.y() - sh.y;
+          const dx = targetBossX - sh.x;
+          const dy = targetBossY - sh.y;
           const d = dx * dx + dy * dy;
           if (d < best) {
             best = d;
-            tx = b.x();
-            ty = b.y();
+            tx = targetBossX;
+            ty = targetBossY;
           }
         }
         if (best < Infinity) {
-          const cur = Math.sqrt(sh.vx * sh.vx + sh.vy * sh.vy) || 1;
+          // homeSpeed is 0 until first use (shape-stable init), then frozen.
+          let cur = sh.homeSpeed!;
+          if (cur === 0) {
+            cur = Math.sqrt(sh.vx * sh.vx + sh.vy * sh.vy) || 1;
+            sh.homeSpeed = cur;
+          }
           const dx = tx - sh.x;
           const dy = ty - sh.y;
           const dl = Math.sqrt(dx * dx + dy * dy) || 1;
-          const nvx = sh.vx * 0.88 + (dx / dl) * cur * 0.12;
-          const nvy = sh.vy * 0.88 + (dy / dl) * cur * 0.12;
+          // Two original 12% steering samples collapsed into one 30 Hz
+          // sample: 1 - (1 - 0.12)^2 = 0.2256.
+          const nvx = sh.vx * 0.7744 + (dx / dl) * cur * 0.2256;
+          const nvy = sh.vy * 0.7744 + (dy / dl) * cur * 0.2256;
           const nl = Math.sqrt(nvx * nvx + nvy * nvy) || 1;
           sh.vx = (nvx / nl) * cur;
           sh.vy = (nvy / nl) * cur;
         }
+        sh.homeCd = 1;
       }
-      sh.x += sh.vx / TPS;
-      sh.y += sh.vy / TPS;
+      const sx = sh.x + sh.vx / TPS;
+      const sy = sh.y + sh.vy / TPS;
+      sh.x = sx;
+      sh.y = sy;
       if (
-        sh.y < FIELD.y0 - 16 || sh.y > FIELD.y0 + FIELD.h + 16 ||
-        sh.x < FIELD.x0 - 16 || sh.x > FIELD.x0 + FIELD.w + 16
+        sy < FY0 - 16 || sy > FY0 + FH + 16 ||
+        sx < FX0 - 16 || sx > FX0 + FW + 16
       ) {
         sh.dead = true;
         removedP = true;
@@ -1208,10 +1306,11 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       }
       // hit foes
       let spent = false;
-      for (const f of foeSnapshot) {
+      for (let i = 0; i < foeSnapshot.length; i++) {
+        const f = foeSnapshot[i];
         if (f.hp() <= 0) continue;
-        const dx = f.x - sh.x;
-        const dy = f.y - sh.y;
+        const dx = f.x - sx;
+        const dy = f.y - sy;
         if (dx * dx + dy * dy <= 13 * 13) {
           hitFoe(f, sh.dmg, sh.pierce, sh.owner);
           if (sh.through > 0) {
@@ -1225,12 +1324,12 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       if (!spent) {
         const b = targetBoss;
         if (b) {
-          const br = b.def.phases[b.phase()].size * 0.4;
-          const dx = b.x() - sh.x;
-          const dy = b.y() - sh.y;
-          if (dx * dx + dy * dy <= br * br) {
+          const dx = targetBossX - sx;
+          const dy = targetBossY - sy;
+          if (dx * dx + dy * dy <= targetBossRadius * targetBossRadius) {
             hitBoss(b, sh.dmg, sh.owner);
             if (boss() !== b) targetBoss = null;
+            else targetBossRadius = b.def.phases[b.phase()].size * 0.4;
             spent = true;
           }
         }
@@ -1243,7 +1342,10 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     if (removedP) {
       if (paintOnlyShots && !removedBanana) {
         let write = 0;
-        for (const shot of pShots) if (!shot.dead) pShots[write++] = shot;
+        for (let i = 0; i < pShots.length; i++) {
+          const shot = pShots[i];
+          if (!shot.dead) pShots[write++] = shot;
+        }
         pShots.length = write;
       } else {
         playerShots.set(playerShots().filter((x) => !x.dead));
@@ -1254,29 +1356,36 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     // clears the sky, and this snapshot must see that)
     const eShots = enemyShots();
     const act = active();
-    const grazeR = act.kind === "catnip" ? CATNIP_GRAZE_R : GRAZE_R;
+    const grazeR2 = (act.kind === "catnip" ? CATNIP_GRAZE_R * CATNIP_GRAZE_R : GRAZE_R * GRAZE_R);
+    const hitR = HIT_R + 3;
+    const hitR2 = hitR * hitR;
     let removedE = false;
-    for (const sh of eShots) {
-      sh.x += sh.vx;
-      sh.y += sh.vy;
+    for (let si = 0; si < eShots.length; si++) {
+      const sh = eShots[si];
+      // One read/write pair per axis; the bounds + range tests below reuse
+      // the locals (each avoided property slot is real interpreter time
+      // at 48 bullets x 60 ticks).
+      const sx = sh.x + sh.vx;
+      const sy = sh.y + sh.vy;
+      sh.x = sx;
+      sh.y = sy;
       if (
-        sh.y > FIELD.y0 + FIELD.h + 12 || sh.y < FIELD.y0 - 12 ||
-        sh.x < FIELD.x0 - 12 || sh.x > FIELD.x0 + FIELD.w + 12
+        sy > FY0 + FH + 12 || sy < FY0 - 12 ||
+        sx < FX0 - 12 || sx > FX0 + FW + 12
       ) {
         sh.dead = true;
         removedE = true;
         continue;
       }
-      const dx = sh.x - pxv;
-      const dy = sh.y - pyv;
+      const dx = sx - pxv;
+      const dy = sy - pyv;
       const d2 = dx * dx + dy * dy;
-      const hitR = HIT_R + 3;
-      if (d2 <= hitR * hitR) {
+      if (d2 <= hitR2) {
         sh.dead = true;
         removedE = true;
         hurtPlayer(sh.dmg);
       } else {
-        if (!sh.grazed && d2 <= grazeR * grazeR && invulnTicks <= 0) {
+        if (!sh.grazed && d2 <= grazeR2 && invulnTicks <= 0) {
           sh.grazed = true;
           graze.set(graze() + 1);
           score.set(score() + 10);
@@ -1288,15 +1397,22 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     if (removedE) {
       if (paintOnlyShots) {
         let write = 0;
-        for (const shot of eShots) if (!shot.dead) eShots[write++] = shot;
+        for (let i = 0; i < eShots.length; i++) {
+          const shot = eShots[i];
+          if (!shot.dead) eShots[write++] = shot;
+        }
         eShots.length = write;
+        enemyShotCount = write;
       } else {
-        enemyShots.set(enemyShots().filter((x) => !x.dead));
+        const kept = enemyShots().filter((x) => !x.dead);
+        enemyShotCount = kept.length;
+        enemyShots.set(kept);
       }
     }
 
     // body rams
-    for (const f of foeSnapshot) {
+    for (let i = 0; i < foeSnapshot.length; i++) {
+      const f = foeSnapshot[i];
       if (f.hp() <= 0) continue;
       const dx = f.x - pxv;
       const dy = f.y - pyv;
@@ -1306,7 +1422,8 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     // motes
     const ms = motes();
     let removedM = false;
-    for (const m of ms) {
+    for (let mi = 0; mi < ms.length; mi++) {
+      const m = ms[mi];
       if (pyv < POC_Y || Math.abs(m.x - pxv) + Math.abs(m.y - pyv) < 34) {
         // magnet: above the PoC line, or close by
         const dx = pxv - m.x;
@@ -1317,7 +1434,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       } else {
         m.y += 44 / TPS;
       }
-      if (m.y > FIELD.y0 + FIELD.h + 10) {
+      if (m.y > FY0 + FH + 10) {
         m.dead = true;
         removedM = true;
         motesMissed.set(motesMissed() + 1);
@@ -1328,6 +1445,11 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       if (dx * dx + dy * dy <= 12 * 12) {
         m.dead = true;
         removedM = true;
+        const collected = motesCollected() + 1;
+        motesCollected.set(collected);
+        if (collected === PRIMROSE_UNLOCK_MOTES) {
+          unlock("primrose", "28 MOON MOTES ANSWER -- MOON PRIMROSE JOINS");
+        }
         const p = active();
         const worth = p.kind === "primrose" ? MOTE_GLOW * 2 : MOTE_GLOW;
         grantGlow(p, worth);
@@ -1345,7 +1467,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
       if (pressed & BTN.TRIANGLE) castSpell();
     }
     tick++;
-    second.set(Math.floor(tick / TPS));
+    if (tick % TPS === 0) second.set(tick / TPS);
     fxTick.set(tick);
     if (fxs().length > 0) {
       const cutoff = tick - FX_LIFE;
@@ -1362,8 +1484,12 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
   // runs its FULL ticksPerFrame() batch or none of it — see the header.
   // The whole frame runs inside one Solid batch: render effects fire once,
   // with final values, after the last micro-tick — not per signal write.
+  // The batch body is a reused binding, not a fresh closure per frame.
+  let frameButtons = 0;
+  const runFrameBody = () => frameBody(frameButtons);
   function frame(buttons: number): void {
-    batch(() => frameBody(buttons));
+    frameButtons = buttons;
+    batch(runFrameBody);
   }
 
   function frameBody(buttons: number): void {
@@ -1426,6 +1552,8 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     rescues: () => rescues,
     escaped: () => escaped(),
     hitsTaken: () => hitsTaken(),
+    motesCollected: () => motesCollected(),
+    primroseUnlockedAt: () => roster.find((r) => r.kind === "primrose")?.unlockedAt() ?? -1,
     motesMissed: () => motesMissed(),
     cardTimeouts: () => cardTimeouts(),
     rosterGlow: () => roster.map((r) => ({ kind: r.kind, stage: r.stage(), hp: r.hp(), glow: Math.round(r.glow()) })),
@@ -1433,7 +1561,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     bulletCount: () => enemyShots().length,
     bossInfo: () => {
       const b = boss();
-      return b ? { name: b.def.name, phase: b.phase(), hp: b.hp() } : null;
+      return b ? { name: b.def.name, phase: b.phase(), hp: b.hp } : null;
     },
     playerPos: () => ({ x: Math.round(px()), y: Math.round(py()) }),
   };
@@ -1452,6 +1580,7 @@ export function createNightbloom(options: NightbloomOptions = {}): Nightbloom {
     bestStage,
     escaped,
     hitsTaken,
+    motesCollected,
     motesMissed,
     cardTimeouts,
     px,
