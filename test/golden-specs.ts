@@ -103,6 +103,46 @@ export const GOLDEN_SPECS: GoldenSpec[] = [
     capture: [8, 60, 120, 170, 236],
     input: (f) => (f === 200 ? BTN.RIGHT : 0),
   },
+  {
+    // chrome: bevel border rings (Win98 window mock, demos/chrome). f2 =
+    // initial layout: raised window frame, sunken text well, thin status
+    // cells, navy caption gradient. DOWN@4 focuses OK, RIGHT@8 moves to
+    // CANCEL — f12 shows the focus face tint; CIRCLE held f16..22 — f18 is
+    // the active: bevel INVERSION; f26 is released and back to raised.
+    name: "chrome-main",
+    frames: 30,
+    capture: [2, 12, 18, 26],
+    input: (f) =>
+      f === 4 ? BTN.DOWN : f === 8 ? BTN.RIGHT : f >= 16 && f <= 22 ? BTN.CIRCLE : 0,
+  },
+  {
+    // im (Pocket Talk): bootstrap lands at f30 — f40 is the conversation
+    // list (presence, unread badges, previews). CIRCLE@60 opens MAYA CHEN —
+    // f80 is the thread bottom (wrapped bubbles, read ticks). UP held
+    // 90..150 scrolls the virtual window — f160 shows mid-history with a
+    // day chip. SELECT@170 jumps back, TRIANGLE@200 opens the OSK, DOWN@230
+    // walks focus to 'q', CIRCLE@260 types it — f280 is the OSK with a live
+    // draft. START@300 sends; f370 has the ack + delivery receipt (gray ✓✓).
+    name: "im-main",
+    frames: 380,
+    capture: [40, 80, 160, 280, 370],
+    input: (f) =>
+      f === 60
+        ? BTN.CIRCLE
+        : f >= 90 && f < 150
+          ? BTN.UP
+          : f === 170
+            ? BTN.SELECT
+            : f === 200
+              ? BTN.TRIANGLE
+              : f === 230
+                ? BTN.DOWN
+                : f === 260
+                  ? BTN.CIRCLE
+                  : f === 300
+                    ? BTN.START
+                    : 0,
+  },
 ];
 
 export function encodeThresholdInput(spec: GoldenSpec): string {

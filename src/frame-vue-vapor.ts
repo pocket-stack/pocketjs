@@ -24,6 +24,8 @@ export function onFrame(callback: FrameCallback): void {
 export interface ButtonPressOptions {
   allowWhenBlocked?: boolean;
   active?: boolean | (() => boolean);
+  /** See src/frame.ts: arm only after the button is seen up for one frame. */
+  latched?: boolean;
 }
 
 export function pushButtonHandlerBlock(): () => void {
@@ -41,7 +43,7 @@ export function onButtonPress(
   callback: (pressed: number, buttons: number) => void,
   opts: ButtonPressOptions = {},
 ): void {
-  let prevButtons = 0;
+  let prevButtons = opts.latched ? ~0 : 0; // latched: "everything held" until released
   onFrame((buttons) => {
     const pressed = buttons & ~prevButtons;
     prevButtons = buttons;

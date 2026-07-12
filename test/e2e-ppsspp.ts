@@ -170,6 +170,20 @@ const SPECS: Spec[] = [
       { name: "skipped", frame: 90 }, // track 2 (STATIC BLOOM) after the RTRIGGER skip
     ],
   },
+  {
+    // chrome: bevel border rings + the native active: press (spec op 26).
+    // DOWN@8 focuses OK, RIGHT@16 moves to CANCEL; CIRCLE held 28..43 shows
+    // the pressed bevel inversion, release restores the raised face.
+    app: "chrome",
+    inputScript: "0:0,8:0x40,12:0,16:0x20,20:0,28:0x2000,44:0",
+    capStart: 0,
+    capN: 60, // window 0..59
+    shots: [
+      { name: "focused", frame: 24 }, // CANCEL focused: face tint, raised bevel
+      { name: "pressed", frame: 36 }, // CIRCLE held: bevel rings inverted
+      { name: "released", frame: 52 }, // raised again after release
+    ],
+  },
   // ADD NEW DEMOS HERE: one Spec per demo, same shape.
 ];
 

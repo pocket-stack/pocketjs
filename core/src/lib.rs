@@ -701,10 +701,22 @@ impl Ui {
     }
 
     /// Set the `active:` pressed state (same native variant machinery as
-    /// focus; exposed for the hosts' input layer — not a spec op).
+    /// focus; spec op 26 — the JS input layer holds it while the press
+    /// button is down).
     pub fn set_active(&mut self, id: i32, active: bool) {
         let Some(slot) = self.tree.resolve(id) else { return };
         if self.tree.slots[slot as usize].active == active {
+            return;
+        }
+        // A record without an `active:` variant cannot change the resolved
+        // style — flip the flag without retargeting, so a press/release never
+        // restarts in-flight transitions (CSS :active semantics).
+        let has_active = self
+            .styles
+            .record(self.tree.slots[slot as usize].style_id)
+            .is_some_and(|r| !r.active.is_empty());
+        if !has_active {
+            self.tree.slots[slot as usize].active = active;
             return;
         }
         let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);

@@ -75,6 +75,14 @@ export interface ButtonPressOptions {
    */
   allowWhenBlocked?: boolean;
   active?: boolean | (() => boolean);
+  /**
+   * Require the button to be seen UP for at least one frame before its next
+   * edge counts. A component that mounts UNDER the user's held finger (a
+   * screen opened by a Focusable press, an on-screen-keyboard chord) would
+   * otherwise read the still-held button as a fresh press one frame later.
+   * Scripted tapes/goldens pulse buttons for single frames and are unaffected.
+   */
+  latched?: boolean;
 }
 
 export function pushButtonHandlerBlock(): () => void {
@@ -92,7 +100,7 @@ export function onButtonPress(
   callback: (pressed: number, buttons: number) => void,
   opts: ButtonPressOptions = {},
 ): void {
-  let prevButtons = 0;
+  let prevButtons = opts.latched ? ~0 : 0; // latched: "everything held" until released
   onFrame((buttons) => {
     const pressed = buttons & ~prevButtons;
     prevButtons = buttons;

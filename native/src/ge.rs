@@ -350,6 +350,13 @@ unsafe fn apply_texture(view: &TexView) {
         view.w as i32,
         view.pixels.as_ptr() as *const c_void,
     );
+    // REAL-GE QUIRK: sceGuTexImage does NOT invalidate the hardware texture
+    // cache. Binds that only change the buffer pointer (same size + format —
+    // e.g. several small same-dimension icons drawn back to back) sample
+    // stale cache lines on hardware and render blank/garbage; every emulator
+    // backend refetches per bind and hides it. Flush on every bind — a few
+    // binds per frame, negligible against the 8 KB cache refill.
+    sys::sceGuTexFlush();
     sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgba);
     // NEAREST remains the golden-parity default: it matches the wasm software
     // rasterizer (core/src/raster.rs) that the byte-exact goldens are defined
@@ -375,6 +382,9 @@ unsafe fn apply_font_texture(tex: &FontTexture) {
         tex.tex_w as i32,
         tex.pixels.as_ptr() as *const c_void,
     );
+    // Same real-GE cache quirk as apply_texture: multiple font atlases with
+    // equal dimensions would alias without a flush.
+    sys::sceGuTexFlush();
     sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgba);
     sys::sceGuTexFilter(TextureFilter::Nearest, TextureFilter::Nearest);
 }

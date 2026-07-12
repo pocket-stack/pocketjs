@@ -173,6 +173,11 @@ pub extern "C" fn ui_set_focus(id: i32) {
 }
 
 #[no_mangle]
+pub extern "C" fn ui_set_active(id: i32, active: i32) {
+    ui().set_active(id, active != 0)
+}
+
+#[no_mangle]
 pub extern "C" fn ui_load_styles(ptr: *const u8, len: usize) -> i32 {
     ui().load_styles(unsafe { bytes(ptr, len) }) as i32
 }

@@ -13,6 +13,10 @@
 //     unlink (renderer calls notifyDetached first).
 //   - Every focus change calls ops.setFocus so the native core applies the
 //     `focus:` style variant with zero further JS.
+//   - While CIRCLE is held, the focused node carries the `active:` variant
+//     (ops.setActive, spec op 26) — pressed visuals with zero per-frame JS.
+//     Cleared on release, and on any focus change (d-pad while held, scope
+//     push/pop, removal repair) so the pressed look never sticks.
 
 import { BTN } from "../spec/spec.ts";
 import { getOps } from "./host.ts";
@@ -20,6 +24,7 @@ import type { NodeMirror } from "./renderer.ts";
 
 let root: NodeMirror | null = null;
 let focused: NodeMirror | null = null;
+let pressedNode: NodeMirror | null = null;
 let prevButtons = 0;
 const focusScopeStack: NodeMirror[] = [];
 const focusGridStack: FocusGridRegistration[] = [];
@@ -28,6 +33,7 @@ const focusGridStack: FocusGridRegistration[] = [];
 export function setInputRoot(r: NodeMirror | null): void {
   root = r;
   focused = null;
+  pressedNode = null;
   prevButtons = 0;
   focusScopeStack.length = 0;
   focusGridStack.length = 0;
@@ -58,8 +64,18 @@ export function registerFocusable(node: NodeMirror, on: boolean): void {
 
 /** Programmatic focus (also used internally). null clears. */
 export function focusNode(node: NodeMirror | null): void {
+  if (pressedNode && pressedNode !== node) setPressedNode(null);
   focused = node;
   getOps().setFocus(node ? node.id : 0);
+}
+
+/** Hold/clear the `active:` variant on a node (stale ids no-op core-side). */
+function setPressedNode(node: NodeMirror | null): void {
+  if (pressedNode === node) return;
+  const ops = getOps();
+  if (pressedNode) ops.setActive?.(pressedNode.id, 0);
+  pressedNode = node;
+  if (node) ops.setActive?.(node.id, 1);
 }
 
 export function getFocused(): NodeMirror | null {
@@ -312,11 +328,16 @@ export function notifyDetached(node: NodeMirror): void {
  */
 export function handleFrame(buttons: number): void {
   const pressed = buttons & ~prevButtons;
+  const released = prevButtons & ~buttons;
   prevButtons = buttons;
+  if (released & BTN.CIRCLE) setPressedNode(null);
   if (pressed === 0) return;
   if (pressed & BTN.DOWN) moveFocus("down");
   if (pressed & BTN.RIGHT) moveFocus("right");
   if (pressed & BTN.UP) moveFocus("up");
   if (pressed & BTN.LEFT) moveFocus("left");
-  if (pressed & BTN.CIRCLE) firePress();
+  if (pressed & BTN.CIRCLE) {
+    setPressedNode(focused);
+    firePress();
+  }
 }

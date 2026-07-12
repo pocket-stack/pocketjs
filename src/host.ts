@@ -69,6 +69,10 @@ export interface HostOps {
   cancelAnim(animId: number): void;
   /** 0 clears focus. Applies the `focus:` style variant natively. */
   setFocus(idOr0: number): void;
+  /** Set/clear the `active:` pressed variant natively (0/1 int; stale ids
+   *  no-op). Optional: older hosts predate spec op 26 — pressed visuals
+   *  degrade gracefully when absent. */
+  setActive?(id: number, active: number): void;
   /** web/test hosts only — on PSP the native bin feeds core from the pak. */
   loadStyles?(buf: Uint8Array): void;
   /** web/test hosts only — one call per baked font atlas blob. */
@@ -141,9 +145,15 @@ export function assertNativeHostContract(
   expected: BuildHostContract | null = embeddedBuildHostContract(),
 ): void {
   if (!expected) return;
+  if (typeof ops.__host !== "string") {
+    throw new Error(
+      `PocketJS: this bundle targets "${expected.target}" but the native host predates platform ` +
+        "contracts — add __host/__hostAbi to its ui namespace (see src/host.ts HostOps)",
+    );
+  }
   if (ops.__host !== expected.target) {
     throw new Error(
-      `PocketJS: native target mismatch (bundle=${expected.target}, host=${ops.__host ?? "missing"})`,
+      `PocketJS: native target mismatch (bundle=${expected.target}, host=${ops.__host})`,
     );
   }
   if (ops.__hostAbi !== expected.hostAbi) {
@@ -158,24 +168,29 @@ export function assertNativeHostContract(
  * QuickJS).
  * Throws when neither exists — PocketJS cannot run without a native tree.
  *
- * Exception: when the injected ops ARE a self-identified native namespace
- * (demo entries commonly pass `globalThis.ui` explicitly), object identity
- * plus `ui.__host` keeps it native and non-strict. Web/wasm adapters also
- * publish `globalThis.ui`, but intentionally omit `__host` and stay injected.
- * No texture-table or target-specific feature detection is involved.
+ * A namespace is NATIVE when it self-identifies with `__host` (platform
+ * contracts) — or, for hosts built before contracts existed (pocket-shell,
+ * the iOS fork, shipped EBOOTs), when it carries `__textures`, which only
+ * native ffi layers ever set. Those legacy hosts stay native/non-strict with
+ * target "unknown"; a bundle carrying an embedded contract refuses them with
+ * an actionable migration error (assertNativeHostContract). Web/wasm
+ * adapters publish `globalThis.ui` too but set neither marker and stay
+ * strict-injected, exactly as before.
  */
 export function detectHost(injected?: HostOps): Host {
-  const native = (globalThis as { ui?: HostOps }).ui;
+  const native = (globalThis as { ui?: HostOps & { __textures?: unknown } }).ui;
+  const nativeMarked =
+    native !== undefined && (typeof native.__host === "string" || native.__textures !== undefined);
   if (injected) {
-    if (native !== undefined && injected === native && typeof native.__host === "string") {
+    if (native !== undefined && injected === native && nativeMarked) {
       assertNativeHostContract(native);
-      return { ops: injected, kind: "native", target: native.__host, strict: false };
+      return { ops: injected, kind: "native", target: native.__host ?? "unknown", strict: false };
     }
     return { ops: injected, kind: "injected", target: injected.__host ?? "injected", strict: true };
   }
-  if (native && typeof native.__host === "string") {
+  if (native !== undefined && nativeMarked) {
     assertNativeHostContract(native);
-    return { ops: native, kind: "native", target: native.__host, strict: false };
+    return { ops: native, kind: "native", target: native.__host ?? "unknown", strict: false };
   }
   if (native) {
     return { ops: native, kind: "injected", target: "injected", strict: true };

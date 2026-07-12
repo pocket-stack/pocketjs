@@ -97,7 +97,7 @@
     "serve": "bun host-web/serve.ts",
     "golden": "bun test/golden.ts",
     "e2e": "bun test/e2e-ppsspp.ts",
-    "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test test/platform-contracts.test.ts test/host-build-inputs.test.ts test/platform-runtime.test.ts test/app-check.test.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/svg-bake.test.ts test/devtools.test.ts test/hot.test.ts test/clock.test.ts test/tiles.test.ts && bun scripts/build.ts cafe-main >/dev/null && bun test --conditions=browser test/sim.test.ts && bun scripts/build.ts zoomlab-main >/dev/null && bun test --conditions=browser test/deepzoom-sim.test.ts",
+    "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test test/platform-contracts.test.ts test/host-build-inputs.test.ts test/platform-runtime.test.ts test/app-check.test.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/svg-bake.test.ts test/devtools.test.ts test/hot.test.ts test/clock.test.ts test/tiles.test.ts && bun scripts/build.ts cafe-main >/dev/null && bun test --conditions=browser test/sim.test.ts && bun scripts/build.ts zoomlab-main >/dev/null && bun test --conditions=browser test/deepzoom-sim.test.ts && bun scripts/build.ts im-main >/dev/null && bun test --conditions=browser test/im-sim.test.ts",
     "tape": "bun scripts/tape.ts",
     "tape:check": "bun scripts/tape.ts replay hero-main test/tapes/hero-main.tape.json --assert test/tapes/hero-main.hashes.json",
     "devtools": "bun scripts/devtools.ts",
