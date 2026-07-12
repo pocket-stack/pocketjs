@@ -9,7 +9,7 @@ edition = "2021"
 vitasdk-sys = { version = "0.3.3", features = ["SceCtrl_stub", "SceGxm_stub", "SceKernelThreadMgr_stub", "SceLibKernel_stub"] }
 vita2d-sys = "0.1.1"
 
-libquickjs-sys = { git = "https://github.com/doodlewind/quickjs-rs.git", rev = "20b758acad6fd4b10fbbfa6685123ed3e9b32483" }
+libquickjs-sys = { git = "https://github.com/doodlewind/quickjs-rs.git", rev = "ae957fd7820ad22e564aa72976a9bf7f7a9a8cac" }
 pocketjs-core = { path = "../core", features = ["std"] }
 
 [features]
