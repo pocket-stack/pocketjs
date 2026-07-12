@@ -113,8 +113,10 @@ optional `<appDir>/sounds.json` (same pattern as `sprites.json`):
 Files resolve against `<appDir>`, `assets/sounds/`, then `assets/`. Each
 entry is decoded (RIFF/WAVE, PCM 8/16-bit), downmixed to mono, resampled to
 `rate` (default 22050 Hz), and packed as an SND pak entry under
-`audio:sfx.<name>` or (with `"bgm": true`) `audio:bgm.<name>`. Old hosts skip
-unknown `audio:` keys — forward compatible.
+`audio:sfx.<name>` or (with `"bgm": true`) `audio:bgm.<name>`. `loopStart`
+is a sample index **in the baked entry's units** — i.e. at the manifest's
+`rate`, after resampling, not in the source file's. Old hosts skip unknown
+`audio:` keys — forward compatible.
 
 SND entry layout (constants in `spec/spec.ts`):
 
