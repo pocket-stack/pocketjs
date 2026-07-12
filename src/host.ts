@@ -34,6 +34,13 @@ export interface HostOps {
   setStyle(id: number, styleId: number): void;
   /** propId: spec PROP. Colors/enums pass their u32 bits as a number. */
   setProp(id: number, propId: number, value: number): void;
+  /** Optional hot-path fusion for paint-only translateX + translateY. PSP
+   *  exposes this to halve QuickJS -> native calls for large moving swarms;
+   *  runtimes without it fall back to two setProp calls in hot.position. */
+  setTranslation?(id: number, x: number, y: number): void;
+  /** Optional paint-only particle layer. Words repeat
+   *  [x:f32, y:f32, size:f32, color:u32 ABGR]. */
+  setParticles?(id: number, words: Uint32Array, count: number): void;
   /** UTF-8 text; text nodes only. */
   setText(id: number, str: string): void;
   /** Solid universal calls this on reactive text updates. */

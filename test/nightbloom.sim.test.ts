@@ -8,8 +8,8 @@
 //
 // Two tapes:
 //   THE MARKSMAN — a full clear (~183 s): the catnip opens the night alone,
-//                  its first ascension wakes the sakura, the midboss's fall
-//                  rouses the gorilla, and the rotation walks all three
+//                  the midboss's fall rouses the healing gorilla, and the
+//                  rotation walks both forms
 //                  through the pilot seat to break the diva's last card.
 //   THE SLEEPER  — nobody home (~40 s): the lone catnip dies with no form
 //                  awake to switch to, and the night ends on the spot.
@@ -42,7 +42,7 @@ const MARKSMAN_SECONDS = 190; // dawn settles at ~184.1 s
 const SLEEPER_SECONDS = 60; // the lone catnip falls at ~40 s
 
 // THE MARKSMAN — sweep-dodge and rotate. The switch presses no-op while a
-// form is still locked, then pick each newcomer up as the night wakes it;
+// form is still locked, then pick the gorilla up when the night wakes it;
 // over the night every form flies.
 const MARKSMAN = (() => {
   const T: { at: number; press?: number; hold?: number }[] = [{ at: 1.0, press: BTN.START }];
@@ -64,10 +64,10 @@ const MARKSMAN = (() => {
     T.push({ at: t + 3.5, press: BTN.TRIANGLE });
     T.push({ at: t + 6, press: BTN.RTRIGGER });
   }
-  // petal clears for the diva's dense cards
+  // moonrise boosts for the diva's dense cards
   for (const t of [139.0, 157.0]) {
     T.push({ at: t, press: BTN.RTRIGGER });
-    T.push({ at: t + 1.5, press: BTN.TRIANGLE }); // PETALFALL
+    T.push({ at: t + 1.5, press: BTN.TRIANGLE }); // MOONRISE
     T.push({ at: t + 3.0, press: BTN.LTRIGGER });
   }
   return T.sort((a, b) => a.at - b.at);
@@ -163,15 +163,15 @@ describe("nightbloom: the night actually happened", () => {
       expect(treeHasText(t.tree, "DAWN BREAKS")).toBe(true);
       expect(treeHasText(t.tree, "THE DIVA FALLS SILENT")).toBe(true);
       // Act one: the score takes the stage (settled by the final frame).
-      expect(treeHasText(t.tree, "8575")).toBe(true);
-      expect(treeHasText(t.tree, "GRAZE: 92")).toBe(true);
-      expect(treeHasText(t.tree, "FOES FELLED: 33")).toBe(true);
+      expect(treeHasText(t.tree, "6830")).toBe(true);
+      expect(treeHasText(t.tree, "GRAZE: 56")).toBe(true);
+      expect(treeHasText(t.tree, "FOES FELLED: 20")).toBe(true);
       // The whole roster woke and every form survived to see the sun.
       expect(treeHasText(t.tree, "GREATEST BLOOM: STAGE 3")).toBe(true);
-      expect(treeHasText(t.tree, "SURVIVING FORMS: 3 OF 3 AWAKENED")).toBe(true);
+      expect(treeHasText(t.tree, "SURVIVING FORMS: 2 OF 2 AWAKENED")).toBe(true);
       // Act two: ONE medal, stamped on and congratulating the wrong thing.
-      expect(treeHasText(t.tree, "MERCY MEDAL")).toBe(true);
-      expect(treeHasText(t.tree, "2 FOES STROLLED OFF UNHARMED")).toBe(true);
+      expect(treeHasText(t.tree, "PINCUSHION")).toBe(true);
+      expect(treeHasText(t.tree, "STRUCK 21 TIMES AND PROUD")).toBe(true);
     }
   });
 

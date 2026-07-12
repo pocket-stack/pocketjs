@@ -203,6 +203,30 @@ struct TimelineInst {
     loop_frames: u16,
 }
 
+/// One paint-only particle owned by a particle-layer node. Coordinates are
+/// local to that node; the normal tree transform and overflow clip apply.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Particle {
+    pub x: f32,
+    pub y: f32,
+    pub size: f32,
+    pub color: u32,
+}
+
+pub(crate) struct ParticleLayer {
+    pub node: i32,
+    pub particles: Vec<Particle>,
+}
+
+#[inline]
+fn valid_particle(particle: &Particle) -> bool {
+    particle.x.is_finite()
+        && particle.y.is_finite()
+        && particle.size.is_finite()
+        && particle.size > 0.0
+        && particle.size <= 64.0
+}
+
 /// The retained UI core. One per host/screen.
 pub struct Ui {
     tree: tree::Tree,
@@ -210,6 +234,7 @@ pub struct Ui {
     fonts: text::Fonts,
     anims: anim::Anims,
     timelines: Vec<TimelineInst>,
+    particle_layers: Vec<ParticleLayer>,
     layout: layout::LayoutEngine,
     /// Generation-tagged texture slots (handles per spec.ts TEX_SLOT_BITS).
     textures: Vec<TexSlot>,
@@ -249,6 +274,7 @@ impl Ui {
             fonts: text::Fonts::new(),
             anims: anim::Anims::new(),
             timelines: Vec::new(),
+            particle_layers: Vec::new(),
             layout: layout::LayoutEngine::new(),
             textures: Vec::new(),
             tex_free: Vec::new(),
@@ -290,6 +316,7 @@ impl Ui {
         for slot in slots {
             let nid = self.tree.slots[slot as usize].id(slot);
             self.anims.kill_node(nid);
+            self.particle_layers.retain(|layer| layer.node != nid);
             self.tree.free_slot(slot);
         }
         self.layout.dirty = true;
@@ -352,6 +379,89 @@ impl Ui {
         tree::Node::put_entry(&mut node.overrides, prop, bits);
         if spec::is_layout_dirtying(prop) {
             self.layout.mark_style(slot);
+        }
+    }
+
+    /// Replace the paint-only particle batch attached to `id`. Capacity is
+    /// retained across frames, so steady-state updates allocate nothing.
+    pub fn set_particles(&mut self, id: i32, particles: &[Particle]) {
+        if self.tree.resolve(id).is_none() {
+            return;
+        }
+        if let Some(layer) = self.particle_layers.iter_mut().find(|layer| layer.node == id) {
+            layer.particles.clear();
+            layer.particles.extend(particles.iter().copied().filter(valid_particle));
+            return;
+        }
+        self.particle_layers.push(ParticleLayer {
+            node: id,
+            particles: particles.iter().copied().filter(valid_particle).collect(),
+        });
+    }
+
+    /// Packed host form: repeated [x:f32 bits, y:f32 bits, size:f32 bits,
+    /// color:ABGR] words. Only `count` complete particles are consumed.
+    pub fn set_particle_words(&mut self, id: i32, words: &[u32], count: usize) {
+        if self.tree.resolve(id).is_none() {
+            return;
+        }
+        let index = match self.particle_layers.iter().position(|layer| layer.node == id) {
+            Some(index) => index,
+            None => {
+                self.particle_layers.push(ParticleLayer { node: id, particles: Vec::new() });
+                self.particle_layers.len() - 1
+            }
+        };
+        let particles = &mut self.particle_layers[index].particles;
+        particles.clear();
+        let count = count.min(words.len() / 4);
+        if particles.capacity() < count {
+            particles.reserve(count - particles.capacity());
+        }
+        for chunk in words[..count * 4].chunks_exact(4) {
+            let particle = Particle {
+                x: f32::from_bits(chunk[0]),
+                y: f32::from_bits(chunk[1]),
+                size: f32::from_bits(chunk[2]),
+                color: chunk[3],
+            };
+            if valid_particle(&particle) {
+                particles.push(particle);
+            }
+        }
+    }
+
+    /// Byte-oriented host form. Unlike casting an ArrayBuffer pointer to
+    /// `u32`, this remains defined even when a JS engine returns an unaligned
+    /// typed-array backing store.
+    pub fn set_particle_bytes(&mut self, id: i32, bytes: &[u8], count: usize) {
+        if self.tree.resolve(id).is_none() {
+            return;
+        }
+        let index = match self.particle_layers.iter().position(|layer| layer.node == id) {
+            Some(index) => index,
+            None => {
+                self.particle_layers.push(ParticleLayer { node: id, particles: Vec::new() });
+                self.particle_layers.len() - 1
+            }
+        };
+        let particles = &mut self.particle_layers[index].particles;
+        particles.clear();
+        let count = count.min(bytes.len() / 16);
+        if particles.capacity() < count {
+            particles.reserve(count - particles.capacity());
+        }
+        for chunk in bytes[..count * 16].chunks_exact(16) {
+            let word = |at: usize| u32::from_le_bytes([chunk[at], chunk[at + 1], chunk[at + 2], chunk[at + 3]]);
+            let particle = Particle {
+                x: f32::from_bits(word(0)),
+                y: f32::from_bits(word(4)),
+                size: f32::from_bits(word(8)),
+                color: word(12),
+            };
+            if valid_particle(&particle) {
+                particles.push(particle);
+            }
         }
     }
 
@@ -907,6 +1017,7 @@ impl Ui {
             &mut self.textures,
             &mut self.tex_free,
             &mut self.discs,
+            &self.particle_layers,
             &mut self.draw_list,
             self.inspect_id,
             self.inspect_drawn,

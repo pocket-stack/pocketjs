@@ -33,6 +33,8 @@ interface BenchLine {
   avg_render_us: number;
   avg_work_us: number;
   max_work_us: number;
+  avg_gpu_us: number;
+  max_gpu_us: number;
   bundle_bytes: number;
   pak_bytes: number;
   arena_capacity_bytes: number;
@@ -88,6 +90,16 @@ const SPECS: Spec[] = [
     inputScript: "0:0,4:0x40,8:0,10:0x2000,14:0,30:0x40,34:0,36:0x40,40:0,42:0x2000,46:0,70:0x0200,74:0",
     capStart: 0,
     capN: 95,
+  },
+  {
+    // Three trajectory families overlap here: lingering aimed wisp/usagi
+    // fire plus the 24 s kasa spread. The sweep tape keeps the pilot alive
+    // and firing so collision, player-shot and swarm rendering costs coexist.
+    app: "nightbloom",
+    inputScript:
+      "0:0,1:0x0008,2:0x40,90:0xc0,180:0x60,270:0xc0,360:0x60,450:0xc0,540:0x60,630:0xc0,720:0x60,810:0xc0,900:0x60,990:0xc0,1080:0x60,1170:0xc0,1260:0x60,1350:0xc0,1440:0x60,1530:0xc0,1620:0x60",
+    capStart: 1440,
+    capN: 180,
   },
 ];
 
@@ -181,6 +193,8 @@ const METRICS = [
   "avg_render_us",
   "avg_work_us",
   "max_work_us",
+  "avg_gpu_us",
+  "max_gpu_us",
   "host_wall_ms",
   "bundle_bytes",
   "pak_bytes",

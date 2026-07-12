@@ -3,7 +3,7 @@
 
 use alloc::vec::Vec;
 
-use crate::{spec, style, Ui};
+use crate::{spec, style, Particle, Ui};
 
 // ---- binary blob builders (bytes hand-assembled per spec.ts formats) --------
 
@@ -242,6 +242,43 @@ fn validate_drawlist(words: &[u32]) -> [u32; 8] {
 }
 
 // ---- tests ---------------------------------------------------------------------
+
+#[test]
+fn particle_layer_reuses_one_tree_node_and_cleans_up_with_it() {
+    let mut ui = Ui::new();
+    let layer = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(layer, spec::prop::WIDTH, 100.0);
+    ui.set_prop(layer, spec::prop::HEIGHT, 100.0);
+    ui.insert_before(spec::ROOT_ID, layer, 0);
+    ui.set_particles(
+        layer,
+        &[
+            Particle { x: 3.0, y: 5.0, size: 8.0, color: abgr(255, 0, 0, 255) },
+            Particle { x: 20.0, y: 30.0, size: 4.0, color: abgr(0, 255, 0, 255) },
+        ],
+    );
+    ui.tick();
+    assert_eq!(validate_drawlist(&ui.draw().words.clone())[spec::draw_op::TEX_QUAD as usize], 2);
+
+    ui.set_particles(layer, &[Particle { x: 1.0, y: 2.0, size: 3.0, color: abgr(0, 0, 255, 255) }]);
+    assert_eq!(validate_drawlist(&ui.draw().words.clone())[spec::draw_op::TEX_QUAD as usize], 1);
+
+    // Host bytes may begin at an unaligned address. Decode bytewise, then
+    // reject a corrupt giant size instead of covering the clipped field.
+    let mut packed = alloc::vec![0xaa];
+    for word in [4.0f32.to_bits(), 6.0f32.to_bits(), 8.0f32.to_bits(), abgr(0, 255, 255, 255)] {
+        packed.extend_from_slice(&word.to_le_bytes());
+    }
+    ui.set_particle_bytes(layer, &packed[1..], 1);
+    assert_eq!(validate_drawlist(&ui.draw().words.clone())[spec::draw_op::TEX_QUAD as usize], 1);
+    packed[9..13].copy_from_slice(&200.0f32.to_bits().to_le_bytes());
+    ui.set_particle_bytes(layer, &packed[1..], 1);
+    assert_eq!(validate_drawlist(&ui.draw().words.clone())[spec::draw_op::TEX_QUAD as usize], 0);
+
+    ui.destroy_node(layer);
+    ui.tick();
+    assert_eq!(validate_drawlist(&ui.draw().words.clone())[spec::draw_op::RECT as usize], 0);
+}
 
 #[test]
 fn arena_id_reuse_and_stale_id_noop() {

@@ -519,13 +519,14 @@ struct Walker<'a> {
     inspect_slot: u32,
     /// World AABB of `inspect_slot`, set when the walk reaches it.
     inspect_hit: Option<Clip>,
+    particle_layers: &'a [crate::ParticleLayer],
 }
 
 /// Build the full DrawList for the current (laid-out) tree. `frame` is the
 /// core's vblank counter (Ui.frame); animated sprites pick their cell from it.
 /// `screen` is the viewport every coordinate is clipped to.
 #[allow(clippy::too_many_arguments)]
-pub fn build(
+pub(crate) fn build(
     tree: &Tree,
     styles: &StyleTable,
     fonts: &Fonts,
@@ -534,6 +535,7 @@ pub fn build(
     textures: &mut Vec<crate::TexSlot>,
     tex_free: &mut Vec<u32>,
     discs: &mut DiscCache,
+    particle_layers: &[crate::ParticleLayer],
     dl: &mut DrawList,
     inspect_id: i32,
     inspect_prev: Option<(f32, f32, f32, f32)>,
@@ -559,6 +561,7 @@ pub fn build(
         discs,
         inspect_slot,
         inspect_hit: None,
+        particle_layers,
     };
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
     w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), dl);
@@ -732,6 +735,49 @@ impl<'a> Walker<'a> {
                 (0.0, 0.0, 1.0, 1.0)
             };
             self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip, fu0, fv0, fu1, fv1);
+        }
+
+        // -- paint-only particle layer ---------------------------------------
+        if let Some(layer) = self.particle_layers.iter().find(|layer| layer.node == node.id(slot)) {
+            for particle in &layer.particles {
+                if !particle.x.is_finite()
+                    || !particle.y.is_finite()
+                    || !particle.size.is_finite()
+                    || particle.size <= 0.0
+                    || particle.size > 64.0
+                    || alpha(particle.color) == 0
+                {
+                    continue;
+                }
+                let r = roundf(particle.size * 0.5).max(1.0) as u32;
+                if let Some((tex, dim)) = disc_texture(self.discs, self.textures, self.tex_free, r) {
+                    let (x, y) = world.apply(particle.x, particle.y);
+                    let size = (r * 2) as f32;
+                    self.emit_corner_quad(
+                        dl,
+                        tex,
+                        x,
+                        y,
+                        size,
+                        0.0,
+                        0.0,
+                        size / dim as f32,
+                        scale_alpha(particle.color, op),
+                        &clip,
+                    );
+                } else {
+                    self.emit_box(
+                        dl,
+                        &world,
+                        particle.x,
+                        particle.y,
+                        particle.x + particle.size,
+                        particle.y + particle.size,
+                        Fill::Flat(scale_alpha(particle.color, op)),
+                        &clip,
+                    );
+                }
+            }
         }
 
         // -- children (overflow-hidden scissor around them; z-index stable

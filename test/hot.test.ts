@@ -3,7 +3,7 @@
 // for unchanged values and exactly one op per change.
 import { beforeEach, expect, test } from "bun:test";
 import { installHost, type Host, type HostOps } from "../src/host.ts";
-import { createElement, resetRendererState, type NodeMirror } from "../src/native-tree.ts";
+import { createElement, registerTexture, resetRendererState, type NodeMirror } from "../src/native-tree.ts";
 import * as hot from "../src/hot.ts";
 
 let calls: [string, ...unknown[]][];
@@ -79,6 +79,55 @@ test("hot.prop encodes, gates, and rejects unknown props", () => {
   hot.prop(el, "translateX", -8);
   expect(of("setProp").length).toBe(2);
   expect(() => hot.prop(el, "notAProp" as never, 1)).toThrow(/unknown style prop/);
+});
+
+test("hot.position falls back to two props and gates the coordinate pair", () => {
+  const el = createElement("view");
+  hot.position(el, 12, -4);
+  expect(of("setProp")).toEqual([
+    ["setProp", el.id, 128, 12],
+    ["setProp", el.id, 129, -4],
+  ]);
+  hot.position(el, 12, -4);
+  expect(of("setProp").length).toBe(2);
+});
+
+test("hot.position uses the fused host operation when available", () => {
+  const host = mockHost();
+  host.ops.setTranslation = (...args) => calls.push(["setTranslation", ...args]);
+  installHost(host);
+  const el = createElement("view");
+  hot.position(el, 7, 9);
+  expect(of("setTranslation")).toEqual([["setTranslation", el.id, 7, 9]]);
+  expect(of("setProp")).toEqual([]);
+});
+
+test("hot.image swaps textures once per changed key", () => {
+  registerTexture("wisp.png", 7);
+  registerTexture("kasa.png", 9);
+  const image = createElement("image");
+  hot.image(image, "wisp.png");
+  hot.image(image, "wisp.png");
+  hot.image(image, "kasa.png");
+  expect(of("setImage")).toEqual([
+    ["setImage", image.id, 7],
+    ["setImage", image.id, 9],
+  ]);
+});
+
+test("particle batches pack f32 geometry and ABGR words into one host call", () => {
+  const host = mockHost();
+  host.ops.setParticles = (id, words, count) => {
+    const floats = new Float32Array(words.buffer);
+    calls.push(["setParticles", id, count, floats[0], floats[1], floats[2], words[3]]);
+  };
+  installHost(host);
+  expect(hot.supportsParticles()).toBe(true);
+  const layer = createElement("view");
+  const batch = hot.createParticleBatch(2);
+  batch.push(3.5, -2, 8, 0xff112233);
+  batch.flush(layer);
+  expect(of("setParticles")).toEqual([["setParticles", layer.id, 1, 3.5, -2, 8, 0xff112233]]);
 });
 
 test("hot.text on a bare text node works without a wrapper", () => {

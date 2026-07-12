@@ -86,10 +86,10 @@ const FOE_STYLE =
 const SHOT_STYLE = "tiny cute pixel art game projectile icon, rounded kawaii shape, soft glow, clean silhouette, centered";
 
 // ---------------------------------------------------------------------------
-// The roster — the five pilotable plant forms
+// The roster — two pilotable plant forms
 // ---------------------------------------------------------------------------
 
-export type PlantId = "primrose" | "catnip" | "sakura";
+export type PlantId = "primrose" | "catnip";
 
 export interface SpellDef {
   name: string;
@@ -115,7 +115,7 @@ export interface PlantDef {
   /** Shot damage per bullet and seconds between volleys, per stage. */
   dmg: [number, number, number];
   period: [number, number, number];
-  /** Streams per volley, per stage (homing orbs / bolts / petal fan width). */
+  /** Streams per volley, per stage. */
   streams: [number, number, number];
   /** Sprite file per stage — full literals so the pak build collects them. */
   sprites: [string, string, string];
@@ -126,7 +126,7 @@ export interface PlantDef {
   spell: SpellDef;
 }
 
-export const PLANT_ORDER: PlantId[] = ["catnip", "sakura", "primrose"];
+export const PLANT_ORDER: PlantId[] = ["catnip", "primrose"];
 
 export const PLANTS: Record<PlantId, PlantDef> = {
   catnip: {
@@ -145,22 +145,6 @@ export const PLANTS: Record<PlantId, PlantDef> = {
     law: "HOMING ORBS, AND IT DANCES WITH DEATH: WIDER GRAZE, DOUBLE GLOW",
     spell: { name: "NINE LIVES", hint: "9 HOMING ORBS + CLEAR NEAR", cooldown: 18 },
   },
-  sakura: {
-    id: "sakura",
-    name: "SAKURA SENTINEL",
-    stageNames: ["SAPLING", "GUARDIAN", "PETALSTORM"],
-    hp: [110, 140, 170],
-    armor: [0, 1, 2],
-    speed: 105,
-    artFacing: -1,
-    dmg: [3, 4, 5],
-    period: [0.34, 0.3, 0.26],
-    streams: [3, 5, 7],
-    sprites: ["p-sakura-1.png", "p-sakura-2.png", "p-sakura-3.png"],
-    evolveAt: [420, 1400],
-    law: "SOFT PETALS, TRUE DAMAGE -- AND EVERY HIT HEALS THE MOST WOUNDED",
-    spell: { name: "PETALFALL", hint: "CLEAR EVERY SHOT, SLOW ALL", cooldown: 15 },
-  },
   primrose: {
     id: "primrose",
     name: "MOON PRIMROSE",
@@ -169,13 +153,13 @@ export const PLANTS: Record<PlantId, PlantDef> = {
     armor: [0, 0, 0],
     speed: 110,
     artFacing: -1,
-    dmg: [14, 18, 22],
+    dmg: [16, 20, 24],
     period: [0.42, 0.38, 0.34],
     streams: [1, 1, 1],
     sprites: ["p-primrose-1.png", "p-primrose-2.png", "p-primrose-3.png"],
     evolveAt: [360, 1200],
-    law: "BANANA BOOMERANGS: THREE ALOFT, CATCH THEM COMING BACK. MOTES x2",
-    spell: { name: "MOONRISE", hint: "+100 GLOW TO THE WHOLE ROSTER", cooldown: 15 },
+    law: "BANANA BOOMERANGS: THREE ALOFT. EVERY HIT MENDS THE MOST WOUNDED. MOTES x2",
+    spell: { name: "MOONRISE", hint: "HEAL 24 + 100 GLOW TO THE WHOLE ROSTER", cooldown: 15 },
   },
 };
 
@@ -188,9 +172,9 @@ export const GRAZE_R = 11;
 /** The catnip dances with death: wider graze ring, double its glow. */
 export const CATNIP_GRAZE_R = 16;
 export const CATNIP_GRAZE_MULT = 2;
-/** Sakura's kindness: every damaging petal heals the most wounded waking
- *  form this much. */
-export const SAKURA_HEAL = 1;
+/** The gorilla guards the garden: every damaging banana touch heals the
+ *  most wounded waking form this much. */
+export const PRIMROSE_HEAL = 2;
 /** The gorilla's boomerangs: at most `max` aloft; thrown up at `throwVy`
  *  px/s (per stage), decelerating `decel` px/s^2 until they turn, then
  *  homing back at `back` px/s. Caught within `catchR` px. A banana never
@@ -268,7 +252,7 @@ export const FOES: Record<FoeId, FoeDef> = {
     firePeriod: [2.2, 2.0, 1.8],
     shotSpeed: [66, 74, 82],
     sprites: ["f-kasa-1.png", "f-kasa-2.png", "f-kasa-3.png"],
-    law: "ARMORED SPREADS. PETALS PIERCE",
+    law: "ARMORED SPREADS. SPELL ORBS PIERCE",
   },
   usagi: {
     id: "usagi",
@@ -331,15 +315,15 @@ export interface WaveDef {
 }
 
 export const WAVES: WaveDef[] = [
-  { at: 4, spawn: ["wisp", "wisp", "wisp"] },
-  { at: 14, spawn: ["wisp", "wisp", "usagi"] },
-  { at: 24, spawn: ["kasa", "wisp", "wisp"] },
-  { at: 34, spawn: ["usagi", "usagi", "wisp", "wisp"] },
-  { at: 44, spawn: ["uta", "wisp", "wisp", "wisp"] },
-  { at: 56, spawn: ["wisp", "wisp", "wisp", "usagi", "usagi"] },
-  { at: 66, spawn: ["kasa", "kasa", "uta"] },
-  { at: 96, spawn: ["usagi", "usagi", "usagi", "wisp", "wisp"] },
-  { at: 104, spawn: ["uta", "uta", "kasa"] },
+  { at: 4, spawn: ["wisp", "usagi"] },
+  { at: 14, spawn: ["wisp", "usagi"] },
+  { at: 24, spawn: ["kasa", "wisp"] },
+  { at: 34, spawn: ["usagi", "uta"] },
+  { at: 44, spawn: ["uta", "kasa"] },
+  { at: 56, spawn: ["wisp", "uta"] },
+  { at: 66, spawn: ["kasa", "uta"] },
+  { at: 96, spawn: ["usagi", "uta"] },
+  { at: 104, spawn: ["uta", "kasa"] },
 ];
 
 /** The midboss crosses at this second (an IRON KASA grown monstrous). */
@@ -507,11 +491,6 @@ export const ART: ArtEntry[] = [
     "the same black and gold cat grown into a young sleek two-tailed cat blossom, taller now, white crescent moon mark glowing on its forehead, golden bell collar, playful grin, two swishing leaf tails",
     "the same black and gold cat fully grown, a large regal spirit cat, many glowing petal tails fanned wide, a bright white full moon mark shining on its forehead, tiny golden crown, sparkling whiskers",
   ], 1030),
-  ...plantArt(PLANTS.sakura, [
-    "tiny baby cherry blossom sapling, small and round with a shy blushing face and big soft eyes, a few pink petals drifting",
-    "the same cherry tree grown taller into a young blossom guardian, swirl of pink petals, calm smile",
-    "the same tree fully grown, a great wide sakura spirit in storm bloom, petal vortex, ancient serene face",
-  ], 1050),
   // --- foes (32x32, transparent, walk west) --------------------------------
   ...foeArt(FOES.wisp, [
     "floating paper lantern ghost with a tiny warm flame heart, chubby cheeks and a happy grin, soft ragged paper skirt",

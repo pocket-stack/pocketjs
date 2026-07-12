@@ -23,8 +23,9 @@
 // gen-assets.ts. Every class is a FULL literal and all copy is ASCII (Inter
 // has no CJK).
 
-import { For, Show } from "solid-js";
-import { Image, Screen, Text, View } from "@pocketjs/framework/components";
+import { For, Show, onCleanup } from "solid-js";
+import { Image, Screen, Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import * as hot from "@pocketjs/framework/hot";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import {
   AVATAR_SIZE,
@@ -39,7 +40,21 @@ import {
   SHOTS,
   WAVES,
 } from "./data.ts";
-import { createNightbloom, FX_LIFE, STAMP_AT, STAMP_IMPACT, type FloatFx, type Nightbloom, type PlantState } from "./engine.ts";
+import {
+  createNightbloom,
+  FX_LIFE,
+  MAX_ENEMY_SHOTS,
+  MAX_MOTES,
+  STAMP_AT,
+  STAMP_IMPACT,
+  type EnemyShot,
+  type EnemyShotKind,
+  type FloatFx,
+  type FoeInst,
+  type Nightbloom,
+  type PlantState,
+  type PlayerShot,
+} from "./engine.ts";
 
 // ---------------------------------------------------------------------------
 // Title / endings
@@ -176,15 +191,30 @@ const STARS = [
   { x: 14, y: 160, layer: 2 }, { x: 186, y: 220, layer: 2 }, { x: 70, y: 250, layer: 2 },
 ];
 
-function Starfield(props: { game: Nightbloom }) {
+function DeclarativeStarfield(props: { game: Nightbloom }) {
   const g = props.game;
+  const nodes: Array<NodeMirror | undefined> = [];
+  const syncStar = (i: number, tick: number) => {
+    const s = STARS[i];
+    hot.prop(nodes[i], "translateY", (s.y + Math.floor(tick * (s.layer === 1 ? 0.35 : 0.7))) % FIELD.h);
+  };
+  const syncStars = () => {
+    const tick = g.fxTick();
+    for (let i = 0; i < STARS.length; i++) syncStar(i, tick);
+  };
+  onFrame(syncStars);
   return (
     <View debugName="Stars" class="absolute inset-0 overflow-hidden">
       <For each={STARS}>
-        {(s) => (
+        {(s, i) => (
           <View
             class={s.layer === 1 ? "absolute w-1 h-1 rounded-full bg-slate-700" : "absolute w-1 h-1 rounded-full bg-slate-500"}
-            style={{ insetL: s.x, insetT: (s.y + Math.floor(g.fxTick() * (s.layer === 1 ? 0.35 : 0.7))) % FIELD.h }}
+            nodeRef={(node) => {
+              const index = i();
+              nodes[index] = node;
+              syncStar(index, g.fxTick());
+            }}
+            style={{ insetL: s.x, insetT: 0, translateY: s.y }}
           />
         )}
       </For>
@@ -192,8 +222,38 @@ function Starfield(props: { game: Nightbloom }) {
   );
 }
 
+function NativeStarfield(props: { game: Nightbloom }) {
+  let layer: NodeMirror | undefined;
+  const batch = hot.createParticleBatch(STARS.length);
+  const sync = () => {
+    const tick = props.game.fxTick();
+    batch.reset();
+    for (const star of STARS) {
+      const y = (star.y + Math.floor(tick * (star.layer === 1 ? 0.35 : 0.7))) % FIELD.h;
+      batch.push(star.x, y, 4, star.layer === 1 ? 0xff554133 : 0xff8b7464);
+    }
+    batch.flush(layer);
+  };
+  onFrame(sync);
+  return (
+    <View
+      debugName="Stars"
+      class="absolute inset-0"
+      nodeRef={(node) => {
+        layer = node;
+        sync();
+      }}
+    />
+  );
+}
+
+function Starfield(props: { game: Nightbloom }) {
+  return hot.supportsParticles() ? <NativeStarfield game={props.game} /> : <DeclarativeStarfield game={props.game} />;
+}
+
 function PlayerNode(props: { game: Nightbloom }) {
   const g = props.game;
+  let playerNode: NodeMirror | undefined;
   const sprite = () => {
     const p = g.active();
     return PLANTS[p.kind].sprites[p.stage() - 1];
@@ -208,16 +268,26 @@ function PlayerNode(props: { game: Nightbloom }) {
   };
   /** Lean into the strafe, danmaku-style. */
   const lean = () => g.lastDx() * 9;
+  const syncPosition = () => {
+    const avatarSize = size();
+    hot.position(
+      playerNode,
+      g.px() - FIELD.x0 - avatarSize / 2,
+      g.py() - FIELD.y0 - avatarSize / 2 + bob(),
+    );
+  };
+  onFrame(syncPosition);
   return (
     <View
       debugName="Player"
-      class="absolute items-center justify-center"
+      class="absolute left-0 top-0 items-center justify-center"
+      nodeRef={(node) => {
+        playerNode = node;
+        syncPosition();
+      }}
       style={{
-        insetL: g.px() - FIELD.x0 - size() / 2,
-        insetT: g.py() - FIELD.y0 - size() / 2,
         width: size(),
         height: size(),
-        translateY: bob(),
         rotate: lean(),
         opacity: blink() ? 1 : 0.35,
       }}
@@ -230,31 +300,137 @@ function PlayerNode(props: { game: Nightbloom }) {
   );
 }
 
-function FoeNode(props: { game: Nightbloom; foeId: number }) {
-  const g = props.game;
-  const foe = () => g.foes().find((f) => f.id === props.foeId);
+interface MovingEntity {
+  id: number;
+  x: number;
+  y: number;
+}
+
+interface Mover {
+  node: NodeMirror;
+  entity: MovingEntity;
+  offsetX: number;
+  offsetY: number;
+  spinOffset?: number;
+  index: number;
+}
+
+type MoverRegistry = Mover[];
+
+/** Register one plain-state swarm entity for the Field's single imperative
+ *  motion pass. This avoids one Solid effect + style-object allocation per
+ *  entity and uses paint-only transforms, so movement never dirties layout. */
+function moverRef(
+  movers: MoverRegistry,
+  entity: MovingEntity,
+  offsetX: number,
+  offsetY: number,
+  spinOffset?: number,
+): (node: NodeMirror) => void {
+  let mover: Mover | undefined;
+  onCleanup(() => {
+    if (!mover) return;
+    const last = movers.pop();
+    if (last && last !== mover) {
+      movers[mover.index] = last;
+      last.index = mover.index;
+    }
+  });
+  return (node) => {
+    mover = { node, entity, offsetX, offsetY, spinOffset, index: movers.length };
+    movers.push(mover);
+  };
+}
+
+function initialMotion(entity: MovingEntity, offsetX: number, offsetY: number): { translateX: number; translateY: number } {
+  return {
+    translateX: entity.x - FIELD.x0 + offsetX,
+    translateY: entity.y - FIELD.y0 + offsetY,
+  };
+}
+
+function FoeNode(props: { foe: FoeInst; movers: MoverRegistry }) {
+  const f = props.foe;
+  const def = FOES[f.kind];
   return (
-    <Show when={foe()} keyed>
-      {(f) => {
-        const def = FOES[f.kind];
-        return (
+    <View
+      debugName="Foe"
+      class="absolute left-0 top-0 items-center"
+      nodeRef={moverRef(props.movers, f, -13, -13)}
+      style={{ ...initialMotion(f, -13, -13), width: 26, height: 30 }}
+    >
+      <Image class="w-[26] h-[26]" src={def.sprites[f.stage - 1]} />
+      <View class="absolute left-1 right-1 top-0 h-1 rounded-sm bg-[#02061799]">
+        <View
+          class="h-1 rounded-sm bg-red-400 origin-left w-full"
+          style={{ scaleX: Math.max(0, f.hp() / def.hp[f.stage - 1]) }}
+        />
+      </View>
+    </View>
+  );
+}
+
+const FOE_POOL_SIZE = 6;
+const FOE_POOL = Array.from({ length: FOE_POOL_SIZE }, (_, i) => i);
+
+interface FoeSlot {
+  root?: NodeMirror;
+  image?: NodeMirror;
+  hp?: NodeMirror;
+}
+
+/** PSP keeps foe structure stable across waves. Spawning, death, and escape
+ *  only repaint these slots, avoiding a full Taffy rebuild on combat beats. */
+function NativeFoes(props: { game: Nightbloom; movers: MoverRegistry }) {
+  const slots: FoeSlot[] = FOE_POOL.map(() => ({}));
+  let visible = 0;
+  const sync = () => {
+    const foes = props.game.foes();
+    const nextVisible = Math.min(foes.length, slots.length);
+    for (let i = 0; i < nextVisible; i++) {
+      const slot = slots[i];
+      const foe = foes[i];
+      const def = FOES[foe.kind];
+      hot.image(slot.image, def.sprites[foe.stage - 1]);
+      hot.position(slot.root, foe.x - FIELD.x0 - 13, foe.y - FIELD.y0 - 13);
+      hot.prop(slot.hp, "scaleX", Math.max(0, foe.hp() / def.hp[foe.stage - 1]));
+      hot.prop(slot.root, "opacity", 1);
+    }
+    for (let i = nextVisible; i < visible; i++) hot.prop(slots[i].root, "opacity", 0);
+    visible = nextVisible;
+  };
+  onFrame(sync);
+  return (
+    <>
+      <For each={FOE_POOL}>
+        {(i) => (
           <View
-            debugName="Foe"
-            class="absolute items-center"
-            style={{ insetL: f.x() - FIELD.x0 - 13, insetT: f.y() - FIELD.y0 - 13, width: 26, height: 30 }}
+            debugName="FoeSlot"
+            class="absolute left-0 top-0 items-center"
+            nodeRef={(node) => (slots[i].root = node)}
+            style={{ width: 26, height: 30, opacity: 0 }}
           >
-            <Image class="w-[26] h-[26]" src={def.sprites[f.stage - 1]} />
+            <Image class="w-[26] h-[26]" src="f-wisp-1.png" nodeRef={(node) => (slots[i].image = node)} />
             <View class="absolute left-1 right-1 top-0 h-1 rounded-sm bg-[#02061799]">
               <View
                 class="h-1 rounded-sm bg-red-400 origin-left w-full"
-                style={{ scaleX: Math.max(0, f.hp() / def.hp[f.stage - 1]) }}
+                nodeRef={(node) => (slots[i].hp = node)}
               />
             </View>
           </View>
-        );
-      }}
-    </Show>
+        )}
+      </For>
+      <For each={props.game.foes().slice(FOE_POOL_SIZE)}>
+        {(foe) => <FoeNode foe={foe} movers={props.movers} />}
+      </For>
+    </>
   );
+}
+
+function Foes(props: { game: Nightbloom; movers: MoverRegistry }) {
+  return hot.supportsParticles()
+    ? <NativeFoes game={props.game} movers={props.movers} />
+    : <For each={props.game.foes()}>{(foe) => <FoeNode foe={foe} movers={props.movers} />}</For>;
 }
 
 function BossNode(props: { game: Nightbloom }) {
@@ -304,63 +480,165 @@ function BossNode(props: { game: Nightbloom }) {
   );
 }
 
-function EnemyShotNode(props: { game: Nightbloom; shotId: number }) {
-  const g = props.game;
-  const shot = () => g.enemyShots().find((s) => s.id === props.shotId);
-  return (
-    <Show when={shot()} keyed>
-      {(s) =>
-        s.kind === "mochi" ? (
-          <Image
-            class="absolute w-[12] h-[12]"
-            src="shot-mochi.png"
-            style={{ insetL: s.x() - FIELD.x0 - 6, insetT: s.y() - FIELD.y0 - 6 }}
-          />
-        ) : (
-          <View
-            class={
-              s.kind === "pink"
-                ? "absolute w-2 h-2 rounded-full bg-pink-300 border border-pink-100"
-                : s.kind === "cyan"
-                  ? "absolute w-2 h-2 rounded-full bg-cyan-300 border border-cyan-100"
-                  : "absolute w-2 h-2 rounded-full bg-amber-300 border border-amber-100"
-            }
-            style={{ insetL: s.x() - FIELD.x0 - 4, insetT: s.y() - FIELD.y0 - 4 }}
-          />
-        )
+function EnemyShotNode(props: { shot: EnemyShot; movers: MoverRegistry }) {
+  const s = props.shot;
+  return s.kind === "mochi" ? (
+    <Image
+      class="absolute left-0 top-0 w-[12] h-[12]"
+      src="shot-mochi.png"
+      nodeRef={moverRef(props.movers, s, -6, -6)}
+      style={initialMotion(s, -6, -6)}
+    />
+  ) : (
+    <View
+      class={
+        s.kind === "pink"
+          ? "absolute left-0 top-0 w-2 h-2 rounded-full bg-pink-300 border border-pink-100"
+          : s.kind === "cyan"
+            ? "absolute left-0 top-0 w-2 h-2 rounded-full bg-cyan-300 border border-cyan-100"
+            : "absolute left-0 top-0 w-2 h-2 rounded-full bg-amber-300 border border-amber-100"
       }
-    </Show>
+      nodeRef={moverRef(props.movers, s, -4, -4)}
+      style={initialMotion(s, -4, -4)}
+    />
   );
 }
 
-function PlayerShotNode(props: { game: Nightbloom; shotId: number }) {
-  const g = props.game;
-  const shot = () => g.playerShots().find((s) => s.id === props.shotId);
+/** ABGR colors matching the fallback Tailwind fills. Mochi becomes a native
+ *  white dot on PSP so every trajectory fits one compact RECT batch. */
+const ENEMY_SHOT_COLORS: Record<EnemyShotKind, number> = {
+  pink: 0xffd4a8f9,
+  cyan: 0xfff9e867,
+  amber: 0xff4dd3fc,
+  mochi: 0xffffffff,
+};
+
+/** PSP: one retained node + one packed host call per frame. Other hosts keep
+ *  the declarative nodes so browser rendering and deterministic tests need no
+ *  new host capability. */
+function NativeEnemyShotLayer(props: { game: Nightbloom }) {
+  let layer: NodeMirror | undefined;
+  const batch = hot.createParticleBatch(MAX_ENEMY_SHOTS);
+  const sync = () => {
+    const shots = props.game.enemyShots();
+    batch.reset();
+    for (let i = 0; i < shots.length; i++) {
+      const shot = shots[i];
+      batch.push(shot.x - FIELD.x0 - 4, shot.y - FIELD.y0 - 4, 8, ENEMY_SHOT_COLORS[shot.kind]);
+    }
+    batch.flush(layer);
+  };
+  onFrame(sync);
   return (
-    <Show when={shot()} keyed>
-      {(s) =>
-        s.kind === "petal" ? (
-          <View class="absolute w-1 h-2 rounded-full bg-pink-200" style={{ insetL: s.x() - FIELD.x0 - 2, insetT: s.y() - FIELD.y0 - 4 }} />
-        ) : s.kind === "banana" ? (
-          <Image
-            class="absolute w-[14] h-[14]"
-            src="shot-banana.png"
-            style={{
-              insetL: s.x() - FIELD.x0 - 7,
-              insetT: s.y() - FIELD.y0 - 7,
-              rotate: ((g.fxTick() * 9 + s.id * 40) % 360),
-            }}
-          />
-        ) : (
-          <Image
-            class="absolute w-[12] h-[12]"
-            src={SHOTS.orb.sprite}
-            style={{ insetL: s.x() - FIELD.x0 - 6, insetT: s.y() - FIELD.y0 - 6 }}
-          />
-        )
-      }
-    </Show>
+    <View
+      debugName="EnemyShotLayer"
+      class="absolute inset-0"
+      nodeRef={(node) => {
+        layer = node;
+        sync();
+      }}
+    />
   );
+}
+
+function EnemyShots(props: { game: Nightbloom; movers: MoverRegistry }) {
+  if (hot.supportsParticles()) return <NativeEnemyShotLayer game={props.game} />;
+  return <For each={props.game.enemyShots()}>{(shot) => <EnemyShotNode shot={shot} movers={props.movers} />}</For>;
+}
+
+function PlayerShotNode(props: { shot: PlayerShot; movers: MoverRegistry }) {
+  const s = props.shot;
+  return s.kind === "banana" ? (
+    <Image
+      class="absolute left-0 top-0 w-[14] h-[14]"
+      src="shot-banana.png"
+      nodeRef={moverRef(props.movers, s, -7, -7, s.id * 40)}
+      style={{
+        ...initialMotion(s, -7, -7),
+        rotate: s.id * 40 % 360,
+      }}
+    />
+  ) : (
+    <Image
+      class="absolute left-0 top-0 w-[12] h-[12]"
+      src={SHOTS.orb.sprite}
+      nodeRef={moverRef(props.movers, s, -6, -6)}
+      style={initialMotion(s, -6, -6)}
+    />
+  );
+}
+
+function NativePlayerShotLayer(props: { game: Nightbloom }) {
+  let layer: NodeMirror | undefined;
+  const batch = hot.createParticleBatch(40);
+  const sync = () => {
+    const shots = props.game.playerShots();
+    batch.reset();
+    for (let i = 0; i < shots.length; i++) {
+      const shot = shots[i];
+      if (shot.kind === "banana") continue;
+      batch.push(shot.x - FIELD.x0 - 6, shot.y - FIELD.y0 - 6, 12, 0xffd4a8f9);
+    }
+    batch.flush(layer);
+  };
+  onFrame(sync);
+  return (
+    <View
+      debugName="PlayerShotLayer"
+      class="absolute inset-0"
+      nodeRef={(node) => {
+        layer = node;
+        sync();
+      }}
+    />
+  );
+}
+
+function PlayerShots(props: { game: Nightbloom; movers: MoverRegistry }) {
+  if (!hot.supportsParticles()) {
+    return <For each={props.game.playerShots()}>{(shot) => <PlayerShotNode shot={shot} movers={props.movers} />}</For>;
+  }
+  return (
+    <>
+      <NativePlayerShotLayer game={props.game} />
+      <For each={props.game.playerShots().filter((shot) => shot.kind === "banana")}>
+        {(shot) => <PlayerShotNode shot={shot} movers={props.movers} />}
+      </For>
+    </>
+  );
+}
+
+function MoteNode(props: { mote: MovingEntity; movers: MoverRegistry }) {
+  return (
+    <Image
+      class="absolute left-0 top-0 w-[10] h-[10]"
+      src="mote.png"
+      nodeRef={moverRef(props.movers, props.mote, -5, -5)}
+      style={initialMotion(props.mote, -5, -5)}
+    />
+  );
+}
+
+function NativeMotes(props: { game: Nightbloom }) {
+  let layer: NodeMirror | undefined;
+  const batch = hot.createParticleBatch(MAX_MOTES);
+  const sync = () => {
+    const motes = props.game.motes();
+    batch.reset();
+    for (let i = 0; i < motes.length; i++) {
+      const mote = motes[i];
+      batch.push(mote.x - FIELD.x0 - 3, mote.y - FIELD.y0 - 3, 6, 0xff7dd3fc);
+    }
+    batch.flush(layer);
+  };
+  onFrame(sync);
+  return <View debugName="MoteLayer" class="absolute inset-0" nodeRef={(node) => { layer = node; sync(); }} />;
+}
+
+function Motes(props: { game: Nightbloom; movers: MoverRegistry }) {
+  return hot.supportsParticles()
+    ? <NativeMotes game={props.game} />
+    : <For each={props.game.motes()}>{(mote) => <MoteNode mote={mote} movers={props.movers} />}</For>;
 }
 
 function FxNode(props: { game: Nightbloom; fx: FloatFx }) {
@@ -383,6 +661,20 @@ function FxNode(props: { game: Nightbloom; fx: FloatFx }) {
 
 function Field(props: { game: Nightbloom }) {
   const g = props.game;
+  const movers: MoverRegistry = [];
+  onFrame(() => {
+    const spinTick = g.fxTick() * 9;
+    for (let i = 0; i < movers.length; i++) {
+      const mover = movers[i];
+      hot.position(
+        mover.node,
+        mover.entity.x - FIELD.x0 + mover.offsetX,
+        mover.entity.y - FIELD.y0 + mover.offsetY,
+      );
+      if (mover.spinOffset !== undefined) hot.prop(mover.node, "rotate", (spinTick + mover.spinOffset) % 360);
+    }
+  });
+  onCleanup(() => (movers.length = 0));
   return (
     <View
       debugName="Field"
@@ -391,16 +683,12 @@ function Field(props: { game: Nightbloom }) {
     >
       <Starfield game={g} />
       <View class="absolute left-0 right-0 h-[1] bg-[#33415566]" style={{ insetT: POC_Y - FIELD.y0 }} />
-      <For each={g.motes()}>
-        {(m) => (
-          <Image class="absolute w-[10] h-[10]" src="mote.png" style={{ insetL: m.x() - FIELD.x0 - 5, insetT: m.y() - FIELD.y0 - 5 }} />
-        )}
-      </For>
-      <For each={g.foes()}>{(f) => <FoeNode game={g} foeId={f.id} />}</For>
+      <Motes game={g} movers={movers} />
+      <Foes game={g} movers={movers} />
       <BossNode game={g} />
-      <For each={g.playerShots()}>{(s) => <PlayerShotNode game={g} shotId={s.id} />}</For>
+      <PlayerShots game={g} movers={movers} />
       <PlayerNode game={g} />
-      <For each={g.enemyShots()}>{(s) => <EnemyShotNode game={g} shotId={s.id} />}</For>
+      <EnemyShots game={g} movers={movers} />
       <For each={g.fxs()}>{(f) => <FxNode game={g} fx={f} />}</For>
       <Show when={g.wilting()}>
         <View
@@ -808,7 +1096,7 @@ function BattleScreen(props: { game: Nightbloom }) {
 // ---------------------------------------------------------------------------
 
 export default function Nightbloom() {
-  const game = createNightbloom();
+  const game = createNightbloom({ paintOnlyShots: hot.supportsParticles() });
   onFrame((buttons) => game.frame(buttons));
   return (
     <Screen debugName="NightbloomScreen" class="relative w-full h-full bg-slate-950 overflow-hidden">
