@@ -7,7 +7,8 @@
 //
 // ABI (see wasm/src/lib.rs): one export per ui.* op; strings/buffers cross
 // via linear memory — ui_alloc(len) -> ptr, write bytes, call, ui_free.
-// ui_render() returns the RGBA8 480x272 framebuffer pointer.
+// ui_render() returns the byte-exact RGBA8 480x272 framebuffer pointer;
+// ui_render_scaled(n) renders the logical DrawList directly at n×.
 
 export const FB_W = 480;
 export const FB_H = 272;
@@ -15,7 +16,8 @@ export const FB_H = 272;
 const encoder = new TextEncoder();
 
 /**
- * Instantiate pocketjs.wasm and return { ops, init, tick, render, exports }.
+ * Instantiate pocketjs.wasm and return
+ * { ops, init, tick, render, renderScaled, exports }.
  * `ops` is a complete HostOps (src/host.ts) — hand it to the app bundle as
  * globalThis.ui before eval'ing it.
  *
@@ -25,7 +27,18 @@ export async function createWasmUi(wasm) {
   const source = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
   const instance = await WebAssembly.instantiate(source, {});
   const ex = instance.exports;
-  ex.ui_init();
+
+  function integerInRange(value, name, min, max) {
+    if (!Number.isInteger(value) || value < min || value > max) {
+      throw new RangeError(`${name} must be an integer from ${min} through ${max}, got ${value}`);
+    }
+    return value;
+  }
+
+  const init = (rasterDensity = 1) => {
+    ex.ui_init(integerInRange(rasterDensity, "rasterDensity", 1, 255));
+  };
+  init();
 
   // Copy bytes into wasm scratch, run fn(ptr, len), free. Views are rebuilt
   // per call: memory.buffer is detached whenever linear memory grows.
@@ -82,17 +95,30 @@ export async function createWasmUi(wasm) {
     ops.uploadImgEntry = (blob) => withBytes(blob, (p, l) => ex.ui_upload_img_entry(p, l));
   }
 
+  function framebufferView(ptr, scale) {
+    if (!ptr) throw new Error(`pocketjs.wasm rejected render scale ${scale}`);
+    return new Uint8Array(
+      ex.memory.buffer,
+      ptr,
+      FB_W * scale * FB_H * scale * 4,
+    );
+  }
+
   return {
     ops,
     exports: ex,
-    /** Reset the core to a fresh Ui (fresh tree/styles/atlases/textures). */
-    init: () => ex.ui_init(),
+    /** Reset the core and set raster samples per logical pixel (default 1). */
+    init,
     /** Advance exactly one fixed-dt (1/60 s) frame. */
     tick: () => ex.ui_tick(),
-    /** Rasterize and return the RGBA8 framebuffer as a fresh view. */
+    /** Rasterize the byte-exact legacy 480x272 framebuffer. */
     render() {
-      const ptr = ex.ui_render();
-      return new Uint8Array(ex.memory.buffer, ptr, FB_W * FB_H * 4);
+      return framebufferView(ex.ui_render(), 1);
+    },
+    /** Rasterize the logical DrawList directly at an integer physical scale. */
+    renderScaled(scale) {
+      scale = integerInRange(scale, "render scale", 1, 4);
+      return framebufferView(ex.ui_render_scaled(scale), scale);
     },
   };
 }

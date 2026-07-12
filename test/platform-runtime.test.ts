@@ -18,7 +18,7 @@ async function bundlePlatform(defines: Record<string, string> = {}) {
   expect(result.success).toBe(true);
   const source = await result.outputs[0]!.text();
   return import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`) as Promise<{
-    platform: { target: string; features: Record<string, boolean> };
+    platform: { target: string; pixelRatio: number; features: Record<string, boolean> };
     hasFeature: (feature: "input.buttons") => boolean;
   }>;
 }
@@ -28,9 +28,11 @@ describe("platform feature availability", () => {
     const runtime = await bundlePlatform({
       __POCKET_TARGET__: JSON.stringify("psp"),
       __POCKET_FEATURES__: JSON.stringify({ "input.buttons": true }),
+      __POCKET_PIXEL_RATIO__: "1",
     });
     expect(runtime.platform).toEqual({
       target: "psp",
+      pixelRatio: 1,
       features: { "input.buttons": true },
     });
     expect(runtime.hasFeature("input.buttons")).toBe(true);
@@ -38,8 +40,17 @@ describe("platform feature availability", () => {
 
   test("legacy builds have an unknown target and no feature claims", async () => {
     const runtime = await bundlePlatform();
-    expect(runtime.platform).toEqual({ target: "unknown", features: {} });
+    expect(runtime.platform).toEqual({ target: "unknown", pixelRatio: 1, features: {} });
     expect(runtime.hasFeature("input.buttons")).toBe(false);
+  });
+
+  test("exposes the resolved raster density to dynamic texture producers", async () => {
+    const runtime = await bundlePlatform({
+      __POCKET_TARGET__: JSON.stringify("vita-test"),
+      __POCKET_FEATURES__: "{}",
+      __POCKET_PIXEL_RATIO__: "2",
+    });
+    expect(runtime.platform.pixelRatio).toBe(2);
   });
 });
 

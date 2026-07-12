@@ -14,6 +14,8 @@ export interface ResolvedBuildPlanContent {
     readonly logical: Viewport;
     readonly physical: Viewport;
     readonly presentation: PresentationMode;
+    /** Target-owned raster samples per logical pixel; layout stays logical. */
+    readonly rasterDensity: number;
   };
   /** Required APIs are true; enhancements reflect target availability. */
   readonly features: Readonly<Record<string, boolean>>;

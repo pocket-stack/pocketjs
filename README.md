@@ -137,6 +137,22 @@ same serialized plan; `planHash` is only its build-time checksum. At startup,
 the bundle checks the native host's target and HostOps ABI. The app entry and
 its reachable imports use the app's ordinary TypeScript configuration.
 
+The selected target profile also resolves `viewport.rasterDensity`. Layout and
+DrawList coordinates stay in the app's logical viewport; the compiler bakes
+font coverage and SVGs at that density, prefers same-directory `@2x` PNG,
+sprite and raw-PAK siblings when present, and asks the core to bake its own
+masks at the same density. Dynamic texture producers read the identical value
+from `platform.pixelRatio`—they never branch on a target name:
+
+```ts
+import { platform } from "@pocketjs/framework/platform";
+
+const canvas = makeTexture(logicalWidth * platform.pixelRatio);
+```
+
+Missing raster siblings deliberately fall back to the 1x source; malformed
+siblings fail the build if their dimensions do not preserve logical size.
+
 Capabilities are plain framework API identifiers. `requires` must exist on the
 selected host; `enhances` resolves to booleans available from
 `@pocketjs/framework/platform`:

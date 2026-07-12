@@ -31,6 +31,7 @@ import { ticksPerFrame } from "./clock.ts";
 import { getOps } from "./host.ts";
 import { analogX, analogY, onFrame } from "./frame.ts";
 import * as hot from "./hot.ts";
+import { platform } from "./platform.ts";
 import {
   createElement,
   detachNode,
@@ -255,7 +256,10 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
     doc = d;
     setProp(container, "style", { bgColor: doc.bg });
     minZoom = Math.min(vw / doc.w, vh / doc.h);
-    maxZoom = doc.levels[0].scale * 2;
+    // Preserve the same physical sampling ceiling on every target. A
+    // density-specific pyramid advertises proportionally larger level scales
+    // and therefore keeps the same logical zoom range automatically.
+    maxZoom = Math.max(minZoom, (doc.levels[0].scale * 2) / platform.pixelRatio);
     zoom = minZoom;
     cx = doc.w / 2;
     cy = doc.h / 2;
@@ -270,11 +274,12 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
 
   // ---- per-frame integration --------------------------------------------------
   const idealLevel = (): number => {
-    // Finest level that still DOWNSCALES on screen (worldScale <= 1): with ×2
-    // level spacing + bilinear sampling this keeps tiles crisp at every zoom.
+    // Finest level that still DOWNSCALES in physical pixels. DrawList zoom is
+    // logical, so include the resolved target density when choosing a mip.
     const ls = doc.levels;
+    const physicalZoom = zoom * platform.pixelRatio;
     for (let i = ls.length - 1; i >= 1; i--) {
-      if (ls[i].scale >= zoom) return i;
+      if (ls[i].scale >= physicalZoom) return i;
     }
     return 0;
   };

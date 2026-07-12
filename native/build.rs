@@ -53,6 +53,7 @@ fn main() {
         dimension("POCKETJS_PHYSICAL_HEIGHT", 272),
     );
     let presentation = env::var("POCKETJS_PRESENTATION").unwrap_or_else(|_| "native".into());
+    let raster_density = dimension("POCKETJS_RASTER_DENSITY", 1);
     assert_eq!(target, "psp", "pocketjs-psp requires target psp");
     assert_eq!(logical, (480, 272), "PSP logical viewport must be 480x272");
     assert_eq!(
@@ -64,6 +65,7 @@ fn main() {
         matches!(presentation.as_str(), "native" | "integer-fit"),
         "PSP presentation must be native or integer-fit"
     );
+    assert_eq!(raster_density, 1, "PSP raster density must be 1");
     let dist = env::var_os("POCKETJS_OUTPUT_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("../dist"));
@@ -133,6 +135,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=POCKETJS_PHYSICAL_WIDTH");
     println!("cargo:rerun-if-env-changed=POCKETJS_PHYSICAL_HEIGHT");
     println!("cargo:rerun-if-env-changed=POCKETJS_PRESENTATION");
+    println!("cargo:rerun-if-env-changed=POCKETJS_RASTER_DENSITY");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_INPUT");
     println!("cargo:rerun-if-env-changed=POCKETJS_TRACE");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAP_START");

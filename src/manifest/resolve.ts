@@ -87,6 +87,17 @@ export function validatePlatformContractRegistry(
   });
 
   for (const [targetId, target] of Object.entries(registry.targets)) {
+    if (
+      !Number.isInteger(target.display.rasterDensity) ||
+      target.display.rasterDensity < 1 ||
+      target.display.rasterDensity > 255
+    ) {
+      diagnostics.push({
+        code: "registry.invalidRasterDensity",
+        path: `/targets/${targetId}/display/rasterDensity`,
+        message: "target rasterDensity must be an integer from 1 through 255",
+      });
+    }
     const provided = new Set<string>();
     target.capabilities.forEach((capability, index) => {
       const path = `/targets/${targetId}/capabilities/${index}`;
@@ -211,6 +222,7 @@ export function resolveBuildPlan(
       logical,
       physical,
       presentation: manifest.app.viewport.presentation,
+      rasterDensity: profile.display.rasterDensity,
     },
     features,
   };

@@ -48,6 +48,7 @@ const syntheticTargetDefinitions = {
       physicalViewport: [960, 544],
       logicalViewports: [[480, 272]],
       presentations: ["integer-fit"],
+      rasterDensity: 2,
     },
     capabilities: [
       "input.analog.left",
@@ -138,6 +139,16 @@ describe("platform registry", () => {
     expect(ids).toEqual(["psp", "vita-test"]);
     expect(validatePlatformContractRegistry(SYNTHETIC_CONTRACTS)).toEqual([]);
   });
+
+  test("rejects invalid target raster densities at the registry boundary", () => {
+    const invalid = structuredClone(SYNTHETIC_CONTRACTS) as any;
+    invalid.targets["vita-test"].display.rasterDensity = 1.5;
+    expect(validatePlatformContractRegistry(invalid)).toContainEqual({
+      code: "registry.invalidRasterDensity",
+      path: "/targets/vita-test/display/rasterDensity",
+      message: "target rasterDensity must be an integer from 1 through 255",
+    });
+  });
 });
 
 describe("semantic resolution", () => {
@@ -155,6 +166,7 @@ describe("semantic resolution", () => {
       logical: [480, 272],
       physical: [480, 272],
       presentation: "integer-fit",
+      rasterDensity: 1,
     });
     expect(result.plan.features).toEqual({
       "input.analog.left": true,
@@ -242,6 +254,7 @@ describe("semantic resolution", () => {
       logical: [480, 272],
       physical: [960, 544],
       presentation: "integer-fit",
+      rasterDensity: 2,
     });
     expect(Object.values(result.plan.features).every(Boolean)).toBe(true);
   });

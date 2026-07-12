@@ -306,14 +306,23 @@ function erase(px: Uint8Array, i: number, cov01: number): void {
   px[i + 3] = Math.round(px[i + 3] * (1 - cov01));
 }
 
-export function bakeSvg(svg: string): DecodedImage {
+export function bakeSvg(svg: string, rasterDensity = 1): DecodedImage {
+  if (!Number.isInteger(rasterDensity) || rasterDensity < 1 || rasterDensity > 255) {
+    throw new RangeError(
+      `svg bake: rasterDensity must be an integer from 1 through 255 (got ${rasterDensity})`,
+    );
+  }
   const svgTag = svg.match(/<svg\b[^>]*>/i)?.[0];
   if (!svgTag) throw new Error("svg bake: missing <svg>");
   const root = attrs(svgTag);
-  const width = Math.round(num(root.width, "width"));
-  const height = Math.round(num(root.height, "height"));
-  if (width <= 0 || height <= 0) throw new Error(`svg bake: bad dimensions ${width}x${height}`);
-  const viewBox = (root.viewBox ?? `0 0 ${width} ${height}`).trim().split(/\s+/).map(Number);
+  const logicalWidth = Math.round(num(root.width, "width"));
+  const logicalHeight = Math.round(num(root.height, "height"));
+  if (logicalWidth <= 0 || logicalHeight <= 0) {
+    throw new Error(`svg bake: bad dimensions ${logicalWidth}x${logicalHeight}`);
+  }
+  const width = logicalWidth * rasterDensity;
+  const height = logicalHeight * rasterDensity;
+  const viewBox = (root.viewBox ?? `0 0 ${logicalWidth} ${logicalHeight}`).trim().split(/\s+/).map(Number);
   if (viewBox.length !== 4 || viewBox.some((n) => !Number.isFinite(n))) {
     throw new Error(`svg bake: invalid viewBox="${root.viewBox}"`);
   }

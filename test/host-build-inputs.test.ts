@@ -26,6 +26,7 @@ describe("custom host build boundary", () => {
         logical: [480, 272],
         physical: [480, 272],
         presentation: "integer-fit",
+        rasterDensity: 1,
       },
     });
   });
@@ -54,6 +55,7 @@ describe("custom host build boundary", () => {
       POCKETJS_PHYSICAL_WIDTH: "480",
       POCKETJS_PHYSICAL_HEIGHT: "272",
       POCKETJS_PRESENTATION: "integer-fit",
+      POCKETJS_RASTER_DENSITY: "1",
     });
   });
 });

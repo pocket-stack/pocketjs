@@ -1,5 +1,7 @@
 //! Deterministic software rasterizer: executes the core DrawList (spec.ts
-//! "DRAWLIST op format") over an RGBA8 480x272 framebuffer.
+//! "DRAWLIST op format") over an RGBA8 framebuffer. DrawList coordinates
+//! remain logical; [`render_scaled`] maps them directly onto an integer-scaled
+//! physical surface without first rasterizing a low-resolution image.
 //!
 //! Determinism rules (byte-exact goldens depend on this):
 //!   - Color math is INTEGER (u32/i64) everywhere: blending, gouraud triangle
@@ -26,8 +28,7 @@
 use crate::spec::{self, draw_op, SCREEN_H, SCREEN_W};
 use crate::{TexView, Ui};
 
-const W: i32 = SCREEN_W as i32;
-const H: i32 = SCREEN_H as i32;
+pub const MAX_RENDER_SCALE: u32 = 4;
 
 /// Integer clip rect: x0/y0 inclusive, x1/y1 exclusive.
 #[derive(Clone, Copy)]
@@ -37,13 +38,6 @@ struct Clip {
     x1: i32,
     y1: i32,
 }
-
-const SCREEN: Clip = Clip {
-    x0: 0,
-    y0: 0,
-    x1: W,
-    y1: H,
-};
 
 impl Clip {
     #[inline]
@@ -60,16 +54,16 @@ impl Clip {
 // ---- word decoding -----------------------------------------------------------
 
 #[inline]
-fn xy(word: u32) -> (i32, i32) {
+fn xy(word: u32, scale: i32) -> (i32, i32) {
     (
-        (word & 0xffff) as u16 as i16 as i32,
-        (word >> 16) as u16 as i16 as i32,
+        (word & 0xffff) as u16 as i16 as i32 * scale,
+        (word >> 16) as u16 as i16 as i32 * scale,
     )
 }
 
 #[inline]
-fn wh(word: u32) -> (i32, i32) {
-    ((word & 0xffff) as i32, (word >> 16) as i32)
+fn wh(word: u32, scale: i32) -> (i32, i32) {
+    ((word & 0xffff) as i32 * scale, (word >> 16) as i32 * scale)
 }
 
 #[inline]
@@ -87,8 +81,8 @@ fn channels(color: u32) -> (u32, u32, u32, u32) {
 /// src-over blend one pixel (integer, round-to-nearest). Caller guarantees
 /// (x, y) inside the framebuffer. Destination treated as opaque.
 #[inline]
-fn blend_px(fb: &mut [u8], x: i32, y: i32, r: u32, g: u32, b: u32, a: u32) {
-    let o = ((y * W + x) * 4) as usize;
+fn blend_px(fb: &mut [u8], stride: i32, x: i32, y: i32, r: u32, g: u32, b: u32, a: u32) {
+    let o = ((y * stride + x) * 4) as usize;
     if a >= 255 {
         fb[o] = r as u8;
         fb[o + 1] = g as u8;
@@ -108,14 +102,14 @@ fn blend_px(fb: &mut [u8], x: i32, y: i32, r: u32, g: u32, b: u32, a: u32) {
 }
 
 /// Fill an already-clipped span rect with one flat color.
-fn fill_rect(fb: &mut [u8], c: Clip, color: u32) {
+fn fill_rect(fb: &mut [u8], stride: i32, c: Clip, color: u32) {
     let (r, g, b, a) = channels(color);
     if a == 0 {
         return;
     }
     for y in c.y0..c.y1 {
         for x in c.x0..c.x1 {
-            blend_px(fb, x, y, r, g, b, a);
+            blend_px(fb, stride, x, y, r, g, b, a);
         }
     }
 }
@@ -135,11 +129,38 @@ fn lerp_color(from: u32, to: u32, f: f32) -> u32 {
 
 // ---- the interpreter --------------------------------------------------------------
 
-/// Execute `words` (a full DrawList) into `fb` (RGBA8, SCREEN_W x SCREEN_H).
+/// Execute `words` into the byte-exact legacy 480x272 surface.
+pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
+    render_scaled(ui, words, fb, 1);
+}
+
+/// Execute `words` (a full DrawList) directly into an integer-scaled physical
+/// surface. `fb` must contain exactly `SCREEN_W*scale × SCREEN_H*scale` RGBA8
+/// pixels. Geometry, clips and gradient/triangle sample points are evaluated
+/// at physical resolution; textures are sampled over that destination and
+/// font coverage accounts for the atlas's own raster density.
 /// `ui` supplies font atlases and textures. The framebuffer is cleared to
 /// opaque black first (the PSP host clears the draw buffer the same way).
-pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
-    debug_assert!(fb.len() >= (W * H * 4) as usize);
+pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
+    assert!(
+        (1..=MAX_RENDER_SCALE).contains(&scale),
+        "render scale must be 1 through 4"
+    );
+    let scale = scale as i32;
+    let width = SCREEN_W as i32 * scale;
+    let height = SCREEN_H as i32 * scale;
+    let expected = width as usize * height as usize * 4;
+    assert_eq!(
+        fb.len(),
+        expected,
+        "scaled framebuffer has the wrong byte length"
+    );
+    let screen = Clip {
+        x0: 0,
+        y0: 0,
+        x1: width,
+        y1: height,
+    };
     // Clear: opaque black.
     for px in fb.chunks_exact_mut(4) {
         px[0] = 0;
@@ -148,9 +169,9 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
         px[3] = 255;
     }
 
-    let mut stack: [Clip; 32] = [SCREEN; 32];
+    let mut stack: [Clip; 32] = [screen; 32];
     let mut depth: usize = 0;
-    let mut clip = SCREEN;
+    let mut clip = screen;
 
     let mut i = 0usize;
     while i < words.len() {
@@ -159,8 +180,8 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 if i + 4 > words.len() {
                     return;
                 }
-                let (x, y) = xy(words[i + 1]);
-                let (w, h) = wh(words[i + 2]);
+                let (x, y) = xy(words[i + 1], scale);
+                let (w, h) = wh(words[i + 2], scale);
                 let c = clip.intersect(Clip {
                     x0: x,
                     y0: y,
@@ -168,7 +189,7 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                     y1: y + h,
                 });
                 if c.x0 < c.x1 && c.y0 < c.y1 {
-                    fill_rect(fb, c, words[i + 3]);
+                    fill_rect(fb, width, c, words[i + 3]);
                 }
                 i += 4;
             }
@@ -176,10 +197,11 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 if i + 6 > words.len() {
                     return;
                 }
-                let (x, y) = xy(words[i + 1]);
-                let (w, h) = wh(words[i + 2]);
+                let (x, y) = xy(words[i + 1], scale);
+                let (w, h) = wh(words[i + 2], scale);
                 grad_rect(
                     fb,
+                    width,
                     clip,
                     x,
                     y,
@@ -201,14 +223,23 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 if i + 3 + 2 * n > words.len() {
                     return;
                 }
-                glyph_run(ui, fb, clip, slot, color, &words[i + 3..i + 3 + 2 * n]);
+                glyph_run(
+                    ui,
+                    fb,
+                    width,
+                    scale,
+                    clip,
+                    slot,
+                    color,
+                    &words[i + 3..i + 3 + 2 * n],
+                );
                 i += 3 + 2 * n;
             }
             draw_op::TEX_QUAD => {
                 if i + 9 > words.len() {
                     return;
                 }
-                tex_quad(ui, fb, clip, &words[i + 1..i + 9]);
+                tex_quad(ui, fb, width, scale, clip, &words[i + 1..i + 9]);
                 i += 9;
             }
             draw_op::SCISSOR => {
@@ -217,11 +248,11 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 }
                 stack[depth] = clip;
                 depth += 1;
-                let (x, y) = xy(words[i + 1]);
-                let (w, h) = wh(words[i + 2]);
+                let (x, y) = xy(words[i + 1], scale);
+                let (w, h) = wh(words[i + 2], scale);
                 // The core emits scissor rects already intersected with every
                 // enclosing scissor — SET (still guard against the screen).
-                clip = SCREEN.intersect(Clip {
+                clip = screen.intersect(Clip {
                     x0: x,
                     y0: y,
                     x1: x + w,
@@ -234,7 +265,7 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                     depth -= 1;
                     clip = stack[depth];
                 } else {
-                    clip = SCREEN;
+                    clip = screen;
                 }
                 i += 1;
             }
@@ -242,14 +273,14 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
                 if i + 7 > words.len() {
                     return;
                 }
-                tri(fb, clip, &words[i + 1..i + 7]);
+                tri(fb, width, scale, clip, &words[i + 1..i + 7]);
                 i += 7;
             }
             draw_op::TEX_TRI => {
                 if i + 12 > words.len() {
                     return;
                 }
-                tex_tri(ui, fb, clip, &words[i + 1..i + 12]);
+                tex_tri(ui, fb, width, scale, clip, &words[i + 1..i + 12]);
                 i += 12;
             }
             // The op set is closed per DrawList version; anything else means
@@ -261,8 +292,10 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
 
 // ---- GRAD_RECT: per-axis gouraud lerp ---------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn grad_rect(
     fb: &mut [u8],
+    stride: i32,
     clip: Clip,
     x: i32,
     y: i32,
@@ -299,7 +332,7 @@ fn grad_rect(
                 continue;
             }
             for py in c.y0..c.y1 {
-                blend_px(fb, px, py, r, g, bb, al);
+                blend_px(fb, stride, px, py, r, g, bb, al);
             }
         }
     } else {
@@ -312,7 +345,7 @@ fn grad_rect(
                 continue;
             }
             for px in c.x0..c.x1 {
-                blend_px(fb, px, py, r, g, bb, al);
+                blend_px(fb, stride, px, py, r, g, bb, al);
             }
         }
     }
@@ -327,10 +360,10 @@ fn orient(ax: i64, ay: i64, bx: i64, by: i64, px: i64, py: i64) -> i64 {
     (bx - ax) * (py - ay) - (by - ay) * (px - ax)
 }
 
-fn tri(fb: &mut [u8], clip: Clip, p: &[u32]) {
-    let (x0, y0) = xy(p[0]);
-    let (x1, y1) = xy(p[1]);
-    let (x2, y2) = xy(p[2]);
+fn tri(fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32]) {
+    let (x0, y0) = xy(p[0], scale);
+    let (x1, y1) = xy(p[1], scale);
+    let (x2, y2) = xy(p[2], scale);
     let c0 = p[3];
     let (mut c1, mut c2) = (p[4], p[5]);
     // Doubled coords: vertices at 2*v, sample points at 2*px+1 (pixel center).
@@ -369,7 +402,7 @@ fn tri(fb: &mut [u8], clip: Clip, p: &[u32]) {
                 continue;
             }
             if flat {
-                blend_px(fb, px, py, r0, g0, b0, a0);
+                blend_px(fb, stride, px, py, r0, g0, b0, a0);
             } else {
                 // Integer barycentric interpolation, round-to-nearest.
                 let mix = |v0: u32, v1: u32, v2: u32| {
@@ -377,6 +410,7 @@ fn tri(fb: &mut [u8], clip: Clip, p: &[u32]) {
                 };
                 blend_px(
                     fb,
+                    stride,
                     px,
                     py,
                     mix(r0, r1, r2),
@@ -391,7 +425,26 @@ fn tri(fb: &mut [u8], clip: Clip, p: &[u32]) {
 
 // ---- GLYPH_RUN: coverage atlas cells -----------------------------------------------
 
-fn glyph_run(ui: &Ui, fb: &mut [u8], clip: Clip, slot: u8, color: u32, glyphs: &[u32]) {
+#[inline]
+fn coverage_index(destination_px: i32, output_scale: i32, atlas_density: i32, limit: i32) -> usize {
+    // Nearest-neighbour at destination pixel centers. This is identical to a
+    // 1:1 lookup when output_scale == atlas_density, duplicates coverage when
+    // the output is denser, and samples the center of each source interval
+    // when a high-density atlas is rendered onto a lower-density surface.
+    ((((2 * destination_px + 1) * atlas_density) / (2 * output_scale)).clamp(0, limit - 1)) as usize
+}
+
+#[allow(clippy::too_many_arguments)]
+fn glyph_run(
+    ui: &Ui,
+    fb: &mut [u8],
+    stride: i32,
+    output_scale: i32,
+    clip: Clip,
+    slot: u8,
+    color: u32,
+    glyphs: &[u32],
+) {
     let Some(atlas) = ui.font_atlas(slot) else {
         return;
     };
@@ -399,11 +452,14 @@ fn glyph_run(ui: &Ui, fb: &mut [u8], clip: Clip, slot: u8, color: u32, glyphs: &
     if a == 0 {
         return;
     }
-    let cell_w = atlas.cell_w as i32;
-    let cell_h = atlas.cell_h as i32;
+    let cell_w = atlas.cell_w as i32 * output_scale;
+    let cell_h = atlas.cell_h as i32 * output_scale;
+    let atlas_density = atlas.raster_density as i32;
+    let coverage_w = atlas.coverage_width() as i32;
+    let coverage_h = atlas.coverage_height() as i32;
     let bpr = atlas.bytes_per_row();
     for pair in glyphs.chunks_exact(2) {
-        let (gx, gy) = xy(pair[0]);
+        let (gx, gy) = xy(pair[0], output_scale);
         let gid = (pair[1] & 0xffff) as u16;
         if gid >= atlas.glyph_count {
             continue;
@@ -418,12 +474,13 @@ fn glyph_run(ui: &Ui, fb: &mut [u8], clip: Clip, slot: u8, color: u32, glyphs: &
         }
         let rows = atlas.glyph_rows(gid);
         for py in y0..y1 {
-            let row = &rows[((py - gy) as usize) * bpr..];
+            let sy = coverage_index(py - gy, output_scale, atlas_density, coverage_h);
+            let row = &rows[sy * bpr..];
             for px in x0..x1 {
-                let cx = (px - gx) as usize;
+                let cx = coverage_index(px - gx, output_scale, atlas_density, coverage_w);
                 let cov = row[cx] as u32;
                 if cov != 0 {
-                    blend_px(fb, px, py, r, g, b, (a * cov + 127) / 255);
+                    blend_px(fb, stride, px, py, r, g, b, (a * cov + 127) / 255);
                 }
             }
         }
@@ -508,13 +565,13 @@ fn sample_linear(view: &TexView, u: f32, v: f32) -> Option<(u32, u32, u32, u32)>
 // ---- TEX_TRI: barycentric textured triangle (affine UV; nearest, or integer
 //      bilinear when the texture carries the linear flag) --------------------
 
-fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
+fn tex_tri(ui: &Ui, fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32]) {
     let handle = p[0] as i32;
-    let (x0, y0) = xy(p[1]);
+    let (x0, y0) = xy(p[1], scale);
     let (u0, v0) = (f32::from_bits(p[2]), f32::from_bits(p[3]));
-    let (x1, y1) = xy(p[4]);
+    let (x1, y1) = xy(p[4], scale);
     let (mut u1, mut v1) = (f32::from_bits(p[5]), f32::from_bits(p[6]));
-    let (x2, y2) = xy(p[7]);
+    let (x2, y2) = xy(p[7], scale);
     let (mut u2, mut v2) = (f32::from_bits(p[8]), f32::from_bits(p[9]));
     let modulate = p[10];
     let Some(view) = ui.texture(handle) else {
@@ -578,7 +635,7 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
                 b = (b * mb + 127) / 255;
                 a = (a * ma + 127) / 255;
             }
-            blend_px(fb, px, py, r, g, b, a);
+            blend_px(fb, stride, px, py, r, g, b, a);
         }
     }
 }
@@ -586,10 +643,10 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
 // ---- TEX_QUAD: textured rect (nearest, or integer bilinear when the texture
 //      carries the linear flag) --------------------------------------------------------
 
-fn tex_quad(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
+fn tex_quad(ui: &Ui, fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32]) {
     let handle = p[0] as i32;
-    let (x, y) = xy(p[1]);
-    let (w, h) = wh(p[2]);
+    let (x, y) = xy(p[1], scale);
+    let (w, h) = wh(p[2], scale);
     let u0 = f32::from_bits(p[3]);
     let v0 = f32::from_bits(p[4]);
     let u1 = f32::from_bits(p[5]);
@@ -639,7 +696,158 @@ fn tex_quad(ui: &Ui, fb: &mut [u8], clip: Clip, p: &[u32]) {
                 b = (b * mb + 127) / 255;
                 a = (a * ma + 127) / 255;
             }
-            blend_px(fb, px, py, r, g, b, a);
+            blend_px(fb, stride, px, py, r, g, b, a);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn xy_word(x: i16, y: i16) -> u32 {
+        x as u16 as u32 | ((y as u16 as u32) << 16)
+    }
+
+    fn wh_word(w: u16, h: u16) -> u32 {
+        w as u32 | ((h as u32) << 16)
+    }
+
+    fn framebuffer(scale: u32) -> Vec<u8> {
+        vec![0; SCREEN_W as usize * scale as usize * SCREEN_H as usize * scale as usize * 4]
+    }
+
+    fn rgba(fb: &[u8], scale: u32, x: usize, y: usize) -> [u8; 4] {
+        let width = SCREEN_W as usize * scale as usize;
+        let offset = (y * width + x) * 4;
+        fb[offset..offset + 4].try_into().unwrap()
+    }
+
+    #[test]
+    fn scale_one_wrapper_is_byte_exact() {
+        let ui = Ui::new();
+        let words = vec![
+            draw_op::RECT,
+            xy_word(3, 4),
+            wh_word(7, 5),
+            0xff33_2211,
+            draw_op::GRAD_RECT,
+            xy_word(12, 4),
+            wh_word(8, 6),
+            0xff00_0000,
+            0xffff_ffff,
+            spec::GradDir::ToRight as u32,
+            draw_op::TRI,
+            xy_word(24, 4),
+            xy_word(30, 10),
+            xy_word(20, 10),
+            0xff00_00ff,
+            0xff00_ff00,
+            0xffff_0000,
+        ];
+        let mut legacy = framebuffer(1);
+        let mut scaled = framebuffer(1);
+        render(&ui, &words, &mut legacy);
+        render_scaled(&ui, &words, &mut scaled, 1);
+        assert_eq!(legacy, scaled);
+    }
+
+    #[test]
+    fn geometry_gradients_triangles_and_scissors_use_physical_samples() {
+        let ui = Ui::new();
+        let words = vec![
+            draw_op::SCISSOR,
+            xy_word(1, 1),
+            wh_word(2, 2),
+            draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(4, 4),
+            0xff00_00ff,
+            draw_op::SCISSOR_POP,
+            draw_op::GRAD_RECT,
+            xy_word(4, 0),
+            wh_word(2, 2),
+            0xff00_0000,
+            0xffff_ffff,
+            spec::GradDir::ToRight as u32,
+            draw_op::TRI,
+            xy_word(8, 0),
+            xy_word(10, 2),
+            xy_word(8, 2),
+            0xff00_ff00,
+            0xff00_ff00,
+            0xff00_ff00,
+        ];
+        let mut fb = framebuffer(2);
+        render_scaled(&ui, &words, &mut fb, 2);
+
+        assert_eq!(rgba(&fb, 2, 1, 1), [0, 0, 0, 255]);
+        assert_eq!(rgba(&fb, 2, 2, 2), [255, 0, 0, 255]);
+        assert_eq!(rgba(&fb, 2, 5, 5), [255, 0, 0, 255]);
+        assert_eq!(rgba(&fb, 2, 6, 6), [0, 0, 0, 255]);
+
+        let gradient = (8..12).map(|x| rgba(&fb, 2, x, 0)[0]).collect::<Vec<_>>();
+        assert_eq!(gradient.len(), 4);
+        assert!(gradient.windows(2).all(|pair| pair[0] < pair[1]));
+        assert_eq!(rgba(&fb, 2, 17, 2), [0, 255, 0, 255]);
+    }
+
+    fn density_two_font() -> Vec<u8> {
+        let coverage = [
+            0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 255,
+        ];
+        let mut atlas = Vec::new();
+        atlas.extend_from_slice(&spec::font_atlas::MAGIC.to_le_bytes());
+        atlas.extend_from_slice(&spec::font_atlas::VERSION.to_le_bytes());
+        atlas.extend_from_slice(&1u16.to_le_bytes());
+        atlas.extend_from_slice(&[2, 2, 2, 2, 0, 0, 2, 0]);
+        atlas.extend_from_slice(&65u32.to_le_bytes());
+        atlas.extend_from_slice(&0u16.to_le_bytes());
+        atlas.extend_from_slice(&[2, 0]);
+        atlas.extend_from_slice(&coverage);
+        atlas
+    }
+
+    #[test]
+    fn textures_and_font_coverage_are_sampled_at_physical_resolution() {
+        let mut ui = Ui::new_with_raster_density(2);
+        let pixels = (0..16)
+            .flat_map(|value| [(value * 16) as u8, 0, 0, 255])
+            .collect::<Vec<_>>();
+        let texture = ui.upload_texture(&pixels, 4, 4, spec::psm::PSM_8888);
+        assert!(texture >= 0);
+        assert!(ui.load_font_atlas(&density_two_font()));
+
+        let words = vec![
+            draw_op::TEX_QUAD,
+            texture as u32,
+            xy_word(0, 0),
+            wh_word(2, 2),
+            0.0f32.to_bits(),
+            0.0f32.to_bits(),
+            1.0f32.to_bits(),
+            1.0f32.to_bits(),
+            0xffff_ffff,
+            draw_op::GLYPH_RUN,
+            1 << 16,
+            0xffff_ffff,
+            xy_word(3, 0),
+            0,
+        ];
+        let mut fb = framebuffer(2);
+        render_scaled(&ui, &words, &mut fb, 2);
+
+        for y in 0..4 {
+            for x in 0..4 {
+                assert_eq!(rgba(&fb, 2, x, y)[0], ((y * 4 + x) * 16) as u8);
+            }
+        }
+        let expected = density_two_font();
+        let coverage = &expected[24..];
+        for y in 0..4 {
+            for x in 0..4 {
+                assert_eq!(rgba(&fb, 2, 6 + x, y)[0], coverage[y * 4 + x]);
+            }
         }
     }
 }

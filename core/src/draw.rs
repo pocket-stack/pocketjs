@@ -398,7 +398,7 @@ fn fill_color_at(fill: &Fill, x0: f32, y0: f32, x1: f32, y1: f32, sx0: i32, sy: 
 /// coverage spans (the spans measured ~7 ms/frame of CPU on real PSP
 /// hardware for rounded-heavy screens).
 pub struct DiscCache {
-    /// (radius px, generation-tagged texture handle). Handles re-validate
+    /// (logical radius px, generation-tagged texture handle). Handles re-validate
     /// through `tex_resolve` on every use: `free_texture` is allowed to free
     /// a disc slot (JS misuse), which simply goes stale here and re-bakes.
     entries: Vec<(u32, i32)>,
@@ -416,8 +416,8 @@ impl Default for DiscCache {
     }
 }
 
-/// Get (or bake + upload) the AA disc texture for `r_px`. The disc is a
-/// 2r x 2r circle, supersampled 4x4, white RGB with coverage alpha
+/// Get (or bake + upload) the AA disc texture for logical `r_px`. The disc is
+/// a density-scaled 2r x 2r circle, supersampled 4x4, white RGB with coverage alpha
 /// (PSM_8888), padded to pow2 — corners sample their quadrant and modulate
 /// by the fill color, which matches the old span math's scale_alpha exactly
 /// up to AA rounding.
@@ -426,8 +426,10 @@ fn disc_texture(
     textures: &mut Vec<crate::TexSlot>,
     tex_free: &mut Vec<u32>,
     r_px: u32,
+    raster_density: u32,
 ) -> Option<(u32, u32)> {
-    let size = 2 * r_px;
+    let raster_radius = r_px.checked_mul(raster_density)?;
+    let size = 2u32.checked_mul(raster_radius)?;
     let dim = pow2_at_least(size);
     if dim > spec::TEX_MAX_DIM {
         return None;
@@ -442,7 +444,7 @@ fn disc_texture(
     }
     let byte_len = (dim * dim * 4) as usize;
     let mut px = alloc::vec![0u8; byte_len];
-    let c = r_px as f32; // disc center (r, r)
+    let c = raster_radius as f32; // disc center in raster pixels
     let rr = c * c;
     for y in 0..size {
         for x in 0..size {
@@ -515,6 +517,7 @@ struct Walker<'a> {
     textures: &'a mut Vec<crate::TexSlot>,
     tex_free: &'a mut Vec<u32>,
     discs: &'a mut DiscCache,
+    raster_density: u32,
     /// DevTools: slot to capture the world AABB of (u32::MAX = none).
     inspect_slot: u32,
     /// World AABB of `inspect_slot`, set when the walk reaches it.
@@ -534,6 +537,7 @@ pub fn build(
     textures: &mut Vec<crate::TexSlot>,
     tex_free: &mut Vec<u32>,
     discs: &mut DiscCache,
+    raster_density: u32,
     dl: &mut DrawList,
     inspect_id: i32,
     inspect_prev: Option<(f32, f32, f32, f32)>,
@@ -557,6 +561,7 @@ pub fn build(
         textures,
         tex_free,
         discs,
+        raster_density,
         inspect_slot,
         inspect_hit: None,
     };
@@ -1658,9 +1663,17 @@ impl<'a> Walker<'a> {
             // Large radii take the analytic span path below instead.
             const DISC_MAX_R: u32 = 32;
             if r_px <= DISC_MAX_R {
-                if let Some((tex, dim)) = disc_texture(self.discs, self.textures, self.tex_free, r_px) {
+                if let Some((tex, dim)) = disc_texture(
+                    self.discs,
+                    self.textures,
+                    self.tex_free,
+                    r_px,
+                    self.raster_density,
+                ) {
                     let rf = r_px as f32;
-                    let du = rf / dim as f32; // one corner quadrant in UV space
+                    let du = (r_px * self.raster_density) as f32 / dim as f32;
+                    // One density-scaled corner quadrant in UV space, drawn
+                    // into the same logical `rf` destination geometry.
                     let corners = [
                         (sx0, sy0, 0.0, 0.0),           // TL quadrant
                         (sx1 - rf, sy0, du, 0.0),       // TR

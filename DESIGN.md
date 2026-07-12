@@ -121,7 +121,10 @@ PocketJS/
                        before JS eval (zero QuickJS-heap transit); image + sprite
                        handles are exposed as ui.__textures / ui.__sprites [R]
   wasm/                Rust cdylib `pocketjs-wasm` — core + rasterizer, no wasm-bindgen
-    src/lib.rs         extern "C" op mirror + render() → RGBA8 480×272
+    src/lib.rs         extern "C" op mirror + byte-exact render() at 480×272;
+                       renderScaled(1..4) rasterizes directly at physical density
+  core/src/raster.rs   shared deterministic scanline rasterizer used by wasm and
+                       native capture (blend, gradients, glyphs, textures)
   src/                 TS/JS runtime shared by all hosts
     renderer.ts        Solid universal createRenderer; JS mirror tree; setProperty
                        DISPATCH TABLE [R]: class→styleId, on*→input registry,

@@ -286,6 +286,7 @@ const hostEnvironment = buildPlan
       POCKETJS_PHYSICAL_WIDTH: "480",
       POCKETJS_PHYSICAL_HEIGHT: "272",
       POCKETJS_PRESENTATION: "native",
+      POCKETJS_RASTER_DENSITY: "1",
     };
 
 const env = {

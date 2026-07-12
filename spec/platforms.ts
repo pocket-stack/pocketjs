@@ -23,6 +23,12 @@ export interface DisplayProfile {
   readonly physicalViewport: Viewport;
   readonly logicalViewports: readonly Viewport[];
   readonly presentations: readonly PresentationMode[];
+  /**
+   * Target raster samples per logical pixel for baked text, vectors, masks,
+   * and target-selected image variants. This is a rendering contract, not an
+   * API capability or a promise that presentation scale has the same value.
+   */
+  readonly rasterDensity: number;
 }
 
 export interface TargetProfile<C extends string = string> {
@@ -65,6 +71,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       // integer-fit at scale 1 is the portable spelling of the native PSP
       // surface and can be satisfied unchanged by higher-resolution hosts.
       presentations: ["native", "integer-fit"],
+      rasterDensity: 1,
     },
     capabilities: [
       "input.analog.left",

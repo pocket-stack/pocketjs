@@ -41,6 +41,10 @@ import { compileClasses, generateStylesModule } from "../compiler/tailwind.ts";
 import { bakeAtlases } from "../compiler/bake-font.ts";
 import { bakeSvg } from "../compiler/bake-svg.ts";
 import {
+  assertDensityVariantDimensions,
+  densityVariantPath,
+} from "../compiler/raster-assets.ts";
+import {
   PAK_DTYPE,
   KEY_STYLES,
   decodePng,
@@ -176,9 +180,10 @@ const appName = buildPlan?.app.output ?? outputName(requestedEntry);
 // A resolved plan names the exact artifact. Low-level demo builds retain the
 // framework suffix so multiple framework variants can coexist in dist/.
 const outName = buildPlan ? appName : `${appName}${frameworkConfig.outputSuffix}`;
+const rasterDensity = buildPlan?.viewport.rasterDensity ?? 1;
 console.log(
   `PocketJS build: ${appName} (${entry}, framework=${framework}` +
-    `${buildPlan ? `, target=${buildPlan.target.id}, plan=${buildPlan.planHash.slice(0, 20)}…` : ""})`,
+    `${buildPlan ? `, target=${buildPlan.target.id}, raster=${rasterDensity}x, plan=${buildPlan.planHash.slice(0, 20)}…` : ""})`,
 );
 
 // ---------------------------------------------------------------------------
@@ -260,10 +265,12 @@ const atlases = await bakeAtlases({
   codepoints,
   slots: styles.usedFontSlots,
   extraChars,
+  rasterDensity,
 });
 for (const a of atlases) {
   console.log(
-    `  font: slot ${a.slot} (${a.px}px${a.bold ? " bold" : ""}) ${a.glyphCount} glyphs, cell ${a.cellW}x${a.cellH}, ${a.bytes.length} bytes`,
+    `  font: slot ${a.slot} (${a.px}px${a.bold ? " bold" : ""}) ${a.glyphCount} glyphs, ` +
+      `cell ${a.cellW}x${a.cellH}, coverage ${a.coverageW}x${a.coverageH} @${a.rasterDensity}x, ${a.bytes.length} bytes`,
   );
 }
 
@@ -294,11 +301,30 @@ for (const name of imageNames) {
   let img;
   if (found) {
     if (/\.svg$/i.test(found)) {
-      img = bakeSvg(await Bun.file(found).text());
-      console.log(`  image: ${name} <- ${found} (${img.width}x${img.height}, svg)`);
+      img = bakeSvg(await Bun.file(found).text(), rasterDensity);
+      console.log(
+        `  image: ${name} <- ${found} (${img.width}x${img.height}, svg @${rasterDensity}x)`,
+      );
     } else {
-      img = decodePng(new Uint8Array(await Bun.file(found).arrayBuffer()));
-      console.log(`  image: ${name} <- ${found} (${img.width}x${img.height})`);
+      const base = decodePng(new Uint8Array(await Bun.file(found).arrayBuffer()));
+      // Static images and sprite atlases share the same @Nx convention. A
+      // sprite's frame grid stays logical because every atlas dimension is
+      // scaled by the same integer density.
+      const variant = densityVariantPath(found, rasterDensity);
+      if (variant !== found && existsSync(variant)) {
+        const highDensity = decodePng(new Uint8Array(await Bun.file(variant).arrayBuffer()));
+        assertDensityVariantDimensions(base, highDensity, rasterDensity, found, variant);
+        img = highDensity;
+        console.log(
+          `  image: ${name} <- ${variant} (${img.width}x${img.height}, @${rasterDensity}x for ${base.width}x${base.height})`,
+        );
+      } else {
+        img = base;
+        console.log(
+          `  image: ${name} <- ${found} (${img.width}x${img.height}` +
+            `${rasterDensity > 1 ? `, 1x fallback (no ${variant})` : ""})`,
+        );
+      }
     }
   } else {
     img = placeholderImage();
@@ -336,14 +362,19 @@ if (existsSync(pakManifestPath)) {
   const rawEntries = JSON.parse(await Bun.file(pakManifestPath).text()) as Array<{ key: string; file: string }>;
   let rawBytes = 0;
   for (const e of rawEntries) {
-    const path = appDir + e.file;
-    if (!existsSync(path)) {
-      console.error(`  pak.json: ${e.key} -> ${path} missing (re-run the app's gen-assets baker?)`);
+    const basePath = appDir + e.file;
+    if (!existsSync(basePath)) {
+      console.error(`  pak.json: ${e.key} -> ${basePath} missing (re-run the app's gen-assets baker?)`);
       process.exit(1);
     }
+    const densityPath = densityVariantPath(basePath, rasterDensity);
+    const path = densityPath !== basePath && existsSync(densityPath) ? densityPath : basePath;
     const data = new Uint8Array(await Bun.file(path).arrayBuffer());
     blobs.push({ key: e.key, dtype: PAK_DTYPE.u8, data });
     rawBytes += data.length;
+    if (path !== basePath) {
+      console.log(`  raw: ${e.key} <- ${path} (@${rasterDensity}x)`);
+    }
   }
   console.log(`  raw: ${rawEntries.length} prebaked blob(s) from pak.json, ${rawBytes} bytes`);
 }
@@ -385,6 +416,7 @@ const result = await Bun.build({
     __POCKET_TARGET__: JSON.stringify(buildPlan?.target.id ?? ""),
     __POCKET_HOST_ABI__: String(buildPlan?.target.hostAbi ?? 0),
     __POCKET_FEATURES__: JSON.stringify(buildPlan?.features ?? {}),
+    __POCKET_PIXEL_RATIO__: String(buildPlan?.viewport.rasterDensity ?? 1),
   },
   minify: false,
   sourcemap: "none",

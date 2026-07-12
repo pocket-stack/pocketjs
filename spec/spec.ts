@@ -954,7 +954,7 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
 }
 
 // ---------------------------------------------------------------------------
-// FONT ATLAS binary format  (version 2)
+// FONT ATLAS binary format  (version 3)
 // ---------------------------------------------------------------------------
 // One blob per font slot, baked by compiler/bake-font.ts, parsed by
 // core/src/text.rs. Glyph coverage is stored in fixed-size cells as one
@@ -963,37 +963,44 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
 //
 //   Header (16 bytes):
 //     off  0  u32  magic      = 0x41464344  bytes 'D','C','F','A'
-//     off  4  u16  version    = 2
+//     off  4  u16  version    = 3
 //     off  6  u16  glyphCount (including gid 0 = tofu box)
-//     off  8  u8   cellW      cell width in px  (coverage cells are cellW x cellH)
-//     off  9  u8   cellH      cell height in px
-//     off 10  u8   baseline   px from cell TOP to the baseline
-//     off 11  u8   lineHeight default line advance in px
+//     off  8  u8   cellW      LOGICAL cell width in px
+//     off  9  u8   cellH      LOGICAL cell height in px
+//     off 10  u8   baseline   LOGICAL px from cell TOP to the baseline
+//     off 11  u8   lineHeight default LOGICAL line advance in px
 //     off 12  u8   fontSlot   slot index this atlas binds (0..MAX_FONT_SLOTS-1)
 //     off 13  u8   flags      bit 0 = bold; bits 1-7 reserved (0)
-//     off 14  u16  reserved   (0)
+//     off 14  u8   density    raster samples per logical pixel (1..255)
+//     off 15  u8   reserved   (0)
 //
 //   cmap (glyphCount x 8 bytes) at FONT_HEADER_SIZE, SORTED ASCENDING by
 //   codepoint so lookups binary-search. A codepoint miss resolves to gid 0
 //   (tofu) and bumps the core's miss counter.
 //     +0  u32  codepoint  (Unicode scalar)
 //     +4  u16  gid        (0..glyphCount-1; index into the bitmap region)
-//     +6  u8   advance    px advance for this glyph
-//     +7  u8   xoff       left-side-bearing shift: px the outline was shifted
+//     +6  u8   advance    LOGICAL px advance for this glyph
+//     +7  u8   xoff       LOGICAL left-side-bearing shift: px the outline was shifted
 //                         RIGHT at bake so negative-LSB ink (î ï ĥ ǰ accents)
 //                         stays inside the cell. Renderers place the cell at
 //                         penX - xoff. 0 for most glyphs (was reserved; old
 //                         atlases with 0 here remain valid).
 //
 //   coverage region at FONT_HEADER_SIZE + glyphCount*FONT_CMAP_ENTRY_SIZE:
-//     glyphCount x cellH x cellW bytes. Each byte is alpha coverage 0..255
-//     for one pixel, left-to-right, top row first. Glyph g's rows start at
-//     coverageOffset + g * cellH * cellW.
+//     glyphCount x (cellH*density) x (cellW*density) bytes. Each byte is alpha
+//     coverage 0..255 for one raster sample, left-to-right, top row first.
+//     Glyph g's rows start at
+//     coverageOffset + g * (cellH*density) * (cellW*density).
 //
 //   gid 0 MUST be the tofu box (drawn for unmapped codepoints).
+//
+// Version 2 used the same 16-byte header and 8-byte cmap, with bytes 14..15
+// reserved and all dimensions/metrics serving as both logical and raster px.
+// New cores accept v2 as density=1; v3 separates raster coverage from stable
+// logical layout metrics so a 2x target can sharpen text without relayout.
 
 export const FONT_MAGIC = 0x41464344; // 'DCFA' LE
-export const FONT_VERSION = 2;
+export const FONT_VERSION = 3;
 export const FONT_HEADER_SIZE = 16;
 export const FONT_CMAP_ENTRY_SIZE = 8;
 export const FONT_FLAG_BOLD = 1 << 0;

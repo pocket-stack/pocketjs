@@ -218,6 +218,10 @@ pub struct Ui {
     tex_free: Vec<u32>,
     /// Baked rounded-corner disc sprites (see draw::DiscCache).
     discs: draw::DiscCache,
+    /// Raster pixels baked for each logical UI pixel. Layout and DrawList
+    /// coordinates always remain logical; only core-owned bitmap resources
+    /// (currently rounded-corner masks) use this density.
+    raster_density: u32,
     focused: i32,
     draw_list: DrawList,
     /// Frame counter advanced by `tick()` (drives fixed-dt animation).
@@ -244,6 +248,17 @@ impl Ui {
     /// Create a core with the pre-created root node (`spec::ROOT_ID`,
     /// full-screen flex column) already in the tree.
     pub fn new() -> Self {
+        Self::new_with_raster_density(1)
+    }
+
+    /// Create a core whose internally baked bitmap resources match the
+    /// target's resolved raster density. The value is immutable so one Ui
+    /// cannot mix resources produced for different target contracts.
+    pub fn new_with_raster_density(raster_density: u32) -> Self {
+        assert!(
+            (1..=u8::MAX as u32).contains(&raster_density),
+            "raster density must be an integer from 1 through 255"
+        );
         Ui {
             tree: tree::Tree::new(),
             styles: style::StyleTable::new(),
@@ -254,6 +269,7 @@ impl Ui {
             textures: Vec::new(),
             tex_free: Vec::new(),
             discs: draw::DiscCache::new(),
+            raster_density,
             focused: 0,
             draw_list: DrawList::new(),
             frame: 0,
@@ -263,6 +279,11 @@ impl Ui {
             paused: false,
             step_pending: false,
         }
+    }
+
+    /// Raster pixels per logical UI pixel for core-owned bitmap resources.
+    pub fn raster_density(&self) -> u32 {
+        self.raster_density
     }
 
     // ---- tree ops ---------------------------------------------------------
@@ -920,6 +941,7 @@ impl Ui {
             &mut self.textures,
             &mut self.tex_free,
             &mut self.discs,
+            self.raster_density,
             &mut self.draw_list,
             self.inspect_id,
             self.inspect_drawn,

@@ -8,13 +8,17 @@
 //
 // Rasterization: opentype.js outlines, flattened to polylines, scanline
 // even-odd fill with horizontally-biased supersampling into 8-bit coverage
-// cells. Cells are tight: cellW = max inked width over the slot's glyphs.
-// Proportional advances (font units * px/upm, rounded) live in the cmap
-// entries. Glyphs with ink LEFT of the pen origin (negative left side bearing:
-// î ï ĥ ǰ) are shifted right at bake and carry the shift in cmap byte +7
-// (xoff) so no ink is clipped; renderers place the cell at penX - xoff. gid 0
-// is a drawn hollow "tofu" box and is also mapped from U+FFFD so it has a
-// discoverable advance.
+// cells. Atlas v3 keeps cell/line/cmap metrics in LOGICAL px while baking the
+// bitmap at `rasterDensity` samples per logical px. A Vita density-2 build can
+// therefore draw sharp 2x coverage without changing PSP-compatible layout.
+// Cells are tight in logical space: cellW = max inked logical width over the
+// slot's glyphs; their coverage cells are exactly cellW*density by
+// cellH*density. Proportional advances (font units * px/upm, rounded) live in
+// the cmap entries. Glyphs with ink LEFT of the pen origin (negative left side
+// bearing: î ï ĥ ǰ) are shifted right at bake and carry the LOGICAL shift in
+// cmap byte +7 (xoff) so no ink is clipped; renderers place the cell at penX -
+// xoff. gid 0 is a drawn hollow "tofu" box and is also mapped from U+FFFD so it
+// has a discoverable advance.
 
 import { parse as parseFont, type Font, type Path } from "opentype.js";
 import {
@@ -35,10 +39,14 @@ export interface BakedAtlas {
   slot: number;
   px: number;
   bold: boolean;
+  rasterDensity: number;
   bytes: Uint8Array;
   glyphCount: number;
+  /** Logical cell dimensions; coverage dimensions are these times rasterDensity. */
   cellW: number;
   cellH: number;
+  coverageW: number;
+  coverageH: number;
 }
 
 export interface BakeOptions {
@@ -48,6 +56,8 @@ export interface BakeOptions {
   slots: number[];
   /** Extra characters to force into every atlas [R]. */
   extraChars?: string;
+  /** Raster samples per logical pixel. Defaults to 1. */
+  rasterDensity?: number;
   regularTtf?: string;
   boldTtf?: string;
 }
@@ -62,7 +72,7 @@ type Contour = Pt[];
 const CURVE_STEPS = 8;
 
 /** Flatten an opentype path (already in y-down px space) into closed contours. */
-function flatten(path: Path): Contour[] {
+function flatten(path: Path, curveSteps = CURVE_STEPS): Contour[] {
   const contours: Contour[] = [];
   let cur: Contour = [];
   let sx = 0;
@@ -87,8 +97,8 @@ function flatten(path: Path): Contour[] {
         cur.push({ x: cx, y: cy });
         break;
       case "Q":
-        for (let i = 1; i <= CURVE_STEPS; i++) {
-          const t = i / CURVE_STEPS;
+        for (let i = 1; i <= curveSteps; i++) {
+          const t = i / curveSteps;
           const u = 1 - t;
           cur.push({
             x: u * u * cx + 2 * u * t * cmd.x1 + t * t * cmd.x,
@@ -99,8 +109,8 @@ function flatten(path: Path): Contour[] {
         cy = cmd.y;
         break;
       case "C":
-        for (let i = 1; i <= CURVE_STEPS; i++) {
-          const t = i / CURVE_STEPS;
+        for (let i = 1; i <= curveSteps; i++) {
+          const t = i / curveSteps;
           const u = 1 - t;
           cur.push({
             x: u * u * u * cx + 3 * u * u * t * cmd.x1 + 3 * u * t * t * cmd.x2 + t * t * t * cmd.x,
@@ -172,25 +182,35 @@ function rasterize(contours: Contour[], cellW: number, cellH: number): Uint8Arra
   return out;
 }
 
-/** Hollow tofu box coverage cell for gid 0. Returns [coverage rows, advance]. */
-function tofu(cellW: number, cellH: number, baseline: number, px: number): [Uint8Array, number] {
-  const out = new Uint8Array(cellH * cellW);
+/** Hollow tofu box coverage cell for gid 0. Returns [coverage rows, logical advance]. */
+function tofu(
+  cellW: number,
+  cellH: number,
+  baseline: number,
+  px: number,
+  rasterDensity: number,
+): [Uint8Array, number] {
+  const coverageW = cellW * rasterDensity;
+  const coverageH = cellH * rasterDensity;
+  const out = new Uint8Array(coverageH * coverageW);
   const w = Math.max(4, Math.min(cellW, Math.round(px * 0.55)));
   const h = Math.max(5, Math.round(px * 0.7));
-  const y1 = Math.min(cellH - 1, baseline - 1);
-  const y0 = Math.max(0, y1 - h + 1);
+  const y1 = Math.min(coverageH - 1, baseline * rasterDensity - 1);
+  const y0 = Math.max(0, y1 - h * rasterDensity + 1);
   const x0 = 0;
-  const x1 = w - 1;
+  const x1 = w * rasterDensity - 1;
   const set = (x: number, y: number) => {
-    out[y * cellW + x] = 255;
+    out[y * coverageW + x] = 255;
   };
-  for (let x = x0; x <= x1; x++) {
-    set(x, y0);
-    set(x, y1);
-  }
-  for (let y = y0; y <= y1; y++) {
-    set(x0, y);
-    set(x1, y);
+  for (let inset = 0; inset < rasterDensity; inset++) {
+    for (let x = x0 + inset; x <= x1 - inset; x++) {
+      set(x, y0 + inset);
+      set(x, y1 - inset);
+    }
+    for (let y = y0 + inset; y <= y1 - inset; y++) {
+      set(x0 + inset, y);
+      set(x1 - inset, y);
+    }
   }
   return [out, Math.min(255, w + 2)];
 }
@@ -206,8 +226,23 @@ async function loadFont(path: string): Promise<Font> {
 
 const TOFU_CODEPOINT = 0xfffd; // U+FFFD replacement char maps to gid 0
 
+function checkedRasterDensity(value: number): number {
+  if (!Number.isInteger(value) || value < 1 || value > 255) {
+    throw new RangeError(`PocketJS bake-font: rasterDensity must be an integer from 1 through 255, got ${value}`);
+  }
+  return value;
+}
+
 /** Bake one slot's atlas blob (see spec.ts FONT ATLAS format). */
-export function bakeSlot(font: Font, slot: number, px: number, bold: boolean, chars: number[]): BakedAtlas {
+export function bakeSlot(
+  font: Font,
+  slot: number,
+  px: number,
+  bold: boolean,
+  chars: number[],
+  rasterDensity = 1,
+): BakedAtlas {
+  rasterDensity = checkedRasterDensity(rasterDensity);
   const upm = font.unitsPerEm;
   const scale = px / upm;
   const ascent = font.ascender * scale;
@@ -238,19 +273,29 @@ export function bakeSlot(font: Font, slot: number, px: number, bold: boolean, ch
     if (gi <= 0) continue;
     const glyph = font.glyphs.get(gi);
     const advance = Math.max(0, Math.min(255, Math.round((glyph.advanceWidth ?? 0) * scale)));
-    const contours = flatten(glyph.getPath(0, baseline, px));
+    const path = glyph.getPath(0, baseline, px);
+    // Keep every metric byte-for-byte equivalent to the density-1 bake. The
+    // higher-density contour gets more curve subdivisions, then is scaled into
+    // raster space only after logical bounds/xoff have been resolved.
+    const metricContours = flatten(path);
     let minX = 0;
     let maxX = 0;
-    for (const c of contours) {
+    for (const c of metricContours) {
       for (const p of c) {
         if (p.x > maxX) maxX = p.x;
         if (p.x < minX) minX = p.x;
       }
     }
     const xoff = Math.min(255, Math.ceil(Math.max(0, -minX)));
-    if (xoff > 0) {
-      for (const c of contours) for (const p of c) p.x += xoff;
-      maxX += xoff;
+    maxX += xoff;
+    const contours = rasterDensity === 1
+      ? metricContours
+      : flatten(path, CURVE_STEPS * rasterDensity);
+    for (const c of contours) {
+      for (const p of c) {
+        p.x = (p.x + xoff) * rasterDensity;
+        p.y *= rasterDensity;
+      }
     }
     glyphs.push({ cp, contours, advance, maxX, xoff });
   }
@@ -263,7 +308,12 @@ export function bakeSlot(font: Font, slot: number, px: number, bold: boolean, ch
   // gid 0 = tofu; gid k+1 = k-th glyph (chars arrive sorted ascending)
   const glyphCount = glyphs.length + 1;
   if (glyphCount > 0xffff) throw new Error("PocketJS bake-font: too many glyphs");
-  const coverageBytes = glyphCount * cellH * cellW;
+  const coverageW = cellW * rasterDensity;
+  const coverageH = cellH * rasterDensity;
+  const coverageBytes = glyphCount * coverageH * coverageW;
+  if (!Number.isSafeInteger(coverageBytes)) {
+    throw new RangeError("PocketJS bake-font: atlas coverage is too large");
+  }
   const size = FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE + coverageBytes;
   const out = new Uint8Array(size);
   const dv = new DataView(out.buffer);
@@ -277,7 +327,8 @@ export function bakeSlot(font: Font, slot: number, px: number, bold: boolean, ch
   out[11] = lineHeight;
   out[12] = slot;
   out[13] = bold ? FONT_FLAG_BOLD : 0;
-  // 14..15 reserved
+  out[14] = rasterDensity;
+  // 15 reserved
 
   // cmap sorted ascending by codepoint (glyphs are sorted; tofu's U+FFFD
   // entry is spliced into position).
@@ -289,7 +340,7 @@ export function bakeSlot(font: Font, slot: number, px: number, bold: boolean, ch
       xoff: g.xoff,
     }),
   );
-  const [tofuCoverage, tofuAdvance] = tofu(cellW, cellH, baseline, px);
+  const [tofuCoverage, tofuAdvance] = tofu(cellW, cellH, baseline, px, rasterDensity);
   entries.push({ cp: TOFU_CODEPOINT, gid: 0, advance: tofuAdvance, xoff: 0 });
   entries.sort((a, b) => a.cp - b.cp);
   let o = FONT_HEADER_SIZE;
@@ -303,17 +354,29 @@ export function bakeSlot(font: Font, slot: number, px: number, bold: boolean, ch
 
   // coverage region, indexed by gid
   const coverageOff = FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE;
-  const cellBytes = cellH * cellW;
+  const cellBytes = coverageH * coverageW;
   out.set(tofuCoverage, coverageOff); // gid 0
   glyphs.forEach((g, i) => {
-    out.set(rasterize(g.contours, cellW, cellH), coverageOff + (i + 1) * cellBytes);
+    out.set(rasterize(g.contours, coverageW, coverageH), coverageOff + (i + 1) * cellBytes);
   });
 
-  return { slot, px, bold, bytes: out, glyphCount, cellW, cellH };
+  return {
+    slot,
+    px,
+    bold,
+    rasterDensity,
+    bytes: out,
+    glyphCount,
+    cellW,
+    cellH,
+    coverageW,
+    coverageH,
+  };
 }
 
 /** Bake every requested slot. Charset = collected + ASCII 32..126 + extraChars. */
 export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
+  const rasterDensity = checkedRasterDensity(opts.rasterDensity ?? 1);
   const cps = new Set<number>();
   for (let c = 32; c <= 126; c++) cps.add(c); // ASCII always [R]
   for (const cp of opts.codepoints) if (cp >= 32 && cp !== 127) cps.add(cp);
@@ -332,7 +395,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
     const { px, bold } = fontSlotInfo(slot);
     const key = bold ? "bold" : "regular";
     fonts[key] ??= await loadFont(bold ? (opts.boldTtf ?? DEFAULT_BOLD) : (opts.regularTtf ?? DEFAULT_REGULAR));
-    results.push(bakeSlot(fonts[key]!, slot, px, bold, chars));
+    results.push(bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity));
   }
   return results;
 }

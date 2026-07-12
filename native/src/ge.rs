@@ -100,8 +100,13 @@ struct FontTexture {
     source_ptr: usize,
     source_len: usize,
     glyph_count: u16,
-    cell_w: u32,
-    cell_h: u32,
+    /// Source coverage-cell dimensions in texture texels.
+    coverage_w: u32,
+    coverage_h: u32,
+    /// Destination cell dimensions in logical screen pixels.
+    logical_w: u32,
+    logical_h: u32,
+    raster_density: u8,
     cols: u32,
     tex_w: u32,
     tex_h: u32,
@@ -171,8 +176,8 @@ fn next_pow2(mut v: u32) -> u32 {
 
 fn font_grid(atlas: &Atlas) -> Option<(u32, u32, u32)> {
     let glyph_count = atlas.glyph_count as u32;
-    let cell_w = atlas.cell_w.max(1);
-    let cell_h = atlas.cell_h.max(1);
+    let cell_w = atlas.coverage_width().max(1);
+    let cell_h = atlas.coverage_height().max(1);
     if glyph_count == 0 || cell_w > spec::TEX_MAX_DIM || cell_h > spec::TEX_MAX_DIM {
         return None;
     }
@@ -201,7 +206,10 @@ unsafe fn build_font_texture(atlas: &Atlas) -> Option<FontTexture> {
     let byte_len = tex_w as usize * tex_h as usize * 2;
     let mut pixels = alloc::vec![0u128; (byte_len + 15) / 16];
     let dst = pixels.as_mut_ptr() as *mut u8;
-    let (cell_w, cell_h) = (atlas.cell_w as usize, atlas.cell_h as usize);
+    let (cell_w, cell_h) = (
+        atlas.coverage_width() as usize,
+        atlas.coverage_height() as usize,
+    );
     let bpr = atlas.bytes_per_row();
     for gid in 0..atlas.glyph_count {
         let src = atlas.glyph_rows(gid);
@@ -228,8 +236,11 @@ unsafe fn build_font_texture(atlas: &Atlas) -> Option<FontTexture> {
         source_ptr: atlas.bitmap.as_ptr() as usize,
         source_len: atlas.bitmap.len(),
         glyph_count: atlas.glyph_count,
-        cell_w: atlas.cell_w,
-        cell_h: atlas.cell_h,
+        coverage_w: atlas.coverage_width(),
+        coverage_h: atlas.coverage_height(),
+        logical_w: atlas.cell_w,
+        logical_h: atlas.cell_h,
+        raster_density: atlas.raster_density,
         cols,
         tex_w,
         tex_h,
@@ -250,8 +261,11 @@ unsafe fn font_texture(atlas: &Atlas) -> Option<&'static FontTexture> {
             tex.source_ptr != source_ptr
                 || tex.source_len != source_len
                 || tex.glyph_count != atlas.glyph_count
-                || tex.cell_w != atlas.cell_w
-                || tex.cell_h != atlas.cell_h
+                || tex.coverage_w != atlas.coverage_width()
+                || tex.coverage_h != atlas.coverage_height()
+                || tex.logical_w != atlas.cell_w
+                || tex.logical_h != atlas.cell_h
+                || tex.raster_density != atlas.raster_density
         }
         None => true,
     };
@@ -386,7 +400,14 @@ unsafe fn apply_font_texture(tex: &FontTexture) {
     // equal dimensions would alias without a flush.
     sys::sceGuTexFlush();
     sys::sceGuTexFunc(TextureEffect::Modulate, TextureColorComponent::Rgba);
-    sys::sceGuTexFilter(TextureFilter::Nearest, TextureFilter::Nearest);
+    // PSP production atlases are density 1, preserving the byte-exact NEAREST
+    // path. If a higher-density atlas is loaded, the source coverage is
+    // downsampled into its logical destination instead of selecting one sample.
+    if tex.raster_density == 1 {
+        sys::sceGuTexFilter(TextureFilter::Nearest, TextureFilter::Nearest);
+    } else {
+        sys::sceGuTexFilter(TextureFilter::Linear, TextureFilter::Linear);
+    }
 }
 
 #[inline]
@@ -406,14 +427,15 @@ fn with_alpha(color: u32, alpha: u8) -> u32 {
     (color & 0x00ff_ffff) | ((alpha as u32) << 24)
 }
 
-/// Count horizontal coverage runs in one glyph's rows.
-fn count_glyph_runs(rows: &[u8], bpr: usize, cell_w: usize, cell_h: usize, color: u32) -> usize {
+/// Count horizontal logical-pixel coverage runs in one glyph. Atlas v3 may
+/// store multiple raster samples per logical pixel; `logical_coverage`
+/// averages the full density×density block before alpha quantization.
+fn count_glyph_runs(atlas: &Atlas, gid: u16, color: u32) -> usize {
     let mut runs = 0usize;
-    for y in 0..cell_h {
-        let row = &rows[y * bpr..y * bpr + bpr];
+    for y in 0..atlas.cell_h {
         let mut cur = 0u8;
-        for x in 0..cell_w {
-            let a = glyph_alpha(color, row[x]);
+        for x in 0..atlas.cell_w {
+            let a = glyph_alpha(color, atlas.logical_coverage(gid, x, y));
             if a != 0 && a != cur {
                 runs += 1;
             }
@@ -542,8 +564,8 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                             if gid >= atlas.glyph_count {
                                 continue;
                             }
-                            let sx = (gid as u32 % tex.cols) * tex.cell_w;
-                            let sy = (gid as u32 / tex.cols) * tex.cell_h;
+                            let sx = (gid as u32 % tex.cols) * tex.coverage_w;
+                            let sy = (gid as u32 / tex.cols) * tex.coverage_h;
                             *verts.add(vi) = VertTC {
                                 u: sx as i16,
                                 v: sy as i16,
@@ -554,11 +576,11 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                                 _pad: 0,
                             };
                             *verts.add(vi + 1) = VertTC {
-                                u: (sx + tex.cell_w) as i16,
-                                v: (sy + tex.cell_h) as i16,
+                                u: (sx + tex.coverage_w) as i16,
+                                v: (sy + tex.coverage_h) as i16,
                                 color,
-                                x: (gx as i32 + tex.cell_w as i32) as i16,
-                                y: (gy as i32 + tex.cell_h as i32) as i16,
+                                x: (gx as i32 + tex.logical_w as i32) as i16,
+                                y: (gy as i32 + tex.logical_h as i32) as i16,
                                 z: 0,
                                 _pad: 0,
                             };
@@ -579,14 +601,13 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                     }
                     // Scan each glyph coverage cell into horizontal alpha
                     // runs, batched as sprite pairs in ONE draw.
-                    let bpr = atlas.bytes_per_row();
                     let (cw, ch) = (atlas.cell_w as usize, atlas.cell_h as usize);
                     // Pass 1: exact vertex count for the bump alloc.
                     let mut rects = 0usize;
                     for g in 0..count {
                         let gid = (words[body + g * 2 + 1] & 0xffff) as u16;
                         if gid < atlas.glyph_count {
-                            rects += count_glyph_runs(atlas.glyph_rows(gid), bpr, cw, ch, color);
+                            rects += count_glyph_runs(atlas, gid, color);
                         }
                     }
                     if rects > 0 {
@@ -600,18 +621,24 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                             if gid >= atlas.glyph_count {
                                 continue;
                             }
-                            let rows = atlas.glyph_rows(gid);
                             for y in 0..ch {
-                                let row = &rows[y * bpr..y * bpr + bpr];
                                 let mut x = 0usize;
                                 while x < cw {
-                                    let a = glyph_alpha(color, row[x]);
+                                    let a = glyph_alpha(
+                                        color,
+                                        atlas.logical_coverage(gid, x as u32, y as u32),
+                                    );
                                     if a == 0 {
                                         x += 1;
                                         continue;
                                     }
                                     let start = x;
-                                    while x < cw && glyph_alpha(color, row[x]) == a {
+                                    while x < cw
+                                        && glyph_alpha(
+                                            color,
+                                            atlas.logical_coverage(gid, x as u32, y as u32),
+                                        ) == a
+                                    {
                                         x += 1;
                                     }
                                     let rx = gx as i32 + start as i32;

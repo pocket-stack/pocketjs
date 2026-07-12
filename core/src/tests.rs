@@ -134,9 +134,34 @@ fn encode_atlas(
     glyph_count: u16,
     glyphs: &[(u32, u16, u8)],
 ) -> Vec<u8> {
+    encode_atlas_version_density(
+        spec::font_atlas::VERSION,
+        1,
+        slot,
+        cell_w,
+        cell_h,
+        baseline,
+        line_height,
+        glyph_count,
+        glyphs,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_atlas_version_density(
+    version: u16,
+    raster_density: u8,
+    slot: u8,
+    cell_w: u8,
+    cell_h: u8,
+    baseline: u8,
+    line_height: u8,
+    glyph_count: u16,
+    glyphs: &[(u32, u16, u8)],
+) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&spec::font_atlas::MAGIC.to_le_bytes());
-    out.extend_from_slice(&spec::font_atlas::VERSION.to_le_bytes());
+    out.extend_from_slice(&version.to_le_bytes());
     out.extend_from_slice(&(glyphs.len() as u16).to_le_bytes());
     out.push(cell_w);
     out.push(cell_h);
@@ -144,7 +169,8 @@ fn encode_atlas(
     out.push(line_height);
     out.push(slot);
     out.push(0); // flags
-    out.extend_from_slice(&[0, 0]); // reserved
+    out.push(raster_density);
+    out.push(0); // reserved
     assert_eq!(glyphs.len(), glyph_count as usize, "test blob: glyphCount == cmap entries");
     for &(cp, gid, adv) in glyphs {
         out.extend_from_slice(&cp.to_le_bytes());
@@ -152,8 +178,9 @@ fn encode_atlas(
         out.push(adv);
         out.push(0);
     }
-    let bytes_per_row = cell_w as usize;
-    out.extend_from_slice(&alloc::vec![0u8; glyph_count as usize * cell_h as usize * bytes_per_row]);
+    let bytes_per_row = cell_w as usize * raster_density.max(1) as usize;
+    let coverage_h = cell_h as usize * raster_density.max(1) as usize;
+    out.extend_from_slice(&alloc::vec![0u8; glyph_count as usize * coverage_h * bytes_per_row]);
     out
 }
 
@@ -635,6 +662,35 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
 }
 
 #[test]
+fn rounded_corner_masks_follow_raster_density_without_changing_layout() {
+    let mut ui = Ui::new_with_raster_density(2);
+    assert_eq!(ui.raster_density(), 2);
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 36.0);
+    ui.set_prop(n, spec::prop::HEIGHT, 20.0);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_T, 10.0);
+    ui.set_prop(n, spec::prop::INSET_L, 10.0);
+    ui.set_prop(n, spec::prop::RADIUS, 10.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(37, 99, 235, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.tick();
+
+    let words = ui.draw().words.clone();
+    let i = words.iter().position(|&word| word == spec::draw_op::TEX_QUAD).unwrap();
+    let view = ui.texture(words[i + 1] as i32).expect("density-scaled disc texture");
+    assert_eq!((view.w, view.h), (64, 64), "20px disc at 2x is padded to 64px");
+    assert_eq!(decode_wh(words[i + 3]), (10, 10), "DrawList geometry stays logical");
+    assert_eq!(f32::from_bits(words[i + 6]), 20.0 / 64.0, "UV selects one 2x quadrant");
+}
+
+#[test]
+#[should_panic(expected = "raster density must be an integer from 1 through 255")]
+fn ui_rejects_zero_raster_density() {
+    let _ = Ui::new_with_raster_density(0);
+}
+
+#[test]
 fn transparent_rounded_border_draws_an_outline_not_square_strips() {
     let mut ui = Ui::new();
     let blue = abgr(37, 99, 235, 255);
@@ -815,6 +871,74 @@ fn text_measurement_against_synthetic_atlas() {
     let atlas = ui.font_atlas(2).unwrap();
     assert_eq!(atlas.lookup('B' as u32), Some((2, 5)));
     assert_eq!(atlas.glyph_rows(1).len(), 64); // cellH * cellW coverage bytes
+}
+
+#[test]
+fn font_atlas_v3_scales_coverage_without_scaling_layout_metrics() {
+    let glyphs = &[(0xfffd, 0, 8), ('A' as u32, 1, 6), ('B' as u32, 2, 5)];
+    let mut ui = Ui::new();
+    let mut hd = encode_atlas_version_density(
+        spec::font_atlas::VERSION,
+        2,
+        2,
+        8,
+        8,
+        7,
+        10,
+        3,
+        glyphs,
+    );
+    // gid 1, logical pixel (0,0): four density-2 samples reduce to their
+    // rounded mean, not the top-left sample.
+    let bitmap_off = spec::font_atlas::HEADER_SIZE
+        + glyphs.len() * spec::font_atlas::CMAP_ENTRY_SIZE;
+    let coverage_w = 16usize;
+    let coverage_h = 16usize;
+    let gid_1 = bitmap_off + coverage_w * coverage_h;
+    hd[gid_1] = 0;
+    hd[gid_1 + 1] = 64;
+    hd[gid_1 + coverage_w] = 128;
+    hd[gid_1 + coverage_w + 1] = 255;
+    assert!(ui.load_font_atlas(&hd));
+    let atlas = ui.font_atlas(2).unwrap();
+    assert_eq!(atlas.raster_density, 2);
+    assert_eq!((atlas.cell_w, atlas.cell_h), (8, 8));
+    assert_eq!((atlas.coverage_width(), atlas.coverage_height()), (16, 16));
+    assert_eq!(atlas.bytes_per_row(), 16);
+    assert_eq!(atlas.glyph_rows(1).len(), 16 * 16);
+    assert_eq!(atlas.logical_coverage(1, 0, 0), 112);
+    assert_eq!(atlas.logical_coverage(1, 8, 0), 0, "out-of-range is transparent");
+    // Advances, line height, and therefore app layout stay in logical px.
+    assert_eq!(ui.measure_text("AB", 2), 11.0);
+
+    // v2 used header bytes 14..15 as zeroed reserved bytes. New cores load it
+    // as density 1 so already-built packs remain compatible.
+    let mut legacy = encode_atlas_version_density(2, 0, 3, 8, 8, 7, 10, 3, glyphs);
+    let legacy_gid_1 = bitmap_off + 8 * 8;
+    legacy[legacy_gid_1] = 173;
+    assert!(ui.load_font_atlas(&legacy));
+    let legacy_atlas = ui.font_atlas(3).unwrap();
+    assert_eq!(legacy_atlas.raster_density, 1);
+    assert_eq!((legacy_atlas.coverage_width(), legacy_atlas.coverage_height()), (8, 8));
+    assert_eq!(legacy_atlas.glyph_rows(1).len(), 8 * 8);
+    assert_eq!(legacy_atlas.logical_coverage(1, 0, 0), 173);
+    assert_eq!(ui.measure_text("AB", 3), 11.0);
+
+    // Density zero has no meaning in v3, and truncation is checked against
+    // density-scaled coverage rather than only logical cell dimensions.
+    let invalid_density = encode_atlas_version_density(
+        spec::font_atlas::VERSION,
+        0,
+        4,
+        8,
+        8,
+        7,
+        10,
+        3,
+        glyphs,
+    );
+    assert!(!ui.load_font_atlas(&invalid_density));
+    assert!(!ui.load_font_atlas(&hd[..hd.len() - 1]));
 }
 
 #[test]
