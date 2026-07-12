@@ -1,0 +1,5 @@
+import { enhancements, useCapability } from "@pocketjs/framework/target";
+
+// Valid for a target that provides the enhancement, but rejected for
+// a target where it may be absent because no fallback guard was written.
+export const touch = useCapability(enhancements["input.touch@1"]);

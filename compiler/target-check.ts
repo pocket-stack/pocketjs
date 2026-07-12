@@ -1,0 +1,283 @@
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, resolve } from "node:path";
+import ts from "typescript";
+
+/**
+ * Narrow input boundary for the manifest/platform resolver. The checker does
+ * not own platform policy: callers hand it an already-resolved target and the
+ * capabilities provided by that host, required by the app, and explicitly
+ * requested as enhancements.
+ */
+export interface TargetTypeEnvironment {
+  target: string;
+  providedCapabilities: readonly string[];
+  requiredCapabilities: readonly string[];
+  enhancementCapabilities?: readonly string[];
+  /** Virtual module made visible only to this target check. */
+  moduleName?: string;
+}
+
+export interface TargetCheckOptions {
+  entry: string;
+  environment: TargetTypeEnvironment;
+  /** Optional app tsconfig whose compiler options/path mappings are inherited. */
+  tsconfigPath?: string;
+  /** Keep the generated directory for debugging failed checks. */
+  keepTemporaryFiles?: boolean;
+}
+
+export interface TargetCheckDiagnostic {
+  code: number;
+  category: "warning" | "error" | "suggestion" | "message";
+  message: string;
+  file?: string;
+  line?: number;
+  column?: number;
+}
+
+export interface TargetCheckArtifacts {
+  targetEnvironment: string;
+  tsconfig: string;
+  /** Present only when keepTemporaryFiles is true. */
+  directory?: string;
+}
+
+export interface TargetCheckResult {
+  ok: boolean;
+  diagnostics: TargetCheckDiagnostic[];
+  /** Non-declaration files reached from entry. Unrelated project files stay out. */
+  checkedFiles: string[];
+  artifacts: TargetCheckArtifacts;
+}
+
+const DEFAULT_TARGET_MODULE = "@pocketjs/framework/target";
+
+function uniqueSorted(values: readonly string[], label: string): string[] {
+  const out = [...new Set(values)];
+  for (const value of out) {
+    if (!value.trim()) throw new Error(`PocketJS target check: ${label} contains an empty capability id`);
+  }
+  return out.sort();
+}
+
+function resolvedEnvironment(environment: TargetTypeEnvironment): {
+  target: string;
+  moduleName: string;
+  provided: string[];
+  required: string[];
+  enhancements: string[];
+} {
+  if (!environment.target.trim()) {
+    throw new Error("PocketJS target check: target must not be empty");
+  }
+  const moduleName = environment.moduleName ?? DEFAULT_TARGET_MODULE;
+  if (!moduleName.trim()) {
+    throw new Error("PocketJS target check: moduleName must not be empty");
+  }
+
+  const provided = uniqueSorted(environment.providedCapabilities, "providedCapabilities");
+  const required = uniqueSorted(environment.requiredCapabilities, "requiredCapabilities");
+  const enhancements = uniqueSorted(
+    environment.enhancementCapabilities ?? [],
+    "enhancementCapabilities",
+  );
+  const providedSet = new Set(provided);
+  const enhancementSet = new Set(enhancements);
+
+  const missing = required.filter((capability) => !providedSet.has(capability));
+  if (missing.length > 0) {
+    throw new Error(
+      `PocketJS target check: target ${environment.target} does not provide required ` +
+        `capabilit${missing.length === 1 ? "y" : "ies"}: ${missing.join(", ")}`,
+    );
+  }
+  const overlap = required.filter((capability) => enhancementSet.has(capability));
+  if (overlap.length > 0) {
+    throw new Error(
+      `PocketJS target check: capabilit${overlap.length === 1 ? "y is" : "ies are"} both required ` +
+        `and an enhancement: ${overlap.join(", ")}`,
+    );
+  }
+
+  return { target: environment.target, moduleName, provided, required, enhancements };
+}
+
+function stringUnion(values: readonly string[]): string {
+  return values.length === 0 ? "never" : values.map((value) => JSON.stringify(value)).join(" | ");
+}
+
+function capabilityProperties(
+  capabilities: readonly string[],
+  tokenType: (capability: string) => string,
+): string {
+  return capabilities.length === 0
+    ? "    // No capabilities were authorized in this group."
+    : capabilities
+        .map((capability) => `    readonly ${JSON.stringify(capability)}: ${tokenType(capability)};`)
+        .join("\n");
+}
+
+/** Deterministically render the target-only ambient module consumed by apps. */
+export function generateTargetEnvironment(environment: TargetTypeEnvironment): string {
+  const { target, moduleName, provided, required, enhancements } = resolvedEnvironment(environment);
+  const providedSet = new Set(provided);
+  const known = uniqueSorted([...provided, ...required, ...enhancements], "capabilities");
+
+  const requiredProperties = capabilityProperties(
+    required,
+    (capability) => `CapabilityToken<${JSON.stringify(capability)}>`,
+  );
+  const enhancementProperties = capabilityProperties(enhancements, (capability) =>
+    providedSet.has(capability)
+      ? `CapabilityToken<${JSON.stringify(capability)}>`
+      : `CapabilityToken<${JSON.stringify(capability)}> | undefined`,
+  );
+
+  return `// Generated by compiler/target-check.ts. Do not edit.\n` +
+    `declare module ${JSON.stringify(moduleName)} {\n` +
+    `  const capabilityBrand: unique symbol;\n\n` +
+    `  export type TargetName = ${JSON.stringify(target)};\n` +
+    `  export type KnownCapability = ${stringUnion(known)};\n\n` +
+    `  export interface CapabilityToken<Id extends KnownCapability> {\n` +
+    `    readonly id: Id;\n` +
+    `    readonly [capabilityBrand]: Id;\n` +
+    `  }\n\n` +
+    `  export interface RequiredCapabilities {\n${requiredProperties}\n  }\n\n` +
+    `  export interface EnhancementCapabilities {\n${enhancementProperties}\n  }\n\n` +
+    `  export const target: TargetName;\n` +
+    `  export const capabilities: RequiredCapabilities;\n` +
+    `  export const enhancements: EnhancementCapabilities;\n` +
+    `  export function enhance<Id extends keyof EnhancementCapabilities>(\n` +
+    `    id: Id,\n` +
+    `    install: (token: Exclude<EnhancementCapabilities[Id], undefined>) => void,\n` +
+    `  ): void;\n` +
+    `  export function useCapability<Id extends KnownCapability>(token: CapabilityToken<Id>): Id;\n` +
+    `}\n`;
+}
+
+function configJson(
+  entry: string,
+  environmentPath: string,
+  tsconfigPath: string | undefined,
+): string {
+  const config: Record<string, unknown> = {
+    ...(tsconfigPath ? { extends: tsconfigPath } : {}),
+    compilerOptions: {
+      target: "ES2022",
+      module: "ESNext",
+      moduleResolution: "Bundler",
+      strict: true,
+      noEmit: true,
+      jsx: "preserve",
+      allowImportingTsExtensions: true,
+      skipLibCheck: true,
+      incremental: false,
+      composite: false,
+      ...(tsconfigPath ? {} : { types: [] }),
+    },
+    files: [entry, environmentPath],
+    // Never inherit a broad include/exclude set: files plus normal module
+    // resolution is the exact entry/import graph contract.
+    include: [],
+    exclude: [],
+  };
+  return JSON.stringify(config, null, 2) + "\n";
+}
+
+function diagnosticCategory(category: ts.DiagnosticCategory): TargetCheckDiagnostic["category"] {
+  switch (category) {
+    case ts.DiagnosticCategory.Warning:
+      return "warning";
+    case ts.DiagnosticCategory.Suggestion:
+      return "suggestion";
+    case ts.DiagnosticCategory.Message:
+      return "message";
+    default:
+      return "error";
+  }
+}
+
+function toDiagnostic(diagnostic: ts.Diagnostic): TargetCheckDiagnostic {
+  const result: TargetCheckDiagnostic = {
+    code: diagnostic.code,
+    category: diagnosticCategory(diagnostic.category),
+    message: ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
+  };
+  if (diagnostic.file && diagnostic.start !== undefined) {
+    const position = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
+    result.file = diagnostic.file.fileName;
+    result.line = position.line + 1;
+    result.column = position.character + 1;
+  }
+  return result;
+}
+
+/**
+ * Typecheck exactly one app entry and its reachable imports under one resolved
+ * target environment. The generated files are deleted by default.
+ */
+export function checkTargetTypes(options: TargetCheckOptions): TargetCheckResult {
+  const entry = resolve(options.entry);
+  if (!existsSync(entry)) throw new Error(`PocketJS target check: entry not found: ${entry}`);
+  const inheritedConfig = options.tsconfigPath ? resolve(options.tsconfigPath) : undefined;
+  if (inheritedConfig && !existsSync(inheritedConfig)) {
+    throw new Error(`PocketJS target check: tsconfig not found: ${inheritedConfig}`);
+  }
+
+  // Keep the ephemeral config beneath the app/config tree rather than the OS
+  // temp directory. TypeScript resolves named `types` and config-relative
+  // package paths from the generated config's ancestry; placing it in /tmp
+  // would make an inherited `types: ["bun"]` unable to see the app's
+  // node_modules. Callers can still retain this directory for diagnostics.
+  const temporaryParent = inheritedConfig ? dirname(inheritedConfig) : dirname(entry);
+  const directory = mkdtempSync(resolve(temporaryParent, ".pocketjs-target-check-"));
+  const environmentPath = resolve(directory, "target-env.d.ts");
+  const generatedConfigPath = resolve(directory, "tsconfig.json");
+  const targetEnvironment = generateTargetEnvironment(options.environment);
+  const tsconfig = configJson(entry, environmentPath, inheritedConfig);
+  writeFileSync(environmentPath, targetEnvironment);
+  writeFileSync(generatedConfigPath, tsconfig);
+
+  try {
+    const loaded = ts.readConfigFile(generatedConfigPath, (path) => readFileSync(path, "utf8"));
+    const configDiagnostics = loaded.error ? [loaded.error] : [];
+    const parsed = loaded.error
+      ? undefined
+      : ts.parseJsonConfigFileContent(loaded.config, ts.sys, dirname(generatedConfigPath), undefined, generatedConfigPath);
+    if (parsed) configDiagnostics.push(...parsed.errors);
+
+    const program = parsed
+      ? ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options })
+      : undefined;
+    const diagnostics = [
+      ...configDiagnostics,
+      ...(program ? ts.getPreEmitDiagnostics(program) : []),
+    ].map(toDiagnostic);
+    const checkedFiles = program
+      ? program
+          .getSourceFiles()
+          .filter((file) => !file.isDeclarationFile)
+          .map((file) => resolve(file.fileName))
+          .sort()
+      : [];
+
+    return {
+      ok: diagnostics.every((diagnostic) => diagnostic.category !== "error"),
+      diagnostics,
+      checkedFiles,
+      artifacts: {
+        targetEnvironment,
+        tsconfig,
+        ...(options.keepTemporaryFiles ? { directory } : {}),
+      },
+    };
+  } finally {
+    if (!options.keepTemporaryFiles) rmSync(directory, { recursive: true, force: true });
+  }
+}

@@ -1,0 +1,5 @@
+import { capabilities, useCapability } from "@pocketjs/framework/target";
+
+// The Vita host may provide touch, but the app did not declare it as required
+// as an enhancement. Host availability alone must not authorize the API.
+export const touch = useCapability(capabilities["input.touch@1"]);

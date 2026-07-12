@@ -1,0 +1,13 @@
+import {
+  capabilities,
+  enhance,
+  useCapability,
+} from "@pocketjs/framework/target";
+
+useCapability(capabilities["input.buttons@1"]);
+
+enhance("input.touch@1", (touch) => {
+  useCapability(touch);
+});
+
+export const controlMode = "buttons-with-touch-enhancement";

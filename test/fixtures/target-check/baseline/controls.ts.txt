@@ -1,0 +1,6 @@
+import { capabilities, useCapability } from "@pocketjs/framework/target";
+
+export function installBaselineControls(): string {
+  useCapability(capabilities["ui.drawlist@1"]);
+  return useCapability(capabilities["input.buttons@1"]);
+}
