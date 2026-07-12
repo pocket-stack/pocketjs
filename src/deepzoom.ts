@@ -78,6 +78,9 @@ export interface DeepZoomView {
   minZoom: number;
   maxZoom: number;
   level: number;
+  /** Current document-space center, useful for HUDs and deterministic input telemetry. */
+  centerX: number;
+  centerY: number;
 }
 
 /** One screen-space direct-manipulation step supplied by an app gesture
@@ -468,7 +471,7 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
     hot.prop(activeWorld, "translateY", ty0);
     hot.prop(activeWorld, "scale", zoom / lv.scale);
 
-    props.onView?.({ zoom, minZoom, maxZoom, level });
+    props.onView?.({ zoom, minZoom, maxZoom, level, centerX: cx, centerY: cy });
   });
 
   onCleanup(() => {
