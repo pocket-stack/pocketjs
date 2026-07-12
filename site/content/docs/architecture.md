@@ -283,8 +283,8 @@ frame order are covered on the [Native contract](/docs/native-contract/) page.
 ## Where to go next
 
 - [Platform contracts](/docs/platform-contracts/) — how an app manifest and a
-  truthful target profile become one hashed build plan shared by JS and native
-  packaging.
+  truthful target profile become one small, checksummed build plan consumed by
+  JS and native packaging.
 - [Build pipeline](/docs/build-pipeline/) — the two-pass build, style
   compilation, and font baking in detail.
 - [Native contract](/docs/native-contract/) — the `ui.*` ops, node lifecycle,

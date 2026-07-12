@@ -1,78 +1,44 @@
 # Platform contracts
 
-PocketJS separates an application's portable intent from the facts of a
-particular device host. The app writes a **manifest**. The framework owns
-**target profiles**. A resolver combines those inputs into one immutable,
-target-specific **ResolvedBuildPlan**, and every later build stage consumes
-that same plan.
-
-This page explains why that extra object exists, how it prevents platform
-conditionals from spreading through the codebase, what is guaranteed today,
-and which parts of the future capability DX are still prototypes.
-
-## The short version
+PocketJS keeps application intent separate from host facts. An app writes
+`pocket.json`; PocketJS owns a profile for each stock target. The resolver
+combines them once, writes a small target-specific `ResolvedBuildPlan`, and all
+later build stages consume that answer.
 
 ```text
-                 app-owned                    framework-owned
-              ┌──────────────┐              ┌─────────────────┐
-              │ pocket.json  │              │ target profile  │
-              │ requirements │              │ provided facts  │
-              └──────┬───────┘              └────────┬────────┘
-                     └──────────────┬────────────────┘
-                                    ▼
-                        schema + semantic resolution
-                                    │
-                                    ▼
-                         target-specific TypeScript
-                                    │
-                                    ▼
-                    .pocket/<target>/plan.json
-                       (hashed ResolvedBuildPlan)
-                         ┌──────────┴──────────┐
-                         ▼                     ▼
-                    JS/pak compiler       native backend
-                         │                     │
-                         └──────────┬──────────┘
-                                    ▼
-                         runtime hash handshake
+  pocket.json           target profile
+  (app intent)          (host facts)
+       └──────── resolve ────────┘
+                    │
+                    ▼
+       .pocket/<target>/plan.json
+          small ResolvedBuildPlan
+             ┌──────┴──────┐
+             ▼             ▼
+        JS compiler    native backend
 ```
 
-The manifest says **what the app needs**. A target profile says **what a
-framework-owned host actually provides**. The plan records **the one resolved
-answer used for this build**.
+This is a build-contract boundary, not a general-purpose platform type system.
+It prevents platform decisions from being rediscovered in the compiler,
+Cargo, packagers, and custom hosts.
 
-The important design rule is not “never mention a target name.” PSP and Vita
-really do have different native backends. The rule is:
+## Ownership
 
-> Target names belong at registry and backend boundaries. Portable app code
-> and generic compiler stages depend on capabilities and resolved values.
+| Data | Owner | Meaning |
+|---|---|---|
+| `pocket.json` | App | Entry, framework, logical viewport, required and optional APIs |
+| Capability registry | PocketJS | Names of framework APIs that can be requested |
+| Target profile | Stock host | Host ABI, display facts, and APIs actually implemented and tested |
+| `ResolvedBuildPlan` | Resolver | One build's target-specific inputs |
+| Backend | PocketJS or custom host | How those inputs become an EBOOT, VPK, or another package |
 
-## Terms and authority
+Apps never claim what a device provides. Profiles never advertise raw hardware
+specifications that the PocketJS host does not expose. Generic build stages do
+not branch on a target name after resolution.
 
-| Object | Written by | Authority | Committed? |
-|---|---|---|---|
-| `pocket.json` | Application author | Identity, entry, framework, logical viewport, required and optional capabilities, package overrides | Yes |
-| Capability registry | PocketJS | Names, versions, parameters, and parameter comparison rules | Yes |
-| Target profile | PocketJS host owner | Host ABI, physical display, supported logical viewports, provided capabilities, package defaults | Yes |
-| `ResolvedBuildPlan` | Resolver | The complete target-specific answer for one build | No; generated under `.pocket/` |
-| Backend implementation | PocketJS or a custom host | How resolved artifacts become an EBOOT, VPK, or another package | Yes |
-| Native host identity | Packaged binary | Target, HostOps ABI, and plan hash actually present at runtime | Embedded in the binary |
+## Application manifest
 
-These ownership boundaries are deliberate:
-
-- Applications may request capabilities; they may not claim that hardware
-  provides them.
-- Target profiles may advertise only behavior implemented and tested by their
-  stock hosts.
-- Compiler and native backends may consume a plan; they may not reinterpret or
-  override its framework, target, ABI, or output name.
-- Machine-local paths such as an output directory are build execution state,
-  not portable contract data, and therefore do not enter the plan hash.
-
-## The manifest: portable intent
-
-`pocket.json` format 2 is a strict, pure-data application contract. A minimal
-portable PSP-shaped application looks like this:
+Format 2 is strict JSON data. A PSP-shaped portable app can say:
 
 ```json
 {
@@ -83,632 +49,192 @@ portable PSP-shaped application looks like this:
   "title": "Pocket Telemetry",
   "version": "1.0.0",
   "engine": {
-    "abi": 1,
     "capabilities": {
-      "requires": [
-        { "id": "ui.drawlist", "version": 1 },
-        { "id": "text.glyphs.baked", "version": 1 },
-        { "id": "input.buttons", "version": 1 },
-        {
-          "id": "input.analog",
-          "version": 1,
-          "parameters": { "sticks": 1 }
-        }
-      ]
+      "requires": ["ui.drawlist", "text.glyphs.baked", "input.buttons"],
+      "enhances": ["input.analog.left"]
     }
   },
   "app": {
     "entry": "app/main.tsx",
     "output": "main",
     "framework": "solid",
-    "simulationHz": 60,
-    "viewport": {
-      "logical": [480, 272],
-      "presentation": "integer-fit"
-    }
+    "viewport": { "logical": [480, 272], "presentation": "integer-fit" }
   }
 }
 ```
 
-Notice what is absent:
+The manifest contains no physical resolution, scale factor, Vita flag, native
+crate path, or host ABI. Those are framework-owned facts.
 
-- no physical screen size;
-- no scale factor;
-- no Vita boolean;
-- no native crate path or build command;
-- no assertion that a device has a particular input API.
-
-Those are target or backend facts, not application intent.
-
-### `requires` and `enhances`
-
-`requires` is the hard compatibility floor. If a selected target cannot
-satisfy one entry, resolution fails before the compiler or Cargo runs.
-
-`enhances` represents an optional capability for which the app has a fallback.
-Resolution records each enhancement as `available` or `unavailable`; it does
-not reject an otherwise compatible target.
-
-```json
-{
-  "requires": [
-    { "id": "input.buttons", "version": 1 }
-  ],
-  "enhances": [
-    { "id": "input.touch", "version": 1, "parameters": { "points": 2 } }
-  ]
-}
-```
-
-The example describes the intended future shape. `input.touch` is not in the
-production capability registry today, so this exact manifest currently fails
-with `capability.unknown`. A capability definition and a real API must land
-before any target may advertise it.
-
-### Package entries are not a target allowlist
-
-`packages.psp` and `packages.vita` override deterministic target packaging
-defaults. Their presence does not mean “this app supports only these targets,”
-and their absence does not disable a target.
-
-Compatibility is computed from:
-
-```text
-app requirements × target-provided capabilities × viewport compatibility
-```
-
-This distinction is what lets an old PSP-oriented manifest compile for Vita
-without adding an empty `packages.vita` stanza merely to opt in.
-
-## Target profiles: framework-owned facts
-
-The registry in `spec/platforms.ts` has two levels.
-
-The capability registry defines the vocabulary and comparison semantics:
+`requires` is the compatibility floor. Resolution fails before compilation if
+the selected host does not provide one of those APIs. `enhances` declares an
+optional API for which the app has a fallback. Its availability becomes a
+boolean in the plan and in the compiled runtime module:
 
 ```ts
-"input.analog": {
-  version: 1,
-  parameters: {
-    sticks: {
-      kind: "integer",
-      required: true,
-      relation: "at-least",
-      minimum: 1,
-    },
-  },
+import { platform } from "@pocketjs/framework/platform";
+
+if (platform.features["input.analog.left"]) {
+  installAnalogNavigation();
+} else {
+  installButtonNavigation();
 }
 ```
 
-The target registry declares what each stock host provides:
+Capability ids are plain strings, not versioned tokens or permissions passed
+through application call graphs.
+
+## What a capability means
+
+A capability means:
+
+> This stock host implements and tests this PocketJS framework API.
+
+It does not mean that hardware merely contains a component. Vita has more
+hardware input than the current HostOps frame exposes, so its profile only
+advertises the APIs actually delivered today.
+
+It also does not model mobile permissions or live device state. Those are
+different questions:
+
+- **Host API support** is a build-time capability.
+- **Permission or entitlement** needs its own declaration and runtime result.
+- **Runtime availability** such as window size, fold state, or an attached
+  controller must be queried at runtime.
+
+Touch is intentionally not registered yet. Adding `input.touch` to a manifest
+currently fails as an unknown capability; Vita may advertise it only after a
+public touch API, HostOps delivery, and tests land together.
+
+## Target profiles
+
+Profiles are small, truthful records:
 
 ```ts
 vita: {
-  profileVersion: 1,
   hostAbi: 1,
   display: {
     physicalViewport: [960, 544],
     logicalViewports: [[480, 272]],
-    presentations: ["integer-fit", "stretch"],
+    presentations: ["integer-fit"],
   },
-  capabilities: {
-    "input.analog": { version: 1, parameters: { sticks: 1 } },
-    "input.buttons": { version: 1 },
-    "text.glyphs.baked": { version: 1 },
-    "ui.drawlist": { version: 1 },
-  },
+  capabilities: ["input.analog.left", "input.buttons", "text.glyphs.baked", "ui.drawlist"],
 }
 ```
 
-The current Vita profile intentionally advertises one stick, not two. Vita
-hardware has more input than that, but the stock PocketJS frame ABI currently
-delivers only the left stick. A target profile describes the tested host API,
-not a hardware marketing sheet.
+There is no capability-parameter comparison DSL. If PocketJS later exposes a
+meaningfully different API, it can receive a new identifier once that API is
+real. The registry remains data; specialized compatibility rules should live
+with the feature that needs them, not in a universal constraint language.
 
-That truthfulness rule prevents this failure mode:
+## Resolution and PSP-to-Vita compatibility
 
-```text
-hardware exists → profile claims feature → typecheck passes
-                                  ↓
-                 runtime never delivered the data
-```
+The resolver performs the same steps for every registered target:
 
-## Resolution: requirements meet facts
+1. Validate `pocket.json` against the format-2 JSON Schema.
+2. Find the selected target profile.
+3. Reject unknown, duplicate, or unavailable required capabilities.
+4. Resolve declared enhancements to booleans.
+5. Validate the logical viewport and presentation mode.
+6. Produce and checksum the build plan.
 
-The resolver in `src/manifest/resolve.ts` is target-generic. It does not have a
-PSP branch and a Vita branch. Given a registry entry, it applies the same rules:
-
-1. Validate the manifest against the format-2 JSON Schema.
-2. Find the requested target profile.
-3. Compare `engine.abi` with the target `hostAbi`.
-4. Validate capability ids, versions, parameters, and duplicates.
-5. Ensure every required capability is provided.
-6. Resolve every enhancement to available or unavailable.
-7. Validate logical viewport and presentation against the display profile.
-8. Compute exact rational X/Y scale values.
-9. Merge target package defaults with app overrides.
-10. Produce and hash a canonical plan.
-
-Capability parameters carry an explicit relation. For `sticks`, `at-least`
-means a host providing two sticks can satisfy an app requiring one. Equality
-parameters require an exact value. These comparison rules live in the registry
-rather than being hidden in target conditionals.
-
-### PSP baseline resolved for Vita
-
-For the manifest above, PSP resolution produces:
+A PSP-oriented app is not a PSP-only app. The manifest above resolves for Vita
+unchanged because Vita provides the same required APIs and accepts the same
+480×272 logical viewport:
 
 ```text
-logical  480 × 272
-physical 480 × 272
-scale    1/1 × 1/1
+PSP:  logical 480×272 → physical 480×272
+Vita: logical 480×272 → physical 960×544
 ```
 
-The same manifest resolved for Vita produces:
+No `vita` stanza is needed. Compatibility is determined by requirements and
+viewport rules, not by a target allowlist. Conversely, a Vita app that treats a
+future touch API as an enhancement can retain its button fallback for PSP; if
+it makes touch a requirement, the PSP build must fail.
 
-```text
-logical  480 × 272
-physical 960 × 544
-scale    2/1 × 2/1
-```
+## The small build plan
 
-No app source or platform stanza changes. The target profile supplies the
-physical facts, and the plan records the result.
-
-If the app requests `input.analog { sticks: 2 }`, both current PSP and Vita
-profiles fail with `capability.unavailable`. The resolver does not silently
-degrade a hard requirement.
-
-## The plan: target-specific build IR
-
-The resolved plan is best understood as target-specific build intermediate
-representation, not as another user configuration file.
+The generated plan is cross-process build IR, not public app configuration:
 
 ```json
 {
-  "pocket": 2,
-  "app": {
-    "id": "dev.pocket-stack.telemetry",
-    "entry": "app/main.tsx",
-    "output": "main",
-    "framework": "solid",
-    "viewport": {
-      "logical": [480, 272],
-      "presentation": "integer-fit"
-    }
-  },
-  "target": {
-    "id": "vita",
-    "profileVersion": 1,
-    "hostAbi": 1
-  },
-  "viewport": {
-    "logical": [480, 272],
-    "physical": [960, 544],
-    "presentation": "integer-fit",
-    "scale": {
-      "x": { "numerator": 2, "denominator": 1 },
-      "y": { "numerator": 2, "denominator": 1 }
-    }
-  },
-  "capabilities": {
-    "requires": [],
-    "enhances": []
-  },
-  "contractHash": "sha256:…"
+  "app": { "entry": "app/main.tsx", "output": "main", "framework": "solid" },
+  "target": { "id": "vita", "hostAbi": 1 },
+  "viewport": { "logical": [480, 272], "physical": [960, 544],
+                "presentation": "integer-fit" },
+  "features": { "input.analog.left": true },
+  "planHash": "sha256:…"
 }
 ```
 
-The real plan includes resolved capability and package records omitted from
-this shortened example. It is written to:
+Serialization matters because PocketJS crosses Bun, the JS compiler, Cargo,
+stock native crates, and downstream custom hosts. `.pocket/<target>/plan.json`
+gives each stage the same debuggable input.
 
-```text
-.pocket/psp/plan.json
-.pocket/vita/plan.json
-```
+`planHash` is only a checksum of this generated build IR. It detects an edited
+or partially copied plan and can support build caching. It is not a runtime
+compatibility hash, a signature, an attestation, or a trust chain. App title,
+icons, package metadata, toolchain provenance, and other fields without a real
+consumer do not belong in the plan merely to make its hash look comprehensive.
 
-### Why serialize it?
+## Consumers and backend dispatch
 
-If validation, compilation, and packaging all happened inside one process, a
-resolved object could remain in memory. PocketJS crosses several process and
-repository boundaries:
-
-- Bun orchestration;
-- the TypeScript/JS and asset compiler;
-- Cargo and `build.rs`;
-- stock native runtimes;
-- downstream custom hosts such as Pocket Figma and OpenStrike.
-
-Serializing the plan gives each consumer the same immutable input and leaves a
-debuggable artifact when a build fails.
-
-The essential abstraction is the canonical resolved contract. `plan.json` is
-its transport format.
-
-### What the plan is not
-
-- **Not a dependency lockfile.** Cargo and package lockfiles still select code
-  versions.
-- **Not a build script.** It contains data, not commands.
-- **Not a cache key for machine paths.** `POCKETJS_OUTPUT_DIR` is deliberately
-  outside the plan.
-- **Not app-authored.** Editing a generated plan is unsupported. Plan-reading
-  consumers verify its hash, and native consumers receive that verified hash
-  for the runtime handshake.
-- **Not a target allowlist.** Target compatibility comes from resolution.
-
-## Why manifest alone is insufficient
-
-It is possible to build without a serialized plan, but then every stage tends
-to reinterpret the manifest independently:
+Target selection happens once at a typed backend boundary:
 
 ```ts
-// compiler
-if (target === "vita") scale = 2;
-
-// package script
-if (target === "vita") output = "main";
-
-// custom host
-const hostAbi = 1;
-```
-
-The values look harmless in isolation. Together they create multiple sources
-of truth. Common failures include:
-
-- validation checks one profile while packaging uses another;
-- JS output naming differs from the file embedded by Cargo;
-- the compiler uses a 480×272 viewport while native rendering assumes a
-  different scale;
-- a custom host copies or symlinks framework-local artifacts to satisfy a
-  hard-coded path;
-- a stale native binary boots a newly compiled bundle;
-- platform handling spreads as unrelated `if (target === …)` branches.
-
-Resolving once does not remove platform differences. It prevents later stages
-from making new platform-policy decisions.
-
-## Where target branching is allowed
-
-PocketJS contains platform dispatch in one typed backend registry:
-
-```ts
-const targetBackends = {
-  psp: pspBackend,
-  vita: vitaBackend,
-} satisfies Record<PocketTargetId, TargetBackend>;
-
+const targetBackends = { psp: pspBackend, vita: vitaBackend }
+  satisfies Record<PocketTargetId, TargetBackend>;
 await targetBackends[plan.target.id](context);
 ```
 
-This is intentional. PSP packaging needs `cargo psp`; Vita packaging needs
-`cargo vita`. A typed registry provides two useful properties:
+PSP and Vita still have different native commands and packages. The registry
+makes that difference explicit and exhaustive while keeping the resolver and
+compiler target-neutral. After dispatch, a backend reads resolved fields; it
+does not recalculate physical dimensions or output names from the target id.
 
-- adding a target without adding a backend is a TypeScript error;
-- generic resolver/compiler code never grows a platform switch.
-
-After dispatch, a backend reads resolved values:
-
-```ts
-const [logicalWidth, logicalHeight] = plan.viewport.logical;
-const [physicalWidth, physicalHeight] = plan.viewport.physical;
-const abi = plan.target.hostAbi;
-```
-
-It does not recalculate them from the target name.
-
-### File suffixes still have a place
-
-React Native-style platform suffixes answer “which implementation file should
-this target compile?” They are useful *inside* a backend or component that
-truly has different implementations.
-
-They do not answer:
-
-- whether a target satisfies an app's requirements;
-- what viewport and scale were selected;
-- whether an optional capability has a fallback;
-- whether JS and native packaging used the same contract.
-
-PocketJS therefore uses capability resolution for compatibility and explicit
-backend modules for implementation. Suffixes could be added as backend-local
-source selection later without replacing the manifest/plan model.
-
-## Target-specific TypeScript
-
-After resolution, `compiler/target-check.ts` checks only the app entry's
-reachable import graph. It inherits compiler options and path mappings from the
-app's `tsconfig`, but deliberately does not inherit a broad project `include`.
-
-The checker generates a virtual `@pocketjs/framework/target` ambient module
-containing branded capability tokens for that one build:
+The complete `ResolvedBuildPlan` is internal and may evolve. Custom hosts use
+the smaller stable boundary instead:
 
 ```ts
-declare module "@pocketjs/framework/target" {
-  export type TargetName = "psp";
+import { extractHostBuildInputs, hostBuildEnvironment }
+  from "@pocketjs/framework/manifest";
 
-  export const capabilities: {
-    readonly "input.buttons@1": CapabilityToken<"input.buttons@1">;
-  };
-
-  export const enhancements: {
-    readonly "input.touch@1":
-      | CapabilityToken<"input.touch@1">
-      | undefined;
-  };
-}
-```
-
-This proves several type-system properties in tests:
-
-- host availability alone does not authorize an undeclared capability;
-- required capabilities are non-optional tokens;
-- unavailable enhancements become `Token | undefined`;
-- unguarded enhancement use fails only for targets where it is unavailable;
-- a guarded enhancement checks for both the base and enhanced targets.
-
-The intended authoring shape is:
-
-```ts
-import { capabilities, enhance, useCapability }
-  from "@pocketjs/framework/target";
-
-useCapability(capabilities["input.buttons@1"]);
-
-enhance("input.touch@1", (touch) => {
-  useCapability(touch);
-  // Install touch-specific behavior here; button fallback remains outside.
+const inputs = extractHostBuildInputs(planJson, { expectedTarget: "vita" });
+const env = hostBuildEnvironment(inputs, {
+  outputDirectory: "dist/pocket/vita",
+  embedApp: false,
 });
 ```
 
-### Current status of the token API
+This verifies the plan checksum, exposes only host build inputs, and produces
+the shared Cargo environment without downstream code duplicating Plan parsing.
 
-The generated module and the compile-time behavior above are exercised by
-`test/target-check.test.ts`. They are not yet a published runtime module or a
-compile-erased virtual module in the production bundler.
+## Runtime and TypeScript checks
 
-Consequently, target-specific TypeScript checking itself is production and
-runs for every `bun pocket check/compile/build`, but application imports from
-`@pocketjs/framework/target` are currently an executable prototype of the
-future capability-gated DX. Shipping touch or dynamic-text APIs requires
-finishing that bundler/runtime boundary rather than merely adding profile data.
+At startup, a manifest-driven bundle verifies only the native target id and
+HostOps ABI. Those are the runtime compatibility facts. Stock builds embed the
+JS and native host together, so repeating the whole build plan as a runtime
+hash would make unrelated build metadata part of the wire contract.
 
-This distinction is important: a type design test is evidence that the model
-can express safe degradation, not evidence that the public API has shipped.
+`bun pocket check`, `compile`, and `build` type-check the app entry and its
+reachable imports with the app's ordinary TypeScript configuration. There is
+no generated ambient target module, branded capability token, or special
+reachability authorization model. Optional APIs are ordinary guarded feature
+checks; the manifest provides the build-time compatibility guarantee.
 
-## Compiler and native consumers
+## Deliberate non-goals
 
-`scripts/pocket.ts` owns orchestration:
+This contract does not currently include:
 
-```sh
-bun pocket check   --target vita
-bun pocket compile --target vita
-bun pocket build   --target vita -- --release
-```
+- a capability-token programming model;
+- capability versions or a generic parameter constraint DSL;
+- a full-plan runtime hash, signing, or supply-chain attestation;
+- package fields whose backends do not consume them;
+- touch or dynamic-text APIs before their host implementations exist;
+- a claim that fixed PSP/Vita profiles model dynamic mobile device conditions.
 
-All three commands perform schema validation, resolution, and target-specific
-TypeScript checking, then write the verified plan.
+Those concerns can gain separate contracts when PocketJS has concrete APIs and
+consumers for them. They do not need to complicate today's PSP/Vita build IR.
 
-- `check` stops there.
-- `compile` also produces JS and pak artifacts; it is the boundary for custom
-  native hosts.
-- `build` continues into the registered stock target backend.
-
-The low-level `scripts/build.ts` path remains available for framework tests and
-legacy demos. A manifest-driven product build should use `bun pocket` so the
-compiler receives a verified plan.
-
-### Plan-owned and execution-owned environment
-
-The shared native-build boundary can receive two categories of data. Vita and
-custom hosts consume the viewport fields shown below. The current stock PSP
-backend has a fixed 480 × 272 surface and does not yet forward those viewport
-environment variables.
-
-Contract data originates in the plan:
-
-```text
-POCKETJS_APP_OUTPUT
-POCKETJS_TARGET
-POCKETJS_HOST_ABI
-POCKETJS_CONTRACT_HASH
-POCKETJS_LOGICAL_WIDTH / HEIGHT
-POCKETJS_PHYSICAL_WIDTH / HEIGHT
-```
-
-Execution data describes who packages artifacts and where they live:
-
-```text
-POCKETJS_EMBED_APP
-POCKETJS_OUTPUT_DIR
-```
-
-`POCKETJS_OUTPUT_DIR` is not hashed because an absolute path differs across
-machines without changing the application/host contract.
-
-`POCKETJS_EMBED_APP=1` means the stock PocketJS runtime is the primary package
-and should embed the JS/pak pair. A custom host sets it to `0`: the reusable
-PocketJS native crate provides HostOps and the custom primary crate embeds the
-app. This prevents a dependency build script from reading PocketJS's own
-unrelated `dist/` directory.
-
-## Runtime handshake
-
-A successful build does not prove that the correct JS and native files will be
-installed together. PocketJS therefore carries the resolved identity into both
-sides of the package.
-
-The JS bundle contains:
-
-```text
-target id
-HostOps ABI
-contract hash
-```
-
-The native host publishes the same values on `globalThis.ui`:
-
-```text
-ui.__host
-ui.__hostAbi
-ui.__contractHash
-```
-
-Before app mount, `src/host.ts` checks all three. A Vita bundle under a PSP
-host, a host ABI mismatch, or a stale plan hash fails before application code
-starts mutating the UI tree.
-
-Injected web/WASM/test hosts remain a separate ownership kind. They are not
-mistaken for native merely because they install `globalThis.ui`; native hosts
-self-identify with `__host`.
-
-The hash proves plan identity, not binary reproducibility. Two compilers could
-still produce different bytes from the same plan. Byte-exact golden tests and
-toolchain lockfiles cover that separate concern.
-
-## Version axes
-
-Several versions coexist because they answer different questions:
-
-| Version | Question |
-|---|---|
-| Manifest format (`pocket: 2`) | Can this parser understand the document shape? |
-| Capability version | Does the app and host agree on one feature contract? |
-| Capability parameters | Does the provided quantity/mode satisfy this request? |
-| Target `profileVersion` | Which revision of framework-owned target facts was resolved? |
-| `hostAbi` | Does the JS/native HostOps wire contract match? |
-| `contractHash` | Did every build stage consume this exact resolved plan? |
-
-Bumping one does not imply bumping all of them. Adding a package default might
-change `profileVersion` and plan hash without changing HostOps ABI. Changing
-the frame input wire shape requires a `hostAbi` bump. A breaking touch API
-requires a capability-version bump.
-
-## Adding another target
-
-Adding 3DS, Linux handheld, Android foldable, iOS, or another device should be
-a registry/backend exercise rather than an app-schema fork.
-
-1. Implement the native host behavior.
-2. Add capability definitions only for APIs with a real framework contract.
-3. Register a truthful target profile: ABI, display modes, capabilities, and
-   package defaults.
-4. Add target package override schema only for metadata genuinely unique to
-   that package format.
-5. Register a backend. The exhaustive `Record<PocketTargetId, TargetBackend>`
-   makes omission a compile error.
-6. Publish target/ABI/hash from the native HostOps namespace.
-7. Add byte-exact resolved-plan fixtures and negative capability tests.
-8. Add native build, runtime handshake, input, viewport, and golden E2E proof.
-
-Do not add `oneOf` branches that turn the entire manifest into a PSP document,
-a Vita document, an Android document, and so on. That model duplicates common
-application fields and makes multi-target intent a cross-product of schemas.
-
-Target-specific package metadata can remain target keyed because it is already
-behind the packaging boundary. Compatibility remains capability based.
-
-## Custom hosts and extensions
-
-Pocket Figma and OpenStrike use `bun pocket compile`, read the public
-`ResolvedBuildPlan` type from `@pocketjs/framework/manifest`, and hand the same
-contract values to their custom primary crates.
-
-The current platform registry describes the framework-owned stock HostOps
-surface. OpenStrike's Pocket3D/`strike` extension is not falsely advertised as
-a stock PSP or Vita capability; its Rust host composition owns that additional
-contract.
-
-This is honest but not yet the final extension model. A future first-class
-custom-host profile must answer who is trusted to augment target capabilities
-without allowing an application to self-assert unsupported APIs. Likely design
-space includes a signed/registered host profile or a typed build-plugin input;
-the app manifest itself should not gain authority to declare provision.
-
-## Current implementation boundaries
-
-The core contract path is implemented and validated today:
-
-- strict format-2 schema and diagnostics;
-- generic capability/viewport/package resolution;
-- deterministic plan canonicalization and hash verification;
-- PSP and Vita target profiles;
-- per-entry, per-target TypeScript execution;
-- plan-consuming JS compiler and stock/custom native builds;
-- JS/native target, ABI, and hash handshake;
-- typed backend registry;
-- PSP/Vita resolved-plan fixtures and native golden E2E.
-
-The following areas remain intentionally incomplete or deserve further design:
-
-1. **Capability token bundling.** The virtual target module is currently a
-   type-check prototype, not a public runtime/compile-erased module.
-2. **Touch and dynamic text.** Neither capability nor public API is registered
-   in production. Vita therefore cannot accidentally authorize them.
-3. **Custom-host capability augmentation.** Custom extensions are host-owned
-   but not yet represented by a separately trusted profile.
-4. **Package materialization.** Package metadata is resolved and hashed, while
-   some stock/custom Cargo packages still carry static title/icon metadata.
-   Backends should eventually prove that the emitted package consumed every
-   resolved metadata field.
-5. **Plan schema publication.** The TypeScript plan type and hash verifier are
-   public, but the generated plan does not yet have a separately versioned JSON
-   Schema for non-TypeScript consumers.
-6. **Contract-hash scope.** Toolchain and dependency versions stay in their
-   lockfiles. If reproducible artifact identity becomes a requirement, a
-   separate build provenance record should reference both plan and toolchain.
-
-These are boundaries, not reasons to move platform policy back into ad hoc
-conditionals. Each can extend the same authority chain:
-
-```text
-app request → trusted host facts → resolved contract → verified consumers
-```
-
-## Verification and debugging
-
-Resolve without compiling:
-
-```sh
-bun pocket check --target psp
-bun pocket check --target vita
-```
-
-Inspect the exact answer:
-
-```sh
-jq . .pocket/vita/plan.json
-jq '.viewport, .capabilities, .contractHash' .pocket/vita/plan.json
-```
-
-Compile artifacts for a custom host:
-
-```sh
-bun pocket compile --target vita --outdir dist/pocket/vita
-```
-
-Build the stock package:
-
-```sh
-bun pocket build --target vita -- --release
-```
-
-The executable specification lives in:
-
-- `test/platform-contracts.test.ts` — schema, resolution, compatibility,
-  package override, viewport, and byte-exact plan behavior;
-- `test/target-check.test.ts` — target-only import graph and capability-token
-  type behavior;
-- `test/fixtures/plans/` — committed canonical PSP/Vita plan fixtures;
-- `test/e2e-ppsspp.ts` and `test/e2e-vita3k.ts` — packaged native behavior and
-  byte-exact rendering.
-
-## Related reading
-
-- [Architecture](/docs/architecture/) — the runtime/core/backend layering.
-- [Build pipeline](/docs/build-pipeline/) — JSX, styles, fonts, pak, and bundle
-  compilation after a plan has selected the inputs.
-- [Native contract](/docs/native-contract/) — the synchronous HostOps surface
-  protected by the target/ABI/hash handshake.
-- [Frameworks](/docs/frameworks/) — Solid and Vue Vapor ownership and output
-  selection.
+Schema/resolver tests, byte-exact plan fixtures, ordinary TypeScript checks,
+native target/ABI checks, and PSP/Vita golden E2E tests cover this contract.

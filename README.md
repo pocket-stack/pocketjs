@@ -144,8 +144,8 @@ selected host; `enhances` resolves to booleans available from
 ```ts
 import { platform } from "@pocketjs/framework/platform";
 
-if (platform.features["input.touch"]) installTouchControls();
-else installButtonControls();
+if (platform.features["input.analog.left"]) installAnalogNavigation();
+else installButtonNavigation();
 ```
 
 They describe fixed host API support, not permissions or live device state.
@@ -154,8 +154,8 @@ Custom native hosts should use `extractHostBuildInputs()` and
 Plan remains an internal build IR.
 
 The complete design, including authority boundaries, compatibility rules,
-typed backend dispatch, runtime hash handshake, extension points, and current
-limitations, is documented in
+typed backend dispatch, target/ABI runtime checks, extension points, and
+current limitations, is documented in
 [Platform contracts](./site/content/docs/platform-contracts.md).
 
 The Vita host is documented in [native-vita/README.md](./native-vita/README.md).

@@ -194,7 +194,7 @@ TARGET_CFLAGS, AR_mipsel_sony_psp=llvm-ar, RUST_PSP_TARGET, RUST_PSP_ABORT_ONLY,
 RUSTFLAGS `-A linker-messages …`), `POCKETJS_APP_OUTPUT=<app>` and
 `POCKETJS_EMBED_APP=1` consumed by the stock runtime `build.rs`.
 `POCKETJS_OUTPUT_DIR` carries the CLI artifact directory without putting a
-machine-local path into the hashed build plan.
+machine-local path into the checksummed build plan.
 
 ## The native contract (`ui.*`)
 
