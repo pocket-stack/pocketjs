@@ -247,6 +247,11 @@ sweep runs inside frame() → core.tick(1/60): anims → layout if dirty → Dra
 → ge::render → sceGuFinish/Sync/WaitVblank/Swap`. Backends never call
 sceGuStart/Finish (display list owned by main.rs, dreamcart contract).
 
+**Audio.** Sound is deliberately *not* part of the `ui.*` contract: it is a
+separate, optional host surface `globalThis.audio` (spec ops 26–31, no core
+implementation, never mounted by goldens/tapes) so replay determinism holds by
+construction. Full contract + API in [AUDIO.md](AUDIO.md).
+
 ## Memory (the blocker fix [R])
 
 rust-psp installs a `#[global_allocator]` that makes **one kernel object per
@@ -364,4 +369,5 @@ pak (base64-in-JS is the known QuickJS boot killer).
 Kinetic scroll views, CLUT/swizzled textures, render-to-texture opacity groups
 (per-vertex alpha propagation instead — wrong on overlap, fine for demos),
 kerning, `hover:`, percentage sizes beyond `-full`, 3DS/Android hosts,
-`rounded-full` on runtime-sized nodes.
+`rounded-full` on runtime-sized nodes. Audio (AUDIO.md): streamed/ADPCM BGM,
+3D/positional audio, DSP effect chains, per-SFX voice handles.

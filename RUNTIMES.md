@@ -84,6 +84,12 @@ code-generated into Rust, with a drift guard that byte-compares the generated
 file in CI (`test/contract.ts`). A surface is versioned by append: codes are
 never renumbered, never reused.
 
+Not every surface fronts a core simulation. The audio surface
+(`globalThis.audio`, spec ops 26–31, [AUDIO.md](AUDIO.md)) is a *device
+surface*: ops-only, no events, no core state — playback is a host-side effect,
+which is exactly what keeps sound outside the deterministic replay world while
+still spec-pinned and drift-guarded like every other vocabulary.
+
 **Capability = surface.** A guest can affect exactly what its mounted
 surfaces express — nothing else. There is no ambient filesystem, network, or
 process access. Sandboxing is not a bolted-on policy; it falls out of the
