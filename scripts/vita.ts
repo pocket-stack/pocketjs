@@ -8,7 +8,12 @@ import {
   type PocketFramework,
 } from "../compiler/jsx-plugin.ts";
 import type { PocketConfig } from "../src/config.ts";
-import { verifyBuildPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
+import {
+  extractHostBuildInputs,
+  hostBuildEnvironment,
+  type HostBuildInputs,
+} from "../src/manifest/index.ts";
+import { verifyPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
 
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
 const nativeDir = pspUiDir + "native-vita/";
@@ -91,11 +96,13 @@ function mountedAppName(arg: string): string {
 }
 
 let buildPlan: ResolvedBuildPlan | undefined;
+let hostBuildInputs: HostBuildInputs | undefined;
 if (planPath) {
   buildPlan = await Bun.file(planPath).json() as ResolvedBuildPlan;
-  if (!verifyBuildPlanHash(buildPlan) || buildPlan.target.id !== "vita") {
+  if (!verifyPlanHash(buildPlan) || buildPlan.target.id !== "vita") {
     throw new Error(`PocketJS vita: invalid Vita ResolvedBuildPlan at ${planPath}`);
   }
+  hostBuildInputs = extractHostBuildInputs(buildPlan, { expectedTarget: "vita" });
   if (frameworkFlag || configFlagged) {
     throw new Error("PocketJS vita: framework/config overrides are forbidden with --plan");
   }
@@ -121,7 +128,11 @@ const framework: PocketFramework = buildPlan
   : frameworkFlag
     ? parseFramework(frameworkFlag, "--framework")
     : parseFramework(config.framework, "pocket.config.ts");
-const outputApp = `${buildPlan ? buildPlan.app.output : app}${FRAMEWORKS[framework].outputSuffix}`;
+// A resolved plan owns the exact artifact name. Low-level demo builds keep the
+// framework suffix so multiple variants can still coexist in dist/.
+const outputApp = buildPlan
+  ? buildPlan.app.output
+  : `${app}${FRAMEWORKS[framework].outputSuffix}`;
 
 // ---------------------------------------------------------------------------
 // 1. Build the app bundle + pak -> dist/<app>.js + dist/<app>.pak
@@ -140,6 +151,17 @@ if (!skipBuild) {
 // 2. cargo vita build vpk
 // ---------------------------------------------------------------------------
 
+const nativeInputs: HostBuildInputs = hostBuildInputs ?? {
+  appOutput: outputApp,
+  target: "vita",
+  hostAbi: 1,
+  viewport: {
+    logical: [480, 272],
+    physical: [960, 544],
+    presentation: "integer-fit",
+  },
+};
+
 const env = {
   ...process.env,
   // cargo-vita probes `rustc` from PATH even when cargo itself was launched
@@ -147,16 +169,10 @@ const env = {
   // compiler and expose VitaSDK tools without requiring shell dotfiles.
   PATH: `${vitasdk}/bin:${home}/.cargo/bin:${process.env.PATH ?? ""}`,
   VITASDK: vitasdk,
-  POCKETJS_APP_OUTPUT: outputApp,
-  POCKETJS_EMBED_APP: "1",
-  POCKETJS_OUTPUT_DIR: outputDir,
-  POCKETJS_TARGET: buildPlan?.target.id ?? "vita",
-  POCKETJS_HOST_ABI: String(buildPlan?.target.hostAbi ?? 1),
-  POCKETJS_CONTRACT_HASH: buildPlan?.contractHash ?? "",
-  POCKETJS_LOGICAL_WIDTH: String(buildPlan?.viewport.logical[0] ?? 480),
-  POCKETJS_LOGICAL_HEIGHT: String(buildPlan?.viewport.logical[1] ?? 272),
-  POCKETJS_PHYSICAL_WIDTH: String(buildPlan?.viewport.physical[0] ?? 960),
-  POCKETJS_PHYSICAL_HEIGHT: String(buildPlan?.viewport.physical[1] ?? 544),
+  ...hostBuildEnvironment(nativeInputs, {
+    outputDirectory: outputDir,
+    embedApp: true,
+  }),
   TARGET_AR: 'arm-vita-eabi-ar',
   AR_armv7_sony_vita_newlibeabihf: 'arm-vita-eabi-ar',
   TARGET_CC: 'arm-vita-eabi-gcc',

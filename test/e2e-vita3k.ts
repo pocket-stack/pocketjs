@@ -101,6 +101,21 @@ function writeFixture(): void {
   writeFileSync(CONFIG, config);
 }
 
+function writeDemoManifest(name: string): string {
+  const demo = name.replace(/-main$/, "");
+  const manifest = JSON.parse(readFileSync(`${ROOT}pocket.json`, "utf8")) as Record<string, any>;
+  manifest.id = `dev.pocket-stack.e2e.${demo.replace(/-/g, ".")}`;
+  manifest.name = `pocketjs-e2e-${demo}`;
+  manifest.title = `PocketJS E2E ${demo}`;
+  manifest.app.entry = `demos/${demo}/main.tsx`;
+  manifest.app.output = name;
+  manifest.app.framework = "solid";
+  const path = `${OUT}/manifests/${name}.json`;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n");
+  return path;
+}
+
 // Vita3K validates `-r TITLE_ID` against the default/global VitaFS before it
 // parses --config-location. Seed only an empty title directory for that CLI
 // check when needed; the actual app always lives in the isolated VitaFS.
@@ -201,8 +216,11 @@ if (specs.length === 0) {
 
 for (const spec of specs) {
   const input = encodeThresholdInput(spec);
+  const manifest = writeDemoManifest(spec.name);
   console.log(`\n## ${spec.name} (${spec.capture.length} golden frame(s))`);
-  const build = await $`bun scripts/vita.ts ${spec.name} --capture --release`
+  // Exercise the same manifest -> plan -> compiler -> backend path as real
+  // applications, including the target/HostOps ABI startup handshake.
+  const build = await $`bun scripts/pocket.ts build --target vita --manifest ${manifest} --project-root ${ROOT} -- --capture --release`
     .cwd(ROOT)
     .env({
       ...process.env,

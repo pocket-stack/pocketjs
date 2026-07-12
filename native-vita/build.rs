@@ -28,25 +28,36 @@ fn main() {
         "POCKETJS_EMBED_APP=1 requires POCKETJS_APP_OUTPUT"
     );
     let target = env::var("POCKETJS_TARGET").unwrap_or_else(|_| "vita".into());
+    assert_eq!(target, "vita", "Vita host requires POCKETJS_TARGET=vita");
     let host_abi = env::var("POCKETJS_HOST_ABI").unwrap_or_else(|_| "1".into());
-    let contract_hash = env::var("POCKETJS_CONTRACT_HASH").unwrap_or_default();
+    assert_eq!(host_abi, "1", "Vita host requires POCKETJS_HOST_ABI=1");
     let dist = env::var_os("POCKETJS_OUTPUT_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("../dist"));
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // The resolved build plan supplies the logical/physical viewports. Vita's
-    // current backend implements a fullscreen integer-fit presentation, so
-    // reject a plan that would require stretching, letterboxing, or a
-    // different physical display instead of silently rendering it wrong.
+    // current renderer implements exactly the PSP-compatible 480x272 logical
+    // surface at 2x integer scale. Reject unsupported presentation modes here
+    // instead of silently treating them as integer-fit.
     let logical_width = positive_dimension("POCKETJS_LOGICAL_WIDTH", 480);
     let logical_height = positive_dimension("POCKETJS_LOGICAL_HEIGHT", 272);
     let physical_width = positive_dimension("POCKETJS_PHYSICAL_WIDTH", 960);
     let physical_height = positive_dimension("POCKETJS_PHYSICAL_HEIGHT", 544);
+    let presentation = env::var("POCKETJS_PRESENTATION").unwrap_or_else(|_| "integer-fit".into());
+    assert_eq!(
+        (logical_width, logical_height),
+        (480, 272),
+        "Vita host requires the PSP-compatible 480x272 logical viewport"
+    );
     assert_eq!(
         (physical_width, physical_height),
         (960, 544),
         "Vita host requires the native 960x544 physical viewport"
+    );
+    assert_eq!(
+        presentation, "integer-fit",
+        "Vita host currently supports only integer-fit presentation"
     );
     assert!(
         physical_width % logical_width == 0 && physical_height % logical_height == 0,
@@ -101,7 +112,6 @@ fn main() {
 
     println!("cargo:rustc-env=POCKETJS_TARGET={target}");
     println!("cargo:rustc-env=POCKETJS_HOST_ABI={host_abi}");
-    println!("cargo:rustc-env=POCKETJS_CONTRACT_HASH={contract_hash}");
     println!("cargo:rustc-env=POCKETJS_CAPTURE_INPUT={capture_input}");
     println!("cargo:rustc-env=POCKETJS_CAPTURE_FRAMES={capture_frames}");
     println!("cargo:rustc-env=POCKETJS_CAPTURE_DIR={capture_dir}");
@@ -120,11 +130,11 @@ fn main() {
     println!("cargo:rerun-if-env-changed=POCKETJS_OUTPUT_DIR");
     println!("cargo:rerun-if-env-changed=POCKETJS_TARGET");
     println!("cargo:rerun-if-env-changed=POCKETJS_HOST_ABI");
-    println!("cargo:rerun-if-env-changed=POCKETJS_CONTRACT_HASH");
     println!("cargo:rerun-if-env-changed=POCKETJS_LOGICAL_WIDTH");
     println!("cargo:rerun-if-env-changed=POCKETJS_LOGICAL_HEIGHT");
     println!("cargo:rerun-if-env-changed=POCKETJS_PHYSICAL_WIDTH");
     println!("cargo:rerun-if-env-changed=POCKETJS_PHYSICAL_HEIGHT");
+    println!("cargo:rerun-if-env-changed=POCKETJS_PRESENTATION");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_INPUT");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_FRAMES");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_DIR");

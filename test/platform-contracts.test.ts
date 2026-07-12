@@ -130,7 +130,7 @@ describe("platform registry", () => {
     expect(POCKET_TARGETS.vita.display).toEqual({
       physicalViewport: [960, 544],
       logicalViewports: [[480, 272]],
-      presentations: ["integer-fit", "stretch"],
+      presentations: ["integer-fit"],
     });
   });
 
