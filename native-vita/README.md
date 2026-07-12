@@ -5,12 +5,14 @@ feeds the normal PocketJS pak, renders the standard DrawList with vita2d/GXM,
 and reads the physical Vita controller. Existing PocketJS bundles do not need
 a Vita-specific entry point.
 
-The PocketJS logical viewport remains 480x272. The Vita backend multiplies
-every coordinate by exactly two and fills the native 960x544 framebuffer;
-there is no letterboxing or aspect-ratio crop. Touch is intentionally not
-implemented yet. D-pad, face buttons, shoulders and both analog sticks are
-available through `input::read`; reusable game hosts can pass the left-stick
-packing through `Runtime::frame_with_analog`.
+The PocketJS logical viewport remains 480x272, so PSP applications keep the
+same layout. The resolved Vita profile separately sets a 960x544 physical
+viewport and raster density 2: geometry is sampled at physical resolution,
+font coverage/SVG/core masks are baked at 2x, and `@2x` image or raw-pak
+siblings are selected when present. There is no letterboxing or aspect-ratio
+crop. Touch is intentionally not implemented yet. D-pad, face buttons,
+shoulders and both analog sticks are available through `input::read`; reusable
+game hosts can pass the left-stick packing through `Runtime::frame_with_analog`.
 
 ## Toolchain
 
@@ -62,16 +64,15 @@ E2E_VITA3K_APP=hero bun run e2e:vita  # focused iteration
 
 For each demo the driver builds a capture VPK, boots it in an isolated VitaFS,
 waits for the guest `done` marker, and terminates only the spawned emulator.
-It checks that every guest frame is exactly 960x544, that every logical pixel
-occupies a 2x2 physical block, and that the downsampled PNG is byte-identical
-to `test/goldens`. Vita3K's GXM framebuffer cannot currently be read back
-coherently on macOS, so the pixel oracle is CPU-rendered; each capture also
-asserts that every DrawList texture used by the production GXM pass is resident
-in its GPU cache. This catches backend-only omissions such as core-generated
-rounded-corner textures. Stable, visually reviewed ARM layout rounding
-differences may live in `test/goldens-vita`; currently 33/35 frames use the
-shared oracle directly and two library frames carry the same one-pixel Vita
-override.
+It checks that every guest frame is exactly 960x544, was rasterized directly at
+physical resolution, contains real detail inside at least one 2x2 logical
+block, and is byte-identical to its independent `test/goldens-vita` image.
+Vita3K's GXM framebuffer cannot currently be read
+back coherently on macOS, so the pixel oracle is CPU-rendered; each capture also
+asserts that every DrawList texture and font atlas used by the production GXM
+pass is resident in its GPU cache. This catches backend-only omissions such as
+core-generated rounded-corner textures or a font atlas rejected by the Vita
+texture packer.
 
 Current Vita3K 0.2.1 builds on macOS can fault while tearing down GXM after a
 guest calls `sceKernelExitProcess`. Capture builds therefore park after the

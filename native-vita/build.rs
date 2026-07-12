@@ -37,13 +37,13 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // The resolved build plan supplies the logical/physical viewports. Vita's
-    // current renderer implements exactly the PSP-compatible 480x272 logical
-    // surface at 2x integer scale. Reject unsupported presentation modes here
-    // instead of silently treating them as integer-fit.
+    // The resolved plan keeps PSP-compatible layout while independently
+    // specifying physical presentation and target raster density.
     let logical_width = positive_dimension("POCKETJS_LOGICAL_WIDTH", 480);
     let logical_height = positive_dimension("POCKETJS_LOGICAL_HEIGHT", 272);
     let physical_width = positive_dimension("POCKETJS_PHYSICAL_WIDTH", 960);
     let physical_height = positive_dimension("POCKETJS_PHYSICAL_HEIGHT", 544);
+    let raster_density = positive_dimension("POCKETJS_RASTER_DENSITY", 2);
     let presentation = env::var("POCKETJS_PRESENTATION").unwrap_or_else(|_| "integer-fit".into());
     assert_eq!(
         (logical_width, logical_height),
@@ -59,6 +59,7 @@ fn main() {
         presentation, "integer-fit",
         "Vita host currently supports only integer-fit presentation"
     );
+    assert_eq!(raster_density, 2, "Vita host requires raster density 2");
     assert!(
         physical_width % logical_width == 0 && physical_height % logical_height == 0,
         "Vita host requires an integer-fit logical viewport"
@@ -77,6 +78,7 @@ fn main() {
              pub const PHYSICAL_W: i32 = {physical_width};\n\
              pub const PHYSICAL_H: i32 = {physical_height};\n\
              pub const INTEGER_SCALE: usize = {scale_x};\n\
+             pub const RASTER_DENSITY: u32 = {raster_density};\n\
              pub const SCALE: f32 = {scale_x} as f32;\n"
         ),
     )
@@ -135,6 +137,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=POCKETJS_PHYSICAL_WIDTH");
     println!("cargo:rerun-if-env-changed=POCKETJS_PHYSICAL_HEIGHT");
     println!("cargo:rerun-if-env-changed=POCKETJS_PRESENTATION");
+    println!("cargo:rerun-if-env-changed=POCKETJS_RASTER_DENSITY");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_INPUT");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_FRAMES");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_DIR");

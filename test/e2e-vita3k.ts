@@ -1,6 +1,6 @@
 // Deterministic PS Vita E2E: build capture VPKs, boot them in an isolated
 // Vita3K VitaFS, wait for the guest completion marker, then compare the
-// guest-produced 960x544 (exact 2x fullscreen) frames against test/goldens.
+// guest-produced, native-density 960x544 frames against Vita goldens.
 
 import { $ } from "bun";
 import {
@@ -24,12 +24,9 @@ const CONFIG = `${OUT}/config/config.yml`;
 const APP_DIR = `${VITAFS}/ux0/app/PCKT00001`;
 const CAPTURE_DIR = `${VITAFS}/ux0/data/pocketjs-captures`;
 const NATIVE_RELEASE = `${ROOT}native-vita/target/armv7-sony-vita-newlibeabihf/release`;
-const GOLDENS = `${ROOT}test/goldens`;
 const VITA_GOLDENS = `${ROOT}test/goldens-vita`;
 const W = 960;
 const H = 544;
-const LOGICAL_W = 480;
-const LOGICAL_H = 272;
 const RAW_BYTES = W * H * 4;
 const TIMEOUT_MS = Number(process.env.E2E_VITA3K_TIMEOUT_MS ?? 45_000);
 const updateVita = process.env.UPDATE_VITA === "1";
@@ -166,37 +163,27 @@ async function runVita3K(): Promise<void> {
   }
 }
 
-function logicalFrame(raw: Uint8Array, label: string): Uint8Array {
-  if (raw.byteLength !== RAW_BYTES) {
-    throw new Error(`${label}: expected ${RAW_BYTES} bytes (960x544 RGBA), got ${raw.byteLength}`);
-  }
-  const logical = new Uint8Array(LOGICAL_W * LOGICAL_H * 4);
-  for (let y = 0; y < LOGICAL_H; y++) {
-    for (let x = 0; x < LOGICAL_W; x++) {
-      const src = ((y * 2) * W + x * 2) * 4;
-      const dst = (y * LOGICAL_W + x) * 4;
-      for (let channel = 0; channel < 4; channel++) {
-        const value = raw[src + channel];
-        if (
-          raw[src + 4 + channel] !== value ||
-          raw[src + W * 4 + channel] !== value ||
-          raw[src + W * 4 + 4 + channel] !== value
-        ) {
-          throw new Error(`${label}: framebuffer is not an exact 2x fullscreen expansion at ${x},${y}`);
-        }
-        logical[dst + channel] = value;
-      }
-    }
-  }
-  return logical;
-}
-
 function isNonFlat(rgba: Uint8Array): boolean {
   const pixels = new Uint32Array(rgba.buffer, rgba.byteOffset, rgba.byteLength / 4);
   const seen = new Set<number>();
   for (const pixel of pixels) {
     seen.add(pixel);
     if (seen.size >= 3) return true;
+  }
+  return false;
+}
+
+/** Prove capture did not regress to rendering 480x272 and duplicating each pixel. */
+function hasNativeDetail(rgba: Uint8Array): boolean {
+  for (let y = 0; y < H; y += 2) {
+    for (let x = 0; x < W; x += 2) {
+      const topLeft = (y * W + x) * 4;
+      for (const offset of [topLeft + 4, topLeft + W * 4, topLeft + W * 4 + 4]) {
+        for (let channel = 0; channel < 4; channel++) {
+          if (rgba[topLeft + channel] !== rgba[offset + channel]) return true;
+        }
+      }
+    }
   }
   return false;
 }
@@ -254,32 +241,31 @@ for (const spec of specs) {
     try {
       const rawPath = `${CAPTURE_DIR}/f${String(frame).padStart(4, "0")}.rgba`;
       if (!existsSync(rawPath)) throw new Error(`${label}: capture file missing`);
-      const logical = logicalFrame(readFileSync(rawPath), label);
-      if (!isNonFlat(logical)) throw new Error(`${label}: degenerate flat frame`);
-      const actual = Buffer.from(encodePNG(logical, LOGICAL_W, LOGICAL_H));
-      const goldenPath = `${GOLDENS}/${label}.png`;
-      if (!existsSync(goldenPath)) throw new Error(`${label}: golden missing`);
-      const commonGolden = readFileSync(goldenPath);
+      const raw = readFileSync(rawPath);
+      if (raw.byteLength !== RAW_BYTES) {
+        throw new Error(`${label}: expected ${RAW_BYTES} bytes (960x544 RGBA), got ${raw.byteLength}`);
+      }
+      if (!isNonFlat(raw)) throw new Error(`${label}: degenerate flat frame`);
+      if (!hasNativeDetail(raw)) {
+        throw new Error(`${label}: framebuffer contains only duplicated 2x2 logical pixels`);
+      }
+      const actual = Buffer.from(encodePNG(raw, W, H));
       const vitaGoldenPath = `${VITA_GOLDENS}/${label}.png`;
       if (updateVita) {
-        if (actual.equals(commonGolden)) {
-          rmSync(vitaGoldenPath, { force: true });
-          console.log(`PASS ${label} (shared golden; removed any Vita override)`);
-        } else {
-          writeFileSync(vitaGoldenPath, actual);
-          console.log(`WROTE ${label} (Vita-specific deterministic layout override)`);
-        }
+        writeFileSync(vitaGoldenPath, actual);
+        console.log(`WROTE ${label} (960x544 native-density Vita golden)`);
         passed++;
         continue;
       }
-      const expected = existsSync(vitaGoldenPath) ? readFileSync(vitaGoldenPath) : commonGolden;
+      if (!existsSync(vitaGoldenPath)) {
+        throw new Error(`${label}: Vita golden missing (run with UPDATE_VITA=1 after visual review)`);
+      }
+      const expected = readFileSync(vitaGoldenPath);
       if (!actual.equals(expected)) {
         writeFileSync(`${OUT}/${label}.actual.png`, actual);
         throw new Error(`${label}: PNG bytes differ (see dist/e2e-vita3k/${label}.actual.png)`);
       }
-      console.log(
-        `PASS ${label} (960x544, exact 2x, GXM textures resident, byte-exact${existsSync(vitaGoldenPath) ? ", Vita override" : ""})`,
-      );
+      console.log(`PASS ${label} (960x544 native density, GXM textures/fonts resident, byte-exact)`);
       passed++;
     } catch (error) {
       console.error(`FAIL ${(error as Error).message}`);

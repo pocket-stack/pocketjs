@@ -120,6 +120,7 @@ vita: {
     physicalViewport: [960, 544],
     logicalViewports: [[480, 272]],
     presentations: ["integer-fit"],
+    rasterDensity: 2,
   },
   capabilities: ["input.analog.left", "input.buttons", "text.glyphs.baked"],
 }
@@ -128,6 +129,12 @@ vita: {
 DrawList is intentionally absent. It is PocketJS's internal core-to-backend IR,
 not behavior an application can observe or request. GE, GXM, WGPU, and software
 raster hosts may consume that IR while offering the same public UI semantics.
+
+`rasterDensity` is also not a capability. It is a target-owned rendering fact:
+layout and DrawList coordinates remain logical, while font coverage, SVGs,
+core masks, and target-selected image variants use that many raster samples per
+logical pixel. Dynamic texture producers receive the same resolved value as
+`platform.pixelRatio`; neither compiler nor application needs a Vita branch.
 
 There is no capability-parameter comparison DSL. If PocketJS later exposes a
 meaningfully different API, it can receive a new identifier once that API is
@@ -142,7 +149,7 @@ The resolver performs the same steps for every registered target:
 2. Find the selected target profile.
 3. Reject unknown, duplicate, or unavailable required capabilities.
 4. Resolve declared enhancements to booleans.
-5. Validate the logical viewport and presentation mode.
+5. Validate the target raster density, logical viewport, and presentation mode.
 6. Produce and checksum the build plan.
 
 A PSP-oriented app is not a PSP-only app. The manifest above resolves for Vita
@@ -151,7 +158,9 @@ unchanged because Vita provides the same required APIs and accepts the same
 
 ```text
 PSP:  logical 480×272 → physical 480×272
+      raster density 1
 Vita: logical 480×272 → physical 960×544
+      raster density 2
 ```
 
 No `vita` stanza is needed. Compatibility is determined by requirements and
@@ -168,7 +177,7 @@ The generated plan is cross-process build IR, not public app configuration:
   "app": { "entry": "app/main.tsx", "output": "main", "framework": "solid" },
   "target": { "id": "vita", "hostAbi": 1 },
   "viewport": { "logical": [480, 272], "physical": [960, 544],
-                "presentation": "integer-fit" },
+                "presentation": "integer-fit", "rasterDensity": 2 },
   "features": { "input.analog.left": true },
   "planHash": "sha256:…"
 }
@@ -228,6 +237,9 @@ reachable imports with the app's ordinary TypeScript configuration. There is
 no generated ambient target module, branded capability token, or special
 reachability authorization model. Optional APIs are ordinary guarded feature
 checks; the manifest provides the build-time compatibility guarantee.
+`platform.pixelRatio` is an ordinary build-defined number for code that must
+produce raster data at runtime; it does not change layout units or API
+availability.
 
 ## Deliberate non-goals
 

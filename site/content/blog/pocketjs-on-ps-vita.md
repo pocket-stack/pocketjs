@@ -7,8 +7,9 @@ bun play vita gallery --fullscreen
 That builds a VPK, installs it into Vita3K, and launches the same Gallery app we
 already run on PSP. There is no Vita entry file, no Vita component tree, and no
 `if (vita)` in the application. PocketJS keeps the 480×272 world the app was
-written for, expands every logical pixel into an exact 2×2 block, and fills the
-Vita's native 960×544 screen.
+written for, but bakes and samples raster resources at density 2 before filling
+the Vita's native 960×544 screen. The layout stays portable; the pixels do not
+stay low resolution.
 
 <img class="w-full rounded-xl border border-line" src="https://raw.githubusercontent.com/pocket-stack/pocket-figma/0735cf2/test/goldens-vita/zoom.png" alt="Pocket Figma running at 960 by 544 for PS Vita, zoomed into a dense design-system page with the PocketJS status bar and controller hints" />
 
@@ -48,7 +49,7 @@ the machine.
   <rect x="428" y="290" width="292" height="78" rx="10" fill="#0b0f1a" stroke="#a78bfa" stroke-width="1.5"/>
   <text x="574" y="316" fill="#f1f5f9" font-size="13" font-weight="700" text-anchor="middle">PS Vita host</text>
   <text x="574" y="338" fill="#c4b5fd" font-size="11.5" text-anchor="middle">vita2d · GXM</text>
-  <text x="574" y="356" fill="#64748b" font-size="11" text-anchor="middle">960×544 physical · exact 2×</text>
+  <text x="574" y="356" fill="#64748b" font-size="11" text-anchor="middle">960×544 physical · raster density 2</text>
   <text x="380" y="394" fill="#475569" font-size="11" text-anchor="middle">the fork is one native submission layer, not the application</text>
 </svg>
 
@@ -63,47 +64,48 @@ not an application capability. Rounded-corner masks, clipping, and paint-only
 transforms are PocketJS semantics implemented above either GPU. The backend is
 allowed to be completely different; the visible contract is not.
 
-## Four PSP pixels become sixteen Vita pixels
+## Same layout, four times the raster budget
 
 The PSP screen is 480×272. The Vita screen is 960×544: exactly twice the width
-and twice the height. That unusually friendly relationship let us make the
-first Vita presentation mode deliberately boring.
+and height. The first port used that relationship only as a presentation
+transform, which preserved layout but also preserved every PSP-sized jagged
+edge. The finished contract separates two facts: logical viewport and raster
+density.
 
-<svg viewBox="0 0 760 300" width="100%" role="img" aria-label="Exact two times viewport mapping: a 480 by 272 logical PocketJS frame maps to a 960 by 544 Vita framebuffer, with each logical pixel becoming a two by two physical pixel block" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
-  <rect x="30" y="46" width="280" height="159" rx="8" fill="#0b0f1a" stroke="#38bdf8" stroke-width="1.5"/>
-  <text x="170" y="28" fill="#e2e8f0" font-size="13" font-weight="700" text-anchor="middle">logical viewport · 480×272</text>
-  <rect x="108" y="92" width="28" height="28" fill="#38bdf8" opacity=".9"/>
-  <rect x="136" y="92" width="28" height="28" fill="#22d3ee" opacity=".65"/>
-  <rect x="108" y="120" width="28" height="28" fill="#22d3ee" opacity=".65"/>
-  <rect x="136" y="120" width="28" height="28" fill="#38bdf8" opacity=".9"/>
-  <path d="M324 126 L424 126" stroke="#475569" stroke-width="2"/>
-  <path d="M424 126 l-12 -7 M424 126 l-12 7" stroke="#475569" stroke-width="2" fill="none"/>
-  <text x="374" y="108" fill="#94a3b8" font-size="12" text-anchor="middle">integer scale 2</text>
-  <rect x="450" y="20" width="280" height="224" rx="8" fill="#0b0f1a" stroke="#a78bfa" stroke-width="1.5"/>
-  <text x="590" y="268" fill="#e2e8f0" font-size="13" font-weight="700" text-anchor="middle">physical framebuffer · 960×544</text>
-  <g transform="translate(514 72)">
-    <rect x="0" y="0" width="28" height="28" fill="#38bdf8"/><rect x="28" y="0" width="28" height="28" fill="#38bdf8"/>
-    <rect x="0" y="28" width="28" height="28" fill="#38bdf8"/><rect x="28" y="28" width="28" height="28" fill="#38bdf8"/>
-    <rect x="56" y="0" width="28" height="28" fill="#22d3ee" opacity=".65"/><rect x="84" y="0" width="28" height="28" fill="#22d3ee" opacity=".65"/>
-    <rect x="56" y="28" width="28" height="28" fill="#22d3ee" opacity=".65"/><rect x="84" y="28" width="28" height="28" fill="#22d3ee" opacity=".65"/>
-    <rect x="0" y="56" width="28" height="28" fill="#22d3ee" opacity=".65"/><rect x="28" y="56" width="28" height="28" fill="#22d3ee" opacity=".65"/>
-    <rect x="0" y="84" width="28" height="28" fill="#22d3ee" opacity=".65"/><rect x="28" y="84" width="28" height="28" fill="#22d3ee" opacity=".65"/>
-    <rect x="56" y="56" width="28" height="28" fill="#38bdf8"/><rect x="84" y="56" width="28" height="28" fill="#38bdf8"/>
-    <rect x="56" y="84" width="28" height="28" fill="#38bdf8"/><rect x="84" y="84" width="28" height="28" fill="#38bdf8"/>
-  </g>
-  <text x="380" y="292" fill="#64748b" font-size="11" text-anchor="middle">no relayout · no crop · no letterbox · no filtering ambiguity</text>
+<svg viewBox="0 0 760 300" width="100%" role="img" aria-label="PocketJS keeps a 480 by 272 logical layout while the Vita profile bakes text vectors images and masks at raster density two and renders a native 960 by 544 framebuffer" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+  <rect x="30" y="42" width="270" height="190" rx="10" fill="#0b0f1a" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="165" y="27" fill="#e2e8f0" font-size="13" font-weight="700" text-anchor="middle">logical layout · 480×272</text>
+  <rect x="72" y="78" width="186" height="108" rx="18" fill="#111c2e" stroke="#334155"/>
+  <text x="165" y="117" fill="#f1f5f9" font-size="20" font-weight="700" text-anchor="middle">Mission</text>
+  <text x="165" y="145" fill="#94a3b8" font-size="12" text-anchor="middle">same metrics · same wrapping</text>
+  <circle cx="235" cy="172" r="9" fill="#22d3ee"/>
+  <path d="M318 126 L442 126" stroke="#475569" stroke-width="2"/>
+  <path d="M442 126 l-12 -7 M442 126 l-12 7" stroke="#475569" stroke-width="2" fill="none"/>
+  <text x="380" y="87" fill="#c4b5fd" font-size="12" text-anchor="middle">profile.rasterDensity = 2</text>
+  <text x="380" y="107" fill="#64748b" font-size="10.5" text-anchor="middle">fonts · SVG · masks · @2x assets</text>
+  <rect x="460" y="24" width="270" height="226" rx="10" fill="#0b0f1a" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="595" y="276" fill="#e2e8f0" font-size="13" font-weight="700" text-anchor="middle">physical raster · 960×544</text>
+  <rect x="493" y="66" width="204" height="130" rx="22" fill="#111c2e" stroke="#475569" stroke-width="1.5"/>
+  <text x="595" y="112" fill="#f1f5f9" font-size="26" font-weight="700" text-anchor="middle">Mission</text>
+  <text x="595" y="146" fill="#94a3b8" font-size="14" text-anchor="middle">2× coverage · native edges</text>
+  <circle cx="670" cy="180" r="12" fill="#22d3ee"/>
+  <text x="380" y="296" fill="#64748b" font-size="11" text-anchor="middle">no relayout · no crop · no letterbox · no target branch</text>
 </svg>
 
-One logical pixel becomes four physical pixels. A 2×2 logical sample—the four
-colored squares above—becomes a 4×4 physical block, or sixteen pixels. Text,
-borders, shadows, radii, and focus rings keep their PSP geometry; the host only
-changes the presentation transform.
+Font atlas v3 keeps advances, baselines, line heights, and glyph cells in
+logical pixels while storing density-scaled coverage. SVGs and PocketJS's own
+rounded-corner masks follow the same rule. PNG, sprite, and pre-baked pak
+assets prefer an `@2x` sibling with build-time dimension checks. Dynamic
+texture producers read `platform.pixelRatio`. Geometry, gradients, and
+triangles are sampled directly on the 960×544 target rather than rendered at
+480×272 and copied afterward.
 
 The application always fills the Vita framebuffer. `--fullscreen` controls the
 Vita3K window around it, so the command can also fill your desktop display. We
 do not ask every component to rediscover a scale factor, and we do not hide a
 Vita-only `scale = 2` in the JavaScript compiler. The resolved target profile
-owns both physical size and presentation.
+owns physical size, presentation, and raster density; every later build stage
+consumes those resolved values.
 
 ## An app asks; a host answers
 
@@ -139,9 +141,9 @@ world it was designed for:
 ```
 
 PocketJS owns the other half: a small profile declaring the HostOps ABI,
-physical display, accepted logical viewports, presentation modes, and public
-framework APIs the stock host has actually implemented and tested. The resolver
-combines manifest and profile exactly once:
+physical display, accepted logical viewports, presentation modes, raster
+density, and public framework APIs the stock host has actually implemented and
+tested. The resolver combines manifest and profile exactly once:
 
 ```text
 pocket.json × target profile → ResolvedBuildPlan
@@ -231,29 +233,31 @@ We have not claimed the same crash on physical Vita hardware. The distinction
 is important: an emulator is a target we support, not evidence for a bug on a
 machine we did not observe.
 
-## Thirty-five frames as a proof
+## Forty-four frames as a proof
 
 “It launches” is not the acceptance criterion for a renderer port. The Vita
 suite installs a capture VPK into an isolated VitaFS, starts Vita3K, drives the
 real QuickJS/input/layout loop with deterministic controller tracks, and waits
 for completion markers written by the guest.
 
-It then checks 35 frames:
+It then checks 44 frames:
 
 - every capture is exactly 960×544 RGBA;
-- every logical pixel covers an identical 2×2 physical block;
-- 33 of 35 frames reuse the shared golden byte for byte;
-- two Library frames carry reviewed one-pixel ARM layout-rounding overrides;
-- every texture referenced by the production GXM submission is resident;
-- all 35 output images match their committed golden exactly.
+- the frame contains physical detail inside at least one logical 2×2 block,
+  proving capture did not regress to low-resolution duplication;
+- every frame has its own reviewed Vita physical golden;
+- every texture and font atlas referenced by production GXM is resident;
+- all 44 960×544 images match their committed golden exactly.
 
 There is one caveat worth making visible. Vita3K's current macOS Vulkan path
 does not provide a coherent GXM framebuffer readback after presentation. The
 pixel oracle is therefore a deterministic CPU renderer inside the capture
-guest, consuming the same DrawList and applying the same exact-2× mapping. The
+guest, consuming the same DrawList and rasterizing geometry, gradients,
+textures, density-aware glyph coverage, and scissors directly at 960×544. The
 production vita2d/GXM pass still runs, and the suite separately asserts that
-all textures it uses—including PocketJS's internally generated rounded-corner
-masks—are resident. These PNGs are not mislabeled GPU framebuffer dumps.
+all textures and font atlases it uses—including PocketJS's internally generated
+rounded-corner masks—are resident. These PNGs are not mislabeled GPU
+framebuffer dumps.
 
 The port also had to survive real applications rather than only framework
 demos. Pocket Figma contributes four Vita journeys: fit, zoom, zoom-and-pan,

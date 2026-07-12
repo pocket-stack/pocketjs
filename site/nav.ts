@@ -59,7 +59,7 @@ export const BLOG_POSTS: BlogPost[] = [
     title: "One App, Two PlayStations: PocketJS on PS Vita",
     date: "2026-07-13",
     description:
-      "PocketJS now builds native PS Vita VPKs without forking the app: one portable manifest, a 480×272 logical world expanded exactly 2× to 960×544, a QuickJS + vita2d/GXM host, and 35 byte-exact Vita3K frames proving the same UI contract across two PlayStations.",
+      "PocketJS now builds native PS Vita VPKs without forking the app: one portable manifest, a 480×272 logical world rendered at native 960×544 density, a QuickJS + vita2d/GXM host, and 44 byte-exact Vita3K frames proving the same UI contract across two PlayStations.",
     author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
   },
   {

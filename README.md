@@ -125,7 +125,7 @@ bun pocket compile --target psp       # typecheck and compile, for custom native
 bun pocket build --target psp         # typecheck, compile, and package the target
 bun scripts/build.ts <app> [--framework=solid|vue-vapor] [--extra-chars=…]
 bun run psp / bun run vita / bun run dev / bun run wasm
-bun run e2e:vita                     # Vita3K, 960x544 exact-2x golden E2E
+bun run e2e:vita                     # Vita3K, native-density 960x544 golden E2E
 bun psplink                           # interactive real PSP switcher over PSPLINK
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
@@ -178,9 +178,9 @@ current limitations, is documented in
 [Platform contracts](./site/content/docs/platform-contracts.md).
 
 The Vita host is documented in [native-vita/README.md](./native-vita/README.md).
-It fills the native 960x544 screen by scaling PocketJS's 480x272 logical
-viewport exactly 2x. Physical controls and analog input are supported; touch
-input is intentionally deferred.
+It preserves PocketJS's 480x272 logical layout while rasterizing geometry,
+fonts, vectors and core masks at Vita's native 960x544 density. Physical
+controls and analog input are supported; touch input is intentionally deferred.
 
 ## DevTools + time travel
 

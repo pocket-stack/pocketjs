@@ -1,8 +1,8 @@
 //! vita2d/GXM DrawList backend shared by PocketJS apps and games.
 //!
-//! The core stays at its deterministic 480x272 logical viewport. Every
-//! coordinate is multiplied by two at this boundary, filling the Vita's
-//! native 960x544 framebuffer exactly without relayout.
+//! The core stays at its deterministic 480x272 logical viewport. Geometry is
+//! presented at 2x while density-aware fonts, vectors, images and masks supply
+//! native 960x544 raster detail without relayout.
 
 use std::collections::HashMap;
 #[cfg(feature = "capture")]
@@ -19,8 +19,13 @@ mod build_plan {
     include!(concat!(env!("OUT_DIR"), "/build_plan.rs"));
 }
 
-pub use build_plan::{INTEGER_SCALE, LOGICAL_H, LOGICAL_W, PHYSICAL_H, PHYSICAL_W, SCALE};
+pub use build_plan::{
+    INTEGER_SCALE, LOGICAL_H, LOGICAL_W, PHYSICAL_H, PHYSICAL_W, RASTER_DENSITY, SCALE,
+};
 pub const DEFAULT_POOL_BYTES: u32 = 2 * 1024 * 1024;
+/// Conservative GXM font-atlas limit. App textures keep the portable 512px
+/// contract, but density-2 ASCII at the 36px slot needs a 1024x1024 atlas.
+const VITA_FONT_TEXTURE_MAX_DIM: u32 = 2048;
 
 #[derive(Clone, Copy)]
 struct Texture {
@@ -32,8 +37,14 @@ struct Texture {
 #[derive(Clone, Copy)]
 struct FontTexture {
     texture: Texture,
-    cell_w: u32,
-    cell_h: u32,
+    glyph_count: u16,
+    /// Source coverage-cell dimensions in GXM texels.
+    coverage_w: u32,
+    coverage_h: u32,
+    /// Destination dimensions before the logical-to-physical scale.
+    logical_w: u32,
+    logical_h: u32,
+    raster_density: u8,
     cols: u32,
 }
 
@@ -244,29 +255,82 @@ fn next_pow2(mut value: u32) -> u32 {
     value + 1
 }
 
-pub fn register_font_atlas(slot: u8, atlas: &Atlas) {
-    let glyphs = atlas.glyph_count as u32;
-    if glyphs == 0 || atlas.cell_w == 0 || atlas.cell_h == 0 {
-        return;
+fn font_grid(glyphs: u32, cell_w: u32, cell_h: u32) -> Option<(u32, u32, u32)> {
+    if glyphs == 0
+        || cell_w == 0
+        || cell_h == 0
+        || cell_w > VITA_FONT_TEXTURE_MAX_DIM
+        || cell_h > VITA_FONT_TEXTURE_MAX_DIM
+    {
+        return None;
     }
-    let max_cols = (spec::TEX_MAX_DIM / atlas.cell_w).max(1);
+    let max_cols = VITA_FONT_TEXTURE_MAX_DIM / cell_w;
     let mut cols = 1u32;
     while cols < max_cols && cols.saturating_mul(cols) < glyphs {
         cols += 1;
     }
-    let rows = glyphs.div_ceil(cols);
-    let tex_w = next_pow2(cols * atlas.cell_w);
-    let tex_h = next_pow2(rows * atlas.cell_h);
-    if tex_w > spec::TEX_MAX_DIM || tex_h > spec::TEX_MAX_DIM {
-        return;
+    let dimensions = |cols: u32| -> Option<(u32, u32)> {
+        let rows = glyphs.div_ceil(cols);
+        let width = next_pow2(cols.checked_mul(cell_w)?);
+        let height = next_pow2(rows.checked_mul(cell_h)?);
+        Some((width, height))
+    };
+    let (mut tex_w, mut tex_h) = dimensions(cols)?;
+    // A square-ish grid can overflow one axis after pow2 padding. Retry with
+    // the maximum legal column count before rejecting the atlas.
+    if tex_w > VITA_FONT_TEXTURE_MAX_DIM || tex_h > VITA_FONT_TEXTURE_MAX_DIM {
+        cols = max_cols;
+        (tex_w, tex_h) = dimensions(cols)?;
     }
-    let mut rgba = vec![0u8; tex_w as usize * tex_h as usize * 4];
+    if tex_w > VITA_FONT_TEXTURE_MAX_DIM || tex_h > VITA_FONT_TEXTURE_MAX_DIM {
+        return None;
+    }
+    Some((cols, tex_w, tex_h))
+}
+
+fn evict_font(slot: u8) {
+    unsafe {
+        if let Some(old) = fonts().remove(&slot) {
+            recycle_texture(old.texture);
+        }
+    }
+}
+
+pub fn register_font_atlas(slot: u8, atlas: &Atlas) {
+    let coverage_w = atlas.coverage_width();
+    let coverage_h = atlas.coverage_height();
+    let Some((cols, tex_w, tex_h)) = font_grid(atlas.glyph_count as u32, coverage_w, coverage_h)
+    else {
+        evict_font(slot);
+        crate::vita_log(format_args!(
+            "[PocketJS Vita] font atlas slot {slot} rejected: {} glyphs, logical {}x{}, coverage {}x{} at density {}, max texture {}",
+            atlas.glyph_count,
+            atlas.cell_w,
+            atlas.cell_h,
+            coverage_w,
+            coverage_h,
+            atlas.raster_density,
+            VITA_FONT_TEXTURE_MAX_DIM,
+        ));
+        return;
+    };
+    let Some(rgba_len) = (tex_w as usize)
+        .checked_mul(tex_h as usize)
+        .and_then(|pixels| pixels.checked_mul(4))
+    else {
+        evict_font(slot);
+        crate::vita_log(format_args!(
+            "[PocketJS Vita] font atlas slot {slot} rejected: {tex_w}x{tex_h} RGBA size overflow"
+        ));
+        return;
+    };
+    let mut rgba = vec![0u8; rgba_len];
     for gid in 0..atlas.glyph_count {
         let src = atlas.glyph_rows(gid);
-        let gx = (gid as u32 % cols) * atlas.cell_w;
-        let gy = (gid as u32 / cols) * atlas.cell_h;
-        for y in 0..atlas.cell_h as usize {
-            for x in 0..atlas.cell_w as usize {
+        let gx = (gid as u32 % cols) * coverage_w;
+        let gy = (gid as u32 / cols) * coverage_h;
+        for y in 0..coverage_h as usize {
+            for x in 0..coverage_w as usize {
                 let dst = ((gy as usize + y) * tex_w as usize + gx as usize + x) * 4;
                 rgba[dst] = 255;
                 rgba[dst + 1] = 255;
@@ -277,12 +341,20 @@ pub fn register_font_atlas(slot: u8, atlas: &Atlas) {
     }
     unsafe {
         let Some(texture) = upload_rgba(tex_w, tex_h, &rgba, false) else {
+            evict_font(slot);
+            crate::vita_log(format_args!(
+                "[PocketJS Vita] font atlas slot {slot} GPU upload failed: {tex_w}x{tex_h}"
+            ));
             return;
         };
         let font = FontTexture {
             texture,
-            cell_w: atlas.cell_w,
-            cell_h: atlas.cell_h,
+            glyph_count: atlas.glyph_count,
+            coverage_w,
+            coverage_h,
+            logical_w: atlas.cell_w,
+            logical_h: atlas.cell_h,
+            raster_density: atlas.raster_density,
             cols,
         };
         if let Some(old) = fonts().insert(slot, font) {
@@ -430,18 +502,34 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                     for k in 0..count {
                         let (x, y) = xy(words[i + 3 + k * 2]);
                         let gid = words[i + 4 + k * 2] & 0xffff;
-                        let sx = (gid % font.cols) * font.cell_w;
-                        let sy = (gid / font.cols) * font.cell_h;
+                        if gid >= font.glyph_count as u32 {
+                            continue;
+                        }
+                        let sx = (gid % font.cols) * font.coverage_w;
+                        let sy = (gid / font.cols) * font.coverage_h;
+                        // DrawList geometry remains logical. Source coverage is
+                        // density-scaled, while the destination is always the
+                        // logical cell multiplied by Vita's presentation scale.
+                        // With density=2 and SCALE=2 these factors are exactly 1.
+                        debug_assert_eq!(
+                            font.coverage_w,
+                            font.logical_w * font.raster_density as u32
+                        );
+                        debug_assert_eq!(
+                            font.coverage_h,
+                            font.logical_h * font.raster_density as u32
+                        );
+                        let coverage_scale = SCALE / font.raster_density as f32;
                         vita2d_draw_texture_tint_part_scale(
                             font.texture.ptr,
                             x,
                             y,
                             sx as f32,
                             sy as f32,
-                            font.cell_w as f32,
-                            font.cell_h as f32,
-                            SCALE,
-                            SCALE,
+                            font.coverage_w as f32,
+                            font.coverage_h as f32,
+                            coverage_scale,
+                            coverage_scale,
                             color,
                         );
                     }
@@ -539,6 +627,19 @@ fn validate_texture_residency(ui: &Ui, words: &[u32]) -> io::Result<()> {
             spec::draw_op::GRAD_RECT => i.checked_add(6),
             spec::draw_op::TRI => i.checked_add(7),
             spec::draw_op::GLYPH_RUN if i + 2 < words.len() => {
+                let slot = (words[i + 1] & 0xff) as u8;
+                if ui.font_atlas(slot).is_none() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("DrawList references missing font atlas slot {slot}"),
+                    ));
+                }
+                let resident = unsafe { fonts().contains_key(&slot) };
+                if !resident {
+                    return Err(io::Error::other(format!(
+                        "Vita GPU font atlas slot {slot} was not resident after production rendering"
+                    )));
+                }
                 let count = (words[i + 1] >> 16) as usize;
                 i.checked_add(3 + count.saturating_mul(2))
             }
@@ -577,36 +678,21 @@ fn validate_texture_residency(ui: &Ui, words: &[u32]) -> io::Result<()> {
     Ok(())
 }
 
-/// Render a deterministic golden at logical resolution and expand every pixel
-/// using the build plan's integer scale. Vita3K's Vulkan framebuffer is not read back:
-/// on current macOS builds that surface is not coherent with guest CDRAM and
-/// produces black dumps. This still runs the real Vita QuickJS/input/frame
-/// loop, while making the pixel oracle byte-stable and explicitly testing the
-/// 480x272 -> 960x544 fullscreen mapping used by the production GXM renderer.
+/// Render a deterministic golden directly at Vita's physical resolution.
+/// Vita3K's Vulkan framebuffer is not read back: on current macOS builds that
+/// surface is not coherent with guest CDRAM and produces black dumps. This
+/// still runs the real Vita QuickJS/input/frame loop, while the CPU oracle
+/// evaluates geometry, gradients, textures and density-aware font coverage at
+/// the same 480x272 -> 960x544 integer presentation scale as production GXM.
 #[cfg(feature = "capture")]
 pub fn capture_golden(ui: &Ui, words: &[u32], path: &str) -> io::Result<()> {
     // The pixels below come from the deterministic CPU oracle because current
     // Vita3K/macOS GXM readback is black. Still verify that the production
-    // renderer made every core texture resident, so backend-only omissions
-    // (notably rounded-corner discs) cannot hide behind a passing CPU golden.
+    // renderer made every core texture and font atlas resident, so backend-
+    // only omissions cannot hide behind a passing CPU golden.
     validate_texture_residency(ui, words)?;
-    let mut logical = vec![0u8; LOGICAL_W as usize * LOGICAL_H as usize * 4];
-    pocketjs_core::raster::render(ui, words, &mut logical);
-
     let mut pixels = vec![0u8; PHYSICAL_W as usize * PHYSICAL_H as usize * 4];
-    for y in 0..LOGICAL_H as usize {
-        for x in 0..LOGICAL_W as usize {
-            let src = (y * LOGICAL_W as usize + x) * 4;
-            for dy in 0..INTEGER_SCALE {
-                for dx in 0..INTEGER_SCALE {
-                    let dst =
-                        ((y * INTEGER_SCALE + dy) * PHYSICAL_W as usize + x * INTEGER_SCALE + dx)
-                            * 4;
-                    pixels[dst..dst + 4].copy_from_slice(&logical[src..src + 4]);
-                }
-            }
-        }
-    }
+    pocketjs_core::raster::render_scaled(ui, words, &mut pixels, INTEGER_SCALE as u32);
     if let Some(parent) = Path::new(path).parent() {
         fs::create_dir_all(parent)?;
     }

@@ -24,14 +24,14 @@ use pocketjs_core::Ui;
 static mut UI: Option<Ui> = None;
 
 /// Create the single core instance (call once, on the worker thread, AFTER
-/// the arena-backed global allocator is linked in — Ui::new allocates).
+/// the arena-backed global allocator is linked in — Ui construction allocates).
 ///
 /// # Safety
 ///
 /// Call exactly once on the Vita render thread, with no outstanding reference
 /// to the process-global UI.
 pub unsafe fn init_ui() -> &'static mut Ui {
-    let mut instance = Ui::new();
+    let mut instance = Ui::new_with_raster_density(crate::graphics::RASTER_DENSITY);
     instance.set_viewport(
         crate::graphics::LOGICAL_W as f32,
         crate::graphics::LOGICAL_H as f32,

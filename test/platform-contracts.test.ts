@@ -131,6 +131,7 @@ describe("platform registry", () => {
       physicalViewport: [960, 544],
       logicalViewports: [[480, 272]],
       presentations: ["integer-fit"],
+      rasterDensity: 2,
     });
   });
 
@@ -187,7 +188,7 @@ describe("semantic resolution", () => {
     expect(JSON.stringify(result.plan, null, 2) + "\n").toBe(committed);
   });
 
-  test("portable PSP baseline resolves to a byte-exact 2x Vita plan", async () => {
+  test("portable PSP baseline resolves to a native-density Vita plan", async () => {
     const result = validateAndResolveBuildPlan(portableInput, { target: "vita" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -196,6 +197,7 @@ describe("semantic resolution", () => {
       logical: [480, 272],
       physical: [960, 544],
       presentation: "integer-fit",
+      rasterDensity: 2,
     });
     expect(result.plan.features).toEqual({
       "input.analog.left": true,

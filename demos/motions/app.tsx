@@ -19,16 +19,17 @@ import { onButtonPress } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
 
 // ---------------------------------------------------------------------------
-// Tile chrome: 3x2 grid of 154x121 rounded cards
+// Tile chrome: 3x2 grid of 154x116 rounded cards. Keep the grid between the
+// header and footer so their text never paints over the animated tiles.
 // ---------------------------------------------------------------------------
 
 const TILE_POS = [
-  "absolute left-[5] top-[14] w-[154] h-[121] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
-  "absolute left-[163] top-[14] w-[154] h-[121] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
-  "absolute left-[321] top-[14] w-[154] h-[121] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
-  "absolute left-[5] top-[139] w-[154] h-[121] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
-  "absolute left-[163] top-[139] w-[154] h-[121] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
-  "absolute left-[321] top-[139] w-[154] h-[121] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
+  "absolute left-[5] top-[16] w-[154] h-[116] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
+  "absolute left-[163] top-[16] w-[154] h-[116] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
+  "absolute left-[321] top-[16] w-[154] h-[116] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
+  "absolute left-[5] top-[136] w-[154] h-[116] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
+  "absolute left-[163] top-[136] w-[154] h-[116] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
+  "absolute left-[321] top-[136] w-[154] h-[116] rounded-[14px] bg-[#f1f1f1] overflow-hidden",
 ];
 
 function Caption(props: { label: string; light?: boolean }) {

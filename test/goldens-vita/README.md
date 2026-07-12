@@ -1,18 +1,18 @@
-# Vita golden overrides
+# Vita physical goldens
 
-`test/e2e-vita3k.ts` compares Vita captures against the shared WASM goldens by
-default. A file appears here only when the ARM/Vita layout result has a stable,
-visually reviewed pixel difference from that shared oracle.
+`test/e2e-vita3k.ts` compares every Vita capture with an independent 960x544
+golden in this directory. These are physical-density images, not 480x272 WASM
+goldens enlarged after rendering.
 
-The current two overrides are the same one-pixel horizontal rounding of the
-first `library-main` tile at frames 2 and 150. All other 33 frames use the
-shared golden byte-for-byte. The driver still requires a 960x544 capture and
-checks every logical pixel expands to an exact 2x2 physical block before any
-platform override is considered.
+The capture guest runs the normal Vita QuickJS/input/layout path, submits the
+production vita2d/GXM frame, verifies all referenced GPU textures and font
+atlases are resident, then executes the same DrawList in the deterministic CPU
+rasterizer directly at physical resolution. The driver rejects a frame made
+only from duplicated 2x2 logical pixels.
 
-After inspecting `.actual.png` output, regenerate only deterministic Vita
-differences with:
+After inspecting `.actual.png` output, regenerate one app or the full set with:
 
 ```sh
-UPDATE_VITA=1 E2E_VITA3K_APP=library bun run e2e:vita
+UPDATE_VITA=1 E2E_VITA3K_APP=hero bun run e2e:vita
+UPDATE_VITA=1 bun run e2e:vita
 ```

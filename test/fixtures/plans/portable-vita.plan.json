@@ -17,12 +17,13 @@
       960,
       544
     ],
-    "presentation": "integer-fit"
+    "presentation": "integer-fit",
+    "rasterDensity": 2
   },
   "features": {
     "input.analog.left": true,
     "input.buttons": true,
     "text.glyphs.baked": true
   },
-  "planHash": "sha256:0587f20793b3c3b7959db4d3f115ce2669c2612f48566aa23ecc79a27f36341f"
+  "planHash": "sha256:ada07a247b28381d2cbc298322f3485dd1376bcaf88b8d35123f361dafee4baf"
 }

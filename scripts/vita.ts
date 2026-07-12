@@ -159,6 +159,7 @@ const nativeInputs: HostBuildInputs = hostBuildInputs ?? {
     logical: [480, 272],
     physical: [960, 544],
     presentation: "integer-fit",
+    rasterDensity: 2,
   },
 };
 

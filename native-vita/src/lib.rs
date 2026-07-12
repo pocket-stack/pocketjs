@@ -259,9 +259,8 @@ impl Runtime {
         graphics::render_over(ffi::ui(), core::slice::from_raw_parts(ptr, len));
     }
 
-    /// Write a deterministic 960x544 golden frame for the current UI tree.
-    /// The frame is rendered at PocketJS's 480x272 logical resolution and
-    /// expanded exactly 2x, matching the Vita backend's fullscreen contract.
+    /// Write a deterministic native-density 960x544 golden for the current UI
+    /// tree while retaining PocketJS's 480x272 logical layout contract.
     ///
     /// # Safety
     ///

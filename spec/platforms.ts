@@ -85,6 +85,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       physicalViewport: [960, 544],
       logicalViewports: [[480, 272]],
       presentations: ["integer-fit"],
+      rasterDensity: 2,
     },
     capabilities: [
       "input.analog.left",
