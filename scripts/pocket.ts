@@ -133,6 +133,20 @@ const targetBackends = {
       "PSP backend",
     );
   },
+  vita: async ({ planPath, projectRoot, outdir, args }) => {
+    await run(
+      [
+        Bun.which("bun") ?? "bun",
+        resolve(frameworkRoot, "scripts/vita.ts"),
+        `--plan=${planPath}`,
+        `--project-root=${projectRoot}`,
+        `--outdir=${outdir}`,
+        "--skip-build",
+        ...args,
+      ],
+      "Vita backend",
+    );
+  },
 } satisfies Record<PocketTargetId, TargetBackend>;
 
 await targetBackends[target as PocketTargetId]({

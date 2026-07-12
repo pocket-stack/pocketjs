@@ -15,10 +15,11 @@ use std::path::Path;
 use pocketjs_core::{spec, text::Atlas, Ui};
 use vita2d_sys::*;
 
-pub const LOGICAL_W: i32 = 480;
-pub const LOGICAL_H: i32 = 272;
-pub const PHYSICAL_W: i32 = 960;
-pub const PHYSICAL_H: i32 = 544;
+mod build_plan {
+    include!(concat!(env!("OUT_DIR"), "/build_plan.rs"));
+}
+
+pub use build_plan::{INTEGER_SCALE, LOGICAL_H, LOGICAL_W, PHYSICAL_H, PHYSICAL_W, SCALE};
 pub const DEFAULT_POOL_BYTES: u32 = 2 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
@@ -271,14 +272,14 @@ pub fn register_font_atlas(slot: u8, atlas: &Atlas) {
 #[inline]
 fn xy(word: u32) -> (f32, f32) {
     (
-        (word & 0xffff) as u16 as i16 as f32 * 2.0,
-        (word >> 16) as u16 as i16 as f32 * 2.0,
+        (word & 0xffff) as u16 as i16 as f32 * SCALE,
+        (word >> 16) as u16 as i16 as f32 * SCALE,
     )
 }
 
 #[inline]
 fn wh(word: u32) -> (f32, f32) {
-    ((word & 0xffff) as f32 * 2.0, (word >> 16) as f32 * 2.0)
+    ((word & 0xffff) as f32 * SCALE, (word >> 16) as f32 * SCALE)
 }
 
 unsafe fn color_vertices(values: &[vita2d_color_vertex], mode: SceGxmPrimitiveType) {
@@ -417,8 +418,8 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                             sy as f32,
                             font.cell_w as f32,
                             font.cell_h as f32,
-                            2.0,
-                            2.0,
+                            SCALE,
+                            SCALE,
                             color,
                         );
                     }
@@ -555,7 +556,7 @@ fn validate_texture_residency(ui: &Ui, words: &[u32]) -> io::Result<()> {
 }
 
 /// Render a deterministic golden at logical resolution and expand every pixel
-/// to a 2x2 block. Vita3K's Vulkan framebuffer is intentionally not read back:
+/// using the build plan's integer scale. Vita3K's Vulkan framebuffer is not read back:
 /// on current macOS builds that surface is not coherent with guest CDRAM and
 /// produces black dumps. This still runs the real Vita QuickJS/input/frame
 /// loop, while making the pixel oracle byte-stable and explicitly testing the
@@ -574,12 +575,14 @@ pub fn capture_golden(ui: &Ui, words: &[u32], path: &str) -> io::Result<()> {
     for y in 0..LOGICAL_H as usize {
         for x in 0..LOGICAL_W as usize {
             let src = (y * LOGICAL_W as usize + x) * 4;
-            let dst = ((y * 2) * PHYSICAL_W as usize + x * 2) * 4;
-            pixels[dst..dst + 4].copy_from_slice(&logical[src..src + 4]);
-            pixels[dst + 4..dst + 8].copy_from_slice(&logical[src..src + 4]);
-            let next_row = dst + PHYSICAL_W as usize * 4;
-            pixels[next_row..next_row + 4].copy_from_slice(&logical[src..src + 4]);
-            pixels[next_row + 4..next_row + 8].copy_from_slice(&logical[src..src + 4]);
+            for dy in 0..INTEGER_SCALE {
+                for dx in 0..INTEGER_SCALE {
+                    let dst =
+                        ((y * INTEGER_SCALE + dy) * PHYSICAL_W as usize + x * INTEGER_SCALE + dx)
+                            * 4;
+                    pixels[dst..dst + 4].copy_from_slice(&logical[src..src + 4]);
+                }
+            }
         }
     }
     if let Some(parent) = Path::new(path).parent() {

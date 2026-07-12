@@ -31,7 +31,12 @@ static mut UI: Option<Ui> = None;
 /// Call exactly once on the Vita render thread, with no outstanding reference
 /// to the process-global UI.
 pub unsafe fn init_ui() -> &'static mut Ui {
-    UI = Some(Ui::new());
+    let mut instance = Ui::new();
+    instance.set_viewport(
+        crate::graphics::LOGICAL_W as f32,
+        crate::graphics::LOGICAL_H as f32,
+    );
+    UI = Some(instance);
     ui()
 }
 
@@ -635,6 +640,48 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
     add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);
     add_fn(ctx, ui_obj, b"__dbgShot\0", js_dbg_shot, 0);
+
+    // Framework-owned host identity. The bundle carries the same resolved
+    // build contract and rejects a VPK assembled with a different target,
+    // host ABI, or plan hash before app code mounts.
+    let target = env!("POCKETJS_TARGET");
+    JS_SetPropertyStr(
+        ctx,
+        ui_obj,
+        c"__host".as_ptr(),
+        JS_NewStringLen(ctx, target.as_ptr(), target.len()),
+    );
+    let host_abi = env!("POCKETJS_HOST_ABI").parse::<i32>().unwrap_or_default();
+    JS_SetPropertyStr(
+        ctx,
+        ui_obj,
+        c"__hostAbi".as_ptr(),
+        JS_NewInt32(ctx, host_abi),
+    );
+    let contract_hash = env!("POCKETJS_CONTRACT_HASH");
+    JS_SetPropertyStr(
+        ctx,
+        ui_obj,
+        c"__contractHash".as_ptr(),
+        JS_NewStringLen(ctx, contract_hash.as_ptr(), contract_hash.len()),
+    );
+
+    // Logical coordinates are part of the same resolved plan. Publishing
+    // them keeps the JS root layer and native core viewport in lockstep.
+    let viewport = JS_NewObject(ctx);
+    JS_SetPropertyStr(
+        ctx,
+        viewport,
+        c"w".as_ptr(),
+        JS_NewInt32(ctx, crate::graphics::LOGICAL_W),
+    );
+    JS_SetPropertyStr(
+        ctx,
+        viewport,
+        c"h".as_ptr(),
+        JS_NewInt32(ctx, crate::graphics::LOGICAL_H),
+    );
+    JS_SetPropertyStr(ctx, ui_obj, c"__viewport".as_ptr(), viewport);
 
     // ui.__textures: pak image name -> texture handle (see module docs).
     let tex_obj = JS_NewObject(ctx);

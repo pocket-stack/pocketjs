@@ -123,7 +123,8 @@ const args = Bun.argv.slice(2);
 if (args.includes("--help") || args.includes("-h")) usage();
 const platform = args.shift();
 const demoArg = args.shift();
-if (platform !== "vita") usage(`unsupported platform ${platform ?? "<missing>"}`);
+const playTargets = { vita: true } as const;
+if (!platform || !(platform in playTargets)) usage(`unsupported platform ${platform ?? "<missing>"}`);
 if (!demoArg) usage("missing demo name");
 
 const fullscreen = args.includes("--fullscreen");
@@ -144,12 +145,32 @@ if (!existsSync(sourceConfig)) {
 }
 
 const requestedFramework =
-  framework?.slice("--framework=".length) || (demo.endsWith("vue-vapor") ? "vue-vapor" : "config");
+  framework?.slice("--framework=".length) || (demo.endsWith("vue-vapor") ? "vue-vapor" : "solid");
 
 if (!noBuild) {
-  const buildArgs = [Bun.which("bun") ?? "bun", "scripts/vita.ts", demo, "--release"];
-  if (framework) buildArgs.push(framework);
-  else if (demo.endsWith("vue-vapor")) buildArgs.push("--framework=vue-vapor");
+  const manifest = JSON.parse(readFileSync(`${ROOT}pocket.json`, "utf8")) as Record<string, any>;
+  manifest.id = `dev.pocket-stack.demo.${demo.replace(/-/g, ".")}`;
+  manifest.name = `pocketjs-${demo}`;
+  manifest.title = `PocketJS ${demo}`;
+  manifest.app.entry = `demos/${demo}/main.tsx`;
+  manifest.app.output = `${demo}-main`;
+  manifest.app.framework = requestedFramework;
+  const manifestPath = `${ROOT}.pocket/play/${demo}.json`;
+  mkdirSync(dirname(manifestPath), { recursive: true });
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+  const buildArgs = [
+    Bun.which("bun") ?? "bun",
+    "scripts/pocket.ts",
+    "build",
+    "--target",
+    "vita",
+    "--manifest",
+    manifestPath,
+    "--project-root",
+    ROOT,
+    "--",
+    "--release",
+  ];
   console.log(`PocketJS play: building ${demo} for PS Vita ...`);
   await run(buildArgs, "Vita build");
 }
