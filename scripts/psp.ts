@@ -26,6 +26,7 @@ import {
   type PocketFramework,
 } from "../compiler/jsx-plugin.ts";
 import type { PocketConfig } from "../src/config.ts";
+import { verifyBuildPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
 
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
 const nativeDir = pspUiDir + "native/";
@@ -73,7 +74,12 @@ let capture = false;
 let bench = false;
 let frameworkFlag: string | undefined;
 let configPath = pspUiDir + "pocket.config.ts";
+let configFlagged = false;
 let useConfig = true;
+let planPath: string | undefined;
+let projectRoot = process.cwd();
+let outputDir = pspUiDir + "dist/";
+let skipBuild = false;
 const cargoArgs: string[] = [];
 const buildFlags: string[] = [];
 for (const a of argv) {
@@ -88,19 +94,24 @@ for (const a of argv) {
   }
   else if (a.startsWith("--config=")) {
     configPath = resolvePath(pspUiDir, a.slice("--config=".length));
+    configFlagged = true;
     buildFlags.push(a);
   }
   else if (a === "--no-config") {
     useConfig = false;
     buildFlags.push(a);
   }
+  else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
+  else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
+  else if (a.startsWith("--outdir=")) outputDir = resolvePath(a.slice("--outdir=".length)) + "/";
+  else if (a === "--skip-build") skipBuild = true;
   else if (!appArg && !a.startsWith("-")) appArg = a;
   else cargoArgs.push(a);
 }
 const features = [capture ? "capture" : "", bench ? "bench" : ""].filter(Boolean);
 if (features.length > 0) cargoArgs.push("--features", features.join(","));
-if (!appArg) {
-  console.error("usage: bun scripts/psp.ts <app> [--capture|--bench] [cargo args…]   e.g. bun scripts/psp.ts hero --release");
+if (!appArg && !planPath) {
+  console.error("usage: bun scripts/psp.ts <app> [--plan=<resolved-plan.json>] [--capture|--bench] [cargo args…]   e.g. bun scripts/psp.ts hero --release");
   process.exit(1);
 }
 
@@ -130,7 +141,22 @@ function mountedAppName(arg: string): string {
   return arg;
 }
 
-const app = appArg ? mountedAppName(appArg) : "";
+let buildPlan: ResolvedBuildPlan | undefined;
+if (planPath) {
+  buildPlan = await Bun.file(planPath).json() as ResolvedBuildPlan;
+  if (!verifyBuildPlanHash(buildPlan) || buildPlan.target.id !== "psp") {
+    throw new Error(`PocketJS psp: invalid PSP ResolvedBuildPlan at ${planPath}`);
+  }
+  if (frameworkFlag || configFlagged) {
+    throw new Error("PocketJS psp: framework/config overrides are forbidden with --plan");
+  }
+}
+
+const app = buildPlan
+  ? resolvePath(projectRoot, buildPlan.app.entry)
+  : appArg
+    ? mountedAppName(appArg)
+    : "";
 
 async function loadConfig(): Promise<PocketConfig> {
   if (!useConfig || !existsSync(configPath)) return {};
@@ -140,18 +166,27 @@ async function loadConfig(): Promise<PocketConfig> {
   return mod.default ?? mod.config ?? {};
 }
 
-const config = await loadConfig();
-const framework: PocketFramework = frameworkFlag
-  ? parseFramework(frameworkFlag, "--framework")
-  : parseFramework(config.framework, "pocket.config.ts");
-const outputApp = `${app}${FRAMEWORKS[framework].outputSuffix}`;
+const config = buildPlan ? {} : await loadConfig();
+const framework: PocketFramework = buildPlan
+  ? parseFramework(buildPlan.app.framework, "ResolvedBuildPlan")
+  : frameworkFlag
+    ? parseFramework(frameworkFlag, "--framework")
+    : parseFramework(config.framework, "pocket.config.ts");
+const baseOutput = buildPlan ? buildPlan.app.output : app;
+const outputApp = `${baseOutput}${FRAMEWORKS[framework].outputSuffix}`;
 
 // ---------------------------------------------------------------------------
 // 1. Build the app bundle + pak -> dist/<app>.js + dist/<app>.pak
 // ---------------------------------------------------------------------------
 
 console.log(`PocketJS psp: building app "${app}" (framework=${framework})`);
-await $`bun scripts/build.ts ${app} ${buildFlags}`.cwd(pspUiDir);
+if (!skipBuild) {
+  if (buildPlan) {
+    await $`bun scripts/build.ts --plan=${planPath!} --project-root=${projectRoot} --outdir=${outputDir}`.cwd(pspUiDir);
+  } else {
+    await $`bun scripts/build.ts ${app} ${buildFlags}`.cwd(pspUiDir);
+  }
+}
 cargoArgs.push("--bin", "pocketjs-psp");
 
 // ---------------------------------------------------------------------------
@@ -190,6 +225,9 @@ const env = {
   // Keep PSP dev builds fast (opt-level 0 is unusably slow on hardware).
   CARGO_PROFILE_DEV_OPT_LEVEL: process.env.CARGO_PROFILE_DEV_OPT_LEVEL ?? "3",
   POCKETJS_APP: outputApp,
+  POCKETJS_TARGET: buildPlan?.target.id ?? "psp",
+  POCKETJS_HOST_ABI: String(buildPlan?.target.hostAbi ?? 1),
+  POCKETJS_CONTRACT_HASH: buildPlan?.contractHash ?? "",
   // Scripted capture input + per-demo capture window, baked into the EBOOT
   // by native/build.rs (only consumed under --capture; harmless otherwise).
   // Explicit so stale values never linger in the cargo fingerprint.

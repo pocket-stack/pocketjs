@@ -21,6 +21,7 @@
   "files": [
     "src",
     "compiler",
+    "schema",
     "spec",
     "scripts",
     "host-web",
@@ -34,6 +35,7 @@
     "native/build.rs",
     "native/Cargo.toml",
     "pocket.config.ts",
+    "pocket.json",
     "tsconfig.json"
   ],
   "publishConfig": {
@@ -67,6 +69,7 @@
   },
   "description": "High-performance JSX UI outside the browser, with native rendering, standard Vue Vapor and Solid support, a Tailwind design system, and 60 FPS animation under an 8 MB memory budget.",
   "scripts": {
+    "pocket": "bun scripts/pocket.ts",
     "build": "bun scripts/build.ts",
     "psp": "bun scripts/psp.ts",
     "psp:all": "bun scripts/psp-all.ts",
@@ -78,7 +81,7 @@
     "serve": "bun host-web/serve.ts",
     "golden": "bun test/golden.ts",
     "e2e": "bun test/e2e-ppsspp.ts",
-    "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/svg-bake.test.ts test/devtools.test.ts test/hot.test.ts test/clock.test.ts test/tiles.test.ts && bun scripts/build.ts cafe-main >/dev/null && bun test --conditions=browser test/sim.test.ts && bun scripts/build.ts zoomlab-main >/dev/null && bun test --conditions=browser test/deepzoom-sim.test.ts",
+    "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test test/platform-contracts.test.ts test/target-check.test.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/svg-bake.test.ts test/devtools.test.ts test/hot.test.ts test/clock.test.ts test/tiles.test.ts && bun scripts/build.ts cafe-main >/dev/null && bun test --conditions=browser test/sim.test.ts && bun scripts/build.ts zoomlab-main >/dev/null && bun test --conditions=browser test/deepzoom-sim.test.ts",
     "tape": "bun scripts/tape.ts",
     "tape:check": "bun scripts/tape.ts replay hero-main test/tapes/hero-main.tape.json --assert test/tapes/hero-main.hashes.json",
     "devtools": "bun scripts/devtools.ts",

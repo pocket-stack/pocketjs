@@ -1,0 +1,29 @@
+{
+  "$schema": "https://pocket-stack.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.hero",
+  "name": "pocketjs-hero",
+  "title": "PocketJS Hero",
+  "version": "0.3.0",
+  "engine": {
+    "abi": 1,
+    "capabilities": {
+      "requires": [
+        { "id": "ui.drawlist", "version": 1 },
+        { "id": "text.glyphs.baked", "version": 1 },
+        { "id": "input.buttons", "version": 1 },
+        { "id": "input.analog", "version": 1, "parameters": { "sticks": 1 } }
+      ]
+    }
+  },
+  "app": {
+    "entry": "demos/hero/main.tsx",
+    "output": "hero-main",
+    "framework": "solid",
+    "simulationHz": 60,
+    "viewport": {
+      "logical": [480, 272],
+      "presentation": "integer-fit"
+    }
+  }
+}

@@ -323,6 +323,7 @@ export function resolveBuildPlan(
       title: manifest.title,
       version: manifest.version,
       entry: manifest.app.entry,
+      output: manifest.app.output ?? manifest.app.entry.split("/").pop()!.replace(/\.tsx?$/, ""),
       framework: manifest.app.framework,
       simulationHz: manifest.app.simulationHz,
       viewport: { logical, presentation: manifest.app.viewport.presentation },

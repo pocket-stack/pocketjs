@@ -6,6 +6,7 @@
     "title": "Pocket Telemetry",
     "version": "0.1.0",
     "entry": "app/main.tsx",
+    "output": "main",
     "framework": "solid",
     "simulationHz": 60,
     "viewport": {
@@ -98,5 +99,5 @@
     ],
     "enhances": []
   },
-  "contractHash": "sha256:3fe9f6d4dfb3e520805d79904fecb1ea4a56c49a6d26d898480399618416a793"
+  "contractHash": "sha256:5285c02ace99385ba8dcf5fe87f2a0b9c5b5df0f348dae5c0cc6e0905fbdcfb7"
 }

@@ -35,6 +35,7 @@ import {
   type PocketFramework,
 } from "../compiler/jsx-plugin.ts";
 import type { PocketConfig } from "../src/config.ts";
+import { verifyBuildPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
 import { registerAnimationTheme } from "../compiler/animation.ts";
 import { compileClasses, generateStylesModule } from "../compiler/tailwind.ts";
 import { bakeAtlases } from "../compiler/bake-font.ts";
@@ -74,16 +75,34 @@ let frameworkFlag: string | undefined;
 let configPath = ROOT + "pocket.config.ts";
 let configFlagged = false;
 let useConfig = true;
+let planPath: string | undefined;
+let projectRoot = process.cwd();
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
   else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
   else if (a.startsWith("--config=")) { configPath = resolvePath(ROOT, a.slice("--config=".length)); configFlagged = true; }
   else if (a === "--no-config") useConfig = false;
+  else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
+  else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
   else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
   else if (!a.startsWith("-")) appArg = a;
 }
+
+let buildPlan: ResolvedBuildPlan | undefined;
+if (planPath) {
+  buildPlan = await Bun.file(planPath).json() as ResolvedBuildPlan;
+  if (!verifyBuildPlanHash(buildPlan)) {
+    throw new Error(`PocketJS build: invalid or stale ResolvedBuildPlan hash in ${planPath}`);
+  }
+  if (frameworkFlag) {
+    throw new Error("PocketJS build: --framework cannot override a ResolvedBuildPlan");
+  }
+  appArg = resolvePath(projectRoot, buildPlan.app.entry);
+  if (!configFlagged) configPath = resolvePath(projectRoot, "pocket.config.ts");
+}
+
 if (!appArg) {
-  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--framework=solid|vue-vapor] [--extra-chars=...]");
+  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor] [--extra-chars=...]");
   process.exit(1);
 }
 
@@ -134,8 +153,15 @@ if (!configFlagged && useConfig) {
   if (existsSync(appConfig)) configPath = appConfig;
 }
 const config = await loadConfig();
+if (buildPlan && config.framework !== undefined) {
+  throw new Error(
+    "PocketJS build: framework belongs to pocket.json in manifest builds; remove it from pocket.config.ts",
+  );
+}
 const framework: PocketFramework = frameworkFlag
   ? parseFramework(frameworkFlag, "--framework")
+  : buildPlan
+    ? parseFramework(buildPlan.app.framework, "ResolvedBuildPlan")
   : parseFramework(config.framework, "pocket.config.ts");
 const frameworkConfig = FRAMEWORKS[framework];
 const entry = frameworkVariantPath(requestedEntry, framework);
@@ -146,9 +172,12 @@ function outputName(file: string): string {
   return file.split("/").pop()!.replace(/\.tsx?$/, "");
 }
 
-const appName = outputName(requestedEntry);
+const appName = buildPlan?.app.output ?? outputName(requestedEntry);
 const outName = `${appName}${frameworkConfig.outputSuffix}`;
-console.log(`PocketJS build: ${appName} (${entry}, framework=${framework})`);
+console.log(
+  `PocketJS build: ${appName} (${entry}, framework=${framework}` +
+    `${buildPlan ? `, target=${buildPlan.target.id}, contract=${buildPlan.contractHash.slice(0, 20)}…` : ""})`,
+);
 
 // ---------------------------------------------------------------------------
 // pass 1 — transform & collect over the entry's import graph
@@ -191,7 +220,7 @@ async function walk(file: string): Promise<void> {
   visited.add(file);
   if (file.endsWith(".generated.ts")) return; // never scan generated output [R]
   const src = await Bun.file(file).text();
-  const res = await transformFile(file, src, framework); // throws with code frame on lint errors
+  const res = await transformFile(file, src, framework, buildPlan?.contractHash ?? ""); // throws with code frame on lint errors
   for (const s of res.classStrings) {
     if (!seenClass.has(s)) {
       seenClass.add(s);
@@ -348,10 +377,15 @@ const result = await Bun.build({
   // Bun's bundler otherwise also enables the "development" condition, which
   // pulls Solid's dev builds and duplicates the root + universal runtimes.
   conditions: ["browser"],
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: {
+    "process.env.NODE_ENV": '"production"',
+    __POCKET_TARGET__: JSON.stringify(buildPlan?.target.id ?? ""),
+    __POCKET_HOST_ABI__: String(buildPlan?.target.hostAbi ?? 0),
+    __POCKET_CONTRACT_HASH__: JSON.stringify(buildPlan?.contractHash ?? ""),
+  },
   minify: false,
   sourcemap: "none",
-  plugins: [jsxPlugin(framework, { entry })],
+  plugins: [jsxPlugin(framework, { entry, contractHash: buildPlan?.contractHash })],
 });
 if (!result.success) {
   for (const log of result.logs) console.error(log);

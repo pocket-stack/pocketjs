@@ -28,6 +28,8 @@ export interface TargetCheckOptions {
   environment: TargetTypeEnvironment;
   /** Optional app tsconfig whose compiler options/path mappings are inherited. */
   tsconfigPath?: string;
+  /** Framework/app ambient declarations required by the reachable source graph. */
+  declarationFiles?: readonly string[];
   /** Keep the generated directory for debugging failed checks. */
   keepTemporaryFiles?: boolean;
 }
@@ -165,6 +167,7 @@ function configJson(
   entry: string,
   environmentPath: string,
   tsconfigPath: string | undefined,
+  declarationFiles: readonly string[],
 ): string {
   const config: Record<string, unknown> = {
     ...(tsconfigPath ? { extends: tsconfigPath } : {}),
@@ -181,7 +184,7 @@ function configJson(
       composite: false,
       ...(tsconfigPath ? {} : { types: [] }),
     },
-    files: [entry, environmentPath],
+    files: [entry, environmentPath, ...declarationFiles],
     // Never inherit a broad include/exclude set: files plus normal module
     // resolution is the exact entry/import graph contract.
     include: [],
@@ -240,7 +243,11 @@ export function checkTargetTypes(options: TargetCheckOptions): TargetCheckResult
   const environmentPath = resolve(directory, "target-env.d.ts");
   const generatedConfigPath = resolve(directory, "tsconfig.json");
   const targetEnvironment = generateTargetEnvironment(options.environment);
-  const tsconfig = configJson(entry, environmentPath, inheritedConfig);
+  const declarationFiles = (options.declarationFiles ?? []).map((file) => resolve(file));
+  for (const file of declarationFiles) {
+    if (!existsSync(file)) throw new Error(`PocketJS target check: declaration file not found: ${file}`);
+  }
+  const tsconfig = configJson(entry, environmentPath, inheritedConfig, declarationFiles);
   writeFileSync(environmentPath, targetEnvironment);
   writeFileSync(generatedConfigPath, tsconfig);
 

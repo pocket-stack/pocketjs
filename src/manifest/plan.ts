@@ -24,7 +24,8 @@ export interface ResolvedEnhancement {
 
 export interface ResolvedBuildPlanContent {
   readonly pocket: 2;
-  readonly app: Pick<PocketManifestV2, "id" | "name" | "title" | "version"> & PocketManifestV2["app"];
+  readonly app: Pick<PocketManifestV2, "id" | "name" | "title" | "version"> &
+    Omit<PocketManifestV2["app"], "output"> & { readonly output: string };
   readonly target: {
     readonly id: string;
     readonly profileVersion: number;

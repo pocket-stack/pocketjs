@@ -36,6 +36,10 @@ budget, including animated transitions and input feedback.
 
 ```sh
 bun install
+bun pocket check --target psp         # schema + capabilities + target-specific TS
+bun pocket build --target psp -- --release
+
+# Low-level compiler commands used by framework demos/tests:
 bun scripts/build.ts hero             # -> dist/hero.js + dist/hero.pak
 bun scripts/build.ts hero-vue-vapor-main --framework=vue-vapor
 ```
@@ -112,12 +116,22 @@ required router package.
 
 ```sh
 bun run test                          # spec contract + tailwind parser tests
+bun pocket check --target psp         # validate pocket.json + resolved target contract
+bun pocket build --target psp         # typecheck, compile, and package the target
 bun scripts/build.ts <app> [--framework=solid|vue-vapor] [--extra-chars=…]
 bun run psp / bun run dev / bun run wasm      # EBOOT / web host / wasm core
 bun psplink                           # interactive real PSP switcher over PSPLINK
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
 ```
+
+Manifest-driven builds resolve `pocket.json` once into a hashed
+`ResolvedBuildPlan`. The JS/font/pak compiler and native backend consume that
+same plan; app code is checked in a target-specific TypeScript environment,
+and the bundle refuses to boot against a native host with a different target,
+host ABI, or plan hash. `packages.*` entries are packaging overrides rather
+than a compatibility allowlist, so compatibility is derived from declared
+capabilities and the selected host profile.
 
 ## DevTools + time travel
 

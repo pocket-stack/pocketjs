@@ -63,6 +63,7 @@ export interface PocketManifestV2 {
   };
   readonly app: {
     readonly entry: string;
+    readonly output?: string;
     readonly framework: "solid" | "vue-vapor";
     readonly simulationHz: number;
     readonly viewport: {
@@ -165,6 +166,12 @@ export const pocketManifestV2Schema = {
           type: "string",
           minLength: 1,
           pattern: "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+\\.tsx?$",
+        },
+        output: {
+          type: "string",
+          minLength: 1,
+          maxLength: 64,
+          pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
         },
         framework: { enum: ["solid", "vue-vapor"] },
         simulationHz: { type: "integer", minimum: 1, maximum: 240 },
