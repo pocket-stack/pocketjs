@@ -55,6 +55,17 @@ describe("determinism", () => {
     expect(chaos.effects).toEqual(t60.effects);
   });
 
+  test("the audio command stream is deterministic too (AUDIO.md, chaos-equal)", async () => {
+    // cafe-main doesn't wire up audio yet (demo audio wiring lands later), so
+    // both arrays are empty today — but this is the harness that will catch
+    // any drift once a demo starts calling audio.*: same tape, same ops, same
+    // frames, chaos or clean. JSON.stringify keeps the comparison trivial to
+    // extend with real expected events later.
+    expect(Array.isArray(t60.audio)).toBe(true);
+    const chaos = await runScenario(scenario(60), { maxSleepMs: 8, gcEvery: 60 });
+    expect(JSON.stringify(chaos.audio)).toBe(JSON.stringify(t60.audio));
+  });
+
   test("the low-rate worlds are deterministic too", async () => {
     expect((await runScenario(scenario(4))).hashes).toEqual(t4.hashes);
     expect((await runScenario(scenario(2))).hashes).toEqual(t2.hashes);

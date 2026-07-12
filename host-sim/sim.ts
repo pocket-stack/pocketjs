@@ -26,6 +26,7 @@
 import { existsSync } from "node:fs";
 import { createWasmUi } from "../host-web/wasm-ops.js";
 import { normalizeHz, TICKS_PER_SECOND } from "../src/clock.ts";
+import type { AudioOps } from "../src/sound.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // PocketJS/
 const DIST = ROOT + "dist/";
@@ -70,6 +71,17 @@ export interface EffectEvent {
   kind: string;
 }
 
+/** One `globalThis.audio.*` call recorded by the sim's audio surface (AUDIO.md
+ *  "sim" host row / Determinism contract point 2): the command STREAM is
+ *  deterministic even though real playback is not, so journeys can assert
+ *  *when* sounds fire. */
+export interface AudioEvent {
+  t: "audio";
+  frame: number;
+  op: string;
+  args: (string | number)[];
+}
+
 export interface Trace {
   app: string;
   hz: number;
@@ -77,6 +89,10 @@ export interface Trace {
   /** FNV-1a of the RGBA framebuffer after every virtual frame. */
   hashes: string[];
   effects: EffectEvent[];
+  /** Every `globalThis.audio.*` call, in call order (AUDIO.md Determinism
+   *  contract point 2). Empty when the app never calls audio.* — sim always
+   *  mounts the recorder, unlike goldens/tapes which mount nothing. */
+  audio: AudioEvent[];
   /** Raw RGBA of the final frame (for cross-hz byte comparison / PNGs). */
   finalFrame: Uint8Array;
   /** Component tree JSON after the final frame (DevTools getTree). */
@@ -144,7 +160,32 @@ export interface SimWorld {
   ticksPerFrame: number;
   hz: number;
   effects: EffectEvent[];
+  audio: AudioEvent[];
   getTree: () => unknown;
+}
+
+/**
+ * The sim's `globalThis.audio` mount (AUDIO.md "sim" host row): a pure
+ * recorder, not a player. Every op appends one `AudioEvent` to `sink` and
+ * returns undefined — no wall clock, no RNG, no playback — so two runs of the
+ * same tape (clean or chaos, any hz) produce identical `Trace.audio`
+ * (Determinism contract point 2). `getFrame` supplies the current virtual
+ * frame index; bootWorld() wires it to the same counter it advances the
+ * bundle's `frame()` entry point with.
+ */
+function createAudioRecorder(sink: AudioEvent[], getFrame: () => number): AudioOps {
+  const rec = (op: string, ...args: (string | number)[]) => {
+    sink.push({ t: "audio", frame: getFrame(), op, args });
+  };
+  return {
+    playSfx: (key, volume, pan) => rec("playSfx", key, volume, pan),
+    playSynth: (wave, freq, freqEnd, durMs, attackMs, releaseMs, volume) =>
+      rec("playSynth", wave, freq, freqEnd, durMs, attackMs, releaseMs, volume),
+    playBgm: (key, loop, fadeMs, volume) => rec("playBgm", key, loop, fadeMs, volume),
+    stopBgm: (fadeMs) => rec("stopBgm", fadeMs),
+    pauseBgm: (paused) => rec("pauseBgm", paused),
+    setChannelVolume: (channel, volume) => rec("setChannelVolume", channel, volume),
+  };
 }
 
 /**
@@ -165,8 +206,14 @@ export async function bootWorld(
   const wasm = await createWasmUi(wasmBytes);
   const g = globalThis as Record<string, unknown>;
   const effects: EffectEvent[] = [];
+  const audio: AudioEvent[] = [];
   const inbox: string[] = [];
   const outbox: string[] = [];
+  // Mirrors src/clock.ts's private `frame` counter: -1 before the first
+  // pump, advanced to 0 on it, +1 per pump thereafter — so an audio.* call
+  // made by app code during pump n is stamped with the same frame index
+  // virtualFrame() would report inside that same pump.
+  let currentFrame = -1;
   g.ui = wasm.ops;
   g.__pak = existsSync(DIST + app + ".pak")
     ? await Bun.file(DIST + app + ".pak").arrayBuffer()
@@ -180,13 +227,20 @@ export async function bootWorld(
     send: (line: string) => outbox.push(line),
     recv: () => (inbox.length ? inbox.shift() : null),
   };
+  // Fresh recorder per boot (fresh `audio` array + closure) — traces never
+  // leak across worlds/runs (AUDIO.md "sim" host row).
+  g.audio = createAudioRecorder(audio, () => (currentFrame < 0 ? 0 : currentFrame));
   if (extraGlobals) Object.assign(g, extraGlobals);
   const src = await Bun.file(DIST + app + ".js").text();
   (0, eval)(src);
-  const frame = g.frame as ((buttons: number, analog?: number) => void) | undefined;
-  if (typeof frame !== "function") {
+  const rawFrame = g.frame as ((buttons: number, analog?: number) => void) | undefined;
+  if (typeof rawFrame !== "function") {
     throw new Error("sim: bundle did not install globalThis.frame (entry must call render()/mount())");
   }
+  const frame = (buttons: number, analog?: number) => {
+    currentFrame = currentFrame < 0 ? 0 : currentFrame + 1;
+    rawFrame(buttons, analog);
+  };
   return {
     frame,
     tick: wasm.tick,
@@ -194,6 +248,7 @@ export async function bootWorld(
     ticksPerFrame: TICKS_PER_SECOND / hz,
     hz,
     effects,
+    audio,
     // Tree probe: ask the DevTools shim, flush with one extra frame (the
     // shim polls its transport at frame start). The probe frame advances the
     // world — call it only when the run is over.
@@ -237,7 +292,16 @@ export async function runScenario(scenario: Scenario, chaos?: ChaosOptions): Pro
   }
   const finalFrame = world.render().slice();
   const tree = world.getTree();
-  return { app: scenario.app, hz, frames, hashes, effects: world.effects.slice(), finalFrame, tree };
+  return {
+    app: scenario.app,
+    hz,
+    frames,
+    hashes,
+    effects: world.effects.slice(),
+    audio: world.audio.slice(),
+    finalFrame,
+    tree,
+  };
 }
 
 /** Depth-first search of a DevTools tree (TreeNodeJson: text = `x`, children
