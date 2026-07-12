@@ -15,6 +15,7 @@ import {
   type HostBuildInputs,
 } from "../src/manifest/index.ts";
 import { verifyPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
+import { validateAndResolveBuildPlan } from "../src/manifest/resolve.ts";
 import { demoIdentity } from "./demo-identity.ts";
 
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
@@ -135,9 +136,36 @@ const framework: PocketFramework = buildPlan
 const outputApp = buildPlan
   ? buildPlan.app.output
   : `${app}${FRAMEWORKS[framework].outputSuffix}`;
-const stockDemo = !buildPlan && appArg && existsSync(`${pspUiDir}demos/${appArg.replace(/-main$/, "")}/main.tsx`)
-  ? demoIdentity(appArg)
+const stockDemoName = !buildPlan && appArg ? appArg.replace(/-main$/, "") : "";
+const stockDemo = stockDemoName && existsSync(`${pspUiDir}demos/${stockDemoName}/main.tsx`)
+  ? demoIdentity(stockDemoName)
   : undefined;
+
+// Keep the convenient low-level demo command on the same manifest/plan path
+// as `bun play` and custom hosts. Without this, its compiler defaulted to a
+// density-1 PSP bundle before the Vita native backend packaged it.
+if (!buildPlan && stockDemo) {
+  const manifest = await Bun.file(`${pspUiDir}pocket.json`).json() as Record<string, any>;
+  manifest.id = stockDemo.id;
+  manifest.name = stockDemo.name;
+  manifest.title = stockDemo.title;
+  manifest.app.entry = `demos/${stockDemoName}/main.tsx`;
+  manifest.app.output = outputApp;
+  manifest.app.framework = framework;
+  const resolution = validateAndResolveBuildPlan(manifest, { target: "vita" });
+  if (!resolution.ok) {
+    throw new Error(
+      `PocketJS vita: could not resolve stock demo plan: ${resolution.diagnostics
+        .map((item) => `${item.path || "/"}: ${item.message}`)
+        .join("; ")}`,
+    );
+  }
+  buildPlan = resolution.plan;
+  hostBuildInputs = extractHostBuildInputs(buildPlan, { expectedTarget: "vita" });
+  planPath = `${pspUiDir}.pocket/vita-low-level/${outputApp}.plan.json`;
+  mkdirSync(resolvePath(planPath, ".."), { recursive: true });
+  await Bun.write(planPath, JSON.stringify(buildPlan, null, 2) + "\n");
+}
 const applicationId = buildPlan?.app.id ?? stockDemo?.id ??
   `dev.pocket-stack.legacy.${outputApp.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
 const packageTitle = buildPlan?.app.title ?? stockDemo?.title ?? `PocketJS ${outputApp}`;
