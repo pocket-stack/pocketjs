@@ -180,7 +180,8 @@ current limitations, is documented in
 The Vita host is documented in [native-vita/README.md](./native-vita/README.md).
 It preserves PocketJS's 480x272 logical layout while rasterizing geometry,
 fonts, vectors and core masks at Vita's native 960x544 density. Physical
-controls and analog input are supported; touch input is intentionally deferred.
+controls, analog input, and front-panel multi-touch snapshots are supported;
+PSP builds retain their controller-only fallback.
 
 ## DevTools + time travel
 

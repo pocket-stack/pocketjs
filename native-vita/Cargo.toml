@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 # Vita dependencies. vita2d ships precompiled GXM shaders, so VPKs remain
 # self-contained and do not require a separately extracted libshacccg.suprx.
-vitasdk-sys = { version = "0.3.3", features = ["SceCtrl_stub", "SceGxm_stub", "SceKernelThreadMgr_stub", "SceLibKernel_stub"] }
+vitasdk-sys = { version = "0.3.3", features = ["SceCtrl_stub", "SceGxm_stub", "SceKernelThreadMgr_stub", "SceLibKernel_stub", "SceTouch_stub"] }
 vita2d-sys = "0.1.1"
 
 libquickjs-sys = { git = "https://github.com/doodlewind/quickjs-rs.git", rev = "ae957fd7820ad22e564aa72976a9bf7f7a9a8cac" }
@@ -17,7 +17,9 @@ capture = []
 bench = []
 
 [package.metadata.vita]
-title_id = "PCKT00001"
+# The Vita backend supplies VITA_DEFAULT_TITLE_ID from pocket.json. Keeping the
+# reusable runtime free of a static id prevents separate apps from replacing
+# one another on real hardware and in Vita3K.
 title_name = "PocketJS"
 
 # vita-elf-create consumes sceUserMainThreadStackSize from the ELF symbol

@@ -210,6 +210,8 @@ export function resolveBuildPlan(
 
   const content: ResolvedBuildPlanContent = {
     app: {
+      id: manifest.id,
+      title: manifest.title,
       entry: manifest.app.entry,
       output,
       framework: manifest.app.framework,

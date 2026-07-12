@@ -1,10 +1,10 @@
 # Input & focus
 
-PocketJS targets a game console: there is no pointer, no touch, no tab key — just a
-d-pad and a handful of face buttons. A single **focus manager** tracks one focused
-node, the d-pad moves focus between focusable nodes, and **CIRCLE** activates whatever
-is focused. On top of that sits a thin layer of per-frame hooks for anything the focus
-manager doesn't cover (global shortcuts, held buttons, custom navigation).
+PocketJS's portable interaction baseline is a d-pad and a handful of face
+buttons. A single **focus manager** tracks one focused node, the d-pad moves
+focus between focusable nodes, and **CIRCLE** activates whatever is focused.
+The Vita profile additionally exposes front-panel contacts without changing
+that controller fallback.
 
 Everything here runs identically on real PSP hardware, PPSSPP, the browser host, and
 headless Bun. The browser and Bun hosts just remap keys onto the same
@@ -44,6 +44,27 @@ const confirmOrBack = BTN.CIRCLE | BTN.CROSS;
 The raw bitmask is a *held* state — it stays set for every frame the button is down.
 When you want "the frame a button went down" (edge detection), use the focus manager,
 [`onButtonPress`](#button-press-hooks), or edge-detect it yourself.
+
+## Touch snapshots
+
+Targets that provide `input.touch` expose the current front-panel contacts in
+logical viewport pixels:
+
+```ts
+import { touches, type TouchContact } from "@pocketjs/framework/input";
+import { onFrame } from "@pocketjs/framework/lifecycle";
+
+onFrame(() => {
+  for (const contact of touches()) {
+    // contact.id stays stable until release; x/y use the app's logical layout.
+  }
+});
+```
+
+The snapshot is immutable and becomes empty after release. PocketJS reports
+contacts rather than prescribing tap, drag, or pinch semantics, so reusable
+gesture recognizers remain ordinary deterministic application code. Put
+`input.touch` in `enhances` when the same app must still build for PSP.
 
 ## The focus model
 

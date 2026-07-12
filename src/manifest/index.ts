@@ -22,3 +22,4 @@ export {
   type ContractDiagnostic,
   type ValidationResult,
 } from "./validate.ts";
+export { vitaTitleId } from "./vita-package.ts";

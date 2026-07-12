@@ -30,6 +30,7 @@ import { setDebugName } from "./native-tree.ts";
 export { View, Text, Image, Sprite, type ViewProps, type TextProps, type ImageProps, type SpriteProps } from "./primitives.ts";
 export {
   DeepZoom,
+  type DeepZoomGesture,
   type DeepZoomProps,
   type DeepZoomView,
   type TileDoc,

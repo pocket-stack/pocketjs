@@ -3,7 +3,8 @@ import type { PocketManifestV2 } from "../../spec/pocket-manifest.ts";
 import type { PresentationMode, Viewport } from "../../spec/platforms.ts";
 
 export interface ResolvedBuildPlanContent {
-  readonly app: Pick<PocketManifestV2["app"], "entry" | "framework"> & {
+  readonly app: Pick<PocketManifestV2, "id" | "title"> &
+    Pick<PocketManifestV2["app"], "entry" | "framework"> & {
     readonly output: string;
   };
   readonly target: {

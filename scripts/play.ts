@@ -13,15 +13,15 @@ import {
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { vitaTitleId } from "../src/manifest/vita-package.ts";
+import { demoIdentity } from "./demo-identity.ts";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const HOME = homedir();
-const TITLE_ID = "PCKT00001";
 const RELEASE_DIR = `${ROOT}native-vita/target/armv7-sony-vita-newlibeabihf/release`;
 const VPK = `${RELEASE_DIR}/pocketjs-vita.vpk`;
 const VPK_STAMP = `${VPK}.play.json`;
 const PLAY_DIR = `${ROOT}dist/play-vita`;
-const STAGED_APP = `${PLAY_DIR}/${TITLE_ID}`;
 const PLAY_CONFIG = `${PLAY_DIR}/config.yml`;
 
 const defaultVita3kApp = [`${HOME}/Applications/Vita3K.app`, "/Applications/Vita3K.app"].find(
@@ -137,6 +137,9 @@ if (unknown) usage(`unknown option ${unknown}`);
 
 const demo = demoArg.replace(/-main$/, "");
 if (!demos().includes(demo)) usage(`unknown demo ${demoArg}`);
+const identity = demoIdentity(demo);
+const titleId = vitaTitleId(identity.id);
+const stagedApp = `${PLAY_DIR}/${titleId}`;
 if (!vita3k || !existsSync(vita3k)) {
   throw new Error("Vita3K not found; set VITA3K/VITA3K_APP or install ~/Applications/Vita3K.app");
 }
@@ -149,9 +152,9 @@ const requestedFramework =
 
 if (!noBuild) {
   const manifest = JSON.parse(readFileSync(`${ROOT}pocket.json`, "utf8")) as Record<string, any>;
-  manifest.id = `dev.pocket-stack.demo.${demo.replace(/-/g, ".")}`;
-  manifest.name = `pocketjs-${demo}`;
-  manifest.title = `PocketJS ${demo}`;
+  manifest.id = identity.id;
+  manifest.name = identity.name;
+  manifest.title = identity.title;
   manifest.app.entry = `demos/${demo}/main.tsx`;
   manifest.app.output = `${demo}-main`;
   manifest.app.framework = requestedFramework;
@@ -176,9 +179,9 @@ if (!noBuild) {
 }
 if (!existsSync(VPK)) throw new Error(`VPK not found at ${VPK}; remove --no-build and retry`);
 if (!noBuild) {
-  writeFileSync(VPK_STAMP, JSON.stringify({ demo, framework: requestedFramework, sha256: vpkSha256() }));
+  writeFileSync(VPK_STAMP, JSON.stringify({ demo, framework: requestedFramework, titleId, sha256: vpkSha256() }));
 } else {
-  let cached: { demo?: string; framework?: string; sha256?: string } = {};
+  let cached: { demo?: string; framework?: string; titleId?: string; sha256?: string } = {};
   try {
     const parsed: unknown = JSON.parse(readFileSync(VPK_STAMP, "utf8"));
     if (parsed && typeof parsed === "object") cached = parsed;
@@ -188,6 +191,7 @@ if (!noBuild) {
   if (
     cached.demo !== demo ||
     cached.framework !== requestedFramework ||
+    cached.titleId !== titleId ||
     cached.sha256 !== vpkSha256()
   ) {
     throw new Error(`the cached VPK is not ${demo}; remove --no-build and retry`);
@@ -196,7 +200,7 @@ if (!noBuild) {
 
 let config = readFileSync(sourceConfig, "utf8");
 const vitaFs = vitaFsFrom(sourceConfig, config);
-const installedApp = `${vitaFs.replace(/\/$/, "")}/ux0/app/${TITLE_ID}`;
+const installedApp = `${vitaFs.replace(/\/$/, "")}/ux0/app/${titleId}`;
 const nextInstalledApp = `${installedApp}.pocketjs-play-new`;
 
 // Homebrew does not need firmware LLE modules. A complete cloned config keeps
@@ -214,25 +218,25 @@ if (fullscreen) {
   config = setScalar(config, "stretch_the_display_area", "true");
 }
 
-rmSync(STAGED_APP, { recursive: true, force: true });
-mkdirSync(STAGED_APP, { recursive: true });
+rmSync(stagedApp, { recursive: true, force: true });
+mkdirSync(stagedApp, { recursive: true });
 const unzip = Bun.which("unzip");
 if (!unzip) throw new Error("unzip not found");
-await run([unzip, "-oq", VPK, "-d", STAGED_APP], "VPK extraction");
-if (!existsSync(`${STAGED_APP}/eboot.bin`) || !existsSync(`${STAGED_APP}/sce_sys/param.sfo`)) {
+await run([unzip, "-oq", VPK, "-d", stagedApp], "VPK extraction");
+if (!existsSync(`${stagedApp}/eboot.bin`) || !existsSync(`${stagedApp}/sce_sys/param.sfo`)) {
   throw new Error("built VPK is missing eboot.bin or sce_sys/param.sfo");
 }
 
 mkdirSync(dirname(installedApp), { recursive: true });
 rmSync(nextInstalledApp, { recursive: true, force: true });
-cpSync(STAGED_APP, nextInstalledApp, { recursive: true });
+cpSync(stagedApp, nextInstalledApp, { recursive: true });
 mkdirSync(PLAY_DIR, { recursive: true });
 writeFileSync(PLAY_CONFIG, config);
 
 await stopVita3K();
 rmSync(installedApp, { recursive: true, force: true });
 renameSync(nextInstalledApp, installedApp);
-console.log(`PocketJS play: installed ${demo} as ${TITLE_ID}`);
+console.log(`PocketJS play: installed ${demo} as ${titleId}`);
 
 if (noLaunch) {
   console.log("PocketJS play: --no-launch requested; emulator not started");
@@ -246,13 +250,13 @@ const launchArgs = [
   PLAY_CONFIG,
   ...(fullscreen ? ["--fullscreen"] : []),
   "-r",
-  TITLE_ID,
+  titleId,
 ];
 
 // Vita3K validates -r against its default VitaFS before loading a custom
 // --config-location. Seed only the empty directory needed for that check.
 const defaultConfigText = existsSync(defaultConfig) ? readFileSync(defaultConfig, "utf8") : "";
-const globalTitleStub = `${vitaFsFrom(defaultConfig, defaultConfigText)}/ux0/app/${TITLE_ID}`;
+const globalTitleStub = `${vitaFsFrom(defaultConfig, defaultConfigText)}/ux0/app/${titleId}`;
 let createdGlobalTitleStub = false;
 if (!existsSync(globalTitleStub)) {
   mkdirSync(globalTitleStub, { recursive: true });

@@ -20,6 +20,7 @@ import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
 import { resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.ts";
+import { __resetTouches, __setTouches } from "./touch.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
 import { __drainEffects, resetEffects } from "./effects.ts";
 import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
@@ -147,8 +148,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   resetEffects();
   initDevtools(host.ops); // DevTools shim (DEVTOOLS.md), same as the Solid path.
   installFrameHandler(
-    wrapFrameHandler((buttons: number) => {
+    wrapFrameHandler((buttons: number, _analog: number, touches?: readonly number[]) => {
       __advanceClock();
+      __setTouches(touches);
       __drainEffects();
       runFrameHooks(buttons);
       handleFrame(buttons);
@@ -158,6 +160,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
 
   const dispose = rendererRender(code, appRoot);
   return () => {
+    __resetTouches();
     dispose();
     setInputRoot(null);
     setOverlayRoot(null);

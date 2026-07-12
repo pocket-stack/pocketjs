@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import { existsSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -11,9 +11,11 @@ import type { PocketConfig } from "../src/config.ts";
 import {
   extractHostBuildInputs,
   hostBuildEnvironment,
+  vitaTitleId,
   type HostBuildInputs,
 } from "../src/manifest/index.ts";
 import { verifyPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
+import { demoIdentity } from "./demo-identity.ts";
 
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
 const nativeDir = pspUiDir + "native-vita/";
@@ -133,6 +135,13 @@ const framework: PocketFramework = buildPlan
 const outputApp = buildPlan
   ? buildPlan.app.output
   : `${app}${FRAMEWORKS[framework].outputSuffix}`;
+const stockDemo = !buildPlan && appArg && existsSync(`${pspUiDir}demos/${appArg.replace(/-main$/, "")}/main.tsx`)
+  ? demoIdentity(appArg)
+  : undefined;
+const applicationId = buildPlan?.app.id ?? stockDemo?.id ??
+  `dev.pocket-stack.legacy.${outputApp.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+const packageTitle = buildPlan?.app.title ?? stockDemo?.title ?? `PocketJS ${outputApp}`;
+const titleId = vitaTitleId(applicationId);
 
 // ---------------------------------------------------------------------------
 // 1. Build the app bundle + pak -> dist/<app>.js + dist/<app>.pak
@@ -154,7 +163,7 @@ if (!skipBuild) {
 const nativeInputs: HostBuildInputs = hostBuildInputs ?? {
   appOutput: outputApp,
   target: "vita",
-  hostAbi: 1,
+  hostAbi: 2,
   viewport: {
     logical: [480, 272],
     physical: [960, 544],
@@ -170,6 +179,10 @@ const env = {
   // compiler and expose VitaSDK tools without requiring shell dotfiles.
   PATH: `${vitasdk}/bin:${home}/.cargo/bin:${process.env.PATH ?? ""}`,
   VITASDK: vitasdk,
+  // cargo-vita uses this only when the reusable runtime crate deliberately
+  // omits a static title_id. Pocket's stable manifest id owns installation
+  // identity; every demo therefore gets its own LiveArea application.
+  VITA_DEFAULT_TITLE_ID: titleId,
   ...hostBuildEnvironment(nativeInputs, {
     outputDirectory: outputDir,
     embedApp: true,
@@ -191,4 +204,25 @@ console.log(`PocketJS vita: cargo vita build vpk (app=${outputApp}${capture ? ",
 // Forward to cargo-vita
 await $`${rustup} run nightly-2026-05-28 cargo vita build vpk ${cargoArgs}`.cwd(nativeDir).env(env);
 
-console.log(`output: ${nativeDir}target/armv7-sony-vita-newlibeabihf/.../pocketjs-vita.vpk`);
+// cargo-vita has a target-id fallback but no corresponding dynamic title-name
+// fallback. Recreate only the package metadata and VPK here so both values
+// come from the same ResolvedBuildPlan; the native executable is unchanged.
+const profile = cargoArgs.includes("--release") || cargoArgs.includes("-r") ? "release" : "debug";
+const targetDirectory = `${nativeDir}target/armv7-sony-vita-newlibeabihf/${profile}`;
+const eboot = `${targetDirectory}/pocketjs-vita.self`;
+const sfo = `${targetDirectory}/pocketjs-vita.sfo`;
+const vpk = `${targetDirectory}/pocketjs-vita.vpk`;
+const nextVpk = `${vpk}.pocketjs-new`;
+if (!existsSync(eboot)) throw new Error(`PocketJS vita: eboot not found at ${eboot}`);
+
+await $`${vitasdk}/bin/vita-mksfoex -d ATTRIBUTE2=12 -s TITLE_ID=${titleId} ${packageTitle} ${sfo}`;
+rmSync(nextVpk, { force: true });
+await $`${vitasdk}/bin/vita-pack-vpk -s ${sfo} -b ${eboot} ${nextVpk}`;
+renameSync(nextVpk, vpk);
+
+const packagedDirectory = resolvePath(outputDir, "vita");
+const packaged = resolvePath(packagedDirectory, `${outputApp}.vpk`);
+mkdirSync(packagedDirectory, { recursive: true });
+cpSync(vpk, packaged);
+console.log(`PocketJS vita: package ${titleId} (${applicationId})`);
+console.log(`output: ${packaged}`);

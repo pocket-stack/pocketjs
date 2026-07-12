@@ -40,6 +40,10 @@ function isViewport(value: unknown): value is Viewport {
 function hasHostInputShape(input: unknown): input is ResolvedBuildPlan {
   if (!isRecord(input) || !isRecord(input.app) || !isRecord(input.target)) return false;
   if (!isRecord(input.viewport) || !isRecord(input.features)) return false;
+  if (
+    typeof input.app.id !== "string" || input.app.id.length === 0 ||
+    typeof input.app.title !== "string" || input.app.title.length === 0
+  ) return false;
   if (typeof input.app.output !== "string" || input.app.output.length === 0) return false;
   if (typeof input.target.id !== "string" || input.target.id.length === 0) return false;
   if (!Number.isInteger(input.target.hostAbi) || (input.target.hostAbi as number) < 1) return false;

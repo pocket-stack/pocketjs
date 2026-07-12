@@ -16,6 +16,13 @@ pub mod input;
 pub mod pak;
 
 extern "C" {
+    fn JS_NewArray(ctx: *mut JSContext) -> JSValue;
+    fn JS_SetPropertyUint32(
+        ctx: *mut JSContext,
+        this_obj: JSValue,
+        index: u32,
+        value: JSValue,
+    ) -> i32;
     fn JS_NewArrayBuffer(
         ctx: *mut JSContext,
         buf: *mut u8,
@@ -198,6 +205,37 @@ impl Runtime {
             JS_NewInt32(self.ctx, buttons),
             JS_NewInt32(self.ctx, analog),
         ])
+    }
+
+    /// Full stock-host input frame: buttons, packed left analog, and a front
+    /// touch snapshot already mapped into PocketJS logical coordinates.
+    ///
+    /// # Safety
+    ///
+    /// Call on the runtime's owning thread with no outstanding mutable UI
+    /// borrow.
+    pub unsafe fn frame_with_input(
+        &mut self,
+        buttons: i32,
+        analog: i32,
+        touches: &input::TouchSnapshot,
+    ) -> Result<(), String> {
+        let touch_array = JS_NewArray(self.ctx);
+        for (index, packed) in touches.packed().iter().enumerate() {
+            JS_SetPropertyUint32(
+                self.ctx,
+                touch_array,
+                index as u32,
+                JS_NewInt32(self.ctx, *packed as i32),
+            );
+        }
+        let result = self.call_frame(&mut [
+            JS_NewInt32(self.ctx, buttons),
+            JS_NewInt32(self.ctx, analog),
+            touch_array,
+        ]);
+        JS_FreeValue(self.ctx, touch_array);
+        result
     }
 
     /// Drain QuickJS promise jobs queued by the current guest turn.

@@ -53,6 +53,7 @@ export type TargetId<T extends TargetRegistry> = Extract<keyof T, string>;
 export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   "input.analog.left",
   "input.buttons",
+  "input.touch",
   "text.glyphs.baked",
 ] as const);
 
@@ -80,7 +81,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
     ],
   },
   vita: {
-    hostAbi: 1,
+    hostAbi: 2,
     display: {
       physicalViewport: [960, 544],
       logicalViewports: [[480, 272]],
@@ -90,6 +91,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
     capabilities: [
       "input.analog.left",
       "input.buttons",
+      "input.touch",
       "text.glyphs.baked",
     ],
   },

@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
+import { vitaTitleId } from "../src/manifest/vita-package.ts";
 import { encodePNG } from "./png.ts";
 import { encodeThresholdInput, GOLDEN_SPECS } from "./golden-specs.ts";
 
@@ -21,7 +22,6 @@ const ROOT = new URL("..", import.meta.url).pathname;
 const OUT = `${ROOT}dist/e2e-vita3k`;
 const VITAFS = `${OUT}/vitafs`;
 const CONFIG = `${OUT}/config/config.yml`;
-const APP_DIR = `${VITAFS}/ux0/app/PCKT00001`;
 const CAPTURE_DIR = `${VITAFS}/ux0/data/pocketjs-captures`;
 const NATIVE_RELEASE = `${ROOT}native-vita/target/armv7-sony-vita-newlibeabihf/release`;
 const VITA_GOLDENS = `${ROOT}test/goldens-vita`;
@@ -53,8 +53,7 @@ if (!existsSync(sourceConfig)) {
 const sourceConfigText = readFileSync(sourceConfig, "utf8");
 const configuredVitaFs = sourceConfigText.match(/^pref-path:\s*(.+?)\s*$/m)?.[1]?.replace(/^['"]|['"]$/g, "");
 const globalVitaFs = configuredVitaFs || `${dirname(sourceConfig)}/fs`;
-const globalTitleStub = `${globalVitaFs}/ux0/app/PCKT00001`;
-let createdGlobalTitleStub = false;
+const createdGlobalTitleStubs = new Set<string>();
 if (!existsSync(`${homedir()}/vitasdk/bin/arm-vita-eabi-gcc`) && !process.env.VITASDK) {
   console.error("VitaSDK not found (set VITASDK, or install it at ~/vitasdk)");
   process.exit(2);
@@ -62,7 +61,6 @@ if (!existsSync(`${homedir()}/vitasdk/bin/arm-vita-eabi-gcc`) && !process.env.VI
 
 function writeFixture(): void {
   rmSync(OUT, { recursive: true, force: true });
-  mkdirSync(`${APP_DIR}/sce_sys`, { recursive: true });
   mkdirSync(CAPTURE_DIR, { recursive: true });
   mkdirSync(`${VITAFS}/ux0/user/00`, { recursive: true });
   mkdirSync(dirname(CONFIG), { recursive: true });
@@ -98,10 +96,11 @@ function writeFixture(): void {
   writeFileSync(CONFIG, config);
 }
 
-function writeDemoManifest(name: string): string {
+function writeDemoManifest(name: string): { readonly path: string; readonly titleId: string } {
   const demo = name.replace(/-main$/, "");
+  const applicationId = `dev.pocket-stack.e2e.${demo.replace(/-/g, ".")}`;
   const manifest = JSON.parse(readFileSync(`${ROOT}pocket.json`, "utf8")) as Record<string, any>;
-  manifest.id = `dev.pocket-stack.e2e.${demo.replace(/-/g, ".")}`;
+  manifest.id = applicationId;
   manifest.name = `pocketjs-e2e-${demo}`;
   manifest.title = `PocketJS E2E ${demo}`;
   manifest.app.entry = `demos/${demo}/main.tsx`;
@@ -110,18 +109,11 @@ function writeDemoManifest(name: string): string {
   const path = `${OUT}/manifests/${name}.json`;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n");
-  return path;
+  return { path, titleId: vitaTitleId(applicationId) };
 }
 
-// Vita3K validates `-r TITLE_ID` against the default/global VitaFS before it
-// parses --config-location. Seed only an empty title directory for that CLI
-// check when needed; the actual app always lives in the isolated VitaFS.
-if (!existsSync(globalTitleStub)) {
-  mkdirSync(globalTitleStub, { recursive: true });
-  createdGlobalTitleStub = true;
-}
 process.on("exit", () => {
-  if (createdGlobalTitleStub) {
+  for (const globalTitleStub of createdGlobalTitleStubs) {
     try {
       rmdirSync(globalTitleStub);
     } catch {
@@ -140,11 +132,11 @@ async function terminate(proc: ReturnType<typeof Bun.spawn>): Promise<void> {
   }
 }
 
-async function runVita3K(): Promise<void> {
+async function runVita3K(titleId: string): Promise<void> {
   const done = `${CAPTURE_DIR}/done`;
   const error = `${CAPTURE_DIR}/error.txt`;
   const proc = Bun.spawn(
-    [vita3k!, "--keep-config", "--load-config", "--config-location", CONFIG, "-r", "PCKT00001"],
+    [vita3k!, "--keep-config", "--load-config", "--config-location", CONFIG, "-r", titleId],
     { cwd: ROOT, stdout: "ignore", stderr: "ignore" },
   );
   const deadline = Date.now() + TIMEOUT_MS;
@@ -203,7 +195,16 @@ if (specs.length === 0) {
 
 for (const spec of specs) {
   const input = encodeThresholdInput(spec);
-  const manifest = writeDemoManifest(spec.name);
+  const { path: manifest, titleId } = writeDemoManifest(spec.name);
+  const appDir = `${VITAFS}/ux0/app/${titleId}`;
+  const globalTitleStub = `${globalVitaFs}/ux0/app/${titleId}`;
+  mkdirSync(`${appDir}/sce_sys`, { recursive: true });
+  // Vita3K validates -r against its default VitaFS before applying the
+  // isolated config. Seed only the empty directory needed for that check.
+  if (!existsSync(globalTitleStub)) {
+    mkdirSync(globalTitleStub, { recursive: true });
+    createdGlobalTitleStubs.add(globalTitleStub);
+  }
   console.log(`\n## ${spec.name} (${spec.capture.length} golden frame(s))`);
   // Exercise the same manifest -> plan -> compiler -> backend path as real
   // applications, including the target/HostOps ABI startup handshake.
@@ -225,11 +226,11 @@ for (const spec of specs) {
 
   rmSync(CAPTURE_DIR, { recursive: true, force: true });
   mkdirSync(CAPTURE_DIR, { recursive: true });
-  copyFileSync(`${NATIVE_RELEASE}/pocketjs-vita.self`, `${APP_DIR}/eboot.bin`);
-  copyFileSync(`${NATIVE_RELEASE}/pocketjs-vita.sfo`, `${APP_DIR}/sce_sys/param.sfo`);
+  copyFileSync(`${NATIVE_RELEASE}/pocketjs-vita.self`, `${appDir}/eboot.bin`);
+  copyFileSync(`${NATIVE_RELEASE}/pocketjs-vita.sfo`, `${appDir}/sce_sys/param.sfo`);
 
   try {
-    await runVita3K();
+    await runVita3K(titleId);
   } catch (error) {
     console.error(`FAIL ${spec.name}: ${(error as Error).message}`);
     failed += spec.capture.length;

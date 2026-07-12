@@ -1,12 +1,14 @@
 {
   "app": {
+    "id": "dev.pocket-stack.telemetry",
+    "title": "Pocket Telemetry",
     "entry": "app/main.tsx",
     "output": "main",
     "framework": "solid"
   },
   "target": {
     "id": "vita",
-    "hostAbi": 1
+    "hostAbi": 2
   },
   "viewport": {
     "logical": [
@@ -25,5 +27,5 @@
     "input.buttons": true,
     "text.glyphs.baked": true
   },
-  "planHash": "sha256:ada07a247b28381d2cbc298322f3485dd1376bcaf88b8d35123f361dafee4baf"
+  "planHash": "sha256:c763eee7c84f6ac5101bb82c75b21706b691279c8043e0561d2a193b71fc9deb"
 }

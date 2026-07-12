@@ -10,9 +10,11 @@ same layout. The resolved Vita profile separately sets a 960x544 physical
 viewport and raster density 2: geometry is sampled at physical resolution,
 font coverage/SVG/core masks are baked at 2x, and `@2x` image or raw-pak
 siblings are selected when present. There is no letterboxing or aspect-ratio
-crop. Touch is intentionally not implemented yet. D-pad, face buttons,
-shoulders and both analog sticks are available through `input::read`; reusable
-game hosts can pass the left-stick packing through `Runtime::frame_with_analog`.
+crop. D-pad, face buttons, shoulders and both analog sticks are available
+through `input::read`; reusable game hosts can pass the complete stock input
+frame through `Runtime::frame_with_input`. The front panel is sampled once per
+frame and exposed to applications as stable contact ids in 480x272 logical
+coordinates through `touches()` from `@pocketjs/framework/input`.
 
 ## Toolchain
 
@@ -32,7 +34,7 @@ export VITASDK="$HOME/vitasdk"
 export PATH="$VITASDK/bin:$HOME/.cargo/bin:$PATH"
 
 bun play vita hero
-# builds, replaces PCKT00001 in the configured VitaFS, and launches Vita3K
+# builds, installs the hero's stable title id, and launches Vita3K
 bun play vita gallery --fullscreen
 # also enters host fullscreen and stretches the Vita display to fill it
 bun play --help
@@ -40,7 +42,7 @@ bun play --help
 
 # Low-level build only:
 bun run vita hero --release
-# native-vita/target/armv7-sony-vita-newlibeabihf/release/pocketjs-vita.vpk
+# dist/vita/hero-main.vpk
 ```
 
 `bun play vita <demo>` owns the interactive loop: it builds the selected demo,
@@ -62,16 +64,19 @@ VitaShell; Vita Toolbox is not required:
 
 1. Open VitaShell and press `SELECT` to start its configured USB or FTP
    connection.
-2. Copy `pocketjs-vita.vpk` to a writable location such as
-   `ux0:/data/pocketjs-vita.vpk`.
+2. Copy the named artifact, such as `dist/vita/hero-main.vpk`, to a writable
+   location such as `ux0:/data/hero-main.vpk`.
 3. Stop the transfer, select the VPK in VitaShell, press `X`, and confirm the
    install prompt.
-4. Return to LiveArea and launch the **PocketJS** bubble.
+4. Return to LiveArea and launch the demo's named bubble.
 
-All demo builds currently use title id `PCKT00001`. Installing another demo
-replaces the previous PocketJS build, which keeps the build-copy-install loop
-short. The VPK is self-contained; no separate app pak or shader file needs to
-be copied beside it.
+Each manifest's stable reverse-DNS `id` is encoded by the Vita backend as `P`
+plus the first eight uppercase hexadecimal digits of its SHA-256 digest. This
+produces a valid nine-character Vita title id without a per-demo table, so
+Hero, Gallery, and other demos coexist instead of replacing one another. Keep
+the manifest `id` unchanged across releases to preserve installation identity.
+The VPK is self-contained; no separate app pak or shader file needs to be
+copied beside it.
 
 ## Golden E2E
 

@@ -220,7 +220,7 @@ export function getOps(): HostOps {
 // Frame hookup
 // ---------------------------------------------------------------------------
 // Every host drives frames the same way: once per vblank/rAF tick it calls
-// `globalThis.frame(buttons, analog?)` with the PSP button bitmask (spec BTN)
+// `globalThis.frame(buttons, analog?, touches?)` with the PSP button bitmask (spec BTN)
 // and, when the host has an analog stick, the packed nub value
 // (x << 8 | y, each axis 0..255, 128 = center — spec ANALOG_CENTER). Hosts
 // without a stick pass one argument; the runtime defaults to center, so every
@@ -228,8 +228,12 @@ export function getOps(): HostOps {
 // edge-detection + the renderer's end-of-frame sweep into that entry point
 // via installFrameHandler.
 
-export function installFrameHandler(fn: (buttons: number, analog?: number) => void): void {
-  (globalThis as { frame?: (buttons: number, analog?: number) => void }).frame = fn;
+export function installFrameHandler(
+  fn: (buttons: number, analog?: number, touches?: readonly number[]) => void,
+): void {
+  (globalThis as {
+    frame?: (buttons: number, analog?: number, touches?: readonly number[]) => void;
+  }).frame = fn;
 }
 
 // ---------------------------------------------------------------------------

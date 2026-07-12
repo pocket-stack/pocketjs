@@ -80,6 +80,17 @@ export interface DeepZoomView {
   level: number;
 }
 
+/** One screen-space direct-manipulation step supplied by an app gesture
+ * recognizer. Positive pan moves the document right/down; zoom is relative
+ * and remains anchored under the supplied logical viewport coordinate. */
+export interface DeepZoomGesture {
+  readonly panX: number;
+  readonly panY: number;
+  readonly zoomFactor?: number;
+  readonly anchorX?: number;
+  readonly anchorY?: number;
+}
+
 export interface DeepZoomProps {
   doc: TileDoc;
   /** Viewport size (defaults to the PSP screen). */
@@ -91,6 +102,10 @@ export interface DeepZoomProps {
   prefetch?: number;
   /** Bind pan/zoom input internally (default true). */
   bindInput?: boolean;
+  /** Optional per-frame direct manipulation. Returning null leaves the
+   * controller integrator in charge; returning a gesture cancels its glide
+   * for that frame and applies pan/pinch around the provided anchor. */
+  gestureSource?: () => DeepZoomGesture | null;
   /** Called each frame after integration (HUD hookup — gate writes with
    *  hot.text/hot.prop on the receiving side). */
   onView?: (view: DeepZoomView) => void;
@@ -353,7 +368,27 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
     // held constant across the frame (DETERMINISM.md).
     const dt = ticksPerFrame();
 
-    if (bind) {
+    const gesture = props.gestureSource?.() ?? null;
+    if (gesture) {
+      // Gesture deltas live in screen/logical pixels. Move the center in the
+      // opposite document direction so the content tracks the finger.
+      const oldZoom = zoom;
+      cx -= gesture.panX / oldZoom;
+      cy -= gesture.panY / oldZoom;
+
+      const factor = gesture.zoomFactor ?? 1;
+      if (Number.isFinite(factor) && factor > 0 && factor !== 1) {
+        const anchorX = gesture.anchorX ?? vw / 2;
+        const anchorY = gesture.anchorY ?? vh / 2;
+        const anchorDocX = cx + (anchorX - vw / 2) / oldZoom;
+        const anchorDocY = cy + (anchorY - vh / 2) / oldZoom;
+        zoom = Math.min(maxZoom, Math.max(minZoom, oldZoom * factor));
+        cx = anchorDocX - (anchorX - vw / 2) / zoom;
+        cy = anchorDocY - (anchorY - vh / 2) / zoom;
+      }
+      vx = 0;
+      vy = 0;
+    } else if (bind) {
       // pan: nub (analog) or d-pad, at a zoom-invariant screen speed
       let ix = analogX();
       let iy = analogY();
@@ -382,14 +417,14 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
         if (buttons & BTN.RTRIGGER) zoom = Math.min(maxZoom, zoom * ZOOM_STEP);
         if (buttons & BTN.LTRIGGER) zoom = Math.max(minZoom, zoom / ZOOM_STEP);
       }
-      // CROSS: reset to fit
-      if (buttons & BTN.CROSS) {
-        zoom = minZoom;
-        cx = doc.w / 2;
-        cy = doc.h / 2;
-        vx = 0;
-        vy = 0;
-      }
+    }
+    // CROSS: reset to fit even if a contact is currently held.
+    if (bind && buttons & BTN.CROSS) {
+      zoom = minZoom;
+      cx = doc.w / 2;
+      cy = doc.h / 2;
+      vx = 0;
+      vy = 0;
     }
 
     // clamp the center so content cannot be panned fully off screen; when a
