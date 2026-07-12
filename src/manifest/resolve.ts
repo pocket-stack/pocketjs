@@ -173,18 +173,34 @@ export function resolveBuildPlan(
     });
   }
 
+  // A derived output must satisfy the same artifact-name contract an explicit
+  // one is validated against — an entry like "app/Main.tsx" or "app/.tsx"
+  // would otherwise smuggle an invalid name past the schema and fail much
+  // later, inside a backend, blaming a plan the resolver itself produced.
+  const OUTPUT_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+  const output = manifest.app.output ?? manifest.app.entry.split("/").pop()!.replace(/\.tsx?$/, "");
+  if (!OUTPUT_NAME.test(output)) {
+    diagnostics.push({
+      code: "app.outputUnderivable",
+      path: manifest.app.output !== undefined ? "/app/output" : "/app/entry",
+      message: `derived output ${JSON.stringify(output)} is not a valid artifact name — set app.output explicitly`,
+    });
+  }
+
   if (diagnostics.length > 0) return { ok: false, diagnostics };
 
   const logical: Viewport = [manifest.app.viewport.logical[0], manifest.app.viewport.logical[1]];
   const physical: Viewport = [profile.display.physicalViewport[0], profile.display.physicalViewport[1]];
+  // Plain codepoint sort — the same ordering canonicalJson uses for the plan
+  // hash, so the pretty plan.json never depends on ICU collation.
   const features = Object.fromEntries(
-    [...featureAvailability.entries()].sort(([left], [right]) => left.localeCompare(right)),
+    [...featureAvailability.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
   );
 
   const content: ResolvedBuildPlanContent = {
     app: {
       entry: manifest.app.entry,
-      output: manifest.app.output ?? manifest.app.entry.split("/").pop()!.replace(/\.tsx?$/, ""),
+      output,
       framework: manifest.app.framework,
     },
     target: {

@@ -704,6 +704,46 @@ impl<'a> Walker<'a> {
             }
         }
 
+        // -- bevel rings: classic-chrome 3D edges (spec.ts PROP.bevelOuter*..) --
+        // Two nested inset rings of 4 strips each. Per ring, light paints
+        // top+left first, then dark paints bottom+right FULL-LENGTH, so dark
+        // owns the shared corners (98.css box-shadow stacking). Square only:
+        // radius > 0 disables bevels (the compiler rejects the combination).
+        if (r.bevel_outer_light | r.bevel_outer_dark | r.bevel_inner_light | r.bevel_inner_dark)
+            != 0
+            && r.bevel_width > 0.0
+            && r.radius <= 0.0
+            && !is_arc
+        {
+            let bvw = r.bevel_width;
+            let rings = [
+                (0.0, r.bevel_outer_light, r.bevel_outer_dark),
+                (bvw, r.bevel_inner_light, r.bevel_inner_dark),
+            ];
+            for &(inset, light, dark) in rings.iter() {
+                let light = scale_alpha(light, op);
+                let dark = scale_alpha(dark, op);
+                if alpha(light) == 0 && alpha(dark) == 0 {
+                    continue;
+                }
+                let (x0, y0, x1, y1) = (inset, inset, l.w - inset, l.h - inset);
+                // Skip rings the box is too small to hold (deterministic guard).
+                if x1 - x0 < bvw * 2.0 || y1 - y0 < bvw * 2.0 {
+                    continue;
+                }
+                if alpha(light) > 0 {
+                    let fl = Fill::Flat(light);
+                    self.emit_box(dl, &world, x0, y0, x1, y0 + bvw, fl, &clip); // top
+                    self.emit_box(dl, &world, x0, y0, x0 + bvw, y1, fl, &clip); // left
+                }
+                if alpha(dark) > 0 {
+                    let fd = Fill::Flat(dark);
+                    self.emit_box(dl, &world, x0, y1 - bvw, x1, y1, fd, &clip); // bottom
+                    self.emit_box(dl, &world, x1 - bvw, y0, x1, y1, fd, &clip); // right
+                }
+            }
+        }
+
         // -- text run ----------------------------------------------------------
         if node.node_type == spec::NodeType::Text as u8 {
             self.emit_text(dl, node, &r, &world, op, &clip, l.w);

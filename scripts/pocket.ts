@@ -42,8 +42,11 @@ if (!target) usage("--target is required");
 const manifestPath = resolve(takeOption("manifest") ?? "pocket.json");
 const projectRoot = resolve(takeOption("project-root") ?? dirname(manifestPath));
 const outdir = resolve(projectRoot, takeOption("outdir") ?? "dist");
+// Backend args live strictly AFTER `--`; anything else left over is a typo.
+// (Without the separator check-first split, `argv.splice(0)` would swallow
+// unknown options into backendArgs and the guard below could never fire.)
 const separator = argv.indexOf("--");
-const backendArgs = separator >= 0 ? argv.splice(separator + 1) : argv.splice(0);
+const backendArgs = separator >= 0 ? argv.splice(separator + 1) : [];
 if (separator >= 0) argv.splice(separator, 1);
 if (argv.length > 0) usage(`unknown option ${argv[0]}`);
 
@@ -77,17 +80,19 @@ if (!typeResult.ok) {
   process.exit(1);
 }
 
-const planDirectory = resolve(projectRoot, ".pocket", target);
-const planPath = resolve(planDirectory, "plan.json");
-mkdirSync(planDirectory, { recursive: true });
-await Bun.write(planPath, JSON.stringify(plan, null, 2) + "\n");
-
 console.log(`✓ pocket.json v2`);
 console.log(`✓ ${target} satisfies pocket.json capabilities`);
 console.log(`✓ TypeScript (${typeResult.checkedFiles.length} app module(s))`);
 console.log(`✓ ResolvedBuildPlan ${plan.planHash}`);
 
+// `check` is read-only — the plan file is only materialized for the
+// compile/build pipelines that consume it.
 if (command === "check") process.exit(0);
+
+const planDirectory = resolve(projectRoot, ".pocket", target);
+const planPath = resolve(planDirectory, "plan.json");
+mkdirSync(planDirectory, { recursive: true });
+await Bun.write(planPath, JSON.stringify(plan, null, 2) + "\n");
 
 async function run(args: string[], label: string): Promise<void> {
   const child = Bun.spawn(args, { cwd: projectRoot, stdout: "inherit", stderr: "inherit" });

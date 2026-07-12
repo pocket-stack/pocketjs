@@ -359,6 +359,16 @@ unsafe extern "C" fn js_set_focus(
     JS_UNDEFINED
 }
 
+unsafe extern "C" fn js_set_active(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().set_active(arg_i32(ctx, argc, argv, 0), arg_i32(ctx, argc, argv, 1) != 0);
+    JS_UNDEFINED
+}
+
 /// Not used on PSP (pak.rs feeds the core natively before eval), but
 /// registered so the full HostOps surface exists. Returns bool.
 unsafe extern "C" fn js_load_styles(
@@ -571,6 +581,7 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"animate\0", js_animate, 6);
     add_fn(ctx, ui_obj, b"cancelAnim\0", js_cancel_anim, 1);
     add_fn(ctx, ui_obj, b"setFocus\0", js_set_focus, 1);
+    add_fn(ctx, ui_obj, b"setActive\0", js_set_active, 2);
     add_fn(ctx, ui_obj, b"loadStyles\0", js_load_styles, 1);
     add_fn(ctx, ui_obj, b"loadFontAtlas\0", js_load_font_atlas, 1);
     add_fn(ctx, ui_obj, b"measureText\0", js_measure_text, 2);
@@ -599,7 +610,11 @@ pub unsafe fn register(
         b"__host\0".as_ptr() as *const _,
         JS_NewStringLen(ctx, target.as_ptr(), target.len()),
     );
-    let host_abi = env!("POCKETJS_HOST_ABI").parse::<i32>().unwrap_or_default();
+    // build.rs validated this is a positive integer; a parse failure here
+    // would mean the two fell out of sync, so fail loudly rather than ship 0.
+    let host_abi = env!("POCKETJS_HOST_ABI")
+        .parse::<i32>()
+        .expect("POCKETJS_HOST_ABI validated by build.rs");
     JS_SetPropertyStr(
         ctx,
         ui_obj,

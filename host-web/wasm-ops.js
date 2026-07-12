@@ -58,6 +58,7 @@ export async function createWasmUi(wasm) {
       ex.ui_animate(id, propId, to, durMs, easing, delayMs),
     cancelAnim: (animId) => ex.ui_cancel_anim(animId),
     setFocus: (id) => ex.ui_set_focus(id),
+    setActive: (id, active) => ex.ui_set_active(id, active ? 1 : 0),
     loadStyles: (buf) => {
       withBytes(buf, (p, l) => ex.ui_load_styles(p, l));
     },

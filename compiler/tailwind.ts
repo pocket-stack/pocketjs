@@ -123,6 +123,11 @@ function colorValue(part: string): number | null {
   return paletteColor(part) ?? arbitraryColor(part);
 }
 
+/** Bare hex inside a comma list: `#fff` | `#8899aa` | `#8899aaff` -> ABGR. */
+function bareHexColor(part: string): number | null {
+  return arbitraryColor(`[${part}]`);
+}
+
 // ---------------------------------------------------------------------------
 // Token parser
 // ---------------------------------------------------------------------------
@@ -155,6 +160,8 @@ interface VariantAcc {
   roundedFull?: boolean;
   pinnedW?: number;
   pinnedH?: number;
+  sawBevel?: boolean;
+  sawRounded?: boolean;
 }
 
 interface TransitionAcc {
@@ -261,8 +268,8 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
     case "overflow-hidden": D.push([PROP.overflow, int(ENUMS.Overflow.Hidden)]); return true;
     case "w-full": D.push([PROP.width, px(SIZE_FULL)]); return true;
     case "h-full": D.push([PROP.height, px(SIZE_FULL)]); return true;
-    case "rounded": D.push([PROP.radius, px(4)]); return true;
-    case "rounded-full": acc.roundedFull = true; return true;
+    case "rounded": D.push([PROP.radius, px(4)]); acc.sawRounded = true; return true;
+    case "rounded-full": acc.roundedFull = true; acc.sawRounded = true; return true;
     case "border": D.push([PROP.borderWidth, px(1)]); return true;
     case "font-bold": acc.bold = true; return true;
     case "tracking-wide": acc.trackingWide = true; return true;
@@ -343,10 +350,49 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
       return true;
     }
     case "rounded": {
-      if (rest in ROUNDED) { D.push([PROP.radius, px(ROUNDED[rest])]); return true; }
+      if (rest in ROUNDED) {
+        D.push([PROP.radius, px(ROUNDED[rest])]);
+        acc.sawRounded = true;
+        return true;
+      }
       const v = spacing(rest);
-      if (v !== null && rest.startsWith("[")) { D.push([PROP.radius, px(v)]); return true; }
+      if (v !== null && rest.startsWith("[")) {
+        D.push([PROP.radius, px(v)]);
+        acc.sawRounded = true;
+        return true;
+      }
       return false;
+    }
+    case "bevel": {
+      // Classic-chrome bevel rings (spec.ts PROP.bevelOuter*..bevelWidth):
+      // `bevel-[#light,#dark]` sets the outer ring, `bevel-[#a,#b,#c,#d]`
+      // both rings (order: outerLight,outerDark,innerLight,innerDark), and
+      // `bevel-w-[N]` the per-ring width (arbitrary-only, default 1px).
+      // Square-only: combining with rounded* is a hard literal-level error.
+      if (rest.startsWith("w-")) {
+        const w = spacing(rest.slice(2));
+        if (w === null || !rest.startsWith("w-[") || w <= 0) return false;
+        D.push([PROP.bevelWidth, px(w)]);
+        acc.sawBevel = true;
+        return true;
+      }
+      const m = /^\[(.+)\]$/.exec(rest);
+      if (!m) return false;
+      const parts = m[1].split(",");
+      if (parts.length !== 2 && parts.length !== 4) return false;
+      const ringProps = [
+        PROP.bevelOuterLight, PROP.bevelOuterDark,
+        PROP.bevelInnerLight, PROP.bevelInnerDark,
+      ];
+      const decls: Decl[] = [];
+      for (let i = 0; i < parts.length; i++) {
+        const c = bareHexColor(parts[i]);
+        if (c === null) return false;
+        decls.push([ringProps[i], c]);
+      }
+      D.push(...decls);
+      acc.sawBevel = true;
+      return true;
     }
     case "opacity": {
       const v = plainNum(rest);
@@ -525,6 +571,17 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
     throw new Error(
       `PocketJS tailwind: \`hover:\` is not supported on PSP (no pointer) in "${literal}" — use focus:/active:.`,
     );
+  }
+  {
+    const variants = [acc.base, acc.focus, acc.active];
+    const sawBevel = variants.some((v) => v.sawBevel);
+    const sawRounded = variants.some((v) => v.sawRounded);
+    if (sawBevel && sawRounded) {
+      throw new Error(
+        `PocketJS tailwind: \`bevel-*\` is square-only and cannot combine with \`rounded*\` ` +
+          `in "${literal}" — drop one of them.`,
+      );
+    }
   }
 
   // resolve pseudo-utilities per variant (font slot / tracking / rounded-full)

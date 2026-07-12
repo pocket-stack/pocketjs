@@ -224,6 +224,52 @@ const SPECS: Spec[] = [
 ];
 
 SPECS.push({
+  // chrome: bevel border rings (Win98 window mock, demos/chrome). f2 = initial
+  // layout: double-ring raised window frame + buttons, double-ring sunken text
+  // well, thin single-ring status cells, navy 2-stop caption gradient — every
+  // bevel form in one frame. DOWN@4 focuses OK, RIGHT@8 moves to CANCEL — f12
+  // shows the focus: face tint with the bevel rings unchanged. CIRCLE held
+  // f16..22 — f18 shows the active: bevel INVERSION (pressed-in CANCEL); f26
+  // is released and back to raised.
+  name: "chrome-main",
+  frames: 30,
+  capture: [2, 12, 18, 26],
+  input: (f) =>
+    f === 4 ? BTN.DOWN : f === 8 ? BTN.RIGHT : f >= 16 && f <= 22 ? BTN.CIRCLE : 0,
+});
+
+SPECS.push({
+  // im (Pocket Talk): bootstrap lands at f30 — f40 is the conversation list
+  // (presence dots, unread badges, ellipsized previews, recency sort).
+  // CIRCLE@60 opens MAYA CHEN — f80 is the thread bottom (wrapped bubbles,
+  // lime read ticks). UP held 90..150 scrolls the virtual window up — f160
+  // shows mid-history with a day chip. SELECT@170 jumps back to latest,
+  // TRIANGLE@200 opens the on-screen keyboard, DOWN@230 walks focus to 'q',
+  // CIRCLE@260 types it — f280 is the OSK with a live draft + counter.
+  // START@300 sends; by f370 the ack and the delivery receipt have landed
+  // (gray ✓✓ on the "q" bubble, MAYA about to type).
+  name: "im-main",
+  frames: 380,
+  capture: [40, 80, 160, 280, 370],
+  input: (f) =>
+    f === 60
+      ? BTN.CIRCLE
+      : f >= 90 && f < 150
+        ? BTN.UP
+        : f === 170
+          ? BTN.SELECT
+          : f === 200
+            ? BTN.TRIANGLE
+            : f === 230
+              ? BTN.DOWN
+              : f === 260
+                ? BTN.CIRCLE
+                : f === 300
+                  ? BTN.START
+                  : 0,
+});
+
+SPECS.push({
   // motions: baked keyframe timelines (yui540 studies). Scene 0 (APP LAUNCH)
   // plays a 3-entry choreography with a 156-frame loop: f8 = press pulse
   // (backwards-fill start states), f60 = expanded full-stage hold, f120 =

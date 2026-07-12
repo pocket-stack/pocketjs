@@ -138,10 +138,11 @@ selected host; `enhances` resolves to booleans available from
 `@pocketjs/framework/platform`:
 
 ```ts
-import { platform } from "@pocketjs/framework/platform";
+import { hasFeature } from "@pocketjs/framework/platform";
 
-if (platform.features["input.touch"]) installTouchControls();
-else installButtonControls();
+// `enhances: ["input.analog.left"]` in pocket.json — buttons-only hosts
+// resolve it to false and the nub branch compiles out of reach.
+if (hasFeature("input.analog.left")) bindNubScrolling();
 ```
 
 They describe fixed host API support, not permissions or live device state.
