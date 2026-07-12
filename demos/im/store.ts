@@ -8,11 +8,24 @@
 // host (sim, tape replay) can take the whole thing over without touching
 // this file. Swapping the mock for a real data layer means re-implementing
 // createTalkStore() against the same interface — the UI does not change.
+//
+// Every delivery applies its writes inside batch(): the UI (row layout,
+// scroll rebase, stick-to-bottom) must see one consistent world per
+// delivery, not one per signal — a history page and its hasMore flip, or a
+// burst of poll events, land as a single update.
 
-import { createSignal, type Accessor } from "solid-js";
+import { batch, createSignal, type Accessor } from "solid-js";
 import { runEffect } from "@pocketjs/framework/effects";
 import { virtualNow } from "@pocketjs/framework/clock";
-import type { BootPayload, HistoryPayload, PollPayload, Push, SendAck } from "./backend.ts";
+import type {
+  BootPayload,
+  HistoryPayload,
+  HistoryReq,
+  PollPayload,
+  Push,
+  SendAck,
+  SendReq,
+} from "./backend.ts";
 import {
   contactById,
   stampNow,
@@ -43,7 +56,8 @@ export interface Convo {
 interface ConvoInternal extends Convo {
   setMsgs: (m: UiMsg[]) => void;
   setUnread: (n: number) => void;
-  setTyping: (s: string | null) => void;
+  /** Typing windows overlap when replies queue up — refcounted, not a slot. */
+  applyTyping: (from: string, on: boolean) => void;
   setHasMore: (b: boolean) => void;
   setLoading: (b: boolean) => void;
   pagesLoaded: number;
@@ -76,18 +90,27 @@ export function createTalkStore(): TalkStore {
       c.setMsgs([...c.msgs(), toUi(p.msg)]);
       if (active() !== c.contact.id) c.setUnread(c.unread() + 1);
     } else if (p.t === "typing") {
-      c.setTyping(p.on ? p.from : null);
+      c.applyTyping(p.from, p.on);
     } else {
-      stateSetters.get(p.id)?.(p.state);
+      const set = stateSetters.get(p.id);
+      if (set) {
+        set(p.state);
+        // Terminal receipt: "read", or "delivered" from a contact who will
+        // never read — drop the setter so sends don't accumulate forever.
+        if (p.state === "read" || !c.contact.online) stateSetters.delete(p.id);
+      }
     }
   };
 
   // The sync loop: exactly one poll in flight, re-issued from its own
-  // delivery. Deliveries apply at frame boundaries (src/effects.ts), so a
-  // burst of pushes lands as one deterministic batch.
+  // delivery. Deliveries apply at frame boundaries (src/effects.ts); the
+  // batch makes a multi-event drain (reply + receipt + ambient in one tick)
+  // a single UI update.
   const poll = (): void => {
     runEffect<PollPayload>("im/poll", null, (res) => {
-      for (const ev of res.events) applyPush(ev);
+      batch(() => {
+        for (const ev of res.events) applyPush(ev);
+      });
       poll();
     });
   };
@@ -101,11 +124,16 @@ export function createTalkStore(): TalkStore {
         const [draft, setDraft] = createSignal("");
         const [hasMore, setHasMore] = createSignal(b.hasMore);
         const [loading, setLoading] = createSignal(false);
+        let typingCount = 0;
+        const applyTyping = (from: string, on: boolean): void => {
+          typingCount = Math.max(0, typingCount + (on ? 1 : -1));
+          setTyping(typingCount > 0 ? from : null);
+        };
         return {
           contact: contactById(b.id),
           msgs, setMsgs,
           unread, setUnread,
-          typing, setTyping,
+          typing, applyTyping,
           draft, setDraft,
           hasMore, setHasMore,
           loading, setLoading,
@@ -130,7 +158,8 @@ export function createTalkStore(): TalkStore {
     };
     stateSetters.set(msg.id, setState);
     c.setMsgs([...c.msgs(), msg]);
-    runEffect<SendAck>("im/send", { convo: c.contact.id, id: msg.id, text }, () => {
+    const req: SendReq = { convo: c.contact.id, id: msg.id, text };
+    runEffect<SendAck>("im/send", req, () => {
       // Receipts may already have arrived in the same drain — never regress.
       if (state() === "sending") setState("sent");
     });
@@ -140,16 +169,19 @@ export function createTalkStore(): TalkStore {
     const c = convo as ConvoInternal;
     if (c.loading() || !c.hasMore()) return;
     c.setLoading(true);
-    runEffect<HistoryPayload>(
-      "im/history",
-      { convo: c.contact.id, page: c.pagesLoaded },
-      (res) => {
+    const req: HistoryReq = { convo: c.contact.id, page: c.pagesLoaded };
+    runEffect<HistoryPayload>("im/history", req, (res) => {
+      // One batch, one layout: the prepend and the hasMore flip (which adds
+      // the beginning-of-conversation chip) must land in the SAME update, or
+      // the thread's scroll rebase misses the chip's height and the content
+      // the user is reading jumps.
+      batch(() => {
         c.pagesLoaded++;
-        c.setMsgs([...res.messages.map(toUi), ...c.msgs()]);
         c.setHasMore(res.hasMore);
+        c.setMsgs([...res.messages.map(toUi), ...c.msgs()]);
         c.setLoading(false);
-      },
-    );
+      });
+    });
   };
 
   const setActive = (id: string | null): void => {

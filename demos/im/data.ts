@@ -62,10 +62,13 @@ export interface Contact {
 // ---------------------------------------------------------------------------
 
 /** New messages (sent or pushed) stamp at 10:24 + virtual session time. */
-export const BASE_MINUTE = 624;
+const BASE_MINUTE = 624;
 
 export function stampNow(nowSeconds: number): { day: number; minute: number } {
-  return { day: 0, minute: BASE_MINUTE + Math.floor(nowSeconds / 60) };
+  // The demo world never crosses virtual midnight (the day-index model counts
+  // age, not calendar days) — clamp at 23:59 so a soak run's stamps stay
+  // ordered instead of wrapping back to 0:00 under a TODAY chip.
+  return { day: 0, minute: Math.min(1439, BASE_MINUTE + Math.floor(nowSeconds / 60)) };
 }
 
 /** Deterministic minutes between corpus message k-1 and k: mostly a few
@@ -78,7 +81,7 @@ function step(c: Contact, k: number): number {
 }
 
 /** Stamp of the message `back` steps before the contact's newest one. */
-export function stampBack(c: Contact, back: number): { day: number; minute: number } {
+function stampBack(c: Contact, back: number): { day: number; minute: number } {
   let m = c.baseMinute;
   for (let k = 1; k <= back; k++) m -= step(c, k);
   const day = m >= 0 ? 0 : Math.ceil(-m / 1440);
@@ -101,7 +104,7 @@ export function dayLabel(day: number): string {
 // History pages — the corpus served backwards, PAGE_LEN messages at a time
 // ---------------------------------------------------------------------------
 
-export const PAGE_LEN = 14;
+const PAGE_LEN = 14;
 
 /** Highest fetchable page index (page 0 ships with bootstrap). */
 export function maxPage(c: Contact): number {
@@ -126,7 +129,7 @@ export function historyPage(c: Contact, page: number): WireMsg[] {
 // forever, so a long-running session keeps receiving mail.
 // ---------------------------------------------------------------------------
 
-export interface AmbientEvent {
+interface AmbientEvent {
   gap: number;
   convo: string;
   from: string;

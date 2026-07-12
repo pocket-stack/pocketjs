@@ -9,7 +9,7 @@
 //   bun demos/im/psp/gen-cover.ts     (rewrites icon0.png + pic1.png here)
 
 import { createCanvas, GlobalFonts, type SKRSContext2D } from "@napi-rs/canvas";
-import { bootWorld } from "../../../host-sim/sim.ts";
+import { runScenario } from "../../../host-sim/sim.ts";
 import { BTN } from "../../../spec/spec.ts";
 
 const ROOT = new URL("../../../", import.meta.url).pathname;
@@ -77,14 +77,17 @@ function roundRect(g: SKRSContext2D, x: number, y: number, w: number, h: number,
 // PIC1 — 480×272 XMB background, screenshotted from the running app
 // ---------------------------------------------------------------------------
 {
-  const world = await bootWorld("im-main", 60);
   // Boot (bootstrap lands at f30), open MAYA CHEN at f60, settle at the
   // thread bottom — wrapped bubbles + read ticks, the app's signature frame.
-  for (let f = 0; f < 110; f++) {
-    world.frame(f === 60 ? BTN.CIRCLE : 0);
-    for (let t = 0; t < world.ticksPerFrame; t++) world.tick();
-  }
-  const rgba = world.render();
+  // runScenario is the same pump every sim test uses, so the cover is a frame
+  // of the exact world the goldens verify.
+  const trace = await runScenario({
+    app: "im-main",
+    hz: 60,
+    seconds: 110 / 60,
+    script: [{ at: 1.0, press: BTN.CIRCLE }],
+  });
+  const rgba = trace.finalFrame;
 
   const c = createCanvas(480, 272);
   const g = c.getContext("2d");

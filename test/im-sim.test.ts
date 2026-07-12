@@ -10,8 +10,17 @@
 // as content, not pixels.
 
 import { describe, expect, test } from "bun:test";
+import { fontSlotFor } from "../compiler/tailwind.ts";
+import { FONT_META, FONT_MSG } from "../demos/im/wrap.ts";
 import { runScenario, treeHasText, type Trace } from "../host-sim/sim.ts";
 import { BTN } from "../spec/spec.ts";
+
+// wrap.ts pins its measurement slots as literals (the compiler must stay out
+// of the app import graph) — this is the guard that keeps them honest.
+test("wrap.ts font slots match the compiler's pinned table", () => {
+  expect(FONT_MSG).toBe(fontSlotFor(14, false));
+  expect(FONT_META).toBe(fontSlotFor(12, false));
+});
 
 // ---------------------------------------------------------------------------
 // Journey A — open MAYA, scroll history, jump back, type "yo!", send, get the

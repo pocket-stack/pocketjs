@@ -18,11 +18,15 @@
 import { getOps } from "@pocketjs/framework";
 import { dayLabel, fmtTime, type UiMsg } from "./data.ts";
 
-// Build-pinned font slots (compiler/tailwind.ts fontSlotFor): regular slots
-// are FONT_PX indexes, bold ones +7. Bubble bodies are text-sm (14 px →
-// slot 1); meta lines and previews are text-xs (12 px → slot 0).
-export const FONT_MSG = 1;
-export const FONT_META = 0;
+// Build-pinned font slots (compiler/tailwind.ts fontSlotFor: FONT_PX index,
+// bold +7). Literals, not imports — compiler source must stay out of the app
+// import graph (pass 1 would harvest its own utility-name strings as class
+// candidates). test/im-sim.test.ts asserts these equal fontSlotFor(...), so
+// a re-pinned FONT_PX table fails the suite instead of silently mis-measuring.
+// Bubble bodies are text-sm, meta lines text-xs, ticks text-xs font-bold.
+export const FONT_MSG = 1; //       fontSlotFor(14, false)
+export const FONT_META = 0; //      fontSlotFor(12, false)
+const FONT_META_BOLD = 7; //        fontSlotFor(12, true)
 
 export const LINE_H = 16; // bubble body lineHeight override
 const PAD_X = 8; //          bubble px-2
@@ -35,7 +39,7 @@ const GROUP_GAP = 3; //      consecutive messages from the same sender
 const DAY_H = 22;
 const BEGIN_H = 18;
 const EDGE_PAD = 6; //       breathing room at both canvas ends
-export const BUBBLE_MAX_TEXT_W = 264;
+const BUBBLE_MAX_TEXT_W = 264;
 
 // ---------------------------------------------------------------------------
 // Cached measurement
@@ -43,7 +47,7 @@ export const BUBBLE_MAX_TEXT_W = 264;
 
 const widthCache = new Map<string, number>();
 
-export function textWidth(text: string, slot: number): number {
+function textWidth(text: string, slot: number): number {
   if (text === "") return 0;
   const key = slot + "|" + text;
   let w = widthCache.get(key);
@@ -80,7 +84,7 @@ function breakToken(token: string, slot: number, maxW: number): string[] {
 const wrapCache = new Map<string, string[]>();
 
 /** Greedy word wrap under maxW px; explicit '\n' always breaks. */
-export function wrapText(text: string, slot: number, maxW: number): string[] {
+function wrapText(text: string, slot: number, maxW: number): string[] {
   const key = slot + "|" + maxW + "|" + text;
   const hit = wrapCache.get(key);
   if (hit) return hit;
@@ -115,11 +119,28 @@ export function wrapText(text: string, slot: number, maxW: number): string[] {
   return lines;
 }
 
-/** Truncate to maxW with a trailing ellipsis (conversation-list previews). */
-export function fitEnd(text: string, slot: number, maxW: number): string {
-  if (textWidth(text, slot) <= maxW) return text;
+/**
+ * Truncate to maxW with an ellipsis, keeping the start (`keepEnd` false —
+ * conversation-list previews) or the tail (`keepEnd` true — the compose
+ * field follows the caret, like every IM input does). Widths accumulate
+ * per cached char, so a growing draft never measures — or caches — the
+ * full string (one dead cache entry per keystroke, forever, otherwise).
+ */
+function fitFrom(text: string, slot: number, maxW: number, keepEnd: boolean): string {
+  let total = 0;
+  for (const ch of text) total += textWidth(ch, slot);
+  if (total <= maxW) return text;
   const budget = maxW - textWidth("…", slot);
   let acc = 0;
+  if (keepEnd) {
+    let i = text.length;
+    for (; i > 0; i--) {
+      const w = textWidth(text[i - 1], slot);
+      if (acc + w > budget) break;
+      acc += w;
+    }
+    return "…" + text.slice(i);
+  }
   let i = 0;
   for (; i < text.length; i++) {
     const w = textWidth(text[i], slot);
@@ -129,19 +150,12 @@ export function fitEnd(text: string, slot: number, maxW: number): string {
   return text.slice(0, i) + "…";
 }
 
-/** Keep the TAIL of a string under maxW with a leading ellipsis (the compose
- *  field follows the caret, like every IM input does). */
+export function fitEnd(text: string, slot: number, maxW: number): string {
+  return fitFrom(text, slot, maxW, false);
+}
+
 export function fitTail(text: string, slot: number, maxW: number): string {
-  if (textWidth(text, slot) <= maxW) return text;
-  const budget = maxW - textWidth("…", slot);
-  let acc = 0;
-  let i = text.length;
-  for (; i > 0; i--) {
-    const w = textWidth(text[i - 1], slot);
-    if (acc + w > budget) break;
-    acc += w;
-  }
-  return "…" + text.slice(i);
+  return fitFrom(text, slot, maxW, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -168,18 +182,42 @@ export interface ThreadLayout {
   total: number;
 }
 
-export function buildRows(msgs: UiMsg[], opts: { group: boolean; begin: boolean }): ThreadLayout {
+function sameRow(a: ThreadRow, b: ThreadRow): boolean {
+  if (a.kind !== b.kind || a.y !== b.y || a.h !== b.h || a.label !== b.label) return false;
+  if (a.kind === "chip" || b.kind === "chip") return true;
+  return a.msg === b.msg && a.bubbleW === b.bubbleW && a.body === b.body;
+}
+
+/**
+ * Lay every message out at an absolute y. Pass the previous build's rows and
+ * unchanged rows come back as the SAME objects: `<For>` keys by reference, so
+ * an append mounts exactly one new row instead of remounting the whole
+ * visible window (a prepend rebases every y, so there everything legitimately
+ * rebuilds — and the scroll rebase makes that invisible).
+ */
+export function buildRows(
+  msgs: UiMsg[],
+  opts: { group: boolean; begin: boolean },
+  prev?: readonly ThreadRow[],
+): ThreadLayout {
+  const prevByKey = new Map<string, ThreadRow>();
+  if (prev) for (const r of prev) prevByKey.set(r.key, r);
+  const reuse = (row: ThreadRow): ThreadRow => {
+    const p = prevByKey.get(row.key);
+    return p !== undefined && sameRow(p, row) ? p : row;
+  };
+
   const rows: ThreadRow[] = [];
   let y = EDGE_PAD;
   if (opts.begin) {
-    rows.push({ kind: "chip", key: "begin", y, h: BEGIN_H, label: "· BEGINNING OF THE CONVERSATION ·" });
+    rows.push(reuse({ kind: "chip", key: "begin", y, h: BEGIN_H, label: "· BEGINNING OF THE CONVERSATION ·" }));
     y += BEGIN_H + ROW_GAP;
   }
   let prevDay: number | null = null;
   let prevFrom: string | null = null;
   for (const m of msgs) {
     if (m.day !== prevDay) {
-      rows.push({ kind: "chip", key: `day-${m.id}`, y, h: DAY_H, label: dayLabel(m.day) });
+      rows.push(reuse({ kind: "chip", key: `day-${m.id}`, y, h: DAY_H, label: dayLabel(m.day) }));
       y += DAY_H + ROW_GAP;
       prevFrom = null; // a day break always restarts the sender run
       prevDay = m.day;
@@ -192,12 +230,13 @@ export function buildRows(msgs: UiMsg[], opts: { group: boolean; begin: boolean 
     let textW = 0;
     for (const line of lines) textW = Math.max(textW, textWidth(line, FONT_MSG));
     const metaW =
-      textWidth(fmtTime(m.minute), FONT_META) + (m.out ? TICK_GAP + textWidth("✓✓", FONT_META) : 0);
+      textWidth(fmtTime(m.minute), FONT_META) +
+      (m.out ? TICK_GAP + textWidth("✓✓", FONT_META_BOLD) : 0);
     const label = opts.group && !m.out && m.from !== prevFrom ? m.from : null;
     const bubbleW = Math.ceil(Math.max(textW, metaW)) + PAD_X * 2;
     const bubbleH = PAD_Y * 2 + lines.length * LINE_H + META_H;
     const h = (label ? LABEL_H : 0) + bubbleH;
-    rows.push({ kind: "msg", key: m.id, y, h, msg: m, label, bubbleW, body: lines.join("\n") });
+    rows.push(reuse({ kind: "msg", key: m.id, y, h, msg: m, label, bubbleW, body: lines.join("\n") }));
     y += h + ROW_GAP;
     prevFrom = m.from;
   }

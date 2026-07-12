@@ -20,13 +20,13 @@
 
 import { createEffect, createMemo, createSignal, For, onMount, Show, untrack } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
-import { analogY, onFrame } from "@pocketjs/framework/lifecycle";
+import { analogY, onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
 import { virtualFrame } from "@pocketjs/framework/clock";
+import { SCREEN_H } from "../../spec/spec.ts";
 import { fmtTime, type UiMsg } from "./data.ts";
 import { Keyboard, OSK_H } from "./keyboard.tsx";
-import { onPressLatched } from "./press.ts";
-import { buildRows, fitTail, FONT_MSG, LINE_H, type ThreadRow } from "./wrap.ts";
+import { buildRows, fitTail, FONT_MSG, LINE_H, type ThreadLayout, type ThreadRow } from "./wrap.ts";
 import type { Convo, TalkStore } from "./store.ts";
 
 const INK = "#e8f0f2";
@@ -34,7 +34,6 @@ const DIM = "#5f7480";
 const LIME = "#b8f34a";
 const TIME_DIM = "#7d95a3";
 
-const SCREEN_H = 272; // spec SCREEN_H — the PSP framebuffer is fixed
 const HEADER_H = 26;
 const COMPOSER_H = 26;
 const SCROLL_STEP = 6; //  d-pad px per held frame
@@ -43,6 +42,10 @@ const OVERSCAN = 60; //    extra px mounted beyond each viewport edge
 const TOP_FETCH = 36; //   distance from the top that triggers a history load
 const DRAFT_MAX = 140;
 const DRAFT_W = 380; //    compose field text budget (composer minus counter)
+const BOTTOM_SLACK = 8; // px within which a position still counts as "at bottom"
+
+const nearBottom = (pos: number, total: number, view: number): boolean =>
+  pos >= total - view - BOTTOM_SLACK;
 
 const ROW_IN = "absolute left-0 right-0 flex-row justify-start px-2";
 const ROW_OUT = "absolute left-0 right-0 flex-row justify-end px-2";
@@ -64,15 +67,25 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
   const [blink, setBlink] = createSignal(true);
   let kbOpenedFrame = -1;
 
-  const layout = createMemo(() =>
-    buildRows(props.convo.msgs(), { group: !!contact.members, begin: !props.convo.hasMore() }),
+  // Rows from the previous build are reused when unchanged (see buildRows),
+  // so an append mounts one new row instead of remounting the window.
+  const layout = createMemo((prev?: ThreadLayout) =>
+    buildRows(
+      props.convo.msgs(),
+      { group: !!contact.members, begin: !props.convo.hasMore() },
+      prev?.rows,
+    ),
   );
   const viewH = () => SCREEN_H - HEADER_H - COMPOSER_H - (kbOpen() ? OSK_H : 0);
   const maxScroll = () => Math.max(0, layout().total - viewH());
-  const visibleRows = createMemo(() => {
+  const visibleRows = createMemo((prev?: ThreadRow[]) => {
     const top = scroll() - OVERSCAN;
     const bottom = scroll() + viewH() + OVERSCAN;
-    return layout().rows.filter((r) => r.y < bottom && r.y + r.h > top);
+    const next = layout().rows.filter((r) => r.y < bottom && r.y + r.h > top);
+    // Row objects are reference-stable, so returning the previous array when
+    // the slice is unchanged lets <For> skip its diff on idle scroll frames.
+    if (prev && prev.length === next.length && next.every((r, i) => r === prev[i])) return prev;
+    return next;
   });
 
   onMount(() => {
@@ -94,8 +107,10 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
     const last = msgs[msgs.length - 1]?.id;
     untrack(() => {
       if (prevFirst !== undefined && first !== prevFirst && last === prevLast) {
-        // Older page prepended: shift by exactly the added height (the
-        // "begin" chip appears in the same frame and is part of the delta).
+        // Older page prepended: shift by exactly the added height. The store
+        // batches the prepend with its hasMore flip, so the beginning-of-
+        // conversation chip (when this was the last page) is part of the
+        // delta — backfill never moves what the user is looking at.
         const d = total - prevTotal;
         setScroll(scroll() + d);
         setTarget(target() + d);
@@ -103,9 +118,9 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
         // At-bottom is judged on the TARGET, not the eased position: when a
         // poll batch appends several messages in one frame, the position has
         // not caught up with the first append's snap yet, but the intent has.
-        const wasAtBottom = target() >= prevTotal - viewH() - 8;
+        const wasAtBottom = nearBottom(target(), prevTotal, viewH());
         const incoming = !msgs[msgs.length - 1].out;
-        if (!incoming || wasAtBottom) setTarget(Math.max(0, total - viewH()));
+        if (!incoming || wasAtBottom) setTarget(maxScroll());
         else setUnseen(unseen() + (msgs.length - prevLen));
       }
       prevFirst = first;
@@ -122,8 +137,8 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
     const v = viewH();
     untrack(() => {
       if (v === prevViewH) return;
-      const wasAtBottom = target() >= layout().total - prevViewH - 8;
-      const m = Math.max(0, layout().total - v);
+      const wasAtBottom = nearBottom(target(), layout().total, prevViewH);
+      const m = maxScroll();
       setScroll(wasAtBottom ? m : Math.min(scroll(), m));
       setTarget(wasAtBottom ? m : Math.min(target(), m));
       prevViewH = v;
@@ -131,7 +146,6 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
   });
 
   // The scroll pump: input moves the target, position eases toward it.
-  let blinkFrames = 0;
   onFrame((buttons) => {
     const m = maxScroll();
     if (!kbOpen()) {
@@ -143,11 +157,15 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
     const s = scroll();
     const d = target() - s;
     if (d !== 0) setScroll(Math.abs(d) < 0.6 ? target() : s + d * 0.3);
-    if (unseen() !== 0 && scroll() >= m - 8) setUnseen(0);
+    if (unseen() !== 0 && scroll() >= m - BOTTOM_SLACK) setUnseen(0);
     if (scroll() < TOP_FETCH && props.convo.hasMore() && !props.convo.loading()) {
       props.store.loadOlder(props.convo);
     }
-    if (kbOpen() && ++blinkFrames % 32 === 0) setBlink((b) => !b);
+    // Caret blink derives from the frame clock — no counter to pump.
+    if (kbOpen()) {
+      const b = ((virtualFrame() >> 5) & 1) === 0;
+      if (b !== blink()) setBlink(b);
+    }
   });
 
   const doSend = () => {
@@ -157,18 +175,28 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
     props.convo.setDraft("");
   };
 
-  onPressLatched(BTN.TRIANGLE, () => {
-    if (!kbOpen()) {
-      kbOpenedFrame = virtualFrame();
-      setKbOpen(true);
-    }
-  });
-  onPressLatched(BTN.CROSS, props.onBack, () => !kbOpen());
-  onPressLatched(BTN.START, doSend);
-  onPressLatched(BTN.SELECT, () => {
-    setTarget(maxScroll());
-    setUnseen(0);
-  });
+  // All chords are `latched`: this screen mounts from a Focusable press on
+  // the list, so a held button must be seen up once before its edge counts.
+  onButtonPress(
+    BTN.TRIANGLE,
+    () => {
+      if (!kbOpen()) {
+        kbOpenedFrame = virtualFrame();
+        setKbOpen(true);
+      }
+    },
+    { latched: true },
+  );
+  onButtonPress(BTN.CROSS, () => props.onBack(), { latched: true, active: () => !kbOpen() });
+  onButtonPress(BTN.START, doSend, { latched: true });
+  onButtonPress(
+    BTN.SELECT,
+    () => {
+      setTarget(maxScroll());
+      setUnseen(0);
+    },
+    { latched: true },
+  );
 
   const typeChar = (ch: string) => {
     if (props.convo.draft().length < DRAFT_MAX) props.convo.setDraft(props.convo.draft() + ch);

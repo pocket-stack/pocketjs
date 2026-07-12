@@ -11,9 +11,9 @@
 
 import { createSignal } from "solid-js";
 import { FocusGrid, FocusScope, Focusable, Text, View } from "@pocketjs/framework/components";
+import { onButtonPress } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
 import { virtualFrame } from "@pocketjs/framework/clock";
-import { onPressLatched } from "./press.ts";
 
 export const OSK_H = 104;
 
@@ -23,7 +23,7 @@ const ROWS_UP = ["1234567890", "QWERTYUIOP", "ASDFGHJKL'", "ZXCVBNM.?!"];
 const KEY_CLS =
   "w-[42] h-[18] rounded-sm items-center justify-center bg-[#141f2a] border-[#1c2a38] transition-colors duration-100 focus:bg-[#33470f] focus:border-[#b8f34a]";
 
-export interface KeyboardProps {
+interface KeyboardProps {
   /** Virtual frame the keyboard was opened on — a press that opened it must
    *  not also type on the freshly focused key in the same frame. */
   openedFrame: number;
@@ -36,17 +36,22 @@ export interface KeyboardProps {
 export function Keyboard(props: KeyboardProps) {
   const [shift, setShift] = createSignal(false);
 
+  /** The one source of truth for "which glyph is this key" — press() types it
+   *  and the key cap renders it, so the two can never disagree. */
+  const keyAt = (r: number, c: number): string => (shift() ? ROWS_UP : ROWS_LO)[r][c];
+
   const press = (r: number, c: number) => {
     if (virtualFrame() === props.openedFrame) return;
-    props.onKey((shift() ? ROWS_UP : ROWS_LO)[r][c]);
+    props.onKey(keyAt(r, c));
   };
 
   // START = send stays registered in the thread — it works with the keyboard
   // open or closed, so a stashed draft can be fired without reopening it.
-  onPressLatched(BTN.SQUARE, props.onBackspace);
-  onPressLatched(BTN.TRIANGLE, props.onSpace);
-  onPressLatched(BTN.CROSS, props.onClose);
-  onPressLatched(BTN.RTRIGGER, () => setShift(!shift()));
+  // `latched`: this component mounts under a held TRIANGLE (the opener).
+  onButtonPress(BTN.SQUARE, () => props.onBackspace(), { latched: true });
+  onButtonPress(BTN.TRIANGLE, () => props.onSpace(), { latched: true });
+  onButtonPress(BTN.CROSS, () => props.onClose(), { latched: true });
+  onButtonPress(BTN.RTRIGGER, () => setShift(!shift()), { latched: true });
 
   return (
     <FocusScope
@@ -60,7 +65,7 @@ export function Keyboard(props: KeyboardProps) {
             {row.split("").map((_, c) => (
               <Focusable class={KEY_CLS} onPress={() => press(r, c)}>
                 <Text class="text-xs font-bold" style={{ textColor: "#dbe7ee", lineHeight: 12 }}>
-                  {(shift() ? ROWS_UP : ROWS_LO)[r][c]}
+                  {keyAt(r, c)}
                 </Text>
               </Focusable>
             ))}

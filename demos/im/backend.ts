@@ -60,12 +60,6 @@ export interface PollPayload {
   events: Push[];
 }
 
-/** Server-side latency per request kind, in VIRTUAL seconds (0.5 s grid). */
-export function latencySeconds(kind: string): number {
-  if (kind === "im/history") return 1.0;
-  return 0.5; // bootstrap, send ack, poll tick
-}
-
 /** How long a contact "types" before a reply of this length lands. */
 function typingSeconds(text: string): number {
   return Math.min(3.5, 0.5 * Math.ceil((0.8 + text.length * 0.03) / 0.5));
@@ -76,7 +70,7 @@ export function installTalkBackend(): void {
   // a cycling pointer instead of being queued ahead, so an arbitrarily long
   // session never grows this array.
   let queue: { at: number; push: Push }[] = [];
-  const sendCounts: Record<string, number> = {};
+  let sendCounts: Record<string, number> = {};
   let ambIdx = 0;
   let ambNextAt = AMBIENT[0].gap;
   let srvSeq = 0;
@@ -128,10 +122,15 @@ export function installTalkBackend(): void {
   };
 
   installEffectDriver((cmd, deliver) => {
-    const lat = latencySeconds(cmd.kind);
+    // Server latency in VIRTUAL seconds (0.5 s grid — exact at every hz).
+    const lat = cmd.kind === "im/history" ? 1.0 : 0.5;
     if (cmd.kind === "im/bootstrap") {
-      // Fresh mount, fresh session (also keeps hot reload sane).
+      // Fresh mount, fresh session (also keeps hot reload sane): a
+      // re-bootstrap must replay like a cold boot, so the reply-script
+      // cursors and server message ids reset along with the push queue.
       queue = [];
+      sendCounts = {};
+      srvSeq = 0;
       ambIdx = 0;
       ambNextAt = virtualNow() + AMBIENT[0].gap;
       after(lat, () =>
