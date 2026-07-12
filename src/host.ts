@@ -60,6 +60,10 @@ export interface HostOps {
   cancelAnim(animId: number): void;
   /** 0 clears focus. Applies the `focus:` style variant natively. */
   setFocus(idOr0: number): void;
+  /** Set/clear the `active:` pressed variant natively (0/1 int; stale ids
+   *  no-op). Optional: older hosts predate spec op 26 — pressed visuals
+   *  degrade gracefully when absent. */
+  setActive?(id: number, active: number): void;
   /** web/test hosts only — on PSP the native bin feeds core from the pak. */
   loadStyles?(buf: Uint8Array): void;
   /** web/test hosts only — one call per baked font atlas blob. */

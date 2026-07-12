@@ -88,6 +88,9 @@ export const SIZE_FULL = -1;
 //   animate(id, propId, to:f64, durMs, easing, delayMs) -> animId [from = current]
 //   cancelAnim(animId)
 //   setFocus(idOr0)                        [applies focus: variant natively]
+//   setActive(id, activeInt)               [applies active: variant natively;
+//                                           0/1 int — the input layer's
+//                                           pressed state, spec op 26]
 //   loadStyles(buf) / loadFontAtlas(buf)   [web/test hosts only; PSP feeds core
 //                                           natively from the pak]
 //   measureText(str, fontSlot) -> width:f32
@@ -131,6 +134,10 @@ export const OP = {
   uploadImgEntry: 25, //  (blob) -> handle | -1. Upload a self-contained IMG
   //                      entry (compiler/pak.ts layout, v2: PSM_T8 palette +
   //                      optional RLE + filter flags parsed core-side).
+  setActive: 26, //       (id, activeInt) — set/clear the `active:` pressed
+  //                      variant natively (same machinery as setFocus). The
+  //                      focus manager holds it while the press button is
+  //                      down; stale ids no-op.
 } as const;
 
 // ---------------------------------------------------------------------------

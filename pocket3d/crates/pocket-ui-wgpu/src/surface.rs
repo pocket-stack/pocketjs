@@ -257,6 +257,11 @@ impl UiSurface {
             op!("setFocus", move |id: i32| ui.borrow_mut().ui.set_focus(id));
 
             let ui = self.inner.clone();
+            op!("setActive", move |id: i32, active: i32| {
+                ui.borrow_mut().ui.set_active(id, active != 0)
+            });
+
+            let ui = self.inner.clone();
             op!("loadStyles", move |buf: TypedArray<u8>| {
                 let Some(bytes) = buf.as_bytes() else {
                     return false;

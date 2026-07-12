@@ -228,11 +228,14 @@ SPECS.push({
   // layout: double-ring raised window frame + buttons, double-ring sunken text
   // well, thin single-ring status cells, navy 2-stop caption gradient — every
   // bevel form in one frame. DOWN@4 focuses OK, RIGHT@8 moves to CANCEL — f12
-  // shows the focus: face tint with the bevel rings unchanged.
+  // shows the focus: face tint with the bevel rings unchanged. CIRCLE held
+  // f16..22 — f18 shows the active: bevel INVERSION (pressed-in CANCEL); f26
+  // is released and back to raised.
   name: "chrome-main",
-  frames: 20,
-  capture: [2, 12],
-  input: (f) => (f === 4 ? BTN.DOWN : f === 8 ? BTN.RIGHT : 0),
+  frames: 30,
+  capture: [2, 12, 18, 26],
+  input: (f) =>
+    f === 4 ? BTN.DOWN : f === 8 ? BTN.RIGHT : f >= 16 && f <= 22 ? BTN.CIRCLE : 0,
 });
 
 SPECS.push({

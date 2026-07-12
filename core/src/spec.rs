@@ -78,6 +78,7 @@ pub mod op {
     pub const LOAD_TILE_TEXTURE: u8 = 23;
     pub const FREE_TEXTURE: u8 = 24;
     pub const UPLOAD_IMG_ENTRY: u8 = 25;
+    pub const SET_ACTIVE: u8 = 26;
 }
 
 /// Property ids (u8, stable, append-only). Groups:

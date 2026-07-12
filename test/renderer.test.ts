@@ -116,6 +116,7 @@ function makeMockHost(strict = true): MockHost {
     },
     cancelAnim: rec("cancelAnim"),
     setFocus: rec("setFocus"),
+    setActive: rec("setActive"),
     loadStyles: rec("loadStyles"),
     loadFontAtlas: rec("loadFontAtlas"),
     measureText: () => 0,
@@ -595,6 +596,52 @@ describe("focus + onPress (input.ts)", () => {
     handleFrame(0);
     handleFrame(BTN.CIRCLE);
     expect(pressedA).toBe(1);
+
+    dispose();
+  });
+
+  test("CIRCLE hold applies active: on the focused node, release clears", () => {
+    setInputRoot(root);
+    const dispose = render(() => {
+      const list = createElement("view");
+      const a = createElement("view");
+      setProp(a, "focusable", true, undefined);
+      insertNode(list, a);
+      const b = createElement("view");
+      setProp(b, "focusable", true, undefined);
+      insertNode(list, b);
+      return list;
+    }, root);
+
+    const a = root.children[0].children[0];
+    const b = root.children[0].children[1];
+
+    handleFrame(BTN.DOWN); // focus a
+    handleFrame(BTN.DOWN | BTN.CIRCLE); // press while holding DOWN's frame
+    expect(host.of("setActive").at(-1)).toEqual(["setActive", a.id, 1]);
+
+    handleFrame(BTN.CIRCLE); // still held: no repeat
+    const activeCalls = host.of("setActive").length;
+    handleFrame(BTN.CIRCLE);
+    expect(host.of("setActive").length).toBe(activeCalls);
+
+    handleFrame(0); // release
+    expect(host.of("setActive").at(-1)).toEqual(["setActive", a.id, 0]);
+
+    // d-pad move WHILE held: active follows off the old node (clears), the
+    // newly focused node is not pressed (press is an edge, not a state).
+    handleFrame(BTN.CIRCLE); // press on a again
+    expect(host.of("setActive").at(-1)).toEqual(["setActive", a.id, 1]);
+    handleFrame(BTN.CIRCLE | BTN.DOWN); // move to b with CIRCLE still down
+    expect(getFocused()).toBe(b);
+    expect(host.of("setActive").at(-1)).toEqual(["setActive", a.id, 0]);
+
+    // CIRCLE with nothing focused: no active call.
+    handleFrame(0);
+    setInputRoot(root);
+    const before = host.of("setActive").length;
+    handleFrame(BTN.CIRCLE);
+    expect(host.of("setActive").length).toBe(before);
 
     dispose();
   });
