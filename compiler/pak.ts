@@ -31,6 +31,10 @@ import {
   PAK_MAGIC,
   PAK_VERSION,
   PSM,
+  SND_FLAG_LOOP,
+  SND_HEADER_SIZE,
+  SND_MAGIC,
+  SND_VERSION,
   TEX_MAX_DIM,
   TILESET_ABSENT,
   TILESET_DIR_ENTRY_SIZE,
@@ -382,6 +386,150 @@ export function placeholderImage(): DecodedImage {
     }
   }
   return { width: w, height: h, rgba };
+}
+
+// ---------------------------------------------------------------------------
+// Sound entries (spec.ts "SND pak entry", AUDIO.md)
+// ---------------------------------------------------------------------------
+
+export interface DecodedWav {
+  rate: number;
+  channels: number;
+  /** Interleaved samples, s16 (8-bit PCM is expanded to s16 range). */
+  samples: Int16Array;
+}
+
+/**
+ * Decode a RIFF/WAVE PCM file (build-time only) to interleaved s16 samples,
+ * any channel count/rate. Accepts format-1 PCM, 8-bit unsigned or 16-bit
+ * signed LE; 8-bit samples are expanded to s16. Throws a descriptive error on
+ * non-PCM or malformed input.
+ */
+export function decodeWav(bytes: Uint8Array): DecodedWav {
+  if (bytes.length < 12) throw new Error("wav: file too short for a RIFF header");
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const fourcc = (o: number) => String.fromCharCode(bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]);
+  if (fourcc(0) !== "RIFF") throw new Error("wav: bad RIFF magic");
+  if (fourcc(8) !== "WAVE") throw new Error("wav: not a WAVE file");
+
+  let format = -1;
+  let channels = 0;
+  let rate = 0;
+  let bitsPerSample = 0;
+  let dataOff = -1;
+  let dataLen = 0;
+  let o = 12;
+  while (o + 8 <= bytes.length) {
+    const id = fourcc(o);
+    const size = dv.getUint32(o + 4, true);
+    const body = o + 8;
+    if (body + size > bytes.length) throw new Error(`wav: ${id} chunk overruns the file`);
+    if (id === "fmt ") {
+      if (size < 16) throw new Error("wav: fmt chunk too small");
+      format = dv.getUint16(body, true);
+      channels = dv.getUint16(body + 2, true);
+      rate = dv.getUint32(body + 4, true);
+      bitsPerSample = dv.getUint16(body + 14, true);
+    } else if (id === "data") {
+      dataOff = body;
+      dataLen = size;
+    }
+    o = body + size + (size & 1); // chunks are word-aligned
+  }
+  if (format !== 1) throw new Error(`wav: unsupported format ${format} (only PCM=1 supported)`);
+  if (channels < 1) throw new Error(`wav: bad channel count ${channels}`);
+  if (bitsPerSample !== 8 && bitsPerSample !== 16) {
+    throw new Error(`wav: unsupported bit depth ${bitsPerSample} (only 8 or 16 supported)`);
+  }
+  if (dataOff < 0) throw new Error("wav: missing data chunk");
+
+  const bytesPerSample = bitsPerSample / 8;
+  const sampleCount = Math.floor(dataLen / bytesPerSample);
+  const samples = new Int16Array(sampleCount);
+  if (bitsPerSample === 16) {
+    for (let i = 0; i < sampleCount; i++) samples[i] = dv.getInt16(dataOff + i * 2, true);
+  } else {
+    // 8-bit PCM is unsigned, centered at 128 -> expand to the full s16 range.
+    for (let i = 0; i < sampleCount; i++) samples[i] = (bytes[dataOff + i] - 128) << 8;
+  }
+  return { rate, channels, samples };
+}
+
+/**
+ * Downmix interleaved multi-channel s16 samples to mono (averaging channels),
+ * then linear-interpolation resample fromRate -> toRate. Identity fast-path
+ * when already mono at the target rate (returns a copy, never the input
+ * array, so callers can always treat the result as owned).
+ */
+export function resampleMono(
+  samples: Int16Array,
+  channels: number,
+  fromRate: number,
+  toRate: number,
+): Int16Array {
+  if (channels < 1) throw new Error(`resampleMono: bad channel count ${channels}`);
+  const frameCount = Math.floor(samples.length / channels);
+  if (channels === 1 && fromRate === toRate) return samples.slice(0, frameCount);
+
+  const mono = new Float32Array(frameCount);
+  for (let i = 0; i < frameCount; i++) {
+    let sum = 0;
+    for (let c = 0; c < channels; c++) sum += samples[i * channels + c];
+    mono[i] = sum / channels;
+  }
+  if (fromRate === toRate) {
+    const out = new Int16Array(frameCount);
+    for (let i = 0; i < frameCount; i++) out[i] = Math.max(-32768, Math.min(32767, Math.round(mono[i])));
+    return out;
+  }
+
+  const outFrames = Math.max(1, Math.round(frameCount * (toRate / fromRate)));
+  const step = frameCount > 1 ? (frameCount - 1) / Math.max(1, outFrames - 1) : 0;
+  const out = new Int16Array(outFrames);
+  for (let i = 0; i < outFrames; i++) {
+    const pos = i * step;
+    const i0 = Math.floor(pos);
+    const i1 = Math.min(i0 + 1, frameCount - 1);
+    const frac = pos - i0;
+    const v = mono[i0] * (1 - frac) + mono[i1] * frac;
+    out[i] = Math.max(-32768, Math.min(32767, Math.round(v)));
+  }
+  return out;
+}
+
+export interface SoundEntryOpts {
+  /** BGM loops from loopStart (spec SND_FLAG_LOOP). Default false. */
+  loop?: boolean;
+  /** Sample index the loop restarts from (iff loop). Default 0. */
+  loopStart?: number;
+}
+
+/** Encode an SND pak entry (see spec.ts "SND pak entry" for the 24-byte
+ *  header layout): mono s16 PCM at sampleRate, optionally looped. */
+export function encodeSoundEntry(
+  pcm: Int16Array,
+  sampleRate: number,
+  opts: SoundEntryOpts = {},
+): Uint8Array {
+  const loop = opts.loop ?? false;
+  const loopStart = opts.loopStart ?? 0;
+  if (!Number.isInteger(sampleRate) || sampleRate <= 0) {
+    throw new Error(`pak sound: bad sampleRate ${sampleRate}`);
+  }
+  if (loopStart < 0 || loopStart > pcm.length) {
+    throw new Error(`pak sound: loopStart ${loopStart} out of range (0..${pcm.length})`);
+  }
+  const out = new Uint8Array(SND_HEADER_SIZE + pcm.length * 2);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, SND_MAGIC, true);
+  dv.setUint16(4, SND_VERSION, true);
+  dv.setUint16(6, loop ? SND_FLAG_LOOP : 0, true);
+  dv.setUint32(8, sampleRate, true);
+  dv.setUint32(12, pcm.length, true);
+  dv.setUint32(16, loopStart, true);
+  dv.setUint32(20, 0, true);
+  for (let i = 0; i < pcm.length; i++) dv.setInt16(SND_HEADER_SIZE + i * 2, pcm[i], true);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
