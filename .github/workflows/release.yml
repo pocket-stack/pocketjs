@@ -18,7 +18,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write # GitHub Release creation
   id-token: write # npm --provenance
 
 jobs:
@@ -113,4 +113,21 @@ jobs:
             echo "$name@$version already published — skipping"
           else
             npm publish --access public --provenance
+          fi
+
+      # The GitHub Release mirrors the changelog entry for this version.
+      # Idempotent like the npm steps: an existing release is left alone.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          tag="v${RELEASE_VERSION#v}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag release already exists — skipping"
+          else
+            bun scripts/release-notes.ts "$tag" > "$RUNNER_TEMP/notes.md"
+            gh release create "$tag" --verify-tag --latest \
+              --title "$(bun scripts/release-notes.ts "$tag" --title)" \
+              --notes-file "$RUNNER_TEMP/notes.md"
           fi
