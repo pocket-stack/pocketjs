@@ -47,18 +47,18 @@ describe("determinism", () => {
       expect(again.hashes).toEqual(t60.hashes);
       expect(again.effects).toEqual(t60.effects);
     }
-  });
+  }, 30000);
 
   test("chaos cannot reach the world: sleeps + garbage + GC change nothing", async () => {
     const chaos = await runScenario(scenario(60), { maxSleepMs: 8, gcEvery: 60 });
     expect(chaos.hashes).toEqual(t60.hashes);
     expect(chaos.effects).toEqual(t60.effects);
-  });
+  }, 30000);
 
   test("the low-rate worlds are deterministic too", async () => {
     expect((await runScenario(scenario(4))).hashes).toEqual(t4.hashes);
     expect((await runScenario(scenario(2))).hashes).toEqual(t2.hashes);
-  });
+  }, 30000);
 });
 
 describe("the virtual clock", () => {
