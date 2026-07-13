@@ -1,9 +1,9 @@
 [package]
 name = "pocket3d-bsp"
 description = "GoldSrc BSP v30 + WAD3 loader: geometry, lightmaps, entities, hull collision, PVS, and the cooked .p3d map format"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
 
 [features]
 default = ["std"]
@@ -14,6 +14,6 @@ std = ["glam/std", "dep:anyhow", "dep:log"]
 libm = ["glam/libm"]
 
 [dependencies]
-glam = { workspace = true }
-anyhow = { workspace = true, optional = true }
-log = { workspace = true, optional = true }
+glam = { version = "0.33", default-features = false }
+anyhow = { version = "1", optional = true }
+log = { version = "0.4", optional = true }

@@ -346,6 +346,7 @@ export const ActionHandler = definePocketVaporComponent((_props: ActionHandlerPr
     {
       allowWhenBlocked: booleanOption(attrs.allowWhenBlocked),
       active: () => resolveActive(attrs.active),
+      latched: booleanOption(attrs.latched),
     },
   );
   return defaultBlock(slots) ?? createCommentNode("action");

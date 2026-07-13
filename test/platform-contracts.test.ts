@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   generatePocketManifestV2Schema,
+  POCKET_MANIFEST_SCHEMA_ID,
   type PocketManifestV2,
 } from "../spec/pocket-manifest.ts";
 import {
@@ -68,6 +69,10 @@ const SYNTHETIC_CONTRACTS = definePlatformContractRegistry(
 );
 
 describe("pocket.json v2 schema", () => {
+  test("uses the schema path deployed by pocketjs.dev", () => {
+    expect(POCKET_MANIFEST_SCHEMA_ID).toBe("https://pocketjs.dev/schema/pocket-2.json");
+  });
+
   test("committed JSON Schema is byte-exact with the TypeScript source", async () => {
     const committed = await Bun.file(new URL("../schema/pocket-2.json", import.meta.url)).text();
     expect(committed).toBe(generatePocketManifestV2Schema());

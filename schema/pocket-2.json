@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pocket-stack.dev/schema/pocket-2.json",
+  "$id": "https://pocketjs.dev/schema/pocket-2.json",
   "title": "Pocket application manifest, format 2",
   "type": "object",
   "additionalProperties": false,
@@ -16,7 +16,7 @@
   ],
   "properties": {
     "$schema": {
-      "const": "https://pocket-stack.dev/schema/pocket-2.json"
+      "const": "https://pocketjs.dev/schema/pocket-2.json"
     },
     "pocket": {
       "const": 2

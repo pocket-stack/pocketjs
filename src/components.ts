@@ -150,6 +150,7 @@ export function ActionHandler(props: ActionHandlerProps): SolidJSX.Element {
   onButtonPress(props.button, props.onPress, {
     allowWhenBlocked: props.allowWhenBlocked,
     active: props.active,
+    latched: props.latched,
   });
   return props.children ?? null;
 }

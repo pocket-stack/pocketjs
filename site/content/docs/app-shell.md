@@ -165,6 +165,7 @@ value on a shoulder button.
 | `onPress`          | `(pressed: number, buttons: number) => void`  | `pressed` = newly-pressed edge bits this frame.    |
 | `active`           | `boolean \| (() => boolean)`                  | Gate the handler on/off. Defaults to on.           |
 | `allowWhenBlocked` | `boolean`                                     | Keep firing even while a `Modal` blocks input.     |
+| `latched`          | `boolean`                                     | Wait for a release before the next edge can fire.  |
 
 It renders its `children` (or nothing), so drop it anywhere in the tree.
 

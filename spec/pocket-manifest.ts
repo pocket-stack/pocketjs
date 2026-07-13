@@ -1,7 +1,7 @@
 import { PRESENTATION_MODES, type PresentationMode, type Viewport } from "./platforms.ts";
 
 export const POCKET_MANIFEST_VERSION = 2 as const;
-export const POCKET_MANIFEST_SCHEMA_ID = "https://pocket-stack.dev/schema/pocket-2.json";
+export const POCKET_MANIFEST_SCHEMA_ID = "https://pocketjs.dev/schema/pocket-2.json";
 
 export type JsonPrimitive = boolean | number | string;
 export type JsonValue = JsonPrimitive | null | JsonValue[] | { [key: string]: JsonValue };

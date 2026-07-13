@@ -7,7 +7,7 @@
 // framebuffer at chosen frames and byte-compares the encoded PNG against the
 // committed test/goldens/<demo>.<frame>.png.
 //
-//   bun test/golden.ts            # compare (builds wasm/bundle if missing)
+//   bun test/golden.ts            # rebuild isolated bundles, then compare
 //   UPDATE=1 bun test/golden.ts   # (re)write goldens
 //
 // Determinism: core ticks exactly 1/60 s per frame (frame content is a pure
@@ -15,13 +15,17 @@
 // PNG encoder (Bun.deflateSync) is deterministic — so byte equality holds.
 // On mismatch a <demo>.<frame>.actual.png is written next to the golden.
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createWasmUi } from "../host-web/wasm-ops.js";
 import { SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 import { GOLDEN_SPECS, type GoldenSpec } from "./golden-specs.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // PocketJS/
-const DIST = ROOT + "dist/";
+// Goldens never consume the shared dist/ directory: it may contain ignored,
+// stale, or half-rebuilt artifacts from another host command. Rebuilding each
+// demo serially into this dedicated directory also keeps every .js/.pak pair
+// from the same compiler invocation.
+const DIST = ROOT + "dist/golden/";
 const GOLDEN_DIR = ROOT + "test/goldens/";
 const WASM_PATH = ROOT + "host-web/pocketjs.wasm";
 const UPDATE = !!process.env.UPDATE;
@@ -30,7 +34,7 @@ const W = SCREEN_W;
 const H = SCREEN_H;
 
 // ---------------------------------------------------------------------------
-// Ensure build artifacts exist (missing only — never silently rebuild stale)
+// Build artifacts
 // ---------------------------------------------------------------------------
 
 function ensureBuilt(path: string, cmd: string[]): void {
@@ -39,6 +43,17 @@ function ensureBuilt(path: string, cmd: string[]): void {
   const p = Bun.spawnSync(cmd, { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
   if (p.exitCode !== 0 || !existsSync(path)) {
     console.error(`golden: failed to produce ${path}`);
+    process.exit(1);
+  }
+}
+
+function buildDemo(name: string): void {
+  const output = DIST + name + ".js";
+  const cmd = ["bun", "scripts/build.ts", name, `--outdir=${DIST}`];
+  console.log(`golden: rebuilding ${name}`);
+  const p = Bun.spawnSync(cmd, { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
+  if (p.exitCode !== 0 || !existsSync(output)) {
+    console.error(`golden: failed to produce ${output}`);
     process.exit(1);
   }
 }
@@ -75,9 +90,9 @@ const SPECS = GOLDEN_SPECS;
 // ---------------------------------------------------------------------------
 
 ensureBuilt(WASM_PATH, ["bun", "scripts/wasm.ts"]);
-for (const spec of SPECS) {
-  ensureBuilt(DIST + spec.name + ".js", ["bun", "scripts/build.ts", spec.name]);
-}
+rmSync(DIST, { recursive: true, force: true });
+mkdirSync(DIST, { recursive: true });
+for (const spec of SPECS) buildDemo(spec.name);
 mkdirSync(GOLDEN_DIR, { recursive: true });
 
 const wasmBytes = await Bun.file(WASM_PATH).arrayBuffer();

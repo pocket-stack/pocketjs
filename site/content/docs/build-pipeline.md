@@ -6,16 +6,34 @@ should first resolve `pocket.json` through `bun pocket check`, `compile`, or
 checksummed target plan becomes the authoritative input to this pipeline and
 native packaging.
 
-One command turns a PocketJS app into two files:
+The manifest-first compiler resolves the target before producing its bundle:
+
+```sh
+bun pocket check --target psp
+bun pocket compile --target psp
+bun pocket build --target psp -- --release
+
+bun pocket check --target vita
+bun pocket build --target vita -- --release
+```
+
+`check` validates the schema, capabilities, viewport, and reachable TypeScript.
+`compile` also writes `.pocket/<target>/plan.json` plus the target-specific JS
+and pak. `build` dispatches that same plan to the registered PSP or Vita native
+backend.
+
+The lower-level compiler can still turn one entry into two files directly:
 
 ```sh
 bun scripts/build.ts hero
 ```
 
 produces `dist/hero.js` (the bundle) and `dist/hero.pak` (styles, font
-atlases, and images packed into a single binary container). Those two artifacts
-are everything a host needs — the same pair loads on real PSP hardware, in
-PPSSPP, in the browser dev host, and in headless Bun.
+atlases, and images packed into a single binary container). This direct command
+uses the default density-1 development contract. A manifest build is
+target-specific: PSP and Vita compile from the same source and logical layout,
+but Vita receives density-2 atlases/assets plus an embedded target/HostOps-ABI
+handshake. Do not copy one target's pair into another target's native package.
 
 Solid is the default framework. Vue Vapor builds beside the Solid artifacts by
 adding a suffix:
@@ -31,7 +49,7 @@ and text codepoints the app actually uses — so styles and fonts can be compile
 for exactly that set. Pass 2 bundles, reusing the cached pass‑1 output. This
 page walks through both.
 
-## Invoking the build
+## Invoking the low-level compiler
 
 The one required argument is the app to build. It can be a path or a bare name:
 
@@ -46,7 +64,7 @@ name ending in `-main` finds `demos/hero/main.tsx`.
 
 | Flag | Effect |
 |---|---|
-| `--framework=solid\|vue-vapor` | Select the framework for this build, overriding `pocket.config.ts`. |
+| `--framework=solid\|vue-vapor` | Select the framework for this low-level build, overriding `pocket.config.ts`. Manifest builds take it from `pocket.json`. |
 | `--config=<path>` | Load a different Pocket config file. |
 | `--no-config` | Ignore `pocket.config.ts`; defaults to Solid unless `--framework` is set. |
 | `--extra-chars=<string>` | Force these codepoints into **every** baked atlas, on top of the collected charset and ASCII. |
@@ -214,6 +232,10 @@ glyph 0 (a hollow "tofu" box) at runtime. Each atlas is horizontally
 supersampled 8‑bit coverage cells plus proportional advances and a cmap, and is
 packed into the pak as `ui:font.<slot>`.
 
+The resolved target owns raster density. PSP bakes one coverage sample per
+logical pixel; Vita bakes two while preserving the same logical font metrics,
+so layout remains 480×272 and glyph edges use the full 960×544 framebuffer.
+
 ```
   font: slot 2 (16px) 96 glyphs, cell 10x19, 18240 bytes
   font: slot 9 (16px bold) 96 glyphs, cell 11x19, 20064 bytes
@@ -233,8 +255,13 @@ in `assets/images/`, then in `assets/`:
   build still succeeds (with a warning).
 
 Each image is encoded as an `8888` (RGBA) texture entry and packed as
-`ui:img.<name>`. Texture dimensions must be power‑of‑two and within the hardware
+`ui:img.<name>`. Texture dimensions must be power-of-two and within the hardware
 limit.
+
+For density-2 targets the compiler prefers a sibling `@2x` PNG and otherwise
+falls back to the base bitmap. SVGs and rounded masks rasterize directly at the
+resolved density; their logical dimensions do not change. Runtime texture
+producers use `platform.pixelRatio` instead of branching on a target name.
 
 ```
   image: logo.png <- /…/demos/hero/logo.png (128x64)
@@ -242,15 +269,21 @@ limit.
 
 ## Pack the pak
 
-All the binary output is written to one container, `dist/<app>.pak`. It is
-byte‑for‑byte the dreamcart `.pak` format, so existing tooling can open it.
-PocketJS uses three families of entry keys:
+All the binary output is written to one container, `dist/<app>.pak`. It uses
+the stable PocketJS pak layout (compatible with earlier DreamCart-era tooling).
+PocketJS uses these entry families:
 
 | Key | Contents |
 |---|---|
 | `ui:styles` | `styles.bin` — the compiled style table |
 | `ui:font.<slot>` | one baked font atlas per used slot |
 | `ui:img.<name>` | one texture per referenced image |
+| `ui:sprite.<name>` | one native-ticked sprite atlas plus frame metadata |
+| `ui:tile.<name>` | a prebaked TILESET pyramid entry supplied through the app's `pak.json` |
+
+`pak.json` may append other explicitly named prebaked `u8` blobs as well; the
+compiler copies those entries verbatim and prefers an `@<density>x` sibling
+when the selected target provides one.
 
 Entries are sorted by key and 16‑byte aligned. How a host reads these blobs —
 and how the PSP feeds them straight into the Rust core from `include_bytes!`
@@ -284,6 +317,11 @@ Bun). The bundle is therefore built from *exactly* the code the class/charset
 scan saw — the two passes agree on the module graph by construction, so a style
 can never be shipped that the bundle doesn't use, or vice versa.
 
+With a resolved plan, pass 1 also replaces literal
+`hasFeature("capability.id")` calls with `true` or `false`; normal tree shaking
+can then remove an unavailable enhancement branch. Pass 2 defines the target,
+HostOps ABI, feature map, and pixel ratio consumed by the runtime contract.
+
 A few settings are deliberate:
 
 - **`format: "iife"`** — a single self‑contained script, the shape QuickJS
@@ -303,12 +341,13 @@ PocketJS build: done
 
 ## The same pipeline in the browser — the Playground
 
-The [Playground](/playground/) runs this exact pipeline **live in the browser**:
-it transforms and collects, compiles the Tailwind subset, bakes atlases, packs a
-pak, and bundles — then loads the result into the WebAssembly build of the
-core and renders to a canvas. There is no separate web toolchain; edit the code,
-rebuild, and the same `.js` + `.pak` a PSP would run is what draws in the
-preview.
+The [Playground](/playground/) runs the same compiler stages **live in the
+browser**: it transforms and collects, compiles the Tailwind subset, bakes
+atlases, packs a pak, and bundles — then loads the result into the WebAssembly
+core and renders to a canvas. It exercises the same logical UI and pak formats,
+but its density-1 browser development pair is not interchangeable with a
+manifest-built PSP or Vita artifact carrying target-specific density and ABI
+constants.
 
 ## Related
 

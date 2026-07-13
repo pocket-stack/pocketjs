@@ -7,6 +7,8 @@ import {
   transformFile,
   type PocketFramework,
 } from "../compiler/jsx-plugin.ts";
+import { POCKET_TARGETS } from "../spec/platforms.ts";
+import type { HostOps } from "../src/host.ts";
 
 async function bundlePlatform(defines: Record<string, string> = {}) {
   const result = await Bun.build({
@@ -126,3 +128,109 @@ async function bundleFeatureBranch(
     await rm(directory, { recursive: true, force: true });
   }
 }
+
+type AnalogSample = readonly [x: number, y: number, packed: number];
+
+interface AnalogProbeGlobals {
+  ui?: HostOps;
+  frame?: (buttons: number, analog?: number) => void;
+  __pocketAnalogSamples?: AnalogSample[];
+  __disposePocketAnalogProbe?: () => void;
+}
+
+function analogProbeHost(): HostOps {
+  let nextId = 2;
+  const noop = () => {};
+  return {
+    createNode: () => nextId++,
+    destroyNode: noop,
+    insertBefore: noop,
+    removeChild: noop,
+    setStyle: noop,
+    setProp: noop,
+    setText: noop,
+    replaceText: noop,
+    uploadTexture: () => 1,
+    setImage: noop,
+    setSprite: noop,
+    animate: () => 1,
+    cancelAnim: noop,
+    setFocus: noop,
+    measureText: () => 0,
+  };
+}
+
+async function bundleAnalogProbe(framework: PocketFramework): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), `pocketjs-${framework}-analog-`));
+  const entry = join(directory, "main.tsx");
+  const runtime = framework === "solid"
+    ? "@pocketjs/framework/solid"
+    : "@pocketjs/framework/vue-vapor";
+  try {
+    await Bun.write(entry, `
+      import { render } from "${runtime}";
+      import { View } from "${runtime}/components";
+      import { analogRaw, analogX, analogY, onFrame } from "${runtime}/lifecycle";
+
+      globalThis.__pocketAnalogSamples = [];
+      globalThis.__disposePocketAnalogProbe = render(() => {
+        onFrame(() => {
+          globalThis.__pocketAnalogSamples.push([analogX(), analogY(), analogRaw()]);
+        });
+        return <View />;
+      }, { ops: globalThis.ui, styles: {} });
+    `);
+    const result = await Bun.build({
+      entrypoints: [entry],
+      format: "iife",
+      target: "browser",
+      conditions: ["browser"],
+      define: {
+        "process.env.NODE_ENV": '"production"',
+        __POCKET_TARGET__: '"vita"',
+        __POCKET_HOST_ABI__: "2",
+        __POCKET_FEATURES__: JSON.stringify({ "input.analog.left": true }),
+        __POCKET_PIXEL_RATIO__: "2",
+      },
+      plugins: [jsxPlugin(framework, { entry })],
+    });
+    expect(result.success).toBe(true);
+    return result.outputs[0]!.text();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+describe.each(["solid", "vue-vapor"] as const)("%s input capability contract", (framework) => {
+  test("delivers the advertised Vita left analog sample and centers legacy frames", async () => {
+    expect(POCKET_TARGETS.vita.capabilities).toContain("input.analog.left");
+
+    const globals = globalThis as typeof globalThis & AnalogProbeGlobals;
+    globals.ui = analogProbeHost();
+    try {
+      const bundle = await bundleAnalogProbe(framework);
+      (0, eval)(bundle);
+      expect(typeof globals.frame).toBe("function");
+
+      globals.frame!(0, 0xff80);
+      globals.frame!(0, 0x80ff);
+      globals.frame!(0, 0x0080);
+      globals.frame!(0, 0x8000);
+      globals.frame!(0); // PSP and pre-analog hosts still call frame(buttons).
+
+      expect(globals.__pocketAnalogSamples).toEqual([
+        [1, 0, 0xff80],
+        [0, 1, 0x80ff],
+        [-1, 0, 0x0080],
+        [0, -1, 0x8000],
+        [0, 0, 0x8080],
+      ]);
+    } finally {
+      globals.__disposePocketAnalogProbe?.();
+      delete globals.__disposePocketAnalogProbe;
+      delete globals.__pocketAnalogSamples;
+      delete globals.frame;
+      delete globals.ui;
+    }
+  });
+});

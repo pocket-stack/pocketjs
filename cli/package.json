@@ -1,7 +1,7 @@
 {
   "name": "@pocketjs/cli",
   "version": "0.4.0",
-  "description": "The PocketJS toolchain CLI — doctor/setup for the bun + Rust + PSP toolchain, app scaffolding, and build/run passthrough.",
+  "description": "The PocketJS CLI — manifest-first PSP and PS Vita builds, app scaffolding, and pinned PSP toolchain setup.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -24,6 +24,7 @@
   "keywords": [
     "pocketjs",
     "psp",
+    "vita",
     "cli",
     "toolchain",
     "doctor"

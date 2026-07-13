@@ -17,12 +17,27 @@ bun scripts/build.ts hero-vue-vapor-main --framework=vue-vapor
 # dist/hero-vue-vapor-main.vue-vapor.js
 ```
 
-There is no environment-variable switch for framework selection. Pick it in a
-project config file, or override it for one command.
+There is no environment-variable switch for framework selection. Product
+builds declare it in `pocket.json`; low-level compiler work can still use a
+project config or one-command override.
 
-## Project config
+## Manifest selection
 
-`pocket.config.ts` is the project-level default:
+```json
+{
+  "app": {
+    "framework": "solid"
+  }
+}
+```
+
+Use `"vue-vapor"` for the Vue adapter. `pocket check|compile|build --target …`
+resolves this value once and all compiler/native stages consume the same plan.
+Do not also put `framework` in `pocket.config.ts` for a manifest build.
+
+## Low-level project config
+
+`pocket.config.ts` is the low-level script default:
 
 ```ts
 import { definePocketConfig } from "@pocketjs/framework/config";
@@ -40,9 +55,10 @@ export default definePocketConfig({
 });
 ```
 
-Every build command reads the config by default. Use `--framework=solid` or
-`--framework=vue-vapor` to override it for one invocation. `--config=<path>`
-selects a different config file, and `--no-config` ignores config entirely.
+The direct compiler/dev scripts read the config by default. Use
+`--framework=solid` or `--framework=vue-vapor` to override it for one
+invocation. `--config=<path>` selects a different config file, and
+`--no-config` ignores config entirely.
 
 The same flag works through the dev and PSP entry points:
 
@@ -59,8 +75,8 @@ PocketJS does not wrap `createSignal`, `ref`, `onMount`, or `onMounted`.
 Solid app:
 
 ```tsx
-import { mount, frameworkName } from "@pocketjs/framework";
-import { View, Text, type NodeMirror } from "@pocketjs/framework/components";
+import { mount, frameworkName } from "@pocketjs/framework/solid";
+import { View, Text, type NodeMirror } from "@pocketjs/framework/solid/components";
 import { createSignal, onMount, Show } from "solid-js";
 
 export default function App() {
@@ -152,6 +168,6 @@ framework state imports native.
 
 Both frameworks use the same Tailwind-subset compiler, generated style table,
 font atlas baker, `.pak` asset container, host detection, input/focus system,
-overlay layer, animation API, PSP native build, browser dev host, and PPSSPP
-capture path. Switching frameworks changes only the JS component/reactivity
-layer and renderer adapter.
+overlay layer, animation API, PSP/Vita native build paths, browser dev host, and
+PPSSPP/Vita3K capture paths. Switching frameworks changes only the JS
+component/reactivity layer and renderer adapter.

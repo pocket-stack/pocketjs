@@ -326,6 +326,9 @@ async function main() {
   await bundle("playground/playground.js", "pg/playground.bundle.js");
 
   // 2. runtime assets
+  // Keep the editor-facing URL byte-identical to the schema used by the
+  // validator. The deployed path is POCKET_MANIFEST_SCHEMA_ID.
+  copy(ROOT + "schema/pocket-2.json", "schema/pocket-2.json");
   copy(ROOT + "host-web/pocketjs.wasm", "pg/pocketjs.wasm");
   copy(ROOT + "assets/fonts/Inter-Regular.ttf", "pg/fonts/Inter-Regular.ttf");
   copy(ROOT + "assets/fonts/Inter-Bold.ttf", "pg/fonts/Inter-Bold.ttf");
@@ -425,7 +428,7 @@ function renderHome(): string {
     url: SITE_URL,
     codeRepository: "https://github.com/pocket-stack/pocketjs",
     programmingLanguage: ["TypeScript", "JavaScript", "Rust"],
-    runtimePlatform: ["Sony PSP", "PPSSPP", "WebAssembly", "Bun"],
+    runtimePlatform: ["Sony PSP", "Sony PS Vita", "PPSSPP", "Vita3K", "WebAssembly", "Bun"],
   });
   return `<!doctype html>
 <html lang="en">

@@ -7,7 +7,7 @@ Engine and site milestones, newest first. Versions track the
 
 **One app, two PlayStations.** PocketJS now treats PSP and PS Vita as two
 profiles of one [portable application contract](/docs/platform-contracts/),
-with native-density rendering, touch, reproducible toolchains, and
+with native-density rendering, touch, a reproducible PSP toolchain, and
 target-specific golden tests.
 
 - **PS Vita is a first-class target** — the QuickJS + vita2d host renders a
