@@ -9,6 +9,7 @@
   },
   "files": [
     "bin.mjs",
+    "psp-toolchain.json",
     "README.md"
   ],
   "engines": {

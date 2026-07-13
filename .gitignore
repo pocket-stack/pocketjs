@@ -15,6 +15,8 @@ src/styles.generated.ts
 host-web/pocketjs.wasm
 # generated per-demo XMB metadata (scripts/psp.ts, from demos/<app>/psp/Psp.toml)
 native/Psp.toml
+# Obsolete checkout-local SDK location; bootstrap uses the shared cache.
+mipsel-sony-psp/
 # golden-mismatch dumps written by test/golden.ts
 test/goldens/*.actual.png
 # golden-mismatch dumps written by test/e2e-ppsspp.ts

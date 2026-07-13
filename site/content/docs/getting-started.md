@@ -18,7 +18,8 @@ the targets that compile the core natively — you don't need them to write UI.
 | ------------------------------------- | --------------------------------------------------------------- |
 | Write components, build bundles       | [Bun](https://bun.sh) (drives the build, tests, and dev host)   |
 | Run the local **browser** dev host    | Bun + Rust with the wasm target (`rustup target add wasm32-unknown-unknown`) |
-| Ship a **PSP EBOOT** / run on hardware | Rust **nightly** + [`cargo-psp`](https://github.com/overdrivenpotato/rust-psp) |
+| Ship a **PSP EBOOT** | `bun run bootstrap` (pinned Rust, [`cargo-psp`](https://github.com/pocket-stack/rust-psp), LLVM, and verified SDK) |
+| Hot-reload on **real PSP hardware** | The build toolchain above + optional [PSPLINK](https://github.com/pspdev/psplinkusb) host tools |
 
 The Rust core is `no_std` and gets built once per platform. For this guide we
 stay on the JS side and let the dev host compile the wasm core for us.
@@ -29,6 +30,7 @@ stay on the JS side and let the dev host compile the wasm core for us.
 git clone https://github.com/pocket-stack/pocketjs
 cd pocketjs
 bun install
+bun run bootstrap   # one-time PSP setup; omit for browser-only development
 ```
 
 The [`@pocketjs/cli`](https://www.npmjs.com/package/@pocketjs/cli) package can
@@ -37,8 +39,17 @@ check (and mostly install) the toolchain for you, flutter-doctor style:
 ```sh
 npm install -g @pocketjs/cli
 pocket doctor   # diagnoses bun, the Rust targets, and the PSP toolchain
-pocket setup    # installs whatever doctor flagged as missing
+pocket setup    # runs the checkout's pinned, idempotent bootstrap
 ```
+
+The PSP setup is self-contained in PocketJS; it does not inspect DreamCart or
+any sibling source checkout. Its exact revisions and SDK checksum live in
+`cli/psp-toolchain.json`. By default artifacts are shared through
+`${XDG_CACHE_HOME:-~/.cache}/pocket-stack`; `POCKET_STACK_CACHE_DIR` overrides
+that root. For a custom SDK, set `PSP_SDK` or `PSPDEV` (in that precedence
+order). The build validates an explicit path and then exports both names to the
+selected SDK, so a typo cannot silently fall through to a different cached
+toolchain.
 
 It also wraps the day-to-day commands — `pocket create <name>` scaffolds a
 demo app, `pocket dev|build|psp|hw|psplink` run the build scripts from

@@ -12,6 +12,7 @@
 
 import { $ } from "bun";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { resolvePspBuildToolchain } from "./psp-toolchain.ts";
 
 const repo = new URL("..", import.meta.url).pathname;
 const home = process.env.HOME ?? "";
@@ -45,33 +46,27 @@ await $`cargo run --release -q -p pocket3d-cook -- ${bsp} --wads ${mapsRoot}/sup
   pocket3d,
 );
 
-// ---- 2. cargo psp (env block mirrors scripts/psp.ts) -------------------
-const root = `${repo}../`; // parent of the repo checkout
-const sdkCandidates = [
-  process.env.PSP_SDK,
-  `${root}mipsel-sony-psp`,
-  `${home}/code/dreamcart/mipsel-sony-psp`,
-].filter((p): p is string => !!p);
-const sdk =
-  sdkCandidates.find((p) => existsSync(`${p}/psp/lib/libc.a`)) ?? sdkCandidates[0];
-const llvm = existsSync("/opt/homebrew/opt/llvm/bin")
-  ? "/opt/homebrew/opt/llvm/bin"
-  : "/usr/local/opt/llvm/bin";
-const TOOLCHAIN = "nightly-2026-05-28";
-const rustup = Bun.which("rustup") ?? `${home}/.cargo/bin/rustup`;
+// ---- 2. cargo psp (same canonical contract as scripts/psp.ts) ----------
+let toolchain: ReturnType<typeof resolvePspBuildToolchain>;
+try {
+  toolchain = resolvePspBuildToolchain();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
+const sdk = toolchain.sdk.path;
 
 const env = {
-  ...process.env,
-  PATH: `${llvm}:${home}/.cargo/bin:${process.env.PATH}`,
+  ...toolchain.environment,
   RUSTFLAGS: "-A linker-messages -A unexpected-cfgs -A unstable-name-collisions",
   CRATE_CC_NO_DEFAULTS: "1",
   TARGET_CC: "clang",
-  TARGET_AR: `${llvm}/llvm-ar`,
+  TARGET_AR: `${toolchain.llvmBin}/llvm-ar`,
   TARGET_CFLAGS:
     `-target mipsel-sony-psp -mcpu=mips2 -msingle-float -mlittle-endian -mno-abicalls -fno-pic -G0 -mno-check-zero-division ` +
     `-fno-stack-protector -I${sdk}/psp/include -I${sdk}/psp/sdk/include`,
-  AR_mipsel_sony_psp: `${llvm}/llvm-ar`,
-  RANLIB_mipsel_sony_psp: `${llvm}/llvm-ranlib`,
+  AR_mipsel_sony_psp: `${toolchain.llvmBin}/llvm-ar`,
+  RANLIB_mipsel_sony_psp: `${toolchain.llvmBin}/llvm-ranlib`,
   RUST_PSP_TARGET: `${repo}native/targets/mipsel-sony-psp.json`,
   RUST_PSP_ABORT_ONLY: "1",
   CARGO_PROFILE_DEV_OPT_LEVEL: process.env.CARGO_PROFILE_DEV_OPT_LEVEL ?? "3",
@@ -82,7 +77,7 @@ const env = {
 
 console.log(`gu-demo: cargo psp (map=${mapName}, cap=${capStart}+${capN})`);
 const cargoArgs = release ? ["--release"] : [];
-await $`${rustup} run ${TOOLCHAIN} cargo psp ${cargoArgs}`.cwd(demoDir).env(env);
+await $`${toolchain.rustup} run ${toolchain.manifest.rust.toolchain} cargo psp ${cargoArgs}`.cwd(demoDir).env(env);
 
 const profile = release ? "release" : "debug";
 const ebootDir = `${demoDir}target/mipsel-sony-psp/${profile}`;

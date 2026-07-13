@@ -1,11 +1,11 @@
 // scripts/psp.ts <app> [cargo args…] — build the app JS+pak (scripts/
 // build.ts), then the EBOOT:
 //   POCKETJS_APP_OUTPUT=<app> POCKETJS_EMBED_APP=1 cargo psp
-// inside native/, with the exact env block from dreamcart runtime/build.ts
+// inside native/, with the canonical env from scripts/psp-toolchain.ts
 // (LLVM PATH, TARGET_CFLAGS, AR_mipsel_sony_psp=llvm-ar,
 //  RUST_PSP_TARGET=native/targets/mipsel-sony-psp.json, RUST_PSP_ABORT_ONLY=1,
-//  RUSTFLAGS "-A linker-messages …"). Needs a rust-psp SDK: set PSP_SDK or
-// keep mipsel-sony-psp next to this checkout / in a sibling dreamcart checkout.
+//  RUSTFLAGS "-A linker-messages …"). `bun run bootstrap` installs the exact
+//  Rust, cargo-psp and SDK revisions into the shared pocket-stack cache.
 //
 // Demo entries: `bun scripts/psp.ts hero` prefers demos/hero/main.tsx (the
 // mounting entry — demos/hero/app.tsx only exports the component) when it exists.
@@ -17,7 +17,7 @@
 // ms0:/PocketJS-bench.jsonl and implies --capture.
 
 import { $ } from "bun";
-import { existsSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, statSync, unlinkSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -31,42 +31,11 @@ import {
   hostBuildEnvironment,
 } from "../src/manifest/host-build-inputs.ts";
 import { verifyPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
+import { resolvePspBuildToolchain } from "./psp-toolchain.ts";
 
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
 const nativeDir = pspUiDir + "native/";
-const root = new URL("../..", import.meta.url).pathname; // parent of PocketJS checkout
-const home = process.env.HOME ?? "";
-
-function dreamcartWorktreeSdkCandidates(): string[] {
-  const base = root + "../dreamcart/";
-  try {
-    return readdirSync(base, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => `${base}${entry.name}/mipsel-sony-psp`);
-  } catch {
-    return [];
-  }
-}
-
-const sdkCandidates = [
-  process.env.PSP_SDK,
-  root + "mipsel-sony-psp",
-  root + "dreamcart/mipsel-sony-psp",
-  home ? `${home}/code/dreamcart/mipsel-sony-psp` : "",
-  ...dreamcartWorktreeSdkCandidates(),
-].filter((p): p is string => !!p);
-const sdk =
-  sdkCandidates.find((p) => existsSync(`${p}/psp/lib/libc.a`)) ??
-  sdkCandidates[0] ??
-  root + "mipsel-sony-psp";
-const llvm = existsSync("/opt/homebrew/opt/llvm/bin")
-  ? "/opt/homebrew/opt/llvm/bin"
-  : "/usr/local/opt/llvm/bin";
 const pspTarget = nativeDir + "targets/mipsel-sony-psp.json";
-
-const TOOLCHAIN = "nightly-2026-05-28";
-const rustup =
-  Bun.which("rustup") ?? (existsSync(`${home}/.cargo/bin/rustup`) ? `${home}/.cargo/bin/rustup` : null);
 
 // ---------------------------------------------------------------------------
 // CLI: first bare arg = app name; everything else is passed to cargo psp.
@@ -119,21 +88,15 @@ if (!appArg && !planPath) {
   process.exit(1);
 }
 
-// Prereqs (fail fast with actionable messages).
-if (!rustup) {
-  console.error("PocketJS psp: rustup not found — run `bun run bootstrap` in the dreamcart repo");
+// Prereqs (fail fast with one PocketJS-owned setup path).
+let toolchain: ReturnType<typeof resolvePspBuildToolchain>;
+try {
+  toolchain = resolvePspBuildToolchain();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
-if (!existsSync(`${sdk}/psp/lib/libc.a`)) {
-  console.error(
-    `PocketJS psp: PSP SDK missing (looked in ${sdkCandidates.join(", ")}) — set PSP_SDK or run \`bun run bootstrap\` in the dreamcart repo`,
-  );
-  process.exit(1);
-}
-if (!existsSync(`${llvm}/clang`)) {
-  console.error(`PocketJS psp: Homebrew LLVM missing at ${llvm} (brew install llvm)`);
-  process.exit(1);
-}
+const sdk = toolchain.sdk.path;
 
 // A bare component demo (demos/<app>/app.tsx exporting the component) needs
 // the mounting entry demos/<app>/main.tsx (imports mount() + STYLE_IDS).
@@ -256,7 +219,7 @@ if (existsSync(xmbFragment)) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. cargo psp with the dreamcart cross env (copied from runtime/build.ts)
+// 2. cargo psp with the canonical PocketJS cross environment.
 // ---------------------------------------------------------------------------
 
 const rustflags = [
@@ -290,20 +253,19 @@ const hostEnvironment = buildPlan
     };
 
 const env = {
-  ...process.env,
-  PATH: `${llvm}:${home}/.cargo/bin:${process.env.PATH}`,
+  ...toolchain.environment,
   RUSTFLAGS: rustflags,
   CRATE_CC_NO_DEFAULTS: "1",
   TARGET_CC: "clang",
-  TARGET_AR: `${llvm}/llvm-ar`,
+  TARGET_AR: `${toolchain.llvmBin}/llvm-ar`,
   // Match the Rust PSP target's +noabicalls mode. -G0 avoids clang's MIPS
   // backend selecting unsupported GP-relative accesses for large C sources.
   TARGET_CFLAGS:
     `-target mipsel-sony-psp -mcpu=mips2 -msingle-float -mlittle-endian -mno-abicalls -fno-pic -G0 -mno-check-zero-division ` +
     `-fno-stack-protector -I${sdk}/psp/include -I${sdk}/psp/sdk/include`,
   // CRITICAL: archive MIPS objects with llvm-ar (Apple ar drops them -> undefined JS_*).
-  AR_mipsel_sony_psp: `${llvm}/llvm-ar`,
-  RANLIB_mipsel_sony_psp: `${llvm}/llvm-ranlib`,
+  AR_mipsel_sony_psp: `${toolchain.llvmBin}/llvm-ar`,
+  RANLIB_mipsel_sony_psp: `${toolchain.llvmBin}/llvm-ranlib`,
   RUST_PSP_TARGET: pspTarget,
   // panic-abort EBOOTs: no panic_unwind/libunwind in build-std.
   RUST_PSP_ABORT_ONLY: "1",
@@ -330,7 +292,7 @@ function outputProfile(args: string[]): string {
 }
 
 console.log(`PocketJS psp: cargo psp (app=${outputApp})`);
-await $`${rustup} run ${TOOLCHAIN} cargo psp ${cargoArgs}`.cwd(nativeDir).env(env);
+await $`${toolchain.rustup} run ${toolchain.manifest.rust.toolchain} cargo psp ${cargoArgs}`.cwd(nativeDir).env(env);
 
 const profile = outputProfile(cargoArgs);
 const binEboot = `${nativeDir}target/mipsel-sony-psp/${profile}/pocketjs-psp.EBOOT.PBP`;

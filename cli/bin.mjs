@@ -3,21 +3,21 @@
 // style). Zero dependencies; plain Node >= 18.
 //
 //   pocket doctor          diagnose the local toolchain
-//   pocket setup [--yes]   install what doctor found missing (best effort)
+//   pocket setup [--yes]   run the checkout's pinned, idempotent bootstrap
 //   pocket create <name>   scaffold a demo app inside a PocketJS checkout
 //   pocket dev|build|psp|hw|psplink|devtools|tape [...args]
 //                            passthrough to the checkout's bun scripts
 //
-// The PSP toolchain pin below MUST match scripts/psp.ts in the framework
-// checkout — the CLI only diagnoses/installs, the build scripts consume.
+// The published CLI ships the same manifest consumed by PocketJS build scripts.
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
-const NIGHTLY = "nightly-2026-05-28";
+const TOOLCHAIN = JSON.parse(readFileSync(new URL("./psp-toolchain.json", import.meta.url), "utf8"));
+const NIGHTLY = TOOLCHAIN.rust.toolchain;
 const C = {
   ok: (s) => `\x1b[32m✓\x1b[0m ${s}`,
   bad: (s) => `\x1b[31m✗\x1b[0m ${s}`,
@@ -55,30 +55,98 @@ function findCheckout(from = process.cwd()) {
 }
 
 // ---------------------------------------------------------------------------
-// doctor
+// Canonical cache + doctor
 // ---------------------------------------------------------------------------
 
-function sdkCandidates(root) {
-  const home = homedir();
-  const out = [process.env.PSP_SDK].filter(Boolean);
-  if (root) {
-    // Mirrors the candidate order in scripts/psp.ts.
-    out.push(join(root, "mipsel-sony-psp"));
-    out.push(join(root, "dreamcart", "mipsel-sony-psp"));
+function cacheRoot() {
+  if (process.env.POCKET_STACK_CACHE_DIR?.trim()) {
+    return resolve(process.env.POCKET_STACK_CACHE_DIR.trim());
   }
-  out.push(join(home, "code", "dreamcart", "mipsel-sony-psp"));
-  return out;
+  return join(resolve(process.env.XDG_CACHE_HOME?.trim() || join(homedir(), ".cache")), "pocket-stack");
+}
+
+function sdkResolution() {
+  if (process.env.PSP_SDK?.trim()) {
+    return { path: resolve(process.env.PSP_SDK.trim()), source: "PSP_SDK" };
+  }
+  if (process.env.PSPDEV?.trim()) {
+    return { path: resolve(process.env.PSPDEV.trim()), source: "PSPDEV" };
+  }
+  return { path: join(cacheRoot(), TOOLCHAIN.sdk.cachePath), source: "cache" };
+}
+
+function hasVerifiedSdkReceipt(sdk) {
+  try {
+    const receipt = JSON.parse(readFileSync(join(sdk, TOOLCHAIN.sdk.receipt), "utf8"));
+    return receipt.tag === TOOLCHAIN.sdk.tag && receipt.asset === TOOLCHAIN.sdk.asset &&
+      receipt.url === TOOLCHAIN.sdk.url && receipt.sha256 === TOOLCHAIN.sdk.sha256;
+  } catch {
+    return false;
+  }
+}
+
+function hasPinnedCargoPspTools(root) {
+  if (!TOOLCHAIN.cargoPsp.tools.every((tool) => existsSync(join(root, "bin", tool)))) return false;
+  const host = hostTriple();
+  try {
+    const metadata = JSON.parse(readFileSync(join(root, ".crates2.json"), "utf8"));
+    const source = `git+${TOOLCHAIN.rustPsp.repository}?rev=${TOOLCHAIN.rustPsp.rev}#${TOOLCHAIN.rustPsp.rev}`;
+    if (Object.entries(metadata.installs || {}).some(([id, install]) =>
+      id.startsWith(`${TOOLCHAIN.cargoPsp.package} `) && id.includes(source) &&
+      install.target === host &&
+      Array.isArray(install.bins) && TOOLCHAIN.cargoPsp.tools.every((tool) => install.bins.includes(tool))
+    )) return true;
+  } catch {}
+  try {
+    const receipt = JSON.parse(readFileSync(join(root, ".pocket-stack-cargo-psp.json"), "utf8"));
+    return receipt.schemaVersion === 1 && receipt.repository === TOOLCHAIN.rustPsp.repository &&
+      receipt.rev === TOOLCHAIN.rustPsp.rev && receipt.package === TOOLCHAIN.cargoPsp.package &&
+      receipt.host === host && Array.isArray(receipt.tools) &&
+      receipt.tools.length === TOOLCHAIN.cargoPsp.tools.length &&
+      TOOLCHAIN.cargoPsp.tools.every((tool) => receipt.tools.includes(tool));
+  } catch {}
+  return false;
+}
+
+function hostTriple() {
+  const cpu = process.arch === "arm64" ? "aarch64" : process.arch === "x64" ? "x86_64" : process.arch;
+  if (platform() === "darwin") return `${cpu}-apple-darwin`;
+  if (platform() === "linux") return `${cpu}-unknown-linux-gnu`;
+  if (platform() === "win32") return `${cpu}-pc-windows-msvc`;
+  return `${cpu}-unknown-${platform()}`;
+}
+
+function llvmResolution() {
+  if (process.env.POCKETJS_LLVM_BIN?.trim()) {
+    const bin = resolve(process.env.POCKETJS_LLVM_BIN.trim());
+    const ok = existsSync(join(bin, "clang")) && existsSync(join(bin, "llvm-ar"));
+    return { bin, ok, source: "POCKETJS_LLVM_BIN" };
+  }
+  const candidates = ["/opt/homebrew/opt/llvm/bin", "/usr/local/opt/llvm/bin"];
+  for (const bin of candidates) {
+    if (existsSync(join(bin, "clang")) && existsSync(join(bin, "llvm-ar"))) {
+      return { bin, ok: true, source: "auto" };
+    }
+  }
+  const clang = which("clang");
+  const llvmAr = which("llvm-ar");
+  const bin = clang && llvmAr && dirname(clang) === dirname(llvmAr) ? dirname(clang) : null;
+  return { bin, ok: !!bin, source: "auto" };
 }
 
 function checks() {
   const root = findCheckout();
   const isMac = platform() === "darwin";
-  const llvm = isMac
-    ? ["/opt/homebrew/opt/llvm/bin/clang", "/usr/local/opt/llvm/bin/clang"].find(existsSync) ?? null
-    : which("clang");
+  const llvm = llvmResolution();
   const toolchains = run("rustup", ["toolchain", "list"]) ?? "";
-  const targets = run("rustup", ["target", "list", "--installed"]) ?? "";
-  const sdk = sdkCandidates(root).find((p) => existsSync(join(p, "psp", "lib", "libc.a"))) ?? null;
+  const targets = run("rustup", ["target", "list", "--installed", "--toolchain", "stable"]) ?? "";
+  const components = run("rustup", ["component", "list", "--toolchain", NIGHTLY]) ?? "";
+  const sdk = sdkResolution();
+  const sdkMarkerOk = existsSync(join(sdk.path, TOOLCHAIN.sdk.marker));
+  const sdkOk = sdkMarkerOk && (sdk.source !== "cache" || hasVerifiedSdkReceipt(sdk.path));
+  const cargoPspRoot = join(cacheRoot(), TOOLCHAIN.cargoPsp.cachePath);
+  const cargoPspBin = join(cargoPspRoot, "bin");
+  const cargoToolsOk = hasPinnedCargoPspTools(cargoPspRoot);
   return {
     root,
     isMac,
@@ -99,31 +167,44 @@ function checks() {
     ],
     psp: [
       {
-        name: `Rust ${NIGHTLY} (PSP builds)`,
-        ok: toolchains.includes(NIGHTLY),
-        fix: ["rustup", ["toolchain", "install", NIGHTLY, "--component", "rust-src"]],
-      },
-      { name: "cargo-psp", ok: !!which("cargo-psp"), fix: ["cargo", ["install", "cargo-psp"]] },
-      {
-        name: "Homebrew LLVM (TARGET_CFLAGS clang)",
-        ok: !!llvm,
-        fix: isMac ? ["brew", ["install", "llvm"]] : null,
-        hint: isMac ? undefined : "install clang/llvm via your distro's package manager",
-        detail: llvm ?? undefined,
+        name: `Rust ${NIGHTLY} + rust-src`,
+        ok: toolchains.includes(NIGHTLY) && /rust-src.*\(installed\)/.test(components),
+        hint: "run `pocket setup` (or `bun run bootstrap` in the checkout)",
       },
       {
-        name: "rust-psp SDK (mipsel-sony-psp)",
-        ok: !!sdk,
-        hint: "set PSP_SDK=/path/to/mipsel-sony-psp (contains psp/lib/libc.a)",
-        detail: sdk ?? undefined,
+        name: `cargo-psp tools (${TOOLCHAIN.rustPsp.rev.slice(0, 12)})`,
+        ok: cargoToolsOk,
+        hint: "run `pocket setup` (unversioned cargo installs are not used)",
+        detail: cargoPspBin,
       },
       {
-        name: "PSPLINK host tools (usbhostfs_pc + pspsh)",
-        ok: !!which("usbhostfs_pc") && !!which("pspsh"),
-        hint: "build from https://github.com/pspdev/psplinkusb (or the pspdev toolchain)",
+        name: llvm.source === "POCKETJS_LLVM_BIN"
+          ? "LLVM override (POCKETJS_LLVM_BIN)"
+          : "LLVM (TARGET_CFLAGS clang)",
+        ok: llvm.ok,
+        fix: llvm.source === "auto" && isMac ? ["brew", ["install", "llvm"]] : null,
+        hint: llvm.source === "POCKETJS_LLVM_BIN"
+          ? "explicit override must contain both clang and llvm-ar; fix or unset POCKETJS_LLVM_BIN"
+          : isMac ? undefined : "install clang/llvm via your distro's package manager",
+        detail: llvm.bin ? (llvm.ok ? join(llvm.bin, "clang") : llvm.bin) : undefined,
+      },
+      {
+        name: sdk.source === "cache"
+          ? `verified PSP SDK (${TOOLCHAIN.sdk.tag})`
+          : `PSP SDK override (${sdk.source})`,
+        ok: sdkOk,
+        hint: sdk.source === "cache"
+          ? "run `pocket setup` to download and verify the pinned SDK"
+          : `${sdk.source} is explicit but ${TOOLCHAIN.sdk.marker} is missing`,
+        detail: `${sdk.path} via ${sdk.source}`,
       },
     ],
     optional: [
+      {
+        name: "PSPLINK host tools (real-hardware hot reload only)",
+        ok: !!which("usbhostfs_pc") && !!which("pspsh"),
+        hint: "needed by pocket hw/psplink, not by PSP builds; see pspdev/psplinkusb",
+      },
       {
         name: "PPSSPPHeadless (emulator E2E)",
         ok: existsSync(join(homedir(), "ppsspp-src", "build", "PPSSPPHeadless")) || !!process.env.PPSSPP_HEADLESS,
@@ -148,7 +229,7 @@ function doctor() {
   };
   console.log(C.bold("PocketJS doctor"));
   section("Core (web/desktop development)", c.core);
-  section("PSP hardware builds", c.psp);
+  section("PSP builds", c.psp);
   section("Optional", c.optional);
   const missing = [...c.core, ...c.psp].filter((i) => !i.ok).length;
   console.log(
@@ -157,11 +238,11 @@ function doctor() {
         ? C.ok("Everything looks good.")
         : C.warn(`${missing} issue(s) found — run ${C.bold("pocket setup")} to fix the installable ones.`)),
   );
-  process.exitCode = 0;
+  process.exitCode = missing === 0 ? 0 : 1;
 }
 
 // ---------------------------------------------------------------------------
-// setup
+// setup — one implementation lives in the PocketJS checkout
 // ---------------------------------------------------------------------------
 
 async function confirm(question) {
@@ -173,25 +254,26 @@ async function confirm(question) {
 }
 
 async function setup() {
-  const c = checks();
-  const fixable = [...c.core, ...c.psp, ...c.optional].filter((i) => !i.ok && i.fix);
-  const manual = [...c.core, ...c.psp].filter((i) => !i.ok && !i.fix);
-  if (fixable.length === 0 && manual.length === 0) {
-    console.log(C.ok("Nothing to do — the toolchain is complete."));
+  const root = findCheckout();
+  if (!root) {
+    console.error(C.bad("`pocket setup` must run inside a PocketJS checkout"));
+    console.error(C.dim("git clone https://github.com/pocket-stack/pocketjs && cd pocketjs"));
+    process.exitCode = 1;
     return;
   }
-  for (const it of fixable) {
-    const [cmd, args] = it.fix;
-    if (!(await confirm(`Install ${C.bold(it.name)} via \`${cmd} ${args.join(" ")}\`?`))) continue;
-    console.log(C.dim(`$ ${cmd} ${args.join(" ")}`));
-    const r = spawnSync(cmd, args, { stdio: "inherit" });
-    console.log(r.status === 0 ? C.ok(it.name) : C.bad(`${it.name} (exit ${r.status})`));
+  if (!which("bun")) {
+    console.error(C.bad("bun not found — install from https://bun.sh, then retry"));
+    process.exitCode = 1;
+    return;
   }
-  if (manual.length > 0) {
-    console.log("\n" + C.bold("Manual steps remaining:"));
-    for (const it of manual) console.log("  " + C.warn(it.name) + "\n      " + C.dim(it.hint ?? ""));
+  if (!(await confirm(`Install the pinned PocketJS toolchain into ${C.bold(cacheRoot())}?`))) return;
+  const result = spawnSync("bun", [join(root, "scripts/bootstrap.ts")], { cwd: root, stdio: "inherit" });
+  if (result.status !== 0) {
+    console.error(C.bad(`PocketJS bootstrap failed (exit ${result.status})`));
+    process.exitCode = result.status ?? 1;
+    return;
   }
-  console.log("\nRe-run " + C.bold("pocket doctor") + " to verify.");
+  doctor();
 }
 
 // ---------------------------------------------------------------------------

@@ -11,8 +11,8 @@ under an 8 MB memory budget. Write Solid or Vue Vapor components, run them on
 QuickJS, and let PocketJS move layout, styling, text and animation into a tiny
 `no_std` Rust core.
 
-It runs on real PSP hardware, PPSSPP, PS Vita via Vita3K (real-hardware run
-pending), the browser (WASM), native macOS windows (wgpu) and headless Bun. Full design + contracts:
+It runs on real PSP and PS Vita hardware, PPSSPP, Vita3K, the browser (WASM),
+native macOS windows (wgpu) and headless Bun. Full design + contracts:
 [DESIGN.md](./DESIGN.md). PocketJS is growing into a family of specialized
 runtimes — Rust cores, spec-pinned surfaces, one QuickJS guest — documented
 in [RUNTIMES.md](./RUNTIMES.md); the 3D base lives in
@@ -36,6 +36,7 @@ budget, including animated transitions and input feedback.
 
 ```sh
 bun install
+bun run bootstrap                       # one-time pinned PSP toolchain setup
 bun pocket check --target psp         # schema + capabilities + ordinary app TypeScript
 bun pocket compile --target psp       # check + emit JS/pak from the resolved plan
 bun pocket build --target psp -- --release
@@ -46,8 +47,8 @@ bun scripts/build.ts hero-vue-vapor-main --framework=vue-vapor
 ```
 
 Or drive everything through the [`pocket` CLI](https://www.npmjs.com/package/@pocketjs/cli):
-`npm i -g @pocketjs/cli`, then `pocket doctor` checks the bun / Rust / PSP
-toolchain (`pocket setup` installs what's missing), `pocket create <name>`
+`npm i -g @pocketjs/cli`, then `pocket doctor` checks the Bun / Rust / PSP
+toolchain (`pocket setup` runs the same pinned bootstrap), `pocket create <name>`
 scaffolds an app, and `pocket dev|build|psp|hw|psplink` wrap the scripts
 below.
 
@@ -116,6 +117,7 @@ required router package.
 ## Commands
 
 ```sh
+bun run bootstrap                    # idempotent PSP toolchain setup
 bun play vita hero                    # build, install and launch in Vita3K
 bun play vita gallery --fullscreen    # stretch to the host's full screen
 bun play --help                       # list every runnable demo
@@ -130,6 +132,17 @@ bun psplink                           # interactive real PSP switcher over PSPLI
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
 ```
+
+The PSP bootstrap owns every production input: Rust nightly + `rust-src`, the
+`cargo-psp` tools built at an exact `pocket-stack/rust-psp` revision, and a
+SHA-256-verified `pocket-stack/pspdev` SDK release. It installs them under the
+shared `${XDG_CACHE_HOME:-~/.cache}/pocket-stack` cache, so independent
+PocketJS, DreamCart, and downstream-app checkouts can reuse one installation.
+Set `POCKET_STACK_CACHE_DIR` to move that cache. An explicit `PSP_SDK` takes
+precedence over `PSPDEV`, which takes precedence over the pinned cache; an
+invalid explicit path fails rather than silently selecting another SDK. PSP
+builds export both variables to the resolved path. PSPLINK is only needed by
+the real-hardware `hw`/`psplink` loop, not to compile an EBOOT.
 
 Manifest-driven builds resolve `pocket.json` once into a small
 `ResolvedBuildPlan`. The JS/font/pak compiler and native backend consume that

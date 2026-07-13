@@ -6,10 +6,10 @@ PocketJS is a standalone cross-platform UI engine: a retained-mode native UI tre
 (Rust: flexbox layout, styling, animation, text, rendering) driven from
 JavaScript (QuickJS on PSP, the host JS engine elsewhere) by **Solid** through
 its universal renderer, styled with a **build-time Tailwind-subset compiler**,
-with **baked font atlases** for text. It lives in `PocketJS/` and deliberately
-shares no code with the dreamcart game framework — it will be extracted into
-its own repository later. (It *does* copy proven low-level patterns from the
-dreamcart runtime; every copy is noted below.)
+with **baked font atlases** for text. It is a standalone repository and has no
+DreamCart or sibling-checkout build dependency. Some early low-level patterns
+were derived from the DreamCart runtime; provenance comments remain where they
+help explain the hardware constraints.
 
 This design was adversarially reviewed by three independent audits (PSP-native
 feasibility, Solid-universal correctness, compiler/pipeline); every confirmed
@@ -46,7 +46,8 @@ artifacts: `$JOB_TMP/map-*.json`).
   effect closures of changed signals. Verified: Solid's dist references no
   `window`/`document`/`setTimeout`/`WeakRef`; needs Proxy, WeakMap, Promise.
   Prior art: Lightning TV, `@opentui/solid`. Preact+DOM-shim is the fallback.
-- **QuickJS reality [R]**: the linked engine (quickjs-rs submodule) is
+- **QuickJS reality [R]**: the linked engine (exact-revision
+  `pocket-stack/quickjs-rs` Cargo dependency) is
   **Bellard 2025 (VERSION 2026-06-04), ~ES2023** — logical assignment, WeakRef
   and **FinalizationRegistry are available**. Still absent: `queueMicrotask`
   (polyfill via `Promise.resolve().then`), `setTimeout`, `MessageChannel`,
@@ -102,8 +103,8 @@ PocketJS/
     src/raster.rs      shared deterministic software rasterizer used by WASM
                        goldens and Vita guest-side capture
   native/              Rust bin `pocketjs-psp` — the EBOOT (standalone dir, lone bin)
-    Cargo.toml         psp {external-c-heap, abort-only, external-global-alloc},
-                       libquickjs-sys, pocketjs-core (path)
+    Cargo.toml         exact-revision pocket-stack psp + libquickjs-sys deps;
+                       pocketjs-core (local path)
     build.rs           embeds $POCKETJS_APP_OUTPUT js + app.pak when the stock backend owns packaging;
                        [features] capture = [] for the E2E frame-dump
     targets/mipsel-sony-psp.json  copied from runtime/ (self-contained)
@@ -261,7 +262,8 @@ allocation** (cap ≈4096 → crash). The QuickJS-side arena trio only hooks
 QuickJS + newlib malloc — it does NOT cover pocketjs-core's Rust allocations
 (taffy slotmaps, children Vecs, per-pass `.collect()`s, DrawList). Therefore:
 
-1. Add feature **`external-global-alloc`** to the vendored `rust-psp` fork:
+1. The pinned `pocket-stack/rust-psp` fork exposes an
+   **`external-global-alloc`** feature:
    cfg-gate `psp/src/alloc_impl.rs`'s `#[global_allocator]` out.
 2. `native/src/alloc.rs` installs the PocketJS global allocator backed by
    `arena::alloc/dealloc` (same single kernel block as QuickJS).

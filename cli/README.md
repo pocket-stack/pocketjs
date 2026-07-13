@@ -7,8 +7,8 @@ build/run passthrough.
 ```sh
 npm install -g @pocketjs/cli
 
-pocket doctor            # diagnose bun / Rust / PSP toolchain / PSPLINK
-pocket setup             # install what doctor found missing
+pocket doctor            # diagnose Bun / pinned Rust + PSP toolchain
+pocket setup             # run PocketJS's pinned, idempotent bootstrap
 pocket create my-app     # scaffold demos/my-app in a PocketJS checkout
 pocket dev my-app-main   # build + serve in the browser
 pocket psp my-app        # build the PSP EBOOT
@@ -31,3 +31,8 @@ Only Node ≥ 18 is required for the CLI itself; everything it diagnoses or
 installs is for building PocketJS apps. See the
 [repository](https://github.com/pocket-stack/pocketjs) and
 [pocketjs.dev](https://pocketjs.dev) for the framework docs.
+
+`pocket setup` installs the exact toolchain described by the CLI's bundled
+`psp-toolchain.json` into the shared pocket-stack cache. PSPLINK is diagnosed
+as an optional real-hardware hot-reload tool; it is not required to build a PSP
+EBOOT.
