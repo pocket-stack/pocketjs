@@ -4,9 +4,31 @@
 import { PocketHost } from "../playground/host.js";
 
 const PG = "/pg/";
-// The hero runs the yui540 motion studies — L/R (or Q/E) switch pages of
-// baked keyframe / 3D animations, all played by the Rust core.
-const SHOWCASE = "motions-main";
+// The hero boots the yui540 motion studies; the pills under the shell
+// (home.html [data-demo]) swap in the other prebuilt showcase bundles live.
+const DEFAULT_DEMO = "motions-main";
+
+// name -> Promise<[jsText, pakBuffer]>; keeps switching back instant.
+const bundleCache = new Map();
+function fetchBundle(name) {
+  if (!bundleCache.has(name)) {
+    const p = Promise.all([
+      fetch(PG + "demo-bundles/" + name + ".js").then((r) => {
+        if (!r.ok) throw new Error("bundle " + name + ".js: HTTP " + r.status);
+        return r.text();
+      }),
+      fetch(PG + "demo-bundles/" + name + ".pak").then((r) => {
+        if (!r.ok) throw new Error("bundle " + name + ".pak: HTTP " + r.status);
+        return r.arrayBuffer();
+      }),
+    ]).catch((e) => {
+      bundleCache.delete(name); // don't cache a failed fetch
+      throw e;
+    });
+    bundleCache.set(name, p);
+  }
+  return bundleCache.get(name);
+}
 
 function setupCodeTabs() {
   const tabs = [...document.querySelectorAll("[data-code-tab]")];
@@ -41,12 +63,29 @@ async function boot() {
     onError: () => {},
   });
 
-  const [js, pak] = await Promise.all([
-    fetch(PG + "demo-bundles/" + SHOWCASE + ".js").then((r) => r.text()),
-    fetch(PG + "demo-bundles/" + SHOWCASE + ".pak").then((r) => r.arrayBuffer()),
-  ]);
+  let wanted = DEFAULT_DEMO;
+  async function show(name) {
+    wanted = name;
+    const [js, pak] = await fetchBundle(name);
+    if (wanted !== name) return; // a newer click won the race
+    host.runIIFE(js, pak);
+  }
+
+  await show(DEFAULT_DEMO);
   loadEl?.remove();
-  host.runIIFE(js, pak);
+
+  // Demo switcher pills (under the shell) swap the running bundle in place.
+  const demoTabs = [...document.querySelectorAll("[data-demo]")];
+  for (const tab of demoTabs) {
+    tab.addEventListener("click", () => {
+      for (const t of demoTabs) {
+        const active = t === tab;
+        t.classList.toggle("is-active", active);
+        t.setAttribute("aria-selected", active ? "true" : "false");
+      }
+      show(tab.dataset.demo).catch((e) => console.error(e));
+    });
+  }
 
   // Wire the device's on-screen buttons to the live WebAssembly canvas.
   for (const el of document.querySelectorAll(".screen-emu [data-btn]")) {

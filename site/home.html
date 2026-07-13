@@ -44,9 +44,9 @@
         </video>
       </div>
       <div class="lp-container lp-hero__in">
-        <a class="lp-eyebrow" href="/docs/architecture/">
-          <span class="lp-eyebrow__tag">Now</span>
-          The Modern Web Under 8MB RAM
+        <a class="lp-eyebrow" href="/blog/pocketjs-on-ps-vita/">
+          <span class="lp-eyebrow__tag">New</span>
+          PocketJS now ships on PS Vita
           <span class="lp-eyebrow__arw" aria-hidden="true">&rarr;</span>
         </a>
         <h1 class="lp-h1">Bare Metal<span class="lp-grad">Modern Web</span></h1>
@@ -57,9 +57,9 @@
         </p>
         <div class="lp-hero__cta">
           <a class="lp-btn lp-btn--primary" href="/docs/getting-started/">Get started</a>
-          <a class="lp-btn lp-btn--ghost" href="/playground/">
-            Open playground
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <a class="lp-btn lp-btn--ghost" href="https://github.com/pocket-stack/pocketjs" target="_blank" rel="noreferrer">
+            Star on GitHub
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 4.7 18 5 18 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
           </a>
         </div>
 
@@ -93,6 +93,13 @@
                 <button class="emu-sys-btn" data-btn="0x0008">START</button>
               </div>
             </div>
+          </div>
+          <div class="lp-demo-tabs" role="tablist" aria-label="Switch the live demo">
+            <button class="lp-demo-tab is-active" type="button" role="tab" aria-selected="true" data-demo="motions-main">Motion Lab</button>
+            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="gallery-main">Gallery</button>
+            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="music-main">Now Playing</button>
+            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="settings-main">Settings</button>
+            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="hero-main">Dashboard</button>
           </div>
         </div>
       </div>
@@ -221,6 +228,51 @@
       </div>
     </section>
 
+    <!-- SHOWCASE -->
+    <section class="lp-section lp-showcase">
+      <div class="lp-container">
+        <div class="lp-secthead lp-reveal">
+          <span class="lp-kicker">The proof is shipping software</span>
+          <h2 class="lp-h2">Built with PocketJS.</h2>
+          <p class="lp-lead">Complete open-source apps running on real handhelds — not tech demos.</p>
+        </div>
+
+        <article class="lp-case lp-reveal">
+          <a class="lp-case__media" href="/blog/shipping-openstrike/" aria-label="Read the OpenStrike story">
+            <img src="/assets/blog/openstrike-psp-dust2.png" alt="OpenStrike on de_dust2: sunlit BSP geometry, crates and arches, with the Solid HUD showing 100 HP and 30/90 ammo." loading="lazy" />
+          </a>
+          <div class="lp-case__copy">
+            <h3 class="lp-case__title">OpenStrike</h3>
+            <p>A Counter-Strike-shaped FPS that plays the classic GoldSrc-era maps — BSP world, lightmaps, bots, recoil, round flow. The HUD is a Solid app; the round rules and weapon tables are TypeScript. It holds a locked 60&nbsp;FPS on a 333&nbsp;MHz PSP and ships as one file you drop on a Memory Stick.</p>
+            <div class="lp-case__links">
+              <a class="lp-btn lp-btn--ghost" href="/blog/shipping-openstrike/">
+                Read the story
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </a>
+              <a class="lp-case__src" href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">pocket-stack/open-strike</a>
+            </div>
+          </div>
+        </article>
+
+        <article class="lp-case lp-case--flip lp-reveal">
+          <a class="lp-case__media" href="/blog/pocket-figma/" aria-label="Read the Pocket Figma story">
+            <img src="/assets/blog/figma-psp-cover-zoom.png" alt="Pocket Figma on a PSP at 59% zoom: the Paper Wireframe Kit cover with hand-drawn lettering, and the viewer HUD along the bottom." loading="lazy" />
+          </a>
+          <div class="lp-case__copy">
+            <h3 class="lp-case__title">Pocket Figma</h3>
+            <p>A real Figma Community file, open on a PSP: the Paper Wireframe Kit — 14,430 nodes, 2,293 component instances, a canvas 26,000 pixels wide. The cooker bakes it into streaming tiles, so the device never parses the file. Pan with the analog nub, zoom with the shoulders — and the same bundle runs at native 960&times;544 on PS Vita.</p>
+            <div class="lp-case__links">
+              <a class="lp-btn lp-btn--ghost" href="/blog/pocket-figma/">
+                Read the story
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </a>
+              <a class="lp-case__src" href="https://github.com/pocket-stack/pocket-figma" target="_blank" rel="noreferrer">pocket-stack/pocket-figma</a>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
     <!-- FEATURES -->
     <section class="lp-section lp-features">
       <div class="lp-container">
@@ -264,13 +316,38 @@
       </div>
     </section>
 
+    <!-- TOOLING -->
+    <section class="lp-section lp-tooling" style="padding-top: 0;">
+      <div class="lp-container">
+        <div class="lp-secthead lp-reveal">
+          <span class="lp-kicker">Grown-up tooling</span>
+          <h2 class="lp-h2">Debuggable, deterministic, shippable.</h2>
+          <p class="lp-lead">A runtime you can ship needs more than a renderer — it needs to be inspectable on device and testable without flakes.</p>
+        </div>
+        <div class="lp-proof-grid">
+          <div class="lp-proof lp-reveal">
+            <h3>Time-travel DevTools</h3>
+            <p>Every input is recorded as a tape on the device. Scrub backwards through frames, inspect the native tree, replay a session exactly — the full loop verified on a real PSP. <a href="/blog/time-travel-devtools/">Read how &rarr;</a></p>
+          </div>
+          <div class="lp-proof lp-reveal">
+            <h3>UI tests that can't flake</h3>
+            <p>A virtual clock makes every frame a pure function of the input tape. Golden tests compare byte-exact framebuffers — the same bytes on CI, desktop and hardware. <a href="/blog/ui-runtime-that-cant-flake/">Read why &rarr;</a></p>
+          </div>
+          <div class="lp-proof lp-reveal">
+            <h3>One manifest, many hosts</h3>
+            <p>Every app carries a <span class="lp-mono">pocket.json</span> manifest; the <span class="lp-mono">pocket</span> CLI checks it against each device's capability contract, so a bundle only ships to hosts that can prove they run it.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- TARGETS -->
     <section class="lp-section lp-targets">
       <div class="lp-container">
         <div class="lp-secthead lp-reveal">
           <span class="lp-kicker">One core, many devices</span>
           <h2 class="lp-h2">The same core, retargeted device by device.</h2>
-          <p class="lp-lead">The <span class="lp-mono">no_std</span> Rust core needs only a framebuffer and a few buttons, so it travels. The PSP and macOS paths ship today; the rest come online as their native backends land — and the list keeps growing.</p>
+          <p class="lp-lead">The <span class="lp-mono">no_std</span> Rust core needs only a framebuffer and a few buttons, so it travels. PSP, PS Vita and macOS ship today; the rest come online as their native backends land — and the list keeps growing.</p>
         </div>
         <ul class="lp-targets__grid" aria-label="Supported and planned devices">
           <li class="lp-target is-live lp-reveal">
@@ -284,6 +361,16 @@
             </div>
           </li>
           <li class="lp-target is-live lp-reveal">
+            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="4"/><circle cx="6.3" cy="12" r="1.7"/><circle cx="17.7" cy="12" r="1.7"/><rect x="9.5" y="9.5" width="5" height="5" rx="0.8"/></svg></span>
+            <div class="lp-target__body">
+              <div class="lp-target__head">
+                <h3 class="lp-target__name">PS Vita</h3>
+                <span class="lp-target__status lp-target__status--live">Available now</span>
+              </div>
+              <p class="lp-target__desc">The same bundle at native 960&times;544 through GXM — no fork, no <span class="lp-mono">if (vita)</span>, proven by byte-exact goldens.</p>
+            </div>
+          </li>
+          <li class="lp-target is-live lp-reveal">
             <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M2 20h20"/></svg></span>
             <div class="lp-target__body">
               <div class="lp-target__head">
@@ -291,6 +378,16 @@
                 <span class="lp-target__status lp-target__status--live">Available now</span>
               </div>
               <p class="lp-target__desc">The same apps in a native window through wgpu — and the desktop home of the Pocket3D game runtimes.</p>
+            </div>
+          </li>
+          <li class="lp-target lp-reveal">
+            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="4"/><rect x="8.5" y="9.4" width="7" height="5.2" rx="0.8"/><path d="M4.4 11h2.4M5.6 9.8v2.4"/><circle cx="18.6" cy="11" r=".9" fill="currentColor" stroke="none"/></svg></span>
+            <div class="lp-target__body">
+              <div class="lp-target__head">
+                <h3 class="lp-target__name">Game Boy Advance</h3>
+                <span class="lp-target__status">Experimental</span>
+              </div>
+              <p class="lp-target__desc"><span class="lp-mono">@pocketjs/aot</span> partially evaluates TSX into a pure C runtime — no JavaScript VM on the device at all.</p>
             </div>
           </li>
           <li class="lp-target lp-reveal">
@@ -318,9 +415,9 @@
             <div class="lp-target__body">
               <div class="lp-target__head">
                 <h3 class="lp-target__name">iOS</h3>
-                <span class="lp-target__status">Coming soon</span>
+                <span class="lp-target__status">In progress</span>
               </div>
-              <p class="lp-target__desc">iPhone and iPad through a native rendering backend for the portable core.</p>
+              <p class="lp-target__desc">iPhone and iPad through a Metal + JavaScriptCore host, with touch scrolling already working.</p>
             </div>
           </li>
           <li class="lp-target lp-reveal">
@@ -406,9 +503,10 @@
           <h4>Explore</h4>
           <ul>
             <li><a href="/playground/">Playground</a></li>
+            <li><a href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">OpenStrike</a></li>
+            <li><a href="https://github.com/pocket-stack/pocket-figma" target="_blank" rel="noreferrer">Pocket Figma</a></li>
             <li><a href="/docs/components/">Components</a></li>
             <li><a href="/docs/styling/">Styling</a></li>
-            <li><a href="/docs/animation/">Animation</a></li>
           </ul>
         </div>
         <div>

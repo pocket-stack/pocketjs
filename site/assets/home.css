@@ -414,6 +414,93 @@ a.lp-btn--primary:hover {
   position: relative;
   z-index: 1;
 }
+/* Demo switcher pills under the shell — each swaps the live bundle in place. */
+.lp-demo-tabs {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  width: fit-content;
+  margin: 1rem auto 0;
+  padding: 0.16rem;
+  border: 1px solid rgba(43, 58, 85, 0.92);
+  border-radius: 9px;
+  background: rgba(5, 7, 13, 0.42);
+}
+.lp-demo-tab {
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  padding: 0.42rem 0.7rem;
+  background: transparent;
+  color: var(--muted);
+  font: 700 12px/1 var(--mono);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.lp-demo-tab:hover { color: var(--ink); }
+.lp-demo-tab.is-active {
+  color: #f8fafc;
+  background: rgba(51, 65, 85, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.lp-demo-tab:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+
+/* ---- Showcase cases (OpenStrike / Pocket Figma) ---------------------------- */
+.lp-case {
+  display: grid;
+  gap: clamp(1.5rem, 4vw, 3.2rem);
+  align-items: center;
+  margin-top: clamp(2.4rem, 5.5vw, 4rem);
+}
+@media (min-width: 940px) {
+  .lp-case { grid-template-columns: 1.08fr 0.92fr; }
+  .lp-case--flip .lp-case__media { order: 2; }
+}
+.lp-case__media {
+  display: block;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  background: #04060c;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 36px 72px -36px rgba(0, 0, 0, 0.9);
+}
+.lp-case__media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  transform: scale(1.001);
+  transition: transform 0.35s ease;
+}
+.lp-case__media:hover img { transform: scale(1.02); }
+.lp-case__media:focus-visible { outline: 2px solid var(--sky); outline-offset: 3px; }
+.lp-case__title {
+  margin: 0 0 0.8rem;
+  font-size: clamp(1.55rem, 3.2vw, 2.1rem);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+.lp-case__copy p { margin: 0; color: var(--ink-2); line-height: 1.7; }
+.lp-case__links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+  margin-top: 1.5rem;
+}
+.lp-case__src {
+  font: 500 13px/1 var(--mono);
+  color: var(--muted);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.lp-case__src:hover { color: var(--ink); border-bottom-color: var(--muted); }
 @media (max-width: 1120px) {
   .lp-hero__pip {
     position: relative;
