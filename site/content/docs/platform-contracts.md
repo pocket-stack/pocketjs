@@ -110,6 +110,13 @@ finger is currently down: `touches()` returns an empty snapshot in that state.
 An application can put touch in `enhances` and keep its button fallback for
 PSP, or put it in `requires` when touch is fundamental to the product.
 
+`input.cursor` follows the same rule for the [virtual
+cursor](/docs/input-focus/#virtual-cursor): the host implements hit testing
+and the cursor sprite (spec ops 27–29), and the framework synthesizes a
+pointer from the analog nub. It is opt-in twice over — declared in the
+manifest AND enabled at runtime with `enableCursor()`; apps that never call it
+keep the d-pad focus walk unchanged.
+
 ## Target profiles
 
 Profiles are small, truthful records:
@@ -123,7 +130,7 @@ vita: {
     presentations: ["integer-fit"],
     rasterDensity: 2,
   },
-  capabilities: ["input.analog.left", "input.buttons", "input.touch", "text.glyphs.baked"],
+  capabilities: ["input.analog.left", "input.buttons", "input.cursor", "input.touch", "text.glyphs.baked"],
 }
 ```
 

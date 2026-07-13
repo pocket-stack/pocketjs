@@ -261,6 +261,22 @@ impl UiSurface {
                 ui.borrow_mut().ui.set_active(id, active != 0)
             });
 
+            // Virtual cursor ops (spec ops 27..29, input.cursor).
+            let ui = self.inner.clone();
+            op!("hitTest", move |x: f64, y: f64| {
+                ui.borrow_mut().ui.hit_test(x as f32, y as f32)
+            });
+
+            let ui = self.inner.clone();
+            op!("setCursor", move |tex: i32, hot_x: f64, hot_y: f64, w: f64, h: f64| {
+                ui.borrow_mut().ui.set_cursor(tex, hot_x as f32, hot_y as f32, w as f32, h as f32)
+            });
+
+            let ui = self.inner.clone();
+            op!("setCursorPos", move |x: f64, y: f64| {
+                ui.borrow_mut().ui.set_cursor_pos(x as f32, y as f32)
+            });
+
             let ui = self.inner.clone();
             op!("loadStyles", move |buf: TypedArray<u8>| {
                 let Some(bytes) = buf.as_bytes() else {

@@ -16,7 +16,7 @@ if (typeof (globalThis as { queueMicrotask?: unknown }).queueMicrotask !== "func
   };
 }
 
-import { detectHost, installFrameHandler, installHost, type HostOps } from "./host.ts";
+import { detectHost, hostViewport, installFrameHandler, installHost, type HostOps } from "./host.ts";
 import { initDevtools, wrapFrameHandler } from "./devtools.ts";
 import {
   createElement,
@@ -165,7 +165,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   // Desktop hosts publish their logical UI size as ui.__viewport (the core
   // root is already sized to it via Ui::set_viewport); PSP/web hosts omit it
   // and keep the 480x272 contract.
-  const viewport = (host.ops as HostOps & { __viewport?: { w: number; h: number } }).__viewport;
+  const viewport = hostViewport(host.ops);
   const layerW = viewport?.w ?? SCREEN_W;
   const layerH = viewport?.h ?? SCREEN_H;
   const appRoot = createLayer({

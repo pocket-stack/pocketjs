@@ -95,6 +95,15 @@ export async function createWasmUi(wasm) {
     ops.uploadImgEntry = (blob) => withBytes(blob, (p, l) => ex.ui_upload_img_entry(p, l));
   }
 
+  // Virtual cursor ops (spec ops 27..29, input.cursor) — feature-detected so
+  // a stale pocketjs.wasm predating them still boots (enableCursor falls
+  // back to the classic d-pad focus model when the host lacks them).
+  if (ex.ui_hit_test) ops.hitTest = (x, y) => ex.ui_hit_test(x, y);
+  if (ex.ui_set_cursor) {
+    ops.setCursor = (tex, hotX, hotY, w, h) => ex.ui_set_cursor(tex, hotX, hotY, w, h);
+  }
+  if (ex.ui_set_cursor_pos) ops.setCursorPos = (x, y) => ex.ui_set_cursor_pos(x, y);
+
   function framebufferView(ptr, scale) {
     if (!ptr) throw new Error(`pocketjs.wasm rejected render scale ${scale}`);
     return new Uint8Array(

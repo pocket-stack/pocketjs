@@ -224,6 +224,15 @@ pub struct Ui {
     raster_density: u32,
     focused: i32,
     draw_list: DrawList,
+    /// Virtual cursor sprite (spec ops 28/29, input.cursor capability):
+    /// texture handle (< 0 = hidden), hotspot offset into the sprite,
+    /// logical draw size (0 = the texture's own pixel size), and the
+    /// hotspot's screen position. Drawn last by `draw()`; never laid out,
+    /// never hit-tested.
+    cursor_tex: i32,
+    cursor_hot: (f32, f32),
+    cursor_size: (f32, f32),
+    cursor_pos: (f32, f32),
     /// Frame counter advanced by `tick()` (drives fixed-dt animation).
     frame: u64,
     /// DevTools (spec ops 18..22, DEVTOOLS.md). All default-off.
@@ -272,6 +281,10 @@ impl Ui {
             raster_density,
             focused: 0,
             draw_list: DrawList::new(),
+            cursor_tex: -1,
+            cursor_hot: (0.0, 0.0),
+            cursor_size: (0.0, 0.0),
+            cursor_pos: (0.0, 0.0),
             frame: 0,
             inspect_id: 0,
             inspect_rect: None,
@@ -746,6 +759,41 @@ impl Ui {
         self.layout.mark_style(slot);
     }
 
+    // ---- virtual cursor (spec ops 27..29, input.cursor capability) ---------
+
+    /// Topmost node at a logical point (spec op hitTest; see draw::hit_test
+    /// for the exact semantics — layout boxes, paint order, clips). Returns
+    /// the generation-tagged id, or 0. Relayouts first if dirty so mid-frame
+    /// queries (the cursor moves before this frame's mutations settle) see
+    /// current geometry — layout is a pure function of the tree, so running
+    /// it early never changes what the next `draw()` shows.
+    pub fn hit_test(&mut self, x: f32, y: f32) -> i32 {
+        if self.layout.needs() {
+            layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
+        }
+        draw::hit_test(&self.tree, &self.styles, self.layout.viewport, x, y)
+    }
+
+    /// Bind the virtual cursor sprite (spec op setCursor): an uploaded
+    /// texture drawn last every frame at the cursor position, offset by
+    /// (hot_x, hot_y). tex < 0 or a stale handle hides the cursor; w/h <= 0
+    /// draw at the texture's own pixel size.
+    pub fn set_cursor(&mut self, tex: i32, hot_x: f32, hot_y: f32, w: f32, h: f32) {
+        self.cursor_tex = if tex >= 0 && tex_resolve(&self.textures, tex).is_some() {
+            tex
+        } else {
+            -1
+        };
+        self.cursor_hot = (hot_x, hot_y);
+        self.cursor_size = (w.max(0.0), h.max(0.0));
+    }
+
+    /// Move the cursor hotspot (spec op setCursorPos), logical px. Clamped
+    /// to the DrawList's i16-safe coordinate range.
+    pub fn set_cursor_pos(&mut self, x: f32, y: f32) {
+        self.cursor_pos = (x.clamp(-32000.0, 32000.0), y.clamp(-32000.0, 32000.0));
+    }
+
     // ---- frame -------------------------------------------------------------
 
     /// Advance one frame: tick animations by exactly spec::FIXED_DT, then
@@ -932,6 +980,25 @@ impl Ui {
         if self.layout.needs() {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
+        // Cursor sprite quad: resolved here so a texture freed after
+        // set_cursor simply stops drawing (generation-tagged handles).
+        let cursor = if self.cursor_tex >= 0 {
+            tex_resolve(&self.textures, self.cursor_tex)
+                .and_then(|slot| self.textures[slot as usize].tex.as_ref())
+                .map(|t| {
+                    let w = if self.cursor_size.0 > 0.0 { self.cursor_size.0 } else { t.w as f32 };
+                    let h = if self.cursor_size.1 > 0.0 { self.cursor_size.1 } else { t.h as f32 };
+                    (
+                        self.cursor_tex as u32,
+                        self.cursor_pos.0 - self.cursor_hot.0,
+                        self.cursor_pos.1 - self.cursor_hot.1,
+                        w,
+                        h,
+                    )
+                })
+        } else {
+            None
+        };
         let (target, drawn) = draw::build(
             &self.tree,
             &self.styles,
@@ -945,6 +1012,7 @@ impl Ui {
             &mut self.draw_list,
             self.inspect_id,
             self.inspect_drawn,
+            cursor,
         );
         self.inspect_drawn = drawn;
         if self.inspect_id != 0 {

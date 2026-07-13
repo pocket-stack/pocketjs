@@ -79,6 +79,9 @@ pub mod op {
     pub const FREE_TEXTURE: u8 = 24;
     pub const UPLOAD_IMG_ENTRY: u8 = 25;
     pub const SET_ACTIVE: u8 = 26;
+    pub const HIT_TEST: u8 = 27;
+    pub const SET_CURSOR: u8 = 28;
+    pub const SET_CURSOR_POS: u8 = 29;
 }
 
 /// Property ids (u8, stable, append-only). Groups:

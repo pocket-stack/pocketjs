@@ -182,6 +182,23 @@ pub extern "C" fn ui_set_active(id: i32, active: i32) {
     ui().set_active(id, active != 0)
 }
 
+// ---- virtual cursor ops (spec ops 27..29, input.cursor) ----------------------
+
+#[no_mangle]
+pub extern "C" fn ui_hit_test(x: f32, y: f32) -> i32 {
+    ui().hit_test(x, y)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_set_cursor(tex: i32, hot_x: f32, hot_y: f32, w: f32, h: f32) {
+    ui().set_cursor(tex, hot_x, hot_y, w, h)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_set_cursor_pos(x: f32, y: f32) {
+    ui().set_cursor_pos(x, y)
+}
+
 #[no_mangle]
 pub extern "C" fn ui_load_styles(ptr: *const u8, len: usize) -> i32 {
     ui().load_styles(unsafe { bytes(ptr, len) }) as i32

@@ -388,6 +388,54 @@ unsafe extern "C" fn js_set_focus(
     JS_UNDEFINED
 }
 
+unsafe extern "C" fn js_set_active(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().set_active(arg_i32(ctx, argc, argv, 0), arg_i32(ctx, argc, argv, 1) != 0);
+    JS_UNDEFINED
+}
+
+// Virtual cursor ops (spec ops 27..29, input.cursor).
+
+unsafe extern "C" fn js_hit_test(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let id = ui().hit_test(arg_f64(ctx, argc, argv, 0) as f32, arg_f64(ctx, argc, argv, 1) as f32);
+    JS_NewInt32(ctx, id)
+}
+
+unsafe extern "C" fn js_set_cursor(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().set_cursor(
+        arg_i32(ctx, argc, argv, 0),
+        arg_f64(ctx, argc, argv, 1) as f32,
+        arg_f64(ctx, argc, argv, 2) as f32,
+        arg_f64(ctx, argc, argv, 3) as f32,
+        arg_f64(ctx, argc, argv, 4) as f32,
+    );
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_set_cursor_pos(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    ui().set_cursor_pos(arg_f64(ctx, argc, argv, 0) as f32, arg_f64(ctx, argc, argv, 1) as f32);
+    JS_UNDEFINED
+}
+
 /// Normally fed natively at boot (pak.rs feeds the core natively before eval), but
 /// registered so the full HostOps surface exists. Returns bool.
 unsafe extern "C" fn js_load_styles(
@@ -623,6 +671,11 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"animate\0", js_animate, 6);
     add_fn(ctx, ui_obj, b"cancelAnim\0", js_cancel_anim, 1);
     add_fn(ctx, ui_obj, b"setFocus\0", js_set_focus, 1);
+    add_fn(ctx, ui_obj, b"setActive\0", js_set_active, 2);
+    // Virtual cursor ops (spec ops 27..29, input.cursor).
+    add_fn(ctx, ui_obj, b"hitTest\0", js_hit_test, 2);
+    add_fn(ctx, ui_obj, b"setCursor\0", js_set_cursor, 5);
+    add_fn(ctx, ui_obj, b"setCursorPos\0", js_set_cursor_pos, 2);
     add_fn(ctx, ui_obj, b"loadStyles\0", js_load_styles, 1);
     add_fn(ctx, ui_obj, b"loadFontAtlas\0", js_load_font_atlas, 1);
     add_fn(ctx, ui_obj, b"measureText\0", js_measure_text, 2);

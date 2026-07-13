@@ -73,6 +73,19 @@ export interface HostOps {
    *  no-op). Optional: older hosts predate spec op 26 — pressed visuals
    *  degrade gracefully when absent. */
   setActive?(id: number, active: number): void;
+
+  // -- virtual cursor ops (spec ops 27..29, input.cursor). Optional: hosts
+  //    that predate them simply lack them and the cursor input layer
+  //    (src/input.ts) falls back to the classic d-pad focus model. ----------
+  /** Topmost node id at a logical point (paint-order hit testing; pure
+   *  layout containers pass through — see spec op 27). 0 = none. */
+  hitTest?(x: number, y: number): number;
+  /** Bind the cursor sprite: an uploaded texture drawn topmost every frame,
+   *  offset by its hotspot; never laid out, never hit-tested. tex < 0 hides
+   *  it; w/h <= 0 draw at the texture's own pixel size. */
+  setCursor?(tex: number, hotX: number, hotY: number, w: number, h: number): void;
+  /** Move the cursor hotspot to a logical point. */
+  setCursorPos?(x: number, y: number): void;
   /** web/test hosts only — on PSP the native bin feeds core from the pak. */
   loadStyles?(buf: Uint8Array): void;
   /** web/test hosts only — one call per baked font atlas blob. */
@@ -119,6 +132,13 @@ export interface HostOps {
   __host?: string;
   /** Version of the JS/native HostOps ABI implemented by this namespace. */
   __hostAbi?: number;
+}
+
+/** Desktop hosts publish their logical UI size as `ui.__viewport` (the core
+ *  is resized to it at mount); console hosts omit it — the spec screen is
+ *  the viewport. One accessor so every consumer reads the same contract. */
+export function hostViewport(ops: HostOps): { w: number; h: number } | null {
+  return (ops as HostOps & { __viewport?: { w: number; h: number } }).__viewport ?? null;
 }
 
 export interface Host {

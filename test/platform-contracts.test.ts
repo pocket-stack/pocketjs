@@ -119,9 +119,16 @@ describe("platform registry", () => {
   test("production advertises only the truthful PSP and Vita profiles", () => {
     expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita"]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
+    expect(POCKET_TARGETS.psp.capabilities).toEqual([
+      "input.analog.left",
+      "input.buttons",
+      "input.cursor",
+      "text.glyphs.baked",
+    ]);
     expect(POCKET_TARGETS.vita.capabilities).toEqual([
       "input.analog.left",
       "input.buttons",
+      "input.cursor",
       "input.touch",
       "text.glyphs.baked",
     ]);

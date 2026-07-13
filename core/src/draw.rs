@@ -241,6 +241,13 @@ impl Clip {
     fn is_empty(&self) -> bool {
         self.x1 <= self.x0 || self.y1 <= self.y0
     }
+
+    /// Half-open containment ([x0, x1) x [y0, y1)) — matches the pixel span
+    /// a painted rect covers, so the viewport edge is outside.
+    #[inline]
+    fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x0 && x < self.x1 && y >= self.y0 && y < self.y1
+    }
 }
 
 // ---- word packing -------------------------------------------------------------
@@ -502,6 +509,230 @@ fn pow2_at_least(n: u32) -> u32 {
     p
 }
 
+/// A node's local frame: layout position + translate, then rotate/scale
+/// about its transform origin. Shared by paint and hit_test so pointer
+/// geometry can never drift from painted geometry.
+fn local_affine(l: &crate::tree::LayoutRect, r: &style::Resolved) -> Affine {
+    let mut local = Affine::translate(l.x + r.translate_x, l.y + r.translate_y);
+    if r.rotate != 0.0 || r.scale != 1.0 || r.scale_x != 1.0 || r.scale_y != 1.0 {
+        // Transform origin: node center offset by the origin fractions
+        // (`origin-*` utilities; e.g. origin-bottom = (0, +0.5)).
+        let (cx, cy) = (l.w * (0.5 + r.origin_x), l.h * (0.5 + r.origin_y));
+        let rad = r.rotate * (PI / 180.0);
+        // rotate == 0 keeps EXACT axis alignment (the trig polyfill is a
+        // few ulp off at multiples of pi/2, which would silently demote
+        // scale-only transforms to the TRI path).
+        let (s, c) = if r.rotate == 0.0 { (0.0, 1.0) } else { (sinf(rad), cosf(rad)) };
+        let sx = r.scale * r.scale_x;
+        let sy = r.scale * r.scale_y;
+        // translate(c) * rotate * scale * translate(-c)
+        let m = Affine {
+            a: c * sx,
+            b: s * sx,
+            c: -s * sy,
+            d: c * sy,
+            tx: cx - (c * sx * cx - s * sy * cy),
+            ty: cy - (s * sx * cx + c * sy * cy),
+        };
+        local = local.then(&m);
+    }
+    local
+}
+
+/// AABB (intersected with the screen) of a local rect under `world` —
+/// conservative integer bounds: floor mins, ceil maxes.
+fn world_aabb_of(screen: (f32, f32), world: &Affine, w: f32, h: f32) -> Clip {
+    let pts = [
+        world.apply(0.0, 0.0),
+        world.apply(w, 0.0),
+        world.apply(w, h),
+        world.apply(0.0, h),
+    ];
+    let mut c = Clip { x0: pts[0].0, y0: pts[0].1, x1: pts[0].0, y1: pts[0].1 };
+    for &(x, y) in &pts[1..] {
+        c.x0 = c.x0.min(x);
+        c.y0 = c.y0.min(y);
+        c.x1 = c.x1.max(x);
+        c.y1 = c.y1.max(y);
+    }
+    Clip {
+        x0: floorf(clampf(c.x0, 0.0, screen.0)),
+        y0: floorf(clampf(c.y0, 0.0, screen.1)),
+        x1: ceilf(clampf(c.x1, 0.0, screen.0)),
+        y1: ceilf(clampf(c.y1, 0.0, screen.1)),
+    }
+}
+
+/// Point-in-border-box under an invertible world transform (half-open,
+/// [0, w) x [0, h) in local space). Degenerate transforms hit nothing.
+fn point_in_box(world: &Affine, px: f32, py: f32, w: f32, h: f32) -> bool {
+    let det = world.a * world.d - world.b * world.c;
+    if det == 0.0 {
+        return false;
+    }
+    let dx = px - world.tx;
+    let dy = py - world.ty;
+    let lx = (world.d * dx - world.c * dy) / det;
+    let ly = (world.a * dy - world.b * dx) / det;
+    lx >= 0.0 && lx < w && ly >= 0.0 && ly < h
+}
+
+/// Visit `slot`'s children in PAINT ORDER: document order, stable-sorted by
+/// z-index only when a child actually carries one (the hot path is a
+/// straight index walk with zero allocations). Shared by `Walker::paint` and
+/// `hit_walk` so hit testing can never disagree with painted stacking.
+fn for_children_in_paint_order(
+    tree: &Tree,
+    styles: &StyleTable,
+    slot: u32,
+    mut f: impl FnMut(u32),
+) {
+    let node = &tree.slots[slot as usize];
+    let mut needs_sort = false;
+    for &cid in &node.children {
+        if let Some(cs) = tree.resolve(cid) {
+            if style::resolve_z(&tree.slots[cs as usize], styles) != 0 {
+                needs_sort = true;
+                break;
+            }
+        }
+    }
+    if !needs_sort {
+        for i in 0..node.children.len() {
+            let cid = tree.slots[slot as usize].children[i];
+            if let Some(cs) = tree.resolve(cid) {
+                f(cs);
+            }
+        }
+    } else {
+        let mut order: Vec<(i32, u32)> = Vec::with_capacity(node.children.len());
+        for &cid in &node.children {
+            if let Some(cs) = tree.resolve(cid) {
+                order.push((style::resolve_z(&tree.slots[cs as usize], styles), cs));
+            }
+        }
+        // Stable by construction: sort_by_key on Vec preserves insertion
+        // order of equal keys (alloc's stable merge sort).
+        order.sort_by_key(|&(z, _)| z);
+        for (_, cs) in order {
+            f(cs);
+        }
+    }
+}
+
+/// Whether a node CLAIMS a hit inside its border box: only nodes that
+/// actually paint there do — background, gradient, border, bevel rings,
+/// a bound image, or a text run. Pure layout containers (and the
+/// framework's full-screen overlay/portal layers) pass hits through to
+/// whatever paints beneath them, which is what a pointer steered by eye
+/// expects: you can press what you can see. This is the engine's stand-in
+/// (and the DEFAULT, until a hit-behavior style bit exists) for CSS
+/// `pointer-events` on transparent wrappers.
+///
+/// A node whose record styles the `focus:` or `active:` variant claims even
+/// while its CURRENT variant paints nothing — hover-styled hotspots must be
+/// reachable before they are hovered, and a hit result must not flip with
+/// the focus state it itself produces (no hysteresis). A focusable with no
+/// paint in ANY variant gives no visual feedback either — give it a bg
+/// (any alpha > 0) to make it a hit target.
+/// Rounded/arc shapes claim their full box (corner approximation).
+fn claims_hit(node: &crate::tree::Node, r: &style::Resolved, styles: &StyleTable) -> bool {
+    if node.node_type == spec::NodeType::Text as u8 {
+        return true; // the glyph run
+    }
+    if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
+        return true;
+    }
+    alpha(r.bg_color) > 0
+        || (r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32)
+        || (r.border_width > 0.0 && alpha(r.border_color) > 0)
+        || ((r.bevel_outer_light | r.bevel_outer_dark | r.bevel_inner_light | r.bevel_inner_dark)
+            != 0
+            && r.bevel_width > 0.0)
+        || styles
+            .record(node.style_id)
+            .is_some_and(|rec| !rec.focus.is_empty() || !rec.active.is_empty())
+}
+
+/// Topmost node at a logical point (spec op hitTest) — paint-order hit
+/// testing over the laid-out tree: the winner is the LAST node in paint
+/// order (document order + z-index) whose border box contains the point AND
+/// that paints there (see `claims_hit` — pure layout containers are
+/// hit-transparent, but their children are still tested). `display:none`
+/// subtrees are skipped, and so are subtrees at effective opacity 0 —
+/// paint culls them entirely, and what cannot be seen must not eat hits (a
+/// faded-out-but-mounted toast). Partially transparent nodes still claim.
+/// `overflow-hidden` clips descendants. A perspective (3D) subtree hits as
+/// its context root's border box — only the 2D walk composes a world affine
+/// per node (the DevTools inspector shares this limit), and swallowing the
+/// hit beats clicking whatever sits BEHIND visible 3D content.
+/// Returns the generation-tagged id, or 0.
+pub fn hit_test(tree: &Tree, styles: &StyleTable, screen: (f32, f32), x: f32, y: f32) -> i32 {
+    let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
+    let mut hit = 0i32;
+    hit_walk(tree, styles, screen, root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), x, y, &mut hit);
+    hit
+}
+
+#[allow(clippy::too_many_arguments)]
+fn hit_walk(
+    tree: &Tree,
+    styles: &StyleTable,
+    screen: (f32, f32),
+    slot: u32,
+    parent_world: Affine,
+    opacity: f32,
+    clip: Clip,
+    px: f32,
+    py: f32,
+    hit: &mut i32,
+) {
+    // The point is fixed, so a clip that excludes it excludes the node AND
+    // every descendant (child clips only shrink).
+    if !clip.contains(px, py) {
+        return;
+    }
+    let node = &tree.slots[slot as usize];
+    let r = style::resolve(node, styles, true);
+    if r.display == spec::Display::None as u8 {
+        return;
+    }
+    let l = node.layout;
+    let world = parent_world.then(&local_affine(&l, &r));
+    // Effective-opacity-0 subtrees are culled exactly like paint culls them.
+    let op = clampf(opacity * r.opacity, 0.0, 1.0);
+    if op <= 0.0 {
+        return;
+    }
+    let inside = point_in_box(&world, px, py, l.w, l.h);
+    if inside && claims_hit(node, &r, styles) {
+        *hit = node.id(slot);
+    }
+    // Text children are absorbed into the node's glyph run (mirrors paint).
+    if node.node_type == spec::NodeType::Text as u8 {
+        return;
+    }
+    let mut child_clip = clip;
+    if r.overflow == spec::Overflow::Hidden as u8 {
+        child_clip = clip.intersect(&world_aabb_of(screen, &world, l.w, l.h));
+        if !child_clip.contains(px, py) {
+            return;
+        }
+    }
+    if r.perspective > 0.0 {
+        // 3D context: projected geometry is not point-testable from the 2D
+        // walk — the context root claims its own box so clicks never fall
+        // through to content painted BEHIND the visible 3D subtree.
+        if inside {
+            *hit = node.id(slot);
+        }
+        return;
+    }
+    for_children_in_paint_order(tree, styles, slot, |cs| {
+        hit_walk(tree, styles, screen, cs, world, op, child_clip, px, py, hit);
+    });
+}
+
 struct Walker<'a> {
     tree: &'a Tree,
     styles: &'a StyleTable,
@@ -526,7 +757,9 @@ struct Walker<'a> {
 
 /// Build the full DrawList for the current (laid-out) tree. `frame` is the
 /// core's vblank counter (Ui.frame); animated sprites pick their cell from it.
-/// `screen` is the viewport every coordinate is clipped to.
+/// `screen` is the viewport every coordinate is clipped to. `cursor` is the
+/// virtual cursor sprite as (tex handle, x, y, w, h) — its TEX_QUAD is
+/// appended after everything else (topmost), outside layout and hit_test.
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     tree: &Tree,
@@ -541,6 +774,7 @@ pub fn build(
     dl: &mut DrawList,
     inspect_id: i32,
     inspect_prev: Option<(f32, f32, f32, f32)>,
+    cursor: Option<(u32, f32, f32, f32, f32)>,
 ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
     dl.words.clear();
     // DevTools (DEVTOOLS.md): slot of the inspected node, u32::MAX = none.
@@ -594,6 +828,23 @@ pub fn build(
     if let Some((x, y, bw, bh)) = drawn {
         w.emit_highlight(dl, &Clip { x0: x, y0: y, x1: x + bw, y1: y + bh });
     }
+    // Virtual cursor sprite: appended last so nothing paints over it (even
+    // the DevTools highlight sits under the pointer the user is steering).
+    if let Some((tex, cx, cy, cw, ch)) = cursor {
+        w.emit_tex_quad(
+            dl,
+            &Affine::translate(cx, cy),
+            cw,
+            ch,
+            tex,
+            1.0,
+            &Clip::viewport(screen),
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+        );
+    }
     (target, drawn)
 }
 
@@ -605,32 +856,7 @@ impl<'a> Walker<'a> {
             return;
         }
         let l = node.layout;
-        // Local frame: layout position + translate, then rotate/scale about
-        // the node center.
-        let mut local = Affine::translate(l.x + r.translate_x, l.y + r.translate_y);
-        if r.rotate != 0.0 || r.scale != 1.0 || r.scale_x != 1.0 || r.scale_y != 1.0 {
-            // Transform origin: node center offset by the origin fractions
-            // (`origin-*` utilities; e.g. origin-bottom = (0, +0.5)).
-            let (cx, cy) = (l.w * (0.5 + r.origin_x), l.h * (0.5 + r.origin_y));
-            let rad = r.rotate * (PI / 180.0);
-            // rotate == 0 keeps EXACT axis alignment (the trig polyfill is a
-            // few ulp off at multiples of pi/2, which would silently demote
-            // scale-only transforms to the TRI path).
-            let (s, c) = if r.rotate == 0.0 { (0.0, 1.0) } else { (sinf(rad), cosf(rad)) };
-            let sx = r.scale * r.scale_x;
-            let sy = r.scale * r.scale_y;
-            // translate(c) * rotate * scale * translate(-c)
-            let m = Affine {
-                a: c * sx,
-                b: s * sx,
-                c: -s * sy,
-                d: c * sy,
-                tx: cx - (c * sx * cx - s * sy * cy),
-                ty: cy - (s * sx * cx + c * sy * cy),
-            };
-            local = local.then(&m);
-        }
-        let world = parent_world.then(&local);
+        let world = parent_world.then(&local_affine(&l, &r));
         // DevTools: capture the inspected node's border-box world AABB
         // (before the opacity cull so transparent nodes still highlight).
         if slot == self.inspect_slot {
@@ -807,43 +1033,12 @@ impl<'a> Walker<'a> {
             return;
         }
 
-        // z-index is rare: detect it with the cheap z-only resolve, and only
-        // allocate + sort when a child actually carries one (the hot path is
-        // a straight index walk with zero allocations).
-        let node = &self.tree.slots[slot as usize];
-        let child_count = node.children.len();
-        let mut needs_sort = false;
-        for &cid in &node.children {
-            if let Some(cs) = self.tree.resolve(cid) {
-                if style::resolve_z(&self.tree.slots[cs as usize], self.styles) != 0 {
-                    needs_sort = true;
-                    break;
-                }
-            }
-        }
-        if !needs_sort {
-            for i in 0..child_count {
-                let cid = self.tree.slots[slot as usize].children[i];
-                if let Some(cs) = self.tree.resolve(cid) {
-                    self.paint(cs, world, op, child_clip, dl);
-                }
-            }
-        } else {
-            let node = &self.tree.slots[slot as usize];
-            let mut order: Vec<(i32, u32)> = Vec::with_capacity(node.children.len());
-            for &cid in &node.children {
-                if let Some(cs) = self.tree.resolve(cid) {
-                    let z = style::resolve_z(&self.tree.slots[cs as usize], self.styles);
-                    order.push((z, cs));
-                }
-            }
-            // Stable by construction: sort_by_key on Vec preserves insertion
-            // order of equal keys (alloc's stable merge sort).
-            order.sort_by_key(|&(z, _)| z);
-            for (_, cs) in order {
-                self.paint(cs, world, op, child_clip, dl);
-            }
-        }
+        // Children in paint order — shared with hit_walk so pointer hits can
+        // never disagree with painted stacking.
+        let (tree, styles) = (self.tree, self.styles);
+        for_children_in_paint_order(tree, styles, slot, |cs| {
+            self.paint(cs, world, op, child_clip, dl);
+        });
 
         if scissored {
             dl.words.push(spec::draw_op::SCISSOR_POP);
@@ -1179,26 +1374,7 @@ impl<'a> Walker<'a> {
 
     /// AABB (intersected with the screen) of a local rect under `world`.
     fn world_aabb(&self, world: &Affine, w: f32, h: f32) -> Clip {
-        let pts = [
-            world.apply(0.0, 0.0),
-            world.apply(w, 0.0),
-            world.apply(w, h),
-            world.apply(0.0, h),
-        ];
-        let mut c = Clip { x0: pts[0].0, y0: pts[0].1, x1: pts[0].0, y1: pts[0].1 };
-        for &(x, y) in &pts[1..] {
-            c.x0 = c.x0.min(x);
-            c.y0 = c.y0.min(y);
-            c.x1 = c.x1.max(x);
-            c.y1 = c.y1.max(y);
-        }
-        // Conservative integer AABB: floor mins, ceil maxes.
-        Clip {
-            x0: floorf(clampf(c.x0, 0.0, self.screen.0)),
-            y0: floorf(clampf(c.y0, 0.0, self.screen.1)),
-            x1: ceilf(clampf(c.x1, 0.0, self.screen.0)),
-            y1: ceilf(clampf(c.y1, 0.0, self.screen.1)),
-        }
+        world_aabb_of(self.screen, world, w, h)
     }
 
     /// Emit a solid/gradient local-space rect under `world`: axis-aligned

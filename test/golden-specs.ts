@@ -116,6 +116,30 @@ export const GOLDEN_SPECS: GoldenSpec[] = [
       f === 4 ? BTN.DOWN : f === 8 ? BTN.RIGHT : f >= 16 && f <= 22 ? BTN.CIRCLE : 0,
   },
   {
+    // cursor: the virtual pointer (input.cursor, demos/cursor). Steered by
+    // d-pad at 1 px/frame (enableCursor dpadSpeed: 60) so the tape stays
+    // button-only. Boot centers the arrow at (240,136) in the gap between
+    // rows — f2 shows the sprite over nothing. UP 4..13 lands on row 2 —
+    // f16 shows hover (= focus: tint). CIRCLE held 18..25 — f22 is the
+    // active: bevel inversion under the pointer. Release clicks: DOWN
+    // 30..61 rides down to row 3 — f64 shows the moved hover + the status
+    // line recording the row-2 click. A second press 66..73 clicks row 3 —
+    // f80 shows its status.
+    name: "cursor-main",
+    frames: 90,
+    capture: [2, 16, 22, 64, 80],
+    input: (f) =>
+      f >= 4 && f < 14
+        ? BTN.UP
+        : f >= 18 && f < 26
+          ? BTN.CIRCLE
+          : f >= 30 && f < 62
+            ? BTN.DOWN
+            : f >= 66 && f < 74
+              ? BTN.CIRCLE
+              : 0,
+  },
+  {
     // im (Pocket Talk): bootstrap lands at f30 — f40 is the conversation
     // list (presence, unread badges, previews). CIRCLE@60 opens MAYA CHEN —
     // f80 is the thread bottom (wrapped bubbles, read ticks). UP held

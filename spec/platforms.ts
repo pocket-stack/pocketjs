@@ -53,6 +53,12 @@ export type TargetId<T extends TargetRegistry> = Extract<keyof T, string>;
 export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   "input.analog.left",
   "input.buttons",
+  // Framework-synthesized pointer for targets without a native one: the
+  // analog nub steers a screen cursor, hover applies `focus:`, the press
+  // button applies `active:` and clicks on release. Opt-in per app
+  // (enableCursor + pocket.json requires/enhances) — d-pad focus traversal
+  // remains the portable default interaction.
+  "input.cursor",
   "input.touch",
   "text.glyphs.baked",
 ] as const);
@@ -77,6 +83,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
     capabilities: [
       "input.analog.left",
       "input.buttons",
+      "input.cursor",
       "text.glyphs.baked",
     ],
   },
@@ -91,6 +98,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
     capabilities: [
       "input.analog.left",
       "input.buttons",
+      "input.cursor",
       "input.touch",
       "text.glyphs.baked",
     ],

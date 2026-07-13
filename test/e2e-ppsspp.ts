@@ -184,6 +184,24 @@ const SPECS: Spec[] = [
       { name: "released", frame: 52 }, // raised again after release
     ],
   },
+  {
+    // cursor: the virtual pointer (input.cursor, spec ops 27..29) on the
+    // native host. d-pad steers at 1 px/frame (enableCursor dpadSpeed: 60):
+    // UP 4..13 hovers row 2 (hover = focus: tint under the arrow), CIRCLE
+    // 18..25 shows the active: inversion, release clicks (status line
+    // updates), DOWN 30..61 rides to row 3, CIRCLE 66..73 clicks it.
+    app: "cursor",
+    inputScript: "0:0,4:0x10,14:0,18:0x2000,26:0,30:0x40,62:0,66:0x2000,74:0",
+    capStart: 0,
+    capN: 90, // window 0..89
+    shots: [
+      { name: "boot", frame: 2 }, // arrow at screen center, nothing hovered
+      { name: "hover", frame: 16 }, // row 2 tinted under the pointer
+      { name: "pressed", frame: 22 }, // active: bevel inversion while held
+      { name: "clicked", frame: 64 }, // status shows row 2; pointer on row 3
+      { name: "clicked-2", frame: 80 }, // status shows row 3
+    ],
+  },
   // ADD NEW DEMOS HERE: one Spec per demo, same shape.
 ];
 

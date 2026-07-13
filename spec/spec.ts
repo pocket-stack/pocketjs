@@ -138,6 +138,30 @@ export const OP = {
   //                      variant natively (same machinery as setFocus). The
   //                      focus manager holds it while the press button is
   //                      down; stale ids no-op.
+  // -- virtual cursor (input.cursor capability; src/input.ts owns the state
+  //    machine — hosts only relay these three calls) ------------------------
+  hitTest: 27, //         (x: f32, y: f32) -> topmost node id at that logical
+  //                      point, or 0. Paint-order hit testing: the last node
+  //                      painted there whose border box contains the point
+  //                      AND that paints something (bg/gradient/border/bevel/
+  //                      image/text — in ANY variant: focus:/active:-styled
+  //                      hotspots claim before they are hovered). Pure layout
+  //                      containers — including the framework's overlay/
+  //                      portal layers — pass through, the engine's stand-in
+  //                      for pointer-events: none; their children are still
+  //                      tested. display:none and effective-opacity-0
+  //                      subtrees are skipped (paint culls them: what cannot
+  //                      be seen takes no hits), overflow-hidden clips
+  //                      descendants. Perspective (3D) subtrees hit as their
+  //                      context root's box.
+  setCursor: 28, //       (tex, hotX, hotY, w, h) — bind the cursor sprite: an
+  //                      uploaded texture drawn LAST every frame (topmost),
+  //                      never hit-tested, never in layout. tex < 0 hides the
+  //                      cursor; w/h <= 0 draw at the texture's pixel size.
+  setCursorPos: 29, //    (x: f32, y: f32) — move the cursor hotspot to a
+  //                      logical point (the sprite renders offset by -hotspot;
+  //                      the cursor input layer integrates the analog nub
+  //                      into this once per frame).
 } as const;
 
 // ---------------------------------------------------------------------------

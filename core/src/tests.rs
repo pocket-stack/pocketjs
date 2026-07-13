@@ -2323,3 +2323,209 @@ fn disc_cache_survives_js_freeing_its_texture() {
     assert_eq!(find_disc(&ui.draw().words.clone()), disc2);
     assert_eq!(ui.texture_slot_count(), 1, "the freed slot was reused LIFO");
 }
+
+// ---- virtual cursor (spec ops 27..29) -----------------------------------------
+
+/// A detached-from-flow PAINTED box at (x, y) sized w x h under `parent`
+/// (hit tests only consider nodes that paint — see draw::claims_hit).
+fn abs_box(ui: &mut Ui, parent: i32, x: f64, y: f64, w: f64, h: f64) -> i32 {
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_L, x);
+    ui.set_prop(n, spec::prop::INSET_T, y);
+    ui.set_prop(n, spec::prop::WIDTH, w);
+    ui.set_prop(n, spec::prop::HEIGHT, h);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(40, 40, 40, 255) as f64);
+    ui.insert_before(parent, n, 0);
+    n
+}
+
+#[test]
+fn hit_test_topmost_wins_and_containers_pass_through() {
+    let mut ui = Ui::new();
+    let panel = abs_box(&mut ui, spec::ROOT_ID, 10.0, 10.0, 100.0, 50.0);
+    let inner = abs_box(&mut ui, panel, 5.0, 5.0, 20.0, 20.0);
+    ui.tick();
+    // Inside the child: the deepest painted node wins over its ancestors.
+    assert_eq!(ui.hit_test(20.0, 20.0), inner);
+    // Inside the panel but not the child.
+    assert_eq!(ui.hit_test(90.0, 40.0), panel);
+    // The unstyled root paints nothing: empty space hits NOTHING — pure
+    // layout containers (e.g. the framework's full-screen overlay layer)
+    // are hit-transparent even though their box contains the point.
+    assert_eq!(ui.hit_test(400.0, 200.0), 0);
+    // A transparent full-screen wrapper OVER the panel does not occlude it,
+    // but its own painted children do.
+    let wrapper = ui.create_node(0);
+    ui.set_prop(wrapper, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(wrapper, spec::prop::INSET_L, 0.0);
+    ui.set_prop(wrapper, spec::prop::INSET_T, 0.0);
+    ui.set_prop(wrapper, spec::prop::WIDTH, 480.0);
+    ui.set_prop(wrapper, spec::prop::HEIGHT, 272.0);
+    ui.insert_before(spec::ROOT_ID, wrapper, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(90.0, 40.0), panel, "overlay layer passes hits through");
+    let toast = abs_box(&mut ui, wrapper, 80.0, 30.0, 40.0, 20.0);
+    assert_eq!(ui.hit_test(90.0, 40.0), toast, "painted overlay content claims");
+    // Outside the viewport (half-open edges): nothing.
+    assert_eq!(ui.hit_test(480.0, 100.0), 0);
+    assert_eq!(ui.hit_test(-1.0, 100.0), 0);
+    // Layout need not be ticked first: hit_test relayouts a dirty tree.
+    let fresh = abs_box(&mut ui, spec::ROOT_ID, 300.0, 100.0, 10.0, 10.0);
+    assert_eq!(ui.hit_test(305.0, 105.0), fresh);
+}
+
+#[test]
+fn hit_test_paint_order_and_z_index() {
+    let mut ui = Ui::new();
+    // Two overlapping siblings: the later one paints on top.
+    let below = abs_box(&mut ui, spec::ROOT_ID, 10.0, 10.0, 40.0, 40.0);
+    let above = abs_box(&mut ui, spec::ROOT_ID, 30.0, 10.0, 40.0, 40.0);
+    ui.tick();
+    assert_eq!(ui.hit_test(35.0, 20.0), above, "document order: later sibling on top");
+    assert_eq!(ui.hit_test(15.0, 20.0), below, "non-overlapped area still hits the first");
+    // z-index beats document order (mirrors the paint sort).
+    ui.set_prop(below, spec::prop::Z_INDEX, 5.0);
+    assert_eq!(ui.hit_test(35.0, 20.0), below, "z-index raises the earlier sibling");
+}
+
+#[test]
+fn hit_test_display_none_overflow_and_transforms() {
+    let mut ui = Ui::new();
+    let clipper = abs_box(&mut ui, spec::ROOT_ID, 10.0, 10.0, 30.0, 30.0);
+    ui.set_prop(clipper, spec::prop::OVERFLOW, spec::Overflow::Hidden as u32 as f64);
+    let wide = abs_box(&mut ui, clipper, 0.0, 0.0, 200.0, 20.0);
+    ui.tick();
+    assert_eq!(ui.hit_test(20.0, 15.0), wide, "inside the clip the child hits");
+    assert_eq!(
+        ui.hit_test(100.0, 15.0),
+        0,
+        "outside the overflow-hidden box the child's box is clipped away"
+    );
+    // display:none removes the whole subtree from hit testing.
+    ui.set_prop(clipper, spec::prop::DISPLAY, spec::Display::None as u32 as f64);
+    assert_eq!(ui.hit_test(20.0, 15.0), 0);
+    ui.set_prop(clipper, spec::prop::DISPLAY, spec::Display::Flex as u32 as f64);
+    // Translate moves the hit box with the paint box.
+    let mover = abs_box(&mut ui, spec::ROOT_ID, 100.0, 100.0, 20.0, 20.0);
+    ui.set_prop(mover, spec::prop::TRANSLATE_X, 50.0);
+    ui.tick();
+    assert_eq!(ui.hit_test(110.0, 110.0), 0, "old spot is empty");
+    assert_eq!(ui.hit_test(160.0, 110.0), mover, "translated spot hits");
+    // A 45-degree rotation rejects the now-outside corner but keeps the center.
+    ui.set_prop(mover, spec::prop::ROTATE, 45.0);
+    assert_eq!(ui.hit_test(160.0, 110.0), mover, "center survives rotation");
+    assert_eq!(ui.hit_test(151.5, 101.5), 0, "corner rotated away");
+    // Effective opacity 0 is culled exactly like paint culls it (a faded-out
+    // toast must not eat hits); partial transparency still claims.
+    let ghost = abs_box(&mut ui, spec::ROOT_ID, 200.0, 200.0, 20.0, 20.0);
+    let ghost_child = abs_box(&mut ui, ghost, 0.0, 0.0, 20.0, 20.0);
+    ui.set_prop(ghost, spec::prop::OPACITY, 0.0);
+    ui.tick();
+    assert_eq!(ui.hit_test(210.0, 210.0), 0, "invisible subtree hits nothing");
+    ui.set_prop(ghost, spec::prop::OPACITY, 0.5);
+    assert_eq!(ui.hit_test(210.0, 210.0), ghost_child, "faded still claims");
+}
+
+#[test]
+fn hit_test_variant_styled_hotspots_and_perspective_roots_claim() {
+    let mut ui = Ui::new();
+    // A record whose BASE paints nothing but whose focus: variant does — the
+    // hotspot must be reachable BEFORE it is hovered, with no hysteresis.
+    let mut hotspot_style = StyleSpec::new();
+    hotspot_style.focus = alloc::vec![(spec::prop::BG_COLOR, abgr(255, 255, 255, 32))];
+    let mut plain_style = StyleSpec::new();
+    plain_style.base = alloc::vec![(spec::prop::WIDTH, 10f32.to_bits())];
+    assert!(ui.load_styles(&encode_styles(&[hotspot_style, plain_style])));
+    let hotspot = ui.create_node(0);
+    ui.set_prop(hotspot, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(hotspot, spec::prop::INSET_L, 30.0);
+    ui.set_prop(hotspot, spec::prop::INSET_T, 30.0);
+    ui.set_prop(hotspot, spec::prop::WIDTH, 40.0);
+    ui.set_prop(hotspot, spec::prop::HEIGHT, 40.0);
+    ui.set_style(hotspot, 0);
+    ui.insert_before(spec::ROOT_ID, hotspot, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(40.0, 40.0), hotspot, "focus:-styled hotspot claims unfocused");
+    // A plain-styled unpainted box still passes through (record present, but
+    // no paint in any variant).
+    let wrapper = ui.create_node(0);
+    ui.set_prop(wrapper, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(wrapper, spec::prop::INSET_L, 30.0);
+    ui.set_prop(wrapper, spec::prop::INSET_T, 30.0);
+    ui.set_prop(wrapper, spec::prop::WIDTH, 40.0);
+    ui.set_prop(wrapper, spec::prop::HEIGHT, 40.0);
+    ui.set_style(wrapper, 1);
+    ui.insert_before(spec::ROOT_ID, wrapper, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(40.0, 40.0), hotspot, "styled-but-unpainted wrapper passes through");
+    // A perspective context root claims its own box: a click on visible 3D
+    // content must never fall through to what is painted behind it.
+    let stage = abs_box(&mut ui, spec::ROOT_ID, 100.0, 100.0, 60.0, 60.0);
+    ui.set_prop(stage, spec::prop::PERSPECTIVE, 300.0);
+    let card = abs_box(&mut ui, stage, 10.0, 10.0, 40.0, 40.0);
+    ui.tick();
+    let _ = card;
+    assert_eq!(ui.hit_test(130.0, 130.0), stage, "3D context root claims, children untestable");
+}
+
+#[test]
+fn cursor_sprite_draws_last_hides_and_survives_free() {
+    let mut ui = Ui::new();
+    let n = abs_box(&mut ui, spec::ROOT_ID, 0.0, 0.0, 100.0, 100.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(20, 20, 20, 255) as f64);
+    let tex = ui.upload_texture(&[0xffu8; 8 * 8 * 4], 8, 8, spec::psm::PSM_8888);
+    assert!(tex >= 0);
+    ui.tick();
+
+    // No cursor bound: no TEX_QUAD at all.
+    let words = ui.draw().words.clone();
+    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 0);
+
+    // Bound: exactly one TEX_QUAD, as the LAST op, offset by the hotspot.
+    ui.set_cursor(tex, 2.0, 3.0, 0.0, 0.0);
+    ui.set_cursor_pos(100.0, 50.0);
+    let words = ui.draw().words.clone();
+    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 1);
+    let i = words.iter().position(|&w| w == spec::draw_op::TEX_QUAD).unwrap();
+    assert_eq!(i + 9, words.len(), "cursor is the final DrawList entry");
+    assert_eq!(words[i + 1], tex as u32);
+    assert_eq!(decode_xy(words[i + 2]), (98, 47), "hotspot offsets the sprite");
+    assert_eq!(decode_wh(words[i + 3]), (8, 8), "size defaults to the texture");
+
+    // Explicit logical size overrides the texture dimensions.
+    ui.set_cursor(tex, 0.0, 0.0, 16.0, 12.0);
+    let words = ui.draw().words.clone();
+    let i = words.iter().position(|&w| w == spec::draw_op::TEX_QUAD).unwrap();
+    assert_eq!(decode_wh(words[i + 3]), (16, 12));
+
+    // The viewport edge clips the sprite instead of wrapping i16 coords.
+    ui.set_cursor_pos(476.0, 268.0);
+    let words = ui.draw().words.clone();
+    let i = words.iter().position(|&w| w == spec::draw_op::TEX_QUAD).unwrap();
+    assert_eq!(decode_wh(words[i + 3]), (4, 4), "clipped at the screen edge");
+
+    // Freeing the bound texture hides the cursor (stale handles draw nothing).
+    ui.free_texture(tex);
+    let words = ui.draw().words.clone();
+    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 0);
+
+    // Unbinding via tex < 0 also hides it.
+    let tex2 = ui.upload_texture(&[0x80u8; 8 * 8 * 4], 8, 8, spec::psm::PSM_8888);
+    ui.set_cursor(tex2, 0.0, 0.0, 0.0, 0.0);
+    ui.set_cursor(-1, 0.0, 0.0, 0.0, 0.0);
+    let words = ui.draw().words.clone();
+    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 0);
+}
+
+#[test]
+fn hit_test_never_sees_the_cursor_sprite() {
+    let mut ui = Ui::new();
+    let under = abs_box(&mut ui, spec::ROOT_ID, 50.0, 50.0, 30.0, 30.0);
+    let tex = ui.upload_texture(&[0xffu8; 8 * 8 * 4], 8, 8, spec::psm::PSM_8888);
+    ui.set_cursor(tex, 0.0, 0.0, 0.0, 0.0);
+    ui.set_cursor_pos(60.0, 60.0);
+    ui.tick();
+    ui.draw();
+    assert_eq!(ui.hit_test(60.0, 60.0), under, "the sprite never occludes the tree");
+}
