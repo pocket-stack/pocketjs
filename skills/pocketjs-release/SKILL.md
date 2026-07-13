@@ -60,7 +60,7 @@ npm view @pocketjs/framework version && npm view @pocketjs/cli version
 npm view @pocketjs/cli dist.attestations.url        # provenance present
 cd "$(mktemp -d)" && npm i -g @pocketjs/cli && pocket --help   # bin smoke
 curl -s https://pocketjs.dev/changelog/ | grep -o "X\.Y\.Z" | head -1
-gh release view vX.Y.Z --json name,isLatest         # GitHub Release exists
+gh release list --limit 2      # GitHub Release exists and is marked Latest
 ```
 
 ## Gotchas
