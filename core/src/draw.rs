@@ -563,18 +563,16 @@ fn world_aabb_of(screen: (f32, f32), world: &Affine, w: f32, h: f32) -> Clip {
     }
 }
 
-/// Point-in-border-box under an invertible world transform (half-open,
-/// [0, w) x [0, h) in local space). Degenerate transforms hit nothing.
-fn point_in_box(world: &Affine, px: f32, py: f32, w: f32, h: f32) -> bool {
+/// A screen point mapped into a node's local space under an invertible
+/// world transform; None for degenerate transforms (which hit nothing).
+fn local_point(world: &Affine, px: f32, py: f32) -> Option<(f32, f32)> {
     let det = world.a * world.d - world.b * world.c;
     if det == 0.0 {
-        return false;
+        return None;
     }
     let dx = px - world.tx;
     let dy = py - world.ty;
-    let lx = (world.d * dx - world.c * dy) / det;
-    let ly = (world.a * dy - world.b * dx) / det;
-    lx >= 0.0 && lx < w && ly >= 0.0 && ly < h
+    Some(((world.d * dx - world.c * dy) / det, (world.a * dy - world.b * dx) / det))
 }
 
 /// Visit `slot`'s children in PAINT ORDER: document order, stable-sorted by
@@ -620,38 +618,59 @@ fn for_children_in_paint_order(
     }
 }
 
-/// Whether a node CLAIMS a hit inside its border box: only nodes that
-/// actually paint there do — background, gradient, border, bevel rings,
-/// a bound image, or a text run. Pure layout containers (and the
-/// framework's full-screen overlay/portal layers) pass hits through to
-/// whatever paints beneath them, which is what a pointer steered by eye
-/// expects: you can press what you can see. This is the engine's stand-in
-/// (and the DEFAULT, until a hit-behavior style bit exists) for CSS
-/// `pointer-events` on transparent wrappers.
+/// Whether a node CLAIMS a hit at LOCAL point (lx, ly) inside its border
+/// box: only nodes that actually paint there do. A background, gradient,
+/// bound image, text run — or any `focus:`/`active:` variant styling —
+/// claims the whole box; a node whose only ink is a border or bevel ring
+/// claims just that visible edge band, so an inset-0 frame overlay (the
+/// classic-chrome window edge) decorates its window without swallowing
+/// every press inside it. Pure layout containers (and the framework's
+/// full-screen overlay/portal layers) pass hits through to whatever paints
+/// beneath them, which is what a pointer steered by eye expects: you can
+/// press what you can see. This is the engine's stand-in (and the DEFAULT,
+/// until a hit-behavior style bit exists) for CSS `pointer-events`.
 ///
-/// A node whose record styles the `focus:` or `active:` variant claims even
-/// while its CURRENT variant paints nothing — hover-styled hotspots must be
-/// reachable before they are hovered, and a hit result must not flip with
-/// the focus state it itself produces (no hysteresis). A focusable with no
-/// paint in ANY variant gives no visual feedback either — give it a bg
-/// (any alpha > 0) to make it a hit target.
+/// Variant records claim even while the CURRENT variant paints nothing —
+/// hover-styled hotspots must be reachable before they are hovered, and a
+/// hit result must not flip with the focus state it itself produces (no
+/// hysteresis). A focusable with no paint in ANY variant gives no visual
+/// feedback either — give it a bg (any alpha > 0) to make it a hit target.
 /// Rounded/arc shapes claim their full box (corner approximation).
-fn claims_hit(node: &crate::tree::Node, r: &style::Resolved, styles: &StyleTable) -> bool {
+#[allow(clippy::too_many_arguments)]
+fn claims_hit(
+    node: &crate::tree::Node,
+    r: &style::Resolved,
+    styles: &StyleTable,
+    lx: f32,
+    ly: f32,
+    w: f32,
+    h: f32,
+) -> bool {
     if node.node_type == spec::NodeType::Text as u8 {
         return true; // the glyph run
     }
     if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
         return true;
     }
-    alpha(r.bg_color) > 0
+    if alpha(r.bg_color) > 0
         || (r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32)
-        || (r.border_width > 0.0 && alpha(r.border_color) > 0)
-        || ((r.bevel_outer_light | r.bevel_outer_dark | r.bevel_inner_light | r.bevel_inner_dark)
-            != 0
-            && r.bevel_width > 0.0)
         || styles
             .record(node.style_id)
             .is_some_and(|rec| !rec.focus.is_empty() || !rec.active.is_empty())
+    {
+        return true;
+    }
+    // Border/bevel-only ink: claim the edge band it actually paints.
+    let mut band = 0.0f32;
+    if r.border_width > 0.0 && alpha(r.border_color) > 0 {
+        band = band.max(r.border_width);
+    }
+    if (r.bevel_outer_light | r.bevel_outer_dark | r.bevel_inner_light | r.bevel_inner_dark) != 0
+        && r.bevel_width > 0.0
+    {
+        band = band.max(r.bevel_width * 2.0); // two nested rings
+    }
+    band > 0.0 && (lx < band || ly < band || lx >= w - band || ly >= h - band)
 }
 
 /// Topmost node at a logical point (spec op hitTest) — paint-order hit
@@ -704,9 +723,13 @@ fn hit_walk(
     if op <= 0.0 {
         return;
     }
-    let inside = point_in_box(&world, px, py, l.w, l.h);
-    if inside && claims_hit(node, &r, styles) {
-        *hit = node.id(slot);
+    let local = local_point(&world, px, py);
+    let inside = local.is_some_and(|(lx, ly)| lx >= 0.0 && lx < l.w && ly >= 0.0 && ly < l.h);
+    if inside {
+        let (lx, ly) = local.unwrap();
+        if claims_hit(node, &r, styles, lx, ly, l.w, l.h) {
+            *hit = node.id(slot);
+        }
     }
     // Text children are absorbed into the node's glyph run (mirrors paint).
     if node.node_type == spec::NodeType::Text as u8 {

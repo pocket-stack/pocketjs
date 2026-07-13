@@ -2529,3 +2529,38 @@ fn hit_test_never_sees_the_cursor_sprite() {
     ui.draw();
     assert_eq!(ui.hit_test(60.0, 60.0), under, "the sprite never occludes the tree");
 }
+
+#[test]
+fn hit_test_frame_edge_overlay_claims_only_its_band() {
+    let mut ui = Ui::new();
+    // A pressable row under an inset-0 bevel-ring frame overlay painted
+    // LAST (the classic-chrome window edge): the overlay claims its 2px
+    // edge band and nothing else.
+    let row = abs_box(&mut ui, spec::ROOT_ID, 20.0, 20.0, 100.0, 20.0);
+    let edge = ui.create_node(0);
+    ui.set_prop(edge, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(edge, spec::prop::INSET_L, 0.0);
+    ui.set_prop(edge, spec::prop::INSET_T, 0.0);
+    ui.set_prop(edge, spec::prop::WIDTH, 480.0);
+    ui.set_prop(edge, spec::prop::HEIGHT, 272.0);
+    ui.set_prop(edge, spec::prop::BEVEL_OUTER_LIGHT, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(edge, spec::prop::BEVEL_OUTER_DARK, abgr(0, 0, 0, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, edge, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(50.0, 30.0), row, "the overlay's transparent center passes through");
+    assert_eq!(ui.hit_test(1.0, 100.0), edge, "the painted ring band claims");
+    assert_eq!(ui.hit_test(479.0, 100.0), edge, "right band too");
+    // A border-only well behaves the same: band claims, interior passes.
+    let well = ui.create_node(0);
+    ui.set_prop(well, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(well, spec::prop::INSET_L, 20.0);
+    ui.set_prop(well, spec::prop::INSET_T, 15.0);
+    ui.set_prop(well, spec::prop::WIDTH, 200.0);
+    ui.set_prop(well, spec::prop::HEIGHT, 40.0);
+    ui.set_prop(well, spec::prop::BORDER_COLOR, abgr(0, 0, 0, 255) as f64);
+    ui.set_prop(well, spec::prop::BORDER_WIDTH, 3.0);
+    ui.insert_before(spec::ROOT_ID, well, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(21.0, 30.0), well, "border band claims");
+    assert_eq!(ui.hit_test(50.0, 30.0), row, "border interior passes through");
+}
