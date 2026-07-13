@@ -16,6 +16,7 @@ target-specific golden tests.
   app a stable Title ID and named VPK. `bun play vita <demo>` builds, installs,
   and launches the selected demo in Vita3K; the Vita golden suite exercises
   the same native plan and package path used by release builds.
+  [Read the port story](/blog/pocketjs-on-ps-vita/).
 - **Portable build contracts** — strict `pocket.json` v2 manifests declare app
   identity, entrypoint, logical viewport, required APIs, and optional
   enhancements. One resolver produces the checked build plan consumed by the
