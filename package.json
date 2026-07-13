@@ -1,6 +1,6 @@
 {
   "name": "@pocketjs/framework",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -11,6 +11,7 @@
   "keywords": [
     "pocketjs",
     "psp",
+    "vita",
     "solid",
     "vue-vapor",
     "tailwind",
@@ -35,6 +36,7 @@
     "native/targets",
     "native/build.rs",
     "native/Cargo.toml",
+    "native/Cargo.lock",
     "native-vita/.cargo",
     "native-vita/src",
     "native-vita/build.rs",
@@ -46,6 +48,8 @@
     "pocket3d/crates/pocket3d-vita/examples",
     "pocket3d/crates/pocket3d-vita/Cargo.toml",
     "pocket3d/crates/pocket3d-vita/Cargo.lock",
+    "pocket3d/crates/pocket3d-bsp/Cargo.toml",
+    "pocket3d/crates/pocket3d-bsp/src",
     "pocket.config.ts",
     "pocket.json",
     "tsconfig.json"
@@ -99,7 +103,7 @@
     "serve": "bun host-web/serve.ts",
     "golden": "bun test/golden.ts",
     "e2e": "bun test/e2e-ppsspp.ts",
-    "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test test/platform-contracts.test.ts test/host-build-inputs.test.ts test/platform-runtime.test.ts test/app-check.test.ts test/font-bake.test.ts test/touch.test.ts test/psp-toolchain.test.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/cursor.test.ts test/svg-bake.test.ts test/devtools.test.ts test/hot.test.ts test/clock.test.ts test/tiles.test.ts && bun scripts/build.ts cafe-main >/dev/null && bun test --conditions=browser test/sim.test.ts && bun scripts/build.ts zoomlab-main >/dev/null && bun test --conditions=browser test/deepzoom-sim.test.ts && bun scripts/build.ts im-main >/dev/null && bun test --conditions=browser test/im-sim.test.ts",
+    "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test test/release-check.test.ts test/release-notes.test.ts test/platform-contracts.test.ts test/host-build-inputs.test.ts test/platform-runtime.test.ts test/app-check.test.ts test/font-bake.test.ts test/touch.test.ts test/psp-toolchain.test.ts test/cli.test.ts test/npm-package.test.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/cursor.test.ts test/action-handler-vue-vapor.test.ts test/svg-bake.test.ts test/devtools.test.ts test/hot.test.ts test/clock.test.ts test/tiles.test.ts && bun scripts/build.ts cafe-main >/dev/null && bun test --conditions=browser test/sim.test.ts && bun scripts/build.ts zoomlab-main >/dev/null && bun test --conditions=browser test/deepzoom-sim.test.ts && bun scripts/build.ts im-main >/dev/null && bun test --conditions=browser test/im-sim.test.ts",
     "tape": "bun scripts/tape.ts",
     "tape:check": "bun scripts/tape.ts replay hero-main test/tapes/hero-main.tape.json --assert test/tapes/hero-main.hashes.json",
     "devtools": "bun scripts/devtools.ts",

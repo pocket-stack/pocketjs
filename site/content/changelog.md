@@ -3,6 +3,58 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.4.0 — July 13, 2026
+
+**One app, two PlayStations.** PocketJS now treats PSP and PS Vita as two
+profiles of one [portable application contract](/docs/platform-contracts/),
+with native-density rendering, touch, a reproducible PSP toolchain, and
+target-specific golden tests.
+
+- **PS Vita is a first-class target** — the QuickJS + vita2d host renders a
+  480×272 logical scene directly at 960×544, bakes fonts, SVGs, and masks at 2×,
+  accepts buttons, left-analog, and front multi-touch input, and gives every
+  app a stable Title ID and named VPK. `bun play vita <demo>` builds, installs,
+  and launches the selected demo in Vita3K; the Vita golden suite exercises
+  the same native plan and package path used by release builds.
+  [Read the port story](/blog/pocketjs-on-ps-vita/).
+- **Portable build contracts** — strict `pocket.json` v2 manifests declare app
+  identity, entrypoint, logical viewport, required APIs, and optional
+  enhancements. One resolver produces the checked build plan consumed by the
+  JS compiler and native backend; unavailable literal `hasFeature()` branches
+  fold away at build time. A PSP-baseline app resolves unchanged for Vita,
+  while Vita-only touch code can retain a controller fallback.
+- **A self-contained PSP toolchain** — `bun run bootstrap` and `pocket setup`
+  install exact `pocket-stack` revisions plus a SHA-256-verified SDK into one
+  shared cache. `PSP_SDK` and `PSPDEV` remain explicit overrides, but builds no
+  longer inspect DreamCart or sibling source checkouts. Cache receipts, staged
+  publication, and host-revision checks make setup repeatable across PocketJS,
+  OpenStrike, and Pocket Figma.
+- **Pocket3D ships on the PSP GE** — the new `no_std` backend consumes cooked
+  `.p3d` worlds with PVS/frustum culling, shared collision, CLUT8 mip chains,
+  baked vertex lighting, and a composable JSX HUD pass. It is the framework
+  path behind [OpenStrike](/blog/shipping-openstrike/), including the texture
+  and light-baking improvements proven on real hardware.
+- **Determinism now includes time and effects** — the virtual clock,
+  frame-boundary effect shell, and headless simulation host make async product
+  journeys repeatable across 60 Hz and deliberately slow worlds. Desktop wgpu
+  apps join the same DevTools mailbox, while cached text shaping and the
+  imperative `hot.text` / `hot.prop` path remove interaction-time PSP spikes.
+  [Read the model](/blog/ui-runtime-that-cant-flake/).
+- **Large native canvases and richer app chrome** — streamed TILESET entries,
+  generation-tagged textures, CLUT8 palettes, and `<DeepZoom>` power the
+  compile-time [Pocket Figma](/blog/pocket-figma/) viewer; Vita adds anchored
+  pinch, inertial pan, and native-detail tiles. Classic bevel rings, working
+  `active:` pressed styles, Pocket Talk's virtualized IM/OSK demo, and a real
+  PSP texture-cache fix round out the 2D runtime.
+- **Compatibility:** existing script-driven PSP apps continue to build, while
+  `pocket.json` is required when opting into `bun pocket` and target-aware
+  Vita builds. **Breaking for custom hosts:** `Host.kind` now reports
+  `"native"` instead of `"psp"`; manifest bundles require `__host` and
+  `__hostAbi`. Rebuild compiler/core/host artifacts together and consume the
+  stable `HostBuildInputs` projection rather than the internal build plan.
+  Vita builds still require VitaSDK + `cargo-vita`; arbitrary logical sizes
+  and dynamic host text are not part of this release.
+
 ## 0.3.0 — July 8, 2026
 
 **Pocket DevTools.** Time travel + inspection as framework primitives —

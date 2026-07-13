@@ -4,9 +4,12 @@
 //
 //   pocket doctor          diagnose the local toolchain
 //   pocket setup [--yes]   run the checkout's pinned, idempotent bootstrap
-//   pocket create <name>   scaffold a demo app inside a PocketJS checkout
-//   pocket dev|build|psp|hw|psplink|devtools|tape [...args]
-//                            passthrough to the checkout's bun scripts
+//   pocket create <name>   scaffold a manifest-first demo app
+//   pocket check|compile|build --target <psp|vita> [...args]
+//                            resolve pocket.json once, then build from its plan
+//   pocket play vita <demo> build, install and launch a demo in Vita3K
+//   pocket dev|psp|vita|hw|psplink|devtools|tape [...args]
+//                            low-level passthrough to the checkout's bun scripts
 //
 // The published CLI ships the same manifest consumed by PocketJS build scripts.
 
@@ -301,19 +304,33 @@ export default function App() {
 
 const MAIN_TSX = (title) => `// @title PocketJS: ${title}
 import App from "./app.tsx";
-import { mount } from "@pocketjs/framework";
+import { mount } from "@pocketjs/framework/solid";
 
 mount(() => <App />);
 `;
 
-const CONFIG_TS = `import { definePocketConfig } from "@pocketjs/framework/config";
-
-export default definePocketConfig({
-  framework: "solid",
-  // theme: { keyframes: { … }, animation: { … } }  — see /docs and the
-  // "Baking Motion" post for the animation surface.
+const MANIFEST = (name, title) => ({
+  $schema: "https://pocketjs.dev/schema/pocket-2.json",
+  pocket: 2,
+  id: `dev.example.${name.replace(/-/g, ".")}`,
+  name,
+  title,
+  version: "0.1.0",
+  engine: {
+    capabilities: {
+      requires: ["text.glyphs.baked", "input.buttons"],
+    },
+  },
+  app: {
+    entry: "main.tsx",
+    output: `${name}-main`,
+    framework: "solid",
+    viewport: {
+      logical: [480, 272],
+      presentation: "integer-fit",
+    },
+  },
 });
-`;
 
 function create(name) {
   if (!name || !/^[a-z][a-z0-9-]*$/.test(name)) {
@@ -334,19 +351,37 @@ function create(name) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "app.tsx"), APP_TSX(title));
   writeFileSync(join(dir, "main.tsx"), MAIN_TSX(title));
-  writeFileSync(join(dir, "pocket.config.ts"), CONFIG_TS);
+  writeFileSync(join(dir, "pocket.json"), JSON.stringify(MANIFEST(name, title), null, 2) + "\n");
   console.log(C.ok(`demos/${name} scaffolded`));
-  console.log(C.dim(`  pocket dev ${name}-main     # browser at http://127.0.0.1:8130/`));
-  console.log(C.dim(`  pocket psp ${name} --release  # PSP EBOOT`));
+  console.log(C.dim(`  pocket check --target psp --manifest demos/${name}/pocket.json`));
+  console.log(C.dim(`  pocket build --target psp --manifest demos/${name}/pocket.json -- --release`));
+  console.log(C.dim(`  pocket build --target vita --manifest demos/${name}/pocket.json -- --release`));
 }
 
 // ---------------------------------------------------------------------------
 // passthrough
 // ---------------------------------------------------------------------------
 
-const SCRIPTS = { dev: "scripts/dev.ts", build: "scripts/build.ts", psp: "scripts/psp.ts", hw: "scripts/hw.ts", psplink: "scripts/psplink.ts", devtools: "scripts/devtools.ts", tape: "scripts/tape.ts" };
+const SCRIPTS = {
+  dev: "scripts/dev.ts",
+  psp: "scripts/psp.ts",
+  vita: "scripts/vita.ts",
+  hw: "scripts/hw.ts",
+  psplink: "scripts/psplink.ts",
+  devtools: "scripts/devtools.ts",
+  tape: "scripts/tape.ts",
+  play: "scripts/play.ts",
+};
+
+function manifestCommand(cmd, args) {
+  passthroughScript(cmd, "scripts/pocket.ts", [cmd, ...args]);
+}
 
 function passthrough(cmd, args) {
+  passthroughScript(cmd, SCRIPTS[cmd], args);
+}
+
+function passthroughScript(cmd, script, args) {
   const root = findCheckout();
   if (!root) {
     console.error(C.bad(`\`pocket ${cmd}\` must run inside a PocketJS checkout`));
@@ -356,7 +391,7 @@ function passthrough(cmd, args) {
     console.error(C.bad("bun not found — run `pocket setup`"));
     process.exit(1);
   }
-  const r = spawnSync("bun", [join(root, SCRIPTS[cmd]), ...args], { stdio: "inherit", cwd: root });
+  const r = spawnSync("bun", [join(root, script), ...args], { stdio: "inherit", cwd: root });
   process.exit(r.status ?? 1);
 }
 
@@ -369,10 +404,15 @@ const HELP = `${C.bold("pocket")} — the PocketJS toolchain CLI
 
   pocket doctor            diagnose bun / Rust / PSP toolchain / PSPLINK
   pocket setup [--yes]     install what doctor found missing
-  pocket create <name>     scaffold demos/<name> in a PocketJS checkout
+  pocket create <name>     scaffold a pocket.json v2 app under demos/<name>
+  pocket check --target T  validate pocket.json, target APIs and app types
+  pocket compile --target T
+                           check + emit JS/pak from one resolved build plan
+  pocket build --target T  check + compile + package PSP or Vita artifacts
+  pocket play vita <app>   build, install and launch a demo in Vita3K
   pocket dev <app>-main    build + serve an app in the browser
-  pocket build <app>       build an app bundle + pak
   pocket psp <app>         build the PSP EBOOT
+  pocket vita <app>        build the PS Vita VPK
   pocket hw <app>          build + run on a real PSP over PSPLINK
   pocket psplink           interactive multi-app switcher on a real PSP
   pocket devtools [app]    DevTools panel + USB debug bridge (one command)
@@ -389,13 +429,19 @@ switch (cmd) {
   case "create":
     create(rest[0]);
     break;
-  case "dev":
+  case "check":
+  case "compile":
   case "build":
+    manifestCommand(cmd, rest);
+    break;
+  case "dev":
   case "psp":
+  case "vita":
   case "hw":
   case "psplink":
   case "devtools":
   case "tape":
+  case "play":
     passthrough(cmd, rest);
     break;
   case "--version":

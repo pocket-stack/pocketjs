@@ -16,7 +16,7 @@ exclude = ["crates/pocket3d-gu", "crates/gu-demo"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/pocketjs/pocketjs"
+repository = "https://github.com/pocket-stack/pocketjs"
 
 [workspace.dependencies]
 pocket3d = { path = "crates/pocket3d" }

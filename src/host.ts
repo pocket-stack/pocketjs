@@ -28,8 +28,9 @@ export interface BuildHostContract {
   readonly hostAbi: number;
 }
 
-/** The `ui.*` op surface. Handles are generation-tagged positive i32 ids;
- *  0 means "none" (anchor 0 = append, setFocus 0 = clear). */
+/** The `ui.*` op surface. Node ids are generation-tagged positive i32 values;
+ *  node id 0 means "none" (anchor 0 = append, setFocus 0 = clear). Texture
+ *  handles have operation-specific 0-based or generation-tagged contracts. */
 export interface HostOps {
   /** type: spec NODE_TYPE (0 view, 1 text, 2 image) → new node id. */
   createNode(type: number): number;

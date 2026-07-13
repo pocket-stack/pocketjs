@@ -1,14 +1,15 @@
 # Architecture
 
-PocketJS is a JSX UI stack that runs apps on real Sony PSP hardware, in PPSSPP,
-in the browser, and under headless Bun. It gets there with one principle:
+PocketJS is a JSX UI stack that runs apps on real Sony PSP and PS Vita hardware,
+in PPSSPP and Vita3K, in desktop/browser hosts, and under headless Bun. It gets
+there with one principle:
 **one Rust core, framework-specific JS adapters, one layout engine everywhere.**
 
 The JavaScript side can be Solid or Vue Vapor. Solid uses its universal renderer;
 Vue Vapor uses a Vapor renderer adapter and a tiny DOM-shaped facade for Vue's
 helpers. The rendering, layout, styling, animation, and text engine is a single
-`no_std` Rust crate (`pocketjs-core`) compiled twice: once to MIPS for the PSP,
-once to `wasm32` for the browser and tests. Styling is a build-time
+`no_std` Rust crate (`pocketjs-core`) compiled for each host: MIPS for PSP, ARM
+for Vita, `wasm32` for browser/tests, and the desktop target for wgpu. Styling is a build-time
 [Tailwind subset](/docs/tailwind/); fonts are baked into atlases at build time.
 This page explains how the pieces fit together and why each choice was made.
 
@@ -26,7 +27,7 @@ This page explains how the pieces fit together and why each choice was made.
    └──────┼──────────────────────────────────────────┘
           │
    ┌──────┴──────────────────┐   ┌──────────────────────────┐
-   │  QuickJS (PSP)          │   │  browser / headless Bun   │
+   │ QuickJS (PSP / Vita)    │   │ browser / desktop / Bun   │
    │    framework runtime    │   │    framework runtime      │
    │      │ ui.* ops         │   │      │ same ui.* ops      │
    │      ▼                  │   │      ▼                    │
@@ -36,8 +37,8 @@ This page explains how the pieces fit together and why each choice was made.
    │  · text                 │   │  · text                   │
    │      │ DrawList         │   │      │ DrawList           │
    │      ▼                  │   │      ▼                    │
-   │  sceGu backend (GE)     │   │  software rasterizer      │
-   └─────────────────────────┘   │    → canvas / PNG golden  │
+   │ GE or GXM backend       │   │ software or wgpu backend  │
+   └─────────────────────────┘   │   → canvas / PNG / window │
                                  └───────────────────────────┘
 ```
 
@@ -46,24 +47,24 @@ Reading it top to bottom:
 1. **`app.tsx`** is ordinary framework JSX: PocketJS components from
    [`@pocketjs/framework/components`](/docs/components/), state/lifecycle from
    `solid-js` or `vue`, and `class` strings from the Tailwind subset.
-2. The **build** (`bun scripts/build.ts <app>`) selects a framework from
-   `pocket.config.ts` or `--framework=...`, runs that JSX transform, compiles
-   class strings to a binary style table (`styles.bin`), bakes the exact glyphs
-   the app uses into font atlases, and packs styles + atlases + images into
-   `app.pak`. The JS is bundled to `bundle.js`. See
+2. A product **build** resolves `pocket.json` for one target, then runs the
+   selected JSX transform, compiles class strings to a binary style table
+   (`styles.bin`), bakes target-density glyph atlases/assets, and packs them
+   into `app.pak`. The JS is bundled with target/ABI constants. The low-level
+   `bun scripts/build.ts <app>` path remains for framework development. See
    [Build pipeline](/docs/build-pipeline/) for the two-pass details.
 3. At **runtime**, the selected framework runtime executes on whichever JS
-   engine the host provides — QuickJS on the PSP, the host engine in the browser
+   engine the host provides — QuickJS on PSP/Vita, the host engine in the browser
    or Bun — and emits mutation ops (`ui.*`) into `pocketjs-core`.
 4. **`pocketjs-core`** owns the retained UI tree: it runs flexbox layout,
    ticks animations, measures and lays out text, and produces a flat
    **DrawList** each frame.
-5. A thin **backend** turns the DrawList into pixels: `sceGu` (the PSP's
-   Graphics Engine) on hardware, or a deterministic software rasterizer in
-   `wasm32` for the browser canvas and for byte-exact PNG goldens.
+5. A thin **backend** turns the DrawList into pixels: sceGu/GE on PSP,
+   vita2d/GXM on Vita, wgpu on desktop, or a deterministic software rasterizer
+   for the browser canvas and byte-exact PNG goldens.
 
 The dashed line down the middle is the whole point: everything *above* the
-backend is identical across targets. The layout you see in the browser
+backend follows the same contract across targets. The layout you see in the browser
 [playground](/playground/) is the same layout, computed by the same code, that
 runs on the handheld.
 
@@ -88,9 +89,10 @@ target engines provide.
 
 On the PSP the JavaScript engine is **QuickJS** (Bellard's engine, the
 `2026-06-04` build), which is roughly **ES2023**. Modern syntax works — logical
-assignment operators, and importantly **`WeakRef` and `FinalizationRegistry`
-are both available**, which PocketJS uses as a backstop for reclaiming
-abandoned nodes.
+assignment operators, `WeakRef`, and `FinalizationRegistry` are available.
+PocketJS node lifetime does not depend on garbage-collector timing: the mirror
+tree uses an explicit end-of-frame sweep plus `retain` / `release` for detached
+subtrees.
 
 What is *not* there shapes the API surface:
 
@@ -103,8 +105,10 @@ What is *not* there shapes the API surface:
 Because there is no timer or microtask *scheduler*, Solid's
 `createResource`, transitions, and `enableScheduling` are **off-limits on the
 PSP**. The compiler lints on importing them so you find out at build time, not
-on-device. Everything the browser and Bun hosts run is deliberately kept to the
-same subset, so an app that builds is an app that runs everywhere.
+on-device. Browser and Bun development builds stay inside the same syntax and
+scheduler subset. Target compatibility is checked separately from the
+manifest's required APIs and viewport contract, so (for example) a
+touch-required Vita app is rejected for PSP before compilation.
 
 ### taffy 0.11 for layout
 
@@ -115,34 +119,38 @@ f32-only, and needs no `libm`, which is exactly what a bare-metal PSP binary
 requires. Using a real, tested layout engine — rather than a hand-rolled
 subset — is why layout is identical on every host.
 
-### One Rust core, compiled twice
+### One Rust core, compiled per host
 
 `core/` is a platform-agnostic `#![no_std]` + `alloc` library,
 **`pocketjs-core`**. It contains no I/O, no graphics API, and no timing — just
-the tree, layout, styling, animation, text, and DrawList generation. Two thin
+the tree, layout, styling, animation, text, and DrawList generation. Thin
 wrappers give it a body:
 
 - **`pocketjs-psp`** (`native/`) — the PSP EBOOT. It embeds QuickJS, feeds JS
   the `ui.*` ops, and renders the DrawList through `sceGu`.
+- **`pocketjs-vita`** (`native-vita/`) — the PS Vita VPK host. It embeds the
+  same guest/core contract and renders native-density output through vita2d/GXM.
 - **`pocketjs-wasm`** (`wasm/`) — a `wasm32-unknown-unknown` `cdylib` that wraps
   the *same* core with a deterministic software rasterizer. This one binary
   serves **both** the browser dev host and the headless Bun golden tests.
+- **Desktop uihosts** — native debug/custom-host crates consume the same
+  DrawList through wgpu and the stable `HostBuildInputs` projection.
 
 One layout engine, one animation clock, one text layouter — reused, never
 reimplemented per platform.
 
-### Native, fixed-dt animation
+### Native animation on a fixed core clock
 
-Tweens and springs tick inside Rust, once per vblank, at a **fixed
-`dt = 1/60 s`**. JavaScript only *declares* motion (via
+Tweens and springs tick inside Rust in exact **`dt = 1/60 s`** steps. A 60 Hz
+host advances one core tick per virtual frame; a deliberately slower simulation
+can advance multiple ticks for that frame. JavaScript only *declares* motion (via
 [`@pocketjs/framework/animation`](/docs/animation/) or `transition-*` classes); it
 never drives it frame by frame.
 
-The fixed timestep has a powerful consequence: **frame content is a pure
-function of the frame index.** Given the same inputs, frame *N* is byte-for-byte
-identical every time it is computed. That is what makes the PNG golden tests
-exact rather than fuzzy — the `wasm32` rasterizer and the goldens agree down to
-the pixel.
+Given the same build, simulation-rate policy, input tape, and frame-boundary
+effect deliveries, those discrete ticks follow the same trajectory. That is
+what makes the PNG golden tests exact rather than fuzzy — the `wasm32`
+rasterizer and the goldens agree down to the pixel.
 
 ### Baked text
 
@@ -162,10 +170,10 @@ codepoints during the build. See [Styling](/docs/styling/) and
 It helps to think of PocketJS as three layers with narrow contracts between
 them.
 
-**1. The app + Solid runtime (JavaScript).** Your components, signals, and
-effects. The universal renderer (`src/renderer.ts`) keeps a lightweight JS
-*mirror* of the tree — `{ id, parent, children[], … }` — so that Solid's
-reconciler can *read* the tree structure without ever crossing the FFI boundary.
+**1. The app + framework runtime (JavaScript).** Your components and reactive
+state. The Solid/Vue adapters keep a lightweight JS *mirror* of the tree —
+`{ id, parent, children[], … }` — so the reconciler can *read* tree structure
+without crossing the FFI boundary.
 Only *mutations* cross into native. `setProperty` runs through a dispatch table:
 `className` → style id, `on*` → the input registry, `src` → the texture
 registry, a `style={{…}}` object → per-key property ids (previous-value
@@ -181,10 +189,10 @@ stage** in `draw.rs` guarantees no negative or oversized coordinates ever reach
 a backend — axis-aligned quads are clipped with UV/color re-interpolation,
 rotated quads are Sutherland–Hodgman-clipped or culled.
 
-**3. The backend.** Consumes the DrawList and nothing else. On PSP that is
-`sceGu`; in `wasm32` it is a scanline rasterizer that handles blending,
-gradients, and glyph coverage identically. Backends never own the frame
-lifecycle — on PSP the main loop owns `sceGuStart` / `sceGuFinish`.
+**3. The backend.** Consumes the DrawList and nothing else. PSP uses `sceGu`,
+Vita uses vita2d/GXM, desktop uses wgpu, and `wasm32` uses a scanline rasterizer
+that handles blending, gradients, and glyph coverage deterministically.
+Backends do not redefine layout, input, or styling semantics.
 
 The exact op signatures, node lifecycle, and per-frame ordering live on the
 [Native contract](/docs/native-contract/) page.
@@ -226,12 +234,16 @@ pocketjs/
     src/ge.rs           DrawList → sceGu; per-frame bump vertex arena
     src/pak.rs        native read-only .pak walker (styles/atlases/images)
 
+  native-vita/          Rust bin `pocketjs-vita` — the Vita VPK host
+    build.rs            consumes the same HostBuildInputs environment
+    src/                QuickJS bindings + vita2d/GXM DrawList backend
+
   wasm/                 Rust cdylib `pocketjs-wasm` — core + rasterizer
     src/lib.rs          extern "C" op mirror + render() → RGBA8 480×272
 
   src/                  TS/JS runtime shared by all hosts
     renderer.ts         Solid universal renderer; JS mirror tree; dispatch table
-    host.ts             HostOps interface + PSP / wasm bindings
+    host.ts             HostOps interface + native/injected target handshake
     pak.ts            QuickJS-safe reader (web/test hosts)
     input.ts            edge-detect + focus manager
     anim.ts             animate() / spring() implementation
@@ -296,4 +308,4 @@ frame order are covered on the [Native contract](/docs/native-contract/) page.
 - [Styling](/docs/styling/) and [Tailwind subset](/docs/tailwind/) — the
   supported utilities and how classes become the binary style table.
 - [Getting started](/docs/getting-started/) — build and run your first app in
-  the browser and on PPSSPP.
+  the browser, on PSP/PPSSPP, or in Vita3K.

@@ -10,10 +10,15 @@ name: Release to npm
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish (for example, 0.4.0)
+        required: true
+        type: string
 
 permissions:
-  contents: read
+  contents: write # GitHub Release creation
   id-token: write # npm --provenance
 
 jobs:
@@ -26,6 +31,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      # This is intentionally before toolchain setup or publish work. A tag or
+      # manual input can only release the exact version committed in all three
+      # public version authorities.
+      - name: Verify release version
+        env:
+          RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: bun scripts/release-check.ts "$RELEASE_VERSION"
 
       # npm (not bun) does the publishing. Trusted Publishing needs npm >=
       # 11.5.1 (Node 22 bundles 10.x), and no registry-url: setup-node's
@@ -54,13 +67,32 @@ jobs:
           restore-keys: ${{ runner.os }}-wasm-
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
       - name: Build wasm (core + software rasterizer)
         run: bun scripts/wasm.ts
 
-      - name: Test
+      - name: Test JavaScript and package contracts
         run: bun run test
+
+      # The app build at the start of `bun run test` generates the local style
+      # module that TypeScript intentionally imports.
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Test Rust core
+        run: cargo test --locked --manifest-path core/Cargo.toml
+
+      - name: Test renderer goldens
+        run: bun test/golden.ts
+
+      - name: Test deterministic tape replay
+        run: bun run tape:check
+
+      - name: Build documentation and public schema
+        run: |
+          bun site/build.ts
+          cmp schema/pocket-2.json site/dist/schema/pocket-2.json
 
       - name: Publish @pocketjs/framework
         run: |
@@ -81,4 +113,21 @@ jobs:
             echo "$name@$version already published — skipping"
           else
             npm publish --access public --provenance
+          fi
+
+      # The GitHub Release mirrors the changelog entry for this version.
+      # Idempotent like the npm steps: an existing release is left alone.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+        run: |
+          tag="v${RELEASE_VERSION#v}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag release already exists — skipping"
+          else
+            bun scripts/release-notes.ts "$tag" > "$RUNNER_TEMP/notes.md"
+            gh release create "$tag" --verify-tag --latest \
+              --title "$(bun scripts/release-notes.ts "$tag" --title)" \
+              --notes-file "$RUNNER_TEMP/notes.md"
           fi

@@ -1,10 +1,10 @@
 {
-  "$schema": "https://pocket-stack.dev/schema/pocket-2.json",
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
   "pocket": 2,
   "id": "dev.pocket-stack.hero",
   "name": "pocketjs-hero",
   "title": "PocketJS Hero",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "engine": {
     "capabilities": {
       "requires": [

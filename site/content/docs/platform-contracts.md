@@ -42,7 +42,7 @@ Format 2 is strict JSON data. A PSP-shaped portable app can say:
 
 ```json
 {
-  "$schema": "https://pocket-stack.dev/schema/pocket-2.json",
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
   "pocket": 2,
   "id": "dev.pocket-stack.telemetry",
   "name": "pocket-telemetry",
@@ -212,13 +212,22 @@ Target selection happens once at a typed backend boundary:
 ```ts
 const targetBackends = { psp: pspBackend, vita: vitaBackend }
   satisfies Record<PocketTargetId, TargetBackend>;
-await targetBackends[plan.target.id](context);
+
+function dispatchTarget(target: PocketTargetId, context: TargetBackendContext) {
+  return targetBackends[target](context);
+}
+
+await dispatchTarget(validatedTarget, context);
 ```
 
 PSP and Vita still have different native commands and packages. The registry
 makes that difference explicit and exhaustive while keeping the resolver and
 compiler target-neutral. After dispatch, a backend reads resolved fields; it
 does not recalculate physical dimensions or output names from the target id.
+`validatedTarget` is the request target accepted by the registry-backed
+resolver; the serialized plan deliberately keeps its cross-process id as a
+string rather than pretending arbitrary custom-host plans share the stock
+target union.
 
 The complete `ResolvedBuildPlan` is internal and may evolve. Custom hosts use
 the smaller stable boundary instead:

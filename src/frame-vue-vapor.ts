@@ -1,6 +1,9 @@
 // App-facing lifecycle callbacks for Vue Vapor.
 
 import { computed, onScopeDispose, shallowRef, type ComputedRef } from "vue";
+import { __resetAnalog } from "./analog.ts";
+
+export { __setAnalog, analogRaw, analogX, analogY } from "./analog.ts";
 
 type FrameCallback = (buttons: number) => void;
 
@@ -10,6 +13,7 @@ let buttonHandlerBlockDepth = 0;
 export function resetFrameHooks(): void {
   callbacks.clear();
   buttonHandlerBlockDepth = 0;
+  __resetAnalog();
 }
 
 export function runFrameHooks(buttons: number): void {

@@ -326,6 +326,7 @@ held mask. Options:
 interface ButtonPressOptions {
   active?: boolean | (() => boolean); // gate the handler on/off (default true)
   allowWhenBlocked?: boolean;         // keep firing while input is blocked (default false)
+  latched?: boolean;                  // wait for release before the next edge (default false)
 }
 ```
 
@@ -334,6 +335,10 @@ interface ButtonPressOptions {
 ```tsx
 onButtonPress(BTN.SQUARE, () => favorite(), { active: () => tab() === "browse" });
 ```
+
+Use `latched: true` when a screen or overlay mounts under the same held button
+that opened it. The handler stays armed-off until that button is observed up
+for a frame, so the held opener cannot become a second press.
 
 The declarative equivalent is the [`ActionHandler`](/docs/app-shell/) component, which
 wraps `onButtonPress`:

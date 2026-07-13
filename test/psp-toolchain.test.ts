@@ -232,7 +232,8 @@ describe("canonical PSP toolchain", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stdout.toString()).toContain("LLVM override (POCKETJS_LLVM_BIN)");
     expect(result.stdout.toString()).toContain(missing);
-  });
+    // Spawning the CLI cold takes >5 s on CI runners; the default timeout flakes.
+  }, 30_000);
 
   test("production entrypoints have no personal, DreamCart, or sibling toolchain fallback", async () => {
     const productionFiles = [

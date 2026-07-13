@@ -1,31 +1,44 @@
 # @pocketjs/cli
 
 The [PocketJS](https://pocketjs.dev) toolchain CLI — `doctor`/`setup` for the
-bun + Rust + PSP toolchain (flutter-doctor style), app scaffolding, and
-build/run passthrough.
+bun + Rust + PSP toolchain (flutter-doctor style), manifest-first app
+scaffolding, and build/run passthrough for PSP and PS Vita.
 
 ```sh
 npm install -g @pocketjs/cli
 
 pocket doctor            # diagnose Bun / pinned Rust + PSP toolchain
 pocket setup             # run PocketJS's pinned, idempotent bootstrap
-pocket create my-app     # scaffold demos/my-app in a PocketJS checkout
+pocket create my-app     # scaffold demos/my-app with pocket.json v2
+pocket check --target psp --manifest demos/my-app/pocket.json
+pocket compile --target psp --manifest demos/my-app/pocket.json
+pocket build --target psp --manifest demos/my-app/pocket.json -- --release
+pocket build --target vita --manifest demos/my-app/pocket.json -- --release
+pocket play vita hero    # build, install and launch a stock demo in Vita3K
 pocket dev my-app-main   # build + serve in the browser
 pocket psp my-app        # build the PSP EBOOT
+pocket vita my-app       # build the PS Vita VPK
 pocket hw my-app         # build + run on a real PSP over PSPLINK
 pocket psplink           # interactive multi-app switcher on a real PSP
 pocket devtools my-app   # DevTools panel + USB debug bridge, one command
 pocket tape replay …     # record / replay / inspect input tapes headlessly
 ```
 
-`create`, `dev`, `build`, `psp`, `hw`, `psplink`, `devtools` and `tape` run inside a PocketJS
-checkout (the CLI finds it by walking up from the current directory):
+Commands run inside a PocketJS checkout (the CLI finds it by walking up from
+the current directory):
 
 ```sh
 git clone https://github.com/pocket-stack/pocketjs
 cd pocketjs && bun install
 pocket doctor
 ```
+
+`check`, `compile`, and `build` delegate to PocketJS's canonical manifest
+resolver. `pocket.json` owns the framework, entry, output, viewport and API
+requirements; the target backend consumes the resulting build plan. Arguments
+after `--` go to the selected PSP or Vita backend. The low-level `dev`, `psp`,
+`vita`, `hw`, `psplink`, `devtools`, and `tape` commands remain available for
+framework demos and host development.
 
 Only Node ≥ 18 is required for the CLI itself; everything it diagnoses or
 installs is for building PocketJS apps. See the

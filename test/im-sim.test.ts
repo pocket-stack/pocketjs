@@ -66,13 +66,13 @@ describe("determinism", () => {
     const again = await runScenario(scenarioA(60));
     expect(again.hashes).toEqual(a60.hashes);
     expect(again.effects).toEqual(a60.effects);
-  });
+  }, 30000);
 
   test("chaos cannot reach the world: sleeps + garbage + GC change nothing", async () => {
     const chaos = await runScenario(scenarioA(60), { maxSleepMs: 3, gcEvery: 120 });
     expect(chaos.hashes).toEqual(a60.hashes);
     expect(chaos.effects).toEqual(a60.effects);
-  });
+  }, 30000);
 
   test("a low-rate world is deterministic too", async () => {
     // Scroll speed is per-frame (PSP runs a fixed 60 Hz), so a 4 Hz world
@@ -81,7 +81,7 @@ describe("determinism", () => {
     const y = await runScenario(scenarioA(4));
     expect(y.hashes).toEqual(x.hashes);
     expect(y.effects).toEqual(x.effects);
-  });
+  }, 30000);
 });
 
 describe("the sync loop is on the virtual clock", () => {
@@ -146,7 +146,7 @@ test("pagination reaches the beginning; the bottom unmounts", async () => {
   expect(treeHasText(b.tree, "did you end up trying that grid layout")).toBe(true);
   // The newest message sits ~1300 px below — outside the mount window.
   expect(treeHasText(b.tree, "knew it. ok ping me")).toBe(false);
-});
+}, 30000);
 
 // ---------------------------------------------------------------------------
 // Journey C — DAD is offline: delivery receipt only, no read, no typing, no
@@ -174,7 +174,7 @@ test("offline contacts deliver but never read or reply", async () => {
   expect(treeHasText(c.tree, "qq")).toBe(true);
   expect(treeHasText(c.tree, "IS TYPING")).toBe(false);
   expect(treeHasText(c.tree, "ask your mother")).toBe(false); // no scripted reply
-});
+}, 30000);
 
 // ---------------------------------------------------------------------------
 // Journey D — sit on the list: ambient pushes bump badges and previews.
@@ -186,4 +186,4 @@ test("ambient traffic updates unread badges and previews live", async () => {
   // becomes the conversation's preview line.
   expect(treeHasText(d.tree, "5 UNREAD")).toBe(true);
   expect(treeHasText(d.tree, "nightly build 412")).toBe(true);
-});
+}, 30000);

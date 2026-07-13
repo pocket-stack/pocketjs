@@ -2,19 +2,22 @@
 
 `pocketjs-vita` is the native PS Vita host for PocketJS. It embeds QuickJS,
 feeds the normal PocketJS pak, renders the standard DrawList with vita2d/GXM,
-and reads the physical Vita controller. Existing PocketJS bundles do not need
-a Vita-specific entry point.
+and reads the physical Vita controller. Applications do not need a
+Vita-specific entry point, but their JS/pak pair is recompiled from the
+resolved Vita plan so density and host-contract constants are target-correct.
 
 The PocketJS logical viewport remains 480x272, so PSP applications keep the
 same layout. The resolved Vita profile separately sets a 960x544 physical
 viewport and raster density 2: geometry is sampled at physical resolution,
 font coverage/SVG/core masks are baked at 2x, and `@2x` image or raw-pak
 siblings are selected when present. There is no letterboxing or aspect-ratio
-crop. D-pad, face buttons, shoulders and both analog sticks are available
-through `input::read`; reusable game hosts can pass the complete stock input
-frame through `Runtime::frame_with_input`. The front panel is sampled once per
-frame and exposed to applications as stable contact ids in 480x272 logical
-coordinates through `touches()` from `@pocketjs/framework/input`.
+crop. Native Rust hosts can read the d-pad, face buttons, shoulders, and both
+analog sticks through `input::read`. The stock PocketJS frame ABI deliberately
+forwards buttons, the left stick, and front-panel contacts through
+`Runtime::frame_with_input`; the public capability is `input.analog.left`.
+The front panel is sampled once per frame and exposed to applications as stable
+contact ids in 480x272 logical coordinates through `touches()` from
+`@pocketjs/framework/input`.
 
 ## Toolchain
 

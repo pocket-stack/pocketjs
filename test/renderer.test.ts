@@ -1174,4 +1174,29 @@ describe("public render() (index.ts)", () => {
 
     dispose();
   });
+
+  test("ActionHandler forwards latched so a held opener must release before firing", () => {
+    const g = globalThis as { ui?: HostOps; frame?: (buttons: number) => void };
+    g.ui = host.ops;
+    let presses = 0;
+
+    const dispose = publicMount(
+      () =>
+        View({
+          children: ActionHandler({
+            button: BTN.SELECT,
+            latched: true,
+            onPress: () => presses++,
+          }),
+        }),
+    );
+
+    g.frame?.(BTN.SELECT);
+    expect(presses).toBe(0);
+    g.frame?.(0);
+    g.frame?.(BTN.SELECT);
+    expect(presses).toBe(1);
+
+    dispose();
+  });
 });

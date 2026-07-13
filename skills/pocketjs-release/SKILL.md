@@ -40,7 +40,11 @@ bun scripts/psp.ts hero        # cross-compile check when native/ changed
    `~/code/pocketjs`, so the local delete fails — GitHub prunes the remote
    branch itself after squash merges (verify with
    `git ls-remote origin <branch>`).
-5. **Tag = publish.**
+5. **Tag = publish.** The workflow publishes both npm packages and then
+   creates the **GitHub Release** itself (`scripts/release-notes.ts` turns
+   the version's changelog entry into the notes; the bold thesis becomes
+   the title). No entry in `site/content/changelog.md` → the release step
+   fails, so step 2 is load-bearing.
 
 ```bash
 git fetch origin main
@@ -56,6 +60,7 @@ npm view @pocketjs/framework version && npm view @pocketjs/cli version
 npm view @pocketjs/cli dist.attestations.url        # provenance present
 cd "$(mktemp -d)" && npm i -g @pocketjs/cli && pocket --help   # bin smoke
 curl -s https://pocketjs.dev/changelog/ | grep -o "X\.Y\.Z" | head -1
+gh release list --limit 2      # GitHub Release exists and is marked Latest
 ```
 
 ## Gotchas

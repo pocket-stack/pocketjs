@@ -49,8 +49,10 @@ bun scripts/build.ts hero-vue-vapor-main --framework=vue-vapor
 Or drive everything through the [`pocket` CLI](https://www.npmjs.com/package/@pocketjs/cli):
 `npm i -g @pocketjs/cli`, then `pocket doctor` checks the Bun / Rust / PSP
 toolchain (`pocket setup` runs the same pinned bootstrap), `pocket create <name>`
-scaffolds an app, and `pocket dev|build|psp|hw|psplink` wrap the scripts
-below.
+scaffolds a format-2 manifest, and `pocket check|compile|build --target
+psp|vita` delegate to the canonical resolver. Low-level host-development
+commands such as `pocket dev`, `pocket psp`, `pocket vita`, and `pocket play`
+remain available.
 
 The build is two-pass: pass 1 babel-transforms every module reachable from the
 entry (framework-specific JSX + TypeScript, content-hash cached in
@@ -85,7 +87,7 @@ handles host detection, the generated style table, pak image uploads and the
 host frame callback:
 
 ```tsx
-import { mount } from "@pocketjs/framework";
+import { mount } from "@pocketjs/framework/solid";
 import App from "./app.tsx";
 
 mount(() => <App />);
@@ -97,12 +99,12 @@ dynamic styling is ternaries of full literals, `style={{...}}`, or `animate()`.
 `classList`, `hover:` and template-interpolated classes are compile errors.
 `rounded-full` requires `w-N h-N` in the same literal.
 
-Framework selection is explicit: set `framework: "solid"` or
-`framework: "vue-vapor"` in `pocket.config.ts`, or pass `--framework=...` to
-`scripts/build.ts`, `scripts/dev.ts`, or `scripts/psp.ts`. App state and
-component lifecycle come from the native framework package (`solid-js` or
-`vue`); PocketJS supplies host components, input, animation, assets and native
-runtime wiring.
+Framework selection is explicit: product builds set `app.framework` to
+`"solid"` or `"vue-vapor"` in `pocket.json`. Low-level compiler/host work can
+still use `pocket.config.ts` or pass `--framework=...` to the individual
+scripts. App state and component lifecycle come from the native framework
+package (`solid-js` or `vue`); PocketJS supplies host components, input,
+animation, assets and native runtime wiring.
 
 `@pocketjs/framework/components` also exposes small app-shell primitives:
 `Screen`, `Focusable`, `FocusScope`, `ActionHandler`, `FocusGrid`, `Portal`,
@@ -125,8 +127,13 @@ bun run test                          # spec contract + tailwind parser tests
 bun pocket check --target psp         # validate pocket.json + resolved target contract
 bun pocket compile --target psp       # typecheck and compile, for custom native hosts
 bun pocket build --target psp         # typecheck, compile, and package the target
+pocket build --target vita -- --release
+pocket play vita hero                 # build, install and launch in Vita3K
 bun scripts/build.ts <app> [--framework=solid|vue-vapor] [--extra-chars=…]
-bun run psp / bun run vita / bun run dev / bun run wasm
+bun run psp <app>                  # low-level PSP demo build
+bun run vita <app>                 # low-level Vita demo build
+bun run dev [app]                  # browser dev host
+bun run wasm                       # rebuild the wasm core
 bun run e2e:vita                     # Vita3K, native-density 960x544 golden E2E
 bun psplink                           # interactive real PSP switcher over PSPLINK
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
@@ -137,7 +144,7 @@ The PSP bootstrap owns every production input: Rust nightly + `rust-src`, the
 `cargo-psp` tools built at an exact `pocket-stack/rust-psp` revision, and a
 SHA-256-verified `pocket-stack/pspdev` SDK release. It installs them under the
 shared `${XDG_CACHE_HOME:-~/.cache}/pocket-stack` cache, so independent
-PocketJS, DreamCart, and downstream-app checkouts can reuse one installation.
+PocketJS and downstream-app checkouts can reuse one installation.
 Set `POCKET_STACK_CACHE_DIR` to move that cache. An explicit `PSP_SDK` takes
 precedence over `PSPDEV`, which takes precedence over the pinned cache; an
 invalid explicit path fails rather than silently selecting another SDK. PSP
@@ -193,7 +200,7 @@ current limitations, is documented in
 The Vita host is documented in [native-vita/README.md](./native-vita/README.md).
 It preserves PocketJS's 480x272 logical layout while rasterizing geometry,
 fonts, vectors and core masks at Vita's native 960x544 density. Physical
-controls, analog input, and front-panel multi-touch snapshots are supported;
+controls, left-analog input, and front-panel multi-touch snapshots are supported;
 PSP builds retain their controller-only fallback.
 
 ## DevTools + time travel
@@ -212,9 +219,10 @@ bun run tape replay <app> <tape.json> --png 60   # render any frame headlessly
 bun run tape:check                    # session-golden replay regression
 ```
 
-On-demand device screenshots (📷 in the panel) work on every host — on real
-hardware the raw VRAM rides the usbhostfs mount and the bridge encodes the
-PNG desktop-side.
+On-demand screenshots (📷 in the panel) work in the browser host and through
+the PSP mailbox. On a real PSP the raw VRAM rides the usbhostfs mount and the
+bridge encodes the PNG desktop-side. Vita exposes the core inspection ops, but
+its DevTools transport and screenshot capture are not wired yet.
 
 ## Determinism + the sim host
 

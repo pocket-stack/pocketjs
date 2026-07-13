@@ -1,5 +1,5 @@
 {
-  "$schema": "https://pocket-stack.dev/schema/pocket-2.json",
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
   "pocket": 2,
   "id": "dev.pocket-stack.touch-first",
   "name": "pocket-touch-first",
