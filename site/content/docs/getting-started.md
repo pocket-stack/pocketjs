@@ -239,6 +239,13 @@ pocket build --target vita --manifest demos/my-app/pocket.json -- --release
 # demos/my-app/dist/vita/my-app-main.vpk
 ```
 
+Vita VPKs include PocketJS's default black 128x128 bubble icon and complete
+LiveArea background/startup artwork, so a newly built application does not get
+a blank bubble or generic launch gate. Custom native hosts call
+`packageVitaVpk()` from `@pocketjs/framework/vita-package`; VPK-relative app
+assets override matching defaults while missing artwork continues to inherit
+PocketJS's complete set.
+
 `pocket compile --target …` stops after the JS/pak artifacts for a custom native
 host. `pocket check --target …` is read-only. Arguments after `--` belong to the
 selected native backend.

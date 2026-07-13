@@ -23,10 +23,15 @@ describe("published npm artifacts", () => {
   test("framework tarball contains every locked native and standalone Pocket3D Vita input", async () => {
     const files = packedFiles(root);
     expect(files).toEqual(expect.arrayContaining([
+      "assets/brand/pocketjs-avatar-white-minimal.png",
       "native/Cargo.toml",
       "native/Cargo.lock",
       "native-vita/Cargo.toml",
       "native-vita/Cargo.lock",
+      "native-vita/assets/sce_sys/icon0.png",
+      "native-vita/assets/sce_sys/livearea/contents/bg.png",
+      "native-vita/assets/sce_sys/livearea/contents/startup.png",
+      "native-vita/assets/sce_sys/livearea/contents/template.xml",
       "pocket3d/crates/pocket3d-vita/Cargo.toml",
       "pocket3d/crates/pocket3d-vita/Cargo.lock",
       "pocket3d/crates/pocket3d-bsp/Cargo.toml",

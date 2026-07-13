@@ -78,8 +78,13 @@ plus the first eight uppercase hexadecimal digits of its SHA-256 digest. This
 produces a valid nine-character Vita title id without a per-demo table, so
 Hero, Gallery, and other demos coexist instead of replacing one another. Keep
 the manifest `id` unchanged across releases to preserve installation identity.
-The VPK is self-contained; no separate app pak or shader file needs to be
-copied beside it.
+Every VPK also includes PocketJS's black 128x128 bubble icon and complete
+LiveArea artwork (840x500 background, 280x158 startup image, and template), so
+a new app never installs as a blank white bubble or generic launch gate. Custom
+hosts call `packageVitaVpk()` from `@pocketjs/framework/vita-package`:
+framework defaults are resolved first and application artwork overlays them.
+The VPK is self-contained; no separate app pak, artwork, or shader file is
+needed.
 
 ## Golden E2E
 

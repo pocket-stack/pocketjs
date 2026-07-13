@@ -21,6 +21,8 @@ bench = []
 # reusable runtime free of a static id prevents separate apps from replacing
 # one another on real hardware and in Vita3K.
 title_name = "PocketJS"
+# scripts/vita-package.ts owns the final VPK asset merge. Keeping cargo-vita's
+# intermediate package asset-free prevents a second, divergent packaging path.
 
 # vita-elf-create consumes sceUserMainThreadStackSize from the ELF symbol
 # table. The release default strips that symbol before conversion and falls

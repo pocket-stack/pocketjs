@@ -14,6 +14,10 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
+import {
+  DEFAULT_VITA_PACKAGE_ASSETS,
+  VITA_REQUIRED_SYSTEM_ASSETS,
+} from "../scripts/vita-package.ts";
 import { vitaTitleId } from "../src/manifest/vita-package.ts";
 import { encodePNG } from "./png.ts";
 import { encodeThresholdInput, GOLDEN_SPECS } from "./golden-specs.ts";
@@ -41,6 +45,7 @@ const sourceConfig =
   (process.platform === "darwin"
     ? `${homedir()}/Library/Application Support/Vita3K/Vita3K/config.yml`
     : `${homedir()}/.config/Vita3K/config.yml`);
+const unzip = Bun.which("unzip");
 
 if (!vita3k || !existsSync(vita3k)) {
   console.error("Vita3K not found (set VITA3K, or install ~/Applications/Vita3K.app)");
@@ -48,6 +53,10 @@ if (!vita3k || !existsSync(vita3k)) {
 }
 if (!existsSync(sourceConfig)) {
   console.error(`Vita3K config not found at ${sourceConfig} (set VITA3K_CONFIG)`);
+  process.exit(2);
+}
+if (!unzip) {
+  console.error("unzip not found (required to validate the built Vita VPK)");
   process.exit(2);
 }
 const sourceConfigText = readFileSync(sourceConfig, "utf8");
@@ -180,6 +189,22 @@ function hasNativeDetail(rgba: Uint8Array): boolean {
   return false;
 }
 
+function assertPackagedDefaultLiveArea(vpk: string): void {
+  for (const path of VITA_REQUIRED_SYSTEM_ASSETS) {
+    const unpacked = Bun.spawnSync({
+      cmd: [unzip!, "-p", vpk, path],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (unpacked.exitCode !== 0) {
+      throw new Error(`VPK is missing ${path}: ${unpacked.stderr.toString().trim()}`);
+    }
+    if (!Buffer.from(unpacked.stdout).equals(readFileSync(`${DEFAULT_VITA_PACKAGE_ASSETS}/${path}`))) {
+      throw new Error(`VPK ${path} does not match PocketJS's default Vita asset`);
+    }
+  }
+}
+
 writeFixture();
 mkdirSync(VITA_GOLDENS, { recursive: true });
 let passed = 0;
@@ -224,10 +249,23 @@ for (const spec of specs) {
     continue;
   }
 
+  try {
+    assertPackagedDefaultLiveArea(`${ROOT}dist/vita/${spec.name}.vpk`);
+  } catch (error) {
+    console.error(`FAIL ${spec.name}: ${(error as Error).message}`);
+    failed += spec.capture.length;
+    continue;
+  }
+
   rmSync(CAPTURE_DIR, { recursive: true, force: true });
   mkdirSync(CAPTURE_DIR, { recursive: true });
   copyFileSync(`${NATIVE_RELEASE}/pocketjs-vita.self`, `${appDir}/eboot.bin`);
   copyFileSync(`${NATIVE_RELEASE}/pocketjs-vita.sfo`, `${appDir}/sce_sys/param.sfo`);
+  for (const path of VITA_REQUIRED_SYSTEM_ASSETS) {
+    const destination = `${appDir}/${path}`;
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(`${DEFAULT_VITA_PACKAGE_ASSETS}/${path}`, destination);
+  }
 
   try {
     await runVita3K(titleId);

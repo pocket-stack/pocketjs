@@ -15,6 +15,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { vitaTitleId } from "../src/manifest/vita-package.ts";
 import { demoIdentity } from "./demo-identity.ts";
+import { VITA_REQUIRED_SYSTEM_ASSETS } from "./vita-package.ts";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const HOME = homedir();
@@ -223,8 +224,10 @@ mkdirSync(stagedApp, { recursive: true });
 const unzip = Bun.which("unzip");
 if (!unzip) throw new Error("unzip not found");
 await run([unzip, "-oq", VPK, "-d", stagedApp], "VPK extraction");
-if (!existsSync(`${stagedApp}/eboot.bin`) || !existsSync(`${stagedApp}/sce_sys/param.sfo`)) {
-  throw new Error("built VPK is missing eboot.bin or sce_sys/param.sfo");
+const missingVpkFiles = ["eboot.bin", "sce_sys/param.sfo", ...VITA_REQUIRED_SYSTEM_ASSETS]
+  .filter((path) => !existsSync(`${stagedApp}/${path}`));
+if (missingVpkFiles.length > 0) {
+  throw new Error(`built VPK is missing ${missingVpkFiles.join(", ")}`);
 }
 
 mkdirSync(dirname(installedApp), { recursive: true });

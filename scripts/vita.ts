@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import { cpSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -17,6 +17,7 @@ import {
 import { verifyPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
 import { validateAndResolveBuildPlan } from "../src/manifest/resolve.ts";
 import { demoIdentity } from "./demo-identity.ts";
+import { packageVitaVpk } from "./vita-package.ts";
 
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
 const nativeDir = pspUiDir + "native-vita/";
@@ -240,13 +241,15 @@ const targetDirectory = `${nativeDir}target/armv7-sony-vita-newlibeabihf/${profi
 const eboot = `${targetDirectory}/pocketjs-vita.self`;
 const sfo = `${targetDirectory}/pocketjs-vita.sfo`;
 const vpk = `${targetDirectory}/pocketjs-vita.vpk`;
-const nextVpk = `${vpk}.pocketjs-new`;
 if (!existsSync(eboot)) throw new Error(`PocketJS vita: eboot not found at ${eboot}`);
 
 await $`${vitasdk}/bin/vita-mksfoex -d ATTRIBUTE2=12 -s TITLE_ID=${titleId} ${packageTitle} ${sfo}`;
-rmSync(nextVpk, { force: true });
-await $`${vitasdk}/bin/vita-pack-vpk -s ${sfo} -b ${eboot} ${nextVpk}`;
-renameSync(nextVpk, vpk);
+await packageVitaVpk({
+  tool: `${vitasdk}/bin/vita-pack-vpk`,
+  sfo,
+  eboot,
+  output: vpk,
+});
 
 const packagedDirectory = resolvePath(outputDir, "vita");
 const packaged = resolvePath(packagedDirectory, `${outputApp}.vpk`);
