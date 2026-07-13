@@ -10,10 +10,13 @@ function packedFiles(cwd: string): string[] {
     stderr: "pipe",
   });
   expect(result.exitCode, result.stderr.toString()).toBe(0);
-  const report = JSON.parse(result.stdout.toString()) as Array<{
-    files: Array<{ path: string }>;
-  }>;
-  return report[0]!.files.map((file) => file.path);
+  // npm <= 11 reports an array of packs; npm >= 12 keys packs by package name.
+  const parsed = JSON.parse(result.stdout.toString()) as unknown;
+  const report = (
+    Array.isArray(parsed) ? parsed[0] : Object.values(parsed as object)[0]
+  ) as { files: Array<{ path: string }> } | undefined;
+  expect(report?.files, result.stdout.toString().slice(0, 200)).toBeDefined();
+  return report!.files.map((file) => file.path);
 }
 
 describe("published npm artifacts", () => {
