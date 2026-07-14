@@ -116,26 +116,60 @@ async function findChrome(): Promise<string> {
   throw new Error("no Chromium-family browser found (Chrome/Chromium/Edge/Brave) for rendering");
 }
 
-async function probe(input: string) {
-  const one = async (args: string[]) => (await $`ffprobe ${args}`.quiet().text()).trim();
-  // CSV gains a trailing empty field for side-data-heavy iPhone HDR streams,
-  // turning values such as `1920` into `1920,`. Keep scalar probes plain.
-  const plainOutput = "default=nw=1:nk=1";
-  const w = Number((await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width", "-of", plainOutput, input])).split("\n")[0]);
-  const h = Number((await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", plainOutput, input])).split("\n")[0]);
-  const rfr = (await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", plainOutput, input])).split("\n")[0];
-  const colorSpace = (await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_space", "-of", plainOutput, input])).split("\n")[0];
-  const colorTransfer = (await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_transfer", "-of", plainOutput, input])).split("\n")[0];
-  const colorPrimaries = (await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_primaries", "-of", plainOutput, input])).split("\n")[0];
-  const colorRange = (await one(["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_range", "-of", plainOutput, input])).split("\n")[0];
-  const dur = Number((await one(["-v", "error", "-show_entries", "format=duration", "-of", plainOutput, input])).split("\n")[0]);
-  const aRaw = await one(["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", plainOutput, input]);
-  const audioStreams = aRaw ? aRaw.split("\n").filter(Boolean).length : 0;
+type ProbeStream = {
+  codec_type?: string;
+  width?: number | string;
+  height?: number | string;
+  r_frame_rate?: string;
+  avg_frame_rate?: string;
+  color_space?: string;
+  color_transfer?: string;
+  color_primaries?: string;
+  color_range?: string;
+};
 
-  const [num, den] = rfr.split("/");
-  const fps = den && Number(den) > 0 ? Number(num) / Number(den) : Number(rfr);
-  if (!w || !h || !dur) throw new Error("could not probe input width/height/duration");
+type ProbeOutput = {
+  streams?: ProbeStream[];
+  format?: { duration?: number | string };
+};
+
+function frameRate(value: string | undefined): number {
+  if (!value) return 0;
+  const [num, den] = value.split("/").map(Number);
+  if (Number.isFinite(num) && Number.isFinite(den) && den > 0) return num / den;
+  const fps = Number(value);
+  return Number.isFinite(fps) ? fps : 0;
+}
+
+export function parseProbeOutput(raw: string) {
+  let output: ProbeOutput;
+  try {
+    output = JSON.parse(raw) as ProbeOutput;
+  } catch {
+    throw new Error("could not parse ffprobe output");
+  }
+
+  const video = output.streams?.find((stream) => stream.codec_type === "video");
+  const w = Number(video?.width);
+  const h = Number(video?.height);
+  const fps = frameRate(video?.r_frame_rate) || frameRate(video?.avg_frame_rate);
+  const dur = Number(output.format?.duration);
+  const audioStreams = output.streams?.filter((stream) => stream.codec_type === "audio").length ?? 0;
+  const colorSpace = video?.color_space ?? "";
+  const colorTransfer = video?.color_transfer ?? "";
+  const colorPrimaries = video?.color_primaries ?? "";
+  const colorRange = video?.color_range ?? "";
+
+  if (![w, h, fps, dur].every((value) => Number.isFinite(value) && value > 0)) {
+    throw new Error("could not probe input width/height/fps/duration");
+  }
   return { w, h, fps, dur, audioStreams, colorSpace, colorTransfer, colorPrimaries, colorRange };
+}
+
+async function probe(input: string) {
+  const entries = "stream=codec_type,width,height,r_frame_rate,avg_frame_rate,color_space,color_transfer,color_primaries,color_range:format=duration";
+  const raw = await $`ffprobe -v error -show_entries ${entries} -of json ${input}`.quiet().text();
+  return parseProbeOutput(raw);
 }
 
 async function shotLayer(chrome: string, layer: string, out: string, w: number, h: number, params: URLSearchParams) {
@@ -276,9 +310,11 @@ async function main() {
   }
 }
 
-try {
-  await main();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+if (import.meta.main) {
+  try {
+    await main();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }
