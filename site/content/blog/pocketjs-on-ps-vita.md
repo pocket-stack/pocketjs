@@ -1,10 +1,19 @@
-The entire PS Vita port of PocketJS is one command:
+<video class="w-full rounded-xl border border-line" width="1920" height="1080" autoplay muted loop controls playsinline preload="metadata" crossorigin="anonymous" aria-label="PocketJS demos and OpenStrike running on a real PS Vita">
+  <source src="https://pub-ddde9ba138d04a9a9f922aa1fda6f855.r2.dev/pocketjs/pocketjs-real-ps-vita-bee7681c.mp4" type="video/mp4" />
+  <a href="https://pub-ddde9ba138d04a9a9f922aa1fda6f855.r2.dev/pocketjs/pocketjs-real-ps-vita-bee7681c.mp4">Watch PocketJS running on a real PS Vita.</a>
+</video>
+
+<p class="text-sm text-slate-500 -mt-4">PocketJS demos and OpenStrike running natively on a real PS Vita — release VPKs, installed through VitaShell and rendered through vita2d/GXM.</p>
+
+The PocketJS Vita port is now verified on real PS Vita hardware. The release VPKs were installed as named LiveArea bubbles, then several framework demos and OpenStrike were launched and exercised using the production renderer. The deterministic Vita3K suite remains our repeatable pixel oracle; the real-device pass closes the deployment and on-hardware presentation gap.
+
+The emulator development loop remains one command:
 
 ```sh
 bun play vita gallery --fullscreen
 ```
 
-That builds a native VPK, installs it into the [Vita3K](https://vita3k.org/) emulator, and launches the same Gallery demo we ship on PSP. There is no Vita entry file, no Vita component tree, and no `if (vita)` anywhere in the application. If you are new here: [PocketJS](/blog/introducing-pocketjs/) runs real Solid and Vue Vapor components on a 2004 Sony PSP — 333 MHz, 32 MB of RAM — at a locked 60 FPS. The Vita is the second PlayStation the runtime targets, and the first whose screen has more pixels than the apps were drawn for.
+That builds a native VPK, installs it into the [Vita3K](https://vita3k.org/) emulator, and launches the same Gallery demo we ship on PSP. The same build pipeline emits the release VPK installed on hardware. There is no Vita entry file, no Vita component tree, and no `if (vita)` anywhere in the application. If you are new here: [PocketJS](/blog/introducing-pocketjs/) runs real Solid and Vue Vapor components on a 2004 Sony PSP — 333 MHz, 32 MB of RAM — at a locked 60 FPS. The Vita is the second PlayStation the runtime targets, and the first whose screen has more pixels than the apps were drawn for.
 
 <img class="w-full rounded-xl border border-line" src="/assets/blog/vita-gallery-960.png" alt="The PocketJS Gallery demo running at 960 by 544 for PS Vita: an EVERGREEN page of six procedural texture tiles named FERN, MOSS, PINE, JADE, TIDE and GROVE, with crisp labels and a controller-hint status bar" />
 
@@ -282,7 +291,7 @@ The first consumer is [`<DeepZoom>`](/blog/pocket-figma/), which now takes ancho
 - every texture and font atlas referenced by the production GXM pass is resident;
 - all 44 frames match their committed goldens byte-exactly.
 
-One caveat stays visible on purpose: Vita3K's macOS Vulkan path does not give back a coherent GXM framebuffer after presentation, so the pixel oracle is a deterministic CPU renderer inside the capture guest, rasterizing the same DrawList at 960×544. The production vita2d/GXM pass still runs and its resource residency is asserted — but these goldens are not GPU framebuffer dumps, and we will not caption them as if they were. The same discipline applies to hardware: Vita3K is a target we support and test; a physical Vita is a machine we have not yet observed, and the [install guide](https://github.com/pocket-stack/pocketjs/tree/main/native-vita#readme) says exactly that until someone's OLED proves otherwise.
+One caveat stays visible on purpose: Vita3K's macOS Vulkan path does not give back a coherent GXM framebuffer after presentation, so the pixel oracle is a deterministic CPU renderer inside the capture guest, rasterizing the same DrawList at 960×544. The production vita2d/GXM pass still runs and its resource residency is asserted — but these goldens are not GPU framebuffer dumps, and we will not caption them as if they were. Hardware is no longer unobserved: the release VPKs have now been installed through VitaShell and exercised as named LiveArea bubbles on a physical Vita, including the stock demos and OpenStrike. That run validates packaging, on-device launch, controller input, the exercised flows, and the actual vita2d/GXM presentation path; the capture guest remains the byte-exact pixel oracle. They are complementary proofs, not interchangeable captions.
 
 Real applications shook out what framework demos could not. Pocket Figma contributes seven Vita3K journeys — from fit and zoom through touch pan, pinch, and page switching — and page switching found a genuine landmine: destroying live vita2d textures mid-session could fault inside Vita3K's GXM emulation. The durable fix separates the two lifetimes that a naive port fuses — a *logical texture handle* retires immediately (stale DrawList references keep failing loudly), while its *physical GXM allocation* drops into a same-size recycler for the next upload to overwrite. Handle generations stay correct, GPU churn stays bounded, and neither layer lies about ownership. OpenStrike adds five golden moments plus live Pocket3D scene counters, proving the 3D world submission is not an empty HUD over a black frame — and its right-stick capture test moves yaw while asserting a centered stick drifts by exactly zero.
 
@@ -290,7 +299,7 @@ Real applications shook out what framework demos could not. Pocket Figma contrib
 
 <p class="text-sm text-slate-500 -mt-4">Pocket Talk — the IM demo with an on-screen keyboard and virtual message list — mid-journey on Vita, from the same 44-frame golden suite. Every app in this post installs as its own bubble: Title IDs derive from each manifest's app id, so the demos, Pocket Figma (<code>PFIG00001</code>), and OpenStrike (<code>OPSK00001</code>) coexist on one home screen instead of overwriting a shared test slot.</p>
 
-## One command, and what 0.4.0 still owes
+## One pipeline, two acceptance loops
 
 With [VitaSDK](https://vitasdk.org/) and [Vita3K](https://vita3k.org/) installed, any bundled demo is a one-liner:
 
@@ -302,7 +311,14 @@ bun play --help
 
 The runner resolves the Vita plan, compiles the app, builds and validates the VPK, replaces the installed title, restarts a running Vita3K safely, and launches the new build — the same short loop as a browser preview, except the output is a native console package.
 
-The gaps are named, because that is the point of the whole system. Dynamic host-shaped text layout is future work; text remains the deterministic baked-glyph contract both profiles advertise. The vita2d/GXM path has residency checks but no pixel oracle of its own yet. And the hardware run is pending. Each of those will land the way touch did — contract first, capability id if one is owed, tests in the same change — because the architecture has made the ad hoc version *more* work than the honest one. That is the property worth porting.
+The exact same pipeline emits the artifact used for hardware acceptance:
+
+```sh
+bun run vita hero --release
+# dist/vita/hero-main.vpk — install with VitaShell
+```
+
+The remaining gaps are named, because that is the point of the whole system. Dynamic host-shaped text layout is future work; text remains the deterministic baked-glyph contract both profiles advertise. The vita2d/GXM path has residency checks but no automated framebuffer pixel oracle of its own yet. A physical Vita run is no longer on that list: real hardware now covers install, LiveArea identity, boot, production GXM presentation, controller input, and the exercised interactive flows, while Vita3K capture covers deterministic byte-exact frames. Future capabilities will land the way touch did — contract first, capability id if one is owed, tests in the same change — because the architecture has made the ad hoc version *more* work than the honest one. That is the property worth porting.
 
 The build contracts landed in [#98](https://github.com/pocket-stack/pocketjs/pull/98), the Vita runtime in [#92](https://github.com/pocket-stack/pocketjs/pull/92), and native density plus touch in [#99](https://github.com/pocket-stack/pocketjs/pull/99), with downstream proofs in [Pocket Figma](https://github.com/pocket-stack/pocket-figma/pull/1) and [OpenStrike](https://github.com/pocket-stack/open-strike/pull/9). If you want the contract rather than the port story, start at [Platform contracts](/docs/platform-contracts/). All of it ships in PocketJS 0.4.0.
 

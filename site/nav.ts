@@ -59,7 +59,7 @@ export const BLOG_POSTS: BlogPost[] = [
     title: "Twice the Pixels, Zero Forks: PocketJS on PS Vita",
     date: "2026-07-13",
     description:
-      "PocketJS 0.4.0's headline: the same apps, unchanged, as native PS Vita bubbles. The 480×272 logical world renders at a true 960×544 through a target-owned raster density — text, vectors, and masks earn real pixels instead of stretched ones — and a pocket.json contract system (manifest × profile → one resolved plan) makes ad hoc platform hacks fail the build. Plus front touch as a first-class deterministic input, and 44 byte-exact goldens per PlayStation.",
+      "PocketJS 0.4.0's headline: the same apps, unchanged, as native PS Vita bubbles. The Vita port is now verified on real hardware: the 480×272 logical world renders at a true 960×544 through a target-owned raster density, while a pocket.json contract system makes ad hoc platform hacks fail the build. Plus front touch as deterministic input, 44 byte-exact Vita goldens, and release VPKs installed and run on a physical Vita.",
     author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
   },
   {
