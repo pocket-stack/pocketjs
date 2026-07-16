@@ -71,8 +71,21 @@ unsafe extern "C" fn audio_thread(_argc: usize, _argv: *mut c_void) -> i32 {
             OUT.0.as_mut_ptr() as *mut c_void,
         );
     }
-    sys::sceAudioSRCChRelease();
+    // sceAudioSRCChRelease fails with "busy" while the hardware drains the
+    // final block — an IGNORED failure here leaks the SRC channel and every
+    // later sceAudioSRCChReserve fails, i.e. one stop() mutes the app until
+    // reboot (observed on hardware: one STOPPED audio-thread corpse, no
+    // audio for every later session). Retry across the drain, bounded.
+    for _ in 0..250 {
+        if sys::sceAudioSRCChRelease() >= 0 {
+            break;
+        }
+        sys::sceKernelDelayThread(2_000);
+    }
     LIVE.store(false, Ordering::Release);
+    // Free the thread UID too — a plain return parks the thread as STOPPED
+    // forever and each session would leak one.
+    sys::sceKernelExitDeleteThread(0);
     0
 }
 
@@ -86,7 +99,17 @@ pub unsafe fn start(sample_rate: u32) -> bool {
     }
     WRITE_POS.store(0, Ordering::Relaxed);
     READ_POS.store(0, Ordering::Relaxed);
-    if sys::sceAudioSRCChReserve(BLOCK_FRAMES as i32, f, 2) < 0 {
+    // The previous session's channel may still be draining its last block
+    // (release retries above) — give the reserve the same grace.
+    let mut reserved = false;
+    for _ in 0..50 {
+        if sys::sceAudioSRCChReserve(BLOCK_FRAMES as i32, f, 2) >= 0 {
+            reserved = true;
+            break;
+        }
+        sys::sceKernelDelayThread(4_000);
+    }
+    if !reserved {
         return false;
     }
     RUN.store(true, Ordering::Release);
@@ -109,13 +132,14 @@ pub unsafe fn start(sample_rate: u32) -> bool {
 }
 
 /// Signal the thread down and wait for it to release the channel (bounded:
-/// one blocking output is ~46 ms; give it a generous 500 ms then move on).
+/// one blocking output is ~46 ms plus the release-retry window; a second
+/// covers it, then move on — start()'s reserve retries absorb a straggler).
 pub unsafe fn stop() {
     if !LIVE.load(Ordering::Acquire) {
         return;
     }
     RUN.store(false, Ordering::Release);
-    for _ in 0..125 {
+    for _ in 0..250 {
         if !LIVE.load(Ordering::Acquire) {
             return;
         }

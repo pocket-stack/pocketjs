@@ -162,10 +162,15 @@ pub unsafe fn tick(ui: &mut Ui) -> i32 {
     let Some(now) = parse_header_block(&hdr) else { return s.presented_frame };
 
     // 2. Discontinuity: drop queued audio and in-flight reads, resync to tail.
+    //    presented_seq resets too — slot seqs are source-frame indices, so a
+    //    BACKWARD seek rewinds them, and gating on the old watermark would
+    //    freeze the plane until playback re-passed it (observed on hardware:
+    //    ◁ then pause/resume looked like "resume is broken").
     if now.epoch != s.epoch {
         s.epoch = now.epoch;
         s.target_seq = 0;
         s.staged = 0;
+        s.presented_seq = 0;
         s.audio_next = 0;
         audio::flush();
     }
