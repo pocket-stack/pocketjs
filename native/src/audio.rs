@@ -34,6 +34,11 @@ static WRITE_POS: AtomicUsize = AtomicUsize::new(0);
 static READ_POS: AtomicUsize = AtomicUsize::new(0);
 static RUN: AtomicBool = AtomicBool::new(false);
 static LIVE: AtomicBool = AtomicBool::new(false);
+/// The SRC channel is held (reserve succeeded, release hasn't). Reserve and
+/// release BOTH happen on the main thread — releasing from the audio thread
+/// failed persistently on hardware (heard once, then silence for every later
+/// session: the leaked channel makes every subsequent reserve fail).
+static RESERVED: AtomicBool = AtomicBool::new(false);
 
 fn freq(sample_rate: u32) -> Option<AudioOutputFrequency> {
     Some(match sample_rate {
@@ -71,47 +76,61 @@ unsafe extern "C" fn audio_thread(_argc: usize, _argv: *mut c_void) -> i32 {
             OUT.0.as_mut_ptr() as *mut c_void,
         );
     }
-    // sceAudioSRCChRelease fails with "busy" while the hardware drains the
-    // final block — an IGNORED failure here leaks the SRC channel and every
-    // later sceAudioSRCChReserve fails, i.e. one stop() mutes the app until
-    // reboot (observed on hardware: one STOPPED audio-thread corpse, no
-    // audio for every later session). Retry across the drain, bounded.
+    // The channel release happens on the MAIN thread (stop()) once LIVE
+    // drops — this thread only signals that it is done outputting. Freeing
+    // the thread UID here too: a plain return parks the thread as STOPPED
+    // forever and each session would leak one.
+    LIVE.store(false, Ordering::Release);
+    sys::sceKernelExitDeleteThread(0);
+    0
+}
+
+/// Release the SRC channel from the main thread, retrying across the
+/// hardware drain of the final queued blocks (release reports busy until
+/// they play out — ~46 ms each; an ignored failure leaks the channel and
+/// mutes every later session).
+unsafe fn release_channel() {
+    if !RESERVED.load(Ordering::Acquire) {
+        return;
+    }
     for _ in 0..250 {
         if sys::sceAudioSRCChRelease() >= 0 {
-            break;
+            RESERVED.store(false, Ordering::Release);
+            return;
         }
         sys::sceKernelDelayThread(2_000);
     }
-    LIVE.store(false, Ordering::Release);
-    // Free the thread UID too — a plain return parks the thread as STOPPED
-    // forever and each session would leak one.
-    sys::sceKernelExitDeleteThread(0);
-    0
 }
 
 /// Reserve the SRC channel at the stream's rate and start the output thread.
 /// Rates outside the hardware's SRC table are refused (the video still plays,
 /// silently). Idempotent-hostile: stop() any previous session first.
 pub unsafe fn start(sample_rate: u32) -> bool {
-    let Some(f) = freq(sample_rate) else { return false };
+    if freq(sample_rate).is_none() {
+        return false;
+    }
     if LIVE.load(Ordering::Acquire) {
         stop();
     }
     WRITE_POS.store(0, Ordering::Relaxed);
     READ_POS.store(0, Ordering::Relaxed);
-    // The previous session's channel may still be draining its last block
-    // (release retries above) — give the reserve the same grace.
-    let mut reserved = false;
+    // A stale hold (previous release timed out) blocks reserve forever —
+    // clear it first, then give the reserve a grace window for the drain.
+    release_channel();
+    let mut ok = false;
     for _ in 0..50 {
+        // freq() per iteration: the enum is not Copy and moves into the call.
+        let Some(f) = freq(sample_rate) else { return false };
         if sys::sceAudioSRCChReserve(BLOCK_FRAMES as i32, f, 2) >= 0 {
-            reserved = true;
+            ok = true;
             break;
         }
         sys::sceKernelDelayThread(4_000);
     }
-    if !reserved {
+    if !ok {
         return false;
     }
+    RESERVED.store(true, Ordering::Release);
     RUN.store(true, Ordering::Release);
     let id = sys::sceKernelCreateThread(
         b"pocketjs_audio\0".as_ptr(),
@@ -123,7 +142,7 @@ pub unsafe fn start(sample_rate: u32) -> bool {
     );
     if id.0 < 0 {
         RUN.store(false, Ordering::Release);
-        sys::sceAudioSRCChRelease();
+        release_channel();
         return false;
     }
     LIVE.store(true, Ordering::Release);
@@ -131,19 +150,22 @@ pub unsafe fn start(sample_rate: u32) -> bool {
     true
 }
 
-/// Signal the thread down and wait for it to release the channel (bounded:
-/// one blocking output is ~46 ms plus the release-retry window; a second
-/// covers it, then move on — start()'s reserve retries absorb a straggler).
+/// Signal the thread down, wait for it to leave its last blocking output
+/// (bounded: ~46 ms a block, give it a second), then release the channel
+/// from THIS thread. A straggler thread just means the release happens on
+/// the next start()'s stale-clear instead.
 pub unsafe fn stop() {
-    if !LIVE.load(Ordering::Acquire) {
-        return;
-    }
-    RUN.store(false, Ordering::Release);
-    for _ in 0..250 {
-        if !LIVE.load(Ordering::Acquire) {
-            return;
+    if LIVE.load(Ordering::Acquire) {
+        RUN.store(false, Ordering::Release);
+        for _ in 0..250 {
+            if !LIVE.load(Ordering::Acquire) {
+                break;
+            }
+            sys::sceKernelDelayThread(4_000);
         }
-        sys::sceKernelDelayThread(4_000);
+    }
+    if !LIVE.load(Ordering::Acquire) {
+        release_channel();
     }
 }
 
