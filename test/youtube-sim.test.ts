@@ -47,10 +47,22 @@ const ITEMS: ResultItem[] = [
 
 type Cmd = { kind: string; id: number; payload: unknown };
 
+const MORE_ITEMS: ResultItem[] = [
+  {
+    videoId: "vapor03",
+    title: "Third result",
+    channel: "pocket-stack",
+    durationS: 100,
+    views: 7,
+    card: "thumbs/vapor03.img",
+  },
+];
+
 /** The canned Mac: answers everything instantly (deliveries still apply at
  *  the next frame boundary — the shell owns the timing). */
 function cannedHost() {
   const seen: Cmd[] = [];
+  let moreServed = false;
   const driver = (cmd: Cmd, deliver: (r: unknown) => void) => {
     seen.push(cmd);
     const id = cmd.id;
@@ -60,6 +72,11 @@ function cannedHost() {
         break;
       case "yt/search":
         deliver({ t: "results", id, items: ITEMS } satisfies HostMsg);
+        break;
+      case "yt/more":
+        // One extra page, then the well runs dry.
+        deliver({ t: "results", id, items: moreServed ? [] : MORE_ITEMS } satisfies HostMsg);
+        moreServed = true;
         break;
       case "yt/play":
         deliver({
@@ -156,6 +173,26 @@ describe("connect phase", () => {
     const browse = await run(Math.ceil(kb.end + 1), kb.events, { driver: c.driver });
     expect(treeHasText(browse.tree, "1/2")).toBe(true); // focus counter
     expect(treeHasText(browse.tree, "○ PLAY")).toBe(true);
+    expect(treeHasText(browse.tree, "▼ LOAD MORE — ○")).toBe(true); // sentinel row
+  }, 30000);
+
+  test("the LOAD MORE row appends a page, then retires at the end", async () => {
+    // DOWN past both results onto the sentinel, ○ loads a page (focus lands
+    // on the fresh row), DOWN to the new sentinel, ○ returns empty — the
+    // sentinel retires and focus pulls back onto the last real row.
+    const host = cannedHost();
+    const script: ScriptEvent[] = [
+      ...kb.events,
+      { at: kb.end + 0.5, press: BTN.DOWN },
+      { at: kb.end + 1.0, press: BTN.DOWN }, //  sentinel (index 2)
+      { at: kb.end + 1.5, press: BTN.CIRCLE }, // load more -> +1 item
+      { at: kb.end + 2.5, press: BTN.DOWN }, //  new sentinel (index 3)
+      { at: kb.end + 3.0, press: BTN.CIRCLE }, // load more -> empty
+    ];
+    const r = await run(Math.ceil(kb.end + 4.5), script, { driver: host.driver });
+    expect(host.seen.filter((c) => c.kind === "yt/more").length).toBe(2);
+    expect(treeHasText(r.tree, "3/3")).toBe(true); //  focus pulled back to the last row
+    expect(treeHasText(r.tree, "▼ LOAD MORE — ○")).toBe(false); // sentinel retired
   }, 30000);
 });
 

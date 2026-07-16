@@ -31,14 +31,11 @@ const BG = "#0b0f14";
 
 /** Row pitch of the results column: 64px row + 4px gap. */
 const ROW_STEP = 68;
+/** Results viewport height (272 minus masthead/search/counter chrome) —
+ *  the scroll clamp keeps the focused row fully inside it. */
+const VIEW_H = 184;
 /** Host-rendered row textures are 512 wide (pow2); this much is content. */
 const CARD_VISIBLE_W = 456;
-// Focus styling swaps the WHOLE class (a stale conditional style object
-// leaves its border behind — observed on hardware as a trail of red rings).
-const ROW_IDLE =
-  "w-full h-[64] rounded-md overflow-hidden border-[#0b0f1400] transition-colors duration-100";
-const ROW_ACTIVE =
-  "w-full h-[64] rounded-md overflow-hidden border-[#ff4757] transition-colors duration-100";
 
 export default function App() {
   const store = createYoutubeStore();
@@ -70,30 +67,34 @@ function Browse(props: { store: YoutubeStore }) {
     onCommit: () => props.store.search(),
   });
 
+  // Rows the d-pad can reach: real results plus the LOAD MORE sentinel.
+  const rowCount = () => props.store.results().length + (props.store.hasMore() ? 1 : 0);
+
   // While the OSK is open these are all muted by its modal block — the
   // keyboard owns every button until it closes.
   onButtonPress(BTN.TRIANGLE, () => osk.open());
   onButtonPress(BTN.START, () => props.store.search());
   onButtonPress(BTN.UP, () => props.store.setFocused(Math.max(0, props.store.focused() - 1)));
   onButtonPress(BTN.DOWN, () =>
-    props.store.setFocused(
-      Math.min(Math.max(0, props.store.results().length - 1), props.store.focused() + 1),
-    ),
+    props.store.setFocused(Math.min(Math.max(0, rowCount() - 1), props.store.focused() + 1)),
   );
   onButtonPress(BTN.CIRCLE, () => {
     const item = props.store.results()[props.store.focused()];
     if (item) props.store.play(item);
+    else if (props.store.hasMore()) props.store.loadMore(); // the sentinel row
   });
 
   // The whole result list lives under a clipping viewport and SCROLLS
-  // (animated translateY, focused row pinned to the second slot). The
-  // viewport's in-flow size is zero (the list is absolute), so opening the
-  // OSK squeezes the viewport, never the OSK.
+  // (animated translateY: focused row rides the second slot, clamped at the
+  // list end so the last row is never cut by the bottom bar). The viewport's
+  // in-flow size is zero (the list is absolute), so opening the OSK squeezes
+  // the viewport, never the OSK.
   let listNode: NodeMirror | undefined;
   createEffect(() => {
-    const n = props.store.results().length;
-    const top = Math.max(0, Math.min(props.store.focused() - 1, Math.max(0, n - 3)));
-    if (listNode) animate(listNode, "translateY", -top * ROW_STEP, { dur: 150, easing: "out" });
+    const listH = rowCount() * ROW_STEP - (ROW_STEP - 64);
+    const maxScroll = Math.max(0, listH - VIEW_H);
+    const top = Math.min(Math.max(0, props.store.focused() - 1) * ROW_STEP, maxScroll);
+    if (listNode) animate(listNode, "translateY", -top, { dur: 150, easing: "out" });
   });
 
   return (
@@ -155,6 +156,12 @@ function Browse(props: { store: YoutubeStore }) {
               <For each={props.store.results()}>
                 {(item, i) => <ResultRow item={item} active={i() === props.store.focused()} />}
               </For>
+              <Show when={props.store.hasMore()}>
+                <LoadMoreRow
+                  active={props.store.focused() >= props.store.results().length}
+                  busy={props.store.searching()}
+                />
+              </Show>
             </View>
           </Show>
         </View>
@@ -189,6 +196,30 @@ function ConnectScreen() {
   );
 }
 
+/** The selection ring, drawn ON TOP of the row content — an absolute
+ *  overlay can never lose the z-fight against the card image (a border on
+ *  the image's own wrapper did, on hardware). */
+function FocusRing(props: { active: boolean }) {
+  return (
+    <Show when={props.active}>
+      <View class="absolute inset-0 rounded-md border-2 border-[#ff4757]" />
+    </Show>
+  );
+}
+
+/** The infinite-list sentinel: focusable like a row, ○ fetches the next
+ *  page of the current search. */
+function LoadMoreRow(props: { active: boolean; busy: boolean }) {
+  return (
+    <View class="relative w-full h-[64] rounded-md bg-[#141c26] items-center justify-center">
+      <Text class="text-xs font-bold tracking-wide" style={{ textColor: props.active ? INK : DIM }}>
+        {props.busy ? "LOADING MORE…" : "▼ LOAD MORE — ○"}
+      </Text>
+      <FocusRing active={props.active} />
+    </View>
+  );
+}
+
 /** One host-rendered full-width result row (512x64 texture, 456 visible —
  *  the pow2 tail is clipped by the wrapper). The texture loads through the
  *  driver's one-per-frame queue and is freed with the row. */
@@ -215,7 +246,7 @@ function ResultRow(props: { item: ResultItem; active: boolean }) {
   });
 
   return (
-    <View class={props.active ? ROW_ACTIVE : ROW_IDLE}>
+    <View class="relative w-full h-[64] rounded-md overflow-hidden">
       <Show
         when={handle() >= 0}
         fallback={
@@ -228,6 +259,7 @@ function ResultRow(props: { item: ResultItem; active: boolean }) {
       >
         <Image nodeRef={(n) => (node = n)} style={{ width: 512, height: 64 }} />
       </Show>
+      <FocusRing active={props.active} />
     </View>
   );
 }

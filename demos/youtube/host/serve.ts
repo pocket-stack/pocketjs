@@ -81,10 +81,12 @@ function fail(id: number, e: unknown): HostMsg {
 // Command dispatch (shared by mailbox and HTTP)
 // ---------------------------------------------------------------------------
 
-async function doSearch(id: number, q: string): Promise<HostMsg> {
-  console.log(`search: "${q}"`);
-  const found = await search(q, 12);
-  const items: ResultItem[] = await Promise.all(
+const SEARCH_PAGE = 12;
+let lastQuery = "";
+let lastCount = 0;
+
+async function renderItems(found: Awaited<ReturnType<typeof search>>): Promise<ResultItem[]> {
+  return Promise.all(
     found.map(async (f) => {
       const thumb = await fetchThumbRGBA(thumbnailUrl(f.videoId), `${svcDir}/thumbs`);
       const rgba = await renderCard({
@@ -99,7 +101,29 @@ async function doSearch(id: number, q: string): Promise<HostMsg> {
       return { ...f, card: rel };
     }),
   );
+}
+
+async function doSearch(id: number, q: string): Promise<HostMsg> {
+  console.log(`search: "${q}"`);
+  const found = await search(q, SEARCH_PAGE);
+  const items = await renderItems(found);
+  lastQuery = q;
+  lastCount = items.length;
   console.log(`  ${items.length} result(s), cards rendered`);
+  return { t: "results", id, items };
+}
+
+/** Next page of the last search: ytsearch has no offset, so re-fetch a
+ *  longer prefix and slice off what the device already has. Replies only
+ *  the NEW items (empty = end of results). */
+async function doMore(id: number): Promise<HostMsg> {
+  if (!lastQuery) return { t: "results", id, items: [] };
+  console.log(`more: "${lastQuery}" past ${lastCount}`);
+  const found = await search(lastQuery, lastCount + SEARCH_PAGE);
+  const fresh = found.slice(lastCount);
+  const items = await renderItems(fresh);
+  lastCount += items.length;
+  console.log(`  +${items.length} result(s)`);
   return { t: "results", id, items };
 }
 
@@ -132,6 +156,12 @@ async function dispatch(cmd: DeviceCmd): Promise<HostMsg | null> {
     case "search":
       try {
         return await doSearch(cmd.id, cmd.q);
+      } catch (e) {
+        return fail(cmd.id, e);
+      }
+    case "more":
+      try {
+        return await doMore(cmd.id);
       } catch (e) {
         return fail(cmd.id, e);
       }

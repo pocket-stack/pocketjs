@@ -10,6 +10,8 @@
 export type DeviceCmd =
   | { t: "hello"; id: number }
   | { t: "search"; id: number; q: string }
+  /** Next batch of the LAST search; replies `results` with only NEW items. */
+  | { t: "more"; id: number }
   | { t: "play"; id: number; videoId: string }
   | { t: "pause"; id: number }
   | { t: "resume"; id: number }

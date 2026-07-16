@@ -33,6 +33,8 @@ export function createYoutubeStore() {
   const [results, setResults] = createSignal<ResultItem[]>([]);
   const [focused, setFocused] = createSignal(0);
   const [searching, setSearching] = createSignal(false);
+  /** The last fetch returned rows — a LOAD MORE row is worth offering. */
+  const [hasMore, setHasMore] = createSignal(false);
   const [status, setStatus] = createSignal("");
   const [player, setPlayer] = createSignal<PlayerState | null>(null);
   /** Bumped on every "playing" reply — the player screen re-opens the
@@ -75,10 +77,33 @@ export function createYoutubeStore() {
       if (msg.t === "results") {
         setResults(msg.items);
         setFocused(0);
+        setHasMore(msg.items.length > 0);
         setStatus(msg.items.length === 0 ? "NO RESULTS" : "");
       } else if (msg.t === "error") {
         setStatus(msg.message === "offline" ? "HOST OFFLINE" : `ERROR: ${msg.message}`);
         if (msg.message === "offline") setPhase("connect");
+      }
+    });
+  };
+
+  /** Fetch the next page of the current search; new rows append in place
+   *  (the LOAD MORE sentinel stays focused, now above the fresh rows). */
+  const loadMore = (): void => {
+    if (searching() || !hasMore()) return;
+    setSearching(true);
+    setStatus("LOADING MORE…");
+    runEffect<HostMsg>("yt/more", {}, (msg) => {
+      setSearching(false);
+      if (msg.t === "results") {
+        setHasMore(msg.items.length > 0);
+        setResults([...results(), ...msg.items]);
+        // End of results: the sentinel row vanishes — pull focus back in.
+        if (msg.items.length === 0) {
+          setFocused(Math.min(focused(), Math.max(0, results().length - 1)));
+        }
+        setStatus("");
+      } else if (msg.t === "error") {
+        setStatus(`ERROR: ${msg.message}`);
       }
     });
   };
@@ -137,12 +162,14 @@ export function createYoutubeStore() {
     focused,
     setFocused,
     searching,
+    hasMore,
     status,
     player,
     playSerial,
     connectTick,
     hello,
     search,
+    loadMore,
     play,
     togglePause,
     seekTo,
