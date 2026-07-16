@@ -44,9 +44,9 @@
         </video>
       </div>
       <div class="lp-container lp-hero__in">
-        <a class="lp-eyebrow" href="/docs/platform-contracts/">
+        <a class="lp-eyebrow" href="/blog/pocket-youtube/">
           <span class="lp-eyebrow__tag">New</span>
-          PocketJS now ships on PS Vita
+          Pocket YouTube: streaming YouTube to a PSP over a USB cable
           <span class="lp-eyebrow__arw" aria-hidden="true">&rarr;</span>
         </a>
         <h1 class="lp-h1">Bare Metal<span class="lp-grad">Modern Web</span></h1>
@@ -77,6 +77,7 @@
                   <button class="emu-key left" data-btn="0x0080" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M8 12 l8 -6 v12 z" fill="currentColor"/></svg></button>
                   <button class="emu-key right" data-btn="0x0020" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M16 12 l-8 -6 v12 z" fill="currentColor"/></svg></button>
                 </div>
+                <div class="emu-nub" aria-hidden="true"></div>
               </div>
               <div class="emu-screen">
                 <canvas id="hero-canvas" width="480" height="272" tabindex="0"></canvas>
@@ -89,8 +90,12 @@
                 <button class="emu-key cross" data-btn="0x4000" aria-label="Cross"><svg viewBox="0 0 24 24"><path d="M6.5 6.5 L17.5 17.5 M17.5 6.5 L6.5 17.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
               </div>
               <div class="emu-sys">
-                <button class="emu-sys-btn" data-btn="0x0001">SELECT</button>
-                <button class="emu-sys-btn" data-btn="0x0008">START</button>
+                <div class="emu-speaker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+                <span class="emu-brand" aria-hidden="true">POCKETJS</span>
+                <div class="emu-sysbtns">
+                  <button class="emu-sys-btn" data-btn="0x0001">SELECT</button>
+                  <button class="emu-sys-btn" data-btn="0x0008">START</button>
+                </div>
               </div>
             </div>
           </div>
@@ -267,6 +272,23 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
               </a>
               <a class="lp-case__src" href="https://github.com/pocket-stack/pocket-figma" target="_blank" rel="noreferrer">pocket-stack/pocket-figma</a>
+            </div>
+          </div>
+        </article>
+
+        <article class="lp-case lp-reveal">
+          <a class="lp-case__media" href="/blog/pocket-youtube/" aria-label="Read the Pocket YouTube story">
+            <img src="/assets/blog/pocket-youtube-paused.png" alt="Pocket YouTube on a PSP: a video paused under a centered pause badge, with the title bar, red progress bar and playback hints of the player HUD." loading="lazy" />
+          </a>
+          <div class="lp-case__copy">
+            <h3 class="lp-case__title">Pocket YouTube</h3>
+            <p>YouTube on a PSP, where the network is a USB cable: a Mac companion runs yt-dlp and ffmpeg, and the handheld plays a ring buffer that happens to be a file. Search with the system keyboard, browse rows with CJK titles the device could never typeset, and watch at 12&nbsp;fps with 44.1&nbsp;kHz audio — pause, seek and all — while the UI never drops from 60&nbsp;FPS.</p>
+            <div class="lp-case__links">
+              <a class="lp-btn lp-btn--ghost" href="/blog/pocket-youtube/">
+                Read the story
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </a>
+              <a class="lp-case__src" href="https://github.com/pocket-stack/pocketjs/tree/main/demos/youtube" target="_blank" rel="noreferrer">pocketjs/demos/youtube</a>
             </div>
           </div>
         </article>
