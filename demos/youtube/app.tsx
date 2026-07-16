@@ -13,7 +13,7 @@
 
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { Image, Text, View } from "@pocketjs/framework/components";
-import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
+import { createSpriteAnimation, onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
 import { getOps } from "@pocketjs/framework/host";
 import { animate } from "@pocketjs/framework/animation";
@@ -36,6 +36,23 @@ const ROW_STEP = 68;
 const VIEW_H = 184;
 /** Host-rendered row textures are 512 wide (pow2); this much is content. */
 const CARD_VISIBLE_W = 456;
+
+const SPINNER_FRAMES = [
+  "spin-00.svg",
+  "spin-01.svg",
+  "spin-02.svg",
+  "spin-03.svg",
+  "spin-04.svg",
+  "spin-05.svg",
+  "spin-06.svg",
+  "spin-07.svg",
+];
+
+/** The accent-red busy spinner (baked SVG frames, ~7.5 rev/s at step 3). */
+function Spinner(props: { size?: number }) {
+  const src = createSpriteAnimation(SPINNER_FRAMES, { frameStep: 3 });
+  return <Image src={src()} style={{ width: props.size ?? 22, height: props.size ?? 22 }} />;
+}
 
 export default function App() {
   const store = createYoutubeStore();
@@ -102,11 +119,9 @@ function Browse(props: { store: YoutubeStore }) {
       {/* Masthead */}
       <View class="flex-row items-center justify-between px-3 py-2">
         <View class="flex-row items-center gap-2">
-          <View class="w-[22] h-[15] rounded-md items-center justify-center" style={{ bgColor: RED }}>
-            <Text class="text-xs font-bold" style={{ textColor: "#ffffff", lineHeight: 12 }}>
-              ▶
-            </Text>
-          </View>
+          {/* Baked SVG mark (64x64 pow2 canvas, transparent bands) — glyph
+              centering in a View never quite landed. */}
+          <Image src="yt-mark.svg" style={{ width: 22, height: 22 }} />
           <Text class="text-lg font-bold tracking-wide" style={{ textColor: INK }}>
             POCKET YOUTUBE
           </Text>
@@ -141,7 +156,10 @@ function Browse(props: { store: YoutubeStore }) {
           <Show
             when={props.store.results().length > 0}
             fallback={
-              <View class="flex-1 items-center justify-center">
+              <View class="flex-1 items-center justify-center flex-col gap-2">
+                <Show when={props.store.searching()}>
+                  <Spinner size={26} />
+                </Show>
                 <Text class="text-xs tracking-wide" style={{ textColor: props.store.status().startsWith("ERROR") ? RED : DIM }}>
                   {props.store.status() || (props.store.searching() ? "SEARCHING…" : "NO RESULTS YET — △ TO TYPE")}
                 </Text>
@@ -211,7 +229,10 @@ function FocusRing(props: { active: boolean }) {
  *  page of the current search. */
 function LoadMoreRow(props: { active: boolean; busy: boolean }) {
   return (
-    <View class="relative w-full h-[64] rounded-md bg-[#141c26] items-center justify-center">
+    <View class="relative w-full h-[64] rounded-md bg-[#141c26] items-center justify-center flex-row gap-2">
+      <Show when={props.busy}>
+        <Spinner />
+      </Show>
       <Text class="text-xs font-bold tracking-wide" style={{ textColor: props.active ? INK : DIM }}>
         {props.busy ? "LOADING MORE…" : "▼ LOAD MORE — ○"}
       </Text>

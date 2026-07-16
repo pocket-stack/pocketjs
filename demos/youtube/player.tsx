@@ -98,6 +98,19 @@ export default function Player(props: { store: YoutubeStore }) {
         </View>
       </Show>
 
+      {/* Instant pause feedback: the store flips `playing` optimistically on
+          the very press frame, so this badge appears immediately — the
+          PICTURE freezes a beat later (host SIGSTOP + ring drain), and
+          without the badge that gap reads as "the button didn't work". */}
+      <Show when={props.store.player() && !props.store.player()!.playing && !props.store.player()!.ended}>
+        <View class="absolute inset-0 items-center justify-center">
+          <View class="w-[56] h-[56] rounded-[28] bg-[#000000b4] border-[#ffffff2e] flex-row items-center justify-center gap-2">
+            <View class="w-[7] h-[24] rounded-sm bg-[#ffffff]" />
+            <View class="w-[7] h-[24] rounded-sm bg-[#ffffff]" />
+          </View>
+        </View>
+      </Show>
+
       {/* HUD overlay (hot-driven opacity; shown while inputs are fresh). */}
       <View
         nodeRef={(n) => (hud = n)}
