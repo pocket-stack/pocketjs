@@ -77,6 +77,10 @@ fn main() {
         String::new()
     } else {
         let path = dist.join(format!("{app}.js"));
+        // Without this, cargo re-runs the script only on env changes — a
+        // JS-only rebuild would ship the PREVIOUS bundle inside a freshly
+        // linked PRX (observed on hardware; maddening to diagnose).
+        println!("cargo:rerun-if-changed={}", path.display());
         fs::read_to_string(&path).unwrap_or_else(|e| {
             panic!(
                 "could not read {} (compile the resolved plan first): {e}",
@@ -92,7 +96,9 @@ fn main() {
     let pak = if !embed_app {
         Vec::new()
     } else {
-        fs::read(dist.join(format!("{app}.pak"))).unwrap_or_default()
+        let path = dist.join(format!("{app}.pak"));
+        println!("cargo:rerun-if-changed={}", path.display());
+        fs::read(&path).unwrap_or_default()
     };
     fs::write(Path::new(&out_dir).join("app.pak"), pak).unwrap();
 
