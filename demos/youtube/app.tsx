@@ -278,7 +278,15 @@ function ResultRow(props: { item: ResultItem; active: boolean }) {
           </View>
         }
       >
-        <Image nodeRef={(n) => (node = n)} style={{ width: 512, height: 64 }} />
+        {/* Absolute: an IN-FLOW 512-wide image gets flex-shrunk to the 456
+            wrapper (observed on hardware as an 11% squeeze — the baked
+            corner arcs drifted ~50px into the row). Out of flow it renders
+            1:1 and the wrapper's scissor clips the pow2 tail. */}
+        <Image
+          nodeRef={(n) => (node = n)}
+          class="absolute"
+          style={{ insetT: 0, insetL: 0, width: 512, height: 64 }}
+        />
       </Show>
       <FocusRing active={props.active} />
     </View>
