@@ -25,9 +25,13 @@ import { StreamWriter } from "./ring.ts";
 import { quantize, paletteBytes } from "./quant.ts";
 import type { ResolvedStream } from "./yt.ts";
 
-export const PLANE_W = 256;
+// 512x128: horizontal resolution lands near 1:1 on the 480-wide screen
+// (sharpness lives in horizontal detail); vertical stays the 2.1x stretch.
+// 12 fps x 65 KB slots + audio ≈ 0.87 MB/s — inside the usbhostfs budget
+// the device pumps at IO_BUDGET per tick (native/src/vid.rs).
+export const PLANE_W = 512;
 export const PLANE_H = 128;
-export const FPS = 15;
+export const FPS = 12;
 export const SAMPLE_RATE = 22050;
 export const CHUNK_FRAMES = 2048;
 
@@ -99,6 +103,11 @@ export class PlaySession {
     this.baseFrame = Math.round(seconds * FPS);
     this.baseSample = Math.round(seconds * SAMPLE_RATE);
     const seek = seconds > 0 ? ["-ss", seconds.toFixed(2)] : [];
+    // Letterbox in SCREEN space, not texture space: the plane's texels are
+    // anamorphic (the 512x128 texture stretches to 480x272), so fitting the
+    // source into the raw texture box would pillarbox 16:9 into a strip.
+    // planeBox maps the true screen-space fit back into texels.
+    const box = planeBox(this.stream.width || 16, this.stream.height || 9);
     this.video = Bun.spawn(
       [
         "ffmpeg",
@@ -110,7 +119,9 @@ export class PlaySession {
         "-i",
         this.stream.url,
         "-vf",
-        `fps=${FPS},scale=${PLANE_W}:${PLANE_H}:force_original_aspect_ratio=decrease:flags=bilinear,pad=${PLANE_W}:${PLANE_H}:(ow-iw)/2:(oh-ih)/2:black`,
+        // lanczos: the plane is anamorphic (wide texels), so every scrap of
+        // horizontal acutance from the 720p source survives to the screen.
+        `fps=${FPS},scale=${box.w}:${box.h}:flags=lanczos,pad=${PLANE_W}:${PLANE_H}:(ow-iw)/2:(oh-ih)/2:black`,
         "-an",
         "-f",
         "rawvideo",

@@ -25,6 +25,10 @@ export interface ResolvedStream {
   /** Direct progressive URL (video+audio muxed) for ffmpeg. */
   url: string;
   thumbnail: string;
+  /** Source dimensions (0 when yt-dlp omits them) — the play pipeline
+   *  letterboxes in SCREEN space, which needs the true aspect. */
+  width: number;
+  height: number;
 }
 
 export type Runner = (args: string[]) => Promise<{ ok: boolean; stdout: string; stderr: string }>;
@@ -78,15 +82,16 @@ export async function search(q: string, n = 12, run: Runner = spawnRunner): Prom
 }
 
 /** Resolve one video to a progressive URL the ffmpeg pipelines can pull.
- *  Format 18 (360p mp4, muxed) is the classic progressive itag; the
- *  fallbacks keep odd uploads working at PSP-appropriate sizes. */
+ *  Format 22 (720p mp4, muxed) feeds the 512-wide plane real horizontal
+ *  detail; 18 (360p) is the classic progressive fallback, then anything
+ *  muxed at PSP-appropriate sizes. */
 export async function resolve(videoId: string, run: Runner = spawnRunner): Promise<ResolvedStream> {
   const res = await run([
     "--dump-json",
     "--no-playlist",
     "--no-warnings",
     "-f",
-    "18/best[height<=480][vcodec^=avc][acodec!=none]/best[height<=480]",
+    "22/18/best[height<=720][vcodec^=avc][acodec!=none]/best[height<=720]",
     `https://www.youtube.com/watch?v=${videoId}`,
   ]);
   if (!res.ok) throw new Error(`yt-dlp resolve failed: ${res.stderr.trim().slice(0, 300)}`);
@@ -103,6 +108,8 @@ export async function resolve(videoId: string, run: Runner = spawnRunner): Promi
     durationS: typeof j.duration === "number" ? Math.round(j.duration) : 0,
     url,
     thumbnail: typeof j.thumbnail === "string" ? j.thumbnail : "",
+    width: typeof j.width === "number" ? j.width : 0,
+    height: typeof j.height === "number" ? j.height : 0,
   };
 }
 

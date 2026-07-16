@@ -31,10 +31,11 @@ use psp::sys::{self, IoOpenFlags, IoWhence, SceUid};
 
 use crate::{audio, ge, svc};
 
-/// File-IO budget per tick, bytes. ~10 KB is the steady state for the tuned
-/// stream (256x128@15 + 22.05 kHz stereo); 20 KB lets a fresh frame catch up
-/// without doubling the worst tick. Hardware tuning knob (#9 on the wire).
-const IO_BUDGET: usize = 20 * 1024;
+/// File-IO budget per tick, bytes. ~15 KB is the steady state for the tuned
+/// stream (512x128@12 + 22.05 kHz stereo ≈ 0.87 MB/s); 26 KB drains a 65 KB
+/// slot in three ticks so presentation keeps pace with the writer. Hardware
+/// tuning knob (#9 on the wire).
+const IO_BUDGET: usize = 26 * 1024;
 /// Whole audio chunks read per tick, max.
 const AUDIO_CHUNKS_PER_TICK: u32 = 2;
 
