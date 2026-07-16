@@ -138,7 +138,9 @@ function ensureBuilt(path: string, cmd: string[]): void {
 let wasmBytes: ArrayBuffer | null = null;
 
 export interface SimWorld {
-  frame: (buttons: number, analog?: number) => void;
+  /** One host frame: buttons bitmask, analog byte, packed touch contacts
+   *  (src/touch.ts __packTouch format) — exactly the native frame() shape. */
+  frame: (buttons: number, analog?: number, touches?: readonly number[]) => void;
   tick: () => void;
   render: () => Uint8Array;
   ticksPerFrame: number;
@@ -183,7 +185,9 @@ export async function bootWorld(
   if (extraGlobals) Object.assign(g, extraGlobals);
   const src = await Bun.file(DIST + app + ".js").text();
   (0, eval)(src);
-  const frame = g.frame as ((buttons: number, analog?: number) => void) | undefined;
+  const frame = g.frame as
+    | ((buttons: number, analog?: number, touches?: readonly number[]) => void)
+    | undefined;
   if (typeof frame !== "function") {
     throw new Error("sim: bundle did not install globalThis.frame (entry must call render()/mount())");
   }

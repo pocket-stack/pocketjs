@@ -39,6 +39,7 @@ const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
 const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
 const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
 const LIFECYCLE_VUE_VAPOR_PATH = new URL("../src/lifecycle-vue-vapor.ts", import.meta.url).pathname;
+const OSK_PATH = new URL("../src/osk.tsx", import.meta.url).pathname;
 const PLATFORM_PATH = new URL("../src/platform.ts", import.meta.url).pathname;
 const PRELUDE_PATH = new URL("../src/prelude.ts", import.meta.url).pathname;
 const VUE_VAPOR_RUNTIME_PATH = new URL(
@@ -75,6 +76,10 @@ export const FRAMEWORKS: Record<
       config: CONFIG_PATH,
       input: INPUT_API_PATH,
       lifecycle: LIFECYCLE_PATH,
+      // The system OSK carries class literals and key-cap glyphs, so pass 1
+      // must walk it (this map lists the framework modules the collector
+      // follows — pure-logic modules like host/clock stay out).
+      osk: OSK_PATH,
       platform: PLATFORM_PATH,
       prelude: PRELUDE_PATH,
       renderer: RENDERER_SOLID_PATH,

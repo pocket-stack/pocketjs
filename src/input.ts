@@ -48,6 +48,7 @@ let pressedNode: NodeMirror | null = null;
 let prevButtons = 0;
 const focusScopeStack: NodeMirror[] = [];
 const focusGridStack: FocusGridRegistration[] = [];
+const focusControllerStack: FocusControllerRegistration[] = [];
 
 /** Bind the focus manager to a mirror tree root (index.ts render()). The
  *  cursor SURVIVES a rebind (enableCursor at module top runs before mount);
@@ -63,6 +64,7 @@ export function setInputRoot(r: NodeMirror | null): void {
   prevButtons = 0;
   focusScopeStack.length = 0;
   focusGridStack.length = 0;
+  focusControllerStack.length = 0;
   if (cursor) {
     cursor.pressTarget = null;
     cursor.target = null;
@@ -144,7 +146,7 @@ function focusables(): NodeMirror[] {
   return out;
 }
 
-type FocusDirection = "up" | "down" | "left" | "right";
+export type FocusDirection = "up" | "down" | "left" | "right";
 
 function linearDirection(direction: FocusDirection): 1 | -1 {
   return direction === "down" || direction === "right" ? 1 : -1;
@@ -237,7 +239,47 @@ function moveGridFocus(direction: FocusDirection): boolean {
   return true;
 }
 
+interface FocusControllerRegistration {
+  node: NodeMirror;
+  move: (direction: FocusDirection) => boolean;
+}
+
+function activeController(): FocusControllerRegistration | null {
+  if (!focused) return null;
+  const active = activeFocusRoot();
+  if (active && !isWithin(focused, active)) return null;
+  for (let i = focusControllerStack.length - 1; i >= 0; i--) {
+    const ctl = focusControllerStack[i];
+    if (active && !isWithin(ctl.node, active) && !isWithin(active, ctl.node)) continue;
+    if (isWithin(focused, ctl.node)) return ctl;
+  }
+  return null;
+}
+
+/**
+ * Give a subtree fully custom d-pad traversal (the OSK's variable-width key
+ * rows can't be expressed as a FocusGrid). While the focused node is inside
+ * `node`, each navigation press calls `move` INSTEAD of grid/linear
+ * traversal; return false to fall through to the default behaviors.
+ */
+export function pushFocusController(
+  node: NodeMirror,
+  move: (direction: FocusDirection) => boolean,
+): () => void {
+  const registration: FocusControllerRegistration = { node, move };
+  focusControllerStack.push(registration);
+  let disposed = false;
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    const i = focusControllerStack.lastIndexOf(registration);
+    if (i >= 0) focusControllerStack.splice(i, 1);
+  };
+}
+
 function moveFocus(direction: FocusDirection): void {
+  const ctl = activeController();
+  if (ctl && ctl.move(direction)) return;
   if (moveGridFocus(direction)) return;
   moveLinearFocus(direction);
 }
@@ -601,6 +643,18 @@ function cursorTarget(hit: NodeMirror | null): NodeMirror | null {
     n = n.parent;
   }
   return null;
+}
+
+/**
+ * Resolve a screen point to the nearest FOCUSABLE node inside the active
+ * focus scope — the cursor's hover resolution, callable for touch input
+ * (the system OSK maps contacts through this). Null when the host has no
+ * hitTest op or nothing focusable is under the point.
+ */
+export function hitFocusable(x: number, y: number): NodeMirror | null {
+  const ops = getOps();
+  if (!ops.hitTest) return null;
+  return cursorTarget(findMirror(root, ops.hitTest(x, y)));
 }
 
 /** One cursor-mode frame. Returns false when the host predates the cursor
