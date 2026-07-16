@@ -22,10 +22,9 @@ import { createEffect, createMemo, createSignal, For, onMount, Show, untrack } f
 import { Text, View } from "@pocketjs/framework/components";
 import { analogY, onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
-import { virtualFrame } from "@pocketjs/framework/clock";
+import { createOsk, Osk, OSK_H } from "@pocketjs/framework/osk";
 import { SCREEN_H } from "../../spec/spec.ts";
 import { fmtTime, type UiMsg } from "./data.ts";
-import { Keyboard, OSK_H } from "./keyboard.tsx";
 import { buildRows, fitTail, FONT_MSG, LINE_H, type ThreadLayout, type ThreadRow } from "./wrap.ts";
 import type { Convo, TalkStore } from "./store.ts";
 
@@ -60,12 +59,26 @@ const MEMBER_ACCENTS: Record<string, string> = {
 
 export default function Thread(props: { convo: Convo; store: TalkStore; onBack: () => void }) {
   const contact = props.convo.contact;
-  const [kbOpen, setKbOpen] = createSignal(false);
   const [scroll, setScroll] = createSignal(0);
   const [target, setTarget] = createSignal(0);
   const [unseen, setUnseen] = createSignal(0);
-  const [blink, setBlink] = createSignal(true);
-  let kbOpenedFrame = -1;
+
+  const doSend = () => {
+    const text = props.convo.draft().trim();
+    if (!text) return;
+    props.store.send(props.convo, text);
+    props.convo.setDraft("");
+  };
+
+  // The system keyboard edits the draft in place. Sending does NOT close it
+  // (fire a message mid-conversation and keep typing), hence closeOnCommit.
+  const osk = createOsk({
+    value: props.convo.draft,
+    setValue: props.convo.setDraft,
+    maxLength: DRAFT_MAX,
+    onCommit: doSend,
+    closeOnCommit: false,
+  });
 
   // Rows from the previous build are reused when unchanged (see buildRows),
   // so an append mounts one new row instead of remounting the window.
@@ -76,7 +89,7 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
       prev?.rows,
     ),
   );
-  const viewH = () => SCREEN_H - HEADER_H - COMPOSER_H - (kbOpen() ? OSK_H : 0);
+  const viewH = () => SCREEN_H - HEADER_H - COMPOSER_H - (osk.isOpen() ? OSK_H : 0);
   const maxScroll = () => Math.max(0, layout().total - viewH());
   const visibleRows = createMemo((prev?: ThreadRow[]) => {
     const top = scroll() - OVERSCAN;
@@ -148,7 +161,8 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
   // The scroll pump: input moves the target, position eases toward it.
   onFrame((buttons) => {
     const m = maxScroll();
-    if (!kbOpen()) {
+    // Raw button reads are not muted by the OSK's modal block — gate them.
+    if (!osk.isOpen()) {
       if (buttons & BTN.UP) setTarget((t) => Math.max(0, t - SCROLL_STEP));
       if (buttons & BTN.DOWN) setTarget((t) => Math.min(m, t + SCROLL_STEP));
     }
@@ -161,33 +175,14 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
     if (scroll() < TOP_FETCH && props.convo.hasMore() && !props.convo.loading()) {
       props.store.loadOlder(props.convo);
     }
-    // Caret blink derives from the frame clock — no counter to pump.
-    if (kbOpen()) {
-      const b = ((virtualFrame() >> 5) & 1) === 0;
-      if (b !== blink()) setBlink(b);
-    }
   });
-
-  const doSend = () => {
-    const text = props.convo.draft().trim();
-    if (!text) return;
-    props.store.send(props.convo, text);
-    props.convo.setDraft("");
-  };
 
   // All chords are `latched`: this screen mounts from a Focusable press on
   // the list, so a held button must be seen up once before its edge counts.
-  onButtonPress(
-    BTN.TRIANGLE,
-    () => {
-      if (!kbOpen()) {
-        kbOpenedFrame = virtualFrame();
-        setKbOpen(true);
-      }
-    },
-    { latched: true },
-  );
-  onButtonPress(BTN.CROSS, () => props.onBack(), { latched: true, active: () => !kbOpen() });
+  // None need an "is the keyboard open" gate — the system OSK blocks them
+  // all while it is up and provides its own chords.
+  onButtonPress(BTN.TRIANGLE, () => osk.open(), { latched: true });
+  onButtonPress(BTN.CROSS, () => props.onBack(), { latched: true });
   onButtonPress(BTN.START, doSend, { latched: true });
   onButtonPress(
     BTN.SELECT,
@@ -198,10 +193,6 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
     { latched: true },
   );
 
-  const typeChar = (ch: string) => {
-    if (props.convo.draft().length < DRAFT_MAX) props.convo.setDraft(props.convo.draft() + ch);
-  };
-
   const accentFor = (from: string): string => MEMBER_ACCENTS[from] ?? contact.accent;
   const presence = () =>
     contact.members
@@ -209,7 +200,8 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
       : contact.online
         ? "● ONLINE"
         : "○ LAST SEEN YESTERDAY";
-  const draftShown = createMemo(() => fitTail(props.convo.draft(), FONT_MSG, DRAFT_W));
+  // The caret marker comes from the OSK session (‹ › move it mid-draft).
+  const draftShown = createMemo(() => fitTail(osk.display(), FONT_MSG, DRAFT_W));
 
   return (
     <View class="flex-col w-full h-full" style={{ bgColor: "#05080c" }}>
@@ -287,7 +279,7 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
         style={{ height: COMPOSER_H }}
       >
         <Show
-          when={kbOpen() || props.convo.draft().length > 0}
+          when={osk.isOpen() || props.convo.draft().length > 0}
           fallback={
             <Text class="text-xs tracking-wide" style={{ textColor: DIM }}>
               ↕ SCROLL · △ KEYBOARD · SELECT LATEST · × BACK
@@ -298,9 +290,6 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
             <Text class="text-sm" style={{ textColor: INK, lineHeight: LINE_H }}>
               {draftShown()}
             </Text>
-            <Show when={kbOpen() && blink()}>
-              <View style={{ width: 2, height: 14, bgColor: LIME, marginL: 1 }} />
-            </Show>
           </View>
           <Text class="text-xs" style={{ textColor: DIM }}>
             {`${props.convo.draft().length}/${DRAFT_MAX}`}
@@ -308,16 +297,8 @@ export default function Thread(props: { convo: Convo; store: TalkStore; onBack: 
         </Show>
       </View>
 
-      {/* On-screen keyboard */}
-      <Show when={kbOpen()}>
-        <Keyboard
-          openedFrame={kbOpenedFrame}
-          onKey={typeChar}
-          onSpace={() => typeChar(" ")}
-          onBackspace={() => props.convo.setDraft(props.convo.draft().slice(0, -1))}
-          onClose={() => setKbOpen(false)}
-        />
-      </Show>
+      {/* System on-screen keyboard */}
+      <Osk osk={osk} />
     </View>
   );
 }

@@ -14,6 +14,7 @@ import { fontSlotFor } from "../compiler/tailwind.ts";
 import { FONT_META, FONT_MSG } from "../demos/im/wrap.ts";
 import { runScenario, treeHasText, type Trace } from "../host-sim/sim.ts";
 import { BTN } from "../spec/spec.ts";
+import { OskScripter } from "./osk-script.ts";
 
 // wrap.ts pins its measurement slots as literals (the compiler must stay out
 // of the app import graph) — this is the guard that keeps them honest.
@@ -27,30 +28,19 @@ test("wrap.ts font slots match the compiler's pinned table", () => {
 // full receipt/typing/reply choreography. Times on the 0.5 s grid.
 // ---------------------------------------------------------------------------
 
+// The system OSK opens on 'q'; the scripter derives the d-pad path to each
+// key from the real layout, switching to the symbols layer for '!' (which
+// also covers the L-chord + layer-preserving-focus path end to end).
+const kb = new OskScripter(5.0).open().type("yo!").commit();
+const SEND_AT = kb.events[kb.events.length - 1].at;
 const TYPE_AND_SEND = [
   { at: 1.0, press: BTN.CIRCLE }, //  open MAYA CHEN (autofocused: most recent)
   { at: 2.0, hold: BTN.UP }, //       scroll up into history (triggers a page fetch)
   { at: 4.0, hold: 0 },
   { at: 4.5, press: BTN.SELECT }, //  jump back to latest
-  { at: 5.0, press: BTN.TRIANGLE }, // open the keyboard (focus lands on '1')
-  { at: 5.5, press: BTN.DOWN }, //    'q'
-  { at: 6.0, press: BTN.RIGHT },
-  { at: 6.5, press: BTN.RIGHT },
-  { at: 7.0, press: BTN.RIGHT },
-  { at: 7.5, press: BTN.RIGHT },
-  { at: 8.0, press: BTN.RIGHT }, //   'y'
-  { at: 8.5, press: BTN.CIRCLE },
-  { at: 9.0, press: BTN.RIGHT },
-  { at: 9.5, press: BTN.RIGHT },
-  { at: 10.0, press: BTN.RIGHT }, //  'o'
-  { at: 10.5, press: BTN.CIRCLE },
-  { at: 11.0, press: BTN.DOWN }, //   'l'
-  { at: 11.5, press: BTN.DOWN }, //   '?'
-  { at: 12.0, press: BTN.RIGHT }, //  '!'
-  { at: 12.5, press: BTN.CIRCLE },
-  { at: 13.0, press: BTN.START }, //  send "yo!"
+  ...kb.events, //                    △ … type "yo!" … START sends
 ];
-const A_SECONDS = 21; // reply lands ~18.5 (typing runs 3 s), settle to 21
+const A_SECONDS = Math.ceil(SEND_AT + 8); // receipts+reply choreography, settle
 
 const scenarioA = (hz: number) => ({
   app: "im-main",
@@ -99,8 +89,8 @@ describe("the sync loop is on the virtual clock", () => {
     expect(sec(named[0])).toBe(0); //     bootstrap issued at mount
     expect(sec(named[1])).toBe(0.5); //   … delivered half a second later
     expect(named[3].frame - named[2].frame).toBe(60); // history latency: 1 s
-    expect(sec(named[4])).toBe(13.0); //  send fired by the START press
-    expect(sec(named[5])).toBe(13.5); //  ack
+    expect(sec(named[4])).toBe(SEND_AT); // send fired by the START press
+    expect(sec(named[5])).toBe(SEND_AT + 0.5); // ack
   });
 
   test("the long-poll ticks every half second", () => {
@@ -150,24 +140,21 @@ test("pagination reaches the beginning; the bottom unmounts", async () => {
 
 // ---------------------------------------------------------------------------
 // Journey C — DAD is offline: delivery receipt only, no read, no typing, no
-// reply. (The OSK types "qq" — DOWN to 'q', CIRCLE twice.)
+// reply. (The OSK opens on 'q' — CIRCLE twice drafts "qq".)
 // ---------------------------------------------------------------------------
 
 test("offline contacts deliver but never read or reply", async () => {
+  const kbC = new OskScripter(3.0).open().type("qq").commit();
   const c = await runScenario({
     app: "im-main",
     hz: 60,
-    seconds: 9,
+    seconds: Math.ceil(kbC.end + 4),
     script: [
       { at: 1.0, press: BTN.DOWN },
       { at: 1.5, press: BTN.DOWN },
       { at: 2.0, press: BTN.DOWN }, //  focus DAD (recency-sorted last)
       { at: 2.5, press: BTN.CIRCLE },
-      { at: 3.0, press: BTN.TRIANGLE },
-      { at: 3.5, press: BTN.DOWN }, //  'q'
-      { at: 4.0, press: BTN.CIRCLE },
-      { at: 4.5, press: BTN.CIRCLE }, // draft "qq"
-      { at: 5.0, press: BTN.START },
+      ...kbC.events,
     ],
   });
   expect(treeHasText(c.tree, "LAST SEEN YESTERDAY")).toBe(true);
