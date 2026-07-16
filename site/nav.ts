@@ -55,6 +55,14 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "pocket-youtube",
+    title: "Pocket YouTube: Streaming YouTube to a PSP over a USB Cable",
+    date: "2026-07-17",
+    description:
+      "The PSP's radio can't reach the modern web, so the network moved to the other end of the cable: a Mac companion runs yt-dlp and ffmpeg, and the handheld plays a ring buffer that happens to be a file — search, CJK titles, seek, pause, 44.1 kHz audio and all. Inside: a stream container you can ls, 256 colors impersonating 720p at 12 fps, and the three bugs only real silicon would show — a GPU race photographed by its own raster line, a leaked audio channel, and a build that shipped last week's code with a green checkmark.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "pocketjs-on-ps-vita",
     title: "Twice the Pixels, Zero Forks: PocketJS on PS Vita",
     date: "2026-07-13",
