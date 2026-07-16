@@ -14,6 +14,7 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
 import { getOps } from "@pocketjs/framework/host";
+import { animate } from "@pocketjs/framework/animation";
 import { virtualFrame } from "@pocketjs/framework/clock";
 import type { NodeMirror } from "@pocketjs/framework/renderer";
 import { loadCard, pumpDriver } from "./driver.ts";
@@ -26,6 +27,13 @@ const INK = "#e8f0f2";
 const DIM = "#8fa3ad";
 const RED = "#ff4757";
 const BG = "#0b0f14";
+
+/** Row pitch of the results column: 64px card + 4px gap. */
+const ROW_STEP = 68;
+// Focus styling swaps the WHOLE class (a stale conditional style object
+// leaves its border behind — observed on hardware as a trail of red rings).
+const CARD_IDLE = "w-[258] h-[64] rounded-md border-[#0b0f1400] transition-colors duration-100";
+const CARD_ACTIVE = "w-[258] h-[64] rounded-md border-[#ff4757] transition-colors duration-100";
 
 export default function App() {
   const store = createYoutubeStore();
@@ -89,12 +97,19 @@ function Browse(props: { store: YoutubeStore }) {
     { active: kbClosed },
   );
 
-  // Visible window: results scroll under a fixed 3-row viewport.
-  const windowStart = () => {
+  // The whole result list lives under a clipping viewport and SCROLLS
+  // (animated translateY, focused row pinned to the second slot). The
+  // viewport's in-flow size is zero (the list is absolute), so opening the
+  // OSK squeezes the viewport, never the OSK — a fixed-height card column
+  // once pushed the keyboard clean off the 272px screen, which reads as a
+  // freeze: every handler was gated on "keyboard open" and no keyboard was
+  // visible to close.
+  let listNode: NodeMirror | undefined;
+  createEffect(() => {
     const n = props.store.results().length;
-    return Math.max(0, Math.min(props.store.focused() - 1, n - 3));
-  };
-  const visible = () => props.store.results().slice(windowStart(), windowStart() + 3);
+    const top = Math.max(0, Math.min(props.store.focused() - 1, Math.max(0, n - 3)));
+    if (listNode) animate(listNode, "translateY", -top * ROW_STEP, { dur: 150, easing: "out" });
+  });
 
   return (
     <View class="flex-col w-full h-full">
@@ -132,8 +147,9 @@ function Browse(props: { store: YoutubeStore }) {
           </View>
         </View>
 
-        {/* Results (3-row window; cards are host-rendered images) */}
-        <View class="flex-1 flex-col gap-1 px-3 py-1">
+        {/* Results: an animated, clipped scroll column of host-rendered
+            cards (left-aligned, like every video list since 2005). */}
+        <View class="flex-1 overflow-hidden mx-3 my-1">
           <Show
             when={props.store.results().length > 0}
             fallback={
@@ -144,23 +160,26 @@ function Browse(props: { store: YoutubeStore }) {
               </View>
             }
           >
-            <For each={visible()}>
-              {(item) => (
-                <Card
-                  item={item}
-                  active={props.store.results().indexOf(item) === props.store.focused()}
-                />
-              )}
-            </For>
-            <View class="flex-row justify-between px-1">
-              <Text class="text-xs" style={{ textColor: DIM, lineHeight: 12 }}>
-                {`${props.store.focused() + 1}/${props.store.results().length}`}
-              </Text>
-              <Text class="text-xs tracking-wide" style={{ textColor: props.store.status() ? RED : DIM, lineHeight: 12 }}>
-                {props.store.status() || "↕ BROWSE · ○ PLAY"}
-              </Text>
+            <View
+              nodeRef={(n) => (listNode = n)}
+              class="absolute flex-col gap-1"
+              style={{ insetT: 0, insetL: 0 }}
+            >
+              <For each={props.store.results()}>
+                {(item, i) => <Card item={item} active={i() === props.store.focused()} />}
+              </For>
             </View>
           </Show>
+        </View>
+        <View class="flex-row justify-between px-4 pb-1">
+          <Text class="text-xs" style={{ textColor: DIM, lineHeight: 12 }}>
+            {props.store.results().length > 0
+              ? `${props.store.focused() + 1}/${props.store.results().length}`
+              : ""}
+          </Text>
+          <Text class="text-xs tracking-wide" style={{ textColor: props.store.status() ? RED : DIM, lineHeight: 12 }}>
+            {props.store.status() || "↕ BROWSE · ○ PLAY · △ TYPE"}
+          </Text>
         </View>
 
         {/* OSK */}
@@ -216,10 +235,7 @@ function Card(props: { item: ResultItem; active: boolean }) {
   });
 
   return (
-    <View
-      class="flex-row items-center justify-center rounded-md border-[#0b0f1400] transition-colors duration-100"
-      style={props.active ? { borderColor: RED } : {}}
-    >
+    <View class={props.active ? CARD_ACTIVE : CARD_IDLE}>
       <Show
         when={handle() >= 0}
         fallback={

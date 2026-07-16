@@ -140,4 +140,21 @@ describe("connect phase", () => {
     expect(treeHasText(browse.tree, "1/2")).toBe(true); // focus counter
     expect(treeHasText(browse.tree, "○ PLAY")).toBe(true);
   }, 30000);
+
+  test("the keyboard stays usable WITH results on screen", async () => {
+    // Regression: a fixed-height card column once pushed the opened OSK off
+    // the 272px screen — every gated handler went dead and the app read as
+    // frozen. The list now scrolls inside a clipped viewport, so a re-opened
+    // keyboard must keep typing + searching.
+    const reopen: ScriptEvent[] = [
+      ...JOURNEY.slice(0, 4), //          first search lands results
+      { at: 4.0, press: BTN.TRIANGLE }, // reopen the OSK over the results
+      { at: 4.5, press: BTN.DOWN },
+      { at: 5.0, press: BTN.CIRCLE }, //  type another 'q'
+      { at: 5.5, press: BTN.START }, //   second search fires
+    ];
+    const r = await run(7, reopen, cannedHost().driver);
+    const searches = r.effects.filter((e) => e.t === "command" && e.kind === "yt/search");
+    expect(searches.length).toBe(2);
+  }, 30000);
 });
