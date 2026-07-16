@@ -56,6 +56,15 @@ struct Session {
     target_seq: u32,
     presented_seq: u32,
     presented_frame: i32,
+    /// A validated frame sits in `staging` awaiting the GE-idle window
+    /// (present() runs between sceGuSync and the next list — the GE samples
+    /// the plane texture ASYNCHRONOUSLY through the whole JS frame, so an
+    /// in-place update from tick() races the raster: with per-frame
+    /// median-cut palettes any torn read renders as full-color noise,
+    /// observed on hardware as constant flicker below the raster position).
+    staged_seq: u32,
+    staged_frame: i32,
+    pending: bool,
     /// Next audio chunk seq to read; 0 = sync to the writer's tail first.
     audio_next: u32,
     chunk_buf: Vec<u8>,
@@ -134,6 +143,9 @@ pub unsafe fn open(ui: &mut Ui, rel: &str) -> bool {
         target_seq: 0,
         presented_seq: 0,
         presented_frame: -1,
+        staged_seq: 0,
+        staged_frame: -1,
+        pending: false,
         audio_next: 0,
         chunk_buf: alloc::vec![0u8; chunk],
         audio_on,
@@ -172,6 +184,7 @@ pub unsafe fn tick(ui: &mut Ui) -> i32 {
         s.target_seq = 0;
         s.staged = 0;
         s.presented_seq = 0;
+        s.pending = false; // a staged pre-seek frame must not present
         s.audio_next = 0;
         audio::flush();
     }
@@ -221,18 +234,20 @@ pub unsafe fn tick(ui: &mut Ui) -> i32 {
         }
     }
 
-    // 4. Video slot pump.
+    // 4. Video slot pump. While a validated frame awaits present() the
+    //    staging buffer is spoken for — hold off on the next slot (at most
+    //    one host-frame of extra latency at 60 Hz).
     let v = &now.video;
     if s.target_seq != 0 && v.latest_seq >= s.target_seq.saturating_add(v.slot_count) {
         // The writer lapped the slot mid-read; its bytes are torn. Restart.
         s.target_seq = 0;
         s.staged = 0;
     }
-    if s.target_seq == 0 && v.latest_seq > s.presented_seq {
+    if !s.pending && s.target_seq == 0 && v.latest_seq > s.presented_seq {
         s.target_seq = v.latest_seq;
         s.staged = 0;
     }
-    if s.target_seq != 0 {
+    if !s.pending && s.target_seq != 0 {
         if let Some(base) = slot_offset(&now, s.target_seq) {
             let want = (s.slot_bytes - s.staged).min(budget);
             if want > 0 {
@@ -253,13 +268,13 @@ pub unsafe fn tick(ui: &mut Ui) -> i32 {
                     && u32::from_le_bytes(live_seq) == s.target_seq;
                 if fresh {
                     let sh = parsed.expect("checked by fresh");
-                    let pal = &s.staging[st::SLOT_HEADER_SIZE..st::SLOT_HEADER_SIZE + 1024];
-                    let px = &s.staging[st::SLOT_HEADER_SIZE + 1024..s.slot_bytes];
-                    if ui.update_texture_t8(s.tex, pal, px) {
-                        ge::writeback_texture(ui, s.tex);
-                        s.presented_seq = s.target_seq;
-                        s.presented_frame = sh.frame_index as i32;
-                    }
+                    // Do NOT touch the texture here: the GE is still
+                    // executing the previous list and samples the plane
+                    // asynchronously. present() commits from staging inside
+                    // the GE-idle window.
+                    s.staged_seq = s.target_seq;
+                    s.staged_frame = sh.frame_index as i32;
+                    s.pending = true;
                 }
                 s.target_seq = 0;
                 s.staged = 0;
@@ -271,6 +286,24 @@ pub unsafe fn tick(ui: &mut Ui) -> i32 {
     }
 
     s.presented_frame
+}
+
+/// Commit the staged frame to the plane texture. MUST be called with the GE
+/// idle (main.rs invokes it between sceGuSync and the next sceGuStart) — the
+/// texture is sampled in place, so this is the only race-free window.
+pub unsafe fn present(ui: &mut Ui) {
+    let Some(s) = SESSION.as_mut() else { return };
+    if !s.pending {
+        return;
+    }
+    s.pending = false;
+    let pal = &s.staging[st::SLOT_HEADER_SIZE..st::SLOT_HEADER_SIZE + 1024];
+    let px = &s.staging[st::SLOT_HEADER_SIZE + 1024..s.slot_bytes];
+    if ui.update_texture_t8(s.tex, pal, px) {
+        ge::writeback_texture(ui, s.tex);
+        s.presented_seq = s.staged_seq;
+        s.presented_frame = s.staged_frame;
+    }
 }
 
 /// Tear down (spec op videoClose): stop audio, close the file, free the
