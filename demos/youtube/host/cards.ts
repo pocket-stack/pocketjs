@@ -294,7 +294,41 @@ export async function renderCard(input: CardInput): Promise<Uint8Array> {
     drawText(rgba, CARD_W, CARD_H, views, tx, 55, 10, DIM);
   }
   drawText(rgba, CARD_W, CARD_H, "›", CARD_VISIBLE_W - 18, 39, 16, DIM);
+  roundCorners(rgba);
   return rgba;
+}
+
+/** App background behind the rows — corner masking must match it. */
+const PAGE_BG = [0x0b, 0x0f, 0x14];
+/** Row corner radius; keep in sync with the app's rounded-md (6px). */
+const CORNER_R = 6;
+
+/**
+ * Round the visible row's corners in pixels: the device clips with a
+ * RECTANGULAR scissor, so a rounded focus ring shows the texture's square
+ * corners poking past its arc. Painting the corners with the page
+ * background (antialiased against the true distance) is equivalent to a
+ * rounded clip because rows always sit on that background.
+ */
+function roundCorners(rgba: Uint8Array): void {
+  // Rounded-rect SDF over the visible area (pixel centers at +0.5): the
+  // blend factor is the coverage OUTSIDE the pill, antialiased over 1px.
+  const hw = CARD_VISIBLE_W / 2 - CORNER_R;
+  const hh = CARD_H / 2 - CORNER_R;
+  for (let y = 0; y < CARD_H; y++) {
+    const qy = Math.abs(y + 0.5 - CARD_H / 2) - hh;
+    if (qy <= 0) continue; // inside the vertical straight band — never clipped
+    for (let x = 0; x < CARD_VISIBLE_W; x++) {
+      const qx = Math.abs(x + 0.5 - CARD_VISIBLE_W / 2) - hw;
+      if (qx <= 0) continue;
+      const a = Math.min(1, Math.max(0, Math.hypot(qx, qy) - CORNER_R + 0.5));
+      if (a <= 0) continue;
+      const o = (y * CARD_W + x) * 4;
+      rgba[o] = rgba[o] + (PAGE_BG[0] - rgba[o]) * a;
+      rgba[o + 1] = rgba[o + 1] + (PAGE_BG[1] - rgba[o + 1]) * a;
+      rgba[o + 2] = rgba[o + 2] + (PAGE_BG[2] - rgba[o + 2]) * a;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
