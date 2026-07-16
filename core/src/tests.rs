@@ -2564,3 +2564,210 @@ fn hit_test_frame_edge_overlay_claims_only_its_band() {
     assert_eq!(ui.hit_test(21.0, 30.0), well, "border band claims");
     assert_eq!(ui.hit_test(50.0, 30.0), row, "border interior passes through");
 }
+
+// ---- STREAM container (.pkst) — stream.rs readers + the video plane ---------
+
+/// Hand-assemble a valid 96-byte header block (spec.ts "STREAM container").
+#[allow(clippy::too_many_arguments)]
+fn stream_header_block(
+    epoch: u32,
+    flags: u16,
+    w: u16,
+    h: u16,
+    slot_count: u32,
+    v_latest: u32,
+    chunk_frames: u32,
+    chunk_count: u32,
+    a_latest: u32,
+) -> Vec<u8> {
+    let slot_size =
+        (spec::stream::SLOT_HEADER_SIZE as u32 + 1024 + w as u32 * h as u32).next_multiple_of(16);
+    let mut b = alloc::vec![0u8; spec::stream::HEADER_BLOCK_SIZE];
+    b[0..4].copy_from_slice(&spec::stream::MAGIC.to_le_bytes());
+    b[4..6].copy_from_slice(&spec::stream::VERSION.to_le_bytes());
+    b[6..8].copy_from_slice(&flags.to_le_bytes());
+    b[8..12].copy_from_slice(&epoch.to_le_bytes());
+    b[12..16].copy_from_slice(&(spec::stream::HEADER_BLOCK_SIZE as u32).to_le_bytes());
+    let audio_off = spec::stream::HEADER_BLOCK_SIZE as u32 + slot_count * slot_size;
+    b[16..20].copy_from_slice(&audio_off.to_le_bytes());
+    let v = spec::stream::VRING_OFF;
+    b[v..v + 4].copy_from_slice(&spec::stream::VRING_MAGIC.to_le_bytes());
+    b[v + 4..v + 6].copy_from_slice(&w.to_le_bytes());
+    b[v + 6..v + 8].copy_from_slice(&h.to_le_bytes());
+    b[v + 8..v + 10].copy_from_slice(&15u16.to_le_bytes());
+    b[v + 10..v + 12].copy_from_slice(&1u16.to_le_bytes());
+    b[v + 12..v + 16].copy_from_slice(&slot_count.to_le_bytes());
+    b[v + 16..v + 20].copy_from_slice(&slot_size.to_le_bytes());
+    b[v + 20..v + 24].copy_from_slice(&v_latest.to_le_bytes());
+    b[v + 24..v + 28].copy_from_slice(&900u32.to_le_bytes());
+    let a = spec::stream::ARING_OFF;
+    b[a..a + 4].copy_from_slice(&spec::stream::ARING_MAGIC.to_le_bytes());
+    b[a + 4..a + 8].copy_from_slice(&22050u32.to_le_bytes());
+    b[a + 8..a + 10].copy_from_slice(&2u16.to_le_bytes());
+    b[a + 12..a + 16].copy_from_slice(&chunk_frames.to_le_bytes());
+    b[a + 16..a + 20].copy_from_slice(&chunk_count.to_le_bytes());
+    b[a + 20..a + 24].copy_from_slice(&a_latest.to_le_bytes());
+    b
+}
+
+#[test]
+fn stream_header_block_round_trips() {
+    let b = stream_header_block(3, spec::stream::FLAG_ENDED, 256, 128, 8, 42, 2048, 64, 17);
+    let h = crate::stream::parse_header_block(&b).expect("valid header block");
+    assert_eq!(h.epoch, 3);
+    assert!(h.ended);
+    assert_eq!((h.video.w, h.video.h), (256, 128));
+    assert_eq!((h.video.fps_num, h.video.fps_den), (15, 1));
+    assert_eq!((h.video.slot_count, h.video.latest_seq), (8, 42));
+    assert_eq!(h.video.total_frames, 900);
+    assert_eq!(h.video.slot_size, (32 + 1024 + 256 * 128u32).next_multiple_of(16));
+    assert_eq!((h.audio.sample_rate, h.audio.channels), (22050, 2));
+    assert_eq!((h.audio.chunk_frames, h.audio.chunk_count, h.audio.latest_seq), (2048, 64, 17));
+    // Ring offsets: seq 1 sits at the ring base; seqs wrap modulo the count.
+    assert_eq!(crate::stream::slot_offset(&h, 1), Some(h.video_off));
+    assert_eq!(crate::stream::slot_offset(&h, 9), Some(h.video_off));
+    assert_eq!(crate::stream::slot_offset(&h, 2), Some(h.video_off + h.video.slot_size));
+    assert_eq!(crate::stream::slot_offset(&h, 0), None, "seqs start at 1");
+    let chunk = crate::stream::chunk_size(2048, 2).unwrap();
+    assert_eq!(chunk, 16 + 2048 * 2 * 2);
+    assert_eq!(crate::stream::chunk_offset(&h, 65), Some(h.audio_off));
+}
+
+#[test]
+fn stream_header_block_refuses_malformed() {
+    use crate::stream::parse_header_block;
+    let ok = stream_header_block(0, 0, 256, 128, 8, 0, 2048, 64, 0);
+    assert!(parse_header_block(&ok).is_some());
+    assert!(parse_header_block(&ok[..95]).is_none(), "short block");
+    let mut bad = ok.clone();
+    bad[0] = 0; // stream magic
+    assert!(parse_header_block(&bad).is_none());
+    let mut bad = ok.clone();
+    bad[4] = 99; // version
+    assert!(parse_header_block(&bad).is_none());
+    let mut bad = ok.clone();
+    bad[spec::stream::VRING_OFF] = 0; // vring magic
+    assert!(parse_header_block(&bad).is_none());
+    let mut bad = ok.clone();
+    bad[spec::stream::ARING_OFF] = 0; // aring magic
+    assert!(parse_header_block(&bad).is_none());
+    // Non-pow2 plane (240 wide) — the plane texture must be uploadable.
+    assert!(parse_header_block(&stream_header_block(0, 0, 240, 128, 8, 0, 2048, 64, 0)).is_none());
+    // A slot too small to carry palette + w*h pixels.
+    let mut bad = ok.clone();
+    let v = spec::stream::VRING_OFF;
+    bad[v + 16..v + 20].copy_from_slice(&64u32.to_le_bytes());
+    assert!(parse_header_block(&bad).is_none());
+    // Zero rings / bad PCM shapes.
+    assert!(parse_header_block(&stream_header_block(0, 0, 256, 128, 0, 0, 2048, 64, 0)).is_none());
+    assert!(parse_header_block(&stream_header_block(0, 0, 256, 128, 8, 0, 0, 64, 0)).is_none());
+    let mut bad = ok.clone();
+    let a = spec::stream::ARING_OFF;
+    bad[a + 8..a + 10].copy_from_slice(&3u16.to_le_bytes()); // channels
+    assert!(parse_header_block(&bad).is_none());
+    // Ring larger than a u32 file offset can address.
+    let mut bad = ok;
+    bad[v + 12..v + 16].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(parse_header_block(&bad).is_none());
+}
+
+#[test]
+fn stream_slot_and_chunk_headers_validate() {
+    let b = stream_header_block(0, 0, 256, 128, 8, 1, 2048, 64, 1);
+    let h = crate::stream::parse_header_block(&b).unwrap();
+    let mut slot = alloc::vec![0u8; spec::stream::SLOT_HEADER_SIZE];
+    slot[0..4].copy_from_slice(&7u32.to_le_bytes());
+    slot[4..8].copy_from_slice(&123u32.to_le_bytes());
+    slot[8..10].copy_from_slice(&256u16.to_le_bytes());
+    slot[10..12].copy_from_slice(&128u16.to_le_bytes());
+    let sh = crate::stream::parse_slot_header(&slot, &h.video).expect("valid slot");
+    assert_eq!((sh.seq, sh.frame_index, sh.w, sh.h), (7, 123, 256, 128));
+    // Dim disagreement with the ring header = torn/malformed, refuse.
+    slot[8..10].copy_from_slice(&64u16.to_le_bytes());
+    assert!(crate::stream::parse_slot_header(&slot, &h.video).is_none());
+    slot[8..10].copy_from_slice(&256u16.to_le_bytes()); // dims valid again…
+    slot[0..4].copy_from_slice(&0u32.to_le_bytes()); // …but seq 0 = never written
+    assert!(crate::stream::parse_slot_header(&slot, &h.video).is_none());
+
+    let mut chunk = alloc::vec![0u8; spec::stream::CHUNK_HEADER_SIZE];
+    chunk[0..4].copy_from_slice(&5u32.to_le_bytes());
+    chunk[4..8].copy_from_slice(&40960u32.to_le_bytes());
+    let ch = crate::stream::parse_chunk_header(&chunk).expect("valid chunk");
+    assert_eq!((ch.seq, ch.start_frame), (5, 40960));
+    chunk[0..4].copy_from_slice(&0u32.to_le_bytes());
+    assert!(crate::stream::parse_chunk_header(&chunk).is_none(), "seq 0 = never written");
+    assert!(crate::stream::parse_chunk_header(&chunk[..8]).is_none(), "short header");
+}
+
+#[test]
+fn update_texture_t8_overwrites_in_place() {
+    let mut ui = Ui::new();
+    // 4x4 T8 plane: palette entry 1 = red, all pixels index 1.
+    let mut data = alloc::vec![0u8; 1024 + 16];
+    data[4..8].copy_from_slice(&abgr(255, 0, 0, 255).to_le_bytes());
+    data[1024..].fill(1);
+    let plane = ui.upload_texture(&data, 4, 4, spec::psm::PSM_T8);
+    assert!(plane >= 0);
+
+    // Overwrite with palette entry 1 = green, pixels still index 1.
+    let mut pal = alloc::vec![0u8; 1024];
+    pal[4..8].copy_from_slice(&abgr(0, 255, 0, 255).to_le_bytes());
+    let px = alloc::vec![1u8; 16];
+    assert!(ui.update_texture_t8(plane, &pal, &px));
+    let view = ui.texture(plane).expect("plane still live");
+    assert_eq!(view.palette.unwrap()[4..8], abgr(0, 255, 0, 255).to_le_bytes());
+    assert_eq!(view.pixels, &px[..]);
+
+    // Size/format/liveness misuse changes nothing and reports false.
+    assert!(!ui.update_texture_t8(plane, &pal[..100], &px), "short palette");
+    assert!(!ui.update_texture_t8(plane, &pal, &px[..8]), "wrong pixel count");
+    let rgba = ui.upload_texture(&[0u8; 4 * 4 * 4], 4, 4, spec::psm::PSM_8888);
+    assert!(!ui.update_texture_t8(rgba, &pal, &px), "non-T8 texture");
+    ui.free_texture(plane);
+    assert!(!ui.update_texture_t8(plane, &pal, &px), "stale handle");
+}
+
+/// Cross-language contract: the committed .pkst golden is WRITTEN by the TS
+/// host (demos/youtube/host/ring.ts; regenerated by UPDATE=1 bun test
+/// test/youtube-host.test.ts) and PARSED here — if either side's byte layout
+/// drifts, one of the two suites breaks.
+#[test]
+fn stream_golden_fixture_parses() {
+    let bytes: &[u8] = include_bytes!("../../test/fixtures/youtube-golden.pkst");
+    let h = crate::stream::parse_header_block(bytes).expect("TS-written header parses");
+    assert_eq!(h.epoch, 0);
+    assert!(!h.ended);
+    assert_eq!((h.video.w, h.video.h), (16, 16));
+    assert_eq!((h.video.fps_num, h.video.fps_den), (15, 1));
+    assert_eq!((h.video.slot_count, h.video.latest_seq, h.video.total_frames), (4, 2, 30));
+    assert_eq!((h.audio.sample_rate, h.audio.channels), (22050, 2));
+    assert_eq!((h.audio.chunk_frames, h.audio.chunk_count, h.audio.latest_seq), (64, 4, 1));
+
+    // Frame 2 (seq 2): palette bytes are (i + 2) & 255, indices (i * 3) & 255.
+    let off = crate::stream::slot_offset(&h, 2).unwrap() as usize;
+    let slot = &bytes[off..off + h.video.slot_size as usize];
+    let sh = crate::stream::parse_slot_header(slot, &h.video).expect("slot 2 parses");
+    assert_eq!((sh.seq, sh.frame_index), (2, 1));
+    let pal = &slot[spec::stream::SLOT_HEADER_SIZE..spec::stream::SLOT_HEADER_SIZE + 1024];
+    assert!(pal.iter().enumerate().all(|(i, &b)| b == ((i + 2) & 255) as u8));
+    let px = &slot[spec::stream::SLOT_HEADER_SIZE + 1024..spec::stream::SLOT_HEADER_SIZE + 1024 + 256];
+    assert!(px.iter().enumerate().all(|(i, &b)| b == ((i * 3) & 255) as u8));
+
+    // Audio chunk 1: s16 LE samples i * 3 - 64.
+    let coff = crate::stream::chunk_offset(&h, 1).unwrap() as usize;
+    let chunk = &bytes[coff..];
+    let ch = crate::stream::parse_chunk_header(chunk).expect("chunk 1 parses");
+    assert_eq!((ch.seq, ch.start_frame), (1, 0));
+    let pcm = &chunk[spec::stream::CHUNK_HEADER_SIZE..];
+    for i in 0..(64 * 2usize) {
+        let v = i16::from_le_bytes([pcm[i * 2], pcm[i * 2 + 1]]);
+        assert_eq!(v as i32, i as i32 * 3 - 64);
+    }
+
+    // And the frame is presentable: a fresh core accepts it as a plane update.
+    let mut ui = Ui::new();
+    let mut init = alloc::vec![0u8; 1024 + 256];
+    init[3] = 0xff;
+    let plane = ui.upload_texture(&init, 16, 16, spec::psm::PSM_T8);
+    assert!(ui.update_texture_t8(plane, pal, px));
+}

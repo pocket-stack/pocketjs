@@ -108,6 +108,34 @@ export interface HostOps {
    *  PSM_T8 palette + RLE/filter flags). → handle or -1. */
   uploadImgEntry?(blob: Uint8Array): number;
 
+  // -- host service channel + video plane (spec ops 30..37). Optional: only
+  //    native hosts with a tethered companion process (PSPLINK usbhostfs,
+  //    PPSSPP memstick dir) implement them. Apps feature-detect: no svcOpen
+  //    (or svcOpen -> false) means "not tethered" and the app shows its
+  //    connect screen or falls back to a host-appropriate transport. -------
+  /** Probe pocket-svc/<app>/ under the tethered share; all later svc/video
+   *  paths resolve inside that directory. → whether the mailbox exists. */
+  svcOpen?(app: string): boolean;
+  /** New COMPLETE JSON lines from the host since the last poll (may batch
+   *  several, newline-terminated); undefined when idle. One usbhostfs round
+   *  trip — poll once per frame, not per read. */
+  svcPoll?(): string | undefined;
+  /** Append one JSON line to the app's outbox. */
+  svcSend?(line: string): void;
+  /** Read a small IMG-entry side file (svc-dir-relative path) into a
+   *  texture — host-rendered thumbnails/text strips. → handle or -1. */
+  loadImgFile?(path: string): number;
+  /** Open a .pkst stream file (svc-dir-relative): validate, allocate the
+   *  plane texture, start audio. → success. */
+  videoOpen?(path: string): boolean;
+  /** Bounded per-frame IO pump — call once per frame while a stream is
+   *  open. → source frame index of the presented frame, -1 before any. */
+  videoTick?(): number;
+  /** The plane texture handle (stable for the session), -1 when closed. */
+  videoTexture?(): number;
+  /** Stop audio, close the stream, free the plane. */
+  videoClose?(): void;
+
   // -- DevTools ops (spec ops 18..22, DEVTOOLS.md). Optional: debug-only,
   //    default-off; hosts that predate them (e.g. pocket-mod) simply lack
   //    them and the shim feature-detects. ---------------------------------

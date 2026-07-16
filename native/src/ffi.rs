@@ -578,6 +578,145 @@ unsafe extern "C" fn js_dbg_send(
 }
 
 // ---------------------------------------------------------------------------
+// Host service channel + video plane (spec ops 30..37; svc.rs / vid.rs)
+// ---------------------------------------------------------------------------
+
+/// Borrow a JS string arg as UTF-8, feed it to `f`. Lone surrogates are a
+/// miss (same reasoning as js_load_tile_texture: paths/names are UTF-8 by
+/// construction on the host side).
+unsafe fn with_str_arg<R>(
+    ctx: *mut JSContext,
+    argc: i32,
+    argv: *mut JSValue,
+    i: isize,
+    miss: R,
+    f: impl FnOnce(&str) -> R,
+) -> R {
+    if (i as i32) >= argc {
+        return miss;
+    }
+    let mut len: size_t = 0;
+    let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(i), 0);
+    if s.is_null() {
+        return miss;
+    }
+    let out = match core::str::from_utf8(core::slice::from_raw_parts(s as *const u8, len)) {
+        Ok(v) => f(v),
+        Err(_) => miss,
+    };
+    JS_FreeCString(ctx, s);
+    out
+}
+
+/// ui.svcOpen(app) -> bool (spec op 30): probe pocket-svc/<app>/ under
+/// host0: then ms0:.
+unsafe extern "C" fn js_svc_open(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let ok = with_str_arg(ctx, argc, argv, 0, false, |app| crate::svc::open(app));
+    JS_NewBool(ctx, ok)
+}
+
+/// ui.svcPoll() -> string | undefined (spec op 31): new complete lines from
+/// the host. Callers own the cadence (the app driver polls once per frame).
+unsafe extern "C" fn js_svc_poll(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    match crate::svc::poll() {
+        Some(s) => JS_NewStringLen(ctx, s.as_ptr(), s.len()),
+        None => JS_UNDEFINED,
+    }
+}
+
+/// ui.svcSend(line) (spec op 32): append one JSON line to the outbox.
+unsafe extern "C" fn js_svc_send(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc >= 1 {
+        let mut len: size_t = 0;
+        let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+        if !s.is_null() {
+            crate::svc::send(core::slice::from_raw_parts(s as *const u8, len));
+            JS_FreeCString(ctx, s);
+        }
+    }
+    JS_UNDEFINED
+}
+
+/// ui.loadImgFile(path) -> handle | -1 (spec op 33): read a small IMG-entry
+/// side file from the svc directory into a texture.
+unsafe extern "C" fn js_load_img_file(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let handle = with_str_arg(ctx, argc, argv, 0, -1, |rel| {
+        match crate::svc::read_side_file(rel, pocketjs_core::spec::svc::IMG_MAX_BYTES) {
+            Some(blob) => ui().upload_img_entry(&blob),
+            None => -1,
+        }
+    });
+    if handle >= 0 {
+        crate::ge::writeback_texture(ui(), handle);
+    }
+    JS_NewInt32(ctx, handle)
+}
+
+/// ui.videoOpen(path) -> bool (spec op 34): open a .pkst stream in the svc
+/// directory, allocate the plane, start audio.
+unsafe extern "C" fn js_video_open(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let ok = with_str_arg(ctx, argc, argv, 0, false, |rel| crate::vid::open(ui(), rel));
+    JS_NewBool(ctx, ok)
+}
+
+/// ui.videoTick() -> frameIndex | -1 (spec op 35): the bounded per-frame IO
+/// pump — call once per frame while a stream is open.
+unsafe extern "C" fn js_video_tick(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, crate::vid::tick(ui()))
+}
+
+/// ui.videoTexture() -> handle | -1 (spec op 36).
+unsafe extern "C" fn js_video_texture(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, crate::vid::texture())
+}
+
+/// ui.videoClose() (spec op 37).
+unsafe extern "C" fn js_video_close(
+    _ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    crate::vid::close(ui());
+    JS_UNDEFINED
+}
+
+// ---------------------------------------------------------------------------
 // registration
 // ---------------------------------------------------------------------------
 
@@ -641,6 +780,15 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
     add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);
     add_fn(ctx, ui_obj, b"__dbgShot\0", js_dbg_shot, 0);
+    // Host service channel + video plane (spec ops 30..37; svc.rs / vid.rs).
+    add_fn(ctx, ui_obj, b"svcOpen\0", js_svc_open, 1);
+    add_fn(ctx, ui_obj, b"svcPoll\0", js_svc_poll, 0);
+    add_fn(ctx, ui_obj, b"svcSend\0", js_svc_send, 1);
+    add_fn(ctx, ui_obj, b"loadImgFile\0", js_load_img_file, 1);
+    add_fn(ctx, ui_obj, b"videoOpen\0", js_video_open, 1);
+    add_fn(ctx, ui_obj, b"videoTick\0", js_video_tick, 0);
+    add_fn(ctx, ui_obj, b"videoTexture\0", js_video_texture, 0);
+    add_fn(ctx, ui_obj, b"videoClose\0", js_video_close, 0);
 
     // Framework-owned host identity. JS uses this for target/profile
     // diagnostics only; native-vs-injected ownership is determined by the

@@ -162,6 +162,37 @@ export const OP = {
   //                      logical point (the sprite renders offset by -hotspot;
   //                      the cursor input layer integrates the analog nub
   //                      into this once per frame).
+  // -- host service channel (tethered apps; see SVC + STREAM below). A
+  //    companion process on the tethered machine (PSPLINK usbhostfs) speaks
+  //    JSON lines + side files with the app — the same mailbox split the
+  //    DevTools bridge uses (control on jsonl, bulk bytes via files). --------
+  svcOpen: 30, //         (app: string) -> bool. Probe pocket-svc/<app>/enable
+  //                      under host0: then ms0:; seek in.jsonl to EOF (stale
+  //                      commands from a previous run are skipped). All later
+  //                      svc/video paths resolve relative to this directory.
+  svcPoll: 31, //         () -> string | undefined. New COMPLETE lines from
+  //                      in.jsonl since the last poll (may batch several); a
+  //                      line the host is mid-writing stays for the next poll.
+  svcSend: 32, //         (line: string) — append one JSON line to out.jsonl.
+  loadImgFile: 33, //     (path: string) -> handle | -1. Read a small IMG-entry
+  //                      file (compiler/pak.ts layout) from the svc directory
+  //                      into a texture — how host-rendered thumbnails and
+  //                      text strips reach the GE without transiting the JS
+  //                      heap or the JSON channel.
+  // -- video plane (STREAM container below): a host-decoded pixel+PCM feed
+  //    presented as one core texture + one audio channel. ------------------
+  videoOpen: 34, //       (path: string) -> bool. Open a .pkst stream file in
+  //                      the svc directory, validate headers, allocate the
+  //                      plane texture (pow2 CLUT8) and start audio output.
+  videoTick: 35, //       () -> frameIndex | -1. Bounded per-frame IO pump:
+  //                      reads the 96-byte header block, tops up the PCM ring,
+  //                      continues the current slot read, and when a slot
+  //                      completes updates the plane texture in place.
+  //                      Returns the source frame index of the presented
+  //                      frame, -1 before the first one.
+  videoTexture: 36, //    () -> handle | -1. The plane texture (stable for the
+  //                      whole session; -1 when no stream is open).
+  videoClose: 37, //      () — stop audio, close the stream, free the plane.
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -568,6 +599,112 @@ export const TILESET_FLAG_LINEAR = 1 << 1;
 /** Pak key family for TILESET entries. NOT fed to the core at boot — tiles
  *  stream on demand through the loadTileTexture op. */
 export const keyTileset = (name: string): string => `ui:tile.${name}`;
+
+// ---------------------------------------------------------------------------
+// SVC — the host service channel (tethered companion apps)
+// ---------------------------------------------------------------------------
+// A companion process on the tethered machine shares a directory with the
+// device (PSPLINK usbhostfs `host0:`, or the memstick root under PPSSPP) and
+// speaks the DevTools mailbox split: control as JSON lines, bulk bytes as
+// side files. Per app:
+//
+//   <root>/pocket-svc/<app>/enable    host creates; device probes at svcOpen
+//   <root>/pocket-svc/<app>/in.jsonl  host -> device (appended lines)
+//   <root>/pocket-svc/<app>/out.jsonl device -> host (appended lines)
+//
+// plus whatever side files the app's protocol names (IMG entries for
+// loadImgFile, .pkst streams for videoOpen) — always svc-dir-relative paths;
+// the device never opens a path outside its svc directory.
+
+export const SVC_DIR = "pocket-svc";
+/** Max bytes consumed per svcPoll (longer backlogs drain over later polls). */
+export const SVC_POLL_BUF = 8192;
+/** loadImgFile refuses IMG entries larger than this (they'd stall the frame —
+ *  bigger assets belong in the pak or a stream). */
+export const SVC_IMG_MAX_BYTES = 128 * 1024;
+
+// ---------------------------------------------------------------------------
+// STREAM container (.pkst) — a host-written video+audio ring file
+// ---------------------------------------------------------------------------
+// One concurrently-written file: the host (writer) appends-in-place into two
+// fixed-slot rings and only THEN advances the ring's latestSeq in the header
+// block, so the device (reader) never observes a half-written frame it was
+// told about. The device re-checks a slot's embedded seq after reading its
+// pixels — a slot the writer lapped is discarded, not presented. All offsets
+// are from the start of the file; everything little-endian.
+//
+//   Stream header (32 bytes at off 0):
+//     off 0  u32  magic     = 0x54534b50  bytes 'P','K','S','T'
+//     off 4  u16  version   = 1
+//     off 6  u16  flags     bit 0 = ended (source exhausted; latestSeq final)
+//     off 8  u32  epoch     bumped by the writer on any discontinuity (seek,
+//                           new source). The reader drops its ring positions
+//                           and re-syncs to latest on a change.
+//     off 12 u32  videoOff  byte offset of video slot 0 (16-aligned)
+//     off 16 u32  audioOff  byte offset of audio chunk 0 (16-aligned)
+//     off 20 u8[12] reserved (0)
+//
+//   Video ring header (32 bytes at off 32):
+//     off 32 u32  magic     = 0x52564b50  bytes 'P','K','V','R'
+//     off 36 u16  w         frame width  (pow2 <= TEX_MAX_DIM — the plane
+//     off 38 u16  h         frame height  texture IS the frame, no crop rect;
+//                           the host letterboxes/pre-squashes into w x h for
+//                           the target viewport's stretch)
+//     off 40 u16  fpsNum    nominal source rate (e.g. 15/1, 30000/1001);
+//     off 42 u16  fpsDen    frameIndex / (fpsNum/fpsDen) = source seconds
+//     off 44 u32  slotCount
+//     off 48 u32  slotSize  = STREAM_SLOT_HEADER_SIZE + 1024 + w*h, 16-aligned
+//     off 52 u32  latestSeq newest fully-written frame; 0 = none yet. Seq
+//                           starts at 1; slot index = (seq-1) % slotCount.
+//     off 56 u32  totalFrames source length in frames (0 = unknown/live)
+//     off 60 u32  reserved (0)
+//
+//   Audio ring header (32 bytes at off 64):
+//     off 64 u32  magic       = 0x52414b50  bytes 'P','K','A','R'
+//     off 68 u32  sampleRate  (22050 is the tuned USB default)
+//     off 72 u16  channels    (1 | 2; s16 interleaved)
+//     off 74 u16  reserved (0)
+//     off 76 u32  chunkFrames sample frames per chunk
+//     off 80 u32  chunkCount
+//     off 84 u32  latestSeq   newest fully-written chunk; 0 = none. Seq starts
+//                             at 1; chunk index = (seq-1) % chunkCount.
+//     off 88 u8[8] reserved (0)
+//
+//   The reader polls one 96-byte header-block read per tick.
+//
+//   Video slot (at videoOff + ((seq-1) % slotCount) * slotSize):
+//     off 0  u32  seq        re-read after the pixel read: changed = lapped,
+//                            discard (never present a torn frame)
+//     off 4  u32  frameIndex source frame index (monotonic; the host may skip
+//                            indices when it adapts its rate)
+//     off 8  u16  w          must equal the ring header's w/h
+//     off 10 u16  h
+//     off 12 u8[20] reserved (0)
+//     off 32 u8[1024]  palette, 256 x u32 ABGR
+//     off 1056 u8[w*h] CLUT8 indices, row-major, raw (fixed-size slots make
+//                      the reader's chunked-read plan trivial; RLE would not
+//                      survive a fixed slot anyway)
+//
+//   Audio chunk (at audioOff + ((seq-1) % chunkCount) * chunkSize where
+//   chunkSize = STREAM_CHUNK_HEADER_SIZE + chunkFrames*channels*2):
+//     off 0  u32  seq
+//     off 4  u32  startFrame position of the chunk's first sample frame on
+//                           the source timeline (seek resets it with epoch)
+//     off 8  u8[8] reserved (0)
+//     off 16 s16[chunkFrames*channels] PCM, interleaved
+
+export const STREAM_MAGIC = 0x54534b50; // 'PKST' LE
+export const STREAM_VERSION = 1;
+export const STREAM_HEADER_SIZE = 32;
+export const STREAM_VRING_MAGIC = 0x52564b50; // 'PKVR' LE
+export const STREAM_VRING_OFF = 32;
+export const STREAM_ARING_MAGIC = 0x52414b50; // 'PKAR' LE
+export const STREAM_ARING_OFF = 64;
+/** One header-block read covers all three headers. */
+export const STREAM_HEADER_BLOCK_SIZE = 96;
+export const STREAM_SLOT_HEADER_SIZE = 32;
+export const STREAM_CHUNK_HEADER_SIZE = 16;
+export const STREAM_FLAG_ENDED = 1 << 0;
 
 // ---------------------------------------------------------------------------
 // Font slots

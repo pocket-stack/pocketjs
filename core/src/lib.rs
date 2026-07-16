@@ -36,6 +36,7 @@ pub mod draw;
 pub mod layout;
 pub mod raster;
 pub mod spec;
+pub mod stream;
 pub mod style;
 pub mod text;
 pub mod tree;
@@ -176,13 +177,13 @@ fn copy_aligned(src: &[u8], byte_len: usize) -> Vec<u128> {
 // ---- unaligned LE readers (asset blob parsing; overflow-proof offsets) ------
 
 #[inline]
-fn rd_u16(b: &[u8], off: usize) -> Option<u16> {
+pub(crate) fn rd_u16(b: &[u8], off: usize) -> Option<u16> {
     let s = b.get(off..off.checked_add(2)?)?;
     Some(u16::from_le_bytes([s[0], s[1]]))
 }
 
 #[inline]
-fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
+pub(crate) fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
     let s = b.get(off..off.checked_add(4)?)?;
     Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
@@ -546,6 +547,40 @@ impl Ui {
             img_flags |= spec::img::FLAG_LINEAR;
         }
         self.upload_texture_flags(&data, tile.tile_w, tile.tile_h, spec::psm::PSM_T8, img_flags)
+    }
+
+    /// Overwrite a live PSM_T8 texture's palette + pixels IN PLACE (the video
+    /// plane's per-frame path: one texture for the whole session, so image
+    /// bindings and the GE's texture pointer stay stable while the bytes
+    /// change under them). `palette` must be exactly the 1024-byte CLUT and
+    /// `pixels` exactly w*h index bytes for the texture's own dimensions —
+    /// this never resizes or re-formats a slot. Returns false (and changes
+    /// nothing) on stale handles, non-T8 textures, or size mismatches.
+    /// Callers on the PSP must writeback the texture after (the GE samples
+    /// RAM, not the dcache).
+    pub fn update_texture_t8(&mut self, handle: i32, palette: &[u8], pixels: &[u8]) -> bool {
+        let Some(slot) = tex_resolve(&self.textures, handle) else { return false };
+        let Some(tex) = self.textures[slot as usize].tex.as_mut() else { return false };
+        if tex.psm != spec::psm::PSM_T8 || palette.len() != TEX_PALETTE_BYTES {
+            return false;
+        }
+        if pixels.len() != tex.byte_len {
+            return false;
+        }
+        let Some(pal) = tex.palette.as_mut() else { return false };
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                palette.as_ptr(),
+                pal.as_mut_ptr() as *mut u8,
+                TEX_PALETTE_BYTES,
+            );
+            core::ptr::copy_nonoverlapping(
+                pixels.as_ptr(),
+                tex.data.as_mut_ptr() as *mut u8,
+                tex.byte_len,
+            );
+        }
+        true
     }
 
     /// Release a texture slot (spec op freeTexture): drop the pixels, bump
