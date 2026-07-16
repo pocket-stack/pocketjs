@@ -3,10 +3,14 @@
 // The host service is a real process on a real cable, so the sim injects a
 // canned host through __pocketEffectDriver (the host-override slot the
 // effect shell reserves for exactly this) and drives the full journey:
-// connect handshake -> OSK search -> host-rendered result cards -> play ->
-// pause. Titles inside cards are images (host-side rendering is the point),
-// so tree assertions ride the player HUD text, the status line and the
-// phase furniture — all device text.
+// connect handshake -> system-OSK search -> host-rendered result rows ->
+// play -> pause. Titles inside rows are images (host-side rendering is the
+// point), so tree assertions ride the player HUD text, the status line and
+// the phase furniture — all device text.
+//
+// The keyboard is the framework OSK: journeys are generated against its
+// real layout (test/osk-script.ts), and one journey types by TOUCH to cover
+// the input.touch adapter end to end.
 
 import { describe, expect, test } from "bun:test";
 import {
@@ -16,7 +20,10 @@ import {
   treeHasText,
   type ScriptEvent,
 } from "../host-sim/sim.ts";
-import { BTN } from "../spec/spec.ts";
+import { BTN, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
+import { layoutRows, OSK_H, OSK_LAYERS, OSK_PAD, OSK_GAP, OSK_ROW_H } from "../src/osk-layout.ts";
+import { __packTouch } from "../src/touch.ts";
+import { OskScripter } from "./osk-script.ts";
 import type { HostMsg, ResultItem } from "../demos/youtube/protocol.ts";
 
 const ITEMS: ResultItem[] = [
@@ -43,9 +50,9 @@ type Cmd = { kind: string; id: number; payload: unknown };
 /** The canned Mac: answers everything instantly (deliveries still apply at
  *  the next frame boundary — the shell owns the timing). */
 function cannedHost() {
-  const seen: string[] = [];
+  const seen: Cmd[] = [];
   const driver = (cmd: Cmd, deliver: (r: unknown) => void) => {
-    seen.push(cmd.kind);
+    seen.push(cmd);
     const id = cmd.id;
     switch (cmd.kind) {
       case "yt/hello":
@@ -73,39 +80,49 @@ function cannedHost() {
   return { driver, seen };
 }
 
-async function run(seconds: number, script: ScriptEvent[], driver?: (cmd: Cmd, deliver: (r: unknown) => void) => void) {
+interface RunOptions {
+  driver?: (cmd: Cmd, deliver: (r: unknown) => void) => void;
+  /** Packed touch contacts per frame index (sparse). */
+  touches?: Map<number, number[]>;
+}
+
+async function run(seconds: number, script: ScriptEvent[], opts: RunOptions = {}) {
   const hz = 60;
   const frames = seconds * hz;
-  const world = await bootWorld("youtube-main", hz, { __pocketEffectDriver: driver });
+  const world = await bootWorld("youtube-main", hz, { __pocketEffectDriver: opts.driver });
   const { masks, analogs } = scriptToMasks(script, hz, frames);
   const hashes: string[] = [];
   for (let f = 0; f < frames; f++) {
-    world.frame(masks[f], analogs[f]);
+    world.frame(masks[f], analogs[f], opts.touches?.get(f));
     for (let t = 0; t < world.ticksPerFrame; t++) world.tick();
     hashes.push(fnv1a(world.render()));
   }
   return { hashes, tree: world.getTree(), effects: world.effects.slice() };
 }
 
-// Journey: browse arrives via the handshake, △ opens the OSK, type "q"
-// (DOWN to the letter row, ○ to press), START searches, ○ plays the
-// focused result, ○ pauses playback.
+/** Search commands as the HOST saw them (payload included — the effect
+ *  trace records only ids/kinds). */
+const searches = (host: { seen: Cmd[] }) =>
+  host.seen.filter((c) => c.kind === "yt/search").map((c) => c.payload as { q: string });
+
+// Journey: browse arrives via the handshake, △ opens the system OSK
+// (focus starts on 'q'), ○ types it, START commits the search + closes,
+// ○ plays the focused result, ○ pauses playback.
+const kb = new OskScripter(1.0).open().type("q").commit();
 const JOURNEY: ScriptEvent[] = [
-  { at: 1.0, press: BTN.TRIANGLE }, // open the keyboard
-  { at: 1.5, press: BTN.DOWN }, //    focus 'q'
-  { at: 2.0, press: BTN.CIRCLE }, //  type it
-  { at: 2.5, press: BTN.START }, //   close + search
-  { at: 3.5, press: BTN.CIRCLE }, //  play the focused (first) result
-  { at: 4.5, press: BTN.CIRCLE }, //  pause
+  ...kb.events,
+  { at: kb.end + 1.0, press: BTN.CIRCLE }, // play the focused (first) result
+  { at: kb.end + 2.0, press: BTN.CIRCLE }, // pause
 ];
 
 const canned = cannedHost();
-const main = await run(6, JOURNEY, canned.driver);
+const main = await run(Math.ceil(kb.end + 3.5), JOURNEY, { driver: canned.driver });
 
 describe("the journey happened", () => {
-  test("handshake, search, play, pause — in order", () => {
+  test("handshake, search, play, pause — in order, with the typed query", () => {
     const kinds = main.effects.filter((e) => e.t === "command").map((e) => e.kind);
     expect(kinds).toEqual(["yt/hello", "yt/search", "yt/play", "yt/pause"]);
+    expect(searches(canned)[0].q).toBe("q");
   });
 
   test("the player HUD shows the host's title and the pause state", () => {
@@ -118,7 +135,7 @@ describe("the journey happened", () => {
 
 describe("determinism", () => {
   test("same tape, same world", async () => {
-    const again = await run(6, JOURNEY, cannedHost().driver);
+    const again = await run(Math.ceil(kb.end + 3.5), JOURNEY, { driver: cannedHost().driver });
     expect(again.hashes).toEqual(main.hashes);
     expect(again.effects).toEqual(main.effects);
   }, 30000);
@@ -128,7 +145,7 @@ describe("connect phase", () => {
   test("an offline host keeps the connect screen up and retries hello", async () => {
     // A driver that answers nothing: commands hang forever (worse than an
     // error — the app must not deadlock on it).
-    const silent = await run(5, [], () => {});
+    const silent = await run(5, [], { driver: () => {} });
     expect(treeHasText(silent.tree, "CONNECT USB")).toBe(true);
     const hellos = silent.effects.filter((e) => e.t === "command" && e.kind === "yt/hello");
     expect(hellos.length).toBeGreaterThanOrEqual(2); // the 2 s retry pump
@@ -136,25 +153,60 @@ describe("connect phase", () => {
 
   test("results render the browse chrome (cards load out-of-band)", async () => {
     const c = cannedHost();
-    const browse = await run(4, JOURNEY.slice(0, 4), c.driver);
+    const browse = await run(Math.ceil(kb.end + 1), kb.events, { driver: c.driver });
     expect(treeHasText(browse.tree, "1/2")).toBe(true); // focus counter
     expect(treeHasText(browse.tree, "○ PLAY")).toBe(true);
   }, 30000);
+});
 
+describe("system OSK", () => {
   test("the keyboard stays usable WITH results on screen", async () => {
     // Regression: a fixed-height card column once pushed the opened OSK off
     // the 272px screen — every gated handler went dead and the app read as
-    // frozen. The list now scrolls inside a clipped viewport, so a re-opened
+    // frozen. The system OSK owns input modality outright; a re-opened
     // keyboard must keep typing + searching.
-    const reopen: ScriptEvent[] = [
-      ...JOURNEY.slice(0, 4), //          first search lands results
-      { at: 4.0, press: BTN.TRIANGLE }, // reopen the OSK over the results
-      { at: 4.5, press: BTN.DOWN },
-      { at: 5.0, press: BTN.CIRCLE }, //  type another 'q'
-      { at: 5.5, press: BTN.START }, //   second search fires
-    ];
-    const r = await run(7, reopen, cannedHost().driver);
-    const searches = r.effects.filter((e) => e.t === "command" && e.kind === "yt/search");
-    expect(searches.length).toBe(2);
+    const s = new OskScripter(1.0).open().type("q").commit();
+    const again = new OskScripter(s.end + 0.5).open().type("a").commit();
+    const host = cannedHost();
+    await run(Math.ceil(again.end + 1), [...s.events, ...again.events], { driver: host.driver });
+    expect(searches(host).length).toBe(2);
+    expect(searches(host)[1].q).toBe("qa");
+  }, 30000);
+
+  test("the symbols layer types digits via the L chord", async () => {
+    const s = new OskScripter(1.0).open().type("q1!").commit();
+    const host = cannedHost();
+    await run(Math.ceil(s.end + 1), s.events, { driver: host.driver });
+    expect(searches(host)[0].q).toBe("q1!");
+  }, 30000);
+
+  test("touch types on the keyboard and commits with ✓ (input.touch adapter)", async () => {
+    // Open with △, then TOUCH 'q' and the ✓ key at their absolute screen
+    // rects (panel docked at the bottom of the 272px column).
+    const rows = layoutRows(OSK_LAYERS.lower, SCREEN_W - 2 * OSK_PAD);
+    const panelTop = SCREEN_H - OSK_H;
+    const at = (want: string): [number, number] => {
+      for (const row of rows) {
+        for (const k of row) {
+          if ((k.key.ch ?? k.key.label) === want) {
+            return [
+              OSK_PAD + k.x + Math.floor(k.w / 2),
+              panelTop + OSK_PAD + k.row * (OSK_ROW_H + OSK_GAP) + Math.floor(OSK_ROW_H / 2),
+            ];
+          }
+        }
+      }
+      throw new Error(`no key ${want}`);
+    };
+    const [qx, qy] = at("q");
+    const [okx, oky] = at("✓");
+    const touches = new Map<number, number[]>();
+    for (let f = 150; f < 154; f++) touches.set(f, [__packTouch(1, qx, qy)]);
+    for (let f = 200; f < 204; f++) touches.set(f, [__packTouch(2, okx, oky)]);
+    const host = cannedHost();
+    await run(6, [{ at: 1.0, press: BTN.TRIANGLE }], { driver: host.driver, touches });
+    const s = searches(host);
+    expect(s.length).toBe(1); // ✓ committed the search…
+    expect(s[0].q).toBe("q"); // …with the touched key
   }, 30000);
 });

@@ -12,7 +12,7 @@ import { packbitsDecode, PSM } from "../spec/spec.ts";
 import { paletteBytes, quantize } from "../demos/youtube/host/quant.ts";
 import { encodeImgT8 } from "../demos/youtube/host/img.ts";
 import { readStream, StreamWriter, type StreamGeometry } from "../demos/youtube/host/ring.ts";
-import { cardFont, CARD_H, CARD_W, fitLines, fmtDuration, renderCard } from "../demos/youtube/host/cards.ts";
+import { cardFont, CARD_H, CARD_VISIBLE_W, CARD_W, fitLines, fmtDuration, renderCard } from "../demos/youtube/host/cards.ts";
 import { search, resolve as resolveVideo, type Runner } from "../demos/youtube/host/yt.ts";
 
 const tmp = mkdtempSync(join(tmpdir(), "pocket-youtube-"));
@@ -213,11 +213,25 @@ describe("cards", () => {
     // Some ink brighter than the background exists in the text region.
     let bright = 0;
     for (let y = 0; y < CARD_H; y++) {
-      for (let x = 124; x < CARD_W; x++) {
+      for (let x = 124; x < CARD_VISIBLE_W; x++) {
         if (card[(y * CARD_W + x) * 4] > 0x80) bright++;
       }
     }
     expect(bright).toBeGreaterThan(50);
+    // The duration badge darkened the thumb's bottom-right corner.
+    expect(card[(56 * CARD_W + 110) * 4 + 2]).toBeLessThan(160);
+    // The chevron leaves ink near the right edge of the VISIBLE row.
+    let chevron = 0;
+    for (let y = 24; y < 44; y++) {
+      for (let x = CARD_VISIBLE_W - 20; x < CARD_VISIBLE_W; x++) {
+        if (card[(y * CARD_W + x) * 4] > 0x40) chevron++;
+      }
+    }
+    expect(chevron).toBeGreaterThan(4);
+    // The pow2 tail (clipped on device) stays flat background.
+    for (let y = 0; y < CARD_H; y += 7) {
+      expect(card[(y * CARD_W + CARD_VISIBLE_W + 20) * 4]).toBe(0x14);
+    }
   });
 
   test("fmtDuration covers m:ss and h:mm:ss", () => {

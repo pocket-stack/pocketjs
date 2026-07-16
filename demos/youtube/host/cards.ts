@@ -1,21 +1,25 @@
-// demos/youtube/host/cards.ts — search-result cards, rendered host-side.
+// demos/youtube/host/cards.ts — search-result rows, rendered host-side.
 //
 // The PSP's font atlas bakes only the glyphs the app's source literals name,
 // so arbitrary search-result text (CJK titles above all) can never render as
-// device text. The Mac has every glyph: each result becomes ONE 256x64
-// CLUT8 card image — thumbnail left, two title lines + meta right — shipped
-// as an IMG-entry side file and shown with loadImgFile. Text is rasterized
-// here with opentype.js outlines (Arial Unicode for coverage) because the
-// Homebrew ffmpeg has no drawtext; thumbnails decode through ffmpeg
-// (scale/crop to the card slot).
+// device text. The Mac has every glyph: each result becomes ONE full-width
+// row image — thumbnail with a duration badge on the left, title/channel/
+// views to the right, a chevron at the far edge — shipped as an IMG-entry
+// side file and shown with loadImgFile. The texture is 512 wide (pow2, spec
+// requirement); the app clips it to the visible 456 (480 minus margins).
+// Text is rasterized here with opentype.js outlines (Arial Unicode for
+// coverage) because the Homebrew ffmpeg has no drawtext; thumbnails decode
+// through ffmpeg (scale/crop to the row slot).
 //
 // Deterministic given the same inputs — the golden test feeds a fixed RGBA
-// thumb and asserts the card bytes.
+// thumb and asserts the row bytes.
 
 import { existsSync } from "node:fs";
 import { parse as parseFont, type Font } from "opentype.js";
 
-export const CARD_W = 256;
+export const CARD_W = 512;
+/** On-screen width — the pow2 tail beyond this is clipped by the app. */
+export const CARD_VISIBLE_W = 456;
 export const CARD_H = 64;
 export const THUMB_W = 116;
 export const THUMB_H = 64;
@@ -222,7 +226,29 @@ export interface CardInput {
   thumbRgba: Uint8Array | null;
 }
 
-/** Compose one 256x64 RGBA card (quantize + encodeImgT8 downstream). */
+/** Fill an axis-aligned rect with `color`, alpha-blending at `a`. */
+function fillRect(
+  rgba: Uint8Array,
+  x0: number,
+  y0: number,
+  w: number,
+  h: number,
+  color: readonly number[],
+  a = 1,
+): void {
+  for (let y = Math.max(0, y0); y < Math.min(CARD_H, y0 + h); y++) {
+    for (let x = Math.max(0, x0); x < Math.min(CARD_W, x0 + w); x++) {
+      const o = (y * CARD_W + x) * 4;
+      rgba[o] = rgba[o] + (color[0] - rgba[o]) * a;
+      rgba[o + 1] = rgba[o + 1] + (color[1] - rgba[o + 1]) * a;
+      rgba[o + 2] = rgba[o + 2] + (color[2] - rgba[o + 2]) * a;
+      rgba[o + 3] = 255;
+    }
+  }
+}
+
+/** Compose one 512x64 RGBA row (quantize + encodeImgT8 downstream): thumb +
+ *  duration badge | title (1-2 lines), channel, views | chevron. */
 export async function renderCard(input: CardInput): Promise<Uint8Array> {
   await cardFont();
   const rgba = new Uint8Array(CARD_W * CARD_H * 4);
@@ -240,27 +266,34 @@ export async function renderCard(input: CardInput): Promise<Uint8Array> {
   } else {
     // Placeholder: a dimmer panel with a play glyph, so a failed thumbnail
     // fetch still reads as "a video".
-    for (let y = 0; y < THUMB_H; y++) {
-      for (let x = 0; x < THUMB_W; x++) {
-        const o = (y * CARD_W + x) * 4;
-        rgba[o] = 0x1e;
-        rgba[o + 1] = 0x2a;
-        rgba[o + 2] = 0x38;
-      }
-    }
+    fillRect(rgba, 0, 0, THUMB_W, THUMB_H, [0x1e, 0x2a, 0x38]);
     drawText(rgba, CARD_W, CARD_H, "▶", (THUMB_W - textWidth("▶", 22)) / 2, 40, 22, DIM);
   }
-  const tx = THUMB_W + 8;
-  const maxW = CARD_W - tx - 6;
-  const lines = fitLines(input.title, 13, maxW, 2);
-  drawText(rgba, CARD_W, CARD_H, lines[0] ?? "", tx, 19, 13, INK);
-  if (lines[1]) drawText(rgba, CARD_W, CARD_H, lines[1], tx, 36, 13, INK);
-  const meta: string[] = [];
-  if (input.channel) meta.push(input.channel);
-  if (input.durationS > 0) meta.push(fmtDuration(input.durationS));
-  if (input.views > 0) meta.push(`${fmtViews(input.views)}次`);
-  const metaLine = fitLines(meta.join(" · "), 10, maxW, 1)[0] ?? "";
-  drawText(rgba, CARD_W, CARD_H, metaLine, tx, 56, 10, DIM);
+  // Duration badge on the thumbnail, bottom-right (the mockup chip).
+  if (input.durationS > 0) {
+    const label = fmtDuration(input.durationS);
+    const tw = Math.ceil(textWidth(label, 10));
+    const bx = THUMB_W - tw - 10;
+    fillRect(rgba, bx, THUMB_H - 16, tw + 8, 13, [0, 0, 0], 0.72);
+    drawText(rgba, CARD_W, CARD_H, label, bx + 4, THUMB_H - 6, 10, INK);
+  }
+  const tx = THUMB_W + 10;
+  const maxW = CARD_VISIBLE_W - tx - 26; // keep clear of the chevron
+  const lines = fitLines(input.title, 14, maxW, 2);
+  const views = input.views > 0 ? `${fmtViews(input.views)}次观看` : "";
+  if (lines.length > 1) {
+    // Two title lines: channel and views share the meta line.
+    drawText(rgba, CARD_W, CARD_H, lines[0], tx, 19, 14, INK);
+    drawText(rgba, CARD_W, CARD_H, lines[1], tx, 36, 14, INK);
+    const meta = [input.channel, views].filter(Boolean).join(" · ");
+    drawText(rgba, CARD_W, CARD_H, fitLines(meta, 10, maxW, 1)[0] ?? "", tx, 55, 10, DIM);
+  } else {
+    // The mockup layout: title / channel / views on their own lines.
+    drawText(rgba, CARD_W, CARD_H, lines[0] ?? "", tx, 21, 14, INK);
+    drawText(rgba, CARD_W, CARD_H, fitLines(input.channel, 10, maxW, 1)[0] ?? "", tx, 39, 10, DIM);
+    drawText(rgba, CARD_W, CARD_H, views, tx, 55, 10, DIM);
+  }
+  drawText(rgba, CARD_W, CARD_H, "›", CARD_VISIBLE_W - 18, 39, 16, DIM);
   return rgba;
 }
 

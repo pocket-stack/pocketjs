@@ -3,11 +3,13 @@
 // No WiFi anywhere in this design: a companion Mac service (host/serve.ts)
 // owns the network and the pixels, and everything reaches the device
 // through the PSPLINK usbhostfs share — search results as host-rendered
-// 256x64 card images (CJK titles included; the PSP atlas never could), the
-// video itself as a CLUT8+PCM ring stream on the native video plane.
+// full-width row images (CJK titles included; the PSP atlas never could),
+// the video itself as a CLUT8+PCM ring stream on the native video plane.
 //
-// Input: △ opens the search keyboard, START searches, d-pad browses,
-// ○ plays; the player screen documents its own chords.
+// Text entry rides the SYSTEM keyboard (@pocketjs/framework/osk): △ opens
+// it, and while it is up every handler below is muted by the framework's
+// modal block — no per-handler gating, no way to freeze the app behind an
+// invisible keyboard. START/✓ commits the search.
 
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { Image, Text, View } from "@pocketjs/framework/components";
@@ -15,10 +17,9 @@ import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
 import { getOps } from "@pocketjs/framework/host";
 import { animate } from "@pocketjs/framework/animation";
-import { virtualFrame } from "@pocketjs/framework/clock";
+import { createOsk, Osk } from "@pocketjs/framework/osk";
 import type { NodeMirror } from "@pocketjs/framework/renderer";
 import { loadCard, pumpDriver } from "./driver.ts";
-import { Keyboard, OSK_H } from "./keyboard.tsx";
 import Player from "./player.tsx";
 import { createYoutubeStore, type YoutubeStore } from "./store.ts";
 import type { ResultItem } from "./protocol.ts";
@@ -28,12 +29,16 @@ const DIM = "#8fa3ad";
 const RED = "#ff4757";
 const BG = "#0b0f14";
 
-/** Row pitch of the results column: 64px card + 4px gap. */
+/** Row pitch of the results column: 64px row + 4px gap. */
 const ROW_STEP = 68;
+/** Host-rendered row textures are 512 wide (pow2); this much is content. */
+const CARD_VISIBLE_W = 456;
 // Focus styling swaps the WHOLE class (a stale conditional style object
 // leaves its border behind — observed on hardware as a trail of red rings).
-const CARD_IDLE = "w-[258] h-[64] rounded-md border-[#0b0f1400] transition-colors duration-100";
-const CARD_ACTIVE = "w-[258] h-[64] rounded-md border-[#ff4757] transition-colors duration-100";
+const ROW_IDLE =
+  "w-full h-[64] rounded-md overflow-hidden border-[#0b0f1400] transition-colors duration-100";
+const ROW_ACTIVE =
+  "w-full h-[64] rounded-md overflow-hidden border-[#ff4757] transition-colors duration-100";
 
 export default function App() {
   const store = createYoutubeStore();
@@ -59,51 +64,31 @@ export default function App() {
 // ---------------------------------------------------------------------------
 
 function Browse(props: { store: YoutubeStore }) {
-  const [kbOpen, setKbOpen] = createSignal(false);
-  const [kbFrame, setKbFrame] = createSignal(0);
-  const kbClosed = () => !kbOpen();
-
-  onButtonPress(
-    BTN.TRIANGLE,
-    () => {
-      setKbFrame(virtualFrame());
-      setKbOpen(true);
-    },
-    { active: kbClosed },
-  );
-  onButtonPress(BTN.START, () => {
-    setKbOpen(false);
-    props.store.search();
+  const osk = createOsk({
+    value: props.store.query,
+    setValue: props.store.setQuery,
+    onCommit: () => props.store.search(),
   });
-  onButtonPress(
-    BTN.UP,
-    () => props.store.setFocused(Math.max(0, props.store.focused() - 1)),
-    { active: kbClosed },
+
+  // While the OSK is open these are all muted by its modal block — the
+  // keyboard owns every button until it closes.
+  onButtonPress(BTN.TRIANGLE, () => osk.open());
+  onButtonPress(BTN.START, () => props.store.search());
+  onButtonPress(BTN.UP, () => props.store.setFocused(Math.max(0, props.store.focused() - 1)));
+  onButtonPress(BTN.DOWN, () =>
+    props.store.setFocused(
+      Math.min(Math.max(0, props.store.results().length - 1), props.store.focused() + 1),
+    ),
   );
-  onButtonPress(
-    BTN.DOWN,
-    () =>
-      props.store.setFocused(
-        Math.min(Math.max(0, props.store.results().length - 1), props.store.focused() + 1),
-      ),
-    { active: kbClosed },
-  );
-  onButtonPress(
-    BTN.CIRCLE,
-    () => {
-      const item = props.store.results()[props.store.focused()];
-      if (item) props.store.play(item);
-    },
-    { active: kbClosed },
-  );
+  onButtonPress(BTN.CIRCLE, () => {
+    const item = props.store.results()[props.store.focused()];
+    if (item) props.store.play(item);
+  });
 
   // The whole result list lives under a clipping viewport and SCROLLS
   // (animated translateY, focused row pinned to the second slot). The
   // viewport's in-flow size is zero (the list is absolute), so opening the
-  // OSK squeezes the viewport, never the OSK — a fixed-height card column
-  // once pushed the keyboard clean off the 272px screen, which reads as a
-  // freeze: every handler was gated on "keyboard open" and no keyboard was
-  // visible to close.
+  // OSK squeezes the viewport, never the OSK.
   let listNode: NodeMirror | undefined;
   createEffect(() => {
     const n = props.store.results().length;
@@ -141,14 +126,16 @@ function Browse(props: { store: YoutubeStore }) {
             SEARCH
           </Text>
           <View class="grow px-2 py-1 rounded-md bg-[#141c26] border-[#232e3c]">
-            <Text class="text-sm" style={{ textColor: props.store.query() ? INK : DIM, lineHeight: 15 }}>
-              {props.store.query() ? props.store.query() + "_" : "△ TYPE A QUERY, START SEARCHES"}
+            <Text class="text-sm" style={{ textColor: props.store.query() || osk.isOpen() ? INK : DIM, lineHeight: 15 }}>
+              {osk.isOpen() || props.store.query()
+                ? osk.display()
+                : "△ TYPE A QUERY, START SEARCHES"}
             </Text>
           </View>
         </View>
 
         {/* Results: an animated, clipped scroll column of host-rendered
-            cards (left-aligned, like every video list since 2005). */}
+            full-width rows (thumb left, text right, chevron far right). */}
         <View class="flex-1 overflow-hidden mx-3 my-1">
           <Show
             when={props.store.results().length > 0}
@@ -163,10 +150,10 @@ function Browse(props: { store: YoutubeStore }) {
             <View
               nodeRef={(n) => (listNode = n)}
               class="absolute flex-col gap-1"
-              style={{ insetT: 0, insetL: 0 }}
+              style={{ insetT: 0, insetL: 0, width: CARD_VISIBLE_W }}
             >
               <For each={props.store.results()}>
-                {(item, i) => <Card item={item} active={i() === props.store.focused()} />}
+                {(item, i) => <ResultRow item={item} active={i() === props.store.focused()} />}
               </For>
             </View>
           </Show>
@@ -182,16 +169,8 @@ function Browse(props: { store: YoutubeStore }) {
           </Text>
         </View>
 
-        {/* OSK */}
-        <Show when={kbOpen()}>
-          <Keyboard
-            openedFrame={kbFrame()}
-            onKey={(ch) => props.store.setQuery(props.store.query() + ch)}
-            onSpace={() => props.store.setQuery(props.store.query() + " ")}
-            onBackspace={() => props.store.setQuery(props.store.query().slice(0, -1))}
-            onClose={() => setKbOpen(false)}
-          />
-        </Show>
+        {/* System keyboard, docked at the column bottom while open */}
+        <Osk osk={osk} />
       </Show>
     </View>
   );
@@ -210,9 +189,10 @@ function ConnectScreen() {
   );
 }
 
-/** One host-rendered 256x64 result card. The texture loads through the
+/** One host-rendered full-width result row (512x64 texture, 456 visible —
+ *  the pow2 tail is clipped by the wrapper). The texture loads through the
  *  driver's one-per-frame queue and is freed with the row. */
-function Card(props: { item: ResultItem; active: boolean }) {
+function ResultRow(props: { item: ResultItem; active: boolean }) {
   const [handle, setHandle] = createSignal(-1);
   let node: NodeMirror | undefined;
   let alive = true;
@@ -235,18 +215,18 @@ function Card(props: { item: ResultItem; active: boolean }) {
   });
 
   return (
-    <View class={props.active ? CARD_ACTIVE : CARD_IDLE}>
+    <View class={props.active ? ROW_ACTIVE : ROW_IDLE}>
       <Show
         when={handle() >= 0}
         fallback={
-          <View class="w-[256] h-[64] rounded-md bg-[#141c26] items-center justify-center">
+          <View class="w-full h-[64] rounded-md bg-[#141c26] items-center justify-center">
             <Text class="text-xs" style={{ textColor: DIM }}>
               …
             </Text>
           </View>
         }
       >
-        <Image nodeRef={(n) => (node = n)} style={{ width: 256, height: 64 }} />
+        <Image nodeRef={(n) => (node = n)} style={{ width: 512, height: 64 }} />
       </Show>
     </View>
   );
