@@ -1,4 +1,4 @@
-<img class="w-full rounded-xl border border-line" src="/assets/blog/pocket-youtube-journey.gif" alt="Pocket YouTube on a real PSP: the search keyboard opens, types psp, results arrive as full-width rows with thumbnails and CJK view counts, a row is selected, and a video plays full screen, pauses under a centered badge, and resumes" />
+<img class="w-full rounded-xl border border-line" src="/assets/blog/pocket-youtube-journey.gif" alt="Pocket YouTube on a real PSP: the search keyboard opens, types psp, results arrive as full-width rows with thumbnails, durations and view counts, a row is selected, and a video plays full screen, pauses under a centered badge, and resumes" />
 
 <p class="text-sm text-slate-500 -mt-4">One search-to-playback journey on a real PSP. Every frame here is the device's own framebuffer, captured over the same USB cable the video streams through — the input is a replay tape, the screenshots ride the DevTools channel.</p>
 
@@ -67,9 +67,9 @@ The mailbox deserves one sentence of respect. It is two append-only JSON-lines f
 
 Search results are worth a look before we get to video, because they solve a problem PocketJS *cannot* solve on-device: arbitrary text. The PSP build bakes a font atlas of exactly the glyphs the app's source mentions — search results can name any Unicode codepoint in existence. So the Mac renders each result as one **512×64 CLUT8 image**: thumbnail, duration badge, title in any script, channel, view count, all typeset with opentype.js and shipped as a side file. The device shows a texture; it never meets a glyph it doesn't know.
 
-<img class="w-full rounded-xl border border-line" src="/assets/blog/pocket-youtube-results.png" alt="Search results for psp on the PSP: three full-width rows with thumbnails, duration badges, English titles with Chinese view counts, a red focus ring on the first row, a 1/12 counter" />
+<img class="w-full rounded-xl border border-line" src="/assets/blog/pocket-youtube-results.png" alt="Search results for psp on the PSP: three full-width rows with thumbnails, duration badges, titles, channels and view counts, a red focus ring on the first row, a 1/12 counter" />
 
-<p class="text-sm text-slate-500 -mt-4">Host-rendered rows on the device: CJK view counts the PSP's atlas could never bake, a duration chip on each thumbnail, rounded corners masked into the pixels — because the GE's scissor is rectangular and cannot round anything.</p>
+<p class="text-sm text-slate-500 -mt-4">Host-rendered rows on the device: titles in any script the PSP's atlas could never bake (CJK included), a duration chip on each thumbnail, rounded corners masked into the pixels — because the GE's scissor is rectangular and cannot round anything.</p>
 
 ## A video stream you can ls
 
