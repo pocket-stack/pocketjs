@@ -41,7 +41,7 @@ The design rule is the same one every project in this family obeys: **the device
   <text x="389" y="284" fill="#64748b" font-size="10">usbhostfs</text>
   <text x="389" y="298" fill="#64748b" font-size="10">host0:/</text>
   <rect x="420" y="12" width="324" height="330" rx="10" fill="#0b0f1a" stroke="#a78bfa" stroke-width="1.5"/>
-  <text x="582" y="38" fill="#f1f5f9" font-size="14" font-weight="700" text-anchor="middle">PSP — demos/youtube</text>
+  <text x="582" y="38" fill="#f1f5f9" font-size="14" font-weight="700" text-anchor="middle">PSP — the PocketJS app</text>
   <text x="582" y="56" fill="#c4b5fd" font-size="11" text-anchor="middle">owns 60 Hz UI · texture · audio ring</text>
   <rect x="440" y="72" width="284" height="50" rx="8" fill="#0e1626" stroke="#2b3a55"/>
   <text x="582" y="93" fill="#e2e8f0" font-size="12" text-anchor="middle">PocketJS app — Solid JSX</text>
@@ -284,4 +284,4 @@ The device never parses the world. It just plays whatever the world writes into 
 
 ---
 
-*Pocket YouTube lives in the PocketJS repo under [`demos/youtube`](https://github.com/pocket-stack/pocketjs/tree/main/demos/youtube), host service included — a PSP, a USB cable, and `bun demos/youtube/host/serve.ts` away. Follow [@pocket_js](https://x.com/pocket_js) for what the Media Engine says back.*
+*Pocket YouTube is open source at [pocket-stack/pocket-youtube](https://github.com/pocket-stack/pocket-youtube), host service included — a PSP, a USB cable, and `bun run serve` away. Follow [@pocket_js](https://x.com/pocket_js) for what the Media Engine says back.*
