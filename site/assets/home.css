@@ -249,7 +249,7 @@ a.lp-btn--primary:hover {
 .lp-nav__link:hover { color: var(--ink); background: rgba(20, 29, 49, 0.9); }
 .lp-nav__gh { display: inline-flex; align-items: center; }
 .lp-nav__gh svg { width: 18px; height: 18px; }
-.lp-nav__discord { display: inline-flex; align-items: center; color: #cfd3ff; }
+.lp-nav__discord { display: inline-flex; align-items: center; }
 .lp-nav__discord svg { width: 18px; height: 18px; }
 .lp-nav__x { display: inline-flex; align-items: center; }
 .lp-nav__x svg { width: 16px; height: 16px; }
