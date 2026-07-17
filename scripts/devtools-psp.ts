@@ -38,6 +38,13 @@ const bridge = startBridge({
       console.log(`devtools-psp: device is talking — open the panel at http://127.0.0.1:${port}/devtools`);
     if (e.type === "hello") console.log(`devtools-psp: app "${e.detail}" said hello`);
     if (e.type === "screenshot") console.log(`devtools-psp: screenshot served (${e.detail})`);
+    if (e.type === "bundle-ok") console.log(`devtools-psp: bundle verified — ${e.detail}`);
+    if (e.type === "bundle-silent") console.error(`devtools-psp: *** BUNDLE UNVERIFIED *** ${e.detail}`);
+    if (e.type === "bundle-mismatch")
+      console.error(
+        `devtools-psp: *** STALE EMBED *** ${e.detail}\n` +
+          "devtools-psp: the device is NOT running the code in dist/ — rebuild the EBOOT and reload before trusting anything you observe.",
+      );
   },
 });
 

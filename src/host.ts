@@ -156,6 +156,11 @@ export interface HostOps {
   __dbgSend?(line: string): void;
   /** PSP on-demand screenshot: dump the displayed framebuffer to
    *  pocketjs-dbg/shot.raw (bridge converts to PNG). → success. */
+  /** OP.debugStats — one JSON snapshot of device diagnostic counters
+   *  (audio/vid/svc) plus build identity (app output name + FNV-1a64 of the
+   *  embedded js+pak). Hosts without counters omit the op; the devtools
+   *  "stats" message replies with data: null then. */
+  debugStats?(): string;
   __dbgShot?(): boolean;
   /** Framework target/profile identity (for example "psp" or "vita"). */
   __host?: string;

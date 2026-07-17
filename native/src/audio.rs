@@ -77,6 +77,7 @@ unsafe extern "C" fn audio_thread(_argc: usize, _argv: *mut c_void) -> i32 {
         if avail < need {
             // Starved (paused stream, USB stall): sleep instead of pushing
             // silence, so resume latency is one block, not a queue of hush.
+            crate::stats::AUDIO_STARVED.fetch_add(1, Ordering::Relaxed);
             sys::sceKernelDelayThread(4_000);
             continue;
         }
@@ -150,6 +151,7 @@ unsafe fn release_channel() {
         }
         sys::sceKernelDelayThread(2_000);
     }
+    crate::stats::AUDIO_RELEASE_TIMEOUTS.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Reserve a normal 44.1 kHz channel and start the output thread. Rates
@@ -172,9 +174,11 @@ pub unsafe fn start(sample_rate: u32) -> bool {
         if ch >= 0 {
             break;
         }
+        crate::stats::AUDIO_LAST_RESERVE_ERR.store(ch, Ordering::Relaxed);
         sys::sceKernelDelayThread(4_000);
     }
     if ch < 0 {
+        crate::stats::AUDIO_RESERVE_GIVEUPS.fetch_add(1, Ordering::Relaxed);
         return false;
     }
     CHANNEL.store(ch, Ordering::Relaxed);
@@ -248,6 +252,7 @@ pub unsafe fn push(pcm: &[i16], channels: u32) {
         }
     }
     WRITE_POS.store(write.wrapping_add(n), Ordering::Release);
+    crate::stats::AUDIO_PUSHED_FRAMES.fetch_add(n as u32, Ordering::Relaxed);
 }
 
 /// Drop everything queued (seek/epoch discontinuity): jump the read cursor
