@@ -16,18 +16,20 @@
 // clock). `--assert` exits 1 and names the first divergent frame.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { createWasmUi } from "../host-web/wasm-ops.js";
 import { expandTape, type Tape } from "../src/devtools.ts";
 import { encodePNG } from "../test/png.ts";
 import { SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 // Tape replays must not consume the shared dist/ directory: target builds and
 // other demos may leave a valid-looking but incompatible JS/pak pair there.
 // Each invocation rebuilds serially into this dedicated runtime directory.
-const RUNTIME_DIST = ROOT + "dist/tape-runtime/";
-const CAPTURE_DIST = ROOT + "dist/tape";
-const WASM_PATH = ROOT + "host-web/pocketjs.wasm";
+const RUNTIME_DIST = join(ROOT, "dist/tape-runtime/");
+const CAPTURE_DIST = join(ROOT, "dist/tape");
+const WASM_PATH = join(ROOT, "host-web/pocketjs.wasm");
 
 function ensureBuilt(path: string, cmd: string[]): void {
   if (existsSync(path)) return;
@@ -43,7 +45,7 @@ function buildApp(app: string): void {
   rmSync(RUNTIME_DIST, { recursive: true, force: true });
   mkdirSync(RUNTIME_DIST, { recursive: true });
   const output = RUNTIME_DIST + app + ".js";
-  const cmd = ["bun", "scripts/build.ts", app, `--outdir=${RUNTIME_DIST}`];
+  const cmd = [process.execPath, "scripts/build.ts", app, `--outdir=${RUNTIME_DIST}`];
   console.log(`tape: rebuilding ${app}`);
   const p = Bun.spawnSync(cmd, { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
   if (p.exitCode !== 0 || !existsSync(output)) {
@@ -78,7 +80,7 @@ interface BootResult {
 /** Boot a fresh core + bundle exactly like test/golden.ts, plus an
  *  in-process DevTools transport — this CLI is just a DevTools client. */
 async function boot(app: string): Promise<BootResult> {
-  ensureBuilt(WASM_PATH, ["bun", "scripts/wasm.ts"]);
+  ensureBuilt(WASM_PATH, [process.execPath, "scripts/wasm.ts"]);
   buildApp(app);
   const wasm = await createWasmUi(await Bun.file(WASM_PATH).arrayBuffer());
   const g = globalThis as Record<string, unknown>;

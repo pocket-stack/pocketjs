@@ -29,11 +29,13 @@ import {
   FONT_VERSION,
   MAX_FONT_SLOTS,
 } from "../spec/spec.ts";
+import { fileURLToPath } from "node:url";
+import { resolve, join } from "node:path";
 import { fontSlotInfo } from "./tailwind.ts";
 
-const FONTS_DIR = new URL("../assets/fonts/", import.meta.url).pathname;
-export const DEFAULT_REGULAR = FONTS_DIR + "Inter-Regular.ttf";
-export const DEFAULT_BOLD = FONTS_DIR + "Inter-Bold.ttf";
+const FONTS_DIR = resolve(fileURLToPath(new URL("../assets/fonts/", import.meta.url)));
+export const DEFAULT_REGULAR = join(FONTS_DIR, "Inter-Regular.ttf");
+export const DEFAULT_BOLD = join(FONTS_DIR, "Inter-Bold.ttf");
 
 export interface BakedAtlas {
   slot: number;

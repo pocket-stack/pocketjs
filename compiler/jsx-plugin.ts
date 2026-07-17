@@ -23,32 +23,35 @@ import vueJsxVaporPkg from "vue-jsx-vapor/package.json";
 import babelCorePkg from "@babel/core/package.json";
 import tsPresetPkg from "@babel/preset-typescript/package.json";
 import type { PocketFramework } from "../src/config.ts";
+import { fileURLToPath } from "node:url";
+import { resolve, join } from "node:path";
 
 export type { PocketFramework };
 
-export const RENDERER_PATH = new URL("../src/renderer.ts", import.meta.url).pathname;
-export const RENDERER_SOLID_PATH = new URL("../src/renderer-solid.ts", import.meta.url).pathname;
-export const RENDERER_VUE_VAPOR_PATH = new URL("../src/renderer-vue-vapor.ts", import.meta.url).pathname;
+const resolveLocalPath = (rel: string) => resolve(fileURLToPath(new URL(rel, import.meta.url)));
 
-const INDEX_PATH = new URL("../src/index.ts", import.meta.url).pathname;
-const INDEX_VUE_VAPOR_PATH = new URL("../src/index-vue-vapor.ts", import.meta.url).pathname;
-const ANIMATION_PATH = new URL("../src/animation.ts", import.meta.url).pathname;
-const COMPONENTS_PATH = new URL("../src/components.ts", import.meta.url).pathname;
-const COMPONENTS_VUE_VAPOR_PATH = new URL("../src/components-vue-vapor.ts", import.meta.url).pathname;
-const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
-const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
-const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
-const LIFECYCLE_VUE_VAPOR_PATH = new URL("../src/lifecycle-vue-vapor.ts", import.meta.url).pathname;
-const OSK_PATH = new URL("../src/osk.tsx", import.meta.url).pathname;
-const PLATFORM_PATH = new URL("../src/platform.ts", import.meta.url).pathname;
-const PRELUDE_PATH = new URL("../src/prelude.ts", import.meta.url).pathname;
-const VUE_VAPOR_RUNTIME_PATH = new URL(
-  "../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js",
-  import.meta.url,
-).pathname;
+export const RENDERER_PATH = resolveLocalPath("../src/renderer.ts");
+export const RENDERER_SOLID_PATH = resolveLocalPath("../src/renderer-solid.ts");
+export const RENDERER_VUE_VAPOR_PATH = resolveLocalPath("../src/renderer-vue-vapor.ts");
+
+const INDEX_PATH = resolveLocalPath("../src/index.ts");
+const INDEX_VUE_VAPOR_PATH = resolveLocalPath("../src/index-vue-vapor.ts");
+const ANIMATION_PATH = resolveLocalPath("../src/animation.ts");
+const COMPONENTS_PATH = resolveLocalPath("../src/components.ts");
+const COMPONENTS_VUE_VAPOR_PATH = resolveLocalPath("../src/components-vue-vapor.ts");
+const CONFIG_PATH = resolveLocalPath("../src/config.ts");
+const INPUT_API_PATH = resolveLocalPath("../src/input-api.ts");
+const LIFECYCLE_PATH = resolveLocalPath("../src/lifecycle.ts");
+const LIFECYCLE_VUE_VAPOR_PATH = resolveLocalPath("../src/lifecycle-vue-vapor.ts");
+const OSK_PATH = resolveLocalPath("../src/osk.tsx");
+const PLATFORM_PATH = resolveLocalPath("../src/platform.ts");
+const PRELUDE_PATH = resolveLocalPath("../src/prelude.ts");
+const VUE_VAPOR_RUNTIME_PATH = resolveLocalPath(
+  "../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js"
+);
 
 const PACKAGE_NAME = "@pocketjs/framework";
-const CACHE_DIR = new URL("../.cache/transforms/", import.meta.url).pathname;
+const CACHE_DIR = resolveLocalPath("../.cache/transforms/");
 const CACHE_VERSION = "2";
 const JSX_PARSER_OPTS: ParserOptions = { plugins: ["jsx"] };
 
@@ -207,12 +210,17 @@ function makeCollector(out: Collected, framework: PocketFramework): PluginObj {
               for (const q of path.node.quasis) add(q.value.cooked ?? q.value.raw);
             },
             JSXText(path) {
-              const raw = path.node.extra?.raw;
-              if (typeof raw === "string" && raw !== path.node.value) {
-                throw path.buildCodeFrameError(
-                  "PocketJS: HTML entities in JSX text are not decoded by the JSX renderer - " +
-                    'write the literal character (é, ♥) or a string expression {"\\u00e9"} instead.',
-                );
+              let raw = path.node.extra?.raw;
+              let val = path.node.value;
+              if (typeof raw === "string") {
+                raw = raw.replace(/\r/g, "");
+                val = val.replace(/\r/g, "");
+                if (raw !== val) {
+                  throw path.buildCodeFrameError(
+                    "PocketJS: HTML entities in JSX text are not decoded by the JSX renderer - " +
+                      'write the literal character (é, ♥) or a string expression {"\\u00e9"} instead.',
+                  );
+                }
               }
               add(path.node.value);
             },
@@ -362,7 +370,7 @@ export async function transformFile(
   options: { features?: BuildFeatures } = {},
 ): Promise<TransformResult> {
   const key = await hashKey(path, src, framework, options.features);
-  const cacheFile = CACHE_DIR + key + ".json";
+  const cacheFile = join(CACHE_DIR, key + ".json");
   const cached = (await Bun.file(cacheFile).json().catch(() => null)) as CacheEntry | null;
   if (cached && typeof cached.code === "string") {
     return {
