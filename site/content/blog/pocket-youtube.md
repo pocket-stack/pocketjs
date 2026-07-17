@@ -1,6 +1,9 @@
-<img class="w-full rounded-xl border border-line" src="/assets/blog/pocket-youtube-journey.gif" alt="Pocket YouTube on a real PSP: the search keyboard opens, types psp, results arrive as full-width rows with thumbnails, durations and view counts, a row is selected, and a video plays full screen, pauses under a centered badge, and resumes" />
+<video class="w-full rounded-xl border border-line" autoplay muted loop controls playsinline preload="metadata" crossorigin="anonymous" aria-label="Hand-held footage of Pocket YouTube playing a PSP documentary on a real piano-black PSP, with the player HUD, pause and seek">
+  <source src="https://pub-ddde9ba138d04a9a9f922aa1fda6f855.r2.dev/pocketjs/pocket-youtube-real-psp-7ae0b36c.mp4" type="video/mp4" />
+  <a href="https://pub-ddde9ba138d04a9a9f922aa1fda6f855.r2.dev/pocketjs/pocket-youtube-real-psp-7ae0b36c.mp4">Watch Pocket YouTube running on a real PSP.</a>
+</video>
 
-<p class="text-sm text-slate-500 -mt-4">One search-to-playback journey on a real PSP. Every frame here is the device's own framebuffer, captured over the same USB cable the video streams through — the input is a replay tape, the screenshots ride the DevTools channel.</p>
+<p class="text-sm text-slate-500 -mt-4">Pocket YouTube on a real PSP — playing, of all things, a documentary about the PSP. Un-mute for the part a screenshot can't prove: the 44.1&nbsp;kHz audio is coming out of the handheld too.</p>
 
 The Sony PSP has WiFi. It is 802.11b, it tops out around 100 KB/s on a good day, and its idea of TLS predates the certificates, the ciphers, and frankly the internet that YouTube lives on. No amount of software on the device will make that radio speak to a 2026 CDN.
 
@@ -259,7 +262,11 @@ onButtonPress(BTN.TRIANGLE, () => osk.open());
 
 **The sim typed on this keyboard before the keyboard existed on hardware.** PocketJS is [deterministic to the byte](/blog/ui-runtime-that-cant-flake/), so the app's test suite is nine scripted journeys: boot a world, feed it a canned host driver, press virtual buttons, assert on the component tree and the command stream. The keyboard journeys don't even hard-code button sequences — they run BFS over the *actual key layout* to derive the d-pad path to each letter, so a layout tweak re-derives every test. One journey types by touch, end to end, on a PSP app, in CI, in about four seconds.
 
-**The device became scriptable the way a browser is.** The same DevTools channel that powers [time travel](/blog/time-travel-devtools/) gave this project its hands and eyes: replay tapes inject button masks (the GIF at the top was "filmed" this way), screenshots come back over the cable, the component tree answers queries — *while a human also holds the device*. Ten of the eleven bugs this project logged were found and verified through that loop, from a terminal. The one that wasn't — the flicker — was found by a human eye and *localized* through it.
+**The device became scriptable the way a browser is.** The same DevTools channel that powers [time travel](/blog/time-travel-devtools/) gave this project its hands and eyes: replay tapes inject button masks, screenshots come back over the cable, the component tree answers queries — *while a human also holds the device*. Ten of the eleven bugs this project logged were found and verified through that loop, from a terminal. The one that wasn't — the flicker — was found by a human eye and *localized* through it. This whole journey was "filmed" that way, no hands involved:
+
+<img class="w-full rounded-xl border border-line" src="/assets/blog/pocket-youtube-journey.gif" alt="Pocket YouTube on a real PSP: the search keyboard opens, types psp, results arrive as full-width rows with thumbnails, durations and view counts, a row is selected, and a video plays full screen, pauses under a centered badge, and resumes" />
+
+<p class="text-sm text-slate-500 -mt-4">One search-to-playback journey, every frame the device's own framebuffer: a replay tape presses the buttons, the DevTools channel takes the pictures, the same USB cable carries both — and the video stream.</p>
 
 The scorecard for the whole feature: **8 new host ops** (the mailbox and the video plane), one `no_std` ring-parser module shared by test and target, **9 sim journeys, 12 host-pipeline tests, 11 keyboard-geometry tests, 77 Rust core tests** — and a bundle that is still, in the end, one Solid component tree that any web developer could read.
 

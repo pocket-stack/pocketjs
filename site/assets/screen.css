@@ -57,6 +57,8 @@
    observed on the deployed page). Bottom corners stay square so the tab
    welds onto the edge. ------------------------------------------------------ */
 .emu-shoulder {
+  display: none; /* hidden pending a better shoulder treatment — the seated-tab
+                    look still reads off; L/R stay reachable via keyboard */
   position: absolute;
   top: 0cqw;
   min-width: 12cqw;
