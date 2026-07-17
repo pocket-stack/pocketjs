@@ -46,15 +46,22 @@ export function encodeNesArt(linked: LinkedGame): {
     const red = nesReduce(sp.palette, backdrop);
     const key = red.subpal.join(",");
     let slot = objSubpals.indexOf(key);
-    if (slot < 0) {
-      if (objSubpals.length >= 4) {
-        throw new Error(
-          `nes: more than 4 distinct sprite palettes (sprite "${sp.name}") — share palettes across sprites`,
-        );
-      }
+    if (slot < 0 && objSubpals.length < 4) {
       slot = objSubpals.length;
       objSubpals.push(key);
       objPal.push(...red.subpal);
+    } else if (slot < 0) {
+      // 4 hardware OBJ subpalettes: extra sprites adopt the nearest one.
+      let bestD = Infinity;
+      for (let i = 0; i < objSubpals.length; i++) {
+        const pal = objSubpals[i].split(",").map(Number);
+        let d = 0;
+        for (let c = 1; c < 4; c++) d += Math.abs(pal[c] - red.subpal[c]);
+        if (d < bestD) {
+          bestD = d;
+          slot = i;
+        }
+      }
     }
     const framesPerDir = sp.facings.down.length;
     spriteTable.push(tileBase & 0xff, (tileBase >> 8) & 0xff, framesPerDir, slot);

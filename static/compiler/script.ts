@@ -39,7 +39,8 @@ class Scope {
 }
 
 export class ScriptError extends Error {
-  constructor(node: ts.Node, sf: ts.SourceFile, msg: string) {
+  constructor(node: ts.Node, fallback: ts.SourceFile, msg: string) {
+    const sf = node.getSourceFile() ?? fallback;
     const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
     super(
       `${sf.fileName}:${line + 1}:${character + 1}: ${msg}\n  near: ${node.getText(sf).slice(0, 90)}`,
@@ -93,8 +94,9 @@ export class ScriptCompiler {
     return new ScriptError(node, this.sf, msg);
   }
   private where(node: ts.Node): string {
-    const { line } = this.sf.getLineAndCharacterOfPosition(node.getStart(this.sf));
-    return `${this.sf.fileName}:${line + 1}`;
+    const sf = node.getSourceFile() ?? this.sf;
+    const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+    return `${sf.fileName}:${line + 1}`;
   }
 
   // --- emission helpers ------------------------------------------------------

@@ -156,11 +156,21 @@ export interface Registry {
 
 export const REGISTRY: Registry = { tilesets: [], sprites: [], scriptCount: 0, game: null };
 
+/**
+ * Reset per-compile state. Tilesets/sprites deliberately SURVIVE: asset
+ * modules are cached by the JS runtime and only execute once, while the
+ * (rewritten) game module re-executes per compile — so declarations register
+ * idempotently by name and the game/script state resets every time.
+ */
 export function resetRegistry(): void {
-  REGISTRY.tilesets = [];
-  REGISTRY.sprites = [];
   REGISTRY.scriptCount = 0;
   REGISTRY.game = null;
+}
+
+function upsert<T extends { name: string }>(list: T[], item: T): void {
+  const at = list.findIndex((x) => x.name === item.name);
+  if (at >= 0) list[at] = item;
+  else list.push(item);
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +187,7 @@ export function defineTileset<Tiles extends Record<string, TileDecl>>(
     }
   }
   const ts: TilesetDecl<Tiles> = { name, ...decl };
-  REGISTRY.tilesets.push(ts);
+  upsert(REGISTRY.tilesets, ts);
   return ts;
 }
 
@@ -195,7 +205,7 @@ export function defineSprite(name: string, decl: Omit<SpriteDecl, "name">): Spri
     }
   }
   if (sp.palette.length > 16) throw new Error(`sprite ${name}: palette > 16 colors`);
-  REGISTRY.sprites.push(sp);
+  upsert(REGISTRY.sprites, sp);
   return sp;
 }
 

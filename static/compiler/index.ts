@@ -14,7 +14,7 @@ import { evaluateGame } from "./evaluate.ts";
 import { linkGame, type LinkedGame } from "./link.ts";
 import { buildModel, patchFixups } from "./model.ts";
 import { compileScripts } from "./script.ts";
-import type { Sites } from "./sites.ts";
+import { resolveHelperImports, type Sites } from "./sites.ts";
 
 export interface DebugInfo {
   target: TargetName;
@@ -36,6 +36,7 @@ export interface CompileOutput {
 
 export async function compileGame(entryPath: string, target: TargetName): Promise<CompileOutput> {
   const { sites, game, registry } = await evaluateGame(entryPath);
+  await resolveHelperImports(sites, entryPath);
   const ctx = new Ctx(target);
   const scripts = compileScripts(sites, ctx);
   const model = buildModel(game, registry, ctx, TARGETS[target]);

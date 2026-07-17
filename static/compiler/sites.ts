@@ -25,6 +25,61 @@ export function parseSource(sourceText: string, fileName = "game.ts"): ts.Source
   return ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.ES2022, true);
 }
 
+/**
+ * Macros may live in imported modules (e.g. @pocketjs/static/rpg/battle):
+ * parse each imported helper module and merge its top-level generator
+ * functions into sites.helpers. AST-only — helper modules never execute.
+ */
+export async function resolveHelperImports(sites: Sites, entryPath: string): Promise<void> {
+  const { dirname, join, resolve } = await import("node:path");
+  const seen = new Set<string>();
+  const scan = async (file: ts.SourceFile, filePath: string): Promise<void> => {
+    const imports: string[] = [];
+    ts.forEachChild(file, (node) => {
+      if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+        imports.push(node.moduleSpecifier.text);
+      }
+    });
+    for (const spec of imports) {
+      let target: string | undefined;
+      if (spec === "@pocketjs/static/rpg/battle") {
+        target = resolve(import.meta.dir, "..", "rpg", "battle.ts");
+      } else if (spec.startsWith("./") || spec.startsWith("../")) {
+        target = resolve(dirname(filePath), spec.endsWith(".ts") ? spec : `${spec}.ts`);
+      }
+      if (!target || seen.has(target)) continue;
+      seen.add(target);
+      const text = await Bun.file(target).text().catch(() => null);
+      if (text === null) continue;
+      const mod = parseSource(text, target);
+      const visit = (node: ts.Node): void => {
+        if (ts.isFunctionDeclaration(node) && node.asteriskToken && node.name) {
+          if (!sites.helpers.has(node.name.text)) sites.helpers.set(node.name.text, node);
+          return;
+        }
+        if (ts.isVariableStatement(node)) {
+          for (const d of node.declarationList.declarations) {
+            if (
+              ts.isIdentifier(d.name) &&
+              d.initializer &&
+              ts.isFunctionExpression(d.initializer) &&
+              d.initializer.asteriskToken &&
+              !sites.helpers.has(d.name.text)
+            ) {
+              sites.helpers.set(d.name.text, d.initializer);
+            }
+          }
+          return;
+        }
+      };
+      ts.forEachChild(mod, visit);
+      await scan(mod, target);
+    }
+  };
+  await scan(sites.file, entryPath);
+  void join;
+}
+
 const isScriptCall = (node: ts.Node): node is ts.CallExpression =>
   ts.isCallExpression(node) &&
   ts.isIdentifier(node.expression) &&
