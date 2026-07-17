@@ -81,6 +81,7 @@ let configFlagged = false;
 let useConfig = true;
 let planPath: string | undefined;
 let projectRoot = process.cwd();
+let densityArg: number | undefined;
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
   else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
@@ -89,6 +90,8 @@ for (const a of args) {
   else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
   else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
   else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
+  else if (a.startsWith("--density=")) densityArg = Number(a.slice("--density=".length));
+  else if (a.startsWith("--raster-density=")) densityArg = Number(a.slice("--raster-density=".length));
   else if (!a.startsWith("-")) appArg = a;
 }
 
@@ -183,10 +186,10 @@ const appName = buildPlan?.app.output ?? outputName(requestedEntry);
 // A resolved plan names the exact artifact. Low-level demo builds retain the
 // framework suffix so multiple framework variants can coexist in dist/.
 const outName = buildPlan ? appName : `${appName}${frameworkConfig.outputSuffix}`;
-const rasterDensity = buildPlan?.viewport.rasterDensity ?? 1;
+const rasterDensity = densityArg ?? buildPlan?.viewport.rasterDensity ?? 1;
 console.log(
   `PocketJS build: ${appName} (${entry}, framework=${framework}` +
-    `${buildPlan ? `, target=${buildPlan.target.id}, raster=${rasterDensity}x, plan=${buildPlan.planHash.slice(0, 20)}…` : ""})`,
+    `${buildPlan || densityArg ? `, raster=${rasterDensity}x` : ""}${buildPlan ? `, target=${buildPlan.target.id}, plan=${buildPlan.planHash.slice(0, 20)}…` : ""})`,
 );
 
 // ---------------------------------------------------------------------------
