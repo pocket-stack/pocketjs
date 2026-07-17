@@ -92,6 +92,7 @@ unsafe fn pread(fd: SceUid, off: u32, buf: &mut [u8]) -> bool {
         }
         got += n as usize;
     }
+    crate::stats::VID_BYTES.fetch_add(buf.len() as u32, core::sync::atomic::Ordering::Relaxed);
     true
 }
 
@@ -166,9 +167,12 @@ pub unsafe fn tick(ui: &mut Ui) -> i32 {
     let Some(s) = SESSION.as_mut() else { return -1 };
     let mut budget = IO_BUDGET;
 
+    use core::sync::atomic::Ordering::Relaxed;
+
     // 1. Writer cursors.
     let mut hdr = [0u8; st::HEADER_BLOCK_SIZE];
     if !pread(s.fd, 0, &mut hdr) {
+        crate::stats::VID_HDR_FAILS.fetch_add(1, Relaxed);
         return s.presented_frame;
     }
     budget -= st::HEADER_BLOCK_SIZE;
@@ -187,6 +191,7 @@ pub unsafe fn tick(ui: &mut Ui) -> i32 {
         s.pending = false; // a staged pre-seek frame must not present
         s.audio_next = 0;
         audio::flush();
+        crate::stats::VID_EPOCHS.fetch_add(1, Relaxed);
     }
 
     // 3. Audio top-up (whole chunks; the RAM ring absorbs jitter).
@@ -242,6 +247,7 @@ pub unsafe fn tick(ui: &mut Ui) -> i32 {
         // The writer lapped the slot mid-read; its bytes are torn. Restart.
         s.target_seq = 0;
         s.staged = 0;
+        crate::stats::VID_LAPPED.fetch_add(1, Relaxed);
     }
     if !s.pending && s.target_seq == 0 && v.latest_seq > s.presented_seq {
         s.target_seq = v.latest_seq;
@@ -275,6 +281,8 @@ pub unsafe fn tick(ui: &mut Ui) -> i32 {
                     s.staged_seq = s.target_seq;
                     s.staged_frame = sh.frame_index as i32;
                     s.pending = true;
+                } else {
+                    crate::stats::VID_TORN.fetch_add(1, Relaxed);
                 }
                 s.target_seq = 0;
                 s.staged = 0;
@@ -303,6 +311,7 @@ pub unsafe fn present(ui: &mut Ui) {
         ge::writeback_texture(ui, s.tex);
         s.presented_seq = s.staged_seq;
         s.presented_frame = s.staged_frame;
+        crate::stats::VID_PRESENTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     }
 }
 

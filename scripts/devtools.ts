@@ -264,6 +264,13 @@ function onEvent(e: { type: string; detail?: string }): void {
   if (e.type === "device-talking") status(green("device is talking — open the panel"));
   if (e.type === "hello") status(green(`app "${e.detail}" attached`));
   if (e.type === "screenshot") status(`screenshot served (${e.detail})`);
+  if (e.type === "bundle-ok") status(green(`bundle verified — ${e.detail}`));
+  if (e.type === "bundle-mismatch")
+    status(
+      yellow(
+        `*** STALE EMBED *** ${e.detail} — the device is NOT running dist/; rebuild + reload before trusting observations`,
+      ),
+    );
 }
 
 if (managed) {

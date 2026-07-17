@@ -358,6 +358,25 @@ function handleMessage(line: string): void {
     case "dumpTape":
       send({ t: "tape", tape: exportTape() });
       break;
+    case "devStats": {
+      // Device diagnostic counters + build identity (OP.debugStats). The
+      // PSPLINK bridge sends this on every hello to verify the embedded
+      // bundle hash against local dist/; panels can poll it for underrun/
+      // presented/torn counters. Hosts without the op reply data: null so
+      // the round trip still completes. (Distinct from the periodic
+      // {t:"stats"} shim push — that one is JS-side frame/node/tape state.)
+      let data: unknown = null;
+      const raw = ops?.debugStats?.();
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          data = null;
+        }
+      }
+      send({ t: "devStats", frame: state.frame, data });
+      break;
+    }
     case "screenshot": {
       // PSP path only — the browser host intercepts this message itself
       // (canvas.toDataURL) and it never reaches the shim there. The native

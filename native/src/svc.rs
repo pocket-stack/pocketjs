@@ -100,6 +100,7 @@ pub unsafe fn poll() -> Option<String> {
     let end = sys::sceIoLseek(fd, 0, IoWhence::End);
     if end < READ_OFF {
         READ_OFF = 0;
+        crate::stats::SVC_TRUNC_RESETS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     }
     sys::sceIoLseek(fd, READ_OFF, IoWhence::Set);
     let mut buf: Vec<u8> = alloc::vec![0u8; pocketjs_core::spec::svc::POLL_BUF];

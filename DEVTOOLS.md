@@ -122,6 +122,7 @@ The shim needs only `{ send(line), recv() -> line | null }`:
 Panel → device:
 `{t:"inspect", id}` · `{t:"pause"}` · `{t:"resume"}` · `{t:"step"}` ·
 `{t:"getTree"}` · `{t:"eval", id, code}` · `{t:"dumpTape"}` ·
+`{t:"devStats"}` (device diagnostic counters + build identity, OP.debugStats) ·
 `{t:"seek", frame}` / `{t:"replay", tape}` (handled by the *host*, not the
 shim: the browser host reloads the demo and fast-forwards tick-only — no
 render — to the target frame, then pauses).
@@ -131,6 +132,12 @@ Device → panel:
 `{t:"tree", frame, root:{i,t,n?,c?,x?,k:[…]}}` (id/type/name/class/text/kids) ·
 `{t:"inspect", id, rect:[x,y,w,h]|null}` ·
 `{t:"stats", frame, nodes, tapeLen, paused}` ·
+`{t:"devStats", frame, data}` (data: `{app, bundle, audio:{starved, reserveGiveups,
+lastReserveErr, releaseTimeouts, pushedFrames}, vid:{presented, torn, lapped,
+epochs, hdrFails, bytes}, svc:{truncResets}}` from native/src/stats.rs, or
+null when the host lacks the op; `bundle` is the FNV-1a64 of the embedded
+js+pak — the PSPLINK bridge requests this on every hello and compares it
+against `dist/` via scripts/bundle-hash.ts, flagging a stale embed loudly) ·
 `{t:"log", level, args}` · `{t:"error", frame, message, stack?}` ·
 `{t:"evalResult", id, ok, value}` ·
 `{t:"tape", tape:{v:1, app, frames, masks:[[mask,count],…]}}` (RLE).

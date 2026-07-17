@@ -548,6 +548,18 @@ unsafe extern "C" fn js_dbg_poll(
     }
 }
 
+/// ui.debugStats() -> string: one JSON snapshot of the diagnostic counters
+/// plus build identity (spec OP.debugStats; see native/src/stats.rs).
+unsafe extern "C" fn js_debug_stats(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    let s = crate::stats::json();
+    JS_NewStringLen(ctx, s.as_ptr(), s.len())
+}
+
 /// ui.__dbgShot() -> bool: dump the displayed framebuffer to
 /// pocketjs-dbg/shot.raw (the bridge converts it to PNG panel-side).
 unsafe extern "C" fn js_dbg_shot(
@@ -779,6 +791,7 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"__dbgActive\0", js_dbg_active, 0);
     add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
     add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);
+    add_fn(ctx, ui_obj, b"debugStats\0", js_debug_stats, 0);
     add_fn(ctx, ui_obj, b"__dbgShot\0", js_dbg_shot, 0);
     // Host service channel + video plane (spec ops 30..37; svc.rs / vid.rs).
     add_fn(ctx, ui_obj, b"svcOpen\0", js_svc_open, 1);

@@ -88,8 +88,6 @@ fn main() {
             )
         })
     };
-    code.push('\0');
-    fs::write(Path::new(&out_dir).join("game.js"), code).unwrap();
 
     // Asset pack (styles.bin + font atlases + images; .pak container) ->
     // $OUT_DIR/app.pak. Empty when absent; main.rs skips an empty pack.
@@ -100,6 +98,21 @@ fn main() {
         println!("cargo:rerun-if-changed={}", path.display());
         fs::read(&path).unwrap_or_default()
     };
+
+    // Build identity: FNV-1a64 over exactly the bytes embedded (js before
+    // its NUL, then pak). scripts/bundle-hash.ts is the host-side twin; the
+    // device reports this through OP.debugStats and the PSPLINK bridge
+    // compares it against local dist/ — a stale embed announces itself
+    // instead of silently invalidating a round of on-device verification.
+    let bundle_hash = if embed_app {
+        fnv1a64(&[code.as_bytes(), &pak])
+    } else {
+        String::from("none")
+    };
+    println!("cargo:rustc-env=POCKETJS_BUNDLE_HASH={bundle_hash}");
+
+    code.push('\0');
+    fs::write(Path::new(&out_dir).join("game.js"), code).unwrap();
     fs::write(Path::new(&out_dir).join("app.pak"), pak).unwrap();
 
     // Scripted input for deterministic capture builds (test/e2e-ppsspp.ts):
@@ -153,4 +166,17 @@ fn main() {
             println!("cargo:rerun-if-changed={}", e.path().display());
         }
     }
+}
+
+/// FNV-1a 64 as 16 hex digits — keep in lockstep with scripts/bundle-hash.ts
+/// (test vectors asserted there: "" = cbf29ce484222325, "a" = af63dc4c8601ec8c).
+fn fnv1a64(chunks: &[&[u8]]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for chunk in chunks {
+        for &b in *chunk {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    format!("{h:016x}")
 }

@@ -193,6 +193,17 @@ export const OP = {
   videoTexture: 36, //    () -> handle | -1. The plane texture (stable for the
   //                      whole session; -1 when no stream is open).
   videoClose: 37, //      () — stop audio, close the stream, free the plane.
+  debugStats: 38, //      () -> string. One JSON snapshot of the device's
+  //                      diagnostic counters (native/src/stats.rs: audio
+  //                      underruns/reserve failures, video frames presented/
+  //                      torn/lapped, svc truncation resets) plus build
+  //                      identity: the app output name and the FNV-1a64 hash
+  //                      of the embedded js+pak (scripts/bundle-hash.ts is
+  //                      the host-side twin). The devtools "devStats"
+  //                      message rides this; the bridge compares the hash
+  //                      against local dist/ on every hello and calls out a
+  //                      stale-embed loudly. Hosts without counters simply
+  //                      omit the op.
 } as const;
 
 // ---------------------------------------------------------------------------
