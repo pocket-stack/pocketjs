@@ -31,7 +31,8 @@ export interface BridgeEvent {
     | "hello"
     | "screenshot"
     | "bundle-ok"
-    | "bundle-mismatch";
+    | "bundle-mismatch"
+    | "bundle-silent";
   detail?: string;
 }
 
@@ -146,14 +147,30 @@ export function startBridge(opts: BridgeOptions): Bridge {
     }
     if (msg?.t === "hello") {
       emit({ type: "hello", detail: String(msg.app ?? "?") });
-      // Fresh boot: ask for device stats — the reply carries the bundle hash.
+      // Fresh boot: ask for device stats — the reply carries the bundle
+      // hash. A build too old to know devStats never replies, which would
+      // fail SILENT — the one thing this tripwire must not do — so a
+      // watchdog turns silence into a verdict too (first caught live: an
+      // EBOOT embedding the pre-rename shim during this feature's own
+      // hardware pass).
       try {
         appendFileSync(inPath, JSON.stringify({ t: "devStats" }) + "\n");
+        if (statsWatchdog) clearTimeout(statsWatchdog);
+        statsWatchdog = setTimeout(() => {
+          emit({
+            type: "bundle-silent",
+            detail: "no devStats reply in 3 s — the embedded bundle predates the handshake (stale or pre-#118)",
+          });
+        }, 3000);
       } catch {
         // usbhostfs hiccup — the next hello retries
       }
     }
     if (msg?.t === "devStats" && msg.data && typeof msg.data === "object") {
+      if (statsWatchdog) {
+        clearTimeout(statsWatchdog);
+        statsWatchdog = null;
+      }
       checkBundle(msg.data as Record<string, unknown>);
       // fall through: panels get the stats reply too
     }
@@ -177,6 +194,7 @@ export function startBridge(opts: BridgeOptions): Bridge {
     if (ws && ws.readyState === 1) ws.send(line);
   }
 
+  let statsWatchdog: ReturnType<typeof setTimeout> | null = null;
   let offset = 0;
   let sawDevice = false;
   const tail = setInterval(() => {
@@ -208,6 +226,7 @@ export function startBridge(opts: BridgeOptions): Bridge {
     stop() {
       stopped = true;
       clearInterval(tail);
+      if (statsWatchdog) clearTimeout(statsWatchdog);
       ws?.close();
       try {
         if (existsSync(enablePath)) rmSync(enablePath);

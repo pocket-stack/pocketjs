@@ -265,6 +265,7 @@ function onEvent(e: { type: string; detail?: string }): void {
   if (e.type === "hello") status(green(`app "${e.detail}" attached`));
   if (e.type === "screenshot") status(`screenshot served (${e.detail})`);
   if (e.type === "bundle-ok") status(green(`bundle verified — ${e.detail}`));
+  if (e.type === "bundle-silent") status(yellow(`bundle unverified — ${e.detail}`));
   if (e.type === "bundle-mismatch")
     status(
       yellow(

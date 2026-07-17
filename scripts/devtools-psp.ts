@@ -39,6 +39,7 @@ const bridge = startBridge({
     if (e.type === "hello") console.log(`devtools-psp: app "${e.detail}" said hello`);
     if (e.type === "screenshot") console.log(`devtools-psp: screenshot served (${e.detail})`);
     if (e.type === "bundle-ok") console.log(`devtools-psp: bundle verified — ${e.detail}`);
+    if (e.type === "bundle-silent") console.error(`devtools-psp: *** BUNDLE UNVERIFIED *** ${e.detail}`);
     if (e.type === "bundle-mismatch")
       console.error(
         `devtools-psp: *** STALE EMBED *** ${e.detail}\n` +
