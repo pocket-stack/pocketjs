@@ -3,6 +3,49 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.5.0 — July 17, 2026
+
+**The console grows system software.** Streaming media, a system keyboard, a
+virtual pointer, and self-diagnosing devices — capabilities every handheld
+app needs, now owned by the framework instead of copy-pasted per demo —
+proven by [streaming YouTube to a PSP over USB](/blog/pocket-youtube/).
+
+- **App services over USB** — the `pocket-svc` mailbox gives any app a JSON
+  command channel to a companion desktop service (request/reply with side
+  files for bulk bytes), the same file-transport model DevTools proved,
+  hardened against host restarts. Pocket YouTube — search, host-rendered CJK
+  result rows, and full-motion playback on real hardware — ships as its own
+  app repo (`pocket-stack/pocket-youtube`) built entirely on these APIs.
+- **A streaming video plane** — `.pkst` ring files carry palettized frames
+  and PCM audio from the host; the native side pumps them under a per-frame
+  IO budget, commits texture updates only in the GE-idle window (tear-free
+  by construction), and plays audio on a dedicated hardware channel with a
+  software resampler. Seek, pause, and epoch resync are part of the
+  contract, not the app.
+- **A system on-screen keyboard** — `@pocketjs/framework/osk`: an LVGL-style
+  variable-width key grid with letters/caps/symbols layers, dark and light
+  themes, and a caret-editing session (`createOsk`). While open it owns
+  input outright (modal focus scope + button block), retiring the
+  gate-every-handler pattern. One component, per-platform input: d-pad
+  spatial navigation and the classic PSP chords, front-touch on Vita, and
+  the virtual cursor for free.
+- **A virtual cursor capability** (`input.cursor`) — the analog nub steers a
+  core-drawn pointer; hover *is* focus, so every `focus:` style doubles as
+  the hover style, presses arm and fire like real buttons, and d-pad
+  traversal stays available as a fallback. Opt-in via `enableCursor()`.
+- **Devices that vouch for themselves** — every build embeds an FNV-1a64
+  hash of its app bundle; the PSPLINK bridge verifies it against `dist/` on
+  every boot and calls out a stale embed (or a silent, pre-handshake build)
+  before you trust a single observation. `OP.debugStats` exposes live
+  audio/video/transport counters through the new DevTools `devStats` query —
+  underruns, torn frames, and truncation resets become one request instead
+  of a thread autopsy.
+- **Compatibility:** existing apps build unchanged. New host ops (30–38) are
+  optional capabilities — hosts that lack them simply omit the op, and the
+  framework degrades gracefully (the OSK falls back to bottom-dock geometry
+  without hit testing; `devStats` replies `data: null`). PS Vita builds now
+  ship complete default LiveArea artwork.
+
 ## 0.4.0 — July 13, 2026
 
 **One app, two PlayStations.** PocketJS now treats PSP and PS Vita as two
