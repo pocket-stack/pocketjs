@@ -17,6 +17,11 @@ export interface PocketConfig {
    * prefers over the repo root one.
    */
   theme?: AnimationTheme;
+  /**
+   * Default raster density / scale factor (1 to 10) to use when baking
+   * fonts, SVGs, and other assets into the application's .pak bundle.
+   */
+  rasterDensity?: number;
 }
 
 export function definePocketConfig(config: PocketConfig): PocketConfig {

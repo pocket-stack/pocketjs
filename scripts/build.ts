@@ -186,7 +186,7 @@ const appName = buildPlan?.app.output ?? outputName(requestedEntry);
 // A resolved plan names the exact artifact. Low-level demo builds retain the
 // framework suffix so multiple framework variants can coexist in dist/.
 const outName = buildPlan ? appName : `${appName}${frameworkConfig.outputSuffix}`;
-const rasterDensity = densityArg ?? buildPlan?.viewport.rasterDensity ?? 1;
+const rasterDensity = densityArg ?? buildPlan?.viewport.rasterDensity ?? config.rasterDensity ?? 1;
 console.log(
   `PocketJS build: ${appName} (${entry}, framework=${framework}` +
     `${buildPlan || densityArg ? `, raster=${rasterDensity}x` : ""}${buildPlan ? `, target=${buildPlan.target.id}, plan=${buildPlan.planHash.slice(0, 20)}…` : ""})`,
