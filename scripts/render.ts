@@ -53,7 +53,9 @@ function usage(msg?: string): never {
       "  -o, --output <path>    Output MP4 file path (default: dist/render/<app>.mp4)",
       "  -d, --duration <secs>  Duration of video in seconds (default: 5.0)",
       "  -f, --fps <number>     Frame rate of output video (default: 60)",
-      "  -s, --scale <1..10>    Integer scaling factor of logical 480x272 size (default: 4)",
+      "  -s, --scale <1..10>    Integer scaling factor of logical size (default: 4)",
+      "  -w, --width <pixels>   Logical width of layout viewport (default: 480)",
+      "  --height <pixels>      Logical height of layout viewport (default: 272)",
       "  -c, --concurrency <n>  Number of parallel processes (default: 1)",
       "  --crf <number>         x264 quality factor (default: 18)",
       "  --preset <string>      x264 encoder preset (default: faster)",
@@ -70,6 +72,8 @@ async function main() {
   let duration = 5.0;
   let fps = 60;
   let scale = 4;
+  let widthParam = 480;
+  let heightParam = 272;
   let crf = 18;
   let preset = "faster";
   let concurrency = 1;
@@ -88,6 +92,10 @@ async function main() {
       fps = Number(args[++i]);
     } else if (a === "-s" || a === "--scale") {
       scale = Number(args[++i]);
+    } else if (a === "-w" || a === "--width") {
+      widthParam = Number(args[++i]);
+    } else if (a === "--height") {
+      heightParam = Number(args[++i]);
     } else if (a === "-c" || a === "--concurrency") {
       concurrency = Number(args[++i]);
     } else if (a === "--crf") {
@@ -111,6 +119,14 @@ async function main() {
 
   if (!Number.isInteger(scale) || scale < 1 || scale > 10) {
     usage("Scale must be an integer between 1 and 10");
+  }
+
+  if (isNaN(widthParam) || widthParam <= 0 || widthParam > 32000) {
+    usage("Width must be a positive integer <= 32000");
+  }
+
+  if (isNaN(heightParam) || heightParam <= 0 || heightParam > 32000) {
+    usage("Height must be a positive integer <= 32000");
   }
 
   if (isNaN(duration) || duration <= 0) {
@@ -200,6 +216,8 @@ async function main() {
         "-d", String(duration),
         "-f", String(fps),
         "-s", String(scale),
+        "-w", String(widthParam),
+        "--height", String(heightParam),
         "--crf", String(crf),
         "--preset", preset,
         "--chunk-start", String(task.start),
@@ -269,10 +287,11 @@ async function main() {
     console.log(`render: loading WASM and booting ${app}...`);
   }
   const wasm = await createWasmUi(await Bun.file(WASM_PATH).arrayBuffer());
-  wasm.init(scale);
+  wasm.init(scale, widthParam, heightParam);
 
   const g = globalThis as Record<string, any>;
   g.ui = wasm.ops;
+  wasm.ops.__viewport = { w: widthParam, h: heightParam };
   const pakPath = join(RUNTIME_DIST, `${baseApp}.pak`);
   g.__pak = existsSync(pakPath) ? await Bun.file(pakPath).arrayBuffer() : undefined;
   g.__pocketApp = baseApp;
@@ -287,12 +306,15 @@ async function main() {
   }
 
   // 4. Compute dimensions and crop arguments
-  const width = 480 * scale;
-  const height = 272 * scale;
-  const targetW = 480 * scale;
-  const targetH = 270 * scale;
+  const width = widthParam * scale;
+  const height = heightParam * scale;
+  const isDefault480 = widthParam === 480 && heightParam === 272;
+  const targetW = isDefault480 ? 480 * scale : width;
+  const targetH = isDefault480 ? 270 * scale : height;
   const cropY = scale;
-  const cropFilter = `crop=${targetW}:${targetH}:0:${cropY}`;
+  const cropFilter = isDefault480
+    ? `crop=${targetW}:${targetH}:0:${cropY}`
+    : `scale=trunc(iw/2)*2:trunc(ih/2)*2`;
 
   if (!isWorker) {
     console.log(`render: spawning FFmpeg to output ${output}`);
