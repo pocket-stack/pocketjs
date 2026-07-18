@@ -181,8 +181,10 @@ async function main() {
       const barLen = 20;
       const filled = Math.round((pct / 100) * barLen);
       const empty = barLen - filled;
+      const elapsed = (performance.now() - start) / 1000;
+      const fpsStr = elapsed > 0 ? `, ${(totalRendered / elapsed).toFixed(1)} fps` : "";
       process.stdout.write(
-        `\rrender: [${"█".repeat(filled)}${"░".repeat(empty)}] ${pct.toFixed(1)}% (${totalRendered}/${totalFrames} frames)`
+        `\rrender: [${"█".repeat(filled)}${"░".repeat(empty)}] ${pct.toFixed(1)}% (${totalRendered}/${totalFrames} frames${fpsStr})\x1b[K`
       );
     };
 
@@ -372,8 +374,10 @@ async function main() {
           const barLen = 20;
           const filled = Math.round((pct / 100) * barLen);
           const empty = barLen - filled;
+          const elapsed = (performance.now() - start) / 1000;
+          const fpsStr = elapsed > 0 ? `, ${((f + 1) / elapsed).toFixed(1)} fps` : "";
           process.stdout.write(
-            `\rrender: [${"█".repeat(filled)}${"░".repeat(empty)}] ${pct.toFixed(1)}% (${f + 1}/${totalFrames} frames)`
+            `\rrender: [${"█".repeat(filled)}${"░".repeat(empty)}] ${pct.toFixed(1)}% (${f + 1}/${totalFrames} frames${fpsStr})\x1b[K`
           );
         }
       }
