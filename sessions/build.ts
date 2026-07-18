@@ -213,7 +213,7 @@ function statTiles(): string {
     [String(prs.length), "merged PR"],
     [String(tags.length), "发布的版本"],
     [`${(totalMB / 1024).toFixed(1)} GB`, "session 转录原始体积"],
-    ["1 + 1", "一个作者 + 一个 coding agent"],
+    ["1 + N", "一个作者 + 一群 coding agent"],
   ];
   return tiles
     .map(([v, k]) => `<div class="stat-tile"><div class="v">${v}</div><div class="k">${k}</div></div>`)
@@ -230,7 +230,7 @@ async function buildHome() {
     `<p class="font-mono text-xs uppercase tracking-widest text-brand-2">The making of PocketJS</p>` +
     `<h1 class="mt-3 text-4xl font-bold tracking-tight text-slate-100">一个框架的<span class="text-gradient">诞生档案</span></h1>` +
     `<p class="mt-4 max-w-2xl text-lg text-slate-400">2026 年 7 月 3 日，PocketJS 从一个游戏项目里被抽取成独立仓库；7 月 7 日，v0.2.0 发上 npm。` +
-    `这个站点用全部 ${sessions.filter(hasPage).length} 个真实开发 session 的转录，回答一个问题：<b class="text-slate-200">它是怎么被一个人和一个 coding agent 做出来的？</b></p>` +
+    `这个站点用全部 ${sessions.filter(hasPage).length} 个真实开发 session 的转录，回答一个问题：<b class="text-slate-200">它是怎么被一个人和一群 coding agent 做出来的？</b></p>` +
     `<div class="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">${statTiles()}</div>` +
     `</header>` +
     `<div class="prose prose-invert max-w-none doc-content mt-10">${intro}</div>` +

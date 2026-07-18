@@ -9,7 +9,7 @@ const MAIN_SITE = "https://pocketjs.dev";
 export const SITE_URL = "https://sessions.pocketjs.dev";
 export const SITE_TITLE = "PocketJS Sessions — 从零到发布的完整开发档案";
 export const SITE_DESC =
-  "PocketJS 如何在两周内被一个作者和一个 coding agent 从零做到首个 release —— 基于全部真实开发 session 转录的深度档案（deep wiki）。";
+  "PocketJS 如何在两周内被一个作者和一群 coding agent 从零做到首个 release —— 基于全部真实开发 session 转录的深度档案（deep wiki）。";
 export const OG_IMAGE_URL = `${MAIN_SITE}/og-image.png`;
 
 export interface PageOpts {
