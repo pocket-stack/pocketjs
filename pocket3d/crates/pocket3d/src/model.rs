@@ -38,6 +38,14 @@ pub struct Primitive {
     pub bind_group: wgpu::BindGroup,
 }
 
+#[derive(Default, Clone, Copy)]
+pub struct ModelLoadOptions {
+    /// Halve textures until no side exceeds this (mip-friendly box filter).
+    /// Character/prop authoring resolutions routinely exceed what small
+    /// windows can display; this is the biggest single memory lever.
+    pub max_texture_dim: Option<u32>,
+}
+
 pub struct Skin {
     /// Node index per joint.
     pub joints: Vec<usize>,
@@ -351,18 +359,52 @@ impl ModelAsset {
         samplers: &Samplers,
         path: &Path,
     ) -> Result<Arc<Self>> {
+        Self::load_glb_opts(gpu, layout, samplers, path, &ModelLoadOptions::default())
+    }
+
+    pub fn load_glb_opts(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        opts: &ModelLoadOptions,
+    ) -> Result<Arc<Self>> {
         let (doc, buffers, images) =
             gltf::import(path).with_context(|| format!("importing {}", path.display()))?;
 
         // --- textures ------------------------------------------------------
+        // Only upload images a material actually samples (VRM files carry
+        // thumbnails and utility maps), and optionally cap texture size —
+        // authoring resolutions (4096²) dwarf what a small widget window can
+        // ever show, and GPU memory is the dominant cost of a character.
+        let used: std::collections::HashSet<usize> = doc
+            .materials()
+            .filter_map(|m| {
+                m.pbr_metallic_roughness()
+                    .base_color_texture()
+                    .map(|t| t.texture().source().index())
+            })
+            .collect();
         let mut textures = Vec::new();
         for (i, img) in images.iter().enumerate() {
-            let rgba = to_rgba8(img);
+            if !used.contains(&i) {
+                textures.push(create_rgba_texture(gpu, "unused", 1, 1, &[255; 4], true, false));
+                continue;
+            }
+            let mut rgba = to_rgba8(img);
+            let (mut w, mut h) = (img.width, img.height);
+            if let Some(max) = opts.max_texture_dim {
+                while w.max(h) > max && w % 2 == 0 && h % 2 == 0 {
+                    rgba = downsample_rgba(&rgba, w, h);
+                    w /= 2;
+                    h /= 2;
+                }
+            }
             textures.push(create_rgba_texture(
                 gpu,
                 &format!("model img {i}"),
-                img.width,
-                img.height,
+                w,
+                h,
                 &rgba,
                 true,
                 true,
@@ -759,6 +801,25 @@ fn strip_cubic<T: Copy>(v: Vec<T>, cubic: bool) -> Vec<T> {
         return v;
     }
     v.as_chunks::<3>().0.iter().map(|c| c[1]).collect()
+}
+
+/// Box-filter 2×2 downsample (straight alpha; fine for albedo maps).
+fn downsample_rgba(px: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let (nw, nh) = (w / 2, h / 2);
+    let mut out = Vec::with_capacity((nw * nh * 4) as usize);
+    for y in 0..nh {
+        for x in 0..nw {
+            let mut acc = [0u32; 4];
+            for (dy, dx) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                let src = (((y * 2 + dy) * w + x * 2 + dx) * 4) as usize;
+                for c in 0..4 {
+                    acc[c] += px[src + c] as u32;
+                }
+            }
+            out.extend(acc.map(|v| (v / 4) as u8));
+        }
+    }
+    out
 }
 
 fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
