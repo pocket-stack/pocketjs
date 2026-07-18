@@ -53,7 +53,7 @@ function usage(msg?: string): never {
       "  -o, --output <path>    Output MP4 file path (default: dist/render/<app>.mp4)",
       "  -d, --duration <secs>  Duration of video in seconds (default: 5.0)",
       "  -f, --fps <number>     Frame rate of output video (default: 60)",
-      "  -s, --scale <1..4>     Integer scaling factor of logical 480x272 size (default: 4)",
+      "  -s, --scale <1..10>    Integer scaling factor of logical 480x272 size (default: 4)",
       "  -c, --concurrency <n>  Number of parallel processes (default: 1)",
       "  --crf <number>         x264 quality factor (default: 18)",
       "  --preset <string>      x264 encoder preset (default: faster)",
@@ -109,8 +109,8 @@ async function main() {
     usage("App name is required (-a or --app)");
   }
 
-  if (!Number.isInteger(scale) || scale < 1 || scale > 4) {
-    usage("Scale must be an integer between 1 and 4");
+  if (!Number.isInteger(scale) || scale < 1 || scale > 10) {
+    usage("Scale must be an integer between 1 and 10");
   }
 
   if (isNaN(duration) || duration <= 0) {
@@ -302,6 +302,7 @@ async function main() {
   const ffmpeg = Bun.spawn([
     "ffmpeg",
     "-y",
+    "-threads", isWorker ? "1" : "0",
     "-f", "rawvideo",
     "-pix_fmt", "rgba",
     "-s", `${width}x${height}`,

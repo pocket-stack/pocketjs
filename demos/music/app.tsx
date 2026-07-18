@@ -44,7 +44,7 @@ const TRACKS: Track[] = [
   },
 ];
 
-const TRACK_FRAMES = 300; // 5s per track at 60 Hz (demo-length, not the real song)
+const TRACK_FRAMES = 100; // 5s per track at 60 Hz (demo-length, not the real song)
 const PROGRESS_TRACK_W = 160; // progress track px — matches the w-[160] track class
 
 // ---------------------------------------------------------------------------

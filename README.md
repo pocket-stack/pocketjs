@@ -226,7 +226,7 @@ bun render -a motions-main -d 5.0 -f 30 -s 2
 #   -o, --output <path>    Output MP4 path (default: dist/render/<app>.mp4)
 #   -d, --duration <secs>  Duration of the video in seconds (default: 5.0)
 #   -f, --fps <number>     Frame rate of the video (default: 60)
-#   -s, --scale <1..4>     Integer scaling factor of logical 480x272 viewport (default: 4 -> 1920x1080)
+#   -s, --scale <1..10>    Integer scaling factor of logical 480x272 viewport (default: 4 -> 1920x1080)
 #   -c, --concurrency <n>  Number of parallel workers (default: 1)
 #   --crf <number>         x264 quality factor (default: 18)
 #   --preset <string>      x264 speed preset (default: faster)

@@ -21,6 +21,7 @@ const BUILT = join(WASM_DIR, "target/wasm32-unknown-unknown/release/pocketjs_was
 const env = {
   ...process.env,
   PATH: `${join(homedir(), ".cargo/bin")}${delimiter}${process.env.PATH ?? ""}`,
+  RUSTFLAGS: "-C target-feature=+simd128",
 };
 
 const proc = Bun.spawnSync(

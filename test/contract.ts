@@ -6,6 +6,7 @@
 //  (b) Round-trips the styles.bin encoder/decoder over a table exercising
 //      every feature (variants, transition, all three value kinds).
 
+import { fileURLToPath } from "node:url";
 import { generateRust } from "../spec/gen-rust.ts";
 import {
   abgr,
@@ -34,7 +35,7 @@ function check(ok: boolean, label: string, detail = "") {
 
 // ---- (a) generated spec.rs is in sync ---------------------------------------
 
-const specRsPath = new URL("../core/src/spec.rs", import.meta.url).pathname;
+const specRsPath = fileURLToPath(new URL("../core/src/spec.rs", import.meta.url));
 const committed = await Bun.file(specRsPath).text().catch(() => null);
 const expected = generateRust();
 check(

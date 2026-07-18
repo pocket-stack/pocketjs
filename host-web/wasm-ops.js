@@ -126,7 +126,7 @@ export async function createWasmUi(wasm) {
     },
     /** Rasterize the logical DrawList directly at an integer physical scale. */
     renderScaled(scale) {
-      scale = integerInRange(scale, "render scale", 1, 4);
+      scale = integerInRange(scale, "render scale", 1, 10);
       return framebufferView(ex.ui_render_scaled(scale), scale);
     },
   };
