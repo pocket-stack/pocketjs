@@ -6,6 +6,7 @@ members = [
     "crates/pocket3d-cook",
     "crates/pocket-mod",
     "crates/pocket-ui-wgpu",
+    "crates/pocket-vrm",
     "examples/uihost",
 ]
 # PSP-only crates (tier-3 target, cargo-psp toolchain) — kept out of the
@@ -23,6 +24,7 @@ pocket3d = { path = "crates/pocket3d" }
 pocket3d-bsp = { path = "crates/pocket3d-bsp" }
 pocket-mod = { path = "crates/pocket-mod" }
 pocket-ui-wgpu = { path = "crates/pocket-ui-wgpu" }
+pocket-vrm = { path = "crates/pocket-vrm" }
 pocketjs-core = { path = "../core", features = ["std"] }
 rquickjs = "0.12"
 
@@ -37,6 +39,8 @@ gltf = "1.4"
 png = "0.18"
 anyhow = "1"
 log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 env_logger = "0.11"
 font8x8 = "0.3"
 
