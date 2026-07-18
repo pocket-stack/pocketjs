@@ -14,7 +14,7 @@
 //   arrows = d-pad     Enter / Z = CIRCLE  X = CROSS
 //   A = SQUARE         S = TRIANGLE        Shift = SELECT   Space = START
 
-import { createWasmUi, FB_W, FB_H } from "./wasm-ops.js";
+import { createWasmUi } from "./wasm-ops.js";
 import { drawHud, wasmMemoryBytes } from "./hud.js";
 
 // spec/spec.ts BTN (plain module — keep the literal in sync with the spec).
@@ -95,6 +95,8 @@ let frameCb = null;
 const VALID_HZ = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
 let simHz = 60;
 let renderScale = 1;
+let logicalW = 480;
+let logicalH = 272;
 let logSink = () => {};
 let fpsSink = () => {};
 let statsFrames = 0;
@@ -164,10 +166,10 @@ function connectDevtools() {
 function devtoolsScreenshot() {
   if (!wasm) return;
   const shot = document.createElement("canvas");
-  shot.width = FB_W * renderScale;
-  shot.height = FB_H * renderScale;
+  shot.width = logicalW * renderScale;
+  shot.height = logicalH * renderScale;
   const sctx = shot.getContext("2d");
-  const img = sctx.createImageData(FB_W * renderScale, FB_H * renderScale);
+  const img = sctx.createImageData(logicalW * renderScale, logicalH * renderScale);
   img.data.set(wasm.renderScaled(renderScale));
   sctx.putImageData(img, 0, 0);
   const frame = globalThis.__pocketDevtools ? globalThis.__pocketDevtools.frame : 0;
@@ -212,7 +214,7 @@ function blit() {
   if (!wasm || !ctx) return;
   imageData.data.set(wasm.renderScaled(renderScale));
   ctx.putImageData(imageData, 0, 0);
-  drawHud(ctx, FB_W * renderScale, FB_H * renderScale, hudFps, hudMem); // built-in on-canvas overlay
+  drawHud(ctx, logicalW * renderScale, logicalH * renderScale, hudFps, hudMem); // built-in on-canvas overlay
 }
 
 function tick(now) {
@@ -296,26 +298,40 @@ export async function mount(theCanvas, opts = {}) {
     renderScale = 3;
   }
 
-  canvas.width = FB_W * renderScale;
-  canvas.height = FB_H * renderScale;
+  const wParam = Number(urlParams.get("width"));
+  if (wParam > 0 && wParam <= 32000) {
+    logicalW = wParam;
+  } else {
+    logicalW = 480;
+  }
+
+  const hParam = Number(urlParams.get("height"));
+  if (hParam > 0 && hParam <= 32000) {
+    logicalH = hParam;
+  } else {
+    logicalH = 272;
+  }
+
+  canvas.width = logicalW * renderScale;
+  canvas.height = logicalH * renderScale;
 
   if (urlParams.has("width")) {
     const w = urlParams.get("width");
     canvas.style.width = w.endsWith("px") || w.endsWith("%") ? w : `${w}px`;
   } else if (renderScale > 1) {
-    canvas.style.width = `${FB_W * renderScale}px`;
+    canvas.style.width = `${logicalW * renderScale}px`;
   }
 
   if (urlParams.has("height")) {
     const h = urlParams.get("height");
     canvas.style.height = h.endsWith("px") || h.endsWith("%") ? h : `${h}px`;
   } else if (renderScale > 1) {
-    canvas.style.height = `${FB_H * renderScale}px`;
+    canvas.style.height = `${logicalH * renderScale}px`;
   }
 
   ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
-  imageData = ctx.createImageData(FB_W * renderScale, FB_H * renderScale);
+  imageData = ctx.createImageData(logicalW * renderScale, logicalH * renderScale);
   window.addEventListener("keydown", onKey(true));
   window.addEventListener("keyup", onKey(false));
   window.addEventListener("blur", () => {
@@ -340,10 +356,11 @@ export async function load(name, opts = {}) {
   if (!wasm) throw new Error("mount() first");
   stop();
   frameCb = null;
-  wasm.init(renderScale); // fresh Ui: tree/styles/atlases/textures all reset
+  wasm.init(renderScale, logicalW, logicalH); // fresh Ui: tree/styles/atlases/textures all reset
   // Host contract (see demos/hero/main.tsx): both globals BEFORE eval, reset
   // EVERY load so nothing stale leaks across reloads.
   globalThis.ui = wasm.ops;
+  globalThis.ui.__viewport = { w: logicalW, h: logicalH };
   globalThis.frame = undefined;
   globalThis.__simHz = simHz; // clock policy — before eval, like __pak
   // DevTools: identity + transport BEFORE eval; render() picks them up.

@@ -1,0 +1,8 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Screen body -->
+  <rect x="2" y="3" width="20" height="13" rx="1.5" fill="#38bdf8"/>
+  <!-- Screen cutout -->
+  <rect x="3.5" y="4.5" width="17" height="10" rx="0.5" fill="hole"/>
+  <!-- Base keyboard -->
+  <path d="M1 17.5C1 16.6716 1.67157 16 2.5 16H21.5C22.3284 16 23 16.6716 23 17.5V18.5C23 19.3284 22.3284 20 21.5 20H2.5C1.67157 20 1 19.3284 1 18.5V17.5Z" fill="#38bdf8"/>
+</svg>

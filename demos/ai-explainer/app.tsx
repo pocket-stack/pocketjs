@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { Text, View } from "@pocketjs/framework/components";
+import { Text, View, Image } from "@pocketjs/framework/components";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
 
@@ -148,7 +148,7 @@ export default function AiExplainer() {
         
         {/* Left Panel: Prompt Console */}
         <View
-          class="w-[210] h-[166] rounded-xl bg-[#0f172a99] border border-[#38bdf826] p-4 relative justify-center gap-4"
+          class="w-[210] h-[166] rounded-xl bg-[#0f172a99] border border-[#38bdf826] p-4 relative justify-center gap-4 flex-col"
           style={{
             translateX: leftPanelX(),
             opacity: leftPanelOpacity(),
@@ -219,7 +219,7 @@ export default function AiExplainer() {
         >
           {/* Visual 1: Floating Apps (frame 1080..1650) */}
           <View
-            class="absolute inset-4 flex-col justify-between"
+            class="absolute top-4 bottom-4 left-2 right-2 flex-col justify-between"
             style={{
               opacity: floatAppsOpacity(),
               translateY: floatAppsY(),
@@ -227,45 +227,45 @@ export default function AiExplainer() {
           >
             <View class="flex-row gap-2 justify-between">
               <View
-                class="w-[94] h-[34] bg-[#0f172aCC] border border-[#38bdf833] rounded-lg p-[6] flex-row items-center gap-2"
+                class="w-[94] h-[38] bg-[#0f172aCC] border border-[#38bdf833] rounded-lg p-[5] flex-row items-center gap-2"
                 style={{ opacity: floatAppCardOpacity(0) }}
               >
-                <Text class="text-sm">💻</Text>
+                <Image src="icon-code.svg" class="w-[14] h-[14]" />
                 <View class="flex-col">
-                  <Text class="text-xs font-bold text-white">Writing Code</Text>
-                  <Text class="text-xs text-[#94a3b8]">Token Streams</Text>
+                  <Text class="text-xs font-bold text-white leading-3">Writing Code</Text>
+                  <Text class="text-xs text-[#94a3b8] leading-3">Token Streams</Text>
                 </View>
               </View>
               <View
-                class="w-[94] h-[34] bg-[#0f172aCC] border border-[#38bdf833] rounded-lg p-[6] flex-row items-center gap-2"
+                class="w-[94] h-[38] bg-[#0f172aCC] border border-[#38bdf833] rounded-lg p-[5] flex-row items-center gap-2"
                 style={{ opacity: floatAppCardOpacity(8) }}
               >
-                <Text class="text-sm">📄</Text>
+                <Image src="icon-doc.svg" class="w-[14] h-[14]" />
                 <View class="flex-col">
-                  <Text class="text-xs font-bold text-white">Summarizing</Text>
-                  <Text class="text-xs text-[#94a3b8]">Attention Maps</Text>
+                  <Text class="text-xs font-bold text-white leading-3">Summarizing</Text>
+                  <Text class="text-xs text-[#94a3b8] leading-3">Attention Maps</Text>
                 </View>
               </View>
             </View>
             <View class="flex-row gap-2 justify-between">
               <View
-                class="w-[94] h-[34] bg-[#0f172aCC] border border-[#38bdf833] rounded-lg p-[6] flex-row items-center gap-2"
+                class="w-[94] h-[38] bg-[#0f172aCC] border border-[#38bdf833] rounded-lg p-[5] flex-row items-center gap-2"
                 style={{ opacity: floatAppCardOpacity(16) }}
               >
-                <Text class="text-sm">💬</Text>
+                <Image src="icon-chat.svg" class="w-[14] h-[14]" />
                 <View class="flex-col">
-                  <Text class="text-xs font-bold text-white">Q&A Chat</Text>
-                  <Text class="text-xs text-[#94a3b8]">Probability Net</Text>
+                  <Text class="text-xs font-bold text-white leading-3">Q&A Chat</Text>
+                  <Text class="text-xs text-[#94a3b8] leading-3">Probability Net</Text>
                 </View>
               </View>
               <View
-                class="w-[94] h-[34] bg-[#0f172aCC] border border-[#38bdf833] rounded-lg p-[6] flex-row items-center gap-2"
+                class="w-[94] h-[38] bg-[#0f172aCC] border border-[#38bdf833] rounded-lg p-[5] flex-row items-center gap-2"
                 style={{ opacity: floatAppCardOpacity(24) }}
               >
-                <Text class="text-sm">🤖</Text>
+                <Image src="icon-bot.svg" class="w-[14] h-[14]" />
                 <View class="flex-col">
-                  <Text class="text-xs font-bold text-white">Agents</Text>
-                  <Text class="text-xs text-[#94a3b8]">Thought Loops</Text>
+                  <Text class="text-xs font-bold text-white leading-3">Agents</Text>
+                  <Text class="text-xs text-[#94a3b8] leading-3">Thought Loops</Text>
                 </View>
               </View>
             </View>

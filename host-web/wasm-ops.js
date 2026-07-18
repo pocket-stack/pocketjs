@@ -35,8 +35,17 @@ export async function createWasmUi(wasm) {
     return value;
   }
 
-  const init = (rasterDensity = 1) => {
-    ex.ui_init(integerInRange(rasterDensity, "rasterDensity", 1, 255));
+  let activeW = 480;
+  let activeH = 272;
+
+  const init = (rasterDensity = 1, w = 480, h = 272) => {
+    activeW = integerInRange(w, "logicalWidth", 1, 32000);
+    activeH = integerInRange(h, "logicalHeight", 1, 32000);
+    ex.ui_init(
+      integerInRange(rasterDensity, "rasterDensity", 1, 255),
+      activeW,
+      activeH,
+    );
   };
   init();
 
@@ -109,7 +118,7 @@ export async function createWasmUi(wasm) {
     return new Uint8Array(
       ex.memory.buffer,
       ptr,
-      FB_W * scale * FB_H * scale * 4,
+      activeW * scale * activeH * scale * 4,
     );
   }
 
