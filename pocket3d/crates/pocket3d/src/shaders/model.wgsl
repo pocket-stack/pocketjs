@@ -12,7 +12,7 @@ struct Globals {
 struct Instance {
     model: mat4x4f,
     tint: vec4f,
-    // x: lit amount, y: ambient boost, z/w unused
+    // x: lit amount, y: alpha-test cutoff (0 = off), z/w unused
     params: vec4f,
 }
 
@@ -68,6 +68,9 @@ fn vs_main(in: VsIn) -> VsOut {
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4f {
     let albedo = textureSample(t_albedo, s_albedo, in.uv) * instance.tint;
+    if instance.params.y > 0.0 && albedo.a < instance.params.y {
+        discard;
+    }
     let n = normalize(in.normal);
     let sun = max(dot(n, normalize(globals.sun_dir.xyz)), 0.0);
     // Hemisphere ambient: sky color from above, warm bounce from below.

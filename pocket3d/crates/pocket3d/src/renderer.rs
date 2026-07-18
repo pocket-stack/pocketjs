@@ -195,11 +195,15 @@ impl Renderer {
                     view: color_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: h.x as f64,
-                            g: h.y as f64,
-                            b: h.z as f64,
-                            a: 1.0,
+                        load: wgpu::LoadOp::Clear(if scene.transparent_clear {
+                            wgpu::Color::TRANSPARENT
+                        } else {
+                            wgpu::Color {
+                                r: h.x as f64,
+                                g: h.y as f64,
+                                b: h.z as f64,
+                                a: 1.0,
+                            }
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -309,8 +313,9 @@ impl Renderer {
 
 const INSTANCE_STRIDE: u64 = 256;
 const JOINT_ALIGN: u64 = 256;
-/// Fixed window each draw binds from the joints buffer: 128 mat4s.
-const JOINT_WINDOW: u64 = 128 * 64;
+/// Fixed window each draw binds from the joints buffer: 512 mat4s (32 KB —
+/// VRoid-style humanoid rigs carry ~270 joints across their skins).
+const JOINT_WINDOW: u64 = 512 * 64;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -324,6 +329,8 @@ pub(crate) struct ModelDraw {
     asset: std::sync::Arc<ModelAsset>,
     inst_offset: u32,
     joints_offset: u32,
+    /// The instance's morph overlay buffer (wgpu buffers are ref-counted).
+    morph: Option<wgpu::Buffer>,
 }
 
 struct ModelPass {
@@ -499,15 +506,25 @@ impl ModelPass {
             let raw = InstanceRaw {
                 model: inst.transform.to_cols_array_2d(),
                 tint: inst.tint,
-                params: [inst.lit, 0.0, 0.0, 0.0],
+                params: [inst.lit, inst.cutout, 0.0, 0.0],
             };
             let off = i * INSTANCE_STRIDE as usize;
             inst_bytes[off..off + std::mem::size_of::<InstanceRaw>()]
                 .copy_from_slice(bytemuck::bytes_of(&raw));
 
-            inst.asset.joint_palette(&inst.anim, &mut palette);
+            if let Some(morph) = &inst.morph {
+                morph.upload_if_dirty(gpu, &inst.asset);
+            }
+            match &inst.pose {
+                Some(globals) => inst.asset.palette_from_globals(globals, &mut palette),
+                None => inst.asset.joint_palette(&inst.anim, &mut palette),
+            }
             if palette.len() as u64 * 64 > JOINT_WINDOW {
-                log::warn!("model has {} joints; truncating to 128", palette.len());
+                log::warn!(
+                    "model has {} joints; truncating to {}",
+                    palette.len(),
+                    JOINT_WINDOW / 64
+                );
                 palette.truncate((JOINT_WINDOW / 64) as usize);
             }
             let joints_offset = joint_bytes.len() as u32;
@@ -523,6 +540,7 @@ impl ModelPass {
                 asset: inst.asset.clone(),
                 inst_offset: off as u32,
                 joints_offset,
+                morph: inst.morph.as_ref().map(|m| m.buffer().clone()),
             });
         }
 
@@ -573,13 +591,40 @@ impl ModelPass {
             pass.set_bind_group(2, &self.object_bg, &[d.inst_offset, d.joints_offset]);
             pass.set_vertex_buffer(0, d.asset.vbuf.slice(..));
             pass.set_index_buffer(d.asset.ibuf.slice(..), wgpu::IndexFormat::Uint32);
-            for prim in &d.asset.primitives {
+            let mut overlay_bound = false;
+            for (pi, prim) in d.asset.primitives.iter().enumerate() {
                 pass.set_bind_group(1, &prim.bind_group, &[]);
-                pass.draw_indexed(
-                    prim.first_index..prim.first_index + prim.index_count,
-                    0,
-                    0..1,
-                );
+                // Morphing primitives read vertices from the instance's
+                // overlay buffer; base_vertex redirects the shared indices.
+                let morph = d
+                    .morph
+                    .as_ref()
+                    .zip(d.asset.prim_morph.get(pi).copied().flatten());
+                match morph {
+                    Some((buf, (mi, pj))) => {
+                        let mp = &d.asset.morph_meshes[mi].prims[pj];
+                        if !overlay_bound {
+                            pass.set_vertex_buffer(0, buf.slice(..));
+                            overlay_bound = true;
+                        }
+                        pass.draw_indexed(
+                            prim.first_index..prim.first_index + prim.index_count,
+                            mp.overlay_offset as i32 - mp.vertex_base as i32,
+                            0..1,
+                        );
+                    }
+                    None => {
+                        if overlay_bound {
+                            pass.set_vertex_buffer(0, d.asset.vbuf.slice(..));
+                            overlay_bound = false;
+                        }
+                        pass.draw_indexed(
+                            prim.first_index..prim.first_index + prim.index_count,
+                            0,
+                            0..1,
+                        );
+                    }
+                }
             }
         }
     }

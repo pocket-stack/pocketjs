@@ -14,6 +14,7 @@ pub struct Input {
     mouse_down: HashSet<u8>,
     mouse_pressed: HashSet<u8>,
     mouse_delta: Vec2,
+    cursor: Option<Vec2>,
 }
 
 fn button_id(b: MouseButton) -> u8 {
@@ -57,9 +58,18 @@ impl Input {
                     }
                 }
             }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor = Some(Vec2::new(position.x as f32, position.y as f32));
+            }
+            WindowEvent::CursorLeft { .. } => self.cursor = None,
             WindowEvent::Focused(false) => self.clear(),
             _ => {}
         }
+    }
+
+    /// Cursor position in window pixels, `None` while outside the window.
+    pub fn cursor(&self) -> Option<Vec2> {
+        self.cursor
     }
 
     pub fn on_device_event(&mut self, event: &DeviceEvent) {

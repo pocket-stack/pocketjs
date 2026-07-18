@@ -1592,6 +1592,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pocket-vrm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "log",
+ "pocket3d",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "pocket3d"
 version = "0.1.0"
 dependencies = [
