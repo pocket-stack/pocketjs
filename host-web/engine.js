@@ -94,6 +94,7 @@ let frameCb = null;
 // runs the 2 FPS world a headless agent sees — on a real screen.
 const VALID_HZ = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
 let simHz = 60;
+let renderScale = 1;
 let logSink = () => {};
 let fpsSink = () => {};
 let statsFrames = 0;
@@ -163,11 +164,11 @@ function connectDevtools() {
 function devtoolsScreenshot() {
   if (!wasm) return;
   const shot = document.createElement("canvas");
-  shot.width = FB_W;
-  shot.height = FB_H;
+  shot.width = FB_W * renderScale;
+  shot.height = FB_H * renderScale;
   const sctx = shot.getContext("2d");
-  const img = sctx.createImageData(FB_W, FB_H);
-  img.data.set(wasm.render());
+  const img = sctx.createImageData(FB_W * renderScale, FB_H * renderScale);
+  img.data.set(wasm.renderScaled(renderScale));
   sctx.putImageData(img, 0, 0);
   const frame = globalThis.__pocketDevtools ? globalThis.__pocketDevtools.frame : 0;
   dtSend(JSON.stringify({ t: "screenshot", frame, data: shot.toDataURL("image/png") }));
@@ -209,9 +210,9 @@ function safeFrame() {
 
 function blit() {
   if (!wasm || !ctx) return;
-  imageData.data.set(wasm.render());
+  imageData.data.set(wasm.renderScaled(renderScale));
   ctx.putImageData(imageData, 0, 0);
-  drawHud(ctx, FB_W, FB_H, hudFps, hudMem); // built-in on-canvas overlay
+  drawHud(ctx, FB_W * renderScale, FB_H * renderScale, hudFps, hudMem); // built-in on-canvas overlay
 }
 
 function tick(now) {
@@ -285,11 +286,36 @@ export async function mount(theCanvas, opts = {}) {
   if (opts.onLog) logSink = opts.onLog;
   if (opts.onFps) fpsSink = opts.onFps;
   canvas = theCanvas;
-  canvas.width = FB_W;
-  canvas.height = FB_H;
+
+  const urlParams = new URLSearchParams(location.search);
+  const scaleParam = Number(urlParams.get("scale"));
+  if (scaleParam >= 1 && scaleParam <= 10) {
+    renderScale = Math.floor(scaleParam);
+  } else {
+    // Default to 3 so we get 1440x816 (which is at least 1280x720)
+    renderScale = 3;
+  }
+
+  canvas.width = FB_W * renderScale;
+  canvas.height = FB_H * renderScale;
+
+  if (urlParams.has("width")) {
+    const w = urlParams.get("width");
+    canvas.style.width = w.endsWith("px") || w.endsWith("%") ? w : `${w}px`;
+  } else if (renderScale > 1) {
+    canvas.style.width = `${FB_W * renderScale}px`;
+  }
+
+  if (urlParams.has("height")) {
+    const h = urlParams.get("height");
+    canvas.style.height = h.endsWith("px") || h.endsWith("%") ? h : `${h}px`;
+  } else if (renderScale > 1) {
+    canvas.style.height = `${FB_H * renderScale}px`;
+  }
+
   ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
-  imageData = ctx.createImageData(FB_W, FB_H);
+  imageData = ctx.createImageData(FB_W * renderScale, FB_H * renderScale);
   window.addEventListener("keydown", onKey(true));
   window.addEventListener("keyup", onKey(false));
   window.addEventListener("blur", () => {
@@ -314,7 +340,7 @@ export async function load(name, opts = {}) {
   if (!wasm) throw new Error("mount() first");
   stop();
   frameCb = null;
-  wasm.init(); // fresh Ui: tree/styles/atlases/textures all reset
+  wasm.init(renderScale); // fresh Ui: tree/styles/atlases/textures all reset
   // Host contract (see demos/hero/main.tsx): both globals BEFORE eval, reset
   // EVERY load so nothing stale leaks across reloads.
   globalThis.ui = wasm.ops;
