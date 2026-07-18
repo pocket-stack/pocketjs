@@ -1,6 +1,6 @@
 {
   "name": "@pocketjs/cli",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "The PocketJS CLI — manifest-first PSP and PS Vita builds, app scaffolding, and pinned PSP toolchain setup.",
   "license": "MIT",
   "type": "module",
