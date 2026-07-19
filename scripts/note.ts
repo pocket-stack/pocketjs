@@ -23,11 +23,11 @@ const args = process.argv.slice(2).filter((a) => a !== "--");
 const proof = args.includes("--proof");
 const pass = args.filter((f) => f !== "--proof");
 
-// The note builds through its manifest against the desktop-widget-macos
+// The note builds through its manifest against the macos-widget
 // target profile — density, viewport and capability features all come from
 // the platform contract, not flags.
 const manifest = await Bun.file(`${root}demos/note/pocket.json`).json();
-const resolution = validateAndResolveBuildPlan(manifest, { target: "desktop-widget-macos" });
+const resolution = validateAndResolveBuildPlan(manifest, { target: "macos-widget" });
 if (!resolution.ok) {
   throw new Error(
     `pocket-note: manifest did not resolve: ${resolution.diagnostics

@@ -115,10 +115,13 @@ one `render_words_scaled` pass on dirty frames. It exercises everything the
   registered capability ids name it (`input.text`, `input.pointer`,
   `input.ime`, `host.clipboard`, `display.viewport.live`,
   `text.glyphs.runtime` — each a distinct observable guarantee; a real
-  pointer is NOT `input.cursor`), and a `desktop-widget-macos` target
+  pointer is NOT `input.cursor`), and a `macos-widget` target
   profile (hostAbi 3, density 2, `dynamicViewport` range) provides them.
-  Target ids for host-windowed platforms follow `<class>-<form>-<os>`
-  (future: `desktop-app-macos`, `desktop-kiosk-linux`). The note's
+  Target semantics live in queryable profile FIELDS (`platform`,
+  `form` — takeover/window/widget/kiosk/embedded); ids are labels
+  (convention `<platform>-<form>`, future: `macos-app`, `linux-kiosk`),
+  and apps declare viewport intent per policy (`fixed`/`dynamic`
+  variants), not per target. The note's
   pocket.json is the reference dual-nature manifest: the desktop surface
   sits in `enhances`, so the app ADMITS everywhere and lights up per
   target (`hasFeature("input.text")` gates the editor — a PSP build never

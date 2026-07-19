@@ -1,3 +1,4 @@
+import { DYNAMIC_FORMS, TARGET_FORMS } from "../../spec/platforms.ts";
 import type { PocketManifestV2 } from "../../spec/pocket-manifest.ts";
 import {
   POCKET_PLATFORM_CONTRACTS,
@@ -28,27 +29,106 @@ function sameViewport(left: Viewport, right: Viewport): boolean {
   return left[0] === right[0] && left[1] === right[1];
 }
 
-function validateViewport(
+/** The app's viewport intent, normalized: the bare `{logical, presentation}`
+ *  spelling is shorthand for `{fixed: ...}`. */
+function normalizeViewport(viewport: PocketManifestV2["app"]["viewport"]): {
+  fixed?: { logical: Viewport; presentation: PresentationMode };
+  dynamic?: { default: Viewport; min?: Viewport; max?: Viewport };
+} {
+  if ("logical" in viewport) {
+    return { fixed: { logical: viewport.logical, presentation: viewport.presentation } };
+  }
+  return { fixed: viewport.fixed as never, dynamic: viewport.dynamic as never };
+}
+
+const within = (v: Viewport, min: Viewport, max: Viewport): boolean =>
+  v[0] >= min[0] && v[1] >= min[1] && v[0] <= max[0] && v[1] <= max[1];
+
+/**
+ * Pick and validate the viewport variant the target's FORM calls for.
+ * Window/widget forms take the app's `dynamic` variant (or its `fixed` one
+ * size-locked, when the target opts in via acceptsFixed); every other form
+ * requires `fixed`. Returns the resolved plan viewport, or null after
+ * pushing diagnostics.
+ */
+function resolveViewport(
   manifest: PocketManifestV2,
   profile: TargetProfile,
   diagnostics: ContractDiagnostic[],
-): void {
-  const { logical, presentation } = manifest.app.viewport;
-  const { physicalViewport, logicalViewports, dynamicViewport, presentations } = profile.display;
-  // A dynamic target (desktop windows) admits any logical size in range —
-  // the listed logicalViewports are only the default the plan bakes for.
-  const logicalSupported = dynamicViewport
-    ? logical[0] >= dynamicViewport.min[0] &&
-      logical[1] >= dynamicViewport.min[1] &&
-      logical[0] <= dynamicViewport.max[0] &&
-      logical[1] <= dynamicViewport.max[1]
-    : logicalViewports.some((supported) => sameViewport(supported, logical));
-  if (!logicalSupported) {
+): { logical: Viewport; presentation: PresentationMode; physical: Viewport } | null {
+  const viewport = normalizeViewport(manifest.app.viewport);
+  const { physicalViewport, logicalViewports, dynamicViewport, presentations, rasterDensity } =
+    profile.display;
+  const dynamicTarget = DYNAMIC_FORMS.includes(profile.form);
+
+  if (dynamicTarget) {
+    const range = dynamicViewport!;
+    if (viewport.dynamic) {
+      const size = viewport.dynamic.default;
+      if (!within(size, range.min, range.max)) {
+        diagnostics.push({
+          code: "viewport.logicalUnsupported",
+          path: "/app/viewport/dynamic/default",
+          message: `target admits ${range.min[0]}x${range.min[1]} through ${range.max[0]}x${range.max[1]}, not ${size[0]}x${size[1]}`,
+        });
+        return null;
+      }
+      return {
+        logical: size,
+        presentation: "native",
+        physical: [size[0] * rasterDensity, size[1] * rasterDensity],
+      };
+    }
+    if (viewport.fixed) {
+      if (!range.acceptsFixed) {
+        diagnostics.push({
+          code: "viewport.fixedUnhosted",
+          path: "/app/viewport",
+          message: `${profile.form}-form target does not host fixed-viewport apps — declare a dynamic viewport variant`,
+        });
+        return null;
+      }
+      const size = viewport.fixed.logical;
+      if (!within(size, range.min, range.max)) {
+        diagnostics.push({
+          code: "viewport.logicalUnsupported",
+          path: "/app/viewport/fixed/logical",
+          message: `target admits ${range.min[0]}x${range.min[1]} through ${range.max[0]}x${range.max[1]}, not ${size[0]}x${size[1]}`,
+        });
+        return null;
+      }
+      // Size-locked window: presented 1 logical px = density physical px.
+      return {
+        logical: size,
+        presentation: "native",
+        physical: [size[0] * rasterDensity, size[1] * rasterDensity],
+      };
+    }
+    diagnostics.push({
+      code: "viewport.dynamicRequired",
+      path: "/app/viewport",
+      message: "target has a dynamic window — declare a dynamic viewport variant",
+    });
+    return null;
+  }
+
+  if (!viewport.fixed) {
+    diagnostics.push({
+      code: "viewport.fixedRequired",
+      path: "/app/viewport",
+      message: "target has a fixed screen — declare a fixed viewport variant",
+    });
+    return null;
+  }
+  const { logical, presentation } = viewport.fixed;
+  let ok = true;
+  if (!logicalViewports.some((supported) => sameViewport(supported, logical))) {
     diagnostics.push({
       code: "viewport.logicalUnsupported",
       path: "/app/viewport/logical",
       message: `target does not support logical viewport ${logical[0]}x${logical[1]}`,
     });
+    ok = false;
   }
   if (!presentations.includes(presentation)) {
     diagnostics.push({
@@ -56,23 +136,19 @@ function validateViewport(
       path: "/app/viewport/presentation",
       message: `target does not support ${JSON.stringify(presentation)} presentation`,
     });
+    ok = false;
   }
   // Native presentation: one logical px maps to rasterDensity physical px.
-  // Fixed targets must match their panel exactly; dynamic targets size the
-  // window to the viewport, so there is nothing to mismatch.
   if (
     presentation === "native" &&
-    !dynamicViewport &&
-    !sameViewport(
-      [logical[0] * profile.display.rasterDensity, logical[1] * profile.display.rasterDensity],
-      physicalViewport,
-    )
+    !sameViewport([logical[0] * rasterDensity, logical[1] * rasterDensity], physicalViewport)
   ) {
     diagnostics.push({
       code: "viewport.nativeMismatch",
       path: "/app/viewport",
       message: "native presentation requires the logical viewport to fill the panel",
     });
+    ok = false;
   }
   if (presentation === "integer-fit") {
     const x = physicalViewport[0] / logical[0];
@@ -83,8 +159,10 @@ function validateViewport(
         path: "/app/viewport",
         message: "integer-fit requires one positive integer scale on both axes",
       });
+      ok = false;
     }
   }
+  return ok ? { logical, presentation, physical: [physicalViewport[0], physicalViewport[1]] } : null;
 }
 
 /** Validate framework-owned registry data before trusting it in resolution. */
@@ -114,6 +192,28 @@ export function validatePlatformContractRegistry(
         code: "registry.invalidRasterDensity",
         path: `/targets/${targetId}/display/rasterDensity`,
         message: "target rasterDensity must be an integer from 1 through 255",
+      });
+    }
+    if (!TARGET_FORMS.includes(target.form)) {
+      diagnostics.push({
+        code: "registry.invalidForm",
+        path: `/targets/${targetId}/form`,
+        message: `target form must be one of ${TARGET_FORMS.join(", ")}`,
+      });
+    }
+    const dynamicForm = DYNAMIC_FORMS.includes(target.form);
+    if (dynamicForm && !target.display.dynamicViewport) {
+      diagnostics.push({
+        code: "registry.dynamicViewportMissing",
+        path: `/targets/${targetId}/display`,
+        message: `${target.form}-form targets must declare display.dynamicViewport`,
+      });
+    }
+    if (!dynamicForm && target.display.dynamicViewport) {
+      diagnostics.push({
+        code: "registry.dynamicViewportForbidden",
+        path: `/targets/${targetId}/display/dynamicViewport`,
+        message: `${target.form}-form targets have a fixed screen — remove dynamicViewport`,
       });
     }
     const provided = new Set<string>();
@@ -155,7 +255,7 @@ export function resolveBuildPlan(
     return { ok: false, diagnostics };
   }
 
-  validateViewport(manifest, profile, diagnostics);
+  const resolvedViewport = resolveViewport(manifest, profile, diagnostics);
 
   const known = new Set<string>(registry.capabilities);
   const provided = new Set<string>(profile.capabilities);
@@ -216,10 +316,10 @@ export function resolveBuildPlan(
     });
   }
 
-  if (diagnostics.length > 0) return { ok: false, diagnostics };
+  if (diagnostics.length > 0 || !resolvedViewport) return { ok: false, diagnostics };
 
-  const logical: Viewport = [manifest.app.viewport.logical[0], manifest.app.viewport.logical[1]];
-  const physical: Viewport = [profile.display.physicalViewport[0], profile.display.physicalViewport[1]];
+  const logical: Viewport = [resolvedViewport.logical[0], resolvedViewport.logical[1]];
+  const physical: Viewport = [resolvedViewport.physical[0], resolvedViewport.physical[1]];
   // Plain codepoint sort — the same ordering canonicalJson uses for the plan
   // hash, so the pretty plan.json never depends on ICU collation.
   const features = Object.fromEntries(
@@ -241,7 +341,7 @@ export function resolveBuildPlan(
     viewport: {
       logical,
       physical,
-      presentation: manifest.app.viewport.presentation,
+      presentation: resolvedViewport.presentation,
       rasterDensity: profile.display.rasterDensity,
     },
     features,
