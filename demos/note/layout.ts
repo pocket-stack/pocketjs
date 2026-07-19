@@ -81,6 +81,9 @@ export type ViewRow =
       indent: number;
       /** Draw the quote bar alongside this line. */
       bar: boolean;
+      /** Soft-wrap continuation of the previous row (same logical line —
+       *  a copy re-joins them with the space the wrap consumed). */
+      wrapCont: boolean;
       /** Source line the row came from (view-click → edit caret). */
       srcLine: number;
     }
@@ -100,12 +103,19 @@ function slotFor(style: SpanStyle, base: number, bold: number): number {
  * Greedy word wrap over styled spans at `maxW`, returning lines of
  * positioned segments. Explicit '\n' inside a span always breaks.
  */
+export interface WrapLine {
+  segs: Seg[];
+  /** This line starts at a hard boundary (block start or explicit '\n'),
+   *  not a soft wrap. */
+  hard: boolean;
+}
+
 export function wrapSpans(
   spans: Span[],
   maxW: number,
   base: number,
   bold: number,
-): Seg[][] {
+): WrapLine[] {
   // Flatten to word tokens. `glue` marks a token that follows its
   // predecessor with no space — the first word of a span continues the
   // previous span's last word ("**Bold**," parses to "Bold" + glued ",").
@@ -125,14 +135,17 @@ export function wrapSpans(
     }
   }
 
-  const lines: Seg[][] = [];
+  const lines: WrapLine[] = [];
   let line: Seg[] = [];
   let x = 0;
   /** Pending px before the next word (separator and/or literal spaces). */
   let gap = 0;
   let gapSlot = base;
+  /** The next flushed line begins at a hard boundary. */
+  let pendingHard = true;
   const flushLine = () => {
-    lines.push(line);
+    lines.push({ segs: line, hard: pendingHard });
+    pendingHard = false;
     line = [];
     x = 0;
     gap = 0;
@@ -153,6 +166,7 @@ export function wrapSpans(
   for (const token of tokens) {
     if (token.text === "\n") {
       flushLine();
+      pendingHard = true;
       continue;
     }
     if (token.text === "") {
@@ -190,7 +204,7 @@ export function wrapSpans(
     append(token.text, token.style, slot, w);
     gapSlot = slot;
   }
-  lines.push(line);
+  lines.push({ segs: line, hard: pendingHard });
   return lines;
 }
 
@@ -240,7 +254,7 @@ export function layoutBlocks(blocks: Block[], width: number): ViewLayout {
 
     const lines = wrapSpans(block.spans, Math.max(40, width - indent), base, bold);
     for (let l = 0; l < lines.length; l++) {
-      const segs = lines[l];
+      const segs = lines[l].segs;
       if (block.kind === "li" && l === 0) {
         segs.unshift({
           text: block.marker,
@@ -257,6 +271,7 @@ export function layoutBlocks(blocks: Block[], width: number): ViewLayout {
         segs,
         indent,
         bar,
+        wrapCont: l > 0 && !lines[l].hard,
         srcLine: block.line,
       });
       y += lineH;

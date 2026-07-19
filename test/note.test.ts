@@ -204,6 +204,7 @@ import {
   rowSelSpan,
   rowText,
   rowXOfCh,
+  selectedText,
 } from "../demos/note/select.ts";
 import type { Seg, ViewRow } from "../demos/note/layout.ts";
 
@@ -302,8 +303,8 @@ describe("undo/redo history", () => {
 
 const MS = (text: string, _slot: number) => text.length * 10;
 
-function lineRow(y: number, indent: number, segs: Seg[]): ViewRow {
-  return { kind: "line", key: `${y}`, y, h: 20, segs, indent, bar: false, srcLine: 0 };
+function lineRow(y: number, indent: number, segs: Seg[], wrapCont = false): ViewRow {
+  return { kind: "line", key: `${y}`, y, h: 20, segs, indent, bar: false, wrapCont, srcLine: 0 };
 }
 
 describe("preview selection", () => {
@@ -361,5 +362,23 @@ describe("preview selection", () => {
     const b = { row: 0, ch: 6 };
     expect(rowSelSpan(rows, 0, a, b, MS)).toEqual({ x0: 20, x1: 60 });
     expect(rowSelSpan(rows, 0, a, a, MS)).toBeNull();
+  });
+
+  test("selectedText: boundary slices, hr skipped, code atomic", () => {
+    expect(selectedText(rows, { row: 0, ch: 5 }, { row: 3, ch: 0 })).toBe(
+      "text\nnext\ncode line",
+    );
+    expect(selectedText(rows, { row: 0, ch: 2 }, { row: 0, ch: 6 })).toBe("ld t");
+  });
+
+  test("selectedText re-joins soft-wrapped rows with a space", () => {
+    const wrapped: ViewRow[] = [
+      lineRow(0, 0, [{ text: "alpha beta", x: 0, slot: 1, style: "plain" }]),
+      lineRow(20, 0, [{ text: "gamma", x: 0, slot: 1, style: "plain" }], true),
+      lineRow(40, 0, [{ text: "hard line", x: 0, slot: 1, style: "plain" }]),
+    ];
+    expect(selectedText(wrapped, { row: 0, ch: 0 }, { row: 2, ch: 9 })).toBe(
+      "alpha beta gamma\nhard line",
+    );
   });
 });

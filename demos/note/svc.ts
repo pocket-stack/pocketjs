@@ -15,6 +15,7 @@
 //   {t:"ch", s}                typed characters (batched, layout applied)
 //   {t:"key", k}               named key: Backspace Delete Enter Tab Left
 //                              Right Up Down Home End PageUp PageDown Escape
+//                              Copy Undo Redo (⌘-chords arrive as keys)
 //   {t:"mouse", x, y, d}       pointer moved / pressed / released — d is
 //                              the primary-button state, and a line is sent
 //                              on every press/release even without movement
@@ -25,6 +26,7 @@
 //   {t:"quit"}                 close the widget
 //   {t:"menu", open}           the ••• menu is up — the host stops claiming
 //                              header drags so backdrop clicks can close it
+//   {t:"copy", text}           put text on the system clipboard (⌘C)
 
 import { getOps } from "@pocketjs/framework";
 
@@ -45,7 +47,13 @@ export interface HostEvent {
 export interface Svc {
   /** Drain and parse this frame's host lines (call once per frame). */
   poll(): HostEvent[];
-  send(line: { t: "save"; text: string } | { t: "quit" } | { t: "menu"; open: boolean }): void;
+  send(
+    line:
+      | { t: "save"; text: string }
+      | { t: "quit" }
+      | { t: "menu"; open: boolean }
+      | { t: "copy"; text: string },
+  ): void;
 }
 
 /** Probe the channel; null = standalone (no widget host on the other end). */

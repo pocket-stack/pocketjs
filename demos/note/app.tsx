@@ -47,7 +47,14 @@ import {
   type EditKind,
   type SelEdit,
 } from "./editor.ts";
-import { cmpPos, rowChFromX, rowFromY, rowSelSpan, type RowPos } from "./select.ts";
+import {
+  cmpPos,
+  rowChFromX,
+  rowFromY,
+  rowSelSpan,
+  selectedText,
+  type RowPos,
+} from "./select.ts";
 import { connectSvc, type HostEvent } from "./svc.ts";
 import { SAMPLE_DOC } from "./sample.ts";
 
@@ -125,14 +132,6 @@ function segColor(seg: Seg, ink: Ink): string {
     default:
       return ink.body;
   }
-}
-
-/** Global char offset of source line `n` (caret for view-mode clicks). */
-function lineOffset(doc: string, n: number): number {
-  let off = 0;
-  const lines = doc.split("\n");
-  for (let i = 0; i < n && i < lines.length; i++) off += lines[i].length + 1;
-  return Math.min(off, doc.length);
 }
 
 export default function Note(): ReturnType<typeof View> {
@@ -293,6 +292,19 @@ export default function Note(): ReturnType<typeof View> {
       else if (editing()) leaveEdit();
       return;
     }
+    if (k === "Copy") {
+      const text = editing()
+        ? (() => {
+            const sel = editSel();
+            return sel ? doc().slice(sel.lo, sel.hi) : "";
+          })()
+        : (() => {
+            const sel = vsel();
+            return sel ? selectedText(viewLayout().rows, sel.start, sel.end) : "";
+          })();
+      if (text !== "") svc?.send({ t: "copy", text });
+      return;
+    }
     if (k === "Undo") {
       applyUndoRedo(undo);
       return;
@@ -401,21 +413,12 @@ export default function Note(): ReturnType<typeof View> {
       setVsel({ start, end });
     }
   };
-  const pointerUp = (x: number, y: number) => {
-    const p = press;
+  const pointerUp = (_x: number, _y: number) => {
+    // Preview clicks are inert (a markdown preview doesn't react to
+    // clicks — the I-beam toggle and the menu enter edit mode); the
+    // pointer-down already placed the caret / cleared the selection.
     press = null;
     pvAnchor = null;
-    if (!p || !p.content) return;
-    if (!editing() && !p.dragged) {
-      // A clean click (no drag) in the preview drops into the source
-      // near the clicked block; a drag is a selection, not an intent
-      // to edit.
-      const ly = y - HEADER_H + scrollV();
-      const rows = viewLayout().rows;
-      let src = 0;
-      for (const r of rows) if (r.y <= ly) src = r.srcLine;
-      enterEdit(lineOffset(doc(), src));
-    }
   };
 
   const handleEvent = (ev: HostEvent) => {

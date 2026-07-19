@@ -219,11 +219,14 @@ impl FlatWidget for NoteGame {
         {
             self.exit = true;
         }
-        // ⌘Z / ⇧⌘Z → the guest's undo/redo (chars are suppressed under ⌘,
-        // so the chord travels as a named key).
+        // ⌘Z / ⇧⌘Z / ⌘C → guest editing chords (chars are suppressed
+        // under ⌘, so chords travel as named keys).
         if input.super_down() && input.key_pressed(KeyCode::KeyZ) {
             let redo = input.key_down(KeyCode::ShiftLeft) || input.key_down(KeyCode::ShiftRight);
             self.svc(serde_json::json!({"t": "key", "k": if redo { "Redo" } else { "Undo" }}));
+        }
+        if input.super_down() && input.key_pressed(KeyCode::KeyC) {
+            self.svc(serde_json::json!({"t": "key", "k": "Copy"}));
         }
         if let Some(limit) = self.quit_after
             && self.ticks >= limit
@@ -294,6 +297,7 @@ impl FlatWidget for NoteGame {
                     Some("save") => self.save(v["text"].as_str().unwrap_or_default()),
                     Some("quit") => self.exit = true,
                     Some("menu") => self.guest_menu_open = v["open"].as_bool().unwrap_or(false),
+                    Some("copy") => clipboard_copy(v["text"].as_str().unwrap_or_default()),
                     other => log::warn!("note-widget: unknown intent {other:?}"),
                 },
                 Err(e) => log::warn!("note-widget: bad svc line from guest: {e}"),
@@ -365,6 +369,32 @@ impl FlatWidget for NoteGame {
     fn wants_exit(&self) -> bool {
         self.exit
     }
+}
+
+/// Put text on the system clipboard. pbcopy is the zero-dependency macOS
+/// road; other platforms just log (the widget shell is macOS-first).
+fn clipboard_copy(text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let child = Command::new("pbcopy").stdin(Stdio::piped()).spawn();
+        match child {
+            Ok(mut child) => {
+                if let Some(stdin) = child.stdin.as_mut() {
+                    let _ = stdin.write_all(text.as_bytes());
+                }
+                let _ = child.wait();
+                log::info!("note-widget: copied {} bytes", text.len());
+            }
+            Err(e) => log::warn!("note-widget: pbcopy failed: {e}"),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    log::warn!("note-widget: clipboard copy unsupported on this platform");
 }
 
 /// FNV-1a 64 over the DrawList words (embed.rs's dirty signal).

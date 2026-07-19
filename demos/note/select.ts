@@ -134,3 +134,35 @@ export function rowFromY(rows: readonly ViewRow[], y: number): number {
   }
   return Math.max(0, rows.length - 1);
 }
+
+/**
+ * The text a normalized [start, end] selection covers, rows joined with
+ * newlines — what ⌘C puts on the clipboard. Boundary rows slice at the
+ * endpoint chars; code rows are atomic (their whole text); inert rows
+ * contribute nothing (a rule "selects" as a blank line would in a
+ * browser: skipped).
+ */
+export function selectedText(rows: readonly ViewRow[], start: RowPos, end: RowPos): string {
+  let out = "";
+  let first = true;
+  for (let r = start.row; r <= end.row && r < rows.length; r++) {
+    const row = rows[r];
+    if (row.kind === "hr") continue;
+    let text: string;
+    if (row.kind === "code") {
+      text = row.text;
+    } else {
+      text = rowText(row);
+      if (r === end.row) text = text.slice(0, end.ch);
+      if (r === start.row) text = text.slice(start.ch);
+    }
+    if (!first) {
+      // A soft-wrapped continuation re-joins with the space the wrap
+      // consumed; everything else is a real line break.
+      out += row.kind === "line" && row.wrapCont ? " " : "\n";
+    }
+    out += text;
+    first = false;
+  }
+  return out;
+}

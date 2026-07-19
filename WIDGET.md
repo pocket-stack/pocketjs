@@ -124,7 +124,11 @@ one `render_words_scaled` pass on dirty frames. It exercises everything the
   driven by ⌘Z/⇧⌘Z) is pure JS over `measureText`, unit-tested in bun.
   Preview mode gets browser-style drag selection over the rendered rows
   (select.ts — (row, char) space, boundary rows clipped, code blocks
-  atomic); a clean click still drops into the editor, a drag never does.
+  atomic) and clicks are inert, exactly like a real markdown preview —
+  edit mode is entered through the eye/I-beam toggle. ⌘C copies the
+  selection in either mode (soft-wrapped rows re-join with the space the
+  wrap consumed; the host pipes the guest's copy intent to the system
+  clipboard).
   Mouse lines carry the primary-button state so the guest sees press/
   drag/release, and the guest tells the host while its menu is up so
   header clicks reach the menu backdrop instead of starting a window
