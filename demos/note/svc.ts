@@ -21,9 +21,10 @@
 //   {t:"ime", s, c}            IME composition: preedit text + caret char
 //                              index within it (null clears); commits
 //                              arrive as plain {t:"ch"} lines
-//   {t:"mouse", x, y, d}       pointer moved / pressed / released — d is
-//                              the primary-button state, and a line is sent
-//                              on every press/release even without movement
+//   {t:"mouse", x, y, d, sh}   pointer moved / pressed / released — d is
+//                              the primary-button state (a line is sent on
+//                              every press/release even without movement),
+//                              sh the shift modifier (extends selections)
 //   {t:"scroll", dy}           wheel delta in logical px
 //
 // guest → host lines:
@@ -48,6 +49,8 @@ export interface HostEvent {
   y?: number;
   /** Primary mouse button held ("mouse" events). */
   d?: boolean;
+  /** Shift held (mouse presses and named keys) — extends selections. */
+  sh?: boolean;
   dy?: number;
   /** IME preedit caret (char index into s), null when composition ends. */
   c?: number | null;

@@ -73,6 +73,8 @@ struct NoteGame {
     script: Vec<(u64, ScriptEvent)>,
     /// Scripted click: CIRCLE held until this tick.
     script_click_until: u64,
+    /// Scripted shift modifier (held while a ShiftClick plays out).
+    script_shift: bool,
     /// Scripted drag in flight: (x0, y0, x1, y1, start tick).
     script_drag: Option<(f32, f32, f32, f32, u64)>,
     quit_after: Option<u64>,
@@ -80,6 +82,7 @@ struct NoteGame {
 
 enum ScriptEvent {
     Click(f32, f32),
+    ShiftClick(f32, f32),
     /// Press at (x0,y0), sweep to (x1,y1) over a few ticks, release.
     Drag(f32, f32, f32, f32),
     Type(String),
@@ -117,6 +120,7 @@ impl NoteGame {
             ticks: 0,
             script: Vec::new(),
             script_click_until: 0,
+            script_shift: false,
             script_drag: None,
             quit_after: None,
         }
@@ -168,6 +172,7 @@ impl NoteGame {
     fn forward_edits(&mut self, input: &Input) {
         // Batch runs of typed chars into one line; ⌘-chords are shortcuts,
         // not text.
+        let shift = input.key_down(KeyCode::ShiftLeft) || input.key_down(KeyCode::ShiftRight);
         let mut chars = String::new();
         for key in input.edits() {
             let named = match key {
@@ -196,7 +201,7 @@ impl NoteGame {
                 self.ensure_text(&batch);
                 self.svc(serde_json::json!({"t": "ch", "s": batch}));
             }
-            self.svc(serde_json::json!({"t": "key", "k": named}));
+            self.svc(serde_json::json!({"t": "key", "k": named, "sh": shift}));
         }
         if !chars.is_empty() {
             self.ensure_text(&chars);
@@ -245,6 +250,15 @@ impl NoteGame {
                     // a few ticks — the same order a real pointer produces.
                     self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false}));
                     self.script_click_until = self.ticks + 4;
+                    self.script_shift = false;
+                    self.script_drag = Some((x, y, x, y, self.ticks));
+                }
+                ScriptEvent::ShiftClick(x, y) => {
+                    self.svc(
+                        serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false, "sh": true}),
+                    );
+                    self.script_click_until = self.ticks + 4;
+                    self.script_shift = true;
                     self.script_drag = Some((x, y, x, y, self.ticks));
                 }
                 ScriptEvent::Drag(x0, y0, x1, y1) => {
@@ -357,6 +371,7 @@ impl FlatWidget for NoteGame {
             let t = ((self.ticks.saturating_sub(start)) as f32 / DRAG_TICKS as f32).min(1.0);
             if t >= 1.0 && !script_down {
                 self.script_drag = None;
+                self.script_shift = false;
             }
             Some((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t))
         } else {
@@ -365,18 +380,23 @@ impl FlatWidget for NoteGame {
                 .map(|c| (c.x / scale as f32, c.y / scale as f32))
                 .or(self.last_mouse.map(|(x, y, _)| (x, y)))
         };
+        let shift = input.key_down(KeyCode::ShiftLeft)
+            || input.key_down(KeyCode::ShiftRight)
+            || self.script_shift;
         if let Some((x, y)) = pos {
             if pressed_edge && !level_down {
                 // The whole click fit inside this tick: deliver both edges
                 // in order so the guest still runs press → release.
-                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": true}));
-                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false}));
+                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": true, "sh": shift}));
+                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false, "sh": shift}));
                 self.last_mouse = Some((x, y, false));
             } else {
                 let m = (x, y, mouse_down);
                 if self.last_mouse != Some(m) {
                     self.last_mouse = Some(m);
-                    self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": mouse_down}));
+                    self.svc(
+                        serde_json::json!({"t": "mouse", "x": x, "y": y, "d": mouse_down, "sh": shift}),
+                    );
                 }
             }
         }
@@ -603,6 +623,14 @@ fn parse_args() -> Result<Args> {
                     .ok_or_else(|| anyhow!("--click wants x,y@frame"))?;
                 args.script
                     .push((frame, ScriptEvent::Click(x.trim().parse()?, y.trim().parse()?)));
+            }
+            "--shift-click" => {
+                let (frame, spec) = at(&val("--shift-click")?, "--shift-click")?;
+                let (x, y) = spec
+                    .split_once(',')
+                    .ok_or_else(|| anyhow!("--shift-click wants x,y@frame"))?;
+                args.script
+                    .push((frame, ScriptEvent::ShiftClick(x.trim().parse()?, y.trim().parse()?)));
             }
             "--drag" => {
                 let (frame, spec) = at(&val("--drag")?, "--drag")?;

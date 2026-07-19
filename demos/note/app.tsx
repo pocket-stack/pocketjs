@@ -286,6 +286,7 @@ export default function Note(): ReturnType<typeof View> {
   const enterEdit = (offset: number) => {
     setMenuOpen(false);
     setVsel(null);
+    pvAnchor = null;
     const pos = Math.max(0, Math.min(offset, doc().length));
     setCaret(pos);
     setAnchor(pos);
@@ -305,7 +306,40 @@ export default function Note(): ReturnType<typeof View> {
     rehover = true;
   };
 
-  const handleKey = (k: string) => {
+  const handleKey = (k: string, shift = false) => {
+    // Shift + navigation extends the selection: the caret moves, the
+    // anchor holds.
+    if (shift && editing() && !preedit()) {
+      const extend = (pos: number) => {
+        setCaret(Math.max(0, Math.min(pos, doc().length)));
+        breakRun(history);
+        revealCaret();
+      };
+      switch (k) {
+        case "Left":
+          extend(caret() - 1);
+          return;
+        case "Right":
+          extend(caret() + 1);
+          return;
+        case "Home":
+          extend(lineStart(dlines(), caret()));
+          return;
+        case "End":
+          extend(lineEnd(dlines(), caret()));
+          return;
+        case "Up":
+        case "Down": {
+          if (!goalSticky) {
+            goalX = caretPx();
+            goalSticky = true;
+          }
+          extend(moveVertical(doc(), dlines(), caret(), k === "Up" ? -1 : 1, goalX, bodyWidth));
+          goalSticky = true;
+          return;
+        }
+      }
+    }
     if (k === "Escape") {
       if (menuOpen()) setMenuOpen(false);
       else if (!editing() && vsel()) setVsel(null);
@@ -401,6 +435,8 @@ export default function Note(): ReturnType<typeof View> {
   // Chrome (toggle, menu) rides the framework's hover-focus + CIRCLE press;
   // content needs press/drag/release, which BTN bits can't carry.
   let press: { x: number; y: number; dragged: boolean; content: boolean } | null = null;
+  /** Preview selection anchor — persists across clicks so shift-click
+   *  extends from the last plain click. */
   let pvAnchor: RowPos | null = null;
   let prevDown = false;
 
@@ -414,16 +450,22 @@ export default function Note(): ReturnType<typeof View> {
     return { row, ch: rows.length ? rowChFromX(rows[row], x - marginX(), textWidth) : 0 };
   };
 
-  const pointerDown = (x: number, y: number) => {
+  const pointerDown = (x: number, y: number, shift: boolean) => {
     const content = y >= HEADER_H && !menuOpen() && !preedit();
     press = { x, y, dragged: false, content };
     if (!content) return;
     if (editing()) {
       const pos = editPosAt(x, y);
       setCaret(pos);
-      setAnchor(pos);
+      // Shift-click keeps the anchor: the span from the previous caret
+      // (or selection anchor) to the clicked point becomes the selection.
+      if (!shift) setAnchor(pos);
       breakRun(history);
       goalSticky = false;
+    } else if (shift && pvAnchor) {
+      const here = viewPosAt(x, y);
+      const [start, end] = cmpPos(pvAnchor, here) <= 0 ? [pvAnchor, here] : [here, pvAnchor];
+      setVsel({ start, end });
     } else {
       setVsel(null);
       pvAnchor = viewPosAt(x, y);
@@ -444,10 +486,10 @@ export default function Note(): ReturnType<typeof View> {
   };
   const pointerUp = (_x: number, _y: number) => {
     // Preview clicks are inert (a markdown preview doesn't react to
-    // clicks — the I-beam toggle and the menu enter edit mode); the
+    // clicks — the pencil toggle and the menu enter edit mode); the
     // pointer-down already placed the caret / cleared the selection.
+    // pvAnchor survives the release so a later shift-click extends.
     press = null;
-    pvAnchor = null;
   };
 
   const handleEvent = (ev: HostEvent) => {
@@ -457,6 +499,7 @@ export default function Note(): ReturnType<typeof View> {
         setVp({ w: ev.w ?? 480, h: ev.h ?? 272 });
         resizeViewport(ev.w ?? 480, ev.h ?? 272);
         setVsel(null); // row geometry changed under the selection
+        pvAnchor = null;
         setScrollV(Math.max(0, Math.min(maxScrollV(), scrollV())));
         setScrollE(Math.max(0, Math.min(maxScrollE(), scrollE())));
         break;
@@ -494,13 +537,13 @@ export default function Note(): ReturnType<typeof View> {
         break;
       }
       case "key":
-        if (ev.k) handleKey(ev.k);
+        if (ev.k) handleKey(ev.k, ev.sh ?? false);
         break;
       case "mouse": {
         const p = { x: ev.x ?? -1, y: ev.y ?? -1 };
         const down = ev.d ?? false;
         setMouse(p);
-        if (down && !prevDown) pointerDown(p.x, p.y);
+        if (down && !prevDown) pointerDown(p.x, p.y, ev.sh ?? false);
         else if (down) pointerMove(p.x, p.y, true);
         if (!down && prevDown) pointerUp(p.x, p.y);
         prevDown = down;
