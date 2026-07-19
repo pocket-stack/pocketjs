@@ -1,0 +1,26 @@
+# pocket-drive — streamed open-data city driving on the pocket3d GE backend.
+#
+# A Tesla-dash-style night drive through a real city: the cooker turns
+# OpenStreetMap footprints + roads into a tiled `.pdrv` mesh pack, and this
+# EBOOT streams tiles in around the car as it follows a baked route.
+#
+# STANDALONE CRATE (excluded from the pocket3d workspace; cargo-psp only).
+# Build + run under PPSSPP with `bun scripts/pocket-drive.ts` from the repo
+# root. No QuickJS, no UI core — pure 3D substrate, like gu-demo.
+
+[package]
+name = "pocket-drive"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[features]
+# On-screen streaming/perf stats every 300 frames (corrupts captures; for
+# PSPLINK bring-up sessions).
+stats = []
+
+[dependencies]
+psp = { git = "https://github.com/pocket-stack/rust-psp.git", rev = "2cbaf8c9bc72569c76240a1d9743de10731e5f6b", features = ["abort-only"] }
+pocket3d-gu = { path = "../pocket3d-gu" }
+glam = { version = "0.33", default-features = false, features = ["libm"] }
+libm = "0.2"

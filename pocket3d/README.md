@@ -33,8 +33,12 @@ pocket3d/
 │   │                      # entities, clipnode hull tracing (no GPU deps)
 │   ├── pocket-mod/        # guest hosting: one QuickJS realm, mounted surfaces,
 │   │                      # one guest turn per tick (the mod-runtime mechanism)
-│   └── pocket-ui-wgpu/    # the PocketJS `ui` surface on this base: pak feeding,
-│                          # HostOps for the guest, DrawList → wgpu, Blit compositor
+│   ├── pocket-ui-wgpu/    # the PocketJS `ui` surface on this base: pak feeding,
+│   │                      # HostOps for the guest, DrawList → wgpu, Blit compositor
+│   ├── pocket3d-gu/       # sceGu (PSP GE) renderer backend for cooked worlds
+│   ├── gu-demo/           # PSP bring-up EBOOT: fly a camera through a .p3d map
+│   └── pocket-drive/      # streamed open-data city drive on PSP (OSM → .pdrv
+│                          # tiles → async memory-stick streaming; see its README)
 └── examples/
     └── uihost/            # PocketJS UI demos in a native macOS window
 ```
