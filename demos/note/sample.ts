@@ -26,9 +26,10 @@ cargo run -p note-widget
 
 ---
 
-1. Click the text to edit (Esc or DONE to finish)
-2. Drag the header to move, the corner to resize
-3. The dots menu has theme, reset and close
+1. Click the text to edit; the eye toggles back to preview
+2. Drag to select in either mode; Cmd-Z / Shift-Cmd-Z undo and redo
+3. Drag the header to move, the corner to resize
+4. The dots menu has theme, reset and close
 
 *Idle costs nothing: no dirt, no frame.*
 `;

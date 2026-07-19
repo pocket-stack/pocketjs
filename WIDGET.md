@@ -120,7 +120,15 @@ one `render_words_scaled` pass on dirty frames. It exercises everything the
 - **Text editing without an OSK.** The `pocket3d` `Input` grew a per-frame
   edit-keystroke stream (chars with layout applied, named keys, repeats)
   and a wheel accumulator; the guest's editor (measured soft wrap, caret
-  math, click-to-caret) is pure JS over `measureText`, unit-tested in bun.
+  math, click-to-caret, drag selection, a coalescing undo/redo stack
+  driven by ⌘Z/⇧⌘Z) is pure JS over `measureText`, unit-tested in bun.
+  Preview mode gets browser-style drag selection over the rendered rows
+  (select.ts — (row, char) space, boundary rows clipped, code blocks
+  atomic); a clean click still drops into the editor, a drag never does.
+  Mouse lines carry the primary-button state so the guest sees press/
+  drag/release, and the guest tells the host while its menu is up so
+  header clicks reach the menu backdrop instead of starting a window
+  drag.
 
 ## 3. Input: from meshes to BTN bits
 

@@ -31,12 +31,14 @@ use winit::keyboard::KeyCode;
 
 /// Header strip height in logical px — mirrors HEADER_H in demos/note/app.tsx.
 const HEADER_H: f32 = 30.0;
-/// Header pixels reserved for the EDIT/••• buttons (not a drag region).
-const HEADER_BUTTONS_W: f32 = 86.0;
+/// Header pixels reserved for the toggle/••• buttons (not a drag region).
+const HEADER_BUTTONS_W: f32 = 112.0;
 /// Resize grip square in the bottom-right corner, logical px.
 const GRIP: f32 = 18.0;
 /// The spec CIRCLE bit — the framework's onPress button.
 const BTN_CIRCLE: u32 = 0x2000;
+/// Ticks a scripted drag takes from press to its final position.
+const DRAG_TICKS: u64 = 8;
 
 struct NoteGame {
     surface: UiSurface,
@@ -51,7 +53,12 @@ struct NoteGame {
     dirty: bool,
     exit: bool,
     booted: bool,
-    last_mouse: Option<(f32, f32)>,
+    /// Last (x, y, primary-down) sent over svc — mouse lines go out on any
+    /// change, including press/release without movement.
+    last_mouse: Option<(f32, f32, bool)>,
+    /// The guest's ••• menu is up: stop claiming header drags/resizes so
+    /// clicks anywhere reach the backdrop and close it.
+    guest_menu_open: bool,
     /// Window scale factor from the latest tick (cursor px → logical).
     scale: f64,
     ticks: u64,
@@ -59,11 +66,15 @@ struct NoteGame {
     script: Vec<(u64, ScriptEvent)>,
     /// Scripted click: CIRCLE held until this tick.
     script_click_until: u64,
+    /// Scripted drag in flight: (x0, y0, x1, y1, start tick).
+    script_drag: Option<(f32, f32, f32, f32, u64)>,
     quit_after: Option<u64>,
 }
 
 enum ScriptEvent {
     Click(f32, f32),
+    /// Press at (x0,y0), sweep to (x1,y1) over a few ticks, release.
+    Drag(f32, f32, f32, f32),
     Type(String),
     Key(String),
     Scroll(f32),
@@ -83,10 +94,12 @@ impl NoteGame {
             exit: false,
             booted: false,
             last_mouse: None,
+            guest_menu_open: false,
             scale: 1.0,
             ticks: 0,
             script: Vec::new(),
             script_click_until: 0,
+            script_drag: None,
             quit_after: None,
         }
     }
@@ -170,8 +183,14 @@ impl NoteGame {
                 ScriptEvent::Click(x, y) => {
                     // Hover first (focuses the target), then hold CIRCLE for
                     // a few ticks — the same order a real pointer produces.
-                    self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y}));
+                    self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false}));
                     self.script_click_until = self.ticks + 4;
+                    self.script_drag = Some((x, y, x, y, self.ticks));
+                }
+                ScriptEvent::Drag(x0, y0, x1, y1) => {
+                    self.svc(serde_json::json!({"t": "mouse", "x": x0, "y": y0, "d": false}));
+                    self.script_click_until = self.ticks + DRAG_TICKS + 2;
+                    self.script_drag = Some((x0, y0, x1, y1, self.ticks));
                 }
                 ScriptEvent::Type(s) => self.svc(serde_json::json!({"t": "ch", "s": s})),
                 ScriptEvent::Key(k) => self.svc(serde_json::json!({"t": "key", "k": k})),
@@ -200,6 +219,12 @@ impl FlatWidget for NoteGame {
         {
             self.exit = true;
         }
+        // ⌘Z / ⇧⌘Z → the guest's undo/redo (chars are suppressed under ⌘,
+        // so the chord travels as a named key).
+        if input.super_down() && input.key_pressed(KeyCode::KeyZ) {
+            let redo = input.key_down(KeyCode::ShiftLeft) || input.key_down(KeyCode::ShiftRight);
+            self.svc(serde_json::json!({"t": "key", "k": if redo { "Redo" } else { "Undo" }}));
+        }
         if let Some(limit) = self.quit_after
             && self.ticks >= limit
         {
@@ -225,20 +250,36 @@ impl FlatWidget for NoteGame {
         if scroll.y != 0.0 {
             self.svc(serde_json::json!({"t": "scroll", "dy": scroll.y / scale as f32}));
         }
-        if let Some(cursor) = input.cursor() {
-            let m = (cursor.x / scale as f32, cursor.y / scale as f32);
-            if self.last_mouse != Some(m) {
-                self.last_mouse = Some(m);
-                self.svc(serde_json::json!({"t": "mouse", "x": m.0, "y": m.1}));
-            }
-        }
-
         // Headless script events (windowed runs have none).
         if !self.script.is_empty() {
             self.run_script();
         }
-        let mouse_down = input.mouse_button_down(winit::event::MouseButton::Left)
-            || self.ticks < self.script_click_until;
+        let script_down = self.ticks < self.script_click_until;
+        let mouse_down =
+            input.mouse_button_down(winit::event::MouseButton::Left) || script_down;
+
+        // Pointer → svc: one line per (position, button) change, so the
+        // guest sees press and release edges even without movement. A
+        // release with the cursor gone reuses the last known position.
+        let pos = if let Some((x0, y0, x1, y1, start)) = self.script_drag {
+            let t = ((self.ticks.saturating_sub(start)) as f32 / DRAG_TICKS as f32).min(1.0);
+            if t >= 1.0 && !script_down {
+                self.script_drag = None;
+            }
+            Some((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t))
+        } else {
+            input
+                .cursor()
+                .map(|c| (c.x / scale as f32, c.y / scale as f32))
+                .or(self.last_mouse.map(|(x, y, _)| (x, y)))
+        };
+        if let Some((x, y)) = pos {
+            let m = (x, y, mouse_down);
+            if self.last_mouse != Some(m) {
+                self.last_mouse = Some(m);
+                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": mouse_down}));
+            }
+        }
 
         // The guest turn (Law 3: exactly one per tick). Clicks are CIRCLE —
         // hover already focused what's under the pointer.
@@ -252,6 +293,7 @@ impl FlatWidget for NoteGame {
                 Ok(v) => match v["t"].as_str() {
                     Some("save") => self.save(v["text"].as_str().unwrap_or_default()),
                     Some("quit") => self.exit = true,
+                    Some("menu") => self.guest_menu_open = v["open"].as_bool().unwrap_or(false),
                     other => log::warn!("note-widget: unknown intent {other:?}"),
                 },
                 Err(e) => log::warn!("note-widget: bad svc line from guest: {e}"),
@@ -303,11 +345,19 @@ impl FlatWidget for NoteGame {
 
     fn drag_at(&mut self, cursor: Vec2) -> bool {
         // The header is the move handle, minus the buttons on its right.
+        // While the guest's menu is up, nothing is a drag region — clicks
+        // must reach the backdrop so it can close.
+        if self.guest_menu_open {
+            return false;
+        }
         let (x, y) = (cursor.x / self.scale as f32, cursor.y / self.scale as f32);
         y < HEADER_H && x < self.logical.0 as f32 - HEADER_BUTTONS_W
     }
 
     fn resize_at(&mut self, cursor: Vec2) -> bool {
+        if self.guest_menu_open {
+            return false;
+        }
         let (x, y) = (cursor.x / self.scale as f32, cursor.y / self.scale as f32);
         x > self.logical.0 as f32 - GRIP && y > self.logical.1 as f32 - GRIP
     }
@@ -388,6 +438,27 @@ fn parse_args() -> Result<Args> {
                     .ok_or_else(|| anyhow!("--click wants x,y@frame"))?;
                 args.script
                     .push((frame, ScriptEvent::Click(x.trim().parse()?, y.trim().parse()?)));
+            }
+            "--drag" => {
+                let (frame, spec) = at(&val("--drag")?, "--drag")?;
+                let (from, to) = spec
+                    .split_once('-')
+                    .ok_or_else(|| anyhow!("--drag wants x0,y0-x1,y1@frame"))?;
+                let (x0, y0) = from
+                    .split_once(',')
+                    .ok_or_else(|| anyhow!("--drag wants x0,y0-x1,y1@frame"))?;
+                let (x1, y1) = to
+                    .split_once(',')
+                    .ok_or_else(|| anyhow!("--drag wants x0,y0-x1,y1@frame"))?;
+                args.script.push((
+                    frame,
+                    ScriptEvent::Drag(
+                        x0.trim().parse()?,
+                        y0.trim().parse()?,
+                        x1.trim().parse()?,
+                        y1.trim().parse()?,
+                    ),
+                ));
             }
             "--type" => {
                 let (frame, s) = at(&val("--type")?, "--type")?;

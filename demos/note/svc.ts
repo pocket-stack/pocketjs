@@ -15,12 +15,16 @@
 //   {t:"ch", s}                typed characters (batched, layout applied)
 //   {t:"key", k}               named key: Backspace Delete Enter Tab Left
 //                              Right Up Down Home End PageUp PageDown Escape
-//   {t:"mouse", x, y}          pointer moved (logical px)
+//   {t:"mouse", x, y, d}       pointer moved / pressed / released — d is
+//                              the primary-button state, and a line is sent
+//                              on every press/release even without movement
 //   {t:"scroll", dy}           wheel delta in logical px
 //
 // guest → host lines:
 //   {t:"save", text}           persist the document (debounced by the app)
 //   {t:"quit"}                 close the widget
+//   {t:"menu", open}           the ••• menu is up — the host stops claiming
+//                              header drags so backdrop clicks can close it
 
 import { getOps } from "@pocketjs/framework";
 
@@ -33,13 +37,15 @@ export interface HostEvent {
   k?: string;
   x?: number;
   y?: number;
+  /** Primary mouse button held ("mouse" events). */
+  d?: boolean;
   dy?: number;
 }
 
 export interface Svc {
   /** Drain and parse this frame's host lines (call once per frame). */
   poll(): HostEvent[];
-  send(line: { t: "save"; text: string } | { t: "quit" }): void;
+  send(line: { t: "save"; text: string } | { t: "quit" } | { t: "menu"; open: boolean }): void;
 }
 
 /** Probe the channel; null = standalone (no widget host on the other end). */

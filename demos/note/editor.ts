@@ -161,3 +161,106 @@ export function lineEnd(lines: DLine[], caret: number): number {
   if (line.soft && line.end > line.start) return line.end - 1;
   return line.end;
 }
+
+// ---------------------------------------------------------------------------
+// Selection: {doc, caret, anchor} — anchor == caret means no selection.
+// Every mutation collapses the selection; the app renders [lo, hi) rects.
+// ---------------------------------------------------------------------------
+
+export interface SelEdit {
+  doc: string;
+  caret: number;
+  anchor: number;
+}
+
+/** Normalized [lo, hi) selection bounds. */
+export function selBounds(s: SelEdit): [number, number] {
+  return s.caret <= s.anchor ? [s.caret, s.anchor] : [s.anchor, s.caret];
+}
+
+export function hasSelection(s: SelEdit): boolean {
+  return s.caret !== s.anchor;
+}
+
+/** Replace the selection (or insert at the caret) with `text`. */
+export function typeText(s: SelEdit, text: string): SelEdit {
+  const [lo, hi] = selBounds(s);
+  const caret = lo + text.length;
+  return { doc: s.doc.slice(0, lo) + text + s.doc.slice(hi), caret, anchor: caret };
+}
+
+/** Backspace: selection deletes it; a bare caret eats one char left. */
+export function backspaceSel(s: SelEdit): SelEdit {
+  if (hasSelection(s)) return typeText(s, "");
+  if (s.caret === 0) return s;
+  return {
+    doc: s.doc.slice(0, s.caret - 1) + s.doc.slice(s.caret),
+    caret: s.caret - 1,
+    anchor: s.caret - 1,
+  };
+}
+
+/** Forward delete: selection deletes it; a bare caret eats one char right. */
+export function deleteSel(s: SelEdit): SelEdit {
+  if (hasSelection(s)) return typeText(s, "");
+  if (s.caret >= s.doc.length) return s;
+  return { doc: s.doc.slice(0, s.caret) + s.doc.slice(s.caret + 1), caret: s.caret, anchor: s.caret };
+}
+
+// ---------------------------------------------------------------------------
+// Undo/redo: snapshot stack with run coalescing. Documents are note-sized,
+// so whole-doc snapshots beat operational inverses on every axis that
+// matters here (simplicity, correctness under selection edits).
+// ---------------------------------------------------------------------------
+
+/** Coalescing class of an edit: consecutive "type"s (typing a run) and
+ *  consecutive "delete"s (holding backspace) merge into one undo step;
+ *  "other" never merges. */
+export type EditKind = "type" | "delete" | "other";
+
+export interface History {
+  past: SelEdit[];
+  future: SelEdit[];
+  /** The kind of the edit that produced the CURRENT state (coalescing). */
+  last: EditKind | null;
+}
+
+export const HISTORY_LIMIT = 200;
+
+export function emptyHistory(): History {
+  return { past: [], future: [], last: null };
+}
+
+/** Record `before` as an undo point for an edit of `kind`. Coalesces runs:
+ *  if the previous edit had the same mergeable kind, the earlier snapshot
+ *  already covers this run. Any edit clears the redo stack. */
+export function recordEdit(h: History, before: SelEdit, kind: EditKind): void {
+  h.future.length = 0;
+  const merge = kind !== "other" && h.last === kind;
+  if (!merge) {
+    h.past.push(before);
+    if (h.past.length > HISTORY_LIMIT) h.past.shift();
+  }
+  h.last = kind;
+}
+
+/** Caret moved by navigation/click — the next typed char starts a new run. */
+export function breakRun(h: History): void {
+  h.last = null;
+}
+
+export function undo(h: History, current: SelEdit): SelEdit | null {
+  const state = h.past.pop();
+  if (!state) return null;
+  h.future.push(current);
+  h.last = null;
+  return state;
+}
+
+export function redo(h: History, current: SelEdit): SelEdit | null {
+  const state = h.future.pop();
+  if (!state) return null;
+  h.past.push(current);
+  h.last = null;
+  return state;
+}
