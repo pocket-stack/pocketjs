@@ -75,6 +75,14 @@ are pickable parts that feed real BTN bits — the same unmodified bundle
 uihost runs, inside a handheld you can click.
 
 ```sh
+bun run widget                   # from the repo root: build bundle + binary, launch
+bun run widget im                # any demo
+bun run widget --proof           # headless acceptance (scripted taps → Count: 2)
+```
+
+Or by hand:
+
+```sh
 bun scripts/build.ts hero-main   # from the repo root
 cd pocket3d
 cargo run -p handheld -- --app hero-main
