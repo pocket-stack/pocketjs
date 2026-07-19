@@ -155,6 +155,13 @@ export function selectedText(rows: readonly ViewRow[], start: RowPos, end: RowPo
       text = rowText(row);
       if (r === end.row) text = text.slice(0, end.ch);
       if (r === start.row) text = text.slice(start.ch);
+      // List markers are furniture for hit-testing, but content for a
+      // copy: a numbered point pastes as "1. …" when the selection covers
+      // the line start (matching what the preview shows).
+      if (r > start.row || start.ch === 0) {
+        const marker = row.segs.find((seg) => seg.style === "marker");
+        if (marker) text = marker.text + " " + text;
+      }
     }
     if (!first) {
       // A soft-wrapped continuation re-joins with the space the wrap

@@ -13,7 +13,7 @@
 // is a read-only note scrolled by d-pad — unmodified-app base case.
 
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { Focusable, Portal, Text, View } from "@pocketjs/framework/components";
+import { Focusable, Image, Portal, Text, View } from "@pocketjs/framework/components";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN, focusNode, hitFocusable } from "@pocketjs/framework/input";
 import { resizeViewport, type NodeMirror } from "@pocketjs/framework";
@@ -565,7 +565,10 @@ export default function Note(): ReturnType<typeof View> {
               if (editing()) leaveEdit();
             }}
           >
-            <EyeIcon color={() => (!editing() ? ink().accent : ink().dim)} bg={ink} dark={dark} />
+            <Image
+              src={dark() ? "icon-eye-dark.svg" : "icon-eye-light.svg"}
+              style={{ width: 16, height: 16 }}
+            />
           </ToggleSeg>
           <ToggleSeg
             active={editing}
@@ -575,7 +578,10 @@ export default function Note(): ReturnType<typeof View> {
               if (!editing()) enterEdit(caret());
             }}
           >
-            <IBeamIcon color={() => (editing() ? ink().accent : ink().dim)} />
+            <Image
+              src={dark() ? "icon-edit-dark.svg" : "icon-edit-light.svg"}
+              style={{ width: 16, height: 16 }}
+            />
           </ToggleSeg>
         </View>
         <Focusable
@@ -790,46 +796,6 @@ function ToggleSeg(props: {
     >
       {props.children}
     </Focusable>
-  );
-}
-
-/** Preview: an eye — pill iris + pupil. */
-function EyeIcon(props: {
-  color: () => string;
-  bg: () => Ink;
-  dark: () => boolean;
-}): ReturnType<typeof View> {
-  return (
-    <View class="relative w-[16] h-[16]">
-      <View
-        class="absolute rounded-full w-[14] h-[10]"
-        style={{ insetL: 1, insetT: 3, bgColor: props.color() }}
-      />
-      <View
-        class="absolute rounded-full w-[4] h-[4]"
-        style={{ insetL: 6, insetT: 6, bgColor: props.dark() ? "#11151b" : "#fbfaf6" }}
-      />
-    </View>
-  );
-}
-
-/** Edit: an I-beam text cursor. */
-function IBeamIcon(props: { color: () => string }): ReturnType<typeof View> {
-  return (
-    <View class="relative w-[16] h-[16]">
-      <View
-        class="absolute rounded-sm"
-        style={{ insetL: 5, insetT: 1, width: 6, height: 2, bgColor: props.color() }}
-      />
-      <View
-        class="absolute"
-        style={{ insetL: 7, insetT: 2, width: 2, height: 12, bgColor: props.color() }}
-      />
-      <View
-        class="absolute rounded-sm"
-        style={{ insetL: 5, insetT: 13, width: 6, height: 2, bgColor: props.color() }}
-      />
-    </View>
   );
 }
 

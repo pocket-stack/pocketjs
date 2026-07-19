@@ -6,6 +6,7 @@ import {
   createEffect,
   createRenderEffect,
   createSignal,
+  mergeProps,
   onCleanup,
   onMount,
   Show as SolidShow,
@@ -53,10 +54,11 @@ function resolveActive(active: boolean | (() => boolean) | undefined): boolean {
 export interface ScreenProps extends ViewProps {}
 
 export function Screen(props: ScreenProps): SolidJSX.Element {
-  return View({
-    ...props,
-    class: props.class ?? "relative flex-col w-full h-full bg-slate-50 overflow-hidden",
-  });
+  // mergeProps keeps caller prop GETTERS live — an object spread would
+  // read them once and freeze every dynamic class/style at mount.
+  return View(
+    mergeProps({ class: "relative flex-col w-full h-full bg-slate-50 overflow-hidden" }, props),
+  );
 }
 
 export interface FocusableProps extends ViewProps {
@@ -64,7 +66,10 @@ export interface FocusableProps extends ViewProps {
 }
 
 export function Focusable(props: FocusableProps): SolidJSX.Element {
-  return View({ ...props, focusable: true });
+  // mergeProps, not object spread: spreading reads the compiled prop
+  // getters once and freezes dynamic class/style (the reactive-leak class
+  // of bug this file must never reintroduce).
+  return View(mergeProps(props, { focusable: true }) as ViewProps);
 }
 
 export interface NamedProps {
@@ -275,12 +280,15 @@ export interface ActionBarProps extends ViewProps {}
 export function ActionBar(props: ActionBarProps): SolidJSX.Element {
   return Portal({
     children: () =>
-      View({
-        ...props,
-        class:
-          props.class ??
-          "absolute left-3 right-3 bottom-3 flex-row items-center justify-between px-2 py-1 rounded-lg shadow-md bg-white border-slate-200",
-      }),
+      View(
+        mergeProps(
+          {
+            class:
+              "absolute left-3 right-3 bottom-3 flex-row items-center justify-between px-2 py-1 rounded-lg shadow-md bg-white border-slate-200",
+          },
+          props,
+        ),
+      ),
   });
 }
 

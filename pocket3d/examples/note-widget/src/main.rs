@@ -272,8 +272,13 @@ impl FlatWidget for NoteGame {
             self.run_script();
         }
         let script_down = self.ticks < self.script_click_until;
-        let mouse_down =
+        // Down-edge OR level: a fast click can press AND release inside one
+        // 60 Hz tick — level sampling alone would drop it entirely (the
+        // guest would see no press, no CIRCLE, and a stale selection).
+        let pressed_edge = input.mouse_button_pressed(winit::event::MouseButton::Left);
+        let level_down =
             input.mouse_button_down(winit::event::MouseButton::Left) || script_down;
+        let mouse_down = level_down || pressed_edge;
 
         // Pointer → svc: one line per (position, button) change, so the
         // guest sees press and release edges even without movement. A
@@ -291,10 +296,18 @@ impl FlatWidget for NoteGame {
                 .or(self.last_mouse.map(|(x, y, _)| (x, y)))
         };
         if let Some((x, y)) = pos {
-            let m = (x, y, mouse_down);
-            if self.last_mouse != Some(m) {
-                self.last_mouse = Some(m);
-                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": mouse_down}));
+            if pressed_edge && !level_down {
+                // The whole click fit inside this tick: deliver both edges
+                // in order so the guest still runs press → release.
+                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": true}));
+                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false}));
+                self.last_mouse = Some((x, y, false));
+            } else {
+                let m = (x, y, mouse_down);
+                if self.last_mouse != Some(m) {
+                    self.last_mouse = Some(m);
+                    self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": mouse_down}));
+                }
             }
         }
 

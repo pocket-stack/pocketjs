@@ -365,10 +365,29 @@ describe("preview selection", () => {
   });
 
   test("selectedText: boundary slices, hr skipped, code atomic", () => {
+    // rows[1] is a bullet item whose selection covers the line start —
+    // the rendered marker rides along ("• next"), like the numbered "1."
+    // a user expects to see in a paste.
     expect(selectedText(rows, { row: 0, ch: 5 }, { row: 3, ch: 0 })).toBe(
-      "text\nnext\ncode line",
+      "text\n• next\ncode line",
     );
     expect(selectedText(rows, { row: 0, ch: 2 }, { row: 0, ch: 6 })).toBe("ld t");
+  });
+
+  test("selectedText: markers only when the line start is covered", () => {
+    const li = [
+      lineRow(0, 18, [
+        { text: "1.", x: -18, slot: 1, style: "marker" },
+        { text: "first", x: 0, slot: 1, style: "plain" },
+      ]),
+      lineRow(20, 18, [
+        { text: "2.", x: -18, slot: 1, style: "marker" },
+        { text: "second", x: 0, slot: 1, style: "plain" },
+      ]),
+    ];
+    expect(selectedText(li, { row: 0, ch: 0 }, { row: 1, ch: 6 })).toBe("1. first\n2. second");
+    // Mid-line start: the first row's marker is not part of the selection.
+    expect(selectedText(li, { row: 0, ch: 3 }, { row: 1, ch: 6 })).toBe("st\n2. second");
   });
 
   test("selectedText re-joins soft-wrapped rows with a space", () => {
