@@ -1,13 +1,15 @@
 // site/bake-demo-wall.ts — bakes the landing hero's "demo wall": every demo
-// and satellite-project recording published on the blog, tiled into one
-// looping background video.
+// tiled into one looping background video.
 //
 //   bun site/bake-demo-wall.ts
 //
-// Sources are recordings that already exist — engine-rendered GIF loops from
-// site/assets/blog/ plus the real-hardware captures the blog serves from R2
-// (downloaded once into site/.cache/demo-wall/, which is gitignored). The two
-// outputs ARE committed, like the old hero mp4 was:
+// Every stream is ENGINE OUTPUT — no camera, no hands, no hardware (those
+// captures are social-media material, not landing-page material): headless
+// sim recordings of the in-repo demos (site/record-sim-clips.ts, recorded on
+// demand into gitignored site/.cache/demo-wall/sim/), the engine-rendered
+// GIF loops from site/assets/blog/, and the Pocket Character desktop-widget
+// screen capture from R2. The two outputs ARE committed, like the old hero
+// mp4 was:
 //
 //   site/assets/pocketjs-demo-wall.mp4   4x4 wall of 480x272 tiles, 24 s loop
 //   site/assets/pocketjs-demo-wall.jpg   poster frame for first paint
@@ -18,6 +20,7 @@
 
 import { $ } from "bun";
 import { existsSync, mkdirSync } from "node:fs";
+import { ensureSimClip } from "./record-sim-clips.ts";
 
 const SITE = new URL(".", import.meta.url).pathname;
 const ROOT = SITE + "../";
@@ -35,7 +38,8 @@ const DUR = 24; // seconds — every tile hard-cuts together at the loop point
 const FPS = 24;
 const CRF = 32; // background texture, not a feature video — bias small
 
-// The real-hardware captures the blog posts embed from R2.
+// The Pocket Character desktop-widget capture the blog embeds from R2 (a
+// clean screen recording — the only non-repo stream on the wall).
 const R2 = "https://pub-ddde9ba138d04a9a9f922aa1fda6f855.r2.dev/pocketjs/";
 async function r2(name: string): Promise<string> {
   const path = CACHE + name;
@@ -48,45 +52,41 @@ async function r2(name: string): Promise<string> {
   return path;
 }
 
-// A clip is one video stream: either a window into a longer recording (ss) or
-// a short loop replayed until the wall's cut point.
-type Clip = { src: string; ss?: number; loop?: boolean };
-const seg = (src: string, ss: number): Clip => ({ src, ss });
-const loop = (src: string): Clip => ({ src, loop: true });
+// A clip is one video stream, replayed from its start until the wall's cut
+// point (sim clips are exactly one wall period long; GIFs loop).
+type Clip = { src: string };
+const loop = (src: string): Clip => ({ src });
+const sim = (app: string): Clip => ({ src: ensureSimClip(app) });
 
 async function main() {
   mkdirSync(CACHE, { recursive: true });
 
-  const hardware = SITE + "assets/pocketjs-hardware-demo.mp4";
-  const vita = await r2("pocketjs-real-ps-vita-bee7681c.mp4");
-  const figma = await r2("pocket-figma-real-psp-ba960367.mp4");
-  const youtube = await r2("pocket-youtube-real-psp-7ae0b36c.mp4");
   const character = await r2("pocket-character-widget-c6cf80c4.mp4");
 
-  // Row-major 4x4 grid. Windows into the long captures were picked off contact
-  // sheets; same-source tiles sit far apart so the wall reads as many demos.
+  // Row-major 4x4 grid: 9 headless sim recordings of the in-repo demos, six
+  // engine-rendered GIF loops, and the Pocket Character widget. Light
+  // motion-study tiles sit far apart so the wall reads as many demos.
   const tiles: (Clip | Clip[])[] = [
-    // row 1: PSP showcase apps / Figma wireframe pages / OSK search / Vita tail
-    seg(hardware, 8), // EVERGREEN grid -> "JSX at 60 FPS" -> Game Library
-    seg(figma, 32), // wireframe + keyboard pages under the nub
-    seg(youtube, 0), // system-OSK search -> results -> playback starts
-    seg(vita, 57.9), // LiveArea -> OpenStrike menu -> brand end card
-    // row 2: engine loops + the VRM widget + Figma welcome tour
-    loop(ROOT + "assets/screenshots/motions-53.gif"),
-    loop(character), // Pocket Character breathing on the desktop
+    // row 1
+    sim("music-main"), // EVERGREEN grid -> Now Playing, track skips
     [loop(BLOG + "menu.gif"), loop(BLOG + "spin.gif"), loop(BLOG + "reveal.gif"), loop(BLOG + "room.gif")],
-    seg(figma, 16), // welcome page -> character bubble -> downloads spread
-    // row 3: playback HUD / gallery page flip / Vita motions / DevTools
-    seg(youtube, 40), // keynote playback -> pause HUD -> result rows
-    loop(BLOG + "page-3d.gif"),
-    seg(vita, 14), // motion-study grids -> mimi sprite page (skips the JSX
-    // card, which would twin with the DevTools loop one tile to the right)
+    sim("im-main"), // Pocket Talk: thread scroll -> OSK typing -> sent
+    loop(ROOT + "assets/screenshots/motions-53.gif"),
+    // row 2
+    loop(character), // Pocket Character breathing on the desktop
+    sim("gallery-main"), // photo pages under the shoulder buttons
     loop(BLOG + "devtools-highlight-glide.gif"),
-    // row 4: motion quads / Pocket YouTube UI / PSP dashboard / Vita Figma
-    [loop(BLOG + "share.gif"), loop(BLOG + "reload.gif"), loop(BLOG + "dpad.gif"), loop(BLOG + "spin.gif")],
+    sim("cards-main"), // Feature Cards focus walk
+    // row 3
+    sim("stats-main"), // Mission Control dashboard tabs
+    loop(BLOG + "page-3d.gif"),
+    sim("settings-main"), // toggles, sliders and theme swaps
     loop(BLOG + "pocket-youtube-journey.gif"),
-    seg(hardware, 33.5), // notifications -> settings -> Mission Control
-    seg(vita, 30), // paper-kit pages at native 960x544
+    // row 4
+    sim("library-main"), // Game Library covers and detail pages
+    sim("notifications-main"),
+    sim("hero-main"), // "JSX at 60 FPS." counter card
+    [loop(BLOG + "share.gif"), loop(BLOG + "reload.gif"), loop(BLOG + "dpad.gif"), loop(BLOG + "spin.gif")],
   ];
 
   const inputs: string[] = [];
@@ -95,8 +95,7 @@ async function main() {
   const addInput = (c: Clip): number => {
     // -t caps the read with margin; tpad+trim below make every stream exactly
     // DUR long so the two xstack layers can never end early or drift.
-    if (c.loop) inputs.push("-stream_loop", "-1", "-t", String(DUR + 2), "-i", c.src);
-    else inputs.push("-ss", String(c.ss ?? 0), "-t", String(DUR + 2), "-i", c.src);
+    inputs.push("-stream_loop", "-1", "-t", String(DUR + 2), "-i", c.src);
     return idx++;
   };
   const norm = (w: number, h: number) =>

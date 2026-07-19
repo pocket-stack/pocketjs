@@ -323,6 +323,7 @@ a.lp-btn--primary:hover {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
+  margin-bottom: 0.75rem;
   font-size: 13px;
   font-weight: 500;
   color: var(--ink-2);
