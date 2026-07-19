@@ -42,6 +42,8 @@ const syntheticTargetDefinitions = {
   psp: POCKET_TARGETS.psp,
   "vita-test": {
     hostAbi: 2,
+    platform: "vita",
+    form: "takeover",
     display: {
       physicalViewport: [960, 544],
       logicalViewports: [[480, 272]],
@@ -122,7 +124,7 @@ describe("pocket.json v2 schema", () => {
 
 describe("platform registry", () => {
   test("production advertises only the truthful stock-host profiles", () => {
-    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "desktop-widget-macos"]);
+    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "macos-widget"]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
     expect(POCKET_TARGETS.psp.capabilities).toEqual([
       "input.analog.left",
@@ -145,7 +147,7 @@ describe("platform registry", () => {
     });
     // The desktop widget target: dynamic viewport, real pointer/text/IME,
     // runtime glyph baking — and honestly NO nub or synthesized cursor.
-    expect(POCKET_TARGETS["desktop-widget-macos"].capabilities).toEqual([
+    expect(POCKET_TARGETS["macos-widget"].capabilities).toEqual([
       "input.buttons",
       "input.ime",
       "input.pointer",
@@ -155,7 +157,7 @@ describe("platform registry", () => {
       "text.glyphs.baked",
       "text.glyphs.runtime",
     ]);
-    expect(POCKET_TARGETS["desktop-widget-macos"].display.dynamicViewport).toEqual({
+    expect(POCKET_TARGETS["macos-widget"].display.dynamicViewport).toEqual({
       min: [240, 180],
       max: [4096, 4096],
     });
@@ -220,10 +222,10 @@ describe("semantic resolution", () => {
 
   test("resolves the note's dual-nature manifest against the desktop widget", async () => {
     const manifest = await Bun.file(new URL("../demos/note/pocket.json", import.meta.url)).json();
-    const result = validateAndResolveBuildPlan(manifest, { target: "desktop-widget-macos" });
+    const result = validateAndResolveBuildPlan(manifest, { target: "macos-widget" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.plan.target).toEqual({ id: "desktop-widget-macos", hostAbi: 3 });
+    expect(result.plan.target).toEqual({ id: "macos-widget", hostAbi: 3 });
     // Dynamic-viewport native presentation: density from the profile.
     expect(result.plan.viewport.rasterDensity).toBe(2);
     expect(result.plan.viewport.logical).toEqual([420, 560]);
@@ -249,20 +251,20 @@ describe("semantic resolution", () => {
   test("dynamic viewport admits in-range sizes and rejects out-of-range", async () => {
     const manifest = await Bun.file(new URL("../demos/note/pocket.json", import.meta.url)).json();
     const tiny = structuredClone(manifest) as any;
-    tiny.app.viewport.logical = [100, 100];
-    const rejected = validateAndResolveBuildPlan(tiny, { target: "desktop-widget-macos" });
+    tiny.app.viewport.dynamic.default = [100, 100];
+    const rejected = validateAndResolveBuildPlan(tiny, { target: "macos-widget" });
     expect(rejected.ok).toBe(false);
     if (rejected.ok) return;
     expect(rejected.diagnostics.map((d) => d.code)).toContain("viewport.logicalUnsupported");
 
     const roomy = structuredClone(manifest) as any;
-    roomy.app.viewport.logical = [800, 600];
-    expect(validateAndResolveBuildPlan(roomy, { target: "desktop-widget-macos" }).ok).toBe(true);
+    roomy.app.viewport.dynamic.default = [800, 600];
+    expect(validateAndResolveBuildPlan(roomy, { target: "macos-widget" }).ok).toBe(true);
   });
 
   test("every committed demo manifest lands on the expected admission matrix", async () => {
     const { readdirSync, existsSync } = await import("node:fs");
-    // demo -> [psp, vita, desktop-widget-macos] admission. Console demos
+    // demo -> [psp, vita, macos-widget] admission. Console demos
     // stay off the desktop widget (its profile presents "native" over a
     // dynamic viewport, not the console integer-fit contract); the note is
     // the inverse. A new demo missing here fails the test on purpose.
@@ -284,7 +286,7 @@ describe("semantic resolution", () => {
       stats: [true, true, false],
       zoomlab: [true, true, false],
     };
-    const targets = ["psp", "vita", "desktop-widget-macos"] as const;
+    const targets = ["psp", "vita", "macos-widget"] as const;
     for (const demo of readdirSync(new URL("../demos/", import.meta.url)).sort()) {
       const url = new URL(`../demos/${demo}/pocket.json`, import.meta.url);
       if (!existsSync(url)) continue;
@@ -299,6 +301,37 @@ describe("semantic resolution", () => {
     // manifests are shown — the note stays off the landing/playground.
     const note = await Bun.file(new URL("../demos/note/pocket.json", import.meta.url)).json();
     expect(validateAndResolveBuildPlan(note, { target: "psp" }).ok).toBe(false);
+  });
+
+  test("viewport policy: legacy shorthand, dynamic-required, fixed-unhosted", async () => {
+    // The bare {logical, presentation} spelling is shorthand for {fixed}.
+    const legacy = structuredClone(portableInput) as any;
+    legacy.app.viewport = { logical: [480, 272], presentation: "integer-fit" };
+    expect(validateAndResolveBuildPlan(legacy, { target: "psp" }).ok).toBe(true);
+
+    // A dynamic-only app is refused by fixed-screen forms…
+    const note = await Bun.file(new URL("../demos/note/pocket.json", import.meta.url)).json();
+    const onPsp = validateAndResolveBuildPlan(note, { target: "psp" });
+    expect(onPsp.ok).toBe(false);
+    if (!onPsp.ok) return;
+    expect(onPsp.diagnostics.map((d) => d.code)).toContain("viewport.fixedRequired");
+  });
+
+  test("widget form does not host fixed-viewport apps (acceptsFixed off)", () => {
+    const fixedOnly = structuredClone(portableInput) as any;
+    fixedOnly.engine.capabilities.requires = ["text.glyphs.baked", "input.buttons"];
+    const result = validateAndResolveBuildPlan(fixedOnly, { target: "macos-widget" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.map((d) => d.code)).toContain("viewport.fixedUnhosted");
+  });
+
+  test("profiles carry queryable platform/form fields — ids are labels", () => {
+    expect(POCKET_TARGETS.psp.platform).toBe("psp");
+    expect(POCKET_TARGETS.psp.form).toBe("takeover");
+    expect(POCKET_TARGETS.vita.form).toBe("takeover");
+    expect(POCKET_TARGETS["macos-widget"].platform).toBe("macos");
+    expect(POCKET_TARGETS["macos-widget"].form).toBe("widget");
   });
 
   test("stock-demo builds prefer the demo's own manifest over synthesis", async () => {

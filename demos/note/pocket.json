@@ -26,8 +26,16 @@
     "output": "note-main",
     "framework": "solid",
     "viewport": {
-      "logical": [420, 560],
-      "presentation": "native"
+      "dynamic": {
+        "default": [
+          420,
+          560
+        ],
+        "min": [
+          240,
+          180
+        ]
+      }
     }
   }
 }

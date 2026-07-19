@@ -48,12 +48,35 @@ export interface PocketManifestV2 {
     readonly entry: string;
     readonly output?: string;
     readonly framework: "solid" | "vue-vapor";
-    readonly viewport: {
-      readonly logical: Viewport;
-      readonly presentation: PresentationMode;
-    };
+    readonly viewport: ManifestViewport;
   };
 }
+
+/** A fixed-screen viewport declaration (takeover/kiosk/embedded targets). */
+export interface FixedViewportSpec {
+  readonly logical: Viewport;
+  readonly presentation: PresentationMode;
+}
+
+/** A dynamic-window viewport declaration (window/widget targets). */
+export interface DynamicViewportSpec {
+  readonly default: Viewport;
+  readonly min?: Viewport;
+  readonly max?: Viewport;
+}
+
+/**
+ * Apps declare viewport intent per POLICY, not per target: `fixed` admits
+ * on fixed-screen forms, `dynamic` on window forms; declaring both makes a
+ * dual-nature app. The bare `{logical, presentation}` spelling remains
+ * valid as shorthand for `{fixed: …}` (format-2 compatibility).
+ */
+export type ManifestViewport =
+  | FixedViewportSpec
+  | {
+      readonly fixed?: FixedViewportSpec;
+      readonly dynamic?: DynamicViewportSpec;
+    };
 
 const capabilityIdSchema = {
   type: "string",
@@ -130,18 +153,71 @@ export const pocketManifestV2Schema = {
         },
         framework: { enum: ["solid", "vue-vapor"] },
         viewport: {
-          type: "object",
-          additionalProperties: false,
-          required: ["logical", "presentation"],
-          properties: {
-            logical: {
-              type: "array",
-              items: { type: "integer", minimum: 1 },
-              minItems: 2,
-              maxItems: 2,
+          anyOf: [
+            // Shorthand: a bare fixed viewport (format-2 compatibility).
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["logical", "presentation"],
+              properties: {
+                logical: {
+                  type: "array",
+                  items: { type: "integer", minimum: 1 },
+                  minItems: 2,
+                  maxItems: 2,
+                },
+                presentation: { enum: PRESENTATION_MODES },
+              },
             },
-            presentation: { enum: PRESENTATION_MODES },
-          },
+            // Policy variants: fixed and/or dynamic. An empty object is
+            // schema-valid but semantically caught by the resolver
+            // (viewport.fixedRequired / viewport.dynamicRequired).
+            {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                fixed: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["logical", "presentation"],
+                  properties: {
+                    logical: {
+                      type: "array",
+                      items: { type: "integer", minimum: 1 },
+                      minItems: 2,
+                      maxItems: 2,
+                    },
+                    presentation: { enum: PRESENTATION_MODES },
+                  },
+                },
+                dynamic: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["default"],
+                  properties: {
+                    default: {
+                      type: "array",
+                      items: { type: "integer", minimum: 1 },
+                      minItems: 2,
+                      maxItems: 2,
+                    },
+                    min: {
+                      type: "array",
+                      items: { type: "integer", minimum: 1 },
+                      minItems: 2,
+                      maxItems: 2,
+                    },
+                    max: {
+                      type: "array",
+                      items: { type: "integer", minimum: 1 },
+                      minItems: 2,
+                      maxItems: 2,
+                    },
+                  },
+                },
+              },
+            },
+          ],
         },
       },
     },

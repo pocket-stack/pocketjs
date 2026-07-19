@@ -18,11 +18,13 @@
     "output": "cafe-main",
     "framework": "solid",
     "viewport": {
-      "logical": [
-        480,
-        272
-      ],
-      "presentation": "integer-fit"
+      "fixed": {
+        "logical": [
+          480,
+          272
+        ],
+        "presentation": "integer-fit"
+      }
     }
   }
 }
