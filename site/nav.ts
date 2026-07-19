@@ -56,7 +56,7 @@ export interface BlogPost {
 export const BLOG_POSTS: BlogPost[] = [
   {
     slug: "pocket-character",
-    title: "One Process, Whole Character",
+    title: "Pocket Character: a Desktop Digital Human in One Native Process",
     date: "2026-07-19",
     description:
       "airi's 3D digital human — same VRM model, same idle loop, same blink math, same spring-bone physics, same transparent always-on-top window — rebuilt as a single native process on the Pocket runtime: 118 MB and 4 % of one core instead of an Electron tree's 2.2 GB and 44 %. Inside: morph targets that cost nothing between blinks, a VRM crate that learned the difference between +Z and −Z the hard way, a QuickJS bundle as the hot-swappable personality, and a measurement section with receipts — same machine, same ruler, screenshots included.",
