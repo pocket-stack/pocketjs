@@ -97,6 +97,7 @@
     "build": "bun scripts/build.ts",
     "play": "bun scripts/play.ts",
  "widget": "bun scripts/widget.ts",
+    "note": "bun scripts/note.ts",
     "psp": "bun scripts/psp.ts",
     "psp:all": "bun scripts/psp-all.ts",
     "psp:switch": "bun psplink",

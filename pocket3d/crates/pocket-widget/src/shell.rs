@@ -267,15 +267,21 @@ fn run_driver(config: WidgetConfig, driver: impl Driver) -> Result<()> {
         error: None,
         ticks: 0,
         frames: 0,
+        arms: ArmCounts::default(),
     };
     event_loop.run_app(&mut app)?;
     // The governor's receipt: how many fixed ticks ran vs. GPU frames
     // actually rendered. A settled widget should show frames ≪ ticks.
     log::info!(
-        "pocket-widget: {} ticks, {} frames rendered ({:.1}%)",
+        "pocket-widget: {} ticks, {} frames rendered ({:.1}%) — armed by dirt {}, resize {}, occlusion {}, scale {}; {} unarmed OS redraws skipped",
         app.ticks,
         app.frames,
-        100.0 * app.frames as f64 / app.ticks.max(1) as f64
+        100.0 * app.frames as f64 / app.ticks.max(1) as f64,
+        app.arms.dirty,
+        app.arms.resized,
+        app.arms.occlusion,
+        app.arms.scale,
+        app.arms.unarmed_redraws
     );
     match app.error {
         Some(e) => Err(e),
@@ -286,6 +292,18 @@ fn run_driver(config: WidgetConfig, driver: impl Driver) -> Result<()> {
 /// Catch-up bound: after an app-nap the loop resyncs instead of replaying
 /// the gap (a widget needs liveness, not history).
 const MAX_CATCHUP_TICKS: u32 = 6;
+
+/// Why frames were armed — logged with the exit receipt so a hot widget
+/// explains itself (dirt is the only healthy steady-state source).
+#[derive(Default)]
+struct ArmCounts {
+    dirty: u64,
+    resized: u64,
+    occlusion: u64,
+    scale: u64,
+    /// OS-initiated RedrawRequested with nothing pending (skipped).
+    unarmed_redraws: u64,
+}
 
 struct WindowState {
     window: Arc<Window>,
@@ -312,6 +330,7 @@ struct WidgetApp<D: Driver> {
     error: Option<anyhow::Error>,
     ticks: u64,
     frames: u64,
+    arms: ArmCounts,
 }
 
 impl<D: Driver> WidgetApp<D> {
@@ -406,6 +425,7 @@ impl<D: Driver> WidgetApp<D> {
 
         if self.driver.take_dirty() {
             state.render_pending = true;
+            self.arms.dirty += 1;
         }
 
         let frame_interval = Duration::from_secs_f32(1.0 / self.config.max_fps.max(1.0));
@@ -425,6 +445,16 @@ impl<D: Driver> WidgetApp<D> {
         let Some(state) = self.state.as_mut() else {
             return Ok(());
         };
+        // Only render when the governor armed a frame. macOS occasionally
+        // streams RedrawRequested on its own (compositor moods); honoring
+        // those would turn a settled widget into a 40 fps space heater.
+        // Every event that genuinely needs pixels (resize, scale change,
+        // un-occlusion, first show) sets render_pending — the compositor
+        // retains the last frame for everything else.
+        if !state.render_pending {
+            self.arms.unarmed_redraws += 1;
+            return Ok(());
+        }
         let frame = match state.surface.get_current_texture() {
             Ok(f) => f,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -481,20 +511,26 @@ impl<D: Driver> ApplicationHandler for WidgetApp<D> {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
+                log::debug!("pocket-widget: Resized {size:?}");
                 state.surface_config.width = size.width.max(1);
                 state.surface_config.height = size.height.max(1);
                 state
                     .surface
                     .configure(&state.gpu.device, &state.surface_config);
                 state.render_pending = true;
+                self.arms.resized += 1;
             }
-            WindowEvent::ScaleFactorChanged { .. } => {
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                log::debug!("pocket-widget: ScaleFactorChanged({scale_factor})");
                 state.render_pending = true;
+                self.arms.scale += 1;
             }
             WindowEvent::Occluded(occluded) => {
+                log::debug!("pocket-widget: Occluded({occluded})");
                 state.occluded = occluded;
                 if !occluded {
                     state.render_pending = true; // repaint on reveal
+                    self.arms.occlusion += 1;
                 }
             }
             WindowEvent::MouseInput {

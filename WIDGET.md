@@ -246,8 +246,11 @@ Kept to one page of spec, append-only, or it doesn't ship.
   CIRCLE taps — and the screen reads `Count: 2`. Captures are composite
   PNGs whose alpha is the real window transparency.
 - **Power is a receipt, then a gate**: the shell logs ticks vs. frames
-  rendered on every exit; the product repo's measurement harness turns the
-  thresholds into a failing check.
+  rendered on every exit, now with arm sources (dirt / resize / occlusion /
+  scale) so a hot widget explains itself — in steady state the only healthy
+  source is dirt, and an idle app has none. OS-initiated redraws with
+  nothing pending are skipped and counted; the product repo's measurement
+  harness turns the thresholds into a failing check.
 
 ## 9. Delivery plan and open questions
 
