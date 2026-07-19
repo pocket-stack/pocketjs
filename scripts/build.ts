@@ -80,6 +80,7 @@ let configPath = ROOT + "pocket.config.ts";
 let configFlagged = false;
 let useConfig = true;
 let planPath: string | undefined;
+let densityFlag: number | undefined;
 let projectRoot = process.cwd();
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
@@ -89,6 +90,7 @@ for (const a of args) {
   else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
   else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
   else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
+  else if (a.startsWith("--density=")) densityFlag = Number(a.slice("--density=".length));
   else if (!a.startsWith("-")) appArg = a;
 }
 
@@ -106,7 +108,7 @@ if (planPath) {
 }
 
 if (!appArg) {
-  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor] [--extra-chars=...]");
+  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor] [--extra-chars=...] [--density=N]");
   process.exit(1);
 }
 
@@ -180,7 +182,16 @@ const appName = buildPlan?.app.output ?? outputName(requestedEntry);
 // A resolved plan names the exact artifact. Low-level demo builds retain the
 // framework suffix so multiple framework variants can coexist in dist/.
 const outName = buildPlan ? appName : `${appName}${frameworkConfig.outputSuffix}`;
-const rasterDensity = buildPlan?.viewport.rasterDensity ?? 1;
+// Raster density: a resolved plan owns it; --density=N serves hosts whose
+// viewport is not a fixed platform contract (the desktop widget shell runs
+// arbitrary window sizes on 2x displays, which no target profile names).
+if (buildPlan && densityFlag !== undefined) {
+  throw new Error("PocketJS build: --density cannot override a ResolvedBuildPlan");
+}
+if (densityFlag !== undefined && (!Number.isInteger(densityFlag) || densityFlag < 1 || densityFlag > 255)) {
+  throw new Error("PocketJS build: --density wants an integer from 1 through 255");
+}
+const rasterDensity = buildPlan?.viewport.rasterDensity ?? densityFlag ?? 1;
 console.log(
   `PocketJS build: ${appName} (${entry}, framework=${framework}` +
     `${buildPlan ? `, target=${buildPlan.target.id}, raster=${rasterDensity}x, plan=${buildPlan.planHash.slice(0, 20)}…` : ""})`,
@@ -416,7 +427,7 @@ const result = await Bun.build({
     __POCKET_TARGET__: JSON.stringify(buildPlan?.target.id ?? ""),
     __POCKET_HOST_ABI__: String(buildPlan?.target.hostAbi ?? 0),
     __POCKET_FEATURES__: JSON.stringify(buildPlan?.features ?? {}),
-    __POCKET_PIXEL_RATIO__: String(buildPlan?.viewport.rasterDensity ?? 1),
+    __POCKET_PIXEL_RATIO__: String(rasterDensity),
   },
   minify: false,
   sourcemap: "none",

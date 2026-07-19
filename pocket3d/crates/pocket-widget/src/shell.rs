@@ -11,6 +11,14 @@
 //! This is a sibling of [`pocket3d::app::run`], not a wrapper: that loop
 //! ties simulation to redraws (right for games rendering every frame),
 //! while a widget must tick without rendering.
+//!
+//! Two widget shapes share the governor:
+//!
+//! - [`WidgetGame`] + [`run`] — the 3D form (a scene, a camera, meshes; the
+//!   `ui` surface arrives on a screen mesh via [`crate::embed::EmbeddedUi`]).
+//! - [`FlatWidget`] + [`run_flat`] — the 2D form: the window *is* the `ui`
+//!   surface, rendered 1:1 by `pocket-ui-wgpu` with no scene pass at all.
+//!   The natural shape for text-first widgets (notes, tickers, boards).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -32,7 +40,7 @@ use pocket3d::scene::Scene;
 
 pub struct WidgetConfig {
     pub title: String,
-    /// Window size in logical px — fixed; widgets don't resize.
+    /// Initial window size in logical px.
     pub size: (u32, u32),
     /// Fixed simulation rate — the guest cadence (60 = the PSP's).
     pub tick_hz: f32,
@@ -42,6 +50,12 @@ pub struct WidgetConfig {
     pub transparent: bool,
     pub decorations: bool,
     pub always_on_top: bool,
+    /// Live window resizing. Borderless windows keep the `Resizable` style
+    /// mask on macOS (edge-drag works without decorations); games can also
+    /// claim a grip region via `resize_at` for an explicit affordance.
+    pub resizable: bool,
+    /// Logical px floor enforced by the OS while `resizable`.
+    pub min_size: (u32, u32),
 }
 
 impl Default for WidgetConfig {
@@ -54,11 +68,13 @@ impl Default for WidgetConfig {
             transparent: true,
             decorations: false,
             always_on_top: true,
+            resizable: false,
+            min_size: (160, 120),
         }
     }
 }
 
-/// What the widget loop needs from a product.
+/// What the widget loop needs from a 3D product.
 pub trait WidgetGame {
     /// Called once after the GPU exists — build assets, boot guests.
     fn init(&mut self, gpu: &Gpu, renderer: &mut Renderer) -> Result<()>;
@@ -82,16 +98,171 @@ pub trait WidgetGame {
         let _ = cursor;
         false
     }
+    /// Left-press policy: return true to start a window resize drag at this
+    /// cursor position (a grip corner). Consulted before `drag_at`.
+    fn resize_at(&mut self, cursor: Vec2) -> bool {
+        let _ = cursor;
+        false
+    }
     fn wants_exit(&self) -> bool {
         false
     }
 }
 
+/// What the widget loop needs from a 2D (window-is-the-surface) product.
+///
+/// Same governor, no scene: the game renders whatever it wants straight
+/// into the swapchain view — for a PocketJS widget that is one
+/// `UiRenderer::render_words` pass over the guest's DrawList.
+pub trait FlatWidget {
+    /// Called once after the GPU exists. `format` is the swapchain format
+    /// the game's pipelines must target.
+    fn init(&mut self, gpu: &Gpu, format: wgpu::TextureFormat) -> Result<()>;
+    /// One fixed-step tick — the guest turn. `window_px` is the surface
+    /// size in physical pixels; `scale` the window's scale factor (cursor
+    /// positions and `window_px` are physical — divide by `scale` for
+    /// logical px).
+    fn tick(&mut self, dt: f32, input: &Input, window_px: (u32, u32), scale: f64) -> Result<()>;
+    /// Consume the "needs a GPU frame" flag (latched by the shell).
+    fn take_dirty(&mut self) -> bool;
+    /// Draw into the swapchain view (submit your own encoder). Called only
+    /// on frames that render.
+    fn render(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        window_px: (u32, u32),
+    ) -> Result<()>;
+    /// Left-press policy: OS window drag (move) at this cursor position?
+    fn drag_at(&mut self, cursor: Vec2) -> bool {
+        let _ = cursor;
+        false
+    }
+    /// Left-press policy: window resize drag at this cursor position?
+    /// Consulted before `drag_at`. The shell tracks the drag itself
+    /// (macOS has no OS resize session for borderless windows).
+    fn resize_at(&mut self, cursor: Vec2) -> bool {
+        let _ = cursor;
+        false
+    }
+    fn wants_exit(&self) -> bool {
+        false
+    }
+}
+
+/// Run a 3D widget (scene + camera + demand rendering).
 pub fn run(config: WidgetConfig, game: impl WidgetGame) -> Result<()> {
+    run_driver(config, SceneDriver { game, renderer: None })
+}
+
+/// Run a 2D widget (the window is the surface).
+pub fn run_flat(config: WidgetConfig, game: impl FlatWidget) -> Result<()> {
+    run_driver(config, FlatDriver { game })
+}
+
+// ---------------------------------------------------------------------------
+// The governor, generic over the two widget shapes.
+// ---------------------------------------------------------------------------
+
+/// Internal adapter: what the event loop actually drives. Both public
+/// traits funnel into this so the governor exists exactly once.
+trait Driver {
+    fn init(&mut self, gpu: &Gpu, format: wgpu::TextureFormat) -> Result<()>;
+    fn tick(&mut self, dt: f32, input: &Input, window_px: (u32, u32), scale: f64) -> Result<()>;
+    fn take_dirty(&mut self) -> bool;
+    fn render(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        window_px: (u32, u32),
+        time: f32,
+    ) -> Result<()>;
+    fn drag_at(&mut self, cursor: Vec2) -> bool;
+    fn resize_at(&mut self, cursor: Vec2) -> bool;
+    fn wants_exit(&self) -> bool;
+}
+
+struct SceneDriver<G: WidgetGame> {
+    game: G,
+    renderer: Option<Renderer>,
+}
+
+impl<G: WidgetGame> Driver for SceneDriver<G> {
+    fn init(&mut self, gpu: &Gpu, format: wgpu::TextureFormat) -> Result<()> {
+        let mut renderer = Renderer::new(gpu, format)?;
+        self.game.init(gpu, &mut renderer)?;
+        self.renderer = Some(renderer);
+        Ok(())
+    }
+    fn tick(&mut self, dt: f32, input: &Input, window_px: (u32, u32), _scale: f64) -> Result<()> {
+        self.game.tick(dt, input, window_px)
+    }
+    fn take_dirty(&mut self) -> bool {
+        self.game.take_dirty()
+    }
+    fn render(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        window_px: (u32, u32),
+        time: f32,
+    ) -> Result<()> {
+        self.game.prepare(gpu)?;
+        let (scene, camera, hud) = self.game.compose(time, window_px);
+        let renderer = self.renderer.as_mut().expect("init ran");
+        renderer.render(gpu, view, window_px, scene, camera, hud);
+        Ok(())
+    }
+    fn drag_at(&mut self, cursor: Vec2) -> bool {
+        self.game.drag_at(cursor)
+    }
+    fn resize_at(&mut self, cursor: Vec2) -> bool {
+        self.game.resize_at(cursor)
+    }
+    fn wants_exit(&self) -> bool {
+        self.game.wants_exit()
+    }
+}
+
+struct FlatDriver<G: FlatWidget> {
+    game: G,
+}
+
+impl<G: FlatWidget> Driver for FlatDriver<G> {
+    fn init(&mut self, gpu: &Gpu, format: wgpu::TextureFormat) -> Result<()> {
+        self.game.init(gpu, format)
+    }
+    fn tick(&mut self, dt: f32, input: &Input, window_px: (u32, u32), scale: f64) -> Result<()> {
+        self.game.tick(dt, input, window_px, scale)
+    }
+    fn take_dirty(&mut self) -> bool {
+        self.game.take_dirty()
+    }
+    fn render(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        window_px: (u32, u32),
+        _time: f32,
+    ) -> Result<()> {
+        self.game.render(gpu, view, window_px)
+    }
+    fn drag_at(&mut self, cursor: Vec2) -> bool {
+        self.game.drag_at(cursor)
+    }
+    fn resize_at(&mut self, cursor: Vec2) -> bool {
+        self.game.resize_at(cursor)
+    }
+    fn wants_exit(&self) -> bool {
+        self.game.wants_exit()
+    }
+}
+
+fn run_driver(config: WidgetConfig, driver: impl Driver) -> Result<()> {
     let event_loop = EventLoop::new()?;
     let mut app = WidgetApp {
         config,
-        game,
+        driver,
         state: None,
         error: None,
         ticks: 0,
@@ -121,7 +292,6 @@ struct WindowState {
     surface: wgpu::Surface<'static>,
     surface_config: wgpu::SurfaceConfiguration,
     gpu: Gpu,
-    renderer: Renderer,
     input: Input,
     start: Instant,
     next_tick: Instant,
@@ -129,20 +299,24 @@ struct WindowState {
     /// Dirt latched from the game, waiting for a paced render.
     render_pending: bool,
     occluded: bool,
+    /// Live grip resize: (cursor at press, window physical size at press).
+    /// The shell tracks the drag itself — macOS offers no OS resize
+    /// session for borderless windows.
+    resizing: Option<(Vec2, (u32, u32))>,
 }
 
-struct WidgetApp<G: WidgetGame> {
+struct WidgetApp<D: Driver> {
     config: WidgetConfig,
-    game: G,
+    driver: D,
     state: Option<WindowState>,
     error: Option<anyhow::Error>,
     ticks: u64,
     frames: u64,
 }
 
-impl<G: WidgetGame> WidgetApp<G> {
+impl<D: Driver> WidgetApp<D> {
     fn init_state(&mut self, event_loop: &ActiveEventLoop) -> Result<WindowState> {
-        let attrs = Window::default_attributes()
+        let mut attrs = Window::default_attributes()
             .with_title(self.config.title.clone())
             .with_inner_size(winit::dpi::LogicalSize::new(
                 self.config.size.0,
@@ -150,12 +324,18 @@ impl<G: WidgetGame> WidgetApp<G> {
             ))
             .with_transparent(self.config.transparent)
             .with_decorations(self.config.decorations)
-            .with_resizable(false)
+            .with_resizable(self.config.resizable)
             .with_window_level(if self.config.always_on_top {
                 WindowLevel::AlwaysOnTop
             } else {
                 WindowLevel::Normal
             });
+        if self.config.resizable {
+            attrs = attrs.with_min_inner_size(winit::dpi::LogicalSize::new(
+                self.config.min_size.0,
+                self.config.min_size.1,
+            ));
+        }
         let window = Arc::new(event_loop.create_window(attrs)?);
         let instance = Gpu::new_instance();
         let surface = instance.create_surface(window.clone())?;
@@ -171,8 +351,7 @@ impl<G: WidgetGame> WidgetApp<G> {
         }
         surface.configure(&gpu.device, &surface_config);
 
-        let mut renderer = Renderer::new(&gpu, surface_config.format)?;
-        self.game.init(&gpu, &mut renderer)?;
+        self.driver.init(&gpu, surface_config.format)?;
 
         let now = Instant::now();
         Ok(WindowState {
@@ -180,13 +359,13 @@ impl<G: WidgetGame> WidgetApp<G> {
             surface,
             surface_config,
             gpu,
-            renderer,
             input: Input::default(),
             start: now,
             next_tick: now,
             last_render: now - Duration::from_secs(1),
             render_pending: true, // first frame
             occluded: false,
+            resizing: None,
         })
     }
 
@@ -201,9 +380,10 @@ impl<G: WidgetGame> WidgetApp<G> {
         let now = Instant::now();
 
         let window_px = (state.surface_config.width, state.surface_config.height);
+        let scale = state.window.scale_factor();
         let mut ran = 0u32;
         while now >= state.next_tick && ran < MAX_CATCHUP_TICKS {
-            if let Err(e) = self.game.tick(tick_dt, &state.input, window_px) {
+            if let Err(e) = self.driver.tick(tick_dt, &state.input, window_px, scale) {
                 self.error = Some(e);
                 event_loop.exit();
                 return;
@@ -219,12 +399,12 @@ impl<G: WidgetGame> WidgetApp<G> {
             state.input.end_frame();
         }
 
-        if self.game.wants_exit() {
+        if self.driver.wants_exit() {
             event_loop.exit();
             return;
         }
 
-        if self.game.take_dirty() {
+        if self.driver.take_dirty() {
             state.render_pending = true;
         }
 
@@ -245,8 +425,6 @@ impl<G: WidgetGame> WidgetApp<G> {
         let Some(state) = self.state.as_mut() else {
             return Ok(());
         };
-        self.game.prepare(&state.gpu)?;
-
         let frame = match state.surface.get_current_texture() {
             Ok(f) => f,
             Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -261,12 +439,12 @@ impl<G: WidgetGame> WidgetApp<G> {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let size = (state.surface_config.width, state.surface_config.height);
-        let (scene, camera, hud) =
-            self.game
-                .compose(state.start.elapsed().as_secs_f32(), size);
-        state
-            .renderer
-            .render(&state.gpu, &view, size, scene, camera, hud);
+        self.driver.render(
+            &state.gpu,
+            &view,
+            size,
+            state.start.elapsed().as_secs_f32(),
+        )?;
         state.window.pre_present_notify();
         frame.present();
 
@@ -277,7 +455,7 @@ impl<G: WidgetGame> WidgetApp<G> {
     }
 }
 
-impl<G: WidgetGame> ApplicationHandler for WidgetApp<G> {
+impl<D: Driver> ApplicationHandler for WidgetApp<D> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_none() {
             match self.init_state(event_loop) {
@@ -310,6 +488,9 @@ impl<G: WidgetGame> ApplicationHandler for WidgetApp<G> {
                     .configure(&state.gpu.device, &state.surface_config);
                 state.render_pending = true;
             }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                state.render_pending = true;
+            }
             WindowEvent::Occluded(occluded) => {
                 state.occluded = occluded;
                 if !occluded {
@@ -320,14 +501,38 @@ impl<G: WidgetGame> ApplicationHandler for WidgetApp<G> {
                 state: elem_state,
                 button: MouseButton::Left,
                 ..
-            } if elem_state == ElementState::Pressed => {
-                if let Some(cursor) = state.input.cursor()
-                    && self.game.drag_at(cursor)
-                {
-                    let _ = state.window.drag_window();
-                    // macOS swallows the release once the OS drag session
-                    // starts; clear the button so the next press edges.
-                    state.input.inject_mouse_button(MouseButton::Left, false);
+            } => match elem_state {
+                ElementState::Pressed => {
+                    if let Some(cursor) = state.input.cursor() {
+                        if self.config.resizable && self.driver.resize_at(cursor) {
+                            let size = (state.surface_config.width, state.surface_config.height);
+                            state.resizing = Some((cursor, size));
+                            // The grip press is a window gesture, not app
+                            // input — take the button back.
+                            state.input.inject_mouse_button(MouseButton::Left, false);
+                        } else if self.driver.drag_at(cursor) {
+                            let _ = state.window.drag_window();
+                            // macOS swallows the release once the OS drag
+                            // session starts; clear the button so the next
+                            // press edges.
+                            state.input.inject_mouse_button(MouseButton::Left, false);
+                        }
+                    }
+                }
+                ElementState::Released => {
+                    state.resizing = None;
+                }
+            },
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some((grab, size0)) = state.resizing {
+                    let scale = state.window.scale_factor();
+                    let min_w = (self.config.min_size.0 as f64 * scale) as i64;
+                    let min_h = (self.config.min_size.1 as f64 * scale) as i64;
+                    let w = (size0.0 as i64 + (position.x - grab.x as f64) as i64).max(min_w);
+                    let h = (size0.1 as i64 + (position.y - grab.y as f64) as i64).max(min_h);
+                    let _ = state
+                        .window
+                        .request_inner_size(winit::dpi::PhysicalSize::new(w as u32, h as u32));
                 }
             }
             WindowEvent::RedrawRequested => {

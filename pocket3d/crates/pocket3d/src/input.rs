@@ -4,8 +4,32 @@
 use std::collections::HashSet;
 
 use glam::Vec2;
-use winit::event::{DeviceEvent, ElementState, MouseButton, WindowEvent};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::event::{DeviceEvent, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+
+/// One text-editing keystroke, in press order, key repeats included. The
+/// per-frame stream a text-editing widget consumes ([`Input::edits`]) —
+/// distinct from the held-state model (`key_down`/`key_pressed`), which
+/// ignores repeats on purpose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditKey {
+    /// A typed character (winit's logical `KeyEvent::text`, so shift and
+    /// layout are already applied). Control characters never appear here.
+    Char(char),
+    Backspace,
+    Delete,
+    Enter,
+    Tab,
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Escape,
+}
 
 #[derive(Default)]
 pub struct Input {
@@ -15,6 +39,11 @@ pub struct Input {
     mouse_pressed: HashSet<u8>,
     mouse_delta: Vec2,
     cursor: Option<Vec2>,
+    edits: Vec<EditKey>,
+    scroll: Vec2,
+    /// A super/command chord is held — edit consumers usually skip
+    /// `Char` events while true (they are shortcuts, not typing).
+    super_down: bool,
 }
 
 fn button_id(b: MouseButton) -> u8 {
@@ -44,6 +73,45 @@ impl Input {
                         }
                     }
                 }
+                // The edit stream: logical keys, repeats included.
+                if event.state == ElementState::Pressed {
+                    let named = match &event.logical_key {
+                        Key::Named(NamedKey::Backspace) => Some(EditKey::Backspace),
+                        Key::Named(NamedKey::Delete) => Some(EditKey::Delete),
+                        Key::Named(NamedKey::Enter) => Some(EditKey::Enter),
+                        Key::Named(NamedKey::Tab) => Some(EditKey::Tab),
+                        Key::Named(NamedKey::ArrowLeft) => Some(EditKey::Left),
+                        Key::Named(NamedKey::ArrowRight) => Some(EditKey::Right),
+                        Key::Named(NamedKey::ArrowUp) => Some(EditKey::Up),
+                        Key::Named(NamedKey::ArrowDown) => Some(EditKey::Down),
+                        Key::Named(NamedKey::Home) => Some(EditKey::Home),
+                        Key::Named(NamedKey::End) => Some(EditKey::End),
+                        Key::Named(NamedKey::PageUp) => Some(EditKey::PageUp),
+                        Key::Named(NamedKey::PageDown) => Some(EditKey::PageDown),
+                        Key::Named(NamedKey::Escape) => Some(EditKey::Escape),
+                        Key::Named(NamedKey::Super) => {
+                            self.super_down = true;
+                            None
+                        }
+                        _ => None,
+                    };
+                    if let Some(k) = named {
+                        self.edits.push(k);
+                    } else if let Some(text) = &event.text {
+                        self.edits.extend(
+                            text.chars().filter(|c| !c.is_control()).map(EditKey::Char),
+                        );
+                    }
+                } else if matches!(&event.logical_key, Key::Named(NamedKey::Super)) {
+                    self.super_down = false;
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                // Normalize to logical px; a line is worth ~20.
+                self.scroll += match delta {
+                    MouseScrollDelta::LineDelta(x, y) => Vec2::new(x * 20.0, y * 20.0),
+                    MouseScrollDelta::PixelDelta(p) => Vec2::new(p.x as f32, p.y as f32),
+                };
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let id = button_id(*button);
@@ -85,6 +153,9 @@ impl Input {
         self.mouse_down.clear();
         self.mouse_pressed.clear();
         self.mouse_delta = Vec2::ZERO;
+        self.edits.clear();
+        self.scroll = Vec2::ZERO;
+        self.super_down = false;
     }
 
     /// Call once per rendered frame, after game logic consumed the state.
@@ -92,6 +163,25 @@ impl Input {
         self.pressed.clear();
         self.mouse_pressed.clear();
         self.mouse_delta = Vec2::ZERO;
+        self.edits.clear();
+        self.scroll = Vec2::ZERO;
+    }
+
+    /// This frame's text-editing keystrokes, in press order (repeats
+    /// included). Cleared by `end_frame`.
+    pub fn edits(&self) -> &[EditKey] {
+        &self.edits
+    }
+
+    /// This frame's accumulated scroll-wheel delta in logical px
+    /// (y positive = content up, winit convention). Cleared by `end_frame`.
+    pub fn scroll(&self) -> Vec2 {
+        self.scroll
+    }
+
+    /// A super/command key is currently held.
+    pub fn super_down(&self) -> bool {
+        self.super_down
     }
 
     pub fn key_down(&self, code: KeyCode) -> bool {
@@ -141,5 +231,15 @@ impl Input {
     /// Place the cursor at a window-pixel position (scripted picking).
     pub fn inject_cursor(&mut self, x: f32, y: f32) {
         self.cursor = Some(Vec2::new(x, y));
+    }
+
+    /// Append a text-editing keystroke (scripted typing).
+    pub fn inject_edit(&mut self, key: EditKey) {
+        self.edits.push(key);
+    }
+
+    /// Add scroll-wheel delta in logical px (scripted scrolling).
+    pub fn inject_scroll(&mut self, dx: f32, dy: f32) {
+        self.scroll += Vec2::new(dx, dy);
     }
 }

@@ -1215,6 +1215,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "note-widget"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "glam",
+ "log",
+ "pocket-mod",
+ "pocket-ui-wgpu",
+ "pocket-widget",
+ "pocket3d",
+ "serde_json",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"

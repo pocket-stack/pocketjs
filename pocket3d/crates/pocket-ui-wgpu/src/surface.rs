@@ -11,6 +11,7 @@
 //! host omits it and the framework defaults to 480x272).
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use anyhow::Result;
@@ -38,6 +39,11 @@ struct Inner {
     /// pak image name → core texture handle (`ui.__textures`).
     textures: Vec<(String, i32)>,
     sprites: Vec<SpriteReg>,
+    /// Host service channel (spec ops 30..32): in-process JSON-line queues.
+    /// On consoles the mailbox is files under a tethered share; here the
+    /// widget host *is* the companion process, so lines just cross a queue.
+    svc_in: VecDeque<String>,
+    svc_out: VecDeque<String>,
 }
 
 /// The `ui` surface. Clone-cheap handle; single-threaded like the guest.
@@ -50,7 +56,16 @@ impl UiSurface {
     /// A fresh core sized to `viewport` (logical px; pass (480, 272) to host
     /// stock PSP apps).
     pub fn new(viewport: (f32, f32)) -> UiSurface {
-        let mut ui = Ui::new();
+        Self::new_with_density(viewport, 1)
+    }
+
+    /// A fresh core with a raster density > 1 (the Vita model: logical
+    /// layout unchanged, core-baked bitmaps and font coverage at `density`
+    /// samples per logical px). Pair with density-`density` paks and
+    /// `UiRenderer::render_words_scaled` for native-resolution output on
+    /// high-DPI displays.
+    pub fn new_with_density(viewport: (f32, f32), density: u32) -> UiSurface {
+        let mut ui = Ui::new_with_raster_density(density);
         ui.set_viewport(viewport.0, viewport.1);
         UiSurface {
             inner: Rc::new(RefCell::new(Inner {
@@ -58,8 +73,20 @@ impl UiSurface {
                 pak: Vec::new(),
                 textures: Vec::new(),
                 sprites: Vec::new(),
+                svc_in: VecDeque::new(),
+                svc_out: VecDeque::new(),
             })),
         }
+    }
+
+    /// Queue one JSON line for the guest's next `svcPoll` (host → guest).
+    pub fn svc_push(&self, line: impl Into<String>) {
+        self.inner.borrow_mut().svc_in.push_back(line.into());
+    }
+
+    /// Drain the lines the guest sent with `svcSend` (guest → host).
+    pub fn svc_drain(&self) -> Vec<String> {
+        self.inner.borrow_mut().svc_out.drain(..).collect()
     }
 
     /// Feed an app pak: styles + font atlases go straight to the core,
@@ -365,6 +392,33 @@ impl UiSurface {
                 if let Some(b) = m.borrow().as_ref() {
                     b.send(&line.0);
                 }
+            });
+
+            // ---- host service channel (spec ops 30..32) ------------------
+            // The widget/desktop host is its own companion process: svcOpen
+            // always succeeds and lines cross an in-process queue instead of
+            // a tethered share. Apps feature-detect exactly like on PSP.
+            op!("svcOpen", move |_app: Coerced<String>| true);
+
+            let ui = self.inner.clone();
+            op!("svcPoll", move || -> Option<String> {
+                let mut inner = ui.borrow_mut();
+                if inner.svc_in.is_empty() {
+                    return None;
+                }
+                // Batch per the HostOps contract: complete JSON lines,
+                // newline-terminated, possibly several per poll.
+                let mut batch = String::new();
+                for line in inner.svc_in.drain(..) {
+                    batch.push_str(&line);
+                    batch.push('\n');
+                }
+                Some(batch)
+            });
+
+            let ui = self.inner.clone();
+            op!("svcSend", move |line: Coerced<String>| {
+                ui.borrow_mut().svc_out.push_back(line.0);
             });
 
             // ---- boot tables (PSP contract) + desktop viewport ----------

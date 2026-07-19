@@ -39,7 +39,8 @@ pocket3d/
 │                          # embedded `ui` surfaces on meshes, part picking (WIDGET.md)
 └── examples/
     ├── uihost/            # PocketJS UI demos in a native macOS window
-    └── handheld/          # a borderless 3D PSP that runs Pocket apps (pocket-widget)
+    ├── handheld/          # a borderless 3D PSP that runs Pocket apps (pocket-widget)
+    └── note-widget/       # a markdown sticky note — the flat pocket-widget form
 ```
 
 Dependency shape: `pocket3d-bsp` knows nothing about rendering; `pocket3d`
@@ -88,6 +89,30 @@ to move the window. The uihost key map works throughout. Headless scripting:
 button for six ticks, `--hold circle` holds it for the whole run. The guest
 ticks at a fixed 60 Hz; GPU frames render only when something changed
 (watch the `pocket-widget: … frames rendered` line on exit).
+
+## note-widget — a markdown sticky on your desk
+
+The first *flat* pocket-widget runtime: no scene at all — the borderless,
+resizable, always-on-top window IS a live `ui` surface, rendered at Retina
+density (density-2 pak + `render_words_scaled`) and demand-driven like every
+widget. The guest is `demos/note` (markdown view/edit, popup menu); the host
+forwards the real keyboard/mouse/wheel/resize over the spec svc channel and
+synthesizes CIRCLE for clicks, so the framework's hover-focus + onPress
+pipeline does all dispatch.
+
+```sh
+bun scripts/build.ts note-main --density=2   # from the repo root
+cd pocket3d
+cargo run -p note-widget
+cargo run -p note-widget -- --file ~/notes/todo.md --width 380 --height 520
+```
+
+Click the text to edit (Esc/DONE to finish), drag the header to move, drag
+the dotted corner or any edge to resize (relayout is live), scroll to
+scroll; the ••• menu has theme/reset/close, edits autosave to `--file`
+(default `~/.pocket-note.md`), ⌘Q quits. Headless scripting:
+`--screenshot out.png --frames N`, `--click x,y@frame`, `--type text@frame`,
+`--key Enter@frame`, `--scroll dy@frame`.
 
 ## The substrate, briefly
 

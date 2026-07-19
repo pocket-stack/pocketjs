@@ -9,6 +9,7 @@ members = [
     "crates/pocket-vrm",
     "crates/pocket-widget",
     "examples/handheld",
+    "examples/note-widget",
     "examples/uihost",
 ]
 # PSP-only crates (tier-3 target, cargo-psp toolchain) — kept out of the

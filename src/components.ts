@@ -14,6 +14,7 @@ import {
 import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 import { animate, type EasingName } from "./anim.ts";
 import { pushButtonHandlerBlock, onButtonPress, onFrame, type ButtonPressOptions } from "./frame.ts";
+import { getOps, hostViewport } from "./host.ts";
 import { pushFocusGrid, pushFocusScope, type FocusGridOptions, type FocusScopeOptions } from "./input.ts";
 import { getOverlayRoot } from "./overlay.ts";
 import { View, type ViewProps } from "./primitives.ts";
@@ -170,12 +171,16 @@ export function Portal(props: PortalProps): SolidJSX.Element {
 
   onMount(() => {
     host = createElement("view");
+    // Size to the live logical viewport — desktop widget hosts resize it
+    // (resizeViewport keeps ui.__viewport fresh); console hosts read the
+    // spec screen. A portal opened after a resize lands full-window.
+    const vp = hostViewport(getOps());
     setProp(
       host,
       "style",
       {
-        width: SCREEN_W,
-        height: SCREEN_H,
+        width: vp?.w ?? SCREEN_W,
+        height: vp?.h ?? SCREEN_H,
         posType: ENUMS.PosType.Absolute,
         insetT: 0,
         insetR: 0,

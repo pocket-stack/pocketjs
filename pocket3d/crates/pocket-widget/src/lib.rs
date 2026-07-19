@@ -8,7 +8,9 @@
 //!   - [`shell`] — the widget window contract and its event loop. The guest
 //!     ticks at a fixed rate, always (Law 3: one guest turn per host tick);
 //!     GPU frames are demand-driven — no dirt, no render pass, no present.
-//!     An idle widget burns ticks (microseconds), not frames.
+//!     An idle widget burns ticks (microseconds), not frames. One governor,
+//!     two widget shapes: 3D ([`WidgetGame`]) and flat 2D ([`FlatWidget`],
+//!     where the window *is* the `ui` surface).
 //!   - [`embed`] — a full PocketJS `ui` surface rendered off-window into an
 //!     offscreen target whose texture view binds onto any pocket3d mesh
 //!     (`ModelAsset::from_geometry_textured`). The screen inside a widget is
@@ -30,4 +32,4 @@ pub mod shell;
 
 pub use embed::EmbeddedUi;
 pub use parts::{PartMap, PartShape, analog_pack, key_button};
-pub use shell::{WidgetConfig, WidgetGame, run};
+pub use shell::{FlatWidget, WidgetConfig, WidgetGame, run, run_flat};
