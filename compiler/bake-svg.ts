@@ -320,8 +320,15 @@ export function bakeSvg(svg: string, rasterDensity = 1): DecodedImage {
   if (logicalWidth <= 0 || logicalHeight <= 0) {
     throw new Error(`svg bake: bad dimensions ${logicalWidth}x${logicalHeight}`);
   }
-  const width = logicalWidth * rasterDensity;
-  const height = logicalHeight * rasterDensity;
+  const rawWidth = logicalWidth * rasterDensity;
+  const rawHeight = logicalHeight * rasterDensity;
+  const nextPowerOf2 = (n: number) => {
+    let p = 1;
+    while (p < n) p *= 2;
+    return p;
+  };
+  const width = nextPowerOf2(rawWidth);
+  const height = nextPowerOf2(rawHeight);
   const viewBox = (root.viewBox ?? `0 0 ${logicalWidth} ${logicalHeight}`).trim().split(/\s+/).map(Number);
   if (viewBox.length !== 4 || viewBox.some((n) => !Number.isFinite(n))) {
     throw new Error(`svg bake: invalid viewBox="${root.viewBox}"`);

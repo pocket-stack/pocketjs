@@ -15,7 +15,7 @@
 import { Show, createSignal } from "solid-js";
 import type { JSX } from "solid-js";
 import { Image, Text, View } from "@pocketjs/framework/components";
-import { onButtonPress } from "@pocketjs/framework/lifecycle";
+import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
 
 // ---------------------------------------------------------------------------
@@ -651,11 +651,26 @@ const PAGES: PageDef[] = [
   },
 ];
 
+const TRACK_FRAMES = 200;
+
 export default function Motions() {
   const [index, setIndex] = createSignal(0);
+  const [position, setPosition] = createSignal(0); // frame tracker
+
   const page = () => PAGES[index()];
   onButtonPress(BTN.RIGHT | BTN.RTRIGGER, () => setIndex((i) => (i + 1) % PAGES.length));
   onButtonPress(BTN.LEFT | BTN.LTRIGGER, () => setIndex((i) => (i + PAGES.length - 1) % PAGES.length));
+
+  onFrame(() => {
+    const p = position() + 1;
+    if (p >= TRACK_FRAMES) {
+      setIndex((i) => (i + 1) % PAGES.length);
+      setPosition(0);
+    } else {
+      setPosition(p);
+    }
+  });
+
   return (
     <View debugName="MotionsScreen" class="w-full h-full bg-[#191919]">
       <View debugName="Header" class="absolute left-0 top-[1] w-full flex-row justify-between px-[8]">

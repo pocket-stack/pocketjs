@@ -28,7 +28,7 @@
 use crate::spec::{self, draw_op, SCREEN_H, SCREEN_W};
 use crate::{TexView, Ui};
 
-pub const MAX_RENDER_SCALE: u32 = 4;
+pub const MAX_RENDER_SCALE: u32 = 10;
 
 /// Integer clip rect: x0/y0 inclusive, x1/y1 exclusive.
 #[derive(Clone, Copy)]
@@ -144,11 +144,12 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
 pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
     assert!(
         (1..=MAX_RENDER_SCALE).contains(&scale),
-        "render scale must be 1 through 4"
+        "render scale must be 1 through 10"
     );
     let scale = scale as i32;
-    let width = SCREEN_W as i32 * scale;
-    let height = SCREEN_H as i32 * scale;
+    let (vp_w, vp_h) = ui.viewport();
+    let width = vp_w as i32 * scale;
+    let height = vp_h as i32 * scale;
     let expected = width as usize * height as usize * 4;
     assert_eq!(
         fb.len(),

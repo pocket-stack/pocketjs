@@ -8,16 +8,20 @@
 // Needs the wasm target: rustup target add wasm32-unknown-unknown
 
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join, resolve, delimiter } from "node:path";
+import { homedir } from "node:os";
 
-const ROOT = new URL("..", import.meta.url).pathname; // PocketJS/
-const WASM_DIR = ROOT + "wasm";
-const OUT = ROOT + "host-web/pocketjs.wasm";
-const BUILT = WASM_DIR + "/target/wasm32-unknown-unknown/release/pocketjs_wasm.wasm";
+const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url))); // PocketJS/
+const WASM_DIR = join(ROOT, "wasm");
+const OUT = join(ROOT, "host-web/pocketjs.wasm");
+const BUILT = join(WASM_DIR, "target/wasm32-unknown-unknown/release/pocketjs_wasm.wasm");
 
 // cargo lives in ~/.cargo/bin, which non-login shells may not have on PATH.
 const env = {
   ...process.env,
-  PATH: `${process.env.HOME}/.cargo/bin:${process.env.PATH ?? ""}`,
+  PATH: `${join(homedir(), ".cargo/bin")}${delimiter}${process.env.PATH ?? ""}`,
+  RUSTFLAGS: "-C target-feature=+simd128",
 };
 
 const proc = Bun.spawnSync(

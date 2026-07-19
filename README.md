@@ -203,6 +203,35 @@ fonts, vectors and core masks at Vita's native 960x544 density. Physical
 controls, left-analog input, and front-panel multi-touch snapshots are supported;
 PSP builds retain their controller-only fallback.
 
+## Headless Video Rendering
+
+PocketJS can render high-performance, high-definition videos (e.g. 1080p) from Solid or Vue Vapor UI components without headless browser automation overhead. It runs inside a single Bun process, using the Rust core's software rasterizer to paint raw framebuffers and piping them directly to FFmpeg.
+
+To maximize performance:
+- **Zero Heap Allocations**: Framebuffers are read directly from WASM linear memory and piped to FFmpeg, bypassing JavaScript V8 heap allocations entirely.
+- **Multiprocess Concurrency**: Spawns parallel worker processes to render chunks of the video concurrently, stitching them together at the end with FFmpeg's ultra-fast demuxer (zero re-encoding overhead).
+- **HD Asset Baking**: Integrates with the compilation pipeline to bake Inter font atlases and SVGs at matching target physical densities (e.g. 4x scale for 1080p).
+
+### Usage
+
+```sh
+# Render a 60-second video of the music demo at 1080p, using 4 parallel CPU processes:
+bun render -a music-main -d 60 -f 30 -s 4 -c 4
+
+# Render a 5-second video of the motions demo at 540p (960x540):
+bun render -a motions-main -d 5.0 -f 30 -s 2
+
+# CLI Options:
+#   -a, --app <name>       Name of the app/demo target to render (required)
+#   -o, --output <path>    Output MP4 path (default: dist/render/<app>.mp4)
+#   -d, --duration <secs>  Duration of the video in seconds (default: 5.0)
+#   -f, --fps <number>     Frame rate of the video (default: 60)
+#   -s, --scale <1..10>    Integer scaling factor of logical 480x272 viewport (default: 4 -> 1920x1080)
+#   -c, --concurrency <n>  Number of parallel workers (default: 1)
+#   --crf <number>         x264 quality factor (default: 18)
+#   --preset <string>      x264 speed preset (default: faster)
+```
+
 ## DevTools + time travel
 
 Pocket DevTools ([DEVTOOLS.md](DEVTOOLS.md)) is built into every bundle: a

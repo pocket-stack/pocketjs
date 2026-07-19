@@ -29,6 +29,8 @@ use pocketjs_core::raster;
 
 static mut UI: Option<Ui> = None;
 static mut FRAMEBUFFER: Vec<u8> = Vec::new();
+static mut LOGICAL_WIDTH: u32 = 480;
+static mut LOGICAL_HEIGHT: u32 = 272;
 
 #[inline]
 fn ui() -> &'static mut Ui {
@@ -57,9 +59,15 @@ unsafe fn text<'a>(ptr: *const u8, len: usize) -> &'a str {
 /// bitmap resources such as rounded-corner masks; zero is the legacy default
 /// of one sample per logical pixel. Idempotent; call before anything else.
 #[no_mangle]
-pub extern "C" fn ui_init(raster_density: u32) {
+pub extern "C" fn ui_init(raster_density: u32, w: u32, h: u32) {
     unsafe {
-        UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
+        let w_val = if w == 0 { 480 } else { w };
+        let h_val = if h == 0 { 272 } else { h };
+        LOGICAL_WIDTH = w_val;
+        LOGICAL_HEIGHT = h_val;
+        let mut ui = Ui::new_with_raster_density(raster_density.max(1));
+        ui.set_viewport(w_val as f32, h_val as f32);
+        UI = Some(ui);
         FRAMEBUFFER.clear();
     }
 }
@@ -253,10 +261,11 @@ fn render_at_scale(scale: u32) -> *const u8 {
     if !(1..=raster::MAX_RENDER_SCALE).contains(&scale) {
         return core::ptr::null();
     }
-    let Some(width) = (SCREEN_W as usize).checked_mul(scale as usize) else {
+    let (w, h) = unsafe { (LOGICAL_WIDTH, LOGICAL_HEIGHT) };
+    let Some(width) = (w as usize).checked_mul(scale as usize) else {
         return core::ptr::null();
     };
-    let Some(height) = (SCREEN_H as usize).checked_mul(scale as usize) else {
+    let Some(height) = (h as usize).checked_mul(scale as usize) else {
         return core::ptr::null();
     };
     let Some(bytes) = width

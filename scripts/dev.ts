@@ -8,8 +8,10 @@
 //
 // Rebuild-on-change is deliberately manual (dev-tool simplicity): re-run
 // `bun scripts/build.ts <app>` (or this script) and reload the page.
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname; // PocketJS/
+const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url))); // PocketJS/
 
 function run(cmd: string[]): void {
   console.log(`dev: ${cmd.join(" ")}`);
@@ -23,9 +25,9 @@ const buildFlags = process.argv
 const demos = process.argv.slice(2).filter((a) => !a.startsWith("-"));
 if (demos.length === 0) demos.push("hero-main");
 
-run(["bun", "scripts/wasm.ts"]);
+run([process.execPath, "scripts/wasm.ts"]);
 for (const demo of demos) {
-  run(["bun", "scripts/build.ts", demo, ...buildFlags]);
+  run([process.execPath, "scripts/build.ts", demo, ...buildFlags]);
 }
 
 await import("../host-web/serve.ts");

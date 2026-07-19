@@ -22,23 +22,25 @@ import { transformAsync, type PluginObj } from "@babel/core";
 import solidPreset from "babel-preset-solid"; // untyped — see compiler/ambient.d.ts
 import tsPreset from "@babel/preset-typescript"; // untyped — see compiler/ambient.d.ts
 import type { BunPlugin } from "bun";
+import { fileURLToPath } from "node:url";
+import { resolve, join } from "node:path";
 // Toolchain identity for the transform cache key: a preset/babel upgrade must
 // invalidate cached output (CACHE_VERSION only covers changes to THIS file).
 import solidPresetPkg from "babel-preset-solid/package.json";
 import babelCorePkg from "@babel/core/package.json";
 import tsPresetPkg from "@babel/preset-typescript/package.json";
 
-/** Absolute path of the universal renderer module — babel-preset-solid emits
- *  this verbatim into every import it generates, so it MUST be absolute [R]. */
-export const RENDERER_PATH = new URL("../src/renderer.ts", import.meta.url).pathname;
-const INDEX_PATH = new URL("../src/index.ts", import.meta.url).pathname;
-const ANIMATION_PATH = new URL("../src/animation.ts", import.meta.url).pathname;
-const COMPONENTS_PATH = new URL("../src/components.ts", import.meta.url).pathname;
-const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
-const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
+const resolveLocalPath = (rel: string) => resolve(fileURLToPath(new URL(rel, import.meta.url)));
+
+export const RENDERER_PATH = resolveLocalPath("../src/renderer.ts");
+const INDEX_PATH = resolveLocalPath("../src/index.ts");
+const ANIMATION_PATH = resolveLocalPath("../src/animation.ts");
+const COMPONENTS_PATH = resolveLocalPath("../src/components.ts");
+const INPUT_API_PATH = resolveLocalPath("../src/input-api.ts");
+const LIFECYCLE_PATH = resolveLocalPath("../src/lifecycle.ts");
 const PACKAGE_NAME = "@pocketjs/framework";
 
-const CACHE_DIR = new URL("../.cache/transforms/", import.meta.url).pathname;
+const CACHE_DIR = resolveLocalPath("../.cache/transforms/");
 /** Bump to invalidate every cached transform (changes to this file's
  *  collector/lints/options — dependency versions are hashed separately). */
 const CACHE_VERSION = "7";
@@ -94,12 +96,17 @@ function makeCollector(out: Collected): PluginObj {
               // text, so HTML entities would render literally on screen while
               // this collector sees the parser-decoded value. Loud error per
               // the module contract (raw !== value iff entities appeared).
-              const raw = path.node.extra?.raw;
-              if (typeof raw === "string" && raw !== path.node.value) {
-                throw path.buildCodeFrameError(
-                  "PocketJS: HTML entities in JSX text are not decoded by the universal " +
-                    'renderer — write the literal character (é, ♥) or a string expression {"\\u00e9"} instead.',
-                );
+              let raw = path.node.extra?.raw;
+              let val = path.node.value;
+              if (typeof raw === "string") {
+                raw = raw.replace(/\r/g, "");
+                val = val.replace(/\r/g, "");
+                if (raw !== val) {
+                  throw path.buildCodeFrameError(
+                    "PocketJS: HTML entities in JSX text are not decoded by the universal " +
+                      'renderer — write the literal character (é, ♥) or a string expression {"\\u00e9"} instead.',
+                  );
+                }
               }
               add(path.node.value);
             },
@@ -203,7 +210,7 @@ function packagePath(spec: string): string | null {
  */
 export async function transformFile(path: string, src: string): Promise<TransformResult> {
   const key = await hashKey(path, src);
-  const cacheFile = CACHE_DIR + key + ".json";
+  const cacheFile = join(CACHE_DIR, key + ".json");
   const cached = (await Bun.file(cacheFile).json().catch(() => null)) as CacheEntry | null;
   if (cached && typeof cached.code === "string") {
     return {

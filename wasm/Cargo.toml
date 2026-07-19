@@ -19,5 +19,7 @@ crate-type = ["cdylib"]
 pocketjs-core = { path = "../core" }
 
 [profile.release]
-opt-level = "s"
+opt-level = 3
 lto = true
+codegen-units = 1
+panic = "abort"

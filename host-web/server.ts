@@ -8,10 +8,12 @@
 // protocol.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 
-const ROOT = new URL("..", import.meta.url).pathname; // PocketJS/
-const HOST_DIR = ROOT + "host-web/";
-const DIST_DIR = ROOT + "dist/";
+const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url))); // PocketJS/
+const HOST_DIR = join(ROOT, "host-web/");
+const DIST_DIR = join(ROOT, "dist/");
 
 const MIME: Record<string, string> = {
   html: "text/html; charset=utf-8",
