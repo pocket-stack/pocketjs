@@ -260,6 +260,60 @@ describe("semantic resolution", () => {
     expect(validateAndResolveBuildPlan(roomy, { target: "desktop-widget-macos" }).ok).toBe(true);
   });
 
+  test("every committed demo manifest lands on the expected admission matrix", async () => {
+    const { readdirSync, existsSync } = await import("node:fs");
+    // demo -> [psp, vita, desktop-widget-macos] admission. Console demos
+    // stay off the desktop widget (its profile presents "native" over a
+    // dynamic viewport, not the console integer-fit contract); the note is
+    // the inverse. A new demo missing here fails the test on purpose.
+    const expected: Record<string, [boolean, boolean, boolean]> = {
+      cafe: [true, true, false],
+      cards: [true, true, false],
+      chrome: [true, true, false],
+      cursor: [true, true, false],
+      gallery: [true, true, false],
+      hero: [true, true, false],
+      "hero-vue-vapor": [true, true, false],
+      im: [true, true, false],
+      library: [true, true, false],
+      motions: [true, true, false],
+      music: [true, true, false],
+      note: [false, false, true],
+      notifications: [true, true, false],
+      settings: [true, true, false],
+      stats: [true, true, false],
+      zoomlab: [true, true, false],
+    };
+    const targets = ["psp", "vita", "desktop-widget-macos"] as const;
+    for (const demo of readdirSync(new URL("../demos/", import.meta.url)).sort()) {
+      const url = new URL(`../demos/${demo}/pocket.json`, import.meta.url);
+      if (!existsSync(url)) continue;
+      const manifest = await Bun.file(url).json();
+      expect(expected[demo]).toBeDefined();
+      targets.forEach((target, i) => {
+        const result = validateAndResolveBuildPlan(manifest, { target });
+        expect(`${demo}@${target}:${result.ok}`).toBe(`${demo}@${target}:${expected[demo][i]}`);
+      });
+    }
+    // The demo shelf rule the site build applies: only psp-admissible
+    // manifests are shown — the note stays off the landing/playground.
+    const note = await Bun.file(new URL("../demos/note/pocket.json", import.meta.url)).json();
+    expect(validateAndResolveBuildPlan(note, { target: "psp" }).ok).toBe(false);
+  });
+
+  test("stock-demo builds prefer the demo's own manifest over synthesis", async () => {
+    const { demoManifestFor } = await import("../scripts/demo-identity.ts");
+    const root = new URL("../", import.meta.url).pathname;
+    const im = demoManifestFor(root, "im") as any;
+    expect(im.id).toBe("dev.pocket-stack.im");
+    expect(im.app.output).toBe("im-main");
+    expect(im.engine.capabilities.enhances).toEqual(["input.analog.left"]);
+    // A real manifest owns its framework — the override only applies to
+    // the synthesized fallback path.
+    const vue = demoManifestFor(root, "hero-vue-vapor", "solid") as any;
+    expect(vue.app.framework).toBe("vue-vapor");
+  });
+
   test("resolved PSP plan is byte-exact with its committed fixture", async () => {
     const result = validateAndResolveBuildPlan(portableInput, { target: "psp" });
     expect(result.ok).toBe(true);

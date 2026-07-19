@@ -16,7 +16,7 @@ import {
 } from "../src/manifest/index.ts";
 import { verifyPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
 import { validateAndResolveBuildPlan } from "../src/manifest/resolve.ts";
-import { demoIdentity } from "./demo-identity.ts";
+import { demoIdentity, demoManifestFor } from "./demo-identity.ts";
 import { packageVitaVpk } from "./vita-package.ts";
 
 const pspUiDir = new URL("..", import.meta.url).pathname; // PocketJS/
@@ -146,13 +146,7 @@ const stockDemo = stockDemoName && existsSync(`${pspUiDir}demos/${stockDemoName}
 // as `bun play` and custom hosts. Without this, its compiler defaulted to a
 // density-1 PSP bundle before the Vita native backend packaged it.
 if (!buildPlan && stockDemo) {
-  const manifest = await Bun.file(`${pspUiDir}pocket.json`).json() as Record<string, any>;
-  manifest.id = stockDemo.id;
-  manifest.name = stockDemo.name;
-  manifest.title = stockDemo.title;
-  manifest.app.entry = `demos/${stockDemoName}/main.tsx`;
-  manifest.app.output = outputApp;
-  manifest.app.framework = framework;
+  const manifest = demoManifestFor(pspUiDir, stockDemoName, framework) as Record<string, any>;
   const resolution = validateAndResolveBuildPlan(manifest, { target: "vita" });
   if (!resolution.ok) {
     throw new Error(

@@ -14,6 +14,7 @@
 //   /docs/*, /index.html  rendered from site/content (added below)
 
 import { spawnSync } from "node:child_process";
+import { validateAndResolveBuildPlan } from "../src/manifest/resolve.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { marked } from "marked";
@@ -269,6 +270,15 @@ function demoManifest() {
     const vueApp = dir + name + "/app.vue-vapor.tsx";
     const main = dir + name + "/main.tsx";
     if (!existsSync(app)) continue;
+    // The playground (and every demo shelf on the site) shows only
+    // PSP-admissible demos: a committed manifest that does not resolve
+    // against the psp target (desktop-only capabilities, non-console
+    // viewport) keeps its demo off the site.
+    const manifestPath = dir + name + "/pocket.json";
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      if (!validateAndResolveBuildPlan(manifest, { target: "psp" }).ok) continue;
+    }
     const source = inlinePlaygroundImports(name, readFileSync(app, "utf8"));
     if (source === null) continue; // multi-file demo
     let title = name[0].toUpperCase() + name.slice(1);
