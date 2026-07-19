@@ -96,6 +96,7 @@
     "pocket": "bun scripts/pocket.ts",
     "build": "bun scripts/build.ts",
     "play": "bun scripts/play.ts",
+ "widget": "bun scripts/widget.ts",
     "psp": "bun scripts/psp.ts",
     "psp:all": "bun scripts/psp-all.ts",
     "psp:switch": "bun psplink",
