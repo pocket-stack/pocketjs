@@ -34,8 +34,16 @@ function validateViewport(
   diagnostics: ContractDiagnostic[],
 ): void {
   const { logical, presentation } = manifest.app.viewport;
-  const { physicalViewport, logicalViewports, presentations } = profile.display;
-  if (!logicalViewports.some((supported) => sameViewport(supported, logical))) {
+  const { physicalViewport, logicalViewports, dynamicViewport, presentations } = profile.display;
+  // A dynamic target (desktop windows) admits any logical size in range —
+  // the listed logicalViewports are only the default the plan bakes for.
+  const logicalSupported = dynamicViewport
+    ? logical[0] >= dynamicViewport.min[0] &&
+      logical[1] >= dynamicViewport.min[1] &&
+      logical[0] <= dynamicViewport.max[0] &&
+      logical[1] <= dynamicViewport.max[1]
+    : logicalViewports.some((supported) => sameViewport(supported, logical));
+  if (!logicalSupported) {
     diagnostics.push({
       code: "viewport.logicalUnsupported",
       path: "/app/viewport/logical",
@@ -49,11 +57,21 @@ function validateViewport(
       message: `target does not support ${JSON.stringify(presentation)} presentation`,
     });
   }
-  if (presentation === "native" && !sameViewport(logical, physicalViewport)) {
+  // Native presentation: one logical px maps to rasterDensity physical px.
+  // Fixed targets must match their panel exactly; dynamic targets size the
+  // window to the viewport, so there is nothing to mismatch.
+  if (
+    presentation === "native" &&
+    !dynamicViewport &&
+    !sameViewport(
+      [logical[0] * profile.display.rasterDensity, logical[1] * profile.display.rasterDensity],
+      physicalViewport,
+    )
+  ) {
     diagnostics.push({
       code: "viewport.nativeMismatch",
       path: "/app/viewport",
-      message: "native presentation requires equal logical and physical viewports",
+      message: "native presentation requires the logical viewport to fill the panel",
     });
   }
   if (presentation === "integer-fit") {

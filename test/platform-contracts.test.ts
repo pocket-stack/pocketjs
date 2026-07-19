@@ -121,8 +121,8 @@ describe("pocket.json v2 schema", () => {
 });
 
 describe("platform registry", () => {
-  test("production advertises only the truthful PSP and Vita profiles", () => {
-    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita"]);
+  test("production advertises only the truthful stock-host profiles", () => {
+    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "desktop-widget-macos"]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
     expect(POCKET_TARGETS.psp.capabilities).toEqual([
       "input.analog.left",
@@ -142,6 +142,22 @@ describe("platform registry", () => {
       logicalViewports: [[480, 272]],
       presentations: ["integer-fit"],
       rasterDensity: 2,
+    });
+    // The desktop widget target: dynamic viewport, real pointer/text/IME,
+    // runtime glyph baking — and honestly NO nub or synthesized cursor.
+    expect(POCKET_TARGETS["desktop-widget-macos"].capabilities).toEqual([
+      "input.buttons",
+      "input.ime",
+      "input.pointer",
+      "input.text",
+      "host.clipboard",
+      "display.viewport.live",
+      "text.glyphs.baked",
+      "text.glyphs.runtime",
+    ]);
+    expect(POCKET_TARGETS["desktop-widget-macos"].display.dynamicViewport).toEqual({
+      min: [240, 180],
+      max: [4096, 4096],
     });
   });
 
@@ -188,6 +204,60 @@ describe("semantic resolution", () => {
     });
     expect(result.plan.planHash).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(verifyPlanHash(result.plan)).toBe(true);
+  });
+
+  test("desktop-widget capabilities are first-class: PSP admission refuses them", () => {
+    // A widget-only app REQUIRES the desktop surface — a PSP plan must be
+    // rejected at resolve time, not discovered broken at runtime.
+    const widgetOnly = structuredClone(portableInput) as any;
+    widgetOnly.engine.capabilities.requires = ["text.glyphs.baked", "input.text", "input.pointer"];
+    const onPsp = validateAndResolveBuildPlan(widgetOnly, { target: "psp" });
+    expect(onPsp.ok).toBe(false);
+    if (onPsp.ok) return;
+    const codes = onPsp.diagnostics.map((d) => d.code);
+    expect(codes).toContain("capability.unavailable");
+  });
+
+  test("resolves the note's dual-nature manifest against the desktop widget", async () => {
+    const manifest = await Bun.file(new URL("../demos/note/pocket.json", import.meta.url)).json();
+    const result = validateAndResolveBuildPlan(manifest, { target: "desktop-widget-macos" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.target).toEqual({ id: "desktop-widget-macos", hostAbi: 3 });
+    // Dynamic-viewport native presentation: density from the profile.
+    expect(result.plan.viewport.rasterDensity).toBe(2);
+    expect(result.plan.viewport.logical).toEqual([420, 560]);
+    // requires are on; enhances resolve to available on this target.
+    expect(result.plan.features["input.text"]).toBe(true);
+    expect(result.plan.features["input.ime"]).toBe(true);
+    expect(result.plan.features["host.clipboard"]).toBe(true);
+    expect(result.plan.features["display.viewport.live"]).toBe(true);
+    expect(result.plan.features["text.glyphs.runtime"]).toBe(true);
+
+    // The same manifest still ADMITS on PSP (the desktop surface is all
+    // `enhances`) — it degrades to the read-only note instead of failing.
+    const onPsp = validateAndResolveBuildPlan(
+      { ...manifest, app: { ...manifest.app, viewport: { logical: [480, 272], presentation: "integer-fit" } } },
+      { target: "psp" },
+    );
+    expect(onPsp.ok).toBe(true);
+    if (!onPsp.ok) return;
+    expect(onPsp.plan.features["input.text"]).toBe(false);
+    expect(onPsp.plan.features["input.pointer"]).toBe(false);
+  });
+
+  test("dynamic viewport admits in-range sizes and rejects out-of-range", async () => {
+    const manifest = await Bun.file(new URL("../demos/note/pocket.json", import.meta.url)).json();
+    const tiny = structuredClone(manifest) as any;
+    tiny.app.viewport.logical = [100, 100];
+    const rejected = validateAndResolveBuildPlan(tiny, { target: "desktop-widget-macos" });
+    expect(rejected.ok).toBe(false);
+    if (rejected.ok) return;
+    expect(rejected.diagnostics.map((d) => d.code)).toContain("viewport.logicalUnsupported");
+
+    const roomy = structuredClone(manifest) as any;
+    roomy.app.viewport.logical = [800, 600];
+    expect(validateAndResolveBuildPlan(roomy, { target: "desktop-widget-macos" }).ok).toBe(true);
   });
 
   test("resolved PSP plan is byte-exact with its committed fixture", async () => {

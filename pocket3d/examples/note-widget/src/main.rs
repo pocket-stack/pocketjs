@@ -737,6 +737,9 @@ fn boot(args: &Args) -> Result<(Guest, UiSurface)> {
         (args.size.0 as f32, args.size.1 as f32),
         args.density,
     );
+    // The platform-contract identity plan-built bundles assert
+    // (spec/platforms.ts POCKET_TARGETS["desktop-widget-macos"]).
+    surface.set_identity("desktop-widget-macos", 3);
     surface.feed_pak(&pak);
     let guest = Guest::new()?;
     surface.mount(&guest)?;

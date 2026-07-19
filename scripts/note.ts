@@ -13,14 +13,33 @@
 // here). On exit the shell prints its governor receipt:
 // "pocket-widget: N ticks, M frames rendered" — a settled note should show
 // M ≪ N (measured: 2 frames over 481 ticks).
+import { mkdirSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { $ } from "bun";
+import { validateAndResolveBuildPlan } from "../src/manifest/resolve.ts";
 
 const root = new URL("..", import.meta.url).pathname;
 const args = process.argv.slice(2).filter((a) => a !== "--");
 const proof = args.includes("--proof");
 const pass = args.filter((f) => f !== "--proof");
 
-await $`bun scripts/build.ts note-main --density=2`.cwd(root);
+// The note builds through its manifest against the desktop-widget-macos
+// target profile — density, viewport and capability features all come from
+// the platform contract, not flags.
+const manifest = await Bun.file(`${root}demos/note/pocket.json`).json();
+const resolution = validateAndResolveBuildPlan(manifest, { target: "desktop-widget-macos" });
+if (!resolution.ok) {
+  throw new Error(
+    `pocket-note: manifest did not resolve: ${resolution.diagnostics
+      .map((d) => `${d.path || "/"}: ${d.message}`)
+      .join("; ")}`,
+  );
+}
+const planPath = `${root}.pocket/desktop-widget/note-main.plan.json`;
+mkdirSync(resolvePath(planPath, ".."), { recursive: true });
+await Bun.write(planPath, JSON.stringify(resolution.plan, null, 2) + "\n");
+
+await $`bun scripts/build.ts --plan=${planPath} --project-root=${root}`.cwd(root);
 await $`cargo build --release -p note-widget`.cwd(`${root}pocket3d`);
 
 const bin = `${root}pocket3d/target/release/note-widget`;
@@ -30,14 +49,14 @@ if (proof) {
   const shot = `${root}dist/note-proof.png`;
   const file = `${root}dist/note-proof.md`;
   await $`rm -f ${file}`;
-  await $`${bin} --file ${file} --screenshot ${shot} --frames 130 --click 200,300@10 --type PROOF-@30 ${pass}`.env(
+  await $`${bin} --file ${file} --screenshot ${shot} --frames 130 --click 350,15@10 --type PROOF-@30 ${pass}`.env(
     env,
   );
   const saved = (await Bun.file(file).text()).includes("PROOF-");
   if (!saved) throw new Error("note proof: autosave round-trip missed the typed text");
   console.log(
-    "\nproof: a click dropped the caret into the sample note, typing landed" +
-      "\nat it, and the debounced autosave wrote the file back out." +
+    "\nproof: the pencil toggle opened the editor, typing landed at the" +
+      "\ncaret, and the debounced autosave wrote the file back out." +
       `\n${shot}`,
   );
   await $`open ${shot}`.nothrow();

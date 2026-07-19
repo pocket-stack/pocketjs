@@ -22,6 +22,13 @@ export type Viewport = readonly [width: number, height: number];
 export interface DisplayProfile {
   readonly physicalViewport: Viewport;
   readonly logicalViewports: readonly Viewport[];
+  /**
+   * Present when the logical viewport is runtime-mutable (desktop windows):
+   * any logical size within [min, max] is admissible, and the host resizes
+   * the core live (`display.viewport.live`). `logicalViewports` then lists
+   * the DEFAULT size a plan bakes assets for.
+   */
+  readonly dynamicViewport?: { readonly min: Viewport; readonly max: Viewport };
   readonly presentations: readonly PresentationMode[];
   /**
    * Target raster samples per logical pixel for baked text, vectors, masks,
@@ -59,16 +66,50 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // (enableCursor + pocket.json requires/enhances) — d-pad focus traversal
   // remains the portable default interaction.
   "input.cursor",
+  // OS text composition: preedit renders inline at the caret with its own
+  // cursor, commits arrive as ordinary text insertions, and the host docks
+  // the candidate window at the caret rect the app reports. Distinct from
+  // input.text — a host can have a keyboard without an IME.
+  "input.ime",
+  // A REAL absolute pointer (mouse/trackpad): position plus press/drag/
+  // release edges, hover resolves focus. A different guarantee than
+  // input.cursor's synthesized nub-pointer, hence a different id (see the
+  // header rule).
+  "input.pointer",
+  // A hardware text stream: layout-applied characters plus named editing
+  // keys (Backspace/Enter/arrows/Home/End/…), key repeat included. The OSK
+  // is the fallback spelling on targets without it.
+  "input.text",
   "input.touch",
+  // Copy/cut/paste round-trips with the OS clipboard.
+  "host.clipboard",
+  // The logical viewport is runtime-mutable: the app is told about live
+  // window resizes and relayouts (framework resizeViewport). Console
+  // targets never provide this — their viewport is a platform constant.
+  "display.viewport.live",
   "text.glyphs.baked",
+  // Codepoints outside the baked charset still render: the host extends
+  // the font atlases at runtime (system-font rasterization + loadFontAtlas
+  // reload). Required by any app that accepts arbitrary text input.
+  "text.glyphs.runtime",
 ] as const);
 
 export type PocketCapabilityId = CapabilityId<typeof POCKET_CAPABILITIES>;
 
-/** Production profiles advertise only capabilities delivered by stock hosts. */
+/**
+ * Production profiles advertise only capabilities delivered by stock hosts.
+ *
+ * Console targets are named by device (`psp`, `vita`). Host-windowed targets
+ * follow `<class>-<form>-<os>`: class names the device family (`desktop`),
+ * form the shell posture (`widget` — small always-on-top surface; future
+ * `app`, `kiosk`), os the platform (`macos`; future `linux`, `windows`).
+ * Form and os both change the truthful profile (viewport ranges, densities,
+ * IME/clipboard semantics), so both belong in the id.
+ */
 export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   readonly psp: TargetProfile<PocketCapabilityId>;
   readonly vita: TargetProfile<PocketCapabilityId>;
+  readonly "desktop-widget-macos": TargetProfile<PocketCapabilityId>;
 }>({
   psp: {
     hostAbi: 1,
@@ -101,6 +142,31 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "input.cursor",
       "input.touch",
       "text.glyphs.baked",
+    ],
+  },
+  // The flat pocket-widget shell (examples/note-widget is the stock host):
+  // a resizable always-on-top window whose logical viewport IS the window,
+  // rendered at density 2 for Retina. No nub, no synthesized cursor — the
+  // pointer is real, text comes from the keyboard/IME, and unseen glyphs
+  // bake at runtime.
+  "desktop-widget-macos": {
+    hostAbi: 3,
+    display: {
+      physicalViewport: [840, 1120],
+      logicalViewports: [[420, 560]],
+      dynamicViewport: { min: [240, 180], max: [4096, 4096] },
+      presentations: ["native"],
+      rasterDensity: 2,
+    },
+    capabilities: [
+      "input.buttons",
+      "input.ime",
+      "input.pointer",
+      "input.text",
+      "host.clipboard",
+      "display.viewport.live",
+      "text.glyphs.baked",
+      "text.glyphs.runtime",
     ],
   },
 });

@@ -17,6 +17,7 @@ import { Focusable, Image, Portal, Text, View } from "@pocketjs/framework/compon
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN, focusNode, hitFocusable } from "@pocketjs/framework/input";
 import { resizeViewport, type NodeMirror } from "@pocketjs/framework";
+import { hasFeature } from "@pocketjs/framework/platform";
 import { parseMarkdown } from "./markdown.ts";
 import {
   BODY_LINE_H,
@@ -139,6 +140,11 @@ function segColor(seg: Seg, ink: Ink): string {
 
 export default function Note(): ReturnType<typeof View> {
   const svc = connectSvc();
+  // Capability gates (build-time platform contract, compiler-foldable):
+  // no text input → the editor never opens (a PSP build is a read-only
+  // note); no pointer → d-pad drives scrolling.
+  const canEdit = hasFeature("input.text");
+  const hasPointer = hasFeature("input.pointer");
   const [vp, setVp] = createSignal({ w: 480, h: 272 });
   const [doc, setDoc] = createSignal(SAMPLE_DOC);
   const [editing, setEditing] = createSignal(false);
@@ -590,12 +596,12 @@ export default function Note(): ReturnType<typeof View> {
     }
   });
 
-  // Button-only hosts (PSP, sim): d-pad scrolls the rendered note.
+  // Pointerless hosts (PSP, sim): d-pad scrolls the rendered note.
   onButtonPress(BTN.UP, () => {
-    if (!svc) setScrollV(Math.max(0, scrollV() - SCROLL_STEP));
+    if (!hasPointer) setScrollV(Math.max(0, scrollV() - SCROLL_STEP));
   });
   onButtonPress(BTN.DOWN, () => {
-    if (!svc) setScrollV(Math.min(maxScrollV(), scrollV() + SCROLL_STEP));
+    if (!hasPointer) setScrollV(Math.min(maxScrollV(), scrollV() + SCROLL_STEP));
   });
 
   // ---- render ------------------------------------------------------------
@@ -656,7 +662,8 @@ export default function Note(): ReturnType<typeof View> {
           POCKET NOTE
         </Text>
         <View class="flex-1" />
-        {/* Preview/edit segmented toggle. */}
+        {/* Preview/edit segmented toggle (text-input hosts only). */}
+        <Show when={canEdit}>
         <View class="flex-row rounded-md p-[2] gap-[2]" style={{ bgColor: ink().chrome }}>
           <ToggleSeg
             active={() => !editing()}
@@ -685,6 +692,7 @@ export default function Note(): ReturnType<typeof View> {
             />
           </ToggleSeg>
         </View>
+        </Show>
         <Focusable
           class={
             dark()
@@ -836,16 +844,18 @@ export default function Note(): ReturnType<typeof View> {
             }
             style={{ insetT: HEADER_H, insetR: 8 }}
           >
-            <MenuItem
-              label={editing() ? "Preview" : "Edit"}
-              dark={dark()}
-              color={ink().body}
-              onPress={() => {
-                setMenuOpen(false);
-                if (editing()) leaveEdit();
-                else enterEdit(caret());
-              }}
-            />
+            <Show when={canEdit}>
+              <MenuItem
+                label={editing() ? "Preview" : "Edit"}
+                dark={dark()}
+                color={ink().body}
+                onPress={() => {
+                  setMenuOpen(false);
+                  if (editing()) leaveEdit();
+                  else enterEdit(caret());
+                }}
+              />
+            </Show>
             <MenuItem
               label={dark() ? "Light theme" : "Dark theme"}
               dark={dark()}

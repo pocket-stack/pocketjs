@@ -44,6 +44,11 @@ struct Inner {
     /// widget host *is* the companion process, so lines just cross a queue.
     svc_in: VecDeque<String>,
     svc_out: VecDeque<String>,
+    /// Platform-contract identity published as `ui.__host`/`ui.__hostAbi`.
+    /// Bundles built from a resolved plan refuse hosts whose identity does
+    /// not match their target (src/host.ts assertNativeHostContract).
+    host_id: String,
+    host_abi: Option<u32>,
 }
 
 /// The `ui` surface. Clone-cheap handle; single-threaded like the guest.
@@ -75,8 +80,19 @@ impl UiSurface {
                 sprites: Vec::new(),
                 svc_in: VecDeque::new(),
                 svc_out: VecDeque::new(),
+                host_id: "desktop".into(),
+                host_abi: None,
             })),
         }
+    }
+
+    /// Declare this host's platform-contract identity (a POCKET_TARGETS id
+    /// + its hostAbi) before `mount`. Plan-built bundles assert it; the
+    /// default "desktop" (no ABI) serves plan-less development hosts.
+    pub fn set_identity(&self, host_id: &str, host_abi: u32) {
+        let mut inner = self.inner.borrow_mut();
+        inner.host_id = host_id.to_string();
+        inner.host_abi = Some(host_abi);
     }
 
     /// Queue one JSON line for the guest's next `svcPoll` (host → guest).
@@ -446,10 +462,13 @@ impl UiSurface {
             viewport.set("h", vh as f64)?;
             ns.set("__viewport", viewport)?;
 
-            // Honest host label for DevTools' hello (the shim would
-            // otherwise report "psp" — this namespace passes its PSP-shaped
-            // host detection on purpose).
-            ns.set("__host", "desktop")?;
+            // Honest host label for DevTools' hello and the platform
+            // contract (the shim would otherwise report "psp" — this
+            // namespace passes its PSP-shaped host detection on purpose).
+            ns.set("__host", inner.host_id.as_str())?;
+            if let Some(abi) = inner.host_abi {
+                ns.set("__hostAbi", abi)?;
+            }
 
             Ok(())
         })

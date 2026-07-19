@@ -108,10 +108,25 @@ one `render_words_scaled` pass on dirty frames. It exercises everything the
   (ops 30..32) needs no new ops for a host that lives in-process: real
   keyboard/mouse/wheel/resize go to the guest as JSON lines
   (`{t:"ch"|"key"|"mouse"|"scroll"|"resize"|"load"}`), save/quit intents
-  come back (`{t:"save"|"quit"}`). Feature-detection keeps the same bundle
-  bootable on svc-less hosts (PSP, sim, goldens) as a read-only note — the
-  unmodified-app base case still holds, so the §7 `widget` surface stays
-  unbuilt.
+  come back (`{t:"save"|"quit"}`). The same bundle boots on svc-less hosts
+  (PSP, sim, goldens) as a read-only note — the unmodified-app base case
+  still holds, so the §7 `widget` surface stays unbuilt.
+- **The desktop surface is first-class in the platform contracts.** Six
+  registered capability ids name it (`input.text`, `input.pointer`,
+  `input.ime`, `host.clipboard`, `display.viewport.live`,
+  `text.glyphs.runtime` — each a distinct observable guarantee; a real
+  pointer is NOT `input.cursor`), and a `desktop-widget-macos` target
+  profile (hostAbi 3, density 2, `dynamicViewport` range) provides them.
+  Target ids for host-windowed platforms follow `<class>-<form>-<os>`
+  (future: `desktop-app-macos`, `desktop-kiosk-linux`). The note's
+  pocket.json is the reference dual-nature manifest: the desktop surface
+  sits in `enhances`, so the app ADMITS everywhere and lights up per
+  target (`hasFeature("input.text")` gates the editor — a PSP build never
+  shows the pencil), while a widget-only app putting them in `requires`
+  is refused by PSP admission at resolve time, not discovered broken on
+  device. Native hosts assert identity (`__host`/`__hostAbi` vs the plan's
+  target), and `bun run note` builds through the manifest — density and
+  features come from the profile, not flags.
 - **Clicks are CIRCLE.** The host synthesizes the spec press button while
   the mouse is down; the app resolves hover → focus (`hitFocusable` +
   `focusNode`) from svc mouse moves, and the framework's stock onPress
