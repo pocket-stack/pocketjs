@@ -28,7 +28,7 @@ import {
   vdomHelperId,
 } from "@vue-jsx-vapor/runtime/raw";
 import { OG_IMAGE_URL, SITE_DESC, SITE_TITLE, SITE_URL, renderPage } from "./templates.ts";
-import { AOT_DOC_NAV, BLOG_POSTS, DOC_NAV, type DocSection } from "./nav.ts";
+import { BLOG_POSTS, DOC_NAV, type DocSection } from "./nav.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // repo root
 const SITE = ROOT + "site/";
@@ -274,13 +274,6 @@ function copyDemoAssets(): void {
   }
 }
 
-function copyAotAssets(): void {
-  const docsDir = ROOT + "aot/docs/";
-  for (const file of ["town.png", "dialogue.png", "choice.png", "route.png"]) {
-    copy(docsDir + file, "aot/assets/" + file);
-  }
-}
-
 async function main() {
   console.log("pocketjs.dev build:");
   rmSync(OUT, { recursive: true, force: true });
@@ -348,20 +341,13 @@ async function main() {
   copy(SITE + "assets/home.css", "assets/home.css");
   await bundle("assets/home.js", "assets/home.js");
 
-  // 7. AOT product line. This is intentionally separate from the framework
-  //    playground and docs tree.
-  write("aot/index.html", renderAotHome());
-  copy(SITE + "assets/aot.css", "assets/aot.css");
-  copy(SITE + "assets/aot-demo.js", "assets/aot-demo.js");
-  copyAotAssets();
-
-  // 8. docs + blog (setupMarkdown installs the shared marked/shiki renderer)
+  // 7. docs + blog (setupMarkdown installs the shared marked/shiki renderer)
   const highlight = await setupMarkdown();
   await buildDocs(highlight);
   await buildBlog();
   buildChangelog();
 
-  // 8b. 404
+  // 7b. 404
   write("404.html", renderPage({
     title: "Not found",
     active: "",
@@ -377,7 +363,7 @@ async function main() {
     </section>`,
   }));
 
-  // 9. Tailwind CSS (@source in tailwind.css scans the site/ SOURCE for classes)
+  // 8. Tailwind CSS (@source in tailwind.css scans the site/ SOURCE for classes)
   await compileCss();
 
   console.log("pocketjs.dev build: done -> site/dist/");
@@ -430,21 +416,6 @@ ${body}
 <script type="module" src="/assets/home.js"></script>
 </body>
 </html>`;
-}
-
-const AOT_DESC = "PocketJS AOT turns a TypeScript/JSX cartridge DSL into GBA-native game data and a fixed runtime.";
-function renderAotHome(): string {
-  return renderPage({
-    title: "PocketJS AOT",
-    active: "aot",
-    body: readFileSync(SITE + "aot.html", "utf8"),
-    bodyClass: "aot-page",
-    head: '<link rel="stylesheet" href="/assets/aot.css">',
-    scripts: ['<script type="module" src="/assets/aot-demo.js"></script>'],
-    path: "/aot/",
-    description: AOT_DESC,
-    robots: "noindex,nofollow",
-  });
 }
 
 async function compileCss() {
@@ -624,7 +595,6 @@ async function buildDocs(highlight: Highlight) {
         head: tree.head,
         scripts: [],
         path: hrefFor(slug),
-        description: tree.active === "aot" ? AOT_DESC : undefined,
         robots: tree.robots,
       }));
     }
@@ -645,15 +615,6 @@ async function buildDocs(highlight: Highlight) {
     nav: DOC_NAV,
     outPrefix: "docs",
     transformFrameworkCode: true,
-  });
-  await buildTree({
-    active: "aot",
-    docsDir: SITE + "content/aot-docs/",
-    head: "",
-    nav: AOT_DOC_NAV,
-    outPrefix: "aot/docs",
-    robots: "noindex,nofollow",
-    transformFrameworkCode: false,
   });
 }
 

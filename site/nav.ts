@@ -128,22 +128,3 @@ export const BLOG_POSTS: BlogPost[] = [
   },
 ];
 
-export const AOT_DOC_NAV: DocSection[] = [
-  {
-    title: "Product line",
-    items: [
-      { slug: "overview", title: "Overview" },
-      { slug: "getting-started", title: "Getting started" },
-      { slug: "authoring", title: "Authoring model" },
-      { slug: "compiler", title: "Compiler pipeline" },
-    ],
-  },
-  {
-    title: "Runtime",
-    items: [
-      { slug: "cartridge", title: "Cartridge format" },
-      { slug: "runtime", title: "GBA runtime" },
-      { slug: "web-demo", title: "Web demo" },
-    ],
-  },
-];
