@@ -9,9 +9,9 @@ The Sony PSP is twenty-two years old: 333 MHz, 32 MB of RAM, a GPU with no shade
 
 So that became the challenge: open a real Figma Community file, as published. Not a cooked-up demo document — the [Paper Wireframe Kit](https://www.figma.com/community/file/1075811850250564922): 14,430 nodes, 2,293 component instances, a canvas 26,000 pixels wide, hand-drawn Patrick Hand lettering, photos, masks, the works. If the runtime can hold *that*, there is not much 2D left to be afraid of. It worked out better than we expected: you pan with the analog nub and zoom with the shoulder triggers, at 60 FPS, and it ships as one `EBOOT.PBP` you drop on a Memory Stick. We call it **Pocket Figma**.
 
-<img class="w-full rounded-xl border border-line" src="/assets/blog/figma-psp-cover-zoom.png" alt="Pocket Figma on a PSP at 59% zoom: the Paper Kit cover — a hand-drawn character asking 'I'm out of paper, got any?' in a speech bubble, the word Wireframe in handwriting, dot-grid paper texture — with the viewer HUD along the bottom" />
+<img class="w-full rounded-xl border border-line" src="/assets/blog/figma-components-fit.png" alt="Pocket Figma with the Paper Wireframe Kit's Components page fit to the screen at 3% zoom — dozens of wireframe component sheets spread across the 26,000-pixel canvas, the viewer HUD along the bottom" />
 
-<p class="text-sm text-slate-500 -mt-4">Native 480×272 output of the shipping build at 59% zoom, mid-pan across the kit's cover. This frame — like every PSP screenshot in this post — is the executable's own framebuffer, captured in the deterministic emulator our byte-exact tests run on.</p>
+<p class="text-sm text-slate-500 -mt-4">The kit's entire Components page — every wireframe sheet on the 26,000-pixel canvas — fit to the screen at 3% zoom. This frame, like every screenshot in this post, is the executable's own framebuffer, captured in the deterministic emulator our byte-exact tests run on.</p>
 
 Pocket Figma is open source at [pocket-stack/pocket-figma](https://github.com/pocket-stack/pocket-figma). And like OpenStrike before it, it exists to make a point about architecture: **the device never parses, it only consumes.** A design file is just the most literal possible test of that law, because a design file is nothing *but* things to parse.
 
