@@ -1,8 +1,8 @@
 /* ==========================================================================
    PocketJS — "Bare Metal Modern Web" landing page
    Direction: Docs navy with brushed metal accents. All classes are .lp-* scoped.
-   The live demo (.screen-emu / .emu-*) is owned by /assets/screen.css and is
-   never targeted here — only wrapped in framing containers.
+   The hero plays the baked demo wall (site/bake-demo-wall.ts) as a full-bleed
+   background; the interactive handheld shell lives only in the playground now.
    ========================================================================== */
 
 @font-face {
@@ -279,29 +279,37 @@ a.lp-btn--primary:hover {
 .lp-hero {
   position: relative;
   overflow: hidden;
-  padding: clamp(3.75rem, 10vw, 7.5rem) 0 clamp(3rem, 7vw, 5.5rem);
+  display: flex;
+  align-items: center;
+  min-height: clamp(560px, 88vh, 920px);
+  padding: clamp(4.5rem, 11vw, 8rem) 0 clamp(4rem, 9vw, 7rem);
 }
-.lp-hero__grid {
+/* The demo wall: 16 real recordings baked into one muted loop. The scrim digs
+   a legibility well under the copy and dissolves the wall into the page
+   background at the bottom edge. */
+.lp-hero__wall {
   position: absolute;
-  inset: -2px;
-  background:
-    linear-gradient(to right, rgba(43, 58, 85, 0.24) 1px, transparent 1px) 0 0 / 62px 62px,
-    linear-gradient(to bottom, rgba(43, 58, 85, 0.18) 1px, transparent 1px) 0 0 / 62px 62px;
-  -webkit-mask-image: radial-gradient(120% 88% at 50% 6%, rgba(0, 0, 0, 0.75) 0%, transparent 62%);
-  mask-image: radial-gradient(120% 88% at 50% 6%, rgba(0, 0, 0, 0.75) 0%, transparent 62%);
+  inset: 0;
   pointer-events: none;
 }
-.lp-hero__aurora {
+.lp-hero__wall-video {
   position: absolute;
-  left: 0;
-  top: -22%;
+  inset: 0;
   width: 100%;
-  height: 780px;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.72) contrast(1.03) brightness(0.8);
+}
+.lp-hero__wall-scrim {
+  position: absolute;
+  inset: 0;
   background:
-    radial-gradient(closest-side at 0% 22%, rgba(96, 165, 250, 0.105), rgba(20, 29, 49, 0.055) 38%, transparent 70%),
-    radial-gradient(closest-side at 100% 24%, rgba(34, 211, 238, 0.06), rgba(20, 29, 49, 0.04) 38%, transparent 72%);
-  filter: blur(16px);
-  pointer-events: none;
+    radial-gradient(88% 76% at 50% 40%, rgba(5, 7, 13, 0.9), rgba(5, 7, 13, 0.66) 52%, rgba(5, 7, 13, 0.32) 76%, rgba(5, 7, 13, 0.14) 100%),
+    linear-gradient(180deg, rgba(5, 7, 13, 0.92) 0%, rgba(5, 7, 13, 0.4) 24%, rgba(5, 7, 13, 0.32) 60%, var(--bg) 97%);
+}
+@media (prefers-reduced-motion: reduce) {
+  /* home.js also pauses the video; keeping the poster frame visible is fine. */
+  .lp-hero__wall-video { display: none; }
 }
 .lp-hero__in {
   position: relative;
@@ -368,87 +376,6 @@ a.lp-btn--primary:hover {
   gap: 0.85rem;
   margin-top: 2.1rem;
 }
-.lp-hero__pip {
-  position: absolute;
-  top: clamp(1.25rem, 2.8vw, 2.5rem);
-  right: clamp(1rem, 3vw, 3rem);
-  z-index: 2;
-  width: clamp(250px, 23vw, 390px);
-  aspect-ratio: 1280 / 684;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  background: #05070d;
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-}
-.lp-hero__pip-video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.92;
-  filter: saturate(0.98) contrast(1.02);
-}
-
-/* ---- Live-demo stage ------------------------------------------------------ */
-.lp-stage {
-  position: relative;
-  width: 100%;
-  max-width: 760px;
-  margin: clamp(2.75rem, 7vw, 5rem) auto 0;
-}
-.lp-stage__glow {
-  position: absolute;
-  inset: -16% -12% -26%;
-  z-index: 0;
-  background:
-    radial-gradient(60% 62% at 50% 48%, rgba(30, 41, 59, 0.34), rgba(9, 12, 20, 0.2) 46%, transparent 72%),
-    radial-gradient(42% 50% at 6% 52%, rgba(96, 165, 250, 0.08), transparent 70%),
-    radial-gradient(42% 50% at 94% 52%, rgba(34, 211, 238, 0.055), transparent 70%);
-  filter: blur(48px);
-  pointer-events: none;
-}
-/* The handheld shell (.screen-emu, in screen.css) is now the frame — this
-   wrapper just holds it above the ambient glow, no second bezel. */
-.lp-stage__frame {
-  position: relative;
-  z-index: 1;
-}
-/* Demo switcher pills under the shell — each swaps the live bundle in place. */
-.lp-demo-tabs {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  width: fit-content;
-  margin: 1rem auto 0;
-  padding: 0.16rem;
-  border: 1px solid rgba(43, 58, 85, 0.92);
-  border-radius: 9px;
-  background: rgba(5, 7, 13, 0.42);
-}
-.lp-demo-tab {
-  appearance: none;
-  border: 0;
-  border-radius: 7px;
-  padding: 0.42rem 0.7rem;
-  background: transparent;
-  color: var(--muted);
-  font: 700 12px/1 var(--mono);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.lp-demo-tab:hover { color: var(--ink); }
-.lp-demo-tab.is-active {
-  color: #f8fafc;
-  background: rgba(51, 65, 85, 0.82);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-.lp-demo-tab:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
-
 /* ---- Showcase cases (OpenStrike / Pocket Figma) ---------------------------- */
 .lp-case {
   display: grid;
@@ -501,15 +428,6 @@ a.lp-btn--primary:hover {
   border-bottom: 1px solid transparent;
 }
 .lp-case__src:hover { color: var(--ink); border-bottom-color: var(--muted); }
-@media (max-width: 1120px) {
-  .lp-hero__pip {
-    position: relative;
-    top: auto;
-    right: auto;
-    width: min(420px, 86vw);
-    margin: 1.6rem auto 0.8rem;
-  }
-}
 /* ---- Section scaffolding -------------------------------------------------- */
 .lp-section { padding: clamp(4.5rem, 10vw, 8rem) 0; }
 .lp-kicker {
