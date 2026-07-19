@@ -59,7 +59,10 @@ import { connectSvc, type HostEvent } from "./svc.ts";
 import { SAMPLE_DOC } from "./sample.ts";
 
 const HEADER_H = 30;
-const PAD_X = 14;
+/** Minimum side padding of the content column. */
+const PAD_X = 22;
+/** The content column stops growing here and centers (markdown-app feel). */
+const MAX_CONTENT_W = 560;
 const OVERSCAN = 40;
 const SCROLL_STEP = 40; //  d-pad / PageUp step base
 const SAVE_DEBOUNCE = 45; // ticks (~0.75 s) after the last edit
@@ -149,7 +152,9 @@ export default function Note(): ReturnType<typeof View> {
   const [mouse, setMouse] = createSignal({ x: -1, y: -1 });
 
   const ink = () => (dark() ? INK.dark : INK.light);
-  const contentW = () => vp().w - PAD_X * 2;
+  const contentW = () => Math.min(vp().w - PAD_X * 2, MAX_CONTENT_W);
+  /** Left edge of the centered content column. */
+  const marginX = () => Math.max(PAD_X, (vp().w - contentW()) / 2);
   const viewH = () => vp().h - HEADER_H;
 
   /** The host gates its header-drag/resize claims while the menu is up
@@ -305,6 +310,14 @@ export default function Note(): ReturnType<typeof View> {
       if (text !== "") svc?.send({ t: "copy", text });
       return;
     }
+    if (k === "Cut") {
+      const sel = editSel();
+      if (editing() && sel) {
+        svc?.send({ t: "copy", text: doc().slice(sel.lo, sel.hi) });
+        mutate("other", (s) => typeText(s, ""));
+      }
+      return;
+    }
     if (k === "Undo") {
       applyUndoRedo(undo);
       return;
@@ -377,12 +390,12 @@ export default function Note(): ReturnType<typeof View> {
 
   const editPosAt = (x: number, y: number): number => {
     const line = Math.floor((y - HEADER_H + scrollE() - EDGE_PAD) / BODY_LINE_H);
-    return caretFromX(doc(), dlines(), line, x - PAD_X, bodyWidth);
+    return caretFromX(doc(), dlines(), line, x - marginX(), bodyWidth);
   };
   const viewPosAt = (x: number, y: number): RowPos => {
     const rows = viewLayout().rows;
     const row = rowFromY(rows, y - HEADER_H + scrollV());
-    return { row, ch: rows.length ? rowChFromX(rows[row], x - PAD_X, textWidth) : 0 };
+    return { row, ch: rows.length ? rowChFromX(rows[row], x - marginX(), textWidth) : 0 };
   };
 
   const pointerDown = (x: number, y: number) => {
@@ -443,6 +456,9 @@ export default function Note(): ReturnType<typeof View> {
         break;
       case "ch":
         if (editing() && ev.s) mutate("type", (s) => typeText(s, ev.s!));
+        break;
+      case "paste":
+        if (editing() && ev.text) mutate("other", (s) => typeText(s, ev.text!));
         break;
       case "key":
         if (ev.k) handleKey(ev.k);
@@ -584,8 +600,8 @@ export default function Note(): ReturnType<typeof View> {
             <View
               class="absolute"
               style={{
-                insetL: PAD_X,
-                insetR: PAD_X,
+                insetL: marginX(),
+                width: contentW(),
                 insetT: 0,
                 height: viewLayout().total,
                 translateY: -scrollV(),
@@ -614,8 +630,8 @@ export default function Note(): ReturnType<typeof View> {
           <View
             class="absolute"
             style={{
-              insetL: PAD_X,
-              insetR: PAD_X,
+              insetL: marginX(),
+              width: contentW(),
               insetT: 0,
               height: editTotal(),
               translateY: -scrollE(),

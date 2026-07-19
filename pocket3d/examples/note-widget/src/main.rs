@@ -77,6 +77,7 @@ enum ScriptEvent {
     Drag(f32, f32, f32, f32),
     Type(String),
     Key(String),
+    Paste(String),
     Scroll(f32),
 }
 
@@ -193,6 +194,9 @@ impl NoteGame {
                     self.script_drag = Some((x0, y0, x1, y1, self.ticks));
                 }
                 ScriptEvent::Type(s) => self.svc(serde_json::json!({"t": "ch", "s": s})),
+                ScriptEvent::Paste(text) => {
+                    self.svc(serde_json::json!({"t": "paste", "text": text}))
+                }
                 ScriptEvent::Key(k) => self.svc(serde_json::json!({"t": "key", "k": k})),
                 ScriptEvent::Scroll(dy) => self.svc(serde_json::json!({"t": "scroll", "dy": dy})),
             }
@@ -227,6 +231,16 @@ impl FlatWidget for NoteGame {
         }
         if input.super_down() && input.key_pressed(KeyCode::KeyC) {
             self.svc(serde_json::json!({"t": "key", "k": "Copy"}));
+        }
+        if input.super_down() && input.key_pressed(KeyCode::KeyX) {
+            self.svc(serde_json::json!({"t": "key", "k": "Cut"}));
+        }
+        if input.super_down() && input.key_pressed(KeyCode::KeyV) {
+            if let Some(text) = clipboard_paste() {
+                if !text.is_empty() {
+                    self.svc(serde_json::json!({"t": "paste", "text": text}));
+                }
+            }
         }
         if let Some(limit) = self.quit_after
             && self.ticks >= limit
@@ -327,7 +341,13 @@ impl FlatWidget for NoteGame {
 
     fn render(&mut self, gpu: &Gpu, view: &wgpu::TextureView, window_px: (u32, u32)) -> Result<()> {
         let renderer = self.renderer.as_mut().expect("init ran");
-        let scale = window_px.0 as f32 / self.logical.0.max(1) as f32;
+        // Render at the WINDOW's scale factor, never at a window/viewport
+        // ratio: mid-resize the surface and the last-ticked viewport differ
+        // by sub-pixel rounding, and a fractional ratio re-scales every
+        // glyph — visible as font/position jitter while dragging the grip.
+        // At the true scale a stale viewport is at most one physical px of
+        // clipped edge for one frame; a resize is a relayout, never a zoom.
+        let scale = if self.scale > 0.0 { self.scale as f32 } else { 1.0 };
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         self.surface.with_ui(|ui| {
             renderer.render_words_scaled(
@@ -395,6 +415,25 @@ fn clipboard_copy(text: &str) {
     }
     #[cfg(not(target_os = "macos"))]
     log::warn!("note-widget: clipboard copy unsupported on this platform");
+}
+
+/// Read the system clipboard (pbpaste — the macOS counterpart of copy).
+fn clipboard_paste() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        match std::process::Command::new("pbpaste").output() {
+            Ok(out) => Some(String::from_utf8_lossy(&out.stdout).into_owned()),
+            Err(e) => {
+                log::warn!("note-widget: pbpaste failed: {e}");
+                None
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        log::warn!("note-widget: clipboard paste unsupported on this platform");
+        None
+    }
 }
 
 /// FNV-1a 64 over the DrawList words (embed.rs's dirty signal).
@@ -497,6 +536,10 @@ fn parse_args() -> Result<Args> {
             "--key" => {
                 let (frame, k) = at(&val("--key")?, "--key")?;
                 args.script.push((frame, ScriptEvent::Key(k)));
+            }
+            "--paste" => {
+                let (frame, text) = at(&val("--paste")?, "--paste")?;
+                args.script.push((frame, ScriptEvent::Paste(text)));
             }
             "--scroll" => {
                 let (frame, dy) = at(&val("--scroll")?, "--scroll")?;

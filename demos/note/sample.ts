@@ -27,7 +27,7 @@ cargo run -p note-widget
 ---
 
 1. The I-beam toggles into editing; the eye back to preview
-2. Drag to select in either mode; Cmd-C copies
+2. Drag to select in either mode; Cmd-C, Cmd-X, Cmd-V work
 3. Cmd-Z / Shift-Cmd-Z undo and redo
 4. Drag the header to move, the corner to resize; dots for the menu
 

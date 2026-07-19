@@ -15,7 +15,9 @@
 //   {t:"ch", s}                typed characters (batched, layout applied)
 //   {t:"key", k}               named key: Backspace Delete Enter Tab Left
 //                              Right Up Down Home End PageUp PageDown Escape
-//                              Copy Undo Redo (⌘-chords arrive as keys)
+//                              Copy Cut Undo Redo (⌘-chords arrive as keys)
+//   {t:"paste", text}          insert the system clipboard (⌘V — the host
+//                              reads it and pushes the text)
 //   {t:"mouse", x, y, d}       pointer moved / pressed / released — d is
 //                              the primary-button state, and a line is sent
 //                              on every press/release even without movement
@@ -31,7 +33,7 @@
 import { getOps } from "@pocketjs/framework";
 
 export interface HostEvent {
-  t: "hello" | "resize" | "load" | "ch" | "key" | "mouse" | "scroll";
+  t: "hello" | "resize" | "load" | "ch" | "key" | "mouse" | "scroll" | "paste";
   w?: number;
   h?: number;
   text?: string;
