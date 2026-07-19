@@ -1,0 +1,29 @@
+{
+  "name": "@pocketjs/static",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pocket Static — the static game compiler: TypeScript in, GBA/GB/NES cartridges out.",
+  "type": "module",
+  "exports": {
+    ".": "./rpg/dsl.ts",
+    "./rpg": "./rpg/dsl.ts",
+    "./rpg/battle": "./rpg/battle.ts",
+    "./spec": "./spec/isa.ts",
+    "./compiler": "./compiler/index.ts"
+  },
+  "bin": {
+    "pocket-static": "./compiler/cli.ts"
+  },
+  "scripts": {
+    "gen": "bun spec/gen-c.ts",
+    "test": "bun test . && bun test/e2e.ts",
+    "test:vm": "bun test vm",
+    "test:e2e": "bun test/e2e.ts",
+    "build:boardroom": "bun games/boardroom/imagegen/build-assets.ts && bun compiler/cli.ts build games/boardroom/game.ts --out dist/boardroom --target gba,gb,nes",
+    "play": "bun compiler/play.ts"
+  },
+  "devDependencies": {
+    "jsnes": "^1.2.1",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,5 @@
+CompileFlags:
+  Add:
+    - -I/Users/evan/.superset/worktrees/pocketjs/zippy-radio/static/runtime/gen
+    - -I/Users/evan/.superset/worktrees/pocketjs/zippy-radio/static/runtime/core
+    - -DPS_TARGET_GBA

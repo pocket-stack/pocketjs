@@ -1,0 +1,80 @@
+<section class="static-hero">
+  <div class="static-shell">
+    <div class="static-hero__copy">
+      <p class="static-kicker">Pocket product line</p>
+      <h1>Pocket Static</h1>
+      <p class="static-hero__lead">
+        Write a generator, ship a cartridge. One TypeScript module compiles to
+        real GBA, Game Boy and NES ROMs &mdash; scripts lower to a portable
+        stack VM, everything else resolves at build time.
+      </p>
+      <div class="static-actions">
+        <a class="static-btn static-btn--primary" href="/static/docs/overview/">Read the docs</a>
+        <a class="static-btn" href="#demo">See BOARDROOM</a>
+      </div>
+    </div>
+
+    <div id="demo" class="static-console" data-static-demo>
+      <div class="static-console__top">
+        <span>PS-01</span>
+        <span>one source, three consoles</span>
+      </div>
+      <div class="static-console__body">
+        <div class="static-dpad" aria-label="Scene controls">
+          <button type="button" data-static-input="up" aria-label="Previous scene"></button>
+          <button type="button" data-static-input="left" aria-label="Previous scene"></button>
+          <button type="button" data-static-input="right" aria-label="Next scene"></button>
+          <button type="button" data-static-input="down" aria-label="Next scene"></button>
+        </div>
+        <div class="static-screen">
+          <canvas id="static-demo-canvas" width="240" height="160"></canvas>
+          <div class="static-screen__status" data-static-status>booting cartridge</div>
+        </div>
+        <div class="static-console__meta">
+          <span data-static-label>boardroom</span>
+          <span>captured from the E2E suites</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="static-band">
+  <div class="static-shell static-band__grid">
+    <div class="static-card">
+      <h2>Scripts that never run</h2>
+      <p>
+        <code>script(function* (s, v, f) { ... })</code> bodies are compiled,
+        not executed: a real expression compiler lowers locals, control flow,
+        <code>&amp;&amp;</code>/<code>||</code>, switch, subroutines and macro
+        expansion into bytecode for a ~600-line portable C interpreter.
+      </p>
+    </div>
+    <div class="static-card">
+      <h2>One engine, three consoles</h2>
+      <p>
+        Gameplay lives in portable C compiled by arm-none-eabi-gcc, sdcc and
+        cc65. Each console adds one small HAL: mode-0 layers on GBA, a
+        window-layer textbox on Game Boy, an NMI-owned VRAM ring on NES.
+      </p>
+    </div>
+    <div class="static-card">
+      <h2>The reference VM is the referee</h2>
+      <p>
+        A TypeScript interpreter is the semantic golden. The E2E suites play
+        identical scenarios through libmgba and jsnes and hold every console
+        to the reference answers &mdash; same seed, same story, byte-equal
+        debug state.
+      </p>
+    </div>
+    <div class="static-card">
+      <h2>BOARDROOM</h2>
+      <p>
+        The launch game: November 2023 at OpenAI, playable &mdash; the Vegas
+        call, 743 signatures, and a final negotiation battle written entirely
+        as compiler macros. Quoted lines pinned to the public record in the
+        research dossier.
+      </p>
+    </div>
+  </div>
+</section>

@@ -11,7 +11,7 @@ A release is one tag push. `.github/workflows/release.yml` publishes
 `@pocketjs/framework` (repo root) and `@pocketjs/cli` (`cli/`) to npm via
 **trusted publishing (OIDC)** — no tokens, provenance attached — skipping any
 version already on the registry (safe to re-run). The site deploys separately
-on every `main` push (`deploy.yml`). `@pocketjs/aot` stays private.
+on every `main` push (`deploy.yml`). `@pocketjs/static` stays private.
 
 ## Standard workflow
 

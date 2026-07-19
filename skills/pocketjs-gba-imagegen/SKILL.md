@@ -1,6 +1,6 @@
 ---
 name: pocketjs-gba-imagegen
-description: Generate original GBA-friendly pixel-art asset source sheets through Codex app-server and ImageGen, then save PNGs for PocketJS AOT asset baking. Use when a local coding agent needs reusable tiles, 16x16 character sprites, RPG item icons, or generic Game Boy Advance-style pixel art through the shared Codex image generation path.
+description: Generate original GBA-friendly pixel-art asset source sheets through Codex app-server and ImageGen, then save PNGs for Pocket Static asset baking. Use when a local coding agent needs reusable tiles, 16x16 character sprites, RPG item icons, or generic Game Boy Advance-style pixel art through the shared Codex image generation path.
 ---
 
 # PocketJS GBA ImageGen
@@ -22,13 +22,13 @@ git status --short --branch
 2. Generate a source sheet with the Bun TypeScript CLI:
 
 ```text
-bun imagegen --out aot/demo/imagegen/gba-source.png
+bun imagegen --out static/games/boardroom/imagegen/source.png
 ```
 
 3. Add an art-direction seed only when the user asks for one:
 
 ```text
-bun imagegen --out aot/demo/imagegen/rainy-port-source.png --theme "rainy port town with stone quays and lanterns"
+bun imagegen --out static/games/boardroom/imagegen/rainy-port-source.png --theme "rainy port town with stone quays and lanterns"
 ```
 
 4. Use `--json` when another coding agent needs machine-readable output:
@@ -37,10 +37,10 @@ bun imagegen --out aot/demo/imagegen/rainy-port-source.png --theme "rainy port t
 bun imagegen --out /tmp/gba-sheet.png --json
 ```
 
-5. If replacing the AOT demo source sheet, rerun the deterministic extractor:
+5. If replacing a game's source sheet, rerun that game's deterministic extractor:
 
 ```text
-bun aot/demo/imagegen/build-assets.ts
+bun static/games/boardroom/imagegen/build-assets.ts  # (per-game extractor)
 ```
 
 ## Prompt Profiles
@@ -58,4 +58,4 @@ Use `--kind items` for small RPG item icons that remain readable as 16x16 sprite
 - Keep all command wrappers in Bun TypeScript. Do not add native shell scripts for this workflow.
 - Generate original assets only; avoid franchise terms and existing character references.
 - Keep the output as a source sheet on a neutral background with gutters so later scripts can crop or quantize it.
-- Treat the generated PNG as source art. The AOT runtime still requires deterministic 4bpp extraction before the image can ship as cartridge data.
+- Treat the generated PNG as source art. Pocket Static still requires deterministic palette-indexed extraction before the image can ship as cartridge data.

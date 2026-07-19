@@ -56,7 +56,7 @@ function usageText(): string {
     "  --json                                        Emit machine-readable JSON on stdout",
     "",
     "examples:",
-    "  bun imagegen --out aot/demo/imagegen/gba-source.png",
+    "  bun imagegen --out static/games/boardroom/imagegen/source.png",
     "  bun imagegen --out /tmp/gba-sheet.png --theme \"rainy port town\" --json",
   ].join("\n");
 }

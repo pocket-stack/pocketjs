@@ -128,22 +128,21 @@ export const BLOG_POSTS: BlogPost[] = [
   },
 ];
 
-export const AOT_DOC_NAV: DocSection[] = [
+export const STATIC_DOC_NAV: DocSection[] = [
   {
-    title: "Product line",
+    title: "Pocket Static",
     items: [
       { slug: "overview", title: "Overview" },
       { slug: "getting-started", title: "Getting started" },
-      { slug: "authoring", title: "Authoring model" },
-      { slug: "compiler", title: "Compiler pipeline" },
+      { slug: "scripts", title: "The script compiler" },
+      { slug: "compiler", title: "Pipeline & assets" },
     ],
   },
   {
-    title: "Runtime",
+    title: "Consoles",
     items: [
-      { slug: "cartridge", title: "Cartridge format" },
-      { slug: "runtime", title: "GBA runtime" },
-      { slug: "web-demo", title: "Web demo" },
+      { slug: "targets", title: "GBA / GB / NES" },
+      { slug: "boardroom", title: "BOARDROOM, the game" },
     ],
   },
 ];

@@ -14,7 +14,7 @@ export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 
 export interface PageOpts {
   title: string | null; // null uses the bare wordmark (homepage)
-  active: string; // "home" | "docs" | "aot" | "playground" | "blog"
+  active: string; // "home" | "docs" | "static" | "playground" | "blog"
   body: string;
   bodyClass?: string;
   head?: string;

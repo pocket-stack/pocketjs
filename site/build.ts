@@ -29,7 +29,7 @@ import {
   vdomHelperId,
 } from "@vue-jsx-vapor/runtime/raw";
 import { OG_IMAGE_URL, SITE_DESC, SITE_TITLE, SITE_URL, renderPage } from "./templates.ts";
-import { AOT_DOC_NAV, BLOG_POSTS, DOC_NAV, type DocSection } from "./nav.ts";
+import { BLOG_POSTS, DOC_NAV, STATIC_DOC_NAV, type DocSection } from "./nav.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // repo root
 const SITE = ROOT + "site/";
@@ -302,10 +302,10 @@ function copyDemoAssets(): void {
   }
 }
 
-function copyAotAssets(): void {
-  const docsDir = ROOT + "aot/docs/";
-  for (const file of ["town.png", "dialogue.png", "choice.png", "route.png"]) {
-    copy(docsDir + file, "aot/assets/" + file);
+function copyStaticAssets(): void {
+  const docsDir = ROOT + "static/docs/";
+  for (const file of ["boardroom.png", "vegas.png", "gameboy.png", "nes.png"]) {
+    copy(docsDir + file, "static/assets/" + file);
   }
 }
 
@@ -380,12 +380,12 @@ async function main() {
   copy(SITE + "assets/screen.css", "assets/screen.css");
   await bundle("assets/home.js", "assets/home.js");
 
-  // 8. AOT product line. This is intentionally separate from the framework
-  //    playground and docs tree.
-  write("aot/index.html", renderAotHome());
-  copy(SITE + "assets/aot.css", "assets/aot.css");
-  copy(SITE + "assets/aot-demo.js", "assets/aot-demo.js");
-  copyAotAssets();
+  // 8. Pocket Static product line. This is intentionally separate from the
+  //    framework playground and docs tree.
+  write("static/index.html", renderStaticHome());
+  copy(SITE + "assets/static.css", "assets/static.css");
+  copy(SITE + "assets/static-demo.js", "assets/static-demo.js");
+  copyStaticAssets();
 
   // 9. docs + blog (setupMarkdown installs the shared marked/shiki renderer)
   const highlight = await setupMarkdown();
@@ -465,17 +465,17 @@ ${body}
 </html>`;
 }
 
-const AOT_DESC = "PocketJS AOT turns a TypeScript/JSX cartridge DSL into GBA-native game data and a fixed runtime.";
-function renderAotHome(): string {
+const STATIC_DESC = "Pocket Static compiles TypeScript generator games into real GBA, Game Boy and NES cartridges.";
+function renderStaticHome(): string {
   return renderPage({
-    title: "PocketJS AOT",
-    active: "aot",
-    body: readFileSync(SITE + "aot.html", "utf8"),
-    bodyClass: "aot-page",
-    head: '<link rel="stylesheet" href="/assets/aot.css">',
-    scripts: ['<script type="module" src="/assets/aot-demo.js"></script>'],
-    path: "/aot/",
-    description: AOT_DESC,
+    title: "Pocket Static",
+    active: "static",
+    body: readFileSync(SITE + "static.html", "utf8"),
+    bodyClass: "static-page",
+    head: '<link rel="stylesheet" href="/assets/static.css">',
+    scripts: ['<script type="module" src="/assets/static-demo.js"></script>'],
+    path: "/static/",
+    description: STATIC_DESC,
     robots: "noindex,nofollow",
   });
 }
@@ -657,7 +657,7 @@ async function buildDocs(highlight: Highlight) {
         head: tree.head,
         scripts: [],
         path: hrefFor(slug),
-        description: tree.active === "aot" ? AOT_DESC : undefined,
+        description: tree.active === "static" ? STATIC_DESC : undefined,
         robots: tree.robots,
       }));
     }
@@ -680,11 +680,11 @@ async function buildDocs(highlight: Highlight) {
     transformFrameworkCode: true,
   });
   await buildTree({
-    active: "aot",
-    docsDir: SITE + "content/aot-docs/",
+    active: "static",
+    docsDir: SITE + "content/static-docs/",
     head: "",
-    nav: AOT_DOC_NAV,
-    outPrefix: "aot/docs",
+    nav: STATIC_DOC_NAV,
+    outPrefix: "static/docs",
     robots: "noindex,nofollow",
     transformFrameworkCode: false,
   });
