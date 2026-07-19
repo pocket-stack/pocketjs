@@ -13,7 +13,6 @@
 //   /playground/          the live editor page
 //   /docs/*, /index.html  rendered from site/content (added below)
 
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { marked } from "marked";
@@ -46,33 +45,6 @@ const copy = (from: string, toRel: string) => {
   mkdirSync(dirname(p), { recursive: true });
   cpSync(from, p, { recursive: true });
 };
-
-function ensureShowcaseBundle(name: string): void {
-  const js = ROOT + "dist/" + name + ".js";
-  const pak = ROOT + "dist/" + name + ".pak";
-  const legacyPak = ROOT + "dist/" + name + ".dcpak";
-  if (existsSync(js) && (existsSync(pak) || existsSync(legacyPak))) return;
-
-  console.log(`  dist/${name}.js + dist/${name}.pak missing; building showcase`);
-  const res = spawnSync("bun", ["scripts/build.ts", name], { cwd: ROOT, stdio: "inherit" });
-  if (res.status !== 0) throw new Error(`showcase build failed: ${name}`);
-}
-
-function copyShowcaseBundle(name: string): void {
-  ensureShowcaseBundle(name);
-
-  const js = ROOT + "dist/" + name + ".js";
-  const pak = ROOT + "dist/" + name + ".pak";
-  const legacyPak = ROOT + "dist/" + name + ".dcpak";
-  const pakSource = existsSync(pak) ? pak : legacyPak;
-
-  if (!existsSync(js) || !existsSync(pakSource)) {
-    throw new Error(`missing showcase bundle: dist/${name}.js + dist/${name}.pak`);
-  }
-
-  copy(js, "pg/demo-bundles/" + name + ".js");
-  copy(pakSource, "pg/demo-bundles/" + name + ".pak");
-}
 
 // --- node-builtin shims: let @babel/core + preset-solid bundle for the browser
 const SHIM_MAP: Record<string, string> = { assert: "assert.js", "node:assert": "assert.js", path: "path.js", "node:path": "path.js" };
@@ -340,27 +312,24 @@ async function main() {
   write("pg/demos.json", JSON.stringify(demos));
   console.log(`  pg/demos.json  (${demos.length} demos: ${demos.map((d) => d.name).join(", ")})`);
 
-  // 4. prebuilt showcase bundles for the homepage hero. Reuse dist/ when
-  //    present, and build missing bundles so the site never emits 404 demos.
-  const showcase = ["motions-main", "gallery-main", "settings-main", "hero-main", "music-main"];
-  for (const s of showcase) {
-    copyShowcaseBundle(s);
-  }
-
-  // 5. static assets + Tailwind CSS (compiled AFTER pages exist so the content
+  // 4. static assets + Tailwind CSS (compiled AFTER pages exist so the content
   //    scan sees every class; we render pages to a temp first, then compile).
   for (const asset of ["favicon.svg", "og-image.svg", "og-image.png"]) {
     if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, asset);
   }
   // OpenStrike desktop screenshot (referenced by the shipping-openstrike post).
   copy(SITE + "assets/os-dust2.jpg", "assets/os-dust2.jpg");
+  // The original hardware capture (embedded by the introducing-pocketjs post).
   copy(SITE + "assets/pocketjs-hardware-demo.mp4", "assets/pocketjs-hardware-demo.mp4");
+  // The hero demo wall + its poster frame (baked by site/bake-demo-wall.ts).
+  copy(SITE + "assets/pocketjs-demo-wall.mp4", "assets/pocketjs-demo-wall.mp4");
+  copy(SITE + "assets/pocketjs-demo-wall.jpg", "assets/pocketjs-demo-wall.jpg");
   // Blog illustration loops (animated GIFs rendered by the engine itself).
   if (existsSync(SITE + "assets/blog/")) {
     for (const f of readdirSync(SITE + "assets/blog/")) copy(SITE + "assets/blog/" + f, "assets/blog/" + f);
   }
 
-  // 6. playground page
+  // 5. playground page
   write("playground/index.html", renderPage({
     title: "Playground",
     active: "playground",
@@ -372,28 +341,27 @@ async function main() {
   }));
   copy(SITE + "assets/screen.css", "assets/screen.css");
 
-  // 7. homepage — bespoke "cinematic" design: its own chrome + home.css, the
-  //    live demo styled by screen.css and driven by home.js. Not wrapped in the
-  //    shared header/footer (those stay for docs + playground).
+  // 6. homepage — bespoke "cinematic" design: its own chrome + home.css +
+  //    home.js (the baked demo-wall hero). Not wrapped in the shared
+  //    header/footer (those stay for docs + playground).
   write("index.html", renderHome());
   copy(SITE + "assets/home.css", "assets/home.css");
-  copy(SITE + "assets/screen.css", "assets/screen.css");
   await bundle("assets/home.js", "assets/home.js");
 
-  // 8. AOT product line. This is intentionally separate from the framework
+  // 7. AOT product line. This is intentionally separate from the framework
   //    playground and docs tree.
   write("aot/index.html", renderAotHome());
   copy(SITE + "assets/aot.css", "assets/aot.css");
   copy(SITE + "assets/aot-demo.js", "assets/aot-demo.js");
   copyAotAssets();
 
-  // 9. docs + blog (setupMarkdown installs the shared marked/shiki renderer)
+  // 8. docs + blog (setupMarkdown installs the shared marked/shiki renderer)
   const highlight = await setupMarkdown();
   await buildDocs(highlight);
   await buildBlog();
   buildChangelog();
 
-  // 9b. 404
+  // 8b. 404
   write("404.html", renderPage({
     title: "Not found",
     active: "",
@@ -409,7 +377,7 @@ async function main() {
     </section>`,
   }));
 
-  // 10. Tailwind CSS (@source in tailwind.css scans the site/ SOURCE for classes)
+  // 9. Tailwind CSS (@source in tailwind.css scans the site/ SOURCE for classes)
   await compileCss();
 
   console.log("pocketjs.dev build: done -> site/dist/");
@@ -455,7 +423,6 @@ function renderHome(): string {
 <meta name="theme-color" content="#05070d">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/home.css">
-<link rel="stylesheet" href="/assets/screen.css">
 <script type="application/ld+json">${jsonLd}</script>
 </head>
 <body>

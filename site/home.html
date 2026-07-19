@@ -34,14 +34,14 @@
   </header>
 
   <main>
-    <!-- HERO -->
+    <!-- HERO — behind the copy, every demo and satellite app plays at once:
+         a baked 4x4 wall of real recordings (site/bake-demo-wall.ts). -->
     <section class="lp-hero">
-      <div class="lp-hero__grid" aria-hidden="true"></div>
-      <div class="lp-hero__aurora" aria-hidden="true"></div>
-      <div class="lp-hero__pip" aria-hidden="true">
-        <video class="lp-hero__pip-video" autoplay muted loop playsinline preload="metadata">
-          <source src="/assets/pocketjs-hardware-demo.mp4" type="video/mp4" />
+      <div class="lp-hero__wall" aria-hidden="true">
+        <video class="lp-hero__wall-video" autoplay muted loop playsinline preload="metadata" poster="/assets/pocketjs-demo-wall.jpg">
+          <source src="/assets/pocketjs-demo-wall.mp4" type="video/mp4" />
         </video>
+        <div class="lp-hero__wall-scrim"></div>
       </div>
       <div class="lp-container lp-hero__in">
         <a class="lp-eyebrow" href="/blog/pocket-character/">
@@ -61,51 +61,6 @@
             Star on GitHub
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 4.7 18 5 18 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
           </a>
-        </div>
-
-        <div class="lp-stage">
-          <div class="lp-stage__glow" aria-hidden="true"></div>
-          <div class="lp-stage__frame">
-            <div class="screen-emu">
-              <button class="emu-shoulder l" data-btn="0x0100" aria-label="Left shoulder — previous page">L</button>
-              <button class="emu-shoulder r" data-btn="0x0200" aria-label="Right shoulder — next page">R</button>
-              <div class="emu-pad">
-                <div class="emu-dpad">
-                  <svg class="emu-cross" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M36 3 H64 V36 H97 V64 H64 V97 H36 V64 H3 V36 H36 Z" fill="rgba(20,29,49,0.68)" stroke="rgba(255,255,255,0.28)" stroke-width="2.5" stroke-linejoin="round"/></svg>
-                  <button class="emu-key up" data-btn="0x0010" aria-label="Up"><svg viewBox="0 0 24 24"><path d="M12 8 l6 8 h-12 z" fill="currentColor"/></svg></button>
-                  <button class="emu-key down" data-btn="0x0040" aria-label="Down"><svg viewBox="0 0 24 24"><path d="M12 16 l6 -8 h-12 z" fill="currentColor"/></svg></button>
-                  <button class="emu-key left" data-btn="0x0080" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M8 12 l8 -6 v12 z" fill="currentColor"/></svg></button>
-                  <button class="emu-key right" data-btn="0x0020" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M16 12 l-8 -6 v12 z" fill="currentColor"/></svg></button>
-                </div>
-                <div class="emu-nub" aria-hidden="true"></div>
-              </div>
-              <div class="emu-screen">
-                <canvas id="hero-canvas" width="480" height="272" tabindex="0"></canvas>
-                <div id="hero-loading" class="emu-loading">booting core…</div>
-              </div>
-              <div class="emu-faces">
-                <button class="emu-key tri" data-btn="0x1000" aria-label="Triangle"><svg viewBox="0 0 24 24"><path d="M12 5 L19.5 18.5 L4.5 18.5 Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg></button>
-                <button class="emu-key sq" data-btn="0x8000" aria-label="Square"><svg viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="1.6" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
-                <button class="emu-key ci" data-btn="0x2000" aria-label="Circle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.2" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
-                <button class="emu-key cross" data-btn="0x4000" aria-label="Cross"><svg viewBox="0 0 24 24"><path d="M6.5 6.5 L17.5 17.5 M17.5 6.5 L6.5 17.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
-              </div>
-              <div class="emu-sys">
-                <div class="emu-speaker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-                <span class="emu-brand" aria-hidden="true">POCKETJS</span>
-                <div class="emu-sysbtns">
-                  <button class="emu-sys-btn" data-btn="0x0001">SELECT</button>
-                  <button class="emu-sys-btn" data-btn="0x0008">START</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="lp-demo-tabs" role="tablist" aria-label="Switch the live demo">
-            <button class="lp-demo-tab is-active" type="button" role="tab" aria-selected="true" data-demo="motions-main">Motion Lab</button>
-            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="gallery-main">Gallery</button>
-            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="music-main">Now Playing</button>
-            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="settings-main">Settings</button>
-            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="hero-main">Dashboard</button>
-          </div>
         </div>
       </div>
     </section>
