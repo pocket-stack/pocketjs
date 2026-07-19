@@ -61,7 +61,13 @@ const sim = (app: string): Clip => ({ src: ensureSimClip(app) });
 async function main() {
   mkdirSync(CACHE, { recursive: true });
 
-  const character = await r2("pocket-character-widget-c6cf80c4.mp4");
+  // The widget capture fades into the brand end card at ~10 s; cut before the
+  // fade so the looping tile only ever shows the character.
+  const characterFull = await r2("pocket-character-widget-c6cf80c4.mp4");
+  const character = CACHE + "pocket-character-widget-loop.mp4";
+  if (!existsSync(character)) {
+    await $`ffmpeg -y -v error -t 9.8 -i ${characterFull} -c:v libx264 -preset medium -crf 14 -an ${character}`;
+  }
 
   // Row-major 4x4 grid: 9 headless sim recordings of the in-repo demos, six
   // engine-rendered GIF loops, and the Pocket Character widget. Light
