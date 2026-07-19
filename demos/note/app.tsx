@@ -147,6 +147,8 @@ export default function Note(): ReturnType<typeof View> {
   const [caret, setCaret] = createSignal(0);
   const [anchor, setAnchor] = createSignal(0);
   const [vsel, setVsel] = createSignal<{ start: RowPos; end: RowPos } | null>(null);
+  /** IME composition riding at the caret: not in the document until commit. */
+  const [preedit, setPreedit] = createSignal<{ text: string; cursor: number } | null>(null);
   const [scrollV, setScrollV] = createSignal(0);
   const [scrollE, setScrollE] = createSignal(0);
   const [mouse, setMouse] = createSignal({ x: -1, y: -1 });
@@ -181,7 +183,20 @@ export default function Note(): ReturnType<typeof View> {
   });
 
   // ---- edit layout -------------------------------------------------------
-  const dlines = createMemo(() => layoutDoc(doc(), contentW(), bodyWidth));
+  // The editor renders the DISPLAY doc: the document with any IME preedit
+  // spliced at the caret. Navigation paths only run while no composition
+  // is active (the IME consumes keys, content clicks are blocked), so
+  // display == document exactly when caret math matters.
+  const displayDoc = createMemo(() => {
+    const p = preedit();
+    if (!p) return doc();
+    return doc().slice(0, caret()) + p.text + doc().slice(caret());
+  });
+  const displayCaret = () => {
+    const p = preedit();
+    return p ? caret() + p.cursor : caret();
+  };
+  const dlines = createMemo(() => layoutDoc(displayDoc(), contentW(), bodyWidth));
   const editTotal = () => dlines().length * BODY_LINE_H + EDGE_PAD * 2;
   const maxScrollE = () => Math.max(0, editTotal() - viewH());
   const visibleLines = createMemo(() => {
@@ -197,8 +212,8 @@ export default function Note(): ReturnType<typeof View> {
     }
     return out;
   });
-  const caretRow = () => caretLine(dlines(), caret());
-  const caretPx = () => caretX(doc(), dlines(), caret(), bodyWidth);
+  const caretRow = () => caretLine(dlines(), displayCaret());
+  const caretPx = () => caretX(displayDoc(), dlines(), displayCaret(), bodyWidth);
   /** Normalized selection bounds, null when collapsed. */
   const editSel = () => {
     if (caret() === anchor()) return null;
@@ -283,6 +298,7 @@ export default function Note(): ReturnType<typeof View> {
     rehover = true;
   };
   const leaveEdit = () => {
+    setPreedit(null);
     setEditing(false);
     if (saveIn > 0) save();
     setScrollV(Math.max(0, Math.min(maxScrollV(), scrollV())));
@@ -399,7 +415,7 @@ export default function Note(): ReturnType<typeof View> {
   };
 
   const pointerDown = (x: number, y: number) => {
-    const content = y >= HEADER_H && !menuOpen();
+    const content = y >= HEADER_H && !menuOpen() && !preedit();
     press = { x, y, dragged: false, content };
     if (!content) return;
     if (editing()) {
@@ -449,17 +465,34 @@ export default function Note(): ReturnType<typeof View> {
         setCaret(0);
         setAnchor(0);
         setVsel(null);
+        setPreedit(null);
         history.past.length = 0;
         history.future.length = 0;
         history.last = null;
         saveIn = -1;
         break;
       case "ch":
-        if (editing() && ev.s) mutate("type", (s) => typeText(s, ev.s!));
+        if (editing() && ev.s) {
+          setPreedit(null); // a commit replaces the preedit it finalizes
+          mutate("type", (s) => typeText(s, ev.s!));
+        }
         break;
       case "paste":
         if (editing() && ev.text) mutate("other", (s) => typeText(s, ev.text!));
         break;
+      case "ime": {
+        if (!editing()) break;
+        const text = ev.s ?? "";
+        if (text === "") {
+          setPreedit(null);
+          break;
+        }
+        // Composition replaces a live selection the moment it starts.
+        if (editSel()) mutate("other", (st) => typeText(st, ""));
+        setPreedit({ text, cursor: Math.min(ev.c ?? text.length, text.length) });
+        revealCaret();
+        break;
+      }
       case "key":
         if (ev.k) handleKey(ev.k);
         break;
@@ -485,10 +518,22 @@ export default function Note(): ReturnType<typeof View> {
     }
   };
 
+  let lastCaretRect = { x: -1, y: -1, h: -1 };
   onFrame(() => {
     if (saveIn > 0 && --saveIn === 0) save();
     if (!svc) return;
     for (const ev of svc.poll()) handleEvent(ev);
+    if (editing()) {
+      const rect = {
+        x: Math.round(marginX() + caretPx()),
+        y: Math.round(HEADER_H + EDGE_PAD + caretRow() * BODY_LINE_H - scrollE()),
+        h: BODY_LINE_H,
+      };
+      if (rect.x !== lastCaretRect.x || rect.y !== lastCaretRect.y) {
+        lastCaretRect = rect;
+        svc.send({ t: "caret", ...rect });
+      }
+    }
     if (rehover) {
       // The frame after a mode switch: the node under the pointer was
       // remounted, so hover-focus it again without waiting for a move.
@@ -535,10 +580,23 @@ export default function Note(): ReturnType<typeof View> {
     const hi = Math.min(sel.hi, line.end);
     if (hi < lo) return null;
     if (hi === lo && !(sel.lo < line.start && sel.hi > line.end)) return null;
-    const x0 = bodyWidth(doc().slice(line.start, lo));
-    const x1 = bodyWidth(doc().slice(line.start, hi));
+    const x0 = bodyWidth(displayDoc().slice(line.start, lo));
+    const x1 = bodyWidth(displayDoc().slice(line.start, hi));
     // A fully-selected empty line still shows a sliver (the newline).
     return { x0, x1: Math.max(x1, x0 + (hi === line.end && sel.hi > line.end ? 4 : 0)) };
+  };
+
+  /** IME composition underline span for one display line, null outside. */
+  const preeditRect = (line: { index: number; start: number; end: number }) => {
+    const p = preedit();
+    if (!p) return null;
+    const lo = Math.max(caret(), line.start);
+    const hi = Math.min(caret() + p.text.length, line.end);
+    if (hi <= lo) return null;
+    return {
+      x0: bodyWidth(displayDoc().slice(line.start, lo)),
+      x1: bodyWidth(displayDoc().slice(line.start, hi)),
+    };
   };
 
   return (
@@ -664,6 +722,21 @@ export default function Note(): ReturnType<typeof View> {
                       }}
                     />
                   </Show>
+                  <Show when={preeditRect(line) != null}>
+                    <View
+                      class="absolute rounded-sm"
+                      style={{
+                        insetL: preeditRect(line)?.x0 ?? 0,
+                        insetT: BODY_LINE_H - 3,
+                        width: Math.max(
+                          2,
+                          (preeditRect(line)?.x1 ?? 0) - (preeditRect(line)?.x0 ?? 0),
+                        ),
+                        height: 2,
+                        bgColor: ink().accent,
+                      }}
+                    />
+                  </Show>
                   <Text
                     class="absolute text-sm"
                     style={{
@@ -674,7 +747,7 @@ export default function Note(): ReturnType<typeof View> {
                       textColor: ink().body,
                     }}
                   >
-                    {doc().slice(line.start, line.end)}
+                    {displayDoc().slice(line.start, line.end)}
                   </Text>
                 </View>
               )}

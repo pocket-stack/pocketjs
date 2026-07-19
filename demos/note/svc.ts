@@ -18,6 +18,9 @@
 //                              Copy Cut Undo Redo (⌘-chords arrive as keys)
 //   {t:"paste", text}          insert the system clipboard (⌘V — the host
 //                              reads it and pushes the text)
+//   {t:"ime", s, c}            IME composition: preedit text + caret char
+//                              index within it (null clears); commits
+//                              arrive as plain {t:"ch"} lines
 //   {t:"mouse", x, y, d}       pointer moved / pressed / released — d is
 //                              the primary-button state, and a line is sent
 //                              on every press/release even without movement
@@ -29,11 +32,13 @@
 //   {t:"menu", open}           the ••• menu is up — the host stops claiming
 //                              header drags so backdrop clicks can close it
 //   {t:"copy", text}           put text on the system clipboard (⌘C)
+//   {t:"caret", x, y, h}       caret rect (logical px) — the host docks the
+//                              IME candidate window next to it
 
 import { getOps } from "@pocketjs/framework";
 
 export interface HostEvent {
-  t: "hello" | "resize" | "load" | "ch" | "key" | "mouse" | "scroll" | "paste";
+  t: "hello" | "resize" | "load" | "ch" | "key" | "mouse" | "scroll" | "paste" | "ime";
   w?: number;
   h?: number;
   text?: string;
@@ -44,6 +49,8 @@ export interface HostEvent {
   /** Primary mouse button held ("mouse" events). */
   d?: boolean;
   dy?: number;
+  /** IME preedit caret (char index into s), null when composition ends. */
+  c?: number | null;
 }
 
 export interface Svc {
@@ -54,7 +61,8 @@ export interface Svc {
       | { t: "save"; text: string }
       | { t: "quit" }
       | { t: "menu"; open: boolean }
-      | { t: "copy"; text: string },
+      | { t: "copy"; text: string }
+      | { t: "caret"; x: number; y: number; h: number },
   ): void;
 }
 

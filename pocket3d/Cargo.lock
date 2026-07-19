@@ -1218,10 +1218,12 @@ dependencies = [
 name = "note-widget"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "env_logger",
  "glam",
  "log",
+ "memmap2",
  "pocket-mod",
  "pocket-ui-wgpu",
  "pocket-widget",

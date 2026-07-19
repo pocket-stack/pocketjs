@@ -655,17 +655,22 @@ impl UiRenderer {
     /// each slot re-uploads whenever its current handle changes and drops
     /// its cache entry when the core frees it.
     fn sync_textures(&mut self, gpu: &Gpu, ui: &Ui) {
-        // Font slots.
+        // Font slots. A slot re-uploads when its glyph count moved — hosts
+        // may extend an atlas at runtime (IME input rasterizing new
+        // codepoints) and reload it via loadFontAtlas.
         if self.fonts.len() < spec::MAX_FONT_SLOTS {
             self.fonts.resize_with(spec::MAX_FONT_SLOTS, || None);
         }
         for slot in 0..spec::MAX_FONT_SLOTS as u8 {
-            if self.fonts[slot as usize].is_some() {
-                continue;
-            }
             let Some(atlas) = ui.font_atlas(slot) else {
                 continue;
             };
+            if self.fonts[slot as usize]
+                .as_ref()
+                .is_some_and(|f| f.glyph_count == atlas.glyph_count)
+            {
+                continue;
+            }
             self.fonts[slot as usize] = Some(self.upload_font(gpu, atlas));
         }
         // Image texture slots.
@@ -693,7 +698,11 @@ impl UiRenderer {
         // Cells upload at coverage resolution (logical × raster density) —
         // a density-2 atlas keeps its full detail for scaled rendering.
         let (cov_w, cov_h) = (atlas.coverage_width(), atlas.coverage_height());
-        let cols = 16u32.min(atlas.glyph_count.max(1) as u32);
+        // Wider grids for big (CJK-extended) atlases keep the texture under
+        // dimension limits: 16 cols x 3500 density-2 cells would be ~8000 px
+        // tall; 64 cols stays square-ish.
+        let max_cols = if atlas.glyph_count > 512 { 64u32 } else { 16u32 };
+        let cols = max_cols.min(atlas.glyph_count.max(1) as u32);
         let rows = (atlas.glyph_count as u32).div_ceil(cols).max(1);
         let tex_w = cols * cov_w;
         let tex_h = rows * cov_h;

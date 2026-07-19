@@ -4,8 +4,22 @@
 use std::collections::HashSet;
 
 use glam::Vec2;
-use winit::event::{DeviceEvent, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{DeviceEvent, ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+
+/// One IME event, in arrival order — the composition stream a text-editing
+/// widget consumes alongside [`Input::edits`]. Mirrors winit's `Ime` with
+/// owned strings (events outlive the borrow).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ImeInput {
+    Enabled,
+    /// Composition text + optional cursor byte range within it.
+    Preedit(String, Option<(usize, usize)>),
+    /// Finished text to insert (plain typing never produces this — with IME
+    /// enabled, composed input commits here and fires NO KeyboardInput).
+    Commit(String),
+    Disabled,
+}
 
 /// One text-editing keystroke, in press order, key repeats included. The
 /// per-frame stream a text-editing widget consumes ([`Input::edits`]) —
@@ -40,6 +54,7 @@ pub struct Input {
     mouse_delta: Vec2,
     cursor: Option<Vec2>,
     edits: Vec<EditKey>,
+    ime: Vec<ImeInput>,
     scroll: Vec2,
     /// A super/command chord is held — edit consumers usually skip
     /// `Char` events while true (they are shortcuts, not typing).
@@ -106,6 +121,14 @@ impl Input {
                     self.super_down = false;
                 }
             }
+            WindowEvent::Ime(ime) => {
+                self.ime.push(match ime {
+                    Ime::Enabled => ImeInput::Enabled,
+                    Ime::Preedit(text, range) => ImeInput::Preedit(text.clone(), *range),
+                    Ime::Commit(text) => ImeInput::Commit(text.clone()),
+                    Ime::Disabled => ImeInput::Disabled,
+                });
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 // Normalize to logical px; a line is worth ~20.
                 self.scroll += match delta {
@@ -154,6 +177,7 @@ impl Input {
         self.mouse_pressed.clear();
         self.mouse_delta = Vec2::ZERO;
         self.edits.clear();
+        self.ime.clear();
         self.scroll = Vec2::ZERO;
         self.super_down = false;
     }
@@ -164,6 +188,7 @@ impl Input {
         self.mouse_pressed.clear();
         self.mouse_delta = Vec2::ZERO;
         self.edits.clear();
+        self.ime.clear();
         self.scroll = Vec2::ZERO;
     }
 
@@ -171,6 +196,12 @@ impl Input {
     /// included). Cleared by `end_frame`.
     pub fn edits(&self) -> &[EditKey] {
         &self.edits
+    }
+
+    /// This frame's IME composition events, in arrival order. Cleared by
+    /// `end_frame`.
+    pub fn ime_events(&self) -> &[ImeInput] {
+        &self.ime
     }
 
     /// This frame's accumulated scroll-wheel delta in logical px
@@ -236,6 +267,11 @@ impl Input {
     /// Append a text-editing keystroke (scripted typing).
     pub fn inject_edit(&mut self, key: EditKey) {
         self.edits.push(key);
+    }
+
+    /// Append an IME event (scripted composition).
+    pub fn inject_ime(&mut self, ime: ImeInput) {
+        self.ime.push(ime);
     }
 
     /// Add scroll-wheel delta in logical px (scripted scrolling).

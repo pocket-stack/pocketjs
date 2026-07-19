@@ -18,12 +18,14 @@
 //! never sees a platform event, only spec inputs. Drag the header to move,
 //! drag the dotted corner (or any edge, macOS) to resize, ⌘Q/⌘W quits.
 
+mod cjk;
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use glam::Vec2;
 use pocket3d::gpu::{Gpu, OFFSCREEN_FORMAT, OffscreenTarget};
-use pocket3d::input::{EditKey, Input};
+use pocket3d::input::{EditKey, ImeInput, Input};
 use pocket_mod::Guest;
 use pocket_ui_wgpu::{UiRenderer, UiSurface};
 use pocket_widget::shell::{FlatWidget, WidgetConfig};
@@ -44,6 +46,11 @@ struct NoteGame {
     surface: UiSurface,
     guest: Guest,
     renderer: Option<UiRenderer>,
+    /// Runtime CJK atlas extension (IME input → system-font glyphs).
+    atlases: cjk::CjkAtlases,
+    /// Caret rect reported by the guest (logical px) — docks the IME
+    /// candidate window.
+    caret_rect: Option<(f32, f32, f32, f32)>,
     file: PathBuf,
     /// Current logical viewport (the core's), tracked against the window.
     logical: (u32, u32),
@@ -78,15 +85,25 @@ enum ScriptEvent {
     Type(String),
     Key(String),
     Paste(String),
+    /// Scripted IME composition (cursor at the end).
+    Preedit(String),
     Scroll(f32),
 }
 
 impl NoteGame {
-    fn new(surface: UiSurface, guest: Guest, file: PathBuf, logical: (u32, u32)) -> Self {
+    fn new(
+        surface: UiSurface,
+        guest: Guest,
+        atlases: cjk::CjkAtlases,
+        file: PathBuf,
+        logical: (u32, u32),
+    ) -> Self {
         NoteGame {
             surface,
             guest,
             renderer: None,
+            atlases,
+            caret_rect: None,
             file,
             logical,
             words: Vec::new(),
@@ -109,12 +126,26 @@ impl NoteGame {
         self.surface.svc_push(value.to_string());
     }
 
+    /// Rasterize any codepoints `text` needs that the baked atlases lack,
+    /// and reload the grown slots — call BEFORE pushing text to the guest
+    /// so its very first measure sees real glyphs, never tofu.
+    fn ensure_text(&mut self, text: &str) {
+        for blob in self.atlases.ensure(text) {
+            self.surface.with_ui(|ui| {
+                if !ui.load_font_atlas(&blob) {
+                    log::warn!("note-widget: extended atlas rejected by the core");
+                }
+            });
+        }
+    }
+
     /// The svc hello: viewport first, then the document (order matters — the
     /// app lays text out against the viewport it was just told about).
     fn send_hello(&mut self) {
         self.svc(serde_json::json!({"t": "hello", "w": self.logical.0, "h": self.logical.1}));
         let text = std::fs::read_to_string(&self.file).unwrap_or_default();
         if !text.is_empty() {
+            self.ensure_text(&text);
             self.svc(serde_json::json!({"t": "load", "text": text}));
         }
         log::info!(
@@ -161,12 +192,40 @@ impl NoteGame {
                 EditKey::Escape => "Escape",
             };
             if !chars.is_empty() {
-                self.svc(serde_json::json!({"t": "ch", "s": std::mem::take(&mut chars)}));
+                let batch = std::mem::take(&mut chars);
+                self.ensure_text(&batch);
+                self.svc(serde_json::json!({"t": "ch", "s": batch}));
             }
             self.svc(serde_json::json!({"t": "key", "k": named}));
         }
         if !chars.is_empty() {
+            self.ensure_text(&chars);
             self.svc(serde_json::json!({"t": "ch", "s": chars}));
+        }
+    }
+
+    /// Forward IME composition: preedit text (with a char-index cursor) and
+    /// commits. Plain typing never lands here (winit sends it as KeyEvents
+    /// while the IME state is Ground), so there is no double-input path.
+    fn forward_ime(&mut self, input: &Input) {
+        for ev in input.ime_events().to_vec() {
+            match ev {
+                ImeInput::Preedit(text, range) => {
+                    self.ensure_text(&text);
+                    let cursor = range.map(|(lo, _)| {
+                        text.char_indices().take_while(|(i, _)| *i < lo).count()
+                    });
+                    self.svc(serde_json::json!({"t": "ime", "s": text, "c": cursor}));
+                }
+                ImeInput::Commit(text) => {
+                    self.ensure_text(&text);
+                    self.svc(serde_json::json!({"t": "ch", "s": text}));
+                }
+                ImeInput::Enabled => {}
+                ImeInput::Disabled => {
+                    self.svc(serde_json::json!({"t": "ime", "s": "", "c": null}));
+                }
+            }
         }
     }
 
@@ -193,9 +252,18 @@ impl NoteGame {
                     self.script_click_until = self.ticks + DRAG_TICKS + 2;
                     self.script_drag = Some((x0, y0, x1, y1, self.ticks));
                 }
-                ScriptEvent::Type(s) => self.svc(serde_json::json!({"t": "ch", "s": s})),
+                ScriptEvent::Type(s) => {
+                    self.ensure_text(&s);
+                    self.svc(serde_json::json!({"t": "ch", "s": s}));
+                }
                 ScriptEvent::Paste(text) => {
-                    self.svc(serde_json::json!({"t": "paste", "text": text}))
+                    self.ensure_text(&text);
+                    self.svc(serde_json::json!({"t": "paste", "text": text}));
+                }
+                ScriptEvent::Preedit(text) => {
+                    self.ensure_text(&text);
+                    let n = text.chars().count();
+                    self.svc(serde_json::json!({"t": "ime", "s": text, "c": n}));
                 }
                 ScriptEvent::Key(k) => self.svc(serde_json::json!({"t": "key", "k": k})),
                 ScriptEvent::Scroll(dy) => self.svc(serde_json::json!({"t": "scroll", "dy": dy})),
@@ -238,6 +306,7 @@ impl FlatWidget for NoteGame {
         if input.super_down() && input.key_pressed(KeyCode::KeyV) {
             if let Some(text) = clipboard_paste() {
                 if !text.is_empty() {
+                    self.ensure_text(&text);
                     self.svc(serde_json::json!({"t": "paste", "text": text}));
                 }
             }
@@ -263,6 +332,7 @@ impl FlatWidget for NoteGame {
 
         // Keyboard / wheel / pointer → svc lines (logical px).
         self.forward_edits(input);
+        self.forward_ime(input);
         let scroll = input.scroll();
         if scroll.y != 0.0 {
             self.svc(serde_json::json!({"t": "scroll", "dy": scroll.y / scale as f32}));
@@ -325,6 +395,14 @@ impl FlatWidget for NoteGame {
                     Some("quit") => self.exit = true,
                     Some("menu") => self.guest_menu_open = v["open"].as_bool().unwrap_or(false),
                     Some("copy") => clipboard_copy(v["text"].as_str().unwrap_or_default()),
+                    Some("caret") => {
+                        self.caret_rect = Some((
+                            v["x"].as_f64().unwrap_or(0.0) as f32,
+                            v["y"].as_f64().unwrap_or(0.0) as f32,
+                            1.0,
+                            v["h"].as_f64().unwrap_or(20.0) as f32,
+                        ));
+                    }
                     other => log::warn!("note-widget: unknown intent {other:?}"),
                 },
                 Err(e) => log::warn!("note-widget: bad svc line from guest: {e}"),
@@ -397,6 +475,11 @@ impl FlatWidget for NoteGame {
         }
         let (x, y) = (cursor.x / self.scale as f32, cursor.y / self.scale as f32);
         x > self.logical.0 as f32 - GRIP && y > self.logical.1 as f32 - GRIP
+    }
+
+    fn ime_cursor_area(&mut self) -> Option<(f32, f32, f32, f32)> {
+        let s = self.scale as f32;
+        self.caret_rect.map(|(x, y, w, h)| (x * s, y * s, w * s, h * s))
     }
 
     fn wants_exit(&self) -> bool {
@@ -554,6 +637,10 @@ fn parse_args() -> Result<Args> {
                 let (frame, text) = at(&val("--paste")?, "--paste")?;
                 args.script.push((frame, ScriptEvent::Paste(text)));
             }
+            "--preedit" => {
+                let (frame, text) = at(&val("--preedit")?, "--preedit")?;
+                args.script.push((frame, ScriptEvent::Preedit(text)));
+            }
             "--scroll" => {
                 let (frame, dy) = at(&val("--scroll")?, "--scroll")?;
                 args.script.push((frame, ScriptEvent::Scroll(dy.parse()?)));
@@ -638,7 +725,10 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let mut args = parse_args()?;
     let (guest, surface) = boot(&args)?;
-    let mut game = NoteGame::new(surface, guest, note_file(args.file.clone()), args.size);
+    let atlases = cjk::CjkAtlases::from_pak(&std::fs::read(
+        resolve_asset(args.pak.clone(), &args.app, "pak")?,
+    )?);
+    let mut game = NoteGame::new(surface, guest, atlases, note_file(args.file.clone()), args.size);
     game.script = std::mem::take(&mut args.script);
     game.quit_after = args.auto_quit.map(|s| (s * 60.0) as u64);
 
@@ -651,6 +741,7 @@ fn main() -> Result<()> {
                 size: args.size,
                 resizable: true,
                 min_size: (240, 180),
+                ime: true,
                 ..Default::default()
             },
             game,

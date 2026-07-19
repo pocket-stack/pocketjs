@@ -125,10 +125,20 @@ one `render_words_scaled` pass on dirty frames. It exercises everything the
   Preview mode gets browser-style drag selection over the rendered rows
   (select.ts — (row, char) space, boundary rows clipped, code blocks
   atomic) and clicks are inert, exactly like a real markdown preview —
-  edit mode is entered through the eye/I-beam toggle. ⌘C copies the
-  selection in either mode (soft-wrapped rows re-join with the space the
-  wrap consumed; the host pipes the guest's copy intent to the system
-  clipboard).
+  edit mode is entered through the eye/pencil toggle. ⌘C/⌘X/⌘V complete
+  the clipboard both ways (the host pipes copy intents to the system
+  clipboard and reads it back for paste).
+- **IME input without a charset.** The shell enables OS composition
+  (`WidgetConfig::ime`); preedit/commit ride the Input's `ime_events`
+  stream into svc lines, the guest splices the preedit at the caret with
+  an underline, and reports its caret rect back so candidate windows dock
+  next to the text. Coverage is solved at RUNTIME: the host rasterizes
+  unseen codepoints from a system CJK font (mmapped), appends them to the
+  pak's FONT ATLAS v3 blobs (cmap stays sorted, coverage is gid-linear —
+  appending is cheap) and reloads the slot through the spec
+  `loadFontAtlas` op; the wgpu renderer re-uploads any slot whose glyph
+  count moved. No charset guessing, no megabyte paks — a note types 你好
+  and two glyphs are baked on the spot.
   Mouse lines carry the primary-button state so the guest sees press/
   drag/release, and the guest tells the host while its menu is up so
   header clicks reach the menu backdrop instead of starting a window
@@ -289,11 +299,10 @@ Landed in this repo:
 
 Still ahead: the golden-specs wiring (§8), density-2 screens for the 3D
 form (§5 — the flat form ships them), the `widget` surface (§7),
-click-through, IME/CJK text input for the note (the edit stream carries
-composed chars but atlases bake Latin only), and the extraction into
-`pocket-stack/pocket-handheld` / `pocket-stack/pocket-note` with the
-steady-state measurement harness. pocket-character retrofits onto
-pocket-widget when convenient.
+click-through, bold-weight CJK fallback faces + line-start kinsoku for
+CJK wrap, and the extraction into `pocket-stack/pocket-handheld` /
+`pocket-stack/pocket-note` with the steady-state measurement harness.
+pocket-character retrofits onto pocket-widget when convenient.
 
 Open questions:
 

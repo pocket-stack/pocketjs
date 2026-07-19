@@ -56,6 +56,10 @@ pub struct WidgetConfig {
     pub resizable: bool,
     /// Logical px floor enforced by the OS while `resizable`.
     pub min_size: (u32, u32),
+    /// Enable OS text composition (IME). Composition arrives on the input's
+    /// `ime_events` stream; the game reports its caret rect through
+    /// `ime_cursor_area` so candidate windows dock next to the text.
+    pub ime: bool,
 }
 
 impl Default for WidgetConfig {
@@ -70,6 +74,7 @@ impl Default for WidgetConfig {
             always_on_top: true,
             resizable: false,
             min_size: (160, 120),
+            ime: false,
         }
     }
 }
@@ -145,6 +150,12 @@ pub trait FlatWidget {
         let _ = cursor;
         false
     }
+    /// The caret rect in PHYSICAL px (x, y, w, h) — where the OS should
+    /// dock IME candidate windows. Polled after ticks; None leaves the
+    /// last placement.
+    fn ime_cursor_area(&mut self) -> Option<(f32, f32, f32, f32)> {
+        None
+    }
     fn wants_exit(&self) -> bool {
         false
     }
@@ -179,6 +190,7 @@ trait Driver {
     ) -> Result<()>;
     fn drag_at(&mut self, cursor: Vec2) -> bool;
     fn resize_at(&mut self, cursor: Vec2) -> bool;
+    fn ime_cursor_area(&mut self) -> Option<(f32, f32, f32, f32)>;
     fn wants_exit(&self) -> bool;
 }
 
@@ -219,6 +231,9 @@ impl<G: WidgetGame> Driver for SceneDriver<G> {
     fn resize_at(&mut self, cursor: Vec2) -> bool {
         self.game.resize_at(cursor)
     }
+    fn ime_cursor_area(&mut self) -> Option<(f32, f32, f32, f32)> {
+        None
+    }
     fn wants_exit(&self) -> bool {
         self.game.wants_exit()
     }
@@ -252,6 +267,9 @@ impl<G: FlatWidget> Driver for FlatDriver<G> {
     }
     fn resize_at(&mut self, cursor: Vec2) -> bool {
         self.game.resize_at(cursor)
+    }
+    fn ime_cursor_area(&mut self) -> Option<(f32, f32, f32, f32)> {
+        self.game.ime_cursor_area()
     }
     fn wants_exit(&self) -> bool {
         self.game.wants_exit()
@@ -317,6 +335,8 @@ struct WindowState {
     /// Dirt latched from the game, waiting for a paced render.
     render_pending: bool,
     occluded: bool,
+    /// Last IME caret rect handed to the OS (dedupe).
+    ime_area: Option<(f32, f32, f32, f32)>,
     /// Live grip resize: (cursor at press, window physical size at press).
     /// The shell tracks the drag itself — macOS offers no OS resize
     /// session for borderless windows.
@@ -356,6 +376,9 @@ impl<D: Driver> WidgetApp<D> {
             ));
         }
         let window = Arc::new(event_loop.create_window(attrs)?);
+        if self.config.ime {
+            window.set_ime_allowed(true);
+        }
         let instance = Gpu::new_instance();
         let surface = instance.create_surface(window.clone())?;
         let gpu = Gpu::from_instance_for_surface(instance, &surface)?;
@@ -384,6 +407,7 @@ impl<D: Driver> WidgetApp<D> {
             last_render: now - Duration::from_secs(1),
             render_pending: true, // first frame
             occluded: false,
+            ime_area: None,
             resizing: None,
         })
     }
@@ -426,6 +450,18 @@ impl<D: Driver> WidgetApp<D> {
         if self.driver.take_dirty() {
             state.render_pending = true;
             self.arms.dirty += 1;
+        }
+
+        if self.config.ime {
+            let area = self.driver.ime_cursor_area();
+            if area.is_some() && area != state.ime_area {
+                state.ime_area = area;
+                let (x, y, w, h) = area.unwrap();
+                state.window.set_ime_cursor_area(
+                    winit::dpi::PhysicalPosition::new(x, y),
+                    winit::dpi::PhysicalSize::new(w, h),
+                );
+            }
         }
 
         let frame_interval = Duration::from_secs_f32(1.0 / self.config.max_fps.max(1.0));
