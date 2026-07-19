@@ -235,9 +235,27 @@ impl UiRenderer {
         target_px: (u32, u32),
         load: wgpu::LoadOp<wgpu::Color>,
     ) -> Result<()> {
-        self.sync_textures(gpu, ui);
         let words: Vec<u32> = ui.draw().words.clone();
-        self.build_batches(&words, target_px);
+        self.render_words(gpu, ui, &words, encoder, view, target_px, load)
+    }
+
+    /// Like [`render`](Self::render), but over a DrawList the host already
+    /// built with `ui.draw()`. Hosts that hash the DrawList per tick to skip
+    /// unchanged frames (pocket-widget's demand rendering) pass the words
+    /// they hashed instead of paying for a second tree walk.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_words(
+        &mut self,
+        gpu: &Gpu,
+        ui: &Ui,
+        words: &[u32],
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        target_px: (u32, u32),
+        load: wgpu::LoadOp<wgpu::Color>,
+    ) -> Result<()> {
+        self.sync_textures(gpu, ui);
+        self.build_batches(words, target_px);
 
         // Upload vertices.
         let bytes: &[u8] = bytemuck::cast_slice(&self.verts);

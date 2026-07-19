@@ -801,6 +801,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "handheld"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "glam",
+ "log",
+ "pocket-mod",
+ "pocket-ui-wgpu",
+ "pocket-widget",
+ "pocket3d",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1601,6 +1617,20 @@ dependencies = [
  "pocket3d",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "pocket-widget"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "log",
+ "pocket-ui-wgpu",
+ "pocket3d",
+ "pocketjs-core",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

@@ -1,0 +1,19 @@
+[package]
+name = "handheld"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A borderless 3D PSP on the desktop that runs Pocket apps: the first pocket-widget runtime"
+
+[dependencies]
+pocket3d = { workspace = true }
+pocket-mod = { workspace = true }
+pocket-ui-wgpu = { workspace = true }
+pocket-widget = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+glam = { workspace = true, features = ["std"] }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }

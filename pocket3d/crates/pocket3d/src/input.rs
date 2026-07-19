@@ -137,4 +137,9 @@ impl Input {
     pub fn inject_mouse_delta(&mut self, dx: f32, dy: f32) {
         self.mouse_delta += Vec2::new(dx, dy);
     }
+
+    /// Place the cursor at a window-pixel position (scripted picking).
+    pub fn inject_cursor(&mut self, x: f32, y: f32) {
+        self.cursor = Some(Vec2::new(x, y));
+    }
 }

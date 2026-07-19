@@ -33,10 +33,13 @@ pocket3d/
 │   │                      # entities, clipnode hull tracing (no GPU deps)
 │   ├── pocket-mod/        # guest hosting: one QuickJS realm, mounted surfaces,
 │   │                      # one guest turn per tick (the mod-runtime mechanism)
-│   └── pocket-ui-wgpu/    # the PocketJS `ui` surface on this base: pak feeding,
-│                          # HostOps for the guest, DrawList → wgpu, Blit compositor
+│   ├── pocket-ui-wgpu/    # the PocketJS `ui` surface on this base: pak feeding,
+│   │                      # HostOps for the guest, DrawList → wgpu, Blit compositor
+│   └── pocket-widget/     # desktop widgets as a capability: demand-render shell,
+│                          # embedded `ui` surfaces on meshes, part picking (WIDGET.md)
 └── examples/
-    └── uihost/            # PocketJS UI demos in a native macOS window
+    ├── uihost/            # PocketJS UI demos in a native macOS window
+    └── handheld/          # a borderless 3D PSP that runs Pocket apps (pocket-widget)
 ```
 
 Dependency shape: `pocket3d-bsp` knows nothing about rendering; `pocket3d`
@@ -62,6 +65,29 @@ cargo run -p uihost -- --app hero-main --screenshot out.png --frames 10
 
 Arrows = D-pad, Z/Enter = CROSS, X = CIRCLE, A/S = SQUARE/TRIANGLE,
 Q/W = triggers, Tab = SELECT, Space = START, Esc quits.
+
+## handheld — a 3D PSP on your desk
+
+The first pocket-widget runtime (WIDGET.md): a transparent, undecorated,
+always-on-top window framing a procedurally built PSP. Its screen is a live
+`ui` surface (an `OffscreenTarget` bound onto the screen mesh), its buttons
+are pickable parts that feed real BTN bits — the same unmodified bundle
+uihost runs, inside a handheld you can click.
+
+```sh
+bun scripts/build.ts hero-main   # from the repo root
+cd pocket3d
+cargo run -p handheld -- --app hero-main
+cargo run -p handheld -- --app hero-main --screenshot out.png --frames 30
+```
+
+Click caps to press them, drag the nub, double-click the screen to zoom
+into a screen-filling focus framing (`--focus` starts there), drag the body
+to move the window. The uihost key map works throughout. Headless scripting:
+`--click x,y` presses that window pixel mid-run, `--tap circle@30` holds a
+button for six ticks, `--hold circle` holds it for the whole run. The guest
+ticks at a fixed 60 Hz; GPU frames render only when something changed
+(watch the `pocket-widget: … frames rendered` line on exit).
 
 ## The substrate, briefly
 
