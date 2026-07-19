@@ -34,14 +34,14 @@
   </header>
 
   <main>
-    <!-- HERO -->
+    <!-- HERO — behind the copy, every demo and satellite app plays at once:
+         a baked 4x4 wall of real recordings (site/bake-demo-wall.ts). -->
     <section class="lp-hero">
-      <div class="lp-hero__grid" aria-hidden="true"></div>
-      <div class="lp-hero__aurora" aria-hidden="true"></div>
-      <div class="lp-hero__pip" aria-hidden="true">
-        <video class="lp-hero__pip-video" autoplay muted loop playsinline preload="metadata">
-          <source src="/assets/pocketjs-hardware-demo.mp4" type="video/mp4" />
+      <div class="lp-hero__wall" aria-hidden="true">
+        <video class="lp-hero__wall-video" autoplay muted loop playsinline preload="metadata" poster="/assets/pocketjs-demo-wall.jpg">
+          <source src="/assets/pocketjs-demo-wall.mp4" type="video/mp4" />
         </video>
+        <div class="lp-hero__wall-scrim"></div>
       </div>
       <div class="lp-container lp-hero__in">
         <a class="lp-eyebrow" href="/blog/pocket-character/">
@@ -61,51 +61,6 @@
             Star on GitHub
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 4.7 18 5 18 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
           </a>
-        </div>
-
-        <div class="lp-stage">
-          <div class="lp-stage__glow" aria-hidden="true"></div>
-          <div class="lp-stage__frame">
-            <div class="screen-emu">
-              <button class="emu-shoulder l" data-btn="0x0100" aria-label="Left shoulder — previous page">L</button>
-              <button class="emu-shoulder r" data-btn="0x0200" aria-label="Right shoulder — next page">R</button>
-              <div class="emu-pad">
-                <div class="emu-dpad">
-                  <svg class="emu-cross" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M36 3 H64 V36 H97 V64 H64 V97 H36 V64 H3 V36 H36 Z" fill="rgba(20,29,49,0.68)" stroke="rgba(255,255,255,0.28)" stroke-width="2.5" stroke-linejoin="round"/></svg>
-                  <button class="emu-key up" data-btn="0x0010" aria-label="Up"><svg viewBox="0 0 24 24"><path d="M12 8 l6 8 h-12 z" fill="currentColor"/></svg></button>
-                  <button class="emu-key down" data-btn="0x0040" aria-label="Down"><svg viewBox="0 0 24 24"><path d="M12 16 l6 -8 h-12 z" fill="currentColor"/></svg></button>
-                  <button class="emu-key left" data-btn="0x0080" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M8 12 l8 -6 v12 z" fill="currentColor"/></svg></button>
-                  <button class="emu-key right" data-btn="0x0020" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M16 12 l-8 -6 v12 z" fill="currentColor"/></svg></button>
-                </div>
-                <div class="emu-nub" aria-hidden="true"></div>
-              </div>
-              <div class="emu-screen">
-                <canvas id="hero-canvas" width="480" height="272" tabindex="0"></canvas>
-                <div id="hero-loading" class="emu-loading">booting core…</div>
-              </div>
-              <div class="emu-faces">
-                <button class="emu-key tri" data-btn="0x1000" aria-label="Triangle"><svg viewBox="0 0 24 24"><path d="M12 5 L19.5 18.5 L4.5 18.5 Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg></button>
-                <button class="emu-key sq" data-btn="0x8000" aria-label="Square"><svg viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="1.6" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
-                <button class="emu-key ci" data-btn="0x2000" aria-label="Circle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.2" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
-                <button class="emu-key cross" data-btn="0x4000" aria-label="Cross"><svg viewBox="0 0 24 24"><path d="M6.5 6.5 L17.5 17.5 M17.5 6.5 L6.5 17.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
-              </div>
-              <div class="emu-sys">
-                <div class="emu-speaker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-                <span class="emu-brand" aria-hidden="true">POCKETJS</span>
-                <div class="emu-sysbtns">
-                  <button class="emu-sys-btn" data-btn="0x0001">SELECT</button>
-                  <button class="emu-sys-btn" data-btn="0x0008">START</button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="lp-demo-tabs" role="tablist" aria-label="Switch the live demo">
-            <button class="lp-demo-tab is-active" type="button" role="tab" aria-selected="true" data-demo="motions-main">Motion Lab</button>
-            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="gallery-main">Gallery</button>
-            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="music-main">Now Playing</button>
-            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="settings-main">Settings</button>
-            <button class="lp-demo-tab" type="button" role="tab" aria-selected="false" data-demo="hero-main">Dashboard</button>
-          </div>
         </div>
       </div>
     </section>
@@ -295,184 +250,83 @@
       </div>
     </section>
 
-    <!-- FEATURES -->
-    <section class="lp-section lp-features">
+    <!-- FEATURES + TOOLING + TARGETS: one bento grid -->
+    <section class="lp-section vb-bento">
       <div class="lp-container">
         <div class="lp-secthead lp-reveal">
-          <span class="lp-kicker">The hard parts move below JSX</span>
-          <h2 class="lp-h2">Layout, styling, text and animation in a tiny native core.</h2>
-          <p class="lp-lead">You keep JSX and signals; PocketJS turns the expensive browser work into native data and draw calls.</p>
+          <span class="lp-kicker">The runtime, at a glance</span>
+          <h2 class="lp-h2">Modern UI physics on retro silicon.</h2>
+          <p class="lp-lead">You keep JSX and signals. Everything expensive becomes native data, native draw calls — and a testable machine.</p>
         </div>
-        <div class="lp-grid">
-          <div class="lp-card lp-reveal">
-            <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>
-            <h3>Fine-grained reactivity</h3>
-            <p>Solid and Vue Vapor keep app state in their native runtimes. PocketJS adapters send mutations straight to the core tree.</p>
-          </div>
-          <div class="lp-card lp-reveal">
-            <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg></span>
+
+        <div class="vb-grid lp-reveal">
+          <article class="vb-tile vb-tile--hero">
+            <h3>UI that can't flake</h3>
+            <p>A virtual clock makes every frame a pure function of the input tape. Golden tests compare whole framebuffers, byte for byte — the same on CI, desktop and hardware. Scrub backwards, replay any session, on a real PSP.</p>
+            <div class="vb-tape" aria-hidden="true">
+              <span class="vb-tape__label">input tape</span>
+              <div class="vb-tape__strip">
+                <i></i><i></i><i class="dn"></i><i></i><i class="dn"></i><i></i><i></i><i></i><i class="dn"></i><i></i><i></i><i class="dn"></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i>
+              </div>
+              <span class="vb-tape__eq">&rarr;</span>
+              <span class="vb-tape__frame">frame 1487<br /><b>hash 7f3a9c01</b></span>
+            </div>
+            <p class="vb-meta">The wall above? Nine of these tapes, replayed headlessly against the core.</p>
+          </article>
+
+          <article class="vb-tile">
             <h3>Compiled styling</h3>
-            <p>Every supported class literal resolves to a numeric style record. Unsupported runtime class composition fails at build time instead of drifting on hardware.</p>
-          </div>
-          <div class="lp-card lp-reveal">
-            <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg></span>
-            <h3>Baked font atlases</h3>
-            <p>The build scans your source, bakes the glyphs you use and ships coverage atlases. Runtime text drawing is compositing, not font rasterization.</p>
-          </div>
-          <div class="lp-card lp-reveal">
-            <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2 0 2-4 4-4s2 8 4 8 2-8 4-8 2 4 4 4 2-2 2-2"/></svg></span>
-            <h3>Native animation</h3>
-            <p>Tweens and springs tick in Rust at a fixed 1/60&nbsp;s. JS declares the motion; the core advances each frame.</p>
-          </div>
-          <div class="lp-card lp-reveal">
-            <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+            <p>Tailwind literals become numeric style records at build time. No parser, no cascade, no utility runtime on the device.</p>
+          </article>
+
+          <article class="vb-tile">
             <h3>Deterministic flexbox</h3>
-            <p>taffy 0.11 does layout inside the Rust core. The same core positions pixels on PSP hardware, browser canvas and golden tests.</p>
-          </div>
-          <div class="lp-card lp-reveal">
-            <span class="lp-card__ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg></span>
-            <h3>One portable core</h3>
-            <p>Layout, style resolution, animation, text and draw lists live in a <code>no_std</code> Rust core compiled for PSP and WebAssembly.</p>
-          </div>
-        </div>
-      </div>
-    </section>
+            <p>taffy 0.11 lays out in the Rust core — identical positions on every target, provable in goldens.</p>
+          </article>
 
-    <!-- TOOLING -->
-    <section class="lp-section lp-tooling" style="padding-top: 0;">
-      <div class="lp-container">
-        <div class="lp-secthead lp-reveal">
-          <span class="lp-kicker">Grown-up tooling</span>
-          <h2 class="lp-h2">Debuggable, deterministic, shippable.</h2>
-          <p class="lp-lead">A runtime you can ship needs more than a renderer — it needs to be inspectable on device and testable without flakes.</p>
-        </div>
-        <div class="lp-proof-grid">
-          <div class="lp-proof lp-reveal">
+          <article class="vb-tile">
+            <h3>Baked text</h3>
+            <p>Coverage atlases with sub-pixel positioning. Runtime text is compositing, not font rasterization.</p>
+          </article>
+
+          <article class="vb-tile">
+            <h3>Native motion</h3>
+            <p>Tweens, springs and keyframe timelines tick in Rust at a fixed 1/60&nbsp;s. JS declares; the core animates.</p>
+          </article>
+
+          <article class="vb-tile">
+            <h3>Real input, system-wide</h3>
+            <p>D-pad focus, analog nub, touch, a virtual cursor — and a system on-screen keyboard any app can summon with one call.</p>
+          </article>
+
+          <article class="vb-tile vb-tile--half">
             <h3>Time-travel DevTools</h3>
-            <p>Every input is recorded as a tape on the device. Scrub backwards through frames, inspect the native tree, replay a session exactly — the full loop verified on a real PSP. <a href="/blog/time-travel-devtools/">Read how &rarr;</a></p>
-          </div>
-          <div class="lp-proof lp-reveal">
-            <h3>UI tests that can't flake</h3>
-            <p>A virtual clock makes every frame a pure function of the input tape. Golden tests compare byte-exact framebuffers — the same bytes on CI, desktop and hardware. <a href="/blog/ui-runtime-that-cant-flake/">Read why &rarr;</a></p>
-          </div>
-          <div class="lp-proof lp-reveal">
-            <h3>One manifest, many hosts</h3>
-            <p>Every app carries a <span class="lp-mono">pocket.json</span> manifest; the <span class="lp-mono">pocket</span> CLI checks it against each device's capability contract, so a bundle only ships to hosts that can prove they run it.</p>
-          </div>
-        </div>
-      </div>
-    </section>
+            <p>Every session records itself. Step to any frame, inspect the native tree, diff against a golden — over USB to real hardware.</p>
+          </article>
 
-    <!-- TARGETS -->
-    <section class="lp-section lp-targets">
-      <div class="lp-container">
-        <div class="lp-secthead lp-reveal">
-          <span class="lp-kicker">One core, many devices</span>
-          <h2 class="lp-h2">The same core, retargeted device by device.</h2>
-          <p class="lp-lead">The <span class="lp-mono">no_std</span> Rust core needs only a framebuffer and a few buttons, so it travels. PSP, PS Vita and macOS ship today; the rest come online as their native backends land — and the list keeps growing.</p>
+          <article class="vb-tile vb-tile--half">
+            <h3>3D, same discipline</h3>
+            <p>Pocket3D runs BSP worlds with PVS through sceGu on PSP and wgpu on desktop — OpenStrike holds a locked 60&nbsp;FPS with a Solid HUD on top.</p>
+          </article>
+
+          <article class="vb-tile vb-tile--wide">
+            <div class="vb-targets__head">
+              <h3>One core, many devices</h3>
+              <p>The <span class="lp-mono">no_std</span> core needs a framebuffer and a few buttons; a <span class="lp-mono">pocket.json</span> contract decides where a bundle may ship.</p>
+            </div>
+            <ul class="vb-chips">
+              <li class="is-live"><b></b>Sony PSP</li>
+              <li class="is-live"><b></b>PS Vita</li>
+              <li class="is-live"><b></b>macOS</li>
+              <li class="is-wip"><b></b>iOS</li>
+              <li><b></b>Nintendo 3DS</li>
+              <li><b></b>Steam Deck</li>
+              <li><b></b>Android</li>
+              <li><b></b>Embedded Linux</li>
+            </ul>
+            <div class="vb-legend"><span><b class="is-live"></b>shipping</span><span><b class="is-wip"></b>in progress</span><span><b></b>planned</span></div>
+          </article>
         </div>
-        <ul class="lp-targets__grid" aria-label="Supported and planned devices">
-          <li class="lp-target is-live lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="3"/><circle cx="6.5" cy="12" r="1.6"/><path d="M15.5 10v4M13.5 12h4"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">Sony PSP (CFW)</h3>
-                <span class="lp-target__status lp-target__status--live">Available now</span>
-              </div>
-              <p class="lp-target__desc">The reference MIPS handheld, rendering through the native core today.</p>
-            </div>
-          </li>
-          <li class="lp-target is-live lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="4"/><circle cx="6.3" cy="12" r="1.7"/><circle cx="17.7" cy="12" r="1.7"/><rect x="9.5" y="9.5" width="5" height="5" rx="0.8"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">PS Vita</h3>
-                <span class="lp-target__status lp-target__status--live">Available now</span>
-              </div>
-              <p class="lp-target__desc">The same bundle at native 960&times;544 through GXM — no fork, no <span class="lp-mono">if (vita)</span>, proven by byte-exact goldens.</p>
-            </div>
-          </li>
-          <li class="lp-target is-live lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M2 20h20"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">macOS</h3>
-                <span class="lp-target__status lp-target__status--live">Available now</span>
-              </div>
-              <p class="lp-target__desc">The same apps in a native window through wgpu — and the desktop home of the Pocket3D game runtimes.</p>
-            </div>
-          </li>
-          <li class="lp-target lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="4"/><rect x="8.5" y="9.4" width="7" height="5.2" rx="0.8"/><path d="M4.4 11h2.4M5.6 9.8v2.4"/><circle cx="18.6" cy="11" r=".9" fill="currentColor" stroke="none"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">Game Boy Advance</h3>
-                <span class="lp-target__status">Experimental</span>
-              </div>
-              <p class="lp-target__desc"><span class="lp-mono">@pocketjs/aot</span> partially evaluates TSX into a pure C runtime — no JavaScript VM on the device at all.</p>
-            </div>
-          </li>
-          <li class="lp-target lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="8" rx="1.6"/><rect x="4" y="13" width="16" height="8" rx="1.6"/><path d="M9 17h6"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">Nintendo 3DS (CFW)</h3>
-                <span class="lp-target__status">Coming soon</span>
-              </div>
-              <p class="lp-target__desc">A dual-screen ARM11 handheld, wired into the same layout and draw pipeline.</p>
-            </div>
-          </li>
-          <li class="lp-target lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="4"/><circle cx="6.5" cy="12" r="1.8"/><circle cx="17.5" cy="10" r="1.2"/><circle cx="17.5" cy="14" r="1.2"/><path d="M10 9.5h4v5h-4z"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">Steam Deck</h3>
-                <span class="lp-target__status">Coming soon</span>
-              </div>
-              <p class="lp-target__desc">A Linux gaming handheld, targeting the same compiled UI through a native backend.</p>
-            </div>
-          </li>
-          <li class="lp-target lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10.5 5h3"/><path d="M10 18.5h4"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">iOS</h3>
-                <span class="lp-target__status">In progress</span>
-              </div>
-              <p class="lp-target__desc">iPhone and iPad through a Metal + JavaScriptCore host, with touch scrolling already working.</p>
-            </div>
-          </li>
-          <li class="lp-target lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 11a6 6 0 0 1 12 0z"/><path d="M6 11h12v6a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1z"/><path d="M8.5 7 7 5M15.5 7 17 5"/><path d="M4 13v3M20 13v3"/><circle cx="9.6" cy="8.6" r=".55" fill="currentColor" stroke="none"/><circle cx="14.4" cy="8.6" r=".55" fill="currentColor" stroke="none"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">Android</h3>
-                <span class="lp-target__status">Coming soon</span>
-              </div>
-              <p class="lp-target__desc">Phones, tablets and gaming handhelds running the same compiled UI.</p>
-            </div>
-          </li>
-          <li class="lp-target lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><rect x="7.5" y="8" width="5" height="5" rx="1"/><path d="M15 9.5h2.5M15 12.5h2.5"/><path d="M7 17v3M11 17v3M15 17v3"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">Embedded Linux</h3>
-                <span class="lp-target__status">Coming soon</span>
-              </div>
-              <p class="lp-target__desc">Framebuffer boards, kiosks and single-board computers with a few inputs.</p>
-            </div>
-          </li>
-          <li class="lp-target is-more lp-reveal">
-            <span class="lp-target__ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>
-            <div class="lp-target__body">
-              <div class="lp-target__head">
-                <h3 class="lp-target__name">…and beyond</h3>
-                <span class="lp-target__status lp-target__status--open">On the roadmap</span>
-              </div>
-              <p class="lp-target__desc">Anything with a framebuffer and a few buttons. Bring a backend and the core follows.</p>
-            </div>
-          </li>
-        </ul>
       </div>
     </section>
 
