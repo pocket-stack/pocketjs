@@ -6,6 +6,7 @@ import {
   createEffect,
   createRenderEffect,
   createSignal,
+  mergeProps,
   onCleanup,
   onMount,
   Show as SolidShow,
@@ -14,6 +15,7 @@ import {
 import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 import { animate, type EasingName } from "./anim.ts";
 import { pushButtonHandlerBlock, onButtonPress, onFrame, type ButtonPressOptions } from "./frame.ts";
+import { getOps, hostViewport } from "./host.ts";
 import { pushFocusGrid, pushFocusScope, type FocusGridOptions, type FocusScopeOptions } from "./input.ts";
 import { getOverlayRoot } from "./overlay.ts";
 import { View, type ViewProps } from "./primitives.ts";
@@ -52,10 +54,11 @@ function resolveActive(active: boolean | (() => boolean) | undefined): boolean {
 export interface ScreenProps extends ViewProps {}
 
 export function Screen(props: ScreenProps): SolidJSX.Element {
-  return View({
-    ...props,
-    class: props.class ?? "relative flex-col w-full h-full bg-slate-50 overflow-hidden",
-  });
+  // mergeProps keeps caller prop GETTERS live — an object spread would
+  // read them once and freeze every dynamic class/style at mount.
+  return View(
+    mergeProps({ class: "relative flex-col w-full h-full bg-slate-50 overflow-hidden" }, props),
+  );
 }
 
 export interface FocusableProps extends ViewProps {
@@ -63,7 +66,10 @@ export interface FocusableProps extends ViewProps {
 }
 
 export function Focusable(props: FocusableProps): SolidJSX.Element {
-  return View({ ...props, focusable: true });
+  // mergeProps, not object spread: spreading reads the compiled prop
+  // getters once and freezes dynamic class/style (the reactive-leak class
+  // of bug this file must never reintroduce).
+  return View(mergeProps(props, { focusable: true }) as ViewProps);
 }
 
 export interface NamedProps {
@@ -170,12 +176,16 @@ export function Portal(props: PortalProps): SolidJSX.Element {
 
   onMount(() => {
     host = createElement("view");
+    // Size to the live logical viewport — desktop widget hosts resize it
+    // (resizeViewport keeps ui.__viewport fresh); console hosts read the
+    // spec screen. A portal opened after a resize lands full-window.
+    const vp = hostViewport(getOps());
     setProp(
       host,
       "style",
       {
-        width: SCREEN_W,
-        height: SCREEN_H,
+        width: vp?.w ?? SCREEN_W,
+        height: vp?.h ?? SCREEN_H,
         posType: ENUMS.PosType.Absolute,
         insetT: 0,
         insetR: 0,
@@ -270,12 +280,15 @@ export interface ActionBarProps extends ViewProps {}
 export function ActionBar(props: ActionBarProps): SolidJSX.Element {
   return Portal({
     children: () =>
-      View({
-        ...props,
-        class:
-          props.class ??
-          "absolute left-3 right-3 bottom-3 flex-row items-center justify-between px-2 py-1 rounded-lg shadow-md bg-white border-slate-200",
-      }),
+      View(
+        mergeProps(
+          {
+            class:
+              "absolute left-3 right-3 bottom-3 flex-row items-center justify-between px-2 py-1 rounded-lg shadow-md bg-white border-slate-200",
+          },
+          props,
+        ),
+      ),
   });
 }
 

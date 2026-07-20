@@ -353,6 +353,77 @@ impl ModelAsset {
         })
     }
 
+    /// Build an asset from raw geometry whose material samples an external
+    /// texture view (an [`crate::gpu::OffscreenTarget`], a video frame, …).
+    /// The bind group keeps the underlying texture alive; render into it
+    /// each frame and every instance of this asset shows the update — this
+    /// is how a live 2D surface lands on a 3D mesh (pocket-widget screens).
+    pub fn from_geometry_textured(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        label: &str,
+        vertices: &[ModelVertex],
+        indices: &[u32],
+        view: &wgpu::TextureView,
+        sampler: &wgpu::Sampler,
+    ) -> Arc<Self> {
+        use wgpu::util::DeviceExt;
+        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        });
+        let vbuf = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let ibuf = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+        let mut aabb = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+        for v in vertices {
+            let p = Vec3::from(v.pos);
+            aabb.0 = aabb.0.min(p);
+            aabb.1 = aabb.1.max(p);
+        }
+        Arc::new(Self {
+            vbuf,
+            ibuf,
+            primitives: vec![Primitive {
+                first_index: 0,
+                index_count: indices.len() as u32,
+                bind_group,
+            }],
+            skeleton: Skeleton {
+                parents: Vec::new(),
+                rest: Vec::new(),
+                order: Vec::new(),
+            },
+            skins: Vec::new(),
+            clips: Vec::new(),
+            morph_meshes: Vec::new(),
+            prim_morph: vec![None],
+            aabb,
+            textures: Vec::new(),
+        })
+    }
+
     pub fn load_glb(
         gpu: &Gpu,
         layout: &wgpu::BindGroupLayout,

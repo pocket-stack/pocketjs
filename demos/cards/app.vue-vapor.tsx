@@ -58,7 +58,7 @@ const Detail = (props: { card: Card | (() => Card)}) => {
     >
       <View class={card().bar} />
       <View class="flex-col gap-1">
-        <Text class="text-sm text-slate-950 font-bold">{card().title}???</Text>
+        <Text class="text-sm text-slate-950 font-bold">{card().title}</Text>
         <Text class="text-xs text-slate-600">{card().detail}</Text>
       </View>
     </View>

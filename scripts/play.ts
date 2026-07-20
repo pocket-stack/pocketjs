@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { vitaTitleId } from "../src/manifest/vita-package.ts";
-import { demoIdentity } from "./demo-identity.ts";
+import { demoIdentity, demoManifestFor } from "./demo-identity.ts";
 import { VITA_REQUIRED_SYSTEM_ASSETS } from "./vita-package.ts";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -152,13 +152,7 @@ const requestedFramework =
   framework?.slice("--framework=".length) || (demo.endsWith("vue-vapor") ? "vue-vapor" : "solid");
 
 if (!noBuild) {
-  const manifest = JSON.parse(readFileSync(`${ROOT}pocket.json`, "utf8")) as Record<string, any>;
-  manifest.id = identity.id;
-  manifest.name = identity.name;
-  manifest.title = identity.title;
-  manifest.app.entry = `demos/${demo}/main.tsx`;
-  manifest.app.output = `${demo}-main`;
-  manifest.app.framework = requestedFramework;
+  const manifest = demoManifestFor(ROOT, demo, requestedFramework) as Record<string, any>;
   const manifestPath = `${ROOT}.pocket/play/${demo}.json`;
   mkdirSync(dirname(manifestPath), { recursive: true });
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");

@@ -16,7 +16,14 @@ if (typeof (globalThis as { queueMicrotask?: unknown }).queueMicrotask !== "func
   };
 }
 
-import { detectHost, hostViewport, installFrameHandler, installHost, type HostOps } from "./host.ts";
+import {
+  detectHost,
+  getOps,
+  hostViewport,
+  installFrameHandler,
+  installHost,
+  type HostOps,
+} from "./host.ts";
 import { initDevtools, wrapFrameHandler } from "./devtools.ts";
 import {
   createElement,
@@ -32,7 +39,7 @@ import {
 } from "./renderer.ts";
 import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
-import { handleFrame, setInputRoot } from "./input.ts";
+import { handleFrame, setHitRoot, setInputRoot } from "./input.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
 import { __resetTouches, __setTouches } from "./touch.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
@@ -113,6 +120,40 @@ function createLayer(style: Record<string, number>): NodeMirror {
   return layer;
 }
 
+// The mounted root layers, kept for live viewport resizes (desktop hosts).
+let appLayer: NodeMirror | null = null;
+let overlayLayer: NodeMirror | null = null;
+
+/**
+ * Live-resize the mounted app to a new logical viewport (desktop widget
+ * hosts: the host resized the core with `Ui::set_viewport` and told the app,
+ * which calls this to follow). Restyles the app + overlay root layers and
+ * refreshes `ui.__viewport` so every later `hostViewport` read — cursor
+ * clamping, OSK docking — sees the new size. Console hosts never resize;
+ * calling this without a mounted app is a no-op.
+ */
+export function resizeViewport(w: number, h: number): void {
+  if (!appLayer || !overlayLayer) return;
+  setProp(appLayer, "style", { width: w, height: h, overflow: ENUMS.Overflow.Hidden }, undefined);
+  setProp(
+    overlayLayer,
+    "style",
+    {
+      width: w,
+      height: h,
+      posType: ENUMS.PosType.Absolute,
+      insetT: 0,
+      insetR: 0,
+      insetB: 0,
+      insetL: 0,
+      zIndex: 1000,
+    },
+    undefined,
+  );
+  const ops = getOps() as HostOps & { __viewport?: { w: number; h: number } };
+  ops.__viewport = { w, h };
+}
+
 /**
  * Mount the app into the native root node and wire the frame loop. Returns a
  * disposer that unmounts and destroys the app subtree.
@@ -186,8 +227,11 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   insertNode(rootMirror, appRoot);
   insertNode(rootMirror, overlayRoot);
   setOverlayRoot(overlayRoot);
+  appLayer = appRoot;
+  overlayLayer = overlayRoot;
 
   setInputRoot(appRoot);
+  setHitRoot(rootMirror); // hit tests see the overlay layer too
   resetFrameHooks();
   resetClock(); // latches the host's __simHz clock policy (DETERMINISM.md)
   resetEffects();
@@ -210,7 +254,10 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     __resetTouches();
     dispose(); // tears down reactivity only — universal keeps the nodes
     setInputRoot(null); // drops focus state (native focus dies with the nodes)
+    setHitRoot(null);
     setOverlayRoot(null);
+    appLayer = null;
+    overlayLayer = null;
     for (const child of rootMirror.children.splice(0)) {
       child.parent = null;
       host.ops.destroyNode(child.id); // recursive native destroy

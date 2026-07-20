@@ -237,8 +237,10 @@ impl<G: Game> WinitApp<G> {
 
 /// The scene pass writes premultiplied-style output (opaque pixels carry
 /// their own alpha, transparent clear is all-zero), so prefer PreMultiplied
-/// and fall back to PostMultiplied — at alpha 0 and 1 they agree.
-fn pick_alpha_mode(
+/// and fall back to PostMultiplied — at alpha 0 and 1 they agree. Public so
+/// alternative shells (pocket-widget) configure transparent surfaces the
+/// same way.
+pub fn pick_alpha_mode(
     surface: &wgpu::Surface<'_>,
     adapter: &wgpu::Adapter,
 ) -> Result<wgpu::CompositeAlphaMode> {
