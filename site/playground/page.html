@@ -33,6 +33,7 @@
               <button class="emu-key left" data-btn="0x0080" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M8 12 l8 -6 v12 z" fill="currentColor"/></svg></button>
               <button class="emu-key right" data-btn="0x0020" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M16 12 l-8 -6 v12 z" fill="currentColor"/></svg></button>
             </div>
+            <div class="emu-nub" aria-hidden="true"></div>
           </div>
           <div class="emu-screen">
             <canvas id="pg-canvas" width="480" height="272" tabindex="0"></canvas>
@@ -44,8 +45,12 @@
             <button class="emu-key cross" data-btn="0x4000" aria-label="Cross"><svg viewBox="0 0 24 24"><path d="M6.5 6.5 L17.5 17.5 M17.5 6.5 L6.5 17.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
           </div>
           <div class="emu-sys">
-            <button class="emu-sys-btn" data-btn="0x0001">SELECT</button>
-            <button class="emu-sys-btn" data-btn="0x0008">START</button>
+            <div class="emu-speaker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            <span class="emu-brand" aria-hidden="true">POCKETJS</span>
+            <div class="emu-sysbtns">
+              <button class="emu-sys-btn" data-btn="0x0001">SELECT</button>
+              <button class="emu-sys-btn" data-btn="0x0008">START</button>
+            </div>
           </div>
         </div>
       </div>

@@ -17,21 +17,19 @@
     "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
-      "@pocketjs/aot": ["./aot/dsl/index.ts"],
-      "@pocketjs/aot/compiler": ["./aot/compiler/index.ts"],
-      "@pocketjs/aot/jsx-runtime": ["./aot/dsl/jsx-runtime.ts"],
-      "@pocketjs/aot/jsx-dev-runtime": ["./aot/dsl/jsx-dev-runtime.ts"],
-      "@pocketjs/aot/spec": ["./aot/spec/pjgb.ts"],
       "@pocketjs/playset": ["./playset/index.ts"],
       "@pocketjs/playset/loop": ["./playset/loop.ts"],
       "@pocketjs/playset/math": ["./playset/math/index.ts"],
       "@pocketjs/playset/scene3d": ["./playset/scene3d/index.ts"],
+      "@pocketjs/playset/sim": ["./playset/sim/ops.ts"],
       "@pocketjs/framework": ["./src/index.ts"],
       "@pocketjs/framework/animation": ["./src/animation.ts"],
       "@pocketjs/framework/config": ["./src/config.ts"],
       "@pocketjs/framework/components": ["./src/components.ts"],
       "@pocketjs/framework/input": ["./src/input-api.ts"],
       "@pocketjs/framework/lifecycle": ["./src/lifecycle.ts"],
+      "@pocketjs/framework/manifest": ["./src/manifest/index.ts"],
+      "@pocketjs/framework/platform": ["./src/platform.ts"],
       "@pocketjs/framework/prelude": ["./src/prelude.ts"],
       "@pocketjs/framework/renderer": ["./src/renderer.ts"],
       "@pocketjs/framework/solid": ["./src/index.ts"],
@@ -46,5 +44,5 @@
       "@pocketjs/framework/vue-vapor/renderer": ["./src/renderer-vue-vapor.ts"]
     }
   },
-  "include": ["src", "compiler", "demos", "test", "spec", "host-web", "aot", "playset"]
+  "include": ["src", "compiler", "demos", "test", "spec", "host-web", "playset"]
 }

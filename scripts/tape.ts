@@ -15,14 +15,18 @@
 // (same determinism contract as test/golden.ts — fixed dt, no RNG/wall
 // clock). `--assert` exits 1 and names the first divergent frame.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createWasmUi } from "../host-web/wasm-ops.js";
 import { expandTape, type Tape } from "../src/devtools.ts";
 import { encodePNG } from "../test/png.ts";
 import { SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
-const DIST = ROOT + "dist/";
+// Tape replays must not consume the shared dist/ directory: target builds and
+// other demos may leave a valid-looking but incompatible JS/pak pair there.
+// Each invocation rebuilds serially into this dedicated runtime directory.
+const RUNTIME_DIST = ROOT + "dist/tape-runtime/";
+const CAPTURE_DIST = ROOT + "dist/tape";
 const WASM_PATH = ROOT + "host-web/pocketjs.wasm";
 
 function ensureBuilt(path: string, cmd: string[]): void {
@@ -31,6 +35,19 @@ function ensureBuilt(path: string, cmd: string[]): void {
   const p = Bun.spawnSync(cmd, { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
   if (p.exitCode !== 0 || !existsSync(path)) {
     console.error(`tape: failed to produce ${path}`);
+    process.exit(1);
+  }
+}
+
+function buildApp(app: string): void {
+  rmSync(RUNTIME_DIST, { recursive: true, force: true });
+  mkdirSync(RUNTIME_DIST, { recursive: true });
+  const output = RUNTIME_DIST + app + ".js";
+  const cmd = ["bun", "scripts/build.ts", app, `--outdir=${RUNTIME_DIST}`];
+  console.log(`tape: rebuilding ${app}`);
+  const p = Bun.spawnSync(cmd, { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
+  if (p.exitCode !== 0 || !existsSync(output)) {
+    console.error(`tape: failed to produce ${output}`);
     process.exit(1);
   }
 }
@@ -62,14 +79,14 @@ interface BootResult {
  *  in-process DevTools transport — this CLI is just a DevTools client. */
 async function boot(app: string): Promise<BootResult> {
   ensureBuilt(WASM_PATH, ["bun", "scripts/wasm.ts"]);
-  ensureBuilt(DIST + app + ".js", ["bun", "scripts/build.ts", app]);
+  buildApp(app);
   const wasm = await createWasmUi(await Bun.file(WASM_PATH).arrayBuffer());
   const g = globalThis as Record<string, unknown>;
   const inbox: string[] = [];
   const outbox: string[] = [];
   g.ui = wasm.ops;
-  g.__pak = existsSync(DIST + app + ".pak")
-    ? await Bun.file(DIST + app + ".pak").arrayBuffer()
+  g.__pak = existsSync(RUNTIME_DIST + app + ".pak")
+    ? await Bun.file(RUNTIME_DIST + app + ".pak").arrayBuffer()
     : undefined;
   g.frame = undefined;
   g.__pocketApp = app;
@@ -77,7 +94,7 @@ async function boot(app: string): Promise<BootResult> {
     send: (line: string) => outbox.push(line),
     recv: () => (inbox.length ? inbox.shift() : null),
   };
-  const src = await Bun.file(DIST + app + ".js").text();
+  const src = await Bun.file(RUNTIME_DIST + app + ".js").text();
   (0, eval)(src);
   const frame = g.frame as ((buttons: number) => void) | undefined;
   if (typeof frame !== "function") {
@@ -125,7 +142,7 @@ async function cmdReplay(): Promise<void> {
   const pngFrames = new Set(
     (argValue("--png") ?? "").split(",").filter(Boolean).map((s) => Number(s)),
   );
-  const outdir = argValue("--outdir") ?? DIST + "tape";
+  const outdir = argValue("--outdir") ?? CAPTURE_DIST;
   const expected: string[] | null = assertPath
     ? (JSON.parse(readFileSync(assertPath, "utf8")) as { hashes: string[] }).hashes
     : null;
@@ -141,6 +158,7 @@ async function cmdReplay(): Promise<void> {
     hashes.push(h);
     if (expected && expected[f] !== undefined && expected[f] !== h) {
       console.error(`tape: FIRST DIVERGENT FRAME ${f} — expected ${expected[f]}, got ${h}`);
+      mkdirSync(outdir, { recursive: true });
       writeFileSync(`${outdir}/divergent.${f}.png`, encodePNG(fb.slice(), SCREEN_W, SCREEN_H));
       console.error(`tape: wrote ${outdir}/divergent.${f}.png`);
       process.exit(1);

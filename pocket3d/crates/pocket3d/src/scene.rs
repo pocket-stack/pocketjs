@@ -69,6 +69,10 @@ pub struct Beam {
 #[derive(Default)]
 pub struct Scene {
     pub sky: Sky,
+    /// Clear the frame to fully transparent instead of the sky horizon.
+    /// For widget-style windows whose surface composites over the desktop;
+    /// meaningless when a `world` (with its sky pass) is present.
+    pub transparent_clear: bool,
     pub lighting: ModelLighting,
     pub world: Option<Arc<WorldModel>>,
     /// Dynamic models (bots, props). Rebuilt or mutated per frame by the game.

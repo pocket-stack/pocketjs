@@ -134,9 +134,34 @@ fn encode_atlas(
     glyph_count: u16,
     glyphs: &[(u32, u16, u8)],
 ) -> Vec<u8> {
+    encode_atlas_version_density(
+        spec::font_atlas::VERSION,
+        1,
+        slot,
+        cell_w,
+        cell_h,
+        baseline,
+        line_height,
+        glyph_count,
+        glyphs,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_atlas_version_density(
+    version: u16,
+    raster_density: u8,
+    slot: u8,
+    cell_w: u8,
+    cell_h: u8,
+    baseline: u8,
+    line_height: u8,
+    glyph_count: u16,
+    glyphs: &[(u32, u16, u8)],
+) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&spec::font_atlas::MAGIC.to_le_bytes());
-    out.extend_from_slice(&spec::font_atlas::VERSION.to_le_bytes());
+    out.extend_from_slice(&version.to_le_bytes());
     out.extend_from_slice(&(glyphs.len() as u16).to_le_bytes());
     out.push(cell_w);
     out.push(cell_h);
@@ -144,7 +169,8 @@ fn encode_atlas(
     out.push(line_height);
     out.push(slot);
     out.push(0); // flags
-    out.extend_from_slice(&[0, 0]); // reserved
+    out.push(raster_density);
+    out.push(0); // reserved
     assert_eq!(glyphs.len(), glyph_count as usize, "test blob: glyphCount == cmap entries");
     for &(cp, gid, adv) in glyphs {
         out.extend_from_slice(&cp.to_le_bytes());
@@ -152,8 +178,9 @@ fn encode_atlas(
         out.push(adv);
         out.push(0);
     }
-    let bytes_per_row = cell_w as usize;
-    out.extend_from_slice(&alloc::vec![0u8; glyph_count as usize * cell_h as usize * bytes_per_row]);
+    let bytes_per_row = cell_w as usize * raster_density.max(1) as usize;
+    let coverage_h = cell_h as usize * raster_density.max(1) as usize;
+    out.extend_from_slice(&alloc::vec![0u8; glyph_count as usize * coverage_h * bytes_per_row]);
     out
 }
 
@@ -635,6 +662,35 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
 }
 
 #[test]
+fn rounded_corner_masks_follow_raster_density_without_changing_layout() {
+    let mut ui = Ui::new_with_raster_density(2);
+    assert_eq!(ui.raster_density(), 2);
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 36.0);
+    ui.set_prop(n, spec::prop::HEIGHT, 20.0);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_T, 10.0);
+    ui.set_prop(n, spec::prop::INSET_L, 10.0);
+    ui.set_prop(n, spec::prop::RADIUS, 10.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(37, 99, 235, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.tick();
+
+    let words = ui.draw().words.clone();
+    let i = words.iter().position(|&word| word == spec::draw_op::TEX_QUAD).unwrap();
+    let view = ui.texture(words[i + 1] as i32).expect("density-scaled disc texture");
+    assert_eq!((view.w, view.h), (64, 64), "20px disc at 2x is padded to 64px");
+    assert_eq!(decode_wh(words[i + 3]), (10, 10), "DrawList geometry stays logical");
+    assert_eq!(f32::from_bits(words[i + 6]), 20.0 / 64.0, "UV selects one 2x quadrant");
+}
+
+#[test]
+#[should_panic(expected = "raster density must be an integer from 1 through 255")]
+fn ui_rejects_zero_raster_density() {
+    let _ = Ui::new_with_raster_density(0);
+}
+
+#[test]
 fn transparent_rounded_border_draws_an_outline_not_square_strips() {
     let mut ui = Ui::new();
     let blue = abgr(37, 99, 235, 255);
@@ -815,6 +871,74 @@ fn text_measurement_against_synthetic_atlas() {
     let atlas = ui.font_atlas(2).unwrap();
     assert_eq!(atlas.lookup('B' as u32), Some((2, 5)));
     assert_eq!(atlas.glyph_rows(1).len(), 64); // cellH * cellW coverage bytes
+}
+
+#[test]
+fn font_atlas_v3_scales_coverage_without_scaling_layout_metrics() {
+    let glyphs = &[(0xfffd, 0, 8), ('A' as u32, 1, 6), ('B' as u32, 2, 5)];
+    let mut ui = Ui::new();
+    let mut hd = encode_atlas_version_density(
+        spec::font_atlas::VERSION,
+        2,
+        2,
+        8,
+        8,
+        7,
+        10,
+        3,
+        glyphs,
+    );
+    // gid 1, logical pixel (0,0): four density-2 samples reduce to their
+    // rounded mean, not the top-left sample.
+    let bitmap_off = spec::font_atlas::HEADER_SIZE
+        + glyphs.len() * spec::font_atlas::CMAP_ENTRY_SIZE;
+    let coverage_w = 16usize;
+    let coverage_h = 16usize;
+    let gid_1 = bitmap_off + coverage_w * coverage_h;
+    hd[gid_1] = 0;
+    hd[gid_1 + 1] = 64;
+    hd[gid_1 + coverage_w] = 128;
+    hd[gid_1 + coverage_w + 1] = 255;
+    assert!(ui.load_font_atlas(&hd));
+    let atlas = ui.font_atlas(2).unwrap();
+    assert_eq!(atlas.raster_density, 2);
+    assert_eq!((atlas.cell_w, atlas.cell_h), (8, 8));
+    assert_eq!((atlas.coverage_width(), atlas.coverage_height()), (16, 16));
+    assert_eq!(atlas.bytes_per_row(), 16);
+    assert_eq!(atlas.glyph_rows(1).len(), 16 * 16);
+    assert_eq!(atlas.logical_coverage(1, 0, 0), 112);
+    assert_eq!(atlas.logical_coverage(1, 8, 0), 0, "out-of-range is transparent");
+    // Advances, line height, and therefore app layout stay in logical px.
+    assert_eq!(ui.measure_text("AB", 2), 11.0);
+
+    // v2 used header bytes 14..15 as zeroed reserved bytes. New cores load it
+    // as density 1 so already-built packs remain compatible.
+    let mut legacy = encode_atlas_version_density(2, 0, 3, 8, 8, 7, 10, 3, glyphs);
+    let legacy_gid_1 = bitmap_off + 8 * 8;
+    legacy[legacy_gid_1] = 173;
+    assert!(ui.load_font_atlas(&legacy));
+    let legacy_atlas = ui.font_atlas(3).unwrap();
+    assert_eq!(legacy_atlas.raster_density, 1);
+    assert_eq!((legacy_atlas.coverage_width(), legacy_atlas.coverage_height()), (8, 8));
+    assert_eq!(legacy_atlas.glyph_rows(1).len(), 8 * 8);
+    assert_eq!(legacy_atlas.logical_coverage(1, 0, 0), 173);
+    assert_eq!(ui.measure_text("AB", 3), 11.0);
+
+    // Density zero has no meaning in v3, and truncation is checked against
+    // density-scaled coverage rather than only logical cell dimensions.
+    let invalid_density = encode_atlas_version_density(
+        spec::font_atlas::VERSION,
+        0,
+        4,
+        8,
+        8,
+        7,
+        10,
+        3,
+        glyphs,
+    );
+    assert!(!ui.load_font_atlas(&invalid_density));
+    assert!(!ui.load_font_atlas(&hd[..hd.len() - 1]));
 }
 
 #[test]
@@ -2198,4 +2322,453 @@ fn disc_cache_survives_js_freeing_its_texture() {
     // Steady state: the rebaked handle is reused, not rebaked per frame.
     assert_eq!(find_disc(&ui.draw().words.clone()), disc2);
     assert_eq!(ui.texture_slot_count(), 1, "the freed slot was reused LIFO");
+}
+
+// ---- virtual cursor (spec ops 27..29) -----------------------------------------
+
+/// A detached-from-flow PAINTED box at (x, y) sized w x h under `parent`
+/// (hit tests only consider nodes that paint — see draw::claims_hit).
+fn abs_box(ui: &mut Ui, parent: i32, x: f64, y: f64, w: f64, h: f64) -> i32 {
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_L, x);
+    ui.set_prop(n, spec::prop::INSET_T, y);
+    ui.set_prop(n, spec::prop::WIDTH, w);
+    ui.set_prop(n, spec::prop::HEIGHT, h);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(40, 40, 40, 255) as f64);
+    ui.insert_before(parent, n, 0);
+    n
+}
+
+#[test]
+fn hit_test_topmost_wins_and_containers_pass_through() {
+    let mut ui = Ui::new();
+    let panel = abs_box(&mut ui, spec::ROOT_ID, 10.0, 10.0, 100.0, 50.0);
+    let inner = abs_box(&mut ui, panel, 5.0, 5.0, 20.0, 20.0);
+    ui.tick();
+    // Inside the child: the deepest painted node wins over its ancestors.
+    assert_eq!(ui.hit_test(20.0, 20.0), inner);
+    // Inside the panel but not the child.
+    assert_eq!(ui.hit_test(90.0, 40.0), panel);
+    // The unstyled root paints nothing: empty space hits NOTHING — pure
+    // layout containers (e.g. the framework's full-screen overlay layer)
+    // are hit-transparent even though their box contains the point.
+    assert_eq!(ui.hit_test(400.0, 200.0), 0);
+    // A transparent full-screen wrapper OVER the panel does not occlude it,
+    // but its own painted children do.
+    let wrapper = ui.create_node(0);
+    ui.set_prop(wrapper, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(wrapper, spec::prop::INSET_L, 0.0);
+    ui.set_prop(wrapper, spec::prop::INSET_T, 0.0);
+    ui.set_prop(wrapper, spec::prop::WIDTH, 480.0);
+    ui.set_prop(wrapper, spec::prop::HEIGHT, 272.0);
+    ui.insert_before(spec::ROOT_ID, wrapper, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(90.0, 40.0), panel, "overlay layer passes hits through");
+    let toast = abs_box(&mut ui, wrapper, 80.0, 30.0, 40.0, 20.0);
+    assert_eq!(ui.hit_test(90.0, 40.0), toast, "painted overlay content claims");
+    // Outside the viewport (half-open edges): nothing.
+    assert_eq!(ui.hit_test(480.0, 100.0), 0);
+    assert_eq!(ui.hit_test(-1.0, 100.0), 0);
+    // Layout need not be ticked first: hit_test relayouts a dirty tree.
+    let fresh = abs_box(&mut ui, spec::ROOT_ID, 300.0, 100.0, 10.0, 10.0);
+    assert_eq!(ui.hit_test(305.0, 105.0), fresh);
+}
+
+#[test]
+fn hit_test_paint_order_and_z_index() {
+    let mut ui = Ui::new();
+    // Two overlapping siblings: the later one paints on top.
+    let below = abs_box(&mut ui, spec::ROOT_ID, 10.0, 10.0, 40.0, 40.0);
+    let above = abs_box(&mut ui, spec::ROOT_ID, 30.0, 10.0, 40.0, 40.0);
+    ui.tick();
+    assert_eq!(ui.hit_test(35.0, 20.0), above, "document order: later sibling on top");
+    assert_eq!(ui.hit_test(15.0, 20.0), below, "non-overlapped area still hits the first");
+    // z-index beats document order (mirrors the paint sort).
+    ui.set_prop(below, spec::prop::Z_INDEX, 5.0);
+    assert_eq!(ui.hit_test(35.0, 20.0), below, "z-index raises the earlier sibling");
+}
+
+#[test]
+fn hit_test_display_none_overflow_and_transforms() {
+    let mut ui = Ui::new();
+    let clipper = abs_box(&mut ui, spec::ROOT_ID, 10.0, 10.0, 30.0, 30.0);
+    ui.set_prop(clipper, spec::prop::OVERFLOW, spec::Overflow::Hidden as u32 as f64);
+    let wide = abs_box(&mut ui, clipper, 0.0, 0.0, 200.0, 20.0);
+    ui.tick();
+    assert_eq!(ui.hit_test(20.0, 15.0), wide, "inside the clip the child hits");
+    assert_eq!(
+        ui.hit_test(100.0, 15.0),
+        0,
+        "outside the overflow-hidden box the child's box is clipped away"
+    );
+    // display:none removes the whole subtree from hit testing.
+    ui.set_prop(clipper, spec::prop::DISPLAY, spec::Display::None as u32 as f64);
+    assert_eq!(ui.hit_test(20.0, 15.0), 0);
+    ui.set_prop(clipper, spec::prop::DISPLAY, spec::Display::Flex as u32 as f64);
+    // Translate moves the hit box with the paint box.
+    let mover = abs_box(&mut ui, spec::ROOT_ID, 100.0, 100.0, 20.0, 20.0);
+    ui.set_prop(mover, spec::prop::TRANSLATE_X, 50.0);
+    ui.tick();
+    assert_eq!(ui.hit_test(110.0, 110.0), 0, "old spot is empty");
+    assert_eq!(ui.hit_test(160.0, 110.0), mover, "translated spot hits");
+    // A 45-degree rotation rejects the now-outside corner but keeps the center.
+    ui.set_prop(mover, spec::prop::ROTATE, 45.0);
+    assert_eq!(ui.hit_test(160.0, 110.0), mover, "center survives rotation");
+    assert_eq!(ui.hit_test(151.5, 101.5), 0, "corner rotated away");
+    // Effective opacity 0 is culled exactly like paint culls it (a faded-out
+    // toast must not eat hits); partial transparency still claims.
+    let ghost = abs_box(&mut ui, spec::ROOT_ID, 200.0, 200.0, 20.0, 20.0);
+    let ghost_child = abs_box(&mut ui, ghost, 0.0, 0.0, 20.0, 20.0);
+    ui.set_prop(ghost, spec::prop::OPACITY, 0.0);
+    ui.tick();
+    assert_eq!(ui.hit_test(210.0, 210.0), 0, "invisible subtree hits nothing");
+    ui.set_prop(ghost, spec::prop::OPACITY, 0.5);
+    assert_eq!(ui.hit_test(210.0, 210.0), ghost_child, "faded still claims");
+}
+
+#[test]
+fn hit_test_variant_styled_hotspots_and_perspective_roots_claim() {
+    let mut ui = Ui::new();
+    // A record whose BASE paints nothing but whose focus: variant does — the
+    // hotspot must be reachable BEFORE it is hovered, with no hysteresis.
+    let mut hotspot_style = StyleSpec::new();
+    hotspot_style.focus = alloc::vec![(spec::prop::BG_COLOR, abgr(255, 255, 255, 32))];
+    let mut plain_style = StyleSpec::new();
+    plain_style.base = alloc::vec![(spec::prop::WIDTH, 10f32.to_bits())];
+    assert!(ui.load_styles(&encode_styles(&[hotspot_style, plain_style])));
+    let hotspot = ui.create_node(0);
+    ui.set_prop(hotspot, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(hotspot, spec::prop::INSET_L, 30.0);
+    ui.set_prop(hotspot, spec::prop::INSET_T, 30.0);
+    ui.set_prop(hotspot, spec::prop::WIDTH, 40.0);
+    ui.set_prop(hotspot, spec::prop::HEIGHT, 40.0);
+    ui.set_style(hotspot, 0);
+    ui.insert_before(spec::ROOT_ID, hotspot, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(40.0, 40.0), hotspot, "focus:-styled hotspot claims unfocused");
+    // A plain-styled unpainted box still passes through (record present, but
+    // no paint in any variant).
+    let wrapper = ui.create_node(0);
+    ui.set_prop(wrapper, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(wrapper, spec::prop::INSET_L, 30.0);
+    ui.set_prop(wrapper, spec::prop::INSET_T, 30.0);
+    ui.set_prop(wrapper, spec::prop::WIDTH, 40.0);
+    ui.set_prop(wrapper, spec::prop::HEIGHT, 40.0);
+    ui.set_style(wrapper, 1);
+    ui.insert_before(spec::ROOT_ID, wrapper, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(40.0, 40.0), hotspot, "styled-but-unpainted wrapper passes through");
+    // A perspective context root claims its own box: a click on visible 3D
+    // content must never fall through to what is painted behind it.
+    let stage = abs_box(&mut ui, spec::ROOT_ID, 100.0, 100.0, 60.0, 60.0);
+    ui.set_prop(stage, spec::prop::PERSPECTIVE, 300.0);
+    let card = abs_box(&mut ui, stage, 10.0, 10.0, 40.0, 40.0);
+    ui.tick();
+    let _ = card;
+    assert_eq!(ui.hit_test(130.0, 130.0), stage, "3D context root claims, children untestable");
+}
+
+#[test]
+fn cursor_sprite_draws_last_hides_and_survives_free() {
+    let mut ui = Ui::new();
+    let n = abs_box(&mut ui, spec::ROOT_ID, 0.0, 0.0, 100.0, 100.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(20, 20, 20, 255) as f64);
+    let tex = ui.upload_texture(&[0xffu8; 8 * 8 * 4], 8, 8, spec::psm::PSM_8888);
+    assert!(tex >= 0);
+    ui.tick();
+
+    // No cursor bound: no TEX_QUAD at all.
+    let words = ui.draw().words.clone();
+    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 0);
+
+    // Bound: exactly one TEX_QUAD, as the LAST op, offset by the hotspot.
+    ui.set_cursor(tex, 2.0, 3.0, 0.0, 0.0);
+    ui.set_cursor_pos(100.0, 50.0);
+    let words = ui.draw().words.clone();
+    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 1);
+    let i = words.iter().position(|&w| w == spec::draw_op::TEX_QUAD).unwrap();
+    assert_eq!(i + 9, words.len(), "cursor is the final DrawList entry");
+    assert_eq!(words[i + 1], tex as u32);
+    assert_eq!(decode_xy(words[i + 2]), (98, 47), "hotspot offsets the sprite");
+    assert_eq!(decode_wh(words[i + 3]), (8, 8), "size defaults to the texture");
+
+    // Explicit logical size overrides the texture dimensions.
+    ui.set_cursor(tex, 0.0, 0.0, 16.0, 12.0);
+    let words = ui.draw().words.clone();
+    let i = words.iter().position(|&w| w == spec::draw_op::TEX_QUAD).unwrap();
+    assert_eq!(decode_wh(words[i + 3]), (16, 12));
+
+    // The viewport edge clips the sprite instead of wrapping i16 coords.
+    ui.set_cursor_pos(476.0, 268.0);
+    let words = ui.draw().words.clone();
+    let i = words.iter().position(|&w| w == spec::draw_op::TEX_QUAD).unwrap();
+    assert_eq!(decode_wh(words[i + 3]), (4, 4), "clipped at the screen edge");
+
+    // Freeing the bound texture hides the cursor (stale handles draw nothing).
+    ui.free_texture(tex);
+    let words = ui.draw().words.clone();
+    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 0);
+
+    // Unbinding via tex < 0 also hides it.
+    let tex2 = ui.upload_texture(&[0x80u8; 8 * 8 * 4], 8, 8, spec::psm::PSM_8888);
+    ui.set_cursor(tex2, 0.0, 0.0, 0.0, 0.0);
+    ui.set_cursor(-1, 0.0, 0.0, 0.0, 0.0);
+    let words = ui.draw().words.clone();
+    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 0);
+}
+
+#[test]
+fn hit_test_never_sees_the_cursor_sprite() {
+    let mut ui = Ui::new();
+    let under = abs_box(&mut ui, spec::ROOT_ID, 50.0, 50.0, 30.0, 30.0);
+    let tex = ui.upload_texture(&[0xffu8; 8 * 8 * 4], 8, 8, spec::psm::PSM_8888);
+    ui.set_cursor(tex, 0.0, 0.0, 0.0, 0.0);
+    ui.set_cursor_pos(60.0, 60.0);
+    ui.tick();
+    ui.draw();
+    assert_eq!(ui.hit_test(60.0, 60.0), under, "the sprite never occludes the tree");
+}
+
+#[test]
+fn hit_test_frame_edge_overlay_claims_only_its_band() {
+    let mut ui = Ui::new();
+    // A pressable row under an inset-0 bevel-ring frame overlay painted
+    // LAST (the classic-chrome window edge): the overlay claims its 2px
+    // edge band and nothing else.
+    let row = abs_box(&mut ui, spec::ROOT_ID, 20.0, 20.0, 100.0, 20.0);
+    let edge = ui.create_node(0);
+    ui.set_prop(edge, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(edge, spec::prop::INSET_L, 0.0);
+    ui.set_prop(edge, spec::prop::INSET_T, 0.0);
+    ui.set_prop(edge, spec::prop::WIDTH, 480.0);
+    ui.set_prop(edge, spec::prop::HEIGHT, 272.0);
+    ui.set_prop(edge, spec::prop::BEVEL_OUTER_LIGHT, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(edge, spec::prop::BEVEL_OUTER_DARK, abgr(0, 0, 0, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, edge, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(50.0, 30.0), row, "the overlay's transparent center passes through");
+    assert_eq!(ui.hit_test(1.0, 100.0), edge, "the painted ring band claims");
+    assert_eq!(ui.hit_test(479.0, 100.0), edge, "right band too");
+    // A border-only well behaves the same: band claims, interior passes.
+    let well = ui.create_node(0);
+    ui.set_prop(well, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(well, spec::prop::INSET_L, 20.0);
+    ui.set_prop(well, spec::prop::INSET_T, 15.0);
+    ui.set_prop(well, spec::prop::WIDTH, 200.0);
+    ui.set_prop(well, spec::prop::HEIGHT, 40.0);
+    ui.set_prop(well, spec::prop::BORDER_COLOR, abgr(0, 0, 0, 255) as f64);
+    ui.set_prop(well, spec::prop::BORDER_WIDTH, 3.0);
+    ui.insert_before(spec::ROOT_ID, well, 0);
+    ui.tick();
+    assert_eq!(ui.hit_test(21.0, 30.0), well, "border band claims");
+    assert_eq!(ui.hit_test(50.0, 30.0), row, "border interior passes through");
+}
+
+// ---- STREAM container (.pkst) — stream.rs readers + the video plane ---------
+
+/// Hand-assemble a valid 96-byte header block (spec.ts "STREAM container").
+#[allow(clippy::too_many_arguments)]
+fn stream_header_block(
+    epoch: u32,
+    flags: u16,
+    w: u16,
+    h: u16,
+    slot_count: u32,
+    v_latest: u32,
+    chunk_frames: u32,
+    chunk_count: u32,
+    a_latest: u32,
+) -> Vec<u8> {
+    let slot_size =
+        (spec::stream::SLOT_HEADER_SIZE as u32 + 1024 + w as u32 * h as u32).next_multiple_of(16);
+    let mut b = alloc::vec![0u8; spec::stream::HEADER_BLOCK_SIZE];
+    b[0..4].copy_from_slice(&spec::stream::MAGIC.to_le_bytes());
+    b[4..6].copy_from_slice(&spec::stream::VERSION.to_le_bytes());
+    b[6..8].copy_from_slice(&flags.to_le_bytes());
+    b[8..12].copy_from_slice(&epoch.to_le_bytes());
+    b[12..16].copy_from_slice(&(spec::stream::HEADER_BLOCK_SIZE as u32).to_le_bytes());
+    let audio_off = spec::stream::HEADER_BLOCK_SIZE as u32 + slot_count * slot_size;
+    b[16..20].copy_from_slice(&audio_off.to_le_bytes());
+    let v = spec::stream::VRING_OFF;
+    b[v..v + 4].copy_from_slice(&spec::stream::VRING_MAGIC.to_le_bytes());
+    b[v + 4..v + 6].copy_from_slice(&w.to_le_bytes());
+    b[v + 6..v + 8].copy_from_slice(&h.to_le_bytes());
+    b[v + 8..v + 10].copy_from_slice(&15u16.to_le_bytes());
+    b[v + 10..v + 12].copy_from_slice(&1u16.to_le_bytes());
+    b[v + 12..v + 16].copy_from_slice(&slot_count.to_le_bytes());
+    b[v + 16..v + 20].copy_from_slice(&slot_size.to_le_bytes());
+    b[v + 20..v + 24].copy_from_slice(&v_latest.to_le_bytes());
+    b[v + 24..v + 28].copy_from_slice(&900u32.to_le_bytes());
+    let a = spec::stream::ARING_OFF;
+    b[a..a + 4].copy_from_slice(&spec::stream::ARING_MAGIC.to_le_bytes());
+    b[a + 4..a + 8].copy_from_slice(&22050u32.to_le_bytes());
+    b[a + 8..a + 10].copy_from_slice(&2u16.to_le_bytes());
+    b[a + 12..a + 16].copy_from_slice(&chunk_frames.to_le_bytes());
+    b[a + 16..a + 20].copy_from_slice(&chunk_count.to_le_bytes());
+    b[a + 20..a + 24].copy_from_slice(&a_latest.to_le_bytes());
+    b
+}
+
+#[test]
+fn stream_header_block_round_trips() {
+    let b = stream_header_block(3, spec::stream::FLAG_ENDED, 256, 128, 8, 42, 2048, 64, 17);
+    let h = crate::stream::parse_header_block(&b).expect("valid header block");
+    assert_eq!(h.epoch, 3);
+    assert!(h.ended);
+    assert_eq!((h.video.w, h.video.h), (256, 128));
+    assert_eq!((h.video.fps_num, h.video.fps_den), (15, 1));
+    assert_eq!((h.video.slot_count, h.video.latest_seq), (8, 42));
+    assert_eq!(h.video.total_frames, 900);
+    assert_eq!(h.video.slot_size, (32 + 1024 + 256 * 128u32).next_multiple_of(16));
+    assert_eq!((h.audio.sample_rate, h.audio.channels), (22050, 2));
+    assert_eq!((h.audio.chunk_frames, h.audio.chunk_count, h.audio.latest_seq), (2048, 64, 17));
+    // Ring offsets: seq 1 sits at the ring base; seqs wrap modulo the count.
+    assert_eq!(crate::stream::slot_offset(&h, 1), Some(h.video_off));
+    assert_eq!(crate::stream::slot_offset(&h, 9), Some(h.video_off));
+    assert_eq!(crate::stream::slot_offset(&h, 2), Some(h.video_off + h.video.slot_size));
+    assert_eq!(crate::stream::slot_offset(&h, 0), None, "seqs start at 1");
+    let chunk = crate::stream::chunk_size(2048, 2).unwrap();
+    assert_eq!(chunk, 16 + 2048 * 2 * 2);
+    assert_eq!(crate::stream::chunk_offset(&h, 65), Some(h.audio_off));
+}
+
+#[test]
+fn stream_header_block_refuses_malformed() {
+    use crate::stream::parse_header_block;
+    let ok = stream_header_block(0, 0, 256, 128, 8, 0, 2048, 64, 0);
+    assert!(parse_header_block(&ok).is_some());
+    assert!(parse_header_block(&ok[..95]).is_none(), "short block");
+    let mut bad = ok.clone();
+    bad[0] = 0; // stream magic
+    assert!(parse_header_block(&bad).is_none());
+    let mut bad = ok.clone();
+    bad[4] = 99; // version
+    assert!(parse_header_block(&bad).is_none());
+    let mut bad = ok.clone();
+    bad[spec::stream::VRING_OFF] = 0; // vring magic
+    assert!(parse_header_block(&bad).is_none());
+    let mut bad = ok.clone();
+    bad[spec::stream::ARING_OFF] = 0; // aring magic
+    assert!(parse_header_block(&bad).is_none());
+    // Non-pow2 plane (240 wide) — the plane texture must be uploadable.
+    assert!(parse_header_block(&stream_header_block(0, 0, 240, 128, 8, 0, 2048, 64, 0)).is_none());
+    // A slot too small to carry palette + w*h pixels.
+    let mut bad = ok.clone();
+    let v = spec::stream::VRING_OFF;
+    bad[v + 16..v + 20].copy_from_slice(&64u32.to_le_bytes());
+    assert!(parse_header_block(&bad).is_none());
+    // Zero rings / bad PCM shapes.
+    assert!(parse_header_block(&stream_header_block(0, 0, 256, 128, 0, 0, 2048, 64, 0)).is_none());
+    assert!(parse_header_block(&stream_header_block(0, 0, 256, 128, 8, 0, 0, 64, 0)).is_none());
+    let mut bad = ok.clone();
+    let a = spec::stream::ARING_OFF;
+    bad[a + 8..a + 10].copy_from_slice(&3u16.to_le_bytes()); // channels
+    assert!(parse_header_block(&bad).is_none());
+    // Ring larger than a u32 file offset can address.
+    let mut bad = ok;
+    bad[v + 12..v + 16].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(parse_header_block(&bad).is_none());
+}
+
+#[test]
+fn stream_slot_and_chunk_headers_validate() {
+    let b = stream_header_block(0, 0, 256, 128, 8, 1, 2048, 64, 1);
+    let h = crate::stream::parse_header_block(&b).unwrap();
+    let mut slot = alloc::vec![0u8; spec::stream::SLOT_HEADER_SIZE];
+    slot[0..4].copy_from_slice(&7u32.to_le_bytes());
+    slot[4..8].copy_from_slice(&123u32.to_le_bytes());
+    slot[8..10].copy_from_slice(&256u16.to_le_bytes());
+    slot[10..12].copy_from_slice(&128u16.to_le_bytes());
+    let sh = crate::stream::parse_slot_header(&slot, &h.video).expect("valid slot");
+    assert_eq!((sh.seq, sh.frame_index, sh.w, sh.h), (7, 123, 256, 128));
+    // Dim disagreement with the ring header = torn/malformed, refuse.
+    slot[8..10].copy_from_slice(&64u16.to_le_bytes());
+    assert!(crate::stream::parse_slot_header(&slot, &h.video).is_none());
+    slot[8..10].copy_from_slice(&256u16.to_le_bytes()); // dims valid again…
+    slot[0..4].copy_from_slice(&0u32.to_le_bytes()); // …but seq 0 = never written
+    assert!(crate::stream::parse_slot_header(&slot, &h.video).is_none());
+
+    let mut chunk = alloc::vec![0u8; spec::stream::CHUNK_HEADER_SIZE];
+    chunk[0..4].copy_from_slice(&5u32.to_le_bytes());
+    chunk[4..8].copy_from_slice(&40960u32.to_le_bytes());
+    let ch = crate::stream::parse_chunk_header(&chunk).expect("valid chunk");
+    assert_eq!((ch.seq, ch.start_frame), (5, 40960));
+    chunk[0..4].copy_from_slice(&0u32.to_le_bytes());
+    assert!(crate::stream::parse_chunk_header(&chunk).is_none(), "seq 0 = never written");
+    assert!(crate::stream::parse_chunk_header(&chunk[..8]).is_none(), "short header");
+}
+
+#[test]
+fn update_texture_t8_overwrites_in_place() {
+    let mut ui = Ui::new();
+    // 4x4 T8 plane: palette entry 1 = red, all pixels index 1.
+    let mut data = alloc::vec![0u8; 1024 + 16];
+    data[4..8].copy_from_slice(&abgr(255, 0, 0, 255).to_le_bytes());
+    data[1024..].fill(1);
+    let plane = ui.upload_texture(&data, 4, 4, spec::psm::PSM_T8);
+    assert!(plane >= 0);
+
+    // Overwrite with palette entry 1 = green, pixels still index 1.
+    let mut pal = alloc::vec![0u8; 1024];
+    pal[4..8].copy_from_slice(&abgr(0, 255, 0, 255).to_le_bytes());
+    let px = alloc::vec![1u8; 16];
+    assert!(ui.update_texture_t8(plane, &pal, &px));
+    let view = ui.texture(plane).expect("plane still live");
+    assert_eq!(view.palette.unwrap()[4..8], abgr(0, 255, 0, 255).to_le_bytes());
+    assert_eq!(view.pixels, &px[..]);
+
+    // Size/format/liveness misuse changes nothing and reports false.
+    assert!(!ui.update_texture_t8(plane, &pal[..100], &px), "short palette");
+    assert!(!ui.update_texture_t8(plane, &pal, &px[..8]), "wrong pixel count");
+    let rgba = ui.upload_texture(&[0u8; 4 * 4 * 4], 4, 4, spec::psm::PSM_8888);
+    assert!(!ui.update_texture_t8(rgba, &pal, &px), "non-T8 texture");
+    ui.free_texture(plane);
+    assert!(!ui.update_texture_t8(plane, &pal, &px), "stale handle");
+}
+
+/// Cross-language contract: the committed .pkst golden is WRITTEN by the TS
+/// stream writer (now in pocket-stack/pocket-youtube, host/ring.ts;
+/// regenerated there by UPDATE=1 bun test test/host.test.ts and copied here)
+/// and PARSED by this crate — if either side's byte layout drifts, one of
+/// the two suites breaks. The fixture is frozen alongside the spec.
+#[test]
+fn stream_golden_fixture_parses() {
+    let bytes: &[u8] = include_bytes!("../../test/fixtures/youtube-golden.pkst");
+    let h = crate::stream::parse_header_block(bytes).expect("TS-written header parses");
+    assert_eq!(h.epoch, 0);
+    assert!(!h.ended);
+    assert_eq!((h.video.w, h.video.h), (16, 16));
+    assert_eq!((h.video.fps_num, h.video.fps_den), (15, 1));
+    assert_eq!((h.video.slot_count, h.video.latest_seq, h.video.total_frames), (4, 2, 30));
+    assert_eq!((h.audio.sample_rate, h.audio.channels), (22050, 2));
+    assert_eq!((h.audio.chunk_frames, h.audio.chunk_count, h.audio.latest_seq), (64, 4, 1));
+
+    // Frame 2 (seq 2): palette bytes are (i + 2) & 255, indices (i * 3) & 255.
+    let off = crate::stream::slot_offset(&h, 2).unwrap() as usize;
+    let slot = &bytes[off..off + h.video.slot_size as usize];
+    let sh = crate::stream::parse_slot_header(slot, &h.video).expect("slot 2 parses");
+    assert_eq!((sh.seq, sh.frame_index), (2, 1));
+    let pal = &slot[spec::stream::SLOT_HEADER_SIZE..spec::stream::SLOT_HEADER_SIZE + 1024];
+    assert!(pal.iter().enumerate().all(|(i, &b)| b == ((i + 2) & 255) as u8));
+    let px = &slot[spec::stream::SLOT_HEADER_SIZE + 1024..spec::stream::SLOT_HEADER_SIZE + 1024 + 256];
+    assert!(px.iter().enumerate().all(|(i, &b)| b == ((i * 3) & 255) as u8));
+
+    // Audio chunk 1: s16 LE samples i * 3 - 64.
+    let coff = crate::stream::chunk_offset(&h, 1).unwrap() as usize;
+    let chunk = &bytes[coff..];
+    let ch = crate::stream::parse_chunk_header(chunk).expect("chunk 1 parses");
+    assert_eq!((ch.seq, ch.start_frame), (1, 0));
+    let pcm = &chunk[spec::stream::CHUNK_HEADER_SIZE..];
+    for i in 0..(64 * 2usize) {
+        let v = i16::from_le_bytes([pcm[i * 2], pcm[i * 2 + 1]]);
+        assert_eq!(v as i32, i as i32 * 3 - 64);
+    }
+
+    // And the frame is presentable: a fresh core accepts it as a plane update.
+    let mut ui = Ui::new();
+    let mut init = alloc::vec![0u8; 1024 + 256];
+    init[3] = 0xff;
+    let plane = ui.upload_texture(&init, 16, 16, spec::psm::PSM_T8);
+    assert!(ui.update_texture_t8(plane, pal, px));
 }

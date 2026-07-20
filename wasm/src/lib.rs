@@ -2,20 +2,22 @@
 //! rasterizer, for wasm32-unknown-unknown (no wasm-bindgen; the JS host talks
 //! plain numbers + wasm linear memory).
 //!
-//! src/raster.rs holds the deterministic rasterizer (blend, gradients,
-//! triangles, glyphs, textures); `ui_render()` runs the core DrawList through
-//! it into FRAMEBUFFER.
+//! `pocketjs_core::raster` is the shared deterministic rasterizer (blend,
+//! gradients, triangles, glyphs, textures). `ui_render()` keeps the byte-exact
+//! legacy 480x272 path while `ui_render_scaled(scale)` rasterizes the same
+//! logical DrawList directly onto an integer-scaled physical surface.
 //!
 //! ABI (all little-endian, one exported fn per spec::op code):
 //!   - Strings/buffers cross via linear memory: the host calls
 //!     `ui_alloc(len)`, writes bytes at the returned offset, passes
 //!     (ptr, len), then `ui_free(ptr, len)`. UTF-8 for text.
-//!   - `ui_render()` returns the framebuffer pointer: RGBA8, tightly packed,
-//!     SCREEN_W * SCREEN_H * 4 bytes, row-major, top-left origin. The pointer
-//!     is stable for the instance lifetime.
+//!   - `ui_render[_scaled]()` returns the framebuffer pointer: RGBA8, tightly
+//!     packed, row-major, top-left origin. The pointer stays valid until the
+//!     next render or init call on this instance.
 //!   - Single-threaded by construction (one wasm instance per Ui).
 
-#![allow(static_mut_refs)] // single-threaded wasm instance; one global Ui
+#![allow(static_mut_refs)]
+// single-threaded wasm instance; one global Ui
 // Every (ptr, len) export dereferences a host-written linear-memory buffer;
 // safety IS the ABI contract (ui_alloc/ui_free above), not a Rust signature.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -23,12 +25,10 @@
 use pocketjs_core::spec::{SCREEN_H, SCREEN_W};
 use pocketjs_core::Ui;
 
-mod raster;
-
-const FB_BYTES: usize = (SCREEN_W * SCREEN_H * 4) as usize;
+use pocketjs_core::raster;
 
 static mut UI: Option<Ui> = None;
-static mut FRAMEBUFFER: [u8; FB_BYTES] = [0; FB_BYTES];
+static mut FRAMEBUFFER: Vec<u8> = Vec::new();
 
 #[inline]
 fn ui() -> &'static mut Ui {
@@ -53,10 +53,15 @@ unsafe fn text<'a>(ptr: *const u8, len: usize) -> &'a str {
 
 // ---- lifecycle -------------------------------------------------------------
 
-/// Create (or reset) the Ui instance. Idempotent; call before anything else.
+/// Create (or reset) the Ui instance. `raster_density` controls core-owned
+/// bitmap resources such as rounded-corner masks; zero is the legacy default
+/// of one sample per logical pixel. Idempotent; call before anything else.
 #[no_mangle]
-pub extern "C" fn ui_init() {
-    unsafe { UI = Some(Ui::new()) };
+pub extern "C" fn ui_init(raster_density: u32) {
+    unsafe {
+        UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
+        FRAMEBUFFER.clear();
+    }
 }
 
 /// Allocate `len` bytes of scratch in linear memory for host -> wasm buffers.
@@ -173,6 +178,28 @@ pub extern "C" fn ui_set_focus(id: i32) {
 }
 
 #[no_mangle]
+pub extern "C" fn ui_set_active(id: i32, active: i32) {
+    ui().set_active(id, active != 0)
+}
+
+// ---- virtual cursor ops (spec ops 27..29, input.cursor) ----------------------
+
+#[no_mangle]
+pub extern "C" fn ui_hit_test(x: f32, y: f32) -> i32 {
+    ui().hit_test(x, y)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_set_cursor(tex: i32, hot_x: f32, hot_y: f32, w: f32, h: f32) {
+    ui().set_cursor(tex, hot_x, hot_y, w, h)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_set_cursor_pos(x: f32, y: f32) {
+    ui().set_cursor_pos(x, y)
+}
+
+#[no_mangle]
 pub extern "C" fn ui_load_styles(ptr: *const u8, len: usize) -> i32 {
     ui().load_styles(unsafe { bytes(ptr, len) }) as i32
 }
@@ -222,10 +249,22 @@ pub extern "C" fn ui_debug_step() {
     ui().debug_step()
 }
 
-/// Rasterize the current tree and return the RGBA8 480x272 framebuffer
-/// pointer (stable; SCREEN_W * SCREEN_H * 4 bytes).
-#[no_mangle]
-pub extern "C" fn ui_render() -> *const u8 {
+fn render_at_scale(scale: u32) -> *const u8 {
+    if !(1..=raster::MAX_RENDER_SCALE).contains(&scale) {
+        return core::ptr::null();
+    }
+    let Some(width) = (SCREEN_W as usize).checked_mul(scale as usize) else {
+        return core::ptr::null();
+    };
+    let Some(height) = (SCREEN_H as usize).checked_mul(scale as usize) else {
+        return core::ptr::null();
+    };
+    let Some(bytes) = width
+        .checked_mul(height)
+        .and_then(|pixels| pixels.checked_mul(4))
+    else {
+        return core::ptr::null();
+    };
     let u = ui();
     // draw() borrows `u` mutably for the returned &DrawList; the rasterizer
     // then needs a shared &Ui for atlases/textures. Both live in the single
@@ -233,6 +272,27 @@ pub extern "C" fn ui_render() -> *const u8 {
     // single-threaded by construction, so the raw-pointer reborrow is sound.
     let dl: *const pocketjs_core::DrawList = u.draw();
     let u_ref: &Ui = unsafe { &*(u as *const Ui) };
-    unsafe { raster::render(u_ref, &(*dl).words, &mut FRAMEBUFFER) };
-    unsafe { FRAMEBUFFER.as_ptr() }
+    unsafe {
+        FRAMEBUFFER.resize(bytes, 0);
+        if scale == 1 {
+            raster::render(u_ref, &(*dl).words, &mut FRAMEBUFFER);
+        } else {
+            raster::render_scaled(u_ref, &(*dl).words, &mut FRAMEBUFFER, scale);
+        }
+        FRAMEBUFFER.as_ptr()
+    }
+}
+
+/// Rasterize the current tree and return the byte-exact RGBA8 480x272
+/// framebuffer pointer. Kept as a dedicated ABI entry for existing hosts.
+#[no_mangle]
+pub extern "C" fn ui_render() -> *const u8 {
+    render_at_scale(1)
+}
+
+/// Rasterize directly at an integer physical scale (currently 1 through 4).
+/// Returns null for an unsupported scale.
+#[no_mangle]
+pub extern "C" fn ui_render_scaled(scale: u32) -> *const u8 {
+    render_at_scale(scale)
 }

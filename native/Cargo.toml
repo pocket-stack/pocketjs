@@ -4,10 +4,10 @@
 # workspace (do NOT add a workspace Cargo.toml at PocketJS/).
 #
 # Build via scripts/psp.ts: `rustup run nightly-2026-05-28 cargo psp` with the
-# env block from dreamcart runtime/build.ts (llvm-ar, RUSTFLAGS
+# environment resolved from cli/psp-toolchain.json (llvm-ar, RUSTFLAGS
 # -A linker-messages, RUST_PSP_TARGET=targets/mipsel-sony-psp.json,
-# RUST_PSP_ABORT_ONLY=1, TARGET_CFLAGS). Requires the repo-root
-# mipsel-sony-psp/ SDK (bun run bootstrap in the dreamcart repo).
+# RUST_PSP_ABORT_ONLY=1, TARGET_CFLAGS). `bun run bootstrap` installs the
+# pinned cargo tools and verified SDK in the shared pocket-stack cache.
 #
 # Memory (DESIGN.md "Memory (the blocker fix)" [R]): the psp crate is built
 # with `external-global-alloc` (gates out rust-psp's one-kernel-object-per-
@@ -21,8 +21,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-psp = { path = "../../rust-psp/psp", features = ["external-c-heap", "abort-only", "external-global-alloc"] }
-libquickjs-sys = { path = "../../quickjs-rs/libquickjs-sys" }
+psp = { git = "https://github.com/pocket-stack/rust-psp.git", rev = "2cbaf8c9bc72569c76240a1d9743de10731e5f6b", features = ["external-c-heap", "abort-only", "external-global-alloc"] }
+libquickjs-sys = { git = "https://github.com/pocket-stack/quickjs-rs.git", rev = "0fc946fb670c0c29bc0135f510bcb0f595415a61" }
 pocketjs-core = { path = "../core" }
 # The scene3d retained store, SHARED with the desktop core (core-only build:
 # no_std + alloc, no wgpu/rquickjs). Renderer is ge3d.rs; mount is scene3d.rs.

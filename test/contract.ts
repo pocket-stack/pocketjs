@@ -5,9 +5,6 @@
 //      never drift. Fix = `bun spec/gen-rust.ts` + commit.
 //  (b) Round-trips the styles.bin encoder/decoder over a table exercising
 //      every feature (variants, transition, all three value kinds).
-//  (c) While PocketJS lives inside the dreamcart repo: greps the dreamcart
-//      sources our constants were copied from (BTN masks, pak magic) so an
-//      upstream change is caught. Skipped silently after extraction.
 
 import { generateRust } from "../spec/gen-rust.ts";
 import {
@@ -15,8 +12,6 @@ import {
   animBit,
   ANIM_FILL_BACKWARDS,
   ANIM_FILL_FORWARDS,
-  BTN,
-  PAK_MAGIC,
   decodeStyleTable,
   encodeStyleTable,
   ENUMS,
@@ -69,6 +64,20 @@ const table: StyleRecord[] = [
   },
   // base-only record
   { base: [{ prop: PROP.opacity, value: f32Bits(0.5) }] },
+  // bevel rings: base raised + active pressed inversion (Win98 chrome)
+  {
+    base: [
+      { prop: PROP.bevelOuterLight, value: abgr(255, 255, 255) },
+      { prop: PROP.bevelOuterDark, value: abgr(0, 0, 0) },
+      { prop: PROP.bevelInnerLight, value: abgr(0xdf, 0xdf, 0xdf) },
+      { prop: PROP.bevelInnerDark, value: abgr(0x80, 0x80, 0x80) },
+      { prop: PROP.bevelWidth, value: f32Bits(2) },
+    ],
+    active: [
+      { prop: PROP.bevelOuterLight, value: abgr(0, 0, 0) },
+      { prop: PROP.bevelOuterDark, value: abgr(255, 255, 255) },
+    ],
+  },
   // transition-all, no base (focus-only)
   {
     focus: [{ prop: PROP.translateX, value: f32Bits(8) }],
@@ -166,25 +175,6 @@ try {
   check(dv.getUint16(8, true) === anims.length, "styles.bin animCount");
 } catch (e) {
   check(false, "styles.bin encode/decode round-trip", String(e));
-}
-
-// ---- (c) upstream constant greps (dreamcart repo only) -----------------------
-
-const engineJs = await Bun.file(
-  new URL("../../web/engine.js", import.meta.url).pathname,
-).text().catch(() => null);
-if (engineJs !== null) {
-  for (const [name, mask] of Object.entries(BTN)) {
-    if (name === "LTRIGGER" || name === "RTRIGGER") continue; // engine.js maps no triggers
-    const re = new RegExp(`${name}: 0x0*${mask.toString(16)}`, "i");
-    check(re.test(engineJs), `BTN.${name} matches web/engine.js`);
-  }
-}
-const pakTs = await Bun.file(
-  new URL("../../framework/bake/pak.ts", import.meta.url).pathname,
-).text().catch(() => null);
-if (pakTs !== null) {
-  check(pakTs.includes("0x4b504344") && PAK_MAGIC === 0x4b504344, "PAK magic matches framework/bake/pak.ts");
 }
 
 if (failed) {

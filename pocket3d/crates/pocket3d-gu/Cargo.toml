@@ -5,8 +5,8 @@
 # would break desktop `cargo check/test`. Consumed as a path dep by PSP game
 # EBOOTs (e.g. OpenStrike's), next to the `pocketjs-psp` host library.
 #
-# The `psp` path mirrors native/Cargo.toml: the doodlewind/rust-psp fork
-# checked out as a sibling of the repo (open-strike vendors it the same way).
+# The `psp` revision mirrors native/Cargo.toml and cli/psp-toolchain.json; no
+# sibling checkout is part of the build contract.
 
 [package]
 name = "pocket3d-gu"
@@ -15,7 +15,7 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-psp = { path = "../../../../rust-psp/psp" }
+psp = { git = "https://github.com/pocket-stack/rust-psp.git", rev = "2cbaf8c9bc72569c76240a1d9743de10731e5f6b" }
 pocket3d-bsp = { path = "../pocket3d-bsp", default-features = false, features = ["libm"] }
 glam = { version = "0.33", default-features = false, features = ["libm"] }
 libm = "0.2"

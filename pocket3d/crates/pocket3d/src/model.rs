@@ -1,5 +1,6 @@
 //! Skinned/static model assets (glTF) and scene instances.
 
+use std::cell::Cell;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -37,10 +38,132 @@ pub struct Primitive {
     pub bind_group: wgpu::BindGroup,
 }
 
+#[derive(Default, Clone, Copy)]
+pub struct ModelLoadOptions {
+    /// Halve textures until no side exceeds this (mip-friendly box filter).
+    /// Character/prop authoring resolutions routinely exceed what small
+    /// windows can display; this is the biggest single memory lever.
+    pub max_texture_dim: Option<u32>,
+}
+
 pub struct Skin {
     /// Node index per joint.
     pub joints: Vec<usize>,
     pub inverse_bind: Vec<Mat4>,
+}
+
+/// One morph target of a primitive, stored sparse: only vertices the target
+/// actually displaces. Deltas are in object space (bake transform applied).
+pub struct MorphTargetData {
+    /// (vertex index within the primitive, position delta).
+    pub pos: Vec<(u32, Vec3)>,
+    /// (vertex index within the primitive, normal delta).
+    pub normal: Vec<(u32, Vec3)>,
+}
+
+/// A primitive that carries morph targets. Its base vertices are kept on the
+/// CPU; morphed copies are written into a per-instance overlay buffer.
+pub struct MorphPrim {
+    /// Index into [`ModelAsset::primitives`].
+    pub primitive: usize,
+    /// First vertex of this primitive in the shared asset vertex buffer.
+    pub vertex_base: u32,
+    pub vertex_count: u32,
+    /// First vertex of this primitive in a [`MorphState`] overlay buffer.
+    pub overlay_offset: u32,
+    base: Vec<ModelVertex>,
+    pub targets: Vec<MorphTargetData>,
+}
+
+/// All morph-bearing primitives of one glTF mesh. VRM blend-shape binds
+/// address targets as (glTF mesh index, target index), which maps here.
+pub struct MorphMesh {
+    /// glTF mesh index.
+    pub mesh: usize,
+    pub target_count: usize,
+    pub prims: Vec<MorphPrim>,
+}
+
+/// Per-instance morph weights + the GPU overlay holding morphed vertices.
+/// Weights are set by game code; the overlay upload happens lazily during
+/// render prepare, and costs nothing on frames where no weight changed.
+pub struct MorphState {
+    /// Parallel to [`ModelAsset::morph_meshes`]; one weight per target.
+    weights: Vec<Vec<f32>>,
+    /// Bitmask of morph meshes needing recompute (interior mutability so the
+    /// renderer can flush during prepare without a `&mut Scene`).
+    dirty: Cell<u64>,
+    buffer: wgpu::Buffer,
+}
+
+impl MorphState {
+    /// `mesh_slot` indexes [`ModelAsset::morph_meshes`].
+    pub fn set_weight(&mut self, mesh_slot: usize, target: usize, weight: f32) {
+        let Some(w) = self
+            .weights
+            .get_mut(mesh_slot)
+            .and_then(|m| m.get_mut(target))
+        else {
+            return;
+        };
+        if *w != weight {
+            *w = weight;
+            let bit = if mesh_slot < 64 {
+                1u64 << mesh_slot
+            } else {
+                u64::MAX
+            };
+            self.dirty.set(self.dirty.get() | bit);
+        }
+    }
+
+    pub fn weight(&self, mesh_slot: usize, target: usize) -> f32 {
+        self.weights
+            .get(mesh_slot)
+            .and_then(|m| m.get(target))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    pub(crate) fn buffer(&self) -> &wgpu::Buffer {
+        &self.buffer
+    }
+
+    /// Recompute + upload overlay vertices for meshes whose weights changed.
+    pub(crate) fn upload_if_dirty(&self, gpu: &Gpu, asset: &ModelAsset) {
+        let dirty = self.dirty.replace(0);
+        if dirty == 0 {
+            return;
+        }
+        for (mi, mesh) in asset.morph_meshes.iter().enumerate() {
+            if mi < 64 && dirty & (1u64 << mi) == 0 {
+                continue;
+            }
+            let weights = &self.weights[mi];
+            for prim in &mesh.prims {
+                let mut verts = prim.base.clone();
+                for (ti, target) in prim.targets.iter().enumerate() {
+                    let w = weights.get(ti).copied().unwrap_or(0.0);
+                    if w.abs() < 1e-4 {
+                        continue;
+                    }
+                    for &(vi, d) in &target.pos {
+                        let v = &mut verts[vi as usize];
+                        v.pos = (Vec3::from(v.pos) + d * w).to_array();
+                    }
+                    for &(vi, d) in &target.normal {
+                        let v = &mut verts[vi as usize];
+                        v.normal = (Vec3::from(v.normal) + d * w).to_array();
+                    }
+                }
+                gpu.queue.write_buffer(
+                    &self.buffer,
+                    prim.overlay_offset as u64 * std::mem::size_of::<ModelVertex>() as u64,
+                    bytemuck::cast_slice(&verts),
+                );
+            }
+        }
+    }
 }
 
 pub struct ModelAsset {
@@ -53,6 +176,10 @@ pub struct ModelAsset {
     /// palette (multi-skin characters: body + visor etc.).
     pub skins: Vec<Skin>,
     pub clips: Vec<Clip>,
+    /// Meshes carrying morph targets (facial blend shapes etc.).
+    pub morph_meshes: Vec<MorphMesh>,
+    /// Parallel to `primitives`: (morph mesh slot, prim slot) when morphing.
+    pub prim_morph: Vec<Option<(usize, usize)>>,
     /// Rest-pose bounds (object space; skinned primitives measured through
     /// their rest-pose joint matrices, so units/orientation baked into the
     /// rig — cm exports, Z-up meshes — are already resolved).
@@ -77,6 +204,12 @@ impl ModelAsset {
         let clip = self.clips.get(anim.clip);
         self.skeleton
             .global_transforms(clip, anim.time, anim.looping, &mut globals);
+        self.palette_from_globals(&globals, out);
+    }
+
+    /// Joint palette from externally computed node globals (procedural poses:
+    /// look-at, physics bones). Same skin concatenation as `joint_palette`.
+    pub fn palette_from_globals(&self, globals: &[Mat4], out: &mut Vec<Mat4>) {
         out.clear();
         for skin in &self.skins {
             for (i, &node) in skin.joints.iter().enumerate() {
@@ -86,6 +219,42 @@ impl ModelAsset {
         if out.is_empty() {
             out.push(Mat4::IDENTITY);
         }
+    }
+
+    /// Which slot in `morph_meshes` a glTF mesh landed in.
+    pub fn morph_mesh_slot(&self, gltf_mesh: usize) -> Option<usize> {
+        self.morph_meshes.iter().position(|m| m.mesh == gltf_mesh)
+    }
+
+    /// Create per-instance morph state (overlay buffer starts at the rest
+    /// shape). `None` when the asset has no morph targets.
+    pub fn create_morph_state(&self, gpu: &Gpu) -> Option<MorphState> {
+        use wgpu::util::DeviceExt;
+        if self.morph_meshes.is_empty() {
+            return None;
+        }
+        let mut init: Vec<ModelVertex> = Vec::new();
+        for mesh in &self.morph_meshes {
+            for prim in &mesh.prims {
+                init.extend_from_slice(&prim.base);
+            }
+        }
+        let buffer = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("morph overlay"),
+                contents: bytemuck::cast_slice(&init),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+        Some(MorphState {
+            weights: self
+                .morph_meshes
+                .iter()
+                .map(|m| vec![0.0; m.target_count])
+                .collect(),
+            dirty: Cell::new(0),
+            buffer,
+        })
     }
 
     /// The material bind group layout for model primitives (group 1).
@@ -177,8 +346,81 @@ impl ModelAsset {
             },
             skins: Vec::new(),
             clips: Vec::new(),
+            morph_meshes: Vec::new(),
+            prim_morph: vec![None],
             aabb,
             textures: vec![tex],
+        })
+    }
+
+    /// Build an asset from raw geometry whose material samples an external
+    /// texture view (an [`crate::gpu::OffscreenTarget`], a video frame, …).
+    /// The bind group keeps the underlying texture alive; render into it
+    /// each frame and every instance of this asset shows the update — this
+    /// is how a live 2D surface lands on a 3D mesh (pocket-widget screens).
+    pub fn from_geometry_textured(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        label: &str,
+        vertices: &[ModelVertex],
+        indices: &[u32],
+        view: &wgpu::TextureView,
+        sampler: &wgpu::Sampler,
+    ) -> Arc<Self> {
+        use wgpu::util::DeviceExt;
+        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        });
+        let vbuf = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let ibuf = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+        let mut aabb = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+        for v in vertices {
+            let p = Vec3::from(v.pos);
+            aabb.0 = aabb.0.min(p);
+            aabb.1 = aabb.1.max(p);
+        }
+        Arc::new(Self {
+            vbuf,
+            ibuf,
+            primitives: vec![Primitive {
+                first_index: 0,
+                index_count: indices.len() as u32,
+                bind_group,
+            }],
+            skeleton: Skeleton {
+                parents: Vec::new(),
+                rest: Vec::new(),
+                order: Vec::new(),
+            },
+            skins: Vec::new(),
+            clips: Vec::new(),
+            morph_meshes: Vec::new(),
+            prim_morph: vec![None],
+            aabb,
+            textures: Vec::new(),
         })
     }
 
@@ -188,18 +430,52 @@ impl ModelAsset {
         samplers: &Samplers,
         path: &Path,
     ) -> Result<Arc<Self>> {
+        Self::load_glb_opts(gpu, layout, samplers, path, &ModelLoadOptions::default())
+    }
+
+    pub fn load_glb_opts(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        opts: &ModelLoadOptions,
+    ) -> Result<Arc<Self>> {
         let (doc, buffers, images) =
             gltf::import(path).with_context(|| format!("importing {}", path.display()))?;
 
         // --- textures ------------------------------------------------------
+        // Only upload images a material actually samples (VRM files carry
+        // thumbnails and utility maps), and optionally cap texture size —
+        // authoring resolutions (4096²) dwarf what a small widget window can
+        // ever show, and GPU memory is the dominant cost of a character.
+        let used: std::collections::HashSet<usize> = doc
+            .materials()
+            .filter_map(|m| {
+                m.pbr_metallic_roughness()
+                    .base_color_texture()
+                    .map(|t| t.texture().source().index())
+            })
+            .collect();
         let mut textures = Vec::new();
         for (i, img) in images.iter().enumerate() {
-            let rgba = to_rgba8(img);
+            if !used.contains(&i) {
+                textures.push(create_rgba_texture(gpu, "unused", 1, 1, &[255; 4], true, false));
+                continue;
+            }
+            let mut rgba = to_rgba8(img);
+            let (mut w, mut h) = (img.width, img.height);
+            if let Some(max) = opts.max_texture_dim {
+                while w.max(h) > max && w % 2 == 0 && h % 2 == 0 {
+                    rgba = downsample_rgba(&rgba, w, h);
+                    w /= 2;
+                    h /= 2;
+                }
+            }
             textures.push(create_rgba_texture(
                 gpu,
                 &format!("model img {i}"),
-                img.width,
-                img.height,
+                w,
+                h,
                 &rgba,
                 true,
                 true,
@@ -288,6 +564,9 @@ impl ModelAsset {
         let mut indices: Vec<u32> = Vec::new();
         let mut primitives_meta: Vec<(u32, u32, Option<usize>)> = Vec::new(); // (first, count, image)
         let mut aabb = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+        let mut morph_meshes: Vec<MorphMesh> = Vec::new();
+        let mut prim_morph: Vec<Option<(usize, usize)>> = Vec::new();
+        let mut overlay_verts: u32 = 0;
 
         for node in doc.nodes() {
             let Some(mesh) = node.mesh() else { continue };
@@ -393,6 +672,62 @@ impl ModelAsset {
                     .pbr_metallic_roughness()
                     .base_color_texture()
                     .map(|t| t.texture().source().index());
+
+                // --- morph targets (sparse deltas, object space) -----------
+                let mut targets: Vec<MorphTargetData> = Vec::new();
+                for (tpos, tnorm, _ttan) in reader.read_morph_targets() {
+                    let mut target = MorphTargetData {
+                        pos: Vec::new(),
+                        normal: Vec::new(),
+                    };
+                    if let Some(it) = tpos {
+                        for (i, d) in it.enumerate() {
+                            let d = bake.transform_vector3(Vec3::from(d));
+                            if d.length_squared() > 1e-12 {
+                                target.pos.push((i as u32, d));
+                            }
+                        }
+                    }
+                    if let Some(it) = tnorm {
+                        for (i, d) in it.enumerate() {
+                            let d = normal_bake.transform_vector3(Vec3::from(d));
+                            if d.length_squared() > 1e-12 {
+                                target.normal.push((i as u32, d));
+                            }
+                        }
+                    }
+                    targets.push(target);
+                }
+                if targets.is_empty() {
+                    prim_morph.push(None);
+                } else {
+                    let mesh_idx = mesh.index();
+                    let slot = morph_meshes
+                        .iter()
+                        .position(|m| m.mesh == mesh_idx)
+                        .unwrap_or_else(|| {
+                            morph_meshes.push(MorphMesh {
+                                mesh: mesh_idx,
+                                target_count: targets.len(),
+                                prims: Vec::new(),
+                            });
+                            morph_meshes.len() - 1
+                        });
+                    let vertex_count = (vertices.len() as u32) - base;
+                    let mm = &mut morph_meshes[slot];
+                    mm.target_count = mm.target_count.max(targets.len());
+                    prim_morph.push(Some((slot, mm.prims.len())));
+                    mm.prims.push(MorphPrim {
+                        primitive: primitives_meta.len(),
+                        vertex_base: base,
+                        vertex_count,
+                        overlay_offset: overlay_verts,
+                        base: vertices[base as usize..].to_vec(),
+                        targets,
+                    });
+                    overlay_verts += vertex_count;
+                }
+
                 primitives_meta.push((first, count, image));
             }
         }
@@ -508,6 +843,8 @@ impl ModelAsset {
             skeleton,
             skins,
             clips,
+            morph_meshes,
+            prim_morph,
             aabb,
             textures,
         }))
@@ -535,6 +872,25 @@ fn strip_cubic<T: Copy>(v: Vec<T>, cubic: bool) -> Vec<T> {
         return v;
     }
     v.as_chunks::<3>().0.iter().map(|c| c[1]).collect()
+}
+
+/// Box-filter 2×2 downsample (straight alpha; fine for albedo maps).
+fn downsample_rgba(px: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let (nw, nh) = (w / 2, h / 2);
+    let mut out = Vec::with_capacity((nw * nh * 4) as usize);
+    for y in 0..nh {
+        for x in 0..nw {
+            let mut acc = [0u32; 4];
+            for (dy, dx) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                let src = (((y * 2 + dy) * w + x * 2 + dx) * 4) as usize;
+                for c in 0..4 {
+                    acc[c] += px[src + c] as u32;
+                }
+            }
+            out.extend(acc.map(|v| (v / 4) as u8));
+        }
+    }
+    out
 }
 
 fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
@@ -579,6 +935,14 @@ pub struct ModelInstance {
     pub anim: AnimState,
     /// 0..1 how strongly lighting applies (1 = fully lit by sun/ambient).
     pub lit: f32,
+    /// Explicit node globals (from `Skeleton::globals_from_locals`) override
+    /// `anim` when set — for procedurally posed characters.
+    pub pose: Option<Vec<Mat4>>,
+    /// Morph weights + overlay buffer; create via `asset.create_morph_state`.
+    pub morph: Option<MorphState>,
+    /// Alpha-test threshold for this instance's primitives (0 = off).
+    /// Anime-style characters use cutout textures for hair/lashes.
+    pub cutout: f32,
 }
 
 impl ModelInstance {
@@ -589,6 +953,9 @@ impl ModelInstance {
             tint: [1.0; 4],
             anim: AnimState::default(),
             lit: 1.0,
+            pose: None,
+            morph: None,
+            cutout: 0.0,
         }
     }
 }

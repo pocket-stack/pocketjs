@@ -4,11 +4,10 @@
 // boundary.
 //
 // Two host kinds:
-//   - "psp":      QuickJS on hardware/PPSSPP — the native bin installs a
-//                 `globalThis.ui` namespace (native/src/ffi.rs). Detected
-//                 automatically. NON-strict: unknown classes/textures bump a
-//                 counter instead of throwing (a crash on hardware is worse
-//                 than a missing style).
+//   - "native":   QuickJS on a framework-owned device runtime — the native
+//                 bin installs a `globalThis.ui` namespace. NON-strict:
+//                 unknown classes/textures bump a counter instead of throwing
+//                 (a crash on hardware is worse than a missing style).
 //   - "injected": web/wasm/Bun-test hosts pass their own HostOps object into
 //                 render(). Strict: unknown classes/textures throw loudly.
 
@@ -19,8 +18,19 @@ import {
   type PropName,
 } from "../spec/spec.ts";
 
-/** The `ui.*` op surface. Handles are generation-tagged positive i32 ids;
- *  0 means "none" (anchor 0 = append, setFocus 0 = clear). */
+// Replaced by scripts/build.ts for manifest-driven builds. `typeof` keeps
+// legacy/test bundles valid until they opt into a ResolvedBuildPlan.
+declare const __POCKET_TARGET__: string;
+declare const __POCKET_HOST_ABI__: number;
+
+export interface BuildHostContract {
+  readonly target: string;
+  readonly hostAbi: number;
+}
+
+/** The `ui.*` op surface. Node ids are generation-tagged positive i32 values;
+ *  node id 0 means "none" (anchor 0 = append, setFocus 0 = clear). Texture
+ *  handles have operation-specific 0-based or generation-tagged contracts. */
 export interface HostOps {
   /** type: spec NODE_TYPE (0 view, 1 text, 2 image) → new node id. */
   createNode(type: number): number;
@@ -60,6 +70,23 @@ export interface HostOps {
   cancelAnim(animId: number): void;
   /** 0 clears focus. Applies the `focus:` style variant natively. */
   setFocus(idOr0: number): void;
+  /** Set/clear the `active:` pressed variant natively (0/1 int; stale ids
+   *  no-op). Optional: older hosts predate spec op 26 — pressed visuals
+   *  degrade gracefully when absent. */
+  setActive?(id: number, active: number): void;
+
+  // -- virtual cursor ops (spec ops 27..29, input.cursor). Optional: hosts
+  //    that predate them simply lack them and the cursor input layer
+  //    (src/input.ts) falls back to the classic d-pad focus model. ----------
+  /** Topmost node id at a logical point (paint-order hit testing; pure
+   *  layout containers pass through — see spec op 27). 0 = none. */
+  hitTest?(x: number, y: number): number;
+  /** Bind the cursor sprite: an uploaded texture drawn topmost every frame,
+   *  offset by its hotspot; never laid out, never hit-tested. tex < 0 hides
+   *  it; w/h <= 0 draw at the texture's own pixel size. */
+  setCursor?(tex: number, hotX: number, hotY: number, w: number, h: number): void;
+  /** Move the cursor hotspot to a logical point. */
+  setCursorPos?(x: number, y: number): void;
   /** web/test hosts only — on PSP the native bin feeds core from the pak. */
   loadStyles?(buf: Uint8Array): void;
   /** web/test hosts only — one call per baked font atlas blob. */
@@ -81,6 +108,34 @@ export interface HostOps {
    *  PSM_T8 palette + RLE/filter flags). → handle or -1. */
   uploadImgEntry?(blob: Uint8Array): number;
 
+  // -- host service channel + video plane (spec ops 30..37). Optional: only
+  //    native hosts with a tethered companion process (PSPLINK usbhostfs,
+  //    PPSSPP memstick dir) implement them. Apps feature-detect: no svcOpen
+  //    (or svcOpen -> false) means "not tethered" and the app shows its
+  //    connect screen or falls back to a host-appropriate transport. -------
+  /** Probe pocket-svc/<app>/ under the tethered share; all later svc/video
+   *  paths resolve inside that directory. → whether the mailbox exists. */
+  svcOpen?(app: string): boolean;
+  /** New COMPLETE JSON lines from the host since the last poll (may batch
+   *  several, newline-terminated); undefined when idle. One usbhostfs round
+   *  trip — poll once per frame, not per read. */
+  svcPoll?(): string | undefined;
+  /** Append one JSON line to the app's outbox. */
+  svcSend?(line: string): void;
+  /** Read a small IMG-entry side file (svc-dir-relative path) into a
+   *  texture — host-rendered thumbnails/text strips. → handle or -1. */
+  loadImgFile?(path: string): number;
+  /** Open a .pkst stream file (svc-dir-relative): validate, allocate the
+   *  plane texture, start audio. → success. */
+  videoOpen?(path: string): boolean;
+  /** Bounded per-frame IO pump — call once per frame while a stream is
+   *  open. → source frame index of the presented frame, -1 before any. */
+  videoTick?(): number;
+  /** The plane texture handle (stable for the session), -1 when closed. */
+  videoTexture?(): number;
+  /** Stop audio, close the stream, free the plane. */
+  videoClose?(): void;
+
   // -- DevTools ops (spec ops 18..22, DEVTOOLS.md). Optional: debug-only,
   //    default-off; hosts that predate them (e.g. pocket-mod) simply lack
   //    them and the shim feature-detects. ---------------------------------
@@ -101,43 +156,101 @@ export interface HostOps {
   __dbgSend?(line: string): void;
   /** PSP on-demand screenshot: dump the displayed framebuffer to
    *  pocketjs-dbg/shot.raw (bridge converts to PNG). → success. */
+  /** OP.debugStats — one JSON snapshot of device diagnostic counters
+   *  (audio/vid/svc) plus build identity (app output name + FNV-1a64 of the
+   *  embedded js+pak). Hosts without counters omit the op; the devtools
+   *  "stats" message replies with data: null then. */
+  debugStats?(): string;
   __dbgShot?(): boolean;
-  /** Host self-identification for DevTools' hello (e.g. "desktop"); hosts
-   *  without it are inferred from the boot tables. */
+  /** Framework target/profile identity (for example "psp" or "vita"). */
   __host?: string;
+  /** Version of the JS/native HostOps ABI implemented by this namespace. */
+  __hostAbi?: number;
+}
+
+/** Desktop hosts publish their logical UI size as `ui.__viewport` (the core
+ *  is resized to it at mount); console hosts omit it — the spec screen is
+ *  the viewport. One accessor so every consumer reads the same contract. */
+export function hostViewport(ops: HostOps): { w: number; h: number } | null {
+  return (ops as HostOps & { __viewport?: { w: number; h: number } }).__viewport ?? null;
 }
 
 export interface Host {
   ops: HostOps;
-  kind: "psp" | "injected";
-  /** Strict hosts throw on unknown class/src; PSP counts silently. */
+  /** Transport/ownership, deliberately independent from the target name. */
+  kind: "native" | "injected";
+  /** Target/profile reported by the host; "injected" for test/web adapters. */
+  target: string;
+  /** Strict hosts throw on unknown class/src; native hosts count silently. */
   strict: boolean;
 }
 
 let current: Host | null = null;
 
+export function embeddedBuildHostContract(): BuildHostContract | null {
+  const target = typeof __POCKET_TARGET__ === "string" ? __POCKET_TARGET__ : "";
+  const hostAbi = typeof __POCKET_HOST_ABI__ === "number" ? __POCKET_HOST_ABI__ : 0;
+  return target && hostAbi > 0 ? { target, hostAbi } : null;
+}
+
+/** Fail before mounting when a bundle was packaged with the wrong native host. */
+export function assertNativeHostContract(
+  ops: HostOps,
+  expected: BuildHostContract | null = embeddedBuildHostContract(),
+): void {
+  if (!expected) return;
+  if (typeof ops.__host !== "string") {
+    throw new Error(
+      `PocketJS: this bundle targets "${expected.target}" but the native host predates platform ` +
+        "contracts — add __host/__hostAbi to its ui namespace (see src/host.ts HostOps)",
+    );
+  }
+  if (ops.__host !== expected.target) {
+    throw new Error(
+      `PocketJS: native target mismatch (bundle=${expected.target}, host=${ops.__host})`,
+    );
+  }
+  if (ops.__hostAbi !== expected.hostAbi) {
+    throw new Error(
+      `PocketJS: native host ABI mismatch (bundle=${expected.hostAbi}, host=${ops.__hostAbi ?? "missing"})`,
+    );
+  }
+}
+
 /**
- * Resolve the host: injected ops win; otherwise `globalThis.ui` (PSP/QuickJS).
+ * Resolve the host: injected ops win; otherwise `globalThis.ui` (native
+ * QuickJS).
  * Throws when neither exists — PocketJS cannot run without a native tree.
  *
- * Exception: when the injected ops ARE the PSP native namespace (the demo
- * entries pass `globalThis.ui` explicitly), the host stays kind "psp"/
- * non-strict — `__textures` is set only by native ffi.rs, never by web/wasm/
- * test hosts, so those keep the strict injected contract. This also routes
- * render() into its PSP branch (bind native texture handles, skip the
- * loadStyles/loadFontAtlas re-feed the native pak walker already did).
+ * A namespace is NATIVE when it self-identifies with `__host` (platform
+ * contracts) — or, for hosts built before contracts existed (pocket-shell,
+ * the iOS fork, shipped EBOOTs), when it carries `__textures`, which only
+ * native ffi layers ever set. Those legacy hosts stay native/non-strict with
+ * target "unknown"; a bundle carrying an embedded contract refuses them with
+ * an actionable migration error (assertNativeHostContract). Web/wasm
+ * adapters publish `globalThis.ui` too but set neither marker and stay
+ * strict-injected, exactly as before.
  */
 export function detectHost(injected?: HostOps): Host {
   const native = (globalThis as { ui?: HostOps & { __textures?: unknown } }).ui;
+  const nativeMarked =
+    native !== undefined && (typeof native.__host === "string" || native.__textures !== undefined);
   if (injected) {
-    if (native !== undefined && injected === native && native.__textures !== undefined) {
-      return { ops: injected, kind: "psp", strict: false };
+    if (native !== undefined && injected === native && nativeMarked) {
+      assertNativeHostContract(native);
+      return { ops: injected, kind: "native", target: native.__host ?? "unknown", strict: false };
     }
-    return { ops: injected, kind: "injected", strict: true };
+    return { ops: injected, kind: "injected", target: injected.__host ?? "injected", strict: true };
   }
-  if (native) return { ops: native, kind: "psp", strict: false };
+  if (native !== undefined && nativeMarked) {
+    assertNativeHostContract(native);
+    return { ops: native, kind: "native", target: native.__host ?? "unknown", strict: false };
+  }
+  if (native) {
+    return { ops: native, kind: "injected", target: "injected", strict: true };
+  }
   throw new Error(
-    "PocketJS: no host — pass HostOps to render() (web/test) or run under the PSP runtime (globalThis.ui)",
+    "PocketJS: no host — pass HostOps to render() (web/test) or run under a native runtime (globalThis.ui)",
   );
 }
 
@@ -161,7 +274,7 @@ export function getOps(): HostOps {
 // Frame hookup
 // ---------------------------------------------------------------------------
 // Every host drives frames the same way: once per vblank/rAF tick it calls
-// `globalThis.frame(buttons, analog?)` with the PSP button bitmask (spec BTN)
+// `globalThis.frame(buttons, analog?, touches?)` with the PSP button bitmask (spec BTN)
 // and, when the host has an analog stick, the packed nub value
 // (x << 8 | y, each axis 0..255, 128 = center — spec ANALOG_CENTER). Hosts
 // without a stick pass one argument; the runtime defaults to center, so every
@@ -169,8 +282,12 @@ export function getOps(): HostOps {
 // edge-detection + the renderer's end-of-frame sweep into that entry point
 // via installFrameHandler.
 
-export function installFrameHandler(fn: (buttons: number, analog?: number) => void): void {
-  (globalThis as { frame?: (buttons: number, analog?: number) => void }).frame = fn;
+export function installFrameHandler(
+  fn: (buttons: number, analog?: number, touches?: readonly number[]) => void,
+): void {
+  (globalThis as {
+    frame?: (buttons: number, analog?: number, touches?: readonly number[]) => void;
+  }).frame = fn;
 }
 
 // ---------------------------------------------------------------------------

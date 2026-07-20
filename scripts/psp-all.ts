@@ -36,13 +36,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import { parse as parseFont, type Font, type Path } from "opentype.js";
+import { cachedCargoPspBin } from "./psp-toolchain.ts";
 
 const pspUiDir = fileURLToPath(new URL("..", import.meta.url));
 const demosDir = join(pspUiDir, "demos");
 const outRoot = join(pspUiDir, "dist/psp");
 const pspGameRoot = join(outRoot, "PSP/GAME");
 const workRoot = join(outRoot, ".work");
-const home = process.env.HOME ?? "";
+const cargoPspBin = cachedCargoPspBin();
 
 const argv = Bun.argv.slice(2);
 const release = !argv.includes("--debug"); // memory-stick packaging defaults to --release
@@ -81,7 +82,8 @@ async function demoTitle(name: string): Promise<string> {
 }
 
 function commandPath(name: string): string | null {
-  return Bun.which(name) ?? (home !== "" && existsSync(join(home, ".cargo/bin", name)) ? join(home, ".cargo/bin", name) : null);
+  const path = join(cargoPspBin, name);
+  return existsSync(path) ? path : null;
 }
 
 function folderName(name: string): string {
@@ -554,7 +556,7 @@ async function repackEboot(name: string, title: string, eboot: string, destDir: 
   const mksfo = commandPath("mksfo");
   const packPbp = commandPath("pack-pbp");
   if (!mksfo || !packPbp) {
-    throw new Error("mksfo/pack-pbp not found (need rust-psp's cargo-psp bin/ on PATH or ~/.cargo/bin)");
+    throw new Error("pinned mksfo/pack-pbp not found; run `bun run bootstrap`");
   }
   await $`${mksfo} ${title} ${paramPath}`;
   await $`${packPbp} ${destEboot} ${paramPath} ${iconPath} NULL NULL ${picPath} NULL ${dataPspPath} ${dataPsar.length > 0 ? dataPsarPath : "NULL"}`;

@@ -13,7 +13,7 @@
 //   /playground/          the live editor page
 //   /docs/*, /index.html  rendered from site/content (added below)
 
-import { spawnSync } from "node:child_process";
+import { validateAndResolveBuildPlan } from "../src/manifest/resolve.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { marked } from "marked";
@@ -29,7 +29,7 @@ import {
   vdomHelperId,
 } from "@vue-jsx-vapor/runtime/raw";
 import { OG_IMAGE_URL, SITE_DESC, SITE_TITLE, SITE_URL, renderPage } from "./templates.ts";
-import { AOT_DOC_NAV, BLOG_POSTS, DOC_NAV, type DocSection } from "./nav.ts";
+import { BLOG_POSTS, DOC_NAV, type DocSection } from "./nav.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname; // repo root
 const SITE = ROOT + "site/";
@@ -46,33 +46,6 @@ const copy = (from: string, toRel: string) => {
   mkdirSync(dirname(p), { recursive: true });
   cpSync(from, p, { recursive: true });
 };
-
-function ensureShowcaseBundle(name: string): void {
-  const js = ROOT + "dist/" + name + ".js";
-  const pak = ROOT + "dist/" + name + ".pak";
-  const legacyPak = ROOT + "dist/" + name + ".dcpak";
-  if (existsSync(js) && (existsSync(pak) || existsSync(legacyPak))) return;
-
-  console.log(`  dist/${name}.js + dist/${name}.pak missing; building showcase`);
-  const res = spawnSync("bun", ["scripts/build.ts", name], { cwd: ROOT, stdio: "inherit" });
-  if (res.status !== 0) throw new Error(`showcase build failed: ${name}`);
-}
-
-function copyShowcaseBundle(name: string): void {
-  ensureShowcaseBundle(name);
-
-  const js = ROOT + "dist/" + name + ".js";
-  const pak = ROOT + "dist/" + name + ".pak";
-  const legacyPak = ROOT + "dist/" + name + ".dcpak";
-  const pakSource = existsSync(pak) ? pak : legacyPak;
-
-  if (!existsSync(js) || !existsSync(pakSource)) {
-    throw new Error(`missing showcase bundle: dist/${name}.js + dist/${name}.pak`);
-  }
-
-  copy(js, "pg/demo-bundles/" + name + ".js");
-  copy(pakSource, "pg/demo-bundles/" + name + ".pak");
-}
 
 // --- node-builtin shims: let @babel/core + preset-solid bundle for the browser
 const SHIM_MAP: Record<string, string> = { assert: "assert.js", "node:assert": "assert.js", path: "path.js", "node:path": "path.js" };
@@ -269,6 +242,15 @@ function demoManifest() {
     const vueApp = dir + name + "/app.vue-vapor.tsx";
     const main = dir + name + "/main.tsx";
     if (!existsSync(app)) continue;
+    // The playground (and every demo shelf on the site) shows only
+    // PSP-admissible demos: a committed manifest that does not resolve
+    // against the psp target (desktop-only capabilities, non-console
+    // viewport) keeps its demo off the site.
+    const manifestPath = dir + name + "/pocket.json";
+    if (existsSync(manifestPath)) {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      if (!validateAndResolveBuildPlan(manifest, { target: "psp" }).ok) continue;
+    }
     const source = inlinePlaygroundImports(name, readFileSync(app, "utf8"));
     if (source === null) continue; // multi-file demo
     let title = name[0].toUpperCase() + name.slice(1);
@@ -302,13 +284,6 @@ function copyDemoAssets(): void {
   }
 }
 
-function copyAotAssets(): void {
-  const docsDir = ROOT + "aot/docs/";
-  for (const file of ["town.png", "dialogue.png", "choice.png", "route.png"]) {
-    copy(docsDir + file, "aot/assets/" + file);
-  }
-}
-
 async function main() {
   console.log("pocketjs.dev build:");
   rmSync(OUT, { recursive: true, force: true });
@@ -326,6 +301,9 @@ async function main() {
   await bundle("playground/playground.js", "pg/playground.bundle.js");
 
   // 2. runtime assets
+  // Keep the editor-facing URL byte-identical to the schema used by the
+  // validator. The deployed path is POCKET_MANIFEST_SCHEMA_ID.
+  copy(ROOT + "schema/pocket-2.json", "schema/pocket-2.json");
   copy(ROOT + "host-web/pocketjs.wasm", "pg/pocketjs.wasm");
   copy(ROOT + "assets/fonts/Inter-Regular.ttf", "pg/fonts/Inter-Regular.ttf");
   copy(ROOT + "assets/fonts/Inter-Bold.ttf", "pg/fonts/Inter-Bold.ttf");
@@ -337,29 +315,24 @@ async function main() {
   write("pg/demos.json", JSON.stringify(demos));
   console.log(`  pg/demos.json  (${demos.length} demos: ${demos.map((d) => d.name).join(", ")})`);
 
-  // 4. prebuilt showcase bundles for the homepage hero. Reuse dist/ when
-  //    present, and build missing bundles so the site never emits 404 demos.
-  const showcase = ["motions-main", "gallery-main", "settings-main", "hero-main", "music-main"];
-  for (const s of showcase) {
-    copyShowcaseBundle(s);
-  }
-
-  // 5. static assets + Tailwind CSS (compiled AFTER pages exist so the content
+  // 4. static assets + Tailwind CSS (compiled AFTER pages exist so the content
   //    scan sees every class; we render pages to a temp first, then compile).
   for (const asset of ["favicon.svg", "og-image.svg", "og-image.png"]) {
     if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, asset);
   }
-  // Pocket3D landing-page imagery (OpenStrike screenshots).
-  for (const asset of ["os-inferno.jpg", "os-dust2.jpg", "os-office.jpg", "os-dust.jpg", "os-dust2-arch.jpg"]) {
-    if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, "assets/" + asset);
-  }
+  // OpenStrike desktop screenshot (referenced by the shipping-openstrike post).
+  copy(SITE + "assets/os-dust2.jpg", "assets/os-dust2.jpg");
+  // The original hardware capture (embedded by the introducing-pocketjs post).
   copy(SITE + "assets/pocketjs-hardware-demo.mp4", "assets/pocketjs-hardware-demo.mp4");
+  // The hero demo wall + its poster frame (baked by site/bake-demo-wall.ts).
+  copy(SITE + "assets/pocketjs-demo-wall.mp4", "assets/pocketjs-demo-wall.mp4");
+  copy(SITE + "assets/pocketjs-demo-wall.jpg", "assets/pocketjs-demo-wall.jpg");
   // Blog illustration loops (animated GIFs rendered by the engine itself).
   if (existsSync(SITE + "assets/blog/")) {
     for (const f of readdirSync(SITE + "assets/blog/")) copy(SITE + "assets/blog/" + f, "assets/blog/" + f);
   }
 
-  // 6. playground page
+  // 5. playground page
   write("playground/index.html", renderPage({
     title: "Playground",
     active: "playground",
@@ -371,33 +344,20 @@ async function main() {
   }));
   copy(SITE + "assets/screen.css", "assets/screen.css");
 
-  // 7. homepage — bespoke "cinematic" design: its own chrome + home.css, the
-  //    live demo styled by screen.css and driven by home.js. Not wrapped in the
-  //    shared header/footer (those stay for docs + playground).
+  // 6. homepage — bespoke "cinematic" design: its own chrome + home.css +
+  //    home.js (the baked demo-wall hero). Not wrapped in the shared
+  //    header/footer (those stay for docs + playground).
   write("index.html", renderHome());
   copy(SITE + "assets/home.css", "assets/home.css");
-  copy(SITE + "assets/screen.css", "assets/screen.css");
   await bundle("assets/home.js", "assets/home.js");
 
-  // 7b. Pocket3D — a standalone cinematic landing page (its own chrome,
-  //     reuses home.css design tokens + a small pocket3d.css). No API docs.
-  write("3d/index.html", renderPocket3dHome());
-  copy(SITE + "assets/pocket3d.css", "assets/pocket3d.css");
-
-  // 8. AOT product line. This is intentionally separate from the framework
-  //    playground and docs tree.
-  write("aot/index.html", renderAotHome());
-  copy(SITE + "assets/aot.css", "assets/aot.css");
-  copy(SITE + "assets/aot-demo.js", "assets/aot-demo.js");
-  copyAotAssets();
-
-  // 9. docs + blog (setupMarkdown installs the shared marked/shiki renderer)
+  // 7. docs + blog (setupMarkdown installs the shared marked/shiki renderer)
   const highlight = await setupMarkdown();
   await buildDocs(highlight);
   await buildBlog();
   buildChangelog();
 
-  // 9b. 404
+  // 7b. 404
   write("404.html", renderPage({
     title: "Not found",
     active: "",
@@ -413,7 +373,7 @@ async function main() {
     </section>`,
   }));
 
-  // 10. Tailwind CSS (@source in tailwind.css scans the site/ SOURCE for classes)
+  // 8. Tailwind CSS (@source in tailwind.css scans the site/ SOURCE for classes)
   await compileCss();
 
   console.log("pocketjs.dev build: done -> site/dist/");
@@ -432,7 +392,7 @@ function renderHome(): string {
     url: SITE_URL,
     codeRepository: "https://github.com/pocket-stack/pocketjs",
     programmingLanguage: ["TypeScript", "JavaScript", "Rust"],
-    runtimePlatform: ["Sony PSP", "PPSSPP", "WebAssembly", "Bun"],
+    runtimePlatform: ["Sony PSP", "Sony PS Vita", "PPSSPP", "Vita3K", "WebAssembly", "Bun"],
   });
   return `<!doctype html>
 <html lang="en">
@@ -459,7 +419,6 @@ function renderHome(): string {
 <meta name="theme-color" content="#05070d">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/home.css">
-<link rel="stylesheet" href="/assets/screen.css">
 <script type="application/ld+json">${jsonLd}</script>
 </head>
 <body>
@@ -467,70 +426,6 @@ ${body}
 <script type="module" src="/assets/home.js"></script>
 </body>
 </html>`;
-}
-
-const P3D_TITLE = "Pocket3D — Native 3D, scripted in TypeScript";
-const P3D_DESC =
-  "Pocket3D is a small, fast Rust renderer for 3D worlds — with the PocketJS UI stack rendering your game's HUD on top and gameplay written as TypeScript mods. OpenStrike, a CS-like FPS on classic BSP maps, is the proof.";
-const P3D_OG = `${SITE_URL}/assets/os-dust.jpg`;
-function renderPocket3dHome(): string {
-  const body = readFileSync(SITE + "3d.html", "utf8");
-  const jsonLd = JSON.stringify({
-    "@context": "https://schema.org",
-    "@type": "SoftwareSourceCode",
-    name: "Pocket3D",
-    description: P3D_DESC,
-    url: `${SITE_URL}/3d/`,
-    codeRepository: "https://github.com/pocket-stack/open-strike",
-    programmingLanguage: ["TypeScript", "Rust", "WGSL"],
-  });
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${P3D_TITLE}</title>
-<meta name="description" content="${P3D_DESC}">
-<meta name="robots" content="index,follow">
-<link rel="canonical" href="${SITE_URL}/3d/">
-<meta property="og:title" content="${P3D_TITLE}">
-<meta property="og:description" content="${P3D_DESC}">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="PocketJS">
-<meta property="og:url" content="${SITE_URL}/3d/">
-<meta property="og:image" content="${P3D_OG}">
-<meta property="og:image:width" content="1600">
-<meta property="og:image:height" content="900">
-<meta property="og:image:alt" content="OpenStrike rendering de_dust in Pocket3D — a Pocket3D world with the PocketJS HUD">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${P3D_TITLE}">
-<meta name="twitter:description" content="${P3D_DESC}">
-<meta name="twitter:image" content="${P3D_OG}">
-<meta name="theme-color" content="#05070d">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/assets/home.css">
-<link rel="stylesheet" href="/assets/pocket3d.css">
-<script type="application/ld+json">${jsonLd}</script>
-</head>
-<body>
-${body}
-</body>
-</html>`;
-}
-
-const AOT_DESC = "PocketJS AOT turns a TypeScript/JSX cartridge DSL into GBA-native game data and a fixed runtime.";
-function renderAotHome(): string {
-  return renderPage({
-    title: "PocketJS AOT",
-    active: "aot",
-    body: readFileSync(SITE + "aot.html", "utf8"),
-    bodyClass: "aot-page",
-    head: '<link rel="stylesheet" href="/assets/aot.css">',
-    scripts: ['<script type="module" src="/assets/aot-demo.js"></script>'],
-    path: "/aot/",
-    description: AOT_DESC,
-    robots: "noindex,nofollow",
-  });
 }
 
 async function compileCss() {
@@ -710,7 +605,6 @@ async function buildDocs(highlight: Highlight) {
         head: tree.head,
         scripts: [],
         path: hrefFor(slug),
-        description: tree.active === "aot" ? AOT_DESC : undefined,
         robots: tree.robots,
       }));
     }
@@ -731,15 +625,6 @@ async function buildDocs(highlight: Highlight) {
     nav: DOC_NAV,
     outPrefix: "docs",
     transformFrameworkCode: true,
-  });
-  await buildTree({
-    active: "aot",
-    docsDir: SITE + "content/aot-docs/",
-    head: "",
-    nav: AOT_DOC_NAV,
-    outPrefix: "aot/docs",
-    robots: "noindex,nofollow",
-    transformFrameworkCode: false,
   });
 }
 

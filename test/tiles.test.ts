@@ -112,7 +112,7 @@ function mockHost(withImgEntry: boolean): Host {
         }
       : {}),
   } as unknown as HostOps;
-  return { kind: "injected", strict: true, ops };
+  return { kind: "injected", target: "test", strict: true, ops };
 }
 
 function installPak(blob: Uint8Array): void {

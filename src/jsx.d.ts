@@ -8,6 +8,14 @@
 import type { JSX as SolidJSX } from "solid-js";
 
 declare global {
+  // solid-js's JSX.Element refers to the DOM `Node` type. PocketJS does not
+  // include lib.dom, so provide an opaque type-only stand-in; otherwise the
+  // unresolved name degrades to `any` under skipLibCheck and generic control
+  // flow children such as <Show>{(value) => ...}</Show> lose contextual types.
+  interface Node {
+    readonly __pocketjs_solid_node__: unique symbol;
+  }
+
   namespace JSX {
     // What a component/JSX expression evaluates to: Solid's union of nodes,
     // strings, numbers, arrays and accessors.

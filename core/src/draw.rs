@@ -241,6 +241,13 @@ impl Clip {
     fn is_empty(&self) -> bool {
         self.x1 <= self.x0 || self.y1 <= self.y0
     }
+
+    /// Half-open containment ([x0, x1) x [y0, y1)) — matches the pixel span
+    /// a painted rect covers, so the viewport edge is outside.
+    #[inline]
+    fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x0 && x < self.x1 && y >= self.y0 && y < self.y1
+    }
 }
 
 // ---- word packing -------------------------------------------------------------
@@ -398,7 +405,7 @@ fn fill_color_at(fill: &Fill, x0: f32, y0: f32, x1: f32, y1: f32, sx0: i32, sy: 
 /// coverage spans (the spans measured ~7 ms/frame of CPU on real PSP
 /// hardware for rounded-heavy screens).
 pub struct DiscCache {
-    /// (radius px, generation-tagged texture handle). Handles re-validate
+    /// (logical radius px, generation-tagged texture handle). Handles re-validate
     /// through `tex_resolve` on every use: `free_texture` is allowed to free
     /// a disc slot (JS misuse), which simply goes stale here and re-bakes.
     entries: Vec<(u32, i32)>,
@@ -416,8 +423,8 @@ impl Default for DiscCache {
     }
 }
 
-/// Get (or bake + upload) the AA disc texture for `r_px`. The disc is a
-/// 2r x 2r circle, supersampled 4x4, white RGB with coverage alpha
+/// Get (or bake + upload) the AA disc texture for logical `r_px`. The disc is
+/// a density-scaled 2r x 2r circle, supersampled 4x4, white RGB with coverage alpha
 /// (PSM_8888), padded to pow2 — corners sample their quadrant and modulate
 /// by the fill color, which matches the old span math's scale_alpha exactly
 /// up to AA rounding.
@@ -426,8 +433,10 @@ fn disc_texture(
     textures: &mut Vec<crate::TexSlot>,
     tex_free: &mut Vec<u32>,
     r_px: u32,
+    raster_density: u32,
 ) -> Option<(u32, u32)> {
-    let size = 2 * r_px;
+    let raster_radius = r_px.checked_mul(raster_density)?;
+    let size = 2u32.checked_mul(raster_radius)?;
     let dim = pow2_at_least(size);
     if dim > spec::TEX_MAX_DIM {
         return None;
@@ -442,7 +451,7 @@ fn disc_texture(
     }
     let byte_len = (dim * dim * 4) as usize;
     let mut px = alloc::vec![0u8; byte_len];
-    let c = r_px as f32; // disc center (r, r)
+    let c = raster_radius as f32; // disc center in raster pixels
     let rr = c * c;
     for y in 0..size {
         for x in 0..size {
@@ -500,6 +509,253 @@ fn pow2_at_least(n: u32) -> u32 {
     p
 }
 
+/// A node's local frame: layout position + translate, then rotate/scale
+/// about its transform origin. Shared by paint and hit_test so pointer
+/// geometry can never drift from painted geometry.
+fn local_affine(l: &crate::tree::LayoutRect, r: &style::Resolved) -> Affine {
+    let mut local = Affine::translate(l.x + r.translate_x, l.y + r.translate_y);
+    if r.rotate != 0.0 || r.scale != 1.0 || r.scale_x != 1.0 || r.scale_y != 1.0 {
+        // Transform origin: node center offset by the origin fractions
+        // (`origin-*` utilities; e.g. origin-bottom = (0, +0.5)).
+        let (cx, cy) = (l.w * (0.5 + r.origin_x), l.h * (0.5 + r.origin_y));
+        let rad = r.rotate * (PI / 180.0);
+        // rotate == 0 keeps EXACT axis alignment (the trig polyfill is a
+        // few ulp off at multiples of pi/2, which would silently demote
+        // scale-only transforms to the TRI path).
+        let (s, c) = if r.rotate == 0.0 { (0.0, 1.0) } else { (sinf(rad), cosf(rad)) };
+        let sx = r.scale * r.scale_x;
+        let sy = r.scale * r.scale_y;
+        // translate(c) * rotate * scale * translate(-c)
+        let m = Affine {
+            a: c * sx,
+            b: s * sx,
+            c: -s * sy,
+            d: c * sy,
+            tx: cx - (c * sx * cx - s * sy * cy),
+            ty: cy - (s * sx * cx + c * sy * cy),
+        };
+        local = local.then(&m);
+    }
+    local
+}
+
+/// AABB (intersected with the screen) of a local rect under `world` —
+/// conservative integer bounds: floor mins, ceil maxes.
+fn world_aabb_of(screen: (f32, f32), world: &Affine, w: f32, h: f32) -> Clip {
+    let pts = [
+        world.apply(0.0, 0.0),
+        world.apply(w, 0.0),
+        world.apply(w, h),
+        world.apply(0.0, h),
+    ];
+    let mut c = Clip { x0: pts[0].0, y0: pts[0].1, x1: pts[0].0, y1: pts[0].1 };
+    for &(x, y) in &pts[1..] {
+        c.x0 = c.x0.min(x);
+        c.y0 = c.y0.min(y);
+        c.x1 = c.x1.max(x);
+        c.y1 = c.y1.max(y);
+    }
+    Clip {
+        x0: floorf(clampf(c.x0, 0.0, screen.0)),
+        y0: floorf(clampf(c.y0, 0.0, screen.1)),
+        x1: ceilf(clampf(c.x1, 0.0, screen.0)),
+        y1: ceilf(clampf(c.y1, 0.0, screen.1)),
+    }
+}
+
+/// A screen point mapped into a node's local space under an invertible
+/// world transform; None for degenerate transforms (which hit nothing).
+fn local_point(world: &Affine, px: f32, py: f32) -> Option<(f32, f32)> {
+    let det = world.a * world.d - world.b * world.c;
+    if det == 0.0 {
+        return None;
+    }
+    let dx = px - world.tx;
+    let dy = py - world.ty;
+    Some(((world.d * dx - world.c * dy) / det, (world.a * dy - world.b * dx) / det))
+}
+
+/// Visit `slot`'s children in PAINT ORDER: document order, stable-sorted by
+/// z-index only when a child actually carries one (the hot path is a
+/// straight index walk with zero allocations). Shared by `Walker::paint` and
+/// `hit_walk` so hit testing can never disagree with painted stacking.
+fn for_children_in_paint_order(
+    tree: &Tree,
+    styles: &StyleTable,
+    slot: u32,
+    mut f: impl FnMut(u32),
+) {
+    let node = &tree.slots[slot as usize];
+    let mut needs_sort = false;
+    for &cid in &node.children {
+        if let Some(cs) = tree.resolve(cid) {
+            if style::resolve_z(&tree.slots[cs as usize], styles) != 0 {
+                needs_sort = true;
+                break;
+            }
+        }
+    }
+    if !needs_sort {
+        for i in 0..node.children.len() {
+            let cid = tree.slots[slot as usize].children[i];
+            if let Some(cs) = tree.resolve(cid) {
+                f(cs);
+            }
+        }
+    } else {
+        let mut order: Vec<(i32, u32)> = Vec::with_capacity(node.children.len());
+        for &cid in &node.children {
+            if let Some(cs) = tree.resolve(cid) {
+                order.push((style::resolve_z(&tree.slots[cs as usize], styles), cs));
+            }
+        }
+        // Stable by construction: sort_by_key on Vec preserves insertion
+        // order of equal keys (alloc's stable merge sort).
+        order.sort_by_key(|&(z, _)| z);
+        for (_, cs) in order {
+            f(cs);
+        }
+    }
+}
+
+/// Whether a node CLAIMS a hit at LOCAL point (lx, ly) inside its border
+/// box: only nodes that actually paint there do. A background, gradient,
+/// bound image, text run — or any `focus:`/`active:` variant styling —
+/// claims the whole box; a node whose only ink is a border or bevel ring
+/// claims just that visible edge band, so an inset-0 frame overlay (the
+/// classic-chrome window edge) decorates its window without swallowing
+/// every press inside it. Pure layout containers (and the framework's
+/// full-screen overlay/portal layers) pass hits through to whatever paints
+/// beneath them, which is what a pointer steered by eye expects: you can
+/// press what you can see. This is the engine's stand-in (and the DEFAULT,
+/// until a hit-behavior style bit exists) for CSS `pointer-events`.
+///
+/// Variant records claim even while the CURRENT variant paints nothing —
+/// hover-styled hotspots must be reachable before they are hovered, and a
+/// hit result must not flip with the focus state it itself produces (no
+/// hysteresis). A focusable with no paint in ANY variant gives no visual
+/// feedback either — give it a bg (any alpha > 0) to make it a hit target.
+/// Rounded/arc shapes claim their full box (corner approximation).
+#[allow(clippy::too_many_arguments)]
+fn claims_hit(
+    node: &crate::tree::Node,
+    r: &style::Resolved,
+    styles: &StyleTable,
+    lx: f32,
+    ly: f32,
+    w: f32,
+    h: f32,
+) -> bool {
+    if node.node_type == spec::NodeType::Text as u8 {
+        return true; // the glyph run
+    }
+    if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
+        return true;
+    }
+    if alpha(r.bg_color) > 0
+        || (r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32)
+        || styles
+            .record(node.style_id)
+            .is_some_and(|rec| !rec.focus.is_empty() || !rec.active.is_empty())
+    {
+        return true;
+    }
+    // Border/bevel-only ink: claim the edge band it actually paints.
+    let mut band = 0.0f32;
+    if r.border_width > 0.0 && alpha(r.border_color) > 0 {
+        band = band.max(r.border_width);
+    }
+    if (r.bevel_outer_light | r.bevel_outer_dark | r.bevel_inner_light | r.bevel_inner_dark) != 0
+        && r.bevel_width > 0.0
+    {
+        band = band.max(r.bevel_width * 2.0); // two nested rings
+    }
+    band > 0.0 && (lx < band || ly < band || lx >= w - band || ly >= h - band)
+}
+
+/// Topmost node at a logical point (spec op hitTest) — paint-order hit
+/// testing over the laid-out tree: the winner is the LAST node in paint
+/// order (document order + z-index) whose border box contains the point AND
+/// that paints there (see `claims_hit` — pure layout containers are
+/// hit-transparent, but their children are still tested). `display:none`
+/// subtrees are skipped, and so are subtrees at effective opacity 0 —
+/// paint culls them entirely, and what cannot be seen must not eat hits (a
+/// faded-out-but-mounted toast). Partially transparent nodes still claim.
+/// `overflow-hidden` clips descendants. A perspective (3D) subtree hits as
+/// its context root's border box — only the 2D walk composes a world affine
+/// per node (the DevTools inspector shares this limit), and swallowing the
+/// hit beats clicking whatever sits BEHIND visible 3D content.
+/// Returns the generation-tagged id, or 0.
+pub fn hit_test(tree: &Tree, styles: &StyleTable, screen: (f32, f32), x: f32, y: f32) -> i32 {
+    let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
+    let mut hit = 0i32;
+    hit_walk(tree, styles, screen, root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), x, y, &mut hit);
+    hit
+}
+
+#[allow(clippy::too_many_arguments)]
+fn hit_walk(
+    tree: &Tree,
+    styles: &StyleTable,
+    screen: (f32, f32),
+    slot: u32,
+    parent_world: Affine,
+    opacity: f32,
+    clip: Clip,
+    px: f32,
+    py: f32,
+    hit: &mut i32,
+) {
+    // The point is fixed, so a clip that excludes it excludes the node AND
+    // every descendant (child clips only shrink).
+    if !clip.contains(px, py) {
+        return;
+    }
+    let node = &tree.slots[slot as usize];
+    let r = style::resolve(node, styles, true);
+    if r.display == spec::Display::None as u8 {
+        return;
+    }
+    let l = node.layout;
+    let world = parent_world.then(&local_affine(&l, &r));
+    // Effective-opacity-0 subtrees are culled exactly like paint culls them.
+    let op = clampf(opacity * r.opacity, 0.0, 1.0);
+    if op <= 0.0 {
+        return;
+    }
+    let local = local_point(&world, px, py);
+    let inside = local.is_some_and(|(lx, ly)| lx >= 0.0 && lx < l.w && ly >= 0.0 && ly < l.h);
+    if inside {
+        let (lx, ly) = local.unwrap();
+        if claims_hit(node, &r, styles, lx, ly, l.w, l.h) {
+            *hit = node.id(slot);
+        }
+    }
+    // Text children are absorbed into the node's glyph run (mirrors paint).
+    if node.node_type == spec::NodeType::Text as u8 {
+        return;
+    }
+    let mut child_clip = clip;
+    if r.overflow == spec::Overflow::Hidden as u8 {
+        child_clip = clip.intersect(&world_aabb_of(screen, &world, l.w, l.h));
+        if !child_clip.contains(px, py) {
+            return;
+        }
+    }
+    if r.perspective > 0.0 {
+        // 3D context: projected geometry is not point-testable from the 2D
+        // walk — the context root claims its own box so clicks never fall
+        // through to content painted BEHIND the visible 3D subtree.
+        if inside {
+            *hit = node.id(slot);
+        }
+        return;
+    }
+    for_children_in_paint_order(tree, styles, slot, |cs| {
+        hit_walk(tree, styles, screen, cs, world, op, child_clip, px, py, hit);
+    });
+}
+
 struct Walker<'a> {
     tree: &'a Tree,
     styles: &'a StyleTable,
@@ -515,6 +771,7 @@ struct Walker<'a> {
     textures: &'a mut Vec<crate::TexSlot>,
     tex_free: &'a mut Vec<u32>,
     discs: &'a mut DiscCache,
+    raster_density: u32,
     /// DevTools: slot to capture the world AABB of (u32::MAX = none).
     inspect_slot: u32,
     /// World AABB of `inspect_slot`, set when the walk reaches it.
@@ -523,7 +780,9 @@ struct Walker<'a> {
 
 /// Build the full DrawList for the current (laid-out) tree. `frame` is the
 /// core's vblank counter (Ui.frame); animated sprites pick their cell from it.
-/// `screen` is the viewport every coordinate is clipped to.
+/// `screen` is the viewport every coordinate is clipped to. `cursor` is the
+/// virtual cursor sprite as (tex handle, x, y, w, h) — its TEX_QUAD is
+/// appended after everything else (topmost), outside layout and hit_test.
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     tree: &Tree,
@@ -534,9 +793,11 @@ pub fn build(
     textures: &mut Vec<crate::TexSlot>,
     tex_free: &mut Vec<u32>,
     discs: &mut DiscCache,
+    raster_density: u32,
     dl: &mut DrawList,
     inspect_id: i32,
     inspect_prev: Option<(f32, f32, f32, f32)>,
+    cursor: Option<(u32, f32, f32, f32, f32)>,
 ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
     dl.words.clear();
     // DevTools (DEVTOOLS.md): slot of the inspected node, u32::MAX = none.
@@ -557,6 +818,7 @@ pub fn build(
         textures,
         tex_free,
         discs,
+        raster_density,
         inspect_slot,
         inspect_hit: None,
     };
@@ -589,6 +851,23 @@ pub fn build(
     if let Some((x, y, bw, bh)) = drawn {
         w.emit_highlight(dl, &Clip { x0: x, y0: y, x1: x + bw, y1: y + bh });
     }
+    // Virtual cursor sprite: appended last so nothing paints over it (even
+    // the DevTools highlight sits under the pointer the user is steering).
+    if let Some((tex, cx, cy, cw, ch)) = cursor {
+        w.emit_tex_quad(
+            dl,
+            &Affine::translate(cx, cy),
+            cw,
+            ch,
+            tex,
+            1.0,
+            &Clip::viewport(screen),
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+        );
+    }
     (target, drawn)
 }
 
@@ -600,32 +879,7 @@ impl<'a> Walker<'a> {
             return;
         }
         let l = node.layout;
-        // Local frame: layout position + translate, then rotate/scale about
-        // the node center.
-        let mut local = Affine::translate(l.x + r.translate_x, l.y + r.translate_y);
-        if r.rotate != 0.0 || r.scale != 1.0 || r.scale_x != 1.0 || r.scale_y != 1.0 {
-            // Transform origin: node center offset by the origin fractions
-            // (`origin-*` utilities; e.g. origin-bottom = (0, +0.5)).
-            let (cx, cy) = (l.w * (0.5 + r.origin_x), l.h * (0.5 + r.origin_y));
-            let rad = r.rotate * (PI / 180.0);
-            // rotate == 0 keeps EXACT axis alignment (the trig polyfill is a
-            // few ulp off at multiples of pi/2, which would silently demote
-            // scale-only transforms to the TRI path).
-            let (s, c) = if r.rotate == 0.0 { (0.0, 1.0) } else { (sinf(rad), cosf(rad)) };
-            let sx = r.scale * r.scale_x;
-            let sy = r.scale * r.scale_y;
-            // translate(c) * rotate * scale * translate(-c)
-            let m = Affine {
-                a: c * sx,
-                b: s * sx,
-                c: -s * sy,
-                d: c * sy,
-                tx: cx - (c * sx * cx - s * sy * cy),
-                ty: cy - (s * sx * cx + c * sy * cy),
-            };
-            local = local.then(&m);
-        }
-        let world = parent_world.then(&local);
+        let world = parent_world.then(&local_affine(&l, &r));
         // DevTools: capture the inspected node's border-box world AABB
         // (before the opacity cull so transparent nodes still highlight).
         if slot == self.inspect_slot {
@@ -723,6 +977,46 @@ impl<'a> Walker<'a> {
             }
         }
 
+        // -- bevel rings: classic-chrome 3D edges (spec.ts PROP.bevelOuter*..) --
+        // Two nested inset rings of 4 strips each. Per ring, light paints
+        // top+left first, then dark paints bottom+right FULL-LENGTH, so dark
+        // owns the shared corners (98.css box-shadow stacking). Square only:
+        // radius > 0 disables bevels (the compiler rejects the combination).
+        if (r.bevel_outer_light | r.bevel_outer_dark | r.bevel_inner_light | r.bevel_inner_dark)
+            != 0
+            && r.bevel_width > 0.0
+            && r.radius <= 0.0
+            && !is_arc
+        {
+            let bvw = r.bevel_width;
+            let rings = [
+                (0.0, r.bevel_outer_light, r.bevel_outer_dark),
+                (bvw, r.bevel_inner_light, r.bevel_inner_dark),
+            ];
+            for &(inset, light, dark) in rings.iter() {
+                let light = scale_alpha(light, op);
+                let dark = scale_alpha(dark, op);
+                if alpha(light) == 0 && alpha(dark) == 0 {
+                    continue;
+                }
+                let (x0, y0, x1, y1) = (inset, inset, l.w - inset, l.h - inset);
+                // Skip rings the box is too small to hold (deterministic guard).
+                if x1 - x0 < bvw * 2.0 || y1 - y0 < bvw * 2.0 {
+                    continue;
+                }
+                if alpha(light) > 0 {
+                    let fl = Fill::Flat(light);
+                    self.emit_box(dl, &world, x0, y0, x1, y0 + bvw, fl, &clip); // top
+                    self.emit_box(dl, &world, x0, y0, x0 + bvw, y1, fl, &clip); // left
+                }
+                if alpha(dark) > 0 {
+                    let fd = Fill::Flat(dark);
+                    self.emit_box(dl, &world, x0, y1 - bvw, x1, y1, fd, &clip); // bottom
+                    self.emit_box(dl, &world, x1 - bvw, y0, x1, y1, fd, &clip); // right
+                }
+            }
+        }
+
         // -- text run ----------------------------------------------------------
         if node.node_type == spec::NodeType::Text as u8 {
             self.emit_text(dl, node, &r, &world, op, &clip, l.w);
@@ -781,43 +1075,12 @@ impl<'a> Walker<'a> {
             return;
         }
 
-        // z-index is rare: detect it with the cheap z-only resolve, and only
-        // allocate + sort when a child actually carries one (the hot path is
-        // a straight index walk with zero allocations).
-        let node = &self.tree.slots[slot as usize];
-        let child_count = node.children.len();
-        let mut needs_sort = false;
-        for &cid in &node.children {
-            if let Some(cs) = self.tree.resolve(cid) {
-                if style::resolve_z(&self.tree.slots[cs as usize], self.styles) != 0 {
-                    needs_sort = true;
-                    break;
-                }
-            }
-        }
-        if !needs_sort {
-            for i in 0..child_count {
-                let cid = self.tree.slots[slot as usize].children[i];
-                if let Some(cs) = self.tree.resolve(cid) {
-                    self.paint(cs, world, op, child_clip, dl);
-                }
-            }
-        } else {
-            let node = &self.tree.slots[slot as usize];
-            let mut order: Vec<(i32, u32)> = Vec::with_capacity(node.children.len());
-            for &cid in &node.children {
-                if let Some(cs) = self.tree.resolve(cid) {
-                    let z = style::resolve_z(&self.tree.slots[cs as usize], self.styles);
-                    order.push((z, cs));
-                }
-            }
-            // Stable by construction: sort_by_key on Vec preserves insertion
-            // order of equal keys (alloc's stable merge sort).
-            order.sort_by_key(|&(z, _)| z);
-            for (_, cs) in order {
-                self.paint(cs, world, op, child_clip, dl);
-            }
-        }
+        // Children in paint order — shared with hit_walk so pointer hits can
+        // never disagree with painted stacking.
+        let (tree, styles) = (self.tree, self.styles);
+        for_children_in_paint_order(tree, styles, slot, |cs| {
+            self.paint(cs, world, op, child_clip, dl);
+        });
 
         if scissored {
             dl.words.push(spec::draw_op::SCISSOR_POP);
@@ -1153,26 +1416,7 @@ impl<'a> Walker<'a> {
 
     /// AABB (intersected with the screen) of a local rect under `world`.
     fn world_aabb(&self, world: &Affine, w: f32, h: f32) -> Clip {
-        let pts = [
-            world.apply(0.0, 0.0),
-            world.apply(w, 0.0),
-            world.apply(w, h),
-            world.apply(0.0, h),
-        ];
-        let mut c = Clip { x0: pts[0].0, y0: pts[0].1, x1: pts[0].0, y1: pts[0].1 };
-        for &(x, y) in &pts[1..] {
-            c.x0 = c.x0.min(x);
-            c.y0 = c.y0.min(y);
-            c.x1 = c.x1.max(x);
-            c.y1 = c.y1.max(y);
-        }
-        // Conservative integer AABB: floor mins, ceil maxes.
-        Clip {
-            x0: floorf(clampf(c.x0, 0.0, self.screen.0)),
-            y0: floorf(clampf(c.y0, 0.0, self.screen.1)),
-            x1: ceilf(clampf(c.x1, 0.0, self.screen.0)),
-            y1: ceilf(clampf(c.y1, 0.0, self.screen.1)),
-        }
+        world_aabb_of(self.screen, world, w, h)
     }
 
     /// Emit a solid/gradient local-space rect under `world`: axis-aligned
@@ -1637,9 +1881,17 @@ impl<'a> Walker<'a> {
             // Large radii take the analytic span path below instead.
             const DISC_MAX_R: u32 = 32;
             if r_px <= DISC_MAX_R {
-                if let Some((tex, dim)) = disc_texture(self.discs, self.textures, self.tex_free, r_px) {
+                if let Some((tex, dim)) = disc_texture(
+                    self.discs,
+                    self.textures,
+                    self.tex_free,
+                    r_px,
+                    self.raster_density,
+                ) {
                     let rf = r_px as f32;
-                    let du = rf / dim as f32; // one corner quadrant in UV space
+                    let du = (r_px * self.raster_density) as f32 / dim as f32;
+                    // One density-scaled corner quadrant in UV space, drawn
+                    // into the same logical `rf` destination geometry.
                     let corners = [
                         (sx0, sy0, 0.0, 0.0),           // TL quadrant
                         (sx1 - rf, sy0, du, 0.0),       // TR

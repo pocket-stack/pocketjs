@@ -11,6 +11,7 @@
 //! host omits it and the framework defaults to 480x272).
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use anyhow::Result;
@@ -38,6 +39,16 @@ struct Inner {
     /// pak image name → core texture handle (`ui.__textures`).
     textures: Vec<(String, i32)>,
     sprites: Vec<SpriteReg>,
+    /// Host service channel (spec ops 30..32): in-process JSON-line queues.
+    /// On consoles the mailbox is files under a tethered share; here the
+    /// widget host *is* the companion process, so lines just cross a queue.
+    svc_in: VecDeque<String>,
+    svc_out: VecDeque<String>,
+    /// Platform-contract identity published as `ui.__host`/`ui.__hostAbi`.
+    /// Bundles built from a resolved plan refuse hosts whose identity does
+    /// not match their target (src/host.ts assertNativeHostContract).
+    host_id: String,
+    host_abi: Option<u32>,
 }
 
 /// The `ui` surface. Clone-cheap handle; single-threaded like the guest.
@@ -50,7 +61,16 @@ impl UiSurface {
     /// A fresh core sized to `viewport` (logical px; pass (480, 272) to host
     /// stock PSP apps).
     pub fn new(viewport: (f32, f32)) -> UiSurface {
-        let mut ui = Ui::new();
+        Self::new_with_density(viewport, 1)
+    }
+
+    /// A fresh core with a raster density > 1 (the Vita model: logical
+    /// layout unchanged, core-baked bitmaps and font coverage at `density`
+    /// samples per logical px). Pair with density-`density` paks and
+    /// `UiRenderer::render_words_scaled` for native-resolution output on
+    /// high-DPI displays.
+    pub fn new_with_density(viewport: (f32, f32), density: u32) -> UiSurface {
+        let mut ui = Ui::new_with_raster_density(density);
         ui.set_viewport(viewport.0, viewport.1);
         UiSurface {
             inner: Rc::new(RefCell::new(Inner {
@@ -58,8 +78,31 @@ impl UiSurface {
                 pak: Vec::new(),
                 textures: Vec::new(),
                 sprites: Vec::new(),
+                svc_in: VecDeque::new(),
+                svc_out: VecDeque::new(),
+                host_id: "desktop".into(),
+                host_abi: None,
             })),
         }
+    }
+
+    /// Declare this host's platform-contract identity (a POCKET_TARGETS id
+    /// + its hostAbi) before `mount`. Plan-built bundles assert it; the
+    /// default "desktop" (no ABI) serves plan-less development hosts.
+    pub fn set_identity(&self, host_id: &str, host_abi: u32) {
+        let mut inner = self.inner.borrow_mut();
+        inner.host_id = host_id.to_string();
+        inner.host_abi = Some(host_abi);
+    }
+
+    /// Queue one JSON line for the guest's next `svcPoll` (host → guest).
+    pub fn svc_push(&self, line: impl Into<String>) {
+        self.inner.borrow_mut().svc_in.push_back(line.into());
+    }
+
+    /// Drain the lines the guest sent with `svcSend` (guest → host).
+    pub fn svc_drain(&self) -> Vec<String> {
+        self.inner.borrow_mut().svc_out.drain(..).collect()
     }
 
     /// Feed an app pak: styles + font atlases go straight to the core,
@@ -264,6 +307,27 @@ impl UiSurface {
             op!("setFocus", move |id: i32| ui.borrow_mut().ui.set_focus(id));
 
             let ui = self.inner.clone();
+            op!("setActive", move |id: i32, active: i32| {
+                ui.borrow_mut().ui.set_active(id, active != 0)
+            });
+
+            // Virtual cursor ops (spec ops 27..29, input.cursor).
+            let ui = self.inner.clone();
+            op!("hitTest", move |x: f64, y: f64| {
+                ui.borrow_mut().ui.hit_test(x as f32, y as f32)
+            });
+
+            let ui = self.inner.clone();
+            op!("setCursor", move |tex: i32, hot_x: f64, hot_y: f64, w: f64, h: f64| {
+                ui.borrow_mut().ui.set_cursor(tex, hot_x as f32, hot_y as f32, w as f32, h as f32)
+            });
+
+            let ui = self.inner.clone();
+            op!("setCursorPos", move |x: f64, y: f64| {
+                ui.borrow_mut().ui.set_cursor_pos(x as f32, y as f32)
+            });
+
+            let ui = self.inner.clone();
             op!("loadStyles", move |buf: TypedArray<u8>| {
                 let Some(bytes) = buf.as_bytes() else {
                     return false;
@@ -353,6 +417,33 @@ impl UiSurface {
                 }
             });
 
+            // ---- host service channel (spec ops 30..32) ------------------
+            // The widget/desktop host is its own companion process: svcOpen
+            // always succeeds and lines cross an in-process queue instead of
+            // a tethered share. Apps feature-detect exactly like on PSP.
+            op!("svcOpen", move |_app: Coerced<String>| true);
+
+            let ui = self.inner.clone();
+            op!("svcPoll", move || -> Option<String> {
+                let mut inner = ui.borrow_mut();
+                if inner.svc_in.is_empty() {
+                    return None;
+                }
+                // Batch per the HostOps contract: complete JSON lines,
+                // newline-terminated, possibly several per poll.
+                let mut batch = String::new();
+                for line in inner.svc_in.drain(..) {
+                    batch.push_str(&line);
+                    batch.push('\n');
+                }
+                Some(batch)
+            });
+
+            let ui = self.inner.clone();
+            op!("svcSend", move |line: Coerced<String>| {
+                ui.borrow_mut().svc_out.push_back(line.0);
+            });
+
             // ---- boot tables (PSP contract) + desktop viewport ----------
             let inner = self.inner.borrow();
             let textures = Object::new(ctx.clone())?;
@@ -378,10 +469,13 @@ impl UiSurface {
             viewport.set("h", vh as f64)?;
             ns.set("__viewport", viewport)?;
 
-            // Honest host label for DevTools' hello (the shim would
-            // otherwise report "psp" — this namespace passes its PSP-shaped
-            // host detection on purpose).
-            ns.set("__host", "desktop")?;
+            // Honest host label for DevTools' hello and the platform
+            // contract (the shim would otherwise report "psp" — this
+            // namespace passes its PSP-shaped host detection on purpose).
+            ns.set("__host", inner.host_id.as_str())?;
+            if let Some(abi) = inner.host_abi {
+                ns.set("__hostAbi", abi)?;
+            }
 
             Ok(())
         })

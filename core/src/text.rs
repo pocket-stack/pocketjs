@@ -34,8 +34,9 @@ fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
 pub struct CmapEntry {
     pub codepoint: u32,
     pub gid: u16,
+    /// Logical px advance; independent of atlas raster density.
     pub advance: u8,
-    /// Left-side-bearing shift (cmap byte +7): px the outline was shifted
+    /// Left-side-bearing shift (cmap byte +7): logical px the outline was shifted
     /// RIGHT at bake so negative-LSB ink stays inside the cell. The cell is
     /// placed at penX - xoff when drawing.
     pub xoff: u8,
@@ -43,17 +44,22 @@ pub struct CmapEntry {
 
 /// One parsed font atlas (a (family-weight, px) bake bound to a slot).
 pub struct Atlas {
+    /// Logical cell dimensions. Coverage dimensions are these times
+    /// `raster_density`.
     pub cell_w: u32,
     pub cell_h: u32,
-    /// px from cell top to the baseline.
+    /// Logical px from cell top to the baseline.
     pub baseline: u32,
-    /// Default line advance in px.
+    /// Default logical line advance in px.
     pub line_height: u32,
+    /// Raster samples per logical pixel (v2 atlases resolve to 1).
+    pub raster_density: u8,
     pub slot: u8,
     pub flags: u8,
     pub glyph_count: u16,
     cmap: Vec<CmapEntry>,
-    /// Coverage cells: glyphCount x cellH x cellW alpha bytes, left-to-right.
+    /// Coverage cells: glyphCount x (cellH*density) x (cellW*density)
+    /// alpha bytes, left-to-right.
     pub bitmap: Vec<u8>,
 }
 
@@ -62,9 +68,23 @@ impl Atlas {
     /// magic/version/slot or truncation.
     pub fn parse(bytes: &[u8]) -> Option<Atlas> {
         use spec::font_atlas as fa;
-        if rd_u32(bytes, 0)? != fa::MAGIC || rd_u16(bytes, 4)? != fa::VERSION {
+        if rd_u32(bytes, 0)? != fa::MAGIC {
             return None;
         }
+        let version = rd_u16(bytes, 4)?;
+        // Atlas v2 used bytes 14..15 as reserved and had one coverage sample
+        // per logical pixel. Keep loading it so old packs remain usable.
+        let raster_density = if version == 2 {
+            1
+        } else if version == fa::VERSION {
+            let density = *bytes.get(14)?;
+            if density == 0 {
+                return None;
+            }
+            density
+        } else {
+            return None;
+        };
         let glyph_count = rd_u16(bytes, 6)?;
         let cell_w = *bytes.get(8)? as u32;
         let cell_h = *bytes.get(9)? as u32;
@@ -76,10 +96,16 @@ impl Atlas {
             return None;
         }
         let cmap_off = fa::HEADER_SIZE;
-        let bitmap_off = cmap_off + glyph_count as usize * fa::CMAP_ENTRY_SIZE;
-        let bytes_per_row = cell_w as usize;
-        let bitmap_len = glyph_count as usize * cell_h as usize * bytes_per_row;
-        if bytes.len() < bitmap_off + bitmap_len {
+        let bitmap_off = (glyph_count as usize)
+            .checked_mul(fa::CMAP_ENTRY_SIZE)?
+            .checked_add(cmap_off)?;
+        let coverage_w = (cell_w as usize).checked_mul(raster_density as usize)?;
+        let coverage_h = (cell_h as usize).checked_mul(raster_density as usize)?;
+        let bitmap_len = (glyph_count as usize)
+            .checked_mul(coverage_h)?
+            .checked_mul(coverage_w)?;
+        let bitmap_end = bitmap_off.checked_add(bitmap_len)?;
+        if bytes.len() < bitmap_end {
             return None;
         }
         let mut cmap = Vec::with_capacity(glyph_count as usize);
@@ -97,12 +123,13 @@ impl Atlas {
             });
         }
         let mut bitmap = Vec::with_capacity(bitmap_len);
-        bitmap.extend_from_slice(&bytes[bitmap_off..bitmap_off + bitmap_len]);
+        bitmap.extend_from_slice(&bytes[bitmap_off..bitmap_end]);
         Some(Atlas {
             cell_w,
             cell_h,
             baseline,
             line_height,
+            raster_density,
             slot,
             flags,
             glyph_count,
@@ -127,14 +154,47 @@ impl Atlas {
 
     #[inline]
     pub fn bytes_per_row(&self) -> usize {
-        self.cell_w as usize
+        self.coverage_width() as usize
     }
 
-    /// The row coverage bytes of one glyph (top row first).
+    #[inline]
+    pub fn coverage_width(&self) -> u32 {
+        self.cell_w * self.raster_density as u32
+    }
+
+    #[inline]
+    pub fn coverage_height(&self) -> u32 {
+        self.cell_h * self.raster_density as u32
+    }
+
+    /// The density-scaled coverage bytes of one glyph (top row first).
     pub fn glyph_rows(&self, gid: u16) -> &[u8] {
-        let per_glyph = self.cell_h as usize * self.bytes_per_row();
+        let per_glyph = self.coverage_height() as usize * self.bytes_per_row();
         let start = gid as usize * per_glyph;
         &self.bitmap[start..start + per_glyph]
+    }
+
+    /// Average one logical pixel's density×density coverage samples. This is
+    /// the reference reduction for logical-resolution software/CPU fallback
+    /// renderers; density 1 returns the original byte exactly.
+    pub fn logical_coverage(&self, gid: u16, x: u32, y: u32) -> u8 {
+        if gid >= self.glyph_count || x >= self.cell_w || y >= self.cell_h {
+            return 0;
+        }
+        let density = self.raster_density as usize;
+        let rows = self.glyph_rows(gid);
+        let bpr = self.bytes_per_row();
+        let x0 = x as usize * density;
+        let y0 = y as usize * density;
+        let mut sum = 0u32;
+        for sample_y in 0..density {
+            let row = (y0 + sample_y) * bpr;
+            for sample_x in 0..density {
+                sum += rows[row + x0 + sample_x] as u32;
+            }
+        }
+        let samples = (density * density) as u32;
+        ((sum + samples / 2) / samples) as u8
     }
 }
 

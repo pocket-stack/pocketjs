@@ -35,7 +35,7 @@ function mockHost(): Host {
     loadFontAtlas: () => true,
     measureText: () => 0,
   } as unknown as HostOps;
-  return { kind: "injected", strict: true, ops };
+  return { kind: "injected", target: "test", strict: true, ops };
 }
 
 function of(name: string): [string, ...unknown[]][] {

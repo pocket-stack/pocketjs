@@ -1,21 +1,23 @@
 /* ======================================================================
-   PocketJS live demo — a LANDSCAPE handheld shell around the 480×272 display.
-   Controls FLANK the screen (d-pad + analog nub on the left, face-button
-   diamond on the right), L/R at the top corners, SELECT/START below — so the
-   rendered UI is never occluded. Warm amber control accents over a dark navy
-   body, thin border. Shared by the homepage hero and the playground; sizes in
+   PocketJS live demo — a PSP-silhouette shell around the 480×272 display.
+   Piano-black pill body with near-semicircular ends, controls flanking the
+   screen exactly where the real handheld puts them: d-pad + analog nub on
+   the left, the △○×□ diamond (PlayStation glyph colors) on the right, L/R
+   riding the top corners, and a bottom bar of speaker dots · wordmark ·
+   SELECT/START. Shared by the homepage hero and the playground; sizes in
    container-query units so it scales to any width. Tapping a control drives
    the WebAssembly demo (assets/home.js / playground.js).
    ====================================================================== */
 
 .screen-emu {
-  --emu-amber: #e6a94b;
-  --emu-amber-hi: #ffc766;
+  --emu-active: #22d3ee;          /* press feedback — the site accent */
+  --emu-label: #8b93a7;           /* silver silkscreen labels */
   /* ONE fixed radius shared by the body and the shoulders' outer corners.
      MUST be a fixed unit (px), NOT cqw: cqw on the body (a container) resolves
      against the viewport, but on the shoulders (descendants) against this
-     container — so a cqw value renders as two different pixel radii. */
-  --emu-radius: 26px;
+     container — so a cqw value renders as two different pixel radii. Large,
+     because a PSP is a lozenge: its ends are close to half-circles. */
+  --emu-radius: 84px;
   container-type: inline-size;
   position: relative; /* L/R shoulders are absolutely pinned to the top corners */
   display: grid;
@@ -30,77 +32,109 @@
     "dpad  screen   faces"
     "sys   sys      sys";
   align-items: center;
-  column-gap: 2.4cqw;
-  row-gap: 0.7cqw;
-  padding: 2cqw 2cqw 0.9cqw;
+  column-gap: 2.6cqw;
+  row-gap: 0.9cqw;
+  padding: 2.6cqw 4.4cqw 1.1cqw; /* wide side padding sells the pill ends */
   border-radius: var(--emu-radius);
-  /* molded navy body: top-lit gradient + faint vertical brushed sheen */
+  /* piano black: glossy top light-sweep + faint horizontal sheen + deep body */
   background:
-    radial-gradient(122% 60% at 50% -8%, rgba(96, 116, 156, 0.32), transparent 58%),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.013) 0 1px, transparent 1px 3px),
-    linear-gradient(180deg, #2a3150 0%, #20263c 46%, #161b2b 100%);
+    radial-gradient(130% 55% at 50% -6%, rgba(148, 163, 205, 0.2), transparent 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, transparent 22%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.008) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, #1a1e2a 0%, #10131c 46%, #090b11 100%);
   box-shadow:
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -3cqw 5cqw rgba(3, 8, 18, 0.4),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
-    0 40px 80px -40px rgba(0, 0, 0, 0.92),
-    0 0 0 1px rgba(43, 58, 85, 0.8);
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -3cqw 6cqw rgba(0, 2, 8, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 44px 90px -42px rgba(0, 0, 0, 0.95),
+    0 0 0 1px rgba(38, 46, 66, 0.9);
 }
 
-/* ---- shoulder bumpers — flush in the top corners, outer corner radius EXACTLY
-   matching the body's so the two curves coincide (no double curve). --------- */
+/* ---- shoulder bumpers — tabs on the FLAT stretch of the top edge. The pill
+   body's corner arc spans exactly --emu-radius horizontally, so insetting by
+   that much guarantees the shoulder sits fully on the silhouette at ANY
+   radius (pinning them at the corners left them floating outside the curve —
+   observed on the deployed page). Bottom corners stay square so the tab
+   welds onto the edge. ------------------------------------------------------ */
 .emu-shoulder {
+  display: none; /* hidden pending a better shoulder treatment — the seated-tab
+                    look still reads off; L/R stay reachable via keyboard */
   position: absolute;
   top: 0cqw;
-  min-width: 11cqw;
-  padding: 1cqw 2.4cqw;
+  min-width: 12cqw;
+  padding: 0.9cqw 2.6cqw;
   cursor: pointer;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 2.2cqw;
+  font-size: 2cqw;
   font-weight: 700;
   letter-spacing: 0.16em;
-  color: var(--emu-amber);
-  background: linear-gradient(180deg, #333b5a, #1d2338);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 1cqw; /* inner corners */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 2px 4px rgba(0, 0, 0, 0.4);
+  color: var(--emu-label);
+  background: linear-gradient(180deg, #232837, #12151f);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1.2cqw 1.2cqw 0 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 2px 4px rgba(0, 0, 0, 0.4);
   transition: color 0.1s ease, background 0.1s ease, transform 0.06s ease, box-shadow 0.1s ease, border-color 0.1s ease;
 }
-.emu-shoulder.l { left: 0cqw; border-top-left-radius: var(--emu-radius); border-bottom-left-radius: 0.4cqw; }
-.emu-shoulder.r { right: 0cqw; border-top-right-radius: var(--emu-radius); border-bottom-right-radius: 0.4cqw; }
-.emu-shoulder:hover { background: linear-gradient(180deg, #3a4363, #222941); }
+.emu-shoulder.l { left: var(--emu-radius); }
+.emu-shoulder.r { right: var(--emu-radius); }
+.emu-shoulder:hover { background: linear-gradient(180deg, #2a3042, #171b26); color: #c6cddc; }
+.emu-shoulder.is-down,
+.emu-shoulder:active {
+  color: var(--emu-active);
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5), 0 0 9px rgba(34, 211, 238, 0.3);
+}
 
-/* ---- d-pad (left) --------------------------------------------------------- */
+/* ---- left column: d-pad above the analog nub, like the real face ---------- */
 .emu-pad {
   grid-area: dpad;
   justify-self: center;
-  width: 18cqw; /* match .emu-faces so the two side columns are equal */
+  width: 17cqw; /* match .emu-faces so the two side columns are equal */
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+  gap: 2.2cqw;
 }
 .emu-dpad {
   position: relative;
-  width: 16cqw;
+  width: 15cqw;
   aspect-ratio: 1;
 }
 
-/* ---- the recessed screen (center) ----------------------------------------- */
+/* the analog nub — a low round slider disc, concentric rings, decorative */
+.emu-nub {
+  width: 6.4cqw;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 38%, #2b3040 0%, #191d29 58%, #0d1018 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 0 0 1.2cqw rgba(0, 0, 0, 0.25),
+    0 2px 5px rgba(0, 0, 0, 0.55),
+    0 0 0 0.55cqw #05070c,
+    0 0 0 0.7cqw rgba(255, 255, 255, 0.05);
+}
+
+/* ---- the recessed widescreen (center) — glass panel look ------------------ */
 .emu-screen {
   grid-area: screen;
   position: relative;
   width: 100%;
   aspect-ratio: 480 / 272;
-  border-radius: 1.6cqw;
+  border-radius: 1.2cqw;
   overflow: hidden;
   background: #04060c;
-  /* slim dark bezel ring + inner recess + cyan screen glow */
+  /* the LCD sits inside a wider glossy glass face: thin inner bezel, a broad
+     near-black glass ring, then a hairline silver rim */
   box-shadow:
     inset 0 0 0 1px rgba(0, 0, 0, 0.9),
     inset 0 2px 10px rgba(0, 0, 0, 0.82),
-    0 0 0 0.7cqw #0c1120,
-    0 0 0 1cqw rgba(255, 255, 255, 0.03),
-    0 0 28px -4px rgba(56, 189, 248, 0.3);
+    0 0 0 1.9cqw #05070d,
+    0 0 0 2cqw rgba(255, 255, 255, 0.06),
+    0 0 30px -4px rgba(56, 189, 248, 0.28);
+  margin: 0 0.6cqw;
 }
 .emu-screen canvas {
   display: block;
@@ -128,22 +162,22 @@
   display: grid;
   place-items: center;
   color: rgba(226, 232, 240, 0.9);
-  background: linear-gradient(180deg, #333b5a, #1a2033);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2px 5px rgba(0, 0, 0, 0.45);
+  background: radial-gradient(circle at 50% 34%, #262b3a, #141824 62%, #0c0f17 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 2px 5px rgba(0, 0, 0, 0.5);
   transition: color 0.1s ease, background 0.1s ease, transform 0.06s ease, border-color 0.1s ease, box-shadow 0.1s ease;
 }
 .emu-key svg { width: 46%; height: 46%; }
-.emu-key:hover { background: linear-gradient(180deg, #3c456524, #1d2534); }
+.emu-key:hover { border-color: rgba(255, 255, 255, 0.18); }
 .emu-key.is-down,
 .emu-key:active {
-  color: var(--emu-amber-hi);
-  border-color: var(--emu-amber);
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5), 0 0 9px rgba(230, 169, 75, 0.4);
+  color: var(--emu-active);
+  border-color: rgba(34, 211, 238, 0.55);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55), 0 0 10px rgba(34, 211, 238, 0.35);
   transform: translateY(1px) scale(0.97);
 }
 
-/* d-pad — ONE molded cross (inline SVG, recolored via CSS), amber arrows over
+/* d-pad — ONE molded cross (inline SVG, recolored via CSS), silver arrows over
    transparent arm hit-areas */
 .emu-cross {
   position: absolute;
@@ -151,76 +185,107 @@
   width: 100%;
   height: 100%;
   overflow: visible;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
 }
 .emu-cross path {
-  fill: #2c3350;
-  stroke: rgba(255, 255, 255, 0.1);
+  fill: #1c202c;
+  stroke: rgba(255, 255, 255, 0.09);
 } /* CSS overrides the inline fill/stroke attributes */
 .emu-dpad .emu-key {
   background: transparent;
   border: 0;
   box-shadow: none;
-  color: var(--emu-amber);
+  color: var(--emu-label);
 }
 .emu-dpad .emu-key svg { width: 42%; height: 42%; }
 .emu-dpad .up    { top: 2%;    left: 35%; width: 30%; height: 34%; }
 .emu-dpad .down  { bottom: 2%; left: 35%; width: 30%; height: 34%; }
 .emu-dpad .left  { left: 2%;   top: 35%;  height: 30%; width: 34%; }
 .emu-dpad .right { right: 2%;  top: 35%;  height: 30%; width: 34%; }
-.emu-dpad .emu-key:hover { background: rgba(230, 169, 75, 0.12); border-radius: 10%; }
+.emu-dpad .emu-key:hover { background: rgba(148, 163, 184, 0.1); border-radius: 10%; }
 .emu-dpad .emu-key.is-down,
 .emu-dpad .emu-key:active {
-  background: rgba(230, 169, 75, 0.28);
-  color: var(--emu-amber-hi);
+  background: rgba(34, 211, 238, 0.2);
+  color: var(--emu-active);
   border-radius: 10%;
   box-shadow: none;
   transform: none;
 }
 
-/* face buttons diamond (right) */
+/* face buttons diamond (right) — PlayStation glyph colors, muted to match
+   the body; press feedback stays the site cyan */
 .emu-faces {
   grid-area: faces;
   justify-self: center;
   position: relative;
-  width: 18cqw;
+  width: 17cqw;
   aspect-ratio: 1;
 }
 /* smaller buttons pushed out to the corners → wider gaps between the diamond */
 .emu-faces .emu-key { width: 33%; aspect-ratio: 1; border-radius: 50%; }
-.emu-faces .tri   { top: 0;    left: 33.5%; }
-.emu-faces .sq    { top: 33.5%;  left: 0;   }
-.emu-faces .ci    { top: 33.5%;  right: 0;  }
-.emu-faces .cross { bottom: 0; left: 33.5%; }
+.emu-faces .tri   { top: 0;    left: 33.5%; color: #52d3a2; }
+.emu-faces .sq    { top: 33.5%;  left: 0;   color: #e6a3c4; }
+.emu-faces .ci    { top: 33.5%;  right: 0;  color: #ef8f8f; }
+.emu-faces .cross { bottom: 0; left: 33.5%; color: #7fb2f0; }
 
-/* SELECT / START — centered below the screen */
+/* ---- bottom bar: speaker · wordmark · SELECT/START ------------------------ */
 .emu-sys {
   grid-area: sys;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 1.2cqw;
+}
+.emu-speaker {
+  justify-self: start;
+  display: flex;
+  gap: 0.9cqw;
+}
+.emu-speaker i {
+  width: 0.8cqw;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #05070c;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.emu-brand {
   justify-self: center;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 1.7cqw;
+  font-weight: 700;
+  font-style: italic;
+  letter-spacing: 0.34em;
+  color: #39415a;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+  user-select: none;
+}
+.emu-sysbtns {
+  justify-self: end;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 3cqw;
+  gap: 1.6cqw;
 }
 .emu-sys-btn {
   cursor: pointer;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 1.4cqw;
+  font-size: 1.3cqw;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: var(--emu-amber);
-  padding: 0.6cqw 2cqw;
+  color: var(--emu-label);
+  padding: 0.5cqw 1.9cqw;
   border-radius: 999px;
-  background: linear-gradient(180deg, #2c3450, #1a2033);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 2px 4px rgba(0, 0, 0, 0.4);
+  background: linear-gradient(180deg, #20242f, #11141d);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 4px rgba(0, 0, 0, 0.4);
   transition: color 0.1s ease, background 0.1s ease, transform 0.06s ease, box-shadow 0.1s ease, border-color 0.1s ease;
 }
-.emu-sys-btn:hover { background: linear-gradient(180deg, #323b58, #1e2539); }
+.emu-sys-btn:hover { background: linear-gradient(180deg, #272c3a, #151924); color: #c6cddc; }
 .emu-sys-btn.is-down,
 .emu-sys-btn:active {
-  color: var(--emu-amber-hi);
-  border-color: var(--emu-amber);
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5), 0 0 9px rgba(230, 169, 75, 0.4);
+  color: var(--emu-active);
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5), 0 0 9px rgba(34, 211, 238, 0.3);
   transform: translateY(1px);
 }

@@ -45,6 +45,7 @@ function makeDevHost(): DevMock {
     };
   const mock: DevMock = {
     kind: "injected",
+    target: "test",
     strict: true,
     calls,
     rectXY: -1,
@@ -325,5 +326,45 @@ describe("errors + formatting", () => {
     expect(fmt(Array.from({ length: 25 }, (_, i) => i))).toContain("… 5 more");
     expect(fmt("plain")).toBe("plain");
     expect(fmt(undefined)).toBe("undefined");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stats (OP.debugStats) + the bundle-hash twin
+// ---------------------------------------------------------------------------
+
+describe("stats", () => {
+  test("stats replies with the host's parsed counter snapshot", () => {
+    host.ops.debugStats = () =>
+      '{"app":"devtools-test","bundle":"cafe00cafe00cafe","vid":{"presented":42}}';
+    mountApp(() => View({}));
+    push({ t: "devStats" });
+    frame();
+    const s = sent("devStats");
+    expect(s.length).toBe(1);
+    const data = s[0].data as Record<string, unknown>;
+    expect(data.bundle).toBe("cafe00cafe00cafe");
+    expect((data.vid as Record<string, unknown>).presented).toBe(42);
+  });
+
+  test("a host without the op still completes the round trip (data: null)", () => {
+    mountApp(() => View({}));
+    push({ t: "devStats" });
+    frame();
+    const s = sent("devStats");
+    expect(s.length).toBe(1);
+    expect(s[0].data).toBeNull();
+  });
+});
+
+describe("bundle hash", () => {
+  test("fnv1a64 matches the published FNV-1a 64 test vectors", async () => {
+    const { fnv1a64 } = await import("../scripts/bundle-hash.ts");
+    const bytes = (s: string) => new TextEncoder().encode(s);
+    expect(fnv1a64(new Uint8Array(0))).toBe("cbf29ce484222325"); // offset basis
+    expect(fnv1a64(bytes("a"))).toBe("af63dc4c8601ec8c");
+    expect(fnv1a64(bytes("hello"))).toBe("a430d84680aabd0b");
+    // Chunk boundaries must not matter (js+pak concatenation).
+    expect(fnv1a64(bytes("he"), bytes("llo"))).toBe(fnv1a64(bytes("hello")));
   });
 });

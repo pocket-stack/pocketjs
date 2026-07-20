@@ -170,6 +170,38 @@ const SPECS: Spec[] = [
       { name: "skipped", frame: 90 }, // track 2 (STATIC BLOOM) after the RTRIGGER skip
     ],
   },
+  {
+    // chrome: bevel border rings + the native active: press (spec op 26).
+    // DOWN@8 focuses OK, RIGHT@16 moves to CANCEL; CIRCLE held 28..43 shows
+    // the pressed bevel inversion, release restores the raised face.
+    app: "chrome",
+    inputScript: "0:0,8:0x40,12:0,16:0x20,20:0,28:0x2000,44:0",
+    capStart: 0,
+    capN: 60, // window 0..59
+    shots: [
+      { name: "focused", frame: 24 }, // CANCEL focused: face tint, raised bevel
+      { name: "pressed", frame: 36 }, // CIRCLE held: bevel rings inverted
+      { name: "released", frame: 52 }, // raised again after release
+    ],
+  },
+  {
+    // cursor: the virtual pointer (input.cursor, spec ops 27..29) on the
+    // native host. d-pad steers at 1 px/frame (enableCursor dpadSpeed: 60):
+    // UP 4..13 hovers row 2 (hover = focus: tint under the arrow), CIRCLE
+    // 18..25 shows the active: inversion, release clicks (status line
+    // updates), DOWN 30..61 rides to row 3, CIRCLE 66..73 clicks it.
+    app: "cursor",
+    inputScript: "0:0,4:0x10,14:0,18:0x2000,26:0,30:0x40,62:0,66:0x2000,74:0",
+    capStart: 0,
+    capN: 90, // window 0..89
+    shots: [
+      { name: "boot", frame: 2 }, // arrow at screen center, nothing hovered
+      { name: "hover", frame: 16 }, // row 2 tinted under the pointer
+      { name: "pressed", frame: 22 }, // active: bevel inversion while held
+      { name: "clicked", frame: 64 }, // status shows row 2; pointer on row 3
+      { name: "clicked-2", frame: 80 }, // status shows row 3
+    ],
+  },
   // ADD NEW DEMOS HERE: one Spec per demo, same shape.
 ];
 
@@ -188,6 +220,21 @@ rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 mkdirSync(goldensDir, { recursive: true });
 
+function writeDemoManifest(app: string): string {
+  const manifest = JSON.parse(readFileSync(`${pspUiDir}pocket.json`, "utf8")) as Record<string, any>;
+  manifest.id = `dev.pocket-stack.e2e.psp.${app.replace(/-/g, ".")}`;
+  manifest.name = `pocketjs-e2e-${app}`;
+  manifest.title = `PocketJS E2E ${app}`;
+  manifest.app.entry = `demos/${app}/main.tsx`;
+  manifest.app.output = `${app}-main`;
+  manifest.app.framework = "solid";
+  const directory = `${outDir}/manifests`;
+  const path = `${directory}/${app}.json`;
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n");
+  return path;
+}
+
 // Emulator provenance: byte-exact goldens are only promised for the PPSSPP
 // build they were generated with.
 const ppssppCommit = (await $`git -C ${homedir()}/ppsspp-src rev-parse HEAD`.text()).trim();
@@ -198,10 +245,12 @@ let failed = false;
 
 for (const spec of SPECS) {
   console.log(`\n## ${spec.app} (input: ${spec.inputScript})`);
+  const manifest = writeDemoManifest(spec.app);
 
-  // 1. Build the capture EBOOT with the baked input script + capture window.
+  // 1. Build through the manifest/plan path so E2E also exercises the
+  // target/HostOps ABI startup handshake.
   console.log("# build capture EBOOT ...");
-  await $`bun scripts/psp.ts ${spec.app} --capture`
+  await $`bun scripts/pocket.ts build --target psp --manifest ${manifest} --project-root ${pspUiDir} -- --capture`
     .cwd(pspUiDir)
     .env({
       ...process.env,

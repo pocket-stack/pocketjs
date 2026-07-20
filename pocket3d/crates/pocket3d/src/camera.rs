@@ -65,4 +65,20 @@ impl Camera {
         self.yaw = (-d.x).atan2(-d.z);
         self.pitch = d.y.atan2(flat);
     }
+
+    /// World-space ray through a window pixel (origin, normalized direction).
+    /// `cursor` is in pixels from the top-left, `viewport` the target size in
+    /// the same units — cursor picking for widgets and editors.
+    pub fn screen_ray(&self, cursor: glam::Vec2, viewport: (f32, f32)) -> (Vec3, Vec3) {
+        let aspect = viewport.0 / viewport.1.max(1.0);
+        let inv = self.view_proj(aspect).inverse();
+        let ndc = glam::Vec2::new(
+            cursor.x / viewport.0 * 2.0 - 1.0,
+            1.0 - cursor.y / viewport.1 * 2.0,
+        );
+        // wgpu clip depth is 0..1; unproject the near and far plane points.
+        let near = inv.project_point3(Vec3::new(ndc.x, ndc.y, 0.0));
+        let far = inv.project_point3(Vec3::new(ndc.x, ndc.y, 1.0));
+        (near, (far - near).normalize_or_zero())
+    }
 }

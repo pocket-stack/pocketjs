@@ -1,0 +1,3 @@
+import { installBaselineControls } from "./controls.ts";
+
+export const installed = installBaselineControls();

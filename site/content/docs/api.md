@@ -1,16 +1,26 @@
 # API reference
 
-Every public export of `@pocketjs/framework`, grouped by import path. Signatures are TypeScript-style; defaults are noted in parentheses. For conceptual walkthroughs see [Components](/docs/components/), [Reactivity](/docs/reactivity/), [Animation](/docs/animation/), and [Input & focus](/docs/input-focus/).
+The primary app-facing exports of `@pocketjs/framework`, grouped by import
+path. Signatures are TypeScript-style; defaults are noted in parentheses.
+Framework-internal and test/debug helpers are intentionally not exhaustive
+here. For conceptual walkthroughs see [Components](/docs/components/),
+[Reactivity](/docs/reactivity/), [Animation](/docs/animation/), and
+[Input & focus](/docs/input-focus/).
 
 | Import path | Exports |
 | --- | --- |
 | `@pocketjs/framework` | `mount`, `render`, host/runtime helpers, types |
-| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar`, `Named`, `Grid`, `Lazy`, `Gallery` |
+| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar`, `Named`, `Grid`, `Lazy`, `Gallery`, `DeepZoom` (Solid) |
 | `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
 | `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
 | `@pocketjs/framework/animation` | `animate`, `spring`, `cancelAnim` |
-| `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `createSpriteAnimation`, `pushButtonHandlerBlock` |
-| `@pocketjs/framework/input` | `BTN`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
+| `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `analogX`, `analogY`, `analogRaw`, `createSpriteAnimation`, `pushButtonHandlerBlock` |
+| `@pocketjs/framework/input` | `BTN`, `touches`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
+| `@pocketjs/framework/platform` | `platform`, `hasFeature` |
+| `@pocketjs/framework/clock` | `simulationHz`, `ticksPerFrame`, `virtualFrame`, `virtualNow`, `after` |
+| `@pocketjs/framework/effects` | `installEffectDriver`, `runEffect`, effect types |
+| `@pocketjs/framework/hot` | `text`, `prop` |
+| `@pocketjs/framework/manifest` | schema/manifest types, validator, `extractHostBuildInputs`, `hostBuildEnvironment`, `vitaTitleId` |
 
 ---
 
@@ -40,7 +50,7 @@ Lower-level mount: detects and installs the host, wires the style resolver, regi
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `ops` | `HostOps` | web/wasm/test hosts inject their op surface here; omit on PSP (`globalThis.ui`). |
+| `ops` | `HostOps` | web/wasm/test hosts inject their op surface here; omit on native QuickJS hosts (`globalThis.ui`). |
 | `styles` | `Record<string, number>` | class-literal → styleId table (`styles.generated.ts`). |
 | `pak` | `ArrayBuffer` | app pack; defaults to `globalThis.__pak` when present. |
 
@@ -52,11 +62,19 @@ function installHost(host: Host): void
 function getOps(): HostOps
 ```
 
-`detectHost` resolves the active host — injected ops win, otherwise `globalThis.ui` (PSP/QuickJS); throws when neither exists. `installHost` sets the active host (called by `render`). `getOps` returns the installed op surface. See [Native contract](/docs/native-contract/) for the full `HostOps` surface.
+`detectHost` resolves the active host — injected ops win, otherwise
+`globalThis.ui` (PSP/Vita QuickJS); throws when neither exists. `installHost`
+sets the active host (called by `render`). `getOps` returns the installed op
+surface. Manifest-built native bundles validate `ui.__host` and
+`ui.__hostAbi` before mounting. See [Native contract](/docs/native-contract/)
+for the full `HostOps` surface.
 
 ### `HostOps`
 
-The synchronous `ui.*` op surface. Handles are generation-tagged positive i32 ids; `0` means "none". Each op is documented in full on the [Native contract](/docs/native-contract/) page; the summary:
+The synchronous `ui.*` op surface. Node ids are generation-tagged positive
+i32 values and reserve `0` for "none"; texture handles have separate 0-based
+or generation-tagged contracts. Each op is documented in full on the
+[Native contract](/docs/native-contract/) page; the summary:
 
 | Op | Signature | Purpose |
 | --- | --- | --- |
@@ -69,24 +87,35 @@ The synchronous `ui.*` op surface. Handles are generation-tagged positive i32 id
 | `setText` / `replaceText` | `(id, str) => void` | Text-node content. |
 | `uploadTexture` | `(buf, w, h, psm) => number` | Upload a pow2 image (≤512) → handle. |
 | `setImage` | `(id, texHandle) => void` | Bind an image; `<0` clears. |
+| `setSprite` | `(id, atlas, frames, cols, step) => void` | Bind/clear a native-ticked sprite atlas. |
 | `animate` | `(id, propId, to, durMs, easing, delayMs) => number` | Start a tween → animId. |
 | `cancelAnim` | `(animId) => void` | Stop a tween. |
 | `setFocus` | `(idOr0) => void` | Focus a node; `0` clears. |
-| `loadStyles` | `(buf) => void` | web/test only — feed the style table. |
-| `loadFontAtlas` | `(buf) => void` | web/test only — feed one baked atlas. |
+| `setActive?` | `(id, active) => void` | Apply/clear the native `active:` variant. |
+| `loadStyles?` | `(buf) => void` | web/test only — feed the style table. |
+| `loadFontAtlas?` | `(buf) => void` | web/test only — feed one baked atlas. |
 | `measureText` | `(str, fontSlot) => number` | Measured width in px. |
+| `loadTileTexture?` / `freeTexture?` | tile key/index or handle | Stream and release generation-tagged DeepZoom textures. |
+| `uploadImgEntry?` | `(blob) => number` | Upload a self-contained baked image entry; returns a handle or `-1`. |
+| `debugInspect?` … `debugStep?` | debug-only | Optional DevTools inspection and pause/step surface. |
+| `__host?` / `__hostAbi?` | metadata | Native target and HostOps ABI handshake. |
 
 ### `Host`
 
 ```ts
 interface Host {
   ops: HostOps;
-  kind: "psp" | "injected";
+  kind: "native" | "injected";
+  target: string;
   strict: boolean;
 }
 ```
 
-`strict` hosts (web/wasm/test) throw on an unknown class or texture; the PSP host is non-strict and counts silently (see `missCounters`).
+`kind` describes who owns the transport, not the target. Native PSP and Vita
+hosts are non-strict and count an unknown class or texture; injected
+web/wasm/test hosts throw. `target` normally carries `"psp"`, `"vita"`, or
+`"injected"`; a pre-contract native host reports `"unknown"`, and a custom
+injected host may supply another identifier.
 
 ### End-of-frame sweep
 
@@ -112,7 +141,9 @@ Bind an image key (the `src` string) to an `uploadTexture` handle so `<Image src
 const missCounters: { unknownClass: number; unknownTexture: number }
 ```
 
-On the non-strict PSP host, an unknown class or texture increments a counter instead of throwing. Read it to diagnose missing styles/images without crashing hardware.
+On a non-strict native host, an unknown class or texture increments a counter
+instead of throwing. Read it to diagnose missing styles/images without
+crashing hardware.
 
 ### Styles
 
@@ -237,7 +268,9 @@ interface ActionHandlerProps extends ButtonPressOptions {
 function ActionHandler(props: ActionHandlerProps): JSX.Element
 ```
 
-Declarative wrapper over `onButtonPress`: fires `onPress` on the button edge. Inherits `allowWhenBlocked` and `active` from `ButtonPressOptions`. Renders `children` (or nothing).
+Declarative wrapper over `onButtonPress`: fires `onPress` on the button edge.
+Inherits `allowWhenBlocked`, `active`, and `latched` from
+`ButtonPressOptions`. Renders `children` (or nothing).
 
 ### `Portal`
 
@@ -326,6 +359,31 @@ function Gallery(props: GalleryProps): JSX.Element
 
 A full-screen L/R-paged strip: `LTRIGGER`/`RTRIGGER` slide one whole screen at a time. Controlled (`page` + `onPageChange`); the slide is one native `translateX` tween per press (paint-only), and pages outside `window` are not built, keeping many-page galleries inside the draw budget. See `demos/gallery`.
 
+### `DeepZoom` (Solid)
+
+```ts
+function DeepZoom(props: DeepZoomProps): JSX.Element
+```
+
+A streamed tiled-canvas viewer. It selects from a baked `TileDoc` pyramid,
+keeps an overview beneath the active level, loads a bounded number of tiles per
+frame, and releases generation-tagged texture handles outside the viewport.
+D-pad/left-analog panning and trigger zoom are built in; `gestureSource` can
+supply logical-coordinate pan/pinch gestures with an anchored zoom point.
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `doc` | `TileDoc` | Baked document dimensions, background, tile edge, and resolution levels. |
+| `width` / `height` | `number` | Logical viewport size (defaults to 480×272). |
+| `loadBudget` | `number` | Maximum textured-tile uploads per frame (default `2`). |
+| `prefetch` | `number` | Extra mounted tile ring (default `1`). |
+| `bindInput` | `boolean` | Bind controller pan/zoom internally (default `true`). |
+| `gestureSource` | `() => DeepZoomGesture \| null` | Optional direct-manipulation input for touch hosts. |
+| `onView` | `(view: DeepZoomView) => void` | Observe deterministic center, zoom, and selected level. |
+
+`DeepZoom` is currently exported by the Solid components adapter. The tile
+wire format and texture-streaming HostOps remain framework-neutral.
+
 ## `solid-js`
 
 Import Solid's reactive primitives and control-flow components directly from
@@ -370,7 +428,10 @@ not wrap refs, computed values, effects, or component definitions. Use
 
 ## `@pocketjs/framework/animation`
 
-Typed motion over `ops.animate`. JS declares the tween once; the Rust core ticks it per vblank at a fixed `dt = 1/60 s`. `prop` is a spec `PROP` name and must be animatable (e.g. `opacity`, `translateY`, `scale`, and color props) — non-animatable props throw. See [Animation](/docs/animation/).
+Typed motion over `ops.animate`. JS declares the tween once; the Rust core
+advances it in exact `dt = 1/60 s` ticks. `prop` is a spec `PROP` name and must
+be animatable (e.g. `opacity`, `translateY`, `scale`, and color props) —
+non-animatable props throw. See [Animation](/docs/animation/).
 
 ### `animate`
 
@@ -420,7 +481,9 @@ Stops a running animation by the id `animate`/`spring` returned.
 
 ## `@pocketjs/framework/lifecycle`
 
-Component-scoped per-frame hooks. Each cleans up on owner disposal via `onCleanup`. See [Reactivity](/docs/reactivity/) and [Input & focus](/docs/input-focus/).
+Component-scoped per-frame hooks. Registrations clean up with the selected
+framework owner (`onCleanup` in Solid, `onScopeDispose` in Vue Vapor). See
+[Reactivity](/docs/reactivity/) and [Input & focus](/docs/input-focus/).
 
 ### `onFrame`
 
@@ -429,6 +492,21 @@ function onFrame(callback: (buttons: number) => void): void
 ```
 
 Registers `callback` to run once per host frame with the current spec `BTN` bitmask.
+
+### Analog input
+
+```ts
+function analogX(): number
+function analogY(): number
+function analogRaw(): number
+```
+
+`analogX` and `analogY` return the current left stick/nub axis in `-1..1`
+after PocketJS's shared deadzone (`right` and `down` are positive).
+`analogRaw` returns the host word `(x << 8) | y`, with each byte in `0..255`
+and `128` at center. Stickless hosts stay centered, so controller fallbacks do
+not need target checks. Solid and Vue Vapor expose the same functions from
+their lifecycle subpaths.
 
 ### `onButtonPress`
 
@@ -448,6 +526,7 @@ Edge-detects a button: fires `callback` on the frame a button in `mask` transiti
 | --- | --- | --- | --- |
 | `allowWhenBlocked` | `boolean` | `false` | Keep firing while a modal/system block owns input. |
 | `active` | `boolean \| (() => boolean)` | `true` | Gate the handler on/off. |
+| `latched` | `boolean` | `false` | Require the button to be observed released before the next edge can fire; prevents a held opener from re-triggering a newly mounted screen. |
 
 ### `createSpriteAnimation`
 
@@ -455,10 +534,13 @@ Edge-detects a button: fires `callback` on the frame a button in `mask` transiti
 function createSpriteAnimation(
   frames: readonly string[],
   opts?: SpriteAnimationOptions,
-): Accessor<string>
+): Accessor<string> | ComputedRef<string>
 ```
 
-Cycles through `frames` (image `src` keys), returning an accessor for the current frame. Throws if `frames` is empty. `opts.frameStep` (default `1`, min `1`) holds each sprite frame for that many host frames.
+Cycles through `frames` (image `src` keys), returning a Solid `Accessor` or a
+Vue Vapor `ComputedRef` for the current frame. Throws if `frames` is empty.
+`opts.frameStep` (default `1`, min `1`) holds each sprite frame for that many
+host frames.
 
 ### `pushButtonHandlerBlock`
 
@@ -486,6 +568,19 @@ PSP button bitmask (identical on every host; web/Bun hosts remap keys).
 | `RIGHT` | `0x0020` | `CIRCLE` | `0x2000` |
 | `DOWN` | `0x0040` | `CROSS` | `0x4000` |
 | `LEFT` | `0x0080` | `SQUARE` | `0x8000` |
+
+### `touches`
+
+```ts
+interface TouchContact { readonly id: number; readonly x: number; readonly y: number }
+function touches(): readonly TouchContact[]
+```
+
+Returns an immutable snapshot of the current front-panel contacts. Coordinates
+are always logical PocketJS pixels, independent of the target raster density;
+at most eight contacts are delivered. No active touch is an empty snapshot,
+not an unavailable API. Declare `input.touch` in `pocket.json` and guard an
+optional enhancement with `hasFeature("input.touch")`.
 
 ### `focusNode`
 
@@ -532,6 +627,82 @@ Gives `node`'s subtree row/column d-pad semantics; returns a disposer that pops 
 | --- | --- | --- | --- |
 | `columns` | `number` | — | Grid column count (min `1`). Required. |
 | `wrap` | `boolean` | `false` | Wrap focus at row ends. |
+
+---
+
+## `@pocketjs/framework/platform`
+
+```ts
+const platform: {
+  readonly target: string;
+  readonly pixelRatio: number;
+  readonly features: Readonly<Partial<Record<PocketCapabilityId, boolean>>>;
+};
+function hasFeature(feature: PocketCapabilityId): boolean
+```
+
+The manifest compiler defines the target-specific constants consumed by this
+module. `pixelRatio` is
+physical raster samples per logical pixel (`1` on PSP, `2` on Vita), useful for
+runtime-created textures; it never changes layout coordinates. Literal
+`hasFeature("…")` calls are folded to booleans during the PocketJS compile, so
+an unavailable enhancement branch can leave the bundle. Computed ids use the
+frozen runtime map.
+
+## `@pocketjs/framework/clock`
+
+| Export | Purpose |
+| --- | --- |
+| `simulationHz()` | Active virtual-frame rate selected by the host. |
+| `ticksPerFrame()` | Exact core ticks advanced per virtual frame. |
+| `virtualFrame()` | Deterministic frame index. |
+| `virtualNow()` | Virtual seconds since boot. |
+| `after(seconds, callback)` | Schedule on the virtual clock; returns a disposer. |
+
+Use these instead of wall-clock timers for deterministic app behavior. The
+host may run at 60 Hz or a lower exact divisor while the same elapsed virtual
+time produces the same trajectory.
+
+## `@pocketjs/framework/effects`
+
+```ts
+type EffectDriver = (command: EffectCommand, deliver: (result: unknown) => void) => void;
+function installEffectDriver(driver: EffectDriver): void
+function runEffect<T>(kind: string, payload: unknown, onResult: (result: T) => void): number
+```
+
+`runEffect` emits an outside-world command; its driver can complete at any
+time, but PocketJS delivers the result only at the next frame boundary. This
+callback surface deliberately avoids promise/microtask timing in deterministic
+journeys. A host-injected `globalThis.__pocketEffectDriver` overrides the app
+driver for replay and simulation.
+
+## `@pocketjs/framework/hot`
+
+```ts
+function text(node: NodeMirror | undefined, value: string | number): void
+function prop(node: NodeMirror | undefined, name: PropName, value: number): void
+```
+
+An imperative, last-value-gated escape hatch for high-frequency HUD updates.
+Do not bind the same value reactively as well. Prefer paint-only transforms to
+layout properties and keep hot text inside a fixed-size cell.
+
+## `@pocketjs/framework/manifest`
+
+This is the stable build/custom-host boundary:
+
+| Export | Purpose |
+| --- | --- |
+| `POCKET_MANIFEST_SCHEMA_ID` / `POCKET_MANIFEST_VERSION` | Canonical format-2 identity. |
+| `pocketManifestV2Schema` / `validatePocketManifest` | Strict schema and structured diagnostics. |
+| `extractHostBuildInputs(plan, options?)` | Verify a plan checksum and project it onto stable native-host inputs. |
+| `hostBuildEnvironment(inputs, options)` | Produce the target-neutral Cargo environment for a custom host. |
+| `vitaTitleId(applicationId)` | Deterministically derive a stable Vita Title ID. |
+
+The complete `ResolvedBuildPlan` is internal build IR. Custom hosts should
+consume `HostBuildInputs` rather than retaining or reinterpreting the plan.
+See [Platform contracts](/docs/platform-contracts/).
 
 ---
 

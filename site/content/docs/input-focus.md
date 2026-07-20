@@ -1,10 +1,11 @@
 # Input & focus
 
-PocketJS targets a game console: there is no pointer, no touch, no tab key — just a
-d-pad and a handful of face buttons. A single **focus manager** tracks one focused
-node, the d-pad moves focus between focusable nodes, and **CIRCLE** activates whatever
-is focused. On top of that sits a thin layer of per-frame hooks for anything the focus
-manager doesn't cover (global shortcuts, held buttons, custom navigation).
+PocketJS's portable interaction baseline is a d-pad and a handful of face
+buttons. A single **focus manager** tracks one focused node, the d-pad moves
+focus between focusable nodes, and **CIRCLE** activates whatever is focused.
+The Vita profile additionally exposes front-panel contacts without changing
+that controller fallback, and apps that want a pointer instead of a focus
+walk can opt in to the [virtual cursor](#virtual-cursor).
 
 Everything here runs identically on real PSP hardware, PPSSPP, the browser host, and
 headless Bun. The browser and Bun hosts just remap keys onto the same
@@ -44,6 +45,86 @@ const confirmOrBack = BTN.CIRCLE | BTN.CROSS;
 The raw bitmask is a *held* state — it stays set for every frame the button is down.
 When you want "the frame a button went down" (edge detection), use the focus manager,
 [`onButtonPress`](#button-press-hooks), or edge-detect it yourself.
+
+## Touch snapshots
+
+Targets that provide `input.touch` expose the current front-panel contacts in
+logical viewport pixels:
+
+```ts
+import { touches, type TouchContact } from "@pocketjs/framework/input";
+import { onFrame } from "@pocketjs/framework/lifecycle";
+
+onFrame(() => {
+  for (const contact of touches()) {
+    // contact.id stays stable until release; x/y use the app's logical layout.
+  }
+});
+```
+
+The snapshot is immutable and becomes empty after release. PocketJS reports
+contacts rather than prescribing tap, drag, or pinch semantics, so reusable
+gesture recognizers remain ordinary deterministic application code. Put
+`input.touch` in `enhances` when the same app must still build for PSP.
+
+## Virtual cursor
+
+Targets that provide `input.cursor` can replace the d-pad focus walk with a
+**pointer**: the analog nub steers a cursor sprite, hovering applies the
+`focus:` variant, and a press button clicks whatever is under the arrow. It is
+opt-in — declare the capability in `pocket.json` (`requires` or `enhances`)
+and enable it at runtime:
+
+```ts
+import { enableCursor } from "@pocketjs/framework/input";
+
+enableCursor(); // safe at module top — the sprite uploads on the first frame
+```
+
+What changes while the cursor is enabled:
+
+- **Hover IS focus.** The cursor hit-tests the tree and focuses the nearest
+  *focusable* ancestor of the node under the point, so every `focus:` style
+  doubles as the hover style with no new machinery. Hit testing follows paint
+  order: a node claims the point where it paints in any variant (background,
+  border, bevel, image, text — `focus:`-styled hotspots count before they are
+  hovered), fully-faded subtrees take no hits, and transparent layout
+  wrappers — including the framework's own overlay layers — pass through.
+  The test runs only on frames where the answer can change (cursor movement,
+  tree/style mutations, press edges) — a parked cursor costs nothing.
+- **The press button clicks.** CIRCLE (configurable) holds the `active:`
+  variant while down over the armed node — drag off to pop it back up, drag
+  back to re-press — and fires `onPress` on release over it, bubbling exactly
+  like the classic model.
+- **D-pad traversal and the classic CIRCLE press are suppressed.**
+  `onButtonPress` hooks and focus scopes keep working; modal backgrounds stay
+  inert because hover resolution respects the active scope.
+
+Options (all optional):
+
+```ts
+interface CursorOptions {
+  image?: string | Uint8Array; // pak IMG key or raw IMG entry; default: built-in arrow
+  hotspot?: [number, number];  // sprite px the position points at (default [0, 0])
+  size?: [number, number];     // logical draw size (default: the texture's own size)
+  speed?: number;              // px per virtual second at full deflection (default 240)
+  dpadSpeed?: number;          // d-pad steering px/s; 0 (default) leaves the d-pad alone
+  button?: number;             // press mask (default BTN.CIRCLE)
+  start?: [number, number];    // initial position (default: viewport center)
+}
+```
+
+`enableCursor` returns a disposer that restores the d-pad model; calling it
+again while enabled updates the options in place (theme switches swap the
+sprite this way — an unchanged image keeps its uploaded texture). On hosts
+that predate the cursor ops the classic d-pad model simply stays active.
+`cursorX()` / `cursorY()` read the current position, `NaN` while disabled.
+
+Determinism is unchanged: the cursor is a pure function of the button/analog
+frame inputs, which the DevTools tape already records — speed is expressed per
+*virtual* second, so a tape replays pixel-identically at every `simulationHz`.
+At the default speed, full deflection moves exactly 4 px per frame at 60 Hz;
+`dpadSpeed: 60` steers exactly 1 px per frame for hand-authored tapes.
 
 ## The focus model
 
@@ -245,6 +326,7 @@ held mask. Options:
 interface ButtonPressOptions {
   active?: boolean | (() => boolean); // gate the handler on/off (default true)
   allowWhenBlocked?: boolean;         // keep firing while input is blocked (default false)
+  latched?: boolean;                  // wait for release before the next edge (default false)
 }
 ```
 
@@ -253,6 +335,10 @@ interface ButtonPressOptions {
 ```tsx
 onButtonPress(BTN.SQUARE, () => favorite(), { active: () => tab() === "browse" });
 ```
+
+Use `latched: true` when a screen or overlay mounts under the same held button
+that opened it. The handler stays armed-off until that button is observed up
+for a frame, so the held opener cannot become a second press.
 
 The declarative equivalent is the [`ActionHandler`](/docs/app-shell/) component, which
 wraps `onButtonPress`:

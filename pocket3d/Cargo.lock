@@ -801,6 +801,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "handheld"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "glam",
+ "log",
+ "pocket-mod",
+ "pocket-ui-wgpu",
+ "pocket-widget",
+ "pocket3d",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1196,6 +1212,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
 dependencies = [
  "jni-sys 0.3.1",
+]
+
+[[package]]
+name = "note-widget"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "anyhow",
+ "env_logger",
+ "glam",
+ "log",
+ "memmap2",
+ "pocket-mod",
+ "pocket-ui-wgpu",
+ "pocket-widget",
+ "pocket3d",
+ "serde_json",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]
@@ -1618,6 +1653,32 @@ dependencies = [
  "pocket3d",
  "pocketjs-core",
  "wgpu",
+]
+
+[[package]]
+name = "pocket-vrm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "log",
+ "pocket3d",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "pocket-widget"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "log",
+ "pocket-ui-wgpu",
+ "pocket3d",
+ "pocketjs-core",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

@@ -3,7 +3,7 @@
 
 import { NODE_TYPE, PROP, ROOT_ID, STYLE_ID_NONE, type PropName } from "../spec/spec.ts";
 import { encodePropValue, getHost, getOps } from "./host.ts";
-import { notifyDetached, registerFocusable, registerPress } from "./input.ts";
+import { __notifyTreeMutation, notifyDetached, registerFocusable, registerPress } from "./input.ts";
 
 export interface NodeMirror {
   /** Native generation-tagged node id. */
@@ -40,6 +40,9 @@ export function setTreeMutationHook(fn: (() => void) | null): void {
 }
 
 function treeMutated(): void {
+  // Cheap change signal for per-frame consumers (the cursor's hover cache
+  // in input.ts) — always counted, hook or no hook.
+  __notifyTreeMutation();
   if (treeMutationHook) treeMutationHook();
 }
 
@@ -573,6 +576,7 @@ function setStyleObject(node: NodeMirror, value: unknown, prev: unknown): void {
   const ops = getOps();
   const next = (value ?? {}) as StyleObject;
   const before = (prev ?? {}) as StyleObject;
+  let changed = false;
   for (const key in next) {
     const v = next[key];
     if (before[key] === v) continue;
@@ -581,7 +585,11 @@ function setStyleObject(node: NodeMirror, value: unknown, prev: unknown): void {
       throw new Error(`PocketJS: unknown style prop '${key}' (see spec PROP)`);
     }
     ops.setProp(node.id, propId, encodePropValue(key as PropName, v));
+    changed = true;
   }
+  // Inline style props move geometry — signal per-frame consumers (cursor
+  // hover cache) exactly like class/tree mutations do.
+  if (changed) treeMutated();
 }
 
 export function setProp<T>(node: NodeMirror, name: string, value: T, prev?: T): T {

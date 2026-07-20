@@ -22,7 +22,14 @@ if (Bun.resolveSync("solid-js", import.meta.dir).endsWith("server.js")) {
   );
 }
 
-import { detectHost, installHost, parseHexColor, type Host, type HostOps } from "../src/host.ts";
+import {
+  assertNativeHostContract,
+  detectHost,
+  installHost,
+  parseHexColor,
+  type Host,
+  type HostOps,
+} from "../src/host.ts";
 import {
   createComponent,
   createElement,
@@ -116,6 +123,7 @@ function makeMockHost(strict = true): MockHost {
     },
     cancelAnim: rec("cancelAnim"),
     setFocus: rec("setFocus"),
+    setActive: rec("setActive"),
     loadStyles: rec("loadStyles"),
     loadFontAtlas: rec("loadFontAtlas"),
     measureText: () => 0,
@@ -123,6 +131,7 @@ function makeMockHost(strict = true): MockHost {
   return {
     ops,
     kind: "injected",
+    target: "test",
     strict,
     calls,
     alive,
@@ -465,20 +474,21 @@ describe("setProperty dispatch table [R]", () => {
     expect(resolveStyle("p-2 bg-red")).toBe(7);
   });
 
-  test("unknown class throws on a strict host, counts on PSP", () => {
+  test("unknown class throws on a strict host, counts on native hosts", () => {
     const el = createElement("view");
     expect(() => setProp(el, "class", "not-compiled", undefined)).toThrow(
       /unknown class/,
     );
 
-    const psp = makeMockHost(false);
-    psp.kind = "psp";
-    installHost(psp);
+    const native = makeMockHost(false);
+    native.kind = "native";
+    native.target = "psp";
+    installHost(native);
     const before = missCounters.unknownClass;
     const el2 = createElement("view");
     setProp(el2, "class", "not-compiled", undefined); // silent
     expect(missCounters.unknownClass).toBe(before + 1);
-    expect(psp.of("setStyle")).toEqual([]);
+    expect(native.of("setStyle")).toEqual([]);
   });
 
   test("null class clears back to the default style", () => {
@@ -595,6 +605,52 @@ describe("focus + onPress (input.ts)", () => {
     handleFrame(0);
     handleFrame(BTN.CIRCLE);
     expect(pressedA).toBe(1);
+
+    dispose();
+  });
+
+  test("CIRCLE hold applies active: on the focused node, release clears", () => {
+    setInputRoot(root);
+    const dispose = render(() => {
+      const list = createElement("view");
+      const a = createElement("view");
+      setProp(a, "focusable", true, undefined);
+      insertNode(list, a);
+      const b = createElement("view");
+      setProp(b, "focusable", true, undefined);
+      insertNode(list, b);
+      return list;
+    }, root);
+
+    const a = root.children[0].children[0];
+    const b = root.children[0].children[1];
+
+    handleFrame(BTN.DOWN); // focus a
+    handleFrame(BTN.DOWN | BTN.CIRCLE); // press while holding DOWN's frame
+    expect(host.of("setActive").at(-1)).toEqual(["setActive", a.id, 1]);
+
+    handleFrame(BTN.CIRCLE); // still held: no repeat
+    const activeCalls = host.of("setActive").length;
+    handleFrame(BTN.CIRCLE);
+    expect(host.of("setActive").length).toBe(activeCalls);
+
+    handleFrame(0); // release
+    expect(host.of("setActive").at(-1)).toEqual(["setActive", a.id, 0]);
+
+    // d-pad move WHILE held: active follows off the old node (clears), the
+    // newly focused node is not pressed (press is an edge, not a state).
+    handleFrame(BTN.CIRCLE); // press on a again
+    expect(host.of("setActive").at(-1)).toEqual(["setActive", a.id, 1]);
+    handleFrame(BTN.CIRCLE | BTN.DOWN); // move to b with CIRCLE still down
+    expect(getFocused()).toBe(b);
+    expect(host.of("setActive").at(-1)).toEqual(["setActive", a.id, 0]);
+
+    // CIRCLE with nothing focused: no active call.
+    handleFrame(0);
+    setInputRoot(root);
+    const before = host.of("setActive").length;
+    handleFrame(BTN.CIRCLE);
+    expect(host.of("setActive").length).toBe(before);
 
     dispose();
   });
@@ -719,11 +775,37 @@ describe("focus + onPress (input.ts)", () => {
 });
 
 describe("host detection (host.ts)", () => {
-  test("PSP native namespace passed explicitly stays kind psp / non-strict", () => {
-    // The demo entries pass globalThis.ui to render(); only the native
-    // namespace carries __textures (ffi.rs), so it must NOT become an
+  test("resolved build contract rejects the wrong native target or ABI", () => {
+    const ops = makeMockHost().ops;
+    ops.__host = "vita";
+    ops.__hostAbi = 1;
+
+    expect(() =>
+      assertNativeHostContract(ops, {
+        target: "vita",
+        hostAbi: 1,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertNativeHostContract(ops, {
+        target: "psp",
+        hostAbi: 1,
+      }),
+    ).toThrow(/target mismatch/);
+    expect(() =>
+      assertNativeHostContract(ops, {
+        target: "vita",
+        hostAbi: 2,
+      }),
+    ).toThrow(/ABI mismatch/);
+  });
+
+  test("native namespace passed explicitly stays native / non-strict", () => {
+    // Demo entries pass globalThis.ui to render(); object identity must keep
+    // the namespace native instead of turning it into an
     // injected/strict host (crash-on-miss on hardware + double asset feed).
     const psp = makeMockHost();
+    psp.ops.__host = "psp";
     (psp.ops as HostOps & { __textures?: Record<string, number> }).__textures = {
       "logo.png": 0,
     };
@@ -731,7 +813,8 @@ describe("host detection (host.ts)", () => {
     g.ui = psp.ops;
     try {
       const detected = detectHost(psp.ops);
-      expect(detected.kind).toBe("psp");
+      expect(detected.kind).toBe("native");
+      expect(detected.target).toBe("psp");
       expect(detected.strict).toBe(false);
       // render() then takes the PSP branch: native handles bound, NO
       // loadStyles/loadFontAtlas re-feed through the FFI.
@@ -761,7 +844,21 @@ describe("host detection (host.ts)", () => {
     }
   });
 
-  test("injected ops WITHOUT __textures stay strict (web/wasm/test hosts)", () => {
+  test("a global web/wasm namespace without native identity stays injected", () => {
+    const wasm = makeMockHost();
+    const g = globalThis as { ui?: HostOps };
+    g.ui = wasm.ops;
+    try {
+      const detected = detectHost(wasm.ops);
+      expect(detected.kind).toBe("injected");
+      expect(detected.target).toBe("injected");
+      expect(detected.strict).toBe(true);
+    } finally {
+      delete g.ui;
+    }
+  });
+
+  test("injected ops stay strict (web/wasm/test hosts)", () => {
     const injected = makeMockHost();
     const detected = detectHost(injected.ops);
     expect(detected.kind).toBe("injected");
@@ -1071,6 +1168,31 @@ describe("public render() (index.ts)", () => {
     g.frame?.(BTN.SELECT);
     expect(presses).toBe(0);
 
+    g.frame?.(0);
+    g.frame?.(BTN.SELECT);
+    expect(presses).toBe(1);
+
+    dispose();
+  });
+
+  test("ActionHandler forwards latched so a held opener must release before firing", () => {
+    const g = globalThis as { ui?: HostOps; frame?: (buttons: number) => void };
+    g.ui = host.ops;
+    let presses = 0;
+
+    const dispose = publicMount(
+      () =>
+        View({
+          children: ActionHandler({
+            button: BTN.SELECT,
+            latched: true,
+            onPress: () => presses++,
+          }),
+        }),
+    );
+
+    g.frame?.(BTN.SELECT);
+    expect(presses).toBe(0);
     g.frame?.(0);
     g.frame?.(BTN.SELECT);
     expect(presses).toBe(1);

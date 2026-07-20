@@ -1,6 +1,9 @@
 // App-facing lifecycle callbacks for Vue Vapor.
 
 import { computed, onScopeDispose, shallowRef, type ComputedRef } from "vue";
+import { __resetAnalog } from "./analog.ts";
+
+export { __setAnalog, analogRaw, analogX, analogY } from "./analog.ts";
 
 type FrameCallback = (buttons: number) => void;
 
@@ -10,6 +13,7 @@ let buttonHandlerBlockDepth = 0;
 export function resetFrameHooks(): void {
   callbacks.clear();
   buttonHandlerBlockDepth = 0;
+  __resetAnalog();
 }
 
 export function runFrameHooks(buttons: number): void {
@@ -24,6 +28,8 @@ export function onFrame(callback: FrameCallback): void {
 export interface ButtonPressOptions {
   allowWhenBlocked?: boolean;
   active?: boolean | (() => boolean);
+  /** See src/frame.ts: arm only after the button is seen up for one frame. */
+  latched?: boolean;
 }
 
 export function pushButtonHandlerBlock(): () => void {
@@ -41,7 +47,7 @@ export function onButtonPress(
   callback: (pressed: number, buttons: number) => void,
   opts: ButtonPressOptions = {},
 ): void {
-  let prevButtons = 0;
+  let prevButtons = opts.latched ? ~0 : 0; // latched: "everything held" until released
   onFrame((buttons) => {
     const pressed = buttons & ~prevButtons;
     prevButtons = buttons;

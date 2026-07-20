@@ -35,7 +35,6 @@ const arcKeyframes = (values: number[], prop: "arcStart" | "arcSweep") =>
   Object.fromEntries(ARC_PCTS.map((pct, i) => [pct, { [prop]: values[i] }]));
 
 export default definePocketConfig({
-  framework: "solid",
   theme: {
     keyframes: {
       // ---- shared ----------------------------------------------------------

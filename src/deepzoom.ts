@@ -31,6 +31,7 @@ import { ticksPerFrame } from "./clock.ts";
 import { getOps } from "./host.ts";
 import { analogX, analogY, onFrame } from "./frame.ts";
 import * as hot from "./hot.ts";
+import { platform } from "./platform.ts";
 import {
   createElement,
   detachNode,
@@ -77,6 +78,20 @@ export interface DeepZoomView {
   minZoom: number;
   maxZoom: number;
   level: number;
+  /** Current document-space center, useful for HUDs and deterministic input telemetry. */
+  centerX: number;
+  centerY: number;
+}
+
+/** One screen-space direct-manipulation step supplied by an app gesture
+ * recognizer. Positive pan moves the document right/down; zoom is relative
+ * and remains anchored under the supplied logical viewport coordinate. */
+export interface DeepZoomGesture {
+  readonly panX: number;
+  readonly panY: number;
+  readonly zoomFactor?: number;
+  readonly anchorX?: number;
+  readonly anchorY?: number;
 }
 
 export interface DeepZoomProps {
@@ -90,6 +105,10 @@ export interface DeepZoomProps {
   prefetch?: number;
   /** Bind pan/zoom input internally (default true). */
   bindInput?: boolean;
+  /** Optional per-frame direct manipulation. Returning null leaves the
+   * controller integrator in charge; returning a gesture cancels its glide
+   * for that frame and applies pan/pinch around the provided anchor. */
+  gestureSource?: () => DeepZoomGesture | null;
   /** Called each frame after integration (HUD hookup — gate writes with
    *  hot.text/hot.prop on the receiving side). */
   onView?: (view: DeepZoomView) => void;
@@ -255,7 +274,10 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
     doc = d;
     setProp(container, "style", { bgColor: doc.bg });
     minZoom = Math.min(vw / doc.w, vh / doc.h);
-    maxZoom = doc.levels[0].scale * 2;
+    // Preserve the same physical sampling ceiling on every target. A
+    // density-specific pyramid advertises proportionally larger level scales
+    // and therefore keeps the same logical zoom range automatically.
+    maxZoom = Math.max(minZoom, (doc.levels[0].scale * 2) / platform.pixelRatio);
     zoom = minZoom;
     cx = doc.w / 2;
     cy = doc.h / 2;
@@ -270,11 +292,12 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
 
   // ---- per-frame integration --------------------------------------------------
   const idealLevel = (): number => {
-    // Finest level that still DOWNSCALES on screen (worldScale <= 1): with ×2
-    // level spacing + bilinear sampling this keeps tiles crisp at every zoom.
+    // Finest level that still DOWNSCALES in physical pixels. DrawList zoom is
+    // logical, so include the resolved target density when choosing a mip.
     const ls = doc.levels;
+    const physicalZoom = zoom * platform.pixelRatio;
     for (let i = ls.length - 1; i >= 1; i--) {
-      if (ls[i].scale >= zoom) return i;
+      if (ls[i].scale >= physicalZoom) return i;
     }
     return 0;
   };
@@ -348,7 +371,27 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
     // held constant across the frame (DETERMINISM.md).
     const dt = ticksPerFrame();
 
-    if (bind) {
+    const gesture = props.gestureSource?.() ?? null;
+    if (gesture) {
+      // Gesture deltas live in screen/logical pixels. Move the center in the
+      // opposite document direction so the content tracks the finger.
+      const oldZoom = zoom;
+      cx -= gesture.panX / oldZoom;
+      cy -= gesture.panY / oldZoom;
+
+      const factor = gesture.zoomFactor ?? 1;
+      if (Number.isFinite(factor) && factor > 0 && factor !== 1) {
+        const anchorX = gesture.anchorX ?? vw / 2;
+        const anchorY = gesture.anchorY ?? vh / 2;
+        const anchorDocX = cx + (anchorX - vw / 2) / oldZoom;
+        const anchorDocY = cy + (anchorY - vh / 2) / oldZoom;
+        zoom = Math.min(maxZoom, Math.max(minZoom, oldZoom * factor));
+        cx = anchorDocX - (anchorX - vw / 2) / zoom;
+        cy = anchorDocY - (anchorY - vh / 2) / zoom;
+      }
+      vx = 0;
+      vy = 0;
+    } else if (bind) {
       // pan: nub (analog) or d-pad, at a zoom-invariant screen speed
       let ix = analogX();
       let iy = analogY();
@@ -377,14 +420,14 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
         if (buttons & BTN.RTRIGGER) zoom = Math.min(maxZoom, zoom * ZOOM_STEP);
         if (buttons & BTN.LTRIGGER) zoom = Math.max(minZoom, zoom / ZOOM_STEP);
       }
-      // CROSS: reset to fit
-      if (buttons & BTN.CROSS) {
-        zoom = minZoom;
-        cx = doc.w / 2;
-        cy = doc.h / 2;
-        vx = 0;
-        vy = 0;
-      }
+    }
+    // CROSS: reset to fit even if a contact is currently held.
+    if (bind && buttons & BTN.CROSS) {
+      zoom = minZoom;
+      cx = doc.w / 2;
+      cy = doc.h / 2;
+      vx = 0;
+      vy = 0;
     }
 
     // clamp the center so content cannot be panned fully off screen; when a
@@ -428,7 +471,7 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
     hot.prop(activeWorld, "translateY", ty0);
     hot.prop(activeWorld, "scale", zoom / lv.scale);
 
-    props.onView?.({ zoom, minZoom, maxZoom, level });
+    props.onView?.({ zoom, minZoom, maxZoom, level, centerX: cx, centerY: cy });
   });
 
   onCleanup(() => {

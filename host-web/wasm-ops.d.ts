@@ -9,12 +9,14 @@ export declare const FB_H: number;
 export interface WasmUi {
   ops: HostOps;
   exports: WebAssembly.Exports & { memory: WebAssembly.Memory };
-  /** Reset the core to a fresh Ui (fresh tree/styles/atlases/textures). */
-  init(): void;
+  /** Reset the core and set raster samples per logical pixel (default 1). */
+  init(rasterDensity?: number): void;
   /** Advance exactly one fixed-dt (1/60 s) frame. */
   tick(): void;
-  /** Rasterize and return the RGBA8 480x272 framebuffer as a fresh view. */
+  /** Rasterize the byte-exact RGBA8 480x272 framebuffer as a fresh view. */
   render(): Uint8Array;
+  /** Rasterize directly at an integer physical scale from 1 through 4. */
+  renderScaled(scale: number): Uint8Array;
 }
 
 export declare function createWasmUi(

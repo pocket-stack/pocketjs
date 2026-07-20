@@ -1,6 +1,10 @@
 # Native contract
 
-Everything in PocketJS — the Solid reconciler, the styling layer, animation, input — ultimately drives a native, retained-mode UI tree through one small, synchronous op surface: `ui.*`. This page documents that surface, the runtime model around it, and the constraints that make a JSX app run inside a 2 MB QuickJS worker on a 333 MHz PSP.
+Everything in PocketJS — the framework adapters, styling, animation, and input
+— ultimately drives a native, retained-mode UI tree through one small,
+synchronous op surface: `ui.*`. This page documents that surface, the runtime
+model around it, and the constraints that let the same application contract run
+through PSP, PS Vita, web, desktop, and headless hosts.
 
 If you only write app code you never call these ops directly — you write [`View` / `Text` / `Image`](/docs/components/) and the renderer emits ops for you. This page is for understanding *why* the surface looks the way it does, and for anyone writing a new host.
 
@@ -8,15 +12,23 @@ If you only write app code you never call these ops directly — you write [`Vie
 
 Three rules define the whole model:
 
-1. **Mutation-only.** Every op is a fire-and-forget mutation of the native tree. There are no queries that walk the tree, no getters that return children. The one read-shaped op, `measureText`, is a stateless convenience — layout still measures natively.
-2. **Synchronous.** Each op is a single blocking FFI call. There is no command buffer, no async batching at this layer; the batching that matters happens one level up (Solid only runs effects for changed signals).
-3. **The reconciler never reads across FFI.** The renderer keeps a **JS mirror tree** of the native tree. Every structural read Solid performs — parent, first child, next sibling, "is this a text node?" — is a plain JS object walk. Only *writes* cross the boundary.
+1. **Mutation-oriented.** Tree operations are immediate commands; returned node,
+   texture, and animation handles are synchronous results. The few read-shaped
+   diagnostics and `measureText` never expose or walk native tree structure.
+2. **Synchronous.** Each op is a single blocking FFI call. There is no command
+   buffer or async batching at this layer; framework reactivity avoids emitting
+   unchanged mutations one level up.
+3. **The reconciler never reads tree structure across FFI.** The renderer keeps
+   a **JS mirror tree**. Parent/child/sibling and node-kind reads are plain JS
+   object walks; structural writes update both mirrors.
 
 The op codes are pinned once, in `spec/spec.ts` (the `OP` table), and shared by every host and the Rust core. Codes are append-only: never renumbered, never reused. `0` is reserved as invalid/nop.
 
 ## The op table
 
-Signatures are authoritative from `src/host.ts` (`HostOps`) and `spec/spec.ts`. Handles are generation-tagged positive `i32` node ids; `0` means "none".
+Signatures are authoritative from `src/host.ts` (`HostOps`) and `spec/spec.ts`.
+Node ids are generation-tagged positive `i32` values and reserve `0` for
+"none"; texture handles use their own 0-based or generation-tagged contracts.
 
 | # | op | signature | notes |
 |---|---|---|---|
@@ -36,6 +48,12 @@ Signatures are authoritative from `src/host.ts` (`HostOps`) and `spec/spec.ts`. 
 | 14 | `loadStyles` | `(buf) → void` | **web/test hosts only.** Optional. Feeds the compiled `styles.bin`. On PSP the native binary feeds core from the pak. |
 | 15 | `loadFontAtlas` | `(buf) → void` | **web/test hosts only.** Optional. One call per baked font atlas blob. |
 | 16 | `measureText` | `(str, fontSlot) → width` | JS-side convenience returning width in px. Layout still measures natively. |
+| 17 | `setSprite` | `(id, atlas, frames, cols, step) → void` | Binds a native-ticked sprite atlas; non-positive `frames` clears it. |
+| 18–22 | `debugInspect`, `debugRectXY`, `debugRectWH`, `debugPause`, `debugStep` | debug-only | Optional DevTools inspection and pause/step surface. Hosts may omit it. |
+| 23 | `loadTileTexture` | `(pakKey, tileIndex) → handle \| -1` | Optional host extension: decode and upload one TILESET tile without moving its bytes through JS. |
+| 24 | `freeTexture` | `(handle) → void` | Optional host extension: release a generation-tagged texture handle; stale handles draw nothing. |
+| 25 | `uploadImgEntry` | `(blob) → handle \| -1` | Optional host extension: upload a complete IMG entry, including CLUT8 palette/RLE metadata. |
+| 26 | `setActive` | `(id, activeInt) → void` | Applies or clears the native `active:` style variant. Optional for legacy hosts. |
 
 For the meaning of `PROP` ids, `ENUMS`, and how a `class` string becomes a `styleId`, see [Styling](/docs/styling/) and the [API reference](/docs/api/). For `animate`/`easing` semantics see [Animation](/docs/animation/).
 
@@ -98,56 +116,84 @@ None of those touch the host. Structural mutations (`insertNode`, `removeNode`, 
 
 `setProperty` is a dispatch table, not a generic setter: `class → styleId` (via the injected style resolver), `onPress`/`on:press` → input registry, `src` → texture registry, `style={{…}}` → per-key `setProp` (prev-diffed, so only changed keys cross FFI). Anything else — `classList`, `on:`/`bool:`/`prop:` namespaces, unknown props — is a loud error. See [Styling](/docs/styling/) for why `classList` is rejected.
 
-## Two host kinds
+## Host identity and strictness
 
 `detectHost()` in `src/host.ts` resolves which `HostOps` object the ops route to, and sets a **strictness** flag that changes behavior on bad input:
 
-| kind | ops source | strict? | on unknown class / texture |
-|---|---|---|---|
-| `psp` | `globalThis.ui` (installed by `native/src/ffi.rs`) | no | bump a miss counter, keep going |
-| `injected` | a `HostOps` passed into `render()` (web / wasm / Bun) | yes | **throw** |
+| kind | ops source | target | strict? | on unknown class / texture |
+|---|---|---|---|---|
+| `native` | `globalThis.ui` installed by a QuickJS device runtime | `ui.__host` (`psp`, `vita`, …) | no | bump a miss counter, keep going |
+| `injected` | a `HostOps` passed into `render()` (web / wasm / Bun) | `injected` unless supplied | yes | **throw** |
 
-The reasoning is asymmetric on purpose. On real hardware a thrown error is a black screen; a missing style is a slightly-wrong box. So the PSP host counts misses (`missCounters.unknownClass` / `unknownTexture`) and renders on. The web, wasm, and headless-Bun hosts are development and CI surfaces, where a silent wrong-color pixel is worse than a stack trace — so they throw the moment a class isn't in the compiled table or a `src` key has no registered texture.
+The reasoning is asymmetric on purpose. On real hardware a thrown error is a
+black screen; a missing style is a slightly-wrong box. Native hosts count
+misses (`missCounters.unknownClass` / `unknownTexture`) and render on. Web,
+wasm, and headless-Bun hosts are development and CI surfaces, where a silent
+wrong-color pixel is worse than a stack trace.
 
-Resolution order: an injected `HostOps` wins; otherwise `globalThis.ui`; if neither exists, `render()` throws (PocketJS cannot run without a native tree). One special case: the PSP demo entries pass `globalThis.ui` *explicitly*. That object carries a `__textures` marker set only by native `ffi.rs`, so it is still detected as kind `psp` / non-strict — and `render()` skips re-feeding `loadStyles`/`loadFontAtlas`, because the native pak walker already fed core directly.
+Resolution order: an injected `HostOps` wins; otherwise `globalThis.ui`; if
+neither exists, `render()` throws. Native namespaces identify themselves with
+`__host` and `__hostAbi`. A manifest-built bundle embeds its expected target
+and ABI and refuses to mount on a mismatched or pre-contract native host.
+`__textures` remains a legacy native marker so old, non-manifest bundles keep
+working, but it cannot satisfy an embedded target contract.
 
-Every host drives frames the same way: once per tick it calls `globalThis.frame(buttons)` with the PSP button bitmask (`BTN` in the spec). `index.ts` composes input edge-detection and the end-of-frame sweep into that entry point via `installFrameHandler`. See [Input & focus](/docs/input-focus/) for the button model and [Architecture](/docs/architecture/) for how the hosts fit together. The [playground](/playground/) runs the injected web host in the browser.
+Every host drives frames through
+`globalThis.frame(buttons, analog?, touches?)`. Buttons use the shared PSP
+bitmask, analog is `(x << 8) | y` with centered bytes on stickless hosts, and
+touch contacts are packed snapshots in logical coordinates. The runtime latches
+all three before app hooks, then performs input edge detection and the
+end-of-frame sweep. See [Input & focus](/docs/input-focus/) and
+[Platform contracts](/docs/platform-contracts/).
 
 ## Frame order
 
-The PSP host runs one deterministic sequence per vblank. The web and Bun hosts do the same steps under a fixed-step `requestAnimationFrame` / loop so goldens stay byte-exact.
+Native hosts run one deterministic sequence per display frame. Web and Bun
+hosts perform the same logical steps under a fixed-step
+`requestAnimationFrame` / loop so goldens stay byte-exact.
 
 ```
-sceCtrlRead                         read the controller
+read host input                     buttons + optional analog/touch snapshot
   ↓
-sceGuStart                          begin the GE display list (main.rs owns it)
-  ↓
-frame(buttons)   ── JS ──►          edge-detect input, run Solid effects for
-                                    changed signals (the only ops this frame),
+frame(buttons, analog?, touches?)
+                 ── JS ──►          advance virtual time, latch input, deliver
+                                    queued effects, run app hooks + focus,
                                     then runSweep() (node reclamation) last
   ↓
 drain jobs                          while JS_ExecutePendingJob(rt, &ctx) > 0
                                     (promise microtasks — polyfilled queueMicrotask)
   ↓
-core.tick(1/60)                     advance every anim/spring track at FIXED_DT
+core.tick(N × 1/60)                 advance exact ticks for this virtual frame
   ↓
 layout (if dirty)                   taffy re-run + text re-measure, only if a
                                     layout-dirtying prop changed
   ↓
 DrawList                            tree walk → flat Vec<u32> ops, CPU-clipped
   ↓
-ge::render                          DrawList → sceGu; then Finish / Sync /
-                                    WaitVblank / Swap
+backend acquire/render/present      DrawList → GE, GXM, WGPU, or software
 ```
+
+That final backend phase is intentionally schematic. PSP pipelines the GE: it
+presents the previous list, starts the next list, and lets the GPU overlap the
+following frame's JS/core work. Vita and software hosts own different acquire
+and presentation order without changing the logical frame transaction above.
 
 Key properties:
 
 - **The sweep runs inside `frame()`**, as the last thing user code does — so a remove-then-reinsert within one frame (a `<For>` reorder, a `<Show>` toggle) never destroys a live node.
-- **Fixed `dt = 1/60 s`.** `core.tick` always advances by `FIXED_DT`, never wall-clock. Frame content is a pure function of frame index, which is exactly what makes byte-exact goldens possible. JS only *declares* motion; Rust ticks it.
+- **Virtual time, fixed core ticks.** `core.tick` advances an exact number of
+  `1/60 s` ticks selected by the host simulation rate, never wall-clock time.
+  Commands from the outside world are delivered only at frame boundaries.
 - **Layout is conditional.** Only a change to a layout-dirtying prop (`LAYOUT_DIRTYING` in the spec — sizes, padding, flex props, `fontSlot`/`tracking`/`lineHeight`) re-runs taffy. Transform and color changes are paint-only. Prefer transforms in animation for this reason.
-- **Backends never own the display list.** `sceGuStart`/`Finish` live in `native/src/main.rs`; the GE backend only translates a DrawList into draw calls. The DrawList arrives already CPU-clipped to `[0, 480] × [0, 272]`, so backends do no clipping.
+- **Backends never define UI semantics.** The Rust core produces one DrawList
+  in 480×272 logical coordinates. The PSP GE consumes it at density 1; Vita
+  GXM consumes it at density 2 after the compiler has baked native-density
+  fonts, vectors, masks, and target-selected images.
 
-In steady state — no signals changed — `frame()` emits **no** mutation ops, the sweep set is empty, and the only boundary crossing is the single `frame(buttons)` call itself. Everything downstream (tick, layout, draw) is pure Rust.
+In steady state — no reactive values changed — `frame()` emits **no** mutation
+ops, the sweep set is empty, and the only JS boundary crossing is the single
+`frame(buttons, analog?, touches?)` call itself. Everything downstream (tick,
+layout, draw) is Rust.
 
 ## Node reclamation
 
@@ -169,14 +215,17 @@ If the same node is inserted again before the frame ends, `insertNode` removes i
 Sometimes you want to detach a subtree and keep it alive across frames — cache an offscreen panel, hold a pooled row. That opts out of the sweep:
 
 ```ts
-import { retain, release } from "@pocketjs/framework";
+import { retain, release } from "@pocketjs/framework/solid";
 
 retain(node);   // detached but preserved; the sweep skips it (and any subtree containing it)
 // ... later ...
 release(node);  // undo; if still detached, it re-enters the next sweep
 ```
 
-`runSweep` checks `subtreeHasRetained` before destroying, so a retained node anywhere inside a detached subtree keeps the whole subtree pending until it is released or re-attached. A `FinalizationRegistry` backstop tier catches anything that slips through both the sweep and an explicit `release` — a safety net, not the primary mechanism.
+`runSweep` checks `subtreeHasRetained` before destroying, so a retained node
+anywhere inside a detached subtree keeps the whole subtree pending until it is
+released or re-attached. Reclamation is explicit and deterministic; it does not
+depend on `FinalizationRegistry` or garbage-collector timing.
 
 ## PSP memory model
 
@@ -186,7 +235,7 @@ On hardware the whole stack lives in **one arena**, and getting there required f
 
 The fix, at a high level:
 
-1. A vendored `rust-psp` fork gains an **`external-global-alloc`** feature that cfg-gates out its `#[global_allocator]`.
+1. The exact-revision `pocket-stack/rust-psp` dependency exposes an **`external-global-alloc`** feature that cfg-gates out its `#[global_allocator]`.
 2. `native/src/alloc.rs` installs the PocketJS global allocator, backed by `arena::alloc`/`dealloc` — the **same single kernel block** QuickJS uses. Core, QuickJS, and newlib all draw from one arena.
 3. `arena.rs`'s `ensure_init` calls `sceKernelAllocPartitionMemory` / `sceKernelGetBlockHeadAddr` **directly** — no recursion back through `alloc::alloc`, now that the arena *is* the global allocator.
 4. Texture uploads and retained core buffers live in that same arena. A **2 MB margin** is reserved for the GE display list and stack safety.
@@ -206,10 +255,10 @@ The whole design converges on a small steady-state cost:
 
 | budget | target |
 |---|---|
-| FFI crossings per steady frame | **one** (`frame(buttons)`; no ops when nothing changed) |
+| FFI crossings per steady frame | **one** (`frame(buttons, analog?, touches?)`; no mutation ops when nothing changed) |
 | DrawList draw calls | **≤ ~40** `sceGuDrawArray` calls |
 | DrawList quads | **≤ ~2000** |
 | per-frame vertex bytes | **≈ 48 KB** from a per-frame bump pool (reset after `sceGuSync`) |
 | Solid effects | run only on interaction / changed signals |
 
-Two practical corollaries for app authors: animate **transforms and colors** rather than layout props, because layout-prop animations force a taffy relayout that frame (transforms are paint-only); and keep dynamic styling to ternaries of full class literals or `style={{…}}` objects so the compiler can bake every style ahead of time. See the [Build pipeline](/docs/build-pipeline/) for how styles and font atlases are baked, and [Architecture](/docs/architecture/) for how the same Rust core reaches all four hosts.
+Two practical corollaries for app authors: animate **transforms and colors** rather than layout props, because layout-prop animations force a taffy relayout that frame (transforms are paint-only); and keep dynamic styling to ternaries of full class literals or `style={{…}}` objects so the compiler can bake every style ahead of time. See the [Build pipeline](/docs/build-pipeline/) for how styles and font atlases are baked, and [Architecture](/docs/architecture/) for how the same Rust core reaches every host family.

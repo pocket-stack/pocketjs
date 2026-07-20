@@ -8,6 +8,10 @@ members = [
     "crates/pocket-playset",
     "crates/pocket-scene3d",
     "crates/pocket-ui-wgpu",
+    "crates/pocket-vrm",
+    "crates/pocket-widget",
+    "examples/handheld",
+    "examples/note-widget",
     "examples/uihost",
 ]
 # PSP-only crates (tier-3 target, cargo-psp toolchain) — kept out of the
@@ -18,7 +22,7 @@ exclude = ["crates/pocket3d-gu", "crates/gu-demo"]
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/pocketjs/pocketjs"
+repository = "https://github.com/pocket-stack/pocketjs"
 
 [workspace.dependencies]
 pocket3d = { path = "crates/pocket3d" }
@@ -27,6 +31,8 @@ pocket-mod = { path = "crates/pocket-mod" }
 pocket-playset = { path = "crates/pocket-playset" }
 pocket-scene3d = { path = "crates/pocket-scene3d" }
 pocket-ui-wgpu = { path = "crates/pocket-ui-wgpu" }
+pocket-vrm = { path = "crates/pocket-vrm" }
+pocket-widget = { path = "crates/pocket-widget" }
 pocketjs-core = { path = "../core", features = ["std"] }
 rquickjs = "0.12"
 
@@ -41,6 +47,10 @@ gltf = "1.4"
 png = "0.18"
 anyhow = "1"
 log = "0.4"
+ab_glyph = "0.2"
+memmap2 = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 env_logger = "0.11"
 font8x8 = "0.3"
 

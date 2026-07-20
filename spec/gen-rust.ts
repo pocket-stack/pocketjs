@@ -59,6 +59,19 @@ import {
   STYLE_VARIANT_BASE,
   STYLE_VARIANT_FOCUS,
   STYLE_VERSION,
+  STREAM_ARING_MAGIC,
+  STREAM_ARING_OFF,
+  STREAM_CHUNK_HEADER_SIZE,
+  STREAM_FLAG_ENDED,
+  STREAM_HEADER_BLOCK_SIZE,
+  STREAM_HEADER_SIZE,
+  STREAM_MAGIC,
+  STREAM_SLOT_HEADER_SIZE,
+  STREAM_VERSION,
+  STREAM_VRING_MAGIC,
+  STREAM_VRING_OFF,
+  SVC_IMG_MAX_BYTES,
+  SVC_POLL_BUF,
   TEX_MAX_DIM,
   TEX_SLOT_BITS,
   TEX_SLOT_MASK,
@@ -279,6 +292,30 @@ export function generateRust(): string {
   put(`    pub const ABSENT: u32 = ${hex(TILESET_ABSENT)};`);
   put(`    pub const FLAG_RLE: u16 = ${TILESET_FLAG_RLE};`);
   put(`    pub const FLAG_LINEAR: u16 = ${TILESET_FLAG_LINEAR};`);
+  put("}");
+  put("");
+
+  // --- svc / stream -----------------------------------------------------------
+  put("/// Host service channel limits (spec.ts SVC — pocket-svc/<app>/ mailbox).");
+  put("pub mod svc {");
+  put(`    pub const POLL_BUF: usize = ${SVC_POLL_BUF};`);
+  put(`    pub const IMG_MAX_BYTES: usize = ${SVC_IMG_MAX_BYTES};`);
+  put("}");
+  put("");
+  put("/// STREAM container (.pkst) — host-written video+audio ring file.");
+  put("/// Full byte layout in spec.ts; parsed by core/src/stream.rs.");
+  put("pub mod stream {");
+  put(`    pub const MAGIC: u32 = ${hex(STREAM_MAGIC)}; // 'PKST' LE`);
+  put(`    pub const VERSION: u16 = ${STREAM_VERSION};`);
+  put(`    pub const HEADER_SIZE: usize = ${STREAM_HEADER_SIZE};`);
+  put(`    pub const VRING_MAGIC: u32 = ${hex(STREAM_VRING_MAGIC)}; // 'PKVR' LE`);
+  put(`    pub const VRING_OFF: usize = ${STREAM_VRING_OFF};`);
+  put(`    pub const ARING_MAGIC: u32 = ${hex(STREAM_ARING_MAGIC)}; // 'PKAR' LE`);
+  put(`    pub const ARING_OFF: usize = ${STREAM_ARING_OFF};`);
+  put(`    pub const HEADER_BLOCK_SIZE: usize = ${STREAM_HEADER_BLOCK_SIZE};`);
+  put(`    pub const SLOT_HEADER_SIZE: usize = ${STREAM_SLOT_HEADER_SIZE};`);
+  put(`    pub const CHUNK_HEADER_SIZE: usize = ${STREAM_CHUNK_HEADER_SIZE};`);
+  put(`    pub const FLAG_ENDED: u16 = ${STREAM_FLAG_ENDED};`);
   put("}");
   put("");
 

@@ -26,7 +26,7 @@ use psp::sys::DisplaySetBufSync;
 use psp::sys::DisplayPixelFormat;
 use psp::sys::{self, CtrlMode, GuContextType, GuSyncBehavior, GuSyncMode, IoOpenFlags, SceCtrlData};
 
-use pocketjs_psp::{dbg, ffi, ge, host, pak, playset, scene3d};
+use pocketjs_psp::{dbg, ffi, ge, host, pak, playset, scene3d, vid};
 #[cfg(feature = "bench")]
 use pocketjs_psp::arena;
 
@@ -723,8 +723,11 @@ unsafe fn run() {
             cap_dump_frame(frame_count.wrapping_sub(1));
         }
         // GE idle (sceGuSync above): rewind the per-frame bump vertex
-        // arena [R] and open frame N's list.
+        // arena [R] and open frame N's list. The video plane commits its
+        // staged frame here too — the ONLY window where the GE is not
+        // sampling the texture it overwrites in place (vid.rs).
         ge::reset_pool();
+        vid::present(ffi::ui());
         if frame_count == 0 {
             trace("frame 0: pool reset ok");
         }

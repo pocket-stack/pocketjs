@@ -3,6 +3,138 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.6.0 — July 19, 2026
+
+**The engine leaves the handheld.** The Pocket runtime's first desktop
+product surface: transparent widget windows and a VRM character stack,
+proven by rebuilding airi's 3D digital human as one native process at
+118 MB / 3.9 % of a core — an [order of magnitude below its Electron
+stage](/blog/pocket-character/) on every axis, same character, same
+behaviors.
+
+- **Widget windows** (pocket3d): `AppConfig` grows `transparent`,
+  `decorations`, `always_on_top`, `resizable`, `drag_window`, and `max_fps`
+  frame pacing that sleeps between frames instead of spinning on vsync;
+  scenes can clear to alpha 0 for desktop-composited windows.
+- **Morph targets** (pocket3d): sparse CPU deltas + per-instance overlay
+  vertex buffers, flushed only when a weight changes — blend-shape faces
+  cost nothing at rest. Draws redirect via `base_vertex`; shared index
+  buffers stay untouched.
+- **Procedural poses** (pocket3d): `Skeleton::sample_locals` /
+  `globals_from_locals` split plus `ModelInstance::pose`, so hosts inject
+  look-at and physics edits between clip sampling and the hierarchy walk.
+  Joint palettes grow 128 → 512 matrices for VRoid-scale humanoid rigs.
+- **pocket-vrm** (new crate): VRM 0.x parsing (humanoid map, blend-shape
+  groups, spring config, MToon material info, look-at ranges), a
+  deterministic allocation-free spring-bone verlet solver, VRMA retargeting
+  with the VRM1 +Z → VRM0 −Z conversion, and bone-type eye look-at —
+  21 tests against the real VRoid sample fixture.
+- **Asset diet** (pocket3d): `load_glb_opts` skips images no material
+  references and caps authoring-resolution textures
+  (`max_texture_dim`) — 413 MB of GPU memory back on the reference
+  character.
+- [pocket-character](https://github.com/pocket-stack/pocket-character):
+  the airi-parity widget itself — character surface + QuickJS policy
+  bundle, blink/saccade schedulers with airi's exact constants, headless
+  render harness, and the [measured report](/blog/pocket-character/).
+- **Compatibility:** no breaking changes; `AppConfig` and `ModelInstance`
+  gained fields (struct-literal constructors need `..Default::default()`).
+
+## 0.5.0 — July 17, 2026
+
+**The console grows system software.** Streaming media, a system keyboard, a
+virtual pointer, and self-diagnosing devices — capabilities every handheld
+app needs, now owned by the framework instead of copy-pasted per demo —
+proven by [streaming YouTube to a PSP over USB](/blog/pocket-youtube/).
+
+- **App services over USB** — the `pocket-svc` mailbox gives any app a JSON
+  command channel to a companion desktop service (request/reply with side
+  files for bulk bytes), the same file-transport model DevTools proved,
+  hardened against host restarts. Pocket YouTube — search, host-rendered CJK
+  result rows, and full-motion playback on real hardware — ships as its own
+  app repo (`pocket-stack/pocket-youtube`) built entirely on these APIs.
+- **A streaming video plane** — `.pkst` ring files carry palettized frames
+  and PCM audio from the host; the native side pumps them under a per-frame
+  IO budget, commits texture updates only in the GE-idle window (tear-free
+  by construction), and plays audio on a dedicated hardware channel with a
+  software resampler. Seek, pause, and epoch resync are part of the
+  contract, not the app.
+- **A system on-screen keyboard** — `@pocketjs/framework/osk`: an LVGL-style
+  variable-width key grid with letters/caps/symbols layers, dark and light
+  themes, and a caret-editing session (`createOsk`). While open it owns
+  input outright (modal focus scope + button block), retiring the
+  gate-every-handler pattern. One component, per-platform input: d-pad
+  spatial navigation and the classic PSP chords, front-touch on Vita, and
+  the virtual cursor for free.
+- **A virtual cursor capability** (`input.cursor`) — the analog nub steers a
+  core-drawn pointer; hover *is* focus, so every `focus:` style doubles as
+  the hover style, presses arm and fire like real buttons, and d-pad
+  traversal stays available as a fallback. Opt-in via `enableCursor()`.
+- **Devices that vouch for themselves** — every build embeds an FNV-1a64
+  hash of its app bundle; the PSPLINK bridge verifies it against `dist/` on
+  every boot and calls out a stale embed (or a silent, pre-handshake build)
+  before you trust a single observation. `OP.debugStats` exposes live
+  audio/video/transport counters through the new DevTools `devStats` query —
+  underruns, torn frames, and truncation resets become one request instead
+  of a thread autopsy.
+- **Compatibility:** existing apps build unchanged. New host ops (30–38) are
+  optional capabilities — hosts that lack them simply omit the op, and the
+  framework degrades gracefully (the OSK falls back to bottom-dock geometry
+  without hit testing; `devStats` replies `data: null`). PS Vita builds now
+  ship complete default LiveArea artwork.
+
+## 0.4.0 — July 13, 2026
+
+**One app, two PlayStations.** PocketJS now treats PSP and PS Vita as two
+profiles of one [portable application contract](/docs/platform-contracts/),
+with native-density rendering, touch, a reproducible PSP toolchain, and
+target-specific golden tests.
+
+- **PS Vita is a first-class target** — the QuickJS + vita2d host renders a
+  480×272 logical scene directly at 960×544, bakes fonts, SVGs, and masks at 2×,
+  accepts buttons, left-analog, and front multi-touch input, and gives every
+  app a stable Title ID and named VPK. `bun play vita <demo>` builds, installs,
+  and launches the selected demo in Vita3K; the Vita golden suite exercises
+  the same native plan and package path used by release builds.
+  [Read the port story](/blog/pocketjs-on-ps-vita/).
+- **Portable build contracts** — strict `pocket.json` v2 manifests declare app
+  identity, entrypoint, logical viewport, required APIs, and optional
+  enhancements. One resolver produces the checked build plan consumed by the
+  JS compiler and native backend; unavailable literal `hasFeature()` branches
+  fold away at build time. A PSP-baseline app resolves unchanged for Vita,
+  while Vita-only touch code can retain a controller fallback.
+- **A self-contained PSP toolchain** — `bun run bootstrap` and `pocket setup`
+  install exact `pocket-stack` revisions plus a SHA-256-verified SDK into one
+  shared cache. `PSP_SDK` and `PSPDEV` remain explicit overrides, but builds no
+  longer inspect DreamCart or sibling source checkouts. Cache receipts, staged
+  publication, and host-revision checks make setup repeatable across PocketJS,
+  OpenStrike, and Pocket Figma.
+- **Pocket3D ships on the PSP GE** — the new `no_std` backend consumes cooked
+  `.p3d` worlds with PVS/frustum culling, shared collision, CLUT8 mip chains,
+  baked vertex lighting, and a composable JSX HUD pass. It is the framework
+  path behind [OpenStrike](/blog/shipping-openstrike/), including the texture
+  and light-baking improvements proven on real hardware.
+- **Determinism now includes time and effects** — the virtual clock,
+  frame-boundary effect shell, and headless simulation host make async product
+  journeys repeatable across 60 Hz and deliberately slow worlds. Desktop wgpu
+  apps join the same DevTools mailbox, while cached text shaping and the
+  imperative `hot.text` / `hot.prop` path remove interaction-time PSP spikes.
+  [Read the model](/blog/ui-runtime-that-cant-flake/).
+- **Large native canvases and richer app chrome** — streamed TILESET entries,
+  generation-tagged textures, CLUT8 palettes, and `<DeepZoom>` power the
+  compile-time [Pocket Figma](/blog/pocket-figma/) viewer; Vita adds anchored
+  pinch, inertial pan, and native-detail tiles. Classic bevel rings, working
+  `active:` pressed styles, Pocket Talk's virtualized IM/OSK demo, and a real
+  PSP texture-cache fix round out the 2D runtime.
+- **Compatibility:** existing script-driven PSP apps continue to build, while
+  `pocket.json` is required when opting into `bun pocket` and target-aware
+  Vita builds. **Breaking for custom hosts:** `Host.kind` now reports
+  `"native"` instead of `"psp"`; manifest bundles require `__host` and
+  `__hostAbi`. Rebuild compiler/core/host artifacts together and consume the
+  stable `HostBuildInputs` projection rather than the internal build plan.
+  Vita builds still require VitaSDK + `cargo-vita`; arbitrary logical sizes
+  and dynamic host text are not part of this release.
+
 ## 0.3.0 — July 8, 2026
 
 **Pocket DevTools.** Time travel + inspection as framework primitives —

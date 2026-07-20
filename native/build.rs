@@ -1,42 +1,118 @@
 //! Embeds the built app bundle + asset pack into the EBOOT at build time.
 //! Pattern copied from the dreamcart runtime (runtime/build.rs, the
-//! PSPJS_GAME pattern), renamed to POCKETJS_APP.
+//! PSPJS_GAME pattern), with app selection separated from embed ownership.
 //!
-//! Set `POCKETJS_APP` to an app name whose build outputs exist in ../dist/
-//! (written by scripts/build.ts as `<app>.js` + `<app>.pak`):
-//!   POCKETJS_APP=hero bun scripts/psp.ts
+//! The stock backend sets `POCKETJS_APP_OUTPUT` and `POCKETJS_EMBED_APP=1`.
+//! Custom native hosts consume the same output name but leave embedding to
+//! their own primary crate, so this runtime remains a reusable dependency.
+//! `POCKETJS_APP=<name>` remains a legacy shorthand that implies embedding.
 //!
 //! Both embeds have EMPTY fallbacks so include_str!/include_bytes! in main.rs
 //! always resolve — an EBOOT built with no app boots to the JS-error screen
 //! rather than failing the build.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
+fn dimension(name: &str, fallback: u32) -> u32 {
+    env::var(name)
+        .unwrap_or_else(|_| fallback.to_string())
+        .parse()
+        .unwrap_or_else(|_| panic!("{name} must be a positive integer"))
+}
+
 fn main() {
-    let app = env::var("POCKETJS_APP").unwrap_or_default();
-    let dist = Path::new("../dist");
+    let legacy_app = env::var("POCKETJS_APP").unwrap_or_default();
+    let app = env::var("POCKETJS_APP_OUTPUT").unwrap_or_else(|_| legacy_app.clone());
+    let embed_app = match env::var("POCKETJS_EMBED_APP") {
+        Ok(value) => match value.as_str() {
+            "0" => false,
+            "1" => true,
+            _ => panic!("POCKETJS_EMBED_APP must be 0 or 1, got {value:?}"),
+        },
+        Err(_) => !legacy_app.is_empty(),
+    };
+    assert!(
+        !embed_app || !app.is_empty(),
+        "POCKETJS_EMBED_APP=1 requires POCKETJS_APP_OUTPUT"
+    );
+    let target = env::var("POCKETJS_TARGET").unwrap_or_else(|_| "psp".into());
+    let host_abi = env::var("POCKETJS_HOST_ABI").unwrap_or_else(|_| "1".into());
+    // Fail HERE, not at boot: a garbage value would otherwise parse to 0 in
+    // ffi.rs and brick every manifest bundle with an ABI-mismatch at mount.
+    assert!(
+        host_abi.parse::<i32>().map(|abi| abi > 0).unwrap_or(false),
+        "POCKETJS_HOST_ABI must be a positive integer (got {host_abi:?})"
+    );
+    let logical = (
+        dimension("POCKETJS_LOGICAL_WIDTH", 480),
+        dimension("POCKETJS_LOGICAL_HEIGHT", 272),
+    );
+    let physical = (
+        dimension("POCKETJS_PHYSICAL_WIDTH", 480),
+        dimension("POCKETJS_PHYSICAL_HEIGHT", 272),
+    );
+    let presentation = env::var("POCKETJS_PRESENTATION").unwrap_or_else(|_| "native".into());
+    let raster_density = dimension("POCKETJS_RASTER_DENSITY", 1);
+    assert_eq!(target, "psp", "pocketjs-psp requires target psp");
+    assert_eq!(logical, (480, 272), "PSP logical viewport must be 480x272");
+    assert_eq!(
+        physical,
+        (480, 272),
+        "PSP physical viewport must be 480x272"
+    );
+    assert!(
+        matches!(presentation.as_str(), "native" | "integer-fit"),
+        "PSP presentation must be native or integer-fit"
+    );
+    assert_eq!(raster_density, 1, "PSP raster density must be 1");
+    let dist = env::var_os("POCKETJS_OUTPUT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("../dist"));
     let out_dir = env::var("OUT_DIR").unwrap();
 
     // App JS bundle -> $OUT_DIR/game.js, NUL-terminated for JS_Eval (which
     // requires input[len] == '\0'; main.rs evals with len - 1).
-    let mut code = if app.is_empty() {
+    let mut code = if !embed_app {
         String::new()
     } else {
-        fs::read_to_string(dist.join(format!("{app}.js"))).unwrap_or_else(|e| {
-            panic!("could not read dist/{app}.js (run `bun run build {app}` first): {e}")
+        let path = dist.join(format!("{app}.js"));
+        // Without this, cargo re-runs the script only on env changes — a
+        // JS-only rebuild would ship the PREVIOUS bundle inside a freshly
+        // linked PRX (observed on hardware; maddening to diagnose).
+        println!("cargo:rerun-if-changed={}", path.display());
+        fs::read_to_string(&path).unwrap_or_else(|e| {
+            panic!(
+                "could not read {} (compile the resolved plan first): {e}",
+                path.display()
+            )
         })
     };
-    code.push('\0');
-    fs::write(Path::new(&out_dir).join("game.js"), code).unwrap();
 
     // Asset pack (styles.bin + font atlases + images; .pak container) ->
     // $OUT_DIR/app.pak. Empty when absent; main.rs skips an empty pack.
-    let pak = if app.is_empty() {
+    let pak = if !embed_app {
         Vec::new()
     } else {
-        fs::read(dist.join(format!("{app}.pak"))).unwrap_or_default()
+        let path = dist.join(format!("{app}.pak"));
+        println!("cargo:rerun-if-changed={}", path.display());
+        fs::read(&path).unwrap_or_default()
     };
+
+    // Build identity: FNV-1a64 over exactly the bytes embedded (js before
+    // its NUL, then pak). scripts/bundle-hash.ts is the host-side twin; the
+    // device reports this through OP.debugStats and the PSPLINK bridge
+    // compares it against local dist/ — a stale embed announces itself
+    // instead of silently invalidating a round of on-device verification.
+    let bundle_hash = if embed_app {
+        fnv1a64(&[code.as_bytes(), &pak])
+    } else {
+        String::from("none")
+    };
+    println!("cargo:rustc-env=POCKETJS_BUNDLE_HASH={bundle_hash}");
+
+    code.push('\0');
+    fs::write(Path::new(&out_dir).join("game.js"), code).unwrap();
     fs::write(Path::new(&out_dir).join("app.pak"), pak).unwrap();
 
     // Scripted input for deterministic capture builds (test/e2e-ppsspp.ts):
@@ -59,6 +135,8 @@ fn main() {
     let bench_dump_frames = env::var("POCKETJS_BENCH_DUMP_FRAMES").unwrap_or_default();
 
     println!("cargo:rustc-env=POCKETJS_APP={app}");
+    println!("cargo:rustc-env=POCKETJS_TARGET={target}");
+    println!("cargo:rustc-env=POCKETJS_HOST_ABI={host_abi}");
     println!("cargo:rustc-env=POCKETJS_CAPTURE_INPUT={capture_input}");
     println!("cargo:rustc-env=POCKETJS_TRACE={trace}");
     println!("cargo:rustc-env=POCKETJS_CAP_START={cap_start}");
@@ -66,15 +144,39 @@ fn main() {
     println!("cargo:rustc-env=POCKETJS_ARENA_BYTES={arena_bytes}");
     println!("cargo:rustc-env=POCKETJS_BENCH_DUMP_FRAMES={bench_dump_frames}");
     println!("cargo:rerun-if-env-changed=POCKETJS_APP");
+    println!("cargo:rerun-if-env-changed=POCKETJS_APP_OUTPUT");
+    println!("cargo:rerun-if-env-changed=POCKETJS_EMBED_APP");
+    println!("cargo:rerun-if-env-changed=POCKETJS_OUTPUT_DIR");
+    println!("cargo:rerun-if-env-changed=POCKETJS_TARGET");
+    println!("cargo:rerun-if-env-changed=POCKETJS_HOST_ABI");
+    println!("cargo:rerun-if-env-changed=POCKETJS_LOGICAL_WIDTH");
+    println!("cargo:rerun-if-env-changed=POCKETJS_LOGICAL_HEIGHT");
+    println!("cargo:rerun-if-env-changed=POCKETJS_PHYSICAL_WIDTH");
+    println!("cargo:rerun-if-env-changed=POCKETJS_PHYSICAL_HEIGHT");
+    println!("cargo:rerun-if-env-changed=POCKETJS_PRESENTATION");
+    println!("cargo:rerun-if-env-changed=POCKETJS_RASTER_DENSITY");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAPTURE_INPUT");
     println!("cargo:rerun-if-env-changed=POCKETJS_TRACE");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAP_START");
     println!("cargo:rerun-if-env-changed=POCKETJS_CAP_N");
     println!("cargo:rerun-if-env-changed=POCKETJS_ARENA_BYTES");
     println!("cargo:rerun-if-env-changed=POCKETJS_BENCH_DUMP_FRAMES");
-    if let Ok(entries) = fs::read_dir(dist) {
+    if let Ok(entries) = fs::read_dir(&dist) {
         for e in entries.flatten() {
             println!("cargo:rerun-if-changed={}", e.path().display());
         }
     }
+}
+
+/// FNV-1a 64 as 16 hex digits — keep in lockstep with scripts/bundle-hash.ts
+/// (test vectors asserted there: "" = cbf29ce484222325, "a" = af63dc4c8601ec8c).
+fn fnv1a64(chunks: &[&[u8]]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for chunk in chunks {
+        for &b in *chunk {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    format!("{h:016x}")
 }

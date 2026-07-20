@@ -78,6 +78,19 @@ pub mod op {
     pub const LOAD_TILE_TEXTURE: u8 = 23;
     pub const FREE_TEXTURE: u8 = 24;
     pub const UPLOAD_IMG_ENTRY: u8 = 25;
+    pub const SET_ACTIVE: u8 = 26;
+    pub const HIT_TEST: u8 = 27;
+    pub const SET_CURSOR: u8 = 28;
+    pub const SET_CURSOR_POS: u8 = 29;
+    pub const SVC_OPEN: u8 = 30;
+    pub const SVC_POLL: u8 = 31;
+    pub const SVC_SEND: u8 = 32;
+    pub const LOAD_IMG_FILE: u8 = 33;
+    pub const VIDEO_OPEN: u8 = 34;
+    pub const VIDEO_TICK: u8 = 35;
+    pub const VIDEO_TEXTURE: u8 = 36;
+    pub const VIDEO_CLOSE: u8 = 37;
+    pub const DEBUG_STATS: u8 = 38;
 }
 
 /// Property ids (u8, stable, append-only). Groups:
@@ -122,6 +135,11 @@ pub mod prop {
     pub const BORDER_COLOR: u8 = 70;
     pub const BORDER_WIDTH: u8 = 71;
     pub const SHADOW: u8 = 72;
+    pub const BEVEL_OUTER_LIGHT: u8 = 77;
+    pub const BEVEL_OUTER_DARK: u8 = 78;
+    pub const BEVEL_INNER_LIGHT: u8 = 79;
+    pub const BEVEL_INNER_DARK: u8 = 80;
+    pub const BEVEL_WIDTH: u8 = 81;
     pub const TEXT_COLOR: u8 = 96;
     pub const FONT_SLOT: u8 = 97;
     pub const TEXT_ALIGN: u8 = 98;
@@ -158,8 +176,8 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
     0x00, 0x02, 0x02, 0x02, 0x00, 0x00, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x00, 0x02, 0x02, 0x02,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0x01, 0x01, 0x01, 0x02, 0x00, 0x00, 0x01, 0x00, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0x01, 0x01, 0x01, 0x02, 0x00, 0x00, 0x01, 0x00, 0x02, 0xff, 0xff, 0xff, 0xff, 0x01, 0x01, 0x01,
+    0x01, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0x01, 0x02, 0x02, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
@@ -319,6 +337,28 @@ pub mod tileset {
     pub const FLAG_LINEAR: u16 = 2;
 }
 
+/// Host service channel limits (spec.ts SVC — pocket-svc/<app>/ mailbox).
+pub mod svc {
+    pub const POLL_BUF: usize = 8192;
+    pub const IMG_MAX_BYTES: usize = 131072;
+}
+
+/// STREAM container (.pkst) — host-written video+audio ring file.
+/// Full byte layout in spec.ts; parsed by core/src/stream.rs.
+pub mod stream {
+    pub const MAGIC: u32 = 0x54534b50; // 'PKST' LE
+    pub const VERSION: u16 = 1;
+    pub const HEADER_SIZE: usize = 32;
+    pub const VRING_MAGIC: u32 = 0x52564b50; // 'PKVR' LE
+    pub const VRING_OFF: usize = 32;
+    pub const ARING_MAGIC: u32 = 0x52414b50; // 'PKAR' LE
+    pub const ARING_OFF: usize = 64;
+    pub const HEADER_BLOCK_SIZE: usize = 96;
+    pub const SLOT_HEADER_SIZE: usize = 32;
+    pub const CHUNK_HEADER_SIZE: usize = 16;
+    pub const FLAG_ENDED: u16 = 1;
+}
+
 /// STYLE TABLE (styles.bin) format constants — full layout in spec.ts.
 pub mod style_table {
     pub const MAGIC: u32 = 0x54534344; // 'DCST' LE
@@ -341,7 +381,7 @@ pub mod style_table {
 /// FONT ATLAS blob format constants — full layout in spec.ts.
 pub mod font_atlas {
     pub const MAGIC: u32 = 0x41464344; // 'DCFA' LE
-    pub const VERSION: u16 = 2;
+    pub const VERSION: u16 = 3;
     pub const HEADER_SIZE: usize = 16;
     pub const CMAP_ENTRY_SIZE: usize = 8;
     pub const FLAG_BOLD: u8 = 1;

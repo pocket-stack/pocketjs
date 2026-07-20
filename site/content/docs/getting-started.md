@@ -2,7 +2,9 @@
 
 This is the fastest path from an empty checkout to JSX running on screen. You'll
 write a component, mount it, build it, and see it in the browser dev host — the
-same bundle that also runs on a real Sony PSP, PPSSPP, and headless Bun.
+same source and `pocket.json` can also be compiled into target-specific PSP and
+PS Vita packages. The logical 480×272 UI stays portable while each target owns
+its native renderer, raster density, and HostOps ABI.
 
 If you only want to *try* PocketJS, skip the toolchain entirely and open the
 online [Playground](/playground/): it runs the Rust core as WebAssembly in your
@@ -18,7 +20,9 @@ the targets that compile the core natively — you don't need them to write UI.
 | ------------------------------------- | --------------------------------------------------------------- |
 | Write components, build bundles       | [Bun](https://bun.sh) (drives the build, tests, and dev host)   |
 | Run the local **browser** dev host    | Bun + Rust with the wasm target (`rustup target add wasm32-unknown-unknown`) |
-| Ship a **PSP EBOOT** / run on hardware | Rust **nightly** + [`cargo-psp`](https://github.com/overdrivenpotato/rust-psp) |
+| Ship a **PSP EBOOT** | `bun run bootstrap` (pinned Rust, [`cargo-psp`](https://github.com/pocket-stack/rust-psp), LLVM, and verified SDK) |
+| Ship a **PS Vita VPK** | [VitaSDK](https://vitasdk.org/), `cargo-vita` 0.2.2, and Rust nightly `2026-05-28` with `rust-src` |
+| Hot-reload on **real PSP hardware** | The build toolchain above + optional [PSPLINK](https://github.com/pspdev/psplinkusb) host tools |
 
 The Rust core is `no_std` and gets built once per platform. For this guide we
 stay on the JS side and let the dev host compile the wasm core for us.
@@ -29,6 +33,7 @@ stay on the JS side and let the dev host compile the wasm core for us.
 git clone https://github.com/pocket-stack/pocketjs
 cd pocketjs
 bun install
+bun run bootstrap   # one-time PSP setup; omit for browser-only development
 ```
 
 The [`@pocketjs/cli`](https://www.npmjs.com/package/@pocketjs/cli) package can
@@ -37,12 +42,22 @@ check (and mostly install) the toolchain for you, flutter-doctor style:
 ```sh
 npm install -g @pocketjs/cli
 pocket doctor   # diagnoses bun, the Rust targets, and the PSP toolchain
-pocket setup    # installs whatever doctor flagged as missing
+pocket setup    # runs the checkout's pinned, idempotent bootstrap
 ```
 
-It also wraps the day-to-day commands — `pocket create <name>` scaffolds a
-demo app, `pocket dev|build|psp|hw|psplink` run the build scripts from
-anywhere inside the checkout, and `pocket devtools [app]` opens the
+The PSP setup is self-contained in PocketJS; it does not inspect DreamCart or
+any sibling source checkout. Its exact revisions and SDK checksum live in
+`cli/psp-toolchain.json`. By default artifacts are shared through
+`${XDG_CACHE_HOME:-~/.cache}/pocket-stack`; `POCKET_STACK_CACHE_DIR` overrides
+that root. For a custom SDK, set `PSP_SDK` or `PSPDEV` (in that precedence
+order). The build validates an explicit path and then exports both names to the
+selected SDK, so a typo cannot silently fall through to a different cached
+toolchain.
+
+It also wraps the day-to-day commands. `pocket create <name>` scaffolds a
+manifest-first demo; `pocket check|compile|build --target psp|vita` delegate to
+the canonical resolver; `pocket dev|psp|vita|hw|psplink` retain the low-level
+host-development paths; and `pocket devtools [app]` opens the
 [DevTools](/docs/devtools/) panel with the USB debug bridge.
 
 That pulls `solid-js`, Vue Vapor dependencies, and the build-time tooling (the
@@ -51,6 +66,46 @@ separate runtime to install — the framework is the `@pocketjs/framework` packa
 in this repo, exposed through subpath imports like
 `@pocketjs/framework/components`.
 
+Create an app and validate it against both stock profiles:
+
+```sh
+pocket create my-app
+pocket check --target psp --manifest demos/my-app/pocket.json
+pocket check --target vita --manifest demos/my-app/pocket.json
+```
+
+The generated `pocket.json` is strict application intent:
+
+```json
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.example.my-app",
+  "name": "my-app",
+  "title": "My App",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": ["text.glyphs.baked", "input.buttons"]
+    }
+  },
+  "app": {
+    "entry": "main.tsx",
+    "output": "my-app-main",
+    "framework": "solid",
+    "viewport": {
+      "logical": [480, 272],
+      "presentation": "integer-fit"
+    }
+  }
+}
+```
+
+Keep `id` stable across releases: the Vita backend derives the installed Title
+ID from it. Put optional APIs such as `input.touch` under `enhances` and retain
+a controller fallback; unsupported entries under `requires` fail before the
+compiler runs.
+
 ## Write your first component
 
 A component returns JSX. You lay out with `View`, draw text with `Text`, and
@@ -58,16 +113,17 @@ style with `class` — a **build-time subset of Tailwind**, not runtime CSS.
 State comes directly from the selected framework: `createSignal` in Solid,
 `ref` in Vue Vapor.
 
-Solid is the default framework. Vue Vapor is selected with `pocket.config.ts` or
-`--framework=vue-vapor`; see [Frameworks](/docs/frameworks/) for the full
-selection model.
+Solid is the default low-level framework. Manifest builds select Solid or Vue
+Vapor with `app.framework` in `pocket.json`; see [Frameworks](/docs/frameworks/)
+for the full selection model.
 
-Here's a focusable counter. Put it in `demos/hero/app.tsx`:
+Here's a focusable counter. Put it in the scaffolded
+`demos/my-app/app.tsx`:
 
 :::framework-code
 ```tsx solid
 import { createSignal, Show } from "solid-js";
-import { Text, View } from "@pocketjs/framework/components";
+import { Text, View } from "@pocketjs/framework/solid/components";
 
 export default function App() {
   const [count, setCount] = createSignal(0);
@@ -93,7 +149,7 @@ export default function App() {
 
 ```tsx vue-vapor
 import { ref } from "vue";
-import { Text, View } from "@pocketjs/framework/components";
+import { Text, View } from "@pocketjs/framework/vue-vapor/components";
 
 export default function App() {
   const count = ref(0);
@@ -140,29 +196,29 @@ What's happening:
 ## The mount entry
 
 `app.tsx` exports a component but doesn't put anything on screen. The **mount
-entry** does that. Keep it tiny — this is just app bootstrap. Put it in
-`demos/hero/main.tsx`:
+entry** does that. Keep it tiny — this is just app bootstrap. Put it in the
+scaffolded `demos/my-app/main.tsx`:
 
 :::framework-code
 ```tsx solid
-// @title PocketJS: Hero
+// @title PocketJS: My App
 import App from "./app.tsx";
-import { mount } from "@pocketjs/framework";
+import { mount } from "@pocketjs/framework/solid";
 
 mount(() => <App />);
 ```
 
 ```tsx vue-vapor
-// @title PocketJS: Hero Vue Vapor
+// @title PocketJS: My App
 import App from "./app.tsx";
-import { mount } from "@pocketjs/framework";
+import { mount } from "@pocketjs/framework/vue-vapor";
 
 mount(App);
 ```
 :::
 
-`mount` is imported from the package root, `@pocketjs/framework`. It handles host
-detection (PSP vs. PPSSPP vs. browser vs. Bun), wiring the generated style table,
+`mount` comes from the selected framework runtime subpath. It handles host
+detection (native PSP/Vita vs. injected browser/headless hosts), wiring the generated style table,
 uploading images from the packed asset file, and installing the per-frame host
 callback — you don't manage any of that yourself. (`mount` builds on the
 lower-level `render` export from the same module; `mount` is what you want for an
@@ -170,14 +226,31 @@ app.)
 
 ## Build it
 
-One command transforms your app, compiles the styles it actually uses, bakes only
-the glyphs it actually renders, and bundles everything:
+Use the manifest path for product builds. It validates the app, resolves the
+target once, compiles target-specific assets, and dispatches the native backend:
 
 ```sh
-bun scripts/build.ts hero
+pocket build --target psp --manifest demos/my-app/pocket.json -- --release
+# native/target/mipsel-sony-psp/release/EBOOT.PBP
+
+export VITASDK="$HOME/vitasdk"
+export PATH="$VITASDK/bin:$HOME/.cargo/bin:$PATH"
+pocket build --target vita --manifest demos/my-app/pocket.json -- --release
+# demos/my-app/dist/vita/my-app-main.vpk
 ```
 
-For Vue Vapor, select the framework explicitly or put it in `pocket.config.ts`:
+Vita VPKs include PocketJS's default black 128x128 bubble icon and complete
+LiveArea background/startup artwork, so a newly built application does not get
+a blank bubble or generic launch gate. Custom native hosts call
+`packageVitaVpk()` from `@pocketjs/framework/vita-package`; VPK-relative app
+assets override matching defaults while missing artwork continues to inherit
+PocketJS's complete set.
+
+`pocket compile --target …` stops after the JS/pak artifacts for a custom native
+host. `pocket check --target …` is read-only. Arguments after `--` belong to the
+selected native backend.
+
+For framework work, the lower-level compiler remains available:
 
 :::framework-code
 ```sh solid
@@ -189,17 +262,17 @@ bun scripts/build.ts hero --framework=vue-vapor
 ```
 :::
 
-This produces two files in `dist/`:
+That density-1 development command produces two files in `dist/`:
 
 | File              | What it is                                                                 |
 | ----------------- | ------------------------------------------------------------------------- |
-| `dist/hero.js`    | Your app bundled to a single IIFE (unminified) that any host loads        |
+| `dist/hero.js`    | Your app bundled to a single IIFE for the selected development contract   |
 | `dist/hero.pak` | The packed asset file: the compiled style table, font atlases, and images |
 
 Vue Vapor builds use the `.vue-vapor` suffix, for example
 `dist/hero.vue-vapor.js` and `dist/hero.vue-vapor.pak`.
 
-A few notes on the command:
+A few notes on the low-level command:
 
 - The argument resolves against `demos/`. `hero` → `demos/hero/app.tsx`. To build
   the **mounted** entry instead, target `main.tsx` — either
@@ -246,6 +319,21 @@ Rebuild-on-change is deliberately manual: after editing a component, re-run
 `bun scripts/build.ts <app>` (or the whole `dev` script) and reload the page.
 The first run compiles the Rust core to wasm with cargo, so it takes a moment;
 subsequent runs are fast.
+
+### In Vita3K
+
+For stock demos, one command builds a manifest-driven VPK, installs it under a
+stable per-demo Title ID, and launches it:
+
+```sh
+pocket play vita hero
+pocket play vita gallery --fullscreen
+```
+
+Vita3K is interactive here; `--fullscreen` controls the emulator window. The
+application still uses the profile's 480×272 logical viewport rendered at
+960×544 density 2. See the [Vita host guide](https://github.com/pocket-stack/pocketjs/blob/main/native-vita/README.md)
+for toolchain setup, key mappings, real-device installation, and the golden E2E.
 
 ### In the Playground
 

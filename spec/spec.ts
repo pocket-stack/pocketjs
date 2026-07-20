@@ -88,6 +88,9 @@ export const SIZE_FULL = -1;
 //   animate(id, propId, to:f64, durMs, easing, delayMs) -> animId [from = current]
 //   cancelAnim(animId)
 //   setFocus(idOr0)                        [applies focus: variant natively]
+//   setActive(id, activeInt)               [applies active: variant natively;
+//                                           0/1 int — the input layer's
+//                                           pressed state, spec op 26]
 //   loadStyles(buf) / loadFontAtlas(buf)   [web/test hosts only; PSP feeds core
 //                                           natively from the pak]
 //   measureText(str, fontSlot) -> width:f32
@@ -131,6 +134,76 @@ export const OP = {
   uploadImgEntry: 25, //  (blob) -> handle | -1. Upload a self-contained IMG
   //                      entry (compiler/pak.ts layout, v2: PSM_T8 palette +
   //                      optional RLE + filter flags parsed core-side).
+  setActive: 26, //       (id, activeInt) — set/clear the `active:` pressed
+  //                      variant natively (same machinery as setFocus). The
+  //                      focus manager holds it while the press button is
+  //                      down; stale ids no-op.
+  // -- virtual cursor (input.cursor capability; src/input.ts owns the state
+  //    machine — hosts only relay these three calls) ------------------------
+  hitTest: 27, //         (x: f32, y: f32) -> topmost node id at that logical
+  //                      point, or 0. Paint-order hit testing: the last node
+  //                      painted there whose border box contains the point
+  //                      AND that paints something (bg/gradient/border/bevel/
+  //                      image/text — in ANY variant: focus:/active:-styled
+  //                      hotspots claim before they are hovered). Pure layout
+  //                      containers — including the framework's overlay/
+  //                      portal layers — pass through, the engine's stand-in
+  //                      for pointer-events: none; their children are still
+  //                      tested. display:none and effective-opacity-0
+  //                      subtrees are skipped (paint culls them: what cannot
+  //                      be seen takes no hits), overflow-hidden clips
+  //                      descendants. Perspective (3D) subtrees hit as their
+  //                      context root's box.
+  setCursor: 28, //       (tex, hotX, hotY, w, h) — bind the cursor sprite: an
+  //                      uploaded texture drawn LAST every frame (topmost),
+  //                      never hit-tested, never in layout. tex < 0 hides the
+  //                      cursor; w/h <= 0 draw at the texture's pixel size.
+  setCursorPos: 29, //    (x: f32, y: f32) — move the cursor hotspot to a
+  //                      logical point (the sprite renders offset by -hotspot;
+  //                      the cursor input layer integrates the analog nub
+  //                      into this once per frame).
+  // -- host service channel (tethered apps; see SVC + STREAM below). A
+  //    companion process on the tethered machine (PSPLINK usbhostfs) speaks
+  //    JSON lines + side files with the app — the same mailbox split the
+  //    DevTools bridge uses (control on jsonl, bulk bytes via files). --------
+  svcOpen: 30, //         (app: string) -> bool. Probe pocket-svc/<app>/enable
+  //                      under host0: then ms0:; seek in.jsonl to EOF (stale
+  //                      commands from a previous run are skipped). All later
+  //                      svc/video paths resolve relative to this directory.
+  svcPoll: 31, //         () -> string | undefined. New COMPLETE lines from
+  //                      in.jsonl since the last poll (may batch several); a
+  //                      line the host is mid-writing stays for the next poll.
+  svcSend: 32, //         (line: string) — append one JSON line to out.jsonl.
+  loadImgFile: 33, //     (path: string) -> handle | -1. Read a small IMG-entry
+  //                      file (compiler/pak.ts layout) from the svc directory
+  //                      into a texture — how host-rendered thumbnails and
+  //                      text strips reach the GE without transiting the JS
+  //                      heap or the JSON channel.
+  // -- video plane (STREAM container below): a host-decoded pixel+PCM feed
+  //    presented as one core texture + one audio channel. ------------------
+  videoOpen: 34, //       (path: string) -> bool. Open a .pkst stream file in
+  //                      the svc directory, validate headers, allocate the
+  //                      plane texture (pow2 CLUT8) and start audio output.
+  videoTick: 35, //       () -> frameIndex | -1. Bounded per-frame IO pump:
+  //                      reads the 96-byte header block, tops up the PCM ring,
+  //                      continues the current slot read, and when a slot
+  //                      completes updates the plane texture in place.
+  //                      Returns the source frame index of the presented
+  //                      frame, -1 before the first one.
+  videoTexture: 36, //    () -> handle | -1. The plane texture (stable for the
+  //                      whole session; -1 when no stream is open).
+  videoClose: 37, //      () — stop audio, close the stream, free the plane.
+  debugStats: 38, //      () -> string. One JSON snapshot of the device's
+  //                      diagnostic counters (native/src/stats.rs: audio
+  //                      underruns/reserve failures, video frames presented/
+  //                      torn/lapped, svc truncation resets) plus build
+  //                      identity: the app output name and the FNV-1a64 hash
+  //                      of the embedded js+pak (scripts/bundle-hash.ts is
+  //                      the host-side twin). The devtools "devStats"
+  //                      message rides this; the bridge compares the hash
+  //                      against local dist/ on every hello and calls out a
+  //                      stale-embed loudly. Hosts without counters simply
+  //                      omit the op.
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -186,6 +259,22 @@ export const PROP = {
   borderColor: 70, //   color u32 ABGR
   borderWidth: 71, //   f32 px — drawn INSET, purely visual, does NOT affect layout
   shadow: 72, //        i32 baked shadow index: 0 = none, 1 = shadow, 2 = md, 3 = lg
+  // ids 73..76 reserved for per-corner radius (radiusTL/TR/BR/BL).
+  //
+  // Bevel rings — the classic-chrome (Win9x-era) 3D edge. Up to two nested
+  // rings drawn INSET as plain rects (purely visual, never affects layout):
+  // the OUTER ring hugs the border box, the INNER ring sits bevelWidth
+  // inside it. Per ring, `light` paints the top+left strips and `dark` the
+  // bottom+right strips; dark is emitted after light and runs the full edge
+  // length, so DARK OWNS THE SHARED CORNERS (matches the 98.css box-shadow
+  // stack order, where the dark shadow is listed first and paints on top).
+  // Unset (alpha 0) colors emit nothing. Ignored when radius > 0 (bevels
+  // are square by definition; the compiler rejects the combination).
+  bevelOuterLight: 77, // color u32 ABGR
+  bevelOuterDark: 78, //  color u32 ABGR
+  bevelInnerLight: 79, // color u32 ABGR
+  bevelInnerDark: 80, //  color u32 ABGR
+  bevelWidth: 81, //      f32 px per ring (default 1)
 
   // -- text (96..127) --------------------------------------------------------
   textColor: 96, //     color u32 ABGR
@@ -350,6 +439,9 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
   gradDir: VALUE_KIND.int, radius: VALUE_KIND.f32, opacity: VALUE_KIND.f32,
   borderColor: VALUE_KIND.color, borderWidth: VALUE_KIND.f32,
   shadow: VALUE_KIND.int,
+  bevelOuterLight: VALUE_KIND.color, bevelOuterDark: VALUE_KIND.color,
+  bevelInnerLight: VALUE_KIND.color, bevelInnerDark: VALUE_KIND.color,
+  bevelWidth: VALUE_KIND.f32,
   textColor: VALUE_KIND.color, fontSlot: VALUE_KIND.int,
   textAlign: VALUE_KIND.int, lineHeight: VALUE_KIND.f32, tracking: VALUE_KIND.f32,
   translateX: VALUE_KIND.f32, translateY: VALUE_KIND.f32,
@@ -529,6 +621,112 @@ export const TILESET_FLAG_LINEAR = 1 << 1;
 /** Pak key family for TILESET entries. NOT fed to the core at boot — tiles
  *  stream on demand through the loadTileTexture op. */
 export const keyTileset = (name: string): string => `ui:tile.${name}`;
+
+// ---------------------------------------------------------------------------
+// SVC — the host service channel (tethered companion apps)
+// ---------------------------------------------------------------------------
+// A companion process on the tethered machine shares a directory with the
+// device (PSPLINK usbhostfs `host0:`, or the memstick root under PPSSPP) and
+// speaks the DevTools mailbox split: control as JSON lines, bulk bytes as
+// side files. Per app:
+//
+//   <root>/pocket-svc/<app>/enable    host creates; device probes at svcOpen
+//   <root>/pocket-svc/<app>/in.jsonl  host -> device (appended lines)
+//   <root>/pocket-svc/<app>/out.jsonl device -> host (appended lines)
+//
+// plus whatever side files the app's protocol names (IMG entries for
+// loadImgFile, .pkst streams for videoOpen) — always svc-dir-relative paths;
+// the device never opens a path outside its svc directory.
+
+export const SVC_DIR = "pocket-svc";
+/** Max bytes consumed per svcPoll (longer backlogs drain over later polls). */
+export const SVC_POLL_BUF = 8192;
+/** loadImgFile refuses IMG entries larger than this (they'd stall the frame —
+ *  bigger assets belong in the pak or a stream). */
+export const SVC_IMG_MAX_BYTES = 128 * 1024;
+
+// ---------------------------------------------------------------------------
+// STREAM container (.pkst) — a host-written video+audio ring file
+// ---------------------------------------------------------------------------
+// One concurrently-written file: the host (writer) appends-in-place into two
+// fixed-slot rings and only THEN advances the ring's latestSeq in the header
+// block, so the device (reader) never observes a half-written frame it was
+// told about. The device re-checks a slot's embedded seq after reading its
+// pixels — a slot the writer lapped is discarded, not presented. All offsets
+// are from the start of the file; everything little-endian.
+//
+//   Stream header (32 bytes at off 0):
+//     off 0  u32  magic     = 0x54534b50  bytes 'P','K','S','T'
+//     off 4  u16  version   = 1
+//     off 6  u16  flags     bit 0 = ended (source exhausted; latestSeq final)
+//     off 8  u32  epoch     bumped by the writer on any discontinuity (seek,
+//                           new source). The reader drops its ring positions
+//                           and re-syncs to latest on a change.
+//     off 12 u32  videoOff  byte offset of video slot 0 (16-aligned)
+//     off 16 u32  audioOff  byte offset of audio chunk 0 (16-aligned)
+//     off 20 u8[12] reserved (0)
+//
+//   Video ring header (32 bytes at off 32):
+//     off 32 u32  magic     = 0x52564b50  bytes 'P','K','V','R'
+//     off 36 u16  w         frame width  (pow2 <= TEX_MAX_DIM — the plane
+//     off 38 u16  h         frame height  texture IS the frame, no crop rect;
+//                           the host letterboxes/pre-squashes into w x h for
+//                           the target viewport's stretch)
+//     off 40 u16  fpsNum    nominal source rate (e.g. 15/1, 30000/1001);
+//     off 42 u16  fpsDen    frameIndex / (fpsNum/fpsDen) = source seconds
+//     off 44 u32  slotCount
+//     off 48 u32  slotSize  = STREAM_SLOT_HEADER_SIZE + 1024 + w*h, 16-aligned
+//     off 52 u32  latestSeq newest fully-written frame; 0 = none yet. Seq
+//                           starts at 1; slot index = (seq-1) % slotCount.
+//     off 56 u32  totalFrames source length in frames (0 = unknown/live)
+//     off 60 u32  reserved (0)
+//
+//   Audio ring header (32 bytes at off 64):
+//     off 64 u32  magic       = 0x52414b50  bytes 'P','K','A','R'
+//     off 68 u32  sampleRate  (22050 is the tuned USB default)
+//     off 72 u16  channels    (1 | 2; s16 interleaved)
+//     off 74 u16  reserved (0)
+//     off 76 u32  chunkFrames sample frames per chunk
+//     off 80 u32  chunkCount
+//     off 84 u32  latestSeq   newest fully-written chunk; 0 = none. Seq starts
+//                             at 1; chunk index = (seq-1) % chunkCount.
+//     off 88 u8[8] reserved (0)
+//
+//   The reader polls one 96-byte header-block read per tick.
+//
+//   Video slot (at videoOff + ((seq-1) % slotCount) * slotSize):
+//     off 0  u32  seq        re-read after the pixel read: changed = lapped,
+//                            discard (never present a torn frame)
+//     off 4  u32  frameIndex source frame index (monotonic; the host may skip
+//                            indices when it adapts its rate)
+//     off 8  u16  w          must equal the ring header's w/h
+//     off 10 u16  h
+//     off 12 u8[20] reserved (0)
+//     off 32 u8[1024]  palette, 256 x u32 ABGR
+//     off 1056 u8[w*h] CLUT8 indices, row-major, raw (fixed-size slots make
+//                      the reader's chunked-read plan trivial; RLE would not
+//                      survive a fixed slot anyway)
+//
+//   Audio chunk (at audioOff + ((seq-1) % chunkCount) * chunkSize where
+//   chunkSize = STREAM_CHUNK_HEADER_SIZE + chunkFrames*channels*2):
+//     off 0  u32  seq
+//     off 4  u32  startFrame position of the chunk's first sample frame on
+//                           the source timeline (seek resets it with epoch)
+//     off 8  u8[8] reserved (0)
+//     off 16 s16[chunkFrames*channels] PCM, interleaved
+
+export const STREAM_MAGIC = 0x54534b50; // 'PKST' LE
+export const STREAM_VERSION = 1;
+export const STREAM_HEADER_SIZE = 32;
+export const STREAM_VRING_MAGIC = 0x52564b50; // 'PKVR' LE
+export const STREAM_VRING_OFF = 32;
+export const STREAM_ARING_MAGIC = 0x52414b50; // 'PKAR' LE
+export const STREAM_ARING_OFF = 64;
+/** One header-block read covers all three headers. */
+export const STREAM_HEADER_BLOCK_SIZE = 96;
+export const STREAM_SLOT_HEADER_SIZE = 32;
+export const STREAM_CHUNK_HEADER_SIZE = 16;
+export const STREAM_FLAG_ENDED = 1 << 0;
 
 // ---------------------------------------------------------------------------
 // Font slots
@@ -939,7 +1137,7 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
 }
 
 // ---------------------------------------------------------------------------
-// FONT ATLAS binary format  (version 2)
+// FONT ATLAS binary format  (version 3)
 // ---------------------------------------------------------------------------
 // One blob per font slot, baked by compiler/bake-font.ts, parsed by
 // core/src/text.rs. Glyph coverage is stored in fixed-size cells as one
@@ -948,37 +1146,44 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
 //
 //   Header (16 bytes):
 //     off  0  u32  magic      = 0x41464344  bytes 'D','C','F','A'
-//     off  4  u16  version    = 2
+//     off  4  u16  version    = 3
 //     off  6  u16  glyphCount (including gid 0 = tofu box)
-//     off  8  u8   cellW      cell width in px  (coverage cells are cellW x cellH)
-//     off  9  u8   cellH      cell height in px
-//     off 10  u8   baseline   px from cell TOP to the baseline
-//     off 11  u8   lineHeight default line advance in px
+//     off  8  u8   cellW      LOGICAL cell width in px
+//     off  9  u8   cellH      LOGICAL cell height in px
+//     off 10  u8   baseline   LOGICAL px from cell TOP to the baseline
+//     off 11  u8   lineHeight default LOGICAL line advance in px
 //     off 12  u8   fontSlot   slot index this atlas binds (0..MAX_FONT_SLOTS-1)
 //     off 13  u8   flags      bit 0 = bold; bits 1-7 reserved (0)
-//     off 14  u16  reserved   (0)
+//     off 14  u8   density    raster samples per logical pixel (1..255)
+//     off 15  u8   reserved   (0)
 //
 //   cmap (glyphCount x 8 bytes) at FONT_HEADER_SIZE, SORTED ASCENDING by
 //   codepoint so lookups binary-search. A codepoint miss resolves to gid 0
 //   (tofu) and bumps the core's miss counter.
 //     +0  u32  codepoint  (Unicode scalar)
 //     +4  u16  gid        (0..glyphCount-1; index into the bitmap region)
-//     +6  u8   advance    px advance for this glyph
-//     +7  u8   xoff       left-side-bearing shift: px the outline was shifted
+//     +6  u8   advance    LOGICAL px advance for this glyph
+//     +7  u8   xoff       LOGICAL left-side-bearing shift: px the outline was shifted
 //                         RIGHT at bake so negative-LSB ink (î ï ĥ ǰ accents)
 //                         stays inside the cell. Renderers place the cell at
 //                         penX - xoff. 0 for most glyphs (was reserved; old
 //                         atlases with 0 here remain valid).
 //
 //   coverage region at FONT_HEADER_SIZE + glyphCount*FONT_CMAP_ENTRY_SIZE:
-//     glyphCount x cellH x cellW bytes. Each byte is alpha coverage 0..255
-//     for one pixel, left-to-right, top row first. Glyph g's rows start at
-//     coverageOffset + g * cellH * cellW.
+//     glyphCount x (cellH*density) x (cellW*density) bytes. Each byte is alpha
+//     coverage 0..255 for one raster sample, left-to-right, top row first.
+//     Glyph g's rows start at
+//     coverageOffset + g * (cellH*density) * (cellW*density).
 //
 //   gid 0 MUST be the tofu box (drawn for unmapped codepoints).
+//
+// Version 2 used the same 16-byte header and 8-byte cmap, with bytes 14..15
+// reserved and all dimensions/metrics serving as both logical and raster px.
+// New cores accept v2 as density=1; v3 separates raster coverage from stable
+// logical layout metrics so a 2x target can sharpen text without relayout.
 
 export const FONT_MAGIC = 0x41464344; // 'DCFA' LE
-export const FONT_VERSION = 2;
+export const FONT_VERSION = 3;
 export const FONT_HEADER_SIZE = 16;
 export const FONT_CMAP_ENTRY_SIZE = 8;
 export const FONT_FLAG_BOLD = 1 << 0;

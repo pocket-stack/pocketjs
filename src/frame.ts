@@ -5,58 +5,19 @@
 // patching mount() with a global per-frame callback.
 
 import { createSignal, onCleanup, type Accessor } from "solid-js";
-import { ANALOG_CENTER } from "../spec/spec.ts";
+import { __resetAnalog } from "./analog.ts";
+
+export { __setAnalog, analogRaw, analogX, analogY } from "./analog.ts";
 
 type FrameCallback = (buttons: number) => void;
 
 const callbacks = new Set<FrameCallback>();
 let buttonHandlerBlockDepth = 0;
 
-// ---------------------------------------------------------------------------
-// Analog stick
-// ---------------------------------------------------------------------------
-// The host passes the packed nub value ((x << 8) | y, 0..255 per axis, 128 =
-// center) as frame()'s second argument; hosts without a stick omit it and the
-// value holds at center. The runtime, not the host, owns deadzone policy so
-// every host feels identical.
-
-/** Fraction of half-range ignored around the stick center (PSP nubs drift). */
-const ANALOG_DEADZONE = 0.12;
-
-let analogPacked = ANALOG_CENTER;
-
-export function __setAnalog(packed: number | undefined): void {
-  analogPacked = packed === undefined ? ANALOG_CENTER : packed & 0xffff;
-}
-
-/** Raw packed nub value ((x << 8) | y) as the host delivered it this frame. */
-export function analogRaw(): number {
-  return analogPacked;
-}
-
-/** One nub axis normalized to -1..1 with the runtime deadzone applied. */
-function axis(raw: number): number {
-  const v = (raw - 128) / 127;
-  const mag = Math.abs(v);
-  if (mag < ANALOG_DEADZONE) return 0;
-  // Rescale so the active range still spans 0..1 (no jump at the deadzone edge).
-  return (Math.sign(v) * (mag - ANALOG_DEADZONE)) / (1 - ANALOG_DEADZONE);
-}
-
-/** Nub X in -1..1 (right positive), deadzoned. 0 on stickless hosts. */
-export function analogX(): number {
-  return axis((analogPacked >> 8) & 0xff);
-}
-
-/** Nub Y in -1..1 (down positive), deadzoned. 0 on stickless hosts. */
-export function analogY(): number {
-  return axis(analogPacked & 0xff);
-}
-
 export function resetFrameHooks(): void {
   callbacks.clear();
   buttonHandlerBlockDepth = 0;
-  analogPacked = ANALOG_CENTER;
+  __resetAnalog();
 }
 
 export function runFrameHooks(buttons: number): void {
@@ -75,6 +36,14 @@ export interface ButtonPressOptions {
    */
   allowWhenBlocked?: boolean;
   active?: boolean | (() => boolean);
+  /**
+   * Require the button to be seen UP for at least one frame before its next
+   * edge counts. A component that mounts UNDER the user's held finger (a
+   * screen opened by a Focusable press, an on-screen-keyboard chord) would
+   * otherwise read the still-held button as a fresh press one frame later.
+   * Scripted tapes/goldens pulse buttons for single frames and are unaffected.
+   */
+  latched?: boolean;
 }
 
 export function pushButtonHandlerBlock(): () => void {
@@ -92,7 +61,7 @@ export function onButtonPress(
   callback: (pressed: number, buttons: number) => void,
   opts: ButtonPressOptions = {},
 ): void {
-  let prevButtons = 0;
+  let prevButtons = opts.latched ? ~0 : 0; // latched: "everything held" until released
   onFrame((buttons) => {
     const pressed = buttons & ~prevButtons;
     prevButtons = buttons;

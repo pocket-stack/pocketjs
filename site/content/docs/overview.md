@@ -1,12 +1,11 @@
 # Overview
 
-PocketJS lets you build **Solid** or **Vue Vapor** interfaces for the Sony PSP
-and similarly constrained hardware. It compiles class strings and font glyphs at
-build time, then renders real flexbox, sub-pixel text and native animation
-through a compact `no_std` Rust core. Solid and Vue Vapor apps share the same
-PocketJS host components, asset pipeline and native runtime, and their built
-artifacts run on real PSP hardware, in the PPSSPP emulator, in the browser, and
-headless under Bun.
+PocketJS lets you build **Solid** or **Vue Vapor** interfaces for Sony PSP and
+PS Vita hardware. It compiles class strings and font glyphs at build time, then
+renders real flexbox, sub-pixel text and native animation through a compact
+`no_std` Rust core. One application manifest resolves into target-specific PSP
+and Vita artifacts; browser, desktop, PPSSPP/Vita3K, and headless hosts exercise
+the same logical UI and HostOps semantics.
 
 If you know Solid or Vue, you already know most of PocketJS. The primitives are
 `View`, `Text`, and `Image`; state comes from the native framework package
@@ -15,18 +14,20 @@ If you know Solid or Vue, you already know most of PocketJS. The primitives are
 What is different is what happens underneath: there is no browser DOM and no
 runtime CSS.
 
-## One core, four hosts
+## One core, multiple hosts
 
 Everything renders through one Rust core, `pocketjs-core` — a
 platform-agnostic `#![no_std]` library that owns the retained node tree,
 [taffy](https://github.com/DioxusLabs/taffy) flexbox layout, the style table,
-animation tracks, baked text, and a `DrawList`. That core is compiled twice and
+animation tracks, baked text, and a `DrawList`. That core is compiled per host and
 paired with a backend per host:
 
 | Host | JS engine | Rust build | Backend |
 |---|---|---|---|
 | **PSP hardware** | QuickJS | `mipsel-sony-psp` | sceGu (the GE) |
 | **PPSSPP** | QuickJS | `mipsel-sony-psp` | sceGu, run headless for e2e goldens |
+| **PS Vita / Vita3K** | QuickJS | `armv7-sony-vita-newlibeabihf` | vita2d/GXM at 960×544 |
+| **Desktop** | host engine | native | wgpu window + DevTools |
 | **Browser** | the browser's | `wasm32-unknown-unknown` | deterministic software rasterizer → canvas |
 | **Headless Bun** | Bun | `wasm32-unknown-unknown` | same rasterizer → byte-exact PNG goldens |
 
@@ -40,7 +41,7 @@ and Rust.
 ## Who it's for
 
 PocketJS is for JavaScript and TypeScript developers who want to build real,
-animated UI for the PSP — launchers, menus, dashboards, small apps — without
+animated UI for PSP/Vita — launchers, menus, dashboards, small apps — without
 writing C or hand-rolling a layout engine. You get a familiar reactive
 component model and utility-class styling; the framework handles host
 detection, the generated style table, image uploads, and the per-frame host
@@ -130,7 +131,7 @@ callback:
 :::framework-code
 ```tsx solid
 // main.tsx
-import { mount } from "@pocketjs/framework";
+import { mount } from "@pocketjs/framework/solid";
 import App from "./app.tsx";
 
 mount(() => <App />);
@@ -138,7 +139,7 @@ mount(() => <App />);
 
 ```tsx vue-vapor
 // main.tsx
-import { mount } from "@pocketjs/framework";
+import { mount } from "@pocketjs/framework/vue-vapor";
 import App from "./app.tsx";
 
 mount(App);
@@ -168,32 +169,39 @@ A few things worth noticing in that example:
   string and a reactive expression laid out as one inline run, not two flex
   items.
 
-## The same runtime, everywhere
+## One application contract, target-specific artifacts
 
-That one built app artifact is what runs on every host:
+The same source and manifest resolve for each compatible target, while each
+host family consumes the artifact built for its density and ABI:
 
 - **PSP hardware** — bundled into an EBOOT, QuickJS evaluating your JS, the core
   driving sceGu.
 - **PPSSPP** — the same EBOOT, run headless for end-to-end frame goldens stamped
   with the emulator build.
+- **PS Vita hardware** — bundled into a target-specific VPK, QuickJS driving the
+  same HostOps/core contract through vita2d/GXM at 960×544.
+- **Vita3K** — the same VPK as Vita hardware, with an isolated capture path for
+  native-density golden tests.
 - **Browser** — the core compiled to WASM with a software rasterizer, drawn to a
-  480×272 canvas. Try demos in the [Playground](/playground/).
-- **Headless Bun** — the same WASM rasterizer, scripted input, fixed timestep,
-  producing byte-exact PNG goldens for the test suite.
+  480×272 canvas and a browser-built development bundle/pak. Try demos in the
+  [Playground](/playground/).
+- **Headless Bun** — the WASM rasterizer with scripted input, virtual time, and
+  recorded effect deliveries, producing byte-exact PNG goldens for the suite.
 
-Because animation ticks at a fixed `dt` and frame content is a pure function of
-the frame index, goldens are byte-exact rather than approximate.
+Given the same target build, simulation-rate policy, input tape, and effect
+deliveries, each 1/60-second core tick follows the same trajectory. Goldens are
+therefore byte-exact rather than approximate.
 
-## What v1 punts
+## Current boundaries
 
-PocketJS v1 is deliberately scoped. It does **not** yet include:
+PocketJS 0.4 is deliberately scoped. It does **not** yet include:
 
-- Kinetic / momentum scroll views
 - `hover:` variants (there is no pointer on a PSP)
 - Percentage sizes beyond `-full`
 - `rounded-full` on runtime-sized nodes — it requires build-time-known `w-N h-N`
   in the same class literal
-- CLUT / swizzled textures
+- arbitrary logical viewport sizes for stock PSP/Vita profiles (both use 480×272)
+- runtime font shaping or unrestricted dynamic glyph layout
 - Render-to-texture opacity groups (per-vertex alpha is used instead — wrong on
   overlap, fine for demos)
 - Kerning
@@ -209,8 +217,8 @@ list in the [Tailwind subset](/docs/tailwind/) reference.
   app.
 - [Frameworks](/docs/frameworks/) — switch between Solid and Vue Vapor without
   environment-variable hacks.
-- [Architecture](/docs/architecture/) — how the JS runtime, the Rust core, and
-  the four backends fit together.
+- [Architecture](/docs/architecture/) — how the JS runtime, Rust core, and
+  target backends fit together.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, control flow, and
   the app-shell primitives.
 - [Playground](/playground/) — run the demos in your browser.

@@ -34,7 +34,9 @@ pub mod anim;
 pub mod codec;
 pub mod draw;
 pub mod layout;
+pub mod raster;
 pub mod spec;
+pub mod stream;
 pub mod style;
 pub mod text;
 pub mod tree;
@@ -175,13 +177,13 @@ fn copy_aligned(src: &[u8], byte_len: usize) -> Vec<u128> {
 // ---- unaligned LE readers (asset blob parsing; overflow-proof offsets) ------
 
 #[inline]
-fn rd_u16(b: &[u8], off: usize) -> Option<u16> {
+pub(crate) fn rd_u16(b: &[u8], off: usize) -> Option<u16> {
     let s = b.get(off..off.checked_add(2)?)?;
     Some(u16::from_le_bytes([s[0], s[1]]))
 }
 
 #[inline]
-fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
+pub(crate) fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
     let s = b.get(off..off.checked_add(4)?)?;
     Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
@@ -217,8 +219,21 @@ pub struct Ui {
     tex_free: Vec<u32>,
     /// Baked rounded-corner disc sprites (see draw::DiscCache).
     discs: draw::DiscCache,
+    /// Raster pixels baked for each logical UI pixel. Layout and DrawList
+    /// coordinates always remain logical; only core-owned bitmap resources
+    /// (currently rounded-corner masks) use this density.
+    raster_density: u32,
     focused: i32,
     draw_list: DrawList,
+    /// Virtual cursor sprite (spec ops 28/29, input.cursor capability):
+    /// texture handle (< 0 = hidden), hotspot offset into the sprite,
+    /// logical draw size (0 = the texture's own pixel size), and the
+    /// hotspot's screen position. Drawn last by `draw()`; never laid out,
+    /// never hit-tested.
+    cursor_tex: i32,
+    cursor_hot: (f32, f32),
+    cursor_size: (f32, f32),
+    cursor_pos: (f32, f32),
     /// Frame counter advanced by `tick()` (drives fixed-dt animation).
     frame: u64,
     /// DevTools (spec ops 18..22, DEVTOOLS.md). All default-off.
@@ -243,6 +258,17 @@ impl Ui {
     /// Create a core with the pre-created root node (`spec::ROOT_ID`,
     /// full-screen flex column) already in the tree.
     pub fn new() -> Self {
+        Self::new_with_raster_density(1)
+    }
+
+    /// Create a core whose internally baked bitmap resources match the
+    /// target's resolved raster density. The value is immutable so one Ui
+    /// cannot mix resources produced for different target contracts.
+    pub fn new_with_raster_density(raster_density: u32) -> Self {
+        assert!(
+            (1..=u8::MAX as u32).contains(&raster_density),
+            "raster density must be an integer from 1 through 255"
+        );
         Ui {
             tree: tree::Tree::new(),
             styles: style::StyleTable::new(),
@@ -253,8 +279,13 @@ impl Ui {
             textures: Vec::new(),
             tex_free: Vec::new(),
             discs: draw::DiscCache::new(),
+            raster_density,
             focused: 0,
             draw_list: DrawList::new(),
+            cursor_tex: -1,
+            cursor_hot: (0.0, 0.0),
+            cursor_size: (0.0, 0.0),
+            cursor_pos: (0.0, 0.0),
             frame: 0,
             inspect_id: 0,
             inspect_rect: None,
@@ -262,6 +293,11 @@ impl Ui {
             paused: false,
             step_pending: false,
         }
+    }
+
+    /// Raster pixels per logical UI pixel for core-owned bitmap resources.
+    pub fn raster_density(&self) -> u32 {
+        self.raster_density
     }
 
     // ---- tree ops ---------------------------------------------------------
@@ -513,6 +549,40 @@ impl Ui {
         self.upload_texture_flags(&data, tile.tile_w, tile.tile_h, spec::psm::PSM_T8, img_flags)
     }
 
+    /// Overwrite a live PSM_T8 texture's palette + pixels IN PLACE (the video
+    /// plane's per-frame path: one texture for the whole session, so image
+    /// bindings and the GE's texture pointer stay stable while the bytes
+    /// change under them). `palette` must be exactly the 1024-byte CLUT and
+    /// `pixels` exactly w*h index bytes for the texture's own dimensions —
+    /// this never resizes or re-formats a slot. Returns false (and changes
+    /// nothing) on stale handles, non-T8 textures, or size mismatches.
+    /// Callers on the PSP must writeback the texture after (the GE samples
+    /// RAM, not the dcache).
+    pub fn update_texture_t8(&mut self, handle: i32, palette: &[u8], pixels: &[u8]) -> bool {
+        let Some(slot) = tex_resolve(&self.textures, handle) else { return false };
+        let Some(tex) = self.textures[slot as usize].tex.as_mut() else { return false };
+        if tex.psm != spec::psm::PSM_T8 || palette.len() != TEX_PALETTE_BYTES {
+            return false;
+        }
+        if pixels.len() != tex.byte_len {
+            return false;
+        }
+        let Some(pal) = tex.palette.as_mut() else { return false };
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                palette.as_ptr(),
+                pal.as_mut_ptr() as *mut u8,
+                TEX_PALETTE_BYTES,
+            );
+            core::ptr::copy_nonoverlapping(
+                pixels.as_ptr(),
+                tex.data.as_mut_ptr() as *mut u8,
+                tex.byte_len,
+            );
+        }
+        true
+    }
+
     /// Release a texture slot (spec op freeTexture): drop the pixels, bump
     /// the slot's generation so every outstanding copy of the handle goes
     /// stale (resolves to nothing, draws nothing), and push the slot on the
@@ -700,16 +770,63 @@ impl Ui {
     }
 
     /// Set the `active:` pressed state (same native variant machinery as
-    /// focus; exposed for the hosts' input layer — not a spec op).
+    /// focus; spec op 26 — the JS input layer holds it while the press
+    /// button is down).
     pub fn set_active(&mut self, id: i32, active: bool) {
         let Some(slot) = self.tree.resolve(id) else { return };
         if self.tree.slots[slot as usize].active == active {
+            return;
+        }
+        // A record without an `active:` variant cannot change the resolved
+        // style — flip the flag without retargeting, so a press/release never
+        // restarts in-flight transitions (CSS :active semantics).
+        let has_active = self
+            .styles
+            .record(self.tree.slots[slot as usize].style_id)
+            .is_some_and(|r| !r.active.is_empty());
+        if !has_active {
+            self.tree.slots[slot as usize].active = active;
             return;
         }
         let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
         self.tree.slots[slot as usize].active = active;
         self.retarget(slot, &old, true);
         self.layout.mark_style(slot);
+    }
+
+    // ---- virtual cursor (spec ops 27..29, input.cursor capability) ---------
+
+    /// Topmost node at a logical point (spec op hitTest; see draw::hit_test
+    /// for the exact semantics — layout boxes, paint order, clips). Returns
+    /// the generation-tagged id, or 0. Relayouts first if dirty so mid-frame
+    /// queries (the cursor moves before this frame's mutations settle) see
+    /// current geometry — layout is a pure function of the tree, so running
+    /// it early never changes what the next `draw()` shows.
+    pub fn hit_test(&mut self, x: f32, y: f32) -> i32 {
+        if self.layout.needs() {
+            layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
+        }
+        draw::hit_test(&self.tree, &self.styles, self.layout.viewport, x, y)
+    }
+
+    /// Bind the virtual cursor sprite (spec op setCursor): an uploaded
+    /// texture drawn last every frame at the cursor position, offset by
+    /// (hot_x, hot_y). tex < 0 or a stale handle hides the cursor; w/h <= 0
+    /// draw at the texture's own pixel size.
+    pub fn set_cursor(&mut self, tex: i32, hot_x: f32, hot_y: f32, w: f32, h: f32) {
+        self.cursor_tex = if tex >= 0 && tex_resolve(&self.textures, tex).is_some() {
+            tex
+        } else {
+            -1
+        };
+        self.cursor_hot = (hot_x, hot_y);
+        self.cursor_size = (w.max(0.0), h.max(0.0));
+    }
+
+    /// Move the cursor hotspot (spec op setCursorPos), logical px. Clamped
+    /// to the DrawList's i16-safe coordinate range.
+    pub fn set_cursor_pos(&mut self, x: f32, y: f32) {
+        self.cursor_pos = (x.clamp(-32000.0, 32000.0), y.clamp(-32000.0, 32000.0));
     }
 
     // ---- frame -------------------------------------------------------------
@@ -898,6 +1015,25 @@ impl Ui {
         if self.layout.needs() {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
+        // Cursor sprite quad: resolved here so a texture freed after
+        // set_cursor simply stops drawing (generation-tagged handles).
+        let cursor = if self.cursor_tex >= 0 {
+            tex_resolve(&self.textures, self.cursor_tex)
+                .and_then(|slot| self.textures[slot as usize].tex.as_ref())
+                .map(|t| {
+                    let w = if self.cursor_size.0 > 0.0 { self.cursor_size.0 } else { t.w as f32 };
+                    let h = if self.cursor_size.1 > 0.0 { self.cursor_size.1 } else { t.h as f32 };
+                    (
+                        self.cursor_tex as u32,
+                        self.cursor_pos.0 - self.cursor_hot.0,
+                        self.cursor_pos.1 - self.cursor_hot.1,
+                        w,
+                        h,
+                    )
+                })
+        } else {
+            None
+        };
         let (target, drawn) = draw::build(
             &self.tree,
             &self.styles,
@@ -907,9 +1043,11 @@ impl Ui {
             &mut self.textures,
             &mut self.tex_free,
             &mut self.discs,
+            self.raster_density,
             &mut self.draw_list,
             self.inspect_id,
             self.inspect_drawn,
+            cursor,
         );
         self.inspect_drawn = drawn;
         if self.inspect_id != 0 {

@@ -159,9 +159,9 @@ export function initDevtools(ops: HostOps): void {
 
 /** Wrap the composed frame handler (render()'s input+hooks+sweep closure). */
 export function wrapFrameHandler(
-  h: (buttons: number, analog: number) => void,
-): (buttons: number, analog?: number) => void {
-  return (buttons: number, analogArg?: number) => {
+  h: (buttons: number, analog: number, touches?: readonly number[]) => void,
+): (buttons: number, analog?: number, touches?: readonly number[]) => void {
+  return (buttons: number, analogArg?: number, touchArg?: readonly number[]) => {
     state.hostCalls++;
     if (state.transport) {
       pollTransport();
@@ -169,10 +169,14 @@ export function wrapFrameHandler(
     }
     let mask = buttons;
     let analog = analogArg === undefined ? ANALOG_CENTER : analogArg & 0xffff;
+    let touch = touchArg;
     if (state.replayMasks) {
       if (state.replayAt < state.replayMasks.length) {
         mask = state.replayMasks[state.replayAt];
         analog = state.replayAnalog ? state.replayAnalog[state.replayAt] : ANALOG_CENTER;
+        // A replay that predates touch input must not leak live hardware state
+        // into the deterministic tape.
+        touch = undefined;
         state.replayAt++;
       } else {
         state.replayMasks = null; // tape exhausted: back to live input
@@ -188,7 +192,7 @@ export function wrapFrameHandler(
     recordMask(mask, analog);
     state.frame++;
     try {
-      h(mask, analog);
+      h(mask, analog, touch);
     } catch (e) {
       send({
         t: "error",
@@ -354,6 +358,25 @@ function handleMessage(line: string): void {
     case "dumpTape":
       send({ t: "tape", tape: exportTape() });
       break;
+    case "devStats": {
+      // Device diagnostic counters + build identity (OP.debugStats). The
+      // PSPLINK bridge sends this on every hello to verify the embedded
+      // bundle hash against local dist/; panels can poll it for underrun/
+      // presented/torn counters. Hosts without the op reply data: null so
+      // the round trip still completes. (Distinct from the periodic
+      // {t:"stats"} shim push — that one is JS-side frame/node/tape state.)
+      let data: unknown = null;
+      const raw = ops?.debugStats?.();
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          data = null;
+        }
+      }
+      send({ t: "devStats", frame: state.frame, data });
+      break;
+    }
     case "screenshot": {
       // PSP path only — the browser host intercepts this message itself
       // (canvas.toDataURL) and it never reaches the shim there. The native

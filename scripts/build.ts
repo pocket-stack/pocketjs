@@ -35,10 +35,15 @@ import {
   type PocketFramework,
 } from "../compiler/jsx-plugin.ts";
 import type { PocketConfig } from "../src/config.ts";
+import { verifyPlanHash, type ResolvedBuildPlan } from "../src/manifest/plan.ts";
 import { registerAnimationTheme } from "../compiler/animation.ts";
 import { compileClasses, generateStylesModule } from "../compiler/tailwind.ts";
 import { bakeAtlases } from "../compiler/bake-font.ts";
 import { bakeSvg } from "../compiler/bake-svg.ts";
+import {
+  assertDensityVariantDimensions,
+  densityVariantPath,
+} from "../compiler/raster-assets.ts";
 import {
   PAK_DTYPE,
   KEY_STYLES,
@@ -74,16 +79,36 @@ let frameworkFlag: string | undefined;
 let configPath = ROOT + "pocket.config.ts";
 let configFlagged = false;
 let useConfig = true;
+let planPath: string | undefined;
+let densityFlag: number | undefined;
+let projectRoot = process.cwd();
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
   else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
   else if (a.startsWith("--config=")) { configPath = resolvePath(ROOT, a.slice("--config=".length)); configFlagged = true; }
   else if (a === "--no-config") useConfig = false;
+  else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
+  else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
   else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
+  else if (a.startsWith("--density=")) densityFlag = Number(a.slice("--density=".length));
   else if (!a.startsWith("-")) appArg = a;
 }
+
+let buildPlan: ResolvedBuildPlan | undefined;
+if (planPath) {
+  buildPlan = await Bun.file(planPath).json() as ResolvedBuildPlan;
+  if (!verifyPlanHash(buildPlan)) {
+    throw new Error(`PocketJS build: invalid ResolvedBuildPlan checksum in ${planPath}`);
+  }
+  if (frameworkFlag) {
+    throw new Error("PocketJS build: --framework cannot override a ResolvedBuildPlan");
+  }
+  appArg = resolvePath(projectRoot, buildPlan.app.entry);
+  if (!configFlagged) configPath = resolvePath(projectRoot, "pocket.config.ts");
+}
+
 if (!appArg) {
-  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--framework=solid|vue-vapor] [--extra-chars=...]");
+  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor] [--extra-chars=...] [--density=N]");
   process.exit(1);
 }
 
@@ -134,8 +159,15 @@ if (!configFlagged && useConfig) {
   if (existsSync(appConfig)) configPath = appConfig;
 }
 const config = await loadConfig();
+if (buildPlan && config.framework !== undefined) {
+  throw new Error(
+    "PocketJS build: framework belongs to pocket.json in manifest builds; remove it from pocket.config.ts",
+  );
+}
 const framework: PocketFramework = frameworkFlag
   ? parseFramework(frameworkFlag, "--framework")
+  : buildPlan
+    ? parseFramework(buildPlan.app.framework, "ResolvedBuildPlan")
   : parseFramework(config.framework, "pocket.config.ts");
 const frameworkConfig = FRAMEWORKS[framework];
 const entry = frameworkVariantPath(requestedEntry, framework);
@@ -146,9 +178,24 @@ function outputName(file: string): string {
   return file.split("/").pop()!.replace(/\.tsx?$/, "");
 }
 
-const appName = outputName(requestedEntry);
-const outName = `${appName}${frameworkConfig.outputSuffix}`;
-console.log(`PocketJS build: ${appName} (${entry}, framework=${framework})`);
+const appName = buildPlan?.app.output ?? outputName(requestedEntry);
+// A resolved plan names the exact artifact. Low-level demo builds retain the
+// framework suffix so multiple framework variants can coexist in dist/.
+const outName = buildPlan ? appName : `${appName}${frameworkConfig.outputSuffix}`;
+// Raster density: a resolved plan owns it; --density=N serves hosts whose
+// viewport is not a fixed platform contract (the desktop widget shell runs
+// arbitrary window sizes on 2x displays, which no target profile names).
+if (buildPlan && densityFlag !== undefined) {
+  throw new Error("PocketJS build: --density cannot override a ResolvedBuildPlan");
+}
+if (densityFlag !== undefined && (!Number.isInteger(densityFlag) || densityFlag < 1 || densityFlag > 255)) {
+  throw new Error("PocketJS build: --density wants an integer from 1 through 255");
+}
+const rasterDensity = buildPlan?.viewport.rasterDensity ?? densityFlag ?? 1;
+console.log(
+  `PocketJS build: ${appName} (${entry}, framework=${framework}` +
+    `${buildPlan ? `, target=${buildPlan.target.id}, raster=${rasterDensity}x, plan=${buildPlan.planHash.slice(0, 20)}…` : ""})`,
+);
 
 // ---------------------------------------------------------------------------
 // pass 1 — transform & collect over the entry's import graph
@@ -191,7 +238,8 @@ async function walk(file: string): Promise<void> {
   visited.add(file);
   if (file.endsWith(".generated.ts")) return; // never scan generated output [R]
   const src = await Bun.file(file).text();
-  const res = await transformFile(file, src, framework); // throws with code frame on lint errors
+  // Throws with a code frame on lint errors.
+  const res = await transformFile(file, src, framework, { features: buildPlan?.features });
   for (const s of res.classStrings) {
     if (!seenClass.has(s)) {
       seenClass.add(s);
@@ -228,10 +276,12 @@ const atlases = await bakeAtlases({
   codepoints,
   slots: styles.usedFontSlots,
   extraChars,
+  rasterDensity,
 });
 for (const a of atlases) {
   console.log(
-    `  font: slot ${a.slot} (${a.px}px${a.bold ? " bold" : ""}) ${a.glyphCount} glyphs, cell ${a.cellW}x${a.cellH}, ${a.bytes.length} bytes`,
+    `  font: slot ${a.slot} (${a.px}px${a.bold ? " bold" : ""}) ${a.glyphCount} glyphs, ` +
+      `cell ${a.cellW}x${a.cellH}, coverage ${a.coverageW}x${a.coverageH} @${a.rasterDensity}x, ${a.bytes.length} bytes`,
   );
 }
 
@@ -262,11 +312,30 @@ for (const name of imageNames) {
   let img;
   if (found) {
     if (/\.svg$/i.test(found)) {
-      img = bakeSvg(await Bun.file(found).text());
-      console.log(`  image: ${name} <- ${found} (${img.width}x${img.height}, svg)`);
+      img = bakeSvg(await Bun.file(found).text(), rasterDensity);
+      console.log(
+        `  image: ${name} <- ${found} (${img.width}x${img.height}, svg @${rasterDensity}x)`,
+      );
     } else {
-      img = decodePng(new Uint8Array(await Bun.file(found).arrayBuffer()));
-      console.log(`  image: ${name} <- ${found} (${img.width}x${img.height})`);
+      const base = decodePng(new Uint8Array(await Bun.file(found).arrayBuffer()));
+      // Static images and sprite atlases share the same @Nx convention. A
+      // sprite's frame grid stays logical because every atlas dimension is
+      // scaled by the same integer density.
+      const variant = densityVariantPath(found, rasterDensity);
+      if (variant !== found && existsSync(variant)) {
+        const highDensity = decodePng(new Uint8Array(await Bun.file(variant).arrayBuffer()));
+        assertDensityVariantDimensions(base, highDensity, rasterDensity, found, variant);
+        img = highDensity;
+        console.log(
+          `  image: ${name} <- ${variant} (${img.width}x${img.height}, @${rasterDensity}x for ${base.width}x${base.height})`,
+        );
+      } else {
+        img = base;
+        console.log(
+          `  image: ${name} <- ${found} (${img.width}x${img.height}` +
+            `${rasterDensity > 1 ? `, 1x fallback (no ${variant})` : ""})`,
+        );
+      }
     }
   } else {
     img = placeholderImage();
@@ -304,14 +373,19 @@ if (existsSync(pakManifestPath)) {
   const rawEntries = JSON.parse(await Bun.file(pakManifestPath).text()) as Array<{ key: string; file: string }>;
   let rawBytes = 0;
   for (const e of rawEntries) {
-    const path = appDir + e.file;
-    if (!existsSync(path)) {
-      console.error(`  pak.json: ${e.key} -> ${path} missing (re-run the app's gen-assets baker?)`);
+    const basePath = appDir + e.file;
+    if (!existsSync(basePath)) {
+      console.error(`  pak.json: ${e.key} -> ${basePath} missing (re-run the app's gen-assets baker?)`);
       process.exit(1);
     }
+    const densityPath = densityVariantPath(basePath, rasterDensity);
+    const path = densityPath !== basePath && existsSync(densityPath) ? densityPath : basePath;
     const data = new Uint8Array(await Bun.file(path).arrayBuffer());
     blobs.push({ key: e.key, dtype: PAK_DTYPE.u8, data });
     rawBytes += data.length;
+    if (path !== basePath) {
+      console.log(`  raw: ${e.key} <- ${path} (@${rasterDensity}x)`);
+    }
   }
   console.log(`  raw: ${rawEntries.length} prebaked blob(s) from pak.json, ${rawBytes} bytes`);
 }
@@ -348,10 +422,16 @@ const result = await Bun.build({
   // Bun's bundler otherwise also enables the "development" condition, which
   // pulls Solid's dev builds and duplicates the root + universal runtimes.
   conditions: ["browser"],
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: {
+    "process.env.NODE_ENV": '"production"',
+    __POCKET_TARGET__: JSON.stringify(buildPlan?.target.id ?? ""),
+    __POCKET_HOST_ABI__: String(buildPlan?.target.hostAbi ?? 0),
+    __POCKET_FEATURES__: JSON.stringify(buildPlan?.features ?? {}),
+    __POCKET_PIXEL_RATIO__: String(rasterDensity),
+  },
   minify: false,
   sourcemap: "none",
-  plugins: [jsxPlugin(framework, { entry })],
+  plugins: [jsxPlugin(framework, { entry, features: buildPlan?.features })],
 });
 if (!result.success) {
   for (const log of result.logs) console.error(log);

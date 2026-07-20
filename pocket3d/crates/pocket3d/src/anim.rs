@@ -120,17 +120,20 @@ pub struct Skeleton {
 }
 
 impl Skeleton {
-    /// Sample `clip` at `t` (wrapping if `looping`) and return global
-    /// transforms per node.
-    pub fn global_transforms(
+    /// Sample `clip` at `t` (wrapping if `looping`) into per-node local TRS,
+    /// starting from the rest pose. The split from [`Self::globals_from_locals`]
+    /// lets callers inject procedural pose edits (look-at, physics bones)
+    /// between animation sampling and the hierarchy walk.
+    pub fn sample_locals(
         &self,
         clip: Option<&Clip>,
         t: f32,
         looping: bool,
-        globals: &mut Vec<Mat4>,
+        locals: &mut Vec<NodeTrs>,
     ) {
-        let n = self.rest.len();
-        let mut locals: Vec<NodeTrs> = self.rest.clone();
+        locals.clear();
+        locals.extend_from_slice(&self.rest);
+        let n = locals.len();
         if let Some(clip) = clip {
             let t = if clip.duration > 0.0 {
                 if looping {
@@ -147,8 +150,12 @@ impl Skeleton {
                 }
             }
         }
+    }
+
+    /// Multiply local TRS down the hierarchy into per-node global transforms.
+    pub fn globals_from_locals(&self, locals: &[NodeTrs], globals: &mut Vec<Mat4>) {
         globals.clear();
-        globals.resize(n, Mat4::IDENTITY);
+        globals.resize(locals.len(), Mat4::IDENTITY);
         for &i in &self.order {
             let local = locals[i].matrix();
             globals[i] = if self.parents[i] == usize::MAX {
@@ -157,6 +164,20 @@ impl Skeleton {
                 globals[self.parents[i]] * local
             };
         }
+    }
+
+    /// Sample `clip` at `t` (wrapping if `looping`) and return global
+    /// transforms per node.
+    pub fn global_transforms(
+        &self,
+        clip: Option<&Clip>,
+        t: f32,
+        looping: bool,
+        globals: &mut Vec<Mat4>,
+    ) {
+        let mut locals = Vec::new();
+        self.sample_locals(clip, t, looping, &mut locals);
+        self.globals_from_locals(&locals, globals);
     }
 }
 
