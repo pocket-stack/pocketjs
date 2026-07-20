@@ -154,7 +154,7 @@ unsafe fn perf_now() -> u64 {
     sys::sceKernelGetSystemTimeWide() as u64
 }
 
-unsafe fn perf_record(js_us: u64, work_us: u64, gu_wait_us: u64) {
+unsafe fn perf_record(ctx: *mut JSContext, js_us: u64, work_us: u64, gu_wait_us: u64) {
     PERF.frames += 1;
     PERF.js_sum_us += js_us;
     PERF.work_sum_us += work_us;
@@ -166,15 +166,54 @@ unsafe fn perf_record(js_us: u64, work_us: u64, gu_wait_us: u64) {
         return;
     }
     let n = PERF.frames as u64;
-    let line = alloc::format!(
-        "[pocketjs perf] frames={} avg_js_us={} avg_work_us={} max_work_us={} avg_gu_wait_us={} (budget 16667)\n",
+    let mut line = alloc::format!(
+        "[pocketjs perf] frames={} avg_js_us={} avg_work_us={} max_work_us={} avg_gu_wait_us={} cpu_mhz={} (budget 16667)\n",
         n,
         PERF.js_sum_us / n,
         PERF.work_sum_us / n,
         PERF.max_work_us,
         PERF.gu_wait_sum_us / n,
+        sys::scePowerGetCpuClockFrequencyInt(),
     );
+    // JS-side split: when the app publishes cumulative counters on
+    // globalThis.__jsPerf ({stepUs, flushUs, hudUs, frames}, µs from
+    // s3.__hwNow), append them raw — the reader diffs across windows.
+    let global = JS_GetGlobalObject(ctx);
+    let jp = JS_GetPropertyStr(ctx, global, b"__jsPerf\0".as_ptr() as *const _);
+    if !JS_IsUndefined(jp) && !JS_IsNull(jp) {
+        let read = |name: &[u8]| -> u64 {
+            let v = JS_GetPropertyStr(ctx, jp, name.as_ptr() as *const _);
+            let mut out = 0f64;
+            JS_ToFloat64(ctx, &mut out, v);
+            JS_FreeValue(ctx, v);
+            out as u64
+        };
+        line.push_str(&alloc::format!(
+            "[pocketjs jsperf] cum_step_us={} cum_flush_us={} cum_hud_us={} cum_frames={} cal_float_us={} cal_prop_us={} cal_vec_us={}\n",
+            read(b"stepUs\0"),
+            read(b"flushUs\0"),
+            read(b"hudUs\0"),
+            read(b"frames\0"),
+            read(b"calFloatUs\0"),
+            read(b"calPropUs\0"),
+            read(b"calVecUs\0"),
+        ));
+    }
+    JS_FreeValue(ctx, jp);
+    JS_FreeValue(ctx, global);
     sys::sceIoWrite(sys::SceUid(1), line.as_ptr() as *const c_void, line.len());
+    // PSPLINK's tty only reaches a shell that was connected when the module
+    // started, and drops on any reconnect — the file lands in the served
+    // target dir on the host, unconditionally readable.
+    let fd = sys::sceIoOpen(
+        b"host0:/PocketJS-perf.txt\0".as_ptr(),
+        IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::APPEND,
+        0o777,
+    );
+    if fd.0 >= 0 {
+        sys::sceIoWrite(fd, line.as_ptr() as *const c_void, line.len());
+        sys::sceIoClose(fd);
+    }
     PERF = PerfState { frames: 0, js_sum_us: 0, work_sum_us: 0, max_work_us: 0, gu_wait_sum_us: 0 };
 }
 
@@ -412,6 +451,11 @@ unsafe fn run() {
     trace("run: entered");
     psp::enable_home_button();
     trace("run: home button enabled");
+    // PSPLINK boots the console at 222/111 MHz; retail XMB launches use
+    // 333/166. Pin the full clock so perf numbers mean the same thing in
+    // both launch paths (and QuickJS gets the CPU it was budgeted for).
+    sys::scePowerSetClockFrequency(333, 333, 166);
+    trace("run: clock 333/166");
     // depth: scene3d composites (ge3d.rs) z-test inside their rects; the 2D
     // pass never enables DepthTest, so ui-only output stays byte-identical.
     host::init_graphics(host::GfxConfig { depth: true });
@@ -636,6 +680,7 @@ unsafe fn run() {
         }
         ge::render(ffi::ui(), core::slice::from_raw_parts(words_ptr, words_len));
         perf_record(
+            ctx,
             perf_after_js.saturating_sub(perf_t0),
             perf_now()
                 .saturating_sub(perf_t0)

@@ -381,6 +381,14 @@ js_op!(js_bind_viewport, |ctx, argc, argv| {
     JS_UNDEFINED
 });
 
+// µs wall clock for on-hardware JS-side profiling (read by the perf probe's
+// __jsPerf line, main.rs). Deliberately NOT in the Scene3dOps contract
+// (ops.ts) — a debug affordance like ui's devtools ops, never a sim input.
+js_op!(js_hw_now, |ctx, _argc, _argv| JS_NewFloat64(
+    ctx,
+    psp::sys::sceKernelGetSystemTimeWide() as f64,
+));
+
 // ---------------------------------------------------------------------------
 // registration
 // ---------------------------------------------------------------------------
@@ -424,6 +432,7 @@ pub unsafe fn register(ctx: *mut JSContext, global: JSValue) {
     add_fn(ctx, s3, b"writeBeams\0", js_write_beams, 4);
     add_fn(ctx, s3, b"poolFree\0", js_pool_free, 1);
     add_fn(ctx, s3, b"bindViewport\0", js_bind_viewport, 2);
+    add_fn(ctx, s3, b"__hwNow\0", js_hw_now, 0);
 
     // Honest host label (ops.ts __host; native hosts omit __serialize).
     let host = JS_NewStringLen(ctx, b"psp".as_ptr(), 3);
