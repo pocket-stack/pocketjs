@@ -22,10 +22,11 @@ edition = "2021"
 
 [dependencies]
 psp = { git = "https://github.com/pocket-stack/rust-psp.git", rev = "2cbaf8c9bc72569c76240a1d9743de10731e5f6b", features = ["external-c-heap", "abort-only", "external-global-alloc"] }
-# ba5bdd0 is the first rev built at -O2. The C sources sat at
-# `.opt_level(0)` from a 2021 PSP bring-up experiment, so every host
-# shipped an unoptimized interpreter dispatch loop for five years;
-# measured on real hardware it is worth roughly 2x on guest time.
+# ba5bdd0 carries the JS_SetGCThreshold/JS_RunGC bindings and sets the C
+# build to -O2. NOTE: that opt_level does NOT reach this target — scripts/psp.ts
+# sets CRATE_CC_NO_DEFAULTS, which makes cc-rs skip the block that emits -O.
+# The flag that actually optimizes QuickJS here lives in TARGET_CFLAGS; with it
+# the guest turn measured 7.1ms -> 4.0ms per frame on real hardware (rally).
 libquickjs-sys = { git = "https://github.com/pocket-stack/quickjs-rs.git", rev = "ba5bdd0dc013518768e76cd9e05cd30ed53dd35b" }
 pocketjs-core = { path = "../core" }
 # The scene3d retained store, SHARED with the desktop core (core-only build:
