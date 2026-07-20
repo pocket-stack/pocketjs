@@ -260,8 +260,14 @@ const env = {
   TARGET_AR: `${toolchain.llvmBin}/llvm-ar`,
   // Match the Rust PSP target's +noabicalls mode. -G0 avoids clang's MIPS
   // backend selecting unsupported GP-relative accesses for large C sources.
+  // -O2 HAS TO LIVE HERE, not in a build script's `.opt_level()`:
+  // CRATE_CC_NO_DEFAULTS above makes cc-rs skip add_default_flags, which is
+  // where it would emit -O (cc-1.2 src/lib.rs, `if !no_defaults`). Without an
+  // explicit flag clang compiles at -O0, so every C dependency — QuickJS most
+  // of all, whose interpreter dispatch loop is the hottest code on the device
+  // — shipped unoptimized.
   TARGET_CFLAGS:
-    `-target mipsel-sony-psp -mcpu=mips2 -msingle-float -mlittle-endian -mno-abicalls -fno-pic -G0 -mno-check-zero-division ` +
+    `-O2 -target mipsel-sony-psp -mcpu=mips2 -msingle-float -mlittle-endian -mno-abicalls -fno-pic -G0 -mno-check-zero-division ` +
     `-fno-stack-protector -I${sdk}/psp/include -I${sdk}/psp/sdk/include`,
   // CRITICAL: archive MIPS objects with llvm-ar (Apple ar drops them -> undefined JS_*).
   AR_mipsel_sony_psp: `${toolchain.llvmBin}/llvm-ar`,
