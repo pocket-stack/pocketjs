@@ -45,6 +45,24 @@ bun skills/pocketjs-video-outro/scripts/make-outro.ts -i ~/Downloads/clip.mov
 # prints the output path on stdout; progress/summary on stderr
 ```
 
+For an X upload, enable the compatibility mode. It produces 30 fps CFR video,
+uses a conventional 30 kHz track timebase, closes GOPs, caps bitrate, and scales
+landscape/portrait footage within 1920x1080 or 1080x1900:
+
+```bash
+bun skills/pocketjs-video-outro/scripts/make-outro.ts -i ~/Downloads/clip.mov --x
+# writes ~/Downloads/clip_outro_x.mp4, leaving a standard outro export untouched
+```
+
+For X-mode verification, both reported rates must be `30/1`, the timebase must be
+`1/30000`, and the dimensions must stay within the orientation-aware 1080p bounds:
+
+```bash
+ffprobe -v error -select_streams v:0 \
+  -show_entries stream=width,height,r_frame_rate,avg_frame_rate,time_base \
+  -of default=nw=1 ~/Downloads/clip_outro_x.mp4
+```
+
 Then **verify visually** — extract a frame near the end and eyeball the card, and
 confirm the tail is silent while the body kept its audio (the animation is the
 whole point; always look):
@@ -63,18 +81,24 @@ ffprobe -v error -select_streams v:0 \
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `-i` / `--input` | — (required) | input video |
-| `-o` / `--output` | `<input>_outro.mp4` next to input | output path |
+| `-o` / `--output` | `<input>_outro.mp4` next to input | output path (`_outro_x.mp4` with `--x`) |
 | `--tagline` | `Bare Metal Modern Web` | hero line (wraps on narrow/portrait frames) |
 | `--brand` | `PocketJS` | wordmark next to the glyph |
 | `--url` | `pocketjs.dev` | footer line; pass `--url ""` to hide it |
 | `--outro` | `5.5` | end-card length in seconds |
 | `--xfade` | `0.8` | crossfade length; text entrance keys off it |
 | `--crf` / `--preset` | `18` / `medium` | x264 quality/speed |
+| `--x` / `--x-compatible` | off | emit an X-safe 30fps CFR social upload |
 
 ## How it adapts to the input
 
-- Probes width/height/fps/duration; the card is rendered at the source's native
-  resolution and re-timed to its fps, so the crossfade is seamless.
+- Probes width/height/fps/duration; VFR inputs use `avg_frame_rate` rather than
+  treating `r_frame_rate` as the real cadence. The selected rational rate is passed
+  directly to FFmpeg, avoiding floating-point timebases.
+- By default the card uses the source's native resolution and selected frame rate.
+  `--x` switches to 30 fps CFR and orientation-aware 1920x1080/1080x1900 bounds.
+- Display-matrix rotation is applied to the probed dimensions before rendering the
+  card, matching FFmpeg's default autorotation for portrait phone footage.
 - **Color:** SDR inputs keep the existing path. HLG and PQ inputs (including the
   HLG base layer in iPhone Dolby Vision clips) are tone-mapped to 8-bit BT.709 SDR;
   Dolby Vision metadata is intentionally not carried into the shareable H.264 file.
@@ -109,6 +133,9 @@ ffprobe -v error -select_streams v:0 \
   4:4:4 or non-faststart MP4s.
 - `xfade` needs both sides normalized to identical size/fps/sar/pix_fmt; the graph
   does this. If you feed a variable-frame-rate capture, the `fps` filter conforms it.
+- ReplayKit and other VFR captures can report a high `r_frame_rate` that represents
+  their smallest frame interval, not their real cadence. Keep average-rate priority
+  and the original rational expression when changing probe logic.
 - Do not remove the explicit sRGB-to-BT.709 conversion from the card layers when
   changing HDR handling. Retagging Chrome's SDR PNG values as HLG/PQ is not a valid
   color conversion and makes the card shift on an HDR-aware display.
