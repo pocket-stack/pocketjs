@@ -190,8 +190,11 @@ export async function mountPocketStage(root) {
   renderer.toneMappingExposure = 1.15;
 
   const scene = new THREE.Scene();
+  // Placeholder framing until the package's authored view block loads; the
+  // scene stays empty until then, so nothing renders from this pose.
   const camera = new THREE.PerspectiveCamera(30, 1, 1, 2000);
   camera.position.set(0, 46, 190);
+  let focusDistanceMm = 98;
   scene.add(new THREE.HemisphereLight(0xe8f1ff, 0x151922, 2.4));
   const key = new THREE.DirectionalLight(0xffffff, 3.2);
   key.position.set(-90, 120, 180);
@@ -389,7 +392,7 @@ export async function mountPocketStage(root) {
       const screenPart = proxyGroup.children.find((child) => child.userData.stagePart.name === "screen")
         ?.userData.stagePart;
       const target = new THREE.Vector3().fromArray(screenPart.center_mm);
-      tweenPose({ position: target.clone().add(new THREE.Vector3(0, 0, 98)), target });
+      tweenPose({ position: target.clone().add(new THREE.Vector3(0, 0, focusDistanceMm)), target });
     } else if (savedDeskPose) {
       focused = false;
       root.dataset.focused = "false";
@@ -444,6 +447,15 @@ export async function mountPocketStage(root) {
 
     const profileResponse = await fetch(STAGE_ROOT + "psp-profile.json").then(failResponse);
     const profile = await profileResponse.json();
+    // The package's view block is the same camera authority the native
+    // pocket-stage runtime reads; the adapter carries no model facts.
+    const view = profile.view ?? {};
+    camera.fov = view.fov_y_degrees ?? camera.fov;
+    camera.updateProjectionMatrix();
+    camera.position.fromArray(view.desk_position_mm ?? [0, 46, 190]);
+    controls.target.fromArray(view.desk_target_mm ?? [0, 0, 0]);
+    controls.update();
+    focusDistanceMm = view.focus_distance_mm ?? focusDistanceMm;
     const loader = new GLTFLoader();
     const [model, appResponse, pakResponse] = await Promise.all([
       loader.loadAsync(STAGE_ROOT + profile.lods.orbit),

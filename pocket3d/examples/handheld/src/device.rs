@@ -35,9 +35,7 @@ struct DeviceProfile {
     #[serde(default)]
     suppressed_materials: Vec<MaterialProfile>,
     parts: Vec<PartProfile>,
-    #[serde(default)]
     display: DisplayProfile,
-    #[serde(default)]
     view: ViewProfile,
     #[serde(default)]
     rotary: Option<RotaryProfile>,
@@ -45,73 +43,24 @@ struct DeviceProfile {
     media: Option<MediaProfile>,
 }
 
+/// Every package states its own display facts; the runtime carries no
+/// model-shaped defaults (a missing block is a package-authoring error).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DisplayProfile {
-    #[serde(default = "default_logical_size")]
     logical_size: [u32; 2],
-    #[serde(default = "default_raster_density")]
     raster_density: u32,
-    #[serde(default = "default_window_size")]
     window_size: [u32; 2],
-}
-
-impl Default for DisplayProfile {
-    fn default() -> Self {
-        Self {
-            logical_size: default_logical_size(),
-            raster_density: default_raster_density(),
-            window_size: default_window_size(),
-        }
-    }
-}
-
-fn default_logical_size() -> [u32; 2] {
-    [480, 272]
-}
-
-fn default_raster_density() -> u32 {
-    1
-}
-
-fn default_window_size() -> [u32; 2] {
-    [480, 260]
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ViewProfile {
-    #[serde(default = "default_desk_position")]
     desk_position_mm: [f32; 3],
     #[serde(default)]
     desk_target_mm: [f32; 3],
-    #[serde(default = "default_focus_distance")]
     focus_distance_mm: f32,
-    #[serde(default = "default_fov_y")]
     fov_y_degrees: f32,
-}
-
-impl Default for ViewProfile {
-    fn default() -> Self {
-        Self {
-            desk_position_mm: default_desk_position(),
-            desk_target_mm: [0.0; 3],
-            focus_distance_mm: default_focus_distance(),
-            fov_y_degrees: default_fov_y(),
-        }
-    }
-}
-
-fn default_desk_position() -> [f32; 3] {
-    [0.0, 46.0, 190.0]
-}
-
-fn default_focus_distance() -> f32 {
-    98.0
-}
-
-fn default_fov_y() -> f32 {
-    30.0
 }
 
 #[derive(Debug, Deserialize)]

@@ -27,13 +27,14 @@ mod media;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, anyhow, ensure};
 use glam::{Quat, Vec2, Vec3};
 use pocket_mod::Guest;
 use pocket_ui_wgpu::UiSurface;
 use pocket_widget::embed::EmbeddedUi;
-use pocket_widget::parts::{analog_pack, btn, key_button};
+use pocket_widget::parts::{analog_pack, key_button};
 use pocket_widget::shell::{WidgetConfig, WidgetGame};
 use pocket3d::camera::Camera;
 use pocket3d::gpu::{Gpu, OFFSCREEN_FORMAT, OffscreenTarget};
@@ -68,7 +69,6 @@ const KEYS: [KeyCode; 14] = [
 /// Camera framings: "desk" shows the whole device; "focus" fills the window
 /// with the screen (effectively uihost with a bezel). Double-click the
 /// screen to toggle; the camera eases between them.
-const DEFAULT_SCREEN_CENTER: Vec3 = Vec3::new(-0.4, 2.4, 8.2);
 const ORBIT_YAW_LIMIT: f32 = 0.85;
 const ORBIT_PITCH_LIMIT: f32 = 0.50;
 const ORBIT_RADIANS_PER_LOGICAL_PIXEL: f32 = 0.006;
@@ -870,11 +870,13 @@ impl WidgetGame for StageGame {
 
     fn compose(&mut self, time: f32, _size: (u32, u32)) -> (&Scene, &Camera, &Hud) {
         let t = smoothstep01(self.blend);
+        // Before the device package finishes loading there is nothing to
+        // frame; the origin keeps the camera math finite until init.
         let screen_center = self
             .dev
             .as_ref()
             .map(|dev| dev.screen_center)
-            .unwrap_or(DEFAULT_SCREEN_CENTER);
+            .unwrap_or(Vec3::ZERO);
         let focus_pos = screen_center + Vec3::Z * self.settings.view.focus_distance;
         let target = self.settings.view.desk_target.lerp(screen_center, t);
         let base_pos = self.settings.view.desk_position.lerp(focus_pos, t);
@@ -903,7 +905,28 @@ impl WidgetGame for StageGame {
     }
 
     fn wants_exit(&self) -> bool {
-        self.exit
+        self.exit || SIGNAL_EXIT.load(Ordering::Relaxed)
+    }
+}
+
+/// Terminal signals must exit through the event loop so Drop still runs: a
+/// paused afplay child is SIGSTOP'd, and only [`media::MediaService`]'s Drop
+/// resumes and kills it. Dying inside the handler would orphan it as a
+/// permanently stopped process.
+static SIGNAL_EXIT: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn request_exit_on_signal(_signal: libc::c_int) {
+    SIGNAL_EXIT.store(true, Ordering::Relaxed);
+}
+
+fn install_signal_handlers() {
+    let handler = request_exit_on_signal as extern "C" fn(libc::c_int) as *const ()
+        as libc::sighandler_t;
+    // SAFETY: the handler only stores to a static atomic, which is
+    // async-signal-safe; registration happens before any thread observes it.
+    unsafe {
+        libc::signal(libc::SIGINT, handler);
+        libc::signal(libc::SIGTERM, handler);
     }
 }
 
@@ -1026,21 +1049,20 @@ fn parse_args() -> Result<Args> {
 }
 
 fn hold_bit(name: &str) -> Result<u32> {
-    Ok(match name {
-        "up" => btn::UP,
-        "down" => btn::DOWN,
-        "left" => btn::LEFT,
-        "right" => btn::RIGHT,
-        "cross" => btn::CROSS,
-        "circle" => btn::CIRCLE,
-        "square" => btn::SQUARE,
-        "triangle" => btn::TRIANGLE,
-        "start" => btn::START,
-        "select" => btn::SELECT,
-        "l" => btn::LTRIGGER,
-        "r" => btn::RTRIGGER,
-        other => return Err(anyhow!("unknown button '{other}'")),
-    })
+    device::button_bits(Some(name))
+}
+
+/// The headless composite renders at 2×. A profile with an absurd window size
+/// must fail with this diagnostic instead of an arithmetic overflow.
+fn headless_frame_size(window_size: (u32, u32)) -> Result<(u32, u32)> {
+    let double = |side: u32, axis: &str| {
+        side.checked_mul(2)
+            .ok_or_else(|| anyhow!("window {axis} overflows the 2x headless frame"))
+    };
+    Ok((
+        double(window_size.0, "width")?,
+        double(window_size.1, "height")?,
+    ))
 }
 
 /// `<repo>/dist` — relative to this crate in the source tree, or
@@ -1124,6 +1146,7 @@ fn boot(args: &Args, settings: &device::StageSettings) -> Result<(Guest, UiSurfa
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    install_signal_handlers();
     let args = parse_args()?;
     let settings = device::load_settings(&args.profile)?;
     if !(1.0..=240.0).contains(&args.max_fps) {
@@ -1145,7 +1168,7 @@ fn main() -> Result<()> {
         );
     }
     if let Some((x, y)) = args.click {
-        let headless_size = (settings.window_size.0 * 2, settings.window_size.1 * 2);
+        let headless_size = headless_frame_size(settings.window_size)?;
         ensure!(
             x.is_finite()
                 && y.is_finite()
@@ -1161,10 +1184,8 @@ fn main() -> Result<()> {
         "--click and --drag are mutually exclusive"
     );
     if let Some((from, to)) = args.drag {
-        let headless_size = Vec2::new(
-            (settings.window_size.0 * 2) as f32,
-            (settings.window_size.1 * 2) as f32,
-        );
+        let frame = headless_frame_size(settings.window_size)?;
+        let headless_size = Vec2::new(frame.0 as f32, frame.1 as f32);
         ensure!(
             from.is_finite()
                 && to.is_finite()
@@ -1223,10 +1244,7 @@ fn main() -> Result<()> {
 /// on that pixel for the middle third of the run — the full pick → part →
 /// BTN → guest path, no window required.
 fn headless(mut game: StageGame, args: &Args, out: &std::path::Path) -> Result<()> {
-    let (w, h) = (
-        game.settings.window_size.0 * 2,
-        game.settings.window_size.1 * 2,
-    );
+    let (w, h) = headless_frame_size(game.settings.window_size)?;
     let gpu = Gpu::new_headless()?;
     let mut renderer = Renderer::new(&gpu, OFFSCREEN_FORMAT)?;
     game.init(&gpu, &mut renderer)?;
@@ -1235,6 +1253,9 @@ fn headless(mut game: StageGame, args: &Args, out: &std::path::Path) -> Result<(
     let base_hold = args.hold;
     let (press_at, release_at) = (args.frames / 3, args.frames * 2 / 3);
     for frame in 0..args.frames {
+        if SIGNAL_EXIT.load(Ordering::Relaxed) {
+            return Err(anyhow!("interrupted before the acceptance run finished"));
+        }
         game.hold_mask = base_hold
             | args
                 .taps
@@ -1302,6 +1323,7 @@ fn headless(mut game: StageGame, args: &Args, out: &std::path::Path) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pocket_widget::parts::btn;
 
     #[test]
     fn pointer_deltas_are_density_independent() {

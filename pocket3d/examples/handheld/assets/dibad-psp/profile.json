@@ -8,6 +8,17 @@
   },
   "target_width_mm": 170.0,
   "rotation_degrees": [0.0, 180.0, 0.0],
+  "display": {
+    "logical_size": [480, 272],
+    "raster_density": 1,
+    "window_size": [480, 260]
+  },
+  "view": {
+    "desk_position_mm": [0.0, 46.0, 190.0],
+    "desk_target_mm": [0.0, 0.0, 0.0],
+    "focus_distance_mm": 98.0,
+    "fov_y_degrees": 30.0
+  },
   "screen": {
     "material_role": "dynamic_screen",
     "material_name_prefix": "P3D_dynamic_screen__",

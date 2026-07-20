@@ -14,6 +14,11 @@
 
 import { getOps } from "@pocketjs/framework";
 
+// Must match `media.channel` in the Stage package's profile.json
+// (pocket3d/examples/handheld/assets/ipod-nano-2). The host only allows the
+// exact package-authored channel through svcOpen; a rename there without a
+// matching change here silently downgrades the demo to its offline mock.
+// test/ipod-nano.test.ts pins the pair together.
 export const NANO_AUDIO_SERVICE = "ipod-nano";
 
 export type NanoMediaOperation =

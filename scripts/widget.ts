@@ -42,18 +42,29 @@ export interface StageDisplayFacts {
 
 export interface WidgetStageConfig {
   readonly defaultApp: string;
-  readonly profile?: string;
+  readonly profile: string;
   readonly display: StageDisplayFacts;
 }
 
-const PSP_DISPLAY: StageDisplayFacts = {
-  logicalSize: [480, 272],
-  rasterDensity: 1,
+/** Every bundled stage is one registry entry pointing at an authored model
+ * package; the launcher owns no model facts of its own. Adding a stage means
+ * adding a line here, nothing else. */
+const STAGE_REGISTRY: Record<WidgetStage, { defaultApp: string; profile: string }> = {
+  psp: {
+    defaultApp: "hero-main",
+    profile: resolvePath(root, "pocket3d/examples/handheld/assets/dibad-psp/profile.json"),
+  },
+  ipod: {
+    defaultApp: "ipod-nano-main",
+    profile: resolvePath(root, "pocket3d/examples/handheld/assets/ipod-nano-2/profile.json"),
+  },
 };
-const IPOD_PROFILE = resolvePath(
-  root,
-  "pocket3d/examples/handheld/assets/ipod-nano-2/profile.json",
-);
+
+function isWidgetStage(value: string): value is WidgetStage {
+  return Object.hasOwn(STAGE_REGISTRY, value);
+}
+
+const STAGE_CHOICES = Object.keys(STAGE_REGISTRY).join(" or ");
 
 function positiveInteger(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) > 0;
@@ -94,14 +105,8 @@ function displayFromProfile(profilePath: string): StageDisplayFacts {
 
 /** Resolve wrapper-owned defaults without leaking the model choice into Rust code. */
 export function widgetStageConfig(stage: WidgetStage): WidgetStageConfig {
-  if (stage === "ipod") {
-    return {
-      defaultApp: "ipod-nano-main",
-      profile: IPOD_PROFILE,
-      display: displayFromProfile(IPOD_PROFILE),
-    };
-  }
-  return { defaultApp: "hero-main", display: PSP_DISPLAY };
+  const entry = STAGE_REGISTRY[stage];
+  return { ...entry, display: displayFromProfile(entry.profile) };
 }
 
 export function stagePlatformContracts(display: StageDisplayFacts) {
@@ -131,12 +136,15 @@ export function stagePlatformContracts(display: StageDisplayFacts) {
   );
 }
 
+/** The bundled PSP stage's display facts anchor the historical exports. */
+const PSP_STAGE_DISPLAY = widgetStageConfig("psp").display;
+
 /** Backwards-compatible PSP contracts for existing imports and callers. */
-export const STAGE_PLATFORM_CONTRACTS = stagePlatformContracts(PSP_DISPLAY);
+export const STAGE_PLATFORM_CONTRACTS = stagePlatformContracts(PSP_STAGE_DISPLAY);
 
 export function resolveStageBuildPlan(
   input: unknown,
-  display: StageDisplayFacts = PSP_DISPLAY,
+  display: StageDisplayFacts = PSP_STAGE_DISPLAY,
 ): ResolvedBuildPlan {
   const resolution = validateAndResolveBuildPlan(
     input,
@@ -200,21 +208,11 @@ export function parseWidgetArgs(rawArgs: readonly string[]): WidgetArgs {
   let sawStage = false;
   for (let i = 0; i < input.length; i++) {
     const arg = input[i];
-    if (arg === "--stage") {
+    if (arg === "--stage" || arg.startsWith("--stage=")) {
       if (sawStage) throw new Error("--stage may only be specified once");
-      const value = input[++i];
-      if (value !== "psp" && value !== "ipod") {
-        throw new Error("--stage wants psp or ipod");
-      }
-      stage = value;
-      sawStage = true;
-      continue;
-    }
-    if (arg.startsWith("--stage=")) {
-      if (sawStage) throw new Error("--stage may only be specified once");
-      const value = arg.slice("--stage=".length);
-      if (value !== "psp" && value !== "ipod") {
-        throw new Error("--stage wants psp or ipod");
+      const value = arg === "--stage" ? input[++i] : arg.slice("--stage=".length);
+      if (value === undefined || !isWidgetStage(value)) {
+        throw new Error(`--stage wants ${STAGE_CHOICES}`);
       }
       stage = value;
       sawStage = true;
@@ -263,15 +261,24 @@ async function main(): Promise<void> {
   mkdirSync(resolvePath(planPath, ".."), { recursive: true });
   await Bun.write(planPath, JSON.stringify(plan, null, 2) + "\n");
 
-  await $`bun scripts/build.ts --plan=${planPath} --project-root=${root}`.cwd(root);
+  // Bundles are stage-flavored (a 480x272 PSP build of an app is not its
+  // 176x132 iPod build), so each stage owns a dist directory. Concurrent
+  // stage launches of the same app can no longer clobber one another, and
+  // target-flavored bundles in dist/ proper are never picked up by mistake.
+  const stageDist = resolvePath(root, "dist", `stage-${stage}`);
+  await $`bun scripts/build.ts --plan=${planPath} --project-root=${root} --outdir=${stageDist}`.cwd(root);
   await $`cargo build --release -p pocket-stage`.cwd(`${root}pocket3d`);
 
   const bin = `${root}pocket3d/target/release/pocket-stage`;
-  const env = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? "info" };
+  const env = {
+    ...process.env,
+    RUST_LOG: process.env.RUST_LOG ?? "info",
+    POCKETJS_DIST: stageDist,
+  };
 
   if (proof) {
     const shot = `${root}dist/pocket-stage-proof.png`;
-    await $`${bin} --app ${plan.app.output} --screenshot ${shot} --frames 90 --tap down@10 --click 869,255 --expect-hit btn_circle --expect-ui-hash 0xc34a21cff1f13b06`.env(env);
+    await $`${bin} --app ${plan.app.output} --profile ${stageConfig.profile} --screenshot ${shot} --frames 90 --tap down@10 --click 869,255 --expect-hit btn_circle --expect-ui-hash 0xc34a21cff1f13b06`.env(env);
     console.log(
       "\nproof: the binary asserted both the 3D CIRCLE ray hit and" +
         '\nthe final PocketJS DrawList — the screen reads "Count: 1".' +
@@ -279,11 +286,7 @@ async function main(): Promise<void> {
     );
     await $`open ${shot}`.nothrow();
   } else {
-    if (stageConfig.profile) {
-      await $`${bin} --app ${plan.app.output} --profile ${stageConfig.profile} ${pass}`.env(env);
-    } else {
-      await $`${bin} --app ${plan.app.output} ${pass}`.env(env);
-    }
+    await $`${bin} --app ${plan.app.output} --profile ${stageConfig.profile} ${pass}`.env(env);
   }
 }
 

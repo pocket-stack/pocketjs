@@ -3,7 +3,7 @@
 // portable BTN contract: UP/DOWN rotate, CIRCLE selects, TRIANGLE goes back,
 // LEFT/RIGHT skip, START toggles playback.
 
-import { Show, createSignal } from "solid-js";
+import { For, Show, createSignal } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
@@ -53,17 +53,19 @@ function MenuRows(props: {
 }) {
   return (
     <View debugName="NanoMenu" class="flex-1 flex-col bg-[#f4f4f4] overflow-hidden">
-      {props.labels.map((label, index) => {
-        const selected = () => props.state.selected[props.menu] === index;
-        return (
-          <View class={selected() ? ROW_SELECTED : ROW} debugName={label}>
-            <View class="flex-1 overflow-hidden">
-              <Text class={selected() ? ROW_TEXT_SELECTED : ROW_TEXT}>{label}</Text>
+      <For each={props.labels}>
+        {(label, index) => {
+          const selected = () => props.state.selected[props.menu] === index();
+          return (
+            <View class={selected() ? ROW_SELECTED : ROW} debugName={label}>
+              <View class="flex-1 overflow-hidden">
+                <Text class={selected() ? ROW_TEXT_SELECTED : ROW_TEXT}>{label}</Text>
+              </View>
+              <Text class={selected() ? ROW_TEXT_SELECTED : ROW_TEXT}>{">"}</Text>
             </View>
-            <Text class={selected() ? ROW_TEXT_SELECTED : ROW_TEXT}>{">"}</Text>
-          </View>
-        );
-      })}
+          );
+        }}
+      </For>
     </View>
   );
 }

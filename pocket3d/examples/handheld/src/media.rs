@@ -281,8 +281,12 @@ impl MediaService {
             self.playing = false;
             return Err(anyhow!("afplay exited with {status}"));
         }
+        // A SIGSTOP'd child cannot exit, so a successful exit always means the
+        // track truly finished — even when a pause raced the natural end and
+        // `playing` is already false. Advance either way; only keep playing
+        // (spawn the next track) when the user still expects audio.
+        self.index = (self.index + 1) % self.tracks.len();
         if self.playing {
-            self.index = (self.index + 1) % self.tracks.len();
             self.spawn_current()?;
         }
         self.dirty = true;
@@ -301,7 +305,10 @@ impl MediaService {
     fn fail(&mut self, error: anyhow::Error) {
         log::warn!("pocket-stage media: {error:#}");
         self.stop_child();
-        self.error = Some(error.to_string());
+        // The guest receives metadata and playback state only — the full
+        // error chain (which may name host filesystem paths) stays in the
+        // host log above.
+        self.error = Some("playback failed".into());
         self.dirty = true;
     }
 }
@@ -386,6 +393,22 @@ mod tests {
         assert_eq!(media.index, 1, "natural completion advances first");
         assert!(!media.playing, "pause applies to the newly started track");
         assert!(media.child.is_some());
+        assert!(media.error.is_none());
+    }
+
+    #[test]
+    fn natural_finish_that_raced_a_pause_still_advances() {
+        // A pause can land on the zombie of a track that just ended: the STOP
+        // succeeds, `playing` flips false, and only then does the reap run. A
+        // stopped child can never exit on its own, so a successful exit must
+        // advance the playlist (paused, at the next track) instead of pinning
+        // the UI to "paused at 0:00" of a track that actually completed.
+        let mut media = service_with_finished_child();
+        media.playing = false;
+        let _ = media.tick(0);
+        assert_eq!(media.index, 1, "the finished track still advances");
+        assert!(!media.playing, "the user's pause intent is preserved");
+        assert!(media.child.is_none(), "nothing new is spawned while paused");
         assert!(media.error.is_none());
     }
 
