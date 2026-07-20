@@ -1,4 +1,4 @@
-import { defineVaporComponent, ref } from "vue";
+import { ref } from "vue";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/vue-vapor/components";
 import { animate } from "@pocketjs/framework/vue-vapor/animation";
 
@@ -125,16 +125,15 @@ function callbackProp<T extends (...args: any[]) => unknown>(value: T | (() => T
   return value as T;
 }
 
-const Toggle = defineVaporComponent((
-  _props: { label: string; value: boolean; themeName: ThemeName; onToggle: () => void },
-  { attrs },
+const Toggle = (
+  props: { label: string; value: boolean; themeName: ThemeName; onToggle: () => void },
 ) => {
   let knob: NodeMirror | undefined;
-  const label = () => propValue(attrs.label as string | (() => string));
-  const value = () => propValue(attrs.value as boolean | (() => boolean));
+  const label = () => propValue(props.label as string | (() => string));
+  const value = () => propValue(props.value as boolean | (() => boolean));
   const current = ref(value());
-  const themeName = () => propValue(attrs.themeName as ThemeName | (() => ThemeName));
-  const onToggle = () => callbackProp(attrs.onToggle as (() => void) | (() => () => void));
+  const themeName = () => propValue(props.themeName as ThemeName | (() => ThemeName));
+  const onToggle = () => callbackProp(props.onToggle as (() => void) | (() => () => void));
   const palette = () => themeByName(themeName());
   const moveKnob = (dur: number) => {
     if (!knob) return;
@@ -163,7 +162,7 @@ const Toggle = defineVaporComponent((
       </View>
     </View>
   );
-});
+};
 
 const BRIGHTNESS_TRACK_W = 120;
 const BRIGHTNESS_INITIAL_LEVEL = 3;
@@ -172,9 +171,9 @@ const brightnessWidth = (level: number): number => (level / 5) * BRIGHTNESS_TRAC
 const brightnessScale = (level: number): number => level / 5;
 const brightnessFillOffset = (level: number): number => -(BRIGHTNESS_TRACK_W * (1 - brightnessScale(level))) / 2;
 
-const Brightness = defineVaporComponent((_props: { themeName: ThemeName }, { attrs }) => {
+const Brightness = (props: { themeName: ThemeName }) => {
   const level = ref(BRIGHTNESS_INITIAL_LEVEL);
-  const themeName = () => propValue(attrs.themeName as ThemeName | (() => ThemeName));
+  const themeName = () => propValue(props.themeName as ThemeName | (() => ThemeName));
   const palette = () => themeByName(themeName());
   let fill: NodeMirror | undefined;
   let thumb: NodeMirror | undefined;
@@ -223,15 +222,14 @@ const Brightness = defineVaporComponent((_props: { themeName: ThemeName }, { att
       </View>
     </View>
   );
-});
+};
 
-const ThemeRow = defineVaporComponent((
-  _props: { value: ThemeName; themeName: ThemeName; onPick: (t: ThemeName) => void },
-  { attrs },
+const ThemeRow = (
+  props: { value: ThemeName; themeName: ThemeName; onPick: (t: ThemeName) => void },
 ) => {
-  const value = () => propValue(attrs.value as ThemeName | (() => ThemeName));
-  const themeName = () => propValue(attrs.themeName as ThemeName | (() => ThemeName));
-  const onPick = () => callbackProp(attrs.onPick as ((t: ThemeName) => void) | (() => (t: ThemeName) => void));
+  const value = () => propValue(props.value as ThemeName | (() => ThemeName));
+  const themeName = () => propValue(props.themeName as ThemeName | (() => ThemeName));
+  const onPick = () => callbackProp(props.onPick as ((t: ThemeName) => void) | (() => (t: ThemeName) => void));
   const palette = () => themeByName(themeName());
   return (
     <View class={palette().panelCls}>
@@ -245,7 +243,7 @@ const ThemeRow = defineVaporComponent((
       </View>
     </View>
   );
-});
+};
 
 export default function Settings() {
   const sfx = ref(true);

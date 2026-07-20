@@ -1,4 +1,4 @@
-import { defineVaporComponent, ref, watchEffect } from "vue";
+import { ref, watchEffect } from "vue";
 import {
   ActionBar,
   FocusScope,
@@ -61,28 +61,27 @@ function callbackProp<T extends (...args: any[]) => unknown>(value: T | (() => T
   return value as T;
 }
 
-const Loading = defineVaporComponent((_props: { title: string }, { attrs }) => {
+const Loading = (props: { title: string }) => {
   const frame = createSpriteAnimation(SPINNER_FRAMES, { frameStep: 3 });
-  const title = () => propValue(attrs.title as string | (() => string));
+  const title = () => propValue(props.title as string | (() => string));
   return (
     <View class="flex-col items-center justify-center gap-2 grow">
       <Image class="w-9 h-9" src={frame.value} />
       <Text class="text-xs text-slate-300 tracking-wide">LOADING {title()}</Text>
     </View>
   );
-});
+};
 
-const TileGrid = defineVaporComponent((
-  _props: {
+const TileGrid = (
+  props: {
     page: number | (() => number);
     current: number | (() => number);
     onSelect: ((label: string) => void) | (() => (label: string) => void);
   },
-  { attrs },
 ) => {
-  const page = () => propValue(attrs.page as number | (() => number));
-  const current = () => propValue(attrs.current as number | (() => number));
-  const onSelect = () => callbackProp(attrs.onSelect as ((label: string) => void) | (() => (label: string) => void));
+  const page = () => propValue(props.page as number | (() => number));
+  const current = () => propValue(props.current as number | (() => number));
+  const onSelect = () => callbackProp(props.onSelect as ((label: string) => void) | (() => (label: string) => void));
   const start = page() * TILES_PER_PAGE;
   const srcs = TILE_SRCS.slice(start, start + TILES_PER_PAGE);
   const refs: (NodeMirror | undefined)[] = [];
@@ -110,19 +109,18 @@ const TileGrid = defineVaporComponent((
       ))}
     </Grid>
   );
-});
+};
 
-const Page = defineVaporComponent((
-  _props: {
+const Page = (
+  props: {
     index: number | (() => number);
     current: number | (() => number);
     onSelect: ((label: string) => void) | (() => (label: string) => void);
   },
-  { attrs },
 ) => {
-  const index = () => propValue(attrs.index as number | (() => number));
-  const current = () => propValue(attrs.current as number | (() => number));
-  const onSelect = () => callbackProp(attrs.onSelect as ((label: string) => void) | (() => (label: string) => void));
+  const index = () => propValue(props.index as number | (() => number));
+  const current = () => propValue(props.current as number | (() => number));
+  const onSelect = () => callbackProp(props.onSelect as ((label: string) => void) | (() => (label: string) => void));
   const isCurrent = () => current() === index();
   return (
     <View class={PAGE_BG[index()]}>
@@ -141,7 +139,7 @@ const Page = defineVaporComponent((
       <View class="w-full h-9 shrink-0" />
     </View>
   );
-});
+};
 
 export default function GalleryDemo() {
   const page = ref(0);

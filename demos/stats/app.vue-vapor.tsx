@@ -1,4 +1,4 @@
-import { computed, defineVaporComponent, ref } from "vue";
+import { computed, ref } from "vue";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/vue-vapor/components";
 import { animate } from "@pocketjs/framework/vue-vapor/animation";
 import { onButtonPress, onFrame } from "@pocketjs/framework/vue-vapor/lifecycle";
@@ -73,7 +73,7 @@ function barFillOffset(scale: number): number {
   return -(BAR_W * (1 - scale)) / 2;
 }
 
-const Overview = defineVaporComponent(() => {
+const Overview = () => {
   const fills: Array<NodeMirror | undefined> = [];
   return (
     <View class="flex-col gap-1">
@@ -102,10 +102,10 @@ const Overview = defineVaporComponent(() => {
       ))}
     </View>
   );
-});
+};
 
-const Systems = defineVaporComponent((_props: { frame: number }, { attrs }) => {
-  const frame = () => (typeof attrs.frame === "function" ? (attrs.frame as () => number)() : (attrs.frame as number));
+const Systems = (props: { frame: number }) => {
+  const frame = () => (typeof props.frame === "function" ? (props.frame as () => number)() : (props.frame as number));
   const rowT = (i: number) => easeOutCubic((frame() - i * SYSTEMS_STAGGER_FRAMES) / SYSTEMS_REVEAL_FRAMES);
   return (
     <View class="flex-col gap-1">
@@ -123,7 +123,7 @@ const Systems = defineVaporComponent((_props: { frame: number }, { attrs }) => {
       ))}
     </View>
   );
-});
+};
 
 export default function Stats() {
   const frameN = ref(0);
