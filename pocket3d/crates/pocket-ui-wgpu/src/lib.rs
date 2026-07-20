@@ -21,5 +21,5 @@ mod surface;
 
 pub use blit::Blit;
 pub use pak::{PakEntry, walk_pak};
-pub use render::UiRenderer;
+pub use render::{SceneQuad, UiRenderer, scene_quads};
 pub use surface::UiSurface;

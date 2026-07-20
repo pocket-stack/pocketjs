@@ -8,6 +8,10 @@
 //!   cargo run -p uihost -- --app hero                # window, 2x scale
 //!   cargo run -p uihost -- --app music --scale 3
 //!   cargo run -p uihost -- --app hero --screenshot out.png --frames 10
+//!   cargo run -p uihost -- --app rally --screenshot out.png --frames 240 --hold cross
+//!
+//! Apps with a scene3d viewport (`s3` surface) composite their 3D scenes
+//! under the ui layer — see `render_frame`.
 //!
 //! Bundles/paks come from the PocketJS build (`bun scripts/build.ts <app>`
 //! at the repo root); uihost looks in `<repo>/dist` (override: POCKETJS_DIST
@@ -24,7 +28,8 @@ use std::time::Instant;
 use anyhow::{Context, Result, anyhow};
 use pocket3d::gpu::{Gpu, OffscreenTarget};
 use pocket_mod::Guest;
-use pocket_ui_wgpu::{Blit, UiRenderer, UiSurface};
+use pocket_scene3d::{Scene3dSurface, SceneRect, SceneRenderer};
+use pocket_ui_wgpu::{Blit, UiRenderer, UiSurface, scene_quads};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -56,6 +61,9 @@ struct Args {
     frames: u32,
     scale: u32,
     auto_quit: Option<f32>,
+    /// Button mask applied every frame (`--hold cross,up`) — lets headless
+    /// screenshots capture an app mid-interaction.
+    hold: u32,
 }
 
 fn parse_args() -> Result<Args> {
@@ -67,6 +75,7 @@ fn parse_args() -> Result<Args> {
         frames: 8,
         scale: 2,
         auto_quit: None,
+        hold: 0,
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -81,10 +90,34 @@ fn parse_args() -> Result<Args> {
             "--frames" => args.frames = val("--frames")?.parse()?,
             "--scale" => args.scale = val("--scale")?.parse::<u32>()?.clamp(1, 8),
             "--auto-quit" => args.auto_quit = Some(val("--auto-quit")?.parse()?),
+            "--hold" => {
+                for name in val("--hold")?.split(',') {
+                    args.hold |= button_mask(name.trim())
+                        .ok_or_else(|| anyhow!("--hold: unknown button '{name}'"))?;
+                }
+            }
             other => return Err(anyhow!("unknown flag {other}")),
         }
     }
     Ok(args)
+}
+
+fn button_mask(name: &str) -> Option<u32> {
+    Some(match name {
+        "select" => BTN_SELECT,
+        "start" => BTN_START,
+        "up" => BTN_UP,
+        "right" => BTN_RIGHT,
+        "down" => BTN_DOWN,
+        "left" => BTN_LEFT,
+        "l" | "ltrigger" => BTN_LTRIGGER,
+        "r" | "rtrigger" => BTN_RTRIGGER,
+        "triangle" => BTN_TRIANGLE,
+        "circle" => BTN_CIRCLE,
+        "cross" => BTN_CROSS,
+        "square" => BTN_SQUARE,
+        _ => return None,
+    })
 }
 
 /// `<repo>/dist` — relative to this crate in the source tree, or
@@ -120,8 +153,10 @@ fn resolve_asset(explicit: Option<PathBuf>, app: &str, ext: &str) -> Result<Path
     ))
 }
 
-/// Boot the guest: feed the pak, mount `ui`, eval the bundle.
-fn boot(args: &Args) -> Result<(Guest, UiSurface)> {
+/// Boot the guest: feed the pak, mount `ui` AND `s3`, eval the bundle.
+/// Apps that never touch `s3` (plain ui apps) leave the scene3d store empty
+/// and render exactly as before.
+fn boot(args: &Args) -> Result<(Guest, UiSurface, Scene3dSurface)> {
     let js_path = resolve_asset(args.js.clone(), &args.app, "js")?;
     let pak_path = resolve_asset(args.pak.clone(), &args.app, "pak")?;
     let bundle = std::fs::read_to_string(&js_path)
@@ -130,14 +165,62 @@ fn boot(args: &Args) -> Result<(Guest, UiSurface)> {
 
     let surface = UiSurface::new((UI_W as f32, UI_H as f32));
     surface.feed_pak(&pak);
+    let scene3d = Scene3dSurface::new();
     let guest = Guest::new()?;
     surface.mount(&guest)?;
+    scene3d.mount(&guest)?;
+    // globalThis.ps — the native sim cores (playset/sim/ops.ts). Must share
+    // the SAME Scene3dSurface that gets rendered: `ps.step` writes chassis and
+    // wheel poses straight into that store instead of returning them to JS.
+    pocket_playset::mount::SimSurface::new(&scene3d).mount(&guest)?;
     guest.eval(&args.app, &bundle)?;
     if !guest.has_frame() {
         return Err(anyhow!("bundle evaluated but installed no frame() — is this a PocketJS app?"));
     }
     log::info!("uihost: booted {} ({} bytes js, {} bytes pak)", args.app, bundle.len(), pak.len());
-    Ok((guest, surface))
+    Ok((guest, surface, scene3d))
+}
+
+/// Forward scene3d viewport bind/unbind events into the ui core as
+/// PROP.scene3d writes — the core then emits SCENE_QUAD backdrop ops at the
+/// bound node's laid-out rect (core/src/draw.rs). Call once per tick.
+fn apply_scene_bindings(scene3d: &Scene3dSurface, ui: &UiSurface) {
+    for (node, scene) in scene3d.drain_binding_events() {
+        ui.set_prop(node, pocketjs_core::spec::prop::SCENE3D, scene as f64);
+    }
+}
+
+/// Composite one frame into `target_view`: every SCENE_QUAD's scene renders
+/// FIRST (the frame's first pass clears to black), then the whole ui
+/// DrawList paints over it with LoadOp::Load.
+///
+/// V1 compositing constraint: the 3D layer renders under ALL ui content, not
+/// literally at the SCENE_QUAD's position in the paint order — so viewport
+/// ancestors (and the viewport node itself) must not paint opaque
+/// backgrounds over the rect, or the scene disappears behind them.
+#[allow(clippy::too_many_arguments)]
+fn render_frame(
+    gpu: &Gpu,
+    encoder: &mut wgpu::CommandEncoder,
+    ui: &UiSurface,
+    ui_renderer: &mut UiRenderer,
+    scene3d: &Scene3dSurface,
+    scene_renderer: &mut SceneRenderer,
+    target_view: &wgpu::TextureView,
+    target_px: (u32, u32),
+) -> Result<()> {
+    let quads = ui.with_ui(|core| scene_quads(&core.draw().words));
+    let mut load = wgpu::LoadOp::Clear(wgpu::Color::BLACK);
+    for q in quads {
+        let rect = SceneRect { x: q.x, y: q.y, w: q.w, h: q.h };
+        let drew = scene3d.with_store(|store| {
+            scene_renderer.render(gpu, encoder, target_view, target_px, store, q.scene, rect, load)
+        });
+        if drew {
+            load = wgpu::LoadOp::Load;
+        }
+    }
+    ui.with_ui(|core| ui_renderer.render(gpu, core, encoder, target_view, target_px, load))
 }
 
 fn main() -> Result<()> {
@@ -155,26 +238,28 @@ fn main() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn headless(args: &Args) -> Result<()> {
-    let (guest, surface) = boot(args)?;
+    let (guest, surface, scene3d) = boot(args)?;
     let gpu = Gpu::new_headless()?;
     let target = OffscreenTarget::new(&gpu, UI_W, UI_H);
     let mut renderer = UiRenderer::new(&gpu, pocket3d::gpu::OFFSCREEN_FORMAT);
+    let mut scene_renderer = SceneRenderer::new(&gpu, pocket3d::gpu::OFFSCREEN_FORMAT);
 
     for _ in 0..args.frames {
-        guest.frame(0)?;
+        guest.frame(args.hold)?;
+        apply_scene_bindings(&scene3d, &surface);
         surface.tick();
     }
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
-    surface.with_ui(|ui| {
-        renderer.render(
-            &gpu,
-            ui,
-            &mut encoder,
-            &target.view,
-            (UI_W, UI_H),
-            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-        )
-    })?;
+    render_frame(
+        &gpu,
+        &mut encoder,
+        &surface,
+        &mut renderer,
+        &scene3d,
+        &mut scene_renderer,
+        &target.view,
+        (UI_W, UI_H),
+    )?;
     gpu.queue.submit([encoder.finish()]);
     let out = args.screenshot.clone().unwrap();
     target.save_png(&gpu, &out)?;
@@ -235,6 +320,8 @@ struct State {
     guest: Guest,
     ui: UiSurface,
     ui_renderer: UiRenderer,
+    scene3d: Scene3dSurface,
+    scene_renderer: SceneRenderer,
     offscreen: OffscreenTarget,
     blit: Blit,
     buttons: u32,
@@ -250,7 +337,7 @@ struct App {
 
 impl App {
     fn init_state(&mut self, event_loop: &ActiveEventLoop) -> Result<State> {
-        let (guest, ui) = boot(&self.args)?;
+        let (guest, ui, scene3d) = boot(&self.args)?;
         let attrs = Window::default_attributes()
             .with_title(format!("PocketJS — {}", self.args.app))
             .with_inner_size(winit::dpi::LogicalSize::new(
@@ -270,6 +357,7 @@ impl App {
 
         let offscreen = OffscreenTarget::new(&gpu, UI_W, UI_H);
         let ui_renderer = UiRenderer::new(&gpu, pocket3d::gpu::OFFSCREEN_FORMAT);
+        let scene_renderer = SceneRenderer::new(&gpu, pocket3d::gpu::OFFSCREEN_FORMAT);
         let blit = Blit::new(&gpu, &offscreen.view, surface_config.format, wgpu::FilterMode::Nearest, false);
         Ok(State {
             window,
@@ -279,6 +367,8 @@ impl App {
             guest,
             ui,
             ui_renderer,
+            scene3d,
+            scene_renderer,
             offscreen,
             blit,
             buttons: 0,
@@ -290,7 +380,8 @@ impl App {
         let Some(s) = self.state.as_mut() else { return Ok(()) };
         // One guest turn + one core frame per vsync'd redraw (~60 Hz, the
         // PSP's cadence).
-        s.guest.frame_with_analog(s.buttons, s.nub.analog())?;
+        s.guest.frame_with_analog(s.buttons | self.args.hold, s.nub.analog())?;
+        apply_scene_bindings(&s.scene3d, &s.ui);
         s.ui.tick();
 
         let frame = match s.surface.get_current_texture() {
@@ -303,16 +394,16 @@ impl App {
         };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = s.gpu.device.create_command_encoder(&Default::default());
-        s.ui.with_ui(|ui| {
-            s.ui_renderer.render(
-                &s.gpu,
-                ui,
-                &mut encoder,
-                &s.offscreen.view,
-                (UI_W, UI_H),
-                wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-            )
-        })?;
+        render_frame(
+            &s.gpu,
+            &mut encoder,
+            &s.ui,
+            &mut s.ui_renderer,
+            &s.scene3d,
+            &mut s.scene_renderer,
+            &s.offscreen.view,
+            (UI_W, UI_H),
+        )?;
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("uihost blit pass"),

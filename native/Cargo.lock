@@ -40,6 +40,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
+name = "glam"
+version = "0.33.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f22fb22f065b308be0d8724e3706c7fa3fc2a6c7d6899df4cad7860e7a75436"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -54,7 +63,7 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "libquickjs-sys"
 version = "0.9.0"
-source = "git+https://github.com/pocket-stack/quickjs-rs.git?rev=0fc946fb670c0c29bc0135f510bcb0f595415a61#0fc946fb670c0c29bc0135f510bcb0f595415a61"
+source = "git+https://github.com/pocket-stack/quickjs-rs.git?rev=ba5bdd0dc013518768e76cd9e05cd30ed53dd35b#ba5bdd0dc013518768e76cd9e05cd30ed53dd35b"
 dependencies = [
  "cc",
  "copy_dir",
@@ -89,6 +98,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
+name = "pocket-playset"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "libm",
+ "pocket-scene3d",
+]
+
+[[package]]
+name = "pocket-scene3d"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "libm",
+]
+
+[[package]]
 name = "pocketjs-core"
 version = "0.1.0"
 dependencies = [
@@ -99,7 +125,11 @@ dependencies = [
 name = "pocketjs-psp"
 version = "0.1.0"
 dependencies = [
+ "glam",
+ "libm",
  "libquickjs-sys",
+ "pocket-playset",
+ "pocket-scene3d",
  "pocketjs-core",
  "psp",
 ]

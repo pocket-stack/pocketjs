@@ -1,0 +1,47 @@
+[package]
+name = "pocket-playset"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Playset sim cores: the hot-path GameBlocks blocks as native f32 Rust, writing poses straight into the pocket-scene3d store (playset/sim/ops.ts contract)"
+
+# Same feature layout as pocket-scene3d: `std` (default) is the desktop crate
+# (store + rquickjs guest mount); with default-features off the crate is
+# no_std+alloc and exposes ONLY the sim, so the PSP host (native/) shares the
+# exact semantics without pulling rquickjs into a tier-3 build.
+[features]
+default = ["std"]
+std = [
+    "dep:rquickjs",
+    "dep:pocket-mod",
+    "dep:pocketjs-core",
+    "dep:anyhow",
+    "dep:bytemuck",
+    "glam/std",
+    "pocket-scene3d/std",
+]
+
+[dependencies]
+# Path dep, not `workspace = true`: cargo forbids a member overriding an
+# inherited `default-features`, and this crate must be able to take scene3d
+# WITHOUT std (the no_std half is what native/ links on the PSP). The `std`
+# feature below turns scene3d's std back on for the desktop build.
+pocket-scene3d = { path = "../pocket-scene3d", default-features = false }
+glam = { workspace = true, features = ["libm"] }
+rquickjs = { workspace = true, optional = true }
+# std-only, all four for src/mount.rs: the guest realm + its rquickjs
+# re-export, the spec BTN mask the PSP twin decodes from, mount error
+# plumbing, and alignment-safe typed-array copy-out.
+pocket-mod = { workspace = true, optional = true }
+pocketjs-core = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
+libm = "0.2"
+
+# tests/parity.rs only: it reads the rally trajectory-parity golden
+# (tests/fixtures/rally-parity.json, written by playset/test/gen-parity-fixture.ts).
+# A dev-dependency never reaches the PSP build — native/ takes this crate with
+# default-features off and no_std stays no_std.
+[dev-dependencies]
+serde_json = "1"

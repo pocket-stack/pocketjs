@@ -311,6 +311,16 @@ export const PROP = {
   //                    center = node center, outer radius = min(w,h)/2, color
   //                    = bgColor. Axis-aligned worlds only (rotation belongs
   //                    in arcStart).
+
+  // -- host surfaces (160..167) — host-composited content layers --------------
+  scene3d: 160, //      u32 scene3d scene handle (0 = none). When set, paint
+  //                    emits DRAW_OP.sceneQuad at the node's border box BEFORE
+  //                    its background/children: the host composites the bound
+  //                    3D scene as the node's backdrop layer. Hosts without a
+  //                    scene3d core skip the quad (the box stays empty) —
+  //                    the <Viewport3D>/<Video> graceful-absence contract.
+  //                    Written by the HOST when the guest calls
+  //                    s3.bindViewport (never set from app code directly).
 } as const;
 
 export type PropName = keyof typeof PROP;
@@ -441,6 +451,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
   rotateX: VALUE_KIND.f32, rotateY: VALUE_KIND.f32,
   translateZ: VALUE_KIND.f32, perspective: VALUE_KIND.f32,
   arcStart: VALUE_KIND.f32, arcSweep: VALUE_KIND.f32, arcWidth: VALUE_KIND.f32,
+  scene3d: VALUE_KIND.int,
 };
 
 // ---------------------------------------------------------------------------
@@ -1239,6 +1250,10 @@ export const DRAW_OP = {
   scissorPop: 6,
   tri: 7,
   texTri: 8,
+  /** [op, xyWord, whWord, sceneHandle] — composite the bound scene3d scene
+   *  into this rect as a backdrop layer (PROP.scene3d; consumers without a
+   *  3D core skip the 4 words). */
+  sceneQuad: 9,
 } as const;
 
 // ---------------------------------------------------------------------------

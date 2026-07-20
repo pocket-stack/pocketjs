@@ -9,6 +9,8 @@ description = "PocketJS UI demos in a native window: the PSP UI runtime on the d
 [dependencies]
 pocket3d = { workspace = true }
 pocket-mod = { workspace = true }
+pocket-playset = { workspace = true }
+pocket-scene3d = { workspace = true }
 pocket-ui-wgpu = { workspace = true }
 pocketjs-core = { workspace = true }
 wgpu = { workspace = true }

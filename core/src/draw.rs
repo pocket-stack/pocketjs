@@ -890,6 +890,25 @@ impl<'a> Walker<'a> {
             return;
         }
 
+        // -- host surface backdrop (PROP.scene3d) ----------------------------
+        // Emitted BEFORE background/children: the host composites the bound
+        // 3D scene as this node's backdrop layer at its world AABB (viewports
+        // are axis-aligned by contract; a rotated ancestor degrades to the
+        // AABB rather than dropping the scene).
+        let scene_handle = node
+            .overrides
+            .iter()
+            .find(|&&(p, _)| p == spec::prop::SCENE3D)
+            .map(|&(_, v)| v)
+            .unwrap_or(0);
+        if scene_handle != 0 {
+            let c = self.world_aabb(&world, l.w, l.h);
+            dl.words.push(spec::draw_op::SCENE_QUAD);
+            dl.words.push(xy_word(c.x0, c.y0));
+            dl.words.push(wh_word(c.x1 - c.x0, c.y1 - c.y0));
+            dl.words.push(scene_handle);
+        }
+
         // -- background + shadow --------------------------------------------
         let has_grad = r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32;
         let bg_color = scale_alpha(r.bg_color, op);

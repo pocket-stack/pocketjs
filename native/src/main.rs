@@ -26,7 +26,7 @@ use psp::sys::DisplaySetBufSync;
 use psp::sys::DisplayPixelFormat;
 use psp::sys::{self, CtrlMode, GuContextType, GuSyncBehavior, GuSyncMode, IoOpenFlags, SceCtrlData};
 
-use pocketjs_psp::{dbg, ffi, ge, host, pak, vid};
+use pocketjs_psp::{dbg, ffi, ge, host, pak, playset, scene3d, vid};
 #[cfg(feature = "bench")]
 use pocketjs_psp::arena;
 
@@ -125,6 +125,143 @@ unsafe fn trace_pair(prefix: &[u8], msg: &str) {
         trace_write(msg.as_bytes());
         trace_write(b"\n");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Always-on perf probe (PSP.md §8 avg_work_us pattern, without the bench
+// feature's file plumbing): per-frame guest-turn µs + GE-list-wait µs,
+// summarized to stdout every PERF_WINDOW frames. Under PPSSPP the line lands
+// in the emulator log; under PSPLINK it reaches the shell console. Answers
+// the standing hardware question — is QuickJS per-frame 3D sim fast enough
+// at 333 MHz — once someone runs it on the metal.
+// ---------------------------------------------------------------------------
+
+const PERF_WINDOW: u32 = 300;
+
+struct PerfState {
+    frames: u32,
+    js_sum_us: u64,
+    tick_sum_us: u64,
+    draw_sum_us: u64,
+    render_sum_us: u64,
+    work_sum_us: u64,
+    max_work_us: u64,
+    gu_wait_sum_us: u64,
+    /// Frames whose CRITICAL PATH missed the 60 Hz budget. An average under
+    /// budget is not the same as holding frame rate: the display is vblank
+    /// quantised, so a single frame over 16,667µs costs a whole 16.7ms.
+    over_budget: u32,
+}
+
+static mut PERF: PerfState = PerfState {
+    frames: 0,
+    js_sum_us: 0,
+    tick_sum_us: 0,
+    draw_sum_us: 0,
+    render_sum_us: 0,
+    work_sum_us: 0,
+    max_work_us: 0,
+    gu_wait_sum_us: 0,
+    over_budget: 0,
+};
+
+#[inline]
+unsafe fn perf_now() -> u64 {
+    sys::sceKernelGetSystemTimeWide() as u64
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn perf_record(
+    ctx: *mut JSContext,
+    js_us: u64,
+    tick_us: u64,
+    draw_us: u64,
+    render_us: u64,
+    work_us: u64,
+    gu_wait_us: u64,
+) {
+    PERF.frames += 1;
+    PERF.js_sum_us += js_us;
+    PERF.tick_sum_us += tick_us;
+    PERF.draw_sum_us += draw_us;
+    PERF.render_sum_us += render_us;
+    PERF.work_sum_us += work_us;
+    PERF.gu_wait_sum_us += gu_wait_us;
+    if work_us > PERF.max_work_us {
+        PERF.max_work_us = work_us;
+    }
+    // The frame's real cost: everything before the sync, the GE wait, then the
+    // render enqueue. `work_us` excludes the wait, so it alone understates.
+    if work_us + gu_wait_us > 16_667 {
+        PERF.over_budget += 1;
+    }
+    if PERF.frames < PERF_WINDOW {
+        return;
+    }
+    let n = PERF.frames as u64;
+    let mut line = alloc::format!(
+        "[pocketjs perf] frames={} avg_js_us={} avg_tick_us={} avg_draw_us={} avg_render_us={} avg_work_us={} max_work_us={} avg_gu_wait_us={} over_budget={} cpu_mhz={} (budget 16667)\n",
+        n,
+        PERF.js_sum_us / n,
+        PERF.tick_sum_us / n,
+        PERF.draw_sum_us / n,
+        PERF.render_sum_us / n,
+        PERF.work_sum_us / n,
+        PERF.max_work_us,
+        PERF.gu_wait_sum_us / n,
+        PERF.over_budget,
+        sys::scePowerGetCpuClockFrequencyInt(),
+    );
+    // JS-side split: when the app publishes cumulative counters on
+    // globalThis.__jsPerf ({stepUs, flushUs, hudUs, frames}, µs from
+    // s3.__hwNow), append them raw — the reader diffs across windows.
+    let global = JS_GetGlobalObject(ctx);
+    let jp = JS_GetPropertyStr(ctx, global, b"__jsPerf\0".as_ptr() as *const _);
+    if !JS_IsUndefined(jp) && !JS_IsNull(jp) {
+        let read = |name: &[u8]| -> u64 {
+            let v = JS_GetPropertyStr(ctx, jp, name.as_ptr() as *const _);
+            let mut out = 0f64;
+            JS_ToFloat64(ctx, &mut out, v);
+            JS_FreeValue(ctx, v);
+            out as u64
+        };
+        line.push_str(&alloc::format!(
+            "[pocketjs jsperf] cum_step_us={} cum_flush_us={} cum_hud_us={} cum_frames={} cal_float_us={} cal_prop_us={} cal_vec_us={}\n",
+            read(b"stepUs\0"),
+            read(b"flushUs\0"),
+            read(b"hudUs\0"),
+            read(b"frames\0"),
+            read(b"calFloatUs\0"),
+            read(b"calPropUs\0"),
+            read(b"calVecUs\0"),
+        ));
+    }
+    JS_FreeValue(ctx, jp);
+    JS_FreeValue(ctx, global);
+    sys::sceIoWrite(sys::SceUid(1), line.as_ptr() as *const c_void, line.len());
+    // PSPLINK's tty only reaches a shell that was connected when the module
+    // started, and drops on any reconnect — the file lands in the served
+    // target dir on the host, unconditionally readable.
+    let fd = sys::sceIoOpen(
+        b"host0:/PocketJS-perf.txt\0".as_ptr(),
+        IoOpenFlags::WR_ONLY | IoOpenFlags::CREAT | IoOpenFlags::APPEND,
+        0o777,
+    );
+    if fd.0 >= 0 {
+        sys::sceIoWrite(fd, line.as_ptr() as *const c_void, line.len());
+        sys::sceIoClose(fd);
+    }
+    PERF = PerfState {
+        frames: 0,
+        js_sum_us: 0,
+        tick_sum_us: 0,
+        draw_sum_us: 0,
+        render_sum_us: 0,
+        work_sum_us: 0,
+        max_work_us: 0,
+        gu_wait_sum_us: 0,
+        over_budget: 0,
+    };
 }
 
 #[cfg(feature = "bench")]
@@ -361,7 +498,14 @@ unsafe fn run() {
     trace("run: entered");
     psp::enable_home_button();
     trace("run: home button enabled");
-    host::init_graphics(host::GfxConfig::default());
+    // PSPLINK boots the console at 222/111 MHz; retail XMB launches use
+    // 333/166. Pin the full clock so perf numbers mean the same thing in
+    // both launch paths (and QuickJS gets the CPU it was budgeted for).
+    sys::scePowerSetClockFrequency(333, 333, 166);
+    trace("run: clock 333/166");
+    // depth: scene3d composites (ge3d.rs) z-test inside their rects; the 2D
+    // pass never enables DepthTest, so ui-only output stays byte-identical.
+    host::init_graphics(host::GfxConfig { depth: true });
     trace("run: graphics initialized");
 
     // ---- Controller ----
@@ -410,6 +554,14 @@ unsafe fn run() {
     trace("run: register ui begin");
     ffi::register(ctx, global, &textures, &sprites);
     trace("run: register ui ok");
+    // globalThis.s3 — the Scene3dOps surface (scene3d.rs), before bundle eval
+    // so playset's detectScene3d finds it (graceful absence otherwise).
+    scene3d::register(ctx, global);
+    trace("run: register s3 ok");
+    // globalThis.ps — the SimOps surface (playset.rs). Same graceful-absence
+    // contract: a guest that does not find it runs the TS module composition.
+    playset::register(ctx, global);
+    trace("run: register ps ok");
 
     // Expose the asset pack read-only as globalThis.__pak (zero-copy over
     // .rodata; free_func = None). Web/test hosts feed core through loadStyles/
@@ -460,6 +612,7 @@ unsafe fn run() {
     #[cfg_attr(not(feature = "capture"), allow(unused_variables, unused_mut))]
     let mut frame_count: u32 = 0;
     loop {
+        let perf_t0 = perf_now();
         #[cfg(feature = "bench")]
         let bench_frame_start = bench_now_us();
         if frame_count == 0 {
@@ -485,6 +638,7 @@ unsafe fn run() {
 
         let mut args = [JS_NewInt32(ctx, mask), JS_NewInt32(ctx, analog)];
         let r = JS_Call(ctx, frame_fn, global, 2, args.as_mut_ptr());
+        let perf_after_js = perf_now();
         #[cfg(feature = "bench")]
         let bench_after_js = bench_now_us();
         if frame_count == 0 {
@@ -510,7 +664,12 @@ unsafe fn run() {
         // borrowck happy about the single static-mut Ui (one thread; render
         // only reads atlases/textures, never the DrawList's owner mutably).
         let ui = ffi::ui();
+        // scene3d bindViewport events -> PROP.scene3d writes, before tick
+        // lays out (uihost's apply_scene_bindings order).
+        scene3d::apply_bindings(ui);
+        let perf_before_tick = perf_now();
         ui.tick();
+        let perf_after_tick = perf_now();
         #[cfg(feature = "bench")]
         let bench_after_tick = bench_now_us();
         if frame_count == 0 {
@@ -520,6 +679,7 @@ unsafe fn run() {
             let dl = ui.draw();
             (dl.words.as_ptr(), dl.words.len())
         };
+        let perf_after_draw = perf_now();
         #[cfg(feature = "bench")]
         let bench_after_draw = bench_now_us();
         if frame_count == 0 {
@@ -533,9 +693,11 @@ unsafe fn run() {
         // latency, the standard PSP double-buffered-list pattern. The vertex
         // pool and the display-list buffer are reused only after the sync, so
         // single instances of both stay sufficient.
+        let perf_before_sync = perf_now();
         #[cfg(feature = "bench")]
         let bench_before_sync = bench_now_us();
         sys::sceGuSync(GuSyncMode::Finish, GuSyncBehavior::Wait);
+        let perf_after_sync = perf_now();
         #[cfg(feature = "bench")]
         bench_record_gpu(frame_count, bench_now_us().saturating_sub(bench_before_sync));
         if frame_count == 0 {
@@ -546,6 +708,7 @@ unsafe fn run() {
             trace("frame 0: vblank ok");
         }
         sys::sceGuSwapBuffers();
+        let perf_after_present = perf_now();
         #[cfg(feature = "bench")]
         let bench_after_present = bench_now_us();
         if frame_count == 0 {
@@ -572,7 +735,20 @@ unsafe fn run() {
         if frame_count == 0 {
             trace("frame 0: gu start ok");
         }
+        let perf_before_render = perf_now();
         ge::render(ffi::ui(), core::slice::from_raw_parts(words_ptr, words_len));
+        let perf_after_render = perf_now();
+        perf_record(
+            ctx,
+            perf_after_js.saturating_sub(perf_t0),
+            perf_after_tick.saturating_sub(perf_before_tick),
+            perf_after_draw.saturating_sub(perf_after_tick),
+            perf_after_render.saturating_sub(perf_before_render),
+            perf_after_render
+                .saturating_sub(perf_t0)
+                .saturating_sub(perf_after_present.saturating_sub(perf_before_sync)),
+            perf_after_sync.saturating_sub(perf_before_sync),
+        );
         #[cfg(feature = "bench")]
         let bench_after_render = bench_now_us();
         #[cfg(feature = "bench")]

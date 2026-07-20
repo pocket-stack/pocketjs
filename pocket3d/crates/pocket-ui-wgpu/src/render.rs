@@ -54,6 +54,68 @@ const MODE_SOLID: u32 = 0;
 const MODE_IMAGE: u32 = 1;
 const MODE_GLYPH: u32 = 2;
 
+/// xy word: packed i16 halves (positions can go negative under transforms).
+fn decode_xy(w: u32) -> (f32, f32) {
+    (((w & 0xffff) as u16 as i16) as f32, ((w >> 16) as u16 as i16) as f32)
+}
+
+/// wh word: packed u16 halves.
+fn decode_wh(w: u32) -> (f32, f32) {
+    ((w & 0xffff) as f32, ((w >> 16) & 0xffff) as f32)
+}
+
+/// One SCENE_QUAD from the DrawList: the rect (ui px) a bound scene3d scene
+/// renders into, plus its scene handle.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SceneQuad {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub scene: i32,
+}
+
+/// Walk a DrawList collecting SCENE_QUAD entries in paint order. 3D-capable
+/// hosts composite each scene under the ui layer (see examples/uihost); the
+/// UiRenderer itself skips the op.
+pub fn scene_quads(words: &[u32]) -> Vec<SceneQuad> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < words.len() {
+        // Strides per spec.ts "DRAWLIST op format" (mirrors build_batches).
+        let stride = match words[i] {
+            spec::draw_op::RECT => 4,
+            spec::draw_op::GRAD_RECT => 6,
+            spec::draw_op::GLYPH_RUN => {
+                if i + 3 > words.len() {
+                    break;
+                }
+                3 + 2 * (words[i + 1] >> 16) as usize
+            }
+            spec::draw_op::TEX_QUAD => 9,
+            spec::draw_op::SCISSOR => 3,
+            spec::draw_op::SCISSOR_POP => 1,
+            spec::draw_op::TRI => 7,
+            spec::draw_op::TEX_TRI => 12,
+            spec::draw_op::SCENE_QUAD => {
+                if i + 4 > words.len() {
+                    break;
+                }
+                let (x, y) = decode_xy(words[i + 1]);
+                let (w, h) = decode_wh(words[i + 2]);
+                out.push(SceneQuad { x, y, w, h, scene: words[i + 3] as i32 });
+                4
+            }
+            _ => break, // closed op set: stop on corrupt data
+        };
+        if i + stride > words.len() {
+            break;
+        }
+        i += stride;
+    }
+    out
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum TexBind {
     White,
@@ -388,7 +450,9 @@ impl UiRenderer {
 
         let ndc = |x: f32, y: f32| -> [f32; 2] { [x / tw * 2.0 - 1.0, 1.0 - y / th * 2.0] };
         // DrawList coordinates are logical; scale them into the physical
-        // target here so every consumer below works in target px.
+        // target here so every consumer below works in target px. (The
+        // module-level `decode_xy`/`decode_wh` stay UNSCALED — `scene_quads`
+        // reports logical ui px and its caller owns the scaling.)
         let xy = |w: u32| -> (f32, f32) {
             (
                 ((w & 0xffff) as u16 as i16) as f32 * s,
@@ -630,6 +694,15 @@ impl UiRenderer {
                     }
                     self.verts.extend_from_slice(&v);
                     i += 7;
+                }
+                spec::draw_op::SCENE_QUAD => {
+                    // Host-composited 3D backdrop. The plain UiRenderer has
+                    // no scene3d core — skip; a 3D-capable host composites
+                    // scenes under the ui layer from the same DrawList.
+                    if i + 4 > words.len() {
+                        break;
+                    }
+                    i += 4;
                 }
                 // The op set is closed per DrawList version; anything else
                 // means corrupt data — stop instead of misinterpreting.

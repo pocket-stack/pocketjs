@@ -1614,6 +1614,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "pocket-playset"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "glam",
+ "libm",
+ "pocket-mod",
+ "pocket-scene3d",
+ "pocketjs-core",
+ "rquickjs",
+ "serde_json",
+]
+
+[[package]]
+name = "pocket-scene3d"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "glam",
+ "libm",
+ "log",
+ "pocket-mod",
+ "pocket3d",
+ "wgpu",
+]
+
+[[package]]
 name = "pocket-ui-wgpu"
 version = "0.1.0"
 dependencies = [
@@ -2316,6 +2345,8 @@ dependencies = [
  "log",
  "png",
  "pocket-mod",
+ "pocket-playset",
+ "pocket-scene3d",
  "pocket-ui-wgpu",
  "pocket3d",
  "pocketjs-core",

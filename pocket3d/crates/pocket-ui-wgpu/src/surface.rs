@@ -182,6 +182,13 @@ impl UiSurface {
         f(&mut self.inner.borrow_mut().ui)
     }
 
+    /// Host-side dynamic prop write (core `set_prop`). Companion surfaces
+    /// use this to push host-owned props — e.g. PROP.scene3d when a scene3d
+    /// viewport binding lands (see examples/uihost).
+    pub fn set_prop(&self, id: i32, prop: u8, value: f64) {
+        self.inner.borrow_mut().ui.set_prop(id, prop, value);
+    }
+
     /// Mount `globalThis.ui` (ops + `__textures`/`__sprites`/`__viewport`)
     /// into `guest`. Call after `feed_pak`, before evaluating the bundle.
     pub fn mount(&self, guest: &Guest) -> Result<()> {

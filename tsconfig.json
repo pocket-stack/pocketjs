@@ -17,6 +17,11 @@
     "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
+      "@pocketjs/playset": ["./playset/index.ts"],
+      "@pocketjs/playset/loop": ["./playset/loop.ts"],
+      "@pocketjs/playset/math": ["./playset/math/index.ts"],
+      "@pocketjs/playset/scene3d": ["./playset/scene3d/index.ts"],
+      "@pocketjs/playset/sim": ["./playset/sim/ops.ts"],
       "@pocketjs/framework": ["./src/index.ts"],
       "@pocketjs/framework/animation": ["./src/animation.ts"],
       "@pocketjs/framework/config": ["./src/config.ts"],
@@ -39,5 +44,5 @@
       "@pocketjs/framework/vue-vapor/renderer": ["./src/renderer-vue-vapor.ts"]
     }
   },
-  "include": ["src", "compiler", "demos", "test", "spec", "host-web"]
+  "include": ["src", "compiler", "demos", "test", "spec", "host-web", "playset"]
 }
