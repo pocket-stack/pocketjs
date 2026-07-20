@@ -44,10 +44,14 @@ struct Brain {
 /// Which scene3d nodes this car drives, plus the wheel/pivot LOCAL offsets.
 ///
 /// `write_poses` always writes position, so rotating a wheel means rewriting
-/// its parent-local translation too. The guest set those offsets when it built
-/// the visual, and never moves them again — so the sim snapshots them from the
-/// store on the first step (lazily: binding may happen before the guest's
-/// first flush) and reuses them forever after.
+/// its parent-local translation too. The offsets arrive AS DATA from the guest,
+/// which set them when it built the visual and never moves them again.
+///
+/// They are not read back out of the store, and that is deliberate: the game
+/// loop steps before it renders, so on frame 0 the sim runs before the guest's
+/// first `flush` and the store still holds identity poses. Snapshotting there
+/// pinned every wheel to the chassis origin — invisible inside the body, and
+/// the steering swing with it.
 #[derive(Default)]
 struct CarVisual {
     group: i32,
@@ -55,7 +59,6 @@ struct CarVisual {
     pivots: Vec<i32>,
     wheel_offsets: Vec<Vec3>,
     pivot_offsets: Vec<Vec3>,
-    offsets_captured: bool,
 }
 
 struct Car {
@@ -149,6 +152,8 @@ impl World {
         self.cars[i].motion.reset(position, yaw);
     }
 
+    /// `wheel_offsets` / `pivot_offsets` are the nodes' parent-local
+    /// translations; a short slice pads with zero.
     pub fn car_bind_visual(
         &mut self,
         car: i32,
@@ -156,6 +161,8 @@ impl World {
         wheels: &[i32],
         pivots: &[i32],
         wheel_radius: f32,
+        wheel_offsets: &[Vec3],
+        pivot_offsets: &[Vec3],
     ) {
         let Some(i) = self.car_slot(car) else { return };
         let c = &mut self.cars[i];
@@ -164,7 +171,8 @@ impl World {
         c.visual.wheels.extend_from_slice(wheels);
         c.visual.pivots.clear();
         c.visual.pivots.extend_from_slice(pivots);
-        c.visual.offsets_captured = false;
+        c.visual.wheel_offsets = padded(wheel_offsets, wheels.len());
+        c.visual.pivot_offsets = padded(pivot_offsets, pivots.len());
         c.model = CarModel::new(wheel_radius, wheels.len(), pivots.len());
     }
 
@@ -336,7 +344,6 @@ impl World {
         if self.cars[i].visual.group == 0 {
             return;
         }
-        self.capture_offsets(store, i);
         let car = &self.cars[i];
         let buf = &mut self.pose_buf;
         buf.clear();
@@ -371,25 +378,6 @@ impl World {
         }
         let count = buf.len() / POSE_STRIDE;
         store.write_poses(buf, count);
-    }
-
-    /// Snapshot the wheel/pivot parent-local translations once (see CarVisual).
-    fn capture_offsets(&mut self, store: &Store, i: usize) {
-        let v = &mut self.cars[i].visual;
-        if v.offsets_captured {
-            return;
-        }
-        v.offsets_captured = true;
-        v.wheel_offsets.clear();
-        for id in &v.wheels {
-            v.wheel_offsets
-                .push(store.node(*id).map_or(Vec3::ZERO, |n| n.p));
-        }
-        v.pivot_offsets.clear();
-        for id in &v.pivots {
-            v.pivot_offsets
-                .push(store.node(*id).map_or(Vec3::ZERO, |n| n.p));
-        }
     }
 
     // -- the guest mirror ------------------------------------------------------
@@ -434,6 +422,16 @@ impl World {
         out[13] = rpos.y;
         out[14] = rpos.z;
     }
+}
+
+/// Copy `n` offsets, padding with zero — a guest that sends a short block
+/// still binds, it just gets origin-anchored wheels for the tail.
+fn padded(src: &[Vec3], n: usize) -> Vec<Vec3> {
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        out.push(src.get(i).copied().unwrap_or(Vec3::ZERO));
+    }
+    out
 }
 
 fn push_pose(buf: &mut Vec<f32>, id: i32, p: Vec3, q: Quat) {

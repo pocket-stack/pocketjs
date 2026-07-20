@@ -356,7 +356,7 @@ fn assemble(fixture: &Value, store: &mut Store) -> World {
         let group = store.node_create(scene, 0);
         let wheels: Vec<i32> = (0..4).map(|_| store.node_create(scene, group)).collect();
         let pivots: Vec<i32> = (0..4).map(|_| store.node_create(scene, group)).collect();
-        world.car_bind_visual(car, group, &wheels, &pivots, 0.35);
+        world.car_bind_visual(car, group, &wheels, &pivots, 0.35, &[], &[]);
 
         let half = arr(spec, "actorHalf");
         world.car_actor(car, vec3(&half, 0));

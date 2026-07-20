@@ -176,9 +176,15 @@ export interface SimOps {
   carCreate(world: number, tuning: Float32Array): number;
   carReset(world: number, car: number, x: number, y: number, z: number, yaw: number): void;
   /**
-   * Hand the sim the scene3d nodes it should drive. The wheel and pivot nodes
-   * keep the parent-local offsets the guest gave them; the sim snapshots those
-   * once and only ever rewrites their rotations.
+   * Hand the sim the scene3d nodes it should drive.
+   *
+   * `localOffsets` carries the parent-local translation of every wheel node
+   * followed by every pivot node (3 floats each). They have to travel WITH the
+   * binding rather than be read back from the store: the game loop steps before
+   * it renders, so on frame 0 the sim runs before the guest's first `flush` and
+   * the store still holds identity poses. A sim that snapshotted them there
+   * pinned all four wheels to the chassis origin — hidden inside the body,
+   * taking the visible steering swing with them.
    */
   carBindVisual(
     world: number,
@@ -187,6 +193,7 @@ export interface SimOps {
     wheels: Int32Array,
     pivots: Int32Array,
     wheelRadius: number,
+    localOffsets: Float32Array,
   ): void;
   /** Register the car with the batch resolver (cuboid half extents). */
   carActor(world: number, car: number, hx: number, hy: number, hz: number): void;

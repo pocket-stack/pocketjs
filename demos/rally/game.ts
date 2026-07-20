@@ -375,6 +375,12 @@ function createNativeRally(built: BuiltWorld, ps: SimOps): RallyGame {
   function addCar(visual: CarVisual, spawn: { position: Vector3; yaw: number }): number {
     const car = ps.carCreate(world, tuning);
     ps.carReset(world, car, spawn.position.x, spawn.position.y, spawn.position.z, spawn.yaw);
+    // Parent-local translations travel WITH the binding: the loop steps before
+    // it renders, so the sim's first write lands before the guest's first
+    // flush and the store has nothing to read back yet.
+    const offsets: number[] = [];
+    for (const n of visual.wheels) offsets.push(n.position.x, n.position.y, n.position.z);
+    for (const n of visual.wheelPivots) offsets.push(n.position.x, n.position.y, n.position.z);
     ps.carBindVisual(
       world,
       car,
@@ -382,6 +388,7 @@ function createNativeRally(built: BuiltWorld, ps: SimOps): RallyGame {
       Int32Array.from(visual.wheels, (n) => n.__id),
       Int32Array.from(visual.wheelPivots, (n) => n.__id),
       WHEEL_RADIUS,
+      Float32Array.from(offsets),
     );
     ps.carActor(world, car, CAR_HALF_EXTENTS.x, CAR_HALF_EXTENTS.y, CAR_HALF_EXTENTS.z);
     return car;

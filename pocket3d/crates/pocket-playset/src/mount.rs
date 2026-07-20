@@ -249,11 +249,38 @@ impl SimSurface {
                       group: i32,
                       wheels: TypedArray<i32>,
                       pivots: TypedArray<i32>,
-                      wheel_radius: f64| {
+                      wheel_radius: f64,
+                      local_offsets: TypedArray<f32>| {
                     let wheels = pods(&wheels);
                     let pivots = pods(&pivots);
+                    // [wheel xyz…][pivot xyz…] — see ops.ts for why these
+                    // travel with the bind instead of being read back out of
+                    // the store.
+                    let offsets = pods(&local_offsets);
+                    let take = |from: usize, n: usize| -> Vec<Vec3> {
+                        (0..n)
+                            .map(|i| {
+                                let o = (from + i) * 3;
+                                if o + 2 < offsets.len() {
+                                    Vec3::new(offsets[o], offsets[o + 1], offsets[o + 2])
+                                } else {
+                                    Vec3::ZERO
+                                }
+                            })
+                            .collect()
+                    };
+                    let wheel_offsets = take(0, wheels.len());
+                    let pivot_offsets = take(wheels.len(), pivots.len());
                     if let Some(w) = s.borrow_mut().world(world) {
-                        w.car_bind_visual(car, group, &wheels, &pivots, wheel_radius as f32);
+                        w.car_bind_visual(
+                            car,
+                            group,
+                            &wheels,
+                            &pivots,
+                            wheel_radius as f32,
+                            &wheel_offsets,
+                            &pivot_offsets,
+                        );
                     }
                 }
             );

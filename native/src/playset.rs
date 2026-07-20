@@ -245,8 +245,33 @@ js_op!(js_car_bind_visual, |ctx, argc, argv| {
     let wheels = arg_pods::<i32>(ctx, argc, argv, 3);
     let pivots = arg_pods::<i32>(ctx, argc, argv, 4);
     let radius = arg_f32(ctx, argc, argv, 5);
+    // [wheel xyz…][pivot xyz…] — see ops.ts for why these travel with the bind
+    // instead of being read back out of the store.
+    let offsets = arg_pods::<f32>(ctx, argc, argv, 6);
+    let take = |from: usize, n: usize| -> Vec<Vec3> {
+        (0..n)
+            .map(|i| {
+                let o = (from + i) * 3;
+                if o + 2 < offsets.len() {
+                    Vec3::new(offsets[o], offsets[o + 1], offsets[o + 2])
+                } else {
+                    Vec3::ZERO
+                }
+            })
+            .collect()
+    };
+    let wheel_offsets = take(0, wheels.len());
+    let pivot_offsets = take(wheels.len(), pivots.len());
     if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
-        w.car_bind_visual(car, group, &wheels, &pivots, radius);
+        w.car_bind_visual(
+            car,
+            group,
+            &wheels,
+            &pivots,
+            radius,
+            &wheel_offsets,
+            &pivot_offsets,
+        );
     }
     JS_UNDEFINED
 });
@@ -382,7 +407,7 @@ pub unsafe fn register(ctx: *mut JSContext, global: JSValue) {
     add_fn(ctx, ps, b"collidersAdd\0", js_colliders_add, 4);
     add_fn(ctx, ps, b"carCreate\0", js_car_create, 2);
     add_fn(ctx, ps, b"carReset\0", js_car_reset, 6);
-    add_fn(ctx, ps, b"carBindVisual\0", js_car_bind_visual, 6);
+    add_fn(ctx, ps, b"carBindVisual\0", js_car_bind_visual, 7);
     add_fn(ctx, ps, b"carActor\0", js_car_actor, 5);
     add_fn(ctx, ps, b"carBrain\0", js_car_brain, 5);
     add_fn(ctx, ps, b"raceInit\0", js_race_init, 4);
