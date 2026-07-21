@@ -326,16 +326,11 @@ async function main() {
   };
   const stageApps = ["launcher-main", ...launcherRegistry.apps.map((a) => a.output)];
   for (const output of stageApps) {
-    for (const ext of ["js", "pak"]) {
-      const source = ROOT + `dist/${output}.${ext}`;
-      if (!existsSync(source)) {
-        throw new Error(
-          `missing dist/${output}.${ext} — run: bun scripts/launcher.ts covers && ` +
-            "bun scripts/pocket.ts compile --target psp --manifest demos/launcher/pocket.json --project-root .",
-        );
-      }
-      copy(source, `stage/apps/${output}.${ext}`);
+    const source = ROOT + `dist/packages/${output}.pocket`;
+    if (!existsSync(source)) {
+      throw new Error(`missing dist/packages/${output}.pocket — run: bun scripts/launcher.ts pack`);
     }
+    copy(source, `stage/apps/${output}.pocket`);
   }
   write(
     "stage/apps/apps.json",

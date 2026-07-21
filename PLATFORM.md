@@ -18,7 +18,7 @@ review as a pure function, not a queue of humans.
 |---|---|---|
 | L0 contract | spec.ts ISA, append-only ops, capability registry, manifest admission | SHIPPED — the platform's constitution |
 | L1 hosts | psp / vita / sim / web against one HostOps contract; guest lifecycle (boot/teardown/switch) | switching shipped on psp + sim; vita inherits when the lifecycle is lifted out of main.rs |
-| L2 distribution | `.pocket` package, on-device install, host-relay push | DESIGNED HERE, not built |
+| L2 distribution | `.pocket` package, on-device install, host-relay push | format SHIPPED (v1, below); install + push next |
 | L3 experience | launcher-as-Home, switch veil, DevTools time travel | launcher shipped; veil below |
 
 Rule 5 of RUNTIMES.md stays the platform's first law: every capability a
@@ -54,20 +54,33 @@ Two refinements stack on top later, both cheap: the launcher can play a
 200 ms card-zoom before calling `appLaunch` (pure JS, no host change), and
 qjsc bytecode (below) shrinks the hold the veil is papering over.
 
-## `.pocket` — the package format (draft)
+## `.pocket` — the package format (SHIPPED, v1)
 
-One file per app, produced by `pocket pack`:
+Spec: `spec/pocket-package.ts` (TS encoder/decoder) + `core/src/package.rs`
+(no_std zero-copy reader), pinned to one committed fixture so the two
+implementations cannot drift. One file per app:
 
 ```
-magic  "PCKT" u32 version
-u32    manifest length   -> pocket.json (verbatim, the SAME file the
-                            build resolver admitted)
-u32    js length         -> dist/<output>.js bytes
-u32    pak length        -> dist/<output>.pak bytes
-u32    cover length      -> 256×128 cover PNG (deck display)
-u64    fnv1a64           -> over everything above (the existing build-
-                            identity algorithm, scripts/bundle-hash.ts)
+header   "PCKT" v1, manifest length, variant count
+manifest pocket.json verbatim (the SAME file the build resolver admitted)
+variants TARGET VARIANTS — dist bundles are target-flavored (psp density 1,
+         vita density 2, a desktop widget's live viewport…), so the app is
+         manifest × variants. Each variant: target id + hostAbi + a typed,
+         APPEND-ONLY section table (1 identity, 2 plan, 3 js — NUL-included
+         for zero-copy device eval, 4 pak, 5 cover; unknown kinds skip).
+         Per-variant FNV-1a64: `thin` extracts a device subset from a
+         universal file without changing any variant's identity.
+footer   FNV-1a64 over the whole file (the stale-embed tripwire, now a
+         file format)
 ```
+
+Tools: `bun run pocket:pack build --manifest … --target psp --target vita`
+(each target compiles into its own outdir — the stale-dist lesson,
+institutionalized), plus `inspect`, `thin`, `verify` (footer + per-variant
+re-admission of the embedded manifest). The launcher chain
+(`scripts/launcher.ts pack`) emits psp packages for the EBOOT — which now
+embeds `.pocket` files verbatim and boots guests zero-copy out of them —
+and the site serves the same files to the wasm host.
 
 Design rules:
 

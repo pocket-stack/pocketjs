@@ -6,11 +6,18 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { BTN, PocketHost } from "../playground/host.js";
+import {
+  POCKET_SECTION,
+  decodePocketPackage,
+  findSection,
+  findVariant,
+} from "../../spec/pocket-package.ts";
 
 // Re-exported for the local/CI browser verifier (site/verify.ts): the
 // app-switch protocol is testable headlessly through PocketHost alone,
-// where WebGL (the 3D shell) may be unavailable.
-export { BTN, PocketHost };
+// where WebGL (the 3D shell) may be unavailable, and the .pocket decode
+// path is exercised with the same helpers the adapter uses.
+export { BTN, PocketHost, POCKET_SECTION, decodePocketPackage, findSection, findVariant };
 
 const STAGE_ROOT = "/stage/";
 const FRONT_SNAP_RADIANS = THREE.MathUtils.degToRad(2);
@@ -462,17 +469,31 @@ export async function mountPocketStage(root) {
     controls.update();
     focusDistanceMm = view.focus_distance_mm ?? focusDistanceMm;
     // The stage boots the Pocket Launcher (LAUNCHER.md) — the same
-    // multi-app deck the PSP EBOOT ships, on the wasm core. apps.json is
-    // the registry twin the site build emits next to the bundles.
+    // multi-app deck the PSP EBOOT ships, on the wasm core. Each app
+    // arrives as a `.pocket` package (spec/pocket-package.ts, footer-hash
+    // verified on decode); the wasm host renders the psp variant, exactly
+    // like the handheld. apps.json is the registry twin next to them.
     const bundleCache = new Map();
     const fetchBundle = async (output) => {
       if (!bundleCache.has(output)) {
         bundleCache.set(
           output,
-          Promise.all([
-            fetch(STAGE_ROOT + "apps/" + output + ".js").then(failResponse).then((r) => r.text()),
-            fetch(STAGE_ROOT + "apps/" + output + ".pak").then(failResponse).then((r) => r.arrayBuffer()),
-          ]).then(([js, pak]) => ({ js, pak })),
+          fetch(STAGE_ROOT + "apps/" + output + ".pocket")
+            .then(failResponse)
+            .then((r) => r.arrayBuffer())
+            .then((buffer) => {
+              const pkg = decodePocketPackage(new Uint8Array(buffer));
+              const variant = findVariant(pkg, "psp");
+              if (!variant) throw new Error(output + ".pocket has no psp variant");
+              const js = findSection(variant, POCKET_SECTION.js);
+              const pak = findSection(variant, POCKET_SECTION.pak) ?? new Uint8Array(0);
+              // The js section carries its QuickJS NUL — strip it for eval-
+              // by-source; copy the pak out of the shared package buffer.
+              return {
+                js: new TextDecoder().decode(js.subarray(0, js.length - 1)),
+                pak: pak.slice().buffer,
+              };
+            }),
         );
       }
       return bundleCache.get(output);

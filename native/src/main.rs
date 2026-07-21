@@ -318,8 +318,8 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
         BENCH.max_work_us,
         BENCH.gpu_sum_us / frames,
         BENCH.max_gpu_us,
-        switch::APPS[0].js.len().saturating_sub(1),
-        switch::APPS[0].pak.len(),
+        switch::guest_bytes(0).map(|g| g.js.len().saturating_sub(1)).unwrap_or(0),
+        switch::guest_bytes(0).map(|g| g.pak.len()).unwrap_or(0),
         arena_stats.capacity_bytes,
         arena_stats.bump_bytes,
         arena_stats.tail_free_bytes,
@@ -404,10 +404,15 @@ unsafe fn guest_fail(app_index: usize, msg: &str) -> usize {
 /// Boot embedded app `app_index`, drive it until a switch request, tear the
 /// guest down, and return the next app index to boot.
 unsafe fn run_guest(app_index: usize) -> usize {
-    let app = &switch::APPS[app_index];
     switch::set_current(app_index);
-    let app_js = app.js;
-    let app_pak = app.pak;
+    // Package mode extracts js/pak zero-copy from the entry's embedded
+    // `.pocket`; single-app mode reads the classic inline embed. A package
+    // that fails to parse routes through the broken-guest rule.
+    let Some(guest) = switch::guest_bytes(app_index) else {
+        return guest_fail(app_index, "embedded package unreadable for this target");
+    };
+    let app_js = guest.js;
+    let app_pak = guest.pak;
 
     // ---- Rust UI core (first allocation initializes the arena). Replacing
     // the instance drops the previous guest's tree/styles/atlases/textures

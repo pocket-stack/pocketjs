@@ -15,10 +15,35 @@ use alloc::string::String;
 
 use psp::sys::{self, DisplayPixelFormat, DisplaySetBufSync};
 
+use pocketjs_core::package::{self, Package};
 use pocketjs_core::{spec, Ui};
 
 // $OUT_DIR/apps.rs — `EmbeddedApp` + `APPS` (build.rs generates both).
 include!(concat!(env!("OUT_DIR"), "/apps.rs"));
+
+/// The bytes a guest boots from — extracted zero-copy from the entry's
+/// embedded `.pocket` (package mode), or the classic inline embed. `js`
+/// includes its NUL terminator (eval with len - 1). None = a malformed
+/// package or a variant this target does not carry; main.rs routes that
+/// through the broken-guest path.
+pub struct GuestBytes {
+    pub js: &'static [u8],
+    pub pak: &'static [u8],
+}
+
+pub fn guest_bytes(index: usize) -> Option<GuestBytes> {
+    let app = &APPS[index];
+    if app.pocket.is_empty() {
+        return Some(GuestBytes { js: app.js.as_bytes(), pak: app.pak });
+    }
+    // Embedded packages were hashed into the build identity at pack time —
+    // skip the footer walk at boot (filesystem loads must NOT skip it).
+    let pkg = Package::parse(app.pocket, true).ok()?;
+    let variant = pkg.find_variant(env!("POCKETJS_TARGET")).ok()??;
+    let js = variant.section(package::section::JS).ok()??;
+    let pak = variant.section(package::section::PAK).ok()?.unwrap_or(&[]);
+    Some(GuestBytes { js, pak })
+}
 
 /// Shot geometry (spec op 41; host-sim/shot.ts is the sim twin). The FULL
 /// 480×272 frame is downscaled — the texture stores it slightly squeezed

@@ -67,7 +67,7 @@ export interface LauncherRegistry {
 function usage(message?: string): never {
   if (message) console.error(`launcher: ${message}`);
   console.error(
-    "usage: bun scripts/launcher.ts <scan|covers|build> [--exclude <output>]... [--force] [-- backend args]",
+    "usage: bun scripts/launcher.ts <scan|covers|pack|build> [--exclude <output>]... [--force] [-- backend args]",
   );
   process.exit(1);
 }
@@ -378,10 +378,54 @@ async function renderXmbArt(): Promise<void> {
   console.log("  xmb art: demos/launcher/psp/{icon0,pic1}.png");
 }
 
+/** Emit dist/packages/<output>.pocket for the launcher + every admitted app
+ *  (psp variant, from the ALREADY-BUILT psp dist — the EBOOT embeds these
+ *  verbatim and the site serves them; scripts/pocket-pack.ts is the
+ *  standalone multi-target packer). */
+async function packPackages(registry: LauncherRegistry): Promise<void> {
+  const { makeVariant } = await import("./pocket-pack.ts");
+  const { encodePocketPackage } = await import("../spec/pocket-package.ts");
+  const { canonicalJson } = await import("../src/manifest/plan.ts");
+  const { validateAndResolveBuildPlan } = await import("../src/manifest/resolve.ts");
+  const packagesDir = join(ROOT, "dist/packages");
+  mkdirSync(packagesDir, { recursive: true });
+  const entries = [
+    { manifest: relative(ROOT, LAUNCHER_MANIFEST) },
+    ...registry.apps.map((a) => ({ manifest: a.manifest })),
+  ];
+  for (const entry of entries) {
+    const manifestBytes = readFileSync(join(ROOT, entry.manifest));
+    const manifest: unknown = JSON.parse(manifestBytes.toString("utf8"));
+    const resolution = validateAndResolveBuildPlan(manifest, { target: "psp" });
+    if (!resolution.ok) throw new Error(`launcher pack: ${entry.manifest} no longer admits psp`);
+    const plan = resolution.plan;
+    const js = new Uint8Array(readFileSync(join(ROOT, "dist", `${plan.app.output}.js`)));
+    const pakPath = join(ROOT, "dist", `${plan.app.output}.pak`);
+    const pak = existsSync(pakPath) ? new Uint8Array(readFileSync(pakPath)) : new Uint8Array(0);
+    const coverPath = join(COVERS_DIR, `cover-${plan.app.output}.png`);
+    const bytes = encodePocketPackage({
+      manifest: new Uint8Array(manifestBytes),
+      variants: [
+        makeVariant({
+          target: "psp",
+          hostAbi: plan.target.hostAbi,
+          planJson: canonicalJson(plan),
+          identity: { output: plan.app.output, id: plan.app.id, title: plan.app.title },
+          js,
+          pak,
+          cover: existsSync(coverPath) ? new Uint8Array(readFileSync(coverPath)) : undefined,
+        }),
+      ],
+    });
+    writeFileSync(join(packagesDir, `${plan.app.output}.pocket`), bytes);
+  }
+  console.log(`launcher: ${entries.length} package(s) -> dist/packages/`);
+}
+
 async function main(): Promise<void> {
   const argv = Bun.argv.slice(2);
   const command = argv.shift();
-  if (command !== "scan" && command !== "covers" && command !== "build") usage();
+  if (command !== "scan" && command !== "covers" && command !== "pack" && command !== "build") usage();
   const exclude = new Set<string>();
   let force = false;
   const separator = argv.indexOf("--");
@@ -424,6 +468,10 @@ async function main(): Promise<void> {
 
   console.log("launcher: compiling the launcher app");
   await compileApp(relative(ROOT, LAUNCHER_MANIFEST));
+  console.log("launcher: packing .pocket files");
+  await packPackages(registry);
+  if (command === "pack") return;
+
   console.log("launcher: rendering XMB art");
   await renderXmbArt();
   console.log("launcher: building the multi-app PSP EBOOT");

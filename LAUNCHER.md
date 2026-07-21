@@ -79,12 +79,14 @@ and fragmentation does not accumulate by construction.
    render, box-downscale the full frame to 256×128, write
    `demos/launcher/covers/cover-<output>.png` (generated, deterministic —
    the sim is the oracle, so goldens over cover-bearing frames stay stable).
-3. **build** — `pocket compile` every admitted app + the launcher, then the
-   PSP backend with `POCKETJS_LAUNCHER_REGISTRY=dist/launcher-registry.json`.
-   `native/build.rs` embeds app 0 = launcher plus every registry entry and
-   generates the `APPS` table; the FNV-1a64 build identity covers every
-   embedded byte in table order (`scripts/bundle-hash.ts` twin grows the
-   same mode), so the stale-embed tripwire keeps firing across all of them.
+3. **pack** — every admitted app + the launcher becomes a `.pocket`
+   package (spec/pocket-package.ts, psp variant) under `dist/packages/`.
+4. **build** — the PSP backend embeds those packages VERBATIM
+   (`native/build.rs` + the core reader extract js/pak zero-copy at boot);
+   the FNV-1a64 build identity covers the package files in table order
+   (`scripts/bundle-hash.ts` twin), so the stale-embed tripwire keeps
+   firing across all of them. Single-app EBOOTs keep the classic inline
+   embed, byte-identical.
 
 ## Hosts
 

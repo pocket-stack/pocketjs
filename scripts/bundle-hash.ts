@@ -40,18 +40,14 @@ export function bundleHash(jsPath: string, pakPath: string): string {
   return fnv1a64(js, pak);
 }
 
-/** Multi-app twin (LAUNCHER.md): the launcher EBOOT's identity is FNV-1a64
- *  over EVERY embedded bundle in table order — app 0 (the launcher), then
- *  each registry entry's js + pak. `outputs` must match that order. */
+/** Multi-app twin (LAUNCHER.md): the launcher EBOOT embeds `.pocket`
+ *  package FILES verbatim, so its identity is FNV-1a64 over those files in
+ *  table order — app 0 (the launcher), then each registry entry. `outputs`
+ *  must match that order; packages live in `<dist>/packages/`. */
 export function launcherBundleHash(dist: string, outputs: readonly string[]): string {
   const chunks: Uint8Array[] = [];
   for (const output of outputs) {
-    chunks.push(readFileSync(`${dist}/${output}.js`));
-    try {
-      chunks.push(readFileSync(`${dist}/${output}.pak`));
-    } catch {
-      chunks.push(new Uint8Array(0));
-    }
+    chunks.push(readFileSync(`${dist}/packages/${output}.pocket`));
   }
   return fnv1a64(...chunks);
 }
