@@ -112,29 +112,12 @@ function themeByName(name: ThemeName): ThemeOption {
   return THEMES.find((t) => t.name === name) ?? THEMES[0];
 }
 
-function propValue<T>(value: T | (() => T)): T {
-  return typeof value === "function" ? (value as () => T)() : value;
-}
-
-function callbackProp<T extends (...args: any[]) => unknown>(value: T | (() => T)): T {
-  if (typeof value !== "function") return value;
-  if (value.length === 0) {
-    const resolved = (value as () => T)();
-    if (typeof resolved === "function") return resolved;
-  }
-  return value as T;
-}
-
 const Toggle = (
   props: { label: string; value: boolean; themeName: ThemeName; onToggle: () => void },
 ) => {
   let knob: NodeMirror | undefined;
-  const label = () => propValue(props.label as string | (() => string));
-  const value = () => propValue(props.value as boolean | (() => boolean));
-  const current = ref(value());
-  const themeName = () => propValue(props.themeName as ThemeName | (() => ThemeName));
-  const onToggle = () => callbackProp(props.onToggle as (() => void) | (() => () => void));
-  const palette = () => themeByName(themeName());
+  const current = ref(props.value);
+  const palette = () => themeByName(props.themeName);
   const moveKnob = (dur: number) => {
     if (!knob) return;
     animate(knob, "translateX", current.value ? 15.5 : 0.5, { dur, easing: "out" });
@@ -146,10 +129,10 @@ const Toggle = (
       onPress={() => {
         current.value = !current.value;
         moveKnob(160);
-        onToggle()();
+        props.onToggle();
       }}
     >
-      <Text class={palette().rowLabelCls}>{label()}</Text>
+      <Text class={palette().rowLabelCls}>{props.label}</Text>
       <View class={current.value ? palette().switchOnCls : palette().switchOffCls}>
         <View
           nodeRef={(node: NodeMirror | null) => {
@@ -173,8 +156,7 @@ const brightnessFillOffset = (level: number): number => -(BRIGHTNESS_TRACK_W * (
 
 const Brightness = (props: { themeName: ThemeName }) => {
   const level = ref(BRIGHTNESS_INITIAL_LEVEL);
-  const themeName = () => propValue(props.themeName as ThemeName | (() => ThemeName));
-  const palette = () => themeByName(themeName());
+  const palette = () => themeByName(props.themeName);
   let fill: NodeMirror | undefined;
   let thumb: NodeMirror | undefined;
   const moveLevel = (dur: number) => {
@@ -227,17 +209,14 @@ const Brightness = (props: { themeName: ThemeName }) => {
 const ThemeRow = (
   props: { value: ThemeName; themeName: ThemeName; onPick: (t: ThemeName) => void },
 ) => {
-  const value = () => propValue(props.value as ThemeName | (() => ThemeName));
-  const themeName = () => propValue(props.themeName as ThemeName | (() => ThemeName));
-  const onPick = () => callbackProp(props.onPick as ((t: ThemeName) => void) | (() => (t: ThemeName) => void));
-  const palette = () => themeByName(themeName());
+  const palette = () => themeByName(props.themeName);
   return (
     <View class={palette().panelCls}>
       <Text class={palette().rowLabelCls}>THEME</Text>
       <View class="flex-row gap-2">
         {THEMES.map((t) => (
-          <View class={value() === t.name ? t.selectedCls : t.swatchCls} focusable onPress={() => onPick()(t.name)}>
-            {value() === t.name ? <View class="w-2 h-2 rounded-full bg-white shadow" /> : null}
+          <View class={props.value === t.name ? t.selectedCls : t.swatchCls} focusable onPress={() => props.onPick(t.name)}>
+            {props.value === t.name ? <View class="w-2 h-2 rounded-full bg-white shadow" /> : null}
           </View>
         ))}
       </View>

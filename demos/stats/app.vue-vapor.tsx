@@ -105,7 +105,7 @@ const Overview = () => {
 };
 
 const Systems = (props: { frame: number }) => {
-  const frame = () => (typeof props.frame === "function" ? (props.frame as () => number)() : (props.frame as number));
+  const frame = () => props.frame;
   const rowT = (i: number) => easeOutCubic((frame() - i * SYSTEMS_STAGGER_FRAMES) / SYSTEMS_REVEAL_FRAMES);
   return (
     <View class="flex-col gap-1">

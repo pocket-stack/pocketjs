@@ -48,46 +48,29 @@ const TILE_LABEL = [
 const TILE_FRAME =
   "w-[68] h-[68] rounded-lg items-center justify-center bg-slate-900 border-slate-700 focus:scale-110 focus:border-white transition-transform duration-150 ease-out";
 
-function propValue<T>(value: T | (() => T)): T {
-  return typeof value === "function" ? (value as () => T)() : value;
-}
-
-function callbackProp<T extends (...args: any[]) => unknown>(value: T | (() => T)): T {
-  if (typeof value !== "function") return value;
-  if (value.length === 0) {
-    const resolved = (value as () => T)();
-    if (typeof resolved === "function") return resolved;
-  }
-  return value as T;
-}
-
 const Loading = (props: { title: string }) => {
   const frame = createSpriteAnimation(SPINNER_FRAMES, { frameStep: 3 });
-  const title = () => propValue(props.title as string | (() => string));
   return (
     <View class="flex-col items-center justify-center gap-2 grow">
       <Image class="w-9 h-9" src={frame.value} />
-      <Text class="text-xs text-slate-300 tracking-wide">LOADING {title()}</Text>
+      <Text class="text-xs text-slate-300 tracking-wide">LOADING {props.title}</Text>
     </View>
   );
 };
 
 const TileGrid = (
   props: {
-    page: number | (() => number);
-    current: number | (() => number);
-    onSelect: ((label: string) => void) | (() => (label: string) => void);
+    page: number;
+    current: number;
+    onSelect: (label: string) => void;
   },
 ) => {
-  const page = () => propValue(props.page as number | (() => number));
-  const current = () => propValue(props.current as number | (() => number));
-  const onSelect = () => callbackProp(props.onSelect as ((label: string) => void) | (() => (label: string) => void));
-  const start = page() * TILES_PER_PAGE;
+  const start = props.page * TILES_PER_PAGE;
   const srcs = TILE_SRCS.slice(start, start + TILES_PER_PAGE);
   const refs: (NodeMirror | undefined)[] = [];
 
   watchEffect(() => {
-    if (current() === page()) focusNode(refs[0] ?? null);
+    if (props.current === props.page) focusNode(refs[0] ?? null);
   });
 
   return (
@@ -100,7 +83,7 @@ const TileGrid = (
             }}
             class={TILE_FRAME}
             focusable
-            onPress={() => onSelect()(TILE_LABEL[start + k])}
+            onPress={() => props.onSelect(TILE_LABEL[start + k])}
           >
             <Sprite class="w-[64] h-[64] rounded-lg" sprite={src} />
           </View>
@@ -113,27 +96,24 @@ const TileGrid = (
 
 const Page = (
   props: {
-    index: number | (() => number);
-    current: number | (() => number);
-    onSelect: ((label: string) => void) | (() => (label: string) => void);
+    index: number;
+    current: number;
+    onSelect: (label: string) => void;
   },
 ) => {
-  const index = () => propValue(props.index as number | (() => number));
-  const current = () => propValue(props.current as number | (() => number));
-  const onSelect = () => callbackProp(props.onSelect as ((label: string) => void) | (() => (label: string) => void));
-  const isCurrent = () => current() === index();
+  const isCurrent = () => props.current === props.index;
   return (
-    <View class={PAGE_BG[index()]}>
+    <View class={PAGE_BG[props.index]}>
       <View class="w-full flex-row items-end justify-between px-4 pt-2 pb-1">
         <View class="flex-col">
-          <Text class="text-xs text-slate-300 tracking-wide">{PAGE_SUB[index()]}</Text>
-          <Text class="text-xl text-white font-bold">{PAGE_TITLE[index()]}</Text>
+          <Text class="text-xs text-slate-300 tracking-wide">{PAGE_SUB[props.index]}</Text>
+          <Text class="text-xl text-white font-bold">{PAGE_TITLE[props.index]}</Text>
         </View>
-        <Text class="text-xs text-slate-300">{PAGE_COUNT_LABEL[index()]}</Text>
+        <Text class="text-xs text-slate-300">{PAGE_COUNT_LABEL[props.index]}</Text>
       </View>
       <FocusScope active={isCurrent} restoreFocus={false} class="grow w-full flex-col items-center justify-center">
-        <Lazy when={true} reveal={REVEAL_FRAMES} fallback={() => <Loading title={PAGE_TITLE[index()]} />}>
-          {() => <TileGrid page={index()} current={current()} onSelect={onSelect()} />}
+        <Lazy when={true} reveal={REVEAL_FRAMES} fallback={() => <Loading title={PAGE_TITLE[props.index]} />}>
+          {() => <TileGrid page={props.index} current={props.current} onSelect={props.onSelect} />}
         </Lazy>
       </FocusScope>
       <View class="w-full h-9 shrink-0" />

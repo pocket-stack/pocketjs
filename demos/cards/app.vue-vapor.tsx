@@ -11,10 +11,6 @@ interface Card {
   bar: string;
 }
 
-function propValue<T>(value: T | (() => T)): T {
-  return typeof value === "function" ? (value as () => T)() : value;
-}
-
 const CARDS: Card[] = [
   {
     title: "Layout",
@@ -42,8 +38,8 @@ const CARDS: Card[] = [
   },
 ];
 
-const Detail = (props: { card: Card | (() => Card)}) => {
-  const card = () => propValue(props.card);
+const Detail = (props: { card: Card }) => {
+  const card = () => props.card;
   let el: NodeMirror | undefined;
   onMounted(() => {
     if (el) spring(el, "translateY", 0);
