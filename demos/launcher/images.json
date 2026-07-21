@@ -46,5 +46,65 @@
   },
   "covers/cover-zoomlab-main.png": {
     "linear": true
+  },
+  "covers/refl-cafe-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-chrome-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-cursor-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-cards-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-gallery-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-library-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-hero-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-hero-vue-vapor-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-stats-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-motions-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-notifications-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-music-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-settings-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-im-main.png": {
+    "linear": true,
+    "psm": 2
+  },
+  "covers/refl-zoomlab-main.png": {
+    "linear": true,
+    "psm": 2
   }
 }

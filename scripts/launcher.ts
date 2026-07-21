@@ -124,9 +124,12 @@ function writeRegistry(registry: LauncherRegistry): void {
     "  output: string;",
     "  id: string;",
     "  title: string;",
-    "  /** Pak image asset of the 256×128 cover. The literal path below is",
+    "  /** Pak image asset of the 256×128 cover. The literal paths below are",
     "   *  what the build's asset collector picks up and bakes. */",
     "  cover: string;",
+    "  /** The cover's baked reflection (mirrored + alpha falloff), drawn as",
+    "   *  its own quad so the seam stays a geometric straight edge. */",
+    "  refl: string;",
     "}",
     "",
     "export const REGISTRY: readonly RegistryApp[] = [",
@@ -134,7 +137,9 @@ function writeRegistry(registry: LauncherRegistry): void {
       (a) =>
         `  { output: ${JSON.stringify(a.output)}, id: ${JSON.stringify(a.id)}, title: ${JSON.stringify(
           a.title,
-        )}, cover: ${JSON.stringify(`covers/cover-${a.output}.png`)} },`,
+        )}, cover: ${JSON.stringify(`covers/cover-${a.output}.png`)}, refl: ${JSON.stringify(
+          `covers/refl-${a.output}.png`,
+        )} },`,
     ),
     "] as const;",
     "",
@@ -147,8 +152,13 @@ function writeRegistry(registry: LauncherRegistry): void {
   const images: Record<string, { linear: boolean }> = {
     "covers/launcher-bg.png": { linear: true },
   };
-  for (const a of registry.apps) images[`covers/cover-${a.output}.png`] = { linear: true };
-  writeFileSync(IMAGES_JSON, JSON.stringify(images, null, 2) + "\n");
+  const images4444: Record<string, { linear: boolean; psm: number }> = {};
+  for (const a of registry.apps) {
+    images[`covers/cover-${a.output}.png`] = { linear: true };
+    // Quarter-res faint mirrors: 16-bit color is invisible at 30% alpha.
+    images4444[`covers/refl-${a.output}.png`] = { linear: true, psm: 2 };
+  }
+  writeFileSync(IMAGES_JSON, JSON.stringify({ ...images, ...images4444 }, null, 2) + "\n");
 }
 
 async function compileApp(manifest: string): Promise<void> {
@@ -240,26 +250,35 @@ function stageBackground(w = SHOT_W, h = SHOT_H): Uint8Array {
   return out;
 }
 
-/** The classic Cover Flow reflection, BAKED: the card texture doubles to
- *  256×256 — cover on top, a vertically mirrored copy below with an alpha
- *  falloff (≈30% at the seam, gone ~60% down). One quad per card carries
- *  both, so the reflection rides the card's rotation for free and the fade
- *  lives in the texture's alpha (the 3D pipeline has no per-quad gradient —
- *  the stage simply shows through). */
-function withReflection(cover: Uint8Array): Uint8Array {
-  const out = new Uint8Array(SHOT_W * SHOT_H * 2 * 4);
-  out.set(cover, 0);
+/** The classic Cover Flow reflection, BAKED as its OWN 256×128 texture: the
+ *  cover vertically mirrored with an alpha falloff (≈30% at the seam, gone
+ *  ~60% down). It is drawn as a SEPARATE quad stacked under the cover in
+ *  the same rotating container — the seam is then a shared GEOMETRIC edge
+ *  and stays a straight line. (Baking both halves into one tall quad put
+ *  the seam mid-quad, where the GE's screen-space affine sampling bends
+ *  texture lines at the triangle diagonal on tilted cards — a real-PSP
+ *  find; the sim's centered card never shows it.) */
+/** Reflections are faint by definition, so they ship QUARTER-res (128×64,
+ *  PSM_4444 via images.json) — 16 KB a card instead of 128 KB. The full-res
+ *  first cut OOM'd the PSP: ~2 MB of extra texture heap tipped the arena
+ *  over and the boot parked on the OOM handler (sim RAM never notices). */
+const REFL_W = SHOT_W / 2;
+const REFL_H = SHOT_H / 2;
+
+function reflectionOf(cover: Uint8Array): Uint8Array {
+  const small = resizeBilinear(cover, SHOT_W, SHOT_H, REFL_W, REFL_H);
+  const out = new Uint8Array(REFL_W * REFL_H * 4);
   const strength = 0.3;
-  const fadeRows = 74;
+  const fadeRows = 37;
   for (let k = 0; k < fadeRows; k++) {
     const f = strength * Math.pow(1 - k / fadeRows, 1.7);
-    const src = (SHOT_H - 1 - k) * SHOT_W * 4;
-    const dst = (SHOT_H + k) * SHOT_W * 4;
-    for (let x = 0; x < SHOT_W; x++) {
-      out[dst + x * 4] = cover[src + x * 4];
-      out[dst + x * 4 + 1] = cover[src + x * 4 + 1];
-      out[dst + x * 4 + 2] = cover[src + x * 4 + 2];
-      out[dst + x * 4 + 3] = Math.round(cover[src + x * 4 + 3] * f);
+    const src = (REFL_H - 1 - k) * REFL_W * 4;
+    const dst = k * REFL_W * 4;
+    for (let x = 0; x < REFL_W; x++) {
+      out[dst + x * 4] = small[src + x * 4];
+      out[dst + x * 4 + 1] = small[src + x * 4 + 1];
+      out[dst + x * 4 + 2] = small[src + x * 4 + 2];
+      out[dst + x * 4 + 3] = Math.round(small[src + x * 4 + 3] * f);
     }
   }
   return out;
@@ -277,7 +296,8 @@ async function renderCovers(registry: LauncherRegistry, force: boolean): Promise
   const { bootWorld } = await import("../host-sim/sim.ts");
   for (const app of registry.apps) {
     const coverPath = join(COVERS_DIR, `cover-${app.output}.png`);
-    if (!force && existsSync(coverPath)) continue;
+    const reflPath = join(COVERS_DIR, `refl-${app.output}.png`);
+    if (!force && existsSync(coverPath) && existsSync(reflPath)) continue;
     if (force || !existsSync(join(ROOT, "dist", `${app.output}.js`))) {
       await compileApp(app.manifest);
     }
@@ -295,9 +315,11 @@ async function renderCovers(registry: LauncherRegistry, force: boolean): Promise
       const message = error instanceof Error ? error.message : String(error);
       console.log(`  cover ${app.output} -> fallback gradient (sim boot failed: ${message})`);
     }
+    const ringed = transparentRing(shot, SHOT_W, SHOT_H);
+    await Bun.write(coverPath, encodePNG(ringed, SHOT_W, SHOT_H));
     await Bun.write(
-      coverPath,
-      encodePNG(withReflection(transparentRing(shot, SHOT_W, SHOT_H)), SHOT_W, SHOT_H * 2),
+      join(COVERS_DIR, `refl-${app.output}.png`),
+      encodePNG(reflectionOf(ringed), REFL_W, REFL_H),
     );
   }
 }

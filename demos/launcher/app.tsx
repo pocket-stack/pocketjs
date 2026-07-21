@@ -220,10 +220,11 @@ export default function Launcher() {
         <View debugName="Deck" class="absolute inset-0 perspective-[620]">
           {apps.map((app, i) => {
             const t = targetFor(i - untrack(sel));
-            // 192×192 quad: cover on the top half, the baked reflection on
-            // the bottom (one texture, LAUNCHER.md) — rotateY is about the
-            // vertical center axis, so the taller box changes nothing about
-            // the deck geometry.
+            // Cover + baked reflection as TWO stacked quads in one rotating
+            // 192×192 container: their shared seam is a geometric edge and
+            // projects to a straight line. (One tall quad put the seam
+            // mid-texture, where the GE's screen-space affine sampling bends
+            // it at the triangle diagonal on tilted cards — real-PSP find.)
             return (
               <View
                 ref={(el: NodeMirror) => (cardEls[i] = el)}
@@ -236,7 +237,8 @@ export default function Launcher() {
                   opacity: t.opacity,
                 }}
               >
-                <Image class="absolute left-0 top-0 w-[192] h-[192]" src={app.cover} />
+                <Image class="absolute left-0 top-0 w-[192] h-[96]" src={app.cover} />
+                <Image class="absolute left-0 top-[96] w-[192] h-[96]" src={app.refl} />
               </View>
             );
           })}
