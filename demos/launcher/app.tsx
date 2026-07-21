@@ -16,7 +16,7 @@
 import { createEffect, createSignal, onMount, Show, untrack } from "solid-js";
 import { registerTexture } from "@pocketjs/framework";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
-import { animate } from "@pocketjs/framework/animation";
+import { animate, jump } from "@pocketjs/framework/animation";
 import { BTN } from "@pocketjs/framework/input";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { appTable, frozenShot, launchApp } from "@pocketjs/framework/launcher";
@@ -41,20 +41,28 @@ interface CardTarget {
   opacity: number;
 }
 
+/** Deck geometry as a CONTINUOUS function of the (possibly fractional)
+ *  card offset — held-flow scrubs through it per frame, and the discrete
+ *  tween targets are exactly its integer samples. */
 function targetFor(offset: number): CardTarget {
-  if (offset === 0) {
-    return { translateX: 0, translateZ: FRONT_Z, rotateY: 0, opacity: 1 };
-  }
-  const side = offset > 0 ? 1 : -1;
+  const side = offset < 0 ? -1 : 1;
   const depth = Math.abs(offset);
+  /** 0 at deck center, 1 from the first rail slot outward. */
+  const near = Math.min(depth, 1);
+  const beyond = Math.max(0, depth - 1);
   return {
+    translateX: side * (near * RAIL_FIRST + beyond * RAIL_STEP),
     // Deeper rail cards sink slightly so the painter sort keeps the card
     // nearer the center on top on BOTH sides (equal z would tie-break by
     // tree order and stack one rail backwards).
-    translateX: side * (RAIL_FIRST + (depth - 1) * RAIL_STEP),
-    translateZ: RAIL_Z - depth * 2,
-    rotateY: -side * RAIL_TILT,
-    opacity: depth > RAIL_VISIBLE ? 0 : 0.92,
+    translateZ: FRONT_Z + (RAIL_Z - 2 - FRONT_Z) * near - beyond * 2,
+    rotateY: -side * near * RAIL_TILT,
+    opacity:
+      depth <= 1
+        ? 1 - 0.08 * depth
+        : depth <= RAIL_VISIBLE
+          ? 0.92
+          : Math.max(0, 0.92 * (1 - (depth - RAIL_VISIBLE))),
   };
 }
 
@@ -81,28 +89,44 @@ export default function Launcher() {
   const [sel, setSel] = createSignal(resumeIndex >= 0 ? resumeIndex : 0);
   const cardEls: (NodeMirror | undefined)[] = new Array(apps.length);
 
+  // Held-flow scrub position: non-null while a browse input streams the
+  // deck through FRACTIONAL offsets (per-frame jump()s, which kill any
+  // running tween on the props they touch). Null = at-rest / tweening.
+  let pos: number | null = null;
+
+  const applyCards = (
+    at: number,
+    set: (el: NodeMirror, prop: "translateX" | "translateZ" | "rotateY" | "opacity", v: number) => void,
+  ) => {
+    for (let i = 0; i < apps.length; i++) {
+      const el = cardEls[i];
+      if (!el) continue;
+      const t = targetFor(i - at);
+      set(el, "translateX", t.translateX);
+      set(el, "translateZ", t.translateZ);
+      set(el, "rotateY", t.rotateY);
+      set(el, "opacity", t.opacity);
+    }
+  };
+  /** Glide every card to the integer deck position (from wherever it is —
+   *  a discrete step's previous target or a released scrub's fraction). */
+  const applyTweens = (s: number) =>
+    applyCards(s, (el, prop, v) => animate(el, prop, v, { dur: 140, easing: "out" }));
+  /** Scrub: place every card for a fractional position RIGHT NOW. */
+  const applyFlow = (p: number) => applyCards(p, (el, prop, v) => jump(el, prop, v));
+
   createEffect(() => {
     const s = sel();
     untrack(() => {
-      for (let i = 0; i < apps.length; i++) {
-        const el = cardEls[i];
-        if (!el) continue;
-        const t = targetFor(i - s);
-        // Short tweens, not springs: rapid browsing retargets from the
-        // current value each press, so the deck's visual center never lags
-        // the selection by more than ~140 ms. (Springs felt right but let a
-        // mashed d-pad outrun the animation — the card under the user's eye
-        // was cards behind the one CROSS would launch. Real-hardware find.)
-        animate(el, "translateX", t.translateX, { dur: 140, easing: "out" });
-        animate(el, "translateZ", t.translateZ, { dur: 140, easing: "out" });
-        animate(el, "rotateY", t.rotateY, { dur: 140, easing: "out" });
-        animate(el, "opacity", t.opacity, { dur: 120, easing: "out" });
-      }
+      // While flowing, jump() owns the cards; the release path below tweens
+      // home explicitly. (Tweens on discrete presses only — springs felt
+      // right but let a mashed d-pad outrun the deck; real-hardware find.)
+      if (pos === null) applyTweens(s);
     });
   });
 
-  const stepSel = (delta: number) =>
-    setSel((v) => Math.min(apps.length - 1, Math.max(0, v + delta)));
+  const clampSel = (v: number) => Math.min(apps.length - 1, Math.max(0, v));
+  const stepSel = (delta: number) => setSel((v) => clampSel(v + delta));
 
   onMount(() => {
     // Latched everywhere: the summon chord (or a held browse button) must
@@ -110,32 +134,44 @@ export default function Launcher() {
     onButtonPress(BTN.LEFT, () => stepSel(-1), { latched: true });
     onButtonPress(BTN.RIGHT, () => stepSel(1), { latched: true });
 
-    // Held-flow browsing: the L/R triggers stream the deck (a step every 6
-    // frames = 10 cards/s, first step on the press frame), and a held d-pad
-    // repeats after a short delay like a key. Every step retargets the same
-    // 140 ms tweens, so the deck GLIDES through cards instead of stepping —
-    // and because sel moves one hop per step, the visual center still never
-    // trails what CROSS would launch.
-    let flowHeld = 0;
+    // Held-flow browsing: while the L/R triggers (or a d-pad direction past
+    // the key-repeat delay) stay down, the deck position advances a
+    // FRACTION of a card every frame and the cards are jumped to it — one
+    // continuous stream, no per-card stop. Release tweens from the exact
+    // fraction to the nearest card. The title tracks round(pos) live, so
+    // what reads as centered is always what CROSS launches.
+    const FLOW_TRIGGER = 10 / 60; // cards per frame, trigger stream
+    const FLOW_DPAD = 7.5 / 60; //  cards per frame, held d-pad
+    const DPAD_DELAY = 15; //       frames before a held d-pad flows
     let dpadHeld = 0;
     onFrame((buttons: number) => {
       const tl = (buttons & BTN.LTRIGGER) !== 0;
       const tr = (buttons & BTN.RTRIGGER) !== 0;
-      if (tl !== tr) {
-        if (flowHeld % 6 === 0) stepSel(tr ? 1 : -1);
-        flowHeld++;
-      } else {
-        flowHeld = 0;
-      }
       const dl = (buttons & BTN.LEFT) !== 0;
       const dr = (buttons & BTN.RIGHT) !== 0;
-      if (dl !== dr) {
-        dpadHeld++;
-        // The press-edge handler above took the first step; repeats start
-        // after 250 ms and then run at 7.5 cards/s.
-        if (dpadHeld >= 15 && (dpadHeld - 15) % 8 === 0) stepSel(dr ? 1 : -1);
-      } else {
-        dpadHeld = 0;
+      dpadHeld = dl !== dr ? dpadHeld + 1 : 0;
+      let dir = 0;
+      let speed = 0;
+      if (tl !== tr) {
+        dir = tr ? 1 : -1;
+        speed = FLOW_TRIGGER;
+      } else if (dl !== dr && dpadHeld > DPAD_DELAY) {
+        dir = dr ? 1 : -1;
+        speed = FLOW_DPAD;
+      }
+      if (dir !== 0) {
+        if (pos === null) pos = sel();
+        pos = Math.min(apps.length - 1, Math.max(0, pos + dir * speed));
+        applyFlow(pos);
+        const r = Math.round(pos);
+        if (r !== sel()) setSel(r);
+      } else if (pos !== null) {
+        const settle = Math.round(pos);
+        pos = null;
+        setSel(settle);
+        // sel() may be unchanged (the effect will not re-run) — glide home
+        // from the released fraction regardless.
+        applyTweens(settle);
       }
     });
     onButtonPress(BTN.CROSS, () => {
