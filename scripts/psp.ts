@@ -223,8 +223,51 @@ if (existsSync(xmbFragment)) {
 }
 
 // ---------------------------------------------------------------------------
-// 2. cargo psp with the canonical PocketJS cross environment.
+// 1b. Switch-veil logo (PLATFORM.md): rasterize the brand mark to a 128×128
+// RGBA texture the host embeds and direct-draws during guest swaps. Baked on
+// every build (deterministic, ~10 ms); single-app EBOOTs embed it too but
+// never switch, so it stays dormant 64 KB of rodata.
 // ---------------------------------------------------------------------------
+
+const veilLogoPath = `${outputDir}veil-logo.raw`;
+{
+  // The brand PNGs carry an opaque white plate and the SVG uses stroked
+  // shapes our baker does not rasterize — so the mark is drawn here from
+  // its exact geometry (assets/brand/pocketjs-avatar-white-minimal.svg, in
+  // its 1024 viewBox): a 76-wide stroked round-rect, the face circle, two
+  // rounded bars. White with real alpha; the veil tints via vertex color.
+  const { resizeBilinear } = await import("./launcher.ts");
+  const S = 512; // supersample grid, downscaled 4x for anti-aliasing
+  const k = S / 1024;
+  const sdRoundRect = (px: number, py: number, cx: number, cy: number, hw: number, hh: number, r: number) => {
+    const qx = Math.abs(px - cx) - (hw - r);
+    const qy = Math.abs(py - cy) - (hh - r);
+    const ax = Math.max(qx, 0);
+    const ay = Math.max(qy, 0);
+    return Math.hypot(ax, ay) + Math.min(Math.max(qx, qy), 0) - r;
+  };
+  const big = new Uint8Array(S * S * 4);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const px = (x + 0.5) / k;
+      const py = (y + 0.5) / k;
+      // Stroked outline: |distance to the round-rect edge| <= 38.
+      const outline = Math.abs(sdRoundRect(px, py, 512, 512, 414, 246, 147)) - 38;
+      const face = Math.hypot(px - 338, py - 512) - 92;
+      const bar1 = sdRoundRect(px, py, 664, 449, 152, 35, 35);
+      const bar2 = sdRoundRect(px, py, 614, 583, 102, 35, 35);
+      const d = Math.min(outline, face, bar1, bar2);
+      // 1.5px-wide edge ramp in supersample space (~2px at 1024 scale).
+      const a = Math.round(255 * Math.min(1, Math.max(0, 0.5 - d * k / 1.5)));
+      const o = (y * S + x) * 4;
+      big[o] = 255;
+      big[o + 1] = 255;
+      big[o + 2] = 255;
+      big[o + 3] = a;
+    }
+  }
+  await Bun.write(veilLogoPath, resizeBilinear(big, S, S, 128, 128));
+}
 
 const rustflags = [
   process.env.RUSTFLAGS,
@@ -287,6 +330,8 @@ const env = {
   POCKETJS_BENCH_DUMP_FRAMES: process.env.POCKETJS_BENCH_DUMP_FRAMES ?? "",
   // Multi-app embed (LAUNCHER.md): empty = single-app table of one.
   POCKETJS_LAUNCHER_REGISTRY: launcherRegistry,
+  // Switch-veil logo texture (PLATFORM.md), baked above.
+  POCKETJS_VEIL_LOGO: veilLogoPath,
 };
 
 function outputProfile(args: string[]): string {

@@ -27,7 +27,7 @@ use psp::sys::DisplayPixelFormat;
 use psp::sys::{self, CtrlMode, GuContextType, GuSyncBehavior, GuSyncMode, IoOpenFlags, SceCtrlData};
 
 use pocketjs_core::spec;
-use pocketjs_psp::{dbg, ffi, ge, host, pak, svc, switch, vid};
+use pocketjs_psp::{dbg, ffi, ge, host, pak, svc, switch, veil, vid};
 #[cfg(feature = "bench")]
 use pocketjs_psp::arena;
 
@@ -378,6 +378,9 @@ unsafe fn run() {
     loop {
         boot_index = run_guest(boot_index);
         trace("run: guest swap");
+        // The system transition (PLATFORM.md): host-drawn shot-dim + mark
+        // sweep, then the next guest's eval holds on its settled last frame.
+        veil::play();
     }
 }
 

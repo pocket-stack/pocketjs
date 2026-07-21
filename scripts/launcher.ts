@@ -327,8 +327,9 @@ async function renderCovers(registry: LauncherRegistry, force: boolean): Promise
 }
 
 /** Generic bilinear resample (art assets only — the deck textures use the
- *  fixed-size shot path). */
-function resizeBilinear(
+ *  fixed-size shot path). Also used by scripts/psp.ts to bake the switch
+ *  veil's logo texture. */
+export function resizeBilinear(
   rgba: Uint8Array,
   sw: number,
   sh: number,

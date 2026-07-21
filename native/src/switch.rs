@@ -34,8 +34,13 @@ static mut CURRENT: usize = 0;
 static mut PENDING: i32 = -1;
 static mut PENDING_SUMMON: bool = false;
 static mut RESUME: i32 = -1;
-static mut SHOT: [u8; SHOT_BYTES] = [0; SHOT_BYTES];
+// 16-aligned: sceGuTexImage samples this buffer directly during the veil.
+static mut SHOT: psp::Align16<[u8; SHOT_BYTES]> = psp::Align16([0; SHOT_BYTES]);
+/// Raw pixels valid (ANY switch captures — the veil dims the real outgoing
+/// frame). GUEST_SHOT additionally marks a summon: only then does the shot
+/// upload into the incoming guest's core (spec op 41 semantics).
 static mut SHOT_VALID: bool = false;
+static mut GUEST_SHOT: bool = false;
 static mut SHOT_HANDLE: i32 = -1;
 
 /// More than one embedded bundle: the summon chord + the app* ops are live.
@@ -79,12 +84,19 @@ pub unsafe fn take_pending() -> Option<(usize, bool)> {
     PENDING_SUMMON = false;
     if summon {
         RESUME = CURRENT as i32;
+        GUEST_SHOT = true;
     } else {
         RESUME = -1;
-        SHOT_VALID = false;
+        GUEST_SHOT = false;
     }
     SHOT_HANDLE = -1;
     Some((target, summon))
+}
+
+/// The veil's background: the raw downscaled pixels of the frame the
+/// outgoing guest last presented (any switch), 256×128 RGBA.
+pub unsafe fn shot_pixels() -> Option<&'static [u8]> {
+    if SHOT_VALID { Some(&SHOT.0) } else { None }
 }
 
 /// spec op 39 — the table + runtime state, one JSON string.
@@ -188,11 +200,11 @@ pub unsafe fn capture_shot() {
                 let p11 = row1[x1 * 4 + c] as f32;
                 let top = p00 + (p01 - p00) * fx;
                 let bot = p10 + (p11 - p10) * fx;
-                SHOT[o + c] = (top + (bot - top) * fy + 0.5) as u8;
+                SHOT.0[o + c] = (top + (bot - top) * fy + 0.5) as u8;
             }
             // The GE leaves framebuffer alpha at 0 — an as-is upload would
             // blend to nothing. The shot is opaque by definition.
-            SHOT[o + 3] = 0xff;
+            SHOT.0[o + 3] = 0xff;
         }
     }
     SHOT_VALID = true;
@@ -202,9 +214,9 @@ pub unsafe fn capture_shot() {
 /// handle dies with the guest's Ui, so it is re-uploaded per boot. Bilinear:
 /// the 256×128 shot stretches back over 480×272 — nearest would pixel-double.
 pub unsafe fn upload_shot(ui: &mut Ui) {
-    if SHOT_VALID {
+    if SHOT_VALID && GUEST_SHOT {
         SHOT_HANDLE = ui.upload_texture_flags(
-            &SHOT,
+            &SHOT.0,
             SHOT_W,
             SHOT_H,
             spec::psm::PSM_8888,

@@ -209,6 +209,20 @@ fn main() {
     fs::write(Path::new(&out_dir).join("game.js"), legacy).unwrap();
     fs::write(Path::new(&out_dir).join("app.pak"), &embeds[0].pak).unwrap();
 
+    // Switch-veil logo (PLATFORM.md): 128×128 RGBA baked by scripts/psp.ts.
+    // Empty fallback keeps custom-host builds (no backend env) linking; the
+    // veil skips the mark when the blob is not exactly 128*128*4 bytes.
+    let veil = env::var("POCKETJS_VEIL_LOGO")
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            println!("cargo:rerun-if-changed={p}");
+            fs::read(&p).unwrap_or_default()
+        })
+        .unwrap_or_default();
+    fs::write(Path::new(&out_dir).join("veil.raw"), veil).unwrap();
+    println!("cargo:rerun-if-env-changed=POCKETJS_VEIL_LOGO");
+
     // Scripted input for deterministic capture builds (test/e2e-ppsspp.ts):
     // "frame:mask,frame:mask" baked into the EBOOT, consumed by main.rs only
     // under --features capture (same pattern as dreamcart runtime/build.rs
