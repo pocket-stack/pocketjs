@@ -277,10 +277,11 @@ function buildWorld(): BuiltWorld {
       },
       terrainSize: 150,
       terrainSegments: 48,
-      // Six-by-six ground patches: on a host that frustum-culls, this one mesh
-      // went from 4,608 always-drawn triangles to only the patches actually in
-      // view. Measured on real PSP — it was 72% of everything still reaching
-      // the GE after the props were being culled.
+      // MEASURED (desktop, real chase-camera positions): 6 patches submit
+      // 5,083 triangles, 1 patch submits the whole 4,608-triangle mesh every
+      // frame plus everything else, and 9 patches submit 8,485 — finer is not
+      // automatically better once the duplicated overlap rows outweigh what
+      // the cull rejects.
       terrainTiles: 6,
       treeCount: 18,
       rockCount: 6,

@@ -770,9 +770,16 @@ impl SceneRenderer {
         }
 
         self.last_draws = draws.len();
+        // Triangles, not just draws: on a GE-bound frame the vertex count is
+        // what costs, and a single unculled mesh can outweigh a hundred draws.
+        let tris: usize = draws
+            .iter()
+            .map(|d| self.geoms.get(&d.geom).map_or(0, |g| g.index_count as usize / 3))
+            .sum();
         log::debug!(
-            "scene3d: scene {scene_handle} submitted {} mesh draws, {} of them merged batches",
+            "scene3d: scene {scene_handle} submitted {} mesh draws ({} tris), {} of them merged batches",
             self.last_draws,
+            tris,
             self.last_batch_draws
         );
 

@@ -3,6 +3,13 @@
 //
 //   bun scripts/hw-bench.ts rally snake dogfight runner
 //
+// Run it UNPIPED. `bun scripts/hw-bench.ts ... | tail -n` buffers every line
+// until the pipe closes, so a sweep that takes half an hour looks identical to
+// one that died on the first build.
+//
+// And do not run a second pspsh against the same link while it works: two
+// clients contend, and the loser hangs rather than failing.
+//
 // Assumes usbhostfs_pc is already serving native/target/mipsel-sony-psp/release
 // and PSPLINK is up (scripts/hw.ts owns that dance for interactive use; this
 // script is for sweeping several demos unattended).

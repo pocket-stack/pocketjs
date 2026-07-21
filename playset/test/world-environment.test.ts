@@ -316,10 +316,45 @@ describe("terrain-mesh-factory", () => {
     ).toThrow("terrainSampler.sample");
   });
 
+  test("splits into cullable patches when asked, one mesh otherwise", () => {
+    // WHY splitting matters: an unsplit terrain's bounds span the whole map, so
+    // no frustum test can reject it and it draws in full every frame — on real
+    // hardware that was 72% of everything still reaching the PSP's GE.
+    const auto = makeScene();
+    const autoRoot = createTerrainMesh({
+      scene: auto.scene,
+      terrainSampler: new NaturalTerrainSampler({}),
+      size: 40,
+      segments: 16,
+      tiles: 4,
+    });
+    const autoDoc = parseScene(auto.scene, auto.ops);
+    const patches = autoDoc.nodes.filter((n) => n.parent === autoRoot.__id && n.geom > 0);
+    expect(patches.length).toBeGreaterThan(1);
+    // Patches tile the extent: every one sits inside the terrain's footprint.
+    for (const p of patches) {
+      expect(Math.abs(p.p[0])).toBeLessThanOrEqual(20);
+      expect(Math.abs(p.p[2])).toBeLessThanOrEqual(20);
+    }
+
+    const single = makeScene();
+    const singleRoot = createTerrainMesh({
+      scene: single.scene,
+      terrainSampler: new NaturalTerrainSampler({}),
+      size: 40,
+      segments: 16,
+      tiles: 1,
+    });
+    const singleDoc = parseScene(single.scene, single.ops);
+    expect(singleDoc.nodes.find((n) => n.id === singleRoot.__id)!.geom).toBeGreaterThan(0);
+  });
+
   test("bakes a (segments+1)² heightfield with vertex colors", () => {
     const { scene, ops } = makeScene();
     const sampler = new NaturalTerrainSampler({});
-    const mesh = createTerrainMesh({ scene, terrainSampler: sampler, size: 40, segments: 8 });
+    // tiles: 1 keeps the single-mesh shape this test is about; the default is
+    // now an automatic split (see createTerrainMesh) and gets its own test.
+    const mesh = createTerrainMesh({ scene, terrainSampler: sampler, size: 40, segments: 8, tiles: 1 });
     const doc = parseScene(scene, ops);
 
     const node = doc.nodes.find((n) => n.id === mesh.__id)!;
@@ -339,7 +374,7 @@ describe("terrain-mesh-factory", () => {
   test("heights/colors match a hand-built row-major bake (digest equality)", () => {
     const sampler = new NaturalTerrainSampler({});
     const { scene, ops } = makeScene();
-    const mesh = createTerrainMesh({ scene, terrainSampler: sampler, size: 40, segments: 8 });
+    const mesh = createTerrainMesh({ scene, terrainSampler: sampler, size: 40, segments: 8, tiles: 1 });
     const doc = parseScene(scene, ops);
     const baked = doc.geoms.find((g) => g.id === doc.nodes.find((n) => n.id === mesh.__id)!.geom)!;
 

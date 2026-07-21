@@ -374,6 +374,14 @@ export function createDogfightGame(): DogfightGame {
     },
     size: 14500,
     segments: 180,
+    // MEASURED: unsplit this is 64,800 triangles in ONE draw whose bounds span
+    // the whole map, so nothing can cull it — about 89 ms/frame of GE on its
+    // own at the ~730 triangles/ms this hardware sustains. 16 patches is where
+    // the curve flattens here (26,982 submitted; 32 patches only reaches
+    // 26,454, because a plane looks ACROSS its terrain and most of it really
+    // is in frustum). Getting this demo to 60 needs terrain LOD, not a finer
+    // split — see the notes on this PR.
+    tiles: 16,
   });
 
   // Demo lighting: sun from basis (1300, 2200, 900), hemisphere 0xbfe8ff over
@@ -385,7 +393,10 @@ export function createDogfightGame(): DogfightGame {
   scene.fog(rgbToAbgr(0x8bc6ee), 900, 3900);
   scene.camera.fovY = (68 * Math.PI) / 180;
   scene.camera.znear = 1;
-  scene.camera.zfar = 18000;
+  // Fog saturates at 3900 and its colour IS the sky colour, so terrain beyond
+  // it contributes nothing but GE time. Clipping just past the fog wall is
+  // invisible — what would show through is the same 0x8bc6ee.
+  scene.camera.zfar = 4200;
 
   // Cloud deck (demo counts/draw order; unit sphere scaled per puff — the
   // demo's per-puff SphereGeometry radius folds into the node scale).

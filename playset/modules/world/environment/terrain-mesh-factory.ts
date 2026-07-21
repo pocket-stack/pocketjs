@@ -83,6 +83,16 @@ export interface CreateTerrainMeshOptions {
    * volume spans the whole map, so it could never be rejected, while most of
    * its vertices sat outside the view. 1 keeps the single-mesh behaviour.
    *
+   * PICK IT BY MEASURING. The tradeoff has no content-independent answer:
+   * finer patches cull better, but adjacent patches duplicate a row of quads
+   * each (see below), so on a small terrain that is mostly on screen anyway
+   * the duplication outweighs the culling. Measured on rally (150 units, 48
+   * segments): 6 patches submit 5,083 triangles where 9 submit 8,485. A rule
+   * keyed on triangle count alone gets this backwards — what decides it is the
+   * FRACTION of the terrain the camera can see, which depends on the far plane
+   * and is not knowable here. An automatic split wants the camera; that is a
+   * real follow-up, not a guess to ship.
+   *
    * Adjacent tiles deliberately OVERLAP by one quad row. Vertex normals are
    * averaged per mesh, so tiles that merely touched would give a boundary
    * vertex a half-neighbourhood on each side and a visible lighting seam; with
