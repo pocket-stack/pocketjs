@@ -1248,7 +1248,12 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //                           quads and for image nodes inside 3D (perspective)
 //                           subtrees, UVs interpolated through the clip.
 //                           Texture sampling is affine in screen space
-//                           (PSP-authentic; no perspective-correct divide).
+//                           (PSP-authentic; no perspective-correct divide);
+//                           the core compensates by emitting foreshortened
+//                           image quads as a GRID of cells sized by the
+//                           perspective variation (projectively correct UVs
+//                           at every cell corner), so interior texture lines
+//                           do not kink at triangle diagonals.
 
 export const DRAW_OP = {
   rect: 1,

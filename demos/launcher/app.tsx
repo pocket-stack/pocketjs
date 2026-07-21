@@ -202,13 +202,6 @@ export default function Launcher() {
         <View class="absolute left-0 top-0 w-[480] h-[272] bg-[#05060a] opacity-75" />
       </Show>
 
-      <View debugName="Header" class="absolute left-4 top-3 flex-col">
-        <Text class="text-xs text-slate-500 tracking-wide">POCKET LAUNCHER</Text>
-      </View>
-      <Text class="absolute right-4 top-3 text-xs text-slate-500">
-        {`${apps.length} APPS`}
-      </Text>
-
       <Show
         when={apps.length > 0}
         fallback={
