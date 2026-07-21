@@ -16,7 +16,7 @@
 import { createEffect, createSignal, onMount, Show, untrack } from "solid-js";
 import { registerTexture } from "@pocketjs/framework";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
-import { animate, spring } from "@pocketjs/framework/animation";
+import { animate } from "@pocketjs/framework/animation";
 import { BTN } from "@pocketjs/framework/input";
 import { onButtonPress } from "@pocketjs/framework/lifecycle";
 import { appTable, frozenShot, launchApp } from "@pocketjs/framework/launcher";
@@ -88,10 +88,15 @@ export default function Launcher() {
         const el = cardEls[i];
         if (!el) continue;
         const t = targetFor(i - s);
-        spring(el, "translateX", t.translateX);
-        spring(el, "translateZ", t.translateZ);
-        spring(el, "rotateY", t.rotateY);
-        animate(el, "opacity", t.opacity, { dur: 160, easing: "out" });
+        // Short tweens, not springs: rapid browsing retargets from the
+        // current value each press, so the deck's visual center never lags
+        // the selection by more than ~140 ms. (Springs felt right but let a
+        // mashed d-pad outrun the animation — the card under the user's eye
+        // was cards behind the one CROSS would launch. Real-hardware find.)
+        animate(el, "translateX", t.translateX, { dur: 140, easing: "out" });
+        animate(el, "translateZ", t.translateZ, { dur: 140, easing: "out" });
+        animate(el, "rotateY", t.rotateY, { dur: 140, easing: "out" });
+        animate(el, "opacity", t.opacity, { dur: 120, easing: "out" });
       }
     });
   });

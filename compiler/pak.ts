@@ -148,8 +148,15 @@ export interface DecodedImage {
   rgba: Uint8Array;
 }
 
-/** Encode an IMG entry blob (see layout at the top of this file). */
-export function encodeImageEntry(img: DecodedImage, psm: number = PSM.PSM_8888): Uint8Array {
+/** Encode an IMG entry blob (see layout at the top of this file).
+ *  `flags`: spec IMG_FLAG_* — IMG_FLAG_LINEAR requests bilinear sampling
+ *  (default nearest; the flag byte has always been in the layout, this is
+ *  just the first cook path to set it). */
+export function encodeImageEntry(
+  img: DecodedImage,
+  psm: number = PSM.PSM_8888,
+  flags: number = 0,
+): Uint8Array {
   const { width: w, height: h, rgba } = img;
   const pow2 = (n: number) => n > 0 && (n & (n - 1)) === 0;
   if (!pow2(w) || !pow2(h) || w > TEX_MAX_DIM || h > TEX_MAX_DIM) {
@@ -162,6 +169,7 @@ export function encodeImageEntry(img: DecodedImage, psm: number = PSM.PSM_8888):
   dv.setUint16(0, w, true);
   dv.setUint16(2, h, true);
   out[4] = psm;
+  out[5] = flags & 0xff;
   if (psm === PSM.PSM_8888) {
     out.set(rgba, 8); // RGBA byte order IS the ABGR u32 LE layout
   } else if (psm === PSM.PSM_4444) {

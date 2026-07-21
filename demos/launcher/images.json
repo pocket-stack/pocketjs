@@ -1,0 +1,47 @@
+{
+  "covers/cover-cafe-main.png": {
+    "linear": true
+  },
+  "covers/cover-chrome-main.png": {
+    "linear": true
+  },
+  "covers/cover-cursor-main.png": {
+    "linear": true
+  },
+  "covers/cover-cards-main.png": {
+    "linear": true
+  },
+  "covers/cover-gallery-main.png": {
+    "linear": true
+  },
+  "covers/cover-library-main.png": {
+    "linear": true
+  },
+  "covers/cover-hero-main.png": {
+    "linear": true
+  },
+  "covers/cover-hero-vue-vapor-main.png": {
+    "linear": true
+  },
+  "covers/cover-stats-main.png": {
+    "linear": true
+  },
+  "covers/cover-motions-main.png": {
+    "linear": true
+  },
+  "covers/cover-notifications-main.png": {
+    "linear": true
+  },
+  "covers/cover-music-main.png": {
+    "linear": true
+  },
+  "covers/cover-settings-main.png": {
+    "linear": true
+  },
+  "covers/cover-im-main.png": {
+    "linear": true
+  },
+  "covers/cover-zoomlab-main.png": {
+    "linear": true
+  }
+}

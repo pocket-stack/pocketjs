@@ -23,12 +23,33 @@ const LAUNCHER_DIR = join(DEMOS_DIR, "launcher");
 const COVERS_DIR = join(LAUNCHER_DIR, "covers");
 const REGISTRY_JSON = join(ROOT, "dist/launcher-registry.json");
 const REGISTRY_TSV = join(ROOT, "dist/launcher-registry.tsv");
+const IMAGES_JSON = join(LAUNCHER_DIR, "images.json");
 const REGISTRY_TS = join(LAUNCHER_DIR, "registry.generated.ts");
 const LAUNCHER_MANIFEST = join(LAUNCHER_DIR, "pocket.json");
 
 /** Frames the sim settles before the cover render: boot springs and stagger
  *  animations land, steady state does not drift (fixed dt, mask 0). */
 const COVER_SETTLE_FRAMES = 90;
+
+/** Fade the outer 2 px of a cover to transparent. With bilinear sampling on,
+ *  the card's polygon edge then blends out through the ring instead of
+ *  cutting a hard aliased line — the poor console's MSAA. */
+function transparentRing(rgba: Uint8Array, w: number, h: number): Uint8Array {
+  const ring = 2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const d = Math.min(x, y, w - 1 - x, h - 1 - y);
+      if (d >= ring) continue;
+      const o = (y * w + x) * 4;
+      const a = d / ring; // 0 at the border, 1 at the ring's inner edge
+      rgba[o] = Math.round(rgba[o] * a);
+      rgba[o + 1] = Math.round(rgba[o + 1] * a);
+      rgba[o + 2] = Math.round(rgba[o + 2] * a);
+      rgba[o + 3] = Math.round(255 * a);
+    }
+  }
+  return rgba;
+}
 
 export interface LauncherRegistryEntry {
   output: string;
@@ -120,6 +141,12 @@ function writeRegistry(registry: LauncherRegistry): void {
   ];
   mkdirSync(LAUNCHER_DIR, { recursive: true });
   writeFileSync(REGISTRY_TS, lines.join("\n"));
+  // Static-image meta for scripts/build.ts: every cover samples bilinear
+  // (IMG_FLAG_LINEAR) — the deck rotates and scales them, nearest shimmers.
+  // Committed alongside registry.generated.ts, same freshness story.
+  const images: Record<string, { linear: boolean }> = {};
+  for (const a of registry.apps) images[`covers/cover-${a.output}.png`] = { linear: true };
+  writeFileSync(IMAGES_JSON, JSON.stringify(images, null, 2) + "\n");
 }
 
 async function compileApp(manifest: string): Promise<void> {
@@ -199,7 +226,7 @@ async function renderCovers(registry: LauncherRegistry, force: boolean): Promise
       const message = error instanceof Error ? error.message : String(error);
       console.log(`  cover ${app.output} -> fallback gradient (sim boot failed: ${message})`);
     }
-    await Bun.write(coverPath, encodePNG(shot, SHOT_W, SHOT_H));
+    await Bun.write(coverPath, encodePNG(transparentRing(shot, SHOT_W, SHOT_H), SHOT_W, SHOT_H));
   }
 }
 

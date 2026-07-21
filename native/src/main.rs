@@ -358,6 +358,11 @@ unsafe fn run() {
     trace("run: entered");
     psp::enable_home_button();
     trace("run: home button enabled");
+    // Full clock. PSPLINK launches modules at its own 222 MHz default, and a
+    // QuickJS guest feels every missing cycle — this was measured as part of
+    // the perf-wall work but never landed in this host.
+    sys::scePowerSetClockFrequency(333, 333, 166);
+    trace("run: clock 333/166");
     host::init_graphics(host::GfxConfig::default());
     trace("run: graphics initialized");
 

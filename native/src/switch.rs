@@ -199,10 +199,17 @@ pub unsafe fn capture_shot() {
 }
 
 /// After a summoned guest boots: upload the shot into ITS core, once. The
-/// handle dies with the guest's Ui, so it is re-uploaded per boot.
+/// handle dies with the guest's Ui, so it is re-uploaded per boot. Bilinear:
+/// the 256×128 shot stretches back over 480×272 — nearest would pixel-double.
 pub unsafe fn upload_shot(ui: &mut Ui) {
     if SHOT_VALID {
-        SHOT_HANDLE = ui.upload_texture(&SHOT, SHOT_W, SHOT_H, spec::psm::PSM_8888);
+        SHOT_HANDLE = ui.upload_texture_flags(
+            &SHOT,
+            SHOT_W,
+            SHOT_H,
+            spec::psm::PSM_8888,
+            spec::img::FLAG_LINEAR,
+        );
     }
 }
 
