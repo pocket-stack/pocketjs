@@ -28,6 +28,19 @@ export { MAT } from "./ops.ts";
 
 const NO_TINT = 0xffffffff;
 
+/**
+ * Geometry dimensions snap to this before caching — see Scene3D geometry.
+ *
+ * 1e-5 (0.01 mm) is chosen to be far below anything the screen, the physics or
+ * a golden can resolve, while still being enormous next to the float noise
+ * that actually causes the trouble: a rail length differing in its 15th digit.
+ */
+const GEOM_QUANTUM = 1e-5;
+
+function q(v: number): number {
+  return Math.round(v / GEOM_QUANTUM) * GEOM_QUANTUM;
+}
+
 /** A node in the retained transform hierarchy (three Object3D/Group analog). */
 export class SceneNode {
   readonly position = new Vector3();
@@ -227,27 +240,43 @@ export class Scene3D {
   }
 
   // -- geometry (cached by params — factories can re-request freely) ----------
+  //
+  // Dimensions are QUANTIZED to GEOM_QUANTUM before they become a cache key,
+  // and the quantized value is what gets built, so the cache never lies about
+  // what it handed back.
+  //
+  // WHY (measured): a barrier rail's length comes out of `hypot` over
+  // interpolated post positions, so two rails that are the same 2.5 units long
+  // differ in the last bits — and a raw-float key made each one its own
+  // geometry. ~270 rails became ~270 unshared meshes, which the host's static
+  // batcher (it groups by geometry) then could not merge at all. Geometry that
+  // is visually identical has to BE identical, and no port should have to know
+  // that; 0.1 mm is far below anything the screen or the physics can resolve.
 
   box(hx: number, hy: number, hz: number): number {
-    return this.geom(`b|${hx}|${hy}|${hz}`, (o) => o.geomBox(hx, hy, hz));
+    const [x, y, z] = [q(hx), q(hy), q(hz)];
+    return this.geom(`b|${x}|${y}|${z}`, (o) => o.geomBox(x, y, z));
   }
   sphere(radius: number, segments = 12): number {
-    return this.geom(`s|${radius}|${segments}`, (o) => o.geomSphere(radius, segments));
+    const r = q(radius);
+    return this.geom(`s|${r}|${segments}`, (o) => o.geomSphere(r, segments));
   }
   cylinder(rTop: number, rBottom: number, height: number, segments = 12): number {
-    return this.geom(`c|${rTop}|${rBottom}|${height}|${segments}`, (o) =>
-      o.geomCylinder(rTop, rBottom, height, segments),
-    );
+    const [a, b, h] = [q(rTop), q(rBottom), q(height)];
+    return this.geom(`c|${a}|${b}|${h}|${segments}`, (o) => o.geomCylinder(a, b, h, segments));
   }
   cone(radius: number, height: number, segments = 12): number {
-    return this.geom(`k|${radius}|${height}|${segments}`, (o) => o.geomCone(radius, height, segments));
+    const [r, h] = [q(radius), q(height)];
+    return this.geom(`k|${r}|${h}|${segments}`, (o) => o.geomCone(r, h, segments));
   }
   plane(w: number, d: number): number {
-    return this.geom(`p|${w}|${d}`, (o) => o.geomPlane(w, d));
+    const [pw, pd] = [q(w), q(d)];
+    return this.geom(`p|${pw}|${pd}`, (o) => o.geomPlane(pw, pd));
   }
   torus(radius: number, tube: number, segments = 16, tubeSegments = 8): number {
-    return this.geom(`t|${radius}|${tube}|${segments}|${tubeSegments}`, (o) =>
-      o.geomTorus(radius, tube, segments, tubeSegments),
+    const [r, t] = [q(radius), q(tube)];
+    return this.geom(`t|${r}|${t}|${segments}|${tubeSegments}`, (o) =>
+      o.geomTorus(r, t, segments, tubeSegments),
     );
   }
   /** Uncached (buffers are unique by construction). */

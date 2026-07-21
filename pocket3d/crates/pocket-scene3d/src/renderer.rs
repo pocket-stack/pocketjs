@@ -770,6 +770,11 @@ impl SceneRenderer {
         }
 
         self.last_draws = draws.len();
+        log::debug!(
+            "scene3d: scene {scene_handle} submitted {} mesh draws, {} of them merged batches",
+            self.last_draws,
+            self.last_batch_draws
+        );
 
         // Upload per-draw uniforms (256-byte strided).
         if !draw_data.is_empty() {

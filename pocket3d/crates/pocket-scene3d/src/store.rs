@@ -593,7 +593,7 @@ impl Store {
         // -- collect candidates, top-down, exactly like the renderer walks ---
         // Hidden subtrees are pruned here rather than tested per node, so
         // "eligible" already means "the whole ancestor chain is visible".
-        let mut groups: BTreeMap<BatchKey, Vec<(i32, Mat4)>> = BTreeMap::new();
+        let mut groups: BTreeMap<BatchKey, Vec<(i32, Mat4, i32)>> = BTreeMap::new();
         if let Some(sc) = self.scenes.get(&scene) {
             let mut stack: Vec<(i32, Mat4)> =
                 sc.root.iter().rev().map(|&id| (id, Mat4::IDENTITY)).collect();
@@ -620,8 +620,8 @@ impl Store {
                 // including its scale, and merged normals are just rotated +
                 // renormalized — exact for the rotation/uniform scale scenery
                 // uses, slightly off for a non-uniformly scaled frozen node.
-                let key = BatchKey::new(node.geom, node.mat, node.tint, world.w_axis.truncate());
-                groups.entry(key).or_default().push((id, world));
+                let key = BatchKey::new(node.mat, node.tint, world.w_axis.truncate());
+                groups.entry(key).or_default().push((id, world, node.geom));
             }
         }
 
@@ -634,8 +634,20 @@ impl Store {
             if group.len() < 2 {
                 continue; // one member saves no draw call and still costs a copy
             }
-            let Some(src) = self.geoms.get(&key.geom) else { continue };
-            let verts = src.positions.len() * group.len();
+            // Members may come from DIFFERENT meshes (see BatchKey), so the
+            // size of the merge is the sum over members, not one mesh times
+            // the count.
+            let verts: usize = group
+                .iter()
+                .map(|&(_, _, g)| self.geoms.get(&g).map_or(0, |m| m.positions.len()))
+                .sum();
+            let index_count: usize = group
+                .iter()
+                .map(|&(_, _, g)| self.geoms.get(&g).map_or(0, |m| m.indices.len()))
+                .sum();
+            if verts == 0 {
+                continue;
+            }
             if used + verts > MAX_BATCH_VERTS {
                 // Stop rather than skip-and-continue: the batch set is then a
                 // prefix of one stable order, which is much easier to reason
@@ -646,14 +658,15 @@ impl Store {
             let mut positions = Vec::with_capacity(verts);
             let mut normals = Vec::with_capacity(verts);
             let mut colors = Vec::with_capacity(verts);
-            let mut indices = Vec::with_capacity(src.indices.len() * group.len());
-            for (_, world) in &group {
+            let mut indices = Vec::with_capacity(index_count);
+            for &(_, world, geom_id) in &group {
+                let Some(src) = self.geoms.get(&geom_id) else { continue };
                 batch::append_transformed(
                     &mut positions,
                     &mut normals,
                     &mut colors,
                     &mut indices,
-                    *world,
+                    world,
                     &src.positions,
                     &src.normals,
                     src.colors.as_deref(),
@@ -673,7 +686,7 @@ impl Store {
             });
             batches.push(StaticBatch { geom, mat: key.mat, tint: key.tint, bound_center, bound_radius });
             geoms.push(geom);
-            members.extend(group.iter().map(|&(id, _)| id));
+            members.extend(group.iter().map(|&(id, _, _)| id));
         }
         for &id in &members {
             if let Some(n) = self.nodes.get_mut(&id) {

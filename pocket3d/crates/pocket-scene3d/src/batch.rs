@@ -63,9 +63,16 @@ pub struct StaticBatch {
 }
 
 /// Group key: same draw state AND same neighbourhood.
+///
+/// GEOMETRY IS DELIBERATELY NOT PART OF THIS. Merging happens at the vertex
+/// level — once a member's world transform is baked into its vertices, which
+/// mesh it came from stops mattering, and only the draw state has to match.
+/// Keying on geometry as well (the first cut of this design) meant that props
+/// whose dimensions are randomized per instance — GameBlocks scatters trees,
+/// rocks and grass exactly that way — could never share a batch with anything,
+/// and each stayed its own draw call.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BatchKey {
-    pub geom: i32,
     pub mat: i32,
     pub tint: u32,
     pub cell_x: i32,
@@ -74,9 +81,8 @@ pub struct BatchKey {
 }
 
 impl BatchKey {
-    pub fn new(geom: i32, mat: i32, tint: u32, world_pos: Vec3) -> Self {
+    pub fn new(mat: i32, tint: u32, world_pos: Vec3) -> Self {
         Self {
-            geom,
             mat,
             tint,
             cell_x: cell_of(world_pos.x),
