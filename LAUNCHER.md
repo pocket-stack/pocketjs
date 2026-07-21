@@ -117,12 +117,14 @@ and fragmentation does not accumulate by construction.
 ## The launcher app
 
 `demos/launcher` — an ordinary manifest app (requires `text.glyphs.baked` +
-`input.buttons`, enhances `input.analog.left`). Cover Flow built on the 2D
-core's perspective pipeline (the same TEX_TRI path motions page 4 ships):
-one `perspective` root, one 2:1 cover card per app, center card flat,
-neighbors angled with `rotateY` ± rail `translateX` + recession
-`translateZ`, all motion via `spring()`/`animate()` so steady state runs
-zero per-frame JS. When summoned, the frozen shot stretches under a dim
-scrim — the "overlay" is honest compositing inside one guest. LEFT/RIGHT
-and the analog nub browse, CROSS launches, SELECT/CIRCLE resumes the
-interrupted app.
+`input.buttons`). Cover Flow built on the 2D core's perspective pipeline
+(the same TEX_TRI path motions page 4 ships): one `perspective` root, one
+2:1 cover card per app, center card flat, neighbors angled with `rotateY` ±
+rail `translateX` + recession `translateZ`. Browse motion is short
+`animate()` tweens retargeted per step (springs let a mashed d-pad outrun
+the deck — a real-hardware find), so steady state still runs zero per-frame
+JS. When summoned, the frozen shot stretches under a dim scrim — the
+"overlay" is honest compositing inside one guest. LEFT/RIGHT steps, a held
+d-pad key-repeats, holding the L/R triggers streams the deck at 10 cards/s
+(each step retargets the tweens, so the deck glides); CROSS launches,
+SELECT/CIRCLE resumes the interrupted app.

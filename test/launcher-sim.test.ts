@@ -103,6 +103,17 @@ describe("switch protocol (sim host policy)", () => {
     expect(w.resume()).toBe(chrome);
   }, 120_000);
 
+  test("holding RTRIGGER flows the deck at 10 cards/s", async () => {
+    const w = await bootLauncherWorld({ hz: 60 });
+    await settle(w, 20);
+    // 30 held frames -> steps at held-frame 0/6/12/18/24 -> selection 5,
+    // registry order: Café(0) … Game Library(5).
+    for (let i = 0; i < 30; i++) await w.step(BTN.RTRIGGER);
+    await settle(w, 20);
+    expect(treeHasText(w.getTree(), "Game Library")).toBe(true);
+    expect(w.current()).toBe("launcher-main");
+  }, 120_000);
+
   test("two identical journeys produce identical frame hashes", async () => {
     const journey = async (): Promise<string[]> => {
       const w = await bootLauncherWorld({ hz: 60 });

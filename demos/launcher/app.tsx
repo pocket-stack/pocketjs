@@ -18,7 +18,7 @@ import { registerTexture } from "@pocketjs/framework";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { BTN } from "@pocketjs/framework/input";
-import { onButtonPress } from "@pocketjs/framework/lifecycle";
+import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { appTable, frozenShot, launchApp } from "@pocketjs/framework/launcher";
 import { REGISTRY, type RegistryApp } from "./registry.generated.ts";
 
@@ -101,12 +101,42 @@ export default function Launcher() {
     });
   });
 
+  const stepSel = (delta: number) =>
+    setSel((v) => Math.min(apps.length - 1, Math.max(0, v + delta)));
+
   onMount(() => {
     // Latched everywhere: the summon chord (or a held browse button) must
     // release before it can fire inside the deck.
-    onButtonPress(BTN.LEFT, () => setSel((v) => Math.max(0, v - 1)), { latched: true });
-    onButtonPress(BTN.RIGHT, () => setSel((v) => Math.min(apps.length - 1, v + 1)), {
-      latched: true,
+    onButtonPress(BTN.LEFT, () => stepSel(-1), { latched: true });
+    onButtonPress(BTN.RIGHT, () => stepSel(1), { latched: true });
+
+    // Held-flow browsing: the L/R triggers stream the deck (a step every 6
+    // frames = 10 cards/s, first step on the press frame), and a held d-pad
+    // repeats after a short delay like a key. Every step retargets the same
+    // 140 ms tweens, so the deck GLIDES through cards instead of stepping —
+    // and because sel moves one hop per step, the visual center still never
+    // trails what CROSS would launch.
+    let flowHeld = 0;
+    let dpadHeld = 0;
+    onFrame((buttons: number) => {
+      const tl = (buttons & BTN.LTRIGGER) !== 0;
+      const tr = (buttons & BTN.RTRIGGER) !== 0;
+      if (tl !== tr) {
+        if (flowHeld % 6 === 0) stepSel(tr ? 1 : -1);
+        flowHeld++;
+      } else {
+        flowHeld = 0;
+      }
+      const dl = (buttons & BTN.LEFT) !== 0;
+      const dr = (buttons & BTN.RIGHT) !== 0;
+      if (dl !== dr) {
+        dpadHeld++;
+        // The press-edge handler above took the first step; repeats start
+        // after 250 ms and then run at 7.5 cards/s.
+        if (dpadHeld >= 15 && (dpadHeld - 15) % 8 === 0) stepSel(dr ? 1 : -1);
+      } else {
+        dpadHeld = 0;
+      }
     });
     onButtonPress(BTN.CROSS, () => {
       const app = apps[sel()];
@@ -180,8 +210,8 @@ export default function Launcher() {
       <Text class="absolute left-0 bottom-2 w-[480] text-center text-xs text-slate-600">
         {table
           ? resume
-            ? "LEFT / RIGHT browse · CROSS launch · SELECT resume"
-            : "LEFT / RIGHT browse · CROSS launch"
+            ? "LEFT / RIGHT browse · hold L / R to flow · CROSS launch · SELECT resume"
+            : "LEFT / RIGHT browse · hold L / R to flow · CROSS launch"
           : "browse only — this host cannot switch apps"}
       </Text>
     </View>
