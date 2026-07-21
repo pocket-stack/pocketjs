@@ -140,8 +140,8 @@ export default function Launcher() {
     // continuous stream, no per-card stop. Release tweens from the exact
     // fraction to the nearest card. The title tracks round(pos) live, so
     // what reads as centered is always what CROSS launches.
-    const FLOW_TRIGGER = 10 / 60; // cards per frame, trigger stream
-    const FLOW_DPAD = 7.5 / 60; //  cards per frame, held d-pad
+    const FLOW_TRIGGER = 14 / 60; // cards per frame, trigger stream
+    const FLOW_DPAD = 9 / 60; //    cards per frame, held d-pad
     const DPAD_DELAY = 15; //       frames before a held d-pad flows
     let dpadHeld = 0;
     onFrame((buttons: number) => {
@@ -174,7 +174,10 @@ export default function Launcher() {
         applyTweens(settle);
       }
     });
-    onButtonPress(BTN.CROSS, () => {
+    // CIRCLE confirms (the console's home convention — CROSS-as-confirm had
+    // users launching with O and landing in the RESUME app every time);
+    // CROSS and SELECT both back out to the interrupted app.
+    onButtonPress(BTN.CIRCLE, () => {
       const app = apps[sel()];
       if (app) launchApp(app.output);
     }, { latched: true });
@@ -182,13 +185,18 @@ export default function Launcher() {
       if (resume) launchApp(resume);
     };
     onButtonPress(BTN.SELECT, doResume, { latched: true });
-    onButtonPress(BTN.CIRCLE, doResume, { latched: true });
+    onButtonPress(BTN.CROSS, doResume, { latched: true });
   });
 
   const selected = () => apps[sel()];
 
   return (
     <View debugName="LauncherScreen" class="relative w-full h-full bg-[#05060a] overflow-hidden">
+      {/* The stage: a baked Aqua-era gradient (scripts/launcher.ts renders
+          it next to the covers) — black floor, cool center glow behind the
+          deck, faint sheen under the cards. Stretched 256×128 → full screen
+          with bilinear, like the frozen shot. */}
+      <Image class="absolute left-0 top-0 w-[480] h-[272]" src="covers/launcher-bg.png" />
       <Show when={shot >= 0}>
         {/* The interrupted app's last frame, stretched back to full screen
             under a scrim — the "overlay" illusion (LAUNCHER.md). */}
@@ -238,7 +246,7 @@ export default function Launcher() {
             {`${sel() + 1} / ${apps.length} · ${selected().id}`}
           </Text>
           <Show when={resume && selected().output === resume}>
-            <Text class="text-xs text-amber-400">INTERRUPTED · SELECT RESUMES</Text>
+            <Text class="text-xs text-amber-400">INTERRUPTED · SELECT / CROSS RESUMES</Text>
           </Show>
         </View>
       </Show>
@@ -246,8 +254,8 @@ export default function Launcher() {
       <Text class="absolute left-0 bottom-2 w-[480] text-center text-xs text-slate-600">
         {table
           ? resume
-            ? "LEFT / RIGHT browse · hold L / R to flow · CROSS launch · SELECT resume"
-            : "LEFT / RIGHT browse · hold L / R to flow · CROSS launch"
+            ? "hold L / R to flow · CIRCLE launch · CROSS back"
+            : "LEFT / RIGHT browse · hold L / R to flow · CIRCLE launch"
           : "browse only — this host cannot switch apps"}
       </Text>
     </View>

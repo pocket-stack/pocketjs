@@ -61,8 +61,8 @@ describe("switch protocol (sim host policy)", () => {
     expect(w.current()).toBe("launcher-main");
     await settle(w, 30);
 
-    // CROSS launches the front card (registry order: Café first).
-    await w.step(BTN.CROSS);
+    // CIRCLE launches the front card (registry order: Café first).
+    await w.step(BTN.CIRCLE);
     expect(w.current()).toBe("cafe-main");
     expect(w.resume()).toBeNull();
     await settle(w, 30);
@@ -73,7 +73,7 @@ describe("switch protocol (sim host policy)", () => {
     expect(w.current()).toBe("launcher-main");
     expect(w.resume()).toBe("cafe-main");
     await settle(w, 20);
-    expect(treeHasText(w.getTree(), "SELECT RESUMES")).toBe(true);
+    expect(treeHasText(w.getTree(), "SELECT / CROSS RESUMES")).toBe(true);
 
     // SELECT again (release first — latched) resumes = relaunches.
     await w.step(0);
@@ -91,7 +91,7 @@ describe("switch protocol (sim host policy)", () => {
     // frames: exactly ONE summon (host edge, not level).
     await w.step(BTN.RIGHT);
     await settle(w, 20);
-    await w.step(BTN.CROSS);
+    await w.step(BTN.CIRCLE);
     const chrome = w.current();
     expect(chrome).not.toBe("launcher-main");
     await settle(w, 20);
@@ -103,15 +103,37 @@ describe("switch protocol (sim host policy)", () => {
     expect(w.resume()).toBe(chrome);
   }, 120_000);
 
-  test("holding RTRIGGER flows the deck at 10 cards/s", async () => {
+  test("holding RTRIGGER flows the deck at 14 cards/s", async () => {
     const w = await bootLauncherWorld({ hz: 60 });
     await settle(w, 20);
-    // 30 held frames -> steps at held-frame 0/6/12/18/24 -> selection 5,
-    // registry order: Café(0) … Game Library(5).
+    // 30 held frames -> pos = 30 × 14/60 = 7.0, registry order:
+    // Café(0) … Hero Vue Vapor(7).
     for (let i = 0; i < 30; i++) await w.step(BTN.RTRIGGER);
     await settle(w, 20);
-    expect(treeHasText(w.getTree(), "Game Library")).toBe(true);
+    expect(treeHasText(w.getTree(), "Hero Vue Vapor")).toBe(true);
     expect(w.current()).toBe("launcher-main");
+  }, 120_000);
+
+  test("after a summon, CIRCLE launches the BROWSED card, never the resume app", async () => {
+    // The real-hardware report behind the CIRCLE-confirm mapping: users
+    // confirmed with O (then bound to resume) and every pick landed back in
+    // the interrupted app. Guard the mapping: summon out of Café, browse two
+    // cards right, confirm — must enter Cursor, not Café.
+    const w = await bootLauncherWorld({ hz: 60 });
+    await settle(w, 10);
+    await w.step(BTN.CIRCLE); // launch Café (front card)
+    expect(w.current()).toBe("cafe-main");
+    await settle(w, 20);
+    await w.step(BTN.SELECT); // summon
+    expect(w.resume()).toBe("cafe-main");
+    await settle(w, 10);
+    await w.step(BTN.RIGHT);
+    await settle(w, 15);
+    await w.step(BTN.RIGHT);
+    await settle(w, 15);
+    await w.step(BTN.CIRCLE);
+    expect(w.current()).toBe("cursor-main");
+    expect(w.resume()).toBeNull();
   }, 120_000);
 
   test("two identical journeys produce identical frame hashes", async () => {
@@ -125,7 +147,7 @@ describe("switch protocol (sim host policy)", () => {
       for (let i = 0; i < 20; i++) await record(0);
       await record(BTN.RIGHT);
       for (let i = 0; i < 15; i++) await record(0);
-      await record(BTN.CROSS);
+      await record(BTN.CIRCLE);
       for (let i = 0; i < 20; i++) await record(0);
       await record(BTN.SELECT);
       for (let i = 0; i < 15; i++) await record(0);

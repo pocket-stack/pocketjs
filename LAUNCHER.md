@@ -124,7 +124,9 @@ rail `translateX` + recession `translateZ`. Browse motion is short
 `animate()` tweens retargeted per step (springs let a mashed d-pad outrun
 the deck — a real-hardware find), so steady state still runs zero per-frame
 JS. When summoned, the frozen shot stretches under a dim scrim — the
-"overlay" is honest compositing inside one guest. LEFT/RIGHT steps, a held
-d-pad key-repeats, holding the L/R triggers streams the deck at 10 cards/s
-(each step retargets the tweens, so the deck glides); CROSS launches,
-SELECT/CIRCLE resumes the interrupted app.
+"overlay" is honest compositing inside one guest, over a baked Aqua-era
+stage gradient. LEFT/RIGHT steps; holding a d-pad direction (after a
+key-repeat delay) or the L/R triggers scrubs the deck CONTINUOUSLY through
+fractional positions (per-frame `jump()`s; release tweens home from the
+exact fraction). CIRCLE launches the centered card — console convention;
+SELECT/CROSS resume the interrupted app.

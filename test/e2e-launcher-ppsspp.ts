@@ -7,9 +7,9 @@
 // demo's visual change (see test/launcher-sim.test.ts for the same call).
 // What this run proves instead:
 //   - the multi-app EBOOT boots the launcher guest,
-//   - CROSS launches Café (guest swap #1: teardown + fresh boot),
+//   - CIRCLE launches Café (guest swap #1: teardown + fresh boot),
 //   - SELECT summons the launcher back (swap #2, frozen shot captured),
-//   - RIGHT browses, CROSS launches Chrome (swap #3),
+//   - RIGHT browses, CIRCLE launches Chrome (swap #3),
 // all under a baked input script, with the frame loop never wedging. The
 // capture signature is exact: a switch discards precisely one frame, so a
 // 220-frame window crossed by 3 switches yields 217 files with gaps at the
@@ -29,28 +29,29 @@ const eboot = `${ROOT}native/target/mipsel-sony-psp/debug/EBOOT.PBP`;
 
 // The journey, in global frames (launcher registry order: Café, Chrome, …).
 // Level-triggered script (capture_input_mask holds the last entry's mask),
-// so every press carries an explicit release.
-const CROSS_LAUNCH_CAFE = 90;
+// so every press carries an explicit release. CIRCLE (0x2000) confirms —
+// the deck's console-convention mapping.
+const LAUNCH_CAFE = 90;
 const SELECT_SUMMON = 180;
 const RIGHT_BROWSE = 240;
-const CROSS_LAUNCH_CHROME = 270;
+const LAUNCH_CHROME = 270;
 const INPUT = [
   "0:0",
-  `${CROSS_LAUNCH_CAFE}:0x4000`,
-  `${CROSS_LAUNCH_CAFE + 1}:0`,
+  `${LAUNCH_CAFE}:0x2000`,
+  `${LAUNCH_CAFE + 1}:0`,
   `${SELECT_SUMMON}:0x0001`,
   `${SELECT_SUMMON + 1}:0`,
   `${RIGHT_BROWSE}:0x0020`,
   `${RIGHT_BROWSE + 1}:0`,
-  `${CROSS_LAUNCH_CHROME}:0x4000`,
-  `${CROSS_LAUNCH_CHROME + 1}:0`,
+  `${LAUNCH_CHROME}:0x2000`,
+  `${LAUNCH_CHROME + 1}:0`,
 ].join(",");
 const CAP_START = 80;
 const CAP_N = 220;
 // A switch at frame N discards frame N itself (the list is never kicked);
 // relative to CAP_START these indices must be the ONLY missing files.
 const EXPECTED_GAPS = new Set(
-  [CROSS_LAUNCH_CAFE, SELECT_SUMMON, CROSS_LAUNCH_CHROME].map((f) => f - CAP_START),
+  [LAUNCH_CAFE, SELECT_SUMMON, LAUNCH_CHROME].map((f) => f - CAP_START),
 );
 
 if (!existsSync(headless)) {

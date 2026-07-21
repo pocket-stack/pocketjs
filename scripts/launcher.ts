@@ -144,7 +144,9 @@ function writeRegistry(registry: LauncherRegistry): void {
   // Static-image meta for scripts/build.ts: every cover samples bilinear
   // (IMG_FLAG_LINEAR) — the deck rotates and scales them, nearest shimmers.
   // Committed alongside registry.generated.ts, same freshness story.
-  const images: Record<string, { linear: boolean }> = {};
+  const images: Record<string, { linear: boolean }> = {
+    "covers/launcher-bg.png": { linear: true },
+  };
   for (const a of registry.apps) images[`covers/cover-${a.output}.png`] = { linear: true };
   writeFileSync(IMAGES_JSON, JSON.stringify(images, null, 2) + "\n");
 }
@@ -201,8 +203,50 @@ function fallbackCover(output: string): Uint8Array {
   return out;
 }
 
+/** The deck's stage, baked: the Cover Flow-era look — black floor, a cool
+ *  Aqua glow behind the center card, a faint sheen where the cards stand.
+ *  256×128, stretched to the screen with bilinear (gradients survive that
+ *  perfectly). Pure math, deterministic. */
+function stageBackground(): Uint8Array {
+  const out = new Uint8Array(SHOT_W * SHOT_H * 4);
+  // In stretched-screen space the deck centers at ~(240, 106)/480×272 —
+  // scale to texture space.
+  const cx = (240 / 480) * SHOT_W;
+  const cy = (106 / 272) * SHOT_H;
+  const glowR = SHOT_W * 0.52;
+  const floorY = (160 / 272) * SHOT_H;
+  for (let y = 0; y < SHOT_H; y++) {
+    const t = y / (SHOT_H - 1);
+    // Vertical base: near-black slate up top -> pure black floor.
+    const base: [number, number, number] =
+      t < 0.55
+        ? [19 + (7 - 19) * (t / 0.55), 26 + (10 - 26) * (t / 0.55), 36 + (16 - 36) * (t / 0.55)]
+        : [7 * (1 - (t - 0.55) / 0.45), 10 * (1 - (t - 0.55) / 0.45), 16 * (1 - (t - 0.55) / 0.45)];
+    for (let x = 0; x < SHOT_W; x++) {
+      const dx = (x - cx) / glowR;
+      const dy = (y - cy) / (glowR * 0.75);
+      const glow = Math.max(0, 1 - (dx * dx + dy * dy));
+      const g15 = glow * Math.sqrt(glow); // ^1.5 falloff, soft center
+      // Floor sheen: a horizontal band fading down from the card line.
+      const fy = (y - floorY) / (SHOT_H - floorY);
+      const sheen = y >= floorY ? (1 - fy) * (1 - fy) * (0.4 + 0.6 * glow) : 0;
+      const o = (y * SHOT_W + x) * 4;
+      out[o] = Math.min(255, Math.round(base[0] + 26 * g15 + 12 * sheen));
+      out[o + 1] = Math.min(255, Math.round(base[1] + 36 * g15 + 16 * sheen));
+      out[o + 2] = Math.min(255, Math.round(base[2] + 52 * g15 + 24 * sheen));
+      out[o + 3] = 255;
+    }
+  }
+  return out;
+}
+
 async function renderCovers(registry: LauncherRegistry, force: boolean): Promise<void> {
   mkdirSync(COVERS_DIR, { recursive: true });
+  const bgPath = join(COVERS_DIR, "launcher-bg.png");
+  if (force || !existsSync(bgPath)) {
+    await Bun.write(bgPath, encodePNG(stageBackground(), SHOT_W, SHOT_H));
+    console.log(`  stage ${relative(ROOT, bgPath)}`);
+  }
   // Import lazily: bootWorld pulls the wasm core + build machinery, which
   // `scan` alone must not need.
   const { bootWorld } = await import("../host-sim/sim.ts");
