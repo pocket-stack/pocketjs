@@ -242,11 +242,7 @@ function createPrimitiveNode(
     prev = next;
     assignRef(rawProps.nodeRef ?? rawProps.ref, node);
   };
-  const hasFrameDynamicProps =
-    typeof opts.extra === "function" ||
-    Object.keys(rawProps).some((key) => !omit.has(key) && typeof rawProps[key] === "function");
   watchEffect(apply);
-  if (hasFrameDynamicProps) onFrame(apply);
   return node;
 }
 
