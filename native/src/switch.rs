@@ -20,14 +20,16 @@ use pocketjs_core::{spec, Ui};
 // $OUT_DIR/apps.rs — `EmbeddedApp` + `APPS` (build.rs generates both).
 include!(concat!(env!("OUT_DIR"), "/apps.rs"));
 
-/// Shot geometry (spec op 41; host-sim/shot.ts is the sim twin).
+/// Shot geometry (spec op 41; host-sim/shot.ts is the sim twin). The FULL
+/// 480×272 frame is downscaled — the texture stores it slightly squeezed
+/// (2:1 vs 1.76:1) and consumers draw at screen aspect, which undoes it
+/// exactly. No crop: a cropped shot visibly deformed the veil's "dimming
+/// screen" and cut covers' top/bottom (real-hardware find).
 pub const SHOT_W: u32 = 256;
 pub const SHOT_H: u32 = 128;
 const SHOT_BYTES: usize = (SHOT_W * SHOT_H * 4) as usize;
-/// 2:1 center crop of the 480×272 display: rows 16..256.
-const CROP_Y: usize = 16;
-const CROP_H: usize = 240;
 const SRC_W: usize = 480;
+const SRC_H: usize = 272;
 const FB_STRIDE_BYTES: usize = 512 * 4;
 
 static mut CURRENT: usize = 0;
@@ -146,7 +148,7 @@ fn push_json_str(out: &mut String, s: &str) {
 
 /// Capture the just-presented display framebuffer (Psm8888, 512 stride, the
 /// dbg.rs shot technique: uncached VRAM mirror, cached-RAM bounce rows) and
-/// bilinear-downscale the 2:1 center crop into the static shot buffer.
+/// bilinear-downscale the FULL frame into the static shot buffer.
 /// Call ONLY between present and the next sceGuStart — the GE must be idle.
 pub unsafe fn capture_shot() {
     let mut top: *mut core::ffi::c_void = core::ptr::null_mut();
@@ -171,19 +173,19 @@ pub unsafe fn capture_shot() {
     let mut row0 = [0u8; SRC_W * 4];
     let mut row1 = [0u8; SRC_W * 4];
     let scale_x = SRC_W as f32 / SHOT_W as f32; // 1.875
-    let scale_y = CROP_H as f32 / SHOT_H as f32; // 1.875
+    let scale_y = SRC_H as f32 / SHOT_H as f32; // 2.125
     for dy in 0..SHOT_H as usize {
         let sy = (dy as f32 + 0.5) * scale_y - 0.5;
-        let y0 = (sy as i32).clamp(0, CROP_H as i32 - 1) as usize;
-        let y1 = (y0 + 1).min(CROP_H - 1);
+        let y0 = (sy as i32).clamp(0, SRC_H as i32 - 1) as usize;
+        let y1 = (y0 + 1).min(SRC_H - 1);
         let fy = (sy - y0 as f32).clamp(0.0, 1.0);
         core::ptr::copy_nonoverlapping(
-            (base + (CROP_Y + y0) * FB_STRIDE_BYTES) as *const u8,
+            (base + y0 * FB_STRIDE_BYTES) as *const u8,
             row0.as_mut_ptr(),
             SRC_W * 4,
         );
         core::ptr::copy_nonoverlapping(
-            (base + (CROP_Y + y1) * FB_STRIDE_BYTES) as *const u8,
+            (base + y1 * FB_STRIDE_BYTES) as *const u8,
             row1.as_mut_ptr(),
             SRC_W * 4,
         );

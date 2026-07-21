@@ -221,15 +221,18 @@ export default function Launcher() {
           {apps.map((app, i) => {
             const t = targetFor(i - untrack(sel));
             // Cover + baked reflection as TWO stacked quads in one rotating
-            // 192×192 container: their shared seam is a geometric edge and
-            // projects to a straight line. (One tall quad put the seam
-            // mid-texture, where the GE's screen-space affine sampling bends
-            // it at the triangle diagonal on tilted cards — real-PSP find.)
+            // container: their shared seam is a geometric edge and projects
+            // to a straight line. (One tall quad put the seam mid-texture,
+            // where the GE's screen-space affine sampling bends it at the
+            // triangle diagonal on tilted cards — real-PSP find.) 192×109 =
+            // the true 480:272 screen aspect: the textures store the full
+            // frame slightly squeezed (2:1 pow2), this draw size undoes it —
+            // no crop, no net deformation (also a real-hardware find).
             return (
               <View
                 ref={(el: NodeMirror) => (cardEls[i] = el)}
                 debugName="Card"
-                class="absolute left-[144] top-[58] w-[192] h-[192]"
+                class="absolute left-[144] top-[52] w-[192] h-[218]"
                 style={{
                   translateX: t.translateX,
                   translateZ: t.translateZ,
@@ -237,8 +240,8 @@ export default function Launcher() {
                   opacity: t.opacity,
                 }}
               >
-                <Image class="absolute left-0 top-0 w-[192] h-[96]" src={app.cover} />
-                <Image class="absolute left-0 top-[96] w-[192] h-[96]" src={app.refl} />
+                <Image class="absolute left-0 top-0 w-[192] h-[109]" src={app.cover} />
+                <Image class="absolute left-0 top-[109] w-[192] h-[109]" src={app.refl} />
               </View>
             );
           })}

@@ -27,7 +27,7 @@ the system summon chord.
 |----|------|-----------|-----------|
 | 39 | `appTable` | `() -> string` | JSON `{ apps: [{output, id, title}], current, resume }`. `current` is the running bundle's output name; `resume` is the app interrupted by the last SELECT summon (null after a cold boot or an explicit launch). Hosts without app switching omit the op (same rule as `debugStats`). |
 | 40 | `appLaunch` | `(output: string) -> 0\|1` | Request a switch. The host finishes the CURRENT frame (draw + present), then swaps guests before the next one. Returns 0 for an unknown output (no switch scheduled). Calling it with `current` relaunches fresh. |
-| 41 | `appShot` | `() -> handle \| -1` | Texture handle of the frozen frame captured when the running app was summoned away: 256×128 PSM_8888, the 480×272 framebuffer center-cropped to 2:1 and box-downscaled. Valid in the guest booted by a summon until the next switch; -1 otherwise. |
+| 41 | `appShot` | `() -> handle \| -1` | Texture handle of the frozen frame captured when the running app was summoned away: the FULL 480×272 frame downscaled into 256×128 PSM_8888 (stored slightly squeezed; drawn at screen aspect, which undoes it). Valid in the guest booted by a summon until the next switch; -1 otherwise. |
 
 `@pocketjs/framework/launcher` wraps these (`appTable()`, `launchApp()`,
 `frozenShot()`, `launcherActive()`) and degrades to `null`/no-op on hosts
@@ -76,7 +76,7 @@ and fragmentation does not accumulate by construction.
 1. **scan** — resolve every demo manifest for `psp`, dedupe by `app.output`,
    emit `dist/launcher-registry.json` + `demos/launcher/registry.generated.ts`.
 2. **covers** — boot each admitted app in host-sim, settle 90 virtual frames,
-   render, center-crop 480×240, box-downscale to 256×128, write
+   render, box-downscale the full frame to 256×128, write
    `demos/launcher/covers/cover-<output>.png` (generated, deterministic —
    the sim is the oracle, so goldens over cover-bearing frames stay stable).
 3. **build** — `pocket compile` every admitted app + the launcher, then the
@@ -112,14 +112,17 @@ and fragmentation does not accumulate by construction.
   demo's visual change. Determinism is asserted by hash equality instead.
 - Native gotcha the e2e caught: the GE leaves framebuffer alpha at 0, so
   the frozen-shot capture forces alpha 255 or the background blends away.
-- Real-hardware pass: pending (PPSSPP software-renderer verified).
+- Real-hardware pass: DONE (PSPLINK, iterated live) — it found the clock
+  never being set, the affine seam, the texture-heap OOM, 4444 banding,
+  the crop deformation and the sweep seams; each fix is annotated at its
+  site. PPSSPP's software GE reproduces most of these; the sim none.
 
 ## The launcher app
 
 `demos/launcher` — an ordinary manifest app (requires `text.glyphs.baked` +
 `input.buttons`). Cover Flow built on the 2D core's perspective pipeline
 (the same TEX_TRI path motions page 4 ships): one `perspective` root, one
-2:1 cover card per app, center card flat, neighbors angled with `rotateY` ±
+screen-aspect (192×109) cover card per app, center card flat, neighbors angled with `rotateY` ±
 rail `translateX` + recession `translateZ`. Browse motion is short
 `animate()` tweens retargeted per step (springs let a mashed d-pad outrun
 the deck — a real-hardware find), so steady state still runs zero per-frame

@@ -2,11 +2,13 @@
 //! before the incoming bundle's blocking eval.
 //!
 //! Host-direct GE drawing, no guest anywhere: the outgoing frame's shot
-//! dims down, the baked Pocket mark fades in centered, and a highlight
-//! sweeps across it — vertex-alpha strips over the mark's own texture,
-//! additive-blended, the PSP-era way to mask a glow to a glyph without a
-//! second texture. The last frame settles and HOLDS through the eval; the
-//! incoming guest's first present replaces it.
+//! dims down, the baked Pocket mark fades in centered and settles, and its
+//! brightness swells once — every animated quantity is UNIFORM across the
+//! frame (vertex color ramps over time only), because GE sprites do not
+//! interpolate color across a quad: any spatial gradient built from flat
+//! strips reads as a marching band of seams on hardware (the first cut's
+//! left-to-right sweep did exactly that). The last frame settles and HOLDS
+//! through the eval; the incoming guest's first present replaces it.
 //!
 //! Deliberately invisible to every contract: no op, no capability, and the
 //! frames present OUTSIDE the input-indexed main loop, so the capture
@@ -34,9 +36,10 @@ const CX: i16 = 240;
 const CY: i16 = 128;
 
 const FRAMES: u32 = 24;
-const SWEEP_START: u32 = 8;
-const SWEEP_END: u32 = 22;
-const STRIPS: usize = 12;
+/// The one-shot brightness swell: base silver rises to full white and back
+/// over these frames (uniform per frame — no spatial gradient, no seams).
+const SWELL_START: u32 = 8;
+const SWELL_END: u32 = 22;
 
 /// TEXTURE_16BIT | COLOR_8888 | VERTEX_16BIT | TRANSFORM_2D (ge.rs layout;
 /// UVs are TEXELS in 2D transform mode).
@@ -156,14 +159,22 @@ pub unsafe fn play() {
         }
 
         if let Some(logo_ptr) = logo {
-            // The mark: fade + settle in over frames 2..12, slight scale-in.
+            // The mark: fade + settle in over frames 2..12, slight scale-in,
+            // then one gentle whole-mark brightness swell. All ramps are
+            // per-frame uniform — reliable on the real GE by construction.
             let f = (((k as f32) - 2.0) / 10.0).clamp(0.0, 1.0);
             if f > 0.0 {
                 let alpha = (f * 255.0) as u8;
                 let half = (MARK as f32 * (1.10 - 0.10 * f) * 0.5) as i16;
+                let swell = if (SWELL_START..SWELL_END).contains(&k) {
+                    let t = ((k - SWELL_START) as f32) / ((SWELL_END - SWELL_START) as f32);
+                    let d = 2.0 * t - 1.0;
+                    (1.0 - d * d).max(0.0)
+                } else {
+                    0.0
+                };
+                let bright = |base: f32| ((base + (255.0 - base) * swell) as u8);
                 bind(logo_ptr, LOGO_TEX as i32, LOGO_TEX as i32);
-                // Slightly dimmed silver base — the additive sweep below
-                // needs headroom to visibly flash the mark to full white.
                 sprite(
                     0,
                     0,
@@ -173,48 +184,9 @@ pub unsafe fn play() {
                     CY - half,
                     CX + half,
                     CY + half,
-                    abgr(alpha, 0xd8, 0xd2, 0xcc),
+                    abgr(alpha, bright(216.0), bright(210.0), bright(204.0)),
                 );
                 flush_sprites();
-
-                // The sweep: a highlight crossing the mark left to right —
-                // the SAME texture drawn additive in vertical strips whose
-                // vertex alpha follows a moving bell curve. Texture alpha
-                // clips the glow to the glyph.
-                if (SWEEP_START..SWEEP_END).contains(&k) {
-                    sys::sceGuBlendFunc(
-                        BlendOp::Add,
-                        BlendFactor::SrcAlpha,
-                        BlendFactor::Fix,
-                        0,
-                        0xffffff,
-                    );
-                    let sweep = -0.25 + 1.5 * ((k - SWEEP_START) as f32) / ((SWEEP_END - SWEEP_START) as f32);
-                    let x0 = CX - half;
-                    let w = (half as i32 * 2) as f32;
-                    for s in 0..STRIPS {
-                        let c = (s as f32 + 0.5) / STRIPS as f32;
-                        let d = (c - sweep) / 0.16;
-                        let bell = (1.0 - (d * d).min(1.0)).max(0.0);
-                        let a = (bell * bell * f * 190.0) as u8;
-                        if a == 0 {
-                            continue;
-                        }
-                        let sx0 = x0 + ((w * s as f32) / STRIPS as f32) as i16;
-                        let sx1 = x0 + ((w * (s as f32 + 1.0)) / STRIPS as f32) as i16;
-                        let u0 = ((LOGO_TEX as f32 * s as f32) / STRIPS as f32) as i16;
-                        let u1 = ((LOGO_TEX as f32 * (s as f32 + 1.0)) / STRIPS as f32) as i16;
-                        sprite(u0, 0, u1, LOGO_TEX, sx0, CY - half, sx1, CY + half, abgr(a, 0xff, 0xff, 0xff));
-                    }
-                    flush_sprites();
-                    sys::sceGuBlendFunc(
-                        BlendOp::Add,
-                        BlendFactor::SrcAlpha,
-                        BlendFactor::OneMinusSrcAlpha,
-                        0,
-                        0,
-                    );
-                }
             }
         }
 
