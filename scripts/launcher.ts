@@ -152,13 +152,14 @@ function writeRegistry(registry: LauncherRegistry): void {
   const images: Record<string, { linear: boolean }> = {
     "covers/launcher-bg.png": { linear: true },
   };
-  const images4444: Record<string, { linear: boolean; psm: number }> = {};
   for (const a of registry.apps) {
     images[`covers/cover-${a.output}.png`] = { linear: true };
-    // Quarter-res faint mirrors: 16-bit color is invisible at 30% alpha.
-    images4444[`covers/refl-${a.output}.png`] = { linear: true, psm: 2 };
+    // Reflections stay 8888: their whole point is a smooth alpha ramp, and
+    // PSM_4444's 4-bit alpha gives the 0.3→0 fade only ~5 steps — visible
+    // horizontal banding on hardware. Quarter-res keeps them cheap (32 KB).
+    images[`covers/refl-${a.output}.png`] = { linear: true };
   }
-  writeFileSync(IMAGES_JSON, JSON.stringify({ ...images, ...images4444 }, null, 2) + "\n");
+  writeFileSync(IMAGES_JSON, JSON.stringify(images, null, 2) + "\n");
 }
 
 async function compileApp(manifest: string): Promise<void> {
@@ -259,9 +260,10 @@ function stageBackground(w = SHOT_W, h = SHOT_H): Uint8Array {
  *  texture lines at the triangle diagonal on tilted cards — a real-PSP
  *  find; the sim's centered card never shows it.) */
 /** Reflections are faint by definition, so they ship QUARTER-res (128×64,
- *  PSM_4444 via images.json) — 16 KB a card instead of 128 KB. The full-res
- *  first cut OOM'd the PSP: ~2 MB of extra texture heap tipped the arena
- *  over and the boot parked on the OOM handler (sim RAM never notices). */
+ *  32 KB a card instead of 128 KB — the full-res first cut OOM'd the PSP:
+ *  ~2 MB of extra texture heap tipped the arena over and boot parked on the
+ *  OOM handler; sim RAM never notices). They stay PSM_8888 though: the fade
+ *  needs the 8-bit alpha ramp (4444 banded visibly on hardware). */
 const REFL_W = SHOT_W / 2;
 const REFL_H = SHOT_H / 2;
 
