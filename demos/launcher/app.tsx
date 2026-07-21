@@ -140,8 +140,8 @@ export default function Launcher() {
     // continuous stream, no per-card stop. Release tweens from the exact
     // fraction to the nearest card. The title tracks round(pos) live, so
     // what reads as centered is always what CROSS launches.
-    const FLOW_TRIGGER = 14 / 60; // cards per frame, trigger stream
-    const FLOW_DPAD = 9 / 60; //    cards per frame, held d-pad
+    const FLOW_TRIGGER = 18 / 60; // cards per frame, trigger stream
+    const FLOW_DPAD = 11 / 60; //   cards per frame, held d-pad
     const DPAD_DELAY = 15; //       frames before a held d-pad flows
     let dpadHeld = 0;
     onFrame((buttons: number) => {

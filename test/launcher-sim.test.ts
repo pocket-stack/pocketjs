@@ -103,14 +103,14 @@ describe("switch protocol (sim host policy)", () => {
     expect(w.resume()).toBe(chrome);
   }, 120_000);
 
-  test("holding RTRIGGER flows the deck at 14 cards/s", async () => {
+  test("holding RTRIGGER flows the deck at 18 cards/s", async () => {
     const w = await bootLauncherWorld({ hz: 60 });
     await settle(w, 20);
-    // 30 held frames -> pos = 30 × 14/60 = 7.0, registry order:
-    // Café(0) … Hero Vue Vapor(7).
+    // 30 held frames -> pos = 30 × 18/60 = 9.0, registry order:
+    // Café(0) … Motion Lab(9).
     for (let i = 0; i < 30; i++) await w.step(BTN.RTRIGGER);
     await settle(w, 20);
-    expect(treeHasText(w.getTree(), "Hero Vue Vapor")).toBe(true);
+    expect(treeHasText(w.getTree(), "Motion Lab")).toBe(true);
     expect(w.current()).toBe("launcher-main");
   }, 120_000);
 
