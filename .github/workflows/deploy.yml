@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build site (wasm + Settings stage + docs + playground)
+      - name: Build site (wasm + launcher stage + docs + playground)
         run: bun run site:build
 
       - name: Deploy to Cloudflare
