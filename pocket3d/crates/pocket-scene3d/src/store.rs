@@ -616,6 +616,10 @@ impl Store {
                 }
                 // Keyed on the node's WORLD position: the cell a post stands
                 // in, not the cell its parent group's origin sits in.
+                // CAVEAT (batch.rs): the world matrix bakes into the vertices
+                // including its scale, and merged normals are just rotated +
+                // renormalized — exact for the rotation/uniform scale scenery
+                // uses, slightly off for a non-uniformly scaled frozen node.
                 let key = BatchKey::new(node.geom, node.mat, node.tint, world.w_axis.truncate());
                 groups.entry(key).or_default().push((id, world));
             }
@@ -1203,5 +1207,313 @@ mod tess {
             }
         }
         acc
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Static batching tests. In-module (not lib.rs) so they can read the private
+// geom registry directly — "does re-freezing leak geoms" is only checkable
+// from in here.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+    use crate::batch::CELL;
+
+    /// A frozen-scenery node: box at (x, y, z), no rotation.
+    fn scenery(s: &mut Store, scene: i32, geom: i32, mat: i32, x: f32, y: f32, z: f32) -> i32 {
+        let n = s.node_create(scene, 0);
+        s.node_set_pose(n, x, y, z, 0.0, 0.0, 0.0, 1.0);
+        s.mesh_set(n, geom, mat);
+        n
+    }
+
+    fn tri_count(s: &Store, geom: i32) -> usize {
+        s.geom(geom).map_or(0, |m| m.indices.len() / 3)
+    }
+
+    #[test]
+    fn grouping_splits_by_material_and_by_cell() {
+        let mut s = Store::new();
+        let sc = s.scene_create();
+        let g = s.geom_box(0.5, 0.5, 0.5);
+        let red = s.material_create(0xff0000ff, 0);
+        let blue = s.material_create(0xffff0000, 0);
+        // Same cell, two materials; then the same material a cell away.
+        let a1 = scenery(&mut s, sc, g, red, 0.0, 0.0, 0.0);
+        let a2 = scenery(&mut s, sc, g, red, 2.5, 0.0, 0.0);
+        let b1 = scenery(&mut s, sc, g, blue, 5.0, 0.0, 0.0);
+        let b2 = scenery(&mut s, sc, g, blue, 7.5, 0.0, 0.0);
+        let c1 = scenery(&mut s, sc, g, red, CELL * 1.5, 0.0, 0.0);
+        let c2 = scenery(&mut s, sc, g, red, CELL * 1.5 + 2.5, 0.0, 0.0);
+        s.freeze_nodes(&[a1, a2, b1, b2, c1, c2]);
+        s.ensure_static_batches(sc);
+        let batches = s.static_batches(sc);
+        assert_eq!(batches.len(), 3, "material split x cell split");
+        let mats: Vec<i32> = batches.iter().map(|b| b.mat).collect();
+        assert_eq!(mats.iter().filter(|&&m| m == red).count(), 2);
+        assert_eq!(mats.iter().filter(|&&m| m == blue).count(), 1);
+        // A tint difference splits too — it is part of the draw state.
+        s.node_set_tint(a2, 0xff00_ff00);
+        s.ensure_static_batches(sc);
+        assert_eq!(s.static_batches(sc).len(), 2, "a1/a2 no longer share a key");
+        assert!(!s.node_batched(a1) && !s.node_batched(a2));
+    }
+
+    #[test]
+    fn merged_triangle_count_is_the_sum_of_the_members() {
+        let mut s = Store::new();
+        let sc = s.scene_create();
+        let g = s.geom_box(0.5, 0.5, 0.5);
+        let m = s.material_create(0xffffffff, 0);
+        let ids: Vec<i32> = (0..5)
+            .map(|i| scenery(&mut s, sc, g, m, i as f32 * 2.0, 0.0, 0.0))
+            .collect();
+        s.freeze_nodes(&ids);
+        s.ensure_static_batches(sc);
+        let batches = s.static_batches(sc);
+        assert_eq!(batches.len(), 1);
+        assert_eq!(tri_count(&s, batches[0].geom), 5 * tri_count(&s, g));
+        let merged = s.geom(batches[0].geom).unwrap();
+        assert_eq!(merged.positions.len(), 5 * s.geom(g).unwrap().positions.len());
+        assert_eq!(merged.positions.len(), merged.normals.len());
+        // A merged mesh always carries a colour stream (white where the source
+        // had none) — one vertex format for the whole buffer.
+        assert_eq!(merged.colors.as_ref().unwrap().len(), merged.positions.len());
+        assert!(merged.indices.iter().all(|&i| (i as usize) < merged.positions.len()));
+    }
+
+    #[test]
+    fn merged_vertices_land_in_world_space() {
+        let mut s = Store::new();
+        let sc = s.scene_create();
+        let g = s.geom_box(1.0, 1.0, 1.0);
+        let m = s.material_create(0xffffffff, 0);
+        // boxx's first vertex is the +X face corner (u,v) = (-1,-1) = [1,-1,1].
+        assert_eq!(s.geom(g).unwrap().positions[0], [1.0, -1.0, 1.0]);
+        let verts = s.geom(g).unwrap().positions.len();
+
+        let a = scenery(&mut s, sc, g, m, 5.0, 0.0, 7.0);
+        // Second member under a parent rotated +90 deg about Y at (10, 0, 0):
+        // the batch must bake the FULL ancestor chain, not the local pose.
+        let parent = s.node_create(sc, 0);
+        let q = glam::Quat::from_rotation_y(core::f32::consts::FRAC_PI_2);
+        s.node_set_pose(parent, 10.0, 0.0, 0.0, q.x, q.y, q.z, q.w);
+        let b = s.node_create(sc, parent);
+        s.mesh_set(b, g, m);
+        s.freeze_nodes(&[a, b]);
+        s.ensure_static_batches(sc);
+
+        let batch = s.static_batches(sc)[0];
+        let merged = s.geom(batch.geom).unwrap();
+        // Member a: pure translation.
+        let p0 = Vec3::from_array(merged.positions[0]);
+        assert!((p0 - Vec3::new(6.0, -1.0, 8.0)).length() < 1e-5, "got {p0}");
+        // Member b: +90 deg about Y sends (1,-1,1) to (1,-1,-1), then +10 X.
+        let p1 = Vec3::from_array(merged.positions[verts]);
+        assert!((p1 - Vec3::new(11.0, -1.0, -1.0)).length() < 1e-5, "got {p1}");
+        // Normals are rotated too (+X face of member b now faces -Z).
+        let n1 = Vec3::from_array(merged.normals[verts]);
+        assert!((n1 - Vec3::new(0.0, 0.0, -1.0)).length() < 1e-5, "got {n1}");
+        // The bound encloses both members and is world-space, not local.
+        for p in &merged.positions {
+            assert!((Vec3::from_array(*p) - batch.bound_center).length() <= batch.bound_radius + 1e-4);
+        }
+    }
+
+    #[test]
+    fn singletons_and_unfrozen_nodes_stay_unbatched() {
+        let mut s = Store::new();
+        let sc = s.scene_create();
+        let g = s.geom_box(0.5, 0.5, 0.5);
+        let m = s.material_create(0xffffffff, 0);
+        let lonely = scenery(&mut s, sc, g, m, 0.0, 0.0, 0.0);
+        let far = scenery(&mut s, sc, g, m, CELL * 4.0, 0.0, 0.0);
+        let pair_a = scenery(&mut s, sc, g, m, CELL * 8.0, 0.0, 0.0);
+        let pair_b = scenery(&mut s, sc, g, m, CELL * 8.0 + 1.0, 0.0, 0.0);
+        let moving = scenery(&mut s, sc, g, m, CELL * 8.0 + 2.0, 0.0, 0.0); // never frozen
+        let bare = s.node_create(sc, 0); // group: no geom/mat
+        s.freeze_nodes(&[lonely, far, pair_a, pair_b, bare]);
+        s.ensure_static_batches(sc);
+        assert_eq!(s.static_batches(sc).len(), 1, "only the pair is worth merging");
+        assert!(s.node_batched(pair_a) && s.node_batched(pair_b));
+        for id in [lonely, far, moving, bare] {
+            assert!(!s.node_batched(id), "node {id} must still be walked per-node");
+        }
+        // An invisible member drops out; two left standing means no batch.
+        s.node_set_visible(pair_a, false);
+        s.ensure_static_batches(sc);
+        assert!(s.static_batches(sc).is_empty());
+        assert!(!s.node_batched(pair_b));
+    }
+
+    #[test]
+    fn hidden_ancestor_removes_the_whole_subtree_from_batches() {
+        let mut s = Store::new();
+        let sc = s.scene_create();
+        let g = s.geom_box(0.5, 0.5, 0.5);
+        let m = s.material_create(0xffffffff, 0);
+        let group = s.node_create(sc, 0);
+        let mut kids = Vec::new();
+        for i in 0..4 {
+            let n = s.node_create(sc, group);
+            s.node_set_pose(n, i as f32, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+            s.mesh_set(n, g, m);
+            kids.push(n);
+        }
+        s.freeze_nodes(&kids);
+        s.ensure_static_batches(sc);
+        assert_eq!(s.static_batches(sc).len(), 1);
+        // THE RULE: hiding an ancestor invalidates the scene, so the merged
+        // draw disappears with the subtree instead of outliving it.
+        s.node_set_visible(group, false);
+        s.ensure_static_batches(sc);
+        assert!(s.static_batches(sc).is_empty(), "a hidden subtree must not keep drawing");
+        assert!(kids.iter().all(|&k| !s.node_batched(k)));
+        s.node_set_visible(group, true);
+        s.ensure_static_batches(sc);
+        assert_eq!(s.static_batches(sc).len(), 1, "and it comes back");
+    }
+
+    #[test]
+    fn oversized_geometry_is_left_alone() {
+        let mut s = Store::new();
+        let sc = s.scene_create();
+        let m = s.material_create(0xffffffff, 0);
+        // 65 x 33 = 2145 verts: way past MAX_GEOM_VERTS, so copying it to save
+        // one draw is a bad trade.
+        let big = s.geom_sphere(1.0, 64);
+        assert!(s.geom(big).unwrap().positions.len() > MAX_GEOM_VERTS);
+        // 31 x 16 = 496 verts: under the cap, merges.
+        let small = s.geom_sphere(1.0, 30);
+        assert!(s.geom(small).unwrap().positions.len() <= MAX_GEOM_VERTS);
+        let b1 = scenery(&mut s, sc, big, m, 0.0, 0.0, 0.0);
+        let b2 = scenery(&mut s, sc, big, m, 3.0, 0.0, 0.0);
+        let s1 = scenery(&mut s, sc, small, m, 6.0, 0.0, 0.0);
+        let s2 = scenery(&mut s, sc, small, m, 9.0, 0.0, 0.0);
+        s.freeze_nodes(&[b1, b2, s1, s2]);
+        s.ensure_static_batches(sc);
+        assert_eq!(s.static_batches(sc).len(), 1);
+        assert!(!s.node_batched(b1) && !s.node_batched(b2));
+        assert!(s.node_batched(s1) && s.node_batched(s2));
+    }
+
+    #[test]
+    fn per_scene_vertex_ceiling_is_honoured() {
+        let mut s = Store::new();
+        let sc = s.scene_create();
+        let m = s.material_create(0xffffffff, 0);
+        let g = s.geom_sphere(1.0, 30); // 496 verts each
+        let per = s.geom(g).unwrap().positions.len();
+        let n = 80; // 39_680 verts per cell — one fits under 60k, two do not
+        assert!(per * n <= MAX_BATCH_VERTS && per * n * 2 > MAX_BATCH_VERTS);
+        let mut near = Vec::new();
+        let mut far = Vec::new();
+        for i in 0..n {
+            near.push(scenery(&mut s, sc, g, m, i as f32 * 0.1, 0.0, 0.0));
+            far.push(scenery(&mut s, sc, g, m, CELL * 1.5 + i as f32 * 0.1, 0.0, 0.0));
+        }
+        s.freeze_nodes(&near);
+        s.freeze_nodes(&far);
+        s.ensure_static_batches(sc);
+        let batches = s.static_batches(sc);
+        assert_eq!(batches.len(), 1, "the ceiling stops batching, it does not truncate a batch");
+        let merged: usize = batches.iter().map(|b| s.geom(b.geom).unwrap().positions.len()).sum();
+        assert!(merged <= MAX_BATCH_VERTS, "{merged} verts merged");
+        // Deterministic: the surviving batch is the lower cell (sorted key
+        // order), and the rejected nodes are simply still drawn per node.
+        assert!(near.iter().all(|&id| s.node_batched(id)));
+        assert!(far.iter().all(|&id| !s.node_batched(id)));
+    }
+
+    #[test]
+    fn rebuilding_is_stable_and_frees_the_previous_generation() {
+        let mut s = Store::new();
+        let sc = s.scene_create();
+        let g = s.geom_box(0.5, 0.5, 0.5);
+        let m = s.material_create(0xffffffff, 0);
+        let ids: Vec<i32> = (0..12)
+            .map(|i| scenery(&mut s, sc, g, m, i as f32 * 4.0, 0.0, 0.0))
+            .collect();
+        s.freeze_nodes(&ids);
+        s.ensure_static_batches(sc);
+        let first: Vec<i32> = s.static_batches(sc).iter().map(|b| b.geom).collect();
+        let geoms_after_first = s.geoms.len();
+        assert!(first.len() >= 2, "12 posts over 44 units span several cells");
+
+        // Idempotent: nothing changed, so nothing is rebuilt or allocated.
+        s.ensure_static_batches(sc);
+        s.ensure_static_batches(sc);
+        let again: Vec<i32> = s.static_batches(sc).iter().map(|b| b.geom).collect();
+        assert_eq!(first, again, "no change ⇒ the same geom ids, not new copies");
+        assert_eq!(s.geoms.len(), geoms_after_first);
+
+        // Forced rebuilds mint new ids (ids are never reused) but must not
+        // grow the registry: the previous generation is freed.
+        for round in 0..5 {
+            s.node_set_visible(ids[0], round % 2 == 0);
+            s.node_set_visible(ids[0], true);
+            s.freeze_nodes(&ids); // already frozen: a no-op, not a rebuild
+            s.ensure_static_batches(sc);
+            assert_eq!(s.geoms.len(), geoms_after_first, "leaked a batch generation");
+            assert_eq!(s.static_batches(sc).len(), first.len(), "same grouping every time");
+        }
+        let latest: Vec<i32> = s.static_batches(sc).iter().map(|b| b.geom).collect();
+        assert!(latest.iter().all(|id| !first.contains(id)), "geom ids are never reused");
+        assert!(first.iter().all(|id| s.geom(*id).is_none()), "old merged geoms are gone");
+
+        // node_batched agrees with what the batches actually contain: every
+        // batched node's geometry is inside some batch, tri counts add up.
+        let batched: usize = ids.iter().filter(|&&id| s.node_batched(id)).count();
+        let merged_tris: usize = s.static_batches(sc).iter().map(|b| tri_count(&s, b.geom)).sum();
+        assert_eq!(merged_tris, batched * tri_count(&s, g));
+
+        // Destroying the scene takes the merged geoms with it.
+        s.scene_destroy(sc);
+        assert!(s.static_batches(sc).is_empty());
+        assert!(latest.iter().all(|id| s.geom(*id).is_none()));
+    }
+
+    #[test]
+    fn a_rally_sized_fence_collapses_into_a_handful_of_draws() {
+        // rally's barrier: ~270 posts + ~270 rails around a ~100-unit circuit.
+        // This is the scene the 6-7x draw-count swing was measured on.
+        let mut s = Store::new();
+        let sc = s.scene_create();
+        let post_g = s.geom_box(0.08, 0.5, 0.08);
+        let rail_g = s.geom_box(0.1, 0.12, 1.2);
+        let post_m = s.material_create(0xffcccccc, 0);
+        let rail_m = s.material_create(0xff2222dd, 0);
+        let mut ids = Vec::new();
+        for i in 0..270 {
+            let t = core::f32::consts::TAU * i as f32 / 270.0;
+            let (st, ct) = (libm::sinf(t), libm::cosf(t));
+            let (x, z) = (ct * 50.0, st * 50.0);
+            ids.push(scenery(&mut s, sc, post_g, post_m, x, 0.5, z));
+            ids.push(scenery(&mut s, sc, rail_g, rail_m, x, 0.9, z));
+        }
+        assert_eq!(ids.len(), 540);
+        s.freeze_nodes(&ids);
+        s.ensure_static_batches(sc);
+        let batches = s.static_batches(sc);
+        let unbatched = ids.iter().filter(|&&id| !s.node_batched(id)).count();
+        let draws = batches.len() + unbatched;
+        std::println!(
+            "rally fence: 540 nodes -> {} batches + {} unbatched = {} draws",
+            batches.len(),
+            unbatched,
+            draws
+        );
+        assert!(draws < 60, "540 scenery draws must collapse by ~an order of magnitude, got {draws}");
+        // Still SPATIAL: no batch may span the whole circuit, or the frustum
+        // test could never reject one (the terrain-heightfield trap).
+        for b in batches {
+            assert!(b.bound_radius < 40.0, "batch bound {} is map-sized", b.bound_radius);
+        }
+        // Every merged triangle is accounted for.
+        let merged: usize = batches.iter().map(|b| tri_count(&s, b.geom)).sum();
+        let per_node: usize = tri_count(&s, post_g);
+        assert_eq!(merged, (540 - unbatched) * per_node);
     }
 }

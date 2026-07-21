@@ -100,6 +100,7 @@ fn cell_of(v: f32) -> i32 {
 /// is exact for the rotation + uniform scale that scenery uses; a non-uniformly
 /// scaled frozen node would get slightly wrong shading, and that is a
 /// documented limitation rather than a silent one.
+#[allow(clippy::too_many_arguments)] // four out-streams in, four mesh streams out
 pub fn append_transformed(
     out_positions: &mut Vec<[f32; 3]>,
     out_normals: &mut Vec<[f32; 3]>,

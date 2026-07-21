@@ -34,6 +34,11 @@ fn u32s(arr: &TypedArray<'_, u32>) -> Vec<u32> {
     arr.as_bytes().map(bytemuck::pod_collect_to_vec).unwrap_or_default()
 }
 
+/// Node id batches (`freeze`).
+fn i32s(arr: &TypedArray<'_, i32>) -> Vec<i32> {
+    arr.as_bytes().map(bytemuck::pod_collect_to_vec).unwrap_or_default()
+}
+
 /// u32 payloads (colors, flags) arrive as JS numbers that may exceed i32
 /// range (`>>> 0` on the guest side); route through f64 -> i64 -> u32.
 fn as_u32(v: f64) -> u32 {
@@ -194,6 +199,17 @@ impl Scene3dSurface {
             let s = self.inner.clone();
             op!("nodeSetTint", move |node: i32, color: f64| {
                 s.borrow_mut().node_set_tint(node, as_u32(color))
+            });
+
+            // Freeze a batch of nodes: a promise their transforms are final,
+            // which lets the store merge them into shared geometry (batch.rs).
+            // Batched on purpose — a 550-node environment declares itself in
+            // one op, not 550.
+            let s = self.inner.clone();
+            op!("freeze", move |ids: TypedArray<i32>, count: i32| {
+                let ids = i32s(&ids);
+                let n = (count.max(0) as usize).min(ids.len());
+                s.borrow_mut().freeze_nodes(&ids[..n]);
             });
 
             // -- environment -------------------------------------------------

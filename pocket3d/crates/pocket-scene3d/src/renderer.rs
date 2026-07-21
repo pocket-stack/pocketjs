@@ -201,9 +201,14 @@ pub struct SceneRenderer {
     pipe_pool_alpha: wgpu::RenderPipeline,
     pipe_pool_additive: wgpu::RenderPipeline,
     geoms: HashMap<i32, GpuGeom>,
+    /// scene -> the batch geom ids uploaded for it, so a rebuilt batch set can
+    /// drop the buffers of the generation it replaced (see `render`).
+    batch_geoms: HashMap<i32, Vec<i32>>,
     depth: Option<DepthTarget>,
     pool_vbuf: wgpu::Buffer,
     pool_vbuf_capacity: u64,
+    last_draws: usize,
+    last_batch_draws: usize,
 }
 
 impl SceneRenderer {
@@ -462,10 +467,27 @@ impl SceneRenderer {
             pipe_pool_alpha,
             pipe_pool_additive,
             geoms: HashMap::new(),
+            batch_geoms: HashMap::new(),
             depth: None,
             pool_vbuf,
             pool_vbuf_capacity,
+            last_draws: 0,
+            last_batch_draws: 0,
         }
+    }
+
+    /// Mesh draws the last `render` submitted — batches plus the nodes that
+    /// survived the frustum test. This surface is judged on submission count
+    /// (it is what makes the GE the bottleneck on the PSP, see ge3d.rs), so
+    /// the figure the pass actually produced is worth being able to read
+    /// rather than infer from the scene.
+    pub fn last_draws(&self) -> usize {
+        self.last_draws
+    }
+
+    /// How many of [`Self::last_draws`] were merged static batches.
+    pub fn last_batch_draws(&self) -> usize {
+        self.last_batch_draws
     }
 
     fn make_draw_buf(device: &wgpu::Device, size: u64) -> wgpu::Buffer {
@@ -625,11 +647,31 @@ impl SceneRenderer {
         let mut draws: Vec<PendingDraw> = Vec::new();
         let mut draw_data: Vec<DrawRaw> = Vec::new();
 
+        // A rebuild (freeze, or any op that invalidates a batch) mints fresh
+        // geom ids and DROPS the meshes it replaced from the store, so the
+        // upload cache has to retire them too — otherwise every rebuild leaks
+        // the GPU buffers of a whole batch set. The steady state is a
+        // same-length id compare over ~25 entries and no allocation.
+        let batches = store.static_batches(scene_handle);
+        let prev = self.batch_geoms.entry(scene_handle).or_default();
+        let stale: Vec<i32> =
+            if prev.len() == batches.len() && prev.iter().zip(batches).all(|(&g, b)| g == b.geom) {
+                Vec::new()
+            } else {
+                let stale =
+                    prev.iter().copied().filter(|g| !batches.iter().any(|b| b.geom == *g)).collect();
+                *prev = batches.iter().map(|b| b.geom).collect();
+                stale
+            };
+        for g in stale {
+            self.geoms.remove(&g);
+        }
+
         // Merged static scenery first. Identity model matrix (batch vertices
         // are world-space already), the batch's own bounding sphere through
         // the same frustum test, and the same opaque/blended split — a batch
         // is a normal draw that happens to cover a whole cell of the map.
-        for b in store.static_batches(scene_handle) {
+        for b in batches {
             if frustum.rejects(b.bound_center, b.bound_radius) {
                 continue;
             }
@@ -659,6 +701,8 @@ impl SceneRenderer {
                 misc: [flags, 0, 0, 0],
             });
         }
+
+        self.last_batch_draws = draws.len();
 
         let mut stack: Vec<(i32, Mat4)> = scene
             .root
@@ -724,6 +768,8 @@ impl SceneRenderer {
                 misc: [flags, 0, 0, 0],
             });
         }
+
+        self.last_draws = draws.len();
 
         // Upload per-draw uniforms (256-byte strided).
         if !draw_data.is_empty() {

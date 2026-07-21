@@ -91,6 +91,11 @@ unsafe fn arg_pods<T: Copy + Default>(
     out
 }
 
+/// Copy an Int32Array arg out (node id batches).
+unsafe fn arg_i32s(ctx: *mut JSContext, argc: i32, argv: *mut JSValue, i: isize) -> Vec<i32> {
+    arg_pods(ctx, argc, argv, i)
+}
+
 /// `Float32Array | null` (geomMesh/geomHeightfield colors).
 unsafe fn arg_f32s_opt(
     ctx: *mut JSContext,
@@ -284,6 +289,16 @@ js_op!(js_node_set_tint, |ctx, argc, argv| {
     JS_UNDEFINED
 });
 
+/// Freeze a batch of nodes: a promise their transforms are final, which lets
+/// the store merge them into shared geometry (batch.rs). Batched on purpose —
+/// a 550-node environment declares itself in one op, not 550.
+js_op!(js_freeze, |ctx, argc, argv| {
+    let ids = arg_i32s(ctx, argc, argv, 0);
+    let count = (arg_i32(ctx, argc, argv, 1).max(0) as usize).min(ids.len());
+    store().freeze_nodes(&ids[..count]);
+    JS_UNDEFINED
+});
+
 js_op!(js_sun, |ctx, argc, argv| {
     store().sun(
         arg_i32(ctx, argc, argv, 0),
@@ -421,6 +436,7 @@ pub unsafe fn register(ctx: *mut JSContext, global: JSValue) {
     add_fn(ctx, s3, b"materialFree\0", js_material_free, 1);
     add_fn(ctx, s3, b"meshSet\0", js_mesh_set, 3);
     add_fn(ctx, s3, b"nodeSetTint\0", js_node_set_tint, 2);
+    add_fn(ctx, s3, b"freeze\0", js_freeze, 2);
     add_fn(ctx, s3, b"sun\0", js_sun, 5);
     add_fn(ctx, s3, b"ambient\0", js_ambient, 3);
     add_fn(ctx, s3, b"fog\0", js_fog, 4);

@@ -195,6 +195,19 @@ pub unsafe fn free_geom(id: i32) {
     geoms().remove(&id);
 }
 
+/// Per-scene list of the batch geom ids currently baked, in batch order — the
+/// only way `composite` can tell one generation of merged scenery from the
+/// next (the store frees the meshes it replaced, but ids are never reused, so
+/// a plain id compare is enough).
+static mut BATCH_GEOMS: Option<BTreeMap<i32, Vec<i32>>> = None;
+
+unsafe fn batch_geoms() -> &'static mut BTreeMap<i32, Vec<i32>> {
+    if BATCH_GEOMS.is_none() {
+        BATCH_GEOMS = Some(BTreeMap::new());
+    }
+    BATCH_GEOMS.as_mut().unwrap()
+}
+
 // ---------------------------------------------------------------------------
 // glow texture (pool quads' radial falloff, desktop fs_pool's 1 - d^2)
 // ---------------------------------------------------------------------------
@@ -421,20 +434,33 @@ pub unsafe fn composite(scene: i32, x: i32, y: i32, w: i32, h: i32) {
     //
     // A batch geom is minted by the batcher AFTER the guest's geom ops have
     // run, so nothing baked it on the way in: bake on first sight, exactly
-    // like js_geom_* does for guest geometry. Ids are never reused, so this
-    // costs one bake per batch for the life of the app. It has to finish
-    // before any `*const BakedGeom` is taken below — inserting into a BTreeMap
-    // moves the values already in it.
-    for b in store.static_batches(scene) {
-        if !geoms().contains_key(&b.geom) {
-            bake_geom(b.geom, store);
+    // like js_geom_* does for guest geometry. A rebuild mints fresh ids and
+    // DROPS the meshes it replaced from the store, so the baked registry has
+    // to retire those in the same breath — a leaked 60k-vertex batch set is
+    // 1.7 MB of the PSP's 8, per rebuild. Both loops have to finish before any
+    // `*const BakedGeom` is taken below: inserting into a BTreeMap moves the
+    // values already in it.
+    let batches = store.static_batches(scene);
+    let tracked = batch_geoms().entry(scene).or_default();
+    if tracked.len() != batches.len() || tracked.iter().zip(batches).any(|(&g, b)| g != b.geom) {
+        for &g in tracked.iter() {
+            if !batches.iter().any(|b| b.geom == g) {
+                free_geom(g);
+            }
+        }
+        tracked.clear();
+        tracked.extend(batches.iter().map(|b| b.geom));
+        for b in batches {
+            if !geoms().contains_key(&b.geom) {
+                bake_geom(b.geom, store);
+            }
         }
     }
     // Identity model matrix (batch vertices are world-space already), the
     // batch's own bounding sphere through the same frustum test, and the same
     // opaque/blended split: a batch is a normal draw that happens to cover a
     // whole cell of the map.
-    for b in store.static_batches(scene) {
+    for b in batches {
         if frustum.rejects(b.bound_center, b.bound_radius) {
             continue;
         }
