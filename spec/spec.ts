@@ -204,6 +204,26 @@ export const OP = {
   //                      against local dist/ on every hello and calls out a
   //                      stale-embed loudly. Hosts without counters simply
   //                      omit the op.
+  // -- app switching (LAUNCHER.md): multi-app hosts embed several bundles
+  //    and swap the whole guest between them. Hosts without app switching
+  //    omit all three ops (same rule as debugStats). ------------------------
+  appTable: 39, //        () -> string. JSON { apps: [{output, id, title}],
+  //                      current, resume }: the embedded bundle table, the
+  //                      running bundle's output name, and the app that was
+  //                      interrupted by the last SELECT summon (null after a
+  //                      cold boot or an explicit launch).
+  appLaunch: 40, //       (output: string) -> 0|1. Request a guest switch: the
+  //                      host finishes the CURRENT frame (draw + present),
+  //                      then tears the guest down and boots `output` from
+  //                      scratch. 0 = unknown output, no switch scheduled.
+  //                      Launching `current` relaunches it fresh — there is
+  //                      no suspend anywhere in this protocol.
+  appShot: 41, //         () -> handle | -1. Texture of the frozen frame the
+  //                      SELECT summon captured: the FULL 480x272 frame
+  //                      downscaled into 256x128 PSM_8888 (stored slightly
+  //                      squeezed — draw it at screen aspect to undo it).
+  //                      Valid inside the summoned launcher guest until the
+  //                      next switch; -1 otherwise.
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -1228,7 +1248,12 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //                           quads and for image nodes inside 3D (perspective)
 //                           subtrees, UVs interpolated through the clip.
 //                           Texture sampling is affine in screen space
-//                           (PSP-authentic; no perspective-correct divide).
+//                           (PSP-authentic; no perspective-correct divide);
+//                           the core compensates by emitting foreshortened
+//                           image quads as a GRID of cells sized by the
+//                           perspective variation (projectively correct UVs
+//                           at every cell corner), so interior texture lines
+//                           do not kink at triangle diagonals.
 
 export const DRAW_OP = {
   rect: 1,

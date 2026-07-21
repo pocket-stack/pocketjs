@@ -30,8 +30,20 @@ async function run(...args: string[]) {
 }
 
 await run("scripts/wasm.ts");
-// Settings needs its own generated table embedded in the homepage guest.
-await run("scripts/build.ts", "settings-main");
+// The homepage stage ships the Pocket Launcher + every admitted app
+// (LAUNCHER.md): registry scan, per-app bundles, deterministic sim-rendered
+// covers, then the launcher bundle itself.
+await run("scripts/launcher.ts", "covers");
+await run(
+  "scripts/pocket.ts",
+  "compile",
+  "--target",
+  "psp",
+  "--manifest",
+  "demos/launcher/pocket.json",
+  "--project-root",
+  ".",
+);
 // Restore the site's canonical hero table for the generic browser runtime.
 await run("scripts/build.ts", "hero");
 await run("site/build.ts");

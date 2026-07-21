@@ -7,6 +7,11 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { BTN, PocketHost } from "../playground/host.js";
 
+// Re-exported for the local/CI browser verifier (site/verify.ts): the
+// app-switch protocol is testable headlessly through PocketHost alone,
+// where WebGL (the 3D shell) may be unavailable.
+export { BTN, PocketHost };
+
 const STAGE_ROOT = "/stage/";
 const FRONT_SNAP_RADIANS = THREE.MathUtils.degToRad(2);
 const ORBIT_YAW_LIMIT = 0.85;
@@ -440,7 +445,7 @@ export async function mountPocketStage(root) {
       onError: (error) => {
         releaseButton();
         root.classList.add("has-error");
-        status.textContent = "The Settings app stopped unexpectedly.";
+        status.textContent = "The Pocket app stopped unexpectedly.";
         console.error("Pocket Stage guest failed", error);
       },
     });
@@ -456,17 +461,37 @@ export async function mountPocketStage(root) {
     controls.target.fromArray(view.desk_target_mm ?? [0, 0, 0]);
     controls.update();
     focusDistanceMm = view.focus_distance_mm ?? focusDistanceMm;
+    // The stage boots the Pocket Launcher (LAUNCHER.md) — the same
+    // multi-app deck the PSP EBOOT ships, on the wasm core. apps.json is
+    // the registry twin the site build emits next to the bundles.
+    const bundleCache = new Map();
+    const fetchBundle = async (output) => {
+      if (!bundleCache.has(output)) {
+        bundleCache.set(
+          output,
+          Promise.all([
+            fetch(STAGE_ROOT + "apps/" + output + ".js").then(failResponse).then((r) => r.text()),
+            fetch(STAGE_ROOT + "apps/" + output + ".pak").then(failResponse).then((r) => r.arrayBuffer()),
+          ]).then(([js, pak]) => ({ js, pak })),
+        );
+      }
+      return bundleCache.get(output);
+    };
     const loader = new GLTFLoader();
-    const [model, appResponse, pakResponse] = await Promise.all([
+    const [model, registryResponse, launcherBundle] = await Promise.all([
       loader.loadAsync(STAGE_ROOT + profile.lods.orbit),
-      fetch(STAGE_ROOT + "settings-main.js").then(failResponse),
-      fetch(STAGE_ROOT + "settings-main.pak").then(failResponse),
+      fetch(STAGE_ROOT + "apps/apps.json").then(failResponse),
+      fetchBundle("launcher-main"),
       hostReady,
     ]);
-    const [appSource, pak] = await Promise.all([
-      appResponse.text(),
-      pakResponse.arrayBuffer(),
-    ]);
+    const registry = await registryResponse.json();
+    stageHost.enableAppSwitching({
+      launcher: "launcher-main",
+      apps: registry.apps,
+      fetchBundle,
+      onSwitch: () => invalidate(),
+    });
+    const { js: appSource, pak } = launcherBundle;
 
     screenTexture = new THREE.CanvasTexture(screenCanvas);
     screenTexture.colorSpace = THREE.SRGBColorSpace;
@@ -490,6 +515,19 @@ export async function mountPocketStage(root) {
     status.textContent = "Pocket Stage ready";
     if (!inViewport || document.hidden) stageHost.stop();
     invalidate();
+
+    // Warm the deck's apps once the hero is up: sequential, idle-priority —
+    // a launch then swaps instantly instead of showing a fetch hold.
+    const prefetch = async () => {
+      for (const app of registry.apps) {
+        try {
+          await fetchBundle(app.output);
+        } catch {
+          // offline or trimmed deploy — the launch path will surface it
+        }
+      }
+    };
+    ("requestIdleCallback" in window ? requestIdleCallback : setTimeout)(prefetch);
 
     // Exposed only as a receipt for the local/CI browser verifier.
     globalThis.__pocketStageReceipt = () => ({

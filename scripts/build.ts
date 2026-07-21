@@ -24,7 +24,7 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
-import { PSM } from "../spec/spec.ts";
+import { IMG_FLAG_LINEAR, PSM } from "../spec/spec.ts";
 import {
   FRAMEWORKS,
   frameworkVariantPath,
@@ -236,7 +236,12 @@ const visited = new Set<string>();
 async function walk(file: string): Promise<void> {
   if (visited.has(file)) return;
   visited.add(file);
-  if (file.endsWith(".generated.ts")) return; // never scan generated output [R]
+  // Never scan the compiled-styles module: its literals ARE the compiled
+  // class names, and collecting them again would feed the compiler its own
+  // output [R]. Other generated modules (e.g. the launcher's registry) are
+  // ordinary app data whose literals — cover asset paths, title glyphs —
+  // pass 1 must see like any hand-written module's.
+  if (file.endsWith("/styles.generated.ts")) return;
   const src = await Bun.file(file).text();
   // Throws with a code frame on lint errors.
   const res = await transformFile(file, src, framework, { features: buildPlan?.features });
@@ -305,6 +310,18 @@ const spriteManifestPath = appDir + "sprites.json";
 const spriteMeta: Record<string, SpriteMeta> = existsSync(spriteManifestPath)
   ? (JSON.parse(await Bun.file(spriteManifestPath).text()) as Record<string, SpriteMeta>)
   : {};
+// Optional per-app static-image meta: <appDir>/images.json maps an asset
+// name to { linear?, psm? }. `linear` bakes IMG_FLAG_LINEAR so the core
+// samples it bilinearly (rotated/scaled art — the launcher's covers); psm 2
+// selects PSM_4444. Absent file or name = today's defaults, byte-identical.
+interface ImageMeta {
+  linear?: boolean;
+  psm?: number;
+}
+const imageManifestPath = appDir + "images.json";
+const imageMeta: Record<string, ImageMeta> = existsSync(imageManifestPath)
+  ? (JSON.parse(await Bun.file(imageManifestPath).text()) as Record<string, ImageMeta>)
+  : {};
 const imageNames = classStrings.filter((s) => /^[\w./-]+\.(?:png|svg)$/i.test(s));
 for (const name of imageNames) {
   const candidates = [appDir + name, ROOT + "assets/images/" + name, ROOT + "assets/" + name];
@@ -360,7 +377,14 @@ for (const name of imageNames) {
     });
     console.log(`  sprite: ${name} (${sp.frames} frames, ${sp.cols} cols, step ${sp.step}, psm ${sp.psm ?? PSM.PSM_8888})`);
   } else {
-    blobs.push({ key: keyImage(name), dtype: PAK_DTYPE.u8, data: encodeImageEntry(img, PSM.PSM_8888) });
+    const meta = imageMeta[name];
+    const flags = meta?.linear ? IMG_FLAG_LINEAR : 0;
+    blobs.push({
+      key: keyImage(name),
+      dtype: PAK_DTYPE.u8,
+      data: encodeImageEntry(img, meta?.psm ?? PSM.PSM_8888, flags),
+    });
+    if (flags) console.log(`  image: ${name} sampled linear (images.json)`);
   }
 }
 

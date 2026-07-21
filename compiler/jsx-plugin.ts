@@ -37,6 +37,7 @@ const COMPONENTS_PATH = new URL("../src/components.ts", import.meta.url).pathnam
 const COMPONENTS_VUE_VAPOR_PATH = new URL("../src/components-vue-vapor.ts", import.meta.url).pathname;
 const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
 const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
+const LAUNCHER_PATH = new URL("../src/launcher.ts", import.meta.url).pathname;
 const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
 const LIFECYCLE_VUE_VAPOR_PATH = new URL("../src/lifecycle-vue-vapor.ts", import.meta.url).pathname;
 const OSK_PATH = new URL("../src/osk.tsx", import.meta.url).pathname;
@@ -75,6 +76,7 @@ export const FRAMEWORKS: Record<
       components: COMPONENTS_PATH,
       config: CONFIG_PATH,
       input: INPUT_API_PATH,
+      launcher: LAUNCHER_PATH,
       lifecycle: LIFECYCLE_PATH,
       // The system OSK carries class literals and key-cap glyphs, so pass 1
       // must walk it (this map lists the framework modules the collector
@@ -96,6 +98,7 @@ export const FRAMEWORKS: Record<
       components: COMPONENTS_VUE_VAPOR_PATH,
       config: CONFIG_PATH,
       input: INPUT_API_PATH,
+      launcher: LAUNCHER_PATH,
       lifecycle: LIFECYCLE_VUE_VAPOR_PATH,
       platform: PLATFORM_PATH,
       prelude: PRELUDE_PATH,

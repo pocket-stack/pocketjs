@@ -20,7 +20,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { bundleHash } from "./bundle-hash.ts";
+import { bundleHash, launcherBundleHash } from "./bundle-hash.ts";
 import { encodePNG } from "../test/png.ts";
 
 export interface BridgeEvent {
@@ -131,10 +131,34 @@ export function startBridge(opts: BridgeOptions): Bridge {
     } catch {
       return; // no local build of this app — nothing to compare against
     }
+    // Multi-app EBOOT (LAUNCHER.md): the device hash covers app 0 PLUS every
+    // registry bundle in table order. When the single-bundle hash misses and
+    // a registry is present, compare against that flavor before crying stale.
+    let launcher: string | null = null;
+    if (local !== device) {
+      try {
+        const tsv = readFileSync(join(distDir, "launcher-registry.tsv"), "utf8");
+        const outputs = [
+          app,
+          ...tsv
+            .split("\n")
+            .filter((l) => l.trim())
+            .map((l) => l.split("\t")[0]),
+        ];
+        launcher = launcherBundleHash(distDir, outputs);
+      } catch {
+        launcher = null; // no registry — plain single-app comparison stands
+      }
+    }
     if (local === device) {
       emit({ type: "bundle-ok", detail: `${app} @ ${device}` });
+    } else if (launcher === device) {
+      emit({ type: "bundle-ok", detail: `${app} (multi-app) @ ${device}` });
     } else {
-      emit({ type: "bundle-mismatch", detail: `${app}: device ${device} != dist ${local}` });
+      emit({
+        type: "bundle-mismatch",
+        detail: `${app}: device ${device} != dist ${local}${launcher ? ` (multi-app ${launcher})` : ""}`,
+      });
     }
   }
 

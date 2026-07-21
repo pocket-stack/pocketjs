@@ -203,6 +203,22 @@ fonts, vectors and core masks at Vita's native 960x544 density. Physical
 controls, left-analog input, and front-panel multi-touch snapshots are supported;
 PSP builds retain their controller-only fallback.
 
+## The Pocket Launcher (on-device app switching)
+
+One EBOOT can now embed EVERY PSP-admissible app plus a Cover Flow launcher
+([LAUNCHER.md](LAUNCHER.md)): pick an app with the deck, press SELECT inside
+any app to summon the deck back over a frozen shot of where you were, pick
+another. Switching is a whole-guest swap (fresh QuickJS realm + core per
+app); three append-only surface ops (`appTable`/`appLaunch`/`appShot`) carry
+the protocol, and single-app EBOOTs are byte-identical to before.
+
+```sh
+bun run launcher scan                 # admission sweep -> registry
+bun run launcher covers               # + deterministic sim-rendered covers
+bun run launcher build -- --release   # + the multi-app PSP EBOOT
+bun run e2e:launcher                  # scripted 3-swap journey in PPSSPPHeadless
+```
+
 ## DevTools + time travel
 
 Pocket DevTools ([DEVTOOLS.md](DEVTOOLS.md)) is built into every bundle: a

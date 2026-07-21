@@ -293,6 +293,7 @@ describe("semantic resolution", () => {
       "hero-vue-vapor": [true, true, false],
       im: [true, true, false],
       "ipod-nano": [false, false, false], // admitted by the package-shaped macos-embedded target
+      launcher: [true, true, false], // the Cover Flow deck (LAUNCHER.md) is an ordinary console app
       library: [true, true, false],
       motions: [true, true, false],
       music: [true, true, false],

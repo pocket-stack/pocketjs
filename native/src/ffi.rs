@@ -560,6 +560,49 @@ unsafe extern "C" fn js_debug_stats(
     JS_NewStringLen(ctx, s.as_ptr(), s.len())
 }
 
+/// ui.appTable() -> string (spec op 39): the embedded app table + runtime
+/// switch state, one JSON snapshot (LAUNCHER.md).
+unsafe extern "C" fn js_app_table(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    let s = crate::switch::table_json();
+    JS_NewStringLen(ctx, s.as_ptr(), s.len())
+}
+
+/// ui.appLaunch(output) -> 0|1 (spec op 40): request a whole-guest switch
+/// after the current frame presents.
+unsafe extern "C" fn js_app_launch(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let scheduled = with_str_arg(ctx, argc, argv, 0, false, |output| {
+        match crate::switch::find(output) {
+            Some(index) => {
+                crate::switch::request_launch(index);
+                true
+            }
+            None => false,
+        }
+    });
+    JS_NewInt32(ctx, scheduled as i32)
+}
+
+/// ui.appShot() -> handle | -1 (spec op 41): the summon's frozen-frame
+/// texture in THIS guest's core.
+unsafe extern "C" fn js_app_shot(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, crate::switch::shot_handle())
+}
+
 /// ui.__dbgShot() -> bool: dump the displayed framebuffer to
 /// pocketjs-dbg/shot.raw (the bridge converts it to PNG panel-side).
 unsafe extern "C" fn js_dbg_shot(
@@ -802,6 +845,14 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"videoTick\0", js_video_tick, 0);
     add_fn(ctx, ui_obj, b"videoTexture\0", js_video_texture, 0);
     add_fn(ctx, ui_obj, b"videoClose\0", js_video_close, 0);
+    // App switching (spec ops 39..41, LAUNCHER.md). Only multi-app hosts
+    // carry the ops — single-app EBOOTs omit them, the spec's stated
+    // degraded mode, so their guests behave exactly as before.
+    if crate::switch::multi() {
+        add_fn(ctx, ui_obj, b"appTable\0", js_app_table, 0);
+        add_fn(ctx, ui_obj, b"appLaunch\0", js_app_launch, 1);
+        add_fn(ctx, ui_obj, b"appShot\0", js_app_shot, 0);
+    }
 
     // Framework-owned host identity. JS uses this for target/profile
     // diagnostics only; native-vs-injected ownership is determined by the
