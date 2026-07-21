@@ -126,39 +126,26 @@ export default function Launcher() {
   });
 
   const clampSel = (v: number) => Math.min(apps.length - 1, Math.max(0, v));
-  const stepSel = (delta: number) => setSel((v) => clampSel(v + delta));
 
   onMount(() => {
-    // Latched everywhere: the summon chord (or a held browse button) must
-    // release before it can fire inside the deck.
-    onButtonPress(BTN.LEFT, () => stepSel(-1), { latched: true });
-    onButtonPress(BTN.RIGHT, () => stepSel(1), { latched: true });
-
-    // Held-flow browsing: while the L/R triggers (or a d-pad direction past
-    // the key-repeat delay) stay down, the deck position advances a
-    // FRACTION of a card every frame and the cards are jumped to it — one
-    // continuous stream, no per-card stop. Release tweens from the exact
-    // fraction to the nearest card. The title tracks round(pos) live, so
-    // what reads as centered is always what CROSS launches.
-    const FLOW_TRIGGER = 18 / 60; // cards per frame, trigger stream
-    const FLOW_DPAD = 11 / 60; //   cards per frame, held d-pad
-    const DPAD_DELAY = 15; //       frames before a held d-pad flows
-    let dpadHeld = 0;
-    let flowOrigin = 0; // deck position where the current flow began
+    // Browsing is ONE mechanism for all four inputs — the L/R triggers and
+    // the d-pad directions are identical flow sources: while held, the deck
+    // position advances a FRACTION of a card every frame and the cards are
+    // jumped to it — one continuous stream, no per-card stop. Release
+    // tweens from the exact fraction to the nearest card, and the tap rule
+    // below turns a quick press into exactly one step. The title tracks
+    // round(pos) live, so what reads as centered is always what CIRCLE
+    // launches.
+    const FLOW = 18 / 60; // cards per frame while a browse input is held
+    let flowOrigin = 0; //  deck position where the current flow began
     onFrame((buttons: number) => {
-      const tl = (buttons & BTN.LTRIGGER) !== 0;
-      const tr = (buttons & BTN.RTRIGGER) !== 0;
-      const dl = (buttons & BTN.LEFT) !== 0;
-      const dr = (buttons & BTN.RIGHT) !== 0;
-      dpadHeld = dl !== dr ? dpadHeld + 1 : 0;
+      const left = (buttons & (BTN.LTRIGGER | BTN.LEFT)) !== 0;
+      const right = (buttons & (BTN.RTRIGGER | BTN.RIGHT)) !== 0;
       let dir = 0;
       let speed = 0;
-      if (tl !== tr) {
-        dir = tr ? 1 : -1;
-        speed = FLOW_TRIGGER;
-      } else if (dl !== dr && dpadHeld > DPAD_DELAY) {
-        dir = dr ? 1 : -1;
-        speed = FLOW_DPAD;
+      if (left !== right) {
+        dir = right ? 1 : -1;
+        speed = FLOW;
       }
       if (dir !== 0) {
         if (pos === null) {
@@ -265,8 +252,8 @@ export default function Launcher() {
       <Text class="absolute left-0 bottom-2 w-[480] text-center text-xs text-slate-600">
         {table
           ? resume
-            ? "hold L / R to flow · CIRCLE launch · CROSS back"
-            : "LEFT / RIGHT browse · hold L / R to flow · CIRCLE launch"
+            ? "tap or hold L / R · CIRCLE launch · CROSS back"
+            : "tap L / R to step · hold to flow · CIRCLE launch"
           : "browse only — this host cannot switch apps"}
       </Text>
     </View>

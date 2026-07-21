@@ -205,32 +205,32 @@ function fallbackCover(output: string): Uint8Array {
 
 /** The deck's stage, baked: the Cover Flow-era look — black floor, a cool
  *  Aqua glow behind the center card, a faint sheen where the cards stand.
- *  256×128, stretched to the screen with bilinear (gradients survive that
- *  perfectly). Pure math, deterministic. */
-function stageBackground(): Uint8Array {
-  const out = new Uint8Array(SHOT_W * SHOT_H * 4);
-  // In stretched-screen space the deck centers at ~(240, 106)/480×272 —
-  // scale to texture space.
-  const cx = (240 / 480) * SHOT_W;
-  const cy = (106 / 272) * SHOT_H;
-  const glowR = SHOT_W * 0.52;
-  const floorY = (160 / 272) * SHOT_H;
-  for (let y = 0; y < SHOT_H; y++) {
-    const t = y / (SHOT_H - 1);
+ *  Default 256×128 (stretched to the screen with bilinear — gradients
+ *  survive that perfectly); full-res for the XMB PIC1. Pure math,
+ *  deterministic. */
+function stageBackground(w = SHOT_W, h = SHOT_H): Uint8Array {
+  const out = new Uint8Array(w * h * 4);
+  // In stretched-screen space the deck centers at ~(240, 106)/480×272.
+  const cx = (240 / 480) * w;
+  const cy = (106 / 272) * h;
+  const glowR = w * 0.52;
+  const floorY = (160 / 272) * h;
+  for (let y = 0; y < h; y++) {
+    const t = y / (h - 1);
     // Vertical base: near-black slate up top -> pure black floor.
     const base: [number, number, number] =
       t < 0.55
         ? [19 + (7 - 19) * (t / 0.55), 26 + (10 - 26) * (t / 0.55), 36 + (16 - 36) * (t / 0.55)]
         : [7 * (1 - (t - 0.55) / 0.45), 10 * (1 - (t - 0.55) / 0.45), 16 * (1 - (t - 0.55) / 0.45)];
-    for (let x = 0; x < SHOT_W; x++) {
+    for (let x = 0; x < w; x++) {
       const dx = (x - cx) / glowR;
       const dy = (y - cy) / (glowR * 0.75);
       const glow = Math.max(0, 1 - (dx * dx + dy * dy));
       const g15 = glow * Math.sqrt(glow); // ^1.5 falloff, soft center
       // Floor sheen: a horizontal band fading down from the card line.
-      const fy = (y - floorY) / (SHOT_H - floorY);
+      const fy = (y - floorY) / (h - floorY);
       const sheen = y >= floorY ? (1 - fy) * (1 - fy) * (0.4 + 0.6 * glow) : 0;
-      const o = (y * SHOT_W + x) * 4;
+      const o = (y * w + x) * 4;
       out[o] = Math.min(255, Math.round(base[0] + 26 * g15 + 12 * sheen));
       out[o + 1] = Math.min(255, Math.round(base[1] + 36 * g15 + 16 * sheen));
       out[o + 2] = Math.min(255, Math.round(base[2] + 52 * g15 + 24 * sheen));
@@ -272,6 +272,57 @@ async function renderCovers(registry: LauncherRegistry, force: boolean): Promise
     }
     await Bun.write(coverPath, encodePNG(transparentRing(shot, SHOT_W, SHOT_H), SHOT_W, SHOT_H));
   }
+}
+
+/** Generic bilinear resample (art assets only — the deck textures use the
+ *  fixed-size shot path). */
+function resizeBilinear(
+  rgba: Uint8Array,
+  sw: number,
+  sh: number,
+  dw: number,
+  dh: number,
+): Uint8Array {
+  const out = new Uint8Array(dw * dh * 4);
+  for (let y = 0; y < dh; y++) {
+    const sy = ((y + 0.5) * sh) / dh - 0.5;
+    const y0 = Math.min(sh - 1, Math.max(0, Math.floor(sy)));
+    const y1 = Math.min(sh - 1, y0 + 1);
+    const fy = Math.min(1, Math.max(0, sy - y0));
+    for (let x = 0; x < dw; x++) {
+      const sx = ((x + 0.5) * sw) / dw - 0.5;
+      const x0 = Math.min(sw - 1, Math.max(0, Math.floor(sx)));
+      const x1 = Math.min(sw - 1, x0 + 1);
+      const fx = Math.min(1, Math.max(0, sx - x0));
+      const o = (y * dw + x) * 4;
+      for (let c = 0; c < 4; c++) {
+        const top = rgba[(y0 * sw + x0) * 4 + c] + (rgba[(y0 * sw + x1) * 4 + c] - rgba[(y0 * sw + x0) * 4 + c]) * fx;
+        const bot = rgba[(y1 * sw + x0) * 4 + c] + (rgba[(y1 * sw + x1) * 4 + c] - rgba[(y1 * sw + x0) * 4 + c]) * fx;
+        out[o + c] = Math.round(top + (bot - top) * fy);
+      }
+    }
+  }
+  return out;
+}
+
+/** XMB identity (cargo-psp packs demos/launcher/psp/Psp.toml): ICON0 is the
+ *  REAL deck — a settled sim render resized to 144×80 — and PIC1 is the
+ *  stage gradient at full 480×272. Deterministic; the outputs are committed
+ *  (small, and single-app `bun run hw launcher` builds need them present). */
+async function renderXmbArt(): Promise<void> {
+  const pspDir = join(LAUNCHER_DIR, "psp");
+  mkdirSync(pspDir, { recursive: true });
+  const { bootWorld } = await import("../host-sim/sim.ts");
+  const world = await bootWorld("launcher-main", 60);
+  for (let f = 0; f < 60; f++) {
+    world.frame(0);
+    for (let t = 0; t < world.ticksPerFrame; t++) world.tick();
+  }
+  const icon = resizeBilinear(world.render(), 480, 272, 144, 80);
+  for (let i = 3; i < icon.length; i += 4) icon[i] = 255;
+  await Bun.write(join(pspDir, "icon0.png"), encodePNG(icon, 144, 80));
+  await Bun.write(join(pspDir, "pic1.png"), encodePNG(stageBackground(480, 272), 480, 272));
+  console.log("  xmb art: demos/launcher/psp/{icon0,pic1}.png");
 }
 
 async function main(): Promise<void> {
@@ -320,6 +371,8 @@ async function main(): Promise<void> {
 
   console.log("launcher: compiling the launcher app");
   await compileApp(relative(ROOT, LAUNCHER_MANIFEST));
+  console.log("launcher: rendering XMB art");
+  await renderXmbArt();
   console.log("launcher: building the multi-app PSP EBOOT");
   const p = Bun.spawnSync(
     [
