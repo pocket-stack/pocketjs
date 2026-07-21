@@ -94,8 +94,15 @@ and fragmentation does not accumulate by construction.
   same box filter, uploads the shot into the next world, answers the three
   ops. Switch flows are therefore deterministic traces, golden-able, and
   chaos-provable like any other scenario.
-- **host-web / native-vita** — not wired in this change; the ops are absent
-  there, which is exactly the degraded mode the framework wrapper handles.
+- **web (Pocket Stage)** — the pocketjs.dev hero boots the SAME launcher on
+  the wasm core: `site/playground/host.js` `enableAppSwitching()` is the
+  browser twin of the native policy (ops overlay per reset, SELECT
+  stripping + summon edge, fetch-and-eval swap with the frozen shot
+  re-uploaded), fed from `/stage/apps/` which the site build assembles from
+  the registry. Verified headlessly by driving the protocol through
+  PocketHost (site/verify.ts probe).
+- **native-vita** — not wired; the ops are absent there, which is exactly
+  the degraded mode the framework wrapper handles.
 
 ## Verification
 

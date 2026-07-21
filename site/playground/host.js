@@ -12,6 +12,10 @@
 
 import { createWasmUi, FB_W, FB_H } from "../../host-web/wasm-ops.js";
 import { drawHud, wasmMemoryBytes } from "../../host-web/hud.js";
+import { SHOT_W, SHOT_H, downscaleShot } from "../../host-sim/shot.ts";
+
+/** spec PSM_8888 — the frozen-shot upload format (spec/spec.ts psm). */
+const PSM_8888 = 3;
 
 // spec/spec.ts BTN — the PSP button bitmask.
 export const BTN = {
@@ -55,6 +59,96 @@ export class PocketHost {
     this._statsT = 0;
     this._hudFps = 0; // on-canvas HUD, sampled once/second (see hud.js)
     this._hudMem = 0;
+    this.switching = null; // multi-app policy (enableAppSwitching)
+  }
+
+  /**
+   * Turn this host into a multi-app host (LAUNCHER.md, the browser twin of
+   * native/src/switch.rs + host-sim/launcher.ts): the three app* ops are
+   * installed on every guest, SELECT is reserved as the summon chord for
+   * non-launcher guests, and a switch fetches + evals the target bundle in
+   * place — the same whole-guest swap runIIFE always was.
+   *
+   *   host.enableAppSwitching({
+   *     launcher: "launcher-main",
+   *     apps: [{ output, id, title }, ...],
+   *     fetchBundle: async (output) => ({ js, pak }),   // caller caches
+   *     onSwitch: (output) => {},                       // optional
+   *   });
+   */
+  enableAppSwitching(config) {
+    this.switching = {
+      launcher: config.launcher,
+      apps: config.apps,
+      fetchBundle: config.fetchBundle,
+      onSwitch: config.onSwitch ?? (() => {}),
+      current: config.launcher,
+      resume: null,
+      shot: null,
+      shotHandle: -1,
+      // Latched: a SELECT still held from the press that caused the last
+      // swap must release before it can summon again.
+      prevSelect: true,
+      pending: null,
+      busy: false,
+    };
+  }
+
+  _applySwitchOps() {
+    const sw = this.switching;
+    if (!sw) return;
+    const ops = this.wasm.ops;
+    ops.appTable = () =>
+      JSON.stringify({ apps: sw.apps, current: sw.current, resume: sw.resume });
+    ops.appLaunch = (output) => {
+      const known = output === sw.launcher || sw.apps.some((a) => a.output === output);
+      if (!known) return 0;
+      sw.pending = { to: output, summon: false };
+      return 1;
+    };
+    ops.appShot = () => {
+      if (!sw.shot) return -1;
+      if (sw.shotHandle < 0) {
+        sw.shotHandle = ops.uploadTexture(sw.shot, SHOT_W, SHOT_H, PSM_8888);
+      }
+      return sw.shotHandle;
+    };
+  }
+
+  async _performSwitch() {
+    const sw = this.switching;
+    const { to, summon } = sw.pending;
+    sw.pending = null;
+    sw.busy = true;
+    try {
+      if (summon) {
+        // The frozen frame is the guest's last presented frame (spec op 41).
+        sw.shot = downscaleShot(this.wasm.render());
+        sw.resume = sw.current;
+      } else {
+        sw.shot = null;
+        sw.resume = null;
+      }
+      sw.shotHandle = -1;
+      this.stop(); // the display holds the last blit through the fetch+eval
+      const { js, pak } = await sw.fetchBundle(to);
+      sw.current = to;
+      sw.prevSelect = true;
+      this.runIIFE(js, pak);
+      sw.onSwitch(to);
+    } catch (error) {
+      this.onError(error);
+      this.onLog("SWITCH ERROR: " + (error && error.stack ? error.stack : error));
+      // Mirror the native broken-guest rule: fall back into the launcher
+      // rather than wedging on a dead guest.
+      if (to !== sw.launcher) {
+        sw.pending = { to: sw.launcher, summon: false };
+        sw.busy = false;
+        return this._performSwitch();
+      }
+    } finally {
+      sw.busy = false;
+    }
   }
 
   /** Bind to a canvas + instantiate the wasm. Call once. `wasmUrl` defaults to
@@ -120,6 +214,9 @@ export class PocketHost {
     globalThis.__pak = undefined;
     this.lastDrawHash = null;
     this.afterTick = [];
+    // Multi-app hosts re-install the app* ops on the fresh core's namespace
+    // before the next eval — exactly like native ffi::register per guest.
+    this._applySwitchOps();
   }
 
   /** Run a callback after the guest has consumed its next fixed-timestep turn.
@@ -172,9 +269,25 @@ export class PocketHost {
   _safeFrame() {
     if (!this.frameCb) return false;
     try {
-      this.frameCb(this.held);
+      // The summon chord (LAUNCHER.md): non-launcher guests never see
+      // SELECT; a host-tracked press-edge schedules the summon.
+      let mask = this.held;
+      const sw = this.switching;
+      if (sw && !sw.busy && sw.current !== sw.launcher) {
+        const select = (mask & BTN.SELECT) !== 0;
+        if (select && !sw.prevSelect && !sw.pending) {
+          sw.pending = { to: sw.launcher, summon: true };
+        }
+        sw.prevSelect = select;
+        mask &= ~BTN.SELECT;
+      }
+      this.frameCb(mask);
       this.wasm.tick();
       this.tickCount++;
+      if (sw && sw.pending && !sw.busy) {
+        // Switch at the frame's bottom, like every other host.
+        this._performSwitch();
+      }
       if (this.wasm.drawHash) {
         const hash = this.wasm.drawHash();
         const changed = hash !== this.lastDrawHash;

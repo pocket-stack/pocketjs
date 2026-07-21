@@ -312,16 +312,37 @@ async function main() {
   for (const f of readdirSync(ROOT + "assets/images/")) copy(ROOT + "assets/images/" + f, "demo-assets/" + f);
   copyDemoAssets();
 
-  // Homepage Pocket Stage package. The deploy workflow builds the admitted
-  // settings guest first; fail here instead of silently publishing a shell
-  // with a missing screen app when site/build.ts is run by hand.
-  for (const file of ["settings-main.js", "settings-main.pak"]) {
-    const source = ROOT + "dist/" + file;
-    if (!existsSync(source)) {
-      throw new Error(`missing dist/${file} — run: bun scripts/build.ts settings-main`);
-    }
-    copy(source, "stage/" + file);
+  // Homepage Pocket Stage package: the Pocket Launcher plus every admitted
+  // app (LAUNCHER.md) — the same deck the PSP EBOOT ships, wasm-rendered.
+  // The deploy workflow builds the launcher family first; fail here instead
+  // of silently publishing a shell with a missing screen app when
+  // site/build.ts is run by hand.
+  const registryPath = ROOT + "dist/launcher-registry.json";
+  if (!existsSync(registryPath)) {
+    throw new Error("missing dist/launcher-registry.json — run: bun scripts/launcher.ts covers");
   }
+  const launcherRegistry = JSON.parse(readFileSync(registryPath, "utf8")) as {
+    apps: { output: string; id: string; title: string }[];
+  };
+  const stageApps = ["launcher-main", ...launcherRegistry.apps.map((a) => a.output)];
+  for (const output of stageApps) {
+    for (const ext of ["js", "pak"]) {
+      const source = ROOT + `dist/${output}.${ext}`;
+      if (!existsSync(source)) {
+        throw new Error(
+          `missing dist/${output}.${ext} — run: bun scripts/launcher.ts covers && ` +
+            "bun scripts/pocket.ts compile --target psp --manifest demos/launcher/pocket.json --project-root .",
+        );
+      }
+      copy(source, `stage/apps/${output}.${ext}`);
+    }
+  }
+  write(
+    "stage/apps/apps.json",
+    JSON.stringify({
+      apps: launcherRegistry.apps.map(({ output, id, title }) => ({ output, id, title })),
+    }),
+  );
   const pspPackage = ROOT + "pocket3d/examples/handheld/assets/dibad-psp/";
   emitSingleLodStagePackage(pspPackage, OUT + "stage/", "psp-profile.json", "orbit");
 
