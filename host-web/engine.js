@@ -5,7 +5,7 @@
 // installs the demo's .pak as globalThis.__pak, evals the demo bundle
 // (which mounts the app and installs globalThis.frame), then drives a
 // fixed-timestep 60 Hz loop: frame(buttons) -> ui_tick -> ui_render ->
-// putImageData onto a 480x272 canvas (CSS-scaled, pixelated).
+// putImageData onto a viewport-sized canvas (CSS-scaled, pixelated).
 //
 // Loop shape (dt clamp 250 ms, max 4 catch-up steps) is copied from the
 // proven dreamcart web/engine.js driver.
@@ -14,8 +14,20 @@
 //   arrows = d-pad     Enter / Z = CIRCLE  X = CROSS
 //   A = SQUARE         S = TRIANGLE        Shift = SELECT   Space = START
 
-import { createWasmUi, FB_W, FB_H } from "./wasm-ops.js";
+import { createWasmUi, FB_W as DEFAULT_FB_W, FB_H as DEFAULT_FB_H } from "./wasm-ops.js";
 import { drawHud, wasmMemoryBytes } from "./hud.js";
+
+const query = new URLSearchParams(location.search);
+function positiveIntParam(name, fallback, max = 32000) {
+  const value = Number(query.get(name));
+  return Number.isInteger(value) && value > 0 && value <= max ? value : fallback;
+}
+const LOGICAL_W = positiveIntParam("width", DEFAULT_FB_W);
+const LOGICAL_H = positiveIntParam("height", DEFAULT_FB_H);
+const RENDER_SCALE = positiveIntParam("scale", 1, 4);
+const RASTER_DENSITY = positiveIntParam("density", RENDER_SCALE, 255);
+const FB_W = LOGICAL_W * RENDER_SCALE;
+const FB_H = LOGICAL_H * RENDER_SCALE;
 
 // spec/spec.ts BTN (plain module — keep the literal in sync with the spec).
 export const BTN = {
@@ -167,7 +179,7 @@ function devtoolsScreenshot() {
   shot.height = FB_H;
   const sctx = shot.getContext("2d");
   const img = sctx.createImageData(FB_W, FB_H);
-  img.data.set(wasm.render());
+  img.data.set(wasm.renderScaled(RENDER_SCALE));
   sctx.putImageData(img, 0, 0);
   const frame = globalThis.__pocketDevtools ? globalThis.__pocketDevtools.frame : 0;
   dtSend(JSON.stringify({ t: "screenshot", frame, data: shot.toDataURL("image/png") }));
@@ -209,7 +221,8 @@ function safeFrame() {
 
 function blit() {
   if (!wasm || !ctx) return;
-  imageData.data.set(wasm.render());
+  const pixels = wasm.renderScaled(RENDER_SCALE);
+  imageData.data.set(pixels);
   ctx.putImageData(imageData, 0, 0);
   drawHud(ctx, FB_W, FB_H, hudFps, hudMem); // built-in on-canvas overlay
 }
@@ -287,6 +300,11 @@ export async function mount(theCanvas, opts = {}) {
   canvas = theCanvas;
   canvas.width = FB_W;
   canvas.height = FB_H;
+  canvas.style.width = `${FB_W}px`;
+  // Preserve the framebuffer aspect ratio when max-width makes the preview
+  // responsive inside a narrower browser window.
+  canvas.style.height = "auto";
+  canvas.style.aspectRatio = `${FB_W} / ${FB_H}`;
   ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   imageData = ctx.createImageData(FB_W, FB_H);
@@ -296,11 +314,15 @@ export async function mount(theCanvas, opts = {}) {
     held = 0;
     nubHeld.clear();
   });
-  const hzParam = Number(new URLSearchParams(location.search).get("hz"));
+  const hzParam = Number(query.get("hz"));
   if (VALID_HZ.includes(hzParam)) simHz = hzParam;
   const res = await fetch("pocketjs.wasm");
   if (!res.ok) throw new Error("pocketjs.wasm not found — run: bun scripts/wasm.ts");
-  wasm = await createWasmUi(await res.arrayBuffer());
+  wasm = await createWasmUi(await res.arrayBuffer(), {
+    width: LOGICAL_W,
+    height: LOGICAL_H,
+    rasterDensity: RASTER_DENSITY,
+  });
   connectDevtools();
   logSink("PocketJS wasm ready");
 }
@@ -314,7 +336,7 @@ export async function load(name, opts = {}) {
   if (!wasm) throw new Error("mount() first");
   stop();
   frameCb = null;
-  wasm.init(); // fresh Ui: tree/styles/atlases/textures all reset
+  wasm.init(RASTER_DENSITY); // fresh Ui: tree/styles/atlases/textures all reset
   // Host contract (see demos/hero/main.tsx): both globals BEFORE eval, reset
   // EVERY load so nothing stale leaks across reloads.
   globalThis.ui = wasm.ops;

@@ -2,7 +2,7 @@
 
 import "./prelude.ts";
 
-import { detectHost, installFrameHandler, installHost, type HostOps } from "./host.ts";
+import { detectHost, hostViewport, installFrameHandler, installHost, type HostOps } from "./host.ts";
 import { initDevtools, wrapFrameHandler } from "./devtools.ts";
 import {
   createElement,
@@ -123,14 +123,17 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     }
   }
 
+  const viewport = hostViewport(host.ops);
+  const layerW = viewport?.w ?? SCREEN_W;
+  const layerH = viewport?.h ?? SCREEN_H;
   const appRoot = createLayer({
-    width: SCREEN_W,
-    height: SCREEN_H,
+    width: layerW,
+    height: layerH,
     overflow: ENUMS.Overflow.Hidden,
   });
   const overlayRoot = createLayer({
-    width: SCREEN_W,
-    height: SCREEN_H,
+    width: layerW,
+    height: layerH,
     posType: ENUMS.PosType.Absolute,
     insetT: 0,
     insetR: 0,

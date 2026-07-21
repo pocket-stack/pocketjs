@@ -25,7 +25,7 @@
 //! format, so channel bytes map 1:1. The buffer is treated as opaque: the
 //! destination alpha is always written back as 255.
 
-use crate::spec::{self, draw_op, SCREEN_H, SCREEN_W};
+use crate::spec::{self, draw_op};
 use crate::{TexView, Ui};
 
 pub const MAX_RENDER_SCALE: u32 = 4;
@@ -129,16 +129,18 @@ fn lerp_color(from: u32, to: u32, f: f32) -> u32 {
 
 // ---- the interpreter --------------------------------------------------------------
 
-/// Execute `words` into the byte-exact legacy 480x272 surface.
+/// Execute `words` into the UI's logical viewport at one sample per pixel.
+/// The stock viewport remains 480x272, preserving the legacy golden output.
 pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
     render_scaled(ui, words, fb, 1);
 }
 
 /// Execute `words` (a full DrawList) directly into an integer-scaled physical
-/// surface. `fb` must contain exactly `SCREEN_W*scale × SCREEN_H*scale` RGBA8
-/// pixels. Geometry, clips and gradient/triangle sample points are evaluated
-/// at physical resolution; textures are sampled over that destination and
-/// font coverage accounts for the atlas's own raster density.
+/// surface. `fb` must contain exactly `viewport_width*scale ×
+/// viewport_height*scale` RGBA8 pixels. Geometry, clips and gradient/triangle
+/// sample points are evaluated at physical resolution; textures are sampled
+/// over that destination and font coverage accounts for the atlas's own raster
+/// density.
 /// `ui` supplies font atlases and textures. The framebuffer is cleared to
 /// opaque black first (the PSP host clears the draw buffer the same way).
 pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
@@ -147,8 +149,10 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
         "render scale must be 1 through 4"
     );
     let scale = scale as i32;
-    let width = SCREEN_W as i32 * scale;
-    let height = SCREEN_H as i32 * scale;
+    let (viewport_w, viewport_h) = ui.viewport();
+    let width = viewport_w as i32 * scale;
+    let height = viewport_h as i32 * scale;
+    assert!(width > 0 && height > 0, "viewport must have positive dimensions");
     let expected = width as usize * height as usize * 4;
     assert_eq!(
         fb.len(),
@@ -714,11 +718,11 @@ mod tests {
     }
 
     fn framebuffer(scale: u32) -> Vec<u8> {
-        vec![0; SCREEN_W as usize * scale as usize * SCREEN_H as usize * scale as usize * 4]
+        vec![0; spec::SCREEN_W as usize * scale as usize * spec::SCREEN_H as usize * scale as usize * 4]
     }
 
     fn rgba(fb: &[u8], scale: u32, x: usize, y: usize) -> [u8; 4] {
-        let width = SCREEN_W as usize * scale as usize;
+        let width = spec::SCREEN_W as usize * scale as usize;
         let offset = (y * width + x) * 4;
         fb[offset..offset + 4].try_into().unwrap()
     }
@@ -750,6 +754,15 @@ mod tests {
         render(&ui, &words, &mut legacy);
         render_scaled(&ui, &words, &mut scaled, 1);
         assert_eq!(legacy, scaled);
+    }
+
+    #[test]
+    fn custom_viewport_controls_framebuffer_dimensions() {
+        let mut ui = Ui::new();
+        ui.set_viewport(7.0, 5.0);
+        let mut fb = vec![0; 7 * 2 * 5 * 2 * 4];
+        render_scaled(&ui, &[], &mut fb, 2);
+        assert!(fb.chunks_exact(4).all(|pixel| pixel == [0, 0, 0, 255]));
     }
 
     #[test]
