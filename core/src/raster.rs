@@ -24,6 +24,11 @@
 //! which is exactly a little-endian ABGR u32 (0xAABBGGRR), the spec color
 //! format, so channel bytes map 1:1. The buffer is treated as opaque: the
 //! destination alpha is always written back as 255.
+//!
+//! [`render_scaled_argb`] emits the same pixels as A,R,G,B bytes instead —
+//! the byte order the ESP32-P4 PPA SRM consumes as ARGB8888. That lets the
+//! ESP firmware present the framebuffer without a per-frame reorder pass:
+//! byte placement is fused into the pixel writes, so it costs nothing extra.
 
 use crate::spec::{self, draw_op};
 use crate::{TexView, Ui};
@@ -80,14 +85,27 @@ fn channels(color: u32) -> (u32, u32, u32, u32) {
 
 /// src-over blend one pixel (integer, round-to-nearest). Caller guarantees
 /// (x, y) inside the framebuffer. Destination treated as opaque.
+/// ARGB=false writes bytes [R,G,B,A] (spec layout, golden-pinned);
+/// ARGB=true writes [A,R,G,B] for the ESP32-P4 PPA. Only byte placement
+/// differs — the blend math and the opaque destination are identical.
 #[inline]
-fn blend_px(fb: &mut [u8], stride: i32, x: i32, y: i32, r: u32, g: u32, b: u32, a: u32) {
+fn blend_px<const ARGB: bool>(
+    fb: &mut [u8],
+    stride: i32,
+    x: i32,
+    y: i32,
+    r: u32,
+    g: u32,
+    b: u32,
+    a: u32,
+) {
     let o = ((y * stride + x) * 4) as usize;
+    let (ri, gi, bi, ai) = if ARGB { (1, 2, 3, 0) } else { (0, 1, 2, 3) };
     if a >= 255 {
-        fb[o] = r as u8;
-        fb[o + 1] = g as u8;
-        fb[o + 2] = b as u8;
-        fb[o + 3] = 255;
+        fb[o + ri] = r as u8;
+        fb[o + gi] = g as u8;
+        fb[o + bi] = b as u8;
+        fb[o + ai] = 255;
         return;
     }
     if a == 0 {
@@ -95,21 +113,21 @@ fn blend_px(fb: &mut [u8], stride: i32, x: i32, y: i32, r: u32, g: u32, b: u32, 
     }
     let ia = 255 - a;
     let mix = |s: u32, d: u8| ((s * a + d as u32 * ia + 127) / 255) as u8;
-    fb[o] = mix(r, fb[o]);
-    fb[o + 1] = mix(g, fb[o + 1]);
-    fb[o + 2] = mix(b, fb[o + 2]);
-    fb[o + 3] = 255;
+    fb[o + ri] = mix(r, fb[o + ri]);
+    fb[o + gi] = mix(g, fb[o + gi]);
+    fb[o + bi] = mix(b, fb[o + bi]);
+    fb[o + ai] = 255;
 }
 
 /// Fill an already-clipped span rect with one flat color.
-fn fill_rect(fb: &mut [u8], stride: i32, c: Clip, color: u32) {
+fn fill_rect<const ARGB: bool>(fb: &mut [u8], stride: i32, c: Clip, color: u32) {
     let (r, g, b, a) = channels(color);
     if a == 0 {
         return;
     }
     for y in c.y0..c.y1 {
         for x in c.x0..c.x1 {
-            blend_px(fb, stride, x, y, r, g, b, a);
+            blend_px::<ARGB>(fb, stride, x, y, r, g, b, a);
         }
     }
 }
@@ -144,6 +162,19 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
 /// `ui` supplies font atlases and textures. The framebuffer is cleared to
 /// opaque black first (the PSP host clears the draw buffer the same way).
 pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
+    render_scaled_impl::<false>(ui, words, fb, scale);
+}
+
+/// Same as [`render_scaled`] but emits A,R,G,B bytes per pixel — the in-memory
+/// order the ESP32-P4 PPA SRM expects for ARGB8888 input. Byte-identical to
+/// shuffling the RGBA output, but fused into the rasterizer so the firmware
+/// skips its per-frame reorder copy. Output determinism matches the RGBA path
+/// pixel-for-pixel; only the byte placement differs.
+pub fn render_scaled_argb(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
+    render_scaled_impl::<true>(ui, words, fb, scale);
+}
+
+fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
     assert!(
         (1..=MAX_RENDER_SCALE).contains(&scale),
         "render scale must be 1 through 4"
@@ -165,12 +196,19 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
         x1: width,
         y1: height,
     };
-    // Clear: opaque black.
+    // Clear: opaque black (alpha first in ARGB mode).
     for px in fb.chunks_exact_mut(4) {
-        px[0] = 0;
-        px[1] = 0;
-        px[2] = 0;
-        px[3] = 255;
+        if ARGB {
+            px[0] = 255;
+            px[1] = 0;
+            px[2] = 0;
+            px[3] = 0;
+        } else {
+            px[0] = 0;
+            px[1] = 0;
+            px[2] = 0;
+            px[3] = 255;
+        }
     }
 
     let mut stack: [Clip; 32] = [screen; 32];
@@ -193,7 +231,7 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
                     y1: y + h,
                 });
                 if c.x0 < c.x1 && c.y0 < c.y1 {
-                    fill_rect(fb, width, c, words[i + 3]);
+                    fill_rect::<ARGB>(fb, width, c, words[i + 3]);
                 }
                 i += 4;
             }
@@ -203,7 +241,7 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
                 }
                 let (x, y) = xy(words[i + 1], scale);
                 let (w, h) = wh(words[i + 2], scale);
-                grad_rect(
+                grad_rect::<ARGB>(
                     fb,
                     width,
                     clip,
@@ -227,7 +265,7 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
                 if i + 3 + 2 * n > words.len() {
                     return;
                 }
-                glyph_run(
+                glyph_run::<ARGB>(
                     ui,
                     fb,
                     width,
@@ -243,7 +281,7 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
                 if i + 9 > words.len() {
                     return;
                 }
-                tex_quad(ui, fb, width, scale, clip, &words[i + 1..i + 9]);
+                tex_quad::<ARGB>(ui, fb, width, scale, clip, &words[i + 1..i + 9]);
                 i += 9;
             }
             draw_op::SCISSOR => {
@@ -277,14 +315,14 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
                 if i + 7 > words.len() {
                     return;
                 }
-                tri(fb, width, scale, clip, &words[i + 1..i + 7]);
+                tri::<ARGB>(fb, width, scale, clip, &words[i + 1..i + 7]);
                 i += 7;
             }
             draw_op::TEX_TRI => {
                 if i + 12 > words.len() {
                     return;
                 }
-                tex_tri(ui, fb, width, scale, clip, &words[i + 1..i + 12]);
+                tex_tri::<ARGB>(ui, fb, width, scale, clip, &words[i + 1..i + 12]);
                 i += 12;
             }
             // The op set is closed per DrawList version; anything else means
@@ -297,7 +335,7 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
 // ---- GRAD_RECT: per-axis gouraud lerp ---------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-fn grad_rect(
+fn grad_rect<const ARGB: bool>(
     fb: &mut [u8],
     stride: i32,
     clip: Clip,
@@ -336,7 +374,7 @@ fn grad_rect(
                 continue;
             }
             for py in c.y0..c.y1 {
-                blend_px(fb, stride, px, py, r, g, bb, al);
+                blend_px::<ARGB>(fb, stride, px, py, r, g, bb, al);
             }
         }
     } else {
@@ -349,7 +387,7 @@ fn grad_rect(
                 continue;
             }
             for px in c.x0..c.x1 {
-                blend_px(fb, stride, px, py, r, g, bb, al);
+                blend_px::<ARGB>(fb, stride, px, py, r, g, bb, al);
             }
         }
     }
@@ -364,7 +402,7 @@ fn orient(ax: i64, ay: i64, bx: i64, by: i64, px: i64, py: i64) -> i64 {
     (bx - ax) * (py - ay) - (by - ay) * (px - ax)
 }
 
-fn tri(fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32]) {
+fn tri<const ARGB: bool>(fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32]) {
     let (x0, y0) = xy(p[0], scale);
     let (x1, y1) = xy(p[1], scale);
     let (x2, y2) = xy(p[2], scale);
@@ -406,13 +444,13 @@ fn tri(fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32]) {
                 continue;
             }
             if flat {
-                blend_px(fb, stride, px, py, r0, g0, b0, a0);
+                blend_px::<ARGB>(fb, stride, px, py, r0, g0, b0, a0);
             } else {
                 // Integer barycentric interpolation, round-to-nearest.
                 let mix = |v0: u32, v1: u32, v2: u32| {
                     ((v0 as i64 * w0 + v1 as i64 * w1 + v2 as i64 * w2 + half) / area) as u32
                 };
-                blend_px(
+                blend_px::<ARGB>(
                     fb,
                     stride,
                     px,
@@ -439,7 +477,7 @@ fn coverage_index(destination_px: i32, output_scale: i32, atlas_density: i32, li
 }
 
 #[allow(clippy::too_many_arguments)]
-fn glyph_run(
+fn glyph_run<const ARGB: bool>(
     ui: &Ui,
     fb: &mut [u8],
     stride: i32,
@@ -484,7 +522,7 @@ fn glyph_run(
                 let cx = coverage_index(px - gx, output_scale, atlas_density, coverage_w);
                 let cov = row[cx] as u32;
                 if cov != 0 {
-                    blend_px(fb, stride, px, py, r, g, b, (a * cov + 127) / 255);
+                    blend_px::<ARGB>(fb, stride, px, py, r, g, b, (a * cov + 127) / 255);
                 }
             }
         }
@@ -569,7 +607,14 @@ fn sample_linear(view: &TexView, u: f32, v: f32) -> Option<(u32, u32, u32, u32)>
 // ---- TEX_TRI: barycentric textured triangle (affine UV; nearest, or integer
 //      bilinear when the texture carries the linear flag) --------------------
 
-fn tex_tri(ui: &Ui, fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32]) {
+fn tex_tri<const ARGB: bool>(
+    ui: &Ui,
+    fb: &mut [u8],
+    stride: i32,
+    scale: i32,
+    clip: Clip,
+    p: &[u32],
+) {
     let handle = p[0] as i32;
     let (x0, y0) = xy(p[1], scale);
     let (u0, v0) = (f32::from_bits(p[2]), f32::from_bits(p[3]));
@@ -639,7 +684,7 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32
                 b = (b * mb + 127) / 255;
                 a = (a * ma + 127) / 255;
             }
-            blend_px(fb, stride, px, py, r, g, b, a);
+            blend_px::<ARGB>(fb, stride, px, py, r, g, b, a);
         }
     }
 }
@@ -647,7 +692,14 @@ fn tex_tri(ui: &Ui, fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32
 // ---- TEX_QUAD: textured rect (nearest, or integer bilinear when the texture
 //      carries the linear flag) --------------------------------------------------------
 
-fn tex_quad(ui: &Ui, fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32]) {
+fn tex_quad<const ARGB: bool>(
+    ui: &Ui,
+    fb: &mut [u8],
+    stride: i32,
+    scale: i32,
+    clip: Clip,
+    p: &[u32],
+) {
     let handle = p[0] as i32;
     let (x, y) = xy(p[1], scale);
     let (w, h) = wh(p[2], scale);
@@ -700,7 +752,7 @@ fn tex_quad(ui: &Ui, fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u3
                 b = (b * mb + 127) / 255;
                 a = (a * ma + 127) / 255;
             }
-            blend_px(fb, stride, px, py, r, g, b, a);
+            blend_px::<ARGB>(fb, stride, px, py, r, g, b, a);
         }
     }
 }
@@ -754,6 +806,47 @@ mod tests {
         render(&ui, &words, &mut legacy);
         render_scaled(&ui, &words, &mut scaled, 1);
         assert_eq!(legacy, scaled);
+    }
+
+    #[test]
+    fn argb_output_is_rgba_with_channels_reordered() {
+        let ui = Ui::new();
+        let words = vec![
+            draw_op::RECT,
+            xy_word(3, 4),
+            wh_word(7, 5),
+            0xff33_2211,
+            // Semi-transparent rect exercises the dst-read blend path, which
+            // must read A,R,G,B offsets in ARGB mode.
+            draw_op::RECT,
+            xy_word(4, 5),
+            wh_word(5, 3),
+            0x8033_2211,
+            draw_op::GRAD_RECT,
+            xy_word(12, 4),
+            wh_word(8, 6),
+            0xff00_0000,
+            0xffff_ffff,
+            spec::GradDir::ToRight as u32,
+            draw_op::TRI,
+            xy_word(24, 4),
+            xy_word(30, 10),
+            xy_word(20, 10),
+            0xff00_00ff,
+            0xff00_ff00,
+            0xffff_0000,
+        ];
+        let mut rgba_fb = framebuffer(1);
+        let mut argb_fb = framebuffer(1);
+        render_scaled(&ui, &words, &mut rgba_fb, 1);
+        render_scaled_argb(&ui, &words, &mut argb_fb, 1);
+        for px in 0..rgba_fb.len() / 4 {
+            let o = px * 4;
+            assert_eq!(argb_fb[o], rgba_fb[o + 3], "alpha at pixel {px}");
+            assert_eq!(argb_fb[o + 1], rgba_fb[o], "red at pixel {px}");
+            assert_eq!(argb_fb[o + 2], rgba_fb[o + 1], "green at pixel {px}");
+            assert_eq!(argb_fb[o + 3], rgba_fb[o + 2], "blue at pixel {px}");
+        }
     }
 
     #[test]
