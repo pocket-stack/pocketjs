@@ -111,6 +111,7 @@ function makeMockHost(): MockHost {
   return {
     ops,
     kind: "injected",
+    target: "injected",
     strict: true,
     calls,
     of(...names: string[]) {

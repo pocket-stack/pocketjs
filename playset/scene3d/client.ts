@@ -329,6 +329,31 @@ export class Scene3D {
    * animate (environments, track furniture). Nodes created later are
    * unaffected.
    */
+  /**
+   * Freeze `root`'s subtree (or the whole scene) — a promise that none of
+   * these transforms will change again, which lets the host merge scenery that
+   * shares geometry and material into far fewer draw calls.
+   *
+   * STRICTLY STRONGER THAN `markStatic`, which only says the GUEST stops
+   * diffing: a car driven by the native sim is static in that sense and must
+   * NOT be frozen, or it would bake in place. Freezing implies markStatic.
+   *
+   * Ported environment factories call this on their own scenery, so a game
+   * built on them inherits the batching without knowing it exists.
+   */
+  freeze(root?: SceneNode): void {
+    this.markStatic(root);
+    const ops = this.__ops;
+    if (!ops?.freeze) return;
+    const ids: number[] = [];
+    for (const n of this.nodes) {
+      if (!n.__alive) continue;
+      if (root && !isDescendantOf(n, root)) continue;
+      ids.push(n.__id);
+    }
+    if (ids.length > 0) ops.freeze(Int32Array.from(ids), ids.length);
+  }
+
   markStatic(root?: SceneNode): void {
     this.staticPending = true;
     if (!root) {
@@ -416,6 +441,15 @@ export class Scene3D {
     this.dynamic.length = 0;
     this.pools.length = 0;
   }
+}
+
+/** `node` is `root` or sits under it. */
+function isDescendantOf(node: SceneNode, root: SceneNode): boolean {
+  if (node === root) return true;
+  for (let p = node.parent; p; p = p.parent) {
+    if (p === root) return true;
+  }
+  return false;
 }
 
 // Scratch Vector3 that carries (fovY, znear, zfar) through the pose differ.

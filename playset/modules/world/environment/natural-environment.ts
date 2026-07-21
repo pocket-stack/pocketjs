@@ -205,6 +205,12 @@ export class NaturalEnvironment {
   create(): this {
     this.createTerrain();
     this.createForest();
+    // Terrain, trees, rocks and grass are placed once and never move, so tell
+    // the host it may merge them. PLAYSET ADDITION (no GameBlocks
+    // counterpart): scenery is where the draw calls are, and declaring it here
+    // means a game inherits the batching from the environment it composes
+    // rather than hand-optimizing its own scene. See Scene3D.freeze.
+    this.scene.freeze(this.group);
     return this;
   }
 

@@ -13,6 +13,7 @@
 // arrays the mount ships across in one op. The environment never learns which
 // path it is on.
 
+import type { VecLike } from "../modules/math/world-basis.ts";
 import type {
   BallDesc,
   ColliderHandle,
@@ -22,6 +23,11 @@ import type {
   TerrainLike,
 } from "../modules/physics/collision-world.ts";
 import { COLLIDER_KIND, COLLIDER_SOLID, COLLIDER_STRIDE, COLLIDER_WALKABLE } from "./ops.ts";
+
+/** VecLike components are optional; a missing axis is 0, as CollisionWorld reads them. */
+function num(v: number | undefined): number {
+  return v ?? 0;
+}
 
 /** Yaw-only planar heading of a quaternion, matching CollisionWorld v1. */
 function planarYaw(q: { x: number; y: number; z: number; w: number } | undefined): number {
@@ -53,11 +59,14 @@ export class ColliderSink {
   }
 
   addCuboid(desc: CuboidDesc): ColliderHandle {
-    return this.push(COLLIDER_KIND.cuboid, desc.position, [
-      Math.abs(desc.halfExtents.x),
-      Math.abs(desc.halfExtents.y),
-      Math.abs(desc.halfExtents.z),
-    ], planarYaw(desc.quaternion), desc);
+    const h = desc.halfExtents;
+    return this.push(
+      COLLIDER_KIND.cuboid,
+      desc.position,
+      [Math.abs(num(h.x)), Math.abs(num(h.y)), Math.abs(num(h.z))],
+      planarYaw(desc.quaternion),
+      desc,
+    );
   }
 
   addCylinder(desc: CylinderDesc): ColliderHandle {
@@ -92,7 +101,7 @@ export class ColliderSink {
 
   private push(
     kind: number,
-    position: { x: number; y: number; z: number },
+    position: VecLike,
     dims: [number, number, number],
     yaw: number,
     opts: { solid?: boolean; walkable?: boolean },
@@ -101,7 +110,16 @@ export class ColliderSink {
     if (opts.solid ?? true) flags |= COLLIDER_SOLID;
     if (opts.walkable ?? false) flags |= COLLIDER_WALKABLE;
     this.kinds.push(kind);
-    this.data.push(position.x, position.y, position.z, dims[0], dims[1], dims[2], yaw, flags);
+    this.data.push(
+      num(position.x),
+      num(position.y),
+      num(position.z),
+      dims[0],
+      dims[1],
+      dims[2],
+      yaw,
+      flags,
+    );
     if (this.data.length !== this.kinds.length * COLLIDER_STRIDE) {
       throw new Error("ColliderSink: collider stride drift");
     }

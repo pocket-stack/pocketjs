@@ -32,6 +32,15 @@
 //! enqueues anything (see `composite`) — the same test the desktop renderer
 //! runs, and the single biggest lever on this surface: rally goes from 707
 //! submissions / 23,585 triangles a frame to ~66 / ~6,400.
+//!
+//! What culling could not fix is the SHAPE of what survives: pointing the
+//! camera down rally's circuit leaves 380-470 fence pieces in frustum, each
+//! its own matrix, light state and `sceGuDrawArray`, against 72 parked facing
+//! open ground. Merged static batches (pocket-scene3d's batch.rs) close that
+//! gap — the store hands back one pre-transformed mesh per (draw state,
+//! spatial cell), `composite` bakes it through `bake_geom` like any other
+//! geom, draws it with an IDENTITY model matrix, and skips the nodes it
+//! subsumes. Same order, same tests as the desktop renderer.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -248,6 +257,20 @@ enum Blend {
     Additive,
 }
 
+impl Blend {
+    /// A batch carries a material handle like any node does, so the two paths
+    /// read the flags through one function rather than two copies of it.
+    fn of(flags: u32) -> Blend {
+        if flags & mat_flags::ADDITIVE != 0 {
+            Blend::Additive
+        } else if flags & mat_flags::TRANSPARENT != 0 {
+            Blend::Alpha
+        } else {
+            Blend::Opaque
+        }
+    }
+}
+
 struct Draw {
     world: Mat4,
     /// Resolved at collect time — the geom registry is not touched between
@@ -344,6 +367,11 @@ impl Frustum {
 /// the scissor — the caller (ge.rs) re-applies its scissor stack.
 pub unsafe fn composite(scene: i32, x: i32, y: i32, w: i32, h: i32) {
     let store = crate::scene3d::store();
+    // Merge frozen scenery before anything reads the scene. Idempotent, and
+    // the only mutable touch of the store in this pass — after it the whole
+    // composite runs off a shared reborrow, as it always did.
+    store.ensure_static_batches(scene);
+    let store: &Store = store;
     let Some(sc) = store.scene(scene) else { return };
     // Clamp to the screen (the core's CPU clip stage guarantees this already).
     let x0 = x.clamp(0, SCREEN_WIDTH as i32);
@@ -388,6 +416,49 @@ pub unsafe fn composite(scene: i32, x: i32, y: i32, w: i32, h: i32) {
     draws.clear();
     blended.clear();
     stack.clear();
+
+    // -- merged static scenery ------------------------------------------------
+    //
+    // A batch geom is minted by the batcher AFTER the guest's geom ops have
+    // run, so nothing baked it on the way in: bake on first sight, exactly
+    // like js_geom_* does for guest geometry. Ids are never reused, so this
+    // costs one bake per batch for the life of the app. It has to finish
+    // before any `*const BakedGeom` is taken below — inserting into a BTreeMap
+    // moves the values already in it.
+    for b in store.static_batches(scene) {
+        if !geoms().contains_key(&b.geom) {
+            bake_geom(b.geom, store);
+        }
+    }
+    // Identity model matrix (batch vertices are world-space already), the
+    // batch's own bounding sphere through the same frustum test, and the same
+    // opaque/blended split: a batch is a normal draw that happens to cover a
+    // whole cell of the map.
+    for b in store.static_batches(scene) {
+        if frustum.rejects(b.bound_center, b.bound_radius) {
+            continue;
+        }
+        let Some(baked) = geoms().get(&b.geom) else { continue };
+        let Some(mat) = store.material(b.mat) else { continue };
+        let blend = Blend::of(mat.flags);
+        let draw = Draw {
+            world: Mat4::IDENTITY,
+            baked: baked as *const BakedGeom,
+            color: abgr_mul(mat.color, b.tint),
+            flags: mat.flags,
+            blend,
+            // The batch's centre, not its (identity) origin: the blended
+            // ordering is a distance sort, and a world-space batch's origin is
+            // wherever the scene's origin happens to sit.
+            depth: (b.bound_center - cam.p).dot(fwd),
+        };
+        if blend == Blend::Opaque {
+            draws.push(draw);
+        } else {
+            blended.push(draw);
+        }
+    }
+
     // The stack carries a SLOT into `worlds` rather than a copy of the parent
     // matrix: rally hangs ~260 barrier posts off one group, which used to mean
     // 260 copies of the same 64-byte Mat4 pushed and popped. One write, N
@@ -414,6 +485,12 @@ pub unsafe fn composite(scene: i32, x: i32, y: i32, w: i32, h: i32) {
                 stack.push((c, slot));
             }
         }
+        // A batch already drew this node's mesh. Its children are NOT implied
+        // — freeze is per node, and a frozen post can carry a moving flag — so
+        // this skips the draw only, after the descent above.
+        if store.node_batched(id) {
+            continue;
+        }
         if node.geom == 0 || node.mat == 0 {
             continue; // bare group
         }
@@ -437,13 +514,7 @@ pub unsafe fn composite(scene: i32, x: i32, y: i32, w: i32, h: i32) {
             continue;
         }
         let Some(mat) = store.material(node.mat) else { continue };
-        let blend = if mat.flags & mat_flags::ADDITIVE != 0 {
-            Blend::Additive
-        } else if mat.flags & mat_flags::TRANSPARENT != 0 {
-            Blend::Alpha
-        } else {
-            Blend::Opaque
-        };
+        let blend = Blend::of(mat.flags);
         let draw = Draw {
             world,
             baked: baked as *const BakedGeom,

@@ -145,6 +145,31 @@ export interface Scene3dOps {
    *  0xffffffff = none). Health flashes, team colors, fade-outs. */
   nodeSetTint(nodeId: number, color: number): void;
 
+  /**
+   * Freeze nodes: promise the host that these world transforms will never
+   * change again, so it may bake them into merged geometry.
+   *
+   * WHY IT EXISTS (measured, real PSP): scenery is where the draw calls are —
+   * rally's fence alone is ~270 posts plus ~270 rails, each its own draw with
+   * its own matrix and material state. With frustum culling in place the frame
+   * is GE-bound and the submitted draw count swings 6-7x with camera direction
+   * (72 parked, 380-470 looking down the circuit), which is what a player feels
+   * as a stutter in some parts of the track. Frozen nodes that share geometry,
+   * material and tint get merged per spatial cell.
+   *
+   * THE PROMISE IS LOAD-BEARING. A frozen node's transform is baked into
+   * vertices; moving it afterwards changes nothing on screen. This is strictly
+   * stronger than the guest-side `Scene3D.markStatic`, which only says the
+   * GUEST will stop diffing a node — a sim-driven car is static in that sense
+   * and must never be frozen.
+   *
+   * Batched, so freezing a 550-node environment costs one op rather than 550.
+   *
+   * OPTIONAL, like everything else on this surface: a host that does not batch
+   * simply omits it and the scene draws node by node.
+   */
+  freeze?(ids: Int32Array, count: number): void;
+
   // -- environment (per scene) -------------------------------------------------
   /** Directional sun: direction the light TRAVELS (normalized by host). */
   sun(scene: number, dx: number, dy: number, dz: number, color: number): void;

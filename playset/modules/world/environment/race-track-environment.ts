@@ -289,6 +289,10 @@ export class RaceTrackEnvironment {
     this.naturalEnvironment.create();
     this.createCheckpointMarkers();
     this.createBarriers();
+    // Gates, posts and rails are placed once and never move. The fence alone
+    // is ~540 nodes sharing two geometries — exactly what the host's static
+    // batching exists for (Scene3D.freeze).
+    this.scene.freeze(this.group);
     return this;
   }
 

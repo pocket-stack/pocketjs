@@ -18,6 +18,8 @@ use alloc::vec::Vec;
 
 use glam::{Mat4, Quat, Vec3};
 
+use crate::batch::{self, BatchKey, MAX_BATCH_VERTS, MAX_GEOM_VERTS, StaticBatch};
+
 /// Scalar float shims: std intrinsics on the desktop build (byte-identical
 /// to the pre-no_std crate), libm on no_std (PSP).
 mod fmath {
@@ -106,6 +108,14 @@ pub struct Node {
     pub mat: i32,
     /// u32 ABGR; 0xffffffff = no tint.
     pub tint: u32,
+    /// Set by `freeze_nodes`: the guest promised this world transform is
+    /// final, so the batcher may bake it into merged geometry (batch.rs).
+    /// Store-owned bookkeeping — read it, don't write it.
+    pub frozen: bool,
+    /// Set by `ensure_static_batches` when a merged batch already draws this
+    /// node, so the renderer's per-node walk must skip it. Store-owned; read
+    /// it through `Store::node_batched` (this field IS that O(1) answer).
+    pub batched: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -175,6 +185,23 @@ impl Default for Env {
     }
 }
 
+/// One scene's static-batch generation (see batch.rs for the why).
+///
+/// Kept out of `Scene` on purpose: this is derived state the host rebuilds,
+/// not part of the op-stream scene the guest describes.
+#[derive(Default)]
+struct SceneBatches {
+    batches: Vec<StaticBatch>,
+    /// The geom ids `batches` own. Freed wholesale on the next rebuild —
+    /// without this, re-freezing a scene leaks a merged copy every time.
+    geoms: Vec<i32>,
+    /// Node ids currently covered by `batches`, so a rebuild can clear their
+    /// `batched` flags without walking the whole scene.
+    members: Vec<i32>,
+    /// Something changed that could alter membership; rebuild on next ensure.
+    dirty: bool,
+}
+
 pub struct Scene {
     pub id: i32,
     /// Root-level child node ids in creation order.
@@ -199,6 +226,13 @@ pub struct Store {
     /// (ui node id, scene-or-0) in call order — the host drains these into
     /// PROP.scene3d writes on the ui core each frame.
     binding_events: Vec<(i32, i32)>,
+    /// Static-batch generation per scene; an entry exists only once something
+    /// in that scene has been frozen.
+    batches: BTreeMap<i32, SceneBatches>,
+    /// True while ANY scene's batches are stale. `ensure_static_batches` runs
+    /// every frame from the renderers, so its early-out has to be one bool
+    /// load, not a map lookup.
+    batches_dirty: bool,
     next_scene: i32,
     next_node: i32,
     next_geom: i32,
@@ -284,6 +318,12 @@ impl Store {
 
     pub fn scene_destroy(&mut self, scene: i32) {
         let Some(sc) = self.scenes.remove(&scene) else { return };
+        // Merged geoms die with the scene that owns them.
+        if let Some(b) = self.batches.remove(&scene) {
+            for g in b.geoms {
+                self.geoms.remove(&g);
+            }
+        }
         // Reap every node in the scene (the per-scene set is implicit in
         // node.scene; walk from the roots).
         let mut stack = sc.root;
@@ -335,6 +375,8 @@ impl Store {
                 geom: 0,
                 mat: 0,
                 tint: 0xffff_ffff,
+                frozen: false,
+                batched: false,
             },
         );
         if parent_or_0 != 0 {
@@ -362,9 +404,10 @@ impl Store {
     }
 
     pub fn node_destroy(&mut self, id: i32) {
-        if !self.nodes.contains_key(&id) {
-            return;
-        }
+        let Some(scene) = self.nodes.get(&id).map(|n| n.scene) else { return };
+        // A batch that merged this node would keep drawing it after the
+        // destroy, so the scene's batches stop being trustworthy here.
+        self.invalidate_batches(scene);
         self.unlink(id);
         let mut stack = vec![id];
         while let Some(nid) = stack.pop() {
@@ -400,6 +443,9 @@ impl Store {
                 }
             }
         }
+        // Reparenting moves the whole subtree's world transforms, which is
+        // exactly what a baked batch assumed would never happen.
+        self.invalidate_batches(scene);
         self.unlink(id);
         self.nodes.get_mut(&id).unwrap().parent = parent_or_0;
         if parent_or_0 != 0 {
@@ -410,9 +456,18 @@ impl Store {
     }
 
     pub fn node_set_visible(&mut self, id: i32, on: bool) {
-        if let Some(node) = self.nodes.get_mut(&id) {
-            node.visible = on;
+        let Some(node) = self.nodes.get_mut(&id) else { return };
+        if node.visible == on {
+            return;
         }
+        node.visible = on;
+        let scene = node.scene;
+        // THE INVALIDATION RULE (see `invalidate_batches`): any visibility
+        // toggle rebuilds the whole scene's batches. A batched node inside a
+        // subtree that just went invisible would otherwise keep drawing —
+        // hiding a subtree is one bit that can silently un-hide 30 merged
+        // fence posts, and no cheaper rule survives that.
+        self.invalidate_batches(scene);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -442,6 +497,193 @@ impl Store {
             node.q = Quat::from_xyzw(b[4], b[5], b[6], b[7]);
             node.s = Vec3::new(b[8], b[9], b[10]);
         }
+    }
+
+    // ---- static geometry batching (see batch.rs for the whole rationale) ----
+
+    /// Freeze nodes: the guest promises these world transforms are final, so
+    /// the host may bake them into merged geometry.
+    ///
+    /// A frozen node must never move again — moving it afterwards changes
+    /// nothing on screen once it has been merged. Freezing is per node id and
+    /// does NOT descend into children: the guest sends every id it means (one
+    /// batched op for a 550-node environment, ops.ts `freeze`).
+    pub fn freeze_nodes(&mut self, ids: &[i32]) {
+        let mut touched = false;
+        for &id in ids {
+            let Some(node) = self.nodes.get_mut(&id) else { continue }; // dead handle: no-op
+            if node.frozen {
+                continue; // idempotent — a re-freeze must not force a rebuild
+            }
+            node.frozen = true;
+            let scene = node.scene;
+            // Minting the entry here is what arms invalidation for this scene:
+            // scenes that never freeze anything never pay for any of this.
+            self.batches.entry(scene).or_default().dirty = true;
+            touched = true;
+        }
+        if touched {
+            self.batches_dirty = true;
+        }
+    }
+
+    /// Rebuild `scene`'s static batches if freezing (or any invalidating op)
+    /// changed something since the last call. Renderers call this every frame:
+    /// when nothing changed it is one bool load and no allocation.
+    pub fn ensure_static_batches(&mut self, scene: i32) {
+        if !self.batches_dirty {
+            return;
+        }
+        match self.batches.get(&scene) {
+            Some(b) if b.dirty => {}
+            _ => return, // never frozen, or already current
+        }
+        self.rebuild_static_batches(scene);
+    }
+
+    /// The merged draws for `scene`: world-space geometry, identity model
+    /// matrix, bounding sphere for the renderer's existing frustum test.
+    pub fn static_batches(&self, scene: i32) -> &[StaticBatch] {
+        const NONE: &[StaticBatch] = &[];
+        self.batches.get(&scene).map_or(NONE, |b| &b.batches)
+    }
+
+    /// True when the renderer's per-node walk must SKIP this node because a
+    /// batch already draws it. One map lookup, no scan — the walk calls it for
+    /// every node of every frame.
+    pub fn node_batched(&self, id: i32) -> bool {
+        self.nodes.get(&id).is_some_and(|n| n.batched)
+    }
+
+    /// THE INVALIDATION RULE. Anything that can change what a batch would
+    /// contain — freeze, visibility toggle, destroy, reparent, meshSet, tint,
+    /// geomFree — marks the node's scene stale, and the next
+    /// `ensure_static_batches` rebuilds that scene from scratch. Coarse on
+    /// purpose: these are setup/teardown ops, while the per-frame op is
+    /// `write_poses`, which deliberately does NOT invalidate — freeze already
+    /// promised those transforms are final, so a pose write on a frozen node
+    /// is a broken promise, not a rebuild trigger.
+    ///
+    /// Scenes with no frozen nodes have no entry and are skipped entirely.
+    fn invalidate_batches(&mut self, scene: i32) {
+        if let Some(b) = self.batches.get_mut(&scene) {
+            b.dirty = true;
+            self.batches_dirty = true;
+        }
+    }
+
+    fn rebuild_static_batches(&mut self, scene: i32) {
+        // -- retire the previous generation ---------------------------------
+        // Freeing the old merged geoms here is what keeps repeated freezing
+        // from leaking a full copy of the scenery every rebuild.
+        let Some(entry) = self.batches.get_mut(&scene) else { return };
+        let old_geoms = core::mem::take(&mut entry.geoms);
+        let old_members = core::mem::take(&mut entry.members);
+        entry.batches = Vec::new();
+        entry.dirty = false;
+        for g in old_geoms {
+            self.geoms.remove(&g);
+        }
+        for id in old_members {
+            if let Some(n) = self.nodes.get_mut(&id) {
+                n.batched = false;
+            }
+        }
+
+        // -- collect candidates, top-down, exactly like the renderer walks ---
+        // Hidden subtrees are pruned here rather than tested per node, so
+        // "eligible" already means "the whole ancestor chain is visible".
+        let mut groups: BTreeMap<BatchKey, Vec<(i32, Mat4)>> = BTreeMap::new();
+        if let Some(sc) = self.scenes.get(&scene) {
+            let mut stack: Vec<(i32, Mat4)> =
+                sc.root.iter().rev().map(|&id| (id, Mat4::IDENTITY)).collect();
+            while let Some((id, parent_world)) = stack.pop() {
+                let Some(node) = self.nodes.get(&id) else { continue };
+                if !node.visible {
+                    continue;
+                }
+                let world =
+                    parent_world * Mat4::from_scale_rotation_translation(node.s, node.q, node.p);
+                for &c in node.children.iter().rev() {
+                    stack.push((c, world));
+                }
+                if !node.frozen || node.geom == 0 || node.mat == 0 {
+                    continue;
+                }
+                let Some(mesh) = self.geoms.get(&node.geom) else { continue }; // dangling
+                if mesh.indices.is_empty() || mesh.positions.len() > MAX_GEOM_VERTS {
+                    continue; // draws nothing, or too big to be worth copying
+                }
+                // Keyed on the node's WORLD position: the cell a post stands
+                // in, not the cell its parent group's origin sits in.
+                let key = BatchKey::new(node.geom, node.mat, node.tint, world.w_axis.truncate());
+                groups.entry(key).or_default().push((id, world));
+            }
+        }
+
+        // -- merge, in sorted key order so the result is reproducible --------
+        let mut batches: Vec<StaticBatch> = Vec::new();
+        let mut geoms: Vec<i32> = Vec::new();
+        let mut members: Vec<i32> = Vec::new();
+        let mut used = 0usize;
+        for (key, group) in groups {
+            if group.len() < 2 {
+                continue; // one member saves no draw call and still costs a copy
+            }
+            let Some(src) = self.geoms.get(&key.geom) else { continue };
+            let verts = src.positions.len() * group.len();
+            if used + verts > MAX_BATCH_VERTS {
+                // Stop rather than skip-and-continue: the batch set is then a
+                // prefix of one stable order, which is much easier to reason
+                // about (and to test) than a packing that depends on which
+                // groups happened to fit.
+                break;
+            }
+            let mut positions = Vec::with_capacity(verts);
+            let mut normals = Vec::with_capacity(verts);
+            let mut colors = Vec::with_capacity(verts);
+            let mut indices = Vec::with_capacity(src.indices.len() * group.len());
+            for (_, world) in &group {
+                batch::append_transformed(
+                    &mut positions,
+                    &mut normals,
+                    &mut colors,
+                    &mut indices,
+                    *world,
+                    &src.positions,
+                    &src.normals,
+                    src.colors.as_deref(),
+                    &src.indices,
+                );
+            }
+            used += verts;
+            let (bound_center, bound_radius) = batch::bounds_of(&positions);
+            // A regular geom id: every host bakes/uploads it through the same
+            // path as any other mesh, and ids are never reused, so their
+            // upload caches stay valid.
+            let geom = self.add_geom(CpuMesh {
+                positions,
+                normals,
+                colors: Some(colors),
+                indices,
+            });
+            batches.push(StaticBatch { geom, mat: key.mat, tint: key.tint, bound_center, bound_radius });
+            geoms.push(geom);
+            members.extend(group.iter().map(|&(id, _)| id));
+        }
+        for &id in &members {
+            if let Some(n) = self.nodes.get_mut(&id) {
+                n.batched = true;
+            }
+        }
+        let entry = self.batches.entry(scene).or_default();
+        entry.batches = batches;
+        entry.geoms = geoms;
+        entry.members = members;
+        entry.dirty = false;
+        // Other scenes may still be waiting; only clear the global flag when
+        // none of them is.
+        self.batches_dirty = self.batches.values().any(|b| b.dirty);
     }
 
     // ---- geometry (creation always succeeds; tessellated up front) -----------
@@ -496,6 +738,13 @@ impl Store {
 
     pub fn geom_free(&mut self, id: i32) {
         self.geoms.remove(&id); // nodes still referencing it draw nothing
+        // A merged batch holds a COPY, so freeing the source would not stop it
+        // drawing. Geom ids carry no scene, so every batched scene rebuilds;
+        // geomFree is a teardown-time op, not a per-frame one.
+        for b in self.batches.values_mut() {
+            b.dirty = true;
+        }
+        self.batches_dirty |= !self.batches.is_empty();
     }
 
     // ---- materials -------------------------------------------------------------
@@ -520,18 +769,24 @@ impl Store {
     // ---- mesh attachment ----------------------------------------------------------
 
     pub fn mesh_set(&mut self, node_id: i32, geom_id: i32, mat_id: i32) {
-        if let Some(node) = self.nodes.get_mut(&node_id) {
-            // Ids are stored verbatim (no liveness check): geomFree semantics
-            // say a dangling reference draws nothing, it is not an error.
-            node.geom = geom_id;
-            node.mat = if geom_id == 0 { 0 } else { mat_id }; // geom 0 clears
-        }
+        let Some(node) = self.nodes.get_mut(&node_id) else { return };
+        // Ids are stored verbatim (no liveness check): geomFree semantics
+        // say a dangling reference draws nothing, it is not an error.
+        node.geom = geom_id;
+        node.mat = if geom_id == 0 { 0 } else { mat_id }; // geom 0 clears
+        let scene = node.scene;
+        // geom/mat/tint ARE the batch key: changing them changes grouping.
+        self.invalidate_batches(scene);
     }
 
     pub fn node_set_tint(&mut self, node_id: i32, color: u32) {
-        if let Some(node) = self.nodes.get_mut(&node_id) {
-            node.tint = color;
+        let Some(node) = self.nodes.get_mut(&node_id) else { return };
+        if node.tint == color {
+            return;
         }
+        node.tint = color;
+        let scene = node.scene;
+        self.invalidate_batches(scene);
     }
 
     // ---- environment -----------------------------------------------------------------

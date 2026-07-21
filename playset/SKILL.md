@@ -49,6 +49,36 @@ and as the target vocabulary when porting Three.js mini-games to Pocket.
 4. Make the original deterministic FIRST (seeded PRNG, fixed step) — a small
    diff — then record input-tape goldens on both sides and compare state
    traces (host-sim on the Pocket side).
+5. **Say what never moves.** Call `scene.freeze(root)` on scenery once it is
+   built. That is the whole performance contract for a port — see below.
+
+## Performance you get for free (and the one line that buys it)
+
+A port should not need hand tuning per game. Two mechanisms do the work, and
+both are driven by declarations rather than by optimizing a particular scene:
+
+- `scene.freeze(root)` — a promise that these transforms never change again.
+  The host merges frozen nodes that share geometry, material and tint into one
+  draw per spatial cell. MEASURED on a real PSP: rally's fence is ~270 posts
+  plus ~270 rails, and with frustum culling in place the frame is GE-bound, so
+  the submitted draw count swings 6-7x with camera direction (72 parked,
+  380-470 looking down the circuit) — which a player feels as a stutter on
+  parts of the track. **The ported environment factories already freeze their
+  own scenery**, so a game composed from `NaturalEnvironment` /
+  `RaceTrackEnvironment` inherits this without writing anything.
+- `scene.markStatic(root?)` — strictly weaker, and about the GUEST only: it
+  stops the per-frame pose differ from walking nodes the guest no longer
+  writes. A car driven by the native sim is `markStatic` but must NEVER be
+  `freeze`d, or it bakes in place.
+
+If you build scenery yourself instead of via the ported environments, freeze it
+at the end of your builder — the same place the environments do it — rather
+than leaving it to the game. Scenery knows it is scenery.
+
+Two more things that are engine-side and automatic, listed so you do not
+re-derive them: large meshes are split for culling (`createTerrainMesh`'s
+`tiles`), and the native sim writes visual poses straight into the store, so
+a bound car costs no per-frame JS at all.
 
 ## Three.js → playset mapping
 

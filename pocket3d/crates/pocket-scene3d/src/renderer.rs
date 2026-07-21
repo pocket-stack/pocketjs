@@ -6,6 +6,14 @@
 //! Geometry uploads are cached by geom id; ids are never reused (ops.ts), so
 //! entries never go stale — a freed geom simply stops being referenced (its
 //! cache entry is dropped the next frame it is seen dead).
+//!
+//! Merged static scenery (batch.rs) rides the same pass: the store hands back
+//! one [`StaticBatch`] per (draw state, spatial cell), each of which is just a
+//! draw whose model matrix is identity because its vertices are already in
+//! world space. Batches are frustum-culled and blend-sorted by exactly the
+//! code that handles nodes, and the nodes they subsume are skipped in the
+//! walk — ge3d.rs does the same thing in the same order, so the two hosts
+//! cannot drift.
 
 use std::collections::HashMap;
 
@@ -139,6 +147,20 @@ enum Blend {
     Opaque,
     Alpha,
     Additive,
+}
+
+impl Blend {
+    /// A batch carries a material handle like any node does, so the two paths
+    /// read the flags through one function rather than two copies of it.
+    fn of(flags: u32) -> Blend {
+        if flags & mat_flags::ADDITIVE != 0 {
+            Blend::Additive
+        } else if flags & mat_flags::TRANSPARENT != 0 {
+            Blend::Alpha
+        } else {
+            Blend::Opaque
+        }
+    }
 }
 
 struct PendingDraw {
@@ -530,11 +552,16 @@ impl SceneRenderer {
         encoder: &mut wgpu::CommandEncoder,
         target_view: &wgpu::TextureView,
         target_size: (u32, u32),
-        store: &Store,
+        store: &mut Store,
         scene_handle: i32,
         rect: SceneRect,
         load: wgpu::LoadOp<wgpu::Color>,
     ) -> bool {
+        // Merge frozen scenery before anything reads the scene. This is the
+        // only mutable touch of the store in the whole pass, and it is
+        // idempotent, so the shared reborrow below covers the rest.
+        store.ensure_static_batches(scene_handle);
+        let store: &Store = store;
         let Some(scene) = store.scene(scene_handle) else { return false };
         // Clamp the rect to the target (integer viewport == scissor).
         let x0 = (rect.x.max(0.0) as u32).min(target_size.0);
@@ -597,6 +624,42 @@ impl SceneRenderer {
         let frustum = Frustum::from_clip(proj * view);
         let mut draws: Vec<PendingDraw> = Vec::new();
         let mut draw_data: Vec<DrawRaw> = Vec::new();
+
+        // Merged static scenery first. Identity model matrix (batch vertices
+        // are world-space already), the batch's own bounding sphere through
+        // the same frustum test, and the same opaque/blended split — a batch
+        // is a normal draw that happens to cover a whole cell of the map.
+        for b in store.static_batches(scene_handle) {
+            if frustum.rejects(b.bound_center, b.bound_radius) {
+                continue;
+            }
+            let Some(mesh) = store.geom(b.geom) else { continue };
+            if mesh.indices.is_empty() {
+                continue;
+            }
+            let Some(Material { color, flags }) = store.material(b.mat) else { continue };
+            self.geoms.entry(b.geom).or_insert_with(|| Self::upload_geom(gpu, mesh));
+            draws.push(PendingDraw {
+                geom: b.geom,
+                offset: (draw_data.len() as u64 * DRAW_STRIDE) as u32,
+                blend: Blend::of(flags),
+                double_sided: flags & mat_flags::DOUBLE_SIDED != 0,
+                // The batch's centre, not its (identity) origin: the blended
+                // ordering is a distance sort, and a world-space batch's
+                // origin is wherever the scene's origin happens to sit.
+                depth: (b.bound_center - cam.p).dot(fwd),
+            });
+            draw_data.push(DrawRaw {
+                model: Mat4::IDENTITY.to_cols_array_2d(),
+                color: {
+                    let m = abgr_f(color);
+                    let t = abgr_f(b.tint);
+                    [m[0] * t[0], m[1] * t[1], m[2] * t[2], m[3] * t[3]]
+                },
+                misc: [flags, 0, 0, 0],
+            });
+        }
+
         let mut stack: Vec<(i32, Mat4)> = scene
             .root
             .iter()
@@ -612,6 +675,12 @@ impl SceneRenderer {
                 parent_world * Mat4::from_scale_rotation_translation(node.s, node.q, node.p);
             for &c in node.children.iter().rev() {
                 stack.push((c, world));
+            }
+            // A batch already drew this node's mesh. Its children are NOT
+            // implied — freeze is per node, and a frozen post can carry a
+            // moving flag — so this skips the draw only, after the descent.
+            if store.node_batched(id) {
+                continue;
             }
             if node.geom == 0 || node.mat == 0 {
                 continue; // bare group
@@ -637,18 +706,11 @@ impl SceneRenderer {
             if frustum.rejects(center, geom.bound_radius * scale2.sqrt()) {
                 continue;
             }
-            let blend = if flags & mat_flags::ADDITIVE != 0 {
-                Blend::Additive
-            } else if flags & mat_flags::TRANSPARENT != 0 {
-                Blend::Alpha
-            } else {
-                Blend::Opaque
-            };
             let pos = world.w_axis.truncate();
             draws.push(PendingDraw {
                 geom: node.geom,
                 offset: (draw_data.len() as u64 * DRAW_STRIDE) as u32,
-                blend,
+                blend: Blend::of(flags),
                 double_sided: flags & mat_flags::DOUBLE_SIDED != 0,
                 depth: (pos - cam.p).dot(fwd),
             });

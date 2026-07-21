@@ -16,12 +16,14 @@
 
 extern crate alloc;
 
+pub mod batch;
 #[cfg(feature = "std")]
 mod mount;
 #[cfg(feature = "std")]
 mod renderer;
 mod store;
 
+pub use batch::{CELL, MAX_BATCH_VERTS, MAX_GEOM_VERTS, StaticBatch};
 #[cfg(feature = "std")]
 pub use mount::Scene3dSurface;
 #[cfg(feature = "std")]
