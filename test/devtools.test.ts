@@ -17,7 +17,14 @@ import { installHost, type Host, type HostOps } from "../src/host.ts";
 import { render as publicRender } from "../src/index.ts";
 import { expandTape, fmt, type Tape } from "../src/devtools.ts";
 import { onFrame } from "../src/lifecycle.ts";
-import { createComponent, createTextNode, insertNode, resetRendererState, type NodeMirror } from "../src/renderer.ts";
+import {
+  createComponent,
+  createTextNode,
+  insertNode,
+  resetRendererState,
+  rootMirror,
+  type NodeMirror,
+} from "../src/renderer.ts";
 import { resetStyles } from "../src/styles.ts";
 import { resetInput } from "../src/input.ts";
 import { resetPack } from "../src/pak.ts";
@@ -169,6 +176,28 @@ describe("tree + semantic names", () => {
     const card = shell.k![0] as { n?: string; k?: { x?: string }[] };
     expect(card.n).toBe("Card");
     expect(card.k![0].x).toBe("hello world");
+  });
+
+  test("tree traversal tolerates Vue Vapor fragment wrappers", () => {
+    mountApp(() => View({ debugName: "PlaybackStatus" }));
+    const playbackStatus = rootMirror.children[0].children[0];
+    const paused = createTextNode("PAUSED");
+
+    // Vue Vapor's dynamic conditional temporarily represents the swapped
+    // branch as a fragment wrapper. It is not a native node and therefore
+    // has `nodes`, not `children`.
+    (playbackStatus.children as unknown[]).push({ nodes: [[paused]] });
+
+    push({ t: "getTree" });
+    expect(() => frame()).not.toThrow();
+    const trees = sent("tree");
+    expect(trees.length).toBeGreaterThan(0);
+    expect(JSON.stringify(trees[trees.length - 1])).toContain("PAUSED");
+
+    // Periodic stats use a separate traversal and must stay safe too.
+    expect(() => {
+      for (let index = 0; index < 30; index++) frame();
+    }).not.toThrow();
   });
 });
 
