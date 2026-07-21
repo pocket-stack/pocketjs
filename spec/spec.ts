@@ -204,6 +204,25 @@ export const OP = {
   //                      against local dist/ on every hello and calls out a
   //                      stale-embed loudly. Hosts without counters simply
   //                      omit the op.
+  // -- app switching (LAUNCHER.md): multi-app hosts embed several bundles
+  //    and swap the whole guest between them. Hosts without app switching
+  //    omit all three ops (same rule as debugStats). ------------------------
+  appTable: 39, //        () -> string. JSON { apps: [{output, id, title}],
+  //                      current, resume }: the embedded bundle table, the
+  //                      running bundle's output name, and the app that was
+  //                      interrupted by the last SELECT summon (null after a
+  //                      cold boot or an explicit launch).
+  appLaunch: 40, //       (output: string) -> 0|1. Request a guest switch: the
+  //                      host finishes the CURRENT frame (draw + present),
+  //                      then tears the guest down and boots `output` from
+  //                      scratch. 0 = unknown output, no switch scheduled.
+  //                      Launching `current` relaunches it fresh — there is
+  //                      no suspend anywhere in this protocol.
+  appShot: 41, //         () -> handle | -1. Texture of the frozen frame the
+  //                      SELECT summon captured (480x272 framebuffer center-
+  //                      cropped to 2:1, box-downscaled to 256x128 PSM_8888).
+  //                      Valid inside the summoned launcher guest until the
+  //                      next switch; -1 otherwise.
 } as const;
 
 // ---------------------------------------------------------------------------

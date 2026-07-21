@@ -236,7 +236,12 @@ const visited = new Set<string>();
 async function walk(file: string): Promise<void> {
   if (visited.has(file)) return;
   visited.add(file);
-  if (file.endsWith(".generated.ts")) return; // never scan generated output [R]
+  // Never scan the compiled-styles module: its literals ARE the compiled
+  // class names, and collecting them again would feed the compiler its own
+  // output [R]. Other generated modules (e.g. the launcher's registry) are
+  // ordinary app data whose literals — cover asset paths, title glyphs —
+  // pass 1 must see like any hand-written module's.
+  if (file.endsWith("/styles.generated.ts")) return;
   const src = await Bun.file(file).text();
   // Throws with a code frame on lint errors.
   const res = await transformFile(file, src, framework, { features: buildPlan?.features });

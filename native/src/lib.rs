@@ -32,4 +32,5 @@ pub mod pak;
 pub mod qjs_alloc;
 pub mod stats;
 pub mod svc;
+pub mod switch;
 pub mod vid;

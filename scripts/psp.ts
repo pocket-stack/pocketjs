@@ -53,6 +53,7 @@ let planPath: string | undefined;
 let projectRoot = process.cwd();
 let outputDir = pspUiDir + "dist/";
 let skipBuild = false;
+let launcherRegistry = "";
 const cargoArgs: string[] = [];
 const buildFlags: string[] = [];
 for (const a of argv) {
@@ -75,6 +76,9 @@ for (const a of argv) {
     buildFlags.push(a);
   }
   else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
+  // Multi-app embed (LAUNCHER.md): the TSV registry scripts/launcher.ts
+  // emits; build.rs appends one embedded bundle per line after app 0.
+  else if (a.startsWith("--launcher-registry=")) launcherRegistry = resolvePath(a.slice("--launcher-registry=".length));
   else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
   else if (a.startsWith("--outdir=")) outputDir = resolvePath(a.slice("--outdir=".length)) + "/";
   else if (a === "--skip-build") skipBuild = true;
@@ -281,6 +285,8 @@ const env = {
   POCKETJS_CAP_N: process.env.POCKETJS_CAP_N ?? "",
   POCKETJS_ARENA_BYTES: process.env.POCKETJS_ARENA_BYTES ?? "",
   POCKETJS_BENCH_DUMP_FRAMES: process.env.POCKETJS_BENCH_DUMP_FRAMES ?? "",
+  // Multi-app embed (LAUNCHER.md): empty = single-app table of one.
+  POCKETJS_LAUNCHER_REGISTRY: launcherRegistry,
 };
 
 function outputProfile(args: string[]): string {

@@ -162,6 +162,19 @@ export interface HostOps {
    *  "stats" message replies with data: null then. */
   debugStats?(): string;
   __dbgShot?(): boolean;
+
+  // -- app switching (spec ops 39..41, LAUNCHER.md). Optional: only
+  //    multi-app hosts (the launcher EBOOT, host-sim's launcher runner)
+  //    implement them; @pocketjs/framework/launcher feature-detects and the
+  //    launcher app degrades to its empty state elsewhere. -----------------
+  /** OP.appTable — JSON { apps: [{output, id, title}], current, resume }. */
+  appTable?(): string;
+  /** OP.appLaunch — request a whole-guest switch to `output` after the
+   *  current frame presents. → 1 scheduled, 0 unknown output. */
+  appLaunch?(output: string): number;
+  /** OP.appShot — texture handle of the SELECT summon's frozen frame
+   *  (256×128 PSM_8888), -1 when none was captured. */
+  appShot?(): number;
   /** Framework target/profile identity (for example "psp" or "vita"). */
   __host?: string;
   /** Version of the JS/native HostOps ABI implemented by this namespace. */

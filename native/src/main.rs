@@ -26,19 +26,16 @@ use psp::sys::DisplaySetBufSync;
 use psp::sys::DisplayPixelFormat;
 use psp::sys::{self, CtrlMode, GuContextType, GuSyncBehavior, GuSyncMode, IoOpenFlags, SceCtrlData};
 
-use pocketjs_psp::{dbg, ffi, ge, host, pak, vid};
+use pocketjs_core::spec;
+use pocketjs_psp::{dbg, ffi, ge, host, pak, svc, switch, vid};
 #[cfg(feature = "bench")]
 use pocketjs_psp::arena;
 
 psp::module!("pocketjs", 1, 1);
 
-// App bundle selected by POCKETJS_APP (see build.rs), NUL-terminated there for
-// JS_Eval (which wants input[len] == '\0'). Empty when built with no app.
-static APP_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/game.js"));
-// Asset pack: styles.bin + font atlases + images (.pak container). Fed to
-// the core natively (pak.rs) BEFORE JS eval; also exposed read-only to JS
-// as __pak. Aliases .rodata — JS must never write through it.
-static APP_PAK: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/app.pak"));
+// App bundles live in switch::APPS (build.rs generates the table; entry 0 is
+// the app POCKETJS_APP selected, multi-app builds append the registry). Each
+// entry's js is NUL-terminated there for JS_Eval (input[len] == '\0').
 #[cfg(feature = "bench")]
 static POCKETJS_APP_NAME: &str = env!("POCKETJS_APP");
 static POCKETJS_TRACE: &str = env!("POCKETJS_TRACE");
@@ -321,8 +318,8 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
         BENCH.max_work_us,
         BENCH.gpu_sum_us / frames,
         BENCH.max_gpu_us,
-        APP_JS.len().saturating_sub(1),
-        APP_PAK.len(),
+        switch::APPS[0].js.len().saturating_sub(1),
+        switch::APPS[0].pak.len(),
         arena_stats.capacity_bytes,
         arena_stats.bump_bytes,
         arena_stats.tail_free_bytes,
@@ -367,23 +364,64 @@ unsafe fn run() {
     // ---- Controller ----
     sys::sceCtrlSetSamplingCycle(0);
     sys::sceCtrlSetSamplingMode(CtrlMode::Analog);
-    let mut pad = SceCtrlData::default();
     trace("run: controller initialized");
 
-    // ---- Rust UI core (first allocation initializes the arena) ----
+    // ---- Guest lifecycle (LAUNCHER.md): one guest alive at a time; a
+    // switch tears the whole guest down and boots the next table entry.
+    // Single-app builds have a table of one and never leave the first call.
+    let mut boot_index: usize = 0;
+    loop {
+        boot_index = run_guest(boot_index);
+        trace("run: guest swap");
+    }
+}
+
+/// Global presented-frame counter across every guest — the capture identity
+/// (baked input script index + dump file name) must not restart at a guest
+/// swap or two apps' frames would collide in one e2e run.
+static mut GLOBAL_FRAME: u32 = 0;
+
+/// A guest that cannot boot (eval throw / no frame fn): a multi-app host
+/// returns to the launcher instead of bricking the device; a single-app
+/// EBOOT keeps the original halt-with-error-screen behavior.
+unsafe fn guest_fail(app_index: usize, msg: &str) -> usize {
+    if switch::multi() && app_index != 0 {
+        trace_pair(b"[PocketJS guest error] ", msg);
+        0
+    } else {
+        halt(msg)
+    }
+}
+
+/// Boot embedded app `app_index`, drive it until a switch request, tear the
+/// guest down, and return the next app index to boot.
+unsafe fn run_guest(app_index: usize) -> usize {
+    let app = &switch::APPS[app_index];
+    switch::set_current(app_index);
+    let app_js = app.js;
+    let app_pak = app.pak;
+
+    // ---- Rust UI core (first allocation initializes the arena). Replacing
+    // the instance drops the previous guest's tree/styles/atlases/textures
+    // back into the arena's free lists.
     trace("run: init ui begin");
     let ui = ffi::init_ui();
     trace("run: init ui ok");
+    // The GE is idle here (cold boot, or a switch point that never kicked
+    // its last list) — safe to drop font textures keyed on the old atlases.
+    ge::reset_fonts();
     // Feed styles.bin + font atlases + images straight from .rodata to the
     // core BEFORE any JS runs (zero QuickJS-heap transit) [R].
     trace("run: pak feed begin");
-    let (textures, sprites) = pak::feed(ui, APP_PAK);
+    let (textures, sprites) = pak::feed(ui, app_pak);
     trace("run: pak feed ok");
     // Keep the pak reachable at runtime for the streaming ops registered
     // below (loadTileTexture pulls tile blobs straight from .rodata).
-    pak::install(APP_PAK);
+    pak::install(app_pak);
+    // A summoned launcher gets the frozen frame as a texture in ITS core.
+    switch::upload_shot(ffi::ui());
 
-    // ---- QuickJS ----
+    // ---- QuickJS (fresh runtime + realm per guest) ----
     trace("run: JS_NewRuntime begin");
     let rt = pocketjs_psp::qjs_alloc::new_runtime();
     if rt.is_null() {
@@ -401,9 +439,14 @@ unsafe fn run() {
 
     // DevTools mailbox (DEVTOOLS.md): active only if pocketjs-dbg/enable
     // exists on host0: (PSPLINK) or ms0: (PPSSPP GUI) — else two failed
-    // opens here and never again.
-    if dbg::init() {
-        trace("run: devtools mailbox active");
+    // opens at first boot and never again. Once per process: the mailbox is
+    // host state, guests come and go under it.
+    static mut DBG_PROBED: bool = false;
+    if !DBG_PROBED {
+        DBG_PROBED = true;
+        if dbg::init() {
+            trace("run: devtools mailbox active");
+        }
     }
 
     // globalThis.ui — the full HostOps surface + the __textures table.
@@ -414,11 +457,11 @@ unsafe fn run() {
     // Expose the asset pack read-only as globalThis.__pak (zero-copy over
     // .rodata; free_func = None). Web/test hosts feed core through loadStyles/
     // loadFontAtlas ops instead — on PSP pak.rs already did it natively.
-    if !APP_PAK.is_empty() {
+    if !app_pak.is_empty() {
         let ab = JS_NewArrayBuffer(
             ctx,
-            APP_PAK.as_ptr() as *mut u8,
-            APP_PAK.len(),
+            app_pak.as_ptr() as *mut u8,
+            app_pak.len(),
             None,
             core::ptr::null_mut(),
             0,
@@ -432,14 +475,18 @@ unsafe fn run() {
     bench_eval_begin();
     let res = JS_Eval(
         ctx,
-        APP_JS.as_ptr() as *const _,
-        APP_JS.len() - 1, // exclude the trailing NUL
+        app_js.as_ptr() as *const _,
+        app_js.len() - 1, // exclude the trailing NUL
         b"app.js\0".as_ptr() as *const _,
         JS_EVAL_TYPE_GLOBAL as i32,
     );
     if JS_ValueGetTag(res) == JS_TAG_EXCEPTION {
         log_exception(ctx);
-        halt("JS_Eval threw");
+        JS_FreeValue(ctx, res);
+        JS_FreeValue(ctx, global);
+        JS_FreeContext(ctx);
+        JS_FreeRuntime(rt);
+        return guest_fail(app_index, "JS_Eval threw");
     }
     JS_FreeValue(ctx, res);
     #[cfg(feature = "bench")]
@@ -448,32 +495,56 @@ unsafe fn run() {
 
     let frame_fn = JS_GetPropertyStr(ctx, global, b"frame\0".as_ptr() as *const _);
     if JS_IsUndefined(frame_fn) {
-        halt("globalThis.frame is undefined");
+        JS_FreeValue(ctx, frame_fn);
+        JS_FreeValue(ctx, global);
+        JS_FreeContext(ctx);
+        JS_FreeRuntime(rt);
+        return guest_fail(app_index, "globalThis.frame is undefined");
     }
     trace("run: frame lookup ok");
+    let mut pad = SceCtrlData::default();
+    // The summon chord edge-detector. Starts LATCHED: when a guest boots
+    // with SELECT already held (the launcher was dismissed via SELECT), the
+    // held button must release before it can summon again — the host-side
+    // twin of the framework's `latched` option.
+    let mut prev_select = true;
 
     // ---- Fixed-timestep frame loop (~60 Hz via vblank) ----
-    // The Rust frame counter is the capture identity (origin/main contract):
-    // it indexes the baked input script AND names the dumped frame files, so
-    // input at frame N and file fN-CAP_START refer to the same presented frame.
-    // It is NOT the JS side's notion of frames — never key test state off JS.
-    #[cfg_attr(not(feature = "capture"), allow(unused_variables, unused_mut))]
-    let mut frame_count: u32 = 0;
+    // GLOBAL_FRAME is the capture identity (origin/main contract): it
+    // indexes the baked input script AND names the dumped frame files, so
+    // input at frame N and file fN-CAP_START refer to the same presented
+    // frame — and it spans guest swaps (see its doc). `guest_frame` is only
+    // this guest's boot-trace / bench / present-skip counter.
+    let mut guest_frame: u32 = 0;
     loop {
         #[cfg(feature = "bench")]
         let bench_frame_start = bench_now_us();
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: begin");
         }
         // Still read sceCtrl even in capture builds so loop timing is
         // identical; the mask is then overridden by the baked script.
         sys::sceCtrlReadBufferPositive(&mut pad, 1);
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: ctrl read ok");
         }
         let mask = pad.buttons.bits() as i32;
         #[cfg(feature = "capture")]
-        let mask = capture_input_mask(frame_count, mask);
+        let mask = capture_input_mask(GLOBAL_FRAME, mask);
+
+        // The summon chord (LAUNCHER.md): on a multi-app host, guests other
+        // than the launcher never see SELECT; a host-tracked press-edge
+        // schedules the summon for this frame's bottom.
+        #[cfg_attr(not(feature = "capture"), allow(unused_mut))]
+        let mut mask = mask;
+        if switch::multi() && app_index != 0 {
+            let select_now = mask & (spec::btn::SELECT as i32) != 0;
+            if select_now && !prev_select {
+                switch::request_summon();
+            }
+            prev_select = select_now;
+            mask &= !(spec::btn::SELECT as i32);
+        }
         // Analog nub packed (x << 8) | y, each axis 0..255 with 128 = center
         // (spec.ts "frame(buttons, analog)"; SceCtrlData names the axes lx/ly).
         #[cfg(not(feature = "capture"))]
@@ -487,21 +558,21 @@ unsafe fn run() {
         let r = JS_Call(ctx, frame_fn, global, 2, args.as_mut_ptr());
         #[cfg(feature = "bench")]
         let bench_after_js = bench_now_us();
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: JS_Call returned");
         }
         if JS_ValueGetTag(r) == JS_TAG_EXCEPTION {
             log_exception(ctx);
         }
         JS_FreeValue(ctx, r); // leak guard: free the return value every frame
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: JS return freed");
         }
 
         host::drain_jobs(rt);
         #[cfg(feature = "bench")]
         let bench_after_jobs = bench_now_us();
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: pending jobs drained");
         }
 
@@ -513,7 +584,7 @@ unsafe fn run() {
         ui.tick();
         #[cfg(feature = "bench")]
         let bench_after_tick = bench_now_us();
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: ui tick ok");
         }
         let (words_ptr, words_len) = {
@@ -522,7 +593,7 @@ unsafe fn run() {
         };
         #[cfg(feature = "bench")]
         let bench_after_draw = bench_now_us();
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: ui draw ok");
         }
 
@@ -533,43 +604,75 @@ unsafe fn run() {
         // latency, the standard PSP double-buffered-list pattern. The vertex
         // pool and the display-list buffer are reused only after the sync, so
         // single instances of both stay sufficient.
+        //
+        // Guest frame 0 after a swap has nothing kicked and nothing to show:
+        // skip the present so the last app frame HOLDS through the new
+        // guest's eval instead of flashing the two-frames-stale draw buffer.
+        // Cold boot (GLOBAL_FRAME == 0) keeps the original present-first
+        // behavior so single-app builds are bit-identical to before.
+        let present = GLOBAL_FRAME == 0 || guest_frame > 0;
         #[cfg(feature = "bench")]
         let bench_before_sync = bench_now_us();
-        sys::sceGuSync(GuSyncMode::Finish, GuSyncBehavior::Wait);
-        #[cfg(feature = "bench")]
-        bench_record_gpu(frame_count, bench_now_us().saturating_sub(bench_before_sync));
-        if frame_count == 0 {
-            trace("frame 0: gu sync (previous list) ok");
+        if present {
+            sys::sceGuSync(GuSyncMode::Finish, GuSyncBehavior::Wait);
+            #[cfg(feature = "bench")]
+            bench_record_gpu(guest_frame, bench_now_us().saturating_sub(bench_before_sync));
+            if guest_frame == 0 {
+                trace("frame 0: gu sync (previous list) ok");
+            }
+            sys::sceDisplayWaitVblankStart();
+            if guest_frame == 0 {
+                trace("frame 0: vblank ok");
+            }
+            sys::sceGuSwapBuffers();
+            if guest_frame == 0 {
+                trace("frame 0: swap ok");
+            }
+            // Capture build only (test/e2e-ppsspp.ts): the buffer just
+            // presented holds frame N-1 (the pipeline is one frame deep), so
+            // dump under that index — file fN keeps meaning "simulated frame
+            // N", and the baked input identity (input at frame N -> file fN)
+            // is preserved. The frame a switch discards never presents, so
+            // its index simply has no file.
+            #[cfg(feature = "capture")]
+            if GLOBAL_FRAME > 0 {
+                cap_dump_frame(GLOBAL_FRAME.wrapping_sub(1));
+            }
         }
-        sys::sceDisplayWaitVblankStart();
-        if frame_count == 0 {
-            trace("frame 0: vblank ok");
-        }
-        sys::sceGuSwapBuffers();
         #[cfg(feature = "bench")]
         let bench_after_present = bench_now_us();
-        if frame_count == 0 {
-            trace("frame 0: swap ok");
+
+        // ---- Guest swap (LAUNCHER.md): a switch requested this frame (op
+        // appLaunch, or the SELECT chord) lands here — the display holds the
+        // last presented frame, the GE is idle, list N was never kicked.
+        if let Some((next, summon)) = switch::take_pending() {
+            if summon {
+                // The frozen frame reads the just-presented framebuffer.
+                switch::capture_shot();
+            }
+            trace("switch: teardown begin");
+            vid::close(ffi::ui()); // stops audio, frees the plane (Ui alive)
+            svc::reset();
+            JS_FreeValue(ctx, frame_fn);
+            JS_FreeValue(ctx, global);
+            JS_FreeContext(ctx);
+            JS_FreeRuntime(rt);
+            trace("switch: teardown ok");
+            GLOBAL_FRAME = GLOBAL_FRAME.wrapping_add(1);
+            return next;
         }
-        // Capture build only (test/e2e-ppsspp.ts): the buffer just presented
-        // holds frame N-1 (the pipeline is one frame deep), so dump under
-        // that index — file fN keeps meaning "simulated frame N", and the
-        // baked input identity (input at frame N -> file fN) is preserved.
-        #[cfg(feature = "capture")]
-        if frame_count > 0 {
-            cap_dump_frame(frame_count.wrapping_sub(1));
-        }
+
         // GE idle (sceGuSync above): rewind the per-frame bump vertex
         // arena [R] and open frame N's list. The video plane commits its
         // staged frame here too — the ONLY window where the GE is not
         // sampling the texture it overwrites in place (vid.rs).
         ge::reset_pool();
         vid::present(ffi::ui());
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: pool reset ok");
         }
         sys::sceGuStart(GuContextType::Direct, host::list_ptr());
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: gu start ok");
         }
         ge::render(ffi::ui(), core::slice::from_raw_parts(words_ptr, words_len));
@@ -577,7 +680,7 @@ unsafe fn run() {
         let bench_after_render = bench_now_us();
         #[cfg(feature = "bench")]
         bench_record_frame(
-            frame_count,
+            guest_frame,
             bench_frame_start,
             bench_after_js,
             bench_after_jobs,
@@ -586,24 +689,25 @@ unsafe fn run() {
             bench_after_render,
             bench_after_present.saturating_sub(bench_before_sync),
         );
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: rendered");
         }
         sys::sceGuFinish(); // kick list N — the GE draws while frame N+1's CPU runs
-        if frame_count == 0 {
+        if guest_frame == 0 {
             trace("frame 0: gu finish (kicked) ok");
         }
-        if frame_count == 0 {
+        if guest_frame == 0 {
             #[cfg(feature = "bench")]
             bench_record_frame0_complete();
         }
         #[cfg(feature = "bench")]
-        bench_maybe_flush(frame_count);
-        if frame_count == 0 {
+        bench_maybe_flush(guest_frame);
+        if guest_frame == 0 {
             trace("frame 0: complete");
         }
 
-        frame_count = frame_count.wrapping_add(1);
+        guest_frame = guest_frame.wrapping_add(1);
+        GLOBAL_FRAME = GLOBAL_FRAME.wrapping_add(1);
     }
 }
 

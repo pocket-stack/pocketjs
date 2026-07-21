@@ -149,6 +149,15 @@ pub unsafe fn reset_pool() {
     }
 }
 
+/// Drop every cached font texture (guest swap, LAUNCHER.md). The cache keys
+/// on the atlas's (ptr, len) — after a teardown the arena can hand the next
+/// guest's atlas the SAME address at the same length, and same-config
+/// atlases with different glyph pixels would then collide. GE must be idle
+/// (call between sceGuSync and the next sceGuStart).
+pub unsafe fn reset_fonts() {
+    FONT_TEXTURES = None;
+}
+
 unsafe fn font_texture_slots() -> &'static mut Vec<Option<FontTexture>> {
     if FONT_TEXTURES.is_none() {
         let mut slots = Vec::new();
