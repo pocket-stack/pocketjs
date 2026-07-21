@@ -114,6 +114,23 @@ describe("switch protocol (sim host policy)", () => {
     expect(w.current()).toBe("launcher-main");
   }, 120_000);
 
+  test("a single-frame trigger tap moves exactly one card, never snaps back", async () => {
+    const w = await bootLauncherWorld({ hz: 60 });
+    await settle(w, 20);
+    // One held frame advances pos by only 18/60 of a card — the release
+    // rule must still land it one card over, not round home.
+    await w.step(BTN.RTRIGGER);
+    await settle(w, 20);
+    expect(treeHasText(w.getTree(), "Chrome")).toBe(true);
+    await w.step(BTN.LTRIGGER);
+    await settle(w, 20);
+    expect(treeHasText(w.getTree(), "Café")).toBe(true);
+    // At the deck wall the tap has nowhere to go: Café stays.
+    await w.step(BTN.LTRIGGER);
+    await settle(w, 20);
+    expect(treeHasText(w.getTree(), "Café")).toBe(true);
+  }, 120_000);
+
   test("after a summon, CIRCLE launches the BROWSED card, never the resume app", async () => {
     // The real-hardware report behind the CIRCLE-confirm mapping: users
     // confirmed with O (then bound to resume) and every pick landed back in

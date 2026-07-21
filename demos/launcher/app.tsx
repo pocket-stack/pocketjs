@@ -144,6 +144,7 @@ export default function Launcher() {
     const FLOW_DPAD = 11 / 60; //   cards per frame, held d-pad
     const DPAD_DELAY = 15; //       frames before a held d-pad flows
     let dpadHeld = 0;
+    let flowOrigin = 0; // deck position where the current flow began
     onFrame((buttons: number) => {
       const tl = (buttons & BTN.LTRIGGER) !== 0;
       const tr = (buttons & BTN.RTRIGGER) !== 0;
@@ -160,13 +161,23 @@ export default function Launcher() {
         speed = FLOW_DPAD;
       }
       if (dir !== 0) {
-        if (pos === null) pos = sel();
+        if (pos === null) {
+          pos = sel();
+          flowOrigin = pos;
+        }
         pos = Math.min(apps.length - 1, Math.max(0, pos + dir * speed));
         applyFlow(pos);
         const r = Math.round(pos);
         if (r !== sel()) setSel(r);
       } else if (pos !== null) {
-        const settle = Math.round(pos);
+        let settle = Math.round(pos);
+        // A tap shorter than half a card still moves one: a flow that ends
+        // displaced from its origin never rounds back onto it — step in the
+        // displacement's direction instead (the deck wall is the only thing
+        // allowed to hold a card in place).
+        if (settle === flowOrigin && pos !== flowOrigin) {
+          settle = clampSel(flowOrigin + Math.sign(pos - flowOrigin));
+        }
         pos = null;
         setSel(settle);
         // sel() may be unchanged (the effect will not re-run) — glide home
