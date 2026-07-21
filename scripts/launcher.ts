@@ -240,6 +240,31 @@ function stageBackground(w = SHOT_W, h = SHOT_H): Uint8Array {
   return out;
 }
 
+/** The classic Cover Flow reflection, BAKED: the card texture doubles to
+ *  256×256 — cover on top, a vertically mirrored copy below with an alpha
+ *  falloff (≈30% at the seam, gone ~60% down). One quad per card carries
+ *  both, so the reflection rides the card's rotation for free and the fade
+ *  lives in the texture's alpha (the 3D pipeline has no per-quad gradient —
+ *  the stage simply shows through). */
+function withReflection(cover: Uint8Array): Uint8Array {
+  const out = new Uint8Array(SHOT_W * SHOT_H * 2 * 4);
+  out.set(cover, 0);
+  const strength = 0.3;
+  const fadeRows = 74;
+  for (let k = 0; k < fadeRows; k++) {
+    const f = strength * Math.pow(1 - k / fadeRows, 1.7);
+    const src = (SHOT_H - 1 - k) * SHOT_W * 4;
+    const dst = (SHOT_H + k) * SHOT_W * 4;
+    for (let x = 0; x < SHOT_W; x++) {
+      out[dst + x * 4] = cover[src + x * 4];
+      out[dst + x * 4 + 1] = cover[src + x * 4 + 1];
+      out[dst + x * 4 + 2] = cover[src + x * 4 + 2];
+      out[dst + x * 4 + 3] = Math.round(cover[src + x * 4 + 3] * f);
+    }
+  }
+  return out;
+}
+
 async function renderCovers(registry: LauncherRegistry, force: boolean): Promise<void> {
   mkdirSync(COVERS_DIR, { recursive: true });
   const bgPath = join(COVERS_DIR, "launcher-bg.png");
@@ -270,7 +295,10 @@ async function renderCovers(registry: LauncherRegistry, force: boolean): Promise
       const message = error instanceof Error ? error.message : String(error);
       console.log(`  cover ${app.output} -> fallback gradient (sim boot failed: ${message})`);
     }
-    await Bun.write(coverPath, encodePNG(transparentRing(shot, SHOT_W, SHOT_H), SHOT_W, SHOT_H));
+    await Bun.write(
+      coverPath,
+      encodePNG(withReflection(transparentRing(shot, SHOT_W, SHOT_H)), SHOT_W, SHOT_H * 2),
+    );
   }
 }
 

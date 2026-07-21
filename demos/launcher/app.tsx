@@ -220,11 +220,15 @@ export default function Launcher() {
         <View debugName="Deck" class="absolute inset-0 perspective-[620]">
           {apps.map((app, i) => {
             const t = targetFor(i - untrack(sel));
+            // 192×192 quad: cover on the top half, the baked reflection on
+            // the bottom (one texture, LAUNCHER.md) — rotateY is about the
+            // vertical center axis, so the taller box changes nothing about
+            // the deck geometry.
             return (
               <View
                 ref={(el: NodeMirror) => (cardEls[i] = el)}
                 debugName="Card"
-                class="absolute left-[144] top-[58] w-[192] h-[96]"
+                class="absolute left-[144] top-[58] w-[192] h-[192]"
                 style={{
                   translateX: t.translateX,
                   translateZ: t.translateZ,
@@ -232,7 +236,7 @@ export default function Launcher() {
                   opacity: t.opacity,
                 }}
               >
-                <Image class="absolute left-0 top-0 w-[192] h-[96]" src={app.cover} />
+                <Image class="absolute left-0 top-0 w-[192] h-[192]" src={app.cover} />
               </View>
             );
           })}
