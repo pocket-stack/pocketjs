@@ -8,9 +8,10 @@
 // On hosts without a 3D core the viewport is an empty box and the HUD —
 // driven by the same deterministic sim — still renders.
 
-import { Show, createSignal } from "solid-js";
+import { Show } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { createGameLoop } from "../../playset/loop.ts";
+import { createHudSignals } from "../../playset/hud.ts";
 import { Viewport3D } from "../../playset/scene3d/viewport.ts";
 import { createSnakeGame } from "./game.ts";
 
@@ -22,14 +23,21 @@ const GREEN = "#35b34a";
 
 export default function Snake() {
   const game = createSnakeGame();
-  const [hud, setHud] = createSignal(game.hudState());
+  // One signal per field, refreshed on the virtual 0.1 s grid — see
+  // playset/hud.ts for why a single snapshot signal is a trap on this
+  // interpreter (it re-runs every consumer whether or not its value moved).
+  const { fields: hud, refresh } = createHudSignals({ read: () => game.hudState() });
 
+  let steps = 0;
   createGameLoop({
-    step: (dt, input) => game.step(dt, input),
-    render: () => {
-      game.scene.flush();
-      setHud(game.hudState());
+    step: (dt, input) => {
+      game.step(dt, input);
+      steps += 1;
+      // Status is the one field a player must never see lag: it gates the
+      // GAME OVER card and the restart hint.
+      if (steps % 6 === 0 || game.hudState().status !== hud.status()) refresh();
     },
+    render: () => game.scene.flush(),
   });
 
   // No bgColor on the viewport: on native hosts the 3D scene composites
@@ -41,26 +49,26 @@ export default function Snake() {
         <View class="flex-row items-start justify-between">
           <View class="flex-col gap-1">
             <Text class="text-xl font-bold tracking-wide" style={{ textColor: RED }}>
-              {`SCORE ${hud().score}`}
+              {`SCORE ${hud.score()}`}
             </Text>
             <Text class="text-xs tracking-wide" style={{ textColor: DIM }}>
-              {`BEST ${hud().bestScore}`}
+              {`BEST ${hud.bestScore()}`}
             </Text>
           </View>
           <Text class="text-xs font-bold tracking-wide" style={{ textColor: BLUE }}>
-            {`RIVAL ${hud().rivalScore}`}
+            {`RIVAL ${hud.rivalScore()}`}
           </Text>
         </View>
 
         {/* Center: game-over card (restart hint) */}
         <View class="flex-row justify-center">
-          <Show when={hud().status === "gameover"}>
+          <Show when={hud.status() === "gameover"}>
             <View class="flex-col items-center gap-1 px-4 py-2 rounded-lg" style={{ bgColor: "#111417" }}>
               <Text class="text-xl font-bold tracking-wide" style={{ textColor: INK }}>
                 GAME OVER
               </Text>
               <Text class="text-xs tracking-wide" style={{ textColor: DIM }}>
-                {`SCORE ${hud().score} · PRESS × TO RESTART`}
+                {`SCORE ${hud.score()} · PRESS × TO RESTART`}
               </Text>
             </View>
           </Show>
@@ -69,7 +77,7 @@ export default function Snake() {
         {/* Bottom bar: length left, controls hint right */}
         <View class="flex-row items-end justify-between">
           <Text class="text-sm font-bold tracking-wide" style={{ textColor: GREEN }}>
-            {`LENGTH ${hud().length}`}
+            {`LENGTH ${hud.length()}`}
           </Text>
           <Text class="text-xs tracking-wide" style={{ textColor: DIM }}>
             D-PAD TURN

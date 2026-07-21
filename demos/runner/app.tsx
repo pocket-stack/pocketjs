@@ -8,9 +8,10 @@
 // <Viewport3D>. On hosts without a 3D core the viewport is an empty box and
 // the HUD — driven by the same deterministic sim — still renders.
 
-import { createSignal, Show } from "solid-js";
+import { Show } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { createGameLoop } from "../../playset/loop.ts";
+import { createHudSignals } from "../../playset/hud.ts";
 import { Viewport3D } from "../../playset/scene3d/viewport.ts";
 import { createRunnerGame } from "./game.ts";
 
@@ -22,14 +23,19 @@ const CARD = "#f4fbffee";
 
 export default function Runner() {
   const game = createRunnerGame();
-  const [hud, setHud] = createSignal(game.hudState());
+  // One signal per field, refreshed on the virtual 0.1 s grid — see
+  // playset/hud.ts for why a single snapshot signal is a trap on this
+  // interpreter (it re-runs every consumer whether or not its value moved).
+  const { fields: hud, refresh } = createHudSignals({ read: () => game.hudState() });
 
+  let steps = 0;
   createGameLoop({
-    step: (dt, input) => game.step(dt, input),
-    render: () => {
-      game.scene.flush();
-      setHud(game.hudState());
+    step: (dt, input) => {
+      game.step(dt, input);
+      steps += 1;
+      if (steps % 6 === 0 || game.hudState().status !== hud.status()) refresh();
     },
+    render: () => game.scene.flush(),
   });
 
   // No bgColor on the viewport: on native hosts the 3D scene composites
@@ -41,17 +47,17 @@ export default function Runner() {
         <View class="flex-row items-start justify-between">
           <View class="flex-col gap-1">
             <Text class="text-xl font-bold tracking-wide" style={{ textColor: INK }}>
-              {`SCORE ${hud().score}`}
+              {`SCORE ${hud.score()}`}
             </Text>
             <Text class="text-xs tracking-wide" style={{ textColor: GOLD }}>
-              {`● ${hud().coins} COINS`}
+              {`● ${hud.coins()} COINS`}
             </Text>
           </View>
           <View class="flex-col items-end gap-1">
             <Text class="text-sm font-bold tracking-wide" style={{ textColor: INK }}>
-              {`${hud().distance} M`}
+              {`${hud.distance()} M`}
             </Text>
-            <Show when={hud().boostActive}>
+            <Show when={hud.boostActive()}>
               <Text class="text-xs font-bold tracking-wide" style={{ textColor: RED }}>
                 BOOST!
               </Text>
@@ -60,19 +66,19 @@ export default function Runner() {
         </View>
 
         {/* Center card: start / game-over flow */}
-        <Show when={hud().status !== "running"}>
+        <Show when={hud.status() !== "running"}>
           <View class="flex-row justify-center">
             <View class="flex-col items-center gap-1 rounded-xl px-5 py-3" style={{ bgColor: CARD }}>
-              <Text class="text-xl font-bold tracking-wide" style={{ textColor: hud().status === "gameOver" ? RED : INK }}>
-                {hud().status === "gameOver" ? "GAME OVER" : "POCKET RUNNER"}
+              <Text class="text-xl font-bold tracking-wide" style={{ textColor: hud.status() === "gameOver" ? RED : INK }}>
+                {hud.status() === "gameOver" ? "GAME OVER" : "POCKET RUNNER"}
               </Text>
-              <Show when={hud().status === "gameOver"}>
+              <Show when={hud.status() === "gameOver"}>
                 <Text class="text-sm tracking-wide" style={{ textColor: DIM }}>
-                  {`SCORE ${hud().finalScore}`}
+                  {`SCORE ${hud.finalScore()}`}
                 </Text>
               </Show>
               <Text class="text-xs tracking-wide" style={{ textColor: DIM }}>
-                {hud().status === "gameOver" ? "PRESS × TO RUN AGAIN" : "PRESS × TO START"}
+                {hud.status() === "gameOver" ? "PRESS × TO RUN AGAIN" : "PRESS × TO START"}
               </Text>
             </View>
           </View>
@@ -87,7 +93,7 @@ export default function Runner() {
           </View>
           <View class="rounded-md px-2 py-1" style={{ bgColor: CARD }}>
             <Text class="text-xs tracking-wide" style={{ textColor: DIM }}>
-              {`${hud().speed} M/S`}
+              {`${hud.speed()} M/S`}
             </Text>
           </View>
         </View>

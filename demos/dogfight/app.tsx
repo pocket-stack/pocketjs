@@ -9,9 +9,10 @@
 // core the viewport is an empty box and the HUD, driven by the same
 // deterministic sim, still renders.
 
-import { Show, createSignal } from "solid-js";
+import { Show } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { createGameLoop } from "../../playset/loop.ts";
+import { createHudSignals } from "../../playset/hud.ts";
 import { Viewport3D } from "../../playset/scene3d/viewport.ts";
 import { FlightHud, type FlightHudState } from "../../playset/modules/user-interface/flight-hud.ts";
 import { HeadingRelativeRadar } from "../../playset/modules/user-interface/heading-relative-radar.ts";
@@ -33,39 +34,44 @@ function pad(value: number, width: number): string {
 
 export default function Dogfight() {
   const game = createDogfightGame();
-  const [hud, setHud] = createSignal(game.hudState());
+  // One signal per field, refreshed on the virtual 0.1 s grid — see
+  // playset/hud.ts for why a single snapshot signal is a trap on this
+  // interpreter (it re-runs every consumer whether or not its value moved).
+  const { fields: hud, refresh } = createHudSignals({ read: () => game.hudState() });
 
+  let steps = 0;
   createGameLoop({
-    step: (dt, input) => game.step(dt, input),
-    render: () => {
-      game.scene.flush();
-      setHud(game.hudState());
+    step: (dt, input) => {
+      game.step(dt, input);
+      steps += 1;
+      if (steps % 6 === 0) refresh();
     },
+    render: () => game.scene.flush(),
   });
 
   // Status row budget is tight at 480 px: HP rides in the region slot, the
   // score is abbreviated, and the time slot stays empty.
-  const hudSource = (): Partial<FlightHudState> => {
-    const h = hud();
-    return {
-      regionName: h.failed ? "MISSION FAILED" : `HP ${pad(h.health, 3)}`,
-      speed: h.speed,
-      altitude: h.altitude,
-      agl: h.agl,
-      waveLabel: `WAVE ${h.waveNumber}`,
-      waveDetail: `${h.banditsAlive} BANDIT${h.banditsAlive === 1 ? "" : "S"}`,
-      compassHeadingDegrees: h.headingDeg,
-      timeText: "",
-      scoreText: `SCR ${pad(h.score, 4)}`,
-      throttle: h.throttle,
-      pitchDegrees: h.pitchDeg,
-      rollDegrees: h.rollDeg,
-      weaponLabel: h.weaponLabel,
-      lockStatus: h.lockStatus,
-      gunHeat: h.gunHeat,
-      pullUpWarning: h.pullUp,
-    };
-  };
+  // Reads each field through its OWN accessor: FlightHud pulls this inside its
+  // reactive getters, so a per-field read means a changing airspeed wakes the
+  // airspeed tape and nothing else.
+  const hudSource = (): Partial<FlightHudState> => ({
+    regionName: hud.failed() ? "MISSION FAILED" : `HP ${pad(hud.health(), 3)}`,
+    speed: hud.speed(),
+    altitude: hud.altitude(),
+    agl: hud.agl(),
+    waveLabel: `WAVE ${hud.waveNumber()}`,
+    waveDetail: `${hud.banditsAlive()} BANDIT${hud.banditsAlive() === 1 ? "" : "S"}`,
+    compassHeadingDegrees: hud.headingDeg(),
+    timeText: "",
+    scoreText: `SCR ${pad(hud.score(), 4)}`,
+    throttle: hud.throttle(),
+    pitchDegrees: hud.pitchDeg(),
+    rollDegrees: hud.rollDeg(),
+    weaponLabel: hud.weaponLabel(),
+    lockStatus: hud.lockStatus(),
+    gunHeat: hud.gunHeat(),
+    pullUpWarning: hud.pullUp(),
+  });
 
   // No bgColor on the viewport: on native hosts the 3D scene composites
   // UNDER the ui layer, so the viewport (and its ancestors) stay unpainted.
@@ -75,7 +81,7 @@ export default function Dogfight() {
         <FlightHud state={hudSource} width={SCREEN_W} height={SCREEN_H} />
 
         {/* damage flash — the demo's red vignette as a flat overlay */}
-        <Show when={hud().damageFlash > 0.01}>
+        <Show when={hud.damageFlash() > 0.01}>
           <View
             style={{
               posType: POS_ABSOLUTE,
@@ -84,13 +90,13 @@ export default function Dogfight() {
               width: SCREEN_W,
               height: SCREEN_H,
               bgColor: "#ff2418",
-              opacity: hud().damageFlash * 0.3,
+              opacity: hud.damageFlash() * 0.3,
             }}
           />
         </Show>
 
         {/* combat messages (FOX TWO / SPLASH ONE / WAVE N INBOUND) */}
-        <Show when={hud().message !== ""}>
+        <Show when={hud.message() !== ""}>
           <View
             style={{
               posType: POS_ABSOLUTE,
@@ -102,7 +108,7 @@ export default function Dogfight() {
             }}
           >
             <Text class="text-sm font-bold tracking-wide" style={{ textColor: "#eafff2" }}>
-              {hud().message}
+              {hud.message()}
             </Text>
           </View>
         </Show>
@@ -118,9 +124,9 @@ export default function Dogfight() {
           }}
         >
           <HeadingRelativeRadar
-            playerPosition={() => hud().playerPosition}
-            playerForward={() => hud().playerForward}
-            contacts={() => hud().contacts}
+            playerPosition={() => hud.playerPosition()}
+            playerForward={() => hud.playerForward()}
+            contacts={() => hud.contacts()}
             width={RADAR_SIZE}
             height={RADAR_SIZE}
             range={RADAR_RANGE}
