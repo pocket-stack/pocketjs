@@ -151,6 +151,13 @@ export interface SimWorld {
   getTree: () => unknown;
 }
 
+export interface SimViewportOptions {
+  width?: number;
+  height?: number;
+  rasterDensity?: number;
+  renderScale?: number;
+}
+
 /**
  * Boot a fresh world: fresh wasm core, fresh bundle eval, host globals
  * (ui/__pak/__simHz/effect trace/DevTools transport) installed before eval —
@@ -163,11 +170,13 @@ export async function bootWorld(
   hz: number,
   extraGlobals?: Record<string, unknown>,
   mutateOps?: (ops: Record<string, unknown>) => void,
+  viewport: SimViewportOptions = {},
 ): Promise<SimWorld> {
   ensureBuilt(WASM_PATH, [process.execPath, "scripts/wasm.ts"]);
   ensureBuilt(DIST + app + ".js", [process.execPath, "scripts/build.ts", app]);
   if (!wasmBytes) wasmBytes = await Bun.file(WASM_PATH).arrayBuffer();
-  const wasm = await createWasmUi(wasmBytes);
+  const wasm = await createWasmUi(wasmBytes, viewport);
+  const renderScale = viewport.renderScale ?? 1;
   const g = globalThis as Record<string, unknown>;
   const effects: EffectEvent[] = [];
   const inbox: string[] = [];
@@ -200,7 +209,7 @@ export async function bootWorld(
   return {
     frame,
     tick: wasm.tick,
-    render: () => wasm.render(),
+    render: () => wasm.renderScaled(renderScale),
     ticksPerFrame: TICKS_PER_SECOND / hz,
     hz,
     effects,

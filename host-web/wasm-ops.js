@@ -7,8 +7,8 @@
 //
 // ABI (see wasm/src/lib.rs): one export per ui.* op; strings/buffers cross
 // via linear memory — ui_alloc(len) -> ptr, write bytes, call, ui_free.
-// ui_render() returns the byte-exact RGBA8 480x272 framebuffer pointer;
-// ui_render_scaled(n) renders the logical DrawList directly at n×.
+// ui_render() returns the byte-exact RGBA8 framebuffer pointer at the
+// logical viewport size; ui_render_scaled(n) renders the DrawList at n×.
 
 export const FB_W = 480;
 export const FB_H = 272;
@@ -23,7 +23,7 @@ const encoder = new TextEncoder();
  *
  * @param {ArrayBuffer | Uint8Array | WebAssembly.Module} wasm
  */
-export async function createWasmUi(wasm) {
+export async function createWasmUi(wasm, options = {}) {
   const source = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
   const instance = await WebAssembly.instantiate(source, {});
   const ex = instance.exports;
@@ -35,10 +35,20 @@ export async function createWasmUi(wasm) {
     return value;
   }
 
-  const init = (rasterDensity = 1) => {
+  const viewportWidth = integerInRange(options.width ?? FB_W, "viewport width", 1, 32000);
+  const viewportHeight = integerInRange(options.height ?? FB_H, "viewport height", 1, 32000);
+  const initialDensity = integerInRange(options.rasterDensity ?? 1, "rasterDensity", 1, 255);
+
+  const init = (rasterDensity = initialDensity) => {
     ex.ui_init(integerInRange(rasterDensity, "rasterDensity", 1, 255));
+    // Older wasm binaries predate ui_set_viewport (same convention as
+    // drawHash): tolerate them at the stock size, fail loud otherwise.
+    if (ex.ui_set_viewport) ex.ui_set_viewport(viewportWidth, viewportHeight);
+    else if (viewportWidth !== FB_W || viewportHeight !== FB_H) {
+      throw new Error("this pocketjs.wasm predates ui_set_viewport — rebuild it: bun scripts/wasm.ts");
+    }
   };
-  init();
+  init(initialDensity);
 
   // Copy bytes into wasm scratch, run fn(ptr, len), free. Views are rebuilt
   // per call: memory.buffer is detached whenever linear memory grows.
@@ -56,6 +66,7 @@ export async function createWasmUi(wasm) {
 
   /** @type {import("../src/host.ts").HostOps} */
   const ops = {
+    __viewport: { w: viewportWidth, h: viewportHeight },
     createNode: (type) => ex.ui_create_node(type),
     destroyNode: (id) => ex.ui_destroy_node(id),
     insertBefore: (parent, child, anchor) => ex.ui_insert_before(parent, child, anchor),
@@ -109,7 +120,7 @@ export async function createWasmUi(wasm) {
     return new Uint8Array(
       ex.memory.buffer,
       ptr,
-      FB_W * scale * FB_H * scale * 4,
+      viewportWidth * scale * viewportHeight * scale * 4,
     );
   }
 
@@ -122,7 +133,7 @@ export async function createWasmUi(wasm) {
     tick: () => ex.ui_tick(),
     /** Hash the current DrawList without rasterizing it (BigInt, wasm i64). */
     drawHash: ex.ui_draw_hash ? () => ex.ui_draw_hash() : null,
-    /** Rasterize the byte-exact legacy 480x272 framebuffer. */
+    /** Rasterize the byte-exact framebuffer at the logical viewport size. */
     render() {
       return framebufferView(ex.ui_render(), 1);
     },

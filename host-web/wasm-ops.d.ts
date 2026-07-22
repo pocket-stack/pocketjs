@@ -15,7 +15,7 @@ export interface WasmUi {
   tick(): void;
   /** Hash the current DrawList without rasterizing it; null for an older wasm. */
   drawHash: (() => bigint) | null;
-  /** Rasterize the byte-exact RGBA8 480x272 framebuffer as a fresh view. */
+  /** Rasterize the byte-exact RGBA8 framebuffer at the logical viewport size. */
   render(): Uint8Array;
   /** Rasterize directly at an integer physical scale from 1 through 4. */
   renderScaled(scale: number): Uint8Array;
@@ -23,6 +23,7 @@ export interface WasmUi {
 
 export declare function createWasmUi(
   wasm: ArrayBuffer | Uint8Array | WebAssembly.Module,
+  options?: { width?: number; height?: number; rasterDensity?: number },
 ): Promise<WasmUi>;
 
 export declare function uploadPackImages(

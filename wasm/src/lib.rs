@@ -22,7 +22,6 @@
 // safety IS the ABI contract (ui_alloc/ui_free above), not a Rust signature.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use pocketjs_core::spec::{SCREEN_H, SCREEN_W};
 use pocketjs_core::Ui;
 
 use pocketjs_core::raster;
@@ -62,6 +61,13 @@ pub extern "C" fn ui_init(raster_density: u32) {
         UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
         FRAMEBUFFER.clear();
     }
+}
+
+/// Resize the logical layout/draw viewport. Existing stock hosts never call
+/// this and retain the legacy 480x272 contract.
+#[no_mangle]
+pub extern "C" fn ui_set_viewport(width: f32, height: f32) {
+    ui().set_viewport(width, height);
 }
 
 /// Allocate `len` bytes of scratch in linear memory for host -> wasm buffers.
@@ -273,10 +279,14 @@ fn render_at_scale(scale: u32) -> *const u8 {
     if !(1..=raster::MAX_RENDER_SCALE).contains(&scale) {
         return core::ptr::null();
     }
-    let Some(width) = (SCREEN_W as usize).checked_mul(scale as usize) else {
+    let u = ui();
+    let (viewport_w, viewport_h) = u.viewport();
+    let logical_width = viewport_w as usize;
+    let logical_height = viewport_h as usize;
+    let Some(width) = logical_width.checked_mul(scale as usize) else {
         return core::ptr::null();
     };
-    let Some(height) = (SCREEN_H as usize).checked_mul(scale as usize) else {
+    let Some(height) = logical_height.checked_mul(scale as usize) else {
         return core::ptr::null();
     };
     let Some(bytes) = width
@@ -285,7 +295,6 @@ fn render_at_scale(scale: u32) -> *const u8 {
     else {
         return core::ptr::null();
     };
-    let u = ui();
     // draw() borrows `u` mutably for the returned &DrawList; the rasterizer
     // then needs a shared &Ui for atlases/textures. Both live in the single
     // static; nothing mutates during rasterization, and this module is
@@ -303,8 +312,9 @@ fn render_at_scale(scale: u32) -> *const u8 {
     }
 }
 
-/// Rasterize the current tree and return the byte-exact RGBA8 480x272
-/// framebuffer pointer. Kept as a dedicated ABI entry for existing hosts.
+/// Rasterize the current tree and return the byte-exact RGBA8 framebuffer
+/// pointer at the logical viewport size. Kept as a dedicated ABI entry for
+/// existing hosts.
 #[no_mangle]
 pub extern "C" fn ui_render() -> *const u8 {
     render_at_scale(1)

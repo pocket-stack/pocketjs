@@ -455,6 +455,9 @@ const result = await Bun.build({
     __POCKET_HOST_ABI__: String(buildPlan?.target.hostAbi ?? 0),
     __POCKET_FEATURES__: JSON.stringify(buildPlan?.features ?? {}),
     __POCKET_PIXEL_RATIO__: String(rasterDensity),
+    ...(framework === "vue-vapor"
+      ? { document: "globalThis.__pocketDocument" }
+      : {}),
   },
   minify: false,
   sourcemap: "none",
