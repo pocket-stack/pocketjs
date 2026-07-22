@@ -1917,24 +1917,35 @@ impl<'a> Walker<'a> {
                     r_px,
                     self.raster_density,
                 ) {
-                    let rf = r_px as f32;
+                    // RECT/TEX_QUAD encode integer x/y plus integer width/height.
+                    // Quantize the shared outer edges once before splitting the
+                    // rounded box; independently rounding each piece's start and
+                    // extent leaves 1px gaps when a scale transform makes sx/sy
+                    // fractional (for example scale 0.96).
+                    let qx0 = roundf(sx0);
+                    let qy0 = roundf(sy0);
+                    let qx1 = roundf(sx1);
+                    let qy1 = roundf(sy1);
+                    let rf = (r_px as f32)
+                        .min((qx1 - qx0) * 0.5)
+                        .min((qy1 - qy0) * 0.5);
                     let du = (r_px * self.raster_density) as f32 / dim as f32;
                     // One density-scaled corner quadrant in UV space, drawn
                     // into the same logical `rf` destination geometry.
                     let corners = [
-                        (sx0, sy0, 0.0, 0.0),           // TL quadrant
-                        (sx1 - rf, sy0, du, 0.0),       // TR
-                        (sx0, sy1 - rf, 0.0, du),       // BL
-                        (sx1 - rf, sy1 - rf, du, du),   // BR
+                        (qx0, qy0, 0.0, 0.0),           // TL quadrant
+                        (qx1 - rf, qy0, du, 0.0),       // TR
+                        (qx0, qy1 - rf, 0.0, du),       // BL
+                        (qx1 - rf, qy1 - rf, du, du),   // BR
                     ];
                     for &(cx, cy, u0, v0) in corners.iter() {
                         self.emit_corner_quad(dl, tex, cx, cy, rf, u0, v0, du, color, clip);
                     }
                     let mid = Fill::Flat(color);
                     // middle band (full width) + top/bottom strips between corners
-                    self.emit_screen_rect(dl, sx0, sy0 + rf, sx1, sy1 - rf, mid, clip);
-                    self.emit_screen_rect(dl, sx0 + rf, sy0, sx1 - rf, sy0 + rf, mid, clip);
-                    self.emit_screen_rect(dl, sx0 + rf, sy1 - rf, sx1 - rf, sy1, mid, clip);
+                    self.emit_screen_rect(dl, qx0, qy0 + rf, qx1, qy1 - rf, mid, clip);
+                    self.emit_screen_rect(dl, qx0 + rf, qy0, qx1 - rf, qy0 + rf, mid, clip);
+                    self.emit_screen_rect(dl, qx0 + rf, qy1 - rf, qx1 - rf, qy1, mid, clip);
                     return;
                 }
             }

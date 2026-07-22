@@ -662,6 +662,36 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
 }
 
 #[test]
+fn scaled_flat_rounded_box_has_no_gaps_between_fast_path_pieces() {
+    let mut ui = Ui::new_with_raster_density(2);
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 70.0);
+    ui.set_prop(n, spec::prop::HEIGHT, 70.0);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_T, 20.0);
+    ui.set_prop(n, spec::prop::INSET_L, 12.0);
+    ui.set_prop(n, spec::prop::RADIUS, 12.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(6, 182, 212, 255) as f64);
+    ui.set_prop(n, spec::prop::SCALE_X, 0.96);
+    ui.set_prop(n, spec::prop::SCALE_Y, 0.96);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.tick();
+
+    let words = ui.draw().words.clone();
+    let mut framebuffer = alloc::vec![0u8; spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4];
+    crate::raster::render(&ui, &words, &mut framebuffer);
+
+    for &(x, y) in &[(68usize, 25usize), (40usize, 76usize)] {
+        let offset = (y * spec::SCREEN_W as usize + x) * 4;
+        assert_ne!(
+            &framebuffer[offset..offset + 3],
+            &[0, 0, 0],
+            "rounded-box fast-path pieces left a black gap at ({x},{y})",
+        );
+    }
+}
+
+#[test]
 fn rounded_corner_masks_follow_raster_density_without_changing_layout() {
     let mut ui = Ui::new_with_raster_density(2);
     assert_eq!(ui.raster_density(), 2);
