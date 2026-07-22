@@ -25,20 +25,45 @@ cell-for-cell after every press.
 
 ```
 $ bun test vapor/test/
- 17 pass, 0 fail, 1330 expect() calls
+ 23 pass, 0 fail, 1343 expect() calls
 
 $ bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx
 == reactive graph ==
 refs:      todos cursor filter editing draft glyph      (6 dirty bits)
-computeds: filtered remaining scroll visible            (masks inferred)
+computeds: filtered remaining current scroll visible    (masks inferred)
 effects:   eff_0 rows [1,2)   mask {todos, filter}
            eff_1 rows [3,15)  mask {todos, cursor, filter}
            eff_2 rows [17,18) mask {editing, draft, glyph}
            eff_3 rows [19,20) mask {editing}
 == memory plan ==
 state RAM: 41 B scalars/strings + 833 B pools + 66 B computed views
-dist/vapor/todo.gba  (8.8 KB)
+dist/vapor/todo.gba  (9.1 KB)
 ```
+
+The business logic is keymaps, not branch ladders — and the compiler meets
+the style: each named action becomes one C function, each keymap becomes a
+10-slot function-pointer table in ROM, and the dispatch line becomes a
+bounds-checked indexed call:
+
+```tsx
+const listKeys: Keymap = {
+  [Button.Up]: () => moveCursor(-1),
+  [Button.Down]: () => moveCursor(1),
+  [Button.A]: toggleDone,
+  [Button.B]: deleteCurrent,
+  [Button.R]: cycleFilter,
+  [Button.Select]: clearDone,
+  [Button.Start]: openEditor,
+};
+
+onButton((b) => (editing.value ? editKeys : listKeys)[b]?.());
+```
+
+Deleting is `todos.value = todos.value.filter((x) => x !== t)` (compiled to
+in-place pool compaction), and the selected todo is itself a computed —
+`const current = computed(() => filtered.value[cursor.value])` — cached as
+a nullable record pointer with the same validity-bit laziness as any other
+computed.
 
 Reactivity survives compilation as data: every ref is a dirty bit, every
 dependency edge is a bitmask baked into ROM, computeds are lazy cached

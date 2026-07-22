@@ -100,4 +100,62 @@ export default () => {
     const msg = compileErr(minimal("", "<row y={0}>{count.value == 1 ? 'a' : 'b'}</row>"));
     expect(msg).toMatch(/^test\.tsx:\d+:\d+/);
   });
+
+  test("keymaps compile to ROM fnptr tables with null holes", async () => {
+    const source = await Bun.file(ENTRY).text();
+    const app = compileVaporApp(ENTRY, source);
+    expect(app.c).toMatch(/static void \(\*const KM_listKeys\[10\]\)\(void\) = \{ .*km_listKeys_6.* \};/);
+    expect(app.c).toContain("KM_editKeys");
+    expect(app.c).toMatch(/\? KM_editKeys : KM_listKeys/); // dispatch ternary
+    expect(app.c).toContain("fn_closeEditor"); // bare fn reference as keymap value
+  });
+
+  test("computed can yield a record reference (current todo)", async () => {
+    const source = await Bun.file(ENTRY).text();
+    const app = compileVaporApp(ENTRY, source);
+    expect(app.graph).toContain("current: obj <- {cursor, filter, todos}");
+    expect(app.c).toContain("static rec_todo * c_current_v;");
+  });
+
+  test("splice/indexOf remain in the subset", () => {
+    const source = `${HEADER}
+interface It { text: string; done: boolean }
+export default () => {
+  const items = ref<It[]>([{ text: "A", done: false }]);
+  onButton((b) => {
+    const t = items.value[0];
+    if (t) items.value.splice(items.value.indexOf(t), 1);
+  });
+  return (<><row y={0}>{items.value.length}</row></>);
+};
+`;
+    const app = compileVaporApp("test.tsx", source);
+    expect(app.c).toContain("g_items_len--");
+  });
+
+  test("rejects keymap keys that are not compile-time constants", () => {
+    const msg = compileErr(minimal("const keys = { [count.value]: () => {} };"));
+    expect(msg).toContain("compile-time Button constants");
+  });
+
+  test("rejects helper params without a number annotation", () => {
+    const msg = compileErr(minimal("function move(d) { count.value = count.value + d; }"));
+    expect(msg).toContain("annotated `: number`");
+  });
+
+  test("rejects list assignment from a different list", () => {
+    const source = `${HEADER}
+interface It { text: string; done: boolean }
+export default () => {
+  const a = ref<It[]>([]);
+  const b2 = ref<It[]>([]);
+  onButton((b) => {
+    a.value = b2.value.filter((t) => !t.done);
+  });
+  return (<><row y={0}>{a.value.length}</row></>);
+};
+`;
+    const msg = compileErr(source);
+    expect(msg).toContain("derive from the same list");
+  });
 });

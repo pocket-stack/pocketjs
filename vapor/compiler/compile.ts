@@ -91,12 +91,20 @@ interface FnBinding {
   decl: ts.FunctionDeclaration;
   emitted: boolean;
   deps: Set<string>;
+  params: string[]; // s32 params, annotated `: number` in source
 }
 
 interface ConstBinding {
   kind: "const";
   name: string;
-  value: number | string | string[];
+  value: number | string | string[] | Record<string, number>;
+}
+
+interface KeymapBinding {
+  kind: "keymap";
+  name: string;
+  /** button id -> C function name (10-entry fnptr table in ROM) */
+  entries: Map<number, string>;
 }
 
 interface LocalBinding {
@@ -105,7 +113,7 @@ interface LocalBinding {
   ty: Ty;
 }
 
-type Binding = RefBinding | ComputedBinding | FnBinding | ConstBinding | LocalBinding;
+type Binding = RefBinding | ComputedBinding | FnBinding | ConstBinding | LocalBinding | KeymapBinding;
 
 const POOL_CAP = 32;
 
@@ -156,6 +164,7 @@ class AppCompiler {
     for (const stmt of this.sf.statements) {
       if (ts.isImportDeclaration(stmt)) this.scanImport(stmt);
       else if (ts.isInterfaceDeclaration(stmt)) this.scanInterface(stmt);
+      else if (ts.isTypeAliasDeclaration(stmt)) continue; // types are erased
       else if (ts.isVariableStatement(stmt)) this.scanModuleConst(stmt);
       else if (ts.isExportAssignment(stmt)) {
         if (!ts.isArrowFunction(stmt.expression)) this.err(stmt, "export default must be an arrow component");
@@ -217,7 +226,17 @@ class AppCompiler {
           return el.text;
         });
         this.scope.set(name, { kind: "const", name, value: items });
-      } else this.err(init, "module consts must be number, string, or string[] literals");
+      } else if (ts.isObjectLiteralExpression(init)) {
+        const record: Record<string, number> = {};
+        for (const prop of init.properties) {
+          if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name))
+            this.err(prop, "const objects must use `name: number` members");
+          const v = this.constNum(prop.initializer);
+          if (v === null) this.err(prop.initializer, "const object members must be compile-time numbers");
+          record[prop.name.text] = v;
+        }
+        this.scope.set(name, { kind: "const", name, value: record });
+      } else this.err(init, "module consts must be number, string, string[], or {name: number} literals");
     }
   }
 
@@ -229,7 +248,20 @@ class AppCompiler {
       if (ts.isVariableStatement(stmt)) this.scanSetupConst(stmt);
       else if (ts.isFunctionDeclaration(stmt)) {
         if (!stmt.name || !stmt.body) this.err(stmt, "setup functions need a name and body");
-        const binding: FnBinding = { kind: "fn", name: stmt.name.text, decl: stmt, emitted: false, deps: new Set() };
+        const params = stmt.parameters.map((p) => {
+          if (!ts.isIdentifier(p.name)) this.err(p, "helper params must be simple names");
+          if (!p.type || p.type.getText(this.sf) !== "number")
+            this.err(p, "helper params must be annotated `: number`");
+          return p.name.text;
+        });
+        const binding: FnBinding = {
+          kind: "fn",
+          name: stmt.name.text,
+          decl: stmt,
+          emitted: false,
+          deps: new Set(),
+          params,
+        };
         this.scope.set(stmt.name.text, binding);
         this.fns.push(binding);
       } else if (ts.isExpressionStatement(stmt)) {
@@ -241,8 +273,7 @@ class AppCompiler {
         ) {
           if (this.handler) this.err(call, "only one onButton handler is supported");
           const arg = call.arguments[0];
-          if (!arg || !ts.isArrowFunction(arg) || !ts.isBlock(arg.body))
-            this.err(call, "onButton takes an arrow with a block body");
+          if (!arg || !ts.isArrowFunction(arg)) this.err(call, "onButton takes an arrow");
           this.handler = arg;
         } else this.err(stmt, "unsupported setup statement");
       } else if (ts.isReturnStatement(stmt)) {
@@ -282,6 +313,12 @@ class AppCompiler {
         const arrow = init.arguments[0];
         if (!arrow || !ts.isArrowFunction(arrow)) this.err(init, "computed() takes an arrow");
         this.compileComputed(name, arrow);
+      } else if (
+        ts.isObjectLiteralExpression(init) &&
+        init.properties.length > 0 &&
+        init.properties.every((p) => ts.isPropertyAssignment(p) && ts.isComputedPropertyName(p.name))
+      ) {
+        this.scanKeymap(name, init);
       } else {
         this.scanModuleConst(stmt);
         return;
@@ -304,6 +341,71 @@ class AppCompiler {
       if (this.ifaces.has(name)) return name;
     }
     this.err(seed, "list refs need an explicit ref<T[]>(...) annotation with a declared interface T");
+  }
+
+  // ---- keymaps --------------------------------------------------------------
+  // `const listKeys: Keymap = { [Button.Up]: () => ..., [Button.A]: action }`
+  // Each value becomes a C function; the map becomes a 10-entry function-
+  // pointer table in ROM, indexed by the GBA key bit. Dispatch is
+  // `(cond ? mapA : mapB)[b]?.()` — undefined entries are null pointers.
+
+  private keymaps: KeymapBinding[] = [];
+
+  private scanKeymap(name: string, init: ts.ObjectLiteralExpression): void {
+    const entries = new Map<number, string>();
+    for (const prop of init.properties) {
+      const pa = prop as ts.PropertyAssignment;
+      const keyExpr = (pa.name as ts.ComputedPropertyName).expression;
+      const key = this.constNum(keyExpr);
+      if (key === null || key < 0 || key > 9)
+        this.err(keyExpr, "keymap keys must be compile-time Button constants (0..9)");
+      if (entries.has(key)) this.err(keyExpr, "duplicate keymap key");
+      const value = this.unparen(pa.initializer);
+      if (ts.isArrowFunction(value)) {
+        if (value.parameters.length !== 0) this.err(value, "keymap actions take no arguments");
+        const cName = `km_${name}_${key}`;
+        this.compileActionArrow(cName, value);
+        entries.set(key, cName);
+      } else if (ts.isIdentifier(value)) {
+        const b = this.scope.get(value.text);
+        if (b?.kind !== "fn") this.err(value, "keymap values must be arrows or setup functions");
+        if (b.params.length !== 0) this.err(value, `${b.name} takes arguments; wrap it in an arrow`);
+        this.emitFn(b);
+        entries.set(key, `fn_${b.name}`);
+      } else this.err(pa.initializer, "keymap values must be arrows or setup functions");
+    }
+    const binding: KeymapBinding = { kind: "keymap", name, entries };
+    this.keymaps.push(binding);
+    this.scope.set(name, binding);
+  }
+
+  private compileActionArrow(cName: string, arrow: ts.ArrowFunction): void {
+    const out: string[] = [];
+    const saved = new Map(this.scope);
+    if (ts.isBlock(arrow.body)) {
+      for (const stmt of arrow.body.statements) this.compileStmt(stmt, out, "  ");
+    } else {
+      this.compileExprStmt(arrow.body, out, "  ");
+    }
+    this.scope = saved;
+    this.bodies.push(`static void ${cName}(void) {\n${out.join("\n")}\n}\n`);
+  }
+
+  /** Resolve a keymap-typed expression to a C fnptr-table expression. */
+  private compileKeymapExpr(e: ts.Expression, out: string[], ind: string): string | null {
+    e = this.unparen(e);
+    if (ts.isIdentifier(e)) {
+      const b = this.scope.get(e.text);
+      return b?.kind === "keymap" ? `KM_${b.name}` : null;
+    }
+    if (ts.isConditionalExpression(e)) {
+      const a = this.compileKeymapExpr(e.whenTrue, out, ind);
+      const bTab = this.compileKeymapExpr(e.whenFalse, out, ind);
+      if (!a || !bTab) return null;
+      const cond = this.compileExpr(e.condition, out, ind);
+      return `(${this.truthy(cond)} ? ${a} : ${bTab})`;
+    }
+    return null;
   }
 
   // ---- shared emission helpers --------------------------------------------
@@ -361,19 +463,36 @@ class AppCompiler {
       this.compileViewInto(body, `c_${name}_v`, lines, "  ");
     } else {
       const val = this.compileExpr(body, lines, "  ");
-      if (val.ty.k !== "num" && val.ty.k !== "bool") this.err(body, "computed must yield a number or a list view");
-      binding = { kind: "computed", name, index, valTy: NUM, deps, maxLen: 0 };
+      if (val.ty.k !== "num" && val.ty.k !== "bool" && val.ty.k !== "obj")
+        this.err(body, "computed must yield a number, a record, or a list view");
+      binding = {
+        kind: "computed",
+        name,
+        index,
+        valTy: val.ty.k === "obj" ? val.ty : NUM,
+        deps,
+        maxLen: 0,
+      };
       lines.push(`  c_${name}_v = ${val.c};`);
     }
     this.curDeps = prevDeps;
 
-    const store = binding.valTy.k === "view" ? `static vp_view c_${name}_v;` : `static s32 c_${name}_v;`;
-    this.decls.push(store);
+    const cTy =
+      binding.valTy.k === "view"
+        ? { store: "static vp_view", accessor: "static const vp_view *", result: `&c_${name}_v` }
+        : binding.valTy.k === "obj"
+          ? {
+              store: `static rec_${binding.valTy.iface.toLowerCase()} *`,
+              accessor: `static rec_${binding.valTy.iface.toLowerCase()} *`,
+              result: `c_${name}_v`,
+            }
+          : { store: "static s32", accessor: "static s32 ", result: `c_${name}_v` };
+    this.decls.push(`${cTy.store} c_${name}_v;`);
     this.bodies.push(
       `static void c_${name}_update(void) {\n${lines.join("\n")}\n}\n` +
-        `${binding.valTy.k === "view" ? "static const vp_view *" : "static s32 "}c_${name}(void) {\n` +
+        `${cTy.accessor}c_${name}(void) {\n` +
         `  if (!(c_valid & ${1 << index}u)) { c_${name}_update(); c_valid |= ${1 << index}u; }\n` +
-        `  return ${binding.valTy.k === "view" ? `&c_${name}_v` : `c_${name}_v`};\n}\n`,
+        `  return ${cTy.result};\n}\n`,
     );
     this.computeds.push(binding);
     this.scope.set(name, binding);
@@ -481,10 +600,15 @@ class AppCompiler {
       if (b?.kind === "const" && typeof b.value === "number") return b.value;
     }
     if (ts.isPropertyAccessExpression(e)) {
-      // GLYPHS.length, Button.X
+      // GLYPHS.length, FILTERS.length, PAL.title, Button.X
       if (ts.isIdentifier(e.expression)) {
         const b = this.scope.get(e.expression.text);
         if (b?.kind === "const" && typeof b.value === "string" && e.name.text === "length") return b.value.length;
+        if (b?.kind === "const" && Array.isArray(b.value) && e.name.text === "length") return b.value.length;
+        if (b?.kind === "const" && typeof b.value === "object" && !Array.isArray(b.value)) {
+          const record = b.value as Record<string, number>;
+          if (e.name.text in record) return record[e.name.text];
+        }
         if (e.expression.text === this.hostButton) {
           const buttons: Record<string, number> = {
             A: 0, B: 1, Select: 2, Start: 3, Right: 4, Left: 5, Up: 6, Down: 7, R: 8, L: 9,
@@ -643,6 +767,7 @@ class AppCompiler {
       if (b?.kind === "computed") {
         for (const d of b.deps) this.depRef(d);
         if (b.valTy.k === "num") return { c: `c_${base}()`, ty: NUM };
+        if (b.valTy.k === "obj") return { c: `c_${base}()`, ty: b.valTy };
         this.err(e, "view computeds can only be used through list operations");
       }
       this.err(e, `.value on non-reactive: ${base}`);
@@ -767,9 +892,16 @@ class AppCompiler {
     if (ts.isIdentifier(callee)) {
       const b = this.scope.get(callee.text);
       if (b?.kind === "fn") {
+        if (e.arguments.length !== b.params.length)
+          this.err(e, `${b.name} takes ${b.params.length} argument(s)`);
+        const args = e.arguments.map((a) => {
+          const v = this.compileExpr(a, out, ind);
+          if (v.ty.k !== "num" && v.ty.k !== "bool") this.err(a, "helper arguments must be numbers");
+          return v.c;
+        });
         this.emitFn(b);
         for (const d of b.deps) this.depRef(d);
-        return { c: `fn_${b.name}()`, ty: { k: "void" } };
+        return { c: `fn_${b.name}(${args.join(", ")})`, ty: { k: "void" } };
       }
     }
     this.err(e, "unsupported call");
@@ -945,11 +1077,52 @@ class AppCompiler {
       if (ts.isIdentifier(callee)) {
         const b = this.scope.get(callee.text);
         if (b?.kind === "fn") {
-          this.emitFn(b);
-          for (const d of b.deps) this.depRef(d);
-          out.push(`${ind}fn_${b.name}();`);
+          const v = this.compileCall(e, out, ind);
+          out.push(`${ind}${v.c};`);
           return;
         }
+      }
+      // keymap dispatch: (cond ? mapA : mapB)[b]?.() or map[b]?.()
+      if (ts.isElementAccessExpression(callee)) {
+        const table = this.compileKeymapExpr(callee.expression, out, ind);
+        if (table) {
+          const idx = this.compileExpr(callee.argumentExpression, out, ind);
+          const km = this.tmp("km");
+          const bi = this.tmp("bi");
+          out.push(`${ind}{ void (*const *${km})(void) = ${table}; s32 ${bi} = ${idx.c};`);
+          out.push(`${ind}  if (${bi} >= 0 && ${bi} < 10 && ${km}[${bi}]) ${km}[${bi}](); }`);
+          return;
+        }
+      }
+    }
+    // compound assignment sugar: x.value += e, x.value -= e, ...
+    if (ts.isBinaryExpression(e)) {
+      const K = ts.SyntaxKind;
+      const sugar: Partial<Record<ts.SyntaxKind, ts.BinaryOperator>> = {
+        [K.PlusEqualsToken]: K.PlusToken,
+        [K.MinusEqualsToken]: K.MinusToken,
+        [K.AsteriskEqualsToken]: K.AsteriskToken,
+        [K.PercentEqualsToken]: K.PercentToken,
+      };
+      const op = sugar[e.operatorToken.kind];
+      if (op) {
+        const rhs = ts.factory.createBinaryExpression(e.left, op, ts.isParenthesizedExpression(e.right) ? e.right : ts.factory.createParenthesizedExpression(e.right));
+        this.compileAssign(e.left, rhs, out, ind);
+        return;
+      }
+    }
+    // ++ / -- statement sugar
+    if (ts.isPostfixUnaryExpression(e) || ts.isPrefixUnaryExpression(e)) {
+      const op = e.operator;
+      if (op === ts.SyntaxKind.PlusPlusToken || op === ts.SyntaxKind.MinusMinusToken) {
+        const one = ts.factory.createNumericLiteral("1");
+        const rhs = ts.factory.createBinaryExpression(
+          e.operand,
+          op === ts.SyntaxKind.PlusPlusToken ? ts.SyntaxKind.PlusToken : ts.SyntaxKind.MinusToken,
+          one,
+        );
+        this.compileAssign(e.operand, rhs, out, ind);
+        return;
       }
     }
     this.err(e, "unsupported expression statement");
@@ -982,7 +1155,25 @@ class AppCompiler {
         out.push(`${ind}}`);
         return;
       }
-      this.err(lhs, "cannot assign whole lists");
+      // whole-list assignment: todos.value = todos.value.filter(...)
+      // Views over one list always carry increasing pool indices (identity
+      // -> filter -> slice preserve order), so in-place compaction is safe.
+      if (b.refTy === "list") {
+        if (!this.isViewExpr(this.unparen(rhs)))
+          this.err(rhs, "list refs can only be assigned a filter/slice view");
+        if (this.viewListRef(this.unparen(rhs)) !== b.name)
+          this.err(rhs, "list assignment must derive from the same list");
+        const nv = this.tmp("nv");
+        const k = this.tmp("k");
+        out.push(`${ind}{ vp_view ${nv}; u8 ${k};`);
+        this.compileViewInto(this.unparen(rhs), nv, out, ind + "  ");
+        out.push(`${ind}  for (${k} = 0; ${k} < ${nv}.len; ${k}++) g_${b.name}[${k}] = g_${b.name}[${nv}.idx[${k}]];`);
+        out.push(`${ind}  g_${b.name}_len = ${nv}.len;`);
+        out.push(`${ind}  ${this.markCode(b.name)}; /* new array identity always triggers */`);
+        out.push(`${ind}}`);
+        return;
+      }
+      this.err(lhs, "unsupported ref assignment");
     }
     // t.done = ... (record field write)
     if (ts.isPropertyAccessExpression(lhs)) {
@@ -1056,10 +1247,12 @@ class AppCompiler {
     const prevDeps = this.curDeps;
     this.curDeps = b.deps;
     const saved = new Map(this.scope);
+    for (const p of b.params) this.scope.set(p, { kind: "local", cName: `p_${p}`, ty: NUM });
     for (const stmt of b.decl.body!.statements) this.compileStmt(stmt, out, "  ");
     this.scope = saved;
     this.curDeps = prevDeps;
-    this.bodies.push(`static void fn_${b.name}(void) {\n${out.join("\n")}\n}\n`);
+    const sig = b.params.length ? b.params.map((p) => `s32 p_${p}`).join(", ") : "void";
+    this.bodies.push(`static void fn_${b.name}(${sig}) {\n${out.join("\n")}\n}\n`);
   }
 
   // ---- JSX -> effects -------------------------------------------------------
@@ -1329,8 +1522,11 @@ class AppCompiler {
       const param = this.handler.parameters[0]?.name.getText(this.sf);
       if (!param) this.err(this.handler, "onButton arrow needs a (b) param");
       this.scope.set(param, { kind: "local", cName: "b_arg", ty: NUM });
-      for (const stmt of (this.handler.body as ts.Block).statements)
-        this.compileStmt(stmt, handlerOut, "  ");
+      if (ts.isBlock(this.handler.body)) {
+        for (const stmt of this.handler.body.statements) this.compileStmt(stmt, handlerOut, "  ");
+      } else {
+        this.compileExprStmt(this.handler.body, handlerOut, "  ");
+      }
       this.scope = saved;
     }
 
@@ -1444,6 +1640,13 @@ class AppCompiler {
     c.push(this.decls.join("\n"));
     c.push("");
     c.push(this.bodies.join("\n"));
+
+    // keymap fnptr tables (ROM), indexed by GBA key bit
+    for (const km of this.keymaps) {
+      const slots = Array.from({ length: 10 }, (_, i) => km.entries.get(i) ?? "0");
+      c.push(`static void (*const KM_${km.name}[10])(void) = { ${slots.join(", ")} };`);
+    }
+    c.push("");
 
     // handler
     c.push(`void app_on_button(u8 b) {\n  s32 b_arg = (s32)b;\n${handlerOut.join("\n")}\n}\n`);

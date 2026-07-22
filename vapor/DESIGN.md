@@ -95,7 +95,25 @@ Enforced with diagnostics, not documentation. In:
 
 - `ref<number>`, `ref<boolean>`, `ref<string>`, `ref<T[]>` of a closed
   interface `T` with number/boolean/string fields; `computed<...>` of pure
-  expressions over those.
+  expressions over those — yielding a number, a **list view**
+  (filter/slice chains), or a **record reference** (`filtered.value[i]`,
+  compiled to a cached nullable pointer).
+- **Keymaps**: a setup const of shape `{ [Button.X]: action, ... }` where
+  actions are zero-arg arrows or setup functions. Compiles to a 10-entry
+  function-pointer table in ROM; dispatch is the one-liner
+  `(cond ? mapA : mapB)[b]?.()` (missing entries are null pointers, `?.()`
+  is the null check).
+- **Setup helpers with parameters**: `function moveCursor(d: number)` —
+  compiled to real C functions with `s32` params (annotation required);
+  callable from actions, handlers, and each other.
+- **Const objects** (`const PAL = { title: 1, ... }`) fold at member
+  access; const string/string[] fold `.length` and index.
+- **Whole-list assignment**: `todos.value = todos.value.filter(...)` —
+  views over one list always carry increasing pool indices, so the
+  compiler emits an in-place compaction; new-array identity always
+  triggers, matching Vue.
+- Sugar: `+=`-family compound assignment (numbers and strings), `++`/`--`
+  statements, negative `slice` ends.
 - Component = `setup()` returning a JSX render closure. One root component
   (v1: no props, no child components — the block machinery supports them,
   the demo doesn't need them).
