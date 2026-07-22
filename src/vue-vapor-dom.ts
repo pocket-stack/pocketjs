@@ -18,6 +18,16 @@ interface TemplateLike {
   innerHTML: string;
 }
 
+interface PocketDocumentLike {
+  createElement(tag: string): TemplateLike | NodeMirror;
+  createElementNS(namespace: string, tag: string): NodeMirror;
+  createTextNode(value?: string): NodeMirror;
+  createComment(value?: string): NodeMirror;
+  querySelector(): null;
+  addEventListener(): void;
+  removeEventListener(): void;
+}
+
 function parseAttrs(raw: string, node: NodeMirror): void {
   const re = /([A-Za-z_:][-A-Za-z0-9_:]*)(?:=(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g;
   let match: RegExpExecArray | null;
@@ -57,6 +67,28 @@ function createTemplate(): TemplateLike {
       current = value;
       content.childNodes = parseTemplateHtml(value);
     },
+  };
+}
+
+function createPocketDocument(): PocketDocumentLike {
+  return {
+    createElement(tag: string) {
+      return tag === "template" ? createTemplate() : createElement(tag.toLowerCase());
+    },
+    createElementNS(_namespace: string, tag: string) {
+      return createElement(tag.toLowerCase());
+    },
+    createTextNode(value = "") {
+      return createTextNode(value);
+    },
+    createComment(value = "") {
+      return createCommentNode(value);
+    },
+    querySelector() {
+      return null;
+    },
+    addEventListener() {},
+    removeEventListener() {},
   };
 }
 
@@ -102,6 +134,7 @@ export function installVueVaporDom(): void {
     Text?: unknown;
     Comment?: unknown;
     window?: unknown;
+    __pocketDocument?: PocketDocumentLike;
   };
 
   installDomClass(g as Record<string, unknown>, "Node", isNativeNode);
@@ -112,25 +145,10 @@ export function installVueVaporDom(): void {
   installDomClass(g as Record<string, unknown>, "Comment", (value) => isNativeNode(value) && value.domNodeType === 8);
   if (!g.window) g.window = globalThis;
 
-  if (!g.document) {
-    g.document = {
-      createElement(tag: string) {
-        return tag === "template" ? createTemplate() : createElement(tag.toLowerCase());
-      },
-      createElementNS(_ns: string, tag: string) {
-        return createElement(tag.toLowerCase());
-      },
-      createTextNode(value = "") {
-        return createTextNode(value);
-      },
-      createComment(value = "") {
-        return createCommentNode(value);
-      },
-      querySelector() {
-        return null;
-      },
-      addEventListener() {},
-      removeEventListener() {},
-    };
-  }
+  // The browser HostWeb and the PocketJS guest share one JavaScript global,
+  // but they must not share a DOM. Vue Vapor's compiled guest references this
+  // facade through a build-time `document` alias; the real browser document
+  // remains available to engine.js for its canvas and controls.
+  g.__pocketDocument = createPocketDocument();
+  if (!g.document) g.document = g.__pocketDocument;
 }

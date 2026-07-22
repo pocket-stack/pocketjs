@@ -1,4 +1,4 @@
-import { computed, defineVaporComponent, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/vue-vapor/components";
 import { spring } from "@pocketjs/framework/vue-vapor/animation";
 import { onButtonPress, onFrame } from "@pocketjs/framework/vue-vapor/lifecycle";
@@ -78,7 +78,7 @@ const SPINNER_FRAMES = [
   "spinner-07.svg",
 ];
 
-const GridScreen = defineVaporComponent((props: { selectedIndex: number; onOpen: (game: Game, index: number) => void }) => {
+const GridScreen = (props: { selectedIndex: number; onOpen: (game: Game, index: number) => void }) => {
   const refs: (NodeMirror | undefined)[] = [];
   onMounted(() => {
     const i = props.selectedIndex;
@@ -103,9 +103,9 @@ const GridScreen = defineVaporComponent((props: { selectedIndex: number; onOpen:
       ))}
     </View>
   );
-});
+};
 
-const Loading = defineVaporComponent((props: { title: string; frame: number }) => {
+const Loading = (props: { title: string; frame: number }) => {
   const src = computed(() => {
     const i = Math.floor(props.frame / SPINNER_FRAME_STEP) % SPINNER_FRAMES.length;
     return SPINNER_FRAMES[i];
@@ -116,18 +116,18 @@ const Loading = defineVaporComponent((props: { title: string; frame: number }) =
       <Text class="text-sm text-slate-600 tracking-wide">LOADING {props.title}...</Text>
     </View>
   );
-});
+};
 
-const DetailStat = defineVaporComponent((props: { label: string; value: string }) => {
+const DetailStat = (props: { label: string; value: string }) => {
   return (
     <View class="flex-col items-end">
       <Text class="text-lg text-blue-600 font-bold">{props.value}</Text>
       <Text class="text-xs text-slate-500 tracking-wide">{props.label}</Text>
     </View>
   );
-});
+};
 
-const Detail = defineVaporComponent((props: { game: Game }) => {
+const Detail = (props: { game: Game }) => {
   let panel: NodeMirror | undefined;
   onMounted(() => {
     if (panel) spring(panel, "translateY", 0);
@@ -160,7 +160,7 @@ const Detail = defineVaporComponent((props: { game: Game }) => {
       <Text class="text-xs text-slate-500">TRIANGLE back to library</Text>
     </View>
   );
-});
+};
 
 export default function Library() {
   const screen = ref<Screen>("library");

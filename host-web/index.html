@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- PocketJS dev host: 480x272 canvas playground, demo picker, virtual buttons.
+<!-- PocketJS dev host: configurable canvas playground, demo picker, virtual buttons.
      Serve with: bun host-web/serve.ts   (or bun scripts/dev.ts) -->
 <html lang="en">
 <head>
@@ -15,7 +15,7 @@
   }
   h1 { font-size: 16px; margin: 0; color: #e2e8f0; }
   #screen {
-    width: 960px; height: 544px; /* 2x logical 480x272 */
+    width: 960px; height: auto; /* engine sets the native framebuffer width */
     max-width: 100%;
     image-rendering: pixelated;
     background: #000; border: 1px solid #1e293b; border-radius: 6px;

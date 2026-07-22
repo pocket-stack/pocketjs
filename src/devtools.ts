@@ -469,6 +469,39 @@ interface TreeNodeJson {
   k?: TreeNodeJson[];
 }
 
+function isTreeMirror(value: unknown): value is NodeMirror {
+  if (value == null || typeof value !== "object") return false;
+  const candidate = value as Partial<NodeMirror>;
+  return typeof candidate.id === "number" && typeof candidate.type === "number";
+}
+
+/**
+ * Vue Vapor may place an internal fragment wrapper in a native node's
+ * `children` while swapping a dynamic branch. The wrapper is not a
+ * NodeMirror: it owns a possibly nested `nodes` array instead. DevTools is
+ * observational and must never stop the host frame loop because of that
+ * renderer-private shape, so flatten wrappers and ignore non-node metadata.
+ */
+function forEachTreeMirror(value: unknown, visit: (node: NodeMirror) => void): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) forEachTreeMirror(entry, visit);
+    return;
+  }
+  if (isTreeMirror(value)) {
+    visit(value);
+    return;
+  }
+  if (value != null && typeof value === "object") {
+    const nodes = (value as { nodes?: unknown }).nodes;
+    if (nodes !== undefined) forEachTreeMirror(nodes, visit);
+  }
+}
+
+function forEachTreeChild(node: NodeMirror, visit: (child: NodeMirror) => void): void {
+  const children = Array.isArray(node.children) ? node.children : [];
+  for (const child of children) forEachTreeMirror(child, visit);
+}
+
 function serializeNode(node: NodeMirror): TreeNodeJson {
   const out: TreeNodeJson = { i: node.id, t: node.domTag ?? String(node.type) };
   if (node.debugName) out.n = node.debugName;
@@ -476,17 +509,19 @@ function serializeNode(node: NodeMirror): TreeNodeJson {
   if (typeof cls === "string" && cls) out.c = cls;
   if (node.text) out.x = node.text.length > 80 ? node.text.slice(0, 79) + "…" : node.text;
   const kids: TreeNodeJson[] = [];
-  for (const child of node.children) {
-    if (child.domNodeType === 8) continue; // comment anchors: invisible noise
+  forEachTreeChild(node, (child) => {
+    if (child.domNodeType === 8) return; // comment anchors: invisible noise
     kids.push(serializeNode(child));
-  }
+  });
   if (kids.length) out.k = kids;
   return out;
 }
 
 function countNodes(node: NodeMirror): number {
   let n = 1;
-  for (const child of node.children) n += countNodes(child);
+  forEachTreeChild(node, (child) => {
+    n += countNodes(child);
+  });
   return n;
 }
 
