@@ -25,7 +25,7 @@ cell-for-cell after every press.
 
 ```
 $ bun test vapor/test/
- 23 pass, 0 fail, 1343 expect() calls
+ 26 pass, 0 fail, 1352 expect() calls
 
 $ bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx
 == reactive graph ==
@@ -64,6 +64,23 @@ in-place pool compaction), and the selected todo is itself a computed —
 `const current = computed(() => filtered.value[cursor.value])` — cached as
 a nullable record pointer with the same validity-bit laziness as any other
 computed.
+
+The view is semantic components, not raw rows — real vapor functional
+components under the oracle, **inlined to zero-cost paint code** by the
+compiler (props substitute at the AST level, so const folding, dependency
+masks and row spans all see through; six components add zero effects and
+zero RAM):
+
+```tsx
+function TodoRow(props: { line: number; todo: Todo; selected: boolean }) { … }
+
+<TitleBar line={0} text="POCKET VAPOR TODO" />
+<StatusBar line={1} count={remaining.value} label={FILTERS[filter.value]} />
+{visible.value.map((t, i) => (
+  <TodoRow line={LIST_Y + i} todo={t} selected={t === current.value} />
+))}
+{editing.value ? <EditorBar line={17} draft={draft.value} glyph={GLYPHS[glyph.value]} /> : null}
+```
 
 Reactivity survives compilation as data: every ref is a dirty bit, every
 dependency edge is a bitmask baked into ROM, computeds are lazy cached

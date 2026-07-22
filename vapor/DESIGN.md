@@ -98,6 +98,18 @@ Enforced with diagnostics, not documentation. In:
   expressions over those — yielding a number, a **list view**
   (filter/slice chains), or a **record reference** (`filtered.value[i]`,
   compiled to a cached nullable pointer).
+- **UI components**: module-level `function Name(props: {...}) { return
+  <row .../> }` — genuine vapor functional components under the oracle,
+  **inlined at compile time** by Pocket Vapor: each use site substitutes
+  `props.<name>` with the use-site expression at the AST level, so const
+  folding, dependency masks and row-span analysis all see through — six
+  components in the demo add zero effects, zero RAM and zero calls. One
+  root `<row>` per component, no nesting (v1), and prop names must not
+  collide with row attributes (`y`/`x`/`pal`): vue's functional-component
+  fallthrough only forwards class/style/on* while suppressing the
+  template's own root binding of a same-named key, so a colliding prop
+  would be written by nobody — the compiler rejects it with that
+  explanation (use `line` for the row position).
 - **Keymaps**: a setup const of shape `{ [Button.X]: action, ... }` where
   actions are zero-arg arrows or setup functions. Compiles to a 10-entry
   function-pointer table in ROM; dispatch is the one-liner

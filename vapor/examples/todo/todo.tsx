@@ -1,12 +1,14 @@
 // VAPOR TODO — TodoMVC for the Game Boy Advance, written as real Vue Vapor.
 //
 // This file has two executions. Under the oracle it runs unmodified on
-// @vue/runtime-vapor (vue 3.6) — ref/computed are the real thing. Under the
+// @vue/runtime-vapor (vue 3.6) — ref/computed are the real thing and the
+// UI components below are genuine vapor functional components. Under the
 // Pocket Vapor compiler it is lowered to C: refs become state-struct slots,
 // computeds become cached recompute functions, JSX bindings become paint
 // effects with compile-time dependency masks, keymaps become ROM function-
-// pointer tables, and the todo list becomes a fixed-capacity arena pool.
-// Same semantics, no JavaScript engine.
+// pointer tables, components inline to zero-cost paint code, and the todo
+// list becomes a fixed-capacity arena pool. Same semantics, no JavaScript
+// engine.
 //
 // Controls — list mode: Up/Down cursor, A toggle done, B delete, R cycle
 // filter, Select clear completed, Start new todo. Edit mode: Left/Right
@@ -28,6 +30,76 @@ const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789";
 const LIST_Y = 3;
 const WINDOW = 12;
 const TEXT_MAX = 20;
+
+// ---- UI components ----------------------------------------------------------
+// Presentational, pure functions of props: they own their palette and
+// indentation; the app owns state and layout (which row each one lives on).
+
+function TitleBar(props: { line: number; text: string }) {
+  return (
+    <row y={props.line} pal={PAL.title}>
+      {" "}
+      {props.text}
+    </row>
+  );
+}
+
+function StatusBar(props: { line: number; count: number; label: string }) {
+  return (
+    <row y={props.line} x={1} pal={PAL.accent}>
+      {props.count}
+      {" LEFT / "}
+      {props.label}
+    </row>
+  );
+}
+
+function TodoRow(props: { line: number; todo: Todo; selected: boolean }) {
+  return (
+    <row
+      y={props.line}
+      x={1}
+      pal={props.selected ? PAL.cursor : props.todo.done ? PAL.dim : PAL.text}
+    >
+      {props.selected ? ">" : " "}
+      {"["}
+      {props.todo.done ? "X" : " "}
+      {"] "}
+      {props.todo.text}
+    </row>
+  );
+}
+
+function Notice(props: { line: number; text: string }) {
+  return (
+    <row y={props.line} x={1} pal={PAL.dim}>
+      {props.text}
+    </row>
+  );
+}
+
+function EditorBar(props: { line: number; draft: string; glyph: string }) {
+  return (
+    <row y={props.line} x={1} pal={PAL.edit}>
+      {"NEW: "}
+      {props.draft}
+      {"["}
+      {props.glyph}
+      {"]"}
+    </row>
+  );
+}
+
+function HelpBar(props: { line: number; text: string }) {
+  return (
+    <row y={props.line} pal={PAL.dim}>
+      {" "}
+      {props.text}
+    </row>
+  );
+}
+
+// ---- app --------------------------------------------------------------------
 
 export default () => {
   const todos = ref<Todo[]>([
@@ -122,44 +194,19 @@ export default () => {
 
   return (
     <>
-      <row y={0} x={0} pal={PAL.title}>
-        {" POCKET VAPOR TODO"}
-      </row>
-      <row y={1} x={1} pal={PAL.accent}>
-        {remaining.value}
-        {" LEFT / "}
-        {FILTERS[filter.value]}
-      </row>
+      <TitleBar line={0} text="POCKET VAPOR TODO" />
+      <StatusBar line={1} count={remaining.value} label={FILTERS[filter.value]} />
       {visible.value.map((t, i) => (
-        <row
-          y={LIST_Y + i}
-          x={1}
-          pal={t === current.value ? PAL.cursor : t.done ? PAL.dim : PAL.text}
-        >
-          {t === current.value ? ">" : " "}
-          {"["}
-          {t.done ? "X" : " "}
-          {"] "}
-          {t.text}
-        </row>
+        <TodoRow line={LIST_Y + i} todo={t} selected={t === current.value} />
       ))}
-      {filtered.value.length === 0 ? (
-        <row y={LIST_Y} x={1} pal={PAL.dim}>
-          {"NOTHING HERE"}
-        </row>
-      ) : null}
+      {filtered.value.length === 0 ? <Notice line={LIST_Y} text="NOTHING HERE" /> : null}
       {editing.value ? (
-        <row y={17} x={1} pal={PAL.edit}>
-          {"NEW: "}
-          {draft.value}
-          {"["}
-          {GLYPHS[glyph.value]}
-          {"]"}
-        </row>
+        <EditorBar line={17} draft={draft.value} glyph={GLYPHS[glyph.value]} />
       ) : null}
-      <row y={19} x={0} pal={PAL.dim}>
-        {editing.value ? " A:PUT B:DEL ST:SAVE SE:QUIT" : " A:DONE B:DEL R:FILT ST:NEW"}
-      </row>
+      <HelpBar
+        line={19}
+        text={editing.value ? "A:PUT B:DEL ST:SAVE SE:QUIT" : "A:DONE B:DEL R:FILT ST:NEW"}
+      />
     </>
   );
 };

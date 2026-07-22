@@ -143,6 +143,54 @@ export default () => {
     expect(msg).toContain("annotated `: number`");
   });
 
+  test("components inline to zero-cost paint code", async () => {
+    const source = await Bun.file(ENTRY).text();
+    const app = compileVaporApp(ENTRY, source);
+    // six components, yet the graph is unchanged: TitleBar folds to a static
+    // boot-painted row, the rest merge into the same four effects
+    expect(app.graph.match(/eff_\d+:/g)?.length).toBe(4);
+    expect(app.c).not.toContain("TitleBar");
+    expect(app.graph).toMatch(/rows \[3, 15\) mask 0x7 \{todos, cursor, filter\}/);
+  });
+
+  test("rejects props that collide with row attributes", () => {
+    const msg = compileErr(`${HEADER}
+function Bad(props: { y: number }) {
+  return (<row y={props.y}>{"A"}</row>);
+}
+export default () => {
+  const count = ref(0);
+  onButton((b) => { count.value = 1; });
+  return (<><Bad y={0} /></>);
+};
+`);
+    expect(msg).toContain('collides with a <row> attribute');
+  });
+
+  test("rejects unknown and missing props", () => {
+    const comp = `
+function Line(props: { line: number; text: string }) {
+  return (<row y={props.line}>{props.text}</row>);
+}
+`;
+    const unknown = compileErr(`${HEADER}${comp}
+export default () => {
+  const count = ref(0);
+  onButton((b) => { count.value = 1; });
+  return (<><Line line={0} text="A" extra={1} /></>);
+};
+`);
+    expect(unknown).toContain("unknown prop extra");
+    const missing = compileErr(`${HEADER}${comp}
+export default () => {
+  const count = ref(0);
+  onButton((b) => { count.value = 1; });
+  return (<><Line line={0} /></>);
+};
+`);
+    expect(missing).toContain("missing prop text");
+  });
+
   test("rejects list assignment from a different list", () => {
     const source = `${HEADER}
 interface It { text: string; done: boolean }

@@ -107,13 +107,43 @@ interface KeymapBinding {
   entries: Map<number, string>;
 }
 
+interface ComponentBinding {
+  kind: "component";
+  name: string;
+  propsParam: string;
+  props: Map<string, string>; // prop name -> declared type text
+  body: ts.JsxElement | ts.JsxSelfClosingElement; // the root <row>
+}
+
+/** Active props substitution while inlining one component use. */
+interface PropsCtx {
+  param: string;
+  exprs: Map<string, ts.Expression>;
+  component: string;
+}
+
+/** A paintable row source: an intrinsic <row> or an inlined component body. */
+interface RowSrc {
+  tag: string;
+  attrs: ts.JsxAttributes;
+  children: readonly ts.JsxChild[];
+  node: ts.Node;
+}
+
 interface LocalBinding {
   kind: "local";
   cName: string;
   ty: Ty;
 }
 
-type Binding = RefBinding | ComputedBinding | FnBinding | ConstBinding | LocalBinding | KeymapBinding;
+type Binding =
+  | RefBinding
+  | ComputedBinding
+  | FnBinding
+  | ConstBinding
+  | LocalBinding
+  | KeymapBinding
+  | ComponentBinding;
 
 const POOL_CAP = 32;
 
@@ -165,6 +195,7 @@ class AppCompiler {
       if (ts.isImportDeclaration(stmt)) this.scanImport(stmt);
       else if (ts.isInterfaceDeclaration(stmt)) this.scanInterface(stmt);
       else if (ts.isTypeAliasDeclaration(stmt)) continue; // types are erased
+      else if (ts.isFunctionDeclaration(stmt)) this.scanComponent(stmt);
       else if (ts.isVariableStatement(stmt)) this.scanModuleConst(stmt);
       else if (ts.isExportAssignment(stmt)) {
         if (!ts.isArrowFunction(stmt.expression)) this.err(stmt, "export default must be an arrow component");
@@ -341,6 +372,77 @@ class AppCompiler {
       if (this.ifaces.has(name)) return name;
     }
     this.err(seed, "list refs need an explicit ref<T[]>(...) annotation with a declared interface T");
+  }
+
+  // ---- components ------------------------------------------------------------
+  // Module-level `function Name(props: {...}) { return <row .../> }` — real
+  // vapor functional components under the oracle, inlined to zero-cost paint
+  // code by the compiler: at each use site the body <row> compiles with
+  // `props.<name>` substituted (at the AST level) by the use-site expression,
+  // so dependency masks, const folding and span analysis all see through.
+
+  private propsCtx: PropsCtx | null = null;
+
+  private scanComponent(decl: ts.FunctionDeclaration): void {
+    if (!decl.name || !/^[A-Z]/.test(decl.name.text))
+      this.err(decl, "module functions must be UI components (Capitalized name)");
+    const param = decl.parameters[0];
+    if (
+      decl.parameters.length !== 1 ||
+      !param ||
+      !ts.isIdentifier(param.name) ||
+      !param.type ||
+      !ts.isTypeLiteralNode(param.type)
+    )
+      this.err(decl, "components take a single `props: { ... }` parameter with an inline type literal");
+    const props = new Map<string, string>();
+    for (const member of param.type.members) {
+      if (!ts.isPropertySignature(member) || !member.type || !ts.isIdentifier(member.name))
+        this.err(member, "component props must be `name: type`");
+      const propName = member.name.text;
+      if (propName === "y" || propName === "x" || propName === "pal")
+        this.err(
+          member,
+          `prop name "${propName}" collides with a <row> attribute: on a functional component, ` +
+            "vue's fallthrough suppresses the template's own root-element binding of a same-named " +
+            "key while forwarding only class/style/on* — the attribute would be written by nobody. " +
+            'Name it differently (e.g. "line" for the row position).',
+        );
+      props.set(propName, member.type.getText(this.sf));
+    }
+    if (!decl.body || decl.body.statements.length !== 1) this.err(decl, "component body must be a single return");
+    const ret = decl.body.statements[0];
+    if (!ts.isReturnStatement(ret) || !ret.expression) this.err(ret, "component must return JSX");
+    let expr: ts.Expression = ret.expression;
+    while (ts.isParenthesizedExpression(expr)) expr = expr.expression;
+    if (!ts.isJsxElement(expr) && !ts.isJsxSelfClosingElement(expr))
+      this.err(ret, "component must return a single <row>");
+    const tag = ts.isJsxElement(expr)
+      ? expr.openingElement.tagName.getText(this.sf)
+      : expr.tagName.getText(this.sf);
+    if (tag !== "row") this.err(expr, "component root must be a <row> (components cannot nest, v1)");
+    this.scope.set(decl.name.text, {
+      kind: "component",
+      name: decl.name.text,
+      propsParam: param.name.text,
+      props,
+      body: expr,
+    });
+  }
+
+  /** If e is `props.<name>` under an active inline, the use-site expression. */
+  private substProp(e: ts.Expression): ts.Expression | null {
+    if (!this.propsCtx) return null;
+    if (
+      ts.isPropertyAccessExpression(e) &&
+      ts.isIdentifier(e.expression) &&
+      e.expression.text === this.propsCtx.param
+    ) {
+      const sub = this.propsCtx.exprs.get(e.name.text);
+      if (!sub) this.err(e, `<${this.propsCtx.component}> read prop ${e.name.text}, which was not passed`);
+      return this.unparen(sub);
+    }
+    return null;
   }
 
   // ---- keymaps --------------------------------------------------------------
@@ -594,6 +696,8 @@ class AppCompiler {
 
   private constNum(e: ts.Expression): number | null {
     e = this.unparen(e);
+    const sub = this.substProp(e);
+    if (sub) return this.constNum(sub);
     if (ts.isNumericLiteral(e)) return Number(e.text);
     if (ts.isIdentifier(e)) {
       const b = this.scope.get(e.text);
@@ -733,6 +837,8 @@ class AppCompiler {
 
   private compileExpr(e: ts.Expression, out: string[], ind: string): { c: string; ty: Ty } {
     e = this.unparen(e);
+    const sub = this.substProp(e);
+    if (sub) return this.compileExpr(sub, out, ind);
     const folded = this.constNum(e);
     if (folded !== null) return { c: String(folded), ty: NUM };
 
@@ -1274,7 +1380,7 @@ class AppCompiler {
         if (rawChild.text.trim() !== "") this.err(rawChild, "stray text at fragment root");
         continue;
       }
-      if (ts.isJsxElement(rawChild)) {
+      if (ts.isJsxElement(rawChild) || ts.isJsxSelfClosingElement(rawChild)) {
         units.push(this.compileRowUnit(rawChild));
         continue;
       }
@@ -1350,20 +1456,64 @@ class AppCompiler {
     return { inits, effects };
   }
 
-  private jsxAttr(el: ts.JsxElement, name: string): ts.Expression | undefined {
-    for (const attr of el.openingElement.attributes.properties) {
-      if (ts.isJsxAttribute(attr) && attr.name.getText(this.sf) === name) {
-        if (!attr.initializer || !ts.isJsxExpression(attr.initializer) || !attr.initializer.expression)
-          this.err(attr, `attribute ${name} must be {expr}`);
-        return attr.initializer.expression;
-      }
+  private rowSrc(el: ts.JsxElement | ts.JsxSelfClosingElement): RowSrc {
+    if (ts.isJsxElement(el))
+      return {
+        tag: el.openingElement.tagName.getText(this.sf),
+        attrs: el.openingElement.attributes,
+        children: el.children,
+        node: el,
+      };
+    return { tag: el.tagName.getText(this.sf), attrs: el.attributes, children: [], node: el };
+  }
+
+  private attrExpr(attr: ts.JsxAttribute): ts.Expression {
+    if (attr.initializer && ts.isStringLiteral(attr.initializer)) return attr.initializer;
+    if (attr.initializer && ts.isJsxExpression(attr.initializer) && attr.initializer.expression)
+      return attr.initializer.expression;
+    this.err(attr, `attribute ${attr.name.getText(this.sf)} must be {expr} or "string"`);
+  }
+
+  /**
+   * Resolve a renderable JSX element: an intrinsic <row>, or a component
+   * use inlined — props collected here, the returned ctx made active while
+   * the component's body <row> compiles.
+   */
+  private resolveRenderable(el: ts.JsxElement | ts.JsxSelfClosingElement): {
+    src: RowSrc;
+    ctx: PropsCtx | null;
+  } {
+    const use = this.rowSrc(el);
+    if (use.tag === "row") return { src: use, ctx: null };
+    const b = this.scope.get(use.tag);
+    if (b?.kind !== "component")
+      this.err(el, `unknown element <${use.tag}> (only <row> and declared components)`);
+    if (this.propsCtx) this.err(el, "components cannot render other components (v1)");
+    const exprs = new Map<string, ts.Expression>();
+    for (const attr of use.attrs.properties) {
+      if (!ts.isJsxAttribute(attr)) this.err(attr, "spread props are not supported");
+      const name = attr.name.getText(this.sf);
+      if (!b.props.has(name)) this.err(attr, `unknown prop ${name} on <${b.name}>`);
+      exprs.set(name, this.attrExpr(attr));
+    }
+    for (const p of b.props.keys())
+      if (!exprs.has(p)) this.err(el, `missing prop ${p} on <${b.name}>`);
+    return {
+      src: this.rowSrc(b.body),
+      ctx: { param: b.propsParam, exprs, component: b.name },
+    };
+  }
+
+  private jsxAttr(src: RowSrc, name: string): ts.Expression | undefined {
+    for (const attr of src.attrs.properties) {
+      if (ts.isJsxAttribute(attr) && attr.name.getText(this.sf) === name) return this.attrExpr(attr);
     }
     return undefined;
   }
 
   /** Compile one <row> paint (dynamic y allowed for map rows). */
   private compileRowPaint(
-    el: ts.JsxElement,
+    el: RowSrc,
     yC: string,
     out: string[],
     ind: string,
@@ -1371,7 +1521,7 @@ class AppCompiler {
     const xExpr = this.jsxAttr(el, "x");
     const palExpr = this.jsxAttr(el, "pal");
     const x = xExpr ? this.constNum(xExpr) : 0;
-    if (x === null) this.err(el, "row x must be compile-time constant");
+    if (x === null) this.err(el.node, "row x must be compile-time constant");
     const pal = palExpr ? this.compileExpr(palExpr, out, ind) : { c: "0", ty: NUM };
     const palV = this.tmp("pal");
     const colV = this.tmp("col");
@@ -1398,29 +1548,32 @@ class AppCompiler {
     out.push(`${ind}}`);
   }
 
-  private rowConstY(el: ts.JsxElement): number {
-    const yExpr = this.jsxAttr(el, "y");
-    if (!yExpr) this.err(el, "row needs a y attribute");
+  private rowConstY(src: RowSrc): number {
+    const yExpr = this.jsxAttr(src, "y");
+    if (!yExpr) this.err(src.node, "row needs a y attribute");
     const y = this.constNum(yExpr);
-    if (y === null) this.err(el, "row y must be compile-time constant here");
-    if (y < 0 || y >= 20) this.err(el, `row y out of range: ${y}`);
+    if (y === null) this.err(src.node, "row y must be compile-time constant here");
+    if (y < 0 || y >= 20) this.err(src.node, `row y out of range: ${y}`);
     return y;
   }
 
-  private compileRowUnit(el: ts.JsxElement): {
+  private compileRowUnit(el: ts.JsxElement | ts.JsxSelfClosingElement): {
     span: [number, number];
     deps: Set<string>;
     body: string[];
     isStatic: boolean;
   } {
-    if (el.openingElement.tagName.getText(this.sf) !== "row") this.err(el, "only <row> elements exist");
-    const y = this.rowConstY(el);
+    const { src, ctx } = this.resolveRenderable(el);
+    const prevCtx = this.propsCtx;
+    this.propsCtx = ctx ?? prevCtx;
+    const y = this.rowConstY(src);
     const deps = new Set<string>();
     const prev = this.curDeps;
     this.curDeps = deps;
     const body: string[] = [];
-    this.compileRowPaint(el, String(y), body, "  ");
+    this.compileRowPaint(src, String(y), body, "  ");
     this.curDeps = prev;
+    this.propsCtx = prevCtx;
     return { span: [y, y + 1], deps, body, isStatic: deps.size === 0 };
   }
 
@@ -1431,17 +1584,24 @@ class AppCompiler {
     isStatic: boolean;
   } {
     const whenTrue = this.unparen(e.whenTrue);
-    if (!ts.isJsxElement(whenTrue) || e.whenFalse.kind !== ts.SyntaxKind.NullKeyword)
+    if (
+      (!ts.isJsxElement(whenTrue) && !ts.isJsxSelfClosingElement(whenTrue)) ||
+      e.whenFalse.kind !== ts.SyntaxKind.NullKeyword
+    )
       this.err(e, "conditional children must be {cond ? <row/> : null}");
-    const y = this.rowConstY(whenTrue);
     const deps = new Set<string>();
     const prev = this.curDeps;
     this.curDeps = deps;
     const body: string[] = [];
     const cond = this.compileExpr(e.condition, body, "  ");
+    const { src, ctx } = this.resolveRenderable(whenTrue);
+    const prevCtx = this.propsCtx;
+    this.propsCtx = ctx ?? prevCtx;
+    const y = this.rowConstY(src);
     body.push(`  if (${this.truthy(cond)}) {`);
-    this.compileRowPaint(whenTrue, String(y), body, "    ");
+    this.compileRowPaint(src, String(y), body, "    ");
     body.push(`  }`);
+    this.propsCtx = prevCtx;
     this.curDeps = prev;
     return { span: [y, y + 1], deps, body, isStatic: false };
   }
@@ -1457,12 +1617,10 @@ class AppCompiler {
     const arrow = call.arguments[0];
     if (!arrow || !ts.isArrowFunction(arrow)) this.err(call, ".map takes an arrow");
     const rowJsx = this.unparen(arrow.body as ts.Expression);
-    if (!ts.isJsxElement(rowJsx)) this.err(call, ".map arrow must return a <row>");
+    if (!ts.isJsxElement(rowJsx) && !ts.isJsxSelfClosingElement(rowJsx))
+      this.err(call, ".map arrow must return a <row> or a component");
     const [itemParam, indexParam] = arrow.parameters.map((p) => p.name.getText(this.sf));
     if (!itemParam || !indexParam) this.err(arrow, ".map arrow needs (item, index) params");
-
-    const yExpr = this.jsxAttr(rowJsx, "y");
-    if (!yExpr) this.err(rowJsx, "row needs y");
 
     const deps = new Set<string>();
     const prev = this.curDeps;
@@ -1482,25 +1640,33 @@ class AppCompiler {
     const saved = new Map(this.scope);
     this.scope.set(itemParam, { kind: "local", cName: pV, ty: { k: "obj", iface, listRef } });
     this.scope.set(indexParam, { kind: "local", cName: `(s32)${iV}`, ty: NUM });
+    const { src: rowSrc, ctx } = this.resolveRenderable(rowJsx);
+    const prevCtx = this.propsCtx;
+    this.propsCtx = ctx ?? prevCtx;
+    const yExpr = this.jsxAttr(rowSrc, "y");
+    if (!yExpr) this.err(rowSrc.node, "row needs y");
+    // span: y = base + i requires resolving the base constant (through props)
+    const yBase = this.mapYBase(yExpr, indexParam);
     const yV = this.compileExpr(yExpr, body, "    ");
     const yTmp = this.tmp("y");
     body.push(`    { u8 ${yTmp} = (u8)(${yV.c});`);
     body.push(`    if (${yTmp} < ${20}) {`);
-    this.compileRowPaint(rowJsx, yTmp, body, "      ");
+    this.compileRowPaint(rowSrc, yTmp, body, "      ");
     body.push(`    } }`);
+    this.propsCtx = prevCtx;
     this.scope = saved;
     body.push(`  } }`);
     this.curDeps = prev;
 
-    // span: y = base + i requires resolving the base constant
-    const yBase = this.mapYBase(yExpr, indexParam);
     const span: [number, number] = [yBase, Math.min(20, yBase + maxLen)];
     return { span, deps, body, isStatic: false };
   }
 
   /** y must be `i` or `CONST + i` / `i + CONST` inside a map row. */
   private mapYBase(yExpr: ts.Expression, indexParam: string): number {
-    const e = this.unparen(yExpr);
+    let e = this.unparen(yExpr);
+    const sub = this.substProp(e);
+    if (sub) e = this.unparen(sub);
     if (ts.isIdentifier(e) && e.text === indexParam) return 0;
     if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.PlusToken) {
       const l = this.constNum(e.left);
