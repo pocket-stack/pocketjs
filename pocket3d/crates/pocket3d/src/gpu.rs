@@ -24,25 +24,86 @@ pub struct Gpu {
 impl Gpu {
     /// Create a device with no surface (offscreen rendering only).
     pub fn new_headless() -> Result<Self> {
-        pollster::block_on(Self::new_async(None))
+        pollster::block_on(Self::new_async(
+            None,
+            wgpu::PowerPreference::HighPerformance,
+        ))
     }
 
     /// Create a device compatible with the given surface.
     pub fn new_for_surface(surface: &wgpu::Surface<'_>) -> Result<Self> {
-        pollster::block_on(Self::new_async(Some(surface)))
+        Self::new_for_surface_with_power_preference(surface, wgpu::PowerPreference::HighPerformance)
     }
 
-    async fn new_async(compatible_surface: Option<&wgpu::Surface<'_>>) -> Result<Self> {
+    /// Create a device compatible with the given surface, requesting the
+    /// adapter class appropriate for the host's power policy.
+    pub fn new_for_surface_with_power_preference(
+        surface: &wgpu::Surface<'_>,
+        power_preference: wgpu::PowerPreference,
+    ) -> Result<Self> {
+        pollster::block_on(Self::new_async(Some(surface), power_preference))
+    }
+
+    async fn new_async(
+        compatible_surface: Option<&wgpu::Surface<'_>>,
+        power_preference: wgpu::PowerPreference,
+    ) -> Result<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        Self::from_instance_async(instance, compatible_surface, power_preference).await
+    }
+
+    /// Create the shared instance first when a surface must be created
+    /// before adapter selection (windowed startup path).
+    pub fn new_instance() -> wgpu::Instance {
+        wgpu::Instance::new(&wgpu::InstanceDescriptor::default())
+    }
+
+    /// Finish initialization from an existing instance + surface.
+    pub fn from_instance_for_surface(
+        instance: wgpu::Instance,
+        surface: &wgpu::Surface<'_>,
+    ) -> Result<Self> {
+        Self::from_instance_for_surface_with_power_preference(
+            instance,
+            surface,
+            wgpu::PowerPreference::HighPerformance,
+        )
+    }
+
+    /// Finish initialization from an existing instance + surface, requesting
+    /// the adapter class appropriate for the host's power policy.
+    pub fn from_instance_for_surface_with_power_preference(
+        instance: wgpu::Instance,
+        surface: &wgpu::Surface<'_>,
+        power_preference: wgpu::PowerPreference,
+    ) -> Result<Self> {
+        pollster::block_on(Self::from_instance_async(
+            instance,
+            Some(surface),
+            power_preference,
+        ))
+    }
+
+    async fn from_instance_async(
+        instance: wgpu::Instance,
+        compatible_surface: Option<&wgpu::Surface<'_>>,
+        power_preference: wgpu::PowerPreference,
+    ) -> Result<Self> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference,
                 compatible_surface,
                 force_fallback_adapter: false,
             })
             .await
             .context("no compatible GPU adapter")?;
-        log::info!("adapter: {:?}", adapter.get_info().name);
+        let info = adapter.get_info();
+        log::info!(
+            "adapter: {:?} ({:?}, requested {:?})",
+            info.name,
+            info.device_type,
+            power_preference
+        );
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("pocket3d"),
@@ -58,46 +119,6 @@ impl Gpu {
             adapter,
             device,
             queue,
-        })
-    }
-
-    /// Create the shared instance first when a surface must be created
-    /// before adapter selection (windowed startup path).
-    pub fn new_instance() -> wgpu::Instance {
-        wgpu::Instance::new(&wgpu::InstanceDescriptor::default())
-    }
-
-    /// Finish initialization from an existing instance + surface.
-    pub fn from_instance_for_surface(
-        instance: wgpu::Instance,
-        surface: &wgpu::Surface<'_>,
-    ) -> Result<Self> {
-        pollster::block_on(async {
-            let adapter = instance
-                .request_adapter(&wgpu::RequestAdapterOptions {
-                    power_preference: wgpu::PowerPreference::HighPerformance,
-                    compatible_surface: Some(surface),
-                    force_fallback_adapter: false,
-                })
-                .await
-                .context("no compatible GPU adapter")?;
-            log::info!("adapter: {:?}", adapter.get_info().name);
-            let (device, queue) = adapter
-                .request_device(&wgpu::DeviceDescriptor {
-                    label: Some("pocket3d"),
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                    trace: wgpu::Trace::Off,
-                })
-                .await
-                .context("failed to create wgpu device")?;
-            Ok(Self {
-                instance,
-                adapter,
-                device,
-                queue,
-            })
         })
     }
 }

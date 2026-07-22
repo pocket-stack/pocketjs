@@ -16,10 +16,17 @@ use pocket3d::gpu::Gpu;
 use pocketjs_core::{TexView, Ui, spec};
 
 /// One glyph atlas uploaded as an R8 grid texture (16 cells per row).
+/// Cells are stored at coverage resolution (logical cell × raster density);
+/// glyphs draw at their logical size × the render scale, so a density-2
+/// atlas under a 2× scale samples 1:1.
 struct FontTexture {
     bind: wgpu::BindGroup,
+    /// Texel cell dimensions (coverage resolution).
     cell_w: u32,
     cell_h: u32,
+    /// Logical cell dimensions (what GLYPH_RUN coordinates address).
+    logical_w: f32,
+    logical_h: f32,
     tex_w: f32,
     tex_h: f32,
     cols: u32,
@@ -235,9 +242,48 @@ impl UiRenderer {
         target_px: (u32, u32),
         load: wgpu::LoadOp<wgpu::Color>,
     ) -> Result<()> {
-        self.sync_textures(gpu, ui);
         let words: Vec<u32> = ui.draw().words.clone();
-        self.build_batches(&words, target_px);
+        self.render_words(gpu, ui, &words, encoder, view, target_px, load)
+    }
+
+    /// Like [`render`](Self::render), but over a DrawList the host already
+    /// built with `ui.draw()`. Hosts that hash the DrawList per tick to skip
+    /// unchanged frames (pocket-widget's demand rendering) pass the words
+    /// they hashed instead of paying for a second tree walk.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_words(
+        &mut self,
+        gpu: &Gpu,
+        ui: &Ui,
+        words: &[u32],
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        target_px: (u32, u32),
+        load: wgpu::LoadOp<wgpu::Color>,
+    ) -> Result<()> {
+        self.render_words_scaled(gpu, ui, words, encoder, view, target_px, 1.0, load)
+    }
+
+    /// Like [`render_words`](Self::render_words), with a logical→physical
+    /// scale: DrawList coordinates are multiplied by `scale` into a
+    /// `target_px`-sized view (`target_px` = core viewport × `scale` for
+    /// 1:1). With density-`scale` font atlases and pak assets this is the
+    /// Vita presentation model on wgpu — a desktop widget on a 2× display
+    /// passes `scale = 2.0` and gets native-resolution text, not upscale.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_words_scaled(
+        &mut self,
+        gpu: &Gpu,
+        ui: &Ui,
+        words: &[u32],
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        target_px: (u32, u32),
+        scale: f32,
+        load: wgpu::LoadOp<wgpu::Color>,
+    ) -> Result<()> {
+        self.sync_textures(gpu, ui);
+        self.build_batches(words, target_px, scale);
 
         // Upload vertices.
         let bytes: &[u8] = bytemuck::cast_slice(&self.verts);
@@ -312,7 +358,7 @@ impl UiRenderer {
 
     // ---- batching -----------------------------------------------------------
 
-    fn build_batches(&mut self, words: &[u32], target_px: (u32, u32)) {
+    fn build_batches(&mut self, words: &[u32], target_px: (u32, u32), scale: f32) {
         self.verts.clear();
         self.cmds.clear();
         let full = (0u32, 0u32, target_px.0, target_px.1);
@@ -321,6 +367,7 @@ impl UiRenderer {
         let mut cur_tex = TexBind::White;
         let mut cur_start = 0u32;
         let (tw, th) = (target_px.0 as f32, target_px.1 as f32);
+        let s = scale;
 
         macro_rules! flush {
             ($new_tex:expr, $new_scissor:expr) => {{
@@ -340,13 +387,17 @@ impl UiRenderer {
         }
 
         let ndc = |x: f32, y: f32| -> [f32; 2] { [x / tw * 2.0 - 1.0, 1.0 - y / th * 2.0] };
+        // DrawList coordinates are logical; scale them into the physical
+        // target here so every consumer below works in target px.
         let xy = |w: u32| -> (f32, f32) {
             (
-                ((w & 0xffff) as u16 as i16) as f32,
-                ((w >> 16) as u16 as i16) as f32,
+                ((w & 0xffff) as u16 as i16) as f32 * s,
+                ((w >> 16) as u16 as i16) as f32 * s,
             )
         };
-        let wh = |w: u32| -> (f32, f32) { ((w & 0xffff) as f32, ((w >> 16) & 0xffff) as f32) };
+        let wh = |w: u32| -> (f32, f32) {
+            ((w & 0xffff) as f32 * s, ((w >> 16) & 0xffff) as f32 * s)
+        };
 
         let quad = |verts: &mut Vec<UiVertex>,
                     p0: [f32; 2],
@@ -450,7 +501,11 @@ impl UiRenderer {
                         flush!(TexBind::Font(slot), scissor);
                     }
                     if let Some(font) = self.fonts.get(slot as usize).and_then(|f| f.as_ref()) {
+                        // UVs address coverage texels; the draw rect is the
+                        // logical cell × scale (1:1 texels when the atlas
+                        // density matches the scale).
                         let (cw, ch) = (font.cell_w as f32, font.cell_h as f32);
+                        let (dw, dh) = (font.logical_w * s, font.logical_h * s);
                         for pair in words[i + 3..i + 3 + 2 * n].as_chunks::<2>().0 {
                             let (gx, gy) = xy(pair[0]);
                             let gid = (pair[1] & 0xffff) as u16;
@@ -466,7 +521,7 @@ impl UiRenderer {
                             quad(
                                 &mut self.verts,
                                 [gx, gy],
-                                [gx + cw, gy + ch],
+                                [gx + dw, gy + dh],
                                 [u0, v0],
                                 [u1, v1],
                                 [color; 4],
@@ -600,17 +655,22 @@ impl UiRenderer {
     /// each slot re-uploads whenever its current handle changes and drops
     /// its cache entry when the core frees it.
     fn sync_textures(&mut self, gpu: &Gpu, ui: &Ui) {
-        // Font slots.
+        // Font slots. A slot re-uploads when its glyph count moved — hosts
+        // may extend an atlas at runtime (IME input rasterizing new
+        // codepoints) and reload it via loadFontAtlas.
         if self.fonts.len() < spec::MAX_FONT_SLOTS {
             self.fonts.resize_with(spec::MAX_FONT_SLOTS, || None);
         }
         for slot in 0..spec::MAX_FONT_SLOTS as u8 {
-            if self.fonts[slot as usize].is_some() {
-                continue;
-            }
             let Some(atlas) = ui.font_atlas(slot) else {
                 continue;
             };
+            if self.fonts[slot as usize]
+                .as_ref()
+                .is_some_and(|f| f.glyph_count == atlas.glyph_count)
+            {
+                continue;
+            }
             self.fonts[slot as usize] = Some(self.upload_font(gpu, atlas));
         }
         // Image texture slots.
@@ -635,20 +695,27 @@ impl UiRenderer {
     }
 
     fn upload_font(&self, gpu: &Gpu, atlas: &pocketjs_core::text::Atlas) -> FontTexture {
-        let cols = 16u32.min(atlas.glyph_count.max(1) as u32);
+        // Cells upload at coverage resolution (logical × raster density) —
+        // a density-2 atlas keeps its full detail for scaled rendering.
+        let (cov_w, cov_h) = (atlas.coverage_width(), atlas.coverage_height());
+        // Wider grids for big (CJK-extended) atlases keep the texture under
+        // dimension limits: 16 cols x 3500 density-2 cells would be ~8000 px
+        // tall; 64 cols stays square-ish.
+        let max_cols = if atlas.glyph_count > 512 { 64u32 } else { 16u32 };
+        let cols = max_cols.min(atlas.glyph_count.max(1) as u32);
         let rows = (atlas.glyph_count as u32).div_ceil(cols).max(1);
-        let tex_w = cols * atlas.cell_w;
-        let tex_h = rows * atlas.cell_h;
+        let tex_w = cols * cov_w;
+        let tex_h = rows * cov_h;
         let mut pixels = vec![0u8; (tex_w * tex_h) as usize];
         for gid in 0..atlas.glyph_count {
-            let gx = (gid as u32 % cols) * atlas.cell_w;
-            let gy = (gid as u32 / cols) * atlas.cell_h;
+            let gx = (gid as u32 % cols) * cov_w;
+            let gy = (gid as u32 / cols) * cov_h;
             let rows_bytes = atlas.glyph_rows(gid);
             let bpr = atlas.bytes_per_row();
-            for y in 0..atlas.cell_h {
-                let src = &rows_bytes[(y as usize) * bpr..][..atlas.cell_w as usize];
+            for y in 0..cov_h {
+                let src = &rows_bytes[(y as usize) * bpr..][..cov_w as usize];
                 let dst = ((gy + y) * tex_w + gx) as usize;
-                pixels[dst..dst + atlas.cell_w as usize].copy_from_slice(src);
+                pixels[dst..dst + cov_w as usize].copy_from_slice(src);
             }
         }
         let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -696,8 +763,10 @@ impl UiRenderer {
         });
         FontTexture {
             bind,
-            cell_w: atlas.cell_w,
-            cell_h: atlas.cell_h,
+            cell_w: cov_w,
+            cell_h: cov_h,
+            logical_w: atlas.cell_w as f32,
+            logical_h: atlas.cell_h as f32,
             tex_w: tex_w as f32,
             tex_h: tex_h as f32,
             cols,

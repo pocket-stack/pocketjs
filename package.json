@@ -1,6 +1,6 @@
 {
   "name": "@pocketjs/framework",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -71,6 +71,7 @@
     "./lifecycle": "./src/lifecycle.ts",
     "./hot": "./src/hot.ts",
     "./input": "./src/input-api.ts",
+    "./launcher": "./src/launcher.ts",
     "./manifest": "./src/manifest/index.ts",
     "./osk": "./src/osk.tsx",
     "./platform": "./src/platform.ts",
@@ -96,6 +97,9 @@
     "pocket": "bun scripts/pocket.ts",
     "build": "bun scripts/build.ts",
     "play": "bun scripts/play.ts",
+    "widget": "bun scripts/widget.ts",
+    "widget:ipod": "bun scripts/widget.ts --stage ipod",
+    "note": "bun scripts/note.ts",
     "psp": "bun scripts/psp.ts",
     "psp:all": "bun scripts/psp-all.ts",
     "psp:switch": "bun psplink",
@@ -106,11 +110,14 @@
     "hw": "bun scripts/hw.ts",
     "dev": "bun scripts/dev.ts",
     "wasm": "bun scripts/wasm.ts",
+    "site:build": "bun scripts/site-build.ts",
     "gba:imagegen": "bun imagegen",
     "serve": "bun host-web/serve.ts",
     "golden": "bun test/golden.ts",
     "e2e": "bun test/e2e-ppsspp.ts",
-    "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test test/release-check.test.ts test/release-notes.test.ts test/platform-contracts.test.ts test/host-build-inputs.test.ts test/platform-runtime.test.ts test/app-check.test.ts test/font-bake.test.ts test/touch.test.ts test/vita-package.test.ts test/psp-toolchain.test.ts test/cli.test.ts test/npm-package.test.ts test/video-outro.test.ts test/osk-layout.test.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/cursor.test.ts test/action-handler-vue-vapor.test.ts test/svg-bake.test.ts test/devtools.test.ts test/hot.test.ts test/clock.test.ts test/tiles.test.ts && bun scripts/build.ts cafe-main >/dev/null && bun test --conditions=browser test/sim.test.ts && bun scripts/build.ts zoomlab-main >/dev/null && bun test --conditions=browser test/deepzoom-sim.test.ts && bun scripts/build.ts im-main >/dev/null && bun test --conditions=browser test/im-sim.test.ts",
+    "launcher": "bun scripts/launcher.ts",
+    "e2e:launcher": "bun test/e2e-launcher-ppsspp.ts",
+    "test": "bun scripts/build.ts hero >/dev/null && bun test/contract.ts && bun test test/release-check.test.ts test/release-notes.test.ts test/platform-contracts.test.ts test/widget-args.test.ts test/ipod-nano.test.ts test/note.test.ts test/site-stage.test.ts test/host-build-inputs.test.ts test/platform-runtime.test.ts test/app-check.test.ts test/font-bake.test.ts test/touch.test.ts test/vita-package.test.ts test/psp-toolchain.test.ts test/cli.test.ts test/npm-package.test.ts test/video-outro.test.ts test/osk-layout.test.ts && bun test --conditions=browser test/tailwind.test.ts test/renderer.test.ts test/cursor.test.ts test/action-handler-vue-vapor.test.ts test/svg-bake.test.ts test/devtools.test.ts test/hot.test.ts test/clock.test.ts test/tiles.test.ts && bun scripts/build.ts cafe-main >/dev/null && bun test --conditions=browser test/sim.test.ts && bun scripts/build.ts zoomlab-main >/dev/null && bun test --conditions=browser test/deepzoom-sim.test.ts && bun scripts/build.ts im-main >/dev/null && bun test --conditions=browser test/im-sim.test.ts && bun scripts/launcher.ts covers >/dev/null && bun test --conditions=browser test/launcher-sim.test.ts",
     "tape": "bun scripts/tape.ts",
     "tape:check": "bun scripts/tape.ts replay hero-main test/tapes/hero-main.tape.json --assert test/tapes/hero-main.hashes.json",
     "devtools": "bun scripts/devtools.ts",
@@ -120,10 +127,10 @@
     "gen": "bun spec/gen-rust.ts"
   },
   "dependencies": {
-    "@vue/compiler-vapor": "3.6.0-beta.17",
+    "@vue/compiler-vapor": "3.6.0-rc.1",
     "solid-js": "^1.9",
-    "vue": "3.6.0-beta.17",
-    "vue-jsx-vapor": "3.2.17"
+    "vue": "3.6.0-rc.1",
+    "vue-jsx-vapor": "3.2.19"
   },
   "devDependencies": {
     "@babel/core": "^7",
@@ -144,6 +151,7 @@
     "opentype.js": "^1.3",
     "shiki": "^4.3.1",
     "tailwindcss": "^4.3.2",
+    "three": "^0.185.1",
     "typescript": "^5"
   },
   "trustedDependencies": [

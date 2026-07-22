@@ -162,6 +162,7 @@ export async function bootWorld(
   app: string,
   hz: number,
   extraGlobals?: Record<string, unknown>,
+  mutateOps?: (ops: Record<string, unknown>) => void,
 ): Promise<SimWorld> {
   ensureBuilt(WASM_PATH, [process.execPath, "scripts/wasm.ts"]);
   ensureBuilt(DIST + app + ".js", [process.execPath, "scripts/build.ts", app]);
@@ -172,6 +173,9 @@ export async function bootWorld(
   const inbox: string[] = [];
   const outbox: string[] = [];
   g.ui = wasm.ops;
+  // Host-flavored op extensions (the launcher runner adds appTable/appLaunch/
+  // appShot here) — installed before eval like every other contract slot.
+  mutateOps?.(wasm.ops as unknown as Record<string, unknown>);
   g.__pak = existsSync(DIST + app + ".pak")
     ? await Bun.file(DIST + app + ".pak").arrayBuffer()
     : undefined;

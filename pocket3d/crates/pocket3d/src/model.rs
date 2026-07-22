@@ -1,9 +1,12 @@
 //! Skinned/static model assets (glTF) and scene instances.
 
+use std::cell::Cell;
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 
@@ -31,16 +34,344 @@ impl ModelVertex {
     };
 }
 
+/// The glTF alpha policy retained on each uploaded primitive.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaterialAlphaMode {
+    Opaque,
+    Mask,
+    Blend,
+}
+
+/// Optional authored treatment of a material's final base color.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MaterialBaseColorMode {
+    #[default]
+    Authored,
+    /// Convert the final RGB value to luminance while preserving alpha.
+    Monochrome,
+}
+
+impl MaterialAlphaMode {
+    fn from_gltf(mode: gltf::material::AlphaMode) -> Self {
+        match mode {
+            gltf::material::AlphaMode::Opaque => Self::Opaque,
+            gltf::material::AlphaMode::Mask => Self::Mask,
+            gltf::material::AlphaMode::Blend => Self::Blend,
+        }
+    }
+}
+
+/// Replace the base-color texture of semantically tagged glTF materials.
+///
+/// Matching prefers `extras.pocket3d_role`; `name_prefix` is used only when
+/// that role is absent. The texture and sampler are captured by the primitive
+/// bind group, so callers may render new pixels into the same texture without
+/// rebuilding the model.
+pub struct MaterialTextureOverride<'a> {
+    pub role: &'a str,
+    pub name_prefix: Option<&'a str>,
+    pub texture_view: &'a wgpu::TextureView,
+    pub sampler: &'a wgpu::Sampler,
+    pub expected_primitive_count: Option<usize>,
+    pub force_white: bool,
+    pub force_unlit: bool,
+    pub force_opaque: bool,
+    pub force_blend: bool,
+    pub require_normalized_texcoord0: bool,
+}
+
+impl<'a> MaterialTextureOverride<'a> {
+    pub fn new(
+        role: &'a str,
+        name_prefix: Option<&'a str>,
+        texture_view: &'a wgpu::TextureView,
+        sampler: &'a wgpu::Sampler,
+    ) -> Self {
+        Self {
+            role,
+            name_prefix,
+            texture_view,
+            sampler,
+            expected_primitive_count: None,
+            force_white: false,
+            force_unlit: false,
+            force_opaque: false,
+            force_blend: false,
+            require_normalized_texcoord0: false,
+        }
+    }
+
+    pub fn expect_primitives(mut self, count: usize) -> Self {
+        self.expected_primitive_count = Some(count);
+        self
+    }
+
+    pub fn force_white(mut self) -> Self {
+        self.force_white = true;
+        self
+    }
+
+    pub fn force_unlit(mut self) -> Self {
+        self.force_unlit = true;
+        self
+    }
+
+    pub fn force_opaque(mut self) -> Self {
+        self.force_opaque = true;
+        self
+    }
+
+    /// Force alpha blending even when the authored glTF material is opaque.
+    /// This is useful for replacing a cosmetic layer with a transparent
+    /// texture without modifying the source mesh.
+    pub fn force_blend(mut self) -> Self {
+        self.force_blend = true;
+        self
+    }
+
+    /// Reject matching primitives unless `TEXCOORD_0` is finite, normalized,
+    /// and spans enough of each axis for a live 2D surface.
+    pub fn require_normalized_texcoord0(mut self) -> Self {
+        self.require_normalized_texcoord0 = true;
+        self
+    }
+}
+
+#[derive(Eq, Hash, PartialEq)]
+struct ModelTextureCacheKey {
+    width: u32,
+    height: u32,
+    rgba: Box<[u8]>,
+}
+
+/// Explicit content-addressed cache for textures shared by multiple models.
+///
+/// Keys use the exact RGBA pixels after [`ModelLoadOptions`] downsampling plus
+/// their dimensions, so identical images in independently cooked LOD files
+/// share one GPU allocation without relying on image indices or names. The
+/// cache retains those CPU pixels to make equality collision-free; callers
+/// loading a fixed batch can drop it afterwards because every [`ModelAsset`]
+/// keeps its shared [`GpuTexture`] allocations alive with [`Arc`].
+#[derive(Default)]
+pub struct ModelTextureCache {
+    entries: HashMap<ModelTextureCacheKey, Arc<GpuTexture>>,
+    hits: usize,
+}
+
+impl ModelTextureCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn hit_count(&self) -> usize {
+        self.hits
+    }
+
+    fn get_or_upload(
+        &mut self,
+        gpu: &Gpu,
+        label: &str,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) -> Arc<GpuTexture> {
+        let key = ModelTextureCacheKey {
+            width,
+            height,
+            rgba: rgba.into_boxed_slice(),
+        };
+        match self.entries.entry(key) {
+            Entry::Occupied(entry) => {
+                self.hits += 1;
+                entry.get().clone()
+            }
+            Entry::Vacant(entry) => {
+                let key = entry.key();
+                let texture = Arc::new(create_rgba_texture(
+                    gpu, label, key.width, key.height, &key.rgba, true, true,
+                ));
+                entry.insert(texture.clone());
+                texture
+            }
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct MaterialRaw {
+    base_color_factor: [f32; 4],
+    /// x: unlit, y: alpha cutoff (0 = off), z: double-sided, w: blend.
+    params: [f32; 4],
+    /// x: monochrome base color, y/z/w reserved.
+    style: [f32; 4],
+}
+
+struct PrimitiveUpload {
+    first_index: u32,
+    index_count: u32,
+    image: Option<usize>,
+    base_color_factor: [f32; 4],
+    alpha_mode: MaterialAlphaMode,
+    alpha_cutoff: f32,
+    double_sided: bool,
+    unlit: bool,
+    base_color_mode: MaterialBaseColorMode,
+    material_name: Option<String>,
+    material_role: Option<String>,
+    texture_override: Option<usize>,
+}
+
 pub struct Primitive {
     pub first_index: u32,
     pub index_count: u32,
     pub bind_group: wgpu::BindGroup,
+    pub alpha_mode: MaterialAlphaMode,
+    pub alpha_cutoff: f32,
+    pub double_sided: bool,
+    pub unlit: bool,
+    pub base_color_mode: MaterialBaseColorMode,
+    pub material_name: Option<String>,
+    pub material_role: Option<String>,
+    /// Kept alive explicitly alongside the bind group.
+    #[allow(dead_code)]
+    material_buf: wgpu::Buffer,
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct ModelLoadOptions {
+    /// Halve textures until no side exceeds this (mip-friendly box filter).
+    /// Character/prop authoring resolutions routinely exceed what small
+    /// windows can display; this is the biggest single memory lever.
+    pub max_texture_dim: Option<u32>,
 }
 
 pub struct Skin {
     /// Node index per joint.
     pub joints: Vec<usize>,
     pub inverse_bind: Vec<Mat4>,
+}
+
+/// One morph target of a primitive, stored sparse: only vertices the target
+/// actually displaces. Deltas are in object space (bake transform applied).
+pub struct MorphTargetData {
+    /// (vertex index within the primitive, position delta).
+    pub pos: Vec<(u32, Vec3)>,
+    /// (vertex index within the primitive, normal delta).
+    pub normal: Vec<(u32, Vec3)>,
+}
+
+/// A primitive that carries morph targets. Its base vertices are kept on the
+/// CPU; morphed copies are written into a per-instance overlay buffer.
+pub struct MorphPrim {
+    /// Index into [`ModelAsset::primitives`].
+    pub primitive: usize,
+    /// First vertex of this primitive in the shared asset vertex buffer.
+    pub vertex_base: u32,
+    pub vertex_count: u32,
+    /// First vertex of this primitive in a [`MorphState`] overlay buffer.
+    pub overlay_offset: u32,
+    base: Vec<ModelVertex>,
+    pub targets: Vec<MorphTargetData>,
+}
+
+/// All morph-bearing primitives of one glTF mesh. VRM blend-shape binds
+/// address targets as (glTF mesh index, target index), which maps here.
+pub struct MorphMesh {
+    /// glTF mesh index.
+    pub mesh: usize,
+    pub target_count: usize,
+    pub prims: Vec<MorphPrim>,
+}
+
+/// Per-instance morph weights + the GPU overlay holding morphed vertices.
+/// Weights are set by game code; the overlay upload happens lazily during
+/// render prepare, and costs nothing on frames where no weight changed.
+pub struct MorphState {
+    /// Parallel to [`ModelAsset::morph_meshes`]; one weight per target.
+    weights: Vec<Vec<f32>>,
+    /// Bitmask of morph meshes needing recompute (interior mutability so the
+    /// renderer can flush during prepare without a `&mut Scene`).
+    dirty: Cell<u64>,
+    buffer: wgpu::Buffer,
+}
+
+impl MorphState {
+    /// `mesh_slot` indexes [`ModelAsset::morph_meshes`].
+    pub fn set_weight(&mut self, mesh_slot: usize, target: usize, weight: f32) {
+        let Some(w) = self
+            .weights
+            .get_mut(mesh_slot)
+            .and_then(|m| m.get_mut(target))
+        else {
+            return;
+        };
+        if *w != weight {
+            *w = weight;
+            let bit = if mesh_slot < 64 {
+                1u64 << mesh_slot
+            } else {
+                u64::MAX
+            };
+            self.dirty.set(self.dirty.get() | bit);
+        }
+    }
+
+    pub fn weight(&self, mesh_slot: usize, target: usize) -> f32 {
+        self.weights
+            .get(mesh_slot)
+            .and_then(|m| m.get(target))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    pub(crate) fn buffer(&self) -> &wgpu::Buffer {
+        &self.buffer
+    }
+
+    /// Recompute + upload overlay vertices for meshes whose weights changed.
+    pub(crate) fn upload_if_dirty(&self, gpu: &Gpu, asset: &ModelAsset) {
+        let dirty = self.dirty.replace(0);
+        if dirty == 0 {
+            return;
+        }
+        for (mi, mesh) in asset.morph_meshes.iter().enumerate() {
+            if mi < 64 && dirty & (1u64 << mi) == 0 {
+                continue;
+            }
+            let weights = &self.weights[mi];
+            for prim in &mesh.prims {
+                let mut verts = prim.base.clone();
+                for (ti, target) in prim.targets.iter().enumerate() {
+                    let w = weights.get(ti).copied().unwrap_or(0.0);
+                    if w.abs() < 1e-4 {
+                        continue;
+                    }
+                    for &(vi, d) in &target.pos {
+                        let v = &mut verts[vi as usize];
+                        v.pos = (Vec3::from(v.pos) + d * w).to_array();
+                    }
+                    for &(vi, d) in &target.normal {
+                        let v = &mut verts[vi as usize];
+                        v.normal = (Vec3::from(v.normal) + d * w).to_array();
+                    }
+                }
+                gpu.queue.write_buffer(
+                    &self.buffer,
+                    prim.overlay_offset as u64 * std::mem::size_of::<ModelVertex>() as u64,
+                    bytemuck::cast_slice(&verts),
+                );
+            }
+        }
+    }
 }
 
 pub struct ModelAsset {
@@ -53,12 +384,164 @@ pub struct ModelAsset {
     /// palette (multi-skin characters: body + visor etc.).
     pub skins: Vec<Skin>,
     pub clips: Vec<Clip>,
+    /// Meshes carrying morph targets (facial blend shapes etc.).
+    pub morph_meshes: Vec<MorphMesh>,
+    /// Parallel to `primitives`: (morph mesh slot, prim slot) when morphing.
+    pub prim_morph: Vec<Option<(usize, usize)>>,
     /// Rest-pose bounds (object space; skinned primitives measured through
     /// their rest-pose joint matrices, so units/orientation baked into the
     /// rig — cm exports, Z-up meshes — are already resolved).
     pub aabb: (Vec3, Vec3),
     #[allow(dead_code)]
-    textures: Vec<GpuTexture>,
+    textures: Vec<Arc<GpuTexture>>,
+}
+
+fn make_material_bind_group(
+    gpu: &Gpu,
+    layout: &wgpu::BindGroupLayout,
+    label: &str,
+    view: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+    material: &MaterialRaw,
+) -> (wgpu::BindGroup, wgpu::Buffer) {
+    use wgpu::util::DeviceExt;
+
+    let material_buf = gpu
+        .device
+        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("{label} params")),
+            contents: bytemuck::bytes_of(material),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+    let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some(label),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: material_buf.as_entire_binding(),
+            },
+        ],
+    });
+    (bind_group, material_buf)
+}
+
+fn pocket3d_material_role(material: &gltf::Material<'_>) -> Option<String> {
+    let raw = material.extras().as_ref()?.get();
+    pocket3d_role_from_extras(raw)
+}
+
+fn pocket3d_material_base_color_mode(material: &gltf::Material<'_>) -> MaterialBaseColorMode {
+    let Some(raw) = material.extras().as_ref().map(|extras| extras.get()) else {
+        return MaterialBaseColorMode::Authored;
+    };
+    pocket3d_base_color_mode_from_extras(raw)
+}
+
+fn pocket3d_role_from_extras(raw: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()?
+        .get("pocket3d_role")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn pocket3d_base_color_mode_from_extras(raw: &str) -> MaterialBaseColorMode {
+    match serde_json::from_str::<serde_json::Value>(raw)
+        .ok()
+        .and_then(|extras| {
+            extras
+                .get("pocket3d_base_color_mode")?
+                .as_str()
+                .map(str::to_owned)
+        })
+        .as_deref()
+    {
+        Some("monochrome") => MaterialBaseColorMode::Monochrome,
+        _ => MaterialBaseColorMode::Authored,
+    }
+}
+
+fn semantic_material_matches(
+    material_role: Option<&str>,
+    material_name: Option<&str>,
+    role: &str,
+    name_prefix: Option<&str>,
+) -> bool {
+    match material_role {
+        Some(material_role) => material_role == role,
+        None => name_prefix
+            .zip(material_name)
+            .is_some_and(|(prefix, name)| name.starts_with(prefix)),
+    }
+}
+
+fn validate_normalized_texcoord0(
+    texcoords: Option<&[[f32; 2]]>,
+    vertex_count: usize,
+    material_name: Option<&str>,
+    path: &Path,
+) -> Result<()> {
+    let label = material_name.unwrap_or("<unnamed>");
+    let Some(texcoords) = texcoords else {
+        bail!(
+            "material {label:?} in {} requires TEXCOORD_0, but it is missing",
+            path.display()
+        );
+    };
+    if texcoords.len() != vertex_count {
+        bail!(
+            "material {label:?} in {} has {} TEXCOORD_0 values for {vertex_count} vertices",
+            path.display(),
+            texcoords.len()
+        );
+    }
+
+    let mut min = [f32::INFINITY; 2];
+    let mut max = [f32::NEG_INFINITY; 2];
+    for uv in texcoords {
+        if !uv[0].is_finite() || !uv[1].is_finite() {
+            bail!(
+                "material {label:?} in {} has non-finite TEXCOORD_0 values",
+                path.display()
+            );
+        }
+        for axis in 0..2 {
+            min[axis] = min[axis].min(uv[axis]);
+            max[axis] = max[axis].max(uv[axis]);
+        }
+    }
+
+    const NORMALIZED_TOLERANCE: f32 = 0.01;
+    if min.iter().any(|&value| value < -NORMALIZED_TOLERANCE)
+        || max.iter().any(|&value| value > 1.0 + NORMALIZED_TOLERANCE)
+    {
+        bail!(
+            "material {label:?} in {} has non-normalized TEXCOORD_0 bounds {:?}..{:?}",
+            path.display(),
+            min,
+            max
+        );
+    }
+
+    const MIN_AXIS_SPAN: f32 = 0.5;
+    let span = [max[0] - min[0], max[1] - min[1]];
+    if span[0] < MIN_AXIS_SPAN || span[1] < MIN_AXIS_SPAN {
+        bail!(
+            "material {label:?} in {} has insufficient TEXCOORD_0 span {:?}; each axis must span at least {MIN_AXIS_SPAN}",
+            path.display(),
+            span
+        );
+    }
+    Ok(())
 }
 
 impl ModelAsset {
@@ -77,6 +560,12 @@ impl ModelAsset {
         let clip = self.clips.get(anim.clip);
         self.skeleton
             .global_transforms(clip, anim.time, anim.looping, &mut globals);
+        self.palette_from_globals(&globals, out);
+    }
+
+    /// Joint palette from externally computed node globals (procedural poses:
+    /// look-at, physics bones). Same skin concatenation as `joint_palette`.
+    pub fn palette_from_globals(&self, globals: &[Mat4], out: &mut Vec<Mat4>) {
         out.clear();
         for skin in &self.skins {
             for (i, &node) in skin.joints.iter().enumerate() {
@@ -86,6 +575,42 @@ impl ModelAsset {
         if out.is_empty() {
             out.push(Mat4::IDENTITY);
         }
+    }
+
+    /// Which slot in `morph_meshes` a glTF mesh landed in.
+    pub fn morph_mesh_slot(&self, gltf_mesh: usize) -> Option<usize> {
+        self.morph_meshes.iter().position(|m| m.mesh == gltf_mesh)
+    }
+
+    /// Create per-instance morph state (overlay buffer starts at the rest
+    /// shape). `None` when the asset has no morph targets.
+    pub fn create_morph_state(&self, gpu: &Gpu) -> Option<MorphState> {
+        use wgpu::util::DeviceExt;
+        if self.morph_meshes.is_empty() {
+            return None;
+        }
+        let mut init: Vec<ModelVertex> = Vec::new();
+        for mesh in &self.morph_meshes {
+            for prim in &mesh.prims {
+                init.extend_from_slice(&prim.base);
+            }
+        }
+        let buffer = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("morph overlay"),
+                contents: bytemuck::cast_slice(&init),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+        Some(MorphState {
+            weights: self
+                .morph_meshes
+                .iter()
+                .map(|m| vec![0.0; m.target_count])
+                .collect(),
+            dirty: Cell::new(0),
+            buffer,
+        })
     }
 
     /// The material bind group layout for model primitives (group 1).
@@ -110,6 +635,18 @@ impl ModelAsset {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: wgpu::BufferSize::new(
+                                std::mem::size_of::<MaterialRaw>() as u64,
+                            ),
+                        },
+                        count: None,
+                    },
                 ],
             })
     }
@@ -127,21 +664,20 @@ impl ModelAsset {
     ) -> Arc<Self> {
         use wgpu::util::DeviceExt;
         let (tw, th, tpx): (u32, u32, &[u8]) = image.unwrap_or((1, 1, &[255u8, 255, 255, 255]));
-        let tex = create_rgba_texture(gpu, label, tw, th, tpx, true, false);
-        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some(label),
+        let tex = Arc::new(create_rgba_texture(gpu, label, tw, th, tpx, true, false));
+        let material = MaterialRaw {
+            base_color_factor: [1.0; 4],
+            params: [0.0; 4],
+            style: [0.0; 4],
+        };
+        let (bind_group, material_buf) = make_material_bind_group(
+            gpu,
             layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&tex.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&samplers.aniso_repeat),
-                },
-            ],
-        });
+            label,
+            &tex.view,
+            &samplers.aniso_repeat,
+            &material,
+        );
         let vbuf = gpu
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -169,6 +705,14 @@ impl ModelAsset {
                 first_index: 0,
                 index_count: indices.len() as u32,
                 bind_group,
+                alpha_mode: MaterialAlphaMode::Opaque,
+                alpha_cutoff: 0.0,
+                double_sided: false,
+                unlit: false,
+                base_color_mode: MaterialBaseColorMode::Authored,
+                material_name: Some(label.to_owned()),
+                material_role: None,
+                material_buf,
             }],
             skeleton: Skeleton {
                 parents: Vec::new(),
@@ -177,8 +721,82 @@ impl ModelAsset {
             },
             skins: Vec::new(),
             clips: Vec::new(),
+            morph_meshes: Vec::new(),
+            prim_morph: vec![None],
             aabb,
             textures: vec![tex],
+        })
+    }
+
+    /// Build an asset from raw geometry whose material samples an external
+    /// texture view (an [`crate::gpu::OffscreenTarget`], a video frame, …).
+    /// The bind group keeps the underlying texture alive; render into it
+    /// each frame and every instance of this asset shows the update — this
+    /// is how a live 2D surface lands on a 3D mesh (pocket-widget screens).
+    pub fn from_geometry_textured(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        label: &str,
+        vertices: &[ModelVertex],
+        indices: &[u32],
+        view: &wgpu::TextureView,
+        sampler: &wgpu::Sampler,
+    ) -> Arc<Self> {
+        use wgpu::util::DeviceExt;
+        let material = MaterialRaw {
+            base_color_factor: [1.0; 4],
+            params: [0.0; 4],
+            style: [0.0; 4],
+        };
+        let (bind_group, material_buf) =
+            make_material_bind_group(gpu, layout, label, view, sampler, &material);
+        let vbuf = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let ibuf = gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+        let mut aabb = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+        for v in vertices {
+            let p = Vec3::from(v.pos);
+            aabb.0 = aabb.0.min(p);
+            aabb.1 = aabb.1.max(p);
+        }
+        Arc::new(Self {
+            vbuf,
+            ibuf,
+            primitives: vec![Primitive {
+                first_index: 0,
+                index_count: indices.len() as u32,
+                bind_group,
+                alpha_mode: MaterialAlphaMode::Opaque,
+                alpha_cutoff: 0.0,
+                double_sided: false,
+                unlit: false,
+                base_color_mode: MaterialBaseColorMode::Authored,
+                material_name: Some(label.to_owned()),
+                material_role: None,
+                material_buf,
+            }],
+            skeleton: Skeleton {
+                parents: Vec::new(),
+                rest: Vec::new(),
+                order: Vec::new(),
+            },
+            skins: Vec::new(),
+            clips: Vec::new(),
+            morph_meshes: Vec::new(),
+            prim_morph: vec![None],
+            aabb,
+            textures: Vec::new(),
         })
     }
 
@@ -188,25 +806,181 @@ impl ModelAsset {
         samplers: &Samplers,
         path: &Path,
     ) -> Result<Arc<Self>> {
+        Self::load_glb_opts(gpu, layout, samplers, path, &ModelLoadOptions::default())
+    }
+
+    pub fn load_glb_opts(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        opts: &ModelLoadOptions,
+    ) -> Result<Arc<Self>> {
+        Self::load_glb_opts_with_overrides(gpu, layout, samplers, path, opts, &[])
+    }
+
+    /// Load a glTF model while sharing imported textures through `cache`.
+    /// The cache must only be used with the [`Gpu`] that created it.
+    pub fn load_glb_with_cache(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        cache: &mut ModelTextureCache,
+    ) -> Result<Arc<Self>> {
+        Self::load_glb_opts_with_cache(
+            gpu,
+            layout,
+            samplers,
+            path,
+            &ModelLoadOptions::default(),
+            cache,
+        )
+    }
+
+    /// `load_glb_with_cache` plus the normal model load options.
+    pub fn load_glb_opts_with_cache(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        opts: &ModelLoadOptions,
+        cache: &mut ModelTextureCache,
+    ) -> Result<Arc<Self>> {
+        Self::load_glb_opts_with_overrides_and_cache(gpu, layout, samplers, path, opts, &[], cache)
+    }
+
+    /// Load a glTF model and replace selected semantic materials with external
+    /// texture views. This is intended for live surfaces such as a handheld
+    /// screen; existing `load_glb*` entry points remain equivalent to passing
+    /// an empty override slice.
+    pub fn load_glb_with_overrides(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        overrides: &[MaterialTextureOverride<'_>],
+    ) -> Result<Arc<Self>> {
+        Self::load_glb_opts_with_overrides(
+            gpu,
+            layout,
+            samplers,
+            path,
+            &ModelLoadOptions::default(),
+            overrides,
+        )
+    }
+
+    /// `load_glb_with_overrides` plus the normal model load options.
+    pub fn load_glb_opts_with_overrides(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        opts: &ModelLoadOptions,
+        overrides: &[MaterialTextureOverride<'_>],
+    ) -> Result<Arc<Self>> {
+        let mut cache = ModelTextureCache::new();
+        Self::load_glb_opts_with_overrides_and_cache(
+            gpu, layout, samplers, path, opts, overrides, &mut cache,
+        )
+    }
+
+    /// `load_glb_with_overrides` with an explicit texture cache shared across
+    /// independently loaded assets.
+    pub fn load_glb_with_overrides_and_cache(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        overrides: &[MaterialTextureOverride<'_>],
+        cache: &mut ModelTextureCache,
+    ) -> Result<Arc<Self>> {
+        Self::load_glb_opts_with_overrides_and_cache(
+            gpu,
+            layout,
+            samplers,
+            path,
+            &ModelLoadOptions::default(),
+            overrides,
+            cache,
+        )
+    }
+
+    /// Fully configurable glTF load with semantic material overrides and an
+    /// explicit content-addressed texture cache.
+    pub fn load_glb_opts_with_overrides_and_cache(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        opts: &ModelLoadOptions,
+        overrides: &[MaterialTextureOverride<'_>],
+        cache: &mut ModelTextureCache,
+    ) -> Result<Arc<Self>> {
+        for material_override in overrides {
+            if material_override.force_opaque && material_override.force_blend {
+                bail!(
+                    "material override role {:?} cannot force both opaque and blend",
+                    material_override.role
+                );
+            }
+        }
         let (doc, buffers, images) =
             gltf::import(path).with_context(|| format!("importing {}", path.display()))?;
 
         // --- textures ------------------------------------------------------
-        let mut textures = Vec::new();
+        // Only upload images a material actually samples (VRM files carry
+        // thumbnails and utility maps), and optionally cap texture size —
+        // authoring resolutions (4096²) dwarf what a small widget window can
+        // ever show, and GPU memory is the dominant cost of a character.
+        let used: std::collections::HashSet<usize> = doc
+            .materials()
+            .filter(|material| {
+                let role = pocket3d_material_role(material);
+                !overrides.iter().any(|candidate| {
+                    semantic_material_matches(
+                        role.as_deref(),
+                        material.name(),
+                        candidate.role,
+                        candidate.name_prefix,
+                    )
+                })
+            })
+            .filter_map(|m| {
+                m.pbr_metallic_roughness()
+                    .base_color_texture()
+                    .map(|t| t.texture().source().index())
+            })
+            .collect();
+        // Unused image slots and primitives without a base-color image all
+        // share this fallback instead of allocating one dummy texture each.
+        let white = Arc::new(create_rgba_texture(
+            gpu,
+            "white",
+            1,
+            1,
+            &[255, 255, 255, 255],
+            true,
+            false,
+        ));
+        let mut textures = Vec::with_capacity(images.len() + 1);
         for (i, img) in images.iter().enumerate() {
-            let rgba = to_rgba8(img);
-            textures.push(create_rgba_texture(
-                gpu,
-                &format!("model img {i}"),
-                img.width,
-                img.height,
-                &rgba,
-                true,
-                true,
-            ));
+            if !used.contains(&i) {
+                textures.push(white.clone());
+                continue;
+            }
+            let mut rgba = to_rgba8(img);
+            let (mut w, mut h) = (img.width, img.height);
+            if let Some(max) = opts.max_texture_dim {
+                while w.max(h) > max && w % 2 == 0 && h % 2 == 0 {
+                    rgba = downsample_rgba(&rgba, w, h);
+                    w /= 2;
+                    h /= 2;
+                }
+            }
+            textures.push(cache.get_or_upload(gpu, &format!("model img {i}"), w, h, rgba));
         }
-        // 1x1 white fallback.
-        let white = create_rgba_texture(gpu, "white", 1, 1, &[255, 255, 255, 255], true, false);
 
         // --- nodes / skeleton ----------------------------------------------
         let node_count = doc.nodes().count();
@@ -286,8 +1060,12 @@ impl ModelAsset {
 
         let mut vertices: Vec<ModelVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
-        let mut primitives_meta: Vec<(u32, u32, Option<usize>)> = Vec::new(); // (first, count, image)
+        let mut primitives_meta: Vec<PrimitiveUpload> = Vec::new();
+        let mut override_counts = vec![0usize; overrides.len()];
         let mut aabb = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+        let mut morph_meshes: Vec<MorphMesh> = Vec::new();
+        let mut prim_morph: Vec<Option<(usize, usize)>> = Vec::new();
+        let mut overlay_verts: u32 = 0;
 
         for node in doc.nodes() {
             let Some(mesh) = node.mesh() else { continue };
@@ -324,10 +1102,8 @@ impl ModelAsset {
                     .read_normals()
                     .map(|it| it.collect())
                     .unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
-                let uvs: Vec<[f32; 2]> = reader
-                    .read_tex_coords(0)
-                    .map(|it| it.into_f32().collect())
-                    .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
+                let texcoord0: Option<Vec<[f32; 2]>> =
+                    reader.read_tex_coords(0).map(|it| it.into_f32().collect());
                 let joints: Vec<[u16; 4]> = reader
                     .read_joints(0)
                     .map(|it| it.into_u16().collect())
@@ -375,7 +1151,11 @@ impl ModelAsset {
                     vertices.push(ModelVertex {
                         pos: p.to_array(),
                         normal: n.to_array(),
-                        uv: uvs[i],
+                        uv: texcoord0
+                            .as_deref()
+                            .and_then(|texcoords| texcoords.get(i))
+                            .copied()
+                            .unwrap_or([0.0, 0.0]),
                         joints: j,
                         weights: w,
                     });
@@ -388,12 +1168,145 @@ impl ModelAsset {
                 }
                 let count = indices.len() as u32 - first;
 
-                let image = prim
-                    .material()
-                    .pbr_metallic_roughness()
+                let material = prim.material();
+                let pbr = material.pbr_metallic_roughness();
+                let image = pbr
                     .base_color_texture()
                     .map(|t| t.texture().source().index());
-                primitives_meta.push((first, count, image));
+                let material_name = material.name().map(str::to_owned);
+                let material_role = pocket3d_material_role(&material);
+                let base_color_mode = pocket3d_material_base_color_mode(&material);
+                let mut texture_override = None;
+                for (override_index, candidate) in overrides.iter().enumerate() {
+                    if !semantic_material_matches(
+                        material_role.as_deref(),
+                        material_name.as_deref(),
+                        candidate.role,
+                        candidate.name_prefix,
+                    ) {
+                        continue;
+                    }
+                    if texture_override.is_some() {
+                        bail!(
+                            "material {:?} in {} matches more than one texture override",
+                            material_name.as_deref().unwrap_or("<unnamed>"),
+                            path.display()
+                        );
+                    }
+                    texture_override = Some(override_index);
+                    override_counts[override_index] += 1;
+                }
+
+                let mut base_color_factor = pbr.base_color_factor();
+                let mut alpha_mode = MaterialAlphaMode::from_gltf(material.alpha_mode());
+                let alpha_cutoff = material.alpha_cutoff().unwrap_or(0.5);
+                let double_sided = material.double_sided();
+                let mut unlit = false;
+                if let Some(override_index) = texture_override {
+                    let material_override = &overrides[override_index];
+                    if material_override.require_normalized_texcoord0 {
+                        validate_normalized_texcoord0(
+                            texcoord0.as_deref(),
+                            positions.len(),
+                            material_name.as_deref(),
+                            path,
+                        )?;
+                    }
+                    if material_override.force_white {
+                        base_color_factor = [1.0; 4];
+                    }
+                    if material_override.force_unlit {
+                        unlit = true;
+                    }
+                    if material_override.force_opaque {
+                        alpha_mode = MaterialAlphaMode::Opaque;
+                    }
+                    if material_override.force_blend {
+                        alpha_mode = MaterialAlphaMode::Blend;
+                    }
+                }
+
+                // --- morph targets (sparse deltas, object space) -----------
+                let mut targets: Vec<MorphTargetData> = Vec::new();
+                for (tpos, tnorm, _ttan) in reader.read_morph_targets() {
+                    let mut target = MorphTargetData {
+                        pos: Vec::new(),
+                        normal: Vec::new(),
+                    };
+                    if let Some(it) = tpos {
+                        for (i, d) in it.enumerate() {
+                            let d = bake.transform_vector3(Vec3::from(d));
+                            if d.length_squared() > 1e-12 {
+                                target.pos.push((i as u32, d));
+                            }
+                        }
+                    }
+                    if let Some(it) = tnorm {
+                        for (i, d) in it.enumerate() {
+                            let d = normal_bake.transform_vector3(Vec3::from(d));
+                            if d.length_squared() > 1e-12 {
+                                target.normal.push((i as u32, d));
+                            }
+                        }
+                    }
+                    targets.push(target);
+                }
+                if targets.is_empty() {
+                    prim_morph.push(None);
+                } else {
+                    let mesh_idx = mesh.index();
+                    let slot = morph_meshes
+                        .iter()
+                        .position(|m| m.mesh == mesh_idx)
+                        .unwrap_or_else(|| {
+                            morph_meshes.push(MorphMesh {
+                                mesh: mesh_idx,
+                                target_count: targets.len(),
+                                prims: Vec::new(),
+                            });
+                            morph_meshes.len() - 1
+                        });
+                    let vertex_count = (vertices.len() as u32) - base;
+                    let mm = &mut morph_meshes[slot];
+                    mm.target_count = mm.target_count.max(targets.len());
+                    prim_morph.push(Some((slot, mm.prims.len())));
+                    mm.prims.push(MorphPrim {
+                        primitive: primitives_meta.len(),
+                        vertex_base: base,
+                        vertex_count,
+                        overlay_offset: overlay_verts,
+                        base: vertices[base as usize..].to_vec(),
+                        targets,
+                    });
+                    overlay_verts += vertex_count;
+                }
+
+                primitives_meta.push(PrimitiveUpload {
+                    first_index: first,
+                    index_count: count,
+                    image,
+                    base_color_factor,
+                    alpha_mode,
+                    alpha_cutoff,
+                    double_sided,
+                    unlit,
+                    base_color_mode,
+                    material_name,
+                    material_role,
+                    texture_override,
+                });
+            }
+        }
+
+        for (material_override, actual) in overrides.iter().zip(override_counts) {
+            if let Some(expected) = material_override.expected_primitive_count
+                && actual != expected
+            {
+                bail!(
+                    "material override role {:?} expected {expected} primitive(s) in {}, found {actual}",
+                    material_override.role,
+                    path.display()
+                );
             }
         }
 
@@ -473,29 +1386,54 @@ impl ModelAsset {
 
         let primitives = primitives_meta
             .into_iter()
-            .map(|(first, count, image)| {
-                let view = image
-                    .and_then(|i| textures.get(i))
-                    .map(|t| &t.view)
-                    .unwrap_or(&white.view);
-                let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("model material"),
-                    layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(view),
+            .map(|meta| {
+                let (view, sampler) = match meta.texture_override {
+                    Some(override_index) => {
+                        let material_override = &overrides[override_index];
+                        (material_override.texture_view, material_override.sampler)
+                    }
+                    None => (
+                        meta.image
+                            .and_then(|i| textures.get(i))
+                            .map(|t| &t.view)
+                            .unwrap_or(&white.view),
+                        &samplers.aniso_repeat,
+                    ),
+                };
+                let material = MaterialRaw {
+                    base_color_factor: meta.base_color_factor,
+                    params: [
+                        meta.unlit as u8 as f32,
+                        if meta.alpha_mode == MaterialAlphaMode::Mask {
+                            meta.alpha_cutoff
+                        } else {
+                            0.0
                         },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Sampler(&samplers.aniso_repeat),
-                        },
+                        meta.double_sided as u8 as f32,
+                        (meta.alpha_mode == MaterialAlphaMode::Blend) as u8 as f32,
                     ],
-                });
+                    style: [
+                        (meta.base_color_mode == MaterialBaseColorMode::Monochrome) as u8 as f32,
+                        0.0,
+                        0.0,
+                        0.0,
+                    ],
+                };
+                let label = meta.material_name.as_deref().unwrap_or("model material");
+                let (bind_group, material_buf) =
+                    make_material_bind_group(gpu, layout, label, view, sampler, &material);
                 Primitive {
-                    first_index: first,
-                    index_count: count,
+                    first_index: meta.first_index,
+                    index_count: meta.index_count,
                     bind_group,
+                    alpha_mode: meta.alpha_mode,
+                    alpha_cutoff: meta.alpha_cutoff,
+                    double_sided: meta.double_sided,
+                    unlit: meta.unlit,
+                    base_color_mode: meta.base_color_mode,
+                    material_name: meta.material_name,
+                    material_role: meta.material_role,
+                    material_buf,
                 }
             })
             .collect();
@@ -508,6 +1446,8 @@ impl ModelAsset {
             skeleton,
             skins,
             clips,
+            morph_meshes,
+            prim_morph,
             aabb,
             textures,
         }))
@@ -537,6 +1477,25 @@ fn strip_cubic<T: Copy>(v: Vec<T>, cubic: bool) -> Vec<T> {
     v.as_chunks::<3>().0.iter().map(|c| c[1]).collect()
 }
 
+/// Box-filter 2×2 downsample (straight alpha; fine for albedo maps).
+fn downsample_rgba(px: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let (nw, nh) = (w / 2, h / 2);
+    let mut out = Vec::with_capacity((nw * nh * 4) as usize);
+    for y in 0..nh {
+        for x in 0..nw {
+            let mut acc = [0u32; 4];
+            for (dy, dx) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+                let src = (((y * 2 + dy) * w + x * 2 + dx) * 4) as usize;
+                for c in 0..4 {
+                    acc[c] += px[src + c] as u32;
+                }
+            }
+            out.extend(acc.map(|v| (v / 4) as u8));
+        }
+    }
+    out
+}
+
 fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
     use gltf::image::Format;
     let n = (img.width * img.height) as usize;
@@ -559,7 +1518,12 @@ fn to_rgba8(img: &gltf::image::Data) -> Vec<u8> {
         Format::R8G8 => {
             let mut out = Vec::with_capacity(n * 4);
             for c in img.pixels.as_chunks::<2>().0 {
-                out.extend_from_slice(&[c[0], c[1], 0, 255]);
+                // PNG's two-channel color type is grayscale + alpha. The
+                // glTF importer exposes that decoded storage as R8G8, so a
+                // base-color texture must replicate luminance into RGB and
+                // retain the second channel as alpha. Treating the channels
+                // as red + green turns white decals neon green and opaque.
+                out.extend_from_slice(&[c[0], c[0], c[0], c[1]]);
             }
             out
         }
@@ -579,6 +1543,14 @@ pub struct ModelInstance {
     pub anim: AnimState,
     /// 0..1 how strongly lighting applies (1 = fully lit by sun/ambient).
     pub lit: f32,
+    /// Explicit node globals (from `Skeleton::globals_from_locals`) override
+    /// `anim` when set — for procedurally posed characters.
+    pub pose: Option<Vec<Mat4>>,
+    /// Morph weights + overlay buffer; create via `asset.create_morph_state`.
+    pub morph: Option<MorphState>,
+    /// Alpha-test threshold for this instance's primitives (0 = off).
+    /// Anime-style characters use cutout textures for hair/lashes.
+    pub cutout: f32,
 }
 
 impl ModelInstance {
@@ -589,6 +1561,144 @@ impl ModelInstance {
             tint: [1.0; 4],
             anim: AnimState::default(),
             lit: 1.0,
+            pose: None,
+            morph: None,
+            cutout: 0.0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{
+        MaterialBaseColorMode, MaterialRaw, ModelTextureCacheKey,
+        pocket3d_base_color_mode_from_extras, pocket3d_role_from_extras, semantic_material_matches,
+        to_rgba8, validate_normalized_texcoord0,
+    };
+
+    #[test]
+    fn material_role_reads_pocket3d_extras() {
+        assert_eq!(
+            pocket3d_role_from_extras(r#"{"pocket3d_role":"dynamic_screen","unrelated":true}"#)
+                .as_deref(),
+            Some("dynamic_screen")
+        );
+        assert_eq!(pocket3d_role_from_extras("{}"), None);
+        assert_eq!(pocket3d_role_from_extras("not json"), None);
+    }
+
+    #[test]
+    fn explicit_role_wins_over_name_prefix_fallback() {
+        assert!(semantic_material_matches(
+            Some("dynamic_screen"),
+            Some("anything"),
+            "dynamic_screen",
+            Some("P3D_dynamic_screen__"),
+        ));
+        assert!(semantic_material_matches(
+            None,
+            Some("P3D_dynamic_screen__panel"),
+            "dynamic_screen",
+            Some("P3D_dynamic_screen__"),
+        ));
+        assert!(!semantic_material_matches(
+            Some("different_role"),
+            Some("P3D_dynamic_screen__panel"),
+            "dynamic_screen",
+            Some("P3D_dynamic_screen__"),
+        ));
+    }
+
+    #[test]
+    fn material_uniform_has_portable_uniform_alignment() {
+        assert_eq!(std::mem::size_of::<MaterialRaw>(), 48);
+        assert_eq!(std::mem::align_of::<MaterialRaw>(), 4);
+    }
+
+    #[test]
+    fn material_base_color_mode_reads_pocket3d_extras() {
+        assert_eq!(
+            pocket3d_base_color_mode_from_extras(r#"{"pocket3d_base_color_mode":"monochrome"}"#,),
+            MaterialBaseColorMode::Monochrome
+        );
+        assert_eq!(
+            pocket3d_base_color_mode_from_extras(r#"{"pocket3d_base_color_mode":"unknown"}"#),
+            MaterialBaseColorMode::Authored
+        );
+        assert_eq!(
+            pocket3d_base_color_mode_from_extras("not json"),
+            MaterialBaseColorMode::Authored
+        );
+    }
+
+    #[test]
+    fn texture_cache_key_uses_exact_pixels_and_dimensions() {
+        let key = |width, height, rgba: &[u8]| ModelTextureCacheKey {
+            width,
+            height,
+            rgba: rgba.into(),
+        };
+        let reference = key(2, 1, &[1, 2, 3, 4, 5, 6, 7, 8]);
+        assert!(reference == key(2, 1, &[1, 2, 3, 4, 5, 6, 7, 8]));
+        assert!(reference != key(1, 2, &[1, 2, 3, 4, 5, 6, 7, 8]));
+        assert!(reference != key(2, 1, &[1, 2, 3, 4, 5, 6, 7, 9]));
+    }
+
+    #[test]
+    fn gray_alpha_base_color_expands_to_rgba() {
+        let image = gltf::image::Data {
+            pixels: vec![32, 0, 180, 255],
+            format: gltf::image::Format::R8G8,
+            width: 2,
+            height: 1,
+        };
+        assert_eq!(to_rgba8(&image), vec![32, 32, 32, 0, 180, 180, 180, 255]);
+    }
+
+    #[test]
+    fn live_surface_texcoord_validation_accepts_normalized_full_span() {
+        let texcoords = [[-0.005, 0.0], [1.005, 0.0], [1.0, 1.0], [0.0, 1.0]];
+        validate_normalized_texcoord0(
+            Some(&texcoords),
+            texcoords.len(),
+            Some("screen"),
+            Path::new("device.glb"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn live_surface_texcoord_validation_rejects_missing_or_invalid_uvs() {
+        let path = Path::new("device.glb");
+        assert!(validate_normalized_texcoord0(None, 4, Some("screen"), path).is_err());
+        assert!(
+            validate_normalized_texcoord0(
+                Some(&[[0.0, 0.0], [f32::NAN, 1.0]]),
+                2,
+                Some("screen"),
+                path,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_normalized_texcoord0(
+                Some(&[[0.0, 0.0], [1.1, 1.0]]),
+                2,
+                Some("screen"),
+                path,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_normalized_texcoord0(
+                Some(&[[0.1, 0.1], [0.2, 0.2]]),
+                2,
+                Some("screen"),
+                path,
+            )
+            .is_err()
+        );
     }
 }

@@ -633,10 +633,22 @@ function findMirror(node: NodeMirror | null, id: number): NodeMirror | null {
   return null;
 }
 
+/** Hit-test search space: the whole mirror tree (app + overlay layers).
+ *  Injected by render() like the input root — overlay content (Portal
+ *  menus, modals) paints above the app and must resolve under the cursor. */
+let hitRoot: NodeMirror | null = null;
+
+export function setHitRoot(r: NodeMirror | null): void {
+  hitRoot = r;
+}
+
 /** The interaction target for a raw hit: the nearest focusable ancestor
- *  that the active focus scope can see (modal backgrounds stay inert). */
+ *  the active focus scope can see. Only an explicitly pushed scope
+ *  restricts (modal backgrounds stay inert while a Modal's FocusScope is
+ *  up); with no scope pushed, overlay focusables resolve like any other. */
 function cursorTarget(hit: NodeMirror | null): NodeMirror | null {
-  const scope = activeFocusRoot();
+  const scope =
+    focusScopeStack.length > 0 ? focusScopeStack[focusScopeStack.length - 1] : null;
   let n = hit;
   while (n) {
     if (n.focusable && (!scope || isWithin(n, scope))) return n;
@@ -654,7 +666,7 @@ function cursorTarget(hit: NodeMirror | null): NodeMirror | null {
 export function hitFocusable(x: number, y: number): NodeMirror | null {
   const ops = getOps();
   if (!ops.hitTest) return null;
-  return cursorTarget(findMirror(root, ops.hitTest(x, y)));
+  return cursorTarget(findMirror(hitRoot ?? root, ops.hitTest(x, y)));
 }
 
 /** One cursor-mode frame. Returns false when the host predates the cursor
@@ -708,7 +720,7 @@ function cursorFrame(buttons: number, pressed: number, released: number): boolea
   if (moved || edges !== 0 || gen !== c.gen) {
     c.gen = gen;
     c.fresh = false;
-    c.target = cursorTarget(findMirror(root, ops.hitTest(c.x, c.y)));
+    c.target = cursorTarget(findMirror(hitRoot ?? root, ops.hitTest(c.x, c.y)));
   }
   const target = c.target;
   if (target !== focused) focusNode(target);

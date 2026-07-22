@@ -95,7 +95,9 @@ function makeCollector(out: Collected): PluginObj {
               // babel-preset-solid's universal codegen emits the RAW source
               // text, so HTML entities would render literally on screen while
               // this collector sees the parser-decoded value. Loud error per
-              // the module contract (raw !== value iff entities appeared).
+              // the module contract (raw !== value iff entities appeared —
+              // after stripping \r, which Babel normalizes out of value but
+              // not raw on CRLF checkouts).
               let raw = path.node.extra?.raw;
               let val = path.node.value;
               if (typeof raw === "string") {

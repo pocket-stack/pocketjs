@@ -1,4 +1,4 @@
-import { defineVaporComponent, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/vue-vapor/components";
 import { animate } from "@pocketjs/framework/vue-vapor/animation";
 import { createSpriteAnimation } from "@pocketjs/framework/vue-vapor/lifecycle";
@@ -16,14 +16,14 @@ const SPINNER_FRAMES = [
   "spinner-07.svg",
 ];
 
-const Stat = defineVaporComponent((props: { label: string; value: string; cls: string }) => {
+const Stat = (props: { label: string; value: string; cls: string }) => {
   return (
     <View class="flex-col items-end">
       <Text class={props.cls}>{props.value}</Text>
       <Text class="text-xs text-slate-500 tracking-wide">{props.label}</Text>
     </View>
   );
-});
+};
 
 export default function Hero() {
   const count = ref(0);

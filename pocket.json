@@ -4,7 +4,7 @@
   "id": "dev.pocket-stack.hero",
   "name": "pocketjs-hero",
   "title": "PocketJS Hero",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "engine": {
     "capabilities": {
       "requires": [
@@ -19,8 +19,13 @@
     "output": "hero-main",
     "framework": "solid",
     "viewport": {
-      "logical": [480, 272],
-      "presentation": "integer-fit"
+      "fixed": {
+        "logical": [
+          480,
+          272
+        ],
+        "presentation": "integer-fit"
+      }
     }
   }
 }

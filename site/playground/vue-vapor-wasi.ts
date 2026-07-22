@@ -11,7 +11,7 @@ import {
   WASI,
 } from "@napi-rs/wasm-runtime";
 
-const VERSION = "3.2.17";
+const VERSION = "3.2.19";
 const CDN = `https://esm.sh/@vue-jsx-vapor/compiler-rs-wasm32-wasi@${VERSION}`;
 const WASM_URL = `${CDN}/compiler-rs.wasm32-wasi.wasm`;
 const WORKER_URL = `${CDN}/wasi-worker-browser.mjs`;

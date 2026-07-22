@@ -102,3 +102,13 @@ export function spring(
 export function cancelAnim(animId: number): void {
   getOps().cancelAnim(animId);
 }
+
+/**
+ * Set an animatable prop RIGHT NOW — the scrub primitive. The core
+ * guarantees a direct set kills any running animation on the same prop, so
+ * per-frame jumps while an input is held never fight a tween; on release,
+ * animate()/spring() glide from wherever the last jump left the value.
+ */
+export function jump(node: NodeMirror | number, prop: PropName, value: number | string): void {
+  getOps().setProp(nodeId(node), animatablePropId(prop), encodePropValue(prop, value));
+}

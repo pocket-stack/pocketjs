@@ -1,4 +1,4 @@
-import { defineComponent, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { createSpriteAnimation } from "@pocketjs/framework/vue-vapor/lifecycle";
@@ -25,10 +25,7 @@ function Stat(props: { label: string; value: string; cls: string }) {
   );
 }
 
-type PocketVueComponent = (props?: Record<string, unknown>) => JSX.Element;
-const definePocketComponent = defineComponent as unknown as (setup: () => () => JSX.Element) => PocketVueComponent;
-
-export default definePocketComponent(() => {
+export default () => {
   const count = ref(0);
   const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, { frameStep: SPINNER_FRAME_STEP });
   let underline: NodeMirror | undefined;
@@ -37,7 +34,7 @@ export default definePocketComponent(() => {
     if (underline) animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
   });
 
-  return () => (
+  return (
     <View class="w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100">
       <View class="flex-row items-center justify-between">
         <View class="flex-row items-center gap-3">
@@ -89,4 +86,4 @@ export default definePocketComponent(() => {
       </View>
     </View>
   );
-});
+};

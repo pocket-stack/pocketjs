@@ -1,0 +1,22 @@
+[package]
+name = "pocket-stage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A low-power 3D stage that mounts Pocket apps onto authored display surfaces"
+
+[dependencies]
+pocket3d = { workspace = true }
+pocket-mod = { workspace = true }
+pocket-ui-wgpu = { workspace = true }
+pocket-widget = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+glam = { workspace = true, features = ["std"] }
+anyhow = { workspace = true }
+libc = "0.2"
+log = { workspace = true }
+env_logger = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

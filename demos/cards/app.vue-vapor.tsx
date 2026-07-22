@@ -1,4 +1,4 @@
-import { defineVaporComponent, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/vue-vapor/components";
 import { animate, spring } from "@pocketjs/framework/vue-vapor/animation";
 
@@ -9,10 +9,6 @@ interface Card {
   cls: string;
   strip: string;
   bar: string;
-}
-
-function propValue<T>(value: T | (() => T)): T {
-  return typeof value === "function" ? (value as () => T)() : value;
 }
 
 const CARDS: Card[] = [
@@ -42,8 +38,8 @@ const CARDS: Card[] = [
   },
 ];
 
-const Detail = defineVaporComponent((_props: unknown, { attrs }: { attrs: { card: Card | (() => Card) } }) => {
-  const card = () => propValue(attrs.card);
+const Detail = (props: { card: Card }) => {
+  const card = () => props.card;
   let el: NodeMirror | undefined;
   onMounted(() => {
     if (el) spring(el, "translateY", 0);
@@ -63,7 +59,7 @@ const Detail = defineVaporComponent((_props: unknown, { attrs }: { attrs: { card
       </View>
     </View>
   );
-});
+};
 
 export default function Cards() {
   const open = ref(-1);

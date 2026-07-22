@@ -83,6 +83,9 @@ jobs:
       - name: Test Rust core
         run: cargo test --locked --manifest-path core/Cargo.toml
 
+      - name: Test desktop 3D and widget workspace
+        run: cargo test --locked --manifest-path pocket3d/Cargo.toml --workspace
+
       - name: Test renderer goldens
         run: bun test/golden.ts
 
@@ -91,7 +94,7 @@ jobs:
 
       - name: Build documentation and public schema
         run: |
-          bun site/build.ts
+          bun run site:build
           cmp schema/pocket-2.json site/dist/schema/pocket-2.json
 
       - name: Publish @pocketjs/framework

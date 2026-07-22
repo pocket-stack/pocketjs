@@ -33,10 +33,14 @@ pocket3d/
 │   │                      # entities, clipnode hull tracing (no GPU deps)
 │   ├── pocket-mod/        # guest hosting: one QuickJS realm, mounted surfaces,
 │   │                      # one guest turn per tick (the mod-runtime mechanism)
-│   └── pocket-ui-wgpu/    # the PocketJS `ui` surface on this base: pak feeding,
-│                          # HostOps for the guest, DrawList → wgpu, Blit compositor
+│   ├── pocket-ui-wgpu/    # the PocketJS `ui` surface on this base: pak feeding,
+│   │                      # HostOps for the guest, DrawList → wgpu, Blit compositor
+│   └── pocket-widget/     # desktop widgets as a capability: demand-render shell,
+│                          # embedded `ui` surfaces on meshes, part picking (WIDGET.md)
 └── examples/
-    └── uihost/            # PocketJS UI demos in a native macOS window
+    ├── uihost/            # PocketJS UI demos in a native macOS window
+    ├── handheld/          # first pocket-stage package + transitional 3D host
+    └── note-widget/       # a markdown sticky note — the flat pocket-widget form
 ```
 
 Dependency shape: `pocket3d-bsp` knows nothing about rendering; `pocket3d`
@@ -62,6 +66,92 @@ cargo run -p uihost -- --app hero-main --screenshot out.png --frames 10
 
 Arrows = D-pad, Z/Enter = CROSS, X = CIRCLE, A/S = SQUARE/TRIANGLE,
 Q/W = triggers, Tab = SELECT, Space = START, Esc quits.
+
+## pocket-stage — Pocket apps inside authored 3D displays
+
+The first pocket-widget runtime (WIDGET.md): a transparent, undecorated,
+always-on-top 3D stage with one or more authored display surfaces. The bundled
+stage is a PSP, but the process name is deliberately model-neutral. After the
+manifest-v1 migration described in WIDGET.md, iPod, phone, laptop, television,
+and room packages use the same host. A JSON asset manifest keeps model-specific
+scale, LOD paths, display semantics, camera presets, and CPU pick proxies out
+of the runtime. The PSP screen is a live `ui` surface (`OffscreenTarget` bound
+to the exact semantic glTF material), and its buttons feed real BTN bits — the
+same unmodified bundle uihost runs.
+
+```sh
+bun run widget                   # from the repo root: build bundle + binary, launch
+bun run widget im                # any demo
+bun run widget im --auto-quit 5  # app first; flags and values pass to pocket-stage
+bun run widget -- --profile psp.json --orbit 35,-12
+bun run widget --proof           # ray-picked CIRCLE acceptance → Count: 1
+```
+
+The optional app name is recognized only as the first argument; otherwise the
+widget defaults to `hero-main`. All following arguments are forwarded to the
+`pocket-stage` binary in order, including values for options such as
+`--auto-quit`, `--profile`, and `--orbit`. `--proof` is the only
+wrapper-specific flag and is consumed by `scripts/widget.ts`; a standalone
+`--` is accepted as Bun's option separator.
+
+Or by hand:
+
+```sh
+bun scripts/build.ts hero-main   # from the repo root
+cd pocket3d
+cargo run -p pocket-stage -- --app hero-main
+cargo run -p pocket-stage -- --app hero-main --screenshot out.png --frames 30
+```
+
+Click caps to press them, drag the nub, and double-click the screen to animate
+both framing and orbit into an exact-front, screen-filling focus view
+(`--focus` starts there). Double-click again to animate back to the exact orbit
+that was active before focus; repeated focus cycles do not reset the desk view.
+Drag inert body areas to move the window. On a Mac trackpad, two-finger scroll
+is the primary orbit gesture: horizontal motion changes yaw and vertical motion
+changes pitch. Near exact front, a gentle magnetic dead zone snaps both angles
+to zero; a wider release threshold keeps trackpad noise from making the camera
+jitter, while accumulated input still lets a deliberate gesture pull away.
+A mouse wheel follows the same two-axis path, and right-drag remains available
+as a mouse-compatible fallback. Orbit input pauses during focus and its framing
+transition so the saved desk orbit cannot be changed accidentally. While a
+gesture is active, the widget temporarily uses the 80,879-triangle eco LOD;
+after about 100 ms of
+scroll inactivity (or immediately after right-button release) it restores the
+131,680-triangle settled LOD for one retained high-quality frame. Their 19
+material textures are content-addressed and uploaded only once. The uihost key
+map works throughout.
+Headless scripting:
+`--click x,y` presses that window pixel mid-run, `--tap circle@30` holds a
+button for six ticks, `--hold circle` holds it for the whole run. The guest
+ticks at a fixed 60 Hz; GPU frames render only when something changed
+(watch the `pocket-widget: … frames rendered` line on exit). `--max-fps 30`
+is available when a lower active-power ceiling matters more than 60 Hz camera
+motion.
+
+## note-widget — a markdown sticky on your desk
+
+The first *flat* pocket-widget runtime: no scene at all — the borderless,
+resizable, always-on-top window IS a live `ui` surface, rendered at Retina
+density (density-2 pak + `render_words_scaled`) and demand-driven like every
+widget. The guest is `demos/note` (markdown view/edit, popup menu); the host
+forwards the real keyboard/mouse/wheel/resize over the spec svc channel and
+synthesizes CIRCLE for clicks, so the framework's hover-focus + onPress
+pipeline does all dispatch.
+
+```sh
+bun scripts/build.ts note-main --density=2   # from the repo root
+cd pocket3d
+cargo run -p note-widget
+cargo run -p note-widget -- --file ~/notes/todo.md --width 380 --height 520
+```
+
+Click the text to edit (Esc/DONE to finish), drag the header to move, drag
+the dotted corner or any edge to resize (relayout is live), scroll to
+scroll; the ••• menu has theme/reset/close, edits autosave to `--file`
+(default `~/.pocket-note.md`), ⌘Q quits. Headless scripting:
+`--screenshot out.png --frames N`, `--click x,y@frame`, `--type text@frame`,
+`--key Enter@frame`, `--scroll dy@frame`.
 
 ## The substrate, briefly
 

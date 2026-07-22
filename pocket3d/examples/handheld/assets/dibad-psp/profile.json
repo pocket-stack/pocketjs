@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "name": "PlayStation Portable (PSP) - EG02",
+  "attribution": "ATTRIBUTION.md",
+  "lods": {
+    "settled": "psp_lod2_interactive.glb",
+    "orbit": "psp_lod3_eco.glb"
+  },
+  "target_width_mm": 170.0,
+  "rotation_degrees": [0.0, 180.0, 0.0],
+  "display": {
+    "logical_size": [480, 272],
+    "raster_density": 1,
+    "window_size": [480, 260]
+  },
+  "view": {
+    "desk_position_mm": [0.0, 46.0, 190.0],
+    "desk_target_mm": [0.0, 0.0, 0.0],
+    "focus_distance_mm": 98.0,
+    "fov_y_degrees": 30.0
+  },
+  "screen": {
+    "material_role": "dynamic_screen",
+    "material_name_prefix": "P3D_dynamic_screen__",
+    "expected_primitives": 1
+  },
+  "suppressed_materials": [
+    {
+      "material_role": "screen_glass_overlay",
+      "material_name_prefix": "P3D_screen_and_glass__tintado",
+      "expected_primitives": 1
+    }
+  ],
+  "parts": [
+    { "name": "body_left", "center_mm": [-72.0, 0.0, 0.0], "half_extents_mm": [13.0, 36.0, 8.0] },
+    { "name": "body_right", "center_mm": [72.0, 0.0, 0.0], "half_extents_mm": [13.0, 36.0, 8.0] },
+    { "name": "body_top", "center_mm": [0.0, 31.0, 0.0], "half_extents_mm": [59.0, 5.0, 8.0] },
+    { "name": "body_bottom", "center_mm": [0.0, -31.0, 0.0], "half_extents_mm": [59.0, 5.0, 8.0] },
+    { "name": "screen", "center_mm": [-0.4, 2.4, 8.2], "half_extents_mm": [47.6, 27.9, 0.8] },
+
+    { "name": "dpad_up", "button": "up", "center_mm": [-66.0, 14.0, 13.0], "half_extents_mm": [7.0, 8.0, 3.0] },
+    { "name": "dpad_down", "button": "down", "center_mm": [-66.0, -10.0, 13.0], "half_extents_mm": [7.0, 8.0, 3.0] },
+    { "name": "dpad_left", "button": "left", "center_mm": [-78.0, 2.0, 13.0], "half_extents_mm": [8.0, 7.0, 3.0] },
+    { "name": "dpad_right", "button": "right", "center_mm": [-54.0, 2.0, 13.0], "half_extents_mm": [8.0, 7.0, 3.0] },
+
+    { "name": "btn_triangle", "button": "triangle", "center_mm": [66.0, 14.0, 13.0], "half_extents_mm": [7.0, 7.0, 3.0] },
+    { "name": "btn_circle", "button": "circle", "center_mm": [78.0, 2.0, 13.0], "half_extents_mm": [7.0, 7.0, 3.0] },
+    { "name": "btn_cross", "button": "cross", "center_mm": [66.0, -10.0, 13.0], "half_extents_mm": [7.0, 7.0, 3.0] },
+    { "name": "btn_square", "button": "square", "center_mm": [54.0, 2.0, 13.0], "half_extents_mm": [7.0, 7.0, 3.0] },
+
+    { "name": "nub", "center_mm": [-66.0, -23.0, 13.0], "half_extents_mm": [9.0, 9.0, 3.0] },
+    { "name": "btn_select", "button": "select", "center_mm": [50.0, -27.0, 13.0], "half_extents_mm": [7.0, 4.0, 3.0] },
+    { "name": "btn_start", "button": "start", "center_mm": [66.0, -27.0, 13.0], "half_extents_mm": [7.0, 4.0, 3.0] },
+    { "name": "trig_l", "button": "l", "center_mm": [-66.0, 38.0, 1.0], "half_extents_mm": [15.0, 5.0, 9.0] },
+    { "name": "trig_r", "button": "r", "center_mm": [66.0, 38.0, 1.0], "half_extents_mm": [15.0, 5.0, 9.0] }
+  ]
+}

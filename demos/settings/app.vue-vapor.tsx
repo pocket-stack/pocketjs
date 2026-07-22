@@ -1,4 +1,4 @@
-import { defineVaporComponent, ref } from "vue";
+import { ref } from "vue";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/vue-vapor/components";
 import { animate } from "@pocketjs/framework/vue-vapor/animation";
 
@@ -112,30 +112,12 @@ function themeByName(name: ThemeName): ThemeOption {
   return THEMES.find((t) => t.name === name) ?? THEMES[0];
 }
 
-function propValue<T>(value: T | (() => T)): T {
-  return typeof value === "function" ? (value as () => T)() : value;
-}
-
-function callbackProp<T extends (...args: any[]) => unknown>(value: T | (() => T)): T {
-  if (typeof value !== "function") return value;
-  if (value.length === 0) {
-    const resolved = (value as () => T)();
-    if (typeof resolved === "function") return resolved;
-  }
-  return value as T;
-}
-
-const Toggle = defineVaporComponent((
-  _props: { label: string; value: boolean; themeName: ThemeName; onToggle: () => void },
-  { attrs },
+const Toggle = (
+  props: { label: string; value: boolean; themeName: ThemeName; onToggle: () => void },
 ) => {
   let knob: NodeMirror | undefined;
-  const label = () => propValue(attrs.label as string | (() => string));
-  const value = () => propValue(attrs.value as boolean | (() => boolean));
-  const current = ref(value());
-  const themeName = () => propValue(attrs.themeName as ThemeName | (() => ThemeName));
-  const onToggle = () => callbackProp(attrs.onToggle as (() => void) | (() => () => void));
-  const palette = () => themeByName(themeName());
+  const current = ref(props.value);
+  const palette = () => themeByName(props.themeName);
   const moveKnob = (dur: number) => {
     if (!knob) return;
     animate(knob, "translateX", current.value ? 15.5 : 0.5, { dur, easing: "out" });
@@ -147,10 +129,10 @@ const Toggle = defineVaporComponent((
       onPress={() => {
         current.value = !current.value;
         moveKnob(160);
-        onToggle()();
+        props.onToggle();
       }}
     >
-      <Text class={palette().rowLabelCls}>{label()}</Text>
+      <Text class={palette().rowLabelCls}>{props.label}</Text>
       <View class={current.value ? palette().switchOnCls : palette().switchOffCls}>
         <View
           nodeRef={(node: NodeMirror | null) => {
@@ -163,7 +145,7 @@ const Toggle = defineVaporComponent((
       </View>
     </View>
   );
-});
+};
 
 const BRIGHTNESS_TRACK_W = 120;
 const BRIGHTNESS_INITIAL_LEVEL = 3;
@@ -172,10 +154,9 @@ const brightnessWidth = (level: number): number => (level / 5) * BRIGHTNESS_TRAC
 const brightnessScale = (level: number): number => level / 5;
 const brightnessFillOffset = (level: number): number => -(BRIGHTNESS_TRACK_W * (1 - brightnessScale(level))) / 2;
 
-const Brightness = defineVaporComponent((_props: { themeName: ThemeName }, { attrs }) => {
+const Brightness = (props: { themeName: ThemeName }) => {
   const level = ref(BRIGHTNESS_INITIAL_LEVEL);
-  const themeName = () => propValue(attrs.themeName as ThemeName | (() => ThemeName));
-  const palette = () => themeByName(themeName());
+  const palette = () => themeByName(props.themeName);
   let fill: NodeMirror | undefined;
   let thumb: NodeMirror | undefined;
   const moveLevel = (dur: number) => {
@@ -223,29 +204,25 @@ const Brightness = defineVaporComponent((_props: { themeName: ThemeName }, { att
       </View>
     </View>
   );
-});
+};
 
-const ThemeRow = defineVaporComponent((
-  _props: { value: ThemeName; themeName: ThemeName; onPick: (t: ThemeName) => void },
-  { attrs },
+const ThemeRow = (
+  props: { value: ThemeName; themeName: ThemeName; onPick: (t: ThemeName) => void },
 ) => {
-  const value = () => propValue(attrs.value as ThemeName | (() => ThemeName));
-  const themeName = () => propValue(attrs.themeName as ThemeName | (() => ThemeName));
-  const onPick = () => callbackProp(attrs.onPick as ((t: ThemeName) => void) | (() => (t: ThemeName) => void));
-  const palette = () => themeByName(themeName());
+  const palette = () => themeByName(props.themeName);
   return (
     <View class={palette().panelCls}>
       <Text class={palette().rowLabelCls}>THEME</Text>
       <View class="flex-row gap-2">
         {THEMES.map((t) => (
-          <View class={value() === t.name ? t.selectedCls : t.swatchCls} focusable onPress={() => onPick()(t.name)}>
-            {value() === t.name ? <View class="w-2 h-2 rounded-full bg-white shadow" /> : null}
+          <View class={props.value === t.name ? t.selectedCls : t.swatchCls} focusable onPress={() => props.onPick(t.name)}>
+            {props.value === t.name ? <View class="w-2 h-2 rounded-full bg-white shadow" /> : null}
           </View>
         ))}
       </View>
     </View>
   );
-});
+};
 
 export default function Settings() {
   const sfx = ref(true);

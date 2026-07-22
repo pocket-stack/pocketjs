@@ -1,5 +1,5 @@
-//! Embeds the built app bundle + asset pack into the EBOOT at build time.
-//! Pattern copied from the dreamcart runtime (runtime/build.rs, the
+//! Embeds the built app bundle(s) + asset pack(s) into the EBOOT at build
+//! time. Pattern copied from the dreamcart runtime (runtime/build.rs, the
 //! PSPJS_GAME pattern), with app selection separated from embed ownership.
 //!
 //! The stock backend sets `POCKETJS_APP_OUTPUT` and `POCKETJS_EMBED_APP=1`.
@@ -10,6 +10,12 @@
 //! Both embeds have EMPTY fallbacks so include_str!/include_bytes! in main.rs
 //! always resolve — an EBOOT built with no app boots to the JS-error screen
 //! rather than failing the build.
+//!
+//! Multi-app mode (LAUNCHER.md): `POCKETJS_LAUNCHER_REGISTRY=<path to the
+//! launcher-registry.tsv scripts/launcher.ts emits>` embeds app 0 = the
+//! selected app (the launcher) PLUS one entry per registry line. Every mode
+//! generates $OUT_DIR/apps.rs — a single-app build is simply a table of one,
+//! so main.rs has exactly one shape to consume.
 
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -71,49 +77,151 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from("../dist"));
     let out_dir = env::var("OUT_DIR").unwrap();
 
-    // App JS bundle -> $OUT_DIR/game.js, NUL-terminated for JS_Eval (which
-    // requires input[len] == '\0'; main.rs evals with len - 1).
-    let mut code = if !embed_app {
-        String::new()
-    } else {
-        let path = dist.join(format!("{app}.js"));
+    // The embedded app table. Entry 0 is the selected app; multi-app builds
+    // (POCKETJS_LAUNCHER_REGISTRY) append one entry per registry line.
+    struct Embed {
+        output: String,
+        id: String,
+        title: String,
+        js: String, // NUL-terminated on write; hashed before the NUL
+        pak: Vec<u8>,
+    }
+
+    let read_bundle = |output: &str| -> (String, Vec<u8>) {
+        let js_path = dist.join(format!("{output}.js"));
+        let pak_path = dist.join(format!("{output}.pak"));
         // Without this, cargo re-runs the script only on env changes — a
         // JS-only rebuild would ship the PREVIOUS bundle inside a freshly
         // linked PRX (observed on hardware; maddening to diagnose).
-        println!("cargo:rerun-if-changed={}", path.display());
-        fs::read_to_string(&path).unwrap_or_else(|e| {
+        println!("cargo:rerun-if-changed={}", js_path.display());
+        println!("cargo:rerun-if-changed={}", pak_path.display());
+        let js = fs::read_to_string(&js_path).unwrap_or_else(|e| {
             panic!(
                 "could not read {} (compile the resolved plan first): {e}",
-                path.display()
+                js_path.display()
             )
-        })
+        });
+        (js, fs::read(&pak_path).unwrap_or_default())
     };
 
-    // Asset pack (styles.bin + font atlases + images; .pak container) ->
-    // $OUT_DIR/app.pak. Empty when absent; main.rs skips an empty pack.
-    let pak = if !embed_app {
-        Vec::new()
+    let mut embeds: Vec<Embed> = Vec::new();
+    if embed_app {
+        let (js, pak) = read_bundle(&app);
+        embeds.push(Embed {
+            output: app.clone(),
+            id: String::new(),
+            title: String::new(),
+            js,
+            pak,
+        });
     } else {
-        let path = dist.join(format!("{app}.pak"));
-        println!("cargo:rerun-if-changed={}", path.display());
-        fs::read(&path).unwrap_or_default()
-    };
+        embeds.push(Embed {
+            output: app.clone(),
+            id: String::new(),
+            title: String::new(),
+            js: String::new(),
+            pak: Vec::new(),
+        });
+    }
 
-    // Build identity: FNV-1a64 over exactly the bytes embedded (js before
-    // its NUL, then pak). scripts/bundle-hash.ts is the host-side twin; the
-    // device reports this through OP.debugStats and the PSPLINK bridge
-    // compares it against local dist/ — a stale embed announces itself
-    // instead of silently invalidating a round of on-device verification.
+    let registry = env::var("POCKETJS_LAUNCHER_REGISTRY").unwrap_or_default();
+    if !registry.is_empty() {
+        assert!(
+            embed_app,
+            "POCKETJS_LAUNCHER_REGISTRY requires POCKETJS_EMBED_APP=1 (the launcher is app 0)"
+        );
+        println!("cargo:rerun-if-changed={registry}");
+        let tsv = fs::read_to_string(&registry)
+            .unwrap_or_else(|e| panic!("could not read {registry}: {e}"));
+        for (lineno, line) in tsv.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let mut cols = line.split('\t');
+            let (output, id, title) = match (cols.next(), cols.next(), cols.next()) {
+                (Some(o), Some(i), Some(t)) => (o.to_string(), i.to_string(), t.to_string()),
+                _ => panic!("{registry}:{}: expected output\\tid\\ttitle", lineno + 1),
+            };
+            assert!(
+                output != app,
+                "{registry}: registry lists the launcher itself ({app})"
+            );
+            let (js, pak) = read_bundle(&output);
+            embeds.push(Embed { output, id, title, js, pak });
+        }
+        assert!(
+            embeds.len() > 1,
+            "{registry}: no apps — a launcher EBOOT with nothing to launch"
+        );
+    }
+
+    // Build identity: FNV-1a64 over exactly the bytes embedded (every app's
+    // js before its NUL, then its pak, in table order). scripts/bundle-hash.ts
+    // is the host-side twin; the device reports this through OP.debugStats
+    // and the PSPLINK bridge compares it against local dist/ — a stale embed
+    // announces itself instead of silently invalidating a round of on-device
+    // verification.
     let bundle_hash = if embed_app {
-        fnv1a64(&[code.as_bytes(), &pak])
+        let chunks: Vec<&[u8]> = embeds
+            .iter()
+            .flat_map(|e| [e.js.as_bytes(), e.pak.as_slice()])
+            .collect();
+        fnv1a64(&chunks)
     } else {
         String::from("none")
     };
     println!("cargo:rustc-env=POCKETJS_BUNDLE_HASH={bundle_hash}");
 
-    code.push('\0');
-    fs::write(Path::new(&out_dir).join("game.js"), code).unwrap();
-    fs::write(Path::new(&out_dir).join("app.pak"), pak).unwrap();
+    // $OUT_DIR/appN.{js,pak} + the generated table (switch.rs include!s it).
+    let mut apps_rs = String::from(
+        "// GENERATED by build.rs — the embedded app table (LAUNCHER.md).\n\
+         pub struct EmbeddedApp {\n\
+             pub output: &'static str,\n\
+             pub id: &'static str,\n\
+             pub title: &'static str,\n\
+             /// NUL-terminated for JS_Eval (eval with len - 1).\n\
+             pub js: &'static str,\n\
+             pub pak: &'static [u8],\n\
+         }\n\
+         pub static APPS: &[EmbeddedApp] = &[\n",
+    );
+    for (i, e) in embeds.iter().enumerate() {
+        let mut js = e.js.clone();
+        js.push('\0');
+        fs::write(Path::new(&out_dir).join(format!("app{i}.js")), js).unwrap();
+        fs::write(Path::new(&out_dir).join(format!("app{i}.pak")), &e.pak).unwrap();
+        apps_rs.push_str(&format!(
+            "    EmbeddedApp {{ output: {output:?}, id: {id:?}, title: {title:?}, \
+             js: include_str!(concat!(env!(\"OUT_DIR\"), \"/app{i}.js\")), \
+             pak: include_bytes!(concat!(env!(\"OUT_DIR\"), \"/app{i}.pak\")) }},\n",
+            output = e.output,
+            id = e.id,
+            title = e.title,
+        ));
+    }
+    apps_rs.push_str("];\n");
+    fs::write(Path::new(&out_dir).join("apps.rs"), apps_rs).unwrap();
+
+    // Legacy single-bundle embeds (main.rs consumed these before the table
+    // existed; kept so a mid-migration checkout still links).
+    let mut legacy = embeds[0].js.clone();
+    legacy.push('\0');
+    fs::write(Path::new(&out_dir).join("game.js"), legacy).unwrap();
+    fs::write(Path::new(&out_dir).join("app.pak"), &embeds[0].pak).unwrap();
+
+    // Switch-veil logo (PLATFORM.md): 128×128 RGBA baked by scripts/psp.ts.
+    // Empty fallback keeps custom-host builds (no backend env) linking; the
+    // veil skips the mark when the blob is not exactly 128*128*4 bytes.
+    let veil = env::var("POCKETJS_VEIL_LOGO")
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            println!("cargo:rerun-if-changed={p}");
+            fs::read(&p).unwrap_or_default()
+        })
+        .unwrap_or_default();
+    fs::write(Path::new(&out_dir).join("veil.raw"), veil).unwrap();
+    println!("cargo:rerun-if-env-changed=POCKETJS_VEIL_LOGO");
 
     // Scripted input for deterministic capture builds (test/e2e-ppsspp.ts):
     // "frame:mask,frame:mask" baked into the EBOOT, consumed by main.rs only
@@ -146,6 +254,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=POCKETJS_APP");
     println!("cargo:rerun-if-env-changed=POCKETJS_APP_OUTPUT");
     println!("cargo:rerun-if-env-changed=POCKETJS_EMBED_APP");
+    println!("cargo:rerun-if-env-changed=POCKETJS_LAUNCHER_REGISTRY");
     println!("cargo:rerun-if-env-changed=POCKETJS_OUTPUT_DIR");
     println!("cargo:rerun-if-env-changed=POCKETJS_TARGET");
     println!("cargo:rerun-if-env-changed=POCKETJS_HOST_ABI");

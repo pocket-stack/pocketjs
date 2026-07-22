@@ -13,6 +13,8 @@ export interface WasmUi {
   init(rasterDensity?: number): void;
   /** Advance exactly one fixed-dt (1/60 s) frame. */
   tick(): void;
+  /** Hash the current DrawList without rasterizing it; null for an older wasm. */
+  drawHash: (() => bigint) | null;
   /** Rasterize the byte-exact RGBA8 480x272 framebuffer as a fresh view. */
   render(): Uint8Array;
   /** Rasterize directly at an integer physical scale from 1 through 4. */

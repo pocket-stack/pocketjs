@@ -41,13 +41,14 @@ const COMPONENTS_PATH = resolveLocalPath("../src/components.ts");
 const COMPONENTS_VUE_VAPOR_PATH = resolveLocalPath("../src/components-vue-vapor.ts");
 const CONFIG_PATH = resolveLocalPath("../src/config.ts");
 const INPUT_API_PATH = resolveLocalPath("../src/input-api.ts");
+const LAUNCHER_PATH = resolveLocalPath("../src/launcher.ts");
 const LIFECYCLE_PATH = resolveLocalPath("../src/lifecycle.ts");
 const LIFECYCLE_VUE_VAPOR_PATH = resolveLocalPath("../src/lifecycle-vue-vapor.ts");
 const OSK_PATH = resolveLocalPath("../src/osk.tsx");
 const PLATFORM_PATH = resolveLocalPath("../src/platform.ts");
 const PRELUDE_PATH = resolveLocalPath("../src/prelude.ts");
 const VUE_VAPOR_RUNTIME_PATH = resolveLocalPath(
-  "../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js"
+  "../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js",
 );
 
 const PACKAGE_NAME = "@pocketjs/framework";
@@ -78,6 +79,7 @@ export const FRAMEWORKS: Record<
       components: COMPONENTS_PATH,
       config: CONFIG_PATH,
       input: INPUT_API_PATH,
+      launcher: LAUNCHER_PATH,
       lifecycle: LIFECYCLE_PATH,
       // The system OSK carries class literals and key-cap glyphs, so pass 1
       // must walk it (this map lists the framework modules the collector
@@ -99,6 +101,7 @@ export const FRAMEWORKS: Record<
       components: COMPONENTS_VUE_VAPOR_PATH,
       config: CONFIG_PATH,
       input: INPUT_API_PATH,
+      launcher: LAUNCHER_PATH,
       lifecycle: LIFECYCLE_VUE_VAPOR_PATH,
       platform: PLATFORM_PATH,
       prelude: PRELUDE_PATH,

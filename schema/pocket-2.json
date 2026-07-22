@@ -103,32 +103,106 @@
           ]
         },
         "viewport": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "logical",
-            "presentation"
-          ],
-          "properties": {
-            "logical": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "minItems": 2,
-              "maxItems": 2
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "logical",
+                "presentation"
+              ],
+              "properties": {
+                "logical": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "presentation": {
+                  "enum": [
+                    "fill",
+                    "fit",
+                    "integer-fit",
+                    "native",
+                    "stretch"
+                  ]
+                }
+              }
             },
-            "presentation": {
-              "enum": [
-                "fill",
-                "fit",
-                "integer-fit",
-                "native",
-                "stretch"
-              ]
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "fixed": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "logical",
+                    "presentation"
+                  ],
+                  "properties": {
+                    "logical": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "minItems": 2,
+                      "maxItems": 2
+                    },
+                    "presentation": {
+                      "enum": [
+                        "fill",
+                        "fit",
+                        "integer-fit",
+                        "native",
+                        "stretch"
+                      ]
+                    }
+                  }
+                },
+                "dynamic": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "default"
+                  ],
+                  "properties": {
+                    "default": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "minItems": 2,
+                      "maxItems": 2
+                    },
+                    "min": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "minItems": 2,
+                      "maxItems": 2
+                    },
+                    "max": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "minItems": 2,
+                      "maxItems": 2
+                    }
+                  }
+                }
+              }
             }
-          }
+          ]
         }
       }
     }

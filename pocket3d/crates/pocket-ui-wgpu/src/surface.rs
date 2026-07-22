@@ -11,6 +11,7 @@
 //! host omits it and the framework defaults to 480x272).
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use anyhow::Result;
@@ -38,6 +39,20 @@ struct Inner {
     /// pak image name → core texture handle (`ui.__textures`).
     textures: Vec<(String, i32)>,
     sprites: Vec<SpriteReg>,
+    /// Host service channel (spec ops 30..32): in-process JSON-line queues.
+    /// On consoles the mailbox is files under a tethered share; here the
+    /// widget host *is* the companion process, so lines just cross a queue.
+    svc_in: VecDeque<String>,
+    svc_out: VecDeque<String>,
+    /// Companion service names accepted by `svcOpen`. `None` preserves the
+    /// historical desktop-host default of accepting any name; a Stage sets an
+    /// exact package-authored allowlist (which may be empty).
+    svc_allowlist: Option<Vec<String>>,
+    /// Platform-contract identity published as `ui.__host`/`ui.__hostAbi`.
+    /// Bundles built from a resolved plan refuse hosts whose identity does
+    /// not match their target (src/host.ts assertNativeHostContract).
+    host_id: String,
+    host_abi: Option<u32>,
 }
 
 /// The `ui` surface. Clone-cheap handle; single-threaded like the guest.
@@ -50,7 +65,16 @@ impl UiSurface {
     /// A fresh core sized to `viewport` (logical px; pass (480, 272) to host
     /// stock PSP apps).
     pub fn new(viewport: (f32, f32)) -> UiSurface {
-        let mut ui = Ui::new();
+        Self::new_with_density(viewport, 1)
+    }
+
+    /// A fresh core with a raster density > 1 (the Vita model: logical
+    /// layout unchanged, core-baked bitmaps and font coverage at `density`
+    /// samples per logical px). Pair with density-`density` paks and
+    /// `UiRenderer::render_words_scaled` for native-resolution output on
+    /// high-DPI displays.
+    pub fn new_with_density(viewport: (f32, f32), density: u32) -> UiSurface {
+        let mut ui = Ui::new_with_raster_density(density);
         ui.set_viewport(viewport.0, viewport.1);
         UiSurface {
             inner: Rc::new(RefCell::new(Inner {
@@ -58,8 +82,65 @@ impl UiSurface {
                 pak: Vec::new(),
                 textures: Vec::new(),
                 sprites: Vec::new(),
+                svc_in: VecDeque::new(),
+                svc_out: VecDeque::new(),
+                svc_allowlist: None,
+                host_id: "desktop".into(),
+                host_abi: None,
             })),
         }
+    }
+
+    /// Declare this host's platform-contract identity (a POCKET_TARGETS id
+    /// and its hostAbi) before `mount`. Plan-built bundles assert it; the
+    /// default "desktop" (no ABI) serves plan-less development hosts.
+    pub fn set_identity(&self, host_id: &str, host_abi: u32) {
+        let mut inner = self.inner.borrow_mut();
+        inner.host_id = host_id.to_string();
+        inner.host_abi = Some(host_abi);
+    }
+
+    /// Restrict `svcOpen` to exact companion service names. An empty list
+    /// advertises no service. Call this before `mount`, which installs the
+    /// host-op closure into the guest.
+    pub fn set_svc_allowlist<I, S>(&self, services: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.inner.borrow_mut().svc_allowlist = Some(
+            services
+                .into_iter()
+                .map(Into::into)
+                .collect::<Vec<String>>(),
+        );
+    }
+
+    /// Queue one JSON line for the guest's next `svcPoll` (host → guest).
+    pub fn svc_push(&self, line: impl Into<String>) {
+        self.inner.borrow_mut().svc_in.push_back(line.into());
+    }
+
+    /// Drain the lines the guest sent with `svcSend` (guest → host).
+    pub fn svc_drain(&self) -> Vec<String> {
+        self.inner.borrow_mut().svc_out.drain(..).collect()
+    }
+
+    /// Take only matching guest → host service lines, retaining every other
+    /// namespace in FIFO order for another companion adapter.
+    pub fn svc_drain_matching(&self, mut predicate: impl FnMut(&str) -> bool) -> Vec<String> {
+        let mut inner = self.inner.borrow_mut();
+        let mut matched = Vec::new();
+        let mut retained = VecDeque::new();
+        while let Some(line) = inner.svc_out.pop_front() {
+            if predicate(&line) {
+                matched.push(line);
+            } else {
+                retained.push_back(line);
+            }
+        }
+        inner.svc_out = retained;
+        matched
     }
 
     /// Feed an app pak: styles + font atlases go straight to the core,
@@ -367,6 +448,40 @@ impl UiSurface {
                 }
             });
 
+            // ---- host service channel (spec ops 30..32) ------------------
+            // A stage advertises a companion service only when its package
+            // provides one. Lines cross an in-process queue instead of a
+            // tethered share; apps feature-detect exactly like on PSP.
+            let ui = self.inner.clone();
+            op!("svcOpen", move |app: Coerced<String>| {
+                let inner = ui.borrow();
+                match &inner.svc_allowlist {
+                    None => true,
+                    Some(names) => names.iter().any(|name| name == &app.0),
+                }
+            });
+
+            let ui = self.inner.clone();
+            op!("svcPoll", move || -> Option<String> {
+                let mut inner = ui.borrow_mut();
+                if inner.svc_in.is_empty() {
+                    return None;
+                }
+                // Batch per the HostOps contract: complete JSON lines,
+                // newline-terminated, possibly several per poll.
+                let mut batch = String::new();
+                for line in inner.svc_in.drain(..) {
+                    batch.push_str(&line);
+                    batch.push('\n');
+                }
+                Some(batch)
+            });
+
+            let ui = self.inner.clone();
+            op!("svcSend", move |line: Coerced<String>| {
+                ui.borrow_mut().svc_out.push_back(line.0);
+            });
+
             // ---- boot tables (PSP contract) + desktop viewport ----------
             let inner = self.inner.borrow();
             let textures = Object::new(ctx.clone())?;
@@ -392,10 +507,13 @@ impl UiSurface {
             viewport.set("h", vh as f64)?;
             ns.set("__viewport", viewport)?;
 
-            // Honest host label for DevTools' hello (the shim would
-            // otherwise report "psp" — this namespace passes its PSP-shaped
-            // host detection on purpose).
-            ns.set("__host", "desktop")?;
+            // Honest host label for DevTools' hello and the platform
+            // contract (the shim would otherwise report "psp" — this
+            // namespace passes its PSP-shaped host detection on purpose).
+            ns.set("__host", inner.host_id.as_str())?;
+            if let Some(abi) = inner.host_abi {
+                ns.set("__hostAbi", abi)?;
+            }
 
             Ok(())
         })
@@ -415,4 +533,64 @@ fn decode_pix_header(blob: &[u8], pixels_off: usize) -> Option<(u32, u32, u32, &
     let psm = *blob.get(4)? as u32;
     let pixels = blob.get(pixels_off..)?;
     Some((w, h, psm, pixels))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_service_allowlist_disables_the_companion() {
+        let guest = Guest::new().unwrap();
+        let surface = UiSurface::new((16.0, 16.0));
+        surface.set_svc_allowlist(std::iter::empty::<&str>());
+        surface.mount(&guest).unwrap();
+        guest
+            .eval("service", "globalThis.serviceOpen = ui.svcOpen('demo');")
+            .unwrap();
+        let open: bool = guest.with(|ctx| ctx.globals().get("serviceOpen").unwrap());
+        assert!(!open);
+    }
+
+    #[test]
+    fn service_allowlist_matches_exact_names() {
+        let guest = Guest::new().unwrap();
+        let surface = UiSurface::new((16.0, 16.0));
+        surface.set_svc_allowlist(["ipod-nano"]);
+        surface.mount(&guest).unwrap();
+        guest
+            .eval(
+                "service",
+                "globalThis.exact = ui.svcOpen('ipod-nano');\
+                 globalThis.wrong = ui.svcOpen('other');",
+            )
+            .unwrap();
+        let (exact, wrong): (bool, bool) = guest.with(|ctx| {
+            (
+                ctx.globals().get("exact").unwrap(),
+                ctx.globals().get("wrong").unwrap(),
+            )
+        });
+        assert!(exact);
+        assert!(!wrong);
+    }
+
+    #[test]
+    fn matching_service_drain_retains_other_namespaces_in_order() {
+        let guest = Guest::new().unwrap();
+        let surface = UiSurface::new((16.0, 16.0));
+        surface.mount(&guest).unwrap();
+        guest
+            .eval(
+                "service",
+                "ui.svcSend('alpha'); ui.svcSend('media'); ui.svcSend('omega');",
+            )
+            .unwrap();
+
+        assert_eq!(
+            surface.svc_drain_matching(|line| line == "media"),
+            vec!["media"]
+        );
+        assert_eq!(surface.svc_drain(), vec!["alpha", "omega"]);
+    }
 }

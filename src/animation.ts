@@ -1,3 +1,3 @@
 // Animation public API.
 
-export { animate, spring, cancelAnim, type AnimateOptions, type EasingName } from "./anim.ts";
+export { animate, spring, cancelAnim, jump, type AnimateOptions, type EasingName } from "./anim.ts";

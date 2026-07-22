@@ -12,14 +12,23 @@ struct Globals {
 struct Instance {
     model: mat4x4f,
     tint: vec4f,
-    // x: lit amount, y: ambient boost, z/w unused
+    // x: lit amount, y: alpha-test cutoff (0 = off), z/w unused
     params: vec4f,
+}
+
+struct Material {
+    base_color_factor: vec4f,
+    // x: unlit, y: alpha-test cutoff, z: double-sided, w: alpha blend
+    params: vec4f,
+    // x: monochrome base color, y/z/w reserved
+    style: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 
 @group(1) @binding(0) var t_albedo: texture_2d<f32>;
 @group(1) @binding(1) var s_albedo: sampler;
+@group(1) @binding(2) var<uniform> material: Material;
 
 @group(2) @binding(0) var<uniform> instance: Instance;
 @group(2) @binding(1) var<storage, read> joints: array<mat4x4f>;
@@ -66,9 +75,24 @@ fn vs_main(in: VsIn) -> VsOut {
 }
 
 @fragment
-fn fs_main(in: VsOut) -> @location(0) vec4f {
-    let albedo = textureSample(t_albedo, s_albedo, in.uv) * instance.tint;
-    let n = normalize(in.normal);
+fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4f {
+    var albedo = textureSample(t_albedo, s_albedo, in.uv)
+        * material.base_color_factor
+        * instance.tint;
+    if material.style.x > 0.5 {
+        // Texture samples are already linearized by the sRGB texture view.
+        // Rec. 709 luminance removes hue without changing transparency.
+        let luminance = dot(albedo.rgb, vec3f(0.2126, 0.7152, 0.0722));
+        albedo = vec4f(vec3f(luminance), albedo.a);
+    }
+    let alpha_cutoff = max(instance.params.y, material.params.y);
+    if alpha_cutoff > 0.0 && albedo.a < alpha_cutoff {
+        discard;
+    }
+    var n = normalize(in.normal);
+    if material.params.z > 0.5 && !front_facing {
+        n = -n;
+    }
     let sun = max(dot(n, normalize(globals.sun_dir.xyz)), 0.0);
     // Hemisphere ambient: sky color from above, warm bounce from below.
     let hemi = mix(
@@ -76,10 +100,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4f {
         globals.sky_zenith.rgb * 0.55 + vec3f(0.25),
         n.y * 0.5 + 0.5,
     );
+    let lit_amount = instance.params.x * (1.0 - material.params.x);
     let lighting = mix(
         vec3f(1.0),
         hemi + globals.sun_color.rgb * sun * 0.9,
-        instance.params.x,
+        lit_amount,
     );
-    return vec4f(albedo.rgb * lighting, albedo.a);
+    let alpha = select(1.0, albedo.a, material.params.w > 0.5);
+    return vec4f(albedo.rgb * lighting, alpha);
 }

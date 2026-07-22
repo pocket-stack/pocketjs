@@ -19,6 +19,7 @@ glam = { workspace = true, features = ["std"] }
 bytemuck = { workspace = true }
 pollster = { workspace = true }
 gltf = { workspace = true }
+serde_json = { workspace = true }
 png = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }

@@ -1199,6 +1199,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "note-widget"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "anyhow",
+ "env_logger",
+ "glam",
+ "log",
+ "memmap2",
+ "pocket-mod",
+ "pocket-ui-wgpu",
+ "pocket-widget",
+ "pocket3d",
+ "serde_json",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1579,6 +1598,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "pocket-stage"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "glam",
+ "libc",
+ "log",
+ "pocket-mod",
+ "pocket-ui-wgpu",
+ "pocket-widget",
+ "pocket3d",
+ "serde",
+ "serde_json",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "pocket-ui-wgpu"
 version = "0.1.0"
 dependencies = [
@@ -1589,6 +1627,32 @@ dependencies = [
  "pocket3d",
  "pocketjs-core",
  "wgpu",
+]
+
+[[package]]
+name = "pocket-vrm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "log",
+ "pocket3d",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "pocket-widget"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "log",
+ "pocket-ui-wgpu",
+ "pocket3d",
+ "pocketjs-core",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]
@@ -1604,6 +1668,7 @@ dependencies = [
  "png",
  "pocket3d-bsp",
  "pollster",
+ "serde_json",
  "wgpu",
  "winit",
 ]

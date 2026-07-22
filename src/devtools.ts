@@ -476,9 +476,11 @@ function serializeNode(node: NodeMirror): TreeNodeJson {
   if (typeof cls === "string" && cls) out.c = cls;
   if (node.text) out.x = node.text.length > 80 ? node.text.slice(0, 79) + "…" : node.text;
   const kids: TreeNodeJson[] = [];
-  for (const child of node.children) {
-    if (child.domNodeType === 8) continue; // comment anchors: invisible noise
-    kids.push(serializeNode(child));
+  if (node.children) {
+    for (const child of node.children) {
+      if (child.domNodeType === 8) continue; // comment anchors: invisible noise
+      kids.push(serializeNode(child));
+    }
   }
   if (kids.length) out.k = kids;
   return out;
@@ -486,7 +488,9 @@ function serializeNode(node: NodeMirror): TreeNodeJson {
 
 function countNodes(node: NodeMirror): number {
   let n = 1;
-  for (const child of node.children) n += countNodes(child);
+  if (node.children) {
+    for (const child of node.children) n += countNodes(child);
+  }
   return n;
 }
 

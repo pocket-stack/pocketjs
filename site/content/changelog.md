@@ -3,6 +3,43 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.6.0 — July 19, 2026
+
+**The engine leaves the handheld.** The Pocket runtime's first desktop
+product surface: transparent widget windows and a VRM character stack,
+proven by rebuilding airi's 3D digital human as one native process at
+118 MB / 3.9 % of a core — an [order of magnitude below its Electron
+stage](/blog/pocket-character/) on every axis, same character, same
+behaviors.
+
+- **Widget windows** (pocket3d): `AppConfig` grows `transparent`,
+  `decorations`, `always_on_top`, `resizable`, `drag_window`, and `max_fps`
+  frame pacing that sleeps between frames instead of spinning on vsync;
+  scenes can clear to alpha 0 for desktop-composited windows.
+- **Morph targets** (pocket3d): sparse CPU deltas + per-instance overlay
+  vertex buffers, flushed only when a weight changes — blend-shape faces
+  cost nothing at rest. Draws redirect via `base_vertex`; shared index
+  buffers stay untouched.
+- **Procedural poses** (pocket3d): `Skeleton::sample_locals` /
+  `globals_from_locals` split plus `ModelInstance::pose`, so hosts inject
+  look-at and physics edits between clip sampling and the hierarchy walk.
+  Joint palettes grow 128 → 512 matrices for VRoid-scale humanoid rigs.
+- **pocket-vrm** (new crate): VRM 0.x parsing (humanoid map, blend-shape
+  groups, spring config, MToon material info, look-at ranges), a
+  deterministic allocation-free spring-bone verlet solver, VRMA retargeting
+  with the VRM1 +Z → VRM0 −Z conversion, and bone-type eye look-at —
+  21 tests against the real VRoid sample fixture.
+- **Asset diet** (pocket3d): `load_glb_opts` skips images no material
+  references and caps authoring-resolution textures
+  (`max_texture_dim`) — 413 MB of GPU memory back on the reference
+  character.
+- [pocket-character](https://github.com/pocket-stack/pocket-character):
+  the airi-parity widget itself — character surface + QuickJS policy
+  bundle, blink/saccade schedulers with airi's exact constants, headless
+  render harness, and the [measured report](/blog/pocket-character/).
+- **Compatibility:** no breaking changes; `AppConfig` and `ModelInstance`
+  gained fields (struct-literal constructors need `..Default::default()`).
+
 ## 0.5.0 — July 17, 2026
 
 **The console grows system software.** Streaming media, a system keyboard, a

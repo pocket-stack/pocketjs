@@ -17,7 +17,7 @@ const encoder = new TextEncoder();
 
 /**
  * Instantiate pocketjs.wasm and return
- * { ops, init, tick, render, renderScaled, exports }.
+ * { ops, init, tick, drawHash, render, renderScaled, exports }.
  * `ops` is a complete HostOps (src/host.ts) — hand it to the app bundle as
  * globalThis.ui before eval'ing it.
  *
@@ -120,6 +120,8 @@ export async function createWasmUi(wasm) {
     init,
     /** Advance exactly one fixed-dt (1/60 s) frame. */
     tick: () => ex.ui_tick(),
+    /** Hash the current DrawList without rasterizing it (BigInt, wasm i64). */
+    drawHash: ex.ui_draw_hash ? () => ex.ui_draw_hash() : null,
     /** Rasterize the byte-exact legacy 480x272 framebuffer. */
     render() {
       return framebufferView(ex.ui_render(), 1);

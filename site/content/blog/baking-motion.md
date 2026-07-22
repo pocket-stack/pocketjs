@@ -124,4 +124,4 @@ The journey, in numbers — average work per frame on the busiest page:
 
 None of this is a demo hack. The keyframe baker, the loop period, the arc primitive, the 3D projector and the pipelined loop are engine features behind Tailwind-shaped utilities; the demo contributes nothing but a config file, some geometry and a few baked SVG icons. The audit is one grep long: the engine tree contains no reference to the demo.
 
-Try it: the [homepage](/) hero is the motion studies live in WebAssembly, and the [playground](/playground/) opens the same source ready to edit — change a keyframe stop and the whole choreography recompiles under your cursor. On a real PSP, `bun psplink` and pick *Motion Lab*.
+Try it: the [homepage](/) now places a live WebAssembly Settings app inside an interactive 3D PSP, while the [playground](/playground/?demo=motions) opens these motion studies ready to edit — change a keyframe stop and the whole choreography recompiles under your cursor. On a real PSP, `bun psplink` and pick *Motion Lab*.

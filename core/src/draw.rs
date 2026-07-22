@@ -1227,16 +1227,64 @@ impl<'a> Walker<'a> {
             let c1 = project(l.w, 0.0);
             let c2 = project(l.w, l.h);
             let c3 = project(0.0, l.h);
-            let depth = (c0.1 + c1.1 + c2.1 + c3.1) * 0.25 + 0.005;
-            items.push((
-                depth,
-                Item3::TexQuad {
-                    pts: [c0.0, c1.0, c2.0, c3.0],
-                    uv: [(fu0, fv0), (fu1, fv0), (fu1, fv1), (fu0, fv1)],
-                    tex: node.tex as u32,
-                    modulate: scale_alpha(0xffff_ffff, op),
-                },
-            ));
+            // Perspective-correct subdivision. TEX_TRI sampling is affine in
+            // screen space (spec, PSP-authentic): exact when the projection
+            // factor is constant across the quad, but a foreshortened quad's
+            // interior texture lines visibly KINK along the triangle diagonal
+            // (a real-hardware find on the launcher's tilted cards). Split
+            // into a grid sized by the perspective variation per axis — each
+            // cell's corners get projectively correct UVs, and the residual
+            // per-cell affine error shrinks quadratically. Flat or affine
+            // mappings stay a single quad, byte-identical to before.
+            let fz = |pz: f32| distance / (distance - pz).max(1.0);
+            let (f0, f1, f2, f3) = (fz(c0.1), fz(c1.1), fz(c2.1), fz(c3.1));
+            let ratio = |a: f32, b: f32| if a > b { a / b } else { b / a };
+            let hvar = ratio(f0, f1).max(ratio(f3, f2));
+            let vvar = ratio(f0, f3).max(ratio(f1, f2));
+            let seg = |v: f32| -> u32 {
+                if v <= 1.02 {
+                    1
+                } else {
+                    (1.0 + (v - 1.0) * 16.0).min(8.0) as u32
+                }
+            };
+            let (nx, ny) = (seg(hvar), seg(vvar));
+            let modulate = scale_alpha(0xffff_ffff, op);
+            if nx == 1 && ny == 1 {
+                let depth = (c0.1 + c1.1 + c2.1 + c3.1) * 0.25 + 0.005;
+                items.push((
+                    depth,
+                    Item3::TexQuad {
+                        pts: [c0.0, c1.0, c2.0, c3.0],
+                        uv: [(fu0, fv0), (fu1, fv0), (fu1, fv1), (fu0, fv1)],
+                        tex: node.tex as u32,
+                        modulate,
+                    },
+                ));
+            } else {
+                for j in 0..ny {
+                    for i in 0..nx {
+                        let (t0, t1) = (i as f32 / nx as f32, (i + 1) as f32 / nx as f32);
+                        let (s0, s1) = (j as f32 / ny as f32, (j + 1) as f32 / ny as f32);
+                        let g0 = project(l.w * t0, l.h * s0);
+                        let g1 = project(l.w * t1, l.h * s0);
+                        let g2 = project(l.w * t1, l.h * s1);
+                        let g3 = project(l.w * t0, l.h * s1);
+                        let depth = (g0.1 + g1.1 + g2.1 + g3.1) * 0.25 + 0.005;
+                        let (u0, u1) = (fu0 + (fu1 - fu0) * t0, fu0 + (fu1 - fu0) * t1);
+                        let (v0, v1) = (fv0 + (fv1 - fv0) * s0, fv0 + (fv1 - fv0) * s1);
+                        items.push((
+                            depth,
+                            Item3::TexQuad {
+                                pts: [g0.0, g1.0, g2.0, g3.0],
+                                uv: [(u0, v0), (u1, v0), (u1, v1), (u0, v1)],
+                                tex: node.tex as u32,
+                                modulate,
+                            },
+                        ));
+                    }
+                }
+            }
         }
         if node.node_type == spec::NodeType::Text as u8 {
             // Glyphs anchor at the projected text origin and stay upright

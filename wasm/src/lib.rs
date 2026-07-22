@@ -222,6 +222,26 @@ pub extern "C" fn ui_tick() {
     ui().tick()
 }
 
+/// Return a deterministic content hash for the current DrawList without
+/// rasterizing the framebuffer. Browser hosts use this as the same dirty
+/// signal as pocket-widget's EmbeddedUi: a settled guest can keep ticking
+/// while skipping the expensive software render and texture upload.
+#[no_mangle]
+pub extern "C" fn ui_draw_hash() -> u64 {
+    draw_hash(&ui().draw().words)
+}
+
+fn draw_hash(words: &[u32]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for word in words {
+        for byte in word.to_le_bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    hash
+}
+
 // ---- DevTools ops (spec ops 18..22, DEVTOOLS.md) -----------------------------
 
 #[no_mangle]
@@ -295,4 +315,17 @@ pub extern "C" fn ui_render() -> *const u8 {
 #[no_mangle]
 pub extern "C" fn ui_render_scaled(scale: u32) -> *const u8 {
     render_at_scale(scale)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::draw_hash;
+
+    #[test]
+    fn draw_hash_is_stable_and_content_sensitive() {
+        let words = [0x0102_0304, 0x0506_0708];
+        assert_eq!(draw_hash(&words), draw_hash(&words));
+        assert_ne!(draw_hash(&words), draw_hash(&[0x0102_0304, 0x0506_0709]));
+        assert_ne!(draw_hash(&[]), draw_hash(&words));
+    }
 }

@@ -1,8 +1,0 @@
-{
-  "steps": [
-    { "op": "advance", "frames": 12 },
-    { "op": "press", "buttons": ["UP"], "frames": 20 },
-    { "op": "read", "name": "player_y", "addr": 33554438, "size": 2 },
-    { "op": "read", "name": "player_dir", "addr": 33554440, "size": 1 }
-  ]
-}

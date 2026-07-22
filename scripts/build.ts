@@ -24,7 +24,7 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve as resolvePath, join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { PSM } from "../spec/spec.ts";
+import { IMG_FLAG_LINEAR, PSM } from "../spec/spec.ts";
 import {
   FRAMEWORKS,
   frameworkVariantPath,
@@ -80,6 +80,7 @@ let configPath = join(ROOT, "pocket.config.ts");
 let configFlagged = false;
 let useConfig = true;
 let planPath: string | undefined;
+let densityFlag: number | undefined;
 let projectRoot = process.cwd();
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
@@ -89,6 +90,7 @@ for (const a of args) {
   else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
   else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
   else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
+  else if (a.startsWith("--density=")) densityFlag = Number(a.slice("--density=".length));
   else if (!a.startsWith("-")) appArg = a;
 }
 
@@ -106,7 +108,7 @@ if (planPath) {
 }
 
 if (!appArg) {
-  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor] [--extra-chars=...]");
+  console.error("usage: bun scripts/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor] [--extra-chars=...] [--density=N]");
   process.exit(1);
 }
 
@@ -183,7 +185,16 @@ const appName = buildPlan?.app.output ?? outputName(requestedEntry);
 // A resolved plan names the exact artifact. Low-level demo builds retain the
 // framework suffix so multiple framework variants can coexist in dist/.
 const outName = buildPlan ? appName : `${appName}${frameworkConfig.outputSuffix}`;
-const rasterDensity = buildPlan?.viewport.rasterDensity ?? 1;
+// Raster density: a resolved plan owns it; --density=N serves hosts whose
+// viewport is not a fixed platform contract (the desktop widget shell runs
+// arbitrary window sizes on 2x displays, which no target profile names).
+if (buildPlan && densityFlag !== undefined) {
+  throw new Error("PocketJS build: --density cannot override a ResolvedBuildPlan");
+}
+if (densityFlag !== undefined && (!Number.isInteger(densityFlag) || densityFlag < 1 || densityFlag > 255)) {
+  throw new Error("PocketJS build: --density wants an integer from 1 through 255");
+}
+const rasterDensity = buildPlan?.viewport.rasterDensity ?? densityFlag ?? 1;
 console.log(
   `PocketJS build: ${appName} (${entry}, framework=${framework}` +
     `${buildPlan ? `, target=${buildPlan.target.id}, raster=${rasterDensity}x, plan=${buildPlan.planHash.slice(0, 20)}…` : ""})`,
@@ -228,7 +239,12 @@ const visited = new Set<string>();
 async function walk(file: string): Promise<void> {
   if (visited.has(file)) return;
   visited.add(file);
-  if (file.endsWith(".generated.ts")) return; // never scan generated output [R]
+  // Never scan the compiled-styles module: its literals ARE the compiled
+  // class names, and collecting them again would feed the compiler its own
+  // output [R]. Other generated modules (e.g. the launcher's registry) are
+  // ordinary app data whose literals — cover asset paths, title glyphs —
+  // pass 1 must see like any hand-written module's.
+  if (file.endsWith("/styles.generated.ts")) return;
   const src = await Bun.file(file).text();
   // Throws with a code frame on lint errors.
   const res = await transformFile(file, src, framework, { features: buildPlan?.features });
@@ -297,6 +313,18 @@ const spriteManifestPath = join(appDir, "sprites.json");
 const spriteMeta: Record<string, SpriteMeta> = existsSync(spriteManifestPath)
   ? (JSON.parse(await Bun.file(spriteManifestPath).text()) as Record<string, SpriteMeta>)
   : {};
+// Optional per-app static-image meta: <appDir>/images.json maps an asset
+// name to { linear?, psm? }. `linear` bakes IMG_FLAG_LINEAR so the core
+// samples it bilinearly (rotated/scaled art — the launcher's covers); psm 2
+// selects PSM_4444. Absent file or name = today's defaults, byte-identical.
+interface ImageMeta {
+  linear?: boolean;
+  psm?: number;
+}
+const imageManifestPath = join(appDir, "images.json");
+const imageMeta: Record<string, ImageMeta> = existsSync(imageManifestPath)
+  ? (JSON.parse(await Bun.file(imageManifestPath).text()) as Record<string, ImageMeta>)
+  : {};
 const imageNames = classStrings.filter((s) => /^[\w./-]+\.(?:png|svg)$/i.test(s));
 for (const name of imageNames) {
   const candidates = [join(appDir, name), join(ROOT, "assets/images/", name), join(ROOT, "assets/", name)];
@@ -352,7 +380,14 @@ for (const name of imageNames) {
     });
     console.log(`  sprite: ${name} (${sp.frames} frames, ${sp.cols} cols, step ${sp.step}, psm ${sp.psm ?? PSM.PSM_8888})`);
   } else {
-    blobs.push({ key: keyImage(name), dtype: PAK_DTYPE.u8, data: encodeImageEntry(img, PSM.PSM_8888) });
+    const meta = imageMeta[name];
+    const flags = meta?.linear ? IMG_FLAG_LINEAR : 0;
+    blobs.push({
+      key: keyImage(name),
+      dtype: PAK_DTYPE.u8,
+      data: encodeImageEntry(img, meta?.psm ?? PSM.PSM_8888, flags),
+    });
+    if (flags) console.log(`  image: ${name} sampled linear (images.json)`);
   }
 }
 
@@ -419,7 +454,7 @@ const result = await Bun.build({
     __POCKET_TARGET__: JSON.stringify(buildPlan?.target.id ?? ""),
     __POCKET_HOST_ABI__: String(buildPlan?.target.hostAbi ?? 0),
     __POCKET_FEATURES__: JSON.stringify(buildPlan?.features ?? {}),
-    __POCKET_PIXEL_RATIO__: String(buildPlan?.viewport.rasterDensity ?? 1),
+    __POCKET_PIXEL_RATIO__: String(rasterDensity),
   },
   minify: false,
   sourcemap: "none",

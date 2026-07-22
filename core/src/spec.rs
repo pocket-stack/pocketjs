@@ -91,6 +91,9 @@ pub mod op {
     pub const VIDEO_TEXTURE: u8 = 36;
     pub const VIDEO_CLOSE: u8 = 37;
     pub const DEBUG_STATS: u8 = 38;
+    pub const APP_TABLE: u8 = 39;
+    pub const APP_LAUNCH: u8 = 40;
+    pub const APP_SHOT: u8 = 41;
 }
 
 /// Property ids (u8, stable, append-only). Groups:
