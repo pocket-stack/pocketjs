@@ -240,11 +240,26 @@ pub fn read(data: &[u8]) -> Result<CookedMap<'_>, ReadError> {
             let vert_count_b = r.u32v()?;
             let index_base = r.u32v()?;
             let index_count = r.u32v()?;
-            if vert_base + vert_count_b > vert_count {
+            let vert_end = vert_base
+                .checked_add(vert_count_b)
+                .ok_or("batch vertex range overflow")?;
+            if vert_end > vert_count {
                 return Err("batch vertex range out of bounds");
             }
-            if (index_base + index_count) as usize > indices.len() {
+            let index_end = index_base
+                .checked_add(index_count)
+                .ok_or("batch index range overflow")?;
+            if index_count % 3 != 0 {
+                return Err("batch index count is not a triangle list");
+            }
+            if index_end as usize > indices.len() {
                 return Err("batch index range out of bounds");
+            }
+            if indices[index_base as usize..index_end as usize]
+                .iter()
+                .any(|&index| index as u32 >= vert_count_b)
+            {
+                return Err("batch index references a vertex out of bounds");
             }
             batches.push(BatchDesc {
                 texture,
@@ -269,7 +284,21 @@ pub fn read(data: &[u8]) -> Result<CookedMap<'_>, ReadError> {
                 if batch as usize >= batches.len() {
                     return Err("run references missing batch");
                 }
-                if (index_base + index_count as u32) as usize > indices.len() {
+                let batch_desc = &batches[batch as usize];
+                let index_end = index_base
+                    .checked_add(index_count as u32)
+                    .ok_or("run index range overflow")?;
+                let batch_index_end = batch_desc
+                    .index_base
+                    .checked_add(batch_desc.index_count)
+                    .ok_or("batch index range overflow")?;
+                if index_count % 3 != 0 {
+                    return Err("run index count is not a triangle list");
+                }
+                if index_base < batch_desc.index_base || index_end > batch_index_end {
+                    return Err("run index range escapes its batch");
+                }
+                if index_end as usize > indices.len() {
                     return Err("run index range out of bounds");
                 }
             }

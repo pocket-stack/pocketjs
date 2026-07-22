@@ -1,8 +1,11 @@
 //! Link-and-render smoke VPK for the reusable backend.
 
+#[cfg(target_os = "vita")]
 use pocket3d_vita::{begin_3d, end_3d, sky, Camera3d, FramePool};
+#[cfg(target_os = "vita")]
 use vita2d_sys as v2d;
 
+#[cfg(target_os = "vita")]
 fn main() {
     unsafe {
         assert_eq!(v2d::vita2d_init_advanced(4 * 1024 * 1024), 1);
@@ -24,6 +27,10 @@ fn main() {
         }
 
         v2d::vita2d_wait_rendering_done();
+        pocket3d_vita::shutdown();
         v2d::vita2d_fini();
     }
 }
+
+#[cfg(not(target_os = "vita"))]
+fn main() {}

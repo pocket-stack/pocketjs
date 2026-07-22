@@ -52,6 +52,7 @@ static mut INITIALIZED: bool = false;
 static mut TEXTURES: Option<HashMap<i32, Texture>> = None;
 static mut RECYCLED_TEXTURES: Option<Vec<Texture>> = None;
 static mut FONTS: Option<HashMap<u8, FontTexture>> = None;
+static mut CLIP_STACK: Option<Vec<(i32, i32, i32, i32)>> = None;
 
 unsafe fn textures() -> &'static mut HashMap<i32, Texture> {
     if TEXTURES.is_none() {
@@ -64,11 +65,32 @@ unsafe fn recycle_texture(texture: Texture) {
     RECYCLED_TEXTURES.get_or_insert_with(Vec::new).push(texture);
 }
 
+/// Whether the GPU is known idle since the last `present`. Reusing a recycled
+/// texture rewrites memory the previous frame may still sample, so the rare
+/// texture-recycle path drains GXM once per frame at most; the common path
+/// never blocks on the GPU.
+static mut GPU_IDLE: bool = true;
+/// True only while callers may record vita2d commands for the current scene.
+/// Recycled textures are not reused in this interval because an earlier draw
+/// in the same scene may still reference one that was just freed by the host.
+static mut SCENE_OPEN: bool = false;
+
+unsafe fn ensure_rendering_done() {
+    if !GPU_IDLE {
+        vita2d_wait_rendering_done();
+        GPU_IDLE = true;
+    }
+}
+
 unsafe fn take_recycled_texture(w: u32, h: u32) -> Option<Texture> {
+    if SCENE_OPEN {
+        return None;
+    }
     let recycled = RECYCLED_TEXTURES.as_mut()?;
     let index = recycled
         .iter()
         .position(|texture| texture.w == w && texture.h == h)?;
+    ensure_rendering_done();
     Some(recycled.swap_remove(index))
 }
 
@@ -77,6 +99,10 @@ unsafe fn fonts() -> &'static mut HashMap<u8, FontTexture> {
         FONTS = Some(HashMap::new());
     }
     FONTS.as_mut().unwrap()
+}
+
+unsafe fn clip_stack() -> &'static mut Vec<(i32, i32, i32, i32)> {
+    CLIP_STACK.get_or_insert_with(Vec::new)
 }
 
 pub fn init() -> Result<(), &'static str> {
@@ -107,23 +133,36 @@ pub fn init_with_pool(pool_bytes: u32) -> Result<(), &'static str> {
 ///
 /// Call on the Vita render thread after [`init`], with no scene already open.
 pub unsafe fn begin_frame(clear: u32) {
+    assert!(!SCENE_OPEN, "vita2d scene is already open");
+    // libvita2d owns one GPU-visible temporary vertex pool and resets it in
+    // `vita2d_start_drawing`. Wait at the last responsible moment so the CPU
+    // can run simulation/JS for frame N+1 while frame N is on the GPU without
+    // overwriting vertices that are still in flight.
+    ensure_rendering_done();
     vita2d_set_clear_color(clear);
     vita2d_start_drawing();
+    SCENE_OPEN = true;
     vita2d_disable_clipping();
     vita2d_clear_screen();
 }
 
-/// Finish, wait for GXM, and make the rendered buffer current/front.
+/// Finish the scene and queue the swap. The CPU does not drain the GPU here:
+/// simulation and JS for frame N+1 overlap frame N's GPU work. [`begin_frame`]
+/// waits immediately before libvita2d reuses its single temporary vertex pool;
+/// texture recycling uses the same safety point when it happens earlier.
 ///
 /// # Safety
 ///
 /// Call on the Vita render thread with exactly one scene opened by
-/// [`begin_frame`] or `vita2d_start_drawing`.
+/// [`begin_frame`]. Raw `vita2d_start_drawing` callers are not tracked by this
+/// module and must pair their scene without using `present`.
 pub unsafe fn present() {
+    assert!(SCENE_OPEN, "no vita2d scene is open");
     vita2d_disable_clipping();
     vita2d_end_drawing();
-    vita2d_wait_rendering_done();
     vita2d_swap_buffers();
+    SCENE_OPEN = false;
+    GPU_IDLE = false;
 }
 
 fn texture_rgba(view: pocketjs_core::TexView<'_>) -> Option<Vec<u8>> {
@@ -171,8 +210,8 @@ unsafe fn upload_rgba(w: u32, h: u32, rgba: &[u8], linear: bool) -> Option<Textu
     // Vita3K's GXM emulation can fault when a live app repeatedly destroys
     // vita2d textures. Recycle same-sized RGBA allocations instead. This also
     // bounds each power-of-two size bucket by its historical resident high
-    // water mark. The frame loop waits for the previous GXM submission before
-    // JS can free/upload, so a recycled allocation is no longer in flight.
+    // water mark. `take_recycled_texture` drains GXM before handing an
+    // allocation back, so a recycled allocation is no longer in flight.
     let ptr = take_recycled_texture(w, h)
         .map(|texture| texture.ptr)
         .unwrap_or_else(|| {
@@ -418,7 +457,10 @@ pub unsafe fn render(ui: &Ui, words: &[u32]) {
 /// Call on the Vita render thread while a vita2d scene is open. `words` and
 /// every texture referenced by it must remain valid for this submission.
 pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
-    let mut scissors: Vec<(i32, i32, i32, i32)> = Vec::new();
+    // Keep the nesting stack's high-water capacity across frames; UI clip
+    // traversal otherwise allocates a fresh Vec on every render.
+    let scissors = clip_stack();
+    scissors.clear();
     let mut i = 0usize;
     while i < words.len() {
         match words[i] {

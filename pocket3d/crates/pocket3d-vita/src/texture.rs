@@ -6,7 +6,13 @@
 use core::ptr::NonNull;
 
 use pocket3d_bsp::cooked::{mip_rows, mip_stride, CookedTexture};
+#[cfg(target_os = "vita")]
 use vita2d_sys as v2d;
+
+#[cfg(target_os = "vita")]
+type TextureHandle = NonNull<v2d::vita2d_texture>;
+#[cfg(not(target_os = "vita"))]
+type TextureHandle = NonNull<core::ffi::c_void>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UploadErrorKind {
@@ -77,7 +83,7 @@ pub fn expand_level0_rgba(texture: &CookedTexture<'_>) -> Result<Vec<u8>, Upload
 }
 
 pub(crate) struct TextureBank {
-    handles: Vec<Option<NonNull<v2d::vita2d_texture>>>,
+    handles: Vec<Option<TextureHandle>>,
 }
 
 impl TextureBank {
@@ -87,6 +93,12 @@ impl TextureBank {
         }
     }
 
+    #[cfg(target_os = "vita")]
+    pub(crate) fn has_resident(&self) -> bool {
+        self.handles.iter().any(Option::is_some)
+    }
+
+    #[cfg(target_os = "vita")]
     pub(crate) fn handle(&self, index: usize) -> *const v2d::vita2d_texture {
         self.handles
             .get(index)
@@ -168,9 +180,7 @@ unsafe fn upload_texture(
 }
 
 #[cfg(not(target_os = "vita"))]
-unsafe fn upload_texture(
-    _texture: &CookedTexture<'_>,
-) -> Result<NonNull<v2d::vita2d_texture>, UploadErrorKind> {
+unsafe fn upload_texture(_texture: &CookedTexture<'_>) -> Result<TextureHandle, UploadErrorKind> {
     Err(UploadErrorKind::UnsupportedHost)
 }
 
