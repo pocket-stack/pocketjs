@@ -11,7 +11,7 @@ if (typeof (globalThis as { queueMicrotask?: unknown }).queueMicrotask !== "func
 }
 
 if (typeof (globalThis as { setTimeout?: unknown }).setTimeout !== "function") {
-  (globalThis as { setTimeout?: (fn: () => void, delay?: number) => number }).setTimeout = (
+  (globalThis as unknown as { setTimeout?: (fn: () => void, delay?: number) => number }).setTimeout = (
     fn: () => void,
   ) => {
     queueMicrotask(fn);
