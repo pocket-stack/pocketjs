@@ -43,7 +43,7 @@ fn wheels_keep_their_local_offsets_when_the_sim_drives_them() {
 
     let mut sim = Sim::new();
     let world_id = sim.world_create(scene);
-    let world = sim.world(world_id).expect("world");
+    let world = sim.rally(world_id).expect("rally world");
     let car = world.car_create(CarTuning::default());
     world.car_reset(car, Vec3::ZERO, 0.0);
     world.car_bind_visual(car, group, &wheels, &pivots, 0.35, &[Vec3::ZERO; 4], &PIVOTS);
@@ -82,7 +82,7 @@ fn steering_rotates_the_front_pivots_and_leaves_the_rear_ones_alone() {
 
     let mut sim = Sim::new();
     let world_id = sim.world_create(scene);
-    let world = sim.world(world_id).expect("world");
+    let world = sim.rally(world_id).expect("rally world");
     let car = world.car_create(CarTuning::default());
     world.car_reset(car, Vec3::ZERO, 0.0);
     world.car_bind_visual(car, group, &wheels, &pivots, 0.35, &[Vec3::ZERO; 4], &PIVOTS);

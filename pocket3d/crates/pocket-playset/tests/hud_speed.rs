@@ -19,7 +19,7 @@ fn hud_reports_player_speed_under_throttle() {
     let scene = store.scene_create();
     let mut sim = Sim::new();
     let world_id = sim.world_create(scene);
-    let world = sim.world(world_id).expect("world");
+    let world = sim.rally(world_id).expect("rally world");
 
     let car = world.car_create(CarTuning {
         max_forward_speed: 22.0,
@@ -51,6 +51,6 @@ fn hud_reports_player_speed_under_throttle() {
 
 fn world_position_z(sim: &mut Sim, world_id: i32) -> f32 {
     let mut hud = [0f32; HUD_FLOATS];
-    sim.world(world_id).expect("world").read_hud(&mut hud);
+    sim.rally(world_id).expect("rally world").read_hud(&mut hud);
     hud[8] // player z
 }

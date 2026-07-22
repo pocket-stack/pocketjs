@@ -574,10 +574,13 @@ mod tests {
         assert_eq!(orphan, 0, "carCreate on an unknown world yields the null handle");
     }
 
-    /// `readHud` writes through the guest's buffer, and refuses a short one
-    /// rather than scribbling past its end.
+    /// `readHud` writes through the guest's buffer, filling as many floats as
+    /// both the world defines and the buffer holds, and never past its end.
+    /// HUD width is per-game now (rally 15, snake 5), so a buffer shorter than
+    /// the widest is FILLED to its own length, not left alone — only past its
+    /// end is off-limits.
     #[test]
-    fn read_hud_writes_through_and_guards_short_buffers() {
+    fn read_hud_writes_through_up_to_the_buffer_length() {
         let guest = mounted();
         guest
             .eval(
@@ -586,16 +589,21 @@ mod tests {
                  const out = new Float32Array(15).fill(7);
                  ps.readHud(w, out);
                  globalThis.filled = Array.from(out).join(',');
-                 const short = new Float32Array(4).fill(7);
-                 ps.readHud(w, short);
-                 globalThis.untouched = Array.from(short).join(',');",
+                 // A 5-float buffer (a snake-width HUD) is filled to 5; the
+                 // guard is the sentinel past its end, not the whole write.
+                 const shorter = new Float32Array(6).fill(7);
+                 shorter[5] = 9;
+                 ps.readHud(w, shorter.subarray(0, 5));
+                 globalThis.partial = Array.from(shorter).join(',');",
             )
             .unwrap();
         let filled: String = guest.with(|ctx| ctx.globals().get("filled").unwrap());
         // A carless world reads zero everywhere except the player forward
         // vector, which World::read_hud defaults to -Z (index 11).
         assert_eq!(filled, "0,0,0,0,0,0,0,0,0,0,0,-1,0,0,0");
-        let untouched: String = guest.with(|ctx| ctx.globals().get("untouched").unwrap());
-        assert_eq!(untouched, "7,7,7,7", "a short buffer is left alone");
+        let partial: String = guest.with(|ctx| ctx.globals().get("partial").unwrap());
+        // First 5 written (all zero for a carless world), the 6th sentinel
+        // untouched — the write stopped at the buffer length.
+        assert_eq!(partial, "0,0,0,0,0,9", "fills to the buffer length, no further");
     }
 }
