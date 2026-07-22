@@ -48,10 +48,10 @@ test("homepage Stage package has one semantic screen and its declared suppressio
   }
 });
 
-test("homepage declares the live settings stage and visible model attribution", () => {
+test("homepage declares the live launcher stage and visible model attribution", () => {
   const home = readFileSync(ROOT + "site/home.html", "utf8");
   expect(home).toContain("data-pocket-stage");
-  expect(home).toContain("Live PocketJS Settings");
+  expect(home).toContain("The live Pocket Launcher");
   expect(home).toContain("Dibad");
   expect(home).toContain("creativecommons.org/licenses/by/4.0");
   expect(home).not.toContain("Drag to orbit");
@@ -66,15 +66,16 @@ test("homepage declares the live settings stage and visible model attribution", 
   expect(homeCss).not.toContain(".lp-stage__viewport::before");
 
   const build = readFileSync(ROOT + "site/build.ts", "utf8");
-  expect(build).toContain('["settings-main.js", "settings-main.pak"]');
-  expect(build).toContain('copy(source, "stage/" + file)');
+  expect(build).toContain("dist/launcher-registry.json");
+  expect(build).toContain("copy(source, `stage/apps/${output}.${ext}`)");
   expect(build).toContain("emitSingleLodStagePackage");
 
   const adapter = readFileSync(ROOT + "site/assets/pocket-stage-web.js", "utf8");
   expect(adapter).toContain("profile.lods.orbit");
 
   const siteBuild = readFileSync(ROOT + "scripts/site-build.ts", "utf8");
-  expect(siteBuild).toContain('run("scripts/build.ts", "settings-main")');
+  expect(siteBuild).toContain('run("scripts/launcher.ts", "covers")');
+  expect(siteBuild).toContain('"demos/launcher/pocket.json"');
   expect(siteBuild).toContain('run("scripts/build.ts", "hero")');
 
   for (const workflow of ["deploy.yml", "release.yml"]) {
