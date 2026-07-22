@@ -235,6 +235,6 @@ Nothing about the pattern is PSP-specific. The console is, as we said when intro
 - **[pocket-stack/open-strike](https://github.com/pocket-stack/open-strike)** — MIT. Desktop build runs with `cargo run -p openstrike`; the [README](https://github.com/pocket-stack/open-strike#readme) covers the PSP EBOOT, the hardware bench, and the emulator goldens.
 - Map data is Valve's and is **not** in the repo — point the build at your own copy of the game's `.bsp`/`.wad` files. Any GoldSrc-era map works; the eight CS classics are the tested set.
 - No PSP? PPSSPP runs the EBOOT beautifully. Real hardware needs custom firmware and [PSPLINK](https://github.com/pspdev/psplinkusb) — the same cable our DevTools ride.
-- **[RUNTIMES.md](https://github.com/pocket-stack/pocketjs/blob/main/RUNTIMES.md)** — the runtime-family architecture OpenStrike instantiates, if you want the ontology behind the diagram.
+- **[docs/RUNTIMES.md](https://github.com/pocket-stack/pocketjs/blob/main/RUNTIMES.md)** — the runtime-family architecture OpenStrike instantiates, if you want the ontology behind the diagram.
 
 Follow [@pocket_js](https://x.com/pocket_js) for what's next. The pocket keeps getting deeper.

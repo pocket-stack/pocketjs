@@ -2,7 +2,7 @@
 
 The primary app-facing exports of `@pocketjs/framework`, grouped by import
 path. Signatures are TypeScript-style; defaults are noted in parentheses.
-Framework-internal and test/debug helpers are intentionally not exhaustive
+Framework-internal and tests/debug helpers are intentionally not exhaustive
 here. For conceptual walkthroughs see [Components](/docs/components/),
 [Reactivity](/docs/reactivity/), [Animation](/docs/animation/), and
 [Input & focus](/docs/input-focus/).
@@ -20,7 +20,7 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | `@pocketjs/framework/clock` | `simulationHz`, `ticksPerFrame`, `virtualFrame`, `virtualNow`, `after` |
 | `@pocketjs/framework/effects` | `installEffectDriver`, `runEffect`, effect types |
 | `@pocketjs/framework/hot` | `text`, `prop` |
-| `@pocketjs/framework/manifest` | schema/manifest types, validator, `extractHostBuildInputs`, `hostBuildEnvironment`, `vitaTitleId` |
+| `@pocketjs/framework/manifest` | contracts/schema/manifest types, validator, `extractHostBuildInputs`, `hostBuildEnvironment`, `vitaTitleId` |
 
 ---
 
@@ -216,7 +216,7 @@ The host primitives, wrapped React Native-style. `View` is the flex container/bo
 **`ImageProps`** — `class`, `src` (`string`), `style`, `ref`, `debugName`.
 **`SpriteProps`** — `class`, `sprite` (`string` — a `ui:sprite.<name>` atlas key), `style`, `ref`, `debugName`.
 
-`Sprite` is a native animated primitive: its atlas (a pow2 texture holding a grid of frames) is baked into the pak, and the Rust core cycles the frame cells per vblank — deterministic and with **zero per-frame JS**. It auto-plays from the first frame the moment it is displayed, so a sprite revealed by paging or a `Show`/`Lazy` starts animating on its own. Bake atlases by listing them in a demo's `sprites.json` (`{ "<atlas>.png": { cols, rows, frames, step } }`); `step` is vblanks per frame (fps = 60/step). See `demos/gallery` (its covers are shader-baked animated sprites).
+`Sprite` is a native animated primitive: its atlas (a pow2 texture holding a grid of frames) is baked into the pak, and the Rust core cycles the frame cells per vblank — deterministic and with **zero per-frame JS**. It auto-plays from the first frame the moment it is displayed, so a sprite revealed by paging or a `Show`/`Lazy` starts animating on its own. Bake atlases by listing them in a demo's `sprites.json` (`{ "<atlas>.png": { cols, rows, frames, step } }`); `step` is vblanks per frame (fps = 60/step). See `apps/gallery` (its covers are shader-baked animated sprites).
 
 ### `Screen`
 
@@ -357,7 +357,7 @@ interface GalleryProps {
 function Gallery(props: GalleryProps): JSX.Element
 ```
 
-A full-screen L/R-paged strip: `LTRIGGER`/`RTRIGGER` slide one whole screen at a time. Controlled (`page` + `onPageChange`); the slide is one native `translateX` tween per press (paint-only), and pages outside `window` are not built, keeping many-page galleries inside the draw budget. See `demos/gallery`.
+A full-screen L/R-paged strip: `LTRIGGER`/`RTRIGGER` slide one whole screen at a time. Controlled (`page` + `onPageChange`); the slide is one native `translateX` tween per press (paint-only), and pages outside `window` are not built, keeping many-page galleries inside the draw budget. See `apps/gallery`.
 
 ### `DeepZoom` (Solid)
 

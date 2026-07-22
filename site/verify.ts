@@ -10,7 +10,7 @@ const waitMs = Number(process.argv[3] ?? 4000);
 const probe =
   process.argv[4] ??
   `(() => {
-     // FPS + memory are drawn IN the canvas now (host-web/hud.js), not in the
+     // FPS + memory are drawn IN the canvas now (hosts/web/hud.js), not in the
      // DOM — so they show up in the canvas pixel stats below, not a text probe.
      const out = { status: null, error: null, canvases: [] };
      const s = document.querySelector('#pg-status'); if (s) out.status = s.textContent;

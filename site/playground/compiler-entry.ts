@@ -1,11 +1,11 @@
 // site/playground/compiler-entry.ts — the WHOLE PocketJS build pipeline,
 // running in the browser. Bun bundles this (browser, ESM, with the node-builtin
 // shims in ./babel-shims) into site/dist/pg/compiler.js, which the playground
-// lazy-loads. compileApp(source) does exactly what scripts/build.ts does — the
-// SAME @babel/core + babel-preset-solid transform, the SAME compiler/tailwind.ts
-// class compiler, the SAME compiler/bake-font.ts atlas baker, the SAME
-// compiler/pak.ts packer — so a playground app compiles byte-identically to a
-// real `bun scripts/build.ts` run. Only two build-time-only pieces are swapped
+// lazy-loads. compileApp(source) does exactly what tools/build.ts does — the
+// SAME @babel/core + babel-preset-solid transform, the SAME framework/compiler/tailwind.ts
+// class compiler, the SAME framework/compiler/bake-font.ts atlas baker, the SAME
+// framework/compiler/pak.ts packer — so a playground app compiles byte-identically to a
+// real `bun tools/build.ts` run. Only two build-time-only pieces are swapped
 // for browser equivalents: fonts/images are fetched (not read from disk) and
 // images are rasterized with a <canvas> instead of the node PNG/SVG decoders.
 
@@ -15,16 +15,16 @@ import tsPreset from "@babel/preset-typescript";
 import { transformVueJsxVapor } from "vue-jsx-vapor/api";
 import { parse as parseFont, type Font } from "opentype.js";
 
-import { compileClasses, fontSlotInfo } from "../../compiler/tailwind.ts";
-import { registerAnimationTheme } from "../../compiler/animation.ts";
-import motionsConfig from "../../demos/motions/pocket.config.ts";
+import { compileClasses, fontSlotInfo } from "../../framework/compiler/tailwind.ts";
+import { registerAnimationTheme } from "../../framework/compiler/animation.ts";
+import motionsConfig from "../../apps/motions/pocket.config.ts";
 
 // The playground compiles single-file demos without their app-dir
 // pocket.config.ts, so install the motions demo's keyframe/animation theme
 // (superset of the built-ins) as the playground-wide default — this is what
 // lets the homepage/blog motion studies stay live-editable.
 registerAnimationTheme(motionsConfig.theme);
-import { bakeSlot } from "../../compiler/bake-font.ts";
+import { bakeSlot } from "../../framework/compiler/bake-font.ts";
 import {
   PAK_DTYPE,
   KEY_STYLES,
@@ -37,8 +37,8 @@ import {
   placeholderImage,
   type DecodedImage,
   type PakBlob,
-} from "../../compiler/pak.ts";
-import { PSM } from "../../spec/spec.ts";
+} from "../../framework/compiler/pak.ts";
+import { PSM } from "../../contracts/spec/spec.ts";
 
 /** babel `moduleName` — the specifier the universal transform imports its
  *  runtime helpers from. The playground import-map points it at runtime.js. */
@@ -67,7 +67,7 @@ export interface CompileResult {
 }
 
 // ---------------------------------------------------------------------------
-// pass-1 collector — mirrors compiler/solid-plugin.ts makeCollector: candidate
+// pass-1 collector — mirrors framework/compiler/solid-plugin.ts makeCollector: candidate
 // class strings + text codepoints from the PRISTINE AST, plus the same loud
 // lints (classList / interpolated class / banned solid imports / HTML entities).
 // ---------------------------------------------------------------------------
@@ -230,7 +230,7 @@ async function getFont(bold: boolean): Promise<Font> {
   return fontCache[key]!;
 }
 
-/** Mirrors compiler/bake-font.ts bakeAtlases charset rule, but with fetched
+/** Mirrors framework/compiler/bake-font.ts bakeAtlases charset rule, but with fetched
  *  fonts. Charset = ASCII 32..126 + collected codepoints + extraChars. */
 async function bakeAtlases(codepoints: Iterable<number>, slots: number[], extraChars: string) {
   const cps = new Set<number>();
