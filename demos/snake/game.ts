@@ -482,14 +482,17 @@ function createNativeSnake(built: BuiltScene, ps: SimOps): SnakeGame {
   const { scene, board, playerVisual, rivalVisual, apple } = built;
   const probe = makeProbe(built);
 
-  // The board, grid and rim never move — declare them frozen so the host can
-  // batch them. The snake segments and the apple DO move, but the sim writes
-  // their poses natively, so the guest never diffs them: markStatic (not
-  // freeze — a frozen node bakes in place).
-  scene.markStatic(playerVisual.root);
-  scene.markStatic(rivalVisual.root);
-  scene.markStatic(apple);
-  scene.freeze();
+  // The sim writes EVERY moving pose (segments, apple) straight into the store,
+  // and the board/grid/rim never move, so the guest diffs nothing — markStatic
+  // the whole scene to drop it from the per-frame flush walk.
+  //
+  // Do NOT freeze here. Freeze is the stronger promise that a transform is
+  // final, which lets the host bake it into merged geometry — fatal for the
+  // snake segments, which the sim moves every tick: a baked segment would stick
+  // at the position it had when it was first shown while the head walked away.
+  // (That is exactly the bug this replaced.) Snake is JS-bound, not draw-bound,
+  // so batching the handful of board nodes buys nothing anyway.
+  scene.markStatic();
 
   const world = ps.snakeCreate(scene.__scene);
   ps.snakeConfig(
