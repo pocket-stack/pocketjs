@@ -22,8 +22,8 @@
 //                                vendored PocketJS and keep outputs local)
 
 import { existsSync, statSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
-import { pathToFileURL } from "node:url";
+import { resolve as resolvePath, join, dirname } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { IMG_FLAG_LINEAR, PSM } from "../spec/spec.ts";
 import {
   FRAMEWORKS,
@@ -58,14 +58,14 @@ import {
   type PakBlob,
 } from "../compiler/pak.ts";
 
-const ROOT = new URL("..", import.meta.url).pathname; // pocketjs/
-let DIST = ROOT + "dist/";
+const ROOT = resolvePath(fileURLToPath(new URL("..", import.meta.url))); // pocketjs/
+let DIST = join(ROOT, "dist/");
 
 interface PackageJson {
   name?: string;
 }
 
-const packageJson = await Bun.file(ROOT + "package.json").json() as PackageJson;
+const packageJson = await Bun.file(join(ROOT, "package.json")).json() as PackageJson;
 const packageName = packageJson.name ?? "@pocketjs/framework";
 
 // ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ const args = process.argv.slice(2);
 let extraChars = "";
 let appArg = "";
 let frameworkFlag: string | undefined;
-let configPath = ROOT + "pocket.config.ts";
+let configPath = join(ROOT, "pocket.config.ts");
 let configFlagged = false;
 let useConfig = true;
 let planPath: string | undefined;
@@ -155,7 +155,7 @@ const requestedEntry = resolveEntry(appArg);
 // An app directory can carry its own pocket.config.ts (theme/keyframes local
 // to the app); it wins over the repo root config unless --config was given.
 if (!configFlagged && useConfig) {
-  const appConfig = requestedEntry.slice(0, requestedEntry.lastIndexOf("/") + 1) + "pocket.config.ts";
+  const appConfig = join(dirname(requestedEntry), "pocket.config.ts");
   if (existsSync(appConfig)) configPath = appConfig;
 }
 const config = await loadConfig();
@@ -172,10 +172,13 @@ const framework: PocketFramework = frameworkFlag
 const frameworkConfig = FRAMEWORKS[framework];
 const entry = frameworkVariantPath(requestedEntry, framework);
 function outputName(file: string): string {
-  const rel = file.startsWith(ROOT) ? file.slice(ROOT.length) : file;
+  const normalizedFile = file.replace(/\\/g, "/");
+  const normalizedRoot = ROOT.replace(/\\/g, "/");
+  const prefix = normalizedRoot.endsWith("/") ? normalizedRoot : normalizedRoot + "/";
+  const rel = normalizedFile.startsWith(prefix) ? normalizedFile.slice(prefix.length) : normalizedFile;
   const demo = rel.match(/^demos\/([^/]+)\/(app|main)\.tsx?$/);
   if (demo) return demo[2] === "main" ? `${demo[1]}-main` : demo[1];
-  return file.split("/").pop()!.replace(/\.tsx?$/, "");
+  return normalizedFile.split("/").pop()!.replace(/\.tsx?$/, "");
 }
 
 const appName = buildPlan?.app.output ?? outputName(requestedEntry);
@@ -221,7 +224,7 @@ function resolveImport(fromFile: string, spec: string): string | null {
   if (!spec.startsWith("./") && !spec.startsWith("../") && !spec.startsWith("/")) return null; // external bare
   let resolved: string;
   try {
-    resolved = Bun.resolveSync(spec, fromFile.slice(0, fromFile.lastIndexOf("/")));
+    resolved = Bun.resolveSync(spec, dirname(fromFile));
   } catch {
     return null;
   }
@@ -270,7 +273,7 @@ const styles = compileClasses(classStrings);
 if (styles.records.length === 0) {
   console.warn("  tailwind: no class literals compiled — is the app unstyled?");
 }
-const generatedPath = ROOT + "src/styles.generated.ts";
+const generatedPath = join(ROOT, "src/styles.generated.ts");
 await Bun.write(generatedPath, generateStylesModule(styles));
 console.log(
   `  tailwind: ${styles.records.length} style record(s), ${styles.anims.length} baked timeline(s), ` +
@@ -295,7 +298,7 @@ const blobs: PakBlob[] = [
   { key: KEY_STYLES, dtype: PAK_DTYPE.u8, data: styles.bin },
   ...atlases.map((a) => ({ key: keyFont(a.slot), dtype: PAK_DTYPE.u8, data: a.bytes })),
 ];
-const appDir = entry.slice(0, entry.lastIndexOf("/") + 1);
+const appDir = dirname(entry);
 // Optional per-app sprite manifest: images listed here are baked as animated
 // sprite-atlas entries (ui:sprite.<name>) instead of static images.
 interface SpriteMeta {
@@ -306,7 +309,7 @@ interface SpriteMeta {
   /** spec PSM (default 8888); set 2 (PSM_4444) to halve atlas texmem on PSP. */
   psm?: number;
 }
-const spriteManifestPath = appDir + "sprites.json";
+const spriteManifestPath = join(appDir, "sprites.json");
 const spriteMeta: Record<string, SpriteMeta> = existsSync(spriteManifestPath)
   ? (JSON.parse(await Bun.file(spriteManifestPath).text()) as Record<string, SpriteMeta>)
   : {};
@@ -318,13 +321,13 @@ interface ImageMeta {
   linear?: boolean;
   psm?: number;
 }
-const imageManifestPath = appDir + "images.json";
+const imageManifestPath = join(appDir, "images.json");
 const imageMeta: Record<string, ImageMeta> = existsSync(imageManifestPath)
   ? (JSON.parse(await Bun.file(imageManifestPath).text()) as Record<string, ImageMeta>)
   : {};
 const imageNames = classStrings.filter((s) => /^[\w./-]+\.(?:png|svg)$/i.test(s));
 for (const name of imageNames) {
-  const candidates = [appDir + name, ROOT + "assets/images/" + name, ROOT + "assets/" + name];
+  const candidates = [join(appDir, name), join(ROOT, "assets/images/", name), join(ROOT, "assets/", name)];
   const found = candidates.find((c) => existsSync(c));
   let img;
   if (found) {
@@ -392,12 +395,12 @@ for (const name of imageNames) {
 // entries (e.g. demos/zoomlab's committed TILESET pyramids from gen-assets.ts)
 // appended verbatim as u8 blobs. This keeps expensive offline bakes out of the
 // build: the build just splices bytes it can't (and needn't) regenerate.
-const pakManifestPath = appDir + "pak.json";
+const pakManifestPath = join(appDir, "pak.json");
 if (existsSync(pakManifestPath)) {
   const rawEntries = JSON.parse(await Bun.file(pakManifestPath).text()) as Array<{ key: string; file: string }>;
   let rawBytes = 0;
   for (const e of rawEntries) {
-    const basePath = appDir + e.file;
+    const basePath = join(appDir, e.file);
     if (!existsSync(basePath)) {
       console.error(`  pak.json: ${e.key} -> ${basePath} missing (re-run the app's gen-assets baker?)`);
       process.exit(1);

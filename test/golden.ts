@@ -16,18 +16,20 @@
 // On mismatch a <demo>.<frame>.actual.png is written next to the golden.
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { createWasmUi } from "../host-web/wasm-ops.js";
 import { SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 import { GOLDEN_SPECS, type GoldenSpec } from "./golden-specs.ts";
 
-const ROOT = new URL("..", import.meta.url).pathname; // PocketJS/
+const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url))); // PocketJS/
 // Goldens never consume the shared dist/ directory: it may contain ignored,
 // stale, or half-rebuilt artifacts from another host command. Rebuilding each
 // demo serially into this dedicated directory also keeps every .js/.pak pair
 // from the same compiler invocation.
-const DIST = ROOT + "dist/golden/";
-const GOLDEN_DIR = ROOT + "test/goldens/";
-const WASM_PATH = ROOT + "host-web/pocketjs.wasm";
+const DIST = join(ROOT, "dist/golden/");
+const GOLDEN_DIR = join(ROOT, "test/goldens/");
+const WASM_PATH = join(ROOT, "host-web/pocketjs.wasm");
 const UPDATE = !!process.env.UPDATE;
 
 const W = SCREEN_W;
@@ -49,7 +51,7 @@ function ensureBuilt(path: string, cmd: string[]): void {
 
 function buildDemo(name: string): void {
   const output = DIST + name + ".js";
-  const cmd = ["bun", "scripts/build.ts", name, `--outdir=${DIST}`];
+  const cmd = [process.execPath, "scripts/build.ts", name, `--outdir=${DIST}`];
   console.log(`golden: rebuilding ${name}`);
   const p = Bun.spawnSync(cmd, { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
   if (p.exitCode !== 0 || !existsSync(output)) {
@@ -89,7 +91,7 @@ const SPECS = GOLDEN_SPECS;
 // Runner
 // ---------------------------------------------------------------------------
 
-ensureBuilt(WASM_PATH, ["bun", "scripts/wasm.ts"]);
+ensureBuilt(WASM_PATH, [process.execPath, "scripts/wasm.ts"]);
 rmSync(DIST, { recursive: true, force: true });
 mkdirSync(DIST, { recursive: true });
 for (const spec of SPECS) buildDemo(spec.name);

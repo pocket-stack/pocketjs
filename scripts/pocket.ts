@@ -11,7 +11,9 @@ import type { PocketTargetId } from "../spec/platforms.ts";
 import { validateAndResolveBuildPlan } from "../src/manifest/resolve.ts";
 import type { ResolvedBuildPlan } from "../src/manifest/plan.ts";
 
-const frameworkRoot = new URL("..", import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+
+const frameworkRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const argv = Bun.argv.slice(2);
 const command = argv.shift();
 
@@ -102,7 +104,7 @@ async function run(args: string[], label: string): Promise<void> {
 
 await run(
   [
-    Bun.which("bun") ?? "bun",
+    process.execPath,
     resolve(frameworkRoot, "scripts/build.ts"),
     `--plan=${planPath}`,
     `--project-root=${projectRoot}`,

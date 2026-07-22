@@ -24,12 +24,14 @@
 // input: a chaos trace must equal a clean trace, byte for byte.
 
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { createWasmUi } from "../host-web/wasm-ops.js";
 import { normalizeHz, TICKS_PER_SECOND } from "../src/clock.ts";
 
-const ROOT = new URL("..", import.meta.url).pathname; // PocketJS/
-const DIST = ROOT + "dist/";
-const WASM_PATH = ROOT + "host-web/pocketjs.wasm";
+const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url))); // PocketJS/
+const DIST = join(ROOT, "dist/");
+const WASM_PATH = join(ROOT, "host-web/pocketjs.wasm");
 
 export interface ScriptEvent {
   /** Virtual seconds since boot. Lands on frame round(at * hz) — keep script
@@ -170,8 +172,8 @@ export async function bootWorld(
   mutateOps?: (ops: Record<string, unknown>) => void,
   viewport: SimViewportOptions = {},
 ): Promise<SimWorld> {
-  ensureBuilt(WASM_PATH, ["bun", "scripts/wasm.ts"]);
-  ensureBuilt(DIST + app + ".js", ["bun", "scripts/build.ts", app]);
+  ensureBuilt(WASM_PATH, [process.execPath, "scripts/wasm.ts"]);
+  ensureBuilt(DIST + app + ".js", [process.execPath, "scripts/build.ts", app]);
   if (!wasmBytes) wasmBytes = await Bun.file(WASM_PATH).arrayBuffer();
   const wasm = await createWasmUi(wasmBytes, viewport);
   const renderScale = viewport.renderScale ?? 1;
