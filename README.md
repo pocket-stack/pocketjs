@@ -5,11 +5,11 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/cTce4eXzSK)
 
-High-performance JSX UI outside the browser, with native rendering, standard
-Vue Vapor and Solid support, a Tailwind design system, and 60 FPS animation
-under an 8 MB memory budget. Write Solid or Vue Vapor components, run them on
-QuickJS, and let PocketJS move layout, styling, text and animation into a tiny
-`no_std` Rust core.
+High-performance component UI outside the browser, with native rendering,
+standard Vue Vapor and Solid support, a Tailwind design system, and 60 FPS
+animation under an 8 MB memory budget. Write Solid JSX, Vue Vapor JSX, or Vue
+single-file components, run them on QuickJS, and let PocketJS move layout,
+styling, text and animation into a tiny `no_std` Rust core.
 
 It runs on real PSP and PS Vita hardware, PPSSPP, Vita3K, the browser (WASM),
 native macOS windows (wgpu) and headless Bun. Full design + contracts:
@@ -44,6 +44,7 @@ bun pocket build --target psp -- --release
 # Low-level compiler commands used by framework apps/tests:
 bun tools/build.ts hero             # -> dist/hero.js + dist/hero.pak
 bun tools/build.ts hero-vue-vapor-main --framework=vue-vapor
+bun tools/build.ts hero-vue-sfc-main --framework=vue-vapor
 ```
 
 Or drive everything through the [`pocket` CLI](https://www.npmjs.com/package/@pocketjs/cli):
@@ -54,13 +55,14 @@ psp|vita` delegate to the canonical resolver. Low-level host-development
 commands such as `pocket dev`, `pocket psp`, `pocket vita`, and `pocket play`
 remain available.
 
-The build is two-pass: pass 1 babel-transforms every module reachable from the
-entry (framework-specific JSX + TypeScript, content-hash cached in
-`.cache/`) while collecting class strings + text codepoints from the AST; then
-the Tailwind compiler writes `styles.bin` + `framework/src/styles.generated.ts`, the font
-baker rasterizes Inter atlas slots for exactly the characters your app uses,
-and everything is packed into `dist/<app>.pak`. Pass 2 bundles with Bun
-(iife, unminified) from the cached transforms.
+The build is two-pass: pass 1 transforms every module reachable from the entry
+(framework-specific JSX + TypeScript, or Vue SFC compiled directly to Vapor;
+content-hash cached in `.cache/`) while collecting class strings + text
+codepoints from the AST. The Tailwind compiler then writes `styles.bin` +
+`framework/src/styles.generated.ts`, the font baker rasterizes Inter atlas
+slots for exactly the characters your app uses, and everything is packed into
+`dist/<app>.pak`. Pass 2 bundles the cached transforms with Bun (iife,
+unminified).
 
 ```tsx
 import { createSignal } from "solid-js";
@@ -105,6 +107,28 @@ still use `pocket.config.ts` or pass `--framework=...` to the individual
 scripts. App state and component lifecycle come from the native framework
 package (`solid-js` or `vue`); PocketJS supplies host components, input,
 animation, assets and native runtime wiring.
+
+### Vue single-file components
+
+Set `"framework": "vue-vapor"` in `pocket.json`, then import `.vue` files from
+the app entry. PocketJS compiles them in Vapor mode, so ordinary
+`<script setup>` is enough; no `vapor` attribute is required in the SFC.
+
+```ts
+import { mount } from "@pocketjs/framework/vue-vapor";
+import App from "./App.vue";
+
+mount(App);
+```
+
+The supported shape is `<script setup>` plus `<template>`. Import reactivity
+from `vue` and host components from `@pocketjs/framework/vue-vapor/components`.
+Runtime `<style>` blocks, template preprocessors, external blocks, and
+Options-API-only components are not supported.
+
+[`apps/hero-vue-sfc`](./apps/hero-vue-sfc) renders the same screen as the JSX
+Hero demos. See [`apps/vue-sfc-lab`](./apps/vue-sfc-lab) for `v-model`,
+conditionals, lists, props, events, and slots.
 
 `@pocketjs/framework/components` also exposes small app-shell primitives:
 `Screen`, `Focusable`, `FocusScope`, `ActionHandler`, `FocusGrid`, `Portal`,

@@ -122,7 +122,7 @@
     "launcher": "bun tools/launcher.ts",
     "e2e:launcher": "bun tests/e2e/launcher-ppsspp.ts",
     "pocket:pack": "bun tools/pocket-pack.ts",
-    "test": "bun tools/build.ts hero >/dev/null && bun tests/contract.ts && bun test tests/release-check.test.ts tests/release-notes.test.ts tests/platform-contracts.test.ts tests/pocket-package.test.ts tests/widget-args.test.ts tests/ipod-nano.test.ts tests/note.test.ts tests/site-stage.test.ts tests/host-build-inputs.test.ts tests/platform-runtime.test.ts tests/app-check.test.ts tests/font-bake.test.ts tests/touch.test.ts tests/vita-package.test.ts tests/psp-toolchain.test.ts tests/cli.test.ts tests/npm-package.test.ts tests/video-outro.test.ts tests/osk-layout.test.ts && bun test --conditions=browser tests/tailwind.test.ts tests/renderer.test.ts tests/cursor.test.ts tests/action-handler-vue-vapor.test.ts tests/vue-vapor-dom.test.ts tests/svg-bake.test.ts tests/devtools.test.ts tests/hot.test.ts tests/clock.test.ts tests/tiles.test.ts && bun tools/build.ts cafe-main >/dev/null && bun test --conditions=browser tests/sim.test.ts && bun tools/build.ts zoomlab-main >/dev/null && bun test --conditions=browser tests/deepzoom-sim.test.ts && bun tools/build.ts im-main >/dev/null && bun test --conditions=browser tests/im-sim.test.ts && bun tools/launcher.ts covers >/dev/null && bun test --conditions=browser tests/launcher-sim.test.ts",
+    "test": "bun tools/build.ts hero >/dev/null && bun tests/contract.ts && bun test tests/release-check.test.ts tests/release-notes.test.ts tests/platform-contracts.test.ts tests/pocket-package.test.ts tests/widget-args.test.ts tests/ipod-nano.test.ts tests/note.test.ts tests/site-stage.test.ts tests/host-build-inputs.test.ts tests/platform-runtime.test.ts tests/app-check.test.ts tests/vue-sfc.test.ts tests/font-bake.test.ts tests/touch.test.ts tests/vita-package.test.ts tests/psp-toolchain.test.ts tests/cli.test.ts tests/npm-package.test.ts tests/video-outro.test.ts tests/osk-layout.test.ts && bun test --conditions=browser tests/tailwind.test.ts tests/renderer.test.ts tests/cursor.test.ts tests/action-handler-vue-vapor.test.ts tests/vue-vapor-dom.test.ts tests/svg-bake.test.ts tests/devtools.test.ts tests/hot.test.ts tests/clock.test.ts tests/tiles.test.ts && bun tools/build.ts hero-vue-sfc-main --framework=vue-vapor >/dev/null && bun tools/build.ts vue-sfc-lab-main --framework=vue-vapor >/dev/null && bun test --conditions=browser tests/vue-sfc-lab.test.ts && bun tools/build.ts cafe-main >/dev/null && bun test --conditions=browser tests/sim.test.ts && bun tools/build.ts zoomlab-main >/dev/null && bun test --conditions=browser tests/deepzoom-sim.test.ts && bun tools/build.ts im-main >/dev/null && bun test --conditions=browser tests/im-sim.test.ts && bun tools/launcher.ts covers >/dev/null && bun test --conditions=browser tests/launcher-sim.test.ts",
     "tape": "bun tools/tape.ts",
     "tape:check": "bun tools/tape.ts replay hero-main tests/tapes/hero-main.tape.json --assert tests/tapes/hero-main.hashes.json",
     "devtools": "bun tools/devtools.ts",
@@ -134,6 +134,7 @@
     "vapor:nes": "bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target nes"
   },
   "dependencies": {
+    "@vue/compiler-sfc": "3.6.0-rc.1",
     "@vue/compiler-vapor": "3.6.0-rc.1",
     "solid-js": "^1.9",
     "vue": "3.6.0-rc.1",

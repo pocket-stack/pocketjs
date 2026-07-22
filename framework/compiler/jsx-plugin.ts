@@ -6,6 +6,7 @@ import solidPreset from "babel-preset-solid";
 import tsPreset from "@babel/preset-typescript"; // untyped - see framework/compiler/ambient.d.ts
 import { transformVueJsxVapor } from "vue-jsx-vapor/api";
 import { existsSync } from "node:fs";
+import { compileVueSfc } from "./vue-sfc-compile.ts";
 import {
   propsHelperCode,
   propsHelperId,
@@ -18,6 +19,7 @@ import {
 } from "@vue-jsx-vapor/runtime/raw";
 import type { BunPlugin } from "bun";
 import solidPresetPkg from "babel-preset-solid/package.json";
+import compilerSfcPkg from "@vue/compiler-sfc/package.json";
 import vuePkg from "vue/package.json";
 import vueJsxVaporPkg from "vue-jsx-vapor/package.json";
 import babelCorePkg from "@babel/core/package.json";
@@ -279,6 +281,8 @@ async function hashKey(
       "\0" +
       solidPresetPkg.version +
       "\0" +
+      compilerSfcPkg.version +
+      "\0" +
       vuePkg.version +
       "\0" +
       vueJsxVaporPkg.version +
@@ -364,6 +368,13 @@ export async function transformFile(
   framework: PocketFramework,
   options: { features?: BuildFeatures } = {},
 ): Promise<TransformResult> {
+  const isVueSfc = path.endsWith(".vue");
+  if (isVueSfc && framework !== "vue-vapor") {
+    throw new Error(
+      `PocketJS: ${path} is a Vue SFC and requires framework \"vue-vapor\" ` +
+        `(set app.framework in pocket.json or pass --framework=vue-vapor)`,
+    );
+  }
   const key = await hashKey(path, src, framework, options.features);
   const cacheFile = CACHE_DIR + key + ".json";
   const cached = (await Bun.file(cacheFile).json().catch(() => null)) as CacheEntry | null;
@@ -372,6 +383,37 @@ export async function transformFile(
       code: cached.code,
       classStrings: cached.classStrings,
       textCodepoints: new Set(cached.textCodepoints),
+    };
+  }
+
+  if (isVueSfc) {
+    const result = compileVueSfc(src, path, { stripTypes: true });
+    const collected: Collected = { classStrings: [], textCodepoints: new Set() };
+    const transformed = await transformAsync(result.code, {
+      filename: path,
+      presets: [],
+      parserOpts: JSX_PARSER_OPTS,
+      plugins: [
+        ...(options.features === undefined ? [] : [makeFeatureFolder(options.features)]),
+        makeCollector(collected, framework),
+      ],
+      babelrc: false,
+      configFile: false,
+      sourceMaps: false,
+    });
+    if (!transformed?.code && transformed?.code !== "") {
+      throw new Error(`PocketJS Vue SFC transform produced no output for ${path}`);
+    }
+    const entry: CacheEntry = {
+      code: transformed.code!,
+      classStrings: collected.classStrings,
+      textCodepoints: [...collected.textCodepoints],
+    };
+    await Bun.write(cacheFile, JSON.stringify(entry));
+    return {
+      code: entry.code,
+      classStrings: entry.classStrings,
+      textCodepoints: new Set(entry.textCodepoints),
     };
   }
 
@@ -465,6 +507,11 @@ export function jsxPlugin(
         if (framework === "vue-vapor" && args.path === opts.entry) {
           src = `import "@pocketjs/framework/prelude";\n${src}`;
         }
+        const { code } = await transformFile(args.path, src, framework, { features: opts.features });
+        return { contents: code, loader: "js" };
+      });
+      build.onLoad({ filter: /\.vue$/ }, async (args) => {
+        const src = await Bun.file(args.path).text();
         const { code } = await transformFile(args.path, src, framework, { features: opts.features });
         return { contents: code, loader: "js" };
       });

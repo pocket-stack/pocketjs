@@ -290,6 +290,7 @@ describe("semantic resolution", () => {
       cursor: [true, true, false],
       gallery: [true, true, false],
       hero: [true, true, false],
+      "hero-vue-sfc": [true, true, false],
       "hero-vue-vapor": [true, true, false],
       im: [true, true, false],
       "ipod-nano": [false, false, false], // admitted by the package-shaped macos-embedded target
@@ -301,6 +302,7 @@ describe("semantic resolution", () => {
       notifications: [true, true, false],
       settings: [true, true, false],
       stats: [true, true, false],
+      "vue-sfc-lab": [true, true, false],
       zoomlab: [true, true, false],
     };
     const targets = ["psp", "vita", "macos-widget"] as const;

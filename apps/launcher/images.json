@@ -44,6 +44,12 @@
   "covers/refl-hero-main.png": {
     "linear": true
   },
+  "covers/cover-hero-vue-sfc-main.png": {
+    "linear": true
+  },
+  "covers/refl-hero-vue-sfc-main.png": {
+    "linear": true
+  },
   "covers/cover-hero-vue-vapor-main.png": {
     "linear": true
   },
@@ -84,6 +90,12 @@
     "linear": true
   },
   "covers/refl-im-main.png": {
+    "linear": true
+  },
+  "covers/cover-vue-sfc-lab-main.png": {
+    "linear": true
+  },
+  "covers/refl-vue-sfc-lab-main.png": {
     "linear": true
   },
   "covers/cover-zoomlab-main.png": {

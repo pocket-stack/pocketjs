@@ -1,6 +1,11 @@
 // Vue Vapor renderer over the native `ui.*` tree.
 
-import { createVaporApp, insert as vaporInsert, remove as vaporRemove } from "vue";
+import {
+  createVaporApp,
+  insert as vaporInsert,
+  remove as vaporRemove,
+  type VaporComponent,
+} from "vue";
 import {
   createElement as createNativeElement,
   createTextNode,
@@ -33,10 +38,12 @@ const insertVaporBlock = vaporInsert as unknown as (
   anchor?: NodeMirror | null,
 ) => void;
 const removeVaporBlock = vaporRemove as unknown as (block: unknown, parent: NodeMirror) => void;
-const createPocketVaporApp = createVaporApp as unknown as (component: { setup: () => unknown }) => {
+const createPocketVaporApp = createVaporApp as unknown as (component: VaporComponent) => {
   mount(root: NodeMirror): void;
   unmount(): void;
 };
+
+export type VaporRenderRoot = (() => unknown) | VaporComponent;
 
 export {
   createTextNode,
@@ -101,8 +108,13 @@ export function createRenderRoot(root: NodeMirror): RenderRoot {
   };
 }
 
-export function render(code: () => unknown, root: NodeMirror): () => void {
-  const app = createPocketVaporApp({ setup: code });
+export function render(code: VaporRenderRoot, root: NodeMirror): () => void {
+  // JSX callers pass a setup callback. Compiled SFCs are component option
+  // objects and can be mounted directly, without a synthetic TSX wrapper.
+  const component = (
+    typeof code === "function" ? { setup: code as () => unknown } : code
+  ) as VaporComponent;
+  const app = createPocketVaporApp(component);
   app.mount(root as never);
   return () => app.unmount();
 }

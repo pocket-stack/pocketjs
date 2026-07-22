@@ -138,8 +138,10 @@ function resolveEntry(arg: string): string {
     resolvePath(arg),
     resolvePath(ROOT, arg),
     wantsMain ? resolvePath(ROOT, "apps", demoName, "main.tsx") : "",
+    wantsMain ? resolvePath(ROOT, "apps", demoName, "main.ts") : "",
     !wantsMain ? resolvePath(ROOT, "apps", demoName, "app.tsx") : "",
     isBareName && !wantsMain ? resolvePath(ROOT, "apps", demoName, "main.tsx") : "",
+    isBareName && !wantsMain ? resolvePath(ROOT, "apps", demoName, "main.ts") : "",
     resolvePath(ROOT, "apps", arg),
     resolvePath(ROOT, "apps", arg + ".tsx"),
     resolvePath(ROOT, "apps", arg + ".ts"),
@@ -228,7 +230,7 @@ function resolveImport(fromFile: string, spec: string): string | null {
   } catch {
     return null;
   }
-  return /\.tsx?$/.test(resolved) && !resolved.endsWith(".d.ts") ? frameworkVariantPath(resolved, framework) : null;
+  return (/\.tsx?$/.test(resolved) || resolved.endsWith(".vue")) && !resolved.endsWith(".d.ts") ? frameworkVariantPath(resolved, framework) : null;
 }
 
 const classStrings: string[] = [];
