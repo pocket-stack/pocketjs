@@ -216,10 +216,17 @@ fn main() {
     if !pockets.is_empty() {
         for (i, (output, id, title, bytes)) in pockets.iter().enumerate() {
             fs::write(Path::new(&out_dir).join(format!("app{i}.pocket")), bytes).unwrap();
+            // 16-align the embedded package: its internal payloads are
+            // 16-aligned relative to the FILE start, and include_bytes!
+            // alone guarantees nothing — MIPS faults on unaligned word
+            // loads, so anchor the file itself.
             apps_rs.push_str(&format!(
                 "    EmbeddedApp {{ output: {output:?}, id: {id:?}, title: {title:?}, \
                  js: \"\", pak: &[], \
-                 pocket: include_bytes!(concat!(env!(\"OUT_DIR\"), \"/app{i}.pocket\")) }},\n",
+                 pocket: {{ static A{i}: psp::Align16<[u8; {len}]> = \
+                 psp::Align16(*include_bytes!(concat!(env!(\"OUT_DIR\"), \"/app{i}.pocket\"))); \
+                 &A{i}.0 }} }},\n",
+                len = bytes.len(),
             ));
         }
     } else {

@@ -334,6 +334,19 @@ const env = {
   POCKETJS_VEIL_LOGO: veilLogoPath,
 };
 
+// Trace bakes dprintln onto the DEBUG SCREEN — over the switch veil it reads
+// as a log stream fighting the animation, and from the XMB (no host0:) it
+// exercises IO paths PSPLINK sessions never see. A release EBOOT with trace
+// is almost always a deployment mistake: say so, loudly (this exact slip
+// shipped once).
+if ((process.env.POCKETJS_TRACE ?? "") !== "" && outputProfile(cargoArgs) === "release") {
+  console.warn(
+    "\n!!  PocketJS psp: POCKETJS_TRACE is baked into a RELEASE build — debug-screen logs" +
+      "\n!!  will draw over the app (and the switch veil). Ship traceless; trace is for" +
+      "\n!!  PSPLINK dev loops.\n",
+  );
+}
+
 function outputProfile(args: string[]): string {
   const inlineProfile = args.find((arg) => arg.startsWith("--profile="));
   if (inlineProfile) return inlineProfile.slice("--profile=".length);
