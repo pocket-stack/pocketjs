@@ -19,7 +19,7 @@
 // a bare `export *` would hit, e.g. app-`render` vs universal-`render`).
 
 // ---- public app surface -----------------------------------------------------
-export { frameworkName, mount, render } from "../../src/index.ts";
+export { frameworkName, mount, render } from "../../framework/src/index.ts";
 export {
   View,
   Text,
@@ -36,21 +36,21 @@ export {
   Grid,
   Lazy,
   Gallery,
-} from "../../src/components.ts";
-export { animate, spring, cancelAnim } from "../../src/animation.ts";
+} from "../../framework/src/components.ts";
+export { animate, spring, cancelAnim } from "../../framework/src/animation.ts";
 export {
   onFrame,
   onButtonPress,
   createSpriteAnimation,
   pushButtonHandlerBlock,
-} from "../../src/lifecycle.ts";
+} from "../../framework/src/lifecycle.ts";
 export {
   BTN,
   focusNode,
   getFocused,
   pushFocusGrid,
   pushFocusScope,
-} from "../../src/input-api.ts";
+} from "../../framework/src/input-api.ts";
 
 // ---- universal-renderer surface (what babel-preset-solid imports from the
 // `moduleName` specifier — must exist under this one module) ------------------
@@ -66,12 +66,12 @@ export {
   setProp,
   mergeProps,
   use,
-} from "../../src/renderer.ts";
+} from "../../framework/src/renderer.ts";
 
 // ---- reset between live-recompiles -----------------------------------------
-import { resetRendererState, resetSprites, resetTextures } from "../../src/renderer.ts";
-import { resetStyles } from "../../src/styles.ts";
-import { resetPack } from "../../src/pak.ts";
+import { resetRendererState, resetSprites, resetTextures } from "../../framework/src/renderer.ts";
+import { resetStyles } from "../../framework/src/styles.ts";
+import { resetPack } from "../../framework/src/pak.ts";
 
 /** Wipe every runtime singleton so the NEXT mount() starts from a blank slate:
  *  the renderer mirror tree, retained/sweep sets, the class→styleId registry,

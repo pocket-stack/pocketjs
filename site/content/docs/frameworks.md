@@ -12,8 +12,8 @@ Solid is the default so existing apps keep building to `dist/<app>.js` and
 `dist/<app>.pak`. Vue Vapor builds next to it:
 
 ```sh
-bun scripts/build.ts hero-main                    # dist/hero-main.js
-bun scripts/build.ts hero-vue-vapor-main --framework=vue-vapor
+bun tools/build.ts hero-main                    # dist/hero-main.js
+bun tools/build.ts hero-vue-vapor-main --framework=vue-vapor
 # dist/hero-vue-vapor-main.vue-vapor.js
 ```
 
@@ -32,7 +32,7 @@ project config or one-command override.
 ```
 
 Use `"vue-vapor"` for the Vue adapter. `pocket check|compile|build --target …`
-resolves this value once and all compiler/native stages consume the same plan.
+resolves this value once and all framework/compiler/native stages consume the same plan.
 Do not also put `framework` in `pocket.config.ts` for a manifest build.
 
 ## Low-level project config
@@ -55,7 +55,7 @@ export default definePocketConfig({
 });
 ```
 
-The direct compiler/dev scripts read the config by default. Use
+The direct framework/compiler/dev scripts read the config by default. Use
 `--framework=solid` or `--framework=vue-vapor` to override it for one
 invocation. `--config=<path>` selects a different config file, and
 `--no-config` ignores config entirely.
@@ -63,8 +63,8 @@ invocation. `--config=<path>` selects a different config file, and
 The same flag works through the dev and PSP entry points:
 
 ```sh
-bun scripts/dev.ts --framework=vue-vapor hero-vue-vapor-main
-bun scripts/psp.ts hero-vue-vapor --framework=vue-vapor --release
+bun tools/dev.ts --framework=vue-vapor hero-vue-vapor-main
+bun tools/psp.ts hero-vue-vapor --framework=vue-vapor --release
 ```
 
 ## Framework app imports
@@ -139,8 +139,8 @@ subpaths when an example or app is tied to a framework:
 
 | Import | Solid build | Vue Vapor build |
 |---|---|---|
-| `@pocketjs/framework` | `src/index.ts` | `src/index-vue-vapor.ts` |
-| `@pocketjs/framework/components` | `src/components.ts` | `src/components-vue-vapor.ts` |
+| `@pocketjs/framework` | `framework/src/index.ts` | `framework/src/index-vue-vapor.ts` |
+| `@pocketjs/framework/components` | `framework/src/components.ts` | `framework/src/components-vue-vapor.ts` |
 | `@pocketjs/framework/lifecycle` | Solid lifecycle hooks | Vue Vapor lifecycle hooks |
 
 Use `nodeRef` when a component should look similar across framework examples. Solid still supports

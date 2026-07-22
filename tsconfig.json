@@ -1,6 +1,6 @@
 {
   // Editors + `bunx tsc --noEmit` typecheck ONLY — babel-preset-solid owns the
-  // actual JSX transform (jsx must stay "preserve"; see DESIGN.md [R]).
+  // actual JSX transform (jsx must stay "preserve"; see docs/DESIGN.md [R]).
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
@@ -17,27 +17,27 @@
     "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
-      "@pocketjs/framework": ["./src/index.ts"],
-      "@pocketjs/framework/animation": ["./src/animation.ts"],
-      "@pocketjs/framework/config": ["./src/config.ts"],
-      "@pocketjs/framework/components": ["./src/components.ts"],
-      "@pocketjs/framework/input": ["./src/input-api.ts"],
-      "@pocketjs/framework/lifecycle": ["./src/lifecycle.ts"],
-      "@pocketjs/framework/manifest": ["./src/manifest/index.ts"],
-      "@pocketjs/framework/platform": ["./src/platform.ts"],
-      "@pocketjs/framework/prelude": ["./src/prelude.ts"],
-      "@pocketjs/framework/renderer": ["./src/renderer.ts"],
-      "@pocketjs/framework/solid": ["./src/index.ts"],
-      "@pocketjs/framework/solid/components": ["./src/components.ts"],
-      "@pocketjs/framework/solid/lifecycle": ["./src/lifecycle.ts"],
-      "@pocketjs/framework/solid/renderer": ["./src/renderer-solid.ts"],
-      "@pocketjs/framework/vue-vapor": ["./src/index-vue-vapor.ts"],
-      "@pocketjs/framework/vue-vapor/animation": ["./src/animation.ts"],
-      "@pocketjs/framework/vue-vapor/components": ["./src/components-vue-vapor.ts"],
-      "@pocketjs/framework/vue-vapor/input": ["./src/input-api.ts"],
-      "@pocketjs/framework/vue-vapor/lifecycle": ["./src/lifecycle-vue-vapor.ts"],
-      "@pocketjs/framework/vue-vapor/renderer": ["./src/renderer-vue-vapor.ts"]
+      "@pocketjs/framework": ["./framework/src/index.ts"],
+      "@pocketjs/framework/animation": ["./framework/src/animation.ts"],
+      "@pocketjs/framework/config": ["./framework/src/config.ts"],
+      "@pocketjs/framework/components": ["./framework/src/components.ts"],
+      "@pocketjs/framework/input": ["./framework/src/input-api.ts"],
+      "@pocketjs/framework/lifecycle": ["./framework/src/lifecycle.ts"],
+      "@pocketjs/framework/manifest": ["./framework/src/manifest/index.ts"],
+      "@pocketjs/framework/platform": ["./framework/src/platform.ts"],
+      "@pocketjs/framework/prelude": ["./framework/src/prelude.ts"],
+      "@pocketjs/framework/renderer": ["./framework/src/renderer.ts"],
+      "@pocketjs/framework/solid": ["./framework/src/index.ts"],
+      "@pocketjs/framework/solid/components": ["./framework/src/components.ts"],
+      "@pocketjs/framework/solid/lifecycle": ["./framework/src/lifecycle.ts"],
+      "@pocketjs/framework/solid/renderer": ["./framework/src/renderer-solid.ts"],
+      "@pocketjs/framework/vue-vapor": ["./framework/src/index-vue-vapor.ts"],
+      "@pocketjs/framework/vue-vapor/animation": ["./framework/src/animation.ts"],
+      "@pocketjs/framework/vue-vapor/components": ["./framework/src/components-vue-vapor.ts"],
+      "@pocketjs/framework/vue-vapor/input": ["./framework/src/input-api.ts"],
+      "@pocketjs/framework/vue-vapor/lifecycle": ["./framework/src/lifecycle-vue-vapor.ts"],
+      "@pocketjs/framework/vue-vapor/renderer": ["./framework/src/renderer-vue-vapor.ts"]
     }
   },
-  "include": ["src", "compiler", "demos", "test", "spec", "host-web"]
+  "include": ["framework", "apps", "tests", "contracts", "hosts/web"]
 }

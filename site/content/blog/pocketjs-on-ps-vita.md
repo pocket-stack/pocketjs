@@ -139,7 +139,7 @@ Those are host facts, and the moment an app states them, every future host inher
 }
 ```
 
-PocketJS owns the other half. Each stock target registers a small profile stating what its host has actually implemented and tested — the real Vita entry, verbatim from `spec/platforms.ts`:
+PocketJS owns the other half. Each stock target registers a small profile stating what its host has actually implemented and tested — the real Vita entry, verbatim from `contracts/spec/platforms.ts`:
 
 ```ts
 vita: {

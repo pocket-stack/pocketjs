@@ -9,7 +9,7 @@ description: Debug PocketJS apps with Pocket DevTools — deterministic input-ta
 
 PocketJS is fixed-dt deterministic and its entire per-frame input is one
 button bitmask, so a recorded input tape replays any session byte-exactly.
-DevTools (design: repo `DEVTOOLS.md`) is built into every bundle: a flight
+DevTools (design: repo `docs/DEVTOOLS.md`) is built into every bundle: a flight
 recorder is ALWAYS on (36 000-frame ring), and a JSON-line debug channel
 connects the runtime to a desktop panel over WebSocket (browser host) or the
 PSPLINK USB mailbox (real PSP).
@@ -28,14 +28,14 @@ bun run tape tree   hero-main t.json --at 60             # component tree JSON a
 bun run tape:check                                       # committed session golden
 ```
 
-- Input masks are spec/spec.ts `BTN` values (`CIRCLE=0x2000=8192`, `DOWN=0x40=64`).
+- Input masks are contracts/spec/spec.ts `BTN` values (`CIRCLE=0x2000=8192`, `DOWN=0x40=64`).
 - A regression workflow: record/obtain a tape on the OLD build → `--hashes` →
   switch builds → `--assert` names the exact first frame that changed →
   `--png <that frame>` on both builds to see the difference.
 - Tapes exported from ANY host (panel "Export", or `__pocketDevtools.dumpTape()`
   in the REPL) replay headlessly. `startFrame > 0` means the ring wrapped —
   replay is then an approximation (warned automatically).
-- Committed session goldens live in `test/tapes/`; regenerate hashes only when
+- Committed session goldens live in `tests/tapes/`; regenerate hashes only when
   a visual change is intended.
 
 ## Panel workflow (one command)
@@ -60,7 +60,7 @@ usbhostfs, converted by the bridge — pixels never cross the JSON channel).
 
 ## Native desktop (macOS) specifics
 
-- `pocket-ui-wgpu` hosts (OpenStrike desktop, `pocket3d/examples/uihost`)
+- `pocket-ui-wgpu` hosts (OpenStrike desktop, `engine/pocket3d/examples/uihost`)
   carry the same file-mailbox transport as the PSP, pointed at
   `$POCKETJS_DBG_DIR` (else the process cwd). Workflow: `bun run devtools
   --dir <root> --port 8131` FIRST (explicit `--dir` wins over a running
@@ -101,18 +101,18 @@ Device→panel: `hello{app,host,frame}` · `tree{root:{i,t,n,c,x,k}}` ·
 - `rect: null` / `debugRectXY() === -1` = the node is never painted
   (display:none, detached, or inside a `paint_3d` perspective subtree — 3D
   interiors aren't captured; the perspective ROOT is).
-- Adding spec ops: edit `spec/spec.ts` → `bun spec/gen-rust.ts` → implement
-  on `Ui` + BOTH hosts (`native/src/ffi.rs`, `wasm/src/lib.rs`) + `host-web/
-  wasm-ops.js` + `HostOps` (optional members) — `test/contract.ts` locks the
+- Adding spec ops: edit `contracts/spec/spec.ts` → `bun contracts/spec/gen-rust.ts` → implement
+  on `Ui` + BOTH hosts (`hosts/psp/src/ffi.rs`, `engine/wasm/src/lib.rs`) + `hosts/web/
+  wasm-ops.js` + `HostOps` (optional members) — `tests/contract.ts` locks the
   spec halves together.
 - `debugName` / `<Named>` are JS-mirror-only: provably zero pixel impact
   (goldens + tape hashes unchanged). Name every function component's root
   element; the tree panel and `tape tree` output read like the source.
-- Shim tests live in `test/devtools.test.ts` (mock ops + in-process
+- Shim tests live in `tests/devtools.test.ts` (mock ops + in-process
   transport; `--conditions=browser` required). Core pause/inspect tests in
-  `core/src/tests.rs`.
+  `engine/core/src/tests.rs`.
 - Missing QuickJS symbols (vendored libquickjs-sys is minimal): declare a
-  local `extern "C"` block — precedent in `native/src/main.rs` and `ffi.rs`.
+  local `extern "C"` block — precedent in `hosts/psp/src/main.rs` and `ffi.rs`.
 - NEVER hand VRAM addresses (`0x4xxxxxxx` uncached mirror) to usbhostfs IO:
   its send path runs dcache writeback + USB bulk DMA on the caller's buffer
   and hangs the device on the first 64 KB block (frozen PSP, 0-byte file).
@@ -133,8 +133,8 @@ Device→panel: `hello{app,host,frame}` · `tree{root:{i,t,n,c,x,k}}` ·
 - The whole device-side path (eval, console, screenshot) is testable
   without hardware, at host0: fidelity: **PPSSPP maps the EBOOT's own
   directory as `host0:`**, so a mailbox in
-  `native/target/mipsel-sony-psp/debug/pocketjs-dbg/` is found by the SAME
+  `hosts/psp/target/mipsel-sony-psp/debug/pocketjs-dbg/` is found by the SAME
   probe hardware uses. Create enable/in/out there, run PPSSPPHeadless with
   a timeout, append commands to in.jsonl mid-run, read out.jsonl. (This
   also means a stale hardware-session mailbox hijacks emulator runs —
-  e2e-ppsspp.ts removes it before each golden run.)
+  tests/e2e/ppsspp.ts removes it before each golden run.)

@@ -4,20 +4,20 @@
 // 480x272 canvas, and drives the fixed-timestep 60 Hz loop (dt clamp 250 ms,
 // max 4 catch-up steps — the proven dreamcart driver shape). Two ways to run an
 // app on it:
-//   • runIIFE(jsText, pak)  — a prebuilt `bun scripts/build.ts` bundle
+//   • runIIFE(jsText, pak)  — a prebuilt `bun tools/build.ts` bundle
 //     (globalThis.ui/__pak in, globalThis.frame out). Used by the homepage.
 //   • reset() → (caller imports an ES module that calls mount()) → begin()
 //     — the live-compiled playground path.
 // Both end up driving the same globalThis.frame(buttons) contract.
 
-import { createWasmUi, FB_W, FB_H } from "../../host-web/wasm-ops.js";
-import { drawHud, wasmMemoryBytes } from "../../host-web/hud.js";
-import { SHOT_W, SHOT_H, downscaleShot } from "../../host-sim/shot.ts";
+import { createWasmUi, FB_W, FB_H } from "../../hosts/web/wasm-ops.js";
+import { drawHud, wasmMemoryBytes } from "../../hosts/web/hud.js";
+import { SHOT_W, SHOT_H, downscaleShot } from "../../hosts/sim/shot.ts";
 
-/** spec PSM_8888 — the frozen-shot upload format (spec/spec.ts psm). */
+/** spec PSM_8888 — the frozen-shot upload format (contracts/spec/spec.ts psm). */
 const PSM_8888 = 3;
 
-// spec/spec.ts BTN — the PSP button bitmask.
+// contracts/spec/spec.ts BTN — the PSP button bitmask.
 export const BTN = {
   SELECT: 0x0001, START: 0x0008,
   UP: 0x0010, RIGHT: 0x0020, DOWN: 0x0040, LEFT: 0x0080,
@@ -63,8 +63,8 @@ export class PocketHost {
   }
 
   /**
-   * Turn this host into a multi-app host (LAUNCHER.md, the browser twin of
-   * native/src/switch.rs + host-sim/launcher.ts): the three app* ops are
+   * Turn this host into a multi-app host (docs/LAUNCHER.md, the browser twin of
+   * hosts/psp/src/switch.rs + hosts/sim/launcher.ts): the three app* ops are
    * installed on every guest, SELECT is reserved as the summon chord for
    * non-launcher guests, and a switch fetches + evals the target bundle in
    * place — the same whole-guest swap runIIFE always was.
@@ -269,7 +269,7 @@ export class PocketHost {
   _safeFrame() {
     if (!this.frameCb) return false;
     try {
-      // The summon chord (LAUNCHER.md): non-launcher guests never see
+      // The summon chord (docs/LAUNCHER.md): non-launcher guests never see
       // SELECT; a host-tracked press-edge schedules the summon.
       let mask = this.held;
       const sw = this.switching;

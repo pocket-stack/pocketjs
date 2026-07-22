@@ -8,7 +8,7 @@ description: Ship a PocketJS release — version bumps, changelog, npm publish v
 ## Overview
 
 A release is one tag push. `.github/workflows/release.yml` publishes
-`@pocketjs/framework` (repo root) and `@pocketjs/cli` (`cli/`) to npm via
+`@pocketjs/framework` (repo root) and `@pocketjs/cli` (`tools/cli/`) to npm via
 **trusted publishing (OIDC)** — no tokens, provenance attached — skipping any
 version already on the registry (safe to re-run). The site deploys separately
 on every `main` push (`deploy.yml`).
@@ -16,8 +16,8 @@ on every `main` push (`deploy.yml`).
 ## Standard workflow
 
 1. **Version bumps (in the feature PR, before merge).** Set the same version
-   in `package.json`, `cli/package.json`, AND `pocket.json` — the release
-   gate (`scripts/release-check.ts`) verifies all three authorities agree
+   in `package.json`, `tools/cli/package.json`, AND `pocket.json` — the release
+   gate (`tools/release-check.ts`) verifies all three authorities agree
    with the tag. Semver within 0.x: breaking changes (e.g. a bin rename)
    and feature sets bump the minor; docs-only fixes ride the next release
    rather than getting their own.
@@ -29,11 +29,11 @@ on every `main` push (`deploy.yml`).
 3. **Validate before merge** (all must pass):
 
 ```bash
-bun run test && bun test/golden.ts && bun run tape:check
-cargo test --manifest-path core/Cargo.toml
+bun run test && bun tests/golden.ts && bun run tape:check
+cargo test --manifest-path engine/core/Cargo.toml
 bunx tsc --noEmit
-bun test/e2e-ppsspp.ts        # when native/ or core/ changed
-bun scripts/psp.ts hero        # cross-compile check when native/ changed
+bun tests/e2e/ppsspp.ts        # when hosts/psp/ or engine/core/ changed
+bun tools/psp.ts hero        # cross-compile check when hosts/psp/ changed
 ```
 
 4. **Merge.** Draft PR → `gh pr ready <n>` → `gh pr merge <n> --squash`
@@ -43,7 +43,7 @@ bun scripts/psp.ts hero        # cross-compile check when native/ changed
    branch itself after squash merges (verify with
    `git ls-remote origin <branch>`).
 5. **Tag = publish.** The workflow publishes both npm packages and then
-   creates the **GitHub Release** itself (`scripts/release-notes.ts` turns
+   creates the **GitHub Release** itself (`tools/release-notes.ts` turns
    the version's changelog entry into the notes; the bold thesis becomes
    the title). No entry in `site/content/changelog.md` → the release step
    fails, so step 2 is load-bearing.
@@ -78,9 +78,9 @@ gh release list --limit 2      # GitHub Release exists and is marked Latest
   then configure the trusted publisher.
 - The publish steps guard with `npm view "$name@$version"` — pushing a tag
   where one package's version already exists publishes only the other.
-- The framework tarball ships gitignored build output (`host-web/
+- The framework tarball ships gitignored build output (`hosts/web/
   pocketjs.wasm`) because the `files` whitelist wins over .gitignore; CI
-  builds it (`bun scripts/wasm.ts`) before publishing. Check tarball
+  builds it (`bun tools/wasm.ts`) before publishing. Check tarball
   contents with `npm pack --dry-run` if `files` changed.
 - Blog posts register in `site/nav.ts` `BLOG_POSTS` (the .md alone doesn't
   render); landing nav lives in `site/home.html`, docs nav in

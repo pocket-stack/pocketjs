@@ -13,7 +13,7 @@
 //   /playground/          the live editor page
 //   /docs/*, /index.html  rendered from site/content (added below)
 
-import { validateAndResolveBuildPlan } from "../src/manifest/resolve.ts";
+import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { marked } from "marked";
@@ -221,7 +221,7 @@ type DemoEntry = { name: string; title: string; variants: DemoVariant[] };
 function inlinePlaygroundImports(name: string, source: string): string | null {
   if (!/from\s+["']\.\.?\//.test(source)) return source;
   if (name !== "gallery") return null;
-  const tilesPath = ROOT + "demos/gallery/tiles.ts";
+  const tilesPath = ROOT + "apps/gallery/tiles.ts";
   const tiles = readFileSync(tilesPath, "utf8").replace(/^export\s+/gm, "");
   return source.replace(
     /import\s+\{\s*GALLERY_PAGES,\s*TILES_PER_PAGE,\s*TILE_SRCS\s*\}\s+from\s+["']\.\/tiles\.ts["'];\n?/,
@@ -230,13 +230,13 @@ function inlinePlaygroundImports(name: string, source: string): string | null {
 }
 
 function demoSpriteMeta(name: string): SpriteMeta | undefined {
-  const path = ROOT + "demos/" + name + "/sprites.json";
+  const path = ROOT + "apps/" + name + "/sprites.json";
   if (!existsSync(path)) return undefined;
   return JSON.parse(readFileSync(path, "utf8")) as SpriteMeta;
 }
 
 function demoManifest() {
-  const dir = ROOT + "demos/";
+  const dir = ROOT + "apps/";
   const out: DemoEntry[] = [];
   for (const name of readdirSync(dir).sort()) {
     const app = dir + name + "/app.tsx";
@@ -275,7 +275,7 @@ function demoManifest() {
 }
 
 function copyDemoAssets(): void {
-  const demosDir = ROOT + "demos/";
+  const demosDir = ROOT + "apps/";
   for (const name of readdirSync(demosDir)) {
     const dir = demosDir + name + "/";
     if (!existsSync(dir)) continue;
@@ -305,21 +305,21 @@ async function main() {
   // 2. runtime assets
   // Keep the editor-facing URL byte-identical to the schema used by the
   // validator. The deployed path is POCKET_MANIFEST_SCHEMA_ID.
-  copy(ROOT + "schema/pocket-2.json", "schema/pocket-2.json");
-  copy(ROOT + "host-web/pocketjs.wasm", "pg/pocketjs.wasm");
+  copy(ROOT + "contracts/schema/pocket-2.json", "contracts/schema/pocket-2.json");
+  copy(ROOT + "hosts/web/pocketjs.wasm", "pg/pocketjs.wasm");
   copy(ROOT + "assets/fonts/Inter-Regular.ttf", "pg/fonts/Inter-Regular.ttf");
   copy(ROOT + "assets/fonts/Inter-Bold.ttf", "pg/fonts/Inter-Bold.ttf");
   for (const f of readdirSync(ROOT + "assets/images/")) copy(ROOT + "assets/images/" + f, "demo-assets/" + f);
   copyDemoAssets();
 
   // Homepage Pocket Stage package: the Pocket Launcher plus every admitted
-  // app (LAUNCHER.md) — the same deck the PSP EBOOT ships, wasm-rendered.
+  // app (docs/LAUNCHER.md) — the same deck the PSP EBOOT ships, wasm-rendered.
   // The deploy workflow builds the launcher family first; fail here instead
   // of silently publishing a shell with a missing screen app when
   // site/build.ts is run by hand.
   const registryPath = ROOT + "dist/launcher-registry.json";
   if (!existsSync(registryPath)) {
-    throw new Error("missing dist/launcher-registry.json — run: bun scripts/launcher.ts covers");
+    throw new Error("missing dist/launcher-registry.json — run: bun tools/launcher.ts covers");
   }
   const launcherRegistry = JSON.parse(readFileSync(registryPath, "utf8")) as {
     apps: { output: string; id: string; title: string }[];
@@ -328,7 +328,7 @@ async function main() {
   for (const output of stageApps) {
     const source = ROOT + `dist/packages/${output}.pocket`;
     if (!existsSync(source)) {
-      throw new Error(`missing dist/packages/${output}.pocket — run: bun scripts/launcher.ts pack`);
+      throw new Error(`missing dist/packages/${output}.pocket — run: bun tools/launcher.ts pack`);
     }
     copy(source, `stage/apps/${output}.pocket`);
   }
@@ -338,7 +338,7 @@ async function main() {
       apps: launcherRegistry.apps.map(({ output, id, title }) => ({ output, id, title })),
     }),
   );
-  const pspPackage = ROOT + "pocket3d/examples/handheld/assets/dibad-psp/";
+  const pspPackage = ROOT + "engine/pocket3d/examples/handheld/assets/dibad-psp/";
   emitSingleLodStagePackage(pspPackage, OUT + "stage/", "psp-profile.json", "orbit");
 
   // 3. demos manifest

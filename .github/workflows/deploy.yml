@@ -23,8 +23,8 @@ jobs:
         with:
           bun-version: latest
 
-      # The site copies host-web/pocketjs.wasm (a gitignored build artifact), so
-      # CI must build it from core/wasm first. Stable Rust is enough (no nightly
+      # The site copies hosts/web/pocketjs.wasm (a gitignored build artifact), so
+      # CI must build it from engine/core/wasm first. Stable Rust is enough (no nightly
       # features); wasm32-unknown-unknown is the target.
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -36,8 +36,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            wasm/target
-          key: ${{ runner.os }}-wasm-${{ hashFiles('wasm/Cargo.toml', 'core/Cargo.toml', 'wasm/src/**', 'core/src/**') }}
+            engine/wasm/target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('engine/wasm/Cargo.toml', 'engine/core/Cargo.toml', 'engine/wasm/src/**', 'engine/core/src/**') }}
           restore-keys: ${{ runner.os }}-wasm-
 
       - name: Install dependencies

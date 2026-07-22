@@ -150,11 +150,11 @@ Build it with Bun:
 
 :::framework-code
 ```sh solid
-bun scripts/build.ts hero      # -> dist/hero.js + dist/hero.pak
+bun tools/build.ts hero      # -> dist/hero.js + dist/hero.pak
 ```
 
 ```sh vue-vapor
-bun scripts/build.ts hero --framework=vue-vapor
+bun tools/build.ts hero --framework=vue-vapor
 # -> dist/hero.vue-vapor.js + dist/hero.vue-vapor.pak
 ```
 :::
