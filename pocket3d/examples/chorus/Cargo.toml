@@ -1,0 +1,17 @@
+[package]
+name = "chorus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "A dream-corridor diorama widget: airbrush chrome profiles receding to a starburst, drag to peer inside"
+
+[dependencies]
+pocket3d = { workspace = true }
+pocket-widget = { workspace = true }
+wgpu = { workspace = true }
+winit = { workspace = true }
+glam = { workspace = true, features = ["std"] }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }

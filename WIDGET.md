@@ -507,6 +507,12 @@ Landed in this repo:
    `--density=N` builds; and the second runtime — `examples/note-widget`
    over `demos/note` (markdown view/edit/menu, autosave, tested in
    `test/note.test.ts`).
+6. `examples/chorus`: the scene-only data point — a `WidgetGame` with no
+   guest and no `EmbeddedUi`, an airbrush-chrome diorama (procedural
+   geometry + painted ramps, everything unlit) you orbit by dragging
+   through the frame opening. It proves the 3D shell stands alone as an
+   ambient-art form and honors the governor: `--still` renders 2 frames
+   over a 3 s windowed run.
 
 Still ahead: the golden-specs wiring (§8), density-2 screens for the 3D
 form (§5 — the flat form ships them), the `widget` surface (§7),

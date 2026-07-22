@@ -8,6 +8,7 @@ members = [
     "crates/pocket-ui-wgpu",
     "crates/pocket-vrm",
     "crates/pocket-widget",
+    "examples/chorus",
     "examples/handheld",
     "examples/note-widget",
     "examples/uihost",

@@ -15,3 +15,8 @@ winit = { workspace = true }
 glam = { workspace = true, features = ["std"] }
 anyhow = { workspace = true }
 log = { workspace = true }
+
+# Widget windows set NSWindow.collectionBehavior (all Spaces, over
+# fullscreen apps) — winit doesn't expose it. Same objc2 winit pins.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5"

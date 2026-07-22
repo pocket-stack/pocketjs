@@ -60,6 +60,11 @@ pub struct WidgetConfig {
     /// `ime_events` stream; the game reports its caret rect through
     /// `ime_cursor_area` so candidate windows dock next to the text.
     pub ime: bool,
+    /// Live on every Space, including over fullscreen apps (macOS: NSWindow
+    /// collectionBehavior CanJoinAllSpaces | FullScreenAuxiliary |
+    /// Stationary). Without this a widget launched from a fullscreen
+    /// terminal opens on the desktop Space and appears to not exist.
+    pub all_spaces: bool,
 }
 
 impl Default for WidgetConfig {
@@ -75,9 +80,41 @@ impl Default for WidgetConfig {
             resizable: false,
             min_size: (160, 120),
             ime: false,
+            all_spaces: true,
         }
     }
 }
+
+/// Make the window a real desktop widget: visible on every Space, allowed
+/// over fullscreen apps, unaffected by Spaces gestures. winit has no API
+/// for `NSWindow.collectionBehavior`, so this reaches through the raw
+/// handle. No-op off macOS.
+#[cfg(target_os = "macos")]
+fn apply_all_spaces(window: &Window) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+    let Ok(handle) = window.window_handle() else {
+        return;
+    };
+    let RawWindowHandle::AppKit(appkit) = handle.as_raw() else {
+        return;
+    };
+    // NSWindowCollectionBehavior: CanJoinAllSpaces | Stationary |
+    // IgnoresCycle | FullScreenAuxiliary.
+    const BEHAVIOR: usize = (1 << 0) | (1 << 4) | (1 << 6) | (1 << 8);
+    unsafe {
+        let ns_view = appkit.ns_view.as_ptr() as *mut AnyObject;
+        let ns_window: *mut AnyObject = msg_send![&*ns_view, window];
+        if !ns_window.is_null() {
+            let _: () = msg_send![&*ns_window, setCollectionBehavior: BEHAVIOR];
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_all_spaces(_window: &Window) {}
 
 /// What the widget loop needs from a 3D product.
 pub trait WidgetGame {
@@ -132,12 +169,7 @@ pub trait FlatWidget {
     fn take_dirty(&mut self) -> bool;
     /// Draw into the swapchain view (submit your own encoder). Called only
     /// on frames that render.
-    fn render(
-        &mut self,
-        gpu: &Gpu,
-        view: &wgpu::TextureView,
-        window_px: (u32, u32),
-    ) -> Result<()>;
+    fn render(&mut self, gpu: &Gpu, view: &wgpu::TextureView, window_px: (u32, u32)) -> Result<()>;
     /// Left-press policy: OS window drag (move) at this cursor position?
     fn drag_at(&mut self, cursor: Vec2) -> bool {
         let _ = cursor;
@@ -163,7 +195,13 @@ pub trait FlatWidget {
 
 /// Run a 3D widget (scene + camera + demand rendering).
 pub fn run(config: WidgetConfig, game: impl WidgetGame) -> Result<()> {
-    run_driver(config, SceneDriver { game, renderer: None })
+    run_driver(
+        config,
+        SceneDriver {
+            game,
+            renderer: None,
+        },
+    )
 }
 
 /// Run a 2D widget (the window is the surface).
@@ -379,6 +417,9 @@ impl<D: Driver> WidgetApp<D> {
         if self.config.ime {
             window.set_ime_allowed(true);
         }
+        if self.config.all_spaces {
+            apply_all_spaces(&window);
+        }
         let instance = Gpu::new_instance();
         let surface = instance.create_surface(window.clone())?;
         let gpu = Gpu::from_instance_for_surface_with_power_preference(
@@ -510,12 +551,8 @@ impl<D: Driver> WidgetApp<D> {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let size = (state.surface_config.width, state.surface_config.height);
-        self.driver.render(
-            &state.gpu,
-            &view,
-            size,
-            state.start.elapsed().as_secs_f32(),
-        )?;
+        self.driver
+            .render(&state.gpu, &view, size, state.start.elapsed().as_secs_f32())?;
         state.window.pre_present_notify();
         frame.present();
 

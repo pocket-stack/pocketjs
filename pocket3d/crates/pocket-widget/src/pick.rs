@@ -70,16 +70,14 @@ mod tests {
     fn t_is_world_scale_under_rotation_and_translation() {
         // Box rotated 45° around Y and pushed to x=10: a ray down -X from
         // (20, 0, 0) hits the corner-on silhouette at 10 - sqrt(2).
-        let m = Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0))
-            * Mat4::from_rotation_y(FRAC_PI_4);
+        let m =
+            Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0)) * Mat4::from_rotation_y(FRAC_PI_4);
         let t = ray_obb(Vec3::new(20.0, 0.0, 0.0), Vec3::NEG_X, &m, BOX).unwrap();
         assert!((t - (10.0 - 2.0f32.sqrt())).abs() < 1e-3, "t = {t}");
     }
 
     #[test]
     fn parallel_ray_outside_slab_misses() {
-        assert!(
-            ray_obb(Vec3::new(0.0, 2.0, 5.0), Vec3::NEG_Z, &Mat4::IDENTITY, BOX).is_none()
-        );
+        assert!(ray_obb(Vec3::new(0.0, 2.0, 5.0), Vec3::NEG_Z, &Mat4::IDENTITY, BOX).is_none());
     }
 }
