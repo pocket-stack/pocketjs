@@ -28,6 +28,8 @@ const RENDER_SCALE = positiveIntParam("scale", 1, 4);
 const RASTER_DENSITY = positiveIntParam("density", RENDER_SCALE, 255);
 const FB_W = LOGICAL_W * RENDER_SCALE;
 const FB_H = LOGICAL_H * RENDER_SCALE;
+const CUSTOM_VIEWPORT =
+  LOGICAL_W !== DEFAULT_FB_W || LOGICAL_H !== DEFAULT_FB_H || RENDER_SCALE !== 1;
 
 // spec/spec.ts BTN (plain module — keep the literal in sync with the spec).
 export const BTN = {
@@ -300,11 +302,15 @@ export async function mount(theCanvas, opts = {}) {
   canvas = theCanvas;
   canvas.width = FB_W;
   canvas.height = FB_H;
-  canvas.style.width = `${FB_W}px`;
-  // Preserve the framebuffer aspect ratio when max-width makes the preview
-  // responsive inside a narrower browser window.
-  canvas.style.height = "auto";
-  canvas.style.aspectRatio = `${FB_W} / ${FB_H}`;
+  if (CUSTOM_VIEWPORT) {
+    // Custom panels present at native framebuffer size; the stylesheet keeps
+    // its 2x-scaled default for the stock 480x272 host. height:auto preserves
+    // the framebuffer aspect ratio when max-width makes the preview
+    // responsive inside a narrower browser window.
+    canvas.style.width = `${FB_W}px`;
+    canvas.style.height = "auto";
+    canvas.style.aspectRatio = `${FB_W} / ${FB_H}`;
+  }
   ctx = canvas.getContext("2d");
   ctx.imageSmoothingEnabled = false;
   imageData = ctx.createImageData(FB_W, FB_H);

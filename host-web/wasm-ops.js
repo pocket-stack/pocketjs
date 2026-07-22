@@ -41,7 +41,12 @@ export async function createWasmUi(wasm, options = {}) {
 
   const init = (rasterDensity = initialDensity) => {
     ex.ui_init(integerInRange(rasterDensity, "rasterDensity", 1, 255));
-    ex.ui_set_viewport(viewportWidth, viewportHeight);
+    // Older wasm binaries predate ui_set_viewport (same convention as
+    // drawHash): tolerate them at the stock size, fail loud otherwise.
+    if (ex.ui_set_viewport) ex.ui_set_viewport(viewportWidth, viewportHeight);
+    else if (viewportWidth !== FB_W || viewportHeight !== FB_H) {
+      throw new Error("this pocketjs.wasm predates ui_set_viewport — rebuild it: bun scripts/wasm.ts");
+    }
   };
   init(initialDensity);
 

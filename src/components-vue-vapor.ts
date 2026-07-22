@@ -118,7 +118,11 @@ function slotDefault(slots: SlotBag, ...args: unknown[]): unknown {
 }
 
 function withNativeTextDocument<T>(fn: () => T): T {
-  const doc = (globalThis as { document?: unknown }).document as
+  // Patch the guest's document, never the embedding page's: vue-vapor builds
+  // alias the guest `document` to globalThis.__pocketDocument (see
+  // installVueVaporDom), and the real browser document must stay untouched.
+  const g = globalThis as { __pocketDocument?: unknown; document?: unknown };
+  const doc = (g.__pocketDocument ?? g.document) as
     | {
         createTextNode?: (value?: string) => unknown;
         createComment?: (value?: string) => unknown;
