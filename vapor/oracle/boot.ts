@@ -44,9 +44,17 @@ export interface Oracle {
   unmount(): void;
 }
 
-export async function bootOracle(): Promise<Oracle> {
+export interface OracleOptions {
+  width?: number;
+  height?: number;
+}
+
+export async function bootOracle(opts: OracleOptions = {}): Promise<Oracle> {
   const bundle = await buildOracleBundle();
   installOracleDom();
+  const g = globalThis as Record<string, unknown>;
+  g.__vaporScreenW = opts.width ?? 30;
+  g.__vaporScreenH = opts.height ?? 20;
   (0, eval)(bundle);
 
   const hooks = globalThis as Record<string, unknown>;
@@ -64,7 +72,7 @@ export async function bootOracle(): Promise<Oracle> {
       pressHook(button);
       await tick();
     },
-    grid: () => paintGrid(root),
+    grid: () => paintGrid(root, opts.width ?? 30, opts.height ?? 20),
     unmount: () => app.unmount(),
   };
 }

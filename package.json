@@ -129,7 +129,9 @@
     "devtools:psp": "bun scripts/devtools-psp.ts",
     "test:tailwind": "bun test test/tailwind.test.ts",
     "contract": "bun test/contract.ts",
-    "gen": "bun spec/gen-rust.ts"
+    "gen": "bun spec/gen-rust.ts",
+    "vapor:gb": "bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target gb",
+    "vapor:nes": "bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target nes"
   },
   "dependencies": {
     "@vue/compiler-vapor": "3.6.0-rc.1",
@@ -152,6 +154,7 @@
     "@types/opentype.js": "^1.3.10",
     "babel-preset-solid": "^1.9",
     "codemirror": "^6.0.2",
+    "jsnes": "^2.1.0",
     "marked": "^18.0.5",
     "opentype.js": "^1.3",
     "shiki": "^4.3.1",

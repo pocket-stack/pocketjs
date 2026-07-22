@@ -20,6 +20,18 @@
 
 #include <mgba/core/core.h>
 #include <mgba/core/config.h>
+#include <mgba/core/log.h>
+
+/* stdout carries the JSON protocol: route mgba's logging to nowhere */
+static void log_null(struct mLogger *logger, int category, enum mLogLevel level,
+                     const char *format, va_list args) {
+  (void)logger;
+  (void)category;
+  (void)level;
+  (void)format;
+  (void)args;
+}
+static struct mLogger nullLogger = { .log = log_null };
 
 static struct mCore *core;
 static uint32_t *videoBuffer;
@@ -58,6 +70,7 @@ int main(int argc, char **argv) {
     return 2;
   }
 
+  mLogSetDefaultLogger(&nullLogger);
   core = mCoreFind(argv[1]);
   if (!core) {
     printf("{\"ok\":false,\"error\":\"no core for rom\"}\n");

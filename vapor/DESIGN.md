@@ -212,8 +212,32 @@ header-patch lineage carried over from Pocket Static's GBA target.
    the full cell grid).
 
 Layer 3 is the claim of the whole project: same file, real Vue on a JS
-engine, native code on a 2001 handheld, cell-identical output — proven for
-every step of the interaction, not just the final frame.
+engine, native code on 1989-2001 consoles, cell-identical output — proven
+for every step of the interaction, not just the final frame, on all three
+targets (the GB scenario paces in video frames with wide margins; the NES
+runner paces on the debug frame counter, Pocket Static's trick).
+
+## 7.5 Targets
+
+| | GBA | GB (DMG) | NES |
+|---|---|---|---|
+| CPU | ARM7TDMI 16.8MHz | SM83 4.19MHz | 6502 1.79MHz |
+| Toolchain | arm-none-eabi-gcc | sdcc + sdasgb + makebin + rgbfix | cc65/ca65/ld65 |
+| Grid | 30x20 | 20x18 | 22x18 (centered) |
+| Palettes | 6 real BG banks | 2 glyph styles (BGP is global) | 2 glyph styles in CHR-ROM |
+| Pool / str caps | 32 / 24 | 32 / 24 | 8 / 20 (2 KB CPU RAM) |
+| Cart | flat ROM + header patch | ROM-only 32 KB | NROM-256 + CHR-ROM |
+| Debug block | EWRAM 0x2000000 | WRAM 0xD800 (grid IS the block) | $0200 fixed segment |
+| Emulator (E2E) | libmgba | libmgba | jsnes |
+
+The generated C is target-independent; geometry and budgets arrive as
+`#define`s, `SCREEN.*` folds in the compiler, and the per-console runtime
+is ~150 lines against the same `vapor.h` contract. 8-bit portability rules
+baked into codegen: `s32`/`u32` are `long` (16-bit `int` consoles),
+declarations hoist to function tops (cc65 is C89), variable-index record
+access is u16 pointer arithmetic and bit masks come from a ROM table
+(sdcc 4.6 SM83 miscompiles some u8-by-u8 multiplies — the __muluchar
+lesson inherited from Pocket Static).
 
 ## 8. The demo — VAPOR TODO
 
@@ -236,6 +260,5 @@ point.
 
 Components-with-props and slots (block machinery is shaped for them; not
 demoed), `reactive()`/`watch()` sugar, floats/fixed-point, CJK text, sound,
-saves, GB/NES backends (the block runtime is portable C by construction;
-only the HAL and budgets differ), real-hardware verification (headers are
-flashcart-correct; emulator-only in CI).
+saves, real-hardware verification (headers are flashcart-correct;
+emulator-only in CI).

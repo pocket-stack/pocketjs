@@ -1,12 +1,16 @@
-// vapor/compiler/rom.ts — drive the ARM toolchain and patch the cart header.
-// Toolchain flags and the header patch carry over from Pocket Static's GBA
-// target (arm-none-eabi-gcc, flat ROM, flashcart-correct header).
+// vapor/compiler/rom.ts — drive the console toolchains and patch cart headers.
+// Three targets, three toolchains, one generated C file:
+//   GBA: arm-none-eabi-gcc, flat ROM, Nintendo-logo/checksum patch
+//   GB:  sdcc (SM83) + sdasgb + makebin + rgbfix, ROM-only cart
+//   NES: cc65/ca65/ld65, NROM-256 + CHR-ROM font, generated ld65 config
+// Toolchain recipes carry over from Pocket Static's target packagers.
 
 import { $ } from "bun";
 import { dirname, join } from "node:path";
-import type { CompiledApp } from "./compile.ts";
+import { nesFontBytes, VAPOR_TARGETS, type CompiledApp, type VaporTargetName } from "./compile.ts";
 
-const RUNTIME = join(import.meta.dir, "..", "runtime", "gba");
+const RUNTIME = join(import.meta.dir, "..", "runtime");
+const CC65_LIB = "/opt/homebrew/share/cc65/lib/none.lib";
 
 // The GBA BIOS validates these 156 bytes at boot on real hardware; every
 // homebrew toolchain (gbafix, devkitARM, tonc) ships the same table.
@@ -24,6 +28,28 @@ const NINTENDO_LOGO = [
   0xD6,0x25,0xE4,0x8B,0x38,0x0A,0xAC,0x72,0x21,0xD4,0xF8,0x07,
 ];
 
+function targetDefines(target: VaporTargetName): string[] {
+  const t = VAPOR_TARGETS[target];
+  return [
+    `-DVP_GRID_W=${t.width}`,
+    `-DVP_GRID_H=${t.height}`,
+    `-DVP_STR_CAP=${t.strCap}`,
+    `-DVP_VIEW_CAP=${t.poolCap}`,
+  ];
+}
+
+export async function buildRom(
+  app: CompiledApp,
+  target: VaporTargetName,
+  outRom: string,
+): Promise<{ romBytes: number }> {
+  if (target === "gba") return buildGbaRom(app, outRom);
+  if (target === "gb") return buildGbRom(app, outRom);
+  return buildNesRom(app, outRom);
+}
+
+// ---- GBA -------------------------------------------------------------------
+
 export async function buildGbaRom(app: CompiledApp, outRom: string): Promise<{ romBytes: number }> {
   const outDir = dirname(outRom);
   const genDir = join(outDir, "gen-gba");
@@ -31,8 +57,10 @@ export async function buildGbaRom(app: CompiledApp, outRom: string): Promise<{ r
   const genC = join(genDir, "gen_app.c");
   await Bun.write(genC, app.c);
 
+  const gbaDir = join(RUNTIME, "gba");
   const elf = join(genDir, "app.elf");
-  await $`arm-none-eabi-gcc -mcpu=arm7tdmi -mthumb-interwork -marm -ffreestanding -nostdlib -Os -fno-strict-aliasing -Wall -Werror=implicit-function-declaration -I${RUNTIME} -T${RUNTIME}/gba.ld ${RUNTIME}/crt0.s ${RUNTIME}/vapor_gba.c ${genC} -lgcc -o ${elf}`;
+  const defines = targetDefines("gba");
+  await $`arm-none-eabi-gcc -mcpu=arm7tdmi -mthumb-interwork -marm -ffreestanding -nostdlib -Os -fno-strict-aliasing -Wall -Werror=implicit-function-declaration ${defines} -I${RUNTIME} -I${gbaDir} -T${gbaDir}/gba.ld ${gbaDir}/crt0.s ${RUNTIME}/vapor_core.c ${gbaDir}/vapor_gba.c ${genC} -lgcc -o ${elf}`;
   await $`arm-none-eabi-objcopy -O binary ${elf} ${outRom}`;
 
   const rom = new Uint8Array(await Bun.file(outRom).arrayBuffer());
@@ -45,5 +73,136 @@ export async function buildGbaRom(app: CompiledApp, outRom: string): Promise<{ r
   for (let i = 0xa0; i <= 0xbc; i++) sum = (sum + rom[i]) & 0xff;
   rom[0xbd] = -(0x19 + sum) & 0xff;
   await Bun.write(outRom, rom);
+  return { romBytes: rom.length };
+}
+
+// ---- GB --------------------------------------------------------------------
+
+export async function buildGbRom(app: CompiledApp, outRom: string): Promise<{ romBytes: number }> {
+  const outDir = dirname(outRom);
+  const genDir = join(outDir, "gen-gb");
+  await $`mkdir -p ${genDir}`.quiet();
+  const genC = join(genDir, "gen_app.c");
+  await Bun.write(genC, app.c);
+
+  const gbDir = join(RUNTIME, "gb");
+  const defines = targetDefines("gb");
+  const cflags = ["-msm83", "--opt-code-size", ...defines, `-I${RUNTIME}`, `-I${gbDir}`];
+
+  for (const [src, rel] of [
+    [join(RUNTIME, "vapor_core.c"), "vapor_core.rel"],
+    [join(gbDir, "vapor_gb.c"), "vapor_gb.rel"],
+    [genC, "gen_app.rel"],
+  ] as const) {
+    await $`sdcc ${cflags} -c ${src} -o ${join(genDir, rel)}`.quiet();
+  }
+  await $`sdasgb -plosgff -o ${join(genDir, "crt0.rel")} ${join(gbDir, "crt0.s")}`.quiet();
+
+  // _HOME holds sdcc's library routines (long div/mod): pin it into ROM
+  // after the header; _CODE starts at 0x0800 above it.
+  const ihx = join(genDir, "app.ihx");
+  await $`sdcc -msm83 --no-std-crt0 --code-loc 0x0800 --data-loc 0xc0a0 -Wl-b_HOME=0x0150 ${join(genDir, "crt0.rel")} ${join(genDir, "vapor_core.rel")} ${join(genDir, "vapor_gb.rel")} ${join(genDir, "gen_app.rel")} -o ${ihx}`.quiet();
+  await $`makebin -Z -yo 2 ${ihx} ${outRom}`.quiet();
+  const title = app.title.toUpperCase().replace(/[^A-Z0-9 ]/g, "").slice(0, 11);
+  await $`rgbfix -v -p 0xff -t ${title} ${outRom}`.quiet();
+  const rom = new Uint8Array(await Bun.file(outRom).arrayBuffer());
+  return { romBytes: rom.length };
+}
+
+// ---- NES -------------------------------------------------------------------
+
+const NES_CFG = `SYMBOLS {
+  __STACKSTART__: type = weak, value = $0700;
+  __STACKSIZE__: type = weak, value = $0100;
+}
+MEMORY {
+  HDR: start = $0000, size = $0010, type = ro, file = %O, fill = yes;
+  PRG: start = $8000, size = $8000, type = ro, file = %O, fill = yes, fillval = $ff;
+  CHR: start = $0000, size = $2000, type = ro, file = %O, fill = yes;
+  ZP: start = $0002, size = $00fa, type = rw;
+  DEBUGRAM: start = $0200, size = $0358, type = rw;
+  RAM: start = $0558, size = $01a8, type = rw;
+}
+SEGMENTS {
+  HEADER: load = HDR, type = ro;
+  CODE: load = PRG, type = ro;
+  STARTUP: load = PRG, type = ro, optional = yes;
+  ONCE: load = PRG, type = ro, optional = yes;
+  RODATA: load = PRG, type = ro;
+  DATA: load = PRG, run = RAM, type = rw, define = yes;
+  VECTORS: load = PRG, type = ro, start = $fffa;
+  CHARS: load = CHR, type = ro;
+  ZEROPAGE: load = ZP, type = zp;
+  DEBUG: load = DEBUGRAM, type = bss, define = yes;
+  BSS: load = RAM, type = bss, define = yes;
+}
+FEATURES {
+  CONDES: type = constructor, label = __CONSTRUCTOR_TABLE__, count = __CONSTRUCTOR_COUNT__, segment = RODATA;
+  CONDES: type = destructor, label = __DESTRUCTOR_TABLE__, count = __DESTRUCTOR_COUNT__, segment = RODATA;
+}
+`;
+
+export async function buildNesRom(app: CompiledApp, outRom: string): Promise<{ romBytes: number }> {
+  const outDir = dirname(outRom);
+  const genDir = join(outDir, "gen-nes");
+  await $`mkdir -p ${genDir}`.quiet();
+  const genC = join(genDir, "gen_app.c");
+  await Bun.write(genC, app.c);
+  await Bun.write(join(genDir, "nes.cfg"), NES_CFG);
+
+  // iNES header: NROM (mapper 0), 32K PRG, 8K CHR
+  await Bun.write(
+    join(genDir, "gen_header.s"),
+    [
+      "; gen_header.s — GENERATED. iNES: mapper 0 (NROM-256), CHR-ROM.",
+      '.segment "HEADER"',
+      ".byte $4e, $45, $53, $1a",
+      ".byte 2",
+      ".byte 1",
+      ".byte 0",
+      ".byte 0, 0, 0, 0, 0, 0, 0, 0, 0",
+      "",
+    ].join("\n"),
+  );
+
+  // CHR-ROM: tile 0 blank, then 190 glyph tiles (2 styles x 95)
+  {
+    const lines = ['; gen_chr.s — GENERATED font CHR.', '.segment "CHARS"', `.res 16, $00`];
+    const bytes = nesFontBytes();
+    for (let at = 0; at < bytes.length; at += 16) {
+      lines.push(`.byte ${bytes.slice(at, at + 16).join(",")}`);
+    }
+    await Bun.write(join(genDir, "gen_chr.s"), lines.join("\n") + "\n");
+  }
+
+  const nesDir = join(RUNTIME, "nes");
+  const defines = targetDefines("nes");
+  const cc = ["-t", "none", "-O", ...defines, `-I${RUNTIME}`, `-I${nesDir}`];
+
+  const objs: string[] = [];
+  for (const [src, name] of [
+    [join(RUNTIME, "vapor_core.c"), "vapor_core"],
+    [join(nesDir, "vapor_nes.c"), "vapor_nes"],
+    [genC, "gen_app"],
+  ] as const) {
+    const s = join(genDir, `${name}.cc65.s`);
+    await $`cc65 ${cc} -o ${s} ${src}`.quiet();
+    const o = join(genDir, `${name}.o`);
+    await $`ca65 -o ${o} ${s}`.quiet();
+    objs.push(o);
+  }
+  for (const asm of ["gen_header", "gen_chr"]) {
+    const o = join(genDir, `${asm}.o`);
+    await $`ca65 -o ${o} ${join(genDir, `${asm}.s`)}`.quiet();
+    objs.push(o);
+  }
+  {
+    const o = join(genDir, "crt0.o");
+    await $`ca65 -o ${o} ${join(nesDir, "crt0.s")}`.quiet();
+    objs.push(o);
+  }
+
+  await $`ld65 -C ${join(genDir, "nes.cfg")} -o ${outRom} ${objs} ${CC65_LIB}`.quiet();
+  const rom = new Uint8Array(await Bun.file(outRom).arrayBuffer());
   return { romBytes: rom.length };
 }

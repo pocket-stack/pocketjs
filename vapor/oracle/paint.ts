@@ -36,23 +36,23 @@ function collectRows(root: VaporElement, out: VaporElement[]): void {
   }
 }
 
-export function paintGrid(root: VaporElement): CellGrid {
+export function paintGrid(root: VaporElement, width = GRID_W, height = GRID_H): CellGrid {
   const chars: string[][] = [];
   const pals: number[][] = [];
-  for (let y = 0; y < GRID_H; y++) {
-    chars.push(new Array<string>(GRID_W).fill(" "));
-    pals.push(new Array<number>(GRID_W).fill(0));
+  for (let y = 0; y < height; y++) {
+    chars.push(new Array<string>(width).fill(" "));
+    pals.push(new Array<number>(width).fill(0));
   }
 
   const rows: VaporElement[] = [];
   collectRows(root, rows);
   for (const row of rows) {
     const y = Number(row.getAttribute("y") ?? -1) | 0;
-    if (y < 0 || y >= GRID_H) throw new Error(`row y out of range: ${row.getAttribute("y")}`);
+    if (y < 0 || y >= height) throw new Error(`row y out of range: ${row.getAttribute("y")}`);
     const x = Number(row.getAttribute("x") ?? 0) | 0;
     const pal = Number(row.getAttribute("pal") ?? 0) | 0;
     const text = rowText(row);
-    for (let col = x; col < GRID_W; col++) {
+    for (let col = x; col < width; col++) {
       const ch = text[col - x] ?? " ";
       const code = ch.charCodeAt(0);
       chars[y][col] = code >= 0x20 && code <= 0x7e ? ch : "?";

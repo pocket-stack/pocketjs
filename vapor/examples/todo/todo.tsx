@@ -16,6 +16,7 @@
 
 import { computed, ref } from "vue";
 import { Button, onButton } from "../../host/input.ts";
+import { SCREEN } from "../../host/screen.ts";
 
 interface Todo {
   text: string;
@@ -28,8 +29,11 @@ const PAL = { text: 0, title: 1, accent: 2, dim: 3, cursor: 4, edit: 5 };
 const FILTERS = ["ALL", "ACTIVE", "DONE"];
 const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789";
 const LIST_Y = 3;
-const WINDOW = 12;
+const WINDOW = SCREEN.height - 8;
+const EDIT_Y = SCREEN.height - 3;
+const HELP_Y = SCREEN.height - 1;
 const TEXT_MAX = 20;
+const NARROW = SCREEN.width < 30;
 
 // ---- UI components ----------------------------------------------------------
 // Presentational, pure functions of props: they own their palette and
@@ -175,6 +179,7 @@ export default () => {
     [Button.A]: toggleDone,
     [Button.B]: deleteCurrent,
     [Button.R]: cycleFilter,
+    [Button.Right]: cycleFilter,
     [Button.Select]: clearDone,
     [Button.Start]: openEditor,
   };
@@ -201,11 +206,19 @@ export default () => {
       ))}
       {filtered.value.length === 0 ? <Notice line={LIST_Y} text="NOTHING HERE" /> : null}
       {editing.value ? (
-        <EditorBar line={17} draft={draft.value} glyph={GLYPHS[glyph.value]} />
+        <EditorBar line={EDIT_Y} draft={draft.value} glyph={GLYPHS[glyph.value]} />
       ) : null}
       <HelpBar
-        line={19}
-        text={editing.value ? "A:PUT B:DEL ST:SAVE SE:QUIT" : "A:DONE B:DEL R:FILT ST:NEW"}
+        line={HELP_Y}
+        text={
+          editing.value
+            ? NARROW
+              ? "A:+ B:- ST:OK SE:Q"
+              : "A:PUT B:DEL ST:SAVE SE:QUIT"
+            : NARROW
+              ? "A:OK B:X >:F ST:NEW"
+              : "A:DONE B:DEL R:FILT ST:NEW"
+        }
       />
     </>
   );

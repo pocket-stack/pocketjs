@@ -30,6 +30,25 @@ export interface DebugSlot {
   kind: "num" | "bool" | "str" | "listLen";
 }
 
+export type VaporTargetName = "gba" | "gb" | "nes";
+
+export interface VaporTarget {
+  name: VaporTargetName;
+  width: number;
+  height: number;
+  poolCap: number;
+  strCap: number;
+}
+
+/** Per-console geometry + memory budgets. NES is bounded by 2 KB of CPU
+ * RAM (shadow grid + debug block + pool must all fit), GB by DMG tile-id
+ * space (2 glyph styles x 95 glyphs). */
+export const VAPOR_TARGETS: Record<VaporTargetName, VaporTarget> = {
+  gba: { name: "gba", width: 30, height: 20, poolCap: 32, strCap: 24 },
+  gb: { name: "gb", width: 20, height: 18, poolCap: 32, strCap: 24 },
+  nes: { name: "nes", width: 22, height: 18, poolCap: 8, strCap: 20 },
+};
+
 export interface CompiledApp {
   c: string;
   title: string;
@@ -145,15 +164,18 @@ type Binding =
   | KeymapBinding
   | ComponentBinding;
 
-const POOL_CAP = 32;
-
 // ---------------------------------------------------------------------------
 // Compiler
 // ---------------------------------------------------------------------------
 
-export function compileVaporApp(fileName: string, source: string, title = "VAPOR"): CompiledApp {
+export function compileVaporApp(
+  fileName: string,
+  source: string,
+  title = "VAPOR",
+  targetName: VaporTargetName = "gba",
+): CompiledApp {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TSX);
-  return new AppCompiler(sf, title).compile();
+  return new AppCompiler(sf, title, VAPOR_TARGETS[targetName]).compile();
 }
 
 class AppCompiler {
@@ -181,6 +203,7 @@ class AppCompiler {
   constructor(
     private sf: ts.SourceFile,
     private title: string,
+    private target: VaporTarget,
   ) {}
 
   private err(node: ts.Node, message: string): never {
@@ -223,6 +246,13 @@ class AppCompiler {
         if (imported === "onButton") this.hostOnButton = local;
         else if (imported === "Button") this.hostButton = local;
         else this.err(spec, `unsupported host import: ${imported}`);
+      } else if (/\/host\/screen(\.ts)?$/.test(from)) {
+        if (imported !== "SCREEN") this.err(spec, `unsupported host import: ${imported}`);
+        this.scope.set(local, {
+          kind: "const",
+          name: local,
+          value: { width: this.target.width, height: this.target.height },
+        });
       } else this.err(stmt, `unsupported import source: ${from}`);
     }
   }
@@ -249,7 +279,8 @@ class AppCompiler {
       if (!ts.isIdentifier(decl.name) || !decl.initializer) this.err(decl, "const needs a simple name + initializer");
       const name = decl.name.text;
       const init = decl.initializer;
-      if (ts.isNumericLiteral(init)) this.scope.set(name, { kind: "const", name, value: Number(init.text) });
+      const folded = this.constNum(init) ?? this.constBool(init);
+      if (folded !== null) this.scope.set(name, { kind: "const", name, value: folded });
       else if (ts.isStringLiteral(init)) this.scope.set(name, { kind: "const", name, value: init.text });
       else if (ts.isArrayLiteralExpression(init)) {
         const items = init.elements.map((el) => {
@@ -383,6 +414,26 @@ class AppCompiler {
 
   private propsCtx: PropsCtx | null = null;
 
+  // cc65 is C89: block-scope declarations must lead their block, so every
+  // generated function collects pointer/local declarations here and emits
+  // them at the top ("hoisting"), with assignments left in place.
+  private hoist: string[] | null = null;
+
+  private declare(decl: string): void {
+    if (!this.hoist) throw new Error("declaration emitted outside a function context");
+    this.hoist.push(decl);
+  }
+
+  private withHoist(build: (body: string[]) => void): { decls: string[]; body: string[] } {
+    const prev = this.hoist;
+    this.hoist = [];
+    const body: string[] = [];
+    build(body);
+    const decls = this.hoist.map((d) => `  ${d}`);
+    this.hoist = prev;
+    return { decls, body };
+  }
+
   private scanComponent(decl: ts.FunctionDeclaration): void {
     if (!decl.name || !/^[A-Z]/.test(decl.name.text))
       this.err(decl, "module functions must be UI components (Capitalized name)");
@@ -482,15 +533,16 @@ class AppCompiler {
   }
 
   private compileActionArrow(cName: string, arrow: ts.ArrowFunction): void {
-    const out: string[] = [];
     const saved = new Map(this.scope);
-    if (ts.isBlock(arrow.body)) {
-      for (const stmt of arrow.body.statements) this.compileStmt(stmt, out, "  ");
-    } else {
-      this.compileExprStmt(arrow.body, out, "  ");
-    }
+    const { decls, body } = this.withHoist((out) => {
+      if (ts.isBlock(arrow.body)) {
+        for (const stmt of arrow.body.statements) this.compileStmt(stmt, out, "  ");
+      } else {
+        this.compileExprStmt(arrow.body, out, "  ");
+      }
+    });
     this.scope = saved;
-    this.bodies.push(`static void ${cName}(void) {\n${out.join("\n")}\n}\n`);
+    this.bodies.push(`static void ${cName}(void) {\n${[...decls, ...body].join("\n")}\n}\n`);
   }
 
   /** Resolve a keymap-typed expression to a C fnptr-table expression. */
@@ -555,10 +607,10 @@ class AppCompiler {
     const deps = new Set<string>();
     const prevDeps = this.curDeps;
     this.curDeps = deps;
-    const lines: string[] = [];
 
     const index = this.computeds.length;
-    let binding: ComputedBinding;
+    let binding!: ComputedBinding;
+    const hoisted = this.withHoist((lines) => {
     if (this.isViewExpr(body)) {
       const maxLen = this.viewMaxLen(body);
       binding = { kind: "computed", name, index, valTy: this.viewTyOf(body), deps, maxLen };
@@ -577,6 +629,8 @@ class AppCompiler {
       };
       lines.push(`  c_${name}_v = ${val.c};`);
     }
+    });
+    const lines = [...hoisted.decls, ...hoisted.body];
     this.curDeps = prevDeps;
 
     const cTy =
@@ -677,10 +731,29 @@ class AppCompiler {
     const base = this.valueBase(e);
     if (base) {
       const b = this.scope.get(base);
-      if (b?.kind === "ref") return POOL_CAP;
+      if (b?.kind === "ref") return this.target.poolCap;
       if (b?.kind === "computed") return b.maxLen;
     }
-    return POOL_CAP;
+    return this.target.poolCap;
+  }
+
+  /** Comparisons over compile-time numbers fold to 0/1 (SCREEN.width < 30). */
+  private constBool(e: ts.Expression): number | null {
+    e = this.unparen(e);
+    if (!ts.isBinaryExpression(e)) return null;
+    const l = this.constNum(e.left);
+    const r = this.constNum(e.right);
+    if (l === null || r === null) return null;
+    const K = ts.SyntaxKind;
+    switch (e.operatorToken.kind) {
+      case K.LessThanToken: return l < r ? 1 : 0;
+      case K.GreaterThanToken: return l > r ? 1 : 0;
+      case K.LessThanEqualsToken: return l <= r ? 1 : 0;
+      case K.GreaterThanEqualsToken: return l >= r ? 1 : 0;
+      case K.EqualsEqualsEqualsToken: return l === r ? 1 : 0;
+      case K.ExclamationEqualsEqualsToken: return l !== r ? 1 : 0;
+      default: return null;
+    }
   }
 
   /** slice(x, x + K) with syntactically-identical x -> K. */
@@ -762,7 +835,7 @@ class AppCompiler {
         const p = this.tmp("p");
         out.push(`${ind}{ u8 ${i}; ${target}.len = 0;`);
         out.push(`${ind}  for (${i} = 0; ${i} < ${src.len}; ${i}++) {`);
-        out.push(`${ind}    rec_${iface.toLowerCase()} *${p} = &g_${listRef}[${src.at(i)}];`);
+        out.push(`${ind}    rec_${iface.toLowerCase()} *${p} = g_${listRef} + (u16)(${src.at(i)});`);
         const saved = new Map(this.scope);
         this.scope.set(param, { kind: "local", cName: p, ty: { k: "obj", iface, listRef } });
         const pred = this.compileExpr(arrow.body, out, ind + "    ");
@@ -814,7 +887,8 @@ class AppCompiler {
       if (b?.kind === "computed" && b.valTy.k === "view") {
         for (const d of b.deps) this.depRef(d);
         const v = this.tmp("v");
-        out.push(`${ind}const vp_view *${v} = c_${b.name}();`);
+        this.declare(`const vp_view *${v};`);
+        out.push(`${ind}${v} = c_${b.name}();`);
         return { len: `${v}->len`, at: (i) => `${v}->idx[${i}]` };
       }
     }
@@ -893,6 +967,10 @@ class AppCompiler {
     if (ts.isBinaryExpression(e)) return this.compileBinary(e, out, ind);
 
     if (ts.isConditionalExpression(e)) {
+      // compile-time condition (SCREEN geometry): pick the branch, drop the
+      // other from ROM entirely — the responsive-layout dead branch
+      const cf = this.constNum(e.condition) ?? this.constBool(e.condition);
+      if (cf !== null) return this.compileExpr(cf ? e.whenTrue : e.whenFalse, out, ind);
       const c = this.compileExpr(e.condition, out, ind);
       const a = this.compileExpr(e.whenTrue, out, ind);
       const b = this.compileExpr(e.whenFalse, out, ind);
@@ -954,8 +1032,9 @@ class AppCompiler {
       const iface = this.viewIface(objExpr);
       this.depRef(listRef);
       const p = this.tmp("e");
+      this.declare(`rec_${iface.toLowerCase()} *${p};`);
       out.push(
-        `${ind}rec_${iface.toLowerCase()} *${p} = (${idx.c} >= 0 && ${idx.c} < (s32)${src.len}) ? &g_${listRef}[${src.at(`(u8)(${idx.c})`)}] : 0;`,
+        `${ind}${p} = (${idx.c} >= 0 && ${idx.c} < (s32)${src.len}) ? g_${listRef} + (u16)(${src.at(`(u8)(${idx.c})`)}) : 0;`,
       );
       return { c: p, ty: { k: "obj", iface, listRef } };
     }
@@ -1110,10 +1189,11 @@ class AppCompiler {
         const v = this.compileExpr(init, inner, ind);
         out.push(...inner);
         const cName = this.tmp(`l_${name}_`);
-        if (v.ty.k === "num") out.push(`${ind}s32 ${cName} = ${v.c};`);
-        else if (v.ty.k === "bool") out.push(`${ind}u8 ${cName} = ${v.c};`);
-        else if (v.ty.k === "obj") out.push(`${ind}rec_${v.ty.iface.toLowerCase()} *${cName} = ${v.c};`);
+        if (v.ty.k === "num") this.declare(`s32 ${cName};`);
+        else if (v.ty.k === "bool") this.declare(`u8 ${cName};`);
+        else if (v.ty.k === "obj") this.declare(`rec_${v.ty.iface.toLowerCase()} *${cName};`);
         else this.err(decl, `unsupported local type: ${v.ty.k}`);
+        out.push(`${ind}${cName} = ${v.c};`);
         this.scope.set(name, { kind: "local", cName, ty: v.ty });
       }
       return;
@@ -1273,7 +1353,7 @@ class AppCompiler {
         const k = this.tmp("k");
         out.push(`${ind}{ vp_view ${nv}; u8 ${k};`);
         this.compileViewInto(this.unparen(rhs), nv, out, ind + "  ");
-        out.push(`${ind}  for (${k} = 0; ${k} < ${nv}.len; ${k}++) g_${b.name}[${k}] = g_${b.name}[${nv}.idx[${k}]];`);
+        out.push(`${ind}  for (${k} = 0; ${k} < ${nv}.len; ${k}++) *(g_${b.name} + (u16)${k}) = *(g_${b.name} + (u16)(${nv}.idx[${k}]));`);
         out.push(`${ind}  g_${b.name}_len = ${nv}.len;`);
         out.push(`${ind}  ${this.markCode(b.name)}; /* new array identity always triggers */`);
         out.push(`${ind}}`);
@@ -1307,8 +1387,8 @@ class AppCompiler {
     const arg = call.arguments[0];
     if (!arg || !ts.isObjectLiteralExpression(arg)) this.err(call, "push takes an object literal");
     const iface = this.ifaces.get(b.iface!)!;
-    out.push(`${ind}if (g_${listRef}_len < ${POOL_CAP}) {`);
-    out.push(`${ind}  rec_${iface.name.toLowerCase()} *np = &g_${listRef}[g_${listRef}_len++];`);
+    out.push(`${ind}if (g_${listRef}_len < ${this.target.poolCap}) {`);
+    out.push(`${ind}  rec_${iface.name.toLowerCase()} *np = g_${listRef} + (u16)(g_${listRef}_len++);`);
     for (const propNode of arg.properties) {
       if (!ts.isPropertyAssignment(propNode) || !ts.isIdentifier(propNode.name))
         this.err(propNode, "push object must use `field: value`");
@@ -1339,7 +1419,7 @@ class AppCompiler {
     const at = this.tmp("at");
     out.push(`${ind}{ s32 ${at} = ${idx.c}; u8 ${i};`);
     out.push(`${ind}  if (${at} >= 0 && ${at} < (s32)g_${listRef}_len) {`);
-    out.push(`${ind}    for (${i} = (u8)${at}; ${i} + 1 < g_${listRef}_len; ${i}++) g_${listRef}[${i}] = g_${listRef}[${i} + 1];`);
+    out.push(`${ind}    for (${i} = (u8)${at}; ${i} + 1 < g_${listRef}_len; ${i}++) *(g_${listRef} + (u16)${i}) = *(g_${listRef} + (u16)${i} + 1);`);
     out.push(`${ind}    g_${listRef}_len--;`);
     out.push(`${ind}  }`);
     out.push(`${ind}  ${this.markCode(listRef)};`);
@@ -1349,16 +1429,17 @@ class AppCompiler {
   private emitFn(b: FnBinding): void {
     if (b.emitted) return;
     b.emitted = true; // set first: recursion guard
-    const out: string[] = [];
     const prevDeps = this.curDeps;
     this.curDeps = b.deps;
     const saved = new Map(this.scope);
-    for (const p of b.params) this.scope.set(p, { kind: "local", cName: `p_${p}`, ty: NUM });
-    for (const stmt of b.decl.body!.statements) this.compileStmt(stmt, out, "  ");
+    const { decls, body } = this.withHoist((out) => {
+      for (const p of b.params) this.scope.set(p, { kind: "local", cName: `p_${p}`, ty: NUM });
+      for (const stmt of b.decl.body!.statements) this.compileStmt(stmt, out, "  ");
+    });
     this.scope = saved;
     this.curDeps = prevDeps;
     const sig = b.params.length ? b.params.map((p) => `s32 p_${p}`).join(", ") : "void";
-    this.bodies.push(`static void fn_${b.name}(${sig}) {\n${out.join("\n")}\n}\n`);
+    this.bodies.push(`static void fn_${b.name}(${sig}) {\n${[...decls, ...body].join("\n")}\n}\n`);
   }
 
   // ---- JSX -> effects -------------------------------------------------------
@@ -1370,6 +1451,7 @@ class AppCompiler {
     interface Unit {
       span: [number, number];
       deps: Set<string>;
+      decls: string[];
       body: string[];
       isStatic: boolean;
     }
@@ -1418,9 +1500,16 @@ class AppCompiler {
       if (hit) {
         hit.span = [Math.min(hit.span[0], u.span[0]), Math.max(hit.span[1], u.span[1])];
         for (const d of u.deps) hit.deps.add(d);
+        hit.decls.push(...u.decls);
         hit.body.push(...u.body);
       } else {
-        merged.push({ ...u, deps: new Set(u.deps), body: [...u.body], span: [...u.span] as [number, number] });
+        merged.push({
+          ...u,
+          deps: new Set(u.deps),
+          decls: [...u.decls],
+          body: [...u.body],
+          span: [...u.span] as [number, number],
+        });
       }
     }
     // re-merge until fixpoint (span growth can create new overlaps)
@@ -1435,6 +1524,7 @@ class AppCompiler {
               Math.max(merged[i].span[1], merged[j].span[1]),
             ];
             for (const d of merged[j].deps) merged[i].deps.add(d);
+            merged[i].decls.push(...merged[j].decls);
             merged[i].body.push(...merged[j].body);
             merged.splice(j, 1);
             changed = true;
@@ -1449,7 +1539,7 @@ class AppCompiler {
     const effects: { name: string; mask: number; span: [number, number] }[] = [];
     merged.forEach((u, i) => {
       const name = `eff_${i}`;
-      const body = [`  vp_row_clear(${u.span[0]}, ${u.span[1]});`, ...u.body];
+      const body = [...u.decls, `  vp_row_clear(${u.span[0]}, ${u.span[1]});`, ...u.body];
       this.bodies.push(`static void ${name}(void) {\n${body.join("\n")}\n}\n`);
       effects.push({ name, mask: this.maskOf(u.deps), span: u.span });
     });
@@ -1553,13 +1643,14 @@ class AppCompiler {
     if (!yExpr) this.err(src.node, "row needs a y attribute");
     const y = this.constNum(yExpr);
     if (y === null) this.err(src.node, "row y must be compile-time constant here");
-    if (y < 0 || y >= 20) this.err(src.node, `row y out of range: ${y}`);
+    if (y < 0 || y >= this.target.height) this.err(src.node, `row y out of range: ${y}`);
     return y;
   }
 
   private compileRowUnit(el: ts.JsxElement | ts.JsxSelfClosingElement): {
     span: [number, number];
     deps: Set<string>;
+    decls: string[];
     body: string[];
     isStatic: boolean;
   } {
@@ -1570,16 +1661,18 @@ class AppCompiler {
     const deps = new Set<string>();
     const prev = this.curDeps;
     this.curDeps = deps;
-    const body: string[] = [];
-    this.compileRowPaint(src, String(y), body, "  ");
+    const { decls, body } = this.withHoist((out) => {
+      this.compileRowPaint(src, String(y), out, "  ");
+    });
     this.curDeps = prev;
     this.propsCtx = prevCtx;
-    return { span: [y, y + 1], deps, body, isStatic: deps.size === 0 };
+    return { span: [y, y + 1], deps, decls, body, isStatic: deps.size === 0 };
   }
 
   private compileConditionalUnit(e: ts.ConditionalExpression): {
     span: [number, number];
     deps: Set<string>;
+    decls: string[];
     body: string[];
     isStatic: boolean;
   } {
@@ -1592,23 +1685,26 @@ class AppCompiler {
     const deps = new Set<string>();
     const prev = this.curDeps;
     this.curDeps = deps;
-    const body: string[] = [];
-    const cond = this.compileExpr(e.condition, body, "  ");
-    const { src, ctx } = this.resolveRenderable(whenTrue);
-    const prevCtx = this.propsCtx;
-    this.propsCtx = ctx ?? prevCtx;
-    const y = this.rowConstY(src);
-    body.push(`  if (${this.truthy(cond)}) {`);
-    this.compileRowPaint(src, String(y), body, "    ");
-    body.push(`  }`);
-    this.propsCtx = prevCtx;
+    let y = 0;
+    const { decls, body } = this.withHoist((out) => {
+      const cond = this.compileExpr(e.condition, out, "  ");
+      const { src, ctx } = this.resolveRenderable(whenTrue);
+      const prevCtx = this.propsCtx;
+      this.propsCtx = ctx ?? prevCtx;
+      y = this.rowConstY(src);
+      out.push(`  if (${this.truthy(cond)}) {`);
+      this.compileRowPaint(src, String(y), out, "    ");
+      out.push(`  }`);
+      this.propsCtx = prevCtx;
+    });
     this.curDeps = prev;
-    return { span: [y, y + 1], deps, body, isStatic: false };
+    return { span: [y, y + 1], deps, decls, body, isStatic: false };
   }
 
   private compileMapUnit(call: ts.CallExpression): {
     span: [number, number];
     deps: Set<string>;
+    decls: string[];
     body: string[];
     isStatic: boolean;
   } {
@@ -1625,8 +1721,9 @@ class AppCompiler {
     const deps = new Set<string>();
     const prev = this.curDeps;
     this.curDeps = deps;
-    const body: string[] = [];
-
+    let yBase = 0;
+    let maxLenOut = 0;
+    const { decls, body } = this.withHoist((body) => {
     const src = this.viewSource(viewExpr, body, "  ");
     const listRef = this.viewListRef(viewExpr);
     const iface = this.viewIface(viewExpr);
@@ -1635,7 +1732,7 @@ class AppCompiler {
     const pV = this.tmp("t");
     body.push(`  { u8 ${iV};`);
     body.push(`  for (${iV} = 0; ${iV} < ${src.len}; ${iV}++) {`);
-    body.push(`    rec_${iface.toLowerCase()} *${pV} = &g_${listRef}[${src.at(iV)}];`);
+    body.push(`    rec_${iface.toLowerCase()} *${pV} = g_${listRef} + (u16)(${src.at(iV)});`);
 
     const saved = new Map(this.scope);
     this.scope.set(itemParam, { kind: "local", cName: pV, ty: { k: "obj", iface, listRef } });
@@ -1646,20 +1743,23 @@ class AppCompiler {
     const yExpr = this.jsxAttr(rowSrc, "y");
     if (!yExpr) this.err(rowSrc.node, "row needs y");
     // span: y = base + i requires resolving the base constant (through props)
-    const yBase = this.mapYBase(yExpr, indexParam);
+    const yBaseInner = this.mapYBase(yExpr, indexParam);
     const yV = this.compileExpr(yExpr, body, "    ");
     const yTmp = this.tmp("y");
     body.push(`    { u8 ${yTmp} = (u8)(${yV.c});`);
-    body.push(`    if (${yTmp} < ${20}) {`);
+    body.push(`    if (${yTmp} < ${this.target.height}) {`);
     this.compileRowPaint(rowSrc, yTmp, body, "      ");
     body.push(`    } }`);
     this.propsCtx = prevCtx;
     this.scope = saved;
     body.push(`  } }`);
+    yBase = yBaseInner;
+    maxLenOut = maxLen;
+    });
     this.curDeps = prev;
 
-    const span: [number, number] = [yBase, Math.min(20, yBase + maxLen)];
-    return { span, deps, body, isStatic: false };
+    const span: [number, number] = [yBase, Math.min(this.target.height, yBase + maxLenOut)];
+    return { span, deps, decls, body, isStatic: false };
   }
 
   /** y must be `i` or `CONST + i` / `i + CONST` inside a map row. */
@@ -1682,17 +1782,21 @@ class AppCompiler {
   private emit(): CompiledApp {
     // handler
     if (!this.handler) this.err(this.sf, "component must register onButton");
-    const handlerOut: string[] = [];
+    let handlerOut: string[] = [];
     {
       const saved = new Map(this.scope);
       const param = this.handler.parameters[0]?.name.getText(this.sf);
       if (!param) this.err(this.handler, "onButton arrow needs a (b) param");
       this.scope.set(param, { kind: "local", cName: "b_arg", ty: NUM });
-      if (ts.isBlock(this.handler.body)) {
-        for (const stmt of this.handler.body.statements) this.compileStmt(stmt, handlerOut, "  ");
-      } else {
-        this.compileExprStmt(this.handler.body, handlerOut, "  ");
-      }
+      const handlerArrow = this.handler;
+      const { decls, body } = this.withHoist((out) => {
+        if (ts.isBlock(handlerArrow.body)) {
+          for (const stmt of handlerArrow.body.statements) this.compileStmt(stmt, out, "  ");
+        } else {
+          this.compileExprStmt(handlerArrow.body, out, "  ");
+        }
+      });
+      handlerOut = [...decls, ...body];
       this.scope = saved;
     }
 
@@ -1711,7 +1815,7 @@ class AppCompiler {
       } else {
         const arr = ref.seed as ts.ArrayLiteralExpression;
         const iface = this.ifaces.get(ref.iface!)!;
-        if (arr.elements.length > POOL_CAP) this.err(arr, `seed exceeds pool capacity ${POOL_CAP}`);
+        if (arr.elements.length > this.target.poolCap) this.err(arr, `seed exceeds pool capacity ${this.target.poolCap}`);
         initOut.push(`  g_${ref.name}_len = ${arr.elements.length};`);
         arr.elements.forEach((el, i) => {
           if (!ts.isObjectLiteralExpression(el)) this.err(el, "list seeds are object literals");
@@ -1756,8 +1860,8 @@ class AppCompiler {
       } else if (ref.refTy === "str") {
         dbgOut.push(`  out[${dbgOff}] = g_${ref.name}.len;`);
         dbgOut.push(`  { u8 i; for (i = 0; i < VP_STR_CAP; i++) out[${dbgOff} + 1 + i] = (u8)g_${ref.name}.b[i]; }`);
-        debugSlots.push({ name: ref.name, offset: dbgOff, size: 1 + 24, kind: "str" });
-        dbgOff += 1 + 24;
+        debugSlots.push({ name: ref.name, offset: dbgOff, size: 1 + this.target.strCap, kind: "str" });
+        dbgOff += 1 + this.target.strCap;
         dbgOff = (dbgOff + 3) & ~3;
       } else {
         dbgOut.push(`  *(volatile s32 *)(out + ${dbgOff}) = (s32)g_${ref.name}_len;`);
@@ -1769,12 +1873,17 @@ class AppCompiler {
     // ---- assemble C ----
     const c: string[] = [];
     c.push("/* gen_app.c — GENERATED by vapor/compiler/compile.ts. DO NOT EDIT. */");
+    c.push(`/* target: ${this.target.name} (${this.target.width}x${this.target.height}) */`);
+    c.push(`#define VP_GRID_W ${this.target.width}`);
+    c.push(`#define VP_GRID_H ${this.target.height}`);
+    c.push(`#define VP_STR_CAP ${this.target.strCap}`);
+    c.push(`#define VP_VIEW_CAP ${this.target.poolCap}`);
     c.push('#include "vapor.h"');
     c.push("");
     c.push("static inline s32 vp_max(s32 a, s32 b) { return a > b ? a : b; }");
     c.push("static inline s32 vp_min(s32 a, s32 b) { return a < b ? a : b; }");
     c.push(
-      "static inline const char *vp_cstr_at(const char *const *arr, s32 n, s32 i) { return (i >= 0 && i < n) ? arr[i] : \"\"; }",
+      "static inline const char *vp_cstr_at(const char *const *arr, s32 n, s32 i) { return (i >= 0 && i < n) ? arr[i] : (const char *)\"\"; }",
     );
     c.push("static inline char vp_char_at(const char *s, s32 n, s32 i) { return (i >= 0 && i < n) ? s[i] : ' '; }");
     c.push("");
@@ -1793,11 +1902,11 @@ class AppCompiler {
       if (ref.refTy === "num") c.push(`static s32 g_${ref.name};`);
       else if (ref.refTy === "bool") c.push(`static s32 g_${ref.name};`);
       else if (ref.refTy === "str") c.push(`static vp_sb g_${ref.name};`);
-      else c.push(`static rec_${ref.iface!.toLowerCase()} g_${ref.name}[${POOL_CAP}]; static u8 g_${ref.name}_len;`);
+      else c.push(`static rec_${ref.iface!.toLowerCase()} g_${ref.name}[${this.target.poolCap}]; static u8 g_${ref.name}_len;`);
     }
     c.push("static u32 vp_dirty; static u32 c_valid;");
     c.push(`static const u32 C_INVAL[${Math.max(1, cInval.length)}] = { ${cInval.map((m) => `0x${m.toString(16)}u`).join(", ") || "0"} };`);
-    c.push("static void vp_mark(u8 refIdx) { vp_dirty |= (u32)1 << refIdx; c_valid &= ~C_INVAL[refIdx]; }");
+    c.push("static void vp_mark(u8 refIdx) { vp_dirty |= vp_bit32[refIdx]; c_valid &= ~C_INVAL[refIdx]; }");
     c.push("");
 
     // string literals
@@ -1844,8 +1953,7 @@ class AppCompiler {
     c.push("");
 
     // generated data: font, palettes, title
-    c.push(emitFontTiles());
-    c.push(emitPalettes());
+    c.push(emitTargetData(this.target));
     c.push(`const char vp_app_title[] = "${this.escC(this.title)}";`);
     c.push("");
 
@@ -1871,8 +1979,8 @@ class AppCompiler {
     const pools = this.refs.filter((r) => r.refTy === "list");
     const poolBytes = pools.reduce((acc, p) => {
       const iface = this.ifaces.get(p.iface!)!;
-      const rec = iface.fields.reduce((a, f) => a + (f.ty === "str" ? 25 : f.ty === "bool" ? 1 : 4), 0);
-      return acc + rec * POOL_CAP + 1;
+      const rec = iface.fields.reduce((a, f) => a + (f.ty === "str" ? this.target.strCap + 1 : f.ty === "bool" ? 1 : 4), 0);
+      return acc + rec * this.target.poolCap + 1;
     }, 0);
     const viewBytes = this.computeds.filter((comp) => comp.valTy.k === "view").length * 33;
     const scalarBytes = this.refs.filter((r) => r.refTy !== "list").reduce((a, r) => a + (r.refTy === "str" ? 25 : 4), 0);
@@ -1894,17 +2002,17 @@ class AppCompiler {
 }
 
 // ---------------------------------------------------------------------------
-// Generated data: font + palettes
+// Generated data: fonts + palettes, per-target encodings
 // ---------------------------------------------------------------------------
 
 const INK = 1;
 const PAPER = 2;
 
-function emitFontTiles(): string {
+/** GBA: 95 glyphs, 4bpp, pixel 1 = ink / 2 = paper (real palette banks). */
+function emitFontGba(): string {
   const bytes: number[] = [];
   for (let g = 0; g < 95; g++) {
     const bitmap = FONT8[g];
-    // 8x8 pixels, 4bpp: two pixels per byte, low nibble = left pixel
     for (let y = 0; y < 8; y++) {
       for (let x = 0; x < 8; x += 2) {
         const left = bitmap[y] & (0x80 >> x) ? INK : PAPER;
@@ -1916,6 +2024,61 @@ function emitFontTiles(): string {
   return `const u8 vp_font_tiles[] = { ${bytes.join(",")} };`;
 }
 
+/** DMG can't do per-tile palettes: styles are baked as glyph copies.
+ * Style 0 = ink shade 3 on paper 0, style 1 = inverse. 2bpp interleaved. */
+function emitFontGb(): string {
+  const bytes: number[] = [];
+  for (const [ink, paper] of [
+    [3, 0],
+    [0, 3],
+  ]) {
+    for (let g = 0; g < 95; g++) {
+      const bitmap = FONT8[g];
+      for (let y = 0; y < 8; y++) {
+        let lo = 0;
+        let hi = 0;
+        for (let x = 0; x < 8; x++) {
+          const v = bitmap[y] & (0x80 >> x) ? ink : paper;
+          if (v & 1) lo |= 0x80 >> x;
+          if (v & 2) hi |= 0x80 >> x;
+        }
+        bytes.push(lo, hi);
+      }
+    }
+  }
+  return `const u8 vp_font_tiles[] = { ${bytes.join(",")} };`;
+}
+
+/** NES: same two styles, 2bpp planar (8 bytes plane 0, then plane 1).
+ * Subpal color 1 = paper, 3 = ink. Exported: rom.ts bakes these into
+ * CHR-ROM (tile 0 blank, then the 190 glyphs). */
+export function nesFontBytes(): number[] {
+  const bytes: number[] = [];
+  for (const [ink, paper] of [
+    [3, 1],
+    [1, 3],
+  ]) {
+    for (let g = 0; g < 95; g++) {
+      const bitmap = FONT8[g];
+      const p0: number[] = [];
+      const p1: number[] = [];
+      for (let y = 0; y < 8; y++) {
+        let lo = 0;
+        let hi = 0;
+        for (let x = 0; x < 8; x++) {
+          const v = bitmap[y] & (0x80 >> x) ? ink : paper;
+          if (v & 1) lo |= 0x80 >> x;
+          if (v & 2) hi |= 0x80 >> x;
+        }
+        p0.push(lo);
+        p1.push(hi);
+      }
+      bytes.push(...p0, ...p1);
+    }
+  }
+  return bytes;
+}
+
 function bgr555(hex: string): number {
   const r = parseInt(hex.slice(1, 3), 16) >> 3;
   const g = parseInt(hex.slice(3, 5), 16) >> 3;
@@ -1923,26 +2086,36 @@ function bgr555(hex: string): number {
   return r | (g << 5) | (b << 10);
 }
 
-const THEME: { ink: string; paper: string }[] = [
-  { ink: "#e6edf3", paper: "#101423" }, // 0 text: light on navy
-  { ink: "#101423", paper: "#42b883" }, // 1 title: navy on vue mint
-  { ink: "#42b883", paper: "#101423" }, // 2 accent: mint on navy
-  { ink: "#5b6b84", paper: "#101423" }, // 3 dim
-  { ink: "#101423", paper: "#e6edf3" }, // 4 cursor: inverted
-  { ink: "#101423", paper: "#e8c266" }, // 5 edit: navy on amber
+const THEME: { ink: string; paper: string; style: number }[] = [
+  { ink: "#e6edf3", paper: "#101423", style: 0 }, // 0 text: light on navy
+  { ink: "#101423", paper: "#42b883", style: 1 }, // 1 title: navy on vue mint
+  { ink: "#42b883", paper: "#101423", style: 0 }, // 2 accent: mint on navy
+  { ink: "#5b6b84", paper: "#101423", style: 0 }, // 3 dim
+  { ink: "#101423", paper: "#e6edf3", style: 1 }, // 4 cursor: inverted
+  { ink: "#101423", paper: "#e8c266", style: 1 }, // 5 edit: navy on amber
 ];
 
-function emitPalettes(): string {
-  const banks: number[] = [];
-  for (const t of THEME) {
-    const bank = new Array<number>(16).fill(0);
-    bank[INK] = bgr555(t.ink);
-    bank[PAPER] = bgr555(t.paper);
-    banks.push(...bank);
+function emitTargetData(target: VaporTarget): string {
+  const style = new Array<number>(8).fill(0);
+  THEME.forEach((t, i) => (style[i] = t.style));
+  const styleTable = `const u8 vp_pal_style[8] = { ${style.join(",")} };`;
+
+  if (target.name === "gba") {
+    const banks: number[] = [];
+    for (const t of THEME) {
+      const bank = new Array<number>(16).fill(0);
+      bank[INK] = bgr555(t.ink);
+      bank[PAPER] = bgr555(t.paper);
+      banks.push(...bank);
+    }
+    return (
+      `${emitFontGba()}\n` +
+      `const u16 vp_palettes[] = { ${banks.join(",")} };\n` +
+      `const u8 vp_palette_count = ${THEME.length};\n` +
+      `const u16 vp_backdrop = ${bgr555("#101423")};`
+    );
   }
-  return (
-    `const u16 vp_palettes[] = { ${banks.join(",")} };\n` +
-    `const u8 vp_palette_count = ${THEME.length};\n` +
-    `const u16 vp_backdrop = ${bgr555("#101423")};`
-  );
+  if (target.name === "gb") return `${emitFontGb()}\n${styleTable}`;
+  /* NES font ships as CHR-ROM (rom.ts); only the style map is C data */
+  return styleTable;
 }

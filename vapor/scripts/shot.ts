@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import { createCanvas } from "@napi-rs/canvas";
 import { compileVaporApp } from "../compiler/compile.ts";
-import { buildGbaRom } from "../compiler/rom.ts";
+import { buildGbaRom, buildGbRom, buildNesRom } from "../compiler/rom.ts";
 import { Button } from "../host/input.ts";
 
 const HERE = import.meta.dir;
@@ -75,4 +75,26 @@ async function ppmToPng(src: string, dst: string, scale = 3): Promise<void> {
 for (const name of ["todo-boot", "todo-active", "todo-edit"]) {
   await ppmToPng(join(OUT, "shots", `${name}.ppm`), join(DOCS, `${name}.png`));
   console.log(`${join(DOCS, `${name}.png`)}`);
+}
+
+// ---- GB + NES boot shots ----------------------------------------------------
+{
+  const gbApp = compileVaporApp(ENTRY, await Bun.file(ENTRY).text(), "VAPOR TODO", "gb");
+  const gbRom = join(OUT, "todo.gb");
+  await buildGbRom(gbApp, gbRom);
+  const sc = join(OUT, "shot-gb.txt");
+  await Bun.write(sc, `A 120\nS ${OUT}/shots/todo-gb.ppm\n`);
+  await $`${RUNNER} ${gbRom} ${sc}`.quiet();
+  await ppmToPng(join(OUT, "shots", "todo-gb.ppm"), join(DOCS, "todo-gb.png"));
+  console.log(join(DOCS, "todo-gb.png"));
+}
+{
+  const nesApp = compileVaporApp(ENTRY, await Bun.file(ENTRY).text(), "VAPOR TODO", "nes");
+  const nesRom = join(OUT, "todo.nes");
+  await buildNesRom(nesApp, nesRom);
+  const sc = join(OUT, "shot-nes.txt");
+  await Bun.write(sc, `A 10\nS ${OUT}/shots/todo-nes.ppm\n`);
+  await $`bun ${join(HERE, "..", "test", "harness", "nes_runner.ts")} ${nesRom} ${sc}`.quiet();
+  await ppmToPng(join(OUT, "shots", "todo-nes.ppm"), join(DOCS, "todo-nes.png"));
+  console.log(join(DOCS, "todo-nes.png"));
 }
