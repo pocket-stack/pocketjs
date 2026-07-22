@@ -1,0 +1,7 @@
+# XMB metadata for the Pocket Talk EBOOT. tools/psp.ts copies this to
+# hosts/psp/Psp.toml (rewriting the image paths absolute) when building this
+# demo; cargo-psp packs it into PARAM.SFO / ICON0 / PIC1.
+# Regenerate the art with: bun apps/im/psp/gen-cover.ts
+title = "Pocket Talk"
+xmb_icon_png = "icon0.png"
+xmb_background_png = "pic1.png"

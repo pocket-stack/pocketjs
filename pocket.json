@@ -15,7 +15,7 @@
     }
   },
   "app": {
-    "entry": "demos/hero/main.tsx",
+    "entry": "apps/hero/main.tsx",
     "output": "hero-main",
     "framework": "solid",
     "viewport": {

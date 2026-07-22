@@ -214,10 +214,10 @@ bun run widget       # build + launch the widget; Ctrl-C to quit
 # once built:
 target/release/pocket-character --max-fps 30            # the 2 % version
 target/release/pocket-character --headless-shot s.png   # CI-friendly render, alpha intact
-bun scripts/measure.ts                                  # reproduce the table above
+bun tools/measure.ts                                  # reproduce the table above
 ```
 
-The personality lives in `app/main.ts` — a policy bundle over the `character` surface. Change it, `bun scripts/build-ui.ts`, relaunch: no Rust rebuild. The engine halves — morph targets, pose injection, widget windows, `pocket-vrm` — shipped in PocketJS [0.6.0](/changelog/).
+The personality lives in `app/main.ts` — a policy bundle over the `character` surface. Change it, `bun tools/build-ui.ts`, relaunch: no Rust rebuild. The engine halves — morph targets, pose injection, widget windows, `pocket-vrm` — shipped in PocketJS [0.6.0](/changelog/).
 
 ---
 

@@ -114,7 +114,7 @@ ffprobe -v error -select_streams v:0 \
 - The card is `assets/outro.html`, parameterized via query string
   (`?layer=…&scale=…&brand=…&tagline=…&url=…`). Edit it to restyle; every dimension
   is in `rem` and the script sets root font-size to `10px * scale`.
-- Entrance/animation is entirely in `ffmpeg`, orchestrated by `scripts/make-outro.ts`
+- Entrance/animation is entirely in `ffmpeg`, orchestrated by `tools/make-outro.ts`
   (Bun TypeScript, `import { $ } from "bun"`): each element is screenshotted as its
   **own transparent layer** with the *others kept in place via `visibility: hidden`*
   (so absolute positions never shift), then composited with per-layer `fade` (alpha)

@@ -17,5 +17,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": [".", "../compiler/ambient.d.ts"]
+  "include": [".", "../framework/compiler/ambient.d.ts"]
 }

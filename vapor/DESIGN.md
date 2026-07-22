@@ -174,7 +174,7 @@ compiles to a C function fed by the runtime's key-edge loop.
 ## 6. Pipeline
 
 ```
-todo.tsx ─┬─ compiler/jsx-plugin.ts + vue-jsx-vapor ──► real Vue Vapor app (oracle)
+todo.tsx ─┬─ framework/compiler/jsx-plugin.ts + vue-jsx-vapor ──► real Vue Vapor app (oracle)
           │
           └─ vapor/compiler/compile.ts (Bun, TS compiler API)
                1 subset check      diagnostics with file:line
@@ -185,7 +185,7 @@ todo.tsx ─┬─ compiler/jsx-plugin.ts + vue-jsx-vapor ──► real Vue Vap
                6 memory plan       slots, pools, budgets (printed with the graph)
                7 emit C            gen_app.c (state, computeds, effects, handler)
                8 cc + link         arm-none-eabi-gcc -Os + vapor/runtime/gba/*
-                                   → header-patched .gba ROM (compiler/rom.ts)
+                                   → header-patched .gba ROM (framework/compiler/rom.ts)
 ```
 
 The fixed C runtime (`vapor/runtime/gba/`) is shared by all apps:
@@ -196,7 +196,7 @@ header-patch lineage carried over from Pocket Static's GBA target.
 
 ## 7. E2E: the oracle is real Vue
 
-`vapor/test/`:
+`vapor/tests/`:
 
 1. **Compiler unit tests** (`compiler.test.ts`) — subset diagnostics with
    file:line, deterministic C output, dependency-mask assertions on the

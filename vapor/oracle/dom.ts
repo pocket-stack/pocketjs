@@ -5,7 +5,7 @@
 // the smallest tree that satisfies it: elements/text/comments, template
 // materialization for hoisted static HTML, and attribute storage. The grid
 // painter (paint.ts) interprets <row> elements from this tree; nothing here
-// knows about cells or palettes. Modeled on src/vue-vapor-dom.ts, minus the
+// knows about cells or palettes. Modeled on framework/src/vue-vapor-dom.ts, minus the
 // native HostOps mirror.
 
 export class VaporNode {

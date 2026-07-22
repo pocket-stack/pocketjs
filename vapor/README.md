@@ -27,7 +27,7 @@ editor. The **same file** runs two ways:
 
 - **Oracle**: unmodified on `vue@3.6` `runtime-with-vapor` (through the
   repo's vue-jsx-vapor pipeline) over a micro-DOM, in bun.
-- **Device**: compiled to C by `compiler/compile.ts`, linked against a
+- **Device**: compiled to C by `framework/compiler/compile.ts`, linked against a
   ~9 KB runtime, running on an ARM7TDMI at 16.8 MHz.
 
 The parity suite drives one tape of button presses through both and
@@ -35,7 +35,7 @@ compares the rendered 30×20 cell grid — characters *and* palettes —
 cell-for-cell after every press.
 
 ```
-$ bun test vapor/test/
+$ bun test vapor/tests/
  30 pass, 0 fail, 3658 expect() calls   # incl. 3-console per-press parity
 
 $ bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx
@@ -98,7 +98,7 @@ dependency edge is a bitmask baked into ROM, computeds are lazy cached
 functions with validity bits, and template bindings are paint effects that
 run only when their mask intersects the dirty word. Pressing a button that
 changes nothing costs zero repaints; pressing ↑ repaints only the list
-block. See [DESIGN.md](DESIGN.md) for the whole argument, including where
+block. See [docs/DESIGN.md](docs/DESIGN.md) for the whole argument, including where
 it deliberately over-approximates Vue (static dependency analysis).
 
 ## Commands
@@ -109,7 +109,7 @@ bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target gb     # → tod
 bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target nes    # → todo.nes (40 KB)
 bun vapor/scripts/play.ts                                 # build + open in mGBA
 bun vapor/scripts/shot.ts                                 # bake docs screenshots
-bun test vapor/test/                                      # oracle + compiler + 3-console parity
+bun test vapor/tests/                                      # oracle + compiler + 3-console parity
 ```
 
 Toolchains: `arm-none-eabi-gcc` + `mgba` (GBA/GB), `sdcc` + `rgbfix` (GB),
@@ -126,13 +126,13 @@ indexing is u16 pointer arithmetic and bit masks come from a ROM table.
 
 ```
 vapor/
-  DESIGN.md            the thesis + the subset definition + target table
+  docs/DESIGN.md            the thesis + the subset definition + target table
   examples/todo/       todo.tsx — the multi-console demo app
   host/                input.ts (Button/onButton), screen.ts (SCREEN geometry)
   oracle/              micro-DOM + grid painter + bundle boot (real vue)
-  compiler/            compile.ts (TS AST → C, per-target), rom.ts (3 toolchains), cli.ts
+  framework/compiler/            compile.ts (TS AST → C, per-target), rom.ts (3 toolchains), cli.ts
   runtime/             vapor.h contract + vapor_core.c (shared grid/strings)
   runtime/gba|gb|nes/  per-console halves: crt0, video commit, input, debug block
-  test/                compiler.test.ts, oracle.test.ts, parity.test.ts (3 consoles)
-  test/harness/        headless libmgba runner (GBA+GB) + jsnes runner (NES)
+  tests/                compiler.test.ts, oracle.test.ts, parity.test.ts (3 consoles)
+  tests/harness/        headless libmgba runner (GBA+GB) + jsnes runner (NES)
 ```

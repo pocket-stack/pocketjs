@@ -1,0 +1,69 @@
+# engine/ — the desktop-buildable Rust workspace of the Pocket engine layer
+# (docs/RUNTIMES.md: these are the Cores plus their desktop surfaces).
+#
+# Deliberately EXCLUDED and standalone (each with its own Cargo.lock):
+#   core/, wasm/          — cargo-psp needs hosts/psp to consume core as a
+#                           lone standalone crate (see core/Cargo.toml)
+#   pocket3d/crates/pocket3d-gu, gu-demo — PSP-only (cargo-psp toolchain)
+#   pocket3d/crates/pocket3d-vita        — Vita-only (vitasdk toolchain)
+[workspace]
+resolver = "2"
+members = [
+    "crates/pocket-mod",
+    "crates/pocket-ui-wgpu",
+    "crates/pocket-vrm",
+    "crates/pocket-widget",
+    "pocket3d/crates/pocket3d",
+    "pocket3d/crates/pocket3d-bsp",
+    "pocket3d/crates/pocket3d-cook",
+    "pocket3d/examples/handheld",
+    "pocket3d/examples/note-widget",
+    "pocket3d/examples/uihost",
+]
+exclude = [
+    "core",
+    "wasm",
+    "pocket3d/crates/pocket3d-gu",
+    "pocket3d/crates/gu-demo",
+    "pocket3d/crates/pocket3d-vita",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/pocket-stack/pocketjs"
+
+[workspace.dependencies]
+pocket3d = { path = "pocket3d/crates/pocket3d" }
+pocket3d-bsp = { path = "pocket3d/crates/pocket3d-bsp" }
+pocket-mod = { path = "crates/pocket-mod" }
+pocket-ui-wgpu = { path = "crates/pocket-ui-wgpu" }
+pocket-vrm = { path = "crates/pocket-vrm" }
+pocket-widget = { path = "crates/pocket-widget" }
+pocketjs-core = { path = "core", features = ["std"] }
+rquickjs = "0.12"
+
+wgpu = "25"
+winit = "0.30"
+# default-features off so pocket3d-bsp can build no_std (libm) for the PSP;
+# desktop crates re-enable "std" per member.
+glam = { version = "0.33", default-features = false }
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+gltf = { version = "1.4", features = ["extras"] }
+png = "0.18"
+anyhow = "1"
+log = "0.4"
+ab_glyph = "0.2"
+memmap2 = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+env_logger = "0.11"
+font8x8 = "0.3"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

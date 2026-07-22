@@ -1,7 +1,7 @@
 // site/record-sim-clips.ts — records clean "emulator" clips of the in-repo
 // demos for the hero demo wall: no camera, no hands, no hardware. The wasm
 // core renders every frame headlessly (the same deterministic boot as
-// scripts/tape.ts / test/golden.ts), driven by a scripted button tape, and
+// tools/tape.ts / tests/golden.ts), driven by a scripted button tape, and
 // the raw RGBA frames are piped straight into ffmpeg.
 //
 //   bun site/record-sim-clips.ts             # record every wall clip
@@ -15,14 +15,14 @@
 // runtimes from ever sharing globals.
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { createWasmUi } from "../host-web/wasm-ops.js";
+import { createWasmUi } from "../hosts/web/wasm-ops.js";
 import { BTN, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const SITE = ROOT + "site/";
 const SIM_DIR = SITE + ".cache/demo-wall/sim/";
 const BUILD_DIST = SITE + ".cache/demo-wall/sim-build/";
-const WASM_PATH = ROOT + "host-web/pocketjs.wasm";
+const WASM_PATH = ROOT + "hosts/web/pocketjs.wasm";
 
 const DUR_S = 24; // must match bake-demo-wall.ts DUR
 const SIM_HZ = 60;
@@ -31,7 +31,7 @@ const FRAMES = DUR_S * SIM_HZ;
 
 // 24-second interaction scripts, one per app — golden-specs.ts pulses
 // stretched to a full loop. A returned mask applies to THAT frame only, so
-// holds are expressed as ranges (exactly like test/golden-specs.ts).
+// holds are expressed as ranges (exactly like tests/golden-specs.ts).
 type Script = (f: number) => number;
 export const WALL_APPS: Record<string, Script> = {
   // "JSX at 60 FPS" card: focus the button, then keep the counter ticking.
@@ -120,7 +120,7 @@ function buildApp(app: string): string {
   const dist = BUILD_DIST + app + "/";
   rmSync(dist, { recursive: true, force: true });
   mkdirSync(dist, { recursive: true });
-  const p = Bun.spawnSync(["bun", "scripts/build.ts", app, `--outdir=${dist}`], {
+  const p = Bun.spawnSync(["bun", "tools/build.ts", app, `--outdir=${dist}`], {
     cwd: ROOT,
     stdout: "inherit",
     stderr: "inherit",
@@ -131,10 +131,10 @@ function buildApp(app: string): string {
   return dist;
 }
 
-/** Same boot dance as scripts/tape.ts — fresh core, bundle installs frame(). */
+/** Same boot dance as tools/tape.ts — fresh core, bundle installs frame(). */
 async function boot(app: string, dist: string) {
   if (!existsSync(WASM_PATH)) {
-    const p = Bun.spawnSync(["bun", "scripts/wasm.ts"], { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
+    const p = Bun.spawnSync(["bun", "tools/wasm.ts"], { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
     if (p.exitCode !== 0) throw new Error("record-sim: wasm build failed");
   }
   const wasm = await createWasmUi(await Bun.file(WASM_PATH).arrayBuffer());

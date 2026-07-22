@@ -51,7 +51,7 @@ Reading it top to bottom:
    selected JSX transform, compiles class strings to a binary style table
    (`styles.bin`), bakes target-density glyph atlases/assets, and packs them
    into `app.pak`. The JS is bundled with target/ABI constants. The low-level
-   `bun scripts/build.ts <app>` path remains for framework development. See
+   `bun tools/build.ts <app>` path remains for framework development. See
    [Build pipeline](/docs/build-pipeline/) for the two-pass details.
 3. At **runtime**, the selected framework runtime executes on whichever JS
    engine the host provides — QuickJS on PSP/Vita, the host engine in the browser
@@ -121,16 +121,16 @@ subset — is why layout is identical on every host.
 
 ### One Rust core, compiled per host
 
-`core/` is a platform-agnostic `#![no_std]` + `alloc` library,
+`engine/core/` is a platform-agnostic `#![no_std]` + `alloc` library,
 **`pocketjs-core`**. It contains no I/O, no graphics API, and no timing — just
 the tree, layout, styling, animation, text, and DrawList generation. Thin
 wrappers give it a body:
 
-- **`pocketjs-psp`** (`native/`) — the PSP EBOOT. It embeds QuickJS, feeds JS
+- **`pocketjs-psp`** (`hosts/psp/`) — the PSP EBOOT. It embeds QuickJS, feeds JS
   the `ui.*` ops, and renders the DrawList through `sceGu`.
-- **`pocketjs-vita`** (`native-vita/`) — the PS Vita VPK host. It embeds the
+- **`pocketjs-vita`** (`hosts/vita/`) — the PS Vita VPK host. It embeds the
   same guest/core contract and renders native-density output through vita2d/GXM.
-- **`pocketjs-wasm`** (`wasm/`) — a `wasm32-unknown-unknown` `cdylib` that wraps
+- **`pocketjs-wasm`** (`engine/wasm/`) — a `wasm32-unknown-unknown` `cdylib` that wraps
   the *same* core with a deterministic software rasterizer. This one binary
   serves **both** the browser dev host and the headless Bun golden tests.
 - **Desktop uihosts** — native debug/custom-host crates consume the same
@@ -201,49 +201,49 @@ The exact op signatures, node lifecycle, and per-frame ordering live on the
 
 ```
 pocketjs/
-  DESIGN.md, README.md
+  docs/DESIGN.md, README.md
   package.json          pinned: solid-js@^1.9, babel-preset-solid@^1.9,
                         @babel/core@^7, @babel/preset-typescript@^7,
                         opentype.js, typescript
   tsconfig.json         jsx: 'preserve' (Babel owns the transform)
   assets/fonts/         Inter-Regular.ttf, Inter-Bold.ttf (+ OFL LICENSE)
 
-  spec/
+  contracts/spec/
     spec.ts             SINGLE SOURCE OF TRUTH: op codes, prop ids, enums,
                         style-table / atlas / DrawList / pak formats
-    gen-rust.ts         codegen → core/src/spec.rs (committed)
+    gen-rust.ts         codegen → engine/core/src/spec.rs (committed)
 
-  core/                 Rust lib `pocketjs-core` — #![no_std] + alloc
-    src/lib.rs          Ui: apply ops, tick(1/60), draw() → &DrawList
-    src/spec.rs         GENERATED — drift-guarded against spec/
-    src/tree.rs         node arena + free list + generation counter
-    src/style.rs        style-table parse/resolve; base/focus/active variants
-    src/layout.rs       taffy sync + text-measure closures + dirty tracking
-    src/text.rs         atlas registry, cmap, measurement, inline-run layout
-    src/anim.rs         tween/spring tracks; transitions on style swap; fixed dt
-    src/draw.rs         tree walk → DrawList + CPU clip stage
-    src/raster.rs       shared deterministic software rasterizer
+  engine/core/                 Rust lib `pocketjs-core` — #![no_std] + alloc
+    framework/src/lib.rs          Ui: apply ops, tick(1/60), draw() → &DrawList
+    framework/src/spec.rs         GENERATED — drift-guarded against contracts/spec/
+    framework/src/tree.rs         node arena + free list + generation counter
+    framework/src/style.rs        style-table parse/resolve; base/focus/active variants
+    framework/src/layout.rs       taffy sync + text-measure closures + dirty tracking
+    framework/src/text.rs         atlas registry, cmap, measurement, inline-run layout
+    framework/src/anim.rs         tween/spring tracks; transitions on style swap; fixed dt
+    framework/src/draw.rs         tree walk → DrawList + CPU clip stage
+    framework/src/raster.rs       shared deterministic software rasterizer
 
-  native/               Rust bin `pocketjs-psp` — the PSP EBOOT
+  hosts/psp/               Rust bin `pocketjs-psp` — the PSP EBOOT
     Cargo.toml          psp, libquickjs-sys, pocketjs-core (path)
     build.rs            embeds the app JS + app.pak
-    src/main.rs         boot, vblank loop, job pump
-    src/alloc.rs        #[global_allocator] backed by the arena
-    src/arena.rs        single-kernel-block allocator (see Memory)
-    src/ffi.rs          QuickJS ui.* bindings → core ops
-    src/ge.rs           DrawList → sceGu; per-frame bump vertex arena
-    src/pak.rs        native read-only .pak walker (styles/atlases/images)
+    framework/src/main.rs         boot, vblank loop, job pump
+    framework/src/alloc.rs        #[global_allocator] backed by the arena
+    framework/src/arena.rs        single-kernel-block allocator (see Memory)
+    framework/src/ffi.rs          QuickJS ui.* bindings → core ops
+    framework/src/ge.rs           DrawList → sceGu; per-frame bump vertex arena
+    framework/src/pak.rs        native read-only .pak walker (styles/atlases/images)
 
-  native-vita/          Rust bin `pocketjs-vita` — the Vita VPK host
+  hosts/vita/          Rust bin `pocketjs-vita` — the Vita VPK host
     build.rs            consumes the same HostBuildInputs environment
-    src/                QuickJS bindings + vita2d/GXM DrawList backend
+    framework/src/                QuickJS bindings + vita2d/GXM DrawList backend
 
-  wasm/                 Rust cdylib `pocketjs-wasm` — core + rasterizer
-    src/lib.rs          extern "C" op mirror + render() → RGBA8 480×272
+  engine/wasm/                 Rust cdylib `pocketjs-wasm` — core + rasterizer
+    framework/src/lib.rs          extern "C" op mirror + render() → RGBA8 480×272
 
-  src/                  TS/JS runtime shared by all hosts
+  framework/src/                  TS/JS runtime shared by all hosts
     renderer.ts         Solid universal renderer; JS mirror tree; dispatch table
-    host.ts             HostOps interface + native/injected target handshake
+    host.ts             HostOps interface + hosts/psp/injected target handshake
     pak.ts            QuickJS-safe reader (web/test hosts)
     input.ts            edge-detect + focus manager
     anim.ts             animate() / spring() implementation
@@ -253,22 +253,22 @@ pocketjs/
     lifecycle.ts         │   (Solid primitives are imported from solid-js)
     input-api.ts, overlay.ts, index.ts  ┘
 
-  compiler/
+  framework/compiler/
     solid-plugin.ts     babel transform + per-file class/codepoint collection
     tailwind.ts         token parser → styles.bin + styles.generated.ts
     bake-font.ts        atlas baker (charset from AST scan + ASCII)
     pak.ts            container writer
 
-  host-web/             480×272 canvas playground + Bun dev server
-  demos/                hero, cards, stats, library, settings, notifications, music
-  test/                 contract drift guard, wasm goldens, PPSSPP e2e
-  scripts/              build.ts, psp.ts, dev.ts, wasm.ts
+  hosts/web/             480×272 canvas playground + Bun dev server
+  apps/                hero, cards, stats, library, settings, notifications, music
+  tests/                 contract drift guard, wasm goldens, PPSSPP e2e
+  tools/              build.ts, psp.ts, dev.ts, wasm.ts
   site/                 this documentation
 ```
 
-The `spec/` directory is the seam that keeps JS and Rust honest: `spec.ts` is
+The `contracts/spec/` directory is the seam that keeps JS and Rust honest: `spec.ts` is
 the single source of truth for every op code, property id, enum, and binary
-format, and `gen-rust.ts` generates `core/src/spec.rs` from it. A contract test
+format, and `gen-rust.ts` generates `engine/core/src/spec.rs` from it. A contract test
 regenerates that file in memory and byte-compares it, so the two sides can never
 drift apart silently.
 
@@ -278,7 +278,7 @@ The PSP build carries one hard constraint worth knowing about here. `rust-psp`'s
 default `#[global_allocator]` makes **one kernel object per allocation**, which
 caps out and crashes long before a real UI tree is built (taffy slotmaps,
 children `Vec`s, per-pass collections, the DrawList). PocketJS installs its own
-global allocator (`native/src/alloc.rs`) backed by a single arena
+global allocator (`hosts/psp/src/alloc.rs`) backed by a single arena
 (`arena.rs`) — the *same* kernel block that QuickJS allocates from. Textures and
 retained core buffers live in that arena too. JS runs on the 2 MB `USER|VFPU`
 worker; a 2 MB margin is kept for the GE display list and stack safety.

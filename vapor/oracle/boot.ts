@@ -1,12 +1,12 @@
 // vapor/oracle/boot.ts — build the oracle bundle and drive it.
 //
 // The bundle is produced with the repo's own vue-vapor jsx pipeline
-// (compiler/jsx-plugin.ts), so the todo component goes through the exact
+// (framework/compiler/jsx-plugin.ts), so the todo component goes through the exact
 // vue-jsx-vapor transform any PocketJS vapor app does — the oracle is not a
 // reimplementation of Vue, it IS Vue 3.6 vapor.
 
 import { join } from "node:path";
-import { jsxPlugin } from "../../compiler/jsx-plugin.ts";
+import { jsxPlugin } from "../../framework/compiler/jsx-plugin.ts";
 import { createRootElement, installOracleDom, type VaporElement } from "./dom.ts";
 import { paintGrid, type CellGrid } from "./paint.ts";
 

@@ -8,7 +8,7 @@ rests on one property: PocketJS is fixed-dt deterministic and its entire
 per-frame input is one button bitmask — so a recorded input tape replays any
 session byte-for-byte. Architecture deep-dive:
 [the blog post](/blog/time-travel-devtools/) and
-[`DEVTOOLS.md`](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md).
+[`docs/DEVTOOLS.md`](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md).
 
 ## One command
 

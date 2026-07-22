@@ -1,6 +1,6 @@
 @ vapor/runtime/gba/crt0.s — cartridge header + startup for Pocket Vapor.
 @ Same lineage as Pocket Static's crt0: the Nintendo logo bytes and header
-@ checksum are patched into the final .gba by compiler/rom.ts; the zeros
+@ checksum are patched into the final .gba by framework/compiler/rom.ts; the zeros
 @ here are placeholders. System mode with IRQs architecturally enabled
 @ (REG_IME stays 0) — the 0xDF hang lesson.
 

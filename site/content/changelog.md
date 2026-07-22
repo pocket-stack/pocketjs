@@ -130,7 +130,7 @@ target-specific golden tests.
   `pocket.json` is required when opting into `bun pocket` and target-aware
   Vita builds. **Breaking for custom hosts:** `Host.kind` now reports
   `"native"` instead of `"psp"`; manifest bundles require `__host` and
-  `__hostAbi`. Rebuild compiler/core/host artifacts together and consume the
+  `__hostAbi`. Rebuild framework/compiler/core/host artifacts together and consume the
   stable `HostBuildInputs` projection rather than the internal build plan.
   Vita builds still require VitaSDK + `cargo-vita`; arbitrary logical sizes
   and dynamic host text are not part of this release.
@@ -139,7 +139,7 @@ target-specific golden tests.
 
 **Pocket DevTools.** Time travel + inspection as framework primitives —
 [read the deep-dive](/blog/time-travel-devtools/), design in
-[DEVTOOLS.md](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md).
+[docs/DEVTOOLS.md](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md).
 
 - **Component inspector with on-device highlight** — a desktop panel
   (`/devtools`) shows the component tree with semantic names (`debugName`
@@ -161,7 +161,7 @@ target-specific golden tests.
   the desktop bridge encodes the PNG). Verified on hardware.
 - **One command** — `bun run devtools [app]` runs the panel, WS hub, USB
   bridge and (optionally) the whole PSP session; detects an existing
-  psplink/hw link and bridges into it. Also via the CLI: `pocket devtools`.
+  tools/psplink/hw link and bridges into it. Also via the CLI: `pocket devtools`.
 - **Breaking:** the `@pocketjs/cli` binary is renamed `pocketjs` → `pocket`.
 - New spec ops 18–22 (`debugInspect/RectXY/RectWH/Pause/Step`), all
   debug-only and default-off — shipped rendering is byte-identical.
@@ -200,7 +200,7 @@ target-specific golden tests.
   annular sector from the background color; all three animatable.
 - **`TEX_TRI` DrawList op** — textured triangles in all three backends;
   2D-rotated images un-culled, textures ride 3D surfaces.
-- **SVG path baking** — `compiler/bake-svg.ts` rasterizes `<path>` data
+- **SVG path baking** — `framework/compiler/bake-svg.ts` rasterizes `<path>` data
   (beziers, winding rules, transforms, `fill="hole"` masks) into pak
   textures.
 - **Real-hardware performance** (measured on a PSP over PSPLINK): baked-disc

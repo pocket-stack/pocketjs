@@ -11,7 +11,7 @@ import {
   decodePocketPackage,
   findSection,
   findVariant,
-} from "../../spec/pocket-package.ts";
+} from "../../contracts/spec/pocket-package.ts";
 
 // Re-exported for the local/CI browser verifier (site/verify.ts): the
 // app-switch protocol is testable headlessly through PocketHost alone,
@@ -468,9 +468,9 @@ export async function mountPocketStage(root) {
     controls.target.fromArray(view.desk_target_mm ?? [0, 0, 0]);
     controls.update();
     focusDistanceMm = view.focus_distance_mm ?? focusDistanceMm;
-    // The stage boots the Pocket Launcher (LAUNCHER.md) — the same
+    // The stage boots the Pocket Launcher (docs/LAUNCHER.md) — the same
     // multi-app deck the PSP EBOOT ships, on the wasm core. Each app
-    // arrives as a `.pocket` package (spec/pocket-package.ts, footer-hash
+    // arrives as a `.pocket` package (contracts/spec/pocket-package.ts, footer-hash
     // verified on decode); the wasm host renders the psp variant, exactly
     // like the handheld. apps.json is the registry twin next to them.
     const bundleCache = new Map();

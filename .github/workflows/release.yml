@@ -38,7 +38,7 @@ jobs:
       - name: Verify release version
         env:
           RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
-        run: bun scripts/release-check.ts "$RELEASE_VERSION"
+        run: bun tools/release-check.ts "$RELEASE_VERSION"
 
       # npm (not bun) does the publishing. Trusted Publishing needs npm >=
       # 11.5.1 (Node 22 bundles 10.x), and no registry-url: setup-node's
@@ -50,8 +50,8 @@ jobs:
       - name: Upgrade npm for Trusted Publishing
         run: npm install -g npm@latest
 
-      # host-web/pocketjs.wasm is a gitignored build artifact shipped in the
-      # framework tarball, so build it from core/wasm. Stable Rust suffices.
+      # hosts/web/pocketjs.wasm is a gitignored build artifact shipped in the
+      # framework tarball, so build it from engine/core/wasm. Stable Rust suffices.
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -62,15 +62,15 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            wasm/target
-          key: ${{ runner.os }}-wasm-${{ hashFiles('wasm/Cargo.toml', 'core/Cargo.toml', 'wasm/src/**', 'core/src/**') }}
+            engine/wasm/target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('engine/wasm/Cargo.toml', 'engine/core/Cargo.toml', 'engine/wasm/src/**', 'engine/core/src/**') }}
           restore-keys: ${{ runner.os }}-wasm-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Build wasm (core + software rasterizer)
-        run: bun scripts/wasm.ts
+        run: bun tools/wasm.ts
 
       - name: Test JavaScript and package contracts
         run: bun run test
@@ -81,13 +81,13 @@ jobs:
         run: bunx tsc --noEmit
 
       - name: Test Rust core
-        run: cargo test --locked --manifest-path core/Cargo.toml
+        run: cargo test --locked --manifest-path engine/core/Cargo.toml
 
       - name: Test desktop 3D and widget workspace
-        run: cargo test --locked --manifest-path pocket3d/Cargo.toml --workspace
+        run: cargo test --locked --manifest-path engine/Cargo.toml --workspace
 
       - name: Test renderer goldens
-        run: bun test/golden.ts
+        run: bun tests/golden.ts
 
       - name: Test deterministic tape replay
         run: bun run tape:check
@@ -95,7 +95,7 @@ jobs:
       - name: Build documentation and public schema
         run: |
           bun run site:build
-          cmp schema/pocket-2.json site/dist/schema/pocket-2.json
+          cmp contracts/schema/pocket-2.json site/dist/schema/pocket-2.json
 
       - name: Publish @pocketjs/framework
         run: |
@@ -129,8 +129,8 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "$tag release already exists — skipping"
           else
-            bun scripts/release-notes.ts "$tag" > "$RUNNER_TEMP/notes.md"
+            bun tools/release-notes.ts "$tag" > "$RUNNER_TEMP/notes.md"
             gh release create "$tag" --verify-tag --latest \
-              --title "$(bun scripts/release-notes.ts "$tag" --title)" \
+              --title "$(bun tools/release-notes.ts "$tag" --title)" \
               --notes-file "$RUNNER_TEMP/notes.md"
           fi

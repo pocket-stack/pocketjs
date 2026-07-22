@@ -22,11 +22,11 @@ Three rules define the whole model:
    a **JS mirror tree**. Parent/child/sibling and node-kind reads are plain JS
    object walks; structural writes update both mirrors.
 
-The op codes are pinned once, in `spec/spec.ts` (the `OP` table), and shared by every host and the Rust core. Codes are append-only: never renumbered, never reused. `0` is reserved as invalid/nop.
+The op codes are pinned once, in `contracts/spec/spec.ts` (the `OP` table), and shared by every host and the Rust core. Codes are append-only: never renumbered, never reused. `0` is reserved as invalid/nop.
 
 ## The op table
 
-Signatures are authoritative from `src/host.ts` (`HostOps`) and `spec/spec.ts`.
+Signatures are authoritative from `framework/src/host.ts` (`HostOps`) and `contracts/spec/spec.ts`.
 Node ids are generation-tagged positive `i32` values and reserve `0` for
 "none"; texture handles use their own 0-based or generation-tagged contracts.
 
@@ -59,7 +59,7 @@ For the meaning of `PROP` ids, `ENUMS`, and how a `class` string becomes a `styl
 
 ### Prop value encoding
 
-`setProp` and `animate` carry every value as one number (`f64` on the wire). `src/host.ts` encodes the JS value per the prop's kind (`PROP_VALUE_KIND` in the spec):
+`setProp` and `animate` carry every value as one number (`f64` on the wire). `framework/src/host.ts` encodes the JS value per the prop's kind (`PROP_VALUE_KIND` in the spec):
 
 - **f32 props** (dimensions, scalars, degrees) pass through as-is.
 - **color props** travel as their `u32` **ABGR** bits (`0xAABBGGRR`, the GE `COLOR_8888` layout). A `'#rgb' / '#rrggbb' / '#rrggbbaa'` string is parsed by `parseHexColor` — full-string hex validation, so `#ff00zz` throws rather than silently painting a prefix.
@@ -89,7 +89,7 @@ Fixed invariants:
 
 ## The JS mirror tree
 
-The renderer (`src/renderer.ts`) implements Solid's universal `createRenderer` over a `NodeMirror`:
+The renderer (`framework/src/renderer.ts`) implements Solid's universal `createRenderer` over a `NodeMirror`:
 
 ```ts
 interface NodeMirror {
@@ -118,7 +118,7 @@ None of those touch the host. Structural mutations (`insertNode`, `removeNode`, 
 
 ## Host identity and strictness
 
-`detectHost()` in `src/host.ts` resolves which `HostOps` object the ops route to, and sets a **strictness** flag that changes behavior on bad input:
+`detectHost()` in `framework/src/host.ts` resolves which `HostOps` object the ops route to, and sets a **strictness** flag that changes behavior on bad input:
 
 | kind | ops source | target | strict? | on unknown class / texture |
 |---|---|---|---|---|
@@ -236,7 +236,7 @@ On hardware the whole stack lives in **one arena**, and getting there required f
 The fix, at a high level:
 
 1. The exact-revision `pocket-stack/rust-psp` dependency exposes an **`external-global-alloc`** feature that cfg-gates out its `#[global_allocator]`.
-2. `native/src/alloc.rs` installs the PocketJS global allocator, backed by `arena::alloc`/`dealloc` — the **same single kernel block** QuickJS uses. Core, QuickJS, and newlib all draw from one arena.
+2. `hosts/psp/src/alloc.rs` installs the PocketJS global allocator, backed by `arena::alloc`/`dealloc` — the **same single kernel block** QuickJS uses. Core, QuickJS, and newlib all draw from one arena.
 3. `arena.rs`'s `ensure_init` calls `sceKernelAllocPartitionMemory` / `sceKernelGetBlockHeadAddr` **directly** — no recursion back through `alloc::alloc`, now that the arena *is* the global allocator.
 4. Texture uploads and retained core buffers live in that same arena. A **2 MB margin** is reserved for the GE display list and stack safety.
 

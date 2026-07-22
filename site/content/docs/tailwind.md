@@ -2,7 +2,7 @@
 
 PocketJS styles come from a **build-time Tailwind subset**. There is no runtime
 Tailwind, no CSS, and no arbitrary-utility escape hatch: a fixed set of
-utilities is parsed at build time by `compiler/tailwind.ts` and baked into
+utilities is parsed at build time by `framework/compiler/tailwind.ts` and baked into
 `styles.bin`, which the Rust core reads directly. This page is the exhaustive
 reference for exactly which utilities exist and what values they accept.
 
