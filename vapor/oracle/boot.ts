@@ -7,6 +7,7 @@
 
 import { join } from "node:path";
 import { jsxPlugin } from "../../framework/compiler/jsx-plugin.ts";
+import type { StyleTable } from "../compiler/styles.ts";
 import { createRootElement, installOracleDom, type VaporElement } from "./dom.ts";
 import { paintGrid, type CellGrid } from "./paint.ts";
 
@@ -47,6 +48,8 @@ export interface Oracle {
 export interface OracleOptions {
   width?: number;
   height?: number;
+  /** compile-produced style table: class -> pair id/align for the painter */
+  styles?: StyleTable;
 }
 
 export async function bootOracle(opts: OracleOptions = {}): Promise<Oracle> {
@@ -72,7 +75,7 @@ export async function bootOracle(opts: OracleOptions = {}): Promise<Oracle> {
       pressHook(button);
       await tick();
     },
-    grid: () => paintGrid(root, opts.width ?? 30, opts.height ?? 20),
+    grid: () => paintGrid(root, opts.width ?? 30, opts.height ?? 20, opts.styles),
     unmount: () => app.unmount(),
   };
 }

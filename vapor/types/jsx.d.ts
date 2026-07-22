@@ -12,12 +12,13 @@ declare global {
     }
     interface IntrinsicElements {
       row: {
-        /** Cell row, 0..19. */
+        /** Cell row, 0..H-1. */
         y: number;
-        /** Cell column the text starts at, 0..29 (default 0). */
+        /** Cell column the text starts at with align-left (default 0). */
         x?: number;
-        /** Palette bank, 0..7 (default 0). */
-        pal?: number;
+        /** Style classes: bg-<color> text-<color> align-left|center|right.
+         *  Dynamic looks are ternaries of full literals. */
+        class?: string;
         children?: unknown;
       };
     }

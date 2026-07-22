@@ -173,6 +173,31 @@ export class VaporElement extends VaporNode {
   getAttribute(name: string): string | null {
     return this.attrs.get(name) ?? null;
   }
+  get className(): string {
+    return this.attrs.get("class") ?? "";
+  }
+  set className(value: string) {
+    this.attrs.set("class", String(value ?? ""));
+  }
+  /** Minimal DOMTokenList — vapor's dynamic class patching diffs through it. */
+  get classList(): { add(...t: string[]): void; remove(...t: string[]): void; contains(t: string): boolean } {
+    const el = this;
+    const tokens = () => (el.attrs.get("class") ?? "").split(/\s+/).filter(Boolean);
+    const write = (list: string[]) => el.attrs.set("class", list.join(" "));
+    return {
+      add(...ts: string[]) {
+        const list = tokens();
+        for (const t of ts) if (t && !list.includes(t)) list.push(t);
+        write(list);
+      },
+      remove(...ts: string[]) {
+        write(tokens().filter((t) => !ts.includes(t)));
+      },
+      contains(t: string) {
+        return tokens().includes(t);
+      },
+    };
+  }
   hasAttribute(name: string): boolean {
     return this.attrs.has(name);
   }

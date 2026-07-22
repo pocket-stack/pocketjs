@@ -6,8 +6,14 @@
 // .gba and compares grids cell-for-cell.
 
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { compileVaporApp } from "../compiler/compile.ts";
 import { Button } from "../host/input.ts";
-import { bootOracle } from "../oracle/boot.ts";
+import { bootOracle, type Oracle } from "../oracle/boot.ts";
+
+const ENTRY = join(import.meta.dir, "..", "examples", "todo", "todo.tsx");
+const styles = compileVaporApp(ENTRY, await Bun.file(ENTRY).text(), "VAPOR TODO", "gba").styles;
+const boot = () => bootOracle({ styles });
 
 function line(oracle: Awaited<ReturnType<typeof bootOracle>>, y: number): string {
   return oracle.grid().chars[y];
@@ -15,8 +21,8 @@ function line(oracle: Awaited<ReturnType<typeof bootOracle>>, y: number): string
 
 describe("vapor todo oracle", () => {
   test("boots with seed todos and computed header", async () => {
-    const o = await bootOracle();
-    expect(line(o, 0)).toBe(" POCKET VAPOR TODO".padEnd(30));
+    const o = await boot();
+    expect(line(o, 0)).toBe(("      POCKET VAPOR TODO").padEnd(30)); // align-center
     expect(line(o, 1)).toBe(" 2 LEFT / ALL".padEnd(30));
     expect(line(o, 3)).toBe(" >[ ] SHIP POCKET VAPOR".padEnd(30));
     expect(line(o, 4)).toBe("  [X] WRITE THE COMPILER".padEnd(30));
@@ -26,7 +32,7 @@ describe("vapor todo oracle", () => {
   });
 
   test("cursor moves and toggle updates remaining", async () => {
-    const o = await bootOracle();
+    const o = await boot();
     await o.press(Button.Down);
     expect(line(o, 3)).toBe("  [ ] SHIP POCKET VAPOR".padEnd(30));
     expect(line(o, 4)).toBe(" >[X] WRITE THE COMPILER".padEnd(30));
@@ -37,7 +43,7 @@ describe("vapor todo oracle", () => {
   });
 
   test("filters are a computed view", async () => {
-    const o = await bootOracle();
+    const o = await boot();
     await o.press(Button.R); // ACTIVE
     expect(line(o, 1)).toBe(" 2 LEFT / ACTIVE".padEnd(30));
     expect(line(o, 3)).toBe(" >[ ] SHIP POCKET VAPOR".padEnd(30));
@@ -52,7 +58,7 @@ describe("vapor todo oracle", () => {
   });
 
   test("delete, clear completed, and the empty state", async () => {
-    const o = await bootOracle();
+    const o = await boot();
     await o.press(Button.B); // delete first
     expect(line(o, 3)).toBe(" >[X] WRITE THE COMPILER".padEnd(30));
     await o.press(Button.Select); // clear completed
@@ -64,7 +70,7 @@ describe("vapor todo oracle", () => {
   });
 
   test("edit mode composes a todo through the glyph picker", async () => {
-    const o = await bootOracle();
+    const o = await boot();
     await o.press(Button.Start);
     expect(line(o, 17)).toBe(" NEW: [A]".padEnd(30));
     expect(line(o, 19)).toBe(" A:PUT B:DEL ST:SAVE SE:QUIT".padEnd(30));
@@ -82,7 +88,7 @@ describe("vapor todo oracle", () => {
   });
 
   test("glyph picker wraps left from A to 9", async () => {
-    const o = await bootOracle();
+    const o = await boot();
     await o.press(Button.Start);
     await o.press(Button.Left);
     expect(line(o, 17)).toBe(" NEW: [9]".padEnd(30));
@@ -92,7 +98,7 @@ describe("vapor todo oracle", () => {
   });
 
   test("cursor clamps when the view shrinks", async () => {
-    const o = await bootOracle();
+    const o = await boot();
     await o.press(Button.Down);
     await o.press(Button.Down); // cursor on last
     await o.press(Button.B); // delete last -> cursor clamps to new last

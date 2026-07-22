@@ -5,6 +5,7 @@
 // its shadow buffer — chars padded with spaces to the right edge, palette
 // per cell, later rows overwriting earlier ones.
 
+import { parseRowClass, StyleTable } from "../compiler/styles.ts";
 import { VaporComment, VaporElement, VaporText, type VaporNode } from "./dom.ts";
 
 export const GRID_W = 30;
@@ -36,7 +37,12 @@ function collectRows(root: VaporElement, out: VaporElement[]): void {
   }
 }
 
-export function paintGrid(root: VaporElement, width = GRID_W, height = GRID_H): CellGrid {
+export function paintGrid(
+  root: VaporElement,
+  width = GRID_W,
+  height = GRID_H,
+  styles?: StyleTable,
+): CellGrid {
   const chars: string[][] = [];
   const pals: number[][] = [];
   for (let y = 0; y < height; y++) {
@@ -50,10 +56,30 @@ export function paintGrid(root: VaporElement, width = GRID_W, height = GRID_H): 
     const y = Number(row.getAttribute("y") ?? -1) | 0;
     if (y < 0 || y >= height) throw new Error(`row y out of range: ${row.getAttribute("y")}`);
     const x = Number(row.getAttribute("x") ?? 0) | 0;
-    const pal = Number(row.getAttribute("pal") ?? 0) | 0;
-    const text = rowText(row);
-    for (let col = x; col < width; col++) {
-      const ch = text[col - x] ?? " ";
+    const cls = (row.getAttribute("class") ?? "").trim().replace(/\s+/g, " ");
+    let pal = 0;
+    let align = 0;
+    if (styles) {
+      const hit = styles.byClass.get(cls);
+      if (hit) {
+        pal = hit.id;
+        align = hit.align;
+      } else {
+        // vapor's classList diffing may reorder tokens vs the literal:
+        // resolve by parsing, then find the (already interned) pair
+        const { style, issues } = parseRowClass(cls);
+        if (issues.length) throw new Error(`oracle painter: bad class "${cls}": ${issues[0].message}`);
+        const id = styles.pairs.findIndex((p) => p.ink === style.ink && p.paper === style.paper);
+        if (id < 0) throw new Error(`oracle painter: class "${cls}" resolves to a pair the compile never interned`);
+        pal = id;
+        align = style.align;
+      }
+    }
+    const text = rowText(row).slice(0, width);
+    const start = align === 1 ? (width - text.length) >> 1 : align === 2 ? width - text.length : x;
+    // a row owns its whole line: full-width fill in the row's pair
+    for (let col = 0; col < width; col++) {
+      const ch = col >= start && col - start < text.length ? text[col - start] : " ";
       const code = ch.charCodeAt(0);
       chars[y][col] = code >= 0x20 && code <= 0x7e ? ch : "?";
       pals[y][col] = pal;

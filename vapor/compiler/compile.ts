@@ -18,6 +18,8 @@
 
 import ts from "typescript";
 import { FONT8 } from "./font.gen.ts";
+import { rgb555, StyleTable, type StyleIssue } from "./styles.ts";
+import { BACKDROP } from "./styles.ts";
 
 // ---------------------------------------------------------------------------
 // Public result
@@ -55,6 +57,10 @@ export interface CompiledApp {
   graph: string;
   plan: string;
   debugSlots: DebugSlot[];
+  /** class DSL result: pair table + class manifest + per-target lowering */
+  styles: StyleTable;
+  /** style diagnostics (errors already thrown; warnings informational) */
+  diagnostics: string[];
 }
 
 export class VaporCompileError extends Error {
@@ -168,14 +174,20 @@ type Binding =
 // Compiler
 // ---------------------------------------------------------------------------
 
+export interface CompileOptions {
+  /** escalate lossy style lowering (e.g. pair collapse on 2-style targets) to errors */
+  strict?: boolean;
+}
+
 export function compileVaporApp(
   fileName: string,
   source: string,
   title = "VAPOR",
   targetName: VaporTargetName = "gba",
+  options: CompileOptions = {},
 ): CompiledApp {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TSX);
-  return new AppCompiler(sf, title, VAPOR_TARGETS[targetName]).compile();
+  return new AppCompiler(sf, title, VAPOR_TARGETS[targetName], options).compile();
 }
 
 class AppCompiler {
@@ -200,11 +212,26 @@ class AppCompiler {
   private strLits = new Map<string, string>(); // literal -> C name
   private strArrays = new Map<string, string>();
 
+  private styleTable = new StyleTable();
+  private styleErrors: string[] = [];
+  private styleWarnings: string[] = [];
+
   constructor(
     private sf: ts.SourceFile,
     private title: string,
     private target: VaporTarget,
+    private options: CompileOptions = {},
   ) {}
+
+  private styleIssue(node: ts.Node, issue: StyleIssue): void {
+    const { line, character } = this.sf.getLineAndCharacterOfPosition(node.getStart(this.sf));
+    const text = `${this.sf.fileName}:${line + 1}:${character + 1} — ${issue.code}: ${issue.message}`;
+    if (issue.severity === "error" || (this.options.strict && issue.severity === "warn")) {
+      this.styleErrors.push(text);
+    } else {
+      this.styleWarnings.push(text);
+    }
+  }
 
   private err(node: ts.Node, message: string): never {
     throw new VaporCompileError(this.sf, node, message);
@@ -1602,6 +1629,39 @@ class AppCompiler {
   }
 
   /** Compile one <row> paint (dynamic y allowed for map rows). */
+  /** Resolve a row's class attribute to C expressions for (pair id, align).
+   *  Literals resolve through the style table; conditionals must be
+   *  ternaries of literals (the same constitution the big framework's
+   *  tailwind pipeline enforces), so every look is compile-time data. */
+  private resolveClassExpr(
+    e: ts.Expression | undefined,
+    out: string[],
+    ind: string,
+    at: ts.Node,
+  ): { palC: string; alignC: string } {
+    if (!e) return { palC: "0", alignC: "0" };
+    let expr = this.unparen(e);
+    const sub = this.substProp(expr);
+    if (sub) expr = this.unparen(sub);
+    if (ts.isStringLiteral(expr)) {
+      const { id, align, issues } = this.styleTable.resolveClass(expr.text);
+      for (const issue of issues) this.styleIssue(expr, issue);
+      return { palC: String(id), alignC: String(align) };
+    }
+    if (ts.isConditionalExpression(expr)) {
+      const cf = this.constNum(expr.condition) ?? this.constBool(expr.condition);
+      if (cf !== null) return this.resolveClassExpr(cf ? expr.whenTrue : expr.whenFalse, out, ind, at);
+      const cond = this.compileExpr(expr.condition, out, ind);
+      const a = this.resolveClassExpr(expr.whenTrue, out, ind, at);
+      const b = this.resolveClassExpr(expr.whenFalse, out, ind, at);
+      return {
+        palC: `(${this.truthy(cond)} ? ${a.palC} : ${b.palC})`,
+        alignC: a.alignC === b.alignC ? a.alignC : `(${this.truthy(cond)} ? ${a.alignC} : ${b.alignC})`,
+      };
+    }
+    this.err(at, 'VS105: dynamic class must be a string literal or a ternary of full literals');
+  }
+
   private compileRowPaint(
     el: RowSrc,
     yC: string,
@@ -1609,33 +1669,31 @@ class AppCompiler {
     ind: string,
   ): void {
     const xExpr = this.jsxAttr(el, "x");
-    const palExpr = this.jsxAttr(el, "pal");
+    if (this.jsxAttr(el, "pal") !== undefined)
+      this.err(el.node, 'the pal attribute is gone — declare the look with class="bg-* text-* align-*"');
     const x = xExpr ? this.constNum(xExpr) : 0;
     if (x === null) this.err(el.node, "row x must be compile-time constant");
-    const pal = palExpr ? this.compileExpr(palExpr, out, ind) : { c: "0", ty: NUM };
-    const palV = this.tmp("pal");
-    const colV = this.tmp("col");
-    out.push(`${ind}{ u8 ${palV} = (u8)(${pal.c}); u8 ${colV} = ${x};`);
+    const cls = this.resolveClassExpr(this.jsxAttr(el, "class"), out, ind, el.node);
+    out.push(`${ind}vp_ln_reset();`);
     for (const child of el.children) {
       if (ts.isJsxText(child)) {
         const text = child.text.replace(/\s*\n\s*/g, "");
-        if (text) out.push(`${ind}  vp_put_str(${yC}, &${colV}, ${palV}, ${this.cStrLit(text)});`);
+        if (text) out.push(`${ind}vp_ln_str(${this.cStrLit(text)});`);
         continue;
       }
       if (ts.isJsxExpression(child)) {
         if (!child.expression) continue;
-        const v = this.compileExpr(child.expression, out, ind + "  ");
-        if (v.ty.k === "strlit") out.push(`${ind}  vp_put_str(${yC}, &${colV}, ${palV}, ${v.c});`);
-        else if (v.ty.k === "sb") out.push(`${ind}  vp_put_sb(${yC}, &${colV}, ${palV}, ${v.c});`);
-        else if (v.ty.k === "char") out.push(`${ind}  vp_put_ch(${yC}, &${colV}, ${palV}, ${v.c});`);
-        else if (v.ty.k === "num") out.push(`${ind}  vp_put_int(${yC}, &${colV}, ${palV}, ${v.c});`);
+        const v = this.compileExpr(child.expression, out, ind);
+        if (v.ty.k === "strlit") out.push(`${ind}vp_ln_str(${v.c});`);
+        else if (v.ty.k === "sb") out.push(`${ind}vp_ln_sb(${v.c});`);
+        else if (v.ty.k === "char") out.push(`${ind}vp_ln_ch(${v.c});`);
+        else if (v.ty.k === "num") out.push(`${ind}vp_ln_int(${v.c});`);
         else this.err(child, `cannot interpolate a ${v.ty.k} into a row`);
         continue;
       }
       this.err(child, "rows may contain only text and {expr} interpolations");
     }
-    out.push(`${ind}  vp_pad(${yC}, ${colV}, ${palV});`);
-    out.push(`${ind}}`);
+    out.push(`${ind}vp_ln_commit(${yC}, ${x}, (u8)(${cls.palC}), (u8)(${cls.alignC}));`);
   }
 
   private rowConstY(src: RowSrc): number {
@@ -1953,7 +2011,19 @@ class AppCompiler {
     c.push("");
 
     // generated data: font, palettes, title
-    c.push(emitTargetData(this.target));
+    {
+      const lowered = this.styleTable.lower(this.target.name, this.options.strict);
+      for (const issue of lowered.issues) {
+        const text = `${this.sf.fileName} — ${issue.code}: ${issue.message}`;
+        if (issue.severity === "error" || (this.options.strict && issue.severity === "warn"))
+          this.styleErrors.push(text);
+        else this.styleWarnings.push(text);
+      }
+    }
+    if (this.styleErrors.length > 0) {
+      throw new Error(this.styleErrors.join("\n"));
+    }
+    c.push(emitTargetData(this.target, this.styleTable));
     c.push(`const char vp_app_title[] = "${this.escC(this.title)}";`);
     c.push("");
 
@@ -1997,6 +2067,8 @@ class AppCompiler {
       graph: graphLines.join("\n"),
       plan: planLines.join("\n"),
       debugSlots,
+      styles: this.styleTable,
+      diagnostics: this.styleWarnings,
     };
   }
 }
@@ -2079,40 +2151,24 @@ export function nesFontBytes(): number[] {
   return bytes;
 }
 
-function bgr555(hex: string): number {
-  const r = parseInt(hex.slice(1, 3), 16) >> 3;
-  const g = parseInt(hex.slice(3, 5), 16) >> 3;
-  const b = parseInt(hex.slice(5, 7), 16) >> 3;
-  return r | (g << 5) | (b << 10);
-}
-
-const THEME: { ink: string; paper: string; style: number }[] = [
-  { ink: "#e6edf3", paper: "#101423", style: 0 }, // 0 text: light on navy
-  { ink: "#101423", paper: "#42b883", style: 1 }, // 1 title: navy on vue mint
-  { ink: "#42b883", paper: "#101423", style: 0 }, // 2 accent: mint on navy
-  { ink: "#5b6b84", paper: "#101423", style: 0 }, // 3 dim
-  { ink: "#101423", paper: "#e6edf3", style: 1 }, // 4 cursor: inverted
-  { ink: "#101423", paper: "#e8c266", style: 1 }, // 5 edit: navy on amber
-];
-
-function emitTargetData(target: VaporTarget): string {
-  const style = new Array<number>(8).fill(0);
-  THEME.forEach((t, i) => (style[i] = t.style));
-  const styleTable = `const u8 vp_pal_style[8] = { ${style.join(",")} };`;
+function emitTargetData(target: VaporTarget, styles: StyleTable): string {
+  const lowered = styles.lower(target.name);
+  const styleTable = `const u8 vp_pal_style[${styles.pairs.length}] = { ${lowered.styleMap.join(",")} };`;
 
   if (target.name === "gba") {
     const banks: number[] = [];
-    for (const t of THEME) {
+    for (const pair of styles.pairs) {
       const bank = new Array<number>(16).fill(0);
-      bank[INK] = bgr555(t.ink);
-      bank[PAPER] = bgr555(t.paper);
+      bank[INK] = rgb555(pair.ink);
+      bank[PAPER] = rgb555(pair.paper);
       banks.push(...bank);
     }
     return (
       `${emitFontGba()}\n` +
       `const u16 vp_palettes[] = { ${banks.join(",")} };\n` +
-      `const u8 vp_palette_count = ${THEME.length};\n` +
-      `const u16 vp_backdrop = ${bgr555("#101423")};`
+      `const u8 vp_palette_count = ${styles.pairs.length};\n` +
+      `const u16 vp_backdrop = ${rgb555(BACKDROP)};\n` +
+      styleTable
     );
   }
   if (target.name === "gb") return `${emitFontGb()}\n${styleTable}`;

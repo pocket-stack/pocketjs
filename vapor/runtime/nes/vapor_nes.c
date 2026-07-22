@@ -43,7 +43,7 @@ static u32 vram_pending;
 
 static u8 row_tile(u8 y, u8 x) {
   u16 at = (u16)y * VP_GRID_W + x;
-  u8 style = vp_pal_style[((const u8 *)vp_grid_pal)[at] & 7];
+  u8 style = vp_pal_style[((const u8 *)vp_grid_pal)[at]];
   return (u8)(1 + (u8)(((const u8 *)vp_grid_ch)[at] - 0x20) + (style ? 95 : 0));
 }
 

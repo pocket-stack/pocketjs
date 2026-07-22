@@ -65,7 +65,7 @@ static void fill_stage(void) {
     rp = (const u8 *)vp_grid_pal + (u16)y * VP_GRID_W;
     st = stage_tiles + (u16)stage_n * VP_GRID_W; /* u16: no __muluchar */
     for (x = 0; x < VP_GRID_W; x++)
-      st[x] = (u8)(1 + (u8)(rc[x] - 0x20) + (vp_pal_style[rp[x] & 7] ? 95 : 0));
+      st[x] = (u8)(1 + (u8)(rc[x] - 0x20) + (vp_pal_style[rp[x]] ? 95 : 0));
     stage_row[stage_n] = y;
     stage_n++;
   }
@@ -166,7 +166,7 @@ void main(void) {
       const u8 *rc = (const u8 *)vp_grid_ch + (u16)y * VP_GRID_W;
       const u8 *rp = (const u8 *)vp_grid_pal + (u16)y * VP_GRID_W;
       for (x = 0; x < VP_GRID_W; x++) {
-        u8 style = vp_pal_style[rp[x] & 7];
+        u8 style = vp_pal_style[rp[x]];
         out[x] = (u8)(1 + (u8)(rc[x] - 0x20) + (style ? 95 : 0));
       }
     }

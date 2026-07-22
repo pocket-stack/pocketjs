@@ -146,6 +146,45 @@ Out (compile errors): closures escaping setup, dynamic property access,
 `reactive()` deep proxies (v1 is `ref`-first; `reactive` is sugar the
 compiler can add later).
 
+## 4.5 Styling: the class DSL and the target style contract
+
+Rows declare their look with the same Tailwind vocabulary the interpreted
+framework compiles — `framework/compiler/tailwind.ts` owns the color table,
+Pocket Vapor imports it, so `text-emerald-500` is one name across the whole
+platform. The cell-grid subset:
+
+    bg-<color>   text-<color>   align-left|center|right
+    (colors: any tailwind name or bg-[#hex]; dynamic looks are ternaries
+     of full class literals — the framework's constitution, reused)
+
+Like everything in Pocket Vapor, styling compiles to data. Every distinct
+(ink, paper) pair the app uses becomes an entry in the app's PAIR TABLE;
+the pal byte in the cell grid is the pair id on every target. What an id
+MEANS is the target's style contract:
+
+| target | contract | lowering |
+|---|---|---|
+| web (oracle/dev host) | `web` | full color, CSS |
+| gba | `rgb555`, <= 15 pairs | pair id = BG palette bank (BGR555 ink/paper) |
+| gb, nes | `styles2` | pair -> glyph style by luminance polarity (dark-on-light / light-on-dark) |
+
+Diagnostics are compile-time and structured (`bun vapor/compiler/cli.ts
+check <file>` prints the whole matrix in one run, no toolchains needed):
+
+    VS101 unknown class            error
+    VS102 unknown color            error
+    VS103 palette budget exceeded  error (rgb555 targets)
+    VS104 pairs collapse to one glyph style   warn -> error with --strict
+    VS105 dynamic class not a ternary of literals   error
+
+On oxc: considered and not adopted for the compiler. The checker needs the
+reactive graph and the type environment the compiler already builds on the
+TypeScript API — a second AST would buy parse speed we don't need (one
+file, ~50 ms) at the cost of divergence. Where oxc could earn a place
+later is editor-time linting: publishing the subset + class rules as an
+oxlint plugin would give red squiggles without booting the compiler. The
+`check` subcommand is the contract such a plugin would mirror.
+
 ## 5. Host vocabulary and rendering
 
 The GBA presents a 30×20 cell text screen (mode 0, one background) driven
@@ -162,8 +201,8 @@ grid on device, and a ~60-line tree walker over the oracle's micro-DOM:
   The compiler turns the whole map into one paint loop; the oracle lets
   vapor's own reactive block machinery re-render it.
 - Conditional rows are plain Vue too: `{cond ? <row …/> : null}`.
-- Palettes express selection/done/dim states (GBA: BG palette banks; the
-  oracle asserts them as a per-cell palette grid).
+- Looks come from the class DSL (§4.5); the painter and every runtime
+  agree on pair ids, and the oracle asserts them as a per-cell grid.
 
 Input is not DOM events: the host module exposes
 `onButton((b: Button) => void)` (frame-latched edge triggering, GBA

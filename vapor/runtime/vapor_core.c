@@ -44,29 +44,34 @@ void vp_row_clear(u8 y0, u8 y1) {
     for (x = 0; x < VP_GRID_W; x++) cell(y, x, ' ', 0);
 }
 
-void vp_put_ch(u8 y, u8 *col, u8 pal, char c) {
+/* ---- line compose ------------------------------------------------------------ */
+static u8 vp_ln[VP_GRID_W];
+static u8 vp_ln_len;
+
+void vp_ln_reset(void) { vp_ln_len = 0; }
+
+void vp_ln_ch(char c) {
   u8 ch = (u8)c;
-  if (*col >= VP_GRID_W) return;
+  if (vp_ln_len >= VP_GRID_W) return; /* clip at the row edge */
   if (ch < 0x20 || ch > 0x7e) ch = '?';
-  cell(y, *col, ch, pal);
-  *col = (u8)(*col + 1);
+  vp_ln[vp_ln_len++] = ch;
 }
 
-void vp_put_str(u8 y, u8 *col, u8 pal, const char *s) {
-  while (*s) vp_put_ch(y, col, pal, *s++);
+void vp_ln_str(const char *s) {
+  while (*s) vp_ln_ch(*s++);
 }
 
-void vp_put_sb(u8 y, u8 *col, u8 pal, const vp_sb *s) {
+void vp_ln_sb(const vp_sb *s) {
   u8 i;
-  for (i = 0; i < s->len; i++) vp_put_ch(y, col, pal, s->b[i]);
+  for (i = 0; i < s->len; i++) vp_ln_ch(s->b[i]);
 }
 
-void vp_put_int(u8 y, u8 *col, u8 pal, s32 v) {
+void vp_ln_int(s32 v) {
   char buf[12];
   u8 n = 0;
   u32 mag;
   if (v < 0) {
-    vp_put_ch(y, col, pal, '-');
+    vp_ln_ch('-');
     mag = (u32)(-v);
   } else {
     mag = (u32)v;
@@ -75,12 +80,20 @@ void vp_put_int(u8 y, u8 *col, u8 pal, s32 v) {
     buf[n++] = (char)('0' + (u8)(mag % 10));
     mag /= 10;
   } while (mag && n < 11);
-  while (n) vp_put_ch(y, col, pal, buf[--n]);
+  while (n) vp_ln_ch(buf[--n]);
 }
 
-void vp_pad(u8 y, u8 col, u8 pal) {
-  u8 x;
-  for (x = col; x < VP_GRID_W; x++) cell(y, x, ' ', pal);
+void vp_ln_commit(u8 y, u8 x, u8 pal, u8 align) {
+  u8 start, col;
+  if (align == VP_ALIGN_CENTER) start = (u8)((VP_GRID_W - vp_ln_len) >> 1);
+  else if (align == VP_ALIGN_RIGHT) start = (u8)(VP_GRID_W - vp_ln_len);
+  else start = x;
+  if (start >= VP_GRID_W) start = 0;
+  for (col = 0; col < VP_GRID_W; col++) {
+    u8 ch = ' ';
+    if (col >= start && (u8)(col - start) < vp_ln_len) ch = vp_ln[col - start];
+    cell(y, col, ch, pal);
+  }
 }
 
 /* ---- strings ---------------------------------------------------------------- */

@@ -131,7 +131,9 @@
     "contract": "bun tests/contract.ts",
     "gen": "bun contracts/spec/gen-rust.ts",
     "vapor:gb": "bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target gb",
-    "vapor:nes": "bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target nes"
+    "vapor:nes": "bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target nes",
+    "vapor:dev": "bun vapor/scripts/dev.ts",
+    "vapor:check": "bun vapor/compiler/cli.ts check vapor/examples/todo/todo.tsx"
   },
   "dependencies": {
     "@vue/compiler-vapor": "3.6.0-rc.1",

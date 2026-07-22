@@ -27,7 +27,7 @@ editor. The **same file** runs two ways:
 
 - **Oracle**: unmodified on `vue@3.6` `runtime-with-vapor` (through the
   repo's vue-jsx-vapor pipeline) over a micro-DOM, in bun.
-- **Device**: compiled to C by `framework/compiler/compile.ts`, linked against a
+- **Device**: compiled to C by `vapor/compiler/compile.ts`, linked against a
   ~9 KB runtime, running on an ARM7TDMI at 16.8 MHz.
 
 The parity suite drives one tape of button presses through both and
@@ -36,7 +36,7 @@ cell-for-cell after every press.
 
 ```
 $ bun test vapor/tests/
- 30 pass, 0 fail, 3658 expect() calls   # incl. 3-console per-press parity
+ 41 pass, 0 fail, 7264 expect() calls   # incl. 3-console per-press parity
 
 $ bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx
 == reactive graph ==
@@ -98,8 +98,30 @@ dependency edge is a bitmask baked into ROM, computeds are lazy cached
 functions with validity bits, and template bindings are paint effects that
 run only when their mask intersects the dirty word. Pressing a button that
 changes nothing costs zero repaints; pressing ↑ repaints only the list
-block. See [docs/DESIGN.md](docs/DESIGN.md) for the whole argument, including where
+block. See [DESIGN.md](DESIGN.md) for the whole argument, including where
 it deliberately over-approximates Vue (static dependency analysis).
+
+The look is declarative now — the same Tailwind names the big framework
+compiles, lowered per console through each target's style contract
+(GBA: real palette banks; GB/NES: two glyph styles by luminance), with the
+whole diagnostics matrix one command away:
+
+```tsx
+<row y={0} class="bg-emerald-500 text-slate-950 align-center">
+<row class={selected ? "bg-slate-100 text-slate-950" : done ? "text-slate-500" : ""}>
+```
+
+```
+$ bun run vapor:check
+gba  OK    30x20, 6 style pairs
+gb   OK    20x18, 6 style pairs
+     warn  VS104: 3 distinct color pairs render as the same glyph style ...
+$ bun vapor/compiler/cli.ts check app.tsx --strict   # lossy lowering = failure
+```
+
+And the oracle is visible: `bun run vapor:dev` serves the app on real Vue
+Vapor in your browser — inspectable DOM rows, keyboard as the pad,
+`?target=gb` to see the DMG's two-style world before you burn a cart.
 
 ## Commands
 
@@ -108,6 +130,8 @@ bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx                 # → dis
 bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target gb     # → todo.gb  (32 KB)
 bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target nes    # → todo.nes (40 KB)
 bun vapor/scripts/play.ts                                 # build + open in mGBA
+bun vapor/scripts/dev.ts [app.tsx]                        # visible oracle in the browser
+bun vapor/compiler/cli.ts check <app.tsx> [--strict]      # cross-target diagnostics matrix
 bun vapor/scripts/shot.ts                                 # bake docs screenshots
 bun test vapor/tests/                                      # oracle + compiler + 3-console parity
 ```
@@ -126,13 +150,14 @@ indexing is u16 pointer arithmetic and bit masks come from a ROM table.
 
 ```
 vapor/
-  docs/DESIGN.md            the thesis + the subset definition + target table
+  DESIGN.md            the thesis + subset + target/style contracts
   examples/todo/       todo.tsx — the multi-console demo app
   host/                input.ts (Button/onButton), screen.ts (SCREEN geometry)
   oracle/              micro-DOM + grid painter + bundle boot (real vue)
-  framework/compiler/            compile.ts (TS AST → C, per-target), rom.ts (3 toolchains), cli.ts
-  runtime/             vapor.h contract + vapor_core.c (shared grid/strings)
+  compiler/            compile.ts (TS AST → C), styles.ts (class DSL), rom.ts, cli.ts
+  runtime/             vapor.h contract + vapor_core.c (shared grid/strings/line)
   runtime/gba|gb|nes/  per-console halves: crt0, video commit, input, debug block
-  tests/                compiler.test.ts, oracle.test.ts, parity.test.ts (3 consoles)
-  tests/harness/        headless libmgba runner (GBA+GB) + jsnes runner (NES)
+  scripts/             dev.ts (visible oracle), play.ts, shot.ts
+  tests/               styles + compiler + oracle + parity (3 consoles)
+  tests/harness/       headless libmgba runner (GBA+GB) + jsnes runner (NES)
 ```

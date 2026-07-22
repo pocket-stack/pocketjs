@@ -17,12 +17,12 @@ const ROOT = join(HERE, "..", "..");
 const ENTRY = join(HERE, "..", "examples", "todo", "todo.tsx");
 const OUT = join(ROOT, "dist", "vapor");
 const DOCS = join(HERE, "..", "docs");
-const RUNNER = join(HERE, "..", "test", "harness", "mgba_runner");
+const RUNNER = join(HERE, "..", "tests", "harness", "mgba_runner");
 
 const app = compileVaporApp(ENTRY, await Bun.file(ENTRY).text(), "VAPOR TODO");
 const rom = join(OUT, "todo.gba");
 await buildGbaRom(app, rom);
-if (!existsSync(RUNNER)) await $`bun ${join(HERE, "..", "test", "harness", "build.ts")}`.quiet();
+if (!existsSync(RUNNER)) await $`bun ${join(HERE, "..", "tests", "harness", "build.ts")}`.quiet();
 await $`mkdir -p ${DOCS} ${OUT}/shots`.quiet();
 
 const press = (b: number) => `P ${(1 << b).toString(16)} 2 4`;
@@ -94,7 +94,7 @@ for (const name of ["todo-boot", "todo-active", "todo-edit"]) {
   await buildNesRom(nesApp, nesRom);
   const sc = join(OUT, "shot-nes.txt");
   await Bun.write(sc, `A 10\nS ${OUT}/shots/todo-nes.ppm\n`);
-  await $`bun ${join(HERE, "..", "test", "harness", "nes_runner.ts")} ${nesRom} ${sc}`.quiet();
+  await $`bun ${join(HERE, "..", "tests", "harness", "nes_runner.ts")} ${nesRom} ${sc}`.quiet();
   await ppmToPng(join(OUT, "shots", "todo-nes.ppm"), join(DOCS, "todo-nes.png"));
   console.log(join(DOCS, "todo-nes.png"));
 }

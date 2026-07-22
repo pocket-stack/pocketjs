@@ -54,12 +54,20 @@ typedef struct {
 } vp_view;
 
 /* ---- grid (runtime-owned) -------------------------------------------------- */
-void vp_row_clear(u8 y0, u8 y1); /* rows [y0, y1): space, palette 0 */
-void vp_put_str(u8 y, u8 *col, u8 pal, const char *s);
-void vp_put_sb(u8 y, u8 *col, u8 pal, const vp_sb *s);
-void vp_put_ch(u8 y, u8 *col, u8 pal, char c);
-void vp_put_int(u8 y, u8 *col, u8 pal, s32 v);
-void vp_pad(u8 y, u8 col, u8 pal); /* fill [col, W) with spaces in pal */
+void vp_row_clear(u8 y0, u8 y1); /* rows [y0, y1): space, pair 0 */
+
+/* Row painting is compose-then-commit: parts append into a line scratch,
+ * commit places the line (left at x / centered / right), painting the FULL
+ * row in the row's style pair — a row owns its whole line. */
+#define VP_ALIGN_LEFT 0
+#define VP_ALIGN_CENTER 1
+#define VP_ALIGN_RIGHT 2
+void vp_ln_reset(void);
+void vp_ln_str(const char *s);
+void vp_ln_sb(const vp_sb *s);
+void vp_ln_ch(char c);
+void vp_ln_int(s32 v);
+void vp_ln_commit(u8 y, u8 x, u8 pal, u8 align);
 
 /* ---- strings ---------------------------------------------------------------- */
 void vp_sb_reset(vp_sb *s);

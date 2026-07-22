@@ -25,7 +25,6 @@ interface Todo {
 
 type Keymap = Record<number, () => void>;
 
-const PAL = { text: 0, title: 1, accent: 2, dim: 3, cursor: 4, edit: 5 };
 const FILTERS = ["ALL", "ACTIVE", "DONE"];
 const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789";
 const LIST_Y = 3;
@@ -41,8 +40,7 @@ const NARROW = SCREEN.width < 30;
 
 function TitleBar(props: { line: number; text: string }) {
   return (
-    <row y={props.line} pal={PAL.title}>
-      {" "}
+    <row y={props.line} class="bg-emerald-500 text-slate-950 align-center">
       {props.text}
     </row>
   );
@@ -50,7 +48,7 @@ function TitleBar(props: { line: number; text: string }) {
 
 function StatusBar(props: { line: number; count: number; label: string }) {
   return (
-    <row y={props.line} x={1} pal={PAL.accent}>
+    <row y={props.line} x={1} class="text-emerald-400">
       {props.count}
       {" LEFT / "}
       {props.label}
@@ -63,7 +61,7 @@ function TodoRow(props: { line: number; todo: Todo; selected: boolean }) {
     <row
       y={props.line}
       x={1}
-      pal={props.selected ? PAL.cursor : props.todo.done ? PAL.dim : PAL.text}
+      class={props.selected ? "bg-slate-100 text-slate-950" : props.todo.done ? "text-slate-500" : ""}
     >
       {props.selected ? ">" : " "}
       {"["}
@@ -76,7 +74,7 @@ function TodoRow(props: { line: number; todo: Todo; selected: boolean }) {
 
 function Notice(props: { line: number; text: string }) {
   return (
-    <row y={props.line} x={1} pal={PAL.dim}>
+    <row y={props.line} x={1} class="text-slate-500">
       {props.text}
     </row>
   );
@@ -84,7 +82,7 @@ function Notice(props: { line: number; text: string }) {
 
 function EditorBar(props: { line: number; draft: string; glyph: string }) {
   return (
-    <row y={props.line} x={1} pal={PAL.edit}>
+    <row y={props.line} x={1} class="bg-amber-300 text-slate-950">
       {"NEW: "}
       {props.draft}
       {"["}
@@ -96,8 +94,7 @@ function EditorBar(props: { line: number; draft: string; glyph: string }) {
 
 function HelpBar(props: { line: number; text: string }) {
   return (
-    <row y={props.line} pal={PAL.dim}>
-      {" "}
+    <row y={props.line} x={1} class="text-slate-500">
       {props.text}
     </row>
   );

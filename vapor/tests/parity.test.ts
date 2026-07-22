@@ -17,6 +17,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { $ } from "bun";
 import { compileVaporApp, VAPOR_TARGETS, type VaporTargetName } from "../compiler/compile.ts";
+import type { StyleTable } from "../compiler/styles.ts";
 import { buildRom } from "../compiler/rom.ts";
 import { Button } from "../host/input.ts";
 import { bootOracle } from "../oracle/boot.ts";
@@ -85,8 +86,7 @@ interface TargetRig {
   run: (rom: string, scenario: string) => Promise<string>;
 }
 
-/* logical palette -> glyph style on the 2-style consoles (THEME order) */
-const PAL_STYLE = [0, 1, 0, 0, 1, 1, 0, 0];
+let appStyles: StyleTable; // set in beforeAll from the compile
 
 const RIGS: TargetRig[] = [
   {
@@ -188,6 +188,7 @@ beforeAll(async () => {
     const t = VAPOR_TARGETS[rig.name];
     const cells = t.width * t.height;
     const app = compileVaporApp(ENTRY, source, "VAPOR TODO", rig.name);
+    appStyles = app.styles;
     const rom = join(OUT, `todo.${rig.ext}`);
     await buildRom(app, rig.name, rom);
 
@@ -230,7 +231,7 @@ describe("oracle == device, three consoles", () => {
   for (const rig of RIGS) {
     test(`${rig.name}: every step of the tape renders identically`, async () => {
       const t = VAPOR_TARGETS[rig.name];
-      const oracle = await bootOracle({ width: t.width, height: t.height });
+      const oracle = await bootOracle({ width: t.width, height: t.height, styles: appStyles });
       const { steps } = deviceRuns.get(rig.name)!;
       const compare = (step: number, label: string) => {
         const want = oracle.grid();
@@ -242,10 +243,11 @@ describe("oracle == device, three consoles", () => {
           );
           // the player's screen, not just the logical grid: decoded VRAM
           expect(`${label} y=${y} vram: ${got.vramChars[y]}`).toBe(`${label} y=${y} vram: ${want.chars[y]}`);
+          const styleMap = appStyles.lower(rig.name).styleMap;
           const wantStyle =
             rig.name === "gba"
               ? want.pals[y].join(",")
-              : want.pals[y].map((palId) => PAL_STYLE[palId & 7]).join(",");
+              : want.pals[y].map((palId) => styleMap[palId]).join(",");
           expect(`${label} y=${y} vstyle: ${got.vramStyles[y].join(",")}`).toBe(
             `${label} y=${y} vstyle: ${wantStyle}`,
           );
