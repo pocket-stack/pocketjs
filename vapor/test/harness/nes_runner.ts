@@ -93,6 +93,14 @@ try {
       if (Number(size) >= 2) v |= mem(addr + 1) << 8;
       if (Number(size) === 4) v = (v | (mem(addr + 2) << 16) | (mem(addr + 3) << 24)) >>> 0;
       reads[name] = v;
+    } else if (op === "V") {
+      // like D, but reads PPU VRAM (nametables) instead of CPU memory
+      const [name, addrHex, len] = line.slice(1).trim().split(/\s+/);
+      const addr = parseInt(addrHex, 16);
+      const ppu = (nes as unknown as { ppu: { vramMem: number[] } }).ppu;
+      let hex = "";
+      for (let i = 0; i < Number(len); i++) hex += (ppu.vramMem[addr + i] & 0xff).toString(16).padStart(2, "0");
+      reads[name] = hex;
     } else if (op === "D") {
       const [name, addrHex, len] = line.slice(1).trim().split(/\s+/);
       const addr = parseInt(addrHex, 16);

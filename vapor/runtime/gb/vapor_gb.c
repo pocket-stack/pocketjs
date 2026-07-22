@@ -3,7 +3,7 @@
  * The 20x18 cell grid from vapor_core.c lives (with the debug header) at
  * absolute WRAM addresses — the shadow grid IS the debug block, so the
  * harness always reads the logical screen even while the physical VRAM
- * commit trickles through vblank at 2 rows per frame.
+ * commit trickles through vblank a few staged rows per frame.
  *
  * DMG has one background palette, so logical palettes map to glyph STYLES:
  * two baked font copies (normal / inverse) selected per cell through
@@ -38,31 +38,56 @@ static void wait_vblank(void) {
   while (rLY < 144) {}
 }
 
-/* Convert + blit up to 2 dirty shadow rows into the BG map. Row writes are
- * ~500 M-cycles each against a ~1140-cycle vblank; leftover rows keep
- * their dirty bits and land next frame (the logical grid is already
- * correct — only pixels lag). */
+/* VRAM commit, DMG-honest edition. The per-cell style conversion is far
+ * too slow for the ~1140-M-cycle vblank window (the PPU silently drops
+ * writes once mode 3 starts — that exact bug shipped once: the status row
+ * landed, the list row vanished). So rows are CONVERTED to tile bytes in
+ * main time (fill_stage) and the vblank does only STAT-guarded raw copies
+ * (blit_stage); a row's pending bit clears when its copy lands, never
+ * when it is merely staged — missed rows are re-staged next frame. */
+#define STAGE_ROWS 3
+static u8 stage_tiles[STAGE_ROWS * VP_GRID_W];
+static u8 stage_row[STAGE_ROWS];
+static u8 stage_n;
 static u32 vram_pending;
 
-static void commit_rows(void) {
-  u8 budget = 2;
+static void fill_stage(void) {
   u8 y, x;
+  u8 *st;
   vram_pending |= vp_rows_dirty;
   vp_rows_dirty = 0;
-  for (y = 0; y < VP_GRID_H && budget; y++) {
-    volatile u8 *out;
+  stage_n = 0;
+  for (y = 0; y < VP_GRID_H && stage_n < STAGE_ROWS; y++) {
+    const u8 *rc;
+    const u8 *rp;
     if (!(vram_pending & vp_bit32[y])) continue;
-    out = VRAM8(BG_MAP + (u16)y * 32);
-    {
-      const u8 *rc = (const u8 *)vp_grid_ch + (u16)y * VP_GRID_W;
-      const u8 *rp = (const u8 *)vp_grid_pal + (u16)y * VP_GRID_W;
-      for (x = 0; x < VP_GRID_W; x++) {
-        u8 style = vp_pal_style[rp[x] & 7];
-        out[x] = (u8)(1 + (u8)(rc[x] - 0x20) + (style ? 95 : 0));
-      }
-    }
-    vram_pending &= ~vp_bit32[y];
-    budget--;
+    rc = (const u8 *)vp_grid_ch + (u16)y * VP_GRID_W;
+    rp = (const u8 *)vp_grid_pal + (u16)y * VP_GRID_W;
+    st = stage_tiles + (u16)stage_n * VP_GRID_W; /* u16: no __muluchar */
+    for (x = 0; x < VP_GRID_W; x++)
+      st[x] = (u8)(1 + (u8)(rc[x] - 0x20) + (vp_pal_style[rp[x] & 7] ? 95 : 0));
+    stage_row[stage_n] = y;
+    stage_n++;
+  }
+}
+
+static void blit_stage(void) {
+  u8 r, n;
+  for (r = 0; r < stage_n; r++) {
+    volatile u8 *out;
+    const u8 *st;
+    /* sdcc's copy loop runs a 20-byte row in roughly 4-5 scanlines, and
+     * the PPU silently drops any write that lands in mode 3 — so a row
+     * may only START while at least 5 vblank lines remain. A row that
+     * misses the window keeps its pending bit and lands next frame. */
+    if ((rSTAT & 3) != 1 || rLY > 148) return;
+    out = VRAM8(BG_MAP + (u16)stage_row[r] * 32);
+    st = stage_tiles + (u16)r * VP_GRID_W;
+    n = VP_GRID_W;
+    do {
+      *out++ = *st++;
+    } while (--n);
+    vram_pending &= ~vp_bit32[stage_row[r]];
   }
 }
 
@@ -152,8 +177,9 @@ void main(void) {
 
   for (;;) {
     u8 keys, edges, b;
+    fill_stage(); /* main time: convert dirty rows to tile bytes */
     wait_vblank();
-    commit_rows();
+    blit_stage(); /* vblank: raw copies only */
     frame_no++;
     debug_commit();
 
