@@ -13,7 +13,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { BTN } from "../contracts/spec/spec.ts";
-import { scanRegistry } from "../tools/launcher.ts";
+import { scanDisplayRegistry, scanRegistry } from "../tools/launcher.ts";
 import { bootLauncherWorld, type LauncherWorld } from "../hosts/sim/launcher.ts";
 import { bootWorld, treeHasText } from "../hosts/sim/sim.ts";
 
@@ -22,6 +22,7 @@ const settle = async (w: LauncherWorld, frames: number) => {
 };
 
 const registry = scanRegistry(new Set());
+const vitaRegistry = scanRegistry(new Set(), "vita");
 
 describe("launcher registry admission", () => {
   test("admits every PSP-compatible demo, excludes the rest", () => {
@@ -47,10 +48,19 @@ describe("launcher registry admission", () => {
     }
   });
 
+  test("Vita admits the same current demo set through its own target profile", () => {
+    expect(vitaRegistry.apps).toEqual(registry.apps);
+    expect(vitaRegistry.apps).toHaveLength(17);
+  });
+
   test("committed registry.generated.ts is fresh (re-run tools/launcher.ts scan)", async () => {
     const { REGISTRY } = await import("../apps/launcher/registry.generated.ts");
     expect(REGISTRY.map((r) => ({ output: r.output, id: r.id, title: r.title }))).toEqual(
-      registry.apps.map((a) => ({ output: a.output, id: a.id, title: a.title })),
+      scanDisplayRegistry(new Set()).apps.map((a) => ({
+        output: a.output,
+        id: a.id,
+        title: a.title,
+      })),
     );
   });
 });

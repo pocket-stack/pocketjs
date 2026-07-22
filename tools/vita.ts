@@ -14,7 +14,10 @@ import {
   vitaTitleId,
   type HostBuildInputs,
 } from "../framework/src/manifest/index.ts";
-import { verifyPlanHash, type ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
+import {
+  verifyPlanHash,
+  type ResolvedBuildPlan,
+} from "../framework/src/manifest/plan.ts";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 import { demoIdentity, demoManifestFor } from "./demo-identity.ts";
 import { packageVitaVpk } from "./vita-package.ts";
@@ -37,7 +40,10 @@ let useConfig = true;
 let planPath: string | undefined;
 let projectRoot = process.cwd();
 let outputDir = pspUiDir + "dist/";
+let packageOutputDir: string | undefined;
 let skipBuild = false;
+let launcherRegistry = "";
+let launcherPackages = "";
 const cargoArgs: string[] = [];
 const buildFlags: string[] = [];
 
@@ -60,6 +66,12 @@ for (const a of argv) {
     projectRoot = resolvePath(a.slice("--project-root=".length));
   } else if (a.startsWith("--outdir=")) {
     outputDir = resolvePath(a.slice("--outdir=".length)) + "/";
+  } else if (a.startsWith("--package-outdir=")) {
+    packageOutputDir = resolvePath(a.slice("--package-outdir=".length));
+  } else if (a.startsWith("--launcher-registry=")) {
+    launcherRegistry = resolvePath(a.slice("--launcher-registry=".length));
+  } else if (a.startsWith("--launcher-packages=")) {
+    launcherPackages = resolvePath(a.slice("--launcher-packages=".length));
   } else if (a === "--skip-build") {
     skipBuild = true;
   } else if (!appArg && !a.startsWith("-")) {
@@ -70,20 +82,43 @@ for (const a of argv) {
 }
 
 if (!appArg && !planPath) {
-  console.error("usage: bun tools/vita.ts <app> [--plan=<resolved-plan.json>] [--capture] [cargo args…]   e.g. bun tools/vita.ts hero --release");
+  console.error(
+    "usage: bun tools/vita.ts <app> [--plan=<resolved-plan.json>] [--capture] " +
+      "[--launcher-registry=<tsv> --launcher-packages=<dir>] [cargo args…]   " +
+      "e.g. bun tools/vita.ts hero --release",
+  );
   process.exit(1);
+}
+if (Boolean(launcherRegistry) !== Boolean(launcherPackages)) {
+  throw new Error(
+    "PocketJS vita: --launcher-registry and --launcher-packages must be provided together",
+  );
+}
+if (launcherRegistry && !existsSync(launcherRegistry)) {
+  throw new Error(
+    `PocketJS vita: launcher registry not found at ${launcherRegistry}`,
+  );
+}
+if (launcherPackages && !existsSync(launcherPackages)) {
+  throw new Error(
+    `PocketJS vita: launcher packages not found at ${launcherPackages}`,
+  );
 }
 
 // Prereqs
 if (!process.env.VITASDK && !existsSync(`${home}/vitasdk`)) {
-  console.error("PocketJS vita: VITASDK environment variable not set. Please set it to your VitaSDK path.");
+  console.error(
+    "PocketJS vita: VITASDK environment variable not set. Please set it to your VitaSDK path.",
+  );
   process.exit(1);
 }
 
 const vitasdk = process.env.VITASDK || `${home}/vitasdk`;
 const rustup = Bun.which("rustup") ?? `${home}/.cargo/bin/rustup`;
 if (!existsSync(rustup)) {
-  console.error("PocketJS vita: rustup not found (expected ~/.cargo/bin/rustup)");
+  console.error(
+    "PocketJS vita: rustup not found (expected ~/.cargo/bin/rustup)",
+  );
   process.exit(1);
 }
 if (!existsSync(`${vitasdk}/bin/arm-vita-eabi-gcc`)) {
@@ -93,7 +128,10 @@ if (!existsSync(`${vitasdk}/bin/arm-vita-eabi-gcc`)) {
 
 function mountedAppName(arg: string): string {
   const bare = arg.replace(/\.tsx?$/, "").replace(/-main$/, "");
-  if (existsSync(`${pspUiDir}apps/${bare}/main.tsx`) || existsSync(`${pspUiDir}apps/${bare}-main.tsx`)) {
+  if (
+    existsSync(`${pspUiDir}apps/${bare}/main.tsx`) ||
+    existsSync(`${pspUiDir}apps/${bare}-main.tsx`)
+  ) {
     return `${bare}-main`;
   }
   return arg;
@@ -102,13 +140,19 @@ function mountedAppName(arg: string): string {
 let buildPlan: ResolvedBuildPlan | undefined;
 let hostBuildInputs: HostBuildInputs | undefined;
 if (planPath) {
-  buildPlan = await Bun.file(planPath).json() as ResolvedBuildPlan;
+  buildPlan = (await Bun.file(planPath).json()) as ResolvedBuildPlan;
   if (!verifyPlanHash(buildPlan) || buildPlan.target.id !== "vita") {
-    throw new Error(`PocketJS vita: invalid Vita ResolvedBuildPlan at ${planPath}`);
+    throw new Error(
+      `PocketJS vita: invalid Vita ResolvedBuildPlan at ${planPath}`,
+    );
   }
-  hostBuildInputs = extractHostBuildInputs(buildPlan, { expectedTarget: "vita" });
+  hostBuildInputs = extractHostBuildInputs(buildPlan, {
+    expectedTarget: "vita",
+  });
   if (frameworkFlag || configFlagged) {
-    throw new Error("PocketJS vita: framework/config overrides are forbidden with --plan");
+    throw new Error(
+      "PocketJS vita: framework/config overrides are forbidden with --plan",
+    );
   }
 }
 
@@ -122,7 +166,10 @@ async function loadConfig(): Promise<PocketConfig> {
   if (!useConfig || !existsSync(configPath)) return {};
   const url = pathToFileURL(configPath);
   url.searchParams.set("mtime", String(statSync(configPath).mtimeMs));
-  const mod = await import(url.href) as { default?: PocketConfig; config?: PocketConfig };
+  const mod = (await import(url.href)) as {
+    default?: PocketConfig;
+    config?: PocketConfig;
+  };
   return mod.default ?? mod.config ?? {};
 }
 
@@ -138,15 +185,20 @@ const outputApp = buildPlan
   ? buildPlan.app.output
   : `${app}${FRAMEWORKS[framework].outputSuffix}`;
 const stockDemoName = !buildPlan && appArg ? appArg.replace(/-main$/, "") : "";
-const stockDemo = stockDemoName && existsSync(`${pspUiDir}apps/${stockDemoName}/main.tsx`)
-  ? demoIdentity(stockDemoName)
-  : undefined;
+const stockDemo =
+  stockDemoName && existsSync(`${pspUiDir}apps/${stockDemoName}/main.tsx`)
+    ? demoIdentity(stockDemoName)
+    : undefined;
 
 // Keep the convenient low-level demo command on the same manifest/plan path
 // as `bun play` and custom hosts. Without this, its compiler defaulted to a
 // density-1 PSP bundle before the Vita native backend packaged it.
 if (!buildPlan && stockDemo) {
-  const manifest = demoManifestFor(pspUiDir, stockDemoName, framework) as Record<string, any>;
+  const manifest = demoManifestFor(
+    pspUiDir,
+    stockDemoName,
+    framework,
+  ) as Record<string, any>;
   const resolution = validateAndResolveBuildPlan(manifest, { target: "vita" });
   if (!resolution.ok) {
     throw new Error(
@@ -156,14 +208,19 @@ if (!buildPlan && stockDemo) {
     );
   }
   buildPlan = resolution.plan;
-  hostBuildInputs = extractHostBuildInputs(buildPlan, { expectedTarget: "vita" });
+  hostBuildInputs = extractHostBuildInputs(buildPlan, {
+    expectedTarget: "vita",
+  });
   planPath = `${pspUiDir}.pocket/vita-low-level/${outputApp}.plan.json`;
   mkdirSync(resolvePath(planPath, ".."), { recursive: true });
   await Bun.write(planPath, JSON.stringify(buildPlan, null, 2) + "\n");
 }
-const applicationId = buildPlan?.app.id ?? stockDemo?.id ??
+const applicationId =
+  buildPlan?.app.id ??
+  stockDemo?.id ??
   `dev.pocket-stack.legacy.${outputApp.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
-const packageTitle = buildPlan?.app.title ?? stockDemo?.title ?? `PocketJS ${outputApp}`;
+const packageTitle =
+  buildPlan?.app.title ?? stockDemo?.title ?? `PocketJS ${outputApp}`;
 const titleId = vitaTitleId(applicationId);
 
 // ---------------------------------------------------------------------------
@@ -210,32 +267,44 @@ const env = {
     outputDirectory: outputDir,
     embedApp: true,
   }),
-  TARGET_AR: 'arm-vita-eabi-ar',
-  AR_armv7_sony_vita_newlibeabihf: 'arm-vita-eabi-ar',
-  TARGET_CC: 'arm-vita-eabi-gcc',
-  CC_armv7_sony_vita_newlibeabihf: 'arm-vita-eabi-gcc',
-  TARGET_CXX: 'arm-vita-eabi-g++',
-  CXX_armv7_sony_vita_newlibeabihf: 'arm-vita-eabi-g++',
+  TARGET_AR: "arm-vita-eabi-ar",
+  AR_armv7_sony_vita_newlibeabihf: "arm-vita-eabi-ar",
+  TARGET_CC: "arm-vita-eabi-gcc",
+  CC_armv7_sony_vita_newlibeabihf: "arm-vita-eabi-gcc",
+  TARGET_CXX: "arm-vita-eabi-g++",
+  CXX_armv7_sony_vita_newlibeabihf: "arm-vita-eabi-g++",
   POCKETJS_CAPTURE_INPUT: process.env.POCKETJS_CAPTURE_INPUT ?? "",
   POCKETJS_CAPTURE_FRAMES: process.env.POCKETJS_CAPTURE_FRAMES ?? "",
-  POCKETJS_CAPTURE_DIR: process.env.POCKETJS_CAPTURE_DIR ?? "ux0:data/pocketjs-captures",
+  POCKETJS_CAPTURE_DIR:
+    process.env.POCKETJS_CAPTURE_DIR ?? "ux0:data/pocketjs-captures",
+  // Multi-app launcher embed. Empty values preserve the single-app runtime.
+  POCKETJS_LAUNCHER_REGISTRY: launcherRegistry,
+  POCKETJS_LAUNCHER_PACKAGES: launcherPackages,
 };
 
 if (capture) cargoArgs.push("--features", "capture");
 
-console.log(`PocketJS vita: cargo vita build vpk (app=${outputApp}${capture ? ", capture" : ""})`);
+console.log(
+  `PocketJS vita: cargo vita build vpk (app=${outputApp}${capture ? ", capture" : ""})`,
+);
 // Forward to cargo-vita
-await $`${rustup} run nightly-2026-05-28 cargo vita build vpk ${cargoArgs}`.cwd(nativeDir).env(env);
+await $`${rustup} run nightly-2026-05-28 cargo vita build vpk ${cargoArgs}`
+  .cwd(nativeDir)
+  .env(env);
 
 // cargo-vita has a target-id fallback but no corresponding dynamic title-name
 // fallback. Recreate only the package metadata and VPK here so both values
 // come from the same ResolvedBuildPlan; the native executable is unchanged.
-const profile = cargoArgs.includes("--release") || cargoArgs.includes("-r") ? "release" : "debug";
+const profile =
+  cargoArgs.includes("--release") || cargoArgs.includes("-r")
+    ? "release"
+    : "debug";
 const targetDirectory = `${nativeDir}target/armv7-sony-vita-newlibeabihf/${profile}`;
 const eboot = `${targetDirectory}/pocketjs-vita.self`;
 const sfo = `${targetDirectory}/pocketjs-vita.sfo`;
 const vpk = `${targetDirectory}/pocketjs-vita.vpk`;
-if (!existsSync(eboot)) throw new Error(`PocketJS vita: eboot not found at ${eboot}`);
+if (!existsSync(eboot))
+  throw new Error(`PocketJS vita: eboot not found at ${eboot}`);
 
 await $`${vitasdk}/bin/vita-mksfoex -d ATTRIBUTE2=12 -s TITLE_ID=${titleId} ${packageTitle} ${sfo}`;
 await packageVitaVpk({
@@ -245,7 +314,7 @@ await packageVitaVpk({
   output: vpk,
 });
 
-const packagedDirectory = resolvePath(outputDir, "vita");
+const packagedDirectory = packageOutputDir ?? resolvePath(outputDir, "vita");
 const packaged = resolvePath(packagedDirectory, `${outputApp}.vpk`);
 mkdirSync(packagedDirectory, { recursive: true });
 cpSync(vpk, packaged);

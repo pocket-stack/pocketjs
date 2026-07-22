@@ -14,6 +14,13 @@ pub mod ffi;
 pub mod graphics;
 pub mod input;
 pub mod pak;
+pub mod switch;
+
+static mut INPUT_INITIALIZED: bool = false;
+/// A plain `Drop` is allowed to happen inside an external host's open scene, so
+/// guest-native teardown is explicit. Refuse a second guest until the previous
+/// one crossed `Runtime::shutdown` at a safe frame boundary.
+static mut GUEST_NATIVE_ACTIVE: bool = false;
 
 extern "C" {
     fn JS_NewArray(ctx: *mut JSContext) -> JSValue;
@@ -71,28 +78,43 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    /// Initialize vita2d, the PocketJS core, pak textures and QuickJS.
+    /// Initialize process-level Vita services (once), then create one fresh
+    /// PocketJS guest: core, pak textures and QuickJS realm.
     /// `app_pak` must outlive the runtime because `globalThis.__pak` borrows it.
     ///
     /// # Safety
     ///
-    /// Construct only one runtime, on the Vita render thread. The caller must
-    /// keep all subsequent runtime and graphics access on that thread.
+    /// Construct only one live runtime at a time, on the Vita render thread.
+    /// Call [`Runtime::shutdown`] at a closed-scene frame boundary before
+    /// booting another guest. Keep all runtime and graphics access on the same
+    /// thread.
     pub unsafe fn new(app_pak: &'static [u8]) -> Result<Self, String> {
+        if GUEST_NATIVE_ACTIVE {
+            return Err(String::from(
+                "previous PocketJS Vita guest was not shut down",
+            ));
+        }
         graphics::init().map_err(String::from)?;
-        input::init();
+        if !INPUT_INITIALIZED {
+            input::init();
+            INPUT_INITIALIZED = true;
+        }
 
         let ui = ffi::init_ui();
         pak::install(app_pak);
         let (textures, sprites) = pak::feed(ui, app_pak);
+        switch::upload_shot(ui);
+        GUEST_NATIVE_ACTIVE = true;
 
         let rt = JS_NewRuntime();
         if rt.is_null() {
+            reset_guest_state();
             return Err(String::from("JS_NewRuntime failed"));
         }
         let ctx = JS_NewContext(rt);
         if ctx.is_null() {
             JS_FreeRuntime(rt);
+            reset_guest_state();
             return Err(String::from("JS_NewContext failed"));
         }
         let global = JS_GetGlobalObject(ctx);
@@ -297,6 +319,36 @@ impl Runtime {
         graphics::render_over(ffi::ui(), core::slice::from_raw_parts(ptr, len));
     }
 
+    /// Freeze the current guest's last DrawList for a launcher summon. This is
+    /// deliberately a CPU raster path: current Vita3K/macOS GXM framebuffer
+    /// readback is incoherent, while the DrawList is deterministic on both
+    /// emulator and hardware.
+    ///
+    /// # Safety
+    ///
+    /// Call after the guest frame has rendered/presented and before dropping
+    /// the runtime, with no outstanding mutable `Ui` borrow.
+    pub unsafe fn capture_switch_shot(&mut self) {
+        let (ptr, len) = self.draw_words();
+        switch::capture_shot(ffi::ui(), core::slice::from_raw_parts(ptr, len));
+    }
+
+    /// Finish a guest so another embedded app can boot. Unlike `Drop`, this
+    /// retires GPU handles and drops the process-global `Ui`/pak binding.
+    /// vita2d and controller sampling remain initialized for the process.
+    ///
+    /// External native hosts must call this with no open vita2d scene and
+    /// before `vita2d_fini`; the stock launcher calls it immediately after the
+    /// outgoing frame's `present`.
+    ///
+    /// # Safety
+    ///
+    /// Call on the owning render thread with no outstanding `Ui` reference.
+    pub unsafe fn shutdown(mut self) {
+        self.release_quickjs();
+        reset_guest_state();
+    }
+
     /// Write a deterministic native-density 960x544 golden for the current UI
     /// tree while retaining PocketJS's 480x272 logical layout contract.
     ///
@@ -313,12 +365,37 @@ impl Runtime {
 impl Drop for Runtime {
     fn drop(&mut self) {
         unsafe {
-            if !JS_IsUndefined(self.frame_fn) {
-                JS_FreeValue(self.ctx, self.frame_fn);
-            }
-            JS_FreeValue(self.ctx, self.global);
-            JS_FreeContext(self.ctx);
-            JS_FreeRuntime(self.rt);
+            // QJS owns no GXM resources, so this fallback remains safe if an
+            // external host drops Runtime while composing an open scene. Full
+            // guest replacement requires the explicit shutdown boundary above.
+            self.release_quickjs();
         }
     }
+}
+
+impl Runtime {
+    unsafe fn release_quickjs(&mut self) {
+        if self.ctx.is_null() {
+            return;
+        }
+        if !JS_IsUndefined(self.frame_fn) {
+            JS_FreeValue(self.ctx, self.frame_fn);
+            self.frame_fn = JS_UNDEFINED;
+        }
+        JS_FreeValue(self.ctx, self.global);
+        self.global = JS_UNDEFINED;
+        JS_FreeContext(self.ctx);
+        self.ctx = core::ptr::null_mut();
+        JS_FreeRuntime(self.rt);
+        self.rt = core::ptr::null_mut();
+    }
+}
+
+/// Tear down every guest-owned native surface while retaining process-level
+/// vita2d/input initialization for the next app.
+unsafe fn reset_guest_state() {
+    graphics::reset_guest();
+    ffi::reset_ui();
+    pak::uninstall();
+    GUEST_NATIVE_ACTIVE = false;
 }

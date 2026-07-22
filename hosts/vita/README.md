@@ -46,6 +46,10 @@ bun play --help
 # Low-level build only:
 bun run vita hero --release
 # dist/vita/hero-main.vpk
+
+# Cover Flow launcher + every Vita-admitted Pocket app in one VPK:
+bun run launcher:vita --release
+# dist/vita/launcher-main.vpk
 ```
 
 `bun play vita <demo>` owns the interactive loop: it builds the selected demo,
@@ -85,6 +89,13 @@ hosts call `packageVitaVpk()` from `@pocketjs/framework/vita-package`:
 framework defaults are resolved first and application artwork overlays them.
 The VPK is self-contained; no separate app pak, artwork, or shader file is
 needed.
+
+Reusable Rust hosts that replace one Pocket guest with another must consume
+the old runtime with `Runtime::shutdown(self)` after presenting a closed
+scene. That boundary releases QuickJS, waits for GXM, retires the guest's
+texture/font handles, drops its `Ui`, and uninstalls its pak. Plain `Drop`
+only releases QuickJS so it remains safe inside a host-owned open scene; it
+does not authorize constructing a second guest.
 
 ## Golden E2E
 

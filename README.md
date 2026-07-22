@@ -159,6 +159,7 @@ bun run vita <app>                 # low-level Vita demo build
 bun run dev [app]                  # browser dev host
 bun run wasm                       # rebuild the wasm core
 bun run e2e:vita                     # Vita3K, native-density 960x544 golden E2E
+bun run e2e:launcher:vita            # Vita3K, multi-app launcher/swap E2E
 bun psplink                           # interactive real PSP switcher over PSPLINK
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
@@ -229,18 +230,21 @@ PSP builds retain their controller-only fallback.
 
 ## The Pocket Launcher (on-device app switching)
 
-One EBOOT can now embed EVERY PSP-admissible app plus a Cover Flow launcher
-([docs/LAUNCHER.md](docs/LAUNCHER.md)): pick an app with the deck, press SELECT inside
-any app to summon the deck back over a frozen shot of where you were, pick
-another. Switching is a whole-guest swap (fresh QuickJS realm + core per
-app); three append-only surface ops (`appTable`/`appLaunch`/`appShot`) carry
-the protocol, and single-app EBOOTs are byte-identical to before.
+One PSP EBOOT or Vita VPK can embed every app admitted by that target plus a
+Cover Flow launcher ([docs/LAUNCHER.md](docs/LAUNCHER.md)): pick an app with the deck,
+press SELECT inside any app to summon the deck back over a frozen shot of
+where you were, then resume or pick another. Switching is a whole-guest swap
+(fresh QuickJS realm + core + guest GPU resources per app); three append-only
+surface ops (`appTable`/`appLaunch`/`appShot`) carry the protocol, and ordinary
+single-app packages retain the original path.
 
 ```sh
-bun run launcher scan                 # admission sweep -> registry
-bun run launcher covers               # + deterministic sim-rendered covers
-bun run launcher build -- --release   # + the multi-app PSP EBOOT
-bun run e2e:launcher                  # scripted 3-swap journey in PPSSPPHeadless
+bun run launcher scan --target vita               # target admission -> registry
+bun run launcher covers --target vita             # + deterministic sim covers
+bun run launcher build --target psp -- --release  # -> multi-app PSP EBOOT
+bun run launcher build --target vita -- --release # -> dist/vita/launcher-main.vpk
+bun run e2e:launcher                              # PPSSPPHeadless 3-swap journey
+bun run e2e:launcher:vita                         # Vita3K 7-swap/resource-reuse journey
 ```
 
 ## DevTools + time travel

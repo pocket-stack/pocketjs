@@ -8,7 +8,8 @@
 //!   ui:styles        -> Ui::load_styles (styles.bin)
 //!   ui:font.<slot>   -> Ui::load_font_atlas (slot is in the blob header)
 //!   ui:img.<name>    -> decode the 8-byte IMG header {u16 w, u16 h, u8 psm,
-//!                       3B pad} + raw pixels -> Ui::upload_texture; the
+//!                       u8 flags, 2B reserved} + raw pixels ->
+//!                       Ui::upload_texture_flags; the
 //!                       (name, handle) pairs are returned so ffi.rs can
 //!                       expose them to JS as ui.__textures (renderer
 //!                       registerTexture keys are the bare `src` names).
@@ -48,6 +49,16 @@ pub unsafe fn install(pak: &'static [u8]) {
 /// Same single-threaded contract as `install`.
 pub unsafe fn installed() -> &'static [u8] {
     PAK
+}
+
+/// Remove the outgoing guest's runtime lookup surface. Embedded bytes are
+/// static, but leaving the old pak installed would make a boot failure expose
+/// another app's tiles to the next realm.
+///
+/// # Safety
+/// Same single-render-thread contract as `install`.
+pub unsafe fn uninstall() {
+    PAK = &[];
 }
 
 #[inline]
@@ -133,16 +144,18 @@ pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
                 }
             }
         } else if let Some(name) = key.strip_prefix("ui:img.") {
-            // IMG entry: 8-byte header {u16 w, u16 h, u8 psm, 3B pad} + pixels
+            // IMG entry: 8-byte header {u16 w, u16 h, u8 psm, u8 flags,
+            // 2B reserved} + pixels.
             // (framework/compiler/pak.ts encodeImageEntry).
-            let (Some(w), Some(h), Some(&psm)) = (rd_u16(blob, 0), rd_u16(blob, 2), blob.get(4))
+            let (Some(w), Some(h), Some(&psm), Some(&flags)) =
+                (rd_u16(blob, 0), rd_u16(blob, 2), blob.get(4), blob.get(5))
             else {
                 continue;
             };
             let Some(pixels) = blob.get(8..) else {
                 continue;
             };
-            let handle = ui.upload_texture(pixels, w as u32, h as u32, psm as u32);
+            let handle = ui.upload_texture_flags(pixels, w as u32, h as u32, psm as u32, flags);
             if handle >= 0 {
                 // The core copied the pixels into 16-byte-aligned storage; the
                 // GE samples RAM, not the dcache — write back ONCE at upload.

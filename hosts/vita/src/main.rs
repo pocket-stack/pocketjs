@@ -1,9 +1,5 @@
-#[cfg(not(feature = "capture"))]
-use pocketjs_vita::input;
-use pocketjs_vita::{graphics, vita_log, Runtime};
-
-static APP_JS: &str = include_str!(concat!(env!("OUT_DIR"), "/game.js"));
-static APP_PAK: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/app.pak"));
+use pocketjs_core::spec;
+use pocketjs_vita::{graphics, input, switch, vita_log, Runtime};
 
 #[cfg(feature = "capture")]
 static CAPTURE_INPUT: &str = env!("POCKETJS_CAPTURE_INPUT");
@@ -15,6 +11,10 @@ static CAPTURE_DIR: &str = env!("POCKETJS_CAPTURE_DIR");
 #[no_mangle]
 #[used]
 pub static sceUserMainThreadStackSize: u32 = 2 * 1024 * 1024;
+
+/// Process-global frame identity. Guest relaunches must not restart capture
+/// input or overwrite files from the previous app.
+static mut GLOBAL_FRAME: u32 = 0;
 
 #[cfg(feature = "capture")]
 fn scripted_buttons(frame: u32) -> i32 {
@@ -59,60 +59,117 @@ fn fail(message: &str) -> ! {
     }
 }
 
+/// A broken embedded app returns to app 0. A broken launcher (or any
+/// single-app VPK) retains the existing visible halt behavior.
+unsafe fn guest_fail(app_index: usize, message: &str) -> usize {
+    switch::cancel_pending();
+    if switch::multi() && app_index != 0 {
+        vita_log(format_args!("[PocketJS Vita guest error] {message}"));
+        0
+    } else {
+        fail(message)
+    }
+}
+
+/// Boot one embedded guest, drive it until an app switch is requested, then
+/// retire it at a closed-scene boundary and return the next table index.
+unsafe fn run_guest(app_index: usize) -> usize {
+    switch::set_current(app_index);
+    let Some(guest) = switch::guest_bytes(app_index) else {
+        return guest_fail(app_index, "embedded package unreadable for Vita");
+    };
+
+    let mut runtime = match Runtime::new(guest.pak) {
+        Ok(runtime) => runtime,
+        Err(error) => return guest_fail(app_index, &error),
+    };
+    if let Err(error) = runtime.eval(guest.js) {
+        runtime.shutdown();
+        return guest_fail(app_index, &error);
+    }
+
+    // A newly booted guest starts latched. If SELECT is still held from the
+    // launcher action that booted it, require a release before it can summon.
+    let mut previous_select = true;
+    #[cfg(feature = "capture")]
+    let wanted = capture_frames();
+    #[cfg(feature = "capture")]
+    let last_capture = wanted.iter().copied().max().unwrap_or(0);
+
+    loop {
+        #[cfg(feature = "capture")]
+        let (mut buttons, analog, touches) = (
+            scripted_buttons(GLOBAL_FRAME),
+            spec::ANALOG_CENTER as i32,
+            input::TouchSnapshot::EMPTY,
+        );
+        #[cfg(not(feature = "capture"))]
+        let (mut buttons, analog, touches) = {
+            let pad = input::read();
+            (pad.buttons as i32, pad.left_analog(), input::read_touches())
+        };
+
+        // SELECT is a host-owned summon chord only in non-launcher guests.
+        // Strip it from their guest ABI and schedule the swap on its press edge.
+        if switch::multi() && app_index != 0 {
+            let select_now = buttons & spec::btn::SELECT as i32 != 0;
+            if select_now && !previous_select {
+                switch::request_summon();
+            }
+            previous_select = select_now;
+            buttons &= !(spec::btn::SELECT as i32);
+        }
+
+        if let Err(error) = runtime.frame_with_input(buttons, analog, &touches) {
+            runtime.shutdown();
+            return guest_fail(app_index, &error);
+        }
+        runtime.tick();
+        runtime.render();
+        graphics::present();
+
+        #[cfg(feature = "capture")]
+        if wanted.contains(&GLOBAL_FRAME) {
+            let stem = format!("{CAPTURE_DIR}/f{:04}", GLOBAL_FRAME);
+            runtime
+                .capture_golden(&format!("{stem}.rgba"))
+                .unwrap_or_else(|error| fail(&error.to_string()));
+            std::fs::write(format!("{stem}.json"), switch::frame_json(app_index))
+                .unwrap_or_else(|error| fail(&error.to_string()));
+        }
+
+        #[cfg(feature = "capture")]
+        if GLOBAL_FRAME >= last_capture {
+            let _ = std::fs::create_dir_all(CAPTURE_DIR);
+            let _ = std::fs::write(format!("{CAPTURE_DIR}/done"), b"ok\n");
+            // Vita3K 0.2.1/macOS can fault while tearing down GXM from
+            // sceKernelExitProcess. The E2E host owns process lifetime.
+            loop {
+                std::thread::yield_now();
+            }
+        }
+
+        // appLaunch/SELECT requests become visible only after the outgoing
+        // current frame has presented. A summon additionally freezes that
+        // DrawList before the outgoing core is dropped.
+        if let Some((next, summon)) = switch::take_pending() {
+            if summon {
+                runtime.capture_switch_shot();
+            }
+            GLOBAL_FRAME = GLOBAL_FRAME.wrapping_add(1);
+            runtime.shutdown();
+            return next;
+        }
+
+        GLOBAL_FRAME = GLOBAL_FRAME.wrapping_add(1);
+    }
+}
+
 fn main() {
     unsafe {
-        let mut runtime = Runtime::new(APP_PAK).unwrap_or_else(|error| fail(&error));
-        runtime.eval(APP_JS).unwrap_or_else(|error| fail(&error));
-
-        #[cfg(feature = "capture")]
-        let wanted = capture_frames();
-        #[cfg(feature = "capture")]
-        let last_capture = wanted.iter().copied().max().unwrap_or(0);
-
-        let mut frame = 0u32;
+        let mut next = 0usize;
         loop {
-            #[cfg(feature = "capture")]
-            let (buttons, analog, touches) = (
-                scripted_buttons(frame),
-                pocketjs_core::spec::ANALOG_CENTER as i32,
-                pocketjs_vita::input::TouchSnapshot::EMPTY,
-            );
-            #[cfg(not(feature = "capture"))]
-            let (buttons, analog, touches) = {
-                let pad = input::read();
-                (pad.buttons as i32, pad.left_analog(), input::read_touches())
-            };
-
-            runtime
-                .frame_with_input(buttons, analog, &touches)
-                .unwrap_or_else(|error| fail(&error));
-            runtime.tick();
-            runtime.render();
-
-            graphics::present();
-
-            #[cfg(feature = "capture")]
-            if wanted.contains(&frame) {
-                let path = format!("{CAPTURE_DIR}/f{frame:04}.rgba");
-                runtime
-                    .capture_golden(&path)
-                    .unwrap_or_else(|error| fail(&error.to_string()));
-            }
-
-            #[cfg(feature = "capture")]
-            if frame >= last_capture {
-                let _ = std::fs::create_dir_all(CAPTURE_DIR);
-                let _ = std::fs::write(format!("{CAPTURE_DIR}/done"), b"ok\n");
-                // Vita3K 0.2.1/macOS can fault while tearing down GXM from
-                // sceKernelExitProcess. The E2E host owns process lifetime:
-                // leave the completed guest parked after publishing `done`,
-                // then let the driver terminate the emulator cleanly.
-                loop {
-                    std::thread::yield_now();
-                }
-            }
-
-            frame = frame.wrapping_add(1);
+            next = run_guest(next);
         }
     }
 }

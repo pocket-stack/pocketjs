@@ -23,6 +23,11 @@ pub use build_plan::{
     INTEGER_SCALE, LOGICAL_H, LOGICAL_W, PHYSICAL_H, PHYSICAL_W, RASTER_DENSITY, SCALE,
 };
 pub const DEFAULT_POOL_BYTES: u32 = 2 * 1024 * 1024;
+/// Cross-guest same-size texture reuse avoids Vita3K's live texture-destroy
+/// instability, but an unbounded union of every app's size buckets would turn
+/// launcher browsing into monotonic CDRAM growth. Trim only at a guest boundary
+/// after GXM is known idle.
+const RECYCLED_TEXTURE_BUDGET: usize = 16 * 1024 * 1024;
 /// Conservative GXM font-atlas limit. App textures keep the portable 512px
 /// contract, but density-2 ASCII at the 36px slot needs a 1024x1024 atlas.
 const VITA_FONT_TEXTURE_MAX_DIM: u32 = 2048;
@@ -92,6 +97,46 @@ unsafe fn take_recycled_texture(w: u32, h: u32) -> Option<Texture> {
         .position(|texture| texture.w == w && texture.h == h)?;
     ensure_rendering_done();
     Some(recycled.swap_remove(index))
+}
+
+#[inline]
+fn texture_bytes(texture: Texture) -> usize {
+    texture.w as usize * texture.h as usize * 4
+}
+
+/// Retire every GPU handle belonging to the outgoing guest. vita2d itself is
+/// process-owned and remains initialized for the next guest.
+///
+/// # Safety
+///
+/// Call on the Vita render thread with no open scene and no outstanding guest
+/// texture references. This function owns the required GXM idle wait.
+pub unsafe fn reset_guest() {
+    assert!(
+        !SCENE_OPEN,
+        "cannot reset guest GPU state inside a vita2d scene"
+    );
+    ensure_rendering_done();
+
+    if let Some(guest_textures) = TEXTURES.take() {
+        for texture in guest_textures.into_values() {
+            recycle_texture(texture);
+        }
+    }
+    if let Some(guest_fonts) = FONTS.take() {
+        for font in guest_fonts.into_values() {
+            recycle_texture(font.texture);
+        }
+    }
+    CLIP_STACK = None;
+
+    let recycled = RECYCLED_TEXTURES.get_or_insert_with(Vec::new);
+    let mut bytes: usize = recycled.iter().copied().map(texture_bytes).sum();
+    while bytes > RECYCLED_TEXTURE_BUDGET && !recycled.is_empty() {
+        let texture = recycled.remove(0);
+        bytes = bytes.saturating_sub(texture_bytes(texture));
+        vita2d_free_texture(texture.ptr);
+    }
 }
 
 unsafe fn fonts() -> &'static mut HashMap<u8, FontTexture> {

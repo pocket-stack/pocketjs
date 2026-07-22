@@ -2,30 +2,65 @@
 
 // The launcher artifact chain (docs/LAUNCHER.md "Build pipeline").
 //
-//   bun tools/launcher.ts scan             registry only
-//   bun tools/launcher.ts covers           + compile app dists, render covers
-//   bun tools/launcher.ts build            + launcher app, multi-app PSP EBOOT
+//   bun tools/launcher.ts scan [--target psp|vita]    registry only
+//   bun tools/launcher.ts covers [--target ...]       + render target-neutral covers
+//   bun tools/launcher.ts build [--target ...]        + multi-app console package
 //
 // The embedded set is COMPUTED, never curated: every apps/*/pocket.json
-// that resolves against the psp target profile (the same admission gate
-// `pocket build` runs) is in, minus explicit --exclude. Covers are rendered
-// by the deterministic sim host, so cover-bearing goldens stay stable.
+// that resolves against the selected target profile (the same admission gate
+// `pocket build` runs) is in, minus explicit --exclude. Covers are rendered by
+// the deterministic PSP-flavored sim host, so they remain target-neutral and
+// cover-bearing goldens stay stable. Vita's density-2 bundles/packages live in
+// their own output tree and never overwrite the PSP/sim artifacts in dist/.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { join, relative } from "node:path";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 import { encodePNG } from "../tests/png.ts";
 import { SHOT_W, SHOT_H, downscaleShot } from "../hosts/sim/shot.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
-const DEMOS_DIR = join(ROOT, "apps");
-const LAUNCHER_DIR = join(DEMOS_DIR, "launcher");
+const APPS_DIR = join(ROOT, "apps");
+const LAUNCHER_DIR = join(APPS_DIR, "launcher");
 const COVERS_DIR = join(LAUNCHER_DIR, "covers");
-const REGISTRY_JSON = join(ROOT, "dist/launcher-registry.json");
-const REGISTRY_TSV = join(ROOT, "dist/launcher-registry.tsv");
 const IMAGES_JSON = join(LAUNCHER_DIR, "images.json");
 const REGISTRY_TS = join(LAUNCHER_DIR, "registry.generated.ts");
 const LAUNCHER_MANIFEST = join(LAUNCHER_DIR, "pocket.json");
+
+export type LauncherTarget = "psp" | "vita";
+
+interface LauncherPaths {
+  /** Target-flavored JS/pak output. PSP stays in dist/ for sim/site compatibility. */
+  output: string;
+  /** Target-thinned .pocket files consumed verbatim by the native host. */
+  packages: string;
+  registryJson: string;
+  registryTsv: string;
+}
+
+function launcherPaths(target: LauncherTarget): LauncherPaths {
+  if (target === "psp") {
+    return {
+      output: join(ROOT, "dist"),
+      packages: join(ROOT, "dist/packages"),
+      registryJson: join(ROOT, "dist/launcher-registry.json"),
+      registryTsv: join(ROOT, "dist/launcher-registry.tsv"),
+    };
+  }
+  const output = join(ROOT, "dist/launcher/vita");
+  return {
+    output,
+    packages: join(output, "packages"),
+    registryJson: join(output, "launcher-registry.json"),
+    registryTsv: join(output, "launcher-registry.tsv"),
+  };
+}
 
 /** Frames the sim settles before the cover render: boot springs and stagger
  *  animations land, steady state does not drift (fixed dt, mask 0). */
@@ -67,58 +102,115 @@ export interface LauncherRegistry {
 function usage(message?: string): never {
   if (message) console.error(`launcher: ${message}`);
   console.error(
-    "usage: bun tools/launcher.ts <scan|covers|pack|build> [--exclude <output>]... [--force] [-- backend args]",
+    "usage: bun tools/launcher.ts <scan|covers|pack|build> [--target psp|vita] [--exclude <output>]... [--force] [-- backend args]",
   );
   process.exit(1);
 }
 
-/** Admission sweep: every demo pocket.json that resolves for psp. */
-export function scanRegistry(exclude: ReadonlySet<string>): LauncherRegistry {
+function scanRegistryForTarget(
+  exclude: ReadonlySet<string>,
+  target: LauncherTarget,
+  logSkips: boolean,
+): LauncherRegistry {
   const apps: LauncherRegistryEntry[] = [];
   const seen = new Map<string, string>();
-  for (const dir of readdirSync(DEMOS_DIR).sort()) {
+  for (const dir of readdirSync(APPS_DIR).sort()) {
     if (dir === "launcher") continue; // the launcher never lists itself
-    const manifestPath = join(DEMOS_DIR, dir, "pocket.json");
+    const manifestPath = join(APPS_DIR, dir, "pocket.json");
     if (!existsSync(manifestPath)) continue;
     const manifest: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
-    const resolution = validateAndResolveBuildPlan(manifest, { target: "psp" });
+    const resolution = validateAndResolveBuildPlan(manifest, { target });
     if (!resolution.ok) {
       const codes = resolution.diagnostics.map((d) => d.code).join(", ");
-      console.log(`  skip ${dir}: not psp-admissible (${codes})`);
+      if (logSkips)
+        console.log(`  skip ${dir}: not ${target}-admissible (${codes})`);
       continue;
     }
     const { output, id, title } = resolution.plan.app;
     if (exclude.has(output)) {
-      console.log(`  skip ${dir}: excluded (${output})`);
+      if (logSkips) console.log(`  skip ${dir}: excluded (${output})`);
       continue;
     }
     const prev = seen.get(output);
     if (prev) {
-      console.log(`  skip ${dir}: duplicate output ${output} (kept ${prev})`);
+      if (logSkips)
+        console.log(`  skip ${dir}: duplicate output ${output} (kept ${prev})`);
       continue;
     }
     seen.set(output, dir);
     apps.push({ output, id, title, manifest: relative(ROOT, manifestPath) });
   }
-  apps.sort((a, b) => (a.title < b.title ? -1 : a.title > b.title ? 1 : a.output < b.output ? -1 : 1));
+  apps.sort((a, b) =>
+    a.title < b.title
+      ? -1
+      : a.title > b.title
+        ? 1
+        : a.output < b.output
+          ? -1
+          : 1,
+  );
   return { apps };
 }
 
-function writeRegistry(registry: LauncherRegistry): void {
-  mkdirSync(join(ROOT, "dist"), { recursive: true });
-  writeFileSync(REGISTRY_JSON, JSON.stringify(registry, null, 2) + "\n");
+/** Admission sweep: every app pocket.json that resolves for the target. */
+export function scanRegistry(
+  exclude: ReadonlySet<string>,
+  target: LauncherTarget = "psp",
+): LauncherRegistry {
+  return scanRegistryForTarget(exclude, target, true);
+}
+
+/**
+ * Display metadata is target-neutral and committed in one generated module.
+ * Keep it as the PSP/Vita union so running a Vita build can never leave the
+ * common source tree in a Vita-only state. Each native host still reports the
+ * target-admitted subset through appTable(), and the launcher intersects it.
+ */
+export function scanDisplayRegistry(
+  exclude: ReadonlySet<string>,
+): LauncherRegistry {
+  const byOutput = new Map<string, LauncherRegistryEntry>();
+  for (const target of ["psp", "vita"] as const) {
+    for (const app of scanRegistryForTarget(exclude, target, false).apps) {
+      byOutput.set(app.output, app);
+    }
+  }
+  const apps = [...byOutput.values()].sort((a, b) =>
+    a.title < b.title
+      ? -1
+      : a.title > b.title
+        ? 1
+        : a.output < b.output
+          ? -1
+          : 1,
+  );
+  return { apps };
+}
+
+function writeRegistry(
+  targetRegistry: LauncherRegistry,
+  displayRegistry: LauncherRegistry,
+  paths: LauncherPaths,
+): void {
+  mkdirSync(paths.output, { recursive: true });
+  writeFileSync(
+    paths.registryJson,
+    JSON.stringify(targetRegistry, null, 2) + "\n",
+  );
   // The native build's twin (hosts/psp/build.rs): output\tid\ttitle per line —
   // no JSON parser inside a build script.
   writeFileSync(
-    REGISTRY_TSV,
-    registry.apps.map((a) => `${a.output}\t${a.id}\t${a.title}\n`).join(""),
+    paths.registryTsv,
+    targetRegistry.apps
+      .map((a) => `${a.output}\t${a.id}\t${a.title}\n`)
+      .join(""),
   );
   const lines = [
     "// GENERATED by tools/launcher.ts scan — do not edit by hand; COMMIT",
     "// the regenerated file (tests/launcher-sim.test.ts asserts freshness).",
-    "// The display-side registry twin of dist/launcher-registry.json: the",
-    "// launcher app imports it for titles + cover asset keys; the host's",
-    "// appTable (spec op 39) stays the runtime truth for what is embedded.",
+    "// The display-side PSP/Vita union: the launcher app imports it for",
+    "// titles + cover asset keys; each host's target-specific appTable",
+    "// (spec op 39) stays the runtime truth for what is embedded.",
     "",
     "export interface RegistryApp {",
     "  output: string;",
@@ -133,7 +225,7 @@ function writeRegistry(registry: LauncherRegistry): void {
     "}",
     "",
     "export const REGISTRY: readonly RegistryApp[] = [",
-    ...registry.apps.map(
+    ...displayRegistry.apps.map(
       (a) =>
         `  { output: ${JSON.stringify(a.output)}, id: ${JSON.stringify(a.id)}, title: ${JSON.stringify(
           a.title,
@@ -152,7 +244,7 @@ function writeRegistry(registry: LauncherRegistry): void {
   const images: Record<string, { linear: boolean }> = {
     "covers/launcher-bg.png": { linear: true },
   };
-  for (const a of registry.apps) {
+  for (const a of displayRegistry.apps) {
     images[`covers/cover-${a.output}.png`] = { linear: true };
     // Reflections stay 8888: their whole point is a smooth alpha ramp, and
     // PSM_4444's 4-bit alpha gives the 0.3→0 fade only ~5 steps — visible
@@ -162,12 +254,29 @@ function writeRegistry(registry: LauncherRegistry): void {
   writeFileSync(IMAGES_JSON, JSON.stringify(images, null, 2) + "\n");
 }
 
-async function compileApp(manifest: string): Promise<void> {
+async function compileApp(
+  manifest: string,
+  target: LauncherTarget,
+  output: string,
+): Promise<void> {
   const p = Bun.spawnSync(
-    ["bun", "tools/pocket.ts", "compile", "--target", "psp", "--manifest", manifest, "--project-root", "."],
+    [
+      "bun",
+      "tools/pocket.ts",
+      "compile",
+      "--target",
+      target,
+      "--manifest",
+      manifest,
+      "--project-root",
+      ".",
+      "--outdir",
+      relative(ROOT, output),
+    ],
     { cwd: ROOT, stdout: "inherit", stderr: "inherit" },
   );
-  if (p.exitCode !== 0) throw new Error(`launcher: compile failed for ${manifest}`);
+  if (p.exitCode !== 0)
+    throw new Error(`launcher: compile failed for ${manifest}`);
 }
 
 /** Deterministic stand-in for apps the sim cannot boot (today: vue-vapor
@@ -231,8 +340,16 @@ function stageBackground(w = SHOT_W, h = SHOT_H): Uint8Array {
     // Vertical base: near-black slate up top -> pure black floor.
     const base: [number, number, number] =
       t < 0.55
-        ? [19 + (7 - 19) * (t / 0.55), 26 + (10 - 26) * (t / 0.55), 36 + (16 - 36) * (t / 0.55)]
-        : [7 * (1 - (t - 0.55) / 0.45), 10 * (1 - (t - 0.55) / 0.45), 16 * (1 - (t - 0.55) / 0.45)];
+        ? [
+            19 + (7 - 19) * (t / 0.55),
+            26 + (10 - 26) * (t / 0.55),
+            36 + (16 - 36) * (t / 0.55),
+          ]
+        : [
+            7 * (1 - (t - 0.55) / 0.45),
+            10 * (1 - (t - 0.55) / 0.45),
+            16 * (1 - (t - 0.55) / 0.45),
+          ];
     for (let x = 0; x < w; x++) {
       const dx = (x - cx) / glowR;
       const dy = (y - cy) / (glowR * 0.75);
@@ -286,7 +403,10 @@ function reflectionOf(cover: Uint8Array): Uint8Array {
   return out;
 }
 
-async function renderCovers(registry: LauncherRegistry, force: boolean): Promise<void> {
+async function renderCovers(
+  registry: LauncherRegistry,
+  force: boolean,
+): Promise<void> {
   mkdirSync(COVERS_DIR, { recursive: true });
   const bgPath = join(COVERS_DIR, "launcher-bg.png");
   if (force || !existsSync(bgPath)) {
@@ -301,7 +421,21 @@ async function renderCovers(registry: LauncherRegistry, force: boolean): Promise
     const reflPath = join(COVERS_DIR, `refl-${app.output}.png`);
     if (!force && existsSync(coverPath) && existsSync(reflPath)) continue;
     if (force || !existsSync(join(ROOT, "dist", `${app.output}.js`))) {
-      await compileApp(app.manifest);
+      // The deterministic sim is the PSP-flavored 480x272 oracle. Covers are
+      // distribution metadata, not a target raster variant; Vita consumes the
+      // same 256x128 PNG from its own density-2 launcher pak. Prefer the PSP
+      // bundle; a future Vita-only app still gets cover metadata through the
+      // injected sim host without making the common registry target-specific.
+      const manifest = JSON.parse(
+        readFileSync(join(ROOT, app.manifest), "utf8"),
+      );
+      const coverTarget: LauncherTarget = validateAndResolveBuildPlan(
+        manifest,
+        { target: "psp" },
+      ).ok
+        ? "psp"
+        : "vita";
+      await compileApp(app.manifest, coverTarget, join(ROOT, "dist"));
     }
     let shot: Uint8Array;
     try {
@@ -315,7 +449,9 @@ async function renderCovers(registry: LauncherRegistry, force: boolean): Promise
     } catch (error) {
       shot = fallbackCover(app.output);
       const message = error instanceof Error ? error.message : String(error);
-      console.log(`  cover ${app.output} -> fallback gradient (sim boot failed: ${message})`);
+      console.log(
+        `  cover ${app.output} -> fallback gradient (sim boot failed: ${message})`,
+      );
     }
     const ringed = transparentRing(shot, SHOT_W, SHOT_H);
     await Bun.write(coverPath, encodePNG(ringed, SHOT_W, SHOT_H));
@@ -349,8 +485,12 @@ export function resizeBilinear(
       const fx = Math.min(1, Math.max(0, sx - x0));
       const o = (y * dw + x) * 4;
       for (let c = 0; c < 4; c++) {
-        const top = rgba[(y0 * sw + x0) * 4 + c] + (rgba[(y0 * sw + x1) * 4 + c] - rgba[(y0 * sw + x0) * 4 + c]) * fx;
-        const bot = rgba[(y1 * sw + x0) * 4 + c] + (rgba[(y1 * sw + x1) * 4 + c] - rgba[(y1 * sw + x0) * 4 + c]) * fx;
+        const top =
+          rgba[(y0 * sw + x0) * 4 + c] +
+          (rgba[(y0 * sw + x1) * 4 + c] - rgba[(y0 * sw + x0) * 4 + c]) * fx;
+        const bot =
+          rgba[(y1 * sw + x0) * 4 + c] +
+          (rgba[(y1 * sw + x1) * 4 + c] - rgba[(y1 * sw + x0) * 4 + c]) * fx;
         out[o + c] = Math.round(top + (bot - top) * fy);
       }
     }
@@ -374,21 +514,28 @@ async function renderXmbArt(): Promise<void> {
   const icon = resizeBilinear(world.render(), 480, 272, 144, 80);
   for (let i = 3; i < icon.length; i += 4) icon[i] = 255;
   await Bun.write(join(pspDir, "icon0.png"), encodePNG(icon, 144, 80));
-  await Bun.write(join(pspDir, "pic1.png"), encodePNG(stageBackground(480, 272), 480, 272));
+  await Bun.write(
+    join(pspDir, "pic1.png"),
+    encodePNG(stageBackground(480, 272), 480, 272),
+  );
   console.log("  xmb art: apps/launcher/psp/{icon0,pic1}.png");
 }
 
-/** Emit dist/packages/<output>.pocket for the launcher + every admitted app
- *  (psp variant, from the ALREADY-BUILT psp dist — the EBOOT embeds these
- *  verbatim and the site serves them; tools/pocket-pack.ts is the
- *  standalone multi-target packer). */
-async function packPackages(registry: LauncherRegistry): Promise<void> {
+/** Emit one target-thinned package per embedded app from ALREADY-BUILT dists.
+ *  Native hosts embed these files verbatim and select their target variant
+ *  through engine/core/src/package.rs. The standalone multi-target packer
+ *  remains tools/pocket-pack.ts. */
+async function packPackages(
+  registry: LauncherRegistry,
+  target: LauncherTarget,
+  paths: LauncherPaths,
+): Promise<void> {
   const { makeVariant } = await import("./pocket-pack.ts");
   const { encodePocketPackage } = await import("../contracts/spec/pocket-package.ts");
   const { canonicalJson } = await import("../framework/src/manifest/plan.ts");
-  const { validateAndResolveBuildPlan } = await import("../framework/src/manifest/resolve.ts");
-  const packagesDir = join(ROOT, "dist/packages");
-  mkdirSync(packagesDir, { recursive: true });
+  const { validateAndResolveBuildPlan } =
+    await import("../framework/src/manifest/resolve.ts");
+  mkdirSync(paths.packages, { recursive: true });
   const entries = [
     { manifest: relative(ROOT, LAUNCHER_MANIFEST) },
     ...registry.apps.map((a) => ({ manifest: a.manifest })),
@@ -396,38 +543,61 @@ async function packPackages(registry: LauncherRegistry): Promise<void> {
   for (const entry of entries) {
     const manifestBytes = readFileSync(join(ROOT, entry.manifest));
     const manifest: unknown = JSON.parse(manifestBytes.toString("utf8"));
-    const resolution = validateAndResolveBuildPlan(manifest, { target: "psp" });
-    if (!resolution.ok) throw new Error(`launcher pack: ${entry.manifest} no longer admits psp`);
+    const resolution = validateAndResolveBuildPlan(manifest, { target });
+    if (!resolution.ok) {
+      throw new Error(
+        `launcher pack: ${entry.manifest} no longer admits ${target}`,
+      );
+    }
     const plan = resolution.plan;
-    const js = new Uint8Array(readFileSync(join(ROOT, "dist", `${plan.app.output}.js`)));
-    const pakPath = join(ROOT, "dist", `${plan.app.output}.pak`);
-    const pak = existsSync(pakPath) ? new Uint8Array(readFileSync(pakPath)) : new Uint8Array(0);
+    const js = new Uint8Array(
+      readFileSync(join(paths.output, `${plan.app.output}.js`)),
+    );
+    const pakPath = join(paths.output, `${plan.app.output}.pak`);
+    const pak = existsSync(pakPath)
+      ? new Uint8Array(readFileSync(pakPath))
+      : new Uint8Array(0);
     const coverPath = join(COVERS_DIR, `cover-${plan.app.output}.png`);
     const bytes = encodePocketPackage({
       manifest: new Uint8Array(manifestBytes),
       variants: [
         makeVariant({
-          target: "psp",
+          target,
           hostAbi: plan.target.hostAbi,
           planJson: canonicalJson(plan),
-          identity: { output: plan.app.output, id: plan.app.id, title: plan.app.title },
+          identity: {
+            output: plan.app.output,
+            id: plan.app.id,
+            title: plan.app.title,
+          },
           js,
           pak,
-          cover: existsSync(coverPath) ? new Uint8Array(readFileSync(coverPath)) : undefined,
+          cover: existsSync(coverPath)
+            ? new Uint8Array(readFileSync(coverPath))
+            : undefined,
         }),
       ],
     });
-    writeFileSync(join(packagesDir, `${plan.app.output}.pocket`), bytes);
+    writeFileSync(join(paths.packages, `${plan.app.output}.pocket`), bytes);
   }
-  console.log(`launcher: ${entries.length} package(s) -> dist/packages/`);
+  console.log(
+    `launcher: ${entries.length} ${target} package(s) -> ${relative(ROOT, paths.packages)}/`,
+  );
 }
 
 async function main(): Promise<void> {
   const argv = Bun.argv.slice(2);
   const command = argv.shift();
-  if (command !== "scan" && command !== "covers" && command !== "pack" && command !== "build") usage();
+  if (
+    command !== "scan" &&
+    command !== "covers" &&
+    command !== "pack" &&
+    command !== "build"
+  )
+    usage();
   const exclude = new Set<string>();
   let force = false;
+  let target: LauncherTarget = "psp";
   const separator = argv.indexOf("--");
   const backendArgs = separator >= 0 ? argv.splice(separator + 1) : [];
   if (separator >= 0) argv.splice(separator, 1);
@@ -437,6 +607,16 @@ async function main(): Promise<void> {
       const value = argv.shift();
       if (!value) usage("--exclude requires an output name");
       exclude.add(value);
+    } else if (arg === "--target") {
+      const value = argv.shift();
+      if (value !== "psp" && value !== "vita")
+        usage("--target must be psp or vita");
+      target = value;
+    } else if (arg.startsWith("--target=")) {
+      const value = arg.slice("--target=".length);
+      if (value !== "psp" && value !== "vita")
+        usage("--target must be psp or vita");
+      target = value;
     } else if (arg === "--force") {
       force = true;
     } else {
@@ -444,13 +624,19 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log("launcher: scanning apps/*/pocket.json against target psp");
-  const registry = scanRegistry(exclude);
-  writeRegistry(registry);
-  console.log(`launcher: ${registry.apps.length} app(s) admitted -> ${relative(ROOT, REGISTRY_JSON)}`);
+  const paths = launcherPaths(target);
+  console.log(
+    `launcher: scanning apps/*/pocket.json against target ${target}`,
+  );
+  const registry = scanRegistry(exclude, target);
+  const displayRegistry = scanDisplayRegistry(exclude);
+  writeRegistry(registry, displayRegistry, paths);
+  console.log(
+    `launcher: ${registry.apps.length} ${target} app(s) admitted -> ${relative(ROOT, paths.registryJson)}`,
+  );
   for (const app of registry.apps) {
-    const js = join(ROOT, "dist", `${app.output}.js`);
-    const pak = join(ROOT, "dist", `${app.output}.pak`);
+    const js = join(paths.output, `${app.output}.js`);
+    const pak = join(paths.output, `${app.output}.pak`);
     const size = (p: string) => (existsSync(p) ? Bun.file(p).size : 0);
     const total = size(js) + size(pak);
     console.log(
@@ -459,40 +645,62 @@ async function main(): Promise<void> {
   }
   if (command === "scan") return;
 
-  console.log("launcher: compiling app dists + rendering covers (sim, deterministic)");
-  for (const app of registry.apps) {
-    if (force || !existsSync(join(ROOT, "dist", `${app.output}.js`))) await compileApp(app.manifest);
-  }
-  await renderCovers(registry, force);
+  console.log(
+    "launcher: rendering common covers (PSP-flavored sim, deterministic)",
+  );
+  await renderCovers(displayRegistry, force);
   if (command === "covers") return;
 
-  console.log("launcher: compiling the launcher app");
-  await compileApp(relative(ROOT, LAUNCHER_MANIFEST));
-  console.log("launcher: packing .pocket files");
-  await packPackages(registry);
+  console.log(
+    `launcher: compiling ${target} app dists -> ${relative(ROOT, paths.output)}/`,
+  );
+  for (const app of registry.apps) {
+    if (force || !existsSync(join(paths.output, `${app.output}.js`))) {
+      await compileApp(app.manifest, target, paths.output);
+    }
+  }
+  console.log(`launcher: compiling the ${target} launcher app`);
+  await compileApp(relative(ROOT, LAUNCHER_MANIFEST), target, paths.output);
+  console.log(`launcher: packing ${target} .pocket files`);
+  await packPackages(registry, target, paths);
   if (command === "pack") return;
 
-  console.log("launcher: rendering XMB art");
-  await renderXmbArt();
-  console.log("launcher: building the multi-app PSP EBOOT");
+  if (target === "psp") {
+    console.log("launcher: rendering XMB art");
+    await renderXmbArt();
+  }
+  console.log(
+    `launcher: building the multi-app ${target === "psp" ? "EBOOT" : "VPK"}`,
+  );
+  const targetBackendArgs =
+    target === "vita"
+      ? [
+          `--launcher-packages=${relative(ROOT, paths.packages)}`,
+          `--package-outdir=${relative(ROOT, join(ROOT, "dist/vita"))}`,
+        ]
+      : [];
   const p = Bun.spawnSync(
     [
       "bun",
       "tools/pocket.ts",
       "build",
       "--target",
-      "psp",
+      target,
       "--manifest",
       relative(ROOT, LAUNCHER_MANIFEST),
       "--project-root",
       ".",
+      "--outdir",
+      relative(ROOT, paths.output),
       "--",
-      `--launcher-registry=${relative(ROOT, REGISTRY_TSV)}`,
+      `--launcher-registry=${relative(ROOT, paths.registryTsv)}`,
+      ...targetBackendArgs,
       ...backendArgs,
     ],
     { cwd: ROOT, stdout: "inherit", stderr: "inherit" },
   );
-  if (p.exitCode !== 0) throw new Error("launcher: EBOOT build failed");
+  if (p.exitCode !== 0)
+    throw new Error(`launcher: ${target} backend build failed`);
 }
 
 if (import.meta.main) {

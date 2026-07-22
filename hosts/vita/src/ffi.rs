@@ -23,12 +23,13 @@ use pocketjs_core::Ui;
 
 static mut UI: Option<Ui> = None;
 
-/// Create the single core instance (call once, on the worker thread, AFTER
-/// the arena-backed global allocator is linked in — Ui construction allocates).
+/// Create a fresh core for one guest. Replacing an old value is defensive;
+/// normal switching calls `reset_ui` during the previous runtime's explicit
+/// shutdown.
 ///
 /// # Safety
 ///
-/// Call exactly once on the Vita render thread, with no outstanding reference
+/// Call once per guest on the Vita render thread, with no outstanding reference
 /// to the process-global UI.
 pub unsafe fn init_ui() -> &'static mut Ui {
     let mut instance = Ui::new_with_raster_density(crate::graphics::RASTER_DENSITY);
@@ -48,6 +49,17 @@ pub unsafe fn init_ui() -> &'static mut Ui {
 /// live mutable reference to the global UI.
 pub unsafe fn ui() -> &'static mut Ui {
     UI.as_mut().expect("ffi::init_ui not called")
+}
+
+/// Drop the outgoing guest's entire retained core (tree, styles, animations,
+/// font atlases and CPU texture copies). GPU handles must be retired first.
+///
+/// # Safety
+///
+/// Call on the render thread with no outstanding `Ui` reference and only after
+/// `graphics::reset_guest` has made the GPU idle.
+pub unsafe fn reset_ui() {
+    UI = None;
 }
 
 // ---------------------------------------------------------------------------
@@ -394,7 +406,10 @@ unsafe extern "C" fn js_set_active(
     argc: i32,
     argv: *mut JSValue,
 ) -> JSValue {
-    ui().set_active(arg_i32(ctx, argc, argv, 0), arg_i32(ctx, argc, argv, 1) != 0);
+    ui().set_active(
+        arg_i32(ctx, argc, argv, 0),
+        arg_i32(ctx, argc, argv, 1) != 0,
+    );
     JS_UNDEFINED
 }
 
@@ -406,7 +421,10 @@ unsafe extern "C" fn js_hit_test(
     argc: i32,
     argv: *mut JSValue,
 ) -> JSValue {
-    let id = ui().hit_test(arg_f64(ctx, argc, argv, 0) as f32, arg_f64(ctx, argc, argv, 1) as f32);
+    let id = ui().hit_test(
+        arg_f64(ctx, argc, argv, 0) as f32,
+        arg_f64(ctx, argc, argv, 1) as f32,
+    );
     JS_NewInt32(ctx, id)
 }
 
@@ -432,7 +450,10 @@ unsafe extern "C" fn js_set_cursor_pos(
     argc: i32,
     argv: *mut JSValue,
 ) -> JSValue {
-    ui().set_cursor_pos(arg_f64(ctx, argc, argv, 0) as f32, arg_f64(ctx, argc, argv, 1) as f32);
+    ui().set_cursor_pos(
+        arg_f64(ctx, argc, argv, 0) as f32,
+        arg_f64(ctx, argc, argv, 1) as f32,
+    );
     JS_UNDEFINED
 }
 
@@ -613,6 +634,55 @@ unsafe extern "C" fn js_dbg_send(
     JS_UNDEFINED
 }
 
+/// ui.appTable() -> JSON snapshot (spec op 39).
+unsafe extern "C" fn js_app_table(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    let value = crate::switch::table_json();
+    JS_NewStringLen(ctx, value.as_ptr(), value.len())
+}
+
+/// ui.appLaunch(output) -> 0|1 (spec op 40). The request is only recorded
+/// here; main swaps guests after this frame has rendered and presented.
+unsafe extern "C" fn js_app_launch(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc < 1 {
+        return JS_NewInt32(ctx, 0);
+    }
+    let mut len: size_t = 0;
+    let raw = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+    if raw.is_null() {
+        return JS_NewInt32(ctx, 0);
+    }
+    let scheduled = core::str::from_utf8(core::slice::from_raw_parts(raw as *const u8, len))
+        .ok()
+        .and_then(crate::switch::find);
+    JS_FreeCString(ctx, raw);
+    if let Some(index) = scheduled {
+        crate::switch::request_launch(index);
+        JS_NewInt32(ctx, 1)
+    } else {
+        JS_NewInt32(ctx, 0)
+    }
+}
+
+/// ui.appShot() -> frozen-frame texture handle or -1 (spec op 41).
+unsafe extern "C" fn js_app_shot(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, crate::switch::shot_handle())
+}
+
 // ---------------------------------------------------------------------------
 // registration
 // ---------------------------------------------------------------------------
@@ -693,6 +763,13 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
     add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);
     add_fn(ctx, ui_obj, b"__dbgShot\0", js_dbg_shot, 0);
+    // Optional launcher surface. Single-app VPKs omit these ops and preserve
+    // the framework's documented degraded behavior.
+    if crate::switch::multi() {
+        add_fn(ctx, ui_obj, b"appTable\0", js_app_table, 0);
+        add_fn(ctx, ui_obj, b"appLaunch\0", js_app_launch, 1);
+        add_fn(ctx, ui_obj, b"appShot\0", js_app_shot, 0);
+    }
 
     // Framework-owned host identity. The bundle rejects a VPK assembled for a
     // different target or HostOps ABI before app code mounts. planHash is a

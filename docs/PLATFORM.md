@@ -1,10 +1,11 @@
 # From launcher to platform — the Pocket app-runtime roadmap
 
-LAUNCHER.md specifies what ships today: one EBOOT, every admissible app
-embedded, whole-guest switching behind three append-only surface ops. This
-document is the forward design: what turns that launcher into a platform —
-a mini-app runtime with an install story, a system transition, and a DX
-that stays instant — without breaking the contracts that got us here.
+LAUNCHER.md specifies what ships today: one PSP EBOOT or Vita VPK, every
+target-admissible app embedded, whole-guest switching behind three append-only
+surface ops. This document is the forward design: what turns that launcher
+into a platform — a mini-app runtime with an install story, a system
+transition, and a DX that stays instant — without breaking the contracts that
+got us here.
 
 The one-line thesis: **Pocket is already most of a mini-app runtime, and
 its unfair advantage is determinism.** Same bundle + same inputs = same
@@ -17,7 +18,7 @@ review as a pure function, not a queue of humans.
 | layer | contents | status |
 |---|---|---|
 | L0 contract | spec.ts ISA, append-only ops, capability registry, manifest admission | SHIPPED — the platform's constitution |
-| L1 hosts | psp / vita / sim / web against one HostOps contract; guest lifecycle (boot/teardown/switch) | switching shipped on psp + sim; vita inherits when the lifecycle is lifted out of main.rs |
+| L1 hosts | psp / vita / sim / web against one HostOps contract; guest lifecycle (boot/teardown/switch) | switching shipped on psp + vita + sim + web |
 | L2 distribution | `.pocket` package, on-device install, host-relay push | format SHIPPED (v1, below); install + push next |
 | L3 experience | launcher-as-Home, switch veil, DevTools time travel | launcher shipped; veil below |
 
@@ -78,9 +79,10 @@ Tools: `bun run pocket:pack build --manifest … --target psp --target vita`
 (each target compiles into its own outdir — the stale-dist lesson,
 institutionalized), plus `inspect`, `thin`, `verify` (footer + per-variant
 re-admission of the embedded manifest). The launcher chain
-(`tools/launcher.ts pack`) emits psp packages for the EBOOT — which now
-embeds `.pocket` files verbatim and boots guests zero-copy out of them —
-and the site serves the same files to the wasm host.
+(`tools/launcher.ts pack --target psp|vita`) emits target-thinned packages
+into separate trees. Both native binaries embed the `.pocket` files verbatim
+and boot guests zero-copy out of them; the site serves the PSP packages to the
+wasm host.
 
 Design rules:
 
@@ -138,16 +140,20 @@ device's arena. Budgets become data, not folklore.
 
 ## The DX pipeline (what keeps it silky)
 
-The launcher's hardware round found four bugs invisible to the sim
+The launcher's PSP hardware round found four bugs invisible to the sim
 (nearest-sampling shimmer, the affine seam kink, the texture-heap OOM,
-4-bit-alpha banding) — PPSSPP's software GE caught three, real hardware
-the rest. That gradient is the platform's QA design:
+4-bit-alpha banding) — PPSSPP's software GE caught three, real hardware the
+rest. Vita adds a native-density Vita3K leg with current-guest sidecars and
+repeated resource-reuse swaps before its real-device pass. That gradient is
+the platform's QA design:
 
 1. **sim** — second-scale iteration, deterministic traces, tree asserts;
-2. **PPSSPPHeadless** — the real GE semantics (affine sampling, texture
-   cache quirks, RAM ceiling) under baked input scripts;
-3. **hardware** — PSPLINK hot-reload (`reset` → `ldstart`), trace file
-   over host0:, `pspsh cp` to install to the stick.
+2. **console emulator** — PPSSPPHeadless exercises GE semantics (affine
+   sampling, texture-cache quirks, RAM ceiling); Vita3K exercises the real Vita
+   host lifecycle, 960×544 CPU-oracle renders, LiveArea VPK, and GXM resource
+   boundaries under baked input scripts;
+3. **hardware** — PSPLINK hot-reload (`reset` → `ldstart`) and `pspsh cp` on
+   PSP; install the validated `dist/vita/launcher-main.vpk` for the Vita pass.
 
 Single-command chains (`launcher.ts scan|covers|build`), append-only
 contracts, and goldens as gates keep third-party DX at "write TSX → see it
