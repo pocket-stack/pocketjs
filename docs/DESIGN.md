@@ -273,7 +273,7 @@ QuickJS + newlib malloc — it does NOT cover pocketjs-core's Rust allocations
    "4 MB margin" no longer needs to hold them; keep a 2 MB margin for the GE
    list + stack safety.
 
-Other inherited hard rules: JS on the 2 MB `USER|VFPU` worker (main stack
+Other inherited hard rules: JS on the 1 MB `USER|VFPU` worker (main stack
 256 KB); GE buffers 16-byte aligned + dcache writeback per batch; 2D vertex
 coords i16 with the CPU clip stage guaranteeing in-range values; textures pow2
 ≤512 sampled from main RAM; `size_t`=`usize` (MIPS o32); llvm-ar; toolchain

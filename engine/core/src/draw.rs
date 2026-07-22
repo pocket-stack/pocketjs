@@ -202,12 +202,21 @@ impl Mat34 {
     }
 }
 
+/// One projected subdivision cell inside a textured 3D image. Cells stay in
+/// one shared scratch vector instead of allocating a separate Vec per image.
+struct TexCell {
+    depth: f32,
+    pts: [(f32, f32); 4],
+    uv: [(f32, f32); 4],
+}
+
 /// One depth-sorted paintable inside a 3D context.
 enum Item3 {
     /// Projected flat-color quad (screen space, pre-clip).
     Quad { pts: [(f32, f32); 4], color: u32 },
-    /// Projected textured quad (an image node; UVs ride the corners).
-    TexQuad { pts: [(f32, f32); 4], uv: [(f32, f32); 4], tex: u32, modulate: u32 },
+    /// One image node's projected cells. The mesh is the painter-sort unit so
+    /// all TEX_TRIs for its texture remain consecutive for host batching.
+    TexMesh { cell_start: usize, cell_end: usize, tex: u32, modulate: u32 },
     /// A text node's glyph run, anchored at its projected origin.
     Run { slot: u32, origin: (f32, f32), opacity: f32 },
 }
@@ -1088,11 +1097,15 @@ impl<'a> Walker<'a> {
     ) {
         let (cx, cy) = (w * 0.5, h * 0.5);
         let mut items: Vec<(f32, Item3)> = Vec::new();
+        let mut tex_cells: Vec<TexCell> = Vec::new();
         let root = &self.tree.slots[root_slot as usize];
         let children: Vec<i32> = root.children.clone();
         for cid in children {
             if let Some(cs) = self.tree.resolve(cid) {
-                self.collect_3d(cs, &Mat34::IDENTITY, opacity, root_world, distance, cx, cy, &mut items);
+                self.collect_3d(
+                    cs, &Mat34::IDENTITY, opacity, root_world, distance, cx, cy,
+                    &mut items, &mut tex_cells,
+                );
             }
         }
         // Painter's algorithm: farthest (smallest camera z) first. total_cmp
@@ -1110,15 +1123,17 @@ impl<'a> Walker<'a> {
                         emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
                     }
                 }
-                Item3::TexQuad { pts, uv, tex, modulate } => {
-                    let poly: Vec<ClipVert> = pts
-                        .iter()
-                        .zip(uv.iter())
-                        .map(|(&(x, y), &(u, v))| ClipVert { x, y, color: [255.0; 4], u, v })
-                        .collect();
-                    let clipped = sutherland_hodgman(&poly, clip);
-                    for i in 1..clipped.len().saturating_sub(1) {
-                        emit_tex_tri(dl, tex, modulate, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
+                Item3::TexMesh { cell_start, cell_end, tex, modulate } => {
+                    for cell in &tex_cells[cell_start..cell_end] {
+                        let poly: Vec<ClipVert> = cell.pts
+                            .iter()
+                            .zip(cell.uv.iter())
+                            .map(|(&(x, y), &(u, v))| ClipVert { x, y, color: [255.0; 4], u, v })
+                            .collect();
+                        let clipped = sutherland_hodgman(&poly, clip);
+                        for i in 1..clipped.len().saturating_sub(1) {
+                            emit_tex_tri(dl, tex, modulate, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
+                        }
                     }
                 }
                 Item3::Run { slot, origin, opacity } => {
@@ -1135,7 +1150,8 @@ impl<'a> Walker<'a> {
 
     /// Depth-first 3D collection. `m` maps node-local 3D coords into the
     /// context root's local space; projection happens here so every painted
-    /// box becomes one flat screen quad + depth key.
+    /// box becomes one projected painter item + depth key; textured images
+    /// retain their subdivided cells inside one mesh item for host batching.
     #[allow(clippy::too_many_arguments)]
     fn collect_3d(
         &self,
@@ -1147,6 +1163,7 @@ impl<'a> Walker<'a> {
         cx: f32,
         cy: f32,
         items: &mut Vec<(f32, Item3)>,
+        tex_cells: &mut Vec<TexCell>,
     ) {
         let node = &self.tree.slots[slot as usize];
         let r = style::resolve(node, self.styles, true);
@@ -1250,17 +1267,19 @@ impl<'a> Walker<'a> {
             };
             let (nx, ny) = (seg(hvar), seg(vvar));
             let modulate = scale_alpha(0xffff_ffff, op);
+            // Sort and emit at IMAGE granularity, matching the painter unit
+            // used before subdivision was introduced. Sorting every cell
+            // globally makes coplanar images (notably a cover + reflection)
+            // interleave texture handles, defeating the PSP GE backend's
+            // consecutive-TEX_TRI batching and multiplying binds/flushes.
+            let mesh_depth = (c0.1 + c1.1 + c2.1 + c3.1) * 0.25 + 0.005;
+            let cell_start = tex_cells.len();
             if nx == 1 && ny == 1 {
-                let depth = (c0.1 + c1.1 + c2.1 + c3.1) * 0.25 + 0.005;
-                items.push((
-                    depth,
-                    Item3::TexQuad {
-                        pts: [c0.0, c1.0, c2.0, c3.0],
-                        uv: [(fu0, fv0), (fu1, fv0), (fu1, fv1), (fu0, fv1)],
-                        tex: node.tex as u32,
-                        modulate,
-                    },
-                ));
+                tex_cells.push(TexCell {
+                    depth: mesh_depth,
+                    pts: [c0.0, c1.0, c2.0, c3.0],
+                    uv: [(fu0, fv0), (fu1, fv0), (fu1, fv1), (fu0, fv1)],
+                });
             } else {
                 for j in 0..ny {
                     for i in 0..nx {
@@ -1273,18 +1292,36 @@ impl<'a> Walker<'a> {
                         let depth = (g0.1 + g1.1 + g2.1 + g3.1) * 0.25 + 0.005;
                         let (u0, u1) = (fu0 + (fu1 - fu0) * t0, fu0 + (fu1 - fu0) * t1);
                         let (v0, v1) = (fv0 + (fv1 - fv0) * s0, fv0 + (fv1 - fv0) * s1);
-                        items.push((
+                        tex_cells.push(TexCell {
                             depth,
-                            Item3::TexQuad {
-                                pts: [g0.0, g1.0, g2.0, g3.0],
-                                uv: [(u0, v0), (u1, v0), (u1, v1), (u0, v1)],
-                                tex: node.tex as u32,
-                                modulate,
-                            },
-                        ));
+                            pts: [g0.0, g1.0, g2.0, g3.0],
+                            uv: [(u0, v0), (u1, v0), (u1, v1), (u0, v1)],
+                        });
                     }
                 }
             }
+            let cell_end = tex_cells.len();
+            // Stable insertion sort: a mesh has at most 64 cells, so this
+            // preserves the former far-to-near cell order without another
+            // temporary allocation inside the frame loop.
+            for i in cell_start + 1..cell_end {
+                let mut j = i;
+                while j > cell_start
+                    && tex_cells[j].depth.total_cmp(&tex_cells[j - 1].depth).is_lt()
+                {
+                    tex_cells.swap(j, j - 1);
+                    j -= 1;
+                }
+            }
+            items.push((
+                mesh_depth,
+                Item3::TexMesh {
+                    cell_start,
+                    cell_end,
+                    tex: node.tex as u32,
+                    modulate,
+                },
+            ));
         }
         if node.node_type == spec::NodeType::Text as u8 {
             // Glyphs anchor at the projected text origin and stay upright
@@ -1295,7 +1332,7 @@ impl<'a> Walker<'a> {
         }
         for &cid in &node.children {
             if let Some(cs) = self.tree.resolve(cid) {
-                self.collect_3d(cs, &m2, op, root_world, distance, cx, cy, items);
+                self.collect_3d(cs, &m2, op, root_world, distance, cx, cy, items, tex_cells);
             }
         }
     }

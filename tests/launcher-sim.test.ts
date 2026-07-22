@@ -21,6 +21,17 @@ const settle = async (w: LauncherWorld, frames: number) => {
   for (let i = 0; i < frames; i++) await w.step(0);
 };
 
+const stepForSeconds = async (
+  w: LauncherWorld,
+  mask: number,
+  hz: number,
+  seconds: number,
+) => {
+  const frames = hz * seconds;
+  expect(Number.isInteger(frames)).toBe(true);
+  for (let i = 0; i < frames; i++) await w.step(mask);
+};
+
 const registry = scanRegistry(new Set());
 const vitaRegistry = scanRegistry(new Set(), "vita");
 
@@ -126,6 +137,34 @@ describe("switch protocol (sim host policy)", () => {
     expect(treeHasText(w.getTree(), "Motion Lab")).toBe(true);
     expect(w.current()).toBe("launcher-main");
   }, 120_000);
+
+  for (const source of [
+    { name: "triggers", right: BTN.RTRIGGER, left: BTN.LTRIGGER },
+    { name: "d-pad", right: BTN.RIGHT, left: BTN.LEFT },
+  ]) {
+    test(`${source.name} flow distance is invariant at 60/30/20 Hz`, async () => {
+      const hzValues = [60, 30, 20] as const;
+      const holdSeconds = 0.5;
+      const distance = 18 * holdSeconds;
+      expect(Number.isInteger(distance)).toBe(true);
+      const destination = registry.apps[distance]!;
+
+      for (const hz of hzValues) {
+        const w = await bootLauncherWorld({ hz });
+        await stepForSeconds(w, 0, hz, 0.2);
+
+        await stepForSeconds(w, source.right, hz, holdSeconds);
+        await w.step(0); // release and settle to the exact destination
+        await stepForSeconds(w, 0, hz, 0.2);
+        expect(treeHasText(w.getTree(), destination.id)).toBe(true);
+
+        await stepForSeconds(w, source.left, hz, holdSeconds);
+        await w.step(0);
+        await stepForSeconds(w, 0, hz, 0.2);
+        expect(treeHasText(w.getTree(), registry.apps[0]!.id)).toBe(true);
+      }
+    }, 240_000);
+  }
 
   test("a single-frame trigger tap moves exactly one card, never snaps back", async () => {
     const w = await bootLauncherWorld({ hz: 60 });

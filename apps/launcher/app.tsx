@@ -9,7 +9,7 @@
 // the frozen frame it captured stretches under a dark scrim, so the deck
 // reads as an overlay over the interrupted app.
 //
-// Hosts without the app* ops (golden/web/vita): appTable() is null — the
+// Hosts without the app* ops (plain sim/golden): appTable() is null — the
 // deck still browses (build-time registry), launch is a visible no-op, and
 // the footer says why. That degraded mode is what plain goldens exercise.
 
@@ -20,6 +20,7 @@ import { animate, jump } from "@pocketjs/framework/animation";
 import { BTN } from "@pocketjs/framework/input";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { appTable, frozenShot, launchApp } from "@pocketjs/framework/launcher";
+import { ticksPerFrame } from "@pocketjs/framework/clock";
 import { REGISTRY, type RegistryApp } from "./registry.generated.ts";
 
 /** Card box: 192×96 at left-[144] top-[58] (class literals below — the deck
@@ -33,6 +34,10 @@ const FRONT_Z = 46;
 /** Cards beyond this offset fade out entirely (the rail dissolves into the
  *  dark backdrop, and the GE never sees their quads — opacity 0 culls). */
 const RAIL_VISIBLE = 4;
+/** Browse velocity in cards per 1/60 s core tick. A host frame can advance
+ *  multiple ticks, so multiplying by ticksPerFrame() keeps the deck at
+ *  18 cards/s under every supported simulation rate. */
+const FLOW_PER_TICK = 18 / 60;
 
 interface CardTarget {
   translateX: number;
@@ -136,7 +141,6 @@ export default function Launcher() {
     // below turns a quick press into exactly one step. The title tracks
     // round(pos) live, so what reads as centered is always what CIRCLE
     // launches.
-    const FLOW = 18 / 60; // cards per frame while a browse input is held
     let flowOrigin = 0; //  deck position where the current flow began
     onFrame((buttons: number) => {
       const left = (buttons & (BTN.LTRIGGER | BTN.LEFT)) !== 0;
@@ -145,7 +149,7 @@ export default function Launcher() {
       let speed = 0;
       if (left !== right) {
         dir = right ? 1 : -1;
-        speed = FLOW;
+        speed = FLOW_PER_TICK * ticksPerFrame();
       }
       if (dir !== 0) {
         if (pos === null) {

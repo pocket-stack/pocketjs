@@ -2,7 +2,7 @@
 #![no_main]
 #![allow(static_mut_refs)]
 
-//! PocketJS PSP host: boots QuickJS on a 2 MB worker thread, evaluates the
+//! PocketJS PSP host: boots QuickJS on a 1 MB worker thread, evaluates the
 //! embedded app bundle, then drives frame(buttons) per vblank while the Rust
 //! core ticks animations/layout and the GE backend draws the DrawList.
 //!
@@ -11,7 +11,7 @@
 //! there; everything app-flavored — trace, bench, capture, and the 2D frame
 //! loop — lives here.
 //!
-//! Frame order (docs/DESIGN.md): sceCtrlRead -> sceGuStart -> JS frame(buttons)
+//! Frame order (docs/DESIGN.md): sceCtrlPeek -> sceGuStart -> JS frame(buttons)
 //! -> drain jobs (JS_ExecutePendingJob, local extern) -> core.tick(1/60) ->
 //! ge::render(core.draw()) -> sceGuFinish/Sync/WaitVblank/Swap -> pool reset.
 
@@ -300,8 +300,10 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
     }
     let frames = BENCH.frames as u64;
     let arena_stats = arena::stats();
+    let stack_free_bytes =
+        sys::sceKernelGetThreadStackFreeSize(sys::SceUid(sys::sceKernelGetThreadId())).max(0);
     let line = alloc::format!(
-        "{{\"app\":\"{}\",\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"avg_gpu_us\":{},\"max_gpu_us\":{},\"bundle_bytes\":{},\"pak_bytes\":{},\"arena_capacity_bytes\":{},\"arena_bump_bytes\":{},\"arena_tail_free_bytes\":{},\"arena_init_free_bytes\":{},\"arena_configured_bytes\":{}}}\n",
+        "{{\"app\":\"{}\",\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"avg_gpu_us\":{},\"max_gpu_us\":{},\"stack_free_bytes\":{},\"bundle_bytes\":{},\"pak_bytes\":{},\"arena_capacity_bytes\":{},\"arena_bump_bytes\":{},\"arena_tail_free_bytes\":{},\"arena_init_free_bytes\":{},\"arena_configured_bytes\":{}}}\n",
         POCKETJS_APP_NAME,
         BENCH.frames,
         start,
@@ -318,6 +320,7 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
         BENCH.max_work_us,
         BENCH.gpu_sum_us / frames,
         BENCH.max_gpu_us,
+        stack_free_bytes,
         switch::guest_bytes(0).map(|g| g.js.len().saturating_sub(1)).unwrap_or(0),
         switch::guest_bytes(0).map(|g| g.pak.len()).unwrap_or(0),
         arena_stats.capacity_bytes,
@@ -535,11 +538,15 @@ unsafe fn run_guest(app_index: usize) -> usize {
         if guest_frame == 0 {
             trace("frame 0: begin");
         }
-        // Still read sceCtrl even in capture builds so loop timing is
+        // Still sample sceCtrl even in capture builds so loop timing is
         // identical; the mask is then overridden by the baked script.
-        sys::sceCtrlReadBufferPositive(&mut pad, 1);
+        // The frame loop is already paced at present by vblank. Peek the
+        // latest controller sample here: Read may wait for the next sampling
+        // cycle after consuming the current sample, accidentally adding a
+        // second pacing point before JS/tick/draw on real hardware.
+        sys::sceCtrlPeekBufferPositive(&mut pad, 1);
         if guest_frame == 0 {
-            trace("frame 0: ctrl read ok");
+            trace("frame 0: ctrl peek ok");
         }
         let mask = pad.buttons.bits() as i32;
         #[cfg(feature = "capture")]

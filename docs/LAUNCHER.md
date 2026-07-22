@@ -63,12 +63,16 @@ viewport). The registry tool prints per-app bundle sizes and takes
 
 ## Memory math (PSP-1000 floor)
 
-24 MB user RAM. The PSP EBOOT (host code ≈ 2.5 MB + 17 bundles ≈ 9 MB +
-covers ≈ 1 MB) sits in .rodata ≈ 12 MB; the arena takes the remaining free
-memory minus its 2 MB margin ≈ 10 MB — comfortably above the 2–4 MB a demo's
-QuickJS heap needs. Teardown returns a guest's allocations to the arena's
-segregated free lists; classes are power-of-two so cross-swap reuse is exact
-and fragmentation does not accumulate by construction.
+24 MB user RAM. The current 18-package PSP table is 13.6 MiB (including the
+3.0 MiB launcher package and its covers). The PSP host runs QuickJS on a 1 MiB
+worker stack, leaving a measured 5.27 MiB arena after its 2 MiB safety margin.
+The current launcher peaks at 4.74 MiB and leaves about 553 KiB of arena tail;
+the worker-stack watermark still reports about 791 KiB free. That is enough
+for the measured launcher, but is no longer a generous margin, so release
+linking plus a real PSP-1000 boot stays a required admission gate.
+Teardown returns a guest's allocations to the arena's segregated free lists;
+classes are power-of-two so cross-swap reuse is exact and fragmentation does
+not accumulate by construction.
 
 Vita embeds the same target-thinned `.pocket` table as 16-byte-aligned SELF
 rodata. Only one QuickJS realm, `Ui`, pak binding, and set of guest texture
@@ -126,6 +130,27 @@ bun tools/launcher.ts build --target vita -- --release
   re-uploaded), fed from `/stage/apps/` which the site build assembles from
   the registry. Verified headlessly by driving the protocol through
   PocketHost (site/verify.ts probe).
+
+## Browse timing and PSP batching
+
+The public behavior is 18 cards per virtual second, not 0.3 cards per host
+frame. The launcher multiplies its per-tick velocity by `ticksPerFrame()`, so
+60, 30, and 20 Hz host policies cover the same distance in the same virtual
+time. A host that deliberately presents at 30 Hz publishes `__simHz = 30`;
+the app does not infer hardware speed or branch on a target name.
+
+On PSP, controller input peeks the newest sample instead of consuming a sample
+and potentially waiting for the next controller cycle; vblank present remains
+the frame pacer. Perspective correction still subdivides each tilted image,
+but the core painter sorts the image as one mesh and emits all of its
+`TEX_TRI`s consecutively. The existing GE backend can therefore bind and draw
+once per cover/reflection instead of rebinding between interleaved cells.
+
+None of this is a platform capability. Capabilities describe stable public
+behavior available to an app, while missed vblanks and scene-dependent GPU
+cost are runtime performance. If a PSP still cannot sustain 60 Hz after these
+host/core fixes, the fallback is an explicit lower simulation policy, not a
+`slowPsp` capability.
 
 ## Verification
 

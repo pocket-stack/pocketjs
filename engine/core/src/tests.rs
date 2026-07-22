@@ -201,7 +201,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
 /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
 /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
 /// balanced, only known ops. Returns per-op counts (indexed by op code).
-fn validate_drawlist(words: &[u32]) -> [u32; 8] {
+fn validate_drawlist(words: &[u32]) -> [u32; 9] {
     let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
     let xy_ok = |w: u32| {
         let (x, y) = decode_xy(w);
@@ -213,11 +213,12 @@ fn validate_drawlist(words: &[u32]) -> [u32; 8] {
         let (w, h) = decode_wh(whw);
         assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
     };
-    let mut counts = [0u32; 8];
+    let mut counts = [0u32; 9];
     let mut depth = 0i32;
     let mut i = 0usize;
     while i < words.len() {
         let op = words[i];
+        assert!((op as usize) < counts.len(), "unknown draw op {op} at word {i}");
         counts[op as usize] += 1;
         match op {
             spec::draw_op::RECT => {
@@ -261,11 +262,55 @@ fn validate_drawlist(words: &[u32]) -> [u32; 8] {
                 xy_ok(words[i + 3]);
                 i += 7;
             }
+            spec::draw_op::TEX_TRI => {
+                for vertex in 0..3 {
+                    xy_ok(words[i + 2 + vertex * 3]);
+                    for uv in [i + 3 + vertex * 3, i + 4 + vertex * 3] {
+                        let f = f32::from_bits(words[uv]);
+                        assert!((0.0..=1.0).contains(&f), "UV out of range: {f}");
+                    }
+                }
+                i += 12;
+            }
             other => panic!("unknown draw op {other} at word {i}"),
         }
     }
     assert_eq!(depth, 0, "unbalanced SCISSOR/SCISSOR_POP");
     counts
+}
+
+/// Consecutive TEX_TRI batches exactly as hosts/psp/src/ge.rs sees them.
+/// Any different op or texture handle terminates the current run.
+fn tex_tri_runs(words: &[u32]) -> Vec<(u32, usize)> {
+    let mut runs: Vec<(u32, usize)> = Vec::new();
+    let mut previous_was_tex_tri = false;
+    let mut i = 0usize;
+    while i < words.len() {
+        match words[i] {
+            spec::draw_op::TEX_TRI => {
+                let tex = words[i + 1];
+                if previous_was_tex_tri && runs.last().map_or(false, |run| run.0 == tex) {
+                    runs.last_mut().unwrap().1 += 1;
+                } else {
+                    runs.push((tex, 1));
+                }
+                previous_was_tex_tri = true;
+                i += 12;
+            }
+            spec::draw_op::RECT => { previous_was_tex_tri = false; i += 4; }
+            spec::draw_op::GRAD_RECT => { previous_was_tex_tri = false; i += 6; }
+            spec::draw_op::GLYPH_RUN => {
+                previous_was_tex_tri = false;
+                i += 3 + 2 * ((words[i + 1] >> 16) as usize);
+            }
+            spec::draw_op::TEX_QUAD => { previous_was_tex_tri = false; i += 9; }
+            spec::draw_op::SCISSOR => { previous_was_tex_tri = false; i += 3; }
+            spec::draw_op::SCISSOR_POP => { previous_was_tex_tri = false; i += 1; }
+            spec::draw_op::TRI => { previous_was_tex_tri = false; i += 7; }
+            other => panic!("unknown draw op {other} at word {i}"),
+        }
+    }
+    runs
 }
 
 // ---- tests ---------------------------------------------------------------------
@@ -1788,6 +1833,57 @@ fn perspective_subtree_emits_depth_sorted_tris() {
         };
     }
     assert!(tris >= 2, "expected projected face triangles, got {tris}");
+}
+
+#[test]
+fn perspective_subdivided_images_form_one_texture_run_per_image() {
+    let mut ui = Ui::new();
+    let pixels = alloc::vec![0xffu8; 8 * 8 * 4];
+    let cover_tex = ui.upload_texture(&pixels, 8, 8, spec::psm::PSM_8888);
+    let reflection_tex = ui.upload_texture(&pixels, 8, 8, spec::psm::PSM_8888);
+    assert!(cover_tex >= 0 && reflection_tex >= 0);
+    assert_ne!(cover_tex, reflection_tex);
+
+    let place = |ui: &mut Ui, node: i32, x: f64, y: f64, w: f64, h: f64| {
+        ui.set_prop(node, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+        ui.set_prop(node, spec::prop::INSET_L, x);
+        ui.set_prop(node, spec::prop::INSET_T, y);
+        ui.set_prop(node, spec::prop::WIDTH, w);
+        ui.set_prop(node, spec::prop::HEIGHT, h);
+    };
+
+    let stage = ui.create_node(spec::NodeType::View as u8);
+    place(&mut ui, stage, 0.0, 0.0, 480.0, 272.0);
+    ui.set_prop(stage, spec::prop::PERSPECTIVE, 620.0);
+    ui.insert_before(spec::ROOT_ID, stage, 0);
+
+    let card = ui.create_node(spec::NodeType::View as u8);
+    place(&mut ui, card, 144.0, 27.0, 192.0, 218.0);
+    ui.set_prop(card, spec::prop::ROTATE_Y, 55.0);
+    ui.insert_before(stage, card, 0);
+
+    let cover = ui.create_node(spec::NodeType::Image as u8);
+    place(&mut ui, cover, 0.0, 0.0, 192.0, 109.0);
+    ui.set_image(cover, cover_tex);
+    ui.insert_before(card, cover, 0);
+
+    let reflection = ui.create_node(spec::NodeType::Image as u8);
+    place(&mut ui, reflection, 0.0, 109.0, 192.0, 109.0);
+    ui.set_image(reflection, reflection_tex);
+    ui.insert_before(card, reflection, 0);
+
+    ui.tick();
+    let words = ui.draw().words.clone();
+    let counts = validate_drawlist(&words);
+    let tri_count = counts[spec::draw_op::TEX_TRI as usize] as usize;
+    assert!(tri_count > 4, "images must retain perspective subdivision");
+
+    let runs = tex_tri_runs(&words);
+    assert_eq!(
+        runs,
+        alloc::vec![(cover_tex as u32, tri_count / 2), (reflection_tex as u32, tri_count / 2)],
+        "each image must be one consecutive PSP texture batch",
+    );
 }
 
 #[test]

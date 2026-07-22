@@ -33,6 +33,7 @@ interface BenchLine {
   avg_render_us: number;
   avg_work_us: number;
   max_work_us: number;
+  stack_free_bytes: number;
   bundle_bytes: number;
   pak_bytes: number;
   arena_capacity_bytes: number;
@@ -181,6 +182,7 @@ const METRICS = [
   "avg_render_us",
   "avg_work_us",
   "max_work_us",
+  "stack_free_bytes",
   "host_wall_ms",
   "bundle_bytes",
   "pak_bytes",

@@ -35,9 +35,11 @@ pub unsafe fn reset_fpu_status() {
 }
 
 /// The `psp::module!` main thread has only a 256 KB stack; QuickJS compiling
-/// a bundle overflows it. Run `entry` on a 2 MB USER|VFPU worker (the VFPU
-/// flag is required for sceGum on hardware) and wait for it; falls back to
-/// calling `fallback` inline if thread creation fails.
+/// a bundle overflows it. Run `entry` on a 1 MB USER|VFPU worker (the VFPU
+/// flag is required for sceGum on hardware) and wait for it. One MiB remains
+/// four times the overflowing main stack while returning the other MiB to the
+/// shared arena before its one kernel block is reserved. Falls back to calling
+/// `fallback` inline if thread creation fails.
 pub unsafe fn run_on_worker(
     entry: unsafe extern "C" fn(usize, *mut c_void) -> i32,
     fallback: unsafe fn(),
@@ -45,8 +47,8 @@ pub unsafe fn run_on_worker(
     let id = sys::sceKernelCreateThread(
         b"pocketjs_main\0".as_ptr(),
         entry,
-        32,              // priority
-        2 * 1024 * 1024, // 2 MB stack
+        32,          // priority
+        1024 * 1024, // 1 MB stack
         ThreadAttributes::USER | ThreadAttributes::VFPU,
         core::ptr::null_mut(),
     );
