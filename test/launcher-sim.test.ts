@@ -21,9 +21,9 @@ const settle = async (w: LauncherWorld, frames: number) => {
   for (let i = 0; i < frames; i++) await w.step(0);
 };
 
-describe("launcher registry admission", () => {
-  const registry = scanRegistry(new Set());
+const registry = scanRegistry(new Set());
 
+describe("launcher registry admission", () => {
   test("admits every PSP-compatible demo, excludes the rest", () => {
     const outputs = registry.apps.map((a) => a.output);
     // The two structurally incompatible demos (LAUNCHER.md "Admission").
@@ -106,9 +106,12 @@ describe("switch protocol (sim host policy)", () => {
   test("holding RTRIGGER flows the deck at 18 cards/s", async () => {
     const w = await bootLauncherWorld({ hz: 60 });
     await settle(w, 20);
-    // 30 held frames -> pos = 30 × 18/60 = 9.0, registry order:
-    // Café(0) … Motion Lab(9).
-    for (let i = 0; i < 30; i++) await w.step(BTN.RTRIGGER);
+    const motionIndex = registry.apps.findIndex((app) => app.title.includes("Motion Lab"));
+    expect(motionIndex).toBeGreaterThan(0);
+    // Move far enough to reach Motion Lab at 18 cards/s. Derive its index
+    // from the registry so adding an earlier demo does not stale the test.
+    const heldFrames = Math.ceil((motionIndex * 60) / 18);
+    for (let i = 0; i < heldFrames; i++) await w.step(BTN.RTRIGGER);
     await settle(w, 20);
     expect(treeHasText(w.getTree(), "Motion Lab")).toBe(true);
     expect(w.current()).toBe("launcher-main");

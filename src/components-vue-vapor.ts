@@ -192,12 +192,27 @@ function normalizeStyleValue(value: unknown): unknown {
 
 function cleanProps(props: Record<string, unknown>, omit: Set<string>): HostProps {
   const out: HostProps = {};
-  for (const key of Object.keys(props)) {
-    if (omit.has(key)) continue;
-    if (key === "class" || key === "className") out[key] = normalizeClassValue(props[key]);
-    else if (key === "style") out[key] = normalizeStyleValue(props[key]);
-    else if (key === "onPress" || key === "on:press") out[key] = callbackOf<() => void>(props[key]);
-    else out[key] = valueOf(props[key]);
+  for (const rawKey of Object.keys(props)) {
+    // Vue templates conventionally spell multi-word props in kebab case.
+    // JSX already supplies the camel-case forms, so normalize only at this
+    // host-component boundary and keep native-tree's property contract exact.
+    const key = rawKey === "debug-name"
+      ? "debugName"
+      : rawKey === "node-ref"
+        ? "nodeRef"
+        : rawKey;
+    if (omit.has(rawKey) || omit.has(key)) continue;
+    const rawValue = props[rawKey];
+    if (key === "class" || key === "className") out[key] = normalizeClassValue(rawValue);
+    else if (key === "style") out[key] = normalizeStyleValue(rawValue);
+    else if (key === "onPress" || key === "on:press") out[key] = callbackOf<() => void>(rawValue);
+    // Primitive host components intentionally keep props in attrs instead of
+    // declaring runtime prop tables. Vue therefore leaves a bare boolean
+    // attribute as ""; on native components it still means true.
+    else if (key === "focusable") {
+      const resolved = valueOf(rawValue);
+      out[key] = resolved === "" ? true : resolved;
+    } else out[key] = valueOf(rawValue);
   }
   if (out.class == null && out.className != null) out.class = out.className;
   delete out.className;
@@ -234,7 +249,7 @@ function createPrimitiveNode(
   const node = createElement(tag);
   opts.onNode?.(node);
   mountChildren(node, slots);
-  const omit = new Set(["children", "key", "ref", "nodeRef", ...(opts.omit ?? [])]);
+  const omit = new Set(["children", "key", "ref", "nodeRef", "node-ref", ...(opts.omit ?? [])]);
   let prev: HostProps = {};
   const apply = () => {
     const extra = typeof opts.extra === "function" ? opts.extra() : (opts.extra ?? {});
@@ -244,7 +259,7 @@ function createPrimitiveNode(
       if (!(key in next)) setProp(node, key, undefined, prev[key]);
     }
     prev = next;
-    assignRef(rawProps.nodeRef ?? rawProps.ref, node);
+    assignRef(rawProps.nodeRef ?? rawProps["node-ref"] ?? rawProps.ref, node);
   };
   watchEffect(apply);
   return node;

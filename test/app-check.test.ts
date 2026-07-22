@@ -14,6 +14,7 @@ import { checkAppTypes } from "../compiler/app-check.ts";
 const FIXTURES = new URL("fixtures/app-check/", import.meta.url).pathname;
 const ROOT_TSCONFIG = new URL("../tsconfig.json", import.meta.url).pathname;
 const JSX_DECLARATIONS = new URL("../src/jsx.d.ts", import.meta.url).pathname;
+const VUE_SFC_DECLARATIONS = new URL("../src/vue-sfc.d.ts", import.meta.url).pathname;
 const SOLID_CONTROL_FLOW_ENTRY = new URL("../demos/cards/main.tsx", import.meta.url).pathname;
 
 function entry(fixture: string): string {
@@ -82,6 +83,22 @@ describe("per-app TypeScript checks", () => {
 
     expect(errors(result)).toBe("");
     expect(result.ok).toBe(true);
+  });
+
+  test("accepts a Vue SFC import at a Vue Vapor app entry", () => {
+    const fixtureEntry = entry("vue-sfc");
+    try {
+      const result = checkAppTypes({
+        entry: fixtureEntry,
+        tsconfigPath: ROOT_TSCONFIG,
+        declarationFiles: [JSX_DECLARATIONS, VUE_SFC_DECLARATIONS],
+      });
+
+      expect(errors(result)).toBe("");
+      expect(result.ok).toBe(true);
+    } finally {
+      rmSync(dirname(fixtureEntry), { recursive: true, force: true });
+    }
   });
 
   test("reports reachable TypeScript errors", () => {

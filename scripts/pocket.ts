@@ -70,7 +70,10 @@ const typeResult = checkAppTypes({
   tsconfigPath: existsSync(resolve(projectRoot, "tsconfig.json"))
     ? resolve(projectRoot, "tsconfig.json")
     : undefined,
-  declarationFiles: [resolve(frameworkRoot, "src/jsx.d.ts")],
+  declarationFiles: [
+    resolve(frameworkRoot, "src/jsx.d.ts"),
+    resolve(frameworkRoot, "src/vue-sfc.d.ts"),
+  ],
 });
 if (!typeResult.ok) {
   for (const diagnostic of typeResult.diagnostics.filter((item) => item.category === "error")) {

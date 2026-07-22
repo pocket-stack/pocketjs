@@ -14,6 +14,7 @@ import {
   rootMirror,
   runSweep,
   setStyleResolver,
+  type VaporRenderRoot,
   type NodeMirror,
 } from "./renderer-vue-vapor.ts";
 import { setOverlayRoot } from "./overlay.ts";
@@ -88,7 +89,7 @@ function createLayer(style: Record<string, number>): NodeMirror {
   return layer;
 }
 
-export function render(code: () => unknown, opts: RenderOptions = {}): () => void {
+export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => void {
   const host = detectHost(opts.ops);
   installHost(host);
 
@@ -176,7 +177,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   };
 }
 
-export function mount(code: () => unknown, opts: MountOptions = {}): () => void {
+export function mount(code: VaporRenderRoot, opts: MountOptions = {}): () => void {
   const ops = opts.ops ?? globalOps();
   if (!ops) {
     throw new Error("PocketJS: mount() requires globalThis.ui or opts.ops");
