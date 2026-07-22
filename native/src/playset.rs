@@ -26,7 +26,6 @@ use pocket_playset::behavior::{
 use pocket_playset::terrain::{Heightfield, RoadTerrain, Terrain};
 use pocket_playset::vehicle::CarTuning;
 use pocket_playset::{collider_kind, Sim, COLLIDER_FLAG_SOLID, COLLIDER_FLAG_WALKABLE, COLLIDER_STRIDE, HUD_FLOATS};
-use pocketjs_core::spec;
 
 use glam::Vec3;
 
@@ -120,7 +119,7 @@ js_op!(js_world_create, |ctx, argc, argv| {
     JS_NewInt32(ctx, sim().world_create(arg_i32(ctx, argc, argv, 0)))
 });
 js_op!(js_world_destroy, |ctx, argc, argv| {
-    sim().world_destroy(arg_i32(ctx, argc, argv, 0));
+    sim().destroy(arg_i32(ctx, argc, argv, 0));
     JS_UNDEFINED
 });
 
@@ -129,7 +128,7 @@ js_op!(js_terrain_heightfield, |ctx, argc, argv| {
     let size = arg_f32(ctx, argc, argv, 1);
     let side = arg_i32(ctx, argc, argv, 2).max(0) as usize;
     let heights = arg_pods::<f32>(ctx, argc, argv, 3);
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         w.set_terrain(Terrain::Grid(Heightfield::new(size, side, &heights)));
     }
     JS_UNDEFINED
@@ -138,7 +137,7 @@ js_op!(js_terrain_heightfield, |ctx, argc, argv| {
 js_op!(js_terrain_road, |ctx, argc, argv| {
     ps_trace("terrainRoad");
     let c = arg_pods::<f32>(ctx, argc, argv, 1);
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         let mut road = RoadTerrain::new();
         road.seed = cfg(&c, 0, 2026.0);
         road.road_half_width = cfg(&c, 1, 6.0);
@@ -158,7 +157,7 @@ js_op!(js_terrain_road_segments, |ctx, argc, argv| {
     ps_trace("terrainRoadSegments");
     let segs = arg_pods::<f32>(ctx, argc, argv, 1);
     let count = (arg_i32(ctx, argc, argv, 2).max(0) as usize).min(segs.len() / 4);
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         w.with_road_terrain(|road| {
             for i in 0..count {
                 let s = &segs[i * 4..i * 4 + 4];
@@ -176,7 +175,7 @@ js_op!(js_colliders_add, |ctx, argc, argv| {
     let count = (arg_i32(ctx, argc, argv, 3).max(0) as usize)
         .min(kinds.len())
         .min(data.len() / COLLIDER_STRIDE);
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         let world = w.collision_mut();
         for i in 0..count {
             let d = &data[i * COLLIDER_STRIDE..(i + 1) * COLLIDER_STRIDE];
@@ -216,7 +215,7 @@ js_op!(js_car_create, |ctx, argc, argv| {
         ride_height: cfg(&t, 8, d.ride_height),
         boost_multiplier: cfg(&t, 9, d.boost_multiplier),
     };
-    let id = match sim().world(arg_i32(ctx, argc, argv, 0)) {
+    let id = match sim().rally(arg_i32(ctx, argc, argv, 0)) {
         Some(w) => w.car_create(tuning),
         None => 0,
     };
@@ -232,7 +231,7 @@ js_op!(js_car_reset, |ctx, argc, argv| {
         arg_f32(ctx, argc, argv, 4),
     );
     let yaw = arg_f32(ctx, argc, argv, 5);
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         w.car_reset(car, p, yaw);
     }
     JS_UNDEFINED
@@ -262,7 +261,7 @@ js_op!(js_car_bind_visual, |ctx, argc, argv| {
     };
     let wheel_offsets = take(0, wheels.len());
     let pivot_offsets = take(wheels.len(), pivots.len());
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         w.car_bind_visual(
             car,
             group,
@@ -284,7 +283,7 @@ js_op!(js_car_actor, |ctx, argc, argv| {
         arg_f32(ctx, argc, argv, 3),
         arg_f32(ctx, argc, argv, 4),
     );
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         w.car_actor(car, half);
     }
     JS_UNDEFINED
@@ -300,7 +299,7 @@ js_op!(js_car_brain, |ctx, argc, argv| {
     for i in 0..count {
         waypoints.push(Vec3::new(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]));
     }
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         let mut tracker = WaypointTracker::new(&waypoints, cfg(&c, 0, 6.0), cfg(&c, 1, 1.0) != 0.0);
         // Start on gate 0, like the TS path's explicit `tracker.reset(0)`.
         // Without it the first step snaps to whichever gate is nearest the
@@ -318,7 +317,7 @@ js_op!(js_race_init, |ctx, argc, argv| {
     let cps = arg_pods::<f32>(ctx, argc, argv, 1);
     let count = (arg_i32(ctx, argc, argv, 2).max(0) as usize).min(cps.len() / 4);
     let laps = arg_i32(ctx, argc, argv, 3).max(1) as u32;
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         let mut race = RacePlay::new(laps);
         for i in 0..count {
             let c = &cps[i * 4..i * 4 + 4];
@@ -333,7 +332,7 @@ js_op!(js_camera_rig, |ctx, argc, argv| {
     ps_trace("cameraRig");
     let car = arg_i32(ctx, argc, argv, 1);
     let c = arg_pods::<f32>(ctx, argc, argv, 2);
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
+    if let Some(w) = sim().rally(arg_i32(ctx, argc, argv, 0)) {
         w.camera_rig(
             car,
             CameraRig::new(CameraRigCfg {
@@ -352,19 +351,88 @@ js_op!(js_camera_rig, |ctx, argc, argv| {
     JS_UNDEFINED
 });
 
-js_op!(js_step, |ctx, argc, argv| {
+// ---------------------------------------------------------------------------
+// snake assembly (playset/sim/ops.ts snake* ops)
+// ---------------------------------------------------------------------------
+
+js_op!(js_snake_create, |ctx, argc, argv| JS_NewInt32(
+    ctx,
+    sim().snake_create(arg_i32(ctx, argc, argv, 0)),
+));
+
+js_op!(js_snake_config, |ctx, argc, argv| {
+    // [columns, rows, cellSize, ox, oy, oz, baseTickMs, minTickMs,
+    //  speedupMsPerPoint, initialLength, maxSegments, prngSeed]
+    let c = arg_pods::<f32>(ctx, argc, argv, 1);
+    if let Some(w) = sim().snake(arg_i32(ctx, argc, argv, 0)) {
+        w.configure(
+            cfg(&c, 0, 16.0) as i32,
+            cfg(&c, 1, 16.0) as i32,
+            cfg(&c, 2, 1.0),
+            Vec3::new(cfg(&c, 3, 0.0), cfg(&c, 4, 0.0), cfg(&c, 5, 0.0)),
+            cfg(&c, 6, 150.0),
+            cfg(&c, 7, 70.0),
+            cfg(&c, 8, 4.0),
+            cfg(&c, 9, 4.0) as i32,
+            cfg(&c, 10, 64.0) as i32,
+            cfg(&c, 11, 1337.0) as i64 as u32,
+        );
+    }
+    JS_UNDEFINED
+});
+
+js_op!(js_snake_add, |ctx, argc, argv| {
+    let idx = match sim().snake(arg_i32(ctx, argc, argv, 0)) {
+        Some(w) => w.add_snake(
+            arg_i32(ctx, argc, argv, 1),
+            arg_i32(ctx, argc, argv, 2),
+            arg_i32(ctx, argc, argv, 3),
+            arg_i32(ctx, argc, argv, 4),
+            arg_i32(ctx, argc, argv, 5) != 0,
+        ) as i32,
+        None => 0,
+    };
+    JS_NewInt32(ctx, idx)
+});
+
+js_op!(js_snake_brain, |ctx, argc, argv| {
+    let snake = arg_i32(ctx, argc, argv, 1) as usize;
+    if let Some(w) = sim().snake(arg_i32(ctx, argc, argv, 0)) {
+        w.set_brain(
+            snake,
+            arg_f32(ctx, argc, argv, 2),
+            arg_f32(ctx, argc, argv, 3),
+            arg_f32(ctx, argc, argv, 4),
+            arg_f32(ctx, argc, argv, 5),
+        );
+    }
+    JS_UNDEFINED
+});
+
+js_op!(js_snake_bind_visual, |ctx, argc, argv| {
+    let snake = arg_i32(ctx, argc, argv, 1) as usize;
+    let ids = arg_pods::<i32>(ctx, argc, argv, 2);
+    if let Some(w) = sim().snake(arg_i32(ctx, argc, argv, 0)) {
+        w.bind_snake_visual(snake, &ids);
+    }
+    JS_UNDEFINED
+});
+
+js_op!(js_snake_bind_apple, |ctx, argc, argv| {
+    let node = arg_i32(ctx, argc, argv, 1);
+    if let Some(w) = sim().snake(arg_i32(ctx, argc, argv, 0)) {
+        w.bind_apple_visual(node);
+    }
+    JS_UNDEFINED
+});
+
+js_op!(js_step,  |ctx, argc, argv| {
     let dt = arg_f32(ctx, argc, argv, 1);
     let buttons = arg_u32(ctx, argc, argv, 2);
     let store = crate::scene3d::store();
-    if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
-        w.set_buttons(
-            buttons & spec::btn::LEFT != 0,
-            buttons & spec::btn::RIGHT != 0,
-            buttons & spec::btn::CROSS != 0,
-            buttons & spec::btn::SQUARE != 0,
-        );
-        w.step(store, dt);
-    }
+    // Generic: GameWorld decodes the mask itself (a car reads steer/throttle,
+    // a snake reads the d-pad), so the mount just forwards it.
+    sim().step(arg_i32(ctx, argc, argv, 0), store, dt, buttons);
     JS_UNDEFINED
 });
 
@@ -372,17 +440,19 @@ js_op!(js_read_hud, |ctx, argc, argv| {
     // Writes THROUGH the guest's Float32Array — the one place this surface
     // hands data back, and the only reason the guest needs a per-frame call
     // at all. QuickJS owns the buffer; we never retain the pointer.
+    // HUD width is per-game now; write as many floats as both the world defines
+    // and the guest buffer holds. HUD_FLOATS is the widest (rally); a snake
+    // buffer of 5 floats gets 5.
     if argc > 1 {
         if let Some((p, len)) = buffer_bytes(ctx, *argv.offset(1)) {
-            if len >= HUD_FLOATS * 4 {
+            let count = (len / 4).min(HUD_FLOATS);
+            if count > 0 {
                 let mut scratch = [0f32; HUD_FLOATS];
-                if let Some(w) = sim().world(arg_i32(ctx, argc, argv, 0)) {
-                    w.read_hud(&mut scratch);
-                }
+                sim().read_hud(arg_i32(ctx, argc, argv, 0), &mut scratch[..count]);
                 core::ptr::copy_nonoverlapping(
                     scratch.as_ptr() as *const u8,
                     p as *mut u8,
-                    HUD_FLOATS * 4,
+                    count * 4,
                 );
             }
         }
@@ -413,6 +483,12 @@ pub unsafe fn register(ctx: *mut JSContext, global: JSValue) {
     add_fn(ctx, ps, b"raceInit\0", js_race_init, 4);
     add_fn(ctx, ps, b"cameraRig\0", js_camera_rig, 3);
     add_fn(ctx, ps, b"step\0", js_step, 3);
+    add_fn(ctx, ps, b"snakeCreate\0", js_snake_create, 1);
+    add_fn(ctx, ps, b"snakeConfig\0", js_snake_config, 2);
+    add_fn(ctx, ps, b"snakeAddSnake\0", js_snake_add, 6);
+    add_fn(ctx, ps, b"snakeBrain\0", js_snake_brain, 6);
+    add_fn(ctx, ps, b"snakeBindVisual\0", js_snake_bind_visual, 3);
+    add_fn(ctx, ps, b"snakeBindApple\0", js_snake_bind_apple, 2);
     add_fn(ctx, ps, b"readHud\0", js_read_hud, 2);
 
     // Honest host label (ops.ts __host).

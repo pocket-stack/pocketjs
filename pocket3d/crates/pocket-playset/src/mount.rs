@@ -27,7 +27,6 @@ use glam::Vec3;
 use pocket_mod::Guest;
 use pocket_mod::qjs::{Function, TypedArray};
 use pocket_scene3d::Scene3dSurface;
-use pocketjs_core::spec::btn;
 
 use crate::behavior::{
     pose_offset, CameraRig, CameraRigCfg, PathNavigator, RacePlay, WaypointDriver, WaypointTracker,
@@ -111,7 +110,7 @@ impl SimSurface {
             op!("worldCreate", move |scene: i32| s.borrow_mut().world_create(scene));
 
             let s = self.inner.clone();
-            op!("worldDestroy", move |world: i32| s.borrow_mut().world_destroy(world));
+            op!("worldDestroy", move |world: i32| s.borrow_mut().destroy(world));
 
             // -- terrain -----------------------------------------------------
             // The PREFERRED terrain op: it samples the exact height grid the
@@ -124,7 +123,7 @@ impl SimSurface {
                 move |world: i32, size: f64, side: i32, heights: TypedArray<f32>| {
                     let heights = pods(&heights);
                     let side = side.max(0) as usize;
-                    if let Some(w) = s.borrow_mut().world(world) {
+                    if let Some(w) = s.borrow_mut().rally(world) {
                         w.set_terrain(Terrain::Grid(Heightfield::new(size as f32, side, &heights)));
                     }
                 }
@@ -133,7 +132,7 @@ impl SimSurface {
             let s = self.inner.clone();
             op!("terrainRoad", move |world: i32, config: TypedArray<f32>| {
                 let c = pods(&config);
-                if let Some(w) = s.borrow_mut().world(world) {
+                if let Some(w) = s.borrow_mut().rally(world) {
                     let mut road = RoadTerrain::new();
                     road.seed = cfg(&c, 0, 2026.0);
                     road.road_half_width = cfg(&c, 1, 6.0);
@@ -156,7 +155,7 @@ impl SimSurface {
                 move |world: i32, segments: TypedArray<f32>, count: i32| {
                     let segs = pods(&segments);
                     let count = (count.max(0) as usize).min(segs.len() / 4);
-                    if let Some(w) = s.borrow_mut().world(world) {
+                    if let Some(w) = s.borrow_mut().rally(world) {
                         w.with_road_terrain(|road| {
                             for i in 0..count {
                                 let s = &segs[i * 4..i * 4 + 4];
@@ -177,7 +176,7 @@ impl SimSurface {
                     let count = (count.max(0) as usize)
                         .min(kinds.len())
                         .min(data.len() / COLLIDER_STRIDE);
-                    if let Some(w) = s.borrow_mut().world(world) {
+                    if let Some(w) = s.borrow_mut().rally(world) {
                         let world = w.collision_mut();
                         for i in 0..count {
                             let d = &data[i * COLLIDER_STRIDE..(i + 1) * COLLIDER_STRIDE];
@@ -224,7 +223,7 @@ impl SimSurface {
                     ride_height: cfg(&t, 8, d.ride_height),
                     boost_multiplier: cfg(&t, 9, d.boost_multiplier),
                 };
-                match s.borrow_mut().world(world) {
+                match s.borrow_mut().rally(world) {
                     Some(w) => w.car_create(tuning),
                     None => 0,
                 }
@@ -235,7 +234,7 @@ impl SimSurface {
                 "carReset",
                 move |world: i32, car: i32, x: f64, y: f64, z: f64, yaw: f64| {
                     let p = Vec3::new(x as f32, y as f32, z as f32);
-                    if let Some(w) = s.borrow_mut().world(world) {
+                    if let Some(w) = s.borrow_mut().rally(world) {
                         w.car_reset(car, p, yaw as f32);
                     }
                 }
@@ -271,7 +270,7 @@ impl SimSurface {
                     };
                     let wheel_offsets = take(0, wheels.len());
                     let pivot_offsets = take(wheels.len(), pivots.len());
-                    if let Some(w) = s.borrow_mut().world(world) {
+                    if let Some(w) = s.borrow_mut().rally(world) {
                         w.car_bind_visual(
                             car,
                             group,
@@ -290,7 +289,7 @@ impl SimSurface {
                 "carActor",
                 move |world: i32, car: i32, hx: f64, hy: f64, hz: f64| {
                     let half = Vec3::new(hx as f32, hy as f32, hz as f32);
-                    if let Some(w) = s.borrow_mut().world(world) {
+                    if let Some(w) = s.borrow_mut().rally(world) {
                         w.car_actor(car, half);
                     }
                 }
@@ -311,7 +310,7 @@ impl SimSurface {
                     for i in 0..count {
                         waypoints.push(Vec3::new(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]));
                     }
-                    if let Some(w) = s.borrow_mut().world(world) {
+                    if let Some(w) = s.borrow_mut().rally(world) {
                         let mut tracker =
                             WaypointTracker::new(&waypoints, cfg(&c, 0, 6.0), cfg(&c, 1, 1.0) != 0.0);
                         // Start on gate 0, like the TS path's explicit
@@ -335,7 +334,7 @@ impl SimSurface {
                     let cps = pods(&checkpoints);
                     let count = (count.max(0) as usize).min(cps.len() / 4);
                     let laps = lap_count.max(1) as u32;
-                    if let Some(w) = s.borrow_mut().world(world) {
+                    if let Some(w) = s.borrow_mut().rally(world) {
                         let mut race = RacePlay::new(laps);
                         for i in 0..count {
                             let c = &cps[i * 4..i * 4 + 4];
@@ -350,7 +349,7 @@ impl SimSurface {
             let s = self.inner.clone();
             op!("cameraRig", move |world: i32, car: i32, config: TypedArray<f32>| {
                 let c = pods(&config);
-                if let Some(w) = s.borrow_mut().world(world) {
+                if let Some(w) = s.borrow_mut().rally(world) {
                     w.camera_rig(
                         car,
                         CameraRig::new(CameraRigCfg {
@@ -381,6 +380,65 @@ impl SimSurface {
                 }
             });
 
+            // -- snake assembly (ops.ts snake* ops) ------------------------------
+            let s = self.inner.clone();
+            op!("snakeCreate", move |scene: i32| s.borrow_mut().snake_create(scene));
+
+            let s = self.inner.clone();
+            op!("snakeConfig", move |world: i32, config: TypedArray<f32>| {
+                let c = pods(&config);
+                if let Some(w) = s.borrow_mut().snake(world) {
+                    w.configure(
+                        cfg(&c, 0, 16.0) as i32,
+                        cfg(&c, 1, 16.0) as i32,
+                        cfg(&c, 2, 1.0),
+                        Vec3::new(cfg(&c, 3, 0.0), cfg(&c, 4, 0.0), cfg(&c, 5, 0.0)),
+                        cfg(&c, 6, 150.0),
+                        cfg(&c, 7, 70.0),
+                        cfg(&c, 8, 4.0),
+                        cfg(&c, 9, 4.0) as i32,
+                        cfg(&c, 10, 64.0) as i32,
+                        cfg(&c, 11, 1337.0) as i64 as u32,
+                    );
+                }
+            });
+
+            let s = self.inner.clone();
+            op!(
+                "snakeAddSnake",
+                move |world: i32, sr: i32, sf: i32, dr: i32, df: i32, rival: i32| -> i32 {
+                    match s.borrow_mut().snake(world) {
+                        Some(w) => w.add_snake(sr, sf, dr, df, rival != 0) as i32,
+                        None => 0,
+                    }
+                }
+            );
+
+            let s = self.inner.clone();
+            op!(
+                "snakeBrain",
+                move |world: i32, snake: i32, space: f64, apple: f64, tail: f64, straight: f64| {
+                    if let Some(w) = s.borrow_mut().snake(world) {
+                        w.set_brain(snake as usize, space as f32, apple as f32, tail as f32, straight as f32);
+                    }
+                }
+            );
+
+            let s = self.inner.clone();
+            op!("snakeBindVisual", move |world: i32, snake: i32, ids: TypedArray<i32>| {
+                let ids = pods(&ids);
+                if let Some(w) = s.borrow_mut().snake(world) {
+                    w.bind_snake_visual(snake as usize, &ids);
+                }
+            });
+
+            let s = self.inner.clone();
+            op!("snakeBindApple", move |world: i32, node: i32| {
+                if let Some(w) = s.borrow_mut().snake(world) {
+                    w.bind_apple_visual(node);
+                }
+            });
+
             // -- the per-frame pair ----------------------------------------------
             // `step` holds BOTH borrows — the sim and the scene3d store — for
             // the length of one turn. They are separate RefCells (the store's
@@ -390,20 +448,11 @@ impl SimSurface {
             let scene3d = self.scene3d.clone();
             op!("step", move |world: i32, dt: f64, buttons: f64| {
                 let buttons = as_u32(buttons);
+                // Generic over the game kind: GameWorld decodes the mask itself
+                // (a car reads steer/throttle, a snake reads the d-pad), so the
+                // mount just forwards it — the PSP twin does the same.
                 scene3d.with_store(|store| {
-                    let mut sim = s.borrow_mut();
-                    if let Some(w) = sim.world(world) {
-                        // Same four bits the PSP twin decodes, from the same
-                        // spec BTN mask (core/src/spec.rs): steer, throttle,
-                        // reverse. Everything else in the mask is the guest's.
-                        w.set_buttons(
-                            buttons & btn::LEFT != 0,
-                            buttons & btn::RIGHT != 0,
-                            buttons & btn::CROSS != 0,
-                            buttons & btn::SQUARE != 0,
-                        );
-                        w.step(store, dt as f32);
-                    }
+                    s.borrow_mut().step(world, store, dt as f32, buttons);
                 });
             });
 
@@ -416,20 +465,21 @@ impl SimSurface {
                 // detached buffer; the pointer is used and dropped inside this
                 // call, never retained.
                 let Some(raw) = out.as_raw() else { return };
-                if raw.len < HUD_FLOATS * 4 {
+                // HUD width is per-game; write min(buffer, widest). A snake
+                // buffer of 5 floats gets 5, a rally buffer of 15 gets 15.
+                let count = (raw.len / 4).min(HUD_FLOATS);
+                if count == 0 {
                     return;
                 }
                 let mut scratch = [0f32; HUD_FLOATS];
-                if let Some(w) = s.borrow_mut().world(world) {
-                    w.read_hud(&mut scratch);
-                }
+                s.borrow_mut().read_hud(world, &mut scratch[..count]);
                 // SAFETY: `raw` is QuickJS's live buffer for `out`, at least
-                // HUD_FLOATS f32s long; a byte copy needs no alignment.
+                // `count` f32s long; a byte copy needs no alignment.
                 unsafe {
                     std::ptr::copy_nonoverlapping(
                         scratch.as_ptr() as *const u8,
                         raw.ptr.as_ptr(),
-                        HUD_FLOATS * 4,
+                        count * 4,
                     );
                 }
             });
@@ -464,6 +514,12 @@ mod tests {
         "carBrain",
         "raceInit",
         "cameraRig",
+        "snakeCreate",
+        "snakeConfig",
+        "snakeAddSnake",
+        "snakeBrain",
+        "snakeBindVisual",
+        "snakeBindApple",
         "step",
         "readHud",
     ];

@@ -289,9 +289,9 @@ js_op!(js_node_set_tint, |ctx, argc, argv| {
     JS_UNDEFINED
 });
 
-/// Freeze a batch of nodes: a promise their transforms are final, which lets
-/// the store merge them into shared geometry (batch.rs). Batched on purpose —
-/// a 550-node environment declares itself in one op, not 550.
+// Freeze a batch of nodes: a promise their transforms are final, which lets
+// the store merge them into shared geometry (batch.rs). Batched on purpose —
+// a 550-node environment declares itself in one op, not 550.
 js_op!(js_freeze, |ctx, argc, argv| {
     let ids = arg_i32s(ctx, argc, argv, 0);
     let count = (arg_i32(ctx, argc, argv, 1).max(0) as usize).min(ids.len());

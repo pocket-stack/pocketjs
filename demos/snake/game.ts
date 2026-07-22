@@ -1,40 +1,40 @@
 // demos/snake/game.ts — "Pocket Snake": a grid-snake arena duel (player vs.
-// one AI rival) composed entirely from playset modules.
+// one AI rival) on either of two interchangeable cores.
 //
-// Reference: the GameBlocks demo "Snake Clash" (https://gb-snake-clash.vercel.app/).
-// The library modules it builds on are the MIT-licensed playset ports used
-// below (SnakeMotionController, SnakePlay, GridPathPlanner, BoardEnvironment,
-// PositionFollowCameraRig, RandomGenerator). The behavior spec — grid
-// dimensions, tick cadence, growth/score rules, AI scoring weights, palette,
-// geometry sizes, and camera framing — is derived from the gb-snake-clash
-// demo sources; the glue itself is a fresh implementation written for
-// Pocket's deterministic fixed-step machine.
+// TWO PATHS, ONE GAME. The board, rim walls, snake node pools, apple and
+// camera are built the same way regardless; only the per-step sim differs:
 //
-// Everything here is deterministic fixed-step state (DETERMINISM.md): the
-// only inputs are the per-step button mask and FIXED_DT — no wall clock, no
+//   TS core (always available)   the playset modules, the REFERENCE the
+//                               deterministic goldens pin. The rival decides
+//                               once per grid tick with a flood fill + two A*
+//                               searches over the 16×16 board — in the
+//                               interpreter that tick frame spiked to ~750ms.
+//   native core (`ps` present)   pocket-playset's snake GameWorld: the same
+//                               integer grid logic in Rust, where the search
+//                               is a BFS over a 256-cell array (microseconds),
+//                               and the segment/apple poses are written
+//                               straight into the store, never through JS.
+//
+// The two cores are EXACT here, not merely trajectory-equivalent — snake is
+// integer logic, so the only floats are the seeded item spawn and the cosmetic
+// idle bob (see playset/sim/ops.ts and pocket-playset/src/snake.rs).
+//
+// Reference: the GameBlocks demo "Snake Clash" (gb-snake-clash.vercel.app).
+// Everything is deterministic fixed-step state (DETERMINISM.md): the only
+// inputs are the per-step button mask and FIXED_DT — no wall clock, no
 // Math.random (one seeded RandomGenerator drives item spawns). The grid
-// advances every N sim steps, N derived from the reference cadence
-// (150 ms base → 9 steps at 60 Hz, speeding up 4 ms per point to a 70 ms
-// floor → 4 steps). The composition under test:
-//
-//   BoardEnvironment                    16×16 board plane + grid + lighting,
-//                                       cellToWorldPoint for all placement
-//   SnakeMotionController ×2            segment queues + pending growth
-//                                       (cardinal mode: reversals impossible)
-//   SnakePlay (fresh per grid tick)     wall/self/snake-vs-snake collisions
-//                                       + item pickups → events
-//   GridPathPlanner                     the rival brain's flood fills and
-//                                       A* routes to the nearest apple
-//   PositionFollowCameraRig             one fixed tilted pose framing the board
+// advances every N sim steps, N derived from the reference cadence.
 //
 // A debug probe rides on globalThis.__snakeProbe so the headless E2E
-// (playset/test/snake-sim.test.ts) can assert pickups/deaths without
-// scraping HUD pixels.
+// (playset/test/snake-sim.test.ts) can assert pickups/deaths without scraping
+// HUD pixels. The E2E boots the TS path (no `ps`), so that path keeps the full
+// probe; the native path fills the fields it cheaply can from the HUD mirror.
 
 import { BTN } from "@pocketjs/framework/input";
 import { Euler } from "../../playset/math/index.ts";
 import { Scene3D, type SceneNode } from "../../playset/scene3d/client.ts";
 import type { GameInput } from "../../playset/loop.ts";
+import { detectSim, type SimOps } from "../../playset/sim/ops.ts";
 import { RandomGenerator } from "../../playset/modules/math/random-utils.ts";
 import { rgbToAbgr } from "../../playset/modules/world/color-utils.ts";
 import { BoardEnvironment } from "../../playset/modules/world/environment/board-environment.ts";
@@ -76,6 +76,7 @@ const RIVAL_START: SnakeCell = { right: COLUMNS - 4, forward: 3 };
 /** Segment-node pool size per snake — growth beyond this still plays out in
  *  the sim; only the visual chain clamps (no per-growth allocation ever). */
 const MAX_SEGMENTS = 64;
+const PRNG_SEED = 1337;
 
 // Palette (reference CSS/material colors).
 const PLAYER_BODY = 0xd72638;
@@ -147,15 +148,6 @@ function tickSteps(score: number): number {
 // ---------------------------------------------------------------------------
 // The rival brain — one grid decision per tick over GridPathPlanner
 // ---------------------------------------------------------------------------
-//
-// Observed reference behavior: consider the three non-reversal directions,
-// discard off-board / occupied moves, then score each candidate by
-//   reachable space (flood fill)        × spaceWeight
-//   − A* distance to the nearest apple  × appleDistanceWeight
-//     (unreachable apple costs the whole board: columns × rows)
-//   + tailReachBonus when its own tail stays reachable
-//   + straightBias when the candidate keeps the current heading
-// picking the highest score (ties resolve in up/right/down/left order).
 
 interface BrainWeights {
   spaceWeight: number;
@@ -322,6 +314,8 @@ export interface SnakeHudState {
 
 export interface SnakeGame {
   scene: Scene3D;
+  /** Which core is running — "ts" or the native host label. */
+  core: string;
   /** One fixed 1/60 s simulation step (createGameLoop's `step`). */
   step(dt: number, input: GameInput): void;
   /** Fresh HUD snapshot (call from the loop's `render`). */
@@ -340,14 +334,22 @@ interface AppleState extends SnakeCell {
 }
 
 // ---------------------------------------------------------------------------
-// The game
+// shared build: board, rim, snake node pools, apple, camera
 // ---------------------------------------------------------------------------
 
-export function createSnakeGame(): SnakeGame {
-  const scene = new Scene3D();
-  const prng = new RandomGenerator(1337);
+interface BuiltScene {
+  scene: Scene3D;
+  board: BoardEnvironment;
+  playerVisual: SnakeVisual;
+  rivalVisual: SnakeVisual;
+  apple: SceneNode;
+  eulerScratch: Euler;
+}
 
-  // -- world: board plane, translucent grid, rim walls, lighting ---------------
+function buildScene(): BuiltScene {
+  const scene = new Scene3D();
+  const eulerScratch = new Euler();
+
   const board = new BoardEnvironment({
     scene,
     columns: COLUMNS,
@@ -394,9 +396,6 @@ export function createSnakeGame(): SnakeGame {
     }
   }
 
-  // -- snake + apple visuals (pooled; nothing allocates after boot) ------------
-  const eulerScratch = new Euler();
-
   function buildSnakeVisual(bodyColor: number, headColor: number): SnakeVisual {
     const root = scene.node();
     const bodyGeom = scene.box(0.39, 0.31, 0.39); // reference 0.78 × 0.62 × 0.78
@@ -440,6 +439,128 @@ export function createSnakeGame(): SnakeGame {
     height: 17.5,
   }).step({ targetPosition: board.center, snapToTarget: true, camera: scene.camera });
 
+  return { scene, board, playerVisual, rivalVisual, apple, eulerScratch };
+}
+
+function makeProbe(built: BuiltScene): SnakeProbe {
+  const probe: SnakeProbe = {
+    sceneId: built.scene.__scene,
+    playerHeadNodeId: built.playerVisual.nodes[0].__id,
+    steps: 0,
+    gridTicks: 0,
+    status: "running",
+    score: 0,
+    rivalScore: 0,
+    bestScore: 0,
+    playerLength: INITIAL_LENGTH,
+    playerHead: { ...PLAYER_START },
+    rivalLength: INITIAL_LENGTH,
+    rivalHead: { ...RIVAL_START },
+    itemsEaten: 0,
+    playerItems: 0,
+    rivalItems: 0,
+    playerDeaths: 0,
+    rivalDeaths: 0,
+    lastPlayerDeathReason: null,
+    restarts: 0,
+  };
+  (globalThis as Record<string, unknown>).__snakeProbe = probe;
+  return probe;
+}
+
+export function createSnakeGame(): SnakeGame {
+  const built = buildScene();
+  const sim = detectSim();
+  return sim ? createNativeSnake(built, sim) : createTsSnake(built);
+}
+
+// ---------------------------------------------------------------------------
+// native core — pocket-playset's snake GameWorld behind `ps`
+// ---------------------------------------------------------------------------
+
+function createNativeSnake(built: BuiltScene, ps: SimOps): SnakeGame {
+  const { scene, board, playerVisual, rivalVisual, apple } = built;
+  const probe = makeProbe(built);
+
+  // The board, grid and rim never move — declare them frozen so the host can
+  // batch them. The snake segments and the apple DO move, but the sim writes
+  // their poses natively, so the guest never diffs them: markStatic (not
+  // freeze — a frozen node bakes in place).
+  scene.markStatic(playerVisual.root);
+  scene.markStatic(rivalVisual.root);
+  scene.markStatic(apple);
+  scene.freeze();
+
+  const world = ps.snakeCreate(scene.__scene);
+  ps.snakeConfig(
+    world,
+    Float32Array.of(
+      COLUMNS,
+      ROWS,
+      CELL_SIZE,
+      board.origin.x,
+      board.origin.y,
+      board.origin.z,
+      BASE_TICK_MS,
+      MIN_TICK_MS,
+      SPEEDUP_MS_PER_POINT,
+      INITIAL_LENGTH,
+      MAX_SEGMENTS,
+      PRNG_SEED,
+    ),
+  );
+
+  ps.snakeAddSnake(world, PLAYER_START.right, PLAYER_START.forward, 1, 0, 0); // heading right
+  const rival = ps.snakeAddSnake(world, RIVAL_START.right, RIVAL_START.forward, -1, 0, 1); // heading left
+  ps.snakeBrain(
+    world,
+    rival,
+    RIVAL_WEIGHTS.spaceWeight,
+    RIVAL_WEIGHTS.appleDistanceWeight,
+    RIVAL_WEIGHTS.tailReachBonus,
+    RIVAL_WEIGHTS.straightBias,
+  );
+  ps.snakeBindVisual(world, 0, Int32Array.from(playerVisual.nodes, (n) => n.__id));
+  ps.snakeBindVisual(world, rival, Int32Array.from(rivalVisual.nodes, (n) => n.__id));
+  ps.snakeBindApple(world, apple.__id);
+
+  const hud = new Float32Array(5);
+  const STATES: SnakeGameStatus[] = ["running", "gameover"];
+
+  function step(_dt: number, input: GameInput): void {
+    ps.step(world, _dt, input.buttons);
+    probe.steps += 1;
+  }
+
+  function hudState(): SnakeHudState {
+    ps.readHud(world, hud);
+    const status = STATES[hud[0]] ?? "running";
+    probe.status = status;
+    probe.score = hud[1];
+    probe.rivalScore = hud[2];
+    probe.bestScore = hud[3];
+    probe.playerLength = hud[4];
+    return {
+      status,
+      score: hud[1],
+      rivalScore: hud[2],
+      bestScore: hud[3],
+      length: hud[4],
+    };
+  }
+
+  return { scene, core: ps.__host ?? "native", step, hudState };
+}
+
+// ---------------------------------------------------------------------------
+// TS core — the playset modules (the reference implementation)
+// ---------------------------------------------------------------------------
+
+function createTsSnake(built: BuiltScene): SnakeGame {
+  const { scene, board, playerVisual, rivalVisual, apple, eulerScratch } = built;
+  const prng = new RandomGenerator(PRNG_SEED);
+  const probe = makeProbe(built);
+
   // -- sim state ----------------------------------------------------------------
   const playerMotion = new SnakeMotionController({
     initialLength: INITIAL_LENGTH,
@@ -463,29 +584,6 @@ export function createSnakeGame(): SnakeGame {
   let pendingDirection: DirectionName | null = null;
   let stepsUntilTick = tickSteps(0);
   let previousButtons = 0;
-
-  const probe: SnakeProbe = {
-    sceneId: scene.__scene,
-    playerHeadNodeId: playerVisual.nodes[0].__id,
-    steps: 0,
-    gridTicks: 0,
-    status,
-    score: 0,
-    rivalScore: 0,
-    bestScore: 0,
-    playerLength: INITIAL_LENGTH,
-    playerHead: { ...PLAYER_START },
-    rivalLength: INITIAL_LENGTH,
-    rivalHead: { ...RIVAL_START },
-    itemsEaten: 0,
-    playerItems: 0,
-    rivalItems: 0,
-    playerDeaths: 0,
-    rivalDeaths: 0,
-    lastPlayerDeathReason: null,
-    restarts: 0,
-  };
-  (globalThis as Record<string, unknown>).__snakeProbe = probe;
 
   function spawnAppleIfNeeded(): void {
     if (apples.length > 0 || status === "gameover") return;
@@ -649,14 +747,8 @@ export function createSnakeGame(): SnakeGame {
   }
 
   function hudState(): SnakeHudState {
-    return {
-      status,
-      score,
-      rivalScore,
-      bestScore,
-      length: playerMotion.length,
-    };
+    return { status, score, rivalScore, bestScore, length: playerMotion.length };
   }
 
-  return { scene, step, hudState };
+  return { scene, core: "ts", step, hudState };
 }

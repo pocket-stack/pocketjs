@@ -206,6 +206,44 @@ export interface SimOps {
   /** Attach the chase camera to a car; it drives the scene's camera. */
   cameraRig(world: number, car: number, config: Float32Array): void;
 
+  // -- snake (a grid game; a different GameWorld behind the same surface) -----
+  // The op surface grows per game because ASSEMBLY is per game — a car and a
+  // snake grid share no vocabulary — but everything after boot (step, readHud,
+  // the world registry) is generic. See pocket-playset's GameWorld.
+
+  /** Create a snake world bound to a scene3d scene. */
+  snakeCreate(scene: number): number;
+  /**
+   * Board + cadence + spawn config, in order:
+   * `[columns, rows, cellSize, originX, originY, originZ, baseTickMs,
+   *   minTickMs, speedupMsPerPoint, initialLength, maxSegments, prngSeed]`.
+   * `origin`/`cellSize` reproduce `board.cellToWorldPoint`.
+   */
+  snakeConfig(world: number, config: Float32Array): void;
+  /** Add a snake at a start cell heading a cardinal direction; `rival` gives
+   *  it the AI brain (0/1). Returns its index. */
+  snakeAddSnake(
+    world: number,
+    startRight: number,
+    startForward: number,
+    dirRight: number,
+    dirForward: number,
+    rival: number,
+  ): number;
+  /** The rival's scoring weights (space, appleDistance, tailReach, straight). */
+  snakeBrain(
+    world: number,
+    snake: number,
+    space: number,
+    appleDistance: number,
+    tailReach: number,
+    straight: number,
+  ): void;
+  /** Hand over a snake's pooled segment nodes (head at index 0). */
+  snakeBindVisual(world: number, snake: number, nodeIds: Int32Array): void;
+  /** Hand over the single apple node. */
+  snakeBindApple(world: number, nodeId: number): void;
+
   /** One fixed simulation step. `buttons` is the spec BTN mask. */
   step(world: number, dt: number, buttons: number): void;
 
