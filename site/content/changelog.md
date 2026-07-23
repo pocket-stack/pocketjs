@@ -3,6 +3,75 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.7.0 — July 23, 2026
+
+**Vue compiles all the way down.** Pocket Vapor takes a real Vue Vapor
+component — actual `ref`/`computed`, actual JSX — and emits native code for
+machines that could never host a JavaScript engine: Game Boy Advance, Game
+Boy, NES cartridges, and now an ESP32 dev board, with the same file proven
+cell-identical against real `vue@3.6` after every button press. [The film
+and the whole argument](/blog/pocket-vapor/). Around it, the platform grew
+a launcher, a package format, and a desktop widget runtime.
+
+- **Pocket Vapor** (`vapor/`) — an AOT compiler for a strict TypeScript
+  subset of Vue Vapor: reactivity lowered to dirty-bit dependency masks
+  baked into ROM, template bindings to span-merged paint effects, every
+  byte planned at compile time (no allocator, no GC). One TodoMVC component
+  becomes `.gba`, `.gb`, and `.nes` carts; `SCREEN` folds make layout a
+  compile-time constant per target — responsive UI with zero bytes of
+  runtime cost.
+- **The oracle is real Vue** — the same file runs unmodified on
+  `vue@3.6` `runtime-with-vapor`, and the parity suite replays one
+  interaction tape through the oracle and every console emulator, comparing
+  the full logical grid — characters *and* palettes — after each press.
+  `bun run vapor:dev` serves the oracle in a browser to make degradation
+  visible before you burn a cart.
+- **A class DSL with per-target style contracts** — the same Tailwind
+  names the big framework compiles, lowered per machine: GBA palette
+  banks (rgb555), ESP32 RGB565 ink/paper pairs, GB/NES two glyph styles by
+  luminance. `vapor:check` prints the whole cross-target diagnostics
+  matrix in one run; `--strict` turns lossy lowering into failure.
+- **ESP32 MeowBit, the fourth target** — an ST7735 RGB565 cell raster,
+  release-latched button chords, and a USB verifier that replays the shared
+  tape against the *physical* board: 32 full-grid receipts, 23,040
+  character/palette cell comparisons, zero tripwires, firmware identity
+  hash-checked so a stale flash can't pass.
+- **Boards as data, execution classes in the contract** — MCU devices are
+  JSON board profiles (pins, panel, pad coverage) validated against the
+  runtime; the compiler derives what an app demands (buttons statically
+  used, style pairs, grid) and `check --json` judges every registered
+  board. pocket.json v2 names the guest/aot split (`execution.classes`) —
+  [vapor/BOARDS.md](https://github.com/pocket-stack/pocketjs/blob/main/vapor/BOARDS.md)
+  is the scaling argument.
+- **Cover Flow launcher + whole-guest app switching** — the launcher is
+  Home: scrub a cover deck with real momentum, boot any installed app, and
+  SELECT summons the deck from inside a running guest behind a frozen-shot
+  veil (ops 39–41). Verified on real PSP hardware.
+- **`.pocket` v1** — one app, every target, one file: identity, build
+  plan, bundle, and assets as sorted sections with deterministic encoding;
+  `build --all-targets`, `thin`, `inspect`, and `verify` in the CLI.
+  Devices re-verify the embedded plan against their own profile before
+  booting.
+- **Widgets grow a family** — the `pocket-widget` crate (demand-rendered
+  embedded surfaces with parts + picking), flat widgets — Pocket Note, a
+  markdown sticky with selection/undo/clipboard/IME on a new
+  `desktop-widget-macos` target — and `pocket-stage` authored 3D stage
+  packages: the landing page's PSP is one, an iPod nano is another.
+- **Vita renders through GXM** — Pocket3D worlds move off the CPU blitter
+  onto the native GPU pipeline.
+- **Vue single-file components** — `.vue` SFCs compile through
+  `@vue/compiler-sfc` vapor mode in the guest vue-vapor framework, and Vue
+  itself moves up to `3.6.0-rc.1` (functional props arrive resolved).
+- **Contracts: semantics as fields** — target profiles carry `platform`
+  and `form` as queryable fields (ids stay labels nothing may parse), and
+  apps declare viewport intent per policy (`fixed`/`dynamic`) instead of
+  per target.
+- **Compatibility:** existing apps and the npm packages build unchanged;
+  the bare fixed-viewport manifest spelling remains valid, and
+  `execution.classes` is optional (omitted means guest). The repository
+  itself moved to one-axis-per-top-level-directory (`docs/STRUCTURE.md`) —
+  contributor-facing only.
+
 ## 0.6.0 — July 19, 2026
 
 **The engine leaves the handheld.** The Pocket runtime's first desktop
