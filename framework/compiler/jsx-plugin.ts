@@ -47,6 +47,7 @@ const LIFECYCLE_VUE_VAPOR_PATH = new URL("../src/lifecycle-vue-vapor.ts", import
 const OSK_PATH = new URL("../src/osk.tsx", import.meta.url).pathname;
 const PLATFORM_PATH = new URL("../src/platform.ts", import.meta.url).pathname;
 const PRELUDE_PATH = new URL("../src/prelude.ts", import.meta.url).pathname;
+const VIRTUAL_LIST_PATH = new URL("../src/virtual-list.ts", import.meta.url).pathname;
 const VUE_VAPOR_RUNTIME_PATH = new URL(
   "../../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js",
   import.meta.url,
@@ -91,6 +92,7 @@ export const FRAMEWORKS: Record<
       platform: PLATFORM_PATH,
       prelude: PRELUDE_PATH,
       renderer: RENDERER_SOLID_PATH,
+      "virtual-list": VIRTUAL_LIST_PATH,
     },
   },
   "vue-vapor": {

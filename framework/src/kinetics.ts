@@ -77,6 +77,9 @@ export interface Scroller {
   /** Shift offset AND every in-flight anchor by delta after a prepend, so
    *  backfill never moves what the user is looking at (the im rebase). */
   rebase(delta: number): void;
+  /** The position the scroller is heading to: the chase/tween target when
+   *  one is in flight, the current offset otherwise. */
+  intent(): number;
   /** At the end of the range, judged on INTENT: the chase/tween target when
    *  one is in flight, the position otherwise (the im at-bottom rule). */
   isAtEnd(slackPx?: number): boolean;
@@ -264,9 +267,12 @@ export function createScroller(opts: ScrollerOptions): Scroller {
       emit(pos + delta);
     },
 
+    intent(): number {
+      return state === "chase" ? target : state === "tween" ? tweenTo : pos;
+    },
+
     isAtEnd(slackPx = 1): boolean {
-      const intent = state === "chase" ? target : state === "tween" ? tweenTo : pos;
-      return intent >= opts.max() - slackPx;
+      return this.intent() >= opts.max() - slackPx;
     },
 
     projectFling,
