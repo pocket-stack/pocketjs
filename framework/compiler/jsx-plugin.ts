@@ -72,6 +72,7 @@ const GENERATED_STYLES_PATH = new URL(
   "../src/styles.generated.ts",
   import.meta.url,
 ).pathname;
+const VIRTUAL_LIST_PATH = new URL("../src/virtual-list.ts", import.meta.url).pathname;
 const VITA_PACKAGE_PATH = new URL(
   "../../tools/vita-package.ts",
   import.meta.url,
@@ -167,6 +168,7 @@ export const FRAMEWORKS: Record<
       platform: PLATFORM_PATH,
       prelude: PRELUDE_PATH,
       renderer: RENDERER_SOLID_PATH,
+      "virtual-list": VIRTUAL_LIST_PATH,
     },
   },
   "vue-vapor": {
