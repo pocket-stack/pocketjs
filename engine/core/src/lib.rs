@@ -40,9 +40,11 @@ pub mod package;
 pub mod raster;
 pub mod spec;
 pub mod stream;
+pub mod stream_rx;
 pub mod style;
 pub mod text;
 pub mod tree;
+pub mod wire;
 
 pub use draw::DrawList;
 

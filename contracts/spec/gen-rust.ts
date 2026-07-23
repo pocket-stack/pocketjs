@@ -72,6 +72,19 @@ import {
   STREAM_VRING_OFF,
   SVC_IMG_MAX_BYTES,
   SVC_POLL_BUF,
+  WIRE_BEACON_MAGIC,
+  WIRE_BEACON_PORT,
+  WIRE_CHUNK_HEADER_SIZE,
+  WIRE_HEADER_SIZE,
+  WIRE_MAGIC,
+  WIRE_MARK_FLAG_ENDED,
+  WIRE_MARK_SIZE,
+  WIRE_MAX_PAYLOAD,
+  WIRE_MSG,
+  WIRE_PORT,
+  WIRE_SLOT_FLAG_RLE,
+  WIRE_SLOT_HEADER_SIZE,
+  WIRE_VERSION,
   TEX_MAX_DIM,
   TEX_SLOT_BITS,
   TEX_SLOT_MASK,
@@ -316,6 +329,26 @@ export function generateRust(): string {
   put(`    pub const SLOT_HEADER_SIZE: usize = ${STREAM_SLOT_HEADER_SIZE};`);
   put(`    pub const CHUNK_HEADER_SIZE: usize = ${STREAM_CHUNK_HEADER_SIZE};`);
   put(`    pub const FLAG_ENDED: u16 = ${STREAM_FLAG_ENDED};`);
+  put("}");
+  put("");
+  put("/// SVC WIRE protocol (PKNT) — the svc mailbox over a socket.");
+  put("/// Full byte layout in spec.ts; parsed by engine/core/src/wire.rs.");
+  put("pub mod wire {");
+  put(`    pub const MAGIC: u32 = ${hex(WIRE_MAGIC)}; // 'PKNT' LE`);
+  put(`    pub const BEACON_MAGIC: u32 = ${hex(WIRE_BEACON_MAGIC)}; // 'PKDB' LE`);
+  put(`    pub const VERSION: u8 = ${WIRE_VERSION};`);
+  put(`    pub const HEADER_SIZE: usize = ${WIRE_HEADER_SIZE};`);
+  put(`    pub const MAX_PAYLOAD: usize = ${WIRE_MAX_PAYLOAD};`);
+  put(`    pub const BEACON_PORT: u16 = ${WIRE_BEACON_PORT};`);
+  put(`    pub const PORT: u16 = ${WIRE_PORT};`);
+  for (const [name, v] of Object.entries(WIRE_MSG)) {
+    put(`    pub const MSG_${screaming(name)}: u8 = ${hex(v, 2)};`);
+  }
+  put(`    pub const SLOT_HEADER_SIZE: usize = ${WIRE_SLOT_HEADER_SIZE};`);
+  put(`    pub const CHUNK_HEADER_SIZE: usize = ${WIRE_CHUNK_HEADER_SIZE};`);
+  put(`    pub const MARK_SIZE: usize = ${WIRE_MARK_SIZE};`);
+  put(`    pub const SLOT_FLAG_RLE: u16 = ${WIRE_SLOT_FLAG_RLE};`);
+  put(`    pub const MARK_FLAG_ENDED: u16 = ${WIRE_MARK_FLAG_ENDED};`);
   put("}");
   put("");
 
