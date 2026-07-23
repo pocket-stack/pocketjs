@@ -129,6 +129,19 @@ fn main() {
         }
     };
 
+    // Build identity for debugStats: FNV-1a64 over the embedded js+pak (the
+    // PSP host's stale-embed tripwire, verbatim math).
+    let bundle_hash = {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for &b in embed.js.as_bytes().iter().chain(embed.pak.iter()) {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        format!("{h:016x}")
+    };
+    println!("cargo:rustc-env=POCKETJS_APP_NAME={app}");
+    println!("cargo:rustc-env=POCKETJS_BUNDLE_HASH={bundle_hash}");
+
     let registry = env::var("POCKETJS_LAUNCHER_REGISTRY").unwrap_or_default();
     let packages_dir = env::var_os("POCKETJS_LAUNCHER_PACKAGES")
         .map(PathBuf::from)

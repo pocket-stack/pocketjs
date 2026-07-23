@@ -9,12 +9,17 @@ use std::string::String;
 use libquickjs_sys::*;
 use pocketjs_core::Ui;
 
+pub mod audio;
 pub mod dbg;
 pub mod ffi;
 pub mod graphics;
 pub mod input;
+pub mod net;
 pub mod pak;
+pub mod stats;
+pub mod svc;
 pub mod switch;
+pub mod vid;
 
 static mut INPUT_INITIALIZED: bool = false;
 /// A plain `Drop` is allowed to happen inside an external host's open scene, so
@@ -299,14 +304,18 @@ impl Runtime {
         }
     }
 
-    /// Render a standalone PocketJS frame into a new vita2d scene.
+    /// Render a standalone PocketJS frame into a new vita2d scene. The video
+    /// plane's staged frame commits here — begin_frame's rendering-done wait
+    /// is the GXM-idle window (the GE-race discipline, GXM edition).
     ///
     /// # Safety
     ///
     /// Call only on the Vita render thread with no scene already open.
     pub unsafe fn render(&mut self) {
         let (ptr, len) = self.draw_words();
-        graphics::render(ffi::ui(), core::slice::from_raw_parts(ptr, len));
+        graphics::begin_frame(0xff00_0000);
+        vid::present(ffi::ui());
+        graphics::render_over(ffi::ui(), core::slice::from_raw_parts(ptr, len));
     }
 
     /// Composite the PocketJS DrawList into the caller's open vita2d scene.
@@ -345,6 +354,13 @@ impl Runtime {
     ///
     /// Call on the owning render thread with no outstanding `Ui` reference.
     pub unsafe fn shutdown(mut self) {
+        // The svc surface is process-global; the guest is not. Close the video
+        // plane (frees the GXM texture, releases the audio port on this thread)
+        // and clear the mailbox so the next guest cannot read this guest's
+        // lines or side files. The net supervisor itself stays up — the TCP
+        // session outlives guest switches by design.
+        vid::close(ffi::ui());
+        svc::reset();
         self.release_quickjs();
         reset_guest_state();
     }
