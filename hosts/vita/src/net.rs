@@ -239,8 +239,13 @@ pub fn reset() {
 // ---------------------------------------------------------------------------
 
 fn supervisor(app: &str) {
+    // host.txt failures round-robin into beacon discovery: a STALE override
+    // (the Mac's DHCP lease moved — observed on first hardware bring-up)
+    // must degrade to broadcast discovery, never wedge the transport.
+    let mut skip_host_txt = false;
     while !SHUTDOWN.load(Ordering::Acquire) {
-        let Some(target) = discover(app) else {
+        let Some(target) = discover(app, skip_host_txt) else {
+            skip_host_txt = false;
             std::thread::sleep(BACKOFF);
             continue;
         };
@@ -262,17 +267,22 @@ fn supervisor(app: &str) {
             }
             Err(err) => {
                 vita_log(format_args!("[PocketJS net] connect {target}: {err}"));
+                // If that came from host.txt, try the beacon next round.
+                skip_host_txt = !skip_host_txt;
             }
         }
         std::thread::sleep(BACKOFF);
     }
 }
 
-/// `host.txt` override first, then one beacon-listen window.
-fn discover(app: &str) -> Option<SocketAddr> {
-    if let Ok(text) = std::fs::read_to_string(HOST_TXT) {
-        if let Ok(addr) = text.trim().parse::<SocketAddr>() {
-            return Some(addr);
+/// `host.txt` override first (unless the last override attempt failed to
+/// connect), then one beacon-listen window.
+fn discover(app: &str, skip_host_txt: bool) -> Option<SocketAddr> {
+    if !skip_host_txt {
+        if let Ok(text) = std::fs::read_to_string(HOST_TXT) {
+            if let Ok(addr) = text.trim().parse::<SocketAddr>() {
+                return Some(addr);
+            }
         }
     }
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, wire::BEACON_PORT)).ok()?;
