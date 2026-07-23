@@ -1,8 +1,9 @@
 //! pocketbook-host — the PocketJS UI runtime on PocketBook e-readers.
 //!
 //! Reuses the backend-agnostic `ui` surface (`pocket_ui_surface::UiSurface`)
-//! and the core's software rasterizer, then converts RGBA8 → Gray8 and drives
-//! the e-ink panel through inkview. See `pocketjs-inkview-implementation.md`
+//! and the core's software rasterizer, then blits the frame as RGB24 (inkview
+//! converts to gray on grayscale panels, writes RGB on color panels). See
+//! `pocketjs-inkview-implementation.md`
 //! at the repo root for the full design and the ground-truth API notes.
 //!
 //! Event-loop model (mirrors `inkview-slint`): `iv_main` runs on the main
@@ -34,9 +35,16 @@ const HOST_ABI: u32 = 4;
 /// smooth while sparing CPU and battery.
 const TICK_MS: u64 = 33;
 
-/// Touch packs coordinates into 9 bits (framework/src/touch.ts), so the
-/// logical viewport must stay ≤511 px per axis.
-const MAX_LOGICAL_AXIS: usize = 511;
+/// Logical viewport the pocketbook target profile bakes bundles for
+/// (contracts/spec/platforms.ts). Must match the bundle: the framework lays
+/// the app out for this size, so the host presents exactly it.
+const LOGICAL_W: u32 = 480;
+const LOGICAL_H: u32 = 272;
+/// Raster density the target profile bakes font atlases/images at; the host
+/// must render at the same density for crisp output. 480×272 also stays
+/// ≤511 px/axis, keeping touch coordinates inside the 9-bit wire format
+/// (framework/src/touch.ts).
+const DENSITY: u32 = 2;
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -80,7 +88,7 @@ fn run(iv: &'static inkview::bindings::Inkview, rx: mpsc::Receiver<Event>) -> Re
     let phys_w = screen.width();
     let phys_h = screen.height();
 
-    let geo = Geometry::choose(phys_w, phys_h);
+    let geo = Geometry::for_panel(phys_w, phys_h);
     log::info!(
         "pocketbook: panel {phys_w}x{phys_h}, logical {}x{} @{}x, render {}x{} +({},{})",
         geo.logical_w,
@@ -97,10 +105,8 @@ fn run(iv: &'static inkview::bindings::Inkview, rx: mpsc::Receiver<Event>) -> Re
     let bundle =
         std::fs::read_to_string(js_path()).with_context(|| format!("reading {}", js_path()))?;
 
-    let surface = UiSurface::new_with_density(
-        (geo.logical_w as f32, geo.logical_h as f32),
-        geo.density,
-    );
+    let surface =
+        UiSurface::new_with_density((geo.logical_w as f32, geo.logical_h as f32), geo.density);
     surface.set_identity(HOST_ID, HOST_ABI);
     surface.feed_pak(&pak);
 
@@ -124,7 +130,14 @@ fn run(iv: &'static inkview::bindings::Inkview, rx: mpsc::Receiver<Event>) -> Re
 
     // First paint: render one frame and full-update so the screen starts clean.
     tick(
-        &guest, &surface, &mut fb, &mut refresh, &mut input, &mut screen, &geo, true,
+        &guest,
+        &surface,
+        &mut fb,
+        &mut refresh,
+        &mut input,
+        &mut screen,
+        &geo,
+        true,
     )?;
 
     let mut last_tick = Instant::now();
@@ -167,7 +180,14 @@ fn run(iv: &'static inkview::bindings::Inkview, rx: mpsc::Receiver<Event>) -> Re
 
         last_tick = Instant::now();
         tick(
-            &guest, &surface, &mut fb, &mut refresh, &mut input, &mut screen, &geo, full,
+            &guest,
+            &surface,
+            &mut fb,
+            &mut refresh,
+            &mut input,
+            &mut screen,
+            &geo,
+            full,
         )?;
     }
     Ok(())
@@ -191,20 +211,21 @@ fn tick(
 
     surface.tick();
 
-    // Rasterize at density → RGBA8, then luminance → Gray8 + damage (buffer coords).
+    // Rasterize at density → RGBA8 and diff against the previous frame
+    // (buffer coords). The blit below reads the CURRENT frame, so the
+    // previous-frame latch is advanced only after blitting.
     let dirty = surface.with_ui(|ui| {
         let words = ui.draw().words.clone();
         fb.rasterize(ui, &words);
-        fb.convert_and_diff()
+        fb.diff()
     });
 
     if full {
+        // Full redraw (first paint / return from background): blit everything
+        // and flash the panel once for a clean, ghost-free image.
         fb.blit_all(screen, geo.ox, geo.oy);
         refresh.full(screen);
-        return Ok(());
-    }
-
-    if !dirty.is_empty() {
+    } else if !dirty.is_empty() {
         fb.blit_dirty(screen, &dirty, geo.ox, geo.oy);
         let screen_dirty = offset_rects(&dirty, geo.ox, geo.oy);
         refresh.present(screen, &screen_dirty);
@@ -213,6 +234,9 @@ fn tick(
         // cleanup timer (it no-ops when there's nothing pending).
         refresh.present(screen, &[]);
     }
+
+    // Latch this frame as the previous one for the next diff.
+    fb.advance();
     Ok(())
 }
 
@@ -241,27 +265,22 @@ struct Geometry {
 }
 
 impl Geometry {
-    /// Pick a raster density (env `POCKET_DENSITY`, default 2) and the largest
-    /// logical viewport that (a) integer-scales by the density onto the panel
-    /// and (b) stays ≤511 px/axis so touch coordinates fit the 9-bit wire
-    /// format. The render buffer is integer-fit centered on the panel.
-    fn choose(phys_w: usize, phys_h: usize) -> Self {
-        let density = std::env::var("POCKET_DENSITY")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(2)
-            .clamp(1, 4);
-        let d = density as usize;
-        let logical_w = (phys_w / d).clamp(1, MAX_LOGICAL_AXIS);
-        let logical_h = (phys_h / d).clamp(1, MAX_LOGICAL_AXIS);
-        let render_w = logical_w * d;
-        let render_h = logical_h * d;
+    /// Present the bundle's fixed 480×272 @2x surface (a 960×544 render) and
+    /// integer-fit center it on the actual panel. The panel size only sets the
+    /// centering offset; the logical viewport and density are fixed to match
+    /// the pocketbook target profile (and stay ≤511/axis, so touch coordinates
+    /// fit the 9-bit wire format).
+    fn for_panel(phys_w: usize, phys_h: usize) -> Self {
+        let logical_w = LOGICAL_W as usize;
+        let logical_h = LOGICAL_H as usize;
+        let render_w = logical_w * DENSITY as usize;
+        let render_h = logical_h * DENSITY as usize;
         let ox = phys_w.saturating_sub(render_w) / 2;
         let oy = phys_h.saturating_sub(render_h) / 2;
         Self {
             logical_w,
             logical_h,
-            density,
+            density: DENSITY,
             render_w,
             render_h,
             ox,
