@@ -4,6 +4,8 @@ use pocketjs_vita::{graphics, input, switch, vita_log, Runtime};
 #[cfg(feature = "capture")]
 static CAPTURE_INPUT: &str = env!("POCKETJS_CAPTURE_INPUT");
 #[cfg(feature = "capture")]
+static CAPTURE_TOUCH: &str = env!("POCKETJS_CAPTURE_TOUCH");
+#[cfg(feature = "capture")]
 static CAPTURE_FRAMES: &str = env!("POCKETJS_CAPTURE_FRAMES");
 #[cfg(feature = "capture")]
 static CAPTURE_DIR: &str = env!("POCKETJS_CAPTURE_DIR");
@@ -37,6 +39,43 @@ fn scripted_buttons(frame: u32) -> i32 {
         }
     }
     buttons
+}
+
+/// Level-triggered touch script, the threshold convention of
+/// `scripted_buttons`: entries `frame:id,x,y[+id,x,y…]` joined by `;`,
+/// `frame:-` releases (tests/golden-specs.ts `encodeTouchInput`).
+#[cfg(feature = "capture")]
+fn scripted_touches(frame: u32) -> pocketjs_vita::input::TouchSnapshot {
+    let mut latest: Option<(u32, &str)> = None;
+    for item in CAPTURE_TOUCH.split(';') {
+        let Some((at, spec)) = item.split_once(':') else {
+            continue;
+        };
+        let Some(at) = at.parse::<u32>().ok().filter(|at| *at <= frame) else {
+            continue;
+        };
+        if latest.is_none_or(|(previous, _)| at >= previous) {
+            latest = Some((at, spec));
+        }
+    }
+    let Some((_, spec)) = latest else {
+        return pocketjs_vita::input::TouchSnapshot::EMPTY;
+    };
+    if spec == "-" {
+        return pocketjs_vita::input::TouchSnapshot::EMPTY;
+    }
+    let mut contacts: Vec<(u8, u16, u16)> = Vec::new();
+    for triple in spec.split('+') {
+        let mut parts = triple.split(',');
+        let (Some(id), Some(x), Some(y)) = (parts.next(), parts.next(), parts.next()) else {
+            continue;
+        };
+        let (Ok(id), Ok(x), Ok(y)) = (id.parse::<u8>(), x.parse::<u16>(), y.parse::<u16>()) else {
+            continue;
+        };
+        contacts.push((id, x, y));
+    }
+    pocketjs_vita::input::TouchSnapshot::from_logical(&contacts)
 }
 
 #[cfg(feature = "capture")]
@@ -101,7 +140,7 @@ unsafe fn run_guest(app_index: usize) -> usize {
         let (mut buttons, analog, touches) = (
             scripted_buttons(GLOBAL_FRAME),
             spec::ANALOG_CENTER as i32,
-            input::TouchSnapshot::EMPTY,
+            scripted_touches(GLOBAL_FRAME),
         );
         #[cfg(not(feature = "capture"))]
         let (mut buttons, analog, touches) = {
