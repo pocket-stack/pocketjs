@@ -174,3 +174,25 @@ test("ambient traffic updates unread badges and previews live", async () => {
   expect(treeHasText(d.tree, "5 UNREAD")).toBe(true);
   expect(treeHasText(d.tree, "nightly build 412")).toBe(true);
 }, 30000);
+
+// ---------------------------------------------------------------------------
+// Journey E — the touch keyboard: taps type through the modern press model
+// (down arms + highlights, release commits), byte-exact on repeat.
+// ---------------------------------------------------------------------------
+
+test("touch taps type on the OSK and replay byte-exact", async () => {
+  const kbE = new OskScripter(3.0).open().tap("hi").commit();
+  const scenario = {
+    app: "im-main",
+    hz: 60,
+    seconds: Math.ceil(kbE.end + 4),
+    script: [
+      { at: 1.0, press: BTN.CIRCLE }, // open MAYA CHEN
+      ...kbE.events,
+    ],
+  };
+  const e = await runScenario(scenario);
+  expect(treeHasText(e.tree, "hi")).toBe(true); // the tapped draft was sent
+  const again = await runScenario(scenario);
+  expect(again.hashes).toEqual(e.hashes);
+}, 30000);
