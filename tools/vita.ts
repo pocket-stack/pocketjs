@@ -217,6 +217,7 @@ const env = {
   TARGET_CXX: 'arm-vita-eabi-g++',
   CXX_armv7_sony_vita_newlibeabihf: 'arm-vita-eabi-g++',
   POCKETJS_CAPTURE_INPUT: process.env.POCKETJS_CAPTURE_INPUT ?? "",
+  POCKETJS_CAPTURE_TOUCH: process.env.POCKETJS_CAPTURE_TOUCH ?? "",
   POCKETJS_CAPTURE_FRAMES: process.env.POCKETJS_CAPTURE_FRAMES ?? "",
   POCKETJS_CAPTURE_DIR: process.env.POCKETJS_CAPTURE_DIR ?? "ux0:data/pocketjs-captures",
 };
