@@ -53,6 +53,10 @@ export interface VirtualListHandle {
   rebaseRows(addedRows: number): void;
   scrollToIndex(index: number, align?: "start" | "center" | "end" | "nearest", animate?: boolean): void;
   focusedIndex(): number | null;
+  /** Programmatic row focus (fresh-results entry point): scrolls the row
+   *  into view and focuses it once mounted — the same path the d-pad walk
+   *  takes. No-op with focusRows: false. */
+  focusRow(index: number): void;
 }
 
 export interface VirtualListProps {
@@ -337,6 +341,10 @@ export function VirtualList(props: VirtualListProps): SolidJSX.Element {
     rebaseRows: (rows) => scroller.rebase(rows * props.rowHeight),
     scrollToIndex,
     focusedIndex,
+    focusRow(index: number): void {
+      if (!focusRows || props.count === 0) return;
+      focusIndex(Math.max(0, Math.min(props.count - 1, index)));
+    },
   };
   props.ref?.(handle);
 

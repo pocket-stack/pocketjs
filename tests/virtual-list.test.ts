@@ -264,3 +264,19 @@ describe("data-flow invariants", () => {
     expect(hits).toBe(1);
   });
 });
+
+describe("focusRow", () => {
+  test("focuses a row programmatically, scrolling it into view", () => {
+    const h = mountList();
+    h.focusRow(0);
+    frame(0);
+    expect(h.focusedIndex()).toBe(0);
+    expect(getFocused()).toBe(canvasNode().children[0]);
+    h.focusRow(50); // off-window: chases + focuses on mount
+    for (let i = 0; i < 60; i++) frame(0);
+    expect(h.focusedIndex()).toBe(50);
+    h.focusRow(999); // clamps to the last row
+    for (let i = 0; i < 120; i++) frame(0);
+    expect(h.focusedIndex()).toBe(99);
+  });
+});
