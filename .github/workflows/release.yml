@@ -108,7 +108,7 @@ jobs:
           fi
 
       - name: Publish @pocketjs/cli
-        working-directory: cli
+        working-directory: tools/cli
         run: |
           name=$(node -p "require('./package.json').name")
           version=$(node -p "require('./package.json').version")
