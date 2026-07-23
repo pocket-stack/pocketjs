@@ -316,6 +316,7 @@ pub enum Easing {
 /// PSM_T8 (CLUT8) uploads as: 1024-byte palette (256 x u32 ABGR), then
 /// w*h index bytes.
 pub mod psm {
+    pub const PSM_5650: u32 = 0;
     pub const PSM_4444: u32 = 2;
     pub const PSM_8888: u32 = 3;
     pub const PSM_T8: u32 = 5;

@@ -496,10 +496,11 @@ export const ENUMS = {
 // ---------------------------------------------------------------------------
 // Values MUST equal rust-psp's TexturePixelFormat (sceGuTexMode arg), as used
 // by the dreamcart runtime — verified against rust-psp/psp/src/sys/gu.rs
-// (Psm4444 = 2, Psm8888 = 3) and runtime/src/gfx3d.rs psm_for(). v1 supports
-// only these two (4444 for baked corner/shadow alpha sprites, 8888 for images).
+// (Psm5650 = 0, Psm4444 = 2, Psm8888 = 3) and runtime/src/gfx3d.rs
+// psm_for().
 
 export const PSM = {
+  PSM_5650: 0, // RGB 565, 16-bit (B5:G6:R5 bit order)
   PSM_4444: 2, // RGBA 4444, 16-bit
   PSM_8888: 3, // RGBA 8888, 32-bit
   PSM_T8: 5, //   CLUT8: one palette index/px + a 256 x u32 ABGR palette

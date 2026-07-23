@@ -10,11 +10,11 @@
 // IMG entry layout (PocketJS addition — the container itself is unchanged):
 //   off 0  u16  width   (texture dims; pow2, <= TEX_MAX_DIM)
 //   off 2  u16  height
-//   off 4  u8   psm     (spec.ts PSM: 2 = 4444, 3 = 8888)
+//   off 4  u8   psm     (spec.ts PSM: 0 = 5650, 2 = 4444, 3 = 8888)
 //   off 5  u8   reserved (0)
 //   off 6  u16  reserved (0)
-//   off 8  ...  raw pixel rows (8888: RGBA bytes == ABGR u32 LE; 4444: u16 LE
-//               with nibbles A<<12|B<<8|G<<4|R, the GE ABGR4444 layout)
+//   off 8  ...  raw pixel rows (8888: RGBA bytes == ABGR u32 LE; 5650: u16 LE
+//               B5:G6:R5; 4444: u16 LE A4:B4:G4:R4)
 //
 // Also here: a minimal PNG decoder (8-bit RGB/RGBA/gray, non-interlaced —
 // zlib via node:zlib inflateSync) for baking demo images. Palette/16-bit/
@@ -172,6 +172,16 @@ export function encodeImageEntry(
   out[5] = flags & 0xff;
   if (psm === PSM.PSM_8888) {
     out.set(rgba, 8); // RGBA byte order IS the ABGR u32 LE layout
+  } else if (psm === PSM.PSM_5650) {
+    for (let i = 0, n = w * h; i < n; i++) {
+      if (rgba[i * 4 + 3] !== 255) {
+        throw new Error("pak image: PSM_5650 requires fully opaque pixels");
+      }
+      const r = rgba[i * 4] >> 3;
+      const g = rgba[i * 4 + 1] >> 2;
+      const b = rgba[i * 4 + 2] >> 3;
+      dv.setUint16(8 + i * 2, (b << 11) | (g << 5) | r, true);
+    }
   } else if (psm === PSM.PSM_4444) {
     for (let i = 0, n = w * h; i < n; i++) {
       const r = rgba[i * 4] >> 4;
@@ -220,8 +230,8 @@ export function encodeSpriteEntry(a: SpriteAtlas, psm: number = PSM.PSM_8888): U
   if (!pow2(w) || !pow2(h) || w > TEX_MAX_DIM || h > TEX_MAX_DIM) {
     throw new Error(`pak sprite: atlas dims must be pow2 <= ${TEX_MAX_DIM}, got ${w}x${h}`);
   }
-  if (psm !== PSM.PSM_8888 && psm !== PSM.PSM_4444) {
-    throw new Error(`pak sprite: unsupported psm ${psm} (8888 or 4444)`);
+  if (psm !== PSM.PSM_8888 && psm !== PSM.PSM_4444 && psm !== PSM.PSM_5650) {
+    throw new Error(`pak sprite: unsupported psm ${psm} (5650, 4444, or 8888)`);
   }
   if (rgba.length !== w * h * 4) throw new Error("pak sprite: rgba length mismatch");
   if (a.frameCount < 1 || a.cols < 1 || a.frameStep < 1) {
@@ -250,7 +260,7 @@ export function encodeSpriteEntry(a: SpriteAtlas, psm: number = PSM.PSM_8888): U
   dv.setUint16(10, a.frameStep, true);
   if (psm === PSM.PSM_8888) {
     out.set(rgba, 16); // RGBA byte order IS the ABGR u32 LE layout
-  } else {
+  } else if (psm === PSM.PSM_4444) {
     // PSM_4444 (16-bit) — halves texmem for PSP; the GE ABGR4444 nibble layout.
     for (let i = 0, n = w * h; i < n; i++) {
       const r = rgba[i * 4] >> 4;
@@ -258,6 +268,16 @@ export function encodeSpriteEntry(a: SpriteAtlas, psm: number = PSM.PSM_8888): U
       const b = rgba[i * 4 + 2] >> 4;
       const av = rgba[i * 4 + 3] >> 4;
       dv.setUint16(16 + i * 2, (av << 12) | (b << 8) | (g << 4) | r, true);
+    }
+  } else {
+    for (let i = 0, n = w * h; i < n; i++) {
+      if (rgba[i * 4 + 3] !== 255) {
+        throw new Error("pak sprite: PSM_5650 requires fully opaque pixels");
+      }
+      const r = rgba[i * 4] >> 3;
+      const g = rgba[i * 4 + 1] >> 2;
+      const b = rgba[i * 4 + 2] >> 3;
+      dv.setUint16(16 + i * 2, (b << 11) | (g << 5) | r, true);
     }
   }
   return out;

@@ -825,11 +825,28 @@ impl UiRenderer {
     }
 }
 
-/// Expand a core texture (PSM 8888/4444/T8) to tightly-packed RGBA8.
+/// Expand a core texture (PSM 5650/8888/4444/T8) to tightly-packed RGBA8.
 fn to_rgba8(view: &TexView) -> Option<Vec<u8>> {
     let count = (view.w * view.h) as usize;
     let pixels = view.pixels;
     match view.psm {
+        spec::psm::PSM_5650 => {
+            if pixels.len() < count * 2 {
+                return None;
+            }
+            let mut out = Vec::with_capacity(count * 4);
+            for px in pixels[..count * 2].as_chunks::<2>().0 {
+                let v = u16::from_le_bytes([px[0], px[1]]) as u32;
+                let r = v & 0x1f;
+                let g = (v >> 5) & 0x3f;
+                let b = (v >> 11) & 0x1f;
+                out.push(((r << 3) | (r >> 2)) as u8);
+                out.push(((g << 2) | (g >> 4)) as u8);
+                out.push(((b << 3) | (b >> 2)) as u8);
+                out.push(255);
+            }
+            Some(out)
+        }
         spec::psm::PSM_8888 => {
             let bytes = count * 4;
             (pixels.len() >= bytes).then(|| pixels[..bytes].to_vec())

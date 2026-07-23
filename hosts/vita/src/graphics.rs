@@ -169,6 +169,21 @@ fn texture_rgba(view: pocketjs_core::TexView<'_>) -> Option<Vec<u8>> {
     let pixels = (view.w as usize).checked_mul(view.h as usize)?;
     let mut out = vec![0u8; pixels.checked_mul(4)?];
     match view.psm {
+        spec::psm::PSM_5650 => {
+            if view.pixels.len() < pixels * 2 {
+                return None;
+            }
+            for (i, src) in view.pixels[..pixels * 2].chunks_exact(2).enumerate() {
+                let px = u16::from_le_bytes([src[0], src[1]]) as u32;
+                let r = px & 0x1f;
+                let g = (px >> 5) & 0x3f;
+                let b = (px >> 11) & 0x1f;
+                out[i * 4] = ((r << 3) | (r >> 2)) as u8;
+                out[i * 4 + 1] = ((g << 2) | (g >> 4)) as u8;
+                out[i * 4 + 2] = ((b << 3) | (b >> 2)) as u8;
+                out[i * 4 + 3] = 255;
+            }
+        }
         spec::psm::PSM_8888 => {
             let len = out.len();
             if view.pixels.len() < len {

@@ -363,6 +363,7 @@ unsafe fn apply_texture(view: &TexView) {
             }
             sys::sceGuTexMode(TexturePixelFormat::PsmT8, 0, 0, 0);
         }
+        spec::psm::PSM_5650 => sys::sceGuTexMode(TexturePixelFormat::Psm5650, 0, 0, 0),
         spec::psm::PSM_4444 => sys::sceGuTexMode(TexturePixelFormat::Psm4444, 0, 0, 0),
         _ => sys::sceGuTexMode(TexturePixelFormat::Psm8888, 0, 0, 0),
     }
