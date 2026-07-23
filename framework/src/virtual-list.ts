@@ -335,15 +335,20 @@ export function VirtualList(props: VirtualListProps): SolidJSX.Element {
     });
   });
 
+  // Handle methods run in CALLER reactive scopes (effects, event handlers):
+  // untrack every props read so an effect that calls focusRow(0) does not
+  // silently subscribe to count/rowHeight and re-fire on every append.
   const handle: VirtualListHandle = {
     scroller,
     rebase: (px) => scroller.rebase(px),
-    rebaseRows: (rows) => scroller.rebase(rows * props.rowHeight),
-    scrollToIndex,
+    rebaseRows: (rows) => untrack(() => scroller.rebase(rows * props.rowHeight)),
+    scrollToIndex: (index, align, animate) => untrack(() => scrollToIndex(index, align, animate)),
     focusedIndex,
     focusRow(index: number): void {
-      if (!focusRows || props.count === 0) return;
-      focusIndex(Math.max(0, Math.min(props.count - 1, index)));
+      untrack(() => {
+        if (!focusRows || props.count === 0) return;
+        focusIndex(Math.max(0, Math.min(props.count - 1, index)));
+      });
     },
   };
   props.ref?.(handle);
