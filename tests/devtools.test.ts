@@ -15,7 +15,8 @@ if (Bun.resolveSync("solid-js", import.meta.dir).endsWith("server.js")) {
 
 import { installHost, type Host, type HostOps } from "../framework/src/host.ts";
 import { render as publicRender } from "../framework/src/index.ts";
-import { expandTape, fmt, type Tape } from "../framework/src/devtools.ts";
+import { expandTape, expandTapeTouch, fmt, type Tape } from "../framework/src/devtools.ts";
+import { touches, __packTouch } from "../framework/src/touch.ts";
 import { onFrame } from "../framework/src/lifecycle.ts";
 import {
   createComponent,
@@ -330,6 +331,95 @@ describe("tape", () => {
   test("expandTape unrolls RLE pairs", () => {
     const tape: Tape = { v: 1, frames: 4, masks: [[5, 1], [0, 2], [9, 1]] };
     expect(Array.from(expandTape(tape))).toEqual([5, 0, 0, 9]);
+  });
+});
+
+describe("tape v2 touch track", () => {
+  function frameTouch(buttons: number, touches?: readonly number[]): void {
+    (globalThis as { frame?: (b: number, a?: number, t?: readonly number[]) => void }).frame!(
+      buttons,
+      undefined,
+      touches,
+    );
+  }
+
+  test("a touch-free session still exports v:1 with no touch key", () => {
+    mountApp(() => View({}));
+    frame(BTN.UP);
+    frame(0);
+    push({ t: "dumpTape" });
+    frame(0);
+    const tape = sent("tape")[0].tape as Tape;
+    expect(tape.v).toBe(1);
+    expect("touch" in tape).toBe(false);
+  });
+
+  test("contact frames export a sparse v:2 track", () => {
+    mountApp(() => View({}));
+    frameTouch(0); // frame 0: no contacts
+    frameTouch(0, [__packTouch(1, 100, 50)]); // frame 1
+    frameTouch(0, [__packTouch(1, 110, 60), __packTouch(2, 30, 30)]); // frame 2
+    frameTouch(0); // frame 3: released
+    push({ t: "dumpTape" });
+    frame(0);
+    const tape = sent("tape")[0].tape as Tape;
+    expect(tape.v).toBe(2);
+    expect(tape.frames).toBe(4);
+    expect(tape.touch).toEqual([
+      [1, [__packTouch(1, 100, 50)]],
+      [2, [__packTouch(1, 110, 60), __packTouch(2, 30, 30)]],
+    ]);
+  });
+
+  test("v2 replay drives touches(); live hardware contacts never leak", () => {
+    const seen: number[] = [];
+    mountApp(() => {
+      onFrame(() => seen.push(touches().length));
+      return View({});
+    });
+    const packed = __packTouch(1, 200, 100);
+    push({
+      t: "replay",
+      tape: { v: 2, frames: 3, masks: [[0, 3]], touch: [[1, [packed]]] } satisfies Tape,
+    });
+    // Live contacts supplied on every frame — replay must own the track:
+    frameTouch(0, [__packTouch(7, 1, 1)]); // tape frame 0: no contacts
+    frameTouch(0, [__packTouch(7, 1, 1)]); // tape frame 1: the tape's contact
+    frameTouch(0, [__packTouch(7, 1, 1)]); // tape frame 2: no contacts
+    frameTouch(0, [__packTouch(7, 1, 1)]); // exhausted: live input again
+    expect(seen).toEqual([0, 1, 0, 1]);
+  });
+
+  test("a v1 tape replays every frame as no-contacts", () => {
+    const seen: number[] = [];
+    mountApp(() => {
+      onFrame(() => seen.push(touches().length));
+      return View({});
+    });
+    push({ t: "replay", tape: { v: 1, frames: 2, masks: [[0, 2]] } satisfies Tape });
+    frameTouch(0, [__packTouch(7, 1, 1)]);
+    frameTouch(0, [__packTouch(7, 1, 1)]);
+    expect(seen).toEqual([0, 0]);
+  });
+
+  test("recorded touch round-trips through export + replay byte-exactly", () => {
+    mountApp(() => View({}));
+    frameTouch(0, [__packTouch(3, 10, 20)]);
+    frameTouch(0, [__packTouch(3, 12, 24)]);
+    frameTouch(0);
+    push({ t: "dumpTape" });
+    frame(0);
+    const exported = sent("tape")[0].tape as Tape;
+    const expanded = expandTapeTouch(exported);
+    expect(expanded[0]).toEqual([__packTouch(3, 10, 20)]);
+    expect(expanded[1]).toEqual([__packTouch(3, 12, 24)]);
+    expect(expanded[2]).toBeUndefined();
+    expect(expanded[3]).toBeUndefined(); // the dump-poll frame
+  });
+
+  test("expandTapeTouch on a v1 tape is all undefined", () => {
+    const tape: Tape = { v: 1, frames: 3, masks: [[0, 3]] };
+    expect(expandTapeTouch(tape)).toEqual([undefined, undefined, undefined]);
   });
 });
 

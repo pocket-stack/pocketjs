@@ -20,7 +20,8 @@ import { pack } from "../framework/compiler/pak.ts";
 import { installHost, type Host, type HostOps } from "../framework/src/host.ts";
 import { loadPack, resetPack } from "../framework/src/pak.ts";
 import { freeTileTexture, loadTileTexture, resetTilesetCache } from "../framework/src/tiles.ts";
-import { scriptToMasks } from "../hosts/sim/sim.ts";
+import { scriptToMasks, touchGlide } from "../hosts/sim/sim.ts";
+import { __packTouch } from "../framework/src/touch.ts";
 
 // ---------------------------------------------------------------------------
 // helpers: hand-build a 2x1 TILESET (tile 0 textured+RLE, tile 1 solid)
@@ -220,4 +221,31 @@ test("scriptToMasks: press pulses, hold levels, analog levels", () => {
     ANALOG_CENTER,
     ANALOG_CENTER,
   ]);
+});
+
+test("scriptToMasks: touch levels hold until the next event; [] releases", () => {
+  const { touches } = scriptToMasks(
+    [
+      { at: 1, touch: [{ x: 100, y: 50 }] },
+      { at: 3, touch: [] },
+    ],
+    1,
+    5,
+  );
+  const packed = __packTouch(0, 100, 50);
+  expect(touches).toEqual([undefined, [packed], [packed], undefined, undefined]);
+});
+
+test("touchGlide interpolates per frame on the 60 Hz grid and releases", () => {
+  const events = touchGlide(240, 200, 240, 140, 1, 1.1); // 6 frames of travel
+  expect(events).toHaveLength(7);
+  expect(events[0]).toEqual({ at: 1, touch: [{ id: 0, x: 240, y: 200 }] });
+  expect(events[3].touch).toEqual([{ id: 0, x: 240, y: 170 }]);
+  expect(events[6]).toEqual({ at: 1.1, touch: [] });
+
+  const { touches } = scriptToMasks(events, 60, 120);
+  expect(touches[59]).toBeUndefined();
+  expect(touches[60]).toEqual([__packTouch(0, 240, 200)]);
+  expect(touches[65]).toEqual([__packTouch(0, 240, 150)]);
+  expect(touches[66]).toBeUndefined(); // released at t1
 });
