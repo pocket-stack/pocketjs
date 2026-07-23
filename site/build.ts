@@ -304,8 +304,9 @@ async function main() {
 
   // 2. runtime assets
   // Keep the editor-facing URL byte-identical to the schema used by the
-  // validator. The deployed path is POCKET_MANIFEST_SCHEMA_ID.
-  copy(ROOT + "contracts/schema/pocket-2.json", "contracts/schema/pocket-2.json");
+  // validator. The deployed path is POCKET_MANIFEST_SCHEMA_ID —
+  // /schema/pocket-2.json, independent of where the repo keeps the file.
+  copy(ROOT + "contracts/schema/pocket-2.json", "schema/pocket-2.json");
   copy(ROOT + "hosts/web/pocketjs.wasm", "pg/pocketjs.wasm");
   copy(ROOT + "assets/fonts/Inter-Regular.ttf", "pg/fonts/Inter-Regular.ttf");
   copy(ROOT + "assets/fonts/Inter-Bold.ttf", "pg/fonts/Inter-Bold.ttf");
