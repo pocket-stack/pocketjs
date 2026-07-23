@@ -5,10 +5,12 @@ surface. It accelerates operations that map exactly to the ESP32-P4 Pixel
 Processing Accelerator and preserves DrawList order with an RGB565 software
 fallback for everything else.
 
-The crate deliberately does not depend on ESP-IDF or a board support package.
-An ESP-IDF host implements `PpaOps` with `ppa_do_fill`, `ppa_do_blend`, and
-`ppa_do_scale_rotate_mirror`. Board-specific display presentation remains in
-the BSP.
+The default crate deliberately does not depend on ESP-IDF or a board support
+package. Hosts can implement `PpaOps` for another driver or test double.
+Enabling the `esp-idf` feature exposes the concrete `EspIdfPpaOps`
+implementation, backed by the reusable ESP-IDF component under
+[`hosts/esp32p4`](../../../hosts/esp32p4/README.md). Board-specific display
+presentation remains in the BSP.
 
 Accelerated paths:
 
@@ -21,3 +23,20 @@ Accelerated paths:
 Gradients, arbitrary triangles, textured triangles, and unsupported texture
 formats fall back to `pocketjs_core::raster::render_scaled_rgb565_over`.
 No full-frame RGB888 or ARGB8888 surface is allocated.
+
+## Test
+
+Run the portable renderer and pixel-parity tests on the host:
+
+```sh
+cargo test --locked --manifest-path engine/backends/esp32p4-ppa/Cargo.toml \
+  --features std
+```
+
+Compile-check the Rust side of the ESP-IDF adapter without linking an IDF
+application:
+
+```sh
+cargo check --locked --manifest-path engine/backends/esp32p4-ppa/Cargo.toml \
+  --features esp-idf
+```

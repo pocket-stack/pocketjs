@@ -19,6 +19,7 @@ pocketjs/
 ├─ hosts/        Surfaces: every embedding of the cores
 │  ├─ psp/        QuickJS + rust-psp EBOOT host
 │  ├─ vita/       Vita host
+│  ├─ esp32p4/    reusable ESP-IDF PPA adapter + component smoke build
 │  ├─ web/        browser dev host (wasm core)
 │  └─ sim/        deterministic headless simulation host (docs/DETERMINISM.md)
 ├─ framework/    Guest: @pocketjs/framework
