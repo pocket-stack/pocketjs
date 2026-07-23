@@ -272,6 +272,42 @@ unsafe fn resolve_texture(ui: &Ui, handle: i32) -> Option<Texture> {
     textures().get(&handle).copied()
 }
 
+/// Rewrite an existing GPU mirror's pixels in place from the core texture —
+/// the per-frame video-plane path (register_texture would allocate + drain
+/// GXM once per presented frame at 24 fps). Falls back to full registration
+/// when no mirror exists or the size changed. Call inside the GPU-idle
+/// window (right after begin_frame's ensure_rendering_done — the previous
+/// scene has finished sampling, the next one reads the new pixels at swap).
+pub fn update_texture_in_place(ui: &Ui, handle: i32) {
+    let Some(view) = ui.texture(handle) else {
+        return;
+    };
+    unsafe {
+        let Some(existing) = textures().get(&handle).copied() else {
+            register_texture(ui, handle);
+            return;
+        };
+        if existing.w != view.w || existing.h != view.h {
+            register_texture(ui, handle);
+            return;
+        }
+        let Some(rgba) = texture_rgba(view) else {
+            return;
+        };
+        ensure_rendering_done();
+        let stride = vita2d_texture_get_stride(existing.ptr) as usize;
+        let dst = vita2d_texture_get_datap(existing.ptr) as *mut u8;
+        let row_bytes = view.w as usize * 4;
+        for row in 0..view.h as usize {
+            core::ptr::copy_nonoverlapping(
+                rgba.as_ptr().add(row * row_bytes),
+                dst.add(row * stride),
+                row_bytes,
+            );
+        }
+    }
+}
+
 pub fn free_texture(handle: i32) {
     unsafe {
         if let Some(texture) = textures().remove(&handle) {

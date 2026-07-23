@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 # Vita dependencies. vita2d ships precompiled GXM shaders, so VPKs remain
 # self-contained and do not require a separately extracted libshacccg.suprx.
-vitasdk-sys = { version = "0.3.3", features = ["SceCtrl_stub", "SceGxm_stub", "SceKernelThreadMgr_stub", "SceLibKernel_stub", "SceTouch_stub"] }
+vitasdk-sys = { version = "0.3.3", features = ["SceAudio_stub", "SceCtrl_stub", "SceGxm_stub", "SceKernelThreadMgr_stub", "SceLibKernel_stub", "SceNet_stub", "SceNetCtl_stub", "SceSysmodule_stub", "SceTouch_stub"] }
 vita2d-sys = "0.1.1"
 
 libquickjs-sys = { git = "https://github.com/pocket-stack/quickjs-rs.git", rev = "0fc946fb670c0c29bc0135f510bcb0f595415a61" }

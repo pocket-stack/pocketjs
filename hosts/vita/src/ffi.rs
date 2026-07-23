@@ -595,6 +595,147 @@ unsafe extern "C" fn js_dbg_shot(
     JS_NewBool(ctx, crate::dbg::shot())
 }
 
+/// Borrow a UTF-8 string argument (the PSP ffi.rs helper, verbatim).
+unsafe fn with_str_arg<R>(
+    ctx: *mut JSContext,
+    argc: i32,
+    argv: *mut JSValue,
+    i: isize,
+    miss: R,
+    f: impl FnOnce(&str) -> R,
+) -> R {
+    if (i as i32) >= argc {
+        return miss;
+    }
+    let mut len: size_t = 0;
+    let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(i), 0);
+    if s.is_null() {
+        return miss;
+    }
+    let out = match core::str::from_utf8(core::slice::from_raw_parts(s as *const u8, len)) {
+        Ok(v) => f(v),
+        Err(_) => miss,
+    };
+    JS_FreeCString(ctx, s);
+    out
+}
+
+/// ui.svcOpen(app) -> bool (spec op 30): kick the WiFi transport, report
+/// connection state (non-blocking; the app's connect pump retries).
+unsafe extern "C" fn js_svc_open(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let ok = with_str_arg(ctx, argc, argv, 0, false, |app| crate::svc::open(app));
+    JS_NewBool(ctx, ok)
+}
+
+/// ui.svcPoll() -> string | undefined (spec op 31).
+unsafe extern "C" fn js_svc_poll(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    match crate::svc::poll() {
+        Some(s) => JS_NewStringLen(ctx, s.as_ptr(), s.len()),
+        None => JS_UNDEFINED,
+    }
+}
+
+/// ui.svcSend(line) (spec op 32).
+unsafe extern "C" fn js_svc_send(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc >= 1 {
+        let mut len: size_t = 0;
+        let s = JS_ToCStringLen2(ctx, &mut len, *argv.offset(0), 0);
+        if !s.is_null() {
+            crate::svc::send(core::slice::from_raw_parts(s as *const u8, len));
+            JS_FreeCString(ctx, s);
+        }
+    }
+    JS_UNDEFINED
+}
+
+/// ui.loadImgFile(path) -> handle | -1 (spec op 33): resolve a pushed side
+/// file from the RAM cache into a texture.
+unsafe extern "C" fn js_load_img_file(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let handle = with_str_arg(ctx, argc, argv, 0, -1, |rel| {
+        match crate::svc::read_side_file(rel, pocketjs_core::spec::svc::IMG_MAX_BYTES) {
+            Some(blob) => ui().upload_img_entry(&blob),
+            None => -1,
+        }
+    });
+    if handle >= 0 {
+        crate::graphics::register_texture(ui(), handle);
+    }
+    JS_NewInt32(ctx, handle)
+}
+
+/// ui.videoOpen(path) -> bool (spec op 34): bind the announced RAM stream.
+unsafe extern "C" fn js_video_open(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let ok = with_str_arg(ctx, argc, argv, 0, false, |rel| crate::vid::open(ui(), rel));
+    JS_NewBool(ctx, ok)
+}
+
+/// ui.videoTick() -> frameIndex | -1 (spec op 35).
+unsafe extern "C" fn js_video_tick(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, crate::vid::tick(ui()))
+}
+
+/// ui.videoTexture() -> handle | -1 (spec op 36).
+unsafe extern "C" fn js_video_texture(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    JS_NewInt32(ctx, crate::vid::texture())
+}
+
+/// ui.videoClose() (spec op 37).
+unsafe extern "C" fn js_video_close(
+    _ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    crate::vid::close(ui());
+    JS_UNDEFINED
+}
+
+/// ui.debugStats() -> string (spec op 38): one JSON diagnostics snapshot.
+unsafe extern "C" fn js_debug_stats(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    let json = crate::stats::json();
+    JS_NewStringLen(ctx, json.as_ptr(), json.len())
+}
+
 /// ui.__dbgSend(line): append one JSON line to the outbound mailbox.
 unsafe extern "C" fn js_dbg_send(
     ctx: *mut JSContext,
@@ -693,6 +834,18 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
     add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);
     add_fn(ctx, ui_obj, b"__dbgShot\0", js_dbg_shot, 0);
+    // Host service channel over WiFi (spec ops 30..33; hosts/vita/src/net.rs).
+    add_fn(ctx, ui_obj, b"svcOpen\0", js_svc_open, 1);
+    add_fn(ctx, ui_obj, b"svcPoll\0", js_svc_poll, 0);
+    add_fn(ctx, ui_obj, b"svcSend\0", js_svc_send, 1);
+    add_fn(ctx, ui_obj, b"loadImgFile\0", js_load_img_file, 1);
+    // Video plane over the RAM .pkst ring (spec ops 34..37).
+    add_fn(ctx, ui_obj, b"videoOpen\0", js_video_open, 1);
+    add_fn(ctx, ui_obj, b"videoTick\0", js_video_tick, 0);
+    add_fn(ctx, ui_obj, b"videoTexture\0", js_video_texture, 0);
+    add_fn(ctx, ui_obj, b"videoClose\0", js_video_close, 0);
+    // Device diagnostics (spec op 38).
+    add_fn(ctx, ui_obj, b"debugStats\0", js_debug_stats, 0);
 
     // Framework-owned host identity. The bundle rejects a VPK assembled for a
     // different target or HostOps ABI before app code mounts. planHash is a
