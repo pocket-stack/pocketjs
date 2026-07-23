@@ -1,0 +1,42 @@
+# pocketbook-host — the PocketJS UI runtime on PocketBook e-readers (inkview).
+#
+# STANDALONE LONE-BIN CRATE (same model as hosts/psp and hosts/vita): it lives
+# outside any workspace with its own Cargo.lock, and path-depends on the engine
+# crates. It reuses the backend-agnostic `ui` surface (pocket-ui-surface) and
+# the core's software rasterizer, then converts RGBA8 → Gray8 for the e-ink
+# panel. See pocketjs-inkview-implementation.md at the repo root.
+#
+# Cross-compile for PocketBook's ARM Linux (glibc 2.23):
+#   rustup target add armv7-unknown-linux-gnueabi
+#   cargo install cargo-zigbuild
+#   cargo zigbuild --release --target armv7-unknown-linux-gnueabi.2.23
+# libinkview.so is dlopen'd at runtime (inkview::load) — no SDK at build time.
+
+[package]
+name = "pocketbook-host"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "PocketJS UI runtime host for PocketBook e-readers via the inkview SDK"
+
+[dependencies]
+pocketjs-core = { path = "../../engine/core", features = ["std"] }
+pocket-mod = { path = "../../engine/crates/pocket-mod" }
+pocket-ui-surface = { path = "../../engine/crates/pocket-ui-surface" }
+
+# inkview is consumed as-is (no modifications). During development this points
+# at a local checkout; for an upstream/CI build switch to the git dependency:
+#   inkview = { git = "https://github.com/simmsb/inkview-rs", package = "inkview" }
+# Default feature is sdk-6-10; override for older firmware, e.g.
+#   --no-default-features --features sdk-6-5
+inkview = { path = "../../../inkview-rs/inkview" }
+
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+
+[profile.release]
+opt-level = "s" # size-optimized (e-readers have limited storage)
+lto = true
+strip = true
+panic = "abort"
