@@ -4,8 +4,11 @@
 Pocket family: you write a component in a **strict TypeScript subset of Vue
 Vapor** — real `ref`/`computed` reactivity, real JSX templates — and the
 compiler emits native code for machines that could never host a JavaScript
-engine. The proof target is the Game Boy Advance: 16.8 MHz ARM7TDMI, 256 KB
-of work RAM, no OS, no allocator, no GC.
+engine. The original proof target is the Game Boy Advance: 16.8 MHz
+ARM7TDMI, 256 KB of work RAM, no OS, no allocator, no GC. The same compiler
+now also targets the Game Boy, NES, and an ESP32 MeowBit profile; the ESP32
+build is still native C with a fixed memory plan, not an embedded JavaScript
+runtime.
 
 Vue Vapor's thesis is *compile the virtual DOM away*. Pocket Vapor extends
 it one machine layer down: **compile the JavaScript engine away.** The
@@ -167,6 +170,7 @@ MEANS is the target's style contract:
 | web (oracle/dev host) | `web` | full color, CSS |
 | gba | `rgb555`, <= 15 pairs | pair id = BG palette bank (BGR555 ink/paper) |
 | gb, nes | `styles2` | pair -> glyph style by luminance polarity (dark-on-light / light-on-dark) |
+| esp32 | `rgb565` | pair id -> RGB565 ink/paper values rasterized into the LCD cell |
 
 Diagnostics are compile-time and structured (`bun vapor/compiler/cli.ts
 check <file>` prints the whole matrix in one run, no toolchains needed):
@@ -187,10 +191,12 @@ oxlint plugin would give red squiggles without booting the compiler. The
 
 ## 5. Host vocabulary and rendering
 
-The GBA presents a 30×20 cell text screen (mode 0, one background) driven
-by the same public-domain 8×8 ASCII font Pocket Static bakes. The JSX
-vocabulary is deliberately one intrinsic with two interpreters — the C cell
-grid on device, and a ~60-line tree walker over the oracle's micro-DOM:
+Each target presents a fixed logical cell screen: 30×20 on GBA, 20×18 on
+GB and ESP32, and 22×18 on NES. The ESP32 MeowBit profile rasterizes its
+20×18 grid as 8×7 cells into a 160×126 content area on the 160×128 ST7735
+panel. The JSX vocabulary is deliberately one intrinsic with two
+interpreters — the C cell grid on device, and a ~60-line tree walker over
+the oracle's micro-DOM:
 
 - `<row y={n} x={n} pal={p}>` — paints its text children at (x, y) in
   palette `p`, padded with spaces to the right edge; later rows overwrite
@@ -223,15 +229,15 @@ todo.tsx ─┬─ framework/compiler/jsx-plugin.ts + vue-jsx-vapor ──► re
                5 span merge        overlapping row spans fuse into one effect
                6 memory plan       slots, pools, budgets (printed with the graph)
                7 emit C            gen_app.c (state, computeds, effects, handler)
-               8 cc + link         arm-none-eabi-gcc -Os + vapor/runtime/gba/*
-                                   → header-patched .gba ROM (framework/compiler/rom.ts)
+               8 cc + link         target toolchain + vapor/runtime/<target>/*
+                                   → cartridge ROM or ESP32 firmware image
 ```
 
-The fixed C runtime (`vapor/runtime/gba/`) is shared by all apps:
-`vapor.h` (the contract both sides compile against), `vapor_gba.c` (cell
-grid with per-cell diff + row-dirty VRAM commit, bounded strings, input
-edges, vblank loop, debug block), and `crt0.s`/`gba.ld` — the startup and
-header-patch lineage carried over from Pocket Static's GBA target.
+The fixed C contract (`vapor/runtime/vapor.h` plus `vapor_core.c`) is shared
+by all apps. Each target supplies its hardware half: the console runtimes
+own startup, video commit, input edges and a fixed debug block; the ESP32
+runtime owns the ESP-IDF frame loop, ST7735 RGB565 raster, MeowBit GPIO
+input and the UART receipt protocol.
 
 ## 7. E2E: the oracle is real Vue
 
@@ -244,35 +250,43 @@ header-patch lineage carried over from Pocket Static's GBA target.
    `vue@3.6` runtime-with-vapor over the micro-DOM: filters, toggles,
    editing, clamping, the empty state.
 3. **Oracle ↔ ROM parity** (`parity.test.ts`) — one tape of button presses
-   drives both the oracle and the real `.gba` in headless libmgba; after
-   every press the 30×20 grid (chars *and* palettes) is compared
-   cell-for-cell, read from a debug block the runtime mirrors to EWRAM each
-   frame (magic `PVDB`, frame counter, reactive state snapshot, tripwires,
-   the full cell grid).
+   drives both the oracle and each console ROM; after every press the
+   target's logical grid (chars *and* palettes) is compared cell-for-cell,
+   read from the console runtime's fixed debug block.
+4. **Oracle ↔ physical ESP32 parity** (`bun run vapor:esp32:verify`) — the
+   verifier replays that interaction tape at 115200 baud and requests a
+   logical-grid receipt after every press. This is an explicit opt-in
+   hardware contract: `H` identifies the firmware, `R` resets in-process,
+   `P <0..9>` dispatches a Pocket button, and `D` dumps character and
+   palette grids. The source-derived build ID prevents an older compatible
+   firmware from being mistaken for the current build. The receipt proves
+   logical-grid parity and exercises LCD commits, but does not read panel
+   pixels or electrically actuate GPIO buttons; those remain manual checks.
+   Physical hardware is not part of the default emulator-only test suite.
 
-Layer 3 is the claim of the whole project: same file, real Vue on a JS
-engine, native code on 1989-2001 consoles, cell-identical output — proven
-for every step of the interaction, not just the final frame, on all three
-targets (the GB scenario paces in video frames with wide margins; the NES
-runner paces on the debug frame counter, Pocket Static's trick).
+Layers 3 and 4 state the claim of the whole project: same file, real Vue on
+a JS engine, and native code on devices, compared for every step of the
+interaction rather than only the final frame. The three console targets run
+under automated emulators; ESP32 uses the same grid-receipt assertion when
+a board is connected.
 
 ## 7.5 Targets
 
-| | GBA | GB (DMG) | NES |
-|---|---|---|---|
-| CPU | ARM7TDMI 16.8MHz | SM83 4.19MHz | 6502 1.79MHz |
-| Toolchain | arm-none-eabi-gcc | sdcc + sdasgb + makebin + rgbfix | cc65/ca65/ld65 |
-| Grid | 30x20 | 20x18 | 22x18 (centered) |
-| Palettes | 6 real BG banks | 2 glyph styles (BGP is global) | 2 glyph styles in CHR-ROM |
-| Pool / str caps | 32 / 24 | 32 / 24 | 8 / 20 (2 KB CPU RAM) |
-| Cart | flat ROM + header patch | ROM-only 32 KB | NROM-256 + CHR-ROM |
-| Debug block | EWRAM 0x2000000 | WRAM 0xD800 (grid IS the block) | $0200 fixed segment |
-| Emulator (E2E) | libmgba | libmgba | jsnes |
+| | GBA | GB (DMG) | NES | ESP32 MeowBit |
+|---|---|---|---|---|
+| CPU | ARM7TDMI 16.8MHz | SM83 4.19MHz | 6502 1.79MHz | Xtensa LX6, up to 240MHz |
+| Toolchain | arm-none-eabi-gcc | sdcc + sdasgb + makebin + rgbfix | cc65/ca65/ld65 | ESP-IDF v6.0.2 |
+| Grid | 30x20 | 20x18 | 22x18 (centered) | 20x18 on ST7735 160x128 |
+| Palettes | 6 real BG banks | 2 glyph styles (BGP is global) | 2 glyph styles in CHR-ROM | RGB565 ink/paper pairs |
+| Pool / str caps | 32 / 24 | 32 / 24 | 8 / 20 (2 KB CPU RAM) | 32 / 24 |
+| Image | flat ROM + header patch | ROM-only 32 KB | NROM-256 + CHR-ROM | ESP-IDF flash image |
+| Debug receipt | EWRAM 0x2000000 | WRAM 0xD800 (grid IS the block) | $0200 fixed segment | UART 115200 (`H/R/P/D`) |
+| E2E transport | libmgba | libmgba | jsnes | physical USB serial (opt-in) |
 
 The generated C is target-independent; geometry and budgets arrive as
-`#define`s, `SCREEN.*` folds in the compiler, and the per-console runtime
-is ~150 lines against the same `vapor.h` contract. 8-bit portability rules
-baked into codegen: `s32`/`u32` are `long` (16-bit `int` consoles),
+`#define`s, `SCREEN.*` folds in the compiler, and each hardware runtime
+implements the same `vapor.h` contract. 8-bit portability rules baked into
+codegen: `s32`/`u32` are `long` (16-bit `int` consoles),
 declarations hoist to function tops (cc65 is C89), variable-index record
 access is u16 pointer arithmetic and bit masks come from a ROM table
 (sdcc 4.6 SM83 miscompiles some u8-by-u8 multiplies — the __muluchar
@@ -280,7 +294,7 @@ lesson inherited from Pocket Static).
 
 ## 8. The demo — VAPOR TODO
 
-`vapor/examples/todo/todo.tsx` — TodoMVC, GBA-idiomatic:
+`vapor/examples/todo/todo.tsx` — TodoMVC, Pocket-pad-idiomatic:
 
 - List mode: ↑/↓ cursor, A toggle done, B delete, R cycles filter
   (ALL/ACTIVE/DONE — a `computed` filtered view), SELECT clears completed,
@@ -290,14 +304,20 @@ lesson inherited from Pocket Static).
 - Header shows `{remaining.value} LEFT` (a `computed`); footer shows mode
   keys. Done rows render dim with a filled checkbox.
 
+The ESP32 MeowBit exposes the six direct directions/action inputs used by
+the app. Release-latched pairs provide the remaining Pocket buttons:
+A+B = START, Left+Right = SELECT, and Up+Down = R.
+
 State: 6 refs, 4 computeds (two of them list views), 4 span-merged paint
 effects, a 32-entry todo pool. The compiler's memory plan for the whole app
-is ~940 bytes of RAM; the finished cartridge is under 9 KB — which is the
-point.
+is ~940 bytes of RAM; the GBA cartridge is under 9 KB, while the ESP32
+artifact also includes the ESP-IDF platform image — which is the point of
+keeping app state and generated C independent of the hardware envelope.
 
 ## 9. Out of scope v1 (explicit)
 
 Components-with-props and slots (block machinery is shaped for them; not
 demoed), `reactive()`/`watch()` sugar, floats/fixed-point, CJK text, sound,
-saves, real-hardware verification (headers are flashcart-correct;
-emulator-only in CI).
+saves, and unattended physical-device CI. Console parity remains
+emulator-driven; ESP32 parity is available through the explicit
+USB-connected verifier.

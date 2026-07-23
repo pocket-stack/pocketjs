@@ -19,51 +19,14 @@ import { $ } from "bun";
 import { compileVaporApp, VAPOR_TARGETS, type VaporTargetName } from "../compiler/compile.ts";
 import type { StyleTable } from "../compiler/styles.ts";
 import { buildRom } from "../compiler/rom.ts";
-import { Button } from "../host/input.ts";
 import { bootOracle } from "../oracle/boot.ts";
+import { TODO_TAPE } from "./todo-tape.ts";
 
 const HERE = import.meta.dir;
 const ENTRY = join(HERE, "..", "examples", "todo", "todo.tsx");
 const OUT = join(HERE, "..", "..", "dist", "vapor");
 const MGBA_RUNNER = join(HERE, "harness", "mgba_runner");
 const NES_RUNNER = join(HERE, "harness", "nes_runner.ts");
-
-// Every interaction the app has: navigation, toggle, filters (Right works on
-// every pad; R is GBA-only), delete, clear-completed, the editor, emptying
-// the list, and re-adding from the empty state.
-const TAPE: number[] = [
-  Button.Down,
-  Button.Down,
-  Button.A, // toggle last
-  Button.Up,
-  Button.A, // un-done the middle todo
-  Button.Right, // ACTIVE
-  Button.Down,
-  Button.A, // toggle under ACTIVE -> row leaves the view
-  Button.Right, // DONE
-  Button.Right, // ALL
-  Button.B, // delete first
-  Button.Select, // clear completed
-  Button.Start, // edit mode
-  Button.Left, // glyph wraps to "9"
-  Button.Right,
-  Button.Right, // glyph "B"
-  Button.A, // put B
-  Button.A, // put B
-  Button.B, // backspace
-  Button.A, // put B again
-  Button.Start, // save "BB"
-  Button.Start, // edit mode again
-  Button.Select, // cancel
-  Button.Down,
-  Button.B, // delete
-  Button.B, // delete
-  Button.B, // delete -> NOTHING HERE
-  Button.B, // delete on empty (no-op)
-  Button.Start,
-  Button.A,
-  Button.Start, // add "A" from empty state
-];
 
 interface VramProbe {
   cmd: "D" | "V"; // bus read vs PPU read (NES)
@@ -199,7 +162,7 @@ beforeAll(async () => {
       `${rig.vram.cmd} vram${i} 0x${rig.vram.addr.toString(16)} ${vramLen}`,
     ];
     const lines: string[] = [rig.boot, ...probeLines(0)];
-    TAPE.forEach((b, i) => {
+    TODO_TAPE.forEach((b, i) => {
       lines.push(rig.press(1 << b));
       lines.push(...probeLines(i + 1));
     });
@@ -211,7 +174,7 @@ beforeAll(async () => {
     const parsed = JSON.parse(out) as { ok: boolean; reads: Record<string, string | number> };
     expect(parsed.ok).toBe(true);
     const steps: DeviceStep[] = [];
-    for (let i = 0; i <= TAPE.length; i++) {
+    for (let i = 0; i <= TODO_TAPE.length; i++) {
       steps.push(
         decodeGrid(
           parsed.reads[`chars${i}`] as string,
@@ -254,9 +217,9 @@ describe("oracle == device, three consoles", () => {
         }
       };
       compare(0, `${rig.name} boot`);
-      for (let i = 0; i < TAPE.length; i++) {
-        await oracle.press(TAPE[i]);
-        compare(i + 1, `${rig.name} step ${i} (btn ${TAPE[i]})`);
+      for (let i = 0; i < TODO_TAPE.length; i++) {
+        await oracle.press(TODO_TAPE[i]);
+        compare(i + 1, `${rig.name} step ${i} (btn ${TODO_TAPE[i]})`);
       }
       oracle.unmount();
     });

@@ -26,7 +26,7 @@ describe("vapor todo oracle", () => {
     expect(line(o, 1)).toBe(" 2 LEFT / ALL".padEnd(30));
     expect(line(o, 3)).toBe(" >[ ] SHIP POCKET VAPOR".padEnd(30));
     expect(line(o, 4)).toBe("  [X] WRITE THE COMPILER".padEnd(30));
-    expect(line(o, 5)).toBe("  [ ] RUN ON A REAL GBA".padEnd(30));
+    expect(line(o, 5)).toBe("  [ ] RUN ON DEVICE".padEnd(30));
     expect(line(o, 19)).toBe(" A:DONE B:DEL R:FILT ST:NEW".padEnd(30));
     o.unmount();
   });
@@ -47,7 +47,7 @@ describe("vapor todo oracle", () => {
     await o.press(Button.R); // ACTIVE
     expect(line(o, 1)).toBe(" 2 LEFT / ACTIVE".padEnd(30));
     expect(line(o, 3)).toBe(" >[ ] SHIP POCKET VAPOR".padEnd(30));
-    expect(line(o, 4)).toBe("  [ ] RUN ON A REAL GBA".padEnd(30));
+    expect(line(o, 4)).toBe("  [ ] RUN ON DEVICE".padEnd(30));
     expect(line(o, 5)).toBe("".padEnd(30));
     await o.press(Button.R); // DONE
     expect(line(o, 1)).toBe(" 2 LEFT / DONE".padEnd(30));
@@ -62,7 +62,7 @@ describe("vapor todo oracle", () => {
     await o.press(Button.B); // delete first
     expect(line(o, 3)).toBe(" >[X] WRITE THE COMPILER".padEnd(30));
     await o.press(Button.Select); // clear completed
-    expect(line(o, 3)).toBe(" >[ ] RUN ON A REAL GBA".padEnd(30));
+    expect(line(o, 3)).toBe(" >[ ] RUN ON DEVICE".padEnd(30));
     expect(line(o, 1)).toBe(" 1 LEFT / ALL".padEnd(30));
     await o.press(Button.B);
     expect(line(o, 3)).toBe(" NOTHING HERE".padEnd(30));

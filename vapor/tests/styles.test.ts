@@ -4,7 +4,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { compileVaporApp } from "../compiler/compile.ts";
-import { parseRowClass, styleOfPair, StyleTable } from "../compiler/styles.ts";
+import { parseRowClass, rgb565, STYLE_CAPS, styleOfPair, StyleTable } from "../compiler/styles.ts";
 
 const ENTRY = join(import.meta.dir, "..", "examples", "todo", "todo.tsx");
 
@@ -64,6 +64,18 @@ describe("per-target lowering", () => {
     expect(table.lower("gb", true).issues.some((i) => i.code === "VS104" && i.severity === "error")).toBe(true);
     expect(table.lower("gba").issues).toEqual([]);
   });
+
+  test("esp32 preserves every pair as an RGB565 table index", () => {
+    const table = new StyleTable();
+    table.resolveClass("text-white");
+    table.resolveClass("text-emerald-400"); // same polarity, distinct full colors
+
+    expect(STYLE_CAPS.esp32).toEqual({ kind: "rgb565", maxPairs: 256 });
+    expect(table.lower("esp32", true)).toEqual({ styleMap: [0, 1, 2], issues: [] });
+    expect(rgb565(0xff0000)).toBe(0xf800);
+    expect(rgb565(0x00ff00)).toBe(0x07e0);
+    expect(rgb565(0x0000ff)).toBe(0x001f);
+  });
 });
 
 describe("compile-time style diagnostics", () => {
@@ -79,6 +91,8 @@ describe("compile-time style diagnostics", () => {
     expect(() => compileVaporApp("t.tsx", app(rows), "T", "gba")).toThrow(/VS103/);
     // the same 16 pairs are fine on a 2-style target (they just collapse)
     expect(() => compileVaporApp("t.tsx", app(rows), "T", "gb")).not.toThrow();
+    // ESP32 retains all pairs in its direct RGB565 ink/paper tables.
+    expect(() => compileVaporApp("t.tsx", app(rows), "T", "esp32")).not.toThrow();
   });
 
   test("strict escalates lossy lowering on 2-style targets", () => {

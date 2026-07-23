@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // vapor/compiler/cli.ts — compile a Pocket Vapor component to a cartridge.
 //
-//   bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes] [--out dist/vapor]
+//   bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes|esp32] [--out dist/vapor]
 //   bun vapor/compiler/cli.ts check <component.tsx> [--strict]
 //
 // `check` runs the compiler frontend for EVERY target and prints the
@@ -41,7 +41,9 @@ if (args[0] === "check") {
 }
 const entry = args.find((a) => !a.startsWith("--"));
 if (!entry) {
-  console.error("usage: bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes] [--out <dir>]");
+  console.error(
+    "usage: bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes|esp32] [--out <dir>]",
+  );
   process.exit(2);
 }
 const outIdx = args.indexOf("--out");
@@ -62,7 +64,16 @@ console.log(app.graph);
 console.log("\n== memory plan ==");
 console.log(app.plan);
 
-const ext = target === "gba" ? "gba" : target === "gb" ? "gb" : "nes";
+const ext =
+  target === "gba"
+    ? "gba"
+    : target === "gb"
+      ? "gb"
+      : target === "nes"
+        ? "nes"
+        : target === "esp32"
+          ? "esp32.bin"
+          : target satisfies never;
 const rom = join(outDir, `${name}.${ext}`);
 const { romBytes } = await buildRom(app, target, rom);
 await Bun.write(join(outDir, `${name}.${target}.debug.json`), JSON.stringify(app.debugSlots, null, 2));

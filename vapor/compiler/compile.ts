@@ -18,7 +18,7 @@
 
 import ts from "typescript";
 import { FONT8 } from "./font.gen.ts";
-import { rgb555, StyleTable, type StyleIssue } from "./styles.ts";
+import { rgb555, rgb565, StyleTable, type StyleIssue } from "./styles.ts";
 import { BACKDROP } from "./styles.ts";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ export interface DebugSlot {
   kind: "num" | "bool" | "str" | "listLen";
 }
 
-export type VaporTargetName = "gba" | "gb" | "nes";
+export type VaporTargetName = "gba" | "gb" | "nes" | "esp32";
 
 export interface VaporTarget {
   name: VaporTargetName;
@@ -42,13 +42,15 @@ export interface VaporTarget {
   strCap: number;
 }
 
-/** Per-console geometry + memory budgets. NES is bounded by 2 KB of CPU
- * RAM (shadow grid + debug block + pool must all fit), GB by DMG tile-id
- * space (2 glyph styles x 95 glyphs). */
+/** Per-device geometry + memory budgets. NES is bounded by 2 KB of CPU RAM
+ * (shadow grid + debug block + pool must all fit), GB by DMG tile-id space
+ * (2 glyph styles x 95 glyphs). ESP32's 20x18 logical grid fits readable
+ * 8x7 cells on its 160x128 display. */
 export const VAPOR_TARGETS: Record<VaporTargetName, VaporTarget> = {
   gba: { name: "gba", width: 30, height: 20, poolCap: 32, strCap: 24 },
   gb: { name: "gb", width: 20, height: 18, poolCap: 32, strCap: 24 },
   nes: { name: "nes", width: 22, height: 18, poolCap: 8, strCap: 20 },
+  esp32: { name: "esp32", width: 20, height: 18, poolCap: 32, strCap: 24 },
 };
 
 export interface CompiledApp {
@@ -2052,13 +2054,25 @@ class AppCompiler {
       const rec = iface.fields.reduce((a, f) => a + (f.ty === "str" ? this.target.strCap + 1 : f.ty === "bool" ? 1 : 4), 0);
       return acc + rec * this.target.poolCap + 1;
     }, 0);
-    const viewBytes = this.computeds.filter((comp) => comp.valTy.k === "view").length * 33;
-    const scalarBytes = this.refs.filter((r) => r.refTy !== "list").reduce((a, r) => a + (r.refTy === "str" ? 25 : 4), 0);
-    const romStrings = [...this.strLits.keys()].reduce((a, s) => a + s.length + 1, 0);
+    const viewBytes =
+      this.computeds.filter((comp) => comp.valTy.k === "view").length * (this.target.poolCap + 1);
+    const scalarBytes = this.refs
+      .filter((r) => r.refTy !== "list")
+      .reduce((a, r) => a + (r.refTy === "str" ? this.target.strCap + 1 : 4), 0);
+    const romStrings =
+      [...this.strLits.keys()].reduce((a, s) => a + s.length + 1, 0) + this.title.length + 1;
+    const pairCount = this.styleTable.pairs.length;
+    const fontBytes = this.target.name === "esp32" ? 95 * 8 : 95 * 32;
+    const styleBytes =
+      this.target.name === "gba"
+        ? pairCount * 16 * 2 + pairCount + 3
+        : this.target.name === "esp32"
+          ? pairCount * 2 * 2 + pairCount + 2
+          : pairCount;
     const planLines = [
       `state RAM: ${scalarBytes} B scalars/strings + ${poolBytes} B pools + ${viewBytes} B computed views`,
       `reactive tables: ${this.refs.length} dirty bits, ${this.computeds.length} validity bits, ${effects.length} effects`,
-      `ROM data: ${romStrings} B strings + ${95 * 32} B font + ${16 * 16 * 2} B palettes`,
+      `ROM data: ${romStrings} B strings + ${fontBytes} B font + ${styleBytes} B style data`,
     ];
 
     return {
@@ -2093,6 +2107,13 @@ function emitFontGba(): string {
       }
     }
   }
+  return `const u8 vp_font_tiles[] = { ${bytes.join(",")} };`;
+}
+
+/** ESP32: one byte per 8-pixel row, MSB = leftmost pixel. */
+function emitFontEsp32(): string {
+  const bytes: number[] = [];
+  for (let g = 0; g < 95; g++) bytes.push(...FONT8[g]);
   return `const u8 vp_font_tiles[] = { ${bytes.join(",")} };`;
 }
 
@@ -2155,23 +2176,38 @@ function emitTargetData(target: VaporTarget, styles: StyleTable): string {
   const lowered = styles.lower(target.name);
   const styleTable = `const u8 vp_pal_style[${styles.pairs.length}] = { ${lowered.styleMap.join(",")} };`;
 
-  if (target.name === "gba") {
-    const banks: number[] = [];
-    for (const pair of styles.pairs) {
-      const bank = new Array<number>(16).fill(0);
-      bank[INK] = rgb555(pair.ink);
-      bank[PAPER] = rgb555(pair.paper);
-      banks.push(...bank);
+  switch (target.name) {
+    case "gba": {
+      const banks: number[] = [];
+      for (const pair of styles.pairs) {
+        const bank = new Array<number>(16).fill(0);
+        bank[INK] = rgb555(pair.ink);
+        bank[PAPER] = rgb555(pair.paper);
+        banks.push(...bank);
+      }
+      return (
+        `${emitFontGba()}\n` +
+        `const u16 vp_palettes[] = { ${banks.join(",")} };\n` +
+        `const u8 vp_palette_count = ${styles.pairs.length};\n` +
+        `const u16 vp_backdrop = ${rgb555(BACKDROP)};\n` +
+        styleTable
+      );
     }
-    return (
-      `${emitFontGba()}\n` +
-      `const u16 vp_palettes[] = { ${banks.join(",")} };\n` +
-      `const u8 vp_palette_count = ${styles.pairs.length};\n` +
-      `const u16 vp_backdrop = ${rgb555(BACKDROP)};\n` +
-      styleTable
-    );
+    case "esp32": {
+      const ink = styles.pairs.map((pair) => rgb565(pair.ink));
+      const paper = styles.pairs.map((pair) => rgb565(pair.paper));
+      return (
+        `${emitFontEsp32()}\n` +
+        `const u16 vp_ink565[] = { ${ink.join(",")} };\n` +
+        `const u16 vp_paper565[] = { ${paper.join(",")} };\n` +
+        `const u16 vp_backdrop = ${rgb565(BACKDROP)};\n` +
+        styleTable
+      );
+    }
+    case "gb":
+      return `${emitFontGb()}\n${styleTable}`;
+    case "nes":
+      /* NES font ships as CHR-ROM (rom.ts); only the style map is C data. */
+      return styleTable;
   }
-  if (target.name === "gb") return `${emitFontGb()}\n${styleTable}`;
-  /* NES font ships as CHR-ROM (rom.ts); only the style map is C data */
-  return styleTable;
 }

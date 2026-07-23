@@ -14,10 +14,11 @@
 // the app's PAIR TABLE; the pal byte in the cell grid is the pair id on
 // every target. What a pair id MEANS is the target's style contract:
 //
-//   gba  "rgb555"  pair id = BG palette bank (ink/paper BGR555), <= 15 pairs
-//   gb   "styles2" pair id -> glyph style via luminance (dark-on-light /
-//   nes            light-on-dark); collapsing distinct pairs is a warning,
-//                  or an error under --strict
+//   gba   "rgb555" pair id = BG palette bank (ink/paper BGR555), <= 15 pairs
+//   esp32 "rgb565" pair id = direct ink/paper RGB565 table index
+//   gb    "styles2" pair id -> glyph style via luminance (dark-on-light /
+//   nes             light-on-dark); collapsing distinct pairs is a warning,
+//                   or an error under --strict
 //
 // The oracle (real Vue in a browser/bun) renders the same classes with the
 // full-color web contract — degradation is visible by flipping targets.
@@ -102,13 +103,14 @@ export interface StylePair {
 }
 
 export interface TargetStyleCaps {
-  kind: "rgb555" | "styles2" | "web";
-  /** rgb555: how many (ink, paper) palette banks exist. */
+  kind: "rgb555" | "rgb565" | "styles2" | "web";
+  /** Palette-backed targets: how many (ink, paper) pairs exist. */
   maxPairs?: number;
 }
 
 export const STYLE_CAPS: Record<string, TargetStyleCaps> = {
   gba: { kind: "rgb555", maxPairs: 15 },
+  esp32: { kind: "rgb565", maxPairs: 256 },
   gb: { kind: "styles2" },
   nes: { kind: "styles2" },
   web: { kind: "web" },
@@ -131,6 +133,14 @@ export function rgb555(rgb: number): number {
   const g = ((rgb >> 8) & 0xff) >> 3;
   const b = (rgb & 0xff) >> 3;
   return r | (g << 5) | (b << 10);
+}
+
+/** Conventional RGB565 word: RRRRRGGGGGGBBBBB. */
+export function rgb565(rgb: number): number {
+  const r = ((rgb >> 16) & 0xff) >> 3;
+  const g = ((rgb >> 8) & 0xff) >> 2;
+  const b = (rgb & 0xff) >> 3;
+  return (r << 11) | (g << 5) | b;
 }
 
 export class StyleTable {
@@ -169,13 +179,13 @@ export class StyleTable {
 
   /** Lower the table for one target; returns issues instead of throwing. */
   lower(target: string, strict = false): {
-    /** pair id -> glyph style (styles2) or bank id (rgb555 — identity) */
+    /** pair id -> glyph style (styles2) or palette/table id (RGB — identity) */
     styleMap: number[];
     issues: StyleIssue[];
   } {
     const caps = STYLE_CAPS[target] ?? STYLE_CAPS.web;
     const issues: StyleIssue[] = [];
-    if (caps.kind === "rgb555") {
+    if (caps.kind === "rgb555" || caps.kind === "rgb565") {
       if (caps.maxPairs !== undefined && this.pairs.length > caps.maxPairs) {
         issues.push({
           code: "VS103",
@@ -225,6 +235,17 @@ export function styleTableCss(table: StyleTable, target: string): string {
         const r = (c & 31) << 3;
         const g = ((c >> 5) & 31) << 3;
         const b = ((c >> 10) & 31) << 3;
+        return (r << 16) | (g << 8) | b;
+      };
+      ink = q(ink);
+      paper = q(paper);
+    } else if (caps.kind === "rgb565") {
+      // round through RGB565 so the preview shows what the ESP32 shows
+      const q = (v: number) => {
+        const c = rgb565(v);
+        const r = ((c >> 11) & 31) << 3;
+        const g = ((c >> 5) & 63) << 2;
+        const b = (c & 31) << 3;
         return (r << 16) | (g << 8) | b;
       };
       ink = q(ink);

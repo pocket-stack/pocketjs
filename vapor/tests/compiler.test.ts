@@ -2,7 +2,9 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { compileVaporApp, VaporCompileError } from "../compiler/compile.ts";
+import { compileVaporApp, VAPOR_TARGETS, VaporCompileError } from "../compiler/compile.ts";
+import { esp32BuildId } from "../compiler/esp32.ts";
+import { FONT8 } from "../compiler/font.gen.ts";
 
 const ENTRY = join(import.meta.dir, "..", "examples", "todo", "todo.tsx");
 
@@ -47,6 +49,58 @@ describe("pocket vapor compiler", () => {
     expect(a.c).toContain("vp_mark");
     expect(a.graph).toContain("visible: view(maxLen 12)");
     expect(a.plan).toContain("pools");
+  });
+
+  test("esp32 uses its 20x18 display grid and emits 1bpp RGB565 data", () => {
+    expect(VAPOR_TARGETS.esp32).toEqual({
+      name: "esp32",
+      width: 20,
+      height: 18,
+      poolCap: 32,
+      strCap: 24,
+    });
+
+    const compiled = compileVaporApp(
+      "esp32.tsx",
+      minimal("", '<row y={0} class="text-[#ff0000] bg-[#00ff00]">{count.value}</row>'),
+      "ESP32",
+      "esp32",
+    );
+    expect(compiled.c).toContain("/* target: esp32 (20x18) */");
+    expect(compiled.c).toContain("#define VP_STR_CAP 24");
+    expect(compiled.c).toContain("#define VP_VIEW_CAP 32");
+
+    const font = compiled.c.match(/const u8 vp_font_tiles\[\] = \{ ([^}]*) \};/);
+    expect(font).not.toBeNull();
+    const fontBytes = font![1].split(",").map(Number);
+    expect(fontBytes).toHaveLength(95 * 8);
+    expect(fontBytes).toEqual(FONT8.flat());
+
+    const ink = compiled.c.match(/const u16 vp_ink565\[\] = \{ ([^}]*) \};/);
+    const paper = compiled.c.match(/const u16 vp_paper565\[\] = \{ ([^}]*) \};/);
+    expect(ink).not.toBeNull();
+    expect(paper).not.toBeNull();
+    expect(ink![1].split(",").map(Number)).toEqual([59262, 0xf800]);
+    expect(paper![1].split(",").map(Number)).toEqual([0x10a4, 0x07e0]);
+    expect(compiled.c).toContain("const u16 vp_backdrop = 4260;");
+    expect(compiled.c).toContain("const u8 vp_pal_style[2] = { 0,1 };");
+    expect(compiled.plan).toContain("760 B font + 12 B style data");
+  });
+
+  test("esp32 build identity is deterministic and source-sensitive", async () => {
+    const app = compileVaporApp("esp32.tsx", minimal(""), "ESP32", "esp32");
+    const same = compileVaporApp("esp32.tsx", minimal(""), "ESP32", "esp32");
+    const changed = compileVaporApp(
+      "esp32.tsx",
+      minimal("").replace("count.value + 1", "count.value + 2"),
+      "ESP32",
+      "esp32",
+    );
+
+    const id = await esp32BuildId(app);
+    expect(id).toMatch(/^[0-9a-f]{16}$/);
+    expect(await esp32BuildId(same)).toBe(id);
+    expect(await esp32BuildId(changed)).not.toBe(id);
   });
 
   test("effect masks subscribe conditional reads on both arms", async () => {

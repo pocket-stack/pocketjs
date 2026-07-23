@@ -1,6 +1,6 @@
-// VAPOR TODO — TodoMVC for the Game Boy Advance, written as real Vue Vapor.
+// VAPOR TODO — TodoMVC for Pocket hardware, written as real Vue Vapor.
 //
-// This file has two executions. Under the oracle it runs unmodified on
+// This file has two execution paths. Under the oracle it runs unmodified on
 // @vue/runtime-vapor (vue 3.6) — ref/computed are the real thing and the
 // UI components below are genuine vapor functional components. Under the
 // Pocket Vapor compiler it is lowered to C: refs become state-struct slots,
@@ -106,7 +106,7 @@ export default () => {
   const todos = ref<Todo[]>([
     { text: "SHIP POCKET VAPOR", done: false },
     { text: "WRITE THE COMPILER", done: true },
-    { text: "RUN ON A REAL GBA", done: false },
+    { text: "RUN ON DEVICE", done: false },
   ]);
   const cursor = ref(0);
   const filter = ref(0);

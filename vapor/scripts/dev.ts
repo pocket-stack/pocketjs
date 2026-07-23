@@ -7,7 +7,7 @@
 // The page mounts the same component file the cartridges are compiled from,
 // through the same vue-jsx-vapor pipeline — but onto the browser DOM: every
 // <row> is a live element (devtools-inspectable), keyboard maps to the pad,
-// and ?target=web|gba|gb|nes re-renders with that console's screen geometry
+// and ?target=web|gba|gb|nes|esp32 re-renders with that target's screen geometry
 // and style lowering, so degradation is something you can SEE while
 // debugging. Keys: arrows = d-pad, Z=A, X=B, Enter=Start, Shift=Select,
 // A=L, S=R.
@@ -30,6 +30,7 @@ const TARGET_DIMS: Record<string, { w: number; h: number }> = {
   gba: { w: 30, h: 20 },
   gb: { w: 20, h: 18 },
   nes: { w: 22, h: 18 },
+  esp32: { w: 20, h: 18 },
 };
 
 function pickTarget(url: URL): string {
@@ -153,4 +154,6 @@ Bun.serve({
 });
 
 console.log(`pocket vapor dev host: http://localhost:${port}/  (entry: ${entry})`);
-console.log(`targets: http://localhost:${port}/?target=web|gba|gb|nes — edit ${entry} and refresh`);
+console.log(
+  `targets: http://localhost:${port}/?target=web|gba|gb|nes|esp32 — edit ${entry} and refresh`,
+);

@@ -1,13 +1,15 @@
 // vapor/compiler/rom.ts — drive the console toolchains and patch cart headers.
-// Three targets, three toolchains, one generated C file:
+// Four targets, four toolchains, one generated C file:
 //   GBA: arm-none-eabi-gcc, flat ROM, Nintendo-logo/checksum patch
 //   GB:  sdcc (SM83) + sdasgb + makebin + rgbfix, ROM-only cart
 //   NES: cc65/ca65/ld65, NROM-256 + CHR-ROM font, generated ld65 config
+//   ESP32: ESP-IDF, retained build project + app image for offset 0x10000
 // Toolchain recipes carry over from Pocket Static's target packagers.
 
 import { $ } from "bun";
 import { dirname, join } from "node:path";
 import { nesFontBytes, VAPOR_TARGETS, type CompiledApp, type VaporTargetName } from "./compile.ts";
+import { buildEsp32Firmware } from "./esp32.ts";
 
 const RUNTIME = join(import.meta.dir, "..", "runtime");
 const CC65_LIB = "/opt/homebrew/share/cc65/lib/none.lib";
@@ -45,7 +47,10 @@ export async function buildRom(
 ): Promise<{ romBytes: number }> {
   if (target === "gba") return buildGbaRom(app, outRom);
   if (target === "gb") return buildGbRom(app, outRom);
-  return buildNesRom(app, outRom);
+  if (target === "nes") return buildNesRom(app, outRom);
+  if (target === "esp32") return buildEsp32Firmware(app, outRom);
+  target satisfies never;
+  throw new Error(`unsupported Pocket Vapor target: ${String(target)}`);
 }
 
 // ---- GBA -------------------------------------------------------------------

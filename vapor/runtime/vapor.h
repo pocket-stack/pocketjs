@@ -1,16 +1,18 @@
 /* vapor/runtime/vapor.h — the Pocket Vapor runtime contract, all targets.
  *
  * Two parties compile against this header: the fixed per-console runtime
- * (gba/vapor_gba.c, gb/vapor_gb.c, nes/vapor_nes.c) and the compiler-
- * generated application (gen_app.c). The runtime owns the cell grid, video
- * commit, input edges, the frame loop and the debug block; the generated
+ * (gba/vapor_gba.c, gb/vapor_gb.c, nes/vapor_nes.c,
+ * esp32/vapor_esp32.c) and the compiler-generated application (gen_app.c).
+ * The runtime owns the cell grid, video commit, input edges, the frame loop
+ * and the debug block; the generated
  * app owns all reactive state, computeds, paint effects and button
  * handlers. No allocator exists anywhere — every byte is planned at
  * compile time.
  *
- * Portability: this compiles under arm-none-eabi-gcc (ARM7TDMI),
- * sdcc (SM83) and cc65 (6502). `int` is 16-bit on the 8-bit consoles, so
- * the 32-bit types are `long`; cc65 is C89, so `inline` vanishes there.
+ * Portability: this compiles under arm-none-eabi-gcc (ARM7TDMI), sdcc
+ * (SM83), cc65 (6502), and xtensa-esp-elf-gcc. `int` is 16-bit on the
+ * 8-bit consoles, so the 32-bit types are `long`; cc65 is C89, so
+ * `inline` vanishes there.
  */
 #ifndef POCKET_VAPOR_H
 #define POCKET_VAPOR_H
@@ -100,11 +102,14 @@ u16 app_debug_state(volatile u8 *out); /* mirror reactive state; returns bytes *
  *   GBA: vp_font_tiles 95x32B 4bpp, vp_palettes/vp_palette_count/vp_backdrop
  *   GB:  vp_font_tiles (2 styles x 95) x 16B 2bpp interleaved
  *   NES: vp_font_tiles (2 styles x 95) x 16B 2bpp planar
+ *   ESP32: vp_font_tiles 95x8B 1bpp, direct RGB565 ink/paper tables
  *   GB/NES: vp_pal_style[8] maps logical palette -> glyph style (0/1) */
 extern const u8 vp_font_tiles[];
 extern const u16 vp_palettes[];
 extern const u8 vp_palette_count;
 extern const u16 vp_backdrop;
+extern const u16 vp_ink565[];
+extern const u16 vp_paper565[];
 extern const u8 vp_pal_style[];
 extern const char vp_app_title[]; /* cartridge title, <= 12 chars */
 
