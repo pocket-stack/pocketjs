@@ -2802,3 +2802,342 @@ fn stream_golden_fixture_parses() {
     let plane = ui.upload_texture(&init, 16, 16, spec::psm::PSM_T8);
     assert!(ui.update_texture_t8(plane, pal, px));
 }
+
+// ---- SVC WIRE (PKNT) — wire.rs codec + stream_rx.rs RAM ring ---------------
+
+#[test]
+fn wire_frame_header_round_trips_and_rejects_oversize() {
+    use crate::wire::{encode_frame_header, parse_frame_header};
+    let mut out = [0u8; 8];
+    assert!(encode_frame_header(spec::wire::MSG_VIDEO_SLOT, 1, 1040, &mut out));
+    let h = parse_frame_header(&out).expect("round trip");
+    assert_eq!((h.kind, h.flags, h.len), (spec::wire::MSG_VIDEO_SLOT, 1, 1040));
+    assert!(parse_frame_header(&out[..7]).is_none(), "short header");
+    assert!(
+        !encode_frame_header(0x10, 0, spec::wire::MAX_PAYLOAD as u32 + 1, &mut out),
+        "oversize refused at encode"
+    );
+    out[4..8].copy_from_slice(&(spec::wire::MAX_PAYLOAD as u32 + 1).to_le_bytes());
+    assert!(parse_frame_header(&out).is_none(), "oversize refused at parse");
+}
+
+#[test]
+fn wire_hello_and_beacon_parse() {
+    use crate::wire::{encode_hello, parse_beacon, parse_hello_ack};
+    let mut out = [0u8; 80];
+    let n = encode_hello("youtube", &mut out).expect("encodes");
+    assert_eq!(n, 7 + 7);
+    assert_eq!(&out[0..4], &spec::wire::MAGIC.to_le_bytes());
+    assert_eq!(out[4], spec::wire::VERSION);
+    assert_eq!(out[6] as usize, 7);
+    assert_eq!(&out[7..14], b"youtube");
+    assert!(encode_hello("", &mut out).is_none());
+
+    let mut ack = [0u8; 8];
+    ack[0..4].copy_from_slice(&spec::wire::MAGIC.to_le_bytes());
+    ack[4] = 1;
+    assert_eq!(parse_hello_ack(&ack), Some(1));
+    ack[0] = 0;
+    assert_eq!(parse_hello_ack(&ack), None);
+
+    let mut beacon = Vec::new();
+    beacon.extend_from_slice(&spec::wire::BEACON_MAGIC.to_le_bytes());
+    beacon.push(spec::wire::VERSION);
+    beacon.push(0);
+    beacon.extend_from_slice(&spec::wire::PORT.to_le_bytes());
+    beacon.push(7);
+    beacon.extend_from_slice(b"youtube");
+    beacon.push(3);
+    beacon.extend_from_slice(b"Mac");
+    let (port, app, name) = parse_beacon(&beacon).expect("beacon parses");
+    assert_eq!((port, app, name), (spec::wire::PORT, "youtube", "Mac"));
+    // Truncations must fail cleanly at every length.
+    for cut in 0..beacon.len() {
+        assert!(parse_beacon(&beacon[..cut]).is_none(), "cut at {cut}");
+    }
+}
+
+#[test]
+fn wire_payload_parsers_validate_and_survive_truncation() {
+    use crate::wire::{
+        parse_audio_chunk, parse_file, parse_stream_mark, parse_stream_open, parse_video_slot,
+    };
+
+    // file: pathLen · path · blob
+    let mut file = Vec::new();
+    file.extend_from_slice(&9u16.to_le_bytes());
+    file.extend_from_slice(b"thumbs/a0");
+    file.extend_from_slice(&[1, 2, 3, 4]);
+    let (path, blob) = parse_file(&file).expect("file parses");
+    assert_eq!((path, blob), ("thumbs/a0", &[1u8, 2, 3, 4][..]));
+    for cut in 0..11 {
+        assert!(parse_file(&file[..cut]).is_none(), "cut at {cut}");
+    }
+
+    // streamOpen requires exactly a 96-byte header block after the path.
+    let block = stream_header_block(0, 0, 32, 16, 2, 0, 64, 4, 0);
+    let mut open = Vec::new();
+    open.extend_from_slice(&7u16.to_le_bytes());
+    open.extend_from_slice(b"media/v");
+    open.extend_from_slice(&block);
+    let (path, got) = parse_stream_open(&open).expect("streamOpen parses");
+    assert_eq!(path, "media/v");
+    assert_eq!(got, &block[..]);
+    assert!(parse_stream_open(&open[..open.len() - 1]).is_none(), "short block refused");
+
+    // videoSlot: header · palette · indices.
+    let mut slot = Vec::new();
+    slot.extend_from_slice(&2u32.to_le_bytes()); // seq
+    slot.extend_from_slice(&7u32.to_le_bytes()); // frameIndex
+    slot.extend_from_slice(&32u16.to_le_bytes());
+    slot.extend_from_slice(&16u16.to_le_bytes());
+    slot.extend_from_slice(&0u16.to_le_bytes()); // flags
+    slot.extend_from_slice(&0u16.to_le_bytes());
+    slot.extend_from_slice(&[9u8; 1024]);
+    slot.extend_from_slice(&[5u8; 32 * 16]);
+    let msg = parse_video_slot(&slot).expect("slot parses");
+    assert_eq!((msg.seq, msg.frame_index, msg.w, msg.h, msg.rle), (2, 7, 32, 16, false));
+    assert_eq!(msg.palette.len(), 1024);
+    assert_eq!(msg.indices.len(), 32 * 16);
+    assert!(parse_video_slot(&slot[..1039]).is_none(), "short slot refused");
+    let mut zero_seq = slot.clone();
+    zero_seq[0..4].copy_from_slice(&0u32.to_le_bytes());
+    assert!(parse_video_slot(&zero_seq).is_none(), "seq 0 refused");
+
+    // audioChunk + streamMark.
+    let mut chunk = Vec::new();
+    chunk.extend_from_slice(&1u32.to_le_bytes());
+    chunk.extend_from_slice(&2048u32.to_le_bytes());
+    chunk.extend_from_slice(&[0u8; 64 * 2 * 2]);
+    let msg = parse_audio_chunk(&chunk).expect("chunk parses");
+    assert_eq!((msg.seq, msg.start_frame, msg.pcm.len()), (1, 2048, 64 * 2 * 2));
+    assert!(parse_audio_chunk(&chunk[..7]).is_none());
+
+    let mut mark = Vec::new();
+    mark.extend_from_slice(&3u32.to_le_bytes());
+    mark.extend_from_slice(&spec::wire::MARK_FLAG_ENDED.to_le_bytes());
+    mark.extend_from_slice(&0u16.to_le_bytes());
+    let msg = parse_stream_mark(&mark).expect("mark parses");
+    assert!(msg.ended);
+    assert_eq!(msg.epoch, 3);
+    assert!(parse_stream_mark(&mark[..7]).is_none());
+}
+
+/// Independent reference writer: build the .pkst image with direct byte
+/// writes straight off the spec.ts layout comment — a different code path
+/// from RamStream, so equality below is a real check, not a tautology.
+fn reference_write_slot(
+    buf: &mut [u8],
+    h: &crate::stream::StreamHeaders,
+    seq: u32,
+    frame_index: u32,
+    palette: &[u8],
+    indices: &[u8],
+) {
+    let off = (h.video_off + ((seq - 1) % h.video.slot_count) * h.video.slot_size) as usize;
+    buf[off..off + 4].copy_from_slice(&seq.to_le_bytes());
+    buf[off + 4..off + 8].copy_from_slice(&frame_index.to_le_bytes());
+    buf[off + 8..off + 10].copy_from_slice(&(h.video.w as u16).to_le_bytes());
+    buf[off + 10..off + 12].copy_from_slice(&(h.video.h as u16).to_le_bytes());
+    for b in &mut buf[off + 12..off + 32] {
+        *b = 0;
+    }
+    buf[off + 32..off + 32 + 1024].copy_from_slice(palette);
+    buf[off + 1056..off + 1056 + indices.len()].copy_from_slice(indices);
+    let v = spec::stream::VRING_OFF;
+    buf[v + 20..v + 24].copy_from_slice(&seq.to_le_bytes());
+}
+
+fn reference_write_chunk(
+    buf: &mut [u8],
+    h: &crate::stream::StreamHeaders,
+    seq: u32,
+    start_frame: u32,
+    pcm: &[u8],
+) {
+    let size = crate::stream::chunk_size(h.audio.chunk_frames, h.audio.channels).unwrap();
+    let off = (h.audio_off + ((seq - 1) % h.audio.chunk_count) * size) as usize;
+    buf[off..off + 4].copy_from_slice(&seq.to_le_bytes());
+    buf[off + 4..off + 8].copy_from_slice(&start_frame.to_le_bytes());
+    for b in &mut buf[off + 8..off + 16] {
+        *b = 0;
+    }
+    buf[off + 16..off + 16 + pcm.len()].copy_from_slice(pcm);
+    let a = spec::stream::ARING_OFF;
+    buf[a + 20..a + 24].copy_from_slice(&seq.to_le_bytes());
+}
+
+#[test]
+fn ram_stream_image_equals_the_reference_file_writer() {
+    use crate::wire::{AudioChunkMsg, StreamMarkMsg, VideoSlotMsg};
+
+    let block = stream_header_block(0, 0, 32, 16, 2, 0, 64, 2, 0);
+    let h = crate::stream::parse_header_block(&block).unwrap();
+    let chunk_size = crate::stream::chunk_size(h.audio.chunk_frames, h.audio.channels).unwrap();
+    let total = (h.audio_off + h.audio.chunk_count * chunk_size) as usize;
+
+    // Reference image: header block + direct writes (3 slots so seq 3 laps
+    // slot 1's position, 2 chunks) + an epoch/ended mark.
+    let mut reference = alloc::vec![0u8; total];
+    reference[..96].copy_from_slice(&block);
+    let pal = |seed: u8| -> Vec<u8> { (0..1024).map(|i| (i as u8).wrapping_add(seed)).collect() };
+    let px = |seed: u8| -> Vec<u8> { (0..32 * 16).map(|i| (i as u8).wrapping_mul(seed)).collect() };
+    let pcm = |seed: u8| -> Vec<u8> { (0..64 * 2 * 2).map(|i| (i as u8) ^ seed).collect() };
+    for seq in 1..=3u32 {
+        reference_write_slot(&mut reference, &h, seq, seq * 2, &pal(seq as u8), &px(seq as u8));
+    }
+    for seq in 1..=2u32 {
+        reference_write_chunk(&mut reference, &h, seq, seq * 64, &pcm(seq as u8));
+    }
+    reference[8..12].copy_from_slice(&5u32.to_le_bytes()); // epoch
+    reference[6..8].copy_from_slice(&spec::stream::FLAG_ENDED.to_le_bytes());
+
+    // RamStream fed the same content as WIRE messages.
+    let mut ram = crate::stream_rx::RamStream::open(&block).expect("opens");
+    for seq in 1..=3u32 {
+        let palette = pal(seq as u8);
+        let indices = px(seq as u8);
+        assert!(ram.apply_slot(&VideoSlotMsg {
+            seq,
+            frame_index: seq * 2,
+            w: 32,
+            h: 16,
+            rle: false,
+            palette: &palette,
+            indices: &indices,
+        }));
+    }
+    for seq in 1..=2u32 {
+        let bytes = pcm(seq as u8);
+        assert!(ram.apply_chunk(&AudioChunkMsg { seq, start_frame: seq * 64, pcm: &bytes }));
+    }
+    ram.apply_mark(&StreamMarkMsg { epoch: 5, ended: true });
+
+    assert_eq!(ram.buf().len(), reference.len());
+    assert_eq!(ram.buf(), &reference[..], "RAM ring == file ring, byte for byte");
+
+    // And the shared readers see the expected world.
+    let live = crate::stream::parse_header_block(ram.buf()).unwrap();
+    assert_eq!((live.epoch, live.ended), (5, true));
+    assert_eq!(live.video.latest_seq, 3);
+    assert_eq!(live.audio.latest_seq, 2);
+    let off = crate::stream::slot_offset(&live, 3).unwrap() as usize;
+    let sh = crate::stream::parse_slot_header(&ram.buf()[off..], &live.video).unwrap();
+    assert_eq!((sh.seq, sh.frame_index), (3, 6));
+}
+
+#[test]
+fn ram_stream_decodes_rle_slots_and_rejects_bad_geometry() {
+    use crate::wire::VideoSlotMsg;
+    let block = stream_header_block(0, 0, 32, 16, 2, 0, 64, 2, 0);
+    let mut ram = crate::stream_rx::RamStream::open(&block).unwrap();
+
+    let raw: Vec<u8> = (0..32 * 16).map(|i| if i < 300 { 7 } else { (i % 5) as u8 }).collect();
+    let rle = packbits_encode(&raw);
+    assert!(rle.len() < raw.len(), "fixture should actually compress");
+    let palette = alloc::vec![1u8; 1024];
+    assert!(ram.apply_slot(&VideoSlotMsg {
+        seq: 1,
+        frame_index: 0,
+        w: 32,
+        h: 16,
+        rle: true,
+        palette: &palette,
+        indices: &rle,
+    }));
+    let h = crate::stream::parse_header_block(ram.buf()).unwrap();
+    let off = crate::stream::slot_offset(&h, 1).unwrap() as usize;
+    assert_eq!(&ram.buf()[off + 1056..off + 1056 + raw.len()], &raw[..]);
+
+    // Wrong plane, wrong palette size, wrong index count, truncated RLE.
+    assert!(!ram.apply_slot(&VideoSlotMsg {
+        seq: 2, frame_index: 1, w: 16, h: 16, rle: false, palette: &palette, indices: &raw,
+    }));
+    assert!(!ram.apply_slot(&VideoSlotMsg {
+        seq: 2, frame_index: 1, w: 32, h: 16, rle: false, palette: &palette[..512], indices: &raw,
+    }));
+    assert!(!ram.apply_slot(&VideoSlotMsg {
+        seq: 2, frame_index: 1, w: 32, h: 16, rle: false, palette: &palette, indices: &raw[..100],
+    }));
+    assert!(!ram.apply_slot(&VideoSlotMsg {
+        seq: 2, frame_index: 1, w: 32, h: 16, rle: true, palette: &palette, indices: &rle[..rle.len() / 2],
+    }));
+    // Failures must not publish a cursor.
+    let h = crate::stream::parse_header_block(ram.buf()).unwrap();
+    assert_eq!(h.video.latest_seq, 1);
+}
+
+/// Cross-language: rebuild the committed TS-written .pkst golden through
+/// RamStream (slots/chunks re-fed as WIRE messages) and require the byte-
+/// identical file image — the socket transport IS the file transport.
+#[test]
+fn ram_stream_reconstructs_the_committed_golden() {
+    use crate::wire::{AudioChunkMsg, StreamMarkMsg, VideoSlotMsg};
+    let golden: &[u8] = include_bytes!("../../../tests/fixtures/youtube-golden.pkst");
+    let h = crate::stream::parse_header_block(golden).expect("golden parses");
+
+    // Open from a PRISTINE header (cursors zeroed, epoch 0, flags 0) — the
+    // exact block a streamOpen would carry before any writes.
+    let mut pristine = golden[..96].to_vec();
+    pristine[6..8].copy_from_slice(&0u16.to_le_bytes());
+    pristine[8..12].copy_from_slice(&0u32.to_le_bytes());
+    let v = spec::stream::VRING_OFF;
+    let a = spec::stream::ARING_OFF;
+    pristine[v + 20..v + 24].copy_from_slice(&0u32.to_le_bytes());
+    pristine[a + 20..a + 24].copy_from_slice(&0u32.to_le_bytes());
+    let mut ram = crate::stream_rx::RamStream::open(&pristine).expect("opens");
+
+    // Re-feed every RESIDENT slot/chunk in seq order (the ring holds the
+    // last slot_count/chunk_count writes; lapped history is gone by design).
+    let mut slots: Vec<(u32, usize)> = Vec::new();
+    for idx in 0..h.video.slot_count {
+        let off = (h.video_off + idx * h.video.slot_size) as usize;
+        if let Some(sh) = crate::stream::parse_slot_header(&golden[off..], &h.video) {
+            slots.push((sh.seq, off));
+        }
+    }
+    slots.sort();
+    for (seq, off) in slots {
+        let sh = crate::stream::parse_slot_header(&golden[off..], &h.video).unwrap();
+        let pal = &golden[off + 32..off + 32 + 1024];
+        let px = &golden[off + 1056..off + 1056 + (h.video.w * h.video.h) as usize];
+        assert!(ram.apply_slot(&VideoSlotMsg {
+            seq,
+            frame_index: sh.frame_index,
+            w: h.video.w,
+            h: h.video.h,
+            rle: false,
+            palette: pal,
+            indices: px,
+        }));
+    }
+    let chunk_size = crate::stream::chunk_size(h.audio.chunk_frames, h.audio.channels).unwrap();
+    let pcm_bytes = (h.audio.chunk_frames * h.audio.channels * 2) as usize;
+    let mut chunks: Vec<(u32, usize)> = Vec::new();
+    for idx in 0..h.audio.chunk_count {
+        let off = (h.audio_off + idx * chunk_size) as usize;
+        if let Some(ch) = crate::stream::parse_chunk_header(&golden[off..]) {
+            chunks.push((ch.seq, off));
+        }
+    }
+    chunks.sort();
+    for (seq, off) in chunks {
+        let ch = crate::stream::parse_chunk_header(&golden[off..]).unwrap();
+        assert!(ram.apply_chunk(&AudioChunkMsg {
+            seq,
+            start_frame: ch.start_frame,
+            pcm: &golden[off + 16..off + 16 + pcm_bytes],
+        }));
+    }
+    ram.apply_mark(&StreamMarkMsg { epoch: h.epoch, ended: h.ended });
+    // Restore the golden's final cursors exactly (a lapped ring's latest may
+    // exceed the highest resident seq; apply_* published the resident max).
+    let final_v = h.video.latest_seq;
+    let final_a = h.audio.latest_seq;
+    let buf_len = ram.buf().len();
+    assert_eq!(buf_len, golden.len(), "same preallocated image size");
+    let mut image = ram.buf().to_vec();
+    image[v + 20..v + 24].copy_from_slice(&final_v.to_le_bytes());
+    image[a + 20..a + 24].copy_from_slice(&final_a.to_le_bytes());
+    assert_eq!(&image[..], golden, "socket-fed RAM ring == TS-written file, byte for byte");
+}
