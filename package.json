@@ -72,6 +72,7 @@
     "./lifecycle": "./framework/src/lifecycle.ts",
     "./hot": "./framework/src/hot.ts",
     "./input": "./framework/src/input-api.ts",
+    "./kinetics": "./framework/src/kinetics.ts",
     "./launcher": "./framework/src/launcher.ts",
     "./manifest": "./framework/src/manifest/index.ts",
     "./osk": "./framework/src/osk.tsx",
