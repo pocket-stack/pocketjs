@@ -12,7 +12,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use pocketjs_core::raster::{pack_rgb565, render_scaled_rgb565_over};
+use pocketjs_core::raster::{linear_sample_coordinates, pack_rgb565, render_scaled_rgb565_over};
 use pocketjs_core::{spec, TexView, Ui};
 
 const MASK_ALIGNMENT: usize = 128;
@@ -787,12 +787,13 @@ fn exact_texel_edge(uv: f32, extent: u32) -> Option<u32> {
 fn is_white_alpha_texture(view: &TexView<'_>) -> bool {
     let count = view.w as usize * view.h as usize;
     match view.psm {
-        spec::psm::PSM_8888 => view.pixels[..count * 4]
-            .chunks_exact(4)
-            .all(|p| p[3] == 0 || (p[0] == 255 && p[1] == 255 && p[2] == 255)),
+        spec::psm::PSM_8888 => view.pixels[..count * 4].chunks_exact(4).all(|p| {
+            let white = p[0] == 255 && p[1] == 255 && p[2] == 255;
+            white || (!view.linear && p[3] == 0)
+        }),
         spec::psm::PSM_4444 => view.pixels[..count * 2].chunks_exact(2).all(|p| {
             let pixel = u16::from_le_bytes([p[0], p[1]]);
-            pixel >> 12 == 0 || pixel & 0x0fff == 0x0fff
+            pixel & 0x0fff == 0x0fff || (!view.linear && pixel >> 12 == 0)
         }),
         spec::psm::PSM_T8 => {
             let Some(palette) = view.palette else {
@@ -800,8 +801,8 @@ fn is_white_alpha_texture(view: &TexView<'_>) -> bool {
             };
             view.pixels[..count].iter().all(|&index| {
                 let p = index as usize * 4;
-                palette[p + 3] == 0
-                    || (palette[p] == 255 && palette[p + 1] == 255 && palette[p + 2] == 255)
+                let white = palette[p] == 255 && palette[p + 1] == 255 && palette[p + 2] == 255;
+                white || (!view.linear && palette[p + 3] == 0)
             })
         }
         _ => false,
@@ -831,20 +832,21 @@ fn sample_alpha(view: &TexView<'_>, u: f32, v: f32) -> u8 {
     if !view.linear {
         return texel_alpha(view, (u * view.w as f32) as i32, (v * view.h as f32) as i32) as u8;
     }
-    let uf = (u * view.w as f32 * 256.0) as i32 - 128;
-    let vf = (v * view.h as f32 * 256.0) as i32 - 128;
-    let x0 = uf >> 8;
-    let y0 = vf >> 8;
-    let fx = (uf & 255) as u32;
-    let fy = (vf & 255) as u32;
+    let Some(sample) = linear_sample_coordinates(view.w, view.h, u, v) else {
+        return 0;
+    };
     let lerp = |a: u32, b: u32, f: u32| (a * (256 - f) + b * f) >> 8;
-    let top = lerp(texel_alpha(view, x0, y0), texel_alpha(view, x0 + 1, y0), fx);
-    let bottom = lerp(
-        texel_alpha(view, x0, y0 + 1),
-        texel_alpha(view, x0 + 1, y0 + 1),
-        fx,
+    let top = lerp(
+        texel_alpha(view, sample.x0 as i32, sample.y0 as i32),
+        texel_alpha(view, sample.x1 as i32, sample.y0 as i32),
+        sample.fx,
     );
-    lerp(top, bottom, fy) as u8
+    let bottom = lerp(
+        texel_alpha(view, sample.x0 as i32, sample.y1 as i32),
+        texel_alpha(view, sample.x1 as i32, sample.y1 as i32),
+        sample.fx,
+    );
+    lerp(top, bottom, sample.fy) as u8
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -894,6 +896,7 @@ mod tests {
         blends: u32,
         srm: u32,
         last_mask_max: u8,
+        last_mask: Vec<u8>,
         last_global_alpha: u8,
         last_source_rect: Rect,
         last_destination_rect: Rect,
@@ -919,27 +922,36 @@ mod tests {
 
         fn blend_a8_rgb565(
             &mut self,
-            _destination: &mut [u16],
-            _width: u32,
+            destination: &mut [u16],
+            width: u32,
             _height: u32,
             mask: &[u8],
-            _rect: Rect,
-            _color: [u8; 3],
+            rect: Rect,
+            color: [u8; 3],
             global_alpha: u8,
         ) -> bool {
             self.blends += 1;
             self.last_mask_max = mask.iter().copied().max().unwrap_or(0);
+            self.last_mask.clear();
+            self.last_mask.extend_from_slice(mask);
             self.last_global_alpha = global_alpha;
+            for y in rect.y..rect.y + rect.h {
+                for x in rect.x..rect.x + rect.w {
+                    let index = y as usize * width as usize + x as usize;
+                    let alpha = (mask[index] as u32 * global_alpha as u32 + 127) / 255;
+                    blend_rgb565(&mut destination[index], color, alpha);
+                }
+            }
             true
         }
 
         fn srm_psm5650_to_rgb565(
             &mut self,
-            _destination: &mut [u16],
-            _width: u32,
+            destination: &mut [u16],
+            width: u32,
             _height: u32,
-            _source: &[u8],
-            _source_width: u32,
+            source: &[u8],
+            source_width: u32,
             _source_height: u32,
             source_rect: Rect,
             destination_rect: Rect,
@@ -949,8 +961,64 @@ mod tests {
             self.last_source_rect = source_rect;
             self.last_destination_rect = destination_rect;
             self.last_transform = transform;
+            if transform.rotation != QuarterTurn::None
+                || source_rect.w != destination_rect.w
+                || source_rect.h != destination_rect.h
+            {
+                return false;
+            }
+            for dy in 0..destination_rect.h {
+                let sy = if transform.mirror_y {
+                    source_rect.y + source_rect.h - 1 - dy
+                } else {
+                    source_rect.y + dy
+                };
+                for dx in 0..destination_rect.w {
+                    let sx = if transform.mirror_x {
+                        source_rect.x + source_rect.w - 1 - dx
+                    } else {
+                        source_rect.x + dx
+                    };
+                    let source_index = (sy * source_width + sx) as usize * 2;
+                    let psm5650 =
+                        u16::from_le_bytes([source[source_index], source[source_index + 1]]);
+                    let rgb565 = ((psm5650 & 0x001f) << 11)
+                        | (psm5650 & 0x07e0)
+                        | ((psm5650 & 0xf800) >> 11);
+                    let destination_index = (destination_rect.y + dy) as usize * width as usize
+                        + (destination_rect.x + dx) as usize;
+                    destination[destination_index] = rgb565;
+                }
+            }
             true
         }
+    }
+
+    fn blend_rgb565(destination: &mut u16, color: [u8; 3], alpha: u32) {
+        if alpha == 0 {
+            return;
+        }
+        if alpha >= 255 {
+            *destination = pack_rgb565(color[0] as u32, color[1] as u32, color[2] as u32);
+            return;
+        }
+        let r5 = (*destination as u32 >> 11) & 0x1f;
+        let g6 = (*destination as u32 >> 5) & 0x3f;
+        let b5 = *destination as u32 & 0x1f;
+        let destination_color = [
+            (r5 << 3) | (r5 >> 2),
+            (g6 << 2) | (g6 >> 4),
+            (b5 << 3) | (b5 >> 2),
+        ];
+        let inverse_alpha = 255 - alpha;
+        let mix = |source: u8, destination: u32| {
+            (source as u32 * alpha + destination * inverse_alpha + 127) / 255
+        };
+        *destination = pack_rgb565(
+            mix(color[0], destination_color[0]),
+            mix(color[1], destination_color[1]),
+            mix(color[2], destination_color[2]),
+        );
     }
 
     fn xy_word(x: i16, y: i16) -> u32 {
@@ -1035,6 +1103,121 @@ mod tests {
     }
 
     #[test]
+    fn linear_alpha_mask_matches_core_edge_sampling() {
+        let mut ui = Ui::new();
+        ui.set_viewport(4.0, 1.0);
+        let handle = ui.upload_texture_flags(
+            &[
+                255, 255, 255, 0, //
+                255, 255, 255, 255,
+            ],
+            2,
+            1,
+            spec::psm::PSM_8888,
+            spec::img::FLAG_LINEAR,
+        );
+        let words = [
+            spec::draw_op::TEX_QUAD,
+            handle as u32,
+            xy_word(0, 0),
+            wh_word(4, 1),
+            0.0f32.to_bits(),
+            0.0f32.to_bits(),
+            1.0f32.to_bits(),
+            1.0f32.to_bits(),
+            0xff00_ffff,
+        ];
+        let mut expected = vec![0u16; 4];
+        pocketjs_core::raster::render_scaled_rgb565(&ui, &words, &mut expected, 1);
+        let mut output = vec![0u16; 4];
+        let mut ppa = MockPpa::default();
+        let stats = renderer()
+            .render(&ui, &words, &mut output, 4, 1, &mut ppa)
+            .unwrap();
+
+        assert_eq!(stats.ppa_blends, 1);
+        assert_eq!(stats.software_ops, 0);
+        assert_eq!(&ppa.last_mask[..4], &[191, 63, 191, 255]);
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn linear_transparent_color_uses_software_fallback() {
+        let mut ui = Ui::new();
+        ui.set_viewport(4.0, 1.0);
+        let handle = ui.upload_texture_flags(
+            &[
+                0, 0, 0, 0, //
+                255, 255, 255, 255,
+            ],
+            2,
+            1,
+            spec::psm::PSM_8888,
+            spec::img::FLAG_LINEAR,
+        );
+        let words = [
+            spec::draw_op::TEX_QUAD,
+            handle as u32,
+            xy_word(0, 0),
+            wh_word(4, 1),
+            0.0f32.to_bits(),
+            0.0f32.to_bits(),
+            1.0f32.to_bits(),
+            1.0f32.to_bits(),
+            0xffff_ffff,
+        ];
+        let mut expected = vec![0u16; 4];
+        pocketjs_core::raster::render_scaled_rgb565(&ui, &words, &mut expected, 1);
+        let mut output = vec![0u16; 4];
+        let mut ppa = MockPpa::default();
+        let stats = renderer()
+            .render(&ui, &words, &mut output, 4, 1, &mut ppa)
+            .unwrap();
+
+        assert_eq!(stats.ppa_blends, 0);
+        assert_eq!(stats.software_ops, 1);
+        assert_eq!(ppa.blends, 0);
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn nearest_transparent_color_remains_alpha_only() {
+        let mut ui = Ui::new();
+        ui.set_viewport(2.0, 1.0);
+        let handle = ui.upload_texture(
+            &[
+                0, 0, 0, 0, //
+                255, 255, 255, 255,
+            ],
+            2,
+            1,
+            spec::psm::PSM_8888,
+        );
+        let words = [
+            spec::draw_op::TEX_QUAD,
+            handle as u32,
+            xy_word(0, 0),
+            wh_word(2, 1),
+            0.0f32.to_bits(),
+            0.0f32.to_bits(),
+            1.0f32.to_bits(),
+            1.0f32.to_bits(),
+            0xffff_ffff,
+        ];
+        let mut expected = vec![0u16; 2];
+        pocketjs_core::raster::render_scaled_rgb565(&ui, &words, &mut expected, 1);
+        let mut output = vec![0u16; 2];
+        let mut ppa = MockPpa::default();
+        let stats = renderer()
+            .render(&ui, &words, &mut output, 2, 1, &mut ppa)
+            .unwrap();
+
+        assert_eq!(stats.ppa_blends, 1);
+        assert_eq!(stats.software_ops, 0);
+        assert_eq!(output, expected);
+    }
+
+    #[test]
     fn folds_global_alpha_into_a8_before_batching_overlaps() {
         let mut ui = Ui::new();
         ui.set_viewport(2.0, 2.0);
@@ -1089,6 +1272,7 @@ mod tests {
         assert_eq!(stats.ppa_srm, 1);
         assert_eq!(stats.software_ops, 0);
         assert_eq!(ppa.srm, 1);
+        assert!(output.iter().all(|&pixel| pixel == pack_rgb565(255, 0, 0)));
     }
 
     #[test]

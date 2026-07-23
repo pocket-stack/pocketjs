@@ -722,28 +722,64 @@ fn texel(view: &TexView, idx: usize) -> Option<(u32, u32, u32, u32)> {
     }
 }
 
-/// Deterministic integer bilinear sample at normalized (u, v). Texel coords
-/// are 24.8 fixed point centered on texel centers (`uf = u*w*256 - 128`);
-/// the 4 clamp-addressed neighbors blend with 8-bit weights, horizontal
-/// first then vertical — integer math only, so byte-exact on every host.
+/// Coordinate selection shared by software and hardware-assisted texture
+/// paths. Texel coordinates are 24.8 fixed point centered on texel centers
+/// (`uf = u*w*256 - 128`). Clamp the base coordinate before selecting its
+/// second neighbor so every backend preserves the core's edge sampling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LinearSample {
+    pub x0: u32,
+    pub y0: u32,
+    pub x1: u32,
+    pub y1: u32,
+    pub fx: u32,
+    pub fy: u32,
+}
+
+#[inline]
+pub fn linear_sample_coordinates(
+    width: u32,
+    height: u32,
+    u: f32,
+    v: f32,
+) -> Option<LinearSample> {
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let (tw_max, th_max) = (width as i32 - 1, height as i32 - 1);
+    let uf = (u * width as f32 * 256.0) as i32 - 128;
+    let vf = (v * height as f32 * 256.0) as i32 - 128;
+    let x0 = (uf >> 8).clamp(0, tw_max);
+    let y0 = (vf >> 8).clamp(0, th_max);
+    Some(LinearSample {
+        x0: x0 as u32,
+        y0: y0 as u32,
+        x1: (x0 + 1).min(tw_max) as u32,
+        y1: (y0 + 1).min(th_max) as u32,
+        fx: (uf & 255) as u32,
+        fy: (vf & 255) as u32,
+    })
+}
+
+/// Deterministic integer bilinear sample at normalized (u, v). The four
+/// clamp-addressed neighbors blend with 8-bit weights, horizontal first then
+/// vertical — integer math only, so byte-exact on every host.
 #[inline]
 fn sample_linear(view: &TexView, u: f32, v: f32) -> Option<(u32, u32, u32, u32)> {
-    let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
-    let uf = (u * view.w as f32 * 256.0) as i32 - 128;
-    let vf = (v * view.h as f32 * 256.0) as i32 - 128;
-    let tx0 = (uf >> 8).clamp(0, tw_max);
-    let ty0 = (vf >> 8).clamp(0, th_max);
-    let tx1 = (tx0 + 1).min(tw_max);
-    let ty1 = (ty0 + 1).min(th_max);
-    let fx = (uf & 255) as u32;
-    let fy = (vf & 255) as u32;
-    let w = view.w as i32;
-    let c00 = texel(view, (ty0 * w + tx0) as usize)?;
-    let c01 = texel(view, (ty0 * w + tx1) as usize)?;
-    let c10 = texel(view, (ty1 * w + tx0) as usize)?;
-    let c11 = texel(view, (ty1 * w + tx1) as usize)?;
+    let sample = linear_sample_coordinates(view.w, view.h, u, v)?;
+    let w = view.w as usize;
+    let c00 = texel(view, sample.y0 as usize * w + sample.x0 as usize)?;
+    let c01 = texel(view, sample.y0 as usize * w + sample.x1 as usize)?;
+    let c10 = texel(view, sample.y1 as usize * w + sample.x0 as usize)?;
+    let c11 = texel(view, sample.y1 as usize * w + sample.x1 as usize)?;
     let lerp8 = |a: u32, b: u32, f: u32| (a * (256 - f) + b * f) >> 8;
-    let mix = |c0: u32, c1: u32, c2: u32, c3: u32| lerp8(lerp8(c0, c1, fx), lerp8(c2, c3, fx), fy);
+    let mix = |c0: u32, c1: u32, c2: u32, c3: u32| {
+        lerp8(
+            lerp8(c0, c1, sample.fx),
+            lerp8(c2, c3, sample.fx),
+            sample.fy,
+        )
+    };
     Some((
         mix(c00.0, c01.0, c10.0, c11.0),
         mix(c00.1, c01.1, c10.1, c11.1),
@@ -928,6 +964,22 @@ mod tests {
         let width = spec::SCREEN_W as usize * scale as usize;
         let offset = (y * width + x) * 4;
         fb[offset..offset + 4].try_into().unwrap()
+    }
+
+    #[test]
+    fn linear_sample_coordinates_pin_clamped_edge_semantics() {
+        assert_eq!(
+            linear_sample_coordinates(2, 1, 0.125, 0.5),
+            Some(LinearSample {
+                x0: 0,
+                y0: 0,
+                x1: 1,
+                y1: 0,
+                fx: 192,
+                fy: 0,
+            })
+        );
+        assert_eq!(linear_sample_coordinates(0, 1, 0.5, 0.5), None);
     }
 
     #[test]
