@@ -4,9 +4,10 @@
 TypeScript subset of Vue Vapor — real `ref`/`computed`, real JSX — and the
 Pocket Vapor compiler emits native code for devices that could never host
 a JavaScript engine: **ARM7 on the Game Boy Advance, SM83 on the Game Boy,
-6502 on the NES, and Xtensa LX6 on the ESP32**. No JS engine, no GC, no
-allocator. Vue Vapor compiles the virtual DOM away; Pocket Vapor compiles
-the JavaScript engine away.
+6502 on the NES, and Xtensa LX6 on the ESP32**, plus a host-native C bundle
+for the official Playdate Simulator. No JS engine, no GC, no allocator. Vue
+Vapor compiles the virtual DOM away; Pocket Vapor compiles the JavaScript
+engine away.
 
 | GBA (arm-none-eabi-gcc) | GBA edit mode |
 |---|---|
@@ -16,11 +17,13 @@ the JavaScript engine away.
 |---|---|
 | ![gb](docs/todo-gb.png) | ![nes](docs/todo-nes.png) |
 
-One component file, five executions: the oracle on real vue 3.6, three
-cartridges, and one ESP32 firmware image. Screen geometry is a compile-time
-constant (`SCREEN.width`/`SCREEN.height` from the host module): layout math
-and width ternaries fold per target, so the narrow help strings on
-GB/NES/ESP32 cost zero bytes on GBA — compile-time responsive UI.
+One component file spans the oracle on real vue 3.6, three cartridges, one
+ESP32 firmware image, and a native `.pdx` running in the official Playdate
+Simulator. Screen geometry is a compile-time constant
+(`SCREEN.width`/`SCREEN.height` from the host module): layout math and width
+ternaries fold per target, so target-specific help strings cost zero bytes
+elsewhere — compile-time responsive UI. The Playdate target is currently
+Simulator-only; this does not claim a physical-device build.
 
 The proof is [`examples/todo/todo.tsx`](examples/todo/todo.tsx) — TodoMVC
 with filters, a computed remaining-count, windowed scrolling and a glyph
@@ -28,16 +31,18 @@ editor. The **same file** runs two ways:
 
 - **Oracle**: unmodified on `vue@3.6` `runtime-with-vapor` (through the
   repo's vue-jsx-vapor pipeline) over a micro-DOM, in bun.
-- **Device**: compiled to C by `vapor/compiler/compile.ts`, linked against a
-  target runtime, and run as native code on a console or ESP32 — still with
-  no JavaScript engine.
+- **Native target**: compiled to C by `vapor/compiler/compile.ts`, linked
+  against a target runtime, and run as native code on a console, ESP32, or
+  the official Playdate Simulator — still with no JavaScript engine.
 
 The parity suite drives one tape of button presses through the oracle and
 each console emulator, then compares the rendered logical cell grid —
 characters *and* palettes — cell-for-cell after every press. The ESP32
 device verifier applies the same contract over UART to the physical board;
 it is an opt-in hardware check, not a claim made by the emulator-only test
-suite.
+suite. Playdate currently has a separate interactive build-and-launch path;
+it is not part of that per-press parity matrix and makes no physical
+Playdate claim.
 
 ```
 $ bun test vapor/tests/                 # incl. 3-console per-press parity
@@ -107,7 +112,7 @@ it deliberately over-approximates Vue (static dependency analysis).
 
 The look is declarative now — the same Tailwind names the big framework
 compiles, lowered through each target's style contract (GBA: real palette
-banks; ESP32: RGB565 ink/paper pairs; GB/NES: two glyph styles by
+banks; ESP32: RGB565 ink/paper pairs; GB/NES/Playdate: two glyph styles by
 luminance), with the whole diagnostics matrix one command away:
 
 ```tsx
@@ -123,6 +128,8 @@ gb      OK    20x18, 6 style pairs
 nes     OK    22x18, 6 style pairs
         warn  VS104: 3 distinct color pairs render as the same glyph style ...
 esp32   OK    20x18, 6 style pairs
+playdate OK   50x30, 6 style pairs
+        warn  VS104: 3 distinct color pairs render as the same glyph style ...
 meowbit OK    board (esp32)
         warn  VB103: "start" is only reachable as the a+b chord on meowbit ...
 $ bun vapor/compiler/cli.ts check app.tsx --strict   # lossy lowering = failure
@@ -138,7 +145,8 @@ ability to enumerate devices.
 And the oracle is visible: `bun run vapor:dev` serves the app on real Vue
 Vapor in your browser — inspectable DOM rows, keyboard as the pad,
 `?target=gb` to see the DMG's two-style world before you burn a cart, or
-`?target=esp32` to preview the MeowBit's 20×18 logical viewport.
+`?target=esp32` to preview the MeowBit's 20×18 logical viewport. Use
+`?target=playdate` for the Playdate target's 50×30 monochrome grid.
 
 ## Commands
 
@@ -155,6 +163,8 @@ bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target nes    # → tod
 bun run vapor:esp32                                        # → app-only todo.esp32.bin + gen-esp32/
 bun run vapor:esp32:flash                                  # build + flash the connected ESP32 MeowBit
 bun run vapor:esp32:verify                                 # build + flash + replay the Vue-oracle tape
+bun run vapor:playdate                                     # → dist/vapor/todo.pdx (Simulator bundle)
+bun run vapor:playdate:play                                # build + open it in the official Simulator
 bun vapor/scripts/play.ts                                 # build + open in mGBA
 bun vapor/scripts/dev.ts [app.tsx]                        # visible oracle in the browser
 bun vapor/compiler/cli.ts check <app.tsx> [--strict]      # cross-target diagnostics matrix
@@ -165,15 +175,35 @@ bun test vapor/tests/                                     # oracle + compiler + 
 Toolchains: `arm-none-eabi-gcc` + `mgba` (GBA/GB), `sdcc` + `rgbfix` (GB),
 `cc65` (NES, emulated by the jsnes dev-dependency), and **ESP-IDF v6.0.2**
 (ESP32; set `IDF_PATH` / `IDF_TOOLS_PATH` when auto-discovery does not find
-the installation). Oracle tests run with bun alone. Notable per-target facts the
-runtime absorbs: the console shadow grid IS the debug block (fixed
-WRAM/CPU-RAM addresses), so the harness reads the logical screen even while
-a 1 MHz SM83 trickles VRAM through vblank; DMG has one palette, so logical
-palettes map to baked glyph styles; NES fits grid + pool + views into 2 KB
-of CPU RAM with the font in CHR-ROM; ESP32 rasterizes the same logical
-20×18 grid into RGB565 on a 160×128 ST7735; and sdcc 4.6's SM83 port
-miscompiles some u8-by-u8 multiplies, so generated indexing is u16 pointer
-arithmetic and bit masks come from a ROM table.
+the installation). Playdate uses Panic's official macOS SDK and host clang.
+Install the SDK from <https://play.date/dev/>; the build resolves it from
+`PLAYDATE_SDK_PATH`, then `SDKRoot` in `~/.Playdate/config`, then the
+installer default `~/Developer/PlaydateSDK`. For example:
+
+```sh
+export PLAYDATE_SDK_PATH="$HOME/Developer/PlaydateSDK"
+bun run vapor:playdate
+```
+
+Both Playdate commands invoke the SDK's `make simulator` path and package a
+host `pdex.dylib` with `pdc`. They intentionally do not run `make device` or
+claim a device-compatible `.pdx`. Oracle tests run with bun alone. Notable
+per-target facts the runtime absorbs: the console shadow grid IS the debug
+block (fixed WRAM/CPU-RAM addresses), so the harness reads the logical
+screen even while a 1 MHz SM83 trickles VRAM through vblank; DMG has one
+palette, so logical palettes map to baked glyph styles; NES fits grid +
+pool + views into 2 KB of CPU RAM with the font in CHR-ROM; ESP32
+rasterizes the same logical 20×18 grid into RGB565 on a 160×128 ST7735;
+Playdate maps a 50×30 grid of 8×8 glyphs directly onto its 400×240 1-bit
+framebuffer; and sdcc 4.6's SM83 port miscompiles some u8-by-u8 multiplies,
+so generated indexing is u16 pointer arithmetic and bit masks come from a
+ROM table.
+
+On Playdate, D-pad presses are direct. A short A/B press emits Pocket A/B
+when released; holding A for 500 ms emits START (new/save), and holding B
+for 500 ms emits SELECT (clear/cancel), without also emitting the short
+press. Right also cycles the Todo filter, so the demo does not need a
+physical R button.
 
 ## Layout
 
@@ -187,7 +217,8 @@ vapor/
   runtime/             vapor.h contract + vapor_core.c (shared grid/strings/line)
   runtime/gba|gb|nes/  per-console halves: crt0, video commit, input, debug block
   runtime/esp32/       ESP-IDF loop, ST7735 RGB565 raster, buttons, UART receipt
-  scripts/             dev.ts (visible oracle), play.ts, shot.ts, esp32.ts (device protocol)
+  runtime/playdate/    official Simulator framebuffer, input and update loop
+  scripts/             dev.ts, play.ts, shot.ts, esp32.ts, playdate.ts
   tests/               styles + compiler + oracle + 3-console parity + shared device tape
   tests/harness/       headless libmgba runner (GBA+GB) + jsnes runner (NES)
 ```

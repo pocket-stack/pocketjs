@@ -135,6 +135,8 @@
     "vapor:esp32": "bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target esp32",
     "vapor:esp32:flash": "bun vapor/scripts/esp32.ts flash",
     "vapor:esp32:verify": "bun vapor/scripts/esp32.ts verify",
+    "vapor:playdate": "bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target playdate",
+    "vapor:playdate:play": "bun vapor/scripts/playdate.ts",
     "vapor:dev": "bun vapor/scripts/dev.ts",
     "vapor:check": "bun vapor/compiler/cli.ts check vapor/examples/todo/todo.tsx"
   },

@@ -14,11 +14,11 @@
 // the app's PAIR TABLE; the pal byte in the cell grid is the pair id on
 // every target. What a pair id MEANS is the target's style contract:
 //
-//   gba   "rgb555" pair id = BG palette bank (ink/paper BGR555), <= 15 pairs
-//   esp32 "rgb565" pair id = direct ink/paper RGB565 table index
-//   gb    "styles2" pair id -> glyph style via luminance (dark-on-light /
-//   nes             light-on-dark); collapsing distinct pairs is a warning,
-//                   or an error under --strict
+//   gba      "rgb555" pair id = BG palette bank (ink/paper BGR555), <= 15 pairs
+//   esp32    "rgb565" pair id = direct ink/paper RGB565 table index
+//   gb/nes/
+//   playdate "styles2" pair id -> glyph style by luminance (dark-on-light /
+//            light-on-dark); collapsing distinct pairs warns, or errors in --strict
 //
 // The oracle (real Vue in a browser/bun) renders the same classes with the
 // full-color web contract — degradation is visible by flipping targets.
@@ -113,6 +113,7 @@ export const STYLE_CAPS: Record<string, TargetStyleCaps> = {
   esp32: { kind: "rgb565", maxPairs: 256 },
   gb: { kind: "styles2" },
   nes: { kind: "styles2" },
+  playdate: { kind: "styles2" },
   web: { kind: "web" },
 };
 
@@ -251,10 +252,16 @@ export function styleTableCss(table: StyleTable, target: string): string {
       ink = q(ink);
       paper = q(paper);
     } else if (caps.kind === "styles2") {
-      // DMG-flavored two-style preview
+      // Match the target's two-style display: Playdate is pure 1-bit while
+      // GB keeps the familiar DMG green preview.
       const s = styleOfPair(pair);
-      ink = s === 0 ? 0x0f380f : 0x9bbc0f;
-      paper = s === 0 ? 0x9bbc0f : 0x0f380f;
+      if (target === "playdate") {
+        ink = s === 0 ? 0x000000 : 0xffffff;
+        paper = s === 0 ? 0xffffff : 0x000000;
+      } else {
+        ink = s === 0 ? 0x0f380f : 0x9bbc0f;
+        paper = s === 0 ? 0x9bbc0f : 0x0f380f;
+      }
     }
     lines.push(`row[data-pal="${id}"] { color: ${css(ink)}; background: ${css(paper)}; }`);
   });

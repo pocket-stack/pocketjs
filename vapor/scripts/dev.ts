@@ -7,10 +7,10 @@
 // The page mounts the same component file the cartridges are compiled from,
 // through the same vue-jsx-vapor pipeline — but onto the browser DOM: every
 // <row> is a live element (devtools-inspectable), keyboard maps to the pad,
-// and ?target=web|gba|gb|nes|esp32 re-renders with that target's screen geometry
-// and style lowering, so degradation is something you can SEE while
-// debugging. Keys: arrows = d-pad, Z=A, X=B, Enter=Start, Shift=Select,
-// A=L, S=R.
+// and ?target=web|gba|gb|nes|esp32|playdate re-renders with that target's
+// screen geometry and style lowering, so degradation is something you can
+// SEE while debugging. Keys: arrows = d-pad, Z=A, X=B, Enter=Start,
+// Shift=Select, A=L, S=R.
 
 import { join, resolve } from "node:path";
 import { jsxPlugin } from "../../framework/compiler/jsx-plugin.ts";
@@ -31,6 +31,7 @@ const TARGET_DIMS: Record<string, { w: number; h: number }> = {
   gb: { w: 20, h: 18 },
   nes: { w: 22, h: 18 },
   esp32: { w: 20, h: 18 },
+  playdate: { w: 50, h: 30 },
 };
 
 function pickTarget(url: URL): string {
@@ -155,5 +156,5 @@ Bun.serve({
 
 console.log(`pocket vapor dev host: http://localhost:${port}/  (entry: ${entry})`);
 console.log(
-  `targets: http://localhost:${port}/?target=web|gba|gb|nes|esp32 — edit ${entry} and refresh`,
+  `targets: http://localhost:${port}/?target=web|gba|gb|nes|esp32|playdate — edit ${entry} and refresh`,
 );

@@ -4,7 +4,14 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { compileVaporApp } from "../compiler/compile.ts";
-import { parseRowClass, rgb565, STYLE_CAPS, styleOfPair, StyleTable } from "../compiler/styles.ts";
+import {
+  parseRowClass,
+  rgb565,
+  STYLE_CAPS,
+  styleOfPair,
+  StyleTable,
+  styleTableCss,
+} from "../compiler/styles.ts";
 
 const ENTRY = join(import.meta.dir, "..", "examples", "todo", "todo.tsx");
 
@@ -75,6 +82,20 @@ describe("per-target lowering", () => {
     expect(rgb565(0xff0000)).toBe(0xf800);
     expect(rgb565(0x00ff00)).toBe(0x07e0);
     expect(rgb565(0x0000ff)).toBe(0x001f);
+  });
+
+  test("playdate lowers pairs to two styles with a pure black-and-white preview", () => {
+    const table = new StyleTable();
+    table.resolveClass("text-[#000000] bg-[#ffffff]");
+
+    expect(STYLE_CAPS.playdate).toEqual({ kind: "styles2" });
+    expect(table.lower("playdate", true)).toEqual({ styleMap: [1, 0], issues: [] });
+    expect(styleTableCss(table, "playdate")).toBe(
+      [
+        'row[data-pal="0"] { color: #ffffff; background: #000000; }',
+        'row[data-pal="1"] { color: #000000; background: #ffffff; }',
+      ].join("\n"),
+    );
   });
 });
 

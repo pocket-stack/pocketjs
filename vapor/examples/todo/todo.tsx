@@ -33,6 +33,7 @@ const EDIT_Y = SCREEN.height - 3;
 const HELP_Y = SCREEN.height - 1;
 const TEXT_MAX = 20;
 const NARROW = SCREEN.width < 30;
+const PLAYDATE = SCREEN.width === 50;
 
 // ---- UI components ----------------------------------------------------------
 // Presentational, pure functions of props: they own their palette and
@@ -209,10 +210,14 @@ export default () => {
         line={HELP_Y}
         text={
           editing.value
-            ? NARROW
+            ? PLAYDATE
+              ? "A:PUT B:DEL <>:GLYPH HOLD-A:SAVE HOLD-B:QUIT"
+              : NARROW
               ? "A:+ B:- ST:OK SE:Q"
               : "A:PUT B:DEL ST:SAVE SE:QUIT"
-            : NARROW
+            : PLAYDATE
+              ? "A:DONE B:DEL >:FILTER HOLD-A:NEW HOLD-B:CLEAR"
+              : NARROW
               ? "A:OK B:X >:F ST:NEW"
               : "A:DONE B:DEL R:FILT ST:NEW"
         }

@@ -2,7 +2,8 @@
  *
  * Two parties compile against this header: the fixed per-console runtime
  * (gba/vapor_gba.c, gb/vapor_gb.c, nes/vapor_nes.c,
- * esp32/vapor_esp32.c) and the compiler-generated application (gen_app.c).
+ * esp32/vapor_esp32.c, playdate/vapor_playdate.c) and the
+ * compiler-generated application (gen_app.c).
  * The runtime owns the cell grid, video commit, input edges, the frame loop
  * and the debug block; the generated
  * app owns all reactive state, computeds, paint effects and button
@@ -10,19 +11,30 @@
  * compile time.
  *
  * Portability: this compiles under arm-none-eabi-gcc (ARM7TDMI), sdcc
- * (SM83), cc65 (6502), and xtensa-esp-elf-gcc. `int` is 16-bit on the
- * 8-bit consoles, so the 32-bit types are `long`; cc65 is C89, so
- * `inline` vanishes there.
+ * (SM83), cc65 (6502), xtensa-esp-elf-gcc, and Playdate's host/device C
+ * toolchains. `long` is 64-bit in the macOS Simulator, so Playdate uses
+ * stdint's exact-width types. `int` is 16-bit on the 8-bit consoles, where
+ * the 32-bit types remain `long`; cc65 is C89, so `inline` vanishes there.
  */
 #ifndef POCKET_VAPOR_H
 #define POCKET_VAPOR_H
 
+#if defined(TARGET_SIMULATOR) || defined(TARGET_PLAYDATE)
+#include <stdint.h>
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef int8_t s8;
+typedef int16_t s16;
+typedef int32_t s32;
+#else
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef unsigned long u32;
 typedef signed char s8;
 typedef signed short s16;
 typedef signed long s32;
+#endif
 
 #if defined(__CC65__)
 #define inline
@@ -103,7 +115,8 @@ u16 app_debug_state(volatile u8 *out); /* mirror reactive state; returns bytes *
  *   GB:  vp_font_tiles (2 styles x 95) x 16B 2bpp interleaved
  *   NES: vp_font_tiles (2 styles x 95) x 16B 2bpp planar
  *   ESP32: vp_font_tiles 95x8B 1bpp, direct RGB565 ink/paper tables
- *   GB/NES: vp_pal_style[8] maps logical palette -> glyph style (0/1) */
+ *   Playdate: vp_font_tiles 95x8B 1bpp
+ *   GB/NES/Playdate: vp_pal_style maps logical palette -> glyph style (0/1) */
 extern const u8 vp_font_tiles[];
 extern const u16 vp_palettes[];
 extern const u8 vp_palette_count;

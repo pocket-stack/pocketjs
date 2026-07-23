@@ -1,11 +1,14 @@
 // vapor/test/compiler.test.ts — subset diagnostics + deterministic output.
 
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, readlink, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadBoard } from "../compiler/boards.ts";
 import { compileVaporApp, VAPOR_TARGETS, VaporCompileError } from "../compiler/compile.ts";
 import { esp32BuildId } from "../compiler/esp32.ts";
 import { FONT8 } from "../compiler/font.gen.ts";
+import { preparePlaydateProject, safePlaydateProductName } from "../compiler/playdate.ts";
 
 const ENTRY = join(import.meta.dir, "..", "examples", "todo", "todo.tsx");
 
@@ -86,6 +89,66 @@ describe("pocket vapor compiler", () => {
     expect(compiled.c).toContain("const u16 vp_backdrop = 4260;");
     expect(compiled.c).toContain("const u8 vp_pal_style[2] = { 0,1 };");
     expect(compiled.plan).toContain("760 B font + 12 B style data");
+  });
+
+  test("playdate uses its native 50x30 grid and emits 1bpp styles2 data", () => {
+    expect(VAPOR_TARGETS.playdate).toEqual({
+      name: "playdate",
+      width: 50,
+      height: 30,
+      poolCap: 32,
+      strCap: 24,
+    });
+
+    const compiled = compileVaporApp(
+      "playdate.tsx",
+      minimal("", '<row y={0} class="text-[#ff0000] bg-[#00ff00]">{count.value}</row>'),
+      "PLAYDATE",
+      "playdate",
+    );
+    expect(compiled.c).toContain("/* target: playdate (50x30) */");
+    expect(compiled.c).toContain("#define VP_GRID_W 50");
+    expect(compiled.c).toContain("#define VP_GRID_H 30");
+    expect(compiled.c).toContain("#define VP_STR_CAP 24");
+    expect(compiled.c).toContain("#define VP_VIEW_CAP 32");
+
+    const font = compiled.c.match(/const u8 vp_font_tiles\[\] = \{ ([^}]*) \};/);
+    expect(font).not.toBeNull();
+    const fontBytes = font![1].split(",").map(Number);
+    expect(fontBytes).toHaveLength(95 * 8);
+    expect(fontBytes).toEqual(FONT8.flat());
+
+    expect(compiled.c).toContain("const u8 vp_pal_style[2] = { 1,0 };");
+    expect(compiled.c).not.toContain("vp_ink565");
+    expect(compiled.c).not.toContain("vp_paper565");
+    expect(compiled.c).not.toContain("vp_palettes");
+    expect(compiled.diagnostics).toEqual([]);
+    expect(compiled.plan).toContain("ROM data: 9 B strings + 760 B font + 2 B style data");
+  });
+
+  test("playdate keeps Make product names inert", () => {
+    expect(safePlaydateProductName("/tmp/todo.pdx")).toBe("todo.pdx");
+    expect(safePlaydateProductName("/tmp/my; false $app.pdx")).toBe("my-false-app.pdx");
+    expect(safePlaydateProductName("/tmp/....pdx")).toBe("app.pdx");
+  });
+
+  test("playdate isolates custom SDK paths from the generated Makefile", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pocket-vapor-playdate "));
+    try {
+      const sdk = join(root, "SDK Root");
+      const outPdx = join(root, "my; false $app.pdx");
+      await mkdir(sdk);
+      const app = compileVaporApp("playdate.tsx", minimal(""), "PLAYDATE", "playdate");
+      const prepared = await preparePlaydateProject(app, outPdx, sdk);
+
+      expect(prepared.product).toBe("my-false-app.pdx");
+      expect(await readlink(join(prepared.projectDir, "sdk"))).toBe(sdk);
+      expect(await Bun.file(join(prepared.projectDir, "Makefile")).text()).toContain(
+        "PRODUCT = my-false-app.pdx\nSDK = sdk",
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("esp32 build identity is deterministic, source- and board-sensitive", async () => {
