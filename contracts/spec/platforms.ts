@@ -162,6 +162,7 @@ export type PocketCapabilityId = CapabilityId<typeof POCKET_CAPABILITIES>;
 export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   readonly psp: TargetProfile<PocketCapabilityId>;
   readonly vita: TargetProfile<PocketCapabilityId>;
+  readonly pocketbook: TargetProfile<PocketCapabilityId>;
   readonly "macos-widget": TargetProfile<PocketCapabilityId>;
 }>({
   psp: {
@@ -197,6 +198,31 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "input.analog.left",
       "input.buttons",
       "input.cursor",
+      "input.touch",
+      "text.glyphs.baked",
+    ],
+  },
+  // PocketBook e-readers (inkview): hosts/pocketbook reuses the backend-
+  // agnostic ui surface + the core software rasterizer. Same logical viewport
+  // and density as vita (480×272 @2x → a 960×544 render). physicalViewport is
+  // that nominal 2x surface — NOT the raw panel — so integer-fit apps validate
+  // (real panels vary by model, e.g. Verse 1024×758, Era Color 1264×1680, and
+  // are not integer multiples of 480×272); the host queries the actual panel at
+  // runtime and integer-fit centers the 960×544 render on it. No analog nub;
+  // a REAL capacitive pointer instead of the synthesized cursor. Color panels
+  // (Era Color) blit RGB, grayscale panels (Verse) blit Gray8.
+  pocketbook: {
+    hostAbi: 4,
+    platform: "pocketbook",
+    form: "takeover",
+    display: {
+      physicalViewport: [960, 544],
+      logicalViewports: [[480, 272]],
+      presentations: ["integer-fit"],
+      rasterDensity: 2,
+    },
+    capabilities: [
+      "input.buttons",
       "input.touch",
       "text.glyphs.baked",
     ],
