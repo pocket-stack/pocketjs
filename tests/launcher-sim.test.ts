@@ -124,14 +124,14 @@ describe("switch protocol (sim host policy)", () => {
     expect(w.resume()).toBe(chrome);
   }, 120_000);
 
-  test("holding RTRIGGER flows the deck at 18 cards/s", async () => {
+  test("holding RTRIGGER flows the deck at 10 cards/s", async () => {
     const w = await bootLauncherWorld({ hz: 60 });
     await settle(w, 20);
     const motionIndex = registry.apps.findIndex((app) => app.title.includes("Motion Lab"));
     expect(motionIndex).toBeGreaterThan(0);
-    // Move far enough to reach Motion Lab at 18 cards/s. Derive its index
+    // Move far enough to reach Motion Lab at 10 cards/s. Derive its index
     // from the registry so adding an earlier demo does not stale the test.
-    const heldFrames = Math.ceil((motionIndex * 60) / 18);
+    const heldFrames = Math.ceil((motionIndex * 60) / 10);
     for (let i = 0; i < heldFrames; i++) await w.step(BTN.RTRIGGER);
     await settle(w, 20);
     expect(treeHasText(w.getTree(), "Motion Lab")).toBe(true);
@@ -145,7 +145,7 @@ describe("switch protocol (sim host policy)", () => {
     test(`${source.name} flow distance is invariant at 60/30/20 Hz`, async () => {
       const hzValues = [60, 30, 20] as const;
       const holdSeconds = 0.5;
-      const distance = 18 * holdSeconds;
+      const distance = 10 * holdSeconds;
       expect(Number.isInteger(distance)).toBe(true);
       const destination = registry.apps[distance]!;
 
@@ -169,7 +169,7 @@ describe("switch protocol (sim host policy)", () => {
   test("a single-frame trigger tap moves exactly one card, never snaps back", async () => {
     const w = await bootLauncherWorld({ hz: 60 });
     await settle(w, 20);
-    // One held frame advances pos by only 18/60 of a card — the release
+    // One held frame advances pos by only 10/60 of a card — the release
     // rule must still land it one card over, not round home.
     await w.step(BTN.RTRIGGER);
     await settle(w, 20);

@@ -133,11 +133,12 @@ bun tools/launcher.ts build --target vita -- --release
 
 ## Browse timing and PSP batching
 
-The public behavior is 18 cards per virtual second, not 0.3 cards per host
-frame. The launcher multiplies its per-tick velocity by `ticksPerFrame()`, so
-60, 30, and 20 Hz host policies cover the same distance in the same virtual
-time. A host that deliberately presents at 30 Hz publishes `__simHz = 30`;
-the app does not infer hardware speed or branch on a target name.
+The public behavior is 10 cards per virtual second, not a fixed distance per
+host frame. The launcher multiplies its per-tick velocity by
+`ticksPerFrame()`, so 60, 30, and 20 Hz host policies cover the same distance
+in the same virtual time. A host that deliberately presents at 30 Hz
+publishes `__simHz = 30`; the app does not infer hardware speed or branch on
+a target name.
 
 On PSP, controller input peeks the newest sample instead of consuming a sample
 and potentially waiting for the next controller cycle; vblank present remains
@@ -153,7 +154,7 @@ deck's CPU work from about 42 ms to about 12 ms, but its texture-heavy GE pass
 still completed across the third vblank (about 50 ms between presentations).
 A multi-app PSP package therefore uses an explicit 20 Hz host policy:
 `__simHz = 20`, three fixed core ticks per virtual frame, and a three-vblank
-presentation cadence. The deck still covers 18 cards per second and ms-based
+presentation cadence. The deck still covers 10 cards per second and ms-based
 animations retain their durations; they are sampled at 20 observations per
 second. Standalone PSP apps remain at 60 Hz. This is one process-wide
 timebase, never a launcher-name branch or a `slowPsp` capability.
@@ -206,7 +207,7 @@ JS. When summoned, the frozen shot stretches under a dim scrim — the
 "overlay" is honest compositing inside one guest, over a baked Aqua-era
 stage gradient. All four browse inputs (d-pad LEFT/RIGHT and the L/R
 triggers) are ONE mechanism: holding scrubs the deck continuously through
-fractional positions at 18 cards/s (per-frame `jump()`s; release tweens
+fractional positions at 10 cards/s (per-frame `jump()`s; release tweens
 home from the exact fraction), and a quick tap always lands exactly one
 card — a flow that ends displaced never rounds back onto its origin.
 CIRCLE launches the centered card — console convention; SELECT/CROSS

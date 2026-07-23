@@ -36,8 +36,8 @@ const FRONT_Z = 46;
 const RAIL_VISIBLE = 4;
 /** Browse velocity in cards per 1/60 s core tick. A host frame can advance
  *  multiple ticks, so multiplying by ticksPerFrame() keeps the deck at
- *  18 cards/s under every supported simulation rate. */
-const FLOW_PER_TICK = 18 / 60;
+ *  10 cards/s under every supported simulation rate. */
+const FLOW_PER_TICK = 10 / 60;
 
 interface CardTarget {
   translateX: number;
