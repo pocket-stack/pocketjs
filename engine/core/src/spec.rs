@@ -361,6 +361,32 @@ pub mod stream {
     pub const FLAG_ENDED: u16 = 1;
 }
 
+/// SVC WIRE protocol (PKNT) — the svc mailbox over a socket.
+/// Full byte layout in spec.ts; parsed by engine/core/src/wire.rs.
+pub mod wire {
+    pub const MAGIC: u32 = 0x544e4b50; // 'PKNT' LE
+    pub const BEACON_MAGIC: u32 = 0x42444b50; // 'PKDB' LE
+    pub const VERSION: u8 = 1;
+    pub const HEADER_SIZE: usize = 8;
+    pub const MAX_PAYLOAD: usize = 262144;
+    pub const BEACON_PORT: u16 = 8621;
+    pub const PORT: u16 = 8622;
+    pub const MSG_PING: u8 = 0x01;
+    pub const MSG_PONG: u8 = 0x02;
+    pub const MSG_CTRL: u8 = 0x10;
+    pub const MSG_FILE: u8 = 0x20;
+    pub const MSG_STREAM_OPEN: u8 = 0x30;
+    pub const MSG_STREAM_CLOSE: u8 = 0x31;
+    pub const MSG_VIDEO_SLOT: u8 = 0x32;
+    pub const MSG_AUDIO_CHUNK: u8 = 0x33;
+    pub const MSG_STREAM_MARK: u8 = 0x34;
+    pub const SLOT_HEADER_SIZE: usize = 16;
+    pub const CHUNK_HEADER_SIZE: usize = 8;
+    pub const MARK_SIZE: usize = 8;
+    pub const SLOT_FLAG_RLE: u16 = 1;
+    pub const MARK_FLAG_ENDED: u16 = 1;
+}
+
 /// STYLE TABLE (styles.bin) format constants — full layout in spec.ts.
 pub mod style_table {
     pub const MAGIC: u32 = 0x54534344; // 'DCST' LE

@@ -738,6 +738,95 @@ export const STREAM_CHUNK_HEADER_SIZE = 16;
 export const STREAM_FLAG_ENDED = 1 << 0;
 
 // ---------------------------------------------------------------------------
+// SVC WIRE protocol (PKNT) — the svc mailbox over a socket
+// ---------------------------------------------------------------------------
+// The PSP reaches its companion host through PSPLINK's usbhostfs file share
+// (SVC above); hosts without a shared filesystem (the Vita, over WiFi) speak
+// the SAME mailbox + side-file + .pkst semantics over one TCP connection.
+// One connection on purpose: TCP ordering is load-bearing — STREAM_OPEN
+// precedes the JSON line announcing it, FILE pushes precede the results line
+// that references them — and a second channel would reintroduce exactly the
+// cross-channel races the file transport never had.
+//
+// Discovery: the host broadcasts a UDP beacon once a second on
+// WIRE_BEACON_PORT; the datagram's SOURCE ADDRESS is the connect target.
+//
+//   Beacon datagram:
+//     off 0  u32  magic    = 0x42444b50  bytes 'P','K','D','B'
+//     off 4  u8   version  = WIRE_VERSION
+//     off 5  u8   reserved (0)
+//     off 6  u16  tcpPort  the WIRE listener's port
+//     off 8  u8   appLen, then app id bytes (the pocket-svc app segment)
+//     ...    u8   nameLen, then a display name (<= 32 bytes, for pickers)
+//
+// Handshake (before any frame):
+//   device -> host:  u32 magic 'PKNT' · u8 version · u8 reserved ·
+//                    u8 appLen · app id bytes
+//   host -> device:  u32 magic 'PKNT' · u8 acceptedVersion · u8 flags (0) ·
+//                    u16 reserved
+// A magic/version/app mismatch closes the socket.
+//
+// Every subsequent message, both directions, is one frame:
+//
+//   Frame header (WIRE_HEADER_SIZE = 8 bytes):
+//     off 0  u8   type      (WIRE_MSG)
+//     off 1  u8   flags     type-specific (see below)
+//     off 2  u16  reserved (0)
+//     off 4  u32  payloadLen (<= WIRE_MAX_PAYLOAD; oversize closes the socket)
+//
+// Types (unknown types are skipped by length — forward compatible):
+//   ping (h->d)        u32 token, every ~2 s; either side drops the
+//   pong (d->h)        connection after ~10 s of silence. Pong echoes.
+//   ctrl (both)        one UTF-8 JSON line, no trailing \n — the in.jsonl /
+//                      out.jsonl mailbox semantics (<= SVC_POLL_BUF bytes).
+//   file (h->d)        u16 pathLen · path (svc-relative, side_path rules) ·
+//                      whole IMG-entry bytes (<= SVC_IMG_MAX_BYTES). Pushed
+//                      PROACTIVELY before the ctrl line that references it,
+//                      so a synchronous loadImgFile hits a warm device cache.
+//   streamOpen (h->d)  u16 pathLen · path (what the announce line will name)
+//                      · the verbatim 96-byte .pkst header block. The device
+//                      allocates a RAM ring image (stream_rx.rs) — every
+//                      streamOpen is a full ring reset.
+//   streamClose (h->d) empty payload.
+//   videoSlot (h->d)   u32 seq · u32 frameIndex · u16 w · u16 h ·
+//                      u16 flags (bit 0 = indices PackBits-RLE) · u16 rsv ·
+//                      u8[1024] palette · indices (raw w*h, or RLE decoding
+//                      to exactly w*h). Applied payload-first, seq-published-
+//                      after into the RAM ring, preserving the .pkst torn-
+//                      frame contract verbatim.
+//   audioChunk (h->d)  u32 seq · u32 startFrame · s16 PCM, exactly
+//                      chunkFrames*channels samples.
+//   streamMark (h->d)  u32 epoch · u16 flags (bit 0 = ended) · u16 reserved —
+//                      carries bumpEpoch()/markEnded() into the ring header.
+
+export const WIRE_MAGIC = 0x544e4b50; // 'PKNT' LE
+export const WIRE_BEACON_MAGIC = 0x42444b50; // 'PKDB' LE
+export const WIRE_VERSION = 1;
+export const WIRE_HEADER_SIZE = 8;
+export const WIRE_MAX_PAYLOAD = 256 * 1024;
+/** UDP discovery beacon (host broadcasts; device listens). */
+export const WIRE_BEACON_PORT = 8621;
+/** The host's TCP listener for the framed protocol. */
+export const WIRE_PORT = 8622;
+export const WIRE_MSG = {
+  ping: 0x01,
+  pong: 0x02,
+  ctrl: 0x10,
+  file: 0x20,
+  streamOpen: 0x30,
+  streamClose: 0x31,
+  videoSlot: 0x32,
+  audioChunk: 0x33,
+  streamMark: 0x34,
+} as const;
+/** videoSlot leading fields (seq..reserved) — the palette follows. */
+export const WIRE_SLOT_HEADER_SIZE = 16;
+export const WIRE_CHUNK_HEADER_SIZE = 8;
+export const WIRE_MARK_SIZE = 8;
+export const WIRE_SLOT_FLAG_RLE = 1 << 0;
+export const WIRE_MARK_FLAG_ENDED = 1 << 0;
+
+// ---------------------------------------------------------------------------
 // Font slots
 // ---------------------------------------------------------------------------
 // A "font slot" is one baked (family-weight, px) atlas. The compiler derives
