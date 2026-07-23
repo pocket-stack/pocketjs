@@ -23,23 +23,35 @@
 //     the SAME pixel math that rendered the keys; CIRCLE presses via the
 //     focus system, so `focus:`/`active:` styling is native and zero-JS.
 //   - chords (PSP tradition): □ backspace · △ space · × close · R shift ·
-//     L symbols · START commit.
-//   - touch: per-frame contact edges resolve through input.hitFocusable
-//     (exact, any placement); hosts without hitTest fall back to
-//     dock-at-the-bottom geometry.
+//     L symbols · START commit. Holding □ auto-repeats backspace.
+//   - touch: the modern press model through the gesture layer — a down
+//     press-highlights the key (native focus:/active: variants), dragging
+//     retargets across keys, sliding off the panel cancels, and the key
+//     commits on release-inside. Backspace fires on the down and repeats
+//     while held. Contacts resolve through input.hitFocusable (exact, any
+//     placement); hosts without hitTest fall back to dock-at-the-bottom
+//     geometry. While the panel is up a touch block mutes app gestures
+//     underneath (the OSK's own recognizer is exempt).
 //   - cursor: keys are plain Focusables in a scope — hover-focus and click
 //     already work, nothing to adapt.
 
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor, type JSX as SolidJSX } from "solid-js";
 import { BTN, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { animate } from "./anim.ts";
-import { virtualFrame } from "./clock.ts";
+import { simulationHz, virtualFrame } from "./clock.ts";
 import { Focusable, FocusScope, Text, View } from "./components.ts";
 import { pushButtonHandlerBlock } from "./frame.ts";
+import { createGesture, pushTouchBlock } from "./gesture.ts";
 import { getOps, hostViewport } from "./host.ts";
-import { focusNode, getFocused, hitFocusable, pushFocusController, type FocusDirection } from "./input.ts";
+import {
+  focusNode,
+  getFocused,
+  hitFocusable,
+  pushFocusController,
+  setActiveNode,
+  type FocusDirection,
+} from "./input.ts";
 import { onButtonPress, onFrame } from "./lifecycle.ts";
-import { touches } from "./touch.ts";
 import {
   clampPos,
   keyAtPoint,
@@ -196,8 +208,10 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
   const [layer, setLayer] = createSignal<OskLayerName>("lower");
   const rows = createMemo(() => layoutRows(OSK_LAYERS[layer()], INNER_W));
 
-  // -- modality: mute every app button handler while the panel lives --------
+  // -- modality: mute app button handlers AND app gestures while the panel
+  //    lives (the list under the keyboard sees onCancel the frame it opens).
   onCleanup(pushButtonHandlerBlock());
+  onCleanup(pushTouchBlock());
 
   // -- key node bookkeeping (rebuilt whenever the layer re-renders) ---------
   let rootNode: NodeMirror | undefined;
@@ -284,24 +298,82 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
   onButtonPress(BTN.RTRIGGER, () => setLayer((l) => (l === "upper" ? "lower" : "upper")), chord);
   onButtonPress(BTN.LTRIGGER, () => setLayer((l) => (l === "symbols" ? "lower" : "symbols")), chord);
 
-  // -- touch: contact edges -> keys (input.touch platforms) -----------------
-  let prevTouchIds = new Set<number>();
-  onFrame(() => {
-    const list = touches();
-    if (list.length === 0) {
-      if (prevTouchIds.size > 0) prevTouchIds = new Set();
-      return;
-    }
-    const ids = new Set<number>();
-    for (const contact of list) {
-      ids.add(contact.id);
-      if (prevTouchIds.has(contact.id)) continue;
-      const rect = resolveTouch(contact.x, contact.y);
-      if (!rect) continue;
+  // -- touch: the modern press model ----------------------------------------
+  // Down press-highlights (focus + active:), dragging retargets across keys,
+  // sliding off the panel cancels, release-inside commits. Backspace is the
+  // exception: it fires on the DOWN and auto-repeats while held (below).
+  // Multi-contact: each finger arms its own key (two-thumb typing); the
+  // highlight follows the most recent contact event.
+  const armed = new Map<number, OskKeyRect | null>();
+  const highlight = (rect: OskKeyRect | null): void => {
+    if (rect) {
       focusPos({ row: rect.row, col: rect.col });
-      activate(rect.key);
+      setActiveNode(keyNodes[rect.row]?.[rect.col] ?? null);
+    } else {
+      setActiveNode(null);
     }
-    prevTouchIds = ids;
+  };
+  createGesture({
+    region: {
+      node: () => rootNode,
+      rect: () => {
+        // Dock-at-the-bottom geometry for hosts without hitTest.
+        const vh = hostViewport(getOps())?.h ?? SCREEN_H;
+        return { x: 0, y: vh - OSK_H, w: SCREEN_W, h: OSK_H };
+      },
+    },
+    allowWhenBlocked: true, // exempt from the OSK's own touch block
+    tapSlop: 9999, // the panel owns its press model — no tap/pan recognition
+    onDown: (c) => {
+      const rect = resolveTouch(c.x, c.y);
+      armed.set(c.id, rect);
+      highlight(rect);
+      if (rect?.key.action === "backspace") activate(rect.key);
+    },
+    onMove: (c) => {
+      const rect = resolveTouch(c.x, c.y);
+      const prev = armed.get(c.id) ?? null;
+      if (rect === prev) return;
+      armed.set(c.id, rect);
+      highlight(rect); // retarget — or cancel when the finger slid off
+    },
+    onUp: (c) => {
+      const rect = armed.get(c.id) ?? null;
+      armed.delete(c.id);
+      setActiveNode(null);
+      if (rect && rect.key.action !== "backspace") activate(rect.key);
+    },
+    onCancel: (c) => {
+      armed.delete(c.id);
+      setActiveNode(null);
+    },
+  });
+
+  // -- backspace auto-repeat (touch hold + held □ chord), in virtual frames --
+  let touchBsFrames = 0;
+  let squareFrames = 0;
+  onFrame((buttons) => {
+    const delay = Math.max(1, Math.round(0.4 * simulationHz()));
+    const every = Math.max(1, Math.round(0.1 * simulationHz()));
+    let heldOnBackspace = false;
+    for (const rect of armed.values()) {
+      if (rect?.key.action === "backspace") {
+        heldOnBackspace = true;
+        break;
+      }
+    }
+    if (heldOnBackspace) {
+      touchBsFrames++;
+      if (touchBsFrames >= delay && (touchBsFrames - delay) % every === 0) props.osk.backspace();
+    } else {
+      touchBsFrames = 0;
+    }
+    if (buttons & BTN.SQUARE) {
+      squareFrames++;
+      if (squareFrames >= delay && (squareFrames - delay) % every === 0) props.osk.backspace();
+    } else {
+      squareFrames = 0;
+    }
   });
 
   const resolveTouch = (x: number, y: number): OskKeyRect | null => {
