@@ -6,13 +6,17 @@
 // lives elsewhere. Mirrors the panel's conventions: focus starts on 'q',
 // layer switches preserve the clamped position.
 
-import { BTN, SCREEN_W } from "../contracts/spec/spec.ts";
+import { BTN, SCREEN_H, SCREEN_W } from "../contracts/spec/spec.ts";
 import type { ScriptEvent } from "../hosts/sim/sim.ts";
 import {
   clampPos,
   layoutRows,
   navigate,
+  OSK_GAP,
+  OSK_H,
   OSK_LAYERS,
+  OSK_PAD,
+  OSK_ROW_H,
   type OskLayerName,
   type OskPos,
 } from "../framework/src/osk-layout.ts";
@@ -106,6 +110,27 @@ export class OskScripter {
       for (const d of pathTo(this.layer, this.pos, target)) this.press(DIR_BTN[d]);
       this.pos = target;
       this.press(BTN.CIRCLE);
+    }
+    return this;
+  }
+
+  /** Touch-tap each character at its key center (panel docked at the bottom
+   *  of the screen — the system convention). A tap is a one-event contact
+   *  released half a step later: down arms + highlights, release commits. */
+  tap(text: string): this {
+    for (const ch of text) {
+      const pos = findKey(this.layer, ch);
+      if (!pos) throw new Error(`osk-script: ${JSON.stringify(ch)} is not on layer ${this.layer}`);
+      const rows = layoutRows(OSK_LAYERS[this.layer], INNER_W);
+      const rect = rows[pos.row][pos.col];
+      const x = Math.round(OSK_PAD + rect.x + rect.w / 2);
+      const y = Math.round(
+        SCREEN_H - OSK_H + OSK_PAD + pos.row * (OSK_ROW_H + OSK_GAP) + OSK_ROW_H / 2,
+      );
+      this.events.push({ at: this.t, touch: [{ x, y }] });
+      this.events.push({ at: this.t + this.step / 2, touch: [] });
+      this.t += this.step;
+      this.pos = pos; // the panel focus follows the tap
     }
     return this;
   }
