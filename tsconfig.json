@@ -23,6 +23,7 @@
       "@pocketjs/framework/components": ["./framework/src/components.ts"],
       "@pocketjs/framework/gesture": ["./framework/src/gesture.ts"],
       "@pocketjs/framework/input": ["./framework/src/input-api.ts"],
+      "@pocketjs/framework/kinetics": ["./framework/src/kinetics.ts"],
       "@pocketjs/framework/lifecycle": ["./framework/src/lifecycle.ts"],
       "@pocketjs/framework/manifest": ["./framework/src/manifest/index.ts"],
       "@pocketjs/framework/platform": ["./framework/src/platform.ts"],

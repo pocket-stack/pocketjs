@@ -50,6 +50,7 @@ const GESTURE_PATH = new URL("../src/gesture.ts", import.meta.url).pathname;
 const HOST_PATH = new URL("../src/host.ts", import.meta.url).pathname;
 const HOT_PATH = new URL("../src/hot.ts", import.meta.url).pathname;
 const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
+const KINETICS_PATH = new URL("../src/kinetics.ts", import.meta.url).pathname;
 const LAUNCHER_PATH = new URL("../src/launcher.ts", import.meta.url).pathname;
 const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
 const LIFECYCLE_VUE_VAPOR_PATH = new URL("../src/lifecycle-vue-vapor.ts", import.meta.url).pathname;
@@ -156,6 +157,7 @@ export const FRAMEWORKS: Record<
       config: CONFIG_PATH,
       gesture: GESTURE_PATH,
       input: INPUT_API_PATH,
+      kinetics: KINETICS_PATH,
       launcher: LAUNCHER_PATH,
       lifecycle: LIFECYCLE_PATH,
       // The system OSK carries class literals and key-cap glyphs, so pass 1
