@@ -5,7 +5,14 @@
 // fine); only ANIMATABLE props are accepted. Colors animate per ABGR channel
 // natively — pass a packed u32 or a '#rrggbb' string.
 
-import { animBit, ENUMS, PROP, type PropName } from "../../contracts/spec/spec.ts";
+import {
+  animBit,
+  ENUMS,
+  PROP,
+  PROP_VALUE_KIND,
+  VALUE_KIND,
+  type PropName,
+} from "../../contracts/spec/spec.ts";
 import { encodePropValue, getOps } from "./host.ts";
 import type { NodeMirror } from "./renderer.ts";
 
@@ -111,4 +118,53 @@ export function cancelAnim(animId: number): void {
  */
 export function jump(node: NodeMirror | number, prop: PropName, value: number | string): void {
   getOps().setProp(nodeId(node), animatablePropId(prop), encodePropValue(prop, value));
+}
+
+export interface JumpBatch {
+  /** Replace one entry's pending value. Entries retain their node/prop pair. */
+  set(index: number, value: number | string): void;
+  /** Apply every pending entry with the same semantics as repeated jump(). */
+  commit(): void;
+}
+
+/**
+ * Precompile a repeated direct-property update into one optional host call.
+ * Native QuickJS hosts avoid one JS/C transition per property; older and
+ * injected hosts retain identical behavior through the setProp fallback.
+ */
+export function createJumpBatch(
+  entries: readonly (readonly [NodeMirror | number, PropName])[],
+): JumpBatch {
+  const ops = getOps();
+  const records = new Float64Array(entries.length * 3);
+  const props: PropName[] = new Array(entries.length);
+  const directNumber: boolean[] = new Array(entries.length);
+  for (let i = 0; i < entries.length; i++) {
+    const [node, prop] = entries[i];
+    records[i * 3] = nodeId(node);
+    records[i * 3 + 1] = animatablePropId(prop);
+    props[i] = prop;
+    const kind = PROP_VALUE_KIND[prop];
+    directNumber[i] = kind !== VALUE_KIND.color && kind !== VALUE_KIND.int;
+  }
+  return {
+    set(index, value) {
+      if (index < 0 || index >= entries.length) {
+        throw new RangeError(`PocketJS: jump batch index ${index} outside 0..${entries.length - 1}`);
+      }
+      records[index * 3 + 2] =
+        directNumber[index] && typeof value === "number"
+          ? value
+          : encodePropValue(props[index], value);
+    },
+    commit() {
+      if (ops.setPropBatch) {
+        ops.setPropBatch(records.buffer as ArrayBuffer);
+        return;
+      }
+      for (let i = 0; i < entries.length; i++) {
+        ops.setProp(records[i * 3], records[i * 3 + 1], records[i * 3 + 2]);
+      }
+    },
+  };
 }

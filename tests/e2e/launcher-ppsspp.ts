@@ -11,8 +11,8 @@
 //   - SELECT summons the launcher back (swap #2, frozen shot captured),
 //   - RIGHT browses, CIRCLE launches Chrome (swap #3),
 // all under a baked input script, with the frame loop never wedging. The
-// capture signature is exact: a switch discards precisely one frame, so a
-// 220-frame window crossed by 3 switches yields 217 files with gaps at the
+// capture signature is exact: a switch discards precisely one frame, so an
+// 80-frame window crossed by 3 switches yields 77 files with gaps at the
 // three switch frames and nowhere else.
 //
 // Run: bun tests/e2e/launcher-ppsspp.ts   (npm: e2e:launcher)
@@ -31,10 +31,12 @@ const eboot = `${ROOT}hosts/psp/target/mipsel-sony-psp/debug/EBOOT.PBP`;
 // Level-triggered script (capture_input_mask holds the last entry's mask),
 // so every press carries an explicit release. CIRCLE (0x2000) confirms —
 // the deck's console-convention mapping.
-const LAUNCH_CAFE = 90;
-const SELECT_SUMMON = 180;
-const RIGHT_BROWSE = 240;
-const LAUNCH_CHROME = 270;
+// Multi-app PSP packages run the same 60-tick trajectory at 20 virtual FPS,
+// so these are the former 1.5s/3s/4s/4.5s events expressed at 20 Hz.
+const LAUNCH_CAFE = 30;
+const SELECT_SUMMON = 60;
+const RIGHT_BROWSE = 80;
+const LAUNCH_CHROME = 90;
 const INPUT = [
   "0:0",
   `${LAUNCH_CAFE}:0x2000`,
@@ -46,8 +48,8 @@ const INPUT = [
   `${LAUNCH_CHROME}:0x2000`,
   `${LAUNCH_CHROME + 1}:0`,
 ].join(",");
-const CAP_START = 80;
-const CAP_N = 220;
+const CAP_START = 20;
+const CAP_N = 80;
 // A switch at frame N discards frame N itself (the list is never kicked);
 // relative to CAP_START these indices must be the ONLY missing files.
 const EXPECTED_GAPS = new Set(
@@ -116,10 +118,10 @@ function frame(rel: number): Buffer {
   return readFileSync(`${dccap}/f${String(rel).padStart(4, "0")}.raw`);
 }
 if (!failed) {
-  const launcher = frame(9); // global 89: settled deck, pre-launch
-  const cafe = frame(99); // global 179: Café, pre-summon
-  const summoned = frame(102); // global 182+: deck again, shot + badge
-  const chrome = frame(215); // global 295: Chrome settled
+  const launcher = frame(9); // global 29: settled deck, pre-launch
+  const cafe = frame(39); // global 59: Café, pre-summon
+  const summoned = frame(42); // global 62+: deck again, shot + badge
+  const chrome = frame(78); // global 98: Chrome settled
   const pairs: [string, Buffer, Buffer][] = [
     ["launcher vs cafe", launcher, cafe],
     ["cafe vs summoned", cafe, summoned],

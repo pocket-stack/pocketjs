@@ -44,6 +44,13 @@ export interface HostOps {
   setStyle(id: number, styleId: number): void;
   /** propId: spec PROP. Colors/enums pass their u32 bits as a number. */
   setProp(id: number, propId: number, value: number): void;
+  /**
+   * Optional fast path for many direct property writes. `records` is a
+   * little-endian Float64Array payload of repeated [nodeId, propId, value]
+   * triples. Semantics are exactly repeated setProp calls, including
+   * cancelling an animation on the same property.
+   */
+  setPropBatch?(records: ArrayBuffer): void;
   /** UTF-8 text; text nodes only. */
   setText(id: number, str: string): void;
   /** Solid universal calls this on reactive text updates. */

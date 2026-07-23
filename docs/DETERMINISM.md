@@ -34,9 +34,9 @@ baked timelines cover the same **virtual time** at every rate — a 300 ms
 tween is 300 ms at 60 Hz and 300 ms at 2 Hz, just sampled coarser.
 
 Hosts publish the policy as `globalThis.__simHz` before the bundle evals
-(web host: `?hz=2`; sim host: scenario option; PSP: always 60). Apps read
-time through the clock API and stay hz-portable by expressing time in
-seconds, never raw frame counts:
+(web host: `?hz=2`; sim host: scenario option; PSP: standalone packages at
+60, multi-app packages at 20). Apps read time through the clock API and stay
+hz-portable by expressing time in seconds, never raw frame counts:
 
 ```ts
 import { after, virtualNow, simulationHz } from "@pocketjs/framework/clock";

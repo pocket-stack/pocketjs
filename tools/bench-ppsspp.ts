@@ -20,12 +20,15 @@ interface Spec {
 
 interface BenchLine {
   app: string;
+  sim_hz: number;
   frames: number;
   window_start: number;
   window_n: number;
   eval_us: number;
   boot_to_eval_begin_us: number;
   boot_to_frame0_us: number;
+  avg_frame_interval_us: number;
+  max_frame_interval_us: number;
   avg_js_us: number;
   avg_jobs_us: number;
   avg_tick_us: number;
@@ -175,6 +178,8 @@ const mdPath = `${outDir}/ppsspp-bench-${stamp}.md`;
 const METRICS = [
   "eval_us",
   "boot_to_frame0_us",
+  "avg_frame_interval_us",
+  "max_frame_interval_us",
   "avg_js_us",
   "avg_jobs_us",
   "avg_tick_us",

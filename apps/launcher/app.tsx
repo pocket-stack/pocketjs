@@ -16,7 +16,7 @@
 import { createEffect, createSignal, onMount, Show, untrack } from "solid-js";
 import { registerTexture } from "@pocketjs/framework";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
-import { animate, jump } from "@pocketjs/framework/animation";
+import { animate, createJumpBatch } from "@pocketjs/framework/animation";
 import { BTN } from "@pocketjs/framework/input";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { appTable, frozenShot, launchApp } from "@pocketjs/framework/launcher";
@@ -117,9 +117,6 @@ export default function Launcher() {
    *  a discrete step's previous target or a released scrub's fraction). */
   const applyTweens = (s: number) =>
     applyCards(s, (el, prop, v) => animate(el, prop, v, { dur: 140, easing: "out" }));
-  /** Scrub: place every card for a fractional position RIGHT NOW. */
-  const applyFlow = (p: number) => applyCards(p, (el, prop, v) => jump(el, prop, v));
-
   createEffect(() => {
     const s = sel();
     untrack(() => {
@@ -133,6 +130,47 @@ export default function Launcher() {
   const clampSel = (v: number) => Math.min(apps.length - 1, Math.max(0, v));
 
   onMount(() => {
+    // The held path changes 4 props × every card each virtual frame. Compile
+    // those writes once so native QuickJS hosts cross into Rust once per deck
+    // update instead of once per property; fallback hosts keep setProp parity.
+    const mountedCards = cardEls.map((el, i) => {
+      if (!el) throw new Error(`launcher card ${i} was not mounted`);
+      return el;
+    });
+    const flowBatch = createJumpBatch(
+      mountedCards.flatMap(
+        (el) =>
+          [
+            [el, "translateX"],
+            [el, "translateZ"],
+            [el, "rotateY"],
+            [el, "opacity"],
+          ] as const,
+      ),
+    );
+    const applyFlow = (p: number) => {
+      for (let i = 0; i < apps.length; i++) {
+        const offset = i - p;
+        const side = offset < 0 ? -1 : 1;
+        const depth = Math.abs(offset);
+        const near = Math.min(depth, 1);
+        const beyond = Math.max(0, depth - 1);
+        const base = i * 4;
+        flowBatch.set(base, side * (near * RAIL_FIRST + beyond * RAIL_STEP));
+        flowBatch.set(base + 1, FRONT_Z + (RAIL_Z - 2 - FRONT_Z) * near - beyond * 2);
+        flowBatch.set(base + 2, -side * near * RAIL_TILT);
+        flowBatch.set(
+          base + 3,
+          depth <= 1
+            ? 1 - 0.08 * depth
+            : depth <= RAIL_VISIBLE
+              ? 0.92
+              : Math.max(0, 0.92 * (1 - (depth - RAIL_VISIBLE))),
+        );
+      }
+      flowBatch.commit();
+    };
+
     // Browsing is ONE mechanism for all four inputs — the L/R triggers and
     // the d-pad directions are identical flow sources: while held, the deck
     // position advances a FRACTION of a card every frame and the cards are

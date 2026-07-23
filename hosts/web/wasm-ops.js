@@ -73,6 +73,12 @@ export async function createWasmUi(wasm, options = {}) {
     removeChild: (parent, child) => ex.ui_remove_child(parent, child),
     setStyle: (id, styleId) => ex.ui_set_style(id, styleId),
     setProp: (id, propId, value) => ex.ui_set_prop(id, propId, value),
+    setPropBatch: (records) => {
+      const values = new Float64Array(records);
+      for (let i = 0; i + 2 < values.length; i += 3) {
+        ex.ui_set_prop(values[i], values[i + 1], values[i + 2]);
+      }
+    },
     setText: (id, str) => withStr(str, (p, l) => ex.ui_set_text(id, p, l)),
     replaceText: (id, str) => withStr(str, (p, l) => ex.ui_replace_text(id, p, l)),
     uploadTexture: (buf, w, h, psm) => withBytes(buf, (p, l) => ex.ui_upload_texture(p, l, w, h, psm)),

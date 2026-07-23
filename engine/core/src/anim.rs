@@ -348,6 +348,13 @@ impl Anims {
 
     /// Kill the live track on (node, prop), if any.
     pub fn kill_for(&mut self, node: i32, prop: u8) {
+        // Slot 0 is permanently dead and never enters `free`, so this
+        // equality means there are no live tracks. Direct per-frame scrubs
+        // commonly retain a large all-dead table after their release tween;
+        // avoid rescanning every dead slot for every property write.
+        if self.tracks.len() == self.free.len() + 1 {
+            return;
+        }
         for slot in 0..self.tracks.len() as u32 {
             let t = &self.tracks[slot as usize];
             if t.alive && t.node == node && t.prop == prop {

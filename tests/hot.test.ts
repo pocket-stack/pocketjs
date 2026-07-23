@@ -2,13 +2,15 @@
 // and mirror truthfulness — the per-frame escape hatch must cost zero ops
 // for unchanged values and exactly one op per change.
 import { beforeEach, expect, test } from "bun:test";
+import { PROP } from "../contracts/spec/spec.ts";
+import { createJumpBatch } from "../framework/src/anim.ts";
 import { installHost, type Host, type HostOps } from "../framework/src/host.ts";
 import { createElement, resetRendererState, type NodeMirror } from "../framework/src/native-tree.ts";
 import * as hot from "../framework/src/hot.ts";
 
 let calls: [string, ...unknown[]][];
 
-function mockHost(): Host {
+function mockHost(withPropBatch = false): Host {
   calls = [];
   let nextId = 100;
   const rec =
@@ -35,6 +37,11 @@ function mockHost(): Host {
     loadFontAtlas: () => true,
     measureText: () => 0,
   } as unknown as HostOps;
+  if (withPropBatch) {
+    ops.setPropBatch = (buffer) => {
+      calls.push(["setPropBatch", Array.from(new Float64Array(buffer))]);
+    };
+  }
   return { kind: "injected", target: "test", strict: true, ops };
 }
 
@@ -86,4 +93,40 @@ test("hot.text on a bare text node works without a wrapper", () => {
   run.text = "";
   hot.text(run, "GO");
   expect(of("setText")).toEqual([["setText", run.id, "GO"]]);
+});
+
+test("jump batch emits one packed host call", () => {
+  installHost(mockHost(true));
+  resetRendererState();
+  const el = createElement("view");
+  const batch = createJumpBatch([
+    [el, "translateX"],
+    [el, "opacity"],
+  ]);
+  batch.set(0, -8.5);
+  batch.set(1, 0.75);
+  batch.commit();
+  expect(of("setProp")).toEqual([]);
+  expect(of("setPropBatch")).toEqual([
+    [
+      "setPropBatch",
+      [el.id, PROP.translateX, -8.5, el.id, PROP.opacity, 0.75],
+    ],
+  ]);
+});
+
+test("jump batch falls back to ordered setProp calls", () => {
+  const el = createElement("view");
+  const batch = createJumpBatch([
+    [el, "translateX"],
+    [el, "opacity"],
+  ]);
+  batch.set(0, 12);
+  batch.set(1, 0.5);
+  batch.commit();
+  expect(of("setProp")).toEqual([
+    ["setProp", el.id, PROP.translateX, 12],
+    ["setProp", el.id, PROP.opacity, 0.5],
+  ]);
+  expect(() => batch.set(2, 0)).toThrow(/outside 0\.\.1/);
 });

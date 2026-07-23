@@ -166,6 +166,39 @@ unsafe extern "C" fn js_set_prop(
     JS_UNDEFINED
 }
 
+#[inline]
+fn read_f64_le(bytes: &[u8], offset: usize) -> f64 {
+    let mut raw = [0u8; 8];
+    raw.copy_from_slice(&bytes[offset..offset + 8]);
+    f64::from_le_bytes(raw)
+}
+
+/// Apply packed Float64 triples `[nodeId, propId, value]` through one
+/// QuickJS/C boundary. The buffer is borrowed only for this synchronous call.
+unsafe extern "C" fn js_set_prop_batch(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    if argc < 1 {
+        return JS_UNDEFINED;
+    }
+    let Some((ptr, len)) = buffer_bytes(ctx, *argv.offset(0)) else {
+        return JS_UNDEFINED;
+    };
+    let bytes = core::slice::from_raw_parts(ptr, len);
+    let instance = ui();
+    for record in bytes.chunks_exact(24) {
+        instance.set_prop(
+            read_f64_le(record, 0) as i32,
+            read_f64_le(record, 8) as u8,
+            read_f64_le(record, 16),
+        );
+    }
+    JS_UNDEFINED
+}
+
 /// Shared body of setText/replaceText (identical core semantics).
 unsafe fn set_text_impl(ctx: *mut JSContext, argc: i32, argv: *mut JSValue) -> JSValue {
     if argc < 2 {
@@ -805,6 +838,7 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"removeChild\0", js_remove_child, 2);
     add_fn(ctx, ui_obj, b"setStyle\0", js_set_style, 2);
     add_fn(ctx, ui_obj, b"setProp\0", js_set_prop, 3);
+    add_fn(ctx, ui_obj, b"setPropBatch\0", js_set_prop_batch, 1);
     add_fn(ctx, ui_obj, b"setText\0", js_set_text, 2);
     add_fn(ctx, ui_obj, b"replaceText\0", js_replace_text, 2);
     add_fn(ctx, ui_obj, b"uploadTexture\0", js_upload_texture, 4);

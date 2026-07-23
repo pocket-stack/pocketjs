@@ -148,9 +148,15 @@ once per cover/reflection instead of rebinding between interleaved cells.
 
 None of this is a platform capability. Capabilities describe stable public
 behavior available to an app, while missed vblanks and scene-dependent GPU
-cost are runtime performance. If a PSP still cannot sustain 60 Hz after these
-host/core fixes, the fallback is an explicit lower simulation policy, not a
-`slowPsp` capability.
+cost are runtime performance. On real PSP hardware, batching cut the full
+deck's CPU work from about 42 ms to about 12 ms, but its texture-heavy GE pass
+still completed across the third vblank (about 50 ms between presentations).
+A multi-app PSP package therefore uses an explicit 20 Hz host policy:
+`__simHz = 20`, three fixed core ticks per virtual frame, and a three-vblank
+presentation cadence. The deck still covers 18 cards per second and ms-based
+animations retain their durations; they are sampled at 20 observations per
+second. Standalone PSP apps remain at 60 Hz. This is one process-wide
+timebase, never a launcher-name branch or a `slowPsp` capability.
 
 ## Verification
 
@@ -159,9 +165,9 @@ host/core fixes, the fallback is an explicit lower simulation policy, not a
   (hosts/sim/launcher.ts), SELECT stripping + host-edge latching, and
   determinism (two identical journeys hash identically frame by frame).
 - `tests/e2e/launcher-ppsspp.ts` (`bun run e2e:launcher`) — the same journey
-  on the REAL native host in PPSSPPHeadless with a baked input script. A
-  switch discards exactly one presented frame, so the capture signature is
-  exact: 217/220 files with gaps precisely at the three switch frames.
+  on the REAL native host in PPSSPPHeadless with a 20 Hz baked input script.
+  A switch discards exactly one presented frame, so the capture signature is
+  exact: 77/80 files with gaps precisely at the three switch frames.
 - `tests/e2e/launcher-vita3k.ts` (`bun run e2e:launcher:vita`) — builds the real launcher VPK, checks its
   four default LiveArea assets, installs it into an isolated VitaFS, and
   drives launcher → Café → launcher → Chrome → launcher → resumed Chrome →

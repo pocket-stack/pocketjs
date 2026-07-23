@@ -3,7 +3,7 @@
 #![allow(static_mut_refs)]
 
 //! PocketJS PSP host: boots QuickJS on a 1 MB worker thread, evaluates the
-//! embedded app bundle, then drives frame(buttons) per vblank while the Rust
+//! embedded app bundle, then drives fixed-rate virtual frames while the Rust
 //! core ticks animations/layout and the GE backend draws the DrawList.
 //!
 //! This bin is one composition of the `pocketjs-psp` library (see lib.rs):
@@ -12,7 +12,7 @@
 //! loop — lives here.
 //!
 //! Frame order (docs/DESIGN.md): sceCtrlPeek -> sceGuStart -> JS frame(buttons)
-//! -> drain jobs (JS_ExecutePendingJob, local extern) -> core.tick(1/60) ->
+//! -> drain jobs (JS_ExecutePendingJob, local extern) -> core.tick(1/60 × N) ->
 //! ge::render(core.draw()) -> sceGuFinish/Sync/WaitVblank/Swap -> pool reset.
 
 extern crate alloc;
@@ -32,6 +32,14 @@ use pocketjs_psp::{dbg, ffi, ge, host, pak, svc, switch, veil, vid};
 use pocketjs_psp::arena;
 
 psp::module!("pocketjs", 1, 1);
+
+const CORE_TICKS_PER_SECOND: u32 = 60;
+// The full launcher originally consumed about 42 ms of CPU work on real PSP
+// hardware. Batching cuts that to about 12 ms, but the texture-heavy GE pass
+// still completes across the third vblank. A multi-app package therefore
+// publishes an honest 20 Hz host policy and advances three fixed core ticks
+// per transaction. Standalone apps retain the 60 Hz policy.
+const MULTI_APP_SIM_HZ: u32 = 20;
 
 // App bundles live in switch::APPS (build.rs generates the table; entry 0 is
 // the app POCKETJS_APP selected, multi-app builds append the registry). Each
@@ -141,6 +149,9 @@ struct BenchState {
     max_work_us: u64,
     gpu_sum_us: u64,
     max_gpu_us: u64,
+    previous_frame_start_us: u64,
+    frame_interval_sum_us: u64,
+    max_frame_interval_us: u64,
 }
 
 #[cfg(feature = "bench")]
@@ -161,6 +172,9 @@ impl BenchState {
             max_work_us: 0,
             gpu_sum_us: 0,
             max_gpu_us: 0,
+            previous_frame_start_us: 0,
+            frame_interval_sum_us: 0,
+            max_frame_interval_us: 0,
         }
     }
 }
@@ -263,6 +277,14 @@ unsafe fn bench_record_frame(
     let draw_us = after_draw.saturating_sub(after_tick);
     let render_us = after_render.saturating_sub(after_draw).saturating_sub(present_us);
     let work_us = after_render.saturating_sub(t0).saturating_sub(present_us);
+    if BENCH.frames > 0 {
+        let interval_us = t0.saturating_sub(BENCH.previous_frame_start_us);
+        BENCH.frame_interval_sum_us = BENCH.frame_interval_sum_us.saturating_add(interval_us);
+        if interval_us > BENCH.max_frame_interval_us {
+            BENCH.max_frame_interval_us = interval_us;
+        }
+    }
+    BENCH.previous_frame_start_us = t0;
     BENCH.frames = BENCH.frames.saturating_add(1);
     BENCH.js_sum_us = BENCH.js_sum_us.saturating_add(js_us);
     BENCH.jobs_sum_us = BENCH.jobs_sum_us.saturating_add(jobs_us);
@@ -299,18 +321,22 @@ unsafe fn bench_maybe_flush(frame_count: u32) {
         return;
     }
     let frames = BENCH.frames as u64;
+    let intervals = frames.saturating_sub(1);
     let arena_stats = arena::stats();
     let stack_free_bytes =
         sys::sceKernelGetThreadStackFreeSize(sys::SceUid(sys::sceKernelGetThreadId())).max(0);
     let line = alloc::format!(
-        "{{\"app\":\"{}\",\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"avg_gpu_us\":{},\"max_gpu_us\":{},\"stack_free_bytes\":{},\"bundle_bytes\":{},\"pak_bytes\":{},\"arena_capacity_bytes\":{},\"arena_bump_bytes\":{},\"arena_tail_free_bytes\":{},\"arena_init_free_bytes\":{},\"arena_configured_bytes\":{}}}\n",
+        "{{\"app\":\"{}\",\"sim_hz\":{},\"frames\":{},\"window_start\":{},\"window_n\":{},\"eval_us\":{},\"boot_to_eval_begin_us\":{},\"boot_to_frame0_us\":{},\"avg_frame_interval_us\":{},\"max_frame_interval_us\":{},\"avg_js_us\":{},\"avg_jobs_us\":{},\"avg_tick_us\":{},\"avg_draw_us\":{},\"avg_render_us\":{},\"avg_work_us\":{},\"max_work_us\":{},\"avg_gpu_us\":{},\"max_gpu_us\":{},\"stack_free_bytes\":{},\"bundle_bytes\":{},\"pak_bytes\":{},\"arena_capacity_bytes\":{},\"arena_bump_bytes\":{},\"arena_tail_free_bytes\":{},\"arena_init_free_bytes\":{},\"arena_configured_bytes\":{}}}\n",
         POCKETJS_APP_NAME,
+        if switch::multi() { MULTI_APP_SIM_HZ } else { CORE_TICKS_PER_SECOND },
         BENCH.frames,
         start,
         n,
         BENCH.eval_end_us.saturating_sub(BENCH.eval_begin_us),
         BENCH.eval_begin_us.saturating_sub(BENCH.run_start_us),
         BENCH.frame0_complete_us.saturating_sub(BENCH.run_start_us),
+        if intervals > 0 { BENCH.frame_interval_sum_us / intervals } else { 0 },
+        BENCH.max_frame_interval_us,
         BENCH.js_sum_us / frames,
         BENCH.jobs_sum_us / frames,
         BENCH.tick_sum_us / frames,
@@ -374,17 +400,48 @@ unsafe fn run() {
     sys::sceCtrlSetSamplingMode(CtrlMode::Analog);
     trace("run: controller initialized");
 
+    // A single rate spans the whole process. In particular, switching guests
+    // never changes the meaning of GLOBAL_FRAME or of a captured input tape.
+    let sim_hz = if switch::multi() {
+        MULTI_APP_SIM_HZ
+    } else {
+        CORE_TICKS_PER_SECOND
+    };
+    let ticks_per_virtual_frame = CORE_TICKS_PER_SECOND / sim_hz;
+    let mut last_present_vcount = sys::sceDisplayGetVcount();
+
     // ---- Guest lifecycle (docs/LAUNCHER.md): one guest alive at a time; a
     // switch tears the whole guest down and boots the next table entry.
     // Single-app builds have a table of one and never leave the first call.
     let mut boot_index: usize = 0;
     loop {
-        boot_index = run_guest(boot_index);
+        boot_index = run_guest(
+            boot_index,
+            sim_hz,
+            ticks_per_virtual_frame,
+            &mut last_present_vcount,
+        );
         trace("run: guest swap");
         // The system transition (docs/PLATFORM.md): host-drawn shot-dim + mark
         // sweep, then the next guest's eval holds on its settled last frame.
         veil::play();
     }
+}
+
+/// Wait for the first vblank at or after the fixed-rate presentation target.
+///
+/// Counting from the previous *actual* swap lets CPU and GE work overlap the
+/// 3-vblank budget at 20 Hz. Blindly waiting three more vblanks after the work
+/// would turn a 42 ms frame into 80+ ms instead of the intended 50 ms.
+unsafe fn wait_for_present(last_vcount: &mut u32, vblanks_per_frame: u32) {
+    loop {
+        let elapsed = sys::sceDisplayGetVcount().wrapping_sub(*last_vcount);
+        if elapsed >= vblanks_per_frame && sys::sceDisplayIsVblank() != 0 {
+            break;
+        }
+        sys::sceDisplayWaitVblankStart();
+    }
+    *last_vcount = sys::sceDisplayGetVcount();
 }
 
 /// Global presented-frame counter across every guest — the capture identity
@@ -406,7 +463,12 @@ unsafe fn guest_fail(app_index: usize, msg: &str) -> usize {
 
 /// Boot embedded app `app_index`, drive it until a switch request, tear the
 /// guest down, and return the next app index to boot.
-unsafe fn run_guest(app_index: usize) -> usize {
+unsafe fn run_guest(
+    app_index: usize,
+    sim_hz: u32,
+    ticks_per_virtual_frame: u32,
+    last_present_vcount: &mut u32,
+) -> usize {
     switch::set_current(app_index);
     // Package mode extracts js/pak zero-copy from the entry's embedded
     // `.pocket`; single-app mode reads the classic inline embed. A package
@@ -470,6 +532,16 @@ unsafe fn run_guest(app_index: usize) -> usize {
     ffi::register(ctx, global, &textures, &sprites);
     trace("run: register ui ok");
 
+    // The bundle mounts synchronously during JS_Eval, and resetClock() latches
+    // this value at mount. Install it for every fresh guest realm beforehand.
+    JS_SetPropertyStr(
+        ctx,
+        global,
+        b"__simHz\0".as_ptr() as *const _,
+        JS_NewInt32(ctx, sim_hz as i32),
+    );
+    trace("run: simulation rate installed");
+
     // Expose the asset pack read-only as globalThis.__pak (zero-copy over
     // .rodata; free_func = None). Web/test hosts feed core through loadStyles/
     // loadFontAtlas ops instead — on PSP pak.rs already did it natively.
@@ -525,7 +597,7 @@ unsafe fn run_guest(app_index: usize) -> usize {
     // twin of the framework's `latched` option.
     let mut prev_select = true;
 
-    // ---- Fixed-timestep frame loop (~60 Hz via vblank) ----
+    // ---- Fixed-timestep virtual-frame loop (60 or 20 Hz host policy) ----
     // GLOBAL_FRAME is the capture identity (origin/main contract): it
     // indexes the baked input script AND names the dumped frame files, so
     // input at frame N and file fN-CAP_START refer to the same presented
@@ -596,12 +668,16 @@ unsafe fn run_guest(app_index: usize) -> usize {
             trace("frame 0: pending jobs drained");
         }
 
-        // Core frame: animations at fixed dt = 1/60, relayout if dirty, then
+        // Core frame: animations always advance at fixed dt = 1/60. A lower
+        // virtual-frame policy runs multiple ticks before drawing so seconds-
+        // based transitions retain their duration and exact 60 Hz trajectory.
         // the DrawList into the open display list. The raw-slice dance keeps
         // borrowck happy about the single static-mut Ui (one thread; render
         // only reads atlases/textures, never the DrawList's owner mutably).
         let ui = ffi::ui();
-        ui.tick();
+        for _ in 0..ticks_per_virtual_frame {
+            ui.tick();
+        }
         #[cfg(feature = "bench")]
         let bench_after_tick = bench_now_us();
         if guest_frame == 0 {
@@ -640,7 +716,7 @@ unsafe fn run_guest(app_index: usize) -> usize {
             if guest_frame == 0 {
                 trace("frame 0: gu sync (previous list) ok");
             }
-            sys::sceDisplayWaitVblankStart();
+            wait_for_present(last_present_vcount, ticks_per_virtual_frame);
             if guest_frame == 0 {
                 trace("frame 0: vblank ok");
             }
