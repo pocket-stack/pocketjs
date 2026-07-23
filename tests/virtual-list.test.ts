@@ -11,7 +11,7 @@ if (Bun.resolveSync("solid-js", import.meta.dir).endsWith("server.js")) {
   throw new Error("solid-js resolved to its SSR build — run: bun test --conditions=browser");
 }
 
-import { createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import { installHost, type Host, type HostOps } from "../framework/src/host.ts";
 import { render as publicRender } from "../framework/src/index.ts";
 import { resetRendererState, rootMirror, type NodeMirror } from "../framework/src/renderer.ts";
@@ -278,5 +278,38 @@ describe("focusRow", () => {
     h.focusRow(999); // clamps to the last row
     for (let i = 0; i < 120; i++) frame(0);
     expect(h.focusedIndex()).toBe(99);
+  });
+});
+
+describe("handle reactivity hygiene", () => {
+  test("focusRow inside an effect does not subscribe to count", () => {
+    const [count, setCount] = createSignal(10);
+    let effectRuns = 0;
+    let h!: VirtualListHandle;
+    dispose = publicRender(
+      () => {
+        const el = VirtualList({
+          get count() {
+            return count();
+          },
+          rowHeight: 10,
+          height: 50,
+          renderRow: (i) => Text({ children: `R${i}` }),
+          ref: (handle) => {
+            h = handle;
+          },
+        });
+        createEffect(() => {
+          effectRuns++;
+          h.focusRow(0); // must NOT leak a props.count subscription
+        });
+        return el;
+      },
+      { ops: host.ops, styles: {} },
+    );
+    const runsAfterMount = effectRuns;
+    setCount(11); // an append must not re-fire the caller's effect
+    expect(effectRuns).toBe(runsAfterMount);
+    expect(h.focusedIndex()).toBe(0);
   });
 });
