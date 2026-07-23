@@ -10,6 +10,7 @@
 resolver = "2"
 members = [
     "crates/pocket-mod",
+    "crates/pocket-ui-surface",
     "crates/pocket-ui-wgpu",
     "crates/pocket-vrm",
     "crates/pocket-widget",
@@ -38,6 +39,7 @@ repository = "https://github.com/pocket-stack/pocketjs"
 pocket3d = { path = "pocket3d/crates/pocket3d" }
 pocket3d-bsp = { path = "pocket3d/crates/pocket3d-bsp" }
 pocket-mod = { path = "crates/pocket-mod" }
+pocket-ui-surface = { path = "crates/pocket-ui-surface" }
 pocket-ui-wgpu = { path = "crates/pocket-ui-wgpu" }
 pocket-vrm = { path = "crates/pocket-vrm" }
 pocket-widget = { path = "crates/pocket-widget" }
