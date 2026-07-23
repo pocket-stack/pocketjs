@@ -46,6 +46,7 @@ const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
 const CLOCK_PATH = new URL("../src/clock.ts", import.meta.url).pathname;
 const DEVTOOLS_PATH = new URL("../src/devtools.ts", import.meta.url).pathname;
 const EFFECTS_PATH = new URL("../src/effects.ts", import.meta.url).pathname;
+const GESTURE_PATH = new URL("../src/gesture.ts", import.meta.url).pathname;
 const HOST_PATH = new URL("../src/host.ts", import.meta.url).pathname;
 const HOT_PATH = new URL("../src/hot.ts", import.meta.url).pathname;
 const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
@@ -153,6 +154,7 @@ export const FRAMEWORKS: Record<
       animation: ANIMATION_PATH,
       components: COMPONENTS_PATH,
       config: CONFIG_PATH,
+      gesture: GESTURE_PATH,
       input: INPUT_API_PATH,
       launcher: LAUNCHER_PATH,
       lifecycle: LIFECYCLE_PATH,

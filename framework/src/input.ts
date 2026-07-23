@@ -285,7 +285,11 @@ function moveFocus(direction: FocusDirection): void {
 }
 
 function firePress(): void {
-  let n: NodeMirror | null = focused;
+  firePressFrom(focused);
+}
+
+function firePressFrom(start: NodeMirror | null): void {
+  let n: NodeMirror | null = start;
   while (n) {
     if (n.onPress) {
       n.onPress();
@@ -293,6 +297,21 @@ function firePress(): void {
     }
     n = n.parent;
   }
+}
+
+/** Hold/clear the `active:` pressed variant from touch/gesture code. All
+ *  writers (d-pad, cursor, touch) route through the same internal latch, so
+ *  a pressed look can never strand across input modes. */
+export function setActiveNode(node: NodeMirror | null): void {
+  setPressedNode(node);
+}
+
+/** Focus a node and fire its onPress (bubbling to the nearest ancestor
+ *  handler) — the touch-tap equivalent of the CIRCLE press, so taps, d-pad,
+ *  and cursor clicks all land in the same handler. */
+export function pressNode(node: NodeMirror): void {
+  focusNode(node);
+  firePressFrom(node);
 }
 
 // ---- removal repair [R] ------------------------------------------------------
@@ -667,6 +686,18 @@ export function hitFocusable(x: number, y: number): NodeMirror | null {
   const ops = getOps();
   if (!ops.hitTest) return null;
   return cursorTarget(findMirror(hitRoot ?? root, ops.hitTest(x, y)));
+}
+
+/**
+ * Raw topmost-ink mirror under a screen point — hitFocusable without the
+ * focusable/scope filter. The gesture layer resolves region ownership with
+ * this (a pan region is rarely focusable itself). Null when the host has no
+ * hitTest op or nothing painted claims the point.
+ */
+export function hitNode(x: number, y: number): NodeMirror | null {
+  const ops = getOps();
+  if (!ops.hitTest) return null;
+  return findMirror(hitRoot ?? root, ops.hitTest(x, y));
 }
 
 /** One cursor-mode frame. Returns false when the host predates the cursor
