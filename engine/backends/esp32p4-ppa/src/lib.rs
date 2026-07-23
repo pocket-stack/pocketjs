@@ -15,6 +15,11 @@ use alloc::vec::Vec;
 use pocketjs_core::raster::{linear_sample_coordinates, pack_rgb565, render_scaled_rgb565_over};
 use pocketjs_core::{spec, TexView, Ui};
 
+#[cfg(feature = "esp-idf")]
+mod esp_idf;
+#[cfg(feature = "esp-idf")]
+pub use esp_idf::EspIdfPpaOps;
+
 const MASK_ALIGNMENT: usize = 128;
 const CLIP_DEPTH: usize = 32;
 const TEXTURE_CLASS_CACHE_LEN: usize = 64;
