@@ -5,14 +5,15 @@
 //   bun vapor/scripts/promo/music.ts     # once: the chiptune bed
 //   bun vapor/scripts/promo/promo.ts     # → dist/vapor/promo/pocket-vapor.mp4
 //
-// 1920x1080 @ 60 fps, ~51 s. Frames are drawn with @napi-rs/canvas on the
-// PocketJS brand field (dark #05070d, blueprint grid, corner glows — the
-// same visual system as the outro card) and streamed as raw RGBA into
-// ffmpeg, muxed with the synthesized soundtrack. Append the branded end
-// card afterwards with skills/pocketjs-video-outro.
+// 1920x1080 @ 60 fps, ~47 s, final cut — no appended end card; the PocketJS
+// logo badge rides every frame instead. Frames are drawn with @napi-rs/canvas
+// on the PocketJS brand field (dark #05070d, blueprint grid, corner glows) and
+// streamed as raw RGBA into ffmpeg, muxed with the synthesized soundtrack.
+// The gameplay segment starts exactly on bar 10 of the soundtrack, where the
+// lead melody enters — keep promo timeline and music structure in sync.
 
 import { join } from "node:path";
-import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
 import { FRAMES_PER_PRESS, LEAD, pressList, TOTAL_FRAMES } from "./capture.ts";
 import { Button } from "../../host/input.ts";
 
@@ -40,11 +41,10 @@ const MONO = "Menlo, Monaco, monospace";
 const SEG = {
   title: { start: 0, len: 210 },
   code: { start: 210, len: 450 },
-  split: { start: 660, len: 450 },
-  carts: { start: 1110, len: 270 },
-  play: { start: 1380, len: 882 },
-  numbers: { start: 2262, len: 420 },
-  close: { start: 2682, len: 360 },
+  split: { start: 660, len: 492 },
+  play: { start: 1152, len: 882 }, // frame 1152 = 19.2 s = soundtrack bar 10 (lead enters)
+  numbers: { start: 2034, len: 420 },
+  close: { start: 2454, len: 360 },
 };
 const TOTAL = SEG.close.start + SEG.close.len;
 if (SEG.play.len !== TOTAL_FRAMES) throw new Error("gameplay segment must match capture length");
@@ -152,15 +152,16 @@ function panel(x: number, y: number, w: number, h: number, alpha = 1, stroke = "
 interface Screen {
   name: string;
   sub: string;
+  rom: string;
   dir: string;
   sw: number; sh: number;      // source crop
   scale: number;
   color: string;
 }
 const SCREENS: Screen[] = [
-  { name: "GAME BOY ADVANCE", sub: "ARM7TDMI · 16.8 MHz · 2001", dir: "gba", sw: 240, sh: 160, scale: 3, color: BLUE },
-  { name: "GAME BOY", sub: "SM83 · 4.19 MHz · 1989", dir: "gb", sw: 160, sh: 144, scale: 3, color: EMERALD },
-  { name: "NES", sub: "6502 · 1.79 MHz · 1983", dir: "nes", sw: 256, sh: 240, scale: 2, color: VIOLET },
+  { name: "GAME BOY ADVANCE", sub: "ARM7TDMI · 16.8 MHz · 2001", rom: "9.1 KB ROM", dir: "gba", sw: 240, sh: 160, scale: 3, color: BLUE },
+  { name: "GAME BOY", sub: "SM83 · 4.19 MHz · 1989", rom: "32 KB ROM", dir: "gb", sw: 160, sh: 144, scale: 3, color: EMERALD },
+  { name: "NES", sub: "6502 · 1.79 MHz · 1983", rom: "40 KB ROM", dir: "nes", sw: 256, sh: 240, scale: 2, color: VIOLET },
 ];
 
 const frameCache = new Map<string, ReturnType<typeof createCanvas>>();
@@ -212,14 +213,13 @@ function segAlpha(t: number, len: number, fade = 14): number {
 function drawTitle(t: number): void {
   const a = segAlpha(t, SEG.title.len);
   ctx.globalAlpha = a;
-  const e0 = entrance(t, 0), e1 = entrance(t, 1), e2 = entrance(t, 2), e3 = entrance(t, 4);
+  const e0 = entrance(t, 0), e1 = entrance(t, 1), e2 = entrance(t, 2);
   text("POCKET VAPOR", W / 2, 470 + e0.dy, 118, TEXT, a * e0.a, "center", "bold");
   ctx.fillStyle = EMERALD;
   ctx.globalAlpha = a * e1.a;
   ctx.fillRect(W / 2 - 260, 512, 520, 5);
-  text("Vue, compiled all the way down", W / 2, 590 + e1.dy, 40, EMERALD, a * e1.a, "center");
+  text("Reactive JavaScript in 2 KB of RAM", W / 2, 590 + e1.dy, 40, EMERALD, a * e1.a, "center");
   text("GBA  ·  GAME BOY  ·  NES", W / 2, 668 + e2.dy, 30, DIM, a * e2.a, "center");
-  text("an experiment from PocketJS", W / 2, 960 + e3.dy, 24, FAINT, a * e3.a, "center");
   ctx.globalAlpha = 1;
 }
 
@@ -303,29 +303,6 @@ function drawSplit(t: number): void {
   ctx.globalAlpha = 1;
 }
 
-function drawCarts(t: number): void {
-  const a = segAlpha(t, SEG.carts.len);
-  text("the whole app, on cartridge", W / 2, 180, 42, TEXT, a * entrance(t, 0).a, "center", "bold");
-  const CARDS = [
-    { name: "GAME BOY ADVANCE", size: "9.1 KB", color: BLUE },
-    { name: "GAME BOY", size: "32 KB", color: EMERALD },
-    { name: "NES", size: "40 KB", color: VIOLET },
-  ];
-  CARDS.forEach((c, i) => {
-    const e = entrance(t, 2 + i * 2);
-    const x = 210 + i * 520;
-    panel(x, 320 + e.dy, 460, 380, a * e.a, "#1c2233");
-    ctx.globalAlpha = a * e.a;
-    ctx.fillStyle = c.color;
-    ctx.fillRect(x + 40, 360 + e.dy, 60, 8);
-    ctx.globalAlpha = 1;
-    text(c.name, x + 40, 430 + e.dy, 27, DIM, a * e.a);
-    text(c.size, x + 40, 560 + e.dy, 84, TEXT, a * e.a, "left", "bold");
-    text("ROM, fonts included", x + 40, 630 + e.dy, 21, FAINT, a * e.a);
-  });
-  text("no JS engine · no GC · no malloc", W / 2, 850 + entrance(t, 9).dy, 32, EMERALD, a * entrance(t, 9).a, "center");
-}
-
 async function drawPlay(t: number): Promise<void> {
   const a = segAlpha(t, SEG.play.len, 10);
   text("same component · same inputs · three consoles, live", W / 2, 110, 36, TEXT, a, "center", "bold");
@@ -348,6 +325,7 @@ async function drawPlay(t: number): Promise<void> {
     ctx.drawImage(frame, 0, 0, s.sw, s.sh, x, y, w, h);
     text(s.name, x + w / 2, top - 40, 26, s.color, a, "center", "bold");
     text(s.sub, x + w / 2, top - 8, 19, FAINT, a, "center");
+    text(s.rom, x + w / 2, y + h + 44, 24, s.color, a, "center", "bold");
     ctx.globalAlpha = 1;
   }
   // live button read-out from the deterministic schedule
@@ -397,8 +375,18 @@ function drawClose(t: number): void {
   text("github.com/pocket-stack/pocketjs", W / 2, 625 + e2.dy, 30, DIM, a * e2.a, "center");
 }
 
+// ---- logo badge (every frame) ------------------------------------------------------
+const logo = await loadImage(join(ROOT, "assets", "images", "logo.png"));
+function badge(): void {
+  ctx.imageSmoothingEnabled = true;
+  ctx.globalAlpha = 0.92;
+  ctx.drawImage(logo, 48, 40, 40, 40);
+  ctx.globalAlpha = 1;
+  text("PocketJS", 104, 68, 24, DIM, 0.92);
+}
+
 // ---- render loop -----------------------------------------------------------------
-const mp4 = join(OUT, "pocket-vapor-main.mp4");
+const mp4 = join(OUT, "pocket-vapor.mp4");
 const ff = Bun.spawn(
   [
     "ffmpeg", "-y",
@@ -406,7 +394,9 @@ const ff = Bun.spawn(
     "-i", join(OUT, "music.wav"),
     "-map", "0:v", "-map", "1:a",
     "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-b:a", "192k", "-t", String(TOTAL / FPS), mp4,
+    // no -t / -shortest: music.wav is synthesized to exactly TOTAL/FPS seconds,
+    // and a duration cap makes ffmpeg close stdin before the writer finishes (EPIPE)
+    "-c:a", "aac", "-b:a", "192k", mp4,
   ],
   { stdin: "pipe", stdout: "ignore", stderr: Bun.file(join(OUT, "ffmpeg.log")) },
 );
@@ -416,18 +406,18 @@ for (let f = 0; f < TOTAL; f++) {
   background();
   if (f < SEG.code.start) drawTitle(f - SEG.title.start);
   else if (f < SEG.split.start) drawCode(f - SEG.code.start);
-  else if (f < SEG.carts.start) drawSplit(f - SEG.split.start);
-  else if (f < SEG.play.start) drawCarts(f - SEG.carts.start);
+  else if (f < SEG.play.start) drawSplit(f - SEG.split.start);
   else if (f < SEG.numbers.start) await drawPlay(f - SEG.play.start);
   else if (f < SEG.close.start) drawNumbers(f - SEG.numbers.start);
   else drawClose(f - SEG.close.start);
+  badge();
 
   const img = (ctx as SKRSContext2D).getImageData(0, 0, W, H);
-  ff.stdin.write(img.data);
-  if (f % 300 === 0) {
-    await ff.stdin.flush();
-    console.log(`frame ${f}/${TOTAL} (${((Date.now() - t0) / 1000).toFixed(0)}s)`);
-  }
+  // write() under backpressure returns a Promise; not awaiting it TRUNCATES the
+  // stream mid-frame (rawvideo: "packet size < expected frame_size", then EPIPE)
+  await ff.stdin.write(img.data);
+  await ff.stdin.flush();
+  if (f % 300 === 0) console.log(`frame ${f}/${TOTAL} (${((Date.now() - t0) / 1000).toFixed(0)}s)`);
 }
 await ff.stdin.end();
 await ff.exited;

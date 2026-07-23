@@ -3,13 +3,15 @@
 // promo video, synthesized from scratch (square arps, triangle bass, noise
 // hats, sine kick), so the soundtrack is as engine-made as the footage.
 //
-// 125 BPM, A minor, Am F C G. Structure keyed to the storyboard:
+// 125 BPM, A minor, Am F C G. Structure keyed to the storyboard — the lead
+// melody MUST enter at bar 10 (19.2 s), the exact frame the three-console
+// gameplay starts (promo.ts SEG.play.start = 1152). Keep them in sync.
 //   bars  1-4   intro: arp + soft pad          (title, component code)
-//   bars  5-8   + hats and bass                (code)
-//   bars  9-12  + kick, groove settles          (TS -> C, cartridge sizes)
-//   bars 13-20  full groove + lead melody       (three-console gameplay)
-//   bars 21-24  breakdown, kick drops out       (numbers)
-//   bars 25-27  resolve and fade                (close)
+//   bars  5-8   + hats and bass                (code, TS -> C split)
+//   bars  9-10  + kick, groove settles          (split lands)
+//   bars 11-18  full groove + lead melody       (three-console gameplay)
+//   bars 19-21  breakdown, kick softens         (numbers)
+//   bars 22-24  resolve and fade                (close)
 
 import { join } from "node:path";
 
@@ -17,8 +19,8 @@ const SR = 44100;
 const BPM = 125;
 const BEAT = 60 / BPM; // 0.48 s
 const BAR = BEAT * 4;
-const BARS = 27;
-const DUR = BARS * BAR + 1.0;
+const BARS = 24;
+const DUR = 2814 / 60; // == the promo timeline (TOTAL frames / fps); trailing 0.8 s rings out
 const N = Math.floor(SR * DUR);
 
 // A minor: chord roots (Hz) for Am, F, C, G (low octave)
@@ -88,9 +90,9 @@ function hat(start: number, amp = 0.16, dur = 0.03): void {
 for (let bar = 0; bar < BARS; bar++) {
   const t0 = bar * BAR;
   const chord = CHORDS[bar % 4];
-  const groove = bar >= 8 && bar < 24;
-  const full = bar >= 12 && bar < 20;
-  const fading = bar >= 24;
+  const groove = bar >= 8 && bar < 21;
+  const full = bar >= 10 && bar < 18; // bar 10 = 19.2 s = gameplay in
+  const fading = bar >= 21;
 
   // arp: 16th-note square through chord tones, two octaves
   const arpAmp = fading ? 0.05 : bar < 4 ? 0.07 : 0.09;
@@ -113,8 +115,8 @@ for (let bar = 0; bar < BARS; bar++) {
   if (bar >= 4 && !fading) {
     for (let s = 0; s < 16; s++) hat(t0 + s * (BEAT / 4), s % 4 === 2 ? 0.2 : 0.09);
   }
-  // kick: four on the floor
-  if (groove) for (let b = 0; b < 4; b++) kick(t0 + b * BEAT, bar >= 20 ? 0.55 : 0.85);
+  // kick: four on the floor, softened for the numbers breakdown
+  if (groove) for (let b = 0; b < 4; b++) kick(t0 + b * BEAT, bar >= 18 ? 0.55 : 0.85);
   // lead: a pentatonic phrase over the gameplay section, with echo
   if (full) {
     const PHRASE = [0, 2, 3, 2, 4, 3, 2, 1]; // indices into PENTA
