@@ -20,7 +20,7 @@ import {
 } from "../../tools/vita-package.ts";
 import { vitaTitleId } from "../../framework/src/manifest/vita-package.ts";
 import { encodePNG } from "../png.ts";
-import { encodeThresholdInput, GOLDEN_SPECS } from "../golden-specs.ts";
+import { encodeThresholdInput, encodeTouchInput, GOLDEN_SPECS } from "../golden-specs.ts";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
 const OUT = `${ROOT}dist/e2e-vita3k`;
@@ -220,7 +220,9 @@ if (specs.length === 0) {
 
 for (const spec of specs) {
   const input = encodeThresholdInput(spec);
-  const { path: manifest, titleId } = writeDemoManifest(spec.name);
+  const touch = encodeTouchInput(spec);
+  const bundle = spec.app ?? spec.name;
+  const { path: manifest, titleId } = writeDemoManifest(bundle);
   const appDir = `${VITAFS}/ux0/app/${titleId}`;
   const globalTitleStub = `${globalVitaFs}/ux0/app/${titleId}`;
   mkdirSync(`${appDir}/sce_sys`, { recursive: true });
@@ -239,6 +241,7 @@ for (const spec of specs) {
       ...process.env,
       VITASDK: process.env.VITASDK ?? `${homedir()}/vitasdk`,
       POCKETJS_CAPTURE_INPUT: input,
+      POCKETJS_CAPTURE_TOUCH: touch,
       POCKETJS_CAPTURE_FRAMES: spec.capture.join(","),
     })
     .quiet()
@@ -250,7 +253,7 @@ for (const spec of specs) {
   }
 
   try {
-    assertPackagedDefaultLiveArea(`${ROOT}dist/vita/${spec.name}.vpk`);
+    assertPackagedDefaultLiveArea(`${ROOT}dist/vita/${bundle}.vpk`);
   } catch (error) {
     console.error(`FAIL ${spec.name}: ${(error as Error).message}`);
     failed += spec.capture.length;
