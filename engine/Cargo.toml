@@ -2,8 +2,9 @@
 # (docs/RUNTIMES.md: these are the Cores plus their desktop surfaces).
 #
 # Deliberately EXCLUDED and standalone (each with its own Cargo.lock):
-#   core/, wasm/          — cargo-psp needs hosts/psp to consume core as a
-#                           lone standalone crate (see core/Cargo.toml)
+#   core/, wasm/, backends/esp32p4-ppa/
+#                        — cargo-psp and ESP-IDF need to consume these as
+#                           lone standalone crates (see their Cargo.toml)
 #   pocket3d/crates/pocket3d-gu, gu-demo — PSP-only (cargo-psp toolchain)
 #   pocket3d/crates/pocket3d-vita        — Vita-only (vitasdk toolchain)
 [workspace]
@@ -21,6 +22,7 @@ members = [
     "pocket3d/examples/uihost",
 ]
 exclude = [
+    "backends/esp32p4-ppa",
     "core",
     "wasm",
     "pocket3d/crates/pocket3d-gu",
