@@ -38,6 +38,7 @@ const ANIMATION_PATH = new URL("../src/animation.ts", import.meta.url).pathname;
 const COMPONENTS_PATH = new URL("../src/components.ts", import.meta.url).pathname;
 const COMPONENTS_VUE_VAPOR_PATH = new URL("../src/components-vue-vapor.ts", import.meta.url).pathname;
 const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
+const GESTURE_PATH = new URL("../src/gesture.ts", import.meta.url).pathname;
 const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
 const LAUNCHER_PATH = new URL("../src/launcher.ts", import.meta.url).pathname;
 const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
@@ -77,6 +78,7 @@ export const FRAMEWORKS: Record<
       animation: ANIMATION_PATH,
       components: COMPONENTS_PATH,
       config: CONFIG_PATH,
+      gesture: GESTURE_PATH,
       input: INPUT_API_PATH,
       launcher: LAUNCHER_PATH,
       lifecycle: LIFECYCLE_PATH,
