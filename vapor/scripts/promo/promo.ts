@@ -13,7 +13,7 @@
 // lead melody enters — keep promo timeline and music structure in sync.
 
 import { join } from "node:path";
-import { createCanvas, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
+import { createCanvas, type SKRSContext2D } from "@napi-rs/canvas";
 import { FRAMES_PER_PRESS, LEAD, pressList, TOTAL_FRAMES } from "./capture.ts";
 import { Button } from "../../host/input.ts";
 
@@ -294,13 +294,6 @@ function drawSplit(t: number): void {
   panel(980, 260 + e3.dy, 820, 480, a * e3.a, "#2a4a3a");
   text("it ships (generated, verbatim)", 1020, 320 + e3.dy, 22, EMERALD, a * e3.a);
   C_SIDE.forEach((l, i) => codeLine(l, 1020, 380 + e3.dy + i * 40, 23, a * e3.a));
-  const e4 = entrance(t, 9);
-  ctx.globalAlpha = a * e4.a;
-  ctx.fillStyle = TEXT;
-  ctx.font = `28px ${MONO}`;
-  ctx.textAlign = "center";
-  ctx.fillText("no JS engine on device  ·  arm-none-eabi-gcc  ·  sdcc  ·  cc65", W / 2, 860);
-  ctx.globalAlpha = 1;
 }
 
 async function drawPlay(t: number): Promise<void> {
@@ -376,13 +369,42 @@ function drawClose(t: number): void {
 }
 
 // ---- logo badge (every frame) ------------------------------------------------------
-const logo = await loadImage(join(ROOT, "assets", "images", "logo.png"));
+// The PocketJS lens/viewfinder glyph, redrawn in vectors from the site's
+// brand SVG (same geometry as skills/pocketjs-video-outro/assets/outro.html):
+// 32x32 viewBox — rounded-rect edge, lens dot at (10,16), two bars.
+function drawLogo(x0: number, y0: number, size: number): void {
+  const u = size / 32;
+  const grad = (x1: number, y1: number, x2: number, y2: number, stops: [number, string][]) => {
+    const g = ctx.createLinearGradient(x0 + x1 * u, y0 + y1 * u, x0 + x2 * u, y0 + y2 * u);
+    for (const [o, c] of stops) g.addColorStop(o, c);
+    return g;
+  };
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = grad(4, 4, 28, 28, [
+    [0, "#eef6ff"], [0.38, "#b7c8e2"], [0.58, "#7487a0"], [0.78, "#aec0d6"], [1, "#dbe8f6"],
+  ]);
+  ctx.lineWidth = 2.6 * u;
+  ctx.beginPath();
+  ctx.roundRect(x0 + 2 * u, y0 + 6 * u, 28 * u, 20 * u, 6 * u);
+  ctx.stroke();
+  ctx.fillStyle = grad(7, 13, 13, 19, [[0, "#e4edf8"], [0.55, "#a7b8cf"], [1, "#53677f"]]);
+  ctx.beginPath();
+  ctx.arc(x0 + 10 * u, y0 + 16 * u, 3.1 * u, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = grad(16, 12, 24, 20, [[0, "#d7e3f1"], [1, "#71849d"]]);
+  ctx.beginPath();
+  ctx.roundRect(x0 + 16 * u, y0 + 12.6 * u, 10 * u, 2.2 * u, 1.1 * u);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.roundRect(x0 + 16 * u, y0 + 17.2 * u, 6.5 * u, 2.2 * u, 1.1 * u);
+  ctx.fill();
+}
+
 function badge(): void {
-  ctx.imageSmoothingEnabled = true;
   ctx.globalAlpha = 0.92;
-  ctx.drawImage(logo, 48, 40, 40, 40);
+  drawLogo(48, 38, 44);
   ctx.globalAlpha = 1;
-  text("PocketJS", 104, 68, 24, DIM, 0.92);
+  text("PocketJS", 106, 69, 24, DIM, 0.92);
 }
 
 // ---- render loop -----------------------------------------------------------------
