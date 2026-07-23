@@ -1,3 +1,7 @@
+<video class="w-full rounded-xl border border-line" src="/assets/pocket-vapor-promo.mp4" poster="/assets/blog/pocket-vapor-promo-poster.jpg" controls playsinline preload="metadata"></video>
+
+<p class="text-sm text-slate-500 -mt-4">The 47-second tour: a real Vue component, compiled to three consoles, running the same inputs in lockstep. Sound on; the chiptune is synthesized by the same repo that builds the ROMs.</p>
+
 <img class="w-full rounded-xl border border-line" src="/assets/blog/vapor-gba-edit.png" alt="A Game Boy Advance screen running a todo app: an emerald title bar reading POCKET VAPOR TODO, a list with SHIP POCKET VAPOR selected, WRITE THE COMPILER checked off, and an amber editor bar at the bottom reading NEW: HELLO HN with a glyph picker cursor" />
 
 <p class="text-sm text-slate-500 -mt-4">A Vue component, mid-keystroke. The amber bar is a reactive string ref being edited with a d-pad; the emerald title is <code>class="bg-emerald-500 text-slate-950 align-center"</code>; the machine is a Game Boy Advance. The whole cartridge is 9.1 KB.</p>

@@ -109,6 +109,29 @@ ffprobe -v error -select_streams v:0 \
   spatial-audio track plus several data streams; `a:0` is the standard stereo mix.
   If the source has no audio, the output is video-only.
 
+## Publishing a video on pocketjs.dev
+
+There is no separate upload step — videos ship with the site deploy as
+static Worker assets (Cloudflare, `site/wrangler.jsonc`; keep each file well
+under the 25 MiB per-asset limit):
+
+1. Commit the mp4 into git at `site/assets/<name>.mp4` (existing examples:
+   `pocketjs-hardware-demo.mp4`, `pocketjs-demo-wall.mp4`).
+2. Add a `copy(SITE + "assets/<name>.mp4", "assets/<name>.mp4")` line in
+   `site/build.ts` step 4, next to the other mp4 copies. Files under
+   `site/assets/blog/` (e.g. poster frames) are directory-copied
+   automatically and need no explicit line.
+3. Embed with a raw `<video>` tag in the page or post markdown. House
+   classes: `class="w-full rounded-xl border border-line"`. Silent loops use
+   `autoplay muted loop playsinline`; anything with a soundtrack must use
+   `controls playsinline preload="metadata"` plus a `poster` (browsers block
+   un-muted autoplay). Bake the poster with
+   `ffmpeg -ss <t> -i in.mp4 -frames:v 1 -q:v 3 site/assets/blog/<name>-poster.jpg`.
+4. Verify locally with `bun run site:build`, then merge to main —
+   `.github/workflows/deploy.yml` runs `site:build` and
+   `bunx wrangler deploy -c site/wrangler.jsonc`. Manual deploy is those same
+   two commands.
+
 ## Customization & internals
 
 - The card is `assets/outro.html`, parameterized via query string
