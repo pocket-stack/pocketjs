@@ -382,6 +382,11 @@ export function VirtualList(props: VirtualListProps): SolidJSX.Element {
       return {
         overflow: ENUMS.Overflow.Hidden,
         height: props.height,
+        // Full parent width by default (SIZE_FULL): a plain View is a flex
+        // ROW, so an unsized viewport inside one lays out at width 0 and the
+        // whole list silently paints nothing (found the hard way — the mock
+        // host has no layout, so only a real core catches it).
+        width: -1,
         ...props.style,
       };
     },
