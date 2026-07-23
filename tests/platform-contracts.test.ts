@@ -120,6 +120,23 @@ describe("pocket.json v2 schema", () => {
       message: "unknown property",
     });
   });
+
+  test("accepts declared execution classes and rejects unknown ones", () => {
+    const dual = structuredClone(portableInput) as Record<string, any>;
+    dual.execution = { classes: ["guest", "aot"] };
+    expect(validatePocketManifest(dual).ok).toBe(true);
+
+    const unknown = structuredClone(portableInput) as Record<string, any>;
+    unknown.execution = { classes: ["jit"] };
+    const result = validatePocketManifest(unknown);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual({
+      code: "schema.enum",
+      path: "/execution/classes/0",
+      message: 'expected one of "guest", "aot"',
+    });
+  });
 });
 
 describe("platform registry", () => {
@@ -195,6 +212,23 @@ describe("platform registry", () => {
 });
 
 describe("semantic resolution", () => {
+  test("guest resolution honors the declared execution classes", () => {
+    const dual = structuredClone(portableInput) as Record<string, any>;
+    dual.execution = { classes: ["guest", "aot"] };
+    expect(validateAndResolveBuildPlan(dual, { target: "psp" }).ok).toBe(true);
+
+    const aotOnly = structuredClone(portableInput) as Record<string, any>;
+    aotOnly.execution = { classes: ["aot"] };
+    const result = validateAndResolveBuildPlan(aotOnly, { target: "psp" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual({
+      code: "execution.guestExcluded",
+      path: "/execution/classes",
+      message: "manifest declares no guest execution class; this resolver only builds guest plans",
+    });
+  });
+
   test("resolves a small PSP build plan", () => {
     const result = validateAndResolveBuildPlan(portableInput, { target: "psp" });
     expect(result.ok).toBe(true);

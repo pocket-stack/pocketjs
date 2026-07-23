@@ -13,6 +13,13 @@ ESP32-D0WD and a 160×128 ST7735 panel. The logical Pocket screen is 20×18;
 each character is rasterized into an 8×7 RGB565 cell, leaving one physical
 row above and below the 160×126 content area.
 
+Board profiles are data, not code: pins, panel and pad coverage live in
+[`vapor/boards/meowbit.json`](../../boards/meowbit.json), validated and
+turned into compile definitions by `vapor/compiler/boards.ts`. The build
+and verify commands take `--board <name>` (default `meowbit`). See
+[`vapor/BOARDS.md`](../../BOARDS.md) for the design. The tables below
+describe the MeowBit values.
+
 ## Board profile
 
 | function | GPIO | electrical behavior |

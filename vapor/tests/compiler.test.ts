@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { loadBoard } from "../compiler/boards.ts";
 import { compileVaporApp, VAPOR_TARGETS, VaporCompileError } from "../compiler/compile.ts";
 import { esp32BuildId } from "../compiler/esp32.ts";
 import { FONT8 } from "../compiler/font.gen.ts";
@@ -87,7 +88,7 @@ describe("pocket vapor compiler", () => {
     expect(compiled.plan).toContain("760 B font + 12 B style data");
   });
 
-  test("esp32 build identity is deterministic and source-sensitive", async () => {
+  test("esp32 build identity is deterministic, source- and board-sensitive", async () => {
     const app = compileVaporApp("esp32.tsx", minimal(""), "ESP32", "esp32");
     const same = compileVaporApp("esp32.tsx", minimal(""), "ESP32", "esp32");
     const changed = compileVaporApp(
@@ -97,10 +98,15 @@ describe("pocket vapor compiler", () => {
       "esp32",
     );
 
-    const id = await esp32BuildId(app);
+    const board = loadBoard("meowbit");
+    const id = await esp32BuildId(app, board);
     expect(id).toMatch(/^[0-9a-f]{16}$/);
-    expect(await esp32BuildId(same)).toBe(id);
-    expect(await esp32BuildId(changed)).not.toBe(id);
+    expect(await esp32BuildId(same, board)).toBe(id);
+    expect(await esp32BuildId(changed, board)).not.toBe(id);
+
+    const rewired = structuredClone(board);
+    rewired.input.pins.b = 14;
+    expect(await esp32BuildId(app, rewired)).not.toBe(id);
   });
 
   test("effect masks subscribe conditional reads on both arms", async () => {

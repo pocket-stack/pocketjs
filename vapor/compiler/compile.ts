@@ -63,6 +63,10 @@ export interface CompiledApp {
   styles: StyleTable;
   /** style diagnostics (errors already thrown; warnings informational) */
   diagnostics: string[];
+  /** Button ids the compiled source statically references (keymap keys and
+   * folded Button.X reads) — the input half of the app's derived demands.
+   * Per target: code behind a false SCREEN fold is never compiled. */
+  buttonsUsed: number[];
 }
 
 export class VaporCompileError extends Error {
@@ -532,6 +536,7 @@ class AppCompiler {
   // `(cond ? mapA : mapB)[b]?.()` — undefined entries are null pointers.
 
   private keymaps: KeymapBinding[] = [];
+  private buttonsUsed = new Set<number>();
 
   private scanKeymap(name: string, init: ts.ObjectLiteralExpression): void {
     const entries = new Map<number, string>();
@@ -819,7 +824,10 @@ class AppCompiler {
           const buttons: Record<string, number> = {
             A: 0, B: 1, Select: 2, Start: 3, Right: 4, Left: 5, Up: 6, Down: 7, R: 8, L: 9,
           };
-          if (e.name.text in buttons) return buttons[e.name.text];
+          if (e.name.text in buttons) {
+            this.buttonsUsed.add(buttons[e.name.text]);
+            return buttons[e.name.text];
+          }
         }
       }
     }
@@ -2083,6 +2091,7 @@ class AppCompiler {
       debugSlots,
       styles: this.styleTable,
       diagnostics: this.styleWarnings,
+      buttonsUsed: [...this.buttonsUsed].sort((a, b) => a - b),
     };
   }
 }

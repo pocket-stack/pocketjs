@@ -9,33 +9,12 @@ import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { mkdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
+import { admitBoard, boardDefinitions, loadBoard, type VaporBoard } from "./boards.ts";
 import { VAPOR_TARGETS, type CompiledApp } from "./compile.ts";
 
 const RUNTIME = resolve(import.meta.dir, "..", "runtime");
 const IDF_VERSION = "v6.0.2";
-const MEOWBIT_DEFINITIONS = [
-  'VP_ESP32_BOARD=\\"meowbit\\"',
-  "VP_LCD_ENABLED=1",
-  "VP_LCD_CONTROLLER=3",
-  "VP_LCD_WIDTH=160",
-  "VP_LCD_HEIGHT=128",
-  "VP_LCD_CELL_W=8",
-  "VP_LCD_CELL_H=7",
-  "VP_LCD_MADCTL=0x60",
-  "VP_LCD_SCLK=18",
-  "VP_LCD_MOSI=23",
-  "VP_LCD_CS=5",
-  "VP_LCD_DC=4",
-  "VP_LCD_RST=-1",
-  "VP_LCD_BL=-1",
-  "VP_BUTTON_COUNT=6",
-  "VP_BUTTON_UP=2",
-  "VP_BUTTON_DOWN=13",
-  "VP_BUTTON_LEFT=27",
-  "VP_BUTTON_RIGHT=35",
-  "VP_BUTTON_A=34",
-  "VP_BUTTON_B=12",
-] as const;
+export const DEFAULT_BOARD = "meowbit";
 
 function cmakeString(value: string): string {
   return `"${value.replaceAll("\\", "/").replaceAll('"', '\\"')}"`;
@@ -136,7 +115,7 @@ export async function runEspIdf(args: string[]): Promise<void> {
   await runIdf(idfPath, idfToolsPath, args);
 }
 
-function mainCmake(debugStateBytes: number, buildId: string): string {
+function mainCmake(debugStateBytes: number, buildId: string, board: VaporBoard): string {
   const target = VAPOR_TARGETS.esp32;
   const sources = [
     join(RUNTIME, "vapor_core.c"),
@@ -150,7 +129,7 @@ function mainCmake(debugStateBytes: number, buildId: string): string {
     `VP_VIEW_CAP=${target.poolCap}`,
     `VP_DEBUG_STATE_BYTES=${debugStateBytes}`,
     `VP_BUILD_ID=\\"${buildId}\\"`,
-    ...MEOWBIT_DEFINITIONS,
+    ...boardDefinitions(board),
   ];
 
   return [
@@ -176,10 +155,12 @@ export interface Esp32BuildResult {
   buildId: string;
 }
 
-/** Identity of the generated app plus every source/config input flashed. */
-export async function esp32BuildId(app: CompiledApp): Promise<string> {
+/** Identity of the generated app plus every source/config input flashed.
+ * The board contributes exactly its derived definitions, so a board file
+ * refactor that keeps the definitions byte-identical keeps the id. */
+export async function esp32BuildId(app: CompiledApp, board: VaporBoard): Promise<string> {
   const hasher = new Bun.CryptoHasher("sha256");
-  hasher.update(`${IDF_VERSION}\n${JSON.stringify(MEOWBIT_DEFINITIONS)}\n${app.c}\n`);
+  hasher.update(`${IDF_VERSION}\n${JSON.stringify(boardDefinitions(board))}\n${app.c}\n`);
   for (const path of [
     join(RUNTIME, "vapor.h"),
     join(RUNTIME, "vapor_core.c"),
@@ -194,13 +175,19 @@ export async function esp32BuildId(app: CompiledApp): Promise<string> {
 export async function buildEsp32Firmware(
   app: CompiledApp,
   outFirmware: string,
+  board: VaporBoard = loadBoard(DEFAULT_BOARD),
 ): Promise<Esp32BuildResult> {
+  const target = VAPOR_TARGETS.esp32;
+  const refusals = admitBoard({ buttonsUsed: [] }, board, target).filter((i) => i.severity === "error");
+  if (refusals.length > 0) {
+    throw new Error(`board ${board.board} cannot host the ${target.width}x${target.height} grid:\n${refusals.map((i) => `${i.code} ${i.message}`).join("\n")}`);
+  }
   const output = resolve(outFirmware);
   const outputDir = dirname(output);
   const projectDir = join(outputDir, "gen-esp32");
   const mainDir = join(projectDir, "main");
   const buildDir = join(projectDir, "build");
-  const buildId = await esp32BuildId(app);
+  const buildId = await esp32BuildId(app, board);
   const debugStateEnd = Math.max(
     1,
     ...app.debugSlots.map((slot) => slot.offset + slot.size),
@@ -213,7 +200,7 @@ export async function buildEsp32Firmware(
 
   await mkdir(mainDir, { recursive: true });
   await Bun.write(join(mainDir, "gen_app.c"), app.c);
-  await Bun.write(join(mainDir, "CMakeLists.txt"), mainCmake(debugStateBytes, buildId));
+  await Bun.write(join(mainDir, "CMakeLists.txt"), mainCmake(debugStateBytes, buildId, board));
   await Bun.write(
     join(projectDir, "CMakeLists.txt"),
     [

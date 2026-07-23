@@ -117,14 +117,23 @@ luminance), with the whole diagnostics matrix one command away:
 
 ```
 $ bun run vapor:check
-gba  OK    30x20, 6 style pairs
-gb   OK    20x18, 6 style pairs
-     warn  VS104: 3 distinct color pairs render as the same glyph style ...
-nes  OK    22x18, 6 style pairs
-     warn  VS104: 3 distinct color pairs render as the same glyph style ...
-esp32 OK   20x18, 6 style pairs
+gba     OK    30x20, 6 style pairs
+gb      OK    20x18, 6 style pairs
+        warn  VS104: 3 distinct color pairs render as the same glyph style ...
+nes     OK    22x18, 6 style pairs
+        warn  VS104: 3 distinct color pairs render as the same glyph style ...
+esp32   OK    20x18, 6 style pairs
+meowbit OK    board (esp32)
+        warn  VB103: "start" is only reachable as the a+b chord on meowbit ...
 $ bun vapor/compiler/cli.ts check app.tsx --strict   # lossy lowering = failure
+$ bun vapor/compiler/cli.ts check app.tsx --json     # demands + verdicts as data
 ```
+
+Board rows are the AOT admission rule at work: MCU devices are data files
+(`boards/meowbit.json`), the compiler derives what the app demands (buttons
+used, style pairs, grid), and `check` judges every registered board against
+them — see [BOARDS.md](BOARDS.md) for how this scales past one store's
+ability to enumerate devices.
 
 And the oracle is visible: `bun run vapor:dev` serves the app on real Vue
 Vapor in your browser — inspectable DOM rows, keyboard as the pad,

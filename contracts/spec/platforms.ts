@@ -38,6 +38,27 @@ export type Viewport = readonly [width: number, height: number];
 export const TARGET_FORMS = ["takeover", "window", "widget", "kiosk", "embedded"] as const;
 export type TargetForm = (typeof TARGET_FORMS)[number];
 
+/**
+ * How an application artifact executes on a device — a semantic FIELD like
+ * TargetForm, and the top-level split in admission machinery:
+ *
+ * - "guest": one portable bundle runs on the embedded JS engine of every
+ *   stock host. Admission is the RUNTIME rule this file defines — manifest
+ *   `requires` ⊆ target profile `capabilities`.
+ * - "aot":   the same source is recompiled natively per device by an AOT
+ *   compiler family (Pocket Vapor, Pocket Static). There is no hostAbi, no
+ *   ops and no runtime capability check; admission is COMPILE-TIME — the
+ *   compiler derives the app's demands and checks them against a BOARD
+ *   PROFILE (data, not a registry entry — see vapor/BOARDS.md).
+ *
+ * The classes scale differently on purpose: guest targets stay an inventory
+ * of real, golden-tested hosts (this registry); aot boards are open-ended
+ * data files validated by schema plus a physical verifier, because the MCU
+ * cross product (chip × panel × input × RAM) cannot be enumerated here.
+ */
+export const EXECUTION_CLASSES = ["guest", "aot"] as const;
+export type ExecutionClass = (typeof EXECUTION_CLASSES)[number];
+
 /** The forms whose logical viewport is a runtime variable. */
 export const DYNAMIC_FORMS: readonly TargetForm[] = ["window", "widget"];
 

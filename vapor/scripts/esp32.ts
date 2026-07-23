@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 // Build, flash, and verify Pocket Vapor on a USB-connected ESP32 MeowBit.
 //
-//   bun vapor/scripts/esp32.ts flash [--port /dev/cu.usbmodem...]
-//   bun vapor/scripts/esp32.ts verify [--port ...] [--no-flash]
+//   bun vapor/scripts/esp32.ts flash [--port /dev/cu.usbmodem...] [--board meowbit]
+//   bun vapor/scripts/esp32.ts verify [--port ...] [--no-flash] [--board meowbit]
 //
 // `verify` is the physical-device equivalent of parity.test.ts: it boots the
 // real Vue Vapor oracle, replays the shared TodoMVC tape through the native
@@ -14,8 +14,10 @@ import {
 } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { compileVaporApp, VAPOR_TARGETS } from "../compiler/compile.ts";
+import { loadBoard } from "../compiler/boards.ts";
 import {
   buildEsp32Firmware,
+  DEFAULT_BOARD,
   esp32BuildId,
   resolveEspIdfEnvironment,
   runEspIdf,
@@ -33,6 +35,7 @@ const RECEIPT = join(OUT, "esp32-device-receipt.json");
 const TARGET = VAPOR_TARGETS.esp32;
 const BAUD = 115200;
 const CELLS = TARGET.width * TARGET.height;
+const BOARD = loadBoard(option("--board") ?? DEFAULT_BOARD);
 
 interface GridReceipt {
   header: string;
@@ -266,7 +269,7 @@ async function build(): Promise<{
 }> {
   const source = await Bun.file(ENTRY).text();
   const app = compileVaporApp(ENTRY, source, "VAPOR TODO", "esp32");
-  const firmware = await buildEsp32Firmware(app, FIRMWARE);
+  const firmware = await buildEsp32Firmware(app, FIRMWARE, BOARD);
   return { app, firmware };
 }
 
@@ -318,12 +321,12 @@ async function verify(
     if (handshakeError) throw handshakeError;
     const identity = fields(ready);
     const expected = {
-      board: "meowbit",
-      chip: "esp32",
-      grid: "20x18",
+      board: BOARD.board,
+      chip: BOARD.chip,
+      grid: `${TARGET.width}x${TARGET.height}`,
       lcd: "1",
-      panel: "160x128",
-      cell: "8x7",
+      panel: `${BOARD.lcd.width}x${BOARD.lcd.height}`,
+      cell: `${BOARD.lcd.cell[0]}x${BOARD.lcd.cell[1]}`,
       build: expectedBuildId,
     };
     for (const [key, value] of Object.entries(expected)) {
@@ -380,6 +383,7 @@ async function verify(
         verifiedAt: new Date().toISOString(),
         port,
         baud: BAUD,
+        board: BOARD.board,
         buildId: expectedBuildId,
         firmware: FIRMWARE,
         localFirmwareBytes: firmwareBytes?.byteLength,
@@ -401,7 +405,7 @@ async function verify(
 const command = process.argv[2] ?? "verify";
 if (command !== "flash" && command !== "verify") {
   console.error(
-    "usage: bun vapor/scripts/esp32.ts flash|verify [--port /dev/cu.usbmodem...] [--no-flash]",
+    "usage: bun vapor/scripts/esp32.ts flash|verify [--port /dev/cu.usbmodem...] [--no-flash] [--board meowbit]",
   );
   process.exit(2);
 }
@@ -415,6 +419,6 @@ if (command === "flash" || !process.argv.includes("--no-flash")) {
   await flash(firmware, port);
 }
 if (command === "verify") {
-  const expectedBuildId = firmware?.buildId ?? await esp32BuildId(app);
+  const expectedBuildId = firmware?.buildId ?? await esp32BuildId(app, BOARD);
   await verify(port, app, expectedBuildId);
 }

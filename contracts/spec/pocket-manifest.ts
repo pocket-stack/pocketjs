@@ -1,4 +1,10 @@
-import { PRESENTATION_MODES, type PresentationMode, type Viewport } from "./platforms.ts";
+import {
+  EXECUTION_CLASSES,
+  PRESENTATION_MODES,
+  type ExecutionClass,
+  type PresentationMode,
+  type Viewport,
+} from "./platforms.ts";
 
 export const POCKET_MANIFEST_VERSION = 2 as const;
 export const POCKET_MANIFEST_SCHEMA_ID = "https://pocketjs.dev/schema/pocket-2.json";
@@ -38,6 +44,17 @@ export interface PocketManifestV2 {
   readonly name: string;
   readonly title: string;
   readonly version: string;
+  /**
+   * Execution classes this package ships as; omitted means ["guest"].
+   * Declaring "aot" states that the entry compiles under an AOT family
+   * (Pocket Vapor/Static) whose admission is compile-time derived demands
+   * against a board profile, not this manifest's capability ids. A package
+   * whose classes exclude "guest" is refused by the guest build resolver.
+   * Per-class blocks (e.g. an `aot` section) hang off this object later.
+   */
+  readonly execution?: {
+    readonly classes: readonly ExecutionClass[];
+  };
   readonly engine: {
     readonly capabilities: {
       readonly requires: readonly string[];
@@ -109,6 +126,19 @@ export const pocketManifestV2Schema = {
     version: {
       type: "string",
       pattern: "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+    },
+    execution: {
+      type: "object",
+      additionalProperties: false,
+      required: ["classes"],
+      properties: {
+        classes: {
+          type: "array",
+          items: { enum: EXECUTION_CLASSES },
+          minItems: 1,
+          uniqueItems: true,
+        },
+      },
     },
     engine: {
       type: "object",
