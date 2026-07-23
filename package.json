@@ -85,6 +85,7 @@
     "./solid/components": "./framework/src/components.ts",
     "./solid/lifecycle": "./framework/src/lifecycle.ts",
     "./solid/renderer": "./framework/src/renderer-solid.ts",
+    "./virtual-list": "./framework/src/virtual-list.ts",
     "./vue-vapor": "./framework/src/index-vue-vapor.ts",
     "./vue-vapor/animation": "./framework/src/animation.ts",
     "./vue-vapor/clock": "./framework/src/clock.ts",
