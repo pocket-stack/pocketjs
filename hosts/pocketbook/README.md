@@ -6,52 +6,89 @@ The PocketJS UI runtime on **PocketBook e-readers**, rendered through the
 It reuses the backend-agnostic `ui` surface (`pocket-ui-surface`) and the
 core's software rasterizer unchanged, then:
 
-- rasterizes the DrawList to RGBA8 at `logical × density` resolution
-  (`pocketjs_core::raster::render_scaled`);
-- luminance-converts RGBA8 → Gray8 with 16×16-tile damage tracking
-  (`framebuffer.rs`);
-- drives the e-ink panel with a partial/dynamic/full update policy ported from
+- rasterizes the DrawList to RGBA8 at `480×272 @2x` = 960×544
+  (`pocketjs_core::raster::render_scaled`), matching the `pocketbook` target
+  profile in `contracts/spec/platforms.ts`;
+- diffs frames in 16×16 tiles and blits the changed pixels as `RGB24`
+  (`framebuffer.rs`). inkview's `Screen::draw` converts `RGB24`→Gray8
+  internally on **grayscale** panels (PocketBook Verse) and writes RGB directly
+  on **color** panels (PocketBook Era Color, Kaleido 3) — one blit path serves
+  both;
+- drives the panel with a partial/dynamic/full update policy ported from
   `inkview-slint` (`refresh.rs`);
 - maps inkview keys → the spec BTN bitmask and the touchscreen → the framework's
   packed touch wire format (`input.rs`);
 - runs the inkview event loop on the main thread forwarding into a channel, with
   a second thread owning the `Screen` and the fixed-cadence tick/render loop
-  (`main.rs`, same model as the `inkview-slint` demo).
+  (`main.rs`, the `inkview-slint` demo model).
+
+The 960×544 render is integer-fit centered on the actual panel (which varies by
+model), so the host works across devices without per-model configuration.
 
 See **`pocketjs-inkview-implementation.md`** at the repo root for the full
-design, the ground-truth API notes, and the open design questions (notably the
-logical-viewport / touch-coordinate trade-off in §9).
+design and the ground-truth API notes.
 
 ## Status
 
-Phases 0–3 of the implementation plan: the host compiles natively, is clippy
-clean, and its framebuffer/input unit tests pass. On-device validation
-(refresh tuning, touch accuracy, the §9 viewport choice) still requires
-hardware.
+The host cross-compiles to a stripped ARM ELF (glibc ≤2.18, dlopens
+`libinkview.so` at runtime), is clippy-clean, and its framebuffer/input unit
+tests pass. The `pocketbook` target is registered and `hero` builds for it
+(`bun pocket compile --target pocketbook`). **On-device validation still needs
+hardware** — see the checklist below.
 
 ## Build
 
-Cross-compile for PocketBook's ARM Linux (glibc 2.23):
+One-time toolchain setup:
 
 ```sh
 rustup target add armv7-unknown-linux-gnueabi
 cargo install cargo-zigbuild
-cargo zigbuild --release --target armv7-unknown-linux-gnueabi.2.23
+# zig (brew install zig) and libclang (for rquickjs bindgen) are also required.
 ```
 
-`libinkview.so` is `dlopen`'d at runtime (`inkview::load`) — no SDK is needed at
-build time. The `inkview` dependency currently points at a local checkout; switch
-to the git dependency in `Cargo.toml` for a standalone/CI build.
+Cross-compile the host (from this directory):
+
+```sh
+cargo zigbuild --release --target armv7-unknown-linux-gnueabi.2.23
+# → target/armv7-unknown-linux-gnueabi/release/pocketbook-host
+```
+
+Notes:
+
+- `libinkview.so` is `dlopen`'d at runtime (`inkview::load`) — no SDK at build
+  time.
+- `rquickjs` ships pre-generated FFI bindings for common targets but not the
+  soft-float `armv7-unknown-linux-gnueabi`, so the ARM build enables its
+  `bindgen` feature (needs `libclang`). Native builds use the pre-generated
+  bindings.
+- LLVM lowers `f32::max/min` to C23 math symbols (`fmaximum_numf`, …) that
+  PocketBook's glibc 2.23 predates; `build.rs` links a tiny shim
+  (`src/compat.c`) providing them for the cross-build.
+- The `inkview` dependency currently points at a local checkout; switch to the
+  git dependency in `Cargo.toml` for a standalone/CI build.
+
+## Build the app bundle
+
+From the repo root:
+
+```sh
+bun pocket compile --target pocketbook --manifest apps/hero/pocket.json --project-root .
+# → dist/hero-main.js + dist/hero-main.pak
+```
 
 ## Deploy
 
+Connect the PocketBook over USB, then from the repo root:
+
 ```sh
-D=/mnt/ext1/applications/myapp
-cp target/armv7-unknown-linux-gnueabi.2.23/release/pocketbook-host $D/myapp
-cp dist/<app>.js  $D/app.js     # PocketJS build output
-cp dist/<app>.pak $D/app.pak
-chmod +x $D/myapp
+hosts/pocketbook/deploy.sh                 # auto-detects the mount point
+# or explicitly:
+hosts/pocketbook/deploy.sh /run/media/$USER/PB626
 ```
+
+It installs `applications/pocketjs-hero/{pocketjs-hero, app.js, app.pak}`.
+Eject safely and launch **pocketjs-hero** from the launcher (a firmware rescan
+or restart may be needed for a new app to appear).
 
 ## Runtime configuration
 
@@ -59,5 +96,36 @@ chmod +x $D/myapp
 | ------- | ------- | ------- |
 | `POCKET_PAK` | `app.pak` | path to the app pak |
 | `POCKET_JS` | `app.js` | path to the JS bundle |
-| `POCKET_DENSITY` | `2` | raster density (1–4); raise for high-DPI panels so the logical viewport stays ≤511 px/axis |
-| `RUST_LOG` | `info` | log filter |
+| `RUST_LOG` | `info` | log filter (the host logs the panel size + geometry at startup) |
+
+## Device testing checklist
+
+Run on both a grayscale and a color device to exercise both blit paths.
+
+**Boot / render**
+
+- [ ] App appears in the launcher and opens without crashing.
+- [ ] The `hero` UI renders, centered, with letterbox borders on the larger
+      panel. Check the startup log line (`pocketbook: panel WxH, … + (ox,oy)`)
+      for sane geometry.
+- [ ] Text is crisp (font atlases are baked @2x).
+- [ ] **Verse (gray):** image/logo render in grayscale, no color.
+- [ ] **Era Color (color):** colored UI elements actually show color.
+
+**Input**
+
+- [ ] Touch: tapping a button activates it (touch maps physical→logical via the
+      integer-fit offset + density).
+- [ ] Hardware keys: D-pad moves focus, OK activates, Back/Menu behave.
+- [ ] Page-turn keys (Prev/Next) map to left/right.
+
+**E-ink refresh**
+
+- [ ] Small changes (button highlight) update without a full flash.
+- [ ] During animation/scroll the panel keeps up (dynamic updates), then does a
+      clean partial update when it settles (~200 ms quiet).
+- [ ] No persistent ghosting after a few seconds idle (periodic cleanup works).
+- [ ] Returning from background (`Show`) does one clean full redraw.
+
+**Report back** any crash (ideally with `RUST_LOG=debug` output), mis-render,
+touch offset, or excessive flicker — those drive the next iteration.
