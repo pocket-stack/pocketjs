@@ -29,6 +29,7 @@ import {
   findSection,
   fnv1a64,
   thinPocketPackage,
+  type PocketPackageSection,
   type PocketPackageVariant,
 } from "../contracts/spec/pocket-package.ts";
 
@@ -60,7 +61,7 @@ export function makeVariant(input: {
   // The js section carries the QuickJS NUL (zero-copy device eval rule).
   const js = new Uint8Array(input.js.length + 1);
   js.set(input.js, 0);
-  const sections = [
+  const sections: PocketPackageSection[] = [
     { kind: POCKET_SECTION.identity, bytes: encodeIdentity(input.identity) },
     { kind: POCKET_SECTION.plan, bytes: new TextEncoder().encode(input.planJson) },
     { kind: POCKET_SECTION.js, bytes: js },
