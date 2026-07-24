@@ -132,11 +132,11 @@ pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
         };
         if key == "ui:styles" {
             if !ui.load_styles(blob) {
-                crate::vita_log(format_args!("[PocketJS pak] bad styles.bin"));
+                crate::host_log(format_args!("[PocketJS pak] bad styles.bin"));
             }
         } else if key.starts_with("ui:font.") {
             if !ui.load_font_atlas(blob) {
-                crate::vita_log(format_args!("[PocketJS pak] bad font atlas {}", key));
+                crate::host_log(format_args!("[PocketJS pak] bad font atlas {}", key));
             } else {
                 let slot = blob.get(12).copied().unwrap_or(0);
                 if let Some(atlas) = ui.font_atlas(slot) {
@@ -162,7 +162,7 @@ pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
                 crate::graphics::register_texture(ui, handle);
                 textures.push((String::from(name), handle));
             } else {
-                crate::vita_log(format_args!(
+                crate::host_log(format_args!(
                     "[PocketJS pak] bad image {} ({}x{} psm {})",
                     key, w, h, psm
                 ));
@@ -196,7 +196,7 @@ pub fn feed(ui: &mut Ui, pak: &[u8]) -> (Vec<(String, i32)>, Vec<SpriteReg>) {
                     step,
                 });
             } else {
-                crate::vita_log(format_args!(
+                crate::host_log(format_args!(
                     "[PocketJS pak] bad sprite {} ({}x{} psm {})",
                     key, w, h, psm
                 ));
