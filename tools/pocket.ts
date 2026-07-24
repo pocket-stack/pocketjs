@@ -157,6 +157,17 @@ const targetBackends = {
       "Vita backend",
     );
   },
+  pocketbook: async ({ outdir }) => {
+    // The PocketBook host loads the pak + bundle from the device filesystem
+    // (hosts/pocketbook), so there is no platform binary to package here —
+    // `compile` already emitted <app>.js + <app>.pak into outdir. The host ELF
+    // is cross-compiled separately (cargo zigbuild; see hosts/pocketbook/
+    // README.md). A dedicated tools/pocketbook.ts wrapper is future work.
+    console.log(
+      `✓ PocketBook bundle ready in ${outdir} — cross-compile the host ` +
+        `(hosts/pocketbook, cargo zigbuild) and copy both to the device.`,
+    );
+  },
 } satisfies Record<PocketTargetId, TargetBackend>;
 
 await targetBackends[target as PocketTargetId]({
