@@ -71,6 +71,7 @@
     "./components": "./framework/src/components.ts",
     "./devtools": "./framework/src/devtools.ts",
     "./effects": "./framework/src/effects.ts",
+    "./gesture": "./framework/src/gesture.ts",
     "./host": "./framework/src/host.ts",
     "./lifecycle": "./framework/src/lifecycle.ts",
     "./hot": "./framework/src/hot.ts",
