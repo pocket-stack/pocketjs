@@ -8,7 +8,7 @@ directory; nothing else gets a top-level name.
 ```
 pocketjs/
 ├─ engine/       Cores: the Rust simulation cores
-│  ├─ core/       pocketjs-core — retained UI tree, taffy layout, raster (standalone crate)
+│  ├─ core/       pocketjs-core — retained UI tree, taffy layout, damage + raster (standalone crate)
 │  ├─ backends/    platform render backends (ESP32-P4 PPA is a standalone no_std crate)
 │  ├─ wasm/       core compiled to wasm32 for web/sim hosts (standalone crate)
 │  ├─ pocket3d/   the 3D core family (bsp, cook, gu, vita) + desktop examples
