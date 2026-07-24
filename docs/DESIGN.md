@@ -60,6 +60,11 @@ artifacts: `$JOB_TMP/map-*.json`).
   PSP bin wraps it with QuickJS + sceGu; `wasm32-unknown-unknown` build wraps
   it with a deterministic software rasterizer used by BOTH the browser dev
   host and headless Bun goldens. One layout engine everywhere.
+- **ESP32-P4 stays 16-bit**: `engine/backends/esp32p4-ppa/` consumes the same
+  DrawList into an opaque RGB565 target. It maps flat fills, A8 coverage
+  blending, and compatible PSM 5650 texture transforms to the PPA, then
+  preserves ordering with the core RGB565 rasterizer for unsupported ops.
+  It never allocates a full-frame RGB888/ARGB8888 intermediate.
 - **Native animation**: tweens/springs tick in Rust per vblank with **fixed
   dt = 1/60 s** (frame content is a pure function of frame index — this is
   what makes byte-exact goldens possible **[R]**). JS only declares motion.

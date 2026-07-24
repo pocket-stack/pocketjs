@@ -174,6 +174,37 @@ beforeEach(() => {
 
 // ---------------------------------------------------------------------------
 
+describe("pak image formats", () => {
+  test("PSM 5650 packs opaque RGBA as little-endian B5:G6:R5", () => {
+    const image = encodeImageEntry(
+      {
+        width: 2,
+        height: 1,
+        rgba: new Uint8Array([
+          255, 0, 0, 255,
+          0, 0, 255, 255,
+        ]),
+      },
+      PSM.PSM_5650,
+    );
+    expect(Array.from(image)).toEqual([
+      2, 0, 1, 0, PSM.PSM_5650, 0, 0, 0,
+      0x1f, 0x00, 0x00, 0xf8,
+    ]);
+
+    expect(() =>
+      encodeImageEntry(
+        {
+          width: 1,
+          height: 1,
+          rgba: new Uint8Array([255, 255, 255, 254]),
+        },
+        PSM.PSM_5650,
+      ),
+    ).toThrow(/fully opaque/);
+  });
+});
+
 describe("basic mount", () => {
   test("static view with text child produces create/setText/insert ops", () => {
     const dispose = render(() => {

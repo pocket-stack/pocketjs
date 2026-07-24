@@ -9,6 +9,7 @@ directory; nothing else gets a top-level name.
 pocketjs/
 ├─ engine/       Cores: the Rust simulation cores
 │  ├─ core/       pocketjs-core — retained UI tree, taffy layout, raster (standalone crate)
+│  ├─ backends/    platform render backends (ESP32-P4 PPA is a standalone no_std crate)
 │  ├─ wasm/       core compiled to wasm32 for web/sim hosts (standalone crate)
 │  ├─ pocket3d/   the 3D core family (bsp, cook, gu, vita) + desktop examples
 │  ├─ crates/     non-3D engine crates: pocket-mod, pocket-ui-wgpu, pocket-vrm, pocket-widget
@@ -19,6 +20,7 @@ pocketjs/
 │  ├─ psp/        QuickJS + rust-psp EBOOT host
 │  ├─ vita/       Vita host
 │  ├─ switch/     QuickJS + libnx/Rust NRO host
+│  ├─ esp32p4/    reusable ESP-IDF PPA adapter + component smoke build
 │  ├─ web/        browser dev host (wasm core)
 │  └─ sim/        deterministic headless simulation host (docs/DETERMINISM.md)
 ├─ framework/    Guest: @pocketjs/framework
@@ -64,7 +66,7 @@ New things go where the axis says — never invent a top-level directory:
 - **npm surface is frozen**: `@pocketjs/framework/*` export *keys* never
   change; the `exports`/`files` maps in package.json absorb internal moves.
 - **Cargo stays non-workspace where toolchains demand it**: `engine/core`,
-  `engine/wasm`, `hosts/psp`, `hosts/vita`, `hosts/switch`, and the gu/vita 3D
-  crates each stand alone with their own lockfiles. `engine/Cargo.toml` is the
-  one desktop workspace.
+  `engine/wasm`, `engine/backends/esp32p4-ppa`, `hosts/psp`, `hosts/vita`,
+  `hosts/switch`, and the gu/vita 3D crates each stand alone with their own
+  lockfiles. `engine/Cargo.toml` is the one desktop workspace.
 - **Moves are `git mv`** — history stays traceable.

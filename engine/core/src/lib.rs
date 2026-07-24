@@ -468,7 +468,7 @@ impl Ui {
     /// EXACTLY w*h*bpp bytes; FLAG_LINEAR requests bilinear sampling.
     pub fn upload_texture_flags(&mut self, data: &[u8], w: u32, h: u32, psm: u32, flags: u8) -> i32 {
         let bpp = match psm {
-            spec::psm::PSM_4444 => 2usize,
+            spec::psm::PSM_5650 | spec::psm::PSM_4444 => 2usize,
             spec::psm::PSM_8888 => 4usize,
             spec::psm::PSM_T8 => 1usize,
             _ => return -1,
