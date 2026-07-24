@@ -231,10 +231,10 @@ The reproducible emulator invocation is:
 /Applications/Ryujinx.app/Contents/MacOS/Ryujinx /path/to/application.nro
 ```
 
-Ryujinx currently stops before executing even the official example with
-`RYU-0001: Keys not found`. M0 remains open until the user supplies a legally
-dumped `prod.keys` in the local Ryujinx system directory. No proprietary input
-belongs in this repository.
+After user-local keys and firmware were configured, Ryujinx loaded
+`simplegfx.nro` as homebrew, reported firmware `22.5.0`, created the libnx
+framebuffer, and sustained 60 FPS. M0 is complete. Keys and firmware remain
+user-local proprietary inputs and do not belong in this repository.
 
 ## Toolchain bootstrap
 
