@@ -1,7 +1,8 @@
 //! Deterministic software rasterizer: executes the core DrawList (spec.ts
-//! "DRAWLIST op format") over an RGBA8 framebuffer. DrawList coordinates
-//! remain logical; [`render_scaled`] maps them directly onto an integer-scaled
-//! physical surface without first rasterizing a low-resolution image.
+//! "DRAWLIST op format") over an RGBA8, BGRA8, or RGB565 framebuffer.
+//! DrawList coordinates remain logical; [`render_scaled`] maps them directly
+//! onto an integer-scaled physical surface without first rasterizing a
+//! low-resolution image.
 //!
 //! Determinism rules (byte-exact goldens depend on this):
 //!   - Color math is INTEGER (u32/i64) everywhere: blending, gouraud triangle
@@ -20,20 +21,32 @@
 //! partial overlap at clip edges — so we keep a scissor stack and pixel-clip
 //! EVERY op against the current rect (a no-op for the pre-clipped ones).
 //!
-//! Framebuffer layout: row-major, top-left origin, 4 bytes/px R,G,B,A —
+//! RGBA framebuffer layout: row-major, top-left origin, 4 bytes/px R,G,B,A —
 //! which is exactly a little-endian ABGR u32 (0xAABBGGRR), the spec color
 //! format, so channel bytes map 1:1. The buffer is treated as opaque: the
 //! destination alpha is always written back as 255.
 //!
-//! [`render_scaled_argb`] emits the same pixels as A,R,G,B bytes instead —
-//! the byte order the ESP32-P4 PPA SRM consumes as ARGB8888. That lets the
-//! ESP firmware present the framebuffer without a per-frame reorder pass:
-//! byte placement is fused into the pixel writes, so it costs nothing extra.
+//! [`render_scaled_argb`] emits the same pixels as B,G,R,A bytes instead —
+//! the little-endian memory layout of an ARGB8888 u32 word. Hosts whose blit
+//! engines consume ARGB8888 words can present the framebuffer without a
+//! per-frame reorder pass: byte placement is fused into the pixel writes, so
+//! it costs nothing extra.
+//!
+//! [`render_scaled_rgb565`] writes native little-endian RGB565 words — the
+//! low-bandwidth opaque target for 16-bit hosts. Hardware DrawList backends
+//! reuse it (via [`render_scaled_rgb565_over`]) as their ordered software
+//! fallback for ops their accelerator cannot express.
 
+use crate::damage::{
+    DamageError, DamagePlan, DamagePolicy, DamageRect, DamageTarget, DamageTracker,
+};
 use crate::spec::{self, draw_op};
 use crate::{TexView, Ui};
 
 pub const MAX_RENDER_SCALE: u32 = 4;
+const DAMAGE_SIGNATURE_RGBA8: u64 = u32::from_be_bytes(*b"RGBA") as u64;
+const DAMAGE_SIGNATURE_ARGB8: u64 = u32::from_be_bytes(*b"ARGB") as u64;
+const DAMAGE_SIGNATURE_RGB565: u64 = u32::from_be_bytes(*b"R565") as u64;
 
 /// Integer clip rect: x0/y0 inclusive, x1/y1 exclusive.
 #[derive(Clone, Copy)]
@@ -81,53 +94,163 @@ fn channels(color: u32) -> (u32, u32, u32, u32) {
     )
 }
 
-// ---- pixel ops -----------------------------------------------------------------
-
-/// src-over blend one pixel (integer, round-to-nearest). Caller guarantees
-/// (x, y) inside the framebuffer. Destination treated as opaque.
-/// ARGB=false writes bytes [R,G,B,A] (spec layout, golden-pinned);
-/// ARGB=true writes [A,R,G,B] for the ESP32-P4 PPA. Only byte placement
-/// differs — the blend math and the opaque destination are identical.
 #[inline]
-fn blend_px<const ARGB: bool>(
-    fb: &mut [u8],
-    stride: i32,
-    x: i32,
-    y: i32,
-    r: u32,
-    g: u32,
-    b: u32,
-    a: u32,
-) {
-    let o = ((y * stride + x) * 4) as usize;
-    let (ri, gi, bi, ai) = if ARGB { (1, 2, 3, 0) } else { (0, 1, 2, 3) };
-    if a >= 255 {
-        fb[o + ri] = r as u8;
-        fb[o + gi] = g as u8;
-        fb[o + bi] = b as u8;
-        fb[o + ai] = 255;
-        return;
+fn pixel_bytes<const ARGB: bool>(r: u32, g: u32, b: u32) -> [u8; 4] {
+    if ARGB {
+        [b as u8, g as u8, r as u8, 255]
+    } else {
+        [r as u8, g as u8, b as u8, 255]
     }
-    if a == 0 {
-        return;
+}
+
+/// Fill an opaque, whole-pixel byte span. Host framebuffers are in practice
+/// at least 4-byte aligned, so the hot path emits one native word per pixel
+/// instead of routing every pixel through alpha blending and four
+/// bounds-checked stores. The byte fallback keeps the API valid for any slice.
+#[inline]
+fn fill_opaque_span<const ARGB: bool>(span: &mut [u8], r: u32, g: u32, b: u32) {
+    debug_assert_eq!(span.len() & 3, 0);
+    let bytes = pixel_bytes::<ARGB>(r, g, b);
+    if (span.as_ptr() as usize) & 3 == 0 {
+        let pixel = u32::from_ne_bytes(bytes);
+        // SAFETY: alignment is checked above, the span length is a multiple
+        // of four, and the temporary word slice covers exactly this span.
+        let words = unsafe {
+            core::slice::from_raw_parts_mut(span.as_mut_ptr().cast::<u32>(), span.len() / 4)
+        };
+        words.fill(pixel);
+    } else {
+        for px in span.chunks_exact_mut(4) {
+            px.copy_from_slice(&bytes);
+        }
     }
-    let ia = 255 - a;
-    let mix = |s: u32, d: u8| ((s * a + d as u32 * ia + 127) / 255) as u8;
-    fb[o + ri] = mix(r, fb[o + ri]);
-    fb[o + gi] = mix(g, fb[o + gi]);
-    fb[o + bi] = mix(b, fb[o + bi]);
-    fb[o + ai] = 255;
+}
+
+// ---- pixel targets --------------------------------------------------------------
+
+/// Opaque framebuffer target. `blend` performs integer src-over compositing;
+/// concrete targets differ only in storage format.
+trait RenderTarget {
+    fn pixel_len(&self) -> usize;
+    fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32);
+    fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32);
+
+    #[inline]
+    fn clear_black(&mut self) {
+        let len = self.pixel_len();
+        self.fill_opaque(0, len, 0, 0, 0);
+    }
+}
+
+struct RgbaTarget<'a, const ARGB: bool> {
+    bytes: &'a mut [u8],
+}
+
+impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
+    #[inline]
+    fn pixel_len(&self) -> usize {
+        assert_eq!(
+            self.bytes.len() & 3,
+            0,
+            "scaled framebuffer byte length must be a multiple of four"
+        );
+        self.bytes.len() / 4
+    }
+
+    #[inline]
+    fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32) {
+        let o = offset * 4;
+        let (ri, gi, bi, ai) = if ARGB { (2, 1, 0, 3) } else { (0, 1, 2, 3) };
+        if a >= 255 {
+            self.bytes[o + ri] = r as u8;
+            self.bytes[o + gi] = g as u8;
+            self.bytes[o + bi] = b as u8;
+            self.bytes[o + ai] = 255;
+            return;
+        }
+        if a == 0 {
+            return;
+        }
+        let ia = 255 - a;
+        let mix = |s: u32, d: u8| ((s * a + d as u32 * ia + 127) / 255) as u8;
+        self.bytes[o + ri] = mix(r, self.bytes[o + ri]);
+        self.bytes[o + gi] = mix(g, self.bytes[o + gi]);
+        self.bytes[o + bi] = mix(b, self.bytes[o + bi]);
+        self.bytes[o + ai] = 255;
+    }
+
+    #[inline]
+    fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32) {
+        let byte_start = start * 4;
+        fill_opaque_span::<ARGB>(&mut self.bytes[byte_start..byte_start + len * 4], r, g, b);
+    }
+}
+
+struct Rgb565Target<'a> {
+    pixels: &'a mut [u16],
+}
+
+#[inline]
+pub const fn pack_rgb565(r: u32, g: u32, b: u32) -> u16 {
+    (((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3)) as u16
+}
+
+#[inline]
+fn unpack_rgb565(pixel: u16) -> (u32, u32, u32) {
+    let r5 = (pixel as u32 >> 11) & 0x1f;
+    let g6 = (pixel as u32 >> 5) & 0x3f;
+    let b5 = pixel as u32 & 0x1f;
+    (
+        (r5 << 3) | (r5 >> 2),
+        (g6 << 2) | (g6 >> 4),
+        (b5 << 3) | (b5 >> 2),
+    )
+}
+
+impl RenderTarget for Rgb565Target<'_> {
+    #[inline]
+    fn pixel_len(&self) -> usize {
+        self.pixels.len()
+    }
+
+    #[inline]
+    fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32) {
+        if a >= 255 {
+            self.pixels[offset] = pack_rgb565(r, g, b);
+            return;
+        }
+        if a == 0 {
+            return;
+        }
+        let (dr, dg, db) = unpack_rgb565(self.pixels[offset]);
+        let ia = 255 - a;
+        let mix = |s: u32, d: u32| (s * a + d * ia + 127) / 255;
+        self.pixels[offset] = pack_rgb565(mix(r, dr), mix(g, dg), mix(b, db));
+    }
+
+    #[inline]
+    fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32) {
+        self.pixels[start..start + len].fill(pack_rgb565(r, g, b));
+    }
 }
 
 /// Fill an already-clipped span rect with one flat color.
-fn fill_rect<const ARGB: bool>(fb: &mut [u8], stride: i32, c: Clip, color: u32) {
+fn fill_rect<T: RenderTarget>(target: &mut T, stride: i32, c: Clip, color: u32) {
     let (r, g, b, a) = channels(color);
     if a == 0 {
         return;
     }
+    if a >= 255 {
+        let row_pixels = (c.x1 - c.x0) as usize;
+        for y in c.y0..c.y1 {
+            let start = (y * stride + c.x0) as usize;
+            target.fill_opaque(start, row_pixels, r, g, b);
+        }
+        return;
+    }
     for y in c.y0..c.y1 {
         for x in c.x0..c.x1 {
-            blend_px::<ARGB>(fb, stride, x, y, r, g, b, a);
+            target.blend((y * stride + x) as usize, r, g, b, a);
         }
     }
 }
@@ -162,19 +285,200 @@ pub fn render(ui: &Ui, words: &[u32], fb: &mut [u8]) {
 /// `ui` supplies font atlases and textures. The framebuffer is cleared to
 /// opaque black first (the PSP host clears the draw buffer the same way).
 pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
-    render_scaled_impl::<false>(ui, words, fb, scale);
+    let mut target = RgbaTarget::<false> { bytes: fb };
+    render_scaled_impl(ui, words, &mut target, scale, true);
 }
 
-/// Same as [`render_scaled`] but emits A,R,G,B bytes per pixel — the in-memory
-/// order the ESP32-P4 PPA SRM expects for ARGB8888 input. Byte-identical to
-/// shuffling the RGBA output, but fused into the rasterizer so the firmware
-/// skips its per-frame reorder copy. Output determinism matches the RGBA path
-/// pixel-for-pixel; only the byte placement differs.
+/// Same as [`render_scaled`] but emits B,G,R,A bytes per pixel — the
+/// little-endian in-memory layout of an ARGB8888 u32 word, for hosts that
+/// present ARGB8888 directly. Byte-identical to shuffling the RGBA output,
+/// but fused into the rasterizer so hosts skip a per-frame reorder copy.
+/// Output determinism matches the RGBA path pixel-for-pixel; only the byte
+/// placement differs.
 pub fn render_scaled_argb(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
-    render_scaled_impl::<true>(ui, words, fb, scale);
+    let mut target = RgbaTarget::<true> { bytes: fb };
+    render_scaled_impl(ui, words, &mut target, scale, true);
 }
 
-fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
+/// Execute a complete DrawList into a little-endian RGB565 framebuffer.
+pub fn render_scaled_rgb565(ui: &Ui, words: &[u32], fb: &mut [u16], scale: u32) {
+    let mut target = Rgb565Target { pixels: fb };
+    render_scaled_impl(ui, words, &mut target, scale, true);
+}
+
+/// Execute DrawList words over an existing RGB565 framebuffer without
+/// clearing it. Hardware backends use this for ordered fallback segments.
+pub fn render_scaled_rgb565_over(ui: &Ui, words: &[u32], fb: &mut [u16], scale: u32) {
+    let mut target = Rgb565Target { pixels: fb };
+    render_scaled_impl(ui, words, &mut target, scale, false);
+}
+
+/// Clear and repaint only the supplied logical damage rectangles into an
+/// existing RGBA8 framebuffer.
+///
+/// Each region replays the complete DrawList under an additional root clip,
+/// preserving painter order for unchanged translucent operations.
+pub fn render_scaled_regions(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    scale: u32,
+    regions: &[DamageRect],
+) {
+    let mut target = RgbaTarget::<false> { bytes: fb };
+    render_scaled_regions_impl(ui, words, &mut target, scale, regions);
+}
+
+/// ARGB/BGRA-memory equivalent of [`render_scaled_regions`].
+pub fn render_scaled_argb_regions(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    scale: u32,
+    regions: &[DamageRect],
+) {
+    let mut target = RgbaTarget::<true> { bytes: fb };
+    render_scaled_regions_impl(ui, words, &mut target, scale, regions);
+}
+
+/// RGB565 equivalent of [`render_scaled_regions`].
+pub fn render_scaled_rgb565_regions(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u16],
+    scale: u32,
+    regions: &[DamageRect],
+) {
+    let mut target = Rgb565Target { pixels: fb };
+    render_scaled_regions_impl(ui, words, &mut target, scale, regions);
+}
+
+/// Incrementally render RGBA8 using one tracker per persistent framebuffer.
+pub fn render_scaled_incremental<const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    scale: u32,
+    tracker: &mut DamageTracker<MAX_REGIONS>,
+    policy: DamagePolicy,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    let mut target = RgbaTarget::<false> { bytes: fb };
+    render_scaled_incremental_impl(
+        ui,
+        words,
+        &mut target,
+        scale,
+        tracker,
+        policy,
+        DAMAGE_SIGNATURE_RGBA8,
+    )
+}
+
+/// Incrementally render ARGB/BGRA-memory pixels.
+pub fn render_scaled_argb_incremental<const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    scale: u32,
+    tracker: &mut DamageTracker<MAX_REGIONS>,
+    policy: DamagePolicy,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    let mut target = RgbaTarget::<true> { bytes: fb };
+    render_scaled_incremental_impl(
+        ui,
+        words,
+        &mut target,
+        scale,
+        tracker,
+        policy,
+        DAMAGE_SIGNATURE_ARGB8,
+    )
+}
+
+/// Incrementally render native RGB565 pixels.
+pub fn render_scaled_rgb565_incremental<const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u16],
+    scale: u32,
+    tracker: &mut DamageTracker<MAX_REGIONS>,
+    policy: DamagePolicy,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    let mut target = Rgb565Target { pixels: fb };
+    render_scaled_incremental_impl(
+        ui,
+        words,
+        &mut target,
+        scale,
+        tracker,
+        policy,
+        DAMAGE_SIGNATURE_RGB565,
+    )
+}
+
+fn render_scaled_impl<T: RenderTarget>(
+    ui: &Ui,
+    words: &[u32],
+    target: &mut T,
+    scale: u32,
+    clear: bool,
+) {
+    let (width, _height, screen) = target_geometry(ui, target, scale);
+    if clear {
+        target.clear_black();
+    }
+    render_scaled_clipped(ui, words, target, width, scale as i32, screen);
+}
+
+fn render_scaled_regions_impl<T: RenderTarget>(
+    ui: &Ui,
+    words: &[u32],
+    target: &mut T,
+    scale: u32,
+    regions: &[DamageRect],
+) {
+    let (width, height, screen) = target_geometry(ui, target, scale);
+    render_damage_regions(
+        ui,
+        words,
+        target,
+        width,
+        height,
+        scale as i32,
+        screen,
+        regions,
+    );
+}
+
+fn render_scaled_incremental_impl<T: RenderTarget, const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    target: &mut T,
+    scale: u32,
+    tracker: &mut DamageTracker<MAX_REGIONS>,
+    policy: DamagePolicy,
+    signature: u64,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    let (width, height, screen) = target_geometry(ui, target, scale);
+    let damage_target = DamageTarget::new(width as u32, height as u32, scale, signature);
+    let plan = tracker
+        .prepare(ui, words, damage_target)?
+        .with_policy(policy)?;
+    render_damage_regions(
+        ui,
+        words,
+        target,
+        width,
+        height,
+        scale as i32,
+        screen,
+        plan.regions(),
+    );
+    tracker.commit(ui, words, damage_target);
+    Ok(plan)
+}
+
+fn target_geometry<T: RenderTarget>(ui: &Ui, target: &T, scale: u32) -> (i32, i32, Clip) {
     assert!(
         (1..=MAX_RENDER_SCALE).contains(&scale),
         "render scale must be 1 through 4"
@@ -183,12 +487,15 @@ fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], s
     let (viewport_w, viewport_h) = ui.viewport();
     let width = viewport_w as i32 * scale;
     let height = viewport_h as i32 * scale;
-    assert!(width > 0 && height > 0, "viewport must have positive dimensions");
-    let expected = width as usize * height as usize * 4;
+    assert!(
+        width > 0 && height > 0,
+        "viewport must have positive dimensions"
+    );
+    let expected = width as usize * height as usize;
     assert_eq!(
-        fb.len(),
+        target.pixel_len(),
         expected,
-        "scaled framebuffer has the wrong byte length"
+        "scaled framebuffer has the wrong pixel count"
     );
     let screen = Clip {
         x0: 0,
@@ -196,21 +503,57 @@ fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], s
         x1: width,
         y1: height,
     };
-    // Clear: opaque black (alpha first in ARGB mode).
-    for px in fb.chunks_exact_mut(4) {
-        if ARGB {
-            px[0] = 255;
-            px[1] = 0;
-            px[2] = 0;
-            px[3] = 0;
-        } else {
-            px[0] = 0;
-            px[1] = 0;
-            px[2] = 0;
-            px[3] = 255;
-        }
-    }
+    (width, height, screen)
+}
 
+#[allow(clippy::too_many_arguments)]
+fn render_damage_regions<T: RenderTarget>(
+    ui: &Ui,
+    words: &[u32],
+    target: &mut T,
+    width: i32,
+    height: i32,
+    scale: i32,
+    screen: Clip,
+    regions: &[DamageRect],
+) {
+    let logical_screen = DamageRect::new(0, 0, width / scale, height / scale);
+    for &region in regions {
+        let region = region.intersect(logical_screen);
+        if region.is_empty() {
+            continue;
+        }
+        let physical = Clip {
+            x0: region.x0 * scale,
+            y0: region.y0 * scale,
+            x1: region.x1 * scale,
+            y1: region.y1 * scale,
+        }
+        .intersect(screen);
+        if physical.x0 >= physical.x1 || physical.y0 >= physical.y1 {
+            continue;
+        }
+        clear_black_rect(target, width, physical);
+        render_scaled_clipped(ui, words, target, width, scale, physical);
+    }
+}
+
+fn clear_black_rect<T: RenderTarget>(target: &mut T, stride: i32, rect: Clip) {
+    let row_pixels = (rect.x1 - rect.x0) as usize;
+    for y in rect.y0..rect.y1 {
+        let start = (y * stride + rect.x0) as usize;
+        target.fill_opaque(start, row_pixels, 0, 0, 0);
+    }
+}
+
+fn render_scaled_clipped<T: RenderTarget>(
+    ui: &Ui,
+    words: &[u32],
+    target: &mut T,
+    width: i32,
+    scale: i32,
+    screen: Clip,
+) {
     let mut stack: [Clip; 32] = [screen; 32];
     let mut depth: usize = 0;
     let mut clip = screen;
@@ -231,7 +574,7 @@ fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], s
                     y1: y + h,
                 });
                 if c.x0 < c.x1 && c.y0 < c.y1 {
-                    fill_rect::<ARGB>(fb, width, c, words[i + 3]);
+                    fill_rect(target, width, c, words[i + 3]);
                 }
                 i += 4;
             }
@@ -241,8 +584,8 @@ fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], s
                 }
                 let (x, y) = xy(words[i + 1], scale);
                 let (w, h) = wh(words[i + 2], scale);
-                grad_rect::<ARGB>(
-                    fb,
+                grad_rect(
+                    target,
                     width,
                     clip,
                     x,
@@ -265,9 +608,9 @@ fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], s
                 if i + 3 + 2 * n > words.len() {
                     return;
                 }
-                glyph_run::<ARGB>(
+                glyph_run(
                     ui,
-                    fb,
+                    target,
                     width,
                     scale,
                     clip,
@@ -281,7 +624,7 @@ fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], s
                 if i + 9 > words.len() {
                     return;
                 }
-                tex_quad::<ARGB>(ui, fb, width, scale, clip, &words[i + 1..i + 9]);
+                tex_quad(ui, target, width, scale, clip, &words[i + 1..i + 9]);
                 i += 9;
             }
             draw_op::SCISSOR => {
@@ -315,14 +658,14 @@ fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], s
                 if i + 7 > words.len() {
                     return;
                 }
-                tri::<ARGB>(fb, width, scale, clip, &words[i + 1..i + 7]);
+                tri(target, width, scale, clip, &words[i + 1..i + 7]);
                 i += 7;
             }
             draw_op::TEX_TRI => {
                 if i + 12 > words.len() {
                     return;
                 }
-                tex_tri::<ARGB>(ui, fb, width, scale, clip, &words[i + 1..i + 12]);
+                tex_tri(ui, target, width, scale, clip, &words[i + 1..i + 12]);
                 i += 12;
             }
             // The op set is closed per DrawList version; anything else means
@@ -335,8 +678,8 @@ fn render_scaled_impl<const ARGB: bool>(ui: &Ui, words: &[u32], fb: &mut [u8], s
 // ---- GRAD_RECT: per-axis gouraud lerp ---------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
-fn grad_rect<const ARGB: bool>(
-    fb: &mut [u8],
+fn grad_rect<T: RenderTarget>(
+    target: &mut T,
     stride: i32,
     clip: Clip,
     x: i32,
@@ -374,7 +717,7 @@ fn grad_rect<const ARGB: bool>(
                 continue;
             }
             for py in c.y0..c.y1 {
-                blend_px::<ARGB>(fb, stride, px, py, r, g, bb, al);
+                target.blend((py * stride + px) as usize, r, g, bb, al);
             }
         }
     } else {
@@ -386,8 +729,13 @@ fn grad_rect<const ARGB: bool>(
             if al == 0 {
                 continue;
             }
+            if al >= 255 {
+                let start = (py * stride + c.x0) as usize;
+                target.fill_opaque(start, (c.x1 - c.x0) as usize, r, g, bb);
+                continue;
+            }
             for px in c.x0..c.x1 {
-                blend_px::<ARGB>(fb, stride, px, py, r, g, bb, al);
+                target.blend((py * stride + px) as usize, r, g, bb, al);
             }
         }
     }
@@ -402,7 +750,7 @@ fn orient(ax: i64, ay: i64, bx: i64, by: i64, px: i64, py: i64) -> i64 {
     (bx - ax) * (py - ay) - (by - ay) * (px - ax)
 }
 
-fn tri<const ARGB: bool>(fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: &[u32]) {
+fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p: &[u32]) {
     let (x0, y0) = xy(p[0], scale);
     let (x1, y1) = xy(p[1], scale);
     let (x2, y2) = xy(p[2], scale);
@@ -431,6 +779,7 @@ fn tri<const ARGB: bool>(fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: 
     let (r1, g1, b1, a1) = channels(c1);
     let (r2, g2, b2, a2) = channels(c2);
     let flat = c0 == c1 && c1 == c2;
+    let flat_opaque = flat && a0 >= 255;
     let half = area / 2;
     for py in min_y..max_y {
         let sy = 2 * py as i64 + 1;
@@ -443,18 +792,17 @@ fn tri<const ARGB: bool>(fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: 
             if w0 < 0 || w1 < 0 || w2 < 0 {
                 continue;
             }
-            if flat {
-                blend_px::<ARGB>(fb, stride, px, py, r0, g0, b0, a0);
+            if flat_opaque {
+                target.fill_opaque((py * stride + px) as usize, 1, r0, g0, b0);
+            } else if flat {
+                target.blend((py * stride + px) as usize, r0, g0, b0, a0);
             } else {
                 // Integer barycentric interpolation, round-to-nearest.
                 let mix = |v0: u32, v1: u32, v2: u32| {
                     ((v0 as i64 * w0 + v1 as i64 * w1 + v2 as i64 * w2 + half) / area) as u32
                 };
-                blend_px::<ARGB>(
-                    fb,
-                    stride,
-                    px,
-                    py,
+                target.blend(
+                    (py * stride + px) as usize,
                     mix(r0, r1, r2),
                     mix(g0, g1, g2),
                     mix(b0, b1, b2),
@@ -467,8 +815,16 @@ fn tri<const ARGB: bool>(fb: &mut [u8], stride: i32, scale: i32, clip: Clip, p: 
 
 // ---- GLYPH_RUN: coverage atlas cells -----------------------------------------------
 
+/// Map a scaled destination pixel (relative to its glyph cell origin) to the
+/// atlas coverage row/column it samples. Shared with hardware DrawList
+/// backends so their glyph masks reproduce the software fallback exactly.
 #[inline]
-fn coverage_index(destination_px: i32, output_scale: i32, atlas_density: i32, limit: i32) -> usize {
+pub fn coverage_index(
+    destination_px: i32,
+    output_scale: i32,
+    atlas_density: i32,
+    limit: i32,
+) -> usize {
     // Nearest-neighbour at destination pixel centers. This is identical to a
     // 1:1 lookup when output_scale == atlas_density, duplicates coverage when
     // the output is denser, and samples the center of each source interval
@@ -477,9 +833,9 @@ fn coverage_index(destination_px: i32, output_scale: i32, atlas_density: i32, li
 }
 
 #[allow(clippy::too_many_arguments)]
-fn glyph_run<const ARGB: bool>(
+fn glyph_run<T: RenderTarget>(
     ui: &Ui,
-    fb: &mut [u8],
+    target: &mut T,
     stride: i32,
     output_scale: i32,
     clip: Clip,
@@ -522,7 +878,7 @@ fn glyph_run<const ARGB: bool>(
                 let cx = coverage_index(px - gx, output_scale, atlas_density, coverage_w);
                 let cov = row[cx] as u32;
                 if cov != 0 {
-                    blend_px::<ARGB>(fb, stride, px, py, r, g, b, (a * cov + 127) / 255);
+                    target.blend((py * stride + px) as usize, r, g, b, (a * cov + 127) / 255);
                 }
             }
         }
@@ -537,6 +893,21 @@ fn glyph_run<const ARGB: bool>(
 #[inline]
 fn texel(view: &TexView, idx: usize) -> Option<(u32, u32, u32, u32)> {
     match view.psm {
+        spec::psm::PSM_5650 => {
+            // PSP PSM 5650: u16 LE, B5:G6:R5 (red in the low bits). Always
+            // opaque — there is no alpha channel to expand.
+            let o = idx * 2;
+            let px16 = view.pixels[o] as u32 | ((view.pixels[o + 1] as u32) << 8);
+            let r5 = px16 & 0x1f;
+            let g6 = (px16 >> 5) & 0x3f;
+            let b5 = (px16 >> 11) & 0x1f;
+            Some((
+                (r5 << 3) | (r5 >> 2),
+                (g6 << 2) | (g6 >> 4),
+                (b5 << 3) | (b5 >> 2),
+                255,
+            ))
+        }
         spec::psm::PSM_8888 => {
             let o = idx * 4;
             Some((
@@ -574,28 +945,59 @@ fn texel(view: &TexView, idx: usize) -> Option<(u32, u32, u32, u32)> {
     }
 }
 
-/// Deterministic integer bilinear sample at normalized (u, v). Texel coords
-/// are 24.8 fixed point centered on texel centers (`uf = u*w*256 - 128`);
-/// the 4 clamp-addressed neighbors blend with 8-bit weights, horizontal
-/// first then vertical — integer math only, so byte-exact on every host.
+/// Coordinate selection shared by software and hardware-assisted texture
+/// paths. Texel coordinates are 24.8 fixed point centered on texel centers
+/// (`uf = u*w*256 - 128`). Clamp the base coordinate before selecting its
+/// second neighbor so every backend preserves the core's edge sampling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LinearSample {
+    pub x0: u32,
+    pub y0: u32,
+    pub x1: u32,
+    pub y1: u32,
+    pub fx: u32,
+    pub fy: u32,
+}
+
+#[inline]
+pub fn linear_sample_coordinates(width: u32, height: u32, u: f32, v: f32) -> Option<LinearSample> {
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let (tw_max, th_max) = (width as i32 - 1, height as i32 - 1);
+    let uf = (u * width as f32 * 256.0) as i32 - 128;
+    let vf = (v * height as f32 * 256.0) as i32 - 128;
+    let x0 = (uf >> 8).clamp(0, tw_max);
+    let y0 = (vf >> 8).clamp(0, th_max);
+    Some(LinearSample {
+        x0: x0 as u32,
+        y0: y0 as u32,
+        x1: (x0 + 1).min(tw_max) as u32,
+        y1: (y0 + 1).min(th_max) as u32,
+        fx: (uf & 255) as u32,
+        fy: (vf & 255) as u32,
+    })
+}
+
+/// Deterministic integer bilinear sample at normalized (u, v). The four
+/// clamp-addressed neighbors blend with 8-bit weights, horizontal first then
+/// vertical — integer math only, so byte-exact on every host.
 #[inline]
 fn sample_linear(view: &TexView, u: f32, v: f32) -> Option<(u32, u32, u32, u32)> {
-    let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
-    let uf = (u * view.w as f32 * 256.0) as i32 - 128;
-    let vf = (v * view.h as f32 * 256.0) as i32 - 128;
-    let tx0 = (uf >> 8).clamp(0, tw_max);
-    let ty0 = (vf >> 8).clamp(0, th_max);
-    let tx1 = (tx0 + 1).min(tw_max);
-    let ty1 = (ty0 + 1).min(th_max);
-    let fx = (uf & 255) as u32;
-    let fy = (vf & 255) as u32;
-    let w = view.w as i32;
-    let c00 = texel(view, (ty0 * w + tx0) as usize)?;
-    let c01 = texel(view, (ty0 * w + tx1) as usize)?;
-    let c10 = texel(view, (ty1 * w + tx0) as usize)?;
-    let c11 = texel(view, (ty1 * w + tx1) as usize)?;
+    let sample = linear_sample_coordinates(view.w, view.h, u, v)?;
+    let w = view.w as usize;
+    let c00 = texel(view, sample.y0 as usize * w + sample.x0 as usize)?;
+    let c01 = texel(view, sample.y0 as usize * w + sample.x1 as usize)?;
+    let c10 = texel(view, sample.y1 as usize * w + sample.x0 as usize)?;
+    let c11 = texel(view, sample.y1 as usize * w + sample.x1 as usize)?;
     let lerp8 = |a: u32, b: u32, f: u32| (a * (256 - f) + b * f) >> 8;
-    let mix = |c0: u32, c1: u32, c2: u32, c3: u32| lerp8(lerp8(c0, c1, fx), lerp8(c2, c3, fx), fy);
+    let mix = |c0: u32, c1: u32, c2: u32, c3: u32| {
+        lerp8(
+            lerp8(c0, c1, sample.fx),
+            lerp8(c2, c3, sample.fx),
+            sample.fy,
+        )
+    };
     Some((
         mix(c00.0, c01.0, c10.0, c11.0),
         mix(c00.1, c01.1, c10.1, c11.1),
@@ -607,9 +1009,9 @@ fn sample_linear(view: &TexView, u: f32, v: f32) -> Option<(u32, u32, u32, u32)>
 // ---- TEX_TRI: barycentric textured triangle (affine UV; nearest, or integer
 //      bilinear when the texture carries the linear flag) --------------------
 
-fn tex_tri<const ARGB: bool>(
+fn tex_tri<T: RenderTarget>(
     ui: &Ui,
-    fb: &mut [u8],
+    target: &mut T,
     stride: i32,
     scale: i32,
     clip: Clip,
@@ -684,7 +1086,7 @@ fn tex_tri<const ARGB: bool>(
                 b = (b * mb + 127) / 255;
                 a = (a * ma + 127) / 255;
             }
-            blend_px::<ARGB>(fb, stride, px, py, r, g, b, a);
+            target.blend((py * stride + px) as usize, r, g, b, a);
         }
     }
 }
@@ -692,9 +1094,9 @@ fn tex_tri<const ARGB: bool>(
 // ---- TEX_QUAD: textured rect (nearest, or integer bilinear when the texture
 //      carries the linear flag) --------------------------------------------------------
 
-fn tex_quad<const ARGB: bool>(
+fn tex_quad<T: RenderTarget>(
     ui: &Ui,
-    fb: &mut [u8],
+    target: &mut T,
     stride: i32,
     scale: i32,
     clip: Clip,
@@ -752,7 +1154,7 @@ fn tex_quad<const ARGB: bool>(
                 b = (b * mb + 127) / 255;
                 a = (a * ma + 127) / 255;
             }
-            blend_px::<ARGB>(fb, stride, px, py, r, g, b, a);
+            target.blend((py * stride + px) as usize, r, g, b, a);
         }
     }
 }
@@ -760,6 +1162,7 @@ fn tex_quad<const ARGB: bool>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::damage::DEFAULT_DAMAGE_REGIONS;
 
     fn xy_word(x: i16, y: i16) -> u32 {
         x as u16 as u32 | ((y as u16 as u32) << 16)
@@ -770,13 +1173,32 @@ mod tests {
     }
 
     fn framebuffer(scale: u32) -> Vec<u8> {
-        vec![0; spec::SCREEN_W as usize * scale as usize * spec::SCREEN_H as usize * scale as usize * 4]
+        vec![
+            0;
+            spec::SCREEN_W as usize * scale as usize * spec::SCREEN_H as usize * scale as usize * 4
+        ]
     }
 
     fn rgba(fb: &[u8], scale: u32, x: usize, y: usize) -> [u8; 4] {
         let width = spec::SCREEN_W as usize * scale as usize;
         let offset = (y * width + x) * 4;
         fb[offset..offset + 4].try_into().unwrap()
+    }
+
+    #[test]
+    fn linear_sample_coordinates_pin_clamped_edge_semantics() {
+        assert_eq!(
+            linear_sample_coordinates(2, 1, 0.125, 0.5),
+            Some(LinearSample {
+                x0: 0,
+                y0: 0,
+                x1: 1,
+                y1: 0,
+                fx: 192,
+                fy: 0,
+            })
+        );
+        assert_eq!(linear_sample_coordinates(0, 1, 0.5, 0.5), None);
     }
 
     #[test]
@@ -809,7 +1231,7 @@ mod tests {
     }
 
     #[test]
-    fn argb_output_is_rgba_with_channels_reordered() {
+    fn argb_output_uses_le_argb8888_memory_layout() {
         let ui = Ui::new();
         let words = vec![
             draw_op::RECT,
@@ -817,7 +1239,7 @@ mod tests {
             wh_word(7, 5),
             0xff33_2211,
             // Semi-transparent rect exercises the dst-read blend path, which
-            // must read A,R,G,B offsets in ARGB mode.
+            // must read B,G,R,A offsets in ARGB mode.
             draw_op::RECT,
             xy_word(4, 5),
             wh_word(5, 3),
@@ -842,11 +1264,436 @@ mod tests {
         render_scaled_argb(&ui, &words, &mut argb_fb, 1);
         for px in 0..rgba_fb.len() / 4 {
             let o = px * 4;
-            assert_eq!(argb_fb[o], rgba_fb[o + 3], "alpha at pixel {px}");
-            assert_eq!(argb_fb[o + 1], rgba_fb[o], "red at pixel {px}");
-            assert_eq!(argb_fb[o + 2], rgba_fb[o + 1], "green at pixel {px}");
-            assert_eq!(argb_fb[o + 3], rgba_fb[o + 2], "blue at pixel {px}");
+            assert_eq!(argb_fb[o], rgba_fb[o + 2], "blue at pixel {px}");
+            assert_eq!(argb_fb[o + 1], rgba_fb[o + 1], "green at pixel {px}");
+            assert_eq!(argb_fb[o + 2], rgba_fb[o], "red at pixel {px}");
+            assert_eq!(argb_fb[o + 3], rgba_fb[o + 3], "alpha at pixel {px}");
         }
+    }
+
+    #[test]
+    fn rgb565_output_is_native_and_ordered_fallback_preserves_existing_pixels() {
+        let mut ui = Ui::new();
+        ui.set_viewport(4.0, 2.0);
+        let red = 0xff00_00ff;
+        let green = 0xff00_ff00;
+        let words = vec![
+            draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(4, 2),
+            red,
+            draw_op::RECT,
+            xy_word(1, 0),
+            wh_word(2, 2),
+            green,
+        ];
+        let mut fb = vec![0u16; 8];
+        render_scaled_rgb565(&ui, &words, &mut fb, 1);
+        assert_eq!(
+            fb,
+            [
+                pack_rgb565(255, 0, 0),
+                pack_rgb565(0, 255, 0),
+                pack_rgb565(0, 255, 0),
+                pack_rgb565(255, 0, 0),
+                pack_rgb565(255, 0, 0),
+                pack_rgb565(0, 255, 0),
+                pack_rgb565(0, 255, 0),
+                pack_rgb565(255, 0, 0),
+            ]
+        );
+
+        let blue = pack_rgb565(0, 0, 255);
+        fb.fill(blue);
+        let overlay = [draw_op::RECT, xy_word(1, 0), wh_word(2, 1), red];
+        render_scaled_rgb565_over(&ui, &overlay, &mut fb, 1);
+        assert_eq!(
+            fb,
+            [
+                blue,
+                pack_rgb565(255, 0, 0),
+                pack_rgb565(255, 0, 0),
+                blue,
+                blue,
+                blue,
+                blue,
+                blue,
+            ]
+        );
+    }
+
+    #[test]
+    fn incremental_rgba_argb_and_rgb565_match_full_renders() {
+        let mut ui = Ui::new();
+        ui.set_viewport(24.0, 12.0);
+        let frame = |moving_x: i16, moving_color: u32| {
+            vec![
+                draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(24, 12),
+                0xff20_1008,
+                draw_op::RECT,
+                xy_word(moving_x, 2),
+                wh_word(8, 8),
+                moving_color,
+                // This unchanged translucent overlay intersects both the old
+                // and new moving rectangle and must be replayed in order.
+                draw_op::RECT,
+                xy_word(8, 4),
+                wh_word(8, 6),
+                0x8000_ff00,
+            ]
+        };
+        let previous = frame(2, 0x8000_00ff);
+        let current = frame(6, 0x80ff_0000);
+        let scale = 2;
+        let pixels = 24 * scale as usize * 12 * scale as usize;
+
+        let mut rgba = vec![0u8; pixels * 4];
+        let mut rgba_state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        let first = render_scaled_incremental(
+            &ui,
+            &previous,
+            &mut rgba,
+            scale,
+            &mut rgba_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(first.is_full_redraw());
+        let changed = render_scaled_incremental(
+            &ui,
+            &current,
+            &mut rgba,
+            scale,
+            &mut rgba_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(!changed.is_full_redraw());
+        let mut rgba_full = vec![0u8; pixels * 4];
+        render_scaled(&ui, &current, &mut rgba_full, scale);
+        assert_eq!(rgba, rgba_full);
+        let before = rgba.clone();
+        let unchanged = render_scaled_incremental(
+            &ui,
+            &current,
+            &mut rgba,
+            scale,
+            &mut rgba_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(unchanged.is_empty());
+        assert_eq!(rgba, before);
+
+        let mut argb = vec![0u8; pixels * 4];
+        let mut argb_state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_argb_incremental(
+            &ui,
+            &previous,
+            &mut argb,
+            scale,
+            &mut argb_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        render_scaled_argb_incremental(
+            &ui,
+            &current,
+            &mut argb,
+            scale,
+            &mut argb_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        let mut argb_full = vec![0u8; pixels * 4];
+        render_scaled_argb(&ui, &current, &mut argb_full, scale);
+        assert_eq!(argb, argb_full);
+
+        let mut rgb565 = vec![0u16; pixels];
+        let mut rgb565_state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_rgb565_incremental(
+            &ui,
+            &previous,
+            &mut rgb565,
+            scale,
+            &mut rgb565_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        render_scaled_rgb565_incremental(
+            &ui,
+            &current,
+            &mut rgb565,
+            scale,
+            &mut rgb565_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        let mut rgb565_full = vec![0u16; pixels];
+        render_scaled_rgb565(&ui, &current, &mut rgb565_full, scale);
+        assert_eq!(rgb565, rgb565_full);
+
+        rgb565_state.invalidate();
+        let invalidated = render_scaled_rgb565_incremental(
+            &ui,
+            &current,
+            &mut rgb565,
+            scale,
+            &mut rgb565_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(invalidated.is_full_redraw());
+        assert_eq!(rgb565, rgb565_full);
+    }
+
+    #[test]
+    fn incremental_software_raster_tracks_double_buffers_independently() {
+        let mut ui = Ui::new();
+        ui.set_viewport(24.0, 8.0);
+        let frame = |x: i16, color: u32| {
+            vec![
+                draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(24, 8),
+                0xff10_0804,
+                draw_op::RECT,
+                xy_word(x, 2),
+                wh_word(3, 3),
+                color,
+            ]
+        };
+        let frames = [
+            frame(1, 0xff00_00ff),
+            frame(5, 0xff00_ff00),
+            frame(9, 0xffff_0000),
+            frame(13, 0xffff_ffff),
+        ];
+        let mut states = [
+            DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new(),
+            DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new(),
+        ];
+        let mut outputs = [vec![0u16; 24 * 8], vec![0u16; 24 * 8]];
+
+        for (index, words) in frames.iter().enumerate() {
+            let target = index & 1;
+            let plan = render_scaled_rgb565_incremental(
+                &ui,
+                words,
+                &mut outputs[target],
+                1,
+                &mut states[target],
+                DamagePolicy::default(),
+            )
+            .unwrap();
+            assert_eq!(plan.is_full_redraw(), index < 2);
+
+            let mut expected = vec![0u16; 24 * 8];
+            render_scaled_rgb565(&ui, words, &mut expected, 1);
+            assert_eq!(outputs[target], expected);
+        }
+    }
+
+    #[test]
+    fn incremental_default_capacity_merges_nine_regions_without_pixel_regression() {
+        assert_eq!(DEFAULT_DAMAGE_REGIONS, 8);
+        let mut ui = Ui::new();
+        ui.set_viewport(96.0, 8.0);
+        let frame = |color: u32| {
+            let mut words = vec![
+                draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(96, 8),
+                0xff10_0804,
+            ];
+            for index in 0..9 {
+                words.extend_from_slice(&[
+                    draw_op::RECT,
+                    xy_word((index * 10 + 1) as i16, 2),
+                    wh_word(2, 2),
+                    color,
+                ]);
+            }
+            words
+        };
+        let previous = frame(0xff00_00ff);
+        let current = frame(0xff00_ff00);
+        let mut incremental = vec![0u16; 96 * 8];
+        let mut tracker = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_rgb565_incremental(
+            &ui,
+            &previous,
+            &mut incremental,
+            1,
+            &mut tracker,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        let plan = render_scaled_rgb565_incremental(
+            &ui,
+            &current,
+            &mut incremental,
+            1,
+            &mut tracker,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(!plan.is_full_redraw());
+        assert_eq!(plan.region_count(), DEFAULT_DAMAGE_REGIONS);
+
+        let mut full = vec![0u16; incremental.len()];
+        render_scaled_rgb565(&ui, &current, &mut full, 1);
+        assert_eq!(incremental, full);
+    }
+
+    #[test]
+    fn incremental_target_signature_prevents_cross_format_reuse() {
+        let mut ui = Ui::new();
+        ui.set_viewport(4.0, 2.0);
+        let words = [draw_op::RECT, xy_word(0, 0), wh_word(4, 2), 0xff33_2211];
+        let mut bytes = vec![0u8; 4 * 2 * 4];
+        let mut state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_incremental(
+            &ui,
+            &words,
+            &mut bytes,
+            1,
+            &mut state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+
+        let argb = render_scaled_argb_incremental(
+            &ui,
+            &words,
+            &mut bytes,
+            1,
+            &mut state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(argb.is_full_redraw());
+        assert!(bytes
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0x33, 0x22, 0x11, 0xff]));
+    }
+
+    #[test]
+    fn incremental_complex_ops_match_a_full_render() {
+        let mut ui = Ui::new_with_raster_density(2);
+        ui.set_viewport(40.0, 24.0);
+        let texture_pixels = (0..16)
+            .flat_map(|value| [(value * 16) as u8, 32, 192, 255])
+            .collect::<Vec<_>>();
+        let texture = ui.upload_texture(&texture_pixels, 4, 4, spec::psm::PSM_8888);
+        assert!(texture >= 0);
+        assert!(ui.load_font_atlas(&density_two_font()));
+
+        let frame = |offset: i16, tint: u32| {
+            vec![
+                draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(40, 24),
+                0xff18_1008,
+                draw_op::SCISSOR,
+                xy_word(1, 1),
+                wh_word(12, 9),
+                draw_op::GRAD_RECT,
+                xy_word(2 + offset, 2),
+                wh_word(7, 5),
+                tint,
+                0xffff_ffff,
+                spec::GradDir::ToRight as u32,
+                draw_op::SCISSOR_POP,
+                draw_op::TEX_QUAD,
+                texture as u32,
+                xy_word(15 + offset, 2),
+                wh_word(5, 5),
+                0.0f32.to_bits(),
+                0.0f32.to_bits(),
+                1.0f32.to_bits(),
+                1.0f32.to_bits(),
+                tint,
+                draw_op::TRI,
+                xy_word(23 + offset, 2),
+                xy_word(29 + offset, 8),
+                xy_word(22 + offset, 8),
+                tint,
+                0xff00_ff00,
+                0xffff_0000,
+                draw_op::TEX_TRI,
+                texture as u32,
+                xy_word(3 + offset, 13),
+                0.0f32.to_bits(),
+                0.0f32.to_bits(),
+                xy_word(9 + offset, 19),
+                1.0f32.to_bits(),
+                1.0f32.to_bits(),
+                xy_word(2 + offset, 19),
+                0.0f32.to_bits(),
+                1.0f32.to_bits(),
+                tint,
+                draw_op::GLYPH_RUN,
+                1 << 16,
+                tint,
+                xy_word(15 + offset, 13),
+                0,
+            ]
+        };
+        let previous = frame(0, 0xff00_00ff);
+        let current = frame(2, 0xc0ff_8000);
+        let scale = 2;
+        let mut incremental = vec![0u16; 40 * scale as usize * 24 * scale as usize];
+        let mut tracker = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_rgb565_incremental(
+            &ui,
+            &previous,
+            &mut incremental,
+            scale,
+            &mut tracker,
+            DamagePolicy::new(100),
+        )
+        .unwrap();
+        let plan = render_scaled_rgb565_incremental(
+            &ui,
+            &current,
+            &mut incremental,
+            scale,
+            &mut tracker,
+            DamagePolicy::new(100),
+        )
+        .unwrap();
+        assert!(!plan.is_full_redraw());
+        assert!(!plan.is_empty());
+
+        let mut full = vec![0u16; incremental.len()];
+        render_scaled_rgb565(&ui, &current, &mut full, scale);
+        assert_eq!(incremental, full);
+    }
+
+    #[test]
+    fn psm5650_textures_decode_into_native_rgb565() {
+        let mut ui = Ui::new();
+        ui.set_viewport(2.0, 1.0);
+        // PSP PSM 5650 is B5:G6:R5: 0x001f is red and 0xf800 is blue.
+        let handle = ui.upload_texture(&[0x1f, 0x00, 0x00, 0xf8], 2, 1, spec::psm::PSM_5650);
+        assert!(handle >= 0);
+        let words = [
+            draw_op::TEX_QUAD,
+            handle as u32,
+            xy_word(0, 0),
+            wh_word(2, 1),
+            0.0f32.to_bits(),
+            0.0f32.to_bits(),
+            1.0f32.to_bits(),
+            1.0f32.to_bits(),
+            0xffff_ffff,
+        ];
+        let mut fb = vec![0u16; 2];
+        render_scaled_rgb565(&ui, &words, &mut fb, 1);
+        assert_eq!(fb, [pack_rgb565(255, 0, 0), pack_rgb565(0, 0, 255)]);
     }
 
     #[test]

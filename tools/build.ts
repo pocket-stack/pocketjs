@@ -17,6 +17,9 @@
 //   --config=<path>              load a Pocket config file (default: pocket.config.ts)
 //   --no-config                  ignore pocket.config.ts
 //   --extra-chars=<string>       force extra codepoints into every atlas
+//   --density=<integer>          low-level target sampling density (default 1)
+//   --font-regular=<path>        override the regular font source
+//   --font-bold=<path>           override the bold font source
 //   --outdir=<path>              write <app>.js/.pak here instead of dist/
 //                                (external repos build their apps against a
 //                                vendored PocketJS and keep outputs local)
@@ -74,6 +77,8 @@ const packageName = packageJson.name ?? "@pocketjs/framework";
 
 const args = process.argv.slice(2);
 let extraChars = "";
+let regularFontPath: string | undefined;
+let boldFontPath: string | undefined;
 let appArg = "";
 let frameworkFlag: string | undefined;
 let configPath = join(ROOT, "pocket.config.ts");
@@ -84,6 +89,8 @@ let densityFlag: number | undefined;
 let projectRoot = process.cwd();
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
+  else if (a.startsWith("--font-regular=")) regularFontPath = resolvePath(a.slice("--font-regular=".length));
+  else if (a.startsWith("--font-bold=")) boldFontPath = resolvePath(a.slice("--font-bold=".length));
   else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
   else if (a.startsWith("--config=")) { configPath = resolvePath(ROOT, a.slice("--config=".length)); configFlagged = true; }
   else if (a === "--no-config") useConfig = false;
@@ -287,6 +294,8 @@ const atlases = await bakeAtlases({
   slots: styles.usedFontSlots,
   extraChars,
   rasterDensity,
+  regularTtf: regularFontPath,
+  boldTtf: boldFontPath,
 });
 for (const a of atlases) {
   console.log(

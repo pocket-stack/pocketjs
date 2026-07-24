@@ -25,7 +25,6 @@
     "contracts/schema",
     "contracts/spec",
     "tools",
-    "tools/cli/psp-toolchain.json",
     "hosts/web",
     "assets/brand",
     "assets/fonts",

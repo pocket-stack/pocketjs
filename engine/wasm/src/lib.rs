@@ -11,9 +11,10 @@
 //!   - Strings/buffers cross via linear memory: the host calls
 //!     `ui_alloc(len)`, writes bytes at the returned offset, passes
 //!     (ptr, len), then `ui_free(ptr, len)`. UTF-8 for text.
-//!   - `ui_render[_scaled]()` returns the framebuffer pointer: RGBA8, tightly
-//!     packed, row-major, top-left origin. The pointer stays valid until the
-//!     next render or init call on this instance.
+//!   - `ui_render[_scaled]()` performs a compatibility full render.
+//!     `ui_render_incremental[_scaled]()` retains the same RGBA8 framebuffer
+//!     and repaints only changed regions. The returned pointer stays valid
+//!     until the next render or init call on this instance.
 //!   - Single-threaded by construction (one wasm instance per Ui).
 
 #![allow(static_mut_refs)]
@@ -22,12 +23,14 @@
 // safety IS the ABI contract (ui_alloc/ui_free above), not a Rust signature.
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+use pocketjs_core::damage::{DamagePolicy, DamageTracker, DEFAULT_DAMAGE_REGIONS};
 use pocketjs_core::Ui;
 
 use pocketjs_core::raster;
 
 static mut UI: Option<Ui> = None;
 static mut FRAMEBUFFER: Vec<u8> = Vec::new();
+static mut DAMAGE_TRACKER: DamageTracker<DEFAULT_DAMAGE_REGIONS> = DamageTracker::new();
 
 #[inline]
 fn ui() -> &'static mut Ui {
@@ -60,6 +63,7 @@ pub extern "C" fn ui_init(raster_density: u32) {
     unsafe {
         UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
         FRAMEBUFFER.clear();
+        DAMAGE_TRACKER = DamageTracker::new();
     }
 }
 
@@ -308,6 +312,50 @@ fn render_at_scale(scale: u32) -> *const u8 {
         } else {
             raster::render_scaled(u_ref, &(*dl).words, &mut FRAMEBUFFER, scale);
         }
+        // A compatibility full render changed the retained framebuffer
+        // outside the incremental tracker's plan/commit transaction.
+        DAMAGE_TRACKER.invalidate();
+        FRAMEBUFFER.as_ptr()
+    }
+}
+
+fn render_incremental_at_scale(scale: u32) -> *const u8 {
+    if !(1..=raster::MAX_RENDER_SCALE).contains(&scale) {
+        return core::ptr::null();
+    }
+    let u = ui();
+    let (viewport_w, viewport_h) = u.viewport();
+    let logical_width = viewport_w as usize;
+    let logical_height = viewport_h as usize;
+    let Some(width) = logical_width.checked_mul(scale as usize) else {
+        return core::ptr::null();
+    };
+    let Some(height) = logical_height.checked_mul(scale as usize) else {
+        return core::ptr::null();
+    };
+    let Some(bytes) = width
+        .checked_mul(height)
+        .and_then(|pixels| pixels.checked_mul(4))
+    else {
+        return core::ptr::null();
+    };
+    let dl: *const pocketjs_core::DrawList = u.draw();
+    let u_ref: &Ui = unsafe { &*(u as *const Ui) };
+    unsafe {
+        FRAMEBUFFER.resize(bytes, 0);
+        if raster::render_scaled_incremental(
+            u_ref,
+            &(*dl).words,
+            &mut FRAMEBUFFER,
+            scale,
+            &mut DAMAGE_TRACKER,
+            DamagePolicy::default(),
+        )
+        .is_err()
+        {
+            raster::render_scaled(u_ref, &(*dl).words, &mut FRAMEBUFFER, scale);
+            DAMAGE_TRACKER.invalidate();
+        }
         FRAMEBUFFER.as_ptr()
     }
 }
@@ -325,6 +373,18 @@ pub extern "C" fn ui_render() -> *const u8 {
 #[no_mangle]
 pub extern "C" fn ui_render_scaled(scale: u32) -> *const u8 {
     render_at_scale(scale)
+}
+
+/// Incrementally rasterize at the logical viewport size.
+#[no_mangle]
+pub extern "C" fn ui_render_incremental() -> *const u8 {
+    render_incremental_at_scale(1)
+}
+
+/// Incrementally rasterize at an integer physical scale (1 through 4).
+#[no_mangle]
+pub extern "C" fn ui_render_incremental_scaled(scale: u32) -> *const u8 {
+    render_incremental_at_scale(scale)
 }
 
 #[cfg(test)]

@@ -223,7 +223,7 @@ function safeFrame() {
 
 function blit() {
   if (!wasm || !ctx) return;
-  const pixels = wasm.renderScaled(RENDER_SCALE);
+  const pixels = wasm.renderScaledIncremental(RENDER_SCALE);
   imageData.data.set(pixels);
   ctx.putImageData(imageData, 0, 0);
   drawHud(ctx, FB_W, FB_H, hudFps, hudMem); // built-in on-canvas overlay

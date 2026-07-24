@@ -19,6 +19,10 @@ export interface WasmUi {
   render(): Uint8Array;
   /** Rasterize directly at an integer physical scale from 1 through 4. */
   renderScaled(scale: number): Uint8Array;
+  /** Repaint only changed regions at the logical viewport size. */
+  renderIncremental(): Uint8Array;
+  /** Repaint only changed regions at an integer physical scale. */
+  renderScaledIncremental(scale: number): Uint8Array;
 }
 
 export declare function createWasmUi(
