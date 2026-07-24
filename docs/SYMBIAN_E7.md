@@ -187,6 +187,9 @@ state, then close/open the keyboard or rotate the phone. The UI should fill and
 reflow at `360x640`, preserve that state, and return to `640x360` without a
 restart, red error screen, stale strip, or black margin.
 
+`PocketJS E7 Runtime` version `1.1.1` passed the manual landscape/portrait
+launch and live-relayout check on an RM-626.
+
 ## Optional CODA device agent
 
 Qt SDK 1.2.1 shipped `Public-CODA-1.0.6-for-S60v5-Anna-Belle-vFuture.sis`.
@@ -241,13 +244,13 @@ time-dependent and therefore is not expected to be byte-for-byte reproducible
 between builds.
 
 Those implementation milestones do not make Symbian a production PocketJS
-target. Device-side installation, launch, visible output, and input still
-require confirmation on the phone; they are not claimed by host-side checks.
-The CODA USB command verifies the transport and TCF Locator session, while MTP
-remains the implemented file-delivery path. `symbian-e7-dev` stays private
-until the host passes a full physical-device acceptance suite and repeatable
-visible-output/input golden tests. Touch is specifically outside the published
-contract during that period.
+target. Installation, launch, visible output, and live landscape/portrait
+relayout are confirmed on one RM-626, but that single manual check is not
+repeatable golden validation. The CODA USB command verifies the transport and
+TCF Locator session, while MTP remains the implemented file-delivery path.
+`symbian-e7-dev` stays private until the host passes a full physical-device
+acceptance suite and repeatable visible-output/button-input golden tests. Touch
+is specifically outside the published contract during that period.
 
 ## Device and privacy boundaries
 
