@@ -5,7 +5,6 @@ import {
   extractHostBuildInputs,
   hostBuildEnvironment,
 } from "../framework/src/manifest/host-build-inputs.ts";
-import type { ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const hostDir = resolve(root, "hosts/switch");
@@ -28,9 +27,47 @@ function flag(name: string): boolean {
 function usage(message?: string): never {
   if (message) console.error(`PocketJS Switch: ${message}`);
   console.error(
-    "usage: bun tools/switch.ts --plan=<plan.json> --project-root=<dir> --outdir=<dir> [--skip-build]",
+    "usage: bun switch <demo> [--release]\n" +
+      "   or: bun tools/switch.ts --plan=<plan.json> --project-root=<dir> --outdir=<dir> [--skip-build]",
   );
   process.exit(2);
+}
+
+function validateNacpText(label: string, value: string, maxBytes: number): string {
+  if (/["\\$`\r\n\0]/.test(value)) {
+    throw new Error(`PocketJS Switch: ${label} contains characters unsafe for the NACP build`);
+  }
+  const bytes = new TextEncoder().encode(value).length;
+  if (bytes > maxBytes) {
+    throw new Error(`PocketJS Switch: ${label} exceeds the NACP limit of ${maxBytes} UTF-8 bytes`);
+  }
+  return value;
+}
+
+const directApp = args[0] && !args[0].startsWith("--")
+  ? args.shift()!.replace(/-main$/, "")
+  : undefined;
+if (directApp) {
+  if (!/^[a-z][a-z0-9-]*$/.test(directApp)) usage(`invalid demo name ${directApp}`);
+  const manifest = resolve(root, `apps/${directApp}/pocket.json`);
+  if (!existsSync(manifest)) usage(`demo manifest not found: apps/${directApp}/pocket.json`);
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      resolve(root, "tools/pocket.ts"),
+      "build",
+      "--target",
+      "switch",
+      "--manifest",
+      manifest,
+      "--project-root",
+      root,
+      "--",
+      ...args,
+    ],
+    { cwd: root, stdout: "inherit", stderr: "inherit" },
+  );
+  process.exit(await child.exited);
 }
 
 const planPath = option("plan");
@@ -43,7 +80,8 @@ if (args.length > 0) usage(`unknown option ${args[0]}`);
 
 const planInput: unknown = await Bun.file(resolve(planPath)).json();
 const inputs = extractHostBuildInputs(planInput, { expectedTarget: "switch" });
-const plan = planInput as ResolvedBuildPlan;
+const appTitle = validateNacpText("app title", inputs.appTitle, 511);
+const appVersion = validateNacpText("app version", inputs.appVersion, 15);
 if (
   inputs.hostAbi !== 4 ||
   inputs.viewport.logical[0] !== 480 ||
@@ -150,9 +188,9 @@ await run(
   [
     "make",
     `RUST_PROFILE=${rustProfile}`,
-    `APP_TITLE=${plan.app.title}`,
+    `APP_TITLE=${appTitle}`,
     "APP_AUTHOR=PocketJS",
-    "APP_VERSION=0.1.0",
+    `APP_VERSION=${appVersion}`,
   ],
   "Switch host build",
   hostDir,

@@ -20,6 +20,8 @@ describe("custom host build boundary", () => {
     const plan = portablePlan();
     expect(extractHostBuildInputs(plan, { expectedTarget: "psp" })).toEqual({
       appOutput: "main",
+      appTitle: "Pocket Telemetry",
+      appVersion: "0.1.0",
       target: "psp",
       hostAbi: 1,
       viewport: {
