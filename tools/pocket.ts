@@ -157,6 +157,20 @@ const targetBackends = {
       "Vita backend",
     );
   },
+  switch: async ({ planPath, projectRoot, outdir, args }) => {
+    await run(
+      [
+        Bun.which("bun") ?? "bun",
+        resolve(frameworkRoot, "tools/switch.ts"),
+        `--plan=${planPath}`,
+        `--project-root=${projectRoot}`,
+        `--outdir=${outdir}`,
+        "--skip-build",
+        ...args,
+      ],
+      "Switch backend",
+    );
+  },
   pocketbook: async ({ outdir }) => {
     // The PocketBook host loads the pak + bundle from the device filesystem
     // (hosts/pocketbook), so there is no platform binary to package here —

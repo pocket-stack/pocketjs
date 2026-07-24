@@ -84,6 +84,8 @@ describe("published npm artifacts", () => {
       "hosts/vita/assets/sce_sys/livearea/contents/bg.png",
       "hosts/vita/assets/sce_sys/livearea/contents/startup.png",
       "hosts/vita/assets/sce_sys/livearea/contents/template.xml",
+      "hosts/switch/Makefile",
+      "hosts/switch/source/main.c",
       "hosts/symbian/probe/main.cpp",
       "hosts/symbian/probe/pocketjs-e7-probe.pro",
       "hosts/symbian/runtime/main.cpp",

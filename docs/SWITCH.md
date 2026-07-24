@@ -1,6 +1,7 @@
 # Nintendo Switch port plan
 
-Status: planning only. This document does not add a Switch target or runtime.
+Status: implementation in progress. The target contract and diagnostic NRO
+shell are implemented; the PocketJS runtime is not yet linked.
 
 ## Goal
 
@@ -211,11 +212,29 @@ Observed on 2026-07-24:
 - Ryujinx has created its normal application support directory and recognizes
   `.nro` as a document type;
 - Bun, CMake, Ninja, Homebrew, and rustup are present;
-- devkitPro, devkitA64, libnx, `elf2nro`, and `nxlink` are not installed;
-- the local `nightly-2026-05-28` directory is present, but rustup reports a
-  missing manifest, so it cannot be treated as a valid Switch toolchain.
+- devkitPro pacman `6.0.2`, devkitA64 `r30`, GCC `16.1.0`, libnx `4.12.0`,
+  switch-tools `1.13.1`, deko3d `0.5.0`, and switch-examples `20260201` are
+  installed under `/opt/devkitpro`;
+- the official pacman installer matched GitHub's published asset digest
+  `sha256:da74156211cd3d8664ba7fb95544fbc0a2fbef1dd87b1a6bfafb30d2d446cd30`;
+- the partial `nightly-2026-05-28` install was repaired in place with
+  `rust-src`; it reports `rustc 1.98.0-nightly (57d06900f 2026-05-27)`;
+- the official `simplegfx.nro` builds successfully from a writable copy of
+  `/opt/devkitpro/examples/switch/graphics/simplegfx`;
+- the installed macOS `elf2nro` silently ignores `--romfsdir`, while an
+  explicit `build_romfs` followed by `elf2nro --romfs=<image>` embeds the
+  expected ASET payload. The PocketJS Makefile uses the working explicit path.
 
-No dependency was installed while preparing this plan.
+The reproducible emulator invocation is:
+
+```sh
+/Applications/Ryujinx.app/Contents/MacOS/Ryujinx /path/to/application.nro
+```
+
+Ryujinx currently stops before executing even the official example with
+`RYU-0001: Keys not found`. M0 remains open until the user supplies a legally
+dumped `prod.keys` in the local Ryujinx system directory. No proprietary input
+belongs in this repository.
 
 ## Toolchain bootstrap
 
