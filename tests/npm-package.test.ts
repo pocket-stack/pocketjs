@@ -24,8 +24,8 @@ describe("published npm artifacts", () => {
   // entry ships ONLY when the framework runtime, the compiler, the shipped
   // tools, or a `pocket` CLI target consumes it from the tarball. Rust
   // sources ride along solely as build inputs for CLI-buildable targets
-  // (psp, vita, the web/sim wasm) plus the deliberately standalone Pocket3D
-  // Vita crate pair for out-of-tree Vita 3D apps. Platform source
+  // (psp, vita, switch, the web/sim wasm) plus the deliberately standalone
+  // Pocket3D Vita crate pair for out-of-tree Vita 3D apps. Platform source
   // integrations without a CLI target (e.g. the ESP32-P4 PPA backend, whose
   // ESP-IDF C component cannot ship in npm anyway) stay git-only. Adding an
   // entry here means updating this list in the same PR — deliberately.
@@ -57,6 +57,13 @@ describe("published npm artifacts", () => {
       "hosts/vita/Cargo.lock",
       "hosts/vita/README.md",
       "hosts/vita/rust-toolchain.toml",
+      "hosts/native",
+      "hosts/switch/Makefile",
+      "hosts/switch/README.md",
+      "hosts/switch/Cargo.toml",
+      "hosts/switch/Cargo.lock",
+      "hosts/switch/source",
+      "hosts/switch/src",
       "engine/pocket3d/crates/pocket3d-vita/src",
       "engine/pocket3d/crates/pocket3d-vita/examples",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",
@@ -81,6 +88,14 @@ describe("published npm artifacts", () => {
       "hosts/vita/assets/sce_sys/livearea/contents/bg.png",
       "hosts/vita/assets/sce_sys/livearea/contents/startup.png",
       "hosts/vita/assets/sce_sys/livearea/contents/template.xml",
+      "hosts/native/ffi.rs",
+      "hosts/native/pak.rs",
+      "hosts/switch/Makefile",
+      "hosts/switch/README.md",
+      "hosts/switch/Cargo.toml",
+      "hosts/switch/Cargo.lock",
+      "hosts/switch/source/main.c",
+      "hosts/switch/src/lib.rs",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.lock",
       "engine/pocket3d/crates/pocket3d-bsp/Cargo.toml",

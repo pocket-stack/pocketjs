@@ -1,7 +1,7 @@
 {
   "name": "@pocketjs/cli",
   "version": "0.7.0",
-  "description": "The PocketJS CLI — manifest-first PSP and PS Vita builds, app scaffolding, and pinned PSP toolchain setup.",
+  "description": "The PocketJS CLI — manifest-first PSP, PS Vita, and Nintendo Switch homebrew builds, emulator launch, and app scaffolding.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -25,6 +25,8 @@
     "pocketjs",
     "psp",
     "vita",
+    "nintendo-switch",
+    "ryujinx",
     "cli",
     "toolchain",
     "doctor"

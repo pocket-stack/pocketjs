@@ -54,7 +54,7 @@ describe("published PocketJS CLI", () => {
     expect(readFileSync(join(app, "main.tsx"), "utf8"))
       .toContain('from "@pocketjs/framework/solid"');
 
-    for (const target of ["psp", "vita"] as const) {
+    for (const target of ["psp", "vita", "switch"] as const) {
       const resolution = validateAndResolveBuildPlan(manifest, { target });
       expect(resolution.ok, target).toBe(true);
     }
@@ -69,7 +69,7 @@ describe("published PocketJS CLI", () => {
   script: import.meta.url,
   args: Bun.argv.slice(2),
 }));\n`;
-    for (const name of ["pocket", "play", "vita"]) {
+    for (const name of ["pocket", "play", "vita", "switch"]) {
       writeFileSync(join(scripts, `${name}.ts`), recorder);
     }
 
@@ -78,7 +78,9 @@ describe("published PocketJS CLI", () => {
       { cliArgs: ["compile", "--target", "vita"], script: "pocket.ts", args: ["compile", "--target", "vita"] },
       { cliArgs: ["build", "--target", "vita", "--", "--release"], script: "pocket.ts", args: ["build", "--target", "vita", "--", "--release"] },
       { cliArgs: ["play", "vita", "hero"], script: "play.ts", args: ["vita", "hero"] },
+      { cliArgs: ["play", "switch", "hero"], script: "play.ts", args: ["switch", "hero"] },
       { cliArgs: ["vita", "hero", "--release"], script: "vita.ts", args: ["hero", "--release"] },
+      { cliArgs: ["switch", "hero", "--release"], script: "switch.ts", args: ["hero", "--release"] },
     ];
 
     for (const fixture of cases) {

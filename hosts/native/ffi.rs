@@ -29,7 +29,7 @@ static mut UI: Option<Ui> = None;
 ///
 /// # Safety
 ///
-/// Call once per guest on the Vita render thread, with no outstanding reference
+/// Call once per guest on the host render thread, with no outstanding reference
 /// to the process-global UI.
 pub unsafe fn init_ui() -> &'static mut Ui {
     let mut instance = Ui::new_with_raster_density(crate::graphics::RASTER_DENSITY);
@@ -45,7 +45,7 @@ pub unsafe fn init_ui() -> &'static mut Ui {
 ///
 /// # Safety
 ///
-/// The caller must stay on the Vita render thread and must not create another
+/// The caller must stay on the host render thread and must not create another
 /// live mutable reference to the global UI.
 pub unsafe fn ui() -> &'static mut Ui {
     UI.as_mut().expect("ffi::init_ui not called")
@@ -612,8 +612,8 @@ unsafe extern "C" fn js_debug_step(
     JS_UNDEFINED
 }
 
-/// ui.__dbgActive() -> bool: whether the PSPLINK/memstick mailbox was found
-/// at boot (dbg::init). The JS shim only builds a transport when true.
+/// ui.__dbgActive() -> bool: whether the debug mailbox was found at boot
+/// (dbg::init). The JS shim only builds a transport when true.
 unsafe extern "C" fn js_dbg_active(
     ctx: *mut JSContext,
     _this: JSValue,
@@ -625,7 +625,7 @@ unsafe extern "C" fn js_dbg_active(
 
 /// ui.__dbgPoll() -> string | undefined: new complete JSON lines from the
 /// bridge (may batch several). The shim rate-limits calls to ~every 10
-/// frames; each call is a few sceIo round trips over usbhostfs.
+/// frames; each call is a few round trips over the debug bridge.
 unsafe extern "C" fn js_dbg_poll(
     ctx: *mut JSContext,
     _this: JSValue,
@@ -797,7 +797,7 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"__dbgPoll\0", js_dbg_poll, 0);
     add_fn(ctx, ui_obj, b"__dbgSend\0", js_dbg_send, 1);
     add_fn(ctx, ui_obj, b"__dbgShot\0", js_dbg_shot, 0);
-    // Optional launcher surface. Single-app VPKs omit these ops and preserve
+    // Optional launcher surface. Single-app builds omit these ops and preserve
     // the framework's documented degraded behavior.
     if crate::switch::multi() {
         add_fn(ctx, ui_obj, b"appTable\0", js_app_table, 0);
@@ -805,9 +805,10 @@ pub unsafe fn register(
         add_fn(ctx, ui_obj, b"appShot\0", js_app_shot, 0);
     }
 
-    // Framework-owned host identity. The bundle rejects a VPK assembled for a
-    // different target or HostOps ABI before app code mounts. planHash is a
-    // build-time checksum and intentionally does not enter runtime handshake.
+    // Framework-owned host identity. The bundle rejects a package assembled
+    // for a different target or HostOps ABI before app code mounts. planHash
+    // is a build-time checksum and intentionally does not enter runtime
+    // handshake.
     let target = env!("POCKETJS_TARGET");
     JS_SetPropertyStr(
         ctx,

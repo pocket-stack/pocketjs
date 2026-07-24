@@ -5,10 +5,10 @@
 //   pocket doctor          diagnose the local toolchain
 //   pocket setup [--yes]   run the checkout's pinned, idempotent bootstrap
 //   pocket create <name>   scaffold a manifest-first demo app
-//   pocket check|compile|build --target <psp|vita> [...args]
+//   pocket check|compile|build --target <psp|vita|switch> [...args]
 //                            resolve pocket.json once, then build from its plan
-//   pocket play vita <demo> build, install and launch a demo in Vita3K
-//   pocket dev|psp|vita|hw|psplink|devtools|tape [...args]
+//   pocket play <vita|switch> <demo> build and launch a demo in an emulator
+//   pocket dev|psp|vita|switch|hw|psplink|devtools|tape [...args]
 //                            low-level passthrough to the checkout's bun scripts
 //
 // The published CLI ships the same manifest consumed by PocketJS build scripts.
@@ -356,6 +356,7 @@ function create(name) {
   console.log(C.dim(`  pocket check --target psp --manifest apps/${name}/pocket.json`));
   console.log(C.dim(`  pocket build --target psp --manifest apps/${name}/pocket.json -- --release`));
   console.log(C.dim(`  pocket build --target vita --manifest apps/${name}/pocket.json -- --release`));
+  console.log(C.dim(`  pocket build --target switch --manifest apps/${name}/pocket.json -- --release`));
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +367,7 @@ const SCRIPTS = {
   dev: "tools/dev.ts",
   psp: "tools/psp.ts",
   vita: "tools/vita.ts",
+  switch: "tools/switch.ts",
   hw: "tools/hw.ts",
   psplink: "tools/psplink.ts",
   devtools: "tools/devtools.ts",
@@ -408,11 +410,13 @@ const HELP = `${C.bold("pocket")} — the PocketJS toolchain CLI
   pocket check --target T  validate pocket.json, target APIs and app types
   pocket compile --target T
                            check + emit JS/pak from one resolved build plan
-  pocket build --target T  check + compile + package PSP or Vita artifacts
+  pocket build --target T  check + compile + package native artifacts
   pocket play vita <app>   build, install and launch a demo in Vita3K
+  pocket play switch <app> build and launch a demo in Ryujinx
   pocket dev <app>-main    build + serve an app in the browser
   pocket psp <app>         build the PSP EBOOT
   pocket vita <app>        build the PS Vita VPK
+  pocket switch <app>      build the Nintendo Switch NRO
   pocket hw <app>          build + run on a real PSP over PSPLINK
   pocket psplink           interactive multi-app switcher on a real PSP
   pocket devtools [app]    DevTools panel + USB debug bridge (one command)
@@ -437,6 +441,7 @@ switch (cmd) {
   case "dev":
   case "psp":
   case "vita":
+  case "switch":
   case "hw":
   case "psplink":
   case "devtools":

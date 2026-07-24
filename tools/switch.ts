@@ -1,0 +1,204 @@
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  extractHostBuildInputs,
+  hostBuildEnvironment,
+} from "../framework/src/manifest/host-build-inputs.ts";
+
+const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const hostDir = resolve(root, "hosts/switch");
+const args = Bun.argv.slice(2);
+
+function option(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const index = args.findIndex((value) => value.startsWith(prefix));
+  if (index < 0) return undefined;
+  return args.splice(index, 1)[0]!.slice(prefix.length);
+}
+
+function flag(name: string): boolean {
+  const index = args.indexOf(`--${name}`);
+  if (index < 0) return false;
+  args.splice(index, 1);
+  return true;
+}
+
+function usage(message?: string): never {
+  if (message) console.error(`PocketJS Switch: ${message}`);
+  console.error(
+    "usage: bun switch <demo> [--release]\n" +
+      "   or: bun tools/switch.ts --plan=<plan.json> --project-root=<dir> --outdir=<dir> [--skip-build]",
+  );
+  process.exit(2);
+}
+
+function validateNacpText(label: string, value: string, maxBytes: number): string {
+  if (/["\\$`\r\n\0]/.test(value)) {
+    throw new Error(`PocketJS Switch: ${label} contains characters unsafe for the NACP build`);
+  }
+  const bytes = new TextEncoder().encode(value).length;
+  if (bytes > maxBytes) {
+    throw new Error(`PocketJS Switch: ${label} exceeds the NACP limit of ${maxBytes} UTF-8 bytes`);
+  }
+  return value;
+}
+
+const directApp = args[0] && !args[0].startsWith("--")
+  ? args.shift()!.replace(/-main$/, "")
+  : undefined;
+if (directApp) {
+  if (!/^[a-z][a-z0-9-]*$/.test(directApp)) usage(`invalid demo name ${directApp}`);
+  const manifest = resolve(root, `apps/${directApp}/pocket.json`);
+  if (!existsSync(manifest)) usage(`demo manifest not found: apps/${directApp}/pocket.json`);
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      resolve(root, "tools/pocket.ts"),
+      "build",
+      "--target",
+      "switch",
+      "--manifest",
+      manifest,
+      "--project-root",
+      root,
+      "--",
+      ...args,
+    ],
+    { cwd: root, stdout: "inherit", stderr: "inherit" },
+  );
+  process.exit(await child.exited);
+}
+
+const planPath = option("plan");
+const projectRoot = resolve(option("project-root") ?? root);
+const outdir = resolve(projectRoot, option("outdir") ?? "dist");
+const skipBuild = flag("skip-build");
+const release = flag("release");
+if (!planPath) usage("--plan is required");
+if (args.length > 0) usage(`unknown option ${args[0]}`);
+
+const planInput: unknown = await Bun.file(resolve(planPath)).json();
+const inputs = extractHostBuildInputs(planInput, { expectedTarget: "switch" });
+const appTitle = validateNacpText("app title", inputs.appTitle, 511);
+const appVersion = validateNacpText("app version", inputs.appVersion, 15);
+if (
+  inputs.hostAbi !== 4 ||
+  inputs.viewport.logical[0] !== 480 ||
+  inputs.viewport.logical[1] !== 272 ||
+  inputs.viewport.physical[0] !== 1280 ||
+  inputs.viewport.physical[1] !== 720 ||
+  inputs.viewport.presentation !== "integer-fit" ||
+  inputs.viewport.rasterDensity !== 2
+) {
+  throw new Error("PocketJS Switch: unsupported target contract");
+}
+
+const devkitpro = resolve(process.env.DEVKITPRO ?? "/opt/devkitpro");
+const devkitA64 = resolve(process.env.DEVKITA64 ?? `${devkitpro}/devkitA64`);
+const toolPath = `${devkitA64}/bin:${devkitpro}/tools/bin:${process.env.PATH ?? ""}`;
+const gcc = resolve(devkitA64, "bin/aarch64-none-elf-gcc");
+if (!existsSync(gcc)) {
+  throw new Error("PocketJS Switch: devkitA64 not found; install devkitPro switch-dev");
+}
+const toolchain = await Bun.file(resolve(root, "tools/cli/psp-toolchain.json")).json() as {
+  rust: { toolchain: string };
+};
+const rustTarget = "aarch64-nintendo-switch-freestanding";
+const rustProfile = release ? "release" : "debug";
+const nativeEnvironment = {
+  ...hostBuildEnvironment(inputs, {
+    outputDirectory: outdir,
+    embedApp: true,
+  }),
+  CC_aarch64_nintendo_switch_freestanding: gcc,
+  AR_aarch64_nintendo_switch_freestanding: resolve(devkitA64, "bin/aarch64-none-elf-ar"),
+  // QuickJS expects GNU tm_gmtoff; Switch newlib has no timezone offset field.
+  // tm_isdst is always -1/0/1, so QuickJS's minute conversion yields UTC zero.
+  CFLAGS_aarch64_nintendo_switch_freestanding:
+    "-D__SWITCH__ -include malloc.h -Dtm_gmtoff=tm_isdst " +
+    "-fPIE -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft",
+  // Rust's built-in Switch target omits the Unix/newlib cfgs used by the libc crate.
+  RUSTFLAGS:
+    `${process.env.RUSTFLAGS ?? ""} -Aexplicit_builtin_cfgs_in_flags ` +
+    `--cfg unix --cfg target_family="unix" --cfg target_env="newlib" ` +
+    `-C relocation-model=pic`,
+};
+
+async function run(command: string[], label: string, cwd = projectRoot): Promise<void> {
+  const child = Bun.spawn(command, {
+    cwd,
+    env: {
+      ...process.env,
+      DEVKITPRO: devkitpro,
+      DEVKITA64: devkitA64,
+      PATH: toolPath,
+      ...nativeEnvironment,
+    },
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const status = await child.exited;
+  if (status !== 0) throw new Error(`${label} failed with exit ${status}`);
+}
+
+if (!skipBuild) {
+  await run(
+    [
+      process.execPath,
+      resolve(root, "tools/build.ts"),
+      `--plan=${resolve(planPath)}`,
+      `--project-root=${projectRoot}`,
+      `--outdir=${outdir}`,
+    ],
+    "PocketJS compiler",
+  );
+}
+
+const appJs = resolve(outdir, `${inputs.appOutput}.js`);
+const appPak = resolve(outdir, `${inputs.appOutput}.pak`);
+if (!existsSync(appJs) || !existsSync(appPak)) {
+  throw new Error(`PocketJS Switch: missing ${inputs.appOutput}.js/.pak in ${outdir}`);
+}
+
+const romfs = resolve(hostDir, "romfs/pocketjs");
+rmSync(dirname(romfs), { recursive: true, force: true });
+mkdirSync(romfs, { recursive: true });
+cpSync(appJs, resolve(romfs, "app.js"));
+cpSync(appPak, resolve(romfs, "app.pak"));
+
+await run(
+  [
+    "rustup",
+    "run",
+    toolchain.rust.toolchain,
+    "cargo",
+    "build",
+    "-Z",
+    "build-std=core,alloc",
+    "--target",
+    rustTarget,
+    ...(release ? ["--release"] : []),
+  ],
+  "Switch Rust runtime build",
+  hostDir,
+);
+await run(["make", "clean"], "Switch host clean", hostDir);
+await run(
+  [
+    "make",
+    `RUST_PROFILE=${rustProfile}`,
+    `APP_TITLE=${appTitle}`,
+    "APP_AUTHOR=PocketJS",
+    `APP_VERSION=${appVersion}`,
+  ],
+  "Switch host build",
+  hostDir,
+);
+
+const builtNro = resolve(hostDir, "pocketjs-switch.nro");
+const packageDir = resolve(outdir, "switch");
+const outputNro = resolve(packageDir, `${inputs.appOutput}.nro`);
+mkdirSync(packageDir, { recursive: true });
+cpSync(builtNro, outputNro);
+console.log(`PocketJS Switch: built ${outputNro}`);

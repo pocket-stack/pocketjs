@@ -19,13 +19,14 @@ pocketjs/
 ├─ hosts/        Surfaces: every embedding of the cores
 │  ├─ psp/        QuickJS + rust-psp EBOOT host
 │  ├─ vita/       Vita host
+│  ├─ switch/     QuickJS + libnx/Rust NRO host
 │  ├─ esp32p4/    reusable ESP-IDF PPA adapter + component smoke build
 │  ├─ web/        browser dev host (wasm core)
 │  └─ sim/        deterministic headless simulation host (docs/DETERMINISM.md)
 ├─ framework/    Guest: @pocketjs/framework
 │  ├─ src/        the TS runtime (Solid + Vue Vapor renderers, components, input, osk…)
 │  └─ compiler/   the interpreted-path build pipeline (jsx-plugin, tailwind, pak)
-├─ vapor/        Pocket Vapor: the AOT compiler family (Vue Vapor subset → GBA/GB/NES)
+├─ vapor/        Pocket Vapor: the AOT compiler family (Vue Vapor subset → GBA/GB/NES/ESP32)
 ├─ contracts/    single sources of truth binding the layers
 │  ├─ spec/       op contract, platform contracts, manifest + package spec, gen-rust
 │  └─ schema/     published JSON schemas (pocket-2.json)
@@ -48,8 +49,11 @@ New things go where the axis says — never invent a top-level directory:
 - **A new Rust simulation core** → `engine/` (workspace member if it builds on
   desktop; excluded standalone crate if it needs a console toolchain).
 - **A new platform embedding** (ESP32, 3DS, …) → `hosts/<platform>/`.
-- **A new AOT backend** (Vapor gains a console) → `vapor/runtime/<console>/`;
-  the vapor compiler grows a target entry, the top level does not change.
+- **A new AOT backend** (Pocket Vapor gains a device) →
+  `vapor/runtime/<device>/`; the vapor compiler grows a target entry, the top
+  level does not change. A QuickJS guest host such as `hosts/switch/` does not
+  imply an AOT backend: Vue Vapor guests already use the shared framework
+  runtime and `HostOps`.
 - **A new demo** → `apps/<name>/` with a `pocket.json`. Standalone products
   keep the `pocket-<name>` separate-repo convention and do not move in.
 - **A new command** → `tools/<name>.ts`. No single-file top-level directories.
@@ -63,6 +67,6 @@ New things go where the axis says — never invent a top-level directory:
   change; the `exports`/`files` maps in package.json absorb internal moves.
 - **Cargo stays non-workspace where toolchains demand it**: `engine/core`,
   `engine/wasm`, `engine/backends/esp32p4-ppa`, `hosts/psp`, `hosts/vita`,
-  and the gu/vita 3D crates each stand alone with their own lockfiles.
-  `engine/Cargo.toml` is the one desktop workspace.
+  `hosts/switch`, and the gu/vita 3D crates each stand alone with their own
+  lockfiles. `engine/Cargo.toml` is the one desktop workspace.
 - **Moves are `git mv`** — history stays traceable.
