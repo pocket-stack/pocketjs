@@ -33,8 +33,10 @@ design and the ground-truth API notes.
 The host cross-compiles to a stripped ARM ELF (glibc ≤2.18, dlopens
 `libinkview.so` at runtime), is clippy-clean, and its framebuffer/input unit
 tests pass. The `pocketbook` target is registered and `hero` builds for it
-(`bun pocket compile --target pocketbook`). **On-device validation still needs
-hardware** — see the checklist below.
+(`bun pocket compile --target pocketbook`). **Boot, render, scale-to-fit
+centering, and animated partial updates are validated on a PocketBook Verse**
+(grayscale); input, idle ghosting, background-return, and color panels still
+need a hands-on pass — see the checklist below.
 
 ## Build
 
@@ -104,28 +106,47 @@ Run on both a grayscale and a color device to exercise both blit paths.
 
 **Boot / render**
 
-- [ ] App appears in the launcher and opens without crashing.
-- [ ] The `hero` UI renders, centered, with letterbox borders on the larger
-      panel. Check the startup log line (`pocketbook: panel WxH, … + (ox,oy)`)
-      for sane geometry.
-- [ ] Text is crisp (font atlases are baked @2x).
-- [ ] **Verse (gray):** image/logo render in grayscale, no color.
+- [x] App appears in the launcher and opens without crashing. *(Verse)*
+- [x] The `hero` UI renders, centered, with letterbox borders on the larger
+      panel. Check the startup log line
+      (`pocketbook: panel WxH, … render WxH → disp WxH +(ox,oy)`) for sane
+      geometry. On the Verse the 960×544 render is scaled to 758×429 and
+      centered vertically. *(Verse)*
+- [x] Text is crisp (font atlases are baked @2x). *(Verse)*
+- [x] **Verse (gray):** image/logo render in grayscale, no color. *(Verse)*
 - [ ] **Era Color (color):** colored UI elements actually show color.
 
 **Input**
 
 - [ ] Touch: tapping a button activates it (touch maps physical→logical via the
-      integer-fit offset + density).
+      scale-to-fit offset + displayed size).
 - [ ] Hardware keys: D-pad moves focus, OK activates, Back/Menu behave.
 - [ ] Page-turn keys (Prev/Next) map to left/right.
 
 **E-ink refresh**
 
-- [ ] Small changes (button highlight) update without a full flash.
-- [ ] During animation/scroll the panel keeps up (dynamic updates), then does a
-      clean partial update when it settles (~200 ms quiet).
+- [x] Small changes (button highlight / spinner) update without a full flash —
+      the hero spinner and progress bar animate via partial updates. *(Verse)*
+- [x] During animation the panel keeps up (dynamic updates), then does a clean
+      partial update when it settles (~200 ms quiet). *(Verse)*
 - [ ] No persistent ghosting after a few seconds idle (periodic cleanup works).
 - [ ] Returning from background (`Show`) does one clean full redraw.
 
-**Report back** any crash (ideally with `RUST_LOG=debug` output), mis-render,
-touch offset, or excessive flicker — those drive the next iteration.
+### Validated on hardware
+
+- **PocketBook Verse** (grayscale, 758×1024) — 2026-07-24. Boot, render,
+  scale-to-fit centering, @2x text, and animated partial updates all confirmed
+  via photo + video. Input (touch / hardware keys), idle ghosting, and
+  background-return still need a hands-on pass.
+- **Era Color / Kaleido 3** — not yet tested (color blit path unverified).
+
+### Logs
+
+The `.app` launcher redirects the host's stdout/stderr to
+`applications/<app>/pocketjs.log` on the device storage (visible over USB), so
+the startup geometry line and any `RUST_LOG` output survive a run. Bump the
+filter with `RUST_LOG=debug` in the launcher for verbose traces.
+
+**Report back** any crash (ideally with the `pocketjs.log` contents),
+mis-render, touch offset, or excessive flicker — those drive the next
+iteration.
