@@ -1,10 +1,20 @@
-//! RGBA8 raster buffer + tile-based damage tracking for the e-ink panel.
+//! Incremental RGBA8 raster + tile-based damage refinement for the e-ink panel.
 //!
-//! The core's software rasterizer (`pocketjs_core::raster::render_scaled`)
-//! produces an RGBA8 framebuffer at `logical × density` resolution, cleared to
-//! opaque black with every pixel alpha=255. We diff it against the previous
-//! frame in 16×16 tiles to drive partial panel updates, then blit the changed
-//! pixels as `RGB24`.
+//! Two damage layers compose here, each doing what the other cannot:
+//!
+//! 1. **DrawList damage** (`pocketjs_core::damage::DamageTracker`, via
+//!    `raster::render_scaled_incremental`): compares the retained DrawList
+//!    against the one whose pixels live in `rgba` and repaints only the
+//!    changed regions — rasterization cost scales with what changed, and an
+//!    idle frame costs nothing.
+//! 2. **Pixel tile diff** (16×16, scoped to the damage regions): decides what
+//!    the *panel* must refresh. E-ink updates are the expensive resource, and
+//!    conservative DrawList regions can contain pixels that did not actually
+//!    change — the tile diff trims the refresh to real pixel changes.
+//!
+//! `rgba` is the persistent render target (always the complete current
+//! frame — `blit_all` can present it at any time); `prev` mirrors what was
+//! last diffed against, advanced only inside the damaged tiles.
 //!
 //! inkview's `Screen::draw` is generic over the pixel format and branches on
 //! the panel depth: on a grayscale panel (PocketBook Verse) it converts
@@ -14,6 +24,7 @@
 //! and color devices with no host-side conversion.
 
 use inkview::screen::{Screen, RGB24};
+use pocketjs_core::damage::{DamagePlan, DamagePolicy, DamageRect, DamageTracker};
 use pocketjs_core::{raster, Ui};
 
 use crate::Geometry;
@@ -32,13 +43,15 @@ pub struct DirtyRect {
 const TILE: usize = 16;
 
 pub struct FramebufferPipeline {
-    /// Current frame, RGBA8 (raster output).
+    /// Persistent render target, RGBA8 — always the complete current frame.
     rgba: Vec<u8>,
-    /// Previous frame, RGBA8 (for damage diffing).
+    /// What the last diff ran against; advanced only inside dirty tiles.
     prev: Vec<u8>,
     w: usize,
     h: usize,
     density: u32,
+    /// DrawList snapshot for the pixels retained in `rgba`.
+    tracker: DamageTracker,
 }
 
 impl FramebufferPipeline {
@@ -51,33 +64,66 @@ impl FramebufferPipeline {
             w,
             h,
             density,
+            tracker: DamageTracker::new(),
         }
     }
 
-    /// Rasterize the DrawList into the RGBA8 buffer at density scale.
-    /// `render_scaled` asserts the buffer is exactly `viewport×density` px.
-    pub fn rasterize(&mut self, ui: &Ui, words: &[u32]) {
-        raster::render_scaled(ui, words, &mut self.rgba, self.density);
+    /// Rasterize the DrawList into the retained RGBA8 buffer, repainting only
+    /// DrawList damage. Returns the logical damage plan; malformed DrawLists
+    /// conservatively fall back to a full render.
+    pub fn rasterize(&mut self, ui: &Ui, words: &[u32]) -> DamagePlan {
+        match raster::render_scaled_incremental(
+            ui,
+            words,
+            &mut self.rgba,
+            self.density,
+            &mut self.tracker,
+            DamagePolicy::default(),
+        ) {
+            Ok(plan) => plan,
+            Err(_) => {
+                raster::render_scaled(ui, words, &mut self.rgba, self.density);
+                self.tracker.invalidate();
+                let logical = DamageRect::new(
+                    0,
+                    0,
+                    (self.w / self.density as usize) as i32,
+                    (self.h / self.density as usize) as i32,
+                );
+                DamagePlan::full(logical)
+            }
+        }
     }
 
-    /// Diff the current frame against the previous one and return the changed
-    /// tiles (buffer coordinates). Does NOT advance the previous-frame buffer;
-    /// call [`Self::advance`] after blitting.
-    pub fn diff(&self) -> Vec<DirtyRect> {
+    /// Diff the current frame against `prev` inside the plan's regions and
+    /// return the changed tiles (buffer coordinates). Pixels outside the plan
+    /// are untouched by construction, so they are never scanned. Does NOT
+    /// advance `prev`; call [`Self::advance`] after blitting.
+    pub fn diff(&self, plan: &DamagePlan) -> Vec<DirtyRect> {
+        if plan.is_empty() {
+            return Vec::new();
+        }
         let (w, h) = (self.w, self.h);
         let tx = w.div_ceil(TILE);
         let ty = h.div_ceil(TILE);
         let mut flags = vec![false; tx * ty];
-        for y in 0..h {
-            for x in 0..w {
-                let i = (y * w + x) * 4;
-                // Alpha is always 255 (the raster clears opaque), so comparing
-                // RGB decides visibility; a 4-byte compare would be equivalent.
-                if self.rgba[i] != self.prev[i]
-                    || self.rgba[i + 1] != self.prev[i + 1]
-                    || self.rgba[i + 2] != self.prev[i + 2]
-                {
-                    flags[(y / TILE) * tx + (x / TILE)] = true;
+        for region in plan.regions() {
+            let scale = self.density as usize;
+            let x0 = (region.x0.max(0) as usize * scale).min(w);
+            let y0 = (region.y0.max(0) as usize * scale).min(h);
+            let x1 = (region.x1.max(0) as usize * scale).min(w);
+            let y1 = (region.y1.max(0) as usize * scale).min(h);
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let i = (y * w + x) * 4;
+                    // Alpha is always 255 (the raster clears opaque), so
+                    // comparing RGB decides visibility.
+                    if self.rgba[i] != self.prev[i]
+                        || self.rgba[i + 1] != self.prev[i + 1]
+                        || self.rgba[i + 2] != self.prev[i + 2]
+                    {
+                        flags[(y / TILE) * tx + (x / TILE)] = true;
+                    }
                 }
             }
         }
@@ -98,9 +144,22 @@ impl FramebufferPipeline {
             .collect()
     }
 
-    /// Latch the current frame as the previous one for the next diff.
-    pub fn advance(&mut self) {
-        std::mem::swap(&mut self.rgba, &mut self.prev);
+    /// Latch the blitted tiles into `prev`. Pixels outside `dirty` are equal
+    /// in both buffers already (unchanged, or repainted byte-identically).
+    pub fn advance(&mut self, dirty: &[DirtyRect]) {
+        for r in dirty {
+            for dy in 0..r.h {
+                let start = ((r.y + dy) * self.w + r.x) * 4;
+                let end = start + r.w * 4;
+                let (rgba, prev) = (&self.rgba[start..end], &mut self.prev[start..end]);
+                prev.copy_from_slice(rgba);
+            }
+        }
+    }
+
+    /// Latch the complete frame (after a `blit_all` full presentation).
+    pub fn advance_full(&mut self) {
+        self.prev.copy_from_slice(&self.rgba);
     }
 
     /// Blit changed tiles to the inkview framebuffer, scaling through `geo`.
@@ -126,7 +185,8 @@ impl FramebufferPipeline {
     }
 
     /// Full-buffer blit scaled through `geo` (used on Show / before a
-    /// full_update).
+    /// full_update). `rgba` is always the complete current frame, so a full
+    /// panel redraw needs no re-rasterization.
     pub fn blit_all(&self, screen: &mut Screen, geo: &Geometry) {
         for sy in geo.oy..(geo.oy + geo.disp_h) {
             let src_y = geo.screen_to_render_y(sy);
@@ -146,54 +206,151 @@ impl FramebufferPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pocketjs_core::spec::draw_op;
 
-    fn solid(fb: &mut FramebufferPipeline, r: u8, g: u8, b: u8) {
-        for px in fb.rgba.chunks_exact_mut(4) {
-            px[0] = r;
-            px[1] = g;
-            px[2] = b;
-            px[3] = 255;
+    fn xy_word(x: i16, y: i16) -> u32 {
+        x as u16 as u32 | ((y as u16 as u32) << 16)
+    }
+
+    fn wh_word(w: u16, h: u16) -> u32 {
+        w as u32 | ((h as u32) << 16)
+    }
+
+    fn frame(x: i16, color: u32) -> Vec<u32> {
+        vec![
+            draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(64, 32),
+            0xff20_1008,
+            draw_op::RECT,
+            xy_word(x, 4),
+            wh_word(6, 6),
+            color,
+        ]
+    }
+
+    fn reference(ui: &Ui, words: &[u32], w: usize, h: usize, density: u32) -> Vec<u8> {
+        let mut full = vec![0u8; w * h * 4];
+        raster::render_scaled(ui, words, &mut full, density);
+        full
+    }
+
+    #[test]
+    fn incremental_pipeline_matches_full_renders_across_frames() {
+        let mut ui = Ui::new();
+        ui.set_viewport(64.0, 32.0);
+        let mut fb = FramebufferPipeline::new(64, 32, 1);
+        let frames = [
+            frame(2, 0xff00_00ff),
+            frame(20, 0xff00_ff00),
+            frame(40, 0xffff_0000),
+        ];
+        for words in &frames {
+            let plan = fb.rasterize(&ui, words);
+            let dirty = fb.diff(&plan);
+            fb.advance(&dirty);
+            assert_eq!(fb.rgba, reference(&ui, words, 64, 32, 1));
+            assert_eq!(fb.prev, fb.rgba, "prev latches every changed pixel");
         }
     }
 
     #[test]
-    fn identical_frames_have_no_damage() {
-        let mut fb = FramebufferPipeline::new(32, 32, 1);
-        solid(&mut fb, 10, 20, 30);
-        fb.advance(); // prev = current
-                      // Same content again → no diff.
-        solid(&mut fb, 10, 20, 30);
-        assert!(fb.diff().is_empty());
+    fn unchanged_frames_produce_no_damage_and_no_dirty_tiles() {
+        let mut ui = Ui::new();
+        ui.set_viewport(64.0, 32.0);
+        let mut fb = FramebufferPipeline::new(64, 32, 1);
+        let words = frame(2, 0xff00_00ff);
+        let plan = fb.rasterize(&ui, &words);
+        assert!(plan.is_full_redraw(), "first frame repaints everything");
+        let dirty = fb.diff(&plan);
+        fb.advance(&dirty);
+
+        let plan = fb.rasterize(&ui, &words);
+        assert!(plan.is_empty(), "unchanged DrawList → zero raster work");
+        assert!(fb.diff(&plan).is_empty());
     }
 
     #[test]
-    fn color_change_is_damage_even_at_equal_luminance() {
-        // Diffing RGBA (not gray) means a hue shift at constant luminance is
-        // still reported — conservative (over-reports), which is safe: it only
-        // causes an extra blit, never a missed update. Matters for color panels.
-        let mut fb = FramebufferPipeline::new(16, 16, 1);
-        solid(&mut fb, 255, 0, 0);
-        fb.advance();
-        solid(&mut fb, 0, 0, 255);
-        assert!(!fb.diff().is_empty());
+    fn dirty_tiles_are_scoped_to_the_damage_regions() {
+        let mut ui = Ui::new();
+        ui.set_viewport(64.0, 32.0);
+        let mut fb = FramebufferPipeline::new(64, 32, 1);
+        let plan = fb.rasterize(&ui, &frame(2, 0xff00_00ff));
+        let dirty = fb.diff(&plan);
+        fb.advance(&dirty);
+
+        // Move the small rect: damage = old box ∪ new box, both in y 4..10.
+        let plan = fb.rasterize(&ui, &frame(40, 0xff00_00ff));
+        assert!(!plan.is_full_redraw());
+        let dirty = fb.diff(&plan);
+        assert!(!dirty.is_empty());
+        for tile in &dirty {
+            assert!(tile.y < 16, "dirty tiles stay in the damaged band");
+        }
+        fb.advance(&dirty);
+        assert_eq!(fb.prev, fb.rgba);
     }
 
     #[test]
-    fn damage_reports_tile_bounds() {
-        let mut fb = FramebufferPipeline::new(32, 32, 1);
-        // prev = black; change one pixel in tile column 1 (x=16..31).
-        fb.advance();
-        let i = (0 * 32 + 20) * 4; // y=0, x=20 → tile (1, 0)
-        fb.rgba[i] = 255;
-        fb.rgba[i + 3] = 255;
-        assert_eq!(
-            fb.diff(),
-            vec![DirtyRect {
-                x: 16,
-                y: 0,
-                w: 16,
-                h: 16
-            }]
-        );
+    fn equal_pixels_inside_damage_produce_no_panel_refresh() {
+        // A DrawList change that renders identical pixels damages the region
+        // but must not dirty any tile — the pixel diff is what protects the
+        // e-ink panel from needless flashes.
+        let mut ui = Ui::new();
+        ui.set_viewport(64.0, 32.0);
+        let mut fb = FramebufferPipeline::new(64, 32, 1);
+        let base = vec![
+            draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(64, 32),
+            0xff10_2030,
+            draw_op::RECT,
+            xy_word(4, 4),
+            wh_word(8, 8),
+            0xffff_ffff,
+        ];
+        // Same pixels: the white rect painted twice (opaque over itself).
+        let repainted = vec![
+            draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(64, 32),
+            0xff10_2030,
+            draw_op::RECT,
+            xy_word(4, 4),
+            wh_word(8, 8),
+            0xffff_ffff,
+            draw_op::RECT,
+            xy_word(4, 4),
+            wh_word(8, 8),
+            0xffff_ffff,
+        ];
+        let plan = fb.rasterize(&ui, &base);
+        let dirty = fb.diff(&plan);
+        fb.advance(&dirty);
+
+        // Structural change (op count differs) → conservative full replan,
+        // but the pixels are identical → zero dirty tiles, zero e-ink work.
+        let plan = fb.rasterize(&ui, &repainted);
+        assert!(plan.is_full_redraw());
+        assert!(fb.diff(&plan).is_empty());
+    }
+
+    #[test]
+    fn density_two_scopes_damage_to_physical_pixels() {
+        let mut ui = Ui::new_with_raster_density(2);
+        ui.set_viewport(32.0, 16.0);
+        let mut fb = FramebufferPipeline::new(64, 32, 2);
+        let plan = fb.rasterize(&ui, &frame(1, 0xff00_00ff));
+        let dirty = fb.diff(&plan);
+        fb.advance(&dirty);
+
+        let words = frame(1, 0xff00_ff00);
+        let plan = fb.rasterize(&ui, &words);
+        assert!(!plan.is_full_redraw());
+        let dirty = fb.diff(&plan);
+        assert!(!dirty.is_empty());
+        fb.advance(&dirty);
+        assert_eq!(fb.rgba, reference(&ui, &words, 64, 32, 2));
+        assert_eq!(fb.prev, fb.rgba);
     }
 }

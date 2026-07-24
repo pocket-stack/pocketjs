@@ -6,14 +6,17 @@ The PocketJS UI runtime on **PocketBook e-readers**, rendered through the
 It reuses the backend-agnostic `ui` surface (`pocket-ui-surface`) and the
 core's software rasterizer unchanged, then:
 
-- rasterizes the DrawList to RGBA8 at `480×272 @2x` = 960×544
-  (`pocketjs_core::raster::render_scaled`), matching the `pocketbook` target
-  profile in `contracts/spec/platforms.ts`;
-- diffs frames in 16×16 tiles and blits the changed pixels as `RGB24`
-  (`framebuffer.rs`). inkview's `Screen::draw` converts `RGB24`→Gray8
-  internally on **grayscale** panels (PocketBook Verse) and writes RGB directly
-  on **color** panels (PocketBook Era Color, Kaleido 3) — one blit path serves
-  both;
+- rasterizes the DrawList **incrementally** to a retained RGBA8 buffer at
+  `480×272 @2x` = 960×544 (`pocketjs_core::raster::render_scaled_incremental`
+  with a core `DamageTracker`), matching the `pocketbook` target profile in
+  `contracts/spec/platforms.ts` — an idle frame costs zero raster work;
+- pixel-diffs 16×16 tiles **inside the damage regions** and blits the changed
+  pixels as `RGB24` (`framebuffer.rs`). The DrawList damage bounds the raster
+  and the scan; the pixel diff trims the e-ink refresh to tiles that actually
+  changed (a DrawList edit that renders identical pixels flashes nothing).
+  inkview's `Screen::draw` converts `RGB24`→Gray8 internally on **grayscale**
+  panels (PocketBook Verse) and writes RGB directly on **color** panels
+  (PocketBook Era Color, Kaleido 3) — one blit path serves both;
 - drives the panel with a partial/dynamic/full update policy ported from
   `inkview-slint` (`refresh.rs`);
 - maps inkview keys → the spec BTN bitmask and the touchscreen → the framework's
@@ -25,7 +28,7 @@ core's software rasterizer unchanged, then:
 The 960×544 render is integer-fit centered on the actual panel (which varies by
 model), so the host works across devices without per-model configuration.
 
-See **`pocketjs-inkview-implementation.md`** at the repo root for the full
+See **`docs/IMPLEMENTATION.md`** in this directory for the full
 design and the ground-truth API notes.
 
 ## Status
@@ -83,9 +86,9 @@ bun pocket compile --target pocketbook --manifest apps/hero/pocket.json --projec
 Connect the PocketBook over USB, then from the repo root:
 
 ```sh
-hosts/pocketbook/deploy.sh                 # auto-detects the mount point
+bun hosts/pocketbook/deploy.ts             # auto-detects the mount point
 # or explicitly:
-hosts/pocketbook/deploy.sh /run/media/$USER/PB626
+bun hosts/pocketbook/deploy.ts /run/media/$USER/PB626
 ```
 
 It installs `applications/pocketjs-hero/{pocketjs-hero, app.js, app.pak}`.
@@ -138,6 +141,9 @@ Run on both a grayscale and a color device to exercise both blit paths.
   scale-to-fit centering, @2x text, and animated partial updates all confirmed
   via photo + video. Input (touch / hardware keys), idle ghosting, and
   background-return still need a hands-on pass.
+  **Note:** that pass ran the full-raster pipeline; the raster has since
+  switched to core DrawList damage (`render_scaled_incremental`, pixel-parity
+  covered by unit tests) — re-confirm animations + Show on device.
 - **Era Color / Kaleido 3** — not yet tested (color blit path unverified).
 
 ### Logs

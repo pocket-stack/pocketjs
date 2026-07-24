@@ -3,8 +3,8 @@
 //! Reuses the backend-agnostic `ui` surface (`pocket_ui_surface::UiSurface`)
 //! and the core's software rasterizer, then blits the frame as RGB24 (inkview
 //! converts to gray on grayscale panels, writes RGB on color panels). See
-//! `pocketjs-inkview-implementation.md`
-//! at the repo root for the full design and the ground-truth API notes.
+//! `docs/IMPLEMENTATION.md` in this directory for the full design and the
+//! ground-truth API notes.
 //!
 //! Event-loop model (mirrors `inkview-slint`): `iv_main` runs on the main
 //! thread forwarding every `Event` into an mpsc channel; a second thread owns
@@ -214,32 +214,34 @@ fn tick(
 
     surface.tick();
 
-    // Rasterize at density → RGBA8 and diff against the previous frame
-    // (buffer coords). The blit below reads the CURRENT frame, so the
-    // previous-frame latch is advanced only after blitting.
+    // Incremental raster: repaint only DrawList damage into the retained
+    // RGBA8 target, then pixel-diff WITHIN the damage plan to find the tiles
+    // the panel must refresh. An idle frame plans nothing, rasterizes
+    // nothing, and scans nothing.
     let dirty = surface.with_ui(|ui| {
         let words = ui.draw().words.clone();
-        fb.rasterize(ui, &words);
-        fb.diff()
+        let plan = fb.rasterize(ui, &words);
+        fb.diff(&plan)
     });
 
     if full {
-        // Full redraw (first paint / return from background): blit everything
+        // Full panel redraw (first paint / return from background): the
+        // retained buffer is always the complete current frame, so re-blit it
         // and flash the panel once for a clean, ghost-free image.
         fb.blit_all(screen, geo);
         refresh.full(screen);
+        fb.advance_full();
     } else if !dirty.is_empty() {
         fb.blit_dirty(screen, &dirty, geo);
         let screen_dirty = offset_rects(&dirty, geo);
         refresh.present(screen, &screen_dirty);
+        // Latch only the blitted tiles; everything else already matches.
+        fb.advance(&dirty);
     } else {
-        // No change this frame; still let the refresh policy run its quiet
-        // cleanup timer (it no-ops when there's nothing pending).
+        // No pixel change this frame; still let the refresh policy run its
+        // quiet cleanup timer (it no-ops when there's nothing pending).
         refresh.present(screen, &[]);
     }
-
-    // Latch this frame as the previous one for the next diff.
-    fb.advance();
     Ok(())
 }
 
