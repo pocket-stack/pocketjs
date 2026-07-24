@@ -162,8 +162,17 @@ bun run e2e:vita                     # Vita3K, native-density 960x544 golden E2E
 bun run e2e:launcher:vita            # Vita3K, multi-app launcher/swap E2E
 bun psplink                           # interactive real PSP switcher over PSPLINK
 bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
+bun symbian doctor --device           # inspect the Nokia E7 toolchain and USB MTP path
+bun symbian doctor --coda-usb          # verify CODA 4.x directly over USB interface 4
+bun symbian build probe               # build a visible self-signed Qt/Symbian SIS
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
 ```
+
+The Nokia E7 bootstrap and its current PocketJS port boundary are documented in
+[docs/SYMBIAN_E7.md](./docs/SYMBIAN_E7.md). It establishes a pinned,
+repeatable GCCE/Qt/E32/SIS build and physical-device staging path; device-side
+installation remains an explicit phone confirmation, and the workflow does not
+register an incomplete Symbian runtime target.
 
 The PSP bootstrap owns every production input: Rust nightly + `rust-src`, the
 `cargo-psp` tools built at an exact `pocket-stack/rust-psp` revision, and a

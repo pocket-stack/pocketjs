@@ -57,6 +57,8 @@ describe("published npm artifacts", () => {
       "hosts/vita/Cargo.lock",
       "hosts/vita/README.md",
       "hosts/vita/rust-toolchain.toml",
+      "hosts/symbian/probe",
+      "docs/SYMBIAN_E7.md",
       "engine/pocket3d/crates/pocket3d-vita/src",
       "engine/pocket3d/crates/pocket3d-vita/examples",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",
@@ -81,6 +83,12 @@ describe("published npm artifacts", () => {
       "hosts/vita/assets/sce_sys/livearea/contents/bg.png",
       "hosts/vita/assets/sce_sys/livearea/contents/startup.png",
       "hosts/vita/assets/sce_sys/livearea/contents/template.xml",
+      "hosts/symbian/probe/main.cpp",
+      "hosts/symbian/probe/pocketjs-e7-probe.pro",
+      "docs/SYMBIAN_E7.md",
+      "tools/cli/symbian-toolchain.json",
+      "tools/symbian/coda-usb-probe.c",
+      "tools/symbian/Dockerfile.dockerignore",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.lock",
       "engine/pocket3d/crates/pocket3d-bsp/Cargo.toml",
@@ -107,6 +115,7 @@ describe("published npm artifacts", () => {
       "bin.mjs",
       "package.json",
       "psp-toolchain.json",
+      "symbian-toolchain.json",
     ]);
   });
 });

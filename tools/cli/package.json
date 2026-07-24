@@ -1,7 +1,7 @@
 {
   "name": "@pocketjs/cli",
   "version": "0.7.0",
-  "description": "The PocketJS CLI — manifest-first PSP and PS Vita builds, app scaffolding, and pinned PSP toolchain setup.",
+  "description": "The PocketJS CLI — manifest-first handheld builds, app scaffolding, and pinned native toolchain setup.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -10,6 +10,7 @@
   "files": [
     "bin.mjs",
     "psp-toolchain.json",
+    "symbian-toolchain.json",
     "README.md"
   ],
   "engines": {
@@ -25,6 +26,7 @@
     "pocketjs",
     "psp",
     "vita",
+    "symbian",
     "cli",
     "toolchain",
     "doctor"

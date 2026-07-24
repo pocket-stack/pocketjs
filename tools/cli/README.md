@@ -2,7 +2,8 @@
 
 The [PocketJS](https://pocketjs.dev) toolchain CLI — `doctor`/`setup` for the
 bun + Rust + PSP toolchain (flutter-doctor style), manifest-first app
-scaffolding, and build/run passthrough for PSP and PS Vita.
+scaffolding, build/run passthrough for PSP and PS Vita, and an isolated
+Nokia E7 / Symbian development toolchain.
 
 ```sh
 npm install -g @pocketjs/cli
@@ -18,6 +19,12 @@ pocket play vita hero    # build, install and launch a stock demo in Vita3K
 pocket dev my-app-main   # build + serve in the browser
 pocket psp my-app        # build the PSP EBOOT
 pocket vita my-app       # build the PS Vita VPK
+pocket symbian doctor --device
+pocket symbian doctor --coda-usb
+pocket symbian setup --yes
+pocket symbian build probe
+pocket symbian deploy dist/symbian/pocketjs-e7-probe.sis
+pocket symbian coda usb
 pocket hw my-app         # build + run on a real PSP over PSPLINK
 pocket psplink           # interactive multi-app switcher on a real PSP
 pocket devtools my-app   # DevTools panel + USB debug bridge, one command

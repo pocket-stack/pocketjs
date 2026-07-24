@@ -138,11 +138,16 @@ export async function withArtifactLock<T>(
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       try {
-        if (Date.now() - statSync(lock).mtimeMs > staleMs) {
-          const staleOwner = lockOwner(lock);
+        const candidateOwner = lockOwner(lock);
+        const ownerDiedOnThisHost = !!candidateOwner &&
+          candidateOwner.hostname === hostname() &&
+          ownerCanBeRecovered(candidateOwner);
+        const ageExceeded = Date.now() - statSync(lock).mtimeMs > staleMs;
+        if (ownerDiedOnThisHost || ageExceeded) {
           const quarantine = `${lock}.stale-${uniqueSuffix()}`;
-          if ((ownerCanBeRecovered(staleOwner) && sameOwner(staleOwner, lockOwner(lock))) ||
-              (!staleOwner && !lockOwner(lock))) {
+          if ((ownerCanBeRecovered(candidateOwner) &&
+              sameOwner(candidateOwner, lockOwner(lock))) ||
+              (!candidateOwner && !lockOwner(lock))) {
             renameSync(lock, quarantine);
             rmSync(quarantine, { recursive: true, force: true });
             continue;
