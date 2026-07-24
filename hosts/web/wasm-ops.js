@@ -17,7 +17,8 @@ const encoder = new TextEncoder();
 
 /**
  * Instantiate pocketjs.wasm and return
- * { ops, init, tick, drawHash, render, renderScaled, exports }.
+ * { ops, init, tick, drawHash, render, renderScaled,
+ *   renderIncremental, renderScaledIncremental, exports }.
  * `ops` is a complete HostOps (framework/src/host.ts) — hand it to the app bundle as
  * globalThis.ui before eval'ing it.
  *
@@ -147,6 +148,21 @@ export async function createWasmUi(wasm, options = {}) {
     renderScaled(scale) {
       scale = integerInRange(scale, "render scale", 1, 4);
       return framebufferView(ex.ui_render_scaled(scale), scale);
+    },
+    /** Repaint only changed regions, falling back for older wasm builds. */
+    renderIncremental() {
+      const ptr = ex.ui_render_incremental
+        ? ex.ui_render_incremental()
+        : ex.ui_render();
+      return framebufferView(ptr, 1);
+    },
+    /** Incremental equivalent of renderScaled(). */
+    renderScaledIncremental(scale) {
+      scale = integerInRange(scale, "render scale", 1, 4);
+      const ptr = ex.ui_render_incremental_scaled
+        ? ex.ui_render_incremental_scaled(scale)
+        : ex.ui_render_scaled(scale);
+      return framebufferView(ptr, scale);
     },
   };
 }

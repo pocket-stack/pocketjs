@@ -307,7 +307,7 @@ export class PocketHost {
 
   _blit() {
     if (!this.wasm || !this.ctx) return;
-    this.imageData.data.set(this.wasm.render());
+    this.imageData.data.set(this.wasm.renderIncremental());
     this.ctx.putImageData(this.imageData, 0, 0);
     if (this.showHud) {
       drawHud(this.ctx, FB_W, FB_H, this._hudFps, this._hudMem); // built-in on-canvas overlay
