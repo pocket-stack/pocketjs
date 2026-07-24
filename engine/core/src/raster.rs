@@ -37,10 +37,16 @@
 //! reuse it (via [`render_scaled_rgb565_over`]) as their ordered software
 //! fallback for ops their accelerator cannot express.
 
+use crate::damage::{
+    DamageError, DamagePlan, DamagePolicy, DamageRect, DamageTarget, DamageTracker,
+};
 use crate::spec::{self, draw_op};
 use crate::{TexView, Ui};
 
 pub const MAX_RENDER_SCALE: u32 = 4;
+const DAMAGE_SIGNATURE_RGBA8: u64 = u32::from_be_bytes(*b"RGBA") as u64;
+const DAMAGE_SIGNATURE_ARGB8: u64 = u32::from_be_bytes(*b"ARGB") as u64;
+const DAMAGE_SIGNATURE_RGB565: u64 = u32::from_be_bytes(*b"R565") as u64;
 
 /// Integer clip rect: x0/y0 inclusive, x1/y1 exclusive.
 #[derive(Clone, Copy)]
@@ -307,6 +313,109 @@ pub fn render_scaled_rgb565_over(ui: &Ui, words: &[u32], fb: &mut [u16], scale: 
     render_scaled_impl(ui, words, &mut target, scale, false);
 }
 
+/// Clear and repaint only the supplied logical damage rectangles into an
+/// existing RGBA8 framebuffer.
+///
+/// Each region replays the complete DrawList under an additional root clip,
+/// preserving painter order for unchanged translucent operations.
+pub fn render_scaled_regions(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    scale: u32,
+    regions: &[DamageRect],
+) {
+    let mut target = RgbaTarget::<false> { bytes: fb };
+    render_scaled_regions_impl(ui, words, &mut target, scale, regions);
+}
+
+/// ARGB/BGRA-memory equivalent of [`render_scaled_regions`].
+pub fn render_scaled_argb_regions(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    scale: u32,
+    regions: &[DamageRect],
+) {
+    let mut target = RgbaTarget::<true> { bytes: fb };
+    render_scaled_regions_impl(ui, words, &mut target, scale, regions);
+}
+
+/// RGB565 equivalent of [`render_scaled_regions`].
+pub fn render_scaled_rgb565_regions(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u16],
+    scale: u32,
+    regions: &[DamageRect],
+) {
+    let mut target = Rgb565Target { pixels: fb };
+    render_scaled_regions_impl(ui, words, &mut target, scale, regions);
+}
+
+/// Incrementally render RGBA8 using one tracker per persistent framebuffer.
+pub fn render_scaled_incremental<const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    scale: u32,
+    tracker: &mut DamageTracker<MAX_REGIONS>,
+    policy: DamagePolicy,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    let mut target = RgbaTarget::<false> { bytes: fb };
+    render_scaled_incremental_impl(
+        ui,
+        words,
+        &mut target,
+        scale,
+        tracker,
+        policy,
+        DAMAGE_SIGNATURE_RGBA8,
+    )
+}
+
+/// Incrementally render ARGB/BGRA-memory pixels.
+pub fn render_scaled_argb_incremental<const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    scale: u32,
+    tracker: &mut DamageTracker<MAX_REGIONS>,
+    policy: DamagePolicy,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    let mut target = RgbaTarget::<true> { bytes: fb };
+    render_scaled_incremental_impl(
+        ui,
+        words,
+        &mut target,
+        scale,
+        tracker,
+        policy,
+        DAMAGE_SIGNATURE_ARGB8,
+    )
+}
+
+/// Incrementally render native RGB565 pixels.
+pub fn render_scaled_rgb565_incremental<const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u16],
+    scale: u32,
+    tracker: &mut DamageTracker<MAX_REGIONS>,
+    policy: DamagePolicy,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    let mut target = Rgb565Target { pixels: fb };
+    render_scaled_incremental_impl(
+        ui,
+        words,
+        &mut target,
+        scale,
+        tracker,
+        policy,
+        DAMAGE_SIGNATURE_RGB565,
+    )
+}
+
 fn render_scaled_impl<T: RenderTarget>(
     ui: &Ui,
     words: &[u32],
@@ -314,6 +423,62 @@ fn render_scaled_impl<T: RenderTarget>(
     scale: u32,
     clear: bool,
 ) {
+    let (width, _height, screen) = target_geometry(ui, target, scale);
+    if clear {
+        target.clear_black();
+    }
+    render_scaled_clipped(ui, words, target, width, scale as i32, screen);
+}
+
+fn render_scaled_regions_impl<T: RenderTarget>(
+    ui: &Ui,
+    words: &[u32],
+    target: &mut T,
+    scale: u32,
+    regions: &[DamageRect],
+) {
+    let (width, height, screen) = target_geometry(ui, target, scale);
+    render_damage_regions(
+        ui,
+        words,
+        target,
+        width,
+        height,
+        scale as i32,
+        screen,
+        regions,
+    );
+}
+
+fn render_scaled_incremental_impl<T: RenderTarget, const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    target: &mut T,
+    scale: u32,
+    tracker: &mut DamageTracker<MAX_REGIONS>,
+    policy: DamagePolicy,
+    signature: u64,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    let (width, height, screen) = target_geometry(ui, target, scale);
+    let damage_target = DamageTarget::new(width as u32, height as u32, scale, signature);
+    let plan = tracker
+        .prepare(ui, words, damage_target)?
+        .with_policy(policy)?;
+    render_damage_regions(
+        ui,
+        words,
+        target,
+        width,
+        height,
+        scale as i32,
+        screen,
+        plan.regions(),
+    );
+    tracker.commit(ui, words, damage_target);
+    Ok(plan)
+}
+
+fn target_geometry<T: RenderTarget>(ui: &Ui, target: &T, scale: u32) -> (i32, i32, Clip) {
     assert!(
         (1..=MAX_RENDER_SCALE).contains(&scale),
         "render scale must be 1 through 4"
@@ -338,10 +503,57 @@ fn render_scaled_impl<T: RenderTarget>(
         x1: width,
         y1: height,
     };
-    if clear {
-        target.clear_black();
-    }
+    (width, height, screen)
+}
 
+#[allow(clippy::too_many_arguments)]
+fn render_damage_regions<T: RenderTarget>(
+    ui: &Ui,
+    words: &[u32],
+    target: &mut T,
+    width: i32,
+    height: i32,
+    scale: i32,
+    screen: Clip,
+    regions: &[DamageRect],
+) {
+    let logical_screen = DamageRect::new(0, 0, width / scale, height / scale);
+    for &region in regions {
+        let region = region.intersect(logical_screen);
+        if region.is_empty() {
+            continue;
+        }
+        let physical = Clip {
+            x0: region.x0 * scale,
+            y0: region.y0 * scale,
+            x1: region.x1 * scale,
+            y1: region.y1 * scale,
+        }
+        .intersect(screen);
+        if physical.x0 >= physical.x1 || physical.y0 >= physical.y1 {
+            continue;
+        }
+        clear_black_rect(target, width, physical);
+        render_scaled_clipped(ui, words, target, width, scale, physical);
+    }
+}
+
+fn clear_black_rect<T: RenderTarget>(target: &mut T, stride: i32, rect: Clip) {
+    let row_pixels = (rect.x1 - rect.x0) as usize;
+    for y in rect.y0..rect.y1 {
+        let start = (y * stride + rect.x0) as usize;
+        target.fill_opaque(start, row_pixels, 0, 0, 0);
+    }
+}
+
+fn render_scaled_clipped<T: RenderTarget>(
+    ui: &Ui,
+    words: &[u32],
+    target: &mut T,
+    width: i32,
+    scale: i32,
+    screen: Clip,
+) {
     let mut stack: [Clip; 32] = [screen; 32];
     let mut depth: usize = 0;
     let mut clip = screen;
@@ -950,6 +1162,7 @@ fn tex_quad<T: RenderTarget>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::damage::DEFAULT_DAMAGE_REGIONS;
 
     fn xy_word(x: i16, y: i16) -> u32 {
         x as u16 as u32 | ((y as u16 as u32) << 16)
@@ -1107,6 +1320,357 @@ mod tests {
                 blue,
             ]
         );
+    }
+
+    #[test]
+    fn incremental_rgba_argb_and_rgb565_match_full_renders() {
+        let mut ui = Ui::new();
+        ui.set_viewport(24.0, 12.0);
+        let frame = |moving_x: i16, moving_color: u32| {
+            vec![
+                draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(24, 12),
+                0xff20_1008,
+                draw_op::RECT,
+                xy_word(moving_x, 2),
+                wh_word(8, 8),
+                moving_color,
+                // This unchanged translucent overlay intersects both the old
+                // and new moving rectangle and must be replayed in order.
+                draw_op::RECT,
+                xy_word(8, 4),
+                wh_word(8, 6),
+                0x8000_ff00,
+            ]
+        };
+        let previous = frame(2, 0x8000_00ff);
+        let current = frame(6, 0x80ff_0000);
+        let scale = 2;
+        let pixels = 24 * scale as usize * 12 * scale as usize;
+
+        let mut rgba = vec![0u8; pixels * 4];
+        let mut rgba_state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        let first = render_scaled_incremental(
+            &ui,
+            &previous,
+            &mut rgba,
+            scale,
+            &mut rgba_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(first.is_full_redraw());
+        let changed = render_scaled_incremental(
+            &ui,
+            &current,
+            &mut rgba,
+            scale,
+            &mut rgba_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(!changed.is_full_redraw());
+        let mut rgba_full = vec![0u8; pixels * 4];
+        render_scaled(&ui, &current, &mut rgba_full, scale);
+        assert_eq!(rgba, rgba_full);
+        let before = rgba.clone();
+        let unchanged = render_scaled_incremental(
+            &ui,
+            &current,
+            &mut rgba,
+            scale,
+            &mut rgba_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(unchanged.is_empty());
+        assert_eq!(rgba, before);
+
+        let mut argb = vec![0u8; pixels * 4];
+        let mut argb_state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_argb_incremental(
+            &ui,
+            &previous,
+            &mut argb,
+            scale,
+            &mut argb_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        render_scaled_argb_incremental(
+            &ui,
+            &current,
+            &mut argb,
+            scale,
+            &mut argb_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        let mut argb_full = vec![0u8; pixels * 4];
+        render_scaled_argb(&ui, &current, &mut argb_full, scale);
+        assert_eq!(argb, argb_full);
+
+        let mut rgb565 = vec![0u16; pixels];
+        let mut rgb565_state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_rgb565_incremental(
+            &ui,
+            &previous,
+            &mut rgb565,
+            scale,
+            &mut rgb565_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        render_scaled_rgb565_incremental(
+            &ui,
+            &current,
+            &mut rgb565,
+            scale,
+            &mut rgb565_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        let mut rgb565_full = vec![0u16; pixels];
+        render_scaled_rgb565(&ui, &current, &mut rgb565_full, scale);
+        assert_eq!(rgb565, rgb565_full);
+
+        rgb565_state.invalidate();
+        let invalidated = render_scaled_rgb565_incremental(
+            &ui,
+            &current,
+            &mut rgb565,
+            scale,
+            &mut rgb565_state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(invalidated.is_full_redraw());
+        assert_eq!(rgb565, rgb565_full);
+    }
+
+    #[test]
+    fn incremental_software_raster_tracks_double_buffers_independently() {
+        let mut ui = Ui::new();
+        ui.set_viewport(24.0, 8.0);
+        let frame = |x: i16, color: u32| {
+            vec![
+                draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(24, 8),
+                0xff10_0804,
+                draw_op::RECT,
+                xy_word(x, 2),
+                wh_word(3, 3),
+                color,
+            ]
+        };
+        let frames = [
+            frame(1, 0xff00_00ff),
+            frame(5, 0xff00_ff00),
+            frame(9, 0xffff_0000),
+            frame(13, 0xffff_ffff),
+        ];
+        let mut states = [
+            DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new(),
+            DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new(),
+        ];
+        let mut outputs = [vec![0u16; 24 * 8], vec![0u16; 24 * 8]];
+
+        for (index, words) in frames.iter().enumerate() {
+            let target = index & 1;
+            let plan = render_scaled_rgb565_incremental(
+                &ui,
+                words,
+                &mut outputs[target],
+                1,
+                &mut states[target],
+                DamagePolicy::default(),
+            )
+            .unwrap();
+            assert_eq!(plan.is_full_redraw(), index < 2);
+
+            let mut expected = vec![0u16; 24 * 8];
+            render_scaled_rgb565(&ui, words, &mut expected, 1);
+            assert_eq!(outputs[target], expected);
+        }
+    }
+
+    #[test]
+    fn incremental_default_capacity_merges_nine_regions_without_pixel_regression() {
+        assert_eq!(DEFAULT_DAMAGE_REGIONS, 8);
+        let mut ui = Ui::new();
+        ui.set_viewport(96.0, 8.0);
+        let frame = |color: u32| {
+            let mut words = vec![
+                draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(96, 8),
+                0xff10_0804,
+            ];
+            for index in 0..9 {
+                words.extend_from_slice(&[
+                    draw_op::RECT,
+                    xy_word((index * 10 + 1) as i16, 2),
+                    wh_word(2, 2),
+                    color,
+                ]);
+            }
+            words
+        };
+        let previous = frame(0xff00_00ff);
+        let current = frame(0xff00_ff00);
+        let mut incremental = vec![0u16; 96 * 8];
+        let mut tracker = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_rgb565_incremental(
+            &ui,
+            &previous,
+            &mut incremental,
+            1,
+            &mut tracker,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        let plan = render_scaled_rgb565_incremental(
+            &ui,
+            &current,
+            &mut incremental,
+            1,
+            &mut tracker,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(!plan.is_full_redraw());
+        assert_eq!(plan.region_count(), DEFAULT_DAMAGE_REGIONS);
+
+        let mut full = vec![0u16; incremental.len()];
+        render_scaled_rgb565(&ui, &current, &mut full, 1);
+        assert_eq!(incremental, full);
+    }
+
+    #[test]
+    fn incremental_target_signature_prevents_cross_format_reuse() {
+        let mut ui = Ui::new();
+        ui.set_viewport(4.0, 2.0);
+        let words = [draw_op::RECT, xy_word(0, 0), wh_word(4, 2), 0xff33_2211];
+        let mut bytes = vec![0u8; 4 * 2 * 4];
+        let mut state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_incremental(
+            &ui,
+            &words,
+            &mut bytes,
+            1,
+            &mut state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+
+        let argb = render_scaled_argb_incremental(
+            &ui,
+            &words,
+            &mut bytes,
+            1,
+            &mut state,
+            DamagePolicy::default(),
+        )
+        .unwrap();
+        assert!(argb.is_full_redraw());
+        assert!(bytes
+            .chunks_exact(4)
+            .all(|pixel| pixel == [0x33, 0x22, 0x11, 0xff]));
+    }
+
+    #[test]
+    fn incremental_complex_ops_match_a_full_render() {
+        let mut ui = Ui::new_with_raster_density(2);
+        ui.set_viewport(40.0, 24.0);
+        let texture_pixels = (0..16)
+            .flat_map(|value| [(value * 16) as u8, 32, 192, 255])
+            .collect::<Vec<_>>();
+        let texture = ui.upload_texture(&texture_pixels, 4, 4, spec::psm::PSM_8888);
+        assert!(texture >= 0);
+        assert!(ui.load_font_atlas(&density_two_font()));
+
+        let frame = |offset: i16, tint: u32| {
+            vec![
+                draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(40, 24),
+                0xff18_1008,
+                draw_op::SCISSOR,
+                xy_word(1, 1),
+                wh_word(12, 9),
+                draw_op::GRAD_RECT,
+                xy_word(2 + offset, 2),
+                wh_word(7, 5),
+                tint,
+                0xffff_ffff,
+                spec::GradDir::ToRight as u32,
+                draw_op::SCISSOR_POP,
+                draw_op::TEX_QUAD,
+                texture as u32,
+                xy_word(15 + offset, 2),
+                wh_word(5, 5),
+                0.0f32.to_bits(),
+                0.0f32.to_bits(),
+                1.0f32.to_bits(),
+                1.0f32.to_bits(),
+                tint,
+                draw_op::TRI,
+                xy_word(23 + offset, 2),
+                xy_word(29 + offset, 8),
+                xy_word(22 + offset, 8),
+                tint,
+                0xff00_ff00,
+                0xffff_0000,
+                draw_op::TEX_TRI,
+                texture as u32,
+                xy_word(3 + offset, 13),
+                0.0f32.to_bits(),
+                0.0f32.to_bits(),
+                xy_word(9 + offset, 19),
+                1.0f32.to_bits(),
+                1.0f32.to_bits(),
+                xy_word(2 + offset, 19),
+                0.0f32.to_bits(),
+                1.0f32.to_bits(),
+                tint,
+                draw_op::GLYPH_RUN,
+                1 << 16,
+                tint,
+                xy_word(15 + offset, 13),
+                0,
+            ]
+        };
+        let previous = frame(0, 0xff00_00ff);
+        let current = frame(2, 0xc0ff_8000);
+        let scale = 2;
+        let mut incremental = vec![0u16; 40 * scale as usize * 24 * scale as usize];
+        let mut tracker = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
+        render_scaled_rgb565_incremental(
+            &ui,
+            &previous,
+            &mut incremental,
+            scale,
+            &mut tracker,
+            DamagePolicy::new(100),
+        )
+        .unwrap();
+        let plan = render_scaled_rgb565_incremental(
+            &ui,
+            &current,
+            &mut incremental,
+            scale,
+            &mut tracker,
+            DamagePolicy::new(100),
+        )
+        .unwrap();
+        assert!(!plan.is_full_redraw());
+        assert!(!plan.is_empty());
+
+        let mut full = vec![0u16; incremental.len()];
+        render_scaled_rgb565(&ui, &current, &mut full, scale);
+        assert_eq!(incremental, full);
     }
 
     #[test]

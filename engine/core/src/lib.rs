@@ -32,6 +32,7 @@ use alloc::vec::Vec;
 
 pub mod anim;
 pub mod codec;
+pub mod damage;
 pub mod draw;
 pub mod layout;
 pub mod package;
@@ -224,6 +225,8 @@ pub struct Ui {
     /// coordinates always remain logical; only core-owned bitmap resources
     /// (currently rounded-corner masks) use this density.
     raster_density: u32,
+    /// Changes whenever raster-visible resource bytes or tables change.
+    raster_revision: u64,
     focused: i32,
     draw_list: DrawList,
     /// Virtual cursor sprite (spec ops 28/29, input.cursor capability):
@@ -281,6 +284,7 @@ impl Ui {
             tex_free: Vec::new(),
             discs: draw::DiscCache::new(),
             raster_density,
+            raster_revision: 1,
             focused: 0,
             draw_list: DrawList::new(),
             cursor_tex: -1,
@@ -299,6 +303,15 @@ impl Ui {
     /// Raster pixels per logical UI pixel for core-owned bitmap resources.
     pub fn raster_density(&self) -> u32 {
         self.raster_density
+    }
+
+    /// Monotonic token for texture/font/style contents consumed by renderers.
+    pub fn raster_revision(&self) -> u64 {
+        self.raster_revision
+    }
+
+    fn bump_raster_revision(&mut self) {
+        self.raster_revision = self.raster_revision.wrapping_add(1);
     }
 
     // ---- tree ops ---------------------------------------------------------
@@ -513,7 +526,11 @@ impl Ui {
             palette,
             linear: flags & spec::img::FLAG_LINEAR != 0,
         };
-        tex_alloc(&mut self.textures, &mut self.tex_free, tex)
+        let handle = tex_alloc(&mut self.textures, &mut self.tex_free, tex);
+        if handle >= 0 {
+            self.bump_raster_revision();
+        }
+        handle
     }
 
     /// Upload a self-contained IMG pak entry (spec op uploadImgEntry;
@@ -581,6 +598,7 @@ impl Ui {
                 tex.byte_len,
             );
         }
+        self.bump_raster_revision();
         true
     }
 
@@ -596,6 +614,7 @@ impl Ui {
         s.tex = None;
         s.gen = ((s.gen as u32 + 1) & TEX_GEN_MASK) as u16;
         self.tex_free.push(slot);
+        self.bump_raster_revision();
     }
 
     /// Bind an uploaded texture to an image node. Handles are 0-based, so
@@ -648,6 +667,7 @@ impl Ui {
             Some(t) => {
                 self.styles = t;
                 self.layout.dirty = true;
+                self.bump_raster_revision();
                 true
             }
             None => false,
@@ -660,6 +680,7 @@ impl Ui {
         let ok = self.fonts.load(bytes);
         if ok {
             self.layout.dirty = true;
+            self.bump_raster_revision();
         }
         ok
     }
