@@ -2,7 +2,14 @@
 
 import "./prelude.ts";
 
-import { detectHost, hostViewport, installFrameHandler, installHost, type HostOps } from "./host.ts";
+import {
+  detectHost,
+  getOps,
+  hostViewport,
+  installFrameHandler,
+  installHost,
+  type HostOps,
+} from "./host.ts";
 import { initDevtools, wrapFrameHandler } from "./devtools.ts";
 import {
   createElement,
@@ -56,11 +63,18 @@ function uploadPakImages(ops: HostOps): void {
   if ((ops as HostOps & { __textures?: unknown }).__textures) return;
   for (const key of pakEntries(IMG_PREFIX)) {
     const blob = pakGet(key);
-    const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
-    const w = dv.getUint16(0, true);
-    const h = dv.getUint16(2, true);
-    const psm = blob[4];
-    const handle = ops.uploadTexture(blob.subarray(8), w, h, psm);
+    let handle: number;
+    if (ops.uploadImgEntry) {
+      handle = ops.uploadImgEntry(blob);
+    } else {
+      const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+      handle = ops.uploadTexture(
+        blob.subarray(8),
+        dv.getUint16(0, true),
+        dv.getUint16(2, true),
+        blob[4],
+      );
+    }
     if (handle >= 0) rendererRegisterTexture(key.slice(IMG_PREFIX.length), handle);
   }
 }
@@ -89,6 +103,47 @@ function createLayer(style: Record<string, number>): NodeMirror {
   return layer;
 }
 
+let appLayer: NodeMirror | null = null;
+let overlayLayer: NodeMirror | null = null;
+
+type ResizeViewportHook = (width: number, height: number) => void;
+
+function installResizeViewportHook(): () => void {
+  const globals = globalThis as typeof globalThis & {
+    __pocketResizeViewport?: ResizeViewportHook;
+  };
+  const previous = globals.__pocketResizeViewport;
+  const hook: ResizeViewportHook = (width, height) => resizeViewport(width, height);
+  globals.__pocketResizeViewport = hook;
+  return () => {
+    if (globals.__pocketResizeViewport !== hook) return;
+    if (previous) globals.__pocketResizeViewport = previous;
+    else delete globals.__pocketResizeViewport;
+  };
+}
+
+export function resizeViewport(w: number, h: number): void {
+  if (!appLayer || !overlayLayer) return;
+  setProp(appLayer, "style", { width: w, height: h, overflow: ENUMS.Overflow.Hidden }, undefined);
+  setProp(
+    overlayLayer,
+    "style",
+    {
+      width: w,
+      height: h,
+      posType: ENUMS.PosType.Absolute,
+      insetT: 0,
+      insetR: 0,
+      insetB: 0,
+      insetL: 0,
+      zIndex: 1000,
+    },
+    undefined,
+  );
+  const ops = getOps() as HostOps & { __viewport?: { w: number; h: number } };
+  ops.__viewport = { w, h };
+}
+
 export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => void {
   const host = detectHost(opts.ops);
   installHost(host);
@@ -96,10 +151,14 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   setStyleResolver(resolveStyle);
   if (opts.styles) registerStyles(opts.styles);
 
+  const nativeTextureTable = host.kind === "native"
+    ? (host.ops as HostOps & { __textures?: Record<string, number> }).__textures
+    : undefined;
   if (host.kind === "native") {
-    const tex = (host.ops as HostOps & { __textures?: Record<string, number> }).__textures;
-    if (tex) {
-      for (const key in tex) rendererRegisterTexture(key, tex[key]);
+    if (nativeTextureTable) {
+      for (const key in nativeTextureTable) {
+        rendererRegisterTexture(key, nativeTextureTable[key]);
+      }
     }
     const spr = (
       host.ops as HostOps & {
@@ -111,7 +170,10 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
     }
   }
 
-  if (host.kind === "injected") {
+  // Transitional native ports can retain strict target/ABI identity while
+  // loading resources from globalThis.__pak until they gain a native parser.
+  // Established console hosts publish __textures, including an empty table.
+  if (host.kind === "injected" || nativeTextureTable === undefined) {
     if (opts.pak) loadPack(opts.pak);
     if (hasPack()) {
       for (const key of pakEntries()) {
@@ -145,6 +207,8 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   insertNode(rootMirror, appRoot);
   insertNode(rootMirror, overlayRoot);
   setOverlayRoot(overlayRoot);
+  appLayer = appRoot;
+  overlayLayer = overlayRoot;
 
   setInputRoot(appRoot);
   resetFrameHooks();
@@ -164,11 +228,15 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   );
 
   const dispose = rendererRender(code, appRoot);
+  const removeResizeViewportHook = installResizeViewportHook();
   return () => {
+    removeResizeViewportHook();
     __resetTouches();
     dispose();
     setInputRoot(null);
     setOverlayRoot(null);
+    appLayer = null;
+    overlayLayer = null;
     for (const child of rootMirror.children.splice(0)) {
       child.parent = null;
       host.ops.destroyNode(child.id);

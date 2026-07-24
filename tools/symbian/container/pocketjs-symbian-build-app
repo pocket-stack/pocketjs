@@ -1,0 +1,237 @@
+#!/bin/bash
+set -euo pipefail
+
+manifest=/opt/pocketjs/symbian-toolchain.json
+: "${POCKETJS_SYMBIAN_IMPLEMENTATION_SHA256:?implementation digest is required}"
+: "${POCKETJS_SYMBIAN_IMAGE_IMPLEMENTATION_SHA256:?image implementation digest is required}"
+if test "$POCKETJS_SYMBIAN_IMAGE_IMPLEMENTATION_SHA256" != \
+    "$POCKETJS_SYMBIAN_IMPLEMENTATION_SHA256"; then
+    echo "Symbian image and checkout implementation digests do not match." >&2
+    exit 1
+fi
+
+if test "$#" != 2; then
+    echo "usage: pocketjs-symbian-build-app <output-name> <sis-version>" >&2
+    exit 1
+fi
+app_output=$1
+sis_version=$2
+if [[ ! "$app_output" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "Unsafe PocketJS app output name: $app_output" >&2
+    exit 1
+fi
+if [[ ! "$sis_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    echo "SIS version must be three decimal components (for example 1.0.0)." >&2
+    exit 1
+fi
+sis_major=${BASH_REMATCH[1]}
+sis_minor=${BASH_REMATCH[2]}
+sis_build=${BASH_REMATCH[3]}
+for component in "$sis_major" "$sis_minor" "$sis_build"; do
+    if (( component > 32767 )); then
+        echo "Every SIS version component must be at most 32767." >&2
+        exit 1
+    fi
+done
+
+toolchain=/toolchain/current
+payload="/out/build/$app_output"
+runtime_source=/workspace/hosts/symbian/runtime
+rust_library="$payload/libpocketjs_symbian_core.a"
+quickjs_asset="/downloads/$(jq -r .quickjs.asset "$manifest")"
+quickjs_sha256=$(jq -r .quickjs.sha256 "$manifest")
+quickjs_version=$(jq -r .quickjs.version "$manifest")
+quickjs_revision=$(jq -r .quickjs.rev "$manifest")
+uid=$(jq -r .runtime.uid "$manifest")
+output_name=$(basename "$(jq -r .runtime.output "$manifest")")
+output="/out/$output_name"
+receipt="/out/${output_name%.sis}.receipt.json"
+certificate="/signing/$(jq -r .signing.certificate "$manifest")"
+private_key="/signing/$(jq -r .signing.privateKey "$manifest")"
+lock=/toolchain/.toolchain.lock
+
+for required in \
+    "$payload/app.js" \
+    "$payload/app.pak" \
+    "$payload/plan.json" \
+    "$rust_library"; do
+    if test ! -s "$required"; then
+        echo "Missing Symbian runtime input: $required" >&2
+        exit 1
+    fi
+done
+echo "$quickjs_sha256  $quickjs_asset" | sha256sum --check --status
+
+if ! initial_logical_width=$(jq -er '.viewport.logical[0]' "$payload/plan.json") ||
+    ! initial_logical_height=$(jq -er '.viewport.logical[1]' "$payload/plan.json"); then
+    echo "Symbian build plan is missing viewport.logical width/height." >&2
+    exit 1
+fi
+if [[ ! "$initial_logical_width" =~ ^[1-9][0-9]*$ ]] ||
+    [[ ! "$initial_logical_height" =~ ^[1-9][0-9]*$ ]] ||
+    (( 10#$initial_logical_width > 640 )) ||
+    (( 10#$initial_logical_height > 640 )); then
+    echo "Symbian logical viewport must contain integer extents from 1 through 640." >&2
+    exit 1
+fi
+
+if test ! -f "$lock"; then
+    echo "Symbian toolchain lock is missing; run setup --yes." >&2
+    exit 1
+fi
+exec 9<"$lock"
+if ! flock --shared --timeout 120 9; then
+    echo "Timed out waiting for the Symbian toolchain setup lock." >&2
+    exit 1
+fi
+
+POCKETJS_SYMBIAN_LOCK_HELD=1 /usr/local/bin/pocketjs-symbian-doctor >/dev/null
+
+build=$(mktemp -d /tmp/pocketjs-symbian-runtime.XXXXXX)
+quickjs_root="$build/quickjs-rs"
+quickjs_objects="$build/quickjs-objects"
+output_stage=$(mktemp -d /out/.pocketjs-symbian-runtime.XXXXXX)
+candidate="$output_stage/$output_name"
+candidate_receipt="$output_stage/${output_name%.sis}.receipt.json"
+
+cleanup() {
+    rm -rf "$build" "$output_stage"
+}
+trap cleanup EXIT
+
+mkdir -p "$quickjs_root" "$quickjs_objects"
+tar -xzf "$quickjs_asset" --strip-components=1 -C "$quickjs_root"
+patch \
+    --batch \
+    --forward \
+    -d "$quickjs_root" \
+    -p1 \
+    < /opt/pocketjs/patches/quickjs-symbian-gcce.patch
+quickjs_source="$quickjs_root/libquickjs-sys/embed/quickjs"
+
+export EPOCROOT="$toolchain/sdk/"
+export PATH="$toolchain/sdk/bin:$toolchain/bin:$toolchain/gcce/arm-2012.03/bin:$PATH"
+export QMAKESPEC=symbian-gcce
+
+compiler_include=$(arm-none-symbianelf-gcc -print-file-name=include)
+quickjs_flags=(
+    -march=armv5t
+    -mapcs
+    -mthumb-interwork
+    -nostdinc
+    -msoft-float
+    "--include=${EPOCROOT}epoc32/include/gcce/gcce.h"
+    -include "${EPOCROOT}mkspecs/common/symbian/symbianincludes.h"
+    -D__GCCE__
+    -DUNICODE
+    -D__SYMBIAN32__
+    -D__MARM_INTERWORK__
+    -D_UNICODE
+    -D__S60_50__
+    -D__S60_3X__
+    -D__SERIES60_3X__
+    -D__EPOC32__
+    -D__MARM__
+    -D__EABI__
+    -D__MARM_ARMV5__
+    -D__SUPPORT_CPP_EXCEPTIONS__
+    "-I${EPOCROOT}epoc32/include"
+    "-I${EPOCROOT}epoc32/include/variant"
+    "-I${EPOCROOT}epoc32/include/stdapis"
+    "-I${EPOCROOT}epoc32/include/gcce"
+    "-I${compiler_include}"
+    "-I${quickjs_source}"
+)
+for source in cutils.c dtoa.c libregexp.c libunicode.c quickjs.c; do
+    arm-none-symbianelf-gcc \
+        "${quickjs_flags[@]}" \
+        -std=gnu99 \
+        -O0 \
+        -funsigned-char \
+        -D_GNU_SOURCE \
+        "-DCONFIG_VERSION=\"$quickjs_version\"" \
+        -c "$quickjs_source/$source" \
+        -o "$quickjs_objects/${source%.c}.o"
+done
+arm-none-symbianelf-ar cqs "$build/libquickjs.a" "$quickjs_objects"/*.o
+
+cp "$runtime_source"/* "$build/"
+cp "$payload/app.js" "$payload/app.pak" "$build/"
+cd "$build"
+
+qmake \
+    -spec "$toolchain/sdk/mkspecs/symbian-gcce" \
+    "POCKETJS_SYMBIAN_UID=$uid" \
+    "POCKETJS_QUICKJS_INCLUDE=$quickjs_source" \
+    "POCKETJS_QUICKJS_LIBRARY=$build/libquickjs.a" \
+    "POCKETJS_CORE_LIBRARY=$rust_library" \
+    "POCKETJS_FRAME_RATE=$(jq -r .runtime.frameRate "$manifest")" \
+    "POCKETJS_INITIAL_LOGICAL_WIDTH=$initial_logical_width" \
+    "POCKETJS_INITIAL_LOGICAL_HEIGHT=$initial_logical_height" \
+    pocketjs-e7-runtime.pro
+make -j2
+
+expected_uid=$(tr "[:upper:]" "[:lower:]" <<<"${uid#0x}" | tr -d "[:space:]")
+actual_uid=$(od -An -tx4 -j8 -N4 PocketJsE7Runtime.exe | tr -d "[:space:]")
+test "$actual_uid" = "$expected_uid"
+file PocketJsE7Runtime.exe | grep -Fq "Psion Series 5 executable"
+
+cat > pocketjs-e7-runtime.pkg <<EOF
+; Generated by pocketjs-symbian-build-app.
+&EN
+#{"PocketJS E7 Runtime"},($uid),$sis_major,$sis_minor,$sis_build
+%{"Pocket Stack"}
+:"Pocket Stack"
+(0x2001E61C),4,7,4,{"Qt"}
+[0x20022E6D],0,0,0,{"Symbian^3"}
+[0x20032DE7],0,0,0,{"Symbian Belle"}
+"PocketJsE7Runtime.exe"-"!:\\sys\\bin\\PocketJsE7Runtime.exe"
+"PocketJsE7Runtime.rsc"-"!:\\resource\\apps\\PocketJsE7Runtime.rsc"
+"PocketJsE7Runtime_reg.rsc"-"!:\\private\\10003a3f\\import\\apps\\PocketJsE7Runtime_reg.rsc"
+EOF
+
+makesis pocketjs-e7-runtime.pkg pocketjs-e7-runtime-unsigned.sis
+signsis \
+    pocketjs-e7-runtime-unsigned.sis \
+    "$candidate" \
+    "$certificate" \
+    "$private_key"
+
+test -s "$candidate"
+file "$candidate" | grep -Fq "Symbian installation file"
+signsis -o "$candidate" > "$build/signing.txt"
+grep -Fq "Issued to:" "$build/signing.txt"
+
+app_js_sha256=$(sha256sum "$payload/app.js" | cut -d " " -f 1)
+app_pak_sha256=$(sha256sum "$payload/app.pak" | cut -d " " -f 1)
+plan_sha256=$(sha256sum "$payload/plan.json" | cut -d " " -f 1)
+core_sha256=$(sha256sum "$rust_library" | cut -d " " -f 1)
+jq -n \
+    --arg app "$app_output" \
+    --arg uid "$uid" \
+    --arg sisVersion "$sis_version" \
+    --arg quickjsVersion "$quickjs_version" \
+    --arg quickjsRevision "$quickjs_revision" \
+    --arg appJsSha256 "$app_js_sha256" \
+    --arg appPakSha256 "$app_pak_sha256" \
+    --arg planSha256 "$plan_sha256" \
+    --arg coreSha256 "$core_sha256" \
+    '{
+      schemaVersion: 1,
+      app: $app,
+      uid: $uid,
+      sisVersion: $sisVersion,
+      quickjs: {version: $quickjsVersion, revision: $quickjsRevision},
+      sha256: {
+        appJs: $appJsSha256,
+        appPak: $appPakSha256,
+        plan: $planSha256,
+        core: $coreSha256
+      }
+    }' > "$candidate_receipt"
+
+mv -f "$candidate" "$output"
+mv -f "$candidate_receipt" "$receipt"
+
+file PocketJsE7Runtime.exe "$output"
+sha256sum "$output"

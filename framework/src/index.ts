@@ -80,11 +80,18 @@ function uploadPakImages(ops: HostOps): void {
   if ((ops as HostOps & { __textures?: unknown }).__textures) return;
   for (const key of pakEntries(IMG_PREFIX)) {
     const blob = pakGet(key);
-    const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
-    const w = dv.getUint16(0, true);
-    const h = dv.getUint16(2, true);
-    const psm = blob[4];
-    const handle = ops.uploadTexture(blob.subarray(8), w, h, psm);
+    let handle: number;
+    if (ops.uploadImgEntry) {
+      handle = ops.uploadImgEntry(blob);
+    } else {
+      const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+      handle = ops.uploadTexture(
+        blob.subarray(8),
+        dv.getUint16(0, true),
+        dv.getUint16(2, true),
+        blob[4],
+      );
+    }
     if (handle >= 0) rendererRegisterTexture(key.slice(IMG_PREFIX.length), handle);
   }
 }
@@ -120,17 +127,33 @@ function createLayer(style: Record<string, number>): NodeMirror {
   return layer;
 }
 
-// The mounted root layers, kept for live viewport resizes (desktop hosts).
+// The mounted root layers, kept for hosts whose logical viewport can change.
 let appLayer: NodeMirror | null = null;
 let overlayLayer: NodeMirror | null = null;
 
+type ResizeViewportHook = (width: number, height: number) => void;
+
+function installResizeViewportHook(): () => void {
+  const globals = globalThis as typeof globalThis & {
+    __pocketResizeViewport?: ResizeViewportHook;
+  };
+  const previous = globals.__pocketResizeViewport;
+  const hook: ResizeViewportHook = (width, height) => resizeViewport(width, height);
+  globals.__pocketResizeViewport = hook;
+  return () => {
+    if (globals.__pocketResizeViewport !== hook) return;
+    if (previous) globals.__pocketResizeViewport = previous;
+    else delete globals.__pocketResizeViewport;
+  };
+}
+
 /**
- * Live-resize the mounted app to a new logical viewport (desktop widget
- * hosts: the host resized the core with `Ui::set_viewport` and told the app,
- * which calls this to follow). Restyles the app + overlay root layers and
+ * Live-resize the mounted app to a new logical viewport. The host resizes the
+ * core with `Ui::set_viewport`, then calls the installed runtime hook so these
+ * app + overlay root layers follow without remounting. This also
  * refreshes `ui.__viewport` so every later `hostViewport` read — cursor
- * clamping, OSK docking — sees the new size. Console hosts never resize;
- * calling this without a mounted app is a no-op.
+ * clamping, OSK docking — sees the new size. Calling this without a mounted
+ * app is a no-op.
  */
 export function resizeViewport(w: number, h: number): void {
   if (!appLayer || !overlayLayer) return;
@@ -169,14 +192,18 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   setStyleResolver(resolveStyle);
   if (opts.styles) registerStyles(opts.styles);
 
+  const nativeTextureTable = host.kind === "native"
+    ? (host.ops as HostOps & { __textures?: Record<string, number> }).__textures
+    : undefined;
   if (host.kind === "native") {
     // Native host: its pak loader already fed styles/atlases to the
     // core and uploaded the pack's images at boot, leaving a name -> texture-
     // handle table on the ui namespace (ffi.rs). Bind it so <image src="name">
     // resolves through the renderer's texture registry.
-    const tex = (host.ops as HostOps & { __textures?: Record<string, number> }).__textures;
-    if (tex) {
-      for (const key in tex) rendererRegisterTexture(key, tex[key]);
+    if (nativeTextureTable) {
+      for (const key in nativeTextureTable) {
+        rendererRegisterTexture(key, nativeTextureTable[key]);
+      }
     }
     const spr = (
       host.ops as HostOps & {
@@ -188,7 +215,12 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     }
   }
 
-  if (host.kind === "injected") {
+  // A target-marked native host may intentionally omit the native resource
+  // tables while a port is still using the portable `globalThis.__pak`
+  // loader. That keeps target/ABI handshakes strict without requiring an
+  // early C++ pak parser. Established console hosts publish `__textures`
+  // (including an empty table) and retain their zero-copy native feed.
+  if (host.kind === "injected" || nativeTextureTable === undefined) {
     if (opts.pak) loadPack(opts.pak);
     if (hasPack()) {
       for (const key of pakEntries()) {
@@ -203,9 +235,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     }
   }
 
-  // Desktop hosts publish their logical UI size as ui.__viewport (the core
-  // root is already sized to it via Ui::set_viewport); PSP/web hosts omit it
-  // and keep the 480x272 contract.
+  // Live-viewport hosts publish their logical UI size as ui.__viewport (the
+  // core root is already sized to it via Ui::set_viewport); PSP/web hosts omit
+  // it and keep the 480x272 contract.
   const viewport = hostViewport(host.ops);
   const layerW = viewport?.w ?? SCREEN_W;
   const layerH = viewport?.h ?? SCREEN_H;
@@ -250,7 +282,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   );
 
   const dispose = rendererRender(code as () => NodeMirror, appRoot);
+  const removeResizeViewportHook = installResizeViewportHook();
   return () => {
+    removeResizeViewportHook();
     __resetTouches();
     dispose(); // tears down reactivity only — universal keeps the nodes
     setInputRoot(null); // drops focus state (native focus dies with the nodes)

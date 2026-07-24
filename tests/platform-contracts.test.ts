@@ -313,17 +313,18 @@ describe("semantic resolution", () => {
 
   test("every committed demo manifest lands on the expected admission matrix", async () => {
     const { readdirSync, existsSync } = await import("node:fs");
-    // demo -> [psp, vita, macos-widget] admission. Console demos
+    // demo -> [psp, vita, macos-widget] admission. Fixed-only console demos
     // stay off the desktop widget (its profile presents "native" over a
-    // dynamic viewport, not the console integer-fit contract); the note is
-    // the inverse. A new demo missing here fails the test on purpose.
+    // dynamic viewport, not the console integer-fit contract); Hero declares
+    // both policies, while the note is dynamic-only. A new demo missing here
+    // fails the test on purpose.
     const expected: Record<string, [boolean, boolean, boolean]> = {
       cafe: [true, true, false],
       cards: [true, true, false],
       chrome: [true, true, false],
       cursor: [true, true, false],
       gallery: [true, true, false],
-      hero: [true, true, false],
+      hero: [true, true, true],
       "hero-vue-sfc": [true, true, false],
       "hero-vue-vapor": [true, true, false],
       im: [true, true, false],

@@ -1,0 +1,8 @@
+*
+!tools/
+tools/*
+!tools/cli/
+tools/cli/*
+!tools/cli/symbian-toolchain.json
+!tools/symbian/
+!tools/symbian/**
