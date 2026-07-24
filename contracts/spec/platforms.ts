@@ -162,6 +162,7 @@ export type PocketCapabilityId = CapabilityId<typeof POCKET_CAPABILITIES>;
 export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   readonly psp: TargetProfile<PocketCapabilityId>;
   readonly vita: TargetProfile<PocketCapabilityId>;
+  readonly switch: TargetProfile<PocketCapabilityId>;
   readonly "macos-widget": TargetProfile<PocketCapabilityId>;
 }>({
   psp: {
@@ -198,6 +199,23 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "input.buttons",
       "input.cursor",
       "input.touch",
+      "text.glyphs.baked",
+    ],
+  },
+  switch: {
+    hostAbi: 4,
+    platform: "switch",
+    form: "takeover",
+    display: {
+      physicalViewport: [1280, 720],
+      logicalViewports: [[480, 272]],
+      presentations: ["integer-fit"],
+      rasterDensity: 2,
+    },
+    capabilities: [
+      "input.analog.left",
+      "input.buttons",
+      "input.cursor",
       "text.glyphs.baked",
     ],
   },

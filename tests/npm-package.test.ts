@@ -32,6 +32,8 @@ describe("published npm artifacts", () => {
       "hosts/vita/assets/sce_sys/livearea/contents/bg.png",
       "hosts/vita/assets/sce_sys/livearea/contents/startup.png",
       "hosts/vita/assets/sce_sys/livearea/contents/template.xml",
+      "hosts/switch/Makefile",
+      "hosts/switch/source/main.c",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.lock",
       "engine/pocket3d/crates/pocket3d-bsp/Cargo.toml",
