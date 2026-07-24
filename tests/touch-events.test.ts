@@ -401,7 +401,7 @@ describe("W3C canonical bubbling order", () => {
     const seen: string[] = [];
     registerTouchHandler(root, TouchPhase.Start, (ev) => {
       seen.push("start");
-      expect(ev.target).toBe(ev.currentTarget);
+      expect(ev.target as NodeMirror | null).toBe(ev.currentTarget);
     });
     handleTouchSamples([__packTouchSample(TouchPhase.Start, 500, 150)], FRAME_MS);
     expect(seen).toEqual(["start"]);

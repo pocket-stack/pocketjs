@@ -3,6 +3,7 @@
 // implicit capture, and bubbling — click/drag on them in the web host.
 import { ref } from "vue";
 import { Text, View } from "@pocketjs/framework/vue-vapor/components";
+import type { PocketTouchEvent } from "@pocketjs/framework/vue-vapor/input";
 
 const log = ref<string[]>([]);
 const tapCount = ref(0);
@@ -18,14 +19,14 @@ function push(msg: string): void {
 let downX = 0;
 let downY = 0;
 
-function onStart(ev: any): void {
+function onStart(ev: PocketTouchEvent): void {
   const t = ev.changedTouches[0];
   downX = t.clientX;
   downY = t.clientY;
   push(`start ${t.clientX},${t.clientY} ts=${ev.timeStamp.toFixed(0)}`);
 }
 
-function onEnd(ev: any): void {
+function onEnd(ev: PocketTouchEvent): void {
   const t = ev.changedTouches[0];
   push(`end ${t.clientX},${t.clientY} touches=${ev.touches.length}`);
   const dx = t.clientX - downX;
@@ -33,7 +34,7 @@ function onEnd(ev: any): void {
   if (dx * dx + dy * dy <= 64) tapCount.value++;
 }
 
-function onMove(ev: any): void {
+function onMove(ev: PocketTouchEvent): void {
   const t = ev.changedTouches[0];
   dragPos.value = `${t.clientX},${t.clientY}`;
   (globalThis as any).__touchLab = { taps: tapCount.value, drag: dragPos.value, bubble: bubbleOrder.value };
@@ -50,7 +51,7 @@ function onBubbleAreaStart(): void {
   bubbleOrder.value = "none";
   syncLab();
 }
-function onBubbleChild(ev: any): void {
+function onBubbleChild(ev: PocketTouchEvent): void {
   childClaimed = true;
   bubbleOrder.value = "child";
   syncLab();

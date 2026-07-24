@@ -25,6 +25,8 @@ import {
   type NodeMirror,
 } from "./native-tree.ts";
 import { createRenderRoot, type RenderRoot } from "./renderer-vue-vapor.ts";
+import type { TouchHandler } from "./touch-events.ts";
+import type { PocketTouchEvent } from "./input-api.ts";
 
 export type { NodeMirror } from "./renderer-vue-vapor.ts";
 
@@ -32,6 +34,16 @@ type StyleObject = Record<string, number | string>;
 type NodeRef = ((node: NodeMirror | null) => void) | { current: NodeMirror | null } | undefined;
 type SlotFn = (...args: unknown[]) => unknown;
 type SlotBag = Record<string, SlotFn | undefined> | SlotFn | undefined;
+
+/** W3C-subset touch handlers shared by every primitive (framework/src/touch-events.ts).
+ *  Vue templates bind them as @touchstart / @touchmove / @touchend / @touchcancel;
+ *  JSX spells them onTouchstart etc. Both land in native-tree's touch registry. */
+export interface TouchHandlers {
+  onTouchstart?: (ev: PocketTouchEvent) => void;
+  onTouchmove?: (ev: PocketTouchEvent) => void;
+  onTouchend?: (ev: PocketTouchEvent) => void;
+  onTouchcancel?: (ev: PocketTouchEvent) => void;
+}
 
 export type VNodeChild = SolidJSX.Element | (() => SolidJSX.Element);
 const NO_FALLTHROUGH = { inheritAttrs: false } as const;
@@ -46,7 +58,7 @@ const insertVaporBlock = vaporInsert as unknown as (
   parent: NodeMirror,
   anchor?: NodeMirror | null,
 ) => void;
-export interface ViewProps {
+export interface ViewProps extends TouchHandlers {
   class?: string;
   className?: string;
   style?: StyleObject;
@@ -56,7 +68,7 @@ export interface ViewProps {
   children?: VNodeChild;
 }
 
-export interface TextProps {
+export interface TextProps extends TouchHandlers {
   class?: string;
   className?: string;
   style?: StyleObject;
@@ -64,7 +76,7 @@ export interface TextProps {
   children?: VNodeChild;
 }
 
-export interface ImageProps {
+export interface ImageProps extends TouchHandlers {
   class?: string;
   className?: string;
   src?: string;
@@ -72,7 +84,7 @@ export interface ImageProps {
   nodeRef?: NodeRef;
 }
 
-export interface SpriteProps {
+export interface SpriteProps extends TouchHandlers {
   class?: string;
   className?: string;
   sprite?: string;
@@ -214,7 +226,7 @@ function cleanProps(props: Record<string, unknown>, omit: Set<string>): HostProp
       key === "onTouchmove" || key === "on:touchmove" ||
       key === "onTouchend" || key === "on:touchend" ||
       key === "onTouchcancel" || key === "on:touchcancel"
-    ) out[key] = callbackOf<(ev: unknown) => void>(rawValue);
+    ) out[key] = callbackOf<TouchHandler>(rawValue);
     // Primitive host components intentionally keep props in attrs instead of
     // declaring runtime prop tables. Vue therefore leaves a bare boolean
     // attribute as ""; on native components it still means true.
@@ -274,9 +286,16 @@ function createPrimitiveNode(
   return node;
 }
 
+function primitive(tag: "view"): (props: ViewProps) => SolidJSX.Element;
+function primitive(tag: "text"): (props: TextProps) => SolidJSX.Element;
+function primitive(tag: "image"): (props: ImageProps) => SolidJSX.Element;
 function primitive(tag: "view" | "text" | "image") {
+  // The implementation reads attrs (untyped fallthrough bag); the overloads
+  // above pin each tag's PUBLIC props contract. Runtime behavior is identical
+  // for all three tags — only the type surface differs.
   return definePocketVaporComponent(
-    (_props: Record<string, unknown>, { attrs, slots }: VaporCtx) => createPrimitiveNode(tag, attrs, slots),
+    (_props: ViewProps | TextProps | ImageProps, { attrs, slots }: VaporCtx) =>
+      createPrimitiveNode(tag, attrs, slots),
     NO_FALLTHROUGH,
   );
 }
@@ -284,7 +303,11 @@ function primitive(tag: "view" | "text" | "image") {
 export const View = primitive("view");
 export const Text = primitive("text");
 export const Image = primitive("image");
-export const Sprite = primitive("image");
+export const Sprite = definePocketVaporComponent(
+  (_props: SpriteProps, { attrs, slots }: VaporCtx) =>
+    createPrimitiveNode("image", attrs, slots),
+  NO_FALLTHROUGH,
+);
 
 function resolveActive(active: unknown): boolean {
   const resolved = valueOf(active);
