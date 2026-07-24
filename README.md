@@ -11,12 +11,13 @@ animation under an 8 MB memory budget. Write Solid JSX, Vue Vapor JSX, or Vue
 single-file components, run them on QuickJS, and let PocketJS move layout,
 styling, text and animation into a tiny `no_std` Rust core.
 
-It runs on real PSP and PS Vita hardware, PPSSPP, Vita3K, the browser (WASM),
-native macOS windows (wgpu) and headless Bun. Full design + contracts:
-[docs/DESIGN.md](./DESIGN.md). PocketJS is growing into a family of specialized
+It runs on real PSP and PS Vita hardware, Nintendo Switch homebrew in Ryujinx,
+PPSSPP, Vita3K, the browser (WASM), native macOS windows (wgpu), and headless
+Bun. Full design + contracts:
+[docs/DESIGN.md](./docs/DESIGN.md). PocketJS is growing into a family of specialized
 runtimes — Rust cores, spec-pinned surfaces, one QuickJS guest — documented
-in [docs/RUNTIMES.md](./RUNTIMES.md); the 3D base lives in
-[engine/pocket3d/](./pocket3d/), and its first game runtime is
+in [docs/RUNTIMES.md](./docs/RUNTIMES.md); the 3D base lives in
+[engine/pocket3d/](./engine/pocket3d/), and its first game runtime is
 [OpenStrike](https://github.com/pocket-stack/open-strike).
 
 ## Screenshots
@@ -51,9 +52,9 @@ Or drive everything through the [`pocket` CLI](https://www.npmjs.com/package/@po
 `npm i -g @pocketjs/cli`, then `pocket doctor` checks the Bun / Rust / PSP
 toolchain (`pocket setup` runs the same pinned bootstrap), `pocket create <name>`
 scaffolds a format-2 manifest, and `pocket check|compile|build --target
-psp|vita` delegate to the canonical resolver. Low-level host-development
-commands such as `pocket dev`, `pocket psp`, `pocket vita`, and `pocket play`
-remain available.
+psp|vita|switch` delegate to the canonical resolver. Low-level host-development
+commands such as `pocket dev`, `pocket psp`, `pocket vita`, `pocket switch`, and
+`pocket play` remain available.
 
 The build is two-pass: pass 1 transforms every module reachable from the entry
 (framework-specific JSX + TypeScript, or Vue SFC compiled directly to Vapor;
@@ -146,16 +147,20 @@ required router package.
 bun run bootstrap                    # idempotent PSP toolchain setup
 bun play vita hero                    # build, install and launch in Vita3K
 bun play vita gallery --fullscreen    # stretch to the host's full screen
+bun play switch hero                  # build and launch the NRO in Ryujinx
 bun play --help                       # list every runnable demo
 bun run test                          # spec contract + tailwind parser tests
 bun pocket check --target psp         # validate pocket.json + resolved target contract
 bun pocket compile --target psp       # typecheck and compile, for custom native hosts
 bun pocket build --target psp         # typecheck, compile, and package the target
 pocket build --target vita -- --release
+pocket build --target switch -- --release
 pocket play vita hero                 # build, install and launch in Vita3K
+pocket play switch hero               # build and launch in Ryujinx
 bun tools/build.ts <app> [--framework=solid|vue-vapor] [--extra-chars=…]
 bun run psp <app>                  # low-level PSP demo build
 bun run vita <app>                 # low-level Vita demo build
+bun run switch <app> --release     # low-level Nintendo Switch NRO build
 bun run dev [app]                  # browser dev host
 bun run wasm                       # rebuild the wasm core
 bun run e2e:vita                     # Vita3K, native-density 960x544 golden E2E
@@ -227,6 +232,13 @@ It preserves PocketJS's 480x272 logical layout while rasterizing geometry,
 fonts, vectors and core masks at Vita's native 960x544 density. Physical
 controls, left-analog input, and front-panel multi-touch snapshots are supported;
 PSP builds retain their controller-only fallback.
+
+The Nintendo Switch homebrew host is documented in
+[hosts/switch/README.md](./hosts/switch/README.md). It runs the same QuickJS
+Solid and Vue Vapor guests, renders the density-2 surface into a centered
+960x544 framebuffer region, and packages manifest metadata plus RomFS assets as
+an NRO. Its devkitPro, Rust, QuickJS/newlib, and Ryujinx requirements live with
+the host rather than in the general framework setup.
 
 ## The Pocket Launcher (on-device app switching)
 
