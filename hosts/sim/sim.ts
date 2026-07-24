@@ -209,7 +209,7 @@ export async function bootWorld(
   return {
     frame,
     tick: wasm.tick,
-    render: () => wasm.renderScaled(renderScale),
+    render: () => renderScale === 1 ? wasm.render() : wasm.renderScaled(renderScale),
     ticksPerFrame: TICKS_PER_SECOND / hz,
     hz,
     effects,

@@ -4,6 +4,7 @@
 import { NODE_TYPE, PROP, ROOT_ID, STYLE_ID_NONE, type PropName } from "../../contracts/spec/spec.ts";
 import { encodePropValue, getHost, getOps } from "./host.ts";
 import { __notifyTreeMutation, notifyDetached, registerFocusable, registerPress } from "./input.ts";
+import { registerTouchHandler, touchPhaseForProp, type TouchHandler } from "./touch-events.ts";
 
 export interface NodeMirror {
   /** Native generation-tagged node id. */
@@ -27,8 +28,7 @@ export interface NodeMirror {
   /** CIRCLE handler while focused (input.ts). */
   onPress?: (() => void) | undefined;
   /** DevTools semantic name (`debugName` prop / <Named> wrapper). */
-  debugName?: string;
-}
+  debugName?: string;}
 
 // DevTools (docs/DEVTOOLS.md): one nullable hook, pinged on any structural or
 // content mutation of the mirror tree so the shim can re-snapshot lazily.
@@ -74,6 +74,14 @@ const NATIVE_ATTRIBUTE_NAMES = new Set([
   "src",
   "onPress",
   "on:press",
+  "onTouchstart",
+  "on:touchstart",
+  "onTouchmove",
+  "on:touchmove",
+  "onTouchend",
+  "on:touchend",
+  "onTouchcancel",
+  "on:touchcancel",
   "focusable",
   "debugName",
   "ref",
@@ -600,6 +608,11 @@ export function setProp<T>(node: NodeMirror, name: string, value: T, prev?: T): 
   if (name !== "children" && name !== "key" && name !== "ref" && name !== "nodeRef") {
     if (value == null) delete domAttrs(node)[name];
     else domAttrs(node)[name] = value;
+  }
+  const touchPhase = touchPhaseForProp(name);
+  if (touchPhase !== -1) {
+    registerTouchHandler(node, touchPhase, value as TouchHandler | undefined);
+    return value;
   }
   switch (name) {
     case "class":

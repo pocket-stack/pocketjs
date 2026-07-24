@@ -22,6 +22,7 @@ import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.ts";
 import { __resetTouches, __setTouches } from "./touch.ts";
+import { handleTouchSamples, resetTouchEvents, setTouchHitRootProvider } from "./touch-events.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
 import { __drainEffects, resetEffects } from "./effects.ts";
 import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
@@ -147,15 +148,19 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   setOverlayRoot(overlayRoot);
 
   setInputRoot(appRoot);
+  setTouchHitRootProvider(() => rootMirror); // touch events see app + overlay
   resetFrameHooks();
   resetClock(); // clock policy + effect shell (docs/DETERMINISM.md), same as Solid
   resetEffects();
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md), same as the Solid path.
   installFrameHandler(
-    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[]) => {
+    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[], touchEvents?: readonly number[]) => {
       __advanceClock();
       __setAnalog(analog);
       __setTouches(touches);
+      // ESP32 QuickJS delivers samples via __tev (its frame wire is 1-arg);
+      // every other host passes them as the 4th frame argument.
+      handleTouchSamples(touchEvents ?? (globalThis as { __tev?: readonly number[] }).__tev);
       __drainEffects();
       runFrameHooks(buttons);
       handleFrame(buttons);
@@ -166,8 +171,10 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   const dispose = rendererRender(code, appRoot);
   return () => {
     __resetTouches();
+    resetTouchEvents(); // drop capture table (native nodes die with the tree)
     dispose();
     setInputRoot(null);
+    setTouchHitRootProvider(null);
     setOverlayRoot(null);
     for (const child of rootMirror.children.splice(0)) {
       child.parent = null;

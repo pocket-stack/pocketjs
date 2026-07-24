@@ -18,7 +18,7 @@ const EMPTY: readonly TouchContact[] = Object.freeze([]);
 
 let snapshot: readonly TouchContact[] = EMPTY;
 
-/** Internal host-frame hook. Each u32 packs x:9, y:9, id:8. */
+/** Internal host-frame hook. Each u32 packs x:10, y:10, id:8. */
 export function __setTouches(packed: readonly number[] | undefined): void {
   if (!packed || packed.length === 0) {
     snapshot = EMPTY;

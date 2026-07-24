@@ -48,9 +48,9 @@ impl TouchPanel {
     }
 
     pub fn pack(self, report: SceTouchReport, logical_w: i32, logical_h: i32) -> u32 {
-        let x = Self::logical_axis(report.x, self.min_x, self.max_x, logical_w) & 0x1ff;
-        let y = Self::logical_axis(report.y, self.min_y, self.max_y, logical_h) & 0x1ff;
-        ((report.id as u32) << 18) | (y << 9) | x
+        let x = Self::logical_axis(report.x, self.min_x, self.max_x, logical_w) & 0x3ff;
+        let y = Self::logical_axis(report.y, self.min_y, self.max_y, logical_h) & 0x3ff;
+        ((report.id as u32) << 20) | (y << 10) | x
     }
 }
 
@@ -88,9 +88,9 @@ impl TouchSnapshot {
         let max_x = (crate::graphics::LOGICAL_W - 1).max(0) as u32;
         let max_y = (crate::graphics::LOGICAL_H - 1).max(0) as u32;
         for (index, (id, x, y)) in contacts.iter().take(snapshot.len).enumerate() {
-            let x = (*x as u32).min(max_x) & 0x1ff;
-            let y = (*y as u32).min(max_y) & 0x1ff;
-            snapshot.packed[index] = ((*id as u32) << 18) | (y << 9) | x;
+            let x = (*x as u32).min(max_x) & 0x3ff;
+            let y = (*y as u32).min(max_y) & 0x3ff;
+            snapshot.packed[index] = ((*id as u32) << 20) | (y << 10) | x;
         }
         snapshot
     }
@@ -127,20 +127,20 @@ mod tests {
         let panel = TouchPanel::from_info(panel_info());
         let top_left = panel.pack(report(7, 0, 0), 480, 272);
         let bottom_right = panel.pack(report(9, 1919, 1087), 480, 272);
-        assert_eq!(top_left & 0x1ff, 0);
-        assert_eq!((top_left >> 9) & 0x1ff, 0);
-        assert_eq!(top_left >> 18, 7);
-        assert_eq!(bottom_right & 0x1ff, 479);
-        assert_eq!((bottom_right >> 9) & 0x1ff, 271);
-        assert_eq!(bottom_right >> 18, 9);
+        assert_eq!(top_left & 0x3ff, 0);
+        assert_eq!((top_left >> 10) & 0x3ff, 0);
+        assert_eq!(top_left >> 20, 7);
+        assert_eq!(bottom_right & 0x3ff, 479);
+        assert_eq!((bottom_right >> 10) & 0x3ff, 271);
+        assert_eq!(bottom_right >> 20, 9);
     }
 
     #[test]
     fn clamps_reports_outside_the_display_area() {
         let panel = TouchPanel::from_info(panel_info());
         let packed = panel.pack(report(1, -200, 2000), 480, 272);
-        assert_eq!(packed & 0x1ff, 0);
-        assert_eq!((packed >> 9) & 0x1ff, 271);
+        assert_eq!(packed & 0x3ff, 0);
+        assert_eq!((packed >> 10) & 0x3ff, 271);
     }
 
     #[test]
@@ -148,7 +148,7 @@ mod tests {
         let snapshot = super::TouchSnapshot::from_logical(&[(4, 120, 80), (9, 900, 900)]);
         assert_eq!(
             snapshot.packed(),
-            &[4 << 18 | 80 << 9 | 120, 9 << 18 | 271 << 9 | 479]
+            &[4 << 20 | 80 << 10 | 120, 9 << 20 | 271 << 10 | 479]
         );
     }
 }

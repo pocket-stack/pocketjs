@@ -8,6 +8,7 @@
 import type { JSX as SolidJSX } from "solid-js";
 import { createElement, spread } from "./renderer.ts";
 import type { NodeMirror } from "./renderer.ts";
+import type { TouchHandler } from "./touch-events.ts";
 
 type StyleObject = Record<string, number | string>;
 type RefProp =
@@ -16,7 +17,17 @@ type RefProp =
   | NodeMirror
   | undefined;
 
-export interface ViewProps {
+/** W3C-subset touch handlers shared by every primitive (framework/src/touch-events.ts).
+ *  JSX spells them onTouchstart etc.; Vue templates bind @touchstart. Both land in
+ *  native-tree's touch registry via setProperty. */
+export interface TouchHandlers {
+  onTouchstart?: TouchHandler;
+  onTouchmove?: TouchHandler;
+  onTouchend?: TouchHandler;
+  onTouchcancel?: TouchHandler;
+}
+
+export interface ViewProps extends TouchHandlers {
   class?: string;
   style?: StyleObject;
   onPress?: () => void;
@@ -28,7 +39,7 @@ export interface ViewProps {
   children?: SolidJSX.Element;
 }
 
-export interface TextProps {
+export interface TextProps extends TouchHandlers {
   class?: string;
   style?: StyleObject;
   /** DevTools semantic name shown in the component tree (docs/DEVTOOLS.md). */
@@ -38,7 +49,7 @@ export interface TextProps {
   children?: SolidJSX.Element;
 }
 
-export interface ImageProps {
+export interface ImageProps extends TouchHandlers {
   class?: string;
   src?: string;
   style?: StyleObject;
@@ -54,7 +65,7 @@ function callRef(ref: RefProp, node: NodeMirror): void {
   else if ("current" in ref) ref.current = node;
 }
 
-export interface SpriteProps {
+export interface SpriteProps extends TouchHandlers {
   class?: string;
   /** DevTools semantic name shown in the component tree (docs/DEVTOOLS.md). */
   debugName?: string;

@@ -24,11 +24,16 @@ if (typeof (globalThis as { clearTimeout?: unknown }).clearTimeout !== "function
 }
 
 if (typeof (globalThis as { console?: unknown }).console !== "object") {
-  (globalThis as unknown as { console?: Record<string, (...args: unknown[]) => void> }).console = {
-    log() {},
-    warn() {},
-    error() {},
-  };
+  (globalThis as unknown as { console?: Record<string, (...args: unknown[]) => void> }).console = {};
+}
+{
+  // QuickJS's js_std_add_helpers ships console.log only; Vue's error
+  // handler calls console.error unconditionally. Fill any missing level,
+  // defaulting to the host's log (or a no-op) so console.* never throws.
+  const c = (globalThis as unknown as { console: Record<string, ((...args: unknown[]) => void) | undefined> }).console;
+  for (const level of ["log", "warn", "error"] as const) {
+    if (typeof c[level] !== "function") c[level] = c.log ?? (() => {});
+  }
 }
 
 installVueVaporDom();
