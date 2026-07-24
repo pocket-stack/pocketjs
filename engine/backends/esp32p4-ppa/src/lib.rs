@@ -12,7 +12,9 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use pocketjs_core::raster::{linear_sample_coordinates, pack_rgb565, render_scaled_rgb565_over};
+use pocketjs_core::raster::{
+    coverage_index, linear_sample_coordinates, pack_rgb565, render_scaled_rgb565_over,
+};
 use pocketjs_core::{spec, TexView, Ui};
 
 #[cfg(feature = "esp-idf")]
@@ -722,11 +724,6 @@ fn composite_mask(destination: &mut u8, source: u8) {
     let d = *destination as u32;
     let s = source as u32;
     *destination = (s + (d * (255 - s) + 127) / 255) as u8;
-}
-
-#[inline]
-fn coverage_index(destination_px: i32, output_scale: i32, atlas_density: i32, limit: i32) -> usize {
-    ((((2 * destination_px + 1) * atlas_density) / (2 * output_scale)).clamp(0, limit - 1)) as usize
 }
 
 fn texture_source_rect(

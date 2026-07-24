@@ -1,7 +1,8 @@
 //! Deterministic software rasterizer: executes the core DrawList (spec.ts
-//! "DRAWLIST op format") over an RGBA8, PPA BGRA32, or RGB565 framebuffer. DrawList coordinates
-//! remain logical; [`render_scaled`] maps them directly onto an integer-scaled
-//! physical surface without first rasterizing a low-resolution image.
+//! "DRAWLIST op format") over an RGBA8, BGRA8, or RGB565 framebuffer.
+//! DrawList coordinates remain logical; [`render_scaled`] maps them directly
+//! onto an integer-scaled physical surface without first rasterizing a
+//! low-resolution image.
 //!
 //! Determinism rules (byte-exact goldens depend on this):
 //!   - Color math is INTEGER (u32/i64) everywhere: blending, gouraud triangle
@@ -26,14 +27,15 @@
 //! destination alpha is always written back as 255.
 //!
 //! [`render_scaled_argb`] emits the same pixels as B,G,R,A bytes instead —
-//! the little-endian memory layout used by the ESP32-P4 PPA SRM's ARGB8888
-//! mode. That lets the ESP firmware present the framebuffer without a
+//! the little-endian memory layout of an ARGB8888 u32 word. Hosts whose blit
+//! engines consume ARGB8888 words can present the framebuffer without a
 //! per-frame reorder pass: byte placement is fused into the pixel writes, so
 //! it costs nothing extra.
 //!
-//! [`render_scaled_rgb565`] writes native little-endian RGB565 words. It is
-//! the low-bandwidth opaque surface used by the ESP32-P4 PPA backend and also
-//! serves as that backend's ordered software fallback for unsupported ops.
+//! [`render_scaled_rgb565`] writes native little-endian RGB565 words — the
+//! low-bandwidth opaque target for 16-bit hosts. Hardware DrawList backends
+//! reuse it (via [`render_scaled_rgb565_over`]) as their ordered software
+//! fallback for ops their accelerator cannot express.
 
 use crate::spec::{self, draw_op};
 use crate::{TexView, Ui};
@@ -95,10 +97,10 @@ fn pixel_bytes<const ARGB: bool>(r: u32, g: u32, b: u32) -> [u8; 4] {
     }
 }
 
-/// Fill an opaque, whole-pixel byte span. ESP framebuffers are at least
-/// 4-byte aligned, so the hot path emits one native word per pixel instead of
-/// routing every pixel through alpha blending and four bounds-checked stores.
-/// The byte fallback keeps the generic host/test API valid for odd slices.
+/// Fill an opaque, whole-pixel byte span. Host framebuffers are in practice
+/// at least 4-byte aligned, so the hot path emits one native word per pixel
+/// instead of routing every pixel through alpha blending and four
+/// bounds-checked stores. The byte fallback keeps the API valid for any slice.
 #[inline]
 fn fill_opaque_span<const ARGB: bool>(span: &mut [u8], r: u32, g: u32, b: u32) {
     debug_assert_eq!(span.len() & 3, 0);
@@ -281,11 +283,12 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
     render_scaled_impl(ui, words, &mut target, scale, true);
 }
 
-/// Same as [`render_scaled`] but emits B,G,R,A bytes per pixel — the in-memory
-/// order the ESP32-P4 PPA SRM expects for ARGB8888 input. Byte-identical to
-/// shuffling the RGBA output, but fused into the rasterizer so the firmware
-/// skips its per-frame reorder copy. Output determinism matches the RGBA path
-/// pixel-for-pixel; only the byte placement differs.
+/// Same as [`render_scaled`] but emits B,G,R,A bytes per pixel — the
+/// little-endian in-memory layout of an ARGB8888 u32 word, for hosts that
+/// present ARGB8888 directly. Byte-identical to shuffling the RGBA output,
+/// but fused into the rasterizer so hosts skip a per-frame reorder copy.
+/// Output determinism matches the RGBA path pixel-for-pixel; only the byte
+/// placement differs.
 pub fn render_scaled_argb(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
     let mut target = RgbaTarget::<true> { bytes: fb };
     render_scaled_impl(ui, words, &mut target, scale, true);
@@ -327,7 +330,7 @@ fn render_scaled_impl<T: RenderTarget>(
     assert_eq!(
         target.pixel_len(),
         expected,
-        "scaled framebuffer has the wrong byte length"
+        "scaled framebuffer has the wrong pixel count"
     );
     let screen = Clip {
         x0: 0,
@@ -600,8 +603,16 @@ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p: 
 
 // ---- GLYPH_RUN: coverage atlas cells -----------------------------------------------
 
+/// Map a scaled destination pixel (relative to its glyph cell origin) to the
+/// atlas coverage row/column it samples. Shared with hardware DrawList
+/// backends so their glyph masks reproduce the software fallback exactly.
 #[inline]
-fn coverage_index(destination_px: i32, output_scale: i32, atlas_density: i32, limit: i32) -> usize {
+pub fn coverage_index(
+    destination_px: i32,
+    output_scale: i32,
+    atlas_density: i32,
+    limit: i32,
+) -> usize {
     // Nearest-neighbour at destination pixel centers. This is identical to a
     // 1:1 lookup when output_scale == atlas_density, duplicates coverage when
     // the output is denser, and samples the center of each source interval
@@ -671,8 +682,8 @@ fn glyph_run<T: RenderTarget>(
 fn texel(view: &TexView, idx: usize) -> Option<(u32, u32, u32, u32)> {
     match view.psm {
         spec::psm::PSM_5650 => {
-            // PSP PSM 5650: u16 LE, B5:G6:R5. It is opaque. ESP32-P4 PPA
-            // consumes the same words with its RGB-swap input bit enabled.
+            // PSP PSM 5650: u16 LE, B5:G6:R5 (red in the low bits). Always
+            // opaque — there is no alpha channel to expand.
             let o = idx * 2;
             let px16 = view.pixels[o] as u32 | ((view.pixels[o + 1] as u32) << 8);
             let r5 = px16 & 0x1f;
@@ -737,12 +748,7 @@ pub struct LinearSample {
 }
 
 #[inline]
-pub fn linear_sample_coordinates(
-    width: u32,
-    height: u32,
-    u: f32,
-    v: f32,
-) -> Option<LinearSample> {
+pub fn linear_sample_coordinates(width: u32, height: u32, u: f32, v: f32) -> Option<LinearSample> {
     if width == 0 || height == 0 {
         return None;
     }
@@ -1012,7 +1018,7 @@ mod tests {
     }
 
     #[test]
-    fn argb_output_uses_ppa_bgra_memory_layout() {
+    fn argb_output_uses_le_argb8888_memory_layout() {
         let ui = Ui::new();
         let words = vec![
             draw_op::RECT,
@@ -1020,7 +1026,7 @@ mod tests {
             wh_word(7, 5),
             0xff33_2211,
             // Semi-transparent rect exercises the dst-read blend path, which
-            // must read B,G,R,A offsets in PPA ARGB8888 mode.
+            // must read B,G,R,A offsets in ARGB mode.
             draw_op::RECT,
             xy_word(4, 5),
             wh_word(5, 3),
