@@ -22,6 +22,7 @@ import {
   hostViewport,
   installFrameHandler,
   installHost,
+  installResizeViewportHook,
   type HostOps,
 } from "./host.ts";
 import { initDevtools, wrapFrameHandler } from "./devtools.ts";
@@ -130,22 +131,6 @@ function createLayer(style: Record<string, number>): NodeMirror {
 // The mounted root layers, kept for hosts whose logical viewport can change.
 let appLayer: NodeMirror | null = null;
 let overlayLayer: NodeMirror | null = null;
-
-type ResizeViewportHook = (width: number, height: number) => void;
-
-function installResizeViewportHook(): () => void {
-  const globals = globalThis as typeof globalThis & {
-    __pocketResizeViewport?: ResizeViewportHook;
-  };
-  const previous = globals.__pocketResizeViewport;
-  const hook: ResizeViewportHook = (width, height) => resizeViewport(width, height);
-  globals.__pocketResizeViewport = hook;
-  return () => {
-    if (globals.__pocketResizeViewport !== hook) return;
-    if (previous) globals.__pocketResizeViewport = previous;
-    else delete globals.__pocketResizeViewport;
-  };
-}
 
 /**
  * Live-resize the mounted app to a new logical viewport. The host resizes the
@@ -282,7 +267,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   );
 
   const dispose = rendererRender(code as () => NodeMirror, appRoot);
-  const removeResizeViewportHook = installResizeViewportHook();
+  const removeResizeViewportHook = installResizeViewportHook(resizeViewport);
   return () => {
     removeResizeViewportHook();
     __resetTouches();

@@ -872,7 +872,7 @@ describe("host detection (host.ts)", () => {
   test("target-marked native host without resource tables uses portable pak feed", () => {
     const symbian = makeMockHost();
     symbian.ops.__host = "symbian-e7-dev";
-    symbian.ops.__hostAbi = 1;
+    symbian.ops.__hostAbi = 4;
     const g = globalThis as { ui?: HostOps; __pak?: ArrayBuffer };
     const pak = pack([
       { key: "ui:styles", dtype: PAK_DTYPE.u8, data: new Uint8Array([1, 2, 3]) },
@@ -974,27 +974,49 @@ describe("public render() (index.ts)", () => {
     expect(host.of("destroyNode").map((c) => c[1])).toEqual([appLayer.id, overlayLayer.id]);
   });
 
-  test("native resize hook updates both root layers and clears on dispose", () => {
+  test("native resize hook reflows a live tree without remounting or losing state", () => {
     const ops = host.ops as HostOps & { __viewport?: { w: number; h: number } };
     const globals = globalThis as typeof globalThis & {
       __pocketResizeViewport?: (width: number, height: number) => void;
     };
     ops.__viewport = { w: 640, h: 360 };
+    const [count, setCount] = createSignal(7);
 
-    const dispose = publicRender(() => createElement("view"), { ops });
+    const dispose = publicRender(() => {
+      const content = createElement("view");
+      const label = createElement("text");
+      insert(label, () => `count:${count()}`);
+      insertNode(content, label);
+      return content;
+    }, { ops });
     const [appLayer, overlayLayer] = rootMirror.children;
+    const content = appLayer.children[0];
+    const label = content.children[0];
+    const dynamicText = label.children[0];
     expect(typeof globals.__pocketResizeViewport).toBe("function");
+    expect(dynamicText.text).toBe("count:7");
     host.clear();
 
     globals.__pocketResizeViewport?.(360, 640);
 
     expect(ops.__viewport).toEqual({ w: 360, h: 640 });
+    expect(appLayer.children[0]).toBe(content);
+    expect(content.children[0]).toBe(label);
+    expect(label.children[0]).toBe(dynamicText);
+    expect(dynamicText.text).toBe("count:7");
     expect(host.of("setProp")).toEqual(expect.arrayContaining([
       ["setProp", appLayer.id, PROP.width, 360],
       ["setProp", appLayer.id, PROP.height, 640],
       ["setProp", overlayLayer.id, PROP.width, 360],
       ["setProp", overlayLayer.id, PROP.height, 640],
     ]));
+    expect(host.of("createNode", "destroyNode", "insertBefore", "removeChild")).toEqual([]);
+
+    host.clear();
+    setCount(8);
+    expect(label.children[0]).toBe(dynamicText);
+    expect(dynamicText.text).toBe("count:8");
+    expect(host.of("replaceText")).toEqual([["replaceText", dynamicText.id, "count:8"]]);
     expect(host.of("createNode", "destroyNode", "insertBefore", "removeChild")).toEqual([]);
 
     dispose();

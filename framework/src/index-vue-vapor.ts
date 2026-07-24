@@ -8,6 +8,7 @@ import {
   hostViewport,
   installFrameHandler,
   installHost,
+  installResizeViewportHook,
   type HostOps,
 } from "./host.ts";
 import { initDevtools, wrapFrameHandler } from "./devtools.ts";
@@ -105,22 +106,6 @@ function createLayer(style: Record<string, number>): NodeMirror {
 
 let appLayer: NodeMirror | null = null;
 let overlayLayer: NodeMirror | null = null;
-
-type ResizeViewportHook = (width: number, height: number) => void;
-
-function installResizeViewportHook(): () => void {
-  const globals = globalThis as typeof globalThis & {
-    __pocketResizeViewport?: ResizeViewportHook;
-  };
-  const previous = globals.__pocketResizeViewport;
-  const hook: ResizeViewportHook = (width, height) => resizeViewport(width, height);
-  globals.__pocketResizeViewport = hook;
-  return () => {
-    if (globals.__pocketResizeViewport !== hook) return;
-    if (previous) globals.__pocketResizeViewport = previous;
-    else delete globals.__pocketResizeViewport;
-  };
-}
 
 export function resizeViewport(w: number, h: number): void {
   if (!appLayer || !overlayLayer) return;
@@ -228,7 +213,7 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   );
 
   const dispose = rendererRender(code, appRoot);
-  const removeResizeViewportHook = installResizeViewportHook();
+  const removeResizeViewportHook = installResizeViewportHook(resizeViewport);
   return () => {
     removeResizeViewportHook();
     __resetTouches();

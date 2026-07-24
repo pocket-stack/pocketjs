@@ -27,6 +27,13 @@ use pocketjs_core::damage::{DamagePolicy, DamageTracker, DEFAULT_DAMAGE_REGIONS}
 use pocketjs_core::raster;
 use pocketjs_core::Ui;
 
+const C_MALLOC_ALIGNMENT: usize = 8;
+
+#[inline]
+const fn c_allocator_supports_alignment(alignment: usize) -> bool {
+    alignment <= C_MALLOC_ALIGNMENT
+}
+
 #[cfg(target_os = "none")]
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut c_void;
@@ -41,6 +48,9 @@ struct CAllocator;
 #[cfg(target_os = "none")]
 unsafe impl GlobalAlloc for CAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if !c_allocator_supports_alignment(layout.align()) {
+            return core::ptr::null_mut();
+        }
         malloc(layout.size().max(1)).cast()
     }
 
@@ -48,7 +58,10 @@ unsafe impl GlobalAlloc for CAllocator {
         free(ptr.cast());
     }
 
-    unsafe fn realloc(&self, ptr: *mut u8, _layout: Layout, size: usize) -> *mut u8 {
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+        if !c_allocator_supports_alignment(layout.align()) {
+            return core::ptr::null_mut();
+        }
         realloc(ptr.cast(), size.max(1)).cast()
     }
 }
@@ -490,6 +503,13 @@ pub extern "C" fn ui_framebuffer_len() -> usize {
 mod tests {
     use super::*;
     use pocketjs_core::spec;
+
+    #[test]
+    fn c_allocator_rejects_alignments_above_symbian_malloc_guarantee() {
+        assert!(c_allocator_supports_alignment(1));
+        assert!(c_allocator_supports_alignment(C_MALLOC_ALIGNMENT));
+        assert!(!c_allocator_supports_alignment(C_MALLOC_ALIGNMENT * 2));
+    }
 
     #[test]
     fn hash_is_stable_and_argb_framebuffer_matches_qimage_layout() {

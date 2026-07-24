@@ -31,6 +31,12 @@ extern "C" {
 #define POCKETJS_FRAME_RATE 30
 #endif
 
+#if POCKETJS_FRAME_RATE <= 0
+#error POCKETJS_FRAME_RATE must be greater than zero
+#elif (60 % POCKETJS_FRAME_RATE) != 0
+#error POCKETJS_FRAME_RATE must divide the 60 Hz PocketJS core tick rate
+#endif
+
 #ifndef POCKETJS_INITIAL_LOGICAL_WIDTH
 #define POCKETJS_INITIAL_LOGICAL_WIDTH 480
 #endif
@@ -45,6 +51,7 @@ const int kMaximumViewportExtent = 640;
 const int kTouchCoordinateExtent = 512;
 const int kAnalogCenter = 0x8080;
 const int kMaximumTouches = 8;
+const int kCoreTicksPerFrame = 60 / POCKETJS_FRAME_RATE;
 
 const int kButtonStart = 0x0008;
 const int kButtonUp = 0x0010;
@@ -553,7 +560,12 @@ bool installHostOps(
         "__host",
         JS_NewString(context, "symbian-e7-dev")
     );
-    JS_SetPropertyStr(context, ui, "__hostAbi", JS_NewInt32(context, 1));
+    JS_SetPropertyStr(
+        context,
+        ui,
+        "__hostAbi",
+        JS_NewInt32(context, POCKETJS_HOST_ABI)
+    );
 
     // Deliberately publish neither __textures nor __sprites. The target-bound
     // native host still feeds styles, fonts, and images through global __pak.
@@ -1008,8 +1020,9 @@ void PocketJsRuntime::runFrame()
     JS_FreeValue(context_, result);
     if (!drainJobs()) return;
 
-    ui_tick();
-    ui_tick();
+    for (int tick = 0; tick < kCoreTicksPerFrame; ++tick) {
+        ui_tick();
+    }
     const uint8_t *pixels = ui_render_incremental();
     const uint32_t width = ui_framebuffer_width();
     const uint32_t height = ui_framebuffer_height();

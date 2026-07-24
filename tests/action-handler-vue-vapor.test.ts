@@ -2,31 +2,12 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { BTN } from "../contracts/spec/spec.ts";
 import type { HostOps } from "../framework/src/host.ts";
 import type { NodeMirror } from "../framework/src/native-tree.ts";
+import { createVueVaporTestRuntime } from "./vue-vapor-test-runtime.ts";
 
 // Components are normally bundled with framework/compiler/jsx-plugin.ts, which aliases
 // `vue` to the Vapor runtime. This focused unit test only needs enough of that
 // runtime to execute ActionHandler's setup and lifecycle registration.
-mock.module("vue", () => ({
-  computed<T>(read: () => T) {
-    return { get value() { return read(); } };
-  },
-  createVaporApp() {
-    return { mount() {}, unmount() {} };
-  },
-  defineVaporComponent(setup: unknown) {
-    return setup;
-  },
-  insert() {},
-  onScopeDispose() {},
-  remove() {},
-  shallowRef<T>(value: T) {
-    return { value };
-  },
-  watchEffect(run: () => void) {
-    run();
-    return () => {};
-  },
-}));
+mock.module("vue", createVueVaporTestRuntime);
 
 const { ActionHandler, View } = await import("../framework/src/components-vue-vapor.ts");
 const { resetFrameHooks, runFrameHooks } = await import("../framework/src/frame-vue-vapor.ts");

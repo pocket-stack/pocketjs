@@ -48,7 +48,6 @@
     "hosts/vita/rust-toolchain.toml",
     "hosts/symbian/probe",
     "hosts/symbian/runtime",
-    "docs/SYMBIAN_E7.md",
     "engine/pocket3d/crates/pocket3d-vita/src",
     "engine/pocket3d/crates/pocket3d-vita/examples",
     "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",

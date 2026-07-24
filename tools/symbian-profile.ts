@@ -15,7 +15,7 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
  * are native logical viewports, with live relayout when Symbian rotates it.
  */
 export const SYMBIAN_E7_DEV_TARGET_ID = "symbian-e7-dev";
-export const SYMBIAN_E7_DEV_HOST_ABI = 1;
+export const SYMBIAN_E7_DEV_HOST_ABI = 4;
 export const SYMBIAN_E7_DEFAULT_VIEWPORT = [640, 360] as const;
 export const SYMBIAN_E7_MIN_VIEWPORT = [360, 360] as const;
 export const SYMBIAN_E7_MAX_VIEWPORT = [640, 640] as const;

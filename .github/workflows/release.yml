@@ -86,6 +86,11 @@ jobs:
       - name: Test desktop 3D and widget workspace
         run: cargo test --locked --manifest-path engine/Cargo.toml --workspace
 
+      # The bridge is a standalone workspace because only its device build
+      # needs nightly build-std. Host tests stay stable-compatible.
+      - name: Test Symbian bridge
+        run: cargo test --locked --manifest-path engine/symbian/Cargo.toml
+
       - name: Test renderer goldens
         run: bun tests/golden.ts
 

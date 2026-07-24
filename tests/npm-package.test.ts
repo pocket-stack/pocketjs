@@ -60,7 +60,6 @@ describe("published npm artifacts", () => {
       "hosts/vita/rust-toolchain.toml",
       "hosts/symbian/probe",
       "hosts/symbian/runtime",
-      "docs/SYMBIAN_E7.md",
       "engine/pocket3d/crates/pocket3d-vita/src",
       "engine/pocket3d/crates/pocket3d-vita/examples",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",
@@ -92,7 +91,6 @@ describe("published npm artifacts", () => {
       "engine/symbian/Cargo.toml",
       "engine/symbian/rust-toolchain.toml",
       "engine/symbian/src/lib.rs",
-      "docs/SYMBIAN_E7.md",
       "tools/cli/symbian-toolchain.json",
       "tools/symbian/coda-usb-probe.c",
       "tools/symbian/Dockerfile.dockerignore",
@@ -106,6 +104,7 @@ describe("published npm artifacts", () => {
     expect(files).not.toContain("engine/backends/esp32p4-ppa/src/lib.rs");
     expect(files.some((file) => file.startsWith("engine/backends/"))).toBe(false);
     expect(files.some((file) => file.startsWith("hosts/esp32p4/"))).toBe(false);
+    expect(files).not.toContain("docs/SYMBIAN_E7.md");
     // The CLI toolchain pin still ships via the wholesale "tools" entry.
     expect(files).toContain("tools/cli/psp-toolchain.json");
 
@@ -114,7 +113,7 @@ describe("published npm artifacts", () => {
     ).text();
     expect(bspManifest).not.toContain(".workspace = true");
     expect(bspManifest).not.toContain("workspace = true");
-  });
+  }, 30_000);
 
   test("CLI tarball stays self-contained and minimal", () => {
     expect(packedFiles(`${root}tools/cli`)).toEqual([

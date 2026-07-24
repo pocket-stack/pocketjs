@@ -53,6 +53,10 @@ LABEL org.pocketjs.symbian.toolchain="${POCKETJS_SYMBIAN_TOOLCHAIN_VERSION}" \
 
 COPY tools/cli/symbian-toolchain.json /opt/pocketjs/symbian-toolchain.json
 COPY tools/symbian/container/patches /opt/pocketjs/patches
+# Repository command entrypoints use Bun TypeScript by default. These shell
+# entrypoints are the documented exception: the pinned, network-disabled
+# linux/amd64 toolchain image intentionally does not install Bun, while all
+# host-side orchestration remains in tools/*.ts.
 COPY tools/symbian/container/pocketjs-symbian-setup /usr/local/bin/
 COPY tools/symbian/container/pocketjs-symbian-doctor /usr/local/bin/
 COPY tools/symbian/container/pocketjs-symbian-build-probe /usr/local/bin/

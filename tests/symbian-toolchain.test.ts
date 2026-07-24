@@ -52,14 +52,11 @@ describe("canonical Symbian E7 toolchain", () => {
       version: "2026-06-04",
       rev: "0fc946fb670c0c29bc0135f510bcb0f595415a61",
     });
-    expect(SYMBIAN_TOOLCHAIN.runtime).toMatchObject({
+    expect(SYMBIAN_TOOLCHAIN.runtime).toEqual({
       uid: "0xE7A11010",
+      output: "dist/symbian/pocketjs-e7-runtime.sis",
+      sisVersion: "1.0.0",
       rustToolchain: "nightly-2026-07-02",
-      defaultViewport: [640, 360],
-      viewportRange: {
-        min: [360, 360],
-        max: [640, 640],
-      },
       frameRate: 30,
     });
     expect(SYMBIAN_TOOLCHAIN.markers).toEqual(expect.arrayContaining([
@@ -202,13 +199,13 @@ describe("canonical Symbian E7 toolchain", () => {
     expect(dockerfile).toContain("pocketjs-symbian-build-app");
   });
 
-  test("CODA launch wire and reply parser stay byte-exact", () => {
+  test("CODA launch wire and reply parser stay byte-exact", async () => {
     const compiler = Bun.which("cc");
     expect(compiler, "cc is required to validate the shipped CODA client").toBeTruthy();
     const build = mkdtempSync(join(tmpdir(), "pocketjs-coda-protocol-"));
     temporary.push(build);
     const binary = join(build, "coda-usb-protocol-test");
-    const compiled = Bun.spawnSync({
+    const compiled = Bun.spawn({
       cmd: [
         compiler!,
         "-std=c11",
@@ -224,15 +221,26 @@ describe("canonical Symbian E7 toolchain", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
-    expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
-    const tested = Bun.spawnSync({
+    const [compiledExit, compiledStderr] = await Promise.all([
+      compiled.exited,
+      new Response(compiled.stderr).text(),
+    ]);
+    expect(compiledExit, compiledStderr).toBe(0);
+
+    // Bun 1.3 on macOS can wait indefinitely in spawnSync for this
+    // intentionally silent fixture; the async subprocess path does not.
+    const tested = Bun.spawn({
       cmd: [binary],
       cwd: repository,
-      stdout: "pipe",
+      stdout: "ignore",
       stderr: "pipe",
     });
-    expect(tested.exitCode, tested.stderr.toString()).toBe(0);
-  });
+    const [testedExit, testedStderr] = await Promise.all([
+      tested.exited,
+      new Response(tested.stderr).text(),
+    ]);
+    expect(testedExit, testedStderr).toBe(0);
+  }, 30_000);
 
   test("Docker invocations are amd64, pinned, and narrowly mounted", () => {
     const root = mkdtempSync(join(tmpdir(), "pocketjs-symbian-repository-"));

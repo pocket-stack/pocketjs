@@ -172,8 +172,10 @@ The experimental host has these runtime semantics:
   Responsive rows should use wrapping or other flexible layout constraints;
   the Hero example keeps its PSP/Vita fixed viewport and adds a
   `360x360`–`640x640` dynamic variant with a `640x360` default.
-- The host calls the JavaScript frame at 30 Hz and advances the PocketJS core
-  with two `ui_tick()` calls per frame.
+- The default host calls the JavaScript frame at 30 Hz and advances the
+  PocketJS core with `60 / POCKETJS_FRAME_RATE` fixed ticks per frame (two at
+  the default rate). Builds reject non-positive rates and rates that do not
+  divide the core's fixed 60 Hz clock exactly.
 - Arrow keys map to the four directions, the navigation center/Select key and
   keyboard Enter to `CIRCLE`, Escape to `CROSS`, and Space to `START`.
 

@@ -67,6 +67,15 @@ if ! initial_logical_width=$(jq -er '.viewport.logical[0]' "$payload/plan.json")
     echo "Symbian build plan is missing viewport.logical width/height." >&2
     exit 1
 fi
+if ! host_abi=$(jq -er '.target.hostAbi' "$payload/plan.json"); then
+    echo "Symbian build plan is missing target.hostAbi." >&2
+    exit 1
+fi
+if [[ ! "$host_abi" =~ ^[1-9][0-9]*$ ]] ||
+    (( 10#$host_abi > 2147483647 )); then
+    echo "Symbian target.hostAbi must be a positive 32-bit integer." >&2
+    exit 1
+fi
 if [[ ! "$initial_logical_width" =~ ^[1-9][0-9]*$ ]] ||
     [[ ! "$initial_logical_height" =~ ^[1-9][0-9]*$ ]] ||
     (( 10#$initial_logical_width > 640 )) ||
@@ -166,6 +175,7 @@ qmake \
     "POCKETJS_QUICKJS_LIBRARY=$build/libquickjs.a" \
     "POCKETJS_CORE_LIBRARY=$rust_library" \
     "POCKETJS_FRAME_RATE=$(jq -r .runtime.frameRate "$manifest")" \
+    "POCKETJS_HOST_ABI=$host_abi" \
     "POCKETJS_INITIAL_LOGICAL_WIDTH=$initial_logical_width" \
     "POCKETJS_INITIAL_LOGICAL_HEIGHT=$initial_logical_height" \
     pocketjs-e7-runtime.pro

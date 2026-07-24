@@ -7,30 +7,17 @@ import {
   resetRendererState,
   resetSprites,
   resetTextures,
+  rootMirror,
 } from "../framework/src/native-tree.ts";
 import { resetStyles } from "../framework/src/styles.ts";
+import { createVueVaporTestRuntime } from "./vue-vapor-test-runtime.ts";
 
-mock.module("vue", () => ({
-  computed<T>(read: () => T) {
-    return { get value() { return read(); } };
-  },
-  createVaporApp(component: { setup?: () => unknown }) {
-    return {
-      mount() {
-        component.setup?.();
-      },
-      unmount() {},
-    };
-  },
-  insert() {},
-  onScopeDispose() {},
-  remove() {},
-  shallowRef<T>(value: T) {
-    return { value };
-  },
-}));
+mock.module("vue", createVueVaporTestRuntime);
 
 const { mount } = await import("../framework/src/index-vue-vapor.ts");
+const { createElement: createVaporElement } = await import(
+  "../framework/src/renderer-vue-vapor.ts"
+);
 
 const globals = globalThis as {
   ui?: HostOps;
@@ -56,7 +43,7 @@ function symbianHost(calls: string[], propCalls: unknown[][] = []): HostOps {
   const noop = () => {};
   return {
     __host: "symbian-e7-dev",
-    __hostAbi: 1,
+    __hostAbi: 4,
     createNode: () => nextId++,
     destroyNode: noop,
     insertBefore: noop,
@@ -113,7 +100,7 @@ describe("Vue Vapor native pak loading", () => {
     dispose();
   });
 
-  test("native resize hook updates both root layers and clears on dispose", () => {
+  test("native resize hook reflows a live tree without remounting or losing state", () => {
     const calls: string[] = [];
     const propCalls: unknown[][] = [];
     const ops = symbianHost(calls, propCalls) as HostOps & {
@@ -121,14 +108,32 @@ describe("Vue Vapor native pak loading", () => {
     };
     ops.__viewport = { w: 640, h: 360 };
     globals.ui = ops;
+    let setupCalls = 0;
+    let localState: { count: number } | undefined;
+    let content: ReturnType<typeof createVaporElement> | undefined;
 
-    const dispose = mount(() => null, { ops, styles: {} });
+    const dispose = mount(() => {
+      setupCalls++;
+      localState = { count: 7 };
+      content = createVaporElement("view");
+      return content;
+    }, { ops, styles: {} });
+    const appLayer = rootMirror.children[0]!;
+    const mountedState = localState!;
+    const mountedContent = content!;
     expect(typeof globals.__pocketResizeViewport).toBe("function");
+    expect(appLayer.children[0]).toBe(mountedContent);
+    expect(setupCalls).toBe(1);
+    mountedState.count = 8;
     propCalls.length = 0;
 
     globals.__pocketResizeViewport?.(360, 640);
 
     expect(ops.__viewport).toEqual({ w: 360, h: 640 });
+    expect(appLayer.children[0]).toBe(mountedContent);
+    expect(localState).toBe(mountedState);
+    expect(localState?.count).toBe(8);
+    expect(setupCalls).toBe(1);
     expect(propCalls.filter((call) => call[1] === PROP.width && call[2] === 360)).toHaveLength(2);
     expect(propCalls.filter((call) => call[1] === PROP.height && call[2] === 640)).toHaveLength(2);
 

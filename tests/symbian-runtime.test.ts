@@ -16,6 +16,7 @@ describe("experimental Nokia E7 runtime profile", () => {
   test("does not register an unproven production target", () => {
     expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "macos-widget"]);
     expect(POCKET_TARGETS).not.toHaveProperty(SYMBIAN_E7_DEV_TARGET_ID);
+    expect(SYMBIAN_E7_DEV_HOST_ABI).toBe(4);
   });
 
   test("selects the Hero's dynamic E7 viewport without changing its PSP viewport", () => {
@@ -94,8 +95,17 @@ describe("experimental Nokia E7 runtime profile", () => {
 
     expect(runtime).toContain('JS_NewString(context, "symbian-e7-dev")');
     expect(runtime).toContain('"__hostAbi"');
+    expect(runtime).toContain("JS_NewInt32(context, POCKETJS_HOST_ABI)");
     expect(runtime).toContain("JS_ExecutePendingJob");
-    expect(runtime.match(/\n    ui_tick\(\);/g)).toHaveLength(2);
+    expect(runtime).toContain("#if POCKETJS_FRAME_RATE <= 0");
+    expect(runtime).toContain("#elif (60 % POCKETJS_FRAME_RATE) != 0");
+    expect(runtime).toContain(
+      "const int kCoreTicksPerFrame = 60 / POCKETJS_FRAME_RATE;",
+    );
+    expect(runtime).toContain(
+      "for (int tick = 0; tick < kCoreTicksPerFrame; ++tick)",
+    );
+    expect(runtime.match(/ui_tick\(\);/g)).toHaveLength(1);
     expect(runtime).toContain("QImage::Format_ARGB32");
     expect(runtime).toContain("point.id()) & 0xff) << 18");
     expect(runtime).toContain("position.x() >= target.left() + target.width()");
@@ -118,6 +128,10 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).not.toContain('"__textures"');
 
     expect(project).toContain("TARGET.EPOCHEAPSIZE = 0x400000 0x2000000");
+    expect(project).toContain(
+      "isEmpty(POCKETJS_HOST_ABI): error(POCKETJS_HOST_ABI is required)",
+    );
+    expect(project).toContain("DEFINES += POCKETJS_HOST_ABI=$$POCKETJS_HOST_ABI");
     expect(project).toContain("QMAKE_LFLAGS += --whole-archive");
     expect(project).toContain("QMAKE_LFLAGS += --no-whole-archive");
     expect(project).toContain(
@@ -132,6 +146,10 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(buildApp).toContain(
       '"POCKETJS_INITIAL_LOGICAL_WIDTH=$initial_logical_width"',
     );
+    expect(buildApp).toContain(
+      "host_abi=$(jq -er '.target.hostAbi' \"$payload/plan.json\")",
+    );
+    expect(buildApp).toContain('"POCKETJS_HOST_ABI=$host_abi"');
     expect(buildApp).toContain("10#$initial_logical_width > 640");
     expect(buildApp).toContain("integer extents from 1 through 640");
     expect(resources).toContain('<file alias="app.js">app.js</file>');
