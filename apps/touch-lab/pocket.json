@@ -1,0 +1,24 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.touch.lab",
+  "name": "pocketjs-touch-lab",
+  "title": "PocketJS: Touch Events Lab",
+  "version": "0.6.0",
+  "engine": {
+    "capabilities": {
+      "requires": ["text.glyphs.baked"]
+    }
+  },
+  "app": {
+    "entry": "apps/touch-lab/main.ts",
+    "output": "touch-lab-main",
+    "framework": "vue-vapor",
+    "viewport": {
+      "fixed": {
+        "logical": [480, 272],
+        "presentation": "integer-fit"
+      }
+    }
+  }
+}

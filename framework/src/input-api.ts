@@ -2,6 +2,7 @@
 
 export { BTN } from "../../contracts/spec/spec.ts";
 export { touches, type TouchContact } from "./touch.ts";
+export type { PocketTouch, PocketTouchEvent, TouchEventType } from "./touch-events.ts";
 export {
   cursorX,
   cursorY,

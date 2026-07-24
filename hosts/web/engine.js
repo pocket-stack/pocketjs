@@ -102,6 +102,18 @@ let rafId = 0;
 let acc = 0;
 let last = 0;
 let frameCb = null;
+// Browser-aligned touch: canvas pointer events are QUEUED as timestamped
+// samples and drained at the frame boundary (framework/src/touch-events.ts
+// wire format). This replaces the per-frame snapshot + deferred release
+// workaround — sub-frame taps now dispatch both events.
+let touchSamples = []; // [{phase, x, y, tMs}] drained by safeFrame
+let touchLastMs = 0;   // performance.now() of the previous queued sample
+function queueTouch(phase, x, y) {
+  const now = performance.now();
+  const dt = touchLastMs > 0 ? Math.min(63, Math.max(0, Math.round(now - touchLastMs))) : 0;
+  touchLastMs = now;
+  touchSamples.push({ phase, x, y, dt });
+}
 // Virtual clock policy (docs/DETERMINISM.md): virtual frames per second. One
 // frame(buttons) transaction + 60/simHz core ticks per virtual frame, so
 // ms-based animations cover the same VIRTUAL time at every rate. ?hz=2
@@ -181,7 +193,7 @@ function devtoolsScreenshot() {
   shot.height = FB_H;
   const sctx = shot.getContext("2d");
   const img = sctx.createImageData(FB_W, FB_H);
-  img.data.set(wasm.renderScaled(RENDER_SCALE));
+  img.data.set(RENDER_SCALE === 1 ? wasm.render() : wasm.renderScaled(RENDER_SCALE));
   sctx.putImageData(img, 0, 0);
   const frame = globalThis.__pocketDevtools ? globalThis.__pocketDevtools.frame : 0;
   dtSend(JSON.stringify({ t: "screenshot", frame, data: shot.toDataURL("image/png") }));
@@ -211,8 +223,13 @@ async function devtoolsSeek(frame) {
 function safeFrame() {
   if (!frameCb) return;
   try {
-    // JS: one virtual-frame transaction (input, effects, sweep)
-    frameCb(held, packedAnalog());
+    // JS: one virtual-frame transaction (input, effects, sweep).
+    // arg4: drained touch event stream (one packed u32 per sample).
+    const events = touchSamples.length > 0
+      ? touchSamples.map((s) => (((s.dt & 0x3f) << 22) | ((s.y & 0x3ff) << 12) | ((s.x & 0x3ff) << 2) | (s.phase & 0x3)) >>> 0)
+      : undefined;
+    touchSamples = [];
+    frameCb(held, packedAnalog(), undefined, events);
     const ticks = 60 / simHz;
     for (let t = 0; t < ticks; t++) wasm.tick(); // core catch-up: 1/60 s each
   } catch (e) {
@@ -319,7 +336,45 @@ export async function mount(theCanvas, opts = {}) {
   window.addEventListener("blur", () => {
     held = 0;
     nubHeld.clear();
+    // A held contact whose window loses focus is a cancel, not an end.
+    if (touchContactDown) { queueTouch(3, touchLastX, touchLastY); touchContactDown = false; }
   });
+  // Canvas pointer → touch sample stream (logical coords).
+  const toLogical = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: Math.round((e.clientX - rect.left) * (LOGICAL_W / rect.width)),
+      y: Math.round((e.clientY - rect.top) * (LOGICAL_H / rect.height)),
+    };
+  };
+  let touchContactDown = false;
+  let touchLastX = 0;
+  let touchLastY = 0;
+  canvas.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const { x, y } = toLogical(e);
+    touchContactDown = true;
+    touchLastX = x; touchLastY = y;
+    queueTouch(0, x, y); // start
+    globalThis.__pocketTouch = { x, y, phase: "down" };
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!touchContactDown) return;
+    const { x, y } = toLogical(e);
+    if (x === touchLastX && y === touchLastY) return; // W3C: no move without movement
+    touchLastX = x; touchLastY = y;
+    queueTouch(1, x, y); // move
+    globalThis.__pocketTouch = { x, y, phase: "move" };
+  });
+  const markRelease = (e) => {
+    if (!touchContactDown) return;
+    touchContactDown = false;
+    queueTouch(2, touchLastX, touchLastY); // end at the last known position
+    if (globalThis.__pocketTouch) globalThis.__pocketTouch.phase = "up";
+  };
+  canvas.addEventListener("pointerup", markRelease);
+  canvas.addEventListener("pointercancel", markRelease);
+  canvas.addEventListener("lostpointercapture", markRelease);
   const hzParam = Number(query.get("hz"));
   if (VALID_HZ.includes(hzParam)) simHz = hzParam;
   const res = await fetch("pocketjs.wasm");

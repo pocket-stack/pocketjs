@@ -206,6 +206,15 @@ function cleanProps(props: Record<string, unknown>, omit: Set<string>): HostProp
     if (key === "class" || key === "className") out[key] = normalizeClassValue(rawValue);
     else if (key === "style") out[key] = normalizeStyleValue(rawValue);
     else if (key === "onPress" || key === "on:press") out[key] = callbackOf<() => void>(rawValue);
+    // Touch handlers are event callbacks, not value getters: wrap with
+    // callbackOf so Vue's invoke-for-value semantics never call them with
+    // zero arguments (which would crash on ev.changedTouches).
+    else if (
+      key === "onTouchstart" || key === "on:touchstart" ||
+      key === "onTouchmove" || key === "on:touchmove" ||
+      key === "onTouchend" || key === "on:touchend" ||
+      key === "onTouchcancel" || key === "on:touchcancel"
+    ) out[key] = callbackOf<(ev: unknown) => void>(rawValue);
     // Primitive host components intentionally keep props in attrs instead of
     // declaring runtime prop tables. Vue therefore leaves a bare boolean
     // attribute as ""; on native components it still means true.
