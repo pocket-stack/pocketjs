@@ -141,7 +141,7 @@ describe("pocket.json v2 schema", () => {
 
 describe("platform registry", () => {
   test("production advertises only the truthful stock-host profiles", () => {
-    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "macos-widget"]);
+    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "pocketbook", "macos-widget"]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
     expect(POCKET_TARGETS.psp.capabilities).toEqual([
       "input.analog.left",
@@ -157,6 +157,20 @@ describe("platform registry", () => {
       "text.glyphs.baked",
     ]);
     expect(POCKET_TARGETS.vita.display).toEqual({
+      physicalViewport: [960, 544],
+      logicalViewports: [[480, 272]],
+      presentations: ["integer-fit"],
+      rasterDensity: 2,
+    });
+    // The PocketBook e-reader target: real touch, no nub/cursor, and the
+    // same nominal 960×544 @2x surface as vita (the host integer-fits it
+    // onto whatever panel the device actually has).
+    expect(POCKET_TARGETS.pocketbook.capabilities).toEqual([
+      "input.buttons",
+      "input.touch",
+      "text.glyphs.baked",
+    ]);
+    expect(POCKET_TARGETS.pocketbook.display).toEqual({
       physicalViewport: [960, 544],
       logicalViewports: [[480, 272]],
       presentations: ["integer-fit"],

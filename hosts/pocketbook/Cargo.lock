@@ -294,6 +294,7 @@ dependencies = [
 [[package]]
 name = "inkview"
 version = "0.3.0"
+source = "git+https://github.com/simmsb/inkview-rs?rev=0e4ecab93f6e2907c255bb50bc4b6c1882779274#0e4ecab93f6e2907c255bb50bc4b6c1882779274"
 dependencies = [
  "libloading",
  "num-derive",

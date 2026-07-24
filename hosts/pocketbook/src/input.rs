@@ -5,19 +5,7 @@
 //! (`(id<<18)|(y<<9)|x`, framework/src/touch.ts) in LOGICAL viewport pixels.
 
 use inkview::event::{Event, Key};
-use pocketjs_core::spec::ANALOG_CENTER;
-
-// spec BTN bits (contracts/spec/spec.ts; mirrored by uihost).
-const BTN_SELECT: u32 = 0x0001;
-const BTN_START: u32 = 0x0008;
-const BTN_UP: u32 = 0x0010;
-const BTN_RIGHT: u32 = 0x0020;
-const BTN_DOWN: u32 = 0x0040;
-const BTN_LEFT: u32 = 0x0080;
-const BTN_LTRIGGER: u32 = 0x0100;
-const BTN_RTRIGGER: u32 = 0x0200;
-const BTN_CIRCLE: u32 = 0x2000;
-const BTN_CROSS: u32 = 0x4000;
+use pocketjs_core::spec::{btn, ANALOG_CENTER};
 
 /// What the render loop should do after handling an event.
 pub enum Outcome {
@@ -106,16 +94,16 @@ fn pack_touch(id: u32, x: u32, y: u32) -> u32 {
 
 fn key_bit(key: Key) -> u32 {
     match key {
-        Key::Up => BTN_UP,
-        Key::Down => BTN_DOWN,
-        Key::Left | Key::Prev | Key::Prev2 => BTN_LEFT, // page-turn = prev
-        Key::Right | Key::Next | Key::Next2 => BTN_RIGHT, // page-turn = next
-        Key::Ok => BTN_CROSS,
-        Key::Back => BTN_CIRCLE,
-        Key::Menu => BTN_START,
-        Key::Home => BTN_SELECT,
-        Key::Plus => BTN_RTRIGGER,
-        Key::Minus => BTN_LTRIGGER,
+        Key::Up => btn::UP,
+        Key::Down => btn::DOWN,
+        Key::Left | Key::Prev | Key::Prev2 => btn::LEFT, // page-turn = prev
+        Key::Right | Key::Next | Key::Next2 => btn::RIGHT, // page-turn = next
+        Key::Ok => btn::CROSS,
+        Key::Back => btn::CIRCLE,
+        Key::Menu => btn::START,
+        Key::Home => btn::SELECT,
+        Key::Plus => btn::RTRIGGER,
+        Key::Minus => btn::LTRIGGER,
         _ => 0,
     }
 }
@@ -135,11 +123,11 @@ mod tests {
     #[test]
     fn keys_set_and_clear_button_bits() {
         let mut input = Input::new(0, 0, 480, 320, 960, 640);
-        assert_eq!(input.on_event_matches_key(Key::Ok), BTN_CROSS);
+        assert_eq!(input.on_event_matches_key(Key::Ok), btn::CROSS);
         input.apply_key_down(Key::Ok);
-        assert_eq!(input.snapshot().0 & BTN_CROSS, BTN_CROSS);
+        assert_eq!(input.snapshot().0 & btn::CROSS, btn::CROSS);
         input.apply_key_up(Key::Ok);
-        assert_eq!(input.snapshot().0 & BTN_CROSS, 0);
+        assert_eq!(input.snapshot().0 & btn::CROSS, 0);
     }
 
     #[test]

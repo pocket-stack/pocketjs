@@ -5,7 +5,7 @@
 # crates. It reuses the backend-agnostic `ui` surface (pocket-ui-surface) and
 # the core's software rasterizer, then blits the frame as RGB24 (inkview
 # converts to gray on grayscale panels, writes RGB on color panels).
-# See pocketjs-inkview-implementation.md at the repo root.
+# See docs/IMPLEMENTATION.md in this directory.
 #
 # Cross-compile for PocketBook's ARM Linux (glibc 2.23):
 #   rustup target add armv7-unknown-linux-gnueabi
@@ -25,12 +25,12 @@ pocketjs-core = { path = "../../engine/core", features = ["std"] }
 pocket-mod = { path = "../../engine/crates/pocket-mod" }
 pocket-ui-surface = { path = "../../engine/crates/pocket-ui-surface" }
 
-# inkview is consumed as-is (no modifications). During development this points
-# at a local checkout; for an upstream/CI build switch to the git dependency:
-#   inkview = { git = "https://github.com/simmsb/inkview-rs", package = "inkview" }
-# Default feature is sdk-6-10; override for older firmware, e.g.
-#   --no-default-features --features sdk-6-5
-inkview = { path = "../../../inkview-rs/inkview" }
+# inkview is consumed as-is (no modifications), pinned to a git REV like the
+# PSP toolchain pins (local sibling-checkout edits are invisible until merged
+# upstream and repinned). Default feature is sdk-6-10; override for older
+# firmware, e.g. --no-default-features --features sdk-6-5. For local inkview
+# hacking use a [patch] section, not a path rewrite here.
+inkview = { git = "https://github.com/simmsb/inkview-rs", rev = "0e4ecab93f6e2907c255bb50bc4b6c1882779274", package = "inkview" }
 
 anyhow = "1"
 log = "0.4"

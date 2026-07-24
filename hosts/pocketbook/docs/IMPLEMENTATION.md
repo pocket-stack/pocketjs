@@ -1,6 +1,6 @@
 # PocketJS × inkview — Implementation File
 
-> **Companion to** `pocketjs-inkview-integration.md` (the feasibility study).
+> **Companion to** `INTEGRATION.md` (the feasibility study).
 > This file turns that study into a concrete, buildable plan grounded in the
 > **actual** APIs of `pocketjs` (this repo) and `inkview-rs`
 > (`/var/home/alberto/projects/inkview-rs`).
