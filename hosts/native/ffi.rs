@@ -29,7 +29,7 @@ static mut UI: Option<Ui> = None;
 ///
 /// # Safety
 ///
-/// Call once per guest on the Vita render thread, with no outstanding reference
+/// Call once per guest on the host render thread, with no outstanding reference
 /// to the process-global UI.
 pub unsafe fn init_ui() -> &'static mut Ui {
     let mut instance = Ui::new_with_raster_density(crate::graphics::RASTER_DENSITY);
@@ -45,7 +45,7 @@ pub unsafe fn init_ui() -> &'static mut Ui {
 ///
 /// # Safety
 ///
-/// The caller must stay on the Vita render thread and must not create another
+/// The caller must stay on the host render thread and must not create another
 /// live mutable reference to the global UI.
 pub unsafe fn ui() -> &'static mut Ui {
     UI.as_mut().expect("ffi::init_ui not called")

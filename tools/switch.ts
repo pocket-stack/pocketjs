@@ -1,7 +1,10 @@
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractHostBuildInputs } from "../framework/src/manifest/host-build-inputs.ts";
+import {
+  extractHostBuildInputs,
+  hostBuildEnvironment,
+} from "../framework/src/manifest/host-build-inputs.ts";
 import type { ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -34,7 +37,7 @@ const planPath = option("plan");
 const projectRoot = resolve(option("project-root") ?? root);
 const outdir = resolve(projectRoot, option("outdir") ?? "dist");
 const skipBuild = flag("skip-build");
-flag("release");
+const release = flag("release");
 if (!planPath) usage("--plan is required");
 if (args.length > 0) usage(`unknown option ${args[0]}`);
 
@@ -60,6 +63,29 @@ const gcc = resolve(devkitA64, "bin/aarch64-none-elf-gcc");
 if (!existsSync(gcc)) {
   throw new Error("PocketJS Switch: devkitA64 not found; install devkitPro switch-dev");
 }
+const toolchain = await Bun.file(resolve(root, "tools/cli/psp-toolchain.json")).json() as {
+  rust: { toolchain: string };
+};
+const rustTarget = "aarch64-nintendo-switch-freestanding";
+const rustProfile = release ? "release" : "debug";
+const nativeEnvironment = {
+  ...hostBuildEnvironment(inputs, {
+    outputDirectory: outdir,
+    embedApp: true,
+  }),
+  CC_aarch64_nintendo_switch_freestanding: gcc,
+  AR_aarch64_nintendo_switch_freestanding: resolve(devkitA64, "bin/aarch64-none-elf-ar"),
+  // QuickJS expects GNU tm_gmtoff; Switch newlib has no timezone offset field.
+  // tm_isdst is always -1/0/1, so QuickJS's minute conversion yields UTC zero.
+  CFLAGS_aarch64_nintendo_switch_freestanding:
+    "-D__SWITCH__ -include malloc.h -Dtm_gmtoff=tm_isdst " +
+    "-fPIE -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft",
+  // Rust's built-in Switch target omits the Unix/newlib cfgs used by the libc crate.
+  RUSTFLAGS:
+    `${process.env.RUSTFLAGS ?? ""} -Aexplicit_builtin_cfgs_in_flags ` +
+    `--cfg unix --cfg target_family="unix" --cfg target_env="newlib" ` +
+    `-C relocation-model=pic`,
+};
 
 async function run(command: string[], label: string, cwd = projectRoot): Promise<void> {
   const child = Bun.spawn(command, {
@@ -69,6 +95,7 @@ async function run(command: string[], label: string, cwd = projectRoot): Promise
       DEVKITPRO: devkitpro,
       DEVKITA64: devkitA64,
       PATH: toolPath,
+      ...nativeEnvironment,
     },
     stdout: "inherit",
     stderr: "inherit",
@@ -102,10 +129,27 @@ mkdirSync(romfs, { recursive: true });
 cpSync(appJs, resolve(romfs, "app.js"));
 cpSync(appPak, resolve(romfs, "app.pak"));
 
+await run(
+  [
+    "rustup",
+    "run",
+    toolchain.rust.toolchain,
+    "cargo",
+    "build",
+    "-Z",
+    "build-std=core,alloc",
+    "--target",
+    rustTarget,
+    ...(release ? ["--release"] : []),
+  ],
+  "Switch Rust runtime build",
+  hostDir,
+);
 await run(["make", "clean"], "Switch host clean", hostDir);
 await run(
   [
     "make",
+    `RUST_PROFILE=${rustProfile}`,
     `APP_TITLE=${plan.app.title}`,
     "APP_AUTHOR=PocketJS",
     "APP_VERSION=0.1.0",

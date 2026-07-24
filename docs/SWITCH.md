@@ -1,7 +1,9 @@
 # Nintendo Switch port plan
 
-Status: implementation in progress. The target contract and diagnostic NRO
-shell are implemented; the PocketJS runtime is not yet linked.
+Status: implementation in progress. M0 through M3 are implemented: the
+release `hero` NRO runs the PocketJS QuickJS guest, renders through the shared
+software rasterizer at 60 FPS in Ryujinx, and accepts controller input. The
+developer loop and broader demo acceptance work remain.
 
 ## Goal
 
@@ -223,7 +225,15 @@ Observed on 2026-07-24:
   `/opt/devkitpro/examples/switch/graphics/simplegfx`;
 - the installed macOS `elf2nro` silently ignores `--romfsdir`, while an
   explicit `build_romfs` followed by `elf2nro --romfs=<image>` embeds the
-  expected ASET payload. The PocketJS Makefile uses the working explicit path.
+  expected ASET payload. The PocketJS Makefile uses the working explicit path;
+- the built-in Rust Switch target omits the Unix/newlib cfg values required by
+  the `libc` crate, so the backend supplies those known target facts while
+  building the Rust static library;
+- the pinned QuickJS build needs Switch newlib's `malloc_usable_size`
+  declaration and the same zero-timezone fallback used by the PSP/Vita hosts;
+- `hero-main.nro` loads its normal `app.js` and `app.pak`, completes the host
+  ABI handshake, renders the centered 960x544 content surface at 60 FPS, and
+  responds to controller input in Ryujinx.
 
 The reproducible emulator invocation is:
 
@@ -324,7 +334,7 @@ Exit criteria:
 - unsupported viewport/capability combinations still fail;
 - existing PSP, Vita, and macOS target tests remain unchanged and green.
 
-### M2 — NRO shell and Rust/QuickJS link spike
+### M2 — NRO shell and Rust/QuickJS link spike (complete)
 
 Scope:
 
@@ -343,10 +353,11 @@ not fork the entire runtime or add a second JavaScript engine.
 Exit criteria:
 
 - a self-contained NRO evaluates a trivial embedded script in Ryujinx;
-- Plus exits cleanly to the emulator;
+- Plus+Minus exits cleanly to the emulator without consuming the mapped Start
+  button;
 - failures are visible through stderr/nxlink-compatible logging.
 
-### M3 — first PocketJS frame
+### M3 — first PocketJS frame (complete)
 
 Scope:
 
@@ -361,7 +372,9 @@ Exit criteria:
 
 - `hero` renders and responds to input in Ryujinx;
 - the bundled target id and host ABI handshake passes;
-- the captured density-2 content frame matches the deterministic oracle.
+- the host uses the same density-2 deterministic rasterizer as the oracle.
+  Byte-exact emulator capture remains the M5 regression proof rather than an
+  extra one-off M3 mechanism.
 
 ### M4 — framework parity and developer loop
 

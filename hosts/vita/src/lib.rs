@@ -10,9 +10,11 @@ use libquickjs_sys::*;
 use pocketjs_core::Ui;
 
 pub mod dbg;
+#[path = "../../native/ffi.rs"]
 pub mod ffi;
 pub mod graphics;
 pub mod input;
+#[path = "../../native/pak.rs"]
 pub mod pak;
 pub mod switch;
 
@@ -42,7 +44,7 @@ extern "C" {
     fn sceClibPrintf(fmt: *const i8, ...) -> i32;
 }
 
-pub fn vita_log(args: fmt::Arguments<'_>) {
+pub fn host_log(args: fmt::Arguments<'_>) {
     use std::fmt::Write;
     let mut line = String::new();
     let _ = line.write_fmt(args);
@@ -51,6 +53,8 @@ pub fn vita_log(args: fmt::Arguments<'_>) {
         sceClibPrintf(c"%s\n".as_ptr(), line.as_ptr());
     }
 }
+
+pub use host_log as vita_log;
 
 unsafe fn exception_string(ctx: *mut JSContext) -> String {
     let value = JS_GetException(ctx);

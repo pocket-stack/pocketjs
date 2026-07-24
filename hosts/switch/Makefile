@@ -11,6 +11,9 @@ TARGET := pocketjs-switch
 BUILD := build
 SOURCES := source
 ROMFS := romfs
+RUST_TARGET := aarch64-nintendo-switch-freestanding
+RUST_PROFILE ?= release
+RUSTLIB := $(TOPDIR)/target/$(RUST_TARGET)/$(RUST_PROFILE)/libpocketjs_switch.a
 
 APP_TITLE ?= PocketJS
 APP_AUTHOR ?= PocketJS
@@ -22,7 +25,7 @@ CFLAGS += $(INCLUDE) -D__SWITCH__
 ASFLAGS := -g $(ARCH)
 LDFLAGS = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) \
 	-Wl,-Map,$(notdir $*.map)
-LIBS := -lnx
+LIBS := $(RUSTLIB) -lm -lnx
 LIBDIRS := $(PORTLIBS) $(LIBNX)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -65,7 +68,7 @@ all: $(OUTPUT).nro
 
 $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp
 
-$(OUTPUT).elf: $(OFILES)
+$(OUTPUT).elf: $(OFILES) $(RUSTLIB)
 
 -include $(DEPENDS)
 
