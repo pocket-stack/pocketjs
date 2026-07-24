@@ -1,11 +1,20 @@
 ARG POCKETJS_SYMBIAN_BASE_IMAGE=debian:bullseye-slim@sha256:de70627667ac77b32ab6858f1acddfb04a4ff3acc1095ac17dbc19fe5725bcb6
 FROM ${POCKETJS_SYMBIAN_BASE_IMAGE}
 
+ARG POCKETJS_DEBIAN_SNAPSHOT
+ARG POCKETJS_DEBIAN_SECURITY_SNAPSHOT
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN dpkg --add-architecture i386 \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN rm -f /etc/apt/sources.list.d/* \
+    && { \
+        echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${POCKETJS_DEBIAN_SNAPSHOT}/ bullseye main"; \
+        echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/${POCKETJS_DEBIAN_SECURITY_SNAPSHOT}/ bullseye-security main"; \
+        echo "deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/${POCKETJS_DEBIAN_SNAPSHOT}/ bullseye-updates main"; \
+    } > /etc/apt/sources.list \
+    && dpkg --add-architecture i386 \
+    && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=60 update \
+    && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=60 install \
+        -y --no-install-recommends \
         autoconf \
         automake \
         bison \
@@ -35,8 +44,9 @@ RUN dpkg --add-architecture i386 \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=60 update \
+    && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=60 install \
+        -y --no-install-recommends \
         libfontconfig1-dev \
         libfreetype6-dev \
         libx11-dev \

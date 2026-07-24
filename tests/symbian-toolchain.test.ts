@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +14,7 @@ import {
   SYMBIAN_RUNTIME_DOWNLOADS,
   SYMBIAN_SETUP_DOWNLOADS,
   SYMBIAN_TOOLCHAIN,
+  inspectSymbianRustHost,
   receiptMatchesSymbianManifest,
   symbianDockerBuildArguments,
   symbianDockerDoctorArguments,
@@ -14,6 +22,7 @@ import {
   symbianDockerSetupArguments,
   symbianDownloadsRoot,
   symbianImplementationDigest,
+  withSymbianRuntimeBuildLock,
 } from "../tools/symbian-toolchain.ts";
 
 const repository = new URL("..", import.meta.url).pathname;
@@ -29,6 +38,8 @@ describe("canonical Symbian E7 toolchain", () => {
       toolchainVersion: "sr1-qt474-v1",
       container: {
         platform: "linux/amd64",
+        debianSnapshot: "20260712T202631Z",
+        debianSecuritySnapshot: "20260712T194830Z",
         signingVolume: "pocketjs-symbian-signing-v1",
       },
       gcce: { version: "4.6.3" },
@@ -41,6 +52,12 @@ describe("canonical Symbian E7 toolchain", () => {
       },
     });
     expect(SYMBIAN_TOOLCHAIN.container.baseImage).toMatch(/@sha256:[a-f0-9]{64}$/);
+    expect(SYMBIAN_TOOLCHAIN.container.debianSnapshot).toMatch(
+      /^\d{8}T\d{6}Z$/,
+    );
+    expect(SYMBIAN_TOOLCHAIN.container.debianSecuritySnapshot).toMatch(
+      /^\d{8}T\d{6}Z$/,
+    );
     expect(SYMBIAN_DOWNLOADS).toHaveLength(4);
     expect(SYMBIAN_RUNTIME_DOWNLOADS).toHaveLength(1);
     expect(SYMBIAN_SETUP_DOWNLOADS).toHaveLength(5);
@@ -196,7 +213,210 @@ describe("canonical Symbian E7 toolchain", () => {
     expect(dockerfile).toContain(
       `ARG POCKETJS_SYMBIAN_BASE_IMAGE=${SYMBIAN_TOOLCHAIN.container.baseImage}`,
     );
+    expect(dockerfile).toContain("ARG POCKETJS_DEBIAN_SNAPSHOT");
+    expect(dockerfile).toContain("ARG POCKETJS_DEBIAN_SECURITY_SNAPSHOT");
+    expect(dockerfile.match(/\[check-valid-until=no\]/g)).toHaveLength(3);
+    expect(dockerfile).not.toContain("deb.debian.org");
+    expect(dockerfile).not.toContain("trusted=yes");
+    expect(dockerfile).not.toContain("Check-Date=false");
+    expect(dockerfile).toContain("rm -f /etc/apt/sources.list.d/*");
+    expect(dockerfile.match(/Acquire::Retries=5/g)).toHaveLength(4);
+    expect(dockerfile).not.toContain(SYMBIAN_TOOLCHAIN.container.debianSnapshot);
+    expect(dockerfile).not.toContain(
+      SYMBIAN_TOOLCHAIN.container.debianSecuritySnapshot,
+    );
     expect(dockerfile).toContain("pocketjs-symbian-build-app");
+  });
+
+  test("inspects only the locally installed pinned Rust toolchain", async () => {
+    const commands: string[] = [];
+    const ready = await inspectSymbianRustHost(
+      (tool) => tool === "rustup" ? "/host/bin/rustup" : undefined,
+      async (command, args) => {
+        commands.push([command, ...args].join(" "));
+        if (args.join(" ") === "toolchain list") {
+          return {
+            exitCode: 0,
+            stdout:
+              `stable-aarch64-apple-darwin (default)\n${SYMBIAN_TOOLCHAIN.runtime.rustToolchain}-aarch64-apple-darwin\n`,
+            stderr: "",
+          };
+        }
+        if (args[0] === "run") {
+          return { exitCode: 0, stdout: "cargo 1.98.0-nightly\n", stderr: "" };
+        }
+        return {
+          exitCode: 0,
+          stdout: "cargo-aarch64-apple-darwin\nrust-src\n",
+          stderr: "",
+        };
+      },
+    );
+    expect(ready).toEqual({
+      cargo: true,
+      rustup: true,
+      pinnedToolchain: true,
+      rustSrc: true,
+      rustupPath: "/host/bin/rustup",
+      toolchainName:
+        `${SYMBIAN_TOOLCHAIN.runtime.rustToolchain}-aarch64-apple-darwin`,
+    });
+    expect(commands).toEqual([
+      "/host/bin/rustup toolchain list",
+      `/host/bin/rustup run ${SYMBIAN_TOOLCHAIN.runtime.rustToolchain}-aarch64-apple-darwin cargo --version`,
+      `/host/bin/rustup component list --toolchain ${SYMBIAN_TOOLCHAIN.runtime.rustToolchain}-aarch64-apple-darwin --installed`,
+    ]);
+  });
+
+  test("does not ask rustup to run an absent pinned nightly", async () => {
+    const commands: string[] = [];
+    const missing = await inspectSymbianRustHost(
+      (tool) => tool === "rustup" ? "/host/bin/rustup" : undefined,
+      async (command, args) => {
+        commands.push([command, ...args].join(" "));
+        return {
+          exitCode: 0,
+          stdout: "stable-aarch64-apple-darwin (default)\n",
+          stderr: "",
+        };
+      },
+    );
+    expect(missing.pinnedToolchain).toBe(false);
+    expect(missing.rustSrc).toBe(false);
+    expect(commands).toEqual(["/host/bin/rustup toolchain list"]);
+  });
+
+  test("requires exact rust-src instead of a similarly named component", async () => {
+    const status = await inspectSymbianRustHost(
+      (tool) => tool === "rustup" ? "/host/bin/rustup" : undefined,
+      async (_command, args) => {
+        if (args.join(" ") === "toolchain list") {
+          return {
+            exitCode: 0,
+            stdout: `${SYMBIAN_TOOLCHAIN.runtime.rustToolchain}\n`,
+            stderr: "",
+          };
+        }
+        if (args[0] === "run") {
+          return { exitCode: 0, stdout: "cargo nightly\n", stderr: "" };
+        }
+        return { exitCode: 0, stdout: "rust-src-preview\n", stderr: "" };
+      },
+    );
+    expect(status.pinnedToolchain).toBe(true);
+    expect(status.rustSrc).toBe(false);
+  });
+
+  test("rejects an installed nightly whose Cargo component cannot run", async () => {
+    const status = await inspectSymbianRustHost(
+      (tool) => tool === "rustup" ? "/host/bin/rustup" : undefined,
+      async (_command, args) => {
+        if (args.join(" ") === "toolchain list") {
+          return {
+            exitCode: 0,
+            stdout: `${SYMBIAN_TOOLCHAIN.runtime.rustToolchain}\n`,
+            stderr: "",
+          };
+        }
+        if (args[0] === "run") {
+          return { exitCode: 1, stdout: "", stderr: "cargo is unavailable" };
+        }
+        return { exitCode: 0, stdout: "rust-src\n", stderr: "" };
+      },
+    );
+    expect(status.pinnedToolchain).toBe(true);
+    expect(status.cargo).toBe(false);
+    expect(status.rustSrc).toBe(true);
+  });
+
+  test("keeps the Rust override synchronized with the manifest pin", () => {
+    const override = Bun.TOML.parse(readFileSync(
+      join(repository, "engine/symbian/rust-toolchain.toml"),
+      "utf8",
+    )) as {
+      toolchain: {
+        channel: string;
+        components: string[];
+        profile: string;
+      };
+    };
+    expect(override.toolchain).toEqual({
+      channel: SYMBIAN_TOOLCHAIN.runtime.rustToolchain,
+      components: ["rust-src"],
+      profile: "minimal",
+    });
+  });
+
+  test("serializes the complete shared runtime payload transaction", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pocketjs-symbian-runtime-lock-"));
+    temporary.push(root);
+    const output = join(root, "dist/symbian");
+    const payload = join(output, "build/shared-app");
+    const env = { POCKET_STACK_CACHE_DIR: join(root, "cache") };
+    let active = 0;
+    let maxActive = 0;
+    const snapshots: string[][] = [];
+    const build = (id: string) => withSymbianRuntimeBuildLock(
+      output,
+      async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        try {
+          rmSync(payload, { recursive: true, force: true });
+          mkdirSync(payload, { recursive: true });
+          for (const file of ["plan", "app", "core"]) {
+            writeFileSync(join(payload, file), id);
+            await Bun.sleep(10);
+          }
+          snapshots.push(
+            ["plan", "app", "core"].map((file) =>
+              readFileSync(join(payload, file), "utf8")
+            ),
+          );
+        } finally {
+          active -= 1;
+        }
+      },
+      env,
+    );
+    await Promise.all([build("first"), build("second")]);
+    expect(maxActive).toBe(1);
+    expect(snapshots).toHaveLength(2);
+    for (const snapshot of snapshots) {
+      expect(new Set(snapshot).size).toBe(1);
+    }
+
+    const orchestrator = readFileSync(join(repository, "tools/symbian.ts"), "utf8");
+    const transaction = orchestrator.indexOf(
+      "return await withSymbianRuntimeBuildLock(outputRoot",
+    );
+    expect(transaction).toBeGreaterThan(-1);
+    expect(orchestrator.indexOf("rmSync(payload", transaction)).toBeGreaterThan(
+      transaction,
+    );
+    expect(orchestrator.indexOf('resolve(payload, "plan.json")', transaction))
+      .toBeGreaterThan(transaction);
+  });
+
+  test("changes the implementation digest when a repository snapshot changes", () => {
+    const root = mkdtempSync(join(tmpdir(), "pocketjs-symbian-snapshot-digest-"));
+    temporary.push(root);
+    cpSync(join(repository, "tools/cli"), join(root, "tools/cli"), {
+      recursive: true,
+    });
+    cpSync(join(repository, "tools/symbian"), join(root, "tools/symbian"), {
+      recursive: true,
+    });
+    const before = symbianImplementationDigest(root);
+    const manifestPath = join(root, "tools/cli/symbian-toolchain.json");
+    writeFileSync(
+      manifestPath,
+      readFileSync(manifestPath, "utf8").replace(
+        SYMBIAN_TOOLCHAIN.container.debianSnapshot,
+        "20260712T202632Z",
+      ),
+    );
+    expect(symbianImplementationDigest(root)).not.toBe(before);
   });
 
   test("CODA launch wire and reply parser stay byte-exact", async () => {
@@ -262,6 +482,10 @@ describe("canonical Symbian E7 toolchain", () => {
       `POCKETJS_SYMBIAN_IMPLEMENTATION_SHA256=${implementation}`,
       "--build-arg",
       `POCKETJS_SYMBIAN_BASE_IMAGE=${SYMBIAN_TOOLCHAIN.container.baseImage}`,
+      "--build-arg",
+      `POCKETJS_DEBIAN_SNAPSHOT=${SYMBIAN_TOOLCHAIN.container.debianSnapshot}`,
+      "--build-arg",
+      `POCKETJS_DEBIAN_SECURITY_SNAPSHOT=${SYMBIAN_TOOLCHAIN.container.debianSecuritySnapshot}`,
       "--build-arg",
       `POCKETJS_SYMBIAN_TOOLCHAIN_VERSION=${SYMBIAN_TOOLCHAIN.toolchainVersion}`,
       "--tag",

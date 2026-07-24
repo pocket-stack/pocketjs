@@ -23,11 +23,13 @@ import {
   SYMBIAN_DOWNLOADS,
   SYMBIAN_RUNTIME_DOWNLOADS,
   SYMBIAN_TOOLCHAIN,
+  inspectSymbianRustHost,
   symbianDockerDoctorArguments,
   symbianDockerRunArguments,
   symbianDownloadPath,
   symbianDownloadsRoot,
   symbianImplementationDigest,
+  withSymbianRuntimeBuildLock,
 } from "./symbian-toolchain.ts";
 import { pocketStackCacheRoot, withArtifactLock } from "./psp-toolchain.ts";
 
@@ -183,6 +185,32 @@ async function doctor(
   console.log(`  ${icon(docker)} Docker`);
   ok &&= docker;
 
+  const rust = await inspectSymbianRustHost(
+    (tool) => Bun.which(tool),
+    (command, args) => spawn(command, args, { timeoutMs: 10_000 }),
+  );
+  console.log(
+    `  ${icon(rust.rustup)} rustup${
+      rust.rustup ? "" : " — install rustup and run setup --yes"
+    }`,
+  );
+  console.log(
+    `  ${icon(rust.pinnedToolchain)} Rust ${SYMBIAN_TOOLCHAIN.runtime.rustToolchain}${
+      rust.pinnedToolchain ? "" : " — run setup --yes"
+    }`,
+  );
+  console.log(
+    `  ${icon(rust.cargo)} Cargo for ${SYMBIAN_TOOLCHAIN.runtime.rustToolchain}${
+      rust.cargo ? "" : " — run setup --yes"
+    }`,
+  );
+  console.log(
+    `  ${icon(rust.rustSrc)} rust-src for ${SYMBIAN_TOOLCHAIN.runtime.rustToolchain}${
+      rust.rustSrc ? "" : " — run setup --yes"
+    }`,
+  );
+  ok &&= rust.rustup && rust.pinnedToolchain && rust.cargo && rust.rustSrc;
+
   for (const artifact of [...SYMBIAN_DOWNLOADS, ...SYMBIAN_RUNTIME_DOWNLOADS]) {
     const path = symbianDownloadPath(artifact);
     const verified = existsSync(path) && await sha256File(path) === artifact.sha256;
@@ -299,64 +327,85 @@ async function buildApp(
       );
     }
   }
+  const rustHost = await inspectSymbianRustHost(
+    (tool) => Bun.which(tool),
+    (command, args) => spawn(command, args, { timeoutMs: 10_000 }),
+  );
+  if (
+    !rustHost.cargo ||
+    !rustHost.rustup ||
+    !rustHost.pinnedToolchain ||
+    !rustHost.rustSrc ||
+    !rustHost.rustupPath ||
+    !rustHost.toolchainName
+  ) {
+    throw new Error(
+      `Rust ${SYMBIAN_TOOLCHAIN.runtime.rustToolchain} with rust-src is not ready; run \`pocket symbian setup --yes\``,
+    );
+  }
 
   const absoluteManifest = resolve(manifestPath);
   const manifest = JSON.parse(readFileSync(absoluteManifest, "utf8")) as unknown;
   const plan = resolveSymbianE7BuildPlan(manifest);
-  if (!/^[A-Za-z0-9._-]+$/.test(plan.app.output)) {
+  if (
+    !/^[A-Za-z0-9._-]+$/.test(plan.app.output) ||
+    plan.app.output === "." ||
+    plan.app.output === ".."
+  ) {
     throw new Error(`unsafe Symbian app output name ${JSON.stringify(plan.app.output)}`);
   }
 
   const outputRoot = resolve(root, "dist/symbian");
   const payload = resolve(outputRoot, "build", plan.app.output);
   const rustTarget = resolve(outputRoot, ".cargo-symbian");
-  mkdirSync(payload, { recursive: true });
-  await Bun.write(resolve(payload, "plan.json"), JSON.stringify(plan, null, 2) + "\n");
+  return await withSymbianRuntimeBuildLock(outputRoot, async () => {
+    rmSync(payload, { recursive: true, force: true });
+    mkdirSync(payload, { recursive: true });
+    await Bun.write(
+      resolve(payload, "plan.json"),
+      JSON.stringify(plan, null, 2) + "\n",
+    );
 
-  const appBuild = await spawn("bun", [
-    "tools/build.ts",
-    `--plan=${resolve(payload, "plan.json")}`,
-    `--project-root=${root}`,
-    `--outdir=${payload}`,
-  ], { inherit: true, cwd: root });
-  if (appBuild.exitCode !== 0) throw new Error("PocketJS Symbian guest build failed");
-  copyFileSync(resolve(payload, `${plan.app.output}.js`), resolve(payload, "app.js"));
-  copyFileSync(resolve(payload, `${plan.app.output}.pak`), resolve(payload, "app.pak"));
+    const appBuild = await spawn("bun", [
+      "tools/build.ts",
+      `--plan=${resolve(payload, "plan.json")}`,
+      `--project-root=${root}`,
+      `--outdir=${payload}`,
+    ], { inherit: true, cwd: root });
+    if (appBuild.exitCode !== 0) throw new Error("PocketJS Symbian guest build failed");
+    copyFileSync(resolve(payload, `${plan.app.output}.js`), resolve(payload, "app.js"));
+    copyFileSync(resolve(payload, `${plan.app.output}.pak`), resolve(payload, "app.pak"));
 
-  const coreDirectory = resolve(root, "engine/symbian");
-  const rustBuild = await spawn("cargo", [
-    "build",
-    "--release",
-    "--locked",
-    "--target",
-    "targets/armv6-symbian-eabi.json",
-    "-Z",
-    "json-target-spec",
-    "-Z",
-    "build-std=core,alloc,compiler_builtins",
-    "-Z",
-    "build-std-features=compiler-builtins-mem",
-  ], {
-    inherit: true,
-    cwd: coreDirectory,
-    env: { ...process.env, CARGO_TARGET_DIR: rustTarget },
-  });
-  if (rustBuild.exitCode !== 0) throw new Error("PocketJS Symbian Rust core build failed");
-  copyFileSync(
-    resolve(
-      rustTarget,
-      "armv6-symbian-eabi/release/libpocketjs_symbian_core.a",
-    ),
-    resolve(payload, "libpocketjs_symbian_core.a"),
-  );
+    const coreDirectory = resolve(root, "engine/symbian");
+    const rustBuild = await spawn(rustHost.rustupPath!, [
+      "run",
+      rustHost.toolchainName!,
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--target",
+      "targets/armv6-symbian-eabi.json",
+      "-Z",
+      "json-target-spec",
+      "-Z",
+      "build-std=core,alloc,compiler_builtins",
+      "-Z",
+      "build-std-features=compiler-builtins-mem",
+    ], {
+      inherit: true,
+      cwd: coreDirectory,
+      env: { ...process.env, CARGO_TARGET_DIR: rustTarget },
+    });
+    if (rustBuild.exitCode !== 0) throw new Error("PocketJS Symbian Rust core build failed");
+    copyFileSync(
+      resolve(
+        rustTarget,
+        "armv6-symbian-eabi/release/libpocketjs_symbian_core.a",
+      ),
+      resolve(payload, "libpocketjs_symbian_core.a"),
+    );
 
-  mkdirSync(outputRoot, { recursive: true });
-  const outputLockId = createHash("sha256").update(outputRoot).digest("hex");
-  const outputLock = join(
-    pocketStackCacheRoot(),
-    `symbian/.locks/runtime-output-${outputLockId}.lock`,
-  );
-  await withArtifactLock(outputLock, async () => {
     const built = await spawn("docker", symbianDockerRunArguments(
       "/usr/local/bin/pocketjs-symbian-build-app",
       [plan.app.output, sisVersion],
@@ -367,11 +416,11 @@ async function buildApp(
       },
     ), { inherit: true, cwd: root });
     if (built.exitCode !== 0) throw new Error("Symbian PocketJS runtime build failed");
-  }, { timeoutMs: 20 * 60_000, staleMs: 60 * 60_000 });
 
-  const sis = resolve(root, SYMBIAN_TOOLCHAIN.runtime.output);
-  if (!existsSync(sis)) throw new Error(`runtime build did not produce ${sis}`);
-  return sis;
+    const sis = resolve(root, SYMBIAN_TOOLCHAIN.runtime.output);
+    if (!existsSync(sis)) throw new Error(`runtime build did not produce ${sis}`);
+    return sis;
+  });
 }
 
 async function deploy(path: string): Promise<void> {

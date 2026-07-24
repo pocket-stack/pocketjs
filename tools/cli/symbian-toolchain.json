@@ -4,6 +4,8 @@
   "container": {
     "platform": "linux/amd64",
     "baseImage": "debian:bullseye-slim@sha256:de70627667ac77b32ab6858f1acddfb04a4ff3acc1095ac17dbc19fe5725bcb6",
+    "debianSnapshot": "20260712T202631Z",
+    "debianSecuritySnapshot": "20260712T194830Z",
     "image": "pocketjs-symbian-toolchain:sr1-qt474-v1",
     "volume": "pocketjs-symbian-toolchain-sr1-qt474-v1",
     "signingVolume": "pocketjs-symbian-signing-v1"

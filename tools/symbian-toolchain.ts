@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import manifestJson from "./cli/symbian-toolchain.json";
-import { pocketStackCacheRoot } from "./psp-toolchain.ts";
+import { pocketStackCacheRoot, withArtifactLock } from "./psp-toolchain.ts";
 
 export interface PinnedDownload {
   readonly asset: string;
@@ -16,6 +16,8 @@ export interface SymbianToolchainManifest {
   readonly container: {
     readonly platform: "linux/amd64";
     readonly baseImage: string;
+    readonly debianSnapshot: string;
+    readonly debianSecuritySnapshot: string;
     readonly image: string;
     readonly volume: string;
     readonly signingVolume: string;
@@ -84,6 +86,93 @@ export const SYMBIAN_SETUP_DOWNLOADS = [
   ...SYMBIAN_DOWNLOADS,
   ...SYMBIAN_RUNTIME_DOWNLOADS,
 ] as const;
+
+interface HostCommandResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export type HostToolResolver = (tool: string) => string | null | undefined;
+export type HostCommandRunner = (
+  command: string,
+  args: readonly string[],
+) => Promise<HostCommandResult>;
+
+export interface SymbianRustHostStatus {
+  readonly cargo: boolean;
+  readonly rustup: boolean;
+  readonly pinnedToolchain: boolean;
+  readonly rustSrc: boolean;
+  readonly rustupPath?: string;
+  readonly toolchainName?: string;
+}
+
+/**
+ * Inspect only locally installed Rust state. Listing the installed toolchains
+ * before `rustup run` avoids an implicit network sync when the pinned nightly
+ * is absent.
+ */
+export async function inspectSymbianRustHost(
+  resolveTool: HostToolResolver,
+  run: HostCommandRunner,
+): Promise<SymbianRustHostStatus> {
+  const rustupPath = resolveTool("rustup") ?? undefined;
+  const unavailable = {
+    cargo: false,
+    rustup: rustupPath !== undefined,
+    pinnedToolchain: false,
+    rustSrc: false,
+    rustupPath,
+  };
+  if (!rustupPath) return unavailable;
+
+  const listed = await run(rustupPath, ["toolchain", "list"]);
+  if (listed.exitCode !== 0) return unavailable;
+  const pin = SYMBIAN_TOOLCHAIN.runtime.rustToolchain;
+  const toolchainName = listed.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim().split(/\s+/, 1)[0])
+    .find((name) => name === pin || name.startsWith(`${pin}-`));
+  if (!toolchainName) return unavailable;
+
+  const [cargo, components] = await Promise.all([
+    run(rustupPath, ["run", toolchainName, "cargo", "--version"]),
+    run(rustupPath, [
+      "component",
+      "list",
+      "--toolchain",
+      toolchainName,
+      "--installed",
+    ]),
+  ]);
+  return {
+    cargo: cargo.exitCode === 0,
+    rustup: true,
+    pinnedToolchain: true,
+    rustSrc: components.exitCode === 0 &&
+      components.stdout.split(/\r?\n/).some((line) => line.trim() === "rust-src"),
+    rustupPath,
+    toolchainName,
+  };
+}
+
+export async function withSymbianRuntimeBuildLock<T>(
+  outputRoot: string,
+  operation: () => Promise<T>,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<T> {
+  const output = resolve(outputRoot);
+  const outputLockId = createHash("sha256").update(output).digest("hex");
+  const outputLock = join(
+    pocketStackCacheRoot(env),
+    `symbian/.locks/runtime-output-${outputLockId}.lock`,
+  );
+  return await withArtifactLock(outputLock, operation, {
+    timeoutMs: 60 * 60_000,
+    staleMs: 2 * 60 * 60_000,
+  });
+}
 
 export function symbianDownloadsRoot(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env.POCKETJS_SYMBIAN_DOWNLOADS?.trim();
@@ -237,6 +326,10 @@ export function symbianDockerBuildArguments(repository: string): string[] {
     `POCKETJS_SYMBIAN_IMPLEMENTATION_SHA256=${implementation}`,
     "--build-arg",
     `POCKETJS_SYMBIAN_BASE_IMAGE=${SYMBIAN_TOOLCHAIN.container.baseImage}`,
+    "--build-arg",
+    `POCKETJS_DEBIAN_SNAPSHOT=${SYMBIAN_TOOLCHAIN.container.debianSnapshot}`,
+    "--build-arg",
+    `POCKETJS_DEBIAN_SECURITY_SNAPSHOT=${SYMBIAN_TOOLCHAIN.container.debianSecuritySnapshot}`,
     "--build-arg",
     `POCKETJS_SYMBIAN_TOOLCHAIN_VERSION=${SYMBIAN_TOOLCHAIN.toolchainVersion}`,
     "--file",
