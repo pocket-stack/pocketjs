@@ -141,7 +141,7 @@ describe("pocket.json v2 schema", () => {
 
 describe("platform registry", () => {
   test("production advertises only the truthful stock-host profiles", () => {
-    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "macos-widget"]);
+    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "switch", "macos-widget"]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
     expect(POCKET_TARGETS.psp.capabilities).toEqual([
       "input.analog.left",
@@ -161,6 +161,23 @@ describe("platform registry", () => {
       logicalViewports: [[480, 272]],
       presentations: ["integer-fit"],
       rasterDensity: 2,
+    });
+    expect(POCKET_TARGETS.switch).toEqual({
+      hostAbi: 4,
+      platform: "switch",
+      form: "takeover",
+      display: {
+        physicalViewport: [1280, 720],
+        logicalViewports: [[480, 272]],
+        presentations: ["integer-fit"],
+        rasterDensity: 2,
+      },
+      capabilities: [
+        "input.analog.left",
+        "input.buttons",
+        "input.cursor",
+        "text.glyphs.baked",
+      ],
     });
     // The desktop widget target: dynamic viewport, real pointer/text/IME,
     // runtime glyph baking — and honestly NO nub or synthesized cursor.
@@ -237,6 +254,7 @@ describe("semantic resolution", () => {
     expect(result.plan.app).toEqual({
       id: "dev.pocket-stack.telemetry",
       title: "Pocket Telemetry",
+      version: "0.1.0",
       entry: "app/main.tsx",
       output: "main",
       framework: "solid",
@@ -313,33 +331,33 @@ describe("semantic resolution", () => {
 
   test("every committed demo manifest lands on the expected admission matrix", async () => {
     const { readdirSync, existsSync } = await import("node:fs");
-    // demo -> [psp, vita, macos-widget] admission. Console demos
+    // demo -> [psp, vita, switch, macos-widget] admission. Console demos
     // stay off the desktop widget (its profile presents "native" over a
     // dynamic viewport, not the console integer-fit contract); the note is
     // the inverse. A new demo missing here fails the test on purpose.
-    const expected: Record<string, [boolean, boolean, boolean]> = {
-      cafe: [true, true, false],
-      cards: [true, true, false],
-      chrome: [true, true, false],
-      cursor: [true, true, false],
-      gallery: [true, true, false],
-      hero: [true, true, false],
-      "hero-vue-sfc": [true, true, false],
-      "hero-vue-vapor": [true, true, false],
-      im: [true, true, false],
-      "ipod-nano": [false, false, false], // admitted by the package-shaped macos-embedded target
-      launcher: [true, true, false], // the Cover Flow deck (docs/LAUNCHER.md) is an ordinary console app
-      library: [true, true, false],
-      motions: [true, true, false],
-      music: [true, true, false],
-      note: [false, false, true],
-      notifications: [true, true, false],
-      settings: [true, true, false],
-      stats: [true, true, false],
-      "vue-sfc-lab": [true, true, false],
-      zoomlab: [true, true, false],
+    const expected: Record<string, [boolean, boolean, boolean, boolean]> = {
+      cafe: [true, true, true, false],
+      cards: [true, true, true, false],
+      chrome: [true, true, true, false],
+      cursor: [true, true, true, false],
+      gallery: [true, true, true, false],
+      hero: [true, true, true, false],
+      "hero-vue-sfc": [true, true, true, false],
+      "hero-vue-vapor": [true, true, true, false],
+      im: [true, true, true, false],
+      "ipod-nano": [false, false, false, false], // admitted by the package-shaped macos-embedded target
+      launcher: [true, true, true, false], // the Cover Flow deck (docs/LAUNCHER.md) is an ordinary console app
+      library: [true, true, true, false],
+      motions: [true, true, true, false],
+      music: [true, true, true, false],
+      note: [false, false, false, true],
+      notifications: [true, true, true, false],
+      settings: [true, true, true, false],
+      stats: [true, true, true, false],
+      "vue-sfc-lab": [true, true, true, false],
+      zoomlab: [true, true, true, false],
     };
-    const targets = ["psp", "vita", "macos-widget"] as const;
+    const targets = ["psp", "vita", "switch", "macos-widget"] as const;
     for (const demo of readdirSync(new URL("../apps/", import.meta.url)).sort()) {
       const url = new URL(`../apps/${demo}/pocket.json`, import.meta.url);
       if (!existsSync(url)) continue;
@@ -399,6 +417,7 @@ describe("semantic resolution", () => {
     expect(POCKET_TARGETS.psp.platform).toBe("psp");
     expect(POCKET_TARGETS.psp.form).toBe("takeover");
     expect(POCKET_TARGETS.vita.form).toBe("takeover");
+    expect(POCKET_TARGETS.switch.form).toBe("takeover");
     expect(POCKET_TARGETS["macos-widget"].platform).toBe("macos");
     expect(POCKET_TARGETS["macos-widget"].form).toBe("widget");
   });
@@ -464,7 +483,7 @@ describe("semantic resolution", () => {
   });
 
   test("reports unknown targets and missing hard requirements", () => {
-    const unknownTarget = validateAndResolveBuildPlan(portableInput, { target: "switch" });
+    const unknownTarget = validateAndResolveBuildPlan(portableInput, { target: "gameboy" });
     expect(unknownTarget.ok).toBe(false);
     if (!unknownTarget.ok) expect(unknownTarget.diagnostics[0]?.code).toBe("target.unknown");
 
@@ -497,6 +516,19 @@ describe("semantic resolution", () => {
       rasterDensity: 2,
     });
     expect(Object.values(result.plan.features).every(Boolean)).toBe(true);
+  });
+
+  test("integer-fit allows centered letterboxing on Switch", () => {
+    const result = validateAndResolveBuildPlan(portableInput, { target: "switch" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.target).toEqual({ id: "switch", hostAbi: 4 });
+    expect(result.plan.viewport).toEqual({
+      logical: [480, 272],
+      physical: [1280, 720],
+      presentation: "integer-fit",
+      rasterDensity: 2,
+    });
   });
 
   test("enhancements record target availability without gating resolution", () => {

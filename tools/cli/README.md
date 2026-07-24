@@ -2,7 +2,8 @@
 
 The [PocketJS](https://pocketjs.dev) toolchain CLI — `doctor`/`setup` for the
 bun + Rust + PSP toolchain (flutter-doctor style), manifest-first app
-scaffolding, and build/run passthrough for PSP and PS Vita.
+scaffolding, and build/run passthrough for PSP, PS Vita, and Nintendo Switch
+homebrew.
 
 ```sh
 npm install -g @pocketjs/cli
@@ -14,10 +15,13 @@ pocket check --target psp --manifest apps/my-app/pocket.json
 pocket compile --target psp --manifest apps/my-app/pocket.json
 pocket build --target psp --manifest apps/my-app/pocket.json -- --release
 pocket build --target vita --manifest apps/my-app/pocket.json -- --release
+pocket build --target switch --manifest apps/my-app/pocket.json -- --release
 pocket play vita hero    # build, install and launch a stock demo in Vita3K
+pocket play switch hero  # build and launch a stock demo in Ryujinx
 pocket dev my-app-main   # build + serve in the browser
 pocket psp my-app        # build the PSP EBOOT
 pocket vita my-app       # build the PS Vita VPK
+pocket switch my-app     # build the Nintendo Switch NRO
 pocket hw my-app         # build + run on a real PSP over PSPLINK
 pocket psplink           # interactive multi-app switcher on a real PSP
 pocket devtools my-app   # DevTools panel + USB debug bridge, one command
@@ -36,9 +40,11 @@ pocket doctor
 `check`, `compile`, and `build` delegate to PocketJS's canonical manifest
 resolver. `pocket.json` owns the framework, entry, output, viewport and API
 requirements; the target backend consumes the resulting build plan. Arguments
-after `--` go to the selected PSP or Vita backend. The low-level `dev`, `psp`,
-`vita`, `hw`, `psplink`, `devtools`, and `tape` commands remain available for
-framework demos and host development.
+after `--` go to the selected PSP, Vita, or Switch backend. The low-level
+`dev`, `psp`, `vita`, `switch`, `hw`, `psplink`, `devtools`, and `tape` commands
+remain available for framework demos and host development. Switch's devkitPro,
+Rust, packaging, and Ryujinx prerequisites are documented in
+[`hosts/switch/README.md`](../../hosts/switch/README.md).
 
 Only Node ≥ 18 is required for the CLI itself; everything it diagnoses or
 installs is for building PocketJS apps. See the

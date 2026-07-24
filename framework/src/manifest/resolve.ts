@@ -157,13 +157,14 @@ function resolveViewport(
     ok = false;
   }
   if (presentation === "integer-fit") {
-    const x = physicalViewport[0] / logical[0];
-    const y = physicalViewport[1] / logical[1];
-    if (!Number.isInteger(x) || x < 1 || x !== y) {
+    const scale = Math.floor(
+      Math.min(physicalViewport[0] / logical[0], physicalViewport[1] / logical[1]),
+    );
+    if (scale < 1) {
       diagnostics.push({
         code: "viewport.integerFitMismatch",
         path: fixedPath,
-        message: "integer-fit requires one positive integer scale on both axes",
+        message: "integer-fit requires the logical viewport to fit at a positive integer scale",
       });
       ok = false;
     }
@@ -348,6 +349,7 @@ export function resolveBuildPlan(
     app: {
       id: manifest.id,
       title: manifest.title,
+      version: manifest.version,
       entry: manifest.app.entry,
       output,
       framework: manifest.app.framework,

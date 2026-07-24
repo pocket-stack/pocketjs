@@ -23,6 +23,13 @@ apps/launcher/covers/
 hosts/web/pocketjs.wasm
 # generated per-demo XMB metadata (tools/psp.ts, from apps/<app>/psp/Psp.toml)
 hosts/psp/Psp.toml
+# generated Switch host inputs and devkitPro outputs
+hosts/switch/romfs/
+hosts/switch/build/
+hosts/switch/pocketjs-switch.elf
+hosts/switch/pocketjs-switch.map
+hosts/switch/pocketjs-switch.nacp
+hosts/switch/pocketjs-switch.nro
 # Obsolete checkout-local SDK location; bootstrap uses the shared cache.
 mipsel-sony-psp/
 # golden-mismatch dumps written by tests/golden.ts

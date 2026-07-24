@@ -24,6 +24,7 @@ const VPK = `${RELEASE_DIR}/pocketjs-vita.vpk`;
 const VPK_STAMP = `${VPK}.play.json`;
 const PLAY_DIR = `${ROOT}dist/play-vita`;
 const PLAY_CONFIG = `${PLAY_DIR}/config.yml`;
+const SWITCH_PLAY_DIR = `${ROOT}dist/play-switch`;
 
 const defaultVita3kApp = [`${HOME}/Applications/Vita3K.app`, "/Applications/Vita3K.app"].find(
   existsSync,
@@ -37,11 +38,21 @@ const defaultConfig =
     ? `${HOME}/Library/Application Support/Vita3K/Vita3K/config.yml`
     : `${HOME}/.config/Vita3K/config.yml`;
 const sourceConfig = process.env.VITA3K_CONFIG || defaultConfig;
+const defaultRyujinxApp = ["/Applications/Ryujinx.app", `${HOME}/Applications/Ryujinx.app`].find(
+  existsSync,
+);
+const ryujinxApp = process.env.RYUJINX_APP || defaultRyujinxApp;
+const ryujinxCandidate =
+  process.env.RYUJINX ||
+  (ryujinxApp ? `${ryujinxApp}/Contents/MacOS/Ryujinx` : Bun.which("Ryujinx"));
+const ryujinx = ryujinxCandidate?.includes("/")
+  ? ryujinxCandidate
+  : Bun.which(ryujinxCandidate ?? "");
 
 function demos(): string[] {
   const root = `${ROOT}apps`;
   return readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && existsSync(`${root}/${entry.name}/main.tsx`))
+    .filter((entry) => entry.isDirectory() && existsSync(`${root}/${entry.name}/pocket.json`))
     .map((entry) => entry.name)
     .sort();
 }
@@ -49,7 +60,7 @@ function demos(): string[] {
 function usage(message?: string): never {
   if (message) console.error(`play: ${message}\n`);
   console.error(
-    "usage: bun play vita <demo> [--fullscreen] [--no-build] [--no-launch] [--framework=solid|vue-vapor]\n" +
+    "usage: bun play <vita|switch> <demo> [--fullscreen] [--no-build] [--no-launch] [--framework=solid|vue-vapor]\n" +
       `demos: ${demos().join(", ")}`,
   );
   process.exit(message ? 2 : 0);
@@ -78,14 +89,129 @@ function vitaFsFrom(configPath: string, config: string): string {
   return configured || `${dirname(configPath)}/fs`;
 }
 
-function vpkSha256(): string {
-  return createHash("sha256").update(readFileSync(VPK)).digest("hex");
+function sha256(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
 async function run(command: string[], label: string): Promise<void> {
   const proc = Bun.spawn(command, { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
   const code = await proc.exited;
   if (code !== 0) throw new Error(`${label} failed with exit code ${code}`);
+}
+
+function playManifest(
+  demo: string,
+  fallbackFramework: string,
+  frameworkOverride?: string,
+): {
+  manifest: Record<string, any>;
+  path: string;
+  framework: string;
+} {
+  const manifest = demoManifestFor(ROOT, demo, fallbackFramework) as Record<string, any>;
+  const framework = manifest.app?.framework;
+  if (typeof framework !== "string" || framework.length === 0) {
+    throw new Error(`demo ${demo} has no app.framework`);
+  }
+  if (frameworkOverride && frameworkOverride !== framework) {
+    throw new Error(
+      `demo ${demo} owns framework ${framework}; remove --framework=${frameworkOverride} or use --framework=${framework}`,
+    );
+  }
+  const path = `${ROOT}.pocket/play/${demo}.json`;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n");
+  return { manifest, path, framework };
+}
+
+async function playSwitch(
+  demo: string,
+  fallbackFramework: string,
+  frameworkOverride: string | undefined,
+  noBuild: boolean,
+  noLaunch: boolean,
+): Promise<never> {
+  const { manifest, path: manifestPath, framework } = playManifest(
+    demo,
+    fallbackFramework,
+    frameworkOverride,
+  );
+  const output = manifest.app?.output;
+  if (typeof output !== "string" || output.length === 0) {
+    throw new Error(`demo ${demo} has no app.output`);
+  }
+  const nro = `${ROOT}dist/switch/${output}.nro`;
+  const stamp = `${SWITCH_PLAY_DIR}/${output}.json`;
+
+  if (!noBuild) {
+    rmSync(nro, { force: true });
+    rmSync(stamp, { force: true });
+    console.log(`PocketJS play: building ${demo} for Nintendo Switch ...`);
+    await run(
+      [
+        Bun.which("bun") ?? "bun",
+        "tools/pocket.ts",
+        "build",
+        "--target",
+        "switch",
+        "--manifest",
+        manifestPath,
+        "--project-root",
+        ROOT,
+        "--",
+        "--release",
+      ],
+      "Switch build",
+    );
+    if (!existsSync(nro)) throw new Error(`Switch build did not produce ${nro}`);
+    mkdirSync(SWITCH_PLAY_DIR, { recursive: true });
+    writeFileSync(stamp, JSON.stringify({ demo, framework, sha256: sha256(nro) }) + "\n");
+  } else {
+    if (!existsSync(nro)) {
+      throw new Error(`NRO not found at ${nro}; remove --no-build and retry`);
+    }
+    let cached: { demo?: string; framework?: string; sha256?: string } = {};
+    try {
+      cached = JSON.parse(readFileSync(stamp, "utf8"));
+    } catch {
+      // The actionable error below covers missing and invalid stamps.
+    }
+    if (
+      cached.demo !== demo ||
+      cached.framework !== framework ||
+      cached.sha256 !== sha256(nro)
+    ) {
+      throw new Error(`the cached NRO is not ${demo}; remove --no-build and retry`);
+    }
+  }
+
+  if (noLaunch) {
+    console.log("PocketJS play: --no-launch requested; emulator not started");
+    process.exit(0);
+  }
+  if (!ryujinx || !existsSync(ryujinx)) {
+    throw new Error(
+      "Ryujinx not found; set RYUJINX/RYUJINX_APP or install /Applications/Ryujinx.app",
+    );
+  }
+
+  const proc = Bun.spawn([ryujinx, nro], {
+    cwd: ROOT,
+    detached: true,
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  const earlyExit = await Promise.race([
+    proc.exited.then((code) => code),
+    Bun.sleep(2_000).then(() => null),
+  ]);
+  if (earlyExit !== null) {
+    throw new Error(`Ryujinx exited during launch with code ${earlyExit}`);
+  }
+  proc.unref();
+  console.log(`PocketJS play: ${demo} is running in Ryujinx`);
+  process.exit(0);
 }
 
 async function stopVita3K(): Promise<void> {
@@ -124,7 +250,7 @@ const args = Bun.argv.slice(2);
 if (args.includes("--help") || args.includes("-h")) usage();
 const platform = args.shift();
 const demoArg = args.shift();
-const playTargets = { vita: true } as const;
+const playTargets = { vita: true, switch: true } as const;
 if (!platform || !(platform in playTargets)) usage(`unsupported platform ${platform ?? "<missing>"}`);
 if (!demoArg) usage("missing demo name");
 
@@ -141,6 +267,21 @@ if (!demos().includes(demo)) usage(`unknown demo ${demoArg}`);
 const identity = demoIdentity(demo);
 const titleId = vitaTitleId(identity.id);
 const stagedApp = `${PLAY_DIR}/${titleId}`;
+const frameworkOverride = framework?.slice("--framework=".length);
+const fallbackFramework =
+  frameworkOverride || (demo.endsWith("vue-vapor") ? "vue-vapor" : "solid");
+
+if (platform === "switch") {
+  if (fullscreen) usage("--fullscreen is not supported by the Switch launcher");
+  await playSwitch(demo, fallbackFramework, frameworkOverride, noBuild, noLaunch);
+}
+
+const { path: manifestPath, framework: actualFramework } = playManifest(
+  demo,
+  fallbackFramework,
+  frameworkOverride,
+);
+
 if (!vita3k || !existsSync(vita3k)) {
   throw new Error("Vita3K not found; set VITA3K/VITA3K_APP or install ~/Applications/Vita3K.app");
 }
@@ -148,14 +289,7 @@ if (!existsSync(sourceConfig)) {
   throw new Error(`Vita3K config not found at ${sourceConfig}; run Vita3K once or set VITA3K_CONFIG`);
 }
 
-const requestedFramework =
-  framework?.slice("--framework=".length) || (demo.endsWith("vue-vapor") ? "vue-vapor" : "solid");
-
 if (!noBuild) {
-  const manifest = demoManifestFor(ROOT, demo, requestedFramework) as Record<string, any>;
-  const manifestPath = `${ROOT}.pocket/play/${demo}.json`;
-  mkdirSync(dirname(manifestPath), { recursive: true });
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
   const buildArgs = [
     Bun.which("bun") ?? "bun",
     "tools/pocket.ts",
@@ -174,7 +308,12 @@ if (!noBuild) {
 }
 if (!existsSync(VPK)) throw new Error(`VPK not found at ${VPK}; remove --no-build and retry`);
 if (!noBuild) {
-  writeFileSync(VPK_STAMP, JSON.stringify({ demo, framework: requestedFramework, titleId, sha256: vpkSha256() }));
+  writeFileSync(VPK_STAMP, JSON.stringify({
+    demo,
+    framework: actualFramework,
+    titleId,
+    sha256: sha256(VPK),
+  }));
 } else {
   let cached: { demo?: string; framework?: string; titleId?: string; sha256?: string } = {};
   try {
@@ -185,9 +324,9 @@ if (!noBuild) {
   }
   if (
     cached.demo !== demo ||
-    cached.framework !== requestedFramework ||
+    cached.framework !== actualFramework ||
     cached.titleId !== titleId ||
-    cached.sha256 !== vpkSha256()
+    cached.sha256 !== sha256(VPK)
   ) {
     throw new Error(`the cached VPK is not ${demo}; remove --no-build and retry`);
   }
