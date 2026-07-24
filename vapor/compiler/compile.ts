@@ -32,7 +32,7 @@ export interface DebugSlot {
   kind: "num" | "bool" | "str" | "listLen";
 }
 
-export type VaporTargetName = "gba" | "gb" | "nes" | "esp32";
+export type VaporTargetName = "gba" | "gb" | "nes" | "esp32" | "playdate";
 
 export interface VaporTarget {
   name: VaporTargetName;
@@ -51,6 +51,7 @@ export const VAPOR_TARGETS: Record<VaporTargetName, VaporTarget> = {
   gb: { name: "gb", width: 20, height: 18, poolCap: 32, strCap: 24 },
   nes: { name: "nes", width: 22, height: 18, poolCap: 8, strCap: 20 },
   esp32: { name: "esp32", width: 20, height: 18, poolCap: 32, strCap: 24 },
+  playdate: { name: "playdate", width: 50, height: 30, poolCap: 32, strCap: 24 },
 };
 
 export interface CompiledApp {
@@ -850,7 +851,7 @@ class AppCompiler {
     e = this.unparen(e);
     if (ts.isConditionalExpression(e)) {
       const cond = this.compileExpr(e.condition, out, ind);
-      out.push(`${ind}if (${this.truthy(cond)}) {`);
+      out.push(`${ind}if ${this.condition(cond)} {`);
       this.compileViewInto(e.whenTrue, target, out, ind + "  ");
       out.push(`${ind}} else {`);
       this.compileViewInto(e.whenFalse, target, out, ind + "  ");
@@ -877,7 +878,7 @@ class AppCompiler {
         this.scope.set(param, { kind: "local", cName: p, ty: { k: "obj", iface, listRef } });
         const pred = this.compileExpr(arrow.body, out, ind + "    ");
         this.scope = saved;
-        out.push(`${ind}    if (${this.truthy(pred)}) ${target}.idx[${target}.len++] = ${src.at(i)};`);
+        out.push(`${ind}    if ${this.condition(pred)} ${target}.idx[${target}.len++] = ${src.at(i)};`);
         out.push(`${ind}  }`);
         out.push(`${ind}}`);
         return;
@@ -942,6 +943,11 @@ class AppCompiler {
   private truthy(v: { c: string; ty: Ty }): string {
     if (v.ty.k === "obj") return `(${v.c} != 0)`;
     return v.c;
+  }
+
+  private condition(v: { c: string; ty: Ty }): string {
+    const c = this.truthy(v);
+    return c.startsWith("(") && c.endsWith(")") ? c : `(${c})`;
   }
 
   // ---- scalar expression compilation ---------------------------------------
@@ -1202,7 +1208,7 @@ class AppCompiler {
     }
     if (ts.isIfStatement(stmt)) {
       const cond = this.compileExpr(stmt.expression, out, ind);
-      out.push(`${ind}if (${this.truthy(cond)}) {`);
+      out.push(`${ind}if ${this.condition(cond)} {`);
       this.compileStmt(stmt.thenStatement, out, ind + "  ");
       if (stmt.elseStatement) {
         out.push(`${ind}} else {`);
@@ -1760,7 +1766,7 @@ class AppCompiler {
       const prevCtx = this.propsCtx;
       this.propsCtx = ctx ?? prevCtx;
       y = this.rowConstY(src);
-      out.push(`  if (${this.truthy(cond)}) {`);
+      out.push(`  if ${this.condition(cond)} {`);
       this.compileRowPaint(src, String(y), out, "    ");
       out.push(`  }`);
       this.propsCtx = prevCtx;
@@ -2070,7 +2076,8 @@ class AppCompiler {
     const romStrings =
       [...this.strLits.keys()].reduce((a, s) => a + s.length + 1, 0) + this.title.length + 1;
     const pairCount = this.styleTable.pairs.length;
-    const fontBytes = this.target.name === "esp32" ? 95 * 8 : 95 * 32;
+    const fontBytes =
+      this.target.name === "esp32" || this.target.name === "playdate" ? 95 * 8 : 95 * 32;
     const styleBytes =
       this.target.name === "gba"
         ? pairCount * 16 * 2 + pairCount + 3
@@ -2119,8 +2126,8 @@ function emitFontGba(): string {
   return `const u8 vp_font_tiles[] = { ${bytes.join(",")} };`;
 }
 
-/** ESP32: one byte per 8-pixel row, MSB = leftmost pixel. */
-function emitFontEsp32(): string {
+/** 1bpp raster targets: one byte per 8-pixel row, MSB = leftmost pixel. */
+function emitFont1bpp(): string {
   const bytes: number[] = [];
   for (let g = 0; g < 95; g++) bytes.push(...FONT8[g]);
   return `const u8 vp_font_tiles[] = { ${bytes.join(",")} };`;
@@ -2206,13 +2213,15 @@ function emitTargetData(target: VaporTarget, styles: StyleTable): string {
       const ink = styles.pairs.map((pair) => rgb565(pair.ink));
       const paper = styles.pairs.map((pair) => rgb565(pair.paper));
       return (
-        `${emitFontEsp32()}\n` +
+        `${emitFont1bpp()}\n` +
         `const u16 vp_ink565[] = { ${ink.join(",")} };\n` +
         `const u16 vp_paper565[] = { ${paper.join(",")} };\n` +
         `const u16 vp_backdrop = ${rgb565(BACKDROP)};\n` +
         styleTable
       );
     }
+    case "playdate":
+      return `${emitFont1bpp()}\n${styleTable}`;
     case "gb":
       return `${emitFontGb()}\n${styleTable}`;
     case "nes":
