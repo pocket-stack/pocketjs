@@ -17,7 +17,7 @@ pocketjs/
 │                 cargo-psp/vitasdk need lone crates; see engine/core/Cargo.toml)
 ├─ hosts/        Surfaces: every embedding of the cores
 │  ├─ psp/        QuickJS + rust-psp EBOOT host
-│  ├─ vita/       QuickJS + vitasdk VPK host
+│  ├─ vita/       Vita host
 │  ├─ switch/     QuickJS + libnx/Rust NRO host
 │  ├─ web/        browser dev host (wasm core)
 │  └─ sim/        deterministic headless simulation host (docs/DETERMINISM.md)
