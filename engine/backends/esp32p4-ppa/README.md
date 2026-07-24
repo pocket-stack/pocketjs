@@ -24,6 +24,29 @@ Gradients, arbitrary triangles, textured triangles, and unsupported texture
 formats fall back to `pocketjs_core::raster::render_scaled_rgb565_over`.
 No full-frame RGB888 or ARGB8888 surface is allocated.
 
+## Incremental rendering
+
+`Renderer::render_incremental` uses the backend-independent
+`pocketjs_core::damage::DamageTracker` to compare the current DrawList with
+the DrawList that produced a persistent RGB565 target. Changed operation
+bounds are collected into up to 8 disjoint logical damage rectangles. Each
+rectangle is cleared and the current DrawList is replayed through that
+rectangle's scissor, preserving normal painter order and translucent
+composition without touching unchanged pixels.
+
+Keep one `RenderTargetState` per framebuffer. This is required for
+double-buffered hosts because each target contains a different older frame.
+The first render and structural DrawList changes use a conservative full
+redraw. This backend additionally promotes damage covering at least 75
+percent of the viewport; that transaction-cost policy is deliberately kept
+outside the common damage planner.
+
+Core-managed texture, font, and style mutations bump `Ui::raster_revision()`,
+so every `RenderTargetState` automatically forces a complete repaint and the
+renderer drops texture classifications even when DrawList handles stay
+unchanged. Call `Renderer::invalidate_resources()` and explicitly invalidate
+target states only for output-affecting changes performed outside `Ui`.
+
 ## Test
 
 Run the portable renderer and pixel-parity tests on the host:

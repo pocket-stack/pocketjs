@@ -12,6 +12,10 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+use pocketjs_core::damage::{
+    DamagePlan, DamagePolicy, DamageRect as Clip, DamageTarget, DamageTracker,
+    DEFAULT_DAMAGE_REGIONS,
+};
 use pocketjs_core::raster::{
     coverage_index, linear_sample_coordinates, pack_rgb565, render_scaled_rgb565_over,
 };
@@ -25,6 +29,9 @@ pub use esp_idf::EspIdfPpaOps;
 const MASK_ALIGNMENT: usize = 128;
 const CLIP_DEPTH: usize = 32;
 const TEXTURE_CLASS_CACHE_LEN: usize = 64;
+const MAX_DAMAGE_REGIONS: usize = DEFAULT_DAMAGE_REGIONS;
+const FULL_REDRAW_PERCENT: u8 = 75;
+const DAMAGE_TARGET_SIGNATURE: u64 = u32::from_be_bytes(*b"PPA5") as u64;
 
 /// Integer pixel rectangle, using half-open bounds.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -140,7 +147,18 @@ pub struct RenderStats {
     pub ppa_srm: u32,
     pub software_ops: u32,
     pub software_words: u32,
+    /// Number of disjoint physical framebuffer regions repainted.
+    pub damage_regions: u32,
+    /// Total physical pixels repainted across all damage regions.
+    pub damage_pixels: u32,
+    /// Bounding rectangle of every repainted physical region.
+    pub damage_bounds: Rect,
+    /// True for an initial, invalidated, or heuristically promoted full frame.
+    pub full_redraw: bool,
 }
+
+/// Core damage snapshot describing the pixels stored in one framebuffer.
+pub type RenderTargetState = DamageTracker<MAX_DAMAGE_REGIONS>;
 
 /// Persistent DrawList renderer. The A8 plane and fallback word buffer are
 /// reused across frames.
@@ -151,6 +169,7 @@ pub struct Renderer {
     mask_len: usize,
     fallback_words: Vec<u32>,
     alpha_texture_cache: Vec<(i32, bool)>,
+    raster_revision: u64,
 }
 
 impl Renderer {
@@ -165,11 +184,27 @@ impl Renderer {
             mask_len: 0,
             fallback_words: Vec::with_capacity(16),
             alpha_texture_cache: Vec::new(),
+            raster_revision: 0,
         })
     }
 
     pub fn config(&self) -> RendererConfig {
         self.config
+    }
+
+    /// Drop classifications derived from texture bytes after resources are
+    /// changed in place. Framebuffer states must be invalidated separately.
+    pub fn invalidate_resources(&mut self) {
+        self.alpha_texture_cache.clear();
+        self.raster_revision = 0;
+    }
+
+    fn sync_resources(&mut self, ui: &Ui) {
+        let revision = ui.raster_revision();
+        if self.raster_revision != revision {
+            self.alpha_texture_cache.clear();
+            self.raster_revision = revision;
+        }
     }
 
     /// Render a complete DrawList. `destination` dimensions must equal the
@@ -183,6 +218,60 @@ impl Renderer {
         height: u32,
         ppa: &mut O,
     ) -> Option<RenderStats> {
+        self.sync_resources(ui);
+        let screen = self.target_screen(ui, destination, width, height)?;
+        let damage = DamagePlan::<MAX_DAMAGE_REGIONS>::full(screen);
+        self.render_damage(ui, words, destination, width, height, &damage, true, ppa)
+    }
+
+    /// Repaint only pixels whose DrawList operations differ from the snapshot
+    /// stored in `target`.
+    ///
+    /// The destination must retain the pixels produced by the same
+    /// `RenderTargetState`; double-buffered hosts therefore keep one state per
+    /// buffer. Structural DrawList changes, invalidated resources, and damage
+    /// covering most of the screen conservatively fall back to a full redraw.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_incremental<O: PpaOps>(
+        &mut self,
+        target: &mut RenderTargetState,
+        ui: &Ui,
+        words: &[u32],
+        destination: &mut [u16],
+        width: u32,
+        height: u32,
+        ppa: &mut O,
+    ) -> Option<RenderStats> {
+        self.sync_resources(ui);
+        self.target_screen(ui, destination, width, height)?;
+        let damage_target =
+            DamageTarget::new(width, height, self.config.scale, DAMAGE_TARGET_SIGNATURE);
+        let damage = target
+            .prepare(ui, words, damage_target)
+            .ok()?
+            .with_policy(DamagePolicy::new(FULL_REDRAW_PERCENT))
+            .ok()?;
+        let full_redraw = damage.is_full_redraw();
+
+        let result = self.render_damage(
+            ui,
+            words,
+            destination,
+            width,
+            height,
+            &damage,
+            full_redraw,
+            ppa,
+        );
+        if result.is_some() {
+            target.commit(ui, words, damage_target);
+        } else {
+            target.invalidate();
+        }
+        result
+    }
+
+    fn target_screen(&self, ui: &Ui, destination: &[u16], width: u32, height: u32) -> Option<Clip> {
         let scale = self.config.scale;
         let (viewport_w, viewport_h) = ui.viewport();
         if viewport_w as u32 * scale != width
@@ -191,27 +280,78 @@ impl Renderer {
         {
             return None;
         }
-        self.ensure_mask(destination.len());
-        let screen = Clip {
+        Some(Clip {
             x0: 0,
             y0: 0,
             x1: viewport_w as i32,
             y1: viewport_h as i32,
-        };
-        let mut stats = RenderStats::default();
+        })
+    }
 
-        let full = Rect {
-            x: 0,
-            y: 0,
-            w: width,
-            h: height,
+    #[allow(clippy::too_many_arguments)]
+    fn render_damage<O: PpaOps>(
+        &mut self,
+        ui: &Ui,
+        words: &[u32],
+        destination: &mut [u16],
+        width: u32,
+        height: u32,
+        damage: &DamagePlan<MAX_DAMAGE_REGIONS>,
+        full_redraw: bool,
+        ppa: &mut O,
+    ) -> Option<RenderStats> {
+        let scale = self.config.scale;
+        let mut stats = RenderStats {
+            damage_regions: damage.region_count() as u32,
+            damage_pixels: damage
+                .area()
+                .saturating_mul(scale as u64)
+                .saturating_mul(scale as u64)
+                .min(u32::MAX as u64) as u32,
+            damage_bounds: physical_rect(damage.bounds(), scale),
+            full_redraw,
+            ..RenderStats::default()
         };
-        if ppa.fill_rgb565(destination, width, height, full, 0) {
-            stats.ppa_fills += 1;
-        } else {
-            destination.fill(0);
+        if damage.is_empty() {
+            return Some(stats);
         }
 
+        self.ensure_mask(destination.len());
+        for &region in damage.regions() {
+            let physical = physical_rect(region, scale);
+            if physical.area() >= self.config.min_fill_pixels
+                && ppa.fill_rgb565(destination, width, height, physical, 0)
+            {
+                stats.ppa_fills += 1;
+            } else {
+                fill_rgb565_rect(destination, width, physical, 0);
+            }
+            self.render_region(
+                ui,
+                words,
+                destination,
+                width,
+                height,
+                region,
+                ppa,
+                &mut stats,
+            )?;
+        }
+        Some(stats)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_region<O: PpaOps>(
+        &mut self,
+        ui: &Ui,
+        words: &[u32],
+        destination: &mut [u16],
+        width: u32,
+        height: u32,
+        screen: Clip,
+        ppa: &mut O,
+        stats: &mut RenderStats,
+    ) -> Option<()> {
         let mut stack = [screen; CLIP_DEPTH];
         let mut depth = 0usize;
         let mut clip = screen;
@@ -222,24 +362,27 @@ impl Renderer {
                     let rect = logical_rect(words[i + 1], words[i + 2]).intersect(clip);
                     let op = &words[i..i + 4];
                     if !rect.is_empty()
-                        && self.try_rect(
+                        && !self.try_rect(
                             destination,
                             width,
                             height,
                             rect,
                             words[i + 3],
                             ppa,
-                            &mut stats,
+                            stats,
                         )
                     {
-                        i += 4;
-                    } else {
-                        self.software_op(ui, destination, clip, op, &mut stats);
-                        i += 4;
+                        self.software_op(ui, destination, clip, op, stats);
                     }
+                    i += 4;
                 }
                 spec::draw_op::GRAD_RECT if i + 6 <= words.len() => {
-                    self.software_op(ui, destination, clip, &words[i..i + 6], &mut stats);
+                    if !logical_rect(words[i + 1], words[i + 2])
+                        .intersect(clip)
+                        .is_empty()
+                    {
+                        self.software_op(ui, destination, clip, &words[i..i + 6], stats);
+                    }
                     i += 6;
                 }
                 spec::draw_op::GLYPH_RUN if i + 3 <= words.len() => {
@@ -248,21 +391,22 @@ impl Renderer {
                     if next > words.len() {
                         return None;
                     }
-                    if !self.try_glyph_run(
-                        ui,
-                        destination,
-                        width,
-                        height,
-                        clip,
-                        &words[i..next],
-                        ppa,
-                        &mut stats,
-                    ) {
-                        self.software_op(ui, destination, clip, &words[i..next], &mut stats);
+                    let op = &words[i..next];
+                    if !glyph_run_bounds(ui, op, clip).is_empty()
+                        && !self.try_glyph_run(ui, destination, width, height, clip, op, ppa, stats)
+                    {
+                        self.software_op(ui, destination, clip, op, stats);
                     }
                     i = next;
                 }
                 spec::draw_op::TEX_QUAD if i + 9 <= words.len() => {
+                    if logical_rect(words[i + 2], words[i + 3])
+                        .intersect(clip)
+                        .is_empty()
+                    {
+                        i += 9;
+                        continue;
+                    }
                     let next = self.try_tex_quad_run(
                         ui,
                         words,
@@ -272,12 +416,12 @@ impl Renderer {
                         height,
                         clip,
                         ppa,
-                        &mut stats,
+                        stats,
                     );
                     if let Some(next) = next {
                         i = next;
                     } else {
-                        self.software_op(ui, destination, clip, &words[i..i + 9], &mut stats);
+                        self.software_op(ui, destination, clip, &words[i..i + 9], stats);
                         i += 9;
                     }
                 }
@@ -300,17 +444,23 @@ impl Renderer {
                     i += 1;
                 }
                 spec::draw_op::TRI if i + 7 <= words.len() => {
-                    self.software_op(ui, destination, clip, &words[i..i + 7], &mut stats);
+                    if !triangle_bounds([words[i + 1], words[i + 2], words[i + 3]], clip).is_empty()
+                    {
+                        self.software_op(ui, destination, clip, &words[i..i + 7], stats);
+                    }
                     i += 7;
                 }
                 spec::draw_op::TEX_TRI if i + 12 <= words.len() => {
-                    self.software_op(ui, destination, clip, &words[i..i + 12], &mut stats);
+                    if !triangle_bounds([words[i + 2], words[i + 5], words[i + 8]], clip).is_empty()
+                    {
+                        self.software_op(ui, destination, clip, &words[i..i + 12], stats);
+                    }
                     i += 12;
                 }
                 _ => return None,
             }
         }
-        Some(stats)
+        Some(())
     }
 
     fn try_rect<O: PpaOps>(
@@ -606,51 +756,40 @@ impl Renderer {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Clip {
-    x0: i32,
-    y0: i32,
-    x1: i32,
-    y1: i32,
+fn glyph_run_bounds(ui: &Ui, words: &[u32], clip: Clip) -> Clip {
+    if words.len() < 3 || words[2] >> 24 == 0 {
+        return Clip::empty();
+    }
+    let slot = (words[1] & 0xff) as u8;
+    let Some(atlas) = ui.font_atlas(slot) else {
+        return Clip::empty();
+    };
+    let mut bounds = Clip::empty();
+    for glyph in words[3..].chunks_exact(2) {
+        let gid = (glyph[1] & 0xffff) as u16;
+        if gid >= atlas.glyph_count {
+            continue;
+        }
+        let (x, y) = xy(glyph[0]);
+        bounds = bounds.union(Clip {
+            x0: x,
+            y0: y,
+            x1: x + atlas.cell_w as i32,
+            y1: y + atlas.cell_h as i32,
+        });
+    }
+    bounds.intersect(clip)
 }
 
-impl Clip {
-    const fn empty() -> Self {
-        Self {
-            x0: i32::MAX,
-            y0: i32::MAX,
-            x1: i32::MIN,
-            y1: i32::MIN,
-        }
+fn triangle_bounds(vertices: [u32; 3], clip: Clip) -> Clip {
+    let [(x0, y0), (x1, y1), (x2, y2)] = vertices.map(xy);
+    Clip {
+        x0: x0.min(x1).min(x2),
+        y0: y0.min(y1).min(y2),
+        x1: x0.max(x1).max(x2),
+        y1: y0.max(y1).max(y2),
     }
-
-    fn intersect(self, other: Self) -> Self {
-        Self {
-            x0: self.x0.max(other.x0),
-            y0: self.y0.max(other.y0),
-            x1: self.x1.min(other.x1),
-            y1: self.y1.min(other.y1),
-        }
-    }
-
-    fn union(self, other: Self) -> Self {
-        if self.is_empty() {
-            return other;
-        }
-        if other.is_empty() {
-            return self;
-        }
-        Self {
-            x0: self.x0.min(other.x0),
-            y0: self.y0.min(other.y0),
-            x1: self.x1.max(other.x1),
-            y1: self.y1.max(other.y1),
-        }
-    }
-
-    fn is_empty(self) -> bool {
-        self.x0 >= self.x1 || self.y0 >= self.y1
-    }
+    .intersect(clip)
 }
 
 #[inline]
@@ -688,6 +827,13 @@ fn physical_rect(clip: Clip, scale: u32) -> Rect {
         y: clip.y0 as u32 * scale,
         w: (clip.x1 - clip.x0) as u32 * scale,
         h: (clip.y1 - clip.y0) as u32 * scale,
+    }
+}
+
+fn fill_rgb565_rect(destination: &mut [u16], stride: u32, rect: Rect, color: u16) {
+    for y in rect.y..rect.y + rect.h {
+        let start = y as usize * stride as usize + rect.x as usize;
+        destination[start..start + rect.w as usize].fill(color);
     }
 }
 
@@ -1039,6 +1185,349 @@ mod tests {
             min_srm_pixels: 1,
         })
         .unwrap()
+    }
+
+    #[test]
+    fn core_resource_revision_invalidates_texture_classifications() {
+        let mut ui = Ui::new();
+        let mut renderer = renderer();
+        renderer.sync_resources(&ui);
+        renderer.alpha_texture_cache.push((7, true));
+
+        assert_eq!(
+            ui.upload_texture(&[0xff, 0xff], 1, 1, spec::psm::PSM_5650),
+            0
+        );
+        renderer.sync_resources(&ui);
+        assert!(renderer.alpha_texture_cache.is_empty());
+        assert_eq!(renderer.raster_revision, ui.raster_revision());
+    }
+
+    fn full_reference(ui: &Ui, words: &[u32], width: usize, height: usize) -> Vec<u16> {
+        let mut output = vec![0u16; width * height];
+        pocketjs_core::raster::render_scaled_rgb565(ui, words, &mut output, 1);
+        output
+    }
+
+    #[test]
+    fn incremental_render_skips_an_unchanged_target() {
+        let mut ui = Ui::new();
+        ui.set_viewport(16.0, 8.0);
+        let words = [
+            spec::draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(16, 8),
+            0xff20_1008,
+            spec::draw_op::RECT,
+            xy_word(2, 2),
+            wh_word(4, 3),
+            0xff00_00ff,
+        ];
+        let mut output = vec![0u16; 16 * 8];
+        let mut state = RenderTargetState::new();
+        let mut renderer = renderer();
+        let first = renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &words,
+                &mut output,
+                16,
+                8,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+        assert!(first.full_redraw);
+        assert_eq!(first.damage_regions, 1);
+        assert_eq!(first.damage_pixels, 16 * 8);
+
+        let before = output.clone();
+        let mut ppa = MockPpa::default();
+        let second = renderer
+            .render_incremental(&mut state, &ui, &words, &mut output, 16, 8, &mut ppa)
+            .unwrap();
+        assert!(!second.full_redraw);
+        assert_eq!(second.damage_regions, 0);
+        assert_eq!(second.damage_pixels, 0);
+        assert_eq!(ppa.fills + ppa.blends + ppa.srm, 0);
+        assert_eq!(output, before);
+    }
+
+    #[test]
+    fn incremental_render_keeps_disjoint_damage_regions() {
+        let mut ui = Ui::new();
+        ui.set_viewport(32.0, 16.0);
+        let frame = |left: u32, right: u32| {
+            vec![
+                spec::draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(32, 16),
+                0xff20_1008,
+                spec::draw_op::RECT,
+                xy_word(2, 4),
+                wh_word(4, 4),
+                left,
+                spec::draw_op::RECT,
+                xy_word(26, 4),
+                wh_word(4, 4),
+                right,
+                spec::draw_op::GRAD_RECT,
+                xy_word(13, 10),
+                wh_word(6, 3),
+                0xff00_0000,
+                0xffff_ffff,
+                spec::GradDir::ToRight as u32,
+            ]
+        };
+        let previous = frame(0xff00_00ff, 0xff00_ff00);
+        let current = frame(0xffff_0000, 0xffff_ffff);
+        let mut output = vec![0u16; 32 * 16];
+        let mut state = RenderTargetState::new();
+        let mut renderer = renderer();
+        renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &previous,
+                &mut output,
+                32,
+                16,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+
+        let stats = renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &current,
+                &mut output,
+                32,
+                16,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+        assert!(!stats.full_redraw);
+        assert_eq!(stats.damage_regions, 2);
+        assert_eq!(stats.damage_pixels, 32);
+        assert_eq!(stats.software_ops, 0, "unchanged off-damage gradient");
+        assert_eq!(output, full_reference(&ui, &current, 32, 16));
+    }
+
+    #[test]
+    fn incremental_render_merges_a_ninth_region_at_default_capacity() {
+        assert_eq!(MAX_DAMAGE_REGIONS, 8);
+        let mut ui = Ui::new();
+        ui.set_viewport(96.0, 8.0);
+        let frame = |color: u32| {
+            let mut words = vec![
+                spec::draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(96, 8),
+                0xff10_0804,
+            ];
+            for index in 0..9 {
+                words.extend_from_slice(&[
+                    spec::draw_op::RECT,
+                    xy_word((index * 10 + 1) as i16, 2),
+                    wh_word(2, 2),
+                    color,
+                ]);
+            }
+            words
+        };
+        let previous = frame(0xff00_00ff);
+        let current = frame(0xff00_ff00);
+        let mut output = vec![0u16; 96 * 8];
+        let mut state = RenderTargetState::new();
+        let mut renderer = renderer();
+        renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &previous,
+                &mut output,
+                96,
+                8,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+
+        let stats = renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &current,
+                &mut output,
+                96,
+                8,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+        assert!(!stats.full_redraw);
+        assert_eq!(stats.damage_regions, MAX_DAMAGE_REGIONS as u32);
+        assert_eq!(output, full_reference(&ui, &current, 96, 8));
+    }
+
+    #[test]
+    fn incremental_render_replays_unchanged_overlays_in_painter_order() {
+        let mut ui = Ui::new();
+        ui.set_viewport(24.0, 12.0);
+        let frame = |moving_x: i16, moving_color: u32| {
+            vec![
+                spec::draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(24, 12),
+                0xff20_1008,
+                spec::draw_op::RECT,
+                xy_word(moving_x, 2),
+                wh_word(8, 8),
+                moving_color,
+                spec::draw_op::RECT,
+                xy_word(8, 4),
+                wh_word(8, 6),
+                0x8000_ff00,
+            ]
+        };
+        let previous = frame(2, 0x8000_00ff);
+        let current = frame(6, 0x80ff_0000);
+        let mut output = vec![0u16; 24 * 12];
+        let mut state = RenderTargetState::new();
+        let mut renderer = renderer();
+        renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &previous,
+                &mut output,
+                24,
+                12,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+
+        let stats = renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &current,
+                &mut output,
+                24,
+                12,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+        assert!(!stats.full_redraw);
+        assert_eq!(output, full_reference(&ui, &current, 24, 12));
+    }
+
+    #[test]
+    fn incremental_render_tracks_each_double_buffer_independently() {
+        let mut ui = Ui::new();
+        ui.set_viewport(24.0, 8.0);
+        let frame = |x: i16, color: u32| {
+            vec![
+                spec::draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(24, 8),
+                0xff10_0804,
+                spec::draw_op::RECT,
+                xy_word(x, 2),
+                wh_word(3, 3),
+                color,
+            ]
+        };
+        let frames = [
+            frame(1, 0xff00_00ff),
+            frame(5, 0xff00_ff00),
+            frame(9, 0xffff_0000),
+            frame(13, 0xffff_ffff),
+        ];
+        let mut renderer = renderer();
+        let mut states = [RenderTargetState::new(), RenderTargetState::new()];
+        let mut outputs = [vec![0u16; 24 * 8], vec![0u16; 24 * 8]];
+
+        for (index, words) in frames.iter().enumerate() {
+            let target = index & 1;
+            let stats = renderer
+                .render_incremental(
+                    &mut states[target],
+                    &ui,
+                    words,
+                    &mut outputs[target],
+                    24,
+                    8,
+                    &mut MockPpa::default(),
+                )
+                .unwrap();
+            assert_eq!(stats.full_redraw, index < 2);
+            assert_eq!(outputs[target], full_reference(&ui, words, 24, 8));
+        }
+    }
+
+    #[test]
+    fn incremental_render_falls_back_for_structural_changes_and_invalidation() {
+        let mut ui = Ui::new();
+        ui.set_viewport(16.0, 8.0);
+        let previous = vec![
+            spec::draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(16, 8),
+            0xff10_0804,
+            spec::draw_op::RECT,
+            xy_word(2, 2),
+            wh_word(3, 3),
+            0xff00_00ff,
+        ];
+        let current = vec![
+            spec::draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(16, 8),
+            0xff10_0804,
+        ];
+        let mut renderer = renderer();
+        let mut state = RenderTargetState::new();
+        let mut output = vec![0u16; 16 * 8];
+        renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &previous,
+                &mut output,
+                16,
+                8,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+
+        let structural = renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &current,
+                &mut output,
+                16,
+                8,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+        assert!(structural.full_redraw);
+        assert_eq!(output, full_reference(&ui, &current, 16, 8));
+
+        state.invalidate();
+        let invalidated = renderer
+            .render_incremental(
+                &mut state,
+                &ui,
+                &current,
+                &mut output,
+                16,
+                8,
+                &mut MockPpa::default(),
+            )
+            .unwrap();
+        assert!(invalidated.full_redraw);
+        assert_eq!(invalidated.damage_pixels, 16 * 8);
     }
 
     #[test]
