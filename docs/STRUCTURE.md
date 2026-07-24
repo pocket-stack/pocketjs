@@ -19,7 +19,7 @@ pocketjs/
 │                 standalone; see each crate's Cargo.toml for its toolchain)
 ├─ hosts/        Surfaces: every embedding of the cores
 │  ├─ psp/        QuickJS + rust-psp EBOOT host
-│  ├─ vita/       QuickJS + vitasdk VPK host
+│  ├─ vita/       Vita host
 │  ├─ switch/     QuickJS + libnx/Rust NRO host
 │  ├─ esp32p4/    reusable ESP-IDF PPA adapter + component smoke build
 │  ├─ pocketbook/ PocketBook e-reader host (inkview, standalone lone-bin crate)
