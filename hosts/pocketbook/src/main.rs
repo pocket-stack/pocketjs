@@ -90,12 +90,14 @@ fn run(iv: &'static inkview::bindings::Inkview, rx: mpsc::Receiver<Event>) -> Re
 
     let geo = Geometry::for_panel(phys_w, phys_h);
     log::info!(
-        "pocketbook: panel {phys_w}x{phys_h}, logical {}x{} @{}x, render {}x{} +({},{})",
+        "pocketbook: panel {phys_w}x{phys_h}, logical {}x{} @{}x, render {}x{} → disp {}x{} +({},{})",
         geo.logical_w,
         geo.logical_h,
         geo.density,
         geo.render_w,
         geo.render_h,
+        geo.disp_w,
+        geo.disp_h,
         geo.ox,
         geo.oy
     );
@@ -121,11 +123,12 @@ fn run(iv: &'static inkview::bindings::Inkview, rx: mpsc::Receiver<Event>) -> Re
     let mut fb = framebuffer::FramebufferPipeline::new(geo.render_w, geo.render_h, geo.density);
     let mut refresh = refresh::Refresh::new();
     let mut input = input::Input::new(
-        geo.density,
         geo.ox as i32,
         geo.oy as i32,
         geo.logical_w as u32,
         geo.logical_h as u32,
+        geo.disp_w as u32,
+        geo.disp_h as u32,
     );
 
     // First paint: render one frame and full-update so the screen starts clean.
@@ -223,11 +226,11 @@ fn tick(
     if full {
         // Full redraw (first paint / return from background): blit everything
         // and flash the panel once for a clean, ghost-free image.
-        fb.blit_all(screen, geo.ox, geo.oy);
+        fb.blit_all(screen, geo);
         refresh.full(screen);
     } else if !dirty.is_empty() {
-        fb.blit_dirty(screen, &dirty, geo.ox, geo.oy);
-        let screen_dirty = offset_rects(&dirty, geo.ox, geo.oy);
+        fb.blit_dirty(screen, &dirty, geo);
+        let screen_dirty = offset_rects(&dirty, geo);
         refresh.present(screen, &screen_dirty);
     } else {
         // No change this frame; still let the refresh policy run its quiet
@@ -240,15 +243,18 @@ fn tick(
     Ok(())
 }
 
-/// Render-buffer rects → screen rects (integer-fit origin offset).
-fn offset_rects(rects: &[DirtyRect], ox: usize, oy: usize) -> Vec<DirtyRect> {
+/// Render-buffer rects → screen rects via the geometry mapping.
+fn offset_rects(rects: &[DirtyRect], geo: &Geometry) -> Vec<DirtyRect> {
     rects
         .iter()
-        .map(|r| DirtyRect {
-            x: r.x + ox,
-            y: r.y + oy,
-            w: r.w,
-            h: r.h,
+        .map(|r| {
+            let (sx, sy, sw, sh) = geo.render_rect_to_screen(r.x, r.y, r.w, r.h);
+            DirtyRect {
+                x: sx,
+                y: sy,
+                w: sw,
+                h: sh,
+            }
         })
         .collect()
 }
@@ -260,32 +266,88 @@ struct Geometry {
     density: u32,
     render_w: usize,
     render_h: usize,
+    /// Displayed width on the panel after scale-to-fit (≤ render_w).
+    disp_w: usize,
+    /// Displayed height on the panel after scale-to-fit (≤ render_h).
+    disp_h: usize,
+    /// Horizontal centering offset on the panel.
     ox: usize,
+    /// Vertical centering offset on the panel.
     oy: usize,
 }
 
 impl Geometry {
-    /// Present the bundle's fixed 480×272 @2x surface (a 960×544 render) and
-    /// integer-fit center it on the actual panel. The panel size only sets the
-    /// centering offset; the logical viewport and density are fixed to match
-    /// the pocketbook target profile (and stay ≤511/axis, so touch coordinates
-    /// fit the 9-bit wire format).
+    /// Present the bundle's fixed 480×272 @2x surface (a 960×544 render) on
+    /// the actual panel. When the render fits, it is integer-centered. When it
+    /// doesn't (e.g. a 960-wide render on a 758-wide portrait panel like the
+    /// Verse), it is nearest-neighbor scaled down to fit and then centered.
+    /// The logical viewport and density are fixed to match the pocketbook
+    /// target profile (and stay ≤511/axis, so touch coordinates fit the 9-bit
+    /// wire format).
     fn for_panel(phys_w: usize, phys_h: usize) -> Self {
         let logical_w = LOGICAL_W as usize;
         let logical_h = LOGICAL_H as usize;
         let render_w = logical_w * DENSITY as usize;
         let render_h = logical_h * DENSITY as usize;
-        let ox = phys_w.saturating_sub(render_w) / 2;
-        let oy = phys_h.saturating_sub(render_h) / 2;
+
+        let (disp_w, disp_h) = if render_w <= phys_w && render_h <= phys_h {
+            (render_w, render_h)
+        } else {
+            // Scale down to fit: pick the binding axis.
+            // Compare phys_w/render_w vs phys_h/render_h without floats:
+            //   phys_w * render_h < phys_h * render_w  →  width binds
+            if phys_w * render_h < phys_h * render_w {
+                let dw = phys_w;
+                let dh = (render_h * phys_w) / render_w;
+                (dw, dh.max(1))
+            } else {
+                let dh = phys_h;
+                let dw = (render_w * phys_h) / render_h;
+                (dw.max(1), dh)
+            }
+        };
+
+        let ox = phys_w.saturating_sub(disp_w) / 2;
+        let oy = phys_h.saturating_sub(disp_h) / 2;
         Self {
             logical_w,
             logical_h,
             density: DENSITY,
             render_w,
             render_h,
+            disp_w,
+            disp_h,
             ox,
             oy,
         }
+    }
+
+    /// Map a panel x coordinate back to a render-buffer x coordinate.
+    #[inline]
+    fn screen_to_render_x(&self, sx: usize) -> usize {
+        (sx.saturating_sub(self.ox)) * self.render_w / self.disp_w
+    }
+
+    /// Map a panel y coordinate back to a render-buffer y coordinate.
+    #[inline]
+    fn screen_to_render_y(&self, sy: usize) -> usize {
+        (sy.saturating_sub(self.oy)) * self.render_h / self.disp_h
+    }
+
+    /// Conservatively map a render-buffer rect to the screen rect that covers
+    /// every panel pixel sampling from within it.
+    fn render_rect_to_screen(
+        &self,
+        rx: usize,
+        ry: usize,
+        rw: usize,
+        rh: usize,
+    ) -> (usize, usize, usize, usize) {
+        let sx_min = (rx * self.disp_w).div_ceil(self.render_w) + self.ox;
+        let sy_min = (ry * self.disp_h).div_ceil(self.render_h) + self.oy;
+        let sx_max = ((rx + rw) * self.disp_w - 1) / self.render_w + self.ox;
+        let sy_max = ((ry + rh) * self.disp_h - 1) / self.render_h + self.oy;
+        (sx_min, sy_min, sx_max - sx_min + 1, sy_max - sy_min + 1)
     }
 }
 

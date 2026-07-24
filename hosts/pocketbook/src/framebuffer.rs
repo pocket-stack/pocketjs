@@ -13,8 +13,10 @@
 //! writes the RGB triple directly. One blit path therefore serves both gray
 //! and color devices with no host-side conversion.
 
-use inkview::screen::{RGB24, Screen};
-use pocketjs_core::{Ui, raster};
+use inkview::screen::{Screen, RGB24};
+use pocketjs_core::{raster, Ui};
+
+use crate::Geometry;
 
 /// One changed tile, in render-buffer pixel coordinates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,16 +103,21 @@ impl FramebufferPipeline {
         std::mem::swap(&mut self.rgba, &mut self.prev);
     }
 
-    /// Blit changed tiles to the inkview framebuffer at screen offset (ox, oy).
+    /// Blit changed tiles to the inkview framebuffer, scaling through `geo`.
     /// Issues no panel update — the caller drives that through `refresh`.
-    pub fn blit_dirty(&self, screen: &mut Screen, dirty: &[DirtyRect], ox: usize, oy: usize) {
+    pub fn blit_dirty(&self, screen: &mut Screen, dirty: &[DirtyRect], geo: &Geometry) {
         for r in dirty {
-            for y in r.y..(r.y + r.h) {
-                for x in r.x..(r.x + r.w) {
-                    let i = (y * self.w + x) * 4;
+            let (sx_min, sy_min, sw, sh) = geo.render_rect_to_screen(r.x, r.y, r.w, r.h);
+            for dy in 0..sh {
+                let sy = sy_min + dy;
+                let src_y = geo.screen_to_render_y(sy);
+                for dx in 0..sw {
+                    let sx = sx_min + dx;
+                    let src_x = geo.screen_to_render_x(sx);
+                    let i = (src_y * self.w + src_x) * 4;
                     screen.draw(
-                        x + ox,
-                        y + oy,
+                        sx,
+                        sy,
                         RGB24(self.rgba[i], self.rgba[i + 1], self.rgba[i + 2]),
                     );
                 }
@@ -118,14 +125,17 @@ impl FramebufferPipeline {
         }
     }
 
-    /// Full-buffer blit at offset (used on Show / before a full_update).
-    pub fn blit_all(&self, screen: &mut Screen, ox: usize, oy: usize) {
-        for y in 0..self.h {
-            for x in 0..self.w {
-                let i = (y * self.w + x) * 4;
+    /// Full-buffer blit scaled through `geo` (used on Show / before a
+    /// full_update).
+    pub fn blit_all(&self, screen: &mut Screen, geo: &Geometry) {
+        for sy in geo.oy..(geo.oy + geo.disp_h) {
+            let src_y = geo.screen_to_render_y(sy);
+            for sx in geo.ox..(geo.ox + geo.disp_w) {
+                let src_x = geo.screen_to_render_x(sx);
+                let i = (src_y * self.w + src_x) * 4;
                 screen.draw(
-                    x + ox,
-                    y + oy,
+                    sx,
+                    sy,
                     RGB24(self.rgba[i], self.rgba[i + 1], self.rgba[i + 2]),
                 );
             }
@@ -151,7 +161,7 @@ mod tests {
         let mut fb = FramebufferPipeline::new(32, 32, 1);
         solid(&mut fb, 10, 20, 30);
         fb.advance(); // prev = current
-        // Same content again → no diff.
+                      // Same content again → no diff.
         solid(&mut fb, 10, 20, 30);
         assert!(fb.diff().is_empty());
     }
