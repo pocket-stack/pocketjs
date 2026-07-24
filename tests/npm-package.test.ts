@@ -87,6 +87,7 @@ describe("published npm artifacts", () => {
       "hosts/native/ffi.rs",
       "hosts/native/pak.rs",
       "hosts/switch/Makefile",
+      "hosts/switch/README.md",
       "hosts/switch/Cargo.toml",
       "hosts/switch/Cargo.lock",
       "hosts/switch/source/main.c",

@@ -48,6 +48,7 @@
     "hosts/vita/rust-toolchain.toml",
     "hosts/native",
     "hosts/switch/Makefile",
+    "hosts/switch/README.md",
     "hosts/switch/Cargo.toml",
     "hosts/switch/Cargo.lock",
     "hosts/switch/source",

@@ -155,6 +155,7 @@ The grammar is implemented once, as infrastructure every runtime reuses:
 | `pocketjs-psp` (lib) | Guest hosting + `ui` surface, PSP edition: the arena allocator, the QuickJS embedding, the DrawList GE backend (with an overlay mode for 3D compositing), pak feeding, and the DevTools mailbox — everything the 2D EBOOT proved, linkable by game EBOOTs. |
 | `pocket3d-vita` | The 3D substrate, Vita edition: CPU projection and six-plane clipping into vita2d/GXM at 960x544, painter-sorted so a PocketJS HUD can share the same scene. |
 | `pocketjs-vita` (lib) | Guest hosting + `ui` surface, Vita edition: QuickJS, density-2 pak/font resources, controller/dual-analog input, logical-coordinate front-panel contacts and a native-density 960x544 vita2d backend over the portable 480x272 logical layout. |
+| `pocketjs-switch` (lib + libnx shell) | Guest hosting + `ui` surface, Nintendo Switch homebrew edition: a libnx shell owns RomFS, controller input and the 1280x720 framebuffer; a Rust static library owns QuickJS, the shared native `HostOps`, pak feeding and the deterministic density-2 software rasterizer, centered as a 960x544 surface. |
 
 A specialized runtime is then a thin composition. OpenStrike is:
 
