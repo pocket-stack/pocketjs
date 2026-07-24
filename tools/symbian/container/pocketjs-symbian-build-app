@@ -62,6 +62,19 @@ for required in \
 done
 echo "$quickjs_sha256  $quickjs_asset" | sha256sum --check --status
 
+if ! initial_logical_width=$(jq -er '.viewport.logical[0]' "$payload/plan.json") ||
+    ! initial_logical_height=$(jq -er '.viewport.logical[1]' "$payload/plan.json"); then
+    echo "Symbian build plan is missing viewport.logical width/height." >&2
+    exit 1
+fi
+if [[ ! "$initial_logical_width" =~ ^[1-9][0-9]*$ ]] ||
+    [[ ! "$initial_logical_height" =~ ^[1-9][0-9]*$ ]] ||
+    (( 10#$initial_logical_width > 640 )) ||
+    (( 10#$initial_logical_height > 640 )); then
+    echo "Symbian logical viewport must contain integer extents from 1 through 640." >&2
+    exit 1
+fi
+
 if test ! -f "$lock"; then
     echo "Symbian toolchain lock is missing; run setup --yes." >&2
     exit 1
@@ -153,6 +166,8 @@ qmake \
     "POCKETJS_QUICKJS_LIBRARY=$build/libquickjs.a" \
     "POCKETJS_CORE_LIBRARY=$rust_library" \
     "POCKETJS_FRAME_RATE=$(jq -r .runtime.frameRate "$manifest")" \
+    "POCKETJS_INITIAL_LOGICAL_WIDTH=$initial_logical_width" \
+    "POCKETJS_INITIAL_LOGICAL_HEIGHT=$initial_logical_height" \
     pocketjs-e7-runtime.pro
 make -j2
 

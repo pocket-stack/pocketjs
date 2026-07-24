@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QRect>
 #include <QResizeEvent>
+#include <QSize>
 #include <QString>
 #include <QTimerEvent>
 #include <QTouchEvent>
@@ -30,10 +31,18 @@ extern "C" {
 #define POCKETJS_FRAME_RATE 30
 #endif
 
+#ifndef POCKETJS_INITIAL_LOGICAL_WIDTH
+#define POCKETJS_INITIAL_LOGICAL_WIDTH 480
+#endif
+
+#ifndef POCKETJS_INITIAL_LOGICAL_HEIGHT
+#define POCKETJS_INITIAL_LOGICAL_HEIGHT 272
+#endif
+
 namespace {
 
-const int kLogicalWidth = 480;
-const int kLogicalHeight = 272;
+const int kMaximumViewportExtent = 640;
+const int kTouchCoordinateExtent = 512;
 const int kAnalogCenter = 0x8080;
 const int kMaximumTouches = 8;
 
@@ -413,8 +422,11 @@ JSValue hostOperation(
         return JS_NewBool(context, ui_load_font_atlas(bytes, byteLength));
 
     case HostMeasureText:
-        if (!stringArgument(context, argc, argv, 0, &text, &textLength) ||
-            !uintArgument(context, argc, argv, 1, &ua)) {
+        if (!stringArgument(context, argc, argv, 0, &text, &textLength)) {
+            return JS_EXCEPTION;
+        }
+        if (!uintArgument(context, argc, argv, 1, &ua)) {
+            JS_FreeCString(context, text);
             return JS_EXCEPTION;
         }
         da = ui_measure_text(
@@ -480,7 +492,12 @@ void addHostOperation(
     JS_SetPropertyStr(context, object, name, function);
 }
 
-bool installHostOps(JSContext *context, JSValueConst global)
+bool installHostOps(
+    JSContext *context,
+    JSValueConst global,
+    int viewportWidth,
+    int viewportHeight
+)
 {
     JSValue ui = JS_NewObject(context);
     if (JS_IsException(ui)) return false;
@@ -520,13 +537,13 @@ bool installHostOps(JSContext *context, JSValueConst global)
         context,
         viewport,
         "w",
-        JS_NewInt32(context, kLogicalWidth)
+        JS_NewInt32(context, viewportWidth)
     );
     JS_SetPropertyStr(
         context,
         viewport,
         "h",
-        JS_NewInt32(context, kLogicalHeight)
+        JS_NewInt32(context, viewportHeight)
     );
     JS_SetPropertyStr(context, ui, "__viewport", viewport);
 
@@ -585,27 +602,34 @@ protected:
     void timerEvent(QTimerEvent *event);
 
 private:
-    bool initialize();
+    bool initialize(const QSize &viewport);
+    bool applyPendingViewport();
     bool loadResource(const QString &path, QByteArray *bytes);
     bool drainJobs();
+    bool validViewport(const QSize &viewport) const;
     QString takeException(JSContext *context);
     void fail(const QString &message);
+    void queueViewport(const QSize &viewport);
     void runFrame();
-    QRect presentationRect() const;
     void updateTouches(QTouchEvent *event);
 
     JSRuntime *runtime_;
     JSContext *context_;
     JSValue global_;
     JSValue frame_;
+    JSValue resizeViewport_;
     QByteArray appJavaScript_;
     QByteArray appPack_;
     QImage framebuffer_;
     QBasicTimer timer_;
     QLabel *errorLabel_;
     QVector<uint32_t> touches_;
+    QSize viewportSize_;
+    QSize pendingViewportSize_;
     int buttons_;
     bool coreInitialized_;
+    bool initialized_;
+    bool hasPendingViewport_;
     bool failed_;
 };
 
@@ -615,14 +639,21 @@ PocketJsRuntime::PocketJsRuntime()
       context_(0),
       global_(JS_UNDEFINED),
       frame_(JS_UNDEFINED),
+      resizeViewport_(JS_UNDEFINED),
       errorLabel_(new QLabel(this)),
+      pendingViewportSize_(
+          POCKETJS_INITIAL_LOGICAL_WIDTH,
+          POCKETJS_INITIAL_LOGICAL_HEIGHT
+      ),
       buttons_(0),
       coreInitialized_(false),
+      initialized_(false),
+      hasPendingViewport_(true),
       failed_(false)
 {
     setAttribute(Qt::WA_OpaquePaintEvent, true);
     setAttribute(Qt::WA_AcceptTouchEvents, true);
-    setAttribute(Qt::WA_LockLandscapeOrientation, true);
+    setAttribute(Qt::WA_AutoOrientation, true);
     setFocusPolicy(Qt::StrongFocus);
 
     errorLabel_->setAlignment(Qt::AlignCenter);
@@ -638,16 +669,18 @@ PocketJsRuntime::PocketJsRuntime()
     );
     errorLabel_->hide();
 
-    if (initialize()) {
-        const int interval = qMax(1, 1000 / POCKETJS_FRAME_RATE);
-        timer_.start(interval, this);
-    }
+    // QApplication::exec() starts only after main() calls showFullScreen().
+    // The first timer event therefore observes the native fullscreen extent
+    // instead of QWidget's pre-show default geometry.
+    const int interval = qMax(1, 1000 / POCKETJS_FRAME_RATE);
+    timer_.start(interval, this);
 }
 
 PocketJsRuntime::~PocketJsRuntime()
 {
     timer_.stop();
     if (context_ != 0) {
+        JS_FreeValue(context_, resizeViewport_);
         JS_FreeValue(context_, frame_);
         JS_FreeValue(context_, global_);
         JS_FreeContext(context_);
@@ -658,6 +691,9 @@ PocketJsRuntime::~PocketJsRuntime()
         runtime_ = 0;
     }
     if (coreInitialized_) {
+        // QImage borrows the Rust framebuffer without a cleanup callback.
+        // Release that view before ui_shutdown() drops the backing storage.
+        framebuffer_ = QImage();
         ui_shutdown();
         coreInitialized_ = false;
     }
@@ -677,11 +713,32 @@ bool PocketJsRuntime::loadResource(
     return true;
 }
 
-bool PocketJsRuntime::initialize()
+bool PocketJsRuntime::validViewport(const QSize &viewport) const
 {
+    return viewport.width() > 0 &&
+        viewport.height() > 0 &&
+        viewport.width() <= kMaximumViewportExtent &&
+        viewport.height() <= kMaximumViewportExtent;
+}
+
+bool PocketJsRuntime::initialize(const QSize &viewport)
+{
+    if (!validViewport(viewport)) {
+        fail(
+            QString("PocketJS received an invalid initial viewport: %1x%2")
+                .arg(viewport.width())
+                .arg(viewport.height())
+        );
+        return false;
+    }
+
+    viewportSize_ = viewport;
+    pendingViewportSize_ = viewport;
+    hasPendingViewport_ = false;
+
     ui_init(1);
     coreInitialized_ = true;
-    ui_set_viewport(kLogicalWidth, kLogicalHeight);
+    ui_set_viewport(viewport.width(), viewport.height());
 
     if (!loadResource(":/pocketjs/app.js", &appJavaScript_) ||
         !loadResource(":/pocketjs/app.pak", &appPack_)) {
@@ -706,7 +763,11 @@ bool PocketJsRuntime::initialize()
     }
     global_ = JS_GetGlobalObject(context_);
 
-    if (!installHostOps(context_, global_)) {
+    if (!installHostOps(
+            context_,
+            global_,
+            viewport.width(),
+            viewport.height())) {
         fail(takeException(context_));
         return false;
     }
@@ -753,6 +814,22 @@ bool PocketJsRuntime::initialize()
         fail("app.js did not install globalThis.frame");
         return false;
     }
+
+    resizeViewport_ = JS_GetPropertyStr(
+        context_,
+        global_,
+        "__pocketResizeViewport"
+    );
+    if (JS_IsException(resizeViewport_)) {
+        fail(takeException(context_));
+        return false;
+    }
+    if (!JS_IsFunction(context_, resizeViewport_)) {
+        fail("app.js did not install globalThis.__pocketResizeViewport");
+        return false;
+    }
+
+    initialized_ = true;
     return true;
 }
 
@@ -827,6 +904,76 @@ bool PocketJsRuntime::drainJobs()
     return true;
 }
 
+void PocketJsRuntime::queueViewport(const QSize &viewport)
+{
+    // Symbian can report a transient empty extent while changing layout.
+    // Wait for the final non-empty QWidget size rather than resizing the core
+    // to a geometry it cannot render.
+    if (viewport.width() <= 0 || viewport.height() <= 0) return;
+
+    if (initialized_ && viewport == viewportSize_) {
+        pendingViewportSize_ = viewport;
+        hasPendingViewport_ = false;
+        return;
+    }
+    if (hasPendingViewport_ && viewport == pendingViewportSize_) return;
+
+    pendingViewportSize_ = viewport;
+    hasPendingViewport_ = true;
+
+    // Coordinates and held keyboard directions belong to the old screen
+    // orientation. Never deliver them against the replacement layout.
+    buttons_ = 0;
+    touches_.clear();
+}
+
+bool PocketJsRuntime::applyPendingViewport()
+{
+    if (!hasPendingViewport_) return true;
+
+    const QSize viewport = pendingViewportSize_;
+    hasPendingViewport_ = false;
+    if (viewport == viewportSize_) return true;
+    if (!validViewport(viewport)) {
+        fail(
+            QString("PocketJS received an invalid viewport: %1x%2")
+                .arg(viewport.width())
+                .arg(viewport.height())
+        );
+        return false;
+    }
+
+    // framebuffer_ borrows the Rust Vec returned by ui_render_incremental().
+    // Drop that QImage view before ui_set_viewport() clears/reallocates it.
+    framebuffer_ = QImage();
+    ui_set_viewport(viewport.width(), viewport.height());
+    viewportSize_ = viewport;
+    buttons_ = 0;
+    touches_.clear();
+
+    JSValue arguments[2];
+    arguments[0] = JS_NewInt32(context_, viewport.width());
+    arguments[1] = JS_NewInt32(context_, viewport.height());
+    JSValue result = JS_Call(
+        context_,
+        resizeViewport_,
+        global_,
+        2,
+        arguments
+    );
+    JS_FreeValue(context_, arguments[0]);
+    JS_FreeValue(context_, arguments[1]);
+    if (JS_IsException(result)) {
+        fail(takeException(context_));
+        return false;
+    }
+    JS_FreeValue(context_, result);
+    if (!drainJobs()) return false;
+
+    update();
+    return true;
+}
+
 void PocketJsRuntime::runFrame()
 {
     JSValue touchArray = JS_NewArray(context_);
@@ -869,11 +1016,15 @@ void PocketJsRuntime::runFrame()
     const uint32_t stride = ui_framebuffer_stride();
     const size_t length = ui_framebuffer_len();
     if (pixels == 0 ||
-        width != static_cast<uint32_t>(kLogicalWidth) ||
-        height != static_cast<uint32_t>(kLogicalHeight) ||
+        width != static_cast<uint32_t>(viewportSize_.width()) ||
+        height != static_cast<uint32_t>(viewportSize_.height()) ||
         stride < width * 4 ||
         length < static_cast<size_t>(stride) * height) {
-        fail("PocketJS core returned an invalid 480x272 framebuffer");
+        fail(
+            QString("PocketJS core returned an invalid %1x%2 framebuffer")
+                .arg(viewportSize_.width())
+                .arg(viewportSize_.height())
+        );
         return;
     }
 
@@ -887,21 +1038,23 @@ void PocketJsRuntime::runFrame()
     repaint();
 }
 
-QRect PocketJsRuntime::presentationRect() const
-{
-    return QRect(
-        (width() - kLogicalWidth) / 2,
-        (height() - kLogicalHeight) / 2,
-        kLogicalWidth,
-        kLogicalHeight
-    );
-}
-
 void PocketJsRuntime::updateTouches(QTouchEvent *touchEvent)
 {
     touches_.clear();
-    const QRect target = presentationRect();
-    if (target.width() <= 0 || target.height() <= 0) return;
+
+    // The current public frame wire has 9-bit x/y fields. A 640px E7
+    // viewport cannot be represented without truncation, so do not publish
+    // touch contacts until the framework negotiates the wider wire. The
+    // target profile intentionally does not advertise input.touch.
+    if (!initialized_ ||
+        hasPendingViewport_ ||
+        size() != viewportSize_ ||
+        viewportSize_.width() > kTouchCoordinateExtent ||
+        viewportSize_.height() > kTouchCoordinateExtent) {
+        return;
+    }
+
+    const QRect target = rect();
 
     const QList<QTouchEvent::TouchPoint> points = touchEvent->touchPoints();
     for (int index = 0;
@@ -917,16 +1070,10 @@ void PocketJsRuntime::updateTouches(QTouchEvent *touchEvent)
             position.y() >= target.top() + target.height()) {
             continue;
         }
-        int x = static_cast<int>(
-            (position.x() - target.left()) * kLogicalWidth /
-            target.width()
-        );
-        int y = static_cast<int>(
-            (position.y() - target.top()) * kLogicalHeight /
-            target.height()
-        );
-        x = qBound(0, x, kLogicalWidth - 1);
-        y = qBound(0, y, kLogicalHeight - 1);
+        int x = static_cast<int>(position.x() - target.left());
+        int y = static_cast<int>(position.y() - target.top());
+        x = qBound(0, x, viewportSize_.width() - 1);
+        y = qBound(0, y, viewportSize_.height() - 1);
         const uint32_t packed =
             ((static_cast<uint32_t>(point.id()) & 0xff) << 18) |
             ((static_cast<uint32_t>(y) & 0x1ff) << 9) |
@@ -990,12 +1137,13 @@ void PocketJsRuntime::paintEvent(QPaintEvent *)
     painter.fillRect(rect(), Qt::black);
     if (!framebuffer_.isNull() && !failed_) {
         painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
-        painter.drawImage(presentationRect(), framebuffer_);
+        painter.drawImage(0, 0, framebuffer_);
     }
 }
 
 void PocketJsRuntime::resizeEvent(QResizeEvent *event)
 {
+    queueViewport(event->size());
     errorLabel_->setGeometry(rect());
     QWidget::resizeEvent(event);
 }
@@ -1003,7 +1151,21 @@ void PocketJsRuntime::resizeEvent(QResizeEvent *event)
 void PocketJsRuntime::timerEvent(QTimerEvent *event)
 {
     if (event->timerId() == timer_.timerId()) {
-        if (!failed_) runFrame();
+        if (failed_) return;
+
+        // QResizeEvent is authoritative; polling size() is a cheap fallback
+        // for Belle variants that coalesce a native layout notification.
+        queueViewport(size());
+
+        if (!initialized_) {
+            if (!isVisible() || !isFullScreen() || !validViewport(size())) {
+                return;
+            }
+            if (!initialize(size())) return;
+        }
+
+        if (!applyPendingViewport()) return;
+        runFrame();
         return;
     }
     QWidget::timerEvent(event);

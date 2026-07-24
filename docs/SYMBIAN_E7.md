@@ -159,20 +159,33 @@ than the version already installed on the phone. After installing `1.0.0`, for
 example, pass `--sis-version 1.0.1` for the next build rather than reusing
 `1.0.0`.
 
-The experimental host has these fixed runtime semantics:
+The experimental host has these runtime semantics:
 
-- PocketJS renders a native `480x272` logical surface centered, without
-  scaling, in the E7's `640x360` full-screen Qt shell; unused margins are
-  black.
+- PocketJS uses the full native Qt window as its logical viewport: `640x360`
+  in landscape and `360x640` in portrait. There is no PSP-shaped `480x272`
+  surface, scaling, or black letterbox margin on the E7.
+- Qt automatic orientation delivers window resize events. The host resizes the
+  Rust core first, then calls the framework's live-viewport hook. Solid and Vue
+  Vapor update their app and overlay roots in place, so application state,
+  focus ownership, and timers survive rotation rather than being remounted.
+- Applications targeting the E7 must declare a compatible dynamic viewport.
+  Responsive rows should use wrapping or other flexible layout constraints;
+  the Hero example keeps its PSP/Vita fixed viewport and adds a
+  `360x360`–`640x640` dynamic variant with a `640x360` default.
 - The host calls the JavaScript frame at 30 Hz and advances the PocketJS core
   with two `ui_tick()` calls per frame.
 - Arrow keys map to the four directions, the navigation center/Select key and
   keyboard Enter to `CIRCLE`, Escape to `CROSS`, and Space to `START`.
 
-The host currently transports in-bounds Qt touch points to the core for
-hardware investigation, but `symbian-e7-dev` does not advertise the
-`input.touch` capability. Applications must not treat touch as a supported
-Symbian target contract yet.
+The current public input wire has 9-bit touch coordinates and cannot represent
+the E7's 640-pixel axis. The host therefore disables touch snapshots at native
+E7 sizes, and `symbian-e7-dev` does not advertise `input.touch`. Applications
+must not treat touch as a supported Symbian target contract yet.
+
+For physical acceptance, launch the app in landscape, change some visible
+state, then close/open the keyboard or rotate the phone. The UI should fill and
+reflow at `360x640`, preserve that state, and return to `640x360` without a
+restart, red error screen, stale strip, or black margin.
 
 ## Optional CODA device agent
 
@@ -221,10 +234,11 @@ install-server policy.
 
 The toolchain now implements the GCCE-compatible Rust core, QuickJS execution
 and Promise-job draining, the base HostOps surface, embedded compiled
-JavaScript and `.pak` resources, fixed-step presentation, and button input.
-The app build and MTP readback checks make both the native package and delivery
-substrate repeatable. A signed SIS is time-dependent and therefore is not
-expected to be byte-for-byte reproducible between builds.
+JavaScript and `.pak` resources, fixed-step presentation, live native-viewport
+relayout, and button input. The app build and MTP readback checks make both the
+native package and delivery substrate repeatable. A signed SIS is
+time-dependent and therefore is not expected to be byte-for-byte reproducible
+between builds.
 
 Those implementation milestones do not make Symbian a production PocketJS
 target. Device-side installation, launch, visible output, and input still

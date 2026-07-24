@@ -85,10 +85,20 @@
     "output": "dist/symbian/pocketjs-e7-runtime.sis",
     "sisVersion": "1.0.0",
     "rustToolchain": "nightly-2026-07-02",
-    "logicalViewport": [
-      480,
-      272
+    "defaultViewport": [
+      640,
+      360
     ],
+    "viewportRange": {
+      "min": [
+        360,
+        360
+      ],
+      "max": [
+        640,
+        640
+      ]
+    },
     "frameRate": 30
   }
 }

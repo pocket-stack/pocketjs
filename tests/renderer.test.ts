@@ -974,6 +974,33 @@ describe("public render() (index.ts)", () => {
     expect(host.of("destroyNode").map((c) => c[1])).toEqual([appLayer.id, overlayLayer.id]);
   });
 
+  test("native resize hook updates both root layers and clears on dispose", () => {
+    const ops = host.ops as HostOps & { __viewport?: { w: number; h: number } };
+    const globals = globalThis as typeof globalThis & {
+      __pocketResizeViewport?: (width: number, height: number) => void;
+    };
+    ops.__viewport = { w: 640, h: 360 };
+
+    const dispose = publicRender(() => createElement("view"), { ops });
+    const [appLayer, overlayLayer] = rootMirror.children;
+    expect(typeof globals.__pocketResizeViewport).toBe("function");
+    host.clear();
+
+    globals.__pocketResizeViewport?.(360, 640);
+
+    expect(ops.__viewport).toEqual({ w: 360, h: 640 });
+    expect(host.of("setProp")).toEqual(expect.arrayContaining([
+      ["setProp", appLayer.id, PROP.width, 360],
+      ["setProp", appLayer.id, PROP.height, 640],
+      ["setProp", overlayLayer.id, PROP.width, 360],
+      ["setProp", overlayLayer.id, PROP.height, 640],
+    ]));
+    expect(host.of("createNode", "destroyNode", "insertBefore", "removeChild")).toEqual([]);
+
+    dispose();
+    expect(globals.__pocketResizeViewport).toBeUndefined();
+  });
+
   test("Portal mounts overlay content outside the app layer", () => {
     const dispose = publicRender(
       () =>

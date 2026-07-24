@@ -2,7 +2,14 @@
 
 import "./prelude.ts";
 
-import { detectHost, hostViewport, installFrameHandler, installHost, type HostOps } from "./host.ts";
+import {
+  detectHost,
+  getOps,
+  hostViewport,
+  installFrameHandler,
+  installHost,
+  type HostOps,
+} from "./host.ts";
 import { initDevtools, wrapFrameHandler } from "./devtools.ts";
 import {
   createElement,
@@ -96,6 +103,47 @@ function createLayer(style: Record<string, number>): NodeMirror {
   return layer;
 }
 
+let appLayer: NodeMirror | null = null;
+let overlayLayer: NodeMirror | null = null;
+
+type ResizeViewportHook = (width: number, height: number) => void;
+
+function installResizeViewportHook(): () => void {
+  const globals = globalThis as typeof globalThis & {
+    __pocketResizeViewport?: ResizeViewportHook;
+  };
+  const previous = globals.__pocketResizeViewport;
+  const hook: ResizeViewportHook = (width, height) => resizeViewport(width, height);
+  globals.__pocketResizeViewport = hook;
+  return () => {
+    if (globals.__pocketResizeViewport !== hook) return;
+    if (previous) globals.__pocketResizeViewport = previous;
+    else delete globals.__pocketResizeViewport;
+  };
+}
+
+export function resizeViewport(w: number, h: number): void {
+  if (!appLayer || !overlayLayer) return;
+  setProp(appLayer, "style", { width: w, height: h, overflow: ENUMS.Overflow.Hidden }, undefined);
+  setProp(
+    overlayLayer,
+    "style",
+    {
+      width: w,
+      height: h,
+      posType: ENUMS.PosType.Absolute,
+      insetT: 0,
+      insetR: 0,
+      insetB: 0,
+      insetL: 0,
+      zIndex: 1000,
+    },
+    undefined,
+  );
+  const ops = getOps() as HostOps & { __viewport?: { w: number; h: number } };
+  ops.__viewport = { w, h };
+}
+
 export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => void {
   const host = detectHost(opts.ops);
   installHost(host);
@@ -159,6 +207,8 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   insertNode(rootMirror, appRoot);
   insertNode(rootMirror, overlayRoot);
   setOverlayRoot(overlayRoot);
+  appLayer = appRoot;
+  overlayLayer = overlayRoot;
 
   setInputRoot(appRoot);
   resetFrameHooks();
@@ -178,11 +228,15 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   );
 
   const dispose = rendererRender(code, appRoot);
+  const removeResizeViewportHook = installResizeViewportHook();
   return () => {
+    removeResizeViewportHook();
     __resetTouches();
     dispose();
     setInputRoot(null);
     setOverlayRoot(null);
+    appLayer = null;
+    overlayLayer = null;
     for (const child of rootMirror.children.splice(0)) {
       child.parent = null;
       host.ops.destroyNode(child.id);

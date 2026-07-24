@@ -127,17 +127,33 @@ function createLayer(style: Record<string, number>): NodeMirror {
   return layer;
 }
 
-// The mounted root layers, kept for live viewport resizes (desktop hosts).
+// The mounted root layers, kept for hosts whose logical viewport can change.
 let appLayer: NodeMirror | null = null;
 let overlayLayer: NodeMirror | null = null;
 
+type ResizeViewportHook = (width: number, height: number) => void;
+
+function installResizeViewportHook(): () => void {
+  const globals = globalThis as typeof globalThis & {
+    __pocketResizeViewport?: ResizeViewportHook;
+  };
+  const previous = globals.__pocketResizeViewport;
+  const hook: ResizeViewportHook = (width, height) => resizeViewport(width, height);
+  globals.__pocketResizeViewport = hook;
+  return () => {
+    if (globals.__pocketResizeViewport !== hook) return;
+    if (previous) globals.__pocketResizeViewport = previous;
+    else delete globals.__pocketResizeViewport;
+  };
+}
+
 /**
- * Live-resize the mounted app to a new logical viewport (desktop widget
- * hosts: the host resized the core with `Ui::set_viewport` and told the app,
- * which calls this to follow). Restyles the app + overlay root layers and
+ * Live-resize the mounted app to a new logical viewport. The host resizes the
+ * core with `Ui::set_viewport`, then calls the installed runtime hook so these
+ * app + overlay root layers follow without remounting. This also
  * refreshes `ui.__viewport` so every later `hostViewport` read — cursor
- * clamping, OSK docking — sees the new size. Console hosts never resize;
- * calling this without a mounted app is a no-op.
+ * clamping, OSK docking — sees the new size. Calling this without a mounted
+ * app is a no-op.
  */
 export function resizeViewport(w: number, h: number): void {
   if (!appLayer || !overlayLayer) return;
@@ -219,9 +235,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     }
   }
 
-  // Desktop hosts publish their logical UI size as ui.__viewport (the core
-  // root is already sized to it via Ui::set_viewport); PSP/web hosts omit it
-  // and keep the 480x272 contract.
+  // Live-viewport hosts publish their logical UI size as ui.__viewport (the
+  // core root is already sized to it via Ui::set_viewport); PSP/web hosts omit
+  // it and keep the 480x272 contract.
   const viewport = hostViewport(host.ops);
   const layerW = viewport?.w ?? SCREEN_W;
   const layerH = viewport?.h ?? SCREEN_H;
@@ -266,7 +282,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   );
 
   const dispose = rendererRender(code as () => NodeMirror, appRoot);
+  const removeResizeViewportHook = installResizeViewportHook();
   return () => {
+    removeResizeViewportHook();
     __resetTouches();
     dispose(); // tears down reactivity only — universal keeps the nodes
     setInputRoot(null); // drops focus state (native focus dies with the nodes)

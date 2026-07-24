@@ -174,7 +174,8 @@ The Nokia E7 bootstrap and its current PocketJS port boundary are documented in
 [docs/SYMBIAN_E7.md](./docs/SYMBIAN_E7.md). It establishes a pinned,
 repeatable GCCE/Qt/QuickJS/Rust/E32/SIS build and physical-device staging path.
 The private `symbian-e7-dev` profile can package PocketJS applications for
-hardware testing, but it is intentionally absent from the production target
+hardware testing with a native viewport that follows the E7's landscape and
+portrait geometry, but it is intentionally absent from the production target
 registry until device acceptance and golden testing are complete.
 
 The PSP bootstrap owns every production input: Rust nightly + `rust-src`, the

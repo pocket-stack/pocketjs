@@ -132,8 +132,8 @@ pub extern "C" fn ui_shutdown() {
     clear_framebuffer();
 }
 
-/// Set the logical viewport. The E7 host uses 480x272 and centers the resulting
-/// QImage without scaling inside its physical 640x360 surface.
+/// Set the logical viewport. The E7 host follows the current full-screen Qt
+/// client size, including 640x360 landscape and 360x640 portrait.
 #[no_mangle]
 pub extern "C" fn ui_set_viewport(width: f32, height: f32) {
     ui().set_viewport(width, height);

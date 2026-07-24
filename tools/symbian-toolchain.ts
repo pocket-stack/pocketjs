@@ -66,7 +66,11 @@ export interface SymbianToolchainManifest {
     readonly output: string;
     readonly sisVersion: string;
     readonly rustToolchain: string;
-    readonly logicalViewport: readonly [number, number];
+    readonly defaultViewport: readonly [number, number];
+    readonly viewportRange: {
+      readonly min: readonly [number, number];
+      readonly max: readonly [number, number];
+    };
     readonly frameRate: number;
   };
 }

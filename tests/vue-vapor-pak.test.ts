@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { IMG_FLAG_LINEAR, PAK_DTYPE, PSM } from "../contracts/spec/spec.ts";
+import { IMG_FLAG_LINEAR, PAK_DTYPE, PROP, PSM } from "../contracts/spec/spec.ts";
 import { encodeImageEntry, pack } from "../framework/compiler/pak.ts";
 import type { HostOps } from "../framework/src/host.ts";
 import { resetPack } from "../framework/src/pak.ts";
@@ -36,12 +36,14 @@ const globals = globalThis as {
   ui?: HostOps;
   __pak?: ArrayBuffer;
   frame?: (buttons: number) => void;
+  __pocketResizeViewport?: (width: number, height: number) => void;
 };
 
 afterEach(() => {
   delete globals.ui;
   delete globals.__pak;
   delete globals.frame;
+  delete globals.__pocketResizeViewport;
   resetPack();
   resetRendererState();
   resetSprites();
@@ -49,7 +51,7 @@ afterEach(() => {
   resetStyles();
 });
 
-function symbianHost(calls: string[]): HostOps {
+function symbianHost(calls: string[], propCalls: unknown[][] = []): HostOps {
   let nextId = 2;
   const noop = () => {};
   return {
@@ -60,7 +62,7 @@ function symbianHost(calls: string[]): HostOps {
     insertBefore: noop,
     removeChild: noop,
     setStyle: noop,
-    setProp: noop,
+    setProp: (...args) => propCalls.push(args),
     setText: noop,
     replaceText: noop,
     uploadTexture: () => 0,
@@ -109,5 +111,28 @@ describe("Vue Vapor native pak loading", () => {
       "loadStyles",
     ]);
     dispose();
+  });
+
+  test("native resize hook updates both root layers and clears on dispose", () => {
+    const calls: string[] = [];
+    const propCalls: unknown[][] = [];
+    const ops = symbianHost(calls, propCalls) as HostOps & {
+      __viewport?: { w: number; h: number };
+    };
+    ops.__viewport = { w: 640, h: 360 };
+    globals.ui = ops;
+
+    const dispose = mount(() => null, { ops, styles: {} });
+    expect(typeof globals.__pocketResizeViewport).toBe("function");
+    propCalls.length = 0;
+
+    globals.__pocketResizeViewport?.(360, 640);
+
+    expect(ops.__viewport).toEqual({ w: 360, h: 640 });
+    expect(propCalls.filter((call) => call[1] === PROP.width && call[2] === 360)).toHaveLength(2);
+    expect(propCalls.filter((call) => call[1] === PROP.height && call[2] === 640)).toHaveLength(2);
+
+    dispose();
+    expect(globals.__pocketResizeViewport).toBeUndefined();
   });
 });

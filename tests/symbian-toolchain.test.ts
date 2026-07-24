@@ -55,7 +55,11 @@ describe("canonical Symbian E7 toolchain", () => {
     expect(SYMBIAN_TOOLCHAIN.runtime).toMatchObject({
       uid: "0xE7A11010",
       rustToolchain: "nightly-2026-07-02",
-      logicalViewport: [480, 272],
+      defaultViewport: [640, 360],
+      viewportRange: {
+        min: [360, 360],
+        max: [640, 640],
+      },
       frameRate: 30,
     });
     expect(SYMBIAN_TOOLCHAIN.markers).toEqual(expect.arrayContaining([
