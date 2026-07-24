@@ -81,6 +81,7 @@ describe("published PocketJS CLI", () => {
       { cliArgs: ["vita", "hero", "--release"], script: "vita.ts", args: ["hero", "--release"] },
       { cliArgs: ["symbian", "doctor", "--device"], script: "symbian.ts", args: ["doctor", "--device"] },
       { cliArgs: ["symbian", "coda", "usb"], script: "symbian.ts", args: ["coda", "usb"] },
+      { cliArgs: ["symbian", "coda", "usb", "launch"], script: "symbian.ts", args: ["coda", "usb", "launch"] },
     ];
 
     for (const fixture of cases) {

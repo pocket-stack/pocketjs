@@ -32,6 +32,7 @@ import {
 import { pocketStackCacheRoot, withArtifactLock } from "./psp-toolchain.ts";
 
 const root = new URL("..", import.meta.url).pathname;
+const DEFAULT_CODA_EXECUTABLE = "PocketJsE7Runtime.exe";
 
 async function spawn(
   command: string,
@@ -97,7 +98,9 @@ async function dockerImageReady(): Promise<boolean> {
       `${SYMBIAN_TOOLCHAIN.toolchainVersion} ${implementation}`;
 }
 
-async function runCodaUsbProbe(): Promise<CommandResult> {
+async function runCodaUsbProbe(
+  executable?: string,
+): Promise<CommandResult> {
   const compiler = Bun.which("cc");
   const pkgConfig = Bun.which("pkg-config");
   if (!compiler || !pkgConfig) {
@@ -152,7 +155,19 @@ async function runCodaUsbProbe(): Promise<CommandResult> {
       binary,
     ], { timeoutMs: 30_000 });
     if (compiled.exitCode !== 0) return compiled;
-    return await spawn(binary, [], { timeoutMs: 30_000 });
+    const lock = join(
+      pocketStackCacheRoot(),
+      "symbian/.locks/coda-usb-device.lock",
+    );
+    return await withArtifactLock(
+      lock,
+      () => spawn(
+        binary,
+        executable !== undefined ? ["launch", executable] : [],
+        { timeoutMs: 45_000 },
+      ),
+      { timeoutMs: 45_000, staleMs: 2 * 60_000 },
+    );
   } finally {
     rmSync(build, { recursive: true, force: true });
   }
@@ -394,6 +409,7 @@ const HELP = `PocketJS Nokia E7 / Symbian toolchain
                                     build a target-bound PocketJS E7 runtime SIS
   pocket symbian deploy <sis>       copy to Mass memory/Installs and verify by MTP readback
   pocket symbian coda usb           run the CODA USB ping + Locator handshake
+  pocket symbian coda usb launch    remotely launch PocketJsE7Runtime.exe
 `;
 
 try {
@@ -438,10 +454,31 @@ try {
       break;
     case "coda": {
       if (args[1] !== "usb") throw new Error("usage: pocket symbian coda usb");
-      const coda = await runCodaUsbProbe();
+      const action = args[2];
+      if (action !== undefined && action !== "launch") {
+        throw new Error(
+          "usage: pocket symbian coda usb [launch [executable.exe]]",
+        );
+      }
+      if (args.length > (action === "launch" ? 4 : 2)) {
+        throw new Error(
+          "usage: pocket symbian coda usb [launch [executable.exe]]",
+        );
+      }
+      const launchRequested = action === "launch";
+      const executable = launchRequested
+        ? args[3] ?? DEFAULT_CODA_EXECUTABLE
+        : undefined;
+      const coda = await runCodaUsbProbe(executable);
       if (coda.stdout) process.stdout.write(sanitizeDeviceOutput(coda.stdout));
       if (coda.stderr) process.stderr.write(sanitizeDeviceOutput(coda.stderr));
-      if (coda.exitCode !== 0) throw new Error("CODA USB handshake failed");
+      if (coda.exitCode !== 0) {
+        throw new Error(
+          launchRequested
+            ? "CODA USB launch failed"
+            : "CODA USB handshake failed",
+        );
+      }
       break;
     }
     case "help":

@@ -174,6 +174,12 @@ describe("canonical Symbian E7 toolchain", () => {
     expect(codaUsbProbe).toContain("libusb_attach_kernel_driver");
     expect(codaUsbProbe).toContain("static int read_until(");
     expect(codaUsbProbe).toContain("CODA Locator: ready");
+    expect(codaUsbProbe).toContain("\"Processes\"");
+    expect(codaUsbProbe).toContain("\"start\"");
+    expect(codaUsbProbe).toContain("\"false\"");
+    expect(codaUsbProbe).toContain("match_command_reply");
+    expect(codaUsbProbe).toContain("command_reply_has_error");
+    expect(codaUsbProbe).toContain("CODA launch: started");
     expect(codaUsbProbe).not.toMatch(/imei|serial number/i);
     expect(buildProbe).toContain("output_stage=$(mktemp -d /out/");
     expect(buildProbe).toContain('mv -f "$candidate" "$output"');
@@ -194,6 +200,38 @@ describe("canonical Symbian E7 toolchain", () => {
       `ARG POCKETJS_SYMBIAN_BASE_IMAGE=${SYMBIAN_TOOLCHAIN.container.baseImage}`,
     );
     expect(dockerfile).toContain("pocketjs-symbian-build-app");
+  });
+
+  test("CODA launch wire and reply parser stay byte-exact", () => {
+    const compiler = Bun.which("cc");
+    expect(compiler, "cc is required to validate the shipped CODA client").toBeTruthy();
+    const build = mkdtempSync(join(tmpdir(), "pocketjs-coda-protocol-"));
+    temporary.push(build);
+    const binary = join(build, "coda-usb-protocol-test");
+    const compiled = Bun.spawnSync({
+      cmd: [
+        compiler!,
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wno-unused-function",
+        join(repository, "tests/fixtures/coda-usb-protocol-test.c"),
+        "-o",
+        binary,
+      ],
+      cwd: repository,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
+    const tested = Bun.spawnSync({
+      cmd: [binary],
+      cwd: repository,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(tested.exitCode, tested.stderr.toString()).toBe(0);
   });
 
   test("Docker invocations are amd64, pinned, and narrowly mounted", () => {

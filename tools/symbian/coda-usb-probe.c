@@ -1,9 +1,14 @@
+#define _POSIX_C_SOURCE 200809L
+
+#ifndef CODA_PROTOCOL_TEST
 #include <libusb.h>
+#endif
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 enum {
     NokiaVendorId = 0x0421,
@@ -11,10 +16,14 @@ enum {
     CodaControlInterface = 3,
     CodaDataInterface = 4,
     TransferTimeoutMs = 3000,
+    CommandTimeoutMs = 10000,
     TransferSliceMs = 250,
     ResponseCapacity = 16384,
+    CommandCapacity = 512,
+    MaxExecutableLength = 128,
 };
 
+#ifndef CODA_PROTOCOL_TEST
 static int is_bulk_endpoint(
     const struct libusb_endpoint_descriptor *endpoint,
     int direction
@@ -128,6 +137,7 @@ static int set_cdc_control_state(libusb_device_handle *handle) {
         ? result
         : LIBUSB_SUCCESS;
 }
+#endif
 
 static int find_pong(
     const unsigned char *buffer,
@@ -188,6 +198,50 @@ static int find_locator_hello(const unsigned char *buffer, int length) {
     return 0;
 }
 
+static int bytes_contain(
+    const unsigned char *buffer,
+    int length,
+    const char *needle
+) {
+    const size_t needle_length = strlen(needle);
+    if (needle_length == 0 || needle_length > (size_t)length)
+        return 0;
+    for (int offset = 0;
+         offset + (int)needle_length <= length;
+         ++offset) {
+        if (memcmp(buffer + offset, needle, needle_length) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static int locator_advertises_processes(
+    const unsigned char *buffer,
+    int length
+) {
+    static const unsigned char locator_prefix[] = {
+        'E', 0x00,
+        'L', 'o', 'c', 'a', 't', 'o', 'r', 0x00,
+        'H', 'e', 'l', 'l', 'o', 0x00,
+    };
+    for (int offset = 0; offset + 4 + (int)sizeof(locator_prefix) <= length;
+         ++offset) {
+        if (buffer[offset] != 0x01 || buffer[offset + 1] != 0x92)
+            continue;
+        const int payload_length =
+            ((int)buffer[offset + 2] << 8) | buffer[offset + 3];
+        if (payload_length < (int)sizeof(locator_prefix) ||
+            offset + 4 + payload_length > length) {
+            continue;
+        }
+        const unsigned char *payload = buffer + offset + 4;
+        if (memcmp(payload, locator_prefix, sizeof(locator_prefix)) != 0)
+            continue;
+        return bytes_contain(payload, payload_length, "\"Processes\"");
+    }
+    return 0;
+}
+
 typedef int (*response_matcher)(
     const unsigned char *buffer,
     int length,
@@ -227,6 +281,7 @@ static int match_locator(
  * transfers, and several frames may arrive together. Keep a bounded
  * accumulator and match complete frames against a single total timeout.
  */
+#ifndef CODA_PROTOCOL_TEST
 static int read_until(
     libusb_device_handle *handle,
     uint8_t endpoint,
@@ -234,18 +289,34 @@ static int read_until(
     int capacity,
     int *length,
     response_matcher matcher,
-    void *context
+    void *context,
+    int timeout_ms
 ) {
     if (matcher(buffer, *length, context))
         return LIBUSB_SUCCESS;
 
-    int remaining = TransferTimeoutMs;
-    while (remaining > 0) {
+    struct timespec started;
+    if (clock_gettime(CLOCK_MONOTONIC, &started) != 0)
+        return LIBUSB_ERROR_OTHER;
+    const int64_t deadline_ms =
+        (int64_t)started.tv_sec * 1000 +
+        started.tv_nsec / 1000000 +
+        timeout_ms;
+    while (1) {
         if (*length >= capacity)
             return LIBUSB_ERROR_OVERFLOW;
 
-        const int timeout = remaining < TransferSliceMs
-            ? remaining
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+            return LIBUSB_ERROR_OTHER;
+        const int64_t now_ms =
+            (int64_t)now.tv_sec * 1000 +
+            now.tv_nsec / 1000000;
+        const int64_t remaining_ms = deadline_ms - now_ms;
+        if (remaining_ms <= 0)
+            break;
+        const int timeout = remaining_ms < TransferSliceMs
+            ? (int)remaining_ms
             : TransferSliceMs;
         int transferred = 0;
         const int result = libusb_bulk_transfer(
@@ -263,12 +334,346 @@ static int read_until(
         }
         if (result != LIBUSB_SUCCESS && result != LIBUSB_ERROR_TIMEOUT)
             return result;
-        remaining -= timeout;
     }
     return LIBUSB_ERROR_TIMEOUT;
 }
+#endif
 
-int main(void) {
+struct command_reply_context {
+    const char *token;
+    char type;
+    unsigned char values[2048];
+    int values_length;
+    int values_overflow;
+};
+
+static int match_command_reply(
+    const unsigned char *buffer,
+    int length,
+    void *context
+) {
+    struct command_reply_context *reply = context;
+    const size_t token_length = strlen(reply->token);
+    for (int offset = 0; offset + 4 <= length; ++offset) {
+        if (buffer[offset] != 0x01 || buffer[offset + 1] != 0x92)
+            continue;
+        const int payload_length =
+            ((int)buffer[offset + 2] << 8) | buffer[offset + 3];
+        if (payload_length < 4 ||
+            offset + 4 + payload_length > length) {
+            continue;
+        }
+        const unsigned char *payload = buffer + offset + 4;
+        if ((payload[0] != 'R' && payload[0] != 'N') ||
+            payload[1] != '\0') {
+            continue;
+        }
+        if (2 + token_length >= (size_t)payload_length ||
+            memcmp(payload + 2, reply->token, token_length) != 0 ||
+            payload[2 + token_length] != '\0') {
+            continue;
+        }
+        reply->type = (char)payload[0];
+        const int values_offset = 3 + (int)token_length;
+        const int available = payload_length - values_offset;
+        reply->values_overflow = available > (int)sizeof(reply->values);
+        reply->values_length = available < (int)sizeof(reply->values)
+            ? available
+            : (int)sizeof(reply->values);
+        if (reply->values_length > 0) {
+            memcpy(
+                reply->values,
+                payload + values_offset,
+                (size_t)reply->values_length
+            );
+        }
+        return 1;
+    }
+    return 0;
+}
+
+static int append_command_field(
+    unsigned char *command,
+    size_t capacity,
+    size_t *length,
+    const char *field
+) {
+    const size_t field_length = strlen(field);
+    if (*length + field_length + 1 > capacity)
+        return 0;
+    memcpy(command + *length, field, field_length);
+    *length += field_length;
+    command[(*length)++] = '\0';
+    return 1;
+}
+
+static int valid_executable(const char *executable) {
+    const size_t length = strlen(executable);
+    if (length < 5 || length > MaxExecutableLength ||
+        strcmp(executable + length - 4, ".exe") != 0) {
+        return 0;
+    }
+    for (size_t index = 0; index < length; ++index) {
+        const char value = executable[index];
+        if ((value >= 'a' && value <= 'z') ||
+            (value >= 'A' && value <= 'Z') ||
+            (value >= '0' && value <= '9') ||
+            value == '.' || value == '_' || value == '-') {
+            continue;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static int build_process_start_command(
+    const char *executable,
+    const char *token,
+    unsigned char *command,
+    size_t command_capacity,
+    size_t *command_length
+) {
+    char quoted_executable[MaxExecutableLength + 3];
+    const int quoted_length = snprintf(
+        quoted_executable,
+        sizeof(quoted_executable),
+        "\"%s\"",
+        executable
+    );
+    if (quoted_length < 0 ||
+        quoted_length >= (int)sizeof(quoted_executable)) {
+        return 0;
+    }
+
+    *command_length = 0;
+    const char *fields[] = {
+        "C",
+        token,
+        "Processes",
+        "start",
+        "\"\"",
+        quoted_executable,
+        "[]",
+        "[]",
+        "false",
+    };
+    for (size_t index = 0;
+         index < sizeof(fields) / sizeof(fields[0]);
+         ++index) {
+        if (!append_command_field(
+                command,
+                command_capacity,
+                command_length,
+                fields[index]
+            )) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+#ifndef CODA_PROTOCOL_TEST
+static int send_serial_payload(
+    libusb_device_handle *handle,
+    uint8_t endpoint,
+    const unsigned char *payload,
+    size_t payload_length
+) {
+    if (payload_length > UINT16_MAX)
+        return LIBUSB_ERROR_INVALID_PARAM;
+    unsigned char *frame = malloc(payload_length + 4);
+    if (frame == NULL)
+        return LIBUSB_ERROR_NO_MEM;
+    frame[0] = 0x01;
+    frame[1] = 0x92;
+    frame[2] = (unsigned char)(payload_length >> 8);
+    frame[3] = (unsigned char)(payload_length & 0xff);
+    memcpy(frame + 4, payload, payload_length);
+
+    int transferred = 0;
+    const int result = libusb_bulk_transfer(
+        handle,
+        endpoint,
+        frame,
+        (int)payload_length + 4,
+        &transferred,
+        TransferTimeoutMs
+    );
+    free(frame);
+    return result == LIBUSB_SUCCESS &&
+            transferred != (int)payload_length + 4
+        ? LIBUSB_ERROR_IO
+        : result;
+}
+#endif
+
+static int command_reply_has_error(
+    const struct command_reply_context *reply
+) {
+    static const char *error_keys[] = {
+        "\"Time\"", "\"Code\"", "\"Format\"", "\"AltCode\"", "\"AltOrg\"",
+    };
+    int matches = 0;
+    for (size_t index = 0;
+         index < sizeof(error_keys) / sizeof(error_keys[0]);
+         ++index) {
+        if (bytes_contain(
+                reply->values,
+                reply->values_length,
+                error_keys[index]
+            )) {
+            ++matches;
+        }
+    }
+    return matches >= 2;
+}
+
+static int extract_process_id(
+    const struct command_reply_context *reply,
+    char *process_id,
+    size_t capacity
+) {
+    static const char key[] = "\"ID\"";
+    for (int offset = 0;
+         offset + (int)sizeof(key) - 1 < reply->values_length;
+         ++offset) {
+        if (memcmp(reply->values + offset, key, sizeof(key) - 1) != 0)
+            continue;
+        int cursor = offset + (int)sizeof(key) - 1;
+        while (cursor < reply->values_length &&
+               (reply->values[cursor] == ' ' ||
+                reply->values[cursor] == ':')) {
+            ++cursor;
+        }
+        if (cursor >= reply->values_length ||
+            reply->values[cursor] != '"') {
+            continue;
+        }
+        ++cursor;
+        size_t written = 0;
+        while (cursor < reply->values_length &&
+               reply->values[cursor] != '"' &&
+               written + 1 < capacity) {
+            const unsigned char value = reply->values[cursor++];
+            if (value < 0x20 || value > 0x7e)
+                return 0;
+            process_id[written++] = (char)value;
+        }
+        if (cursor >= reply->values_length ||
+            reply->values[cursor] != '"' ||
+            written == 0) {
+            return 0;
+        }
+        process_id[written] = '\0';
+        return 1;
+    }
+    return 0;
+}
+
+static void print_command_error(
+    const struct command_reply_context *reply
+) {
+    fprintf(stderr, "CODA launch: device rejected the start command");
+    if (reply->values_length > 0) {
+        fprintf(stderr, " (");
+        for (int index = 0; index < reply->values_length; ++index) {
+            const unsigned char value = reply->values[index];
+            if (value == '\0')
+                fputs(" | ", stderr);
+            else if (value >= 0x20 && value <= 0x7e)
+                fputc((int)value, stderr);
+        }
+        fprintf(stderr, ")");
+    }
+    fprintf(stderr, "\n");
+}
+
+#ifndef CODA_PROTOCOL_TEST
+static int launch_process(
+    libusb_device_handle *handle,
+    uint8_t endpoint_in,
+    uint8_t endpoint_out,
+    unsigned char *response,
+    int response_capacity,
+    int *response_length,
+    const char *executable
+) {
+    static const char token[] = "0";
+    unsigned char command[CommandCapacity];
+    size_t command_length = 0;
+    if (!build_process_start_command(
+            executable,
+            token,
+            command,
+            sizeof(command),
+            &command_length
+        )) {
+        return LIBUSB_ERROR_OVERFLOW;
+    }
+
+    int result = send_serial_payload(
+        handle,
+        endpoint_out,
+        command,
+        command_length
+    );
+    if (result != LIBUSB_SUCCESS)
+        return result;
+
+    struct command_reply_context reply = {
+        .token = token,
+        .type = '\0',
+        .values_length = 0,
+        .values_overflow = 0,
+    };
+    result = read_until(
+        handle,
+        endpoint_in,
+        response,
+        response_capacity,
+        response_length,
+        match_command_reply,
+        &reply,
+        CommandTimeoutMs
+    );
+    if (result != LIBUSB_SUCCESS)
+        return result;
+    if (reply.values_overflow) {
+        fprintf(stderr, "CODA launch: reply exceeds the safe parser limit\n");
+        return LIBUSB_ERROR_OVERFLOW;
+    }
+    if (reply.type != 'R' || command_reply_has_error(&reply)) {
+        print_command_error(&reply);
+        return LIBUSB_ERROR_OTHER;
+    }
+
+    char process_id[128];
+    if (!extract_process_id(&reply, process_id, sizeof(process_id))) {
+        fprintf(stderr, "CODA launch: success reply has no process ID\n");
+        return LIBUSB_ERROR_OTHER;
+    }
+    printf("CODA launch: started\n");
+    printf("CODA executable: %s\n", executable);
+    printf("CODA process: %s\n", process_id);
+    return LIBUSB_SUCCESS;
+}
+
+int main(int argc, char **argv) {
+    const char *executable = NULL;
+    if (argc == 3 && strcmp(argv[1], "launch") == 0) {
+        executable = argv[2];
+        if (!valid_executable(executable)) {
+            fprintf(
+                stderr,
+                "CODA USB: executable must be a basename ending in .exe\n"
+            );
+            return 2;
+        }
+    } else if (argc != 1) {
+        fprintf(stderr, "usage: coda-usb-probe [launch <executable.exe>]\n");
+        return 2;
+    }
+
     libusb_context *context = NULL;
     libusb_device **devices = NULL;
     libusb_device *match = NULL;
@@ -408,7 +813,8 @@ int main(void) {
         sizeof(response),
         &response_length,
         match_pong,
-        &pong
+        &pong,
+        TransferTimeoutMs
     );
     if (result != LIBUSB_SUCCESS) {
         fprintf(
@@ -451,7 +857,8 @@ int main(void) {
         sizeof(response),
         &response_length,
         match_locator,
-        NULL
+        NULL,
+        TransferTimeoutMs
     );
     if (result != LIBUSB_SUCCESS) {
         fprintf(stderr, "CODA USB: Locator handshake failed\n");
@@ -462,6 +869,32 @@ int main(void) {
     if (version[0] != '\0')
         printf("CODA version: %s\n", version);
     printf("CODA Locator: ready\n");
+
+    if (executable != NULL) {
+        if (!locator_advertises_processes(response, response_length)) {
+            fprintf(stderr, "CODA launch: Processes service is unavailable\n");
+            goto cleanup;
+        }
+        result = launch_process(
+            handle,
+            endpoint_in,
+            endpoint_out,
+            response,
+            sizeof(response),
+            &response_length,
+            executable
+        );
+        if (result != LIBUSB_SUCCESS) {
+            if (result != LIBUSB_ERROR_OTHER) {
+                fprintf(
+                    stderr,
+                    "CODA launch: failed (%s)\n",
+                    libusb_error_name(result)
+                );
+            }
+            goto cleanup;
+        }
+    }
     exit_code = 0;
 
 cleanup:
@@ -480,3 +913,4 @@ cleanup:
     libusb_exit(context);
     return exit_code;
 }
+#endif

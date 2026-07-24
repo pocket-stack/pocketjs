@@ -211,6 +211,8 @@ macOS workflow: keep the phone in Nokia Suite mode, select USB in CODA, and run:
 pocket symbian coda usb
 # Or include it in the complete device check:
 pocket symbian doctor --device --coda-usb
+# Launch the installed PocketJS runtime without touching the phone:
+pocket symbian coda usb launch
 ```
 
 The host opens only the exact Nokia E7 Suite-mode VID/PID and claims CODA's
@@ -219,6 +221,19 @@ historical CODA serial ping followed by the TCF Locator handshake, without
 querying a serial number or IMEI. This avoids relying on the old Nokia USB
 driver binding that modern macOS no longer provides. A successful check reports
 the agent version, for example `4.0.23:app`.
+
+`coda usb launch` waits for the device's Locator service list, requires the
+`Processes` service, and sends CODA's non-debug-controlled `Processes.start`
+command for `PocketJsE7Runtime.exe`. Success includes the CODA process context,
+for example `CODA process: p2382`. An alternate installed executable basename
+can be supplied as the final argument. The command never terminates an existing
+process; close the app first if CODA reports that it is already running.
+
+This is a repeatable remote-launch path for device testing, not yet a
+source-level debugger. CODA also exposes run control, logging, memory,
+registers, and breakpoints, but PocketJS does not yet ship the CODA-to-GDB
+adapter, a Symbian GDB, or the matching native symbol artifact. QuickJS
+source-level breakpoints require a separate PocketJS DevTools transport.
 
 WLAN remains an alternative. Connect the phone and host to the same network,
 select WLAN in CODA, and use the IP and port shown on the phone (the historical
