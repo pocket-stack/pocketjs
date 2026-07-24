@@ -56,12 +56,14 @@ COPY tools/symbian/container/patches /opt/pocketjs/patches
 COPY tools/symbian/container/pocketjs-symbian-setup /usr/local/bin/
 COPY tools/symbian/container/pocketjs-symbian-doctor /usr/local/bin/
 COPY tools/symbian/container/pocketjs-symbian-build-probe /usr/local/bin/
+COPY tools/symbian/container/pocketjs-symbian-build-app /usr/local/bin/
 COPY tools/symbian/container/symbian-gcce-link /usr/local/bin/
 
 RUN chmod 0755 \
         /usr/local/bin/pocketjs-symbian-setup \
         /usr/local/bin/pocketjs-symbian-doctor \
         /usr/local/bin/pocketjs-symbian-build-probe \
+        /usr/local/bin/pocketjs-symbian-build-app \
         /usr/local/bin/symbian-gcce-link
 
 WORKDIR /work

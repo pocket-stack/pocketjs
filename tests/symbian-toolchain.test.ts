@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   SYMBIAN_DOWNLOADS,
+  SYMBIAN_RUNTIME_DOWNLOADS,
+  SYMBIAN_SETUP_DOWNLOADS,
   SYMBIAN_TOOLCHAIN,
   receiptMatchesSymbianManifest,
   symbianDockerBuildArguments,
@@ -40,10 +42,22 @@ describe("canonical Symbian E7 toolchain", () => {
     });
     expect(SYMBIAN_TOOLCHAIN.container.baseImage).toMatch(/@sha256:[a-f0-9]{64}$/);
     expect(SYMBIAN_DOWNLOADS).toHaveLength(4);
-    for (const artifact of SYMBIAN_DOWNLOADS) {
+    expect(SYMBIAN_RUNTIME_DOWNLOADS).toHaveLength(1);
+    expect(SYMBIAN_SETUP_DOWNLOADS).toHaveLength(5);
+    for (const artifact of SYMBIAN_SETUP_DOWNLOADS) {
       expect(artifact.url).toMatch(/^https:\/\//);
       expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
     }
+    expect(SYMBIAN_TOOLCHAIN.quickjs).toMatchObject({
+      version: "2026-06-04",
+      rev: "0fc946fb670c0c29bc0135f510bcb0f595415a61",
+    });
+    expect(SYMBIAN_TOOLCHAIN.runtime).toMatchObject({
+      uid: "0xE7A11010",
+      rustToolchain: "nightly-2026-07-02",
+      logicalViewport: [480, 272],
+      frameRate: 30,
+    });
     expect(SYMBIAN_TOOLCHAIN.markers).toEqual(expect.arrayContaining([
       "sdk/epoc32/include/e32base.h",
       "gcce/arm-2012.03/bin/arm-none-symbianelf-g++",
@@ -127,6 +141,10 @@ describe("canonical Symbian E7 toolchain", () => {
       join(repository, "tools/symbian/container/pocketjs-symbian-build-probe"),
       "utf8",
     );
+    const buildApp = readFileSync(
+      join(repository, "tools/symbian/container/pocketjs-symbian-build-app"),
+      "utf8",
+    );
     const probeProject = readFileSync(
       join(repository, "hosts/symbian/probe/pocketjs-e7-probe.pro"),
       "utf8",
@@ -156,12 +174,22 @@ describe("canonical Symbian E7 toolchain", () => {
     expect(buildProbe).toContain("output_stage=$(mktemp -d /out/");
     expect(buildProbe).toContain('mv -f "$candidate" "$output"');
     expect(buildProbe).toContain("actual_uid=$(od ");
+    expect(buildApp).toContain("quickjs-symbian-gcce.patch");
+    expect(buildApp).toContain("-std=gnu99");
+    expect(buildApp).toContain("-O0");
+    expect(buildApp).toContain("POCKETJS_CORE_LIBRARY");
+    expect(buildApp).toContain("output_stage=$(mktemp -d /out/");
+    expect(buildApp).toContain('mv -f "$candidate" "$output"');
+    expect(buildApp).toContain("actual_uid=$(od ");
+    expect(buildApp).toContain("sha256sum --check --status");
+    expect(buildApp).toContain("SIS version must be three decimal components");
     expect(probeProject).toContain("QMAKE_LINK = /toolchain/current/bin/symbian-gcce-link");
     expect(probeProject).toContain("TARGET.UID3 = $$POCKETJS_SYMBIAN_UID");
     expect(probeProject).not.toContain(SYMBIAN_TOOLCHAIN.probe.uid);
     expect(dockerfile).toContain(
       `ARG POCKETJS_SYMBIAN_BASE_IMAGE=${SYMBIAN_TOOLCHAIN.container.baseImage}`,
     );
+    expect(dockerfile).toContain("pocketjs-symbian-build-app");
   });
 
   test("Docker invocations are amd64, pinned, and narrowly mounted", () => {

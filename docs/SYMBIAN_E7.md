@@ -1,25 +1,34 @@
 # Nokia E7 / Symbian Belle development
 
-PocketJS includes a pinned, repeatable command-line bootstrap for building standard
-Symbian Qt applications for a Nokia E7 (RM-626). It is intended as the first
-stage of a PocketJS host port: it exercises the compiler, Qt ABI, E32
-executable, resource registration, SIS packaging, and signing before a new
-runtime target is registered. The separate MTP command proves byte delivery to
-the phone; installation and launch remain device-side confirmations.
+PocketJS includes a pinned, repeatable command-line bootstrap for building
+standard Symbian Qt applications and an experimental PocketJS host for a Nokia
+E7 (RM-626). The probe exercises the compiler, Qt ABI, E32 executable, resource
+registration, SIS packaging, and signing. The private runtime additionally
+links the PocketJS Rust core and pinned QuickJS, embeds a compiled application
+and its `.pak`, and exposes the host operations needed to draw and accept
+button input. The separate MTP command proves byte delivery to the phone;
+installation and launch remain device-side confirmations.
 
 This workflow does not flash or modify firmware. A CFW may relax installation
 policy on the phone, but applications should still use the smallest possible
-capability set.
+capability set. The runtime uses a private `symbian-e7-dev` build profile; it
+does not register Symbian in the production `POCKET_TARGETS` registry.
 
 ## What gets installed
 
-`pocket symbian setup --yes` downloads four pinned, SHA-256-verified inputs into
+`pocket symbian setup --yes` downloads five pinned, SHA-256-verified inputs into
 the shared Pocket Stack cache:
 
 - Belle SDK for Qt SDK 1.2.1 (`SymbianSR1Qt474`)
 - GCCE 4.6.3 for Linux/i686
 - Qt 4.7.4 source, used to build a native Linux `qmake`
 - GnuPoc's native EKA2 resource, executable, and SIS tools
+- `pocket-stack/quickjs-rs` at revision
+  `0fc946fb670c0c29bc0135f510bcb0f595415a61` (QuickJS `2026-06-04`)
+
+Setup also uses `rustup` to install `nightly-2026-07-02` with the `rust-src`
+component. That toolchain cross-compiles the no-std PocketJS core static
+library for the ARMv6 Symbian EABI.
 
 The build runs in an isolated `linux/amd64` container because the historical
 GCCE binaries are 32-bit Intel Linux executables. The SDK and generated signing
@@ -33,10 +42,12 @@ redistributed by this repository. Review and comply with their original terms.
 
 ## One-time setup
 
-On macOS, install the two host prerequisites:
+On macOS, install the host prerequisites:
 
 ```sh
 brew install libmtp libusb pkgconf
+# Install rustup, if it is not already available, then verify:
+rustup --version
 # Install OrbStack or Docker Desktop, then verify:
 docker version
 ```
@@ -114,6 +125,55 @@ Application manager > Installation settings > Software installation > All
 Do not disable certificate checks globally unless the specific CFW workflow
 requires that choice and its security consequences are understood.
 
+## Build and stage a PocketJS application
+
+The app builder resolves the manifest against the private
+`symbian-e7-dev` profile, compiles the PocketJS JavaScript and `.pak`, builds
+the Rust core, links the Qt/QuickJS host, and signs one SIS:
+
+```sh
+bun tools/symbian.ts build app \
+  --manifest apps/hero/pocket.json \
+  --sis-version 1.0.0
+```
+
+It writes both the installable package and a build receipt:
+
+```text
+dist/symbian/pocketjs-e7-runtime.sis
+dist/symbian/pocketjs-e7-runtime.receipt.json
+```
+
+The receipt records the application output, package UID and version, pinned
+QuickJS revision, and SHA-256 hashes for the JavaScript, `.pak`, resolved plan,
+and Rust core. Stage the SIS over the same readback-verified USB/MTP path:
+
+```sh
+bun tools/symbian.ts doctor --device --coda-usb
+bun tools/symbian.ts deploy dist/symbian/pocketjs-e7-runtime.sis
+```
+
+Install it from `File manager > Mass memory > Installs`, then launch
+**PocketJS E7 Runtime**. Symbian package upgrades must use a version greater
+than the version already installed on the phone. After installing `1.0.0`, for
+example, pass `--sis-version 1.0.1` for the next build rather than reusing
+`1.0.0`.
+
+The experimental host has these fixed runtime semantics:
+
+- PocketJS renders a native `480x272` logical surface centered, without
+  scaling, in the E7's `640x360` full-screen Qt shell; unused margins are
+  black.
+- The host calls the JavaScript frame at 30 Hz and advances the PocketJS core
+  with two `ui_tick()` calls per frame.
+- Arrow keys map to the four directions, the navigation center/Select key and
+  keyboard Enter to `CIRCLE`, Escape to `CROSS`, and Space to `START`.
+
+The host currently transports in-bounds Qt touch points to the core for
+hardware investigation, but `symbian-e7-dev` does not advertise the
+`input.touch` capability. Applications must not treat touch as a supported
+Symbian target contract yet.
+
 ## Optional CODA device agent
 
 Qt SDK 1.2.1 shipped `Public-CODA-1.0.6-for-S60v5-Anna-Belle-vFuture.sis`.
@@ -159,24 +219,21 @@ install-server policy.
 
 ## PocketJS port boundary
 
-The build and MTP readback checks make the native application and delivery
+The toolchain now implements the GCCE-compatible Rust core, QuickJS execution
+and Promise-job draining, the base HostOps surface, embedded compiled
+JavaScript and `.pak` resources, fixed-step presentation, and button input.
+The app build and MTP readback checks make both the native package and delivery
 substrate repeatable. A signed SIS is time-dependent and therefore is not
-expected to be byte-for-byte reproducible between builds. Device-side
-installation and launch still require confirmation on the phone; they are not
-claimed by the host checks. The CODA USB command currently verifies the
-transport and TCF Locator session; MTP remains the implemented file-delivery
-path. This workflow does not yet make `symbian-e7` a production PocketJS target.
-That target should be added only after all of these are implemented and tested:
+expected to be byte-for-byte reproducible between builds.
 
-- a GCCE-compatible PocketJS core static library;
-- QuickJS execution and Promise-job draining on Symbian;
-- HostOps for the `640x360` display, touch/keyboard input, time, textures, and
-  frame presentation;
-- embedding the compiled JavaScript and `.pak` payload in the SIS; and
-- emulator or physical-device golden tests for visible output and input.
-
-Until those gates pass, use this probe as the stable starting point for the
-runtime port instead of declaring an incomplete target in `POCKET_TARGETS`.
+Those implementation milestones do not make Symbian a production PocketJS
+target. Device-side installation, launch, visible output, and input still
+require confirmation on the phone; they are not claimed by host-side checks.
+The CODA USB command verifies the transport and TCF Locator session, while MTP
+remains the implemented file-delivery path. `symbian-e7-dev` stays private
+until the host passes a full physical-device acceptance suite and repeatable
+visible-output/input golden tests. Touch is specifically outside the published
+contract during that period.
 
 ## Device and privacy boundaries
 

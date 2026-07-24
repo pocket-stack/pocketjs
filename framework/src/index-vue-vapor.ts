@@ -56,11 +56,18 @@ function uploadPakImages(ops: HostOps): void {
   if ((ops as HostOps & { __textures?: unknown }).__textures) return;
   for (const key of pakEntries(IMG_PREFIX)) {
     const blob = pakGet(key);
-    const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
-    const w = dv.getUint16(0, true);
-    const h = dv.getUint16(2, true);
-    const psm = blob[4];
-    const handle = ops.uploadTexture(blob.subarray(8), w, h, psm);
+    let handle: number;
+    if (ops.uploadImgEntry) {
+      handle = ops.uploadImgEntry(blob);
+    } else {
+      const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+      handle = ops.uploadTexture(
+        blob.subarray(8),
+        dv.getUint16(0, true),
+        dv.getUint16(2, true),
+        blob[4],
+      );
+    }
     if (handle >= 0) rendererRegisterTexture(key.slice(IMG_PREFIX.length), handle);
   }
 }
@@ -96,10 +103,14 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   setStyleResolver(resolveStyle);
   if (opts.styles) registerStyles(opts.styles);
 
+  const nativeTextureTable = host.kind === "native"
+    ? (host.ops as HostOps & { __textures?: Record<string, number> }).__textures
+    : undefined;
   if (host.kind === "native") {
-    const tex = (host.ops as HostOps & { __textures?: Record<string, number> }).__textures;
-    if (tex) {
-      for (const key in tex) rendererRegisterTexture(key, tex[key]);
+    if (nativeTextureTable) {
+      for (const key in nativeTextureTable) {
+        rendererRegisterTexture(key, nativeTextureTable[key]);
+      }
     }
     const spr = (
       host.ops as HostOps & {
@@ -111,7 +122,10 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
     }
   }
 
-  if (host.kind === "injected") {
+  // Transitional native ports can retain strict target/ABI identity while
+  // loading resources from globalThis.__pak until they gain a native parser.
+  // Established console hosts publish __textures, including an empty table.
+  if (host.kind === "injected" || nativeTextureTable === undefined) {
     if (opts.pak) loadPack(opts.pak);
     if (hasPack()) {
       for (const key of pakEntries()) {

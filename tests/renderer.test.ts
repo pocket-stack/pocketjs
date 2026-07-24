@@ -65,7 +65,16 @@ import { rootMirror } from "../framework/src/renderer.ts";
 import { ActionBar, ActionHandler, FocusGrid, Modal, Portal, Text, View } from "../framework/src/components.ts";
 import { resetPack } from "../framework/src/pak.ts";
 import { encodeImageEntry, pack } from "../framework/compiler/pak.ts";
-import { BTN, PAK_DTYPE, NODE_TYPE, PSM, ROOT_ID, PROP, STYLE_ID_NONE } from "../contracts/spec/spec.ts";
+import {
+  BTN,
+  IMG_FLAG_LINEAR,
+  PAK_DTYPE,
+  NODE_TYPE,
+  PSM,
+  ROOT_ID,
+  PROP,
+  STYLE_ID_NONE,
+} from "../contracts/spec/spec.ts";
 
 // ---------------------------------------------------------------------------
 // Mock host
@@ -860,6 +869,34 @@ describe("host detection (host.ts)", () => {
     }
   });
 
+  test("target-marked native host without resource tables uses portable pak feed", () => {
+    const symbian = makeMockHost();
+    symbian.ops.__host = "symbian-e7-dev";
+    symbian.ops.__hostAbi = 1;
+    const g = globalThis as { ui?: HostOps; __pak?: ArrayBuffer };
+    const pak = pack([
+      { key: "ui:styles", dtype: PAK_DTYPE.u8, data: new Uint8Array([1, 2, 3]) },
+      { key: "ui:font.0", dtype: PAK_DTYPE.u8, data: new Uint8Array([4, 5, 6]) },
+    ]);
+    g.ui = symbian.ops;
+    g.__pak = pak.buffer.slice(pak.byteOffset, pak.byteOffset + pak.byteLength) as ArrayBuffer;
+    try {
+      const dispose = publicRender(() => createElement("view"), {
+        ops: symbian.ops,
+        styles: {},
+      });
+      expect(detectHost(symbian.ops).kind).toBe("native");
+      expect(symbian.of("loadStyles", "loadFontAtlas").map(([name]) => name)).toEqual([
+        "loadFontAtlas",
+        "loadStyles",
+      ]);
+      dispose();
+    } finally {
+      delete g.ui;
+      delete g.__pak;
+    }
+  });
+
   test("a real injected host stays strict even when globalThis.ui exists", () => {
     const psp = makeMockHost();
     (psp.ops as HostOps & { __textures?: unknown }).__textures = {};
@@ -1139,6 +1176,31 @@ describe("public render() (index.ts)", () => {
     expect(typeof g.frame).toBe("function");
     g.frame?.(BTN.CIRCLE);
     expect(before).toEqual([BTN.CIRCLE]);
+
+    dispose();
+  });
+
+  test("mount() preserves IMG flags through uploadImgEntry when the host supports it", () => {
+    const g = globalThis as { ui?: HostOps; __pak?: ArrayBuffer };
+    g.ui = host.ops;
+    host.ops.uploadImgEntry = (blob) => {
+      host.calls.push(["uploadImgEntry", blob[5], blob.length]);
+      return 901;
+    };
+    const image = encodeImageEntry(
+      { width: 1, height: 1, rgba: new Uint8Array([10, 20, 30, 255]) },
+      PSM.PSM_8888,
+      IMG_FLAG_LINEAR,
+    );
+    const pak = pack([{ key: "ui:img.logo.png", dtype: PAK_DTYPE.u8, data: image }]);
+    g.__pak = pak.buffer.slice(pak.byteOffset, pak.byteOffset + pak.byteLength) as ArrayBuffer;
+
+    const dispose = publicMount(() => createElement("view"));
+
+    expect(host.of("uploadImgEntry")).toEqual([
+      ["uploadImgEntry", IMG_FLAG_LINEAR, image.length],
+    ]);
+    expect(host.of("uploadTexture")).toEqual([]);
 
     dispose();
   });

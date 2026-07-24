@@ -36,6 +36,14 @@
     "sha256": "97195ebce8a46f9929fb971d9ae58326d011c4d54425389e6e936514f540221e",
     "extractRoot": "qt-everywhere-opensource-src-4.7.4"
   },
+  "quickjs": {
+    "version": "2026-06-04",
+    "repository": "https://github.com/pocket-stack/quickjs-rs",
+    "rev": "0fc946fb670c0c29bc0135f510bcb0f595415a61",
+    "asset": "quickjs-rs-0fc946fb670c0c29bc0135f510bcb0f595415a61.tar.gz",
+    "url": "https://codeload.github.com/pocket-stack/quickjs-rs/tar.gz/0fc946fb670c0c29bc0135f510bcb0f595415a61",
+    "sha256": "2160d35d7f5a69c687161647ae5521c186f08442fde56f78465cdfa2a3d6ecf5"
+  },
   "downloadsCachePath": "symbian/downloads",
   "receipt": ".pocket-stack-symbian.json",
   "signing": {
@@ -71,5 +79,16 @@
   "probe": {
     "uid": "0xE7A11001",
     "output": "dist/symbian/pocketjs-e7-probe.sis"
+  },
+  "runtime": {
+    "uid": "0xE7A11010",
+    "output": "dist/symbian/pocketjs-e7-runtime.sis",
+    "sisVersion": "1.0.0",
+    "rustToolchain": "nightly-2026-07-02",
+    "logicalViewport": [
+      480,
+      272
+    ],
+    "frameRate": 30
   }
 }

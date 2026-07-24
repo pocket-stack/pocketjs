@@ -36,6 +36,11 @@ export interface SymbianToolchainManifest {
     readonly version: string;
     readonly extractRoot: string;
   };
+  readonly quickjs: PinnedDownload & {
+    readonly version: string;
+    readonly repository: string;
+    readonly rev: string;
+  };
   readonly downloadsCachePath: string;
   readonly receipt: string;
   readonly signing: {
@@ -56,14 +61,29 @@ export interface SymbianToolchainManifest {
     readonly uid: string;
     readonly output: string;
   };
+  readonly runtime: {
+    readonly uid: string;
+    readonly output: string;
+    readonly sisVersion: string;
+    readonly rustToolchain: string;
+    readonly logicalViewport: readonly [number, number];
+    readonly frameRate: number;
+  };
 }
 
-export const SYMBIAN_TOOLCHAIN = manifestJson as SymbianToolchainManifest;
+export const SYMBIAN_TOOLCHAIN = manifestJson as unknown as SymbianToolchainManifest;
 export const SYMBIAN_DOWNLOADS = [
   SYMBIAN_TOOLCHAIN.gnupoc,
   SYMBIAN_TOOLCHAIN.sdk,
   SYMBIAN_TOOLCHAIN.gcce,
   SYMBIAN_TOOLCHAIN.qtSource,
+] as const;
+export const SYMBIAN_RUNTIME_DOWNLOADS = [
+  SYMBIAN_TOOLCHAIN.quickjs,
+] as const;
+export const SYMBIAN_SETUP_DOWNLOADS = [
+  ...SYMBIAN_DOWNLOADS,
+  ...SYMBIAN_RUNTIME_DOWNLOADS,
 ] as const;
 
 export function symbianDownloadsRoot(env: NodeJS.ProcessEnv = process.env): string {
@@ -124,9 +144,11 @@ const SYMBIAN_IMPLEMENTATION_FILES = [
   "tools/symbian/container/pocketjs-symbian-setup",
   "tools/symbian/container/pocketjs-symbian-doctor",
   "tools/symbian/container/pocketjs-symbian-build-probe",
+  "tools/symbian/container/pocketjs-symbian-build-app",
   "tools/symbian/container/symbian-gcce-link",
   "tools/symbian/container/patches/makesis-openssl-1.1.patch",
   "tools/symbian/container/patches/makesis-openssl-1.1-pem-eof.patch",
+  "tools/symbian/container/patches/quickjs-symbian-gcce.patch",
 ] as const;
 
 export function symbianImplementationDigest(repository: string): string {

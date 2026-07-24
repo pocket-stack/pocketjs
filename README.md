@@ -165,14 +165,17 @@ bun run hw hero --trace              # real PSP via PSPLINK + host0 trace
 bun symbian doctor --device           # inspect the Nokia E7 toolchain and USB MTP path
 bun symbian doctor --coda-usb          # verify CODA 4.x directly over USB interface 4
 bun symbian build probe               # build a visible self-signed Qt/Symbian SIS
+bun tools/symbian.ts build app --manifest apps/hero/pocket.json --sis-version 1.0.0
+bun symbian deploy dist/symbian/pocketjs-e7-runtime.sis
 bunx tsc --noEmit                     # typecheck (babel owns the JSX transform)
 ```
 
 The Nokia E7 bootstrap and its current PocketJS port boundary are documented in
 [docs/SYMBIAN_E7.md](./docs/SYMBIAN_E7.md). It establishes a pinned,
-repeatable GCCE/Qt/E32/SIS build and physical-device staging path; device-side
-installation remains an explicit phone confirmation, and the workflow does not
-register an incomplete Symbian runtime target.
+repeatable GCCE/Qt/QuickJS/Rust/E32/SIS build and physical-device staging path.
+The private `symbian-e7-dev` profile can package PocketJS applications for
+hardware testing, but it is intentionally absent from the production target
+registry until device acceptance and golden testing are complete.
 
 The PSP bootstrap owns every production input: Rust nightly + `rust-src`, the
 `cargo-psp` tools built at an exact `pocket-stack/rust-psp` revision, and a

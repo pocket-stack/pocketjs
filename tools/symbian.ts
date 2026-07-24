@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import {
   createReadStream,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,12 +18,15 @@ import {
   type CommandRunner,
 } from "./symbian-device.ts";
 import { setupSymbianToolchain } from "./symbian-bootstrap.ts";
+import { resolveSymbianE7BuildPlan } from "./symbian-profile.ts";
 import {
   SYMBIAN_DOWNLOADS,
+  SYMBIAN_RUNTIME_DOWNLOADS,
   SYMBIAN_TOOLCHAIN,
   symbianDockerDoctorArguments,
   symbianDockerRunArguments,
   symbianDownloadPath,
+  symbianDownloadsRoot,
   symbianImplementationDigest,
 } from "./symbian-toolchain.ts";
 import { pocketStackCacheRoot, withArtifactLock } from "./psp-toolchain.ts";
@@ -31,11 +36,17 @@ const root = new URL("..", import.meta.url).pathname;
 async function spawn(
   command: string,
   args: readonly string[],
-  options: { timeoutMs?: number; inherit?: boolean; cwd?: string } = {},
+  options: {
+    timeoutMs?: number;
+    inherit?: boolean;
+    cwd?: string;
+    env?: Record<string, string | undefined>;
+  } = {},
 ): Promise<CommandResult> {
   const process = Bun.spawn({
     cmd: [command, ...args],
     cwd: options.cwd,
+    env: options.env,
     stdout: options.inherit ? "inherit" : "pipe",
     stderr: options.inherit ? "inherit" : "pipe",
   });
@@ -157,7 +168,7 @@ async function doctor(
   console.log(`  ${icon(docker)} Docker`);
   ok &&= docker;
 
-  for (const artifact of SYMBIAN_DOWNLOADS) {
+  for (const artifact of [...SYMBIAN_DOWNLOADS, ...SYMBIAN_RUNTIME_DOWNLOADS]) {
     const path = symbianDownloadPath(artifact);
     const verified = existsSync(path) && await sha256File(path) === artifact.sha256;
     console.log(
@@ -245,6 +256,109 @@ async function buildProbe(): Promise<string> {
   return sis;
 }
 
+function flagValue(args: readonly string[], name: string): string | undefined {
+  const inline = args.find((arg) => arg.startsWith(`${name}=`));
+  if (inline) return inline.slice(name.length + 1);
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+async function buildApp(
+  manifestPath: string,
+  sisVersion: string,
+): Promise<string> {
+  const version = sisVersion.match(/^([0-9]+)\.([0-9]+)\.([0-9]+)$/);
+  if (!version || version.slice(1).some((part) => Number(part) > 32767)) {
+    throw new Error(
+      "SIS version must be three decimal components from 0 through 32767",
+    );
+  }
+  if (!await dockerImageReady()) {
+    throw new Error("Symbian container is not ready; run `pocket symbian setup --yes`");
+  }
+  for (const artifact of SYMBIAN_RUNTIME_DOWNLOADS) {
+    const path = symbianDownloadPath(artifact);
+    if (!existsSync(path) || await sha256File(path) !== artifact.sha256) {
+      throw new Error(
+        `missing pinned ${artifact.asset}; run \`pocket symbian setup --yes\``,
+      );
+    }
+  }
+
+  const absoluteManifest = resolve(manifestPath);
+  const manifest = JSON.parse(readFileSync(absoluteManifest, "utf8")) as unknown;
+  const plan = resolveSymbianE7BuildPlan(manifest);
+  if (!/^[A-Za-z0-9._-]+$/.test(plan.app.output)) {
+    throw new Error(`unsafe Symbian app output name ${JSON.stringify(plan.app.output)}`);
+  }
+
+  const outputRoot = resolve(root, "dist/symbian");
+  const payload = resolve(outputRoot, "build", plan.app.output);
+  const rustTarget = resolve(outputRoot, ".cargo-symbian");
+  mkdirSync(payload, { recursive: true });
+  await Bun.write(resolve(payload, "plan.json"), JSON.stringify(plan, null, 2) + "\n");
+
+  const appBuild = await spawn("bun", [
+    "tools/build.ts",
+    `--plan=${resolve(payload, "plan.json")}`,
+    `--project-root=${root}`,
+    `--outdir=${payload}`,
+  ], { inherit: true, cwd: root });
+  if (appBuild.exitCode !== 0) throw new Error("PocketJS Symbian guest build failed");
+  copyFileSync(resolve(payload, `${plan.app.output}.js`), resolve(payload, "app.js"));
+  copyFileSync(resolve(payload, `${plan.app.output}.pak`), resolve(payload, "app.pak"));
+
+  const coreDirectory = resolve(root, "engine/symbian");
+  const rustBuild = await spawn("cargo", [
+    "build",
+    "--release",
+    "--locked",
+    "--target",
+    "targets/armv6-symbian-eabi.json",
+    "-Z",
+    "json-target-spec",
+    "-Z",
+    "build-std=core,alloc,compiler_builtins",
+    "-Z",
+    "build-std-features=compiler-builtins-mem",
+  ], {
+    inherit: true,
+    cwd: coreDirectory,
+    env: { ...process.env, CARGO_TARGET_DIR: rustTarget },
+  });
+  if (rustBuild.exitCode !== 0) throw new Error("PocketJS Symbian Rust core build failed");
+  copyFileSync(
+    resolve(
+      rustTarget,
+      "armv6-symbian-eabi/release/libpocketjs_symbian_core.a",
+    ),
+    resolve(payload, "libpocketjs_symbian_core.a"),
+  );
+
+  mkdirSync(outputRoot, { recursive: true });
+  const outputLockId = createHash("sha256").update(outputRoot).digest("hex");
+  const outputLock = join(
+    pocketStackCacheRoot(),
+    `symbian/.locks/runtime-output-${outputLockId}.lock`,
+  );
+  await withArtifactLock(outputLock, async () => {
+    const built = await spawn("docker", symbianDockerRunArguments(
+      "/usr/local/bin/pocketjs-symbian-build-app",
+      [plan.app.output, sisVersion],
+      {
+        repository: root,
+        output: outputRoot,
+        downloads: symbianDownloadsRoot(),
+      },
+    ), { inherit: true, cwd: root });
+    if (built.exitCode !== 0) throw new Error("Symbian PocketJS runtime build failed");
+  }, { timeoutMs: 20 * 60_000, staleMs: 60 * 60_000 });
+
+  const sis = resolve(root, SYMBIAN_TOOLCHAIN.runtime.output);
+  if (!existsSync(sis)) throw new Error(`runtime build did not produce ${sis}`);
+  return sis;
+}
+
 async function deploy(path: string): Promise<void> {
   const sis = resolve(path);
   const missing = ["mtp-folders", "mtp-sendfile", "mtp-getfile"]
@@ -276,6 +390,8 @@ const HELP = `PocketJS Nokia E7 / Symbian toolchain
   pocket symbian doctor --coda-usb  verify CODA over the E7 USB interface 4
   pocket symbian setup --yes        fetch pinned SDK inputs and build the amd64 toolchain
   pocket symbian build probe        build and self-sign the visible Qt probe SIS
+  pocket symbian build app --manifest <pocket.json> [--sis-version 1.0.0]
+                                    build a target-bound PocketJS E7 runtime SIS
   pocket symbian deploy <sis>       copy to Mass memory/Installs and verify by MTP readback
   pocket symbian coda usb           run the CODA USB ping + Locator handshake
 `;
@@ -297,9 +413,25 @@ try {
       await setupSymbianToolchain();
       break;
     case "build":
-      if (args[1] !== "probe") throw new Error("usage: pocket symbian build probe");
-      console.log(`PocketJS Symbian probe: ${await buildProbe()}`);
-      break;
+      if (args[1] === "probe") {
+        console.log(`PocketJS Symbian probe: ${await buildProbe()}`);
+        break;
+      }
+      if (args[1] === "app") {
+        const manifest = flagValue(args.slice(2), "--manifest");
+        if (!manifest) {
+          throw new Error(
+            "usage: pocket symbian build app --manifest <pocket.json> [--sis-version 1.0.0]",
+          );
+        }
+        const sisVersion = flagValue(args.slice(2), "--sis-version") ??
+          SYMBIAN_TOOLCHAIN.runtime.sisVersion;
+        console.log(`PocketJS Symbian runtime: ${await buildApp(manifest, sisVersion)}`);
+        break;
+      }
+      throw new Error(
+        "usage: pocket symbian build probe | build app --manifest <pocket.json>",
+      );
     case "deploy":
       if (!args[1]) throw new Error("usage: pocket symbian deploy <path-to.sis>");
       await deploy(args[1]);

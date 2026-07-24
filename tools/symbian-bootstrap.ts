@@ -9,7 +9,7 @@ import {
 import { dirname, join } from "node:path";
 import {
   type PinnedDownload,
-  SYMBIAN_DOWNLOADS,
+  SYMBIAN_SETUP_DOWNLOADS,
   SYMBIAN_TOOLCHAIN,
   symbianDockerBuildArguments,
   symbianDockerSetupArguments,
@@ -105,12 +105,33 @@ export async function setupSymbianToolchain(): Promise<void> {
     throw new Error("Docker is required (OrbStack or Docker Desktop on macOS)");
   }
   if (!Bun.which("curl")) throw new Error("curl is required to fetch the pinned SDK inputs");
+  if (!Bun.which("rustup")) {
+    throw new Error("rustup is required to build the PocketJS Symbian core");
+  }
 
   console.log(`PocketJS Symbian setup (${SYMBIAN_TOOLCHAIN.toolchainVersion})`);
   console.log(`  downloads: ${symbianDownloadsRoot()}`);
   console.log(`  platform: ${SYMBIAN_TOOLCHAIN.container.platform}\n`);
 
-  for (const artifact of SYMBIAN_DOWNLOADS) {
+  const rust = await run("rustup", [
+    "toolchain",
+    "install",
+    SYMBIAN_TOOLCHAIN.runtime.rustToolchain,
+    "--profile",
+    "minimal",
+    "--component",
+    "rust-src",
+  ]);
+  if (rust.exitCode !== 0) {
+    throw new Error(
+      `failed to install ${SYMBIAN_TOOLCHAIN.runtime.rustToolchain} with rust-src`,
+    );
+  }
+  console.log(
+    `  ✓ Rust ${SYMBIAN_TOOLCHAIN.runtime.rustToolchain} + rust-src`,
+  );
+
+  for (const artifact of SYMBIAN_SETUP_DOWNLOADS) {
     const status = await installDownload(artifact);
     console.log(`  ${status === "cached" ? "·" : "✓"} ${artifact.asset} (${status})`);
   }
