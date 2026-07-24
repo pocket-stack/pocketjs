@@ -254,6 +254,7 @@ describe("semantic resolution", () => {
     expect(result.plan.app).toEqual({
       id: "dev.pocket-stack.telemetry",
       title: "Pocket Telemetry",
+      version: "0.1.0",
       entry: "app/main.tsx",
       output: "main",
       framework: "solid",

@@ -92,7 +92,7 @@ static uint8_t analog_axis(int32_t value) {
 }
 
 static int32_t pocket_analog(HidAnalogStickState stick) {
-    return analog_axis(stick.x) | ((int32_t)analog_axis(-stick.y) << 8);
+    return ((int32_t)analog_axis(stick.x) << 8) | analog_axis(-stick.y);
 }
 
 int main(int argc, char **argv) {
