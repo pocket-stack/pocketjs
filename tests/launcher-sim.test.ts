@@ -61,7 +61,7 @@ describe("launcher registry admission", () => {
 
   test("Vita admits the same current demo set through its own target profile", () => {
     expect(vitaRegistry.apps).toEqual(registry.apps);
-    expect(vitaRegistry.apps).toHaveLength(17);
+    expect(vitaRegistry.apps).toHaveLength(18);
   });
 
   test("committed registry.generated.ts is fresh (re-run tools/launcher.ts scan)", async () => {

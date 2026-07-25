@@ -336,6 +336,7 @@ describe("semantic resolution", () => {
       notifications: [true, true, false],
       settings: [true, true, false],
       stats: [true, true, false],
+      "touch-lab": [true, true, false], // fixed-viewport touch demo, same shape as zoomlab
       "vue-sfc-lab": [true, true, false],
       zoomlab: [true, true, false],
     };

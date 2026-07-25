@@ -92,6 +92,12 @@
   "covers/refl-im-main.png": {
     "linear": true
   },
+  "covers/cover-touch-lab-main.png": {
+    "linear": true
+  },
+  "covers/refl-touch-lab-main.png": {
+    "linear": true
+  },
   "covers/cover-vue-sfc-lab-main.png": {
     "linear": true
   },

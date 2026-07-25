@@ -32,6 +32,7 @@ export const REGISTRY: readonly RegistryApp[] = [
   { output: "music-main", id: "dev.pocket-stack.music", title: "PocketJS: Now Playing", cover: "covers/cover-music-main.png", refl: "covers/refl-music-main.png" },
   { output: "settings-main", id: "dev.pocket-stack.settings", title: "PocketJS: Settings", cover: "covers/cover-settings-main.png", refl: "covers/refl-settings-main.png" },
   { output: "im-main", id: "dev.pocket-stack.im", title: "PocketJS: Talk", cover: "covers/cover-im-main.png", refl: "covers/refl-im-main.png" },
+  { output: "touch-lab-main", id: "dev.pocket-stack.touch.lab", title: "PocketJS: Touch Events Lab", cover: "covers/cover-touch-lab-main.png", refl: "covers/refl-touch-lab-main.png" },
   { output: "vue-sfc-lab-main", id: "dev.pocket-stack.vue.sfc.lab", title: "PocketJS: Vue SFC Feature Lab", cover: "covers/cover-vue-sfc-lab-main.png", refl: "covers/refl-vue-sfc-lab-main.png" },
   { output: "zoomlab-main", id: "dev.pocket-stack.zoomlab", title: "Zoom Lab", cover: "covers/cover-zoomlab-main.png", refl: "covers/refl-zoomlab-main.png" },
 ] as const;
