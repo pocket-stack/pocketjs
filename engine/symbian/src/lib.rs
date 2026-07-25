@@ -29,9 +29,12 @@ use pocketjs_core::Ui;
 
 #[cfg(any(target_os = "none", test))]
 mod gles2;
+pub mod extension;
 
+#[cfg(any(target_os = "none", test))]
 const C_MALLOC_ALIGNMENT: usize = 8;
 
+#[cfg(any(target_os = "none", test))]
 #[inline]
 const fn c_allocator_supports_alignment(alignment: usize) -> bool {
     alignment <= C_MALLOC_ALIGNMENT
@@ -91,6 +94,15 @@ static mut DAMAGE_TRACKER: DamageTracker<DEFAULT_DAMAGE_REGIONS> = DamageTracker
 static mut FRAMEBUFFER_WIDTH: u32 = 0;
 static mut FRAMEBUFFER_HEIGHT: u32 = 0;
 static mut FRAMEBUFFER_STRIDE: u32 = 0;
+
+/// Stock cores have no application-specific native surface. A custom static
+/// library depends on this crate with default features disabled and exports
+/// the same symbol with its versioned callback table.
+#[cfg(feature = "standalone-extension-provider")]
+#[no_mangle]
+pub extern "C" fn pocketjs_symbian_extension_v1() -> *const extension::ExtensionV1 {
+    core::ptr::null()
+}
 
 #[inline]
 fn ui() -> &'static mut Ui {
@@ -416,6 +428,44 @@ pub extern "C" fn ui_gl_render(
     #[cfg(target_os = "none")]
     unsafe {
         return gles2::render(
+            ui(),
+            target_x,
+            target_y,
+            target_width,
+            target_height,
+            window_width,
+            window_height,
+        ) as i32;
+    }
+    #[cfg(not(target_os = "none"))]
+    {
+        let _ = (
+            target_x,
+            target_y,
+            target_width,
+            target_height,
+            window_width,
+            window_height,
+        );
+        0
+    }
+}
+
+/// Draw the retained UI over an application-owned color buffer. Native 3D
+/// extensions render and clear first; this pass preserves their color output
+/// while the backend disables depth testing for the HUD.
+#[no_mangle]
+pub extern "C" fn ui_gl_render_over(
+    target_x: i32,
+    target_y: i32,
+    target_width: i32,
+    target_height: i32,
+    window_width: i32,
+    window_height: i32,
+) -> i32 {
+    #[cfg(target_os = "none")]
+    unsafe {
+        return gles2::render_over(
             ui(),
             target_x,
             target_y,

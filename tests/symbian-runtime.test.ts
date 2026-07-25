@@ -342,6 +342,22 @@ describe("experimental Nokia E7 runtime profile", () => {
       join(repository, "hosts/symbian/runtime/pocketjs_symbian_core.h"),
       "utf8",
     );
+    const coreCargo = readFileSync(
+      join(repository, "engine/symbian/Cargo.toml"),
+      "utf8",
+    );
+    const coreSource = readFileSync(
+      join(repository, "engine/symbian/src/lib.rs"),
+      "utf8",
+    );
+    const extensionHeader = readFileSync(
+      join(repository, "hosts/symbian/runtime/pocketjs_symbian_extension.h"),
+      "utf8",
+    );
+    const orchestrator = readFileSync(
+      join(repository, "tools/symbian.ts"),
+      "utf8",
+    );
     const buildApp = readFileSync(
       join(repository, "tools/symbian/container/pocketjs-symbian-build-app"),
       "utf8",
@@ -364,7 +380,10 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain("class PocketJsRuntime : public QGLWidget");
     expect(runtime).toContain("QGLFormat pocketJsGlFormat()");
     expect(runtime).toContain("format.setDoubleBuffer(true)");
-    expect(runtime).toContain("format.setDepth(false)");
+    expect(runtime).toContain("format.setDepth(");
+    expect(runtime).toContain(
+      "extension->flags & POCKETJS_SYMBIAN_EXTENSION_DEPTH_BUFFER",
+    );
     expect(runtime).toContain("format.setStencil(false)");
     expect(runtime).toContain("format.setSampleBuffers(false)");
     expect(runtime).toContain("QGLWidget(pocketJsGlFormat())");
@@ -375,7 +394,8 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain("PocketJS lost its OpenGL ES 2 context.");
     expect(runtime).toContain("glInitialized_ && isValid()");
     expect(runtime).toContain("void PocketJsRuntime::paintGL()");
-    expect(runtime).toContain("if (ui_gl_render(");
+    expect(runtime).toContain("? ui_gl_render_over(");
+    expect(runtime).toContain(": ui_gl_render(");
     expect(runtime).toContain("const QRect target = presentationRect();");
     expect(runtime).toContain("glReadPixels(");
     expect(runtime).toContain(
@@ -408,6 +428,11 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain("return kButtonTriangle;");
     expect(runtime).toContain("case Qt::Key_S:");
     expect(runtime).toContain("return kButtonSquare;");
+    expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_MOVE_FORWARD");
+    expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_LOOK_LEFT");
+    expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_RELOAD");
+    expect(runtime).toContain("nativeKeys_ |= nativeKey");
+    expect(runtime).toContain("nativeKeys_ &= ~nativeKey");
     expect(runtime).toContain("setAttribute(Qt::WA_AutoOrientation, true)");
     expect(runtime).not.toContain("WA_LockLandscapeOrientation");
     expect(runtime).toContain('"__pocketResizeViewport"');
@@ -457,6 +482,9 @@ describe("experimental Nokia E7 runtime profile", () => {
       '"POCKETJS_INITIAL_LOGICAL_WIDTH=$initial_logical_width"',
     );
     expect(buildApp).toContain(
+      '"$quickjs_root/libquickjs-sys/embed/static-functions.c"',
+    );
+    expect(buildApp).toContain(
       "host_abi=$(jq -er '.target.hostAbi' \"$payload/plan.json\")",
     );
     expect(buildApp).toContain('"POCKETJS_HOST_ABI=$host_abi"');
@@ -471,6 +499,84 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(coreHeader).toContain("void ui_gl_reset_resources(void);");
     expect(coreHeader).toContain("void ui_gl_shutdown(void);");
     expect(coreHeader).toContain("int32_t ui_gl_render(");
+    expect(coreHeader).toContain("int32_t ui_gl_render_over(");
+    expect(project).toContain("pocketjs_symbian_extension.h");
+
+    expect(extensionHeader).toContain(
+      "POCKETJS_SYMBIAN_EXTENSION_ABI_V1 = 1",
+    );
+    expect(extensionHeader).toContain(
+      "POCKETJS_SYMBIAN_EXTENSION_DEPTH_BUFFER = 1u << 0",
+    );
+    expect(extensionHeader).toContain(
+      "typedef struct PocketJsSymbianExtensionV1",
+    );
+    expect(extensionHeader).toContain(
+      "void (*shutdown)(int32_t gl_context_current)",
+    );
+    expect(extensionHeader).toContain(
+      "pocketjs_symbian_extension_v1(void)",
+    );
+    expect(extensionHeader).not.toContain("__attribute__((weak))");
+    expect(extensionHeader).toContain(
+      "explicit null provider avoids ELF weak relocations",
+    );
+    expect(coreCargo).toContain(
+      'default = ["standalone-extension-provider"]',
+    );
+    expect(coreCargo).toContain('crate-type = ["rlib", "staticlib"]');
+    expect(coreSource).toContain(
+      '#[cfg(feature = "standalone-extension-provider")]',
+    );
+    expect(coreSource).toContain(
+      "pub extern \"C\" fn pocketjs_symbian_extension_v1()",
+    );
+    const extensionRust = readFileSync(
+      join(repository, "engine/symbian/src/extension.rs"),
+      "utf8",
+    );
+    for (const [cName, rustName, bit] of [
+      ["POCKETJS_SYMBIAN_KEY_MOVE_FORWARD", "KEY_MOVE_FORWARD", 0],
+      ["POCKETJS_SYMBIAN_KEY_MOVE_BACK", "KEY_MOVE_BACK", 1],
+      ["POCKETJS_SYMBIAN_KEY_MOVE_LEFT", "KEY_MOVE_LEFT", 2],
+      ["POCKETJS_SYMBIAN_KEY_MOVE_RIGHT", "KEY_MOVE_RIGHT", 3],
+      ["POCKETJS_SYMBIAN_KEY_LOOK_UP", "KEY_LOOK_UP", 4],
+      ["POCKETJS_SYMBIAN_KEY_LOOK_DOWN", "KEY_LOOK_DOWN", 5],
+      ["POCKETJS_SYMBIAN_KEY_LOOK_LEFT", "KEY_LOOK_LEFT", 6],
+      ["POCKETJS_SYMBIAN_KEY_LOOK_RIGHT", "KEY_LOOK_RIGHT", 7],
+      ["POCKETJS_SYMBIAN_KEY_FIRE", "KEY_FIRE", 8],
+      ["POCKETJS_SYMBIAN_KEY_JUMP", "KEY_JUMP", 9],
+      ["POCKETJS_SYMBIAN_KEY_RELOAD", "KEY_RELOAD", 10],
+      ["POCKETJS_SYMBIAN_KEY_WALK", "KEY_WALK", 11],
+    ] as const) {
+      expect(extensionHeader).toContain(`${cName} = 1u << ${bit}`);
+      expect(extensionRust).toContain(
+        `pub const ${rustName}: u32 = 1 << ${bit};`,
+      );
+    }
+    expect(runtime).toContain(
+      "extension->struct_size < sizeof(PocketJsSymbianExtensionV1)",
+    );
+    expect(runtime).toContain("sizeof(JSValue) == 8");
+    expect(runtime).toContain("extension_->boot(");
+    expect(runtime).toContain("JS_NewArrayBufferCopy(");
+    expect(runtime).toContain(
+      "extension_->shutdown(hasContext ? 1 : 0)",
+    );
+    expect(runtime).toContain("extension_->before_guest(");
+    expect(runtime).toContain("extension_->after_guest(context_)");
+    expect(runtime).toContain("extension_->resize(");
+    expect(runtime).toContain("extension_->render(");
+    expect(orchestrator).toContain("coreLibrary?: string;");
+    expect(orchestrator).toContain(
+      'resolve(payload, "libpocketjs_symbian_core.a")',
+    );
+    expect(orchestrator).toContain(
+      'coreLibrary: flagValue(args.slice(2), "--core-library")',
+    );
+    expect(orchestrator).toContain(
+      "Symbian application-specific cores cannot be combined with a multi-app catalog",
+    );
 
     const applyViewport = runtime.indexOf(
       "bool PocketJsRuntime::applyPendingViewport()",
@@ -539,10 +645,15 @@ describe("experimental Nokia E7 runtime profile", () => {
       "apps_.size() <= 1 || appIndex == 0",
     );
 
+    const shutdownExtension = runtime.indexOf(
+      "extension_->shutdown(hasContext ? 1 : 0);",
+    );
     const freeContext = runtime.indexOf("JS_FreeContext(context_);");
     const freeRuntime = runtime.indexOf("JS_FreeRuntime(runtime_);", freeContext);
     const shutdownCore = runtime.indexOf("ui_shutdown();", freeRuntime);
     const clearPack = runtime.indexOf("appPack_.clear();", shutdownCore);
+    expect(shutdownExtension).toBeGreaterThan(-1);
+    expect(freeContext).toBeGreaterThan(shutdownExtension);
     expect(freeContext).toBeGreaterThan(-1);
     expect(freeRuntime).toBeGreaterThan(freeContext);
     expect(shutdownCore).toBeGreaterThan(freeRuntime);

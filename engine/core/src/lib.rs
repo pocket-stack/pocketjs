@@ -35,6 +35,7 @@ pub mod codec;
 pub mod damage;
 pub mod draw;
 pub mod layout;
+pub mod pak;
 pub mod package;
 pub mod raster;
 pub mod spec;

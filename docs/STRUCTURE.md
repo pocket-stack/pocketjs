@@ -12,7 +12,7 @@ pocketjs/
 │  ├─ backends/    platform render backends (ESP32-P4 PPA is a standalone no_std crate)
 │  ├─ wasm/       core compiled to wasm32 for web/sim hosts (standalone crate)
 │  ├─ symbian/    no_std Symbian UI static library: C ABI, capture raster + GLES2 DrawList backend (standalone crate)
-│  ├─ pocket3d/   the 3D core family (bsp, cook, gu, vita) + desktop examples
+│  ├─ pocket3d/   the 3D core family (bsp, cook, gu, vita, GLES2) + desktop examples
 │  ├─ crates/     non-3D engine crates: pocket-mod, pocket-ui-surface, pocket-ui-wgpu, pocket-vrm, pocket-widget
 │  └─ Cargo.toml  the desktop workspace root (core/, wasm/, symbian/, and
 │                 console-toolchain crates are deliberately excluded and

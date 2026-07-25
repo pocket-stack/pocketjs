@@ -31,6 +31,11 @@ extern "C" {
 }
 
 #include "pocketjs_symbian_core.h"
+#include "pocketjs_symbian_extension.h"
+
+typedef char PocketJsQuickJsValueMustBeEightBytes[
+    sizeof(JSValue) == 8 ? 1 : -1
+];
 
 #ifndef POCKETJS_FRAME_RATE
 #define POCKETJS_FRAME_RATE 30
@@ -74,12 +79,29 @@ const int kShotWidth = 256;
 const int kShotHeight = 128;
 const uint32_t kPixelStorage8888 = 3;
 
+const PocketJsSymbianExtensionV1 *pocketJsNativeExtension()
+{
+    const PocketJsSymbianExtensionV1 *extension =
+        pocketjs_symbian_extension_v1();
+    if (extension == 0 ||
+        extension->abi_version != POCKETJS_SYMBIAN_EXTENSION_ABI_V1 ||
+        extension->struct_size < sizeof(PocketJsSymbianExtensionV1)) {
+        return 0;
+    }
+    return extension;
+}
+
 QGLFormat pocketJsGlFormat()
 {
     QGLFormat format;
     format.setRgba(true);
     format.setDoubleBuffer(true);
-    format.setDepth(false);
+    const PocketJsSymbianExtensionV1 *extension =
+        pocketJsNativeExtension();
+    format.setDepth(
+        extension != 0 &&
+        (extension->flags & POCKETJS_SYMBIAN_EXTENSION_DEPTH_BUFFER) != 0
+    );
     format.setStencil(false);
     format.setAccum(false);
     format.setSampleBuffers(false);
@@ -1097,6 +1119,38 @@ int buttonForKey(int key)
     }
 }
 
+uint32_t nativeKeyForKey(int key)
+{
+    switch (key) {
+    case Qt::Key_W:
+        return POCKETJS_SYMBIAN_KEY_MOVE_FORWARD;
+    case Qt::Key_S:
+        return POCKETJS_SYMBIAN_KEY_MOVE_BACK;
+    case Qt::Key_A:
+        return POCKETJS_SYMBIAN_KEY_MOVE_LEFT;
+    case Qt::Key_D:
+        return POCKETJS_SYMBIAN_KEY_MOVE_RIGHT;
+    case Qt::Key_Up:
+        return POCKETJS_SYMBIAN_KEY_LOOK_UP;
+    case Qt::Key_Down:
+        return POCKETJS_SYMBIAN_KEY_LOOK_DOWN;
+    case Qt::Key_Left:
+        return POCKETJS_SYMBIAN_KEY_LOOK_LEFT;
+    case Qt::Key_Right:
+        return POCKETJS_SYMBIAN_KEY_LOOK_RIGHT;
+    case Qt::Key_E:
+        return POCKETJS_SYMBIAN_KEY_FIRE;
+    case Qt::Key_Space:
+        return POCKETJS_SYMBIAN_KEY_JUMP;
+    case Qt::Key_R:
+        return POCKETJS_SYMBIAN_KEY_RELOAD;
+    case Qt::Key_Shift:
+        return POCKETJS_SYMBIAN_KEY_WALK;
+    default:
+        return 0;
+    }
+}
+
 class PocketJsRuntime : public QGLWidget
 {
 public:
@@ -1158,12 +1212,14 @@ private:
 #endif
     QVector<EmbeddedApp> apps_;
     QBasicTimer timer_;
+    const PocketJsSymbianExtensionV1 *extension_;
     QLabel *errorLabel_;
     QVector<uint32_t> touches_;
     QSize viewportSize_;
     QSize pendingViewportSize_;
     QSize windowSize_;
     int buttons_;
+    uint32_t nativeKeys_;
     int currentApp_;
     int pendingApp_;
     int resumeApp_;
@@ -1207,12 +1263,14 @@ PocketJsRuntime::PocketJsRuntime()
       global_(JS_UNDEFINED),
       frame_(JS_UNDEFINED),
       resizeViewport_(JS_UNDEFINED),
+      extension_(0),
       errorLabel_(new QLabel(this)),
       pendingViewportSize_(
           POCKETJS_INITIAL_LOGICAL_WIDTH,
           POCKETJS_INITIAL_LOGICAL_HEIGHT
       ),
       buttons_(0),
+      nativeKeys_(0),
       currentApp_(0),
       pendingApp_(-1),
       resumeApp_(-1),
@@ -1269,6 +1327,15 @@ PocketJsRuntime::~PocketJsRuntime()
 void PocketJsRuntime::destroyGuest()
 {
     initialized_ = false;
+    if (extension_ != 0) {
+        const bool hasContext = glInitialized_ && isValid();
+        if (hasContext) makeCurrent();
+        if (extension_->shutdown != 0) {
+            extension_->shutdown(hasContext ? 1 : 0);
+        }
+        if (hasContext) doneCurrent();
+        extension_ = 0;
+    }
     if (context_ != 0) {
         JS_FreeValue(context_, resizeViewport_);
         JS_FreeValue(context_, frame_);
@@ -1296,6 +1363,7 @@ void PocketJsRuntime::destroyGuest()
     appPack_.clear();
     touches_.clear();
     buttons_ = 0;
+    nativeKeys_ = 0;
     frozenShotHandle_ = -1;
 }
 
@@ -1563,14 +1631,25 @@ bool PocketJsRuntime::bootGuest(
         return false;
     }
 
-    JSValue pack = JS_NewArrayBuffer(
-        context_,
-        reinterpret_cast<uint8_t *>(appPack_.data()),
-        static_cast<size_t>(appPack_.size()),
-        0,
-        0,
-        0
-    );
+    extension_ = pocketJsNativeExtension();
+    // A native extension may borrow appPack_ as immutable storage until
+    // shutdown. QuickJS ArrayBuffers are always writable, so an extension
+    // guest must receive an independent JS-owned copy rather than an alias
+    // that a Uint8Array could mutate behind Rust's borrowed CookedMap.
+    JSValue pack = extension_ != 0
+        ? JS_NewArrayBufferCopy(
+            context_,
+            reinterpret_cast<const uint8_t *>(appPack_.constData()),
+            static_cast<size_t>(appPack_.size())
+        )
+        : JS_NewArrayBuffer(
+            context_,
+            reinterpret_cast<uint8_t *>(appPack_.data()),
+            static_cast<size_t>(appPack_.size()),
+            0,
+            0,
+            0
+        );
     if (JS_IsException(pack) ||
         JS_SetPropertyStr(context_, global_, "__pak", pack) < 0 ||
         JS_SetPropertyStr(
@@ -1580,6 +1659,19 @@ bool PocketJsRuntime::bootGuest(
             JS_NewInt32(context_, POCKETJS_FRAME_RATE)
         ) < 0) {
         fail(takeException(context_));
+        return false;
+    }
+
+    if (extension_ != 0 &&
+        (extension_->boot == 0 ||
+         extension_->boot(
+             context_,
+             reinterpret_cast<const uint8_t *>(appPack_.constData()),
+             static_cast<size_t>(appPack_.size()),
+             viewport.width(),
+             viewport.height()
+         ) == 0)) {
+        fail("PocketJS native extension could not initialize.");
         return false;
     }
 
@@ -1876,6 +1968,7 @@ void PocketJsRuntime::queueViewport(const QSize &viewport)
         pendingViewportSize_ = viewport;
         hasPendingViewport_ = false;
         buttons_ = 0;
+        nativeKeys_ = 0;
         touches_.clear();
         update();
         return;
@@ -1896,6 +1989,7 @@ void PocketJsRuntime::queueViewport(const QSize &viewport)
     // Coordinates and held keyboard directions belong to the old screen
     // orientation. Never deliver them against the replacement layout.
     buttons_ = 0;
+    nativeKeys_ = 0;
     touches_.clear();
 }
 
@@ -1918,7 +2012,11 @@ bool PocketJsRuntime::applyPendingViewport()
     ui_set_viewport(viewport.width(), viewport.height());
     viewportSize_ = viewport;
     buttons_ = 0;
+    nativeKeys_ = 0;
     touches_.clear();
+    if (extension_ != 0 && extension_->resize != 0) {
+        extension_->resize(viewport.width(), viewport.height());
+    }
 
     JSValue arguments[2];
     arguments[0] = JS_NewInt32(context_, viewport.width());
@@ -1992,6 +2090,18 @@ void PocketJsRuntime::runFrame()
         frameButtons &= ~kButtonSelect;
     }
 
+    if (extension_ != 0 &&
+        extension_->before_guest != 0 &&
+        extension_->before_guest(
+            context_,
+            static_cast<uint32_t>(frameButtons),
+            static_cast<uint32_t>(kAnalogCenter),
+            nativeKeys_
+        ) == 0) {
+        fail("PocketJS native extension frame failed.");
+        return;
+    }
+
     JSValue touchArray = JS_NewArray(context_);
     for (int index = 0; index < touches_.size(); ++index) {
         JS_SetPropertyUint32(
@@ -2023,6 +2133,12 @@ void PocketJsRuntime::runFrame()
     }
     JS_FreeValue(context_, result);
     if (!drainJobs()) return;
+    if (extension_ != 0 &&
+        extension_->after_guest != 0 &&
+        extension_->after_guest(context_) == 0) {
+        fail("PocketJS native extension guest handoff failed.");
+        return;
+    }
 #ifdef POCKETJS_PERF_TRACE
     const int jsMs = perfTimer.elapsed();
 #endif
@@ -2224,12 +2340,14 @@ bool PocketJsRuntime::event(QEvent *event)
 void PocketJsRuntime::keyPressEvent(QKeyEvent *event)
 {
     const int button = buttonForKey(event->key());
-    if (button != 0) {
+    const uint32_t nativeKey = nativeKeyForKey(event->key());
+    if (button != 0 || nativeKey != 0) {
         if (event->isAutoRepeat()) {
             event->accept();
             return;
         }
-        buttons_ |= button;
+        if (button != 0) buttons_ |= button;
+        nativeKeys_ |= nativeKey;
         event->accept();
         return;
     }
@@ -2239,12 +2357,14 @@ void PocketJsRuntime::keyPressEvent(QKeyEvent *event)
 void PocketJsRuntime::keyReleaseEvent(QKeyEvent *event)
 {
     const int button = buttonForKey(event->key());
-    if (button != 0) {
+    const uint32_t nativeKey = nativeKeyForKey(event->key());
+    if (button != 0 || nativeKey != 0) {
         if (event->isAutoRepeat()) {
             event->accept();
             return;
         }
-        buttons_ &= ~button;
+        if (button != 0) buttons_ &= ~button;
+        nativeKeys_ &= ~nativeKey;
         event->accept();
         return;
     }
@@ -2254,6 +2374,7 @@ void PocketJsRuntime::keyReleaseEvent(QKeyEvent *event)
 void PocketJsRuntime::focusOutEvent(QFocusEvent *event)
 {
     buttons_ = 0;
+    nativeKeys_ = 0;
     touches_.clear();
     QGLWidget::focusOutEvent(event);
 }
@@ -2309,14 +2430,39 @@ void PocketJsRuntime::paintGL()
         return;
     }
     const QRect target = presentationRect();
-    if (ui_gl_render(
+    bool nativeRendered = false;
+    if (extension_ != 0 && extension_->render != 0) {
+        if (extension_->render(
+                target.x(),
+                target.y(),
+                target.width(),
+                target.height(),
+                width(),
+                height()
+            ) == 0) {
+            fail("PocketJS native extension rendering failed.");
+            return;
+        }
+        nativeRendered = true;
+    }
+    const int uiRendered = nativeRendered
+        ? ui_gl_render_over(
             target.x(),
             target.y(),
             target.width(),
             target.height(),
             width(),
             height()
-        ) == 0) {
+        )
+        : ui_gl_render(
+            target.x(),
+            target.y(),
+            target.width(),
+            target.height(),
+            width(),
+            height()
+        );
+    if (uiRendered == 0) {
         fail("PocketJS OpenGL ES 2 rendering failed.");
         return;
     }

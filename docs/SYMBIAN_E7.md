@@ -176,6 +176,45 @@ bun tools/symbian.ts build app \
   --outdir /path/to/project/dist/symbian
 ```
 
+Applications that need an app-specific native surface can supply a prebuilt
+archive through `--core-library`. The archive must implement the ordinary
+PocketJS `ui_*` ABI; it may also export the versioned
+`pocketjs_symbian_extension_v1` table from
+`pocketjs_symbian_extension.h`. The table adds synchronous boot, fixed-step
+input, post-guest command draining, resize, render, and shutdown callbacks
+without copying or forking the Qt/QuickJS host:
+
+```sh
+bun tools/symbian.ts build app \
+  --manifest /path/to/project/pocket.json \
+  --project-root /path/to/project \
+  --core-library /path/to/libapplication_symbian_core.a
+```
+
+The stock core's provider returns null, so it retains the exact 2D runtime and
+requests no depth buffer. A custom core disables that default Cargo feature
+and exports the same symbol with a callback table. This explicit null-provider
+shape is intentional: Symbian's historical E32 conversion tools cannot safely
+consume ELF weak relocations. An extension can request a depth attachment,
+render its scene first, and let `ui_gl_render_over` composite the retained
+PocketJS HUD without clearing the color buffer. The PAK bytes stay owned by the
+host and may be borrowed only until the matching shutdown call; the JS guest
+receives a separate writable ArrayBuffer, so script code cannot mutate native
+borrowed storage. Shutdown reports whether the owning GL context is current,
+allowing the extension to delete live resources normally or abandon stale
+handles after context loss. Application-specific cores are intentionally
+single-app only and cannot be combined with a launcher catalog because their
+process-wide provider has no per-guest opt-out. The selected
+archive is copied inside the serialized build transaction and its exact bytes
+remain covered by the receipt's `sha256.core`. The pinned QuickJS archive also
+includes its official `static-functions.c` wrappers, so Rust extensions can
+call the inline value helpers through stable C symbols without carrying a
+second QuickJS build.
+
+Rust application cores should import the matching table, flags, and native-key
+bits from `pocketjs_symbian_core::extension`; that module is the Rust ABI
+authority paired with the public C header.
+
 The experimental host has these runtime semantics:
 
 - PocketJS uses the full native Qt window as its logical viewport: `640x360`
@@ -196,6 +235,10 @@ The experimental host has these runtime semantics:
 - Arrow keys map to the four directions, the navigation center/Select key and
   keyboard Enter to `CIRCLE`, Escape to `CROSS`, Space to `START`, Q/E to the
   left/right triggers, and T/S to `TRIANGLE`/`SQUARE`.
+- Native extensions additionally receive an independent held-key bitset:
+  W/A/S/D move, arrows look, E fires, Space jumps, R reloads, and Shift walks.
+  This channel does not change the portable PocketJS button mask seen by the
+  guest.
 - Touch frame v2 uses tagged 10-bit coordinates for the E7's full 640-pixel
   axis while retaining the original untagged 9-bit wire for PSP/Vita-era
   hosts. `symbian-e7-dev` advertises `input.touch`; the framework exposes the

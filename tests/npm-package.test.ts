@@ -24,8 +24,8 @@ describe("published npm artifacts", () => {
   // entry ships ONLY when the framework runtime, the compiler, the shipped
   // tools, or a `pocket` CLI target consumes it from the tarball. Rust
   // sources ride along solely as build inputs for CLI-buildable targets
-  // (psp, vita, the web/sim wasm) plus the deliberately standalone Pocket3D
-  // Vita crate pair for out-of-tree Vita 3D apps. Platform source
+  // (psp, vita, symbian, the web/sim wasm) plus the deliberately standalone
+  // Pocket3D Vita/GLES2 crates for out-of-tree native 3D apps. Platform source
   // integrations without a CLI target (e.g. the ESP32-P4 PPA backend, whose
   // ESP-IDF C component cannot ship in npm anyway) stay git-only. Adding an
   // entry here means updating this list in the same PR — deliberately.
@@ -64,6 +64,9 @@ describe("published npm artifacts", () => {
       "engine/pocket3d/crates/pocket3d-vita/examples",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.lock",
+      "engine/pocket3d/crates/pocket3d-gles2/src",
+      "engine/pocket3d/crates/pocket3d-gles2/Cargo.toml",
+      "engine/pocket3d/crates/pocket3d-gles2/Cargo.lock",
       "engine/pocket3d/crates/pocket3d-bsp/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-bsp/src",
       "pocket.config.ts",
@@ -72,7 +75,7 @@ describe("published npm artifacts", () => {
     ]);
   });
 
-  test("framework tarball contains every locked native and standalone Pocket3D Vita input", async () => {
+  test("framework tarball contains every locked native and standalone Pocket3D input", async () => {
     const files = packedFiles(root);
     expect(files).toEqual(expect.arrayContaining([
       "assets/brand/pocketjs-avatar-white-minimal.png",
@@ -96,6 +99,9 @@ describe("published npm artifacts", () => {
       "tools/symbian/Dockerfile.dockerignore",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-vita/Cargo.lock",
+      "engine/pocket3d/crates/pocket3d-gles2/Cargo.toml",
+      "engine/pocket3d/crates/pocket3d-gles2/Cargo.lock",
+      "engine/pocket3d/crates/pocket3d-gles2/src/lib.rs",
       "engine/pocket3d/crates/pocket3d-bsp/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-bsp/src/lib.rs",
     ]));
