@@ -66,6 +66,12 @@ pub struct Texture {
     /// Sample with bilinear filtering (spec::img::FLAG_LINEAR). Pure sampling
     /// hint for backends — the pixel bytes are identical either way.
     pub linear: bool,
+    /// Changes only when this live texture's bytes are overwritten in place.
+    ///
+    /// Generation-tagged handles catch free/reuse, while this revision lets
+    /// GPU backends refresh one still-live binding without retransferring
+    /// every other texture.
+    revision: u64,
 }
 
 impl Texture {
@@ -525,6 +531,7 @@ impl Ui {
             psm,
             palette,
             linear: flags & spec::img::FLAG_LINEAR != 0,
+            revision: 0,
         };
         let handle = tex_alloc(&mut self.textures, &mut self.tex_free, tex);
         if handle >= 0 {
@@ -598,6 +605,7 @@ impl Ui {
                 tex.byte_len,
             );
         }
+        tex.revision = tex.revision.wrapping_add(1);
         self.bump_raster_revision();
         true
     }
@@ -1183,6 +1191,17 @@ impl Ui {
         self.textures[slot as usize].tex.as_ref().map(Texture::view)
     }
 
+    /// Content revision of a live texture. Generation-tagged handles catch
+    /// free/reuse; this value changes when the bytes behind one still-live
+    /// handle are overwritten in place.
+    pub fn texture_revision(&self, handle: i32) -> Option<u64> {
+        let slot = tex_resolve(&self.textures, handle)?;
+        self.textures[slot as usize]
+            .tex
+            .as_ref()
+            .map(|texture| texture.revision)
+    }
+
     /// Number of texture slots ever allocated (live or free) — the walk
     /// bound for `texture_at` (the wgpu backend's texture-sync sweep).
     pub fn texture_slot_count(&self) -> usize {
@@ -1195,6 +1214,15 @@ impl Ui {
         let s = self.textures.get(slot as usize)?;
         let t = s.tex.as_ref()?;
         Some((make_tex_handle(s.gen, slot), t.view()))
+    }
+
+    /// Versioned texture-slot walk for GPU caches. This is additive to the
+    /// long-standing `texture_at`/`TexView` API so downstream struct literals
+    /// and exhaustive patterns do not break merely to support cache refresh.
+    pub fn texture_at_versioned(&self, slot: u32) -> Option<(i32, u64, TexView<'_>)> {
+        let s = self.textures.get(slot as usize)?;
+        let t = s.tex.as_ref()?;
+        Some((make_tex_handle(s.gen, slot), t.revision, t.view()))
     }
 
     /// A registered font atlas (backends read glyph bitmaps through this).

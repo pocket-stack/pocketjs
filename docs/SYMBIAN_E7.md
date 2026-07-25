@@ -212,7 +212,7 @@ machine-specific paths to committed launcher sources:
 
 ```sh
 bun tools/launcher.ts build --target symbian \
-  --include-manifest /path/to/open-strike/.pocket/symbian-e7-dev/pocket.generated.json \
+  --include-manifest /path/to/another-app/pocket.json \
   --include-manifest /path/to/pocket-figma/pocket.json
 ```
 

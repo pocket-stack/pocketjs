@@ -1,5 +1,6 @@
-# pocketjs-symbian-core — pocketjs-core plus its deterministic software
-# rasterizer, exposed as a C static library for the Qt/Symbian host.
+# pocketjs-symbian-core — pocketjs-core plus the GLES2 DrawList backend and
+# deterministic capture rasterizer, exposed as a C static library for the
+# Qt/Symbian host. QGLWidget owns the graphics context and presentation.
 #
 # This is deliberately a standalone workspace. The custom Symbian target
 # needs nightly build-std while the desktop engine workspace stays on the

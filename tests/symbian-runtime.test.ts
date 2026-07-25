@@ -18,6 +18,7 @@ import {
 import {
   encodeSymbianCatalog,
   includeExternalManifests,
+  launcherGeneratedSources,
   needsLauncherCompile,
   scanRegistry,
   withLauncherSourceLock,
@@ -144,6 +145,22 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(outputs).toEqual(["note-main", "hero-main"]);
     expect(outputs).not.toContain("cafe-main");
     expect(outputs).not.toContain("launcher-main");
+  });
+
+  test("thins the E7 launcher source to admitted Cover Flow textures", () => {
+    const registry = scanRegistry(new Set(), SYMBIAN_E7_DEV_TARGET_ID);
+    const generated = launcherGeneratedSources(registry);
+    expect(generated.registryTs).toContain("cover-note-main.png");
+    expect(generated.registryTs).toContain("cover-hero-main.png");
+    expect(generated.registryTs).not.toContain("cover-cafe-main.png");
+    expect(generated.registryTs).toContain("refl-note-main.png");
+    expect(JSON.parse(generated.imagesJson)).toEqual({
+      "covers/launcher-bg.png": { linear: true },
+      "covers/cover-note-main.png": { linear: true },
+      "covers/refl-note-main.png": { linear: true },
+      "covers/cover-hero-main.png": { linear: true },
+      "covers/refl-hero-main.png": { linear: true },
+    });
   });
 
   test("adds explicit external manifests without leaking paths or dirtying sources", () => {
@@ -321,6 +338,10 @@ describe("experimental Nokia E7 runtime profile", () => {
       join(repository, "hosts/symbian/runtime/pocketjs-runtime.qrc"),
       "utf8",
     );
+    const coreHeader = readFileSync(
+      join(repository, "hosts/symbian/runtime/pocketjs_symbian_core.h"),
+      "utf8",
+    );
     const buildApp = readFileSync(
       join(repository, "tools/symbian/container/pocketjs-symbian-build-app"),
       "utf8",
@@ -339,7 +360,38 @@ describe("experimental Nokia E7 runtime profile", () => {
       "for (int tick = 0; tick < kCoreTicksPerFrame; ++tick)",
     );
     expect(runtime.match(/ui_tick\(\);/g)).toHaveLength(1);
-    expect(runtime).toContain("QImage::Format_ARGB32");
+    expect(runtime).toContain("#include <QtOpenGL/QGLWidget>");
+    expect(runtime).toContain("class PocketJsRuntime : public QGLWidget");
+    expect(runtime).toContain("QGLFormat pocketJsGlFormat()");
+    expect(runtime).toContain("format.setDoubleBuffer(true)");
+    expect(runtime).toContain("format.setDepth(false)");
+    expect(runtime).toContain("format.setStencil(false)");
+    expect(runtime).toContain("format.setSampleBuffers(false)");
+    expect(runtime).toContain("QGLWidget(pocketJsGlFormat())");
+    expect(runtime).toContain("glInitialized_ = ui_gl_initialize() != 0;");
+    expect(runtime).toContain(
+      "PocketJS could not obtain a valid OpenGL ES 2 context.",
+    );
+    expect(runtime).toContain("PocketJS lost its OpenGL ES 2 context.");
+    expect(runtime).toContain("glInitialized_ && isValid()");
+    expect(runtime).toContain("void PocketJsRuntime::paintGL()");
+    expect(runtime).toContain("if (ui_gl_render(");
+    expect(runtime).toContain("const QRect target = presentationRect();");
+    expect(runtime).toContain("glReadPixels(");
+    expect(runtime).toContain(
+      "const QRect sourceRect = presentationRect().intersected(rect());",
+    );
+    expect(runtime).toContain("height() - sourceRect.y() - sourceRect.height()");
+    expect(runtime).toContain("if (pendingApp_ >= 0 && pendingSummon_)");
+    expect(runtime).not.toContain("grabFrameBuffer");
+    expect(runtime).toContain("updateGL();");
+    expect(runtime).not.toContain("QPainter");
+    expect(runtime).not.toContain("framebuffer_");
+    expect(runtime).not.toContain("ui_render(");
+    expect(runtime).toContain("frame_delta_ms");
+    expect(runtime).toContain("update_gl_ms");
+    expect(runtime).not.toContain("\\tgpu_ms");
+    expect(runtime).toContain("perfTraceBuffer_.append(");
     expect(runtime).toContain("0x80000000U |");
     expect(runtime).toContain("point.id()) & 0xff) << 20");
     expect(runtime).toContain("static_cast<uint32_t>(y) & 0x3ff) << 10");
@@ -361,18 +413,27 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain('"__pocketResizeViewport"');
     expect(runtime).toContain("queueViewport(event->size())");
     expect(runtime).toContain("queueViewport(size())");
-    expect(runtime).toContain("framebuffer_ = QImage();");
-    expect(runtime).toContain(
-      "width != static_cast<uint32_t>(viewportSize_.width())",
-    );
     expect(runtime).not.toContain("kTouchCoordinateExtent");
     expect(runtime).toContain("QRect PocketJsRuntime::presentationRect() const");
-    expect(runtime).toContain("target.size() != viewportSize_");
     expect(runtime).toContain("viewportSize_.width() /");
     expect(runtime).toContain("viewportSize_.height() /");
     expect(runtime).not.toContain("kLogicalWidth");
     expect(runtime).not.toContain('"__textures"');
+    expect(runtime).toContain("const uint32_t kPakMagic = 0x4b504344U;");
+    expect(runtime).toContain("bool findPakEntry(");
+    expect(runtime).toContain("rawBlobLength > static_cast<uint32_t>(");
+    expect(runtime).toContain(
+      "memcmp(pack.constData() + nameOffset, key, keyLength)",
+    );
+    expect(runtime).toContain("case HostLoadTileTexture:");
+    expect(runtime).toContain("ui_upload_tileset_tile(");
+    expect(runtime).toContain(
+      'addHostOperation(context, ui, "loadTileTexture", 2, HostLoadTileTexture)',
+    );
+    expect(coreHeader).toContain("int32_t ui_upload_tileset_tile(");
 
+    expect(project).toContain("QT += core gui opengl");
+    expect(project).not.toContain("DEFINES += POCKETJS_PERF_TRACE");
     expect(project).toContain("TARGET.EPOCHEAPSIZE = 0x400000 0x2000000");
     expect(project).toContain(
       "DEPLOYMENT.display_name = $$POCKETJS_SYMBIAN_CAPTION",
@@ -406,17 +467,26 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(resources).toContain('<file alias="catalog.tsv">catalog.tsv</file>');
     expect(resources).toContain('<file alias="catalog.bin">catalog.bin</file>');
 
-    const clearImage = runtime.indexOf("framebuffer_ = QImage();");
+    expect(coreHeader).toContain("int32_t ui_gl_initialize(void);");
+    expect(coreHeader).toContain("void ui_gl_reset_resources(void);");
+    expect(coreHeader).toContain("void ui_gl_shutdown(void);");
+    expect(coreHeader).toContain("int32_t ui_gl_render(");
+
+    const applyViewport = runtime.indexOf(
+      "bool PocketJsRuntime::applyPendingViewport()",
+    );
     const resizeCore = runtime.indexOf(
       "ui_set_viewport(viewport.width(), viewport.height());",
-      clearImage,
+      applyViewport,
     );
     const callHook = runtime.indexOf("resizeViewport_,", resizeCore);
     const drainJobs = runtime.indexOf("if (!drainJobs()) return false;", callHook);
-    expect(clearImage).toBeGreaterThan(-1);
-    expect(resizeCore).toBeGreaterThan(clearImage);
+    const scheduleGl = runtime.indexOf("update();", drainJobs);
+    expect(applyViewport).toBeGreaterThan(-1);
+    expect(resizeCore).toBeGreaterThan(applyViewport);
     expect(callHook).toBeGreaterThan(resizeCore);
     expect(drainJobs).toBeGreaterThan(callHook);
+    expect(scheduleGl).toBeGreaterThan(drainJobs);
   });
 
   test("embeds validated .pocket guests and cold-switches after presentation", () => {
@@ -443,8 +513,13 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain("frameButtons &= ~kButtonSelect");
     expect(runtime).toContain("selectPressed && !selectLatched_");
 
-    const present = runtime.indexOf("repaint();\n    finishPendingSwitch();");
-    const teardown = runtime.indexOf("destroyGuest();", present);
+    const runFrame = runtime.indexOf(
+      "void PocketJsRuntime::runFrame()",
+    );
+    const tick = runtime.indexOf("ui_tick();", runFrame);
+    const present = runtime.indexOf("updateGL();", tick);
+    const finish = runtime.indexOf("finishPendingSwitch();", present);
+    const teardown = runtime.indexOf("destroyGuest();", finish);
     const reboot = runtime.indexOf(
       "if (!bootGuest(nextApp, size()))",
       teardown,
@@ -453,8 +528,11 @@ describe("experimental Nokia E7 runtime profile", () => {
       "recoverGuestFailure(nextApp);",
       reboot,
     );
-    expect(present).toBeGreaterThan(-1);
-    expect(teardown).toBeGreaterThan(present);
+    expect(runFrame).toBeGreaterThan(-1);
+    expect(tick).toBeGreaterThan(runFrame);
+    expect(present).toBeGreaterThan(tick);
+    expect(finish).toBeGreaterThan(present);
+    expect(teardown).toBeGreaterThan(finish);
     expect(reboot).toBeGreaterThan(teardown);
     expect(recover).toBeGreaterThan(reboot);
     expect(runtime).toContain(

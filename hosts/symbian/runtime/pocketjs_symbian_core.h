@@ -32,6 +32,11 @@ int32_t ui_upload_texture(
     uint32_t psm
 );
 int32_t ui_upload_img_entry(const uint8_t *data, size_t len);
+int32_t ui_upload_tileset_tile(
+    const uint8_t *data,
+    size_t len,
+    uint32_t index
+);
 void ui_free_texture(int32_t handle);
 void ui_set_image(int32_t id, int32_t texture);
 void ui_set_sprite(
@@ -74,6 +79,17 @@ void ui_debug_pause(int32_t on);
 void ui_debug_step(void);
 
 void ui_tick(void);
+int32_t ui_gl_initialize(void);
+void ui_gl_reset_resources(void);
+void ui_gl_shutdown(void);
+int32_t ui_gl_render(
+    int32_t target_x,
+    int32_t target_y,
+    int32_t target_width,
+    int32_t target_height,
+    int32_t window_width,
+    int32_t window_height
+);
 const uint8_t *ui_render_incremental(void);
 uint32_t ui_framebuffer_width(void);
 uint32_t ui_framebuffer_height(void);

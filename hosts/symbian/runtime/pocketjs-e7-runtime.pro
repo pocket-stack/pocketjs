@@ -3,7 +3,7 @@ isEmpty(POCKETJS_SYMBIAN_TARGET): error(POCKETJS_SYMBIAN_TARGET is required)
 isEmpty(POCKETJS_SYMBIAN_CAPTION): error(POCKETJS_SYMBIAN_CAPTION is required)
 TARGET = $$POCKETJS_SYMBIAN_TARGET
 DEPLOYMENT.display_name = $$POCKETJS_SYMBIAN_CAPTION
-QT += core gui
+QT += core gui opengl
 CONFIG += release
 CONFIG -= debug app_bundle
 

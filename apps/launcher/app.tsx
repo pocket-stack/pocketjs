@@ -22,11 +22,22 @@ import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { appTable, frozenShot, launchApp } from "@pocketjs/framework/launcher";
 import { ticksPerFrame } from "@pocketjs/framework/clock";
 import { getOps, hostViewport } from "@pocketjs/framework/host";
-import { REGISTRY, type RegistryApp } from "./registry.generated.ts";
 
-/** Card box: 192×218, centered from the live host viewport; rail geometry
- *  stays in transforms while orientation changes only move the deck origin. */
-/** Rail geometry: first neighbor offset, then per-card spacing. */
+export interface RegistryApp {
+  output: string;
+  id: string;
+  title: string;
+  cover: string;
+  refl: string;
+}
+
+export interface LauncherProps {
+  registry: readonly RegistryApp[];
+}
+
+/** Card box: 192×218, centered from the live host viewport; orientation
+ *  changes only move the deck origin. Rail geometry is the first-neighbor
+ *  offset followed by per-card spacing. */
 const RAIL_FIRST = 124;
 const RAIL_STEP = 44;
 const RAIL_TILT = 55;
@@ -79,7 +90,7 @@ function displayTitle(app: RegistryApp): string {
   return cut > 0 ? title.slice(0, cut) : title;
 }
 
-export default function Launcher() {
+export default function Launcher(props: LauncherProps) {
   const initialViewport = hostViewport(getOps()) ?? { w: 480, h: 272 };
   const [viewport, setViewport] = createSignal(initialViewport);
   const cardLeft = () => viewport().w / 2 - 96;
@@ -91,8 +102,8 @@ export default function Launcher() {
   // intersection, in registry order. No table -> browse-only degraded mode.
   const table = appTable();
   const apps = table
-    ? REGISTRY.filter((r) => table.apps.some((a) => a.output === r.output))
-    : [...REGISTRY];
+    ? props.registry.filter((r) => table.apps.some((a) => a.output === r.output))
+    : [...props.registry];
   const shot = frozenShot();
   if (shot >= 0) registerTexture("launcher.shot", shot);
   const resume = table?.resume ?? null;

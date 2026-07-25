@@ -500,6 +500,7 @@ fn disc_texture(
             psm: spec::psm::PSM_8888,
             palette: None,
             linear: false,
+            revision: 0,
         },
     );
     if handle < 0 {

@@ -14,13 +14,15 @@
 // their own output tree and never overwrite the PSP/sim artifacts in dist/.
 
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 import type { ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
@@ -43,7 +45,6 @@ import {
   withSymbianGuestBuildLock,
 } from "./symbian-toolchain.ts";
 import {
-  pocketStackCacheRoot,
   withArtifactLock,
 } from "./psp-toolchain.ts";
 
@@ -54,23 +55,37 @@ const COVERS_DIR = join(LAUNCHER_DIR, "covers");
 const IMAGES_JSON = join(LAUNCHER_DIR, "images.json");
 const REGISTRY_TS = join(LAUNCHER_DIR, "registry.generated.ts");
 const LAUNCHER_MANIFEST = join(LAUNCHER_DIR, "pocket.json");
+const LAUNCHER_APP = join(LAUNCHER_DIR, "app.tsx");
+const LAUNCHER_PSP_DIR = join(LAUNCHER_DIR, "psp");
 
 /**
- * registry.generated.ts and images.json are shared source-tree inputs for every
- * target. Hold one checkout-wide lock across scan/cover/compile/package work so
- * a concurrent PSP/Vita command cannot replace a Symbian external-app registry
- * between its catalog and launcher bundle steps.
+ * Serialize one checkout's committed scan output, deterministic cover renders,
+ * and target artifact directories. Build/pack never swap the shared generated
+ * sources: each target compiles its own dist/.launcher-source instead.
  */
 export async function withLauncherSourceLock<T>(
   operation: () => Promise<T>,
-  env: NodeJS.ProcessEnv = process.env,
+  // Kept for API compatibility with callers/tests that previously selected a
+  // cache root. The lock deliberately ignores cache environment now.
+  _env: NodeJS.ProcessEnv = process.env,
 ): Promise<T> {
-  const checkoutId = createHash("sha256").update(ROOT).digest("hex");
+  const dotGit = join(ROOT, ".git");
+  let checkoutMetadata = join(ROOT, "dist/.locks");
+  if (existsSync(dotGit)) {
+    checkoutMetadata = dotGit;
+    try {
+      const marker = readFileSync(dotGit, "utf8").trim();
+      if (marker.startsWith("gitdir:")) {
+        checkoutMetadata = resolve(ROOT, marker.slice("gitdir:".length).trim());
+      }
+    } catch {
+      // A normal checkout has a .git directory rather than a gitdir marker.
+    }
+  }
   return await withArtifactLock(
     join(
-      pocketStackCacheRoot(env),
-      "launcher/.locks",
-      checkoutId,
+      checkoutMetadata,
+      "pocketjs-locks",
       "generated-source.lock",
     ),
     operation,
@@ -81,23 +96,28 @@ export async function withLauncherSourceLock<T>(
   );
 }
 
-let generatedSourceBackup:
-  | { registry: Uint8Array; images: Uint8Array }
-  | undefined;
+let generatedSourceWriteSequence = 0;
 
-function backupGeneratedSources(): void {
-  if (generatedSourceBackup) return;
-  generatedSourceBackup = {
-    registry: new Uint8Array(readFileSync(REGISTRY_TS)),
-    images: new Uint8Array(readFileSync(IMAGES_JSON)),
-  };
-}
-
-function restoreGeneratedSources(): void {
-  if (!generatedSourceBackup) return;
-  writeFileSync(REGISTRY_TS, generatedSourceBackup.registry);
-  writeFileSync(IMAGES_JSON, generatedSourceBackup.images);
-  generatedSourceBackup = undefined;
+function replaceGeneratedSources(
+  registry: string | Uint8Array,
+  images: string | Uint8Array,
+): void {
+  const suffix = `${process.pid}-${generatedSourceWriteSequence++}`;
+  const registryTemp = `${REGISTRY_TS}.tmp-${suffix}`;
+  const imagesTemp = `${IMAGES_JSON}.tmp-${suffix}`;
+  try {
+    // Stage both complete files before publishing. Each individual rename is
+    // atomic, but the pair is not; only the explicit `scan` command writes
+    // these shared files, under the checkout-local source lock. Build/pack
+    // commands compile from an isolated dist source tree instead.
+    writeFileSync(registryTemp, registry);
+    writeFileSync(imagesTemp, images);
+    renameSync(registryTemp, REGISTRY_TS);
+    renameSync(imagesTemp, IMAGES_JSON);
+  } finally {
+    rmSync(registryTemp, { force: true });
+    rmSync(imagesTemp, { force: true });
+  }
 }
 
 export type LauncherTarget = "psp" | "vita" | typeof SYMBIAN_E7_DEV_TARGET_ID;
@@ -109,6 +129,8 @@ interface LauncherPaths {
   packages: string;
   registryJson: string;
   registryTsv: string;
+  /** Build-private entry directory for generated registry data and assets. */
+  isolatedSource: string;
   catalogIndex?: string;
   catalogBlob?: string;
 }
@@ -120,6 +142,7 @@ function launcherPaths(target: LauncherTarget): LauncherPaths {
       packages: join(ROOT, "dist/packages"),
       registryJson: join(ROOT, "dist/launcher-registry.json"),
       registryTsv: join(ROOT, "dist/launcher-registry.tsv"),
+      isolatedSource: join(ROOT, "dist/launcher/psp/.launcher-source"),
     };
   }
   const targetDirectory = target === "vita" ? "vita" : "symbian";
@@ -129,6 +152,7 @@ function launcherPaths(target: LauncherTarget): LauncherPaths {
     packages: join(output, "packages"),
     registryJson: join(output, "launcher-registry.json"),
     registryTsv: join(output, "launcher-registry.tsv"),
+    isolatedSource: join(output, ".launcher-source"),
     ...(target === SYMBIAN_E7_DEV_TARGET_ID
       ? {
           catalogIndex: join(output, "catalog.tsv"),
@@ -178,12 +202,14 @@ export interface LauncherRegistry {
   apps: LauncherRegistryEntry[];
 }
 
+class LauncherUsageError extends Error {}
+
 function usage(message?: string): never {
   if (message) console.error(`launcher: ${message}`);
   console.error(
     "usage: bun tools/launcher.ts <scan|covers|pack|build> [--target psp|vita|symbian] [--exclude <output>]... [--include-manifest <external/pocket.json>]... [--force] [-- backend args]",
   );
-  process.exit(1);
+  throw new LauncherUsageError(message);
 }
 
 function manifestPath(entry: Pick<LauncherRegistryEntry, "manifest" | "projectRoot">): string {
@@ -196,7 +222,19 @@ function projectRoot(entry: Pick<LauncherRegistryEntry, "manifest" | "projectRoo
   return resolve(entry.projectRoot ?? ROOT);
 }
 
-function launcherManifestForTarget(target: LauncherTarget): unknown {
+function portableRelative(from: string, to: string): string {
+  return relative(from, to).replaceAll("\\", "/");
+}
+
+function moduleSpecifier(from: string, to: string): string {
+  const specifier = portableRelative(from, to);
+  return specifier.startsWith(".") ? specifier : `./${specifier}`;
+}
+
+function launcherManifestForTarget(
+  target: LauncherTarget,
+  entry?: string,
+): unknown {
   const manifest = JSON.parse(readFileSync(LAUNCHER_MANIFEST, "utf8")) as {
     engine: {
       capabilities: {
@@ -204,9 +242,11 @@ function launcherManifestForTarget(target: LauncherTarget): unknown {
       };
     };
     app: {
+      entry: string;
       viewport: Record<string, unknown>;
     };
   };
+  if (entry) manifest.app.entry = entry;
   if (target === SYMBIAN_E7_DEV_TARGET_ID) {
     manifest.engine.capabilities.enhances = [
       ...(manifest.engine.capabilities.enhances ?? []),
@@ -240,6 +280,99 @@ function launcherBuildEntry(
     JSON.stringify(launcherManifestForTarget(target), null, 2) + "\n",
   );
   return { manifest: generatedManifest, projectRoot: ROOT };
+}
+
+/**
+ * Materialize a compiler-only launcher project under dist. Its generated
+ * registry and image metadata are private to this build, so a direct
+ * tools/build.ts process or watcher can keep reading the committed launcher
+ * sources while target-specific packaging runs.
+ */
+export function prepareIsolatedLauncherSource(
+  target: LauncherTarget,
+  registry: LauncherRegistry,
+  sourceDirectory: string,
+): Pick<LauncherRegistryEntry, "manifest" | "projectRoot"> {
+  const source = resolve(sourceDirectory);
+  const distRoot = join(ROOT, "dist");
+  const sourceRelativeToDist = relative(distRoot, source);
+  if (
+    !sourceRelativeToDist ||
+    sourceRelativeToDist === "." ||
+    sourceRelativeToDist === ".." ||
+    sourceRelativeToDist.startsWith("../") ||
+    sourceRelativeToDist.startsWith("..\\") ||
+    isAbsolute(sourceRelativeToDist)
+  ) {
+    throw new Error(
+      `launcher: isolated source must stay below ${distRoot}: ${source}`,
+    );
+  }
+
+  rmSync(source, { recursive: true, force: true });
+  const covers = join(source, "covers");
+  mkdirSync(covers, { recursive: true });
+
+  const generated = launcherGeneratedSources(registry);
+  writeFileSync(join(source, "registry.generated.ts"), generated.registryTs);
+  writeFileSync(join(source, "images.json"), generated.imagesJson);
+
+  const mainPath = join(source, "main.tsx");
+  writeFileSync(
+    mainPath,
+    [
+      "// GENERATED by tools/launcher.ts — isolated target launcher entry.",
+      "// @title PocketJS: Launcher",
+      'import { mount } from "@pocketjs/framework";',
+      `import Launcher from ${JSON.stringify(moduleSpecifier(source, LAUNCHER_APP))};`,
+      'import { REGISTRY } from "./registry.generated.ts";',
+      "",
+      "mount(() => <Launcher registry={REGISTRY} />);",
+      "",
+    ].join("\n"),
+  );
+
+  const assets = [
+    "launcher-bg.png",
+    ...registry.apps.flatMap((app) => [
+      `cover-${app.output}.png`,
+      `refl-${app.output}.png`,
+    ]),
+  ];
+  for (const asset of assets) {
+    const sourceAsset = join(COVERS_DIR, asset);
+    if (!existsSync(sourceAsset)) {
+      throw new Error(`launcher: isolated asset is missing: ${sourceAsset}`);
+    }
+    copyFileSync(sourceAsset, join(covers, asset));
+  }
+
+  const manifestPath = join(source, "pocket.json");
+  writeFileSync(
+    manifestPath,
+    JSON.stringify(
+      launcherManifestForTarget(
+        target,
+        portableRelative(ROOT, mainPath),
+      ),
+      null,
+      2,
+    ) + "\n",
+  );
+  return { manifest: manifestPath, projectRoot: ROOT };
+}
+
+function copyIsolatedPspMetadata(source: string): void {
+  const destination = join(source, "psp");
+  rmSync(destination, { recursive: true, force: true });
+  mkdirSync(destination, { recursive: true });
+  for (const asset of ["Psp.toml", "icon0.png", "pic1.png"]) {
+    const path = join(LAUNCHER_PSP_DIR, asset);
+    if (!existsSync(path)) {
+      throw new Error(`launcher: PSP metadata is missing: ${path}`);
+    }
+    copyFileSync(path, join(destination, asset));
+  }
 }
 
 function inferExternalProjectRoot(
@@ -449,10 +582,69 @@ export function scanDisplayRegistry(
   return { apps };
 }
 
+export function launcherGeneratedSources(
+  registry: LauncherRegistry,
+): { registryTs: string; imagesJson: string } {
+  const lines = [
+    "// GENERATED by tools/launcher.ts scan — do not edit by hand; COMMIT",
+    "// the regenerated file (tests/launcher-sim.test.ts asserts freshness).",
+    "// The display-side PSP/Vita/Symbian union: the launcher imports it for",
+    "// titles + cover asset keys; each host's target-specific appTable",
+    "// (spec op 39) stays the runtime truth for what is embedded.",
+    "",
+    "export interface RegistryApp {",
+    "  output: string;",
+    "  id: string;",
+    "  title: string;",
+    "  /** Pak image asset of the 256×128 cover. The literal paths below are",
+    "   *  what the build's asset collector picks up and bakes. */",
+    "  cover: string;",
+    "  /** The cover's baked reflection (mirrored + alpha falloff), drawn as",
+    "   *  its own quad so the seam stays a geometric straight edge. */",
+    "  refl: string;",
+    "}",
+    "",
+    "export const REGISTRY: readonly RegistryApp[] = [",
+    ...registry.apps.map(
+      (a) =>
+        `  { output: ${JSON.stringify(a.output)}, id: ${JSON.stringify(a.id)}, title: ${JSON.stringify(
+          a.title,
+        )}, cover: ${JSON.stringify(`covers/cover-${a.output}.png`)}, refl: ${JSON.stringify(
+          `covers/refl-${a.output}.png`,
+        )} },`,
+    ),
+    "] as const;",
+    "",
+  ];
+  const images: Record<string, { linear: boolean }> = {
+    "covers/launcher-bg.png": { linear: true },
+  };
+  for (const a of registry.apps) {
+    images[`covers/cover-${a.output}.png`] = { linear: true };
+    // Reflections stay 8888: their whole point is a smooth alpha ramp, and
+    // PSM_4444's 4-bit alpha gives the 0.3→0 fade only ~5 steps — visible
+    // horizontal banding on hardware. Quarter-res keeps them cheap (32 KB).
+    images[`covers/refl-${a.output}.png`] = { linear: true };
+  }
+  return {
+    registryTs: lines.join("\n"),
+    imagesJson: JSON.stringify(images, null, 2) + "\n",
+  };
+}
+
+function writeLauncherGeneratedSources(
+  registry: LauncherRegistry,
+): void {
+  const generated = launcherGeneratedSources(registry);
+  mkdirSync(LAUNCHER_DIR, { recursive: true });
+  replaceGeneratedSources(generated.registryTs, generated.imagesJson);
+}
+
 function writeRegistry(
   targetRegistry: LauncherRegistry,
   displayRegistry: LauncherRegistry,
   paths: LauncherPaths,
+  persistGeneratedSources: boolean,
 ): void {
   mkdirSync(paths.output, { recursive: true });
   writeFileSync(
@@ -474,53 +666,9 @@ function writeRegistry(
       .map((a) => `${a.output}\t${a.id}\t${a.title}\n`)
       .join(""),
   );
-  const lines = [
-    "// GENERATED by tools/launcher.ts scan — do not edit by hand; COMMIT",
-    "// the regenerated file (tests/launcher-sim.test.ts asserts freshness).",
-    "// The display-side PSP/Vita/Symbian union: the launcher imports it for",
-    "// titles + cover asset keys; each host's target-specific appTable",
-    "// (spec op 39) stays the runtime truth for what is embedded.",
-    "",
-    "export interface RegistryApp {",
-    "  output: string;",
-    "  id: string;",
-    "  title: string;",
-    "  /** Pak image asset of the 256×128 cover. The literal paths below are",
-    "   *  what the build's asset collector picks up and bakes. */",
-    "  cover: string;",
-    "  /** The cover's baked reflection (mirrored + alpha falloff), drawn as",
-    "   *  its own quad so the seam stays a geometric straight edge. */",
-    "  refl: string;",
-    "}",
-    "",
-    "export const REGISTRY: readonly RegistryApp[] = [",
-    ...displayRegistry.apps.map(
-      (a) =>
-        `  { output: ${JSON.stringify(a.output)}, id: ${JSON.stringify(a.id)}, title: ${JSON.stringify(
-          a.title,
-        )}, cover: ${JSON.stringify(`covers/cover-${a.output}.png`)}, refl: ${JSON.stringify(
-          `covers/refl-${a.output}.png`,
-        )} },`,
-    ),
-    "] as const;",
-    "",
-  ];
-  mkdirSync(LAUNCHER_DIR, { recursive: true });
-  writeFileSync(REGISTRY_TS, lines.join("\n"));
-  // Static-image meta for tools/build.ts: every cover samples bilinear
-  // (IMG_FLAG_LINEAR) — the deck rotates and scales them, nearest shimmers.
-  // Committed alongside registry.generated.ts, same freshness story.
-  const images: Record<string, { linear: boolean }> = {
-    "covers/launcher-bg.png": { linear: true },
-  };
-  for (const a of displayRegistry.apps) {
-    images[`covers/cover-${a.output}.png`] = { linear: true };
-    // Reflections stay 8888: their whole point is a smooth alpha ramp, and
-    // PSM_4444's 4-bit alpha gives the 0.3→0 fade only ~5 steps — visible
-    // horizontal banding on hardware. Quarter-res keeps them cheap (32 KB).
-    images[`covers/refl-${a.output}.png`] = { linear: true };
+  if (persistGeneratedSources) {
+    writeLauncherGeneratedSources(displayRegistry);
   }
-  writeFileSync(IMAGES_JSON, JSON.stringify(images, null, 2) + "\n");
 }
 
 export function needsLauncherCompile(
@@ -1141,131 +1289,150 @@ async function main(): Promise<void> {
   ) {
     usage("--include-manifest is currently limited to the Symbian launcher");
   }
+  // Validate target-specific backend arguments before launcherBuildEntry() or
+  // writeRegistry() can emit any build metadata.
+  const symbianBackend =
+    target === SYMBIAN_E7_DEV_TARGET_ID
+      ? symbianBackendOptions(backendArgs)
+      : undefined;
   const execute = async (
     symbianTransaction?: SymbianBuildTransaction,
   ): Promise<void> => {
-  const launcher = launcherBuildEntry(target, paths);
-  console.log(
-    `launcher: scanning apps/*/pocket.json against target ${target}`,
-  );
-  const registry = includeExternalManifests(
-    scanRegistry(exclude, target),
-    externalManifests,
-    exclude,
-    target,
-    launcher,
-  );
-  const displayRegistry = mergeDisplayRegistry(
-    scanDisplayRegistry(exclude),
-    registry,
-  );
-  if (externalManifests.length > 0) backupGeneratedSources();
-  writeRegistry(registry, displayRegistry, paths);
-  console.log(
-    `launcher: ${registry.apps.length} ${target} app(s) admitted -> ${relative(ROOT, paths.registryJson)}`,
-  );
-  for (const app of registry.apps) {
-    const js = join(paths.output, `${app.output}.js`);
-    const pak = join(paths.output, `${app.output}.pak`);
-    const size = (p: string) => (existsSync(p) ? Bun.file(p).size : 0);
-    const total = size(js) + size(pak);
+    let launcher = launcherBuildEntry(target, paths);
     console.log(
-      `  ${app.output.padEnd(24)} ${app.title.padEnd(28)} ${total ? (total / 1024).toFixed(0) + " KB" : "(not built)"}`,
+      `launcher: scanning apps/*/pocket.json against target ${target}`,
     );
-  }
-  if (command === "scan") return;
-
-  console.log(
-    "launcher: rendering common covers (PSP-flavored sim, deterministic)",
-  );
-  await renderCovers(displayRegistry, force);
-  if (command === "covers") return;
-
-  console.log(
-    `launcher: compiling ${target} app dists -> ${relative(ROOT, paths.output)}/`,
-  );
-  for (const app of registry.apps) {
-    if (needsLauncherCompile(app.output, target, paths.output, force)) {
-      await compileApp(app, target, paths.output);
-    }
-  }
-  console.log(`launcher: compiling the ${target} launcher app`);
-  await compileApp(launcher, target, paths.output);
-  console.log(`launcher: packing ${target} .pocket files`);
-  await packPackages(registry, target, paths, launcher);
-  if (target === SYMBIAN_E7_DEV_TARGET_ID) {
-    console.log("launcher: assembling the Symbian package catalog");
-    await writeSymbianCatalog(registry, paths, launcher);
-  }
-  if (command === "pack") return;
-
-  if (target === "psp") {
-    console.log("launcher: rendering XMB art");
-    await renderXmbArt();
-  }
-  console.log(`launcher: building the multi-app ${
-    target === "psp"
-      ? "EBOOT"
-      : target === "vita"
-        ? "VPK"
-        : "SIS"
-  }`);
-  if (target === SYMBIAN_E7_DEV_TARGET_ID) {
-    const backend = symbianBackendOptions(backendArgs);
-    const sis = await buildSymbianApp(
-      manifestPath(launcher),
-      backend.sisVersion,
-      {
-        projectRoot: ROOT,
-        outputRoot: paths.output,
-        uid: backend.uid,
-        catalogIndex: paths.catalogIndex!,
-        catalogBlob: paths.catalogBlob!,
-        transaction: symbianTransaction,
-      },
-    );
-    console.log(`PocketJS Symbian launcher: ${sis}`);
-    return;
-  }
-  const targetBackendArgs =
-    target === "vita"
-      ? [
-          `--launcher-packages=${relative(ROOT, paths.packages)}`,
-          `--package-outdir=${relative(ROOT, join(ROOT, "dist/vita"))}`,
-        ]
-      : [];
-  const p = Bun.spawnSync(
-    [
-      "bun",
-      "tools/pocket.ts",
-      "build",
-      "--target",
+    const registry = includeExternalManifests(
+      scanRegistry(exclude, target),
+      externalManifests,
+      exclude,
       target,
-      "--manifest",
-      relative(ROOT, LAUNCHER_MANIFEST),
-      "--project-root",
-      ".",
-      "--outdir",
-      relative(ROOT, paths.output),
-      "--",
-      `--launcher-registry=${relative(ROOT, paths.registryTsv)}`,
-      ...targetBackendArgs,
-      ...backendArgs,
-    ],
-    { cwd: ROOT, stdout: "inherit", stderr: "inherit" },
-  );
-  if (p.exitCode !== 0)
-    throw new Error(`launcher: ${target} backend build failed`);
+      launcher,
+    );
+    const displayRegistry = mergeDisplayRegistry(
+      scanDisplayRegistry(exclude),
+      registry,
+    );
+    // Only a plain scan updates the committed display union. External scans
+    // and every build-like command write dist metadata only.
+    writeRegistry(
+      registry,
+      displayRegistry,
+      paths,
+      command === "scan" && externalManifests.length === 0,
+    );
+    console.log(
+      `launcher: ${registry.apps.length} ${target} app(s) admitted -> ${relative(ROOT, paths.registryJson)}`,
+    );
+    for (const app of registry.apps) {
+      const js = join(paths.output, `${app.output}.js`);
+      const pak = join(paths.output, `${app.output}.pak`);
+      const size = (p: string) => (existsSync(p) ? Bun.file(p).size : 0);
+      const total = size(js) + size(pak);
+      console.log(
+        `  ${app.output.padEnd(24)} ${app.title.padEnd(28)} ${total ? (total / 1024).toFixed(0) + " KB" : "(not built)"}`,
+      );
+    }
+    if (command === "scan") return;
+
+    console.log(
+      "launcher: rendering common covers (PSP-flavored sim, deterministic)",
+    );
+    await renderCovers(displayRegistry, force);
+    if (command === "covers") return;
+
+    console.log(
+      `launcher: compiling ${target} app dists -> ${relative(ROOT, paths.output)}/`,
+    );
+    for (const app of registry.apps) {
+      if (needsLauncherCompile(app.output, target, paths.output, force)) {
+        await compileApp(app, target, paths.output);
+      }
+    }
+    // PSP/Vita retain the historical display union and let appTable() filter
+    // it at runtime. Symbian bakes only target-admitted apps to keep E7 texture
+    // memory bounded.
+    launcher = prepareIsolatedLauncherSource(
+      target,
+      target === SYMBIAN_E7_DEV_TARGET_ID ? registry : displayRegistry,
+      paths.isolatedSource,
+    );
+    console.log(`launcher: compiling the ${target} launcher app`);
+    await compileApp(launcher, target, paths.output);
+    console.log(`launcher: packing ${target} .pocket files`);
+    await packPackages(registry, target, paths, launcher);
+    if (target === SYMBIAN_E7_DEV_TARGET_ID) {
+      console.log("launcher: assembling the Symbian package catalog");
+      await writeSymbianCatalog(registry, paths, launcher);
+    }
+    if (command === "pack") return;
+
+    if (target === "psp") {
+      console.log("launcher: rendering XMB art");
+      await renderXmbArt();
+      copyIsolatedPspMetadata(paths.isolatedSource);
+    }
+    console.log(`launcher: building the multi-app ${
+      target === "psp"
+        ? "EBOOT"
+        : target === "vita"
+          ? "VPK"
+          : "SIS"
+    }`);
+    if (target === SYMBIAN_E7_DEV_TARGET_ID) {
+      if (!symbianBackend) {
+        throw new Error("launcher: missing validated Symbian backend options");
+      }
+      const sis = await buildSymbianApp(
+        manifestPath(launcher),
+        symbianBackend.sisVersion,
+        {
+          projectRoot: ROOT,
+          outputRoot: paths.output,
+          uid: symbianBackend.uid,
+          catalogIndex: paths.catalogIndex!,
+          catalogBlob: paths.catalogBlob!,
+          transaction: symbianTransaction,
+        },
+      );
+      console.log(`PocketJS Symbian launcher: ${sis}`);
+      return;
+    }
+    const targetBackendArgs =
+      target === "vita"
+        ? [
+            `--launcher-packages=${relative(ROOT, paths.packages)}`,
+            `--package-outdir=${relative(ROOT, join(ROOT, "dist/vita"))}`,
+          ]
+        : [];
+    const p = Bun.spawnSync(
+      [
+        "bun",
+        "tools/pocket.ts",
+        "build",
+        "--target",
+        target,
+        "--manifest",
+        manifestPath(launcher),
+        "--project-root",
+        projectRoot(launcher),
+        "--outdir",
+        paths.output,
+        "--",
+        `--launcher-registry=${relative(ROOT, paths.registryTsv)}`,
+        ...targetBackendArgs,
+        ...backendArgs,
+      ],
+      { cwd: ROOT, stdout: "inherit", stderr: "inherit" },
+    );
+    if (p.exitCode !== 0)
+      throw new Error(`launcher: ${target} backend build failed`);
   };
 
   await withLauncherSourceLock(async () => {
     if (target === SYMBIAN_E7_DEV_TARGET_ID) {
       await withSymbianBuildTransaction(paths.output, async (transaction) => {
-        try {
-          await execute(transaction);
-        } finally {
-          restoreGeneratedSources();
-        }
+        await execute(transaction);
       });
     } else {
       await execute();
@@ -1276,7 +1443,11 @@ async function main(): Promise<void> {
 if (import.meta.main) {
   try {
     await main();
-  } finally {
-    restoreGeneratedSources();
+  } catch (error) {
+    if (error instanceof LauncherUsageError) {
+      process.exitCode = 1;
+    } else {
+      throw error;
+    }
   }
 }

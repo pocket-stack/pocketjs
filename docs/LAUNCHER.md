@@ -96,6 +96,9 @@ is the default for compatibility:
    by `app.output`. PSP writes `dist/launcher-registry.{json,tsv}`; Vita writes
    `dist/launcher/vita/launcher-registry.{json,tsv}`. The committed display
    registry is the PSP/Vita/Symbian union, while `appTable()` remains the runtime truth.
+   A plain in-repository `scan` is the only command that updates
+   `apps/launcher/{registry.generated.ts,images.json}`; external scans leave
+   those files untouched.
 2. **covers** — boot each admitted app in `hosts/sim`, settle 90 virtual frames,
    render, box-downscale the full frame to 256×128, write
    `apps/launcher/covers/cover-<output>.png` (generated, deterministic —
@@ -104,7 +107,10 @@ is the default for compatibility:
 3. **pack** — every admitted app + the launcher becomes a `.pocket`
    package (`contracts/spec/pocket-package.ts`) with the selected target variant. PSP uses
    `dist/packages/`; Vita uses `dist/launcher/vita/packages/` so density-2
-   bundles never overwrite the PSP/sim outputs.
+   bundles never overwrite the PSP/sim outputs. Pack/build materialize a private
+   `.launcher-source` under `dist/launcher/<target>/` containing the selected
+   registry, image metadata, entry, and cover assets; compiler/watch processes
+   never observe a temporary target registry in the committed source tree.
 4. **build** — the selected backend embeds those packages VERBATIM
    (`hosts/psp/build.rs` or `hosts/vita/build.rs`; the core reader extracts
    js/pak zero-copy at boot). PSP retains its aggregate FNV-1a64 build
@@ -135,8 +141,9 @@ bun tools/launcher.ts build --target symbian
 The Symbian build may repeat `--include-manifest /absolute/path/to/pocket.json`
 to add explicitly requested external projects. The tool resolves each declared
 entry by walking up from that manifest, applies the same private E7 admission
-gate, and restores the committed display registry after the artifact is built;
-absolute local paths never enter the emitted registry or source diff. This
+gate, and builds the launcher from its isolated target registry without ever
+writing the committed display registry; absolute local paths never enter the
+emitted registry or source diff. This
 extension is deliberately unavailable to PSP/Vita builds, whose computed
 in-repository admission set remains unchanged.
 

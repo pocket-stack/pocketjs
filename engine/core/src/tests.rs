@@ -2834,6 +2834,7 @@ fn update_texture_t8_overwrites_in_place() {
     data[1024..].fill(1);
     let plane = ui.upload_texture(&data, 4, 4, spec::psm::PSM_T8);
     assert!(plane >= 0);
+    assert_eq!(ui.texture_revision(plane), Some(0));
 
     // Overwrite with palette entry 1 = green, pixels still index 1.
     let mut pal = alloc::vec![0u8; 1024];
@@ -2843,10 +2844,12 @@ fn update_texture_t8_overwrites_in_place() {
     let view = ui.texture(plane).expect("plane still live");
     assert_eq!(view.palette.unwrap()[4..8], abgr(0, 255, 0, 255).to_le_bytes());
     assert_eq!(view.pixels, &px[..]);
+    assert_eq!(ui.texture_revision(plane), Some(1));
 
     // Size/format/liveness misuse changes nothing and reports false.
     assert!(!ui.update_texture_t8(plane, &pal[..100], &px), "short palette");
     assert!(!ui.update_texture_t8(plane, &pal, &px[..8]), "wrong pixel count");
+    assert_eq!(ui.texture_revision(plane), Some(1));
     let rgba = ui.upload_texture(&[0u8; 4 * 4 * 4], 4, 4, spec::psm::PSM_8888);
     assert!(!ui.update_texture_t8(rgba, &pal, &px), "non-T8 texture");
     ui.free_texture(plane);

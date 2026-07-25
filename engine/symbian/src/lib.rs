@@ -1,15 +1,15 @@
-//! Symbian C ABI for PocketJS's retained UI core and deterministic software
-//! rasterizer.
+//! Symbian C ABI for PocketJS's retained UI core, GLES2 DrawList backend, and
+//! deterministic capture rasterizer.
 //!
 //! The Qt host owns QuickJS and calls this library synchronously from its UI
 //! thread. There is exactly one `Ui` instance. Strings and blobs are borrowed
 //! as `(ptr, len)` for the duration of a call and copied by the core whenever
 //! they must outlive it.
 //!
-//! Rendering returns tightly packed, top-left-origin ARGB32 pixels. On the
-//! little-endian ARM target that is B,G,R,A byte order, exactly what Qt 4's
-//! `QImage::Format_ARGB32` expects. The pointer remains valid until the next
-//! render, viewport change, init, or shutdown call.
+//! QGLWidget owns the graphics context and calls the GLES2 entry points only
+//! while it is current. The software capture entry points return tightly
+//! packed, top-left-origin ARGB32 pixels; those pointers remain valid until
+//! the next capture, viewport change, init, or shutdown call.
 
 #![cfg_attr(target_os = "none", no_std)]
 #![cfg_attr(target_os = "none", feature(alloc_error_handler))]
@@ -26,6 +26,9 @@ use core::ffi::c_void;
 use pocketjs_core::damage::{DamagePolicy, DamageTracker, DEFAULT_DAMAGE_REGIONS};
 use pocketjs_core::raster;
 use pocketjs_core::Ui;
+
+#[cfg(any(target_os = "none", test))]
+mod gles2;
 
 const C_MALLOC_ALIGNMENT: usize = 8;
 
@@ -130,6 +133,12 @@ fn clear_framebuffer() {
 /// Reset the single UI instance. `raster_density == 0` selects density 1.
 #[no_mangle]
 pub extern "C" fn ui_init(raster_density: u32) {
+    #[cfg(target_os = "none")]
+    unsafe {
+        // This call may happen without a current GL context, so the backend
+        // only marks its caches stale and defers replacement until render.
+        gles2::invalidate_resources();
+    }
     unsafe {
         UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
     }
@@ -139,6 +148,10 @@ pub extern "C" fn ui_init(raster_density: u32) {
 /// Drop all retained UI, texture, font, and framebuffer allocations.
 #[no_mangle]
 pub extern "C" fn ui_shutdown() {
+    #[cfg(target_os = "none")]
+    unsafe {
+        gles2::invalidate_resources();
+    }
     unsafe {
         UI = None;
     }
@@ -338,7 +351,19 @@ pub extern "C" fn ui_load_styles(ptr: *const u8, len: usize) -> i32 {
 
 #[no_mangle]
 pub extern "C" fn ui_load_font_atlas(ptr: *const u8, len: usize) -> i32 {
-    ui().load_font_atlas(unsafe { bytes(ptr, len) }) as i32
+    let blob = unsafe { bytes(ptr, len) };
+    let loaded = ui().load_font_atlas(blob);
+    #[cfg(target_os = "none")]
+    if loaded {
+        if let Some(&slot) = blob.get(12) {
+            unsafe {
+                // Loading happens in a host callback, not necessarily with
+                // QGLWidget's context current. Defer GL deletion/re-upload.
+                gles2::invalidate_font(slot);
+            }
+        }
+    }
+    loaded as i32
 }
 
 #[no_mangle]
@@ -351,6 +376,67 @@ pub extern "C" fn ui_measure_text(ptr: *const u8, len: usize, font_slot: u32) ->
 #[no_mangle]
 pub extern "C" fn ui_tick() {
     ui().tick();
+}
+
+#[no_mangle]
+pub extern "C" fn ui_gl_initialize() -> i32 {
+    #[cfg(target_os = "none")]
+    unsafe {
+        return gles2::initialize() as i32;
+    }
+    #[cfg(not(target_os = "none"))]
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn ui_gl_reset_resources() {
+    #[cfg(target_os = "none")]
+    unsafe {
+        gles2::reset_resources();
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn ui_gl_shutdown() {
+    #[cfg(target_os = "none")]
+    unsafe {
+        gles2::shutdown();
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn ui_gl_render(
+    target_x: i32,
+    target_y: i32,
+    target_width: i32,
+    target_height: i32,
+    window_width: i32,
+    window_height: i32,
+) -> i32 {
+    #[cfg(target_os = "none")]
+    unsafe {
+        return gles2::render(
+            ui(),
+            target_x,
+            target_y,
+            target_width,
+            target_height,
+            window_width,
+            window_height,
+        ) as i32;
+    }
+    #[cfg(not(target_os = "none"))]
+    {
+        let _ = (
+            target_x,
+            target_y,
+            target_width,
+            target_height,
+            window_width,
+            window_height,
+        );
+        0
+    }
 }
 
 #[no_mangle]

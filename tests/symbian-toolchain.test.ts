@@ -180,9 +180,39 @@ describe("canonical Symbian E7 toolchain", () => {
     expect(setup).toContain("tools/mifconv.cpp");
     expect(setup).toContain("markersSha256: $markers");
     expect(setup).toContain("pocketjs-symbian-doctor");
+    expect(setup).toContain(
+      "for alias_pair in GLES2:gles2 EGL:egl GLES:gles; do",
+    );
+    expect(setup).toContain(
+      'ln -s "$target_name" "$stage/sdk/epoc32/include/$alias_name"',
+    );
     expect(doctor).toContain("sha256sum --check --status");
     expect(doctor).toContain("signsis -o");
+    expect(doctor).toContain(
+      'test "$(readlink "$root/sdk/epoc32/include/GLES2")" = gles2',
+    );
+    expect(doctor).toContain(
+      'test "$(readlink "$root/sdk/epoc32/include/EGL")" = egl',
+    );
+    expect(doctor).toContain(
+      'test -s "$root/sdk/include/QtOpenGL/QGLWidget"',
+    );
+    expect(doctor).toContain(
+      'test -s "$root/sdk/epoc32/release/armv5/lib/QtOpenGL.dso"',
+    );
+    expect(doctor).toContain(
+      'test -s "$root/sdk/epoc32/release/armv5/lib/libGLESv2.dso"',
+    );
+    expect(doctor).toContain(
+      'test -s "$root/sdk/epoc32/release/armv5/lib/libEGL.dso"',
+    );
+    expect(doctor).toContain("#include <QtOpenGL/QGLWidget>");
+    expect(doctor).toContain("class PocketJsGlSmoke : public QGLWidget");
+    expect(doctor).toContain("glClear(GL_COLOR_BUFFER_BIT);");
+    expect(doctor).toContain("QT += core gui opengl");
     expect(doctor).toContain('cd "$smoke"');
+    expect(doctor).toContain("make -j2 >/dev/null");
+    expect(doctor).toContain('test -s "$smoke/PocketJsDoctorSmoke.exe"');
     expect(doctor).toContain("makesis smoke.pkg smoke-unsigned.sis");
     expect(codaUsbProbe).toContain("NokiaVendorId = 0x0421");
     expect(codaUsbProbe).toContain("NokiaE7SuiteProductId = 0x0335");
