@@ -38,15 +38,41 @@ const ANIMATION_PATH = new URL("../src/animation.ts", import.meta.url).pathname;
 const COMPONENTS_PATH = new URL("../src/components.ts", import.meta.url).pathname;
 const COMPONENTS_VUE_VAPOR_PATH = new URL("../src/components-vue-vapor.ts", import.meta.url).pathname;
 const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
+const CLOCK_PATH = new URL("../src/clock.ts", import.meta.url).pathname;
+const DEVTOOLS_PATH = new URL("../src/devtools.ts", import.meta.url).pathname;
+const EFFECTS_PATH = new URL("../src/effects.ts", import.meta.url).pathname;
+const HOST_PATH = new URL("../src/host.ts", import.meta.url).pathname;
+const HOT_PATH = new URL("../src/hot.ts", import.meta.url).pathname;
 const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
 const LAUNCHER_PATH = new URL("../src/launcher.ts", import.meta.url).pathname;
 const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
 const LIFECYCLE_VUE_VAPOR_PATH = new URL("../src/lifecycle-vue-vapor.ts", import.meta.url).pathname;
 const OSK_PATH = new URL("../src/osk.tsx", import.meta.url).pathname;
+const MANIFEST_PATH = new URL("../src/manifest/index.ts", import.meta.url).pathname;
+const PACKAGE_PATH = new URL(
+  "../../contracts/spec/pocket-package.ts",
+  import.meta.url,
+).pathname;
 const PLATFORM_PATH = new URL("../src/platform.ts", import.meta.url).pathname;
 const PRELUDE_PATH = new URL("../src/prelude.ts", import.meta.url).pathname;
+const GENERATED_STYLES_PATH = new URL(
+  "../src/styles.generated.ts",
+  import.meta.url,
+).pathname;
+const VITA_PACKAGE_PATH = new URL(
+  "../../tools/vita-package.ts",
+  import.meta.url,
+).pathname;
 const VUE_VAPOR_RUNTIME_PATH = new URL(
   "../../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js",
+  import.meta.url,
+).pathname;
+const SOLID_RUNTIME_PATH = new URL(
+  "../../node_modules/solid-js/dist/solid.js",
+  import.meta.url,
+).pathname;
+const SOLID_UNIVERSAL_RUNTIME_PATH = new URL(
+  "../../node_modules/solid-js/universal/dist/universal.js",
   import.meta.url,
 ).pathname;
 
@@ -335,9 +361,21 @@ export function packagePath(spec: string, framework: PocketFramework): string | 
     return FRAMEWORKS.solid.subpaths[subpath] ?? null;
   }
   if (spec === `${PACKAGE_NAME}/vue-vapor` || spec.startsWith(`${PACKAGE_NAME}/vue-vapor/`)) {
-    return FRAMEWORKS["vue-vapor"].subpaths[subpath] ?? null;
+    return FRAMEWORKS["vue-vapor"].subpaths[subpath] ?? {
+      clock: CLOCK_PATH,
+      effects: EFFECTS_PATH,
+    }[subpath] ?? null;
   }
-  return FRAMEWORKS[framework].subpaths[subpath] ?? null;
+  return FRAMEWORKS[framework].subpaths[subpath] ?? {
+    clock: CLOCK_PATH,
+    devtools: DEVTOOLS_PATH,
+    effects: EFFECTS_PATH,
+    host: HOST_PATH,
+    hot: HOT_PATH,
+    manifest: MANIFEST_PATH,
+    package: PACKAGE_PATH,
+    "vita-package": VITA_PACKAGE_PATH,
+  }[subpath] ?? null;
 }
 
 export function frameworkVariantPath(path: string, framework: PocketFramework): string {
@@ -470,11 +508,25 @@ export async function transformFile(
 
 export function jsxPlugin(
   framework: PocketFramework,
-  opts: { entry?: string; features?: BuildFeatures } = {},
+  opts: {
+    entry?: string;
+    features?: BuildFeatures;
+    generatedStyles?: string;
+  } = {},
 ): BunPlugin {
   return {
     name: `pocketjs-${framework}-jsx`,
     setup(build) {
+      // External applications may have their own node_modules. Resolve both
+      // sides of the renderer boundary to PocketJS's browser-mode Solid copy,
+      // otherwise identical packages at different paths form two reactive
+      // ownership domains and lifecycle hooks silently stop crossing it.
+      build.onResolve({ filter: /^solid-js$/ }, () => ({
+        path: SOLID_RUNTIME_PATH,
+      }));
+      build.onResolve({ filter: /^solid-js\/universal$/ }, () => ({
+        path: SOLID_UNIVERSAL_RUNTIME_PATH,
+      }));
       build.onResolve({ filter: /^@pocketjs\/framework(?:\/.*)?$/ }, (args) => {
         const path = packagePath(args.path, framework);
         return path ? { path } : undefined;
@@ -503,7 +555,10 @@ export function jsxPlugin(
       }
       build.onLoad({ filter: /\.tsx?$/ }, async (args) => {
         if (args.path.includes("/node_modules/") || args.path.endsWith(".d.ts")) return undefined;
-        let src = await Bun.file(args.path).text();
+        let src = args.path === GENERATED_STYLES_PATH &&
+            opts.generatedStyles !== undefined
+          ? opts.generatedStyles
+          : await Bun.file(args.path).text();
         if (framework === "vue-vapor" && args.path === opts.entry) {
           src = `import "@pocketjs/framework/prelude";\n${src}`;
         }

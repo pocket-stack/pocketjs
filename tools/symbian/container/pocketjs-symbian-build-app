@@ -10,12 +10,14 @@ if test "$POCKETJS_SYMBIAN_IMAGE_IMPLEMENTATION_SHA256" != \
     exit 1
 fi
 
-if test "$#" != 2; then
-    echo "usage: pocketjs-symbian-build-app <output-name> <sis-version>" >&2
+if test "$#" != 4; then
+    echo "usage: pocketjs-symbian-build-app <output-name> <sis-version> <data-base> <embedded-bytes>" >&2
     exit 1
 fi
 app_output=$1
 sis_version=$2
+data_base=$3
+embedded_bytes=$4
 if [[ ! "$app_output" =~ ^[A-Za-z0-9._-]+$ ]]; then
     echo "Unsafe PocketJS app output name: $app_output" >&2
     exit 1
@@ -33,19 +35,73 @@ for component in "$sis_major" "$sis_minor" "$sis_build"; do
         exit 1
     fi
 done
+if [[ ! "$data_base" =~ ^0x[0-9a-f]+$ ]] ||
+    (( data_base < 0x400000 )) ||
+    (( data_base > 0x10000000 )) ||
+    (( data_base % 0x100000 != 0 )); then
+    echo "Symbian data base must be an aligned lowercase hex address from 0x400000 through 0x10000000." >&2
+    exit 1
+fi
+if [[ ! "$embedded_bytes" =~ ^[0-9]+$ ]]; then
+    echo "Symbian embedded byte count must be a decimal integer." >&2
+    exit 1
+fi
 
 toolchain=/toolchain/current
 payload="/out/build/$app_output"
 runtime_source=/workspace/hosts/symbian/runtime
 rust_library="$payload/libpocketjs_symbian_core.a"
+package_json="$payload/package.json"
 quickjs_asset="/downloads/$(jq -r .quickjs.asset "$manifest")"
 quickjs_sha256=$(jq -r .quickjs.sha256 "$manifest")
 quickjs_version=$(jq -r .quickjs.version "$manifest")
 quickjs_revision=$(jq -r .quickjs.rev "$manifest")
-uid=$(jq -r .runtime.uid "$manifest")
-output_name=$(basename "$(jq -r .runtime.output "$manifest")")
+if test ! -s "$package_json"; then
+    echo "Missing Symbian package identity: $package_json" >&2
+    exit 1
+fi
+uid=$(jq -er '.uid | strings | select(test("^0xE[0-9A-F]{7}$"))' "$package_json")
+package_title=$(jq -er \
+    '.title | strings |
+     select(test("^[A-Za-z0-9][A-Za-z0-9 ._+&():-]{0,127}$"))' \
+    "$package_json")
+executable=$(jq -er \
+    '.executable | strings | select(test("^[A-Za-z][A-Za-z0-9]{0,30}$"))' \
+    "$package_json")
+output_name=$(jq -er \
+    '.sisFile | strings | select(test("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.sis$"))' \
+    "$package_json")
 output="/out/$output_name"
-receipt="/out/${output_name%.sis}.receipt.json"
+receipt_name=$(jq -er \
+    '.receiptFile | strings | select(test("^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.receipt\\.json$"))' \
+    "$package_json")
+receipt="/out/$receipt_name"
+catalog_index="$payload/catalog.tsv"
+catalog_blob="$payload/catalog.bin"
+catalog_enabled=false
+if test -e "$catalog_index" || test -e "$catalog_blob"; then
+    if test ! -s "$catalog_index" || test ! -s "$catalog_blob"; then
+        echo "Symbian app catalog requires non-empty catalog.tsv and catalog.bin." >&2
+        exit 1
+    fi
+    catalog_enabled=true
+fi
+actual_embedded_bytes=$(
+    stat -c %s "$payload/app.js" "$payload/app.pak" |
+        awk '{ total += $1 } END { print total + 0 }'
+)
+if test "$catalog_enabled" = true; then
+    actual_embedded_bytes=$(
+        {
+            printf '%s\n' "$actual_embedded_bytes"
+            stat -c %s "$catalog_index" "$catalog_blob"
+        } | awk '{ total += $1 } END { print total + 0 }'
+    )
+fi
+if test "$actual_embedded_bytes" != "$embedded_bytes"; then
+    echo "Symbian embedded payload changed after link layout resolution." >&2
+    exit 1
+fi
 certificate="/signing/$(jq -r .signing.certificate "$manifest")"
 private_key="/signing/$(jq -r .signing.privateKey "$manifest")"
 lock=/toolchain/.toolchain.lock
@@ -54,6 +110,7 @@ for required in \
     "$payload/app.js" \
     "$payload/app.pak" \
     "$payload/plan.json" \
+    "$package_json" \
     "$rust_library"; do
     if test ! -s "$required"; then
         echo "Missing Symbian runtime input: $required" >&2
@@ -101,7 +158,7 @@ quickjs_root="$build/quickjs-rs"
 quickjs_objects="$build/quickjs-objects"
 output_stage=$(mktemp -d /out/.pocketjs-symbian-runtime.XXXXXX)
 candidate="$output_stage/$output_name"
-candidate_receipt="$output_stage/${output_name%.sis}.receipt.json"
+candidate_receipt="$output_stage/$receipt_name"
 
 cleanup() {
     rm -rf "$build" "$output_stage"
@@ -166,11 +223,17 @@ arm-none-symbianelf-ar cqs "$build/libquickjs.a" "$quickjs_objects"/*.o
 
 cp "$runtime_source"/* "$build/"
 cp "$payload/app.js" "$payload/app.pak" "$build/"
+if test "$catalog_enabled" = true; then
+    cp "$catalog_index" "$build/catalog.tsv"
+    cp "$catalog_blob" "$build/catalog.bin"
+fi
 cd "$build"
 
 qmake \
     -spec "$toolchain/sdk/mkspecs/symbian-gcce" \
     "POCKETJS_SYMBIAN_UID=$uid" \
+    "POCKETJS_SYMBIAN_TARGET=$executable" \
+    "POCKETJS_SYMBIAN_CAPTION=$package_title" \
     "POCKETJS_QUICKJS_INCLUDE=$quickjs_source" \
     "POCKETJS_QUICKJS_LIBRARY=$build/libquickjs.a" \
     "POCKETJS_CORE_LIBRARY=$rust_library" \
@@ -178,26 +241,27 @@ qmake \
     "POCKETJS_HOST_ABI=$host_abi" \
     "POCKETJS_INITIAL_LOGICAL_WIDTH=$initial_logical_width" \
     "POCKETJS_INITIAL_LOGICAL_HEIGHT=$initial_logical_height" \
+    "QMAKE_${executable}_LFLAGS=-Ttext 0x80000 -Tdata $data_base" \
     pocketjs-e7-runtime.pro
 make -j2
 
 expected_uid=$(tr "[:upper:]" "[:lower:]" <<<"${uid#0x}" | tr -d "[:space:]")
-actual_uid=$(od -An -tx4 -j8 -N4 PocketJsE7Runtime.exe | tr -d "[:space:]")
+actual_uid=$(od -An -tx4 -j8 -N4 "$executable.exe" | tr -d "[:space:]")
 test "$actual_uid" = "$expected_uid"
-file PocketJsE7Runtime.exe | grep -Fq "Psion Series 5 executable"
+file "$executable.exe" | grep -Fq "Psion Series 5 executable"
 
 cat > pocketjs-e7-runtime.pkg <<EOF
 ; Generated by pocketjs-symbian-build-app.
 &EN
-#{"PocketJS E7 Runtime"},($uid),$sis_major,$sis_minor,$sis_build
+#{"$package_title"},($uid),$sis_major,$sis_minor,$sis_build
 %{"Pocket Stack"}
 :"Pocket Stack"
 (0x2001E61C),4,7,4,{"Qt"}
 [0x20022E6D],0,0,0,{"Symbian^3"}
 [0x20032DE7],0,0,0,{"Symbian Belle"}
-"PocketJsE7Runtime.exe"-"!:\\sys\\bin\\PocketJsE7Runtime.exe"
-"PocketJsE7Runtime.rsc"-"!:\\resource\\apps\\PocketJsE7Runtime.rsc"
-"PocketJsE7Runtime_reg.rsc"-"!:\\private\\10003a3f\\import\\apps\\PocketJsE7Runtime_reg.rsc"
+"$executable.exe"-"!:\\sys\\bin\\$executable.exe"
+"$executable.rsc"-"!:\\resource\\apps\\$executable.rsc"
+"${executable}_reg.rsc"-"!:\\private\\10003a3f\\import\\apps\\${executable}_reg.rsc"
 EOF
 
 makesis pocketjs-e7-runtime.pkg pocketjs-e7-runtime-unsigned.sis
@@ -216,9 +280,18 @@ app_js_sha256=$(sha256sum "$payload/app.js" | cut -d " " -f 1)
 app_pak_sha256=$(sha256sum "$payload/app.pak" | cut -d " " -f 1)
 plan_sha256=$(sha256sum "$payload/plan.json" | cut -d " " -f 1)
 core_sha256=$(sha256sum "$rust_library" | cut -d " " -f 1)
+catalog_index_sha256=
+catalog_blob_sha256=
+if test "$catalog_enabled" = true; then
+    catalog_index_sha256=$(sha256sum "$catalog_index" | cut -d " " -f 1)
+    catalog_blob_sha256=$(sha256sum "$catalog_blob" | cut -d " " -f 1)
+fi
 jq -n \
     --arg app "$app_output" \
+    --arg appId "$(jq -r .appId "$package_json")" \
+    --arg title "$package_title" \
     --arg uid "$uid" \
+    --arg executable "$executable.exe" \
     --arg sisVersion "$sis_version" \
     --arg quickjsVersion "$quickjs_version" \
     --arg quickjsRevision "$quickjs_revision" \
@@ -226,22 +299,35 @@ jq -n \
     --arg appPakSha256 "$app_pak_sha256" \
     --arg planSha256 "$plan_sha256" \
     --arg coreSha256 "$core_sha256" \
+    --arg catalogIndexSha256 "$catalog_index_sha256" \
+    --arg catalogBlobSha256 "$catalog_blob_sha256" \
+    --arg dataBase "$data_base" \
+    --arg embeddedBytes "$embedded_bytes" \
     '{
-      schemaVersion: 1,
+      schemaVersion: 2,
       app: $app,
+      appId: $appId,
+      title: $title,
       uid: $uid,
+      executable: $executable,
       sisVersion: $sisVersion,
       quickjs: {version: $quickjsVersion, revision: $quickjsRevision},
+      link: {
+        dataBase: $dataBase,
+        embeddedBytes: ($embeddedBytes | tonumber)
+      },
       sha256: {
         appJs: $appJsSha256,
         appPak: $appPakSha256,
         plan: $planSha256,
-        core: $coreSha256
+        core: $coreSha256,
+        catalogIndex: (if $catalogIndexSha256 == "" then null else $catalogIndexSha256 end),
+        catalogBlob: (if $catalogBlobSha256 == "" then null else $catalogBlobSha256 end)
       }
     }' > "$candidate_receipt"
 
 mv -f "$candidate" "$output"
 mv -f "$candidate_receipt" "$receipt"
 
-file PocketJsE7Runtime.exe "$output"
+file "$executable.exe" "$output"
 sha256sum "$output"

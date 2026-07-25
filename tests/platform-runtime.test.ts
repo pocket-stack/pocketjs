@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   jsxPlugin,
+  packagePath,
   transformFile,
   type PocketFramework,
 } from "../framework/compiler/jsx-plugin.ts";
@@ -101,6 +102,109 @@ test("feature folding rejects dynamic and shadowed calls", async () => {
     features: { "text.glyphs.baked": true },
   });
   expect(result.code.match(/hasFeature\(/g)).toHaveLength(2);
+});
+
+test("the build resolver owns every published framework export", async () => {
+  const packageJson = await Bun.file(
+    new URL("../package.json", import.meta.url),
+  ).json() as { exports: Record<string, string> };
+  for (const exported of Object.keys(packageJson.exports)) {
+    const spec = exported === "."
+      ? "@pocketjs/framework"
+      : `@pocketjs/framework${exported.slice(1)}`;
+    const framework = exported === "./vue-vapor" ||
+        exported.startsWith("./vue-vapor/")
+      ? "vue-vapor"
+      : "solid";
+    expect(packagePath(spec, framework), spec).not.toBeNull();
+  }
+});
+
+test("external apps share PocketJS's Solid runtime identity", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pocketjs-external-solid-"));
+  const entry = join(directory, "main.ts");
+  const duplicatePackage = join(directory, "node_modules", "solid-js");
+  try {
+    await Bun.write(join(duplicatePackage, "package.json"), JSON.stringify({
+      name: "solid-js",
+      version: "0.0.0-duplicate",
+      type: "module",
+      exports: "./index.js",
+    }));
+    await Bun.write(
+      join(duplicatePackage, "index.js"),
+      'export const createSignal = () => "DUPLICATE_SOLID_RUNTIME";\n',
+    );
+    await Bun.write(entry, `
+      import { createSignal } from "solid-js";
+      import { render } from "@pocketjs/framework/solid";
+      globalThis.__externalSolidProbe = [createSignal, render];
+    `);
+    const result = await Bun.build({
+      entrypoints: [entry],
+      format: "iife",
+      target: "browser",
+      conditions: ["browser"],
+      define: {
+        "process.env.NODE_ENV": '"production"',
+        __POCKET_TARGET__: '"symbian-e7-dev"',
+        __POCKET_HOST_ABI__: "4",
+        __POCKET_FEATURES__: "{}",
+        __POCKET_PIXEL_RATIO__: "1",
+      },
+      plugins: [jsxPlugin("solid", { entry })],
+    });
+    expect(result.success).toBe(true);
+    expect(await result.outputs[0]!.text()).not.toContain(
+      "DUPLICATE_SOLID_RUNTIME",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("parallel bundles receive their own generated style table", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pocketjs-parallel-styles-"));
+  const entry = join(directory, "main.ts");
+  try {
+    await Bun.write(entry, `
+      import { render } from "@pocketjs/framework/solid";
+      globalThis.__parallelStyleProbe = render;
+    `);
+    const bundle = async (marker: string): Promise<string> => {
+      const result = await Bun.build({
+        entrypoints: [entry],
+        format: "iife",
+        target: "browser",
+        conditions: ["browser"],
+        define: {
+          "process.env.NODE_ENV": '"production"',
+          __POCKET_TARGET__: '"symbian-e7-dev"',
+          __POCKET_HOST_ABI__: "4",
+          __POCKET_FEATURES__: "{}",
+          __POCKET_PIXEL_RATIO__: "1",
+        },
+        plugins: [jsxPlugin("solid", {
+          entry,
+          generatedStyles:
+            `globalThis.__pocketStyleBuildMarker = ${JSON.stringify(marker)};\n` +
+            `export const STYLE_IDS: Record<string, number> = ${JSON.stringify({ [marker]: 1 })};`,
+        })],
+      });
+      expect(result.success).toBe(true);
+      return await result.outputs[0]!.text();
+    };
+    const [first, second] = await Promise.all([
+      bundle("STYLE_BUILD_ALPHA"),
+      bundle("STYLE_BUILD_BETA"),
+    ]);
+    expect(first).toContain("STYLE_BUILD_ALPHA");
+    expect(first).not.toContain("STYLE_BUILD_BETA");
+    expect(second).toContain("STYLE_BUILD_BETA");
+    expect(second).not.toContain("STYLE_BUILD_ALPHA");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 async function bundleFeatureBranch(

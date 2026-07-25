@@ -6,7 +6,7 @@ E7 (RM-626). The probe exercises the compiler, Qt ABI, E32 executable, resource
 registration, SIS packaging, and signing. The private runtime additionally
 links the PocketJS Rust core and pinned QuickJS, embeds a compiled application
 and its `.pak`, and exposes the host operations needed to draw and accept
-button input. The separate MTP command proves byte delivery to the phone;
+button and native-resolution touch input. The separate MTP command proves byte delivery to the phone;
 installation and launch remain device-side confirmations.
 
 This workflow does not flash or modify firmware. A CFW may relax installation
@@ -140,24 +140,41 @@ bun tools/symbian.ts build app \
 It writes both the installable package and a build receipt:
 
 ```text
-dist/symbian/pocketjs-e7-runtime.sis
-dist/symbian/pocketjs-e7-runtime.receipt.json
+dist/symbian/hero-main.sis
+dist/symbian/hero-main.receipt.json
 ```
 
-The receipt records the application output, package UID and version, pinned
-QuickJS revision, and SHA-256 hashes for the JavaScript, `.pak`, resolved plan,
-and Rust core. Stage the SIS over the same readback-verified USB/MTP path:
+Every manifest gets a stable private-range UID derived from its Pocket app id,
+a collision-resistant executable name, its own application-menu caption, and
+output-specific SIS/receipt filenames. Multiple PocketJS apps can therefore be
+installed side by side instead of replacing one shared runtime package. The
+receipt records that identity, the package version, pinned QuickJS revision,
+and SHA-256 hashes for the JavaScript, `.pak`, resolved plan, Rust core, and
+optional launcher catalog. It also records the deterministic GCCE data base:
+the historical 4 MiB baseline plus the raw embedded JS/pak/catalog byte count,
+rounded to 1 MiB. This keeps large DeepZoom packs and multi-app catalogs above
+the read-only qrc segment without weakening the linker's overlap check. Stage
+the SIS over the same readback-verified USB/MTP path:
 
 ```sh
 bun tools/symbian.ts doctor --device --coda-usb
-bun tools/symbian.ts deploy dist/symbian/pocketjs-e7-runtime.sis
+bun tools/symbian.ts deploy dist/symbian/hero-main.sis
 ```
 
 Install it from `File manager > Mass memory > Installs`, then launch
-**PocketJS E7 Runtime**. Symbian package upgrades must use a version greater
+the manifest's title. Symbian package upgrades must use a version greater
 than the version already installed on the phone. After installing `1.0.0`, for
 example, pass `--sis-version 1.0.1` for the next build rather than reusing
 `1.0.0`.
+
+External Pocket projects use the same authority without copying the toolchain:
+
+```sh
+bun tools/symbian.ts build app \
+  --manifest /path/to/project/pocket.json \
+  --project-root /path/to/project \
+  --outdir /path/to/project/dist/symbian
+```
 
 The experimental host has these runtime semantics:
 
@@ -177,19 +194,44 @@ The experimental host has these runtime semantics:
   the default rate). Builds reject non-positive rates and rates that do not
   divide the core's fixed 60 Hz clock exactly.
 - Arrow keys map to the four directions, the navigation center/Select key and
-  keyboard Enter to `CIRCLE`, Escape to `CROSS`, and Space to `START`.
+  keyboard Enter to `CIRCLE`, Escape to `CROSS`, Space to `START`, Q/E to the
+  left/right triggers, and T/S to `TRIANGLE`/`SQUARE`.
+- Touch frame v2 uses tagged 10-bit coordinates for the E7's full 640-pixel
+  axis while retaining the original untagged 9-bit wire for PSP/Vita-era
+  hosts. `symbian-e7-dev` advertises `input.touch`; the framework exposes the
+  same immutable per-frame contact snapshots on both encodings.
 
-The current public input wire has 9-bit touch coordinates and cannot represent
-the E7's 640-pixel axis. The host therefore disables touch snapshots at native
-E7 sizes, and `symbian-e7-dev` does not advertise `input.touch`. Applications
-must not treat touch as a supported Symbian target contract yet.
+## Build the E7 Pocket Launcher
+
+The Launcher SIS contains target-thinned `.pocket` packages and keeps exactly
+one guest realm/core alive at a time. Home or Backspace summons the launcher;
+choosing a card destroys the current guest and cold-boots the next package.
+The built-in catalog admits only manifests with a genuine live E7 viewport.
+Additional external projects can be included explicitly without adding their
+machine-specific paths to committed launcher sources:
+
+```sh
+bun tools/launcher.ts build --target symbian \
+  --include-manifest /path/to/open-strike/.pocket/symbian-e7-dev/pocket.generated.json \
+  --include-manifest /path/to/pocket-figma/pocket.json
+```
+
+The tool locates each external project root from its declared entry, builds
+and validates the exact `.pocket` packages, derives the launcher's E7-only
+dynamic manifest without changing its PSP/Vita contract, records a
+16-byte-aligned catalog, and produces:
+
+```text
+dist/launcher/symbian/launcher-main.sis
+dist/launcher/symbian/launcher-main.receipt.json
+```
 
 For physical acceptance, launch the app in landscape, change some visible
 state, then close/open the keyboard or rotate the phone. The UI should fill and
 reflow at `360x640`, preserve that state, and return to `640x360` without a
 restart, red error screen, stale strip, or black margin.
 
-`PocketJS E7 Runtime` version `1.1.1` passed the manual landscape/portrait
+`PocketJS E7 Runtime` version `1.1.1` passed the original manual landscape/portrait
 launch and live-relayout check on an RM-626.
 
 ## Optional CODA device agent
@@ -213,8 +255,9 @@ macOS workflow: keep the phone in Nokia Suite mode, select USB in CODA, and run:
 pocket symbian coda usb
 # Or include it in the complete device check:
 pocket symbian doctor --device --coda-usb
-# Launch the installed PocketJS runtime without touching the phone:
-pocket symbian coda usb launch
+# Launch an installed app without touching the phone (read the exact name
+# from that app's *.receipt.json):
+pocket symbian coda usb launch PocketJsLauncherMainECEF4AC6.exe
 ```
 
 The host opens only the exact Nokia E7 Suite-mode VID/PID and claims CODA's
@@ -224,12 +267,13 @@ querying a serial number or IMEI. This avoids relying on the old Nokia USB
 driver binding that modern macOS no longer provides. A successful check reports
 the agent version, for example `4.0.23:app`.
 
-`coda usb launch` waits for the device's Locator service list, requires the
-`Processes` service, and sends CODA's non-debug-controlled `Processes.start`
-command for `PocketJsE7Runtime.exe`. Success includes the CODA process context,
-for example `CODA process: p2382`. An alternate installed executable basename
-can be supplied as the final argument. The command never terminates an existing
-process; close the app first if CODA reports that it is already running.
+`coda usb launch <executable.exe>` waits for the device's Locator service list,
+requires the `Processes` service, and sends CODA's non-debug-controlled
+`Processes.start` command for that exact independently packaged executable.
+Success includes the CODA process context, for example
+`CODA process: p2382`. The command never guesses which app to start and never
+terminates an existing process; close the app first if CODA reports that it is
+already running.
 
 This is a repeatable remote-launch path for device testing, not yet a
 source-level debugger. CODA also exposes run control, logging, memory,
@@ -255,7 +299,8 @@ install-server policy.
 The toolchain now implements the GCCE-compatible Rust core, QuickJS execution
 and Promise-job draining, the base HostOps surface, embedded compiled
 JavaScript and `.pak` resources, fixed-step presentation, live native-viewport
-relayout, and button input. The app build and MTP readback checks make both the
+relayout, buttons, native touch, independent app identities, and cold
+multi-package switching. The app build and MTP readback checks make both the
 native package and delivery substrate repeatable. A signed SIS is
 time-dependent and therefore is not expected to be byte-for-byte reproducible
 between builds.

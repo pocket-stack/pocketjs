@@ -63,6 +63,12 @@ import { mount as publicMount, render as publicRender } from "../framework/src/i
 import { pushButtonHandlerBlock, onButtonPress, onFrame } from "../framework/src/lifecycle.ts";
 import { rootMirror } from "../framework/src/renderer.ts";
 import { ActionBar, ActionHandler, FocusGrid, Modal, Portal, Text, View } from "../framework/src/components.ts";
+import {
+  DeepZoom,
+  type DeepZoomGesture,
+  type DeepZoomView,
+  type TileDoc,
+} from "../framework/src/deepzoom.ts";
 import { resetPack } from "../framework/src/pak.ts";
 import { encodeImageEntry, pack } from "../framework/compiler/pak.ts";
 import {
@@ -1021,6 +1027,133 @@ describe("public render() (index.ts)", () => {
 
     dispose();
     expect(globals.__pocketResizeViewport).toBeUndefined();
+  });
+
+  test("DeepZoom follows the live viewport while preserving a non-fit view", () => {
+    const ops = host.ops as HostOps & { __viewport?: { w: number; h: number } };
+    const frame = () =>
+      (globalThis as { frame?: (buttons: number) => void }).frame?.(0);
+    const doc: TileDoc = {
+      name: "live viewport",
+      w: 1000,
+      h: 500,
+      bg: 0xff202020,
+      tile: 100,
+      levels: [{
+        scale: 1,
+        cols: 10,
+        rows: 5,
+        key: "ui:tile.live-viewport",
+        grid: Array<string>(5).fill("aaaaaaaaaa"),
+        solids: [0xff808080],
+      }],
+    };
+    const views: DeepZoomView[] = [];
+    let gesture: DeepZoomGesture | null = null;
+    ops.__viewport = { w: 640, h: 360 };
+
+    const dispose = publicRender(
+      () =>
+        DeepZoom({
+          doc,
+          prefetch: 0,
+          gestureSource: () => gesture,
+          onView: (view) => views.push({ ...view }),
+        }) as unknown as NodeMirror,
+      { ops },
+    );
+    const container = rootMirror.children[0].children[0];
+    const activeWorld = container.children[1];
+
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.64);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.64);
+    expect(activeWorld.children).toHaveLength(50);
+
+    host.clear();
+    ops.__viewport = { w: 360, h: 640 };
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.36);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.36);
+    expect(host.of("setProp")).toEqual(expect.arrayContaining([
+      ["setProp", container.id, PROP.width, 360],
+      ["setProp", container.id, PROP.height, 640],
+    ]));
+    expect(rootMirror.children[0].children[0]).toBe(container);
+    expect(container.children[1]).toBe(activeWorld);
+
+    gesture = { panX: -36, panY: 0, zoomFactor: 2 };
+    frame();
+    gesture = null;
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.72);
+    expect(views.at(-1)?.centerX).toBeCloseTo(600);
+    expect(activeWorld.children).toHaveLength(30);
+
+    host.clear();
+    ops.__viewport = { w: 640, h: 360 };
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.64);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.72);
+    expect(views.at(-1)?.centerX).toBeCloseTo(1000 - 320 / 0.72);
+    expect(views.at(-1)?.centerX).not.toBeCloseTo(doc.w / 2);
+    expect(activeWorld.children).toHaveLength(45);
+    expect(rootMirror.children[0].children[0]).toBe(container);
+    expect(container.children[1]).toBe(activeWorld);
+
+    dispose();
+  });
+
+  test("DeepZoom keeps an explicit viewport fixed", () => {
+    const ops = host.ops as HostOps & { __viewport?: { w: number; h: number } };
+    const views: DeepZoomView[] = [];
+    const doc: TileDoc = {
+      name: "fixed viewport",
+      w: 1000,
+      h: 500,
+      bg: 0xff202020,
+      tile: 100,
+      levels: [{
+        scale: 1,
+        cols: 10,
+        rows: 5,
+        key: "ui:tile.fixed-viewport",
+        grid: Array<string>(5).fill("aaaaaaaaaa"),
+        solids: [0xff808080],
+      }],
+    };
+    ops.__viewport = { w: 640, h: 360 };
+
+    const dispose = publicRender(
+      () =>
+        DeepZoom({
+          doc,
+          width: 480,
+          height: 272,
+          prefetch: 0,
+          onView: (view) => views.push({ ...view }),
+        }) as unknown as NodeMirror,
+      { ops },
+    );
+    const container = rootMirror.children[0].children[0];
+    const frame = () =>
+      (globalThis as { frame?: (buttons: number) => void }).frame?.(0);
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.48);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.48);
+
+    host.clear();
+    ops.__viewport = { w: 360, h: 640 };
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.48);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.48);
+    expect(
+      host.of("setProp").filter((call) =>
+        call[1] === container.id &&
+        (call[2] === PROP.width || call[2] === PROP.height)
+      ),
+    ).toEqual([]);
+
+    dispose();
   });
 
   test("Portal mounts overlay content outside the app layer", () => {

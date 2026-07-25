@@ -6,11 +6,12 @@
 // pass 1  transform & collect: framework-specific JSX + TS over every
 //         .tsx/.ts reachable from the app entry (content-hash cached),
 //         collecting candidate class strings + text codepoints from the AST.
-// compile tailwind.ts -> styles.bin + framework/src/styles.generated.ts;
+// compile tailwind.ts -> styles.bin + an ignored styles.generated.ts mirror;
 //         bake-font.ts -> font atlas per used slot; demo images (PNG/SVG or a
 //         placeholder); pak.ts packs it all -> dist/<app>.pak.
-// pass 2  Bun.build (plugin serves the CACHED pass-1 transforms, iife,
-//         target browser, minify false) -> dist/<app>.js.
+// pass 2  Bun.build (plugin serves the CACHED pass-1 transforms plus this
+//         build's in-memory generated styles, iife, target browser,
+//         minify false) -> dist/<app>.js.
 //
 // Flags:
 //   --framework=solid|vue-vapor  select the framework for this build
@@ -283,7 +284,11 @@ if (styles.records.length === 0) {
   console.warn("  tailwind: no class literals compiled — is the app unstyled?");
 }
 const generatedPath = join(ROOT, "framework/src/styles.generated.ts");
-await Bun.write(generatedPath, generateStylesModule(styles));
+const generatedStyles = generateStylesModule(styles);
+// Keep the ignored mirror for docs/site tooling and human inspection. Pass 2
+// receives this build's source directly through jsxPlugin, so concurrent
+// targets can never import another build's transient STYLE_IDS table.
+await Bun.write(generatedPath, generatedStyles);
 console.log(
   `  tailwind: ${styles.records.length} style record(s), ${styles.anims.length} baked timeline(s), ` +
     `${Object.keys(styles.ids).length} literal(s) -> framework/src/styles.generated.ts`,
@@ -443,11 +448,9 @@ if (!existsSync(frameworkConfig.rendererPath)) {
   console.warn("  pass 2: renderer missing — wrote the no-op placeholder (js-runtime phase owns the real one)");
 }
 
-// NOTE for external app repos (see open-strike): framework-runtime imports
-// (solid-js, vue) must resolve to the ONE copy installed next to the
-// framework — symlink `node_modules/solid-js` in your repo at the vendored
-// framework's copy, or you will bundle a second reactive runtime and break
-// reactivity across the two.
+// jsxPlugin owns dependency identity as well as framework aliases. In
+// particular, external apps and renderer-solid.ts must share PocketJS's
+// browser-mode Solid runtime even when the app has its own node_modules.
 const result = await Bun.build({
   entrypoints: [entry],
   outdir: DIST,
@@ -472,7 +475,11 @@ const result = await Bun.build({
   },
   minify: false,
   sourcemap: "none",
-  plugins: [jsxPlugin(framework, { entry, features: buildPlan?.features })],
+  plugins: [jsxPlugin(framework, {
+    entry,
+    features: buildPlan?.features,
+    generatedStyles,
+  })],
 });
 if (!result.success) {
   for (const log of result.logs) console.error(log);

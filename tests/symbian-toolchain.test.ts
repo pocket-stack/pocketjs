@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -22,8 +25,10 @@ import {
   symbianDockerSetupArguments,
   symbianDownloadsRoot,
   symbianImplementationDigest,
+  withSymbianGuestBuildLock,
   withSymbianRuntimeBuildLock,
 } from "../tools/symbian-toolchain.ts";
+import { withArtifactLock } from "../tools/psp-toolchain.ts";
 
 const repository = new URL("..", import.meta.url).pathname;
 const temporary: string[] = [];
@@ -70,8 +75,6 @@ describe("canonical Symbian E7 toolchain", () => {
       rev: "0fc946fb670c0c29bc0135f510bcb0f595415a61",
     });
     expect(SYMBIAN_TOOLCHAIN.runtime).toEqual({
-      uid: "0xE7A11010",
-      output: "dist/symbian/pocketjs-e7-runtime.sis",
       sisVersion: "1.0.0",
       rustToolchain: "nightly-2026-07-02",
       frameRate: 30,
@@ -202,8 +205,34 @@ describe("canonical Symbian E7 toolchain", () => {
     expect(buildApp).toContain("-std=gnu99");
     expect(buildApp).toContain("-O0");
     expect(buildApp).toContain("POCKETJS_CORE_LIBRARY");
+    expect(buildApp).toContain("POCKETJS_SYMBIAN_TARGET");
+    expect(buildApp).toContain("POCKETJS_SYMBIAN_CAPTION");
+    expect(buildApp).toContain('package_json="$payload/package.json"');
+    expect(buildApp).toContain('catalog_index="$payload/catalog.tsv"');
+    expect(buildApp).toContain('cp "$catalog_blob" "$build/catalog.bin"');
+    expect(buildApp).toContain("catalogIndex: (if $catalogIndexSha256");
+    expect(buildApp).toContain(
+      '"QMAKE_${executable}_LFLAGS=-Ttext 0x80000 -Tdata $data_base"',
+    );
+    expect(buildApp).toContain("embeddedBytes: ($embeddedBytes | tonumber)");
+    expect(buildApp).toContain('schemaVersion: 2');
     expect(buildApp).toContain("output_stage=$(mktemp -d /out/");
     expect(buildApp).toContain('mv -f "$candidate" "$output"');
+    const sisPattern = buildApp.match(
+      /\.sisFile \| strings \| select\(test\("([^"]+)"\)\)/,
+    )?.[1];
+    const receiptPattern = buildApp.match(
+      /\.receiptFile \| strings \| select\(test\("([^"]+)"\)\)/,
+    )?.[1];
+    expect(sisPattern).toBeDefined();
+    expect(receiptPattern).toBeDefined();
+    expect(new RegExp(JSON.parse(`"${sisPattern}"`)).test("launcher-main.sis"))
+      .toBe(true);
+    expect(
+      new RegExp(JSON.parse(`"${receiptPattern}"`)).test(
+        "launcher-main.receipt.json",
+      ),
+    ).toBe(true);
     expect(buildApp).toContain("actual_uid=$(od ");
     expect(buildApp).toContain("sha256sum --check --status");
     expect(buildApp).toContain("SIS version must be three decimal components");
@@ -388,7 +417,7 @@ describe("canonical Symbian E7 toolchain", () => {
 
     const orchestrator = readFileSync(join(repository, "tools/symbian.ts"), "utf8");
     const transaction = orchestrator.indexOf(
-      "return await withSymbianRuntimeBuildLock(outputRoot",
+      "const transaction = async () =>",
     );
     expect(transaction).toBeGreaterThan(-1);
     expect(orchestrator.indexOf("rmSync(payload", transaction)).toBeGreaterThan(
@@ -396,6 +425,49 @@ describe("canonical Symbian E7 toolchain", () => {
     );
     expect(orchestrator.indexOf('resolve(payload, "plan.json")', transaction))
       .toBeGreaterThan(transaction);
+    expect(
+      orchestrator.indexOf(
+        "return await withSymbianRuntimeBuildLock(outputRoot, transaction)",
+        transaction,
+      ),
+    ).toBeGreaterThan(transaction);
+    expect(orchestrator).toContain(
+      "!activeBuildTransactions.has(options.transaction)",
+    );
+  });
+
+  test("serializes guest compilation across independent output roots", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pocketjs-symbian-guest-lock-"));
+    temporary.push(root);
+    const env = { POCKET_STACK_CACHE_DIR: join(root, "cache") };
+    let active = 0;
+    let maxActive = 0;
+    const compile = () => withSymbianGuestBuildLock(async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await Bun.sleep(20);
+      active -= 1;
+    }, env);
+    await Promise.all([compile(), compile()]);
+    expect(maxActive).toBe(1);
+
+    const orchestrator = readFileSync(
+      join(repository, "tools/symbian.ts"),
+      "utf8",
+    );
+    expect(orchestrator).toContain(
+      "await withSymbianGuestBuildLock(async () =>",
+    );
+    const launcher = readFileSync(
+      join(repository, "tools/launcher.ts"),
+      "utf8",
+    );
+    expect(launcher).toContain(
+      "await withSymbianGuestBuildLock(async () =>",
+    );
+    expect(launcher).toContain(
+      "await withSymbianBuildTransaction(paths.output",
+    );
   });
 
   test("changes the implementation digest when a repository snapshot changes", () => {
@@ -422,45 +494,71 @@ describe("canonical Symbian E7 toolchain", () => {
   test("CODA launch wire and reply parser stay byte-exact", async () => {
     const compiler = Bun.which("cc");
     expect(compiler, "cc is required to validate the shipped CODA client").toBeTruthy();
-    const build = mkdtempSync(join(tmpdir(), "pocketjs-coda-protocol-"));
-    temporary.push(build);
+    const fixture = join(repository, "tests/fixtures/coda-usb-protocol-test.c");
+    const implementation = join(repository, "tools/symbian/coda-usb-probe.c");
+    const digest = createHash("sha256")
+      .update(readFileSync(fixture))
+      .update(readFileSync(implementation))
+      .update(`${compiler}\0${process.platform}\0${process.arch}`)
+      .digest("hex");
+    const build = join(
+      tmpdir(),
+      "pocketjs-coda-protocol-cache",
+      digest,
+    );
     const binary = join(build, "coda-usb-protocol-test");
-    const compiled = Bun.spawn({
-      cmd: [
-        compiler!,
-        "-std=c11",
-        "-Wall",
-        "-Wextra",
-        "-Werror",
-        "-Wno-unused-function",
-        join(repository, "tests/fixtures/coda-usb-protocol-test.c"),
-        "-o",
-        binary,
-      ],
-      cwd: repository,
-      stdout: "pipe",
-      stderr: "pipe",
+    await withArtifactLock(`${build}.lock`, async () => {
+      if (existsSync(binary)) return;
+      mkdirSync(build, { recursive: true });
+      const staged = `${binary}.tmp-${process.pid}-${Date.now()}`;
+      const compiled = Bun.spawn({
+        cmd: [
+          compiler!,
+          "-std=c11",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-Wno-unused-function",
+          fixture,
+          "-o",
+          staged,
+        ],
+        cwd: repository,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [compiledExit, compiledStderr] = await Promise.all([
+        compiled.exited,
+        new Response(compiled.stderr).text(),
+      ]);
+      expect(compiledExit, compiledStderr).toBe(0);
+      renameSync(staged, binary);
+      rmSync(staged, { force: true });
     });
-    const [compiledExit, compiledStderr] = await Promise.all([
-      compiled.exited,
-      new Response(compiled.stderr).text(),
-    ]);
-    expect(compiledExit, compiledStderr).toBe(0);
 
-    // Bun 1.3 on macOS can wait indefinitely in spawnSync for this
-    // intentionally silent fixture; the async subprocess path does not.
+    // Bun 1.3 on macOS can wait indefinitely in spawnSync while endpoint
+    // security validates a freshly linked executable. Cache by exact C source
+    // and use an explicit watchdog so the protocol proof is fast after its
+    // first launch and can never strand the whole test process.
     const tested = Bun.spawn({
       cmd: [binary],
       cwd: repository,
       stdout: "ignore",
       stderr: "pipe",
     });
+    let timedOut = false;
+    const watchdog = setTimeout(() => {
+      timedOut = true;
+      tested.kill();
+    }, 55_000);
     const [testedExit, testedStderr] = await Promise.all([
       tested.exited,
       new Response(tested.stderr).text(),
     ]);
+    clearTimeout(watchdog);
+    expect(timedOut, "CODA protocol fixture did not start within 55 seconds").toBe(false);
     expect(testedExit, testedStderr).toBe(0);
-  }, 30_000);
+  }, 60_000);
 
   test("Docker invocations are amd64, pinned, and narrowly mounted", () => {
     const root = mkdtempSync(join(tmpdir(), "pocketjs-symbian-repository-"));

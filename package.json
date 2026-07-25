@@ -125,6 +125,7 @@
     "launcher": "bun tools/launcher.ts",
     "launcher:psp": "bun tools/launcher.ts build --target psp --",
     "launcher:vita": "bun tools/launcher.ts build --target vita --",
+    "launcher:symbian": "bun tools/launcher.ts build --target symbian --",
     "e2e:launcher": "bun tests/e2e/launcher-ppsspp.ts",
     "e2e:launcher:vita": "bun tests/e2e/launcher-vita3k.ts",
     "pocket:pack": "bun tools/pocket-pack.ts",

@@ -64,8 +64,6 @@ export interface SymbianToolchainManifest {
     readonly output: string;
   };
   readonly runtime: {
-    readonly uid: string;
-    readonly output: string;
     readonly sisVersion: string;
     readonly rustToolchain: string;
     readonly frameRate: number;
@@ -169,6 +167,25 @@ export async function withSymbianRuntimeBuildLock<T>(
     `symbian/.locks/runtime-output-${outputLockId}.lock`,
   );
   return await withArtifactLock(outputLock, operation, {
+    timeoutMs: 60 * 60_000,
+    staleMs: 2 * 60 * 60_000,
+  });
+}
+
+/**
+ * Current tools/build.ts injects its STYLE_IDS module per build, but it also
+ * keeps an ignored on-disk mirror for docs and older consumers. Serialize
+ * Symbian callers so that mirror and any vendored legacy builder stay stable.
+ */
+export async function withSymbianGuestBuildLock<T>(
+  operation: () => Promise<T>,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<T> {
+  const lock = join(
+    pocketStackCacheRoot(env),
+    "symbian/.locks/guest-build.lock",
+  );
+  return await withArtifactLock(lock, operation, {
     timeoutMs: 60 * 60_000,
     staleMs: 2 * 60 * 60_000,
   });

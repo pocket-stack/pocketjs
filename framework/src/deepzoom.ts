@@ -28,7 +28,7 @@
 import { onCleanup, type JSX as SolidJSX } from "solid-js";
 import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { ticksPerFrame } from "./clock.ts";
-import { getOps } from "./host.ts";
+import { getOps, hostViewport } from "./host.ts";
 import { analogX, analogY, onFrame } from "./frame.ts";
 import * as hot from "./hot.ts";
 import { platform } from "./platform.ts";
@@ -96,7 +96,10 @@ export interface DeepZoomGesture {
 
 export interface DeepZoomProps {
   doc: TileDoc;
-  /** Viewport size (defaults to the PSP screen). */
+  /**
+   * Fixed viewport size. When both are omitted, DeepZoom follows the live
+   * logical viewport published by the host and falls back to the PSP screen.
+   */
   width?: number;
   height?: number;
   /** Textured-tile loads per frame (decode+upload budget; default 2). */
@@ -141,8 +144,10 @@ interface MountedTile {
 }
 
 export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
-  const vw = props.width ?? SCREEN_W;
-  const vh = props.height ?? SCREEN_H;
+  const fixedViewport = props.width !== undefined || props.height !== undefined;
+  const initialViewport = fixedViewport ? null : hostViewport(getOps());
+  let vw = props.width ?? initialViewport?.w ?? SCREEN_W;
+  let vh = props.height ?? initialViewport?.h ?? SCREEN_H;
   const budget = props.loadBudget ?? 2;
   const prefetch = props.prefetch ?? 1;
   const bind = props.bindInput ?? true;
@@ -267,17 +272,49 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
     }
   };
 
+  const updateZoomBounds = (): void => {
+    minZoom = Math.min(vw / doc.w, vh / doc.h);
+    // Preserve the same physical sampling ceiling on every target. A
+    // density-specific pyramid advertises proportionally larger level scales
+    // and therefore keeps the same logical zoom range automatically.
+    maxZoom = Math.max(minZoom, (doc.levels[0].scale * 2) / platform.pixelRatio);
+  };
+
+  const atFitZoom = (): boolean =>
+    Math.abs(zoom - minZoom) <=
+      Number.EPSILON * 8 * Math.max(1, Math.abs(zoom), Math.abs(minZoom));
+
+  const syncLiveViewport = (): void => {
+    if (fixedViewport) return;
+    const viewport = hostViewport(getOps());
+    if (
+      !viewport ||
+      !Number.isFinite(viewport.w) ||
+      !Number.isFinite(viewport.h) ||
+      viewport.w <= 0 ||
+      viewport.h <= 0 ||
+      (viewport.w === vw && viewport.h === vh)
+    ) {
+      return;
+    }
+
+    const followFit = atFitZoom();
+    vw = viewport.w;
+    vh = viewport.h;
+    setProp(container, "style", { width: vw, height: vh });
+    updateZoomBounds();
+    zoom = followFit
+      ? minZoom
+      : Math.min(maxZoom, Math.max(minZoom, zoom));
+  };
+
   // ---- doc (re)initialization -----------------------------------------------
   const initDoc = (d: TileDoc): void => {
     clearActive();
     for (const m of overviewMounted.splice(0)) unmountTile(overviewWorld, m);
     doc = d;
     setProp(container, "style", { bgColor: doc.bg });
-    minZoom = Math.min(vw / doc.w, vh / doc.h);
-    // Preserve the same physical sampling ceiling on every target. A
-    // density-specific pyramid advertises proportionally larger level scales
-    // and therefore keeps the same logical zoom range automatically.
-    maxZoom = Math.max(minZoom, (doc.levels[0].scale * 2) / platform.pixelRatio);
+    updateZoomBounds();
     zoom = minZoom;
     cx = doc.w / 2;
     cy = doc.h / 2;
@@ -362,6 +399,7 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
   };
 
   onFrame((buttons) => {
+    syncLiveViewport();
     if (doc !== props.doc) initDoc(props.doc); // app swapped pages
 
     // Virtual-clock scaling: 60/simulationHz ticks elapse per frame. The
