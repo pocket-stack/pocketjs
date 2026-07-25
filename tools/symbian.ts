@@ -321,6 +321,13 @@ export interface SymbianBuildAppOptions {
   uid?: string;
   catalogIndex?: string;
   catalogBlob?: string;
+  /**
+   * Prebuilt application-specific core that implements the ordinary
+   * `ui_*` ABI and may additionally export the native extension provider.
+   * The exact archive is copied into the locked payload and covered by the
+   * existing receipt `sha256.core` field.
+   */
+  coreLibrary?: string;
   transaction?: SymbianBuildTransaction;
 }
 
@@ -419,9 +426,27 @@ export async function buildApp(
   const outputRoot = resolve(
     options.outputRoot ?? resolve(projectRoot, "dist/symbian"),
   );
+  const customCoreLibrary = options.coreLibrary === undefined
+    ? undefined
+    : resolve(options.coreLibrary);
+  if (
+    customCoreLibrary !== undefined &&
+    (!existsSync(customCoreLibrary) ||
+      !statSync(customCoreLibrary).isFile() ||
+      statSync(customCoreLibrary).size === 0)
+  ) {
+    throw new Error(
+      `Symbian custom core library is missing or empty: ${customCoreLibrary}`,
+    );
+  }
   if ((options.catalogIndex === undefined) !== (options.catalogBlob === undefined)) {
     throw new Error(
       "Symbian app catalog requires both --catalog-index and --catalog-blob",
+    );
+  }
+  if (customCoreLibrary !== undefined && options.catalogIndex !== undefined) {
+    throw new Error(
+      "Symbian application-specific cores cannot be combined with a multi-app catalog",
     );
   }
   const catalogIndex = options.catalogIndex === undefined
@@ -483,35 +508,44 @@ export async function buildApp(
     );
     const dataBase = symbianDataBaseForEmbeddedBytes(embeddedBytes);
 
-    const coreDirectory = resolve(root, "engine/symbian");
-    const rustBuild = await spawn(rustHost.rustupPath!, [
-      "run",
-      rustHost.toolchainName!,
-      "cargo",
-      "build",
-      "--release",
-      "--locked",
-      "--target",
-      "targets/armv6-symbian-eabi.json",
-      "-Z",
-      "json-target-spec",
-      "-Z",
-      "build-std=core,alloc,compiler_builtins",
-      "-Z",
-      "build-std-features=compiler-builtins-mem",
-    ], {
-      inherit: true,
-      cwd: coreDirectory,
-      env: { ...process.env, CARGO_TARGET_DIR: rustTarget },
-    });
-    if (rustBuild.exitCode !== 0) throw new Error("PocketJS Symbian Rust core build failed");
-    copyFileSync(
-      resolve(
-        rustTarget,
-        "armv6-symbian-eabi/release/libpocketjs_symbian_core.a",
-      ),
-      resolve(payload, "libpocketjs_symbian_core.a"),
-    );
+    if (customCoreLibrary !== undefined) {
+      copyFileSync(
+        customCoreLibrary,
+        resolve(payload, "libpocketjs_symbian_core.a"),
+      );
+    } else {
+      const coreDirectory = resolve(root, "engine/symbian");
+      const rustBuild = await spawn(rustHost.rustupPath!, [
+        "run",
+        rustHost.toolchainName!,
+        "cargo",
+        "build",
+        "--release",
+        "--locked",
+        "--target",
+        "targets/armv6-symbian-eabi.json",
+        "-Z",
+        "json-target-spec",
+        "-Z",
+        "build-std=core,alloc,compiler_builtins",
+        "-Z",
+        "build-std-features=compiler-builtins-mem",
+      ], {
+        inherit: true,
+        cwd: coreDirectory,
+        env: { ...process.env, CARGO_TARGET_DIR: rustTarget },
+      });
+      if (rustBuild.exitCode !== 0) {
+        throw new Error("PocketJS Symbian Rust core build failed");
+      }
+      copyFileSync(
+        resolve(
+          rustTarget,
+          "armv6-symbian-eabi/release/libpocketjs_symbian_core.a",
+        ),
+        resolve(payload, "libpocketjs_symbian_core.a"),
+      );
+    }
 
     const built = await spawn("docker", symbianDockerRunArguments(
       "/usr/local/bin/pocketjs-symbian-build-app",
@@ -577,6 +611,7 @@ const HELP = `PocketJS Nokia E7 / Symbian toolchain
   pocket symbian build app --manifest <pocket.json> [--sis-version 1.0.0]
                            [--project-root <dir>] [--outdir <dir>] [--uid 0xE.......]
                            [--catalog-index <catalog.tsv> --catalog-blob <catalog.bin>]
+                           [--core-library <application-core.a>]
                                     build an independently installable PocketJS E7 SIS
   pocket symbian deploy <sis>       copy to Mass memory/Installs and verify by MTP readback
   pocket symbian coda usb           run the CODA USB ping + Locator handshake
@@ -613,7 +648,7 @@ export async function symbianMain(
         const manifest = flagValue(args.slice(2), "--manifest");
         if (!manifest) {
           throw new Error(
-            "usage: pocket symbian build app --manifest <pocket.json> [--sis-version 1.0.0]",
+            "usage: pocket symbian build app --manifest <pocket.json> [--sis-version 1.0.0] [--core-library <lib.a>]",
           );
         }
         const sisVersion = flagValue(args.slice(2), "--sis-version") ??
@@ -627,12 +662,13 @@ export async function symbianMain(
             uid: flagValue(args.slice(2), "--uid"),
             catalogIndex: flagValue(args.slice(2), "--catalog-index"),
             catalogBlob: flagValue(args.slice(2), "--catalog-blob"),
+            coreLibrary: flagValue(args.slice(2), "--core-library"),
           },
         )}`);
         break;
       }
       throw new Error(
-        "usage: pocket symbian build probe | build app --manifest <pocket.json>",
+        "usage: pocket symbian build probe | build app --manifest <pocket.json> [--core-library <lib.a>]",
       );
     case "deploy":
       if (!args[1]) throw new Error("usage: pocket symbian deploy <path-to.sis>");

@@ -981,15 +981,18 @@ impl Renderer {
         target_height: i32,
         window_width: i32,
         window_height: i32,
+        clear_color: bool,
     ) -> bool {
         clear_errors();
         if window_width <= 0 || window_height <= 0 {
             return true;
         }
-        glDisable(GL_SCISSOR_TEST);
-        glViewport(0, 0, window_width, window_height);
-        glClearColor(0.0, 0.0, 0.0, 1.0);
-        glClear(GL_COLOR_BUFFER_BIT);
+        if clear_color {
+            glDisable(GL_SCISSOR_TEST);
+            glViewport(0, 0, window_width, window_height);
+            glClearColor(0.0, 0.0, 0.0, 1.0);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
         if target_width <= 0 || target_height <= 0 {
             return true;
         }
@@ -1128,6 +1131,30 @@ pub unsafe fn render(
             target_height,
             window_width,
             window_height,
+            true,
+        )
+    })
+}
+
+pub unsafe fn render_over(
+    ui: &mut Ui,
+    target_x: i32,
+    target_y: i32,
+    target_width: i32,
+    target_height: i32,
+    window_width: i32,
+    window_height: i32,
+) -> bool {
+    RENDERER.as_mut().is_some_and(|renderer| {
+        renderer.render(
+            ui,
+            target_x,
+            target_y,
+            target_width,
+            target_height,
+            window_width,
+            window_height,
+            false,
         )
     })
 }

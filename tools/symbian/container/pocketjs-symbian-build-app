@@ -219,6 +219,15 @@ for source in cutils.c dtoa.c libregexp.c libunicode.c quickjs.c; do
         -c "$quickjs_source/$source" \
         -o "$quickjs_objects/${source%.c}.o"
 done
+arm-none-symbianelf-gcc \
+    "${quickjs_flags[@]}" \
+    -std=gnu99 \
+    -O0 \
+    -funsigned-char \
+    -D_GNU_SOURCE \
+    "-DCONFIG_VERSION=\"$quickjs_version\"" \
+    -c "$quickjs_root/libquickjs-sys/embed/static-functions.c" \
+    -o "$quickjs_objects/static-functions.o"
 arm-none-symbianelf-ar cqs "$build/libquickjs.a" "$quickjs_objects"/*.o
 
 cp "$runtime_source"/* "$build/"

@@ -5,7 +5,9 @@
 
 use core::ptr::NonNull;
 
-use pocket3d_bsp::cooked::{mip_rows, mip_stride, CookedTexture};
+use pocket3d_bsp::cooked::{
+    expand_level0_rgba as expand_cooked_level0_rgba, CookedTexture, TextureDecodeError,
+};
 #[cfg(target_os = "vita")]
 use vita2d_sys as v2d;
 
@@ -19,8 +21,20 @@ pub enum UploadErrorKind {
     MissingLevelZero,
     TruncatedSwizzle,
     TruncatedPalette,
+    SizeOverflow,
     OutOfMemory,
     UnsupportedHost,
+}
+
+impl From<TextureDecodeError> for UploadErrorKind {
+    fn from(error: TextureDecodeError) -> Self {
+        match error {
+            TextureDecodeError::MissingLevelZero => Self::MissingLevelZero,
+            TextureDecodeError::TruncatedSwizzle => Self::TruncatedSwizzle,
+            TextureDecodeError::TruncatedPalette => Self::TruncatedPalette,
+            TextureDecodeError::SizeOverflow => Self::SizeOverflow,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,52 +48,7 @@ pub struct UploadError {
 /// This function is platform-independent so cooker/runtime compatibility can
 /// be covered by ordinary host tests.
 pub fn expand_level0_rgba(texture: &CookedTexture<'_>) -> Result<Vec<u8>, UploadErrorKind> {
-    let source = texture
-        .mips
-        .first()
-        .copied()
-        .ok_or(UploadErrorKind::MissingLevelZero)?;
-    if texture.palette.len() < 256 * 4 {
-        return Err(UploadErrorKind::TruncatedPalette);
-    }
-
-    let width = texture.width.max(1) as usize;
-    let height = texture.height.max(1) as usize;
-    let stride = mip_stride(texture.width.max(1), 0);
-    let rows = mip_rows(texture.height.max(1), 0);
-    let expected = stride
-        .checked_mul(rows)
-        .ok_or(UploadErrorKind::TruncatedSwizzle)?;
-    if source.len() < expected {
-        return Err(UploadErrorKind::TruncatedSwizzle);
-    }
-
-    let mut rgba = vec![0u8; width * height * 4];
-    let mut source_offset = 0usize;
-    for block_y in 0..rows / 8 {
-        for block_x in 0..stride / 16 {
-            for row in 0..8 {
-                let y = block_y * 8 + row;
-                for column in 0..16 {
-                    let x = block_x * 16 + column;
-                    let index = source[source_offset + column] as usize;
-                    if x < width && y < height {
-                        let palette = &texture.palette[index * 4..index * 4 + 4];
-                        let destination = (y * width + x) * 4;
-                        rgba[destination..destination + 4].copy_from_slice(palette);
-                        // Masked palettes intentionally carry alpha zero at
-                        // index 255. Clear RGB too so linear filtering cannot
-                        // bleed the palette's arbitrary transparent color.
-                        if palette[3] == 0 {
-                            rgba[destination..destination + 3].fill(0);
-                        }
-                    }
-                }
-                source_offset += 16;
-            }
-        }
-    }
-    Ok(rgba)
+    expand_cooked_level0_rgba(texture).map_err(Into::into)
 }
 
 pub(crate) struct TextureBank {

@@ -19,7 +19,11 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+default = ["standalone-extension-provider"]
+standalone-extension-provider = []
 
 [dependencies]
 pocketjs-core = { path = "../core" }
