@@ -212,7 +212,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   // a REAL capacitive pointer instead of the synthesized cursor. Color panels
   // (Era Color) blit RGB, grayscale panels (Verse) blit Gray8.
   pocketbook: {
-    hostAbi: 4,
+    hostAbi: 5,
     platform: "pocketbook",
     form: "takeover",
     display: {

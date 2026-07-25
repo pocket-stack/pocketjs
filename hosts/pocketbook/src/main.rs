@@ -29,7 +29,7 @@ use framebuffer::DirtyRect;
 /// contracts/spec/platforms.ts, or plan-built bundles refuse this host
 /// (framework/src/host.ts::assertNativeHostContract).
 const HOST_ID: &str = "pocketbook";
-const HOST_ABI: u32 = 4;
+const HOST_ABI: u32 = 5;
 
 /// Logical tick cadence. E-ink doesn't need 60 fps; ~30 fps keeps animations
 /// smooth while sparing CPU and battery.

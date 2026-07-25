@@ -725,7 +725,8 @@ exactly like `vita` (the other density-2 touch target):
 ```typescript
 // In POCKET_TARGETS (and add `readonly pocketbook: TargetProfile<…>` to the type):
 pocketbook: {
-  hostAbi: 4,                       // next free ABI (psp=1, vita=2, macos-widget=3)
+  hostAbi: 5,                       // next free ABI (psp=1, vita=2, macos-widget=3,
+                                    // symbian-e7-dev=4)
   platform: "pocketbook",
   form: "takeover",
   display: {

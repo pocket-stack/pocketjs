@@ -33,7 +33,8 @@ design and the ground-truth API notes.
 
 ## Status
 
-The host cross-compiles to a stripped ARM ELF (glibc ≤2.18, dlopens
+**Work in progress** — merged early so it can be iterated on in-tree. The
+host cross-compiles to a stripped ARM ELF (glibc ≤2.18, dlopens
 `libinkview.so` at runtime), is clippy-clean, and its framebuffer/input unit
 tests pass. The `pocketbook` target is registered and `hero` builds for it
 (`bun pocket compile --target pocketbook`). **Boot, render, scale-to-fit
@@ -139,11 +140,12 @@ Run on both a grayscale and a color device to exercise both blit paths.
 
 - **PocketBook Verse** (grayscale, 758×1024) — 2026-07-24. Boot, render,
   scale-to-fit centering, @2x text, and animated partial updates all confirmed
-  via photo + video. Input (touch / hardware keys), idle ghosting, and
-  background-return still need a hands-on pass.
-  **Note:** that pass ran the full-raster pipeline; the raster has since
-  switched to core DrawList damage (`render_scaled_incremental`, pixel-parity
-  covered by unit tests) — re-confirm animations + Show on device.
+  via photo + video, **re-confirmed after the switch to incremental DrawList
+  damage** (`render_scaled_incremental`). The progress-bar animation now runs
+  at its intended cadence — closer to the desktop host — because the tick loop
+  no longer re-rasterizes and re-scans the whole 960×544 frame every 33 ms.
+  Input (touch / hardware keys), idle ghosting, and background-return still
+  need a hands-on pass.
 - **Era Color / Kaleido 3** — not yet tested (color blit path unverified).
 
 ### Logs
