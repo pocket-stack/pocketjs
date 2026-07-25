@@ -106,13 +106,14 @@ let frameCb = null;
 // samples and drained at the frame boundary (framework/src/touch-events.ts
 // wire format). This replaces the per-frame snapshot + deferred release
 // workaround — sub-frame taps now dispatch both events.
-let touchSamples = []; // [{phase, x, y, tMs}] drained by safeFrame
-let touchLastMs = 0;   // performance.now() of the previous queued sample
-function queueTouch(phase, x, y) {
+let touchSamples = []; // [{phase, x, y, id, dt}] drained by safeFrame
+const touchLastMs = new Map(); // pointerId -> performance.now() of that contact's previous sample
+function queueTouch(phase, x, y, id = 0) {
   const now = performance.now();
-  const dt = touchLastMs > 0 ? Math.min(63, Math.max(0, Math.round(now - touchLastMs))) : 0;
-  touchLastMs = now;
-  touchSamples.push({ phase, x, y, dt });
+  const prev = touchLastMs.get(id) ?? 0;
+  const dt = prev > 0 ? Math.min(63, Math.max(0, Math.round(now - prev))) : 0;
+  touchLastMs.set(id, now);
+  touchSamples.push({ phase, x, y, id, dt });
 }
 // Virtual clock policy (docs/DETERMINISM.md): virtual frames per second. One
 // frame(buttons) transaction + 60/simHz core ticks per virtual frame, so
@@ -226,7 +227,7 @@ function safeFrame() {
     // JS: one virtual-frame transaction (input, effects, sweep).
     // arg4: drained touch event stream (one packed u32 per sample).
     const events = touchSamples.length > 0
-      ? touchSamples.map((s) => (((s.dt & 0x3f) << 22) | ((s.y & 0x3ff) << 12) | ((s.x & 0x3ff) << 2) | (s.phase & 0x3)) >>> 0)
+      ? touchSamples.map((s) => (((s.id & 0xf) << 28) | ((s.dt & 0x3f) << 22) | ((s.y & 0x3ff) << 12) | ((s.x & 0x3ff) << 2) | (s.phase & 0x3)) >>> 0)
       : undefined;
     touchSamples = [];
     frameCb(held, packedAnalog(), undefined, events);
@@ -336,10 +337,13 @@ export async function mount(theCanvas, opts = {}) {
   window.addEventListener("blur", () => {
     held = 0;
     nubHeld.clear();
-    // A held contact whose window loses focus is a cancel, not an end.
-    if (touchContactDown) { queueTouch(3, touchLastX, touchLastY); touchContactDown = false; }
+    // Held contacts whose window loses focus are cancels, not ends.
+    for (const [pid, c] of touchContacts) queueTouch(3, c.x, c.y, pid);
+    touchContacts.clear();
   });
-  // Canvas pointer → touch sample stream (logical coords).
+  // Canvas pointer → touch sample stream (logical coords). Each pointerId is
+  // an independent contact (multi-touch); the framework keys its capture
+  // table by the same id.
   const toLogical = (e) => {
     const rect = canvas.getBoundingClientRect();
     return {
@@ -347,29 +351,28 @@ export async function mount(theCanvas, opts = {}) {
       y: Math.round((e.clientY - rect.top) * (LOGICAL_H / rect.height)),
     };
   };
-  let touchContactDown = false;
-  let touchLastX = 0;
-  let touchLastY = 0;
+  const touchContacts = new Map(); // pointerId -> {x, y} of the last queued sample
   canvas.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     const { x, y } = toLogical(e);
-    touchContactDown = true;
-    touchLastX = x; touchLastY = y;
-    queueTouch(0, x, y); // start
+    touchContacts.set(e.pointerId, { x, y });
+    queueTouch(0, x, y, e.pointerId); // start
     globalThis.__pocketTouch = { x, y, phase: "down" };
   });
   canvas.addEventListener("pointermove", (e) => {
-    if (!touchContactDown) return;
+    const c = touchContacts.get(e.pointerId);
+    if (!c) return;
     const { x, y } = toLogical(e);
-    if (x === touchLastX && y === touchLastY) return; // W3C: no move without movement
-    touchLastX = x; touchLastY = y;
-    queueTouch(1, x, y); // move
+    if (x === c.x && y === c.y) return; // W3C: no move without movement
+    c.x = x; c.y = y;
+    queueTouch(1, x, y, e.pointerId); // move
     globalThis.__pocketTouch = { x, y, phase: "move" };
   });
   const markRelease = (e) => {
-    if (!touchContactDown) return;
-    touchContactDown = false;
-    queueTouch(2, touchLastX, touchLastY); // end at the last known position
+    const c = touchContacts.get(e.pointerId);
+    if (!c) return;
+    touchContacts.delete(e.pointerId);
+    queueTouch(2, c.x, c.y, e.pointerId); // end at the last known position
     if (globalThis.__pocketTouch) globalThis.__pocketTouch.phase = "up";
   };
   canvas.addEventListener("pointerup", markRelease);

@@ -401,3 +401,127 @@ describe("W3C canonical bubbling order", () => {
     expect(atRoot).toBe(0); // not root, even though root sees the bubble
   });
 });
+
+// ---- multi-touch (contact identifier, W3C §5.1) -------------------------------
+// Two simultaneous contacts are independent: each captures its own target,
+// interleaved moves do not disturb each other, and the event lists group by
+// contact. Driven by hand-packed u32 streams carrying distinct id fields.
+
+describe("multi-touch (contact identifiers)", () => {
+  test("wire: id round-trips through pack/decode", () => {
+    const p = __packTouchSample(TouchPhase.Start, 10, 20, 5, 3);
+    expect((p >>> 28) & 0xf).toBe(3);
+    const s = __packTouchSample(TouchPhase.Move, 0, 0, 0, 15);
+    expect((s >>> 28) & 0xf).toBe(15);
+  });
+
+  test("two contacts capture different targets independently (W3C §5.2)", () => {
+    const sibling = mirror(0x33, root);
+    const targets: Record<number, number[]> = { 0: [], 1: [] };
+    registerTouchHandler(child, TouchPhase.Move, (ev) =>
+      targets[ev.changedTouches[0].identifier]!.push((ev.target as NodeMirror).id),
+    );
+    registerTouchHandler(sibling, TouchPhase.Move, (ev) =>
+      targets[ev.changedTouches[0].identifier]!.push((ev.target as NodeMirror).id),
+    );
+    // Contact 0 down on child, contact 1 down on sibling.
+    host.hitResult = child.id;
+    handleTouchSamples([__packTouchSample(TouchPhase.Start, 10, 20, 0, 0)], FRAME_MS);
+    host.hitResult = sibling.id;
+    handleTouchSamples([__packTouchSample(TouchPhase.Start, 200, 150, 0, 1)], 2 * FRAME_MS);
+    // Both move elsewhere: each still reports its OWN captured target.
+    handleTouchSamples(
+      [
+        __packTouchSample(TouchPhase.Move, 300, 5, 0, 0),
+        __packTouchSample(TouchPhase.Move, 300, 6, 0, 1),
+      ],
+      3 * FRAME_MS,
+    );
+    expect(targets[0]).toEqual([child.id]);
+    expect(targets[1]).toEqual([sibling.id]);
+  });
+
+  test("interleaved moves keep per-contact positions and touches list (W3C §5.3)", () => {
+    host.hitResult = child.id;
+    const seen: Array<[number, number, number, number]> = []; // [id, x, y, touches.length]
+    registerTouchHandler(child, TouchPhase.Move, (ev) =>
+      seen.push([
+        ev.changedTouches[0].identifier,
+        ev.changedTouches[0].clientX,
+        ev.changedTouches[0].clientY,
+        ev.touches.length,
+      ]),
+    );
+    handleTouchSamples([__packTouchSample(TouchPhase.Start, 10, 20, 0, 0)], FRAME_MS);
+    handleTouchSamples([__packTouchSample(TouchPhase.Start, 100, 120, 0, 1)], 2 * FRAME_MS);
+    handleTouchSamples(
+      [
+        __packTouchSample(TouchPhase.Move, 11, 21, 0, 0),
+        __packTouchSample(TouchPhase.Move, 101, 121, 0, 1),
+      ],
+      3 * FRAME_MS,
+    );
+    // Both contacts active throughout: touches.length stays 2, positions independent.
+    expect(seen).toEqual([
+      [0, 11, 21, 2],
+      [1, 101, 121, 2],
+    ]);
+  });
+
+  test("ending one contact leaves the other tracked; touches shrinks to 1", () => {
+    host.hitResult = child.id;
+    const seen: Array<[string, number]> = [];
+    registerTouchHandler(child, TouchPhase.End, (ev) =>
+      seen.push(["end", ev.changedTouches[0].identifier]),
+    );
+    registerTouchHandler(child, TouchPhase.Move, (ev) =>
+      seen.push(["move", ev.touches.length]),
+    );
+    handleTouchSamples([__packTouchSample(TouchPhase.Start, 10, 20, 0, 0)], FRAME_MS);
+    handleTouchSamples([__packTouchSample(TouchPhase.Start, 100, 120, 0, 1)], 2 * FRAME_MS);
+    handleTouchSamples([__packTouchSample(TouchPhase.End, 100, 120, 0, 1)], 3 * FRAME_MS);
+    expect(seen).toEqual([["end", 1]]);
+    // Contact 0 still moves, and it is now the only active touch.
+    handleTouchSamples([__packTouchSample(TouchPhase.Move, 12, 22, 0, 0)], 4 * FRAME_MS);
+    expect(seen).toEqual([
+      ["end", 1],
+      ["move", 1],
+    ]);
+  });
+
+  test("per-contact dticks reconstruct independent timelines (interleaved)", () => {
+    host.hitResult = child.id;
+    const stamps: Array<[number, number]> = []; // [id, timeStamp]
+    const log = (ev: PocketTouchEvent) =>
+      stamps.push([ev.changedTouches[0].identifier, ev.timeStamp]);
+    registerTouchHandler(child, TouchPhase.Start, log);
+    registerTouchHandler(child, TouchPhase.Move, log);
+    registerTouchHandler(child, TouchPhase.End, log);
+    // Frame ends at t=1000. id0: start dtick 8, then move dtick 8 → move at
+    // 1000-8=992, start at 992-8=984. id1 interleaves with start dtick 4 → 996.
+    handleTouchSamples(
+      [
+        __packTouchSample(TouchPhase.Start, 1, 1, 8, 0),
+        __packTouchSample(TouchPhase.Start, 50, 50, 4, 1),
+        __packTouchSample(TouchPhase.Move, 2, 1, 8, 0),
+      ],
+      1000,
+    );
+    expect(stamps).toEqual([
+      [0, 984],
+      [1, 996],
+      [0, 992],
+    ]);
+  });
+
+  test("a second Start for an already-down id is ignored (host glitch guard)", () => {
+    host.hitResult = child.id;
+    const seen: string[] = [];
+    registerTouchHandler(child, TouchPhase.Start, () => seen.push("start"));
+    handleTouchSamples([__packTouchSample(TouchPhase.Start, 10, 20, 0, 0)], FRAME_MS);
+    // Re-down id 0 elsewhere without an end: must not re-hitTest or re-fire.
+    handleTouchSamples([__packTouchSample(TouchPhase.Start, 400, 300, 0, 0)], 2 * FRAME_MS);
+    expect(seen).toEqual(["start"]);
+    expect(host.of("hitTest")).toEqual([["hitTest", 10, 20]]);
+  });
+});

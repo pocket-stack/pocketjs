@@ -28,10 +28,12 @@ import type { NodeMirror } from "./native-tree.ts";
 //   bits [1:0]   phase: 0=start, 1=move, 2=end, 3=cancel
 //   bits [11:2]  x (logical px, 10-bit, 0..1023)
 //   bits [21:12] y (logical px, 10-bit, 0..1023)
-//   bits [27:22] dticks: ms since the previous event, clamped at 63
+//   bits [27:22] dticks: ms since this contact's previous event, clamped at 63
+//   bits [31:28] contact identifier (0..15)
 //
-// Single-touch controllers imply identifier = 0. A future two-u32 variant
-// (multi-touch) has headroom above bit 28.
+// Single-touch controllers (ESP32-S3's CST9217) always report identifier 0,
+// which makes per-contact dticks identical to a shared timeline — fully
+// backward compatible with a host that predates the id field.
 
 export const enum TouchPhase {
   Start = 0,
@@ -44,8 +46,10 @@ export interface TouchSample {
   phase: TouchPhase;
   x: number;
   y: number;
-  /** Milliseconds since the previous sample (clamped to 63 by the wire). */
+  /** Milliseconds since this contact's previous sample (clamped to 63). */
   dticks: number;
+  /** Contact identifier (0..15); 0 on single-touch hardware. */
+  id: number;
 }
 
 export function decodeTouchSample(packed: number): TouchSample {
@@ -54,6 +58,7 @@ export function decodeTouchSample(packed: number): TouchSample {
     x: (packed >>> 2) & 0x3ff,
     y: (packed >>> 12) & 0x3ff,
     dticks: (packed >>> 22) & 0x3f,
+    id: (packed >>> 28) & 0xf,
   };
 }
 
@@ -63,9 +68,11 @@ export function __packTouchSample(
   x: number,
   y: number,
   dticks = 0,
+  id = 0,
 ): number {
   return (
-    (((Math.min(dticks, 63) & 0x3f) << 22) |
+    (((id & 0xf) << 28) |
+      ((Math.min(dticks, 63) & 0x3f) << 22) |
       ((y & 0x3ff) << 12) |
       ((x & 0x3ff) << 2) |
       (phase & 0x3)) >>>
@@ -174,8 +181,8 @@ interface ActiveContact extends PocketTouch {
   screenY: number;
 }
 
-/** Single-touch hardware: at most one active contact, but the table is
- *  keyed by identifier so a multi-touch wire variant plugs in unchanged. */
+/** Active contacts keyed by identifier: one entry per simultaneous touch
+ *  point. Single-touch hardware only ever uses key 0. */
 const active = new Map<number, ActiveContact>();
 
 /** The mirror subtree root for hit resolution (app + overlay layers), set
@@ -284,13 +291,18 @@ export function handleTouchSamples(
   if (!packed || packed.length === 0) return;
   const frameEndMs = _frameEndMs ?? virtualNow() * 1000;
 
-  // Precompute absolute sample times: sample i happened at
-  // frameEndMs - (sum of dticks of samples i..end). dtick[0] is relative to
-  // the PREVIOUS event (possibly in an earlier frame), so track it too.
-  let back = 0;
+  // Precompute absolute sample times. dticks is PER CONTACT: sample i of
+  // contact c happened at frameEndMs minus the sum of dticks of all later
+  // samples of contact c. Walk the frame backwards keeping one running
+  // offset per contact id, so interleaved contacts each reconstruct their
+  // own timeline. Single-contact streams (id always 0) reduce to a shared
+  // timeline — identical to the pre-id behaviour.
   const times = new Array<number>(packed.length);
+  const backByContact = new Map<number, number>();
   for (let i = packed.length - 1; i >= 0; i--) {
-    back += (packed[i] >>> 22) & 0x3f;
+    const id = (packed[i] >>> 28) & 0xf;
+    const back = (backByContact.get(id) ?? 0) + ((packed[i] >>> 22) & 0x3f);
+    backByContact.set(id, back);
     times[i] = frameEndMs - back;
   }
 
@@ -299,7 +311,7 @@ export function handleTouchSamples(
     const t = times[i];
     switch (s.phase) {
       case TouchPhase.Start: {
-        if (active.has(0)) break; // already tracking: single-touch hardware guard
+        if (active.has(s.id)) break; // this contact is already down: host glitch
         const ops = getOps();
         const root = hitRootProvider?.() ?? null;
         let target: NodeMirror | null = null;
@@ -316,19 +328,19 @@ export function handleTouchSamples(
         }
         if (!target) break;
         const contact: ActiveContact = {
-          identifier: 0,
+          identifier: s.id,
           clientX: s.x,
           clientY: s.y,
           screenX: s.x,
           screenY: s.y,
           target,
         };
-        active.set(0, contact);
+        active.set(s.id, contact);
         dispatch(TouchPhase.Start, contact, t);
         break;
       }
       case TouchPhase.Move: {
-        const contact = active.get(0);
+        const contact = active.get(s.id);
         if (!contact) break; // move without a start on this host: ignore
         // W3C: no touchmove without movement (integer logical coords).
         if (contact.clientX === s.x && contact.clientY === s.y) break;
@@ -341,7 +353,7 @@ export function handleTouchSamples(
       }
       case TouchPhase.End:
       case TouchPhase.Cancel: {
-        const contact = active.get(0);
+        const contact = active.get(s.id);
         if (!contact) break;
         contact.clientX = s.x;
         contact.clientY = s.y;
@@ -349,7 +361,7 @@ export function handleTouchSamples(
         contact.screenY = s.y;
         // W3C §5.3: at touchend, `touches` no longer contains the released
         // contact, `changedTouches` does. Remove BEFORE dispatch.
-        active.delete(0);
+        active.delete(s.id);
         dispatch(s.phase, contact, t);
         break;
       }
