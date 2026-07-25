@@ -164,40 +164,6 @@ describe("phase dispatch", () => {
     expect(seen).toEqual([]);
     expect(host.of("hitTest")).toEqual([]);
   });
-
-  test("outlier guard: single-frame coordinate spikes are discarded, next plausible frame wins", () => {
-    host.hitResult = child.id;
-    const positions: [number, number][] = [];
-    registerTouchHandler(child, TouchPhase.Move, (ev) =>
-      positions.push([ev.changedTouches[0].clientX, ev.changedTouches[0].clientY]),
-    );
-    handleTouchSamples([__packTouchSample(TouchPhase.Start, 10, 20)], FRAME_MS);
-    // I2C partial-read artifact: finger cannot jump 400 px in one frame.
-    handleTouchSamples([__packTouchSample(TouchPhase.Move, 410, 20)], 2 * FRAME_MS);
-    expect(positions).toEqual([]);
-    // A second spike is still measured against the last GOOD sample (10,20),
-    // not against the discarded one — no drift accumulation.
-    handleTouchSamples([__packTouchSample(TouchPhase.Move, 420, 200)], 3 * FRAME_MS);
-    expect(positions).toEqual([]);
-    // Next plausible frame dispatches normally.
-    handleTouchSamples([__packTouchSample(TouchPhase.Move, 12, 22)], 4 * FRAME_MS);
-    expect(positions).toEqual([[12, 22]]);
-  });
-
-  test("outlier guard: baseline resets on every start (fast taps never filtered)", () => {
-    host.hitResult = child.id;
-    const seen: string[] = [];
-    registerTouchHandler(child, TouchPhase.Start, () => seen.push("start"));
-    handleTouchSamples([__packTouchSample(TouchPhase.Start, 10, 20)], FRAME_MS);
-    handleTouchSamples([__packTouchSample(TouchPhase.End, 10, 20)], 2 * FRAME_MS);
-    // New contact far away: start is always trusted, never outlier-filtered.
-    handleTouchSamples([__packTouchSample(TouchPhase.Start, 600, 200)], 3 * FRAME_MS);
-    expect(seen).toEqual(["start", "start"]);
-    expect(host.of("hitTest")).toEqual([
-      ["hitTest", 10, 20],
-      ["hitTest", 600, 200],
-    ]);
-  });
 });
 
 describe("implicit capture (W3C §5.2)", () => {

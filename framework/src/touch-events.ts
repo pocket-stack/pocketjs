@@ -178,18 +178,6 @@ interface ActiveContact extends PocketTouch {
  *  keyed by identifier so a multi-touch wire variant plugs in unchanged. */
 const active = new Map<number, ActiveContact>();
 
-/** Last known-good logical coordinates (updated only when a sample passes the
- *  outlier filter). Used to detect single-frame coordinate spikes from I2C
- *  partial-read corruption. Reset on every Start event. */
-let lastGoodX = 0;
-let lastGoodY = 0;
-
-/** Maximum physically-plausible coordinate jump in one sample interval.
- *  Logical viewport is at most 640×480; half-width = 320, half-height = 240.
- *  Even a very fast flick (< 5 m/s) cannot exceed 200 px in one sample. */
-const OUTLIER_DX_MAX = 320;
-const OUTLIER_DY_MAX = 240;
-
 /** The mirror subtree root for hit resolution (app + overlay layers), set
  *  by render() alongside setInputRoot. Null falls back to input.ts's root. */
 let hitRootProvider: (() => NodeMirror | null) | null = null;
@@ -336,8 +324,6 @@ export function handleTouchSamples(
           target,
         };
         active.set(0, contact);
-        lastGoodX = s.x;
-        lastGoodY = s.y;
         dispatch(TouchPhase.Start, contact, t);
         break;
       }
@@ -346,15 +332,6 @@ export function handleTouchSamples(
         if (!contact) break; // move without a start on this host: ignore
         // W3C: no touchmove without movement (integer logical coords).
         if (contact.clientX === s.x && contact.clientY === s.y) break;
-        // Outlier guard: reject single-frame coordinate spikes caused by
-        // I2C partial-read corruption or EMI bit flips. A human finger
-        // cannot move > OUTLIER_DX_MAX px in one sample interval.
-        if (Math.abs(s.x - lastGoodX) > OUTLIER_DX_MAX ||
-            Math.abs(s.y - lastGoodY) > OUTLIER_DY_MAX) {
-          break; // discard — contact stays at last known-good position
-        }
-        lastGoodX = s.x;
-        lastGoodY = s.y;
         contact.clientX = s.x;
         contact.clientY = s.y;
         contact.screenX = s.x;
