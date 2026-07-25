@@ -132,7 +132,7 @@ describe("experimental Nokia E7 runtime profile", () => {
   });
 
   test("does not register an unproven production target", () => {
-    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "pocketbook", "macos-widget"]);
+    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "switch", "pocketbook", "macos-widget"]);
     expect(POCKET_TARGETS).not.toHaveProperty(SYMBIAN_E7_DEV_TARGET_ID);
     expect(SYMBIAN_E7_DEV_HOST_ABI).toBe(4);
   });
