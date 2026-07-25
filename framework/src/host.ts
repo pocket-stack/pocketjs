@@ -310,6 +310,27 @@ export function installFrameHandler(
   }).frame = fn;
 }
 
+export type ResizeViewportHook = (width: number, height: number) => void;
+
+/**
+ * Install the native host's live-viewport callback without coupling the
+ * global hook lifecycle to a particular renderer. Restores any previous hook
+ * only when the installed callback still owns the slot.
+ */
+export function installResizeViewportHook(resizeViewport: ResizeViewportHook): () => void {
+  const globals = globalThis as typeof globalThis & {
+    __pocketResizeViewport?: ResizeViewportHook;
+  };
+  const previous = globals.__pocketResizeViewport;
+  const hook: ResizeViewportHook = (width, height) => resizeViewport(width, height);
+  globals.__pocketResizeViewport = hook;
+  return () => {
+    if (globals.__pocketResizeViewport !== hook) return;
+    if (previous) globals.__pocketResizeViewport = previous;
+    else delete globals.__pocketResizeViewport;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Prop value encoding
 // ---------------------------------------------------------------------------

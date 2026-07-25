@@ -10,6 +10,7 @@
 //   pocket play vita <demo> build, install and launch a demo in Vita3K
 //   pocket dev|psp|vita|hw|psplink|devtools|tape [...args]
 //                            low-level passthrough to the checkout's bun scripts
+//   pocket symbian <cmd>      Nokia E7 toolchain doctor/setup/build/deploy
 //
 // The published CLI ships the same manifest consumed by PocketJS build scripts.
 
@@ -366,6 +367,7 @@ const SCRIPTS = {
   dev: "tools/dev.ts",
   psp: "tools/psp.ts",
   vita: "tools/vita.ts",
+  symbian: "tools/symbian.ts",
   hw: "tools/hw.ts",
   psplink: "tools/psplink.ts",
   devtools: "tools/devtools.ts",
@@ -413,6 +415,7 @@ const HELP = `${C.bold("pocket")} — the PocketJS toolchain CLI
   pocket dev <app>-main    build + serve an app in the browser
   pocket psp <app>         build the PSP EBOOT
   pocket vita <app>        build the PS Vita VPK
+  pocket symbian <cmd>      Nokia E7 doctor/setup/build-probe/deploy
   pocket hw <app>          build + run on a real PSP over PSPLINK
   pocket psplink           interactive multi-app switcher on a real PSP
   pocket devtools [app]    DevTools panel + USB debug bridge (one command)
@@ -437,6 +440,7 @@ switch (cmd) {
   case "dev":
   case "psp":
   case "vita":
+  case "symbian":
   case "hw":
   case "psplink":
   case "devtools":

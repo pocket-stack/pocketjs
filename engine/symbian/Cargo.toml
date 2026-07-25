@@ -1,0 +1,32 @@
+# pocketjs-symbian-core — pocketjs-core plus its deterministic software
+# rasterizer, exposed as a C static library for the Qt/Symbian host.
+#
+# This is deliberately a standalone workspace. The custom Symbian target
+# needs nightly build-std while the desktop engine workspace stays on the
+# normal host toolchain.
+#
+# Build from this directory (rust-toolchain.toml pins the compiler):
+#   cargo build --release --locked \
+#     --target targets/armv6-symbian-eabi.json \
+#     -Z json-target-spec \
+#     -Z build-std=core,alloc,compiler_builtins \
+#     -Z build-std-features=compiler-builtins-mem
+
+[package]
+name = "pocketjs-symbian-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+pocketjs-core = { path = "../core" }
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+lto = true
+
+[workspace]
