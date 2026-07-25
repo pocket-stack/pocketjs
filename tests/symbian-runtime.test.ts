@@ -568,11 +568,18 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain("extension_->resize(");
     expect(runtime).toContain("extension_->render(");
     expect(orchestrator).toContain("coreLibrary?: string;");
+    expect(orchestrator).toContain("massStorageDataRoot?: string;");
     expect(orchestrator).toContain(
       'resolve(payload, "libpocketjs_symbian_core.a")',
     );
     expect(orchestrator).toContain(
       'coreLibrary: flagValue(args.slice(2), "--core-library")',
+    );
+    expect(orchestrator).toContain(
+      '"--mass-storage-data-root"',
+    );
+    expect(orchestrator).toContain(
+      "stageSymbianMassStorageData(massStorageDataRoot, payload)",
     );
     expect(orchestrator).toContain(
       "Symbian application-specific cores cannot be combined with a multi-app catalog",

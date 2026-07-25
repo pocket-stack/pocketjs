@@ -242,10 +242,22 @@ describe("canonical Symbian E7 toolchain", () => {
     expect(buildApp).toContain('cp "$catalog_blob" "$build/catalog.bin"');
     expect(buildApp).toContain("catalogIndex: (if $catalogIndexSha256");
     expect(buildApp).toContain(
+      'data_manifest="$data_stage/manifest.json"',
+    );
+    expect(buildApp).toContain('keys == ["bytes", "path", "sha256"]');
+    expect(buildApp).toContain("expected_bytes=$(jq -er '.bytes'");
+    expect(buildApp).toContain(
+      "Staged Symbian mass-storage data failed verification",
+    );
+    expect(buildApp).toContain(
+      'printf \'"%s"-"E:\\\\private\\\\%s\\\\data\\\\%s"\\n\'',
+    );
+    expect(buildApp).toContain(
       '"QMAKE_${executable}_LFLAGS=-Ttext 0x80000 -Tdata $data_base"',
     );
     expect(buildApp).toContain("embeddedBytes: ($embeddedBytes | tonumber)");
-    expect(buildApp).toContain('schemaVersion: 2');
+    expect(buildApp).toContain('schemaVersion: 3');
+    expect(buildApp).toContain("data: $data[0]");
     expect(buildApp).toContain("output_stage=$(mktemp -d /out/");
     expect(buildApp).toContain('mv -f "$candidate" "$output"');
     const sisPattern = buildApp.match(
@@ -455,6 +467,12 @@ describe("canonical Symbian E7 toolchain", () => {
     );
     expect(orchestrator.indexOf('resolve(payload, "plan.json")', transaction))
       .toBeGreaterThan(transaction);
+    expect(
+      orchestrator.indexOf(
+        "stageSymbianMassStorageData(massStorageDataRoot, payload)",
+        transaction,
+      ),
+    ).toBeGreaterThan(transaction);
     expect(
       orchestrator.indexOf(
         "return await withSymbianRuntimeBuildLock(outputRoot, transaction)",
