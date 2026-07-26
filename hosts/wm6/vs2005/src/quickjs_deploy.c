@@ -90,6 +90,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     char *bundle;
     char *snapshot_text;
     unsigned int bundle_length;
+    WCHAR create_error[256];
     WCHAR *message;
     int status;
 
@@ -129,9 +130,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     runtime = create_runtime(8u * 1024u * 1024u, 256u * 1024u,
                              result, sizeof(result));
     if (!runtime) {
-        ascii_to_wide(message, 256, result);
+        ascii_to_wide(create_error, 256, result);
         FreeLibrary(module);
-        MessageBox(NULL, message, L"QuickJS create failed", MB_OK);
+        MessageBox(NULL, create_error, L"QuickJS create failed", MB_OK);
         return 4;
     }
     bundle = read_cards_bundle(&bundle_length);

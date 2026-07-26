@@ -94,11 +94,12 @@ describe("Windows Mobile 6 VS2005 projects", () => {
 
   test("includes a pinned CeGCC QuickJS ARM/WinCE probe", async () => {
     const quickjsRoot = new URL("../hosts/wm6/quickjs/", import.meta.url);
-    const [solution, project, build, runtimeBuild, cardsBuild, patch, probe,
+    const [solution, project, host, build, runtimeBuild, cardsBuild, patch, probe,
       runtime, abi, cards, math, executable, dll] =
       await Promise.all([
         readFile(new URL("PocketJS.WM6.sln", root), "utf8"),
         readFile(new URL("PocketJS.WM6.QuickJS.vcproj", root), "utf8"),
+        readFile(new URL("src/quickjs_deploy.c", root), "utf8"),
         readFile(new URL("build-probe.sh", quickjsRoot), "utf8"),
         readFile(new URL("build-runtime.sh", quickjsRoot), "utf8"),
         readFile(new URL("build-cards.sh", quickjsRoot), "utf8"),
@@ -126,6 +127,9 @@ describe("Windows Mobile 6 VS2005 projects", () => {
         /RemoteExecutable="%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\\PocketJS\.WM6\.QuickJS\.Host\.exe"/g,
       ),
     ).toHaveLength(2);
+    expect(host).toContain("WCHAR create_error[256]");
+    expect(host).toContain("ascii_to_wide(create_error, 256, result)");
+    expect(host).not.toContain("ascii_to_wide(message, 256, result)");
 
     expect(build).toContain(
       'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',
