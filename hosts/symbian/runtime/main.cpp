@@ -1193,6 +1193,7 @@ private:
     bool validViewport(const QSize &viewport) const;
     QRect presentationRect() const;
     QString takeException(JSContext *context);
+    void clearInput();
     void fail(const QString &message);
     void queueViewport(const QSize &viewport);
     void requestSummon();
@@ -1220,7 +1221,9 @@ private:
     QSize pendingViewportSize_;
     QSize windowSize_;
     int buttons_;
+    int pressedButtons_;
     uint32_t nativeKeys_;
+    uint32_t pressedNativeKeys_;
     int currentApp_;
     int pendingApp_;
     int resumeApp_;
@@ -1271,7 +1274,9 @@ PocketJsRuntime::PocketJsRuntime()
           POCKETJS_INITIAL_LOGICAL_HEIGHT
       ),
       buttons_(0),
+      pressedButtons_(0),
       nativeKeys_(0),
+      pressedNativeKeys_(0),
       currentApp_(0),
       pendingApp_(-1),
       resumeApp_(-1),
@@ -1291,6 +1296,9 @@ PocketJsRuntime::PocketJsRuntime()
     setAttribute(Qt::WA_OpaquePaintEvent, true);
     setAttribute(Qt::WA_AcceptTouchEvents, true);
     setAttribute(Qt::WA_AutoOrientation, true);
+    // This surface is a controller, not a Qt text editor. Do not advertise
+    // input-method capabilities; controller identity comes from nativeScanCode.
+    setAttribute(Qt::WA_InputMethodEnabled, false);
     setFocusPolicy(Qt::StrongFocus);
 
     errorLabel_->setAlignment(Qt::AlignCenter);
@@ -1323,6 +1331,15 @@ PocketJsRuntime::~PocketJsRuntime()
         doneCurrent();
     }
     glInitialized_ = false;
+}
+
+void PocketJsRuntime::clearInput()
+{
+    buttons_ = 0;
+    pressedButtons_ = 0;
+    nativeKeys_ = 0;
+    pressedNativeKeys_ = 0;
+    touches_.clear();
 }
 
 void PocketJsRuntime::destroyGuest()
@@ -1362,9 +1379,7 @@ void PocketJsRuntime::destroyGuest()
     resizeViewport_ = JS_UNDEFINED;
     appJavaScript_.clear();
     appPack_.clear();
-    touches_.clear();
-    buttons_ = 0;
-    nativeKeys_ = 0;
+    clearInput();
     frozenShotHandle_ = -1;
 }
 
@@ -1968,9 +1983,7 @@ void PocketJsRuntime::queueViewport(const QSize &viewport)
         windowSize_ = viewport;
         pendingViewportSize_ = viewport;
         hasPendingViewport_ = false;
-        buttons_ = 0;
-        nativeKeys_ = 0;
-        touches_.clear();
+        clearInput();
         update();
         return;
     }
@@ -1989,9 +2002,7 @@ void PocketJsRuntime::queueViewport(const QSize &viewport)
 
     // Coordinates and held keyboard directions belong to the old screen
     // orientation. Never deliver them against the replacement layout.
-    buttons_ = 0;
-    nativeKeys_ = 0;
-    touches_.clear();
+    clearInput();
 }
 
 bool PocketJsRuntime::applyPendingViewport()
@@ -2012,9 +2023,7 @@ bool PocketJsRuntime::applyPendingViewport()
 
     ui_set_viewport(viewport.width(), viewport.height());
     viewportSize_ = viewport;
-    buttons_ = 0;
-    nativeKeys_ = 0;
-    touches_.clear();
+    clearInput();
     if (extension_ != 0 && extension_->resize != 0) {
         extension_->resize(viewport.width(), viewport.height());
     }
@@ -2082,7 +2091,12 @@ void PocketJsRuntime::runFrame()
     QTime perfTimer;
     perfTimer.start();
 #endif
-    int frameButtons = buttons_;
+    // Preserve a quick press+release for one host frame. S60 can deliver both
+    // events between two 30 Hz samples even though the core advances at 60 Hz.
+    int frameButtons = buttons_ | pressedButtons_;
+    const uint32_t frameNativeKeys = nativeKeys_ | pressedNativeKeys_;
+    pressedButtons_ = 0;
+    pressedNativeKeys_ = 0;
     if (apps_.size() > 1 && currentApp_ != 0) {
         const bool selectPressed =
             (frameButtons & kButtonSelect) != 0;
@@ -2097,7 +2111,7 @@ void PocketJsRuntime::runFrame()
             context_,
             static_cast<uint32_t>(frameButtons),
             static_cast<uint32_t>(kAnalogCenter),
-            nativeKeys_
+            frameNativeKeys
         ) == 0) {
         fail("PocketJS native extension frame failed.");
         return;
@@ -2340,7 +2354,10 @@ bool PocketJsRuntime::event(QEvent *event)
 
 void PocketJsRuntime::keyPressEvent(QKeyEvent *event)
 {
-    const int key = pocketjsSymbianNormalizeKey(event->key());
+    const int key = pocketjsSymbianControlKey(
+        event->key(),
+        event->nativeScanCode()
+    );
     const int button = buttonForKey(key);
     const uint32_t nativeKey = nativeKeyForKey(key);
     if (button != 0 || nativeKey != 0) {
@@ -2348,8 +2365,12 @@ void PocketJsRuntime::keyPressEvent(QKeyEvent *event)
             event->accept();
             return;
         }
-        if (button != 0) buttons_ |= button;
+        if (button != 0) {
+            buttons_ |= button;
+            pressedButtons_ |= button;
+        }
         nativeKeys_ |= nativeKey;
+        pressedNativeKeys_ |= nativeKey;
         event->accept();
         return;
     }
@@ -2358,7 +2379,10 @@ void PocketJsRuntime::keyPressEvent(QKeyEvent *event)
 
 void PocketJsRuntime::keyReleaseEvent(QKeyEvent *event)
 {
-    const int key = pocketjsSymbianNormalizeKey(event->key());
+    const int key = pocketjsSymbianControlKey(
+        event->key(),
+        event->nativeScanCode()
+    );
     const int button = buttonForKey(key);
     const uint32_t nativeKey = nativeKeyForKey(key);
     if (button != 0 || nativeKey != 0) {
@@ -2376,9 +2400,7 @@ void PocketJsRuntime::keyReleaseEvent(QKeyEvent *event)
 
 void PocketJsRuntime::focusOutEvent(QFocusEvent *event)
 {
-    buttons_ = 0;
-    nativeKeys_ = 0;
-    touches_.clear();
+    clearInput();
     QGLWidget::focusOutEvent(event);
 }
 

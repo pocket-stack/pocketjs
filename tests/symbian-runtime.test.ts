@@ -457,15 +457,29 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_MOVE_FORWARD");
     expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_LOOK_LEFT");
     expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_RELOAD");
-    expect(runtime.match(/pocketjsSymbianNormalizeKey\(event->key\(\)\)/g))
+    expect(runtime.match(/pocketjsSymbianControlKey\(/g))
       .toHaveLength(2);
+    expect(runtime.match(/event->nativeScanCode\(\)/g)).toHaveLength(2);
     expect(runtime).toContain("nativeKeys_ |= nativeKey");
     expect(runtime).toContain("nativeKeys_ &= ~nativeKey");
+    expect(runtime).toContain("pressedNativeKeys_ |= nativeKey");
+    expect(runtime).toContain(
+      "const uint32_t frameNativeKeys = nativeKeys_ | pressedNativeKeys_;",
+    );
+    expect(runtime).toContain("int frameButtons = buttons_ | pressedButtons_;");
+    expect(runtime).toContain("void PocketJsRuntime::clearInput()");
+    expect(runtime).toContain("pressedButtons_ = 0;");
+    expect(runtime).toContain("pressedNativeKeys_ = 0;");
     expect(keyHeader).toContain(
       "((key) >= 'a' && (key) <= 'z') ? ((key) - ('a' - 'A')) : (key)",
     );
     expect(keyHeader).toContain("pocketjsSymbianNormalizeKey");
+    expect(keyHeader).toContain("POCKETJS_SYMBIAN_CONTROL_KEY");
+    expect(keyHeader).toContain("pocketjsSymbianControlKey");
     expect(runtime).toContain("setAttribute(Qt::WA_AutoOrientation, true)");
+    expect(runtime).toContain(
+      "setAttribute(Qt::WA_InputMethodEnabled, false)",
+    );
     expect(runtime).not.toContain("WA_LockLandscapeOrientation");
     expect(runtime).toContain('"__pocketResizeViewport"');
     expect(runtime).toContain("queueViewport(event->size())");
