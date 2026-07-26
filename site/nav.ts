@@ -55,6 +55,22 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "pocket-vapor",
+    title: "Pocket Vapor: Vue, Compiled All the Way Down",
+    date: "2026-07-23",
+    description:
+      "A real Vue component (ref, computed, filter/map/slice, JSX, Tailwind classes) compiled to a 9.1 KB Game Boy Advance ROM, a 32 KB Game Boy cartridge, and a 40 KB NES cartridge. No JS engine, no GC, no malloc. The trick is one observation: a reactive UI program is far more static than the machinery we run it on. Refs become dirty bits, dependency edges become ROM bitmasks, filter/slice become index views over a struct pool, and Vue's own runtime becomes the test oracle that keeps every claim honest, cell by cell, 7,264 assertions per commit. First public writeup of an experiment; includes the part where the differential suite found a bug in Vue's release candidate.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
+    slug: "pocket-character",
+    title: "Pocket Character: a Desktop Digital Human in One Native Process",
+    date: "2026-07-19",
+    description:
+      "airi's 3D digital human — same VRM model, same idle loop, same blink math, same spring-bone physics, same transparent always-on-top window — rebuilt as a single native process on the Pocket runtime: 118 MB and 4 % of one core instead of an Electron tree's 2.2 GB and 44 %. Inside: morph targets that cost nothing between blinks, a VRM crate that learned the difference between +Z and −Z the hard way, a QuickJS bundle as the hot-swappable personality, and a measurement section with receipts — same machine, same ruler, screenshots included.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "pocket-youtube",
     title: "Pocket YouTube: Streaming YouTube to a PSP over a USB Cable",
     date: "2026-07-17",
@@ -120,22 +136,3 @@ export const BLOG_POSTS: BlogPost[] = [
   },
 ];
 
-export const AOT_DOC_NAV: DocSection[] = [
-  {
-    title: "Product line",
-    items: [
-      { slug: "overview", title: "Overview" },
-      { slug: "getting-started", title: "Getting started" },
-      { slug: "authoring", title: "Authoring model" },
-      { slug: "compiler", title: "Compiler pipeline" },
-    ],
-  },
-  {
-    title: "Runtime",
-    items: [
-      { slug: "cartridge", title: "Cartridge format" },
-      { slug: "runtime", title: "GBA runtime" },
-      { slug: "web-demo", title: "Web demo" },
-    ],
-  },
-];

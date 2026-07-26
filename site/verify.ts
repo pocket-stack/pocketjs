@@ -10,7 +10,7 @@ const waitMs = Number(process.argv[3] ?? 4000);
 const probe =
   process.argv[4] ??
   `(() => {
-     // FPS + memory are drawn IN the canvas now (host-web/hud.js), not in the
+     // FPS + memory are drawn IN the canvas now (hosts/web/hud.js), not in the
      // DOM — so they show up in the canvas pixel stats below, not a text probe.
      const out = { status: null, error: null, canvases: [] };
      const s = document.querySelector('#pg-status'); if (s) out.status = s.textContent;
@@ -35,8 +35,11 @@ const SHOT = process.env.SHOT ?? "/private/tmp/claude-501/-Users-evan-code-pocke
 // --- launch chrome with a debugging port -----------------------------------
 const port = 9333;
 const proc = Bun.spawn(
-  [CHROME, "--headless=new", `--remote-debugging-port=${port}`, "--no-first-run", "--no-default-browser-check",
-    "--disable-gpu", "--hide-scrollbars", "--window-size=1400,1600", "--force-device-scale-factor=1", "about:blank"],
+  // Recent Chrome only opens the debugging port with a dedicated profile dir,
+  // and the Pocket Stage hero needs WebGL — SwiftShader instead of --disable-gpu.
+  [CHROME, "--headless=old", `--remote-debugging-port=${port}`, `--user-data-dir=/tmp/pocketjs-verify-profile`, "--no-first-run", "--no-default-browser-check",
+    "--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+    "--hide-scrollbars", "--window-size=1400,1600", "--force-device-scale-factor=1", "about:blank"],
   { stdout: "ignore", stderr: "ignore" },
 );
 

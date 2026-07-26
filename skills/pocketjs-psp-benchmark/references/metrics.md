@@ -1,6 +1,6 @@
 # PocketJS PSP Benchmark Metrics
 
-Read this reference when explaining `scripts/bench-ppsspp.ts` output.
+Read this reference when explaining `tools/bench-ppsspp.ts` output.
 
 ## Timing
 

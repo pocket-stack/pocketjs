@@ -11,7 +11,7 @@
 // Usage:
 //   bun skills/pocketjs-video-outro/scripts/make-outro.ts -i input.mov [-o out.mp4]
 //        [--tagline STR] [--brand STR] [--url STR] [--outro SECS] [--xfade SECS]
-//        [--crf N] [--preset P]
+//        [--crf N] [--preset P] [--x]
 //
 // Defaults: brand "PocketJS", tagline "Bare Metal Modern Web", url "pocketjs.dev",
 // outro 5.5s, xfade 0.8s, crf 18, preset medium. Pass --url "" to hide the url.
@@ -35,6 +35,7 @@ type Args = {
   xfade: number;
   crf: number;
   preset: string;
+  xCompatible: boolean;
 };
 
 function usage(): never {
@@ -44,7 +45,7 @@ function usage(): never {
       "  bun skills/pocketjs-video-outro/scripts/make-outro.ts -i <input> [options]",
       "",
       "options:",
-      "  -o, --output <path>   output file (default: <input>_outro.mp4 next to input)",
+      "  -o, --output <path>   output file (default: <input>_outro[_x].mp4 next to input)",
       '  --tagline <str>       hero line (default: "Bare Metal Modern Web")',
       '  --brand <str>         wordmark (default: "PocketJS")',
       '  --url <str>           footer line (default: "pocketjs.dev"; "" hides it)',
@@ -52,6 +53,7 @@ function usage(): never {
       "  --xfade <secs>        crossfade length (default: 0.8)",
       "  --crf <n>             x264 quality (default: 18)",
       "  --preset <p>          x264 preset (default: medium)",
+      "  --x, --x-compatible   export X-safe 30fps CFR within web upload bounds",
     ].join("\n"),
   );
   process.exit(2);
@@ -62,7 +64,7 @@ function need(v: string | undefined, flag: string): string {
   return v;
 }
 
-function parseArgs(argv: string[]): Args {
+export function parseArgs(argv: string[]): Args {
   if (argv.includes("-h") || argv.includes("--help")) usage();
   let input: string | undefined;
   let output: string | undefined;
@@ -73,6 +75,7 @@ function parseArgs(argv: string[]): Args {
   let xfade = 0.8;
   let crf = 18;
   let preset = "medium";
+  let xCompatible = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -85,6 +88,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--xfade") xfade = Number(need(argv[++i], a));
     else if (a === "--crf") crf = Number(need(argv[++i], a));
     else if (a === "--preset") preset = need(argv[++i], a);
+    else if (a === "--x" || a === "--x-compatible") xCompatible = true;
     else usage();
   }
 
@@ -95,9 +99,10 @@ function parseArgs(argv: string[]): Args {
 
   if (!output) {
     const dir = resolve(dirname(input));
-    output = join(dir, `${basename(input, extname(input))}_outro.mp4`);
+    const suffix = xCompatible ? "_outro_x.mp4" : "_outro.mp4";
+    output = join(dir, `${basename(input, extname(input))}${suffix}`);
   }
-  return { input, output, brand, tagline, url, outro, xfade, crf, preset };
+  return { input, output, brand, tagline, url, outro, xfade, crf, preset, xCompatible };
 }
 
 const CHROME_CANDIDATES = [
@@ -126,6 +131,8 @@ type ProbeStream = {
   color_transfer?: string;
   color_primaries?: string;
   color_range?: string;
+  tags?: { rotate?: string };
+  side_data_list?: Array<{ rotation?: number | string }>;
 };
 
 type ProbeOutput = {
@@ -141,6 +148,51 @@ function frameRate(value: string | undefined): number {
   return Number.isFinite(fps) ? fps : 0;
 }
 
+type ParsedFrameRate = { fps: number; rate: string };
+
+function parsedFrameRate(value: string | undefined): ParsedFrameRate | undefined {
+  const fps = frameRate(value);
+  return fps > 0 && value ? { fps, rate: value } : undefined;
+}
+
+export function displayDimensions(video: ProbeStream) {
+  const codedW = Number(video.width);
+  const codedH = Number(video.height);
+  const sideRotation = video.side_data_list?.find((entry) => entry.rotation !== undefined)?.rotation;
+  const parsedRotation = Number(sideRotation ?? video.tags?.rotate ?? 0);
+  const rotation = Number.isFinite(parsedRotation) ? ((parsedRotation % 360) + 360) % 360 : 0;
+  const swapsAxes = Math.abs(rotation - 90) < 0.5 || Math.abs(rotation - 270) < 0.5;
+  return swapsAxes
+    ? { w: codedH, h: codedW, rotation }
+    : { w: codedW, h: codedH, rotation };
+}
+
+export function fitWithin(w: number, h: number, maxW: number, maxH: number) {
+  const factor = Math.min(1, maxW / w, maxH / h);
+  const even = (value: number, limit: number) => (
+    Math.min(limit - (limit % 2), Math.max(2, (factor < 1 ? Math.round(value / 2) : Math.floor(value / 2)) * 2))
+  );
+  return { w: even(w * factor, maxW), h: even(h * factor, maxH) };
+}
+
+export function resolveOutputSpec(
+  input: { w: number; h: number; fps: number; fpsRate: string },
+  xCompatible: boolean,
+) {
+  if (!xCompatible) return input;
+  const limits = input.h > input.w ? { w: 1080, h: 1900 } : { w: 1920, h: 1080 };
+  return { ...fitWithin(input.w, input.h, limits.w, limits.h), fps: 30, fpsRate: "30/1" };
+}
+
+export function xCompatibilityArgs(enabled: boolean): string[] {
+  if (!enabled) return [];
+  return [
+    "-level:v", "4.0", "-r", "30", "-fps_mode:v", "cfr", "-video_track_timescale", "30000",
+    "-g", "60", "-keyint_min", "60", "-sc_threshold", "0", "-flags:v", "+cgop",
+    "-x264-params", "open-gop=0", "-maxrate", "8M", "-bufsize", "16M",
+  ];
+}
+
 export function parseProbeOutput(raw: string) {
   let output: ProbeOutput;
   try {
@@ -150,9 +202,13 @@ export function parseProbeOutput(raw: string) {
   }
 
   const video = output.streams?.find((stream) => stream.codec_type === "video");
-  const w = Number(video?.width);
-  const h = Number(video?.height);
-  const fps = frameRate(video?.r_frame_rate) || frameRate(video?.avg_frame_rate);
+  const { w, h, rotation } = displayDimensions(video ?? {});
+  // For VFR captures r_frame_rate is often only the stream's smallest frame
+  // interval (ReplayKit commonly reports 120/1). avg_frame_rate represents the
+  // actual timeline and must win; preserve its rational form for FFmpeg filters.
+  const selectedFrameRate = parsedFrameRate(video?.avg_frame_rate) ?? parsedFrameRate(video?.r_frame_rate);
+  const fps = selectedFrameRate?.fps ?? 0;
+  const fpsRate = selectedFrameRate?.rate ?? "";
   const dur = Number(output.format?.duration);
   const audioStreams = output.streams?.filter((stream) => stream.codec_type === "audio").length ?? 0;
   const colorSpace = video?.color_space ?? "";
@@ -163,11 +219,11 @@ export function parseProbeOutput(raw: string) {
   if (![w, h, fps, dur].every((value) => Number.isFinite(value) && value > 0)) {
     throw new Error("could not probe input width/height/fps/duration");
   }
-  return { w, h, fps, dur, audioStreams, colorSpace, colorTransfer, colorPrimaries, colorRange };
+  return { w, h, rotation, fps, fpsRate, dur, audioStreams, colorSpace, colorTransfer, colorPrimaries, colorRange };
 }
 
 async function probe(input: string) {
-  const entries = "stream=codec_type,width,height,r_frame_rate,avg_frame_rate,color_space,color_transfer,color_primaries,color_range:format=duration";
+  const entries = "stream=codec_type,width,height,r_frame_rate,avg_frame_rate,color_space,color_transfer,color_primaries,color_range:stream_tags=rotate:stream_side_data=rotation:format=duration";
   const raw = await $`ffprobe -v error -show_entries ${entries} -of json ${input}`.quiet().text();
   return parseProbeOutput(raw);
 }
@@ -199,8 +255,12 @@ async function main() {
   await $`command -v ffprobe`.quiet().then(undefined, () => { throw new Error("ffprobe not found on PATH"); });
 
   const chrome = await findChrome();
-  const { w, h, fps, dur, audioStreams, colorSpace, colorTransfer, colorPrimaries, colorRange } = await probe(a.input);
+  const input = await probe(a.input);
+  const { w, h, fps, fpsRate } = resolveOutputSpec(input, a.xCompatible);
+  const { w: inputW, h: inputH, rotation, fps: inputFps, fpsRate: inputFpsRate, dur, audioStreams, colorSpace, colorTransfer, colorPrimaries, colorRange } = input;
   const isHdr = colorTransfer === "arib-std-b67" || colorTransfer === "smpte2084";
+  const isBt709 = colorSpace === "bt709" && colorTransfer === "bt709" && colorPrimaries === "bt709";
+  const outputIsBt709Tv = isHdr || (isBt709 && colorRange !== "pc");
   const hdrColorSpace = isHdr
     ? hdrColorValue(colorSpace, SWSCALE_MATRICES, "bt2020nc", "matrix")
     : "";
@@ -231,8 +291,9 @@ async function main() {
   const t0 = l0 + 0.35;
   const u0 = t0 + 0.6;
 
-  console.error(`input : ${w}x${h} @ ${fps.toFixed(3)}fps  dur=${dur}s  audio-streams=${audioStreams}`);
+  console.error(`input : ${inputW}x${inputH} @ ${inputFps.toFixed(3)}fps (${inputFpsRate})  dur=${dur}s  audio-streams=${audioStreams}${rotation ? `  rotation=${rotation}` : ""}`);
   console.error(`color : ${[colorSpace, colorTransfer, colorPrimaries, colorRange].filter(Boolean).join("/") || "unspecified"}${isHdr ? " -> bt709 SDR" : ""}`);
+  console.error(`video : ${w}x${h} @ ${fps.toFixed(3)}fps (${fpsRate})${a.xCompatible ? "  X-compatible CFR" : ""}`);
   console.error(`card  : scale=${scale.toFixed(4)}  outro=${a.outro}s  xfade=${a.xfade}s (offset=${offset.toFixed(3)}s)`);
   console.error(`output: ${a.output}`);
 
@@ -259,14 +320,14 @@ async function main() {
       : `scale=${w}:${h},setsar=1,format=yuv420p`;
     const outputColor = isHdr ? `,${bt709}` : "";
     const graphLines = [
-      `[1:v]${cardColor}setsar=1,fps=${fps},format=yuv420p${outputColor},setpts=PTS-STARTPTS[bg];`,
-      `[2:v]${cardColor}fps=${fps},format=yuva420p${outputColor},fade=t=in:st=${f(l0)}:d=0.60:alpha=1,setpts=PTS-STARTPTS[lg];`,
-      `[3:v]${cardColor}fps=${fps},format=yuva420p${outputColor},fade=t=in:st=${f(t0)}:d=0.60:alpha=1,setpts=PTS-STARTPTS[tg];`,
-      `[4:v]${cardColor}fps=${fps},format=yuva420p${outputColor},fade=t=in:st=${f(u0)}:d=0.50:alpha=1,setpts=PTS-STARTPTS[ur];`,
+      `[1:v]${cardColor}setsar=1,fps=${fpsRate},format=yuv420p${outputColor},setpts=PTS-STARTPTS[bg];`,
+      `[2:v]${cardColor}fps=${fpsRate},format=yuva420p${outputColor},fade=t=in:st=${f(l0)}:d=0.60:alpha=1,setpts=PTS-STARTPTS[lg];`,
+      `[3:v]${cardColor}fps=${fpsRate},format=yuva420p${outputColor},fade=t=in:st=${f(t0)}:d=0.60:alpha=1,setpts=PTS-STARTPTS[tg];`,
+      `[4:v]${cardColor}fps=${fpsRate},format=yuva420p${outputColor},fade=t=in:st=${f(u0)}:d=0.50:alpha=1,setpts=PTS-STARTPTS[ur];`,
       `[bg][lg]overlay=x=0:y='${slideL}*pow(1-clip((t-${f(l0)})/0.60,0,1),3)'[o1];`,
       `[o1][tg]overlay=x=0:y='${slideT}*pow(1-clip((t-${f(t0)})/0.60,0,1),3)'[o2];`,
       `[o2][ur]overlay=x=0:y='${slideU}*pow(1-clip((t-${f(u0)})/0.50,0,1),3)',format=yuv420p${outputColor},setpts=PTS-STARTPTS[outro];`,
-      `[0:v]fps=${fps},${mainColor},setpts=PTS-STARTPTS[main];`,
+      `[0:v]fps=${fpsRate},${mainColor},setpts=PTS-STARTPTS[main];`,
       `[main][outro]xfade=transition=fade:duration=${a.xfade}:offset=${offset.toFixed(3)},format=yuv420p${outputColor}[v];`,
     ];
 
@@ -296,7 +357,8 @@ async function main() {
       "-filter_complex_script", graphPath,
       ...maps,
       "-c:v", "libx264", "-profile:v", "high", "-crf", String(a.crf), "-preset", a.preset, "-pix_fmt", "yuv420p",
-      ...(isHdr ? ["-color_range", "tv", "-colorspace", "bt709", "-color_trc", "bt709", "-color_primaries", "bt709"] : []),
+      ...(outputIsBt709Tv ? ["-color_range", "tv", "-colorspace", "bt709", "-color_trc", "bt709", "-color_primaries", "bt709"] : []),
+      ...xCompatibilityArgs(a.xCompatible),
       "-movflags", "+faststart", "-shortest",
       a.output,
     ];

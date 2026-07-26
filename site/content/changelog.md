@@ -3,6 +3,112 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.7.0 — July 23, 2026
+
+**Vue compiles all the way down.** Pocket Vapor takes a real Vue Vapor
+component — actual `ref`/`computed`, actual JSX — and emits native code for
+machines that could never host a JavaScript engine: Game Boy Advance, Game
+Boy, NES cartridges, and now an ESP32 dev board, with the same file proven
+cell-identical against real `vue@3.6` after every button press. [The film
+and the whole argument](/blog/pocket-vapor/). Around it, the platform grew
+a launcher, a package format, and a desktop widget runtime.
+
+- **Pocket Vapor** (`vapor/`) — an AOT compiler for a strict TypeScript
+  subset of Vue Vapor: reactivity lowered to dirty-bit dependency masks
+  baked into ROM, template bindings to span-merged paint effects, every
+  byte planned at compile time (no allocator, no GC). One TodoMVC component
+  becomes `.gba`, `.gb`, and `.nes` carts; `SCREEN` folds make layout a
+  compile-time constant per target — responsive UI with zero bytes of
+  runtime cost.
+- **The oracle is real Vue** — the same file runs unmodified on
+  `vue@3.6` `runtime-with-vapor`, and the parity suite replays one
+  interaction tape through the oracle and every console emulator, comparing
+  the full logical grid — characters *and* palettes — after each press.
+  `bun run vapor:dev` serves the oracle in a browser to make degradation
+  visible before you burn a cart.
+- **A class DSL with per-target style contracts** — the same Tailwind
+  names the big framework compiles, lowered per machine: GBA palette
+  banks (rgb555), ESP32 RGB565 ink/paper pairs, GB/NES two glyph styles by
+  luminance. `vapor:check` prints the whole cross-target diagnostics
+  matrix in one run; `--strict` turns lossy lowering into failure.
+- **ESP32 MeowBit, the fourth target** — an ST7735 RGB565 cell raster,
+  release-latched button chords, and a USB verifier that replays the shared
+  tape against the *physical* board: 32 full-grid receipts, 23,040
+  character/palette cell comparisons, zero tripwires, firmware identity
+  hash-checked so a stale flash can't pass.
+- **Boards as data, execution classes in the contract** — MCU devices are
+  JSON board profiles (pins, panel, pad coverage) validated against the
+  runtime; the compiler derives what an app demands (buttons statically
+  used, style pairs, grid) and `check --json` judges every registered
+  board. pocket.json v2 names the guest/aot split (`execution.classes`) —
+  [vapor/BOARDS.md](https://github.com/pocket-stack/pocketjs/blob/main/vapor/BOARDS.md)
+  is the scaling argument.
+- **Cover Flow launcher + whole-guest app switching** — the launcher is
+  Home: scrub a cover deck with real momentum, boot any installed app, and
+  SELECT summons the deck from inside a running guest behind a frozen-shot
+  veil (ops 39–41). Verified on real PSP hardware.
+- **`.pocket` v1** — one app, every target, one file: identity, build
+  plan, bundle, and assets as sorted sections with deterministic encoding;
+  `build --all-targets`, `thin`, `inspect`, and `verify` in the CLI.
+  Devices re-verify the embedded plan against their own profile before
+  booting.
+- **Widgets grow a family** — the `pocket-widget` crate (demand-rendered
+  embedded surfaces with parts + picking), flat widgets — Pocket Note, a
+  markdown sticky with selection/undo/clipboard/IME on a new
+  `desktop-widget-macos` target — and `pocket-stage` authored 3D stage
+  packages: the landing page's PSP is one, an iPod nano is another.
+- **Vita renders through GXM** — Pocket3D worlds move off the CPU blitter
+  onto the native GPU pipeline.
+- **Vue single-file components** — `.vue` SFCs compile through
+  `@vue/compiler-sfc` vapor mode in the guest vue-vapor framework, and Vue
+  itself moves up to `3.6.0-rc.1` (functional props arrive resolved).
+- **Contracts: semantics as fields** — target profiles carry `platform`
+  and `form` as queryable fields (ids stay labels nothing may parse), and
+  apps declare viewport intent per policy (`fixed`/`dynamic`) instead of
+  per target.
+- **Compatibility:** existing apps and the npm packages build unchanged;
+  the bare fixed-viewport manifest spelling remains valid, and
+  `execution.classes` is optional (omitted means guest). The repository
+  itself moved to one-axis-per-top-level-directory (`docs/STRUCTURE.md`) —
+  contributor-facing only.
+
+## 0.6.0 — July 19, 2026
+
+**The engine leaves the handheld.** The Pocket runtime's first desktop
+product surface: transparent widget windows and a VRM character stack,
+proven by rebuilding airi's 3D digital human as one native process at
+118 MB / 3.9 % of a core — an [order of magnitude below its Electron
+stage](/blog/pocket-character/) on every axis, same character, same
+behaviors.
+
+- **Widget windows** (pocket3d): `AppConfig` grows `transparent`,
+  `decorations`, `always_on_top`, `resizable`, `drag_window`, and `max_fps`
+  frame pacing that sleeps between frames instead of spinning on vsync;
+  scenes can clear to alpha 0 for desktop-composited windows.
+- **Morph targets** (pocket3d): sparse CPU deltas + per-instance overlay
+  vertex buffers, flushed only when a weight changes — blend-shape faces
+  cost nothing at rest. Draws redirect via `base_vertex`; shared index
+  buffers stay untouched.
+- **Procedural poses** (pocket3d): `Skeleton::sample_locals` /
+  `globals_from_locals` split plus `ModelInstance::pose`, so hosts inject
+  look-at and physics edits between clip sampling and the hierarchy walk.
+  Joint palettes grow 128 → 512 matrices for VRoid-scale humanoid rigs.
+- **pocket-vrm** (new crate): VRM 0.x parsing (humanoid map, blend-shape
+  groups, spring config, MToon material info, look-at ranges), a
+  deterministic allocation-free spring-bone verlet solver, VRMA retargeting
+  with the VRM1 +Z → VRM0 −Z conversion, and bone-type eye look-at —
+  21 tests against the real VRoid sample fixture.
+- **Asset diet** (pocket3d): `load_glb_opts` skips images no material
+  references and caps authoring-resolution textures
+  (`max_texture_dim`) — 413 MB of GPU memory back on the reference
+  character.
+- [pocket-character](https://github.com/pocket-stack/pocket-character):
+  the airi-parity widget itself — character surface + QuickJS policy
+  bundle, blink/saccade schedulers with airi's exact constants, headless
+  render harness, and the [measured report](/blog/pocket-character/).
+- **Compatibility:** no breaking changes; `AppConfig` and `ModelInstance`
+  gained fields (struct-literal constructors need `..Default::default()`).
+
 ## 0.5.0 — July 17, 2026
 
 **The console grows system software.** Streaming media, a system keyboard, a
@@ -93,7 +199,7 @@ target-specific golden tests.
   `pocket.json` is required when opting into `bun pocket` and target-aware
   Vita builds. **Breaking for custom hosts:** `Host.kind` now reports
   `"native"` instead of `"psp"`; manifest bundles require `__host` and
-  `__hostAbi`. Rebuild compiler/core/host artifacts together and consume the
+  `__hostAbi`. Rebuild framework/compiler/core/host artifacts together and consume the
   stable `HostBuildInputs` projection rather than the internal build plan.
   Vita builds still require VitaSDK + `cargo-vita`; arbitrary logical sizes
   and dynamic host text are not part of this release.
@@ -102,7 +208,7 @@ target-specific golden tests.
 
 **Pocket DevTools.** Time travel + inspection as framework primitives —
 [read the deep-dive](/blog/time-travel-devtools/), design in
-[DEVTOOLS.md](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md).
+[docs/DEVTOOLS.md](https://github.com/pocket-stack/pocketjs/blob/main/DEVTOOLS.md).
 
 - **Component inspector with on-device highlight** — a desktop panel
   (`/devtools`) shows the component tree with semantic names (`debugName`
@@ -124,7 +230,7 @@ target-specific golden tests.
   the desktop bridge encodes the PNG). Verified on hardware.
 - **One command** — `bun run devtools [app]` runs the panel, WS hub, USB
   bridge and (optionally) the whole PSP session; detects an existing
-  psplink/hw link and bridges into it. Also via the CLI: `pocket devtools`.
+  tools/psplink/hw link and bridges into it. Also via the CLI: `pocket devtools`.
 - **Breaking:** the `@pocketjs/cli` binary is renamed `pocketjs` → `pocket`.
 - New spec ops 18–22 (`debugInspect/RectXY/RectWH/Pause/Step`), all
   debug-only and default-off — shipped rendering is byte-identical.
@@ -163,7 +269,7 @@ target-specific golden tests.
   annular sector from the background color; all three animatable.
 - **`TEX_TRI` DrawList op** — textured triangles in all three backends;
   2D-rotated images un-culled, textures ride 3D surfaces.
-- **SVG path baking** — `compiler/bake-svg.ts` rasterizes `<path>` data
+- **SVG path baking** — `framework/compiler/bake-svg.ts` rasterizes `<path>` data
   (beziers, winding rules, transforms, `fill="hole"` masks) into pak
   textures.
 - **Real-hardware performance** (measured on a PSP over PSPLINK): baked-disc

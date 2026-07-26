@@ -455,10 +455,10 @@ function Photos() {
 Under the hood `Gallery` is a **static `overflow-hidden` viewport** wrapping an
 **animated strip** of absolutely-positioned page cells. The split matters: the
 scissor is taken from the clip node's own box, so the clipping viewport must not
-move — only the inner strip's `translateX` animates. `demos/gallery` is a full
+move — only the inner strip's `translateX` animates. `apps/gallery` is a full
 worked example (L/R paging, a [`Grid`](#grid) of baked tiles, [`Lazy`](#lazy)
 first-visit loading, and a page-dot [`ActionBar`](#actionbar)); build it with
-`bun scripts/build.ts gallery-main` and press **L / R** (or **Q / E**).
+`bun tools/build.ts gallery-main` and press **L / R** (or **Q / E**).
 
 ## Routing is just app state
 

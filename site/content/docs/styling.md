@@ -17,12 +17,12 @@ utilities lives on [/docs/tailwind/](/docs/tailwind/); motion utilities
 
 ## The pipeline
 
-The Tailwind compiler runs in pass 1 of `bun scripts/build.ts <app>` (see
+The Tailwind compiler runs in pass 1 of `bun tools/build.ts <app>` (see
 [/docs/build-pipeline/](/docs/build-pipeline/)):
 
 1. The babel pass collects **candidate class strings** from the AST — every
    string literal, every template-literal quasi, and every chunk of JSX text.
-2. `compiler/tailwind.ts` tries to parse each candidate. The ones that parse
+2. `framework/compiler/tailwind.ts` tries to parse each candidate. The ones that parse
    become style records; identical records are deduplicated to a single
    `styleId`.
 3. The records are encoded to `styles.bin` and a generated `styles.generated.ts`

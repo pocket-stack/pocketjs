@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "name": "iPod nano (2nd generation inspired)",
+  "attribution": "ATTRIBUTION.md",
+  "lods": {
+    "settled": "ipod-nano-2.glb",
+    "orbit": "ipod-nano-2.glb"
+  },
+  "target_width_mm": 40.0,
+  "rotation_degrees": [0.0, 0.0, 0.0],
+  "display": {
+    "logical_size": [176, 132],
+    "raster_density": 1,
+    "window_size": [320, 600]
+  },
+  "view": {
+    "desk_position_mm": [0.0, 12.0, 190.0],
+    "desk_target_mm": [0.0, 0.0, 0.0],
+    "focus_distance_mm": 110.0,
+    "fov_y_degrees": 30.0
+  },
+  "screen": {
+    "material_role": "dynamic_screen",
+    "material_name_prefix": "P3D_dynamic_screen__",
+    "expected_primitives": 1
+  },
+  "suppressed_materials": [],
+  "parts": [
+    {
+      "name": "screen",
+      "center_mm": [0.0, 28.9, 3.6],
+      "half_extents_mm": [14.8, 11.1, 0.8]
+    },
+    {
+      "name": "wheel_select",
+      "button": "circle",
+      "center_mm": [0.0, -13.1, 3.9],
+      "half_extents_mm": [6.8, 6.8, 0.7]
+    },
+    {
+      "name": "click_wheel",
+      "center_mm": [0.0, -13.1, 3.7],
+      "half_extents_mm": [15.0, 15.0, 0.6]
+    }
+  ],
+  "rotary": {
+    "adapter": "rotary-wheel@1",
+    "name": "click_wheel",
+    "center_mm": [0.0, -13.1, 3.7],
+    "inner_radius_mm": 6.8,
+    "outer_radius_mm": 15.0,
+    "step_degrees": 12.0,
+    "clockwise_button": "down",
+    "counterclockwise_button": "up",
+    "sectors": [
+      {
+        "name": "wheel_menu",
+        "center_degrees": 90.0,
+        "half_width_degrees": 30.0,
+        "button": "triangle"
+      },
+      {
+        "name": "wheel_next",
+        "center_degrees": 0.0,
+        "half_width_degrees": 30.0,
+        "button": "right"
+      },
+      {
+        "name": "wheel_play",
+        "center_degrees": 270.0,
+        "half_width_degrees": 30.0,
+        "button": "start"
+      },
+      {
+        "name": "wheel_previous",
+        "center_degrees": 180.0,
+        "half_width_degrees": 30.0,
+        "button": "left"
+      }
+    ]
+  },
+  "media": {
+    "service": "audio-playlist@1",
+    "channel": "ipod-nano",
+    "tracks": [
+      {
+        "id": "neon-boardwalk",
+        "title": "Neon Boardwalk",
+        "artist": "Pocket Sessions",
+        "file": "media/neon-boardwalk.wav",
+        "duration_ms": 24000
+      },
+      {
+        "id": "silver-static",
+        "title": "Silver Static",
+        "artist": "Pocket Sessions",
+        "file": "media/silver-static.wav",
+        "duration_ms": 24000
+      },
+      {
+        "id": "night-bus-loop",
+        "title": "Night Bus Loop",
+        "artist": "Pocket Sessions",
+        "file": "media/night-bus-loop.wav",
+        "duration_ms": 24000
+      }
+    ]
+  }
+}

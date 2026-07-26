@@ -7,7 +7,7 @@ description: Benchmark PocketJS demos on PSP or PPSSPP, including per-frame timi
 
 ## Overview
 
-Use this skill to produce repeatable PocketJS PSP benchmark evidence instead of ad hoc emulator runs. Prefer `scripts/bench-ppsspp.ts` for local PPSSPP measurements; use `scripts/hw.ts` only when the user explicitly asks for real PSP hardware proof.
+Use this skill to produce repeatable PocketJS PSP benchmark evidence instead of ad hoc emulator runs. Prefer `tools/bench-ppsspp.ts` for local PPSSPP measurements; use `tools/hw.ts` only when the user explicitly asks for real PSP hardware proof.
 
 ## Standard Workflow
 
@@ -23,14 +23,14 @@ test -n "$PSP_SDK" && test -f "$PSP_SDK/psp/lib/libc.a"
 
 ```bash
 PSP_SDK=/path/to/mipsel-sony-psp BENCH_PPSSPP_TIMEOUT=60 \
-  bun scripts/bench-ppsspp.ts --apps=stats --samples=3
+  bun tools/bench-ppsspp.ts --apps=stats --samples=3
 ```
 
 4. Run the full suite and memory scan for release-quality evidence:
 
 ```bash
 PSP_SDK=/path/to/mipsel-sony-psp BENCH_PPSSPP_TIMEOUT=60 \
-  bun scripts/bench-ppsspp.ts --apps=all --samples=3 --memory-scan
+  bun tools/bench-ppsspp.ts --apps=all --samples=3 --memory-scan
 ```
 
 5. Preserve the generated evidence paths from `dist/bench/` in the final answer, PR body, or handoff. The `.json` file is authoritative; the `.md` file is for human review; `.raw.jsonl` keeps per-sample and memory-probe records.
@@ -48,7 +48,7 @@ safe_arena = min_passing_arena + max(512 KiB, 20% of min_passing_arena)
 Override it only when the user specifies a different margin:
 
 ```bash
-bun scripts/bench-ppsspp.ts --apps=all --samples=3 --memory-scan \
+bun tools/bench-ppsspp.ts --apps=all --samples=3 --memory-scan \
   --memory-step-kib=128 --memory-safety-kib=1024 --memory-safety-percent=25
 ```
 
@@ -71,4 +71,4 @@ Always include:
 - suite safe arena when `--memory-scan` was used
 - any app whose `avg_work_us` exceeds the frame budget
 
-Do not claim real hardware proof from a PPSSPP run. State PPSSPP evidence as emulator evidence unless `scripts/hw.ts` or a real PSP run was actually used.
+Do not claim real hardware proof from a PPSSPP run. State PPSSPP evidence as emulator evidence unless `tools/hw.ts` or a real PSP run was actually used.

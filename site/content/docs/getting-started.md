@@ -47,7 +47,7 @@ pocket setup    # runs the checkout's pinned, idempotent bootstrap
 
 The PSP setup is self-contained in PocketJS; it does not inspect DreamCart or
 any sibling source checkout. Its exact revisions and SDK checksum live in
-`cli/psp-toolchain.json`. By default artifacts are shared through
+`tools/cli/psp-toolchain.json`. By default artifacts are shared through
 `${XDG_CACHE_HOME:-~/.cache}/pocket-stack`; `POCKET_STACK_CACHE_DIR` overrides
 that root. For a custom SDK, set `PSP_SDK` or `PSPDEV` (in that precedence
 order). The build validates an explicit path and then exports both names to the
@@ -70,8 +70,8 @@ Create an app and validate it against both stock profiles:
 
 ```sh
 pocket create my-app
-pocket check --target psp --manifest demos/my-app/pocket.json
-pocket check --target vita --manifest demos/my-app/pocket.json
+pocket check --target psp --manifest apps/my-app/pocket.json
+pocket check --target vita --manifest apps/my-app/pocket.json
 ```
 
 The generated `pocket.json` is strict application intent:
@@ -118,7 +118,7 @@ Vapor with `app.framework` in `pocket.json`; see [Frameworks](/docs/frameworks/)
 for the full selection model.
 
 Here's a focusable counter. Put it in the scaffolded
-`demos/my-app/app.tsx`:
+`apps/my-app/app.tsx`:
 
 :::framework-code
 ```tsx solid
@@ -197,7 +197,7 @@ What's happening:
 
 `app.tsx` exports a component but doesn't put anything on screen. The **mount
 entry** does that. Keep it tiny — this is just app bootstrap. Put it in the
-scaffolded `demos/my-app/main.tsx`:
+scaffolded `apps/my-app/main.tsx`:
 
 :::framework-code
 ```tsx solid
@@ -230,13 +230,13 @@ Use the manifest path for product builds. It validates the app, resolves the
 target once, compiles target-specific assets, and dispatches the native backend:
 
 ```sh
-pocket build --target psp --manifest demos/my-app/pocket.json -- --release
-# native/target/mipsel-sony-psp/release/EBOOT.PBP
+pocket build --target psp --manifest apps/my-app/pocket.json -- --release
+# hosts/psp/target/mipsel-sony-psp/release/EBOOT.PBP
 
 export VITASDK="$HOME/vitasdk"
 export PATH="$VITASDK/bin:$HOME/.cargo/bin:$PATH"
-pocket build --target vita --manifest demos/my-app/pocket.json -- --release
-# demos/my-app/dist/vita/my-app-main.vpk
+pocket build --target vita --manifest apps/my-app/pocket.json -- --release
+# apps/my-app/dist/vita/my-app-main.vpk
 ```
 
 Vita VPKs include PocketJS's default black 128x128 bubble icon and complete
@@ -254,11 +254,11 @@ For framework work, the lower-level compiler remains available:
 
 :::framework-code
 ```sh solid
-bun scripts/build.ts hero
+bun tools/build.ts hero
 ```
 
 ```sh vue-vapor
-bun scripts/build.ts hero --framework=vue-vapor
+bun tools/build.ts hero --framework=vue-vapor
 ```
 :::
 
@@ -274,16 +274,16 @@ Vue Vapor builds use the `.vue-vapor` suffix, for example
 
 A few notes on the low-level command:
 
-- The argument resolves against `demos/`. `hero` → `demos/hero/app.tsx`. To build
+- The argument resolves against `apps/`. `hero` → `apps/hero/app.tsx`. To build
   the **mounted** entry instead, target `main.tsx` — either
-  `bun scripts/build.ts demos/hero/main.tsx` or the shorthand
-  `bun scripts/build.ts hero-main`, which emits `dist/hero-main.js`. The dev host
+  `bun tools/build.ts apps/hero/main.tsx` or the shorthand
+  `bun tools/build.ts hero-main`, which emits `dist/hero-main.js`. The dev host
   runs the mounted `-main` bundle.
 - `--extra-chars=<string>` forces extra codepoints into every font atlas — useful
   when text is data-driven and not present in the source:
 
   ```sh
-  bun scripts/build.ts hero --extra-chars="0123456789€"
+  bun tools/build.ts hero --extra-chars="0123456789€"
   ```
 
 ## Run it
@@ -293,17 +293,17 @@ A few notes on the low-level command:
 The dev host builds the wasm core, builds the mounted demo, and serves it:
 
 ```sh
-bun scripts/dev.ts          # builds the wasm core + hero-main, then serves
+bun tools/dev.ts          # builds the wasm core + hero-main, then serves
 # or: bun run dev
 ```
 
 :::framework-code
 ```sh solid
-bun scripts/dev.ts hero-main
+bun tools/dev.ts hero-main
 ```
 
 ```sh vue-vapor
-bun scripts/dev.ts --framework=vue-vapor hero-main
+bun tools/dev.ts --framework=vue-vapor hero-main
 ```
 :::
 
@@ -311,12 +311,12 @@ Open the printed URL, **http://127.0.0.1:8130/**. Pass demo names to build
 specific ones, or set `PORT`:
 
 ```sh
-bun scripts/dev.ts hero-main cards
-PORT=9000 bun scripts/dev.ts
+bun tools/dev.ts hero-main cards
+PORT=9000 bun tools/dev.ts
 ```
 
 Rebuild-on-change is deliberately manual: after editing a component, re-run
-`bun scripts/build.ts <app>` (or the whole `dev` script) and reload the page.
+`bun tools/build.ts <app>` (or the whole `dev` script) and reload the page.
 The first run compiles the Rust core to wasm with cargo, so it takes a moment;
 subsequent runs are fast.
 
@@ -332,7 +332,7 @@ pocket play vita gallery --fullscreen
 
 Vita3K is interactive here; `--fullscreen` controls the emulator window. The
 application still uses the profile's 480×272 logical viewport rendered at
-960×544 density 2. See the [Vita host guide](https://github.com/pocket-stack/pocketjs/blob/main/native-vita/README.md)
+960×544 density 2. See the [Vita host guide](https://github.com/pocket-stack/pocketjs/blob/main/hosts/vita/README.md)
 for toolchain setup, key mappings, real-device installation, and the golden E2E.
 
 ### In the Playground
@@ -344,7 +344,7 @@ styling surface before wiring up a local project.
 
 ## What the build just did
 
-`bun scripts/build.ts` is a **two-pass** build:
+`bun tools/build.ts` is a **two-pass** build:
 
 1. **Transform & collect.** Babel (Solid's universal preset + TypeScript) runs
    over every module reachable from your entry, content-hash cached in `.cache/`.
