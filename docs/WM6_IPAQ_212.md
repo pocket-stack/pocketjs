@@ -84,6 +84,29 @@ and keep those changes as a reviewable patch, as the Symbian toolchain already
 does. Acceptance is 100 repeated create/evaluate/destroy cycles without
 unbounded memory loss.
 
+The repository-pinned QuickJS revision cannot be compiled directly by VC8: it
+uses C99 syntax, flexible arrays, GCC builtins/attributes, compound literals,
+and designated initializers. Compiling it as C++ is also not a shortcut because
+the C sources rely on implicit `void *` conversions and C linkage rules. Gate 1
+therefore remains open and needs either a maintained VC8 compatibility patch or
+a separately validated GNU WinCE toolchain.
+
+### AOT milestone — Pocket Vapor Todo (implemented)
+
+`PocketJS.WM6.Vapor` is an independent application project in the same VS2005
+solution. It links:
+
+- the target-independent `vapor/runtime/vapor_core.c`;
+- deterministic C generated from `vapor/examples/todo/todo.tsx`;
+- a WM6 GDI cell-grid host with D-pad, centre, Back, soft-key, and stylus
+  mappings.
+
+This milestone deliberately follows the AOT-first option described below. It
+proves that Pocket-authored reactive UI can execute on the SDK ABI without a
+heap or JavaScript engine, and it gives the real iPAQ a useful memory/input
+test while QuickJS compatibility work continues. It must not be described as
+ordinary PocketJS guest compatibility.
+
 ### Gate 2 — renderer choice
 
 The existing Rust core cannot be treated as a linkable WM6 library. Choose one
@@ -93,10 +116,11 @@ of these paths only after Gate 1:
    retained UI and software rasterizer to portable C/C++03 behind the existing
    `ui_*` ABI. Reuse `hosts/symbian/runtime/pocketjs_symbian_core.h` as the ABI
    inventory, but create a platform-neutral header before sharing it.
-2. **AOT-first host (smaller, different execution class):** adapt the C Pocket
-   Vapor runtime to VC8 and compile applications ahead of time. This can put
-   Pocket-authored UI on the device sooner, but it is not a PocketJS guest and
-   cannot be advertised as compatible with ordinary JS bundles.
+2. **AOT-first host (implemented as an early milestone, different execution
+   class):** adapt the C Pocket Vapor runtime to VC8 and compile applications
+   ahead of time. This puts Pocket-authored UI on the device sooner, but it is
+   not a PocketJS guest and cannot be advertised as compatible with ordinary
+   JS bundles.
 
 For the guest path, start with solid rectangles, clipping, text atlas blits,
 and touch hit testing. Use a 240×320 or 480×272 logical viewport rendered to a

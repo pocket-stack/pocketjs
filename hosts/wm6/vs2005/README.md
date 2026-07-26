@@ -1,8 +1,16 @@
-# PocketJS Windows Mobile 6 VS2005 probe
+# PocketJS Windows Mobile 6 VS2005 projects
 
-This solution is the first hardware gate for the HP iPAQ 212 port. It is a
-native, C++03-compatible Smart Device application rather than a desktop Win32
-project. The executable exercises the OS surface that a future PocketJS host
+This solution contains two native Smart Device applications for the HP iPAQ
+212 port:
+
+- `PocketJS.WM6.Probe` is the first hardware gate. It exercises the screen,
+  GDI, stylus, keys, timer, memory reporting, and deployment path.
+- `PocketJS.WM6.Vapor` runs the repository's Pocket Vapor Todo component after
+  ahead-of-time compilation to portable C. It is the first application UI on
+  WM6, but it is not a QuickJS host and cannot load ordinary PocketJS bundles.
+
+Both are VC8-compatible Smart Device projects rather than desktop Win32
+projects. The probe exercises the OS surface that a future full PocketJS host
 will need:
 
 - ARMV4I code generation for the PXA310 device;
@@ -13,8 +21,8 @@ will need:
 - hardware key events;
 - runtime screen and memory reporting.
 
-It does **not** embed QuickJS or the PocketJS retained UI core yet. A successful
-run proves only the device/SDK/deployment layer; see
+Neither executable embeds QuickJS or the PocketJS retained UI core yet. A
+successful probe run proves only the device/SDK/deployment layer; see
 [`docs/WM6_IPAQ_212.md`](../../../docs/WM6_IPAQ_212.md) for the staged port.
 
 ## Build
@@ -28,13 +36,33 @@ run proves only the device/SDK/deployment layer; see
    Standard SDK is for non-touchscreen Smartphones.
 4. Open `PocketJS.WM6.sln`.
 5. Select `Release | Windows Mobile 6 Professional SDK (ARMV4I)`.
-6. Build, then deploy `bin\Release\PocketJS.WM6.Probe.exe` through Visual
-   Studio or copy it to the device and launch it.
+6. Right-click the project you want to run and choose **Set as StartUp
+   Project**.
+7. Build and deploy through Visual Studio, or copy the corresponding executable
+   from `bin\Release` to the device.
 
-The probe has no MFC, ATL, .NET Compact Framework, or redistributable runtime
-dependency. Press the device's Back/Escape key to exit. If that key is not
-mapped by the ROM, stop it from **Settings > System > Memory > Running
-Programs**.
+The applications have no MFC, ATL, .NET Compact Framework, or redistributable
+runtime dependency.
+
+## Pocket Vapor Todo controls
+
+The WM6 host maps the D-pad directly. Centre/Enter is A, Back is B, and the two
+soft keys are Select and Start. On an emulator without those buttons, stylus
+taps provide a minimal fallback:
+
+- top third: Up;
+- middle third: Down;
+- bottom-left: A;
+- bottom-right: B.
+
+The Todo component itself uses Up/Down to select, A to toggle, B to delete,
+Right to change the filter, and Start to open the editor. The checked-in
+`generated\todo.gba.c` is deterministic output from
+`vapor\examples\todo\todo.tsx`; the WM6 host reuses its 30×20 logical grid and
+RGB555 style table.
+
+Press an unmapped Back/Escape key to exit. If the ROM consumes that key, stop
+the application from **Settings > System > Memory > Running Programs**.
 
 If the probe reports `240 x 320` on a 480×640 iPAQ, the device is running an
 older executable without the `HI_RES_AWARE` resource. Clean the solution,

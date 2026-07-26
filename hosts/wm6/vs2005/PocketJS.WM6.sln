@@ -2,6 +2,8 @@ Microsoft Visual Studio Solution File, Format Version 9.00
 # Visual Studio 2005
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PocketJS.WM6.Probe", "PocketJS.WM6.Probe.vcproj", "{64AE683E-7663-4DFD-86FC-F8FE3D972C6D}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PocketJS.WM6.Vapor", "PocketJS.WM6.Vapor.vcproj", "{970E99AC-1918-451D-A515-9C23D9C3AC65}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Windows Mobile 6 Professional SDK (ARMV4I) = Debug|Windows Mobile 6 Professional SDK (ARMV4I)
@@ -14,6 +16,12 @@ Global
 		{64AE683E-7663-4DFD-86FC-F8FE3D972C6D}.Release|Windows Mobile 6 Professional SDK (ARMV4I).ActiveCfg = Release|Windows Mobile 6 Professional SDK (ARMV4I)
 		{64AE683E-7663-4DFD-86FC-F8FE3D972C6D}.Release|Windows Mobile 6 Professional SDK (ARMV4I).Build.0 = Release|Windows Mobile 6 Professional SDK (ARMV4I)
 		{64AE683E-7663-4DFD-86FC-F8FE3D972C6D}.Release|Windows Mobile 6 Professional SDK (ARMV4I).Deploy.0 = Release|Windows Mobile 6 Professional SDK (ARMV4I)
+		{970E99AC-1918-451D-A515-9C23D9C3AC65}.Debug|Windows Mobile 6 Professional SDK (ARMV4I).ActiveCfg = Debug|Windows Mobile 6 Professional SDK (ARMV4I)
+		{970E99AC-1918-451D-A515-9C23D9C3AC65}.Debug|Windows Mobile 6 Professional SDK (ARMV4I).Build.0 = Debug|Windows Mobile 6 Professional SDK (ARMV4I)
+		{970E99AC-1918-451D-A515-9C23D9C3AC65}.Debug|Windows Mobile 6 Professional SDK (ARMV4I).Deploy.0 = Debug|Windows Mobile 6 Professional SDK (ARMV4I)
+		{970E99AC-1918-451D-A515-9C23D9C3AC65}.Release|Windows Mobile 6 Professional SDK (ARMV4I).ActiveCfg = Release|Windows Mobile 6 Professional SDK (ARMV4I)
+		{970E99AC-1918-451D-A515-9C23D9C3AC65}.Release|Windows Mobile 6 Professional SDK (ARMV4I).Build.0 = Release|Windows Mobile 6 Professional SDK (ARMV4I)
+		{970E99AC-1918-451D-A515-9C23D9C3AC65}.Release|Windows Mobile 6 Professional SDK (ARMV4I).Deploy.0 = Release|Windows Mobile 6 Professional SDK (ARMV4I)
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
