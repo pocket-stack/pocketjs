@@ -253,19 +253,28 @@ To maximize performance:
 ### Usage
 
 ```sh
-# Render a 60-second video of the music demo at 1080p, using 4 parallel CPU processes:
-bun render -a music-main -d 60 -f 30 -s 4 -c 4
+# Example 1: Full 1080p 60fps video with narration audio track and 4 parallel workers:
+bun render -a ai-explainer-main -d 58.68 -f 60 --width 1920 --height 1080 -c 4 --audio apps/ai-explainer/assets/section4.wav
 
-# Render a 5-second video of the motions demo at 540p (960x540):
-bun render -a motions-main -d 5.0 -f 30 -s 2
+# Example 2: 720p 30fps quick preview:
+bun render -a ai-explainer-main -d 10.0 -f 30 --width 1280 --height 720
+
+# Example 3: 1080p render using default 480x272 viewport at 4x scaling:
+bun render -a music-main -d 60 -f 30 -s 4
+
+# Example 4: Custom output path for 5-second 540p clip:
+bun render -a motions-main -d 5.0 -f 30 -s 2 -o dist/render/motions-preview.mp4
 
 # CLI Options:
 #   -a, --app <name>       Name of the app/demo target to render (required)
 #   -o, --output <path>    Output MP4 path (default: dist/render/<app>.mp4)
 #   -d, --duration <secs>  Duration of the video in seconds (default: 5.0)
 #   -f, --fps <number>     Frame rate of the video (default: 60)
-#   -s, --scale <1..10>    Integer scaling factor of logical 480x272 viewport (default: 4 -> 1920x1080)
-#   -c, --concurrency <n>  Number of parallel workers (default: 1)
+#   -s, --scale <1..10>    Scaling factor (default: 4 for stock 480x272, 1 for custom width/height)
+#   -w, --width <pixels>   Logical width of layout viewport (default: 480)
+#   --height <pixels>      Logical height of layout viewport (default: 272)
+#   -c, --concurrency <n>  Number of parallel worker processes (default: CPU core count)
+#   --audio, -au <path>    Path to audio track to mix into output MP4 (WAV/MP3/AAC)
 #   --crf <number>         x264 quality factor (default: 18)
 #   --preset <string>      x264 speed preset (default: faster)
 ```
