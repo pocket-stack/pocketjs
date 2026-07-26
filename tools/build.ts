@@ -78,6 +78,7 @@ const packageName = packageJson.name ?? "@pocketjs/framework";
 
 const args = process.argv.slice(2);
 let extraChars = "";
+const slotExtraChars: Record<number, string> = {};
 let regularFontPath: string | undefined;
 let boldFontPath: string | undefined;
 let appArg = "";
@@ -90,6 +91,12 @@ let densityFlag: number | undefined;
 let projectRoot = process.cwd();
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
+  else if (a.startsWith("--slot-extra-chars=")) {
+    // --slot-extra-chars=<slot>:<path-to-utf8-file> — bake file's chars into one slot only
+    const spec = a.slice("--slot-extra-chars=".length);
+    const sep = spec.indexOf(":");
+    if (sep > 0) slotExtraChars[Number(spec.slice(0, sep))] = await Bun.file(resolvePath(spec.slice(sep + 1))).text();
+  }
   else if (a.startsWith("--font-regular=")) regularFontPath = resolvePath(a.slice("--font-regular=".length));
   else if (a.startsWith("--font-bold=")) boldFontPath = resolvePath(a.slice("--font-bold=".length));
   else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
@@ -298,6 +305,7 @@ const atlases = await bakeAtlases({
   codepoints,
   slots: styles.usedFontSlots,
   extraChars,
+  slotExtraChars,
   rasterDensity,
   regularTtf: regularFontPath,
   boldTtf: boldFontPath,

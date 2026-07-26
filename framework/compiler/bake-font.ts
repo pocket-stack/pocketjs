@@ -58,6 +58,9 @@ export interface BakeOptions {
   slots: number[];
   /** Extra characters to force into every atlas [R]. */
   extraChars?: string;
+  /** Extra characters baked only into specific slots (e.g. { 0: "<cjk l1>" }).
+      Use for large per-slot sets that must not multiply across slots. */
+  slotExtraChars?: Record<number, string>;
   /** Raster samples per logical pixel. Defaults to 1. */
   rasterDensity?: number;
   regularTtf?: string;
@@ -397,7 +400,11 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
     const { px, bold } = fontSlotInfo(slot);
     const key = bold ? "bold" : "regular";
     fonts[key] ??= await loadFont(bold ? (opts.boldTtf ?? DEFAULT_BOLD) : (opts.regularTtf ?? DEFAULT_REGULAR));
-    results.push(bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity));
+    const slotExtra = opts.slotExtraChars?.[slot];
+    const slotChars = slotExtra
+      ? [...new Set([...chars, ...[...slotExtra].map((ch) => ch.codePointAt(0)!).filter((cp) => cp >= 32 && cp !== 127)])].sort((a, b) => a - b)
+      : chars;
+    results.push(bakeSlot(fonts[key]!, slot, px, bold, slotChars, rasterDensity));
   }
   return results;
 }
