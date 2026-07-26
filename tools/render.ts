@@ -322,9 +322,16 @@ async function main() {
   const wasm = await createWasmUi(await Bun.file(WASM_PATH).arrayBuffer());
   wasm.init(scale, widthParam, heightParam);
 
-  const g = globalThis as Record<string, any>;
+  interface GlobalPocketEngine {
+    ui?: unknown;
+    __pak?: ArrayBuffer;
+    __pocketApp?: string;
+    frame?: (buttons: number) => void;
+  }
+
+  const g = globalThis as unknown as GlobalPocketEngine & Record<string, unknown>;
   g.ui = wasm.ops;
-  wasm.ops.__viewport = { w: widthParam, h: heightParam };
+  (wasm.ops as Record<string, unknown>).__viewport = { w: widthParam, h: heightParam };
   const pakPath = join(RUNTIME_DIST, `${baseApp}.pak`);
   g.__pak = existsSync(pakPath) ? await Bun.file(pakPath).arrayBuffer() : undefined;
   g.__pocketApp = baseApp;
@@ -333,7 +340,7 @@ async function main() {
   const src = await Bun.file(jsPath).text();
   (0, eval)(src);
 
-  const frameFn = g.frame as (buttons: number) => void;
+  const frameFn = g.frame;
   if (typeof frameFn !== "function") {
     throw new Error("Entry bundle did not expose globalThis.frame function");
   }
@@ -390,7 +397,6 @@ async function main() {
 
   const startFrame = chunkStart ?? 0;
   const endFrame = chunkEnd ?? totalFrames;
-  const framesToWrite = endFrame - startFrame;
 
   if (!isWorker) {
     console.log(`render: generating ${totalFrames} frames @ ${fps} FPS...`);
