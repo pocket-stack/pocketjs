@@ -30,6 +30,7 @@ describe("Windows Mobile 6 VS2005 probe", () => {
     expect(source).toContain("CreateCompatibleBitmap");
     expect(source).toContain("CreateFontIndirect");
     expect(source).not.toMatch(/\bCreateFont\s*\(/);
+    expect(source).not.toContain("lstrcpyn");
     expect(source).not.toMatch(/\b(auto|nullptr|constexpr|override)\b/);
   });
 });

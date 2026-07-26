@@ -107,7 +107,9 @@ BOOL EnsureBackBuffer(HDC target, int width, int height)
 
 HFONT CreateProbeFont()
 {
+    const TCHAR faceName[] = _T("Tahoma");
     LOGFONT description;
+    int index;
     ZeroMemory(&description, sizeof(description));
     description.lfHeight = -16;
     description.lfWeight = FW_NORMAL;
@@ -116,7 +118,14 @@ HFONT CreateProbeFont()
     description.lfClipPrecision = CLIP_DEFAULT_PRECIS;
     description.lfQuality = DEFAULT_QUALITY;
     description.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
-    lstrcpyn(description.lfFaceName, _T("Tahoma"), LF_FACESIZE);
+    for (
+        index = 0;
+        index < LF_FACESIZE - 1 && faceName[index] != _T('\0');
+        ++index
+    ) {
+        description.lfFaceName[index] = faceName[index];
+    }
+    description.lfFaceName[index] = _T('\0');
     return CreateFontIndirect(&description);
 }
 
