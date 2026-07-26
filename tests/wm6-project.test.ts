@@ -19,6 +19,16 @@ describe("Windows Mobile 6 VS2005 probe", () => {
     expect(project.match(/DisableSpecificWarnings="4201"/g)).toHaveLength(2);
     expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
     expect(project).not.toContain('TargetMachine="1"');
+    expect(
+      project.match(
+        /RemoteDirectory="%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.Probe"/g,
+      ),
+    ).toHaveLength(2);
+    expect(
+      project.match(
+        /RemoteExecutable="%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.Probe\\PocketJS\.WM6\.Probe\.exe"/g,
+      ),
+    ).toHaveLength(2);
     expect(project).not.toContain("Windows Mobile 6 Standard SDK");
   });
 

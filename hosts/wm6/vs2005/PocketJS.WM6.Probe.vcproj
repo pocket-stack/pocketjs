@@ -68,11 +68,13 @@
 			<Tool Name="VCPostBuildEventTool"/>
 			<DeploymentTool
 				ForceDirty="-1"
-				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS"
+				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.Probe"
 				RegisterOutput="0"
 				AdditionalFiles=""
 			/>
-			<DebuggerTool/>
+			<DebuggerTool
+				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.Probe\PocketJS.WM6.Probe.exe"
+			/>
 		</Configuration>
 		<Configuration
 			Name="Release|Windows Mobile 6 Professional SDK (ARMV4I)"
@@ -131,11 +133,13 @@
 			<Tool Name="VCPostBuildEventTool"/>
 			<DeploymentTool
 				ForceDirty="-1"
-				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS"
+				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.Probe"
 				RegisterOutput="0"
 				AdditionalFiles=""
 			/>
-			<DebuggerTool/>
+			<DebuggerTool
+				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.Probe\PocketJS.WM6.Probe.exe"
+			/>
 		</Configuration>
 	</Configurations>
 	<References>
