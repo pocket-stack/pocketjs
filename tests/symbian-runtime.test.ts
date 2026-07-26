@@ -29,11 +29,11 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
 const repository = new URL("..", import.meta.url).pathname;
 
 describe("experimental Nokia E7 runtime profile", () => {
-  test("normalizes unshifted S60 letter keysyms without changing special keys", () => {
+  test("maps the E7 scan matrix without changing unrelated keys", () => {
     const compiler = Bun.which("cc");
     expect(
       compiler,
-      "cc is required to validate the Symbian key normalizer",
+      "cc is required to validate the Symbian key mapper",
     ).toBeTruthy();
     if (!compiler) return;
     const compiled = Bun.spawnSync([
@@ -474,7 +474,21 @@ describe("experimental Nokia E7 runtime profile", () => {
       "((key) >= 'a' && (key) <= 'z') ? ((key) - ('a' - 'A')) : (key)",
     );
     expect(keyHeader).toContain("pocketjsSymbianNormalizeKey");
-    expect(keyHeader).toContain("POCKETJS_SYMBIAN_CONTROL_KEY");
+    expect(keyHeader).toContain("pocketjsSymbianE7PhysicalKey");
+    for (const [scan, control] of [
+      ["1", "Q"],
+      ["2", "W"],
+      ["3", "E"],
+      ["4", "R"],
+      ["5", "T"],
+      ["6", "Y"],
+      ["7", "U"],
+      ["8", "I"],
+      ["9", "O"],
+      ["0", "P"],
+    ]) {
+      expect(keyHeader).toContain(`case '${scan}': return '${control}';`);
+    }
     expect(keyHeader).toContain("pocketjsSymbianControlKey");
     expect(runtime).toContain("setAttribute(Qt::WA_AutoOrientation, true)");
     expect(runtime).toContain(
