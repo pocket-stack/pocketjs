@@ -72,11 +72,13 @@ async function main() {
   let duration = 5.0;
   let fps = 60;
   let scale = 4;
+  let scaleExplicit = false;
+  let customSizeExplicit = false;
   let widthParam = 480;
   let heightParam = 272;
   let crf = 18;
   let preset = "faster";
-  let concurrency = 1;
+  let concurrency = Math.max(1, cpus().length);
   let chunkStart: number | undefined;
   let chunkEnd: number | undefined;
 
@@ -92,10 +94,13 @@ async function main() {
       fps = Number(args[++i]);
     } else if (a === "-s" || a === "--scale") {
       scale = Number(args[++i]);
+      scaleExplicit = true;
     } else if (a === "-w" || a === "--width" || a === "-width") {
       widthParam = Number(args[++i]);
+      customSizeExplicit = true;
     } else if (a === "--height" || a === "-height") {
       heightParam = Number(args[++i]);
+      customSizeExplicit = true;
     } else if (a === "-c" || a === "--concurrency") {
       concurrency = Number(args[++i]);
     } else if (a === "--crf") {
@@ -111,6 +116,10 @@ async function main() {
     } else {
       usage(`Unknown argument: ${a}`);
     }
+  }
+
+  if (customSizeExplicit && !scaleExplicit) {
+    scale = 1;
   }
 
   if (!app) {
