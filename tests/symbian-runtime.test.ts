@@ -36,19 +36,43 @@ describe("experimental Nokia E7 runtime profile", () => {
       "cc is required to validate the Symbian key mapper",
     ).toBeTruthy();
     if (!compiler) return;
-    const compiled = Bun.spawnSync([
-      compiler,
-      "-std=c11",
-      "-Wall",
-      "-Wextra",
-      "-Werror",
-      "-fsyntax-only",
-      join(
-        repository,
-        "tests/fixtures/symbian-key-normalization-test.c",
-      ),
-    ], { cwd: repository });
-    expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
+    const root = mkdtempSync(join(tmpdir(), "pocketjs-e7-key-map-"));
+    try {
+      const executable = join(root, "symbian-key-map-test");
+      const compiled = Bun.spawnSync([
+        compiler,
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        join(
+          repository,
+          "tests/fixtures/symbian-key-normalization-test.c",
+        ),
+        "-o",
+        executable,
+      ], { cwd: repository });
+      expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
+
+      // Managed macOS hosts can attach provenance to a freshly linked
+      // temporary executable and hold its first launch beyond Bun's timeout.
+      // This file is built above from the committed hermetic fixture.
+      if (process.platform === "darwin") {
+        const xattr = Bun.which("xattr");
+        if (xattr) {
+          Bun.spawnSync([
+            xattr,
+            "-d",
+            "com.apple.provenance",
+            executable,
+          ]);
+        }
+      }
+      const ran = Bun.spawnSync([executable], { cwd: repository });
+      expect(ran.exitCode, ran.stderr.toString()).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("serializes the shared launcher source tree across targets", async () => {
