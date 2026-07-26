@@ -40,6 +40,7 @@
 				UsePrecompiledHeader="0"
 				WarningLevel="4"
 				WarnAsError="true"
+				DisableSpecificWarnings="4201"
 				DebugInformationFormat="3"
 				CompileAs="0"
 			/>
@@ -101,6 +102,7 @@
 				UsePrecompiledHeader="0"
 				WarningLevel="4"
 				WarnAsError="true"
+				DisableSpecificWarnings="4201"
 				DebugInformationFormat="0"
 				CompileAs="0"
 			/>

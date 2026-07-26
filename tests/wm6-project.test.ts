@@ -16,6 +16,7 @@ describe("Windows Mobile 6 VS2005 probe", () => {
     expect(project).toContain('Name="Windows Mobile 6 Professional SDK (ARMV4I)"');
     expect(project).toContain("/subsystem:windowsce,5.02");
     expect(project).toContain("aygshell.lib coredll.lib");
+    expect(project.match(/DisableSpecificWarnings="4201"/g)).toHaveLength(2);
     expect(project).not.toContain("Windows Mobile 6 Standard SDK");
   });
 
@@ -27,6 +28,8 @@ describe("Windows Mobile 6 VS2005 probe", () => {
     expect(source).toContain("WM_LBUTTONDOWN");
     expect(source).toContain("WM_KEYDOWN");
     expect(source).toContain("CreateCompatibleBitmap");
+    expect(source).toContain("CreateFontIndirect");
+    expect(source).not.toMatch(/\bCreateFont\s*\(/);
     expect(source).not.toMatch(/\b(auto|nullptr|constexpr|override)\b/);
   });
 });

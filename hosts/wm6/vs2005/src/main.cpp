@@ -105,6 +105,21 @@ BOOL EnsureBackBuffer(HDC target, int width, int height)
     return TRUE;
 }
 
+HFONT CreateProbeFont()
+{
+    LOGFONT description;
+    ZeroMemory(&description, sizeof(description));
+    description.lfHeight = -16;
+    description.lfWeight = FW_NORMAL;
+    description.lfCharSet = DEFAULT_CHARSET;
+    description.lfOutPrecision = OUT_DEFAULT_PRECIS;
+    description.lfClipPrecision = CLIP_DEFAULT_PRECIS;
+    description.lfQuality = DEFAULT_QUALITY;
+    description.lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE;
+    lstrcpyn(description.lfFaceName, _T("Tahoma"), LF_FACESIZE);
+    return CreateFontIndirect(&description);
+}
+
 void DrawProbe(HWND window, HDC target)
 {
     RECT client;
@@ -140,11 +155,7 @@ void DrawProbe(HWND window, HDC target)
         );
     }
 
-    font = CreateFont(
-        -16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        DEFAULT_QUALITY, DEFAULT_PITCH | FF_DONTCARE, _T("Tahoma")
-    );
+    font = CreateProbeFont();
     previousFont = NULL;
     if (font != NULL) {
         previousFont = static_cast<HFONT>(SelectObject(back, font));
