@@ -34,7 +34,7 @@
 				ExecutionBucket="7"
 				Optimization="0"
 				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;_WINDOWS;_DEBUG;DEBUG;$(ARCHFAM);$(_ARCHFAM_);UNICODE;_UNICODE;inline=__inline"
-				AdditionalIncludeDirectories="..\..\..\vapor\runtime"
+				AdditionalIncludeDirectories=".\runtime"
 				MinimalRebuild="false"
 				BasicRuntimeChecks="0"
 				RuntimeLibrary="3"
@@ -100,7 +100,7 @@
 				Optimization="1"
 				FavorSizeOrSpeed="1"
 				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;_WINDOWS;NDEBUG;$(ARCHFAM);$(_ARCHFAM_);UNICODE;_UNICODE;inline=__inline"
-				AdditionalIncludeDirectories="..\..\..\vapor\runtime"
+				AdditionalIncludeDirectories=".\runtime"
 				RuntimeLibrary="3"
 				EnableFunctionLevelLinking="true"
 				UsePrecompiledHeader="0"
@@ -150,7 +150,7 @@
 		<Filter Name="Source Files" Filter="cpp;c;cxx">
 			<File RelativePath=".\src\vapor_main.c"/>
 			<File RelativePath=".\generated\todo.gba.c"/>
-			<File RelativePath="..\..\..\vapor\runtime\vapor_core.c"/>
+			<File RelativePath=".\runtime\vapor_core.c"/>
 		</Filter>
 		<Filter Name="Resource Files" Filter="rc">
 			<File RelativePath=".\resources\probe.rc"/>

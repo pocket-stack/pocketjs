@@ -59,7 +59,9 @@ The Todo component itself uses Up/Down to select, A to toggle, B to delete,
 Right to change the filter, and Start to open the editor. The checked-in
 `generated\todo.gba.c` is deterministic output from
 `vapor\examples\todo\todo.tsx`; the WM6 host reuses its 30×20 logical grid and
-RGB555 style table.
+RGB555 style table. `runtime\vapor.h` and `runtime\vapor_core.c` are checked-in
+copies of the repository runtime so the `vs2005` directory remains
+self-contained when it is mounted as `Y:\vs2005` in the build VM.
 
 Press an unmapped Back/Escape key to exit. If the ROM consumes that key, stop
 the application from **Settings > System > Memory > Running Programs**.

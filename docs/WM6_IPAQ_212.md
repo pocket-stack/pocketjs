@@ -96,7 +96,8 @@ a separately validated GNU WinCE toolchain.
 `PocketJS.WM6.Vapor` is an independent application project in the same VS2005
 solution. It links:
 
-- the target-independent `vapor/runtime/vapor_core.c`;
+- a checked-in copy of the target-independent `vapor/runtime/vapor_core.c`
+  (kept inside the solution so a `Y:\vs2005` VM mount is self-contained);
 - deterministic C generated from `vapor/examples/todo/todo.tsx`;
 - a WM6 GDI cell-grid host with D-pad, centre, Back, soft-key, and stylus
   mappings.
