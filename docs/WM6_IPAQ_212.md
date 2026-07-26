@@ -82,6 +82,9 @@ native-API `arm-mingw32ce` compiler. The checked-in ARM/WinCE probe now proves:
 Its pinned source, compatibility patch, and reproducible build command live in
 `hosts/wm6/quickjs`. `PocketJS.WM6.QuickJS` in the VS2005 solution deploys the
 resulting CeGCC executable and starts it on the selected device or emulator.
+The CeGCC build targets ARMV4T with interworking rather than the PXA310's
+ARMv5TE extensions: the WM6 ARMV4I emulator rejects ARMv5-only instructions
+such as `CLZ`, while the physical PXA310 remains backward-compatible.
 
 Do not begin with the full PocketJS bundle. QuickJS will need a dedicated
 WinCE compatibility layer for time, allocation, file APIs, missing CRT calls,

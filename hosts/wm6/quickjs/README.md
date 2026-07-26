@@ -2,7 +2,9 @@
 
 This directory is the first executable QuickJS toolchain milestone for the
 WM6 port. It builds the repository's pinned `pocket-stack/quickjs-rs` revision
-as an ARM Windows CE application with the native CeGCC toolset.
+as an ARM Windows CE application with the native CeGCC toolset. Code generation
+uses the SDK's ARMV4I-compatible instruction baseline (`-march=armv4t`), so
+the same binary runs in the WM6 emulator and on the ARMv5TE PXA310.
 
 Visual C++ 2005 remains the windowing, deployment, and debugger tool for the
 eventual PocketJS host. QuickJS itself uses CeGCC because current QuickJS is

@@ -123,7 +123,8 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(build).toContain(
       'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',
     );
-    expect(build).toContain("-march=armv5te");
+    expect(build).toContain("-march=armv4t");
+    expect(build).not.toContain("-march=armv5");
     expect(build).toContain("-msoft-float");
     expect(build).toContain("-D_WIN32_WCE=0x0502");
     expect(patch).toContain("#undef CONFIG_ATOMICS");

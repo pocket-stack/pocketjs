@@ -47,7 +47,7 @@ cp "${script_dir}/src/probe.c" "${work_dir}/probe.c"
 
 common_flags=(
     -std=gnu99
-    -march=armv5te
+    -march=armv4t
     -msoft-float
     -Os
     -funsigned-char
@@ -67,7 +67,7 @@ done
 "$cc" "${common_flags[@]}" -c "${work_dir}/probe.c" \
     -o "${work_dir}/obj/probe.o"
 
-"$cc" -march=armv5te -msoft-float -mwindows \
+"$cc" -march=armv4t -msoft-float -mwindows \
     -o "${work_dir}/PocketJS.WM6.QuickJS.Probe.exe" \
     "${work_dir}/obj/probe.o" \
     "${work_dir}/obj/wm6_math.o" \
