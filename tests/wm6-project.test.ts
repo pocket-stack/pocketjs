@@ -70,7 +70,9 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(project.match(/AdditionalIncludeDirectories="\.\\runtime"/g)).toHaveLength(
       2,
     );
-    expect(project.match(/DisableSpecificWarnings="4201;4819"/g)).toHaveLength(2);
+    expect(
+      project.match(/DisableSpecificWarnings="4201;4115;4214;4819"/g),
+    ).toHaveLength(2);
     expect(project.match(/inline=__inline/g)).toHaveLength(2);
     expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
     expect(
