@@ -78,7 +78,21 @@ const SOLID_UNIVERSAL_RUNTIME_PATH = new URL(
 
 const PACKAGE_NAME = "@pocketjs/framework";
 const CACHE_DIR = new URL("../../.cache/transforms/", import.meta.url).pathname;
-const CACHE_VERSION = "2";
+const CACHE_VERSION = "2"; // manual backstop; compiler sources are hashed in below
+
+// Transform behavior also depends on this package's own compiler sources,
+// which dependency versions and input hashes can't cover.
+const IMPLEMENTATION_SOURCES = ["./jsx-plugin.ts", "./vue-sfc-compile.ts"];
+let implementationHash: string | undefined;
+
+async function compilerImplementationHash(): Promise<string> {
+  if (implementationHash !== undefined) return implementationHash;
+  const h = new Bun.CryptoHasher("sha256");
+  for (const source of IMPLEMENTATION_SOURCES) {
+    h.update(await Bun.file(new URL(source, import.meta.url)).text());
+  }
+  return (implementationHash = h.digest("hex"));
+}
 const JSX_PARSER_OPTS: ParserOptions = { plugins: ["jsx"] };
 
 const BANNED_SOLID_IMPORTS = new Set(["createResource", "useTransition", "startTransition"]);
@@ -302,6 +316,8 @@ async function hashKey(
   const h = new Bun.CryptoHasher("sha256");
   h.update(
     CACHE_VERSION +
+      "\0" +
+      (await compilerImplementationHash()) +
       "\0" +
       framework +
       "\0" +

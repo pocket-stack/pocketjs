@@ -53,4 +53,35 @@ describe("Vue Vapor guest DOM", () => {
     expect(text.text).toBe("PAUSED");
     expect(text.children).toEqual([]);
   });
+
+  test("parses template comments as comment nodes, never literal text", () => {
+    let nextId = 2;
+    installHost({
+      kind: "injected",
+      target: "test",
+      strict: true,
+      ops: {
+        createNode: () => nextId++,
+        setText() {},
+      } as unknown as HostOps,
+    });
+    installVueVaporDom();
+
+    const pocketDocument = g.__pocketDocument as {
+      createElement(tag: string): {
+        innerHTML: string;
+        content: {
+          firstChild: { domNodeType?: number; domData?: string; text?: string } | null;
+        };
+      };
+    };
+    const template = pocketDocument.createElement("template");
+    template.innerHTML = "<!-- comment -->";
+
+    const node = template.content.firstChild;
+    expect(node).not.toBeNull();
+    expect(node!.domNodeType).toBe(8);
+    expect(node!.domData).toBe(" comment ");
+    expect(node!.text).toBe("");
+  });
 });

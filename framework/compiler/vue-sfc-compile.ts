@@ -23,7 +23,12 @@ export function compileVueSfc(
   filename: string,
   options: { stripTypes?: boolean } = {},
 ): { code: string } {
-  const { descriptor, errors } = parse(source, { filename });
+  // compileScript reuses the descriptor's pre-parsed template AST, so comments
+  // must be stripped here — compilerOptions below would arrive too late.
+  const { descriptor, errors } = parse(source, {
+    filename,
+    templateParseOptions: { comments: false },
+  });
   if (errors.length > 0) {
     throw new Error(
       `PocketJS: failed to parse Vue SFC ${filename}: ${errors.map(compilerError).join("; ")}`,
@@ -55,7 +60,11 @@ export function compileVueSfc(
     sourceMap: false,
     vapor: true,
     templateOptions: {
-      compilerOptions: { mode: "module" },
+      compilerOptions: {
+        mode: "module",
+        // Backstop for re-parses inside compileScript.
+        comments: false,
+      },
     },
   });
   const code = options.stripTypes

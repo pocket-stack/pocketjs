@@ -39,6 +39,11 @@ function parseAttrs(raw: string, node: NodeMirror): void {
 
 function parseTemplateHtml(html: string): NodeMirror[] {
   if (!html) return [];
+  // "<!-- ... -->" is a Comment node; falling through to text would paint the source.
+  if (html.startsWith("<!--")) {
+    const comment = html.match(/^<!--([\s\S]*?)-->$/);
+    if (comment) return [createCommentNode(comment[1])];
+  }
   if (!html.startsWith("<")) return [createTextNode(html)];
   const match = html.match(/^<([A-Za-z][A-Za-z0-9_-]*)([^>]*)>([\s\S]*)$/);
   if (!match) return [createTextNode(html)];
