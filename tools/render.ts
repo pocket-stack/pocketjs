@@ -92,9 +92,9 @@ async function main() {
       fps = Number(args[++i]);
     } else if (a === "-s" || a === "--scale") {
       scale = Number(args[++i]);
-    } else if (a === "-w" || a === "--width") {
+    } else if (a === "-w" || a === "--width" || a === "-width") {
       widthParam = Number(args[++i]);
-    } else if (a === "--height") {
+    } else if (a === "--height" || a === "-height") {
       heightParam = Number(args[++i]);
     } else if (a === "-c" || a === "--concurrency") {
       concurrency = Number(args[++i]);

@@ -63,8 +63,6 @@ pub extern "C" fn ui_init(raster_density: u32, w: u32, h: u32) {
     unsafe {
         let w_val = if w == 0 { 480 } else { w };
         let h_val = if h == 0 { 272 } else { h };
-        LOGICAL_WIDTH = w_val;
-        LOGICAL_HEIGHT = h_val;
         let mut ui = Ui::new_with_raster_density(raster_density.max(1));
         ui.set_viewport(w_val as f32, h_val as f32);
         UI = Some(ui);
