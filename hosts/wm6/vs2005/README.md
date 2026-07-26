@@ -8,6 +8,7 @@ will need:
 - ARMV4I code generation for the PXA310 device;
 - a fullscreen, dynamically sized native window;
 - a double-buffered GDI presentation loop;
+- a `HI_RES_AWARE` executable resource so VGA devices expose native pixels;
 - stylus press, drag, and release coordinates;
 - hardware key events;
 - runtime screen and memory reporting.
@@ -34,3 +35,8 @@ The probe has no MFC, ATL, .NET Compact Framework, or redistributable runtime
 dependency. Press the device's Back/Escape key to exit. If that key is not
 mapped by the ROM, stop it from **Settings > System > Memory > Running
 Programs**.
+
+If the probe reports `240 x 320` on a 480×640 iPAQ, the device is running an
+older executable without the `HI_RES_AWARE` resource. Clean the solution,
+rebuild it, and confirm that `resources\probe.rc` appears in the build log
+before redeploying.

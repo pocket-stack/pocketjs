@@ -5,9 +5,10 @@ const root = new URL("../hosts/wm6/vs2005/", import.meta.url);
 
 describe("Windows Mobile 6 VS2005 probe", () => {
   test("uses the Professional SDK ARMV4I smart-device platform", async () => {
-    const [solution, project] = await Promise.all([
+    const [solution, project, resource] = await Promise.all([
       readFile(new URL("PocketJS.WM6.sln", root), "utf8"),
       readFile(new URL("PocketJS.WM6.Probe.vcproj", root), "utf8"),
+      readFile(new URL("resources/probe.rc", root), "utf8"),
     ]);
 
     expect(solution).toContain("Microsoft Visual Studio Solution File, Format Version 9.00");
@@ -30,6 +31,8 @@ describe("Windows Mobile 6 VS2005 probe", () => {
       ),
     ).toHaveLength(2);
     expect(project).not.toContain("Windows Mobile 6 Standard SDK");
+    expect(project).toContain('RelativePath=".\\resources\\probe.rc"');
+    expect(resource).toMatch(/\bHI_RES_AWARE\s+CEUX\s+\{\s*1\s*\}/);
   });
 
   test("keeps the probe compatible with the VC8 compiler", async () => {

@@ -148,6 +148,9 @@
 		<Filter Name="Source Files" Filter="cpp;c;cxx">
 			<File RelativePath=".\src\main.cpp"/>
 		</Filter>
+		<Filter Name="Resource Files" Filter="rc">
+			<File RelativePath=".\resources\probe.rc"/>
+		</Filter>
 		<Filter Name="Documentation">
 			<File RelativePath=".\README.md"/>
 		</Filter>

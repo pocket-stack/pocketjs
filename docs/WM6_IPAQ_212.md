@@ -62,6 +62,11 @@ the physical iPAQ shows:
 Record the ROM version, orientation, displayed memory values, D-pad key codes,
 and whether the Back/Escape key exits. Emulator-only success is insufficient.
 
+Windows Mobile virtualizes a VGA device as `240×320` for legacy applications.
+The probe embeds `HI_RES_AWARE CEUX { 1 }` to opt out of that compatibility
+scaling. A QVGA result therefore means an older or incorrectly linked resource
+was deployed; it is not the iPAQ panel's physical resolution.
+
 ### Gate 1 — toolchain-owned QuickJS probe
 
 Build QuickJS as C sources with the same VC8 ARMV4I compiler and expose only:
