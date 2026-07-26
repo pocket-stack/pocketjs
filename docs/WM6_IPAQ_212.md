@@ -1,0 +1,139 @@
+# HP iPAQ 212 / Windows Mobile 6 port
+
+## Decision
+
+PocketJS should reach the iPAQ 212 through a native Windows Mobile host, built
+by Visual C++ 2005 for the Windows Mobile 6 Professional SDK's ARMV4I target.
+The repository now contains a first, deployable solution at
+`hosts/wm6/vs2005/PocketJS.WM6.sln`.
+
+This is intentionally an experimental port, not a production target in
+`POCKET_TARGETS`. Adding a target profile before the complete guest runtime and
+its capabilities work on hardware would make build admission promise behavior
+that the host does not deliver.
+
+## Why this target
+
+The HP iPAQ 212 belongs to the iPAQ 210 series. It has a 624 MHz Marvell
+PXA310, 128 MB SDRAM, and a 4-inch 480×640 touch display, and ships with
+Windows Mobile 6 Classic. Despite the device name, Microsoft's SDK mapping is:
+
+| Device class | Required WM6 SDK |
+| --- | --- |
+| Classic / Pocket PC | Professional SDK |
+| Professional / Pocket PC Phone | Professional SDK |
+| Standard / Smartphone | Standard SDK |
+
+The Visual Studio platform must therefore read
+`Windows Mobile 6 Professional SDK (ARMV4I)`. ARMV4I is the SDK ABI and is
+compatible with the PXA310; selecting an unofficial CPU-specific target would
+make the binary less portable and would bypass the SDK libraries.
+
+## Honest feasibility boundary
+
+Creating a `.sln` is necessary but not sufficient for the existing guest
+runtime:
+
+- the native PocketJS hosts embed QuickJS;
+- the retained renderer lives in the Rust `engine/core` crate;
+- Visual C++ 2005 predates modern C/C++ language features;
+- stable Rust has no Windows CE 5.2 / ARMV4I target, and its modern
+  ARM-Windows object format cannot simply be linked into a VC8 Smart Device
+  executable;
+- Windows Mobile 6 has neither a suitable browser runtime nor modern Web APIs,
+  so wrapping the web host is not a viable shortcut.
+
+The lowest-risk route is to validate each irreversible assumption on the real
+device before porting the next layer.
+
+## Port gates
+
+### Gate 0 — native hardware probe (implemented)
+
+Build and run `hosts/wm6/vs2005/PocketJS.WM6.sln`. Accept this gate only when
+the physical iPAQ shows:
+
+- `screen: 480 x 640` in portrait (or `640 x 480` after rotation);
+- a steadily increasing frame count near the 33 ms timer interval;
+- touch coordinates and DOWN/up state following the stylus;
+- distinct hexadecimal key codes for the D-pad and centre button;
+- stable free RAM after leaving the probe running for ten minutes.
+
+Record the ROM version, orientation, displayed memory values, D-pad key codes,
+and whether the Back/Escape key exits. Emulator-only success is insufficient.
+
+### Gate 1 — toolchain-owned QuickJS probe
+
+Build QuickJS as C sources with the same VC8 ARMV4I compiler and expose only:
+
+1. runtime/context creation;
+2. evaluation of an embedded UTF-8 script;
+3. one native `print` callback;
+4. explicit memory and stack limits;
+5. pending-job draining and clean teardown.
+
+Do not begin with the full PocketJS bundle. QuickJS will need a dedicated
+WinCE compatibility layer for time, allocation, file APIs, missing CRT calls,
+and any compiler syntax unsupported by VC8. Pin the exact upstream revision
+and keep those changes as a reviewable patch, as the Symbian toolchain already
+does. Acceptance is 100 repeated create/evaluate/destroy cycles without
+unbounded memory loss.
+
+### Gate 2 — renderer choice
+
+The existing Rust core cannot be treated as a linkable WM6 library. Choose one
+of these paths only after Gate 1:
+
+1. **Guest-compatible host (preferred, larger):** port the backend-agnostic
+   retained UI and software rasterizer to portable C/C++03 behind the existing
+   `ui_*` ABI. Reuse `hosts/symbian/runtime/pocketjs_symbian_core.h` as the ABI
+   inventory, but create a platform-neutral header before sharing it.
+2. **AOT-first host (smaller, different execution class):** adapt the C Pocket
+   Vapor runtime to VC8 and compile applications ahead of time. This can put
+   Pocket-authored UI on the device sooner, but it is not a PocketJS guest and
+   cannot be advertised as compatible with ordinary JS bundles.
+
+For the guest path, start with solid rectangles, clipping, text atlas blits,
+and touch hit testing. Use a 240×320 or 480×272 logical viewport rendered to a
+16-bit back buffer, then scale/letterbox to the VGA panel. A full 480×640
+32-bit double buffer consumes about 2.34 MiB before textures; RGB565 halves
+that cost and is a better first hardware target.
+
+### Gate 3 — PocketJS HostOps
+
+After QuickJS and rendering work independently, bind the append-only HostOps
+surface. Start with lifecycle, node creation, style/property batches, text,
+tick/render, touch, and buttons. Then boot the smallest compiled fixture, not
+the gallery or launcher. Add WM6 to the private development profiles only
+after its manifest resolver rejects unsupported capabilities.
+
+### Gate 4 — packaging and production admission
+
+Produce a CAB only after direct EXE deployment is stable. The CAB should
+install one application under `\Program Files\PocketJS`, add a Start Menu
+shortcut, and uninstall without touching shared storage. Promote WM6 to
+`POCKET_TARGETS` only when:
+
+- the stock host boots a real `.pocket` guest;
+- viewport and input contracts have device tests;
+- memory has a measured ceiling;
+- suspend/resume and orientation behavior are defined;
+- an iPAQ 212 hardware receipt identifies the ROM and binary hash.
+
+## Recommended build machine
+
+Use an isolated 32-bit Windows XP SP3 VM for the shortest path, with Visual
+Studio 2005 SP1, the Smart Device C++ feature, and the WM6 Professional SDK
+Refresh. ActiveSync 4.5 is the period-correct XP deployment path. A Vista VM
+can use Windows Mobile Device Center plus Microsoft's VS2005 Vista updates,
+but modern Windows hosts add driver and installer failure modes unrelated to
+the port.
+
+Keep the VM offline except while obtaining original toolchain installers.
+Never flash the iPAQ as part of this workflow; copying or debugging an
+application does not require a ROM change.
+
+## Sources
+
+- [Microsoft: Windows Mobile 6 SDK Refresh download and SDK mapping](https://www.microsoft.com/en-us/download/details.aspx?id=6135)
+- [HP: iPAQ 200 series product specifications](https://support.hp.com/tw-zh/document/c01419121)

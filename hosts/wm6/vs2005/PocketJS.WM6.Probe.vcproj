@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="Windows-1252"?>
+<VisualStudioProject
+	ProjectType="Visual C++"
+	Version="8.00"
+	Name="PocketJS.WM6.Probe"
+	ProjectGUID="{64AE683E-7663-4DFD-86FC-F8FE3D972C6D}"
+	RootNamespace="PocketJSWM6Probe"
+	Keyword="Win32Proj"
+	>
+	<Platforms>
+		<Platform Name="Windows Mobile 6 Professional SDK (ARMV4I)"/>
+	</Platforms>
+	<ToolFiles>
+	</ToolFiles>
+	<Configurations>
+		<Configuration
+			Name="Debug|Windows Mobile 6 Professional SDK (ARMV4I)"
+			OutputDirectory="$(SolutionDir)bin\$(ConfigurationName)"
+			IntermediateDirectory="$(SolutionDir)obj\$(ConfigurationName)"
+			ConfigurationType="1"
+			CharacterSet="1"
+			>
+			<Tool Name="VCPreBuildEventTool"/>
+			<Tool Name="VCCustomBuildTool"/>
+			<Tool Name="VCXMLDataGeneratorTool"/>
+			<Tool Name="VCWebServiceProxyGeneratorTool"/>
+			<Tool
+				Name="VCMIDLTool"
+				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;DEBUG;$(ARCHFAM);$(_ARCHFAM_);_DEBUG"
+				TargetEnvironment="1"
+			/>
+			<Tool
+				Name="VCCLCompilerTool"
+				ExecutionBucket="7"
+				Optimization="0"
+				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;_WINDOWS;_DEBUG;DEBUG;$(ARCHFAM);$(_ARCHFAM_);UNICODE;_UNICODE"
+				MinimalRebuild="false"
+				BasicRuntimeChecks="0"
+				RuntimeLibrary="3"
+				UsePrecompiledHeader="0"
+				WarningLevel="4"
+				WarnAsError="true"
+				DebugInformationFormat="3"
+				CompileAs="0"
+			/>
+			<Tool Name="VCManagedResourceCompilerTool"/>
+			<Tool Name="VCResourceCompilerTool"/>
+			<Tool Name="VCPreLinkEventTool"/>
+			<Tool
+				Name="VCLinkerTool"
+				AdditionalOptions="/subsystem:windowsce,5.02"
+				AdditionalDependencies="aygshell.lib coredll.lib"
+				OutputFile="$(OutDir)\PocketJS.WM6.Probe.exe"
+				LinkIncremental="1"
+				GenerateDebugInformation="true"
+				ProgramDatabaseFile="$(OutDir)\PocketJS.WM6.Probe.pdb"
+				SubSystem="0"
+				TargetMachine="1"
+			/>
+			<Tool Name="VCALinkTool"/>
+			<Tool Name="VCManifestTool"/>
+			<Tool Name="VCXDCMakeTool"/>
+			<Tool Name="VCBscMakeTool"/>
+			<Tool Name="VCFxCopTool"/>
+			<Tool Name="VCAppVerifierTool"/>
+			<Tool Name="VCCodeSignTool"/>
+			<Tool Name="VCPostBuildEventTool"/>
+			<DeploymentTool
+				ForceDirty="-1"
+				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS"
+				RegisterOutput="0"
+				AdditionalFiles=""
+			/>
+			<DebuggerTool/>
+		</Configuration>
+		<Configuration
+			Name="Release|Windows Mobile 6 Professional SDK (ARMV4I)"
+			OutputDirectory="$(SolutionDir)bin\$(ConfigurationName)"
+			IntermediateDirectory="$(SolutionDir)obj\$(ConfigurationName)"
+			ConfigurationType="1"
+			CharacterSet="1"
+			WholeProgramOptimization="0"
+			>
+			<Tool Name="VCPreBuildEventTool"/>
+			<Tool Name="VCCustomBuildTool"/>
+			<Tool Name="VCXMLDataGeneratorTool"/>
+			<Tool Name="VCWebServiceProxyGeneratorTool"/>
+			<Tool
+				Name="VCMIDLTool"
+				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;NDEBUG;$(ARCHFAM);$(_ARCHFAM_)"
+				TargetEnvironment="1"
+			/>
+			<Tool
+				Name="VCCLCompilerTool"
+				ExecutionBucket="7"
+				Optimization="1"
+				FavorSizeOrSpeed="1"
+				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;_WINDOWS;NDEBUG;$(ARCHFAM);$(_ARCHFAM_);UNICODE;_UNICODE"
+				RuntimeLibrary="3"
+				EnableFunctionLevelLinking="true"
+				UsePrecompiledHeader="0"
+				WarningLevel="4"
+				WarnAsError="true"
+				DebugInformationFormat="0"
+				CompileAs="0"
+			/>
+			<Tool Name="VCManagedResourceCompilerTool"/>
+			<Tool Name="VCResourceCompilerTool"/>
+			<Tool Name="VCPreLinkEventTool"/>
+			<Tool
+				Name="VCLinkerTool"
+				AdditionalOptions="/subsystem:windowsce,5.02 /opt:ref /opt:icf"
+				AdditionalDependencies="aygshell.lib coredll.lib"
+				OutputFile="$(OutDir)\PocketJS.WM6.Probe.exe"
+				LinkIncremental="1"
+				GenerateDebugInformation="false"
+				SubSystem="0"
+				OptimizeReferences="2"
+				EnableCOMDATFolding="2"
+				TargetMachine="1"
+			/>
+			<Tool Name="VCALinkTool"/>
+			<Tool Name="VCManifestTool"/>
+			<Tool Name="VCXDCMakeTool"/>
+			<Tool Name="VCBscMakeTool"/>
+			<Tool Name="VCFxCopTool"/>
+			<Tool Name="VCAppVerifierTool"/>
+			<Tool Name="VCCodeSignTool"/>
+			<Tool Name="VCPostBuildEventTool"/>
+			<DeploymentTool
+				ForceDirty="-1"
+				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS"
+				RegisterOutput="0"
+				AdditionalFiles=""
+			/>
+			<DebuggerTool/>
+		</Configuration>
+	</Configurations>
+	<References>
+	</References>
+	<Files>
+		<Filter Name="Source Files" Filter="cpp;c;cxx">
+			<File RelativePath=".\src\main.cpp"/>
+		</Filter>
+		<Filter Name="Documentation">
+			<File RelativePath=".\README.md"/>
+		</Filter>
+	</Files>
+	<Globals>
+	</Globals>
+</VisualStudioProject>
