@@ -11,15 +11,18 @@ pocketjs/
 │  ├─ core/       pocketjs-core — retained UI tree, taffy layout, damage + raster (standalone crate)
 │  ├─ backends/    platform render backends (ESP32-P4 PPA is a standalone no_std crate)
 │  ├─ wasm/       core compiled to wasm32 for web/sim hosts (standalone crate)
-│  ├─ pocket3d/   the 3D core family (bsp, cook, gu, vita) + desktop examples
-│  ├─ crates/     non-3D engine crates: pocket-mod, pocket-ui-wgpu, pocket-vrm, pocket-widget
-│  └─ Cargo.toml  the desktop workspace root (core/, wasm/ and the console-
-│                 toolchain crates are deliberately excluded and standalone —
-│                 cargo-psp/vitasdk need lone crates; see engine/core/Cargo.toml)
+│  ├─ symbian/    no_std Symbian UI static library: C ABI, capture raster + GLES2 DrawList backend (standalone crate)
+│  ├─ pocket3d/   the 3D core family (bsp, cook, gu, vita, GLES2) + desktop examples
+│  ├─ crates/     non-3D engine crates: pocket-mod, pocket-ui-surface, pocket-ui-wgpu, pocket-vrm, pocket-widget
+│  └─ Cargo.toml  the desktop workspace root (core/, wasm/, symbian/, and
+│                 console-toolchain crates are deliberately excluded and
+│                 standalone; see each crate's Cargo.toml for its toolchain)
 ├─ hosts/        Surfaces: every embedding of the cores
 │  ├─ psp/        QuickJS + rust-psp EBOOT host
 │  ├─ vita/       Vita host
 │  ├─ esp32p4/    reusable ESP-IDF PPA adapter + component smoke build
+│  ├─ pocketbook/ PocketBook e-reader host (inkview, standalone lone-bin crate)
+│  ├─ symbian/    Nokia E7 Qt/QuickJS runtime + visible toolchain probe
 │  ├─ web/        browser dev host (wasm core)
 │  └─ sim/        deterministic headless simulation host (docs/DETERMINISM.md)
 ├─ framework/    Guest: @pocketjs/framework
@@ -31,7 +34,8 @@ pocketjs/
 │  └─ schema/     published JSON schemas (pocket-2.json)
 ├─ apps/         demo apps (pocket.json manifests; built by tools/build.ts)
 ├─ tools/        every command: build/dev/device/release bun scripts (flat),
-│                plus cli/ (@pocketjs/cli), psplink/, imagegen/
+│                plus cli/ (@pocketjs/cli), psplink/, imagegen/, and
+│                symbian/ (isolated GCCE/Qt toolchain + CODA USB transport)
 ├─ tests/        the test suite: *.test.ts flat at the root, plus
 │                e2e/ (PPSSPP, Vita3K drivers), goldens/{web,psp,vita}, tapes/, fixtures/
 ├─ site/         pocketjs.dev (Cloudflare)
@@ -62,7 +66,7 @@ New things go where the axis says — never invent a top-level directory:
 - **npm surface is frozen**: `@pocketjs/framework/*` export *keys* never
   change; the `exports`/`files` maps in package.json absorb internal moves.
 - **Cargo stays non-workspace where toolchains demand it**: `engine/core`,
-  `engine/wasm`, `engine/backends/esp32p4-ppa`, `hosts/psp`, `hosts/vita`,
-  and the gu/vita 3D crates each stand alone with their own lockfiles.
-  `engine/Cargo.toml` is the one desktop workspace.
+  `engine/wasm`, `engine/symbian`, `engine/backends/esp32p4-ppa`, `hosts/psp`,
+  `hosts/vita`, `hosts/pocketbook`, and the gu/vita 3D crates each stand alone
+  with their own lockfiles. `engine/Cargo.toml` is the one desktop workspace.
 - **Moves are `git mv`** — history stays traceable.

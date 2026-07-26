@@ -11,9 +11,13 @@ export interface TouchContact {
   readonly y: number;
 }
 
-const COORD_BITS = 9;
-const COORD_MASK = (1 << COORD_BITS) - 1;
-const ID_SHIFT = COORD_BITS * 2;
+const LEGACY_COORD_BITS = 9;
+const LEGACY_COORD_MASK = (1 << LEGACY_COORD_BITS) - 1;
+const LEGACY_ID_SHIFT = LEGACY_COORD_BITS * 2;
+const WIDE_MARKER = 0x80000000;
+const WIDE_COORD_BITS = 10;
+const WIDE_COORD_MASK = (1 << WIDE_COORD_BITS) - 1;
+const WIDE_ID_SHIFT = WIDE_COORD_BITS * 2;
 const EMPTY: readonly TouchContact[] = Object.freeze([]);
 
 let snapshot: readonly TouchContact[] = EMPTY;
@@ -25,11 +29,17 @@ export function __setTouches(packed: readonly number[] | undefined): void {
     return;
   }
   snapshot = Object.freeze(
-    packed.slice(0, 8).map((value) => Object.freeze({
-      id: (value >>> ID_SHIFT) & 0xff,
-      x: value & COORD_MASK,
-      y: (value >>> COORD_BITS) & COORD_MASK,
-    })),
+    packed.slice(0, 8).map((value) => {
+      const wide = (value & WIDE_MARKER) !== 0;
+      const coordBits = wide ? WIDE_COORD_BITS : LEGACY_COORD_BITS;
+      const coordMask = wide ? WIDE_COORD_MASK : LEGACY_COORD_MASK;
+      const idShift = wide ? WIDE_ID_SHIFT : LEGACY_ID_SHIFT;
+      return Object.freeze({
+        id: (value >>> idShift) & 0xff,
+        x: value & coordMask,
+        y: (value >>> coordBits) & coordMask,
+      });
+    }),
   );
 }
 
@@ -45,8 +55,18 @@ export function __resetTouches(): void {
 /** Test/capture helper matching the native frame wire format. */
 export function __packTouch(id: number, x: number, y: number): number {
   return (
-    ((id & 0xff) << ID_SHIFT) |
-    ((y & COORD_MASK) << COORD_BITS) |
-    (x & COORD_MASK)
+    ((id & 0xff) << LEGACY_ID_SHIFT) |
+    ((y & LEGACY_COORD_MASK) << LEGACY_COORD_BITS) |
+    (x & LEGACY_COORD_MASK)
+  ) >>> 0;
+}
+
+/** Test/native helper for logical viewports up to 1024 pixels per axis. */
+export function __packTouchWide(id: number, x: number, y: number): number {
+  return (
+    WIDE_MARKER |
+    ((id & 0xff) << WIDE_ID_SHIFT) |
+    ((y & WIDE_COORD_MASK) << WIDE_COORD_BITS) |
+    (x & WIDE_COORD_MASK)
   ) >>> 0;
 }

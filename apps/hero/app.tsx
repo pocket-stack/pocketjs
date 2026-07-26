@@ -42,7 +42,7 @@ export default function Hero() {
       debugName="HeroScreen"
       class="w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100"
     >
-      <View debugName="Header" class="flex-row items-center justify-between">
+      <View debugName="Header" class="flex-row flex-wrap items-center justify-between">
         <View class="flex-row items-center gap-3">
             <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
           <View class="flex-col">
@@ -59,7 +59,7 @@ export default function Hero() {
 
       <View class="flex-col gap-2">
         <Text class="text-xs text-blue-600 tracking-wide">ONE RUST CORE · ONE JSX APP</Text>
-        <View class="flex-row items-center justify-between">
+        <View class="flex-row flex-wrap items-center justify-between">
           <Text class="text-4xl text-slate-950 font-bold">JSX at 60 FPS.</Text>
           <Image class="w-10 h-10" src={spinnerSrc()} />
         </View>
@@ -68,12 +68,13 @@ export default function Hero() {
           class="h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"
           style={{ translateX: count() * 2 }}
         />
-        <Text class="text-sm text-slate-600">
-          Flexbox, springs and baked type — running on a 2005 handheld.
-        </Text>
+        <View debugName="Description" class="flex-row flex-wrap gap-1">
+          <Text class="text-sm text-slate-600">Flexbox, springs and baked type —</Text>
+          <Text class="text-sm text-slate-600">running on a 2005 handheld.</Text>
+        </View>
       </View>
 
-      <View class="flex-row items-center gap-4">
+      <View class="flex-row flex-wrap items-center gap-4">
         <View
           class="px-4 py-2 rounded-xl shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
           focusable

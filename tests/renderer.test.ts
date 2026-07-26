@@ -63,9 +63,24 @@ import { mount as publicMount, render as publicRender } from "../framework/src/i
 import { pushButtonHandlerBlock, onButtonPress, onFrame } from "../framework/src/lifecycle.ts";
 import { rootMirror } from "../framework/src/renderer.ts";
 import { ActionBar, ActionHandler, FocusGrid, Modal, Portal, Text, View } from "../framework/src/components.ts";
+import {
+  DeepZoom,
+  type DeepZoomGesture,
+  type DeepZoomView,
+  type TileDoc,
+} from "../framework/src/deepzoom.ts";
 import { resetPack } from "../framework/src/pak.ts";
 import { encodeImageEntry, pack } from "../framework/compiler/pak.ts";
-import { BTN, PAK_DTYPE, NODE_TYPE, PSM, ROOT_ID, PROP, STYLE_ID_NONE } from "../contracts/spec/spec.ts";
+import {
+  BTN,
+  IMG_FLAG_LINEAR,
+  PAK_DTYPE,
+  NODE_TYPE,
+  PSM,
+  ROOT_ID,
+  PROP,
+  STYLE_ID_NONE,
+} from "../contracts/spec/spec.ts";
 
 // ---------------------------------------------------------------------------
 // Mock host
@@ -860,6 +875,34 @@ describe("host detection (host.ts)", () => {
     }
   });
 
+  test("target-marked native host without resource tables uses portable pak feed", () => {
+    const symbian = makeMockHost();
+    symbian.ops.__host = "symbian-e7-dev";
+    symbian.ops.__hostAbi = 4;
+    const g = globalThis as { ui?: HostOps; __pak?: ArrayBuffer };
+    const pak = pack([
+      { key: "ui:styles", dtype: PAK_DTYPE.u8, data: new Uint8Array([1, 2, 3]) },
+      { key: "ui:font.0", dtype: PAK_DTYPE.u8, data: new Uint8Array([4, 5, 6]) },
+    ]);
+    g.ui = symbian.ops;
+    g.__pak = pak.buffer.slice(pak.byteOffset, pak.byteOffset + pak.byteLength) as ArrayBuffer;
+    try {
+      const dispose = publicRender(() => createElement("view"), {
+        ops: symbian.ops,
+        styles: {},
+      });
+      expect(detectHost(symbian.ops).kind).toBe("native");
+      expect(symbian.of("loadStyles", "loadFontAtlas").map(([name]) => name)).toEqual([
+        "loadFontAtlas",
+        "loadStyles",
+      ]);
+      dispose();
+    } finally {
+      delete g.ui;
+      delete g.__pak;
+    }
+  });
+
   test("a real injected host stays strict even when globalThis.ui exists", () => {
     const psp = makeMockHost();
     (psp.ops as HostOps & { __textures?: unknown }).__textures = {};
@@ -935,6 +978,182 @@ describe("public render() (index.ts)", () => {
     expect(rootMirror.children.length).toBe(0);
     // layer roots are destroyed once each (native destroy recurses).
     expect(host.of("destroyNode").map((c) => c[1])).toEqual([appLayer.id, overlayLayer.id]);
+  });
+
+  test("native resize hook reflows a live tree without remounting or losing state", () => {
+    const ops = host.ops as HostOps & { __viewport?: { w: number; h: number } };
+    const globals = globalThis as typeof globalThis & {
+      __pocketResizeViewport?: (width: number, height: number) => void;
+    };
+    ops.__viewport = { w: 640, h: 360 };
+    const [count, setCount] = createSignal(7);
+
+    const dispose = publicRender(() => {
+      const content = createElement("view");
+      const label = createElement("text");
+      insert(label, () => `count:${count()}`);
+      insertNode(content, label);
+      return content;
+    }, { ops });
+    const [appLayer, overlayLayer] = rootMirror.children;
+    const content = appLayer.children[0];
+    const label = content.children[0];
+    const dynamicText = label.children[0];
+    expect(typeof globals.__pocketResizeViewport).toBe("function");
+    expect(dynamicText.text).toBe("count:7");
+    host.clear();
+
+    globals.__pocketResizeViewport?.(360, 640);
+
+    expect(ops.__viewport).toEqual({ w: 360, h: 640 });
+    expect(appLayer.children[0]).toBe(content);
+    expect(content.children[0]).toBe(label);
+    expect(label.children[0]).toBe(dynamicText);
+    expect(dynamicText.text).toBe("count:7");
+    expect(host.of("setProp")).toEqual(expect.arrayContaining([
+      ["setProp", appLayer.id, PROP.width, 360],
+      ["setProp", appLayer.id, PROP.height, 640],
+      ["setProp", overlayLayer.id, PROP.width, 360],
+      ["setProp", overlayLayer.id, PROP.height, 640],
+    ]));
+    expect(host.of("createNode", "destroyNode", "insertBefore", "removeChild")).toEqual([]);
+
+    host.clear();
+    setCount(8);
+    expect(label.children[0]).toBe(dynamicText);
+    expect(dynamicText.text).toBe("count:8");
+    expect(host.of("replaceText")).toEqual([["replaceText", dynamicText.id, "count:8"]]);
+    expect(host.of("createNode", "destroyNode", "insertBefore", "removeChild")).toEqual([]);
+
+    dispose();
+    expect(globals.__pocketResizeViewport).toBeUndefined();
+  });
+
+  test("DeepZoom follows the live viewport while preserving a non-fit view", () => {
+    const ops = host.ops as HostOps & { __viewport?: { w: number; h: number } };
+    const frame = () =>
+      (globalThis as { frame?: (buttons: number) => void }).frame?.(0);
+    const doc: TileDoc = {
+      name: "live viewport",
+      w: 1000,
+      h: 500,
+      bg: 0xff202020,
+      tile: 100,
+      levels: [{
+        scale: 1,
+        cols: 10,
+        rows: 5,
+        key: "ui:tile.live-viewport",
+        grid: Array<string>(5).fill("aaaaaaaaaa"),
+        solids: [0xff808080],
+      }],
+    };
+    const views: DeepZoomView[] = [];
+    let gesture: DeepZoomGesture | null = null;
+    ops.__viewport = { w: 640, h: 360 };
+
+    const dispose = publicRender(
+      () =>
+        DeepZoom({
+          doc,
+          prefetch: 0,
+          gestureSource: () => gesture,
+          onView: (view) => views.push({ ...view }),
+        }) as unknown as NodeMirror,
+      { ops },
+    );
+    const container = rootMirror.children[0].children[0];
+    const activeWorld = container.children[1];
+
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.64);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.64);
+    expect(activeWorld.children).toHaveLength(50);
+
+    host.clear();
+    ops.__viewport = { w: 360, h: 640 };
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.36);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.36);
+    expect(host.of("setProp")).toEqual(expect.arrayContaining([
+      ["setProp", container.id, PROP.width, 360],
+      ["setProp", container.id, PROP.height, 640],
+    ]));
+    expect(rootMirror.children[0].children[0]).toBe(container);
+    expect(container.children[1]).toBe(activeWorld);
+
+    gesture = { panX: -36, panY: 0, zoomFactor: 2 };
+    frame();
+    gesture = null;
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.72);
+    expect(views.at(-1)?.centerX).toBeCloseTo(600);
+    expect(activeWorld.children).toHaveLength(30);
+
+    host.clear();
+    ops.__viewport = { w: 640, h: 360 };
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.64);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.72);
+    expect(views.at(-1)?.centerX).toBeCloseTo(1000 - 320 / 0.72);
+    expect(views.at(-1)?.centerX).not.toBeCloseTo(doc.w / 2);
+    expect(activeWorld.children).toHaveLength(45);
+    expect(rootMirror.children[0].children[0]).toBe(container);
+    expect(container.children[1]).toBe(activeWorld);
+
+    dispose();
+  });
+
+  test("DeepZoom keeps an explicit viewport fixed", () => {
+    const ops = host.ops as HostOps & { __viewport?: { w: number; h: number } };
+    const views: DeepZoomView[] = [];
+    const doc: TileDoc = {
+      name: "fixed viewport",
+      w: 1000,
+      h: 500,
+      bg: 0xff202020,
+      tile: 100,
+      levels: [{
+        scale: 1,
+        cols: 10,
+        rows: 5,
+        key: "ui:tile.fixed-viewport",
+        grid: Array<string>(5).fill("aaaaaaaaaa"),
+        solids: [0xff808080],
+      }],
+    };
+    ops.__viewport = { w: 640, h: 360 };
+
+    const dispose = publicRender(
+      () =>
+        DeepZoom({
+          doc,
+          width: 480,
+          height: 272,
+          prefetch: 0,
+          onView: (view) => views.push({ ...view }),
+        }) as unknown as NodeMirror,
+      { ops },
+    );
+    const container = rootMirror.children[0].children[0];
+    const frame = () =>
+      (globalThis as { frame?: (buttons: number) => void }).frame?.(0);
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.48);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.48);
+
+    host.clear();
+    ops.__viewport = { w: 360, h: 640 };
+    frame();
+    expect(views.at(-1)?.minZoom).toBeCloseTo(0.48);
+    expect(views.at(-1)?.zoom).toBeCloseTo(0.48);
+    expect(
+      host.of("setProp").filter((call) =>
+        call[1] === container.id &&
+        (call[2] === PROP.width || call[2] === PROP.height)
+      ),
+    ).toEqual([]);
+
+    dispose();
   });
 
   test("Portal mounts overlay content outside the app layer", () => {
@@ -1139,6 +1358,31 @@ describe("public render() (index.ts)", () => {
     expect(typeof g.frame).toBe("function");
     g.frame?.(BTN.CIRCLE);
     expect(before).toEqual([BTN.CIRCLE]);
+
+    dispose();
+  });
+
+  test("mount() preserves IMG flags through uploadImgEntry when the host supports it", () => {
+    const g = globalThis as { ui?: HostOps; __pak?: ArrayBuffer };
+    g.ui = host.ops;
+    host.ops.uploadImgEntry = (blob) => {
+      host.calls.push(["uploadImgEntry", blob[5], blob.length]);
+      return 901;
+    };
+    const image = encodeImageEntry(
+      { width: 1, height: 1, rgba: new Uint8Array([10, 20, 30, 255]) },
+      PSM.PSM_8888,
+      IMG_FLAG_LINEAR,
+    );
+    const pak = pack([{ key: "ui:img.logo.png", dtype: PAK_DTYPE.u8, data: image }]);
+    g.__pak = pak.buffer.slice(pak.byteOffset, pak.byteOffset + pak.byteLength) as ArrayBuffer;
+
+    const dispose = publicMount(() => createElement("view"));
+
+    expect(host.of("uploadImgEntry")).toEqual([
+      ["uploadImgEntry", IMG_FLAG_LINEAR, image.length],
+    ]);
+    expect(host.of("uploadTexture")).toEqual([]);
 
     dispose();
   });

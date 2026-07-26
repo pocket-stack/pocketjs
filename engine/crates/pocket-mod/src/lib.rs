@@ -108,6 +108,34 @@ impl Guest {
         Ok(())
     }
 
+    /// One guest turn with touch contacts. `touches` packs each contact as
+    /// `(id << 18) | (y << 9) | x` (framework/src/touch.ts): 9 bits per axis
+    /// (so logical coordinates must be ≤ 511), 8 bits of id, up to 8 contacts.
+    /// A contact present in the array is down/move this frame; absent = released.
+    /// Hosts without touch call [`Guest::frame`] / [`Guest::frame_with_analog`]
+    /// instead; this is the 3-arg `globalThis.frame(buttons, analog, touches)`
+    /// path for touch targets (Vita, PocketBook).
+    pub fn frame_with_touches(&self, buttons: u32, analog: u32, touches: &[u32]) -> Result<()> {
+        self.ctx.with(|ctx| -> Result<()> {
+            let frame: Option<Function> = ctx.globals().get("frame").ok();
+            if let Some(frame) = frame {
+                let arr = rquickjs::Array::new(ctx.clone())
+                    .map_err(|e| anyhow!("pocket-mod: allocating touch array: {e}"))?;
+                for (i, t) in touches.iter().enumerate() {
+                    arr.set(i, *t)
+                        .map_err(|e| anyhow!("pocket-mod: setting touch {i}: {e}"))?;
+                }
+                frame
+                    .call::<_, ()>((buttons, analog, arr))
+                    .catch(&ctx)
+                    .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
+            }
+            Ok(())
+        })?;
+        self.drain_jobs();
+        Ok(())
+    }
+
     /// Drain the microtask/job queue (promise reactions). Job exceptions are
     /// logged, not fatal — matching how hosts treat stray rejections.
     pub fn drain_jobs(&self) {
@@ -267,6 +295,30 @@ mod tests {
         g.frame(0).unwrap();
         let a: u32 = g.with(|ctx| ctx.globals().get("a").unwrap());
         assert_eq!(a, pocketjs_core::spec::ANALOG_CENTER);
+    }
+
+    #[test]
+    fn frame_carries_packed_touches() {
+        let g = Guest::new().unwrap();
+        g.eval(
+            "boot",
+            "globalThis.res = ''; \
+             globalThis.frame = (b, a, t) => { \
+               globalThis.res = b + ':' + (t ? t.length : 0) + ':' + (t && t[0] !== undefined ? t[0] : -1); \
+             };",
+        )
+        .unwrap();
+        // (id<<18)|(y<<9)|x — contact id 0 at logical (10, 20):
+        let packed = (20u32 << 9) | 10;
+        g.frame_with_touches(5, pocketjs_core::spec::ANALOG_CENTER, &[packed])
+            .unwrap();
+        let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
+        assert_eq!(res, format!("5:1:{packed}"));
+        // No contacts → empty array, frame still turns.
+        g.frame_with_touches(0, pocketjs_core::spec::ANALOG_CENTER, &[])
+            .unwrap();
+        let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
+        assert_eq!(res, "0:0:-1");
     }
 
     #[test]

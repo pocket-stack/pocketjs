@@ -8,9 +8,8 @@ description = "The PocketJS `ui` surface on the native desktop base: pak feeding
 
 [dependencies]
 pocket3d = { workspace = true }
-pocket-mod = { workspace = true }
+pocket-ui-surface = { workspace = true }
 pocketjs-core = { workspace = true }
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
 anyhow = { workspace = true }
-log = { workspace = true }

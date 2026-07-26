@@ -1,5 +1,5 @@
 // apps/launcher/app.tsx — the Pocket Launcher: Cover Flow over every
-// PSP-admissible app in the repo (docs/LAUNCHER.md).
+// host-admitted app in the repo (docs/LAUNCHER.md).
 //
 // The deck is the 2D core's perspective pipeline (the same TEX_TRI path
 // motions page 4 ships): one perspective root, one 2:1 cover card per app,
@@ -17,15 +17,27 @@ import { createEffect, createSignal, onMount, Show, untrack } from "solid-js";
 import { registerTexture } from "@pocketjs/framework";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate, createJumpBatch } from "@pocketjs/framework/animation";
-import { BTN } from "@pocketjs/framework/input";
+import { BTN, touches } from "@pocketjs/framework/input";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { appTable, frozenShot, launchApp } from "@pocketjs/framework/launcher";
 import { ticksPerFrame } from "@pocketjs/framework/clock";
-import { REGISTRY, type RegistryApp } from "./registry.generated.ts";
+import { getOps, hostViewport } from "@pocketjs/framework/host";
 
-/** Card box: 192×96 at left-[144] top-[58] (class literals below — the deck
- *  geometry lives in the transforms, the box never moves). */
-/** Rail geometry: first neighbor offset, then per-card spacing. */
+export interface RegistryApp {
+  output: string;
+  id: string;
+  title: string;
+  cover: string;
+  refl: string;
+}
+
+export interface LauncherProps {
+  registry: readonly RegistryApp[];
+}
+
+/** Card box: 192×218, centered from the live host viewport; orientation
+ *  changes only move the deck origin. Rail geometry is the first-neighbor
+ *  offset followed by per-card spacing. */
 const RAIL_FIRST = 124;
 const RAIL_STEP = 44;
 const RAIL_TILT = 55;
@@ -78,14 +90,20 @@ function displayTitle(app: RegistryApp): string {
   return cut > 0 ? title.slice(0, cut) : title;
 }
 
-export default function Launcher() {
+export default function Launcher(props: LauncherProps) {
+  const initialViewport = hostViewport(getOps()) ?? { w: 480, h: 272 };
+  const [viewport, setViewport] = createSignal(initialViewport);
+  const cardLeft = () => viewport().w / 2 - 96;
+  const cardTop = () =>
+    Math.max(24, Math.round((viewport().h - 76 - 218) / 2));
+
   // The host table is the runtime truth for what is embedded; the generated
   // registry carries display data (titles + baked covers). Show their
   // intersection, in registry order. No table -> browse-only degraded mode.
   const table = appTable();
   const apps = table
-    ? REGISTRY.filter((r) => table.apps.some((a) => a.output === r.output))
-    : [...REGISTRY];
+    ? props.registry.filter((r) => table.apps.some((a) => a.output === r.output))
+    : [...props.registry];
   const shot = frozenShot();
   if (shot >= 0) registerTexture("launcher.shot", shot);
   const resume = table?.resume ?? null;
@@ -217,6 +235,36 @@ export default function Launcher() {
     // CIRCLE confirms (the console's home convention — CROSS-as-confirm had
     // users launching with O and landing in the RESUME app every time);
     // CROSS and SELECT both back out to the interrupted app.
+    let previousTouchIds = new Set<number>();
+    onFrame(() => {
+      const nextViewport = hostViewport(getOps());
+      if (
+        nextViewport &&
+        (nextViewport.w !== viewport().w || nextViewport.h !== viewport().h)
+      ) {
+        setViewport(nextViewport);
+      }
+      const contacts = touches();
+      const nextTouchIds = new Set(contacts.map((contact) => contact.id));
+      const pressed = contacts.find((contact) => !previousTouchIds.has(contact.id));
+      previousTouchIds = nextTouchIds;
+      if (!pressed) return;
+
+      // Three large screen zones keep touch useful even while perspective
+      // makes individual cover hit boxes overlap: left/right browse, center
+      // launches the card that the title identifies.
+      const third = viewport().w / 3;
+      if (pressed.x < third) {
+        pos = null;
+        setSel((current) => clampSel(current - 1));
+      } else if (pressed.x >= third * 2) {
+        pos = null;
+        setSel((current) => clampSel(current + 1));
+      } else {
+        const app = apps[sel()];
+        if (app) launchApp(app.output);
+      }
+    });
     onButtonPress(BTN.CIRCLE, () => {
       const app = apps[sel()];
       if (app) launchApp(app.output);
@@ -236,18 +284,21 @@ export default function Launcher() {
           it next to the covers) — black floor, cool center glow behind the
           deck, faint sheen under the cards. Stretched 256×128 → full screen
           with bilinear, like the frozen shot. */}
-      <Image class="absolute left-0 top-0 w-[480] h-[272]" src="covers/launcher-bg.png" />
+      <Image class="absolute inset-0 w-full h-full" src="covers/launcher-bg.png" />
       <Show when={shot >= 0}>
         {/* The interrupted app's last frame, stretched back to full screen
             under a scrim — the "overlay" illusion (docs/LAUNCHER.md). */}
-        <Image class="absolute left-0 top-0 w-[480] h-[272]" src="launcher.shot" />
-        <View class="absolute left-0 top-0 w-[480] h-[272] bg-[#05060a] opacity-75" />
+        <Image class="absolute inset-0 w-full h-full" src="launcher.shot" />
+        <View class="absolute inset-0 w-full h-full bg-[#05060a] opacity-75" />
       </Show>
 
       <Show
         when={apps.length > 0}
         fallback={
-          <Text class="absolute left-0 top-[128] w-[480] text-center text-sm text-slate-400">
+          <Text
+            class="absolute left-0 right-0 text-center text-sm text-slate-400"
+            style={{ insetT: viewport().h / 2 - 8 }}
+          >
             No apps embedded — build with tools/launcher.ts
           </Text>
         }
@@ -267,8 +318,10 @@ export default function Launcher() {
               <View
                 ref={(el: NodeMirror) => (cardEls[i] = el)}
                 debugName="Card"
-                class="absolute left-[144] top-[52] w-[192] h-[218]"
+                class="absolute w-[192] h-[218]"
                 style={{
+                  insetL: cardLeft(),
+                  insetT: cardTop(),
                   translateX: t.translateX,
                   translateZ: t.translateZ,
                   rotateY: t.rotateY,
@@ -282,7 +335,10 @@ export default function Launcher() {
           })}
         </View>
 
-        <View debugName="TitleBlock" class="absolute left-0 top-[196] w-[480] flex-col items-center gap-1">
+        <View
+          debugName="TitleBlock"
+          class="absolute left-0 right-0 bottom-8 flex-col items-center gap-1"
+        >
           <Text class="text-xl text-slate-100 font-bold">{displayTitle(selected())}</Text>
           <Text class="text-xs text-slate-500">
             {`${sel() + 1} / ${apps.length} · ${selected().id}`}
@@ -293,11 +349,11 @@ export default function Launcher() {
         </View>
       </Show>
 
-      <Text class="absolute left-0 bottom-2 w-[480] text-center text-xs text-slate-600">
+      <Text class="absolute left-0 right-0 bottom-2 text-center text-xs text-slate-600">
         {table
           ? resume
-            ? "tap or hold L / R · CIRCLE launch · CROSS back"
-            : "tap L / R to step · hold to flow · CIRCLE launch"
+            ? "L/R · CIRCLE launch · CROSS back · touch sides/center"
+            : "L/R · CIRCLE launch · touch sides/center"
           : "browse only — this host cannot switch apps"}
       </Text>
     </View>

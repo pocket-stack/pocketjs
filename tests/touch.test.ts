@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   __packTouch,
+  __packTouchWide,
   __resetTouches,
   __setTouches,
   touches,
@@ -16,6 +17,17 @@ describe("touch frame snapshot", () => {
     ]);
     expect(touches()).toEqual([
       { id: 7, x: 12, y: 34 },
+      { id: 3, x: 479, y: 271 },
+    ]);
+  });
+
+  test("decodes wide E7 coordinates alongside legacy contacts", () => {
+    __setTouches([
+      __packTouchWide(9, 639, 359),
+      __packTouch(3, 479, 271),
+    ]);
+    expect(touches()).toEqual([
+      { id: 9, x: 639, y: 359 },
       { id: 3, x: 479, y: 271 },
     ]);
   });

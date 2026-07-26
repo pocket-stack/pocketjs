@@ -295,7 +295,7 @@ without touching the JS heap — is covered in the [Native contract](/docs/nativ
 
 ## Pass 2 — bundle
 
-With `styles.generated.ts` now written, `Bun.build` bundles the app:
+With the style table compiled, `Bun.build` bundles the app:
 
 ```ts
 Bun.build({
@@ -307,15 +307,18 @@ Bun.build({
   define: { "process.env.NODE_ENV": '"production"' },
   minify: false,
   sourcemap: "none",
-  plugins: [jsxPlugin(framework, { entry })],
+  plugins: [jsxPlugin(framework, { entry, generatedStyles })],
 });
 ```
 
 The plugin's `onLoad` hook intercepts every project `.ts`/`.tsx` file and serves
 the **cached pass‑1 transform** (`node_modules` and `.d.ts` fall through to
-Bun). The bundle is therefore built from *exactly* the code the class/charset
-scan saw — the two passes agree on the module graph by construction, so a style
-can never be shipped that the bundle doesn't use, or vice versa.
+Bun). It also serves this build's generated style module directly from memory;
+the ignored `framework/src/styles.generated.ts` file is only a human-readable
+mirror. Parallel target builds therefore cannot consume one another's transient
+style table. The bundle is built from *exactly* the code the class/charset scan
+saw — the two passes agree on the module graph by construction, so a style can
+never be shipped that the bundle doesn't use, or vice versa.
 
 With a resolved plan, pass 1 also replaces literal
 `hasFeature("capability.id")` calls with `true` or `false`; normal tree shaking

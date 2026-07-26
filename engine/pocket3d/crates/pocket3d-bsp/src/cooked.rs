@@ -27,6 +27,7 @@
 //! - `WENT` — spawns, sun light, map bounds.
 
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use glam::Vec3;
@@ -73,6 +74,74 @@ pub fn mip_stride(width: u32, level: u32) -> usize {
 /// Padded row count for one mip level (swizzle blocks are 8 rows tall).
 pub fn mip_rows(height: u32, level: u32) -> usize {
     ((height >> level).max(1) as usize).div_ceil(8) * 8
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TextureDecodeError {
+    MissingLevelZero,
+    TruncatedSwizzle,
+    TruncatedPalette,
+    SizeOverflow,
+}
+
+/// Unswizzle and palette-expand a cooked texture's first mip into RGBA8.
+///
+/// The `.p3d` texture layout is shared by every constrained backend, so this
+/// format operation lives next to the reader rather than in a specific GPU
+/// implementation. Transparent palette entries have RGB cleared to prevent
+/// bilinear filtering from bleeding arbitrary cutout colors into their edge.
+pub fn expand_level0_rgba(texture: &CookedTexture<'_>) -> Result<Vec<u8>, TextureDecodeError> {
+    let source = texture
+        .mips
+        .first()
+        .copied()
+        .ok_or(TextureDecodeError::MissingLevelZero)?;
+    if texture.palette.len() < 256 * 4 {
+        return Err(TextureDecodeError::TruncatedPalette);
+    }
+
+    let width = texture.width.max(1) as usize;
+    let height = texture.height.max(1) as usize;
+    let stride = mip_stride(texture.width.max(1), 0);
+    let rows = mip_rows(texture.height.max(1), 0);
+    let expected = stride
+        .checked_mul(rows)
+        .ok_or(TextureDecodeError::SizeOverflow)?;
+    if source.len() < expected {
+        return Err(TextureDecodeError::TruncatedSwizzle);
+    }
+    let pixel_count = width
+        .checked_mul(height)
+        .ok_or(TextureDecodeError::SizeOverflow)?;
+    let mut rgba = vec![
+        0u8;
+        pixel_count
+            .checked_mul(4)
+            .ok_or(TextureDecodeError::SizeOverflow)?
+    ];
+
+    let mut source_offset = 0usize;
+    for block_y in 0..rows / 8 {
+        for block_x in 0..stride / 16 {
+            for row in 0..8 {
+                let y = block_y * 8 + row;
+                for column in 0..16 {
+                    let x = block_x * 16 + column;
+                    let palette_index = source[source_offset + column] as usize;
+                    if x < width && y < height {
+                        let palette = &texture.palette[palette_index * 4..palette_index * 4 + 4];
+                        let destination = (y * width + x) * 4;
+                        rgba[destination..destination + 4].copy_from_slice(palette);
+                        if palette[3] == 0 {
+                            rgba[destination..destination + 3].fill(0);
+                        }
+                    }
+                }
+                source_offset += 16;
+            }
+        }
+    }
+    Ok(rgba)
 }
 
 #[derive(Clone, Copy, Debug)]

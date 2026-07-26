@@ -2,6 +2,12 @@
   "covers/launcher-bg.png": {
     "linear": true
   },
+  "covers/cover-note-main.png": {
+    "linear": true
+  },
+  "covers/refl-note-main.png": {
+    "linear": true
+  },
   "covers/cover-cafe-main.png": {
     "linear": true
   },

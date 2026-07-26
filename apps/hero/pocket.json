@@ -10,6 +10,9 @@
       "requires": [
         "text.glyphs.baked",
         "input.buttons"
+      ],
+      "enhances": [
+        "display.viewport.live"
       ]
     }
   },
@@ -24,6 +27,20 @@
           272
         ],
         "presentation": "integer-fit"
+      },
+      "dynamic": {
+        "default": [
+          640,
+          360
+        ],
+        "min": [
+          360,
+          360
+        ],
+        "max": [
+          640,
+          640
+        ]
       }
     }
   }

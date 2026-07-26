@@ -199,6 +199,18 @@ describe("canonical PSP toolchain", () => {
       async () => "recovered",
       { timeoutMs: 100, staleMs: 10, pollMs: 2 },
     )).toBe("recovered");
+
+    mkdirSync(lock);
+    writeFileSync(join(lock, "owner.json"), JSON.stringify({
+      token: "fresh-but-dead",
+      pid: 2_147_483_647,
+      hostname: hostname(),
+    }));
+    expect(await withArtifactLock(
+      lock,
+      async () => "recovered immediately",
+      { timeoutMs: 100, staleMs: 60_000, pollMs: 2 },
+    )).toBe("recovered immediately");
   });
 
   test("publishes only complete staged directories", () => {
