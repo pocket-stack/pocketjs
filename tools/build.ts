@@ -196,7 +196,7 @@ function outputName(file: string): string {
   const normalizedRoot = ROOT.replace(/\\/g, "/");
   const prefix = normalizedRoot.endsWith("/") ? normalizedRoot : normalizedRoot + "/";
   const rel = normalizedFile.startsWith(prefix) ? normalizedFile.slice(prefix.length) : normalizedFile;
-  const demo = rel.match(/^(apps|demos)\/([^/]+)\/(app|main)\.tsx?$/);
+  const demo = rel.match(/^(?:apps|demos)\/([^/]+)\/(app|main)\.tsx?$/);
   if (demo) return demo[2] === "main" ? `${demo[1]}-main` : demo[1];
   return normalizedFile.split("/").pop()!.replace(/\.tsx?$/, "");
 }
