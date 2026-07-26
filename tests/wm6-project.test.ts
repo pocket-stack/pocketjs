@@ -123,8 +123,11 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     );
     expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
     expect(
+      project.match(/OutputFile="\$\(OutDir\)\\PocketJS\.WM6\.QuickJS\.Probe\.exe"/g),
+    ).toHaveLength(2);
+    expect(
       project.match(
-        /RemoteExecutable="%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\\PocketJS\.WM6\.QuickJS\.Host\.exe"/g,
+        /RemoteExecutable="%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\\PocketJS\.WM6\.QuickJS\.Probe\.exe"/g,
       ),
     ).toHaveLength(2);
     expect(host).toContain("WCHAR create_error[256]");
