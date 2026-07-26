@@ -8,9 +8,9 @@ This solution contains three native Smart Device applications for the HP iPAQ
 - `PocketJS.WM6.Vapor` runs the repository's Pocket Vapor Todo component after
   ahead-of-time compilation to portable C. It is the first application UI on
   WM6, but it is not a QuickJS host and cannot load ordinary PocketJS bundles.
-- `PocketJS.WM6.QuickJS` deploys and starts the CeGCC-built QuickJS probe. It
-  evaluates actual modern JavaScript on ARM/WinCE; it is the first runtime
-  toolchain gate, not a PocketJS UI host yet.
+- `PocketJS.WM6.QuickJS` builds a VC8 host and deploys the CeGCC-built QuickJS
+  DLL plus the real `apps/cards` bundle. Its first receipt mounts Solid and
+  shows the HostOps text tree; GDI layout and painting are still in progress.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a
@@ -41,9 +41,9 @@ but does not yet connect PocketJS lifecycle, input, or rendering APIs; see
    Windows Mobile Classic/Pocket PC devices to this SDK; the similarly named
    Standard SDK is for non-touchscreen Smartphones.
 4. Open `PocketJS.WM6.sln`.
-5. To rebuild QuickJS, generate `prebuilt\PocketJS.WM6.QuickJS.Probe.exe`
-   using `..\quickjs\build-probe.sh` under WSL. A known-good ARM/WinCE binary is
-   checked in so a clean clone can deploy immediately.
+5. To rebuild the Cards host assets, run `tools/build.ts cards-main`, then
+   `..\quickjs\build-cards.sh` and `..\quickjs\build-runtime.sh` under WSL.
+   Known-good ARM/WinCE and JavaScript files are checked in for deployment.
 6. Select `Release | Windows Mobile 6 Professional SDK (ARMV4I)`.
 7. Right-click the project you want to run and choose **Set as StartUp
    Project**.

@@ -48,6 +48,16 @@ QuickJS runtime and 256 KiB stack. Each cycle calls a native `print` function
 from a Promise job. Success shows `QuickJS 6,10,16,26` under the title
 `QuickJS: 100 cycles passed` in a native WM6 message box.
 
+## Cards bundle host
+
+`build-runtime.sh` builds `PocketJS.WM6.QuickJS.dll` with a five-function,
+versioned C ABI and statically linked libgcc. `build-cards.sh` combines the
+minimal WM6 HostOps bootstrap with the real `dist/cards-main.js` output.
+VS2005 builds `PocketJS.WM6.QuickJS.Host.exe`, deploys both files, mounts the
+Solid application in QuickJS, and displays a native-tree receipt containing
+the Cards text. This receipt is the bundle/HostOps gate; GDI layout and paint
+are the next milestone.
+
 The compatibility patch:
 
 - disables QuickJS atomics because WM6 has no pthread/C11 atomic API;

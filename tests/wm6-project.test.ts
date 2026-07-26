@@ -94,29 +94,36 @@ describe("Windows Mobile 6 VS2005 projects", () => {
 
   test("includes a pinned CeGCC QuickJS ARM/WinCE probe", async () => {
     const quickjsRoot = new URL("../hosts/wm6/quickjs/", import.meta.url);
-    const [solution, project, build, patch, probe, math, executable] =
+    const [solution, project, build, runtimeBuild, cardsBuild, patch, probe,
+      runtime, abi, cards, math, executable, dll] =
       await Promise.all([
         readFile(new URL("PocketJS.WM6.sln", root), "utf8"),
         readFile(new URL("PocketJS.WM6.QuickJS.vcproj", root), "utf8"),
         readFile(new URL("build-probe.sh", quickjsRoot), "utf8"),
+        readFile(new URL("build-runtime.sh", quickjsRoot), "utf8"),
+        readFile(new URL("build-cards.sh", quickjsRoot), "utf8"),
         readFile(new URL("patches/quickjs-wm6.patch", quickjsRoot), "utf8"),
         readFile(new URL("src/probe.c", quickjsRoot), "utf8"),
+        readFile(new URL("src/runtime_dll.c", quickjsRoot), "utf8"),
+        readFile(new URL("runtime/wm6_quickjs_abi.h", root), "utf8"),
+        readFile(new URL("prebuilt/PocketJS.WM6.Cards.js", root), "utf8"),
         readFile(new URL("src/wm6_math.c", quickjsRoot), "utf8"),
         readFile(
           new URL("prebuilt/PocketJS.WM6.QuickJS.Probe.exe", root),
         ),
+        readFile(new URL("prebuilt/PocketJS.WM6.QuickJS.dll", root)),
       ]);
 
     expect(solution).toContain('"PocketJS.WM6.QuickJS"');
     expect(solution).toContain("{AA37CB32-6044-4A78-A3A5-1F58080498C8}");
     expect(project).toContain('Version="8.00"');
     expect(project).toContain(
-      'AdditionalFiles="PocketJS.WM6.QuickJS.Probe.exe|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\\PocketJS.WM6.QuickJS|0"',
+      'PocketJS.WM6.QuickJS.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\\PocketJS.WM6.QuickJS|0',
     );
     expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
     expect(
       project.match(
-        /RemoteExecutable="%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\\PocketJS\.WM6\.QuickJS\.Probe\.exe"/g,
+        /RemoteExecutable="%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\\PocketJS\.WM6\.QuickJS\.Host\.exe"/g,
       ),
     ).toHaveLength(2);
 
@@ -127,6 +134,9 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(build).not.toContain("-march=armv5");
     expect(build).toContain("-msoft-float");
     expect(build).toContain("-D_WIN32_WCE=0x0502");
+    expect(runtimeBuild).toContain("-shared");
+    expect(runtimeBuild).toContain("-static-libgcc");
+    expect(cardsBuild).toContain("dist/cards-main.js");
     expect(patch).toContain("#undef CONFIG_ATOMICS");
     expect(patch).toContain("#elif defined(_WIN32_WCE)");
     expect(probe).toContain("JS_SetMemoryLimit(runtime, 8u * 1024u * 1024u)");
@@ -138,6 +148,13 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(probe).toContain("QuickJS 6,10,16,26");
     expect(math).toContain("double fmax");
     expect(math).toContain("double fmin");
+    expect(abi).toContain("#define WM6_QJS_ABI_VERSION 1u");
+    expect(runtime).toContain("wm6_qjs_create");
+    expect(runtime).toContain("wm6_qjs_eval");
+    expect(runtime).toContain("wm6_qjs_drain_jobs");
+    expect(cards).toContain("PocketJS Cards (real bundle)");
+    expect(cards).toContain("Feature Cards");
+    expect(cards).toContain("Flexbox via Taffy");
 
     expect(executable.subarray(0, 2).toString("ascii")).toBe("MZ");
     const peOffset = executable.readUInt32LE(0x3c);
@@ -146,5 +163,9 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     );
     expect(executable.readUInt16LE(peOffset + 4)).toBe(0x01c0);
     expect(executable.readUInt16LE(peOffset + 24 + 68)).toBe(9);
+    expect(dll.subarray(0, 2).toString("ascii")).toBe("MZ");
+    const dllPeOffset = dll.readUInt32LE(0x3c);
+    expect(dll.readUInt16LE(dllPeOffset + 4)).toBe(0x01c0);
+    expect(dll.readUInt16LE(dllPeOffset + 22) & 0x2000).toBe(0x2000);
   });
 });

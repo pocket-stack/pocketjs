@@ -30,13 +30,14 @@
 				ExecutionBucket="7"
 				Optimization="0"
 				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;_WINDOWS;_DEBUG;DEBUG;$(ARCHFAM);$(_ARCHFAM_);UNICODE;_UNICODE"
+				AdditionalIncludeDirectories=".\runtime"
 				MinimalRebuild="false"
 				BasicRuntimeChecks="0"
 				RuntimeLibrary="3"
 				UsePrecompiledHeader="0"
 				WarningLevel="4"
 				WarnAsError="true"
-				DisableSpecificWarnings="4201;4115;4214"
+				DisableSpecificWarnings="4201;4115;4214;4191"
 				DebugInformationFormat="3"
 				CompileAs="1"
 			/>
@@ -47,10 +48,10 @@
 				Name="VCLinkerTool"
 				AdditionalOptions="/subsystem:windowsce,5.02"
 				AdditionalDependencies="coredll.lib"
-				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.Deploy.exe"
+				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.Host.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="true"
-				ProgramDatabaseFile="$(OutDir)\PocketJS.WM6.QuickJS.Deploy.pdb"
+				ProgramDatabaseFile="$(OutDir)\PocketJS.WM6.QuickJS.Host.pdb"
 				SubSystem="0"
 				TargetMachine="0"
 			/>
@@ -66,10 +67,10 @@
 				ForceDirty="-1"
 				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS"
 				RegisterOutput="0"
-				AdditionalFiles="PocketJS.WM6.QuickJS.Probe.exe|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
+				AdditionalFiles="PocketJS.WM6.QuickJS.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Cards.js|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
 			/>
 			<DebuggerTool
-				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS\PocketJS.WM6.QuickJS.Probe.exe"
+				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS\PocketJS.WM6.QuickJS.Host.exe"
 			/>
 		</Configuration>
 		<Configuration
@@ -90,12 +91,13 @@
 				Optimization="1"
 				FavorSizeOrSpeed="1"
 				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;_WINDOWS;NDEBUG;$(ARCHFAM);$(_ARCHFAM_);UNICODE;_UNICODE"
+				AdditionalIncludeDirectories=".\runtime"
 				RuntimeLibrary="3"
 				EnableFunctionLevelLinking="true"
 				UsePrecompiledHeader="0"
 				WarningLevel="4"
 				WarnAsError="true"
-				DisableSpecificWarnings="4201;4115;4214"
+				DisableSpecificWarnings="4201;4115;4214;4191"
 				DebugInformationFormat="0"
 				CompileAs="1"
 			/>
@@ -106,7 +108,7 @@
 				Name="VCLinkerTool"
 				AdditionalOptions="/subsystem:windowsce,5.02 /opt:ref /opt:icf"
 				AdditionalDependencies="coredll.lib"
-				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.Deploy.exe"
+				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.Host.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="false"
 				SubSystem="0"
@@ -126,10 +128,10 @@
 				ForceDirty="-1"
 				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS"
 				RegisterOutput="0"
-				AdditionalFiles="PocketJS.WM6.QuickJS.Probe.exe|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
+				AdditionalFiles="PocketJS.WM6.QuickJS.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Cards.js|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
 			/>
 			<DebuggerTool
-				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS\PocketJS.WM6.QuickJS.Probe.exe"
+				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS\PocketJS.WM6.QuickJS.Host.exe"
 			/>
 		</Configuration>
 	</Configurations>
@@ -138,6 +140,12 @@
 	<Files>
 		<Filter Name="Source Files" Filter="c">
 			<File RelativePath=".\src\quickjs_deploy.c"/>
+		</Filter>
+		<Filter Name="Header Files" Filter="h">
+			<File RelativePath=".\runtime\wm6_quickjs_abi.h"/>
+		</Filter>
+		<Filter Name="Resource Files" Filter="rc">
+			<File RelativePath=".\resources\probe.rc"/>
 		</Filter>
 		<Filter Name="Documentation">
 			<File RelativePath=".\README.md"/>
