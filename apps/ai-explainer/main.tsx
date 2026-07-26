@@ -1,4 +1,4 @@
-import AiExplainerSection3 from "./section3.tsx";
+import AiExplainerSection4 from "./section4.tsx";
 import { mount } from "@pocketjs/framework";
 
-mount(() => <AiExplainerSection3 />);
+mount(() => <AiExplainerSection4 />);
