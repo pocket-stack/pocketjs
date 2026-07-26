@@ -9,8 +9,8 @@ export declare const FB_H: number;
 export interface WasmUi {
   ops: HostOps;
   exports: WebAssembly.Exports & { memory: WebAssembly.Memory };
-  /** Reset the core and set raster samples per logical pixel (default 1). */
-  init(rasterDensity?: number): void;
+  /** Reset the core and set raster samples per logical pixel (default 1) and viewport dimensions. */
+  init(rasterDensity?: number, width?: number, height?: number): void;
   /** Advance exactly one fixed-dt (1/60 s) frame. */
   tick(): void;
   /** Hash the current DrawList without rasterizing it; null for an older wasm. */

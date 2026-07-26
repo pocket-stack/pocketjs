@@ -32,6 +32,8 @@ export interface BuildHostContract {
  *  node id 0 means "none" (anchor 0 = append, setFocus 0 = clear). Texture
  *  handles have operation-specific 0-based or generation-tagged contracts. */
 export interface HostOps {
+  /** Optional layout viewport dimensions ({ w, h }) set by host. */
+  __viewport?: { w: number; h: number };
   /** type: spec NODE_TYPE (0 view, 1 text, 2 image) → new node id. */
   createNode(type: number): number;
   /** Destroys the whole subtree; frees anim tracks; clears focus if inside. */

@@ -12,6 +12,13 @@ const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const RUNTIME_DIST = join(ROOT, "dist/render-runtime/");
 const WASM_PATH = join(ROOT, "hosts/web/pocketjs.wasm");
 
+interface GlobalPocketEngine {
+  ui?: unknown;
+  __pak?: ArrayBuffer;
+  __pocketApp?: string;
+  frame?: (buttons: number) => void;
+}
+
 function ensureBuilt(path: string, cmd: string[]): void {
   if (existsSync(path)) return;
   console.log(`render: ${path.slice(ROOT.length)} missing — running: ${cmd.join(" ")}`);
@@ -322,16 +329,9 @@ async function main() {
   const wasm = await createWasmUi(await Bun.file(WASM_PATH).arrayBuffer());
   wasm.init(scale, widthParam, heightParam);
 
-  interface GlobalPocketEngine {
-    ui?: unknown;
-    __pak?: ArrayBuffer;
-    __pocketApp?: string;
-    frame?: (buttons: number) => void;
-  }
-
   const g = globalThis as unknown as GlobalPocketEngine & Record<string, unknown>;
   g.ui = wasm.ops;
-  (wasm.ops as Record<string, unknown>).__viewport = { w: widthParam, h: heightParam };
+  wasm.ops.__viewport = { w: widthParam, h: heightParam };
   const pakPath = join(RUNTIME_DIST, `${baseApp}.pak`);
   g.__pak = existsSync(pakPath) ? await Bun.file(pakPath).arrayBuffer() : undefined;
   g.__pocketApp = baseApp;

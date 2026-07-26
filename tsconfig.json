@@ -39,5 +39,5 @@
       "@pocketjs/framework/vue-vapor/renderer": ["./framework/src/renderer-vue-vapor.ts"]
     }
   },
-  "include": ["framework", "apps", "tests", "contracts", "hosts/web"]
+  "include": ["framework", "apps", "tests", "contracts", "hosts/web", "tools"]
 }
