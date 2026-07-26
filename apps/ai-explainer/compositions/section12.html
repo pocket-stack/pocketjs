@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Context Window Layout */
+      .context-container {
+        position: relative;
+        width: 1500px;
+        height: 640px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Left side: Context Workspace Box */
+      .workspace-box {
+        width: 580px;
+        height: 520px;
+        background: rgba(15, 23, 42, 0.6);
+        border: 2px solid rgba(56, 189, 248, 0.2);
+        border-radius: 20px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+        opacity: 0;
+        transform: translateX(-50px);
+        transition: all 0.5s ease;
+      }
+      .workspace-box::before {
+        content: 'ACTIVE_CONTEXT_WINDOW_MEMORY';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+      }
+
+      /* Surging tokens indicator */
+      .token-surge-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        margin-top: 20px;
+      }
+      .token-progress-bar-container {
+        width: 100%;
+        height: 20px;
+        background: rgba(4, 8, 20, 0.8);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        border-radius: 10px;
+        overflow: hidden;
+        position: relative;
+      }
+      .token-progress-fill {
+        height: 100%;
+        width: 0.2%; /* Starts at 4k/2M = 0.2% */
+        background: linear-gradient(90deg, #38bdf8 0%, #fb923c 100%);
+        box-shadow: 0 0 15px #fb923c;
+        transition: width 1.5s cubic-bezier(0.25, 1, 0.5, 1);
+      }
+      .token-counter {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 32px;
+        font-weight: 800;
+        color: #f8fafc;
+      }
+
+      /* Right side: Input File Stack */
+      .stack-container {
+        width: 480px;
+        height: 480px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        position: relative;
+        opacity: 0;
+        transform: translateX(50px);
+      }
+      .stack-item {
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: 12px;
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      .stack-item.ingested {
+        border-color: #fb923c;
+        box-shadow: 0 0 15px rgba(251, 146, 60, 0.2);
+      }
+      .stack-icon {
+        font-size: 28px;
+      }
+      .stack-details h5 {
+        font-size: 16px;
+        color: #f8fafc;
+        margin-bottom: 2px;
+      }
+      .stack-details p {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+
+      /* Haystack micro-grid representing million words */
+      .haystack-grid-panel {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(56, 189, 248, 0.2);
+        border-radius: 20px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+        z-index: 15;
+        scale: 0.95;
+        transition: all 0.5s ease;
+      }
+      .haystack-grid-panel::before {
+        content: 'EXPERIMENT: NEEDLE_IN_A_HAYSTACK_RETRIEVAL';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+      }
+      .haystack-dense-dots {
+        display: grid;
+        grid-template-columns: repeat(40, 1fr);
+        gap: 6px;
+        width: 100%;
+        height: 320px;
+        margin-top: 20px;
+      }
+      .hay-dot {
+        height: 4px;
+        background: rgba(148, 163, 184, 0.2);
+        border-radius: 1px;
+      }
+      
+      /* Glowing Needle point inside haystack */
+      .hay-needle {
+        background: #fb923c !important;
+        box-shadow: 0 0 15px #fb923c;
+        scale: 1.8;
+      }
+
+      /* Floating Needle metadata card */
+      .needle-card {
+        position: absolute;
+        left: 200px;
+        top: 240px;
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid #fb923c;
+        border-radius: 12px;
+        padding: 16px 24px;
+        width: 440px;
+        box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+        z-index: 20;
+        opacity: 0;
+        scale: 0.9;
+      }
+      .needle-card h6 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #fb923c;
+        margin-bottom: 6px;
+      }
+      .needle-card p {
+        font-size: 15px;
+        color: #cbd5e1;
+        line-height: 1.4;
+      }
+
+      /* Context caching teaser badge */
+      .caching-teaser-badge {
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid #10b981;
+        color: #10b981;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 15px;
+        font-weight: bold;
+        padding: 10px 20px;
+        border-radius: 8px;
+        opacity: 0;
+        transform: scale(0.9);
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-f4u4" id="root" data-composition-id="scene-sec12" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-io2v">MODULE // CONTEXT_WINDOW</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-kbuj" class="context-container">
+          <!-- Left side: workspace box -->
+          <div data-hf-id="hf-mz3j" class="workspace-box" id="workspace-card">
+            <div data-hf-id="hf-8t23" class="token-surge-panel">
+              <div data-hf-id="hf-6kfu" class="token-counter" id="t-count">4,000 TOKENS</div>
+              <div data-hf-id="hf-qf7n" class="token-progress-bar-container">
+                <div data-hf-id="hf-hzgi" class="token-progress-fill" id="progress-bar"></div>
+              </div>
+              <div data-hf-id="hf-7f6t" style="font-size: 14px; color: #94a3b8; font-family: 'JetBrains Mono', monospace;">CAPACITY STATUS: CALIBRATING...</div>
+            </div>
+            <div data-hf-id="hf-7i59" style="height: 40px;"></div>
+          </div>
+
+          <!-- Right side: document stack -->
+          <div data-hf-id="hf-4jmc" class="stack-container" id="stack-box">
+            <!-- Item 1: codebase -->
+            <div data-hf-id="hf-cylo" class="stack-item" id="stack-1">
+              <span data-hf-id="hf-auy5" class="stack-icon">📁</span>
+              <div data-hf-id="hf-ytxh" class="stack-details">
+                <h5 data-hf-id="hf-of8t">Source Codebase</h5>
+                <p data-hf-id="hf-5lmd">850,000 Tokens // 420 Files</p>
+              </div>
+            </div>
+            <!-- Item 2: reports -->
+            <div data-hf-id="hf-nu3b" class="stack-item" id="stack-2">
+              <span data-hf-id="hf-gwge" class="stack-icon">📄</span>
+              <div data-hf-id="hf-q2xl" class="stack-details">
+                <h5 data-hf-id="hf-vdqn">E-books &amp; Reports</h5>
+                <p data-hf-id="hf-2de4">600,000 Tokens // 30 Documents</p>
+              </div>
+            </div>
+            <!-- Item 3: audio transcripts -->
+            <div data-hf-id="hf-hodi" class="stack-item" id="stack-3">
+              <span data-hf-id="hf-d53w" class="stack-icon">🔊</span>
+              <div data-hf-id="hf-r9uo" class="stack-details">
+                <h5 data-hf-id="hf-wepf">Audio Transcripts</h5>
+                <p data-hf-id="hf-finc">550,000 Tokens // 24 Hours</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Needle in a Haystack panel -->
+          <div data-hf-id="hf-rd3l" class="haystack-grid-panel" id="haystack-card">
+            <div data-hf-id="hf-e1kk" class="haystack-dense-dots" id="dots-grid">
+              <!-- Dots generated by loop inside script -->
+            </div>
+            <div data-hf-id="hf-ze15" style="display: flex; justify-content: space-between; align-items: center;">
+              <div data-hf-id="hf-3oe6" style="font-family: 'JetBrains Mono', monospace; font-size: 16px; color: #10b981;" id="haystack-status-txt">
+                STATUS: SCANNING HAYSTACK...
+              </div>
+              <div data-hf-id="hf-xr5d" class="caching-teaser-badge" id="caching-badge">
+                🧠 CONTEXT CACHING ACTIVE
+              </div>
+            </div>
+          </div>
+
+          <!-- Floating Needle Card -->
+          <div data-hf-id="hf-ybh7" class="needle-card" id="needle-desc-box">
+            <h6 data-hf-id="hf-p7x5">🔑 GOLDEN NEEDLE FOUND</h6>
+            <p data-hf-id="hf-f5cx"><strong data-hf-id="hf-2rgu">Fact:</strong> "The secret passkey to the vault is: GOLDEN_ORB."</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-0msd">FRAME_TIME: 09:50:13</div>
+        <div data-hf-id="hf-fxj4">SYS_METRIC: ACTIVE_WORKING_MEMORY</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-0s0o" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="54.49" data-track-index="5">
+        <div data-hf-id="hf-aklk" class="caption-box" id="caption-text">Section 12: Context Windows</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Generate 200 grid dots inside the haystack card to prevent layout check errors
+      const grid = document.getElementById("dots-grid");
+      for (let i = 0; i < 200; i++) {
+        const dot = document.createElement("div");
+        dot.className = "hay-dot";
+        dot.id = `dot-${i}`;
+        grid.appendChild(dot);
+      }
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 9,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Initial State: workspace entrance (3s)
+      tl.to("#workspace-card", { opacity: 1, x: 0, duration: 0.8, ease: "power3.out" }, 3.0);
+
+      // 2. Initial state: progress bar starts small (4,000 tokens) (6s)
+      tl.call(() => {
+        document.getElementById("progress-bar").style.width = "0.2%";
+        document.getElementById("t-count").innerText = "4,000 TOKENS";
+      }, [], 4.0);
+
+      // 3. Context window expands surge (14s)
+      tl.to("#stack-box", { opacity: 1, x: 0, duration: 0.8 }, 14.0);
+      
+      tl.call(() => {
+        // Surge progress fill and token counter text
+        const fill = document.getElementById("progress-bar");
+        fill.style.width = "100%";
+        
+        let val = 4000;
+        const target = 2000000;
+        const speed = (target - val) / 50; // step count
+        const timer = setInterval(() => {
+          if (val < target) {
+            val += Math.floor(speed);
+            if (val > target) val = target;
+            document.getElementById("t-count").innerText = val.toLocaleString() + " TOKENS";
+          } else {
+            clearInterval(timer);
+          }
+        }, 30);
+      }, [], 14.5);
+
+      // Ingest stack items one by one (18s)
+      tl.to("#stack-1", { opacity: 1, y: 0, duration: 0.5 }, 18.0);
+      tl.to("#stack-2", { opacity: 1, y: 0, duration: 0.5 }, 19.5);
+      tl.to("#stack-3", { opacity: 1, y: 0, duration: 0.5 }, 21.0);
+
+      // Mark ingested active styles (22s)
+      tl.to("#stack-1, #stack-2, #stack-3", { className: "stack-item ingested", duration: 0.5 }, 22.5);
+
+      // 4. Needle in a Haystack panel display (30s)
+      tl.to("#workspace-card, #stack-box", { opacity: 0.1, duration: 0.8 }, 30.0);
+      tl.to("#haystack-card", { opacity: 1, scale: 1.0, duration: 0.8, ease: "power2.out" }, 30.5);
+
+      // Stagger highlight dots representing searching
+      tl.to(".hay-dot", { background: "rgba(56, 189, 248, 0.4)", duration: 0.2, stagger: 0.005 }, 31.0);
+
+      // Plant golden needle at dot index 137 (35s)
+      tl.call(() => {
+        const dot = document.getElementById("dot-137");
+        if (dot) dot.className = "hay-dot hay-needle";
+      }, [], 35.0);
+
+      // Search locks on to needle card popup (37s)
+      tl.to("#needle-desc-box", { opacity: 1, scale: 1.0, duration: 0.6, ease: "back.out(1.2)" }, 37.0);
+      
+      tl.call(() => {
+        document.getElementById("haystack-status-txt").innerText = "STATUS: 100% RETRIEVAL ACCURACY";
+        document.getElementById("haystack-status-txt").style.color = "#10b981";
+      }, [], 37.5);
+
+      // 5. Caching badge pops up (43s - 54.49s)
+      tl.to("#caching-badge", { opacity: 1, scale: 1.0, duration: 0.6, ease: "back.out(1.2)" }, 43.0);
+
+      // Final Exit
+      tl.to("#haystack-card, #needle-desc-box", { opacity: 0, scale: 0.9, duration: 1.0, ease: "power2.in" }, 52.5);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Every time you chat with a model, it reads your prompt, the history, and any context you provide." },
+        { time: 6.2, text: "This temporary working space is the Context Window." },
+        { time: 9.8, text: "Early models could only remember a few pages of text—around 4,000 tokens." },
+        { time: 14.5, text: "If you went past that, they forgot the beginning of the conversation." },
+        { time: 18.2, text: "But today, modern models have context windows of up to two million tokens." },
+        { time: 22.5, text: "That's enough to hold an entire codebase, hours of audio, or thirty books in active memory." },
+        { time: 29.8, text: "To prove this capacity, developers run a test called \"Needle in a Haystack\"." },
+        { time: 34.0, text: "They hide a random, unrelated sentence deep inside a million words of text and ask the model to find it." },
+        { time: 40.5, text: "Modern reasoning models pass this with near-perfect accuracy." },
+        { time: 44.5, text: "But how does a model keep track of these long conversations across different turns and sessions?" },
+        { time: 50.0, text: "For that, it needs a way to save its state. Enter Context Caching." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec12"] = tl;
+    </script>
+  </template>
+</body>
+</html>

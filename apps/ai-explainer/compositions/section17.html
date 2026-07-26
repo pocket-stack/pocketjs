@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Split Layout */
+      .reasoning-layout {
+        position: relative;
+        width: 1550px;
+        height: 640px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Panel Column */
+      .reasoning-column {
+        width: 720px;
+        height: 520px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 24px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+        transform: translateY(30px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+      }
+      .reasoning-column.active-column {
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.2);
+      }
+
+      .panel-title {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #94a3b8;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+      }
+      .reasoning-column.active-column .panel-title {
+        color: #38bdf8;
+      }
+
+      /* Pipeline diagram visualization */
+      .pipe-vis {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: relative;
+        height: 180px;
+      }
+      .pipe-node-card {
+        background: rgba(4, 8, 20, 0.95);
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: 12px;
+        padding: 16px 20px;
+        width: 160px;
+        text-align: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        z-index: 12;
+      }
+      .pipe-node-card.node-success {
+        border-color: #10b981;
+        color: #10b981;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+      }
+      .pipe-connector-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 5;
+      }
+      .pipe-arrow {
+        stroke: rgba(148, 163, 184, 0.2);
+        stroke-width: 2;
+        fill: none;
+      }
+      .pipe-arrow.arrow-active {
+        stroke: #38bdf8;
+        stroke-width: 4;
+        filter: drop-shadow(0 0 4px #38bdf8);
+      }
+
+      /* Central circular loop container for o1 */
+      .reasoning-loop-box {
+        position: relative;
+        width: 140px;
+        height: 140px;
+        border: 2px dashed rgba(56, 189, 248, 0.3);
+        border-radius: 50%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+      }
+      .reasoning-loop-box.loop-running {
+        border-color: #38bdf8;
+        animation: spin 6s linear infinite;
+      }
+      @keyframes spin {
+        100% { transform: rotate(360deg); }
+      }
+      .loop-spinner-dot {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+        top: -6px;
+      }
+
+      /* Log console panel inside o1 */
+      .internal-thoughts-log {
+        background: rgba(4, 8, 20, 0.95);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 12px;
+        padding: 16px 24px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #cbd5e1;
+        height: 160px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        opacity: 0;
+      }
+      .thought-line {
+        opacity: 0;
+        transform: translateY(5px);
+        transition: all 0.3s ease;
+      }
+      .thought-line.visible-thought {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .thought-line span {
+        color: #94a3b8;
+      }
+
+      /* Metric label */
+      .comp-stat-badge {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+      }
+
+      /* Multimodal Teaser overlay */
+      .multimodal-teaser-panel {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: all 0.6s ease;
+      }
+      .multimodal-sockets-wrapper {
+        display: flex;
+        gap: 40px;
+        margin-top: 40px;
+      }
+      .m-socket-card {
+        background: rgba(15, 23, 42, 0.9);
+        border: 2px solid rgba(56, 189, 248, 0.2);
+        border-radius: 16px;
+        padding: 24px 30px;
+        width: 180px;
+        text-align: center;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+      }
+      .m-socket-card.socket-glow {
+        border-color: #38bdf8;
+        box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+      }
+      .m-socket-icon {
+        font-size: 34px;
+        margin-bottom: 10px;
+      }
+      .m-socket-card h6 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #cbd5e1;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-jaad" id="root" data-composition-id="scene-sec17" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-jdkj">MODULE // REASIONING_MODELS</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-2l8b" class="reasoning-layout">
+          <!-- Left side: Traditional GPT-4 -->
+          <div data-hf-id="hf-pkwr" class="reasoning-column" id="col-trad">
+            <div data-hf-id="hf-npvi" class="panel-title">TRADITIONAL_MODEL // DIRECT_RESPONSE (GPT-4)</div>
+            <div data-hf-id="hf-gilt" class="pipe-vis">
+              <svg data-hf-id="hf-e9aa" class="pipe-connector-svg">
+                <path data-hf-id="hf-s04r" class="pipe-arrow" id="arrow-trad" d="M 120 90 L 520 90" />
+              </svg>
+              <div data-hf-id="hf-far2" class="pipe-node-card" id="n-trad-in">INPUT PROMPT</div>
+              <div data-hf-id="hf-25ta" class="pipe-node-card node-success" id="n-trad-out" style="opacity: 0;">OUTPUT</div>
+            </div>
+            <div data-hf-id="hf-vu2x" class="comp-stat-badge" id="stat-trad">Inference Compute: 1x (Immediate token prediction)</div>
+          </div>
+
+          <!-- Right side: Reasoning o1 -->
+          <div data-hf-id="hf-vose" class="reasoning-column" id="col-reason">
+            <div data-hf-id="hf-zsw2" class="panel-title">REASONING_MODEL // SEARCH_COMPUTE (o1 / R1)</div>
+            <div data-hf-id="hf-w205" class="pipe-vis">
+              <svg data-hf-id="hf-gyxy" class="pipe-connector-svg">
+                <path data-hf-id="hf-iv3n" class="pipe-arrow" id="arrow-reason-1" d="M 100 90 L 220 90" />
+                <path data-hf-id="hf-tgks" class="pipe-arrow" id="arrow-reason-2" d="M 360 90 L 480 90" />
+              </svg>
+              <div data-hf-id="hf-vo9l" class="pipe-node-card" id="n-reason-in">INPUT PROMPT</div>
+              <!-- Loop spinner box -->
+              <div data-hf-id="hf-ajvl" class="reasoning-loop-box" id="loop-container">
+                <div data-hf-id="hf-r5t4" class="loop-spinner-dot"></div>
+                <span data-hf-id="hf-st8k" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: bold; text-align: center;">REASONING<br data-hf-id="hf-x5px">LOOP</span>
+              </div>
+              <div data-hf-id="hf-1452" class="pipe-node-card node-success" id="n-reason-out" style="opacity: 0;">REFINED OUTPUT</div>
+            </div>
+
+            <!-- Thought logs console -->
+            <div data-hf-id="hf-2fs3" class="internal-thoughts-log" id="thoughts-console">
+              <div data-hf-id="hf-tz4e" class="thought-line" id="t-1"><span data-hf-id="hf-j5pi">[thought]</span>Evaluating mathematical logic constraints...</div>
+              <div data-hf-id="hf-2nhh" class="thought-line" id="t-2"><span data-hf-id="hf-wysq">[thought]</span>Identifying edge case in sequence indices.</div>
+              <div data-hf-id="hf-opl7" class="thought-line" id="t-3"><span data-hf-id="hf-xd3r">[thought]</span>Found overlap logic warning: correcting weights plan...</div>
+            </div>
+
+            <div data-hf-id="hf-r46t" class="comp-stat-badge" id="stat-reason">Inference Compute: 100x (Deep logic evaluation)</div>
+          </div>
+        </div>
+
+        <!-- Multimodal Teaser -->
+        <div data-hf-id="hf-w1v3" class="multimodal-teaser-panel" id="multimodal-teaser" style=" ">
+          <div data-hf-id="hf-2yc6" style="font-family: 'JetBrains Mono', monospace; font-size: 18px; color: #38bdf8; text-transform: uppercase; letter-spacing: 2px;">
+            Unified Sensory Network: Multimodal Integration
+          </div>
+          <div data-hf-id="hf-bzfp" class="multimodal-sockets-wrapper">
+            <div data-hf-id="hf-fo6e" class="m-socket-card socket-glow" id="s-img">
+              <div data-hf-id="hf-jsc9" class="m-socket-icon">📷</div>
+              <h6 data-hf-id="hf-by6k">IMAGE INPUT</h6>
+            </div>
+            <div data-hf-id="hf-d5n9" class="m-socket-card socket-glow" id="s-aud">
+              <div data-hf-id="hf-h66x" class="m-socket-icon">🎤</div>
+              <h6 data-hf-id="hf-2eer">AUDIO INPUT</h6>
+            </div>
+            <div data-hf-id="hf-vy66" class="m-socket-card socket-glow" id="s-vid">
+              <div data-hf-id="hf-hkhy" class="m-socket-icon">🎥</div>
+              <h6 data-hf-id="hf-qfmm">VIDEO INPUT</h6>
+            </div>
+            <div data-hf-id="hf-z5zn" class="m-socket-card socket-glow" id="s-txt">
+              <div data-hf-id="hf-1wk0" class="m-socket-icon">📄</div>
+              <h6 data-hf-id="hf-clzk">TEXT INPUT</h6>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-r4vr">FRAME_TIME: 13:59:26</div>
+        <div data-hf-id="hf-9936">SYS_METRIC: INFERENCE_SEARCH_COMPUTE</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-nfcw" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="47.81" data-track-index="5">
+        <div data-hf-id="hf-ui6v" class="caption-box" id="caption-text">Section 17: Reasoning Models</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 8,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Entrance of panels (3s)
+      tl.to("#col-trad", { opacity: 1, y: 0, duration: 0.6 }, 3.0);
+      tl.to("#col-reason", { opacity: 1, y: 0, duration: 0.6 }, 4.0);
+
+      // 2. Traditional direct output generation (6s)
+      tl.to("#arrow-trad", { className: "pipe-arrow arrow-active", duration: 0.5 }, 6.0);
+      tl.to("#n-trad-out", { opacity: 1, duration: 0.4 }, 6.5);
+      tl.to("#col-trad", { className: "reasoning-column active-column", duration: 0.5 }, 7.0);
+
+      // 3. Reasoning model prompt slides to loop (14s)
+      tl.to("#col-trad", { className: "reasoning-column", duration: 0.5 }, 13.5);
+      tl.to("#arrow-reason-1", { className: "pipe-arrow arrow-active", duration: 0.5 }, 14.0);
+      
+      tl.call(() => {
+        // Start circular loop animation
+        document.getElementById("loop-container").className = "reasoning-loop-box loop-running";
+      }, [], 14.5);
+
+      // Thoughts console reveals (16s)
+      tl.to("#thoughts-console", { opacity: 1, duration: 0.5 }, 16.0);
+      tl.to("#t-1", { className: "thought-line visible-thought", duration: 0.4 }, 17.5);
+      tl.to("#t-2", { className: "thought-line visible-thought", duration: 0.4 }, 21.0);
+      tl.to("#t-3", { className: "thought-line visible-thought", duration: 0.4 }, 25.5);
+
+      // 4. Output generation (32s)
+      tl.call(() => {
+        // Stop circular loop spin
+        document.getElementById("loop-container").className = "reasoning-loop-box";
+      }, [], 31.5);
+      
+      tl.to("#arrow-reason-2", { className: "pipe-arrow arrow-active", duration: 0.5 }, 32.0);
+      tl.to("#n-reason-out", { opacity: 1, duration: 0.4 }, 32.5);
+      tl.to("#col-reason", { className: "reasoning-column active-column", duration: 0.5 }, 33.0);
+
+      // 5. Transition to Multimodal teaser (38s - 47.81s)
+      tl.to("#col-trad, #col-reason", { opacity: 0.05, duration: 0.8 }, 38.5);
+      tl.to("#multimodal-teaser", { opacity: 1, duration: 1.0 }, 39.5);
+      
+      // Stagger socket cards hover scale
+      tl.to(".m-socket-card", {
+        scale: 1.08,
+        stagger: 0.15,
+        duration: 0.5,
+        yoyo: true,
+        repeat: 3
+      }, 40.5);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Traditional models like GPT-4 output their first thought immediately." },
+        { time: 5.5, text: "Newer reasoning models, like OpenAI's o1 and DeepSeek's R1, operate differently." },
+        { time: 13.5, text: "When you send a prompt, the model enters a hidden reasoning phase before writing its response." },
+        { time: 19.5, text: "It generates an internal chain of thought, evaluating options, checking for errors, and refining its logic." },
+        { time: 27.5, text: "Only after completing this search does it present the final output to the user." },
+        { time: 31.8, text: "While this makes the model take longer to respond, it uses more compute during inference" },
+        { time: 37.0, text: "to solve problems that previously stumped AI." },
+        { time: 40.5, text: "But AI isn't just about text. Modern models must understand the physical world through multiple senses." },
+        { time: 45.0, text: "For that, they must be multimodal." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec17"] = tl;
+    </script>
+  </template>
+</body>
+</html>

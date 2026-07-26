@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #10b981;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #10b981;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 120px 80px 80px 80px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Unified Blueprint Layout */
+      .blueprint-container {
+        position: relative;
+        width: 1600px;
+        height: 720px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      /* Central flow nodes stack */
+      .central-flow {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        width: 480px;
+        z-index: 12;
+      }
+
+      /* Node Card */
+      .flow-node-card {
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        padding: 16px 24px;
+        width: 380px;
+        text-align: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #cbd5e1;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+        opacity: 0;
+        transform: translateY(20px);
+        transition: all 0.3s ease;
+      }
+      .flow-node-card.node-active {
+        border-color: #38bdf8;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
+        color: #f8fafc;
+      }
+      .flow-node-card.node-success {
+        border-color: #10b981;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.25);
+        color: #10b981;
+      }
+
+      /* Side inputs columns */
+      .side-inputs-left, .side-inputs-right {
+        position: absolute;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        width: 280px;
+        z-index: 10;
+      }
+      .side-inputs-left { left: 160px; }
+      .side-inputs-right { right: 160px; }
+
+      .side-node-card {
+        background: rgba(15, 23, 42, 0.95);
+        border: 1.5px solid rgba(148, 163, 184, 0.2);
+        border-radius: 10px;
+        padding: 14px 20px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #cbd5e1;
+        opacity: 0;
+        transform: scale(0.95);
+      }
+      .side-node-card.side-active {
+        border-color: #38bdf8;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+      }
+
+      /* Connector SVG layer */
+      .blueprint-connector-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 5;
+      }
+      .connector-line {
+        stroke: rgba(148, 163, 184, 0.15);
+        stroke-width: 2;
+        fill: none;
+      }
+      .connector-line.connector-active {
+        stroke: #38bdf8;
+        stroke-width: 3;
+        filter: drop-shadow(0 0 4px #38bdf8);
+      }
+
+      /* Optimizations wrapping box overlay */
+      .optimizations-wrap-box {
+        position: absolute;
+        width: 520px;
+        height: 130px;
+        border: 2px dashed rgba(16, 185, 129, 0.1);
+        border-radius: 18px;
+        background: rgba(16, 185, 129, 0.02);
+        opacity: 0;
+        transform: scale(0.98);
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: #10b981;
+      }
+      .optimizations-wrap-box.wrap-active {
+        border-color: #10b981;
+        opacity: 1;
+        box-shadow: 0 0 25px rgba(16, 185, 129, 0.1);
+      }
+
+      /* Giant Final Credits Overlay */
+      .final-credits-overlay {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: all 0.8s ease;
+      }
+      .credits-title {
+        font-size: 48px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 3px;
+        background: linear-gradient(135deg, #f8fafc 0%, #38bdf8 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 20px;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-7e91" id="root" data-composition-id="scene-sec22" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-nju9">MODULE // FULL_AI_ARCHITECTURE</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-psn7" class="blueprint-container">
+          <!-- Connector SVG overlay -->
+          <svg data-hf-id="hf-1lip" class="blueprint-connector-svg" style=" ">
+            <!-- Downward core flow paths -->
+            <path data-hf-id="hf-2scw" class="connector-line" id="line-flow-1" d="M 800 130 L 800 180" />
+            <path data-hf-id="hf-tb2x" class="connector-line" id="line-flow-2" d="M 800 240 L 800 290" />
+            <path data-hf-id="hf-f2ox" class="connector-line" id="line-flow-3" d="M 800 350 L 800 400" />
+            <path data-hf-id="hf-9q12" class="connector-line" id="line-flow-4" d="M 800 460 L 800 510" />
+
+            <!-- Side inputs lines (Left) -->
+            <!-- Slack Context: L-1 to Context Assembly -->
+            <path data-hf-id="hf-h5g8" class="connector-line" id="line-side-l1" d="M 440 230 C 560 230, 580 290, 610 290" />
+            <!-- Vector DB Docs: L-2 to Context Assembly -->
+            <path data-hf-id="hf-7quv" class="connector-line" id="line-side-l2" d="M 440 330 C 560 330, 580 340, 610 340" />
+
+            <!-- Side inputs lines (Right) -->
+            <!-- User Profile Memory: R-1 to Context Assembly -->
+            <path data-hf-id="hf-ieb5" class="connector-line" id="line-side-r1" d="M 1160 230 C 1040 230, 1020 290, 990 290" />
+            <!-- MCP Tool Servers: R-2 to Context Assembly -->
+            <path data-hf-id="hf-d06w" class="connector-line" id="line-side-r2" d="M 1160 330 C 1040 330, 1020 340, 990 340" />
+          </svg>
+
+          <!-- Central stack nodes -->
+          <div data-hf-id="hf-lgkc" class="central-flow">
+            <div data-hf-id="hf-yeqg" class="flow-node-card" id="nd-req">USER_PROMPT_INPUT</div>
+            <div data-hf-id="hf-2ozd" class="flow-node-card" id="nd-context">CONTEXT_ASSEMBLY_PIPELINE</div>
+            <div data-hf-id="hf-g5el" class="flow-node-card" id="nd-agent">AGENT_REASONING_PLANNER</div>
+            <div data-hf-id="hf-mqgq" class="flow-node-card" id="nd-llm">LARGE_LANGUAGE_MODEL</div>
+            <div data-hf-id="hf-8vqq" class="flow-node-card node-success" id="nd-resp">FINAL_SYNTHESIZED_RESPONSE</div>
+          </div>
+
+          <!-- Left column side nodes -->
+          <div data-hf-id="hf-ktmp" class="side-inputs-left">
+            <div data-hf-id="hf-r6mx" class="side-node-card" id="nd-side-l1">Conversation Memory</div>
+            <div data-hf-id="hf-k1b9" class="side-node-card" id="nd-side-l2">Vector DB / RAG Docs</div>
+          </div>
+
+          <!-- Right column side nodes -->
+          <div data-hf-id="hf-1k30" class="side-inputs-right">
+            <div data-hf-id="hf-ptcx" class="side-node-card" id="nd-side-r1">System Instruction templates</div>
+            <div data-hf-id="hf-o1ma" class="side-node-card" id="nd-side-r2">MCP Tool Schemas</div>
+          </div>
+
+          <!-- Optimizations wrapper box -->
+          <div data-hf-id="hf-7qpq" class="optimizations-wrap-box" id="opt-box" style="top: 385px; left: 540px;">
+            SYSTEM_OPTIMIZATIONS (SLM / KNOWLEDGE_DISTILLATION / QUANTIZATION)
+          </div>
+        </div>
+
+        <!-- Giant Final Credits Overlay -->
+        <div data-hf-id="hf-57f1" class="final-credits-overlay" id="final-credits" style=" ">
+          <div data-hf-id="hf-zv3s" class="credits-title">AI Engineering Explained</div>
+          <div data-hf-id="hf-mnwb" style="font-family: 'JetBrains Mono', monospace; font-size: 16px; color: #cbd5e1; text-align: center; line-height: 1.6; max-width: 680px;">
+            Course Mental Model: Fully Assembled.<br data-hf-id="hf-x5px">
+            You are now ready to build real-world AI applications.<br data-hf-id="hf-rsrt">
+            <br data-hf-id="hf-szow">
+            <span data-hf-id="hf-dh5p" style="color: #38bdf8; font-weight: bold;">HAPPY HACKING! 🚀</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-4lb0">FRAME_TIME: 18:17:35</div>
+        <div data-hf-id="hf-f0r3">SYS_METRIC: BLUEPRINT_COMPLETE</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-veh1" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="68.85" data-track-index="5">
+        <div data-hf-id="hf-p2vu" class="caption-box" id="caption-text">Section 22: Ending</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 11,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. User request input card slides in (3s)
+      tl.to("#nd-req", { opacity: 1, y: 0, duration: 0.6 }, 3.0);
+      tl.to("#nd-req", { className: "flow-node-card node-active", duration: 0.4 }, 3.6);
+
+      // 2. Context assembly core activates (14s)
+      tl.to("#line-flow-1", { className: "connector-line connector-active", duration: 0.5 }, 13.5);
+      tl.to("#nd-context", { opacity: 1, y: 0, duration: 0.6 }, 14.0);
+
+      // Side inputs fade in
+      tl.to("#nd-side-l1, #nd-side-r1", { opacity: 1, scale: 1, duration: 0.5 }, 15.5);
+      tl.to("#nd-side-l2, #nd-side-r2", { opacity: 1, scale: 1, duration: 0.5 }, 17.0);
+
+      // Side lines shoot energy
+      tl.to("#line-side-l1, #line-side-r1", { className: "connector-line connector-active", duration: 0.5 }, 18.0);
+      tl.to("#line-side-l2, #line-side-r2", { className: "connector-line connector-active", duration: 0.5 }, 19.5);
+      tl.to("#nd-context", { className: "flow-node-card node-active", duration: 0.5 }, 20.5);
+
+      // 3. Agent planning reasoning step (26s)
+      tl.to("#line-flow-2", { className: "connector-line connector-active", duration: 0.5 }, 26.0);
+      tl.to("#nd-agent", { opacity: 1, y: 0, duration: 0.6 }, 26.5);
+      tl.to("#nd-agent", { className: "flow-node-card node-active", duration: 0.4 }, 27.5);
+
+      // 4. Large Language Model reasons (32s)
+      tl.to("#line-flow-3", { className: "connector-line connector-active", duration: 0.5 }, 31.5);
+      tl.to("#nd-llm", { opacity: 1, y: 0, duration: 0.6 }, 32.0);
+      tl.to("#nd-llm", { className: "flow-node-card node-active", duration: 0.4 }, 33.0);
+
+      // Final output response generated (38s)
+      tl.to("#line-flow-4", { className: "connector-line connector-active", duration: 0.5 }, 37.5);
+      tl.to("#nd-resp", { opacity: 1, y: 0, duration: 0.6 }, 38.0);
+
+      // 5. System Optimization encloser card (45s - 58s)
+      tl.to("#opt-box", { className: "optimizations-wrap-box wrap-active", duration: 0.8 }, 45.5);
+
+      // 6. Full Credits wrap up overlay (58s - 68.85s)
+      tl.to("#final-credits", { opacity: 1, duration: 1.2 }, 58.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Every concept you've learned today fits into a modern AI application." },
+        { time: 5.5, text: "The user sends a request." },
+        { time: 8.8, text: "The application gathers context, retrieves relevant knowledge, loads user memories," },
+        { time: 14.5, text: "and calls external tools when needed." },
+        { time: 18.5, text: "An agent decides which actions to take." },
+        { time: 22.0, text: "A large language model reasons over all of that information" },
+        { time: 26.5, text: "and generates the final response." },
+        { time: 30.2, text: "Around that core, techniques like fine-tuning, prompting, quantization," },
+        { time: 35.8, text: "distillation, and small language models" },
+        { time: 39.5, text: "make the system more specialized, faster, and cheaper to run." },
+        { time: 44.8, text: "Once you understand how these pieces fit together, AI engineering becomes much less mysterious." },
+        { time: 50.8, text: "Instead of seeing a collection of buzzwords, you'll recognize them as components" },
+        { time: 54.8, text: "in a larger architecture, each solving a specific problem." },
+        { time: 59.2, text: "Whether you're building coding assistants, customer support bots," },
+        { time: 62.5, text: "internal knowledge systems, or fully autonomous agents," },
+        { time: 65.5, text: "these concepts form the foundation of modern AI software." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec22"] = tl;
+    </script>
+  </template>
+</body>
+</html>

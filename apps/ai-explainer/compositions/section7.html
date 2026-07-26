@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Fine-tuning flow structure */
+      .flow-container {
+        position: relative;
+        width: 1600px;
+        height: 680px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      /* Base Model Block (Center-Left) */
+      .base-model-box {
+        position: absolute;
+        left: 80px;
+        width: 320px;
+        height: 240px;
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid #38bdf8;
+        border-radius: 20px;
+        padding: 30px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        box-shadow: 0 0 30px rgba(56, 189, 248, 0.2);
+        z-index: 10;
+      }
+      .base-model-box h3 {
+        font-size: 26px;
+        color: #f8fafc;
+        margin-bottom: 8px;
+        font-weight: 800;
+      }
+      .base-model-box p {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+      }
+
+      /* User Prompt / Completion Dialogue bubbles */
+      .chat-bubble {
+        position: absolute;
+        padding: 16px 24px;
+        border-radius: 16px;
+        font-size: 16px;
+        max-width: 360px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        opacity: 0;
+        transform: translateY(20px);
+        transition: all 0.4s ease;
+      }
+      .bubble-user {
+        background: #0f172a;
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        color: #38bdf8;
+        top: 20px;
+        left: 200px;
+      }
+      .bubble-completion {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px dashed #ef4444;
+        color: #fca5a5;
+        bottom: 20px;
+        left: 240px;
+      }
+
+      /* Branch Paths SVG Layer */
+      .paths-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
+
+      /* Branch paths connector lines */
+      .branch-line {
+        stroke: rgba(56, 189, 248, 0.15);
+        stroke-width: 3;
+        fill: none;
+        transition: stroke 0.4s ease;
+      }
+      .branch-line.active-med { stroke: #10b981; }
+      .branch-line.active-fin { stroke: #fb923c; }
+      .branch-line.active-leg { stroke: #a855f7; }
+
+      /* Specialized Bot Cards (Right Side Stack) */
+      .specialized-stack {
+        position: absolute;
+        right: 80px;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        z-index: 5;
+      }
+
+      .bot-card {
+        background: rgba(15, 23, 42, 0.8);
+        border: 2px solid rgba(56, 189, 248, 0.1);
+        border-radius: 16px;
+        padding: 20px 30px;
+        width: 460px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        opacity: 0;
+        transform: translateX(50px);
+        transition: all 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+      }
+      .bot-icon {
+        font-size: 38px;
+        background: rgba(4, 8, 20, 0.8);
+        padding: 10px;
+        border-radius: 12px;
+        border: 1px solid;
+      }
+      .bot-info h4 {
+        font-size: 20px;
+        color: #f8fafc;
+        margin-bottom: 4px;
+      }
+      .bot-info p {
+        font-size: 14px;
+        color: #94a3b8;
+        font-family: 'JetBrains Mono', monospace;
+      }
+
+      /* Specific colors for specialized cards */
+      .bot-medical {
+        border-color: rgba(16, 185, 129, 0.2);
+      }
+      .bot-medical.active-card {
+        border-color: #10b981;
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+      }
+      .bot-medical .bot-icon {
+        color: #10b981;
+        border-color: #10b981;
+      }
+
+      .bot-financial {
+        border-color: rgba(251, 146, 96, 0.2);
+      }
+      .bot-financial.active-card {
+        border-color: #fb923c;
+        box-shadow: 0 0 20px rgba(251, 146, 96, 0.2);
+      }
+      .bot-financial .bot-icon {
+        color: #fb923c;
+        border-color: #fb923c;
+      }
+
+      .bot-legal {
+        border-color: rgba(168, 85, 247, 0.2);
+      }
+      .bot-legal.active-card {
+        border-color: #a855f7;
+        box-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
+      }
+      .bot-legal .bot-icon {
+        color: #a855f7;
+        border-color: #a855f7;
+      }
+
+      /* Training Cost Comparison Panel */
+      .cost-compare {
+        position: absolute;
+        bottom: 20px;
+        left: 80px;
+        display: flex;
+        gap: 30px;
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      .cost-card {
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(56, 189, 248, 0.15);
+        border-radius: 12px;
+        padding: 16px 24px;
+        width: 320px;
+      }
+      .cost-card h5 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #cbd5e1;
+        margin-bottom: 6px;
+      }
+      .cost-val {
+        font-size: 28px;
+        font-weight: 800;
+      }
+      .cost-card.pretrain .cost-val {
+        color: #ef4444;
+        text-decoration: line-through;
+      }
+      .cost-card.finetune {
+        border-color: #10b981;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
+      }
+      .cost-card.finetune .cost-val {
+        color: #10b981;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-u2zw" id="root" data-composition-id="scene-sec7" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-vekt">MODULE // FINE_TUNING</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-dklq" class="flow-container">
+          <!-- Connectors Layer -->
+          <svg data-hf-id="hf-dgdy" class="paths-svg">
+            <!-- Path lines from Base Model (cx: 240, cy: 340) to Specialized cards (cx: 1140, cy: 150/340/530) -->
+            <path data-hf-id="hf-aaub" class="branch-line" id="line-med" d="M 400 340 Q 600 200, 1060 150" />
+            <path data-hf-id="hf-zbdi" class="branch-line" id="line-fin" d="M 400 340 Q 600 340, 1060 340" />
+            <path data-hf-id="hf-z79h" class="branch-line" id="line-leg" d="M 400 340 Q 600 480, 1060 530" />
+          </svg>
+
+          <!-- Base Model Block -->
+          <div data-hf-id="hf-0z79" class="base-model-box" id="base-card">
+            <h3 data-hf-id="hf-b4m8">BASE MODEL</h3>
+            <p data-hf-id="hf-dl5w">Trillions of Web Tokens</p>
+          </div>
+
+          <!-- Dialogues bubbles showing document completion issue -->
+          <div data-hf-id="hf-uy12" class="chat-bubble bubble-user" id="chat-u">
+            <strong data-hf-id="hf-gft2">Prompt:</strong> "What is my medical diagnosis?"
+          </div>
+          <div data-hf-id="hf-wumy" class="chat-bubble bubble-completion" id="chat-c">
+            <strong data-hf-id="hf-pf5a">Completion:</strong> "Medical forum post #241: I have been having a headache..."
+          </div>
+
+          <!-- Specialized Target Stack -->
+          <div data-hf-id="hf-06rs" class="specialized-stack">
+            <!-- Medical Bot -->
+            <div data-hf-id="hf-6zvi" class="bot-card bot-medical" id="card-med">
+              <span data-hf-id="hf-6s92" class="bot-icon">🩺</span>
+              <div data-hf-id="hf-7da4" class="bot-info">
+                <h4 data-hf-id="hf-inw6">MEDICAL_ASSISTANT_AI</h4>
+                <p data-hf-id="hf-zdwx">Fine-Tuned: Clinical Q&amp;A Dataset</p>
+              </div>
+            </div>
+
+            <!-- Financial Bot -->
+            <div data-hf-id="hf-ooxb" class="bot-card bot-financial" id="card-fin">
+              <span data-hf-id="hf-js0r" class="bot-icon">📈</span>
+              <div data-hf-id="hf-zf5g" class="bot-info">
+                <h4 data-hf-id="hf-lgh4">FINANCIAL_ANALYST_AI</h4>
+                <p data-hf-id="hf-vm4w">Fine-Tuned: Ledger Reports &amp; Filings</p>
+              </div>
+            </div>
+
+            <!-- Legal Bot -->
+            <div data-hf-id="hf-anmy" class="bot-card bot-legal" id="card-leg">
+              <span data-hf-id="hf-gjul" class="bot-icon">⚖️</span>
+              <div data-hf-id="hf-y88d" class="bot-info">
+                <h4 data-hf-id="hf-ajrl">LEGAL_COUNSEL_AI</h4>
+                <p data-hf-id="hf-ce6e">Fine-Tuned: Precedents &amp; Contracts</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Training Cost comparison cards -->
+          <div data-hf-id="hf-e6j1" class="cost-compare" id="cost-panel">
+            <div data-hf-id="hf-krt5" class="cost-card pretrain">
+              <h5 data-hf-id="hf-c3sp">PRE-TRAINING COST</h5>
+              <div data-hf-id="hf-ihkr" class="cost-val">$10,000,000+</div>
+            </div>
+            <div data-hf-id="hf-urk4" class="cost-card finetune">
+              <h5 data-hf-id="hf-e9x1">FINE-TUNING COST</h5>
+              <div data-hf-id="hf-mw9g" class="cost-val">$100 - $1,000</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-2vpz">FRAME_TIME: 05:56:00</div>
+        <div data-hf-id="hf-uz6v">SYS_METRIC: TASK_ALIGNMENT</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-1c2b" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="46.76" data-track-index="5">
+        <div data-hf-id="hf-jpav" class="caption-box" id="caption-text">Section 7: Fine Tuning</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 8,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Initial State: base card slides in
+      tl.fromTo("#base-card", { scale: 0.8, opacity: 0 }, { scale: 1.0, opacity: 1, duration: 0.8, ease: "back.out(1.2)" }, 1.5);
+
+      // 2. Chat dialogues pop up representing base model completer behavior (4s - 13s)
+      tl.to("#chat-u", { opacity: 1, y: 0, duration: 0.5 }, 4.0);
+      tl.to("#chat-c", { opacity: 1, y: 0, duration: 0.5 }, 7.0);
+
+      // Fade out bubbles (13.5s)
+      tl.to("#chat-u, #chat-c", { opacity: 0, scale: 0.9, duration: 0.6 }, 13.0);
+
+      // 3. Fine-tuning paths branch out & datasets connect (14s)
+      // Path lengths are drawn / active curves glow (15s)
+      tl.to("#line-med", { stroke: "#10b981", duration: 1.2, ease: "power2.out" }, 15.0);
+      tl.to("#line-fin", { stroke: "#fb923c", duration: 1.2, ease: "power2.out" }, 15.2);
+      tl.to("#line-leg", { stroke: "#a855f7", duration: 1.2, ease: "power2.out" }, 15.4);
+
+      // Stagger animate target bots
+      tl.to("#card-med", { opacity: 1, x: 0, duration: 0.8, ease: "power3.out" }, 18.0);
+      tl.to("#card-fin", { opacity: 1, x: 0, duration: 0.8, ease: "power3.out" }, 18.5);
+      tl.to("#card-leg", { opacity: 1, x: 0, duration: 0.8, ease: "power3.out" }, 19.0);
+
+      // 4. Highlight specialised bots as they are described (22s - 37s)
+      // Medical Assistant AI (22s)
+      tl.to("#card-med", { className: "bot-card bot-medical active-card", scale: 1.05, duration: 0.5 }, 22.0);
+      tl.to("#card-med", { className: "bot-card bot-medical", scale: 1.0, duration: 0.5 }, 25.0);
+
+      // Financial AI (27s)
+      tl.to("#card-fin", { className: "bot-card bot-financial active-card", scale: 1.05, duration: 0.5 }, 27.0);
+      tl.to("#card-fin", { className: "bot-card bot-financial", scale: 1.0, duration: 0.5 }, 30.0);
+
+      // Legal AI (32s)
+      tl.to("#card-leg", { className: "bot-card bot-legal active-card", scale: 1.05, duration: 0.5 }, 32.0);
+      tl.to("#card-leg", { className: "bot-card bot-legal", scale: 1.0, duration: 0.5 }, 35.0);
+
+      // 5. Cost comparison cards display (37s - 43s)
+      tl.to("#cost-panel", { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }, 37.0);
+
+      // Final Exit
+      tl.to("#base-card, #card-med, #card-fin, #card-leg, #cost-panel", { opacity: 0, scale: 0.85, duration: 1.0, ease: "power2.in" }, 45.0);
+      tl.to(".branch-line", { opacity: 0, duration: 0.8 }, 45.2);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "A raw base model only knows how to write internet-like text." },
+        { time: 4.5, text: "If you ask it: \"What is my medical diagnosis?\", it might write another medical forum post instead of answering." },
+        { time: 13.5, text: "To make it useful, we use Fine-Tuning." },
+        { time: 17.0, text: "We take the base model and train it further on a smaller, curated dataset." },
+        { time: 22.0, text: "For example, a medical dataset transforms the base model into a Medical Assistant." },
+        { time: 27.0, text: "A financial dataset creates a Financial AI, and legal documents build a Legal AI." },
+        { time: 33.5, text: "Unlike pre-training, which is slow and costs millions," },
+        { time: 37.0, text: "fine-tuning adapts an existing model's behavior for a fraction of the cost." },
+        { time: 42.5, text: "But what if we don't want to change the model's weights at all?" },
+        { time: 44.5, text: "We can change its behavior instantly through prompting." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec7"] = tl;
+    </script>
+  </template>
+</body>
+</html>

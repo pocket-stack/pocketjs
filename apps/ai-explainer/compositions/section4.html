@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Paper Display Block (shown at the beginning) */
+      .paper-container {
+        position: absolute;
+        width: 580px;
+        height: 480px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 2px solid rgba(56, 189, 248, 0.3);
+        border-radius: 16px;
+        padding: 40px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        transform: scale(0.8);
+        opacity: 0;
+        z-index: 8;
+      }
+      .paper-tag {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+        border: 1px solid #38bdf8;
+        padding: 4px 12px;
+        border-radius: 6px;
+        margin-bottom: 25px;
+      }
+      .paper-title {
+        font-size: 38px;
+        font-weight: 800;
+        line-height: 1.3;
+        margin-bottom: 20px;
+        color: #f8fafc;
+      }
+      .paper-authors {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #94a3b8;
+      }
+
+      /* Main Attention Visual Frame */
+      .attention-frame {
+        width: 100%;
+        height: 680px;
+        display: grid;
+        grid-template-rows: 1fr 1fr;
+        gap: 40px;
+        position: relative;
+        opacity: 0;
+      }
+
+      .sentence-row {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(56, 189, 248, 0.1);
+        border-radius: 20px;
+        padding: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+      }
+      .sentence-row::before {
+        content: attr(data-label);
+        position: absolute;
+        top: 20px;
+        left: 30px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #94a3b8;
+      }
+
+      .tokens-list {
+        display: flex;
+        gap: 30px;
+        align-items: center;
+        z-index: 2;
+      }
+
+      .attention-token {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 32px;
+        padding: 16px 28px;
+        border-radius: 12px;
+        background: rgba(4, 8, 20, 0.7);
+        border: 2px solid rgba(56, 189, 248, 0.2);
+        color: #f8fafc;
+        position: relative;
+        transition: all 0.4s ease;
+      }
+      .attention-token.target-word {
+        border-color: #38bdf8;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+      }
+
+      /* Connection Curve Layer */
+      .connection-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
+
+      /* Context info card (Right side of each row) */
+      .context-indicator {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        background: rgba(4, 8, 20, 0.5);
+        border: 1px solid rgba(56, 189, 248, 0.1);
+        padding: 20px 30px;
+        border-radius: 16px;
+        width: 380px;
+        opacity: 0;
+        transform: translateX(40px);
+      }
+      .context-icon {
+        font-size: 40px;
+      }
+      .context-text h4 {
+        font-size: 20px;
+        color: #f8fafc;
+        margin-bottom: 4px;
+      }
+      .context-text p {
+        font-size: 14px;
+        color: #94a3b8;
+        font-family: 'JetBrains Mono', monospace;
+      }
+
+      /* LSTM / Transformer Architecture Reveal */
+      .transformer-reveal {
+        position: absolute;
+        width: 1000px;
+        height: 600px;
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid rgba(56, 189, 248, 0.3);
+        border-radius: 24px;
+        padding: 40px;
+        box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 50px;
+        align-items: center;
+        opacity: 0;
+        scale: 0.8;
+        z-index: 9;
+      }
+      .arch-column {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+      }
+      .arch-column h3 {
+        font-size: 28px;
+        margin-bottom: 30px;
+        color: #f8fafc;
+      }
+      .arch-box {
+        background: rgba(4, 8, 20, 0.7);
+        border: 2px solid rgba(56, 189, 248, 0.2);
+        border-radius: 12px;
+        padding: 24px;
+        width: 320px;
+        text-align: center;
+        font-size: 22px;
+        font-family: 'JetBrains Mono', monospace;
+        position: relative;
+        transition: all 0.5s ease;
+      }
+      .lstm-cross {
+        position: absolute;
+        width: 100%;
+        height: 6px;
+        background: #ef4444;
+        top: 50%;
+        left: 0;
+        transform: scaleX(0);
+        transform-origin: 0 50%;
+        box-shadow: 0 0 10px #ef4444;
+      }
+
+      .transformer-block {
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.3);
+        color: #38bdf8;
+      }
+      .transformer-badge {
+        position: absolute;
+        top: -14px;
+        background: #38bdf8;
+        color: #040814;
+        font-size: 12px;
+        font-weight: bold;
+        padding: 2px 10px;
+        border-radius: 4px;
+        align-self: center;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-vs6r" id="root" data-composition-id="scene-sec4" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-hscl">MODULE // ATTENTION_MECHANISM</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <!-- Google Research Paper Stage -->
+        <div data-hf-id="hf-nvcc" class="paper-container" id="paper-box">
+          <span data-hf-id="hf-z2ut" class="paper-tag">RESEARCH // GOOGLE_2017</span>
+          <h2 data-hf-id="hf-ty40" class="paper-title">Attention Is All You Need</h2>
+          <p data-hf-id="hf-fy4v" class="paper-authors">Vaswani, Shazeer, Parmar, Uszkoreit, Jones...</p>
+        </div>
+
+        <!-- Attention Comparison Frame -->
+        <div data-hf-id="hf-7mul" class="attention-frame" id="att-comparison">
+          <!-- Row 1: Technology Context -->
+          <div data-hf-id="hf-i9w5" class="sentence-row" data-label="CASE_01 // TECHNOLOGY_MAPPING">
+            <div data-hf-id="hf-03qu" class="tokens-list" id="list-tech">
+              <div data-hf-id="hf-d0mw" class="attention-token target-word" id="tok-tech-apple">Apple</div>
+              <div data-hf-id="hf-jtcy" class="attention-token" id="tok-tech-released">released</div>
+              <div data-hf-id="hf-4wr8" class="attention-token" id="tok-tech-new">new</div>
+              <div data-hf-id="hf-xhqo" class="attention-token" id="tok-tech-macs">Macs</div>
+            </div>
+            <svg data-hf-id="hf-m5a5" class="connection-canvas" id="canvas-tech" />
+            <div data-hf-id="hf-3ajj" class="context-indicator" id="ind-tech">
+              <span data-hf-id="hf-9zlk" class="context-icon">💻</span>
+              <div data-hf-id="hf-bzqj" class="context-text">
+                <h4 data-hf-id="hf-e6ie">TECHNOLOGY_CLUSTER</h4>
+                <p data-hf-id="hf-gx2e">Vector Shift: → [Microsoft, Hardware]</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 2: Food Context -->
+          <div data-hf-id="hf-cq07" class="sentence-row" data-label="CASE_02 // BOTANICAL_MAPPING">
+            <div data-hf-id="hf-wpbe" class="tokens-list" id="list-food">
+              <div data-hf-id="hf-0a9s" class="attention-token target-word" id="tok-food-apple">Apple</div>
+              <div data-hf-id="hf-itzc" class="attention-token" id="tok-food-tastes">tastes</div>
+              <div data-hf-id="hf-7xqo" class="attention-token" id="tok-food-delicious">delicious</div>
+            </div>
+            <svg data-hf-id="hf-qu7p" class="connection-canvas" id="canvas-food" />
+            <div data-hf-id="hf-47k7" class="context-indicator" id="ind-food">
+              <span data-hf-id="hf-xop6" class="context-icon">🍎</span>
+              <div data-hf-id="hf-7f63" class="context-text">
+                <h4 data-hf-id="hf-ti7f">AGRICULTURE_CLUSTER</h4>
+                <p data-hf-id="hf-zc59">Vector Shift: → [Fruit, Organic]</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LSTM vs Transformer Architecture Reveal -->
+        <div data-hf-id="hf-x5s0" class="transformer-reveal" id="transformer-box">
+          <!-- Left Column: LSTM -->
+          <div data-hf-id="hf-9vaf" class="arch-column">
+            <h3 data-hf-id="hf-m45i">LEGACY ARCHITECTURE</h3>
+            <div data-hf-id="hf-yjft" class="arch-box" id="lstm-box">
+              LSTM / RNN
+              <div data-hf-id="hf-szvo" class="lstm-cross" id="lstm-line"></div>
+            </div>
+          </div>
+          <!-- Right Column: Transformer -->
+          <div data-hf-id="hf-1jyf" class="arch-column">
+            <h3 data-hf-id="hf-meeo">MODERN PARADIGM</h3>
+            <div data-hf-id="hf-o4s2" class="arch-box transformer-block" id="trans-card">
+              <span data-hf-id="hf-s8nx" class="transformer-badge">ATTENTION NATIVE</span>
+              THE TRANSFORMER
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-knb2">FRAME_TIME: 02:43:28</div>
+        <div data-hf-id="hf-6gxg">SYS_METRIC: CONTEXTUAL_WEIGHTING</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-bjop" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="58.68" data-track-index="5">
+        <div data-hf-id="hf-k8ru" class="caption-box" id="caption-text">Section 4: Attention Mechanism</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.15,
+        duration: 4,
+        yoyo: true,
+        repeat: 14,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Research paper popup (1.5s - 12s)
+      tl.to("#paper-box", { opacity: 1, scale: 1.0, duration: 1.0, ease: "back.out(1.2)" }, 1.5);
+      tl.to("#paper-box", { opacity: 0, scale: 0.8, duration: 1.0, ease: "power2.in" }, 11.5);
+
+      // 2. Attention frame reveals (14s)
+      tl.to("#att-comparison", { opacity: 1, duration: 1.0 }, 13.5);
+      tl.fromTo(".attention-token", 
+        { y: 30, opacity: 0 }, 
+        { y: 0, opacity: 1, duration: 0.6, stagger: 0.1, ease: "power3.out" }, 
+        14.2
+      );
+
+      // Helper function to draw dynamic bezier path for attention weight
+      function drawAttentionCurve(canvasId, fromId, toId, color, weightText, weightVal) {
+        const canvas = document.getElementById(canvasId);
+        const fromEl = document.getElementById(fromId);
+        const toEl = document.getElementById(toId);
+        if (!canvas || !fromEl || !toEl) return;
+
+        // Clear canvas
+        canvas.innerHTML = "";
+
+        const cRect = canvas.getBoundingClientRect();
+        const fRect = fromEl.getBoundingClientRect();
+        const tRect = toEl.getBoundingClientRect();
+
+        const x1 = fRect.left - cRect.left + fRect.width / 2;
+        const y1 = fRect.top - cRect.top + fRect.height / 2;
+        const x2 = tRect.left - cRect.left + tRect.width / 2;
+        const y2 = tRect.top - cRect.top + tRect.height / 2;
+
+        // Control point for quadratic curve (bend upward slightly)
+        const cx = (x1 + x2) / 2;
+        const cy = Math.min(y1, y2) - 60;
+
+        // Create Path
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`);
+        path.setAttribute("stroke", color);
+        path.setAttribute("stroke-width", Math.max(2, weightVal * 12));
+        path.setAttribute("fill", "transparent");
+        path.setAttribute("stroke-dasharray", "2000");
+        path.setAttribute("stroke-dashoffset", "2000");
+        path.setAttribute("id", `curve-${fromId}-${toId}`);
+        canvas.appendChild(path);
+
+        // Create Text group for Weight Badge
+        const textGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        textGroup.setAttribute("opacity", "0");
+        textGroup.setAttribute("id", `badge-${fromId}-${toId}`);
+
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", cx - 40);
+        rect.setAttribute("y", cy - 18);
+        rect.setAttribute("width", "80");
+        rect.setAttribute("height", "26");
+        rect.setAttribute("rx", "6");
+        rect.setAttribute("fill", "#040814");
+        rect.setAttribute("stroke", color);
+        rect.setAttribute("stroke-width", "1.5");
+
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", cx);
+        text.setAttribute("y", cy);
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("fill", color);
+        text.setAttribute("font-family", "JetBrains Mono");
+        text.setAttribute("font-size", "14px");
+        text.textContent = weightText;
+
+        textGroup.appendChild(rect);
+        textGroup.appendChild(text);
+        canvas.appendChild(textGroup);
+      }
+
+      // 3. Case 1: Tech connection (25s - 38s)
+      tl.call(() => {
+        drawAttentionCurve("canvas-tech", "tok-tech-apple", "tok-tech-macs", "#38bdf8", "w = 0.85", 0.85);
+        drawAttentionCurve("canvas-tech", "tok-tech-apple", "tok-tech-released", "rgba(56, 189, 248, 0.4)", "w = 0.45", 0.45);
+      }, [], 25.0);
+
+      // Animate curves drawing in
+      tl.to("#canvas-tech path", { strokeDashoffset: 0, duration: 1.2, ease: "power2.out" }, 25.5);
+      tl.to("#canvas-tech g", { opacity: 1, duration: 0.5 }, 26.5);
+
+      // Context Indicator slide in and target word visual shift
+      tl.to("#ind-tech", { opacity: 1, x: 0, duration: 0.8, ease: "power2.out" }, 28.0);
+      tl.to("#tok-tech-apple", { x: 30, scale: 1.05, borderColor: "#38bdf8", backgroundColor: "rgba(56, 189, 248, 0.1)", duration: 0.8 }, 28.5);
+
+      // 4. Case 2: Food connection (38s - 45s)
+      tl.call(() => {
+        drawAttentionCurve("canvas-food", "tok-food-apple", "tok-food-delicious", "#34d399", "w = 0.92", 0.92);
+        drawAttentionCurve("canvas-food", "tok-food-apple", "tok-food-tastes", "rgba(52, 211, 153, 0.4)", "w = 0.52", 0.52);
+      }, [], 37.5);
+
+      tl.to("#canvas-food path", { strokeDashoffset: 0, duration: 1.2, ease: "power2.out" }, 38.0);
+      tl.to("#canvas-food g", { opacity: 1, duration: 0.5 }, 39.0);
+
+      tl.to("#ind-food", { opacity: 1, x: 0, duration: 0.8, ease: "power2.out" }, 40.5);
+      tl.to("#tok-food-apple", { x: 30, scale: 1.05, borderColor: "#34d399", backgroundColor: "rgba(52, 211, 153, 0.1)", duration: 0.8 }, 41.0);
+
+      // 5. Compute weights for everything else (45s - 50s)
+      // Fade out comparison frame, slide in Transformer transition
+      tl.to("#att-comparison", { opacity: 0, scale: 0.95, duration: 1.0, ease: "power2.in" }, 48.0);
+
+      // 6. LSTM vs Transformer (50s - 58s)
+      tl.to("#transformer-box", { opacity: 1, scale: 1.0, duration: 1.0, ease: "back.out(1.2)" }, 49.5);
+      tl.to("#lstm-line", { scaleX: 1, duration: 0.8, ease: "power3.inOut" }, 52.0);
+      tl.to("#lstm-box", { opacity: 0.4, borderColor: "#ef4444", color: "#ef4444", duration: 0.6 }, 52.5);
+      tl.to("#trans-card", { scale: 1.1, duration: 0.6, yoyo: true, repeat: 1 }, 53.5);
+
+      // Final Exit
+      tl.to("#transformer-box", { opacity: 0, scale: 1.1, duration: 1.0, ease: "power2.in" }, 57.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "In 2017, a team of Google researchers published a paper that changed everything: \"Attention Is All You Need\"." },
+        { time: 6.8, text: "Attention allows a model to look at a sentence and weigh the relationships between words." },
+        { time: 13.8, text: "Consider these two sentences: \"Apple released new Macs\" versus \"Apple tastes delicious\"." },
+        { time: 24.5, text: "In the first sentence, the attention mechanism draws a strong connection between \"Apple\" and \"Macs\"." },
+        { time: 30.5, text: "This context shifts the vector representation of \"Apple\" closer to \"Microsoft\" and technology." },
+        { time: 37.0, text: "In the second, it connects \"Apple\" with \"tastes\" and \"delicious\"," },
+        { time: 41.5, text: "shifting its meaning toward fruit." },
+        { time: 45.0, text: "Instead of reading words in isolation, the model dynamically computes context weights for every single token." },
+        { time: 49.5, text: "This was so revolutionary, researchers abandoned previous architectures like LSTMs" },
+        { time: 54.0, text: "and built a brand new system entirely around attention. They called it: The Transformer." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec4"] = tl;
+    </script>
+  </template>
+</body>
+</html>

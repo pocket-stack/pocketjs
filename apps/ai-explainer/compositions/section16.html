@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Prompt Card */
+      .puzzle-prompt-card {
+        width: 1200px;
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid rgba(56, 189, 248, 0.2);
+        border-radius: 16px;
+        padding: 24px 35px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      .puzzle-prompt-card h5 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #38bdf8;
+        margin-bottom: 8px;
+      }
+      .puzzle-prompt-card p {
+        font-size: 20px;
+        color: #f8fafc;
+        line-height: 1.4;
+      }
+
+      /* Split Columns Layout */
+      .columns-container {
+        width: 1200px;
+        height: 380px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-top: 30px;
+      }
+
+      /* Column card */
+      .cot-col-card {
+        width: 570px;
+        height: 100%;
+        background: rgba(15, 23, 42, 0.7);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 20px;
+        padding: 30px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+        transform: translateY(30px);
+        transition: all 0.4s ease;
+      }
+      .cot-col-card.active-col {
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.15);
+      }
+      .col-header {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #94a3b8;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+      }
+      .col-body {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .step-row {
+        font-size: 14px;
+        color: #cbd5e1;
+        line-height: 1.4;
+        opacity: 0;
+        transform: translateX(-15px);
+        transition: all 0.3s ease;
+      }
+      .step-row.visible-step {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .wrong-ans-badge {
+        font-size: 24px;
+        font-weight: 800;
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid #ef4444;
+        padding: 10px 20px;
+        border-radius: 8px;
+        width: fit-content;
+        opacity: 0;
+      }
+      .right-ans-badge {
+        font-size: 24px;
+        font-weight: 800;
+        color: #10b981;
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid #10b981;
+        padding: 10px 20px;
+        border-radius: 8px;
+        width: fit-content;
+        opacity: 0;
+      }
+
+      /* Reasoning Models Teaser Overlay */
+      .reasoning-teaser-panel {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        z-index: 25;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: all 0.6s ease;
+      }
+      .inference-compare-box {
+        display: flex;
+        gap: 50px;
+        margin-top: 30px;
+      }
+      .inf-card {
+        background: rgba(15, 23, 42, 0.9);
+        border: 2px solid rgba(148, 163, 184, 0.25);
+        border-radius: 16px;
+        padding: 30px;
+        width: 460px;
+        box-shadow: 0 15px 30px rgba(0,0,0,0.4);
+      }
+      .inf-card.card-loop-active {
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.25);
+      }
+      .inf-card h6 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #94a3b8;
+        margin-bottom: 12px;
+      }
+      .inf-card.card-loop-active h6 { color: #38bdf8; }
+      .inf-card p {
+        font-size: 15px;
+        line-height: 1.4;
+        color: #e2e8f0;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-o508" id="root" data-composition-id="scene-sec16" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-uz1m">MODULE // CHAIN_OF_THOUGHT</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <!-- Puzzle Prompt Card -->
+        <div data-hf-id="hf-cb5i" class="puzzle-prompt-card" id="prompt-box">
+          <h5 data-hf-id="hf-571r">PROMPT_INPUT // MATH_LOGIC_PUZZLE</h5>
+          <p data-hf-id="hf-zdst">"A bucket holds 3 red balls and 4 blue balls. If we extract 2 red balls, how many red balls remain?"</p>
+        </div>
+
+        <!-- Columns Comparison -->
+        <div data-hf-id="hf-3coj" class="columns-container">
+          <!-- Column 1: Without COT -->
+          <div data-hf-id="hf-wdot" class="cot-col-card" id="col-without">
+            <div data-hf-id="hf-yeow">
+              <div data-hf-id="hf-xqdv" class="col-header">WITHOUT_CHAIN_OF_THOUGHT // INSTANT_FORWARD_PASS</div>
+              <div data-hf-id="hf-zo7j" class="col-body">
+                <div data-hf-id="hf-ruyg" class="step-row visible-step" style="color: #94a3b8; font-style: italic;">
+                  Model predicts final answer directly without intermediate reasoning...
+                </div>
+              </div>
+            </div>
+            <div data-hf-id="hf-w1em" class="wrong-ans-badge" id="wrong-badge">Answer: 4 red balls ❌</div>
+          </div>
+
+          <!-- Column 2: With COT -->
+          <div data-hf-id="hf-y6mn" class="cot-col-card" id="col-with">
+            <div data-hf-id="hf-y7yw">
+              <div data-hf-id="hf-k8z7" class="col-header">WITH_CHAIN_OF_THOUGHT // STEP_BY_STEP_DECOMPOSITION</div>
+              <div data-hf-id="hf-teun" class="col-body">
+                <div data-hf-id="hf-q6gu" class="step-row" id="s-1">1. Identify the starting count of red balls in the bucket: 3.</div>
+                <div data-hf-id="hf-dn1b" class="step-row" id="s-2">2. Identify the number of red balls extracted: 2.</div>
+                <div data-hf-id="hf-undp" class="step-row" id="s-3">3. Subtract extracted from starting: 3 - 2 = 1.</div>
+              </div>
+            </div>
+            <div data-hf-id="hf-1nq5" class="right-ans-badge" id="right-badge">Answer: 1 red ball ✅</div>
+          </div>
+        </div>
+
+        <!-- Reasoning Models Teaser -->
+        <div data-hf-id="hf-t12f" class="reasoning-teaser-panel" id="reasoning-teaser" style=" ">
+          <div data-hf-id="hf-5s4o" style="font-family: 'JetBrains Mono', monospace; font-size: 16px; color: #38bdf8; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px;">
+            Next Era: Hardcoded System Inference Scaling
+          </div>
+          <div data-hf-id="hf-x4ff" class="inference-compare-box">
+            <div data-hf-id="hf-ycqw" class="inf-card">
+              <h6 data-hf-id="hf-r030">TRADITIONAL INFERENCE (GPT-4)</h6>
+              <p data-hf-id="hf-vbs0">User Prompt ──► Forward Pass ──► Immediate Output Generation</p>
+              <p data-hf-id="hf-2utn" style="color: #94a3b8; font-size: 12px; margin-top: 15px;">Fast reply speeds, but low accuracy on complex mathematics and system design.</p>
+            </div>
+            <div data-hf-id="hf-8tww" class="inf-card card-loop-active">
+              <h6 data-hf-id="hf-g1qr">REASONING INFERENCE (o1 / R1)</h6>
+              <p data-hf-id="hf-dq1q">User Prompt ──► Hidden Reasoning Loop ──► Refined Output Generation</p>
+              <p data-hf-id="hf-qabi" style="color: #cbd5e1; font-size: 12px; margin-top: 15px;">Generates thousands of internal thought tokens to explore logic paths before replying.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-u67t">FRAME_TIME: 13:18:85</div>
+        <div data-hf-id="hf-2ifq">SYS_METRIC: REASONING_STEPS_EVALUATED</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-u7qn" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="40.41" data-track-index="5">
+        <div data-hf-id="hf-3kx9" class="caption-box" id="caption-text">Section 16: Chain of Thought</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 6,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Entrance of elements (3s)
+      tl.to("#prompt-box", { opacity: 1, y: 0, duration: 0.6 }, 3.0);
+      tl.to("#col-without", { opacity: 1, y: 0, className: "cot-col-card active-col", duration: 0.6 }, 4.5);
+
+      // 2. Without COT wrong answer pops up immediately (9s)
+      tl.to("#wrong-badge", { opacity: 1, y: 0, duration: 0.4 }, 8.0);
+
+      // 3. With COT panel entrance (12s)
+      tl.to("#col-without", { className: "cot-col-card", duration: 0.5 }, 12.0);
+      tl.to("#col-with", { opacity: 1, y: 0, className: "cot-col-card active-col", duration: 0.6 }, 12.5);
+
+      // 4. Stagger steps reveals (14s)
+      tl.to("#s-1", { className: "step-row visible-step", duration: 0.4 }, 14.5);
+      tl.to("#s-2", { className: "step-row visible-step", duration: 0.4 }, 17.5);
+      tl.to("#s-3", { className: "step-row visible-step", duration: 0.4 }, 21.0);
+
+      // 5. Right answer badge pops up (24s)
+      tl.to("#right-badge", { opacity: 1, y: 0, duration: 0.5 }, 24.5);
+
+      // 6. Transition to reasoning teaser (31s - 40.41s)
+      tl.to("#prompt-box, #col-without, #col-with", { opacity: 0.05, duration: 0.8 }, 31.0);
+      tl.to("#reasoning-teaser", { opacity: 1, duration: 1.0 }, 32.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "If you ask an LLM a complex math or logic puzzle, and it answers immediately, it will often fail." },
+        { time: 6.8, text: "This is because it tries to predict the final answer in a single forward pass." },
+        { time: 11.8, text: "Chain of Thought prompting forces the model to break the problem down." },
+        { time: 15.5, text: "By instructing the model to \"think step by step\", it outputs its reasoning process before giving the final answer." },
+        { time: 21.5, text: "Generating these intermediate reasoning tokens allows the model to compute complex steps," },
+        { time: 25.5, text: "verify its logic, and correct mistakes along the way." },
+        { time: 29.0, text: "This simple technique dramatically improves accuracy on programming, mathematics, and logic tasks." },
+        { time: 35.0, text: "And today, this technique is hard-coded into a new class of models." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec16"] = tl;
+    </script>
+  </template>
+</body>
+</html>

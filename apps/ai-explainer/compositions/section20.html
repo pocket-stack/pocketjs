@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Layout */
+      .dist-layout {
+        position: relative;
+        width: 1550px;
+        height: 640px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Column Panel */
+      .dist-column {
+        width: 620px;
+        height: 520px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 24px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+        transform: translateY(30px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+      }
+      .dist-column.active-column {
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.2);
+      }
+
+      .panel-title {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #94a3b8;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+      }
+      .dist-column.active-column .panel-title {
+        color: #38bdf8;
+      }
+
+      /* Probability Bar Chart */
+      .dist-chart-box {
+        background: #090d16;
+        border-radius: 12px;
+        padding: 20px;
+        height: 220px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        justify-content: center;
+      }
+      .chart-title-tag {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: #cbd5e1;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+      }
+      .chart-row {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+      .token-name {
+        width: 60px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #94a3b8;
+        text-align: right;
+      }
+      .bar-wrapper {
+        flex-grow: 1;
+        height: 14px;
+        background: rgba(148, 163, 184, 0.05);
+        border-radius: 7px;
+        overflow: hidden;
+      }
+      .bar-fill {
+        height: 100%;
+        background: #e11d48;
+        width: 0%;
+        transition: width 0.6s ease;
+      }
+      .student-bar-fill {
+        height: 100%;
+        background: #38bdf8;
+        width: 0%;
+        transition: width 0.6s ease;
+      }
+      .prob-val {
+        width: 45px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+
+      /* Knowledge beam overlay */
+      .beam-svg-layer {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 10;
+      }
+      .beam-line {
+        stroke: rgba(148, 163, 184, 0.1);
+        stroke-width: 2;
+        fill: none;
+      }
+      .beam-line.beam-active {
+        stroke: #38bdf8;
+        stroke-width: 4;
+        stroke-dasharray: 10 5;
+        animation: linkDash 3s linear infinite;
+        filter: drop-shadow(0 0 5px #38bdf8);
+      }
+      @keyframes linkDash {
+        to { stroke-dashoffset: -90; }
+      }
+
+      /* Quantization Teaser Overlay */
+      .quantization-teaser-panel {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: all 0.6s ease;
+      }
+      .quant-grid-wrapper {
+        display: flex;
+        gap: 60px;
+        margin-top: 40px;
+        align-items: center;
+      }
+      .quant-grid-card {
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 16px;
+        padding: 24px;
+        width: 320px;
+        box-shadow: 0 15px 30px rgba(0,0,0,0.4);
+      }
+      .quant-grid-card.quant-active {
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.2);
+      }
+      .weight-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 15px;
+      }
+      .weight-cell {
+        background: rgba(4, 8, 20, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 6px;
+        padding: 10px 0;
+        text-align: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+      .quant-grid-card.quant-active .weight-cell {
+        color: #38bdf8;
+        border-color: rgba(56, 189, 248, 0.3);
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-kc7j" id="root" data-composition-id="scene-sec20" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-wlbi">MODULE // KNOWLEDGE_DISTILLATION</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-pfsv" class="dist-layout">
+          <!-- Link beam overlay -->
+          <svg data-hf-id="hf-b7hp" class="beam-svg-layer" style=" ">
+            <path data-hf-id="hf-urh8" class="beam-line" id="transfer-beam" d="M 670 320 L 880 320" />
+          </svg>
+
+          <!-- Left panel: Teacher Model -->
+          <div data-hf-id="hf-cxlg" class="dist-column" id="col-teacher">
+            <div data-hf-id="hf-729r" class="panel-title">TEACHER_MODEL // PARALOG_KNOWLEDGE (400B)</div>
+            <div data-hf-id="hf-wxwr" style="display: flex; align-items: center; gap: 20px; margin-bottom: 15px;">
+              <span data-hf-id="hf-2lml" style="font-size: 34px;">🧠</span>
+              <div data-hf-id="hf-yeow">
+                <div data-hf-id="hf-4sf9" style="font-weight: bold; font-family: 'JetBrains Mono', monospace; font-size: 14px;">Teacher Network</div>
+                <div data-hf-id="hf-x9sk" style="font-size: 12px; color: #94a3b8;">Outputs rich probability distributions</div>
+              </div>
+            </div>
+            <!-- Chart visual -->
+            <div data-hf-id="hf-vh5r" class="dist-chart-box">
+              <div data-hf-id="hf-gyqi" class="chart-title-tag">Teacher Soft Targets</div>
+              <div data-hf-id="hf-rq6f" class="chart-row">
+                <span data-hf-id="hf-1zst" class="token-name">"the"</span>
+                <div data-hf-id="hf-49ix" class="bar-wrapper"><div data-hf-id="hf-k5ic" class="bar-fill" id="tb-1" style="width: 0%; background: #e11d48;"></div></div>
+                <span data-hf-id="hf-5xhn" class="prob-val" id="tv-1">0%</span>
+              </div>
+              <div data-hf-id="hf-5isn" class="chart-row">
+                <span data-hf-id="hf-vv2d" class="token-name">"a"</span>
+                <div data-hf-id="hf-msy5" class="bar-wrapper"><div data-hf-id="hf-mim3" class="bar-fill" id="tb-2" style="width: 0%; background: #e11d48;"></div></div>
+                <span data-hf-id="hf-6l54" class="prob-val" id="tv-2">0%</span>
+              </div>
+              <div data-hf-id="hf-54hm" class="chart-row">
+                <span data-hf-id="hf-76i7" class="token-name">"of"</span>
+                <div data-hf-id="hf-nzv8" class="bar-wrapper"><div data-hf-id="hf-92pi" class="bar-fill" id="tb-3" style="width: 0%; background: #e11d48;"></div></div>
+                <span data-hf-id="hf-eb4d" class="prob-val" id="tv-3">0%</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right panel: Student Model -->
+          <div data-hf-id="hf-tux7" class="dist-column" id="col-student">
+            <div data-hf-id="hf-mo1h" class="panel-title">STUDENT_MODEL // NUANCE_MIMICRY (3B)</div>
+            <div data-hf-id="hf-amx7" style="display: flex; align-items: center; gap: 20px; margin-bottom: 15px;">
+              <span data-hf-id="hf-s7zw" style="font-size: 34px;">👶</span>
+              <div data-hf-id="hf-y7yw">
+                <div data-hf-id="hf-8jkc" style="font-weight: bold; font-family: 'JetBrains Mono', monospace; font-size: 14px;">Student Network</div>
+                <div data-hf-id="hf-fbm2" style="font-size: 12px; color: #94a3b8;" id="student-status-lbl">Initializing weights alignment...</div>
+              </div>
+            </div>
+            <!-- Chart visual -->
+            <div data-hf-id="hf-p4in" class="dist-chart-box">
+              <div data-hf-id="hf-0suj" class="chart-title-tag">Student Predictions</div>
+              <div data-hf-id="hf-4q6l" class="chart-row">
+                <span data-hf-id="hf-789d" class="token-name">"the"</span>
+                <div data-hf-id="hf-nlk7" class="bar-wrapper"><div data-hf-id="hf-qwno" class="student-bar-fill" id="sb-1" style="width: 0%;"></div></div>
+                <span data-hf-id="hf-erq6" class="prob-val" id="sv-1">0%</span>
+              </div>
+              <div data-hf-id="hf-7ibs" class="chart-row">
+                <span data-hf-id="hf-wtax" class="token-name">"a"</span>
+                <div data-hf-id="hf-osha" class="bar-wrapper"><div data-hf-id="hf-a7pp" class="student-bar-fill" id="sb-2" style="width: 0%;"></div></div>
+                <span data-hf-id="hf-z3md" class="prob-val" id="sv-2">0%</span>
+              </div>
+              <div data-hf-id="hf-740r" class="chart-row">
+                <span data-hf-id="hf-gdsf" class="token-name">"of"</span>
+                <div data-hf-id="hf-oe69" class="bar-wrapper"><div data-hf-id="hf-pifi" class="student-bar-fill" id="sb-3" style="width: 0%;"></div></div>
+                <span data-hf-id="hf-1s5s" class="prob-val" id="sv-3">0%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quantization Teaser -->
+        <div data-hf-id="hf-3qgl" class="quantization-teaser-panel" id="quant-teaser" style=" ">
+          <div data-hf-id="hf-yupd" style="font-family: 'JetBrains Mono', monospace; font-size: 18px; color: #38bdf8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px;">
+            Next Module: Weight Quantization
+          </div>
+          <div data-hf-id="hf-bkkp" style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #94a3b8;">
+            Shrinking Weights from 16-Bit Floats to 8-Bit Integers
+          </div>
+          <div data-hf-id="hf-kpk4" class="quant-grid-wrapper">
+            <!-- 16-bit Float Grid -->
+            <div data-hf-id="hf-qrlh" class="quant-grid-card">
+              <h6 data-hf-id="hf-jodj" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #94a3b8; border-bottom: 1px solid rgba(148,163,184,0.1); padding-bottom: 8px;">FP16 PRECISION (2 BYTES)</h6>
+              <div data-hf-id="hf-z2dt" class="weight-grid">
+                <div data-hf-id="hf-r3iq" class="weight-cell">-0.8354</div>
+                <div data-hf-id="hf-7ooe" class="weight-cell">0.1192</div>
+                <div data-hf-id="hf-85p8" class="weight-cell">-0.4851</div>
+                <div data-hf-id="hf-ly3r" class="weight-cell">0.9234</div>
+                <div data-hf-id="hf-u9xm" class="weight-cell">-0.0152</div>
+                <div data-hf-id="hf-xvdz" class="weight-cell">0.3478</div>
+              </div>
+            </div>
+            
+            <span data-hf-id="hf-7fox" style="font-size: 38px;">➔</span>
+
+            <!-- 8-bit Integer Grid -->
+            <div data-hf-id="hf-65nr" class="quant-grid-card quant-active">
+              <h6 data-hf-id="hf-vdjb" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #38bdf8; border-bottom: 1px solid rgba(56,189,248,0.2); padding-bottom: 8px;">INT8 PRECISION (1 BYTE)</h6>
+              <div data-hf-id="hf-gdad" class="weight-grid">
+                <div data-hf-id="hf-kuba" class="weight-cell">-107</div>
+                <div data-hf-id="hf-e3h3" class="weight-cell">15</div>
+                <div data-hf-id="hf-syjo" class="weight-cell">-62</div>
+                <div data-hf-id="hf-5ojt" class="weight-cell">118</div>
+                <div data-hf-id="hf-x8cq" class="weight-cell">-2</div>
+                <div data-hf-id="hf-fb5l" class="weight-cell">44</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-cot1">FRAME_TIME: 16:16:37</div>
+        <div data-hf-id="hf-7flo">SYS_METRIC: PROBABILITY_DISTILLATION</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-qbs9" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="58.33" data-track-index="5">
+        <div data-hf-id="hf-9c9j" class="caption-box" id="caption-text">Section 20: Distillation</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 9,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Entrance of Teacher and Student panels (3s)
+      tl.to("#col-teacher", { opacity: 1, y: 0, duration: 0.6 }, 3.0);
+      tl.to("#col-student", { opacity: 1, y: 0, duration: 0.6 }, 4.0);
+
+      // 2. Teacher probabilities slide up (12s)
+      tl.to("#col-teacher", { className: "dist-column active-column", duration: 0.5 }, 12.0);
+      tl.to("#tb-1", { width: "60%", duration: 0.8 }, 12.5);
+      tl.to("#tb-2", { width: "25%", duration: 0.8 }, 12.7);
+      tl.to("#tb-3", { width: "10%", duration: 0.8 }, 12.9);
+      tl.call(() => {
+        document.getElementById("tv-1").innerText = "60%";
+        document.getElementById("tv-2").innerText = "25%";
+        document.getElementById("tv-3").innerText = "10%";
+      }, [], 13.5);
+
+      // 3. Knowledge link link activation (22s)
+      tl.to("#transfer-beam", { className: "beam-line beam-active", duration: 0.5 }, 22.0);
+      tl.to("#col-student", { className: "dist-column active-column", duration: 0.5 }, 22.5);
+      
+      tl.call(() => {
+        document.getElementById("student-status-lbl").innerText = "Aligning probability vectors...";
+      }, [], 23.0);
+
+      // 4. Student probability predictions align with teacher (32s - 45s)
+      tl.to("#sb-1", { width: "58%", duration: 1.2 }, 32.0);
+      tl.to("#sb-2", { width: "24%", duration: 1.2 }, 32.3);
+      tl.to("#sb-3", { width: "11%", duration: 1.2 }, 32.6);
+      tl.call(() => {
+        document.getElementById("sv-1").innerText = "58%";
+        document.getElementById("sv-2").innerText = "24%";
+        document.getElementById("sv-3").innerText = "11%";
+        document.getElementById("student-status-lbl").innerText = "Mimicry complete: 98% aligned";
+      }, [], 34.0);
+
+      // 5. Quantization Teaser entrance (48s - 58.33s)
+      tl.to("#col-teacher, #col-student, #transfer-beam", { opacity: 0.05, duration: 0.8 }, 48.0);
+      tl.to("#quant-teaser", { opacity: 1, duration: 1.0 }, 49.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "How do we transfer the intelligence of a massive model into a small one?" },
+        { time: 4.8, text: "Through a process called knowledge distillation." },
+        { time: 8.5, text: "Instead of training a small student model from scratch on raw text," },
+        { time: 12.8, text: "we train it to mimic a large teacher model." },
+        { time: 16.5, text: "During training, the teacher model outputs probability distributions over possible next tokens." },
+        { time: 22.5, text: "These probabilities, called 'soft targets,' contain rich information" },
+        { time: 26.5, text: "about what the teacher thinks is likely, unlikely, or impossible." },
+        { time: 32.0, text: "By learning from these soft targets, the student model captures the teacher's reasoning patterns" },
+        { time: 37.8, text: "and nuances far faster than it would from simple raw text." },
+        { time: 42.5, text: "The result is a small, efficient model that retains a surprising percentage" },
+        { time: 47.0, text: "of the giant model's capabilities." },
+        { time: 50.0, text: "But training is only the first step. Once a model is trained," },
+        { time: 54.0, text: "how do we make it even smaller for device deployment? For that, we use quantization." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec20"] = tl;
+    </script>
+  </template>
+</body>
+</html>

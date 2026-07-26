@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -100px; left: 100px; }
+      .glow-right { bottom: -100px; right: 100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Scene Content layout - Split Frame Pattern */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 60px;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Left Column: Sandbox/Console */
+      .terminal-panel {
+        background: rgba(15, 23, 42, 0.6);
+        border: 2px solid rgba(56, 189, 248, 0.15);
+        border-radius: 20px;
+        height: 680px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 40px;
+        position: relative;
+        overflow: hidden;
+      }
+      .terminal-panel::before {
+        content: '// PROMPT CONSOLE';
+        position: absolute;
+        top: 20px;
+        left: 30px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #64748b;
+      }
+
+      .text-prompt {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 38px;
+        line-height: 1.5;
+        color: #f8fafc;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .blinking-cursor {
+        display: inline-block;
+        width: 18px;
+        height: 38px;
+        background-color: #38bdf8;
+        margin-left: 8px;
+        animation: blink 1s step-end infinite;
+      }
+      @keyframes blink {
+        from, to { background-color: transparent }
+        50% { background-color: #38bdf8 }
+      }
+
+      .prediction-box {
+        margin-top: 15px;
+        background: rgba(56, 189, 248, 0.1);
+        border: 1px dashed rgba(56, 189, 248, 0.4);
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 32px;
+        color: #38bdf8;
+        display: inline-flex;
+        align-items: center;
+        gap: 15px;
+        opacity: 0;
+        transform: scale(0.9);
+      }
+      .prediction-prob {
+        font-size: 18px;
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        color: #38bdf8;
+        background: rgba(56, 189, 248, 0.15);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+      }
+
+      /* Right Column: Concept explaining visual */
+      .visual-panel {
+        background: rgba(15, 23, 42, 0.4);
+        border: 1px solid rgba(56, 189, 248, 0.1);
+        border-radius: 20px;
+        height: 680px;
+        padding: 40px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+      }
+
+      /* DB vs Net Comparison Cards */
+      .comp-container {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        opacity: 0;
+      }
+      .comp-card {
+        background: rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(56, 189, 248, 0.15);
+        border-radius: 12px;
+        padding: 24px;
+        position: relative;
+      }
+      .comp-card::before {
+        position: absolute;
+        top: -12px;
+        left: 24px;
+        padding: 2px 10px;
+        background: #0f172a;
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        border-radius: 6px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+      }
+      .card-db::before { content: 'DATABASE LOOKUP'; }
+      .card-nn::before { content: 'STATISTICAL PROBABILITY NETWORK'; }
+
+      .db-rows {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #94a3b8;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .db-row span { color: #f8fafc; }
+
+      /* Neural network visual simulation */
+      .nn-network {
+        height: 120px;
+        position: relative;
+        margin-top: 15px;
+        margin-bottom: 25px;
+      }
+      .nn-node-svg {
+        fill: #0f172a;
+        stroke: #38bdf8;
+        stroke-width: 2.5px;
+        filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.4));
+      }
+      .nn-node-svg.active-node {
+        fill: #38bdf8;
+        stroke: #f8fafc;
+        stroke-width: 2px;
+        filter: drop-shadow(0 0 12px #38bdf8);
+      }
+      .nn-label-input,
+      .nn-label-hidden,
+      .nn-label-output {
+        font-family: 'Inter', sans-serif;
+        font-size: 13px;
+        font-weight: 600;
+        fill: #cbd5e1;
+      }
+      .nn-value-input,
+      .nn-value-hidden,
+      .nn-value-output {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        fill: #64748b;
+      }
+      .nn-label-output.active {
+        fill: #38bdf8;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      .nn-value-output.active {
+        fill: #38bdf8;
+        font-weight: bold;
+      }
+      .nn-lines {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Floating applications block */
+      .floating-apps {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        width: 100%;
+        opacity: 0;
+      }
+      .app-card {
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .app-icon {
+        font-size: 32px;
+      }
+      .app-info h4 {
+        font-size: 20px;
+        color: #f8fafc;
+        margin-bottom: 4px;
+      }
+      .app-info p {
+        font-size: 14px;
+        color: #94a3b8;
+        font-family: 'JetBrains Mono', monospace;
+      }
+
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-4aq8" id="root" data-composition-id="scene-sec1" data-start="0" data-width="1920" data-height="1080">
+      <!-- Background elements -->
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-rwog">MODULE // LARGE_LANGUAGE_MODELS</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <!-- Left: Prompt Terminal Simulator -->
+        <div data-hf-id="hf-sz5x" class="terminal-panel">
+          <!-- Prompt Case 1 -->
+          <div data-hf-id="hf-wcj1" class="prompt-case" id="case-1" style="opacity: 0;">
+            <div data-hf-id="hf-h8pg" class="text-prompt">
+              <span data-hf-id="hf-rw81">All that glitters</span>
+              <span data-hf-id="hf-0hy8" class="blinking-cursor" id="cursor-1"></span>
+            </div>
+            <div data-hf-id="hf-yt4e" class="prediction-box" id="predict-1">
+              <span data-hf-id="hf-qkg2">is not gold</span>
+              <div data-hf-id="hf-8pxa" class="prediction-prob">P = 98.4%</div>
+            </div>
+          </div>
+
+          <!-- Prompt Case 2 -->
+          <div data-hf-id="hf-prl2" class="prompt-case" id="case-2" style="opacity: 0;">
+            <div data-hf-id="hf-stws" class="text-prompt">
+              <span data-hf-id="hf-4jeg">The capital of France is</span>
+              <span data-hf-id="hf-bdfv" class="blinking-cursor" id="cursor-2"></span>
+            </div>
+            <div data-hf-id="hf-uv0d" class="prediction-box" id="predict-2">
+              <span data-hf-id="hf-9ies">Paris</span>
+              <div data-hf-id="hf-poyr" class="prediction-prob">P = 99.8%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Technical Visuals -->
+        <div data-hf-id="hf-ovzt" class="visual-panel">
+          <!-- Floating App Mockups (shown first) -->
+          <div data-hf-id="hf-ixki" class="floating-apps" id="app-visuals">
+            <div data-hf-id="hf-4823" class="app-card" id="app-code">
+              <span data-hf-id="hf-1958" class="app-icon">💻</span>
+              <div data-hf-id="hf-cwou" class="app-info">
+                <h4 data-hf-id="hf-maw8">Writing Code</h4>
+                <p data-hf-id="hf-u8kj">Generating Token Streams</p>
+              </div>
+            </div>
+            <div data-hf-id="hf-zxau" class="app-card" id="app-doc">
+              <span data-hf-id="hf-4twh" class="app-icon">📄</span>
+              <div data-hf-id="hf-97c2" class="app-info">
+                <h4 data-hf-id="hf-a7kg">Summarizing PDFs</h4>
+                <p data-hf-id="hf-v4hk">Attention Over Context</p>
+              </div>
+            </div>
+            <div data-hf-id="hf-kzn2" class="app-card" id="app-qa">
+              <span data-hf-id="hf-vajt" class="app-icon">💬</span>
+              <div data-hf-id="hf-9ln3" class="app-info">
+                <h4 data-hf-id="hf-vvs0">Answering Questions</h4>
+                <p data-hf-id="hf-n6w4">Next Token Probability</p>
+              </div>
+            </div>
+            <div data-hf-id="hf-4a87" class="app-card" id="app-agent">
+              <span data-hf-id="hf-6t70" class="app-icon">🤖</span>
+              <div data-hf-id="hf-9zy4" class="app-info">
+                <h4 data-hf-id="hf-7040">Agentic Execution</h4>
+                <p data-hf-id="hf-w66j">Recursive Thought loops</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- DB vs NN Comp (shown second) -->
+          <div data-hf-id="hf-b8c8" class="comp-container" id="comp-visuals">
+            <div data-hf-id="hf-potl" class="comp-card card-db">
+              <div data-hf-id="hf-d9rk" class="db-rows">
+                <div data-hf-id="hf-03yl" class="db-row">SELECT capital FROM countries WHERE name = 'France'</div>
+                <div data-hf-id="hf-tmh0" class="db-row">──► Result: <span data-hf-id="hf-oap2">'Paris'</span> (Exact key-value match)</div>
+              </div>
+            </div>
+            <div data-hf-id="hf-zsrb" class="comp-card card-nn">
+              <div data-hf-id="hf-qmxt" class="nn-network">
+                <svg data-hf-id="hf-v7vl" class="nn-lines" viewBox="0 0 400 120">
+                  <!-- Fully connected weighted neural lines -->
+                  <line data-hf-id="hf-e3iw" x1="50" y1="60" x2="150" y2="30" stroke="#38bdf8" stroke-width="2.5" stroke-opacity="0.8" />
+                  <line data-hf-id="hf-kitv" x1="50" y1="60" x2="150" y2="90" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.3" />
+                  
+                  <line data-hf-id="hf-l3" x1="150" y1="30" x2="250" y2="30" stroke="#38bdf8" stroke-width="4" stroke-opacity="0.95" />
+                  <line data-hf-id="hf-l4" x1="150" y1="30" x2="250" y2="90" stroke="#38bdf8" stroke-width="1" stroke-opacity="0.1" />
+                  <line data-hf-id="hf-l5" x1="150" y1="90" x2="250" y2="30" stroke="#38bdf8" stroke-width="2" stroke-opacity="0.4" />
+                  <line data-hf-id="hf-l6" x1="150" y1="90" x2="250" y2="90" stroke="#38bdf8" stroke-width="1" stroke-opacity="0.15" />
+                  
+                  <!-- Nodes placed inside the SVG coordinate system -->
+                  <circle data-hf-id="hf-nn1" cx="50" cy="60" r="9" class="nn-node-svg" />
+                  <circle data-hf-id="hf-nn2" cx="150" cy="30" r="9" class="nn-node-svg" />
+                  <circle data-hf-id="hf-nn3" cx="150" cy="90" r="9" class="nn-node-svg" />
+                  <circle data-hf-id="hf-nn4" cx="250" cy="30" r="9" class="nn-node-svg active-node" />
+                  <circle data-hf-id="hf-nn5" cx="250" cy="90" r="9" class="nn-node-svg" />
+
+                  <!-- Node Labels & Values -->
+                  <!-- Input Layer (X=50) -->
+                  <text data-hf-id="hf-txt1" x="35" y="58" class="nn-label-input" text-anchor="end">"France"</text>
+                  <text data-hf-id="hf-txt2" x="35" y="70" class="nn-value-input" text-anchor="end">Input Token</text>
+
+                  <!-- Hidden Layer (X=150) -->
+                  <text data-hf-id="hf-txt3" x="150" y="12" class="nn-label-hidden" text-anchor="middle">w₁</text>
+                  <text data-hf-id="hf-txt4" x="150" y="24" class="nn-value-hidden" text-anchor="middle">0.82</text>
+                  
+                  <text data-hf-id="hf-txt5" x="150" y="108" class="nn-label-hidden" text-anchor="middle">w₂</text>
+                  <text data-hf-id="hf-txt6" x="150" y="118" class="nn-value-hidden" text-anchor="middle">-0.45</text>
+
+                  <!-- Output Layer (X=250) -->
+                  <text data-hf-id="hf-txt7" x="265" y="28" class="nn-label-output active" text-anchor="start">"Paris"</text>
+                  <text data-hf-id="hf-txt8" x="265" y="40" class="nn-value-output active" text-anchor="start">P = 0.98</text>
+
+                  <text data-hf-id="hf-txt9" x="265" y="88" class="nn-label-output" text-anchor="start">"London"</text>
+                  <text data-hf-id="hf-txt10" x="265" y="100" class="nn-value-output" text-anchor="start">P = 0.01</text>
+                </svg>
+              </div>
+              <div data-hf-id="hf-8dvl" style="font-family:'JetBrains Mono', monospace; font-size:14px; color:#64748b; margin-top:16px; text-align:center;">
+                Learned Statistical Relationships (Trillions of parameters)
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-12yt">FRAME_TIME: 00:46:64</div>
+        <div data-hf-id="hf-5s3t">SYS_METRIC: PROBABILITY_SAMPLING</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-uodu" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="48.68" data-track-index="5">
+        <div data-hf-id="hf-bwcr" class="caption-box" id="caption-text">Section 1: Large Language Models</div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.15,
+        duration: 4,
+        yoyo: true,
+        repeat: 11,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Initial State: panels slide in
+      tl.fromTo(".terminal-panel", { x: -80, opacity: 0 }, { x: 0, opacity: 1, duration: 1.0, ease: "power3.out" }, 1.0);
+      tl.fromTo(".visual-panel", { x: 80, opacity: 0 }, { x: 0, opacity: 1, duration: 1.0, ease: "power3.out" }, 1.2);
+
+      // 2. Case 1 Prompt ("All that glitters...") (3.5s - 8s)
+      tl.to("#case-1", { opacity: 1, duration: 0.5 }, 3.5);
+      // Prediction appears (8.0s)
+      tl.to("#predict-1", { opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.2)" }, 8.0);
+
+      // 3. Case 2 Prompt ("The capital of France is...") (13s)
+      // Slide Case 1 up slightly and dim
+      tl.to("#case-1", { y: -20, opacity: 0.4, scale: 0.95, duration: 0.8 }, 12.5);
+      tl.to("#cursor-1", { display: "none" }, 12.5);
+      tl.to("#case-2", { opacity: 1, duration: 0.5 }, 13.0);
+      // Prediction 2 appears (14.5s)
+      tl.to("#predict-2", { opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.2)" }, 14.5);
+
+      // 4. Float App Mockups in (18s)
+      // "Everything else... writing code... summarizing PDFs... starts from this simple idea."
+      tl.to("#app-visuals", { opacity: 1, duration: 0.8 }, 18.0);
+      tl.fromTo(".app-card", 
+        { scale: 0.8, opacity: 0 }, 
+        { scale: 1, opacity: 1, stagger: 0.15, duration: 0.8, ease: "back.out(1.1)" }, 
+        18.2
+      );
+
+      // 5. Shift to DB vs Net comparison (28s)
+      // "A language model isn't storing answers like a database..."
+      tl.to("#app-visuals", { y: -50, opacity: 0, duration: 0.6, ease: "power2.in" }, 27.5);
+      tl.to("#comp-visuals", { opacity: 1, duration: 0.8 }, 28.2);
+      tl.fromTo(".comp-card",
+        { y: 30, opacity: 0 },
+        { y: 0, opacity: 1, stagger: 0.2, duration: 0.8, ease: "power3.out" },
+        28.5
+      );
+
+      // Neural connection pulse line animations (38s)
+      // "The more data it sees... the better it becomes..."
+      tl.to("line", { strokeDashoffset: -20, strokeWidth: "+=1", stroke: "#60a5fa", duration: 1.0, repeat: 5, yoyo: true }, 38.0);
+
+      // Slide panels out at the end of the scene (46s)
+      tl.to(".terminal-panel", { x: -100, opacity: 0, duration: 1.0, ease: "power3.in" }, 46.5);
+      tl.to(".visual-panel", { x: 100, opacity: 0, duration: 1.0, ease: "power3.in" }, 46.8);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Despite all the hype, a Large Language Model only does one job." },
+        { time: 5.0, text: "Predict the next token. That's it." },
+        { time: 8.0, text: "When you type \"All that glitters\"," },
+        { time: 10.5, text: "the model predicts that the next sequence is likely \"is not gold.\"" },
+        { time: 13.0, text: "When you ask \"The capital of France is\"," },
+        { time: 15.5, text: "it predicts \"Paris.\"" },
+        { time: 18.0, text: "Everything else... writing code... summarizing PDFs... answering questions..." },
+        { time: 23.5, text: "starts from this surprisingly simple idea." },
+        { time: 27.5, text: "A language model isn't storing answers like a database." },
+        { time: 31.5, text: "Instead, it's learned statistical relationships between billions of pieces of text." },
+        { time: 37.5, text: "The more data it sees... the better it becomes at predicting what comes next." },
+        { time: 42.0, text: "But this raises another question." },
+        { time: 44.5, text: "Humans read words. Computers don't. So how does a language model even read text?" }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec1"] = tl;
+    </script>
+  </template>
+</body>
+</html>

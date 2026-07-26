@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: 200px; left: -100px; }
+      .glow-right { top: -100px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Split Frame Layout */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 50px;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Left Side: Tokenizer Machine */
+      .token-panel {
+        background: rgba(15, 23, 42, 0.6);
+        border: 2px solid rgba(56, 189, 248, 0.15);
+        border-radius: 20px;
+        height: 680px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+        gap: 40px;
+      }
+      .token-panel::before {
+        content: '// TOKENIZATION_PIPELINE';
+        position: absolute;
+        top: 20px;
+        left: 30px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #64748b;
+      }
+
+      .input-string {
+        background: rgba(4, 8, 20, 0.5);
+        border: 1px solid rgba(56, 189, 248, 0.1);
+        padding: 24px 30px;
+        border-radius: 12px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 36px;
+        color: #f8fafc;
+        position: relative;
+      }
+      .scanner-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 4px;
+        height: 100%;
+        background: #38bdf8;
+        box-shadow: 0 0 15px #38bdf8;
+        opacity: 0;
+      }
+
+      .token-output {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        min-height: 120px;
+        align-items: center;
+      }
+
+      .token-chip {
+        background: rgba(15, 23, 42, 0.8);
+        border: 2px solid #38bdf8;
+        padding: 16px 28px;
+        border-radius: 10px;
+        font-size: 28px;
+        font-weight: 600;
+        font-family: 'JetBrains Mono', monospace;
+        color: #f8fafc;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.1);
+        transform-style: preserve-3d;
+      }
+      .token-chip .id-label {
+        font-size: 14px;
+        color: #38bdf8;
+        border-top: 1px solid rgba(56, 189, 248, 0.2);
+        padding-top: 4px;
+        width: 100%;
+        text-align: center;
+      }
+
+      /* Right Side: Vocabulary Lookup Table */
+      .vocab-panel {
+        background: rgba(15, 23, 42, 0.4);
+        border: 1px solid rgba(56, 189, 248, 0.10);
+        border-radius: 20px;
+        height: 680px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        opacity: 0;
+        transform: translateX(40px);
+      }
+      .vocab-panel::before {
+        content: '// VOCABULARY DATABASE';
+        position: absolute;
+        top: 20px;
+        left: 30px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #64748b;
+      }
+
+      .vocab-table {
+        margin-top: 30px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #94a3b8;
+      }
+      .vocab-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 20px;
+        background: rgba(4, 8, 20, 0.3);
+        border-radius: 8px;
+        border: 1px solid rgba(56, 189, 248, 0.05);
+      }
+      .vocab-row.highlight-row {
+        border-color: #38bdf8;
+        background: rgba(56, 189, 248, 0.08);
+        color: #38bdf8;
+        font-weight: bold;
+      }
+      .vocab-row.highlight-compare {
+        border-color: #ef4444;
+        background: rgba(239, 68, 68, 0.05);
+        color: #ef4444;
+      }
+
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-1r7x" id="root" data-composition-id="scene-sec2" data-start="0" data-width="1920" data-height="1080">
+      <!-- Background elements -->
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-q45v">MODULE // TOKENIZATION_ENGINE</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <!-- Left: Scanner and Tokens output -->
+        <div data-hf-id="hf-jg2q" class="token-panel">
+          <!-- Text Input String -->
+          <div data-hf-id="hf-hjqu" class="input-string" id="input-str-box">
+            <span data-hf-id="hf-wonw" id="text-all">All</span> <span data-hf-id="hf-h97y" id="text-that">that</span> <span data-hf-id="hf-psi0" id="text-glitters">glitters</span><span data-hf-id="hf-22d0" id="text-emoji" style="opacity:0;"> 🔥</span>
+            <div data-hf-id="hf-7vde" class="scanner-bar" id="scanner"></div>
+          </div>
+
+          <!-- Token chips list -->
+          <div data-hf-id="hf-jvu4" class="token-output" id="tokens-list">
+            <!-- Stagger-loaded chips -->
+            <div data-hf-id="hf-vzca" class="token-chip" id="chip-1" style="opacity: 0;">
+              <span data-hf-id="hf-dhry" class="word-val">All</span>
+              <span data-hf-id="hf-pu25" class="id-label" id="id-1">ID: 1023</span>
+            </div>
+            <div data-hf-id="hf-cfb5" class="token-chip" id="chip-2" style="opacity: 0;">
+              <span data-hf-id="hf-saey" class="word-val">that</span>
+              <span data-hf-id="hf-11wi" class="id-label" id="id-2">ID: 194</span>
+            </div>
+            <div data-hf-id="hf-htvk" class="token-chip" id="chip-3" style="opacity: 0;">
+              <span data-hf-id="hf-ibkz" class="word-val">glitt</span>
+              <span data-hf-id="hf-ai4y" class="id-label" id="id-3">ID: 8856</span>
+            </div>
+            <div data-hf-id="hf-jetj" class="token-chip" id="chip-4" style="opacity: 0;">
+              <span data-hf-id="hf-wi8h" class="word-val">ers</span>
+              <span data-hf-id="hf-9x9v" class="id-label" id="id-4">ID: 230</span>
+            </div>
+            <div data-hf-id="hf-jq7q" class="token-chip" id="chip-5" style="opacity: 0;">
+              <span data-hf-id="hf-vot1" class="word-val">🔥</span>
+              <span data-hf-id="hf-tpy4" class="id-label" id="id-5">ID: 9532</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Vocabulary List -->
+        <div data-hf-id="hf-phie" class="vocab-panel" id="vocab-card">
+          <div data-hf-id="hf-r71y" class="vocab-table">
+            <div data-hf-id="hf-b3ef" class="vocab-row" id="row-523">
+              <span data-hf-id="hf-mo4o">Token: 523</span>
+              <span data-hf-id="hf-cz57">"apple"</span>
+            </div>
+            <div data-hf-id="hf-h948" class="vocab-row" id="row-524">
+              <span data-hf-id="hf-jvzh">Token: 524</span>
+              <span data-hf-id="hf-iq47">"orange"</span>
+            </div>
+            <div data-hf-id="hf-oppw" class="vocab-row highlight-row" id="row-1023">
+              <span data-hf-id="hf-7dmq">Token: 1023</span>
+              <span data-hf-id="hf-td5y">"All"</span>
+            </div>
+            <div data-hf-id="hf-xjl4" class="vocab-row highlight-row" id="row-194">
+              <span data-hf-id="hf-sjm2">Token: 194</span>
+              <span data-hf-id="hf-jsza">"that"</span>
+            </div>
+            <div data-hf-id="hf-pbyv" class="vocab-row highlight-row" id="row-8856">
+              <span data-hf-id="hf-fgvr">Token: 8856</span>
+              <span data-hf-id="hf-8l55">"glitt"</span>
+            </div>
+            <div data-hf-id="hf-vxst" class="vocab-row highlight-row" id="row-230">
+              <span data-hf-id="hf-mibl">Token: 230</span>
+              <span data-hf-id="hf-fgjn">"ers"</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-bkoz">FRAME_TIME: 01:35:32</div>
+        <div data-hf-id="hf-ry5x">SYS_METRIC: VOCABULARY_INDEXING</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-q1r5" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="48.76" data-track-index="5">
+        <div data-hf-id="hf-1hv2" class="caption-box" id="caption-text">Section 2: Tokenization</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 9,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Initial State: token panel slides in (1.0s)
+      tl.fromTo(".token-panel", { x: -80, opacity: 0 }, { x: 0, opacity: 1, duration: 1.0, ease: "power3.out" }, 1.0);
+
+      // 2. Scanner Sweep animation (7s - 13s)
+      // "The first step is called tokenization."
+      tl.set("#scanner", { opacity: 0.8 }, 6.5);
+      tl.fromTo("#scanner", { x: 0 }, { x: 760, duration: 4.5, ease: "power1.inOut" }, 7.0);
+      tl.to("#scanner", { opacity: 0, duration: 0.3 }, 11.5);
+
+      // 3. Stagger-load tokens (13s - 22s)
+      // "Instead of treating an entire sentence as one giant object, the tokenizer breaks it..."
+      tl.to("#chip-1", { opacity: 1, scale: 1, duration: 0.5 }, 13.0);
+      tl.to("#text-all", { color: "#38bdf8", duration: 0.2 }, 13.0);
+
+      tl.to("#chip-2", { opacity: 1, scale: 1, duration: 0.5 }, 14.5);
+      tl.to("#text-that", { color: "#38bdf8", duration: 0.2 }, 14.5);
+
+      tl.to("#chip-3", { opacity: 1, scale: 1, duration: 0.5 }, 16.0);
+      // Highlight "glitt" sub-word split
+      tl.to("#text-glitters", { color: "#f43f5e", duration: 0.2 }, 16.0);
+
+      tl.to("#chip-4", { opacity: 1, scale: 1, duration: 0.5 }, 17.5);
+
+      // 4. Emoji token addition (22s)
+      // "Even emojis become tokens."
+      tl.to("#text-emoji", { opacity: 1, duration: 0.5 }, 21.5);
+      tl.to("#chip-5", { opacity: 1, scale: 1, duration: 0.5 }, 22.5);
+
+      // 5. Flip cards or fade IDs (26s)
+      // "Every token receives an ID. The language model never sees the word..."
+      // Animate background color change of the chips, highlighting the ID label
+      tl.to(".token-chip", { borderColor: "#60a5fa", backgroundColor: "rgba(30, 41, 59, 0.8)", duration: 0.8 }, 26.5);
+      tl.to(".token-chip .word-val", { opacity: 0.3, duration: 0.6 }, 26.8);
+      tl.fromTo(".id-label", { scale: 1.2, fontWeight: "bold" }, { scale: 1, fontWeight: "normal", duration: 0.6 }, 27.0);
+
+      // 6. Vocabulary panel slides in (32s)
+      // "But IDs alone don't carry meaning..."
+      tl.to("#vocab-card", { opacity: 1, x: 0, duration: 1.0, ease: "power3.out" }, 31.5);
+
+      // Highlight row comparisons
+      // "Token 523 isn't inherently similar to token 524."
+      tl.to("#row-523, #row-524", { className: "vocab-row highlight-compare", duration: 0.8 }, 33.0);
+
+      // 7. Coordinate shift (40s)
+      // "So the next challenge is teaching the model which words are actually related..."
+      tl.to(".token-chip", { y: -20, opacity: 0.5, scale: 0.9, duration: 0.8 }, 41.0);
+      tl.to("#vocab-card", { opacity: 0.3, duration: 0.8 }, 41.5);
+
+      // Final Exit
+      tl.to(".token-panel", { y: 100, opacity: 0, duration: 1.0, ease: "power3.in" }, 46.5);
+      tl.to("#vocab-card", { x: 100, opacity: 0, duration: 1.0, ease: "power3.in" }, 46.8);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Computers never actually read words." },
+        { time: 3.2, text: "Everything must eventually become numbers." },
+        { time: 6.8, text: "The first step is called tokenization." },
+        { time: 10.0, text: "Instead of treating an entire sentence as one giant object," },
+        { time: 13.5, text: "the tokenizer breaks it into smaller pieces called tokens." },
+        { time: 18.0, text: "Sometimes they're whole words. Sometimes they're parts of words. Sometimes they're punctuation." },
+        { time: 22.0, text: "Even emojis become tokens." },
+        { time: 25.5, text: "Every token receives an ID." },
+        { time: 28.0, text: "The language model never sees the word itself. It only sees these numerical IDs." },
+        { time: 32.0, text: "But IDs alone don't carry meaning." },
+        { time: 35.0, text: "Token 523 isn't inherently similar to token 524." },
+        { time: 40.0, text: "So the next challenge is teaching the model which words are actually related." },
+        { time: 45.0, text: "That's where vectors come in." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec2"] = tl;
+    </script>
+  </template>
+</body>
+</html>

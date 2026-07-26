@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #fb923c;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #fb923c;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Split Layout */
+      .rl-layout {
+        position: relative;
+        width: 1550px;
+        height: 640px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Left Side: Generated Responses */
+      .responses-container {
+        width: 680px;
+        display: flex;
+        flex-direction: column;
+        gap: 25px;
+        position: relative;
+      }
+      .prompt-input-badge {
+        background: rgba(56, 189, 248, 0.1);
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        padding: 14px 20px;
+        border-radius: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+        width: fit-content;
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      .response-card {
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 16px;
+        padding: 24px 30px;
+        position: relative;
+        overflow: hidden;
+        opacity: 0;
+        transform: translateX(-50px);
+        transition: all 0.4s ease;
+      }
+      .response-card.rejected {
+        border-color: #ef4444;
+        opacity: 0.45;
+        scale: 0.95;
+      }
+      .response-card.reinforced {
+        border-color: #10b981;
+        box-shadow: 0 0 25px rgba(16, 185, 129, 0.2);
+      }
+      .response-header {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: #94a3b8;
+        margin-bottom: 8px;
+      }
+      .response-card.rejected .response-header { color: #f87171; }
+      .response-card.reinforced .response-header { color: #10b981; }
+
+      .response-body {
+        font-size: 15px;
+        color: #cbd5e1;
+        line-height: 1.4;
+      }
+      .thumbs-stamp {
+        position: absolute;
+        right: 30px;
+        top: 20px;
+        font-size: 38px;
+        opacity: 0;
+        scale: 0.5;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      }
+      .thumbs-stamp.stamp-visible {
+        opacity: 1;
+        scale: 1.0;
+      }
+
+      /* Right Side: Reward Network Graph */
+      .network-graph-container {
+        width: 680px;
+        height: 520px;
+        background: rgba(15, 23, 42, 0.7);
+        border: 2px solid rgba(56, 189, 248, 0.15);
+        border-radius: 20px;
+        padding: 40px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+        transform: translateX(50px);
+      }
+      .network-graph-container::before {
+        content: '// ALIGNMENT_WEIGHT_ADJUSTMENT';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #94a3b8;
+      }
+
+      /* SVG Network structure */
+      .weights-svg-wrapper {
+        width: 100%;
+        height: 280px;
+        position: relative;
+        margin: 20px 0;
+      }
+      .net-node {
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        background: #334155;
+        border-radius: 50%;
+        z-index: 10;
+        transition: all 0.3s ease;
+      }
+      .net-node.active-node {
+        background: #10b981;
+        box-shadow: 0 0 10px #10b981;
+      }
+      .net-line {
+        stroke: rgba(148, 163, 184, 0.15);
+        stroke-width: 2;
+        fill: none;
+      }
+      .net-line.reinforced-line {
+        stroke: #10b981;
+        stroke-width: 6;
+        filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.4));
+      }
+
+      /* Reward curve panel */
+      .reward-stat-card {
+        background: rgba(4, 8, 20, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.15);
+        border-radius: 12px;
+        padding: 16px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .reward-title {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #94a3b8;
+      }
+      .reward-value-display {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 28px;
+        font-weight: 800;
+        color: #cbd5e1;
+        transition: color 0.4s ease;
+      }
+      .reward-value-display.reward-success {
+        color: #10b981;
+      }
+
+      /* Chain of Thought Teaser overlay */
+      .cot-teaser-panel {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: all 0.6s ease;
+      }
+      .cot-puzzle-card {
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(56, 189, 248, 0.25);
+        border-radius: 16px;
+        padding: 30px 40px;
+        width: 640px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+      }
+      .cot-puzzle-card h5 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #fb923c;
+        margin-bottom: 12px;
+      }
+      .cot-puzzle-card p {
+        font-size: 18px;
+        line-height: 1.4;
+        color: #f8fafc;
+        margin-bottom: 20px;
+      }
+      .cot-thinking-status {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .thinking-dot {
+        width: 8px;
+        height: 8px;
+        background: #38bdf8;
+        border-radius: 50%;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-idxb" id="root" data-composition-id="scene-sec15" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-kvp7">MODULE // REINFORCEMENT_LEARNING</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-pgsh" class="rl-layout">
+          <!-- Left side prompt and responses -->
+          <div data-hf-id="hf-8frm" class="responses-container">
+            <div data-hf-id="hf-nw33" class="prompt-input-badge" id="rl-prompt">
+              PROMPT: Write a robust API health check.
+            </div>
+            
+            <!-- Response A -->
+            <div data-hf-id="hf-n1rh" class="response-card" id="card-resp-a">
+              <div data-hf-id="hf-p6gt" class="response-header">RESPONSE_A // COLD_GENERATION</div>
+              <div data-hf-id="hf-dnac" class="response-body">
+                "Wait 500 seconds and hope the database connection recovers itself."
+              </div>
+              <div data-hf-id="hf-pgbn" class="thumbs-stamp" id="stamp-a" style="color: #ef4444;">👎</div>
+            </div>
+
+            <!-- Response B -->
+            <div data-hf-id="hf-qzvi" class="response-card" id="card-resp-b">
+              <div data-hf-id="hf-mshy" class="response-header">RESPONSE_B // ALIGNED_GENERATION</div>
+              <div data-hf-id="hf-rlca" class="response-body">
+                "Ping the database pool. If connection errors exist, raise an alert with diagnostics."
+              </div>
+              <div data-hf-id="hf-fbv1" class="thumbs-stamp" id="stamp-b" style="color: #10b981;">👍</div>
+            </div>
+          </div>
+
+          <!-- Right side network weights -->
+          <div data-hf-id="hf-aie0" class="network-graph-container" id="net-container">
+            <div data-hf-id="hf-lkc4" class="weights-svg-wrapper">
+              <svg data-hf-id="hf-uldc" style="position: absolute; inset: 0; width: 100%; height: 100%;">
+                <!-- Layer lines -->
+                <path data-hf-id="hf-ykyb" class="net-line" id="line-1" d="M 40 140 L 220 70 M 40 140 L 220 210" />
+                <path data-hf-id="hf-pmq6" class="net-line" id="line-2" d="M 220 70 L 400 70 M 220 210 L 400 210" />
+                <path data-hf-id="hf-7hx9" class="net-line" id="line-3" d="M 400 70 L 560 140 M 400 210 L 560 140" />
+              </svg>
+              <!-- Layer nodes -->
+              <div data-hf-id="hf-06xy" class="net-node active-node" style="left: 32px; top: 132px;"></div>
+              
+              <div data-hf-id="hf-3o8p" class="net-node" style="left: 212px; top: 62px;"></div>
+              <div data-hf-id="hf-owjm" class="net-node active-node" id="n-mid-b" style="left: 212px; top: 202px;"></div>
+
+              <div data-hf-id="hf-mrdk" class="net-node" style="left: 392px; top: 62px;"></div>
+              <div data-hf-id="hf-524h" class="net-node active-node" id="n-right-b" style="left: 392px; top: 202px;"></div>
+
+              <div data-hf-id="hf-5nlj" class="net-node active-node" style="left: 552px; top: 132px;"></div>
+            </div>
+
+            <div data-hf-id="hf-malr" class="reward-stat-card">
+              <div data-hf-id="hf-ddpy" class="reward-title">REWARD_ALIGNMENT_SIGNAL</div>
+              <div data-hf-id="hf-vjq9" class="reward-value-display" id="reward-display">VAL: 0.00</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chain of Thought teaser overlay -->
+        <div data-hf-id="hf-ys67" class="cot-teaser-panel" id="cot-teaser" style=" ">
+          <div data-hf-id="hf-t0wi" class="cot-puzzle-card">
+            <h5 data-hf-id="hf-paua">COMPLEX REASONING PUZZLE</h5>
+            <p data-hf-id="hf-kgjv"><strong data-hf-id="hf-dqkp">Problem:</strong> "If a train leaves Seattle at 3 PM and travels at 80 mph, and another leaves Chicago at..."</p>
+            <div data-hf-id="hf-dn66" class="cot-thinking-status">
+              <div data-hf-id="hf-d7dm" class="thinking-dot" id="td-1"></div>
+              <div data-hf-id="hf-999l" class="thinking-dot" id="td-2"></div>
+              <div data-hf-id="hf-8hls" class="thinking-dot" id="td-3"></div>
+              <span data-hf-id="hf-2xnu">REASONING LOOP ENGAGED: THINKING...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-koj4">FRAME_TIME: 12:37:08</div>
+        <div data-hf-id="hf-ho2q">SYS_METRIC: WEIGHT_UPDATE_COMPLETE</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-aben" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="41.77" data-track-index="5">
+        <div data-hf-id="hf-hhia" class="caption-box" id="caption-text">Section 15: Reinforcement Learning</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 7,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Entrance of components (3s)
+      tl.to("#rl-prompt", { opacity: 1, y: 0, duration: 0.6 }, 3.0);
+      tl.to("#card-resp-a", { opacity: 1, x: 0, duration: 0.6 }, 4.5);
+      tl.to("#card-resp-b", { opacity: 1, x: 0, duration: 0.6 }, 5.5);
+      tl.to("#net-container", { opacity: 1, x: 0, duration: 0.8 }, 7.0);
+
+      // 2. Thumbs stamps overlay ratings (13s)
+      tl.to("#card-resp-a", { className: "response-card rejected", duration: 0.5 }, 13.0);
+      tl.to("#stamp-a", { className: "thumbs-stamp stamp-visible", duration: 0.4 }, 13.2);
+
+      tl.to("#card-resp-b", { className: "response-card reinforced", duration: 0.5 }, 14.5);
+      tl.to("#stamp-b", { className: "thumbs-stamp stamp-visible", duration: 0.4 }, 14.7);
+
+      // 3. Weight reinforcement path highlights (25s)
+      tl.call(() => {
+        // Redraw paths representing Response B connection
+        const l1 = document.getElementById("line-1");
+        const l2 = document.getElementById("line-2");
+        const l3 = document.getElementById("line-3");
+        
+        // Highlight active lines
+        l1.setAttribute("d", "M 40 140 L 220 210");
+        l1.setAttribute("class", "net-line reinforced-line");
+
+        l2.setAttribute("d", "M 220 210 L 400 210");
+        l2.setAttribute("class", "net-line reinforced-line");
+
+        l3.setAttribute("d", "M 400 210 L 560 140");
+        l3.setAttribute("class", "net-line reinforced-line");
+
+        // Nodes highlight
+        document.getElementById("n-mid-b").style.background = "#10b981";
+        document.getElementById("n-right-b").style.background = "#10b981";
+
+        // Score display updates
+        document.getElementById("reward-display").innerText = "VAL: +1.00 👍";
+        document.getElementById("reward-display").className = "reward-value-display reward-success";
+      }, [], 25.0);
+
+      // 4. Transition to Chain of Thought teaser (32s - 41.77s)
+      tl.to("#rl-prompt, #card-resp-a, #card-resp-b, #net-container", { opacity: 0.05, duration: 0.8 }, 32.5);
+      tl.to("#cot-teaser", { opacity: 1, duration: 1.0 }, 33.2);
+      
+      // Pulse thinking dots
+      tl.to(".thinking-dot", {
+        y: -10,
+        stagger: 0.15,
+        duration: 0.4,
+        yoyo: true,
+        repeat: 9
+      }, 34.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Pre-training teaches a model how to speak." },
+        { time: 3.5, text: "Reinforcement Learning from Human Feedback, or RLHF, teaches it how to behave." },
+        { time: 8.5, text: "To align a model, we ask it to generate multiple responses to a prompt." },
+        { time: 13.0, text: "Human evaluators—or automated reward models—rate these responses, giving thumbs up for helpful answers" },
+        { time: 18.5, text: "and thumbs down for hallucinations or harmful content." },
+        { time: 24.5, text: "The model uses this feedback as a reward signal, updating its neural weights to favor high-scoring responses." },
+        { time: 31.0, text: "This training turns a raw base model into a polite, helpful assistant." },
+        { time: 35.0, text: "But for complex reasoning, simple feedback isn't enough. We need the model to think out loud." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec15"] = tl;
+    </script>
+  </template>
+</body>
+</html>

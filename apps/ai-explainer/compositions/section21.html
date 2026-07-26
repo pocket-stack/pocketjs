@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Layout */
+      .quant-layout {
+        position: relative;
+        width: 1550px;
+        height: 640px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Weight Cards Panels */
+      .quant-panel {
+        width: 440px;
+        height: 520px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 24px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+        transform: translateY(30px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+      }
+      .quant-panel.quant-active {
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.25);
+      }
+
+      .panel-title {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+      }
+      .quant-panel.quant-active .panel-title {
+        color: #38bdf8;
+      }
+
+      /* Matrix grid visual */
+      .matrix-container {
+        background: #090d16;
+        border-radius: 12px;
+        padding: 24px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+      .matrix-cell {
+        background: rgba(4, 8, 20, 0.95);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 8px;
+        padding: 16px 0;
+        text-align: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+      }
+      .matrix-cell.cell-highlight {
+        color: #38bdf8;
+        border-color: #38bdf8;
+        box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+      }
+
+      /* Number Line Visualization */
+      .numberline-panel {
+        width: 520px;
+        height: 520px;
+        background: rgba(15, 23, 42, 0.4);
+        border: 1px dashed rgba(148, 163, 184, 0.15);
+        border-radius: 24px;
+        padding: 30px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        opacity: 0;
+        transform: scale(0.95);
+      }
+      .axis-container {
+        position: relative;
+        width: 100%;
+        height: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .axis-line {
+        position: absolute;
+        width: 90%;
+        height: 4px;
+        background: rgba(148, 163, 184, 0.3);
+        border-radius: 2px;
+      }
+      .axis-ticks {
+        position: absolute;
+        width: 90%;
+        display: flex;
+        justify-content: space-between;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: #94a3b8;
+        top: 75px;
+      }
+      .discrete-bucket {
+        position: absolute;
+        width: 2px;
+        height: 24px;
+        background: #38bdf8;
+        transform: translateY(-10px);
+        opacity: 0;
+      }
+      .discrete-bucket.bucket-active {
+        opacity: 1;
+      }
+      .continuous-pointer {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: #ef4444;
+        border-radius: 50%;
+        top: 54px;
+        left: 5%; /* Start of the number line at -1.0 mark */
+        transform: translate(-6px, 0);
+        box-shadow: 0 0 10px #ef4444;
+        opacity: 0;
+      }
+
+      /* Metrics & scale */
+      .badge-metric {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #cbd5e1;
+        background: rgba(15, 23, 42, 0.95);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 6px;
+        padding: 8px 12px;
+      }
+      .badge-metric.badge-success {
+        border-color: #10b981;
+        color: #10b981;
+      }
+
+      /* Ending Teaser blueprint overlay */
+      .blueprint-teaser-panel {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: all 0.6s ease;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-0ovm" id="root" data-composition-id="scene-sec21" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-ywnl">MODULE // WEIGHT_QUANTIZATION</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-ffjo" class="quant-layout">
+          <!-- Left panel: FP16 Float Grid -->
+          <div data-hf-id="hf-8ho6" class="quant-panel" id="panel-fp16">
+            <div data-hf-id="hf-we58" class="panel-title">WEIGHT_PRECISION // FP16 (16-BIT FLOATS)</div>
+            <div data-hf-id="hf-cqzd" class="matrix-container">
+              <div data-hf-id="hf-vuha" class="matrix-cell" id="c1-1">0.8354</div>
+              <div data-hf-id="hf-zkcl" class="matrix-cell" id="c1-2">-0.1192</div>
+              <div data-hf-id="hf-6n5a" class="matrix-cell" id="c1-3">0.4851</div>
+              <div data-hf-id="hf-m8hi" class="matrix-cell" id="c1-4">-0.9234</div>
+              <div data-hf-id="hf-eu1u" class="matrix-cell" id="c1-5">0.0152</div>
+              <div data-hf-id="hf-ll4s" class="matrix-cell" id="c1-6">-0.3478</div>
+            </div>
+            <div data-hf-id="hf-yeow">
+              <div data-hf-id="hf-fu2b" class="badge-metric" id="badge-fp16-size">Memory footprint: 16 Gigabytes</div>
+            </div>
+          </div>
+
+          <!-- Middle panel: Number Line slider -->
+          <div data-hf-id="hf-f76r" class="numberline-panel" id="panel-nline">
+            <div data-hf-id="hf-kdxk" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #cbd5e1; text-transform: uppercase;">
+              Mapping Float to discrete bucket
+            </div>
+            <div data-hf-id="hf-l9w1" class="axis-container">
+              <div data-hf-id="hf-pb7m" class="axis-line"></div>
+              <!-- Buckets threshold -->
+              <div data-hf-id="hf-xrbc" class="discrete-bucket" id="b-1" style="left: 10%;"></div>
+              <div data-hf-id="hf-3a9f" class="discrete-bucket" id="b-2" style="left: 30%;"></div>
+              <div data-hf-id="hf-9hyu" class="discrete-bucket" id="b-3" style="left: 50%;"></div>
+              <div data-hf-id="hf-3lm5" class="discrete-bucket" id="b-4" style="left: 70%;"></div>
+              <div data-hf-id="hf-49y4" class="discrete-bucket" id="b-5" style="left: 90%;"></div>
+              <!-- Continuous pointer slider -->
+              <div data-hf-id="hf-xph8" class="continuous-pointer" id="axis-pointer"></div>
+            </div>
+            <div data-hf-id="hf-ommq" class="axis-ticks">
+              <span data-hf-id="hf-spix">-1.0</span>
+              <span data-hf-id="hf-qzbt">-0.5</span>
+              <span data-hf-id="hf-hs2t">0.0</span>
+              <span data-hf-id="hf-3l23">+0.5</span>
+              <span data-hf-id="hf-zmuz">+1.0</span>
+            </div>
+            <div data-hf-id="hf-iaqk" class="badge-metric" id="nline-val-lbl">Weight: Continuous scale</div>
+          </div>
+
+          <!-- Right panel: INT8 Integer Grid -->
+          <div data-hf-id="hf-gnu0" class="quant-panel" id="panel-int8">
+            <div data-hf-id="hf-6syn" class="panel-title">WEIGHT_PRECISION // INT8 (8-BIT INTEGERS)</div>
+            <div data-hf-id="hf-h10t" class="matrix-container">
+              <div data-hf-id="hf-vrzj" class="matrix-cell" id="c2-1">6</div>
+              <div data-hf-id="hf-26m2" class="matrix-cell" id="c2-2">-1</div>
+              <div data-hf-id="hf-7dcm" class="matrix-cell" id="c2-3">3</div>
+              <div data-hf-id="hf-645e" class="matrix-cell" id="c2-4">-7</div>
+              <div data-hf-id="hf-u1f9" class="matrix-cell" id="c2-5">0</div>
+              <div data-hf-id="hf-3vww" class="matrix-cell" id="c2-6">-3</div>
+            </div>
+            <div data-hf-id="hf-y7yw">
+              <div data-hf-id="hf-c93h" class="badge-metric badge-success" id="badge-int8-size" style="opacity: 0;">Memory footprint: 4 Gigabytes</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ending Teaser Blueprint overlay -->
+        <div data-hf-id="hf-hgdf" class="blueprint-teaser-panel" id="blueprint-teaser" style=" ">
+          <div data-hf-id="hf-4iis" style="font-family: 'JetBrains Mono', monospace; font-size: 18px; color: #10b981; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 20px;">
+            AI Application Architecture Blueprint
+          </div>
+          <div data-hf-id="hf-7pqa" style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #cbd5e1; font-weight: bold; margin-bottom: 40px;">
+            Connecting All Modules into a Unified Intelligent Core
+          </div>
+          <span data-hf-id="hf-ddvv" style="font-size: 56px;">⚙️</span>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-o3so">FRAME_TIME: 17:14:42</div>
+        <div data-hf-id="hf-jr8l">SYS_METRIC: COMPACT_BUCKETING_MAP</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-k081" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="62.65" data-track-index="5">
+        <div data-hf-id="hf-ahud" class="caption-box" id="caption-text">Section 21: Quantization</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 10,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Entrance of FP16 panel (3s)
+      tl.to("#panel-fp16", { opacity: 1, y: 0, duration: 0.6 }, 3.0);
+
+      // 2. Entrance of Number Line (14s)
+      tl.to("#panel-nline", { opacity: 1, scale: 1, duration: 0.6 }, 14.0);
+
+      // Buckets activation
+      tl.to(".discrete-bucket", { className: "discrete-bucket bucket-active", stagger: 0.1, duration: 0.4 }, 21.5);
+      tl.to("#axis-pointer", { opacity: 1, duration: 0.3 }, 22.0);
+
+      // 3. Pointer snap rounding animation (25s - 39s)
+      // Slider moves to 0.8354 (approx 83.5% width from left tick to right tick, or let's say x: 356px)
+      tl.to("#axis-pointer", { x: 356, duration: 1.5, ease: "power1.inOut" }, 25.0);
+      tl.call(() => {
+        document.getElementById("nline-val-lbl").innerText = "Weight: FP16 (0.8354)";
+        document.getElementById("c1-1").className = "matrix-cell cell-highlight";
+      }, [], 26.5);
+
+      // Slider snaps to nearest bucket (90% width bucket, tick 5: +0.8, x: 391px)
+      tl.to("#axis-pointer", { x: 391, duration: 0.4, ease: "back.out" }, 31.0);
+      tl.call(() => {
+        document.getElementById("nline-val-lbl").innerText = "Mapped Bucket: INT8 (6)";
+        document.getElementById("b-5").style.background = "#ef4444";
+      }, [], 31.5);
+
+      // 4. INT8 matrix grid activation (40s)
+      tl.to("#panel-int8", { opacity: 1, y: 0, duration: 0.6 }, 40.0);
+      tl.to("#c2-1", { className: "matrix-cell cell-highlight", duration: 0.3 }, 40.5);
+
+      // 5. Size tag reduction down to 4GB (48s)
+      tl.to("#badge-fp16-size", { textDecoration: "line-through", color: "#94a3b8", duration: 0.4 }, 48.0);
+      tl.to("#badge-int8-size", { opacity: 1, duration: 0.5 }, 48.5);
+      tl.to("#panel-int8", { className: "quant-panel quant-active", duration: 0.5 }, 49.0);
+
+      // 6. Ending Teaser overlay transition (54s - 62.65s)
+      tl.to("#panel-fp16, #panel-nline, #panel-int8", { opacity: 0.05, duration: 0.8 }, 54.5);
+      tl.to("#blueprint-teaser", { opacity: 1, duration: 1.0 }, 55.5);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Even small models can still be too large to fit in the RAM of a smartphone." },
+        { time: 5.5, text: "To shrink them further, we use quantization." },
+        { time: 9.8, text: "By default, model weights are stored as 16-bit floating-point numbers," },
+        { time: 14.5, text: "which can take any value between a massive range." },
+        { time: 18.2, text: "Quantization maps these high-precision floats into a tiny set of discrete integer buckets" },
+        { time: 23.5, text: "—typically 8-bit or even 4-bit integers." },
+        { time: 27.0, text: "Think of it like rounding numbers on a scale." },
+        { time: 30.5, text: "Instead of remembering a weight is precisely zero point eight three five four," },
+        { time: 35.8, text: "the model rounds it to a simple integer value like six." },
+        { time: 39.8, text: "This reduces the file size of a model by seventy-five percent," },
+        { time: 44.2, text: "allowing a 16-gigabyte model to compress down to just 4 gigabytes." },
+        { time: 49.0, text: "This makes it run faster and consume far less power on your device." },
+        { time: 53.5, text: "But models don't just sit on our devices waiting for prompts." },
+        { time: 57.0, text: "Sometimes, they need to act on their own, executing multi-step workflows." },
+        { time: 61.2, text: "For that, they need to act as agents." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec21"] = tl;
+    </script>
+  </template>
+</body>
+</html>

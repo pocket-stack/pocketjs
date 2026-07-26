@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* High-Level Transformer Architecture Grid */
+      .arch-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 80px;
+        width: 1300px;
+        height: 720px;
+        align-items: center;
+        position: relative;
+      }
+
+      .stack-container {
+        background: rgba(15, 23, 42, 0.6);
+        border: 2px solid;
+        border-radius: 24px;
+        padding: 40px;
+        height: 600px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        position: relative;
+        transition: all 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+      }
+      
+      .encoder-stack {
+        border-color: rgba(56, 189, 248, 0.2);
+        box-shadow: 0 0 30px rgba(56, 189, 248, 0.05);
+      }
+      .encoder-stack::before {
+        content: 'ENCODER (THE READER)';
+        position: absolute;
+        top: -15px;
+        background: #040814;
+        border: 1px solid #38bdf8;
+        color: #38bdf8;
+        padding: 4px 14px;
+        border-radius: 6px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        font-weight: bold;
+      }
+
+      .decoder-stack {
+        border-color: rgba(251, 146, 60, 0.2);
+        box-shadow: 0 0 30px rgba(251, 146, 60, 0.05);
+      }
+      .decoder-stack::before {
+        content: 'DECODER (THE WRITER)';
+        position: absolute;
+        top: -15px;
+        background: #040814;
+        border: 1px solid #fb923c;
+        color: #fb923c;
+        padding: 4px 14px;
+        border-radius: 6px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        font-weight: bold;
+      }
+
+      /* Stack Internal Layer Boxes */
+      .stack-box {
+        background: rgba(4, 8, 20, 0.8);
+        border: 2px solid;
+        border-radius: 12px;
+        width: 100%;
+        height: 90px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        font-weight: bold;
+        text-align: center;
+        transition: all 0.4s ease;
+      }
+      .enc-box {
+        border-color: rgba(56, 189, 248, 0.3);
+        color: #e2e8f0;
+      }
+      .dec-box {
+        border-color: rgba(251, 146, 60, 0.3);
+        color: #e2e8f0;
+      }
+
+      /* Inputs and Outputs cards */
+      .io-node {
+        background: rgba(4, 8, 20, 0.5);
+        border: 1px dashed;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        opacity: 0;
+        transform: translateY(20px);
+        transition: all 0.5s ease;
+      }
+      .input-node {
+        border-color: #38bdf8;
+        color: #38bdf8;
+      }
+      .output-node {
+        border-color: #fb923c;
+        color: #fb923c;
+      }
+
+      /* Cross attention bridge */
+      .cross-bridge {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 80px;
+        height: 4px;
+        background-image: linear-gradient(90deg, #38bdf8 0%, #fb923c 100%);
+        transform: translate(-50%, -50%) scaleX(0);
+        transform-origin: 0 50%;
+        opacity: 0;
+        z-index: 10;
+        box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+      }
+
+      /* Highlight effect for decoder-only focus */
+      .stack-container.dimmed {
+        opacity: 0.15;
+        transform: scale(0.9);
+      }
+      .stack-container.highlighted {
+        border-color: #fb923c;
+        box-shadow: 0 0 40px rgba(251, 146, 60, 0.3);
+        transform: scale(1.08) translateX(-150px);
+      }
+      .stack-container.highlighted .dec-box {
+        border-color: #fb923c;
+        color: #fb923c;
+        box-shadow: 0 0 15px rgba(251, 146, 60, 0.1);
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-qi3q" id="root" data-composition-id="scene-sec5" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-5vbk">MODULE // TRANSFORMER_ARCHITECTURE</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-yigp" class="arch-grid">
+          <!-- Encoder Stack (Left) -->
+          <div data-hf-id="hf-h46g" class="stack-container encoder-stack" id="encoder-panel" style="opacity: 0;">
+            <div data-hf-id="hf-b783" class="io-node input-node" id="enc-input">INPUT: "All that glitters"</div>
+            <div data-hf-id="hf-l0t6" class="stack-box enc-box" id="enc-ff">FEED FORWARD</div>
+            <div data-hf-id="hf-y9fi" class="stack-box enc-box" id="enc-attn">MULTI-HEAD ATTENTION</div>
+            <div data-hf-id="hf-071e" class="io-node input-node" id="enc-rep">CONTEXT REPRESENTATION</div>
+          </div>
+
+          <!-- Cross-Attention bridge -->
+          <div data-hf-id="hf-4sid" class="cross-bridge" id="attn-bridge"></div>
+
+          <!-- Decoder Stack (Right) -->
+          <div data-hf-id="hf-5vhh" class="stack-container decoder-stack" id="decoder-panel" style="opacity: 0;">
+            <div data-hf-id="hf-1ieg" class="io-node output-node" id="dec-output">NEXT WORD: "gold"</div>
+            <div data-hf-id="hf-z7v2" class="stack-box dec-box" id="dec-ff">FEED FORWARD</div>
+            <div data-hf-id="hf-v8kp" class="stack-box dec-box" id="dec-cross">CROSS ATTENTION</div>
+            <div data-hf-id="hf-pp2n" class="stack-box dec-box" id="dec-mask">MASKED SELF-ATTENTION</div>
+            <div data-hf-id="hf-237o" class="io-node output-node" id="dec-input-past">PAST: "is not..."</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-cpjm">FRAME_TIME: 03:41:96</div>
+        <div data-hf-id="hf-ltm3">SYS_METRIC: FULL_TRANSFORMER_BLOCK</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-fuy4" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="47.52" data-track-index="5">
+        <div data-hf-id="hf-t7aa" class="caption-box" id="caption-text">Section 5: The Transformer (Overview)</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 8,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Stagger animate stacks entrance (3s)
+      tl.fromTo("#encoder-panel", { x: -50, opacity: 0 }, { x: 0, opacity: 1, duration: 1.0, ease: "power3.out" }, 3.0);
+      tl.fromTo("#decoder-panel", { x: 50, opacity: 0 }, { x: 0, opacity: 1, duration: 1.0, ease: "power3.out" }, 3.5);
+
+      // 2. Encoder representation: Input slides in, pulses travel up (12s - 22s)
+      tl.to("#enc-input", { opacity: 1, y: 0, duration: 0.6 }, 12.0);
+      tl.to("#enc-attn", { backgroundColor: "rgba(56, 189, 248, 0.15)", borderColor: "#38bdf8", duration: 0.5 }, 14.0);
+      tl.to("#enc-attn", { backgroundColor: "rgba(4, 8, 20, 0.8)", borderColor: "rgba(56, 189, 248, 0.3)", duration: 0.5 }, 15.0);
+      tl.to("#enc-ff", { backgroundColor: "rgba(56, 189, 248, 0.15)", borderColor: "#38bdf8", duration: 0.5 }, 15.2);
+      tl.to("#enc-ff", { backgroundColor: "rgba(4, 8, 20, 0.8)", borderColor: "rgba(56, 189, 248, 0.3)", duration: 0.5 }, 16.2);
+      tl.to("#enc-rep", { opacity: 1, y: 0, duration: 0.6 }, 17.0);
+
+      // 3. Decoder generation: Cross attention bridge, past input, outputs sequential word (22s - 31s)
+      tl.to("#attn-bridge", { opacity: 1, scaleX: 1, duration: 0.8, ease: "power2.inOut" }, 22.0);
+      tl.to("#dec-input-past", { opacity: 1, y: 0, duration: 0.6 }, 23.0);
+      tl.to("#dec-mask", { backgroundColor: "rgba(251, 146, 60, 0.15)", borderColor: "#fb923c", duration: 0.5 }, 24.5);
+      tl.to("#dec-mask", { backgroundColor: "rgba(4, 8, 20, 0.8)", borderColor: "rgba(251, 146, 60, 0.3)", duration: 0.5 }, 25.5);
+      tl.to("#dec-cross", { backgroundColor: "rgba(251, 146, 60, 0.15)", borderColor: "#fb923c", duration: 0.5 }, 25.8);
+      tl.to("#dec-cross", { backgroundColor: "rgba(4, 8, 20, 0.8)", borderColor: "rgba(251, 146, 60, 0.3)", duration: 0.5 }, 26.8);
+      tl.to("#dec-ff", { backgroundColor: "rgba(251, 146, 60, 0.15)", borderColor: "#fb923c", duration: 0.5 }, 27.0);
+      tl.to("#dec-ff", { backgroundColor: "rgba(4, 8, 20, 0.8)", borderColor: "rgba(251, 146, 60, 0.3)", duration: 0.5 }, 28.0);
+      tl.to("#dec-output", { opacity: 1, y: 0, duration: 0.6 }, 28.5);
+
+      // 4. Focus shift: Modern models only need Decoder (37s - 47.52s)
+      tl.to("#attn-bridge", { opacity: 0, scaleX: 0, duration: 0.6 }, 37.0);
+      tl.to("#encoder-panel", { className: "stack-container encoder-stack dimmed", duration: 1.0 }, 37.5);
+      tl.to("#decoder-panel", { className: "stack-container decoder-stack highlighted", duration: 1.2 }, 38.0);
+
+      // Final Exit
+      tl.to("#encoder-panel, #decoder-panel", { opacity: 0, scale: 0.8, duration: 1.0, ease: "power2.in" }, 46.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "At a high level, a Transformer is split into two major blocks: the Encoder and the Decoder." },
+        { time: 6.5, text: "Think of the Encoder as the reader. It takes input tokens, analyzes their relationships using attention," },
+        { time: 13.0, text: "and builds a rich, contextual representation of the entire text." },
+        { time: 18.0, text: "The Decoder is the writer. It uses the Encoder's representation, combined with what it has written so far," },
+        { time: 25.0, text: "to generate the next word in the sequence." },
+        { time: 29.5, text: "For tasks like translation, both are used: the Encoder reads the English, and the Decoder writes the French." },
+        { time: 36.5, text: "But for modern AI models like ChatGPT, Claude, and Gemini, they only need one half." },
+        { time: 41.5, text: "Specifically: the Decoder." },
+        { time: 43.5, text: "Let's zoom into the Decoder to see why it's so powerful at text generation." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec5"] = tl;
+    </script>
+  </template>
+</body>
+</html>

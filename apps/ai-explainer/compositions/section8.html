@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: grid;
+        grid-template-columns: 1fr 1.2fr;
+        gap: 60px;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Comparison Panels styling */
+      .prompt-panel {
+        background: rgba(15, 23, 42, 0.6);
+        border: 2px solid rgba(56, 189, 248, 0.15);
+        border-radius: 20px;
+        height: 680px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+        opacity: 0;
+        transform: scale(0.95);
+        transition: all 0.5s ease;
+      }
+
+      .panel-zero {
+        border-color: rgba(148, 163, 184, 0.2);
+      }
+      .panel-zero::before {
+        content: '// ZERO-SHOT (RAW PROMPT)';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #94a3b8;
+      }
+
+      .panel-few {
+        border-color: rgba(56, 189, 248, 0.2);
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.05);
+      }
+      .panel-few::before {
+        content: '// FEW-SHOT (PATTERN GUIDANCE)';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #38bdf8;
+      }
+      .panel-few.highlight-active {
+        border-color: #38bdf8;
+        box-shadow: 0 0 35px rgba(56, 189, 248, 0.25);
+      }
+
+      /* Prompt boxes */
+      .prompt-box {
+        background: rgba(4, 8, 20, 0.5);
+        border: 1px solid rgba(56, 189, 248, 0.1);
+        border-radius: 12px;
+        padding: 24px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        margin-top: 30px;
+      }
+      .prompt-title {
+        color: #94a3b8;
+        font-size: 14px;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .prompt-text {
+        font-size: 24px;
+        color: #f8fafc;
+      }
+
+      /* Output boxes */
+      .output-box {
+        background: rgba(4, 8, 20, 0.7);
+        border: 1px dashed;
+        border-radius: 12px;
+        padding: 24px;
+        height: 280px;
+        font-family: 'JetBrains Mono', monospace;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        position: relative;
+      }
+      .zero-out {
+        border-color: rgba(148, 163, 184, 0.3);
+        color: #94a3b8;
+        font-size: 16px;
+        line-height: 1.6;
+        opacity: 0;
+      }
+      .few-out {
+        border-color: rgba(56, 189, 248, 0.3);
+        color: #cbd5e1;
+        font-size: 20px;
+        line-height: 1.8;
+        gap: 15px;
+        justify-content: flex-start;
+      }
+
+      .few-line {
+        opacity: 0;
+        transform: translateY(10px);
+        display: flex;
+        justify-content: space-between;
+      }
+      .few-review {
+        color: #94a3b8;
+      }
+      .few-sentiment {
+        font-weight: bold;
+      }
+      .sentiment-pos { color: #10b981; }
+      .sentiment-neg { color: #ef4444; }
+      .sentiment-target { color: #38bdf8; font-weight: 800; }
+
+      .blinking-cursor {
+        display: inline-block;
+        width: 12px;
+        height: 20px;
+        background-color: #38bdf8;
+        margin-left: 4px;
+        animation: blink 1s step-end infinite;
+      }
+      @keyframes blink {
+        from, to { background-color: transparent }
+        50% { background-color: #38bdf8 }
+      }
+
+      /* Weight Status Overlay */
+      .weight-status {
+        background: rgba(16, 185, 129, 0.1);
+        border: 1px solid #10b981;
+        color: #10b981;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        font-weight: bold;
+        padding: 8px 16px;
+        border-radius: 6px;
+        text-align: center;
+        opacity: 0;
+        transform: scale(0.9);
+      }
+
+      /* Frozen Warning Block */
+      .warning-box {
+        position: absolute;
+        inset: 0;
+        background: rgba(239, 68, 68, 0.15);
+        border: 2px solid #ef4444;
+        border-radius: 20px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 40px;
+        backdrop-filter: blur(4px);
+        z-index: 15;
+        opacity: 0;
+        scale: 0.9;
+        transition: all 0.5s ease;
+      }
+      .warning-box h4 {
+        font-size: 26px;
+        color: #ef4444;
+        margin-bottom: 12px;
+        font-weight: bold;
+      }
+      .warning-box p {
+        font-size: 16px;
+        color: #fca5a5;
+        font-family: 'JetBrains Mono', monospace;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-r7ef" id="root" data-composition-id="scene-sec8" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-j4q1">MODULE // FEW_SHOT_PROMPTING</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <!-- Left Panel: Zero-Shot -->
+        <div data-hf-id="hf-mm6z" class="prompt-panel panel-zero" id="zero-card">
+          <!-- Frozen Knowledge Warning -->
+          <div data-hf-id="hf-5ald" class="warning-box" id="frozen-warn">
+            <h4 data-hf-id="hf-zred">KNOWLEDGE LIMITATION DETECTED</h4>
+            <p data-hf-id="hf-nipa">Error: Private Data or Real-Time Facts Not Found in Pre-trained Weights</p>
+          </div>
+
+          <div data-hf-id="hf-il5m" class="prompt-box">
+            <div data-hf-id="hf-jlz1" class="prompt-title">PROMPT INPUT</div>
+            <div data-hf-id="hf-7eaz" class="prompt-text">"Summarize this."</div>
+          </div>
+
+          <div data-hf-id="hf-e28e" class="output-box zero-out" id="zero-result">
+            <div data-hf-id="hf-eltv" class="prompt-title">LLM OUTPUT</div>
+            <p data-hf-id="hf-2sq9">Here is a summary of the provided text. It contains details that are general, high-level, and completely unformatted, failing to adhere to the custom key-value schema required for the target application parsing pipeline...</p>
+          </div>
+
+          <div data-hf-id="hf-6e1e" style="height: 38px;"></div> <!-- spacer -->
+        </div>
+
+        <!-- Right Panel: Few-Shot -->
+        <div data-hf-id="hf-6hvf" class="prompt-panel panel-few" id="few-card">
+          <div data-hf-id="hf-ar3y" class="prompt-box">
+            <div data-hf-id="hf-skd2" class="prompt-title">PROMPT INPUT WITH PATTERNS</div>
+            <div data-hf-id="hf-sd9h" style="font-size: 16px; line-height: 1.5;">
+              Review: "Loved it!" Sentiment: Positive<br data-hf-id="hf-x5px">
+              Review: "Broke instantly." Sentiment: Negative<br data-hf-id="hf-rsrt">
+              Review: "It was okay." Sentiment: ...
+            </div>
+          </div>
+
+          <div data-hf-id="hf-oueq" class="output-box few-out">
+            <div data-hf-id="hf-ykxv" class="prompt-title">LLM OUTPUT</div>
+            <!-- Pattern lines -->
+            <div data-hf-id="hf-ztu2" class="few-line" id="line-few-1">
+              <span data-hf-id="hf-w915" class="few-review">Review 1: "Loved it!"</span>
+              <span data-hf-id="hf-hfw3" class="few-sentiment sentiment-pos">──► Sentiment: Positive</span>
+            </div>
+            <div data-hf-id="hf-vvq1" class="few-line" id="line-few-2">
+              <span data-hf-id="hf-vwjb" class="few-review">Review 2: "Broke instantly."</span>
+              <span data-hf-id="hf-kqp3" class="few-sentiment sentiment-neg">──► Sentiment: Negative</span>
+            </div>
+            <div data-hf-id="hf-v428" class="few-line" id="line-few-3">
+              <span data-hf-id="hf-y80n" class="few-review">Review 3: "It was okay."</span>
+              <span data-hf-id="hf-8lk7" class="few-sentiment" id="target-sentiment">──► Sentiment: <span data-hf-id="hf-122h" class="blinking-cursor" id="f-cursor"></span></span>
+            </div>
+          </div>
+
+          <!-- Weight change status indicator -->
+          <div data-hf-id="hf-npj7" class="weight-status" id="weights-badge">
+            🧠 WEIGHT ALIGNMENT: UNCHANGED (0% WEIGHT ADJUSTMENT)
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-bmhc">FRAME_TIME: 06:42:76</div>
+        <div data-hf-id="hf-esv6">SYS_METRIC: IN_CONTEXT_LEARNING</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-lctd" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="46.52" data-track-index="5">
+        <div data-hf-id="hf-a5f3" class="caption-box" id="caption-text">Section 8: Few Shot Prompting</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 8,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Initial State: panels entrance (3s)
+      tl.to("#zero-card", { opacity: 1, scale: 1.0, duration: 0.8, ease: "power3.out" }, 3.0);
+      tl.to("#few-card", { opacity: 1, scale: 1.0, duration: 0.8, ease: "power3.out" }, 3.5);
+
+      // 2. Zero-shot output loading (6s - 15s)
+      tl.to("#zero-result", { opacity: 1, duration: 1.0 }, 6.0);
+
+      // 3. Few-shot pattern lines loading (15s - 25s)
+      tl.to("#line-few-1", { opacity: 1, y: 0, duration: 0.6 }, 16.0);
+      tl.to("#line-few-2", { opacity: 1, y: 0, duration: 0.6 }, 18.5);
+
+      // 4. Target test case loads (25s)
+      tl.to("#line-few-3", { opacity: 1, y: 0, duration: 0.6 }, 25.0);
+
+      // Cursor writes "Neutral." (28s)
+      tl.call(() => {
+        const text = "Neutral.";
+        const target = document.getElementById("target-sentiment");
+        const cursor = document.getElementById("f-cursor");
+        let current = "";
+        let i = 0;
+        
+        // Timer to write
+        const timer = setInterval(() => {
+          if (i < text.length) {
+            current += text[i];
+            target.innerHTML = `──► Sentiment: <span class="sentiment-target">${current}</span><span class="blinking-cursor" id="f-cursor"></span>`;
+            i++;
+          } else {
+            clearInterval(timer);
+            // Flash green border highlight around few shot card
+            document.getElementById("few-card").className = "prompt-panel panel-few highlight-active";
+          }
+        }, 120);
+      }, [], 28.0);
+
+      // 5. Weight unchanged badge pops up (34s)
+      tl.to("#weights-badge", { opacity: 1, scale: 1.0, duration: 0.8, ease: "back.out(1.2)" }, 34.0);
+
+      // 6. Frozen Warning Overlay on Left Card (40s - 46.52s)
+      tl.to("#frozen-warn", { opacity: 1, scale: 1.0, duration: 0.8, ease: "back.out(1.2)" }, 40.0);
+
+      // Final Exit
+      tl.to("#zero-card, #few-card", { opacity: 0, scale: 0.85, duration: 1.0, ease: "power2.in" }, 45.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "The simplest way to guide a model is in-context learning, or prompting." },
+        { time: 5.0, text: "If you give a simple prompt like \"Summarize this\", the model might write a generic summary." },
+        { time: 14.8, text: "But with few-shot prompting, we show the model examples of what we want." },
+        { time: 19.5, text: "We write: \"Review: I loved it! Sentiment: Positive. Review: It broke instantly. Sentiment: Negative.\"" },
+        { time: 25.0, text: "And then we give our target: \"Review: It was okay. Sentiment: Neutral.\"" },
+        { time: 29.5, text: "By seeing these patterns in its active memory, the model immediately understands the format and style we expect." },
+        { time: 36.5, text: "This works without changing a single weight in the network." },
+        { time: 40.5, text: "But what if the model needs real-time facts or private documentation it has never seen?" }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec8"] = tl;
+    </script>
+  </template>
+</body>
+</html>

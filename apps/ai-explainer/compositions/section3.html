@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: grid;
+        grid-template-columns: 0.85fr 1.15fr;
+        gap: 50px;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Left Side: Text to Coordinate Converter Panel */
+      .conv-panel {
+        background: rgba(15, 23, 42, 0.6);
+        border: 2px solid rgba(56, 189, 248, 0.15);
+        border-radius: 20px;
+        height: 680px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        position: relative;
+        overflow: hidden;
+        gap: 30px;
+      }
+      .conv-panel::before {
+        content: '// VECTOR_EMBEDDING_GENERATOR';
+        position: absolute;
+        top: 20px;
+        left: 30px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #94a3b8;
+      }
+
+      .word-box {
+        background: rgba(4, 8, 20, 0.4);
+        border: 1px dashed rgba(56, 189, 248, 0.2);
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 26px;
+        opacity: 0;
+      }
+      .word-label {
+        font-weight: 600;
+        color: #f8fafc;
+      }
+      .word-arrow {
+        color: #38bdf8;
+        font-weight: bold;
+      }
+      .vector-value {
+        font-family: 'JetBrains Mono', monospace;
+        color: #38bdf8;
+        font-size: 18px;
+        max-width: 320px;
+        word-break: break-all;
+      }
+
+      /* Right Side: 3D Scatter Space */
+      .space-panel {
+        background: rgba(15, 23, 42, 0.4);
+        border: 1px solid rgba(56, 189, 248, 0.1);
+        border-radius: 20px;
+        height: 680px;
+        position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+      }
+      .space-panel::before {
+        content: '// 3D_VECTOR_SPACE';
+        position: absolute;
+        top: 20px;
+        left: 30px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #94a3b8;
+        z-index: 6;
+      }
+
+      .space-3d {
+        position: relative;
+        width: 800px;
+        height: 500px;
+        perspective: 900px;
+        transform-style: preserve-3d;
+        opacity: 0;
+      }
+      .space-rotator {
+        width: 100%;
+        height: 100%;
+        transform-style: preserve-3d;
+        position: relative;
+      }
+
+      /* Axis lines */
+      .axis {
+        position: absolute;
+        background: rgba(56, 189, 248, 0.15);
+      }
+      .axis-x { width: 100%; height: 2px; top: 50%; left: 0; }
+      .axis-y { width: 2px; height: 100%; top: 0; left: 50%; }
+      .axis-z { 
+        width: 2px; 
+        height: 100%; 
+        top: 0; 
+        left: 50%; 
+        transform: rotateX(90deg); 
+      }
+
+      /* Word vector nodes */
+      .vector-node {
+        position: absolute;
+        padding: 10px 18px;
+        border-radius: 10px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        font-weight: bold;
+        transform-style: preserve-3d;
+        background: rgba(15, 23, 42, 0.8);
+        border: 2px solid;
+        box-shadow: 0 0 15px currentColor;
+        transition: all 0.3s ease;
+      }
+
+      /* Color states for node clusters */
+      .cluster-royalty {
+        color: #38bdf8;
+        border-color: #38bdf8;
+      }
+      .cluster-fruit {
+        color: #34d399;
+        border-color: #34d399;
+      }
+      .cluster-tech {
+        color: #fb923c;
+        border-color: #fb923c;
+      }
+
+      /* Dotted lines for distance calculation */
+      .distance-line {
+        position: absolute;
+        height: 2px;
+        background-image: linear-gradient(90deg, #38bdf8 50%, transparent 50%);
+        background-size: 10px 10px;
+        transform-origin: 0 50%;
+        opacity: 0;
+      }
+
+      /* Semantic distance label */
+      .distance-label {
+        position: absolute;
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid #38bdf8;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+        opacity: 0;
+      }
+
+      /* Caption positioning */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-eex4" id="root" data-composition-id="scene-sec3" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-2oqb">MODULE // VECTOR_EMBEDDINGS</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <!-- Left Column: Generator simulation -->
+        <div data-hf-id="hf-hugb" class="conv-panel">
+          <div data-hf-id="hf-5mwz" class="word-box" id="box-king">
+            <span data-hf-id="hf-5hrl" class="word-label">"King"</span>
+            <span data-hf-id="hf-3sa5" class="word-arrow">──►</span>
+            <span data-hf-id="hf-mhdp" class="vector-value">[0.28, -0.45, 0.81, ...]</span>
+          </div>
+          <div data-hf-id="hf-s8u0" class="word-box" id="box-queen">
+            <span data-hf-id="hf-t5gu" class="word-label">"Queen"</span>
+            <span data-hf-id="hf-7s0x" class="word-arrow">──►</span>
+            <span data-hf-id="hf-z875" class="vector-value">[0.26, -0.42, 0.79, ...]</span>
+          </div>
+          <div data-hf-id="hf-8vcu" class="word-box" id="box-apple">
+            <span data-hf-id="hf-09rc" class="word-label">"Apple"</span>
+            <span data-hf-id="hf-8yy0" class="word-arrow">──►</span>
+            <span data-hf-id="hf-bama" class="vector-value">[0.05, 0.89, -0.32, ...]</span>
+          </div>
+        </div>
+
+        <!-- Right Column: 3D scatter coordinate space -->
+        <div data-hf-id="hf-5wqb" class="space-panel">
+          <div data-hf-id="hf-2etq" class="space-3d" id="viewport">
+            <div data-hf-id="hf-61iy" class="space-rotator" id="space-box">
+              <!-- Grid Axes -->
+              <div data-hf-id="hf-8yix" class="axis axis-x"></div>
+              <div data-hf-id="hf-86v4" class="axis axis-y"></div>
+              <div data-hf-id="hf-guqz" class="axis axis-z"></div>
+
+              <!-- Nodes Royalty (Blue) -->
+              <div data-hf-id="hf-jfaf" class="vector-node cluster-royalty" id="node-king" style="left: 45%; top: 30%; transform: translateZ(100px);">King</div>
+              <div data-hf-id="hf-syii" class="vector-node cluster-royalty" id="node-queen" style="left: 55%; top: 25%; transform: translateZ(90px);">Queen</div>
+              <div data-hf-id="hf-xn6c" class="vector-node cluster-royalty" id="node-prince" style="left: 48%; top: 40%; transform: translateZ(80px);">Prince</div>
+              <div data-hf-id="hf-xco0" class="vector-node cluster-royalty" id="node-princess" style="left: 58%; top: 35%; transform: translateZ(70px);">Princess</div>
+
+              <!-- Nodes Fruit (Green) -->
+              <div data-hf-id="hf-ib1p" class="vector-node cluster-fruit" id="node-banana" style="left: 20%; top: 70%; transform: translateZ(-100px);">Banana</div>
+              <div data-hf-id="hf-doud" class="vector-node cluster-fruit" id="node-apple" style="left: 25%; top: 78%; transform: translateZ(-80px);">Apple</div>
+
+              <!-- Nodes Tech (Orange) -->
+              <div data-hf-id="hf-kmpn" class="vector-node cluster-tech" id="node-microsoft" style="left: 75%; top: 72%; transform: translateZ(-50px);">Microsoft</div>
+
+              <!-- Split details for Apple (Initially hidden, positioned relative to node-apple) -->
+              <div data-hf-id="hf-rhd4" class="vector-node cluster-fruit" id="node-apple-fruit" style="left: 18%; top: 82%; transform: translateZ(-100px); opacity: 0; scale: 0.8;">Apple (Fruit)</div>
+              <div data-hf-id="hf-l3f1" class="vector-node cluster-tech" id="node-apple-tech" style="left: 32%; top: 68%; transform: translateZ(-60px); opacity: 0; scale: 0.8;">Apple (Tech)</div>
+
+              <!-- Distance connector lines -->
+              <div data-hf-id="hf-6jco" class="distance-line" id="line-match"></div>
+              <div data-hf-id="hf-pune" class="distance-label" id="label-match">Sim = 0.88</div>
+              <div data-hf-id="hf-ehtr" class="distance-line" id="line-diff" style="background-image: linear-gradient(90deg, #ef4444 50%, transparent 50%);"></div>
+              <div data-hf-id="hf-5iok" class="distance-label" id="label-diff" style="color: #ef4444; border-color: #ef4444;">Sim = 0.05</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-o6l2">FRAME_TIME: 01:44:08</div>
+        <div data-hf-id="hf-gqdm">SYS_METRIC: VECTOR_MAPPING</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-avtg" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="59.20" data-track-index="5">
+        <div data-hf-id="hf-ju3w" class="caption-box" id="caption-text">Section 3: Vectorization / Embeddings</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.15,
+        duration: 4,
+        yoyo: true,
+        repeat: 14,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 3D Space Orbit Loop simulation (slow rotation)
+      tl.fromTo("#space-box",
+        { rotateY: -15, rotateX: 10 },
+        { rotateY: 15, rotateX: -10, duration: 6.0, yoyo: true, repeat: 9, ease: "sine.inOut" },
+        0
+      );
+
+      // 1. Initial State: panels slide in
+      tl.fromTo(".conv-panel", { x: -80, opacity: 0 }, { x: 0, opacity: 1, duration: 1.0, ease: "power3.out" }, 1.0);
+      tl.fromTo(".space-panel", { x: 80, opacity: 0 }, { x: 0, opacity: 1, duration: 1.0, ease: "power3.out" }, 1.2);
+
+      // 2. Token coordinates reveal on the left (4s - 13s)
+      tl.to("#box-king", { opacity: 1, duration: 0.6 }, 4.0);
+      tl.to("#box-queen", { opacity: 1, duration: 0.6 }, 5.5);
+      tl.to("#box-apple", { opacity: 1, duration: 0.6 }, 7.0);
+
+      // 3. 3D space reveals, nodes stagger in (13s)
+      tl.to("#viewport", { opacity: 1, duration: 1.0 }, 13.0);
+      tl.fromTo(".vector-node",
+        { scale: 0, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.8, stagger: 0.1, ease: "back.out(1.2)" },
+        13.5
+      );
+
+      // 4. Cluster highlights (22s - 32s)
+      // Royalty Highlight
+      tl.to(".cluster-royalty", { scale: 1.1, backgroundColor: "rgba(56, 189, 248, 0.3)", duration: 0.5 }, 22.0);
+      tl.to(".cluster-royalty", { scale: 1.0, backgroundColor: "rgba(15, 23, 42, 0.8)", duration: 0.5 }, 23.5);
+      // Fruits Highlight
+      tl.to(".cluster-fruit", { scale: 1.1, backgroundColor: "rgba(52, 211, 153, 0.3)", duration: 0.5 }, 24.5);
+      tl.to(".cluster-fruit", { scale: 1.0, backgroundColor: "rgba(15, 23, 42, 0.8)", duration: 0.5 }, 26.0);
+      // Tech Highlight
+      tl.to(".cluster-tech", { scale: 1.1, backgroundColor: "rgba(251, 146, 60, 0.3)", duration: 0.5 }, 27.0);
+      tl.to(".cluster-tech", { scale: 1.0, backgroundColor: "rgba(15, 23, 42, 0.8)", duration: 0.5 }, 28.5);
+
+      // 5. Semantic Distance Calculation lines (32s - 40s)
+      // Match line (King -> Queen)
+      tl.call(() => {
+        const k = document.getElementById("node-king").getBoundingClientRect();
+        const q = document.getElementById("node-queen").getBoundingClientRect();
+        const container = document.getElementById("viewport").getBoundingClientRect();
+        const line = document.getElementById("line-match");
+        const label = document.getElementById("label-match");
+        
+        // Calculate coordinate differences relative to viewport
+        const x1 = k.left - container.left + k.width / 2;
+        const y1 = k.top - container.top + k.height / 2;
+        const x2 = q.left - container.left + q.width / 2;
+        const y2 = q.top - container.top + q.height / 2;
+        
+        const dist = Math.sqrt((x2-x1)**2 + (y2-y1)**2);
+        const angle = Math.atan2(y2-y1, x2-x1) * 180 / Math.PI;
+        
+        line.style.width = dist + "px";
+        line.style.left = x1 + "px";
+        line.style.top = y1 + "px";
+        line.style.transform = `rotate(${angle}deg)`;
+        
+        label.style.left = (x1 + x2) / 2 - 40 + "px";
+        label.style.top = (y1 + y2) / 2 - 20 + "px";
+      }, [], 32.0);
+      tl.to("#line-match", { opacity: 0.8, duration: 0.6 }, 32.2);
+      tl.to("#label-match", { opacity: 1, scale: 1, duration: 0.4 }, 32.5);
+
+      // Difference line (King -> Apple)
+      tl.call(() => {
+        const k = document.getElementById("node-king").getBoundingClientRect();
+        const a = document.getElementById("node-apple").getBoundingClientRect();
+        const container = document.getElementById("viewport").getBoundingClientRect();
+        const line = document.getElementById("line-diff");
+        const label = document.getElementById("label-diff");
+        
+        const x1 = k.left - container.left + k.width / 2;
+        const y1 = k.top - container.top + k.height / 2;
+        const x2 = a.left - container.left + a.width / 2;
+        const y2 = a.top - container.top + a.height / 2;
+        
+        const dist = Math.sqrt((x2-x1)**2 + (y2-y1)**2);
+        const angle = Math.atan2(y2-y1, x2-x1) * 180 / Math.PI;
+        
+        line.style.width = dist + "px";
+        line.style.left = x1 + "px";
+        line.style.top = y1 + "px";
+        line.style.transform = `rotate(${angle}deg)`;
+        
+        label.style.left = (x1 + x2) / 2 - 40 + "px";
+        label.style.top = (y1 + y2) / 2 - 20 + "px";
+      }, [], 34.0);
+      tl.to("#line-diff", { opacity: 0.8, duration: 0.6 }, 34.2);
+      tl.to("#label-diff", { opacity: 1, scale: 1, duration: 0.4 }, 34.5);
+
+      // Fade out lines before zooming (39s)
+      tl.to("#line-match, #label-match, #line-diff, #label-diff", { opacity: 0, duration: 0.5 }, 39.0);
+
+      // 6. Zoom in on Apple node & split (40s - 50s)
+      tl.to("#space-box", { scale: 1.4, x: 200, y: -200, duration: 1.5, ease: "power2.out" }, 40.0);
+      tl.to("#node-apple", { opacity: 0, scale: 0.5, duration: 0.5 }, 41.5);
+      tl.to("#node-apple-fruit, #node-apple-tech", { opacity: 1, scale: 1.0, duration: 0.8, stagger: 0.2, ease: "back.out(1.2)" }, 42.0);
+
+      // Connect context arrows simulation
+      // "To solve this, we need a mechanism that updates a word's meaning..." (50s)
+      tl.to("#node-apple-fruit", { borderStyle: "dashed", borderColor: "#10b981", duration: 0.8 }, 50.0);
+      tl.to("#node-apple-tech", { borderStyle: "dashed", borderColor: "#60a5fa", duration: 0.8 }, 50.5);
+
+      // Final Exit
+      tl.to(".conv-panel", { y: -100, opacity: 0, duration: 1.0, ease: "power3.in" }, 57.0);
+      tl.to(".space-panel", { y: 100, opacity: 0, duration: 1.0, ease: "power3.in" }, 57.2);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "If IDs are just arbitrary numbers, how does a model know that the word \"King\" is related to \"Queen\"," },
+        { time: 4.5, text: "but completely different from \"Apple\"?" },
+        { time: 8.0, text: "This is solved by vectorization, turning tokens into high-dimensional vectors, or embeddings." },
+        { time: 13.5, text: "Imagine a 3D coordinate space. In this space, words with similar meanings are grouped close together." },
+        { time: 20.0, text: "Tokens like \"King\", \"Queen\", \"Prince\", and \"Princess\" cluster in one region representing royalty." },
+        { time: 25.5, text: "Meanwhile, \"Apple\", \"Banana\", and other fruits cluster in a separate area," },
+        { time: 30.0, text: "and tech terms like \"Microsoft\" float elsewhere." },
+        { time: 33.0, text: "By converting text into coordinates, the model can calculate the semantic distance between words." },
+        { time: 40.0, text: "But this leads to a puzzle." },
+        { time: 42.5, text: "If \"Apple\" has a single fixed position in this space, how does the model know if we mean the fruit or the tech company?" },
+        { time: 49.5, text: "To solve this, we need a mechanism that updates a word's meaning based on its context." },
+        { time: 55.0, text: "And that is where attention comes in." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec3"] = tl;
+    </script>
+  </template>
+</body>
+</html>

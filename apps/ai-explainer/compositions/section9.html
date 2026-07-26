@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* RAG Stage Panels Grid */
+      .rag-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.2fr;
+        gap: 40px;
+        width: 1500px;
+        height: 640px;
+        align-items: center;
+        position: relative;
+      }
+
+      .rag-panel {
+        background: rgba(15, 23, 42, 0.6);
+        border: 2px solid rgba(56, 189, 248, 0.15);
+        border-radius: 20px;
+        height: 560px;
+        padding: 30px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+        opacity: 0;
+        transform: translateY(30px);
+        transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+      }
+      .panel-db {
+        border-color: rgba(56, 189, 248, 0.2);
+      }
+      .panel-db::before {
+        content: 'RETRIEVAL SOURCE // VECTOR DB';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+      }
+      .panel-prompt {
+        border-color: rgba(251, 146, 60, 0.2);
+      }
+      .panel-prompt::before {
+        content: 'CONTEXT INJECTOR // PROMPT WRAPPER';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #fb923c;
+      }
+      .panel-llm {
+        border-color: rgba(16, 185, 129, 0.2);
+      }
+      .panel-llm::before {
+        content: 'SYNTHESIS // LLM ENGINE';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #10b981;
+      }
+
+      /* DB Grid search representation */
+      .db-grid-container {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-top: 30px;
+        position: relative;
+      }
+      .db-doc-block {
+        height: 60px;
+        background: rgba(4, 8, 20, 0.8);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        border-radius: 8px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 11px;
+        font-family: 'JetBrains Mono', monospace;
+        color: #94a3b8;
+        transition: all 0.3s ease;
+      }
+      .db-doc-block.matched-doc {
+        border-color: #38bdf8;
+        background: rgba(56, 189, 248, 0.1);
+        color: #38bdf8;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+        transform: scale(1.05);
+      }
+
+      .scanner-line {
+        position: absolute;
+        width: 100%;
+        height: 4px;
+        background: #38bdf8;
+        box-shadow: 0 0 15px #38bdf8;
+        top: 0;
+        left: 0;
+        opacity: 0;
+      }
+
+      /* Query & Context fly-out documents */
+      .flying-doc {
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid #38bdf8;
+        border-radius: 8px;
+        padding: 12px 18px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+        position: absolute;
+        z-index: 100;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        opacity: 0;
+        transform: scale(0.8);
+      }
+
+      /* Prompt Wrapper context inputs */
+      .context-stuffer {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        margin-top: 30px;
+        width: 100%;
+      }
+      .stuffed-item {
+        background: rgba(4, 8, 20, 0.5);
+        border: 1px solid rgba(251, 146, 60, 0.2);
+        border-radius: 10px;
+        padding: 16px;
+        font-size: 14px;
+        line-height: 1.5;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.4s ease;
+      }
+      .stuffed-item.active-item {
+        border-color: #fb923c;
+        background: rgba(251, 146, 60, 0.05);
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .stuffed-item h5 {
+        color: #fb923c;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+
+      /* Hallucination / Frozen overlay block (Initial state) */
+      .frozen-block-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(239, 68, 68, 0.15);
+        border: 2px dashed #ef4444;
+        border-radius: 20px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 30px;
+        text-align: center;
+        z-index: 12;
+        opacity: 0;
+        transform: scale(0.95);
+        backdrop-filter: blur(5px);
+        transition: all 0.5s ease;
+      }
+      .frozen-block-overlay h4 {
+        font-size: 24px;
+        color: #ef4444;
+        font-weight: bold;
+        margin-bottom: 8px;
+      }
+      .frozen-block-overlay p {
+        font-size: 14px;
+        color: #fca5a5;
+        font-family: 'JetBrains Mono', monospace;
+      }
+
+      /* LLM Console output */
+      .llm-console {
+        background: rgba(4, 8, 20, 0.9);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        border-radius: 12px;
+        padding: 24px;
+        height: 260px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        line-height: 1.6;
+        color: #cbd5e1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        opacity: 0;
+        transition: all 0.5s ease;
+      }
+      .llm-console.active-console {
+        border-color: #10b981;
+        box-shadow: 0 0 25px rgba(16, 185, 129, 0.15);
+        opacity: 1;
+      }
+      .cite-tag {
+        color: #10b981;
+        font-weight: bold;
+        background: rgba(16, 185, 129, 0.2);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-left: 4px;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-4zi2" id="root" data-composition-id="scene-sec9" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-5qwf">MODULE // RETRIEVAL_AUGMENTED_GENERATION</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <!-- RAG flow stages -->
+        <div data-hf-id="hf-juen" class="rag-grid">
+          <!-- Panel 1: Vector DB Source -->
+          <div data-hf-id="hf-cuuv" class="rag-panel panel-db" id="panel-db-box">
+            <!-- Frozen Hallucination state overlay (active at first) -->
+            <div data-hf-id="hf-8rvt" class="frozen-block-overlay" id="hallucination-overlay">
+              <h4 data-hf-id="hf-e1bp">HALLUCINATION RISK</h4>
+              <p data-hf-id="hf-1keo">Prompt: "What is Acme's 2025 revenue?"<br data-hf-id="hf-x5px">LLM: "Acme revenue is $200B..." (False completion)</p>
+            </div>
+
+            <div data-hf-id="hf-eqbu" class="db-grid-container" id="db-grid">
+              <div data-hf-id="hf-n2q1" class="scanner-line" id="db-scan"></div>
+              <div data-hf-id="hf-jgdp" class="db-doc-block">doc_001.txt</div>
+              <div data-hf-id="hf-90yg" class="db-doc-block">doc_002.txt</div>
+              <div data-hf-id="hf-isqf" class="db-doc-block">doc_003.txt</div>
+              <div data-hf-id="hf-0ec2" class="db-doc-block">doc_004.txt</div>
+              <div data-hf-id="hf-psw2" class="db-doc-block" id="acme-doc">acme_2025.pdf</div>
+              <div data-hf-id="hf-xh1o" class="db-doc-block">doc_006.txt</div>
+              <div data-hf-id="hf-1dmj" class="db-doc-block">doc_007.txt</div>
+              <div data-hf-id="hf-ln7a" class="db-doc-block">doc_008.txt</div>
+            </div>
+            <div data-hf-id="hf-6lui" style="height: 30px;"></div>
+          </div>
+
+          <!-- Flying Document element (flies from DB to Prompt wrapper) -->
+          <div data-hf-id="hf-fm6l" class="flying-doc" id="file-flyer">
+            📄 acme_2025.pdf (Context Chunk)
+          </div>
+
+          <!-- Panel 2: Prompt Wrapper -->
+          <div data-hf-id="hf-m5cz" class="rag-panel panel-prompt" id="panel-prompt-box">
+            <div data-hf-id="hf-akyx" class="context-stuffer">
+              <!-- User original question -->
+              <div data-hf-id="hf-s2od" class="stuffed-item active-item" id="item-query">
+                <h5 data-hf-id="hf-d9y1">User Query</h5>
+                "What is Acme Corp's 2025 Revenue?"
+              </div>
+              <!-- Injected context document chunk -->
+              <div data-hf-id="hf-6izs" class="stuffed-item" id="item-context">
+                <h5 data-hf-id="hf-55xs">Injected Context Chunk</h5>
+                "Page 3: Acme Corp Q4 2025 earnings statement confirms total fiscal revenue closed at $42 Million..."
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel 3: LLM Engine -->
+          <div data-hf-id="hf-n283" class="rag-panel panel-llm" id="panel-llm-box">
+            <div data-hf-id="hf-r0ek" class="llm-console" id="console-result">
+              <div data-hf-id="hf-88ty" style="font-size: 13px; color: #10b981; margin-bottom: 12px; text-transform: uppercase; font-weight: bold;">LLM Output</div>
+              <span data-hf-id="hf-ojls">Acme Corp's revenue in 2025 was $42 Million<span data-hf-id="hf-x2gp" class="cite-tag">Source [1]</span>.</span>
+            </div>
+            <div data-hf-id="hf-db26" style="height: 30px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-bvxh">FRAME_TIME: 07:29:28</div>
+        <div data-hf-id="hf-uwrg">SYS_METRIC: RAG_ORCHESTRATION</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-2p6z" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="48.16" data-track-index="5">
+        <div data-hf-id="hf-799k" class="caption-box" id="caption-text">Section 9: Retrieval Augmented Generation</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 8,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Initial State: panels entrance (3s)
+      tl.to("#panel-db-box", { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 3.0);
+      tl.to("#panel-prompt-box", { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 3.5);
+      tl.to("#panel-llm-box", { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 4.0);
+
+      // 2. Hallucination Warning Overlay displays (4s - 13s)
+      tl.to("#hallucination-overlay", { opacity: 1, scale: 1.0, duration: 0.6 }, 4.5);
+      tl.to("#hallucination-overlay", { opacity: 0, scale: 0.9, duration: 0.6 }, 13.0);
+
+      // 3. User query enters, DB scanning line triggers (22s)
+      tl.to("#db-scan", { opacity: 0.8, duration: 0.3 }, 22.0);
+      tl.to("#db-scan", { y: 220, duration: 1.5, repeat: 1, ease: "power1.inOut" }, 22.3);
+      tl.to("#acme-doc", { className: "db-doc-block matched-doc", duration: 0.5 }, 24.5);
+
+      // 4. File flyer block flies out from DB to Prompt stuffer (25s)
+      tl.call(() => {
+        const doc = document.getElementById("acme-doc").getBoundingClientRect();
+        const dest = document.getElementById("panel-prompt-box").getBoundingClientRect();
+        const flyer = document.getElementById("file-flyer");
+        
+        // Calculate coords relative to viewport
+        flyer.style.left = doc.left + "px";
+        flyer.style.top = doc.top + "px";
+      }, [], 25.0);
+      
+      tl.to("#file-flyer", { opacity: 1, scale: 1.0, duration: 0.3 }, 25.2);
+
+      tl.to("#file-flyer", {
+        x: 420,
+        y: 120,
+        scale: 0.95,
+        duration: 1.1,
+        ease: "power2.inOut"
+      }, 25.5);
+      
+      tl.to("#file-flyer", { opacity: 0, scale: 0.8, duration: 0.3 }, 26.6);
+
+      // Prompt Context stuffs document (27s)
+      tl.to("#item-context", { className: "stuffed-item active-item", duration: 0.6 }, 27.0);
+
+      // 5. Synthesis output print in green console (30s - 38s)
+      tl.to("#console-result", { className: "llm-console active-console", duration: 1.0 }, 30.5);
+
+      // 6. DB zoom transition for next section prep (38s)
+      tl.to("#panel-prompt-box, #panel-llm-box", { opacity: 0.1, duration: 1.0 }, 39.0);
+      tl.to("#panel-db-box", { scale: 1.12, x: 220, duration: 1.5, ease: "power2.inOut" }, 39.5);
+
+      // Final Exit
+      tl.to("#panel-db-box", { opacity: 0, scale: 0.9, duration: 1.0, ease: "power2.in" }, 46.5);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Language models have a huge limitation: their training data is frozen in time, and they don't know your private data." },
+        { time: 7.2, text: "If they don't know an answer, they might hallucinate—confidently making things up." },
+        { time: 13.8, text: "The solution is Retrieval Augmented Generation, or RAG." },
+        { time: 18.0, text: "Instead of relying on the model's memory, RAG works like an open-book exam." },
+        { time: 22.0, text: "When a user asks a question, we first search a database for relevant documents." },
+        { time: 27.0, text: "We retrieve these documents, stuff them into the prompt as context, and send it to the LLM." },
+        { time: 32.5, text: "The LLM reads the context and synthesizes an accurate answer. This connects the frozen model to the live outside world." },
+        { time: 39.5, text: "But how does the database quickly find the right documents out of millions?" },
+        { time: 44.0, text: "To do that, we must revisit the concept of vector similarity." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec9"] = tl;
+    </script>
+  </template>
+</body>
+</html>

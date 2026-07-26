@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #e11d48;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #e11d48;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Layout */
+      .slm-layout {
+        position: relative;
+        width: 1550px;
+        height: 640px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Left Side: Server Rack Card */
+      .server-rack-panel {
+        width: 600px;
+        height: 520px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 2px solid rgba(225, 29, 72, 0.25);
+        border-radius: 24px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+        transform: translateX(-40px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+      }
+      .panel-title {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #f43f5e;
+        border-bottom: 1px solid rgba(225, 29, 72, 0.15);
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+      }
+
+      /* Server rack visual */
+      .server-visual-container {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        background: #090d16;
+        border-radius: 12px;
+        padding: 20px;
+        height: 240px;
+      }
+      .server-unit {
+        height: 40px;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 6px;
+        background: #020617;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+      }
+      .led-indicators {
+        display: flex;
+        gap: 6px;
+      }
+      .led-light {
+        width: 8px;
+        height: 8px;
+        background: #ef4444;
+        border-radius: 50%;
+        box-shadow: 0 0 4px #ef4444;
+      }
+      .led-green {
+        background: #10b981;
+        box-shadow: 0 0 4px #10b981;
+      }
+
+      /* Right Side: Phone Card */
+      .phone-panel {
+        width: 600px;
+        height: 520px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 2px solid rgba(56, 189, 248, 0.2);
+        border-radius: 24px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        opacity: 0;
+        transform: translateX(40px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+      }
+      .phone-panel.phone-highlighted {
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.2);
+      }
+      .panel-title-blue {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+        border-bottom: 1px solid rgba(56, 189, 248, 0.15);
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+      }
+
+      /* Edge device visual */
+      .phone-visual-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 240px;
+      }
+      .phone-device {
+        width: 140px;
+        height: 230px;
+        border: 3px solid rgba(148, 163, 184, 0.3);
+        border-radius: 20px;
+        background: #020617;
+        padding: 10px;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+      }
+      .phone-device.device-running {
+        border-color: #38bdf8;
+        box-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+      }
+      .phone-screen {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: #10b981;
+        text-align: center;
+        opacity: 0;
+      }
+
+      /* Parameter stats labels */
+      .param-label {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 24px;
+        font-weight: bold;
+        color: #f8fafc;
+      }
+      .param-sub {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #94a3b8;
+      }
+
+      /* Funnel connector line overlay */
+      .funnel-svg-layer {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 10;
+      }
+      .funnel-path {
+        stroke: rgba(148, 163, 184, 0.15);
+        stroke-width: 2;
+        fill: none;
+        stroke-dasharray: 8 4;
+      }
+      .funnel-path.funnel-active {
+        stroke: #38bdf8;
+        stroke-width: 4;
+        filter: drop-shadow(0 0 5px #38bdf8);
+      }
+
+      /* Knowledge Distillation teaser overlay */
+      .distillation-teaser-panel {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: all 0.6s ease;
+      }
+      .kd-nodes-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 60px;
+        margin-top: 40px;
+      }
+      .kd-node-card {
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(148, 163, 184, 0.25);
+        border-radius: 20px;
+        padding: 30px;
+        width: 240px;
+        text-align: center;
+        box-shadow: 0 15px 30px rgba(0,0,0,0.4);
+      }
+      .kd-node-card.teacher-card {
+        border-color: #ef4444;
+        box-shadow: 0 0 25px rgba(239, 68, 68, 0.15);
+      }
+      .kd-node-card.student-card {
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.15);
+      }
+      .kd-beam-svg {
+        width: 140px;
+        height: 60px;
+      }
+      .kd-arrow-path {
+        stroke: #38bdf8;
+        stroke-width: 4;
+        fill: none;
+        stroke-dasharray: 10 5;
+        animation: dash 4s linear infinite;
+      }
+      @keyframes dash {
+        to { stroke-dashoffset: -100; }
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-byp7" id="root" data-composition-id="scene-sec19" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-z3a4">MODULE // SMALL_LANGUAGE_MODELS</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-otwp" class="slm-layout">
+          <!-- Funnel SVG connector overlay -->
+          <svg data-hf-id="hf-4bk4" class="funnel-svg-layer" style=" ">
+            <path data-hf-id="hf-20yy" class="funnel-path" id="funnel-link" d="M 580 320 C 720 320, 780 320, 920 320" />
+          </svg>
+
+          <!-- Left panel: Server cluster -->
+          <div data-hf-id="hf-xiae" class="server-rack-panel" id="panel-server">
+            <div data-hf-id="hf-f016" class="panel-title">CLOUD_INFRASTRUCTURE // PARALOG_COMPUTE</div>
+            <div data-hf-id="hf-v4ss" class="server-visual-container">
+              <div data-hf-id="hf-ghgk" class="server-unit">
+                <span data-hf-id="hf-xlo8" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #cbd5e1;">SERVER_UNIT_01</span>
+                <div data-hf-id="hf-0e2q" class="led-indicators">
+                  <div data-hf-id="hf-u0d8" class="led-light"></div>
+                  <div data-hf-id="hf-qnh9" class="led-light led-green"></div>
+                </div>
+              </div>
+              <div data-hf-id="hf-eujg" class="server-unit">
+                <span data-hf-id="hf-wer5" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #cbd5e1;">SERVER_UNIT_02</span>
+                <div data-hf-id="hf-ne7a" class="led-indicators">
+                  <div data-hf-id="hf-abg1" class="led-light led-green"></div>
+                  <div data-hf-id="hf-23pw" class="led-light"></div>
+                </div>
+              </div>
+              <div data-hf-id="hf-dnmd" class="server-unit">
+                <span data-hf-id="hf-wt26" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #cbd5e1;">SERVER_UNIT_03</span>
+                <div data-hf-id="hf-nsib" class="led-indicators">
+                  <div data-hf-id="hf-bid4" class="led-light led-green"></div>
+                  <div data-hf-id="hf-b423" class="led-light led-green"></div>
+                </div>
+              </div>
+            </div>
+            <div data-hf-id="hf-yeow">
+              <div data-hf-id="hf-1dut" class="param-label" id="lbl-cloud-param">400B+</div>
+              <div data-hf-id="hf-zcik" class="param-sub">PARAMETERS (MASSIVE GPU CLUSTER REQUIRED)</div>
+            </div>
+          </div>
+
+          <!-- Right panel: Edge Device -->
+          <div data-hf-id="hf-lfao" class="phone-panel" id="panel-phone">
+            <div data-hf-id="hf-x0cs" class="panel-title-blue">EDGE_DEVICE // LOCAL_EXECUTION</div>
+            <div data-hf-id="hf-mn0f" class="phone-visual-container">
+              <div data-hf-id="hf-qxrw" class="phone-device" id="device-body">
+                <div data-hf-id="hf-i79u" class="phone-screen" id="device-screen">
+                  <div data-hf-id="hf-ctmj" style="font-weight: bold; margin-bottom: 12px; color: #cbd5e1;">Gemma 2B</div>
+                  <div data-hf-id="hf-x5hi" style="margin-bottom: 6px;">[✓] Offline AI</div>
+                  <div data-hf-id="hf-kico" style="margin-bottom: 6px;">[✓] Local Privacy</div>
+                  <div data-hf-id="hf-158m">[✓] Zero API Cost</div>
+                </div>
+              </div>
+            </div>
+            <div data-hf-id="hf-y7yw">
+              <div data-hf-id="hf-77fg" class="param-label" id="lbl-edge-param">3B - 8B</div>
+              <div data-hf-id="hf-dg2m" class="param-sub">PARAMETERS (RUNS DIRECTLY ON SMARTPHONES)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Knowledge Distillation Teaser -->
+        <div data-hf-id="hf-qatr" class="distillation-teaser-panel" id="dist-teaser" style=" ">
+          <div data-hf-id="hf-1lx8" style="font-family: 'JetBrains Mono', monospace; font-size: 18px; color: #38bdf8; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px;">
+            Next Module: Knowledge Distillation
+          </div>
+          <div data-hf-id="hf-8ogh" style="font-family: 'JetBrains Mono', monospace; font-size: 14px; color: #94a3b8;">
+            Condensing Giant Capabilities into Compact Models
+          </div>
+          <div data-hf-id="hf-2cqf" class="kd-nodes-wrapper">
+            <div data-hf-id="hf-bbwa" class="kd-node-card teacher-card">
+              <div data-hf-id="hf-meky" style="font-size: 38px; margin-bottom: 10px;">🧠</div>
+              <h6 data-hf-id="hf-wlr2" style="color: #ef4444; font-family: 'JetBrains Mono', monospace; font-size: 13px;">TEACHER MODEL</h6>
+              <span data-hf-id="hf-18g0" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #cbd5e1;">400 Billion Weights</span>
+            </div>
+            
+            <svg data-hf-id="hf-gnbt" class="kd-beam-svg">
+              <path data-hf-id="hf-1pyc" class="kd-arrow-path" d="M 10 30 L 130 30" />
+            </svg>
+
+            <div data-hf-id="hf-yumz" class="kd-node-card student-card">
+              <div data-hf-id="hf-v6zj" style="font-size: 38px; margin-bottom: 10px;">👶</div>
+              <h6 data-hf-id="hf-g4e7" style="color: #38bdf8; font-family: 'JetBrains Mono', monospace; font-size: 13px;">STUDENT MODEL</h6>
+              <span data-hf-id="hf-isd1" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #cbd5e1;">3 Billion Weights</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-ijey">FRAME_TIME: 15:33:41</div>
+        <div data-hf-id="hf-12vh">SYS_METRIC: LOCAL_EDGE_INFERENCE</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-db7r" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="42.69" data-track-index="5">
+        <div data-hf-id="hf-6en6" class="caption-box" id="caption-text">Section 19: Small Language Models</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 7,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Entrance of server rack (3s)
+      tl.to("#panel-server", { opacity: 1, x: 0, duration: 0.6 }, 3.0);
+
+      // Flashing server unit LEDs
+      tl.to(".led-light:not(.led-green)", {
+        opacity: 0.2,
+        yoyo: true,
+        repeat: 20,
+        duration: 0.3
+      }, 4.0);
+
+      // 2. Entrance of phone (14s)
+      tl.to("#panel-phone", { opacity: 1, x: 0, duration: 0.6 }, 14.0);
+      tl.to("#funnel-link", { className: "funnel-path funnel-active", duration: 0.6 }, 14.5);
+
+      // 3. Flow funnel collapse animation (16s - 22s)
+      tl.to("#lbl-cloud-param", { scale: 0.9, duration: 0.5, yoyo: true, repeat: 3 }, 16.0);
+      tl.to("#lbl-edge-param", { scale: 1.15, color: "#38bdf8", duration: 0.5, yoyo: true, repeat: 3 }, 18.0);
+
+      // 4. Phone Screen Activation offline checkmarks (22s)
+      tl.to("#device-body", { className: "phone-device device-running", duration: 0.5 }, 22.0);
+      tl.to("#panel-phone", { className: "phone-panel phone-highlighted", duration: 0.5 }, 22.5);
+      tl.to("#device-screen", { opacity: 1, duration: 0.5 }, 23.0);
+
+      // 5. Distillation Teaser Overlay transition (34s - 42.69s)
+      tl.to("#panel-server, #panel-phone, #funnel-link", { opacity: 0.05, duration: 0.8 }, 34.5);
+      tl.to("#dist-teaser", { opacity: 1, duration: 1.0 }, 35.5);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "While models with hundreds of billions of parameters rule the cloud," },
+        { time: 4.8, text: "a parallel revolution is happening on the edge: Small Language Models, or SLMs." },
+        { time: 11.2, text: "By optimizing architecture and training data, models with only one to seven billion parameters" },
+        { time: 16.8, text: "are becoming incredibly smart." },
+        { time: 19.5, text: "Models like Llama 3 8B, Phi-3, or Gemma can run directly on consumer laptops," },
+        { time: 24.2, text: "smartphones, and even single-board computers like a Raspberry Pi." },
+        { time: 28.5, text: "This enables offline AI assistants, protects user privacy by keeping data local," },
+        { time: 33.2, text: "and eliminates API costs." },
+        { time: 36.0, text: "But how do we fit the capabilities of a giant model into a tiny package?" },
+        { time: 40.0, text: "One key method is distillation." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec19"] = tl;
+    </script>
+  </template>
+</body>
+</html>

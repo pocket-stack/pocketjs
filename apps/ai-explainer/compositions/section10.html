@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Vector Coordinate System */
+      .space-box {
+        position: relative;
+        width: 1200px;
+        height: 600px;
+        background: rgba(15, 23, 42, 0.6);
+        border: 2px solid rgba(56, 189, 248, 0.15);
+        border-radius: 20px;
+        overflow: hidden;
+        opacity: 0;
+        transform: scale(0.95);
+        transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+      }
+
+      /* Axes */
+      .axis-x {
+        position: absolute;
+        bottom: 60px;
+        left: 80px;
+        right: 80px;
+        height: 2px;
+        background: rgba(148, 163, 184, 0.3);
+      }
+      .axis-x::after {
+        content: 'Dimension 1 (Context)';
+        position: absolute;
+        right: 0;
+        bottom: -25px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #94a3b8;
+      }
+      .axis-y {
+        position: absolute;
+        top: 60px;
+        bottom: 60px;
+        left: 80px;
+        width: 2px;
+        background: rgba(148, 163, 184, 0.3);
+      }
+      .axis-y::after {
+        content: 'Dimension 2 (Semantic Weight)';
+        position: absolute;
+        left: -50px;
+        top: 0;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #94a3b8;
+        transform: rotate(-90deg) translateY(-20px);
+      }
+
+      /* Grid ticks */
+      .grid-tick {
+        position: absolute;
+        background: rgba(148, 163, 184, 0.1);
+      }
+      .tick-h { width: 100%; height: 1px; }
+      .tick-v { height: 100%; width: 1px; }
+
+      /* Vector Points styling */
+      .vector-point {
+        position: absolute;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #f8fafc;
+        z-index: 5;
+        opacity: 0;
+        transform: scale(0);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .point-pulse {
+        position: absolute;
+        inset: -6px;
+        border: 1.5px solid inherit;
+        border-radius: 50%;
+        opacity: 0;
+        box-shadow: 0 0 10px currentColor;
+      }
+      .point-label {
+        position: absolute;
+        top: -32px;
+        white-space: nowrap;
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #e2e8f0;
+      }
+
+      /* Node positions (mapped on our 1200x600 space) */
+      #node-king { left: 240px; top: 120px; color: #60a5fa; }
+      #node-king .point-dot { background: #60a5fa; width: 12px; height: 12px; border-radius: 50%; }
+
+      #node-queen { left: 320px; top: 140px; color: #f472b6; }
+      #node-queen .point-dot { background: #f472b6; width: 12px; height: 12px; border-radius: 50%; }
+
+      #node-man { left: 220px; top: 220px; color: #93c5fd; }
+      #node-man .point-dot { background: #93c5fd; width: 12px; height: 12px; border-radius: 50%; }
+
+      #node-woman { left: 300px; top: 240px; color: #fbcfe8; }
+      #node-woman .point-dot { background: #fbcfe8; width: 12px; height: 12px; border-radius: 50%; }
+
+      /* Cluster: Fruit */
+      #node-apple-f { left: 780px; top: 400px; color: #4ade80; }
+      #node-apple-f .point-dot { background: #4ade80; width: 12px; height: 12px; border-radius: 50%; }
+
+      #node-banana { left: 880px; top: 420px; color: #fef08a; }
+      #node-banana .point-dot { background: #fef08a; width: 12px; height: 12px; border-radius: 50%; }
+
+      /* Cluster: Tech */
+      #node-apple-t { left: 920px; top: 150px; color: #22d3ee; }
+      #node-apple-t .point-dot { background: #22d3ee; width: 12px; height: 12px; border-radius: 50%; }
+
+      #node-microsoft { left: 1040px; top: 130px; color: #f8fafc; }
+      #node-microsoft .point-dot { background: #f8fafc; width: 12px; height: 12px; border-radius: 50%; }
+
+      /* Vector SVGs for similarity paths */
+      .lines-svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 2;
+      }
+      .sim-line {
+        stroke-dasharray: 6;
+        stroke-width: 2.5;
+        opacity: 0;
+      }
+      .label-sim {
+        position: absolute;
+        background: rgba(15, 23, 42, 0.95);
+        border: 1px solid;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        font-weight: bold;
+        z-index: 8;
+        opacity: 0;
+      }
+
+      /* Specialized label coords (calculated halfway between nodes) */
+      #lbl-fruit-sim {
+        left: 800px;
+        top: 430px;
+        border-color: #4ade80;
+        color: #4ade80;
+      }
+      #lbl-tech-sim {
+        left: 950px;
+        top: 100px;
+        border-color: #22d3ee;
+        color: #22d3ee;
+      }
+
+      /* Morph Embedding card block (final scene transition) */
+      .embedding-card-transition {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(0);
+        width: 520px;
+        height: 240px;
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid #38bdf8;
+        border-radius: 20px;
+        box-shadow: 0 0 40px rgba(56, 189, 248, 0.35);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 40px;
+        opacity: 0;
+        z-index: 20;
+      }
+      .embedding-card-transition h3 {
+        font-size: 28px;
+        color: #38bdf8;
+        font-weight: 800;
+        margin-bottom: 8px;
+      }
+      .embedding-card-transition p {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #cbd5e1;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-8dkm" id="root" data-composition-id="scene-sec10" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-q2za">MODULE // VECTOR_SIMILARITY</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div style="clip-path: inset(0px)" data-hf-id="hf-pnky" class="space-box" id="space-box">
+          <!-- Grid lines -->
+          <div data-hf-id="hf-l824" class="axis-x"></div>
+          <div data-hf-id="hf-lzpx" class="axis-y"></div>
+
+          <!-- SVGs for connector similarity lines -->
+          <svg data-hf-id="hf-p4yj" class="lines-svg">
+            <!-- Line between Apple (Fruit) [780+8, 400+8] and Banana [880+8, 420+8] -->
+            <line data-hf-id="hf-6y35" class="sim-line" id="line-fruit" x1="788" y1="408" x2="888" y2="428" stroke="#4ade80" />
+            <!-- Line between Apple (Tech) [920+8, 150+8] and Microsoft [1040+8, 130+8] -->
+            <line data-hf-id="hf-kyu7" class="sim-line" id="line-tech" x1="928" y1="158" x2="1048" y2="138" stroke="#22d3ee" />
+          </svg>
+
+          <!-- Sim distance values -->
+          <div data-hf-id="hf-vo1h" class="label-sim" id="lbl-fruit-sim">Sim = 0.88</div>
+          <div data-hf-id="hf-veci" class="label-sim" id="lbl-tech-sim">Sim = 0.92</div>
+
+          <!-- Word Nodes -->
+          <div data-hf-id="hf-7lkm" class="vector-point" id="node-king">
+            <div data-hf-id="hf-t6jw" class="point-dot"></div>
+            <div data-hf-id="hf-0yf2" class="point-pulse"></div>
+            <span data-hf-id="hf-41n7" class="point-label">King</span>
+          </div>
+
+          <div data-hf-id="hf-9u53" class="vector-point" id="node-queen">
+            <div data-hf-id="hf-a9z8" class="point-dot"></div>
+            <div data-hf-id="hf-ey3m" class="point-pulse"></div>
+            <span data-hf-id="hf-56km" class="point-label">Queen</span>
+          </div>
+
+          <div data-hf-id="hf-n0td" class="vector-point" id="node-man">
+            <div data-hf-id="hf-9325" class="point-dot"></div>
+            <div data-hf-id="hf-fcen" class="point-pulse"></div>
+            <span data-hf-id="hf-2468" class="point-label">Man</span>
+          </div>
+
+          <div data-hf-id="hf-4xoz" class="vector-point" id="node-woman">
+            <div data-hf-id="hf-9hd6" class="point-dot"></div>
+            <div data-hf-id="hf-fqpo" class="point-pulse"></div>
+            <span data-hf-id="hf-40ku" class="point-label">Woman</span>
+          </div>
+
+          <div data-hf-id="hf-xg64" class="vector-point" id="node-apple-f">
+            <div data-hf-id="hf-bgwb" class="point-dot"></div>
+            <div data-hf-id="hf-g50p" class="point-pulse"></div>
+            <span data-hf-id="hf-nzkt" class="point-label">Apple (Fruit)</span>
+          </div>
+
+          <div data-hf-id="hf-8370" class="vector-point" id="node-banana">
+            <div data-hf-id="hf-bv7c" class="point-dot"></div>
+            <div data-hf-id="hf-gjbq" class="point-pulse"></div>
+            <span data-hf-id="hf-xqfp" class="point-label">Banana</span>
+          </div>
+
+          <div data-hf-id="hf-h352" class="vector-point" id="node-apple-t">
+            <div data-hf-id="hf-aoa9" class="point-dot"></div>
+            <div data-hf-id="hf-gxmr" class="point-pulse"></div>
+            <span data-hf-id="hf-y1nr" class="point-label">Apple (Tech)</span>
+          </div>
+
+          <div data-hf-id="hf-zc0p" class="vector-point" id="node-microsoft">
+            <div data-hf-id="hf-b2la" class="point-dot"></div>
+            <div data-hf-id="hf-hbxs" class="point-pulse"></div>
+            <span data-hf-id="hf-xrr4" class="point-label">Microsoft</span>
+          </div>
+        </div>
+
+        <!-- Embedding Card morph block -->
+        <div data-hf-id="hf-uc2t" class="embedding-card-transition" id="morph-embed-card">
+          <h3 data-hf-id="hf-eesw">EMBEDDING MODEL</h3>
+          <p data-hf-id="hf-bv96">Converting Text Tokens into Coordinates</p>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-0sq9">FRAME_TIME: 08:17:44</div>
+        <div data-hf-id="hf-jqmt">SYS_METRIC: COGNITIVE_SPACE</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-hl2h" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="42.56" data-track-index="5">
+        <div data-hf-id="hf-f2ee" class="caption-box" id="caption-text">Section 10: Vector Similarity</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 7,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Initial State: grid panel entrance (3s)
+      tl.to("#space-box", { opacity: 1, scale: 1.0, duration: 0.8, ease: "power3.out" }, 3.0);
+
+      // 2. Plot Semantic words King, Queen, Man, Woman stagger (4.5s - 10s)
+      tl.to("#node-king", { opacity: 1, scale: 1.0, duration: 0.4 }, 4.5);
+      tl.to("#node-queen", { opacity: 1, scale: 1.0, duration: 0.4 }, 5.0);
+      tl.to("#node-man", { opacity: 1, scale: 1.0, duration: 0.4 }, 5.5);
+      tl.to("#node-woman", { opacity: 1, scale: 1.0, duration: 0.4 }, 6.0);
+
+      // 3. Fruit and Tech clusters plot (12s)
+      tl.to("#node-apple-f", { opacity: 1, scale: 1.0, duration: 0.4 }, 12.0);
+      tl.to("#node-banana", { opacity: 1, scale: 1.0, duration: 0.4 }, 12.5);
+      tl.to("#node-apple-t", { opacity: 1, scale: 1.0, duration: 0.4 }, 13.0);
+      tl.to("#node-microsoft", { opacity: 1, scale: 1.0, duration: 0.4 }, 13.5);
+
+      // 4. Fruit distance calculations (20s - 25s)
+      tl.to("#line-fruit", { opacity: 0.8, duration: 0.6 }, 20.0);
+      tl.to("#lbl-fruit-sim", { opacity: 1, duration: 0.5 }, 20.5);
+
+      // 5. Tech distance calculations (26s - 31s)
+      tl.to("#line-tech", { opacity: 0.8, duration: 0.6 }, 26.0);
+      tl.to("#lbl-tech-sim", { opacity: 1, duration: 0.5 }, 26.5);
+
+      // 6. Highlight distance rings (31s - 37s)
+      tl.to("#node-apple-f .point-pulse, #node-banana .point-pulse", {
+        scale: 2.2,
+        opacity: 0.7,
+        duration: 1.0,
+        repeat: 4
+      }, 31.0);
+      tl.to("#node-apple-t .point-pulse, #node-microsoft .point-pulse", {
+        scale: 2.2,
+        opacity: 0.7,
+        duration: 1.0,
+        repeat: 4
+      }, 31.5);
+
+      // 7. Morph transition: space-box fades, embedding card scales up (37s - 42.56s)
+      tl.to("#space-box", { opacity: 0.1, scale: 0.9, duration: 0.8 }, 37.0);
+      tl.to("#morph-embed-card", { opacity: 1, scale: 1.0, duration: 0.8, ease: "back.out(1.2)" }, 37.5);
+
+      // Final Exit
+      tl.to("#morph-embed-card", { opacity: 0, scale: 0.8, duration: 0.6 }, 41.5);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Traditional databases search for exact words." },
+        { time: 3.5, text: "But in a vector database, words and documents are converted into numbers called embeddings," },
+        { time: 8.5, text: "and plotted in a multi-dimensional space." },
+        { time: 12.0, text: "This space groups concepts by semantic meaning, not spelling. For instance, the word \"Apple\" can mean two entirely different things." },
+        { time: 19.8, text: "If we talk about fruit, the vector for \"Apple\" sits close to \"Banana\"." },
+        { time: 25.5, text: "But if we talk about computers, the vector for \"Apple\" sits right next to \"Microsoft\"." },
+        { time: 31.0, text: "By calculating the distance between these vectors, the database instantly finds contextually relevant information." },
+        { time: 37.0, text: "But where do these embeddings come from?" },
+        { time: 39.5, text: "To turn words into numbers, we use an Embedding Model." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec10"] = tl;
+    </script>
+  </template>
+</body>
+</html>

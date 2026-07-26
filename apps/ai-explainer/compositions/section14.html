@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #10b981;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #10b981;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Layout */
+      .agents-layout {
+        position: relative;
+        width: 1550px;
+        height: 640px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Left Panel: Comparison */
+      .comparison-panel {
+        width: 480px;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+      }
+      .comp-card {
+        background: rgba(15, 23, 42, 0.7);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 16px;
+        padding: 24px 30px;
+        opacity: 0;
+        transform: translateX(-50px);
+        transition: all 0.5s ease;
+      }
+      .comp-card.active-comp {
+        border-color: #38bdf8;
+        box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);
+      }
+      .comp-card.agent-comp {
+        border-color: #10b981;
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+      }
+      .comp-card h4 {
+        font-size: 20px;
+        margin-bottom: 8px;
+      }
+      .comp-card p {
+        font-size: 14px;
+        color: #cbd5e1;
+        line-height: 1.4;
+      }
+
+      /* Middle Panel: Loop Diagram */
+      .loop-panel {
+        width: 480px;
+        height: 520px;
+        position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        scale: 0.95;
+      }
+      
+      /* Circular flowchart container */
+      .loop-nodes-wrapper {
+        position: relative;
+        width: 380px;
+        height: 380px;
+        border: 2px dashed rgba(16, 185, 129, 0.25);
+        border-radius: 50%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+      .loop-node {
+        position: absolute;
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(148, 163, 184, 0.25);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        z-index: 10;
+      }
+      .loop-node span {
+        font-size: 11px;
+        color: #94a3b8;
+        font-weight: normal;
+        margin-top: 2px;
+      }
+      .loop-node.node-active {
+        border-color: #10b981;
+        box-shadow: 0 0 15px #10b981;
+        color: #10b981;
+      }
+      /* Node positions around the circle */
+      .n-plan    { top: -45px; left: calc(50% - 45px); }
+      .n-tool    { top: 100px; right: -45px; }
+      .n-observe { bottom: -45px; right: 20px; }
+      .n-think   { bottom: -45px; left: 20px; }
+      .n-repeat  { top: 100px; left: -45px; }
+
+      /* Goal/Done items outside circle */
+      .goal-done-badge {
+        position: absolute;
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(148, 163, 184, 0.25);
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        z-index: 12;
+        opacity: 0;
+      }
+      .goal-badge { top: -140px; }
+      .done-badge { bottom: -140px; }
+      .goal-badge.active-badge { border-color: #38bdf8; color: #38bdf8; box-shadow: 0 0 10px rgba(56, 189, 248, 0.2); }
+      .done-badge.active-badge { border-color: #10b981; color: #10b981; box-shadow: 0 0 10px rgba(16, 185, 129, 0.2); }
+
+      /* Right Panel: Execution Log console */
+      .console-panel {
+        width: 480px;
+        height: 520px;
+        background: rgba(4, 8, 20, 0.9);
+        border: 2px solid rgba(56, 189, 248, 0.15);
+        border-radius: 20px;
+        padding: 30px;
+        font-family: 'JetBrains Mono', monospace;
+        box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+        opacity: 0;
+        transform: translateX(50px);
+        display: flex;
+        flex-direction: column;
+      }
+      .console-header {
+        font-size: 13px;
+        color: #94a3b8;
+        border-bottom: 1px solid rgba(56, 189, 248, 0.1);
+        padding-bottom: 12px;
+        margin-bottom: 20px;
+      }
+      .console-logs-container {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        flex-grow: 1;
+        overflow: hidden;
+      }
+      .log-row {
+        font-size: 13px;
+        line-height: 1.5;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.3s ease;
+      }
+      .log-row.visible-log {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .log-tag {
+        color: #fb923c;
+        margin-right: 8px;
+      }
+      .log-tag.tag-tool { color: #38bdf8; }
+      .log-tag.tag-observe { color: #f87171; }
+      .log-tag.tag-think { color: #c084fc; }
+      .log-tag.tag-done { color: #10b981; }
+
+      /* Reinforcement Learning Teaser Overlay */
+      .rl-teaser-grid {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 25;
+        opacity: 0;
+        transition: all 0.6s ease;
+      }
+      .rl-feedback-container {
+        display: flex;
+        gap: 40px;
+        margin-top: 30px;
+      }
+      .feedback-card {
+        background: rgba(15, 23, 42, 0.9);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 16px;
+        padding: 30px;
+        width: 440px;
+        box-shadow: 0 15px 30px rgba(0,0,0,0.4);
+        position: relative;
+      }
+      .feedback-card.card-reinforced {
+        border-color: #10b981;
+        box-shadow: 0 0 25px rgba(16, 185, 129, 0.2);
+      }
+      .feedback-card.card-reinforced::after {
+        content: 'REINFORCED 👍';
+        position: absolute;
+        top: -15px;
+        right: 20px;
+        background: #10b981;
+        color: #040814;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        font-weight: bold;
+        padding: 4px 10px;
+        border-radius: 4px;
+      }
+      .feedback-card h6 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #94a3b8;
+        margin-bottom: 10px;
+      }
+      .feedback-card p {
+        font-size: 15px;
+        line-height: 1.4;
+        color: #e2e8f0;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-toiq" id="root" data-composition-id="scene-sec14" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-rbea">MODULE // AUTONOMOUS_AGENTS</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-mxwh" class="agents-layout">
+          <!-- Left comparison cards -->
+          <div data-hf-id="hf-p6py" class="comparison-panel">
+            <div data-hf-id="hf-c28s" class="comp-card" id="chat-comp">
+              <h4 data-hf-id="hf-qu5u" style="color: #38bdf8;">Reactive Chatbot</h4>
+              <p data-hf-id="hf-laxz">Simple Request ──► Single Inference pass ──► Response.</p>
+              <p data-hf-id="hf-epjy" style="color: #94a3b8; font-size: 12px; margin-top: 8px;">No tools, no planning updates, no loop validation.</p>
+            </div>
+            <div data-hf-id="hf-bc17" class="comp-card" id="agent-comp">
+              <h4 data-hf-id="hf-p24j" style="color: #10b981;">Autonomous Agent</h4>
+              <p data-hf-id="hf-sciz">Goal ──► Iterative execution loop ──► Tool use ──► Validation ──► Done.</p>
+              <p data-hf-id="hf-yhkr" style="color: #94a3b8; font-size: 12px; margin-top: 8px;">Runs self-directed steps until goal validation succeeds.</p>
+            </div>
+          </div>
+
+          <!-- Middle Loop diagram -->
+          <div data-hf-id="hf-1nl9" class="loop-panel" id="loop-diag">
+            <div data-hf-id="hf-e1zu" class="goal-done-badge goal-badge" id="goal-tag">GOAL: SCRAPE DATA</div>
+            
+            <div data-hf-id="hf-dsf4" class="loop-nodes-wrapper" data-layout-allow-overflow>
+              <div data-hf-id="hf-5mwk" class="loop-node n-plan" id="node-plan">PLAN <span data-hf-id="hf-hq2p">(LLM)</span></div>
+              <div data-hf-id="hf-enor" class="loop-node n-tool" id="node-tool">TOOL <span data-hf-id="hf-il79">(Exec)</span></div>
+              <div data-hf-id="hf-5ra5" class="loop-node n-observe" id="node-observe">OBSERVE <span data-hf-id="hf-4e6m">(Data)</span></div>
+              <div data-hf-id="hf-uxa5" class="loop-node n-think" id="node-think">THINK <span data-hf-id="hf-5ufp">(LLM)</span></div>
+              <div data-hf-id="hf-lgkc" class="loop-node n-repeat" id="node-repeat">REPEAT <span data-hf-id="hf-49eo">(Loop)</span></div>
+            </div>
+
+            <div data-hf-id="hf-l7ke" class="goal-done-badge done-badge" id="done-tag">DONE: EXITED LOOP</div>
+          </div>
+
+          <!-- Right console log -->
+          <div data-hf-id="hf-ufwm" class="console-panel" id="console-log">
+            <div data-hf-id="hf-gh72" class="console-header">AGENT_EXECUTION_TRACE_LOG</div>
+            <div data-hf-id="hf-o36u" class="console-logs-container" id="logs-area">
+              <div data-hf-id="hf-6pw9" class="log-row" id="l-plan"><span data-hf-id="hf-sf7f" class="log-tag">[PLAN]</span>Creating step-by-step scraping itinerary.</div>
+              <div data-hf-id="hf-atan" class="log-row" id="l-tool"><span data-hf-id="hf-6wkb" class="log-tag tag-tool">[TOOL]</span>Calling execute_script("scraper.py").</div>
+              <div data-hf-id="hf-meen" class="log-row" id="l-observe"><span data-hf-id="hf-tdgx" class="log-tag tag-observe">[OBSERVE]</span>Stderr: selector ".content" not found.</div>
+              <div data-hf-id="hf-lo4t" class="log-row" id="l-think"><span data-hf-id="hf-9px9" class="log-tag tag-think">[THINK]</span>Target site changed layout class names. I should inspect HTML.</div>
+              <div data-hf-id="hf-dfqq" class="log-row" id="l-repeat"><span data-hf-id="hf-uotv" class="log-tag">[REPEAT]</span>Updating Plan with alternate class selectors.</div>
+              <div data-hf-id="hf-khlp" class="log-row" id="l-done"><span data-hf-id="hf-bp4n" class="log-tag tag-done">[DONE]</span>Scraping completed. Found 42 target entries. Exiting.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reinforcement Learning Teaser Overlay -->
+        <div data-hf-id="hf-n1q5" class="rl-teaser-grid" id="rl-teaser" style=" ">
+          <div data-hf-id="hf-c4zs" style="font-family: 'JetBrains Mono', monospace; font-size: 16px; color: #10b981; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 2px;">
+            Alignment Training: Reinforcement Learning from Human Feedback
+          </div>
+          <div data-hf-id="hf-rguk" class="rl-feedback-container">
+            <div data-hf-id="hf-i0t0" class="feedback-card">
+              <h6 data-hf-id="hf-q7vv">RESPONSE A (HALLUCINATORY LOGIC)</h6>
+              <p data-hf-id="hf-z6nl" style="color: #f87171; text-decoration: line-through;">"To fix the selector error, we should wait 500 seconds and run the identical code again."</p>
+              <p data-hf-id="hf-cn3i" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #ef4444; margin-top: 15px;">Reward Signal: -1.0 👎</p>
+            </div>
+            <div data-hf-id="hf-zfqe" class="feedback-card card-reinforced">
+              <h6 data-hf-id="hf-op2w">RESPONSE B (LOGICAL REASONING STEP)</h6>
+              <p data-hf-id="hf-4y0o">"Target site changed layout. We should parse the HTML tree locally and fetch the alternate class name."</p>
+              <p data-hf-id="hf-o55d" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #10b981; margin-top: 15px;">Reward Signal: +1.0 👍</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-wx0n">FRAME_TIME: 11:39:31</div>
+        <div data-hf-id="hf-kg1f">SYS_METRIC: LOOP_ITERATIONS_SUCCESS</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-pnxy" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="57.77" data-track-index="5">
+        <div data-hf-id="hf-deqi" class="caption-box" id="caption-text">Section 14: Autonomous Agents</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 9,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Initial entrance reactive chatbot card (3s)
+      tl.to("#chat-comp", { opacity: 1, x: 0, className: "comp-card active-comp", duration: 0.8, ease: "power2.out" }, 3.0);
+
+      // 2. Active Agent entrance card (9s)
+      tl.to("#chat-comp", { className: "comp-card", duration: 0.5 }, 9.0);
+      tl.to("#agent-comp", { opacity: 1, x: 0, className: "comp-card agent-comp", duration: 0.8, ease: "power2.out" }, 9.5);
+
+      // 3. Circular loop flowchart panel entrance (13s)
+      tl.to("#loop-diag", { opacity: 1, duration: 0.8 }, 13.0);
+      tl.to("#goal-tag", { opacity: 1, className: "goal-done-badge goal-badge active-badge", duration: 0.5 }, 14.5);
+
+      // 4. Trace console log entrance (20s)
+      tl.to("#console-log", { opacity: 1, x: 0, duration: 0.8 }, 20.0);
+
+      // 5. Plan phase (22s)
+      tl.to("#node-plan", { className: "loop-node n-plan node-active", duration: 0.4 }, 22.0);
+      tl.to("#l-plan", { className: "log-row visible-log", duration: 0.3 }, 22.8);
+
+      // 6. Tool phase (25s)
+      tl.to("#node-plan", { className: "loop-node n-plan", duration: 0.4 }, 25.0);
+      tl.to("#node-tool", { className: "loop-node n-tool node-active", duration: 0.4 }, 25.2);
+      tl.to("#l-tool", { className: "log-row visible-log", duration: 0.3 }, 26.0);
+
+      // 7. Observe phase (30s)
+      tl.to("#node-tool", { className: "loop-node n-tool", duration: 0.4 }, 30.0);
+      tl.to("#node-observe", { className: "loop-node n-observe node-active", duration: 0.4 }, 30.2);
+      tl.to("#l-observe", { className: "log-row visible-log", duration: 0.3 }, 31.0);
+
+      // 8. Think phase (34s)
+      tl.to("#node-observe", { className: "loop-node n-observe", duration: 0.4 }, 34.0);
+      tl.to("#node-think", { className: "loop-node n-think node-active", duration: 0.4 }, 34.2);
+      tl.to("#l-think", { className: "log-row visible-log", duration: 0.3 }, 35.0);
+
+      // 9. Repeat Loop back phase (38s)
+      tl.to("#node-think", { className: "loop-node n-think", duration: 0.4 }, 38.0);
+      tl.to("#node-repeat", { className: "loop-node n-repeat node-active", duration: 0.4 }, 38.2);
+      tl.to("#l-repeat", { className: "log-row visible-log", duration: 0.3 }, 39.0);
+
+      // 10. Completed done phase (43s)
+      tl.to("#node-repeat", { className: "loop-node n-repeat", duration: 0.4 }, 43.0);
+      tl.to("#done-tag", { opacity: 1, className: "goal-done-badge done-badge active-badge", duration: 0.5 }, 43.5);
+      tl.to("#l-done", { className: "log-row visible-log", duration: 0.3 }, 44.2);
+
+      // 11. Transition to RL alignment (48s - 57.77s)
+      tl.to("#chat-comp, #agent-comp, #loop-diag, #console-log", { opacity: 0.05, duration: 0.8 }, 48.5);
+      tl.to("#rl-teaser", { opacity: 1, duration: 1.0 }, 49.5);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "A standard chatbot is reactive—it takes a prompt and gives an immediate response." },
+        { time: 6.2, text: "An agent is active. You give it a goal, and it runs a loop to achieve it." },
+        { time: 12.5, text: "The agent loop consists of five phases: Plan, Tool, Observe, Think, and Repeat." },
+        { time: 19.5, text: "First, the agent uses the LLM to write a step-by-step plan." },
+        { time: 23.8, text: "Then, it selects and executes a tool, like searching the web or running a script." },
+        { time: 29.8, text: "Next, it observes the tool's output." },
+        { time: 32.5, text: "Then, it thinks about the result: Did the script succeed? Did it get the answer?" },
+        { time: 37.8, text: "If not, it updates its plan and repeats the loop." },
+        { time: 41.5, text: "Once the goal is achieved, it returns the final answer." },
+        { time: 44.5, text: "This autonomy allows agents to perform complex, multi-step tasks, like debugging code or booking travel, completely unattended." },
+        { time: 51.5, text: "But how do we train a model to follow these logical steps instead of babbling? We use Reinforcement Learning." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec14"] = tl;
+    </script>
+  </template>
+</body>
+</html>

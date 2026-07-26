@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #10b981;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #10b981;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Multimodal Layout */
+      .multimodal-layout {
+        position: relative;
+        width: 1550px;
+        height: 640px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Sockets container left */
+      .sockets-left {
+        width: 320px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .socket-row {
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        padding: 16px 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        opacity: 0;
+        transform: translateX(-30px);
+        transition: all 0.3s ease;
+      }
+      .socket-row.socket-active {
+        border-color: #38bdf8;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
+      }
+      .socket-label {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+      }
+
+      /* Central model box */
+      .model-core-panel {
+        width: 420px;
+        height: 420px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        opacity: 0;
+      }
+      .model-core-block {
+        width: 240px;
+        height: 240px;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, rgba(15, 23, 42, 0.95) 70%);
+        border: 2px solid rgba(56, 189, 248, 0.3);
+        border-radius: 24px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        box-shadow: 0 0 40px rgba(56, 189, 248, 0.1);
+        text-align: center;
+        z-index: 10;
+        transition: all 0.4s ease;
+      }
+      .model-core-block.pulse-active {
+        border-color: #10b981;
+        box-shadow: 0 0 50px rgba(16, 185, 129, 0.35);
+      }
+      .model-core-block h5 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #94a3b8;
+      }
+      .model-core-block.pulse-active h5 { color: #10b981; }
+
+      /* SVG Converging energy lines */
+      .energy-svg-layer {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 5;
+      }
+      .energy-line {
+        stroke: rgba(148, 163, 184, 0.15);
+        stroke-width: 2;
+        fill: none;
+        transition: all 0.4s ease;
+      }
+      .energy-line.active-line {
+        stroke: #38bdf8;
+        stroke-width: 4;
+        filter: drop-shadow(0 0 6px #38bdf8);
+      }
+
+      /* Outputs container right */
+      .outputs-right {
+        width: 420px;
+        display: flex;
+        flex-direction: column;
+        gap: 25px;
+      }
+      .output-demo-card {
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(148, 163, 184, 0.25);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        opacity: 0;
+        transform: translateX(40px);
+      }
+      .output-demo-card.output-success {
+        border-color: #10b981;
+        box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+      }
+      .output-demo-card h6 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #94a3b8;
+        margin-bottom: 8px;
+      }
+      .output-demo-card.output-success h6 { color: #10b981; }
+
+      /* Blinking cursor / code type simulation */
+      .code-line-sim {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #38bdf8;
+      }
+      .audio-wave-sim {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 30px;
+        margin-top: 10px;
+      }
+      .wave-bar {
+        width: 3px;
+        height: 10px;
+        background: #10b981;
+        border-radius: 1px;
+        transition: height 0.3s ease;
+      }
+
+      /* Edge phone teaser panel */
+      .phone-teaser-panel {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        z-index: 25;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: all 0.6s ease;
+      }
+      .teaser-smartphone {
+        width: 180px;
+        height: 320px;
+        border: 4px solid rgba(56, 189, 248, 0.3);
+        border-radius: 28px;
+        background: rgba(15, 23, 42, 0.9);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+        position: relative;
+      }
+      .teaser-smartphone.phone-active {
+        border-color: #38bdf8;
+        box-shadow: 0 0 35px rgba(56, 189, 248, 0.25);
+      }
+      .teaser-smartphone::before {
+        content: '';
+        position: absolute;
+        top: 15px;
+        width: 50px;
+        height: 4px;
+        background: rgba(148, 163, 184, 0.3);
+        border-radius: 2px;
+      }
+      .phone-screen-logo {
+        font-size: 42px;
+        margin-bottom: 20px;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-9u5a" id="root" data-composition-id="scene-sec18" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-308w">MODULE // MULTIMODAL_MODELS</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-nltl" class="multimodal-layout">
+          <!-- Left: Input Sockets -->
+          <div data-hf-id="hf-qr1g" class="sockets-left">
+            <div data-hf-id="hf-j7nc" class="socket-row" id="s-row-img">
+              <span data-hf-id="hf-wsi0" style="font-size: 26px;">📷</span>
+              <span data-hf-id="hf-s3hv" class="socket-label">Visual Image Token</span>
+            </div>
+            <div data-hf-id="hf-eqpf" class="socket-row" id="s-row-aud">
+              <span data-hf-id="hf-z1ew" style="font-size: 26px;">🎤</span>
+              <span data-hf-id="hf-56jc" class="socket-label">Audio Frequency Token</span>
+            </div>
+            <div data-hf-id="hf-r6ww" class="socket-row" id="s-row-vid">
+              <span data-hf-id="hf-yn3v" style="font-size: 26px;">🎥</span>
+              <span data-hf-id="hf-x7o5" class="socket-label">Video Frames Sequence</span>
+            </div>
+            <div data-hf-id="hf-w89l" class="socket-row" id="s-row-txt">
+              <span data-hf-id="hf-p8oh" style="font-size: 26px;">📄</span>
+              <span data-hf-id="hf-p5jz" class="socket-label">Structured Text Prompt</span>
+            </div>
+          </div>
+
+          <!-- Middle: Unified model core -->
+          <div data-hf-id="hf-xx4j" class="model-core-panel" id="model-container">
+            <!-- Energy SVG overlay -->
+            <svg data-hf-id="hf-8hy8" class="energy-svg-layer" style=" ">
+              <!-- line from socket 1 (cx: 260, cy: 200) to model block (cx: 775, cy: 320) -->
+              <path data-hf-id="hf-kmxj" class="energy-line" id="line-img" d="M 280 200 C 440 200, 480 320, 650 320" />
+              <!-- line from socket 2 (cx: 260, cy: 275) to model block -->
+              <path data-hf-id="hf-95tg" class="energy-line" id="line-aud" d="M 280 275 C 440 275, 480 320, 650 320" />
+              <!-- line from socket 3 (cx: 260, cy: 350) to model block -->
+              <path data-hf-id="hf-voqf" class="energy-line" id="line-vid" d="M 280 350 C 440 350, 480 320, 650 320" />
+              <!-- line from socket 4 (cx: 260, cy: 425) to model block -->
+              <path data-hf-id="hf-wdpy" class="energy-line" id="line-txt" d="M 280 425 C 440 425, 480 320, 650 320" />
+            </svg>
+
+            <div data-hf-id="hf-shi6" class="model-core-block" id="core-block">
+              <div data-hf-id="hf-t89z" style="font-size: 48px; margin-bottom: 10px;">🧠</div>
+              <h5 data-hf-id="hf-vb78">UNIFIED EMBEDDING LAYER</h5>
+              <span data-hf-id="hf-ub9j" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #94a3b8; margin-top: 6px;">MULTIMODAL_ENCODER</span>
+            </div>
+          </div>
+
+          <!-- Right: Output Demos -->
+          <div data-hf-id="hf-alen" class="outputs-right">
+            <!-- Code Output -->
+            <div data-hf-id="hf-emgx" class="output-demo-card" id="out-card-code">
+              <h6 data-hf-id="hf-q9xh">IMAGE_TO_CODE // DASHBOARD_GENERATION</h6>
+              <div data-hf-id="hf-8ui3" class="code-line-sim" id="code-sim-txt">Initializing dashboard components...</div>
+            </div>
+
+            <!-- Audio Response Output -->
+            <div data-hf-id="hf-6h1k" class="output-demo-card" id="out-card-audio">
+              <h6 data-hf-id="hf-mrb9">REAL_TIME_SPEECH // EMOTION_INTEGRATED</h6>
+              <div data-hf-id="hf-ul6i" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #10b981;">Synthesizing natural voice...</div>
+              <div data-hf-id="hf-kvcm" class="audio-wave-sim">
+                <div data-hf-id="hf-uey9" class="wave-bar" id="wb-1" style="height: 12px;"></div>
+                <div data-hf-id="hf-oayn" class="wave-bar" id="wb-2" style="height: 24px;"></div>
+                <div data-hf-id="hf-gxka" class="wave-bar" id="wb-3" style="height: 15px;"></div>
+                <div data-hf-id="hf-86bk" class="wave-bar" id="wb-4" style="height: 30px;"></div>
+                <div data-hf-id="hf-mzbs" class="wave-bar" id="wb-5" style="height: 8px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Phone Teaser overlay -->
+        <div data-hf-id="hf-sitb" class="phone-teaser-panel" id="phone-teaser" style=" ">
+          <div data-hf-id="hf-7cfi" style="font-family: 'JetBrains Mono', monospace; font-size: 16px; color: #38bdf8; margin-bottom: 40px; text-transform: uppercase; letter-spacing: 2px;">
+            Local Inference: Running AI on the Edge
+          </div>
+          <div data-hf-id="hf-e3i1" class="teaser-smartphone" id="teaser-phone">
+            <div data-hf-id="hf-m5e9" class="phone-screen-logo">📱</div>
+            <div data-hf-id="hf-x61y" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #cbd5e1; font-weight: bold;">LOCAL_LLM</div>
+            <div data-hf-id="hf-wyf3" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #94a3b8; margin-top: 4px;">OFFLINE_MODE: ENGAGED</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-ubmi">FRAME_TIME: 14:47:07</div>
+        <div data-hf-id="hf-xt69">SYS_METRIC: EMBEDDING_SPACE_UNIFIED</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-zqqz" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="46.61" data-track-index="5">
+        <div data-hf-id="hf-b09o" class="caption-box" id="caption-text">Section 18: Multimodal Models</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 8,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Entrance of sockets and model core (3s)
+      tl.to("#s-row-img", { opacity: 1, x: 0, duration: 0.4 }, 3.0);
+      tl.to("#s-row-aud", { opacity: 1, x: 0, duration: 0.4 }, 3.3);
+      tl.to("#s-row-vid", { opacity: 1, x: 0, duration: 0.4 }, 3.6);
+      tl.to("#s-row-txt", { opacity: 1, x: 0, duration: 0.4 }, 3.9);
+      tl.to("#model-container", { opacity: 1, duration: 0.8 }, 4.5);
+
+      // 2. Convergence of energy paths (13s)
+      tl.to(".energy-line", { className: "energy-line active-line", duration: 0.6 }, 13.0);
+      tl.to("#s-row-img, #s-row-aud, #s-row-vid, #s-row-txt", { className: "socket-row socket-active", duration: 0.6 }, 13.2);
+      tl.to("#core-block", { className: "model-core-block pulse-active", duration: 0.8 }, 14.0);
+
+      // 3. Screenshot to code demo (22s)
+      tl.to("#s-row-img", { className: "socket-row socket-active socket-glow", duration: 0.4 }, 22.0);
+      tl.to("#out-card-code", { opacity: 1, x: 0, duration: 0.6 }, 22.5);
+      
+      tl.call(() => {
+        document.getElementById("code-sim-txt").innerText = "<div class='nav'>Menu</div>";
+        document.getElementById("out-card-code").className = "output-demo-card output-success";
+      }, [], 23.5);
+
+      // 4. Audio conversation demo (28s)
+      tl.to("#s-row-aud", { className: "socket-row socket-active socket-glow", duration: 0.4 }, 28.0);
+      tl.to("#out-card-audio", { opacity: 1, x: 0, duration: 0.6 }, 28.5);
+
+      // Audio wave pulsing
+      tl.to("#wb-1, #wb-3, #wb-5", { height: 28, yoyo: true, repeat: 9, duration: 0.25 }, 29.0);
+      tl.to("#wb-2, #wb-4", { height: 10, yoyo: true, repeat: 9, duration: 0.25 }, 29.15);
+
+      tl.call(() => {
+        document.getElementById("out-card-audio").className = "output-demo-card output-success";
+      }, [], 30.5);
+
+      // 5. Phone teaser entrance (35s - 46.61s)
+      tl.to("#s-row-img, #s-row-aud, #s-row-vid, #s-row-txt, #model-container, #out-card-code, #out-card-audio", { opacity: 0.05, duration: 0.8 }, 36.0);
+      tl.to("#phone-teaser", { opacity: 1, duration: 1.0 }, 37.0);
+      tl.to("#teaser-phone", { className: "teaser-smartphone phone-active", duration: 0.8 }, 38.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Early AI systems had separate models for image recognition, speech-to-text, and language." },
+        { time: 5.5, text: "Today's models are natively multimodal." },
+        { time: 9.8, text: "Images, audio, video, and text are all converted into a single unified embedding space." },
+        { time: 14.5, text: "This means the model doesn't just convert an image into a text description;" },
+        { time: 18.2, text: "it understands the visual pixels directly." },
+        { time: 22.0, text: "You can upload a screenshot of a dashboard, and the model can write the code to reproduce it." },
+        { time: 27.5, text: "You can talk to it in real-time, and it can hear the emotion in your voice and respond instantly." },
+        { time: 33.5, text: "By unifying all modalities, AI becomes much more interactive and capable in real-world environments." },
+        { time: 39.8, text: "But running these massive models requires enormous data centers." },
+        { time: 43.0, text: "How do we run AI on our own laptops and phones?" }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec18"] = tl;
+    </script>
+  </template>
+</body>
+</html>

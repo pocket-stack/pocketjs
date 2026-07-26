@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #38bdf8;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #38bdf8;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Embedding layout components */
+      .embed-layout {
+        position: relative;
+        width: 1600px;
+        height: 680px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Input phrase card */
+      .input-phrase-card {
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid rgba(56, 189, 248, 0.2);
+        border-radius: 16px;
+        padding: 30px;
+        width: 380px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+        opacity: 0;
+        transform: translateX(-50px);
+        transition: all 0.5s ease;
+      }
+      .input-phrase-card h4 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #cbd5e1;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+      }
+      .phrase-txt {
+        font-size: 26px;
+        color: #f8fafc;
+        font-weight: 800;
+        line-height: 1.4;
+      }
+
+      /* Central Model Block */
+      .model-node {
+        background: rgba(15, 23, 42, 0.9);
+        border: 2px solid #38bdf8;
+        border-radius: 20px;
+        width: 360px;
+        height: 260px;
+        padding: 30px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        box-shadow: 0 0 35px rgba(56, 189, 248, 0.25);
+        position: relative;
+        z-index: 10;
+        opacity: 0;
+        transform: scale(0.9);
+      }
+      .model-node h3 {
+        font-size: 24px;
+        color: #f8fafc;
+        font-weight: 800;
+        margin-bottom: 8px;
+      }
+      .model-node p {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #38bdf8;
+      }
+
+      /* Dense Vector Array Card */
+      .vector-array-card {
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid rgba(56, 189, 248, 0.2);
+        border-radius: 16px;
+        padding: 24px;
+        width: 600px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+        opacity: 0;
+        transform: translateX(50px);
+        transition: all 0.5s ease;
+      }
+      .vector-scroller {
+        background: rgba(4, 8, 20, 0.9);
+        border: 1px solid rgba(56, 189, 248, 0.15);
+        border-radius: 10px;
+        padding: 16px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #38bdf8;
+        overflow: hidden;
+        white-space: nowrap;
+        position: relative;
+        height: 60px;
+        display: flex;
+        align-items: center;
+      }
+      .vector-scroll-content {
+        display: inline-block;
+        position: absolute;
+        white-space: nowrap;
+      }
+
+      /* Vector Projection Visualizer (Spinning Globe) */
+      .projection-visualizer {
+        position: absolute;
+        right: 40px;
+        top: 20px;
+        width: 180px;
+        height: 180px;
+        opacity: 0;
+        transform: scale(0.8);
+      }
+      .sphere-svg {
+        width: 100%;
+        height: 100%;
+      }
+      .sphere-lat {
+        fill: none;
+        stroke: rgba(56, 189, 248, 0.3);
+        stroke-width: 1;
+      }
+      .sphere-lon {
+        fill: none;
+        stroke: rgba(56, 189, 248, 0.35);
+        stroke-width: 1;
+      }
+      .sphere-boundary {
+        fill: none;
+        stroke: #38bdf8;
+        stroke-width: 1.5;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
+      }
+
+      /* Semantic Vector Alignment Comparison Panel */
+      .semantic-alignment-panel {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%) translateY(30px);
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid rgba(56, 189, 248, 0.25);
+        border-radius: 16px;
+        width: 1100px;
+        padding: 24px 40px;
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 30px;
+        align-items: center;
+        opacity: 0;
+        z-index: 15;
+      }
+      .align-phrase {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 15px;
+        color: #cbd5e1;
+        margin-bottom: 8px;
+      }
+      .align-phrase span {
+        color: #f8fafc;
+        font-weight: bold;
+      }
+      .align-graph {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        border-left: 1px solid rgba(148, 163, 184, 0.2);
+        padding-left: 30px;
+      }
+      .sim-badge {
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid #10b981;
+        color: #10b981;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        font-weight: bold;
+        padding: 8px 20px;
+        border-radius: 6px;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+      }
+
+      /* Giant Context Stack (Teaser for next section) */
+      .context-stack-teaser {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(0.8);
+        width: 580px;
+        height: 380px;
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid #fb923c;
+        border-radius: 20px;
+        box-shadow: 0 0 40px rgba(251, 146, 60, 0.3);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        padding: 40px;
+        opacity: 0;
+        z-index: 25;
+      }
+      .context-stack-teaser h3 {
+        font-size: 32px;
+        color: #fb923c;
+        font-weight: 800;
+        margin-bottom: 12px;
+      }
+      .context-stack-teaser p {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 16px;
+        color: #cbd5e1;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-y7nn" id="root" data-composition-id="scene-sec11" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-fr3n">MODULE // EMBEDDING_MODELS</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <div data-hf-id="hf-1t02" class="embed-layout" id="main-embed-layout">
+          <!-- Left: Input phrase card -->
+          <div data-hf-id="hf-wyz3" class="input-phrase-card" id="phrase-card">
+            <h4 data-hf-id="hf-woh9">TEXT_INPUT</h4>
+            <div data-hf-id="hf-2ah7" class="phrase-txt">"Deep learning is fun."</div>
+          </div>
+
+          <!-- Center: Embedding Model block -->
+          <div data-hf-id="hf-qixe" class="model-node" id="model-node-box">
+            <h3 data-hf-id="hf-eesw">EMBEDDING MODEL</h3>
+            <p data-hf-id="hf-ur5a">1536-Dimensional Map</p>
+          </div>
+
+          <!-- Right: Vector Scroller Card -->
+          <div data-hf-id="hf-i2qq" class="vector-array-card" id="vector-card">
+            <h4 data-hf-id="hf-hdif" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #cbd5e1; margin-bottom: 12px; text-transform: uppercase;">1536-D Vector Output</h4>
+            <div data-hf-id="hf-vua4" class="vector-scroller">
+              <div data-hf-id="hf-gqc2" class="vector-scroll-content" id="vector-nums">
+                [0.1245, -0.4512, 0.8931, -0.2105, 0.5467, -0.7301, 0.0894, -0.3122, 0.6541, -0.1985, 0.4431, -0.9012, 0.3214, -0.5562, 0.8879, -0.1245, 0.4512, -0.8931, 0.2105]
+              </div>
+            </div>
+          </div>
+
+          <!-- Wireframe Projection Globe (Top Right) -->
+          <div data-hf-id="hf-0rwn" class="projection-visualizer" id="proj-sphere">
+            <svg data-hf-id="hf-xgdm" class="sphere-svg" viewBox="0 0 100 100">
+              <circle data-hf-id="hf-gb24" class="sphere-boundary" cx="50" cy="50" r="45" />
+              <!-- Horizontal Ellipses (Latitude) -->
+              <ellipse data-hf-id="hf-rkld" class="sphere-lat" cx="50" cy="50" rx="45" ry="15" />
+              <ellipse data-hf-id="hf-zfgy" class="sphere-lat" cx="50" cy="50" rx="45" ry="30" />
+              <!-- Vertical Ellipses (Longitude) -->
+              <ellipse data-hf-id="hf-xuw9" class="sphere-lon" cx="50" cy="50" rx="15" ry="45" />
+              <ellipse data-hf-id="hf-lb2m" class="sphere-lon" cx="50" cy="50" rx="30" ry="45" />
+            </svg>
+          </div>
+        </div>
+
+        <!-- Semantic vector direction alignment panel -->
+        <div data-hf-id="hf-2g9r" class="semantic-alignment-panel" id="align-panel">
+          <div data-hf-id="hf-yeow">
+            <div data-hf-id="hf-1029" class="align-phrase">Sentence A: <span data-hf-id="hf-8fx4">"AI is amazing"</span></div>
+            <div data-hf-id="hf-77dy" class="align-phrase">Sentence B: <span data-hf-id="hf-kq5j">"Machine learning is incredible"</span></div>
+          </div>
+          <div data-hf-id="hf-7wck" class="align-graph">
+            <div data-hf-id="hf-wg7s" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #cbd5e1; margin-bottom: 8px;">SEMANTIC ALIGNMENT (COSINE)</div>
+            <div data-hf-id="hf-hkgh" class="sim-badge">Similarity: 0.98</div>
+          </div>
+        </div>
+
+        <!-- Giant Context Stack Teaser -->
+        <div data-hf-id="hf-iptz" class="context-stack-teaser" id="context-teaser">
+          <h3 data-hf-id="hf-b5yw">THE CONTEXT WINDOW</h3>
+          <p data-hf-id="hf-8cqc">Analyzing Millions of Tokens Simultaneously</p>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-cswe">FRAME_TIME: 09:00:00</div>
+        <div data-hf-id="hf-bm8j">SYS_METRIC: VECTOR_DIMENSIONALITY</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-uf4b" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="50.13" data-track-index="5">
+        <div data-hf-id="hf-d15y" class="caption-box" id="caption-text">Section 11: Embedding Models</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 9,
+        ease: "sine.inOut"
+      }, 0);
+
+      // Sphere spin rotation
+      tl.to("#proj-sphere", {
+        rotation: 360,
+        duration: 20,
+        repeat: 2,
+        ease: "none"
+      }, 0);
+
+      // 1. Initial State: cards entrance (3s)
+      tl.to("#phrase-card", { opacity: 1, x: 0, duration: 0.8, ease: "power3.out" }, 3.0);
+      tl.to("#model-node-box", { opacity: 1, scale: 1.0, duration: 0.8, ease: "power3.out" }, 3.5);
+
+      // 2. Input phrase moves to Model block (10s)
+      tl.to("#phrase-card", { scale: 0.95, opacity: 0.7, duration: 0.6 }, 10.0);
+      // Pulse line or glow
+      tl.to("#model-node-box", { boxShadow: "0 0 50px rgba(56, 189, 248, 0.6)", duration: 0.4, yoyo: true, repeat: 1 }, 10.6);
+
+      // 3. Dense Vector Scroller / Sphere appear (16s)
+      tl.to("#vector-card", { opacity: 1, x: 0, duration: 0.8, ease: "power3.out" }, 16.0);
+      tl.to("#proj-sphere", { opacity: 1, scale: 1.0, duration: 0.8 }, 16.5);
+
+      // Scrolling vector numbers timeline
+      tl.fromTo("#vector-nums", { x: 0 }, { x: -320, duration: 8, ease: "none", repeat: 3 }, 16.8);
+
+      // 4. Semantic alignment panel displays (22s - 33s)
+      tl.to("#main-embed-layout", { opacity: 0.15, duration: 0.8 }, 22.0);
+      tl.to("#align-panel", { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }, 22.5);
+
+      // Fade out alignment panel (33s)
+      tl.to("#align-panel", { opacity: 0, scale: 0.95, duration: 0.6 }, 33.0);
+      tl.to("#main-embed-layout", { opacity: 1.0, duration: 0.6 }, 33.5);
+
+      // 5. Database teaser transition: fade layout out, scale up context teaser (42s)
+      tl.to("#main-embed-layout", { opacity: 0.05, scale: 0.9, duration: 1.0 }, 42.0);
+      tl.to("#context-teaser", { opacity: 1, scale: 1.0, duration: 1.0, ease: "power3.out" }, 42.5);
+
+      // Final Exit
+      tl.to("#context-teaser", { opacity: 0, scale: 0.8, duration: 0.8 }, 49.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "To represent human language mathematically, we use an Embedding Model." },
+        { time: 5.5, text: "Unlike large language models that generate text, an embedding model does one thing: it turns text into a dense mathematical vector." },
+        { time: 13.5, text: "If you feed it the sentence \"Deep learning is fun\", it outputs a long string of numbers—usually 1536 float values." },
+        { time: 20.0, text: "Each number represents a coordinate in a multi-dimensional semantic space." },
+        { time: 23.5, text: "If two sentences have a similar meaning, like \"AI is amazing\" and \"Machine learning is incredible\"," },
+        { time: 28.5, text: "their embedding models output vectors that point in nearly the same direction." },
+        { time: 33.0, text: "This vector output is what vector databases store and index." },
+        { time: 36.5, text: "But as our context windows grow to millions of tokens, how does a model keep track of all these connections?" },
+        { time: 42.5, text: "Let's look at the mechanism that handles it all: the context window." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec11"] = tl;
+    </script>
+  </template>
+</body>
+</html>

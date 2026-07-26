@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <template>
+    <style>
+      #root {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #040814;
+        color: #f8fafc;
+        overflow: hidden;
+        font-family: 'Inter', sans-serif;
+      }
+
+      /* Background Grid Pattern */
+      .bg-grid {
+        position: absolute;
+        inset: 0;
+        background-image: 
+          linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+        background-size: 60px 60px;
+        background-position: center;
+        z-index: 1;
+      }
+
+      /* Glowing Orbs */
+      .glow-orb {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%);
+        z-index: 2;
+      }
+      .glow-left { top: -200px; left: -100px; }
+      .glow-right { bottom: -200px; right: -100px; }
+
+      /* Technical Header */
+      .tech-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 80px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid rgba(56, 189, 248, 0.1);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 18px;
+        color: #cbd5e1;
+        z-index: 10;
+        background: rgba(4, 8, 20, 0.8);
+        backdrop-filter: blur(10px);
+      }
+      .tech-header .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .tech-header .status-dot {
+        width: 10px;
+        height: 10px;
+        background: #10b981;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #10b981;
+      }
+
+      /* Tech Footer Details */
+      .tech-footer {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        padding: 0 80px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(56, 189, 248, 0.05);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+        z-index: 10;
+      }
+
+      /* Content container */
+      .scene-content {
+        position: absolute;
+        inset: 0;
+        padding: 140px 100px 100px 100px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 5;
+      }
+
+      /* Caching layout structure */
+      .caching-layout {
+        position: relative;
+        width: 1500px;
+        height: 640px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      /* Left side: Cached Context Server Rack */
+      .server-rack {
+        width: 480px;
+        height: 520px;
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid rgba(148, 163, 184, 0.25);
+        border-radius: 24px;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+        opacity: 0;
+        transform: translateX(-50px);
+        transition: all 0.5s ease;
+      }
+      .server-rack.cached-active {
+        border-color: #10b981;
+        box-shadow: 0 0 30px rgba(16, 185, 129, 0.25);
+      }
+      .server-rack::before {
+        content: '// CONTEXT_CACHED_STORE';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: #cbd5e1;
+      }
+
+      /* Server slots representation */
+      .server-slots-container {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        margin-top: 20px;
+      }
+      .server-slot {
+        height: 50px;
+        background: rgba(4, 8, 20, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 20px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #94a3b8;
+        transition: all 0.4s ease;
+      }
+      .server-slot.active-slot {
+        border-color: #10b981;
+        background: rgba(16, 185, 129, 0.08);
+        color: #10b981;
+      }
+      .slot-led {
+        width: 10px;
+        height: 10px;
+        background: #ef4444;
+        border-radius: 50%;
+        box-shadow: 0 0 8px #ef4444;
+        transition: all 0.4s ease;
+      }
+      .server-slot.active-slot .slot-led {
+        background: #10b981;
+        box-shadow: 0 0 10px #10b981;
+      }
+
+      /* Right side: User query and Codebase input */
+      .input-side-container {
+        width: 580px;
+        height: 520px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+      }
+
+      /* Codebase Block */
+      .codebase-input-card {
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid rgba(56, 189, 248, 0.25);
+        border-radius: 16px;
+        padding: 24px 30px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      .codebase-input-card.cached-done {
+        border-color: #10b981;
+      }
+
+      /* Subsequent Query Stack */
+      .query-sequence-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        margin-top: 30px;
+      }
+      .seq-query-card {
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(56, 189, 248, 0.15);
+        border-radius: 12px;
+        padding: 16px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        opacity: 0;
+        transform: translateX(40px);
+      }
+      .seq-query-card.hit-active {
+        border-color: #10b981;
+        box-shadow: 0 0 15px rgba(16, 185, 129, 0.15);
+      }
+      .query-txt {
+        font-size: 15px;
+        color: #e2e8f0;
+      }
+      .query-latency {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #94a3b8;
+      }
+      .query-latency.fast-latency {
+        color: #10b981;
+        font-weight: bold;
+      }
+
+      /* Lightning SVG paths layer */
+      .lightning-layer {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 5;
+      }
+      .lightning-bolt {
+        stroke: #10b981;
+        stroke-width: 3;
+        fill: none;
+        opacity: 0;
+      }
+
+      /* Metrics overlay panels */
+      .metrics-row-panel {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%) translateY(30px);
+        display: flex;
+        gap: 30px;
+        z-index: 12;
+        opacity: 0;
+      }
+      .stat-metric-card {
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid #10b981;
+        border-radius: 12px;
+        padding: 16px 24px;
+        width: 320px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+      }
+      .stat-metric-card h6 {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #cbd5e1;
+        margin-bottom: 6px;
+      }
+      .stat-metric-card div {
+        font-size: 28px;
+        font-weight: 800;
+        color: #10b981;
+      }
+
+      /* Attention weights morph teaser panel */
+      .attention-teaser-grid {
+        position: absolute;
+        inset: 0;
+        background: #040814;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 25;
+        opacity: 0;
+        transition: all 0.6s ease;
+      }
+      .attention-tokens-container {
+        display: flex;
+        gap: 30px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 38px;
+        font-weight: bold;
+      }
+      .token-node-glow {
+        padding: 12px 24px;
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        border-radius: 8px;
+        color: #cbd5e1;
+        position: relative;
+      }
+      .token-node-glow.active-token {
+        color: #38bdf8;
+        border-color: #38bdf8;
+        box-shadow: 0 0 25px rgba(56, 189, 248, 0.25);
+      }
+      .attention-link-svg {
+        position: absolute;
+        width: 1000px;
+        height: 200px;
+        z-index: -1;
+      }
+      .att-link-path {
+        stroke: rgba(56, 189, 248, 0.1);
+        stroke-width: 2;
+        fill: none;
+      }
+      .att-link-path.high-weight {
+        stroke: #38bdf8;
+        stroke-width: 5;
+      }
+
+      /* Caption overlay */
+      .caption-overlay {
+        position: absolute;
+        bottom: 100px;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        z-index: 100;
+      }
+      .caption-box {
+        background: rgba(15, 23, 42, 0.85);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 16px 36px;
+        border-radius: 12px;
+        font-size: 28px;
+        font-weight: 500;
+        color: #f8fafc;
+        max-width: 1200px;
+        text-align: center;
+        line-height: 1.4;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+    
+      /* Disabled UI Elements */
+      .caption-overlay,
+      .tech-header > div:not(.status),
+      .tech-footer > div:first-child {
+        display: none !important;
+      }
+</style>
+
+    <div data-hf-id="hf-5uvd" id="root" data-composition-id="scene-sec13" data-start="0" data-width="1920" data-height="1080">
+      <div data-hf-id="hf-yqqm" class="bg-grid"></div>
+      <div data-hf-id="hf-q50c" class="glow-orb glow-left"></div>
+      <div data-hf-id="hf-9x0z" class="glow-orb glow-right"></div>
+
+      <!-- Header -->
+      <div data-hf-id="hf-4vhm" class="tech-header">
+        <div data-hf-id="hf-8kim" class="status">
+          <div data-hf-id="hf-l9dc" class="status-dot"></div>
+          <span data-hf-id="hf-9c30">MODULE // CONTEXT_CACHING</span>
+        </div>
+        <div data-hf-id="hf-l68e">PREVIEW_MODE: PROTO_V1</div>
+      </div>
+
+      <!-- Content -->
+      <div data-hf-id="hf-cn5c" class="scene-content">
+        <!-- Caching interactive structure -->
+        <div data-hf-id="hf-ptd3" class="caching-layout" id="caching-main">
+          <!-- Lightning SVGs -->
+          <svg data-hf-id="hf-74g5" class="lightning-layer" style=" ">
+            <!-- lightning path from query-1 (cx: 1140, cy: 260) to server rack (cx: 400, cy: 300) -->
+            <path data-hf-id="hf-pntv" class="lightning-bolt" id="lightning-1" d="M 1000 280 L 800 280 Q 640 280, 480 300" />
+            <!-- lightning path from query-2 (cx: 1140, cy: 360) to server rack (cx: 400, cy: 300) -->
+            <path data-hf-id="hf-0zic" class="lightning-bolt" id="lightning-2" d="M 1000 370 L 800 370 Q 640 330, 480 300" />
+          </svg>
+
+          <!-- Left: Server Rack cached store -->
+          <div data-hf-id="hf-aqgr" class="server-rack" id="rack-card">
+            <div data-hf-id="hf-w0nz" class="server-slots-container">
+              <div data-hf-id="hf-jen6" class="server-slot" id="slot-1">
+                <span data-hf-id="hf-3rp0">MEM_BANK_01 (BASE SYSTEM)</span>
+                <span data-hf-id="hf-8wsh" class="slot-led"></span>
+              </div>
+              <div data-hf-id="hf-fgj5" class="server-slot" id="slot-2">
+                <span data-hf-id="hf-0qrp">MEM_BANK_02 (CACHED_CONTEXT)</span>
+                <span data-hf-id="hf-gvmd" class="slot-led"></span>
+              </div>
+              <div data-hf-id="hf-eovc" class="server-slot" id="slot-3">
+                <span data-hf-id="hf-2i1j">MEM_BANK_03 (TEMPORARY_LOGS)</span>
+                <span data-hf-id="hf-i2jg" class="slot-led"></span>
+              </div>
+            </div>
+            <div data-hf-id="hf-emkz" style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #10b981;" id="cache-status-txt">
+              CACHE: EMPTY (0% STORAGE ADOPTED)
+            </div>
+          </div>
+
+          <!-- Right: codebase and query inputs -->
+          <div data-hf-id="hf-rjty" class="input-side-container">
+            <!-- Codebase block -->
+            <div data-hf-id="hf-blln" class="codebase-input-card" id="codebase-card">
+              <span data-hf-id="hf-7e6x" style="font-size: 34px;">📁</span>
+              <div data-hf-id="hf-tuwa" style="font-family: 'JetBrains Mono', monospace;">
+                <h5 data-hf-id="hf-n4f2" style="font-size: 18px; color: #f8fafc; margin-bottom: 2px;">Entire Codebase Directory</h5>
+                <p data-hf-id="hf-iuzg" style="font-size: 13px; color: #94a3b8;" id="codebase-badge">Size: 1,500,000 Tokens (Cold Ingestion)</p>
+              </div>
+            </div>
+
+            <!-- Query sequence stack -->
+            <div data-hf-id="hf-air9" class="query-sequence-stack">
+              <!-- Query 1 -->
+              <div data-hf-id="hf-xyge" class="seq-query-card" id="query-1-card">
+                <span data-hf-id="hf-4oeu" class="query-txt">Query 1: "Find the memory leak in connections.py"</span>
+                <span data-hf-id="hf-cndu" class="query-latency" id="latency-1">Latency: 12.5s (Cold Read)</span>
+              </div>
+
+              <!-- Query 2 -->
+              <div data-hf-id="hf-xigb" class="seq-query-card" id="query-2-card">
+                <span data-hf-id="hf-wsid" class="query-txt">Query 2: "Explain the socket index logic"</span>
+                <span data-hf-id="hf-5vv9" class="query-latency" id="latency-2">Latency: Calibrating...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Comparative Metrics Panel -->
+        <div data-hf-id="hf-2vef" class="metrics-row-panel" id="metrics-panel">
+          <div data-hf-id="hf-08li" class="stat-metric-card">
+            <h6 data-hf-id="hf-fc72">CACHED LATENCY REDUCTION</h6>
+            <div data-hf-id="hf-5ozi">-90% faster</div>
+          </div>
+          <div data-hf-id="hf-t11m" class="stat-metric-card">
+            <h6 data-hf-id="hf-jehu">CACHED TOKEN COST SAVINGS</h6>
+            <div data-hf-id="hf-ub30">-99% cheaper</div>
+          </div>
+        </div>
+
+        <!-- Attention Teaser overlay -->
+        <div data-hf-id="hf-ua21" class="attention-teaser-grid" id="attention-teaser" style=" ">
+          <svg data-hf-id="hf-drkz" class="attention-link-svg">
+            <path data-hf-id="hf-bccz" class="att-link-path" d="M 180 100 Q 500 15, 820 100" />
+            <path data-hf-id="hf-ae29" class="att-link-path high-weight" d="M 180 100 Q 500 180, 820 100" />
+          </svg>
+          <div data-hf-id="hf-x90u" style="font-family: 'JetBrains Mono', monospace; font-size: 16px; color: #38bdf8; margin-bottom: 40px; text-transform: uppercase; letter-spacing: 2px;">
+            Attention Link Weights (Softmax distribution)
+          </div>
+          <div data-hf-id="hf-qbc7" class="attention-tokens-container">
+            <div data-hf-id="hf-kdkz" class="token-node-glow active-token">The</div>
+            <div data-hf-id="hf-fzwk" class="token-node-glow">Haystack</div>
+            <div data-hf-id="hf-7a8f" class="token-node-glow active-token">Needle</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div data-hf-id="hf-kxd8" class="tech-footer">
+        <div data-hf-id="hf-joeg">FRAME_TIME: 10:44:62</div>
+        <div data-hf-id="hf-gy1f">SYS_METRIC: PERSISTENT_CONTEXT_MEM</div>
+      </div>
+
+      <!-- Captions overlay -->
+      <div data-hf-id="hf-tp9u" class="caption-overlay clip" id="caption-wrapper" data-start="0" data-duration="54.69" data-track-index="5">
+        <div data-hf-id="hf-u1wh" class="caption-box" id="caption-text">Section 13: Context Caching</div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Ambient glows
+      tl.to(".glow-left, .glow-right", {
+        scale: 1.12,
+        duration: 5,
+        yoyo: true,
+        repeat: 9,
+        ease: "sine.inOut"
+      }, 0);
+
+      // 1. Initial State: components entrance (3s)
+      tl.to("#rack-card", { opacity: 1, x: 0, duration: 0.8, ease: "power3.out" }, 3.0);
+      tl.to("#codebase-card", { opacity: 1, y: 0, duration: 0.8, ease: "power3.out" }, 3.5);
+
+      // 2. Codebase block slides/flies to rack (14s)
+      tl.to("#codebase-card", {
+        x: -450,
+        y: 120,
+        scale: 0.85,
+        opacity: 0.6,
+        duration: 1.2,
+        ease: "power2.inOut"
+      }, 14.0);
+
+      tl.to("#codebase-card", { opacity: 0, duration: 0.3 }, 15.2);
+
+      // Active green cache rack lights up
+      tl.to("#rack-card", { className: "server-rack cached-active", duration: 0.6 }, 16.0);
+      tl.to("#slot-2", { className: "server-slot active-slot", duration: 0.5 }, 16.2);
+      
+      tl.call(() => {
+        document.getElementById("cache-status-txt").innerText = "CACHE: ACTIVE (100% PERSISTENT STORE)";
+        document.getElementById("codebase-badge").innerText = "Size: 1,500,000 Tokens (Cached)";
+      }, [], 16.8);
+
+      // 3. User Query 1 enters, lightning path flashes (25s)
+      tl.to("#query-1-card", { opacity: 1, x: 0, duration: 0.6 }, 25.0);
+      tl.to("#lightning-1", { opacity: 0.8, duration: 0.2, yoyo: true, repeat: 3 }, 26.5);
+      tl.to("#query-1-card", { className: "seq-query-card hit-active", duration: 0.5 }, 27.5);
+      
+      tl.call(() => {
+        document.getElementById("latency-1").innerText = "Latency: 240ms (Cache Hit!)";
+        document.getElementById("latency-1").className = "query-latency fast-latency";
+      }, [], 28.0);
+
+      // 4. User Query 2 enters, lightning path flashes (32s)
+      tl.to("#query-2-card", { opacity: 1, x: 0, duration: 0.6 }, 31.0);
+      tl.to("#lightning-2", { opacity: 0.8, duration: 0.2, yoyo: true, repeat: 3 }, 32.2);
+      tl.to("#query-2-card", { className: "seq-query-card hit-active", duration: 0.5 }, 33.2);
+
+      tl.call(() => {
+        document.getElementById("latency-2").innerText = "Latency: 180ms (Cache Hit!)";
+        document.getElementById("latency-2").className = "query-latency fast-latency";
+      }, [], 33.8);
+
+      // 5. Comparative Metrics row slides up (36s - 43s)
+      tl.to("#metrics-panel", { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }, 36.0);
+
+      // 6. Transition to Attention (43s - 54.69s)
+      tl.to("#caching-main, #metrics-panel", { opacity: 0.05, duration: 0.8 }, 43.5);
+      tl.to("#attention-teaser", { opacity: 1, duration: 1.0 }, 44.0);
+
+      // Captions timing
+      const captions = [
+        { time: 0.0, text: "Reading millions of tokens on every single turn of a chat is slow and incredibly expensive." },
+        { time: 7.2, text: "If you ask a model ten questions about the same codebase, it has to re-read that entire codebase ten times." },
+        { time: 13.5, text: "To solve this, developers use Context Caching." },
+        { time: 17.5, text: "With caching, the model reads the heavy files or history once and stores the processed state in server memory." },
+        { time: 25.0, text: "When you send your next message, the model instantly references the cache instead of re-reading everything from scratch." },
+        { time: 33.5, text: "This cuts latency by up to ninety percent and reduces costs by over ninety-nine percent." },
+        { time: 39.5, text: "Context caching makes building massive, multi-turn AI applications practical for production." },
+        { time: 44.5, text: "But as our context windows scale, how does the model select which specific token is important at any given moment?" },
+        { time: 50.0, text: "For that, we must look at the mathematical core of the Transformer: Attention." }
+      ];
+
+      captions.forEach((cap, i) => {
+        tl.call(() => {
+          document.getElementById("caption-text").innerText = cap.text;
+        }, [], cap.time);
+      });
+
+      window.__timelines["scene-sec13"] = tl;
+    </script>
+  </template>
+</body>
+</html>
