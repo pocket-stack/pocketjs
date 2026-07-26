@@ -4,7 +4,7 @@
 
 import { existsSync, mkdirSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { cpus } from "node:os";
 import { createWasmUi } from "../hosts/web/wasm-ops.js";
 
@@ -56,7 +56,8 @@ function usage(msg?: string): never {
       "  -s, --scale <1..10>    Integer scaling factor of logical size (default: 4)",
       "  -w, --width <pixels>   Logical width of layout viewport (default: 480)",
       "  --height <pixels>      Logical height of layout viewport (default: 272)",
-      "  -c, --concurrency <n>  Number of parallel processes (default: 1)",
+      "  -c, --concurrency <n>  Number of parallel processes (default: CPU count)",
+      "  --audio, -au <path>    Path to audio file to mix into output MP4 (WAV/MP3/AAC)",
       "  --crf <number>         x264 quality factor (default: 18)",
       "  --preset <string>      x264 encoder preset (default: faster)",
       "  -h, --help             Show this help message",
@@ -79,6 +80,7 @@ async function main() {
   let crf = 18;
   let preset = "faster";
   let concurrency = Math.max(1, cpus().length);
+  let audioParam: string | undefined;
   let chunkStart: number | undefined;
   let chunkEnd: number | undefined;
 
@@ -103,6 +105,8 @@ async function main() {
       customSizeExplicit = true;
     } else if (a === "-c" || a === "--concurrency") {
       concurrency = Number(args[++i]);
+    } else if (a === "--audio" || a === "-au") {
+      audioParam = args[++i];
     } else if (a === "--crf") {
       crf = Number(args[++i]);
     } else if (a === "--preset") {
@@ -124,6 +128,15 @@ async function main() {
 
   if (!app) {
     usage("App name is required (-a or --app)");
+  }
+
+  let resolvedAudioPath: string | undefined;
+  if (audioParam) {
+    const candidate = isAbsolute(audioParam) ? audioParam : resolve(ROOT, audioParam);
+    if (!existsSync(candidate)) {
+      usage(`Audio file not found: ${audioParam}`);
+    }
+    resolvedAudioPath = candidate;
   }
 
   if (!Number.isInteger(scale) || scale < 1 || scale > 10) {
@@ -252,19 +265,28 @@ async function main() {
 
     // Stitch chunks using FFmpeg concat demuxer
     console.log(`render: stitching ${chunkTasks.length} chunks into ${output}...`);
+    if (resolvedAudioPath) {
+      console.log(`render: mixing audio track ${resolvedAudioPath}...`);
+    }
     const concatListPath = join(dirname(output), `${baseApp}-concat.txt`);
     const concatLines = chunkTasks.map(t => `file '${t.output.replace(/\\/g, "/")}'`).join("\n") + "\n";
     writeFileSync(concatListPath, concatLines, "utf8");
 
-    const stitch = Bun.spawn([
+    const stitchCmd = [
       "ffmpeg",
       "-y",
       "-safe", "0",
       "-f", "concat",
       "-i", concatListPath,
-      "-c", "copy",
-      output
-    ], {
+    ];
+    if (resolvedAudioPath) {
+      stitchCmd.push("-i", resolvedAudioPath, "-c:v", "copy", "-c:a", "aac", "-shortest");
+    } else {
+      stitchCmd.push("-c", "copy");
+    }
+    stitchCmd.push(output);
+
+    const stitch = Bun.spawn(stitchCmd, {
       stdout: "ignore",
       stderr: "inherit"
     });
@@ -329,10 +351,13 @@ async function main() {
 
   if (!isWorker) {
     console.log(`render: spawning FFmpeg to output ${output}`);
+    if (resolvedAudioPath) {
+      console.log(`render: mixing audio track ${resolvedAudioPath}...`);
+    }
     console.log(`render: input size ${width}x${height} -> output size ${targetW}x${targetH} (cropped)`);
   }
 
-  const ffmpeg = Bun.spawn([
+  const ffmpegCmd = [
     "ffmpeg",
     "-y",
     "-threads", isWorker ? "1" : "0",
@@ -341,13 +366,23 @@ async function main() {
     "-s", `${width}x${height}`,
     "-r", String(fps),
     "-i", "-", // read from stdin
+  ];
+  if (!isWorker && resolvedAudioPath) {
+    ffmpegCmd.push("-i", resolvedAudioPath);
+  }
+  ffmpegCmd.push(
     "-vf", cropFilter,
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
     "-preset", preset,
-    "-crf", String(crf),
-    output
-  ], {
+    "-crf", String(crf)
+  );
+  if (!isWorker && resolvedAudioPath) {
+    ffmpegCmd.push("-c:a", "aac", "-shortest");
+  }
+  ffmpegCmd.push(output);
+
+  const ffmpeg = Bun.spawn(ffmpegCmd, {
     stdin: "pipe",
     stdout: "ignore",
     stderr: "ignore"
