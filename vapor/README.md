@@ -32,6 +32,11 @@ editor. The **same file** runs two ways:
   target runtime, and run as native code on a console or ESP32 — still with
   no JavaScript engine.
 
+The next fixed-console target is designed in
+[`docs/PLAYDATE.md`](docs/PLAYDATE.md). It compiles the same AOT runtime
+contract into a native Playdate `.pdx`, using a 50x30 cell grid and the SDK's
+one-bit framebuffer API; the document is a plan, not a shipped-target claim.
+
 The parity suite drives one tape of button presses through the oracle and
 each console emulator, then compares the rendered logical cell grid —
 characters *and* palettes — cell-for-cell after every press. The ESP32
