@@ -32,6 +32,7 @@ extern "C" {
 
 #include "pocketjs_symbian_core.h"
 #include "pocketjs_symbian_extension.h"
+#include "pocketjs_symbian_keys.h"
 
 typedef char PocketJsQuickJsValueMustBeEightBytes[
     sizeof(JSValue) == 8 ? 1 : -1
@@ -2339,8 +2340,9 @@ bool PocketJsRuntime::event(QEvent *event)
 
 void PocketJsRuntime::keyPressEvent(QKeyEvent *event)
 {
-    const int button = buttonForKey(event->key());
-    const uint32_t nativeKey = nativeKeyForKey(event->key());
+    const int key = pocketjsSymbianNormalizeKey(event->key());
+    const int button = buttonForKey(key);
+    const uint32_t nativeKey = nativeKeyForKey(key);
     if (button != 0 || nativeKey != 0) {
         if (event->isAutoRepeat()) {
             event->accept();
@@ -2356,8 +2358,9 @@ void PocketJsRuntime::keyPressEvent(QKeyEvent *event)
 
 void PocketJsRuntime::keyReleaseEvent(QKeyEvent *event)
 {
-    const int button = buttonForKey(event->key());
-    const uint32_t nativeKey = nativeKeyForKey(event->key());
+    const int key = pocketjsSymbianNormalizeKey(event->key());
+    const int button = buttonForKey(key);
+    const uint32_t nativeKey = nativeKeyForKey(key);
     if (button != 0 || nativeKey != 0) {
         if (event->isAutoRepeat()) {
             event->accept();

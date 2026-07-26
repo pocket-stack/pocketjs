@@ -29,6 +29,28 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
 const repository = new URL("..", import.meta.url).pathname;
 
 describe("experimental Nokia E7 runtime profile", () => {
+  test("normalizes unshifted S60 letter keysyms without changing special keys", () => {
+    const compiler = Bun.which("cc");
+    expect(
+      compiler,
+      "cc is required to validate the Symbian key normalizer",
+    ).toBeTruthy();
+    if (!compiler) return;
+    const compiled = Bun.spawnSync([
+      compiler,
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-fsyntax-only",
+      join(
+        repository,
+        "tests/fixtures/symbian-key-normalization-test.c",
+      ),
+    ], { cwd: repository });
+    expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
+  });
+
   test("serializes the shared launcher source tree across targets", async () => {
     const root = mkdtempSync(join(tmpdir(), "pocketjs-launcher-source-lock-"));
     try {
@@ -354,6 +376,10 @@ describe("experimental Nokia E7 runtime profile", () => {
       join(repository, "hosts/symbian/runtime/pocketjs_symbian_extension.h"),
       "utf8",
     );
+    const keyHeader = readFileSync(
+      join(repository, "hosts/symbian/runtime/pocketjs_symbian_keys.h"),
+      "utf8",
+    );
     const orchestrator = readFileSync(
       join(repository, "tools/symbian.ts"),
       "utf8",
@@ -431,8 +457,14 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_MOVE_FORWARD");
     expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_LOOK_LEFT");
     expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_RELOAD");
+    expect(runtime.match(/pocketjsSymbianNormalizeKey\(event->key\(\)\)/g))
+      .toHaveLength(2);
     expect(runtime).toContain("nativeKeys_ |= nativeKey");
     expect(runtime).toContain("nativeKeys_ &= ~nativeKey");
+    expect(keyHeader).toContain(
+      "((key) >= 'a' && (key) <= 'z') ? ((key) - ('a' - 'A')) : (key)",
+    );
+    expect(keyHeader).toContain("pocketjsSymbianNormalizeKey");
     expect(runtime).toContain("setAttribute(Qt::WA_AutoOrientation, true)");
     expect(runtime).not.toContain("WA_LockLandscapeOrientation");
     expect(runtime).toContain('"__pocketResizeViewport"');

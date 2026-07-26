@@ -8,7 +8,7 @@ CONFIG += release
 CONFIG -= debug app_bundle
 
 SOURCES += main.cpp
-HEADERS += pocketjs_symbian_core.h pocketjs_symbian_extension.h
+HEADERS += pocketjs_symbian_core.h pocketjs_symbian_extension.h pocketjs_symbian_keys.h
 RESOURCES += pocketjs-runtime.qrc
 
 isEmpty(POCKETJS_QUICKJS_INCLUDE): error(POCKETJS_QUICKJS_INCLUDE is required)

@@ -91,6 +91,7 @@ describe("published npm artifacts", () => {
       "hosts/symbian/probe/pocketjs-e7-probe.pro",
       "hosts/symbian/runtime/main.cpp",
       "hosts/symbian/runtime/pocketjs-e7-runtime.pro",
+      "hosts/symbian/runtime/pocketjs_symbian_keys.h",
       "engine/symbian/Cargo.toml",
       "engine/symbian/rust-toolchain.toml",
       "engine/symbian/src/lib.rs",
