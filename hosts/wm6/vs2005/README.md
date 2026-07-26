@@ -1,6 +1,6 @@
 # PocketJS Windows Mobile 6 VS2005 projects
 
-This solution contains two native Smart Device applications for the HP iPAQ
+This solution contains three native Smart Device applications for the HP iPAQ
 212 port:
 
 - `PocketJS.WM6.Probe` is the first hardware gate. It exercises the screen,
@@ -8,10 +8,15 @@ This solution contains two native Smart Device applications for the HP iPAQ
 - `PocketJS.WM6.Vapor` runs the repository's Pocket Vapor Todo component after
   ahead-of-time compilation to portable C. It is the first application UI on
   WM6, but it is not a QuickJS host and cannot load ordinary PocketJS bundles.
+- `PocketJS.WM6.QuickJS` deploys and starts the CeGCC-built QuickJS probe. It
+  evaluates actual modern JavaScript on ARM/WinCE; it is the first runtime
+  toolchain gate, not a PocketJS UI host yet.
 
-Both are VC8-compatible Smart Device projects rather than desktop Win32
-projects. The probe exercises the OS surface that a future full PocketJS host
-will need:
+The Probe and Vapor applications are VC8-compatible Smart Device projects
+rather than desktop Win32 projects. The QuickJS deployment anchor is also a
+VC8 Smart Device project, while its actual runtime executable comes from
+CeGCC. The probe exercises the OS surface that a future full PocketJS host will
+need:
 
 - ARMV4I code generation for the PXA310 device;
 - a fullscreen, dynamically sized native window;
@@ -21,8 +26,9 @@ will need:
 - hardware key events;
 - runtime screen and memory reporting.
 
-Neither executable embeds QuickJS or the PocketJS retained UI core yet. A
-successful probe run proves only the device/SDK/deployment layer; see
+The hardware and Vapor executables do not embed QuickJS or the PocketJS
+retained UI core. A successful QuickJS probe proves the JavaScript runtime,
+but does not yet connect PocketJS lifecycle, input, or rendering APIs; see
 [`docs/WM6_IPAQ_212.md`](../../../docs/WM6_IPAQ_212.md) for the staged port.
 
 ## Build
@@ -35,10 +41,13 @@ successful probe run proves only the device/SDK/deployment layer; see
    Windows Mobile Classic/Pocket PC devices to this SDK; the similarly named
    Standard SDK is for non-touchscreen Smartphones.
 4. Open `PocketJS.WM6.sln`.
-5. Select `Release | Windows Mobile 6 Professional SDK (ARMV4I)`.
-6. Right-click the project you want to run and choose **Set as StartUp
+5. To rebuild QuickJS, generate `prebuilt\PocketJS.WM6.QuickJS.Probe.exe`
+   using `..\quickjs\build-probe.sh` under WSL. A known-good ARM/WinCE binary is
+   checked in so a clean clone can deploy immediately.
+6. Select `Release | Windows Mobile 6 Professional SDK (ARMV4I)`.
+7. Right-click the project you want to run and choose **Set as StartUp
    Project**.
-7. Build and deploy through Visual Studio, or copy the corresponding executable
+8. Build and deploy through Visual Studio, or copy the corresponding executable
    from `bin\Release` to the device.
 
 The applications have no MFC, ATL, .NET Compact Framework, or redistributable

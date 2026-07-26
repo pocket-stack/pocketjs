@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="Windows-1252"?>
+<VisualStudioProject
+	ProjectType="Visual C++"
+	Version="8.00"
+	Name="PocketJS.WM6.QuickJS"
+	ProjectGUID="{AA37CB32-6044-4A78-A3A5-1F58080498C8}"
+	RootNamespace="PocketJSWM6QuickJS"
+	Keyword="Win32Proj"
+	>
+	<Platforms>
+		<Platform Name="Windows Mobile 6 Professional SDK (ARMV4I)"/>
+	</Platforms>
+	<ToolFiles>
+	</ToolFiles>
+	<Configurations>
+		<Configuration
+			Name="Debug|Windows Mobile 6 Professional SDK (ARMV4I)"
+			OutputDirectory="$(SolutionDir)bin\$(ConfigurationName)"
+			IntermediateDirectory="$(SolutionDir)obj\QuickJS\$(ConfigurationName)"
+			ConfigurationType="1"
+			CharacterSet="1"
+			>
+			<Tool Name="VCPreBuildEventTool"/>
+			<Tool Name="VCCustomBuildTool"/>
+			<Tool Name="VCXMLDataGeneratorTool"/>
+			<Tool Name="VCWebServiceProxyGeneratorTool"/>
+			<Tool Name="VCMIDLTool" TargetEnvironment="1"/>
+			<Tool
+				Name="VCCLCompilerTool"
+				ExecutionBucket="7"
+				Optimization="0"
+				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;_WINDOWS;_DEBUG;DEBUG;$(ARCHFAM);$(_ARCHFAM_);UNICODE;_UNICODE"
+				MinimalRebuild="false"
+				BasicRuntimeChecks="0"
+				RuntimeLibrary="3"
+				UsePrecompiledHeader="0"
+				WarningLevel="4"
+				WarnAsError="true"
+				DisableSpecificWarnings="4201;4115;4214"
+				DebugInformationFormat="3"
+				CompileAs="1"
+			/>
+			<Tool Name="VCManagedResourceCompilerTool"/>
+			<Tool Name="VCResourceCompilerTool"/>
+			<Tool Name="VCPreLinkEventTool"/>
+			<Tool
+				Name="VCLinkerTool"
+				AdditionalOptions="/subsystem:windowsce,5.02"
+				AdditionalDependencies="coredll.lib"
+				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.Deploy.exe"
+				LinkIncremental="1"
+				GenerateDebugInformation="true"
+				ProgramDatabaseFile="$(OutDir)\PocketJS.WM6.QuickJS.Deploy.pdb"
+				SubSystem="0"
+				TargetMachine="0"
+			/>
+			<Tool Name="VCALinkTool"/>
+			<Tool Name="VCManifestTool"/>
+			<Tool Name="VCXDCMakeTool"/>
+			<Tool Name="VCBscMakeTool"/>
+			<Tool Name="VCFxCopTool"/>
+			<Tool Name="VCAppVerifierTool"/>
+			<Tool Name="VCCodeSignTool"/>
+			<Tool Name="VCPostBuildEventTool"/>
+			<DeploymentTool
+				ForceDirty="-1"
+				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS"
+				RegisterOutput="0"
+				AdditionalFiles="PocketJS.WM6.QuickJS.Probe.exe|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
+			/>
+			<DebuggerTool
+				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS\PocketJS.WM6.QuickJS.Probe.exe"
+			/>
+		</Configuration>
+		<Configuration
+			Name="Release|Windows Mobile 6 Professional SDK (ARMV4I)"
+			OutputDirectory="$(SolutionDir)bin\$(ConfigurationName)"
+			IntermediateDirectory="$(SolutionDir)obj\QuickJS\$(ConfigurationName)"
+			ConfigurationType="1"
+			CharacterSet="1"
+			>
+			<Tool Name="VCPreBuildEventTool"/>
+			<Tool Name="VCCustomBuildTool"/>
+			<Tool Name="VCXMLDataGeneratorTool"/>
+			<Tool Name="VCWebServiceProxyGeneratorTool"/>
+			<Tool Name="VCMIDLTool" TargetEnvironment="1"/>
+			<Tool
+				Name="VCCLCompilerTool"
+				ExecutionBucket="7"
+				Optimization="1"
+				FavorSizeOrSpeed="1"
+				PreprocessorDefinitions="_WIN32_WCE=$(CEVER);UNDER_CE;$(PLATFORMDEFINES);WINCE;_WINDOWS;NDEBUG;$(ARCHFAM);$(_ARCHFAM_);UNICODE;_UNICODE"
+				RuntimeLibrary="3"
+				EnableFunctionLevelLinking="true"
+				UsePrecompiledHeader="0"
+				WarningLevel="4"
+				WarnAsError="true"
+				DisableSpecificWarnings="4201;4115;4214"
+				DebugInformationFormat="0"
+				CompileAs="1"
+			/>
+			<Tool Name="VCManagedResourceCompilerTool"/>
+			<Tool Name="VCResourceCompilerTool"/>
+			<Tool Name="VCPreLinkEventTool"/>
+			<Tool
+				Name="VCLinkerTool"
+				AdditionalOptions="/subsystem:windowsce,5.02 /opt:ref /opt:icf"
+				AdditionalDependencies="coredll.lib"
+				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.Deploy.exe"
+				LinkIncremental="1"
+				GenerateDebugInformation="false"
+				SubSystem="0"
+				OptimizeReferences="2"
+				EnableCOMDATFolding="2"
+				TargetMachine="0"
+			/>
+			<Tool Name="VCALinkTool"/>
+			<Tool Name="VCManifestTool"/>
+			<Tool Name="VCXDCMakeTool"/>
+			<Tool Name="VCBscMakeTool"/>
+			<Tool Name="VCFxCopTool"/>
+			<Tool Name="VCAppVerifierTool"/>
+			<Tool Name="VCCodeSignTool"/>
+			<Tool Name="VCPostBuildEventTool"/>
+			<DeploymentTool
+				ForceDirty="-1"
+				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS"
+				RegisterOutput="0"
+				AdditionalFiles="PocketJS.WM6.QuickJS.Probe.exe|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
+			/>
+			<DebuggerTool
+				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS\PocketJS.WM6.QuickJS.Probe.exe"
+			/>
+		</Configuration>
+	</Configurations>
+	<References>
+	</References>
+	<Files>
+		<Filter Name="Source Files" Filter="c">
+			<File RelativePath=".\src\quickjs_deploy.c"/>
+		</Filter>
+		<Filter Name="Documentation">
+			<File RelativePath=".\README.md"/>
+			<File RelativePath="..\quickjs\README.md"/>
+		</Filter>
+	</Files>
+	<Globals>
+	</Globals>
+</VisualStudioProject>

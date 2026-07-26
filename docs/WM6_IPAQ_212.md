@@ -67,29 +67,37 @@ The probe embeds `HI_RES_AWARE CEUX { 1 }` to opt out of that compatibility
 scaling. A QVGA result therefore means an older or incorrectly linked resource
 was deployed; it is not the iPAQ panel's physical resolution.
 
-### Gate 1 — toolchain-owned QuickJS probe
+### Gate 1 — toolchain-owned QuickJS probe (first executable implemented)
 
-Build QuickJS as C sources with the same VC8 ARMV4I compiler and expose only:
+Current QuickJS cannot be built by VC8. The implemented split toolchain keeps
+VS2005 as the WM6 window/deployment/debug host and builds QuickJS with CeGCC's
+native-API `arm-mingw32ce` compiler. The checked-in ARM/WinCE probe now proves:
 
 1. runtime/context creation;
 2. evaluation of an embedded UTF-8 script;
-3. one native `print` callback;
-4. explicit memory and stack limits;
-5. pending-job draining and clean teardown.
+3. a native `print` callback plus Promise pending-job draining;
+4. explicit 8 MiB memory and 256 KiB stack limits;
+5. 100 repeated create/evaluate/drain/destroy cycles.
+
+Its pinned source, compatibility patch, and reproducible build command live in
+`hosts/wm6/quickjs`. `PocketJS.WM6.QuickJS` in the VS2005 solution deploys the
+resulting CeGCC executable and starts it on the selected device or emulator.
 
 Do not begin with the full PocketJS bundle. QuickJS will need a dedicated
 WinCE compatibility layer for time, allocation, file APIs, missing CRT calls,
-and any compiler syntax unsupported by VC8. Pin the exact upstream revision
-and keep those changes as a reviewable patch, as the Symbian toolchain already
-does. Acceptance is 100 repeated create/evaluate/destroy cycles without
-unbounded memory loss.
+and any missing runtime facilities. Keep those changes as a reviewable patch,
+as the Symbian toolchain already does. Gate 1 remains open until the 100-cycle
+probe passes on physical iPAQ hardware with before/after free-memory receipts;
+emulator success validates the binary and ABI but cannot close the hardware
+gate.
 
 The repository-pinned QuickJS revision cannot be compiled directly by VC8: it
 uses C99 syntax, flexible arrays, GCC builtins/attributes, compound literals,
 and designated initializers. Compiling it as C++ is also not a shortcut because
 the C sources rely on implicit `void *` conversions and C linkage rules. Gate 1
-therefore remains open and needs either a maintained VC8 compatibility patch or
-a separately validated GNU WinCE toolchain.
+therefore uses a separately owned GNU WinCE build. The future VS2005 host will
+load a CeGCC-built DLL through a narrow C ABI; QuickJS values and allocator
+ownership must never cross that boundary.
 
 ### AOT milestone — Pocket Vapor Todo (implemented)
 

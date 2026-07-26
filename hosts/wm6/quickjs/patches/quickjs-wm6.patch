@@ -1,0 +1,48 @@
+diff --git a/quickjs.c b/quickjs.c
+index 39e334c..c45f717 100644
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -34,6 +34,12 @@
+ #include <time.h>
+ #include <fenv.h>
+ #include <math.h>
++#if defined(_WIN32_WCE)
++#define alloca __builtin_alloca
++#ifndef signbit
++#define signbit __builtin_signbit
++#endif
++#endif
+ #ifdef __PSP__
+ #ifndef FE_TONEAREST
+ #define FE_TONEAREST 0
+@@ -100,6 +106,9 @@ _Static_assert(_Alignof(JSValue) == 8, "Vita JSValue must be 8-byte aligned");
+ #if defined(__PSP__) || defined(__vita__)
+ #undef CONFIG_ATOMICS
+ #endif
++#if defined(_WIN32_WCE)
++#undef CONFIG_ATOMICS
++#endif
+ 
+ #if !defined(__EMSCRIPTEN__)
+ /* enable stack limitation */
+@@ -2167,6 +2176,8 @@ static size_t js_def_malloc_usable_size(const void *ptr)
+ {
+ #if defined(__APPLE__)
+     return malloc_size(ptr);
++#elif defined(_WIN32_WCE)
++    return 0;
+ #elif defined(_WIN32)
+     return _msize((void *)ptr);
+ #elif defined(__EMSCRIPTEN__)
+@@ -47284,7 +47295,10 @@ static int getTimezoneOffset(int64_t time)
+         }
+     }
+     ti = time;
+-#if defined(_WIN32)
++#if defined(_WIN32_WCE)
++    (void)ti;
++    res = 0;
++#elif defined(_WIN32)
+     {
+         struct tm *tm;
+         time_t gm_ti, loc_ti;

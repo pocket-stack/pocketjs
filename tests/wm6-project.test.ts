@@ -91,4 +91,59 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(generated).toContain("const char vp_app_title[] = \"VAPOR TODO\"");
     expect(runtime).toContain("void vp_row_clear");
   });
+
+  test("includes a pinned CeGCC QuickJS ARM/WinCE probe", async () => {
+    const quickjsRoot = new URL("../hosts/wm6/quickjs/", import.meta.url);
+    const [solution, project, build, patch, probe, math, executable] =
+      await Promise.all([
+        readFile(new URL("PocketJS.WM6.sln", root), "utf8"),
+        readFile(new URL("PocketJS.WM6.QuickJS.vcproj", root), "utf8"),
+        readFile(new URL("build-probe.sh", quickjsRoot), "utf8"),
+        readFile(new URL("patches/quickjs-wm6.patch", quickjsRoot), "utf8"),
+        readFile(new URL("src/probe.c", quickjsRoot), "utf8"),
+        readFile(new URL("src/wm6_math.c", quickjsRoot), "utf8"),
+        readFile(
+          new URL("prebuilt/PocketJS.WM6.QuickJS.Probe.exe", root),
+        ),
+      ]);
+
+    expect(solution).toContain('"PocketJS.WM6.QuickJS"');
+    expect(solution).toContain("{AA37CB32-6044-4A78-A3A5-1F58080498C8}");
+    expect(project).toContain('Version="8.00"');
+    expect(project).toContain(
+      'AdditionalFiles="PocketJS.WM6.QuickJS.Probe.exe|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\\PocketJS.WM6.QuickJS|0"',
+    );
+    expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
+    expect(
+      project.match(
+        /RemoteExecutable="%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\\PocketJS\.WM6\.QuickJS\.Probe\.exe"/g,
+      ),
+    ).toHaveLength(2);
+
+    expect(build).toContain(
+      'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',
+    );
+    expect(build).toContain("-march=armv5te");
+    expect(build).toContain("-msoft-float");
+    expect(build).toContain("-D_WIN32_WCE=0x0502");
+    expect(patch).toContain("#undef CONFIG_ATOMICS");
+    expect(patch).toContain("#elif defined(_WIN32_WCE)");
+    expect(probe).toContain("JS_SetMemoryLimit(runtime, 8u * 1024u * 1024u)");
+    expect(probe).toContain("JS_SetMaxStackSize(runtime, 256u * 1024u)");
+    expect(probe).toContain("JS_Eval(context");
+    expect(probe).toContain("JS_NewCFunction(context, probe_print");
+    expect(probe).toContain("JS_ExecutePendingJob(runtime");
+    expect(probe).toContain("cycle < 100");
+    expect(probe).toContain("QuickJS 6,10,16,26");
+    expect(math).toContain("double fmax");
+    expect(math).toContain("double fmin");
+
+    expect(executable.subarray(0, 2).toString("ascii")).toBe("MZ");
+    const peOffset = executable.readUInt32LE(0x3c);
+    expect(executable.subarray(peOffset, peOffset + 4).toString("binary")).toBe(
+      "PE\u0000\u0000",
+    );
+    expect(executable.readUInt16LE(peOffset + 4)).toBe(0x01c0);
+    expect(executable.readUInt16LE(peOffset + 24 + 68)).toBe(9);
+  });
 });
