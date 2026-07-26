@@ -56,7 +56,7 @@
 				GenerateDebugInformation="true"
 				ProgramDatabaseFile="$(OutDir)\PocketJS.WM6.Probe.pdb"
 				SubSystem="0"
-				TargetMachine="1"
+				TargetMachine="0"
 			/>
 			<Tool Name="VCALinkTool"/>
 			<Tool Name="VCManifestTool"/>
@@ -119,7 +119,7 @@
 				SubSystem="0"
 				OptimizeReferences="2"
 				EnableCOMDATFolding="2"
-				TargetMachine="1"
+				TargetMachine="0"
 			/>
 			<Tool Name="VCALinkTool"/>
 			<Tool Name="VCManifestTool"/>

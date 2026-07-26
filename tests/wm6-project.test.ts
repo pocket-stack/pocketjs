@@ -17,6 +17,8 @@ describe("Windows Mobile 6 VS2005 probe", () => {
     expect(project).toContain("/subsystem:windowsce,5.02");
     expect(project).toContain("aygshell.lib coredll.lib");
     expect(project.match(/DisableSpecificWarnings="4201"/g)).toHaveLength(2);
+    expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
+    expect(project).not.toContain('TargetMachine="1"');
     expect(project).not.toContain("Windows Mobile 6 Standard SDK");
   });
 
