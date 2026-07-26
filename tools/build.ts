@@ -149,12 +149,20 @@ function resolveEntry(arg: string): string {
     resolvePath(ROOT, arg),
     wantsMain ? resolvePath(ROOT, "apps", demoName, "main.tsx") : "",
     wantsMain ? resolvePath(ROOT, "apps", demoName, "main.ts") : "",
+    wantsMain ? resolvePath(ROOT, "demos", demoName, "main.tsx") : "",
+    wantsMain ? resolvePath(ROOT, "demos", demoName, "main.ts") : "",
     !wantsMain ? resolvePath(ROOT, "apps", demoName, "app.tsx") : "",
+    !wantsMain ? resolvePath(ROOT, "demos", demoName, "app.tsx") : "",
     isBareName && !wantsMain ? resolvePath(ROOT, "apps", demoName, "main.tsx") : "",
     isBareName && !wantsMain ? resolvePath(ROOT, "apps", demoName, "main.ts") : "",
+    isBareName && !wantsMain ? resolvePath(ROOT, "demos", demoName, "main.tsx") : "",
+    isBareName && !wantsMain ? resolvePath(ROOT, "demos", demoName, "main.ts") : "",
     resolvePath(ROOT, "apps", arg),
     resolvePath(ROOT, "apps", arg + ".tsx"),
     resolvePath(ROOT, "apps", arg + ".ts"),
+    resolvePath(ROOT, "demos", arg),
+    resolvePath(ROOT, "demos", arg + ".tsx"),
+    resolvePath(ROOT, "demos", arg + ".ts"),
   ].filter(Boolean);
   for (const t of tries) {
     if (/\.tsx?$/.test(t) && existsSync(t) && statSync(t).isFile()) return t;
