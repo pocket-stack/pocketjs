@@ -91,6 +91,9 @@ static int g_touch_active;
 static int g_touch_x;
 static int g_touch_y;
 static int g_frame_error_shown;
+static int g_first_frame_reported;
+static DWORD g_frame_window_started;
+static unsigned int g_frame_window_count;
 static DEVMODE g_original_display_mode;
 static int g_display_rotated;
 
@@ -183,6 +186,64 @@ static void update_touch_position(LPARAM position)
     g_touch_y = y;
 }
 
+static int stop_frame_rendering(const WCHAR *message)
+{
+    if (!g_frame_error_shown) {
+        g_frame_error_shown = 1;
+        OutputDebugString(L"PocketJS WM6 frame failure: ");
+        OutputDebugString(message);
+        OutputDebugString(L"\r\n");
+        MessageBox(NULL, message, L"PocketJS frame failed", MB_OK);
+    }
+    g_framebuffer_ready = 0;
+    return 0;
+}
+
+static void report_successful_frame(
+    unsigned int width,
+    unsigned int height,
+    unsigned int stride,
+    unsigned int byte_length)
+{
+    WCHAR receipt[256];
+    DWORD now;
+    DWORD elapsed;
+    DWORD fps_tenths;
+
+    now = GetTickCount();
+    if (!g_first_frame_reported) {
+        wsprintfW(
+            receipt,
+            L"PocketJS WM6 receipt: Rust frame %lux%lu "
+            L"stride=%lu bytes=%lu\r\n",
+            (DWORD)width,
+            (DWORD)height,
+            (DWORD)stride,
+            (DWORD)byte_length);
+        OutputDebugString(receipt);
+        g_first_frame_reported = 1;
+        g_frame_window_started = now;
+        g_frame_window_count = 0;
+    }
+    g_frame_window_count++;
+    elapsed = now - g_frame_window_started;
+    if (elapsed >= 2000u) {
+        fps_tenths =
+            (DWORD)((g_frame_window_count * 10000u) / elapsed);
+        wsprintfW(
+            receipt,
+            L"PocketJS WM6 receipt: %lu.%lu FPS "
+            L"(%lu frames/%lu ms)\r\n",
+            fps_tenths / 10u,
+            fps_tenths % 10u,
+            (DWORD)g_frame_window_count,
+            elapsed);
+        OutputDebugString(receipt);
+        g_frame_window_started = now;
+        g_frame_window_count = 0;
+    }
+}
+
 static int render_core_frame(void)
 {
     const unsigned char *pixels;
@@ -215,21 +276,23 @@ static int render_core_frame(void)
         &byte_length,
         error,
         sizeof(error));
-    if (!pixels ||
-        !wm6_framebuffer_copy_argb(
-            pixels, width, height, stride, byte_length) ||
-        !wm6_framebuffer_present()) {
-        if (!g_frame_error_shown && error[0]) {
-            WCHAR message[256];
+    if (!pixels) {
+        WCHAR message[256];
 
-            ascii_to_wide(message, 256, error);
-            g_frame_error_shown = 1;
-            MessageBox(
-                NULL, message, L"PocketJS frame failed", MB_OK);
-        }
-        g_framebuffer_ready = 0;
-        return 0;
+        ascii_to_wide(
+            message,
+            256,
+            error[0] ? error : "QuickJS/Rust frame returned no pixels");
+        return stop_frame_rendering(message);
     }
+    if (!wm6_framebuffer_copy_argb(
+            pixels, width, height, stride, byte_length))
+        return stop_frame_rendering(
+            L"Rust framebuffer geometry or byte length is invalid");
+    if (!wm6_framebuffer_present())
+        return stop_frame_rendering(
+            L"DirectDraw could not present the Rust framebuffer");
+    report_successful_frame(width, height, stride, byte_length);
     return 1;
 }
 
@@ -324,6 +387,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     MSG message_loop;
     int rotation_ready;
     int status;
+    unsigned int loaded_abi;
     int viewport_height;
     int viewport_width;
 
@@ -332,9 +396,13 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     (void)command;
     (void)show;
 
-    module = LoadLibrary(L"PocketJS.WM6.QuickJS.dll");
+    module = LoadLibrary(L"PocketJS.WM6.QuickJS.v3.dll");
     if (!module) {
-        MessageBox(NULL, L"LoadLibrary failed", L"PocketJS QuickJS Host", MB_OK);
+        MessageBox(
+            NULL,
+            L"PocketJS.WM6.QuickJS.v3.dll was not deployed or could not load",
+            L"PocketJS QuickJS Host",
+            MB_OK);
         return 1;
     }
     abi_version = (wm6_qjs_abi_version_fn)GetProcAddress(
@@ -357,9 +425,15 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
                    L"PocketJS QuickJS Host", MB_OK);
         return 2;
     }
-    if (abi_version() != WM6_QJS_ABI_VERSION) {
+    loaded_abi = abi_version();
+    if (loaded_abi != WM6_QJS_ABI_VERSION) {
+        wsprintfW(
+            create_error,
+            L"QuickJS ABI mismatch: expected %lu, loaded %lu",
+            (DWORD)WM6_QJS_ABI_VERSION,
+            (DWORD)loaded_abi);
         FreeLibrary(module);
-        MessageBox(NULL, L"QuickJS ABI version mismatch",
+        MessageBox(NULL, create_error,
                    L"PocketJS QuickJS Host", MB_OK);
         return 3;
     }
@@ -427,6 +501,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     g_touch_x = 0;
     g_touch_y = 0;
     g_frame_error_shown = 0;
+    g_first_frame_reported = 0;
+    g_frame_window_started = 0;
+    g_frame_window_count = 0;
     g_quickjs_module = module;
     g_quickjs_runtime = runtime;
     g_quickjs_frame = frame;
@@ -435,6 +512,16 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         OutputDebugString(L"PocketJS WM6: landscape display active\r\n");
     else
         OutputDebugString(L"PocketJS WM6: display rotation unavailable\r\n");
+    wsprintfW(
+        message,
+        L"PocketJS WM6 receipt: ABI v%lu, viewport=%lux%lu, "
+        L"bundle=%lu bytes, pak=%lu bytes\r\n",
+        (DWORD)WM6_QJS_ABI_VERSION,
+        (DWORD)viewport_width,
+        (DWORD)viewport_height,
+        (DWORD)bundle_length,
+        (DWORD)pak_length);
+    OutputDebugString(message);
     memset(&window_class, 0, sizeof(window_class));
     window_class.lpfnWndProc = DemoWindowProc;
     window_class.hInstance = instance;

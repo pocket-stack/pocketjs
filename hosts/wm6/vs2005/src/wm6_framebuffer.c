@@ -8,6 +8,7 @@ static LPDIRECTDRAWSURFACE g_primary;
 static unsigned short *g_pixels;
 static int g_width;
 static int g_height;
+static int g_surface_reported;
 
 static unsigned short rgb565(
     unsigned int red,
@@ -103,6 +104,7 @@ int wm6_framebuffer_open(HWND window, int logical_width, int logical_height)
         return 0;
     g_width = logical_width;
     g_height = logical_height;
+    g_surface_reported = 0;
 
     status = DirectDrawCreate(NULL, &g_direct_draw, NULL);
     if (status != DD_OK || !g_direct_draw) {
@@ -144,6 +146,7 @@ void wm6_framebuffer_close(void)
     }
     g_width = 0;
     g_height = 0;
+    g_surface_reported = 0;
 }
 
 int wm6_framebuffer_copy_argb(
@@ -239,6 +242,23 @@ int wm6_framebuffer_present(void)
     if (surface_width * bytes_per_pixel > pitch) {
         g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
         return 0;
+    }
+    if (!g_surface_reported) {
+        WCHAR receipt[256];
+
+        wsprintfW(
+            receipt,
+            L"PocketJS WM6 receipt: DirectDraw surface=%ldx%ld "
+            L"pitch=%ld rgb=%lu masks=%08lx/%08lx/%08lx\r\n",
+            (LONG)surface_width,
+            (LONG)surface_height,
+            (LONG)surface.lPitch,
+            pixel_format.dwRGBBitCount,
+            pixel_format.dwRBitMask,
+            pixel_format.dwGBitMask,
+            pixel_format.dwBBitMask);
+        OutputDebugString(receipt);
+        g_surface_reported = 1;
     }
     for (y = 0; y < surface_height; y++)
         memset((unsigned char *)surface.lpSurface + y * surface.lPitch,

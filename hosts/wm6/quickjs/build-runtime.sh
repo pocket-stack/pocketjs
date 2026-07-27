@@ -6,7 +6,7 @@ quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"
 quickjs_version="2026-06-04"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-output="${1:-${script_dir}/../vs2005/prebuilt/PocketJS.WM6.QuickJS.dll}"
+output="${1:-${script_dir}/../vs2005/prebuilt/PocketJS.WM6.QuickJS.v3.dll}"
 core_object="${WM6_CORE_OBJECT:-${script_dir}/../vs2005/prebuilt/PocketJS.WM6.Core.obj}"
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/pocketjs-wm6-quickjs-dll.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT
@@ -69,10 +69,10 @@ done
     -o "${work_dir}/obj/runtime_dll.o"
 
 "$cc" -shared -static-libgcc -march=armv4t -msoft-float \
-    -o "${work_dir}/PocketJS.WM6.QuickJS.dll" \
+    -o "${work_dir}/PocketJS.WM6.QuickJS.v3.dll" \
     "${work_dir}/obj/runtime_dll.o" "${work_dir}/obj/wm6_math.o" \
     "${work_dir}/obj/quickjs.o" "${work_dir}/obj/cutils.o" \
     "${work_dir}/obj/dtoa.o" "${work_dir}/obj/libregexp.o" \
     "${work_dir}/obj/libunicode.o" "$core_object" -lm
-cp "${work_dir}/PocketJS.WM6.QuickJS.dll" "$output"
+cp "${work_dir}/PocketJS.WM6.QuickJS.v3.dll" "$output"
 echo "Built ${output}"

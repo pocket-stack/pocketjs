@@ -69,6 +69,15 @@ capture; see
 The applications have no MFC, ATL, .NET Compact Framework, or redistributable
 runtime dependency.
 
+The real runtime project deploys `PocketJS.WM6.QuickJS.v3.dll`; the ABI suffix
+prevents Windows CE from reusing an older QuickJS module still loaded by the
+standalone Probe or a previous host process. After changing ABI versions,
+close every old PocketJS process (or soft-reset the emulator) before deploying.
+The VS2005 Output window reports the loaded ABI, viewport and asset sizes, the
+first Rust framebuffer geometry, the actual DirectDraw surface format, and a
+rolling measured FPS. Any runtime, framebuffer-copy, or DirectDraw failure
+also appears in a message box instead of silently leaving a black screen.
+
 ## Pocket Vapor Todo controls
 
 The WM6 host maps the D-pad directly. Centre/Enter is A, Back is B, and the two

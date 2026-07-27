@@ -40,5 +40,5 @@ WM6_CE_NM=/opt/cegcc/bin/arm-mingw32ce-nm \
 
 The default output is
 `hosts/wm6/vs2005/prebuilt/PocketJS.WM6.Core.obj`. The QuickJS runtime build
-links that object into `PocketJS.WM6.QuickJS.dll`; the standalone object is a
+links that object into `PocketJS.WM6.QuickJS.v3.dll`; the standalone object is a
 generated intermediate and is not deployed.

@@ -50,7 +50,7 @@ from a Promise job. Success shows `QuickJS 6,10,16,26` under the title
 
 ## Hero demo host
 
-`build-runtime.sh` builds `PocketJS.WM6.QuickJS.dll` with a versioned C ABI,
+`build-runtime.sh` builds `PocketJS.WM6.QuickJS.v3.dll` with a versioned C ABI,
 statically linked libgcc, and the native Rust core produced by
 `engine/wm6/build-core.sh`. The DLL installs the same `ui` HostOps boundary as
 the Symbian host: JavaScript node/style/texture/animation calls go directly to
@@ -67,6 +67,8 @@ is converted to the application-owned RGB565 buffer and presented through a
 locked DirectDraw primary surface. Arrow keys and Enter/Space are mapped to the
 PocketJS directional and Circle button bits. Stylus contacts use the wide
 PocketJS touch encoding so the full 640×480 VGA coordinates are preserved.
+The ABI suffix is part of the deployed filename so Windows CE cannot satisfy a
+new host from an older process's shared/cached runtime module.
 
 The compatibility patch:
 
