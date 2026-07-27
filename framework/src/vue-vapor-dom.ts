@@ -39,10 +39,14 @@ function parseAttrs(raw: string, node: NodeMirror): void {
 
 function parseTemplateHtml(html: string): NodeMirror[] {
   if (!html) return [];
-  // "<!-- ... -->" is a Comment node; falling through to text would paint the source.
+  // "<!-- ... -->" is a Comment node; falling through to text would paint the
+  // source. Anything after the comment is parsed on its own, so a run of
+  // comments (or a comment ahead of the element) can't fall back to text either.
   if (html.startsWith("<!--")) {
-    const comment = html.match(/^<!--([\s\S]*?)-->$/);
-    if (comment) return [createCommentNode(comment[1])];
+    const end = html.indexOf("-->");
+    if (end >= 0) {
+      return [createCommentNode(html.slice(4, end)), ...parseTemplateHtml(html.slice(end + 3))];
+    }
   }
   if (!html.startsWith("<")) return [createTextNode(html)];
   const match = html.match(/^<([A-Za-z][A-Za-z0-9_-]*)([^>]*)>([\s\S]*)$/);
