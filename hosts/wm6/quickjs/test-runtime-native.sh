@@ -9,6 +9,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../.." && pwd)"
 bundle="${1:-${script_dir}/../vs2005/prebuilt/PocketJS.WM6.Demo.js}"
 pak="${2:-${script_dir}/../vs2005/prebuilt/PocketJS.WM6.Demo.pak}"
+viewport_width="${3:-640}"
+viewport_height="${4:-480}"
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/pocketjs-wm6-native-test.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT
 
@@ -72,4 +74,5 @@ done
     "${work_dir}/obj/dtoa.o" "${work_dir}/obj/libregexp.o" \
     "${work_dir}/obj/libunicode.o" "$core_archive" \
     -lgcc_s -lutil -lrt -lpthread -lm -ldl
-"${work_dir}/runtime-smoke" "$bundle" "$pak"
+"${work_dir}/runtime-smoke" \
+    "$bundle" "$pak" "$viewport_width" "$viewport_height"

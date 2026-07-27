@@ -86,10 +86,17 @@ WinCE `SYSTEMTIME`/timezone implementation before shipping a general runtime.
 `test-runtime-native.sh` compiles the exact WM6 QuickJS bridge against the
 same Rust core on the development host, evaluates the checked-in Hero bundle,
 installs its PAK, forwards one wide touch frame, and verifies a non-empty
-640×480 ARGB32 framebuffer. This does not replace ARMV4I emulator acceptance,
-but it catches JS/HostOps/core integration regressions before deployment:
+ARGB32 framebuffer. It defaults to 640×480; optional third and fourth
+arguments select the exact viewport so the 320×240 emulator path can be
+checked as well. This does not replace ARMV4I emulator acceptance, but it
+catches JS/HostOps/core integration regressions before deployment:
 
 ```sh
 WM6_QUICKJS_SOURCE=/path/to/pinned/quickjs-rs \
   hosts/wm6/quickjs/test-runtime-native.sh
+
+WM6_QUICKJS_SOURCE=/path/to/pinned/quickjs-rs \
+  hosts/wm6/quickjs/test-runtime-native.sh \
+  hosts/wm6/vs2005/prebuilt/PocketJS.WM6.Demo.js \
+  hosts/wm6/vs2005/prebuilt/PocketJS.WM6.Demo.pak 320 240
 ```

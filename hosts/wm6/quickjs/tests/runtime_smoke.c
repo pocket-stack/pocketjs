@@ -89,6 +89,21 @@ static uint64_t hash_bytes(const unsigned char *bytes, unsigned int length)
     return hash;
 }
 
+static int parse_dimension(const char *text, unsigned int *value)
+{
+    char *end;
+    unsigned long parsed;
+
+    if (!text || !text[0])
+        return 0;
+    end = NULL;
+    parsed = strtoul(text, &end, 10);
+    if (!end || *end != '\0' || parsed == 0 || parsed > 1024)
+        return 0;
+    *value = (unsigned int)parsed;
+    return 1;
+}
+
 static int fail(
     const char *step,
     const char *detail,
@@ -121,10 +136,24 @@ int main(int argument_count, char **arguments)
     unsigned int index;
     unsigned int nonzero_alpha;
     unsigned int changed_pixels;
+    unsigned int viewport_width;
+    unsigned int viewport_height;
+    unsigned int expected_stride;
+    unsigned int expected_length;
     uint64_t hash;
 
-    if (argument_count != 3) {
-        fprintf(stderr, "usage: runtime_smoke BUNDLE PAK\n");
+    viewport_width = 640u;
+    viewport_height = 480u;
+    if (argument_count != 3 && argument_count != 5) {
+        fprintf(
+            stderr,
+            "usage: runtime_smoke BUNDLE PAK [WIDTH HEIGHT]\n");
+        return 2;
+    }
+    if (argument_count == 5 &&
+        (!parse_dimension(arguments[3], &viewport_width) ||
+         !parse_dimension(arguments[4], &viewport_height))) {
+        fprintf(stderr, "viewport must be 1..1024 pixels per axis\n");
         return 2;
     }
     if (wm6_qjs_abi_version() != WM6_QJS_ABI_VERSION) {
@@ -139,8 +168,8 @@ int main(int argument_count, char **arguments)
     runtime = wm6_qjs_create(
         8u * 1024u * 1024u,
         256u * 1024u,
-        640u,
-        480u,
+        viewport_width,
+        viewport_height,
         message,
         sizeof(message));
     if (!runtime)
@@ -158,7 +187,9 @@ int main(int argument_count, char **arguments)
     if (wm6_qjs_drain_jobs(runtime, message, sizeof(message)) < 0)
         return fail("initial job drain", message, runtime, bundle, pak);
 
-    touch = 0x80000000u | (240u << 10) | 320u;
+    touch = 0x80000000u |
+            (((viewport_height / 2u) & 0x3ffu) << 10) |
+            ((viewport_width / 2u) & 0x3ffu);
     pixels = wm6_qjs_frame(
         runtime,
         0,
@@ -172,10 +203,21 @@ int main(int argument_count, char **arguments)
         sizeof(message));
     if (!pixels)
         return fail("first frame", message, runtime, bundle, pak);
-    if (width != 640u || height != 480u || stride != 2560u ||
-        byte_length != 1228800u)
+    expected_stride = viewport_width * 4u;
+    expected_length = expected_stride * viewport_height;
+    if (width != viewport_width || height != viewport_height ||
+        stride != expected_stride || byte_length != expected_length) {
+        snprintf(
+            message,
+            sizeof(message),
+            "expected %ux%u stride=%u bytes=%u ARGB32",
+            viewport_width,
+            viewport_height,
+            expected_stride,
+            expected_length);
         return fail(
-            "frame geometry", "expected 640x480 ARGB32", runtime, bundle, pak);
+            "frame geometry", message, runtime, bundle, pak);
+    }
 
     nonzero_alpha = 0;
     changed_pixels = 0;
