@@ -76,9 +76,147 @@ static void ascii_to_wide(WCHAR *output, unsigned int capacity,
     output[index] = L'\0';
 }
 
+static char *g_draw_list;
+
+static int wide_length(const WCHAR *text)
+{
+    int length;
+
+    length = 0;
+    while (text[length] != L'\0')
+        length++;
+    return length;
+}
+
+static int read_number(char **cursor)
+{
+    int value;
+
+    if (**cursor == '|')
+        (*cursor)++;
+    value = 0;
+    while (**cursor >= '0' && **cursor <= '9') {
+        value = value * 10 + (**cursor - '0');
+        (*cursor)++;
+    }
+    return value;
+}
+
+static void paint_cards(HWND window, HDC dc)
+{
+    RECT client;
+    RECT logical;
+    char *line;
+    char *next;
+    char *cursor;
+    char saved;
+    int offset_x;
+    int offset_y;
+
+    GetClientRect(window, &client);
+    FillRect(dc, &client, (HBRUSH)GetStockObject(BLACK_BRUSH));
+    offset_x = (client.right - 480) / 2;
+    offset_y = (client.bottom - 272) / 2;
+    line = g_draw_list;
+    while (line && *line) {
+        int x, y, w, h, size, r, g, b;
+        HBRUSH brush;
+        COLORREF color;
+
+        next = line;
+        while (*next && *next != '\n')
+            next++;
+        saved = *next;
+        *next = '\0';
+        cursor = line + 1;
+        if (line[0] == 'B') {
+            r = read_number(&cursor);
+            g = read_number(&cursor);
+            b = read_number(&cursor);
+            logical.left = offset_x;
+            logical.top = offset_y;
+            logical.right = offset_x + 480;
+            logical.bottom = offset_y + 272;
+            brush = CreateSolidBrush(RGB(r, g, b));
+            FillRect(dc, &logical, brush);
+            DeleteObject(brush);
+        } else if (line[0] == 'R') {
+            x = read_number(&cursor);
+            y = read_number(&cursor);
+            w = read_number(&cursor);
+            h = read_number(&cursor);
+            r = read_number(&cursor);
+            g = read_number(&cursor);
+            b = read_number(&cursor);
+            logical.left = offset_x + x;
+            logical.top = offset_y + y;
+            logical.right = logical.left + w;
+            logical.bottom = logical.top + h;
+            brush = CreateSolidBrush(RGB(r, g, b));
+            FillRect(dc, &logical, brush);
+            DeleteObject(brush);
+        } else if (line[0] == 'T') {
+            LOGFONT font_spec;
+            HFONT font;
+            HFONT previous_font;
+            WCHAR text[256];
+
+            x = read_number(&cursor);
+            y = read_number(&cursor);
+            size = read_number(&cursor);
+            r = read_number(&cursor);
+            g = read_number(&cursor);
+            b = read_number(&cursor);
+            if (*cursor == '|')
+                cursor++;
+            ascii_to_wide(text, 256, cursor);
+            memset(&font_spec, 0, sizeof(font_spec));
+            font_spec.lfHeight = -size;
+            font_spec.lfWeight = size >= 14 ? FW_BOLD : FW_NORMAL;
+            font = CreateFontIndirect(&font_spec);
+            previous_font = (HFONT)SelectObject(dc, font);
+            color = RGB(r, g, b);
+            SetTextColor(dc, color);
+            SetBkMode(dc, TRANSPARENT);
+            TextOut(dc, offset_x + x, offset_y + y,
+                    text, wide_length(text));
+            SelectObject(dc, previous_font);
+            DeleteObject(font);
+        }
+        *next = saved;
+        line = saved ? next + 1 : next;
+    }
+}
+
+static LRESULT CALLBACK CardsWindowProc(HWND window, UINT message,
+                                        WPARAM wparam, LPARAM lparam)
+{
+    switch (message) {
+    case WM_PAINT:
+        {
+            PAINTSTRUCT paint;
+            HDC dc = BeginPaint(window, &paint);
+            paint_cards(window, dc);
+            EndPaint(window, &paint);
+        }
+        return 0;
+    case WM_KEYDOWN:
+        if (wparam == VK_ESCAPE) {
+            DestroyWindow(window);
+            return 0;
+        }
+        break;
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProc(window, message, wparam, lparam);
+}
+
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int show)
 {
-    static const char snapshot[] = "__wm6Snapshot()";
+    static const char snapshot[] = "__wm6DrawList()";
+    static const WCHAR class_name[] = L"PocketJSWM6Cards";
     HMODULE module;
     wm6_qjs_abi_version_fn abi_version;
     wm6_qjs_create_fn create_runtime;
@@ -92,6 +230,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     unsigned int bundle_length;
     WCHAR create_error[256];
     WCHAR *message;
+    WNDCLASS window_class;
+    HWND window;
+    MSG message_loop;
     int status;
 
     (void)instance;
@@ -159,12 +300,41 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     destroy_runtime(runtime);
     FreeLibrary(module);
 
-    ascii_to_wide(message, 8192, status == 0 ? snapshot_text : result);
-    MessageBox(NULL, message,
-               status == 0 ? L"PocketJS Cards bundle mounted"
-                           : L"PocketJS QuickJS DLL failure",
-               MB_OK);
+    if (status != 0) {
+        ascii_to_wide(message, 8192, result);
+        MessageBox(NULL, message, L"PocketJS QuickJS DLL failure", MB_OK);
+        LocalFree(snapshot_text);
+        LocalFree(message);
+        return 5;
+    }
+    g_draw_list = snapshot_text;
+    memset(&window_class, 0, sizeof(window_class));
+    window_class.lpfnWndProc = CardsWindowProc;
+    window_class.hInstance = instance;
+    window_class.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    window_class.lpszClassName = class_name;
+    if (!RegisterClass(&window_class)) {
+        LocalFree(snapshot_text);
+        LocalFree(message);
+        return 6;
+    }
+    window = CreateWindow(class_name, L"PocketJS Feature Cards",
+                          WS_VISIBLE, 0, 0,
+                          GetSystemMetrics(SM_CXSCREEN),
+                          GetSystemMetrics(SM_CYSCREEN),
+                          NULL, NULL, instance, NULL);
+    if (!window) {
+        LocalFree(snapshot_text);
+        LocalFree(message);
+        return 7;
+    }
+    ShowWindow(window, show);
+    UpdateWindow(window);
+    while (GetMessage(&message_loop, NULL, 0, 0)) {
+        TranslateMessage(&message_loop);
+        DispatchMessage(&message_loop);
+    }
     LocalFree(snapshot_text);
     LocalFree(message);
-    return status == 0 ? 0 : 5;
+    return 0;
 }

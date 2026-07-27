@@ -13,7 +13,7 @@ fi
 mkdir -p "$(dirname "$output")"
 {
     printf '%s\n' '/* PocketJS WM6 bootstrap + real apps/cards bundle. */'
-    sed 's/$/\r/' "${script_dir}/cards-host.js"
-    sed 's/$/\r/' "$bundle"
+    sed -n 'p' "${script_dir}/cards-host.js"
+    sed -n 'p' "$bundle"
 } > "$output"
 echo "Built ${output}"

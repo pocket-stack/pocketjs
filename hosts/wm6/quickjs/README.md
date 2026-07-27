@@ -53,10 +53,12 @@ from a Promise job. Success shows `QuickJS 6,10,16,26` under the title
 `build-runtime.sh` builds `PocketJS.WM6.QuickJS.dll` with a five-function,
 versioned C ABI and statically linked libgcc. `build-cards.sh` combines the
 minimal WM6 HostOps bootstrap with the real `dist/cards-main.js` output.
-VS2005 builds `PocketJS.WM6.QuickJS.Host.exe`, deploys both files, mounts the
-Solid application in QuickJS, and displays a native-tree receipt containing
-the Cards text. This receipt is the bundle/HostOps gate; GDI layout and paint
-are the next milestone.
+VS2005 builds the compatibility-named `PocketJS.WM6.QuickJS.Probe.exe`,
+deploys both files, mounts the
+Solid application in QuickJS, and turns its native tree into a compact GDI
+draw list. The first graphical milestone paints the Cards header, three module
+cards, accent strips, captions, and footer in a centered 480×272 viewport.
+Input-driven focus and detail updates are the next milestone.
 
 The compatibility patch:
 

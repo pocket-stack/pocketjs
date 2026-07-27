@@ -9,8 +9,8 @@ This solution contains three native Smart Device applications for the HP iPAQ
   ahead-of-time compilation to portable C. It is the first application UI on
   WM6, but it is not a QuickJS host and cannot load ordinary PocketJS bundles.
 - `PocketJS.WM6.QuickJS` builds a VC8 host and deploys the CeGCC-built QuickJS
-  DLL plus the real `apps/cards` bundle. Its first receipt mounts Solid and
-  shows the HostOps text tree; GDI layout and painting are still in progress.
+  DLL plus the real `apps/cards` bundle. It mounts Solid, derives a draw list
+  from the HostOps tree, and paints the first Cards screen with GDI.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a

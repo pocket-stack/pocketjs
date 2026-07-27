@@ -133,6 +133,9 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).toContain("WCHAR create_error[256]");
     expect(host).toContain("ascii_to_wide(create_error, 256, result)");
     expect(host).not.toContain("ascii_to_wide(message, 256, result)");
+    expect(host).toContain('static const char snapshot[] = "__wm6DrawList()"');
+    expect(host).toContain("CreateWindow(class_name");
+    expect(host).toContain("paint_cards(window, dc)");
 
     expect(build).toContain(
       'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',
@@ -162,6 +165,7 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(cards).toContain("PocketJS Cards (real bundle)");
     expect(cards).toContain("Feature Cards");
     expect(cards).toContain("Flexbox via Taffy");
+    expect(cards).toContain("globalThis.__wm6DrawList");
 
     expect(executable.subarray(0, 2).toString("ascii")).toBe("MZ");
     const peOffset = executable.readUInt32LE(0x3c);
