@@ -136,6 +136,8 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).toContain('static const char snapshot[] = "__wm6DrawList()"');
     expect(host).toContain("CreateWindow(class_name");
     expect(host).toContain("paint_cards(window, dc)");
+    expect(host).toContain("ExtTextOut(dc");
+    expect(host).not.toContain("\n            TextOut(dc");
 
     expect(build).toContain(
       'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',

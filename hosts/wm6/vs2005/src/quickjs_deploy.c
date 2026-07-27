@@ -178,8 +178,8 @@ static void paint_cards(HWND window, HDC dc)
             color = RGB(r, g, b);
             SetTextColor(dc, color);
             SetBkMode(dc, TRANSPARENT);
-            TextOut(dc, offset_x + x, offset_y + y,
-                    text, wide_length(text));
+            ExtTextOut(dc, offset_x + x, offset_y + y, 0, NULL,
+                       text, wide_length(text), NULL);
             SelectObject(dc, previous_font);
             DeleteObject(font);
         }
