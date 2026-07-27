@@ -11,10 +11,13 @@ point rustc currently emits only:
 
 The CeGCC BFD objcopy can copy all sections from ELF to COFF, but its generic
 format converter preserves the ELF relocation numbers *and* the ELF symbol
-indices. The latter do not identify the corresponding COFF symbols. This tool
-uses the source ELF relocation tables as the authority, appends exact COFF
-symbols for their targets, rewrites every relocation, and rejects unexpected
-input instead of silently producing a corrupt object.
+indices. The latter do not identify the corresponding COFF symbols. ELF ARM
+branches also carry a -8 instruction addend for the architecture's PC bias,
+while WinCE ARM_26 expects a zero immediate and applies that bias itself. This
+tool uses the source ELF relocation tables as the authority, appends exact
+COFF symbols for their targets, normalizes branch addends, rewrites every
+relocation, and rejects unexpected input instead of silently producing a
+corrupt object.
 """
 
 from __future__ import annotations
@@ -83,6 +86,8 @@ class CoffSection:
     index: int
     name: str
     header: int
+    data_offset: int
+    data_size: int
     relocation_offset: int
     relocation_count: int
 
@@ -312,6 +317,8 @@ def parse_coff_sections(data: bytearray) -> list[CoffSection]:
     sections: list[CoffSection] = []
     for index in range(section_count):
         header = section_table + index * COFF_SECTION_SIZE
+        data_size = read_u32(data, header + 16)
+        data_offset = read_u32(data, header + 20)
         relocation_offset = read_u32(data, header + 24)
         relocation_count = read_u16(data, header + 32)
         characteristics = read_u32(data, header + 36)
@@ -320,6 +327,12 @@ def parse_coff_sections(data: bytearray) -> list[CoffSection]:
                 f"section {index + 1} uses unsupported relocation overflow"
             )
         if relocation_count:
+            checked_range(
+                data,
+                data_offset,
+                data_size,
+                f"contents for section {index + 1}",
+            )
             checked_range(
                 data,
                 relocation_offset,
@@ -331,6 +344,8 @@ def parse_coff_sections(data: bytearray) -> list[CoffSection]:
                 index + 1,
                 section_name(data, header, string_table, string_table_end),
                 header,
+                data_offset,
+                data_size,
                 relocation_offset,
                 relocation_count,
             )
@@ -421,7 +436,7 @@ def append_coff_symbols(
 def remap_relocations(
     elf_data: bytes,
     coff_data: bytearray,
-) -> tuple[bytearray, Counter[tuple[int, int]], int]:
+) -> tuple[bytearray, Counter[tuple[int, int]], int, int]:
     elf_sections, elf_symbols = parse_elf(elf_data)
     coff_sections = parse_coff_sections(coff_data)
 
@@ -432,6 +447,7 @@ def remap_relocations(
         coff_by_name[section.name] = section
 
     pending: list[tuple[int, int, int]] = []
+    normalized_branches = 0
     matched_coff_sections: set[int] = set()
     for relocation_section in elf_sections:
         if relocation_section.kind != SHT_REL:
@@ -498,6 +514,32 @@ def remap_relocations(
                     f"at index {index}: ELF=(0x{relocation_address:x}, "
                     f"{input_type}), COFF=(0x{coff_address:x}, {copied_type})"
                 )
+            if input_type in (28, 29):
+                if relocation_address > coff_section.data_size - 4:
+                    raise CoffError(
+                        f"ARM branch relocation at 0x{relocation_address:x} "
+                        f"lies outside {target.name!r}"
+                    )
+                instruction_offset = (
+                    coff_section.data_offset + relocation_address
+                )
+                instruction = read_u32(coff_data, instruction_offset)
+                if instruction & 0x0E000000 != 0x0A000000:
+                    raise CoffError(
+                        f"ARM branch relocation at 0x{relocation_address:x} "
+                        f"in {target.name!r} targets non-branch instruction "
+                        f"0x{instruction:08x}"
+                    )
+                # ELF REL stores A=-8 in imm24 so S+A-P compensates for the
+                # ARM PC value (P+8). WinCE ARM_26 performs that compensation
+                # itself and follows CeGCC's convention of imm24=0.
+                struct.pack_into(
+                    "<I",
+                    coff_data,
+                    instruction_offset,
+                    instruction & 0xFF000000,
+                )
+                normalized_branches += 1
             pending.append((coff_record, input_type, elf_symbol_index))
 
     unmatched = [
@@ -576,7 +618,7 @@ def remap_relocations(
             output_type,
         )
         patched[(input_type, output_type)] += 1
-    return coff_data, patched, len(additions)
+    return coff_data, patched, len(additions), normalized_branches
 
 
 def restore_ui_exports(data: bytearray) -> tuple[bytearray, list[str]]:
@@ -682,7 +724,9 @@ def main() -> int:
 
     elf_data = args.elf_input.read_bytes()
     data = bytearray(args.coff_input.read_bytes())
-    data, patched, mapped_symbols = remap_relocations(elf_data, data)
+    data, patched, mapped_symbols, normalized_branches = remap_relocations(
+        elf_data, data
+    )
     data, restored = restore_ui_exports(data)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(data)
@@ -692,6 +736,7 @@ def main() -> int:
         for (source, target), count in sorted(patched.items())
     )
     print(f"patched {sum(patched.values())} ARM relocations ({summary})")
+    print(f"normalized {normalized_branches} WinCE ARM_26 branch addends")
     print(f"mapped {mapped_symbols} ELF relocation symbols")
     print(f"restored {len(restored)} PocketJS C ABI exports")
     return 0

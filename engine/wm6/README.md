@@ -15,7 +15,9 @@ performs a narrow, checked conversion to `pe-arm-wince` COFF:
    `.data`, and `.bss`, and removes unwind/LLVM metadata;
 3. a dual-target CeGCC binutils `objcopy` writes WinCE COFF;
 4. `patch_arm_coff_relocs.py` maps the three emitted ARM relocations and
-   rebuilds every relocation symbol index from the authoritative ELF tables;
+   rebuilds every relocation symbol index from the authoritative ELF tables.
+   It also clears the ELF branch instruction's `-8` PC-bias addend because
+   WinCE `ARM_26` uses the CeGCC convention of a zero immediate;
 5. WinCE ld performs a second relocatable link as a structural verification;
 6. the build rejects a core that is not ARMv4T, does not contain exactly the
    four folded COFF sections, loses a required `ui_*` entry point, or imports
