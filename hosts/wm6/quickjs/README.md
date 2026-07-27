@@ -65,7 +65,8 @@ deploys the DLL, bundle, and PAK, and mounts the Solid application. The native
 screen size after WM6 rotation becomes `ui.__viewport`. Each Rust ARGB32 frame
 is converted to the application-owned RGB565 buffer and presented through a
 locked DirectDraw primary surface. Arrow keys and Enter/Space are mapped to the
-PocketJS directional and Circle button bits.
+PocketJS directional and Circle button bits. Stylus contacts use the wide
+PocketJS touch encoding so the full 640×480 VGA coordinates are preserved.
 
 The compatibility patch:
 

@@ -100,7 +100,7 @@ the C sources rely on implicit `void *` conversions and C linkage rules. Gate 1
 therefore uses a separately owned GNU WinCE build. The future VS2005 host will
 load a CeGCC-built DLL through a narrow C ABI; QuickJS values and allocator
 ownership must never cross that boundary. That DLL boundary is now
-implemented as ABI v2; it also owns the linked Rust core so QuickJS values,
+implemented as ABI v3; it also owns the linked Rust core so QuickJS values,
 Rust allocations, and framebuffer pointers stay on the CeGCC side.
 
 ### AOT milestone — Pocket Vapor Todo (implemented)
@@ -140,14 +140,15 @@ runtime receipt before this gate is considered closed.
 
 ### Gate 3 — PocketJS HostOps (implemented; runtime receipt pending)
 
-The ABI v2 DLL installs native lifecycle, node, style/property batch, text,
+The ABI v3 DLL installs native lifecycle, node, style/property batch, text,
 texture/font, animation, focus/hit-test, debug, tick, and render operations.
 It copies the PAK into QuickJS before evaluating the unmodified Hero bundle,
 calls `globalThis.frame` at the WM6 timer cadence, ticks the core, and returns
 the incremental framebuffer. The former JavaScript tree and hand-authored
 draw-list adapter have been removed. D-pad keys and Enter/Space currently feed
-the PocketJS directional/Circle button bits; stylus forwarding remains a
-follow-up after the first core-rendered emulator receipt.
+the PocketJS directional/Circle button bits. Stylus down/move/up snapshots use
+the wide 10-bit PocketJS touch wire format so VGA coordinates are not
+truncated.
 
 ### Gate 4 — packaging and production admission
 

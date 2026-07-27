@@ -39,7 +39,7 @@ exercises the OS surface that a future full PocketJS host will need:
 - runtime screen and memory reporting.
 
 The hardware and Vapor executables do not embed QuickJS or the PocketJS
-retained UI core. The QuickJS project does: its v2 DLL ABI owns the Rust core
+retained UI core. The QuickJS project does: its v3 DLL ABI owns the Rust core
 and forwards native HostOps, PAK loading, fixed-step frames, and framebuffer
 capture; see
 [`docs/WM6_IPAQ_212.md`](../../../docs/WM6_IPAQ_212.md) for the staged port.

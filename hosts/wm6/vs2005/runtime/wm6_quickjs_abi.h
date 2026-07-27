@@ -1,7 +1,7 @@
 #ifndef POCKETJS_WM6_QUICKJS_ABI_H
 #define POCKETJS_WM6_QUICKJS_ABI_H
 
-#define WM6_QJS_ABI_VERSION 2u
+#define WM6_QJS_ABI_VERSION 3u
 
 #if defined(__cplusplus)
 extern "C" {
@@ -36,10 +36,14 @@ typedef int (__cdecl *wm6_qjs_drain_jobs_fn)(
 typedef const unsigned char *(__cdecl *wm6_qjs_frame_fn)(
     wm6_qjs_handle handle,
     unsigned int buttons,
+    const unsigned int *touches,
+    unsigned int touch_count,
     unsigned int *width,
     unsigned int *height,
     unsigned int *stride,
-    unsigned int *byte_length);
+    unsigned int *byte_length,
+    char *error,
+    unsigned int error_capacity);
 typedef void (__cdecl *wm6_qjs_destroy_fn)(wm6_qjs_handle handle);
 
 #if defined(__cplusplus)

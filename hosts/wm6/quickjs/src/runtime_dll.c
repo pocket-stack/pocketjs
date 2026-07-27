@@ -650,10 +650,14 @@ __declspec(dllexport) int __cdecl wm6_qjs_drain_jobs(
 __declspec(dllexport) const unsigned char *__cdecl wm6_qjs_frame(
     wm6_qjs_handle opaque,
     unsigned int buttons,
+    const unsigned int *touches,
+    unsigned int touch_count,
     unsigned int *width,
     unsigned int *height,
     unsigned int *stride,
-    unsigned int *byte_length)
+    unsigned int *byte_length,
+    char *error,
+    unsigned int error_capacity)
 {
     Wm6QuickJS *host;
     JSContext *job_context;
@@ -663,20 +667,42 @@ __declspec(dllexport) const unsigned char *__cdecl wm6_qjs_frame(
     JSValue result;
     const uint8_t *pixels;
     size_t length;
+    unsigned int touch_index;
 
     host = (Wm6QuickJS *)opaque;
-    if (!host)
+    copy_text(error, error_capacity, "");
+    if (!host || (!touches && touch_count != 0)) {
+        copy_text(error, error_capacity, "invalid frame arguments");
         return NULL;
+    }
     global = JS_GetGlobalObject(host->context);
     frame = JS_GetPropertyStr(host->context, global, "frame");
     if (!JS_IsFunction(host->context, frame)) {
         JS_FreeValue(host->context, frame);
         JS_FreeValue(host->context, global);
+        copy_text(error, error_capacity, "globalThis.frame is missing");
         return NULL;
     }
     arguments[0] = JS_NewUint32(host->context, buttons);
     arguments[1] = JS_NewInt32(host->context, 0x8080);
     arguments[2] = JS_NewArray(host->context);
+    if (touch_count > 8)
+        touch_count = 8;
+    for (touch_index = 0; touch_index < touch_count; touch_index++) {
+        if (JS_SetPropertyUint32(
+                host->context,
+                arguments[2],
+                touch_index,
+                JS_NewUint32(host->context, touches[touch_index])) < 0) {
+            JS_FreeValue(host->context, arguments[0]);
+            JS_FreeValue(host->context, arguments[1]);
+            JS_FreeValue(host->context, arguments[2]);
+            JS_FreeValue(host->context, frame);
+            JS_FreeValue(host->context, global);
+            copy_exception(host->context, error, error_capacity);
+            return NULL;
+        }
+    }
     result = JS_Call(
         host->context, frame, global, 3, arguments);
     JS_FreeValue(host->context, arguments[0]);
@@ -685,18 +711,30 @@ __declspec(dllexport) const unsigned char *__cdecl wm6_qjs_frame(
     JS_FreeValue(host->context, frame);
     JS_FreeValue(host->context, global);
     if (JS_IsException(result)) {
+        copy_exception(host->context, error, error_capacity);
         JS_FreeValue(host->context, result);
         return NULL;
     }
     JS_FreeValue(host->context, result);
     while (JS_IsJobPending(host->runtime)) {
         job_context = NULL;
-        if (JS_ExecutePendingJob(host->runtime, &job_context) < 0)
+        if (JS_ExecutePendingJob(host->runtime, &job_context) < 0) {
+            copy_exception(
+                job_context ? job_context : host->context,
+                error,
+                error_capacity);
             return NULL;
+        }
     }
     ui_tick();
     pixels = ui_render_incremental();
     length = ui_framebuffer_len();
+    if (!pixels || length == 0) {
+        copy_text(
+            error, error_capacity,
+            "PocketJS Rust core returned an empty framebuffer");
+        return NULL;
+    }
     if (width)
         *width = ui_framebuffer_width();
     if (height)
