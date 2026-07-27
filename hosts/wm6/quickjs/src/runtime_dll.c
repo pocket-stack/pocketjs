@@ -10,6 +10,7 @@ typedef struct Wm6QuickJS {
     JSRuntime *runtime;
     JSContext *context;
     char printed[256];
+    int first_frame_traced;
 } Wm6QuickJS;
 
 typedef enum Wm6HostOperation {
@@ -71,6 +72,16 @@ static void copy_exception(JSContext *context, char *output,
         JS_FreeCString(context, text);
     JS_FreeValue(context, exception);
 }
+
+#ifdef _WIN32
+static void trace_first_frame(Wm6QuickJS *host, const WCHAR *message)
+{
+    if (host && !host->first_frame_traced)
+        OutputDebugStringW(message);
+}
+#else
+#define trace_first_frame(host, message) ((void)(host))
+#endif
 
 static JSValue runtime_print(JSContext *context, JSValueConst this_value,
                              int argument_count, JSValueConst *arguments)
@@ -675,6 +686,8 @@ __declspec(dllexport) const unsigned char *__cdecl wm6_qjs_frame(
         copy_text(error, error_capacity, "invalid frame arguments");
         return NULL;
     }
+    trace_first_frame(
+        host, L"PocketJS WM6 trace: QuickJS frame call begin\r\n");
     global = JS_GetGlobalObject(host->context);
     frame = JS_GetPropertyStr(host->context, global, "frame");
     if (!JS_IsFunction(host->context, frame)) {
@@ -716,6 +729,8 @@ __declspec(dllexport) const unsigned char *__cdecl wm6_qjs_frame(
         return NULL;
     }
     JS_FreeValue(host->context, result);
+    trace_first_frame(
+        host, L"PocketJS WM6 trace: JavaScript frame complete\r\n");
     while (JS_IsJobPending(host->runtime)) {
         job_context = NULL;
         if (JS_ExecutePendingJob(host->runtime, &job_context) < 0) {
@@ -726,8 +741,14 @@ __declspec(dllexport) const unsigned char *__cdecl wm6_qjs_frame(
             return NULL;
         }
     }
+    trace_first_frame(
+        host, L"PocketJS WM6 trace: pending jobs complete\r\n");
     ui_tick();
+    trace_first_frame(
+        host, L"PocketJS WM6 trace: Rust tick complete\r\n");
     pixels = ui_render_incremental();
+    trace_first_frame(
+        host, L"PocketJS WM6 trace: Rust raster complete\r\n");
     length = ui_framebuffer_len();
     if (!pixels || length == 0) {
         copy_text(
@@ -745,6 +766,7 @@ __declspec(dllexport) const unsigned char *__cdecl wm6_qjs_frame(
         *byte_length = length > 0xffffffffU
                            ? 0xffffffffU
                            : (unsigned int)length;
+    host->first_frame_traced = 1;
     return pixels;
 }
 

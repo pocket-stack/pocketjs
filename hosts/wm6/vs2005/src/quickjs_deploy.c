@@ -200,6 +200,52 @@ static int stop_frame_rendering(const WCHAR *message)
     return 0;
 }
 
+static void report_first_frame_pixels(
+    const unsigned char *pixels,
+    unsigned int width,
+    unsigned int height,
+    unsigned int stride,
+    unsigned int byte_length)
+{
+    WCHAR receipt[256];
+    DWORD alpha_pixels;
+    DWORD colored_pixels;
+    unsigned int row;
+
+    if (g_first_frame_reported || !pixels || width == 0 ||
+        height == 0 || stride < width * 4u ||
+        height > byte_length / stride)
+        return;
+    alpha_pixels = 0;
+    colored_pixels = 0;
+    for (row = 0; row < height; row++) {
+        const unsigned char *source;
+        unsigned int column;
+
+        source = pixels + row * stride;
+        for (column = 0; column < width; column++) {
+            const unsigned char *pixel;
+
+            pixel = source + column * 4u;
+            if (pixel[3] != 0)
+                alpha_pixels++;
+            if (pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0)
+                colored_pixels++;
+        }
+    }
+    wsprintfW(
+        receipt,
+        L"PocketJS WM6 receipt: Rust pixels alpha=%lu color=%lu "
+        L"first BGRA=%02lx/%02lx/%02lx/%02lx\r\n",
+        alpha_pixels,
+        colored_pixels,
+        (DWORD)pixels[0],
+        (DWORD)pixels[1],
+        (DWORD)pixels[2],
+        (DWORD)pixels[3]);
+    OutputDebugString(receipt);
+}
+
 static void report_successful_frame(
     unsigned int width,
     unsigned int height,
@@ -269,6 +315,9 @@ static int render_core_frame(void)
         touch_count = 1;
     }
     width = height = stride = byte_length = 0;
+    if (!g_first_frame_reported)
+        OutputDebugString(
+            L"PocketJS WM6 trace: host frame call begin\r\n");
     pixels = g_quickjs_frame(
         g_quickjs_runtime,
         frame_buttons,
@@ -289,10 +338,18 @@ static int render_core_frame(void)
             error[0] ? error : "QuickJS/Rust frame returned no pixels");
         return stop_frame_rendering(message);
     }
+    if (!g_first_frame_reported)
+        OutputDebugString(
+            L"PocketJS WM6 trace: host frame call complete\r\n");
+    report_first_frame_pixels(
+        pixels, width, height, stride, byte_length);
     if (!wm6_framebuffer_copy_argb(
             pixels, width, height, stride, byte_length))
         return stop_frame_rendering(
             L"Rust framebuffer geometry or byte length is invalid");
+    if (!g_first_frame_reported)
+        OutputDebugString(
+            L"PocketJS WM6 trace: ARGB32 conversion complete\r\n");
     if (!wm6_framebuffer_present())
         return stop_frame_rendering(
             L"DirectDraw could not present the Rust framebuffer");

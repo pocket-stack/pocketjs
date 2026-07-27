@@ -82,6 +82,11 @@ The VS2005 Output window reports the loaded ABI, viewport and asset sizes, the
 first Rust framebuffer geometry, the actual DirectDraw surface format, and a
 rolling measured FPS. Any runtime, framebuffer-copy, or DirectDraw failure
 also appears in a message box instead of silently leaving a black screen.
+The first frame additionally emits one-shot `trace` lines around the
+JavaScript frame call, pending jobs, Rust tick, software raster, ARGB32
+conversion, and DirectDraw primary-surface lock. It also reports the number of
+non-transparent and colored Rust pixels. If startup stalls, the final trace
+line identifies the exact stage without adding per-frame logging overhead.
 
 ## Pocket Vapor Todo controls
 

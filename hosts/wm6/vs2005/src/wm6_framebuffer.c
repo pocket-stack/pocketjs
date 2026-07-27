@@ -199,6 +199,9 @@ int wm6_framebuffer_present(void)
         return 0;
     memset(&surface, 0, sizeof(surface));
     surface.dwSize = sizeof(surface);
+    if (!g_surface_reported)
+        OutputDebugString(
+            L"PocketJS WM6 trace: DirectDraw primary lock begin\r\n");
     status = g_primary->lpVtbl->Lock(
         g_primary, NULL, &surface, 0, NULL);
     if (status == DDERR_SURFACELOST) {
