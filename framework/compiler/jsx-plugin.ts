@@ -6,6 +6,7 @@ import solidPreset from "babel-preset-solid";
 import tsPreset from "@babel/preset-typescript"; // untyped - see framework/compiler/ambient.d.ts
 import { transformVueJsxVapor } from "vue-jsx-vapor/api";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { compileVueSfc } from "./vue-sfc-compile.ts";
 import {
   propsHelperCode,
@@ -28,56 +29,46 @@ import type { PocketFramework } from "../src/config.ts";
 
 export type { PocketFramework };
 
-export const RENDERER_PATH = new URL("../src/renderer.ts", import.meta.url).pathname;
-export const RENDERER_SOLID_PATH = new URL("../src/renderer-solid.ts", import.meta.url).pathname;
-export const RENDERER_VUE_VAPOR_PATH = new URL("../src/renderer-vue-vapor.ts", import.meta.url).pathname;
+function localPath(path: string): string {
+  return fileURLToPath(new URL(path, import.meta.url));
+}
 
-const INDEX_PATH = new URL("../src/index.ts", import.meta.url).pathname;
-const INDEX_VUE_VAPOR_PATH = new URL("../src/index-vue-vapor.ts", import.meta.url).pathname;
-const ANIMATION_PATH = new URL("../src/animation.ts", import.meta.url).pathname;
-const COMPONENTS_PATH = new URL("../src/components.ts", import.meta.url).pathname;
-const COMPONENTS_VUE_VAPOR_PATH = new URL("../src/components-vue-vapor.ts", import.meta.url).pathname;
-const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
-const CLOCK_PATH = new URL("../src/clock.ts", import.meta.url).pathname;
-const DEVTOOLS_PATH = new URL("../src/devtools.ts", import.meta.url).pathname;
-const EFFECTS_PATH = new URL("../src/effects.ts", import.meta.url).pathname;
-const HOST_PATH = new URL("../src/host.ts", import.meta.url).pathname;
-const HOT_PATH = new URL("../src/hot.ts", import.meta.url).pathname;
-const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
-const LAUNCHER_PATH = new URL("../src/launcher.ts", import.meta.url).pathname;
-const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
-const LIFECYCLE_VUE_VAPOR_PATH = new URL("../src/lifecycle-vue-vapor.ts", import.meta.url).pathname;
-const OSK_PATH = new URL("../src/osk.tsx", import.meta.url).pathname;
-const MANIFEST_PATH = new URL("../src/manifest/index.ts", import.meta.url).pathname;
-const PACKAGE_PATH = new URL(
-  "../../contracts/spec/pocket-package.ts",
-  import.meta.url,
-).pathname;
-const PLATFORM_PATH = new URL("../src/platform.ts", import.meta.url).pathname;
-const PRELUDE_PATH = new URL("../src/prelude.ts", import.meta.url).pathname;
-const GENERATED_STYLES_PATH = new URL(
-  "../src/styles.generated.ts",
-  import.meta.url,
-).pathname;
-const VITA_PACKAGE_PATH = new URL(
-  "../../tools/vita-package.ts",
-  import.meta.url,
-).pathname;
-const VUE_VAPOR_RUNTIME_PATH = new URL(
+export const RENDERER_PATH = localPath("../src/renderer.ts");
+export const RENDERER_SOLID_PATH = localPath("../src/renderer-solid.ts");
+export const RENDERER_VUE_VAPOR_PATH = localPath("../src/renderer-vue-vapor.ts");
+
+const INDEX_PATH = localPath("../src/index.ts");
+const INDEX_VUE_VAPOR_PATH = localPath("../src/index-vue-vapor.ts");
+const ANIMATION_PATH = localPath("../src/animation.ts");
+const COMPONENTS_PATH = localPath("../src/components.ts");
+const COMPONENTS_VUE_VAPOR_PATH = localPath("../src/components-vue-vapor.ts");
+const CONFIG_PATH = localPath("../src/config.ts");
+const CLOCK_PATH = localPath("../src/clock.ts");
+const DEVTOOLS_PATH = localPath("../src/devtools.ts");
+const EFFECTS_PATH = localPath("../src/effects.ts");
+const HOST_PATH = localPath("../src/host.ts");
+const HOT_PATH = localPath("../src/hot.ts");
+const INPUT_API_PATH = localPath("../src/input-api.ts");
+const LAUNCHER_PATH = localPath("../src/launcher.ts");
+const LIFECYCLE_PATH = localPath("../src/lifecycle.ts");
+const LIFECYCLE_VUE_VAPOR_PATH = localPath("../src/lifecycle-vue-vapor.ts");
+const OSK_PATH = localPath("../src/osk.tsx");
+const MANIFEST_PATH = localPath("../src/manifest/index.ts");
+const PACKAGE_PATH = localPath("../../contracts/spec/pocket-package.ts");
+const PLATFORM_PATH = localPath("../src/platform.ts");
+const PRELUDE_PATH = localPath("../src/prelude.ts");
+const GENERATED_STYLES_PATH = localPath("../src/styles.generated.ts");
+const VITA_PACKAGE_PATH = localPath("../../tools/vita-package.ts");
+const VUE_VAPOR_RUNTIME_PATH = localPath(
   "../../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js",
-  import.meta.url,
-).pathname;
-const SOLID_RUNTIME_PATH = new URL(
-  "../../node_modules/solid-js/dist/solid.js",
-  import.meta.url,
-).pathname;
-const SOLID_UNIVERSAL_RUNTIME_PATH = new URL(
+);
+const SOLID_RUNTIME_PATH = localPath("../../node_modules/solid-js/dist/solid.js");
+const SOLID_UNIVERSAL_RUNTIME_PATH = localPath(
   "../../node_modules/solid-js/universal/dist/universal.js",
-  import.meta.url,
-).pathname;
+);
 
 const PACKAGE_NAME = "@pocketjs/framework";
-const CACHE_DIR = new URL("../../.cache/transforms/", import.meta.url).pathname;
+const CACHE_DIR = localPath("../../.cache/transforms/");
 const CACHE_VERSION = "2";
 const JSX_PARSER_OPTS: ParserOptions = { plugins: ["jsx"] };
 
