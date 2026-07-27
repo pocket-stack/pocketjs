@@ -148,8 +148,10 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).toContain("DirectDraw unavailable; using GDI");
     expect(framebuffer).toContain("#include <ddraw.h>");
     expect(framebuffer).toContain("static unsigned short g_pixels[");
-    expect(framebuffer).toContain("IDirectDrawSurface_Lock(");
-    expect(framebuffer).toContain("IDirectDrawSurface_Unlock(");
+    expect(framebuffer).toContain("g_primary->lpVtbl->Lock(");
+    expect(framebuffer).toContain("g_primary->lpVtbl->Unlock(");
+    expect(framebuffer).not.toContain("DDLOCK_WAIT");
+    expect(framebuffer).not.toContain("IDirectDrawSurface_");
 
     expect(build).toContain(
       'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',

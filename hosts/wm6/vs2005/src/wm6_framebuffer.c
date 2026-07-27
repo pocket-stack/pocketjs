@@ -1,4 +1,3 @@
-#define COBJMACROS
 #include <windows.h>
 #include <ddraw.h>
 
@@ -99,7 +98,7 @@ int wm6_framebuffer_open(HWND window)
     status = DirectDrawCreate(NULL, &g_direct_draw, NULL);
     if (status != DD_OK || !g_direct_draw)
         return 0;
-    status = IDirectDraw_SetCooperativeLevel(
+    status = g_direct_draw->lpVtbl->SetCooperativeLevel(
         g_direct_draw, window, DDSCL_NORMAL);
     if (status != DD_OK) {
         wm6_framebuffer_close();
@@ -109,7 +108,7 @@ int wm6_framebuffer_open(HWND window)
     description.dwSize = sizeof(description);
     description.dwFlags = DDSD_CAPS;
     description.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE;
-    status = IDirectDraw_CreateSurface(
+    status = g_direct_draw->lpVtbl->CreateSurface(
         g_direct_draw, &description, &g_primary, NULL);
     if (status != DD_OK || !g_primary) {
         wm6_framebuffer_close();
@@ -121,11 +120,11 @@ int wm6_framebuffer_open(HWND window)
 void wm6_framebuffer_close(void)
 {
     if (g_primary) {
-        IDirectDrawSurface_Release(g_primary);
+        g_primary->lpVtbl->Release(g_primary);
         g_primary = NULL;
     }
     if (g_direct_draw) {
-        IDirectDraw_Release(g_direct_draw);
+        g_direct_draw->lpVtbl->Release(g_direct_draw);
         g_direct_draw = NULL;
     }
 }
@@ -189,12 +188,12 @@ int wm6_framebuffer_present(void)
         return 0;
     memset(&surface, 0, sizeof(surface));
     surface.dwSize = sizeof(surface);
-    status = IDirectDrawSurface_Lock(
-        g_primary, NULL, &surface, DDLOCK_WAIT, NULL);
+    status = g_primary->lpVtbl->Lock(
+        g_primary, NULL, &surface, 0, NULL);
     if (status == DDERR_SURFACELOST) {
-        IDirectDrawSurface_Restore(g_primary);
-        status = IDirectDrawSurface_Lock(
-            g_primary, NULL, &surface, DDLOCK_WAIT, NULL);
+        g_primary->lpVtbl->Restore(g_primary);
+        status = g_primary->lpVtbl->Lock(
+            g_primary, NULL, &surface, 0, NULL);
     }
     if (status != DD_OK || !surface.lpSurface)
         return 0;
@@ -248,10 +247,10 @@ int wm6_framebuffer_present(void)
                 pixels[x * 3 + 2] = (unsigned char)(color >> 16);
             }
         } else {
-            IDirectDrawSurface_Unlock(g_primary, surface.lpSurface);
+            g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
             return 0;
         }
     }
-    IDirectDrawSurface_Unlock(g_primary, surface.lpSurface);
+    g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
     return 1;
 }
