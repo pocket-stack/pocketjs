@@ -73,6 +73,11 @@ The real runtime project deploys `PocketJS.WM6.QuickJS.v3.dll`; the ABI suffix
 prevents Windows CE from reusing an older QuickJS module still loaded by the
 standalone Probe or a previous host process. After changing ABI versions,
 close every old PocketJS process (or soft-reset the emulator) before deploying.
+The primary executable is `PocketJS.WM6.QuickJS.exe`. VS2005 stores its remote
+debugger target in a machine-specific ignored `.user` file, so an older
+workspace may still request `PocketJS.WM6.QuickJS.Probe.exe`. The post-build
+step deploys that name as a byte-for-byte compatibility alias of the current
+runtime; it is not the old text-only Cards probe.
 The VS2005 Output window reports the loaded ABI, viewport and asset sizes, the
 first Rust framebuffer geometry, the actual DirectDraw surface format, and a
 rolling measured FPS. Any runtime, framebuffer-copy, or DirectDraw failure

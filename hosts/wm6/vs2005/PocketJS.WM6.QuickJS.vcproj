@@ -62,12 +62,16 @@
 			<Tool Name="VCFxCopTool"/>
 			<Tool Name="VCAppVerifierTool"/>
 			<Tool Name="VCCodeSignTool"/>
-			<Tool Name="VCPostBuildEventTool"/>
+			<Tool
+				Name="VCPostBuildEventTool"
+				Description="Create legacy debugger alias"
+				CommandLine="copy /Y &quot;$(OutDir)\PocketJS.WM6.QuickJS.exe&quot; &quot;$(OutDir)\PocketJS.WM6.QuickJS.Probe.exe&quot;"
+			/>
 			<DeploymentTool
 				ForceDirty="-1"
 				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS"
 				RegisterOutput="0"
-				AdditionalFiles="PocketJS.WM6.QuickJS.v3.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Demo.js|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Demo.pak|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
+				AdditionalFiles="PocketJS.WM6.QuickJS.Probe.exe|$(OutDir)|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.QuickJS.v3.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Demo.js|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Demo.pak|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
 			/>
 			<DebuggerTool
 				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS\PocketJS.WM6.QuickJS.exe"
@@ -123,12 +127,16 @@
 			<Tool Name="VCFxCopTool"/>
 			<Tool Name="VCAppVerifierTool"/>
 			<Tool Name="VCCodeSignTool"/>
-			<Tool Name="VCPostBuildEventTool"/>
+			<Tool
+				Name="VCPostBuildEventTool"
+				Description="Create legacy debugger alias"
+				CommandLine="copy /Y &quot;$(OutDir)\PocketJS.WM6.QuickJS.exe&quot; &quot;$(OutDir)\PocketJS.WM6.QuickJS.Probe.exe&quot;"
+			/>
 			<DeploymentTool
 				ForceDirty="-1"
 				RemoteDirectory="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS"
 				RegisterOutput="0"
-				AdditionalFiles="PocketJS.WM6.QuickJS.v3.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Demo.js|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Demo.pak|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
+				AdditionalFiles="PocketJS.WM6.QuickJS.Probe.exe|$(OutDir)|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.QuickJS.v3.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Demo.js|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0;PocketJS.WM6.Demo.pak|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS|0"
 			/>
 			<DebuggerTool
 				RemoteExecutable="%CSIDL_PROGRAM_FILES%\PocketJS.WM6.QuickJS\PocketJS.WM6.QuickJS.exe"
