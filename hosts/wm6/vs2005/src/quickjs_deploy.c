@@ -1,6 +1,7 @@
 #include <windows.h>
 
 #include "wm6_quickjs_abi.h"
+#include "wm6_framebuffer.h"
 
 static int append_file_name(WCHAR *path, unsigned int capacity,
                             const WCHAR *name)
@@ -77,6 +78,7 @@ static void ascii_to_wide(WCHAR *output, unsigned int capacity,
 }
 
 static char *g_draw_list;
+static int g_framebuffer_ready;
 
 static int wide_length(const WCHAR *text)
 {
@@ -114,7 +116,8 @@ static void paint_cards(HWND window, HDC dc)
     int offset_y;
 
     GetClientRect(window, &client);
-    FillRect(dc, &client, (HBRUSH)GetStockObject(BLACK_BRUSH));
+    if (!g_framebuffer_ready)
+        FillRect(dc, &client, (HBRUSH)GetStockObject(BLACK_BRUSH));
     offset_x = (client.right - 480) / 2;
     offset_y = (client.bottom - 272) / 2;
     line = g_draw_list;
@@ -129,7 +132,7 @@ static void paint_cards(HWND window, HDC dc)
         saved = *next;
         *next = '\0';
         cursor = line + 1;
-        if (line[0] == 'B') {
+        if (line[0] == 'B' && !g_framebuffer_ready) {
             r = read_number(&cursor);
             g = read_number(&cursor);
             b = read_number(&cursor);
@@ -140,7 +143,7 @@ static void paint_cards(HWND window, HDC dc)
             brush = CreateSolidBrush(RGB(r, g, b));
             FillRect(dc, &logical, brush);
             DeleteObject(brush);
-        } else if (line[0] == 'R') {
+        } else if (line[0] == 'R' && !g_framebuffer_ready) {
             x = read_number(&cursor);
             y = read_number(&cursor);
             w = read_number(&cursor);
@@ -196,6 +199,8 @@ static LRESULT CALLBACK CardsWindowProc(HWND window, UINT message,
         {
             PAINTSTRUCT paint;
             HDC dc = BeginPaint(window, &paint);
+            if (g_framebuffer_ready && !wm6_framebuffer_present())
+                g_framebuffer_ready = 0;
             paint_cards(window, dc);
             EndPaint(window, &paint);
         }
@@ -207,6 +212,7 @@ static LRESULT CALLBACK CardsWindowProc(HWND window, UINT message,
         }
         break;
     case WM_DESTROY:
+        wm6_framebuffer_close();
         PostQuitMessage(0);
         return 0;
     }
@@ -328,6 +334,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         LocalFree(message);
         return 7;
     }
+    g_framebuffer_ready = wm6_framebuffer_open(window);
+    if (g_framebuffer_ready)
+        wm6_framebuffer_render(g_draw_list);
     ShowWindow(window, show);
     UpdateWindow(window);
     while (GetMessage(&message_loop, NULL, 0, 0)) {

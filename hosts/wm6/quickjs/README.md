@@ -54,11 +54,14 @@ from a Promise job. Success shows `QuickJS 6,10,16,26` under the title
 versioned C ABI and statically linked libgcc. `build-cards.sh` combines the
 minimal WM6 HostOps bootstrap with the real `dist/cards-main.js` output.
 VS2005 builds the compatibility-named `PocketJS.WM6.QuickJS.Probe.exe`,
-deploys both files, mounts the
-Solid application in QuickJS, and turns its native tree into a compact GDI
-draw list. The first graphical milestone paints the Cards header, three module
-cards, accent strips, captions, and footer in a centered 480×272 viewport.
-Input-driven focus and detail updates are the next milestone.
+deploys both files, mounts the Solid application in QuickJS, and turns its
+native tree into a compact draw list. The WM6 host rasterizes backgrounds and
+rectangles into an application-owned 480×272 RGB565 framebuffer, then presents
+it through a locked DirectDraw primary surface. Text is still drawn through
+GDI after the surface is unlocked, and the complete GDI renderer remains the
+fallback when DirectDraw or the display pixel format is unavailable.
+Input-driven focus, font-atlas rasterization, and detail updates are the next
+milestones.
 
 The compatibility patch:
 

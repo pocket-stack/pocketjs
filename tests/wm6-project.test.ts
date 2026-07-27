@@ -94,12 +94,13 @@ describe("Windows Mobile 6 VS2005 projects", () => {
 
   test("includes a pinned CeGCC QuickJS ARM/WinCE probe", async () => {
     const quickjsRoot = new URL("../hosts/wm6/quickjs/", import.meta.url);
-    const [solution, project, host, build, runtimeBuild, cardsBuild, patch, probe,
-      runtime, abi, cards, math, executable, dll] =
+    const [solution, project, host, framebuffer, build, runtimeBuild, cardsBuild,
+      patch, probe, runtime, abi, cards, math, executable, dll] =
       await Promise.all([
         readFile(new URL("PocketJS.WM6.sln", root), "utf8"),
         readFile(new URL("PocketJS.WM6.QuickJS.vcproj", root), "utf8"),
         readFile(new URL("src/quickjs_deploy.c", root), "utf8"),
+        readFile(new URL("src/wm6_framebuffer.c", root), "utf8"),
         readFile(new URL("build-probe.sh", quickjsRoot), "utf8"),
         readFile(new URL("build-runtime.sh", quickjsRoot), "utf8"),
         readFile(new URL("build-cards.sh", quickjsRoot), "utf8"),
@@ -122,6 +123,9 @@ describe("Windows Mobile 6 VS2005 projects", () => {
       'PocketJS.WM6.QuickJS.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\\PocketJS.WM6.QuickJS|0',
     );
     expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
+    expect(project.match(/AdditionalDependencies="ddraw\.lib coredll\.lib"/g))
+      .toHaveLength(2);
+    expect(project).toContain('RelativePath=".\\src\\wm6_framebuffer.c"');
     expect(
       project.match(/OutputFile="\$\(OutDir\)\\PocketJS\.WM6\.QuickJS\.Probe\.exe"/g),
     ).toHaveLength(2);
@@ -138,6 +142,12 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).toContain("paint_cards(window, dc)");
     expect(host).toContain("ExtTextOut(dc");
     expect(host).not.toContain("\n            TextOut(dc");
+    expect(host).toContain("wm6_framebuffer_open(window)");
+    expect(host).toContain("wm6_framebuffer_present()");
+    expect(framebuffer).toContain("#include <ddraw.h>");
+    expect(framebuffer).toContain("static unsigned short g_pixels[");
+    expect(framebuffer).toContain("IDirectDrawSurface_Lock(");
+    expect(framebuffer).toContain("IDirectDrawSurface_Unlock(");
 
     expect(build).toContain(
       'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',

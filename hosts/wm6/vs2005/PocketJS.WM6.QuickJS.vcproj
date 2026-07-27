@@ -47,7 +47,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/subsystem:windowsce,5.02"
-				AdditionalDependencies="coredll.lib"
+				AdditionalDependencies="ddraw.lib coredll.lib"
 				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.Probe.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="true"
@@ -107,7 +107,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/subsystem:windowsce,5.02 /opt:ref /opt:icf"
-				AdditionalDependencies="coredll.lib"
+				AdditionalDependencies="ddraw.lib coredll.lib"
 				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.Probe.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="false"
@@ -140,9 +140,11 @@
 	<Files>
 		<Filter Name="Source Files" Filter="c">
 			<File RelativePath=".\src\quickjs_deploy.c"/>
+			<File RelativePath=".\src\wm6_framebuffer.c"/>
 		</Filter>
 		<Filter Name="Header Files" Filter="h">
 			<File RelativePath=".\runtime\wm6_quickjs_abi.h"/>
+			<File RelativePath=".\src\wm6_framebuffer.h"/>
 		</Filter>
 		<Filter Name="Resource Files" Filter="rc">
 			<File RelativePath=".\resources\probe.rc"/>
