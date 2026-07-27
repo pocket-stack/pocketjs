@@ -85,6 +85,7 @@ static wm6_qjs_handle g_quickjs_runtime;
 static wm6_qjs_frame_fn g_quickjs_frame;
 static wm6_qjs_destroy_fn g_quickjs_destroy;
 static unsigned int g_buttons;
+static unsigned int g_pressed_buttons;
 static int g_viewport_width;
 static int g_viewport_height;
 static int g_touch_active;
@@ -249,6 +250,7 @@ static int render_core_frame(void)
     const unsigned char *pixels;
     unsigned int touches[1];
     unsigned int touch_count;
+    unsigned int frame_buttons;
     unsigned int width;
     unsigned int height;
     unsigned int stride;
@@ -257,6 +259,8 @@ static int render_core_frame(void)
 
     if (!g_quickjs_runtime || !g_quickjs_frame || !g_framebuffer_ready)
         return 0;
+    frame_buttons = g_buttons | g_pressed_buttons;
+    g_pressed_buttons = 0;
     touch_count = 0;
     if (g_touch_active) {
         touches[0] = 0x80000000u |
@@ -267,7 +271,7 @@ static int render_core_frame(void)
     width = height = stride = byte_length = 0;
     pixels = g_quickjs_frame(
         g_quickjs_runtime,
-        g_buttons,
+        frame_buttons,
         touches,
         touch_count,
         &width,
@@ -339,7 +343,14 @@ static LRESULT CALLBACK DemoWindowProc(HWND window, UINT message,
         g_touch_active = 0;
         return 0;
     case WM_KEYDOWN:
-        g_buttons |= button_for_key(wparam);
+        {
+            unsigned int button;
+
+            button = button_for_key(wparam);
+            if (button && !(g_buttons & button))
+                g_pressed_buttons |= button;
+            g_buttons |= button;
+        }
         if (wparam == VK_ESCAPE) {
             DestroyWindow(window);
             return 0;
@@ -347,6 +358,13 @@ static LRESULT CALLBACK DemoWindowProc(HWND window, UINT message,
         return 0;
     case WM_KEYUP:
         g_buttons &= ~button_for_key(wparam);
+        return 0;
+    case WM_KILLFOCUS:
+        g_buttons = 0;
+        g_pressed_buttons = 0;
+        g_touch_active = 0;
+        if (GetCapture() == window)
+            ReleaseCapture();
         return 0;
     case WM_DESTROY:
         KillTimer(window, 1);
@@ -497,6 +515,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         return 5;
     }
     g_buttons = 0;
+    g_pressed_buttons = 0;
     g_touch_active = 0;
     g_touch_x = 0;
     g_touch_y = 0;
