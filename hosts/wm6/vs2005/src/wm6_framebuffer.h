@@ -3,10 +3,7 @@
 
 #include <windows.h>
 
-#define WM6_FB_WIDTH 480
-#define WM6_FB_HEIGHT 272
-
-int wm6_framebuffer_open(HWND window);
+int wm6_framebuffer_open(HWND window, int logical_width, int logical_height);
 int wm6_framebuffer_load_pak(const WCHAR *path);
 void wm6_framebuffer_close(void);
 int wm6_framebuffer_render(const char *draw_list);

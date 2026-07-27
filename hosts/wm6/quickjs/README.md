@@ -56,7 +56,10 @@ minimal WM6 HostOps bootstrap with the real `dist/hero-main.js` output.
 VS2005 builds the compatibility-named `PocketJS.WM6.QuickJS.Probe.exe`,
 deploys both files, mounts the Solid application in QuickJS, and turns its
 native tree into a compact draw list. The WM6 host rasterizes backgrounds and
-rectangles into an application-owned 480×272 RGB565 framebuffer. It reads the
+rectangles into an application-owned RGB565 framebuffer sized from the rotated
+WM6 screen metrics. It injects those dimensions into `ui.__viewport` before
+the real bundle mounts, and the Hero draw-list adapter derives its layout from
+the runtime viewport rather than assuming 480×272. It reads the
 same Inter font-atlas and RGBA image entries that other PocketJS hosts consume
 from the demo PAK, alpha-blends glyphs, the logo, and a spinner frame directly
 into RGB565, then presents the buffer through a locked DirectDraw primary

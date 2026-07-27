@@ -153,6 +153,9 @@ describe("Windows Mobile 6 VS2005 projects", () => {
       host.match(/requested\.dmDisplayOrientation = DMDO_90/g),
     ).toHaveLength(2);
     expect(host).toContain("restore_display_orientation()");
+    expect(host).toContain("make_viewport_script");
+    expect(host).toContain("globalThis.__wm6ViewportWidth=");
+    expect(host).toContain("globalThis.__wm6ViewportHeight=");
     expect(host).toContain('L"PocketJS Hero Demo [landscape]"');
     expect(host).toContain('L"PocketJS Hero Demo [rotation unavailable]"');
     expect(host).toContain("paint_demo(window, dc)");
@@ -160,12 +163,16 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).toContain('L"PocketJS.WM6.Demo.pak"');
     expect(host).toContain("ExtTextOut(dc");
     expect(host).not.toContain("\n            TextOut(dc");
-    expect(host).toContain("wm6_framebuffer_open(window)");
+    expect(host).toContain(
+      "wm6_framebuffer_open(window, viewport_width, viewport_height)",
+    );
     expect(host).toContain("wm6_framebuffer_present()");
     expect(host).toContain("DirectDraw RGB565 + PAK assets active");
     expect(host).toContain("DirectDraw unavailable; using GDI");
     expect(framebuffer).toContain("#include <ddraw.h>");
-    expect(framebuffer).toContain("static unsigned short g_pixels[");
+    expect(framebuffer).toContain("static unsigned short *g_pixels");
+    expect(framebuffer).toContain("g_width = logical_width");
+    expect(framebuffer).toContain("g_height = logical_height");
     expect(framebuffer).toContain("g_primary->lpVtbl->Lock(");
     expect(framebuffer).toContain("g_primary->lpVtbl->Unlock(");
     expect(framebuffer).toContain("g_primary->lpVtbl->GetPixelFormat(");
@@ -174,10 +181,10 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(framebuffer).toContain("destination_width");
     expect(framebuffer).toContain("destination_height");
     expect(framebuffer).toContain(
-      "source_x = x * WM6_FB_WIDTH / destination_width",
+      "source_x = x * g_width / destination_width",
     );
     expect(framebuffer).toContain(
-      "source_y = y * WM6_FB_HEIGHT / destination_height",
+      "source_y = y * g_height / destination_height",
     );
     expect(framebuffer).not.toContain("DDLOCK_WAIT");
     expect(framebuffer).not.toContain("IDirectDrawSurface_");
@@ -219,6 +226,10 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(demo).toContain("ONE RUST CORE");
     expect(demo).toContain("spinner-00.svg");
     expect(demo).toContain("globalThis.__wm6DrawList");
+    expect(demo).toContain("globalThis.__wm6ViewportWidth");
+    expect(demo).toContain("__viewport: { w: viewportWidth, h: viewportHeight }");
+    expect(demo).toContain("const middleY = Math.max");
+    expect(demo).toContain("const footerY = Math.max");
     expect(demo).toContain('const out = ["B|248|250|252"]');
     expect(demo).toContain("I|${x}|${y}|${w}|${h}|${handle}");
     expect(demoPak.subarray(0, 4).toString()).toBe("DCPK");

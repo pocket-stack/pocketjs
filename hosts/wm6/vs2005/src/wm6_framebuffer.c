@@ -5,7 +5,9 @@
 
 static LPDIRECTDRAW g_direct_draw;
 static LPDIRECTDRAWSURFACE g_primary;
-static unsigned short g_pixels[WM6_FB_WIDTH * WM6_FB_HEIGHT];
+static unsigned short *g_pixels;
+static int g_width;
+static int g_height;
 static unsigned char *g_pak;
 static unsigned int g_pak_size;
 
@@ -85,10 +87,10 @@ static void blend_pixel(int x, int y, int red, int green, int blue,
     int destination_green;
     int destination_blue;
 
-    if (x < 0 || x >= WM6_FB_WIDTH || y < 0 || y >= WM6_FB_HEIGHT ||
+    if (x < 0 || x >= g_width || y < 0 || y >= g_height ||
         alpha == 0)
         return;
-    destination = g_pixels[y * WM6_FB_WIDTH + x];
+    destination = g_pixels[y * g_width + x];
     destination_red = (int)(((destination >> 11) & 31u) * 255u / 31u);
     destination_green = (int)(((destination >> 5) & 63u) * 255u / 63u);
     destination_blue = (int)((destination & 31u) * 255u / 31u);
@@ -99,7 +101,7 @@ static void blend_pixel(int x, int y, int red, int green, int blue,
                    (unsigned int)destination_green * inverse + 127u) / 255u);
     blue = (int)(((unsigned int)blue * alpha +
                   (unsigned int)destination_blue * inverse + 127u) / 255u);
-    g_pixels[y * WM6_FB_WIDTH + x] = rgb565(red, green, blue);
+    g_pixels[y * g_width + x] = rgb565(red, green, blue);
 }
 
 static void fill_rect(int x, int y, int width, int height,
@@ -116,16 +118,16 @@ static void fill_rect(int x, int y, int width, int height,
     top = y < 0 ? 0 : y;
     right = x + width;
     bottom = y + height;
-    if (right > WM6_FB_WIDTH)
-        right = WM6_FB_WIDTH;
-    if (bottom > WM6_FB_HEIGHT)
-        bottom = WM6_FB_HEIGHT;
+    if (right > g_width)
+        right = g_width;
+    if (bottom > g_height)
+        bottom = g_height;
     if (left >= right || top >= bottom)
         return;
     for (row = top; row < bottom; row++) {
         unsigned short *destination;
 
-        destination = &g_pixels[row * WM6_FB_WIDTH + left];
+        destination = &g_pixels[row * g_width + left];
         for (column = left; column < right; column++)
             *destination++ = color;
     }
@@ -555,12 +557,24 @@ static int draw_image(int x, int y, int width, int height, int handle)
     return 1;
 }
 
-int wm6_framebuffer_open(HWND window)
+int wm6_framebuffer_open(HWND window, int logical_width, int logical_height)
 {
     DDSURFACEDESC description;
     HRESULT status;
+    unsigned int pixel_count;
 
     wm6_framebuffer_close();
+    if (logical_width <= 0 || logical_height <= 0 ||
+        logical_width > 2048 || logical_height > 2048)
+        return 0;
+    pixel_count = (unsigned int)logical_width *
+                  (unsigned int)logical_height;
+    g_pixels = (unsigned short *)LocalAlloc(
+        LMEM_FIXED, pixel_count * sizeof(unsigned short));
+    if (!g_pixels)
+        return 0;
+    g_width = logical_width;
+    g_height = logical_height;
     status = DirectDrawCreate(NULL, &g_direct_draw, NULL);
     if (status != DD_OK || !g_direct_draw)
         return 0;
@@ -593,6 +607,12 @@ void wm6_framebuffer_close(void)
         g_direct_draw->lpVtbl->Release(g_direct_draw);
         g_direct_draw = NULL;
     }
+    if (g_pixels) {
+        LocalFree(g_pixels);
+        g_pixels = NULL;
+    }
+    g_width = 0;
+    g_height = 0;
     if (g_pak) {
         LocalFree(g_pak);
         g_pak = NULL;
@@ -607,9 +627,9 @@ int wm6_framebuffer_render(const char *draw_list)
     const char *line;
     int succeeded;
 
-    if (!draw_list)
+    if (!draw_list || !g_pixels || g_width <= 0 || g_height <= 0)
         return 0;
-    fill_rect(0, 0, WM6_FB_WIDTH, WM6_FB_HEIGHT, rgb565(0, 0, 0));
+    fill_rect(0, 0, g_width, g_height, rgb565(0, 0, 0));
     succeeded = 1;
     line = draw_list;
     while (*line) {
@@ -629,7 +649,7 @@ int wm6_framebuffer_render(const char *draw_list)
             red = read_number(&cursor);
             green = read_number(&cursor);
             blue = read_number(&cursor);
-            fill_rect(0, 0, WM6_FB_WIDTH, WM6_FB_HEIGHT,
+            fill_rect(0, 0, g_width, g_height,
                       rgb565(red, green, blue));
         } else if (line[0] == 'R') {
             x = read_number(&cursor);
@@ -683,7 +703,7 @@ int wm6_framebuffer_present(void)
     int pitch;
     int y;
 
-    if (!g_primary)
+    if (!g_primary || !g_pixels || g_width <= 0 || g_height <= 0)
         return 0;
     memset(&surface, 0, sizeof(surface));
     surface.dwSize = sizeof(surface);
@@ -707,15 +727,14 @@ int wm6_framebuffer_present(void)
         g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
         return 0;
     }
-    if (surface_width * WM6_FB_HEIGHT <=
-        surface_height * WM6_FB_WIDTH) {
+    if (surface_width * g_height <= surface_height * g_width) {
         destination_width = surface_width;
         destination_height =
-            WM6_FB_HEIGHT * surface_width / WM6_FB_WIDTH;
+            g_height * surface_width / g_width;
     } else {
         destination_height = surface_height;
         destination_width =
-            WM6_FB_WIDTH * surface_height / WM6_FB_HEIGHT;
+            g_width * surface_height / g_height;
     }
     if (destination_width <= 0 || destination_height <= 0) {
         g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
@@ -744,10 +763,10 @@ int wm6_framebuffer_present(void)
         int source_y;
         int x;
 
-        source_y = y * WM6_FB_HEIGHT / destination_height;
+        source_y = y * g_height / destination_height;
         destination = (unsigned char *)surface.lpSurface +
                       (offset_y + y) * surface.lPitch;
-        source = &g_pixels[source_y * WM6_FB_WIDTH];
+        source = &g_pixels[source_y * g_width];
         if (pixel_format.dwRGBBitCount == 16) {
             unsigned short *pixels;
 
@@ -755,7 +774,7 @@ int wm6_framebuffer_present(void)
             for (x = 0; x < destination_width; x++) {
                 int source_x;
 
-                source_x = x * WM6_FB_WIDTH / destination_width;
+                source_x = x * g_width / destination_width;
                 pixels[x] = (unsigned short)convert_pixel(
                     source[source_x], &pixel_format);
             }
@@ -766,7 +785,7 @@ int wm6_framebuffer_present(void)
             for (x = 0; x < destination_width; x++) {
                 int source_x;
 
-                source_x = x * WM6_FB_WIDTH / destination_width;
+                source_x = x * g_width / destination_width;
                 pixels[x] = convert_pixel(
                     source[source_x], &pixel_format);
             }
@@ -778,7 +797,7 @@ int wm6_framebuffer_present(void)
                 DWORD color;
                 int source_x;
 
-                source_x = x * WM6_FB_WIDTH / destination_width;
+                source_x = x * g_width / destination_width;
                 color = convert_pixel(
                     source[source_x], &pixel_format);
                 pixels[x * 3] = (unsigned char)color;

@@ -77,8 +77,65 @@ static void ascii_to_wide(WCHAR *output, unsigned int capacity,
     output[index] = L'\0';
 }
 
+static int append_script_text(char **cursor, const char *end,
+                              const char *text)
+{
+    while (*text) {
+        if (*cursor >= end)
+            return 0;
+        **cursor = *text;
+        (*cursor)++;
+        text++;
+    }
+    return 1;
+}
+
+static int append_script_number(char **cursor, const char *end,
+                                unsigned int value)
+{
+    char digits[16];
+    int length;
+
+    length = 0;
+    do {
+        digits[length++] = (char)('0' + value % 10u);
+        value /= 10u;
+    } while (value && length < 16);
+    while (length > 0) {
+        if (*cursor >= end)
+            return 0;
+        **cursor = digits[--length];
+        (*cursor)++;
+    }
+    return 1;
+}
+
+static int make_viewport_script(char *buffer, unsigned int capacity,
+                                int width, int height)
+{
+    char *cursor;
+    const char *end;
+
+    if (!buffer || capacity == 0 || width <= 0 || height <= 0)
+        return 0;
+    cursor = buffer;
+    end = buffer + capacity - 1;
+    if (!append_script_text(
+            &cursor, end, "globalThis.__wm6ViewportWidth=") ||
+        !append_script_number(&cursor, end, (unsigned int)width) ||
+        !append_script_text(
+            &cursor, end, ";globalThis.__wm6ViewportHeight=") ||
+        !append_script_number(&cursor, end, (unsigned int)height) ||
+        !append_script_text(&cursor, end, ";"))
+        return 0;
+    *cursor = '\0';
+    return (int)(cursor - buffer);
+}
+
 static char *g_draw_list;
 static int g_framebuffer_ready;
+static int g_viewport_width;
+static int g_viewport_height;
 static DEVMODE g_original_display_mode;
 static int g_display_rotated;
 
@@ -183,8 +240,8 @@ static void paint_demo(HWND window, HDC dc)
     GetClientRect(window, &client);
     if (!g_framebuffer_ready)
         FillRect(dc, &client, (HBRUSH)GetStockObject(BLACK_BRUSH));
-    offset_x = (client.right - 480) / 2;
-    offset_y = (client.bottom - 272) / 2;
+    offset_x = (client.right - g_viewport_width) / 2;
+    offset_y = (client.bottom - g_viewport_height) / 2;
     line = g_draw_list;
     while (line && *line) {
         int x, y, w, h, slot, r, g, b;
@@ -203,8 +260,8 @@ static void paint_demo(HWND window, HDC dc)
             b = read_number(&cursor);
             logical.left = offset_x;
             logical.top = offset_y;
-            logical.right = offset_x + 480;
-            logical.bottom = offset_y + 272;
+            logical.right = offset_x + g_viewport_width;
+            logical.bottom = offset_y + g_viewport_height;
             brush = CreateSolidBrush(RGB(r, g, b));
             FillRect(dc, &logical, brush);
             DeleteObject(brush);
@@ -296,6 +353,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     wm6_qjs_destroy_fn destroy_runtime;
     wm6_qjs_handle runtime;
     char result[256];
+    char viewport_script[128];
     char *bundle;
     char *snapshot_text;
     unsigned int bundle_length;
@@ -307,6 +365,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     MSG message_loop;
     int rotation_ready;
     int status;
+    int viewport_height;
+    int viewport_length;
+    int viewport_width;
 
     (void)instance;
     (void)previous;
@@ -362,8 +423,23 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
                    L"PocketJS QuickJS Host", MB_OK);
         return 5;
     }
-    status = eval(runtime, bundle, bundle_length,
-                  result, sizeof(result));
+    g_display_rotated = 0;
+    rotation_ready = rotate_display_90();
+    viewport_width = GetSystemMetrics(SM_CXSCREEN);
+    viewport_height = GetSystemMetrics(SM_CYSCREEN);
+    g_viewport_width = viewport_width;
+    g_viewport_height = viewport_height;
+    viewport_length = make_viewport_script(
+        viewport_script, sizeof(viewport_script),
+        viewport_width, viewport_height);
+    status = viewport_length > 0
+                 ? eval(runtime, viewport_script,
+                        (unsigned int)viewport_length,
+                        result, sizeof(result))
+                 : -1;
+    if (status == 0)
+        status = eval(runtime, bundle, bundle_length,
+                      result, sizeof(result));
     if (status == 0)
         status = drain_jobs(runtime, result, sizeof(result)) < 0 ? -1 : 0;
     if (status == 0)
@@ -374,6 +450,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     FreeLibrary(module);
 
     if (status != 0) {
+        restore_display_orientation();
         ascii_to_wide(message, 8192, result);
         MessageBox(NULL, message, L"PocketJS QuickJS DLL failure", MB_OK);
         LocalFree(snapshot_text);
@@ -381,8 +458,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         return 5;
     }
     g_draw_list = snapshot_text;
-    g_display_rotated = 0;
-    rotation_ready = rotate_display_90();
     if (rotation_ready)
         OutputDebugString(L"PocketJS WM6: landscape display active\r\n");
     else
@@ -415,7 +490,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     g_framebuffer_ready = 0;
     if (GetModuleFileName(NULL, pak_path, MAX_PATH) &&
         append_file_name(pak_path, MAX_PATH, L"PocketJS.WM6.Demo.pak") &&
-        wm6_framebuffer_open(window) &&
+        wm6_framebuffer_open(window, viewport_width, viewport_height) &&
         wm6_framebuffer_load_pak(pak_path) &&
         wm6_framebuffer_render(g_draw_list)) {
         g_framebuffer_ready = 1;

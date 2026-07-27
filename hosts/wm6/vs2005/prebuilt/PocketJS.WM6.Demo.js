@@ -27,12 +27,16 @@
     "spinner-06.svg": 8,
     "spinner-07.svg": 9
   };
+  const viewportWidth = Math.max(
+    1, Math.floor(Number(globalThis.__wm6ViewportWidth) || 480));
+  const viewportHeight = Math.max(
+    1, Math.floor(Number(globalThis.__wm6ViewportHeight) || 272));
 
   globalThis.ui = {
     __host: "wm6",
     __hostAbi: 1,
     __textures: textures,
-    __viewport: { w: 480, h: 272 },
+    __viewport: { w: viewportWidth, h: viewportHeight },
     createNode(type) {
       const id = nextNode++;
       nodes.set(id, { id, type, style: -1, text: "", image: -1, parent: 0, children: [] });
@@ -72,7 +76,11 @@
   };
 
   globalThis.__wm6Snapshot = () => {
-    const lines = ["PocketJS Hero (real bundle)", "viewport 480x272", ""];
+    const lines = [
+      "PocketJS Hero (real bundle)",
+      `viewport ${viewportWidth}x${viewportHeight}`,
+      ""
+    ];
     const visit = (id, depth) => {
       const current = node(id);
       if (!current) return;
@@ -85,6 +93,10 @@
 
   globalThis.__wm6DrawList = () => {
     const out = ["B|248|250|252"];
+    const width = viewportWidth;
+    const height = viewportHeight;
+    const middleY = Math.max(72, Math.floor((height - 90) / 2));
+    const footerY = Math.max(middleY + 118, height - 52);
     const safe = (value) => String(value).replace(/[|\r\n]/g, " ");
     const rect = (x, y, w, h, r, g, b) =>
       out.push(`R|${x}|${y}|${w}|${h}|${r}|${g}|${b}`);
@@ -111,41 +123,42 @@
          (values.find((entry) => entry.indexOf("+ RUST + SCEGU") >= 0) ||
           " + RUST + SCEGU"));
 
-    text(348, 20, 10, 5, 150, 105, exact("60", "60"));
-    text(349, 43, 0, 100, 116, 139, exact("FPS", "FPS"));
-    text(397, 20, 10, 37, 99, 235, exact("42", "42"));
-    text(394, 43, 0, 100, 116, 139, exact("NODES", "NODES"));
-    text(449, 20, 10, 217, 119, 6, exact("9", "9"));
-    text(438, 43, 0, 100, 116, 139, exact("DRAWS", "DRAWS"));
+    text(width - 132, 20, 10, 5, 150, 105, exact("60", "60"));
+    text(width - 131, 43, 0, 100, 116, 139, exact("FPS", "FPS"));
+    text(width - 83, 20, 10, 37, 99, 235, exact("42", "42"));
+    text(width - 86, 43, 0, 100, 116, 139, exact("NODES", "NODES"));
+    text(width - 31, 20, 10, 217, 119, 6, exact("9", "9"));
+    text(width - 42, 43, 0, 100, 116, 139, exact("DRAWS", "DRAWS"));
 
-    text(20, 91, 0, 37, 99, 235,
+    text(20, middleY, 0, 37, 99, 235,
          exact("ONE RUST CORE · ONE JSX APP",
                "ONE RUST CORE · ONE JSX APP"));
-    text(20, 112, 13, 15, 23, 42,
+    text(20, middleY + 21, 13, 15, 23, 42,
          exact("JSX at 60 FPS.", "JSX at 60 FPS."));
-    image(420, 108, 40, 40,
+    image(width - 60, middleY + 17, 40, 40,
           imageHandles.find((handle) => handle >= 2) ||
           textures["spinner-00.svg"]);
-    rect(20, 159, 105, 4, 59, 130, 246);
-    rect(125, 159, 105, 4, 6, 182, 212);
-    text(20, 174, 1, 71, 85, 105,
+    rect(20, middleY + 68, 105, 4, 59, 130, 246);
+    rect(125, middleY + 68, 105, 4, 6, 182, 212);
+    text(20, middleY + 83, 1, 71, 85, 105,
          exact("Flexbox, springs and baked type —",
                "Flexbox, springs and baked type —"));
-    text(253, 174, 1, 71, 85, 105,
+    text(width >= 480 ? 253 : 20,
+         middleY + (width >= 480 ? 83 : 101), 1, 71, 85, 105,
          exact("running on a 2005 handheld.",
                "running on a 2005 handheld."));
 
-    rect(20, 220, 132, 32, focused ? 37 : 37,
+    rect(20, footerY, 132, 32, focused ? 37 : 37,
          focused ? 99 : 99, focused ? 235 : 235);
-    text(34, 226, 9, 255, 255, 255,
+    text(34, footerY + 6, 9, 255, 255, 255,
          exact("Press Circle", "Press Circle"));
     const counters = values.filter((entry) => /^\d+$/.test(entry));
-    text(172, 228, 1, 71, 85, 105,
+    text(172, footerY + 8, 1, 71, 85, 105,
          prefix("Count: ", "Count: ") + (counters[counters.length - 1] || "0"));
     const reactive = values.find((entry) =>
       entry === "Reactive on real hardware.");
     if (reactive)
-      text(250, 228, 1, 5, 150, 105, reactive);
+      text(250, footerY + 8, 1, 5, 150, 105, reactive);
     return out.join("\n");
   };
 })();

@@ -15,11 +15,13 @@ This solution contains three native Smart Device applications for the HP iPAQ
   assets into the same buffer, and presents it through DirectDraw. GDI is
   retained only as a compatibility fallback. The host requests the absolute
   `DMDO_90` orientation relative to the device's default portrait mode before
-  creating the window and restores the previous mode when it exits. The
-  480x272 logical framebuffer is aspect-fitted and centered on the actual
-  DirectDraw surface, so QVGA, VGA, and other WM6 display sizes share the same
-  bundle without cropping. The window title reports whether landscape rotation
-  succeeded, even when the process was launched without a debugger attached.
+  mounting the bundle and restores the previous mode when it exits. The
+  rotated `SM_CXSCREEN` and `SM_CYSCREEN` values become the PocketJS viewport
+  and the dynamically allocated logical framebuffer dimensions, so VGA uses
+  640x480 while QVGA uses 320x240. The Hero adapter derives its middle, footer,
+  right-aligned statistics, and wrapping positions from that viewport instead
+  of scaling a fixed 480x272 screenshot. The window title reports whether
+  landscape rotation succeeded, even without a debugger attached.
   Pixel masks are queried from the primary surface separately after a display
   rotation; a missing 16-bit mask falls back to the WM6 RGB565 layout instead
   of silently converting every source color to black.
