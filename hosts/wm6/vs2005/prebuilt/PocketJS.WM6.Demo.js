@@ -1,4 +1,4 @@
-/* PocketJS WM6 bootstrap + real apps/cursor bundle. */
+/* PocketJS WM6 bootstrap + real apps/hero bundle. */
 (() => {
   let nextNode = 2;
   let nextAnim = 1;
@@ -16,14 +16,26 @@
     if (child) child.parent = 0;
   };
 
+  const textures = {
+    "logo.png": 1,
+    "spinner-00.svg": 2,
+    "spinner-01.svg": 3,
+    "spinner-02.svg": 4,
+    "spinner-03.svg": 5,
+    "spinner-04.svg": 6,
+    "spinner-05.svg": 7,
+    "spinner-06.svg": 8,
+    "spinner-07.svg": 9
+  };
+
   globalThis.ui = {
     __host: "wm6",
     __hostAbi: 1,
-    __textures: {},
+    __textures: textures,
     __viewport: { w: 480, h: 272 },
     createNode(type) {
       const id = nextNode++;
-      nodes.set(id, { id, type, style: -1, text: "", parent: 0, children: [] });
+      nodes.set(id, { id, type, style: -1, text: "", image: -1, parent: 0, children: [] });
       return id;
     },
     destroyNode(id) {
@@ -47,7 +59,7 @@
     replaceText(id, text) { this.setText(id, text); },
     uploadTexture() { return -1; },
     freeTexture() {},
-    setImage() {},
+    setImage(id, handle) { const n = node(id); if (n) n.image = handle; },
     setSprite() {},
     animate() { return nextAnim++; },
     cancelAnim() {},
@@ -60,7 +72,7 @@
   };
 
   globalThis.__wm6Snapshot = () => {
-    const lines = ["PocketJS Cursor (real bundle)", "viewport 480x272", ""];
+    const lines = ["PocketJS Hero (real bundle)", "viewport 480x272", ""];
     const visit = (id, depth) => {
       const current = node(id);
       if (!current) return;
@@ -72,46 +84,68 @@
   };
 
   globalThis.__wm6DrawList = () => {
-    const out = ["B|0|128|128"];
+    const out = ["B|248|250|252"];
     const safe = (value) => String(value).replace(/[|\r\n]/g, " ");
     const rect = (x, y, w, h, r, g, b) =>
       out.push(`R|${x}|${y}|${w}|${h}|${r}|${g}|${b}`);
-    const text = (x, y, value) =>
-      out.push(`T|${x}|${y}|0|0|0|0|${safe(value)}`);
-    const bevel = (x, y, w, h, pressed) => {
-      rect(x, y, w, h, pressed ? 210 : 192, pressed ? 206 : 192,
-           pressed ? 198 : 192);
-      rect(x, y, w, 2, pressed ? 0 : 255, pressed ? 0 : 255,
-           pressed ? 0 : 255);
-      rect(x, y, 2, h, pressed ? 0 : 255, pressed ? 0 : 255,
-           pressed ? 0 : 255);
-      rect(x, y + h - 2, w, 2, pressed ? 255 : 0, pressed ? 255 : 0,
-           pressed ? 255 : 0);
-      rect(x + w - 2, y, 2, h, pressed ? 255 : 0, pressed ? 255 : 0,
-           pressed ? 255 : 0);
+    const text = (x, y, slot, r, g, b, value) =>
+      out.push(`T|${x}|${y}|${slot}|${r}|${g}|${b}|${safe(value)}`);
+    const image = (x, y, w, h, handle) => {
+      if (handle > 0) out.push(`I|${x}|${y}|${w}|${h}|${handle}`);
     };
-    const labels = ["REPLAY TAPE", "OPEN MEMORY STICK", "LAUNCH SHELL"];
-
-    labels.forEach((label, index) => {
-      let owner = 0;
-      for (const current of nodes.values()) {
-        if (current.text === label) {
-          owner = current.parent;
-          break;
-        }
-      }
-      const y = 78 + index * 32;
-      bevel(120, y, 240, 24, owner === focused);
-      text(240 - Math.floor(label.length * 7 / 2), y + 5, label);
-    });
-
-    let status = "hover a row, press CIRCLE";
+    const values = [];
+    const imageHandles = [];
     for (const current of nodes.values()) {
-      if (current.text && labels.indexOf(current.text) < 0)
-        status = current.text;
+      if (current.text) values.push(current.text);
+      if (current.image > 0) imageHandles.push(current.image);
     }
-    bevel(120, 184, 240, 18, false);
-    text(128, 187, status);
+    const exact = (value, fallback) =>
+      values.indexOf(value) >= 0 ? value : fallback;
+    const prefix = (value, fallback) =>
+      values.find((entry) => entry.indexOf(value) === 0) || fallback;
+
+    image(20, 20, 40, 40, textures["logo.png"]);
+    text(72, 21, 9, 15, 23, 42, exact("PocketJS", "PocketJS"));
+    text(72, 43, 0, 100, 116, 139,
+         exact("Solid", "Solid") +
+         (values.find((entry) => entry.indexOf("+ RUST + SCEGU") >= 0) ||
+          " + RUST + SCEGU"));
+
+    text(348, 20, 10, 5, 150, 105, exact("60", "60"));
+    text(349, 43, 0, 100, 116, 139, exact("FPS", "FPS"));
+    text(397, 20, 10, 37, 99, 235, exact("42", "42"));
+    text(394, 43, 0, 100, 116, 139, exact("NODES", "NODES"));
+    text(449, 20, 10, 217, 119, 6, exact("9", "9"));
+    text(438, 43, 0, 100, 116, 139, exact("DRAWS", "DRAWS"));
+
+    text(20, 91, 0, 37, 99, 235,
+         exact("ONE RUST CORE · ONE JSX APP",
+               "ONE RUST CORE · ONE JSX APP"));
+    text(20, 112, 13, 15, 23, 42,
+         exact("JSX at 60 FPS.", "JSX at 60 FPS."));
+    image(420, 108, 40, 40,
+          imageHandles.find((handle) => handle >= 2) ||
+          textures["spinner-00.svg"]);
+    rect(20, 159, 105, 4, 59, 130, 246);
+    rect(125, 159, 105, 4, 6, 182, 212);
+    text(20, 174, 1, 71, 85, 105,
+         exact("Flexbox, springs and baked type —",
+               "Flexbox, springs and baked type —"));
+    text(253, 174, 1, 71, 85, 105,
+         exact("running on a 2005 handheld.",
+               "running on a 2005 handheld."));
+
+    rect(20, 220, 132, 32, focused ? 37 : 37,
+         focused ? 99 : 99, focused ? 235 : 235);
+    text(34, 226, 9, 255, 255, 255,
+         exact("Press Circle", "Press Circle"));
+    const counters = values.filter((entry) => /^\d+$/.test(entry));
+    text(172, 228, 1, 71, 85, 105,
+         prefix("Count: ", "Count: ") + (counters[counters.length - 1] || "0"));
+    const reactive = values.find((entry) =>
+      entry === "Reactive on real hardware.");
+    if (reactive)
+      text(250, 228, 1, 5, 150, 105, reactive);
     return out.join("\n");
   };
 })();
@@ -212,6 +246,15 @@
     else
       updateComputation(c);
   }
+  function createEffect(fn, value, options) {
+    runEffects = runUserEffects;
+    const c = createComputation(fn, value, false, STALE), s = SuspenseContext && useContext(SuspenseContext);
+    if (s)
+      c.suspense = s;
+    if (!options || !options.render)
+      c.user = true;
+    Effects ? Effects.push(c) : updateComputation(c);
+  }
   function createMemo(fn, value, options) {
     options = options ? Object.assign({}, signalOptions, options) : signalOptions;
     const c = createComputation(fn, value, true, 0);
@@ -237,6 +280,9 @@
     } finally {
       Listener = listener;
     }
+  }
+  function onMount(fn) {
+    createEffect(() => untrack(fn));
   }
   function onCleanup(fn) {
     if (Owner === null)
@@ -276,6 +322,10 @@
     });
   }
   var [transPending, setTransPending] = /* @__PURE__ */ createSignal(false);
+  function useContext(context) {
+    let value;
+    return Owner && Owner.context && (value = Owner.context[context.id]) !== undefined ? value : context.defaultValue;
+  }
   var SuspenseContext;
   function readSignal() {
     const runningTransition = Transition && Transition.running;
@@ -601,6 +651,31 @@
       }
     }
   }
+  function runUserEffects(queue) {
+    let i, userLength = 0;
+    for (i = 0;i < queue.length; i++) {
+      const e = queue[i];
+      if (!e.user)
+        runTop(e);
+      else
+        queue[userLength++] = e;
+    }
+    if (sharedConfig.context) {
+      if (sharedConfig.count) {
+        sharedConfig.effects || (sharedConfig.effects = []);
+        sharedConfig.effects.push(...queue.slice(0, userLength));
+        return;
+      }
+      setHydrateContext();
+    }
+    if (sharedConfig.effects && (sharedConfig.done || !sharedConfig.count)) {
+      queue = [...sharedConfig.effects, ...queue];
+      userLength += sharedConfig.effects.length;
+      delete sharedConfig.effects;
+    }
+    for (i = 0;i < userLength; i++)
+      runTop(queue[i]);
+  }
   function lookUpstream(node, ignore) {
     const runningTransition = Transition && Transition.running;
     if (runningTransition)
@@ -838,6 +913,27 @@
         target[key] = desc ? desc.value : undefined;
     }
     return target;
+  }
+  var narrowedError = (name) => `Stale read from <${name}>.`;
+  function Show(props) {
+    const keyed = props.keyed;
+    const conditionValue = createMemo(() => props.when, undefined, undefined);
+    const condition = keyed ? conditionValue : createMemo(conditionValue, undefined, {
+      equals: (a, b) => !a === !b
+    });
+    return createMemo(() => {
+      const c = condition();
+      if (c) {
+        const child = props.children;
+        const fn = typeof child === "function" && child.length > 0;
+        return fn ? untrack(() => child(keyed ? c : () => {
+          if (!untrack(condition))
+            throw narrowedError("Show");
+          return conditionValue();
+        })) : child;
+      }
+      return props.fallback;
+    }, undefined, undefined);
   }
 
   // node_modules/solid-js/universal/dist/universal.js
@@ -1178,6 +1274,49 @@
     arcSweep: 141,
     arcWidth: 142
   };
+  var ANIMATABLE = [
+    "width",
+    "height",
+    "paddingT",
+    "paddingR",
+    "paddingB",
+    "paddingL",
+    "marginT",
+    "marginR",
+    "marginB",
+    "marginL",
+    "gap",
+    "basis",
+    "insetT",
+    "insetR",
+    "insetB",
+    "insetL",
+    "bgColor",
+    "gradFrom",
+    "gradTo",
+    "radius",
+    "opacity",
+    "borderColor",
+    "borderWidth",
+    "textColor",
+    "lineHeight",
+    "tracking",
+    "translateX",
+    "translateY",
+    "scale",
+    "rotate",
+    "scaleX",
+    "scaleY",
+    "rotateX",
+    "rotateY",
+    "translateZ",
+    "arcStart",
+    "arcSweep",
+    "arcWidth"
+  ];
+  function animBit(prop) {
+    return ANIMATABLE.indexOf(prop);
+  }
   var VALUE_KIND = {
     f32: 0,
     color: 1,
@@ -1548,6 +1687,21 @@
     for (const cb of [...callbacks])
       cb(buttons);
   }
+  function onFrame(callback) {
+    callbacks.add(callback);
+    onCleanup(() => callbacks.delete(callback));
+  }
+  function createSpriteAnimation(frames, opts = {}) {
+    if (frames.length === 0) {
+      throw new Error("PocketJS: createSpriteAnimation() requires at least one frame");
+    }
+    const frameStep = Math.max(1, Math.floor(opts.frameStep ?? 1));
+    const [frame2, setFrame] = createSignal(0);
+    onFrame(() => {
+      setFrame((frame2() + 1) % (frames.length * frameStep));
+    });
+    return () => frames[Math.floor(frame2() / frameStep) % frames.length];
+  }
 
   // framework/src/pak.ts
   var map = null;
@@ -1903,48 +2057,6 @@
       }
     }
     return px;
-  }
-  function enableCursor(opts = {}) {
-    const prev = cursor;
-    if (prev?.pressTarget)
-      setPressedNode(null);
-    const sprite = {
-      image: opts.image,
-      hotspot: opts.hotspot ?? [0, 0],
-      size: opts.size ?? [0, 0]
-    };
-    const sameSprite = prev !== null && !prev.spriteDirty && prev.sprite.image === sprite.image && prev.sprite.hotspot[0] === sprite.hotspot[0] && prev.sprite.hotspot[1] === sprite.hotspot[1] && prev.sprite.size[0] === sprite.size[0] && prev.sprite.size[1] === sprite.size[1];
-    cursor = {
-      x: opts.start ? opts.start[0] : prev ? prev.x : -1,
-      y: opts.start ? opts.start[1] : prev ? prev.y : -1,
-      vw: prev ? prev.vw : 0,
-      vh: prev ? prev.vh : 0,
-      speed: opts.speed ?? 240,
-      dpadSpeed: opts.dpadSpeed ?? 0,
-      button: opts.button ?? BTN.CIRCLE,
-      pressTarget: null,
-      tex: prev ? prev.tex : -1,
-      sprite,
-      spriteDirty: !sameSprite,
-      target: null,
-      gen: -1,
-      fresh: true
-    };
-    return disableCursor;
-  }
-  function disableCursor() {
-    if (!cursor)
-      return;
-    const c = cursor;
-    cursor = null;
-    setPressedNode(null);
-    if (focused)
-      focusNode(null);
-    if (c.tex >= 0) {
-      const ops = getOps();
-      ops.setCursor?.(-1, 0, 0, 0, 0);
-      ops.freeTexture?.(c.tex);
-    }
   }
   function cursorInitSprite(c, ops) {
     const sprite = c.sprite;
@@ -2693,6 +2805,33 @@
     spring: ENUMS.Easing.Spring,
     "spring-bouncy": ENUMS.Easing.SpringBouncy
   };
+  function nodeId(node) {
+    return typeof node === "number" ? node : node.id;
+  }
+  function animatablePropId(prop) {
+    const propId = PROP[prop];
+    if (propId === undefined) {
+      throw new Error(`PocketJS: unknown prop '${prop}'`);
+    }
+    if (animBit(prop) < 0) {
+      throw new Error(`PocketJS: prop '${prop}' is not animatable (see spec ANIMATABLE)`);
+    }
+    return propId;
+  }
+  function animate(node, prop, to, opts = {}) {
+    const propId = animatablePropId(prop);
+    let easing;
+    if (typeof opts.easing === "number") {
+      easing = opts.easing;
+    } else {
+      const named = EASING_BY_NAME[opts.easing ?? "out"];
+      if (named === undefined) {
+        throw new Error(`PocketJS: unknown easing '${opts.easing}'`);
+      }
+      easing = named;
+    }
+    return getOps().animate(nodeId(node), propId, encodePropValue(prop, to), opts.dur ?? 200, easing, opts.delay ?? 0);
+  }
 
   // framework/src/overlay.ts
   var overlayRoot = null;
@@ -2720,6 +2859,9 @@
   function Text(props) {
     return primitive("text", props);
   }
+  function Image(props) {
+    return primitive("image", props);
+  }
   // framework/src/hot.ts
   var lastText = new WeakMap;
   var lastProp = new WeakMap;
@@ -2736,46 +2878,6 @@
 
   // framework/src/tiles.ts
   var parsed = new Map;
-  // apps/cursor/app.tsx
-  var ROWS = ["REPLAY TAPE", "OPEN MEMORY STICK", "LAUNCH SHELL"];
-  function CursorDemo() {
-    const [status, setStatus] = createSignal("hover a row, press CIRCLE");
-    return createComponent2(View, {
-      class: "w-full h-full flex-col items-center justify-center gap-[10] bg-[#008080]",
-      get children() {
-        return [createComponent2(View, {
-          debugName: "Panel",
-          class: "w-[240] flex-col gap-[8]",
-          get children() {
-            return ROWS.map((label) => createComponent2(View, {
-              debugName: label,
-              focusable: true,
-              onPress: () => setStatus(label),
-              class: "h-[24] flex-col justify-center items-center bg-[#c0c0c0] bevel-[#ffffff,#000000,#dfdfdf,#808080] focus:bg-[#d2cec6] active:bevel-[#000000,#ffffff,#808080,#dfdfdf]",
-              get children() {
-                return createComponent2(Text, {
-                  class: "text-xs text-black",
-                  children: label
-                });
-              }
-            }));
-          }
-        }), createComponent2(View, {
-          debugName: "Status",
-          class: "h-[18] pl-[8] pr-[8] flex-col justify-center bg-[#c0c0c0] bevel-[#808080,#ffffff]",
-          get children() {
-            return createComponent2(Text, {
-              class: "text-xs text-black",
-              get children() {
-                return status();
-              }
-            });
-          }
-        })];
-      }
-    });
-  }
-
   // framework/src/devtools.ts
   var TAPE_CAP = 36000;
   var TREE_THROTTLE = 30;
@@ -3380,18 +3482,36 @@
 
   // framework/src/styles.generated.ts
   var STYLE_IDS = {
-    "w-full h-full flex-col items-center justify-center gap-[10] bg-[#008080]": 0,
-    "w-[240] flex-col gap-[8]": 1,
-    "h-[24] flex-col justify-center items-center bg-[#c0c0c0] bevel-[#ffffff,#000000,#dfdfdf,#808080] focus:bg-[#d2cec6] active:bevel-[#000000,#ffffff,#808080,#dfdfdf]": 2,
-    "text-xs text-black": 3,
-    "h-[18] pl-[8] pr-[8] flex-col justify-center bg-[#c0c0c0] bevel-[#808080,#ffffff]": 4,
-    "relative flex-col w-full h-full bg-slate-50 overflow-hidden": 5,
-    "absolute inset-0 z-50 flex-col items-center justify-center": 6,
-    "absolute inset-0 bg-slate-950": 7,
-    "flex-col gap-2 w-[328] p-3 rounded-xl shadow-lg bg-white border-slate-200": 8,
-    "absolute left-3 right-3 bottom-3 flex-row items-center justify-between px-2 py-1 rounded-lg shadow-md bg-white border-slate-200": 9,
-    "flex-row flex-wrap": 10,
-    grow: 11
+    "flex-col items-end": 0,
+    "text-xs text-slate-500 tracking-wide": 1,
+    "w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100": 2,
+    "flex-row flex-wrap items-center justify-between": 3,
+    "flex-row items-center gap-3": 4,
+    "w-10 h-10 rounded-lg shadow": 5,
+    "flex-col": 6,
+    "text-base text-slate-950 font-bold tracking-wide": 7,
+    "flex-row gap-4": 8,
+    "text-lg text-emerald-600 font-bold": 9,
+    "text-lg text-blue-600 font-bold": 10,
+    "text-lg text-amber-600 font-bold": 11,
+    "flex-col gap-2": 12,
+    "text-xs text-blue-600 tracking-wide": 13,
+    "text-4xl text-slate-950 font-bold": 14,
+    "w-10 h-10": 15,
+    "h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500": 16,
+    "flex-row flex-wrap gap-1": 17,
+    "text-sm text-slate-600": 18,
+    "flex-row flex-wrap items-center gap-4": 19,
+    "px-4 py-2 rounded-xl shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150": 20,
+    "text-base text-white font-bold": 21,
+    "text-sm text-emerald-600": 22,
+    "relative flex-col w-full h-full bg-slate-50 overflow-hidden": 23,
+    "absolute inset-0 z-50 flex-col items-center justify-center": 24,
+    "absolute inset-0 bg-slate-950": 25,
+    "flex-col gap-2 w-[328] p-3 rounded-xl shadow-lg bg-white border-slate-200": 26,
+    "absolute left-3 right-3 bottom-3 flex-row items-center justify-between px-2 py-1 rounded-lg shadow-md bg-white border-slate-200": 27,
+    "flex-row flex-wrap": 28,
+    grow: 29
   };
 
   // framework/src/index.ts
@@ -3404,6 +3524,9 @@
   var FONT_PREFIX = "ui:font.";
   var IMG_PREFIX = "ui:img.";
   var SPRITE_PREFIX = "ui:sprite.";
+  function frameworkName() {
+    return "Solid";
+  }
   function globalOps() {
     return globalThis.ui;
   }
@@ -3581,9 +3704,171 @@
     });
     return dispose;
   }
-  // apps/cursor/main.tsx
-  enableCursor({
-    dpadSpeed: 60
-  });
-  mount(() => createComponent2(CursorDemo, {}));
+
+  // apps/hero/app.tsx
+  var SPINNER_FRAME_STEP = 3;
+  var SPINNER_FRAMES = ["spinner-00.svg", "spinner-01.svg", "spinner-02.svg", "spinner-03.svg", "spinner-04.svg", "spinner-05.svg", "spinner-06.svg", "spinner-07.svg"];
+  function Stat(props) {
+    return createComponent2(View, {
+      class: "flex-col items-end",
+      get children() {
+        return [createComponent2(Text, {
+          get ["class"]() {
+            return props.cls;
+          },
+          get children() {
+            return props.value;
+          }
+        }), createComponent2(Text, {
+          class: "text-xs text-slate-500 tracking-wide",
+          get children() {
+            return props.label;
+          }
+        })];
+      }
+    });
+  }
+  function Hero() {
+    const [count, setCount] = createSignal(0);
+    const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, {
+      frameStep: SPINNER_FRAME_STEP
+    });
+    let underline;
+    onMount(() => {
+      if (underline)
+        animate(underline, "width", 210, {
+          dur: 700,
+          easing: "out",
+          delay: 150
+        });
+    });
+    return createComponent2(View, {
+      debugName: "HeroScreen",
+      class: "w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100",
+      get children() {
+        return [createComponent2(View, {
+          debugName: "Header",
+          class: "flex-row flex-wrap items-center justify-between",
+          get children() {
+            return [createComponent2(View, {
+              class: "flex-row items-center gap-3",
+              get children() {
+                return [createComponent2(Image, {
+                  class: "w-10 h-10 rounded-lg shadow",
+                  src: "logo.png"
+                }), createComponent2(View, {
+                  class: "flex-col",
+                  get children() {
+                    return [createComponent2(Text, {
+                      class: "text-base text-slate-950 font-bold tracking-wide",
+                      children: "PocketJS"
+                    }), createComponent2(Text, {
+                      class: "text-xs text-slate-500 tracking-wide",
+                      get children() {
+                        return [memo2(() => frameworkName()), " + RUST + SCEGU"];
+                      }
+                    })];
+                  }
+                })];
+              }
+            }), createComponent2(View, {
+              class: "flex-row gap-4",
+              get children() {
+                return [createComponent2(Stat, {
+                  label: "FPS",
+                  value: "60",
+                  cls: "text-lg text-emerald-600 font-bold"
+                }), createComponent2(Stat, {
+                  label: "NODES",
+                  value: "42",
+                  cls: "text-lg text-blue-600 font-bold"
+                }), createComponent2(Stat, {
+                  label: "DRAWS",
+                  value: "9",
+                  cls: "text-lg text-amber-600 font-bold"
+                })];
+              }
+            })];
+          }
+        }), createComponent2(View, {
+          class: "flex-col gap-2",
+          get children() {
+            return [createComponent2(Text, {
+              class: "text-xs text-blue-600 tracking-wide",
+              children: "ONE RUST CORE · ONE JSX APP"
+            }), createComponent2(View, {
+              class: "flex-row flex-wrap items-center justify-between",
+              get children() {
+                return [createComponent2(Text, {
+                  class: "text-4xl text-slate-950 font-bold",
+                  children: "JSX at 60 FPS."
+                }), createComponent2(Image, {
+                  class: "w-10 h-10",
+                  get src() {
+                    return spinnerSrc();
+                  }
+                })];
+              }
+            }), createComponent2(View, {
+              ref(r$) {
+                var _ref$ = underline;
+                typeof _ref$ === "function" ? _ref$(r$) : underline = r$;
+              },
+              class: "h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500",
+              get style() {
+                return {
+                  translateX: count() * 2
+                };
+              }
+            }), createComponent2(View, {
+              debugName: "Description",
+              class: "flex-row flex-wrap gap-1",
+              get children() {
+                return [createComponent2(Text, {
+                  class: "text-sm text-slate-600",
+                  children: "Flexbox, springs and baked type —"
+                }), createComponent2(Text, {
+                  class: "text-sm text-slate-600",
+                  children: "running on a 2005 handheld."
+                })];
+              }
+            })];
+          }
+        }), createComponent2(View, {
+          class: "flex-row flex-wrap items-center gap-4",
+          get children() {
+            return [createComponent2(View, {
+              class: "px-4 py-2 rounded-xl shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150",
+              focusable: true,
+              onPress: () => setCount(count() + 1),
+              get children() {
+                return createComponent2(Text, {
+                  class: "text-base text-white font-bold",
+                  children: "Press Circle"
+                });
+              }
+            }), createComponent2(Text, {
+              class: "text-sm text-slate-600",
+              get children() {
+                return ["Count: ", memo2(() => count())];
+              }
+            }), createComponent2(Show, {
+              get when() {
+                return count() > 3;
+              },
+              get children() {
+                return createComponent2(Text, {
+                  class: "text-sm text-emerald-600",
+                  children: "Reactive on real hardware."
+                });
+              }
+            })];
+          }
+        })];
+      }
+    });
+  }
+
+  // apps/hero/main.tsx
+  mount(() => createComponent2(Hero, {}));
 })();

@@ -15,14 +15,26 @@
     if (child) child.parent = 0;
   };
 
+  const textures = {
+    "logo.png": 1,
+    "spinner-00.svg": 2,
+    "spinner-01.svg": 3,
+    "spinner-02.svg": 4,
+    "spinner-03.svg": 5,
+    "spinner-04.svg": 6,
+    "spinner-05.svg": 7,
+    "spinner-06.svg": 8,
+    "spinner-07.svg": 9
+  };
+
   globalThis.ui = {
     __host: "wm6",
     __hostAbi: 1,
-    __textures: {},
+    __textures: textures,
     __viewport: { w: 480, h: 272 },
     createNode(type) {
       const id = nextNode++;
-      nodes.set(id, { id, type, style: -1, text: "", parent: 0, children: [] });
+      nodes.set(id, { id, type, style: -1, text: "", image: -1, parent: 0, children: [] });
       return id;
     },
     destroyNode(id) {
@@ -46,7 +58,7 @@
     replaceText(id, text) { this.setText(id, text); },
     uploadTexture() { return -1; },
     freeTexture() {},
-    setImage() {},
+    setImage(id, handle) { const n = node(id); if (n) n.image = handle; },
     setSprite() {},
     animate() { return nextAnim++; },
     cancelAnim() {},
@@ -59,7 +71,7 @@
   };
 
   globalThis.__wm6Snapshot = () => {
-    const lines = ["PocketJS Cursor (real bundle)", "viewport 480x272", ""];
+    const lines = ["PocketJS Hero (real bundle)", "viewport 480x272", ""];
     const visit = (id, depth) => {
       const current = node(id);
       if (!current) return;
@@ -71,46 +83,68 @@
   };
 
   globalThis.__wm6DrawList = () => {
-    const out = ["B|0|128|128"];
+    const out = ["B|248|250|252"];
     const safe = (value) => String(value).replace(/[|\r\n]/g, " ");
     const rect = (x, y, w, h, r, g, b) =>
       out.push(`R|${x}|${y}|${w}|${h}|${r}|${g}|${b}`);
-    const text = (x, y, value) =>
-      out.push(`T|${x}|${y}|0|0|0|0|${safe(value)}`);
-    const bevel = (x, y, w, h, pressed) => {
-      rect(x, y, w, h, pressed ? 210 : 192, pressed ? 206 : 192,
-           pressed ? 198 : 192);
-      rect(x, y, w, 2, pressed ? 0 : 255, pressed ? 0 : 255,
-           pressed ? 0 : 255);
-      rect(x, y, 2, h, pressed ? 0 : 255, pressed ? 0 : 255,
-           pressed ? 0 : 255);
-      rect(x, y + h - 2, w, 2, pressed ? 255 : 0, pressed ? 255 : 0,
-           pressed ? 255 : 0);
-      rect(x + w - 2, y, 2, h, pressed ? 255 : 0, pressed ? 255 : 0,
-           pressed ? 255 : 0);
+    const text = (x, y, slot, r, g, b, value) =>
+      out.push(`T|${x}|${y}|${slot}|${r}|${g}|${b}|${safe(value)}`);
+    const image = (x, y, w, h, handle) => {
+      if (handle > 0) out.push(`I|${x}|${y}|${w}|${h}|${handle}`);
     };
-    const labels = ["REPLAY TAPE", "OPEN MEMORY STICK", "LAUNCH SHELL"];
-
-    labels.forEach((label, index) => {
-      let owner = 0;
-      for (const current of nodes.values()) {
-        if (current.text === label) {
-          owner = current.parent;
-          break;
-        }
-      }
-      const y = 78 + index * 32;
-      bevel(120, y, 240, 24, owner === focused);
-      text(240 - Math.floor(label.length * 7 / 2), y + 5, label);
-    });
-
-    let status = "hover a row, press CIRCLE";
+    const values = [];
+    const imageHandles = [];
     for (const current of nodes.values()) {
-      if (current.text && labels.indexOf(current.text) < 0)
-        status = current.text;
+      if (current.text) values.push(current.text);
+      if (current.image > 0) imageHandles.push(current.image);
     }
-    bevel(120, 184, 240, 18, false);
-    text(128, 187, status);
+    const exact = (value, fallback) =>
+      values.indexOf(value) >= 0 ? value : fallback;
+    const prefix = (value, fallback) =>
+      values.find((entry) => entry.indexOf(value) === 0) || fallback;
+
+    image(20, 20, 40, 40, textures["logo.png"]);
+    text(72, 21, 9, 15, 23, 42, exact("PocketJS", "PocketJS"));
+    text(72, 43, 0, 100, 116, 139,
+         exact("Solid", "Solid") +
+         (values.find((entry) => entry.indexOf("+ RUST + SCEGU") >= 0) ||
+          " + RUST + SCEGU"));
+
+    text(348, 20, 10, 5, 150, 105, exact("60", "60"));
+    text(349, 43, 0, 100, 116, 139, exact("FPS", "FPS"));
+    text(397, 20, 10, 37, 99, 235, exact("42", "42"));
+    text(394, 43, 0, 100, 116, 139, exact("NODES", "NODES"));
+    text(449, 20, 10, 217, 119, 6, exact("9", "9"));
+    text(438, 43, 0, 100, 116, 139, exact("DRAWS", "DRAWS"));
+
+    text(20, 91, 0, 37, 99, 235,
+         exact("ONE RUST CORE · ONE JSX APP",
+               "ONE RUST CORE · ONE JSX APP"));
+    text(20, 112, 13, 15, 23, 42,
+         exact("JSX at 60 FPS.", "JSX at 60 FPS."));
+    image(420, 108, 40, 40,
+          imageHandles.find((handle) => handle >= 2) ||
+          textures["spinner-00.svg"]);
+    rect(20, 159, 105, 4, 59, 130, 246);
+    rect(125, 159, 105, 4, 6, 182, 212);
+    text(20, 174, 1, 71, 85, 105,
+         exact("Flexbox, springs and baked type —",
+               "Flexbox, springs and baked type —"));
+    text(253, 174, 1, 71, 85, 105,
+         exact("running on a 2005 handheld.",
+               "running on a 2005 handheld."));
+
+    rect(20, 220, 132, 32, focused ? 37 : 37,
+         focused ? 99 : 99, focused ? 235 : 235);
+    text(34, 226, 9, 255, 255, 255,
+         exact("Press Circle", "Press Circle"));
+    const counters = values.filter((entry) => /^\d+$/.test(entry));
+    text(172, 228, 1, 71, 85, 105,
+         prefix("Count: ", "Count: ") + (counters[counters.length - 1] || "0"));
+    const reactive = values.find((entry) =>
+      entry === "Reactive on real hardware.");
+    if (reactive)
+      text(250, 228, 1, 5, 150, 105, reactive);
     return out.join("\n");
   };
 })();

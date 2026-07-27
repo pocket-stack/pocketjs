@@ -152,7 +152,7 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).not.toContain("\n            TextOut(dc");
     expect(host).toContain("wm6_framebuffer_open(window)");
     expect(host).toContain("wm6_framebuffer_present()");
-    expect(host).toContain("DirectDraw RGB565 + font atlas active");
+    expect(host).toContain("DirectDraw RGB565 + PAK assets active");
     expect(host).toContain("DirectDraw unavailable; using GDI");
     expect(framebuffer).toContain("#include <ddraw.h>");
     expect(framebuffer).toContain("static unsigned short g_pixels[");
@@ -164,6 +164,8 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(framebuffer).toContain("parse_font_atlas");
     expect(framebuffer).toContain("logical_coverage");
     expect(framebuffer).toContain("draw_text(");
+    expect(framebuffer).toContain("parse_image(");
+    expect(framebuffer).toContain("draw_image(");
 
     expect(build).toContain(
       'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',
@@ -174,8 +176,8 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(build).toContain("-D_WIN32_WCE=0x0502");
     expect(runtimeBuild).toContain("-shared");
     expect(runtimeBuild).toContain("-static-libgcc");
-    expect(demoBuild).toContain("dist/cursor-main.js");
-    expect(demoBuild).toContain("dist/cursor-main.pak");
+    expect(demoBuild).toContain("dist/hero-main.js");
+    expect(demoBuild).toContain("dist/hero-main.pak");
     expect(patch).toContain("#undef CONFIG_ATOMICS");
     expect(patch).toContain("#elif defined(_WIN32_WCE)");
     expect(probe).toContain("JS_SetMemoryLimit(runtime, 8u * 1024u * 1024u)");
@@ -191,14 +193,18 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(runtime).toContain("wm6_qjs_create");
     expect(runtime).toContain("wm6_qjs_eval");
     expect(runtime).toContain("wm6_qjs_drain_jobs");
-    expect(demo).toContain("PocketJS Cursor (real bundle)");
-    expect(demo).toContain("REPLAY TAPE");
-    expect(demo).toContain("OPEN MEMORY STICK");
+    expect(demo).toContain("PocketJS Hero (real bundle)");
+    expect(demo).toContain("JSX at 60 FPS.");
+    expect(demo).toContain("ONE RUST CORE");
+    expect(demo).toContain("spinner-00.svg");
     expect(demo).toContain("globalThis.__wm6DrawList");
-    expect(demo).toContain('const out = ["B|0|128|128"]');
+    expect(demo).toContain('const out = ["B|248|250|252"]');
+    expect(demo).toContain("I|${x}|${y}|${w}|${h}|${handle}");
     expect(demoPak.subarray(0, 4).toString()).toBe("DCPK");
     expect(demoPak.includes(Buffer.from("ui:font.0"))).toBeTrue();
-    expect(demoPak.includes(Buffer.from("ui:font.2"))).toBeTrue();
+    expect(demoPak.includes(Buffer.from("ui:font.13"))).toBeTrue();
+    expect(demoPak.includes(Buffer.from("ui:img.logo.png"))).toBeTrue();
+    expect(demoPak.includes(Buffer.from("ui:img.spinner-00.svg"))).toBeTrue();
 
     expect(executable.subarray(0, 2).toString("ascii")).toBe("MZ");
     const peOffset = executable.readUInt32LE(0x3c);

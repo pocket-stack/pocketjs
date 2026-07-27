@@ -9,11 +9,11 @@ This solution contains three native Smart Device applications for the HP iPAQ
   ahead-of-time compilation to portable C. It is the first application UI on
   WM6, but it is not a QuickJS host and cannot load ordinary PocketJS bundles.
 - `PocketJS.WM6.QuickJS` builds a VC8 host and deploys the CeGCC-built QuickJS
-  DLL plus the real `apps/cursor` bundle. It mounts Solid, derives a draw list
-  from the HostOps tree, paints the simple three-button demo into an RGB565
-  framebuffer, rasterizes the PAK's Inter font atlases into the same buffer,
-  and presents it through DirectDraw. GDI is retained only as a compatibility
-  fallback.
+  DLL plus the real `apps/hero` bundle (`JSX at 60 FPS.`). It mounts Solid,
+  derives a draw list from the HostOps tree, paints the Hero screen into an
+  RGB565 framebuffer, rasterizes the PAK's Inter fonts and RGBA logo/spinner
+  assets into the same buffer, and presents it through DirectDraw. GDI is
+  retained only as a compatibility fallback.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a
@@ -43,7 +43,7 @@ but does not yet connect PocketJS lifecycle, input, or rendering APIs; see
    Windows Mobile Classic/Pocket PC devices to this SDK; the similarly named
    Standard SDK is for non-touchscreen Smartphones.
 4. Open `PocketJS.WM6.sln`.
-5. To rebuild the Cursor host assets, run `tools/build.ts cursor-main`, then
+5. To rebuild the Hero host assets, run `tools/build.ts hero-main`, then
    `..\quickjs\build-demo.sh` and `..\quickjs\build-runtime.sh` under WSL.
    Known-good ARM/WinCE and JavaScript files are checked in for deployment.
 6. Select `Release | Windows Mobile 6 Professional SDK (ARMV4I)`.

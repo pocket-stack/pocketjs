@@ -10,6 +10,7 @@ static unsigned char *g_pak;
 static unsigned int g_pak_size;
 
 #define WM6_MAX_FONT_SLOTS 16
+#define WM6_MAX_IMAGES 10
 #define WM6_PAK_MAGIC 0x4b504344u
 #define WM6_PAK_ENTRY_SIZE 24u
 #define WM6_FONT_MAGIC 0x41464344u
@@ -25,7 +26,15 @@ typedef struct Wm6FontAtlas {
     unsigned char density;
 } Wm6FontAtlas;
 
+typedef struct Wm6Image {
+    const unsigned char *pixels;
+    unsigned short width;
+    unsigned short height;
+    unsigned char format;
+} Wm6Image;
+
 static Wm6FontAtlas g_fonts[WM6_MAX_FONT_SLOTS];
+static Wm6Image g_images[WM6_MAX_IMAGES];
 
 static unsigned short read_u16(const unsigned char *bytes)
 {
@@ -197,6 +206,69 @@ static int parse_font_atlas(const unsigned char *blob, unsigned int length)
     return 1;
 }
 
+static int name_equals(const unsigned char *name, unsigned int length,
+                       const char *expected)
+{
+    unsigned int index;
+
+    index = 0;
+    while (expected[index]) {
+        if (index >= length || name[index] != (unsigned char)expected[index])
+            return 0;
+        index++;
+    }
+    return index == length;
+}
+
+static int image_handle(const unsigned char *name, unsigned int length)
+{
+    static const char *names[] = {
+        "",
+        "ui:img.logo.png",
+        "ui:img.spinner-00.svg",
+        "ui:img.spinner-01.svg",
+        "ui:img.spinner-02.svg",
+        "ui:img.spinner-03.svg",
+        "ui:img.spinner-04.svg",
+        "ui:img.spinner-05.svg",
+        "ui:img.spinner-06.svg",
+        "ui:img.spinner-07.svg"
+    };
+    int handle;
+
+    for (handle = 1; handle < WM6_MAX_IMAGES; handle++) {
+        if (name_equals(name, length, names[handle]))
+            return handle;
+    }
+    return 0;
+}
+
+static int parse_image(int handle, const unsigned char *blob,
+                       unsigned int length)
+{
+    Wm6Image *image;
+    unsigned int width;
+    unsigned int height;
+    unsigned int required;
+
+    if (handle <= 0 || handle >= WM6_MAX_IMAGES || length < 8)
+        return 0;
+    width = read_u16(blob);
+    height = read_u16(blob + 2);
+    if (width == 0 || height == 0 || blob[4] != 3 ||
+        width > (length - 8) / 4 / height)
+        return 0;
+    required = width * height * 4;
+    if (!range_valid(8, required, length))
+        return 0;
+    image = &g_images[handle];
+    image->pixels = blob + 8;
+    image->width = (unsigned short)width;
+    image->height = (unsigned short)height;
+    image->format = blob[4];
+    return 1;
+}
+
 int wm6_framebuffer_load_pak(const WCHAR *path)
 {
     HANDLE file;
@@ -204,6 +276,7 @@ int wm6_framebuffer_load_pak(const WCHAR *path)
     DWORD received;
     unsigned int entry_count;
     unsigned int directory_offset;
+    unsigned int names_offset;
     unsigned int index;
     int font_count;
 
@@ -213,6 +286,7 @@ int wm6_framebuffer_load_pak(const WCHAR *path)
         g_pak_size = 0;
     }
     memset(g_fonts, 0, sizeof(g_fonts));
+    memset(g_images, 0, sizeof(g_images));
     file = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE)
@@ -241,6 +315,7 @@ int wm6_framebuffer_load_pak(const WCHAR *path)
     }
     entry_count = read_u32(g_pak + 8);
     directory_offset = read_u32(g_pak + 12);
+    names_offset = read_u32(g_pak + 16);
     if (entry_count > g_pak_size / WM6_PAK_ENTRY_SIZE ||
         !range_valid(directory_offset, entry_count * WM6_PAK_ENTRY_SIZE,
                      g_pak_size)) {
@@ -252,16 +327,28 @@ int wm6_framebuffer_load_pak(const WCHAR *path)
         const unsigned char *entry;
         unsigned int blob_offset;
         unsigned int blob_length;
+        unsigned int name_offset;
+        unsigned int name_length;
+        int handle;
 
         entry = g_pak + directory_offset + index * WM6_PAK_ENTRY_SIZE;
         blob_offset = read_u32(entry + 4);
         blob_length = read_u32(entry + 8);
+        name_offset = read_u32(entry + 12);
+        name_length = read_u16(entry + 16);
         if (!range_valid(blob_offset, blob_length, g_pak_size))
             continue;
         if (blob_length >= 4 &&
             read_u32(g_pak + blob_offset) == WM6_FONT_MAGIC &&
             parse_font_atlas(g_pak + blob_offset, blob_length))
             font_count++;
+        if (!range_valid(names_offset, name_offset, g_pak_size) ||
+            !range_valid(names_offset + name_offset, name_length, g_pak_size))
+            continue;
+        handle = image_handle(
+            g_pak + names_offset + name_offset, name_length);
+        if (handle)
+            parse_image(handle, g_pak + blob_offset, blob_length);
     }
     if (font_count == 0) {
         wm6_framebuffer_close();
@@ -403,6 +490,40 @@ static int draw_text(int x, int y, int slot, int red, int green, int blue,
     return 1;
 }
 
+static int draw_image(int x, int y, int width, int height, int handle)
+{
+    const Wm6Image *image;
+    int destination_y;
+    int destination_x;
+
+    if (handle <= 0 || handle >= WM6_MAX_IMAGES ||
+        width <= 0 || height <= 0)
+        return 0;
+    image = &g_images[handle];
+    if (!image->pixels || image->format != 3)
+        return 0;
+    for (destination_y = 0; destination_y < height; destination_y++) {
+        unsigned int source_y;
+
+        source_y = (unsigned int)destination_y * image->height /
+                   (unsigned int)height;
+        for (destination_x = 0; destination_x < width; destination_x++) {
+            unsigned int source_x;
+            unsigned int offset;
+
+            source_x = (unsigned int)destination_x * image->width /
+                       (unsigned int)width;
+            offset = (source_y * image->width + source_x) * 4u;
+            blend_pixel(x + destination_x, y + destination_y,
+                        image->pixels[offset],
+                        image->pixels[offset + 1],
+                        image->pixels[offset + 2],
+                        image->pixels[offset + 3]);
+        }
+    }
+    return 1;
+}
+
 int wm6_framebuffer_open(HWND window)
 {
     DDSURFACEDESC description;
@@ -447,6 +568,7 @@ void wm6_framebuffer_close(void)
         g_pak_size = 0;
     }
     memset(g_fonts, 0, sizeof(g_fonts));
+    memset(g_images, 0, sizeof(g_images));
 }
 
 int wm6_framebuffer_render(const char *draw_list)
@@ -466,6 +588,7 @@ int wm6_framebuffer_render(const char *draw_list)
         int width;
         int height;
         int slot;
+        int handle;
         int red;
         int green;
         int blue;
@@ -496,6 +619,14 @@ int wm6_framebuffer_render(const char *draw_list)
             if (*cursor == '|')
                 cursor++;
             if (!draw_text(x, y, slot, red, green, blue, cursor))
+                succeeded = 0;
+        } else if (line[0] == 'I') {
+            x = read_number(&cursor);
+            y = read_number(&cursor);
+            width = read_number(&cursor);
+            height = read_number(&cursor);
+            handle = read_number(&cursor);
+            if (!draw_image(x, y, width, height, handle))
                 succeeded = 0;
         }
         while (*line && *line != '\n')

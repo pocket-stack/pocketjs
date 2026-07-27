@@ -336,7 +336,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         LocalFree(message);
         return 6;
     }
-    window = CreateWindow(class_name, L"PocketJS Cursor Demo",
+    window = CreateWindow(class_name, L"PocketJS Hero Demo",
                           WS_VISIBLE, 0, 0,
                           GetSystemMetrics(SM_CXSCREEN),
                           GetSystemMetrics(SM_CYSCREEN),
@@ -354,7 +354,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         wm6_framebuffer_render(g_draw_list)) {
         g_framebuffer_ready = 1;
         OutputDebugString(
-            L"PocketJS WM6: DirectDraw RGB565 + font atlas active\r\n");
+            L"PocketJS WM6: DirectDraw RGB565 + PAK assets active\r\n");
     } else {
         wm6_framebuffer_close();
         OutputDebugString(L"PocketJS WM6: DirectDraw unavailable; using GDI\r\n");
