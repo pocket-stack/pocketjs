@@ -55,6 +55,14 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "pocketjs-on-symbian",
+    title: "Symbian Wanted a Frame Function: PocketJS on a Nokia E7",
+    date: "2026-07-26",
+    description:
+      "Solid components, a Cover Flow launcher, a real Figma file and a 3D FPS, running natively on Symbian Belle. What the active-object model is, and what a new machine is allowed to change.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "pocket-vapor",
     title: "Pocket Vapor: Vue, Compiled All the Way Down",
     date: "2026-07-23",
