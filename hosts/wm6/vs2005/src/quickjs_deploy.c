@@ -335,8 +335,12 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         return 7;
     }
     g_framebuffer_ready = wm6_framebuffer_open(window);
-    if (g_framebuffer_ready)
+    if (g_framebuffer_ready) {
         wm6_framebuffer_render(g_draw_list);
+        OutputDebugString(L"PocketJS WM6: DirectDraw RGB565 active\r\n");
+    } else {
+        OutputDebugString(L"PocketJS WM6: DirectDraw unavailable; using GDI\r\n");
+    }
     ShowWindow(window, show);
     UpdateWindow(window);
     while (GetMessage(&message_loop, NULL, 0, 0)) {

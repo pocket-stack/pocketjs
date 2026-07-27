@@ -144,6 +144,8 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).not.toContain("\n            TextOut(dc");
     expect(host).toContain("wm6_framebuffer_open(window)");
     expect(host).toContain("wm6_framebuffer_present()");
+    expect(host).toContain("DirectDraw RGB565 active");
+    expect(host).toContain("DirectDraw unavailable; using GDI");
     expect(framebuffer).toContain("#include <ddraw.h>");
     expect(framebuffer).toContain("static unsigned short g_pixels[");
     expect(framebuffer).toContain("IDirectDrawSurface_Lock(");
