@@ -87,6 +87,11 @@ JavaScript frame call, pending jobs, Rust tick, software raster, ARGB32
 conversion, and DirectDraw primary-surface lock. It also reports the number of
 non-transparent and colored Rust pixels. If startup stalls, the final trace
 line identifies the exact stage without adding per-frame logging overhead.
+Opening DirectDraw does not by itself mark a frame as presentable: the initial
+`WM_PAINT` fills the window through GDI and waits until the first Rust frame
+has been copied. Later paint requests finish and release their GDI paint DC
+before locking the DirectDraw primary surface, avoiding a Windows CE display
+driver deadlock between the two access paths.
 
 ## Pocket Vapor Todo controls
 

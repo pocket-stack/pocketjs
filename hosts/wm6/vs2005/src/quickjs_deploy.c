@@ -80,6 +80,7 @@ static void ascii_to_wide(WCHAR *output, unsigned int capacity,
 }
 
 static int g_framebuffer_ready;
+static int g_frame_available;
 static HMODULE g_quickjs_module;
 static wm6_qjs_handle g_quickjs_runtime;
 static wm6_qjs_frame_fn g_quickjs_frame;
@@ -197,6 +198,7 @@ static int stop_frame_rendering(const WCHAR *message)
         MessageBox(NULL, message, L"PocketJS frame failed", MB_OK);
     }
     g_framebuffer_ready = 0;
+    g_frame_available = 0;
     return 0;
 }
 
@@ -347,6 +349,7 @@ static int render_core_frame(void)
             pixels, width, height, stride, byte_length))
         return stop_frame_rendering(
             L"Rust framebuffer geometry or byte length is invalid");
+    g_frame_available = 1;
     if (!g_first_frame_reported)
         OutputDebugString(
             L"PocketJS WM6 trace: ARGB32 conversion complete\r\n");
@@ -365,13 +368,24 @@ static LRESULT CALLBACK DemoWindowProc(HWND window, UINT message,
         {
             PAINTSTRUCT paint;
             HDC dc = BeginPaint(window, &paint);
-            if (g_framebuffer_ready && !wm6_framebuffer_present())
-                g_framebuffer_ready = 0;
-            if (!g_framebuffer_ready)
+            int should_present;
+
+            should_present =
+                g_framebuffer_ready && g_frame_available;
+            if (!should_present)
                 FillRect(
                     dc, &paint.rcPaint,
                     (HBRUSH)GetStockObject(BLACK_BRUSH));
             EndPaint(window, &paint);
+            /*
+             * Never lock the DirectDraw primary surface while a GDI paint DC
+             * is active. Some Windows CE display drivers serialize those two
+             * access paths and otherwise deadlock inside DirectDraw::Lock.
+             */
+            if (should_present && !wm6_framebuffer_present()) {
+                g_framebuffer_ready = 0;
+                g_frame_available = 0;
+            }
         }
         return 0;
     case WM_TIMER:
@@ -426,6 +440,8 @@ static LRESULT CALLBACK DemoWindowProc(HWND window, UINT message,
     case WM_DESTROY:
         KillTimer(window, 1);
         wm6_framebuffer_close();
+        g_framebuffer_ready = 0;
+        g_frame_available = 0;
         if (g_quickjs_destroy && g_quickjs_runtime)
             g_quickjs_destroy(g_quickjs_runtime);
         g_quickjs_runtime = NULL;
@@ -630,6 +646,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         return 7;
     }
     g_framebuffer_ready = 0;
+    g_frame_available = 0;
     if (wm6_framebuffer_open(
             window, viewport_width, viewport_height)) {
         g_framebuffer_ready = 1;
