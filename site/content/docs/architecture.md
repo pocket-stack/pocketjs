@@ -254,7 +254,8 @@ pocketjs/
     input-api.ts, overlay.ts, index.ts  ┘
 
   framework/compiler/
-    solid-plugin.ts     babel transform + per-file class/codepoint collection
+    jsx-plugin.ts       babel transform (Solid or Vue Vapor) + per-file class/codepoint collection
+    vue-sfc-compile.ts  .vue → inline Vapor render function (@vue/compiler-sfc)
     tailwind.ts         token parser → styles.bin + styles.generated.ts
     bake-font.ts        atlas baker (charset from AST scan + ASCII)
     pak.ts            container writer

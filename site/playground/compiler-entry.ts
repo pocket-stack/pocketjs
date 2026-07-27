@@ -67,7 +67,7 @@ export interface CompileResult {
 }
 
 // ---------------------------------------------------------------------------
-// pass-1 collector — mirrors framework/compiler/solid-plugin.ts makeCollector: candidate
+// pass-1 collector — mirrors framework/compiler/jsx-plugin.ts makeCollector: candidate
 // class strings + text codepoints from the PRISTINE AST, plus the same loud
 // lints (classList / interpolated class / banned solid imports / HTML entities).
 // ---------------------------------------------------------------------------

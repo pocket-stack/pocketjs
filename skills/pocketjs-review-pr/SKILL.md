@@ -94,10 +94,11 @@ derives `preserveComments` from it, so the two settings must agree).
      `parseTemplateHtml` is a single-element parser; a comment fix billed as
      "DOM-correct from any path" can only be correct at the top level. State
      the limit in the comment rather than implying generality.
-   - **Is the module still reachable?** `framework/compiler/solid-plugin.ts` has
-     no importer (superseded by `jsx-plugin.ts`) yet `docs/DESIGN.md` and
-     `site/content/docs/architecture.md` still describe it as the pass-1
-     transform. Report it; don't fold it into a bugfix PR.
+   - **Is the module still reachable?** `grep -rn <module>` for an importer, and
+     grep the docs for its name. `solid-plugin.ts` sat unimported from #27 until
+     it was retired, collecting mechanical updates in #122 and #149 the whole
+     time, while `docs/DESIGN.md` and `site/content/docs/architecture.md` still
+     called it the pass-1 transform. Report it; don't fold it into a bugfix PR.
    - **Duplication introduced by the PR's own tests** — repeated stub-host
      setup, an inline type that wants to be a helper.
 

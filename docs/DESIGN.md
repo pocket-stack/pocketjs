@@ -156,11 +156,18 @@ PocketJS/
     anim.ts            animate()/spring() typed API
     index.ts           render(), signals re-export
   framework/compiler/
-    solid-plugin.ts    babel transformAsync: [[babel-preset-solid,{generate:'universal',
-                       moduleName}], [@babel/preset-typescript]]; ALSO collects, per file,
-                       class strings + text codepoints FROM THE AST (StringLiteral +
-                       TemplateLiteral quasis — JSX text compiles to template literals [R]);
-                       lints: classList attr, solid createResource/transition imports
+    jsx-plugin.ts      babel transformAsync per framework: Solid gets
+                       [[babel-preset-solid,{generate:'universal',moduleName}],
+                       [@babel/preset-typescript]], Vue Vapor gets vue-jsx-vapor +
+                       preset-typescript; ALSO collects, per file, class strings + text
+                       codepoints FROM THE AST (StringLiteral + TemplateLiteral quasis —
+                       JSX text compiles to template literals [R]); lints: classList attr,
+                       interpolated class, HTML entities in JSX text, solid
+                       createResource/transition imports
+    vue-sfc-compile.ts .vue → inline Vapor render function via @vue/compiler-sfc
+                       (comments stripped at the SFC parse [R]); the emitted template is
+                       ordinary string literals, so the collector above needs no
+                       template-specific walk
     tailwind.ts        token parser + style-table compiler → styles.bin + styles.generated.ts;
                        a literal becomes a style record iff EVERY whitespace-separated
                        token parses as a supported utility (else ignored) [R]
