@@ -23,7 +23,7 @@ static int append_file_name(WCHAR *path, unsigned int capacity,
     return name[index] == L'\0';
 }
 
-static char *read_cards_bundle(unsigned int *length)
+static char *read_demo_bundle(unsigned int *length)
 {
     WCHAR path[MAX_PATH];
     HANDLE file;
@@ -34,7 +34,7 @@ static char *read_cards_bundle(unsigned int *length)
     *length = 0;
     if (!GetModuleFileName(NULL, path, MAX_PATH))
         return NULL;
-    if (!append_file_name(path, MAX_PATH, L"PocketJS.WM6.Cards.js"))
+    if (!append_file_name(path, MAX_PATH, L"PocketJS.WM6.Demo.js"))
         return NULL;
     file = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -115,7 +115,7 @@ static int read_number(char **cursor)
     return value;
 }
 
-static void paint_cards(HWND window, HDC dc)
+static void paint_demo(HWND window, HDC dc)
 {
     RECT client;
     RECT logical;
@@ -202,8 +202,8 @@ static void paint_cards(HWND window, HDC dc)
     }
 }
 
-static LRESULT CALLBACK CardsWindowProc(HWND window, UINT message,
-                                        WPARAM wparam, LPARAM lparam)
+static LRESULT CALLBACK DemoWindowProc(HWND window, UINT message,
+                                       WPARAM wparam, LPARAM lparam)
 {
     switch (message) {
     case WM_PAINT:
@@ -212,7 +212,7 @@ static LRESULT CALLBACK CardsWindowProc(HWND window, UINT message,
             HDC dc = BeginPaint(window, &paint);
             if (g_framebuffer_ready && !wm6_framebuffer_present())
                 g_framebuffer_ready = 0;
-            paint_cards(window, dc);
+            paint_demo(window, dc);
             EndPaint(window, &paint);
         }
         return 0;
@@ -233,7 +233,7 @@ static LRESULT CALLBACK CardsWindowProc(HWND window, UINT message,
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int show)
 {
     static const char snapshot[] = "__wm6DrawList()";
-    static const WCHAR class_name[] = L"PocketJSWM6Cards";
+    static const WCHAR class_name[] = L"PocketJSWM6Demo";
     HMODULE module;
     wm6_qjs_abi_version_fn abi_version;
     wm6_qjs_create_fn create_runtime;
@@ -294,7 +294,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         MessageBox(NULL, create_error, L"QuickJS create failed", MB_OK);
         return 4;
     }
-    bundle = read_cards_bundle(&bundle_length);
+    bundle = read_demo_bundle(&bundle_length);
     snapshot_text = (char *)LocalAlloc(LMEM_FIXED, 8192);
     message = (WCHAR *)LocalAlloc(LMEM_FIXED, 8192 * sizeof(WCHAR));
     if (!bundle || !snapshot_text || !message) {
@@ -303,7 +303,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         if (message) LocalFree(message);
         destroy_runtime(runtime);
         FreeLibrary(module);
-        MessageBox(NULL, L"Cards bundle allocation failed",
+        MessageBox(NULL, L"Demo bundle allocation failed",
                    L"PocketJS QuickJS Host", MB_OK);
         return 5;
     }
@@ -327,7 +327,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     }
     g_draw_list = snapshot_text;
     memset(&window_class, 0, sizeof(window_class));
-    window_class.lpfnWndProc = CardsWindowProc;
+    window_class.lpfnWndProc = DemoWindowProc;
     window_class.hInstance = instance;
     window_class.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     window_class.lpszClassName = class_name;
@@ -336,7 +336,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         LocalFree(message);
         return 6;
     }
-    window = CreateWindow(class_name, L"PocketJS Feature Cards",
+    window = CreateWindow(class_name, L"PocketJS Cursor Demo",
                           WS_VISIBLE, 0, 0,
                           GetSystemMetrics(SM_CXSCREEN),
                           GetSystemMetrics(SM_CYSCREEN),
@@ -348,7 +348,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     }
     g_framebuffer_ready = 0;
     if (GetModuleFileName(NULL, pak_path, MAX_PATH) &&
-        append_file_name(pak_path, MAX_PATH, L"PocketJS.WM6.Cards.pak") &&
+        append_file_name(pak_path, MAX_PATH, L"PocketJS.WM6.Demo.pak") &&
         wm6_framebuffer_open(window) &&
         wm6_framebuffer_load_pak(pak_path) &&
         wm6_framebuffer_render(g_draw_list)) {

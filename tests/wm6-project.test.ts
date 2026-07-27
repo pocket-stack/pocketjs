@@ -94,8 +94,8 @@ describe("Windows Mobile 6 VS2005 projects", () => {
 
   test("includes a pinned CeGCC QuickJS ARM/WinCE probe", async () => {
     const quickjsRoot = new URL("../hosts/wm6/quickjs/", import.meta.url);
-    const [solution, project, host, framebuffer, build, runtimeBuild, cardsBuild,
-      patch, probe, runtime, abi, cards, cardsPak, math, executable, dll] =
+    const [solution, project, host, framebuffer, build, runtimeBuild, demoBuild,
+      patch, probe, runtime, abi, demo, demoPak, math, executable, dll] =
       await Promise.all([
         readFile(new URL("PocketJS.WM6.sln", root), "utf8"),
         readFile(new URL("PocketJS.WM6.QuickJS.vcproj", root), "utf8"),
@@ -103,13 +103,13 @@ describe("Windows Mobile 6 VS2005 projects", () => {
         readFile(new URL("src/wm6_framebuffer.c", root), "utf8"),
         readFile(new URL("build-probe.sh", quickjsRoot), "utf8"),
         readFile(new URL("build-runtime.sh", quickjsRoot), "utf8"),
-        readFile(new URL("build-cards.sh", quickjsRoot), "utf8"),
+        readFile(new URL("build-demo.sh", quickjsRoot), "utf8"),
         readFile(new URL("patches/quickjs-wm6.patch", quickjsRoot), "utf8"),
         readFile(new URL("src/probe.c", quickjsRoot), "utf8"),
         readFile(new URL("src/runtime_dll.c", quickjsRoot), "utf8"),
         readFile(new URL("runtime/wm6_quickjs_abi.h", root), "utf8"),
-        readFile(new URL("prebuilt/PocketJS.WM6.Cards.js", root), "utf8"),
-        readFile(new URL("prebuilt/PocketJS.WM6.Cards.pak", root)),
+        readFile(new URL("prebuilt/PocketJS.WM6.Demo.js", root), "utf8"),
+        readFile(new URL("prebuilt/PocketJS.WM6.Demo.pak", root)),
         readFile(new URL("src/wm6_math.c", quickjsRoot), "utf8"),
         readFile(
           new URL("prebuilt/PocketJS.WM6.QuickJS.Probe.exe", root),
@@ -125,7 +125,7 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     );
     expect(
       project.match(
-        /PocketJS\.WM6\.Cards\.pak\|\$\(SolutionDir\)prebuilt\|%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\|0/g,
+        /PocketJS\.WM6\.Demo\.pak\|\$\(SolutionDir\)prebuilt\|%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\|0/g,
       ),
     ).toHaveLength(2);
     expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
@@ -145,7 +145,9 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).not.toContain("ascii_to_wide(message, 256, result)");
     expect(host).toContain('static const char snapshot[] = "__wm6DrawList()"');
     expect(host).toContain("CreateWindow(class_name");
-    expect(host).toContain("paint_cards(window, dc)");
+    expect(host).toContain("paint_demo(window, dc)");
+    expect(host).toContain('L"PocketJS.WM6.Demo.js"');
+    expect(host).toContain('L"PocketJS.WM6.Demo.pak"');
     expect(host).toContain("ExtTextOut(dc");
     expect(host).not.toContain("\n            TextOut(dc");
     expect(host).toContain("wm6_framebuffer_open(window)");
@@ -172,8 +174,8 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(build).toContain("-D_WIN32_WCE=0x0502");
     expect(runtimeBuild).toContain("-shared");
     expect(runtimeBuild).toContain("-static-libgcc");
-    expect(cardsBuild).toContain("dist/cards-main.js");
-    expect(cardsBuild).toContain("dist/cards-main.pak");
+    expect(demoBuild).toContain("dist/cursor-main.js");
+    expect(demoBuild).toContain("dist/cursor-main.pak");
     expect(patch).toContain("#undef CONFIG_ATOMICS");
     expect(patch).toContain("#elif defined(_WIN32_WCE)");
     expect(probe).toContain("JS_SetMemoryLimit(runtime, 8u * 1024u * 1024u)");
@@ -189,14 +191,14 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(runtime).toContain("wm6_qjs_create");
     expect(runtime).toContain("wm6_qjs_eval");
     expect(runtime).toContain("wm6_qjs_drain_jobs");
-    expect(cards).toContain("PocketJS Cards (real bundle)");
-    expect(cards).toContain("Feature Cards");
-    expect(cards).toContain("Flexbox via Taffy");
-    expect(cards).toContain("globalThis.__wm6DrawList");
-    expect(cards).toContain("text(16, 35, 12, 15, 23, 42");
-    expect(cardsPak.subarray(0, 4).toString()).toBe("DCPK");
-    expect(cardsPak.includes(Buffer.from("ui:font.0"))).toBeTrue();
-    expect(cardsPak.includes(Buffer.from("ui:font.12"))).toBeTrue();
+    expect(demo).toContain("PocketJS Cursor (real bundle)");
+    expect(demo).toContain("REPLAY TAPE");
+    expect(demo).toContain("OPEN MEMORY STICK");
+    expect(demo).toContain("globalThis.__wm6DrawList");
+    expect(demo).toContain('const out = ["B|0|128|128"]');
+    expect(demoPak.subarray(0, 4).toString()).toBe("DCPK");
+    expect(demoPak.includes(Buffer.from("ui:font.0"))).toBeTrue();
+    expect(demoPak.includes(Buffer.from("ui:font.2"))).toBeTrue();
 
     expect(executable.subarray(0, 2).toString("ascii")).toBe("MZ");
     const peOffset = executable.readUInt32LE(0x3c);

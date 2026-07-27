@@ -48,21 +48,22 @@ QuickJS runtime and 256 KiB stack. Each cycle calls a native `print` function
 from a Promise job. Success shows `QuickJS 6,10,16,26` under the title
 `QuickJS: 100 cycles passed` in a native WM6 message box.
 
-## Cards bundle host
+## Cursor demo host
 
 `build-runtime.sh` builds `PocketJS.WM6.QuickJS.dll` with a five-function,
-versioned C ABI and statically linked libgcc. `build-cards.sh` combines the
-minimal WM6 HostOps bootstrap with the real `dist/cards-main.js` output.
+versioned C ABI and statically linked libgcc. `build-demo.sh` combines the
+minimal WM6 HostOps bootstrap with the real `dist/cursor-main.js` output.
 VS2005 builds the compatibility-named `PocketJS.WM6.QuickJS.Probe.exe`,
 deploys both files, mounts the Solid application in QuickJS, and turns its
 native tree into a compact draw list. The WM6 host rasterizes backgrounds and
 rectangles into an application-owned 480×272 RGB565 framebuffer. It reads the
-same Inter font-atlas entries that other PocketJS hosts consume from the Cards
+same Inter font-atlas entries that other PocketJS hosts consume from the demo
 PAK and alpha-blends glyph coverage directly into RGB565. The finished buffer
 is presented through a locked DirectDraw primary surface. The complete GDI
 renderer remains the fallback when DirectDraw, the PAK, or the display pixel
-format is unavailable. Input-driven focus and detail updates are the next
-milestones.
+format is unavailable. The three-button Cursor screen is intentionally the
+smallest existing interactive PocketJS/Solid demo; input-driven focus and
+status updates are the next milestones.
 
 The compatibility patch:
 
