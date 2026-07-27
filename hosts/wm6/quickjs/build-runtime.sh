@@ -7,6 +7,7 @@ quickjs_version="2026-06-04"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 output="${1:-${script_dir}/../vs2005/prebuilt/PocketJS.WM6.QuickJS.dll}"
+core_object="${WM6_CORE_OBJECT:-${script_dir}/../vs2005/prebuilt/PocketJS.WM6.Core.obj}"
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/pocketjs-wm6-quickjs-dll.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT
 
@@ -18,6 +19,11 @@ tool_bin="${WM6_CEGCC_ROOT}/mingw32ce/bin"
 cc="${tool_bin}/arm-mingw32ce-gcc"
 if [[ ! -x "$cc" ]]; then
     echo "arm-mingw32ce-gcc was not found under ${tool_bin}." >&2
+    exit 2
+fi
+if [[ ! -f "$core_object" ]]; then
+    echo "PocketJS WM6 core object not found: ${core_object}" >&2
+    echo "Build it first with engine/wm6/build-core.sh." >&2
     exit 2
 fi
 if [[ -n "${WM6_CEGCC_LIBDIR:-}" ]]; then
@@ -42,6 +48,8 @@ patch -d "$quickjs_dir" -p1 < "${script_dir}/patches/quickjs-wm6.patch"
 mkdir -p "${work_dir}/obj" "$(dirname "$output")"
 cp "${script_dir}/src/wm6_math.c" "${work_dir}/wm6_math.c"
 cp "${script_dir}/src/runtime_dll.c" "${work_dir}/runtime_dll.c"
+cp "${script_dir}/src/pocketjs_wm6_core.h" \
+    "${work_dir}/pocketjs_wm6_core.h"
 cp "${script_dir}/../vs2005/runtime/wm6_quickjs_abi.h" \
     "${work_dir}/wm6_quickjs_abi.h"
 
@@ -65,6 +73,6 @@ done
     "${work_dir}/obj/runtime_dll.o" "${work_dir}/obj/wm6_math.o" \
     "${work_dir}/obj/quickjs.o" "${work_dir}/obj/cutils.o" \
     "${work_dir}/obj/dtoa.o" "${work_dir}/obj/libregexp.o" \
-    "${work_dir}/obj/libunicode.o" -lm
+    "${work_dir}/obj/libunicode.o" "$core_object" -lm
 cp "${work_dir}/PocketJS.WM6.QuickJS.dll" "$output"
 echo "Built ${output}"

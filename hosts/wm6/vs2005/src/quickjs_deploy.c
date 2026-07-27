@@ -23,18 +23,20 @@ static int append_file_name(WCHAR *path, unsigned int capacity,
     return name[index] == L'\0';
 }
 
-static char *read_demo_bundle(unsigned int *length)
+static unsigned char *read_neighbor_file(
+    const WCHAR *name,
+    unsigned int *length)
 {
     WCHAR path[MAX_PATH];
     HANDLE file;
     DWORD size;
     DWORD read;
-    char *bytes;
+    unsigned char *bytes;
 
     *length = 0;
     if (!GetModuleFileName(NULL, path, MAX_PATH))
         return NULL;
-    if (!append_file_name(path, MAX_PATH, L"PocketJS.WM6.Demo.js"))
+    if (!append_file_name(path, MAX_PATH, name))
         return NULL;
     file = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL,
                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -45,7 +47,7 @@ static char *read_demo_bundle(unsigned int *length)
         CloseHandle(file);
         return NULL;
     }
-    bytes = (char *)LocalAlloc(LMEM_FIXED, size + 1);
+    bytes = (unsigned char *)LocalAlloc(LMEM_FIXED, size + 1);
     if (!bytes) {
         CloseHandle(file);
         return NULL;
@@ -77,65 +79,12 @@ static void ascii_to_wide(WCHAR *output, unsigned int capacity,
     output[index] = L'\0';
 }
 
-static int append_script_text(char **cursor, const char *end,
-                              const char *text)
-{
-    while (*text) {
-        if (*cursor >= end)
-            return 0;
-        **cursor = *text;
-        (*cursor)++;
-        text++;
-    }
-    return 1;
-}
-
-static int append_script_number(char **cursor, const char *end,
-                                unsigned int value)
-{
-    char digits[16];
-    int length;
-
-    length = 0;
-    do {
-        digits[length++] = (char)('0' + value % 10u);
-        value /= 10u;
-    } while (value && length < 16);
-    while (length > 0) {
-        if (*cursor >= end)
-            return 0;
-        **cursor = digits[--length];
-        (*cursor)++;
-    }
-    return 1;
-}
-
-static int make_viewport_script(char *buffer, unsigned int capacity,
-                                int width, int height)
-{
-    char *cursor;
-    const char *end;
-
-    if (!buffer || capacity == 0 || width <= 0 || height <= 0)
-        return 0;
-    cursor = buffer;
-    end = buffer + capacity - 1;
-    if (!append_script_text(
-            &cursor, end, "globalThis.__wm6ViewportWidth=") ||
-        !append_script_number(&cursor, end, (unsigned int)width) ||
-        !append_script_text(
-            &cursor, end, ";globalThis.__wm6ViewportHeight=") ||
-        !append_script_number(&cursor, end, (unsigned int)height) ||
-        !append_script_text(&cursor, end, ";"))
-        return 0;
-    *cursor = '\0';
-    return (int)(cursor - buffer);
-}
-
-static char *g_draw_list;
 static int g_framebuffer_ready;
-static int g_viewport_width;
-static int g_viewport_height;
+static HMODULE g_quickjs_module;
+static wm6_qjs_handle g_quickjs_runtime;
+static wm6_qjs_frame_fn g_quickjs_frame;
+static wm6_qjs_destroy_fn g_quickjs_destroy;
+static unsigned int g_buttons;
 static DEVMODE g_original_display_mode;
 static int g_display_rotated;
 
@@ -191,126 +140,50 @@ static void restore_display_orientation(void)
     g_display_rotated = 0;
 }
 
-static int wide_length(const WCHAR *text)
+static unsigned int button_for_key(WPARAM key)
 {
-    int length;
-
-    length = 0;
-    while (text[length] != L'\0')
-        length++;
-    return length;
-}
-
-static int font_pixels_for_slot(int slot)
-{
-    static const int pixels[] = { 12, 14, 16, 18, 20, 24, 36 };
-    int index;
-
-    index = slot >= 7 ? slot - 7 : slot;
-    if (index < 0 || index >= 7)
-        return 16;
-    return pixels[index];
-}
-
-static int read_number(char **cursor)
-{
-    int value;
-
-    if (**cursor == '|')
-        (*cursor)++;
-    value = 0;
-    while (**cursor >= '0' && **cursor <= '9') {
-        value = value * 10 + (**cursor - '0');
-        (*cursor)++;
+    switch (key) {
+    case VK_UP:
+        return 0x0010u;
+    case VK_RIGHT:
+        return 0x0020u;
+    case VK_DOWN:
+        return 0x0040u;
+    case VK_LEFT:
+        return 0x0080u;
+    case VK_RETURN:
+    case VK_SPACE:
+        return 0x2000u;
     }
-    return value;
+    return 0;
 }
 
-static void paint_demo(HWND window, HDC dc)
+static int render_core_frame(void)
 {
-    RECT client;
-    RECT logical;
-    char *line;
-    char *next;
-    char *cursor;
-    char saved;
-    int offset_x;
-    int offset_y;
+    const unsigned char *pixels;
+    unsigned int width;
+    unsigned int height;
+    unsigned int stride;
+    unsigned int byte_length;
 
-    GetClientRect(window, &client);
-    if (!g_framebuffer_ready)
-        FillRect(dc, &client, (HBRUSH)GetStockObject(BLACK_BRUSH));
-    offset_x = (client.right - g_viewport_width) / 2;
-    offset_y = (client.bottom - g_viewport_height) / 2;
-    line = g_draw_list;
-    while (line && *line) {
-        int x, y, w, h, slot, r, g, b;
-        HBRUSH brush;
-        COLORREF color;
-
-        next = line;
-        while (*next && *next != '\n')
-            next++;
-        saved = *next;
-        *next = '\0';
-        cursor = line + 1;
-        if (line[0] == 'B' && !g_framebuffer_ready) {
-            r = read_number(&cursor);
-            g = read_number(&cursor);
-            b = read_number(&cursor);
-            logical.left = offset_x;
-            logical.top = offset_y;
-            logical.right = offset_x + g_viewport_width;
-            logical.bottom = offset_y + g_viewport_height;
-            brush = CreateSolidBrush(RGB(r, g, b));
-            FillRect(dc, &logical, brush);
-            DeleteObject(brush);
-        } else if (line[0] == 'R' && !g_framebuffer_ready) {
-            x = read_number(&cursor);
-            y = read_number(&cursor);
-            w = read_number(&cursor);
-            h = read_number(&cursor);
-            r = read_number(&cursor);
-            g = read_number(&cursor);
-            b = read_number(&cursor);
-            logical.left = offset_x + x;
-            logical.top = offset_y + y;
-            logical.right = logical.left + w;
-            logical.bottom = logical.top + h;
-            brush = CreateSolidBrush(RGB(r, g, b));
-            FillRect(dc, &logical, brush);
-            DeleteObject(brush);
-        } else if (line[0] == 'T' && !g_framebuffer_ready) {
-            LOGFONT font_spec;
-            HFONT font;
-            HFONT previous_font;
-            WCHAR text[256];
-
-            x = read_number(&cursor);
-            y = read_number(&cursor);
-            slot = read_number(&cursor);
-            r = read_number(&cursor);
-            g = read_number(&cursor);
-            b = read_number(&cursor);
-            if (*cursor == '|')
-                cursor++;
-            ascii_to_wide(text, 256, cursor);
-            memset(&font_spec, 0, sizeof(font_spec));
-            font_spec.lfHeight = -font_pixels_for_slot(slot);
-            font_spec.lfWeight = slot >= 7 ? FW_BOLD : FW_NORMAL;
-            font = CreateFontIndirect(&font_spec);
-            previous_font = (HFONT)SelectObject(dc, font);
-            color = RGB(r, g, b);
-            SetTextColor(dc, color);
-            SetBkMode(dc, TRANSPARENT);
-            ExtTextOut(dc, offset_x + x, offset_y + y, 0, NULL,
-                       text, wide_length(text), NULL);
-            SelectObject(dc, previous_font);
-            DeleteObject(font);
-        }
-        *next = saved;
-        line = saved ? next + 1 : next;
+    if (!g_quickjs_runtime || !g_quickjs_frame || !g_framebuffer_ready)
+        return 0;
+    width = height = stride = byte_length = 0;
+    pixels = g_quickjs_frame(
+        g_quickjs_runtime,
+        g_buttons,
+        &width,
+        &height,
+        &stride,
+        &byte_length);
+    if (!pixels ||
+        !wm6_framebuffer_copy_argb(
+            pixels, width, height, stride, byte_length) ||
+        !wm6_framebuffer_present()) {
+        g_framebuffer_ready = 0;
+        return 0;
     }
+    return 1;
 }
 
 static LRESULT CALLBACK DemoWindowProc(HWND window, UINT message,
@@ -323,18 +196,35 @@ static LRESULT CALLBACK DemoWindowProc(HWND window, UINT message,
             HDC dc = BeginPaint(window, &paint);
             if (g_framebuffer_ready && !wm6_framebuffer_present())
                 g_framebuffer_ready = 0;
-            paint_demo(window, dc);
+            if (!g_framebuffer_ready)
+                FillRect(
+                    dc, &paint.rcPaint,
+                    (HBRUSH)GetStockObject(BLACK_BRUSH));
             EndPaint(window, &paint);
         }
         return 0;
+    case WM_TIMER:
+        render_core_frame();
+        return 0;
     case WM_KEYDOWN:
+        g_buttons |= button_for_key(wparam);
         if (wparam == VK_ESCAPE) {
             DestroyWindow(window);
             return 0;
         }
-        break;
+        return 0;
+    case WM_KEYUP:
+        g_buttons &= ~button_for_key(wparam);
+        return 0;
     case WM_DESTROY:
+        KillTimer(window, 1);
         wm6_framebuffer_close();
+        if (g_quickjs_destroy && g_quickjs_runtime)
+            g_quickjs_destroy(g_quickjs_runtime);
+        g_quickjs_runtime = NULL;
+        if (g_quickjs_module)
+            FreeLibrary(g_quickjs_module);
+        g_quickjs_module = NULL;
         PostQuitMessage(0);
         return 0;
     }
@@ -343,22 +233,22 @@ static LRESULT CALLBACK DemoWindowProc(HWND window, UINT message,
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int show)
 {
-    static const char snapshot[] = "__wm6DrawList()";
     static const WCHAR class_name[] = L"PocketJSWM6Demo";
     HMODULE module;
     wm6_qjs_abi_version_fn abi_version;
     wm6_qjs_create_fn create_runtime;
+    wm6_qjs_set_pak_fn set_pak;
     wm6_qjs_eval_fn eval;
     wm6_qjs_drain_jobs_fn drain_jobs;
+    wm6_qjs_frame_fn frame;
     wm6_qjs_destroy_fn destroy_runtime;
     wm6_qjs_handle runtime;
     char result[256];
-    char viewport_script[128];
-    char *bundle;
-    char *snapshot_text;
+    unsigned char *bundle;
+    unsigned char *pak;
     unsigned int bundle_length;
+    unsigned int pak_length;
     WCHAR create_error[256];
-    WCHAR pak_path[MAX_PATH];
     WCHAR *message;
     WNDCLASS window_class;
     HWND window;
@@ -366,7 +256,6 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     int rotation_ready;
     int status;
     int viewport_height;
-    int viewport_length;
     int viewport_width;
 
     (void)instance;
@@ -386,10 +275,14 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     eval = (wm6_qjs_eval_fn)GetProcAddress(module, L"wm6_qjs_eval");
     drain_jobs = (wm6_qjs_drain_jobs_fn)GetProcAddress(
         module, L"wm6_qjs_drain_jobs");
+    set_pak = (wm6_qjs_set_pak_fn)GetProcAddress(
+        module, L"wm6_qjs_set_pak");
+    frame = (wm6_qjs_frame_fn)GetProcAddress(
+        module, L"wm6_qjs_frame");
     destroy_runtime = (wm6_qjs_destroy_fn)GetProcAddress(
         module, L"wm6_qjs_destroy");
-    if (!abi_version || !create_runtime || !eval ||
-        !drain_jobs || !destroy_runtime) {
+    if (!abi_version || !create_runtime || !set_pak || !eval ||
+        !drain_jobs || !frame || !destroy_runtime) {
         FreeLibrary(module);
         MessageBox(NULL, L"QuickJS ABI export missing",
                    L"PocketJS QuickJS Host", MB_OK);
@@ -402,62 +295,67 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         return 3;
     }
 
-    runtime = create_runtime(8u * 1024u * 1024u, 256u * 1024u,
-                             result, sizeof(result));
+    g_display_rotated = 0;
+    rotation_ready = rotate_display_90();
+    viewport_width = GetSystemMetrics(SM_CXSCREEN);
+    viewport_height = GetSystemMetrics(SM_CYSCREEN);
+
+    runtime = create_runtime(
+        8u * 1024u * 1024u,
+        256u * 1024u,
+        (unsigned int)viewport_width,
+        (unsigned int)viewport_height,
+        result,
+        sizeof(result));
     if (!runtime) {
+        restore_display_orientation();
         ascii_to_wide(create_error, 256, result);
         FreeLibrary(module);
         MessageBox(NULL, create_error, L"QuickJS create failed", MB_OK);
         return 4;
     }
-    bundle = read_demo_bundle(&bundle_length);
-    snapshot_text = (char *)LocalAlloc(LMEM_FIXED, 8192);
-    message = (WCHAR *)LocalAlloc(LMEM_FIXED, 8192 * sizeof(WCHAR));
-    if (!bundle || !snapshot_text || !message) {
-        if (bundle) LocalFree(bundle);
-        if (snapshot_text) LocalFree(snapshot_text);
+    bundle = read_neighbor_file(
+        L"PocketJS.WM6.Demo.js", &bundle_length);
+    pak = read_neighbor_file(
+        L"PocketJS.WM6.Demo.pak", &pak_length);
+    message = (WCHAR *)LocalAlloc(LMEM_FIXED, 1024 * sizeof(WCHAR));
+    if (!bundle || !pak || !message) {
+        if (bundle)
+            LocalFree(bundle);
+        if (pak)
+            LocalFree(pak);
         if (message) LocalFree(message);
         destroy_runtime(runtime);
         FreeLibrary(module);
+        restore_display_orientation();
         MessageBox(NULL, L"Demo bundle allocation failed",
                    L"PocketJS QuickJS Host", MB_OK);
         return 5;
     }
-    g_display_rotated = 0;
-    rotation_ready = rotate_display_90();
-    viewport_width = GetSystemMetrics(SM_CXSCREEN);
-    viewport_height = GetSystemMetrics(SM_CYSCREEN);
-    g_viewport_width = viewport_width;
-    g_viewport_height = viewport_height;
-    viewport_length = make_viewport_script(
-        viewport_script, sizeof(viewport_script),
-        viewport_width, viewport_height);
-    status = viewport_length > 0
-                 ? eval(runtime, viewport_script,
-                        (unsigned int)viewport_length,
-                        result, sizeof(result))
-                 : -1;
+    status = set_pak(
+        runtime, pak, pak_length, result, sizeof(result));
     if (status == 0)
-        status = eval(runtime, bundle, bundle_length,
+        status = eval(runtime, (const char *)bundle, bundle_length,
                       result, sizeof(result));
     if (status == 0)
         status = drain_jobs(runtime, result, sizeof(result)) < 0 ? -1 : 0;
-    if (status == 0)
-        status = eval(runtime, snapshot, sizeof(snapshot) - 1,
-                      snapshot_text, 8192);
     LocalFree(bundle);
-    destroy_runtime(runtime);
-    FreeLibrary(module);
+    LocalFree(pak);
 
     if (status != 0) {
         restore_display_orientation();
-        ascii_to_wide(message, 8192, result);
+        ascii_to_wide(message, 1024, result);
         MessageBox(NULL, message, L"PocketJS QuickJS DLL failure", MB_OK);
-        LocalFree(snapshot_text);
+        destroy_runtime(runtime);
+        FreeLibrary(module);
         LocalFree(message);
         return 5;
     }
-    g_draw_list = snapshot_text;
+    g_buttons = 0;
+    g_quickjs_module = module;
+    g_quickjs_runtime = runtime;
+    g_quickjs_frame = frame;
+    g_quickjs_destroy = destroy_runtime;
     if (rotation_ready)
         OutputDebugString(L"PocketJS WM6: landscape display active\r\n");
     else
@@ -469,7 +367,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     window_class.lpszClassName = class_name;
     if (!RegisterClass(&window_class)) {
         restore_display_orientation();
-        LocalFree(snapshot_text);
+        destroy_runtime(runtime);
+        FreeLibrary(module);
+        g_quickjs_module = NULL;
+        g_quickjs_runtime = NULL;
         LocalFree(message);
         return 6;
     }
@@ -483,31 +384,34 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
                           NULL, NULL, instance, NULL);
     if (!window) {
         restore_display_orientation();
-        LocalFree(snapshot_text);
+        destroy_runtime(runtime);
+        FreeLibrary(module);
+        g_quickjs_module = NULL;
+        g_quickjs_runtime = NULL;
         LocalFree(message);
         return 7;
     }
     g_framebuffer_ready = 0;
-    if (GetModuleFileName(NULL, pak_path, MAX_PATH) &&
-        append_file_name(pak_path, MAX_PATH, L"PocketJS.WM6.Demo.pak") &&
-        wm6_framebuffer_open(window, viewport_width, viewport_height) &&
-        wm6_framebuffer_load_pak(pak_path) &&
-        wm6_framebuffer_render(g_draw_list)) {
+    if (wm6_framebuffer_open(
+            window, viewport_width, viewport_height)) {
         g_framebuffer_ready = 1;
         OutputDebugString(
-            L"PocketJS WM6: DirectDraw RGB565 + PAK assets active\r\n");
+            L"PocketJS WM6: Rust core ARGB32 -> DirectDraw active\r\n");
     } else {
         wm6_framebuffer_close();
-        OutputDebugString(L"PocketJS WM6: DirectDraw unavailable; using GDI\r\n");
+        OutputDebugString(L"PocketJS WM6: DirectDraw unavailable\r\n");
     }
     ShowWindow(window, show);
     UpdateWindow(window);
+    if (g_framebuffer_ready) {
+        render_core_frame();
+        SetTimer(window, 1, 16, NULL);
+    }
     while (GetMessage(&message_loop, NULL, 0, 0)) {
         TranslateMessage(&message_loop);
         DispatchMessage(&message_loop);
     }
     restore_display_orientation();
-    LocalFree(snapshot_text);
     LocalFree(message);
     return 0;
 }

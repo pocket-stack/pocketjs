@@ -14,8 +14,7 @@ if [[ ! -f "$bundle" || ! -f "$pak" ]]; then
 fi
 mkdir -p "$(dirname "$output")"
 {
-    printf '%s\n' '/* PocketJS WM6 bootstrap + real apps/hero bundle. */'
-    sed -n 'p' "${script_dir}/demo-host.js"
+    printf '%s\n' '/* PocketJS WM6 native Rust core + real apps/hero bundle. */'
     sed -n 'p' "$bundle"
 } > "$output"
 cp "$pak" "$pak_output"

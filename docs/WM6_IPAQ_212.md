@@ -37,9 +37,9 @@ runtime:
 - the native PocketJS hosts embed QuickJS;
 - the retained renderer lives in the Rust `engine/core` crate;
 - Visual C++ 2005 predates modern C/C++ language features;
-- stable Rust has no Windows CE 5.2 / ARMV4I target, and its modern
-  ARM-Windows object format cannot simply be linked into a VC8 Smart Device
-  executable;
+- stable Rust has no Windows CE 5.2 / ARMV4I target; the implemented build
+  therefore emits ARMv4T ELF and performs a checked relocation/symbol
+  conversion to WinCE COFF with dual-target CeGCC binutils;
 - Windows Mobile 6 has neither a suitable browser runtime nor modern Web APIs,
   so wrapping the web host is not a viable shortcut.
 
@@ -86,10 +86,9 @@ The CeGCC build targets ARMV4T with interworking rather than the PXA310's
 ARMv5TE extensions: the WM6 ARMV4I emulator rejects ARMv5-only instructions
 such as `CLZ`, while the physical PXA310 remains backward-compatible.
 
-Do not begin with the full PocketJS bundle. QuickJS will need a dedicated
-WinCE compatibility layer for time, allocation, file APIs, missing CRT calls,
-and any missing runtime facilities. Keep those changes as a reviewable patch,
-as the Symbian toolchain already does. Gate 1 remains open until the 100-cycle
+QuickJS now has a dedicated WinCE compatibility layer for allocation, missing
+CRT calls, and the subset used by the Hero guest. Those changes remain a
+reviewable patch, as the Symbian toolchain does. Gate 1 remains open until the 100-cycle
 probe passes on physical iPAQ hardware with before/after free-memory receipts;
 emulator success validates the binary and ABI but cannot close the hardware
 gate.
@@ -100,7 +99,9 @@ and designated initializers. Compiling it as C++ is also not a shortcut because
 the C sources rely on implicit `void *` conversions and C linkage rules. Gate 1
 therefore uses a separately owned GNU WinCE build. The future VS2005 host will
 load a CeGCC-built DLL through a narrow C ABI; QuickJS values and allocator
-ownership must never cross that boundary.
+ownership must never cross that boundary. That DLL boundary is now
+implemented as ABI v2; it also owns the linked Rust core so QuickJS values,
+Rust allocations, and framebuffer pointers stay on the CeGCC side.
 
 ### AOT milestone — Pocket Vapor Todo (implemented)
 
@@ -119,34 +120,34 @@ heap or JavaScript engine, and it gives the real iPAQ a useful memory/input
 test while QuickJS compatibility work continues. It must not be described as
 ordinary PocketJS guest compatibility.
 
-### Gate 2 — renderer choice
+### Gate 2 — native Rust renderer (implemented; runtime receipt pending)
 
-The existing Rust core cannot be treated as a linkable WM6 library. Choose one
-of these paths only after Gate 1:
+The guest-compatible path now reuses the actual Rust core rather than
+rewriting it in C:
 
-1. **Guest-compatible host (preferred, larger):** port the backend-agnostic
-   retained UI and software rasterizer to portable C/C++03 behind the existing
-   `ui_*` ABI. Reuse `hosts/symbian/runtime/pocketjs_symbian_core.h` as the ABI
-   inventory, but create a platform-neutral header before sharing it.
-2. **AOT-first host (implemented as an early milestone, different execution
-   class):** adapt the C Pocket Vapor runtime to VC8 and compile applications
-   ahead of time. This puts Pocket-authored UI on the device sooner, but it is
-   not a PocketJS guest and cannot be advertised as compatible with ordinary
-   JS bundles.
+1. nightly rustc builds the freestanding core for `armv4t-none-eabi`;
+2. ARM ELF ld merges per-item sections and discards unwind/LLVM metadata;
+3. dual-target CeGCC binutils converts ELF to WinCE COFF;
+4. a repository tool reconstructs all COFF relocation symbol indices and
+   strictly maps `R_ARM_ABS32`, `R_ARM_CALL`, and `R_ARM_JUMP24`;
+5. CeGCC links that object into the QuickJS DLL.
 
-For the guest path, start with solid rectangles, clipping, text atlas blits,
-and touch hit testing. Use a 240×320 or 480×272 logical viewport rendered to a
-16-bit back buffer, then scale/letterbox to the VGA panel. A full 480×640
-32-bit double buffer consumes about 2.34 MiB before textures; RGB565 halves
-that cost and is a better first hardware target.
+The final DLL has 16 PE sections instead of thousands of Rust per-item
+sections. The core renders its real incremental ARGB32 framebuffer at the
+rotated native viewport; the VC8 host converts it to an RGB565 staging buffer
+and presents it through DirectDraw. The next emulator run must provide the
+runtime receipt before this gate is considered closed.
 
-### Gate 3 — PocketJS HostOps
+### Gate 3 — PocketJS HostOps (implemented; runtime receipt pending)
 
-After QuickJS and rendering work independently, bind the append-only HostOps
-surface. Start with lifecycle, node creation, style/property batches, text,
-tick/render, touch, and buttons. Then boot the smallest compiled fixture, not
-the gallery or launcher. Add WM6 to the private development profiles only
-after its manifest resolver rejects unsupported capabilities.
+The ABI v2 DLL installs native lifecycle, node, style/property batch, text,
+texture/font, animation, focus/hit-test, debug, tick, and render operations.
+It copies the PAK into QuickJS before evaluating the unmodified Hero bundle,
+calls `globalThis.frame` at the WM6 timer cadence, ticks the core, and returns
+the incremental framebuffer. The former JavaScript tree and hand-authored
+draw-list adapter have been removed. D-pad keys and Enter/Space currently feed
+the PocketJS directional/Circle button bits; stylus forwarding remains a
+follow-up after the first core-rendered emulator receipt.
 
 ### Gate 4 — packaging and production admission
 

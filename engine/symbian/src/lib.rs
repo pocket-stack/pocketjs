@@ -11,36 +11,36 @@
 //! packed, top-left-origin ARGB32 pixels; those pointers remain valid until
 //! the next capture, viewport change, init, or shutdown call.
 
-#![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(target_os = "none", feature(alloc_error_handler))]
+#![cfg_attr(all(feature = "freestanding", not(test)), no_std)]
+#![cfg_attr(all(feature = "freestanding", not(test)), feature(alloc_error_handler))]
 #![allow(static_mut_refs)]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 extern crate alloc;
 
 use alloc::vec::Vec;
-#[cfg(target_os = "none")]
+#[cfg(all(feature = "freestanding", not(test)))]
 use core::alloc::{GlobalAlloc, Layout};
-#[cfg(target_os = "none")]
+#[cfg(all(feature = "freestanding", not(test)))]
 use core::ffi::c_void;
 use pocketjs_core::damage::{DamagePolicy, DamageTracker, DEFAULT_DAMAGE_REGIONS};
 use pocketjs_core::raster;
 use pocketjs_core::Ui;
 
-#[cfg(any(target_os = "none", test))]
-mod gles2;
 pub mod extension;
+#[cfg(feature = "gles2")]
+mod gles2;
 
-#[cfg(any(target_os = "none", test))]
+#[cfg(any(feature = "freestanding", test))]
 const C_MALLOC_ALIGNMENT: usize = 8;
 
-#[cfg(any(target_os = "none", test))]
+#[cfg(any(feature = "freestanding", test))]
 #[inline]
 const fn c_allocator_supports_alignment(alignment: usize) -> bool {
     alignment <= C_MALLOC_ALIGNMENT
 }
 
-#[cfg(target_os = "none")]
+#[cfg(all(feature = "freestanding", not(test)))]
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut c_void;
     fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
@@ -48,10 +48,10 @@ unsafe extern "C" {
     fn abort() -> !;
 }
 
-#[cfg(target_os = "none")]
+#[cfg(all(feature = "freestanding", not(test)))]
 struct CAllocator;
 
-#[cfg(target_os = "none")]
+#[cfg(all(feature = "freestanding", not(test)))]
 unsafe impl GlobalAlloc for CAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if !c_allocator_supports_alignment(layout.align()) {
@@ -72,17 +72,17 @@ unsafe impl GlobalAlloc for CAllocator {
     }
 }
 
-#[cfg(target_os = "none")]
+#[cfg(all(feature = "freestanding", not(test)))]
 #[global_allocator]
 static ALLOCATOR: CAllocator = CAllocator;
 
-#[cfg(target_os = "none")]
+#[cfg(all(feature = "freestanding", not(test)))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
     unsafe { abort() }
 }
 
-#[cfg(target_os = "none")]
+#[cfg(all(feature = "freestanding", not(test)))]
 #[alloc_error_handler]
 fn allocation_error(_layout: Layout) -> ! {
     unsafe { abort() }
@@ -145,7 +145,7 @@ fn clear_framebuffer() {
 /// Reset the single UI instance. `raster_density == 0` selects density 1.
 #[no_mangle]
 pub extern "C" fn ui_init(raster_density: u32) {
-    #[cfg(target_os = "none")]
+    #[cfg(feature = "gles2")]
     unsafe {
         // This call may happen without a current GL context, so the backend
         // only marks its caches stale and defers replacement until render.
@@ -160,7 +160,7 @@ pub extern "C" fn ui_init(raster_density: u32) {
 /// Drop all retained UI, texture, font, and framebuffer allocations.
 #[no_mangle]
 pub extern "C" fn ui_shutdown() {
-    #[cfg(target_os = "none")]
+    #[cfg(feature = "gles2")]
     unsafe {
         gles2::invalidate_resources();
     }
@@ -365,7 +365,7 @@ pub extern "C" fn ui_load_styles(ptr: *const u8, len: usize) -> i32 {
 pub extern "C" fn ui_load_font_atlas(ptr: *const u8, len: usize) -> i32 {
     let blob = unsafe { bytes(ptr, len) };
     let loaded = ui().load_font_atlas(blob);
-    #[cfg(target_os = "none")]
+    #[cfg(feature = "gles2")]
     if loaded {
         if let Some(&slot) = blob.get(12) {
             unsafe {
@@ -392,17 +392,17 @@ pub extern "C" fn ui_tick() {
 
 #[no_mangle]
 pub extern "C" fn ui_gl_initialize() -> i32 {
-    #[cfg(target_os = "none")]
+    #[cfg(feature = "gles2")]
     unsafe {
         return gles2::initialize() as i32;
     }
-    #[cfg(not(target_os = "none"))]
+    #[cfg(not(feature = "gles2"))]
     0
 }
 
 #[no_mangle]
 pub extern "C" fn ui_gl_reset_resources() {
-    #[cfg(target_os = "none")]
+    #[cfg(feature = "gles2")]
     unsafe {
         gles2::reset_resources();
     }
@@ -410,7 +410,7 @@ pub extern "C" fn ui_gl_reset_resources() {
 
 #[no_mangle]
 pub extern "C" fn ui_gl_shutdown() {
-    #[cfg(target_os = "none")]
+    #[cfg(feature = "gles2")]
     unsafe {
         gles2::shutdown();
     }
@@ -425,7 +425,7 @@ pub extern "C" fn ui_gl_render(
     window_width: i32,
     window_height: i32,
 ) -> i32 {
-    #[cfg(target_os = "none")]
+    #[cfg(feature = "gles2")]
     unsafe {
         return gles2::render(
             ui(),
@@ -437,7 +437,7 @@ pub extern "C" fn ui_gl_render(
             window_height,
         ) as i32;
     }
-    #[cfg(not(target_os = "none"))]
+    #[cfg(not(feature = "gles2"))]
     {
         let _ = (
             target_x,
@@ -463,7 +463,7 @@ pub extern "C" fn ui_gl_render_over(
     window_width: i32,
     window_height: i32,
 ) -> i32 {
-    #[cfg(target_os = "none")]
+    #[cfg(feature = "gles2")]
     unsafe {
         return gles2::render_over(
             ui(),
@@ -475,7 +475,7 @@ pub extern "C" fn ui_gl_render_over(
             window_height,
         ) as i32;
     }
-    #[cfg(not(target_os = "none"))]
+    #[cfg(not(feature = "gles2"))]
     {
         let _ = (
             target_x,

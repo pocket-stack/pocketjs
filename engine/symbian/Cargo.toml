@@ -22,8 +22,10 @@ edition = "2021"
 crate-type = ["rlib", "staticlib"]
 
 [features]
-default = ["standalone-extension-provider"]
+default = ["standalone-extension-provider", "freestanding", "gles2"]
 standalone-extension-provider = []
+freestanding = []
+gles2 = []
 
 [dependencies]
 pocketjs-core = { path = "../core" }

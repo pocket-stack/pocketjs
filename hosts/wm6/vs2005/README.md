@@ -9,19 +9,18 @@ This solution contains three native Smart Device applications for the HP iPAQ
   ahead-of-time compilation to portable C. It is the first application UI on
   WM6, but it is not a QuickJS host and cannot load ordinary PocketJS bundles.
 - `PocketJS.WM6.QuickJS` builds a VC8 host and deploys the CeGCC-built QuickJS
-  DLL plus the real `apps/hero` bundle (`JSX at 60 FPS.`). It mounts Solid,
-  derives a draw list from the HostOps tree, paints the Hero screen into an
-  RGB565 framebuffer, rasterizes the PAK's Inter fonts and RGBA logo/spinner
-  assets into the same buffer, and presents it through DirectDraw. GDI is
-  retained only as a compatibility fallback. The host requests the absolute
+  DLL plus the real `apps/hero` bundle (`JSX at 60 FPS.`). That DLL contains
+  the native ARMv4T Rust PocketJS core. QuickJS HostOps call the core's real
+  tree, styles, Taffy layout, animation, texture/font, and software-raster
+  APIs. Each incremental ARGB32 core frame is converted to RGB565 and
+  presented through DirectDraw. The host requests the absolute
   `DMDO_90` orientation relative to the device's default portrait mode before
   mounting the bundle and restores the previous mode when it exits. The
   rotated `SM_CXSCREEN` and `SM_CYSCREEN` values become the PocketJS viewport
   and the dynamically allocated logical framebuffer dimensions, so VGA uses
-  640x480 while QVGA uses 320x240. The Hero adapter derives its middle, footer,
-  right-aligned statistics, and wrapping positions from that viewport instead
-  of scaling a fixed 480x272 screenshot. The window title reports whether
-  landscape rotation succeeded, even without a debugger attached.
+  640x480 while QVGA uses 320x240. PocketJS performs layout directly against
+  that viewport rather than scaling a fixed 480x272 screenshot. The window
+  title reports whether landscape rotation succeeded, even without a debugger.
   Pixel masks are queried from the primary surface separately after a display
   rotation; a missing 16-bit mask falls back to the WM6 RGB565 layout instead
   of silently converting every source color to black.
@@ -40,8 +39,9 @@ exercises the OS surface that a future full PocketJS host will need:
 - runtime screen and memory reporting.
 
 The hardware and Vapor executables do not embed QuickJS or the PocketJS
-retained UI core. A successful QuickJS probe proves the JavaScript runtime,
-but does not yet connect PocketJS lifecycle, input, or rendering APIs; see
+retained UI core. The QuickJS project does: its v2 DLL ABI owns the Rust core
+and forwards native HostOps, PAK loading, fixed-step frames, and framebuffer
+capture; see
 [`docs/WM6_IPAQ_212.md`](../../../docs/WM6_IPAQ_212.md) for the staged port.
 
 ## Build
@@ -54,9 +54,12 @@ but does not yet connect PocketJS lifecycle, input, or rendering APIs; see
    Windows Mobile Classic/Pocket PC devices to this SDK; the similarly named
    Standard SDK is for non-touchscreen Smartphones.
 4. Open `PocketJS.WM6.sln`.
-5. To rebuild the Hero host assets, run `tools/build.ts hero-main`, then
-   `..\quickjs\build-demo.sh` and `..\quickjs\build-runtime.sh` under WSL.
-   Known-good ARM/WinCE and JavaScript files are checked in for deployment.
+5. To rebuild the native core and Hero host assets under WSL, run
+   `engine/wm6/build-core.sh`, `tools/build.ts hero-main`,
+   `hosts/wm6/quickjs/build-demo.sh`, and
+   `hosts/wm6/quickjs/build-runtime.sh`. The first and last commands require
+   the tool paths documented in their adjacent READMEs. Known-good ARM/WinCE
+   and JavaScript files are checked in for deployment.
 6. Select `Release | Windows Mobile 6 Professional SDK (ARMV4I)`.
 7. Right-click the project you want to run and choose **Set as StartUp
    Project**.

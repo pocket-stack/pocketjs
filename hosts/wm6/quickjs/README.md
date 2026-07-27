@@ -7,9 +7,9 @@ uses the SDK's ARMV4I-compatible instruction baseline (`-march=armv4t`), so
 the same binary runs in the WM6 emulator and on the ARMv5TE PXA310.
 
 Visual C++ 2005 remains the windowing, deployment, and debugger tool for the
-eventual PocketJS host. QuickJS itself uses CeGCC because current QuickJS is
-GNU C99 and cannot be compiled by VC8. The future integration boundary will be
-a narrow C DLL API; QuickJS values and allocations must stay on the CeGCC side.
+PocketJS host. QuickJS itself uses CeGCC because current QuickJS is
+GNU C99 and cannot be compiled by VC8. A narrow C DLL API is the integration
+boundary; QuickJS values and allocations stay on the CeGCC side.
 
 ## Pinned source
 
@@ -50,23 +50,22 @@ from a Promise job. Success shows `QuickJS 6,10,16,26` under the title
 
 ## Hero demo host
 
-`build-runtime.sh` builds `PocketJS.WM6.QuickJS.dll` with a five-function,
-versioned C ABI and statically linked libgcc. `build-demo.sh` combines the
-minimal WM6 HostOps bootstrap with the real `dist/hero-main.js` output.
+`build-runtime.sh` builds `PocketJS.WM6.QuickJS.dll` with a versioned C ABI,
+statically linked libgcc, and the native Rust core produced by
+`engine/wm6/build-core.sh`. The DLL installs the same `ui` HostOps boundary as
+the Symbian host: JavaScript node/style/texture/animation calls go directly to
+the real retained Rust `Ui`. It also copies the PAK into QuickJS before mount,
+advances `globalThis.frame` and `ui_tick` at the host cadence, and exposes the
+core's incremental ARGB32 framebuffer.
+
+`build-demo.sh` packages the unmodified real `dist/hero-main.js` output; it no
+longer prepends a JavaScript tree or hand-authored draw-list adapter.
 VS2005 builds the compatibility-named `PocketJS.WM6.QuickJS.Probe.exe`,
-deploys both files, mounts the Solid application in QuickJS, and turns its
-native tree into a compact draw list. The WM6 host rasterizes backgrounds and
-rectangles into an application-owned RGB565 framebuffer sized from the rotated
-WM6 screen metrics. It injects those dimensions into `ui.__viewport` before
-the real bundle mounts, and the Hero draw-list adapter derives its layout from
-the runtime viewport rather than assuming 480×272. It reads the
-same Inter font-atlas and RGBA image entries that other PocketJS hosts consume
-from the demo PAK, alpha-blends glyphs, the logo, and a spinner frame directly
-into RGB565, then presents the buffer through a locked DirectDraw primary
-surface. The complete GDI renderer remains the fallback when DirectDraw, the
-PAK, or the display pixel format is unavailable. The current milestone renders
-the Hero first frame; its 60 FPS spinner, underline tween, and reactive button
-are the next runtime-loop milestone.
+deploys the DLL, bundle, and PAK, and mounts the Solid application. The native
+screen size after WM6 rotation becomes `ui.__viewport`. Each Rust ARGB32 frame
+is converted to the application-owned RGB565 buffer and presented through a
+locked DirectDraw primary surface. Arrow keys and Enter/Space are mapped to the
+PocketJS directional and Circle button bits.
 
 The compatibility patch:
 
