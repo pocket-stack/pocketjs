@@ -16,7 +16,10 @@ performs a narrow, checked conversion to `pe-arm-wince` COFF:
 3. a dual-target CeGCC binutils `objcopy` writes WinCE COFF;
 4. `patch_arm_coff_relocs.py` maps the three emitted ARM relocations and
    rebuilds every relocation symbol index from the authoritative ELF tables;
-5. WinCE ld performs a second relocatable link as a structural verification.
+5. WinCE ld performs a second relocatable link as a structural verification;
+6. the build rejects a core that is not ARMv4T, does not contain exactly the
+   four folded COFF sections, loses a required `ui_*` entry point, or imports
+   anything beyond the four allocator/abort functions supplied by the host.
 
 The WM6 build disables the Symbian GLES2 backend. It uses `ui_render_incremental`
 to obtain the real PocketJS ARGB32 framebuffer, then converts/presents that
@@ -29,6 +32,7 @@ the corresponding build-tree executables:
 
 ```sh
 WM6_CE_OBJCOPY=/opt/cegcc/bin/arm-mingw32ce-objcopy \
+WM6_CE_OBJDUMP=/opt/cegcc/bin/arm-mingw32ce-objdump \
 WM6_CE_LD=/opt/cegcc/bin/arm-mingw32ce-ld \
 WM6_CE_NM=/opt/cegcc/bin/arm-mingw32ce-nm \
   bash engine/wm6/build-core.sh
