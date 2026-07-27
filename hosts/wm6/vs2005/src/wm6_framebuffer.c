@@ -643,10 +643,11 @@ int wm6_framebuffer_present(void)
     HRESULT status;
     int offset_x;
     int offset_y;
-    int copy_width;
-    int copy_height;
-    int source_x;
-    int source_y;
+    int destination_width;
+    int destination_height;
+    int surface_width;
+    int surface_height;
+    int bytes_per_pixel;
     int y;
 
     if (!g_primary)
@@ -663,57 +664,85 @@ int wm6_framebuffer_present(void)
     if (status != DD_OK || !surface.lpSurface)
         return 0;
 
-    offset_x = ((int)surface.dwWidth - WM6_FB_WIDTH) / 2;
-    offset_y = ((int)surface.dwHeight - WM6_FB_HEIGHT) / 2;
-    source_x = offset_x < 0 ? -offset_x : 0;
-    source_y = offset_y < 0 ? -offset_y : 0;
-    copy_width = WM6_FB_WIDTH - source_x;
-    copy_height = WM6_FB_HEIGHT - source_y;
-    if (offset_x < 0)
-        offset_x = 0;
-    if (offset_y < 0)
-        offset_y = 0;
-    if (copy_width > (int)surface.dwWidth - offset_x)
-        copy_width = (int)surface.dwWidth - offset_x;
-    if (copy_height > (int)surface.dwHeight - offset_y)
-        copy_height = (int)surface.dwHeight - offset_y;
+    surface_width = (int)surface.dwWidth;
+    surface_height = (int)surface.dwHeight;
+    if (surface_width <= 0 || surface_height <= 0) {
+        g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
+        return 0;
+    }
+    if (surface_width * WM6_FB_HEIGHT <=
+        surface_height * WM6_FB_WIDTH) {
+        destination_width = surface_width;
+        destination_height =
+            WM6_FB_HEIGHT * surface_width / WM6_FB_WIDTH;
+    } else {
+        destination_height = surface_height;
+        destination_width =
+            WM6_FB_WIDTH * surface_height / WM6_FB_HEIGHT;
+    }
+    if (destination_width <= 0 || destination_height <= 0) {
+        g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
+        return 0;
+    }
+    offset_x = (surface_width - destination_width) / 2;
+    offset_y = (surface_height - destination_height) / 2;
+    bytes_per_pixel = (int)surface.ddpfPixelFormat.dwRGBBitCount / 8;
+    if (bytes_per_pixel != 2 && bytes_per_pixel != 3 &&
+        bytes_per_pixel != 4) {
+        g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
+        return 0;
+    }
+    for (y = 0; y < surface_height; y++)
+        memset((unsigned char *)surface.lpSurface + y * surface.lPitch,
+               0, surface_width * bytes_per_pixel);
 
-    for (y = 0; y < copy_height; y++) {
+    for (y = 0; y < destination_height; y++) {
         unsigned char *destination;
         const unsigned short *source;
+        int source_y;
         int x;
 
+        source_y = y * WM6_FB_HEIGHT / destination_height;
         destination = (unsigned char *)surface.lpSurface +
                       (offset_y + y) * surface.lPitch;
-        source = &g_pixels[(source_y + y) * WM6_FB_WIDTH + source_x];
+        source = &g_pixels[source_y * WM6_FB_WIDTH];
         if (surface.ddpfPixelFormat.dwRGBBitCount == 16) {
             unsigned short *pixels;
 
             pixels = (unsigned short *)destination + offset_x;
-            for (x = 0; x < copy_width; x++)
+            for (x = 0; x < destination_width; x++) {
+                int source_x;
+
+                source_x = x * WM6_FB_WIDTH / destination_width;
                 pixels[x] = (unsigned short)convert_pixel(
-                    source[x], &surface.ddpfPixelFormat);
+                    source[source_x], &surface.ddpfPixelFormat);
+            }
         } else if (surface.ddpfPixelFormat.dwRGBBitCount == 32) {
             DWORD *pixels;
 
             pixels = (DWORD *)destination + offset_x;
-            for (x = 0; x < copy_width; x++)
-                pixels[x] = convert_pixel(source[x], &surface.ddpfPixelFormat);
-        } else if (surface.ddpfPixelFormat.dwRGBBitCount == 24) {
+            for (x = 0; x < destination_width; x++) {
+                int source_x;
+
+                source_x = x * WM6_FB_WIDTH / destination_width;
+                pixels[x] = convert_pixel(
+                    source[source_x], &surface.ddpfPixelFormat);
+            }
+        } else {
             unsigned char *pixels;
 
             pixels = destination + offset_x * 3;
-            for (x = 0; x < copy_width; x++) {
+            for (x = 0; x < destination_width; x++) {
                 DWORD color;
+                int source_x;
 
-                color = convert_pixel(source[x], &surface.ddpfPixelFormat);
+                source_x = x * WM6_FB_WIDTH / destination_width;
+                color = convert_pixel(
+                    source[source_x], &surface.ddpfPixelFormat);
                 pixels[x * 3] = (unsigned char)color;
                 pixels[x * 3 + 1] = (unsigned char)(color >> 8);
                 pixels[x * 3 + 2] = (unsigned char)(color >> 16);
             }
-        } else {
-            g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
-            return 0;
         }
     }
     g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);

@@ -82,7 +82,9 @@ static int g_framebuffer_ready;
 static DEVMODE g_original_display_mode;
 static int g_display_rotated;
 
-static int rotate_display_landscape(void)
+static void restore_display_orientation(void);
+
+static int rotate_display_90(void)
 {
     DEVMODE current;
     DEVMODE requested;
@@ -92,13 +94,13 @@ static int rotate_display_landscape(void)
     current.dmSize = sizeof(current);
     if (!EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &current))
         return 0;
-    if (GetSystemMetrics(SM_CXSCREEN) >= GetSystemMetrics(SM_CYSCREEN))
+    if (current.dmDisplayOrientation == DMDO_90 &&
+        GetSystemMetrics(SM_CXSCREEN) > GetSystemMetrics(SM_CYSCREEN))
         return 1;
     g_original_display_mode = current;
     requested = current;
     requested.dmFields = DM_DISPLAYORIENTATION;
-    requested.dmDisplayOrientation =
-        (current.dmDisplayOrientation + DMDO_90) & 3;
+    requested.dmDisplayOrientation = DMDO_90;
     status = ChangeDisplaySettingsEx(
         NULL, &requested, NULL, CDS_TEST, NULL);
     if (status != DISP_CHANGE_SUCCESSFUL)
@@ -108,6 +110,10 @@ static int rotate_display_landscape(void)
     if (status != DISP_CHANGE_SUCCESSFUL)
         return 0;
     g_display_rotated = 1;
+    if (GetSystemMetrics(SM_CXSCREEN) <= GetSystemMetrics(SM_CYSCREEN)) {
+        restore_display_orientation();
+        return 0;
+    }
     return 1;
 }
 
@@ -370,7 +376,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     }
     g_draw_list = snapshot_text;
     g_display_rotated = 0;
-    if (rotate_display_landscape())
+    if (rotate_display_90())
         OutputDebugString(L"PocketJS WM6: landscape display active\r\n");
     else
         OutputDebugString(L"PocketJS WM6: display rotation unavailable\r\n");

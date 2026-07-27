@@ -13,8 +13,12 @@ This solution contains three native Smart Device applications for the HP iPAQ
   derives a draw list from the HostOps tree, paints the Hero screen into an
   RGB565 framebuffer, rasterizes the PAK's Inter fonts and RGBA logo/spinner
   assets into the same buffer, and presents it through DirectDraw. GDI is
-  retained only as a compatibility fallback. A portrait display is rotated
-  90 degrees before the demo window is created and restored when it exits.
+  retained only as a compatibility fallback. The host requests the absolute
+  `DMDO_90` orientation relative to the device's default portrait mode before
+  creating the window and restores the previous mode when it exits. The
+  480x272 logical framebuffer is aspect-fitted and centered on the actual
+  DirectDraw surface, so QVGA, VGA, and other WM6 display sizes share the same
+  bundle without cropping.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a

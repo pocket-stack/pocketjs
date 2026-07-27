@@ -145,10 +145,10 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).not.toContain("ascii_to_wide(message, 256, result)");
     expect(host).toContain('static const char snapshot[] = "__wm6DrawList()"');
     expect(host).toContain("CreateWindow(class_name");
-    expect(host).toContain("rotate_display_landscape()");
+    expect(host).toContain("rotate_display_90()");
     expect(host).toContain("EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS");
     expect(host).toContain("DM_DISPLAYORIENTATION");
-    expect(host).toContain("DMDO_90");
+    expect(host).toContain("requested.dmDisplayOrientation = DMDO_90");
     expect(host).toContain("restore_display_orientation()");
     expect(host).toContain("paint_demo(window, dc)");
     expect(host).toContain('L"PocketJS.WM6.Demo.js"');
@@ -163,6 +163,14 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(framebuffer).toContain("static unsigned short g_pixels[");
     expect(framebuffer).toContain("g_primary->lpVtbl->Lock(");
     expect(framebuffer).toContain("g_primary->lpVtbl->Unlock(");
+    expect(framebuffer).toContain("destination_width");
+    expect(framebuffer).toContain("destination_height");
+    expect(framebuffer).toContain(
+      "source_x = x * WM6_FB_WIDTH / destination_width",
+    );
+    expect(framebuffer).toContain(
+      "source_y = y * WM6_FB_HEIGHT / destination_height",
+    );
     expect(framebuffer).not.toContain("DDLOCK_WAIT");
     expect(framebuffer).not.toContain("IDirectDrawSurface_");
     expect(framebuffer).toContain("wm6_framebuffer_load_pak");
