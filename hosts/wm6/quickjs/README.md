@@ -60,8 +60,8 @@ core's incremental ARGB32 framebuffer.
 
 `build-demo.sh` packages the unmodified real `dist/hero-main.js` output; it no
 longer prepends a JavaScript tree or hand-authored draw-list adapter.
-VS2005 builds the compatibility-named `PocketJS.WM6.QuickJS.Probe.exe`,
-deploys the DLL, bundle, and PAK, and mounts the Solid application. The native
+VS2005 builds `PocketJS.WM6.QuickJS.exe`, deploys the DLL, bundle, and PAK,
+and mounts the Solid application. The native
 screen size after WM6 rotation becomes `ui.__viewport`. Each Rust ARGB32 frame
 is converted to the application-owned RGB565 buffer and presented through a
 locked DirectDraw primary surface. Arrow keys and Enter/Space are mapped to the
