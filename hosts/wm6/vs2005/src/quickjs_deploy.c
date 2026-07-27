@@ -90,6 +90,17 @@ static int wide_length(const WCHAR *text)
     return length;
 }
 
+static int font_pixels_for_slot(int slot)
+{
+    static const int pixels[] = { 12, 14, 16, 18, 20, 24, 36 };
+    int index;
+
+    index = slot >= 7 ? slot - 7 : slot;
+    if (index < 0 || index >= 7)
+        return 16;
+    return pixels[index];
+}
+
 static int read_number(char **cursor)
 {
     int value;
@@ -122,7 +133,7 @@ static void paint_cards(HWND window, HDC dc)
     offset_y = (client.bottom - 272) / 2;
     line = g_draw_list;
     while (line && *line) {
-        int x, y, w, h, size, r, g, b;
+        int x, y, w, h, slot, r, g, b;
         HBRUSH brush;
         COLORREF color;
 
@@ -158,7 +169,7 @@ static void paint_cards(HWND window, HDC dc)
             brush = CreateSolidBrush(RGB(r, g, b));
             FillRect(dc, &logical, brush);
             DeleteObject(brush);
-        } else if (line[0] == 'T') {
+        } else if (line[0] == 'T' && !g_framebuffer_ready) {
             LOGFONT font_spec;
             HFONT font;
             HFONT previous_font;
@@ -166,7 +177,7 @@ static void paint_cards(HWND window, HDC dc)
 
             x = read_number(&cursor);
             y = read_number(&cursor);
-            size = read_number(&cursor);
+            slot = read_number(&cursor);
             r = read_number(&cursor);
             g = read_number(&cursor);
             b = read_number(&cursor);
@@ -174,8 +185,8 @@ static void paint_cards(HWND window, HDC dc)
                 cursor++;
             ascii_to_wide(text, 256, cursor);
             memset(&font_spec, 0, sizeof(font_spec));
-            font_spec.lfHeight = -size;
-            font_spec.lfWeight = size >= 14 ? FW_BOLD : FW_NORMAL;
+            font_spec.lfHeight = -font_pixels_for_slot(slot);
+            font_spec.lfWeight = slot >= 7 ? FW_BOLD : FW_NORMAL;
             font = CreateFontIndirect(&font_spec);
             previous_font = (HFONT)SelectObject(dc, font);
             color = RGB(r, g, b);
@@ -235,6 +246,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     char *snapshot_text;
     unsigned int bundle_length;
     WCHAR create_error[256];
+    WCHAR pak_path[MAX_PATH];
     WCHAR *message;
     WNDCLASS window_class;
     HWND window;
@@ -334,11 +346,17 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         LocalFree(message);
         return 7;
     }
-    g_framebuffer_ready = wm6_framebuffer_open(window);
-    if (g_framebuffer_ready) {
-        wm6_framebuffer_render(g_draw_list);
-        OutputDebugString(L"PocketJS WM6: DirectDraw RGB565 active\r\n");
+    g_framebuffer_ready = 0;
+    if (GetModuleFileName(NULL, pak_path, MAX_PATH) &&
+        append_file_name(pak_path, MAX_PATH, L"PocketJS.WM6.Cards.pak") &&
+        wm6_framebuffer_open(window) &&
+        wm6_framebuffer_load_pak(pak_path) &&
+        wm6_framebuffer_render(g_draw_list)) {
+        g_framebuffer_ready = 1;
+        OutputDebugString(
+            L"PocketJS WM6: DirectDraw RGB565 + font atlas active\r\n");
     } else {
+        wm6_framebuffer_close();
         OutputDebugString(L"PocketJS WM6: DirectDraw unavailable; using GDI\r\n");
     }
     ShowWindow(window, show);

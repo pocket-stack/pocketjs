@@ -95,7 +95,7 @@ describe("Windows Mobile 6 VS2005 projects", () => {
   test("includes a pinned CeGCC QuickJS ARM/WinCE probe", async () => {
     const quickjsRoot = new URL("../hosts/wm6/quickjs/", import.meta.url);
     const [solution, project, host, framebuffer, build, runtimeBuild, cardsBuild,
-      patch, probe, runtime, abi, cards, math, executable, dll] =
+      patch, probe, runtime, abi, cards, cardsPak, math, executable, dll] =
       await Promise.all([
         readFile(new URL("PocketJS.WM6.sln", root), "utf8"),
         readFile(new URL("PocketJS.WM6.QuickJS.vcproj", root), "utf8"),
@@ -109,6 +109,7 @@ describe("Windows Mobile 6 VS2005 projects", () => {
         readFile(new URL("src/runtime_dll.c", quickjsRoot), "utf8"),
         readFile(new URL("runtime/wm6_quickjs_abi.h", root), "utf8"),
         readFile(new URL("prebuilt/PocketJS.WM6.Cards.js", root), "utf8"),
+        readFile(new URL("prebuilt/PocketJS.WM6.Cards.pak", root)),
         readFile(new URL("src/wm6_math.c", quickjsRoot), "utf8"),
         readFile(
           new URL("prebuilt/PocketJS.WM6.QuickJS.Probe.exe", root),
@@ -122,6 +123,11 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(project).toContain(
       'PocketJS.WM6.QuickJS.dll|$(SolutionDir)prebuilt|%CSIDL_PROGRAM_FILES%\\PocketJS.WM6.QuickJS|0',
     );
+    expect(
+      project.match(
+        /PocketJS\.WM6\.Cards\.pak\|\$\(SolutionDir\)prebuilt\|%CSIDL_PROGRAM_FILES%\\PocketJS\.WM6\.QuickJS\|0/g,
+      ),
+    ).toHaveLength(2);
     expect(project.match(/TargetMachine="0"/g)).toHaveLength(2);
     expect(project.match(/AdditionalDependencies="ddraw\.lib coredll\.lib"/g))
       .toHaveLength(2);
@@ -144,7 +150,7 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).not.toContain("\n            TextOut(dc");
     expect(host).toContain("wm6_framebuffer_open(window)");
     expect(host).toContain("wm6_framebuffer_present()");
-    expect(host).toContain("DirectDraw RGB565 active");
+    expect(host).toContain("DirectDraw RGB565 + font atlas active");
     expect(host).toContain("DirectDraw unavailable; using GDI");
     expect(framebuffer).toContain("#include <ddraw.h>");
     expect(framebuffer).toContain("static unsigned short g_pixels[");
@@ -152,6 +158,10 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(framebuffer).toContain("g_primary->lpVtbl->Unlock(");
     expect(framebuffer).not.toContain("DDLOCK_WAIT");
     expect(framebuffer).not.toContain("IDirectDrawSurface_");
+    expect(framebuffer).toContain("wm6_framebuffer_load_pak");
+    expect(framebuffer).toContain("parse_font_atlas");
+    expect(framebuffer).toContain("logical_coverage");
+    expect(framebuffer).toContain("draw_text(");
 
     expect(build).toContain(
       'quickjs_rev="0fc946fb670c0c29bc0135f510bcb0f595415a61"',
@@ -163,6 +173,7 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(runtimeBuild).toContain("-shared");
     expect(runtimeBuild).toContain("-static-libgcc");
     expect(cardsBuild).toContain("dist/cards-main.js");
+    expect(cardsBuild).toContain("dist/cards-main.pak");
     expect(patch).toContain("#undef CONFIG_ATOMICS");
     expect(patch).toContain("#elif defined(_WIN32_WCE)");
     expect(probe).toContain("JS_SetMemoryLimit(runtime, 8u * 1024u * 1024u)");
@@ -182,6 +193,10 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(cards).toContain("Feature Cards");
     expect(cards).toContain("Flexbox via Taffy");
     expect(cards).toContain("globalThis.__wm6DrawList");
+    expect(cards).toContain("text(16, 35, 12, 15, 23, 42");
+    expect(cardsPak.subarray(0, 4).toString()).toBe("DCPK");
+    expect(cardsPak.includes(Buffer.from("ui:font.0"))).toBeTrue();
+    expect(cardsPak.includes(Buffer.from("ui:font.12"))).toBeTrue();
 
     expect(executable.subarray(0, 2).toString("ascii")).toBe("MZ");
     const peOffset = executable.readUInt32LE(0x3c);

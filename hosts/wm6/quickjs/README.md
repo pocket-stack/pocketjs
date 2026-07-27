@@ -56,11 +56,12 @@ minimal WM6 HostOps bootstrap with the real `dist/cards-main.js` output.
 VS2005 builds the compatibility-named `PocketJS.WM6.QuickJS.Probe.exe`,
 deploys both files, mounts the Solid application in QuickJS, and turns its
 native tree into a compact draw list. The WM6 host rasterizes backgrounds and
-rectangles into an application-owned 480×272 RGB565 framebuffer, then presents
-it through a locked DirectDraw primary surface. Text is still drawn through
-GDI after the surface is unlocked, and the complete GDI renderer remains the
-fallback when DirectDraw or the display pixel format is unavailable.
-Input-driven focus, font-atlas rasterization, and detail updates are the next
+rectangles into an application-owned 480×272 RGB565 framebuffer. It reads the
+same Inter font-atlas entries that other PocketJS hosts consume from the Cards
+PAK and alpha-blends glyph coverage directly into RGB565. The finished buffer
+is presented through a locked DirectDraw primary surface. The complete GDI
+renderer remains the fallback when DirectDraw, the PAK, or the display pixel
+format is unavailable. Input-driven focus and detail updates are the next
 milestones.
 
 The compatibility patch:

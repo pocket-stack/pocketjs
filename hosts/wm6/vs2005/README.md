@@ -11,7 +11,9 @@ This solution contains three native Smart Device applications for the HP iPAQ
 - `PocketJS.WM6.QuickJS` builds a VC8 host and deploys the CeGCC-built QuickJS
   DLL plus the real `apps/cards` bundle. It mounts Solid, derives a draw list
   from the HostOps tree, paints backgrounds and cards into an RGB565
-  framebuffer, presents it through DirectDraw, and overlays text with GDI.
+  framebuffer, rasterizes the PAK's Inter font atlases into the same buffer,
+  and presents it through DirectDraw. GDI is retained only as a compatibility
+  fallback.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a

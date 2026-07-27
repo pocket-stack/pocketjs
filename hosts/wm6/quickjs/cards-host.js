@@ -72,8 +72,8 @@
   globalThis.__wm6DrawList = () => {
     const out = ["B|248|250|252"];
     const safe = (text) => String(text).replace(/[|\r\n]/g, " ");
-    const text = (x, y, size, r, g, b, value) =>
-      out.push(`T|${x}|${y}|${size}|${r}|${g}|${b}|${safe(value)}`);
+    const text = (x, y, slot, r, g, b, value) =>
+      out.push(`T|${x}|${y}|${slot}|${r}|${g}|${b}|${safe(value)}`);
     const rect = (x, y, w, h, r, g, b) =>
       out.push(`R|${x}|${y}|${w}|${h}|${r}|${g}|${b}`);
     let cardIndex = 0;
@@ -89,12 +89,12 @@
     for (const n of nodes.values()) {
       if (!n.text) continue;
       const style = effectiveStyle(n);
-      if (style === 18) text(16, 18, 12, 37, 99, 235, n.text);
-      else if (style === 19) text(16, 35, 24, 15, 23, 42, n.text);
+      if (style === 18) text(16, 18, 0, 37, 99, 235, n.text);
+      else if (style === 19) text(16, 35, 12, 15, 23, 42, n.text);
       else if (style === 20 && n.text === "3 MODULES")
-        text(398, 43, 12, 100, 116, 139, n.text);
+        text(398, 43, 0, 100, 116, 139, n.text);
       else if (style === 20)
-        text(16, 250, 12, 100, 116, 139, n.text);
+        text(16, 250, 0, 100, 116, 139, n.text);
     }
     for (const n of nodes.values()) {
       if (n.style !== 0 && n.style !== 3 && n.style !== 6) continue;
@@ -113,8 +113,8 @@
         for (const nested of child.children) collect(nested);
       };
       collect(n.id);
-      if (labels[0]) text(x + 12, 91, 14, 15, 23, 42, labels[0]);
-      if (labels[1]) text(x + 12, 115, 12, 71, 85, 105, labels[1]);
+      if (labels[0]) text(x + 12, 91, 8, 15, 23, 42, labels[0]);
+      if (labels[1]) text(x + 12, 115, 0, 71, 85, 105, labels[1]);
       cardIndex++;
     }
     for (const n of nodes.values()) {
@@ -128,8 +128,8 @@
         for (const nested of child.children) collect(nested);
       };
       collect(n.id);
-      if (labels[0]) text(34, 184, 14, 15, 23, 42, labels[0]);
-      if (labels[1]) text(34, 204, 12, 71, 85, 105, labels[1]);
+      if (labels[0]) text(34, 184, 8, 15, 23, 42, labels[0]);
+      if (labels[1]) text(34, 204, 0, 71, 85, 105, labels[1]);
     }
     return out.join("\n");
   };
