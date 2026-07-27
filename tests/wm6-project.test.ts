@@ -168,6 +168,9 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(framebuffer).toContain("static unsigned short g_pixels[");
     expect(framebuffer).toContain("g_primary->lpVtbl->Lock(");
     expect(framebuffer).toContain("g_primary->lpVtbl->Unlock(");
+    expect(framebuffer).toContain("g_primary->lpVtbl->GetPixelFormat(");
+    expect(framebuffer).toContain("resolve_primary_pixel_format");
+    expect(framebuffer).toContain("format->dwRBitMask = 0xf800u");
     expect(framebuffer).toContain("destination_width");
     expect(framebuffer).toContain("destination_height");
     expect(framebuffer).toContain(

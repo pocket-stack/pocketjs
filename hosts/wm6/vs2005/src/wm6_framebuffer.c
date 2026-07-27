@@ -163,6 +163,37 @@ static DWORD convert_pixel(unsigned short source, const DDPIXELFORMAT *format)
            pack_component(blue, format->dwBBitMask);
 }
 
+static int resolve_primary_pixel_format(const DDSURFACEDESC *surface,
+                                        DDPIXELFORMAT *format)
+{
+    HRESULT status;
+
+    memset(format, 0, sizeof(*format));
+    format->dwSize = sizeof(*format);
+    status = g_primary->lpVtbl->GetPixelFormat(g_primary, format);
+    if (status != DD_OK || format->dwRGBBitCount == 0)
+        *format = surface->ddpfPixelFormat;
+    if (format->dwRGBBitCount == 16 &&
+        (!format->dwRBitMask || !format->dwGBitMask ||
+         !format->dwBBitMask)) {
+        format->dwRBitMask = 0xf800u;
+        format->dwGBitMask = 0x07e0u;
+        format->dwBBitMask = 0x001fu;
+    } else if ((format->dwRGBBitCount == 24 ||
+                format->dwRGBBitCount == 32) &&
+               (!format->dwRBitMask || !format->dwGBitMask ||
+                !format->dwBBitMask)) {
+        format->dwRBitMask = 0x00ff0000u;
+        format->dwGBitMask = 0x0000ff00u;
+        format->dwBBitMask = 0x000000ffu;
+    }
+    return (format->dwRGBBitCount == 16 ||
+            format->dwRGBBitCount == 24 ||
+            format->dwRGBBitCount == 32) &&
+           format->dwRBitMask && format->dwGBitMask &&
+           format->dwBBitMask;
+}
+
 static int parse_font_atlas(const unsigned char *blob, unsigned int length)
 {
     Wm6FontAtlas *atlas;
@@ -640,6 +671,7 @@ int wm6_framebuffer_render(const char *draw_list)
 int wm6_framebuffer_present(void)
 {
     DDSURFACEDESC surface;
+    DDPIXELFORMAT pixel_format;
     HRESULT status;
     int offset_x;
     int offset_y;
@@ -648,6 +680,7 @@ int wm6_framebuffer_present(void)
     int surface_width;
     int surface_height;
     int bytes_per_pixel;
+    int pitch;
     int y;
 
     if (!g_primary)
@@ -663,6 +696,10 @@ int wm6_framebuffer_present(void)
     }
     if (status != DD_OK || !surface.lpSurface)
         return 0;
+    if (!resolve_primary_pixel_format(&surface, &pixel_format)) {
+        g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
+        return 0;
+    }
 
     surface_width = (int)surface.dwWidth;
     surface_height = (int)surface.dwHeight;
@@ -686,9 +723,14 @@ int wm6_framebuffer_present(void)
     }
     offset_x = (surface_width - destination_width) / 2;
     offset_y = (surface_height - destination_height) / 2;
-    bytes_per_pixel = (int)surface.ddpfPixelFormat.dwRGBBitCount / 8;
+    bytes_per_pixel = (int)pixel_format.dwRGBBitCount / 8;
     if (bytes_per_pixel != 2 && bytes_per_pixel != 3 &&
         bytes_per_pixel != 4) {
+        g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
+        return 0;
+    }
+    pitch = surface.lPitch < 0 ? -surface.lPitch : surface.lPitch;
+    if (surface_width * bytes_per_pixel > pitch) {
         g_primary->lpVtbl->Unlock(g_primary, surface.lpSurface);
         return 0;
     }
@@ -706,7 +748,7 @@ int wm6_framebuffer_present(void)
         destination = (unsigned char *)surface.lpSurface +
                       (offset_y + y) * surface.lPitch;
         source = &g_pixels[source_y * WM6_FB_WIDTH];
-        if (surface.ddpfPixelFormat.dwRGBBitCount == 16) {
+        if (pixel_format.dwRGBBitCount == 16) {
             unsigned short *pixels;
 
             pixels = (unsigned short *)destination + offset_x;
@@ -715,9 +757,9 @@ int wm6_framebuffer_present(void)
 
                 source_x = x * WM6_FB_WIDTH / destination_width;
                 pixels[x] = (unsigned short)convert_pixel(
-                    source[source_x], &surface.ddpfPixelFormat);
+                    source[source_x], &pixel_format);
             }
-        } else if (surface.ddpfPixelFormat.dwRGBBitCount == 32) {
+        } else if (pixel_format.dwRGBBitCount == 32) {
             DWORD *pixels;
 
             pixels = (DWORD *)destination + offset_x;
@@ -726,7 +768,7 @@ int wm6_framebuffer_present(void)
 
                 source_x = x * WM6_FB_WIDTH / destination_width;
                 pixels[x] = convert_pixel(
-                    source[source_x], &surface.ddpfPixelFormat);
+                    source[source_x], &pixel_format);
             }
         } else {
             unsigned char *pixels;
@@ -738,7 +780,7 @@ int wm6_framebuffer_present(void)
 
                 source_x = x * WM6_FB_WIDTH / destination_width;
                 color = convert_pixel(
-                    source[source_x], &surface.ddpfPixelFormat);
+                    source[source_x], &pixel_format);
                 pixels[x * 3] = (unsigned char)color;
                 pixels[x * 3 + 1] = (unsigned char)(color >> 8);
                 pixels[x * 3 + 2] = (unsigned char)(color >> 16);

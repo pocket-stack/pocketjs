@@ -20,6 +20,9 @@ This solution contains three native Smart Device applications for the HP iPAQ
   DirectDraw surface, so QVGA, VGA, and other WM6 display sizes share the same
   bundle without cropping. The window title reports whether landscape rotation
   succeeded, even when the process was launched without a debugger attached.
+  Pixel masks are queried from the primary surface separately after a display
+  rotation; a missing 16-bit mask falls back to the WM6 RGB565 layout instead
+  of silently converting every source color to black.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a
