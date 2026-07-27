@@ -149,7 +149,12 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).toContain("EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS");
     expect(host).toContain("DM_DISPLAYORIENTATION");
     expect(host).toContain("requested.dmDisplayOrientation = DMDO_90");
+    expect(
+      host.match(/requested\.dmDisplayOrientation = DMDO_90/g),
+    ).toHaveLength(2);
     expect(host).toContain("restore_display_orientation()");
+    expect(host).toContain('L"PocketJS Hero Demo [landscape]"');
+    expect(host).toContain('L"PocketJS Hero Demo [rotation unavailable]"');
     expect(host).toContain("paint_demo(window, dc)");
     expect(host).toContain('L"PocketJS.WM6.Demo.js"');
     expect(host).toContain('L"PocketJS.WM6.Demo.pak"');

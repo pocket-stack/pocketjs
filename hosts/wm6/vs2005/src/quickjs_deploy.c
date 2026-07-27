@@ -105,6 +105,11 @@ static int rotate_display_90(void)
         NULL, &requested, NULL, CDS_TEST, NULL);
     if (status != DISP_CHANGE_SUCCESSFUL)
         return 0;
+    /*
+     * Windows CE also uses CDS_TEST with DM_DISPLAYORIENTATION to return the
+     * current orientation in this field, so restore the requested value.
+     */
+    requested.dmDisplayOrientation = DMDO_90;
     status = ChangeDisplaySettingsEx(
         NULL, &requested, NULL, CDS_RESET, NULL);
     if (status != DISP_CHANGE_SUCCESSFUL)
@@ -300,6 +305,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     WNDCLASS window_class;
     HWND window;
     MSG message_loop;
+    int rotation_ready;
     int status;
 
     (void)instance;
@@ -376,7 +382,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     }
     g_draw_list = snapshot_text;
     g_display_rotated = 0;
-    if (rotate_display_90())
+    rotation_ready = rotate_display_90();
+    if (rotation_ready)
         OutputDebugString(L"PocketJS WM6: landscape display active\r\n");
     else
         OutputDebugString(L"PocketJS WM6: display rotation unavailable\r\n");
@@ -391,7 +398,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         LocalFree(message);
         return 6;
     }
-    window = CreateWindow(class_name, L"PocketJS Hero Demo",
+    window = CreateWindow(class_name,
+                          rotation_ready
+                              ? L"PocketJS Hero Demo [landscape]"
+                              : L"PocketJS Hero Demo [rotation unavailable]",
                           WS_VISIBLE, 0, 0,
                           GetSystemMetrics(SM_CXSCREEN),
                           GetSystemMetrics(SM_CYSCREEN),

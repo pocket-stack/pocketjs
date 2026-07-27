@@ -18,7 +18,8 @@ This solution contains three native Smart Device applications for the HP iPAQ
   creating the window and restores the previous mode when it exits. The
   480x272 logical framebuffer is aspect-fitted and centered on the actual
   DirectDraw surface, so QVGA, VGA, and other WM6 display sizes share the same
-  bundle without cropping.
+  bundle without cropping. The window title reports whether landscape rotation
+  succeeded, even when the process was launched without a debugger attached.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a
