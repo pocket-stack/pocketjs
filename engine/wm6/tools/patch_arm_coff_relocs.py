@@ -38,6 +38,7 @@ IMAGE_FILE_MACHINE_THUMB = 0x01C2
 IMAGE_SCN_LNK_NRELOC_OVFL = 0x01000000
 IMAGE_SYM_CLASS_EXTERNAL = 2
 IMAGE_SYM_CLASS_STATIC = 3
+IMAGE_REL_ARM_BRANCH24 = 3
 
 ELF_HEADER_SIZE = 52
 ELF_SECTION_SIZE = 40
@@ -52,8 +53,8 @@ SHN_ABS = 0xFFF1
 
 ELF_TO_WINCE_RELOCATION = {
     2: 1,   # R_ARM_ABS32 -> ARM_32
-    28: 3,  # R_ARM_CALL -> ARM_26
-    29: 3,  # R_ARM_JUMP24 -> ARM_26
+    28: IMAGE_REL_ARM_BRANCH24,  # R_ARM_CALL -> ARM_26
+    29: IMAGE_REL_ARM_BRANCH24,  # R_ARM_JUMP24 -> ARM_26
 }
 
 
@@ -618,7 +619,46 @@ def remap_relocations(
             output_type,
         )
         patched[(input_type, output_type)] += 1
+    verified_branches = verify_wince_branch_addends(coff_data)
+    if verified_branches != normalized_branches:
+        raise CoffError(
+            "normalized/verified ARM branch count differs: "
+            f"{normalized_branches}/{verified_branches}"
+        )
     return coff_data, patched, len(additions), normalized_branches
+
+
+def verify_wince_branch_addends(data: bytearray) -> int:
+    """Reject an ARM_26 relocation whose instruction still carries an addend."""
+    verified = 0
+    for section in parse_coff_sections(data):
+        for index in range(section.relocation_count):
+            record = (
+                section.relocation_offset + index * COFF_RELOCATION_SIZE
+            )
+            if read_u16(data, record + 8) != IMAGE_REL_ARM_BRANCH24:
+                continue
+            address = read_u32(data, record)
+            if address > section.data_size - 4:
+                raise CoffError(
+                    f"ARM_26 relocation at 0x{address:x} lies outside "
+                    f"{section.name!r}"
+                )
+            instruction = read_u32(data, section.data_offset + address)
+            if instruction & 0x0E000000 != 0x0A000000:
+                raise CoffError(
+                    f"ARM_26 relocation at 0x{address:x} in "
+                    f"{section.name!r} references non-branch instruction "
+                    f"0x{instruction:08x}"
+                )
+            if instruction & 0x00FFFFFF:
+                raise CoffError(
+                    f"ARM_26 relocation at 0x{address:x} in "
+                    f"{section.name!r} retains non-zero instruction addend "
+                    f"0x{instruction & 0x00FFFFFF:06x}"
+                )
+            verified += 1
+    return verified
 
 
 def restore_ui_exports(data: bytearray) -> tuple[bytearray, list[str]]:
@@ -736,7 +776,10 @@ def main() -> int:
         for (source, target), count in sorted(patched.items())
     )
     print(f"patched {sum(patched.values())} ARM relocations ({summary})")
-    print(f"normalized {normalized_branches} WinCE ARM_26 branch addends")
+    print(
+        f"normalized and verified {normalized_branches} "
+        "WinCE ARM_26 branch addends"
+    )
     print(f"mapped {mapped_symbols} ELF relocation symbols")
     print(f"restored {len(restored)} PocketJS C ABI exports")
     return 0
