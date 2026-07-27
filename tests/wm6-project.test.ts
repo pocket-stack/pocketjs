@@ -145,6 +145,11 @@ describe("Windows Mobile 6 VS2005 projects", () => {
     expect(host).not.toContain("ascii_to_wide(message, 256, result)");
     expect(host).toContain('static const char snapshot[] = "__wm6DrawList()"');
     expect(host).toContain("CreateWindow(class_name");
+    expect(host).toContain("rotate_display_landscape()");
+    expect(host).toContain("EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS");
+    expect(host).toContain("DM_DISPLAYORIENTATION");
+    expect(host).toContain("DMDO_90");
+    expect(host).toContain("restore_display_orientation()");
     expect(host).toContain("paint_demo(window, dc)");
     expect(host).toContain('L"PocketJS.WM6.Demo.js"');
     expect(host).toContain('L"PocketJS.WM6.Demo.pak"');

@@ -79,6 +79,49 @@ static void ascii_to_wide(WCHAR *output, unsigned int capacity,
 
 static char *g_draw_list;
 static int g_framebuffer_ready;
+static DEVMODE g_original_display_mode;
+static int g_display_rotated;
+
+static int rotate_display_landscape(void)
+{
+    DEVMODE current;
+    DEVMODE requested;
+    LONG status;
+
+    memset(&current, 0, sizeof(current));
+    current.dmSize = sizeof(current);
+    if (!EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &current))
+        return 0;
+    if (GetSystemMetrics(SM_CXSCREEN) >= GetSystemMetrics(SM_CYSCREEN))
+        return 1;
+    g_original_display_mode = current;
+    requested = current;
+    requested.dmFields = DM_DISPLAYORIENTATION;
+    requested.dmDisplayOrientation =
+        (current.dmDisplayOrientation + DMDO_90) & 3;
+    status = ChangeDisplaySettingsEx(
+        NULL, &requested, NULL, CDS_TEST, NULL);
+    if (status != DISP_CHANGE_SUCCESSFUL)
+        return 0;
+    status = ChangeDisplaySettingsEx(
+        NULL, &requested, NULL, CDS_RESET, NULL);
+    if (status != DISP_CHANGE_SUCCESSFUL)
+        return 0;
+    g_display_rotated = 1;
+    return 1;
+}
+
+static void restore_display_orientation(void)
+{
+    DEVMODE requested;
+
+    if (!g_display_rotated)
+        return;
+    requested = g_original_display_mode;
+    requested.dmFields = DM_DISPLAYORIENTATION;
+    ChangeDisplaySettingsEx(NULL, &requested, NULL, CDS_RESET, NULL);
+    g_display_rotated = 0;
+}
 
 static int wide_length(const WCHAR *text)
 {
@@ -326,12 +369,18 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         return 5;
     }
     g_draw_list = snapshot_text;
+    g_display_rotated = 0;
+    if (rotate_display_landscape())
+        OutputDebugString(L"PocketJS WM6: landscape display active\r\n");
+    else
+        OutputDebugString(L"PocketJS WM6: display rotation unavailable\r\n");
     memset(&window_class, 0, sizeof(window_class));
     window_class.lpfnWndProc = DemoWindowProc;
     window_class.hInstance = instance;
     window_class.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     window_class.lpszClassName = class_name;
     if (!RegisterClass(&window_class)) {
+        restore_display_orientation();
         LocalFree(snapshot_text);
         LocalFree(message);
         return 6;
@@ -342,6 +391,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
                           GetSystemMetrics(SM_CYSCREEN),
                           NULL, NULL, instance, NULL);
     if (!window) {
+        restore_display_orientation();
         LocalFree(snapshot_text);
         LocalFree(message);
         return 7;
@@ -365,6 +415,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         TranslateMessage(&message_loop);
         DispatchMessage(&message_loop);
     }
+    restore_display_orientation();
     LocalFree(snapshot_text);
     LocalFree(message);
     return 0;
