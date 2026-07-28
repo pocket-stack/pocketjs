@@ -41,6 +41,9 @@ This solution contains three native Smart Device applications for the HP iPAQ
   While DirectDraw remains active, the GDI copy is deferred until it is
   actually needed, and matching RGB565 surfaces use a row copy instead of
   converting every 16-bit pixel a second time.
+  The recurring FPS receipt also reports average QuickJS/core, framebuffer
+  conversion, and presentation times so emulator and device bottlenecks can
+  be distinguished without a profiler.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a

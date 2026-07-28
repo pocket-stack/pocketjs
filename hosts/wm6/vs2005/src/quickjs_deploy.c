@@ -99,6 +99,9 @@ static int g_frame_error_shown;
 static int g_first_frame_reported;
 static DWORD g_frame_window_started;
 static unsigned int g_frame_window_count;
+static DWORD g_profile_core_ms;
+static DWORD g_profile_copy_ms;
+static DWORD g_profile_present_ms;
 static DEVMODE g_original_display_mode;
 static int g_display_rotated;
 static int g_shell_hidden;
@@ -330,12 +333,18 @@ static void report_successful_frame(
     unsigned int width,
     unsigned int height,
     unsigned int stride,
-    unsigned int byte_length)
+    unsigned int byte_length,
+    DWORD core_ms,
+    DWORD copy_ms,
+    DWORD present_ms)
 {
     WCHAR receipt[256];
     DWORD now;
     DWORD elapsed;
     DWORD fps_tenths;
+    DWORD core_tenths;
+    DWORD copy_tenths;
+    DWORD present_tenths;
 
     now = GetTickCount();
     if (!g_first_frame_reported) {
@@ -351,12 +360,24 @@ static void report_successful_frame(
         g_first_frame_reported = 1;
         g_frame_window_started = now;
         g_frame_window_count = 0;
+        g_profile_core_ms = 0;
+        g_profile_copy_ms = 0;
+        g_profile_present_ms = 0;
     }
     g_frame_window_count++;
+    g_profile_core_ms += core_ms;
+    g_profile_copy_ms += copy_ms;
+    g_profile_present_ms += present_ms;
     elapsed = now - g_frame_window_started;
     if (elapsed >= 2000u) {
         fps_tenths =
             (DWORD)((g_frame_window_count * 10000u) / elapsed);
+        core_tenths =
+            g_profile_core_ms * 10u / g_frame_window_count;
+        copy_tenths =
+            g_profile_copy_ms * 10u / g_frame_window_count;
+        present_tenths =
+            g_profile_present_ms * 10u / g_frame_window_count;
         wsprintfW(
             receipt,
             L"PocketJS WM6 receipt: %lu.%lu FPS "
@@ -366,8 +387,22 @@ static void report_successful_frame(
             (DWORD)g_frame_window_count,
             elapsed);
         OutputDebugString(receipt);
+        wsprintfW(
+            receipt,
+            L"PocketJS WM6 profile: core=%lu.%lu ms "
+            L"copy=%lu.%lu ms present=%lu.%lu ms/frame\r\n",
+            core_tenths / 10u,
+            core_tenths % 10u,
+            copy_tenths / 10u,
+            copy_tenths % 10u,
+            present_tenths / 10u,
+            present_tenths % 10u);
+        OutputDebugString(receipt);
         g_frame_window_started = now;
         g_frame_window_count = 0;
+        g_profile_core_ms = 0;
+        g_profile_copy_ms = 0;
+        g_profile_present_ms = 0;
     }
 }
 
@@ -382,6 +417,10 @@ static int render_core_frame(void)
     unsigned int stride;
     unsigned int byte_length;
     char error[256];
+    DWORD frame_started;
+    DWORD core_complete;
+    DWORD copy_complete;
+    DWORD present_complete;
 
     if (!g_quickjs_runtime || !g_quickjs_frame || !g_framebuffer_ready)
         return 0;
@@ -398,6 +437,7 @@ static int render_core_frame(void)
     if (!g_first_frame_reported)
         OutputDebugString(
             L"PocketJS WM6 trace: host frame call begin\r\n");
+    frame_started = GetTickCount();
     pixels = g_quickjs_frame(
         g_quickjs_runtime,
         frame_buttons,
@@ -418,6 +458,7 @@ static int render_core_frame(void)
             error[0] ? error : "QuickJS/Rust frame returned no pixels");
         return stop_frame_rendering(message);
     }
+    core_complete = GetTickCount();
     if (!g_first_frame_reported)
         OutputDebugString(
             L"PocketJS WM6 trace: host frame call complete\r\n");
@@ -427,6 +468,7 @@ static int render_core_frame(void)
             pixels, width, height, stride, byte_length))
         return stop_frame_rendering(
             L"Rust framebuffer geometry or byte length is invalid");
+    copy_complete = GetTickCount();
     g_frame_available = 1;
     if (!g_first_frame_reported)
         OutputDebugString(
@@ -434,7 +476,15 @@ static int render_core_frame(void)
     if (!wm6_framebuffer_present())
         return stop_frame_rendering(
             L"WM6 could not present the Rust framebuffer");
-    report_successful_frame(width, height, stride, byte_length);
+    present_complete = GetTickCount();
+    report_successful_frame(
+        width,
+        height,
+        stride,
+        byte_length,
+        core_complete - frame_started,
+        copy_complete - core_complete,
+        present_complete - copy_complete);
     return 1;
 }
 
@@ -694,6 +744,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     g_first_frame_reported = 0;
     g_frame_window_started = 0;
     g_frame_window_count = 0;
+    g_profile_core_ms = 0;
+    g_profile_copy_ms = 0;
+    g_profile_present_ms = 0;
     g_quickjs_module = module;
     g_quickjs_runtime = runtime;
     g_quickjs_frame = frame;
