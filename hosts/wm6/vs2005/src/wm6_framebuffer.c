@@ -23,6 +23,8 @@ static int g_height;
 static int g_surface_reported;
 static int g_directdraw_disabled;
 static int g_gdi_reported;
+static DDPIXELFORMAT g_primary_format;
+static int g_primary_format_known;
 static const unsigned char *g_last_argb;
 static unsigned int g_last_argb_width;
 static unsigned int g_last_argb_height;
@@ -162,6 +164,8 @@ int wm6_framebuffer_open(HWND window, int logical_width, int logical_height)
     g_surface_reported = 0;
     g_directdraw_disabled = 0;
     g_gdi_reported = 0;
+    memset(&g_primary_format, 0, sizeof(g_primary_format));
+    g_primary_format_known = 0;
 
     status = DirectDrawCreate(NULL, &g_direct_draw, NULL);
     if (status != DD_OK || !g_direct_draw) {
@@ -205,6 +209,10 @@ int wm6_framebuffer_open(HWND window, int logical_width, int logical_height)
         status == DD_OK &&
         resolve_surface_pixel_format(
             g_primary, &primary_description, &primary_format);
+    if (have_primary_format) {
+        g_primary_format = primary_format;
+        g_primary_format_known = 1;
+    }
     memset(&description, 0, sizeof(description));
     description.dwSize = sizeof(description);
     description.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
@@ -280,6 +288,8 @@ void wm6_framebuffer_close(void)
     g_surface_reported = 0;
     g_directdraw_disabled = 0;
     g_gdi_reported = 0;
+    memset(&g_primary_format, 0, sizeof(g_primary_format));
+    g_primary_format_known = 0;
     g_last_argb = NULL;
     g_last_argb_width = 0;
     g_last_argb_height = 0;
@@ -402,12 +412,36 @@ static int present_directdraw(void)
     }
     if (!resolve_surface_pixel_format(
             g_offscreen, &offscreen, &pixel_format)) {
-        g_offscreen->lpVtbl->Unlock(
-            g_offscreen, offscreen.lpSurface);
-        return 0;
+        if (g_primary_format_known) {
+            pixel_format = g_primary_format;
+        } else {
+            OutputDebugString(
+                L"PocketJS WM6 DirectDraw: offscreen pixel format "
+                L"unavailable\r\n");
+            g_offscreen->lpVtbl->Unlock(
+                g_offscreen, offscreen.lpSurface);
+            return 0;
+        }
     }
-    if ((int)offscreen.dwWidth != g_width ||
-        (int)offscreen.dwHeight != g_height) {
+    /*
+     * A few CE drivers only populate lpSurface and lPitch in the descriptor
+     * returned by Lock. The dimensions were already validated at creation.
+     */
+    if ((offscreen.dwWidth != 0 &&
+         (int)offscreen.dwWidth != g_width) ||
+        (offscreen.dwHeight != 0 &&
+         (int)offscreen.dwHeight != g_height)) {
+        WCHAR receipt[160];
+
+        wsprintfW(
+            receipt,
+            L"PocketJS WM6 DirectDraw: offscreen geometry "
+            L"%lux%lu expected %ldx%ld\r\n",
+            offscreen.dwWidth,
+            offscreen.dwHeight,
+            (LONG)g_width,
+            (LONG)g_height);
+        OutputDebugString(receipt);
         g_offscreen->lpVtbl->Unlock(
             g_offscreen, offscreen.lpSurface);
         return 0;
@@ -415,6 +449,9 @@ static int present_directdraw(void)
     bytes_per_pixel = (int)pixel_format.dwRGBBitCount / 8;
     if (bytes_per_pixel != 2 && bytes_per_pixel != 3 &&
         bytes_per_pixel != 4) {
+        OutputDebugString(
+            L"PocketJS WM6 DirectDraw: unsupported offscreen "
+            L"pixel depth\r\n");
         g_offscreen->lpVtbl->Unlock(
             g_offscreen, offscreen.lpSurface);
         return 0;
@@ -423,6 +460,15 @@ static int present_directdraw(void)
                 ? -offscreen.lPitch
                 : offscreen.lPitch;
     if (g_width * bytes_per_pixel > pitch) {
+        WCHAR receipt[160];
+
+        wsprintfW(
+            receipt,
+            L"PocketJS WM6 DirectDraw: offscreen pitch=%ld "
+            L"requires=%ld\r\n",
+            (LONG)offscreen.lPitch,
+            (LONG)(g_width * bytes_per_pixel));
+        OutputDebugString(receipt);
         g_offscreen->lpVtbl->Unlock(
             g_offscreen, offscreen.lpSurface);
         return 0;
@@ -475,8 +521,11 @@ static int present_directdraw(void)
     }
     status = g_offscreen->lpVtbl->Unlock(
         g_offscreen, offscreen.lpSurface);
-    if (status != DD_OK)
+    if (status != DD_OK) {
+        OutputDebugString(
+            L"PocketJS WM6 DirectDraw: offscreen unlock failed\r\n");
         return 0;
+    }
 
     memset(&primary, 0, sizeof(primary));
     primary.dwSize = sizeof(primary);
@@ -489,8 +538,12 @@ static int present_directdraw(void)
     primary_width = (int)primary.dwWidth;
     primary_height = (int)primary.dwHeight;
     if (status != DD_OK ||
-        primary_width <= 0 || primary_height <= 0)
+        primary_width <= 0 || primary_height <= 0) {
+        OutputDebugString(
+            L"PocketJS WM6 DirectDraw: primary description "
+            L"unavailable\r\n");
         return 0;
+    }
     if (primary_width * g_height <= primary_height * g_width) {
         destination_width = primary_width;
         destination_height = g_height * primary_width / g_width;

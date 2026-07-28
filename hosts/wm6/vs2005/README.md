@@ -36,6 +36,9 @@ This solution contains three native Smart Device applications for the HP iPAQ
   Legacy drivers get several compatible offscreen-surface capability requests;
   the relaxed system-memory variant explicitly inherits the primary surface's
   pixel format so that it remains lockable and suitable as a `Blt` source.
+  The presenter also tolerates CE drivers that omit width and height from a
+  successful `Lock` descriptor and reuses the validated primary pixel format
+  when the offscreen query omits it.
   If all of them fail, the 32-bit GDI fallback copies PocketJS BGRA rows
   directly instead of building both RGB565 and BGRA buffers pixel by pixel.
   While DirectDraw remains active, the GDI copy is deferred until it is
