@@ -90,6 +90,8 @@ static unsigned int g_buttons;
 static unsigned int g_pressed_buttons;
 static int g_viewport_width;
 static int g_viewport_height;
+static int g_display_width;
+static int g_display_height;
 static int g_touch_active;
 static int g_touch_x;
 static int g_touch_y;
@@ -250,12 +252,16 @@ static void update_touch_position(LPARAM position)
     y = (short)HIWORD(position);
     if (x < 0)
         x = 0;
-    else if (x >= g_viewport_width)
-        x = g_viewport_width - 1;
+    else if (x >= g_display_width)
+        x = g_display_width - 1;
     if (y < 0)
         y = 0;
-    else if (y >= g_viewport_height)
-        y = g_viewport_height - 1;
+    else if (y >= g_display_height)
+        y = g_display_height - 1;
+    if (g_display_width > 0)
+        x = x * g_viewport_width / g_display_width;
+    if (g_display_height > 0)
+        y = y * g_viewport_height / g_display_height;
     g_touch_x = x;
     g_touch_y = y;
 }
@@ -550,8 +556,13 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     HWND window;
     MSG message_loop;
     int rotation_ready;
+    int render_scale;
+    int width_scale;
+    int height_scale;
     int status;
     unsigned int loaded_abi;
+    int display_height;
+    int display_width;
     int viewport_height;
     int viewport_width;
 
@@ -608,8 +619,18 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     g_aygshell_module = NULL;
     g_sh_fullscreen = NULL;
     rotation_ready = rotate_display_90();
-    viewport_width = GetSystemMetrics(SM_CXSCREEN);
-    viewport_height = GetSystemMetrics(SM_CYSCREEN);
+    display_width = GetSystemMetrics(SM_CXSCREEN);
+    display_height = GetSystemMetrics(SM_CYSCREEN);
+    width_scale = display_width / 320;
+    height_scale = display_height / 240;
+    render_scale =
+        width_scale < height_scale ? width_scale : height_scale;
+    if (render_scale < 1)
+        render_scale = 1;
+    viewport_width = display_width / render_scale;
+    viewport_height = display_height / render_scale;
+    g_display_width = display_width;
+    g_display_height = display_height;
     g_viewport_width = viewport_width;
     g_viewport_height = viewport_height;
 
@@ -683,11 +704,15 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         OutputDebugString(L"PocketJS WM6: display rotation unavailable\r\n");
     wsprintfW(
         message,
-        L"PocketJS WM6 receipt: ABI v%lu, viewport=%lux%lu, "
+        L"PocketJS WM6 receipt: ABI v%lu, display=%lux%lu, "
+        L"viewport=%lux%lu, scale=%lux, "
         L"bundle=%lu bytes, pak=%lu bytes\r\n",
         (DWORD)WM6_QJS_ABI_VERSION,
+        (DWORD)display_width,
+        (DWORD)display_height,
         (DWORD)viewport_width,
         (DWORD)viewport_height,
+        (DWORD)render_scale,
         (DWORD)bundle_length,
         (DWORD)pak_length);
     OutputDebugString(message);
@@ -710,8 +735,8 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
                               ? L"PocketJS Hero Demo [landscape]"
                               : L"PocketJS Hero Demo [rotation unavailable]",
                           WS_VISIBLE, 0, 0,
-                          GetSystemMetrics(SM_CXSCREEN),
-                          GetSystemMetrics(SM_CYSCREEN),
+                          display_width,
+                          display_height,
                           NULL, NULL, instance, NULL);
     if (!window) {
         restore_display_orientation();

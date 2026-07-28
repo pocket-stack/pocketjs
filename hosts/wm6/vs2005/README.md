@@ -18,11 +18,13 @@ This solution contains three native Smart Device applications for the HP iPAQ
   backed by the same software framebuffer. The host requests the absolute
   `DMDO_90` orientation relative to the device's default portrait mode before
   mounting the bundle and restores the previous mode when it exits. The
-  rotated `SM_CXSCREEN` and `SM_CYSCREEN` values become the PocketJS viewport
-  and the dynamically allocated logical framebuffer dimensions, so VGA uses
-  640x480 while QVGA uses 320x240. PocketJS performs layout directly against
-  that viewport rather than scaling a fixed 480x272 screenshot. The window
-  title reports whether landscape rotation succeeded, even without a debugger.
+  rotated `SM_CXSCREEN` and `SM_CYSCREEN` values determine both the physical
+  output and an integer high-DPI render scale. VGA presents a 320x240 PocketJS
+  framebuffer at 640x480 with a 2x scale, while QVGA remains native 320x240.
+  Other display sizes preserve their aspect ratio rather than scaling a fixed
+  480x272 screenshot. Stylus coordinates are mapped from the physical client
+  to the logical viewport. The window title reports whether landscape rotation
+  succeeded, even without a debugger.
   Once the top-level window is foreground and sized to the whole rotated
   screen, the host resolves `SHFullScreen` from `aygshell.dll` at runtime to
   hide the taskbar, Start icon, and SIP button. SDKs whose import library omits
