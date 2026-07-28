@@ -208,6 +208,19 @@ int wm6_framebuffer_open(HWND window, int logical_width, int logical_height)
             g_direct_draw, &description, &g_offscreen, NULL);
     }
     if (status != DD_OK || !g_offscreen) {
+        /*
+         * Some VGA CE drivers reject the OFFSCREENPLAIN capability exposed by
+         * newer DirectDraw headers, but accept a plain system-memory request.
+         */
+        if (g_offscreen) {
+            g_offscreen->lpVtbl->Release(g_offscreen);
+            g_offscreen = NULL;
+        }
+        description.ddsCaps.dwCaps = DDSCAPS_SYSTEMMEMORY;
+        status = g_direct_draw->lpVtbl->CreateSurface(
+            g_direct_draw, &description, &g_offscreen, NULL);
+    }
+    if (status != DD_OK || !g_offscreen) {
         WCHAR receipt[128];
 
         wsprintfW(
@@ -257,6 +270,24 @@ int wm6_framebuffer_copy_argb(
         height != (unsigned int)g_height || stride < width * 4u ||
         height > byte_length / stride)
         return 0;
+    if (g_directdraw_disabled) {
+        /*
+         * A PocketJS ARGB32 row is BGRA in little-endian memory, which is
+         * already the byte order expected by a 32-bit BI_RGB DIB. Keep the
+         * bottom-up row order required by the positive DIB height, but avoid
+         * converting every pixel and building an unused RGB565 copy.
+         */
+        for (row = 0; row < height; row++) {
+            const unsigned char *source;
+            DWORD *gdi_destination;
+
+            source = pixels + row * stride;
+            gdi_destination =
+                g_gdi_pixels + (height - row - 1u) * width;
+            memcpy(gdi_destination, source, width * 4u);
+        }
+        return 1;
+    }
     for (row = 0; row < height; row++) {
         const unsigned char *source;
         unsigned short *destination;

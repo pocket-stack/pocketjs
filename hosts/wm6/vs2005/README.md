@@ -31,6 +31,9 @@ This solution contains three native Smart Device applications for the HP iPAQ
   Pixel masks are queried from the primary surface separately after a display
   rotation; a missing 16-bit mask falls back to the WM6 RGB565 layout instead
   of silently converting every source color to black.
+  Legacy drivers get several compatible offscreen-surface capability requests.
+  If all of them fail, the 32-bit GDI fallback copies PocketJS BGRA rows
+  directly instead of building both RGB565 and BGRA buffers pixel by pixel.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a
