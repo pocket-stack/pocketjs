@@ -3,6 +3,14 @@
 
 #include "wm6_framebuffer.h"
 
+/*
+ * The WM6 Professional SDK's legacy ddraw.h omits this public DirectDraw
+ * capability spelling even though CreateSurface accepts its documented value.
+ */
+#ifndef DDSCAPS_OFFSCREENPLAIN
+#define DDSCAPS_OFFSCREENPLAIN 0x00000040L
+#endif
+
 static LPDIRECTDRAW g_direct_draw;
 static LPDIRECTDRAWSURFACE g_primary;
 static LPDIRECTDRAWSURFACE g_offscreen;
