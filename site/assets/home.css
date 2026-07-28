@@ -3,8 +3,8 @@
    Direction: Docs navy with brushed metal accents. All classes are .lp-* scoped.
    The hero plays the baked demo wall (site/bake-demo-wall.ts) as a full-bleed
    background and mounts the demand-rendered Pocket Stage below its CTA. The
-   page then walks the platform story: proof strip → execution classes →
-   target selector → .pocket → device taxonomy → showcase → porting contract.
+   page then walks the platform story: proof strip → target selector →
+   .pocket → device taxonomy → showcase → closing CTA.
    ========================================================================== */
 
 @font-face {
@@ -516,7 +516,6 @@ a.lp-btn--primary:hover {
   color: #a9b7cb;
 }
 .lp-secthead { max-width: 720px; margin: 0 auto; text-align: center; }
-.lp-secthead--wide { max-width: 880px; }
 .lp-secthead .lp-kicker { display: block; margin-bottom: 0.9rem; }
 .lp-h2 {
   font-weight: 800;
@@ -978,121 +977,6 @@ a.lp-btn--primary:hover {
   border-bottom-color: transparent;
 }
 .lp-app__links .lp-app__src:hover { color: var(--ink); border-bottom-color: var(--muted); }
-
-/* ---- Porting contract + workflow ------------------------------------------ */
-.lp-port { border-top: 1px solid var(--line); }
-.lp-port__grid {
-  display: grid;
-  gap: 1rem;
-  margin-top: clamp(2.4rem, 5vw, 3.6rem);
-}
-@media (min-width: 980px) {
-  .lp-port__grid { grid-template-columns: 0.75fr 1fr 1.35fr; align-items: stretch; }
-}
-.lp-port__card {
-  padding: 1.5rem 1.5rem 1.6rem;
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  background:
-    linear-gradient(180deg, rgba(20, 29, 49, 0.58), rgba(7, 10, 17, 0.9)),
-    var(--bg-2);
-}
-.lp-port__card--pocket {
-  border: 1px solid transparent;
-  background:
-    linear-gradient(180deg, rgba(15, 22, 38, 0.92), rgba(9, 12, 20, 0.88)) padding-box,
-    linear-gradient(165deg, rgba(96, 165, 250, 0.34), rgba(43, 58, 85, 0.5) 42%, rgba(157, 229, 199, 0.2)) border-box;
-}
-.lp-port__card h3 {
-  font: 600 11px/1.5 var(--mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 0.95rem;
-}
-.lp-port__card--pocket h3 { color: var(--mint); }
-.lp-port__list {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.62rem;
-}
-.lp-port__list li {
-  position: relative;
-  padding-left: 1.2rem;
-  font-size: 0.94rem;
-  line-height: 1.5;
-  color: var(--ink-2);
-}
-.lp-port__list li::before {
-  content: "";
-  position: absolute;
-  left: 0.1rem;
-  top: 0.56em;
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: var(--steel-3);
-}
-.lp-port__card--pocket .lp-port__list li::before {
-  background: var(--mint);
-  box-shadow: 0 0 7px rgba(157, 229, 199, 0.5);
-}
-.lp-port__side { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
-.lp-term {
-  border-radius: 16px;
-  border: 1px solid var(--line-2);
-  background:
-    linear-gradient(180deg, rgba(20, 29, 49, 0.62), rgba(9, 12, 20, 0.94)),
-    #090c14;
-  overflow: hidden;
-  box-shadow: 0 40px 80px -44px rgba(3, 9, 20, 0.94);
-}
-.lp-term__bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.78rem 1.05rem;
-  border-bottom: 1px solid var(--line);
-  background: rgba(20, 29, 49, 0.72);
-}
-.lp-term__pre {
-  padding: 1.2rem 1.3rem;
-  overflow-x: auto;
-  font-family: var(--mono);
-  font-size: 12.8px;
-  line-height: 1.95;
-  color: #cbd5e1;
-}
-.lp-term__pre code { font: inherit; white-space: pre; }
-.lp-term__ps { color: var(--mint); }
-.lp-term__c { color: #566780; }
-.lp-port__note {
-  font-size: 0.92rem;
-  line-height: 1.65;
-  color: var(--muted);
-}
-.lp-port__note a { color: var(--ink-2); text-underline-offset: 3px; }
-.lp-port__note a:hover { color: var(--ink); }
-.lp-port__links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: auto;
-}
-.lp-port__links a {
-  font-size: 0.86rem;
-  font-weight: 600;
-  color: var(--ink-2);
-  text-decoration: none;
-  padding: 0.5rem 0.85rem;
-  border-radius: 999px;
-  border: 1px solid var(--line-2);
-  background: rgba(5, 7, 13, 0.5);
-  transition: color 0.2s ease, border-color 0.2s ease;
-}
-.lp-port__links a:hover { color: var(--ink); border-color: rgba(96, 165, 250, 0.44); }
 
 /* ---- Codecard (shared by the target selector) ------------------------------ */
 .lp-codecard {

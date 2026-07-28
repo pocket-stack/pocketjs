@@ -508,58 +508,6 @@
       </div>
     </section>
 
-    <!-- PORTING CONTRACT + WORKFLOW — for the people who add device number nine. -->
-    <section class="lp-section lp-port">
-      <div class="lp-container">
-        <div class="lp-secthead lp-secthead--wide lp-reveal">
-          <span class="lp-kicker">The porting contract</span>
-          <h2 class="lp-h2">Bring a screen. Bring some input.<br />Pocket provides the rest.</h2>
-          <p class="lp-lead">Every port reuses the same retained draw list &mdash; conservative damage regions feed full framebuffers, MCU strips and e-ink tiles alike.</p>
-        </div>
-        <div class="lp-port__grid lp-reveal">
-          <div class="lp-port__card">
-            <h3>A port brings</h3>
-            <ul class="lp-port__list">
-              <li>A display surface</li>
-              <li>Input events</li>
-              <li>A clock</li>
-              <li>Storage</li>
-              <li>Optional host services</li>
-            </ul>
-          </div>
-          <div class="lp-port__card lp-port__card--pocket">
-            <h3>PocketJS provides</h3>
-            <ul class="lp-port__list">
-              <li>Retained UI tree &amp; native flexbox</li>
-              <li>Text, glyph atlases &amp; runtime CJK</li>
-              <li>Animation engine &amp; damage tracking</li>
-              <li>Incremental RGBA8 / ARGB8 / RGB565 raster paths</li>
-              <li>Guest lifecycle, launcher &amp; app switching</li>
-              <li>Packages, OSK, DevTools</li>
-            </ul>
-          </div>
-          <div class="lp-port__side">
-            <div class="lp-term">
-              <div class="lp-term__bar">
-                <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
-                <span class="lp-codecard__name">from JSX to real hardware</span>
-              </div>
-              <pre class="lp-term__pre"><code><span class="lp-term__ps">$</span> pocket create my-app
-<span class="lp-term__ps">$</span> pocket check --target psp   <span class="lp-term__c"># will it fit?</span>
-<span class="lp-term__ps">$</span> pocket build --target psp -- --release
-<span class="lp-term__ps">$</span> pocket hw my-app            <span class="lp-term__c"># run it on real hardware</span></code></pre>
-            </div>
-            <p class="lp-port__note">Then debug the hardware like a deterministic browser tab &mdash; every session is a tape you can scrub. <a href="/blog/time-travel-devtools/">Time travel over a USB cable &rarr;</a></p>
-            <div class="lp-port__links">
-              <a href="/docs/native-contract/">Native contract</a>
-              <a href="/docs/architecture/">Architecture</a>
-              <a href="/docs/platform-contracts/">Target profiles</a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- CLOSING CTA -->
     <section class="lp-section lp-cta">
       <div class="lp-cta__glow" aria-hidden="true"></div>
@@ -595,7 +543,7 @@
             </svg>
             <span>PocketJS</span>
           </a>
-          <p>One application model &mdash; Vue, Solid, TypeScript &mdash; carried to consoles, e-readers, abandoned phones and microcontrollers by a tiny native core.</p>
+          <p>Components, signals and Tailwind &mdash; carried to consoles, e-readers and microcontrollers by a tiny native core.</p>
         </div>
         <div>
           <h4>Docs</h4>
