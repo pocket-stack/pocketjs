@@ -97,52 +97,6 @@
       </div>
     </section>
 
-    <!-- EXECUTION CLASSES — the central abstraction: one app model, two ways down. -->
-    <section class="lp-section lp-exec">
-      <div class="lp-container">
-        <div class="lp-secthead lp-reveal">
-          <span class="lp-kicker">One app model, two execution classes</span>
-          <h2 class="lp-h2">Choose how low you need&nbsp;to&nbsp;go.</h2>
-          <p class="lp-lead">Some devices can host a tiny JavaScript engine. Some can&rsquo;t host a heap. PocketJS treats that as a build decision, not a rewrite.</p>
-        </div>
-        <div class="lp-exec__grid lp-reveal">
-          <article class="lp-exec__card">
-            <div class="lp-exec__head">
-              <h3>Pocket Guest</h3>
-              <span class="lp-exec__badge">execution:&nbsp;guest</span>
-            </div>
-            <p class="lp-exec__tag">Keep JavaScript dynamic.</p>
-            <ul class="lp-exec__list">
-              <li>Solid and Vue Vapor with their real reactivity, running on QuickJS</li>
-              <li>A native Rust core owns layout, text, animation and damage tracking</li>
-              <li>Hot-swappable app logic &mdash; replace the bundle, keep the device</li>
-              <li>Time-travel DevTools over USB to real hardware</li>
-            </ul>
-            <p class="lp-exec__for"><span>Runs on</span> PSP &middot; PS&nbsp;Vita &middot; Nokia&nbsp;E7 &middot; PocketBook &middot; ESP32&#8209;P4 &middot; macOS &middot; browser</p>
-          </article>
-          <article class="lp-exec__card lp-exec__card--aot">
-            <div class="lp-exec__head">
-              <h3>Pocket Vapor</h3>
-              <span class="lp-exec__badge">execution:&nbsp;aot</span>
-            </div>
-            <p class="lp-exec__tag">Compile the runtime away.</p>
-            <ul class="lp-exec__list">
-              <li>The Vue authoring model &mdash; <span class="lp-mono">ref</span>, <span class="lp-mono">computed</span>, JSX, list rendering</li>
-              <li>Reactivity becomes compile-time dirty-bit graphs</li>
-              <li>No JavaScript engine, no GC, no allocator on the device</li>
-              <li>Verified frame-by-frame against real Vue on the same inputs</li>
-            </ul>
-            <p class="lp-exec__for"><span>Runs on</span> Game&nbsp;Boy Advance &middot; Game&nbsp;Boy &middot; NES &middot; ESP32 microcontrollers</p>
-          </article>
-        </div>
-        <p class="lp-exec__note lp-reveal">
-          The manifest declares what an app needs; every target profile declares which execution
-          classes and capabilities it admits. Admission is checked before anything ships &mdash;
-          not discovered on the device. <a href="/docs/platform-contracts/">Platform contracts &rarr;</a>
-        </p>
-      </div>
-    </section>
-
     <!-- CODE + TARGET SELECTOR — same component, pick the machine underneath it. -->
     <section class="lp-section lp-targets">
       <div class="lp-container">
@@ -331,7 +285,7 @@
       <div class="lp-container">
         <div class="lp-pkg__split">
           <div class="lp-pkg__copy lp-reveal">
-            <span class="lp-kicker">One app. Every target. One package.</span>
+            <span class="lp-kicker">The .pocket format</span>
             <h2 class="lp-h2">Ship the application,<br />not the port.</h2>
             <p>A <span class="lp-mono">.pocket</span> file describes what the app <em>is</em> and what it <em>needs</em> &mdash; identity, capabilities, build plan, payloads. Each device decides how it should run: which viewport, which presentation, which execution class. If a target can&rsquo;t honor the contract, it says so before launch, not after.</p>
             <div class="lp-pkg__verbs" aria-label="Package toolchain verbs">
@@ -416,7 +370,7 @@
             <h3>Abandoned smartphones</h3>
             <p>The vendor moved on. The hardware didn&rsquo;t.</p>
             <ul class="lp-chips">
-              <li class="is-live"><b></b>Nokia E7 &middot; Symbian</li>
+              <li class="is-live"><b></b>Symbian Belle</li>
               <li><b></b>MeeGo</li>
               <li><b></b>BlackBerry</li>
               <li><b></b>Windows Phone</li>
@@ -438,6 +392,7 @@
               <li class="is-live"><b></b>ESP32&#8209;P4</li>
               <li><b></b>M5Stack Tab5</li>
             </ul>
+            <p class="lp-imp__note">Built on <a href="/blog/pocket-vapor/">Pocket Vapor</a>, the experimental compile-away pipeline.</p>
           </article>
           <article class="lp-imp lp-reveal">
             <h3>Native desktop surfaces</h3>
@@ -445,7 +400,7 @@
             <ul class="lp-chips">
               <li class="is-live"><b></b>macOS widgets</li>
               <li class="is-live"><b></b>Transparent windows</li>
-              <li class="is-wip"><b></b>iOS</li>
+              <li><b></b>iOS</li>
             </ul>
           </article>
           <div class="lp-imp lp-imp--legend lp-reveal">
@@ -460,7 +415,7 @@
     <section class="lp-section lp-showcase">
       <div class="lp-container">
         <div class="lp-secthead lp-reveal">
-          <span class="lp-kicker">Real software, not rendering demos</span>
+          <span class="lp-kicker">Shipped on real hardware</span>
           <h2 class="lp-h2">The proof is what it can carry.</h2>
           <p class="lp-lead">Complete open-source apps, each shipped to stress a different part of the platform.</p>
         </div>
@@ -559,7 +514,7 @@
         <div class="lp-secthead lp-secthead--wide lp-reveal">
           <span class="lp-kicker">The porting contract</span>
           <h2 class="lp-h2">Bring a screen. Bring some input.<br />Pocket provides the rest.</h2>
-          <p class="lp-lead">The newest ports &mdash; a 2011 Symbian phone and an e-ink reader &mdash; reuse the same retained draw list: conservative damage regions feed full framebuffers, MCU strips and e-ink tiles alike.</p>
+          <p class="lp-lead">Every port reuses the same retained draw list &mdash; conservative damage regions feed full framebuffers, MCU strips and e-ink tiles alike.</p>
         </div>
         <div class="lp-port__grid lp-reveal">
           <div class="lp-port__card">
@@ -609,7 +564,7 @@
     <section class="lp-section lp-cta">
       <div class="lp-cta__glow" aria-hidden="true"></div>
       <div class="lp-container lp-cta__in lp-reveal">
-        <span class="lp-kicker">There is always one more device</span>
+        <span class="lp-kicker">Your turn</span>
         <h2 class="lp-h2" style="margin-top: 0.9rem;">The browser was never the limit.</h2>
         <p>Take the app model you already know to the device everyone else gave up on.</p>
         <div class="lp-cta__btns">
