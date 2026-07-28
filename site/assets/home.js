@@ -1,23 +1,26 @@
 // site/assets/home.js — homepage behaviors. The background remains a cheap
 // baked demo wall; the live Pocket Stage below the CTA is code-split and boots
-// only when it approaches the viewport.
+// only when it approaches the viewport. Tab groups (framework tabs on the code
+// card, target chips on the selector) are static HTML — JS only toggles state.
 
-function setupCodeTabs() {
-  const tabs = [...document.querySelectorAll("[data-code-tab]")];
+function setupTabs(tabAttr, panelAttr) {
+  const tabs = [...document.querySelectorAll(`[data-${tabAttr}]`)];
   if (tabs.length === 0) return;
-  const panels = [...document.querySelectorAll("[data-code-panel]")];
+  const panels = [...document.querySelectorAll(`[data-${panelAttr}]`)];
+  const key = tabAttr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  const panelKey = panelAttr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
   const select = (name) => {
     for (const tab of tabs) {
-      const active = tab.dataset.codeTab === name;
+      const active = tab.dataset[key] === name;
       tab.classList.toggle("is-active", active);
       tab.setAttribute("aria-selected", active ? "true" : "false");
     }
     for (const panel of panels) {
-      panel.hidden = panel.dataset.codePanel !== name;
+      panel.hidden = panel.dataset[panelKey] !== name;
     }
   };
   for (const tab of tabs) {
-    tab.addEventListener("click", () => select(tab.dataset.codeTab));
+    tab.addEventListener("click", () => select(tab.dataset[key]));
   }
 }
 
@@ -71,6 +74,7 @@ function setupPocketStage() {
   io.observe(root);
 }
 
-setupCodeTabs();
+setupTabs("code-tab", "code-panel");
+setupTabs("tgt-tab", "tgt-panel");
 setupDemoWall();
 setupPocketStage();

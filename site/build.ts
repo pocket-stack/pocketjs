@@ -427,7 +427,21 @@ function renderHome(): string {
     url: SITE_URL,
     codeRepository: "https://github.com/pocket-stack/pocketjs",
     programmingLanguage: ["TypeScript", "JavaScript", "Rust"],
-    runtimePlatform: ["Sony PSP", "Sony PS Vita", "PPSSPP", "Vita3K", "WebAssembly", "Bun"],
+    runtimePlatform: [
+      "Sony PSP",
+      "Sony PS Vita",
+      "Nokia E7 (Symbian)",
+      "PocketBook",
+      "ESP32",
+      "Game Boy Advance",
+      "Game Boy",
+      "NES",
+      "macOS",
+      "PPSSPP",
+      "Vita3K",
+      "WebAssembly",
+      "Bun",
+    ],
   });
   return `<!doctype html>
 <html lang="en">
@@ -446,7 +460,7 @@ function renderHome(): string {
 <meta property="og:image" content="${OG_IMAGE_URL}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="PocketJS — Bare Metal Modern Web">
+<meta property="og:image:alt" content="PocketJS — Build Modern Apps for Impossible Devices">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${SITE_TITLE}">
 <meta name="twitter:description" content="${HOME_DESC}">
