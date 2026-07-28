@@ -355,7 +355,7 @@ static int render_core_frame(void)
             L"PocketJS WM6 trace: ARGB32 conversion complete\r\n");
     if (!wm6_framebuffer_present())
         return stop_frame_rendering(
-            L"DirectDraw could not present the Rust framebuffer");
+            L"WM6 could not present the Rust framebuffer");
     report_successful_frame(width, height, stride, byte_length);
     return 1;
 }
@@ -651,7 +651,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
             window, viewport_width, viewport_height)) {
         g_framebuffer_ready = 1;
         OutputDebugString(
-            L"PocketJS WM6: Rust core ARGB32 -> DirectDraw active\r\n");
+            L"PocketJS WM6: Rust core ARGB32 presenter active\r\n");
     } else {
         wm6_framebuffer_close();
         OutputDebugString(L"PocketJS WM6: DirectDraw unavailable\r\n");

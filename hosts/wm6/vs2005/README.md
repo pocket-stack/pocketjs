@@ -12,8 +12,10 @@ This solution contains three native Smart Device applications for the HP iPAQ
   DLL plus the real `apps/hero` bundle (`JSX at 60 FPS.`). That DLL contains
   the native ARMv4T Rust PocketJS core. QuickJS HostOps call the core's real
   tree, styles, Taffy layout, animation, texture/font, and software-raster
-  APIs. Each incremental ARGB32 core frame is converted to RGB565 and
-  presented through DirectDraw. The host requests the absolute
+  APIs. Each incremental ARGB32 core frame is converted to RGB565, written to
+  a lockable DirectDraw offscreen surface, and blitted to the primary surface.
+  Drivers without a usable DirectDraw path fall back to a 32-bit GDI DIB
+  backed by the same software framebuffer. The host requests the absolute
   `DMDO_90` orientation relative to the device's default portrait mode before
   mounting the bundle and restores the previous mode when it exits. The
   rotated `SM_CXSCREEN` and `SM_CYSCREEN` values become the PocketJS viewport
@@ -84,14 +86,15 @@ rolling measured FPS. Any runtime, framebuffer-copy, or DirectDraw failure
 also appears in a message box instead of silently leaving a black screen.
 The first frame additionally emits one-shot `trace` lines around the
 JavaScript frame call, pending jobs, Rust tick, software raster, ARGB32
-conversion, and DirectDraw primary-surface lock. It also reports the number of
+conversion, and DirectDraw offscreen-surface lock. It also reports the number of
 non-transparent and colored Rust pixels. If startup stalls, the final trace
 line identifies the exact stage without adding per-frame logging overhead.
 Opening DirectDraw does not by itself mark a frame as presentable: the initial
 `WM_PAINT` fills the window through GDI and waits until the first Rust frame
 has been copied. Later paint requests finish and release their GDI paint DC
-before locking the DirectDraw primary surface, avoiding a Windows CE display
-driver deadlock between the two access paths.
+before presenting. Windows CE drivers that reject direct primary-surface
+locking are handled through offscreen-surface Blt, with `StretchDIBits` as a
+last-resort presenter.
 
 ## Pocket Vapor Todo controls
 
