@@ -100,12 +100,17 @@ static unsigned int g_frame_window_count;
 static DEVMODE g_original_display_mode;
 static int g_display_rotated;
 static int g_shell_hidden;
+static int g_taskbar_hidden;
+static HMODULE g_aygshell_module;
+typedef BOOL (WINAPI *wm6_sh_fullscreen_fn)(HWND, DWORD);
+static wm6_sh_fullscreen_fn g_sh_fullscreen;
 
 static void restore_display_orientation(void);
 
 static void enter_fullscreen(HWND window)
 {
     DWORD state;
+    HWND taskbar;
 
     MoveWindow(
         window,
@@ -118,10 +123,26 @@ static void enter_fullscreen(HWND window)
     state = SHFS_HIDETASKBAR |
             SHFS_HIDESTARTICON |
             SHFS_HIDESIPBUTTON;
-    if (SHFullScreen(window, state)) {
+    g_aygshell_module = LoadLibrary(L"aygshell.dll");
+    if (g_aygshell_module) {
+        g_sh_fullscreen = (wm6_sh_fullscreen_fn)GetProcAddress(
+            g_aygshell_module,
+            L"SHFullScreen");
+    }
+    if (g_sh_fullscreen && g_sh_fullscreen(window, state)) {
         g_shell_hidden = 1;
         OutputDebugString(
             L"PocketJS WM6: shell chrome hidden\r\n");
+        return;
+    }
+
+    taskbar = FindWindow(L"HHTaskBar", NULL);
+    if (taskbar) {
+        ShowWindow(taskbar, SW_HIDE);
+        g_taskbar_hidden = 1;
+        g_shell_hidden = 1;
+        OutputDebugString(
+            L"PocketJS WM6: shell taskbar hidden by fallback\r\n");
     } else {
         OutputDebugString(
             L"PocketJS WM6: shell chrome could not be hidden\r\n");
@@ -131,14 +152,25 @@ static void enter_fullscreen(HWND window)
 static void leave_fullscreen(HWND window)
 {
     DWORD state;
+    HWND taskbar;
 
-    if (!g_shell_hidden)
-        return;
-    state = SHFS_SHOWTASKBAR |
-            SHFS_SHOWSTARTICON |
-            SHFS_SHOWSIPBUTTON;
-    SHFullScreen(window, state);
+    if (g_shell_hidden && g_sh_fullscreen) {
+        state = SHFS_SHOWTASKBAR |
+                SHFS_SHOWSTARTICON |
+                SHFS_SHOWSIPBUTTON;
+        g_sh_fullscreen(window, state);
+    }
+    if (g_taskbar_hidden) {
+        taskbar = FindWindow(L"HHTaskBar", NULL);
+        if (taskbar)
+            ShowWindow(taskbar, SW_SHOW);
+    }
+    if (g_aygshell_module)
+        FreeLibrary(g_aygshell_module);
     g_shell_hidden = 0;
+    g_taskbar_hidden = 0;
+    g_sh_fullscreen = NULL;
+    g_aygshell_module = NULL;
 }
 
 static int rotate_display_90(void)
@@ -572,6 +604,9 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
 
     g_display_rotated = 0;
     g_shell_hidden = 0;
+    g_taskbar_hidden = 0;
+    g_aygshell_module = NULL;
+    g_sh_fullscreen = NULL;
     rotation_ready = rotate_display_90();
     viewport_width = GetSystemMetrics(SM_CXSCREEN);
     viewport_height = GetSystemMetrics(SM_CYSCREEN);

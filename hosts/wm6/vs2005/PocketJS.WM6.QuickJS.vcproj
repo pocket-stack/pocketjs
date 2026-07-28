@@ -47,7 +47,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/subsystem:windowsce,5.02"
-				AdditionalDependencies="ddraw.lib aygshell.lib coredll.lib"
+				AdditionalDependencies="ddraw.lib coredll.lib"
 				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="true"
@@ -111,7 +111,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalOptions="/subsystem:windowsce,5.02 /opt:ref /opt:icf"
-				AdditionalDependencies="ddraw.lib aygshell.lib coredll.lib"
+				AdditionalDependencies="ddraw.lib coredll.lib"
 				OutputFile="$(OutDir)\PocketJS.WM6.QuickJS.exe"
 				LinkIncremental="1"
 				GenerateDebugInformation="false"
