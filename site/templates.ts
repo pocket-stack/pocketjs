@@ -9,7 +9,7 @@ const X_URL = "https://x.com/pocket_js";
 export const SITE_URL = "https://pocketjs.dev";
 export const SITE_TITLE = "PocketJS — Build Modern Apps for Impossible Devices";
 export const SITE_DESC =
-  "Write Vue, Solid and TypeScript once — run it on game consoles, e-readers, abandoned smartphones and microcontrollers. A tiny JavaScript guest where it fits; the framework compiled away where it doesn't.";
+  "Components, signals and Tailwind — on game consoles, e-readers and microcontrollers. A tiny JavaScript guest where it fits; the framework compiled away where it doesn't.";
 export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 
 export interface PageOpts {
