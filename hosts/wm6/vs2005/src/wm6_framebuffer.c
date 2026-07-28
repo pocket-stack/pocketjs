@@ -94,6 +94,8 @@ static int resolve_surface_pixel_format(
         format->dwGBitMask = 0x0000ff00u;
         format->dwBBitMask = 0x000000ffu;
     }
+    format->dwSize = sizeof(*format);
+    format->dwFlags |= DDPF_RGB;
     return (format->dwRGBBitCount == 16 ||
             format->dwRGBBitCount == 24 ||
             format->dwRGBBitCount == 32) &&
@@ -120,8 +122,11 @@ static void release_directdraw(void)
 int wm6_framebuffer_open(HWND window, int logical_width, int logical_height)
 {
     DDSURFACEDESC description;
+    DDSURFACEDESC primary_description;
+    DDPIXELFORMAT primary_format;
     HRESULT status;
     unsigned int pixel_count;
+    int have_primary_format;
 
     wm6_framebuffer_close();
     if (logical_width <= 0 || logical_height <= 0 ||
@@ -185,6 +190,14 @@ int wm6_framebuffer_open(HWND window, int logical_width, int logical_height)
         release_directdraw();
         return 1;
     }
+    memset(&primary_description, 0, sizeof(primary_description));
+    primary_description.dwSize = sizeof(primary_description);
+    status = g_primary->lpVtbl->GetSurfaceDesc(
+        g_primary, &primary_description);
+    have_primary_format =
+        status == DD_OK &&
+        resolve_surface_pixel_format(
+            g_primary, &primary_description, &primary_format);
     memset(&description, 0, sizeof(description));
     description.dwSize = sizeof(description);
     description.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT;
@@ -216,9 +229,15 @@ int wm6_framebuffer_open(HWND window, int logical_width, int logical_height)
             g_offscreen->lpVtbl->Release(g_offscreen);
             g_offscreen = NULL;
         }
-        description.ddsCaps.dwCaps = DDSCAPS_SYSTEMMEMORY;
-        status = g_direct_draw->lpVtbl->CreateSurface(
-            g_direct_draw, &description, &g_offscreen, NULL);
+        if (have_primary_format) {
+            description.dwFlags =
+                DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT |
+                DDSD_PIXELFORMAT;
+            description.ddsCaps.dwCaps = DDSCAPS_SYSTEMMEMORY;
+            description.ddpfPixelFormat = primary_format;
+            status = g_direct_draw->lpVtbl->CreateSurface(
+                g_direct_draw, &description, &g_offscreen, NULL);
+        }
     }
     if (status != DD_OK || !g_offscreen) {
         WCHAR receipt[128];

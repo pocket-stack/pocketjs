@@ -31,7 +31,9 @@ This solution contains three native Smart Device applications for the HP iPAQ
   Pixel masks are queried from the primary surface separately after a display
   rotation; a missing 16-bit mask falls back to the WM6 RGB565 layout instead
   of silently converting every source color to black.
-  Legacy drivers get several compatible offscreen-surface capability requests.
+  Legacy drivers get several compatible offscreen-surface capability requests;
+  the relaxed system-memory variant explicitly inherits the primary surface's
+  pixel format so that it remains lockable and suitable as a `Blt` source.
   If all of them fail, the 32-bit GDI fallback copies PocketJS BGRA rows
   directly instead of building both RGB565 and BGRA buffers pixel by pixel.
 
