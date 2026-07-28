@@ -36,7 +36,7 @@
 namespace {
 
 constexpr char FIRMWARE_NAME[] = "Symbian Pocket";
-constexpr char FIRMWARE_VERSION[] = "0.1.0";
+constexpr char FIRMWARE_VERSION[] = "0.1.1";
 
 constexpr std::uint16_t SCREEN_WIDTH = 160;
 constexpr std::uint16_t SCREEN_HEIGHT = 128;
@@ -185,13 +185,17 @@ public:
             if (!face && button.pressed) heldMask_ |= button.mask;
             if (!face && wasPressed && !button.pressed) heldMask_ &= ~button.mask;
 
+            // Match the original working tool firmware: face-button actions
+            // happen on the debounced press edge, not only after release.
+            // This makes A/B feel immediate and still permits the long-press
+            // START/SELECT actions below.
+            if (face && !wasPressed && button.pressed) {
+                pulseMask_ |= button.mask;
+            }
             if (face && button.pressed && !button.longSent &&
                 now - button.pressedAt >= LONG_PRESS_MS) {
                 pulseMask_ |= button.pin == PIN_A ? BUTTON_START : BUTTON_SELECT;
                 button.longSent = true;
-            }
-            if (face && wasPressed && !button.pressed && !button.longSent) {
-                pulseMask_ |= button.mask;
             }
         }
         const std::uint32_t result = heldMask_ | pulseMask_;
@@ -204,6 +208,15 @@ public:
         for (std::size_t index = 0; index < 6; ++index) {
             if (index) value += ',';
             value += buttons_[index].idle ? '1' : '0';
+        }
+        return value;
+    }
+
+    String rawLevels() const {
+        String value;
+        for (std::size_t index = 0; index < 6; ++index) {
+            if (index) value += ',';
+            value += digitalRead(buttons_[index].pin) == HIGH ? '1' : '0';
         }
         return value;
     }
@@ -235,6 +248,8 @@ volatile bool bluetoothInitialized = false;
 volatile bool storageMounted = false;
 volatile bool controllerPresent = false;
 volatile bool imuPresent = false;
+volatile bool frameDumpRequested = false;
+volatile std::uint32_t injectedButtonMask = 0;
 bool ledState[2] = {false, false};
 bool expansionState = false;
 bool toneInitialized = false;
@@ -883,6 +898,75 @@ void showBootError(int code) {
     if (spiMutex) xSemaphoreGive(spiMutex);
 }
 
+std::uint32_t takeInjectedButtons() {
+    portENTER_CRITICAL(&stateMux);
+    const std::uint32_t mask = injectedButtonMask;
+    injectedButtonMask = 0;
+    portEXIT_CRITICAL(&stateMux);
+    return mask;
+}
+
+void requestInjectedButton(std::uint32_t mask) {
+    portENTER_CRITICAL(&stateMux);
+    injectedButtonMask |= mask;
+    portEXIT_CRITICAL(&stateMux);
+}
+
+void dumpFramebuffer() {
+    if (!framebuffer) return;
+    constexpr std::size_t bytes = FRAME_PIXELS * sizeof(std::uint16_t);
+    Serial.printf(
+        "SP_FRAME_BEGIN {\"width\":%u,\"height\":%u,\"bytes\":%u}\n",
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        static_cast<unsigned>(bytes));
+    Serial.write(reinterpret_cast<const std::uint8_t*>(framebuffer), bytes);
+    Serial.print("\nSP_FRAME_END\n");
+    Serial.flush();
+}
+
+void pollSerialConsole() {
+    while (Serial.available()) {
+        const char command = static_cast<char>(Serial.read());
+        if (command == 's' || command == 'S') {
+            Serial.printf(
+                "SP_CONSOLE {\"ready\":%s,\"freeHeap\":%u,\"freePsram\":%u,"
+                "\"qjsPeak\":%u}\n",
+                runtimeReady ? "true" : "false",
+                ESP.getFreeHeap(),
+                ESP.getFreePsram(),
+                static_cast<unsigned>(pocketjs_runtime_qjs_peak_bytes()));
+        } else if (command == 'x' || command == 'X') {
+            allOutputsOff();
+            Serial.println("SP_CONSOLE {\"outputsOff\":true}");
+        } else if (command == 'p' || command == 'P') {
+            frameDumpRequested = true;
+        } else if (command == 'k' || command == 'K') {
+            Serial.printf(
+                "SP_KEYS {\"order\":[\"up\",\"down\",\"left\",\"right\",\"a\",\"b\"],"
+                "\"idle\":[%s],\"raw\":[%s]}\n",
+                buttons.idleLevels().c_str(),
+                buttons.rawLevels().c_str());
+        } else if (command == 'u' || command == 'U') {
+            requestInjectedButton(BUTTON_UP);
+        } else if (command == 'd' || command == 'D') {
+            requestInjectedButton(BUTTON_DOWN);
+        } else if (command == 'l' || command == 'L') {
+            requestInjectedButton(BUTTON_LEFT);
+        } else if (command == 'r' || command == 'R') {
+            requestInjectedButton(BUTTON_RIGHT);
+        } else if (command == 'a' || command == 'A') {
+            requestInjectedButton(BUTTON_CROSS);
+        } else if (command == 'b' || command == 'B') {
+            requestInjectedButton(BUTTON_CIRCLE);
+        } else if (command == 'q' || command == 'Q') {
+            requestInjectedButton(BUTTON_START);
+        } else if (command == 'e' || command == 'E') {
+            requestInjectedButton(BUTTON_SELECT);
+        }
+    }
+}
+
 void runtimeTask(void*) {
     const int initialized = pocketjs_runtime_init(
         symbian_pocket_qbc,
@@ -912,16 +996,35 @@ void runtimeTask(void*) {
     std::uint32_t statusAt = millis();
     std::uint32_t statusFrames = 0;
     std::uint32_t statusRenders = 0;
+    std::uint32_t lastPhysicalMask = 0;
     std::int64_t nextFrame = esp_timer_get_time();
 
     for (;;) {
         nextFrame += 16667;
-        const std::uint32_t mask = buttons.frame();
+        // The runtime task has a higher priority than Arduino's loop task so
+        // that display cadence remains deterministic. Poll UART here as well,
+        // otherwise sustained native redraws can starve debug/input commands.
+        pollSerialConsole();
+        const std::uint32_t physicalMask = buttons.frame();
+        const std::uint32_t serialMask = takeInjectedButtons();
+        const std::uint32_t mask = physicalMask | serialMask;
         const int changed = pocketjs_runtime_frame(mask);
         ++frameCount;
         if (changed < 0) {
             Serial.printf("SP_RUNTIME {\"frameError\":%d}\n", changed);
         }
+        if (mask != 0 && (serialMask != 0 || physicalMask != lastPhysicalMask)) {
+            Serial.printf(
+                "SP_INPUT {\"source\":\"%s\",\"mask\":%lu,\"changed\":%d}\n",
+                serialMask ? "serial" : "physical",
+                static_cast<unsigned long>(mask),
+                changed);
+            // Always transfer the resulting frame on input. This keeps
+            // immediate key feedback visible even if a future draw-list
+            // optimization reports an unchanged hash.
+            forceRender = true;
+        }
+        lastPhysicalMask = physicalMask;
         if (changed > 0 || forceRender) {
             forceRender = false;
             if (pocketjs_runtime_render_rgb565(framebuffer, FRAME_PIXELS) == 0) {
@@ -930,6 +1033,10 @@ void runtimeTask(void*) {
                 if (spiMutex) xSemaphoreGive(spiMutex);
                 ++renderCount;
             }
+        }
+        if (frameDumpRequested) {
+            frameDumpRequested = false;
+            dumpFramebuffer();
         }
 
         const std::uint32_t nowMs = millis();
@@ -1242,20 +1349,5 @@ void setup() {
 }
 
 void loop() {
-    if (Serial.available()) {
-        const char command = static_cast<char>(Serial.read());
-        if (command == 's' || command == 'S') {
-            Serial.printf(
-                "SP_CONSOLE {\"ready\":%s,\"freeHeap\":%u,\"freePsram\":%u,"
-                "\"qjsPeak\":%u}\n",
-                runtimeReady ? "true" : "false",
-                ESP.getFreeHeap(),
-                ESP.getFreePsram(),
-                static_cast<unsigned>(pocketjs_runtime_qjs_peak_bytes()));
-        } else if (command == 'x' || command == 'X') {
-            allOutputsOff();
-            Serial.println("SP_CONSOLE {\"outputsOff\":true}");
-        }
-    }
     delay(20);
 }

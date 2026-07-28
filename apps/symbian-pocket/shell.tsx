@@ -85,10 +85,10 @@ function timeText(uptimeMs: number): string {
 
 function StatusBar(props: { snapshot: SensorSnapshot }) {
   return (
-    <View class="h-[12] flex-row items-center justify-between px-[3] bg-gradient-to-b from-[#1e73bd] to-[#073a78]">
-      <Text class="text-xs font-bold text-white">SP</Text>
-      <Text class="text-xs text-white">{timeText(props.snapshot.uptimeMs)}</Text>
-      <Text class="text-xs text-white">
+    <View class="absolute left-[0] top-[0] w-full h-[12] bg-gradient-to-b from-[#1e73bd] to-[#073a78] overflow-hidden">
+      <Text class="absolute left-[3] top-[1] text-xs font-bold text-white">SP</Text>
+      <Text class="absolute left-[65] top-[1] text-xs text-white">{timeText(props.snapshot.uptimeMs)}</Text>
+      <Text class="absolute right-[3] top-[1] text-xs text-white">
         {props.snapshot.wifiConnected ? "W" : "-"}
         {props.snapshot.bluetoothReady ? "B" : "-"}
         {props.snapshot.sdMounted ? "S" : "-"}
@@ -99,11 +99,11 @@ function StatusBar(props: { snapshot: SensorSnapshot }) {
 
 function TitleBar(props: { title: string; busy?: boolean }) {
   return (
-    <View class="h-[16] flex-row items-center px-[4] bg-gradient-to-b from-[#f8fafc] to-[#cbd5e1] border-[#8fa2b5] overflow-hidden">
-      <View class="w-[4] h-[12] bg-[#1e73bd] mr-[3]" />
-      <Text class="text-xs font-bold text-[#122235]">{props.title}</Text>
+    <View class="absolute left-[0] top-[12] w-full h-[16] bg-gradient-to-b from-[#f8fafc] to-[#cbd5e1] border-[#8fa2b5] overflow-hidden">
+      <View class="absolute left-[4] top-[2] w-[4] h-[12] bg-[#1e73bd]" />
+      <Text class="absolute left-[11] top-[2] text-xs font-bold text-[#122235]">{props.title}</Text>
       <Show when={props.busy}>
-        <View class="absolute right-[4] w-[30] h-[3] bg-[#9fb4c7] overflow-hidden">
+        <View class="absolute right-[4] top-[7] w-[30] h-[3] bg-[#9fb4c7] overflow-hidden">
           <View class="w-[20] h-[3] bg-[#2c8bd2] animate-s60-scan" />
         </View>
       </Show>
@@ -113,12 +113,12 @@ function TitleBar(props: { title: string; busy?: boolean }) {
 
 function SoftKeys(props: { language: Language; left?: string; center?: string; right?: string }) {
   return (
-    <View class="h-[15] flex-row items-center justify-between px-[4] bg-gradient-to-b from-[#dbe4ec] to-[#9baebf] border-[#788c9f]">
-      <Text class="text-xs font-bold text-[#12365f]">
+    <View class="absolute left-[0] top-[113] w-full h-[15] bg-gradient-to-b from-[#dbe4ec] to-[#9baebf] border-[#788c9f] overflow-hidden">
+      <Text class="absolute left-[4] top-[2] text-xs font-bold text-[#12365f]">
         {props.left ?? tr(props.language, "选项", "Options")}
       </Text>
-      <Text class="text-xs text-[#36536f]">{props.center ?? "A"}</Text>
-      <Text class="text-xs font-bold text-[#12365f]">
+      <Text class="absolute left-[77] top-[2] text-xs text-[#36536f]">{props.center ?? "A"}</Text>
+      <Text class="absolute right-[4] top-[2] text-xs font-bold text-[#12365f]">
         {props.right ?? tr(props.language, "返回", "Back")}
       </Text>
     </View>
@@ -136,10 +136,10 @@ function Chrome(props: {
   right?: string;
 }) {
   return (
-    <View class="w-full h-full flex-col bg-[#e7ecf1] overflow-hidden">
+    <View class="relative w-full h-full bg-[#e7ecf1] overflow-hidden">
       <StatusBar snapshot={props.snapshot} />
       <TitleBar title={props.title} busy={props.busy} />
-      <View class="flex-1 flex-col bg-gradient-to-b from-[#f9fbfd] to-[#d7e2ec] overflow-hidden animate-s60-screen-in">
+      <View class="absolute left-[0] top-[28] w-full h-[85] bg-gradient-to-b from-[#f9fbfd] to-[#d7e2ec] overflow-hidden animate-s60-screen-in">
         {props.children}
       </View>
       <SoftKeys
@@ -159,30 +159,35 @@ function HomeGrid(props: {
   pageStart: number;
 }) {
   return (
-    <View class="flex-1 flex-row flex-wrap px-[4] py-[2] bg-gradient-to-b from-[#dfeaf3] to-[#a9c4da]">
+    <View class="relative w-full h-[85] bg-gradient-to-b from-[#dfeaf3] to-[#a9c4da] overflow-hidden">
       <For each={props.onPage}>
         {(app, localIndex) => {
           const selected = () => props.pageStart + localIndex() === props.selected;
+          const column = () => localIndex() % 3;
+          const row = () => Math.floor(localIndex() / 3);
           return (
             <View
               class={selected()
-                ? "w-[50] h-[27] flex-row items-center px-[3] rounded-sm bg-gradient-to-b from-[#5bb2ec] to-[#1267ad] border-white animate-s60-cursor"
-                : "w-[50] h-[27] flex-row items-center px-[3] rounded-sm bg-[#d5e4ef] border-[#9ab3c6]"}
+                ? "absolute w-[50] h-[26] rounded-sm bg-gradient-to-b from-[#5bb2ec] to-[#1267ad] border-white animate-s60-cursor"
+                : "absolute w-[50] h-[26] rounded-sm bg-[#d5e4ef] border-[#9ab3c6]"}
+              style={{ insetL: 3 + column() * 52, insetT: 2 + row() * 27 }}
             >
               <View
                 class={selected()
-                  ? "w-[17] h-[17] items-center justify-center rounded-sm bg-[#eef8ff] border-[#0c4f8a]"
-                  : "w-[17] h-[17] items-center justify-center rounded-sm bg-gradient-to-b from-[#ffffff] to-[#a6bfd1] border-[#607f98]"}
+                  ? "absolute left-[2] top-[4] w-[17] h-[17] rounded-sm bg-[#eef8ff] border-[#0c4f8a]"
+                  : "absolute left-[2] top-[4] w-[17] h-[17] rounded-sm bg-gradient-to-b from-[#ffffff] to-[#a6bfd1] border-[#607f98]"}
               >
-                <Text class={selected() ? "text-xs font-bold text-[#0b4f88]" : "text-xs font-bold text-[#1a4b73]"}>
+                <Text class={selected()
+                  ? "absolute left-[5] top-[2] text-xs font-bold text-[#0b4f88]"
+                  : "absolute left-[5] top-[2] text-xs font-bold text-[#1a4b73]"}>
                   {app.icon}
                 </Text>
               </View>
-              <View class="flex-1 pl-[2] overflow-hidden">
-                <Text class={selected() ? "text-xs font-bold text-white" : "text-xs text-[#122235]"}>
-                  {props.language === "zh" ? app.zh : app.en}
-                </Text>
-              </View>
+              <Text class={selected()
+                ? "absolute left-[22] top-[7] w-[26] text-xs font-bold text-white overflow-hidden"
+                : "absolute left-[22] top-[7] w-[26] text-xs text-[#122235] overflow-hidden"}>
+                {props.language === "zh" ? app.zh : app.en}
+              </Text>
             </View>
           );
         }}
@@ -200,10 +205,10 @@ function ListPage(props: {
   const top = () => Math.max(0, Math.min(props.selected - 2, Math.max(0, props.items.length - 5)));
   const visible = createMemo(() => props.items.slice(top(), top() + 5));
   return (
-    <View class="flex-1 flex-col py-[1]">
+    <View class="relative w-full h-[85] overflow-hidden">
       <Show when={props.items.length > 0} fallback={
-        <View class="flex-1 items-center justify-center px-[8]">
-          <Text class="text-xs text-[#566675]">{props.empty}</Text>
+        <View class="absolute left-[8] top-[34] w-[144] h-[17] overflow-hidden">
+          <Text class="absolute left-[0] top-[2] text-xs text-[#566675]">{props.empty}</Text>
         </View>
       }>
         <For each={visible()}>
@@ -213,14 +218,19 @@ function ListPage(props: {
             return (
               <View
                 class={active()
-                  ? "h-[17] flex-row items-center justify-between px-[4] bg-gradient-to-b from-[#5aaee4] to-[#1769aa] border-white"
-                  : "h-[17] flex-row items-center justify-between px-[4] bg-[#edf3f7] border-[#c2d0db]"}
+                  ? "absolute left-[0] w-full h-[17] bg-gradient-to-b from-[#5aaee4] to-[#1769aa] border-white"
+                  : "absolute left-[0] w-full h-[17] bg-[#edf3f7] border-[#c2d0db]"}
+                style={{ insetT: localIndex() * 17 }}
               >
-                <Text class={active() ? "text-xs font-bold text-white" : "text-xs text-[#101820]"}>
+                <Text class={active()
+                  ? "absolute left-[4] top-[2] text-xs font-bold text-white"
+                  : "absolute left-[4] top-[2] text-xs text-[#101820]"}>
                   {item}
                 </Text>
                 <Show when={props.details?.[absoluteIndex()]}>
-                  <Text class={active() ? "text-xs text-white" : "text-xs text-[#566675]"}>
+                  <Text class={active()
+                    ? "absolute right-[4] top-[2] text-xs text-white"
+                    : "absolute right-[4] top-[2] text-xs text-[#566675]"}>
                     {props.details?.[absoluteIndex()]}
                   </Text>
                 </Show>
@@ -235,14 +245,15 @@ function ListPage(props: {
 
 function InfoRows(props: { rows: readonly [string, string][] }) {
   return (
-    <View class="flex-1 flex-col py-[1]">
+    <View class="relative w-full h-[85] overflow-hidden">
       <For each={props.rows.slice(0, 6)}>
         {(row, index) => (
           <View class={index() % 2 === 0
-            ? "h-[14] flex-row items-center justify-between px-[4] bg-[#edf3f7]"
-            : "h-[14] flex-row items-center justify-between px-[4] bg-[#dbe7f0]"}>
-            <Text class="text-xs text-[#33485b]">{row[0]}</Text>
-            <Text class="text-xs font-bold text-[#102d4b]">{row[1]}</Text>
+            ? "absolute left-[0] w-full h-[14] bg-[#edf3f7]"
+            : "absolute left-[0] w-full h-[14] bg-[#dbe7f0]"}
+            style={{ insetT: index() * 14 }}>
+            <Text class="absolute left-[4] top-[1] text-xs text-[#33485b]">{row[0]}</Text>
+            <Text class="absolute right-[4] top-[1] text-xs font-bold text-[#102d4b]">{row[1]}</Text>
           </View>
         )}
       </For>
@@ -258,9 +269,9 @@ function Keyboard(props: {
 }) {
   const rows = [...KEYPAD, "^   SPACE   OK"];
   return (
-    <View class="flex-1 flex-col px-[2] py-[1]">
-      <View class="h-[16] flex-row items-center px-[3] bg-white border-[#7f95a8] overflow-hidden">
-        <Text class="text-xs text-[#122235]">
+    <View class="relative w-full h-[85] overflow-hidden">
+      <View class="absolute left-[2] top-[1] w-[156] h-[16] bg-white border-[#7f95a8] overflow-hidden">
+        <Text class="absolute left-[3] top-[2] text-xs text-[#122235]">
           {props.text ? "*".repeat(Math.min(18, props.text.length)) : tr(props.language, "输入密码", "Password")}
         </Text>
       </View>
@@ -269,19 +280,25 @@ function Keyboard(props: {
           const special = () => rowIndex() === 5;
           const cells = () => special() ? ["^", "SPACE", "OK"] : characters.split("");
           return (
-            <View class="h-[11] flex-row justify-center">
+            <View
+              class="absolute left-[5] w-[150] h-[11]"
+              style={{ insetT: 18 + rowIndex() * 11 }}
+            >
               <For each={cells()}>
                 {(character, colIndex) => {
                   const active = () => rowIndex() === props.row && colIndex() === props.col;
                   return (
                     <View class={active()
                       ? special()
-                        ? "w-[50] h-[11] items-center justify-center bg-[#1769aa] border-white"
-                        : "w-[15] h-[11] items-center justify-center bg-[#1769aa] border-white"
+                        ? "absolute top-[0] w-[50] h-[11] bg-[#1769aa] border-white"
+                        : "absolute top-[0] w-[15] h-[11] bg-[#1769aa] border-white"
                       : special()
-                        ? "w-[50] h-[11] items-center justify-center bg-[#d8e3eb] border-[#8499aa]"
-                        : "w-[15] h-[11] items-center justify-center bg-[#edf3f7] border-[#aabac7]"}>
-                      <Text class={active() ? "text-xs font-bold text-white" : "text-xs text-[#102d4b]"}>
+                        ? "absolute top-[0] w-[50] h-[11] bg-[#d8e3eb] border-[#8499aa]"
+                        : "absolute top-[0] w-[15] h-[11] bg-[#edf3f7] border-[#aabac7]"}
+                      style={{ insetL: colIndex() * (special() ? 50 : 15) }}>
+                      <Text class={active()
+                        ? "absolute left-[3] top-[0] text-xs font-bold text-white"
+                        : "absolute left-[3] top-[0] text-xs text-[#102d4b]"}>
                         {character}
                       </Text>
                     </View>
@@ -298,8 +315,8 @@ function Keyboard(props: {
 
 function SnakeBoard(props: { state: SnakeState }) {
   return (
-    <View class="flex-1 items-center justify-center bg-[#a8bd79]">
-      <View class="relative w-[120] h-[60] bg-[#b9cc8b] border-[#405027] overflow-hidden">
+    <View class="relative w-full h-[85] bg-[#a8bd79]">
+      <View class="absolute left-[20] top-[12] w-[120] h-[60] bg-[#b9cc8b] border-[#405027] overflow-hidden">
         <For each={props.state.body}>
           {(point, index) => (
             <View
@@ -714,7 +731,11 @@ export default function SymbianPocket() {
   let languageHydrated = false;
   onFrame(() => {
     frame += 1;
-    if (frame % 6 === 0) {
+    // Native ESP32 rendering is intentionally capped at a lightweight 2 Hz
+    // telemetry refresh. Input and device events are still polled every frame,
+    // while the status clock and sensor values do not need a 10 Hz full-tree
+    // redraw on a 160×128 display.
+    if (frame % 30 === 0) {
       const next = sensorSnapshot();
       setSnapshot(next);
       if (!languageHydrated) {
@@ -798,20 +819,31 @@ export default function SymbianPocket() {
         <ListPage items={notes()} selected={cursor()} empty={tr(language(), "没有记事", "No notes")} />
       </Show>
       <Show when={screen() === "calculator"}>
-        <View class="h-[22] mx-[3] mt-[2] px-[3] flex-row items-center justify-end bg-white border-[#71879a] overflow-hidden">
-          <Text class="text-xs font-bold text-[#102d4b]">{calculatorText() || "0"}</Text>
-        </View>
-        <View class="flex-1 flex-row flex-wrap justify-center py-[2]">
+        <View class="relative w-full h-[85] overflow-hidden">
+          <View class="absolute left-[3] top-[2] w-[154] h-[22] bg-white border-[#71879a] overflow-hidden">
+            <Text class="absolute right-[3] top-[4] text-xs font-bold text-[#102d4b]">
+              {calculatorText() || "0"}
+            </Text>
+          </View>
           <For each={calcKeys}>
-            {(key, index) => (
-              <View class={index() === calcCursor()
-                ? "w-[37] h-[15] items-center justify-center bg-gradient-to-b from-[#5aaee4] to-[#1769aa] border-white"
-                : "w-[37] h-[15] items-center justify-center bg-gradient-to-b from-[#ffffff] to-[#cbd7e0] border-[#8499aa]"}>
-                <Text class={index() === calcCursor() ? "text-xs font-bold text-white" : "text-xs font-bold text-[#102d4b]"}>
-                  {key}
-                </Text>
-              </View>
-            )}
+            {(key, index) => {
+              const column = () => index() % 4;
+              const row = () => Math.floor(index() / 4);
+              return (
+                <View
+                  class={index() === calcCursor()
+                    ? "absolute w-[38] h-[15] bg-gradient-to-b from-[#5aaee4] to-[#1769aa] border-white"
+                    : "absolute w-[38] h-[15] bg-gradient-to-b from-[#ffffff] to-[#cbd7e0] border-[#8499aa]"}
+                  style={{ insetL: 4 + column() * 38, insetT: 25 + row() * 15 }}
+                >
+                  <Text class={index() === calcCursor()
+                    ? "absolute left-[15] top-[1] text-xs font-bold text-white"
+                    : "absolute left-[15] top-[1] text-xs font-bold text-[#102d4b]"}>
+                    {key}
+                  </Text>
+                </View>
+              );
+            }}
           </For>
         </View>
       </Show>
@@ -914,7 +946,7 @@ export default function SymbianPocket() {
       <Show when={screen() === "settings"}>
         <ListPage items={settingsItems()} selected={cursor()} empty="" />
         <View class="absolute bottom-[1] right-[3]">
-          <Text class="text-xs text-[#566675]">v0.1.0</Text>
+          <Text class="text-xs text-[#566675]">v0.1.1</Text>
         </View>
       </Show>
       <Show when={screen() === "quick"}>

@@ -22,6 +22,10 @@ host `qjsc`, feeds the generated PAK to PocketJS Core, and advances the guest
 at a fixed 60 Hz cadence. QuickJS allocations use aligned PSRAM, and its device
 C build enables the ESP32 PSRAM cache-erratum workaround.
 
+The 160×128 shell uses explicit pixel bands and positioned content panels.
+This keeps the physical ST7735 result deterministic while preserving
+PocketJS state, components, transitions, input events, and native rendering.
+
 The 4 MiB flash uses `symbian_pocket.csv`: one `0x3E0000` factory application
 partition plus NVS and coredump storage. No OTA slot or OTA code is included;
 upgrades and restoration use the serial bridge on COM13.
@@ -55,7 +59,7 @@ content elsewhere on the card is left unchanged.
 
 | Function | Connection |
 |---|---|
-| TFT | SCK 18, MOSI 23, CS 5, DC 4; software reset; 60 MHz |
+| TFT | SCK 18, MOSI 23, CS 5, DC 4; software reset; 20 MHz |
 | microSD | SCK 18, MISO 19, MOSI 23, CS 22 |
 | Buttons | Up 2, Down 13, Left 27, Right 35, A 34, B 12 |
 | Buzzer | GPIO14 |
@@ -100,16 +104,16 @@ frames per second.
 
 ## Final hardware validation
 
-The image currently installed through COM13 passed a continuous 60-second
-validation on 2026-07-28:
+Version `0.1.1`, currently installed through COM13, passed a continuous
+60-second validation on 2026-07-28:
 
 | Check | Result |
 |---|---:|
-| Fixed-step cadence | 60.0–60.2 fps |
-| QuickJS peak allocation | 1,119,962 bytes |
-| Free ESP32 heap after mount | 115,704 bytes |
-| Free PSRAM after mount | 2,227,863 bytes |
-| Flash usage | 3,150,249 / 4,063,232 bytes (77.5%) |
+| Fixed-step cadence | 53.4 fps first window; 60.0 fps steady |
+| QuickJS peak allocation | 1,105,866 bytes |
+| Free ESP32 heap after mount | 115,688 bytes |
+| Minimum free PSRAM | 2,227,587 bytes |
+| Flash usage | 3,157,901 / 4,063,232 bytes (77.7%) |
 | SD / controller / IMU | mounted / `0x40` present / `0x68` absent |
 | Output state | locked and off |
 | Panic, reset loop, frame error | none |
@@ -123,9 +127,9 @@ The complete serial transcript is generated as
 `dist/manifest.json`. The validated full image is:
 
 ```text
-dist/symbian-pocket-0.1.0-full-4mb.bin
+dist/symbian-pocket-0.1.1-full-4mb.bin
 Size    4,194,304 bytes
-SHA-256 FD0780DC0A77FD077E7B92A48659F97AC26317A1AD775446AA86037B557A7C57
+SHA-256 E4B4838547B0C62B56227E92692C36D06DA6389CAD62CAD6A48B25E83C4BCA23
 ```
 
 ## Serial receipts
@@ -134,8 +138,20 @@ SHA-256 FD0780DC0A77FD077E7B92A48659F97AC26317A1AD775446AA86037B557A7C57
 - `SP_INVENTORY`: controller, IMU, SD, buttons, safe output state
 - `SP_BOOT`: runtime-ready state and actual QuickJS/PocketJS flags
 - `SP_STATUS`: cadence, rendering, heap, radio, storage, and safety state
+- `SP_INPUT`: acknowledged physical or serial button event
 - Send `S` for an immediate console snapshot.
 - Send `X` to force all outputs off.
+- Send `K` for calibrated and current button levels.
+- Send `U/D/L/R/A/B` to inject a button press, `Q` for Start, or `E` for
+  Select.
+- Send `P` to stream the current logical RGB565 framebuffer. The helper below
+  performs a ready handshake and writes a PNG:
+
+```powershell
+python .\hosts\esp32\scripts\capture_frame.py `
+  --port COM13 `
+  --output .\hosts\esp32\build\device-frame.png
+```
 
 ## Restore
 

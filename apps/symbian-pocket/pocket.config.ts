@@ -13,9 +13,8 @@ export default definePocketConfig({
         to: { transform: "translateY(0px) scale(1)", opacity: 1 },
       },
       "s60-cursor": {
-        "0%": { opacity: 0.72 },
-        "50%": { opacity: 1 },
-        "100%": { opacity: 0.72 },
+        from: { transform: "scale(0.96)", opacity: 0.72 },
+        to: { transform: "scale(1)", opacity: 1 },
       },
       "s60-scan": {
         from: { transform: "translateX(-150px)" },
@@ -25,7 +24,9 @@ export default definePocketConfig({
     animation: {
       "s60-screen-in": { value: "s60-screen-in 0.2s ease-out both" },
       "s60-menu-in": { value: "s60-menu-in 0.18s ease-out both" },
-      "s60-cursor": { value: "s60-cursor 1.1s ease-in-out infinite both" },
+      // Replays when selection changes without forcing a permanent full-screen
+      // redraw loop on the ESP32 RGB565 renderer.
+      "s60-cursor": { value: "s60-cursor 0.18s ease-out both" },
       "s60-scan": { value: "s60-scan 1.4s linear infinite both" },
     },
   },
