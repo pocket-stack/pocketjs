@@ -192,6 +192,8 @@ int wm6_framebuffer_open(HWND window, int logical_width, int logical_height)
     }
     memset(&primary_description, 0, sizeof(primary_description));
     primary_description.dwSize = sizeof(primary_description);
+    memset(&primary_format, 0, sizeof(primary_format));
+    primary_format.dwSize = sizeof(primary_format);
     status = g_primary->lpVtbl->GetSurfaceDesc(
         g_primary, &primary_description);
     have_primary_format =
