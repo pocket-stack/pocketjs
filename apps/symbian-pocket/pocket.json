@@ -1,0 +1,30 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.symbian-pocket",
+  "name": "symbian-pocket",
+  "title": "Symbian Pocket",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "text.glyphs.baked",
+        "input.buttons"
+      ]
+    }
+  },
+  "app": {
+    "entry": "apps/symbian-pocket/main.tsx",
+    "output": "symbian-pocket",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [
+          160,
+          128
+        ],
+        "presentation": "integer-fit"
+      }
+    }
+  }
+}

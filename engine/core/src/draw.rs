@@ -849,10 +849,14 @@ pub fn build(
                 p.2 + (t.2 - p.2) * K,
                 p.3 + (t.3 - p.3) * K,
             );
-            let close = (d.0 - t.0).abs() < 0.5
-                && (d.1 - t.1).abs() < 0.5
-                && (d.2 - t.2).abs() < 0.5
-                && (d.3 - t.3).abs() < 0.5;
+            // Keep this path compatible with the Xtensa no_std target.  That
+            // target's core library does not expose the inherent f32::abs
+            // method, while the comparison only needs a sign-independent
+            // distance.
+            let close = abs_f32(d.0 - t.0) < 0.5
+                && abs_f32(d.1 - t.1) < 0.5
+                && abs_f32(d.2 - t.2) < 0.5
+                && abs_f32(d.3 - t.3) < 0.5;
             Some(if close { t } else { d })
         }
         (Some(t), None) => Some(t), // first appearance: no glide-from-nowhere
@@ -879,6 +883,11 @@ pub fn build(
         );
     }
     (target, drawn)
+}
+
+#[inline]
+fn abs_f32(value: f32) -> f32 {
+    if value < 0.0 { -value } else { value }
 }
 
 impl<'a> Walker<'a> {

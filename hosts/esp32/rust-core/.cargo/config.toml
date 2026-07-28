@@ -1,0 +1,6 @@
+[target.xtensa-esp32-none-elf]
+linker = "xtensa-esp32-elf-gcc"
+ar = "xtensa-esp32-elf-ar"
+
+[unstable]
+build-std = ["core", "alloc"]
