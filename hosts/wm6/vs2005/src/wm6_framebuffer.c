@@ -23,6 +23,11 @@ static int g_height;
 static int g_surface_reported;
 static int g_directdraw_disabled;
 static int g_gdi_reported;
+static const unsigned char *g_last_argb;
+static unsigned int g_last_argb_width;
+static unsigned int g_last_argb_height;
+static unsigned int g_last_argb_stride;
+static unsigned int g_last_argb_length;
 
 static unsigned short rgb565(
     unsigned int red,
@@ -275,6 +280,42 @@ void wm6_framebuffer_close(void)
     g_surface_reported = 0;
     g_directdraw_disabled = 0;
     g_gdi_reported = 0;
+    g_last_argb = NULL;
+    g_last_argb_width = 0;
+    g_last_argb_height = 0;
+    g_last_argb_stride = 0;
+    g_last_argb_length = 0;
+}
+
+static int copy_argb_to_gdi(
+    const unsigned char *pixels,
+    unsigned int width,
+    unsigned int height,
+    unsigned int stride,
+    unsigned int byte_length)
+{
+    unsigned int row;
+
+    if (!pixels || !g_gdi_pixels ||
+        width != (unsigned int)g_width ||
+        height != (unsigned int)g_height || stride < width * 4u ||
+        height > byte_length / stride)
+        return 0;
+    /*
+     * A PocketJS ARGB32 row is BGRA in little-endian memory, which is already
+     * the byte order expected by a 32-bit BI_RGB DIB. Keep the bottom-up row
+     * order required by the positive DIB height.
+     */
+    for (row = 0; row < height; row++) {
+        const unsigned char *source;
+        DWORD *gdi_destination;
+
+        source = pixels + row * stride;
+        gdi_destination =
+            g_gdi_pixels + (height - row - 1u) * width;
+        memcpy(gdi_destination, source, width * 4u);
+    }
+    return 1;
 }
 
 int wm6_framebuffer_copy_argb(
@@ -286,49 +327,32 @@ int wm6_framebuffer_copy_argb(
 {
     unsigned int row;
 
-    if (!pixels || !g_pixels || !g_gdi_pixels ||
+    if (!pixels || !g_pixels ||
         width != (unsigned int)g_width ||
         height != (unsigned int)g_height || stride < width * 4u ||
         height > byte_length / stride)
         return 0;
-    if (g_directdraw_disabled) {
-        /*
-         * A PocketJS ARGB32 row is BGRA in little-endian memory, which is
-         * already the byte order expected by a 32-bit BI_RGB DIB. Keep the
-         * bottom-up row order required by the positive DIB height, but avoid
-         * converting every pixel and building an unused RGB565 copy.
-         */
-        for (row = 0; row < height; row++) {
-            const unsigned char *source;
-            DWORD *gdi_destination;
-
-            source = pixels + row * stride;
-            gdi_destination =
-                g_gdi_pixels + (height - row - 1u) * width;
-            memcpy(gdi_destination, source, width * 4u);
-        }
-        return 1;
-    }
+    g_last_argb = pixels;
+    g_last_argb_width = width;
+    g_last_argb_height = height;
+    g_last_argb_stride = stride;
+    g_last_argb_length = byte_length;
+    if (g_directdraw_disabled)
+        return copy_argb_to_gdi(
+            pixels, width, height, stride, byte_length);
     for (row = 0; row < height; row++) {
         const unsigned char *source;
         unsigned short *destination;
-        DWORD *gdi_destination;
         unsigned int column;
 
         source = pixels + row * stride;
         destination = g_pixels + row * width;
-        gdi_destination =
-            g_gdi_pixels + (height - row - 1u) * width;
         for (column = 0; column < width; column++) {
             /* PocketJS exposes little-endian ARGB32: B, G, R, A bytes. */
             destination[column] = rgb565(
                 source[column * 4u + 2u],
                 source[column * 4u + 1u],
                 source[column * 4u]);
-            gdi_destination[column] =
-                ((DWORD)source[column * 4u + 2u] << 16) |
-                ((DWORD)source[column * 4u + 1u] << 8) |
-                (DWORD)source[column * 4u];
         }
     }
     return 1;
@@ -415,9 +439,19 @@ static int present_directdraw(void)
             unsigned short *output;
 
             output = (unsigned short *)destination;
-            for (x = 0; x < g_width; x++)
-                output[x] = (unsigned short)convert_pixel(
-                    source[x], &pixel_format);
+            if (pixel_format.dwRBitMask == 0xf800u &&
+                pixel_format.dwGBitMask == 0x07e0u &&
+                pixel_format.dwBBitMask == 0x001fu) {
+                memcpy(
+                    output,
+                    source,
+                    (unsigned int)g_width *
+                        sizeof(unsigned short));
+            } else {
+                for (x = 0; x < g_width; x++)
+                    output[x] = (unsigned short)convert_pixel(
+                        source[x], &pixel_format);
+            }
         } else if (pixel_format.dwRGBBitCount == 32) {
             DWORD *output;
 
@@ -615,6 +649,13 @@ int wm6_framebuffer_present(void)
         OutputDebugString(
             L"PocketJS WM6: DirectDraw presentation failed; "
             L"using GDI DIB\r\n");
+        if (!copy_argb_to_gdi(
+                g_last_argb,
+                g_last_argb_width,
+                g_last_argb_height,
+                g_last_argb_stride,
+                g_last_argb_length))
+            return 0;
     }
     return present_gdi();
 }

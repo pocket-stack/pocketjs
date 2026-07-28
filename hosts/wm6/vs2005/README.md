@@ -36,6 +36,9 @@ This solution contains three native Smart Device applications for the HP iPAQ
   pixel format so that it remains lockable and suitable as a `Blt` source.
   If all of them fail, the 32-bit GDI fallback copies PocketJS BGRA rows
   directly instead of building both RGB565 and BGRA buffers pixel by pixel.
+  While DirectDraw remains active, the GDI copy is deferred until it is
+  actually needed, and matching RGB565 surfaces use a row copy instead of
+  converting every 16-bit pixel a second time.
 
 The Probe and Vapor applications are VC8-compatible Smart Device projects
 rather than desktop Win32 projects. The QuickJS deployment anchor is also a
