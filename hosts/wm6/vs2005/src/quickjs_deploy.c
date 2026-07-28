@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <aygshell.h>
 
 #include "wm6_quickjs_abi.h"
 #include "wm6_framebuffer.h"
@@ -98,8 +99,47 @@ static DWORD g_frame_window_started;
 static unsigned int g_frame_window_count;
 static DEVMODE g_original_display_mode;
 static int g_display_rotated;
+static int g_shell_hidden;
 
 static void restore_display_orientation(void);
+
+static void enter_fullscreen(HWND window)
+{
+    DWORD state;
+
+    MoveWindow(
+        window,
+        0,
+        0,
+        GetSystemMetrics(SM_CXSCREEN),
+        GetSystemMetrics(SM_CYSCREEN),
+        TRUE);
+    SetForegroundWindow(window);
+    state = SHFS_HIDETASKBAR |
+            SHFS_HIDESTARTICON |
+            SHFS_HIDESIPBUTTON;
+    if (SHFullScreen(window, state)) {
+        g_shell_hidden = 1;
+        OutputDebugString(
+            L"PocketJS WM6: shell chrome hidden\r\n");
+    } else {
+        OutputDebugString(
+            L"PocketJS WM6: shell chrome could not be hidden\r\n");
+    }
+}
+
+static void leave_fullscreen(HWND window)
+{
+    DWORD state;
+
+    if (!g_shell_hidden)
+        return;
+    state = SHFS_SHOWTASKBAR |
+            SHFS_SHOWSTARTICON |
+            SHFS_SHOWSIPBUTTON;
+    SHFullScreen(window, state);
+    g_shell_hidden = 0;
+}
 
 static int rotate_display_90(void)
 {
@@ -438,6 +478,7 @@ static LRESULT CALLBACK DemoWindowProc(HWND window, UINT message,
             ReleaseCapture();
         return 0;
     case WM_DESTROY:
+        leave_fullscreen(window);
         KillTimer(window, 1);
         wm6_framebuffer_close();
         g_framebuffer_ready = 0;
@@ -530,6 +571,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
     }
 
     g_display_rotated = 0;
+    g_shell_hidden = 0;
     rotation_ready = rotate_display_90();
     viewport_width = GetSystemMetrics(SM_CXSCREEN);
     viewport_height = GetSystemMetrics(SM_CYSCREEN);
@@ -657,6 +699,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command, int s
         OutputDebugString(L"PocketJS WM6: DirectDraw unavailable\r\n");
     }
     ShowWindow(window, show);
+    enter_fullscreen(window);
     UpdateWindow(window);
     if (g_framebuffer_ready) {
         render_core_frame();

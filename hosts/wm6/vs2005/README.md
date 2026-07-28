@@ -23,6 +23,9 @@ This solution contains three native Smart Device applications for the HP iPAQ
   640x480 while QVGA uses 320x240. PocketJS performs layout directly against
   that viewport rather than scaling a fixed 480x272 screenshot. The window
   title reports whether landscape rotation succeeded, even without a debugger.
+  Once the top-level window is foreground and sized to the whole rotated
+  screen, `SHFullScreen` hides the taskbar, Start icon, and SIP button. The
+  shell chrome is restored during normal window destruction.
   Pixel masks are queried from the primary surface separately after a display
   rotation; a missing 16-bit mask falls back to the WM6 RGB565 layout instead
   of silently converting every source color to black.
