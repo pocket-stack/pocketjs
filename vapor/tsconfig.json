@@ -1,6 +1,6 @@
 {
   // Editors + `bunx tsc --noEmit -p vapor` typecheck ONLY. The JSX transform
-  // is owned by vue-jsx-vapor (oracle) and the Pocket Vapor compiler (GBA);
+  // is owned by vue-jsx-vapor (oracle) and the Pocket Vapor AOT compiler;
   // both require jsx "preserve". Separate from the root tsconfig because the
   // <row> intrinsic must not leak into the Solid/PSP JSX surface.
   "compilerOptions": {

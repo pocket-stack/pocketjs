@@ -4,7 +4,14 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { compileVaporApp } from "../compiler/compile.ts";
-import { parseRowClass, rgb565, STYLE_CAPS, styleOfPair, StyleTable } from "../compiler/styles.ts";
+import {
+  parseRowClass,
+  rgb565,
+  STYLE_CAPS,
+  styleOfPair,
+  StyleTable,
+  styleTableCss,
+} from "../compiler/styles.ts";
 
 const ENTRY = join(import.meta.dir, "..", "examples", "todo", "todo.tsx");
 
@@ -63,6 +70,9 @@ describe("per-target lowering", () => {
     expect(table.lower("gb").issues.some((i) => i.code === "VS104" && i.severity === "warn")).toBe(true);
     expect(table.lower("gb", true).issues.some((i) => i.code === "VS104" && i.severity === "error")).toBe(true);
     expect(table.lower("gba").issues).toEqual([]);
+    expect(STYLE_CAPS.playdate).toEqual({ kind: "styles2" });
+    expect(table.lower("playdate").issues.some((i) => i.code === "VS104")).toBe(true);
+    expect(table.lower("playdate", true).issues.some((i) => i.severity === "error")).toBe(true);
   });
 
   test("esp32 preserves every pair as an RGB565 table index", () => {
@@ -75,6 +85,15 @@ describe("per-target lowering", () => {
     expect(rgb565(0xff0000)).toBe(0xf800);
     expect(rgb565(0x00ff00)).toBe(0x07e0);
     expect(rgb565(0x0000ff)).toBe(0x001f);
+  });
+
+  test("playdate preview uses black and white, not the DMG green ramp", () => {
+    const table = new StyleTable();
+    table.resolveClass("bg-white text-black");
+    const css = styleTableCss(table, "playdate");
+    expect(css).toContain("color: #ffffff; background: #000000");
+    expect(css).toContain("color: #000000; background: #ffffff");
+    expect(css).not.toContain("#9bbc0f");
   });
 });
 

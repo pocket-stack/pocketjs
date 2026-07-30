@@ -6,8 +6,9 @@
 // is never executed — the compiler recognizes imports of `onButton` and
 // `Button` from this path and wires handlers to the GBA key-edge register.
 //
-// Button values ARE the GBA KEYINPUT bit positions (and mGBA's key-mask bit
-// order): a press on device sets bit (1 << Button.X).
+// Button values ARE the shared Pocket pad ABI. Playdate directly exposes
+// A/B/Right/Left/Up/Down and rejects Select/Start/R/L demands at compile
+// time; it never invents chords for missing physical inputs.
 
 export const Button = {
   A: 0,
