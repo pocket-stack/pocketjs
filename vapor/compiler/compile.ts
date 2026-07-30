@@ -323,6 +323,12 @@ class AppCompiler {
             name: local,
             value: { Primary: 0, Secondary: 1 },
           });
+        else if (imported === "RelativeAxisUnits")
+          this.scope.set(local, {
+            kind: "const",
+            name: local,
+            value: { PerDegree: 1000, PerTurn: 360000 },
+          });
         else this.err(spec, `unsupported host import: ${imported}`);
       } else if (/\/host\/screen(\.ts)?$/.test(from)) {
         if (imported !== "SCREEN") this.err(spec, `unsupported host import: ${imported}`);
@@ -1162,7 +1168,8 @@ class AppCompiler {
 
   private compileCall(e: ts.CallExpression, out: string[], ind: string): { c: string; ty: Ty } {
     const callee = this.unparen(e.expression);
-    // Math.min/max
+    // Integer-safe Math subset. Every compiled NUM is s32, so Math.trunc is
+    // an identity after C integer division while preserving Vue-oracle parity.
     if (
       ts.isPropertyAccessExpression(callee) &&
       ts.isIdentifier(callee.expression) &&
@@ -1171,6 +1178,10 @@ class AppCompiler {
       const args = e.arguments.map((a) => this.compileExpr(a, out, ind).c);
       if (callee.name.text === "max") return { c: `vp_max(${args.join(", ")})`, ty: NUM };
       if (callee.name.text === "min") return { c: `vp_min(${args.join(", ")})`, ty: NUM };
+      if (callee.name.text === "trunc") {
+        if (args.length !== 1) this.err(e, "Math.trunc takes exactly one argument");
+        return { c: `(${args[0]})`, ty: NUM };
+      }
       this.err(e, `unsupported Math.${callee.name.text}`);
     }
     // list.indexOf(ptr)

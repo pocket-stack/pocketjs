@@ -95,8 +95,14 @@ extern u32 vp_rows_dirty;
 extern const u32 vp_bit32[32]; /* vp_bit32[n] == 1UL << n */
 
 /* ---- generated app hooks ----------------------------------------------------- */
+#define VP_RELATIVE_AXIS_PRIMARY 0
+#define VP_RELATIVE_AXIS_SECONDARY 1
 void app_init(void);      /* seed state + first paint (all effects) */
 void app_on_button(u8 b); /* one press edge, GBA key bit index */
+/* Signed physical motion on a hardware-neutral relative axis. Axis 0 is
+ * RelativeAxis.Primary. Rotary hosts use millidegrees and preserve the
+ * signed total; applications own detents and sensitivity. */
+void app_on_axis_delta(u8 axis, s32 delta);
 u8 app_flush(void);       /* computeds + dirty effects; 1 if painted */
 u16 app_debug_state(volatile u8 *out); /* mirror reactive state; returns bytes */
 

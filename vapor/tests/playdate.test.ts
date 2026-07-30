@@ -8,6 +8,13 @@ import {
   resolvePlaydateSdk,
 } from "../compiler/playdate.ts";
 import { FONT8 } from "../compiler/font.gen.ts";
+import {
+  __dispatchAxisDelta,
+  __resetButtons,
+  onAxisDelta,
+  RelativeAxis,
+  RelativeAxisUnits,
+} from "../host/input.ts";
 
 const RUNTIME = join(import.meta.dir, "..", "runtime");
 const SIX_BUTTON = join(
@@ -18,6 +25,13 @@ const SIX_BUTTON = join(
   "playdate-six-button.tsx",
 );
 const TODO = join(import.meta.dir, "..", "examples", "todo", "todo.tsx");
+const PLAYDATE_TODO = join(
+  import.meta.dir,
+  "..",
+  "examples",
+  "todo",
+  "todo.playdate.tsx",
+);
 
 describe("playdate compiler target", () => {
   test("uses the 50x30 grid and emits only 1bpp two-style data", async () => {
@@ -40,6 +54,8 @@ describe("playdate compiler target", () => {
     expect(app.c).not.toContain("vp_ink565");
     expect(app.c).not.toContain("vp_paper565");
     expect(app.c).not.toContain("vp_palettes");
+    expect(app.c).toContain("void app_on_axis_delta(u8 axis, s32 delta)");
+    expect(app.relativeAxesUsed).toEqual([]);
     expect(app.plan).toContain("760 B font + 3 B style data");
     expect(compileVaporApp(SIX_BUTTON, source, "PLAYDATE SIX", "playdate").c).toBe(app.c);
   });
@@ -54,6 +70,70 @@ describe("playdate compiler target", () => {
       /VT101: playdate has no physical input for Select, Start, R/,
     );
   });
+
+  test("lowers the generic Primary relative axis and admits the Playdate Todo", async () => {
+    const source = await Bun.file(PLAYDATE_TODO).text();
+    const app = compileVaporApp(PLAYDATE_TODO, source, "VAPOR TODO", "playdate");
+    expect(app.buttonsUsed).toEqual([0, 1, 4, 5, 6, 7]);
+    expect(app.relativeAxesUsed).toEqual([RelativeAxis.Primary]);
+    expect(app.c).toContain("static void vp_axis_handler_0(s32 axis_delta_arg)");
+    expect(app.c).toContain("case 0: vp_axis_handler_0(delta); break;");
+    expect(app.c).toContain("void app_on_axis_delta(u8 axis, s32 delta)");
+    expect(app.c).toContain("/ 45000");
+    expect(app.c).toContain("% 45000");
+    expect(app.c).not.toContain("Math.trunc");
+    expect(app.graph).toContain("relative axes: Primary");
+    expect(() => compileVaporApp(PLAYDATE_TODO, source, "VAPOR TODO", "gba")).toThrow(
+      /VT102: gba has no adapter for relative axis Primary/,
+    );
+    expect(() =>
+      compileVaporApp(
+        PLAYDATE_TODO,
+        source.replace("RelativeAxis.Primary, (delta)", "RelativeAxis.Secondary, (delta)"),
+        "VAPOR TODO",
+        "playdate",
+      ),
+    ).toThrow(/VT102: playdate has no adapter for relative axis Secondary/);
+  });
+});
+
+test("relative-axis oracle contract preserves signed canonical deltas", () => {
+  const seen: number[] = [];
+  __resetButtons();
+  onAxisDelta(RelativeAxis.Primary, (delta) => seen.push(delta));
+  __dispatchAxisDelta(RelativeAxis.Primary, 3);
+  __dispatchAxisDelta(RelativeAxis.Primary, -2);
+  expect(seen).toEqual([3, -2]);
+  expect(() => __dispatchAxisDelta(RelativeAxis.Primary, 0)).toThrow(/non-zero integer/);
+  expect(() => __dispatchAxisDelta(RelativeAxis.Primary, 1.5)).toThrow(/non-zero integer/);
+  expect(() => __dispatchAxisDelta(99 as 0, 1)).toThrow(/unknown relative axis 99/);
+  __resetButtons();
+});
+
+test("45-degree detents are application policy over canonical axis deltas", () => {
+  let remainder = 0;
+  let cursor = 0;
+  const threshold = 45 * RelativeAxisUnits.PerDegree;
+
+  __resetButtons();
+  onAxisDelta(RelativeAxis.Primary, (delta) => {
+    remainder += delta;
+    const steps = Math.trunc(remainder / threshold);
+    if (steps !== 0) {
+      remainder %= threshold;
+      cursor += steps;
+    }
+  });
+
+  __dispatchAxisDelta(RelativeAxis.Primary, 44_999);
+  expect({ cursor, remainder }).toEqual({ cursor: 0, remainder: 44_999 });
+  __dispatchAxisDelta(RelativeAxis.Primary, 1);
+  expect({ cursor, remainder }).toEqual({ cursor: 1, remainder: 0 });
+  __dispatchAxisDelta(RelativeAxis.Primary, 90_000);
+  expect({ cursor, remainder }).toEqual({ cursor: 3, remainder: 0 });
+  __dispatchAxisDelta(RelativeAxis.Primary, -135_001);
+  expect({ cursor, remainder }).toEqual({ cursor: 0, remainder: -1 });
+  __resetButtons();
 });
 
 describe("playdate build inputs", () => {

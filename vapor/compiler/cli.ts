@@ -16,7 +16,7 @@
 import { basename, join, resolve } from "node:path";
 import { admitBoard, listBoards, loadBoard, POCKET_PAD, type BoardIssue } from "./boards.ts";
 import { compileVaporApp, VAPOR_TARGETS, type CompiledApp, type VaporTargetName } from "./compile.ts";
-import { buildArtifact } from "./rom.ts";
+import { buildRom } from "./rom.ts";
 import type { PlaydateBuildMode } from "./playdate.ts";
 
 let args = process.argv.slice(2);
@@ -161,7 +161,7 @@ const ext =
             ? null
             : target satisfies never;
 const output = ext ? join(outDir, `${name}.${ext}`) : join(outDir, name);
-const artifacts = await buildArtifact(app, target, output, { playdateMode });
+const artifacts = await buildRom(app, target, output, { playdateMode });
 await Bun.write(join(outDir, `${name}.${target}.debug.json`), JSON.stringify(app.debugSlots, null, 2));
 for (const artifact of artifacts) {
   const platform = artifact.platform ? `/${artifact.platform}` : "";

@@ -33,6 +33,8 @@ struct playdate_sys {
   void (*logToConsole)(const char *fmt, ...);
   void (*setUpdateCallback)(PDCallbackFunction *update, void *userdata);
   void (*getButtonState)(PDButtons *current, PDButtons *pushed, PDButtons *released);
+  float (*getCrankChange)(void);
+  int (*isCrankDocked)(void);
 };
 
 struct playdate_graphics {

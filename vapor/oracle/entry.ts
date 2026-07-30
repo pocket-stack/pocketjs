@@ -7,7 +7,11 @@
 
 import { createVaporApp, nextTick } from "vue";
 import TodoApp from "../examples/todo/todo.tsx";
-import { __dispatchButton, __resetButtons } from "../host/input.ts";
+import {
+  __dispatchAxisDelta,
+  __dispatchButton,
+  __resetButtons,
+} from "../host/input.ts";
 
 type AnyApp = { mount(container: unknown): void; unmount(): void };
 
@@ -24,6 +28,10 @@ hooks.__vaporBoot = (container: unknown): AnyApp => {
 
 hooks.__vaporPress = (button: number): void => {
   __dispatchButton(button);
+};
+
+hooks.__vaporAxisDelta = (axis: number, delta: number): void => {
+  __dispatchAxisDelta(axis as 0 | 1, delta);
 };
 
 hooks.__vaporTick = (): Promise<void> => nextTick();

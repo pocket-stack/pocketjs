@@ -4,7 +4,7 @@
 TypeScript subset of Vue Vapor — real `ref`/`computed`, real JSX — and the
 Pocket Vapor compiler emits native code for devices that could never host
 a JavaScript engine: **ARM7 on the Game Boy Advance, SM83 on the Game Boy,
-6502 on the NES, and Xtensa LX6 on the ESP32**. No JS engine, no GC, no
+6502 on the NES, Xtensa LX6 on the ESP32, and Cortex-M7 on Playdate**. No JS engine, no GC, no
 allocator. Vue Vapor compiles the virtual DOM away; Pocket Vapor compiles
 the JavaScript engine away.
 
@@ -16,15 +16,19 @@ the JavaScript engine away.
 |---|---|
 | ![gb](docs/todo-gb.png) | ![nes](docs/todo-nes.png) |
 
-One component file, five executions: the oracle on real vue 3.6, three
-cartridges, and one ESP32 firmware image. Screen geometry is a compile-time
+The portable Todo component targets the oracle on real vue 3.6, three
+cartridges, and ESP32 firmware. Its Playdate input variant shares the same
+business model and rendering vocabulary while replacing list Up/Down with
+the generic relative-axis input supplied by the crank. Screen geometry is a compile-time
 constant (`SCREEN.width`/`SCREEN.height` from the host module): layout math
 and width ternaries fold per target, so the narrow help strings on
 GB/NES/ESP32 cost zero bytes on GBA — compile-time responsive UI.
 
-The proof is [`examples/todo/todo.tsx`](examples/todo/todo.tsx) — TodoMVC
-with filters, a computed remaining-count, windowed scrolling and a glyph
-editor. The **same file** runs two ways:
+The proof is [`examples/todo/todo.tsx`](examples/todo/todo.tsx), plus the
+Playdate control mapping in
+[`examples/todo/todo.playdate.tsx`](examples/todo/todo.playdate.tsx) —
+TodoMVC with filters, a computed remaining-count, windowed scrolling and a
+glyph editor. Each component runs two ways:
 
 - **Oracle**: unmodified on `vue@3.6` `runtime-with-vapor` (through the
   repo's vue-jsx-vapor pipeline) over a micro-DOM, in bun.
@@ -73,6 +77,26 @@ const listKeys: Keymap = {
 
 onButton((b) => (editing.value ? editKeys : listKeys)[b]?.());
 ```
+
+Incremental controls are a separate, hardware-neutral input capability:
+
+```tsx
+onAxisDelta(RelativeAxis.Primary, (delta) => {
+  if (!editing.value) {
+    remainder.value += delta;
+    const steps = Math.trunc(
+      remainder.value / (45 * RelativeAxisUnits.PerDegree),
+    );
+    remainder.value %= 45 * RelativeAxisUnits.PerDegree;
+    moveCursor(steps);
+  }
+});
+```
+
+The generated ABI receives signed canonical deltas. Rotary hosts normalize
+physical movement to millidegrees but do not choose a UI detent. The Playdate
+Todo chooses 45 degrees itself; a future ESP32 board can map an encoder or
+wheel to the same axis without exposing GPIO or Playdate APIs to the app.
 
 Deleting is `todos.value = todos.value.filter((x) => x !== t)` (compiled to
 in-place pool compaction), and the selected todo is itself a computed —
@@ -123,11 +147,18 @@ gb      OK    20x18, 6 style pairs
 nes     OK    22x18, 6 style pairs
         warn  VS104: 3 distinct color pairs render as the same glyph style ...
 esp32   OK    20x18, 6 style pairs
+playdate FAIL
+        error VT101: playdate has no physical input for Select, Start, R ...
 meowbit OK    board (esp32)
         warn  VB103: "start" is only reachable as the a+b chord on meowbit ...
 $ bun vapor/compiler/cli.ts check app.tsx --strict   # lossy lowering = failure
 $ bun vapor/compiler/cli.ts check app.tsx --json     # demands + verdicts as data
 ```
+
+That failure is intentional for the portable button-only file. Checking
+`todo.playdate.tsx` reports Playdate support through its six direct buttons
+and `RelativeAxis.Primary`; targets without a relative-axis adapter fail
+with `VT102`.
 
 Board rows are the AOT admission rule at work: MCU devices are data files
 (`boards/meowbit.json`), the compiler derives what the app demands (buttons
@@ -137,8 +168,9 @@ ability to enumerate devices.
 
 And the oracle is visible: `bun run vapor:dev` serves the app on real Vue
 Vapor in your browser — inspectable DOM rows, keyboard as the pad,
-`?target=gb` to see the DMG's two-style world before you burn a cart, or
-`?target=esp32` to preview the MeowBit's 20×18 logical viewport.
+`?target=gb` to see the DMG's two-style world before you burn a cart,
+`?target=esp32` to preview the MeowBit viewport, or `?target=playdate` for
+the 50×30 one-bit contract.
 
 ## Commands
 
@@ -153,6 +185,10 @@ bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx                 # → dis
 bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target gb     # → todo.gb  (32 KB)
 bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target nes    # → todo.nes (40 KB)
 bun run vapor:esp32                                        # → app-only todo.esp32.bin + gen-esp32/
+bun run vapor:playdate                                     # → crank-driven Todo Simulator .pdx
+bun run vapor:playdate:device                              # → crank-driven Todo device .pdx
+bun run vapor:playdate:both                                # → both independent .pdx packages
+bun run vapor:playdate:smoke                               # → six-button regression fixture
 bun run vapor:esp32:flash                                  # build + flash the connected ESP32 MeowBit
 bun run vapor:esp32:verify                                 # build + flash + replay the Vue-oracle tape
 bun vapor/scripts/play.ts                                 # build + open in mGBA
@@ -163,7 +199,8 @@ bun test vapor/tests/                                     # oracle + compiler + 
 ```
 
 Toolchains: `arm-none-eabi-gcc` + `mgba` (GBA/GB), `sdcc` + `rgbfix` (GB),
-`cc65` (NES, emulated by the jsnes dev-dependency), and **ESP-IDF v6.0.2**
+`cc65` (NES, emulated by the jsnes dev-dependency), **ESP-IDF v6.0.2**,
+and the Playdate SDK CMake/pdc toolchain
 (ESP32; set `IDF_PATH` / `IDF_TOOLS_PATH` when auto-discovery does not find
 the installation). Oracle tests run with bun alone. Notable per-target facts the
 runtime absorbs: the console shadow grid IS the debug block (fixed
@@ -171,7 +208,8 @@ WRAM/CPU-RAM addresses), so the harness reads the logical screen even while
 a 1 MHz SM83 trickles VRAM through vblank; DMG has one palette, so logical
 palettes map to baked glyph styles; NES fits grid + pool + views into 2 KB
 of CPU RAM with the font in CHR-ROM; ESP32 rasterizes the same logical
-20×18 grid into RGB565 on a 160×128 ST7735; and sdcc 4.6's SM83 port
+20×18 grid into RGB565 on a 160×128 ST7735; Playdate maps a 50×30 grid
+byte-for-cell into its 400×240 1bpp framebuffer; and sdcc 4.6's SM83 port
 miscompiles some u8-by-u8 multiplies, so generated indexing is u16 pointer
 arithmetic and bit masks come from a ROM table.
 
@@ -180,13 +218,14 @@ arithmetic and bit masks come from a ROM table.
 ```
 vapor/
   DESIGN.md            the thesis + subset + target/style contracts
-  examples/todo/       todo.tsx — the multi-console demo app
-  host/                input.ts (Button/onButton), screen.ts (SCREEN geometry)
+  examples/todo/       portable Todo + Playdate relative-axis input variant
+  host/                input.ts (buttons + relative axes), screen.ts (SCREEN geometry)
   oracle/              micro-DOM + grid painter + bundle boot (real vue)
   compiler/            compile.ts (TS AST → C), styles.ts (class DSL), rom.ts, cli.ts
   runtime/             vapor.h contract + vapor_core.c (shared grid/strings/line)
   runtime/gba|gb|nes/  per-console halves: crt0, video commit, input, debug block
   runtime/esp32/       ESP-IDF loop, ST7735 RGB565 raster, buttons, UART receipt
+  runtime/playdate/    SDK lifecycle, raw 1bpp framebuffer, buttons + crank adapter
   scripts/             dev.ts (visible oracle), play.ts, shot.ts, esp32.ts (device protocol)
   tests/               styles + compiler + oracle + 3-console parity + shared device tape
   tests/harness/       headless libmgba runner (GBA+GB) + jsnes runner (NES)

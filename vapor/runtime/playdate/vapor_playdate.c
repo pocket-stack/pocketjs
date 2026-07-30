@@ -27,6 +27,8 @@ static PlaydateAPI *pd;
 static u32 frame_no;
 static u32 flush_no;
 static u32 commit_no;
+static u32 axis_event_no;
+static float crank_sub_millidegrees;
 static u8 stopped;
 
 static u32 full_dirty_mask(void) {
@@ -102,6 +104,42 @@ static void dispatch_pushed(PDButtons pushed) {
     if (pushed & map[i].physical) app_on_button(map[i].logical);
 }
 
+static void reset_crank_input(const char *reason) {
+  float discarded = pd->system->getCrankChange();
+  crank_sub_millidegrees = 0.0f;
+  pd->system->logToConsole(
+      "PVINPUT axis=primary event=reset reason=%s discarded_mdeg=%ld",
+      reason,
+      (long)(discarded * 1000.0f));
+}
+
+static s32 dispatch_crank_delta(void) {
+  float change = pd->system->getCrankChange();
+  float accumulated_millidegrees;
+  s32 delta_millidegrees;
+
+  if (pd->system->isCrankDocked()) {
+    crank_sub_millidegrees = 0.0f;
+    return 0;
+  }
+  accumulated_millidegrees =
+      crank_sub_millidegrees + (change * 1000.0f);
+  delta_millidegrees = (s32)accumulated_millidegrees;
+  crank_sub_millidegrees =
+      accumulated_millidegrees - (float)delta_millidegrees;
+  if (!delta_millidegrees) return 0;
+
+  app_on_axis_delta(VP_RELATIVE_AXIS_PRIMARY, delta_millidegrees);
+  axis_event_no++;
+  pd->system->logToConsole(
+      "PVINPUT axis=primary delta_mdeg=%ld raw_mdeg=%ld sub_mdeg_x1000=%ld event=%lu",
+      (long)delta_millidegrees,
+      (long)(change * 1000.0f),
+      (long)(crank_sub_millidegrees * 1000.0f),
+      (unsigned long)axis_event_no);
+  return delta_millidegrees;
+}
+
 static int update(void *userdata) {
   PDButtons pushed = 0;
   int painted;
@@ -110,6 +148,7 @@ static int update(void *userdata) {
   if (stopped) return 0;
   pd->system->getButtonState(NULL, &pushed, NULL);
   dispatch_pushed(pushed);
+  dispatch_crank_delta();
   if (app_flush()) flush_no++;
   painted = commit_rows();
   frame_no++;
@@ -144,10 +183,17 @@ int eventHandler(PlaydateAPI *playdate, PDSystemEvent event, uint32_t arg) {
         stopped = 1;
         return 0;
       }
+      if (!pd->system->getCrankChange || !pd->system->isCrankDocked) {
+        pd->system->logToConsole("PVERROR stage=init code=missing-relative-axis-api");
+        stopped = 1;
+        return 0;
+      }
       stopped = 0;
       frame_no = 0;
       flush_no = 0;
       commit_no = 0;
+      axis_event_no = 0;
+      crank_sub_millidegrees = 0.0f;
       vp_tripwires = 0;
       vp_rows_dirty = 0;
       vp_row_clear(0, VP_GRID_H);
@@ -160,6 +206,7 @@ int eventHandler(PlaydateAPI *playdate, PDSystemEvent event, uint32_t arg) {
         stopped = 1;
         return 0;
       }
+      reset_crank_input("init");
       pd->display->setRefreshRate(30.0f);
       pd->system->setUpdateCallback(update, NULL);
       pd->system->logToConsole(
@@ -172,9 +219,11 @@ int eventHandler(PlaydateAPI *playdate, PDSystemEvent event, uint32_t arg) {
           (unsigned long)commit_no);
       break;
     case kEventUnlock:
+      reset_crank_input("unlock");
       force_full_redraw("unlock");
       break;
     case kEventResume:
+      reset_crank_input("resume");
       force_full_redraw("resume");
       break;
     case kEventMirrorStarted:

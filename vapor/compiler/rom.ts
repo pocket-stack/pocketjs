@@ -45,22 +45,6 @@ function targetDefines(target: VaporTargetName): string[] {
   ];
 }
 
-export async function buildRom(
-  app: CompiledApp,
-  target: VaporTargetName,
-  outRom: string,
-): Promise<{ romBytes: number }> {
-  if (target === "gba") return buildGbaRom(app, outRom);
-  if (target === "gb") return buildGbRom(app, outRom);
-  if (target === "nes") return buildNesRom(app, outRom);
-  if (target === "esp32") return buildEsp32Firmware(app, outRom);
-  if (target === "playdate") {
-    throw new Error("Playdate produces .pdx packages; use buildArtifact()");
-  }
-  target satisfies never;
-  throw new Error(`unsupported Pocket Vapor target: ${String(target)}`);
-}
-
 export interface BuiltArtifact {
   path: string;
   kind: "rom" | "firmware" | "pdx";
@@ -68,18 +52,50 @@ export interface BuiltArtifact {
   platform?: "simulator" | "device";
 }
 
-export interface BuildArtifactOptions {
+export interface BuildRomOptions {
   playdateMode?: PlaydateBuildMode;
 }
 
-/** Target-neutral artifact dispatch. Playdate `both` intentionally returns
- * two independent packages because a .pdx cannot host both device and
- * Simulator native binaries. */
-export async function buildArtifact(
+type SingleArtifactTarget = Exclude<VaporTargetName, "playdate">;
+
+async function buildSingleArtifact(
+  app: CompiledApp,
+  target: SingleArtifactTarget,
+  outPath: string,
+): Promise<BuiltArtifact> {
+  if (target === "gba") {
+    const { romBytes } = await buildGbaRom(app, outPath);
+    return { path: outPath, kind: "rom", bytes: romBytes };
+  }
+  if (target === "gb") {
+    const { romBytes } = await buildGbRom(app, outPath);
+    return { path: outPath, kind: "rom", bytes: romBytes };
+  }
+  if (target === "nes") {
+    const { romBytes } = await buildNesRom(app, outPath);
+    return { path: outPath, kind: "rom", bytes: romBytes };
+  }
+  if (target === "esp32") {
+    const { romBytes } = await buildEsp32Firmware(app, outPath);
+    return { path: outPath, kind: "firmware", bytes: romBytes };
+  }
+  target satisfies never;
+  throw new Error(`unsupported Pocket Vapor target: ${String(target)}`);
+}
+
+/**
+ * Build the distributable artifact set for one Vapor target.
+ *
+ * `buildRom` is the stable public entry-point name. Its result is deliberately
+ * plural: console targets and ESP32 return one artifact, while Playdate
+ * `both` returns independent Simulator and device packages because a native
+ * .pdx cannot contain both executable flavors.
+ */
+export async function buildRom(
   app: CompiledApp,
   target: VaporTargetName,
   outPath: string,
-  options: BuildArtifactOptions = {},
+  options: BuildRomOptions = {},
 ): Promise<BuiltArtifact[]> {
   if (target === "playdate") {
     const packages = await buildPlaydatePackages(
@@ -94,14 +110,7 @@ export async function buildArtifact(
       bytes,
     }));
   }
-  const { romBytes } = await buildRom(app, target, outPath);
-  return [
-    {
-      path: outPath,
-      kind: target === "esp32" ? "firmware" : "rom",
-      bytes: romBytes,
-    },
-  ];
+  return [await buildSingleArtifact(app, target, outPath)];
 }
 
 // ---- GBA -------------------------------------------------------------------

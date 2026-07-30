@@ -20,6 +20,9 @@ static int app_init_calls;
 static int app_flush_calls;
 static int buttons[16];
 static int button_count;
+static int axes[16];
+static int axis_deltas[16];
+static int axis_count;
 
 void app_init(void) {
   app_init_calls++;
@@ -36,6 +39,18 @@ void app_on_button(u8 button) {
   vp_ln_commit(1, 0, 0, VP_ALIGN_LEFT);
 }
 
+void app_on_axis_delta(u8 axis, s32 delta) {
+  axes[axis_count] = axis;
+  axis_deltas[axis_count] = (int)delta;
+  axis_count++;
+  vp_ln_reset();
+  vp_ln_str("AXIS ");
+  vp_ln_int(axis);
+  vp_ln_ch(' ');
+  vp_ln_int(delta);
+  vp_ln_commit(2, 0, 0, VP_ALIGN_LEFT);
+}
+
 u8 app_flush(void) {
   app_flush_calls++;
   return 1;
@@ -48,6 +63,8 @@ u16 app_debug_state(volatile u8 *out) {
 
 static uint8_t framebuffer[VP_PD_LCD_ROWS * VP_PD_LCD_ROWSIZE];
 static PDButtons next_pushed;
+static float next_crank_change;
+static int crank_docked;
 static PDCallbackFunction *installed_update;
 static void *installed_userdata;
 static float refresh_rate;
@@ -81,6 +98,16 @@ static void fake_buttons(PDButtons *current, PDButtons *pushed, PDButtons *relea
   next_pushed = 0;
 }
 
+static float fake_crank_change(void) {
+  float change = next_crank_change;
+  next_crank_change = 0.0f;
+  return change;
+}
+
+static int fake_crank_docked(void) {
+  return crank_docked;
+}
+
 static uint8_t *fake_get_frame(void) {
   return framebuffer;
 }
@@ -103,9 +130,11 @@ static int check(int condition, const char *message) {
 
 int main(void) {
   const struct playdate_sys system = {
-      fake_log,
-      fake_set_update,
-      fake_buttons,
+      .logToConsole = fake_log,
+      .setUpdateCallback = fake_set_update,
+      .getButtonState = fake_buttons,
+      .getCrankChange = fake_crank_change,
+      .isCrankDocked = fake_crank_docked,
   };
   const struct playdate_graphics graphics = {
       fake_get_frame,
@@ -150,13 +179,71 @@ int main(void) {
           "physical buttons were not normalized in deterministic order"))
     return 1;
 
+  before = app_flush_calls;
+  next_crank_change = 7.25f;
+  if (!check(installed_update(installed_userdata) == 1, "raw crank movement did not paint"))
+    return 1;
+  if (!check(
+          axis_count == 1 && axes[0] == 0 && axis_deltas[0] == 7250,
+          "positive crank millidegrees were not preserved"))
+    return 1;
+  next_crank_change = 8.0f;
+  if (!check(installed_update(installed_userdata) == 1, "second raw crank movement did not paint"))
+    return 1;
+  if (!check(axis_count == 2 && axis_deltas[1] == 8000, "second crank delta was quantized"))
+    return 1;
+  if (!check(app_flush_calls == before + 2, "each crank frame did not get exactly one flush"))
+    return 1;
+
+  next_crank_change = -31.5f;
+  if (!check(installed_update(installed_userdata) == 1, "reverse crank movement did not paint"))
+    return 1;
+  if (!check(axis_count == 3 && axis_deltas[2] == -31500, "reverse crank delta was quantized"))
+    return 1;
+
+  next_crank_change = 0.0004f;
+  if (!check(installed_update(installed_userdata) == 0, "sub-millidegree crank movement painted"))
+    return 1;
+  if (!check(axis_count == 3, "sub-millidegree crank movement dispatched too early"))
+    return 1;
+  next_crank_change = 0.0007f;
+  if (!check(installed_update(installed_userdata) == 1, "fractional millidegrees were lost"))
+    return 1;
+  if (!check(axis_count == 4 && axis_deltas[3] == 1, "fractional millidegrees did not accumulate"))
+    return 1;
+
+  crank_docked = 1;
+  next_crank_change = 45.0f;
+  if (!check(installed_update(installed_userdata) == 0, "docked crank dispatched movement"))
+    return 1;
+  crank_docked = 0;
+  next_crank_change = 15.0f;
+  if (!check(installed_update(installed_userdata) == 1, "undocked crank did not restart cleanly"))
+    return 1;
+  if (!check(
+          axis_count == 5 && axis_deltas[4] == 15000,
+          "docked crank movement leaked into the next event"))
+    return 1;
+  if (!check(
+          strstr(logs, "PVINPUT axis=primary delta_mdeg=") != NULL,
+          "crank input receipt missing"))
+    return 1;
+
   before = mark_count;
+  next_crank_change = 10.0f;
   eventHandler(&api, kEventResume, 0);
   if (!check(installed_update(installed_userdata) == 1, "resume did not force a repaint"))
     return 1;
   if (!check(
           mark_count == before + 1 && marked_first[before] == 0 && marked_last[before] == 239,
           "resume repaint was not full-screen"))
+    return 1;
+  next_crank_change = 5.0f;
+  if (!check(installed_update(installed_userdata) == 1, "new post-resume movement was lost"))
+    return 1;
+  if (!check(
+          axis_count == 6 && axis_deltas[5] == 5000,
+          "resume leaked stale movement or suppressed new movement"))
     return 1;
 
   vp_grid_ch[0][0] = 0;

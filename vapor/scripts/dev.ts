@@ -10,7 +10,9 @@
 // and ?target=web|gba|gb|nes|esp32|playdate re-renders with that target's screen geometry
 // and style lowering, so degradation is something you can SEE while
 // debugging. Keys: arrows = d-pad, Z=A, X=B, Enter=Start, Shift=Select,
-// A=L, S=R.
+// A=L, S=R. Wheel/trackpad distance drives RelativeAxis.Primary: downward
+// motion is positive, upward motion is negative, and the page shows the
+// accumulated emulated angle.
 
 import { join, resolve } from "node:path";
 import { jsxPlugin } from "../../framework/compiler/jsx-plugin.ts";
@@ -45,10 +47,11 @@ async function buildAppBundle(): Promise<string> {
     devEntry,
     `import { createVaporApp } from "vue";
 import App from ${JSON.stringify(entry)};
-import { __dispatchButton } from ${JSON.stringify(join(HOST_DIR, "input.ts"))};
+import { __dispatchAxisDelta, __dispatchButton, RelativeAxis, RelativeAxisUnits } from ${JSON.stringify(join(HOST_DIR, "input.ts"))};
 import { parseRowClass } from ${JSON.stringify(join(import.meta.dir, "..", "compiler", "styles.ts"))};
 
 const screen = document.getElementById("screen")!;
+const axisReadout = document.getElementById("axis-readout")!;
 const app = createVaporApp({ setup: () => (App as unknown as () => unknown)() });
 app.mount(screen);
 
@@ -92,6 +95,29 @@ addEventListener("keydown", (e) => {
     __dispatchButton(b);
   }
 });
+let wheelSubMillidegrees = 0;
+let wheelTotalDegrees = 0;
+function wheelDegrees(e: WheelEvent): number {
+  // Browsers report wheel deltas in pixels, lines, or pages. Normalize all
+  // three to an explicit development-only angle while preserving magnitude.
+  if (e.deltaMode === WheelEvent.DOM_DELTA_LINE) return e.deltaY * 15;
+  if (e.deltaMode === WheelEvent.DOM_DELTA_PAGE) return e.deltaY * 90;
+  return e.deltaY; // pixel-mode trackpads: one CSS pixel emulates one degree
+}
+addEventListener("wheel", (e) => {
+  if (e.deltaY === 0) return;
+  e.preventDefault();
+  const degrees = wheelDegrees(e);
+  wheelTotalDegrees += degrees;
+  axisReadout.textContent =
+    "Primary: " + (wheelTotalDegrees >= 0 ? "+" : "") + wheelTotalDegrees.toFixed(3) + "°";
+
+  const accumulated =
+    wheelSubMillidegrees + degrees * RelativeAxisUnits.PerDegree;
+  const delta = Math.trunc(accumulated);
+  wheelSubMillidegrees = accumulated - delta;
+  if (delta !== 0) __dispatchAxisDelta(RelativeAxis.Primary, delta);
+}, { passive: false });
 `,
   );
   const result = await Bun.build({
@@ -122,6 +148,7 @@ function page(target: string): string {
   body { background:#0b0e1a; color:#8b96ad; font: 14px ui-monospace, monospace; display:flex;
          flex-direction:column; align-items:center; gap:12px; padding:24px; }
   a { color:#42b883; } b { color:#e6edf3; }
+  #axis-readout { color:#e6edf3; font-variant-numeric:tabular-nums; }
   #screen { position:relative; width:${dims.w}ch; height:calc(${dims.h} * var(--ch-h));
             font: 18px/22px ui-monospace, monospace; background:#101423;
             outline:6px solid #1c2233; border-radius:2px; overflow:hidden; }
@@ -132,6 +159,7 @@ function page(target: string): string {
 <div>pocket vapor dev · target: ${picker}</div>
 <div id="screen"></div>
 <div>arrows=pad &nbsp; Z=A &nbsp; X=B &nbsp; Enter=Start &nbsp; Shift=Select &nbsp; A/S=L/R</div>
+<div>wheel down=Primary+ &nbsp; wheel up=Primary− &nbsp; <span id="axis-readout">Primary: +0.000°</span></div>
 <script>
   globalThis.__vaporScreenW = ${dims.w};
   globalThis.__vaporScreenH = ${dims.h};
