@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 // vapor/compiler/cli.ts — compile a Pocket Vapor component to a cartridge.
 //
-//   bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes|esp32] [--out dist/vapor]
+//   bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes|esp32|playdate] [--out dist/vapor]
+//     [--playdate-mode simulator|device|both]
 //   bun vapor/compiler/cli.ts check <component.tsx> [--strict] [--json]
 //
 // `check` runs the compiler frontend for EVERY target and prints the
@@ -15,7 +16,8 @@
 import { basename, join, resolve } from "node:path";
 import { admitBoard, listBoards, loadBoard, POCKET_PAD, type BoardIssue } from "./boards.ts";
 import { compileVaporApp, VAPOR_TARGETS, type CompiledApp, type VaporTargetName } from "./compile.ts";
-import { buildRom } from "./rom.ts";
+import { buildArtifact } from "./rom.ts";
+import type { PlaydateBuildMode } from "./playdate.ts";
 
 let args = process.argv.slice(2);
 
@@ -37,6 +39,7 @@ if (args[0] === "check") {
     grid: string;
     stylePairs?: number;
     buttonsUsed?: string[];
+    relativeAxesUsed?: string[];
     warnings: string[];
     errors: string[];
   }
@@ -53,6 +56,9 @@ if (args[0] === "check") {
         grid,
         stylePairs: app.styles.pairs.length,
         buttonsUsed: app.buttonsUsed.map((id) => POCKET_PAD[id]),
+        relativeAxesUsed: app.relativeAxesUsed.map((id) =>
+          id === 0 ? "primary" : id === 1 ? "secondary" : String(id),
+        ),
         warnings: app.diagnostics,
         errors: [],
       };
@@ -102,7 +108,8 @@ if (args[0] === "check") {
 const entry = args.find((a) => !a.startsWith("--"));
 if (!entry) {
   console.error(
-    "usage: bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes|esp32] [--out <dir>]",
+    "usage: bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes|esp32|playdate] " +
+      "[--out <dir>] [--playdate-mode simulator|device|both]",
   );
   process.exit(2);
 }
@@ -114,10 +121,27 @@ if (!(target in VAPOR_TARGETS)) {
   console.error(`unknown target: ${target}`);
   process.exit(2);
 }
+const playdateModeIdx = args.indexOf("--playdate-mode");
+const playdateMode = (
+  playdateModeIdx >= 0 ? args[playdateModeIdx + 1] : "simulator"
+) as PlaydateBuildMode;
+if (!["simulator", "device", "both"].includes(playdateMode)) {
+  console.error(`invalid --playdate-mode: ${playdateMode}`);
+  process.exit(2);
+}
+if (target !== "playdate" && playdateModeIdx >= 0) {
+  console.error("--playdate-mode requires --target playdate");
+  process.exit(2);
+}
 
 const source = await Bun.file(entry).text();
 const name = basename(entry).replace(/\.tsx$/, "");
-const app = compileVaporApp(entry, source, name === "todo" ? "VAPOR TODO" : name.toUpperCase(), target);
+const app = compileVaporApp(
+  entry,
+  source,
+  name.startsWith("todo") ? "VAPOR TODO" : name.toUpperCase(),
+  target,
+);
 
 console.log(`== reactive graph (${target}) ==`);
 console.log(app.graph);
@@ -133,8 +157,15 @@ const ext =
         ? "nes"
         : target === "esp32"
           ? "esp32.bin"
-          : target satisfies never;
-const rom = join(outDir, `${name}.${ext}`);
-const { romBytes } = await buildRom(app, target, rom);
+          : target === "playdate"
+            ? null
+            : target satisfies never;
+const output = ext ? join(outDir, `${name}.${ext}`) : join(outDir, name);
+const artifacts = await buildArtifact(app, target, output, { playdateMode });
 await Bun.write(join(outDir, `${name}.${target}.debug.json`), JSON.stringify(app.debugSlots, null, 2));
-console.log(`\n${rom}  (${(romBytes / 1024).toFixed(1)} KB)`);
+for (const artifact of artifacts) {
+  const platform = artifact.platform ? `/${artifact.platform}` : "";
+  console.log(
+    `\n${artifact.path}  (${(artifact.bytes / 1024).toFixed(1)} KB, ${artifact.kind}${platform})`,
+  );
+}

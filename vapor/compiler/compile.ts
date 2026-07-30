@@ -32,7 +32,7 @@ export interface DebugSlot {
   kind: "num" | "bool" | "str" | "listLen";
 }
 
-export type VaporTargetName = "gba" | "gb" | "nes" | "esp32";
+export type VaporTargetName = "gba" | "gb" | "nes" | "esp32" | "playdate";
 
 export interface VaporTarget {
   name: VaporTargetName;
@@ -51,6 +51,18 @@ export const VAPOR_TARGETS: Record<VaporTargetName, VaporTarget> = {
   gb: { name: "gb", width: 20, height: 18, poolCap: 32, strCap: 24 },
   nes: { name: "nes", width: 22, height: 18, poolCap: 8, strCap: 20 },
   esp32: { name: "esp32", width: 20, height: 18, poolCap: 32, strCap: 24 },
+  playdate: { name: "playdate", width: 50, height: 30, poolCap: 32, strCap: 24 },
+};
+
+const BUTTON_NAMES = ["A", "B", "Select", "Start", "Right", "Left", "Up", "Down", "R", "L"] as const;
+const PLAYDATE_BUTTONS = new Set([0, 1, 4, 5, 6, 7]);
+const RELATIVE_AXIS_NAMES = ["Primary", "Secondary"] as const;
+const TARGET_RELATIVE_AXES: Record<VaporTargetName, readonly number[]> = {
+  gba: [],
+  gb: [],
+  nes: [],
+  esp32: [],
+  playdate: [0],
 };
 
 export interface CompiledApp {
@@ -67,6 +79,8 @@ export interface CompiledApp {
    * folded Button.X reads) — the input half of the app's derived demands.
    * Per target: code behind a false SCREEN fold is never compiled. */
   buttonsUsed: number[];
+  /** Relative axes statically registered through onAxisDelta(). */
+  relativeAxesUsed: number[];
 }
 
 export class VaporCompileError extends Error {
@@ -193,7 +207,29 @@ export function compileVaporApp(
   options: CompileOptions = {},
 ): CompiledApp {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TSX);
-  return new AppCompiler(sf, title, VAPOR_TARGETS[targetName], options).compile();
+  const app = new AppCompiler(sf, title, VAPOR_TARGETS[targetName], options).compile();
+  if (targetName === "playdate") {
+    const unsupported = app.buttonsUsed.filter((button) => !PLAYDATE_BUTTONS.has(button));
+    if (unsupported.length > 0) {
+      throw new Error(
+        `${fileName} — VT101: playdate has no physical input for ${unsupported
+          .map((button) => BUTTON_NAMES[button] ?? `button ${button}`)
+          .join(", ")}; supported buttons are A, B, Right, Left, Up, Down`,
+      );
+    }
+  }
+  const supportedAxes = new Set(TARGET_RELATIVE_AXES[targetName]);
+  const unsupportedAxes = app.relativeAxesUsed.filter((axis) => !supportedAxes.has(axis));
+  if (unsupportedAxes.length > 0) {
+    throw new Error(
+      `${fileName} — VT102: ${targetName} has no adapter for relative axis ${unsupportedAxes
+        .map((axis) => RELATIVE_AXIS_NAMES[axis] ?? String(axis))
+        .join(", ")}; supported relative axes are ${
+        [...supportedAxes].map((axis) => RELATIVE_AXIS_NAMES[axis] ?? String(axis)).join(", ") || "none"
+      }`,
+    );
+  }
+  return app;
 }
 
 class AppCompiler {
@@ -203,12 +239,14 @@ class AppCompiler {
   private computeds: ComputedBinding[] = [];
   private fns: FnBinding[] = [];
   private handler: ts.ArrowFunction | null = null;
+  private axisHandlers = new Map<number, ts.ArrowFunction>();
   private template: ts.JsxFragment | null = null;
 
   private vueRef = "";
   private vueComputed = "";
   private hostOnButton = "";
   private hostButton = "";
+  private hostOnAxisDelta = "";
 
   // emission
   private decls: string[] = [];
@@ -278,6 +316,13 @@ class AppCompiler {
       } else if (/\/host\/input(\.ts)?$/.test(from)) {
         if (imported === "onButton") this.hostOnButton = local;
         else if (imported === "Button") this.hostButton = local;
+        else if (imported === "onAxisDelta") this.hostOnAxisDelta = local;
+        else if (imported === "RelativeAxis")
+          this.scope.set(local, {
+            kind: "const",
+            name: local,
+            value: { Primary: 0, Secondary: 1 },
+          });
         else this.err(spec, `unsupported host import: ${imported}`);
       } else if (/\/host\/screen(\.ts)?$/.test(from)) {
         if (imported !== "SCREEN") this.err(spec, `unsupported host import: ${imported}`);
@@ -370,6 +415,24 @@ class AppCompiler {
           const arg = call.arguments[0];
           if (!arg || !ts.isArrowFunction(arg)) this.err(call, "onButton takes an arrow");
           this.handler = arg;
+        } else if (
+          ts.isCallExpression(call) &&
+          ts.isIdentifier(call.expression) &&
+          call.expression.text === this.hostOnAxisDelta
+        ) {
+          const axisNode = call.arguments[0];
+          const handler = call.arguments[1];
+          if (!axisNode) this.err(call, "onAxisDelta requires a relative axis");
+          const axis = this.constNum(axisNode);
+          if (axis === null || axis < 0 || axis >= RELATIVE_AXIS_NAMES.length)
+            this.err(axisNode, "onAxisDelta axis must be a compile-time RelativeAxis constant");
+          if (!handler || !ts.isArrowFunction(handler))
+            this.err(call, "onAxisDelta takes an axis and an arrow");
+          if (handler.parameters.length !== 1)
+            this.err(handler, "onAxisDelta arrow needs exactly one delta parameter");
+          if (this.axisHandlers.has(axis))
+            this.err(axisNode, `only one onAxisDelta handler is supported for ${RELATIVE_AXIS_NAMES[axis]}`);
+          this.axisHandlers.set(axis, handler);
         } else this.err(stmt, "unsupported setup statement");
       } else if (ts.isReturnStatement(stmt)) {
         if (!stmt.expression) this.err(stmt, "component must return JSX");
@@ -850,7 +913,7 @@ class AppCompiler {
     e = this.unparen(e);
     if (ts.isConditionalExpression(e)) {
       const cond = this.compileExpr(e.condition, out, ind);
-      out.push(`${ind}if (${this.truthy(cond)}) {`);
+      out.push(`${ind}if (${this.condition(cond)}) {`);
       this.compileViewInto(e.whenTrue, target, out, ind + "  ");
       out.push(`${ind}} else {`);
       this.compileViewInto(e.whenFalse, target, out, ind + "  ");
@@ -877,7 +940,7 @@ class AppCompiler {
         this.scope.set(param, { kind: "local", cName: p, ty: { k: "obj", iface, listRef } });
         const pred = this.compileExpr(arrow.body, out, ind + "    ");
         this.scope = saved;
-        out.push(`${ind}    if (${this.truthy(pred)}) ${target}.idx[${target}.len++] = ${src.at(i)};`);
+        out.push(`${ind}    if (${this.condition(pred)}) ${target}.idx[${target}.len++] = ${src.at(i)};`);
         out.push(`${ind}  }`);
         out.push(`${ind}}`);
         return;
@@ -942,6 +1005,14 @@ class AppCompiler {
   private truthy(v: { c: string; ty: Ty }): string {
     if (v.ty.k === "obj") return `(${v.c} != 0)`;
     return v.c;
+  }
+
+  /** C control-flow syntax already supplies the outer parentheses. */
+  private condition(v: { c: string; ty: Ty }): string {
+    const c = this.truthy(v);
+    return v.ty.k === "bool" && c.startsWith("(") && c.endsWith(")")
+      ? c.slice(1, -1)
+      : c;
   }
 
   // ---- scalar expression compilation ---------------------------------------
@@ -1202,7 +1273,7 @@ class AppCompiler {
     }
     if (ts.isIfStatement(stmt)) {
       const cond = this.compileExpr(stmt.expression, out, ind);
-      out.push(`${ind}if (${this.truthy(cond)}) {`);
+      out.push(`${ind}if (${this.condition(cond)}) {`);
       this.compileStmt(stmt.thenStatement, out, ind + "  ");
       if (stmt.elseStatement) {
         out.push(`${ind}} else {`);
@@ -1248,7 +1319,7 @@ class AppCompiler {
       const cond = stmt.condition ? this.compileExpr(stmt.condition, out, ind) : { c: "1", ty: BOOL };
       const incr = stmt.incrementor ? this.compileIncrement(stmt.incrementor) : "";
       out.push(`${ind}{ s32 ${cName};`);
-      out.push(`${ind}for (${cName} = ${init.c}; ${this.truthy(cond)}; ${incr}) {`);
+      out.push(`${ind}for (${cName} = ${init.c}; ${this.condition(cond)}; ${incr}) {`);
       this.compileStmt(stmt.statement, out, ind + "  ");
       out.push(`${ind}} }`);
       this.scope = saved;
@@ -1760,7 +1831,7 @@ class AppCompiler {
       const prevCtx = this.propsCtx;
       this.propsCtx = ctx ?? prevCtx;
       y = this.rowConstY(src);
-      out.push(`  if (${this.truthy(cond)}) {`);
+      out.push(`  if (${this.condition(cond)}) {`);
       this.compileRowPaint(src, String(y), out, "    ");
       out.push(`  }`);
       this.propsCtx = prevCtx;
@@ -1868,6 +1939,32 @@ class AppCompiler {
       this.scope = saved;
     }
 
+    const axisHandlerFns: string[] = [];
+    const axisHandlerCases: string[] = [];
+    for (const [axis, handler] of [...this.axisHandlers].sort(([a], [b]) => a - b)) {
+      const saved = new Map(this.scope);
+      const parameter = handler.parameters[0];
+      if (!parameter || !ts.isIdentifier(parameter.name))
+        this.err(handler, "onAxisDelta arrow needs a simple delta parameter");
+      this.scope.set(parameter.name.text, {
+        kind: "local",
+        cName: "axis_delta_arg",
+        ty: NUM,
+      });
+      const { decls, body } = this.withHoist((out) => {
+        if (ts.isBlock(handler.body)) {
+          for (const stmt of handler.body.statements) this.compileStmt(stmt, out, "  ");
+        } else {
+          this.compileExprStmt(handler.body, out, "  ");
+        }
+      });
+      axisHandlerFns.push(
+        `static void vp_axis_handler_${axis}(s32 axis_delta_arg) {\n${[...decls, ...body].join("\n")}\n}`,
+      );
+      axisHandlerCases.push(`    case ${axis}: vp_axis_handler_${axis}(delta); break;`);
+      this.scope = saved;
+    }
+
     const { inits, effects } = this.emitTemplate();
 
     // seed + init
@@ -1948,12 +2045,17 @@ class AppCompiler {
     c.push(`#define VP_VIEW_CAP ${this.target.poolCap}`);
     c.push('#include "vapor.h"');
     c.push("");
-    c.push("static inline s32 vp_max(s32 a, s32 b) { return a > b ? a : b; }");
-    c.push("static inline s32 vp_min(s32 a, s32 b) { return a < b ? a : b; }");
+    c.push("#if defined(__GNUC__)");
+    c.push("#define VP_UNUSED_FN __attribute__((unused))");
+    c.push("#else");
+    c.push("#define VP_UNUSED_FN");
+    c.push("#endif");
+    c.push("static inline s32 VP_UNUSED_FN vp_max(s32 a, s32 b) { return a > b ? a : b; }");
+    c.push("static inline s32 VP_UNUSED_FN vp_min(s32 a, s32 b) { return a < b ? a : b; }");
     c.push(
-      "static inline const char *vp_cstr_at(const char *const *arr, s32 n, s32 i) { return (i >= 0 && i < n) ? arr[i] : (const char *)\"\"; }",
+      "static inline const char *VP_UNUSED_FN vp_cstr_at(const char *const *arr, s32 n, s32 i) { return (i >= 0 && i < n) ? arr[i] : (const char *)\"\"; }",
     );
-    c.push("static inline char vp_char_at(const char *s, s32 n, s32 i) { return (i >= 0 && i < n) ? s[i] : ' '; }");
+    c.push("static inline char VP_UNUSED_FN vp_char_at(const char *s, s32 n, s32 i) { return (i >= 0 && i < n) ? s[i] : ' '; }");
     c.push("");
 
     // record structs
@@ -1993,6 +2095,18 @@ class AppCompiler {
 
     // handler
     c.push(`void app_on_button(u8 b) {\n  s32 b_arg = (s32)b;\n${handlerOut.join("\n")}\n}\n`);
+    c.push(axisHandlerFns.join("\n\n"));
+    if (axisHandlerCases.length > 0) {
+      c.push(
+        `void app_on_axis_delta(u8 axis, s32 delta) {\n  switch (axis) {\n${axisHandlerCases.join(
+          "\n",
+        )}\n    default: break;\n  }\n}\n`,
+      );
+    } else {
+      c.push(
+        "void app_on_axis_delta(u8 axis, s32 delta) {\n  (void)axis;\n  (void)delta;\n}\n",
+      );
+    }
 
     // flush
     const flush: string[] = [];
@@ -2055,6 +2169,23 @@ class AppCompiler {
           .join(", ")}}`,
       ),
     );
+    graphLines.push("inputs:");
+    graphLines.push(
+      `  buttons: ${
+        [...this.buttonsUsed]
+          .sort((a, b) => a - b)
+          .map((button) => BUTTON_NAMES[button] ?? String(button))
+          .join(", ") || "none"
+      }`,
+    );
+    graphLines.push(
+      `  relative axes: ${
+        [...this.axisHandlers.keys()]
+          .sort((a, b) => a - b)
+          .map((axis) => RELATIVE_AXIS_NAMES[axis] ?? String(axis))
+          .join(", ") || "none"
+      }`,
+    );
 
     const pools = this.refs.filter((r) => r.refTy === "list");
     const poolBytes = pools.reduce((acc, p) => {
@@ -2070,7 +2201,8 @@ class AppCompiler {
     const romStrings =
       [...this.strLits.keys()].reduce((a, s) => a + s.length + 1, 0) + this.title.length + 1;
     const pairCount = this.styleTable.pairs.length;
-    const fontBytes = this.target.name === "esp32" ? 95 * 8 : 95 * 32;
+    const fontBytes =
+      this.target.name === "esp32" || this.target.name === "playdate" ? 95 * 8 : 95 * 32;
     const styleBytes =
       this.target.name === "gba"
         ? pairCount * 16 * 2 + pairCount + 3
@@ -2092,6 +2224,7 @@ class AppCompiler {
       styles: this.styleTable,
       diagnostics: this.styleWarnings,
       buttonsUsed: [...this.buttonsUsed].sort((a, b) => a - b),
+      relativeAxesUsed: [...this.axisHandlers.keys()].sort((a, b) => a - b),
     };
   }
 }
@@ -2119,8 +2252,8 @@ function emitFontGba(): string {
   return `const u8 vp_font_tiles[] = { ${bytes.join(",")} };`;
 }
 
-/** ESP32: one byte per 8-pixel row, MSB = leftmost pixel. */
-function emitFontEsp32(): string {
+/** Direct 1bpp targets: one byte per 8-pixel row, MSB = leftmost pixel. */
+function emitFont1bpp(): string {
   const bytes: number[] = [];
   for (let g = 0; g < 95; g++) bytes.push(...FONT8[g]);
   return `const u8 vp_font_tiles[] = { ${bytes.join(",")} };`;
@@ -2206,7 +2339,7 @@ function emitTargetData(target: VaporTarget, styles: StyleTable): string {
       const ink = styles.pairs.map((pair) => rgb565(pair.ink));
       const paper = styles.pairs.map((pair) => rgb565(pair.paper));
       return (
-        `${emitFontEsp32()}\n` +
+        `${emitFont1bpp()}\n` +
         `const u16 vp_ink565[] = { ${ink.join(",")} };\n` +
         `const u16 vp_paper565[] = { ${paper.join(",")} };\n` +
         `const u16 vp_backdrop = ${rgb565(BACKDROP)};\n` +
@@ -2218,5 +2351,11 @@ function emitTargetData(target: VaporTarget, styles: StyleTable): string {
     case "nes":
       /* NES font ships as CHR-ROM (rom.ts); only the style map is C data. */
       return styleTable;
+    case "playdate":
+      return (
+        `${emitFont1bpp()}\n` +
+        `const u8 vp_palette_count = ${styles.pairs.length};\n` +
+        styleTable
+      );
   }
 }

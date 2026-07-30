@@ -1,15 +1,20 @@
 // vapor/compiler/rom.ts — drive the console toolchains and patch cart headers.
-// Four targets, four toolchains, one generated C file:
+// ROM/firmware targets plus Playdate packages, one generated C file:
 //   GBA: arm-none-eabi-gcc, flat ROM, Nintendo-logo/checksum patch
 //   GB:  sdcc (SM83) + sdasgb + makebin + rgbfix, ROM-only cart
 //   NES: cc65/ca65/ld65, NROM-256 + CHR-ROM font, generated ld65 config
 //   ESP32: ESP-IDF, retained build project + app image for offset 0x10000
+//   Playdate: SDK CMake, independent Simulator/device .pdx packages
 // Toolchain recipes carry over from Pocket Static's target packagers.
 
 import { $ } from "bun";
 import { dirname, join } from "node:path";
 import { nesFontBytes, VAPOR_TARGETS, type CompiledApp, type VaporTargetName } from "./compile.ts";
 import { buildEsp32Firmware } from "./esp32.ts";
+import {
+  buildPlaydatePackages,
+  type PlaydateBuildMode,
+} from "./playdate.ts";
 
 const RUNTIME = join(import.meta.dir, "..", "runtime");
 const CC65_LIB = "/opt/homebrew/share/cc65/lib/none.lib";
@@ -49,8 +54,54 @@ export async function buildRom(
   if (target === "gb") return buildGbRom(app, outRom);
   if (target === "nes") return buildNesRom(app, outRom);
   if (target === "esp32") return buildEsp32Firmware(app, outRom);
+  if (target === "playdate") {
+    throw new Error("Playdate produces .pdx packages; use buildArtifact()");
+  }
   target satisfies never;
   throw new Error(`unsupported Pocket Vapor target: ${String(target)}`);
+}
+
+export interface BuiltArtifact {
+  path: string;
+  kind: "rom" | "firmware" | "pdx";
+  bytes: number;
+  platform?: "simulator" | "device";
+}
+
+export interface BuildArtifactOptions {
+  playdateMode?: PlaydateBuildMode;
+}
+
+/** Target-neutral artifact dispatch. Playdate `both` intentionally returns
+ * two independent packages because a .pdx cannot host both device and
+ * Simulator native binaries. */
+export async function buildArtifact(
+  app: CompiledApp,
+  target: VaporTargetName,
+  outPath: string,
+  options: BuildArtifactOptions = {},
+): Promise<BuiltArtifact[]> {
+  if (target === "playdate") {
+    const packages = await buildPlaydatePackages(
+      app,
+      outPath,
+      options.playdateMode ?? "simulator",
+    );
+    return packages.map(({ path, kind, platform, bytes }) => ({
+      path,
+      kind,
+      platform,
+      bytes,
+    }));
+  }
+  const { romBytes } = await buildRom(app, target, outPath);
+  return [
+    {
+      path: outPath,
+      kind: target === "esp32" ? "firmware" : "rom",
+      bytes: romBytes,
+    },
+  ];
 }
 
 // ---- GBA -------------------------------------------------------------------
