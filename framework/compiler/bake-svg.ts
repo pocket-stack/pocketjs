@@ -332,6 +332,15 @@ export function bakeSvg(svg: string, rasterDensity = 1): DecodedImage {
 
   // <defs> content (clipPaths, masks) is never painted directly.
   const svgBody = svg.replace(/<defs[\s\S]*?<\/defs>/gi, "");
+  // Shapes are scanned flat: a <g> wrapper is invisible to this baker, so a
+  // transform on one would be silently dropped — shapes would pile up at
+  // their untranslated coordinates (a sprite atlas with 7 blank cells shipped
+  // this way once). Hard error; bake the offsets into the coordinates.
+  if (/<g\b[^>]*\btransform=/i.test(svgBody)) {
+    throw new Error(
+      "svg bake: <g transform> is not applied by this baker - flatten the transform into the shapes' own coordinates",
+    );
+  }
   const shapes: Shape[] = [];
   const shapeRe = /<(circle|rect|path)\b[^>]*\/?>/gi;
   let m: RegExpExecArray | null;

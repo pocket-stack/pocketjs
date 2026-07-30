@@ -47,6 +47,19 @@ renderer drops texture classifications even when DrawList handles stay
 unchanged. Call `Renderer::invalidate_resources()` and explicitly invalidate
 target states only for output-affecting changes performed outside `Ui`.
 
+Hosts that present damage through a separate asynchronous display pipeline can
+split planning from history updates:
+
+- `prepare_damage` computes a plan without mutating the target snapshot;
+- `render_strip` renders one logical damage rectangle into a compact,
+  full-viewport-width RGB565 strip while preserving global sampling phase;
+- `commit_damage` advances history only after every strip is presented;
+- `abort_damage` invalidates a partially updated target so its next plan is a
+  full redraw.
+
+This keeps framebuffer history transactional when a display transfer fails and
+lets two reusable strips overlap CPU rendering with asynchronous presentation.
+
 ## Test
 
 Run the portable renderer and pixel-parity tests on the host:

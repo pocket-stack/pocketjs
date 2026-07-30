@@ -29,6 +29,52 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
 const repository = new URL("..", import.meta.url).pathname;
 
 describe("experimental Nokia E7 runtime profile", () => {
+  test("maps the E7 scan matrix without changing unrelated keys", () => {
+    const compiler = Bun.which("cc");
+    expect(
+      compiler,
+      "cc is required to validate the Symbian key mapper",
+    ).toBeTruthy();
+    if (!compiler) return;
+    const root = mkdtempSync(join(tmpdir(), "pocketjs-e7-key-map-"));
+    try {
+      const executable = join(root, "symbian-key-map-test");
+      const compiled = Bun.spawnSync([
+        compiler,
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        join(
+          repository,
+          "tests/fixtures/symbian-key-normalization-test.c",
+        ),
+        "-o",
+        executable,
+      ], { cwd: repository });
+      expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
+
+      // Managed macOS hosts can attach provenance to a freshly linked
+      // temporary executable and hold its first launch beyond Bun's timeout.
+      // This file is built above from the committed hermetic fixture.
+      if (process.platform === "darwin") {
+        const xattr = Bun.which("xattr");
+        if (xattr) {
+          Bun.spawnSync([
+            xattr,
+            "-d",
+            "com.apple.provenance",
+            executable,
+          ]);
+        }
+      }
+      const ran = Bun.spawnSync([executable], { cwd: repository });
+      expect(ran.exitCode, ran.stderr.toString()).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("serializes the shared launcher source tree across targets", async () => {
     const root = mkdtempSync(join(tmpdir(), "pocketjs-launcher-source-lock-"));
     try {
@@ -354,6 +400,10 @@ describe("experimental Nokia E7 runtime profile", () => {
       join(repository, "hosts/symbian/runtime/pocketjs_symbian_extension.h"),
       "utf8",
     );
+    const keyHeader = readFileSync(
+      join(repository, "hosts/symbian/runtime/pocketjs_symbian_keys.h"),
+      "utf8",
+    );
     const orchestrator = readFileSync(
       join(repository, "tools/symbian.ts"),
       "utf8",
@@ -431,9 +481,43 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_MOVE_FORWARD");
     expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_LOOK_LEFT");
     expect(runtime).toContain("POCKETJS_SYMBIAN_KEY_RELOAD");
+    expect(runtime.match(/pocketjsSymbianControlKey\(/g))
+      .toHaveLength(2);
+    expect(runtime.match(/event->nativeScanCode\(\)/g)).toHaveLength(2);
     expect(runtime).toContain("nativeKeys_ |= nativeKey");
     expect(runtime).toContain("nativeKeys_ &= ~nativeKey");
+    expect(runtime).toContain("pressedNativeKeys_ |= nativeKey");
+    expect(runtime).toContain(
+      "const uint32_t frameNativeKeys = nativeKeys_ | pressedNativeKeys_;",
+    );
+    expect(runtime).toContain("int frameButtons = buttons_ | pressedButtons_;");
+    expect(runtime).toContain("void PocketJsRuntime::clearInput()");
+    expect(runtime).toContain("pressedButtons_ = 0;");
+    expect(runtime).toContain("pressedNativeKeys_ = 0;");
+    expect(keyHeader).toContain(
+      "((key) >= 'a' && (key) <= 'z') ? ((key) - ('a' - 'A')) : (key)",
+    );
+    expect(keyHeader).toContain("pocketjsSymbianNormalizeKey");
+    expect(keyHeader).toContain("pocketjsSymbianE7PhysicalKey");
+    for (const [scan, control] of [
+      ["1", "Q"],
+      ["2", "W"],
+      ["3", "E"],
+      ["4", "R"],
+      ["5", "T"],
+      ["6", "Y"],
+      ["7", "U"],
+      ["8", "I"],
+      ["9", "O"],
+      ["0", "P"],
+    ]) {
+      expect(keyHeader).toContain(`case '${scan}': return '${control}';`);
+    }
+    expect(keyHeader).toContain("pocketjsSymbianControlKey");
     expect(runtime).toContain("setAttribute(Qt::WA_AutoOrientation, true)");
+    expect(runtime).toContain(
+      "setAttribute(Qt::WA_InputMethodEnabled, false)",
+    );
     expect(runtime).not.toContain("WA_LockLandscapeOrientation");
     expect(runtime).toContain('"__pocketResizeViewport"');
     expect(runtime).toContain("queueViewport(event->size())");
@@ -568,11 +652,18 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect(runtime).toContain("extension_->resize(");
     expect(runtime).toContain("extension_->render(");
     expect(orchestrator).toContain("coreLibrary?: string;");
+    expect(orchestrator).toContain("massStorageDataRoot?: string;");
     expect(orchestrator).toContain(
       'resolve(payload, "libpocketjs_symbian_core.a")',
     );
     expect(orchestrator).toContain(
       'coreLibrary: flagValue(args.slice(2), "--core-library")',
+    );
+    expect(orchestrator).toContain(
+      '"--mass-storage-data-root"',
+    );
+    expect(orchestrator).toContain(
+      "stageSymbianMassStorageData(massStorageDataRoot, payload)",
     );
     expect(orchestrator).toContain(
       "Symbian application-specific cores cannot be combined with a multi-app catalog",

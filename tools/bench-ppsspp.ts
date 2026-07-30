@@ -1,15 +1,18 @@
 // PPSSPP benchmark runner for the current PocketJS PSP renderer.
 //
-// Builds one bench EBOOT per selected app, then runs PPSSPPHeadless and reads
-// PSP-side timing/memory metrics from ms0:/PocketJS-bench.jsonl.
+// Builds one bench EBOOT per selected app (and per selected framework), then
+// runs PPSSPPHeadless and reads PSP-side timing/memory metrics from
+// ms0:/PocketJS-bench.jsonl.
 //
 // Examples:
 //   PSP_SDK=/path/to/mipsel-sony-psp bun tools/bench-ppsspp.ts --apps=stats --samples=5
 //   PSP_SDK=/path/to/mipsel-sony-psp bun tools/bench-ppsspp.ts --apps=all --samples=3 --memory-scan
+//   bun tools/bench-ppsspp.ts --apps=all --frameworks=solid,vue-vapor,octane --samples=7 --bootstrap=5000
 
 import { $ } from "bun";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { parseFramework, type PocketFramework } from "../framework/compiler/jsx-plugin.ts";
 
 interface Spec {
   app: string;
@@ -47,6 +50,7 @@ interface BenchLine {
 }
 
 interface Sample extends BenchLine {
+  framework: PocketFramework;
   sample: number;
   host_wall_ms: number;
   arena_limit_bytes: number | null;
@@ -99,6 +103,8 @@ const pspUiDir = new URL("..", import.meta.url).pathname;
 const argv = Bun.argv.slice(2);
 let samples = 5;
 let apps = ["stats"];
+let frameworks: PocketFramework[] = ["solid"];
+let bootstrapIterations = 0;
 let timeout = Number(process.env.BENCH_PPSSPP_TIMEOUT || 60);
 let outDir = `${pspUiDir}dist/bench`;
 let dumpFrames = false;
@@ -107,6 +113,7 @@ let memoryStepBytes = 256 * KiB;
 let memorySafetyBytes = 512 * KiB;
 let memorySafetyPercent = 20;
 let memoryMaxBytes = 32 * MiB;
+let fromRaw = "";
 
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
@@ -117,6 +124,15 @@ for (let i = 0; i < argv.length; i++) {
   } else if (a.startsWith("--apps=") || a === "--apps") {
     apps = value.split(",").filter(Boolean);
     if (a === "--apps") i++;
+  } else if (a.startsWith("--frameworks=") || a === "--frameworks") {
+    frameworks = value
+      .split(",")
+      .filter(Boolean)
+      .map((fw) => parseFramework(fw, "--frameworks"));
+    if (a === "--frameworks") i++;
+  } else if (a.startsWith("--bootstrap=") || a === "--bootstrap") {
+    bootstrapIterations = Number(value);
+    if (a === "--bootstrap") i++;
   } else if (a.startsWith("--timeout=") || a === "--timeout") {
     timeout = Number(value);
     if (a === "--timeout") i++;
@@ -139,6 +155,9 @@ for (let i = 0; i < argv.length; i++) {
   } else if (a.startsWith("--memory-max-kib=") || a === "--memory-max-kib") {
     memoryMaxBytes = Number(value) * KiB;
     if (a === "--memory-max-kib") i++;
+  } else if (a.startsWith("--from-raw=") || a === "--from-raw") {
+    fromRaw = value;
+    if (a === "--from-raw") i++;
   } else if (a === "--list-apps") {
     console.log(SPECS.map((s) => s.app).join("\n"));
     process.exit(0);
@@ -148,6 +167,16 @@ for (let i = 0; i < argv.length; i++) {
 }
 
 if (!Number.isFinite(samples) || samples < 1) throw new Error("--samples must be >= 1");
+if (frameworks.length === 0) throw new Error("--frameworks must name at least one framework");
+if (new Set(frameworks).size !== frameworks.length) throw new Error("--frameworks has duplicates");
+if (!Number.isFinite(bootstrapIterations) || bootstrapIterations < 0) {
+  throw new Error("--bootstrap must be >= 0");
+}
+if (memoryScan && frameworks.length > 1) {
+  throw new Error("--memory-scan supports a single framework per run");
+}
+if (fromRaw && memoryScan) throw new Error("--from-raw cannot be combined with --memory-scan");
+if (fromRaw && !existsSync(fromRaw)) throw new Error(`--from-raw file not found: ${fromRaw}`);
 if (!Number.isFinite(timeout) || timeout <= 0) throw new Error("--timeout must be > 0");
 if (!Number.isFinite(memoryStepBytes) || memoryStepBytes < 16 * KiB) throw new Error("--memory-step-kib must be >= 16");
 if (!Number.isFinite(memorySafetyBytes) || memorySafetyBytes < 0) throw new Error("--memory-safety-kib must be >= 0");
@@ -163,7 +192,7 @@ const selectedSpecs = apps.includes("all")
     });
 
 const headless = process.env.PPSSPP_HEADLESS || `${homedir()}/ppsspp-src/build/PPSSPPHeadless`;
-if (!existsSync(headless)) throw new Error(`PPSSPPHeadless not found at ${headless}`);
+if (!fromRaw && !existsSync(headless)) throw new Error(`PPSSPPHeadless not found at ${headless}`);
 
 const dccap = `${homedir()}/.ppsspp/dc_cap`;
 const benchFile = `${homedir()}/.ppsspp/PocketJS-bench.jsonl`;
@@ -200,27 +229,58 @@ const METRICS = [
 
 type Metric = (typeof METRICS)[number];
 
+// Comparison metrics live up here (not with buildComparison below): the
+// report is built by top-level code, so a `const` further down would still
+// be in its temporal dead zone when buildComparison runs.
+const COMPARISON_METRICS = [
+  "eval_us",
+  "boot_to_frame0_us",
+  "avg_work_us",
+  "host_wall_ms",
+  "bundle_bytes",
+] as const satisfies readonly Metric[];
+
 const samplesOut: Sample[] = [];
 const memoryScans = new Map<string, MemoryScanApp>();
 
-for (const spec of selectedSpecs) {
-  console.log(`\n## build ${spec.app}`);
-  await buildBenchEboot(spec, null);
+if (fromRaw) {
+  // Rebuild the report from a previous run's raw samples (no emulator runs).
+  for (const line of readFileSync(fromRaw, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    const row = JSON.parse(line);
+    if (row.kind !== "sample") continue;
+    delete row.kind;
+    samplesOut.push(row as Sample);
+  }
+  console.log(`loaded ${samplesOut.length} samples from ${fromRaw}`);
+  for (const spec of selectedSpecs) {
+    for (const framework of frameworks) {
+      const n = samplesOut.filter((r) => isAppRow(r, spec.app, framework)).length;
+      if (n === 0) throw new Error(`--from-raw has no samples for ${spec.app} (${framework})`);
+    }
+  }
+} else {
+  for (const spec of selectedSpecs) {
+    for (const framework of frameworks) {
+      console.log(`\n## build ${spec.app} (${framework})`);
+      await buildBenchEboot(spec, null, framework);
 
-  for (let sample = 1; sample <= samples; sample++) {
-    const row = await runBenchSample(spec, sample, null);
-    samplesOut.push(row);
-    writeRaw({ kind: "sample", ...row });
-    console.log(
-      `${row.app} #${sample}: eval=${fmtMs(row.eval_us)} frame0=${fmtMs(row.boot_to_frame0_us)} ` +
-        `work=${fmtUs(row.avg_work_us)} render=${fmtUs(row.avg_render_us)} arena=${fmtBytes(row.arena_bump_bytes)}`,
-    );
+      for (let sample = 1; sample <= samples; sample++) {
+        const row = await runBenchSample(spec, sample, null, framework);
+        samplesOut.push(row);
+        writeRaw({ kind: "sample", ...row });
+        console.log(
+          `${row.app} [${framework}] #${sample}: eval=${fmtMs(row.eval_us)} frame0=${fmtMs(row.boot_to_frame0_us)} ` +
+            `work=${fmtUs(row.avg_work_us)} render=${fmtUs(row.avg_render_us)} arena=${fmtBytes(row.arena_bump_bytes)}`,
+        );
+      }
+    }
   }
 }
 
 if (memoryScan) {
   for (const spec of selectedSpecs) {
-    const uncappedRows = samplesOut.filter((r) => isAppRow(r, spec.app));
+    const uncappedRows = samplesOut.filter((r) => isAppRow(r, spec.app, frameworks[0]));
     const uncapped = uncappedRows.reduce((best, row) => (row.arena_bump_bytes > best.arena_bump_bytes ? row : best), uncappedRows[0]);
     if (!uncapped) throw new Error(`no uncapped sample for ${spec.app}`);
     const scan = await scanMemoryForApp(spec, uncapped);
@@ -232,10 +292,17 @@ const memoryScanReport = memoryScan ? renderMemoryScanReport(memoryScans) : unde
 const report = {
   generated: new Date().toISOString(),
   samples,
+  frameworks,
   ppsspp_revision: await textOrUnknown($`git -C ${homedir()}/ppsspp-src rev-parse --short HEAD`.quiet()),
   git_revision: await textOrUnknown($`git rev-parse --short HEAD`.cwd(pspUiDir).quiet()),
   frame_budget_us: FRAME_BUDGET_US,
-  apps: Object.fromEntries(selectedSpecs.map((spec) => [spec.app, summarizeApp(samplesOut, spec.app)])),
+  apps: Object.fromEntries(
+    selectedSpecs.map((spec) => [
+      spec.app,
+      Object.fromEntries(frameworks.map((fw) => [fw, summarizeApp(samplesOut, spec.app, fw)])),
+    ]),
+  ),
+  comparison: frameworks.length > 1 ? buildComparison(samplesOut, selectedSpecs) : undefined,
   memory_scan: memoryScanReport,
 };
 writeFileSync(summaryPath, JSON.stringify(report, null, 2));
@@ -248,8 +315,12 @@ if (memoryScanReport) {
   console.log(`suite safe arena: ${fmtBytes(memoryScanReport.suite.safe_arena_bytes)}`);
 }
 
-async function buildBenchEboot(spec: Spec, arenaBytes: number | null): Promise<void> {
-  await $`bun tools/psp.ts ${spec.app} --bench`
+async function buildBenchEboot(
+  spec: Spec,
+  arenaBytes: number | null,
+  framework: PocketFramework = frameworks[0],
+): Promise<void> {
+  await $`bun tools/psp.ts ${spec.app} --bench --framework=${framework}`
     .cwd(pspUiDir)
     .env({
       ...process.env,
@@ -262,7 +333,12 @@ async function buildBenchEboot(spec: Spec, arenaBytes: number | null): Promise<v
     .quiet();
 }
 
-async function runBenchSample(spec: Spec, sample: number, arenaBytes: number | null): Promise<Sample> {
+async function runBenchSample(
+  spec: Spec,
+  sample: number,
+  arenaBytes: number | null,
+  framework: PocketFramework = frameworks[0],
+): Promise<Sample> {
   rmSync(dccap, { recursive: true, force: true });
   rmSync(benchFile, { force: true });
   const t0 = performance.now();
@@ -291,7 +367,7 @@ async function runBenchSample(spec: Spec, sample: number, arenaBytes: number | n
   if (parsed.frames !== spec.capN || parsed.window_n !== spec.capN) {
     throw new Error(`${spec.app} sample ${sample}: bench window mismatch (${parsed.frames}/${parsed.window_n}, expected ${spec.capN})`);
   }
-  return { ...parsed, sample, host_wall_ms, arena_limit_bytes: arenaBytes };
+  return { ...parsed, framework, sample, host_wall_ms, arena_limit_bytes: arenaBytes };
 }
 
 async function scanMemoryForApp(spec: Spec, uncapped: Sample): Promise<MemoryScanApp> {
@@ -405,8 +481,11 @@ function writeRaw(value: unknown): void {
   writeFileSync(rawPath, `${JSON.stringify(value)}\n`, { flag: "a" });
 }
 
-function isAppRow(row: Sample, app: string): boolean {
-  return row.app === `${app}-main` || row.app === app;
+function isAppRow(row: Sample, app: string, framework: PocketFramework): boolean {
+  if (row.framework !== framework) return false;
+  // Device-side app ids may carry the framework output suffix.
+  const base = row.app.split(".")[0];
+  return base === `${app}-main` || base === app;
 }
 
 function firstLine(text: string): string {
@@ -468,12 +547,84 @@ function quantile(sorted: number[], q: number): number {
   return sorted[lo] * (1 - t) + sorted[hi] * t;
 }
 
-function summarizeApp(rows: Sample[], app: string): Record<Metric, ReturnType<typeof summarize>> {
-  const subset = rows.filter((r) => isAppRow(r, app));
+function summarizeApp(
+  rows: Sample[],
+  app: string,
+  framework: PocketFramework,
+): Record<Metric, ReturnType<typeof summarize>> {
+  const subset = rows.filter((r) => isAppRow(r, app, framework));
   return Object.fromEntries(METRICS.map((metric) => [metric, summarize(subset.map((r) => r[metric]))])) as Record<
     Metric,
     ReturnType<typeof summarize>
   >;
+}
+
+// ---------------------------------------------------------------------------
+// Cross-framework comparison (PR #6 methodology): per metric, the geometric
+// mean over apps of ratio(framework mean / baseline mean), baseline = the
+// first selected framework. Optional bootstrap resampling (per app/framework
+// cell, with replacement) yields a 95% percentile CI on each geomean.
+// ---------------------------------------------------------------------------
+
+function geomean(values: number[]): number {
+  return Math.exp(values.reduce((a, b) => a + Math.log(b), 0) / values.length);
+}
+
+function buildComparison(rows: Sample[], specs: Spec[]) {
+  const baseline = frameworks[0];
+  const cell = (app: string, fw: PocketFramework, metric: Metric): number[] =>
+    rows.filter((r) => isAppRow(r, app, fw)).map((r) => r[metric]);
+  const ratioOverApps = (
+    fw: PocketFramework,
+    metric: Metric,
+    pick: (values: number[]) => number,
+  ): number =>
+    geomean(specs.map((spec) => pick(cell(spec.app, fw, metric)) / pick(cell(spec.app, baseline, metric))));
+
+  const rng = mulberry32(0x9e3779b9);
+  const resample = (values: number[]): number[] =>
+    values.map(() => values[Math.floor(rng() * values.length)]);
+
+  const geomeans: Record<string, Record<string, { ratio: number; ci95?: [number, number] }>> = {};
+  for (const fw of frameworks.slice(1)) {
+    geomeans[fw] = {};
+    for (const metric of COMPARISON_METRICS) {
+      const ratio = ratioOverApps(fw, metric, mean);
+      const entry: { ratio: number; ci95?: [number, number] } = { ratio };
+      if (bootstrapIterations > 0) {
+        const draws: number[] = [];
+        for (let b = 0; b < bootstrapIterations; b++) {
+          draws.push(ratioOverApps(fw, metric, (values) => mean(resample(values))));
+        }
+        draws.sort((x, y) => x - y);
+        entry.ci95 = [quantile(draws, 0.025), quantile(draws, 0.975)];
+      }
+      geomeans[fw][metric] = entry;
+    }
+  }
+
+  const perApp: Record<string, Record<string, Record<string, number>>> = {};
+  for (const metric of COMPARISON_METRICS) {
+    perApp[metric] = {};
+    for (const spec of specs) {
+      perApp[metric][spec.app] = Object.fromEntries(
+        frameworks.map((fw) => [fw, mean(cell(spec.app, fw, metric))]),
+      );
+    }
+  }
+
+  return { baseline, bootstrap: bootstrapIterations || undefined, geomean: geomeans, per_app: perApp };
+}
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 function formatMetric(metric: Metric, value: number): string {
@@ -485,33 +636,64 @@ function formatMetric(metric: Metric, value: number): string {
 function renderMarkdown(report: {
   generated: string;
   samples: number;
+  frameworks: PocketFramework[];
   ppsspp_revision: string;
   git_revision: string;
   frame_budget_us: number;
-  apps: Record<string, Record<Metric, ReturnType<typeof summarize>>>;
+  apps: Record<string, Record<string, Record<Metric, ReturnType<typeof summarize>>>>;
+  comparison?: ReturnType<typeof buildComparison>;
   memory_scan?: ReturnType<typeof renderMemoryScanReport>;
 }) {
   const lines = [
     "# PocketJS PPSSPP Benchmark",
     "",
     `Generated: ${report.generated}`,
-    `Samples per app: ${report.samples}`,
+    `Samples per app/framework: ${report.samples}`,
+    `Frameworks: ${report.frameworks.join(", ")}`,
     `PPSSPP revision: ${report.ppsspp_revision}`,
     `Git revision: ${report.git_revision}`,
     `Frame budget: ${fmtUs(report.frame_budget_us)}`,
     "",
   ];
-  for (const [app, metrics] of Object.entries(report.apps)) {
-    lines.push(`## ${app}`, "");
-    lines.push("| metric | mean | sd | min | median | max |");
-    lines.push("|---|---:|---:|---:|---:|---:|");
-    for (const metric of METRICS) {
-      const s = metrics[metric];
+  if (report.comparison) {
+    const { baseline, geomean: ratios, per_app, bootstrap } = report.comparison;
+    lines.push(`## Comparison (baseline: ${baseline}; lower is better)`, "");
+    const others = report.frameworks.filter((fw) => fw !== baseline);
+    lines.push(`| metric | ${others.map((fw) => `${fw}/${baseline} geomean`).join(" | ")} |`);
+    lines.push(`|---|${others.map(() => "---:").join("|")}|`);
+    for (const metric of COMPARISON_METRICS) {
+      const cells = others.map((fw) => {
+        const entry = ratios[fw][metric];
+        const ci = entry.ci95 ? ` [${entry.ci95[0].toFixed(3)}, ${entry.ci95[1].toFixed(3)}]` : "";
+        return `${entry.ratio.toFixed(3)}x${ci}`;
+      });
+      lines.push(`| \`${metric}\` | ${cells.join(" | ")} |`);
+    }
+    lines.push("");
+    if (bootstrap) lines.push(`95% CIs from ${bootstrap} bootstrap resamples.`, "");
+    lines.push(`### Average frame work by app`, "");
+    lines.push(`| app | ${report.frameworks.map((fw) => `${fw} avg work`).join(" | ")} |`);
+    lines.push(`|---|${report.frameworks.map(() => "---:").join("|")}|`);
+    for (const [app, byFw] of Object.entries(per_app.avg_work_us)) {
       lines.push(
-        `| ${metric} | ${formatMetric(metric, s.mean)} | ${formatMetric(metric, s.sd)} | ${formatMetric(metric, s.min)} | ${formatMetric(metric, s.median)} | ${formatMetric(metric, s.max)} |`,
+        `| ${app} | ${report.frameworks.map((fw) => `${(byFw[fw] / 1000).toFixed(2)} ms`).join(" | ")} |`,
       );
     }
     lines.push("");
+  }
+  for (const [app, byFramework] of Object.entries(report.apps)) {
+    for (const [fw, metrics] of Object.entries(byFramework)) {
+      lines.push(`## ${app} (${fw})`, "");
+      lines.push("| metric | mean | sd | min | median | max |");
+      lines.push("|---|---:|---:|---:|---:|---:|");
+      for (const metric of METRICS) {
+        const s = metrics[metric];
+        lines.push(
+          `| ${metric} | ${formatMetric(metric, s.mean)} | ${formatMetric(metric, s.sd)} | ${formatMetric(metric, s.min)} | ${formatMetric(metric, s.median)} | ${formatMetric(metric, s.max)} |`,
+        );
+      }
+      lines.push("");
+    }
   }
 
   if (report.memory_scan) {

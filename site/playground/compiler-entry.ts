@@ -13,17 +13,23 @@ import { transformAsync, type PluginObj } from "@babel/core";
 import solidPreset from "babel-preset-solid";
 import tsPreset from "@babel/preset-typescript";
 import { transformVueJsxVapor } from "vue-jsx-vapor/api";
+import { compile as octaneCompile } from "octane/compiler";
 import { parse as parseFont, type Font } from "opentype.js";
 
 import { compileClasses, fontSlotInfo } from "../../framework/compiler/tailwind.ts";
 import { registerAnimationTheme } from "../../framework/compiler/animation.ts";
 import motionsConfig from "../../apps/motions/pocket.config.ts";
+import musicConfig from "../../apps/music/pocket.config.ts";
 
 // The playground compiles single-file demos without their app-dir
-// pocket.config.ts, so install the motions demo's keyframe/animation theme
-// (superset of the built-ins) as the playground-wide default — this is what
-// lets the homepage/blog motion studies stay live-editable.
-registerAnimationTheme(motionsConfig.theme);
+// pocket.config.ts, so install the demo themes that define keyframes —
+// motions (the homepage/blog motion studies) and music (the Octane
+// equalizer's baked bar timelines) — merged as the playground-wide default.
+// Namespaces are disjoint; a collision would mean a demo rename, not magic.
+registerAnimationTheme({
+  keyframes: { ...motionsConfig.theme?.keyframes, ...musicConfig.theme?.keyframes },
+  animation: { ...motionsConfig.theme?.animation, ...musicConfig.theme?.animation },
+});
 import { bakeSlot } from "../../framework/compiler/bake-font.ts";
 import {
   PAK_DTYPE,
@@ -44,7 +50,19 @@ import { PSM } from "../../contracts/spec/spec.ts";
  *  runtime helpers from. The playground import-map points it at runtime.js. */
 const SOLID_RENDERER_MODULE = "@pocketjs/framework/solid/renderer";
 
-type PlaygroundFramework = "solid" | "vue-vapor";
+/** Octane universal-renderer descriptor — mirrors framework/compiler/jsx-plugin.ts
+ *  OCTANE_RENDERER_DESCRIPTOR; the import map points the module id at
+ *  runtime-octane.js. */
+const OCTANE_RENDERER = {
+  id: "pocket",
+  module: "@pocketjs/framework/octane/renderer",
+  target: "universal",
+  server: "unsupported",
+  text: "host",
+  capabilities: ["portal"],
+} as const;
+
+type PlaygroundFramework = "solid" | "vue-vapor" | "octane";
 
 interface SpriteMeta {
   cols: number;
@@ -67,7 +85,7 @@ export interface CompileResult {
 }
 
 // ---------------------------------------------------------------------------
-// pass-1 collector — mirrors framework/compiler/solid-plugin.ts makeCollector: candidate
+// pass-1 collector — mirrors framework/compiler/jsx-plugin.ts makeCollector: candidate
 // class strings + text codepoints from the PRISTINE AST, plus the same loud
 // lints (classList / interpolated class / banned solid imports / HTML entities).
 // ---------------------------------------------------------------------------
@@ -194,6 +212,19 @@ async function transform(
       configFile: false,
       sourceMaps: false,
     });
+  } else if (framework === "octane") {
+    await transformAsync(source, {
+      filename: "app.tsx",
+      presets: [[tsPreset, {}]],
+      parserOpts: { plugins: ["jsx"] },
+      plugins: [collectorPlugin(collected, framework)],
+      babelrc: false,
+      configFile: false,
+      sourceMaps: false,
+    });
+    res = octaneCompile(source, "app.tsx", { mode: "client", renderer: OCTANE_RENDERER }) as {
+      code: string;
+    };
   } else {
     res = await transformAsync(source, {
       filename: "app.tsx",

@@ -64,7 +64,7 @@ export interface PocketManifestV2 {
   readonly app: {
     readonly entry: string;
     readonly output?: string;
-    readonly framework: "solid" | "vue-vapor";
+    readonly framework: "solid" | "vue-vapor" | "octane";
     readonly viewport: ManifestViewport;
   };
 }
@@ -181,7 +181,7 @@ export const pocketManifestV2Schema = {
           maxLength: 64,
           pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
         },
-        framework: { enum: ["solid", "vue-vapor"] },
+        framework: { enum: ["solid", "vue-vapor", "octane"] },
         viewport: {
           anyOf: [
             // Shorthand: a bare fixed viewport (format-2 compatibility).

@@ -2,7 +2,7 @@
 
 > **Goal:** Create a new PocketJS host that renders the PocketJS UI engine on PocketBook
 > e-readers via the inkview SDK, enabling native-speed applications built with
-> Solid/Vue Vapor + Tailwind on e-ink hardware.
+> Solid/Vue Vapor/Octane + Tailwind on e-ink hardware.
 
 ---
 
@@ -31,14 +31,14 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  app.tsx  (Solid or Vue Vapor + Tailwind classes)               │
+│  app.tsx  (Solid, Vue Vapor or Octane + Tailwind classes)       │
 │  Compiled by @pocketjs/framework compiler (jsx-plugin, pak)     │
 └──────────────────────────┬──────────────────────────────────────┘
                            │  bundle.js + styles.bin + font atlases + images
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  QuickJS  (single realm, ~ES2023)                               │
-│  framework/src/renderer-solid.ts or renderer-vue-vapor.ts       │
+│  framework/src/renderer-{solid,vue-vapor,octane}.ts             │
 │  Emits ui.* ops via globalThis.ui (HostOps interface)           │
 └──────────────────────────┬──────────────────────────────────────┘
                            │  ~17 numeric FFI calls (createNode, setProp, setText…)
@@ -100,7 +100,7 @@ RGBA8→Gray8 conversion + e-ink refresh management on top.
 | --------- | --------- |
 | **inkview-rs** | **None.** Used as a dependency as-is. |
 | **pocketjs-core** | **None.** DrawList + software rasterizer used unchanged. |
-| **pocketjs framework** | **None.** Solid/Vue Vapor renderers are host-agnostic. |
+| **pocketjs framework** | **None.** Solid/Vue Vapor/Octane renderers are host-agnostic. |
 | **pocketjs contracts** | **Additive.** New target profile in `platforms.ts`, new build backend entry. |
 | **NEW `hosts/pocketbook/`** | **All the new code.** ~1000–2000 lines of Rust. |
 
@@ -111,7 +111,7 @@ RGBA8→Gray8 conversion + e-ink refresh management on top.
 ### Knowledge
 
 - Basic Rust (structs, traits, closures — you don't need to be an expert)
-- Familiarity with PocketJS app development (you'll write apps in Solid/Vue Vapor)
+- Familiarity with PocketJS app development (you'll write apps in Solid/Vue Vapor/Octane)
 - Understanding of e-ink display characteristics (ghosting, refresh modes)
 
 ### Tools
@@ -1071,7 +1071,7 @@ PocketJS apps are compiled into a **pak** — a bundle containing:
 
 | File | Contents |
 | ------ | ---------- |
-| `bundle.js` | Compiled app (Solid/Vue Vapor → universal renderer) |
+| `bundle.js` | Compiled app (Solid/Vue Vapor/Octane → universal renderer) |
 | `styles.bin` | Tailwind classes → style table records |
 | `font-atlas-*.bin` | Baked Inter glyph atlases (exactly the app's codepoints) |
 | `images/` | PNG/JPEG textures referenced by the app |
@@ -1330,6 +1330,7 @@ feature-detects optional HostOps methods.
 | `framework/src/native-tree.ts` | NodeMirror arena (JS-side tree mirror) |
 | `framework/src/renderer-solid.ts` | Solid universal renderer over HostOps |
 | `framework/src/renderer-vue-vapor.ts` | Vue Vapor renderer over HostOps |
+| `framework/src/renderer-octane.ts` | Octane universal driver over HostOps |
 | `hosts/psp/src/ffi.rs` | PSP's HostOps installation (reference implementation) |
 | `hosts/psp/src/ge.rs` | PSP's DrawList walker (reference for a GPU backend) |
 | `hosts/psp/src/main.rs` | PSP's frame loop ordering |

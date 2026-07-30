@@ -1087,6 +1087,13 @@ impl Ui {
         &self.draw_list
     }
 
+    /// Return the DrawList most recently produced by [`draw`](Self::draw)
+    /// without rebuilding it. Transactional render hosts use this to replay
+    /// several dirty strips from one stable frame snapshot.
+    pub fn current_draw_list(&self) -> &DrawList {
+        &self.draw_list
+    }
+
     /// Resize the logical viewport (root node + layout bounds + draw clip).
     /// Defaults to the PSP's 480x272; desktop hosts call this with their
     /// surface size. Values are clamped to the DrawList's i16 coordinate

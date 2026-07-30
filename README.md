@@ -6,10 +6,11 @@
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/cTce4eXzSK)
 
 High-performance component UI outside the browser, with native rendering,
-standard Vue Vapor and Solid support, a Tailwind design system, and 60 FPS
-animation under an 8 MB memory budget. Write Solid JSX, Vue Vapor JSX, or Vue
-single-file components, run them on QuickJS, and let PocketJS move layout,
-styling, text and animation into a tiny `no_std` Rust core.
+standard Solid, Vue Vapor and Octane support, a Tailwind design system, and
+60 FPS animation under an 8 MB memory budget. Write Solid JSX, Vue Vapor JSX,
+Octane JSX, or Vue single-file components, run them on QuickJS, and let
+PocketJS move layout, styling, text and animation into a tiny `no_std` Rust
+core.
 
 It runs on real PSP and PS Vita hardware, Nintendo Switch homebrew in Ryujinx,
 PPSSPP, Vita3K, the browser (WASM), native macOS windows (wgpu), and headless
@@ -46,6 +47,7 @@ bun pocket build --target psp -- --release
 bun tools/build.ts hero             # -> dist/hero.js + dist/hero.pak
 bun tools/build.ts hero-vue-vapor-main --framework=vue-vapor
 bun tools/build.ts hero-vue-sfc-main --framework=vue-vapor
+bun tools/build.ts hero-main --framework=octane   # -> dist/hero-main.octane.js
 ```
 
 Or drive everything through the [`pocket` CLI](https://www.npmjs.com/package/@pocketjs/cli):
@@ -103,11 +105,11 @@ dynamic styling is ternaries of full literals, `style={{...}}`, or `animate()`.
 `rounded-full` requires `w-N h-N` in the same literal.
 
 Framework selection is explicit: product builds set `app.framework` to
-`"solid"` or `"vue-vapor"` in `pocket.json`. Low-level framework/compiler/host work can
+`"solid"`, `"vue-vapor"` or `"octane"` in `pocket.json`. Low-level framework/compiler/host work can
 still use `pocket.config.ts` or pass `--framework=...` to the individual
 scripts. App state and component lifecycle come from the native framework
-package (`solid-js` or `vue`); PocketJS supplies host components, input,
-animation, assets and native runtime wiring.
+package (`solid-js`, `vue` or `octane`); PocketJS supplies host components,
+input, animation, assets and native runtime wiring.
 
 ### Vue single-file components
 
@@ -130,6 +132,32 @@ Options-API-only components are not supported.
 [`apps/hero-vue-sfc`](./apps/hero-vue-sfc) renders the same screen as the JSX
 Hero demos. See [`apps/vue-sfc-lab`](./apps/vue-sfc-lab) for `v-model`,
 conditionals, lists, props, events, and slots.
+
+### Octane
+
+Set `"framework": "octane"` in `pocket.json` (or pass `--framework=octane`)
+for [Octane](https://github.com/octanejs/octane) — React's programming model,
+compiled: hooks and JSX, no VDOM. Hooks import from `octane` (`useState`,
+`useEffect`, …; dependency arrays may be omitted — the compiler infers them;
+hooks are tracked by call site, so `if` is fine but hooks in loops are not).
+PocketJS APIs come from
+`@pocketjs/framework/octane/{components,animation,lifecycle,input}`. The
+Octane compiler lowers JSX to static host plans plus dynamic slots executed
+against the native `ui.*` tree — no DOM shim, unlike Vue Vapor. Entries pass
+the component itself to `mount`; JSX in a call-argument arrow
+(`mount(() => <App />)`) is a compile error.
+
+```tsx
+import { mount } from "@pocketjs/framework/octane";
+import App from "./app.tsx";
+
+mount(App);
+```
+
+Sibling variants (`app.octane.tsx` next to `app.tsx`) let one demo ship every
+framework; octane builds emit `dist/<app>.octane.js`.
+[`apps/hero/app.octane.tsx`](./apps/hero/app.octane.tsx) renders the same
+screen as the Solid and Vue Vapor Hero demos.
 
 `@pocketjs/framework/components` also exposes small app-shell primitives:
 `Screen`, `Focusable`, `FocusScope`, `ActionHandler`, `FocusGrid`, `Portal`,
@@ -157,7 +185,7 @@ pocket build --target vita -- --release
 pocket build --target switch -- --release
 pocket play vita hero                 # build, install and launch in Vita3K
 pocket play switch hero               # build and launch in Ryujinx
-bun tools/build.ts <app> [--framework=solid|vue-vapor] [--extra-chars=…]
+bun tools/build.ts <app> [--framework=solid|vue-vapor|octane] [--extra-chars=…]
 bun run psp <app>                  # low-level PSP demo build
 bun run vita <app>                 # low-level Vita demo build
 bun run switch <app> --release     # low-level Nintendo Switch NRO build

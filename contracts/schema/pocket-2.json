@@ -119,7 +119,8 @@
         "framework": {
           "enum": [
             "solid",
-            "vue-vapor"
+            "vue-vapor",
+            "octane"
           ]
         },
         "viewport": {

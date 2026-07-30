@@ -33,7 +33,20 @@ PSP_SDK=/path/to/mipsel-sony-psp BENCH_PPSSPP_TIMEOUT=60 \
   bun tools/bench-ppsspp.ts --apps=all --samples=3 --memory-scan
 ```
 
-5. Preserve the generated evidence paths from `dist/bench/` in the final answer, PR body, or handoff. The `.json` file is authoritative; the `.md` file is for human review; `.raw.jsonl` keeps per-sample and memory-probe records.
+5. For a cross-framework comparison (Solid vs Vue Vapor vs Octane), pass a
+   framework axis; the first framework is the ratio baseline and
+   `--bootstrap=N` adds 95% percentile CIs to the geomean ratios:
+
+```bash
+BENCH_PPSSPP_TIMEOUT=60 bun tools/bench-ppsspp.ts \
+  --apps=all --frameworks=solid,vue-vapor,octane --samples=7 --bootstrap=5000
+```
+
+   The summary JSON then nests per-framework metrics (`apps[app][framework]`)
+   and adds a `comparison` block; `--memory-scan` stays single-framework.
+   Render the matrix chart with `bun tools/bench-chart.ts <summary.json> <out.svg>`.
+
+6. Preserve the generated evidence paths from `dist/bench/` in the final answer, PR body, or handoff. The `.json` file is authoritative; the `.md` file is for human review; `.raw.jsonl` keeps per-sample and memory-probe records.
 
 ## Memory Scans
 

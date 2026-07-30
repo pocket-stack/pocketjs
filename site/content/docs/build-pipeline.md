@@ -35,12 +35,14 @@ target-specific: PSP and Vita compile from the same source and logical layout,
 but Vita receives density-2 atlases/assets plus an embedded target/HostOps-ABI
 handshake. Do not copy one target's pair into another target's native package.
 
-Solid is the default framework. Vue Vapor builds beside the Solid artifacts by
-adding a suffix:
+Solid is the default framework. Vue Vapor and Octane build beside the Solid
+artifacts by adding a suffix:
 
 ```sh
 bun tools/build.ts hero-vue-vapor-main --framework=vue-vapor
 # -> dist/hero-vue-vapor-main.vue-vapor.js + dist/hero-vue-vapor-main.vue-vapor.pak
+bun tools/build.ts hero-main --framework=octane
+# -> dist/hero-main.octane.js + dist/hero-main.octane.pak
 ```
 
 The build is **two passes over the same module graph**. Pass 1 transforms every
@@ -64,7 +66,7 @@ name ending in `-main` finds `apps/hero/main.tsx`.
 
 | Flag | Effect |
 |---|---|
-| `--framework=solid\|vue-vapor` | Select the framework for this low-level build, overriding `pocket.config.ts`. Manifest builds take it from `pocket.json`. |
+| `--framework=solid\|vue-vapor\|octane` | Select the framework for this low-level build, overriding `pocket.config.ts`. Manifest builds take it from `pocket.json`. |
 | `--config=<path>` | Load a different Pocket config file. |
 | `--no-config` | Ignore `pocket.config.ts`; defaults to Solid unless `--framework` is set. |
 | `--extra-chars=<string>` | Force these codepoints into **every** baked atlas, on top of the collected charset and ASCII. |
@@ -83,6 +85,7 @@ The output name is derived from the entry path, and both artifacts share it:
 | `apps/hero/main.tsx` | `hero-main.js`, `hero-main.pak` | the mounted entry — calls `mount()` |
 | `foo/bar.tsx` | `bar.js`, `bar.pak` | non‑demo path: basename |
 | `--framework=vue-vapor` | `<name>.vue-vapor.js`, `<name>.vue-vapor.pak` | Vue Vapor artifacts coexist with Solid artifacts |
+| `--framework=octane` | `<name>.octane.js`, `<name>.octane.pak` | Octane artifacts coexist with the other two |
 
 A demo typically has `app.tsx` (the exported UI) and `main.tsx` (a tiny file
 that imports the app and mounts it). You build `hero-main` when you want a
@@ -106,17 +109,27 @@ The selected framework owns the JSX transform:
 
 // Vue Vapor
 transformVueJsxVapor(source, path)
+
+// Octane
+octaneCompile(source, path, { mode: "client", renderer: OCTANE_RENDERER_DESCRIPTOR })
 ```
 
 Solid compiles JSX into calls against `framework/src/renderer-solid.ts`. Vue Vapor
 compiles JSX with `vue-jsx-vapor` and bundles against `framework/src/renderer-vue-vapor.ts`
-plus the small DOM facade needed by Vue's Vapor helpers. `@babel/preset-typescript`
-still strips types in both cases, and the same collector/lints run before JSX is
+plus the small DOM facade needed by Vue's Vapor helpers. Octane runs the
+collector pass over the pristine source first, then hands the same source to
+the Octane universal compiler, which lowers JSX and hooks to static host plans
+plus dynamic slots against the "pocket" renderer descriptor — the compiled
+output's runtime imports retarget to `@pocketjs/framework/octane/renderer`
+(`framework/src/renderer-octane.ts`), whose driver maps host command batches
+onto the native `ui.*` tree with no DOM shim. `@babel/preset-typescript`
+still strips types in every case, and the same collector/lints run before JSX is
 lowered.
 
 Package imports are framework-aware during both pass 1 and pass 2. For example,
-`@pocketjs/framework/components` resolves to `framework/src/components.ts` for Solid and
-`framework/src/components-vue-vapor.ts` for Vue Vapor. The mapping is centralized in
+`@pocketjs/framework/components` resolves to `framework/src/components.ts` for Solid,
+`framework/src/components-vue-vapor.ts` for Vue Vapor, and
+`framework/src/components-octane.tsx` for Octane. The mapping is centralized in
 `framework/compiler/jsx-plugin.ts`; see [Frameworks](/docs/frameworks/) for the public
 contract.
 

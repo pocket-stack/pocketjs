@@ -27,9 +27,7 @@ use psp::sys::DisplayPixelFormat;
 use psp::sys::{self, CtrlMode, GuContextType, GuSyncBehavior, GuSyncMode, IoOpenFlags, SceCtrlData};
 
 use pocketjs_core::spec;
-use pocketjs_psp::{dbg, ffi, ge, host, pak, svc, switch, veil, vid};
-#[cfg(feature = "bench")]
-use pocketjs_psp::arena;
+use pocketjs_psp::{arena, dbg, ffi, ge, host, pak, svc, switch, veil, vid};
 
 psp::module!("pocketjs", 1, 1);
 
@@ -47,6 +45,17 @@ const MULTI_APP_SIM_HZ: u32 = 20;
 #[cfg(feature = "bench")]
 static POCKETJS_APP_NAME: &str = env!("POCKETJS_APP");
 static POCKETJS_TRACE: &str = env!("POCKETJS_TRACE");
+
+// Arena bump high-water at the last host-forced collection (frame loop's
+// arena-pressure GC below). Single-threaded QuickJS worker.
+static mut LAST_GC_BUMP: usize = 0;
+
+// libquickjs-sys omits JS_RunGC; the linked QuickJS C library provides it
+// (local-extern pattern, same as host.rs JS_ExecutePendingJob).
+extern "C" {
+    fn JS_RunGC(rt: *mut JSRuntime);
+}
+
 
 // Build-time scripted input for deterministic PPSSPPHeadless captures
 // (tests/e2e/ppsspp.ts). Baked by build.rs from the POCKETJS_CAPTURE_INPUT env;
@@ -662,6 +671,29 @@ unsafe fn run_guest(
         }
 
         host::drain_jobs(rt);
+        // Arena-pressure GC (post-profiler-stub this WORKS: the guest's
+        // per-frame cycles are collectable once no WeakMap pins them, and the
+        // engine's lazy live*1.5 threshold otherwise lets its slab chunks pin
+        // the fixed arena). Collect when a frame leaves the bump >256 KiB
+        // past the last collection; steady-state guests never trigger it.
+        {
+            const GC_BUMP_STEP: usize = 256 * 1024;
+            let bump = arena::stats().bump_bytes;
+            if bump > LAST_GC_BUMP.saturating_add(GC_BUMP_STEP) {
+                JS_RunGC(rt);
+                LAST_GC_BUMP = arena::stats().bump_bytes;
+            }
+        }
+        if trace_enabled() && guest_frame % 25 == 0 {
+            let s = arena::stats();
+            trace_pair(
+                b"[PocketJS arena] ",
+                &alloc::format!(
+                    "frame {} bump {} tail {}",
+                    guest_frame, s.bump_bytes, s.tail_free_bytes
+                ),
+            );
+        }
         #[cfg(feature = "bench")]
         let bench_after_jobs = bench_now_us();
         if guest_frame == 0 {

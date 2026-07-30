@@ -60,7 +60,8 @@ the canonical resolver; `pocket dev|psp|vita|hw|psplink` retain the low-level
 host-development paths; and `pocket devtools [app]` opens the
 [DevTools](/docs/devtools/) panel with the USB debug bridge.
 
-That pulls `solid-js`, Vue Vapor dependencies, and the build-time tooling (the
+That pulls `solid-js`, the Vue Vapor and Octane dependencies, and the
+build-time tooling (the
 Babel + Tailwind-subset compiler, the font baker, and the dev host). There is no
 separate runtime to install — the framework is the `@pocketjs/framework` package
 in this repo, exposed through subpath imports like
@@ -111,11 +112,11 @@ compiler runs.
 A component returns JSX. You lay out with `View`, draw text with `Text`, and
 style with `class` — a **build-time subset of Tailwind**, not runtime CSS.
 State comes directly from the selected framework: `createSignal` in Solid,
-`ref` in Vue Vapor.
+`ref` in Vue Vapor, `useState` in Octane.
 
-Solid is the default low-level framework. Manifest builds select Solid or Vue
-Vapor with `app.framework` in `pocket.json`; see [Frameworks](/docs/frameworks/)
-for the full selection model.
+Solid is the default low-level framework. Manifest builds select Solid, Vue
+Vapor, or Octane with `app.framework` in `pocket.json`; see
+[Frameworks](/docs/frameworks/) for the full selection model.
 
 Here's a focusable counter. Put it in the scaffolded
 `apps/my-app/app.tsx`:
@@ -174,6 +175,32 @@ export default function App() {
   );
 }
 ```
+
+```tsx octane
+import { useState } from "octane";
+import { Text, View } from "@pocketjs/framework/octane/components";
+
+export default function App() {
+  const [count, setCount] = useState(0);
+  return (
+    <View class="w-full h-full flex-col items-center gap-4 p-4 bg-slate-50">
+      <Text class="text-xl text-slate-950 font-bold">{`Count: ${count}`}</Text>
+
+      <View
+        class="px-4 py-2 rounded-xl shadow-md bg-blue-600 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
+        focusable
+        onPress={() => setCount(count + 1)}
+      >
+        <Text class="text-base text-white font-bold">Press Circle</Text>
+      </View>
+
+      {count > 3 ? (
+        <Text class="text-sm text-emerald-600">Reactive on real hardware.</Text>
+      ) : null}
+    </View>
+  );
+}
+```
 :::
 
 What's happening:
@@ -189,9 +216,11 @@ What's happening:
 - **`focusable`** opts the `View` into d-pad focus, and **`onPress`** fires when
   the focused node is confirmed (the Circle button on a PSP). Focus and input
   are covered in [Input & focus](/docs/input-focus/).
-- **`{count()}` / `{count.value}`** is a reactive read. When the setter or ref
+- **`{count()}` / `{count.value}` / `` {`…${count}`} ``** is a reactive read.
+  When the setter or ref
   write runs, only that `Text` updates — no re-render of the whole native tree.
-  More in [Reactivity](/docs/reactivity/).
+  (In Octane, a text run that mixes static and dynamic segments is written as
+  one template literal.) More in [Reactivity](/docs/reactivity/).
 
 ## The mount entry
 
@@ -213,6 +242,16 @@ mount(() => <App />);
 import App from "./app.tsx";
 import { mount } from "@pocketjs/framework/vue-vapor";
 
+mount(App);
+```
+
+```tsx octane
+// @title PocketJS: My App
+import App from "./app.tsx";
+import { mount } from "@pocketjs/framework/octane";
+
+// Pass the component itself: in Octane, JSX inside a call-argument arrow
+// (mount(() => <App />)) is a compile error.
 mount(App);
 ```
 :::
@@ -260,6 +299,10 @@ bun tools/build.ts hero
 ```sh vue-vapor
 bun tools/build.ts hero --framework=vue-vapor
 ```
+
+```sh octane
+bun tools/build.ts hero --framework=octane
+```
 :::
 
 That density-1 development command produces two files in `dist/`:
@@ -270,7 +313,8 @@ That density-1 development command produces two files in `dist/`:
 | `dist/hero.pak` | The packed asset file: the compiled style table, font atlases, and images |
 
 Vue Vapor builds use the `.vue-vapor` suffix, for example
-`dist/hero.vue-vapor.js` and `dist/hero.vue-vapor.pak`.
+`dist/hero.vue-vapor.js` and `dist/hero.vue-vapor.pak`; Octane builds use the
+`.octane` suffix, for example `dist/hero.octane.js` and `dist/hero.octane.pak`.
 
 A few notes on the low-level command:
 
@@ -305,6 +349,10 @@ bun tools/dev.ts hero-main
 ```sh vue-vapor
 bun tools/dev.ts --framework=vue-vapor hero-main
 ```
+
+```sh octane
+bun tools/dev.ts --framework=octane hero-main
+```
 :::
 
 Open the printed URL, **http://127.0.0.1:8130/**. Pass demo names to build
@@ -338,15 +386,17 @@ for toolchain setup, key mappings, real-device installation, and the golden E2E.
 ### In the Playground
 
 No local build at all: open the [Playground](/playground/), which loads the same
-wasm core in your browser. Pick Solid or Vue Vapor in the toolbar, edit JSX in
-the editor, and it renders live — the quickest way to explore the component and
+wasm core in your browser. Pick Solid, Vue Vapor, or Octane in the toolbar,
+edit JSX in the editor, and it renders live — the quickest way to explore the component and
 styling surface before wiring up a local project.
 
 ## What the build just did
 
 `bun tools/build.ts` is a **two-pass** build:
 
-1. **Transform & collect.** Babel (Solid's universal preset + TypeScript) runs
+1. **Transform & collect.** The selected framework's JSX transform — Solid's
+   universal Babel preset, `vue-jsx-vapor`, or the Octane universal compiler —
+   plus TypeScript runs
    over every module reachable from your entry, content-hash cached in `.cache/`.
    As it goes it collects every class literal and every text codepoint from the
    AST. The Tailwind-subset compiler turns the collected classes into
@@ -364,7 +414,7 @@ pak format — are in [Build pipeline](/docs/build-pipeline/).
 ## Next steps
 
 - [Architecture](/docs/architecture/) — how one Rust core drives every host.
-- [Frameworks](/docs/frameworks/) — switch between Solid and Vue Vapor.
+- [Frameworks](/docs/frameworks/) — switch between Solid, Vue Vapor, and Octane.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, control flow, and the app-shell primitives.
 - [Styling](/docs/styling/) and [Tailwind subset](/docs/tailwind/) — the compile-time class rules.
 - [Reactivity](/docs/reactivity/) and [Animation](/docs/animation/) — signals, effects, and native tweens.

@@ -1,11 +1,12 @@
 import type { AnimationTheme } from "../compiler/animation.ts";
 
-export type PocketFramework = "solid" | "vue-vapor";
+export type PocketFramework = "solid" | "vue-vapor" | "octane";
 
 export interface PocketConfig {
   /**
    * JSX/runtime framework for application sources. Solid is the default for
-   * existing apps; Vue Vapor can be selected here or with --framework.
+   * existing apps; Vue Vapor or Octane can be selected here or with
+   * --framework.
    */
   framework?: PocketFramework;
   /**

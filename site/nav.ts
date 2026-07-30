@@ -55,6 +55,22 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "octane-on-psp",
+    title: "useState at 333 MHz: Octane Is PocketJS's Third Framework",
+    date: "2026-07-30",
+    description:
+      "React itself can't run on a 2004 Sony PSP — 333 MHz, 32 MB of RAM. Octane compiles React's programming model instead of shipping its runtime, so we made it PocketJS's third framework beside Solid and Vue Vapor. Between \"it boots\" and 60 FPS: a WeakMap the JS engine's GC never frees, the discovery that a 2021 build flag had been silently shipping an unoptimized interpreter ever since, and a hard rule — on hardware like this, continuous animation never touches setState. Full three-framework benchmark included; every demo ends up inside the 16.7 ms frame budget.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
+    slug: "pocketjs-on-symbian",
+    title: "Symbian Wanted a Frame Function: PocketJS on a Nokia E7",
+    date: "2026-07-26",
+    description:
+      "Solid components, a Cover Flow launcher, a real Figma file and a 3D FPS, running natively on Symbian Belle. What the active-object model is, and what a new machine is allowed to change.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "pocket-vapor",
     title: "Pocket Vapor: Vue, Compiled All the Way Down",
     date: "2026-07-23",

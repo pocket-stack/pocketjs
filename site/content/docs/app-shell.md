@@ -146,6 +146,22 @@ import { FocusGrid, Focusable, Text } from "@pocketjs/framework/components";
   ))}
 </FocusGrid>;
 ```
+
+```tsx octane
+import { FocusGrid, Focusable, Text } from "@pocketjs/framework/components";
+
+<FocusGrid class="flex-row flex-wrap gap-2 w-[440]" columns={3} wrap>
+  {games.map((game) => (
+    <Focusable
+      key={game.title}
+      class="w-[140] h-[72] rounded-lg bg-white border-slate-200 focus:border-blue-500"
+      onPress={() => launch(game)}
+    >
+      <Text class="text-sm text-slate-950">{game.title}</Text>
+    </Focusable>
+  ))}
+</FocusGrid>;
+```
 :::
 
 Because the grid keys off document order, it stays correct after a
@@ -271,6 +287,34 @@ function DeletePrompt(props: { onConfirm: () => void }) {
           onPress={() => {
             open.value = false;
           }}
+        >
+          <Text class="text-sm text-slate-950">Cancel</Text>
+        </Focusable>
+        <Focusable
+          class="px-3 py-1 rounded-md bg-rose-600 border-rose-500 focus:border-rose-300"
+          onPress={props.onConfirm}
+        >
+          <Text class="text-sm text-white">Delete</Text>
+        </Focusable>
+      </View>
+    </Modal>
+  );
+}
+```
+
+```tsx octane
+import { useState } from "octane";
+import { Modal, Focusable, Text, View } from "@pocketjs/framework/components";
+
+function DeletePrompt(props: { onConfirm: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Modal open={open}>
+      <Text class="text-lg text-slate-950 font-bold">Delete save?</Text>
+      <View class="flex-row gap-2">
+        <Focusable
+          class="px-3 py-1 rounded-md bg-slate-100 border-slate-200 focus:border-blue-500"
+          onPress={() => setOpen(false)}
         >
           <Text class="text-sm text-slate-950">Cancel</Text>
         </Focusable>
@@ -445,6 +489,25 @@ function Photos() {
           page.value = next;
         }}
         renderPage={(i) => <PhotoPage index={i} current={() => page.value} />}
+      />
+    </Screen>
+  );
+}
+```
+
+```tsx octane
+import { useState } from "octane";
+import { Gallery, Screen } from "@pocketjs/framework/components";
+
+function Photos() {
+  const [page, setPage] = useState(0);
+  return (
+    <Screen class="relative w-full h-full bg-slate-950 overflow-hidden">
+      <Gallery
+        count={4}
+        page={page}
+        onPageChange={setPage}
+        renderPage={(i) => <PhotoPage index={i} current={page} />}
       />
     </Screen>
   );

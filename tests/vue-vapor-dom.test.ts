@@ -25,18 +25,40 @@ afterEach(() => {
   }
 });
 
+function installStubHost(): void {
+  let nextId = 2;
+  installHost({
+    kind: "injected",
+    target: "test",
+    strict: true,
+    ops: {
+      createNode: () => nextId++,
+      setText() {},
+      insertBefore() {},
+    } as unknown as HostOps,
+  });
+}
+
+interface TemplateStub {
+  innerHTML: string;
+  content: {
+    childNodes: { domNodeType?: number; domData?: string; text?: string; domTag?: string }[];
+    firstChild: { domNodeType?: number; domData?: string; text?: string } | null;
+  };
+}
+
+function parseTemplate(html: string): TemplateStub["content"] {
+  const pocketDocument = g.__pocketDocument as {
+    createElement(tag: string): TemplateStub;
+  };
+  const template = pocketDocument.createElement("template");
+  template.innerHTML = html;
+  return template.content;
+}
+
 describe("Vue Vapor guest DOM", () => {
   test("uses a Pocket document without replacing an existing browser document", () => {
-    let nextId = 2;
-    installHost({
-      kind: "injected",
-      target: "test",
-      strict: true,
-      ops: {
-        createNode: () => nextId++,
-        setText() {},
-      } as unknown as HostOps,
-    });
+    installStubHost();
 
     const browserDocument = { kind: "browser-document" };
     g.document = browserDocument;
@@ -52,5 +74,30 @@ describe("Vue Vapor guest DOM", () => {
     expect(isNativeNode(text)).toBe(true);
     expect(text.text).toBe("PAUSED");
     expect(text.children).toEqual([]);
+  });
+
+  test("parses template comments as comment nodes, never literal text", () => {
+    installStubHost();
+    installVueVaporDom();
+
+    const node = parseTemplate("<!-- comment -->").firstChild;
+    expect(node).not.toBeNull();
+    expect(node!.domNodeType).toBe(8);
+    expect(node!.domData).toBe(" comment ");
+    expect(node!.text).toBe("");
+  });
+
+  test("keeps parsing past a comment instead of falling back to text", () => {
+    installStubHost();
+    installVueVaporDom();
+
+    expect(parseTemplate("<!-- a --><!-- b -->").childNodes.map((node) => node.domData))
+      .toEqual([" a ", " b "]);
+
+    const [comment, element] = parseTemplate("<!-- lead --><view>hi</view>").childNodes;
+    expect(comment.domNodeType).toBe(8);
+    expect(comment.domData).toBe(" lead ");
+    expect(element.domNodeType).toBe(1);
+    expect(element.domTag).toBe("view");
   });
 });

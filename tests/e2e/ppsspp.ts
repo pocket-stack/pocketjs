@@ -18,15 +18,25 @@
 //   bun run e2e            # compare against tests/goldens/psp/
 //   UPDATE=1 bun run e2e   # regenerate goldens (then eyeball the PNGs!)
 //
+// Frameworks: pass --framework=vue-vapor|octane to run the demos through a
+// non-default framework. Goldens then live in tests/goldens/psp-<framework>/
+// and the spec table is filtered to demos that have that sibling variant
+// (apps/<app>/app.<framework>.tsx).
+//
 // Host deps: ~/ppsspp-src/build/PPSSPPHeadless (source-built; see
 // framework/test/bsp-compare/ppsspp-capture.md on origin/main) and ImageMagick.
 
 import { $ } from "bun";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { FRAMEWORKS, parseFramework } from "../../framework/compiler/jsx-plugin.ts";
+
+const frameworkArg = Bun.argv.find((a) => a.startsWith("--framework="));
+const framework = parseFramework(frameworkArg?.slice("--framework=".length), "--framework");
 
 const pspUiDir = new URL("../..", import.meta.url).pathname; // PocketJS/
-const goldensDir = `${pspUiDir}tests/goldens/psp`;
+const goldensDir =
+  framework === "solid" ? `${pspUiDir}tests/goldens/psp` : `${pspUiDir}tests/goldens/psp-${framework}`;
 const outDir = `${pspUiDir}dist/e2e-ppsspp`;
 const headless = process.env.PPSSPP_HEADLESS || `${homedir()}/ppsspp-src/build/PPSSPPHeadless`;
 // PPSSPPHeadless maps ms0: to ~/.ppsspp — dumps land in ~/.ppsspp/dc_cap.
@@ -227,7 +237,7 @@ function writeDemoManifest(app: string): string {
   manifest.title = `PocketJS E2E ${app}`;
   manifest.app.entry = `apps/${app}/main.tsx`;
   manifest.app.output = `${app}-main`;
-  manifest.app.framework = "solid";
+  manifest.app.framework = framework;
   const directory = `${outDir}/manifests`;
   const path = `${directory}/${app}.json`;
   mkdirSync(directory, { recursive: true });
@@ -241,9 +251,23 @@ const ppssppCommit = (await $`git -C ${homedir()}/ppsspp-src rev-parse HEAD`.tex
 const commitStamp = `${goldensDir}/PPSSPP-COMMIT.txt`;
 const stampedCommit = existsSync(commitStamp) ? readFileSync(commitStamp, "utf8").trim() : null;
 
+// Non-default frameworks cover exactly the demos that carry the sibling
+// variant; the rest stay Solid-only.
+const selectedSpecs =
+  framework === "solid"
+    ? SPECS
+    : SPECS.filter((spec) =>
+        existsSync(`${pspUiDir}apps/${spec.app}/app${FRAMEWORKS[framework].outputSuffix}.tsx`),
+      );
+if (selectedSpecs.length === 0) {
+  console.error(`no demos carry an app${FRAMEWORKS[framework].outputSuffix}.tsx variant`);
+  process.exit(2);
+}
+console.log(`framework: ${framework} (${selectedSpecs.length} demo(s), goldens: ${goldensDir})`);
+
 let failed = false;
 
-for (const spec of SPECS) {
+for (const spec of selectedSpecs) {
   console.log(`\n## ${spec.app} (input: ${spec.inputScript})`);
   const manifest = writeDemoManifest(spec.app);
 
@@ -347,7 +371,7 @@ for (const spec of SPECS) {
       writeFileSync(`${goldensDir}/${spec.app}.${shot.name}.actual.png`, a);
       console.error(
         `FAIL ${spec.app}.${shot.name}: differs from golden ` +
-          `(actual -> goldens/psp/${spec.app}.${shot.name}.actual.png)`,
+          `(actual -> ${goldensDir.slice(pspUiDir.length)}/${spec.app}.${shot.name}.actual.png)`,
       );
       if (stampedCommit && stampedCommit !== ppssppCommit) {
         console.error(

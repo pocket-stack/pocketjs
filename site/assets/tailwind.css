@@ -548,12 +548,14 @@
     border-top-left-radius: 0;
   }
   .doc-fw-radio-solid:checked ~ .doc-fw-tabs .doc-fw-tab-solid,
-  .doc-fw-radio-vue-vapor:checked ~ .doc-fw-tabs .doc-fw-tab-vue-vapor {
+  .doc-fw-radio-vue-vapor:checked ~ .doc-fw-tabs .doc-fw-tab-vue-vapor,
+  .doc-fw-radio-octane:checked ~ .doc-fw-tabs .doc-fw-tab-octane {
     color: #04121b;
     background: linear-gradient(112deg, #eef3fa 0%, #d2dbe7 42%, #e8edf4 100%);
   }
   .doc-fw-radio-solid:checked ~ .doc-fw-panels .doc-fw-panel-solid,
-  .doc-fw-radio-vue-vapor:checked ~ .doc-fw-panels .doc-fw-panel-vue-vapor {
+  .doc-fw-radio-vue-vapor:checked ~ .doc-fw-panels .doc-fw-panel-vue-vapor,
+  .doc-fw-radio-octane:checked ~ .doc-fw-panels .doc-fw-panel-octane {
     display: block;
   }
 }

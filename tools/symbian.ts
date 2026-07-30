@@ -38,6 +38,11 @@ import {
   withSymbianRuntimeBuildLock,
 } from "./symbian-toolchain.ts";
 import { pocketStackCacheRoot, withArtifactLock } from "./psp-toolchain.ts";
+import {
+  assertSymbianMassStorageDataStageSeparation,
+  resolveSymbianMassStorageDataRoot,
+  stageSymbianMassStorageData,
+} from "./symbian-data.ts";
 
 const root = new URL("..", import.meta.url).pathname;
 
@@ -328,6 +333,12 @@ export interface SymbianBuildAppOptions {
    * existing receipt `sha256.core` field.
    */
   coreLibrary?: string;
+  /**
+   * Host directory recursively installed on mass storage for an
+   * application-specific core. Files are staged and hashed inside the build
+   * transaction; stock cores cannot request this native-only boundary.
+   */
+  massStorageDataRoot?: string;
   transaction?: SymbianBuildTransaction;
 }
 
@@ -439,6 +450,10 @@ export async function buildApp(
       `Symbian custom core library is missing or empty: ${customCoreLibrary}`,
     );
   }
+  const massStorageDataRoot = resolveSymbianMassStorageDataRoot(
+    options.massStorageDataRoot,
+    customCoreLibrary,
+  );
   if ((options.catalogIndex === undefined) !== (options.catalogBlob === undefined)) {
     throw new Error(
       "Symbian app catalog requires both --catalog-index and --catalog-blob",
@@ -465,10 +480,16 @@ export async function buildApp(
     }
   }
   const payload = resolve(outputRoot, "build", plan.app.output);
+  if (massStorageDataRoot !== undefined) {
+    assertSymbianMassStorageDataStageSeparation(massStorageDataRoot, payload);
+  }
   const rustTarget = resolve(outputRoot, ".cargo-symbian");
   const transaction = async () => {
     rmSync(payload, { recursive: true, force: true });
     mkdirSync(payload, { recursive: true });
+    if (massStorageDataRoot !== undefined) {
+      stageSymbianMassStorageData(massStorageDataRoot, payload);
+    }
     await Bun.write(
       resolve(payload, "plan.json"),
       JSON.stringify(plan, null, 2) + "\n",
@@ -612,6 +633,7 @@ const HELP = `PocketJS Nokia E7 / Symbian toolchain
                            [--project-root <dir>] [--outdir <dir>] [--uid 0xE.......]
                            [--catalog-index <catalog.tsv> --catalog-blob <catalog.bin>]
                            [--core-library <application-core.a>]
+                           [--mass-storage-data-root <dir>]
                                     build an independently installable PocketJS E7 SIS
   pocket symbian deploy <sis>       copy to Mass memory/Installs and verify by MTP readback
   pocket symbian coda usb           run the CODA USB ping + Locator handshake
@@ -648,7 +670,7 @@ export async function symbianMain(
         const manifest = flagValue(args.slice(2), "--manifest");
         if (!manifest) {
           throw new Error(
-            "usage: pocket symbian build app --manifest <pocket.json> [--sis-version 1.0.0] [--core-library <lib.a>]",
+            "usage: pocket symbian build app --manifest <pocket.json> [--sis-version 1.0.0] [--core-library <lib.a>] [--mass-storage-data-root <dir>]",
           );
         }
         const sisVersion = flagValue(args.slice(2), "--sis-version") ??
@@ -663,12 +685,16 @@ export async function symbianMain(
             catalogIndex: flagValue(args.slice(2), "--catalog-index"),
             catalogBlob: flagValue(args.slice(2), "--catalog-blob"),
             coreLibrary: flagValue(args.slice(2), "--core-library"),
+            massStorageDataRoot: flagValue(
+              args.slice(2),
+              "--mass-storage-data-root",
+            ),
           },
         )}`);
         break;
       }
       throw new Error(
-        "usage: pocket symbian build probe | build app --manifest <pocket.json> [--core-library <lib.a>]",
+        "usage: pocket symbian build probe | build app --manifest <pocket.json> [--core-library <lib.a>] [--mass-storage-data-root <dir>]",
       );
     case "deploy":
       if (!args[1]) throw new Error("usage: pocket symbian deploy <path-to.sis>");

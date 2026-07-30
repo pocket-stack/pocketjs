@@ -153,5 +153,27 @@ pub unsafe fn log_exception_with(ctx: *mut JSContext, sink: impl Fn(&str)) {
         }
         JS_FreeCString(ctx, s);
     }
+    // Diagnostics for opaque exception values: report the tag and, for
+    // objects, the message/stack properties individually (a throw whose
+    // toString fails stringifies as "null" above and hides the cause).
+    // JS_TAG_OBJECT (-1) is absent from the PSP bindings surface.
+    const TAG_OBJECT: i32 = -1;
+    sink(&alloc::format!("exception tag={}", JS_ValueGetTag(e)));
+    if JS_ValueGetTag(e) == TAG_OBJECT {
+        for prop in [b"message\0".as_ptr(), b"stack\0".as_ptr()] {
+            let v = JS_GetPropertyStr(ctx, e, prop as *const core::ffi::c_char);
+            let mut plen: size_t = 0;
+            let ps = JS_ToCStringLen2(ctx, &mut plen, v, 0);
+            if !ps.is_null() {
+                if let Ok(pmsg) =
+                    core::str::from_utf8(core::slice::from_raw_parts(ps as *const u8, plen))
+                {
+                    sink(pmsg);
+                }
+                JS_FreeCString(ctx, ps);
+            }
+            JS_FreeValue(ctx, v);
+        }
+    }
     JS_FreeValue(ctx, e);
 }

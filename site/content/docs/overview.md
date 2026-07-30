@@ -1,15 +1,17 @@
 # Overview
 
-PocketJS lets you build **Solid** or **Vue Vapor** interfaces for Sony PSP and
+PocketJS lets you build **Solid**, **Vue Vapor**, or **Octane** interfaces for
+Sony PSP and
 PS Vita hardware. It compiles class strings and font glyphs at build time, then
 renders real flexbox, sub-pixel text and native animation through a compact
 `no_std` Rust core. One application manifest resolves into target-specific PSP
 and Vita artifacts; browser, desktop, PPSSPP/Vita3K, and headless hosts exercise
 the same logical UI and HostOps semantics.
 
-If you know Solid or Vue, you already know most of PocketJS. The primitives are
+If you know Solid, Vue, or React, you already know most of PocketJS. The
+primitives are
 `View`, `Text`, and `Image`; state comes from the native framework package
-(`solid-js` or `vue`); layout and color come from class strings like
+(`solid-js`, `vue`, or `octane`); layout and color come from class strings like
 `flex-col items-center gap-4 bg-slate-50`.
 What is different is what happens underneath: there is no browser DOM and no
 runtime CSS.
@@ -50,7 +52,9 @@ callback for you.
 ## Three pillars
 
 **1. Framework adapters over one native tree.** Solid is the default adapter and
-uses `babel-preset-solid` universal mode. Vue Vapor uses `vue-jsx-vapor`. Both
+uses `babel-preset-solid` universal mode. Vue Vapor uses `vue-jsx-vapor`.
+Octane — React's programming model, compiled — uses the Octane universal
+compiler, which lowers JSX to static host plans plus dynamic slots. All three
 target the same retained native tree and HostOps surface, so switching framework
 changes the JS component/reactivity layer, not the Rust core, styling pipeline,
 input model, or asset pack. See [Frameworks](/docs/frameworks/) and
@@ -122,6 +126,27 @@ export default function App() {
   );
 }
 ```
+
+```tsx octane
+// app.tsx
+import { useState } from "octane";
+import { Text, View } from "@pocketjs/framework/components";
+
+export default function App() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <View class="flex-col items-center gap-4 p-4 bg-slate-50">
+      <Text class="text-xl text-slate-950">{`Count: ${count}`}</Text>
+      <View
+        class="p-2 rounded-md bg-blue-600 focus:bg-blue-500 transition-colors duration-150"
+        focusable
+        onPress={() => setCount(count + 1)}
+      />
+    </View>
+  );
+}
+```
 :::
 
 The mount entry is ordinary bootstrap code — the framework detects the host,
@@ -144,6 +169,14 @@ import App from "./app.tsx";
 
 mount(App);
 ```
+
+```tsx octane
+// main.tsx
+import { mount } from "@pocketjs/framework/octane";
+import App from "./app.tsx";
+
+mount(App);
+```
 :::
 
 Build it with Bun:
@@ -157,6 +190,11 @@ bun tools/build.ts hero      # -> dist/hero.js + dist/hero.pak
 bun tools/build.ts hero --framework=vue-vapor
 # -> dist/hero.vue-vapor.js + dist/hero.vue-vapor.pak
 ```
+
+```sh octane
+bun tools/build.ts hero --framework=octane
+# -> dist/hero.octane.js + dist/hero.octane.pak
+```
 :::
 
 A few things worth noticing in that example:
@@ -165,9 +203,10 @@ A few things worth noticing in that example:
   changes swap styles natively, with zero JS on the focus transition.
 - `transition-colors duration-150` declares motion; the tween ticks in Rust at
   a fixed `dt = 1/60 s`. JS only declares it.
-- `Count: {count()}` / `Count: {count.value}` is a mixed text run — a static
+- `Count: {count()}` / `Count: {count.value}` / `` {`Count: ${count}`} `` is a
+  mixed text run — a static
   string and a reactive expression laid out as one inline run, not two flex
-  items.
+  items. (Octane writes the mixed run as one template literal.)
 
 ## One application contract, target-specific artifacts
 
@@ -215,8 +254,8 @@ list in the [Tailwind subset](/docs/tailwind/) reference.
 
 - [Getting started](/docs/getting-started/) — install, build, and run your first
   app.
-- [Frameworks](/docs/frameworks/) — switch between Solid and Vue Vapor without
-  environment-variable hacks.
+- [Frameworks](/docs/frameworks/) — switch between Solid, Vue Vapor, and
+  Octane without environment-variable hacks.
 - [Architecture](/docs/architecture/) — how the JS runtime, Rust core, and
   target backends fit together.
 - [Components](/docs/components/) — `View`, `Text`, `Image`, control flow, and

@@ -13,8 +13,9 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar`, `Named`, `Grid`, `Lazy`, `Gallery`, `DeepZoom` (Solid) |
 | `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
 | `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
+| `octane` | `useState`, `useEffect`, `useMemo`, `useRef`, `useLayoutEffect`, `useEffectEvent` |
 | `@pocketjs/framework/animation` | `animate`, `spring`, `cancelAnim` |
-| `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `analogX`, `analogY`, `analogRaw`, `createSpriteAnimation`, `pushButtonHandlerBlock` |
+| `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `analogX`, `analogY`, `analogRaw`, `createSpriteAnimation`, `pushButtonHandlerBlock` (Octane builds: `useFrame`, `useButtonPress`, `useSpriteAnimation`) |
 | `@pocketjs/framework/input` | `BTN`, `touches`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
 | `@pocketjs/framework/platform` | `platform`, `hasFeature` |
 | `@pocketjs/framework/clock` | `simulationHz`, `ticksPerFrame`, `virtualFrame`, `virtualNow`, `after` |
@@ -35,6 +36,11 @@ function mount(code: () => unknown, opts?: MountOptions): () => void
 ```
 
 App-level entry point for demo/application bundles. Resolves ops from `opts.ops` or `globalThis.ui`, loads `opts.pak` (when given), uploads the pack's images on injected hosts, feeds the default generated style table (`opts.styles` ?? `STYLE_IDS`), and mounts `code`. Returns a disposer that unmounts and destroys the app subtree. Throws if neither `opts.ops` nor `globalThis.ui` is present.
+
+Solid entries pass a closure (`mount(() => <App />)`); Vue Vapor and Octane
+entries pass the component itself (`mount(App)`). In Octane, JSX inside a
+call-argument arrow is a compile error, so `mount(App)` is the only valid
+entry shape.
 
 ### `render`
 
@@ -424,6 +430,24 @@ not wrap refs, computed values, effects, or component definitions. Use
 `@pocketjs/framework/vue-vapor/components` explicitly, or set
 `framework: "vue-vapor"` and import generic `@pocketjs/framework/components`.
 
+## `octane`
+
+Octane apps import React-model hooks directly from `octane` (`useState`,
+`useEffect`, `useMemo`, `useRef`, `useLayoutEffect`, `useEffectEvent`, …);
+PocketJS does not wrap them. Dependency arrays may be omitted — the Octane
+compiler infers them from captures — and hooks are tracked by call site
+(conditional hooks in `if` blocks are fine, hooks in loops are not). Use
+`@pocketjs/framework/octane/components` explicitly, or set
+`framework: "octane"` and import generic `@pocketjs/framework/components`.
+
+PocketJS's per-frame lifecycle hooks are use-prefixed in Octane builds —
+`useFrame`, `useButtonPress`, and `useSpriteAnimation` from
+`@pocketjs/framework/octane/lifecycle` — because the Octane compiler slot-keys
+custom hooks by the `use[A-Z]` naming convention. Their signatures match
+`onFrame` / `onButtonPress` / `createSpriteAnimation` below, except
+`useSpriteAnimation` returns the current frame key as a plain `string`.
+`pushButtonHandlerBlock` is not a hook and keeps its name.
+
 ---
 
 ## `@pocketjs/framework/animation`
@@ -482,7 +506,10 @@ Stops a running animation by the id `animate`/`spring` returned.
 ## `@pocketjs/framework/lifecycle`
 
 Component-scoped per-frame hooks. Registrations clean up with the selected
-framework owner (`onCleanup` in Solid, `onScopeDispose` in Vue Vapor). See
+framework owner (`onCleanup` in Solid, `onScopeDispose` in Vue Vapor, effect
+cleanup in Octane). In Octane builds these exports are the use-prefixed hooks
+`useFrame`, `useButtonPress`, and `useSpriteAnimation` (see
+[`octane`](#octane) above); the signatures below are otherwise identical. See
 [Reactivity](/docs/reactivity/) and [Input & focus](/docs/input-focus/).
 
 ### `onFrame`
@@ -505,8 +532,8 @@ function analogRaw(): number
 after PocketJS's shared deadzone (`right` and `down` are positive).
 `analogRaw` returns the host word `(x << 8) | y`, with each byte in `0..255`
 and `128` at center. Stickless hosts stay centered, so controller fallbacks do
-not need target checks. Solid and Vue Vapor expose the same functions from
-their lifecycle subpaths.
+not need target checks. Solid, Vue Vapor, and Octane expose the same functions
+from their lifecycle subpaths.
 
 ### `onButtonPress`
 
@@ -538,7 +565,9 @@ function createSpriteAnimation(
 ```
 
 Cycles through `frames` (image `src` keys), returning a Solid `Accessor` or a
-Vue Vapor `ComputedRef` for the current frame. Throws if `frames` is empty.
+Vue Vapor `ComputedRef` for the current frame (the Octane hook,
+`useSpriteAnimation`, returns the current frame key as a plain `string`).
+Throws if `frames` is empty.
 `opts.frameStep` (default `1`, min `1`) holds each sprite frame for that many
 host frames.
 

@@ -158,8 +158,10 @@ async function main() {
       const appUrl = URL.createObjectURL(new Blob([result.code], { type: "text/javascript" }));
       const runtime = activeFramework === "vue-vapor"
         ? "@pocketjs/framework/vue-vapor"
-        : "@pocketjs/framework/solid";
-      const mountExpr = activeFramework === "vue-vapor" ? "App" : "() => App()";
+        : activeFramework === "octane"
+          ? "@pocketjs/framework/octane"
+          : "@pocketjs/framework/solid";
+      const mountExpr = activeFramework === "solid" ? "() => App()" : "App";
       const boot =
         `import App from ${JSON.stringify(appUrl)};\n` +
         `import { mount, __resetAll } from ${JSON.stringify(runtime)};\n` +
@@ -171,8 +173,9 @@ async function main() {
         await import(/* @vite-ignore */ bootUrl);
         host.begin();
         const ms = Math.round(performance.now() - t0);
+        const fwLabel = { "vue-vapor": "Vue Vapor", octane: "Octane" }[activeFramework] || "Solid";
         setStatus(
-          `${activeFramework === "vue-vapor" ? "Vue Vapor" : "Solid"} · ok · ${result.classCount} styles · ${result.slotCount} atlases` +
+          `${fwLabel} · ok · ${result.classCount} styles · ${result.slotCount} atlases` +
             (result.imageNames.length ? ` · ${result.imageNames.length} img` : "") +
             ` · ${ms} ms`,
           "ok",
@@ -232,7 +235,12 @@ async function main() {
   const boot = new URLSearchParams(location.search).get("demo");
   const bootFramework = new URLSearchParams(location.search).get("framework");
   if (boot && demos.some((d) => d.name === boot)) demoSel.value = boot;
-  if (bootFramework === "vue-vapor" && variantFor(currentDemo(), "vue-vapor")) framework = "vue-vapor";
+  if (
+    (bootFramework === "vue-vapor" || bootFramework === "octane") &&
+    variantFor(currentDemo(), bootFramework)
+  ) {
+    framework = bootFramework;
+  }
   const first = currentDemo();
   updateFrameworkButtons();
   const firstVariant = currentVariant();

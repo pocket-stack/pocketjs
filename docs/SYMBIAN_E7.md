@@ -150,7 +150,9 @@ output-specific SIS/receipt filenames. Multiple PocketJS apps can therefore be
 installed side by side instead of replacing one shared runtime package. The
 receipt records that identity, the package version, pinned QuickJS revision,
 and SHA-256 hashes for the JavaScript, `.pak`, resolved plan, Rust core, and
-optional launcher catalog. It also records the deterministic GCCE data base:
+optional launcher catalog. Receipt schema 3 also carries a `data` array of
+`{path, bytes, sha256}` entries for custom-core mass-storage files. It also
+records the deterministic GCCE data base:
 the historical 4 MiB baseline plus the raw embedded JS/pak/catalog byte count,
 rounded to 1 MiB. This keeps large DeepZoom packs and multi-app catalogs above
 the read-only qrc segment without weakening the linker's overlap check. Stage
@@ -190,6 +192,35 @@ bun tools/symbian.ts build app \
   --project-root /path/to/project \
   --core-library /path/to/libapplication_symbian_core.a
 ```
+
+An application-specific core can package a non-empty external data tree in the
+same SIS by adding `--mass-storage-data-root`:
+
+```sh
+bun tools/symbian.ts build app \
+  --manifest /path/to/project/pocket.json \
+  --project-root /path/to/project \
+  --core-library /path/to/libapplication_symbian_core.a \
+  --mass-storage-data-root /path/to/native-data
+```
+
+This option is restricted to `--core-library`; the stock core and launcher
+catalog cannot use it. The source must be a real directory containing only
+regular files. Symlinks, special files, empty trees, unsafe relative paths,
+case-insensitive path collisions, and a source that overlaps the build payload
+are rejected. Portable path components use ASCII letters, digits, spaces,
+periods, underscores, and hyphens, and may not begin or end with a period or
+space.
+
+The host copies the tree into the locked payload and writes a deterministic
+manifest containing only relative paths, byte counts, and SHA-256 digests. The
+offline container revalidates the manifest, exact file set, and every file's
+byte count and digest before packaging. Each file is installed to
+`E:\private\<application UID without 0x>\data\<relative path>`. These bytes are
+not embedded in the Qt resource, exposed to QuickJS, or counted in the GCCE
+read-only data-base calculation; the custom native core owns how it opens and
+interprets them. The receipt's `data` array is the authoritative record of
+what the SIS carried.
 
 The stock core's provider returns null, so it retains the exact 2D runtime and
 requests no depth buffer. A custom core disables that default Cargo feature

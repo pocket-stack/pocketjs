@@ -82,7 +82,12 @@ const PROCESS_PRELUDE =
 async function bundle(
   entry: string,
   outfile: string,
-  opts: { shims?: boolean; prelude?: string; external?: string[] } = {},
+  opts: {
+    shims?: boolean;
+    prelude?: string;
+    external?: string[];
+    plugins?: import("bun").BunPlugin[];
+  } = {},
 ) {
   const res = await Bun.build({
     entrypoints: [SITE + entry],
@@ -93,7 +98,7 @@ async function bundle(
     external: opts.external,
     minify: true,
     sourcemap: "none",
-    plugins: opts.shims ? [shimPlugin] : [],
+    plugins: [...(opts.shims ? [shimPlugin] : []), ...(opts.plugins ?? [])],
   });
   if (!res.success) {
     for (const l of res.logs) console.error(String(l));
@@ -215,7 +220,7 @@ function writeStaticHeaders(): void {
 
 // --- editable demos (mostly single-file; gallery inlines generated tile data)
 type SpriteMeta = Record<string, { cols: number; rows: number; frames: number; step: number; psm?: number }>;
-type DemoVariant = { framework: "solid" | "vue-vapor"; source: string; spriteMeta?: SpriteMeta };
+type DemoVariant = { framework: "solid" | "vue-vapor" | "octane"; source: string; spriteMeta?: SpriteMeta };
 type DemoEntry = { name: string; title: string; variants: DemoVariant[] };
 
 function inlinePlaygroundImports(name: string, source: string): string | null {
@@ -241,6 +246,7 @@ function demoManifest() {
   for (const name of readdirSync(dir).sort()) {
     const app = dir + name + "/app.tsx";
     const vueApp = dir + name + "/app.vue-vapor.tsx";
+    const octaneApp = dir + name + "/app.octane.tsx";
     const main = dir + name + "/main.tsx";
     if (!existsSync(app)) continue;
     // The playground (and every demo shelf on the site) shows only
@@ -267,6 +273,12 @@ function demoManifest() {
       const vueSource = inlinePlaygroundImports(name, readFileSync(vueApp, "utf8"));
       if (vueSource !== null) {
         variants.push({ framework: "vue-vapor", source: vueSource, spriteMeta });
+      }
+    }
+    if (existsSync(octaneApp)) {
+      const octaneSource = inlinePlaygroundImports(name, readFileSync(octaneApp, "utf8"));
+      if (octaneSource !== null) {
+        variants.push({ framework: "octane", source: octaneSource, spriteMeta });
       }
     }
     out.push({ name, title, variants });
@@ -299,6 +311,18 @@ async function main() {
   await bundle("playground/runtime-entry.ts", "pg/runtime.js", { external: ["solid-js", "solid-js/universal"] });
   await bundle("playground/runtime-vue-vapor-entry.ts", "pg/runtime-vue-vapor.js", { external: ["vue"] });
   await bundle("playground/compiler-entry.ts", "pg/compiler.js", { shims: true, prelude: PROCESS_PRELUDE });
+  // Octane framework modules must pass through the Octane compiler (hook call
+  // sites get slots; JSX lowers to universal plans), so this bundle runs under
+  // the same jsxPlugin the real build uses. Self-contained: the universal
+  // runtime (octane/universal/native) is bundled in, no import-map external.
+  // Imported lazily AFTER pg/compiler.js is bundled: loading jsx-plugin.ts
+  // (vue-jsx-vapor/api and friends) into this process poisons Bun's module
+  // classification for the wasi-shim graph and the compiler bundle then fails
+  // with a require-of-top-level-await error.
+  const { jsxPlugin } = await import("../framework/compiler/jsx-plugin.ts");
+  await bundle("playground/runtime-octane-entry.ts", "pg/runtime-octane.js", {
+    plugins: [jsxPlugin("octane")],
+  });
   await bundle("playground/playground.js", "pg/playground.bundle.js");
   await bundle("assets/pocket-stage-web.js", "assets/pocket-stage-web.js");
 
@@ -427,7 +451,21 @@ function renderHome(): string {
     url: SITE_URL,
     codeRepository: "https://github.com/pocket-stack/pocketjs",
     programmingLanguage: ["TypeScript", "JavaScript", "Rust"],
-    runtimePlatform: ["Sony PSP", "Sony PS Vita", "PPSSPP", "Vita3K", "WebAssembly", "Bun"],
+    runtimePlatform: [
+      "Sony PSP",
+      "Sony PS Vita",
+      "Nokia E7 (Symbian)",
+      "PocketBook",
+      "ESP32",
+      "Game Boy Advance",
+      "Game Boy",
+      "NES",
+      "macOS",
+      "PPSSPP",
+      "Vita3K",
+      "WebAssembly",
+      "Bun",
+    ],
   });
   return `<!doctype html>
 <html lang="en">
@@ -446,7 +484,7 @@ function renderHome(): string {
 <meta property="og:image" content="${OG_IMAGE_URL}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="PocketJS — Bare Metal Modern Web">
+<meta property="og:image:alt" content="PocketJS — Build Modern Apps for Impossible Devices">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${SITE_TITLE}">
 <meta name="twitter:description" content="${HOME_DESC}">
@@ -502,7 +540,13 @@ const IMPORT_MAP = `<script type="importmap">
   "@pocketjs/framework/vue-vapor/components":"/pg/runtime-vue-vapor.js",
   "@pocketjs/framework/vue-vapor/input":"/pg/runtime-vue-vapor.js",
   "@pocketjs/framework/vue-vapor/lifecycle":"/pg/runtime-vue-vapor.js",
-  "@pocketjs/framework/vue-vapor/renderer":"/pg/runtime-vue-vapor.js"
+  "@pocketjs/framework/vue-vapor/renderer":"/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/octane":"/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/animation":"/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/components":"/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/input":"/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/lifecycle":"/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/renderer":"/pg/runtime-octane.js"
 }}
 </script>`;
 
@@ -514,7 +558,7 @@ type Highlight = (text: string, rawLang: string) => string;
 async function setupMarkdown(): Promise<Highlight> {
   const highlighter = await createHighlighter({
     themes: ["one-dark-pro"],
-    langs: ["tsx", "typescript", "jsx", "javascript", "json", "bash", "rust", "toml", "html", "css", "diff"],
+    langs: ["tsx", "typescript", "jsx", "javascript", "json", "bash", "rust", "toml", "html", "css", "diff", "c", "cpp"],
   });
   const LANG_ALIAS: Record<string, string> = { ts: "typescript", js: "javascript", sh: "bash", shell: "bash", console: "bash", jsonc: "json", rs: "rust", text: "text", txt: "text" };
   const loaded = new Set(highlighter.getLoadedLanguages());
@@ -553,19 +597,17 @@ async function buildDocs(highlight: Highlight) {
   let frameworkCodeId = 0;
   const renderFrameworkCode = (markdown: string) =>
     markdown.replace(/:::framework-code\n([\s\S]*?)\n:::/g, (_match, body: string) => {
-      const variants: { framework: "solid" | "vue-vapor"; code: string; lang: string; label: string }[] = [];
+      const FW_LABELS = { solid: "Solid", "vue-vapor": "Vue Vapor", octane: "Octane" } as const;
+      const variants: { framework: keyof typeof FW_LABELS; code: string; lang: string; label: string }[] = [];
       body.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_fence, meta: string, code: string) => {
         const parts = meta.trim().split(/\s+/);
-        const framework = parts.find((part: string) => part === "solid" || part === "vue-vapor") as
-          | "solid"
-          | "vue-vapor"
-          | undefined;
+        const framework = parts.find((part: string): part is keyof typeof FW_LABELS => part in FW_LABELS);
         if (!framework) return "";
         variants.push({
           framework,
           code: code.replace(/\n$/, ""),
           lang: parts[0] || "text",
-          label: framework === "solid" ? "Solid" : "Vue Vapor",
+          label: FW_LABELS[framework],
         });
         return "";
       });

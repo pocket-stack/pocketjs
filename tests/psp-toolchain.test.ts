@@ -42,7 +42,7 @@ describe("canonical PSP toolchain", () => {
       },
       quickJsRs: {
         repository: "https://github.com/pocket-stack/quickjs-rs.git",
-        rev: "0fc946fb670c0c29bc0135f510bcb0f595415a61",
+        rev: "ba5bdd0dc013518768e76cd9e05cd30ed53dd35b",
       },
       sdk: {
         repository: "https://github.com/pocket-stack/pspdev",

@@ -64,7 +64,7 @@ const env = {
   TARGET_AR: `${toolchain.llvmBin}/llvm-ar`,
   TARGET_CFLAGS:
     `-target mipsel-sony-psp -mcpu=mips2 -msingle-float -mlittle-endian -mno-abicalls -fno-pic -G0 -mno-check-zero-division ` +
-    `-fno-stack-protector -I${sdk}/psp/include -I${sdk}/psp/sdk/include`,
+    `-fno-stack-protector -O2 -I${sdk}/psp/include -I${sdk}/psp/sdk/include`,
   AR_mipsel_sony_psp: `${toolchain.llvmBin}/llvm-ar`,
   RANLIB_mipsel_sony_psp: `${toolchain.llvmBin}/llvm-ranlib`,
   RUST_PSP_TARGET: `${repo}hosts/psp/targets/mipsel-sony-psp.json`,

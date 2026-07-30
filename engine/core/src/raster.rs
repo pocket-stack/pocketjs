@@ -190,6 +190,20 @@ struct Rgb565Target<'a> {
     pixels: &'a mut [u16],
 }
 
+/// A tightly packed RGB565 window whose pixels retain their coordinates in the
+/// full viewport. The rasterizer continues to produce full-surface linear
+/// offsets so gradient, glyph, texture, and triangle sampling keep their global
+/// phase; this adapter maps those offsets into the compact backing slice.
+struct Rgb565WindowTarget<'a> {
+    pixels: &'a mut [u16],
+    full_stride: usize,
+    full_pixel_len: usize,
+    origin_x: usize,
+    origin_y: usize,
+    width: usize,
+    height: usize,
+}
+
 #[inline]
 pub const fn pack_rgb565(r: u32, g: u32, b: u32) -> u16 {
     (((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3)) as u16
@@ -207,6 +221,24 @@ fn unpack_rgb565(pixel: u16) -> (u32, u32, u32) {
     )
 }
 
+/// Blend one straight-alpha RGB888 source pixel over an RGB565 pixel. Shared
+/// by the full-frame and compact-window targets so a strip render stays
+/// bit-identical to the same window of a full render by construction.
+#[inline]
+fn blend_rgb565_pixel(pixel: &mut u16, r: u32, g: u32, b: u32, a: u32) {
+    if a >= 255 {
+        *pixel = pack_rgb565(r, g, b);
+        return;
+    }
+    if a == 0 {
+        return;
+    }
+    let (dr, dg, db) = unpack_rgb565(*pixel);
+    let ia = 255 - a;
+    let mix = |s: u32, d: u32| (s * a + d * ia + 127) / 255;
+    *pixel = pack_rgb565(mix(r, dr), mix(g, dg), mix(b, db));
+}
+
 impl RenderTarget for Rgb565Target<'_> {
     #[inline]
     fn pixel_len(&self) -> usize {
@@ -215,22 +247,55 @@ impl RenderTarget for Rgb565Target<'_> {
 
     #[inline]
     fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32) {
-        if a >= 255 {
-            self.pixels[offset] = pack_rgb565(r, g, b);
-            return;
-        }
-        if a == 0 {
-            return;
-        }
-        let (dr, dg, db) = unpack_rgb565(self.pixels[offset]);
-        let ia = 255 - a;
-        let mix = |s: u32, d: u32| (s * a + d * ia + 127) / 255;
-        self.pixels[offset] = pack_rgb565(mix(r, dr), mix(g, dg), mix(b, db));
+        blend_rgb565_pixel(&mut self.pixels[offset], r, g, b, a);
     }
 
     #[inline]
     fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32) {
         self.pixels[start..start + len].fill(pack_rgb565(r, g, b));
+    }
+}
+
+impl Rgb565WindowTarget<'_> {
+    #[inline]
+    fn local_offset(&self, full_offset: usize) -> usize {
+        let y = full_offset / self.full_stride;
+        let x = full_offset % self.full_stride;
+        assert!(
+            x >= self.origin_x
+                && x < self.origin_x + self.width
+                && y >= self.origin_y
+                && y < self.origin_y + self.height,
+            "raster write escaped the compact RGB565 window"
+        );
+        (y - self.origin_y) * self.width + (x - self.origin_x)
+    }
+}
+
+impl RenderTarget for Rgb565WindowTarget<'_> {
+    #[inline]
+    fn pixel_len(&self) -> usize {
+        // This is the virtual target length used by full-viewport coordinate
+        // calculations. The actual compact slice is validated by the window
+        // entry point below.
+        self.full_pixel_len
+    }
+
+    #[inline]
+    fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32) {
+        let offset = self.local_offset(offset);
+        blend_rgb565_pixel(&mut self.pixels[offset], r, g, b, a);
+    }
+
+    #[inline]
+    fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32) {
+        let full_x = start % self.full_stride;
+        let local = self.local_offset(start);
+        assert!(
+            len <= self.origin_x + self.width - full_x,
+            "raster span crossed a compact RGB565 window row"
+        );
+        self.pixels[local..local + len].fill(pack_rgb565(r, g, b));
     }
 }
 
@@ -311,6 +376,62 @@ pub fn render_scaled_rgb565(ui: &Ui, words: &[u32], fb: &mut [u16], scale: u32) 
 pub fn render_scaled_rgb565_over(ui: &Ui, words: &[u32], fb: &mut [u16], scale: u32) {
     let mut target = Rgb565Target { pixels: fb };
     render_scaled_impl(ui, words, &mut target, scale, false);
+}
+
+/// Execute DrawList words over a tightly packed RGB565 sub-window without
+/// clearing it.
+///
+/// `window` is expressed in global logical viewport coordinates with half-open
+/// bounds. `fb` must contain exactly
+/// `(window.width * scale) * (window.height * scale)` pixels. Raster sampling
+/// remains anchored to the full viewport; only storage is translated to the
+/// compact window. Hardware backends use this for ordered software fallback
+/// while rendering a dirty strip.
+pub fn render_scaled_rgb565_window_over(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u16],
+    scale: u32,
+    window: DamageRect,
+) {
+    assert!(
+        (1..=MAX_RENDER_SCALE).contains(&scale),
+        "render scale must be 1 through 4"
+    );
+    let scale_i = scale as i32;
+    let (viewport_w, viewport_h) = ui.viewport();
+    let logical_screen = DamageRect::new(0, 0, viewport_w as i32, viewport_h as i32);
+    assert!(
+        !window.is_empty() && window.intersect(logical_screen) == window,
+        "compact RGB565 window must be non-empty and inside the viewport"
+    );
+
+    let full_width = logical_screen.x1 * scale_i;
+    let full_height = logical_screen.y1 * scale_i;
+    let physical = Clip {
+        x0: window.x0 * scale_i,
+        y0: window.y0 * scale_i,
+        x1: window.x1 * scale_i,
+        y1: window.y1 * scale_i,
+    };
+    let width = (physical.x1 - physical.x0) as usize;
+    let height = (physical.y1 - physical.y0) as usize;
+    assert_eq!(
+        fb.len(),
+        width * height,
+        "compact RGB565 window has the wrong pixel length"
+    );
+
+    let mut target = Rgb565WindowTarget {
+        pixels: fb,
+        full_stride: full_width as usize,
+        full_pixel_len: full_width as usize * full_height as usize,
+        origin_x: physical.x0 as usize,
+        origin_y: physical.y0 as usize,
+        width,
+        height,
+    };
+    render_scaled_clipped(ui, words, &mut target, full_width, scale_i, physical);
 }
 
 /// Clear and repaint only the supplied logical damage rectangles into an

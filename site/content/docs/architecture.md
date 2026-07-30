@@ -5,9 +5,12 @@ in PPSSPP and Vita3K, in desktop/browser hosts, and under headless Bun. It gets
 there with one principle:
 **one Rust core, framework-specific JS adapters, one layout engine everywhere.**
 
-The JavaScript side can be Solid or Vue Vapor. Solid uses its universal renderer;
+The JavaScript side can be Solid, Vue Vapor, or Octane. Solid uses its
+universal renderer;
 Vue Vapor uses a Vapor renderer adapter and a tiny DOM-shaped facade for Vue's
-helpers. The rendering, layout, styling, animation, and text engine is a single
+helpers; Octane compiles JSX and hooks to static host plans plus dynamic slots
+whose driver (`renderer-octane.ts`) targets the native tree directly, with no
+DOM shim. The rendering, layout, styling, animation, and text engine is a single
 `no_std` Rust crate (`pocketjs-core`) compiled for each host: MIPS for PSP, ARM
 for Vita, `wasm32` for browser/tests, and the desktop target for wgpu. Styling is a build-time
 [Tailwind subset](/docs/tailwind/); fonts are baked into atlases at build time.
@@ -16,7 +19,7 @@ This page explains how the pieces fit together and why each choice was made.
 ## The pipeline
 
 ```
-        app.tsx  (Solid or Vue Vapor + Tailwind-subset classes)
+        app.tsx  (Solid, Vue Vapor or Octane + Tailwind-subset classes)
            │
            │  framework JSX transform   (two-pass build)
            ▼
@@ -46,7 +49,7 @@ Reading it top to bottom:
 
 1. **`app.tsx`** is ordinary framework JSX: PocketJS components from
    [`@pocketjs/framework/components`](/docs/components/), state/lifecycle from
-   `solid-js` or `vue`, and `class` strings from the Tailwind subset.
+   `solid-js`, `vue`, or `octane`, and `class` strings from the Tailwind subset.
 2. A product **build** resolves `pocket.json` for one target, then runs the
    selected JSX transform, compiles class strings to a binary style table
    (`styles.bin`), bakes target-density glyph atlases/assets, and packs them
@@ -74,7 +77,9 @@ runs on the handheld.
 
 PocketJS keeps framework code above a small renderer adapter boundary. Solid
 uses `babel-preset-solid` with `generate: 'universal'`; Vue Vapor uses
-`vue-jsx-vapor` and `renderer-vue-vapor.ts`. Both adapters target the same JS
+`vue-jsx-vapor` and `renderer-vue-vapor.ts`; Octane uses its universal
+compiler against the "pocket" renderer descriptor and `renderer-octane.ts`.
+All three adapters target the same JS
 mirror tree and `ui.*` HostOps, so the Rust core, input manager, style table,
 animation system, `.pak` format, and native targets do not fork by framework.
 
@@ -171,7 +176,7 @@ It helps to think of PocketJS as three layers with narrow contracts between
 them.
 
 **1. The app + framework runtime (JavaScript).** Your components and reactive
-state. The Solid/Vue adapters keep a lightweight JS *mirror* of the tree —
+state. The Solid/Vue/Octane adapters keep a lightweight JS *mirror* of the tree —
 `{ id, parent, children[], … }` — so the reconciler can *read* tree structure
 without crossing the FFI boundary.
 Only *mutations* cross into native. `setProperty` runs through a dispatch table:
@@ -252,15 +257,23 @@ pocketjs/
     animation.ts         ├ the public @pocketjs/framework/* subpath modules
     lifecycle.ts         │   (Solid primitives are imported from solid-js)
     input-api.ts, overlay.ts, index.ts  ┘
+    renderer-octane.ts  Octane pocket driver: host command batches → mirror tree + ui.* ops
+    components-octane.tsx, frame-octane.tsx, lifecycle-octane.ts
+                        the Octane adapter (useFrame / useButtonPress / useSpriteAnimation)
+    index-octane.ts     Octane runtime entry: render/mount; flushes Octane's
+                        microtask re-renders synchronously inside each frame
+    scheduler-polyfill.ts  microtask scheduler shim for QuickJS hosts
 
   framework/compiler/
-    solid-plugin.ts     babel transform + per-file class/codepoint collection
+    jsx-plugin.ts       babel transform (Solid, Vue Vapor or Octane) + per-file class/codepoint collection
+    vue-sfc-compile.ts  .vue → inline Vapor render function (@vue/compiler-sfc)
     tailwind.ts         token parser → styles.bin + styles.generated.ts
     bake-font.ts        atlas baker (charset from AST scan + ASCII)
     pak.ts            container writer
 
   hosts/web/             480×272 canvas playground + Bun dev server
-  apps/                hero, cards, stats, library, settings, notifications, music
+  apps/                hero, cards, stats, library, settings, notifications, music, gallery
+                        (each ships app.tsx plus app.vue-vapor.tsx / app.octane.tsx siblings)
   tests/                 contract drift guard, wasm goldens, PPSSPP e2e
   tools/              build.ts, psp.ts, dev.ts, wasm.ts
   site/                 this documentation
@@ -301,7 +314,8 @@ frame order are covered on the [Native contract](/docs/native-contract/) page.
   compilation, and font baking in detail.
 - [Native contract](/docs/native-contract/) — the `ui.*` ops, node lifecycle,
   generation-tagged handles, and per-frame ordering.
-- [Frameworks](/docs/frameworks/) — Solid and Vue Vapor selection, imports, and
+- [Frameworks](/docs/frameworks/) — Solid, Vue Vapor, and Octane selection,
+  imports, and
   output naming.
 - [Reactivity](/docs/reactivity/) — how Solid signals and effects behave on the
   default runtime.

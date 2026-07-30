@@ -60,7 +60,7 @@ function demos(): string[] {
 function usage(message?: string): never {
   if (message) console.error(`play: ${message}\n`);
   console.error(
-    "usage: bun play <vita|switch> <demo> [--fullscreen] [--no-build] [--no-launch] [--framework=solid|vue-vapor]\n" +
+    "usage: bun play <vita|switch> <demo> [--fullscreen] [--no-build] [--no-launch] [--framework=solid|vue-vapor|octane]\n" +
       `demos: ${demos().join(", ")}`,
   );
   process.exit(message ? 2 : 0);
@@ -269,7 +269,8 @@ const titleId = vitaTitleId(identity.id);
 const stagedApp = `${PLAY_DIR}/${titleId}`;
 const frameworkOverride = framework?.slice("--framework=".length);
 const fallbackFramework =
-  frameworkOverride || (demo.endsWith("vue-vapor") ? "vue-vapor" : "solid");
+  frameworkOverride ||
+  (demo.endsWith("vue-vapor") ? "vue-vapor" : demo.endsWith("octane") ? "octane" : "solid");
 
 if (platform === "switch") {
   if (fullscreen) usage("--fullscreen is not supported by the Switch launcher");

@@ -86,6 +86,71 @@ if test -e "$catalog_index" || test -e "$catalog_blob"; then
     fi
     catalog_enabled=true
 fi
+data_stage="$payload/mass-storage-data"
+data_manifest="$data_stage/manifest.json"
+data_files="$data_stage/files"
+data_enabled=false
+if test -e "$data_stage"; then
+    if test -L "$data_stage" || test ! -d "$data_stage" ||
+        test -L "$data_manifest" || test ! -f "$data_manifest" ||
+        test -L "$data_files" || test ! -d "$data_files"; then
+        echo "Symbian mass-storage data stage is incomplete or unsafe." >&2
+        exit 1
+    fi
+    if find "$data_files" -mindepth 1 \
+        \( -type l -o \( ! -type d ! -type f \) \) \
+        -print -quit | grep -q .; then
+        echo "Symbian mass-storage data contains a symlink or non-regular file." >&2
+        exit 1
+    fi
+    if ! jq -e '
+        .schemaVersion == 1 and
+        keys == ["data", "schemaVersion"] and
+        (.data | type == "array" and length > 0) and
+        all(.data[];
+          keys == ["bytes", "path", "sha256"] and
+          (.path | type == "string" and length > 0 and length <= 200 and
+            test("^[A-Za-z0-9_-](?:[A-Za-z0-9._ -]{0,62}[A-Za-z0-9_-])?(?:/[A-Za-z0-9_-](?:[A-Za-z0-9._ -]{0,62}[A-Za-z0-9_-])?)*$")) and
+          (.bytes | type == "number" and . >= 0 and . <= 9007199254740991 and floor == .) and
+          (.sha256 | type == "string" and test("^[a-f0-9]{64}$"))
+        ) and
+        ([.data[].path] == ([.data[].path] | sort)) and
+        (([.data[].path | ascii_downcase] | length) ==
+          ([.data[].path | ascii_downcase] | unique | length))
+      ' "$data_manifest" >/dev/null; then
+        echo "Symbian mass-storage data manifest is invalid." >&2
+        exit 1
+    fi
+    expected_data_count=$(jq -r '.data | length' "$data_manifest")
+    actual_data_count=$(
+        find "$data_files" -type f -printf '%p\n' |
+            wc -l |
+            tr -d '[:space:]'
+    )
+    if test "$actual_data_count" != "$expected_data_count"; then
+        echo "Symbian mass-storage data manifest does not cover the staged file set." >&2
+        exit 1
+    fi
+    while IFS= read -r encoded; do
+        record=$(printf '%s' "$encoded" | base64 -d)
+        relative_path=$(jq -er '.path' <<<"$record")
+        expected_bytes=$(jq -er '.bytes' <<<"$record")
+        expected_sha256=$(jq -er '.sha256' <<<"$record")
+        staged_file="$data_files/$relative_path"
+        if test -L "$staged_file" || test ! -f "$staged_file"; then
+            echo "Missing staged Symbian mass-storage data: $relative_path" >&2
+            exit 1
+        fi
+        actual_bytes=$(stat -c %s "$staged_file")
+        actual_sha256=$(sha256sum "$staged_file" | cut -d " " -f 1)
+        if test "$actual_bytes" != "$expected_bytes" ||
+            test "$actual_sha256" != "$expected_sha256"; then
+            echo "Staged Symbian mass-storage data failed verification: $relative_path" >&2
+            exit 1
+        fi
+    done < <(jq -r '.data[] | @base64' "$data_manifest")
+    data_enabled=true
+fi
 actual_embedded_bytes=$(
     stat -c %s "$payload/app.js" "$payload/app.pak" |
         awk '{ total += $1 } END { print total + 0 }'
@@ -159,11 +224,18 @@ quickjs_objects="$build/quickjs-objects"
 output_stage=$(mktemp -d /out/.pocketjs-symbian-runtime.XXXXXX)
 candidate="$output_stage/$output_name"
 candidate_receipt="$output_stage/$receipt_name"
+data_receipt="$build/mass-storage-data-receipt.json"
 
 cleanup() {
     rm -rf "$build" "$output_stage"
 }
 trap cleanup EXIT
+
+if test "$data_enabled" = true; then
+    jq '.data' "$data_manifest" > "$data_receipt"
+else
+    printf '[]\n' > "$data_receipt"
+fi
 
 mkdir -p "$quickjs_root" "$quickjs_objects"
 tar -xzf "$quickjs_asset" --strip-components=1 -C "$quickjs_root"
@@ -272,6 +344,20 @@ cat > pocketjs-e7-runtime.pkg <<EOF
 "$executable.rsc"-"!:\\resource\\apps\\$executable.rsc"
 "${executable}_reg.rsc"-"!:\\private\\10003a3f\\import\\apps\\${executable}_reg.rsc"
 EOF
+if test "$data_enabled" = true; then
+    uid_directory=${uid#0x}
+    while IFS= read -r encoded; do
+        record=$(printf '%s' "$encoded" | base64 -d)
+        relative_path=$(jq -er '.path' <<<"$record")
+        staged_file="$data_files/$relative_path"
+        destination_path=${relative_path//\//\\}
+        printf '"%s"-"E:\\private\\%s\\data\\%s"\n' \
+            "$staged_file" \
+            "$uid_directory" \
+            "$destination_path" \
+            >> pocketjs-e7-runtime.pkg
+    done < <(jq -r '.data[] | @base64' "$data_manifest")
+fi
 
 makesis pocketjs-e7-runtime.pkg pocketjs-e7-runtime-unsigned.sis
 signsis \
@@ -312,8 +398,9 @@ jq -n \
     --arg catalogBlobSha256 "$catalog_blob_sha256" \
     --arg dataBase "$data_base" \
     --arg embeddedBytes "$embedded_bytes" \
+    --slurpfile data "$data_receipt" \
     '{
-      schemaVersion: 2,
+      schemaVersion: 3,
       app: $app,
       appId: $appId,
       title: $title,
@@ -332,7 +419,8 @@ jq -n \
         core: $coreSha256,
         catalogIndex: (if $catalogIndexSha256 == "" then null else $catalogIndexSha256 end),
         catalogBlob: (if $catalogBlobSha256 == "" then null else $catalogBlobSha256 end)
-      }
+      },
+      data: $data[0]
     }' > "$candidate_receipt"
 
 mv -f "$candidate" "$output"

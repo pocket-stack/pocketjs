@@ -23,6 +23,19 @@ declare module "vue-jsx-vapor/api" {
   ): { code: string; map?: string | null };
 }
 
+declare module "octane/compiler" {
+  export function compile(
+    source: string,
+    filename: string,
+    options?: Record<string, unknown>,
+  ): { code: string; map: unknown; diagnostics: readonly unknown[] };
+}
+
+declare module "octane/package.json" {
+  const pkg: { version: string };
+  export default pkg;
+}
+
 declare module "@vue-jsx-vapor/runtime/raw" {
   export const propsHelperCode: string;
   export const propsHelperId: string;

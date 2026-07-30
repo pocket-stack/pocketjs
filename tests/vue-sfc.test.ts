@@ -142,4 +142,19 @@ describe("Vue SFC Vapor compilation", () => {
       /v-else.*adjacent v-if/i,
     );
   });
+
+  test("strips template comments from the emitted render function", () => {
+    const source = `<script setup>const ok = true</script>
+<template>
+  <!-- leading block comment -->
+  <div>{{ ok }}</div>
+  <!-- trailing
+       multi-line comment -->
+</template>`;
+    const result = compileVueSfc(source, "/virtual/Comments.vue");
+
+    expect(result.code).not.toContain("<!--");
+    expect(result.code).not.toContain("leading block comment");
+    expect(result.code).not.toContain("multi-line comment");
+  });
 });

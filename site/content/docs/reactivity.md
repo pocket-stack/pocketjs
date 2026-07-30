@@ -2,7 +2,8 @@
 
 PocketJS uses the selected framework's reactive system directly. Solid apps
 import signals and lifecycle from `solid-js`; Vue Vapor apps import refs,
-computed values, watchers, and lifecycle from `vue`. There is no PocketJS
+computed values, watchers, and lifecycle from `vue`; Octane apps import hooks
+from `octane`. There is no PocketJS
 reactivity wrapper.
 
 :::framework-code
@@ -27,18 +28,40 @@ import {
   onScopeDispose,
 } from "vue";
 ```
+
+```ts octane
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useLayoutEffect,
+  useEffectEvent,
+} from "octane";
+```
 :::
 
-If you already know either framework, you know the API. These are fine-grained
+If you already know the framework, you know the API. Solid and Vue Vapor are
+fine-grained
 reactive primitives, not React hooks: they aren't dependency-array driven, and a
-state write updates the native nodes that read it.
+state write updates the native nodes that read it. Octane *is* React's hooks
+model, compiled: dependency arrays may be omitted (the compiler infers them
+from captures), and hooks are tracked by call site — a hook inside an `if`
+block is fine, hooks in loops are not.
 
 ## The no-VDOM model
 
 React re-renders a component, builds a new virtual tree, and diffs it against the
-old one. PocketJS's supported frameworks avoid that per-update component rerender
-path: setup wires reactive reads to native mutations, and after that the work is
-limited to the effects or bindings whose dependencies changed.
+old one. PocketJS's supported frameworks avoid that virtual-tree path. Solid and
+Vue Vapor never re-run a component after
+setup: setup wires reactive reads to native mutations, and after that the work is
+limited to the effects or bindings whose dependencies changed. Octane keeps
+React's re-render model but compiles it: a state write re-executes the
+component function, and the compiler's static host plans mean only the dynamic
+slots that actually changed are applied to the native tree — there is no
+virtual tree and no reconciliation walk. PocketJS's frame loop flushes Octane's
+microtask-scheduled re-renders synchronously inside each frame, so a state
+write commits in the same frame.
 
 That property is what makes PocketJS viable on a 2005 handheld:
 
@@ -53,10 +76,11 @@ That property is what makes PocketJS viable on a 2005 handheld:
   JS side does essentially nothing; the Rust core still ticks animations and
   layout at a fixed 1/60 s. Idle screens cost no JS work.
 
-## Signal / ref
+## Signal / ref / state
 
 A Solid signal is a getter/setter pair. A Vue ref is an object with a `.value`.
-Both represent one reactive value.
+An Octane `useState` returns a `[value, setValue]` pair. Each represents one
+reactive value.
 
 :::framework-code
 ```tsx solid
@@ -92,6 +116,24 @@ function Counter() {
       }}
     >
       <Text class="text-base text-white font-bold">Count: {count.value}</Text>
+    </View>
+  );
+}
+```
+
+```tsx octane
+import { View, Text } from "@pocketjs/framework/components";
+import { useState } from "octane";
+
+function Counter() {
+  const [count, setCount] = useState(0);
+  return (
+    <View
+      class="px-4 py-2 rounded-xl bg-blue-600 focus:bg-blue-500"
+      focusable
+      onPress={() => setCount(count + 1)}
+    >
+      <Text class="text-base text-white font-bold">{`Count: ${count}`}</Text>
     </View>
   );
 }
@@ -139,6 +181,19 @@ watchEffect(() => {
   if (level.value >= 100) console.log("charged");
 });
 ```
+
+```tsx octane
+import { useEffect, useState } from "octane";
+
+// Inside a component — hooks only run in components:
+const [level, setLevel] = useState(0);
+
+useEffect(() => {
+  // Re-runs every time level changes — the dep array is omitted and
+  // the compiler infers it from the captured `level`.
+  if (level >= 100) console.log("charged");
+});
+```
 :::
 
 Effects are the right place to bridge reactive state to imperative APIs like
@@ -168,12 +223,24 @@ const total = computed(() => items.value.length);
 
 // total.value is cached; it recomputes only when items.value changes.
 ```
+
+```tsx octane
+import { useMemo, useState } from "octane";
+
+// Inside a component:
+const [items, setItems] = useState<string[]>([]);
+const total = useMemo(() => items.length);
+
+// total is cached; it recomputes only when items changes (inferred deps).
+```
 :::
 
 ## Mount and cleanup
 
 `onMount` / `onMounted` runs a callback once, after the component's initial
-render — the place to do one-time imperative setup. It's exactly where the hero
+render — the place to do one-time imperative setup. Octane uses
+`useLayoutEffect(fn, [])`, which runs once before the first paint. It's exactly
+where the hero
 demo starts its underline sweep:
 
 :::framework-code
@@ -213,6 +280,30 @@ function Underline() {
   );
 }
 ```
+
+```tsx octane
+import { View, type NodeMirror } from "@pocketjs/framework/components";
+import { animate } from "@pocketjs/framework/animation";
+import { useLayoutEffect, useRef } from "octane";
+
+function Underline() {
+  const underline = useRef<NodeMirror | null>(null);
+  useLayoutEffect(() => {
+    // Runs once (empty deps); the tween ticks natively - zero steady-state JS.
+    if (underline.current) {
+      animate(underline.current, "width", 210, { dur: 700, easing: "out", delay: 150 });
+    }
+  }, []);
+  return (
+    <View
+      nodeRef={(node: NodeMirror | null) => {
+        underline.current = node;
+      }}
+      class="h-1 w-0 rounded-full bg-blue-500"
+    />
+  );
+}
+```
 :::
 
 Cleanup callbacks run when the enclosing scope is disposed — a component
@@ -241,6 +332,17 @@ watchEffect((onCleanup) => {
 
 onScopeDispose(() => {
   // runs when the component scope is disposed
+});
+```
+
+```tsx octane
+import { useEffect } from "octane";
+import { animate, cancelAnim } from "@pocketjs/framework/animation";
+
+useEffect(() => {
+  const anim = animate(node, "opacity", 1, { dur: 300 });
+  // The returned cleanup runs before the next re-run / on unmount.
+  return () => cancelAnim(anim);
 });
 ```
 :::

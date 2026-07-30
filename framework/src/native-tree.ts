@@ -449,6 +449,28 @@ export function isTextNode(node: NodeMirror): boolean {
   return node.type === NODE_TYPE.text;
 }
 
+/** Imperatively replace a text element's content — the text-shaped sibling of
+ *  `animate()`/`jump()`: per-frame text (count-ups, tickers, percentages)
+ *  drives the native tree through a `nodeRef` instead of re-rendering. On
+ *  replay-rendering frameworks a state commit re-prepares the whole root, so
+ *  this is the difference between one host op and a full-tree walk per tick.
+ *  Accepts the `<Text>` element mirror (updates its text child) or a raw text
+ *  mirror. */
+export function setTextContent(node: NodeMirror, value: string): void {
+  // A <Text> ELEMENT is itself text-typed, but its rendered content lives in
+  // #text child mirrors (static plan text included) — prefer the child, and
+  // only write the node itself when it is a childless text mirror. Writing
+  // the element while a text child exists renders both runs side by side.
+  const target = node.children.find(isTextNode) ?? (isTextNode(node) ? node : undefined);
+  if (target === undefined) {
+    if (getHost().strict) {
+      throw new Error("PocketJS: setTextContent() target has no text child");
+    }
+    return;
+  }
+  replaceText(target, value);
+}
+
 /** Unlink from the current mirror parent (native insertBefore self-unlinks). */
 function unlink(node: NodeMirror): void {
   const p = node.parent;

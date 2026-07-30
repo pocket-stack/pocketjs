@@ -18,6 +18,7 @@ use pocketjs_core::damage::{
 };
 use pocketjs_core::raster::{
     coverage_index, linear_sample_coordinates, pack_rgb565, render_scaled_rgb565_over,
+    render_scaled_rgb565_window_over,
 };
 use pocketjs_core::{spec, TexView, Ui};
 
@@ -160,12 +161,16 @@ pub struct RenderStats {
 /// Core damage snapshot describing the pixels stored in one framebuffer.
 pub type RenderTargetState = DamageTracker<MAX_DAMAGE_REGIONS>;
 
+/// Damage plan produced for one persistent render target.
+pub type RenderDamagePlan = DamagePlan<MAX_DAMAGE_REGIONS>;
+
 /// Persistent DrawList renderer. The A8 plane and fallback word buffer are
 /// reused across frames.
 pub struct Renderer {
     config: RendererConfig,
     mask_storage: Vec<u128>,
     mask_offset: usize,
+    mask_capacity: usize,
     mask_len: usize,
     fallback_words: Vec<u32>,
     alpha_texture_cache: Vec<(i32, bool)>,
@@ -181,6 +186,7 @@ impl Renderer {
             config,
             mask_storage: Vec::new(),
             mask_offset: 0,
+            mask_capacity: 0,
             mask_len: 0,
             fallback_words: Vec::with_capacity(16),
             alpha_texture_cache: Vec::new(),
@@ -224,6 +230,41 @@ impl Renderer {
         self.render_damage(ui, words, destination, width, height, &damage, true, ppa)
     }
 
+    /// Compute damage against the DrawList last committed to `target`.
+    ///
+    /// This does not mutate `target`. Call [`commit_damage`](Self::commit_damage)
+    /// only after every corresponding output update has completed successfully,
+    /// or [`abort_damage`](Self::abort_damage) after a failed/partial update.
+    pub fn prepare_damage(
+        &mut self,
+        target: &RenderTargetState,
+        ui: &Ui,
+        words: &[u32],
+    ) -> Option<RenderDamagePlan> {
+        self.sync_resources(ui);
+        let damage_target = self.damage_target(ui)?;
+        target
+            .prepare(ui, words, damage_target)
+            .ok()?
+            .with_policy(DamagePolicy::new(FULL_REDRAW_PERCENT))
+            .ok()
+    }
+
+    /// Record a successfully presented DrawList in one persistent target.
+    pub fn commit_damage(&self, target: &mut RenderTargetState, ui: &Ui, words: &[u32]) -> bool {
+        let Some(damage_target) = self.damage_target(ui) else {
+            target.invalidate();
+            return false;
+        };
+        target.commit(ui, words, damage_target);
+        true
+    }
+
+    /// Invalidate a persistent target after an aborted or partial update.
+    pub fn abort_damage(&self, target: &mut RenderTargetState) {
+        target.invalidate();
+    }
+
     /// Repaint only pixels whose DrawList operations differ from the snapshot
     /// stored in `target`.
     ///
@@ -242,15 +283,8 @@ impl Renderer {
         height: u32,
         ppa: &mut O,
     ) -> Option<RenderStats> {
-        self.sync_resources(ui);
         self.target_screen(ui, destination, width, height)?;
-        let damage_target =
-            DamageTarget::new(width, height, self.config.scale, DAMAGE_TARGET_SIGNATURE);
-        let damage = target
-            .prepare(ui, words, damage_target)
-            .ok()?
-            .with_policy(DamagePolicy::new(FULL_REDRAW_PERCENT))
-            .ok()?;
+        let damage = self.prepare_damage(target, ui, words)?;
         let full_redraw = damage.is_full_redraw();
 
         let result = self.render_damage(
@@ -264,11 +298,108 @@ impl Renderer {
             ppa,
         );
         if result.is_some() {
-            target.commit(ui, words, damage_target);
+            if !self.commit_damage(target, ui, words) {
+                return None;
+            }
         } else {
-            target.invalidate();
+            self.abort_damage(target);
         }
         result
+    }
+
+    /// Render one global logical dirty rectangle into a tightly packed
+    /// full-width horizontal strip.
+    ///
+    /// `region.y..region.y + region.h` defines both the strip's global vertical
+    /// interval and its height. The backing buffer is
+    /// `viewport_width * region.h` pixels at `config.scale`; pixels outside
+    /// `region.x..region.x + region.w` are left untouched. DrawList geometry and
+    /// sampling remain in global viewport coordinates while all PPA surfaces
+    /// and mask offsets are translated to strip-local coordinates.
+    pub fn render_strip<O: PpaOps>(
+        &mut self,
+        ui: &Ui,
+        words: &[u32],
+        destination: &mut [u16],
+        region: Rect,
+        ppa: &mut O,
+    ) -> Option<RenderStats> {
+        self.sync_resources(ui);
+        if region.is_empty() {
+            return None;
+        }
+        let (viewport_w, viewport_h) = ui.viewport();
+        let logical_width = viewport_w as u32;
+        let logical_height = viewport_h as u32;
+        let x1 = region.x.checked_add(region.w)?;
+        let y1 = region.y.checked_add(region.h)?;
+        if logical_width == 0 || logical_height == 0 || x1 > logical_width || y1 > logical_height {
+            return None;
+        }
+
+        let scale = self.config.scale;
+        let width = logical_width.checked_mul(scale)?;
+        let height = region.h.checked_mul(scale)?;
+        if destination.len() != width as usize * height as usize {
+            return None;
+        }
+
+        let surface = Clip {
+            x0: 0,
+            y0: region.y as i32,
+            x1: logical_width as i32,
+            y1: y1 as i32,
+        };
+        let clip = Clip {
+            x0: region.x as i32,
+            y0: region.y as i32,
+            x1: x1 as i32,
+            y1: y1 as i32,
+        };
+        let local = local_physical_rect(clip, surface, scale);
+        let mut stats = RenderStats {
+            damage_regions: 1,
+            damage_pixels: region.area().saturating_mul(scale).saturating_mul(scale),
+            damage_bounds: physical_rect(clip, scale),
+            ..RenderStats::default()
+        };
+
+        self.ensure_mask(destination.len());
+        if local.area() >= self.config.min_fill_pixels
+            && ppa.fill_rgb565(destination, width, height, local, 0)
+        {
+            stats.ppa_fills += 1;
+        } else {
+            fill_rgb565_rect(destination, width, local, 0);
+        }
+        self.render_region(
+            ui,
+            words,
+            destination,
+            width,
+            height,
+            surface,
+            clip,
+            ppa,
+            &mut stats,
+        )?;
+        Some(stats)
+    }
+
+    fn damage_target(&self, ui: &Ui) -> Option<DamageTarget> {
+        let scale = self.config.scale;
+        let (viewport_w, viewport_h) = ui.viewport();
+        let width = (viewport_w as u32).checked_mul(scale)?;
+        let height = (viewport_h as u32).checked_mul(scale)?;
+        if width == 0 || height == 0 {
+            return None;
+        }
+        Some(DamageTarget::new(
+            width,
+            height,
+            scale,
+            DAMAGE_TARGET_SIGNATURE,
+        ))
     }
 
     fn target_screen(&self, ui: &Ui, destination: &[u16], width: u32, height: u32) -> Option<Clip> {
@@ -301,6 +432,12 @@ impl Renderer {
         ppa: &mut O,
     ) -> Option<RenderStats> {
         let scale = self.config.scale;
+        let surface = Clip {
+            x0: 0,
+            y0: 0,
+            x1: (width / scale) as i32,
+            y1: (height / scale) as i32,
+        };
         let mut stats = RenderStats {
             damage_regions: damage.region_count() as u32,
             damage_pixels: damage
@@ -318,7 +455,7 @@ impl Renderer {
 
         self.ensure_mask(destination.len());
         for &region in damage.regions() {
-            let physical = physical_rect(region, scale);
+            let physical = local_physical_rect(region, surface, scale);
             if physical.area() >= self.config.min_fill_pixels
                 && ppa.fill_rgb565(destination, width, height, physical, 0)
             {
@@ -332,6 +469,7 @@ impl Renderer {
                 destination,
                 width,
                 height,
+                surface,
                 region,
                 ppa,
                 &mut stats,
@@ -348,6 +486,7 @@ impl Renderer {
         destination: &mut [u16],
         width: u32,
         height: u32,
+        surface: Clip,
         screen: Clip,
         ppa: &mut O,
         stats: &mut RenderStats,
@@ -366,13 +505,14 @@ impl Renderer {
                             destination,
                             width,
                             height,
+                            surface,
                             rect,
                             words[i + 3],
                             ppa,
                             stats,
                         )
                     {
-                        self.software_op(ui, destination, clip, op, stats);
+                        self.software_op(ui, destination, surface, clip, op, stats);
                     }
                     i += 4;
                 }
@@ -381,7 +521,7 @@ impl Renderer {
                         .intersect(clip)
                         .is_empty()
                     {
-                        self.software_op(ui, destination, clip, &words[i..i + 6], stats);
+                        self.software_op(ui, destination, surface, clip, &words[i..i + 6], stats);
                     }
                     i += 6;
                 }
@@ -393,9 +533,19 @@ impl Renderer {
                     }
                     let op = &words[i..next];
                     if !glyph_run_bounds(ui, op, clip).is_empty()
-                        && !self.try_glyph_run(ui, destination, width, height, clip, op, ppa, stats)
+                        && !self.try_glyph_run(
+                            ui,
+                            destination,
+                            width,
+                            height,
+                            surface,
+                            clip,
+                            op,
+                            ppa,
+                            stats,
+                        )
                     {
-                        self.software_op(ui, destination, clip, op, stats);
+                        self.software_op(ui, destination, surface, clip, op, stats);
                     }
                     i = next;
                 }
@@ -414,6 +564,7 @@ impl Renderer {
                         destination,
                         width,
                         height,
+                        surface,
                         clip,
                         ppa,
                         stats,
@@ -421,7 +572,7 @@ impl Renderer {
                     if let Some(next) = next {
                         i = next;
                     } else {
-                        self.software_op(ui, destination, clip, &words[i..i + 9], stats);
+                        self.software_op(ui, destination, surface, clip, &words[i..i + 9], stats);
                         i += 9;
                     }
                 }
@@ -446,14 +597,14 @@ impl Renderer {
                 spec::draw_op::TRI if i + 7 <= words.len() => {
                     if !triangle_bounds([words[i + 1], words[i + 2], words[i + 3]], clip).is_empty()
                     {
-                        self.software_op(ui, destination, clip, &words[i..i + 7], stats);
+                        self.software_op(ui, destination, surface, clip, &words[i..i + 7], stats);
                     }
                     i += 7;
                 }
                 spec::draw_op::TEX_TRI if i + 12 <= words.len() => {
                     if !triangle_bounds([words[i + 2], words[i + 5], words[i + 8]], clip).is_empty()
                     {
-                        self.software_op(ui, destination, clip, &words[i..i + 12], stats);
+                        self.software_op(ui, destination, surface, clip, &words[i..i + 12], stats);
                     }
                     i += 12;
                 }
@@ -468,6 +619,7 @@ impl Renderer {
         destination: &mut [u16],
         width: u32,
         height: u32,
+        surface: Clip,
         logical: Clip,
         color: u32,
         ppa: &mut O,
@@ -477,7 +629,7 @@ impl Renderer {
         if a == 0 {
             return true;
         }
-        let rect = physical_rect(logical, self.config.scale);
+        let rect = local_physical_rect(logical, surface, self.config.scale);
         if a == 255 && rect.area() >= self.config.min_fill_pixels {
             if ppa.fill_rgb565(destination, width, height, rect, pack_rgb565(r, g, b)) {
                 stats.ppa_fills += 1;
@@ -509,6 +661,7 @@ impl Renderer {
         destination: &mut [u16],
         width: u32,
         height: u32,
+        surface: Clip,
         clip: Clip,
         op: &[u32],
         ppa: &mut O,
@@ -540,7 +693,8 @@ impl Renderer {
             }
         }
         bounds = bounds.intersect(clip);
-        let rect = physical_rect(bounds, self.config.scale);
+        let global_rect = physical_rect(bounds, self.config.scale);
+        let rect = local_physical_rect(bounds, surface, self.config.scale);
         if rect.is_empty() || rect.area() < self.config.min_blend_pixels {
             return false;
         }
@@ -557,17 +711,19 @@ impl Renderer {
                 continue;
             }
             let rows = atlas.glyph_rows(gid);
-            let x0 = (gx * scale).max(rect.x as i32);
-            let y0 = (gy * scale).max(rect.y as i32);
-            let x1 = ((gx + cell_w) * scale).min((rect.x + rect.w) as i32);
-            let y1 = ((gy + cell_h) * scale).min((rect.y + rect.h) as i32);
+            let x0 = (gx * scale).max(global_rect.x as i32);
+            let y0 = (gy * scale).max(global_rect.y as i32);
+            let x1 = ((gx + cell_w) * scale).min((global_rect.x + global_rect.w) as i32);
+            let y1 = ((gy + cell_h) * scale).min((global_rect.y + global_rect.h) as i32);
             for py in y0..y1 {
                 let sy = coverage_index(py - gy * scale, scale, density, coverage_h);
                 let row = &rows[sy * bpr..];
                 for px in x0..x1 {
                     let sx = coverage_index(px - gx * scale, scale, density, coverage_w);
+                    let local_x = px - surface.x0 * scale;
+                    let local_y = py - surface.y0 * scale;
                     composite_mask(
-                        &mut mask[py as usize * width as usize + px as usize],
+                        &mut mask[local_y as usize * width as usize + local_x as usize],
                         ((row[sx] as u32 * a + 127) / 255) as u8,
                     );
                 }
@@ -598,6 +754,7 @@ impl Renderer {
         destination: &mut [u16],
         width: u32,
         height: u32,
+        surface: Clip,
         clip: Clip,
         ppa: &mut O,
         stats: &mut RenderStats,
@@ -608,7 +765,7 @@ impl Renderer {
 
         if view.psm == spec::psm::PSM_5650 {
             let logical = logical_rect(op[2], op[3]).intersect(clip);
-            let destination_rect = physical_rect(logical, self.config.scale);
+            let destination_rect = local_physical_rect(logical, surface, self.config.scale);
             if destination_rect.area() >= self.config.min_srm_pixels {
                 let (source_rect, mirror_x, mirror_y) = texture_source_rect(&view, op, logical)?;
                 let one_to_one =
@@ -656,7 +813,7 @@ impl Renderer {
         if a == 0 {
             return Some(end);
         }
-        let rect = physical_rect(bounds, self.config.scale);
+        let rect = local_physical_rect(bounds, surface, self.config.scale);
         if rect.is_empty() || rect.area() < self.config.min_blend_pixels {
             return None;
         }
@@ -668,6 +825,7 @@ impl Renderer {
             alpha_quad_into_mask(
                 &view,
                 &words[cursor..cursor + 9],
+                surface,
                 clip,
                 scale,
                 mask,
@@ -696,6 +854,7 @@ impl Renderer {
         &mut self,
         ui: &Ui,
         destination: &mut [u16],
+        surface: Clip,
         clip: Clip,
         op: &[u32],
         stats: &mut RenderStats,
@@ -709,19 +868,38 @@ impl Renderer {
         self.fallback_words
             .push(pack_wh(clip.x1 - clip.x0, clip.y1 - clip.y0));
         self.fallback_words.extend_from_slice(op);
-        render_scaled_rgb565_over(ui, &self.fallback_words, destination, self.config.scale);
+        let full_screen = {
+            let (viewport_w, viewport_h) = ui.viewport();
+            Clip {
+                x0: 0,
+                y0: 0,
+                x1: viewport_w as i32,
+                y1: viewport_h as i32,
+            }
+        };
+        if surface == full_screen {
+            render_scaled_rgb565_over(ui, &self.fallback_words, destination, self.config.scale);
+        } else {
+            render_scaled_rgb565_window_over(
+                ui,
+                &self.fallback_words,
+                destination,
+                self.config.scale,
+                surface,
+            );
+        }
         stats.software_ops += 1;
         stats.software_words += op.len() as u32;
     }
 
     fn ensure_mask(&mut self, len: usize) {
-        if self.mask_len >= len {
-            return;
+        if self.mask_capacity < len {
+            let bytes = len + MASK_ALIGNMENT - 1;
+            self.mask_storage = alloc::vec![0u128; bytes.div_ceil(16)];
+            let base = self.mask_storage.as_ptr() as usize;
+            self.mask_offset = (MASK_ALIGNMENT - base % MASK_ALIGNMENT) % MASK_ALIGNMENT;
+            self.mask_capacity = len;
         }
-        let bytes = len + MASK_ALIGNMENT - 1;
-        self.mask_storage = alloc::vec![0u128; bytes.div_ceil(16)];
-        let base = self.mask_storage.as_ptr() as usize;
-        self.mask_offset = (MASK_ALIGNMENT - base % MASK_ALIGNMENT) % MASK_ALIGNMENT;
         self.mask_len = len;
     }
 
@@ -825,6 +1003,20 @@ fn physical_rect(clip: Clip, scale: u32) -> Rect {
     Rect {
         x: clip.x0 as u32 * scale,
         y: clip.y0 as u32 * scale,
+        w: (clip.x1 - clip.x0) as u32 * scale,
+        h: (clip.y1 - clip.y0) as u32 * scale,
+    }
+}
+
+#[inline]
+fn local_physical_rect(clip: Clip, surface: Clip, scale: u32) -> Rect {
+    let clip = clip.intersect(surface);
+    if clip.is_empty() {
+        return Rect::default();
+    }
+    Rect {
+        x: (clip.x0 - surface.x0) as u32 * scale,
+        y: (clip.y0 - surface.y0) as u32 * scale,
         w: (clip.x1 - clip.x0) as u32 * scale,
         h: (clip.y1 - clip.y0) as u32 * scale,
     }
@@ -1001,6 +1193,7 @@ fn sample_alpha(view: &TexView<'_>, u: f32, v: f32) -> u8 {
 fn alpha_quad_into_mask(
     view: &TexView<'_>,
     op: &[u32],
+    surface: Clip,
     clip: Clip,
     scale: u32,
     mask: &mut [u8],
@@ -1025,8 +1218,10 @@ fn alpha_quad_into_mask(
             let u =
                 u0 + (u1 - u0) * ((px as i32 - x * scale_i) as f32 + 0.5) / (w * scale_i) as f32;
             let alpha = (sample_alpha(view, u, v) as u32 * global_alpha as u32 + 127) / 255;
+            let local_x = px as i32 - surface.x0 * scale_i;
+            let local_y = py as i32 - surface.y0 * scale_i;
             composite_mask(
-                &mut mask[py as usize * stride as usize + px as usize],
+                &mut mask[local_y as usize * stride as usize + local_x as usize],
                 alpha as u8,
             );
         }
@@ -1046,6 +1241,11 @@ mod tests {
         last_mask_max: u8,
         last_mask: Vec<u8>,
         last_global_alpha: u8,
+        last_surface_width: u32,
+        last_surface_height: u32,
+        last_fill_rect: Rect,
+        last_blend_rect: Rect,
+        last_mask_len: usize,
         last_source_rect: Rect,
         last_destination_rect: Rect,
         last_transform: SrmTransform,
@@ -1056,11 +1256,14 @@ mod tests {
             &mut self,
             destination: &mut [u16],
             width: u32,
-            _height: u32,
+            height: u32,
             rect: Rect,
             color: u16,
         ) -> bool {
             self.fills += 1;
+            self.last_surface_width = width;
+            self.last_surface_height = height;
+            self.last_fill_rect = rect;
             for y in rect.y..rect.y + rect.h {
                 let start = y as usize * width as usize + rect.x as usize;
                 destination[start..start + rect.w as usize].fill(color);
@@ -1072,13 +1275,17 @@ mod tests {
             &mut self,
             destination: &mut [u16],
             width: u32,
-            _height: u32,
+            height: u32,
             mask: &[u8],
             rect: Rect,
             color: [u8; 3],
             global_alpha: u8,
         ) -> bool {
             self.blends += 1;
+            self.last_surface_width = width;
+            self.last_surface_height = height;
+            self.last_blend_rect = rect;
+            self.last_mask_len = mask.len();
             self.last_mask_max = mask.iter().copied().max().unwrap_or(0);
             self.last_mask.clear();
             self.last_mask.extend_from_slice(mask);
@@ -1207,6 +1414,158 @@ mod tests {
         let mut output = vec![0u16; width * height];
         pocketjs_core::raster::render_scaled_rgb565(ui, words, &mut output, 1);
         output
+    }
+
+    #[test]
+    fn compact_strip_matches_the_same_window_of_a_full_render() {
+        let mut ui = Ui::new();
+        ui.set_viewport(16.0, 10.0);
+        let words = [
+            spec::draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(16, 10),
+            0xff20_1008,
+            spec::draw_op::GRAD_RECT,
+            xy_word(2, 2),
+            wh_word(12, 6),
+            0xff00_0040,
+            0xffc0_8000,
+            spec::GradDir::ToRight as u32,
+            spec::draw_op::RECT,
+            xy_word(5, 3),
+            wh_word(5, 5),
+            0x8000_ff00,
+        ];
+        let region = Rect {
+            x: 3,
+            y: 4,
+            w: 9,
+            h: 3,
+        };
+        let untouched = 0x5aa5;
+        let mut strip = vec![untouched; 16 * region.h as usize];
+        let mut ppa = MockPpa::default();
+        let stats = renderer()
+            .render_strip(&ui, &words, &mut strip, region, &mut ppa)
+            .unwrap();
+        let full = full_reference(&ui, &words, 16, 10);
+
+        assert_eq!(stats.damage_bounds, region);
+        assert!(
+            stats.software_ops > 0,
+            "gradient must exercise window fallback"
+        );
+        for local_y in 0..region.h as usize {
+            let global_y = region.y as usize + local_y;
+            for x in 0..16usize {
+                let actual = strip[local_y * 16 + x];
+                if x >= region.x as usize && x < (region.x + region.w) as usize {
+                    assert_eq!(actual, full[global_y * 16 + x], "pixel ({x},{global_y})");
+                } else {
+                    assert_eq!(actual, untouched, "strip write escaped dirty x range");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn strip_ppa_rects_and_masks_are_local_and_mask_length_tracks_each_strip() {
+        let mut ui = Ui::new();
+        ui.set_viewport(16.0, 10.0);
+        let words = [
+            spec::draw_op::RECT,
+            xy_word(4, 5),
+            wh_word(3, 2),
+            0x8000_00ff,
+        ];
+        let mut renderer = renderer();
+
+        let mut large = vec![0u16; 16 * 4];
+        let mut large_ppa = MockPpa::default();
+        renderer
+            .render_strip(
+                &ui,
+                &words,
+                &mut large,
+                Rect {
+                    x: 4,
+                    y: 3,
+                    w: 3,
+                    h: 4,
+                },
+                &mut large_ppa,
+            )
+            .unwrap();
+        assert_eq!(large_ppa.last_mask_len, 16 * 4);
+
+        let mut small = vec![0u16; 16 * 2];
+        let mut small_ppa = MockPpa::default();
+        renderer
+            .render_strip(
+                &ui,
+                &words,
+                &mut small,
+                Rect {
+                    x: 4,
+                    y: 5,
+                    w: 3,
+                    h: 2,
+                },
+                &mut small_ppa,
+            )
+            .unwrap();
+        assert_eq!(small_ppa.last_surface_width, 16);
+        assert_eq!(small_ppa.last_surface_height, 2);
+        assert_eq!(
+            small_ppa.last_blend_rect,
+            Rect {
+                x: 4,
+                y: 0,
+                w: 3,
+                h: 2,
+            }
+        );
+        assert_eq!(small_ppa.last_mask_len, 16 * 2);
+    }
+
+    #[test]
+    fn split_damage_transactions_track_two_native_targets_independently() {
+        let mut ui = Ui::new();
+        ui.set_viewport(24.0, 8.0);
+        let frame = |x: i16, color: u32| {
+            vec![
+                spec::draw_op::RECT,
+                xy_word(0, 0),
+                wh_word(24, 8),
+                0xff10_0804,
+                spec::draw_op::RECT,
+                xy_word(x, 2),
+                wh_word(3, 3),
+                color,
+            ]
+        };
+        let first = frame(1, 0xff00_00ff);
+        let second = frame(5, 0xff00_ff00);
+        let third = frame(9, 0xffff_0000);
+        let mut states = [RenderTargetState::new(), RenderTargetState::new()];
+        let mut renderer = renderer();
+
+        assert!(renderer
+            .prepare_damage(&states[0], &ui, &first)
+            .unwrap()
+            .is_full_redraw());
+        assert!(renderer.commit_damage(&mut states[0], &ui, &first));
+        assert!(renderer
+            .prepare_damage(&states[1], &ui, &second)
+            .unwrap()
+            .is_full_redraw());
+        assert!(renderer.commit_damage(&mut states[1], &ui, &second));
+
+        let target_zero = renderer.prepare_damage(&states[0], &ui, &third).unwrap();
+        assert!(!target_zero.is_full_redraw());
+        assert!(!target_zero.is_empty());
+        let target_one_unchanged = renderer.prepare_damage(&states[1], &ui, &second).unwrap();
+        assert!(target_one_unchanged.is_empty());
     }
 
     #[test]

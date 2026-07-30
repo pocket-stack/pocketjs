@@ -14,7 +14,7 @@
 //         minify false) -> dist/<app>.js.
 //
 // Flags:
-//   --framework=solid|vue-vapor  select the framework for this build
+//   --framework=solid|vue-vapor|octane  select the framework for this build
 //   --config=<path>              load a Pocket config file (default: pocket.config.ts)
 //   --no-config                  ignore pocket.config.ts
 //   --extra-chars=<string>       force extra codepoints into every atlas
@@ -116,7 +116,7 @@ if (planPath) {
 }
 
 if (!appArg) {
-  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor] [--extra-chars=...] [--density=N]");
+  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor|octane] [--extra-chars=...] [--density=N]");
   process.exit(1);
 }
 
