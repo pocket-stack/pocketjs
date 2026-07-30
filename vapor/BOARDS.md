@@ -25,6 +25,11 @@ open-ended and mostly built by other people. Stretching capability ids over
 it ("esp32.lcd.st7735") would burn the registry's own first rule: ids name
 observable framework behavior, never hardware.
 
+Fixed console-style AOT targets such as Playdate live directly in
+`VAPOR_TARGETS` and their runtime/compiler contract. They do not enter the
+ESP32-only board JSON schema: a fixed SDK target is not an open-ended
+chip/panel/pin combination.
+
 A pocket.json may declare which classes it ships as
 (`execution.classes`, default `["guest"]`); the guest build resolver
 refuses a manifest that ships no guest artifact (`execution.guestExcluded`).
@@ -75,13 +80,14 @@ behaviors the runtime already has; it never programs new ones.
 
 Guest apps hand-declare `requires` because the framework cannot always see
 what they use. The AOT compiler *can* see: which buttons the keymaps and
-handlers statically reference (`CompiledApp.buttonsUsed`), how many style
-pairs the class DSL resolved, which `SCREEN` folds the layout takes, the
-whole memory plan. So the demand block is compiler output:
+handlers statically reference (`CompiledApp.buttonsUsed`), which incremental
+controls register (`CompiledApp.relativeAxesUsed`), how many style pairs the
+class DSL resolved, which `SCREEN` folds the layout takes, the whole memory
+plan. So the demand block is compiler output:
 
 ```sh
 bun vapor/compiler/cli.ts check app.tsx --json
-# { targets: { esp32: { ok, grid, stylePairs, buttonsUsed, ... } },
+# { targets: { esp32: { ok, grid, stylePairs, buttonsUsed, relativeAxesUsed, ... } },
 #   boards:  { meowbit: { ok, issues: [...] } } }
 ```
 
@@ -132,6 +138,12 @@ don't enumerate monitors; they declare breakpoints and the client decides.
 
 ## Deliberately not built yet
 
+- **ESP32 relative-axis adapters.** Vapor's generated ABI already models
+  signed canonical `RelativeAxis` deltas and Playdate maps its crank to
+  Primary in millidegrees. An
+  ESP32 board may only declare an encoder/wheel after its runtime implements
+  pulse decoding, direction, and `pulsesPerStep`; until then admission must
+  fail instead of accepting an inert axis.
 - **Per-board grid geometry.** Today the `esp32` target owns 20×18 and the
   board must fit it. The second board with a different panel promotes
   geometry to a board field and turns `VAPOR_TARGETS.esp32` into a family.

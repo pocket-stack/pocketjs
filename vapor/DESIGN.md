@@ -6,9 +6,9 @@ Vapor** — real `ref`/`computed` reactivity, real JSX templates — and the
 compiler emits native code for machines that could never host a JavaScript
 engine. The original proof target is the Game Boy Advance: 16.8 MHz
 ARM7TDMI, 256 KB of work RAM, no OS, no allocator, no GC. The same compiler
-now also targets the Game Boy, NES, and an ESP32 MeowBit profile; the ESP32
-build is still native C with a fixed memory plan, not an embedded JavaScript
-runtime.
+now also targets the Game Boy, NES, an ESP32 MeowBit profile, and Playdate;
+all builds remain native C with a fixed memory plan, not an embedded
+JavaScript runtime.
 
 Vue Vapor's thesis is *compile the virtual DOM away*. Pocket Vapor extends
 it one machine layer down: **compile the JavaScript engine away.** The
@@ -169,7 +169,7 @@ MEANS is the target's style contract:
 |---|---|---|
 | web (oracle/dev host) | `web` | full color, CSS |
 | gba | `rgb555`, <= 15 pairs | pair id = BG palette bank (BGR555 ink/paper) |
-| gb, nes | `styles2` | pair -> glyph style by luminance polarity (dark-on-light / light-on-dark) |
+| gb, nes, playdate | `styles2` | pair -> glyph style by luminance polarity (dark-on-light / light-on-dark) |
 | esp32 | `rgb565` | pair id -> RGB565 ink/paper values rasterized into the LCD cell |
 
 Diagnostics are compile-time and structured (`bun vapor/compiler/cli.ts
@@ -192,7 +192,7 @@ oxlint plugin would give red squiggles without booting the compiler. The
 ## 5. Host vocabulary and rendering
 
 Each target presents a fixed logical cell screen: 30×20 on GBA, 20×18 on
-GB and ESP32, and 22×18 on NES. The ESP32 MeowBit profile rasterizes its
+GB and ESP32, 22×18 on NES, and 50×30 on Playdate. The ESP32 MeowBit profile rasterizes its
 20×18 grid as 8×7 cells into a 160×126 content area on the 160×128 ST7735
 panel. The JSX vocabulary is deliberately one intrinsic with two
 interpreters — the C cell grid on device, and a ~60-line tree walker over
@@ -210,11 +210,20 @@ the oracle's micro-DOM:
 - Looks come from the class DSL (§4.5); the painter and every runtime
   agree on pair ids, and the oracle asserts them as a per-cell grid.
 
-Input is not DOM events: the host module exposes
-`onButton((b: Button) => void)` (frame-latched edge triggering, GBA
-KEYINPUT bit order). Under the oracle the module executes and the test tape
-feeds it; under the compiler the import is recognized and the handler
-compiles to a C function fed by the runtime's key-edge loop.
+Input is not DOM events. The host module exposes two explicit capabilities:
+
+- `onButton((b: Button) => void)` for frame-latched press edges;
+- `onAxisDelta(RelativeAxis.Primary, (delta) => void)` for signed,
+  hardware-neutral incremental movement in canonical units.
+
+Under the oracle the module executes and the test tape feeds it; under the
+compiler registrations become `app_on_button()` and
+`app_on_axis_delta(axis, delta)`. Physical hosts own normalization:
+rotary adapters preserve signed motion as millidegrees, while applications
+own detents, acceleration, and sensitivity. Playdate forwards crank motion
+to Primary; a future ESP32 board can adapt an encoder without exposing pins
+to the app. Axis demands are derived from registrations, and a target
+without an adapter fails admission with `VT102`.
 
 ## 6. Pipeline
 
@@ -230,14 +239,15 @@ todo.tsx ─┬─ framework/compiler/jsx-plugin.ts + vue-jsx-vapor ──► re
                6 memory plan       slots, pools, budgets (printed with the graph)
                7 emit C            gen_app.c (state, computeds, effects, handler)
                8 cc + link         target toolchain + vapor/runtime/<target>/*
-                                   → cartridge ROM or ESP32 firmware image
+                                   → ROM, firmware, or Playdate .pdx
 ```
 
 The fixed C contract (`vapor/runtime/vapor.h` plus `vapor_core.c`) is shared
 by all apps. Each target supplies its hardware half: the console runtimes
 own startup, video commit, input edges and a fixed debug block; the ESP32
 runtime owns the ESP-IDF frame loop, ST7735 RGB565 raster, MeowBit GPIO
-input and the UART receipt protocol.
+input and the UART receipt protocol. The Playdate runtime owns the SDK event
+handler, pushed-button snapshots, and direct 52-byte-stride 1bpp framebuffer.
 
 ## 7. E2E: the oracle is real Vue
 
@@ -263,25 +273,35 @@ input and the UART receipt protocol.
    logical-grid parity and exercises LCD commits, but does not read panel
    pixels or electrically actuate GPIO buttons; those remain manual checks.
    Physical hardware is not part of the default emulator-only test suite.
+5. **Playdate native boundary** (`playdate.test.ts`) — compiled C tests
+   exercise exact framebuffer bytes and a fake SDK table drives lifecycle,
+   pushed-button batches, crank accumulation/docking, redraws, receipts, and
+   fatal render behavior. The Playdate Todo is also replayed through the real
+   Vue Vapor oracle with signed Primary-axis deltas.
+   Separate SDK smoke builds validate Simulator and ARM device packages;
+   physical display/input verification remains manual.
 
 Layers 3 and 4 state the claim of the whole project: same file, real Vue on
 a JS engine, and native code on devices, compared for every step of the
 interaction rather than only the final frame. The three console targets run
 under automated emulators; ESP32 uses the same grid-receipt assertion when
-a board is connected.
+a board is connected. Playdate's first implementation has deterministic
+native-boundary tests and package smoke builds, not a claimed hardware
+parity transport.
 
 ## 7.5 Targets
 
-| | GBA | GB (DMG) | NES | ESP32 MeowBit |
-|---|---|---|---|---|
-| CPU | ARM7TDMI 16.8MHz | SM83 4.19MHz | 6502 1.79MHz | Xtensa LX6, up to 240MHz |
-| Toolchain | arm-none-eabi-gcc | sdcc + sdasgb + makebin + rgbfix | cc65/ca65/ld65 | ESP-IDF v6.0.2 |
-| Grid | 30x20 | 20x18 | 22x18 (centered) | 20x18 on ST7735 160x128 |
-| Palettes | 6 real BG banks | 2 glyph styles (BGP is global) | 2 glyph styles in CHR-ROM | RGB565 ink/paper pairs |
-| Pool / str caps | 32 / 24 | 32 / 24 | 8 / 20 (2 KB CPU RAM) | 32 / 24 |
-| Image | flat ROM + header patch | ROM-only 32 KB | NROM-256 + CHR-ROM | ESP-IDF flash image |
-| Debug receipt | EWRAM 0x2000000 | WRAM 0xD800 (grid IS the block) | $0200 fixed segment | UART 115200 (`H/R/P/D`) |
-| E2E transport | libmgba | libmgba | jsnes | physical USB serial (opt-in) |
+| | GBA | GB (DMG) | NES | ESP32 MeowBit | Playdate |
+|---|---|---|---|---|---|
+| CPU | ARM7TDMI 16.8MHz | SM83 4.19MHz | 6502 1.79MHz | Xtensa LX6, up to 240MHz | Cortex-M7 |
+| Toolchain | arm-none-eabi-gcc | sdcc + sdasgb + makebin + rgbfix | cc65/ca65/ld65 | ESP-IDF v6.0.2 | Playdate SDK CMake + pdc |
+| Grid | 30x20 | 20x18 | 22x18 (centered) | 20x18 on ST7735 160x128 | 50x30 on 400x240 1bpp |
+| Palettes | 6 real BG banks | 2 glyph styles (BGP is global) | 2 glyph styles in CHR-ROM | RGB565 ink/paper pairs | 2 glyph styles |
+| Pool / str caps | 32 / 24 | 32 / 24 | 8 / 20 (2 KB CPU RAM) | 32 / 24 | 32 / 24 |
+| Image | flat ROM + header patch | ROM-only 32 KB | NROM-256 + CHR-ROM | ESP-IDF flash image | independent Simulator/device `.pdx` |
+| Debug receipt | EWRAM 0x2000000 | WRAM 0xD800 (grid IS the block) | $0200 fixed segment | UART 115200 (`H/R/P/D`) | SDK console `PVREADY/PVFRAME/PVERROR` |
+| E2E transport | libmgba | libmgba | jsnes | physical USB serial (opt-in) | fake SDK unit; Simulator/device smoke |
+| Relative axes | none | none | none | board adapter (not yet configured) | Primary = crank, signed millidegrees |
 
 The generated C is target-independent; geometry and budgets arrive as
 `#define`s, `SCREEN.*` folds in the compiler, and each hardware runtime
@@ -308,7 +328,14 @@ The ESP32 MeowBit exposes the six direct directions/action inputs used by
 the app. Release-latched pairs provide the remaining Pocket buttons:
 A+B = START, Left+Right = SELECT, and Up+Down = R.
 
-State: 6 refs, 4 computeds (two of them list views), 4 span-merged paint
+Playdate exposes A, B and the D-pad directly. It has no ordinary
+Select/Start/R/L inputs, so target admission rejects those demands with
+`VT101`. `vapor/examples/todo/todo.playdate.tsx` keeps the same model and
+view but consumes `RelativeAxis.Primary` for list movement. This frees
+Up/Down for new/clear in list mode and save/cancel in edit mode. The
+six-button example remains a minimal regression fixture.
+
+State: 6 refs, 5 computeds (two of them list views), 4 span-merged paint
 effects, a 32-entry todo pool. The compiler's memory plan for the whole app
 is ~940 bytes of RAM; the GBA cartridge is under 9 KB, while the ESP32
 artifact also includes the ESP-IDF platform image — which is the point of

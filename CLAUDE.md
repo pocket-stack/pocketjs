@@ -4,3 +4,4 @@
 - If the user also asks to merge the change, open the draft pull request first, then mark it ready and merge it after the relevant checks pass.
 - Name pull requests (and the branch's primary commit) using the Conventional Commits format — `type(scope): summary`, e.g. `feat(gallery): …`, `fix: …`, `docs: …`, `refactor: …`.
 - Keep PocketJS examples explicit about API ownership: import PocketJS runtime, host components, lifecycle, input, and animation APIs from `@pocketjs/framework/*`; import Solid primitives and control flow directly from `solid-js`.
+- Pocket Vapor incremental controls use the hardware-neutral `RelativeAxis` / `onAxisDelta` contract in `vapor/host/input.ts`. Rotary hosts preserve motion as signed millidegrees; applications own detents and sensitivity. Playdate maps its crank to `RelativeAxis.Primary`; applications must not import Playdate SDK concepts or encode crank motion as fake buttons.
