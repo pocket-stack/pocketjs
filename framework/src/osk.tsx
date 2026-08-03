@@ -36,10 +36,10 @@
 //     already work, nothing to adapt.
 
 import { createEffect, createMemo, createSignal, For, onCleanup, Show, type Accessor, type JSX as SolidJSX } from "solid-js";
-import { BTN, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
+import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { animate } from "./anim.ts";
 import { simulationHz, virtualFrame } from "./clock.ts";
-import { Focusable, FocusScope, Text, View } from "./components.ts";
+import { Focusable, FocusScope, Portal, Text, View } from "./components.ts";
 import { pushButtonHandlerBlock } from "./frame.ts";
 import { createGesture, pushTouchBlock } from "./gesture.ts";
 import { getOps, hostViewport } from "./host.ts";
@@ -77,88 +77,12 @@ export { OSK_H, OSK_LAYERS, type OskKeyDef, type OskLayerName } from "./osk-layo
 // it; a host with a real keyboard could call insert()/backspace() directly.
 // ---------------------------------------------------------------------------
 
-export interface CreateOskOptions {
-  /** The app-owned text signal the OSK edits. */
-  value: Accessor<string>;
-  setValue: (next: string) => void;
-  /** ↵ / ✓ / START. Closes afterwards unless closeOnCommit is false. */
-  onCommit?: (text: string) => void;
-  /** × / ▼ — closed without committing. */
-  onClose?: () => void;
-  maxLength?: number;
-  closeOnCommit?: boolean;
-}
-
-export interface OskController {
-  open(): void;
-  close(): void;
-  isOpen: Accessor<boolean>;
-  /** Caret index into value(), clamped live against external edits. */
-  caret: Accessor<number>;
-  /** value() with the caret marker inserted while open. */
-  display(marker?: string): string;
-  insert(text: string): void;
-  backspace(): void;
-  moveCaret(delta: number): void;
-  commit(): void;
-  cancel(): void;
-  /** Virtual frame of the last open() — same-frame presses must not type. */
-  openedFrame(): number;
-}
-
-export function createOsk(opts: CreateOskOptions): OskController {
-  const [isOpen, setOpen] = createSignal(false);
-  const [caretRaw, setCaretRaw] = createSignal(0);
-  let opened = -1;
-
-  const caret = () => Math.min(caretRaw(), opts.value().length);
-
-  const controller: OskController = {
-    open() {
-      setCaretRaw(opts.value().length);
-      opened = virtualFrame();
-      setOpen(true);
-    },
-    close() {
-      setOpen(false);
-    },
-    isOpen,
-    caret,
-    display(marker = "|") {
-      const v = opts.value();
-      if (!isOpen()) return v;
-      const c = caret();
-      return v.slice(0, c) + marker + v.slice(c);
-    },
-    insert(text) {
-      const v = opts.value();
-      if (opts.maxLength !== undefined && v.length + text.length > opts.maxLength) return;
-      const c = caret();
-      opts.setValue(v.slice(0, c) + text + v.slice(c));
-      setCaretRaw(c + text.length);
-    },
-    backspace() {
-      const c = caret();
-      if (c === 0) return;
-      const v = opts.value();
-      opts.setValue(v.slice(0, c - 1) + v.slice(c));
-      setCaretRaw(c - 1);
-    },
-    moveCaret(delta) {
-      setCaretRaw(Math.max(0, Math.min(caret() + delta, opts.value().length)));
-    },
-    commit() {
-      opts.onCommit?.(opts.value());
-      if (opts.closeOnCommit !== false) controller.close();
-    },
-    cancel() {
-      opts.onClose?.();
-      controller.close();
-    },
-    openedFrame: () => opened,
-  };
-  return controller;
-}
+export {
+  createOsk,
+  type CreateOskOptions,
+  type OskController,
+} from "./osk-controller.ts";
+import { createOsk, type OskController } from "./osk-controller.ts";
 
 // ---------------------------------------------------------------------------
 // Themes — whole class literals (the build harvests classes and codepoints
@@ -436,4 +360,70 @@ function OskPanel(props: { osk: OskController; theme: OskThemeName }): SolidJSX.
       </For>
     </FocusScope>
   );
+}
+
+// ---------------------------------------------------------------------------
+// TextField — the editable field (docs/TOUCH.md §1). The field and its
+// keyboard are one vertical: ACTIVATION of the field — touch tap, d-pad
+// CIRCLE, cursor click, one pressNode pipeline — summons the system OSK
+// bound to the field's signal. No app osk plumbing.
+// ---------------------------------------------------------------------------
+
+export interface TextFieldProps {
+  /** The bound text (application state stays the only authority). */
+  value: Accessor<string>;
+  onInput: (next: string) => void;
+  /** Commit (the OSK's START/✓): receives the final value; the panel closes. */
+  onSubmit?: (value: string) => void;
+  placeholder?: string;
+  /** Replaces the default field box classes (whole literals only). */
+  class?: string;
+  theme?: OskThemeName;
+  /** Controller escape hatch — shortcut buttons (△) call `ref.open()`. */
+  ref?: (osk: OskController) => void;
+}
+
+export function TextField(props: TextFieldProps): SolidJSX.Element {
+  const osk = createOsk({
+    value: props.value,
+    setValue: (next) => props.onInput(next),
+    onCommit: (text) => props.onSubmit?.(text),
+    closeOnCommit: true,
+  });
+  props.ref?.(osk);
+  return [
+    Focusable({
+      onPress: () => osk.open(),
+      get class() {
+        return (
+          props.class ??
+          "rounded-md bg-[#10161f] border-[#232e3c] px-2 py-1 focus:border-[#4a5a70] active:bg-[#1a2333]"
+        );
+      },
+      get children() {
+        return Text({
+          get class() {
+            return osk.isOpen() || props.value()
+              ? "text-sm text-slate-100"
+              : "text-sm text-slate-500";
+          },
+          get children() {
+            return osk.isOpen() ? osk.display() : props.value() || props.placeholder || " ";
+          },
+        });
+      },
+    }),
+    // The keyboard docks over the overlay layer (hitPass keeps the empty
+    // layer hit-transparent; the panel itself claims normally) and blocks
+    // buttons + gestures beneath while it lives — the OSK's own modality.
+    Portal({
+      children: () =>
+        View({
+          style: { posType: ENUMS.PosType.Absolute, insetB: 0, insetL: 0, width: SCREEN_W },
+          get children() {
+            return Osk({ osk, get theme() { return props.theme; } });
+          },
+        }),
+    }),
+  ] as unknown as SolidJSX.Element;
 }
