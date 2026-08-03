@@ -222,6 +222,22 @@ export const GOLDEN_SPECS: GoldenSpec[] = [
       return [];
     },
   },
+  {
+    // App-layer touch through the whole host stack: a tap on a conversation
+    // row must open the thread via the default activation recognizer — the
+    // coverage that was missing when every hardware touch resolved to the
+    // TextField's portal host (fix/portal-hit-pass). f40 = the list; f90 =
+    // after the tap resolved.
+    name: "im-rowtap",
+    app: "im-main",
+    frames: 100,
+    capture: [40, 90],
+    input: () => 0,
+    touch: (f) => {
+      if (f >= 60 && f < 64) return [{ id: 0, x: 240, y: 90 }];
+      return [];
+    },
+  },
 ];
 
 export function encodeThresholdInput(spec: GoldenSpec): string {

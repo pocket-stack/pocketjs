@@ -419,7 +419,7 @@ export function TextField(props: TextFieldProps): SolidJSX.Element {
     Portal({
       children: () =>
         View({
-          style: { posType: ENUMS.PosType.Absolute, insetB: 0, insetL: 0, width: SCREEN_W },
+          style: { posType: ENUMS.PosType.Absolute, insetB: 0, insetL: 0, width: SCREEN_W, hitPass: 1 },
           get children() {
             return Osk({ osk, get theme() { return props.theme; } });
           },

@@ -192,6 +192,11 @@ export function Portal(props: PortalProps): SolidJSX.Element {
         insetB: 0,
         insetL: 0,
         zIndex: 1000,
+        // Pure plumbing: a full-screen box that must NEVER claim a hit
+        // itself (bounds facts would resolve every touch to it — the
+        // overlay-root lesson of op 42, portal edition). Its CONTENT still
+        // claims normally (a modal scrim keeps blocking touches behind it).
+        hitPass: 1,
       },
       undefined,
     );
