@@ -108,7 +108,14 @@ impl Atlas {
         if bytes.len() < bitmap_end {
             return None;
         }
-        let mut cmap = Vec::with_capacity(glyph_count as usize);
+        // Fallible allocation: at runtime the PSRAM heap can be too
+        // fragmented for a multi-MB atlas bitmap (observed on esp32p4: a
+        // 1.5 MB lyric-glyph bake alloc aborted the whole app). OOM must
+        // degrade to load() == false (tofu glyphs), never abort.
+        let mut cmap: Vec<CmapEntry> = Vec::new();
+        if cmap.try_reserve_exact(glyph_count as usize).is_err() {
+            return None;
+        }
         for i in 0..glyph_count as usize {
             let o = cmap_off + i * fa::CMAP_ENTRY_SIZE;
             let gid = rd_u16(bytes, o + 4)?;
@@ -122,7 +129,10 @@ impl Atlas {
                 xoff: *bytes.get(o + 7)?,
             });
         }
-        let mut bitmap = Vec::with_capacity(bitmap_len);
+        let mut bitmap: Vec<u8> = Vec::new();
+        if bitmap.try_reserve_exact(bitmap_len).is_err() {
+            return None;
+        }
         bitmap.extend_from_slice(&bytes[bitmap_off..bitmap_end]);
         Some(Atlas {
             cell_w,
