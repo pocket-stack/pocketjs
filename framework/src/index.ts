@@ -42,6 +42,7 @@ import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setHitRoot, setInputRoot } from "./input.ts";
 import { __runGestures, resetGestures } from "./gesture.ts";
+import { installTouchActivation } from "./touch-activation.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
 import { __resetTouches, __setTouches } from "./touch.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
@@ -256,6 +257,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   setHitRoot(rootMirror); // hit tests see the overlay layer too
   resetFrameHooks();
   resetGestures();
+  // The default tap->press recognizer registers FIRST: every component
+  // gesture mounted after it wins priority (docs/TOUCH.md §0).
+  installTouchActivation();
   resetClock(); // latches the host's __simHz clock policy (docs/DETERMINISM.md)
   resetEffects();
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md): flight recorder +

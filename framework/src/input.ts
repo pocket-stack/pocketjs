@@ -689,6 +689,20 @@ export function hitFocusable(x: number, y: number): NodeMirror | null {
 }
 
 /**
+ * Nearest activation target for a touch contact: the hit FACT (or its query
+ * fallback) walked up to the closest focusable in scope — the exact filter
+ * cursor hover uses, so "what a tap can press" and "what a click can press"
+ * are one authority. Null when nothing pressable owns the point.
+ */
+export function touchFocusable(
+  x: number,
+  y: number,
+  fact: number | undefined,
+): NodeMirror | null {
+  return cursorTarget(resolveTouchHit(x, y, fact));
+}
+
+/**
  * Raw topmost-ink mirror under a screen point — hitFocusable without the
  * focusable/scope filter. The gesture layer resolves region ownership with
  * this (a pan region is rarely focusable itself). Null when the host has no
