@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// Build, flash, and verify Pocket Vapor on a USB-connected ESP32 MeowBit.
+// Build, flash, and verify Pocket Vapor on a supported USB-connected ESP32.
 //
+//   bun vapor/scripts/esp32.ts build [--board meowbit]
 //   bun vapor/scripts/esp32.ts flash [--port /dev/cu.usbmodem...] [--board meowbit]
 //   bun vapor/scripts/esp32.ts verify [--port ...] [--no-flash] [--board meowbit]
 //
@@ -18,6 +19,7 @@ import { loadBoard } from "../compiler/boards.ts";
 import {
   buildEsp32Firmware,
   DEFAULT_BOARD,
+  esp32ArtifactStem,
   esp32BuildId,
   resolveEspIdfEnvironment,
   runEspIdf,
@@ -30,12 +32,13 @@ import { TODO_TAPE } from "../tests/todo-tape.ts";
 const ROOT = resolve(import.meta.dir, "..", "..");
 const ENTRY = join(ROOT, "vapor", "examples", "todo", "todo.tsx");
 const OUT = join(ROOT, "dist", "vapor");
-const FIRMWARE = join(OUT, "todo.esp32.bin");
-const RECEIPT = join(OUT, "esp32-device-receipt.json");
 const TARGET = VAPOR_TARGETS.esp32;
 const BAUD = 115200;
 const CELLS = TARGET.width * TARGET.height;
 const BOARD = loadBoard(option("--board") ?? DEFAULT_BOARD);
+const ARTIFACT_STEM = esp32ArtifactStem(BOARD);
+const FIRMWARE = join(OUT, `todo.${ARTIFACT_STEM}.bin`);
+const RECEIPT = join(OUT, `${ARTIFACT_STEM}-device-receipt.json`);
 
 interface GridReceipt {
   header: string;
@@ -87,7 +90,7 @@ class SerialLines {
   private readonly child: Bun.PipedSubprocess;
 
   static async open(port: string): Promise<SerialLines> {
-    const { idfToolsPath } = resolveEspIdfEnvironment();
+    const { idfToolsPath } = resolveEspIdfEnvironment(BOARD);
     const pythonRoot = join(idfToolsPath, "python_env");
     const envs = readdirSync(pythonRoot)
       .filter((name) => /^idf.+_env$/.test(name))
@@ -274,18 +277,21 @@ async function build(): Promise<{
 }
 
 async function flash(buildResult: Esp32BuildResult, port: string): Promise<void> {
-  console.log(`\nflashing ${basename(FIRMWARE)} to ${port} at ${BAUD} baud...`);
-  await runEspIdf([
-    "-C",
-    buildResult.projectDir,
-    "-B",
-    buildResult.buildDir,
-    "-p",
-    port,
-    "-b",
-    String(BAUD),
-    "flash",
-  ]);
+  console.log(`\nflashing ${basename(FIRMWARE)} for ${BOARD.board} to ${port} at ${BAUD} baud...`);
+  await runEspIdf(
+    [
+      "-C",
+      buildResult.projectDir,
+      "-B",
+      buildResult.buildDir,
+      "-p",
+      port,
+      "-b",
+      String(BAUD),
+      "flash",
+    ],
+    buildResult.idfEnvironment,
+  );
   await waitForPort(port);
 }
 
@@ -403,22 +409,28 @@ async function verify(
 }
 
 const command = process.argv[2] ?? "verify";
-if (command !== "flash" && command !== "verify") {
+if (command !== "build" && command !== "flash" && command !== "verify") {
   console.error(
-    "usage: bun vapor/scripts/esp32.ts flash|verify [--port /dev/cu.usbmodem...] [--no-flash] [--board meowbit]",
+    "usage: bun vapor/scripts/esp32.ts build|flash|verify [--port /dev/cu.usbmodem...] [--no-flash] [--board meowbit]",
   );
   process.exit(2);
 }
 
-const port = autoPort();
 const source = await Bun.file(ENTRY).text();
 let app = compileVaporApp(ENTRY, source, "VAPOR TODO", "esp32");
 let firmware: Esp32BuildResult | undefined;
-if (command === "flash" || !process.argv.includes("--no-flash")) {
+if (command === "build" || command === "flash" || !process.argv.includes("--no-flash")) {
   ({ app, firmware } = await build());
-  await flash(firmware, port);
 }
-if (command === "verify") {
-  const expectedBuildId = firmware?.buildId ?? await esp32BuildId(app, BOARD);
-  await verify(port, app, expectedBuildId);
+if (command === "build") {
+  console.log(
+    `${FIRMWARE}  (${(firmware!.romBytes / 1024).toFixed(1)} KB, firmware for ${BOARD.board})`,
+  );
+} else {
+  const port = autoPort();
+  if (firmware) await flash(firmware, port);
+  if (command === "verify") {
+    const expectedBuildId = firmware?.buildId ?? await esp32BuildId(app, BOARD);
+    await verify(port, app, expectedBuildId);
+  }
 }

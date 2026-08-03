@@ -349,6 +349,11 @@ impl UiSurface {
             });
 
             let ui = self.inner.clone();
+            op!("hitTestBounds", move |x: f64, y: f64| {
+                ui.borrow_mut().ui.hit_test_bounds(x as f32, y as f32)
+            });
+
+            let ui = self.inner.clone();
             op!("setCursor", move |tex: i32, hot_x: f64, hot_y: f64, w: f64, h: f64| {
                 ui.borrow_mut().ui.set_cursor(tex, hot_x as f32, hot_y as f32, w as f32, h as f32)
             });
@@ -538,6 +543,43 @@ fn decode_pix_header(blob: &[u8], pixels_off: usize) -> Option<(u32, u32, u32, &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mounts_bounds_hit_fallback_for_touch_guests() {
+        let guest = Guest::new().unwrap();
+        let surface = UiSurface::new((16.0, 16.0));
+        let container = surface.with_ui(|ui| {
+            let id = ui.create_node(0);
+            ui.set_prop(
+                id,
+                pocketjs_core::spec::prop::POS_TYPE,
+                pocketjs_core::spec::PosType::Absolute as u32 as f64,
+            );
+            ui.set_prop(id, pocketjs_core::spec::prop::INSET_L, 2.0);
+            ui.set_prop(id, pocketjs_core::spec::prop::INSET_T, 2.0);
+            ui.set_prop(id, pocketjs_core::spec::prop::WIDTH, 8.0);
+            ui.set_prop(id, pocketjs_core::spec::prop::HEIGHT, 8.0);
+            ui.insert_before(pocketjs_core::spec::ROOT_ID, id, 0);
+            ui.tick();
+            id
+        });
+        surface.mount(&guest).unwrap();
+        guest
+            .eval(
+                "touch-hit",
+                "globalThis.inkHit = ui.hitTest(4, 4); \
+                 globalThis.boundsHit = ui.hitTestBounds(4, 4);",
+            )
+            .unwrap();
+        let (ink, bounds): (i32, i32) = guest.with(|ctx| {
+            (
+                ctx.globals().get("inkHit").unwrap(),
+                ctx.globals().get("boundsHit").unwrap(),
+            )
+        });
+        assert_eq!(ink, 0, "pure layout containers do not claim ink hits");
+        assert_eq!(bounds, container, "bounds fallback must claim the container");
+    }
 
     #[test]
     fn empty_service_allowlist_disables_the_companion() {

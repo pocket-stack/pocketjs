@@ -4,7 +4,15 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { loadBoard } from "../compiler/boards.ts";
 import { compileVaporApp, VAPOR_TARGETS, VaporCompileError } from "../compiler/compile.ts";
-import { esp32BuildId } from "../compiler/esp32.ts";
+import {
+  esp32ArtifactStem,
+  esp32BuildId,
+  esp32IdfVersion,
+  esp32ProjectName,
+  ESP32P4_LVGL_PORT_RGB565_SWAPPED_COMMIT,
+  ESP32P4_LVGL_PORT_VERSION,
+  ESP32P4_DEPENDENCY_LOCK,
+} from "../compiler/esp32.ts";
 import { FONT8 } from "../compiler/font.gen.ts";
 
 const ENTRY = join(import.meta.dir, "..", "examples", "todo", "todo.tsx");
@@ -104,9 +112,39 @@ describe("pocket vapor compiler", () => {
     expect(await esp32BuildId(same, board)).toBe(id);
     expect(await esp32BuildId(changed, board)).not.toBe(id);
 
+    const todoSource = await Bun.file(ENTRY).text();
+    const todo = compileVaporApp(ENTRY, todoSource, "VAPOR TODO", "esp32");
+    expect(await esp32BuildId(todo, board)).toBe("a6f3b6489877b73e");
+
     const rewired = structuredClone(board);
     rewired.input.pins.b = 14;
     expect(await esp32BuildId(app, rewired)).not.toBe(id);
+  });
+
+  test("ESP32 board artifacts are isolated without renaming the MeowBit defaults", () => {
+    const meowbit = loadBoard("meowbit");
+    const p4 = loadBoard("waveshare-esp32-p4-wifi6-touch-lcd-7b");
+    expect(esp32ArtifactStem(meowbit)).toBe("esp32");
+    expect(esp32ProjectName(meowbit)).toBe("gen-esp32");
+    expect(esp32ArtifactStem(p4)).toBe(
+      "esp32-waveshare-esp32-p4-wifi6-touch-lcd-7b",
+    );
+    expect(esp32ProjectName(p4)).toBe(
+      "gen-esp32-waveshare-esp32-p4-wifi6-touch-lcd-7b",
+    );
+    expect(esp32IdfVersion(meowbit)).toBe("v6.0.2");
+    expect(esp32IdfVersion(p4)).toBe("v5.5.4");
+    expect(ESP32P4_LVGL_PORT_VERSION).toBe("2.7.2");
+    expect(ESP32P4_LVGL_PORT_RGB565_SWAPPED_COMMIT).toHaveLength(40);
+  });
+
+  test("ESP32-P4 managed components are locked in a hashed source input", async () => {
+    const lock = await Bun.file(ESP32P4_DEPENDENCY_LOCK).text();
+    for (const version of ["0.5.3", "1.5.11", "1.0.4", "1.2.1", "1.2.0~3", "2.7.2", "5.5.4", "9.2.2"]) {
+      expect(lock).toContain(`version: ${version}`);
+    }
+    expect(lock).toContain("component_hash:");
+    expect(lock).toContain("target: esp32p4");
   });
 
   test("effect masks subscribe conditional reads on both arms", async () => {

@@ -1,0 +1,18 @@
+{
+  "board": "waveshare-esp32-p4-wifi6-touch-lcd-7b",
+  "title": "Waveshare ESP32-P4-WIFI6-Touch-LCD-7B",
+  "chip": "esp32p4",
+  "lcd": {
+    "bsp": "waveshare-esp32-p4-wifi6-touch-lcd-7b",
+    "controller": "ek79007",
+    "width": 1024,
+    "height": 600,
+    "cell": [30, 30]
+  },
+  "input": {
+    "kind": "touch",
+    "controller": "gt911",
+    "virtualButtons": ["a", "b", "select", "start", "right", "left", "up", "down", "r"],
+    "absent": ["l"]
+  }
+}

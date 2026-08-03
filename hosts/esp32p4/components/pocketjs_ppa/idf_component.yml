@@ -6,4 +6,4 @@ documentation: https://github.com/pocket-stack/pocketjs/tree/main/hosts/esp32p4
 targets:
   - esp32p4
 dependencies:
-  idf: ">=6.0,<6.2"
+  idf: ">=5.5.4,<6.2"

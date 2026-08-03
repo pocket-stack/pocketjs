@@ -1,0 +1,32 @@
+[package]
+name = "pocketjs-esp32p4-runtime"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+anyhow = "1"
+log = "0.4"
+# The direct dependency enables target-correct bindings for ESP-IDF's RISC-V
+# ABI. pocket-mod and this crate then share the same rquickjs instance.
+rquickjs = { version = "0.12", features = ["bindgen"] }
+pocket-mod = { path = "../../../engine/crates/pocket-mod" }
+pocket-ui-surface = { path = "../../../engine/crates/pocket-ui-surface" }
+pocketjs-core = { path = "../../../engine/core", features = ["std"] }
+pocketjs-esp32p4-ppa = { path = "../../../engine/backends/esp32p4-ppa", features = ["std"] }
+
+[features]
+default = []
+esp-idf = ["pocketjs-esp32p4-ppa/esp-idf"]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+lto = true
+
+[workspace]

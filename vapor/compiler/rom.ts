@@ -11,6 +11,7 @@ import { $ } from "bun";
 import { dirname, join } from "node:path";
 import { nesFontBytes, VAPOR_TARGETS, type CompiledApp, type VaporTargetName } from "./compile.ts";
 import { buildEsp32Firmware } from "./esp32.ts";
+import type { VaporBoard } from "./boards.ts";
 import {
   buildPlaydatePackages,
   type PlaydateBuildMode,
@@ -54,6 +55,7 @@ export interface BuiltArtifact {
 
 export interface BuildRomOptions {
   playdateMode?: PlaydateBuildMode;
+  esp32Board?: VaporBoard;
 }
 
 type SingleArtifactTarget = Exclude<VaporTargetName, "playdate">;
@@ -62,6 +64,7 @@ async function buildSingleArtifact(
   app: CompiledApp,
   target: SingleArtifactTarget,
   outPath: string,
+  options: BuildRomOptions,
 ): Promise<BuiltArtifact> {
   if (target === "gba") {
     const { romBytes } = await buildGbaRom(app, outPath);
@@ -76,7 +79,7 @@ async function buildSingleArtifact(
     return { path: outPath, kind: "rom", bytes: romBytes };
   }
   if (target === "esp32") {
-    const { romBytes } = await buildEsp32Firmware(app, outPath);
+    const { romBytes } = await buildEsp32Firmware(app, outPath, options.esp32Board);
     return { path: outPath, kind: "firmware", bytes: romBytes };
   }
   target satisfies never;
@@ -110,7 +113,7 @@ export async function buildRom(
       bytes,
     }));
   }
-  return [await buildSingleArtifact(app, target, outPath)];
+  return [await buildSingleArtifact(app, target, outPath, options)];
 }
 
 // ---- GBA -------------------------------------------------------------------

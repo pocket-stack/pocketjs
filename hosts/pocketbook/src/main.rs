@@ -210,7 +210,9 @@ fn tick(
     full: bool,
 ) -> Result<()> {
     let (buttons, analog, touches) = input.snapshot();
-    guest.frame_with_touches(buttons, analog, &touches)?;
+    let mut hits = [0i32; 8];
+    let hit_count = surface.with_ui(|ui| ui.touch_hits(&touches, &mut hits));
+    guest.frame_with_touch_hits(buttons, analog, &touches, &hits[..hit_count])?;
 
     surface.tick();
 

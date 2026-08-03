@@ -1,0 +1,6 @@
+/build/
+/managed_components/
+/sdkconfig
+/sdkconfig.old
+/main/app.js
+/main/app.pak

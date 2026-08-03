@@ -38,7 +38,13 @@ export const RUNTIME_CHORDS: Readonly<Partial<Record<PocketButtonName, readonly 
 const LCD_CONTROLLERS = { ili934x: 1, st7789: 2, st7735: 3 } as const;
 export type LcdController = keyof typeof LCD_CONTROLLERS;
 
-export interface VaporBoard {
+const ESP32P4_BSP = "waveshare-esp32-p4-wifi6-touch-lcd-7b" as const;
+const ESP32P4_PANEL = { controller: "ek79007", width: 1024, height: 600, cell: [30, 30] } as const;
+export const ESP32P4_VIRTUAL_BUTTONS = [
+  "a", "b", "select", "start", "right", "left", "up", "down", "r",
+] as const satisfies readonly PocketButtonName[];
+
+export interface Esp32Board {
   board: string;
   title: string;
   chip: "esp32";
@@ -57,6 +63,30 @@ export interface VaporBoard {
   };
 }
 
+export interface Esp32P4Board {
+  board: string;
+  title: string;
+  chip: "esp32p4";
+  lcd: {
+    /** Board-support package selected by the ESP32-P4 host. */
+    bsp: typeof ESP32P4_BSP;
+    controller: "ek79007";
+    width: 1024;
+    height: 600;
+    cell: readonly [30, 30];
+  };
+  input: {
+    kind: "touch";
+    controller: "gt911";
+    /** Pocket buttons exposed by the host's on-screen controls. */
+    virtualButtons: readonly PocketButtonName[];
+    absent: readonly PocketButtonName[];
+  };
+}
+
+/** Chip is the discriminator because it selects a different ESP-IDF host. */
+export type VaporBoard = Esp32Board | Esp32P4Board;
+
 export interface BoardIssue {
   code: string;
   severity: "error" | "warn";
@@ -73,6 +103,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function requireKnownKeys(
+  name: string,
+  value: Record<string, unknown>,
+  what: string,
+  allowed: readonly string[],
+): void {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) throw new BoardError(name, `unknown ${what} field ${JSON.stringify(key)}`);
+  }
+}
+
+function requireButtonList(name: string, value: unknown, what: string): PocketButtonName[] {
+  if (!Array.isArray(value)) throw new BoardError(name, `${what} must be an array`);
+  const buttons: PocketButtonName[] = [];
+  for (const button of value) {
+    if (!(POCKET_PAD as readonly unknown[]).includes(button))
+      throw new BoardError(name, `unknown pocket button ${JSON.stringify(button)} in ${what}`);
+    if (buttons.includes(button as PocketButtonName))
+      throw new BoardError(name, `duplicate pocket button ${JSON.stringify(button)} in ${what}`);
+    buttons.push(button as PocketButtonName);
+  }
+  return buttons;
+}
+
 function requireInt(name: string, value: unknown, what: string, min: number, max: number): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max)
     throw new BoardError(name, `${what} must be an integer in [${min}, ${max}], got ${JSON.stringify(value)}`);
@@ -82,16 +136,92 @@ function requireInt(name: string, value: unknown, what: string, min: number, max
 /** Validate a raw board document; throws a descriptive error on any defect. */
 export function parseBoard(name: string, raw: unknown): VaporBoard {
   if (!isRecord(raw)) throw new BoardError(name, "document must be a JSON object");
+  requireKnownKeys(name, raw, "board", ["board", "title", "chip", "lcd", "input"]);
   if (raw.board !== name)
     throw new BoardError(name, `"board" must equal the file name, got ${JSON.stringify(raw.board)}`);
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new BoardError(name, "board names are lowercase kebab-case");
   if (typeof raw.title !== "string" || raw.title.length === 0)
     throw new BoardError(name, '"title" must be a non-empty string');
-  if (raw.chip !== "esp32")
-    throw new BoardError(name, `the only board runtime today is "esp32", got ${JSON.stringify(raw.chip)}`);
+  if (raw.chip !== "esp32" && raw.chip !== "esp32p4")
+    throw new BoardError(name, `chip must be "esp32" or "esp32p4", got ${JSON.stringify(raw.chip)}`);
 
   const lcd = raw.lcd;
   if (!isRecord(lcd)) throw new BoardError(name, '"lcd" must be an object');
+
+  if (raw.chip === "esp32p4") {
+    requireKnownKeys(name, lcd, "lcd", ["bsp", "controller", "width", "height", "cell"]);
+    if (lcd.bsp !== ESP32P4_BSP)
+      throw new BoardError(
+        name,
+        `lcd.bsp must be "${ESP32P4_BSP}", got ${JSON.stringify(lcd.bsp)}`,
+      );
+    if (lcd.controller !== ESP32P4_PANEL.controller)
+      throw new BoardError(
+        name,
+        `lcd.controller must be "${ESP32P4_PANEL.controller}", got ${JSON.stringify(lcd.controller)}`,
+      );
+    const width = requireInt(name, lcd.width, "lcd.width", 1, 4096);
+    const height = requireInt(name, lcd.height, "lcd.height", 1, 4096);
+    if (width !== ESP32P4_PANEL.width || height !== ESP32P4_PANEL.height)
+      throw new BoardError(
+        name,
+        `the ${ESP32P4_PANEL.controller} BSP panel must be ${ESP32P4_PANEL.width}x${ESP32P4_PANEL.height}, got ${width}x${height}`,
+      );
+    if (!Array.isArray(lcd.cell) || lcd.cell.length !== 2)
+      throw new BoardError(name, "lcd.cell must be [width, height]");
+    const cell = [
+      requireInt(name, lcd.cell[0], "lcd.cell[0]", 1, 256),
+      requireInt(name, lcd.cell[1], "lcd.cell[1]", 1, 256),
+    ] as const;
+    if (cell[0] !== ESP32P4_PANEL.cell[0] || cell[1] !== ESP32P4_PANEL.cell[1])
+      throw new BoardError(
+        name,
+        `the ${ESP32P4_BSP} touch layout requires lcd.cell [${ESP32P4_PANEL.cell.join(", ")}], got ${JSON.stringify(cell)}`,
+      );
+
+    const input = raw.input;
+    if (!isRecord(input)) throw new BoardError(name, '"input" must be an object');
+    requireKnownKeys(name, input, "input", ["kind", "controller", "virtualButtons", "absent"]);
+    if (input.kind !== "touch")
+      throw new BoardError(name, `input.kind must be "touch", got ${JSON.stringify(input.kind)}`);
+    if (input.controller !== "gt911")
+      throw new BoardError(name, `input.controller must be "gt911", got ${JSON.stringify(input.controller)}`);
+    const virtualButtons = requireButtonList(name, input.virtualButtons, "input.virtualButtons");
+    const absent = requireButtonList(name, input.absent, "input.absent");
+
+    for (const button of POCKET_PAD) {
+      const spellings = [virtualButtons.includes(button), absent.includes(button)].filter(Boolean).length;
+      if (spellings !== 1)
+        throw new BoardError(
+          name,
+          `pocket button "${button}" must have exactly one spelling (virtual button or absent), found ${spellings}`,
+        );
+    }
+    if (
+      virtualButtons.length !== ESP32P4_VIRTUAL_BUTTONS.length ||
+      ESP32P4_VIRTUAL_BUTTONS.some((button) => !virtualButtons.includes(button))
+    )
+      throw new BoardError(
+        name,
+        `input.virtualButtons must match the ${ESP32P4_BSP} touch layout ${JSON.stringify(ESP32P4_VIRTUAL_BUTTONS)}`,
+      );
+
+    return {
+      board: name,
+      title: raw.title,
+      chip: "esp32p4",
+      lcd: {
+        bsp: ESP32P4_BSP,
+        controller: ESP32P4_PANEL.controller,
+        width,
+        height,
+        cell: ESP32P4_PANEL.cell,
+      },
+      input: { kind: "touch", controller: "gt911", virtualButtons, absent },
+    };
+  }
+
+  requireKnownKeys(name, lcd, "lcd", ["controller", "width", "height", "cell", "madctl", "pins"]);
   if (typeof lcd.controller !== "string" || !(lcd.controller in LCD_CONTROLLERS))
     throw new BoardError(name, `lcd.controller must be one of ${Object.keys(LCD_CONTROLLERS).join(", ")}`);
   const width = requireInt(name, lcd.width, "lcd.width", 1, 1024);
@@ -114,10 +244,11 @@ export function parseBoard(name: string, raw: unknown): VaporBoard {
       const wired = pin === "sclk" || pin === "mosi" || pin === "cs" || pin === "dc";
       return [pin, requireInt(name, rawLcdPins[pin], `lcd.pins.${pin}`, wired ? 0 : -1, 48)];
     }),
-  ) as VaporBoard["lcd"]["pins"];
+  ) as Esp32Board["lcd"]["pins"];
 
   const input = raw.input;
   if (!isRecord(input)) throw new BoardError(name, '"input" must be an object');
+  requireKnownKeys(name, input, "input", ["pins", "chorded", "absent"]);
   const rawPadPins = input.pins;
   if (!isRecord(rawPadPins)) throw new BoardError(name, '"input.pins" must be an object');
   for (const extra of Object.keys(rawPadPins))
@@ -130,7 +261,7 @@ export function parseBoard(name: string, raw: unknown): VaporBoard {
     PAD_KEYS.map((key) => [key, requireInt(name, rawPadPins[key], `input.pins.${key}`, 0, 48)]),
   ) as Record<PadKey, number>;
 
-  const chorded: VaporBoard["input"]["chorded"] = {};
+  const chorded: Esp32Board["input"]["chorded"] = {};
   if (input.chorded !== undefined) {
     if (!isRecord(input.chorded)) throw new BoardError(name, '"input.chorded" must be an object');
     for (const [button, pair] of Object.entries(input.chorded)) {
@@ -146,15 +277,7 @@ export function parseBoard(name: string, raw: unknown): VaporBoard {
     }
   }
 
-  const absent: PocketButtonName[] = [];
-  if (input.absent !== undefined) {
-    if (!Array.isArray(input.absent)) throw new BoardError(name, '"input.absent" must be an array');
-    for (const button of input.absent) {
-      if (!(POCKET_PAD as readonly string[]).includes(button))
-        throw new BoardError(name, `unknown pocket button ${JSON.stringify(button)} in input.absent`);
-      absent.push(button as PocketButtonName);
-    }
-  }
+  const absent = input.absent === undefined ? [] : requireButtonList(name, input.absent, "input.absent");
 
   // Every pocket button must be accounted for exactly once: direct pad key,
   // runtime chord, or declared absent. Silence is how coverage claims rot.
@@ -204,6 +327,30 @@ export function listBoards(): string[] {
  * the derivation must stay byte-stable for a given board file.
  */
 export function boardDefinitions(board: VaporBoard): string[] {
+  if (board.chip === "esp32p4") {
+    const virtualMask = board.input.virtualButtons.reduce(
+      (mask, button) => mask | (1 << POCKET_PAD.indexOf(button)),
+      0,
+    );
+    const absentMask = board.input.absent.reduce(
+      (mask, button) => mask | (1 << POCKET_PAD.indexOf(button)),
+      0,
+    );
+    return [
+      `VP_BOARD_ID=\\"${board.board}\\"`,
+      `VP_CHIP_ID=\\"${board.chip}\\"`,
+      `VP_BSP_ID=\\"${board.lcd.bsp}\\"`,
+      `VP_PANEL_ID=\\"${board.lcd.controller}\\"`,
+      `VP_LCD_WIDTH=${board.lcd.width}`,
+      `VP_LCD_HEIGHT=${board.lcd.height}`,
+      `VP_LCD_CELL_W=${board.lcd.cell[0]}`,
+      `VP_LCD_CELL_H=${board.lcd.cell[1]}`,
+      `VP_TOUCH_ID=\\"${board.input.controller}\\"`,
+      `VP_TOUCH_BUTTON_MASK=0x${virtualMask.toString(16)}`,
+      `VP_ABSENT_BUTTON_MASK=0x${absentMask.toString(16)}`,
+    ];
+  }
+
   const { lcd, input } = board;
   return [
     `VP_ESP32_BOARD=\\"${board.board}\\"`,
@@ -260,6 +407,15 @@ export function admitBoard(
     const button = POCKET_PAD[id];
     if (button === undefined) {
       issues.push({ code: "VB102", severity: "error", message: `unknown button id ${id} in demands` });
+      continue;
+    }
+    if (board.chip === "esp32p4") {
+      if (board.input.virtualButtons.includes(button)) continue;
+      issues.push({
+        code: "VB102",
+        severity: "error",
+        message: `app uses "${button}" but ${board.board} has no mapping for it`,
+      });
       continue;
     }
     if ((PAD_KEYS as readonly string[]).includes(button)) continue;

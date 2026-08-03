@@ -175,22 +175,26 @@ the 50×30 one-bit contract.
 ## Commands
 
 The ESP32 `flash` and default `verify` commands below write the connected
-board; make a full-flash backup first as described in
-[`runtime/esp32/README.md`](runtime/esp32/README.md). The standalone
-`todo.esp32.bin` is app-only and, if written manually, belongs at
-`0x10000`—never offset zero. Prefer the segmented flash script.
+board. Make a full-flash backup first using the target-specific instructions:
+[`runtime/esp32/README.md`](runtime/esp32/README.md) for the 4 MiB MeowBit,
+or [`runtime/esp32p4/README.md`](runtime/esp32p4/README.md) for the 32 MiB
+Waveshare 7B. Application-only images belong at `0x10000`, never offset
+zero; prefer the target's segmented flash script.
 
 ```sh
 bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx                 # → dist/vapor/todo.gba
 bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target gb     # → todo.gb  (32 KB)
 bun vapor/compiler/cli.ts vapor/examples/todo/todo.tsx --target nes    # → todo.nes (40 KB)
-bun run vapor:esp32                                        # → app-only todo.esp32.bin + gen-esp32/
+bun run vapor:esp32                                        # → MeowBit app-only todo.esp32.bin + gen-esp32/
+bun run vapor:esp32p4                                      # → Waveshare 7B app + board-scoped ESP-IDF project
 bun run vapor:playdate                                     # → crank-driven Todo Simulator .pdx
 bun run vapor:playdate:device                              # → crank-driven Todo device .pdx
 bun run vapor:playdate:both                                # → both independent .pdx packages
 bun run vapor:playdate:smoke                               # → six-button regression fixture
 bun run vapor:esp32:flash                                  # build + flash the connected ESP32 MeowBit
 bun run vapor:esp32:verify                                 # build + flash + replay the Vue-oracle tape
+bun run vapor:esp32p4:flash                                # build + flash the Waveshare ESP32-P4 7B board
+bun run vapor:esp32p4:verify                               # flash + replay the same logical-grid tape
 bun vapor/scripts/play.ts                                 # build + open in mGBA
 bun vapor/scripts/dev.ts [app.tsx]                        # visible oracle in the browser
 bun vapor/compiler/cli.ts check <app.tsx> [--strict]      # cross-target diagnostics matrix
@@ -199,19 +203,39 @@ bun test vapor/tests/                                     # oracle + compiler + 
 ```
 
 Toolchains: `arm-none-eabi-gcc` + `mgba` (GBA/GB), `sdcc` + `rgbfix` (GB),
-`cc65` (NES, emulated by the jsnes dev-dependency), **ESP-IDF v6.0.2**,
-and the Playdate SDK CMake/pdc toolchain
-(ESP32; set `IDF_PATH` / `IDF_TOOLS_PATH` when auto-discovery does not find
-the installation). Oracle tests run with bun alone. Notable per-target facts the
+`cc65` (NES, emulated by the jsnes dev-dependency), ESP-IDF, and the Playdate
+SDK CMake/pdc toolchain. The MeowBit uses ESP-IDF v6.0.2; the Waveshare
+ESP32-P4 uses ESP-IDF v5.5.4, the latest release in the vendor-recommended
+v5.5.1-v5.5.4 range for this board.
+Install the matching release, then set `IDF_PATH` / `IDF_TOOLS_PATH` when
+auto-discovery does not find it. The scripts discover an existing toolchain
+but do not download one; the macOS cache candidates are
+`~/Library/Caches/esp-idf/v6.0.2` and `~/Library/Caches/esp-idf/v5.5.4`.
+Oracle tests run with bun alone. Notable per-target facts the
 runtime absorbs: the console shadow grid IS the debug block (fixed
 WRAM/CPU-RAM addresses), so the harness reads the logical screen even while
 a 1 MHz SM83 trickles VRAM through vblank; DMG has one palette, so logical
 palettes map to baked glyph styles; NES fits grid + pool + views into 2 KB
-of CPU RAM with the font in CHR-ROM; ESP32 rasterizes the same logical
-20×18 grid into RGB565 on a 160×128 ST7735; Playdate maps a 50×30 grid
+of CPU RAM with the font in CHR-ROM; the classic ESP32/MeowBit target
+rasterizes the same logical 20×18 grid into RGB565 on a 160×128 ST7735;
+Playdate maps a 50×30 grid
 byte-for-cell into its 400×240 1bpp framebuffer; and sdcc 4.6's SM83 port
 miscompiles some u8-by-u8 multiplies, so generated indexing is u16 pointer
 arithmetic and bit masks come from a ROM table.
+
+The Waveshare target keeps its generated files separate at
+`dist/vapor/todo.esp32-waveshare-esp32-p4-wifi6-touch-lcd-7b.bin` and
+`dist/vapor/gen-esp32-waveshare-esp32-p4-wifi6-touch-lcd-7b/`. Its GT911
+controls render on screen and dispatch the same hardware-neutral `Button`
+ids used by every Pocket Vapor app; device SDK touch concepts never enter
+app code. The generated project pins the HW-V1.0-compatible Waveshare 7B BSP
+at v1.0.4, LVGL at 9.2.x, and the LVGL port at v2.7.2 (the last release
+before its RGB565 API began requiring newer LVGL); it also records the exact
+official EK79007/GT911 example revision, targets the board's 32 MiB flash,
+and retains ESP32-P4 revision-1 support. The complete registry resolution is
+checked in at `runtime/esp32p4/dependencies.lock`, copied into every generated
+project, and included in the firmware build id; a clean build therefore cannot
+silently resolve different transitive drivers under an unchanged receipt.
 
 ## Layout
 

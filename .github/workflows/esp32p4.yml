@@ -6,14 +6,36 @@ on:
       - ".github/workflows/esp32p4.yml"
       - "engine/core/**"
       - "engine/backends/esp32p4-ppa/**"
+      - "engine/crates/pocket-mod/**"
+      - "engine/crates/pocket-ui-surface/**"
+      - "contracts/**"
+      - "framework/**"
       - "hosts/esp32p4/**"
+      - "tools/build.ts"
+      - "tools/esp32p4*.ts"
+      - "tests/esp32p4*.test.ts"
+      - "vapor/boards/**"
+      - "vapor/compiler/**"
+      - "package.json"
+      - "bun.lock"
   push:
     branches: [main]
     paths:
       - ".github/workflows/esp32p4.yml"
       - "engine/core/**"
       - "engine/backends/esp32p4-ppa/**"
+      - "engine/crates/pocket-mod/**"
+      - "engine/crates/pocket-ui-surface/**"
+      - "contracts/**"
+      - "framework/**"
       - "hosts/esp32p4/**"
+      - "tools/build.ts"
+      - "tools/esp32p4*.ts"
+      - "tests/esp32p4*.test.ts"
+      - "vapor/boards/**"
+      - "vapor/compiler/**"
+      - "package.json"
+      - "bun.lock"
   workflow_dispatch: {}
 
 permissions:
@@ -29,6 +51,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install JavaScript dependencies
+        run: bun install --frozen-lockfile
+
       - name: Test RGB565 core rasterizer
         run: cargo test --locked --manifest-path engine/core/Cargo.toml
 
@@ -38,16 +65,47 @@ jobs:
       - name: Check ESP-IDF Rust adapter
         run: cargo check --locked --manifest-path engine/backends/esp32p4-ppa/Cargo.toml --features esp-idf
 
-  esp-idf:
-    name: ESP-IDF release/v6.0
+      - name: Test complete QuickJS host runtime
+        run: cargo test --locked --manifest-path hosts/esp32p4/runtime/Cargo.toml
+
+      - name: Test ESP32-P4 build and device tooling
+        run: bun test tests/esp32p4-profile.test.ts tests/esp32p4-device.test.ts
+
+      - name: Generate framework style module
+        run: bun tools/build.ts hero >/dev/null
+
+      - name: Check TypeScript contracts
+        run: bunx tsc --noEmit
+
+  full-host:
+    name: Full PocketJS host final link
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cross-build QuickJS and link the Waveshare firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.4
+          target: esp32p4
+          extra_docker_args: --user root
+          command: bash hosts/esp32p4/waveshare-7b/ci-build.sh
+
+  esp-idf:
+    name: ESP-IDF ${{ matrix.idf }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        idf: [v5.5.4, release-v6.0]
     steps:
       - uses: actions/checkout@v4
 
       - name: Build ESP32-P4 component smoke app
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: release-v6.0
+          esp_idf_version: ${{ matrix.idf }}
           target: esp32p4
           path: hosts/esp32p4/examples/ppa-smoke

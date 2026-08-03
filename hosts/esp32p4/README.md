@@ -15,11 +15,31 @@ it is a concrete PPA backend:
 
 No full-frame RGB888 or ARGB8888 intermediate is required.
 
+## Complete PocketJS host
+
+[`waveshare-7b`](./waveshare-7b/README.md) is a product host for the
+Waveshare ESP32-P4-WIFI6-Touch-LCD-7B. It runs target-bound PocketJS bundles
+in QuickJS with the retained UI surface, 60 Hz lifecycle, button/touch input,
+and this PPA renderer; it is separate from the Pocket Vapor firmware for the
+same board.
+
+From the repository root, build or build-and-flash any compatible stock app:
+
+```sh
+bun run esp32p4:device build chrome
+bun run esp32p4:device flash cards --port /dev/cu.usbmodem101
+```
+
+The command stages a clean generated ESP-IDF project under `dist/esp32p4`,
+pins the dated Rust and ESP-IDF toolchains, validates the dependency lock and
+segmented flash manifest, and refuses raw offset-zero application writes.
+
 ## Compatibility
 
-The adapter is supported and build-tested with the ESP-IDF `release/v6.0` and
-`release/v6.1` branches. Versions older than v6.0 have not been tested. CI
-builds `release/v6.0` as the minimum supported baseline.
+The adapter is supported with ESP-IDF v5.5.4 through the `release/v6.1`
+branch. v5.5.4 is the pinned baseline for the Waveshare 7B product host; CI
+also builds `release/v6.0`. Each baseline performs a final ESP-IDF link, not
+only a Rust type-check.
 
 Only the `esp32p4` target is supported. The adapter does not select a silicon
 revision, CPU frequency, PSRAM mode, display controller, or panel timing;

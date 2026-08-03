@@ -2,7 +2,7 @@
 // vapor/compiler/cli.ts — compile a Pocket Vapor component to a cartridge.
 //
 //   bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes|esp32|playdate] [--out dist/vapor]
-//     [--playdate-mode simulator|device|both]
+//     [--board meowbit] [--playdate-mode simulator|device|both]
 //   bun vapor/compiler/cli.ts check <component.tsx> [--strict] [--json]
 //
 // `check` runs the compiler frontend for EVERY target and prints the
@@ -16,6 +16,7 @@
 import { basename, join, resolve } from "node:path";
 import { admitBoard, listBoards, loadBoard, POCKET_PAD, type BoardIssue } from "./boards.ts";
 import { compileVaporApp, VAPOR_TARGETS, type CompiledApp, type VaporTargetName } from "./compile.ts";
+import { esp32ArtifactStem } from "./esp32.ts";
 import { buildRom } from "./rom.ts";
 import type { PlaydateBuildMode } from "./playdate.ts";
 
@@ -109,7 +110,7 @@ const entry = args.find((a) => !a.startsWith("--"));
 if (!entry) {
   console.error(
     "usage: bun vapor/compiler/cli.ts <component.tsx> [--target gba|gb|nes|esp32|playdate] " +
-      "[--out <dir>] [--playdate-mode simulator|device|both]",
+      "[--out <dir>] [--board <name>] [--playdate-mode simulator|device|both]",
   );
   process.exit(2);
 }
@@ -133,6 +134,14 @@ if (target !== "playdate" && playdateModeIdx >= 0) {
   console.error("--playdate-mode requires --target playdate");
   process.exit(2);
 }
+const boardIdx = args.indexOf("--board");
+if (target !== "esp32" && boardIdx >= 0) {
+  console.error("--board requires --target esp32");
+  process.exit(2);
+}
+const esp32Board = target === "esp32"
+  ? loadBoard(boardIdx >= 0 ? args[boardIdx + 1] : "meowbit")
+  : undefined;
 
 const source = await Bun.file(entry).text();
 const name = basename(entry).replace(/\.tsx$/, "");
@@ -156,12 +165,12 @@ const ext =
       : target === "nes"
         ? "nes"
         : target === "esp32"
-          ? "esp32.bin"
+          ? `${esp32ArtifactStem(esp32Board!)}.bin`
           : target === "playdate"
             ? null
             : target satisfies never;
 const output = ext ? join(outDir, `${name}.${ext}`) : join(outDir, name);
-const artifacts = await buildRom(app, target, output, { playdateMode });
+const artifacts = await buildRom(app, target, output, { playdateMode, esp32Board });
 await Bun.write(join(outDir, `${name}.${target}.debug.json`), JSON.stringify(app.debugSlots, null, 2));
 for (const artifact of artifacts) {
   const platform = artifact.platform ? `/${artifact.platform}` : "";

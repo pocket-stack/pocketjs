@@ -20,7 +20,7 @@
 //! process access. A guest can affect exactly what its mounted surfaces
 //! express.
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, ensure};
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime};
 
 // Surface crates implement ops against the same rquickjs the guest uses.
@@ -114,8 +114,37 @@ impl Guest {
     /// A contact present in the array is down/move this frame; absent = released.
     /// Hosts without touch call [`Guest::frame`] / [`Guest::frame_with_analog`]
     /// instead; this is the 3-arg `globalThis.frame(buttons, analog, touches)`
-    /// path for touch targets (Vita, PocketBook).
+    /// compatibility path for hosts without a touch-hit fact channel.
     pub fn frame_with_touches(&self, buttons: u32, analog: u32, touches: &[u32]) -> Result<()> {
+        self.frame_with_touch_data(buttons, analog, touches, None)
+    }
+
+    /// One guest turn with touch contacts and host-resolved hit facts. `hits`
+    /// is parallel to `touches` and becomes the fourth argument to
+    /// `globalThis.frame(buttons, analog, touches, hits)`.
+    pub fn frame_with_touch_hits(
+        &self,
+        buttons: u32,
+        analog: u32,
+        touches: &[u32],
+        hits: &[i32],
+    ) -> Result<()> {
+        ensure!(
+            touches.len() == hits.len(),
+            "pocket-mod: touch/hit arrays must be parallel ({} touches, {} hits)",
+            touches.len(),
+            hits.len()
+        );
+        self.frame_with_touch_data(buttons, analog, touches, Some(hits))
+    }
+
+    fn frame_with_touch_data(
+        &self,
+        buttons: u32,
+        analog: u32,
+        touches: &[u32],
+        hits: Option<&[i32]>,
+    ) -> Result<()> {
         self.ctx.with(|ctx| -> Result<()> {
             let frame: Option<Function> = ctx.globals().get("frame").ok();
             if let Some(frame) = frame {
@@ -125,10 +154,24 @@ impl Guest {
                     arr.set(i, *t)
                         .map_err(|e| anyhow!("pocket-mod: setting touch {i}: {e}"))?;
                 }
-                frame
-                    .call::<_, ()>((buttons, analog, arr))
-                    .catch(&ctx)
-                    .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
+                if let Some(hits) = hits {
+                    let hit_arr = rquickjs::Array::new(ctx.clone())
+                        .map_err(|e| anyhow!("pocket-mod: allocating touch hit array: {e}"))?;
+                    for (i, hit) in hits.iter().enumerate() {
+                        hit_arr
+                            .set(i, *hit)
+                            .map_err(|e| anyhow!("pocket-mod: setting touch hit {i}: {e}"))?;
+                    }
+                    frame
+                        .call::<_, ()>((buttons, analog, arr, hit_arr))
+                        .catch(&ctx)
+                        .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
+                } else {
+                    frame
+                        .call::<_, ()>((buttons, analog, arr))
+                        .catch(&ctx)
+                        .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
+                }
             }
             Ok(())
         })?;
@@ -319,6 +362,29 @@ mod tests {
             .unwrap();
         let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
         assert_eq!(res, "0:0:-1");
+    }
+
+    #[test]
+    fn frame_carries_touch_hits_as_fourth_argument() {
+        let g = Guest::new().unwrap();
+        g.eval(
+            "boot",
+            "globalThis.res = ''; \
+             globalThis.frame = (b, a, t, h) => { \
+               globalThis.res = t.length + ':' + h.length + ':' + h[0]; \
+             };",
+        )
+        .unwrap();
+        let packed = (20u32 << 9) | 10;
+        g.frame_with_touch_hits(0, pocketjs_core::spec::ANALOG_CENTER, &[packed], &[42])
+            .unwrap();
+        let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
+        assert_eq!(res, "1:1:42");
+
+        let err = g
+            .frame_with_touch_hits(0, pocketjs_core::spec::ANALOG_CENTER, &[packed], &[])
+            .unwrap_err();
+        assert!(err.to_string().contains("must be parallel"));
     }
 
     #[test]
