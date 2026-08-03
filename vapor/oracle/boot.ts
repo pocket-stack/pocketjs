@@ -13,12 +13,13 @@ import { paintGrid, type CellGrid } from "./paint.ts";
 
 const ENTRY = join(import.meta.dir, "entry.ts");
 
-let bundleText: string | null = null;
+const bundleTexts = new Map<string, string>();
 
-async function buildOracleBundle(): Promise<string> {
-  if (bundleText) return bundleText;
+async function buildOracleBundle(entry: string): Promise<string> {
+  const cached = bundleTexts.get(entry);
+  if (cached) return cached;
   const result = await Bun.build({
-    entrypoints: [ENTRY],
+    entrypoints: [entry],
     format: "iife",
     target: "browser",
     conditions: ["browser"],
@@ -32,7 +33,8 @@ async function buildOracleBundle(): Promise<string> {
   if (!result.success) {
     throw new Error(`oracle bundle failed:\n${result.logs.join("\n")}`);
   }
-  bundleText = await result.outputs[0].text();
+  const bundleText = await result.outputs[0].text();
+  bundleTexts.set(entry, bundleText);
   return bundleText;
 }
 
@@ -52,10 +54,12 @@ export interface OracleOptions {
   height?: number;
   /** compile-produced style table: class -> pair id/align for the painter */
   styles?: StyleTable;
+  /** bundle entry installing the hooks; defaults to the todo entry */
+  entry?: string;
 }
 
 export async function bootOracle(opts: OracleOptions = {}): Promise<Oracle> {
-  const bundle = await buildOracleBundle();
+  const bundle = await buildOracleBundle(opts.entry ?? ENTRY);
   installOracleDom();
   const g = globalThis as Record<string, unknown>;
   g.__vaporScreenW = opts.width ?? 30;

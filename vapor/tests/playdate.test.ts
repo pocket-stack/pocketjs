@@ -11,10 +11,12 @@ import { FONT8 } from "../compiler/font.gen.ts";
 import {
   __dispatchAxisDelta,
   __resetButtons,
+  Button,
   onAxisDelta,
   RelativeAxis,
   RelativeAxisUnits,
 } from "../host/input.ts";
+import { bootOracle, type Oracle } from "../oracle/boot.ts";
 
 const RUNTIME = join(import.meta.dir, "..", "runtime");
 const SIX_BUTTON = join(
@@ -108,6 +110,64 @@ test("relative-axis oracle contract preserves signed canonical deltas", () => {
   expect(() => __dispatchAxisDelta(RelativeAxis.Primary, 1.5)).toThrow(/non-zero integer/);
   expect(() => __dispatchAxisDelta(99 as 0, 1)).toThrow(/unknown relative axis 99/);
   __resetButtons();
+});
+
+describe("playdate todo under the real Vue Vapor oracle", () => {
+  const line = (o: Oracle, y: number): string => o.grid().chars[y];
+
+  async function bootPlaydateTodo(): Promise<Oracle> {
+    const source = await Bun.file(PLAYDATE_TODO).text();
+    const styles = compileVaporApp(
+      PLAYDATE_TODO,
+      source,
+      "PLAYDATE VAPOR TODO",
+      "playdate",
+    ).styles;
+    return bootOracle({
+      width: 50,
+      height: 30,
+      styles,
+      entry: join(import.meta.dir, "..", "oracle", "entry-playdate.ts"),
+    });
+  }
+
+  test("boots on the 50x30 grid with seed todos", async () => {
+    const o = await bootPlaydateTodo();
+    expect(line(o, 0).trim()).toBe("PLAYDATE VAPOR TODO");
+    expect(line(o, 1)).toBe(" 2 LEFT / ALL".padEnd(50));
+    expect(line(o, 3)).toBe(" >[ ] SHIP POCKET VAPOR".padEnd(50));
+    expect(line(o, 4)).toBe("  [X] WRITE THE COMPILER".padEnd(50));
+    expect(line(o, 5)).toBe("  [ ] RUN ON PLAYDATE".padEnd(50));
+    expect(line(o, 29)).toBe(" CRANK:MOVE A:DONE B:DEL >:FILT UP:NEW DOWN:CLEAR".padEnd(50));
+    o.unmount();
+  });
+
+  test("crank deltas move the cursor once per 45 degrees, signed and clamped", async () => {
+    const o = await bootPlaydateTodo();
+    await o.axisDelta(RelativeAxis.Primary, 44_999); // just under one detent
+    expect(line(o, 3)).toBe(" >[ ] SHIP POCKET VAPOR".padEnd(50));
+    await o.axisDelta(RelativeAxis.Primary, 1); // remainder completes the step
+    expect(line(o, 3)).toBe("  [ ] SHIP POCKET VAPOR".padEnd(50));
+    expect(line(o, 4)).toBe(" >[X] WRITE THE COMPILER".padEnd(50));
+    await o.axisDelta(RelativeAxis.Primary, 90_000); // two steps, clamped at the end
+    expect(line(o, 5)).toBe(" >[ ] RUN ON PLAYDATE".padEnd(50));
+    await o.axisDelta(RelativeAxis.Primary, -45_000); // anti-clockwise moves up
+    expect(line(o, 4)).toBe(" >[X] WRITE THE COMPILER".padEnd(50));
+    o.unmount();
+  });
+
+  test("edit mode consumes buttons and ignores crank motion", async () => {
+    const o = await bootPlaydateTodo();
+    await o.press(Button.Up); // open the editor
+    expect(line(o, 27)).toBe(" NEW: [A]".padEnd(50));
+    await o.axisDelta(RelativeAxis.Primary, 180_000); // crank must not move the list
+    await o.press(Button.Right); // scrub glyph A -> B
+    await o.press(Button.A); // put it
+    expect(line(o, 27)).toBe(" NEW: B[B]".padEnd(50));
+    await o.press(Button.Down); // cancel
+    expect(line(o, 3)).toBe(" >[ ] SHIP POCKET VAPOR".padEnd(50));
+    o.unmount();
+  });
 });
 
 test("45-degree detents are application policy over canonical axis deltas", () => {

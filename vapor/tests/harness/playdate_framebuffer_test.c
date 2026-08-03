@@ -54,13 +54,18 @@ static int visible_and_padding(void) {
               result.runs[1].first == 232 && result.runs[1].last == 239,
           "physical updated-row ranges are wrong"))
     return 0;
-  if (!check(frame[0] == 0x81, "normal glyph byte or MSB order is wrong")) return 0;
+  /* Playdate framebuffer bits are white; font bits are ink. Style 0 must
+   * paint dark ink on light paper (ink bits cleared), style 1 the inverse. */
   if (!check(
-          frame[(size_t)232 * VP_PD_LCD_ROWSIZE + 49] == (uint8_t)~0x81,
-          "inverse boundary glyph byte is wrong"))
+          frame[0] == (uint8_t)~0x81,
+          "dark-on-light glyph byte or MSB order is wrong"))
     return 0;
   if (!check(
-          frame[(size_t)239 * VP_PD_LCD_ROWSIZE + 49] == (uint8_t)~0x42,
+          frame[(size_t)232 * VP_PD_LCD_ROWSIZE + 49] == 0x81,
+          "light-on-dark boundary glyph byte is wrong"))
+    return 0;
+  if (!check(
+          frame[(size_t)239 * VP_PD_LCD_ROWSIZE + 49] == 0x42,
           "last scanline boundary write is wrong"))
     return 0;
 

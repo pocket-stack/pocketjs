@@ -78,7 +78,11 @@ vp_pd_render_code vp_pd_render_frame(
         uint8_t ch = grid_ch[row + x];
         uint8_t glyph = font[(size_t)(ch - 0x20) * VP_PD_CELL_SIZE + glyph_y];
         uint8_t style = pal_style[grid_pal[row + x]];
-        dst[x] = style ? (uint8_t)~glyph : glyph;
+        /* Font bits are ink; Playdate framebuffer bits are white. Style 0 is
+         * dark-on-light (ink bits cleared to black on a set white paper),
+         * style 1 is light-on-dark — matching the styles2 luminance contract
+         * shared with GB/NES and the oracle preview. */
+        dst[x] = style ? glyph : (uint8_t)~glyph;
       }
     }
 
