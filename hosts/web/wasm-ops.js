@@ -117,6 +117,9 @@ export async function createWasmUi(wasm, options = {}) {
   // a stale pocketjs.wasm predating them still boots (enableCursor falls
   // back to the classic d-pad focus model when the host lacks them).
   if (ex.ui_hit_test) ops.hitTest = (x, y) => ex.ui_hit_test(x, y);
+  // Touch hit facts (spec op 42): the bounds-only query twin. Same stale-wasm
+  // tolerance — the gesture layer falls back to ink hitTest, then rects.
+  if (ex.ui_hit_test_bounds) ops.hitTestBounds = (x, y) => ex.ui_hit_test_bounds(x, y);
   if (ex.ui_set_cursor) {
     ops.setCursor = (tex, hotX, hotY, w, h) => ex.ui_set_cursor(tex, hotX, hotY, w, h);
   }

@@ -241,6 +241,10 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     insetB: 0,
     insetL: 0,
     zIndex: 1000,
+    // Self-transparent to hit testing (spec prop hitPass): the empty layer
+    // must not swallow bounds hit facts aimed at app content beneath it —
+    // portal/OSK content INSIDE it still claims normally.
+    hitPass: 1,
   });
   insertNode(rootMirror, appRoot);
   insertNode(rootMirror, overlayRoot);
@@ -257,10 +261,10 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md): flight recorder +
   // debug channel; one branch per frame when no transport is connected.
   installFrameHandler(
-    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[]) => {
+    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[], hits?: readonly number[]) => {
       __advanceClock(); // virtual frame++, fire due after() timers
       __setAnalog(analog); // latch the nub before any app code reads it
-      __setTouches(touches); // latch logical front-panel contacts for this frame
+      __setTouches(touches, hits); // latch contacts + their host-resolved hit facts
       __drainEffects(); // frame-boundary deliveries enter the world first
       __runGestures(); // contact lifecycles resolve before app hooks read them
       runFrameHooks(buttons); // app lifecycle callbacks: onFrame/onButtonPress/etc.

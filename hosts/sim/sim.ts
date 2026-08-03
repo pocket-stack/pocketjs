@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 import { createWasmUi } from "../web/wasm-ops.js";
 import { normalizeHz, TICKS_PER_SECOND } from "../../framework/src/clock.ts";
-import { __packTouch } from "../../framework/src/touch.ts";
+import { createTouchHitFacts, __packTouch } from "../../framework/src/touch.ts";
 
 const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url))); // PocketJS/
 const DIST = join(ROOT, "dist/");
@@ -251,12 +251,20 @@ export async function bootWorld(
   if (extraGlobals) Object.assign(g, extraGlobals);
   const src = await Bun.file(DIST + app + ".js").text();
   (0, eval)(src);
-  const frame = g.frame as
-    | ((buttons: number, analog?: number, touches?: readonly number[]) => void)
+  const appFrame = g.frame as
+    | ((buttons: number, analog?: number, touches?: readonly number[], hits?: readonly number[]) => void)
     | undefined;
-  if (typeof frame !== "function") {
+  if (typeof appFrame !== "function") {
     throw new Error("sim: bundle did not install globalThis.frame (entry must call render()/mount())");
   }
+  // Touch hit facts (docs/TOUCH.md): the sim is a host, so it resolves each
+  // new contact's bounds hit against the committed core frame and carries it
+  // — the guest never queries on the touch path, exactly like device hosts.
+  const hitTestBounds = (wasm.ops as { hitTestBounds?: (x: number, y: number) => number })
+    .hitTestBounds;
+  const hitFacts = hitTestBounds ? createTouchHitFacts(hitTestBounds) : undefined;
+  const frame = (buttons: number, analog?: number, touches?: readonly number[]): void =>
+    appFrame(buttons, analog, touches, hitFacts?.(touches));
   return {
     frame,
     tick: wasm.tick,

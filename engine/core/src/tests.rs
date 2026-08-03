@@ -3240,3 +3240,90 @@ fn ram_stream_reconstructs_the_committed_golden() {
     image[a + 20..a + 24].copy_from_slice(&final_a.to_le_bytes());
     assert_eq!(&image[..], golden, "socket-fed RAM ring == TS-written file, byte for byte");
 }
+
+// ---------------------------------------------------------------------------
+// touch hit facts (spec op hitTestBounds + Ui::touch_hits; docs/TOUCH.md)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn hit_test_bounds_claims_pure_layout_containers() {
+    let mut ui = Ui::new();
+    // An unstyled container (a list viewport): ink-transparent, bounds-solid.
+    let viewport = ui.create_node(0);
+    ui.set_prop(viewport, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(viewport, spec::prop::INSET_L, 10.0);
+    ui.set_prop(viewport, spec::prop::INSET_T, 10.0);
+    ui.set_prop(viewport, spec::prop::WIDTH, 100.0);
+    ui.set_prop(viewport, spec::prop::HEIGHT, 100.0);
+    ui.insert_before(spec::ROOT_ID, viewport, 0);
+    let row = abs_box(&mut ui, viewport, 0.0, 0.0, 100.0, 20.0);
+    ui.tick();
+    // On the painted row both modes agree (paint order, depth, clips shared).
+    assert_eq!(ui.hit_test(20.0, 15.0), row);
+    assert_eq!(ui.hit_test_bounds(20.0, 15.0), row);
+    // In the row gap: ink misses, bounds resolves to the container's box —
+    // the property that lets a list own its whole viewport without painted
+    // rows under every finger (the touchRect workaround this replaces).
+    assert_eq!(ui.hit_test(20.0, 80.0), 0, "ink: nothing painted in the gap");
+    assert_eq!(ui.hit_test_bounds(20.0, 80.0), viewport, "bounds: the gap is the viewport's box");
+}
+
+#[test]
+fn touch_hit_facts_carry_from_the_down_frame() {
+    let mut ui = Ui::new();
+    let a = abs_box(&mut ui, spec::ROOT_ID, 0.0, 0.0, 50.0, 50.0);
+    let b = abs_box(&mut ui, spec::ROOT_ID, 100.0, 0.0, 50.0, 50.0);
+    ui.tick();
+    let pack = |id: u32, x: u32, y: u32| (id << 18) | (y << 9) | x;
+    let mut out = [0i32; 8];
+    // Down on A.
+    assert_eq!(ui.touch_hits(&[pack(3, 20, 20)], &mut out), 1);
+    assert_eq!(out[0], a);
+    // Drag over B: the down hit is CARRIED, never re-resolved (implicit capture).
+    assert_eq!(ui.touch_hits(&[pack(3, 120, 20)], &mut out), 1);
+    assert_eq!(out[0], a, "capture: the hit stays the down-frame hit");
+    // Lift, then a NEW id lands on B: fresh resolve.
+    assert_eq!(ui.touch_hits(&[], &mut out), 0);
+    assert_eq!(ui.touch_hits(&[pack(4, 120, 20)], &mut out), 1);
+    assert_eq!(out[0], b);
+    // Two simultaneous contacts resolve independently, in wire order.
+    ui.touch_hits(&[], &mut out);
+    let n = ui.touch_hits(&[pack(1, 20, 20), pack(2, 120, 20)], &mut out);
+    assert_eq!((n, out[0], out[1]), (2, a, b));
+}
+
+#[test]
+fn touch_decode_reads_both_packings() {
+    assert_eq!(crate::touch::decode((7 << 18) | (200 << 9) | 300), (7, 300.0, 200.0));
+    assert_eq!(
+        crate::touch::decode(0x8000_0000 | (9 << 20) | (600 << 10) | 700),
+        (9, 700.0, 600.0)
+    );
+}
+
+#[test]
+fn hit_pass_layers_never_swallow_bounds_hits() {
+    let mut ui = Ui::new();
+    let content = abs_box(&mut ui, spec::ROOT_ID, 10.0, 10.0, 100.0, 50.0);
+    // A full-screen overlay layer ABOVE the content (the framework's portal
+    // root): hitPass makes its own box hit-transparent in BOTH walks, while
+    // its children still claim.
+    let overlay = ui.create_node(0);
+    ui.set_prop(overlay, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(overlay, spec::prop::INSET_L, 0.0);
+    ui.set_prop(overlay, spec::prop::INSET_T, 0.0);
+    ui.set_prop(overlay, spec::prop::WIDTH, 480.0);
+    ui.set_prop(overlay, spec::prop::HEIGHT, 272.0);
+    ui.set_prop(overlay, spec::prop::HIT_PASS, 1.0);
+    ui.insert_before(spec::ROOT_ID, overlay, 0);
+    ui.tick();
+    assert_eq!(
+        ui.hit_test_bounds(20.0, 20.0),
+        content,
+        "bounds facts resolve through the empty overlay to the content"
+    );
+    // A toast INSIDE the overlay claims over the content beneath it.
+    let toast = abs_box(&mut ui, overlay, 15.0, 15.0, 30.0, 20.0);
+    assert_eq!(ui.hit_test_bounds(20.0, 20.0), toast);
+    assert_eq!(ui.hit_test(20.0, 20.0), toast, "ink walk honors overlay content too");
+}

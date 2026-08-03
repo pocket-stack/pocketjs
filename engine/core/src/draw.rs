@@ -697,9 +697,23 @@ fn claims_hit(
 /// hit beats clicking whatever sits BEHIND visible 3D content.
 /// Returns the generation-tagged id, or 0.
 pub fn hit_test(tree: &Tree, styles: &StyleTable, screen: (f32, f32), x: f32, y: f32) -> i32 {
+    hit_point(tree, styles, screen, x, y, true)
+}
+
+/// Topmost node at a logical point by LAYOUT BOX alone (spec op
+/// hitTestBounds; the touch hit FACT resolver). The identical walk minus the
+/// `claims_hit` ink requirement: pure layout containers claim their box, so
+/// a finger in a list's row gap still resolves to the list — UIKit bounds
+/// semantics. Everything else (paint order, clips, transforms, opacity
+/// culling, 3D contexts) matches `hit_test` exactly.
+pub fn hit_test_bounds(tree: &Tree, styles: &StyleTable, screen: (f32, f32), x: f32, y: f32) -> i32 {
+    hit_point(tree, styles, screen, x, y, false)
+}
+
+fn hit_point(tree: &Tree, styles: &StyleTable, screen: (f32, f32), x: f32, y: f32, ink: bool) -> i32 {
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
     let mut hit = 0i32;
-    hit_walk(tree, styles, screen, root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), x, y, &mut hit);
+    hit_walk(tree, styles, screen, root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), x, y, ink, &mut hit);
     hit
 }
 
@@ -714,6 +728,7 @@ fn hit_walk(
     clip: Clip,
     px: f32,
     py: f32,
+    ink: bool,
     hit: &mut i32,
 ) {
     // The point is fixed, so a clip that excludes it excludes the node AND
@@ -735,9 +750,9 @@ fn hit_walk(
     }
     let local = local_point(&world, px, py);
     let inside = local.is_some_and(|(lx, ly)| lx >= 0.0 && lx < l.w && ly >= 0.0 && ly < l.h);
-    if inside {
+    if inside && r.hit_pass == 0 {
         let (lx, ly) = local.unwrap();
-        if claims_hit(node, &r, styles, lx, ly, l.w, l.h) {
+        if !ink || claims_hit(node, &r, styles, lx, ly, l.w, l.h) {
             *hit = node.id(slot);
         }
     }
@@ -756,13 +771,13 @@ fn hit_walk(
         // 3D context: projected geometry is not point-testable from the 2D
         // walk — the context root claims its own box so clicks never fall
         // through to content painted BEHIND the visible 3D subtree.
-        if inside {
+        if inside && r.hit_pass == 0 {
             *hit = node.id(slot);
         }
         return;
     }
     for_children_in_paint_order(tree, styles, slot, |cs| {
-        hit_walk(tree, styles, screen, cs, world, op, child_clip, px, py, hit);
+        hit_walk(tree, styles, screen, cs, world, op, child_clip, px, py, ink, hit);
     });
 }
 

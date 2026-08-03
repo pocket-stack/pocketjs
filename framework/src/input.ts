@@ -700,6 +700,27 @@ export function hitNode(x: number, y: number): NodeMirror | null {
   return findMirror(hitRoot ?? root, ops.hitTest(x, y));
 }
 
+/**
+ * Touch-path hit authority (docs/TOUCH.md). The host-delivered FACT wins when
+ * present (`TouchContact.hit` — resolved once at the contact's down edge and
+ * carried); otherwise ONE cold query, preferring the bounds op (42) and
+ * tolerating ink-only hosts (op 27). Null = nothing claimed / no channel at
+ * all — region rects are the caller's last resort.
+ */
+export function resolveTouchHit(
+  x: number,
+  y: number,
+  fact: number | undefined,
+): NodeMirror | null {
+  if (fact !== undefined) {
+    return fact === 0 ? null : findMirror(hitRoot ?? root, fact);
+  }
+  const ops = getOps();
+  const query = ops.hitTestBounds ?? ops.hitTest;
+  if (!query) return null;
+  return findMirror(hitRoot ?? root, query(x, y));
+}
+
 /** One cursor-mode frame. Returns false when the host predates the cursor
  *  ops — the caller then falls through to the classic d-pad model, so a
  *  stale host never loses input. */

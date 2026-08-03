@@ -34,7 +34,7 @@ import { createGesture, type GestureContact } from "./gesture.ts";
 import {
   focusNode,
   getFocused,
-  hitFocusable,
+  resolveTouchHit,
   pressNode,
   pushFocusController,
   setActiveNode,
@@ -85,9 +85,6 @@ export interface VirtualListProps {
   stickToBottom?: boolean;
   /** Gate d-pad/touch input (e.g. `() => !osk.isOpen()`). Default on. */
   inputActive?: () => boolean;
-  /** Viewport geometry in screen px — the touch fallback when the host has
-   *  no hitTest op, and the complement for contacts on unpainted gaps. */
-  touchRect?: () => { x: number; y: number; w: number; h: number } | null;
   /** Extra style merged onto the viewport (height/overflow stay owned here). */
   style?: Record<string, number | string>;
   ref?: (handle: VirtualListHandle) => void;
@@ -236,24 +233,22 @@ export function VirtualList(props: VirtualListProps): SolidJSX.Element {
   // ---- touch --------------------------------------------------------------
 
   const rowFromContact = (c: GestureContact): { index: number; node: NodeMirror | null } | null => {
-    // Ink path: the nearest focusable under the finger, matched to a row.
-    const hit = hitFocusable(c.x, c.y);
+    // The contact's hit fact (or its cold-query fallback) names the exact
+    // node under the finger; the row is whichever mounted row's subtree
+    // contains it. Bounds semantics make this total for full-bleed rows; a
+    // hit on the canvas/viewport itself is a row GAP — a separator tap, and
+    // separators don't press (the UIKit convention).
+    const hit = resolveTouchHit(c.x, c.y, c.hit);
     if (hit) {
       for (const [i, n] of rowNodes) {
         if (isWithin(hit, n)) return { index: i, node: n };
       }
     }
-    // Geometry fallback (no hitTest, or the finger sits on an unpainted gap).
-    const rect = props.touchRect?.();
-    if (rect && c.x >= rect.x && c.x < rect.x + rect.w && c.y >= rect.y && c.y < rect.y + rect.h) {
-      const index = Math.floor((untrack(offset) + (c.y - rect.y)) / props.rowHeight);
-      if (index >= 0 && index < props.count) return { index, node: rowNodes.get(index) ?? null };
-    }
     return null;
   };
 
   createGesture({
-    region: { node: () => viewportNode, rect: () => props.touchRect?.() ?? null },
+    region: { node: () => viewportNode },
     axis: "y",
     onDown: (c) => {
       if (!active()) return;

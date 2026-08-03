@@ -40,7 +40,7 @@
 
 import { onCleanup } from "solid-js";
 import { simulationHz, virtualFrame } from "./clock.ts";
-import { hitNode } from "./input.ts";
+import { resolveTouchHit } from "./input.ts";
 import type { NodeMirror } from "./renderer.ts";
 import { touches } from "./touch.ts";
 
@@ -67,6 +67,10 @@ export interface GestureContact {
   readonly vy: number;
   /** virtualFrame() at the down edge. */
   readonly downFrame: number;
+  /** The down edge's hit FACT (TouchContact.hit): the node id the host
+   *  bounds-resolved under the finger when it landed, carried for the
+   *  contact's lifetime. undefined on hosts without the fact channel. */
+  readonly hit?: number;
   /** Frames since down (0 on the down frame). */
   readonly frames: number;
 }
@@ -147,6 +151,7 @@ interface Track extends GestureContact {
   used: boolean;
   /** Seen in the current frame's snapshot (mark/sweep). */
   present: boolean;
+  hit?: number;
   id: number;
   x: number;
   y: number;
@@ -206,23 +211,25 @@ function withinSubtree(node: NodeMirror, ancestor: NodeMirror): boolean {
   return false;
 }
 
-/** Region match for a down at (x, y). `hit` is the memoized ink hit for this
- *  down: undefined = not yet computed, null = computed and missed/no op. */
+/** Region match for a down at (x, y). `hit` memoizes the down's resolution:
+ *  the host FACT when delivered (`fact` — TouchContact.hit), else one cold
+ *  bounds/ink query. undefined = not yet resolved, null = resolved-miss. */
 function regionMatches(
   rec: Recognizer,
   x: number,
   y: number,
-  hitBox: { hit: NodeMirror | null | undefined },
+  hitBox: { hit: NodeMirror | null | undefined; fact: number | undefined },
 ): boolean {
   const region = rec.opts.region;
   if (!region) return true;
   const target = region.node?.();
   if (target) {
-    if (hitBox.hit === undefined) hitBox.hit = hitNode(x, y);
+    if (hitBox.hit === undefined) hitBox.hit = resolveTouchHit(x, y, hitBox.fact);
     const hit = hitBox.hit;
     if (hit) return withinSubtree(hit, target);
-    // Ink miss (or no hitTest op): the rect decides, when provided. A hit on
-    // ink OUTSIDE the subtree already returned above — occluders win.
+    // Miss (bare screen on a fact host, or no hit channel at all): the rect
+    // decides, when provided. A hit OUTSIDE the subtree already returned
+    // above — occluders win.
   }
   const r = region.rect?.();
   if (!r) return false;
@@ -251,9 +258,10 @@ function releaseTrack(t: Track): void {
   liveCount--;
 }
 
-function beginTrack(t: Track, id: number, x: number, y: number): void {
+function beginTrack(t: Track, id: number, x: number, y: number, fact: number | undefined): void {
   t.used = true;
   t.present = true;
+  t.hit = fact;
   t.id = id;
   t.x = x;
   t.y = y;
@@ -275,9 +283,12 @@ function beginTrack(t: Track, id: number, x: number, y: number): void {
   t.claimedBy = null;
   liveCount++;
 
-  // Resolve owners in priority order (last-registered first); the ink hit is
-  // computed at most once per down, shared across recognizers.
-  const hitBox: { hit: NodeMirror | null | undefined } = { hit: undefined };
+  // Resolve owners in priority order (last-registered first); the down's hit
+  // — the host fact, or at most one query — is shared across recognizers.
+  const hitBox: { hit: NodeMirror | null | undefined; fact: number | undefined } = {
+    hit: undefined,
+    fact,
+  };
   for (let i = recognizers.length - 1; i >= 0; i--) {
     const rec = recognizers[i];
     if (rec.disposed) continue;
@@ -428,7 +439,7 @@ export function __runGestures(): void {
         break;
       }
     }
-    if (free) beginTrack(free, c.id, c.x, c.y);
+    if (free) beginTrack(free, c.id, c.x, c.y, c.hit);
   }
 
   // Up edges first (a released contact must not be re-recognized), then the

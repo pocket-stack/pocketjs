@@ -43,6 +43,7 @@ pub mod stream;
 pub mod stream_rx;
 pub mod style;
 pub mod text;
+pub mod touch;
 pub mod tree;
 pub mod wire;
 
@@ -247,6 +248,8 @@ pub struct Ui {
     cursor_hot: (f32, f32),
     cursor_size: (f32, f32),
     cursor_pos: (f32, f32),
+    /// Per-contact hit-at-down carry (touch hit facts; `touch_hits`).
+    touch_table: touch::HitTable,
     /// Frame counter advanced by `tick()` (drives fixed-dt animation).
     frame: u64,
     /// DevTools (spec ops 18..22, docs/DEVTOOLS.md). All default-off.
@@ -300,6 +303,7 @@ impl Ui {
             cursor_hot: (0.0, 0.0),
             cursor_size: (0.0, 0.0),
             cursor_pos: (0.0, 0.0),
+            touch_table: touch::HitTable::default(),
             frame: 0,
             inspect_id: 0,
             inspect_rect: None,
@@ -840,6 +844,60 @@ impl Ui {
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
         draw::hit_test(&self.tree, &self.styles, self.layout.viewport, x, y)
+    }
+
+    /// `hit_test`'s bounds-only twin (spec op hitTestBounds): pure layout
+    /// containers claim their box — the touch hit FACT resolver (see
+    /// draw::hit_test_bounds). Same relayout-if-dirty rule.
+    pub fn hit_test_bounds(&mut self, x: f32, y: f32) -> i32 {
+        if self.layout.needs() {
+            layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
+        }
+        draw::hit_test_bounds(&self.tree, &self.styles, self.layout.viewport, x, y)
+    }
+
+    /// Resolve the touch hit facts for this frame's packed contacts (frame()
+    /// argument 4; docs/TOUCH.md). A NEW contact id is bounds-hit ONCE
+    /// against the committed layout and the node id is carried until the id
+    /// lifts — hosts call this right before the guest frame, so the guest
+    /// never issues a hit query on the touch path. Returns the number of
+    /// entries written to `out` (parallel to `packed`, capped at 8).
+    pub fn touch_hits(&mut self, packed: &[u32], out: &mut [i32; 8]) -> usize {
+        let n = packed.len().min(8);
+        let mut seen = [false; 8];
+        for i in 0..n {
+            let (id, x, y) = touch::decode(packed[i]);
+            let mut carried = None;
+            for s in 0..8 {
+                if self.touch_table.live[s] && self.touch_table.ids[s] == id {
+                    carried = Some(self.touch_table.hits[s]);
+                    seen[s] = true;
+                    break;
+                }
+            }
+            out[i] = match carried {
+                Some(h) => h,
+                None => {
+                    let h = self.hit_test_bounds(x, y);
+                    for s in 0..8 {
+                        if !self.touch_table.live[s] {
+                            self.touch_table.live[s] = true;
+                            self.touch_table.ids[s] = id;
+                            self.touch_table.hits[s] = h;
+                            seen[s] = true;
+                            break;
+                        }
+                    }
+                    h
+                }
+            };
+        }
+        for s in 0..8 {
+            if self.touch_table.live[s] && !seen[s] {
+                self.touch_table.live[s] = false;
+            }
+        }
+        n
     }
 
     /// Bind the virtual cursor sprite (spec op setCursor): an uploaded

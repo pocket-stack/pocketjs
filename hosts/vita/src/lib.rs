@@ -247,20 +247,38 @@ impl Runtime {
         analog: i32,
         touches: &input::TouchSnapshot,
     ) -> Result<(), String> {
+        let packed = touches.packed();
         let touch_array = JS_NewArray(self.ctx);
-        for (index, packed) in touches.packed().iter().enumerate() {
+        for (index, value) in packed.iter().enumerate() {
             JS_SetPropertyUint32(
                 self.ctx,
                 touch_array,
                 index as u32,
-                JS_NewInt32(self.ctx, *packed as i32),
+                JS_NewInt32(self.ctx, *value as i32),
+            );
+        }
+        // Touch hit facts (frame arg 4, docs/TOUCH.md): each NEW contact is
+        // bounds-hit ONCE against the committed frame the user is looking at
+        // and carried by the core's capture table — the guest never queries
+        // on the touch path.
+        let mut hits = [0i32; 8];
+        let hit_count = ffi::ui().touch_hits(packed, &mut hits);
+        let hits_array = JS_NewArray(self.ctx);
+        for (index, hit) in hits[..hit_count].iter().enumerate() {
+            JS_SetPropertyUint32(
+                self.ctx,
+                hits_array,
+                index as u32,
+                JS_NewInt32(self.ctx, *hit),
             );
         }
         let result = self.call_frame(&mut [
             JS_NewInt32(self.ctx, buttons),
             JS_NewInt32(self.ctx, analog),
             touch_array,
+            hits_array,
         ]);
+        JS_FreeValue(self.ctx, hits_array);
         JS_FreeValue(self.ctx, touch_array);
         result
     }

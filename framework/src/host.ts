@@ -88,6 +88,10 @@ export interface HostOps {
   /** Topmost node id at a logical point (paint-order hit testing; pure
    *  layout containers pass through — see spec op 27). 0 = none. */
   hitTest?(x: number, y: number): number;
+  /** Bounds-only twin of hitTest (spec op 42): pure layout containers CLAIM
+   *  their box — the touch hit fact resolver's query form. The gesture layer
+   *  only calls it when the host delivers no per-contact fact (frame() arg 4). */
+  hitTestBounds?(x: number, y: number): number;
   /** Bind the cursor sprite: an uploaded texture drawn topmost every frame,
    *  offset by its hotspot; never laid out, never hit-tested. tex < 0 hides
    *  it; w/h <= 0 draw at the texture's own pixel size. */

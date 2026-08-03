@@ -54,8 +54,13 @@ let dispose: (() => void) | null = null;
 
 const g = globalThis as Record<string, unknown>;
 
-function frame(buttons = 0, touches?: readonly number[]): void {
-  (g.frame as (b: number, a?: number, t?: readonly number[]) => void)(buttons, undefined, touches);
+function frame(buttons = 0, touches?: readonly number[], hits?: readonly number[]): void {
+  (g.frame as (b: number, a?: number, t?: readonly number[], h?: readonly number[]) => void)(
+    buttons,
+    undefined,
+    touches,
+    hits,
+  );
 }
 
 beforeEach(() => {
@@ -78,16 +83,23 @@ function canvasNode(): NodeMirror {
   return rootMirror.children[0].children[0].children[0];
 }
 
+function viewportNode(): NodeMirror {
+  return rootMirror.children[0].children[0];
+}
+
+/** The hit FACT for a contact inside the viewport (frame() arg 4): tests are
+ *  hosts too, and this host resolves hits by construction. */
+function vpHit(): number[] {
+  return [viewportNode().id];
+}
+
 interface MountOpts {
   count?: () => number;
   onRowPress?: (i: number) => void;
   focusRows?: boolean;
   stickToBottom?: boolean;
   onNearEnd?: () => void;
-  touchRect?: () => { x: number; y: number; w: number; h: number };
 }
-
-const LIST_RECT = { x: 0, y: 0, w: 480, h: 50 };
 
 function mountList(opts: MountOpts = {}): VirtualListHandle {
   let handle: VirtualListHandle | undefined;
@@ -104,7 +116,6 @@ function mountList(opts: MountOpts = {}): VirtualListHandle {
         onRowPress: opts.onRowPress,
         stickToBottom: opts.stickToBottom,
         onNearEnd: opts.onNearEnd,
-        touchRect: opts.touchRect ?? (() => LIST_RECT),
         renderRow: (i) => Text({ children: `ROW ${i}` }),
         ref: (h) => {
           handle = h;
@@ -188,11 +199,13 @@ describe("d-pad focus", () => {
 });
 
 describe("touch", () => {
-  test("tap on a row fires the shared onPress path (geometry fallback, no hitTest)", () => {
+  test("tap on a row fires the shared onPress path (hit fact names the row)", () => {
     const pressed: number[] = [];
     const h = mountList({ onRowPress: (i) => pressed.push(i) });
     h.scroller.scrollTo(100, { immediate: true });
-    frame(0, [__packTouch(1, 100, 25)]); // y 25 in-view → content y 125 → row 12
+    // y 25 in-view → content y 125 → row 12; window first = 8 → child 4.
+    const row12 = canvasNode().children[4];
+    frame(0, [__packTouch(1, 100, 25)], [row12.id]);
     frame(0); // release
     expect(pressed).toEqual([12]);
     expect(h.focusedIndex()).toBe(12);
@@ -201,11 +214,12 @@ describe("touch", () => {
   test("pan claims the contact, follows the finger, and flings on release", () => {
     const pressed: number[] = [];
     const h = mountList({ onRowPress: (i) => pressed.push(i) });
-    // Drag upward 12 px/frame (content scrolls down), then release.
-    frame(0, [__packTouch(1, 100, 45)]);
-    frame(0, [__packTouch(1, 100, 33)]);
-    frame(0, [__packTouch(1, 100, 21)]);
-    frame(0, [__packTouch(1, 100, 9)]);
+    // Drag upward 12 px/frame (content scrolls down), then release. The host
+    // fact resolves to the viewport box — a bounds hit ANYWHERE in the list.
+    frame(0, [__packTouch(1, 100, 45)], vpHit());
+    frame(0, [__packTouch(1, 100, 33)], vpHit());
+    frame(0, [__packTouch(1, 100, 21)], vpHit());
+    frame(0, [__packTouch(1, 100, 9)], vpHit());
     const atRelease = h.scroller.offset();
     expect(atRelease).toBeGreaterThan(20); // finger-follow moved the content
     frame(0); // release → fling
@@ -222,14 +236,27 @@ describe("touch", () => {
 
   test("a down arrests an in-flight fling", () => {
     const h = mountList();
-    frame(0, [__packTouch(1, 100, 45)]);
-    frame(0, [__packTouch(1, 100, 25)]);
-    frame(0, [__packTouch(1, 100, 5)]);
+    frame(0, [__packTouch(1, 100, 45)], vpHit());
+    frame(0, [__packTouch(1, 100, 25)], vpHit());
+    frame(0, [__packTouch(1, 100, 5)], vpHit());
     frame(0); // release → fling
     frame(0);
     expect(h.scroller.state()).toBe("fling");
-    frame(0, [__packTouch(2, 100, 25)]); // catch
+    frame(0, [__packTouch(2, 100, 25)], vpHit()); // catch
     expect(h.scroller.state()).not.toBe("fling");
+  });
+
+  test("no fact channel: the gesture layer queries ops.hitTestBounds instead", () => {
+    // The injected host GAINS the bounds op (a stale-host shim would lack
+    // both — and then the region simply never matches, PSP-style inertness).
+    host.ops.hitTestBounds = () => viewportNode().id;
+    const h = mountList();
+    frame(0, [__packTouch(1, 100, 45)]);
+    frame(0, [__packTouch(1, 100, 25)]);
+    frame(0, [__packTouch(1, 100, 5)]);
+    frame(0);
+    frame(0);
+    expect(h.scroller.state()).toBe("fling");
   });
 });
 

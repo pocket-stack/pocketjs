@@ -461,6 +461,21 @@ unsafe extern "C" fn js_hit_test(
     JS_NewInt32(ctx, id)
 }
 
+/// Bounds-only hit twin (spec op 42) — the touch hit fact's cold-query form
+/// (devtools replay resolves through this; the live path rides frame arg 4).
+unsafe extern "C" fn js_hit_test_bounds(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let id = ui().hit_test_bounds(
+        arg_f64(ctx, argc, argv, 0) as f32,
+        arg_f64(ctx, argc, argv, 1) as f32,
+    );
+    JS_NewInt32(ctx, id)
+}
+
 unsafe extern "C" fn js_set_cursor(
     ctx: *mut JSContext,
     _this: JSValue,
@@ -919,6 +934,7 @@ pub unsafe fn register(
     add_fn(ctx, ui_obj, b"setActive\0", js_set_active, 2);
     // Virtual cursor ops (spec ops 27..29, input.cursor).
     add_fn(ctx, ui_obj, b"hitTest\0", js_hit_test, 2);
+    add_fn(ctx, ui_obj, b"hitTestBounds\0", js_hit_test_bounds, 2);
     add_fn(ctx, ui_obj, b"setCursor\0", js_set_cursor, 5);
     add_fn(ctx, ui_obj, b"setCursorPos\0", js_set_cursor_pos, 2);
     add_fn(ctx, ui_obj, b"loadStyles\0", js_load_styles, 1);

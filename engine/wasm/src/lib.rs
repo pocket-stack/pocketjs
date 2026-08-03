@@ -199,6 +199,13 @@ pub extern "C" fn ui_hit_test(x: f32, y: f32) -> i32 {
     ui().hit_test(x, y)
 }
 
+// ---- touch hit facts (spec op 42 hitTestBounds; docs/TOUCH.md) ---------------
+
+#[no_mangle]
+pub extern "C" fn ui_hit_test_bounds(x: f32, y: f32) -> i32 {
+    ui().hit_test_bounds(x, y)
+}
+
 #[no_mangle]
 pub extern "C" fn ui_set_cursor(tex: i32, hot_x: f32, hot_y: f32, w: f32, h: f32) {
     ui().set_cursor(tex, hot_x, hot_y, w, h)

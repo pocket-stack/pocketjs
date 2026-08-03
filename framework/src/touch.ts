@@ -9,6 +9,15 @@ export interface TouchContact {
   readonly x: number;
   /** Logical viewport Y coordinate. */
   readonly y: number;
+  /**
+   * Touch hit FACT: the node id the host bounds-hit at this contact's DOWN
+   * edge (against the committed frame the user was looking at), carried for
+   * the contact's lifetime. `undefined` when the host predates the fact
+   * channel or during devtools replay — the gesture layer then falls back to
+   * a query (spec op 42 hitTestBounds, else op 27, else region rects).
+   * 0 means the host resolved and nothing claimed (off-screen edge cases).
+   */
+  readonly hit?: number;
 }
 
 const LEGACY_COORD_BITS = 9;
@@ -29,13 +38,16 @@ let snapshot: readonly TouchContact[] = EMPTY;
  * wider than 512 use the append-only wide form: bit31=1, x:10, y:10, id:8.
  * Per-contact detection keeps every PSP/Vita tape and host byte-compatible.
  */
-export function __setTouches(packed: readonly number[] | undefined): void {
+export function __setTouches(
+  packed: readonly number[] | undefined,
+  hits?: readonly number[],
+): void {
   if (!packed || packed.length === 0) {
     snapshot = EMPTY;
     return;
   }
   snapshot = Object.freeze(
-    packed.slice(0, 8).map((value) => {
+    packed.slice(0, 8).map((value, index) => {
       const wide = (value & WIDE_MARKER) !== 0;
       const coordBits = wide ? WIDE_COORD_BITS : LEGACY_COORD_BITS;
       const coordMask = wide ? WIDE_COORD_MASK : LEGACY_COORD_MASK;
@@ -44,6 +56,7 @@ export function __setTouches(packed: readonly number[] | undefined): void {
         id: (value >>> idShift) & 0xff,
         x: value & coordMask,
         y: (value >>> coordBits) & coordMask,
+        hit: hits?.[index],
       });
     }),
   );
@@ -65,6 +78,41 @@ export function __packTouch(id: number, x: number, y: number): number {
     ((y & LEGACY_COORD_MASK) << LEGACY_COORD_BITS) |
     (x & LEGACY_COORD_MASK)
   ) >>> 0;
+}
+
+/**
+ * TS-host helper: the host-side per-contact capture table behind frame()
+ * argument 4 (Rust twin: pocketjs_core::Ui::touch_hits). Each NEW contact id
+ * is resolved ONCE through `query` (the bounds hit, spec op 42) and the node
+ * id is carried until the id lifts. Hosts call this right before invoking the
+ * guest frame; `undefined` (no contacts) keeps arg 4 absent.
+ */
+export function createTouchHitFacts(
+  query: (x: number, y: number) => number,
+): (packed: readonly number[] | undefined) => number[] | undefined {
+  const table = new Map<number, number>();
+  return (packed) => {
+    if (!packed || packed.length === 0) {
+      table.clear();
+      return undefined;
+    }
+    const seen = new Set<number>();
+    const hits = packed.slice(0, 8).map((value) => {
+      const wide = (value & WIDE_MARKER) !== 0;
+      const coordBits = wide ? WIDE_COORD_BITS : LEGACY_COORD_BITS;
+      const coordMask = wide ? WIDE_COORD_MASK : LEGACY_COORD_MASK;
+      const id = (value >>> (coordBits * 2)) & 0xff;
+      seen.add(id);
+      let hit = table.get(id);
+      if (hit === undefined) {
+        hit = query(value & coordMask, (value >>> coordBits) & coordMask);
+        table.set(id, hit);
+      }
+      return hit;
+    });
+    for (const id of [...table.keys()]) if (!seen.has(id)) table.delete(id);
+    return hits;
+  };
 }
 
 /** Test/native helper for logical viewports up to 1024 pixels per axis. */

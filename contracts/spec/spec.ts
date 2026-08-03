@@ -225,6 +225,22 @@ export const OP = {
   //                      undo it; consoles are 480x272).
   //                      Valid inside the summoned launcher guest until the
   //                      next switch; -1 otherwise.
+  // -- touch hit facts (input.touch capability; docs/TOUCH.md) ---------------
+  hitTestBounds: 42, //   (x: f32, y: f32) -> topmost node id at that logical
+  //                      point by LAYOUT BOX alone, or 0. The same paint-order
+  //                      walk as hitTest (clips, transforms, opacity culling,
+  //                      display:none) minus the paints-something requirement:
+  //                      pure layout containers claim their box (UIKit bounds
+  //                      semantics — a finger in a list's row gap still owns
+  //                      the list). This is the cold-path QUERY form of the
+  //                      touch hit FACT: a host with input.touch resolves it
+  //                      once per contact at the DOWN edge against the
+  //                      committed frame, carries it for the contact's
+  //                      lifetime, and delivers it as frame() argument 4
+  //                      (`hits`, parallel to `touches`; see the frame
+  //                      contract note on that argument). The guest only
+  //                      issues this op when no fact channel exists (devtools
+  //                      replay, injected test hosts, older wasm builds).
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -269,6 +285,12 @@ export const PROP = {
   display: 29, //       enum Display
   overflow: 30, //      enum Overflow (hidden => scissor in draw)
   zIndex: 31, //        i32 (paint order among siblings; layout-group id but paint-only)
+  hitPass: 32, //       0|1. 1 = the node's OWN box never claims a hit (ink or
+  //                    bounds walk alike); descendants are still tested — the
+  //                    engine's pointer-events:none, self-only. The framework
+  //                    marks its full-screen overlay/portal layers with it so
+  //                    bounds hit facts (op 42) resolve through empty overlay
+  //                    space to the app content beneath.
 
   // -- visual (64..95) -------------------------------------------------------
   bgColor: 64, //       color u32 ABGR
@@ -446,6 +468,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
   insetT: VALUE_KIND.f32, insetR: VALUE_KIND.f32,
   insetB: VALUE_KIND.f32, insetL: VALUE_KIND.f32,
   display: VALUE_KIND.int, overflow: VALUE_KIND.int, zIndex: VALUE_KIND.int,
+  hitPass: VALUE_KIND.int,
   bgColor: VALUE_KIND.color, gradFrom: VALUE_KIND.color, gradTo: VALUE_KIND.color,
   gradDir: VALUE_KIND.int, radius: VALUE_KIND.f32, opacity: VALUE_KIND.f32,
   borderColor: VALUE_KIND.color, borderWidth: VALUE_KIND.f32,

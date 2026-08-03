@@ -174,9 +174,14 @@ export function initDevtools(ops: HostOps): void {
 
 /** Wrap the composed frame handler (render()'s input+hooks+sweep closure). */
 export function wrapFrameHandler(
-  h: (buttons: number, analog: number, touches?: readonly number[]) => void,
-): (buttons: number, analog?: number, touches?: readonly number[]) => void {
-  return (buttons: number, analogArg?: number, touchArg?: readonly number[]) => {
+  h: (buttons: number, analog: number, touches?: readonly number[], hits?: readonly number[]) => void,
+): (buttons: number, analog?: number, touches?: readonly number[], hits?: readonly number[]) => void {
+  return (
+    buttons: number,
+    analogArg?: number,
+    touchArg?: readonly number[],
+    hitsArg?: readonly number[],
+  ) => {
     state.hostCalls++;
     if (state.transport) {
       pollTransport();
@@ -185,6 +190,7 @@ export function wrapFrameHandler(
     let mask = buttons;
     let analog = analogArg === undefined ? ANALOG_CENTER : analogArg & 0xffff;
     let touch = touchArg;
+    let hits = hitsArg;
     if (state.replayMasks) {
       if (state.replayAt < state.replayMasks.length) {
         mask = state.replayMasks[state.replayAt];
@@ -193,6 +199,12 @@ export function wrapFrameHandler(
         // into the deterministic tape. A v1 tape (no touch track) replays
         // every frame as no-contacts.
         touch = state.replayTouch ? state.replayTouch[state.replayAt] : undefined;
+        // Hit facts are DERIVED, not recorded: the host resolved them for the
+        // LIVE contacts, so they cannot describe the tape's. Dropping them
+        // sends the gesture layer down its deterministic query fallback
+        // (op 42/27 against the same committed layout — the same answer the
+        // recording host computed).
+        hits = undefined;
         state.replayAt++;
       } else {
         state.replayMasks = null; // tape exhausted: back to live input
@@ -209,7 +221,7 @@ export function wrapFrameHandler(
     recordMask(mask, analog, touch);
     state.frame++;
     try {
-      h(mask, analog, touch);
+      h(mask, analog, touch, hits);
     } catch (e) {
       send({
         t: "error",
