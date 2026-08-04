@@ -147,6 +147,7 @@ describe("platform registry", () => {
       "input.analog.left",
       "input.buttons",
       "input.cursor",
+      "audio.pcm",
       "text.glyphs.baked",
     ]);
     expect(POCKET_TARGETS.vita.capabilities).toEqual([

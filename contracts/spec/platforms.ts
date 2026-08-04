@@ -189,6 +189,9 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "input.analog.left",
       "input.buttons",
       "input.cursor",
+      // hosts/psp/src/audio_mod.rs: the audio module mounted as
+      // globalThis.audio (4-stream mixer on one 44.1 kHz normal channel).
+      "audio.pcm",
       "text.glyphs.baked",
     ],
   },

@@ -805,6 +805,117 @@ unsafe extern "C" fn js_video_close(
 }
 
 // ---------------------------------------------------------------------------
+// audio module (contracts/spec/audio.ts — its own namespace, not ui ops)
+// ---------------------------------------------------------------------------
+
+unsafe extern "C" fn js_audio_create_stream(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let rate = arg_i32(ctx, argc, argv, 0);
+    let channels = arg_i32(ctx, argc, argv, 1);
+    JS_NewInt32(
+        ctx,
+        crate::audio_mod::create_stream(rate.max(0) as u32, channels.max(0) as u32),
+    )
+}
+
+unsafe extern "C" fn js_audio_destroy_stream(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    crate::audio_mod::destroy_stream(arg_i32(ctx, argc, argv, 0));
+    JS_UNDEFINED
+}
+
+/// audio.writePcm(handle, buf) -> framesAccepted. The buffer is BORROWED for
+/// the call (spec data contract): bytes are copied into the stream ring
+/// before returning, exactly the buffer_bytes lifetime rule.
+unsafe extern "C" fn js_audio_write_pcm(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    let handle = arg_i32(ctx, argc, argv, 0);
+    if argc < 2 {
+        return JS_NewInt32(ctx, 0);
+    }
+    let Some((ptr, len)) = buffer_bytes(ctx, *argv.offset(1)) else {
+        return JS_NewInt32(ctx, 0);
+    };
+    // s16 LE on a LE machine: reinterpret, tolerating a truncated odd byte.
+    let pcm = core::slice::from_raw_parts(ptr as *const i16, len / 2);
+    JS_NewInt32(ctx, crate::audio_mod::write_pcm(handle, pcm))
+}
+
+unsafe extern "C" fn js_audio_play(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    crate::audio_mod::play(arg_i32(ctx, argc, argv, 0));
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_audio_pause(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    crate::audio_mod::pause(arg_i32(ctx, argc, argv, 0));
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_audio_stop(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    crate::audio_mod::stop(arg_i32(ctx, argc, argv, 0));
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_audio_set_volume(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    crate::audio_mod::set_volume(arg_i32(ctx, argc, argv, 0), arg_f64(ctx, argc, argv, 1));
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_audio_end_stream(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    argc: i32,
+    argv: *mut JSValue,
+) -> JSValue {
+    crate::audio_mod::end_stream(arg_i32(ctx, argc, argv, 0));
+    JS_UNDEFINED
+}
+
+unsafe extern "C" fn js_audio_poll(
+    ctx: *mut JSContext,
+    _this: JSValue,
+    _argc: i32,
+    _argv: *mut JSValue,
+) -> JSValue {
+    match crate::audio_mod::poll() {
+        Some(s) => JS_NewStringLen(ctx, s.as_ptr(), s.len()),
+        None => JS_UNDEFINED,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // registration
 // ---------------------------------------------------------------------------
 
@@ -944,4 +1055,19 @@ pub unsafe fn register(
 
     // JS_SetPropertyStr consumes ownership of ui_obj.
     JS_SetPropertyStr(ctx, global, b"ui\0".as_ptr() as *const _, ui_obj);
+
+    // The audio MODULE mounts as its own namespace (capability audio.pcm =
+    // spec namespace, contracts/spec/audio.ts) — the pocket-mod
+    // `mount("audio", …)` shape spelled in raw QuickJS.
+    let audio_obj = JS_NewObject(ctx);
+    add_fn(ctx, audio_obj, b"createStream\0", js_audio_create_stream, 2);
+    add_fn(ctx, audio_obj, b"destroyStream\0", js_audio_destroy_stream, 1);
+    add_fn(ctx, audio_obj, b"writePcm\0", js_audio_write_pcm, 2);
+    add_fn(ctx, audio_obj, b"play\0", js_audio_play, 1);
+    add_fn(ctx, audio_obj, b"pause\0", js_audio_pause, 1);
+    add_fn(ctx, audio_obj, b"stop\0", js_audio_stop, 1);
+    add_fn(ctx, audio_obj, b"setVolume\0", js_audio_set_volume, 2);
+    add_fn(ctx, audio_obj, b"endStream\0", js_audio_end_stream, 1);
+    add_fn(ctx, audio_obj, b"poll\0", js_audio_poll, 0);
+    JS_SetPropertyStr(ctx, global, b"audio\0".as_ptr() as *const _, audio_obj);
 }

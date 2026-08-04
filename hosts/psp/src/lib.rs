@@ -23,6 +23,7 @@ extern crate alloc;
 mod allocator;
 pub mod arena;
 pub mod audio;
+pub mod audio_mod;
 pub mod c_heap;
 pub mod dbg;
 pub mod ffi;

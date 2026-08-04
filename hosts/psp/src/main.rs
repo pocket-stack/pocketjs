@@ -27,7 +27,7 @@ use psp::sys::DisplayPixelFormat;
 use psp::sys::{self, CtrlMode, GuContextType, GuSyncBehavior, GuSyncMode, IoOpenFlags, SceCtrlData};
 
 use pocketjs_core::spec;
-use pocketjs_psp::{arena, dbg, ffi, ge, host, pak, svc, switch, veil, vid};
+use pocketjs_psp::{arena, audio_mod, dbg, ffi, ge, host, pak, svc, switch, veil, vid};
 
 psp::module!("pocketjs", 1, 1);
 
@@ -780,6 +780,7 @@ unsafe fn run_guest(
             }
             trace("switch: teardown begin");
             vid::close(ffi::ui()); // stops audio, frees the plane (Ui alive)
+            audio_mod::reset(); // guest-scoped streams die with their guest
             svc::reset();
             JS_FreeValue(ctx, frame_fn);
             JS_FreeValue(ctx, global);
