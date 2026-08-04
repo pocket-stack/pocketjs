@@ -1,7 +1,7 @@
 # Frameworks
 
-PocketJS supports three first-class app frameworks over the same native tree
-and Rust core:
+PocketJS supports three app frameworks over the same native tree and Rust
+core:
 
 | Framework | Build id | JSX transform | Runtime renderer | Output suffix |
 |---|---|---|---|---|

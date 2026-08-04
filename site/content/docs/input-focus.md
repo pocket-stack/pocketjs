@@ -83,7 +83,7 @@ enableCursor(); // safe at module top — the sprite uploads on the first frame
 
 What changes while the cursor is enabled:
 
-- **Hover IS focus.** The cursor hit-tests the tree and focuses the nearest
+- **Hover is focus.** The cursor hit-tests the tree and focuses the nearest
   *focusable* ancestor of the node under the point, so every `focus:` style
   doubles as the hover style with no new machinery. Hit testing follows paint
   order: a node claims the point where it paints in any variant (background,
@@ -117,7 +117,7 @@ interface CursorOptions {
 `enableCursor` returns a disposer that restores the d-pad model; calling it
 again while enabled updates the options in place (theme switches swap the
 sprite this way — an unchanged image keeps its uploaded texture). On hosts
-that predate the cursor ops the classic d-pad model simply stays active.
+that predate the cursor ops the classic d-pad model stays active.
 `cursorX()` / `cursorY()` read the current position, `NaN` while disabled.
 
 Determinism is unchanged: the cursor is a pure function of the button/analog

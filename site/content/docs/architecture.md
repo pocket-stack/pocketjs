@@ -66,10 +66,9 @@ Reading it top to bottom:
    vita2d/GXM on Vita, wgpu on desktop, or a deterministic software rasterizer
    for the browser canvas and byte-exact PNG goldens.
 
-The dashed line down the middle is the whole point: everything *above* the
-backend follows the same contract across targets. The layout you see in the browser
-[playground](/playground/) is the same layout, computed by the same code, that
-runs on the handheld.
+Everything *above* the backend follows the same contract across targets. The
+layout you see in the browser [playground](/playground/) is the same layout,
+computed by the same code, that runs on the handheld.
 
 ## Why these choices
 
@@ -172,8 +171,7 @@ codepoints during the build. See [Styling](/docs/styling/) and
 
 ## The three layers
 
-It helps to think of PocketJS as three layers with narrow contracts between
-them.
+PocketJS is three layers with narrow contracts between them.
 
 **1. The app + framework runtime (JavaScript).** Your components and reactive
 state. The Solid/Vue/Octane adapters keep a lightweight JS *mirror* of the tree —

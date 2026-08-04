@@ -16,7 +16,7 @@ Rust core owns every frame from there.**
 ## How native animation works
 
 Tweens and springs tick in the Rust core once per vblank at a **fixed `dt = 1/60 s`**.
-That has two consequences worth internalizing:
+Two consequences:
 
 - **Zero steady-state JS.** After you call `animate()` (or a style swap starts a
   transition), JavaScript is not involved again until the tween ends. A 20-second

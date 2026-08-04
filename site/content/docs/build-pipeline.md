@@ -142,8 +142,7 @@ lowerer rewrites subtrees), a collector visitor records:
   `TemplateLiteral` quasi (the static chunks), and every `JSXText` run. It never
   regexes over quotes; it reads real AST nodes. It does *not* decide what is a
   class here — `tailwind.ts` does that later. A string like `"Loading…"` is
-  collected as a candidate and simply fails to parse as a utility, so it is
-  dropped.
+  collected as a candidate, fails to parse as a utility, and is dropped.
 - **Text codepoints** — every codepoint of those same literals. This is the
   charset input for the font baker: if a character appears anywhere in a string,
   template chunk, or JSX text, its glyph gets baked.
@@ -217,7 +216,7 @@ export const FONT_SLOTS: Record<number, { px: number; bold: boolean }> = {
 export const DEFAULT_FONT_SLOT = 2;
 ```
 
-Two class literals earn a **hard compile error** instead of being dropped, even
+Two class literals produce a **hard compile error** instead of being dropped, even
 though they otherwise parse: `rounded-full` on a literal that doesn't also pin
 both `w-N` and `h-N` (the radius must be build‑time bakeable), and any `hover:`
 variant (the PSP has no pointer — use `focus:`/`active:`).

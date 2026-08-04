@@ -28,9 +28,8 @@ keyed `array.map`. Higher-level app-shell primitives (`Screen`, `Focusable`, `Mo
 and friends) build on `View` and are covered on the [App shell](/docs/app-shell/)
 page.
 
-If you know React Native, the mental model is familiar: `View` is your box,
-`Text` is your typography, `Image` is your picture. The capitalized names are
-the public API. Under the hood the renderer targets lowercase `view` / `text` /
+The three primitives play the same roles as React Native's `View`, `Text`,
+and `Image`. The capitalized names are the public API. Under the hood the renderer targets lowercase `view` / `text` /
 `image` host tags, but those are an internal detail — they are deliberately not
 declared as JSX intrinsics, so `<view>` in app code fails typecheck. Always use
 the capitalized components.

@@ -331,7 +331,7 @@ function DeletePrompt(props: { onConfirm: () => void }) {
 ```
 :::
 
-Two behaviors worth internalizing:
+Two behaviors to know:
 
 - **The block is on button *handlers*, not on rendering or animation.**
   [`onFrame`](/docs/animation/)-based work — [`animate()`](/docs/animation/),

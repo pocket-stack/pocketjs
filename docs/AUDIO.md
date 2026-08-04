@@ -1,10 +1,10 @@
 # The Audio Module
 
-Audio is PocketJS's third module-shaped vertical slice (after the ui surface
-and OpenStrike's `strike`), and the first one built module-first: the spec was
-written before any host code, every host implements the same pinned boundary,
-and a developer adding an audio feature extends the spec — not a fork of a
-host. `contracts/spec/audio.ts` is normative; this page is the map.
+Audio is PocketJS's third module (after the ui surface and OpenStrike's
+`strike`), and the first written spec-first: the boundary existed before any
+host code, every host implements the same pinned protocol, and a developer
+adding an audio feature extends the spec instead of forking a host.
+`contracts/spec/audio.ts` is normative; this page is the map.
 
 ```
 platform audio device (AudioWorklet · sceAudio · CPAL · …)     Host / substrate
