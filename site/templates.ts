@@ -7,9 +7,9 @@ const GH = "https://github.com/pocket-stack/pocketjs";
 const DISCORD = "https://discord.gg/cTce4eXzSK";
 const X_URL = "https://x.com/pocket_js";
 export const SITE_URL = "https://pocketjs.dev";
-export const SITE_TITLE = "PocketJS — Build Modern Apps for Impossible Devices";
+export const SITE_TITLE = "PocketJS · Compact JavaScript Runtime for Rich Interactive Software";
 export const SITE_DESC =
-  "Components, signals and Tailwind — on game consoles, e-readers and microcontrollers. A tiny JavaScript guest where it fits; the framework compiled away where it doesn't.";
+  "A compact JavaScript runtime for building UI, games, 3D experiences and AI-native applications across radically different devices. A tiny JavaScript guest where it fits; the framework compiled away where it doesn't.";
 export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 
 export interface PageOpts {
@@ -138,7 +138,7 @@ export function renderPage(o: PageOpts): string {
 <meta property="og:image" content="${OG_IMAGE_URL}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="PocketJS — Build Modern Apps for Impossible Devices">
+<meta property="og:image:alt" content="${SITE_TITLE}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${fullTitle}">
 <meta name="twitter:description" content="${desc}">

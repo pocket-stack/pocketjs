@@ -34,7 +34,7 @@
   </header>
 
   <main>
-    <!-- HERO — behind the copy, every demo and satellite app plays at once:
+    <!-- HERO: behind the copy, every demo and satellite app plays at once:
          a baked 4x4 wall of real recordings (site/bake-demo-wall.ts). -->
     <section class="lp-hero">
       <div class="lp-hero__wall" aria-hidden="true">
@@ -44,14 +44,15 @@
         <div class="lp-hero__wall-scrim"></div>
       </div>
       <div class="lp-container lp-hero__in">
-        <a class="lp-eyebrow" href="/blog/pocketjs-on-symbian/">
+        <a class="lp-eyebrow" href="/blog/octane-on-psp/">
           <span class="lp-eyebrow__tag">New</span>
-          Symbian Wanted a Frame Function: PocketJS on a Nokia E7
+          useState at 333&nbsp;MHz: Octane Is PocketJS&rsquo;s Third Framework
           <span class="lp-eyebrow__arw" aria-hidden="true">&rarr;</span>
         </a>
-        <h1 class="lp-h1">Build modern apps<span class="lp-grad">for impossible devices.</span></h1>
+        <h1 class="lp-h1">Rich interactive JavaScript<span class="lp-grad">where no browser fits.</span></h1>
         <p class="lp-sub">
-          Components, signals and Tailwind &mdash; on consoles, e-readers and
+          UI, games, 3D and AI-native apps. One compact runtime across
+          radically different devices: consoles, phones, e&#8209;readers,
           microcontrollers. A tiny JS guest where it fits; the framework
           compiled away where it doesn&rsquo;t.
         </p>
@@ -65,7 +66,7 @@
         </div>
         <figure class="lp-stage" id="stage" data-pocket-stage>
           <div class="lp-stage__viewport" data-stage-viewport>
-            <canvas class="lp-stage__canvas" data-stage-canvas aria-label="Interactive 3D PSP running the Pocket Launcher. Drag to rotate, swipe sideways with two fingers to turn, and click the device controls — SELECT summons the app switcher."></canvas>
+            <canvas class="lp-stage__canvas" data-stage-canvas aria-label="Interactive 3D PSP running the Pocket Launcher. Drag to rotate, swipe sideways with two fingers to turn, and click the device controls. SELECT summons the app switcher."></canvas>
             <canvas class="lp-stage__screen" data-stage-screen aria-hidden="true"></canvas>
             <div class="lp-stage__status" data-stage-status role="status" aria-live="polite">
               <span class="lp-stage__status-dot" aria-hidden="true"></span>
@@ -73,7 +74,7 @@
             </div>
           </div>
           <figcaption class="lp-stage__caption">
-            <span><strong>The live Pocket Launcher</strong> inside the model&rsquo;s real screen material &mdash; browse the deck, launch any app, SELECT to switch.</span>
+            <span><strong>The live Pocket Launcher</strong> runs inside the model&rsquo;s real screen material. Browse the deck, launch any app, press SELECT to switch.</span>
             <span class="lp-stage__credit">
               PSP model by <a href="https://sketchfab.com/3d-models/playstation-portable-psp-eg02-b76c7f9158204a39929a9c97d0b813d0" target="_blank" rel="noreferrer">Dibad</a>
               &middot; <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
@@ -83,27 +84,56 @@
       </div>
     </section>
 
-    <!-- PROOF STRIP — five seconds to establish this is not a concept project. -->
+    <!-- PROOF STRIP: five seconds to establish this is not a concept project. -->
     <section class="lp-proofstrip" aria-label="Shipped results">
       <div class="lp-container">
         <ul class="lp-proofstrip__row">
           <li><a class="lp-fact" href="/blog/pocket-vapor/"><b>Vue on a Game&nbsp;Boy</b><span>no JS engine, no GC, no malloc</span></a></li>
           <li><a class="lp-fact" href="/blog/pocket-youtube/"><b>YouTube on a PSP</b><span>the network is a USB cable</span></a></li>
           <li><a class="lp-fact" href="/blog/pocket-figma/"><b>Figma at 333&nbsp;MHz</b><span>14,430 nodes, streamed in tiles</span></a></li>
-          <li><a class="lp-fact" href="/blog/pocketjs-on-symbian/"><b>Modern UI on Symbian</b><span>a 2011 phone, a 2026 stack</span></a></li>
+          <li><a class="lp-fact" href="/blog/octane-on-psp/"><b>Three frameworks, one core</b><span>Octane&rsquo;s useState joins Solid and Vue Vapor</span></a></li>
           <li><a class="lp-fact" href="/blog/shipping-openstrike/"><b>60&nbsp;FPS 3D on 2004 silicon</b><span>BSP worlds under a Solid HUD</span></a></li>
           <li><a class="lp-fact" href="/blog/pocket-character/"><b>Desktop widgets, no Electron</b><span>118&nbsp;MB where Electron needs 2.2&nbsp;GB</span></a></li>
         </ul>
       </div>
     </section>
 
-    <!-- CODE + TARGET SELECTOR — same component, pick the machine underneath it. -->
+    <!-- PILLARS: the value proposition itself: four kinds of software, one runtime. -->
+    <section class="lp-section lp-pillars">
+      <div class="lp-container">
+        <div class="lp-secthead lp-reveal">
+          <span class="lp-kicker">Rich interactive software</span>
+          <h2 class="lp-h2">Interfaces, games, worlds. And agents.</h2>
+          <p class="lp-lead">This is not a UI kit with ambitions. The runtime already carries four kinds of software, all of it shipped and open source.</p>
+        </div>
+        <div class="lp-proof-grid">
+          <div class="lp-proof lp-reveal">
+            <h3>User interfaces</h3>
+            <p>Solid, Vue Vapor and Octane components share one native tree, with flexbox layout, compile-time Tailwind, baked motion, a system keyboard, and a touch stack with real gesture physics. <a href="/docs/frameworks/">Three frameworks, one tree &rarr;</a></p>
+          </div>
+          <div class="lp-proof lp-reveal">
+            <h3>Games</h3>
+            <p>A locked 60&nbsp;FPS on 2004 silicon, with receipts: BSP worlds, bots and tracers under a JSX HUD, and input tapes that replay whole matches frame for frame. <a href="/blog/shipping-openstrike/">OpenStrike, shipped &rarr;</a></p>
+          </div>
+          <div class="lp-proof lp-reveal">
+            <h3>3D experiences</h3>
+            <p>A portable BSP engine, a painter-sorted motion pipeline, and VRM digital humans with spring-bone physics. The same scene runs on desktop wgpu or the PSP&rsquo;s GE. The launcher above is one. <a href="/blog/pocket-character/">One process, whole character &rarr;</a></p>
+          </div>
+          <div class="lp-proof lp-reveal">
+            <h3>AI-native apps</h3>
+            <p>Every frame is a pure function of an input tape, so sessions are data an agent can drive, replay and diff. Small enough to host one, too: <a href="https://github.com/pocket-stack/pocket-pi" target="_blank" rel="noreferrer">a real coding agent</a> runs inside the QuickJS guest, no Node underneath. <a href="/blog/ui-runtime-that-cant-flake/">The runtime agents want &rarr;</a></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CODE + TARGET SELECTOR: same component, pick the machine underneath it. -->
     <section class="lp-section lp-targets">
       <div class="lp-container">
         <div class="lp-secthead lp-reveal">
           <span class="lp-kicker">Familiar code, native machinery</span>
           <h2 class="lp-h2">Write the app you already know how to write.</h2>
-          <p class="lp-lead">Components, signals, Tailwind classes. Then pick the machine underneath.</p>
+          <p class="lp-lead">Write components, signals and Tailwind classes in Solid, Vue Vapor or Octane. Then pick the machine underneath.</p>
         </div>
         <div class="lp-tools__row lp-reveal" aria-label="PocketJS frontend stack">
           <span class="lp-tool" aria-label="Solid">
@@ -203,15 +233,16 @@
               <button class="lp-tgt__chip" type="button" role="tab" id="lp-tgt-tab-pb" aria-selected="false" aria-controls="lp-tgt-pb" data-tgt-tab="pb">PocketBook</button>
               <button class="lp-tgt__chip" type="button" role="tab" id="lp-tgt-tab-esp" aria-selected="false" aria-controls="lp-tgt-esp" data-tgt-tab="esp">ESP32&#8209;P4</button>
               <button class="lp-tgt__chip" type="button" role="tab" id="lp-tgt-tab-gb" aria-selected="false" aria-controls="lp-tgt-gb" data-tgt-tab="gb">Game Boy</button>
+              <button class="lp-tgt__chip" type="button" role="tab" id="lp-tgt-tab-pd" aria-selected="false" aria-controls="lp-tgt-pd" data-tgt-tab="pd">Playdate</button>
             </div>
 
             <div class="lp-tgt__panel" id="lp-tgt-browser" role="tabpanel" aria-labelledby="lp-tgt-tab-browser" data-tgt-panel="browser">
               <dl class="lp-tgt__specs">
                 <div><dt>Execution</dt><dd>the same Rust core, compiled to WebAssembly</dd></div>
                 <div><dt>Display</dt><dd>any viewport, density-aware</dd></div>
-                <div><dt>Rendering</dt><dd>identical framebuffers to the devices &mdash; goldens run here</dd></div>
+                <div><dt>Rendering</dt><dd>the same framebuffers as the devices, so the goldens run here</dd></div>
                 <div><dt>Input</dt><dd>mouse, keyboard, gamepad</dd></div>
-                <div><dt>Ships as</dt><dd>a URL &mdash; no install, no toolchain</dd></div>
+                <div><dt>Ships as</dt><dd>a URL, with no install and no toolchain</dd></div>
               </dl>
               <a class="lp-tgt__link" href="/playground/">Run this counter in the playground &rarr;</a>
             </div>
@@ -227,9 +258,9 @@
             </div>
             <div class="lp-tgt__panel" id="lp-tgt-vita" role="tabpanel" aria-labelledby="lp-tgt-tab-vita" data-tgt-panel="vita" hidden>
               <dl class="lp-tgt__specs">
-                <div><dt>Execution</dt><dd>QuickJS guest &mdash; the same bundle as the PSP</dd></div>
+                <div><dt>Execution</dt><dd>QuickJS guest, the same bundle as the PSP</dd></div>
                 <div><dt>Display</dt><dd>960 &times; 544 native, 2&times; raster density</dd></div>
-                <div><dt>Rendering</dt><dd>one codebase, twice the pixels &mdash; zero forks</dd></div>
+                <div><dt>Rendering</dt><dd>one codebase, twice the pixels, zero forks</dd></div>
                 <div><dt>Input</dt><dd>touch, buttons, dual analog</dd></div>
                 <div><dt>Ships as</dt><dd>a <span class="lp-mono">.vpk</span> with LiveArea art</dd></div>
               </dl>
@@ -239,7 +270,7 @@
               <dl class="lp-tgt__specs">
                 <div><dt>Execution</dt><dd>QuickJS guest on a Symbian C++ host</dd></div>
                 <div><dt>Display</dt><dd>640 &times; 360 AMOLED, live portrait &#8646; landscape</dd></div>
-                <div><dt>Rendering</dt><dd>native viewport resize &mdash; the app relays out, no letterbox</dd></div>
+                <div><dt>Rendering</dt><dd>native viewport resize, so the app relays out instead of letterboxing</dd></div>
                 <div><dt>Input</dt><dd>touch + the slide-out QWERTY</dd></div>
                 <div><dt>Ships as</dt><dd>a <span class="lp-mono">.sis</span>, deployed over CODA USB</dd></div>
               </dl>
@@ -248,7 +279,7 @@
             <div class="lp-tgt__panel" id="lp-tgt-pb" role="tabpanel" aria-labelledby="lp-tgt-tab-pb" data-tgt-panel="pb" hidden>
               <dl class="lp-tgt__specs">
                 <div><dt>Execution</dt><dd>QuickJS guest on the inkview host</dd></div>
-                <div><dt>Display</dt><dd>e-ink &mdash; a screen that fights every frame</dd></div>
+                <div><dt>Display</dt><dd>e-ink, a screen that fights every frame</dd></div>
                 <div><dt>Rendering</dt><dd>16 &times; 16 tile diffs choose partial, dynamic or full refresh</dd></div>
                 <div><dt>Input</dt><dd>page-turn buttons + touch</dd></div>
                 <div><dt>Ships as</dt><dd>a PocketBook application</dd></div>
@@ -257,7 +288,7 @@
             </div>
             <div class="lp-tgt__panel" id="lp-tgt-esp" role="tabpanel" aria-labelledby="lp-tgt-tab-esp" data-tgt-panel="esp" hidden>
               <dl class="lp-tgt__specs">
-                <div><dt>Execution</dt><dd>embedded guest &mdash; no OS underneath</dd></div>
+                <div><dt>Execution</dt><dd>an embedded guest with no OS underneath</dd></div>
                 <div><dt>Display</dt><dd>RGB565 panel</dd></div>
                 <div><dt>Rendering</dt><dd>incremental damage strips, PPA-accelerated blits</dd></div>
                 <div><dt>Input</dt><dd>touch</dd></div>
@@ -267,13 +298,23 @@
             </div>
             <div class="lp-tgt__panel" id="lp-tgt-gb" role="tabpanel" aria-labelledby="lp-tgt-tab-gb" data-tgt-panel="gb" hidden>
               <dl class="lp-tgt__specs">
-                <div><dt>Execution</dt><dd>Pocket Vapor AOT &mdash; no JS engine on the device</dd></div>
+                <div><dt>Execution</dt><dd>Pocket Vapor AOT with no JS engine on the device</dd></div>
                 <div><dt>Display</dt><dd>160 &times; 144, four shades of green</dd></div>
                 <div><dt>Rendering</dt><dd>reactivity compiled to console-native tile layers</dd></div>
                 <div><dt>Input</dt><dd>D-pad and two buttons</dd></div>
-                <div><dt>Ships as</dt><dd>a <span class="lp-mono">.gb</span> cart &mdash; the same source also builds <span class="lp-mono">.gba</span> and <span class="lp-mono">.nes</span></dd></div>
+                <div><dt>Ships as</dt><dd>a <span class="lp-mono">.gb</span> cart, and the same source also builds <span class="lp-mono">.gba</span> and <span class="lp-mono">.nes</span></dd></div>
               </dl>
               <a class="lp-tgt__link" href="/blog/pocket-vapor/">Vue, compiled all the way down &rarr;</a>
+            </div>
+            <div class="lp-tgt__panel" id="lp-tgt-pd" role="tabpanel" aria-labelledby="lp-tgt-tab-pd" data-tgt-panel="pd" hidden>
+              <dl class="lp-tgt__specs">
+                <div><dt>Execution</dt><dd>Pocket Vapor AOT with no JS engine on the device</dd></div>
+                <div><dt>Display</dt><dd>400 &times; 240, 1-bit, famously un-backlit</dd></div>
+                <div><dt>Rendering</dt><dd>compiled dirty-bit updates drawn straight into the framebuffer</dd></div>
+                <div><dt>Input</dt><dd>buttons, D-pad, and the crank as a signed relative axis</dd></div>
+                <div><dt>Ships as</dt><dd>a <span class="lp-mono">.pdx</span> for device and Simulator</dd></div>
+              </dl>
+              <a class="lp-tgt__link" href="/blog/pocket-vapor/">The compiler that makes it possible &rarr;</a>
             </div>
           </div>
         </div>
@@ -281,7 +322,7 @@
         <div class="lp-proof-grid">
           <div class="lp-proof lp-reveal">
             <h3>Layout becomes native flexbox</h3>
-            <p>taffy lays out in the Rust core &mdash; a familiar <span class="lp-mono">flex-col gap-4</span> lands on identical pixels on every target, provable in goldens.</p>
+            <p>taffy lays out in the Rust core, so a familiar <span class="lp-mono">flex-col gap-4</span> lands on identical pixels on every target, provable in goldens.</p>
           </div>
           <div class="lp-proof lp-reveal">
             <h3>Tailwind becomes style data</h3>
@@ -289,20 +330,20 @@
           </div>
           <div class="lp-proof lp-reveal">
             <h3>Reactivity becomes what fits</h3>
-            <p>A tiny QuickJS guest where there&rsquo;s room for one; compiled dirty-bit state machinery where there isn&rsquo;t.</p>
+            <p>Write Solid signals, Vue refs or Octane hooks. They run in a tiny QuickJS guest where there&rsquo;s room for one, and become compiled dirty-bit machinery where there isn&rsquo;t.</p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- .POCKET — the platform story: ship the application, not the port. -->
+    <!-- .POCKET: the platform story: ship the application, not the port. -->
     <section class="lp-section lp-pkg">
       <div class="lp-container">
         <div class="lp-pkg__split">
           <div class="lp-pkg__copy lp-reveal">
             <span class="lp-kicker">The .pocket format</span>
             <h2 class="lp-h2">Ship the application,<br />not the port.</h2>
-            <p>A <span class="lp-mono">.pocket</span> file describes what the app <em>is</em> and what it <em>needs</em> &mdash; identity, capabilities, build plan, payloads. Each device decides how it should run: which viewport, which presentation, which execution class. If a target can&rsquo;t honor the contract, it says so before launch, not after.</p>
+            <p>A <span class="lp-mono">.pocket</span> file describes what the app <em>is</em> and what it <em>needs</em>: identity, capabilities, build plan, payloads. Each device decides how it should run: which viewport, which presentation, which execution class. If a target can&rsquo;t honor the contract, it says so before launch, not after.</p>
             <div class="lp-pkg__verbs" aria-label="Package toolchain verbs">
               <span class="lp-mono">build --all-targets</span>
               <span class="lp-mono">inspect</span>
@@ -328,12 +369,12 @@
         <div class="lp-sys lp-reveal">
           <div class="lp-sys__head">
             <h3>System software, built into the runtime</h3>
-            <p>Not just rectangles on unusual screens &mdash; the pieces apps need to become an ecosystem.</p>
+            <p>Not just rectangles on unusual screens, but the pieces apps need to become an ecosystem.</p>
           </div>
           <div class="lp-sys__grid">
             <article class="lp-proof">
               <h3>App launcher</h3>
-              <p>A Cover Flow deck that cold-boots, freezes and switches whole apps &mdash; running live in the PSP at the top of this page.</p>
+              <p>A Cover Flow deck that cold-boots, freezes and switches whole apps. It runs live in the PSP at the top of this page.</p>
             </article>
             <article class="lp-proof">
               <h3>Capability contracts</h3>
@@ -341,7 +382,7 @@
             </article>
             <article class="lp-proof">
               <h3>Input &amp; OSK</h3>
-              <p>D-pad focus, touch, analog, a virtual cursor &mdash; and a system keyboard any app summons with one call.</p>
+              <p>D-pad focus, analog, a virtual cursor, real touch with gestures, kinetic scroll and tap-to-press, and a system keyboard any app summons with one call.</p>
             </article>
             <article class="lp-proof">
               <h3>Host services</h3>
@@ -349,7 +390,7 @@
             </article>
             <article class="lp-proof">
               <h3>Time-travel DevTools</h3>
-              <p>Every session records itself. Step to any frame, inspect the native tree &mdash; over USB to real hardware.</p>
+              <p>Every session records itself. Step to any frame and inspect the native tree, over USB to real hardware.</p>
             </article>
             <article class="lp-proof">
               <h3>Deterministic core</h3>
@@ -360,17 +401,17 @@
       </div>
     </section>
 
-    <!-- DEVICE TAXONOMY — impossible, classified by constraint rather than by nostalgia. -->
+    <!-- DEVICE TAXONOMY: impossible, classified by constraint rather than by nostalgia. -->
     <section class="lp-section lp-imposs" id="devices">
       <div class="lp-container">
         <div class="lp-secthead lp-reveal">
-          <span class="lp-kicker">Where it runs</span>
+          <span class="lp-kicker">Radically different devices</span>
           <h2 class="lp-h2">Built for every kind of impossible.</h2>
-          <p class="lp-lead">Impossible doesn&rsquo;t mean old. It means no browser, no modern OS, no JS engine, no continuous refresh &mdash; or no vendor left to care.</p>
+          <p class="lp-lead">Radically different doesn&rsquo;t mean old. It means no browser, no modern OS, no JS engine, no continuous refresh, or no vendor left to care.</p>
         </div>
         <div class="lp-imposs__grid">
           <article class="lp-imp lp-reveal">
-            <h3>Retro consoles</h3>
+            <h3>Consoles &amp; handhelds</h3>
             <p>No OS to lean on, and 333&nbsp;MHz is the fast one.</p>
             <ul class="lp-chips">
               <li class="is-live"><b></b>Sony PSP</li>
@@ -378,6 +419,7 @@
               <li class="is-live"><b></b>Game Boy Advance</li>
               <li class="is-live"><b></b>Game Boy</li>
               <li class="is-live"><b></b>NES</li>
+              <li class="is-live"><b></b>Playdate</li>
               <li><b></b>Nintendo 3DS</li>
             </ul>
           </article>
@@ -393,7 +435,7 @@
           </article>
           <article class="lp-imp lp-reveal">
             <h3>E-ink surfaces</h3>
-            <p>A screen that fights every frame &mdash; so the runtime picks partial, dynamic or full refresh per update.</p>
+            <p>A screen that fights every frame, so the runtime picks partial, dynamic or full refresh per update.</p>
             <ul class="lp-chips">
               <li class="is-live"><b></b>PocketBook</li>
               <li><b></b>Kindle</li>
@@ -420,13 +462,13 @@
           </article>
           <div class="lp-imp lp-imp--legend lp-reveal">
             <div class="vb-legend"><span><b class="is-live"></b>shipping</span><span><b class="is-wip"></b>in progress</span><span><b></b>planned</span></div>
-            <p>Every &ldquo;shipping&rdquo; chip is a real, tested host in the registry &mdash; not a roadmap slide. <a href="/docs/platform-contracts/">See the target profiles &rarr;</a></p>
+            <p>Every &ldquo;shipping&rdquo; chip is a real, tested host in the registry, not a roadmap slide. <a href="/docs/platform-contracts/">See the target profiles &rarr;</a></p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- SHOWCASE — six kinds of proof, not three PSP demos. -->
+    <!-- SHOWCASE: six kinds of proof, not three PSP demos. -->
     <section class="lp-section lp-showcase">
       <div class="lp-container">
         <div class="lp-secthead lp-reveal">
@@ -442,7 +484,7 @@
             <div class="lp-app__body">
               <h3>Pocket Launcher</h3>
               <p class="lp-app__proves">Proves: multi-app lifecycle &amp; system UI</p>
-              <p>A Cover Flow deck that boots, freezes and switches whole apps &mdash; on PSP and on a 2011 Nokia. It&rsquo;s running live in the 3D PSP at the top of this page.</p>
+              <p>A Cover Flow deck that boots, freezes and switches whole apps on the PSP and on a 2011 Nokia. It&rsquo;s running live in the 3D PSP at the top of this page.</p>
               <div class="lp-app__links">
                 <a href="#stage">Try it above &uarr;</a>
                 <a class="lp-app__src" href="https://github.com/pocket-stack/pocketjs" target="_blank" rel="noreferrer">pocket-stack/pocketjs</a>
@@ -456,7 +498,7 @@
             <div class="lp-app__body">
               <h3>OpenStrike</h3>
               <p class="lp-app__proves">Proves: 3D worlds &amp; the JS/native split</p>
-              <p>A Counter-Strike-shaped FPS on the classic GoldSrc-era maps &mdash; BSP, lightmaps, bots, recoil &mdash; at a locked 60&nbsp;FPS on a 333&nbsp;MHz PSP. The HUD is a Solid app.</p>
+              <p>A Counter-Strike-shaped FPS that runs the classic GoldSrc-era maps, with BSP, lightmaps, bots and recoil, at a locked 60&nbsp;FPS on a 333&nbsp;MHz PSP. The HUD is a Solid app.</p>
               <div class="lp-app__links">
                 <a href="/blog/shipping-openstrike/">Read the story &rarr;</a>
                 <a class="lp-app__src" href="https://github.com/pocket-stack/open-strike" target="_blank" rel="noreferrer">pocket-stack/open-strike</a>
@@ -470,7 +512,7 @@
             <div class="lp-app__body">
               <h3>Pocket Figma</h3>
               <p class="lp-app__proves">Proves: big documents &amp; streamed assets</p>
-              <p>A real Figma Community file &mdash; 14,430 nodes, a canvas 26,000 pixels wide &mdash; baked into streaming tiles the device pans and zooms without ever parsing the file.</p>
+              <p>A real Figma Community file, 14,430 nodes on a canvas 26,000 pixels wide, baked into streaming tiles the device pans and zooms without ever parsing the file.</p>
               <div class="lp-app__links">
                 <a href="/blog/pocket-figma/">Read the story &rarr;</a>
                 <a class="lp-app__src" href="https://github.com/pocket-stack/pocket-figma" target="_blank" rel="noreferrer">pocket-stack/pocket-figma</a>
@@ -484,7 +526,7 @@
             <div class="lp-app__body">
               <h3>Pocket YouTube</h3>
               <p class="lp-app__proves">Proves: host services, video, audio &amp; OSK</p>
-              <p>YouTube on a PSP where the network is a USB cable: a Mac companion runs yt-dlp and ffmpeg, the handheld plays the stream &mdash; search, seek, CJK titles and all.</p>
+              <p>YouTube on a PSP where the network is a USB cable: a Mac companion runs yt-dlp and ffmpeg while the handheld plays the stream, with search, seek and CJK titles intact.</p>
               <div class="lp-app__links">
                 <a href="/blog/pocket-youtube/">Read the story &rarr;</a>
                 <a class="lp-app__src" href="https://github.com/pocket-stack/pocket-youtube" target="_blank" rel="noreferrer">pocket-stack/pocket-youtube</a>
@@ -498,7 +540,7 @@
             <div class="lp-app__body">
               <h3>Pocket Character</h3>
               <p class="lp-app__proves">Proves: it also replaces heavy desktop runtimes</p>
-              <p>A VRM digital human in a transparent always-on-top window &mdash; one native process, 118&nbsp;MB and ~4% of a core, where the Electron stage needs 2.2&nbsp;GB and 44%.</p>
+              <p>A VRM digital human in a transparent always-on-top window, running as one native process at 118&nbsp;MB and ~4% of a core, where the Electron stage needs 2.2&nbsp;GB and 44%.</p>
               <div class="lp-app__links">
                 <a href="/blog/pocket-character/">Read the story &rarr;</a>
                 <a class="lp-app__src" href="https://github.com/pocket-stack/pocket-character" target="_blank" rel="noreferrer">pocket-stack/pocket-character</a>
@@ -512,7 +554,7 @@
             <div class="lp-app__body">
               <h3>Pocket Vapor Todo</h3>
               <p class="lp-app__proves">Proves: it reaches machines with no interpreter</p>
-              <p>One Vue module &mdash; <span class="lp-mono">ref</span>, <span class="lp-mono">computed</span>, list rendering &mdash; compiled into GBA, Game Boy and NES carts, verified frame-by-frame against real Vue on the same inputs.</p>
+              <p>One Vue module with <span class="lp-mono">ref</span>, <span class="lp-mono">computed</span> and list rendering, compiled into GBA, Game Boy and NES carts, verified frame-by-frame against real Vue on the same inputs.</p>
               <div class="lp-app__links">
                 <a href="/blog/pocket-vapor/">Read the story &rarr;</a>
                 <a class="lp-app__src" href="https://github.com/pocket-stack/pocketjs" target="_blank" rel="noreferrer">pocket-stack/pocketjs</a>
@@ -529,7 +571,7 @@
       <div class="lp-container lp-cta__in lp-reveal">
         <span class="lp-kicker">Your turn</span>
         <h2 class="lp-h2" style="margin-top: 0.9rem;">The browser was never the limit.</h2>
-        <p>Take the app model you already know to the device everyone else gave up on.</p>
+        <p>Whether it&rsquo;s an interface, a game, a world or an agent, take the software you already know how to write to the device everyone else gave up on.</p>
         <div class="lp-cta__btns">
           <a class="lp-btn lp-btn--primary" href="/docs/getting-started/">Start building</a>
           <a class="lp-btn lp-btn--ghost" href="/docs/native-contract/">Add a device</a>
@@ -558,7 +600,7 @@
             </svg>
             <span>PocketJS</span>
           </a>
-          <p>Components, signals and Tailwind &mdash; carried to consoles, e-readers and microcontrollers by a tiny native core.</p>
+          <p>A compact JavaScript runtime for UI, games, 3D and AI-native software, carried to radically different devices by a tiny native core.</p>
         </div>
         <div>
           <h4>Docs</h4>

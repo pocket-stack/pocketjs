@@ -460,6 +460,7 @@ function renderHome(): string {
       "Game Boy Advance",
       "Game Boy",
       "NES",
+      "Playdate",
       "macOS",
       "PPSSPP",
       "Vita3K",
@@ -484,7 +485,7 @@ function renderHome(): string {
 <meta property="og:image" content="${OG_IMAGE_URL}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="PocketJS — Build Modern Apps for Impossible Devices">
+<meta property="og:image:alt" content="${SITE_TITLE}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${SITE_TITLE}">
 <meta name="twitter:description" content="${HOME_DESC}">
