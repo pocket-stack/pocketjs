@@ -1,0 +1,5 @@
+[
+  { "key": "audio:wav.midnight-replay", "file": "media/midnight-replay.wav" },
+  { "key": "audio:wav.glass-horizon", "file": "media/glass-horizon.wav" },
+  { "key": "audio:wav.static-bloom", "file": "media/static-bloom.wav" }
+]

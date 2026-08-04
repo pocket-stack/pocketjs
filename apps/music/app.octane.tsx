@@ -4,10 +4,13 @@ import { animate, jump } from "@pocketjs/framework/octane/animation";
 import { useButtonPress, useFrame } from "@pocketjs/framework/octane/lifecycle";
 import { BTN } from "@pocketjs/framework/octane/input";
 import { setTextContent } from "@pocketjs/framework/octane";
+import { createWavPlayer } from "@pocketjs/framework/octane/audio";
 
 interface Track {
   title: string;
   artist: string;
+  /** pak key suffix: audio:wav.<wav> (see apps/music/pak.json + gen-assets.ts). */
+  wav: string;
   coverCls: string;
 }
 
@@ -15,18 +18,21 @@ const TRACKS: Track[] = [
   {
     title: "MIDNIGHT REPLAY",
     artist: "SYNC PULSE",
+    wav: "midnight-replay",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-blue-500 to-blue-700 border-blue-300 focus:border-slate-900 transition-colors duration-150",
   },
   {
     title: "GLASS HORIZON",
     artist: "AMBER TIDE",
+    wav: "glass-horizon",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-amber-400 to-amber-700 border-amber-300 focus:border-slate-900 transition-colors duration-150",
   },
   {
     title: "STATIC BLOOM",
     artist: "NEON DRIFTERS",
+    wav: "static-bloom",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-cyan-500 to-cyan-700 border-cyan-300 focus:border-slate-900 transition-colors duration-150",
   },
@@ -34,6 +40,17 @@ const TRACKS: Track[] = [
 
 const TRACK_FRAMES = 300;
 const PROGRESS_TRACK_W = 160;
+
+// Real playback where the host mounts the audio module (a silent no-op
+// everywhere else). The player lives at module scope — Octane re-renders the
+// component on every state tick, and the stream must not. `audioIndex`
+// mirrors the track index for the audio side because next/prev use
+// functional setState (the new index isn't in scope at the call site).
+const player = createWavPlayer();
+let audioIndex = 0;
+const loadTrack = (i: number) => player.load(TRACKS[i].wav);
+loadTrack(0);
+player.play(); // playing starts true
 
 // Continuous motion rides the native animation system, never per-frame JS:
 // an Octane state tick replays the whole root — cheap nowhere, ruinous on
@@ -124,18 +141,26 @@ export default function Music() {
     setTrackIndex(i);
     setSession((s) => s + 1);
     setPlaying(true);
+    audioIndex = i;
+    loadTrack(i);
+    player.play();
   };
   const nextTrack = () => {
     setTrackIndex((i) => (i + 1) % TRACKS.length);
     setSession((s) => s + 1);
+    audioIndex = (audioIndex + 1) % TRACKS.length;
+    loadTrack(audioIndex);
   };
   const prevTrack = () => {
     setTrackIndex((i) => (i - 1 + TRACKS.length) % TRACKS.length);
     setSession((s) => s + 1);
+    audioIndex = (audioIndex - 1 + TRACKS.length) % TRACKS.length;
+    loadTrack(audioIndex);
   };
 
   useButtonPress(BTN.LTRIGGER, prevTrack);
   useButtonPress(BTN.RTRIGGER, nextTrack);
+  useFrame(() => player.pump()); // drain the event batch, feed within credit
 
   return (
     <View class="flex-col w-full h-full p-3 gap-2 bg-gradient-to-b from-slate-50 to-slate-100">
@@ -148,7 +173,15 @@ export default function Music() {
       </View>
 
       <View class="flex-row items-center gap-3">
-        <View class={track.coverCls} focusable onPress={() => setPlaying(!playing)}>
+        <View
+          class={track.coverCls}
+          focusable
+          onPress={() => {
+            setPlaying(!playing);
+            if (!playing) player.play();
+            else player.pause();
+          }}
+        >
           <Text class="text-base text-white font-bold">{playing ? ">" : "II"}</Text>
         </View>
 

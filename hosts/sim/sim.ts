@@ -240,6 +240,7 @@ export async function bootWorld(
     ? await Bun.file(DIST + app + ".pak").arrayBuffer()
     : undefined;
   g.frame = undefined;
+  g.audio = undefined; // audio module namespace: absent unless extraGlobals mounts one
   g.__pocketApp = app;
   g.__simHz = hz;
   g.__pocketEffectTrace = (e: EffectEvent) => effects.push(e);

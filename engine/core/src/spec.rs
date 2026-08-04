@@ -473,3 +473,28 @@ pub mod btn {
 /// axis 0..255 with 128 = center. Hosts without a stick omit the arg;
 /// the runtime defaults to this value (so old tapes/goldens hold).
 pub const ANALOG_CENTER: u32 = 0x8080;
+
+/// AUDIO module boundary (contracts/spec/audio.ts — `globalThis.audio`).
+/// Credit-based PCM streaming; events batch to tick boundaries via poll().
+/// Frames consumed on virtual tick n at 60 ticks/s (the determinism
+/// contract): floor((n+1)*rate/60) - floor(n*rate/60).
+pub mod audio {
+    pub const OP_CREATE_STREAM: u8 = 1;
+    pub const OP_DESTROY_STREAM: u8 = 2;
+    pub const OP_WRITE_PCM: u8 = 3;
+    pub const OP_PLAY: u8 = 4;
+    pub const OP_PAUSE: u8 = 5;
+    pub const OP_STOP: u8 = 6;
+    pub const OP_SET_VOLUME: u8 = 7;
+    pub const OP_END_STREAM: u8 = 8;
+    pub const OP_POLL: u8 = 9;
+    /// Accepted stream rates: integer divisors of the PSP's native 44.1 kHz.
+    pub const RATES: [u32; 3] = [44100, 22050, 11025];
+    pub const MAX_CHANNELS: u32 = 2;
+    /// Per-stream ring capacity in SOURCE sample frames (credit ceiling).
+    pub const RING_FRAMES: usize = 16384;
+    pub const MAX_STREAMS: usize = 4;
+    pub const EVENT_CREDIT: &str = "credit";
+    pub const EVENT_UNDERRUN: &str = "underrun";
+    pub const EVENT_ENDED: &str = "ended";
+}

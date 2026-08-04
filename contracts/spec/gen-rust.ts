@@ -1,4 +1,4 @@
-// Deterministic codegen: contracts/spec/spec.ts -> engine/core/src/spec.rs.
+// Deterministic codegen: contracts/spec/{spec,audio}.ts -> engine/core/src/spec.rs.
 //
 // Run from PocketJS/:  bun contracts/spec/gen-rust.ts
 //
@@ -7,6 +7,15 @@
 // spec.ts. Keep this generator free of anything non-deterministic (no dates,
 // no env, no object-key sorting surprises — insertion order only).
 
+import {
+  AUDIO_EVENT,
+  AUDIO_MAX_CHANNELS,
+  AUDIO_MAX_STREAMS,
+  AUDIO_OP,
+  AUDIO_RATES,
+  AUDIO_RING_FRAMES,
+  audioFramesForTick,
+} from "./audio.ts";
 import {
   ANALOG_CENTER,
   ANIMATABLE,
@@ -425,6 +434,34 @@ export function generateRust(): string {
   put("/// axis 0..255 with 128 = center. Hosts without a stick omit the arg;");
   put("/// the runtime defaults to this value (so old tapes/goldens hold).");
   put(`pub const ANALOG_CENTER: u32 = ${hex(ANALOG_CENTER, 4)};`);
+  put("");
+
+  // --- audio module -------------------------------------------------------------
+  // The audio MODULE's boundary (contracts/spec/audio.ts): its own op space,
+  // mounted as `globalThis.audio`, independent of the ui surface. A native
+  // host implementing it reads these constants; the ring/thread discipline to
+  // copy is hosts/psp/src/audio.rs (currently serving the video plane).
+  if (audioFramesForTick(22050, 0) !== 367 || audioFramesForTick(22050, 1) !== 368) {
+    throw new Error("audioFramesForTick drifted from the pinned Bresenham formula");
+  }
+  put("/// AUDIO module boundary (contracts/spec/audio.ts — `globalThis.audio`).");
+  put("/// Credit-based PCM streaming; events batch to tick boundaries via poll().");
+  put("/// Frames consumed on virtual tick n at 60 ticks/s (the determinism");
+  put("/// contract): floor((n+1)*rate/60) - floor(n*rate/60).");
+  put("pub mod audio {");
+  for (const [name, v] of Object.entries(AUDIO_OP)) {
+    put(`    pub const OP_${screaming(name)}: u8 = ${v};`);
+  }
+  put(`    /// Accepted stream rates: integer divisors of the PSP's native 44.1 kHz.`);
+  put(`    pub const RATES: [u32; ${AUDIO_RATES.length}] = [${AUDIO_RATES.join(", ")}];`);
+  put(`    pub const MAX_CHANNELS: u32 = ${AUDIO_MAX_CHANNELS};`);
+  put(`    /// Per-stream ring capacity in SOURCE sample frames (credit ceiling).`);
+  put(`    pub const RING_FRAMES: usize = ${AUDIO_RING_FRAMES};`);
+  put(`    pub const MAX_STREAMS: usize = ${AUDIO_MAX_STREAMS};`);
+  for (const [name, v] of Object.entries(AUDIO_EVENT)) {
+    put(`    pub const EVENT_${screaming(name)}: &str = ${JSON.stringify(v)};`);
+  }
+  put("}");
 
   return L.join("\n") + "\n";
 }

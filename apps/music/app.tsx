@@ -8,6 +8,13 @@
 // tracks (the one button pair none of the other three demos touch); CIRCLE
 // on the cover toggles play/pause, CIRCLE on a track row selects it.
 //
+// Audio: on hosts that mount the audio module (contracts/spec/audio.ts) the
+// demo streams each track's 5-second WAV (apps/music/media, pak audio:wav.*)
+// through a credit-driven WavPlayer. The TICK CLOCK stays authoritative —
+// position/equalizer/track-advance are the same frame counters either way,
+// the player only follows them — so every pixel golden is byte-identical
+// with or without the module (tests/audio-sim.test.ts pins this).
+//
 // Design notes: every class a FULL literal (per-track cover accent baked per
 // entry); text single-line.
 
@@ -15,10 +22,13 @@ import { createSignal } from "solid-js";
 import { Text, View } from "@pocketjs/framework/components";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN } from "@pocketjs/framework/input";
+import { createWavPlayer } from "@pocketjs/framework/audio";
 
 interface Track {
   title: string;
   artist: string;
+  /** pak key suffix: audio:wav.<wav> (see apps/music/pak.json + gen-assets.ts). */
+  wav: string;
   /** cover/play-pause control: FULL literal (fixed size + per-track accent). */
   coverCls: string;
 }
@@ -27,18 +37,21 @@ const TRACKS: Track[] = [
   {
     title: "MIDNIGHT REPLAY",
     artist: "SYNC PULSE",
+    wav: "midnight-replay",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-blue-500 to-blue-700 border-blue-300 focus:border-slate-900 transition-colors duration-150",
   },
   {
     title: "GLASS HORIZON",
     artist: "AMBER TIDE",
+    wav: "glass-horizon",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-amber-400 to-amber-700 border-amber-300 focus:border-slate-900 transition-colors duration-150",
   },
   {
     title: "STATIC BLOOM",
     artist: "NEON DRIFTERS",
+    wav: "static-bloom",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-cyan-500 to-cyan-700 border-cyan-300 focus:border-slate-900 transition-colors duration-150",
   },
@@ -57,25 +70,38 @@ export default function Music() {
   const [position, setPosition] = createSignal(0); // frames into the current track
   const [barsFrame, setBarsFrame] = createSignal(0);
 
+  // Real playback where the host mounts the audio module; a silent no-op
+  // everywhere else. The player is slaved to the signals at each mutation
+  // point below — it never drives them (the tick clock owns the UI).
+  const player = createWavPlayer();
+  const loadTrack = (i: number) => player.load(TRACKS[i].wav);
+  loadTrack(0);
+  player.play(); // playing() starts true
+
   const selectTrack = (i: number) => {
     setTrackIndex(i);
     setPosition(0);
     setPlaying(true);
+    loadTrack(i);
+    player.play();
   };
 
   const nextTrack = () => {
     setTrackIndex((trackIndex() + 1) % TRACKS.length);
     setPosition(0);
+    loadTrack(trackIndex());
   };
 
   const prevTrack = () => {
     setTrackIndex((trackIndex() - 1 + TRACKS.length) % TRACKS.length);
     setPosition(0);
+    loadTrack(trackIndex());
   };
 
   onButtonPress(BTN.LTRIGGER, prevTrack);
   onButtonPress(BTN.RTRIGGER, nextTrack);
   onFrame(() => {
+    player.pump(); // drain this tick's event batch, feed within credit
     if (!playing()) return;
     setBarsFrame(barsFrame() + 1);
     const p = position() + 1;
@@ -103,7 +129,16 @@ export default function Music() {
       </View>
 
       <View debugName="NowPlaying" class="flex-row items-center gap-3">
-        <View class={track().coverCls} focusable onPress={() => setPlaying(!playing())}>
+        <View
+          class={track().coverCls}
+          focusable
+          onPress={() => {
+            const p = !playing();
+            setPlaying(p);
+            if (p) player.play();
+            else player.pause();
+          }}
+        >
           <Text class="text-base text-white font-bold">{playing() ? ">" : "II"}</Text>
         </View>
 

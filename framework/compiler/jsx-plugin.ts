@@ -43,6 +43,7 @@ const COMPONENTS_PATH = new URL("../src/components.ts", import.meta.url).pathnam
 const COMPONENTS_VUE_VAPOR_PATH = new URL("../src/components-vue-vapor.ts", import.meta.url).pathname;
 const COMPONENTS_OCTANE_PATH = new URL("../src/components-octane.tsx", import.meta.url).pathname;
 const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
+const AUDIO_API_PATH = new URL("../src/audio-api.ts", import.meta.url).pathname;
 const CLOCK_PATH = new URL("../src/clock.ts", import.meta.url).pathname;
 const DEVTOOLS_PATH = new URL("../src/devtools.ts", import.meta.url).pathname;
 const EFFECTS_PATH = new URL("../src/effects.ts", import.meta.url).pathname;
@@ -456,17 +457,20 @@ export function packagePath(spec: string, framework: PocketFramework): string | 
   }
   if (spec === `${PACKAGE_NAME}/vue-vapor` || spec.startsWith(`${PACKAGE_NAME}/vue-vapor/`)) {
     return FRAMEWORKS["vue-vapor"].subpaths[subpath] ?? {
+      audio: AUDIO_API_PATH,
       clock: CLOCK_PATH,
       effects: EFFECTS_PATH,
     }[subpath] ?? null;
   }
   if (spec === `${PACKAGE_NAME}/octane` || spec.startsWith(`${PACKAGE_NAME}/octane/`)) {
     return FRAMEWORKS.octane.subpaths[subpath] ?? {
+      audio: AUDIO_API_PATH,
       clock: CLOCK_PATH,
       effects: EFFECTS_PATH,
     }[subpath] ?? null;
   }
   return FRAMEWORKS[framework].subpaths[subpath] ?? {
+    audio: AUDIO_API_PATH,
     clock: CLOCK_PATH,
     devtools: DEVTOOLS_PATH,
     effects: EFFECTS_PATH,

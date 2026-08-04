@@ -136,6 +136,14 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // is the fallback spelling on targets without it.
   "input.text",
   "input.touch",
+  // Credit-based s16 PCM streaming through the audio module's own namespace
+  // (`globalThis.audio`, contracts/spec/audio.ts). Registered ahead of any
+  // stock TARGET advertising it: the web dev host and the sim host implement
+  // and test the whole contract, so apps can already declare the enhancement
+  // and degrade cleanly where the namespace is absent. A console target
+  // appends the id to its profile only when its native host ships the module
+  // (the ring/thread discipline to copy is hosts/psp/src/audio.rs).
+  "audio.pcm",
   // Copy/cut/paste round-trips with the OS clipboard.
   "host.clipboard",
   // The logical viewport is runtime-mutable: the app is told about live

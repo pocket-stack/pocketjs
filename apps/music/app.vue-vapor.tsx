@@ -2,10 +2,13 @@ import { computed, ref } from "vue";
 import { Text, View } from "@pocketjs/framework/vue-vapor/components";
 import { onButtonPress, onFrame } from "@pocketjs/framework/vue-vapor/lifecycle";
 import { BTN } from "@pocketjs/framework/vue-vapor/input";
+import { createWavPlayer } from "@pocketjs/framework/vue-vapor/audio";
 
 interface Track {
   title: string;
   artist: string;
+  /** pak key suffix: audio:wav.<wav> (see apps/music/pak.json + gen-assets.ts). */
+  wav: string;
   coverCls: string;
 }
 
@@ -13,18 +16,21 @@ const TRACKS: Track[] = [
   {
     title: "MIDNIGHT REPLAY",
     artist: "SYNC PULSE",
+    wav: "midnight-replay",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-blue-500 to-blue-700 border-blue-300 focus:border-slate-900 transition-colors duration-150",
   },
   {
     title: "GLASS HORIZON",
     artist: "AMBER TIDE",
+    wav: "glass-horizon",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-amber-400 to-amber-700 border-amber-300 focus:border-slate-900 transition-colors duration-150",
   },
   {
     title: "STATIC BLOOM",
     artist: "NEON DRIFTERS",
+    wav: "static-bloom",
     coverCls:
       "w-16 h-16 rounded-xl shadow-md items-center justify-center bg-gradient-to-b from-cyan-500 to-cyan-700 border-cyan-300 focus:border-slate-900 transition-colors duration-150",
   },
@@ -41,18 +47,29 @@ export default function Music() {
   const track = computed(() => TRACKS[trackIndex.value]);
   const pct = computed(() => Math.round((position.value / TRACK_FRAMES) * 100));
 
+  // Real playback where the host mounts the audio module; a silent no-op
+  // everywhere else. Slaved to the refs — the tick clock owns the UI.
+  const player = createWavPlayer();
+  const loadTrack = (i: number) => player.load(TRACKS[i].wav);
+  loadTrack(0);
+  player.play(); // playing starts true
+
   const selectTrack = (i: number) => {
     trackIndex.value = i;
     position.value = 0;
     playing.value = true;
+    loadTrack(i);
+    player.play();
   };
   const nextTrack = () => {
     trackIndex.value = (trackIndex.value + 1) % TRACKS.length;
     position.value = 0;
+    loadTrack(trackIndex.value);
   };
   const prevTrack = () => {
     trackIndex.value = (trackIndex.value - 1 + TRACKS.length) % TRACKS.length;
     position.value = 0;
+    loadTrack(trackIndex.value);
   };
   const barHeight = (i: number): number => {
     if (!playing.value) return 6;
@@ -63,6 +80,7 @@ export default function Music() {
   onButtonPress(BTN.LTRIGGER, prevTrack);
   onButtonPress(BTN.RTRIGGER, nextTrack);
   onFrame(() => {
+    player.pump(); // drain this tick's event batch, feed within credit
     if (!playing.value) return;
     barsFrame.value++;
     const p = position.value + 1;
@@ -81,7 +99,15 @@ export default function Music() {
         </View>
 
         <View class="flex-row items-center gap-3">
-          <View class={track.value.coverCls} focusable onPress={() => { playing.value = !playing.value; }}>
+          <View
+            class={track.value.coverCls}
+            focusable
+            onPress={() => {
+              playing.value = !playing.value;
+              if (playing.value) player.play();
+              else player.pause();
+            }}
+          >
             <Text class="text-base text-white font-bold">{playing.value ? ">" : "II"}</Text>
           </View>
 
