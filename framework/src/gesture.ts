@@ -137,7 +137,6 @@ const OBSERVING = 1;
 const TAP_DEAD = 2;
 const LONGPRESS_FIRED = 4;
 const PANNING = 8;
-const PAN_DEAD = 16;
 
 interface Recognizer {
   opts: GestureOptions;
@@ -367,15 +366,21 @@ function recognize(t: Track): void {
   if (!t.claimedBy) {
     for (const rec of t.owners) {
       const f = rec.flags[t.slot];
-      if (!(f & OBSERVING) || f & (PANNING | PAN_DEAD)) continue;
+      if (!(f & OBSERVING) || f & PANNING) continue;
       if (!rec.opts.onPanStart && !rec.opts.onPanMove && !rec.opts.onPanEnd) continue;
       const slop = rec.opts.panSlop ?? DEFAULT_PAN_SLOP;
       if (adx <= slop && ady <= slop) continue;
       const axis = rec.opts.axis ?? "any";
       if (axis === "y" ? ady < adx : axis === "x" ? adx < ady : false) {
-        // Dominant axis is the wrong one — this recognizer never pans this
-        // contact (a horizontal swipe over a vertical list stays a swipe).
-        rec.flags[t.slot] |= PAN_DEAD;
+        // The locked axis is not dominant YET — defer, don't kill. Deciding
+        // permanently at the first slop crossing (6 logical px = 24 Vita
+        // panel px) killed real-world swipes: a script moves in a pure
+        // line, but a real thumb lands with wobble and arcs, so the wrong
+        // axis often wins the first few pixels (found on hardware — the
+        // motions pager never fired). Re-evaluated every frame while
+        // unclaimed: the recognizer claims the moment its axis dominates,
+        // and a drag whose dominant axis never matches simply never pans
+        // here — a vertical scroll still cannot turn a horizontal pager.
         continue;
       }
       rec.flags[t.slot] |= PANNING | TAP_DEAD;

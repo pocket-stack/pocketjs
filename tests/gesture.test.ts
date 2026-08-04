@@ -181,6 +181,35 @@ describe("pan", () => {
     expect(log).toEqual(["hpan:start", "pan:cancel"]);
   });
 
+  test("a wobbly thumb landing still pans the locked axis once it dominates", () => {
+    // The hardware profile: landing wobble crosses slop VERTICALLY first,
+    // the horizontal sweep builds after. The old first-crossing verdict
+    // marked the recognizer dead permanently — the motions pager on a real
+    // Vita never fired. Deferral claims the frame the axis wins.
+    const log: string[] = [];
+    attachGesture({
+      axis: "x",
+      onPanStart: () => log.push("start"),
+      onPanEnd: () => log.push("end"),
+    });
+    pump([[1, 200, 100]]);
+    pump([[1, 202, 108]]); // ady 8 crosses slop, adx 2 — wrong axis: defer
+    pump([[1, 214, 110]]); // adx 14 > ady 10 — x dominates: claim
+    pump([[1, 244, 112]]);
+    pump([]); // release
+    expect(log).toEqual(["start", "end"]);
+  });
+
+  test("a vertical drag never pans a horizontal-locked recognizer", () => {
+    const log: string[] = [];
+    attachGesture({ axis: "x", onPanStart: () => log.push("start") });
+    pump([[1, 200, 100]]);
+    pump([[1, 202, 130]]);
+    pump([[1, 201, 180]]);
+    pump([]);
+    expect(log).toEqual([]);
+  });
+
   test("onPanMove fires on hold frames so finger-follow sees every frame", () => {
     let moves = 0;
     attachGesture({ axis: "y", onPanMove: () => moves++ });
