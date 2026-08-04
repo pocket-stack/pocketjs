@@ -1,13 +1,14 @@
 # Core concepts
 
-PocketJS looks like a UI framework, but the thing underneath is a small
-platform ontology: five nouns and one relation.
-**A Host composes a Runtime at build time by mounting Modules — vertical
-slices of Core + Spec + SDK — over shared Substrate, gated by Capabilities.**
-The UI engine is one instance of that pattern, not the pattern itself. This
-page defines the nouns; [Architecture](/docs/architecture/) shows how the UI
-module is wired, and [Platform contracts](/docs/platform-contracts/) covers
-the capability machinery in depth.
+PocketJS ships more than a UI engine. The structure that carries the UI — a
+native core behind a pinned protocol, mounted into a JS guest — is the same
+structure every other capability uses: audio landed this way, and
+OpenStrike's game core before it. This page names the parts:
+**a runtime is a host plus the modules it mounts plus one guest program,
+and every boundary between them is pinned as data.**
+[Architecture](/docs/architecture/) shows the UI module's internals;
+[Platform contracts](/docs/platform-contracts/) covers capability
+resolution in depth.
 
 ```
 Runtime  =  Host  +  mounted Modules  +  Guest
@@ -17,127 +18,128 @@ Runtime  =  Host  +  mounted Modules  +  Guest
 │  ─────────  one namespace per mounted module  ─────────────  │
 │  Modules      ui          audio        strike (OpenStrike)   │
 │               core+spec   core+spec    core+spec             │
-│  Substrate    pocket3d · platform drivers (no vocabulary)    │
+│  Substrate    pocket3d · platform drivers (no guest API)     │
 │  Host         PSP EBOOT · Vita · browser · headless sim      │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ## Host
 
-The platform-native shell: it owns what the operating system owns — the
-window or framebuffer, input devices, GPU, audio device, filesystem. The PSP
-EBOOT, the Vita binary, the browser dev host, and the headless deterministic
-sim are all hosts. A host has no product logic; its job is to compose
-everything else and drive the tick loop.
+A host is the platform binary. It owns what the operating system hands out —
+the window or framebuffer, input devices, GPU, audio device, filesystem. The
+PSP EBOOT, the Vita binary, the browser dev host, and the headless Bun sim
+are hosts. A host carries no product logic: it boots the cores, mounts each
+module's namespace into the guest, and drives the tick loop.
 
 ## Module
 
-A module is a reusable vertical slice of one domain, exactly three layers:
+A module packages one domain so it can be reused across hosts and products.
+It has exactly three layers:
 
 ```
-SDK    the domain's natural algebra for guest code
-────── Spec ──────  the pinned boundary (the module's identity)
-Core   owner of the domain's state and time
+SDK    guest-side API (components, players, mod hooks)
+────── Spec ──────  the pinned protocol between the two sides
+Core   native side: owns the domain's state and clock
 ```
 
-The **core** owns domain state and the domain clock; per-entity, per-frame
-work happens only there, and the core never calls the guest. The **SDK** is
-whatever shape the domain wants — JSX components for `ui`, a `WavPlayer` for
-`audio`, a mod API for OpenStrike's `strike`. Both layers are replaceable
-because the **spec** between them is not: swap Solid for Vue Vapor, rewrite
-the layout engine, and the other side cannot tell.
+The **core** owns the domain's state and its clock; per-entity, per-frame
+work happens only there, and the core never calls into the guest. The
+**SDK** is ordinary guest code shaped for its domain — JSX components for
+`ui`, `decodeWav` and a `WavPlayer` for `audio`, a mod API for OpenStrike's
+`strike`. The two sides can be replaced independently because the **spec**
+between them does not move: swap Solid for Vue Vapor, or rewrite the layout
+engine, and the other side cannot tell.
 
 `ui` (pocketjs-core + the `ui.*` ops + the JSX SDK) was the first module.
-`strike` (OpenStrike's FPS core and mod API) was the second. `audio` —
-credit-based PCM streaming — is the third, and the first built module-first:
-spec before any host code.
+`strike` was the second. `audio` — credit-based PCM streaming — is the
+third, and the first written spec-first: the protocol existed before any
+host implemented it.
 
 ## Spec
 
-A spec does not describe a module's implementation; it describes the
-**boundary** between two execution domains — what may cross, in which
-direction, when, and in what shape. Everything that can cross decomposes
-into three axes, so a spec has exactly four parts:
+A spec pins the boundary between guest and core: what crosses it, in which
+direction, when, and in what byte shape. It has four parts:
 
-| Part | Direction | Shape |
+| Part | Direction | Contents |
 | --- | --- | --- |
-| **ops** | guest → core | intent: synchronous calls, numeric codes, append-only |
+| **ops** | guest → core | commands: synchronous calls, numeric codes, append-only |
 | **events** | core → guest | facts: batched per tick, drained inside the guest's turn, never re-entrant |
-| **data contract** | both | every bulk payload's byte layout plus ownership (`move` or `borrow` — nothing else) |
-| **frame contract** | — | when the guest runs relative to the core clock, and what has happened before and after |
+| **data contract** | both | the byte layout of every bulk payload, plus ownership (`move` or `borrow` — nothing else) |
+| **frame contract** | — | when the guest runs relative to the core clock, and what happens before and after |
 
-Specs are plain TypeScript data (`contracts/spec/*.ts`), code-generated into
-the Rust side, and byte-compared in CI so the two languages can never drift.
-The versioning rule is one word: **append-only**. Queries are an attribute
-of an op, not a fourth axis; flow control (audio's credit protocol) is a
-pattern of ops + events, not a new mechanism.
+Specs are plain TypeScript data (`contracts/spec/*.ts`). The Rust side is
+generated from them and byte-compared in CI, so the two languages cannot
+drift. The one versioning rule: codes and fields are append-only. A
+synchronous return value is a property of an op, not a separate mechanism,
+and flow control (audio's credit protocol) is built from ops plus events,
+not a third channel.
 
 ## Capability
 
-A capability id names stable, observable behavior an app can rely on — and
-it shares its name with the spec namespace it exposes: the `audio.pcm`
-capability means `globalThis.audio` is mounted, which means `audio:*` pak
-entries have meaning. One name, three layers.
+A capability id names behavior an app can observe, and it is the same name
+as the spec namespace it stands for: the `audio.pcm` capability means
+`globalThis.audio` is mounted and `audio:*` pak entries have meaning. One
+name covers the manifest, the runtime namespace, and the asset prefix.
 
-Capabilities are resolved entirely at build time. An app's `pocket.json`
-declares `requires` (the compatibility floor) and `enhances` (optional,
-degrade-gracefully); the resolver checks them against each target's profile
-and writes one `ResolvedBuildPlan`. There is no runtime permission system
-and no dynamic negotiation — a guest can do exactly what its mounted specs
-express, one thing less than nothing more. Sandboxing falls out of the
-ontology instead of being bolted on.
+Capabilities resolve at build time only. An app's `pocket.json` declares
+`requires` (the compatibility floor) and `enhances` (optional, degrades
+cleanly); the resolver checks them against the target's profile and writes
+one `ResolvedBuildPlan`. There is no runtime permission system and no
+dynamic negotiation. The sandbox is the same fact read from the other side:
+a guest can call exactly what its mounted specs define, and nothing else.
 
 ## Substrate
 
-Shared native code with **no guest vocabulary**: the pocket3d rendering and
-collision crates, platform audio drivers, DMA helpers. The line between
-substrate and module is a single question — *is there a spec?* If guests
-can name it, it's a module; if only native code can, it's substrate.
+Native code shared by modules but invisible to guests: the pocket3d
+rendering and collision crates, platform audio output, DMA helpers. The
+dividing line is a single question — does it have a spec? If guest code can
+name it, it is a module; if only native code links against it, it is
+substrate.
 
 ## Runtime
 
-A runtime is not a product class; it is a composition, and a product is one
-composition:
+A runtime is what a host assembles at build time. A product is one such
+assembly:
 
 | Runtime | Host | Modules | Guest |
 | --- | --- | --- | --- |
 | PSP UI runtime | PSP EBOOT | `ui` + `audio` | any PocketJS app |
-| Music demo, dev flavor | browser host | `ui` + `audio` | `apps/music` |
+| Music demo in the browser | browser dev host | `ui` + `audio` | `apps/music` |
 | OpenStrike | its own Rust bin | `strike` + `ui` (HUD) | round rules, weapons, bots — all JS |
 | Headless CI | Bun sim | `ui` + virtual `audio` | the same bundles, byte-for-byte |
 
 ## The three laws
 
-Every module obeys the same three laws, which is why the whole stack can be
-tested headlessly:
+Every module obeys the same three rules, which is why the whole stack can
+be tested headlessly:
 
 1. **State lives in the core; the guest holds mirrors.** Hot-path reads
    never cross the boundary. Queries exist, but only on cold paths.
-2. **Intent crosses as ops, facts cross as events, both spec-pinned.** No
+2. **Commands cross as ops, facts cross as events, both spec-pinned.** No
    shared memory, no mid-tick callbacks, no string side-channels.
 3. **Each host tick, the guest runs exactly once.** The guest owns no
    timers and no threads. Frame content is a pure function of tick index
    plus inputs — which is what makes byte-exact goldens, input tapes, and
    deterministic replay possible.
 
-One placement principle rides along with the laws: draw the spec boundary
-where crossings are **O(changes), not O(entities)**. Text layout stays
-inside the ui core because measurement is per-element and per-frame;
-a spec boundary there would die of traffic.
+One placement rule comes with them: put the spec boundary where crossings
+are proportional to **changes, not entities**. Text layout stays inside the
+ui core because measurement runs per element, per frame — a boundary there
+would be crossed thousands of times a tick.
 
 ## Clocks
 
-The guest has exactly one clock: the tick. Some domains genuinely need a
-second one — real-time audio cannot wait for a frame — so a module may
-declare a **native-side clock** in its frame contract, under strict rules:
-it never calls the guest, never blocks on it, and resamples its facts to
-tick boundaries for delivery. On virtual-clock hosts the same module
-consumes by a pinned formula instead of a device callback, so even a
-multi-clock module has a deterministic, byte-reproducible test story.
+The guest has exactly one clock: the tick. Some domains need a second one —
+real-time audio cannot wait for a frame — so a module may declare a
+**native-side clock** in its frame contract, under strict rules: it never
+calls the guest, never blocks on it, and its facts are batched to tick
+boundaries for delivery. On virtual-clock hosts the same module consumes by
+a pinned per-tick formula instead of a device callback, so a two-clock
+module still has a deterministic, byte-reproducible test path.
 
 ## Worked example: the audio module
 
-Every concept above, instantiated once:
+Each concept above, instantiated once:
 
 | Concept | Artifact |
 | --- | --- |
@@ -149,9 +151,8 @@ Every concept above, instantiated once:
 | SDK | `@pocketjs/framework/audio` — `decodeWav` + a credit-driven `WavPlayer` |
 | Guest | the music demo: same pixels with or without the module mounted |
 
-The payoff is the composition property: the PSP gained audible audio by
-changing **only host code and one line of its target profile**. The spec,
-the framework, and the app did not change at all. That is what a module is
-for — the next domain (networking, haptics, a camera) should land the same
-way: write the vocabulary, build the core against it, mount, ship the SDK
-with a headless story.
+The composition property is the point: the PSP gained audible audio by
+changing only host code and one line of its target profile. The spec, the
+framework, and the app did not change. A new domain — networking, haptics,
+a camera — lands the same way: write the spec, build the core against it,
+mount it in a host, ship the SDK with a headless test.
