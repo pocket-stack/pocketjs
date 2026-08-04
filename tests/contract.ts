@@ -5,8 +5,12 @@
 //      never drift. Fix = `bun contracts/spec/gen-rust.ts` + commit.
 //  (b) Round-trips the styles.bin encoder/decoder over a table exercising
 //      every feature (variants, transition, all three value kinds).
+//  (c) Regenerates package.json's exports block from the subpath registry
+//      (framework/compiler/subpaths.ts) and byte-compares: the npm surface
+//      can never drift from the one declaration. Fix = `bun tools/gen-exports.ts`.
 
 import { generateRust } from "../contracts/spec/gen-rust.ts";
+import { withGeneratedExports } from "../tools/gen-exports.ts";
 import {
   abgr,
   animBit,
@@ -41,6 +45,16 @@ check(
   committed !== null && committed === expected,
   "engine/core/src/spec.rs matches spec.ts",
   "run `bun contracts/spec/gen-rust.ts` and commit the result",
+);
+
+// ---- (c) package.json exports match the subpath registry ---------------------
+
+const pkgPath = new URL("../package.json", import.meta.url).pathname;
+const pkgText = await Bun.file(pkgPath).text();
+check(
+  withGeneratedExports(pkgText) === pkgText,
+  "package.json exports match framework/compiler/subpaths.ts",
+  "run `bun tools/gen-exports.ts` and commit the result",
 );
 
 // ---- (b) style table encoder/decoder round-trip ------------------------------

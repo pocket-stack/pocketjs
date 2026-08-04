@@ -27,6 +27,7 @@ import octanePkg from "octane/package.json";
 import babelCorePkg from "@babel/core/package.json";
 import tsPresetPkg from "@babel/preset-typescript/package.json";
 import type { PocketFramework } from "../src/config.ts";
+import { POCKET_FRAMEWORKS, SUBPATHS } from "./subpaths.ts";
 
 export type { PocketFramework };
 
@@ -35,47 +36,34 @@ export const RENDERER_SOLID_PATH = new URL("../src/renderer-solid.ts", import.me
 export const RENDERER_VUE_VAPOR_PATH = new URL("../src/renderer-vue-vapor.ts", import.meta.url).pathname;
 export const RENDERER_OCTANE_PATH = new URL("../src/renderer-octane.ts", import.meta.url).pathname;
 
-const INDEX_PATH = new URL("../src/index.ts", import.meta.url).pathname;
-const INDEX_VUE_VAPOR_PATH = new URL("../src/index-vue-vapor.ts", import.meta.url).pathname;
-const INDEX_OCTANE_PATH = new URL("../src/index-octane.ts", import.meta.url).pathname;
-const ANIMATION_PATH = new URL("../src/animation.ts", import.meta.url).pathname;
-const COMPONENTS_PATH = new URL("../src/components.ts", import.meta.url).pathname;
-const COMPONENTS_VUE_VAPOR_PATH = new URL("../src/components-vue-vapor.ts", import.meta.url).pathname;
-const COMPONENTS_OCTANE_PATH = new URL("../src/components-octane.tsx", import.meta.url).pathname;
-const CONFIG_PATH = new URL("../src/config.ts", import.meta.url).pathname;
-const AUDIO_API_PATH = new URL("../src/audio-api.ts", import.meta.url).pathname;
-const CLOCK_PATH = new URL("../src/clock.ts", import.meta.url).pathname;
-const DEVTOOLS_PATH = new URL("../src/devtools.ts", import.meta.url).pathname;
-const EFFECTS_PATH = new URL("../src/effects.ts", import.meta.url).pathname;
-const GESTURE_PATH = new URL("../src/gesture.ts", import.meta.url).pathname;
-const HOST_PATH = new URL("../src/host.ts", import.meta.url).pathname;
-const HOT_PATH = new URL("../src/hot.ts", import.meta.url).pathname;
-const INPUT_API_PATH = new URL("../src/input-api.ts", import.meta.url).pathname;
-const KINETICS_PATH = new URL("../src/kinetics.ts", import.meta.url).pathname;
-const LAUNCHER_PATH = new URL("../src/launcher.ts", import.meta.url).pathname;
-const LIFECYCLE_PATH = new URL("../src/lifecycle.ts", import.meta.url).pathname;
-const LIFECYCLE_VUE_VAPOR_PATH = new URL("../src/lifecycle-vue-vapor.ts", import.meta.url).pathname;
-const LIFECYCLE_OCTANE_PATH = new URL("../src/lifecycle-octane.ts", import.meta.url).pathname;
-const OSK_PATH = new URL("../src/osk.tsx", import.meta.url).pathname;
-const MANIFEST_PATH = new URL("../src/manifest/index.ts", import.meta.url).pathname;
-const PACKAGE_PATH = new URL(
-  "../../contracts/spec/pocket-package.ts",
-  import.meta.url,
-).pathname;
-const PLATFORM_PATH = new URL("../src/platform.ts", import.meta.url).pathname;
-const PRELUDE_PATH = new URL("../src/prelude.ts", import.meta.url).pathname;
-const SCHEDULER_POLYFILL_PATH = new URL("../src/scheduler-polyfill.ts", import.meta.url).pathname;
+/**
+ * subpath -> absolute module file, per framework — derived once from the
+ * SUBPATHS registry (framework/compiler/subpaths.ts, THE declaration).
+ * A missing entry means "this framework does not resolve the subpath":
+ * pass 1 skips it and pass 2 falls through to Bun's package.json
+ * resolution.
+ */
+const RESOLVED: Record<PocketFramework, Record<string, string>> = (() => {
+  const root = new URL("../../", import.meta.url);
+  const out: Record<PocketFramework, Record<string, string>> = {
+    solid: {},
+    "vue-vapor": {},
+    octane: {},
+  };
+  for (const [name, decl] of Object.entries(SUBPATHS)) {
+    for (const fw of POCKET_FRAMEWORKS) {
+      const rel = typeof decl.file === "string" ? decl.file : decl.file[fw];
+      if (rel) out[fw][name] = new URL(rel, root).pathname;
+    }
+  }
+  return out;
+})();
 const OCTANE_PROFILING_STUB_PATH = new URL(
   "../src/octane-profiling-stub.ts",
   import.meta.url,
 ).pathname;
 const GENERATED_STYLES_PATH = new URL(
   "../src/styles.generated.ts",
-  import.meta.url,
-).pathname;
-const VIRTUAL_LIST_PATH = new URL("../src/virtual-list.ts", import.meta.url).pathname;
-const VITA_PACKAGE_PATH = new URL(
-  "../../tools/vita-package.ts",
   import.meta.url,
 ).pathname;
 const VUE_VAPOR_RUNTIME_PATH = new URL(
@@ -137,6 +125,9 @@ const JSX_PARSER_OPTS: ParserOptions = { plugins: ["jsx"] };
 
 const BANNED_SOLID_IMPORTS = new Set(["createResource", "useTransition", "startTransition"]);
 
+// Per-framework identity. Module resolution is NOT here — it is derived
+// from the SUBPATHS registry (framework/compiler/subpaths.ts) into RESOLVED
+// above; rootPath/rendererPath are views into the same derivation.
 export const FRAMEWORKS: Record<
   PocketFramework,
   {
@@ -144,69 +135,25 @@ export const FRAMEWORKS: Record<
     outputSuffix: string;
     rendererPath: string;
     rootPath: string;
-    subpaths: Record<string, string>;
   }
 > = {
   solid: {
     label: "Solid",
     outputSuffix: "",
-    rendererPath: RENDERER_SOLID_PATH,
-    rootPath: INDEX_PATH,
-    subpaths: {
-      "": INDEX_PATH,
-      animation: ANIMATION_PATH,
-      components: COMPONENTS_PATH,
-      config: CONFIG_PATH,
-      gesture: GESTURE_PATH,
-      input: INPUT_API_PATH,
-      kinetics: KINETICS_PATH,
-      launcher: LAUNCHER_PATH,
-      lifecycle: LIFECYCLE_PATH,
-      // The system OSK carries class literals and key-cap glyphs, so pass 1
-      // must walk it (this map lists the framework modules the collector
-      // follows — pure-logic modules like host/clock stay out).
-      osk: OSK_PATH,
-      platform: PLATFORM_PATH,
-      prelude: PRELUDE_PATH,
-      renderer: RENDERER_SOLID_PATH,
-      "virtual-list": VIRTUAL_LIST_PATH,
-    },
+    rendererPath: RESOLVED.solid.renderer,
+    rootPath: RESOLVED.solid[""],
   },
   "vue-vapor": {
     label: "Vue Vapor",
     outputSuffix: ".vue-vapor",
-    rendererPath: RENDERER_VUE_VAPOR_PATH,
-    rootPath: INDEX_VUE_VAPOR_PATH,
-    subpaths: {
-      "": INDEX_VUE_VAPOR_PATH,
-      animation: ANIMATION_PATH,
-      components: COMPONENTS_VUE_VAPOR_PATH,
-      config: CONFIG_PATH,
-      input: INPUT_API_PATH,
-      launcher: LAUNCHER_PATH,
-      lifecycle: LIFECYCLE_VUE_VAPOR_PATH,
-      platform: PLATFORM_PATH,
-      prelude: PRELUDE_PATH,
-      renderer: RENDERER_VUE_VAPOR_PATH,
-    },
+    rendererPath: RESOLVED["vue-vapor"].renderer,
+    rootPath: RESOLVED["vue-vapor"][""],
   },
   octane: {
     label: "Octane",
     outputSuffix: ".octane",
-    rendererPath: RENDERER_OCTANE_PATH,
-    rootPath: INDEX_OCTANE_PATH,
-    subpaths: {
-      "": INDEX_OCTANE_PATH,
-      animation: ANIMATION_PATH,
-      components: COMPONENTS_OCTANE_PATH,
-      config: CONFIG_PATH,
-      input: INPUT_API_PATH,
-      launcher: LAUNCHER_PATH,
-      lifecycle: LIFECYCLE_OCTANE_PATH,
-      platform: PLATFORM_PATH,
-      prelude: SCHEDULER_POLYFILL_PATH,
-      renderer: RENDERER_OCTANE_PATH,
-    },
+    rendererPath: RESOLVED.octane.renderer,
+    rootPath: RESOLVED.octane[""],
   },
 };
 
@@ -437,49 +384,23 @@ function resolvePackageSubpath(spec: string): string | null {
   return null;
 }
 
-function publicSubpath(spec: string, framework: PocketFramework): string | null {
+/**
+ * Resolve an `@pocketjs/framework[/…]` import to a module file, or null to
+ * let Bun's package.json resolution (or an error) take over. A framework
+ * prefix (`vue-vapor/audio`) pins that framework's view; a bare subpath
+ * resolves through the ACTIVE framework — both are lookups into the same
+ * SUBPATHS-derived table, so the registry is the only authority.
+ */
+export function packagePath(spec: string, framework: PocketFramework): string | null {
   const subpath = resolvePackageSubpath(spec);
   if (subpath === null) return null;
-  if (subpath === "solid") return "";
-  if (subpath.startsWith("solid/")) return subpath.slice("solid/".length);
-  if (subpath === "vue-vapor") return "";
-  if (subpath.startsWith("vue-vapor/")) return subpath.slice("vue-vapor/".length);
-  if (subpath === "octane") return "";
-  if (subpath.startsWith("octane/")) return subpath.slice("octane/".length);
-  return subpath;
-}
-
-export function packagePath(spec: string, framework: PocketFramework): string | null {
-  const subpath = publicSubpath(spec, framework);
-  if (subpath === null) return null;
-  if (spec === `${PACKAGE_NAME}/solid` || spec.startsWith(`${PACKAGE_NAME}/solid/`)) {
-    return FRAMEWORKS.solid.subpaths[subpath] ?? null;
+  for (const fw of POCKET_FRAMEWORKS) {
+    if (subpath === fw) return RESOLVED[fw][""] ?? null;
+    if (subpath.startsWith(fw + "/")) {
+      return RESOLVED[fw][subpath.slice(fw.length + 1)] ?? null;
+    }
   }
-  if (spec === `${PACKAGE_NAME}/vue-vapor` || spec.startsWith(`${PACKAGE_NAME}/vue-vapor/`)) {
-    return FRAMEWORKS["vue-vapor"].subpaths[subpath] ?? {
-      audio: AUDIO_API_PATH,
-      clock: CLOCK_PATH,
-      effects: EFFECTS_PATH,
-    }[subpath] ?? null;
-  }
-  if (spec === `${PACKAGE_NAME}/octane` || spec.startsWith(`${PACKAGE_NAME}/octane/`)) {
-    return FRAMEWORKS.octane.subpaths[subpath] ?? {
-      audio: AUDIO_API_PATH,
-      clock: CLOCK_PATH,
-      effects: EFFECTS_PATH,
-    }[subpath] ?? null;
-  }
-  return FRAMEWORKS[framework].subpaths[subpath] ?? {
-    audio: AUDIO_API_PATH,
-    clock: CLOCK_PATH,
-    devtools: DEVTOOLS_PATH,
-    effects: EFFECTS_PATH,
-    host: HOST_PATH,
-    hot: HOT_PATH,
-    manifest: MANIFEST_PATH,
-    package: PACKAGE_PATH,
-    "vita-package": VITA_PACKAGE_PATH,
-  }[subpath] ?? null;
+  return RESOLVED[framework][subpath] ?? null;
 }
 
 export function frameworkVariantPath(path: string, framework: PocketFramework): string {
