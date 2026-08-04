@@ -24,6 +24,8 @@ crate-type = ["rlib", "staticlib"]
 [features]
 default = ["standalone-extension-provider"]
 standalone-extension-provider = []
+# Reuse the no_std C ABI on Mach-O targets whose OS cfg is not `none`.
+bare-platform = []
 
 [dependencies]
 pocketjs-core = { path = "../core" }

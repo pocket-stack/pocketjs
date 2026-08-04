@@ -11,36 +11,39 @@
 //! packed, top-left-origin ARGB32 pixels; those pointers remain valid until
 //! the next capture, viewport change, init, or shutdown call.
 
-#![cfg_attr(target_os = "none", no_std)]
-#![cfg_attr(target_os = "none", feature(alloc_error_handler))]
+#![cfg_attr(any(target_os = "none", feature = "bare-platform"), no_std)]
+#![cfg_attr(
+    any(target_os = "none", feature = "bare-platform"),
+    feature(alloc_error_handler)
+)]
 #![allow(static_mut_refs)]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 extern crate alloc;
 
 use alloc::vec::Vec;
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "bare-platform"))]
 use core::alloc::{GlobalAlloc, Layout};
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "bare-platform"))]
 use core::ffi::c_void;
 use pocketjs_core::damage::{DamagePolicy, DamageTracker, DEFAULT_DAMAGE_REGIONS};
 use pocketjs_core::raster;
 use pocketjs_core::Ui;
 
+pub mod extension;
 #[cfg(any(target_os = "none", test))]
 mod gles2;
-pub mod extension;
 
-#[cfg(any(target_os = "none", test))]
+#[cfg(any(target_os = "none", feature = "bare-platform", test))]
 const C_MALLOC_ALIGNMENT: usize = 8;
 
-#[cfg(any(target_os = "none", test))]
+#[cfg(any(target_os = "none", feature = "bare-platform", test))]
 #[inline]
 const fn c_allocator_supports_alignment(alignment: usize) -> bool {
     alignment <= C_MALLOC_ALIGNMENT
 }
 
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "bare-platform"))]
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut c_void;
     fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
@@ -48,10 +51,10 @@ unsafe extern "C" {
     fn abort() -> !;
 }
 
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "bare-platform"))]
 struct CAllocator;
 
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "bare-platform"))]
 unsafe impl GlobalAlloc for CAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         if !c_allocator_supports_alignment(layout.align()) {
@@ -72,17 +75,17 @@ unsafe impl GlobalAlloc for CAllocator {
     }
 }
 
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "bare-platform"))]
 #[global_allocator]
 static ALLOCATOR: CAllocator = CAllocator;
 
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "bare-platform"))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
     unsafe { abort() }
 }
 
-#[cfg(target_os = "none")]
+#[cfg(any(target_os = "none", feature = "bare-platform"))]
 #[alloc_error_handler]
 fn allocation_error(_layout: Layout) -> ! {
     unsafe { abort() }
@@ -344,6 +347,11 @@ pub extern "C" fn ui_set_active(id: i32, active: i32) {
 #[no_mangle]
 pub extern "C" fn ui_hit_test(x: f32, y: f32) -> i32 {
     ui().hit_test(x, y)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_hit_test_bounds(x: f32, y: f32) -> i32 {
+    ui().hit_test_bounds(x, y)
 }
 
 #[no_mangle]

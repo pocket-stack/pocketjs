@@ -1,0 +1,664 @@
+#include "pocket_runtime.h"
+
+#include "pocket_core.h"
+#include "quickjs.h"
+
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+#define POCKETJS_HOST_ABI 6
+#define POCKETJS_SIMULATION_HZ 30
+#define POCKETJS_ANALOG_CENTER 32896
+
+typedef enum {
+  HostCreateNode,
+  HostDestroyNode,
+  HostInsertBefore,
+  HostRemoveChild,
+  HostSetStyle,
+  HostSetProp,
+  HostSetPropBatch,
+  HostSetText,
+  HostReplaceText,
+  HostUploadTexture,
+  HostSetImage,
+  HostSetSprite,
+  HostAnimate,
+  HostCancelAnim,
+  HostSetFocus,
+  HostSetActive,
+  HostHitTest,
+  HostHitTestBounds,
+  HostSetCursor,
+  HostSetCursorPos,
+  HostLoadStyles,
+  HostLoadFontAtlas,
+  HostMeasureText,
+  HostFreeTexture,
+  HostUploadImgEntry,
+  HostDebugInspect,
+  HostDebugRectXY,
+  HostDebugRectWH,
+  HostDebugPause,
+  HostDebugStep,
+} HostOperation;
+
+static JSRuntime *runtime;
+static JSContext *context;
+static JSValue global;
+static JSValue frame_function;
+static char last_error[512];
+static int runtime_failed;
+
+static void clear_error(void) {
+  last_error[0] = '\0';
+}
+
+static void set_error(const char *message) {
+  size_t length = message == 0 ? 0 : strlen(message);
+  if (length >= sizeof(last_error)) length = sizeof(last_error) - 1;
+  if (length > 0) memcpy(last_error, message, length);
+  last_error[length] = '\0';
+}
+
+static void take_exception(JSContext *exception_context) {
+  JSValue exception = JS_GetException(exception_context);
+  size_t length = 0;
+  const char *message = JS_ToCStringLen2(exception_context, &length, exception, 0);
+  if (message != 0) {
+    size_t copy_length = length < sizeof(last_error) - 1 ? length : sizeof(last_error) - 1;
+    memcpy(last_error, message, copy_length);
+    last_error[copy_length] = '\0';
+    JS_FreeCString(exception_context, message);
+  } else {
+    set_error("QuickJS exception");
+  }
+  JS_FreeValue(exception_context, exception);
+}
+
+static int int_argument(
+  JSContext *ctx,
+  int argc,
+  JSValueConst *argv,
+  int index,
+  int32_t *value
+) {
+  if (index >= argc) {
+    JS_ThrowTypeError(ctx, "missing argument %d", index);
+    return 0;
+  }
+  return JS_ToInt32(ctx, value, argv[index]) == 0;
+}
+
+static int uint_argument(
+  JSContext *ctx,
+  int argc,
+  JSValueConst *argv,
+  int index,
+  uint32_t *value
+) {
+  if (index >= argc) {
+    JS_ThrowTypeError(ctx, "missing argument %d", index);
+    return 0;
+  }
+  return JS_ToUint32(ctx, value, argv[index]) == 0;
+}
+
+static int float_argument(
+  JSContext *ctx,
+  int argc,
+  JSValueConst *argv,
+  int index,
+  double *value
+) {
+  if (index >= argc) {
+    JS_ThrowTypeError(ctx, "missing argument %d", index);
+    return 0;
+  }
+  return JS_ToFloat64(ctx, value, argv[index]) == 0;
+}
+
+static int non_negative_uint_argument(
+  JSContext *ctx,
+  int argc,
+  JSValueConst *argv,
+  int index,
+  uint32_t *value
+) {
+  double raw = 0.0;
+  if (!float_argument(ctx, argc, argv, index, &raw)) return 0;
+  if (raw <= 0.0) *value = 0;
+  else if (raw >= 4294967295.0) *value = 0xffffffffU;
+  else *value = (uint32_t)raw;
+  return 1;
+}
+
+static int string_argument(
+  JSContext *ctx,
+  int argc,
+  JSValueConst *argv,
+  int index,
+  const char **text,
+  size_t *length
+) {
+  if (index >= argc) {
+    JS_ThrowTypeError(ctx, "missing argument %d", index);
+    return 0;
+  }
+  *text = JS_ToCStringLen2(ctx, length, argv[index], 0);
+  return *text != 0;
+}
+
+static int bytes_argument(
+  JSContext *ctx,
+  int argc,
+  JSValueConst *argv,
+  int index,
+  const uint8_t **bytes,
+  size_t *length
+) {
+  if (index >= argc) {
+    JS_ThrowTypeError(ctx, "missing argument %d", index);
+    return 0;
+  }
+
+  uint8_t *direct = JS_GetArrayBuffer(ctx, length, argv[index]);
+  if (!JS_HasException(ctx)) {
+    *bytes = direct;
+    return 1;
+  }
+  JSValue direct_error = JS_GetException(ctx);
+  JS_FreeValue(ctx, direct_error);
+
+  size_t offset = 0;
+  size_t byte_length = 0;
+  size_t bytes_per_element = 0;
+  JSValue buffer = JS_GetTypedArrayBuffer(
+    ctx,
+    argv[index],
+    &offset,
+    &byte_length,
+    &bytes_per_element
+  );
+  if (JS_IsException(buffer)) return 0;
+  size_t buffer_length = 0;
+  uint8_t *base = JS_GetArrayBuffer(ctx, &buffer_length, buffer);
+  if (JS_HasException(ctx)) {
+    JS_FreeValue(ctx, buffer);
+    return 0;
+  }
+  if (offset > buffer_length || byte_length > buffer_length - offset) {
+    JS_FreeValue(ctx, buffer);
+    JS_ThrowRangeError(ctx, "typed array is outside its backing buffer");
+    return 0;
+  }
+  (void)bytes_per_element;
+  *bytes = base == 0 ? 0 : base + offset;
+  *length = byte_length;
+  JS_FreeValue(ctx, buffer);
+  return 1;
+}
+
+static JSValue host_operation(
+  JSContext *ctx,
+  JSValueConst this_value,
+  int argc,
+  JSValueConst *argv,
+  int magic
+) {
+  (void)this_value;
+  int32_t a = 0;
+  int32_t b = 0;
+  int32_t c = 0;
+  uint32_t ua = 0;
+  uint32_t ub = 0;
+  uint32_t uc = 0;
+  uint32_t ud = 0;
+  double da = 0.0;
+  double db = 0.0;
+  double dc = 0.0;
+  double dd = 0.0;
+  const uint8_t *bytes = 0;
+  size_t byte_length = 0;
+  const char *text = 0;
+  size_t text_length = 0;
+
+  switch ((HostOperation)magic) {
+    case HostCreateNode:
+      if (!uint_argument(ctx, argc, argv, 0, &ua)) return JS_EXCEPTION;
+      return JS_NewInt32(ctx, ui_create_node(ua));
+    case HostDestroyNode:
+      if (!int_argument(ctx, argc, argv, 0, &a)) return JS_EXCEPTION;
+      ui_destroy_node(a);
+      return JS_UNDEFINED;
+    case HostInsertBefore:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !int_argument(ctx, argc, argv, 1, &b) ||
+          !int_argument(ctx, argc, argv, 2, &c)) return JS_EXCEPTION;
+      ui_insert_before(a, b, c);
+      return JS_UNDEFINED;
+    case HostRemoveChild:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !int_argument(ctx, argc, argv, 1, &b)) return JS_EXCEPTION;
+      ui_remove_child(a, b);
+      return JS_UNDEFINED;
+    case HostSetStyle:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !int_argument(ctx, argc, argv, 1, &b)) return JS_EXCEPTION;
+      ui_set_style(a, b);
+      return JS_UNDEFINED;
+    case HostSetProp:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !uint_argument(ctx, argc, argv, 1, &ua) ||
+          !float_argument(ctx, argc, argv, 2, &da)) return JS_EXCEPTION;
+      ui_set_prop(a, ua, da);
+      return JS_UNDEFINED;
+    case HostSetPropBatch:
+      if (!bytes_argument(ctx, argc, argv, 0, &bytes, &byte_length)) return JS_EXCEPTION;
+      ui_set_prop_batch(bytes, byte_length);
+      return JS_UNDEFINED;
+    case HostSetText:
+    case HostReplaceText:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !string_argument(ctx, argc, argv, 1, &text, &text_length)) return JS_EXCEPTION;
+      if (magic == HostSetText) ui_set_text(a, (const uint8_t *)text, text_length);
+      else ui_replace_text(a, (const uint8_t *)text, text_length);
+      JS_FreeCString(ctx, text);
+      return JS_UNDEFINED;
+    case HostUploadTexture:
+      if (!bytes_argument(ctx, argc, argv, 0, &bytes, &byte_length) ||
+          !uint_argument(ctx, argc, argv, 1, &ua) ||
+          !uint_argument(ctx, argc, argv, 2, &ub) ||
+          !uint_argument(ctx, argc, argv, 3, &uc)) return JS_EXCEPTION;
+      return JS_NewInt32(ctx, ui_upload_texture(bytes, byte_length, ua, ub, uc));
+    case HostSetImage:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !int_argument(ctx, argc, argv, 1, &b)) return JS_EXCEPTION;
+      ui_set_image(a, b);
+      return JS_UNDEFINED;
+    case HostSetSprite:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !int_argument(ctx, argc, argv, 1, &b) ||
+          !non_negative_uint_argument(ctx, argc, argv, 2, &ua) ||
+          !non_negative_uint_argument(ctx, argc, argv, 3, &ub) ||
+          !non_negative_uint_argument(ctx, argc, argv, 4, &uc)) return JS_EXCEPTION;
+      ui_set_sprite(a, b, ua, ub, uc);
+      return JS_UNDEFINED;
+    case HostAnimate:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !uint_argument(ctx, argc, argv, 1, &ua) ||
+          !float_argument(ctx, argc, argv, 2, &da) ||
+          !non_negative_uint_argument(ctx, argc, argv, 3, &ub) ||
+          !uint_argument(ctx, argc, argv, 4, &uc) ||
+          !non_negative_uint_argument(ctx, argc, argv, 5, &ud)) return JS_EXCEPTION;
+      return JS_NewInt32(ctx, ui_animate(a, ua, da, ub, uc, ud));
+    case HostCancelAnim:
+      if (!int_argument(ctx, argc, argv, 0, &a)) return JS_EXCEPTION;
+      ui_cancel_anim(a);
+      return JS_UNDEFINED;
+    case HostSetFocus:
+      if (!int_argument(ctx, argc, argv, 0, &a)) return JS_EXCEPTION;
+      ui_set_focus(a);
+      return JS_UNDEFINED;
+    case HostSetActive:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !int_argument(ctx, argc, argv, 1, &b)) return JS_EXCEPTION;
+      ui_set_active(a, b);
+      return JS_UNDEFINED;
+    case HostHitTest:
+    case HostHitTestBounds:
+      if (!float_argument(ctx, argc, argv, 0, &da) ||
+          !float_argument(ctx, argc, argv, 1, &db)) return JS_EXCEPTION;
+      return JS_NewInt32(
+        ctx,
+        magic == HostHitTest
+          ? ui_hit_test((float)da, (float)db)
+          : ui_hit_test_bounds((float)da, (float)db)
+      );
+    case HostSetCursor:
+      if (!int_argument(ctx, argc, argv, 0, &a) ||
+          !float_argument(ctx, argc, argv, 1, &da) ||
+          !float_argument(ctx, argc, argv, 2, &db) ||
+          !float_argument(ctx, argc, argv, 3, &dc) ||
+          !float_argument(ctx, argc, argv, 4, &dd)) return JS_EXCEPTION;
+      ui_set_cursor(a, (float)da, (float)db, (float)dc, (float)dd);
+      return JS_UNDEFINED;
+    case HostSetCursorPos:
+      if (!float_argument(ctx, argc, argv, 0, &da) ||
+          !float_argument(ctx, argc, argv, 1, &db)) return JS_EXCEPTION;
+      ui_set_cursor_pos((float)da, (float)db);
+      return JS_UNDEFINED;
+    case HostLoadStyles:
+    case HostLoadFontAtlas:
+      if (!bytes_argument(ctx, argc, argv, 0, &bytes, &byte_length)) return JS_EXCEPTION;
+      return JS_NewBool(
+        ctx,
+        magic == HostLoadStyles
+          ? ui_load_styles(bytes, byte_length)
+          : ui_load_font_atlas(bytes, byte_length)
+      );
+    case HostMeasureText:
+      if (!string_argument(ctx, argc, argv, 0, &text, &text_length)) return JS_EXCEPTION;
+      if (!uint_argument(ctx, argc, argv, 1, &ua)) {
+        JS_FreeCString(ctx, text);
+        return JS_EXCEPTION;
+      }
+      da = ui_measure_text((const uint8_t *)text, text_length, ua);
+      JS_FreeCString(ctx, text);
+      return JS_NewFloat64(ctx, da);
+    case HostFreeTexture:
+      if (!int_argument(ctx, argc, argv, 0, &a)) return JS_EXCEPTION;
+      ui_free_texture(a);
+      return JS_UNDEFINED;
+    case HostUploadImgEntry:
+      if (!bytes_argument(ctx, argc, argv, 0, &bytes, &byte_length)) return JS_EXCEPTION;
+      return JS_NewInt32(ctx, ui_upload_img_entry(bytes, byte_length));
+    case HostDebugInspect:
+      if (!int_argument(ctx, argc, argv, 0, &a)) return JS_EXCEPTION;
+      ui_debug_inspect(a);
+      return JS_UNDEFINED;
+    case HostDebugRectXY:
+      return JS_NewInt32(ctx, ui_debug_rect_xy());
+    case HostDebugRectWH:
+      return JS_NewInt32(ctx, ui_debug_rect_wh());
+    case HostDebugPause:
+      if (!int_argument(ctx, argc, argv, 0, &a)) return JS_EXCEPTION;
+      ui_debug_pause(a);
+      return JS_UNDEFINED;
+    case HostDebugStep:
+      ui_debug_step();
+      return JS_UNDEFINED;
+  }
+  return JS_ThrowInternalError(ctx, "unknown PocketJS HostOp");
+}
+
+static int add_host_operation(
+  JSContext *ctx,
+  JSValueConst object,
+  const char *name,
+  int arity,
+  HostOperation operation
+) {
+  JSValue function = JS_NewCFunctionMagic(
+    ctx,
+    host_operation,
+    name,
+    arity,
+    JS_CFUNC_generic_magic,
+    (int)operation
+  );
+  if (JS_IsException(function)) return 0;
+  return JS_SetPropertyStr(ctx, object, name, function) >= 0;
+}
+
+static int install_host(int width, int height) {
+  JSValue ui = JS_NewObject(context);
+  if (JS_IsException(ui)) return 0;
+  if (!add_host_operation(context, ui, "createNode", 1, HostCreateNode) ||
+      !add_host_operation(context, ui, "destroyNode", 1, HostDestroyNode) ||
+      !add_host_operation(context, ui, "insertBefore", 3, HostInsertBefore) ||
+      !add_host_operation(context, ui, "removeChild", 2, HostRemoveChild) ||
+      !add_host_operation(context, ui, "setStyle", 2, HostSetStyle) ||
+      !add_host_operation(context, ui, "setProp", 3, HostSetProp) ||
+      !add_host_operation(context, ui, "setPropBatch", 1, HostSetPropBatch) ||
+      !add_host_operation(context, ui, "setText", 2, HostSetText) ||
+      !add_host_operation(context, ui, "replaceText", 2, HostReplaceText) ||
+      !add_host_operation(context, ui, "uploadTexture", 4, HostUploadTexture) ||
+      !add_host_operation(context, ui, "setImage", 2, HostSetImage) ||
+      !add_host_operation(context, ui, "setSprite", 5, HostSetSprite) ||
+      !add_host_operation(context, ui, "animate", 6, HostAnimate) ||
+      !add_host_operation(context, ui, "cancelAnim", 1, HostCancelAnim) ||
+      !add_host_operation(context, ui, "setFocus", 1, HostSetFocus) ||
+      !add_host_operation(context, ui, "setActive", 2, HostSetActive) ||
+      !add_host_operation(context, ui, "hitTest", 2, HostHitTest) ||
+      !add_host_operation(context, ui, "hitTestBounds", 2, HostHitTestBounds) ||
+      !add_host_operation(context, ui, "setCursor", 5, HostSetCursor) ||
+      !add_host_operation(context, ui, "setCursorPos", 2, HostSetCursorPos) ||
+      !add_host_operation(context, ui, "loadStyles", 1, HostLoadStyles) ||
+      !add_host_operation(context, ui, "loadFontAtlas", 1, HostLoadFontAtlas) ||
+      !add_host_operation(context, ui, "measureText", 2, HostMeasureText) ||
+      !add_host_operation(context, ui, "freeTexture", 1, HostFreeTexture) ||
+      !add_host_operation(context, ui, "uploadImgEntry", 1, HostUploadImgEntry) ||
+      !add_host_operation(context, ui, "debugInspect", 1, HostDebugInspect) ||
+      !add_host_operation(context, ui, "debugRectXY", 0, HostDebugRectXY) ||
+      !add_host_operation(context, ui, "debugRectWH", 0, HostDebugRectWH) ||
+      !add_host_operation(context, ui, "debugPause", 1, HostDebugPause) ||
+      !add_host_operation(context, ui, "debugStep", 0, HostDebugStep)) {
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+
+  JSValue viewport = JS_NewObject(context);
+  if (JS_IsException(viewport)) {
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+  if (JS_SetPropertyStr(context, viewport, "w", JS_NewInt32(context, width)) < 0 ||
+      JS_SetPropertyStr(context, viewport, "h", JS_NewInt32(context, height)) < 0) {
+    JS_FreeValue(context, viewport);
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+  if (JS_SetPropertyStr(context, ui, "__viewport", viewport) < 0) {
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+  if (JS_SetPropertyStr(context, ui, "__host", JS_NewString(context, "iphone2g-dev")) < 0 ||
+      JS_SetPropertyStr(
+        context,
+        ui,
+        "__hostAbi",
+        JS_NewInt32(context, POCKETJS_HOST_ABI)
+      ) < 0) {
+    JS_FreeValue(context, ui);
+    return 0;
+  }
+  return JS_SetPropertyStr(context, global, "ui", ui) >= 0;
+}
+
+static int drain_jobs(void) {
+  for (;;) {
+    JSContext *pending_context = 0;
+    int result = JS_ExecutePendingJob(runtime, &pending_context);
+    if (result > 0) continue;
+    if (result < 0) {
+      take_exception(pending_context == 0 ? context : pending_context);
+      return 0;
+    }
+    return 1;
+  }
+}
+
+void pocket_runtime_shutdown(void) {
+  if (context != 0) {
+    if (!JS_IsUndefined(frame_function)) JS_FreeValue(context, frame_function);
+    if (!JS_IsUndefined(global)) JS_FreeValue(context, global);
+    JS_FreeContext(context);
+  }
+  if (runtime != 0) JS_FreeRuntime(runtime);
+  context = 0;
+  runtime = 0;
+  runtime_failed = 0;
+  frame_function = JS_UNDEFINED;
+  global = JS_UNDEFINED;
+  ui_shutdown();
+}
+
+int pocket_runtime_boot(
+  const char *java_script,
+  size_t java_script_length,
+  const uint8_t *pack,
+  size_t pack_length,
+  int width,
+  int height
+) {
+  clear_error();
+  pocket_runtime_shutdown();
+  ui_init(1);
+  ui_set_viewport((float)width, (float)height);
+
+  runtime = JS_NewRuntime();
+  if (runtime == 0) {
+    set_error("QuickJS runtime allocation failed");
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  JS_SetMaxStackSize(runtime, 256 * 1024);
+  context = JS_NewContext(runtime);
+  if (context == 0) {
+    set_error("QuickJS context allocation failed");
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  global = JS_GetGlobalObject(context);
+  if (!install_host(width, height)) {
+    take_exception(context);
+    pocket_runtime_shutdown();
+    return 0;
+  }
+
+  JSValue pack_value = JS_NewArrayBuffer(
+    context,
+    (uint8_t *)pack,
+    pack_length,
+    0,
+    0,
+    0
+  );
+  if (JS_IsException(pack_value) ||
+      JS_SetPropertyStr(context, global, "__pak", pack_value) < 0 ||
+      JS_SetPropertyStr(
+        context,
+        global,
+        "__simHz",
+        JS_NewInt32(context, POCKETJS_SIMULATION_HZ)
+      ) < 0) {
+    take_exception(context);
+    pocket_runtime_shutdown();
+    return 0;
+  }
+
+  JSValue result = JS_Eval(
+    context,
+    java_script,
+    java_script_length,
+    "app.js",
+    JS_EVAL_TYPE_GLOBAL
+  );
+  if (JS_IsException(result)) {
+    take_exception(context);
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  JS_FreeValue(context, result);
+  frame_function = JS_GetPropertyStr(context, global, "frame");
+  if (JS_IsException(frame_function) || !JS_IsFunction(context, frame_function)) {
+    if (JS_IsException(frame_function)) take_exception(context);
+    else set_error("app.js did not install globalThis.frame");
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  if (!drain_jobs()) {
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  return 1;
+}
+
+int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  JSValue touch_array = JS_NewArray(context);
+  JSValue hit_array = JS_NewArray(context);
+  if (JS_IsException(touch_array) || JS_IsException(hit_array)) {
+    if (!JS_IsException(touch_array)) JS_FreeValue(context, touch_array);
+    if (!JS_IsException(hit_array)) JS_FreeValue(context, hit_array);
+    take_exception(context);
+    runtime_failed = 1;
+    return 0;
+  }
+  if (touch_down) {
+    uint32_t x = (uint32_t)(touch_x < 0 ? 0 : touch_x > 511 ? 511 : touch_x);
+    uint32_t y = (uint32_t)(touch_y < 0 ? 0 : touch_y > 511 ? 511 : touch_y);
+    uint32_t packed = (y << 9) | x;
+    if (JS_SetPropertyUint32(
+          context,
+          touch_array,
+          0,
+          JS_NewInt32(context, (int32_t)packed)
+        ) < 0 ||
+        JS_SetPropertyUint32(
+          context,
+          hit_array,
+          0,
+          JS_NewInt32(context, touch_hit)
+        ) < 0) {
+      JS_FreeValue(context, hit_array);
+      JS_FreeValue(context, touch_array);
+      take_exception(context);
+      runtime_failed = 1;
+      return 0;
+    }
+  }
+  JSValue arguments[4] = {
+    JS_NewInt32(context, 0),
+    JS_NewInt32(context, POCKETJS_ANALOG_CENTER),
+    touch_array,
+    hit_array,
+  };
+  JSValue result = JS_Call(context, frame_function, global, 4, arguments);
+  JS_FreeValue(context, hit_array);
+  JS_FreeValue(context, touch_array);
+  if (JS_IsException(result)) {
+    take_exception(context);
+    runtime_failed = 1;
+    return 0;
+  }
+  JS_FreeValue(context, result);
+  if (!drain_jobs()) {
+    runtime_failed = 1;
+    return 0;
+  }
+  ui_tick();
+  ui_tick();
+  return 1;
+}
+
+int pocket_runtime_hit_test(float x, float y) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return ui_hit_test(x, y);
+}
+
+int pocket_runtime_hit_test_bounds(float x, float y) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return ui_hit_test_bounds(x, y);
+}
+
+const uint8_t *pocket_runtime_render(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return ui_render_incremental();
+}
+
+uint32_t pocket_runtime_width(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return ui_framebuffer_width();
+}
+
+uint32_t pocket_runtime_height(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return ui_framebuffer_height();
+}
+
+uint32_t pocket_runtime_stride(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return ui_framebuffer_stride();
+}
+
+size_t pocket_runtime_length(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return ui_framebuffer_len();
+}
+
+const char *pocket_runtime_error(void) {
+  return last_error;
+}
