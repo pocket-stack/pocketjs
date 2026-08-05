@@ -1,81 +1,154 @@
-# iPhone 2G / iPhone OS 1.1.4 development
+# iPhone 2G / iPhone OS 3.1.3 development
 
-This document describes the deliberately narrow path for developing and testing
-PocketJS on an original iPhone (`iPhone1,1`) running stock iPhone OS 1.1.4
-(`4A102`). It is a preservation-oriented device-lab procedure, not a general
-jailbreak, unlock, or restore guide.
+This document tracks the experimental PocketJS target for an original iPhone
+(`iPhone1,1`). The current device target is iPhone OS **3.1.3** (`7E18`). The
+native artifact is still compiled with a byte-pinned iPhone OS **1.1.4**
+(`4A102`) sysroot and `LC_VERSION_MIN_IPHONEOS` of 1.1.4; that is its linker ABI
+floor, not a claim that the connected phone still runs 1.1.4. The bundle's
+`MinimumOSVersion` and supported installed-system target are 3.1.3.
 
-The native artifact is `PocketJSDemo.app`: an ARMv6 UIKit host containing the
-generated PocketJS JavaScript and asset pack, pinned QuickJS, and the PocketJS
-raster core. Building the combined bundle proves that these inputs link
-together; it does not prove that the guest code executes on the phone. That
-requires the live acceptance at the end of this document.
+`PocketJSDemo.app` is an ARMv6 UIKit host containing the generated PocketJS
+JavaScript and asset pack, pinned QuickJS, and the PocketJS raster core.
+Building the bundle proves the compiler, linker, and packaging seam. It does
+not prove that the 1.1.4-ABI binary runs correctly on 3.1.3. Deployment,
+drawing, and touch remain separate live-hardware acceptance gates.
+
+## Current status
+
+| Layer | Target | Status |
+| --- | --- | --- |
+| Device hardware | `iPhone1,1`, ARMv6, normal USB `05ac:1290` | **Pass** |
+| Installed system | iPhone OS 3.1.3 (`7E18`), FactoryActivated | **Pass** |
+| Recovery | Legacy-iOS-Kit CustomHJ erase restore | **Pass** |
+| Device access | SpringBoard, Cydia, `sshd`, and USB SSH | **Pass** |
+| Build ABI | 1.1.4 (`4A102`) sysroot and linker ABI floor | **Pass, local only** |
+| 3.1.3 package/deployment | Signed bundle plus transactional install/readback | **Pass** |
+| PocketJS runtime | Guest frames, visible UI, and physical touch | **Pending** |
+
+The target remains private and experimental until the PocketJS runtime row
+passes. In particular, a successful install and the presence of SpringBoard,
+Cydia, or SSH are not PocketJS runtime acceptance.
+
+## Verified 3.1.3 recovery receipt
+
+On 2026-08-05, the working recovery route was an **erase restore** to the pinned
+Legacy-iOS-Kit CustomHJ image:
+
+```text
+iPhone1,1_3.1.3_7E18_CustomHJ.ipsw
+SHA-1 8140ed162c6712a6e8d1608d3a36257998253d82
+```
+
+The restore completed with `Status: Restore Finished`. After normal boot, the
+following independent checks passed:
+
+- USB re-enumerated in normal mode as Apple product `0x1290`;
+- `ideviceinfo` reported `ProductVersion: 3.1.3`, `BuildVersion: 7E18`, and
+  `ActivationState: FactoryActivated`;
+- SpringBoard and Cydia launched;
+- `sshd` was running and a command completed over USB SSH.
+
+This receipt proves the erase restore, normal boot, activation state, and a
+working USB shell transport. It does not prove that `PocketJSDemo.app` has
+been installed or executed. Do not replace this receipt with “entered WTF”,
+“image hash matched”, or “restore process started”; those were earlier gates,
+not completion.
+
+The restore erased and reformatted the installed system. The pre-change raw
+filesystem backup remains preservation evidence, but it does not contain the
+baseband NOR or seczone and must not be described as a complete radio/unlock
+backup. Its repo-external receipt is
+`backups/pre-jailbreak-20260804-1340/raw/rdisk0.img` under the iPhone 2G cache;
+the expected whole-filesystem-disk size is 8,120,172,544 bytes.
 
 ## Safety and scope
 
-The supported target is exact:
+The supported device/installed-OS tuple for continued development is exact;
+end-to-end PocketJS support remains pending the acceptance gates below:
 
 - device: `iPhone1,1` (original iPhone / iPhone 2G);
-- installed OS: iPhone OS 1.1.4, build `4A102`;
+- installed OS: iPhone OS 3.1.3, build `7E18`;
+- activation observed after restore: `FactoryActivated`;
 - CPU and executable format: ARMv6 Mach-O;
+- build sysroot/linker ABI floor: iPhone OS 1.1.4, build `4A102`;
+- bundle and installed-system target: iPhone OS 3.1.3, build `7E18`;
 - normal-mode USB identity: Apple `05ac:1290`;
-- application location: the stock root-volume `/Applications` directory.
+- application location to validate: `/Applications/PocketJSDemo.app`.
 
-This procedure does **not**:
+Do not run the archived 1.1.4 bootstrap procedure on the restored 3.1.3
+installation. In particular, do not install its eight historical SSH files,
+replace the working `sshd`, restore 1.1.4 filesystem blocks, alter activation,
+or mix 1.1.4 kernel payloads with the 3.1.3/7E18 boot chain. The current
+`prepare-bootstrap` and `install-bootstrap` commands are a separate 3.1.3
+workflow: they preserve the working CustomHJ `sshd`, host key, and launchd
+plist. Baseband, bootloader, NOR, seczone, AFC services, activation records,
+and radio state remain outside the PocketJS deployment scope.
 
-- flash, restore, upgrade, or downgrade iPhone OS;
-- unlock or modify the baseband, bootloader, NOR, seczone, or radio state;
-- activate, deactivate, or replace Lockdown activation records;
-- install Installer.app or a package manager;
-- enable AFC2 or replace `System/Library/Lockdown/Services.plist`;
-- replace the stock `private/etc/fstab`, stash system directories, or make the
-  root filesystem permanently writable;
-- run ZiPhone or Legacy-iOS-Kit's automated install/dump actions.
-
-That list is about what this procedure *intends*. One step in it turns out to
-carry a one-way cost that the list does not cover: booting the temporary SSH
-ramdisk upgrades the NAND format epoch and permanently prevents 1.1.4 from
-booting. It flashes no OS and no baseband, and the phone is still unbootable
-afterwards. Read
-[NAND epoch: a one-way hazard](#nand-epoch-a-one-way-hazard-measured-on-this-device)
-before the device-side procedure, and decide there whether a stock 1.1.4 install
-is something you are willing to spend.
-
-The stock filesystem policy remains:
-
-```text
-/dev/disk0s1 /            hfs ro                    0 1
-/dev/disk0s2 /private/var hfs rw,noexec,nodev       0 2
-```
-
-Executable application bundles therefore stay in `/Applications`. The data
-partition remains `noexec`. Root is remounted read/write only for a bounded
-manual install or deployment, then returned to read-only or rebooted.
-
-There is intentionally no repository command that enters DFU, boots a ramdisk,
-backs up a phone, mounts its installed filesystems from the ramdisk, installs
-SSH, or changes boot/radio state. Those preservation-sensitive steps remain
-operator-reviewed in this runbook. After that one-time bootstrap,
-`bun iphone2g deploy` and `bun iphone2g device-status` use the dedicated
-USB-only SSH path described below.
+There is intentionally no repository command that enters DFU, restores an
+IPSW, reformats NAND, or changes boot/radio state. Those destructive operations
+require an operator-reviewed recovery plan, a byte-verified image, an explicit
+erase authorization, and a separately verified exit route.
 
 ## Repository commands and cache
 
-`package.json` exposes `bun iphone2g`, which currently dispatches to
-`tools/iphone2g.ts`. The supported end-to-end local workflow is:
+`package.json` exposes `bun iphone2g`, which dispatches to
+`tools/iphone2g.ts`:
 
-| Command | Effect | Device access |
+| Command | Current meaning | Device access |
 | --- | --- | --- |
-| `bun iphone2g doctor` | Checks local Xcode tools and pinned cached artifacts. This is the default command. | None |
+| `bun iphone2g doctor` | Checks the local 1.1.4 ABI inputs, `ldid`, and pinned source/recovery artifacts. It does not certify the device. | None |
 | `bun iphone2g setup-sources` | Clones and verifies Apple `Csu-76`, QuickJS, and Legacy-iOS-Kit checkouts if absent. | None |
-| `bun iphone2g prepare-bootstrap` | Verifies two cached historical packages, builds the 1.1.4 device helper, generates keys/configuration, and stages an eight-file SSH bootstrap. | None |
-| `bun iphone2g build` | Builds the guest bundle, QuickJS/PocketJS runtime, and combined `dist/iphone2g/PocketJSDemo.app`. It may run `setup-sources`. | None |
-| `bun iphone2g deploy` | Builds, atomically installs, byte-for-byte reads back, and asks SpringBoard to rescan the demo through the USB SSH tunnel. | USB SSH |
-| `bun iphone2g device-status` | Reads the device-local runtime acceptance record after the app has launched. | USB SSH |
+| `bun iphone2g prepare-bootstrap` | Builds and signs the ARMv6 `pocketjs-device` helper, creates or verifies the dedicated RSA client key, and stages the 3.1.3 key-only SSH policy plus receipt. It does not contact the phone. | None |
+| `bun iphone2g install-bootstrap` | Rebuilds/verifies the stage, checks the exact `iPhone1,1`/3.1.3/`7E18` tuple and read/write mounts, pins the existing CustomHJ RSA host key, merges the client key, installs the signed helper, and disables password SSH only after key/helper checks pass. The transaction preserves the device `sshd`, host key, and launchd plist and rolls back on failure. | USB SSH; managed tunnel |
+| `bun iphone2g tunnel` | Runs a foreground `127.0.0.1:2222` to device port 22 usbmux forward for repeated manual access. Install, deploy, and status start a temporary tunnel themselves when one is not already listening. | USB |
+| `bun iphone2g build` | Builds and `ldid`-signs the 3.1.3-targeted `dist/iphone2g/PocketJSDemo.app` against the 1.1.4 ABI sysroot. | None |
+| `bun iphone2g deploy` | Rebuilds a signed bundle, verifies the installed helper, performs a transactional install with byte-exact readback and rollback, checks that root and data remain read/write, commits, refreshes the application cache as `mobile`, and restarts SpringBoard. | Key-only USB SSH; managed tunnel |
+| `bun iphone2g launch` | Verifies that the installed build receipt matches the current local bundle, then asks SpringBoard to open the demo through its private `pocketjs-iphone2g-demo` URL scheme. | Key-only USB SSH; managed tunnel |
+| `bun iphone2g device-status` | Verifies that the device record matches the current build and reports a running guest with positive frame, touch-sequence, and touch-hit counters and no runtime error. | Key-only USB SSH; managed tunnel |
 
 `setup-csu`, `build-demo`, and `build-runtime` remain lower-level entry points.
 `build-probe` is a compatibility alias for the full guest-plus-runtime build;
 despite its historical name, its output is `PocketJSDemo.app`.
+
+### Current 3.1.3 workflow
+
+With the restored phone normally booted and attached over USB, the supported
+sequence is:
+
+```sh
+bun iphone2g doctor
+bun iphone2g prepare-bootstrap
+bun iphone2g install-bootstrap
+bun iphone2g build
+bun iphone2g deploy
+bun iphone2g launch
+# On the phone: tap the blue target.
+bun iphone2g device-status
+```
+
+`install-bootstrap`, `deploy`, `launch`, and `device-status` use an already
+listening local port 2222 tunnel or manage a temporary one around the command.
+For a persistent foreground tunnel, run `bun iphone2g tunnel` in another
+terminal; it fails rather than taking over if local port 2222 is already in
+use.
+
+The bootstrap stage contains exactly three managed files: the signed helper,
+the proposed key-only `sshd_config`, and the dedicated public key. Installation
+merges that key into the phone's existing `authorized_keys`. It first proves
+that either the dedicated key or the temporary CustomHJ `root`/`alpine` path
+can reach the normally booted phone; after the dedicated key and helper work,
+it validates and activates the key-only configuration, verifies that password
+authentication is rejected, and only then commits. Re-running it is
+idempotent when the verified helper and policy already match.
+
+`deploy` does not launch the app. Its success proves signing, transactional
+installation, byte-for-byte device readback, mount-policy preservation, and a
+SpringBoard restart. `launch` checks that the installed receipt matches the
+current local build before asking SpringBoard to open it. The operator must
+still produce a physical touch hit. Only a subsequent successful
+`device-status` is the machine-readable runtime/touch gate; until that live
+receipt is collected, the PocketJS runtime row in the status table remains
+pending.
 
 By default, proprietary and device-specific material lives outside the
 repository at:
@@ -99,7 +172,7 @@ records, SSH keys, or historical binary packages. The canonical versions,
 URLs, revisions, and hashes are in
 [`tools/cli/iphone2g-toolchain.json`](../tools/cli/iphone2g-toolchain.json).
 
-### Local artifact preparation
+### 1.1.4 build and archival artifact preparation
 
 `doctor` verifies bytes that already exist; it does not download firmware,
 decrypt the root image, or extract a sysroot. Supply these cache artifacts by a
@@ -110,12 +183,10 @@ downloads/iPhone1,1_1.1.4_4A102_Restore.ipsw
 sysroot-1.1.4/iPhoneOS-1.1.4-rootfs.raw
 sysroot-1.1.4/rootfs/usr/lib/libSystem.B.dylib
 sysroot-1.1.4/rootfs/usr/lib/libgcc_s.1.dylib
-sysroot-1.1.4/rootfs/usr/lib/libgcc_s_v6.1.dylib
 sysroot-1.1.4/rootfs/usr/lib/libobjc.A.dylib
 sysroot-1.1.4/rootfs/System/Library/Frameworks/UIKit.framework/UIKit
 sysroot-1.1.4/rootfs/System/Library/Frameworks/Foundation.framework/Foundation
 sysroot-1.1.4/rootfs/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics
-sysroot-1.1.4/rootfs/System/Library/Frameworks/GraphicsServices.framework/GraphicsServices
 downloads/bootstrap/openssh_4.7p1-1_iphoneos-arm.deb
 downloads/bootstrap/openssl_0.9.8g-1_iphoneos-arm.deb
 sources/Legacy-iOS-Kit-1e982b7f2a27ff0f77fe138b9bd48bd7cf431ca6/
@@ -173,10 +244,10 @@ Then run the read-only local checks:
 bun iphone2g doctor
 ```
 
-Every required line must report `[ok]`. `ldid` is optional and is not used for
-the unsigned 1.1.4 app.
+Every required line must report `[ok]`. `ldid` is required to sign the current
+3.1.3-targeted executable and device helper.
 
-## Build
+## Build the 3.1.3 bundle with the 1.1.4 ABI sysroot
 
 Build the generated guest and native runtime as one workflow:
 
@@ -211,10 +282,12 @@ Objective-C runtime because the current classic linker cannot safely translate
 old ObjC1 class-reference relocations emitted by an `@implementation`.
 
 The runtime build checks that the result is an ARMv6 Mach-O executable and that
-its load commands include UIKit, Foundation, CoreGraphics, GraphicsServices,
-libobjc, libSystem, and `libgcc_s_v6.1`. It writes `build-receipt.json` with the
+its load commands include UIKit, Foundation, CoreGraphics, libobjc, libSystem,
+and `libgcc_s.1`. The 1.x `GSEvent` fallback is resolved with `dlsym` so the
+3.1.3 executable does not retain the obsolete public-Frameworks
+GraphicsServices install name. It writes `build-receipt.json` with the
 toolchain, sysroot, Csu, QuickJS, Rust, guest JavaScript, guest pack, core
-library, and executable identities plus `unsigned: true`.
+library, and executable identities plus `signed: true` and `signer: "ldid -S"`.
 It also assigns the per-build identifier later used to bind deployment,
 rollback, and runtime-status evidence to these exact bundle bytes.
 
@@ -231,30 +304,39 @@ A successful build proves only the host compiler/linker/package layer. It says
 nothing about USB deployment, SpringBoard discovery, process launch, drawing,
 or touch on the phone.
 
-## Boot a temporary SSH ramdisk
+## Historical 1.1.4 incident and preservation record
 
-### NAND epoch: a one-way hazard, measured on this device
+> **Archive, not a current runbook.** The sections below preserve the exact
+> 1.1.4-era design and the evidence that invalidated it. Do not execute their
+> ramdisk, bootstrap-install, filesystem-write, deployment, or rollback commands
+> on the restored 3.1.3 phone. They remain here so the failed mixed-version path
+> is reviewable and is not accidentally rediscovered.
 
-**Booting the `ramdisk_7E18` SSH ramdisk on a 1.1.4 phone permanently stops
-1.1.4 from booting.** This was established on hardware, not predicted. Read this
-before running any step in this section.
+### Incident trigger: the temporary SSH ramdisk
+
+#### NAND epoch hazard observed on this device
+
+After the `ramdisk_7E18` SSH ramdisk was booted on this phone while it ran
+1.1.4, the installed 1.1.4 system stopped booting. This is a hardware
+observation from this incident, not a general claim that every possible 1.x
+recovery route is impossible.
 
 The Legacy-iOS-Kit SSH ramdisk for `iPhone1,1` is built from iPhone OS **3.1.3**
-(`7E18`). Its WMR/FTL driver rewrites the NAND format signature — the "epoch" —
-from the `C003` that 1.1.4 requires up to `C005`, as a side effect of opening
-the flash translation layer. The upgrade is one-way and happens before anything
-is mounted. From that point the native 1.1.4 bootloader reports:
+(`7E18`). During this incident, opening the flash translation layer with its
+WMR/FTL driver changed the NAND format signature — the "epoch" — from the
+`C003` expected by 1.1.4 to `C005`, before the installed volumes were mounted.
+The native 1.1.4 bootloader then reported:
 
 ```text
 no signature or no production format
 root filesystem mount failed
 ```
 
-and the phone returns to Recovery on every boot attempt.
+and the phone returned to Recovery on every native 1.1.4 boot attempt.
 
 Three consequences are easy to get wrong, so state them plainly:
 
-- **The file data is not the problem, and restoring it does not help.** On this
+- **Restoring the file data did not recover this incident.** On this
   device the full 8,120,172,544-byte disk image was written back and re-read;
   the MBR, every allocated `disk0s1` block and every allocated `disk0s2` block
   matched the backup by SHA-256, and the era-matched `fsck_hfs -q` reported both
@@ -264,56 +346,50 @@ Three consequences are easy to get wrong, so state them plainly:
   paragraph below is accurate that the ramdisk does not flash the installed OS
   or the baseband. It changes NAND metadata anyway, and that is enough to make
   the installed OS unbootable.
-- **It cannot be undone in place by hand.** Rewriting `C005` back to `C003`
-  needs a 1.1.4-era kernel driving the NAND FTL epoch selector. Attempting that
-  with a hand-built kernel and helper wedged the device (see the recovery
-  section below).
+- **No in-place reversal was validated.** An attempted 1.1.4-era kernel/helper
+  path intended to drive the NAND FTL epoch selector wedged the device. Do not
+  reuse those unvalidated payloads.
 
-The only reliable repair is a **full restore that reformats the NAND**, which
-rewrites the epoch as a normal part of its work. Note the asymmetry this
-creates, because it decides the whole plan:
+The recovery route that was actually validated was a **full 3.1.3 erase
+restore**, which reformatted the NAND as part of the restore. The table is
+scoped to the pinned Kit revision and this lab; it is not a universal statement
+about all hand-built restore research:
 
-| Target | Restorable on `iPhone1,1` today |
+| Target | Status in this lab |
 | --- | --- |
-| 3.1.3 (`7E18`) | Yes — Legacy-iOS-Kit ships a prebuilt jailbroken custom IPSW; no SHSH needed on S5L8900. |
-| 2.0 – 3.1.2 | Yes — Kit menu `Other (Custom IPSW)`. |
-| 1.x, including 1.1.4 | **No.** `restore.sh` states outright that `1.x will not work`. |
+| 3.1.3 (`7E18`) | **Verified** — the CustomHJ erase restore completed and normal boot/USB/SSH passed. |
+| 2.0 – 3.1.2 | Not tested here; the pinned Kit exposes an `Other (Custom IPSW)` path. |
+| 1.x, including 1.1.4 | **No validated route in this repository.** The pinned `restore.sh` says its 1.x path will not work. |
 
-So a 1.1.4 phone that has had the 7E18 ramdisk booted on it cannot simply be put
-back. Treat the stock 1.1.4 install as the irreplaceable artifact it is: if the
-goal only needs a device to develop against, restore to 3.1.3 and retarget,
-rather than spending the one-way step to keep a 1.1.4 that will not boot again.
+The project therefore retargeted this development phone to 3.1.3. The original
+1.1.4 bytes remain useful as a build sysroot and preservation record; they are
+not the current installed-system target.
 
-### If a custom boot chain wedges the phone
+#### White-screen custom-kernel failure observed during the incident
 
-A hung custom kernel shows a **plain white screen** — the framebuffer is
-initialised, nothing is drawn — with no USB enumeration at all.
+The failed custom boot showed a **plain white screen** with no USB enumeration.
+That establishes the symptom for this attempt; it does not establish that every
+white screen has the same cause.
 
-**The button combination will not rescue it.** The original iPhone implements
-Home + top-button force-restart in iBoot/kernel software; S5L8900 has no
-PMU-level hardware reset combination. When the kernel is wedged with interrupts
-off, no amount of holding reaches anything. Holding for 30 seconds is not a
-longer version of the same idea; it is the same nothing.
+Repeated Home + top-button attempts did not recover this particular hang. Stop
+blind button cycles when neither the display nor USB state changes; first
+classify the USB mode with a detector that recognizes Recovery, WTF (`0x1222`),
+and DFU (`0x1227`) by product ID rather than product name.
 
-Recover by power depletion:
+The exit used for this incident was complete power depletion. All power was
+disconnected; the backlight eventually went dark, the phone was left unpowered
+for a further interval, and only then was it reconnected for USB mode
+classification.
 
-1. Disconnect **all** power, Mac and wall charger alike. On power, a white-screen
-   hang persists indefinitely.
-2. Wait for the screen to go dark by itself — roughly 3–5 hours with the
-   backlight lit.
-3. Leave it a further 10 minutes, then connect it to the Mac and press nothing.
+After the SoC lost power, the phone again reached a bootrom/iBoot USB mode and
+the audited restore could continue. Power depletion is hard on an 18-year-old
+cell and is an incident outcome, not the first-line recovery instruction.
 
-The S5L8900 bootrom is mask ROM and cannot be damaged, so the device recovers to
-Recovery or DFU once the SoC actually loses power. The phone is not bricked; it
-is only unreachable. Expect to charge it before restoring, and note that a
-deep discharge is hard on an 18-year-old cell.
+#### Archived prerequisites
 
-### Prerequisites
-
-Use [Legacy-iOS-Kit](https://github.com/LukeZGD/Legacy-iOS-Kit) only to boot the
-temporary ramdisk. The checkout and four boot artifacts are prerequisites, not
-material to fetch or build after the phone has entered DFU. Prepare them in the
-external cache first:
+These were prerequisites for reconstructing the 1.1.4 incident, not for the
+current 3.1.3 device. The checkout and four boot artifacts are preserved here
+for auditability:
 
 ```text
 sources/Legacy-iOS-Kit-1e982b7f2a27ff0f77fe138b9bd48bd7cf431ca6/
@@ -323,20 +399,18 @@ saved/iPhone1,1/ramdisk_7E18/saved/DeviceTree.dec
 saved/iPhone1,1/ramdisk_7E18/saved/Kernelcache.dec
 ```
 
-`bun iphone2g setup-sources` creates the detached checkout. Supply the saved
-ramdisk artifacts through the separately audited local preparation path, then
-run:
+The historical preparation created the detached checkout and verified the
+saved ramdisk artifacts with:
 
 ```sh
 bun iphone2g setup-sources
 bun iphone2g doctor
 ```
 
-Do not start the device-side procedure unless `doctor` reports both `pinned
-Legacy-iOS-Kit` and `verified SSH ramdisk` as `[ok]`. This proves the checkout
-is at clean revision `1e982b7f2a27ff0f77fe138b9bd48bd7cf431ca6` and each boot
-artifact matches the manifest. Then, from that exact checkout on Apple Silicon,
-start the already verified ramdisk:
+At the time, the hard precondition was that `doctor` reported both `pinned
+Legacy-iOS-Kit` and `verified SSH ramdisk` as `[ok]`, proving the checkout was
+at clean revision `1e982b7f2a27ff0f77fe138b9bd48bd7cf431ca6` and every boot
+artifact matched the manifest. The recorded ramdisk invocation was:
 
 ```sh
 IPHONE2G_KIT=/absolute/cache/path/to/Legacy-iOS-Kit-1e982b7f2a27ff0f77fe138b9bd48bd7cf431ca6
@@ -344,20 +418,20 @@ cd "$IPHONE2G_KIT"
 ./restore.sh --sshrd --no-finder
 ```
 
-Do not select the Kit actions named `Get iOS Version`, `Dump
-Baseband/Activation`, or `Install OpenSSH`, and do not run its `mount.sh`.
-Those paths have broader filesystem behavior than this procedure. This runbook
-never reads or changes the baseband and never replaces activation records, AFC
-services, or `fstab`.
+The incident scope excluded the Kit actions named `Get iOS Version`, `Dump
+Baseband/Activation`, and `Install OpenSSH`, as well as its `mount.sh`. Those
+paths had broader filesystem behavior than the preservation design. The design
+did not read or change the baseband or replace activation records, AFC services,
+or `fstab`.
 
-For the S5L8900 device, follow the on-screen prompt precisely:
+The historical S5L8900 prompt sequence was:
 
 1. Starting from Recovery, hold the top and Home buttons together for 8
    seconds.
 2. Release the top button and continue holding Home for 13 seconds.
 3. The device first presents WTF mode (`0x1222`); the Kit sends patched Apple WTF
    and transitions it to true DFU (`0x1227`).
-4. If detection fails, force-restart and retry. Do not choose Restore.
+4. On a detection failure, stop without choosing Restore.
 
 A direct, simple USB cable/dongle is preferable to an unreliable hub. The
 ramdisk sets `auto-boot=1` in NVRAM and starts temporary services, so even this
@@ -395,12 +469,14 @@ Every multi-step remote block below starts with `set -e`; an error must stop the
 write path. Never paste a semicolon-separated write sequence without this
 fail-closed behavior.
 
-## Back up before the first write
+### Archived backup procedure before the first 1.1.4 write
 
-### Whole filesystem disk image
+#### Whole filesystem disk image
 
-First prove that only the temporary memory disk is mounted, and inspect the
-whole-disk partition table without repairing or changing it:
+The commands below record the pre-change backup procedure. Do not rerun them on
+the restored 3.1.3 installation. The procedure first proved that only the
+temporary memory disk was mounted and inspected the whole-disk partition table
+without repairing or changing it:
 
 ```sh
 sshrd_script <<'RAMDISK'
@@ -475,7 +551,7 @@ justifies the time.
 capture baseband NOR/seczone. Do not describe it as a baseband/unlock backup and
 do not perform radio changes on the strength of this image.
 
-### Read-only configuration and activation backup
+#### Read-only configuration and activation backup
 
 Only after the whole-disk backup passes every check, mount both installed
 volumes explicitly read-only:
@@ -515,7 +591,7 @@ Before installation, enumerate every bootstrap target below while the mounts
 are still read-only. If any target exists, stop and make a path-specific
 read-only archive of it. Never silently overlay an earlier SSH installation.
 
-## Prepare the minimal key-only SSH bootstrap
+### Archived 1.1.4 key-only SSH bootstrap preparation
 
 Run locally, with no device required:
 
@@ -572,11 +648,12 @@ omitted because its binary imports an API absent from the 1.1.4 runtime.
 Deployment uses the small, path-scoped `pocketjs-device` protocol instead of a
 general shell utility set, SCP, or AFC2.
 
-## Install the SSH bootstrap manually
+### Archived 1.1.4 SSH bootstrap installation design
 
-No `bun iphone2g install` command exists. The following is an operator-reviewed
-ramdisk procedure. Perform it only after the raw and read-only backups above
-exist and have been verified.
+No `bun iphone2g install` command exists. The following operator-reviewed
+ramdisk procedure is retained only to document the abandoned 1.1.4 design. Do
+not perform it on the restored 3.1.3 installation. In the historical design,
+the raw and read-only backups above had to exist and pass verification first.
 
 Keep the existing `/mnt1` and `/mnt2` read-only mounts. First fail closed if any
 of the eight target files or either newly owned directory already exists;
@@ -926,9 +1003,10 @@ Only then choose the Kit's `Reboot Device` action. Do not run ZiPhone or a Kit
 install action if normal-boot SSH does not start; return to the pinned ramdisk
 and inspect only the eight scoped files.
 
-## USB SSH and deployment
+### Archived 1.1.4 USB SSH and deployment design
 
-After a normal boot, forward the phone's port 22 over usbmux:
+The abandoned 1.1.4 design would have forwarded port 22 over usbmux after a
+normal 1.1.4 boot:
 
 ```sh
 "$IPHONE2G_KIT/bin/macos/arm64/iproxy" 2222 22 -s 127.0.0.1
@@ -983,12 +1061,14 @@ read-only proof precedes the SpringBoard rescan. All of those checks must pass
 for `deploy` to exit zero. If read-only state cannot be proven, stop and reboot;
 do not issue an ad hoc transfer or mount sequence.
 
-## Rollback
+### Archived 1.1.4 rollback design
 
-Rollback is path-scoped. A whole-disk rewrite is emergency recovery, not the
-normal uninstall path, and the raw disk image does not restore baseband state.
+This path-scoped rollback was designed for the abandoned 1.1.4 bootstrap. Do
+not use it on the current Cydia/3.1.3 installation. A whole-disk rewrite is
+emergency recovery, not a normal uninstall path, and the raw disk image does
+not restore baseband state.
 
-### Remove a deployed demo
+#### Remove a deployed demo
 
 Boot normally with the usbmux forward active and use only the scoped helper:
 
@@ -1003,7 +1083,7 @@ only the allowlisted current/stage/backup bundle trees, clears the runtime
 record, and returns root to read-only. Require all three commands to pass before
 restarting SpringBoard or rebooting.
 
-### Remove the SSH bootstrap
+#### Remove the SSH bootstrap
 
 Boot the pinned, byte-verified temporary ramdisk again, confirm the device
 identity and backup availability, and mount both installed volumes read-only as
@@ -1052,35 +1132,58 @@ remain unchanged.
 Keep evidence for each layer separate. Passing an earlier layer is not evidence
 for a later one.
 
-### 1. Build acceptance
+### 1. Recovery and transport acceptance — passed
+
+- CustomHJ IPSW SHA-1 equals
+  `8140ed162c6712a6e8d1608d3a36257998253d82`.
+- The erase restore reports `Status: Restore Finished`.
+- The phone performs a normal, non-ramdisk boot and enumerates as USB `0x1290`.
+- `ideviceinfo` reports `3.1.3`, `7E18`, and `FactoryActivated`.
+- SpringBoard and Cydia launch.
+- The installed `sshd` accepts a command over the USB transport.
+
+These checks prove a usable restored system and shell transport. They do not
+prove the PocketJS helper, app transaction, or runtime.
+
+### 2. Linker ABI acceptance — passed locally
 
 - `bun iphone2g doctor` reports all required inputs `[ok]`.
 - `bun iphone2g build` exits zero.
 - `file` reports `Mach-O executable arm_v6`.
-- `otool-classic -L`, `Info.plist`, and `build-receipt.json` match the pinned
-  1.1.4 toolchain contract.
+- `otool-classic -L` and the build receipt match the pinned 1.1.4 linker ABI
+  contract.
 - The receipt identifies both embedded guest inputs and the combined native
   runtime executable.
 
-### 2. Backup and deployment acceptance
+This proves that the 1.1.4-ABI artifact links. It is not yet evidence that the
+retargeted, signed bundle executes correctly in the restored 3.1.3 userspace.
 
-- The raw `/dev/rdisk0` stream and saved file hashes match, its byte size is
-  exactly 8,120,172,544, and its repo-external directories/files are
-  `0700`/`0600`.
-- The read-only configuration and Lockdown archives can be listed on the host.
-- The eight installed SSH files match the receipt, modes, and `0:0` ownership.
-- Normal-boot SSH accepts only the dedicated key; password authentication is
-  rejected.
-- The installed helper matches its receipt and the deployment reads all five
-  app files back byte-for-byte before committing the per-build transaction.
-- `/` is positively verified read-only again before normal use.
+### 3. 3.1.3 package and deployment acceptance — passed
 
-These checks prove bytes and transport, not application execution.
+On the attached restored phone, the current commands produced the following
+live receipt:
 
-### 3. Live hardware acceptance
+- `bun iphone2g install-bootstrap` accepted the exact `iPhone1,1`, 3.1.3,
+  `7E18` identity with read/write root and data mounts.
+- The signed version-4 helper and dedicated key passed their device readback
+  checks. A separate password-only SSH attempt was rejected.
+- Hashes of the existing CustomHJ `sshd`, RSA host key, and launchd plist were
+  identical before and after bootstrap installation.
+- A second `install-bootstrap` run reported that the key-only bootstrap already
+  matched and made no device changes.
+- `bun iphone2g deploy` installed only the five allowlisted
+  `PocketJSDemo.app` files, read every file back byte-for-byte, and committed
+  the identifier-matched transaction. An independent readback matched all five
+  local files and `transaction-state` returned `state=none`.
+- The helper and independent mount checks still reported read/write root and
+  data volumes after installation and commit, and SpringBoard restarted.
 
-- The phone performs a normal, non-ramdisk boot and SpringBoard shows the
-  PocketJS icon.
+This proves signing, bootstrap policy, byte-exact installation, rollback
+discipline, and mount-policy preservation. Icon launch, drawing, and physical
+touch remain layer 4 evidence.
+
+### 4. PocketJS runtime acceptance — pending
+
 - Launching the icon presents the expected 320-by-480 PocketJS UI rather than
   immediately returning to SpringBoard.
 - Each physical tap on `TAP ME` visibly increments `Touch count`.
@@ -1096,8 +1199,8 @@ These checks prove bytes and transport, not application execution.
   `last_touch_hit`, and an empty `error`. This complements the visible result;
   it does not replace it.
 - The app survives quit/relaunch and a normal reboot.
-- After unplug/replug, USB SSH still uses the dedicated key and `/` remains
-  read-only.
+- After unplug/replug, USB SSH still works and the filesystem retains the
+  verified post-deployment mount policy.
 - Capture a dated photo or video plus the build receipt and exact device
   identity as the acceptance record.
 

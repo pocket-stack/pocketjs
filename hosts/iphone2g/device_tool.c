@@ -8,7 +8,6 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #ifndef APP_DIRECTORY
@@ -37,7 +36,7 @@ typedef struct {
   mode_t mode;
 } BundleFile;
 
-static const unsigned char PACKAGE_MAGIC[8] = {'P', 'J', 'S', '2', 'G', '0', '0', '2'};
+static const unsigned char PACKAGE_MAGIC[8] = {'P', 'J', 'S', '2', 'G', '0', '0', '3'};
 
 #define TRANSACTION_ID_LENGTH 32
 
@@ -194,32 +193,18 @@ static int directory_is_complete(const char *path) {
   return 1;
 }
 
-static int run_mount(const char *option) {
+static int mount_is_read_write(const char *path) {
 #ifdef POCKETJS_DEVICE_TEST
-  (void)option;
-  return 0;
-#else
-  pid_t child = fork();
-  int status;
-  if (child < 0) return -1;
-  if (child == 0) {
-    execl("/sbin/mount", "mount", option, "/", (char *)NULL);
-    _exit(127);
-  }
-  while (waitpid(child, &status, 0) < 0) {
-    if (errno != EINTR) return -1;
-  }
-  return WIFEXITED(status) && WEXITSTATUS(status) == 0 ? 0 : -1;
-#endif
-}
-
-static int root_is_read_only(void) {
-#ifdef POCKETJS_DEVICE_TEST
+  (void)path;
   return 1;
 #else
   struct statfs status;
-  return statfs("/", &status) == 0 && (status.f_flags & MNT_RDONLY) != 0;
+  return statfs(path, &status) == 0 && (status.f_flags & MNT_RDONLY) == 0;
 #endif
+}
+
+static int device_mounts_are_read_write(void) {
+  return mount_is_read_write("/") && mount_is_read_write("/private/var");
 }
 
 static int valid_transaction_identifier(const char *identifier) {
@@ -449,15 +434,15 @@ static int install_bundle(void) {
     fprintf(stderr, "an unfinished PocketJS transaction requires rollback\n");
     return 3;
   }
+  if (!device_mounts_are_read_write()) {
+    fprintf(stderr, "iPhone OS 3.1.3 root/data mount policy is not read/write\n");
+    return 3;
+  }
   if (write_transaction('L', 0, identifier) < 0) {
     fprintf(stderr, "could not acquire the durable transaction lock\n");
     return 3;
   }
   transaction_started = 1;
-  if (run_mount("-uw") < 0) {
-    fprintf(stderr, "could not remount root read/write\n");
-    goto done;
-  }
   if (g_interrupted) goto done;
   if (reconcile_committed_state(&existing) < 0) {
     fprintf(stderr, "could not reconcile the committed app and backup state\n");
@@ -520,15 +505,15 @@ done:
     (void)clear_known_directory(STAGE_DIRECTORY);
   }
   sync();
-  if (run_mount("-ur") < 0 || !root_is_read_only()) {
-    fprintf(stderr, "root could not be returned to read-only\n");
+  if (!device_mounts_are_read_write()) {
+    fprintf(stderr, "iPhone OS 3.1.3 root/data mount policy changed\n");
     return 4;
   }
   if (rollback_completed && clear_transaction_markers() < 0) {
     fprintf(stderr, "rolled back, but could not clear the durable transaction marker\n");
     return 5;
   }
-  if (result == 0) printf("installed=PocketJSDemo.app\ntransaction=pending\nroot_readonly=1\n");
+  if (result == 0) printf("installed=PocketJSDemo.app\ntransaction=pending\nmount_policy=rw-root-data\n");
   return result;
 }
 
@@ -544,10 +529,10 @@ static int commit_bundle(const char *identifier) {
       ((!transaction.had_previous && backup_known != 0) ||
        (transaction.had_previous && !directory_is_complete(BACKUP_DIRECTORY))) ||
       !directory_is_complete(APP_DIRECTORY)) return 1;
-  if (!root_is_read_only() && (run_mount("-ur") < 0 || !root_is_read_only())) return 3;
+  if (!device_mounts_are_read_write()) return 3;
   if (g_interrupted) return 4;
   if (clear_transaction_markers() < 0) return 1;
-  printf("committed=PocketJSDemo.app\nroot_readonly=1\n");
+  printf("committed=PocketJSDemo.app\nmount_policy=rw-root-data\n");
   return 0;
 }
 
@@ -559,17 +544,17 @@ static int rollback_bundle(const char *identifier) {
   state = read_transaction(&transaction);
   if (state < 0 || (state == 1 && strcmp(transaction.identifier, identifier) != 0)) return 1;
   if (state == 0) {
-    if (!root_is_read_only() && (run_mount("-ur") < 0 || !root_is_read_only())) return 3;
-    printf("rollback=not-needed\nroot_readonly=1\n");
+    if (!device_mounts_are_read_write()) return 3;
+    printf("rollback=not-needed\nmount_policy=rw-root-data\n");
     return 0;
   }
-  if (run_mount("-uw") < 0) return 2;
+  if (!device_mounts_are_read_write()) return 2;
   result = rollback_transaction_mounted(identifier) < 0 ? 1 : 0;
-  if (run_mount("-ur") < 0 || !root_is_read_only()) return 3;
+  if (!device_mounts_are_read_write()) return 3;
   if (result == 0 && clear_transaction_markers() < 0) {
     result = 1;
   }
-  if (result == 0) printf("rollback=complete\nroot_readonly=1\n");
+  if (result == 0) printf("rollback=complete\nmount_policy=rw-root-data\n");
   return result;
 }
 
@@ -622,7 +607,7 @@ static int read_bundle_file(const char *name) {
 static int remove_bundle(void) {
   Transaction transaction;
   int result;
-  if (run_mount("-uw") < 0) return 2;
+  if (!device_mounts_are_read_write()) return 2;
   if (read_transaction(&transaction) != 0) {
     result = 1;
   } else {
@@ -631,9 +616,9 @@ static int remove_bundle(void) {
       clear_known_directory(BACKUP_DIRECTORY) < 0 ? 1 : 0;
   }
   sync();
-  if (run_mount("-ur") < 0 || !root_is_read_only()) return 3;
+  if (!device_mounts_are_read_write()) return 3;
   if (result == 0 && unlink(ACCEPTANCE_RECORD) < 0 && errno != ENOENT) result = 1;
-  if (result == 0) printf("removed=PocketJSDemo.app\nroot_readonly=1\n");
+  if (result == 0) printf("removed=PocketJSDemo.app\nmount_policy=rw-root-data\n");
   return result;
 }
 
@@ -646,9 +631,9 @@ int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "self") == 0) {
     return stream_file("/usr/libexec/pocketjs-device");
   }
-  if (argc == 2 && strcmp(argv[1], "root-state") == 0) {
-    if (!root_is_read_only()) return 1;
-    printf("root_readonly=1\n");
+  if (argc == 2 && strcmp(argv[1], "mount-state") == 0) {
+    if (!device_mounts_are_read_write()) return 1;
+    printf("root_readwrite=1\ndata_readwrite=1\n");
     return 0;
   }
   if (argc == 2 && strcmp(argv[1], "status") == 0) return stream_file(ACCEPTANCE_RECORD);
@@ -656,9 +641,9 @@ int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "clear-status") == 0) return clear_acceptance_record();
   if (argc == 2 && strcmp(argv[1], "remove") == 0) return remove_bundle();
   if (argc == 2 && strcmp(argv[1], "version") == 0) {
-    printf("pocketjs-iphone2g-device 3\n");
+    printf("pocketjs-iphone2g-device 4\n");
     return 0;
   }
-  fprintf(stderr, "usage: pocketjs-device <install|commit ID|rollback ID|read NAME|self|root-state|transaction-state|status|clear-status|remove|version>\n");
+  fprintf(stderr, "usage: pocketjs-device <install|commit ID|rollback ID|read NAME|self|mount-state|transaction-state|status|clear-status|remove|version>\n");
   return 64;
 }

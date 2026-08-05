@@ -167,8 +167,12 @@ function doctor(): void {
       join(status.cacheRoot, "downloads/bootstrap"),
     ),
   ];
-  console.log(
-    `${ldid ? "[ok]" : "[optional]"} ldid: ${ldid || "not required by iPhone OS 1.1.4"}`,
+  checks.push(
+    check(
+      "ldid signing",
+      !!ldid,
+      ldid || "install ldid before building 3.1.3 executables",
+    ),
   );
   console.log(`cache: ${status.cacheRoot}`);
   if (checks.some((ok) => !ok)) process.exitCode = 1;
@@ -537,12 +541,15 @@ function buildRuntime(): void {
     "Foundation",
     "-framework",
     "CoreGraphics",
-    "-framework",
-    "GraphicsServices",
     "-lobjc",
     "-lSystem",
-    "-lgcc_s_v6.1",
+    "-lgcc_s.1",
   ]);
+  const ldid = commandPath("ldid");
+  if (!ldid) {
+    throw new Error("PocketJS iPhone 2G: ldid is required for iPhone OS 3.1.3");
+  }
+  mustRun(ldid, ["-S", executable]);
 
   cpSync(
     join(repository, "hosts/iphone2g/Info.plist"),
@@ -572,10 +579,9 @@ function buildRuntime(): void {
     "UIKit.framework/UIKit",
     "Foundation.framework/Foundation",
     "CoreGraphics.framework/CoreGraphics",
-    "GraphicsServices.framework/GraphicsServices",
     "libobjc.A.dylib",
     "libSystem.B.dylib",
-    "libgcc_s_v6.1.dylib",
+    "libgcc_s.1.dylib",
   ]) {
     if (!dependencies.includes(dependency)) {
       throw new Error(
@@ -583,11 +589,17 @@ function buildRuntime(): void {
       );
     }
   }
+  if (dependencies.includes("GraphicsServices.framework/GraphicsServices")) {
+    throw new Error(
+      "PocketJS iPhone 2G: GraphicsServices must remain a dlsym-only 1.x fallback on 3.1.3",
+    );
+  }
   for (const marker of [
     "LC_VERSION_MIN_IPHONEOS",
     "version 1.1.4",
     "sectname __pocket_js",
     "sectname __pocket_pak",
+    "LC_CODE_SIGNATURE",
   ]) {
     if (!loadCommands.includes(marker)) {
       throw new Error(
@@ -657,7 +669,8 @@ function buildRuntime(): void {
         executableSha256: sha256File(executable),
         bundleFiles,
         receiptMode: "0644",
-        unsigned: true,
+        signed: true,
+        signer: "ldid -S",
       },
       null,
       2,
@@ -672,7 +685,7 @@ const SSHD_CONFIG = `Protocol 2
 HostKey /etc/ssh/ssh_host_rsa_key
 PermitRootLogin yes
 PubkeyAuthentication yes
-AuthorizedKeysFile .ssh/authorized_keys_pocketjs
+AuthorizedKeysFile .ssh/authorized_keys
 StrictModes yes
 PasswordAuthentication no
 ChallengeResponseAuthentication no
@@ -683,58 +696,11 @@ UsePrivilegeSeparation no
 UseDNS no
 `;
 
-const SSHD_LAUNCHD_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.openssh.sshd</string>
-  <key>Program</key>
-  <string>/usr/sbin/sshd</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/usr/sbin/sshd</string>
-    <string>-i</string>
-  </array>
-  <key>SessionCreate</key>
-  <true/>
-  <key>Sockets</key>
-  <dict>
-    <key>Listeners</key>
-    <dict>
-      <key>SockNodeName</key>
-      <string>127.0.0.1</string>
-      <key>SockServiceName</key>
-      <string>ssh</string>
-    </dict>
-  </dict>
-  <key>inetdCompatibility</key>
-  <dict>
-    <key>Wait</key>
-    <false/>
-  </dict>
-  <key>StandardErrorPath</key>
-  <string>/dev/null</string>
-</dict>
-</plist>
-`;
-
 function identityPath(): string {
   const explicit = process.env.POCKETJS_IPHONE2G_IDENTITY?.trim();
   return explicit
     ? resolve(explicit)
     : join(homedir(), ".ssh", "iphone2g_pocketjs");
-}
-
-function copyBootstrapFile(
-  source: string,
-  destination: string,
-  mode: number,
-): void {
-  mkdirSync(dirname(destination), { recursive: true });
-  cpSync(source, destination);
-  chmodSync(destination, mode);
 }
 
 function buildBootstrapDeviceTool(output: string, scratch: string): void {
@@ -821,6 +787,13 @@ function buildBootstrapDeviceTool(output: string, scratch: string): void {
     "-lSystem",
     "-lgcc_s.1",
   ]);
+  const ldid = commandPath("ldid");
+  if (!ldid) {
+    throw new Error(
+      "PocketJS iPhone 2G: ldid is required for the device helper",
+    );
+  }
+  mustRun(ldid, ["-S", output]);
   const fileInfo = mustRun("file", [output]);
   const dependencies = mustRun("xcrun", ["otool-classic", "-L", output]);
   const loadCommands = mustRun("xcrun", ["otool-classic", "-l", output]);
@@ -828,7 +801,8 @@ function buildBootstrapDeviceTool(output: string, scratch: string): void {
     !fileInfo.includes("Mach-O executable arm_v6") ||
     !dependencies.includes("/usr/lib/libSystem.B.dylib") ||
     !dependencies.includes("/usr/lib/libgcc_s.1.dylib") ||
-    !loadCommands.includes("version 1.1.4")
+    !loadCommands.includes("version 1.1.4") ||
+    !loadCommands.includes("LC_CODE_SIGNATURE")
   ) {
     throw new Error(
       "PocketJS iPhone 2G: generated device helper failed its ARMv6/1.1.4 audit",
@@ -871,19 +845,37 @@ function verifyRsaKey(
   return publicLines[0].trim();
 }
 
-function prepareBootstrap(): void {
-  const status = inspectIPhone2GToolchain();
-  if (!status.openssh || !status.openssl) {
-    throw new Error(
-      "PocketJS iPhone 2G: pinned OpenSSH/OpenSSL packages are absent or corrupt",
-    );
-  }
-
+function writeDeviceSshConfig(): string {
   const cache = iphone2gCacheRoot();
-  const packages = join(cache, "downloads/bootstrap");
+  const sshConfig = join(cache, "bootstrap/ssh_config");
+  const knownHosts = join(cache, "bootstrap/known_hosts");
+  mkdirSync(dirname(sshConfig), { recursive: true, mode: 0o700 });
+  writeFileSync(
+    sshConfig,
+    `Host iphone2g-pocketjs
+  HostName 127.0.0.1
+  Port ${IPHONE2G_TOOLCHAIN.deployment.localPort}
+  User ${IPHONE2G_TOOLCHAIN.deployment.bootstrapUser}
+  IdentityFile ${identityPath()}
+  IdentitiesOnly yes
+  UserKnownHostsFile ${knownHosts}
+  StrictHostKeyChecking yes
+  HostKeyAlgorithms +ssh-rsa
+  PubkeyAcceptedAlgorithms +ssh-rsa
+  KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group1-sha1
+  Ciphers +aes128-cbc,3des-cbc,aes192-cbc,aes256-cbc
+  MACs +hmac-sha1,hmac-md5
+`,
+    { mode: 0o600 },
+  );
+  chmodSync(sshConfig, 0o600);
+  return sshConfig;
+}
+
+function prepareBootstrap(): void {
+  const cache = iphone2gCacheRoot();
   const bootstrapRoot = join(cache, "bootstrap");
   const scratch = join(bootstrapRoot, `.prepare-${process.pid}`);
-  const keyRoot = join(bootstrapRoot, "keys");
   const destination = join(bootstrapRoot, "stage");
   mkdirSync(bootstrapRoot, { recursive: true, mode: 0o700 });
   chmodSync(bootstrapRoot, 0o700);
@@ -891,73 +883,11 @@ function prepareBootstrap(): void {
   mkdirSync(scratch, { recursive: true, mode: 0o700 });
 
   try {
-    for (const [name, asset] of [
-      ["openssh", IPHONE2G_TOOLCHAIN.bootstrap.openssh.asset],
-      ["openssl", IPHONE2G_TOOLCHAIN.bootstrap.openssl.asset],
-    ] as const) {
-      const archive = join(scratch, name);
-      const files = join(scratch, `${name}-files`);
-      mkdirSync(archive, { recursive: true });
-      mkdirSync(files, { recursive: true });
-      mustRun("bsdtar", ["-xf", join(packages, asset), "-C", archive]);
-      mustRun("bsdtar", ["-xzf", join(archive, "data.tar.gz"), "-C", files]);
-    }
-
     const stage = join(scratch, "stage");
-    const selected: Array<readonly [string, string, number]> = [
-      [
-        join(scratch, "openssh-files/usr/sbin/sshd"),
-        "root/usr/sbin/sshd",
-        0o755,
-      ],
-      [
-        join(scratch, "openssl-files/usr/lib/libcrypto.0.9.8.dylib"),
-        "root/usr/lib/libcrypto.0.9.8.dylib",
-        0o555,
-      ],
-      [
-        join(scratch, "openssh-files/etc/ssh/moduli"),
-        "root/private/etc/ssh/moduli",
-        0o644,
-      ],
-    ];
-    for (const [source, relative, mode] of selected) {
-      const expected =
-        IPHONE2G_TOOLCHAIN.bootstrap.files[relative.replace(/^root\//, "")];
-      if (!expected || sha256File(source) !== expected) {
-        throw new Error(
-          `PocketJS iPhone 2G: selected bootstrap file failed verification: ${relative}`,
-        );
-      }
-      copyBootstrapFile(source, join(stage, relative), mode);
-    }
     buildBootstrapDeviceTool(
       join(stage, "root/usr/libexec/pocketjs-device"),
       scratch,
     );
-
-    mkdirSync(keyRoot, { recursive: true, mode: 0o700 });
-    chmodSync(keyRoot, 0o700);
-    const hostKey = join(keyRoot, "ssh_host_rsa_key");
-    if (!existsSync(hostKey)) {
-      mustRun("ssh-keygen", [
-        "-q",
-        "-t",
-        "rsa",
-        "-b",
-        "2048",
-        "-m",
-        "PEM",
-        "-N",
-        "",
-        "-C",
-        "iphone2g-host",
-        "-f",
-        hostKey,
-      ]);
-    }
-    chmodSync(hostKey, 0o600);
-    const hostPublicKey = verifyRsaKey(hostKey, `${hostKey}.pub`, "host key");
 
     const identity = identityPath();
     if (!existsSync(identity)) {
@@ -985,43 +915,20 @@ function prepareBootstrap(): void {
       "client identity",
     );
 
-    copyBootstrapFile(
-      hostKey,
-      join(stage, "root/private/etc/ssh/ssh_host_rsa_key"),
-      0o600,
-    );
-    writeFileSync(
-      join(stage, "root/private/etc/ssh/sshd_config"),
-      SSHD_CONFIG,
-      { mode: 0o644 },
-    );
-    mkdirSync(join(stage, "root/Library/LaunchDaemons"), { recursive: true });
-    writeFileSync(
-      join(stage, "root/Library/LaunchDaemons/com.openssh.sshd.plist"),
-      SSHD_LAUNCHD_PLIST,
-      { mode: 0o644 },
-    );
-    mustRun("plutil", [
-      "-lint",
-      join(stage, "root/Library/LaunchDaemons/com.openssh.sshd.plist"),
-    ]);
+    const stagedSshConfig = join(stage, "root/private/etc/ssh/sshd_config");
+    mkdirSync(dirname(stagedSshConfig), { recursive: true });
+    writeFileSync(stagedSshConfig, SSHD_CONFIG, { mode: 0o644 });
     mkdirSync(join(stage, "data/root/.ssh"), { recursive: true, mode: 0o700 });
-    chmodSync(join(stage, "data/root/.ssh"), 0o700);
     writeFileSync(
-      join(stage, "data/root/.ssh/authorized_keys_pocketjs"),
+      join(stage, "data/root/.ssh/authorized_keys"),
       `${publicKey}\n`,
       { mode: 0o600 },
     );
 
     const expectedModes: Array<readonly [string, number]> = [
-      ["root/usr/sbin/sshd", 0o755],
       ["root/usr/libexec/pocketjs-device", 0o755],
-      ["root/usr/lib/libcrypto.0.9.8.dylib", 0o555],
-      ["root/private/etc/ssh/moduli", 0o644],
       ["root/private/etc/ssh/sshd_config", 0o644],
-      ["root/private/etc/ssh/ssh_host_rsa_key", 0o600],
-      ["root/Library/LaunchDaemons/com.openssh.sshd.plist", 0o644],
-      ["data/root/.ssh/authorized_keys_pocketjs", 0o600],
+      ["data/root/.ssh/authorized_keys", 0o600],
     ];
     const files = Object.fromEntries(
       expectedModes.map(([relative, mode]) => {
@@ -1034,55 +941,37 @@ function prepareBootstrap(): void {
         }
         return [
           relative,
-          { sha256: sha256File(path), mode: mode.toString(8).padStart(4, "0") },
+          {
+            sha256: sha256File(path),
+            mode: mode.toString(8).padStart(4, "0"),
+          },
         ];
       }),
     );
 
-    const sshConfig = join(cache, "bootstrap/ssh_config");
-    const knownHosts = join(cache, "bootstrap/known_hosts");
-    const hostKeyFields = hostPublicKey.split(/\s+/).slice(0, 2).join(" ");
-    writeFileSync(knownHosts, `[127.0.0.1]:2222 ${hostKeyFields}\n`, {
-      mode: 0o600,
-    });
-    writeFileSync(
-      sshConfig,
-      `Host iphone2g-pocketjs
-  HostName 127.0.0.1
-  Port 2222
-  User root
-  IdentityFile ${identity}
-  IdentitiesOnly yes
-  UserKnownHostsFile ${knownHosts}
-  StrictHostKeyChecking yes
-  HostKeyAlgorithms +ssh-rsa
-  PubkeyAcceptedAlgorithms +ssh-rsa
-  KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group1-sha1
-  MACs +hmac-sha1
-`,
-    );
-    chmodSync(sshConfig, 0o600);
+    writeDeviceSshConfig();
     writeFileSync(
       join(stage, "bootstrap-receipt.json"),
       `${JSON.stringify(
         {
-          schemaVersion: 1,
-          packageSha256: {
-            openssh: IPHONE2G_TOOLCHAIN.bootstrap.openssh.sha256,
-            openssl: IPHONE2G_TOOLCHAIN.bootstrap.openssl.sha256,
-          },
+          schemaVersion: 2,
           files,
           deviceHelper: {
             sourceSha256: sha256File(
               join(repository, "hosts/iphone2g/device_tool.c"),
             ),
-            protocol: "PJS2G002",
+            protocol: "PJS2G003",
+            signed: true,
           },
           clientIdentity: identity,
-          hostKeyFingerprint: mustRun("ssh-keygen", ["-lf", hostKey]),
           policy: {
+            productVersion: "3.1.3",
+            buildVersion: "7E18",
+            mountPolicy: "rw-root-data",
             passwordAuthentication: false,
-            listenAddress: "127.0.0.1",
+            preserveDeviceSshd: true,
+            preserveDeviceHostKey: true,
+            preserveDeviceLaunchdPlist: true,
             sftp: false,
             afc2: false,
             fstabMutation: false,
@@ -1099,7 +988,9 @@ function prepareBootstrap(): void {
     cpSync(stage, destination, { recursive: true, preserveTimestamps: true });
     chmodSync(destination, 0o700);
     console.log(`PocketJS iPhone 2G: key-only bootstrap -> ${destination}`);
-    console.log(`PocketJS iPhone 2G: dedicated SSH config -> ${sshConfig}`);
+    console.log(
+      `PocketJS iPhone 2G: dedicated SSH config -> ${writeDeviceSshConfig()}`,
+    );
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -1114,17 +1005,23 @@ const DEVICE_BUNDLE_FILES = [
 ] as const;
 
 interface BootstrapReceipt {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly files: Readonly<
     Record<string, { readonly sha256: string; readonly mode: string }>
   >;
   readonly deviceHelper: {
     readonly sourceSha256: string;
-    readonly protocol: "PJS2G002";
+    readonly protocol: "PJS2G003";
+    readonly signed: true;
   };
   readonly policy: {
+    readonly productVersion: "3.1.3";
+    readonly buildVersion: "7E18";
+    readonly mountPolicy: "rw-root-data";
     readonly passwordAuthentication: false;
-    readonly listenAddress: "127.0.0.1";
+    readonly preserveDeviceSshd: true;
+    readonly preserveDeviceHostKey: true;
+    readonly preserveDeviceLaunchdPlist: true;
     readonly sftp: false;
     readonly afc2: false;
     readonly fstabMutation: false;
@@ -1144,25 +1041,26 @@ function verifiedBootstrapReceipt(): BootstrapReceipt {
     readFileSync(receiptPath, "utf8"),
   ) as BootstrapReceipt;
   const expectedFiles = [
-    "root/usr/sbin/sshd",
     "root/usr/libexec/pocketjs-device",
-    "root/usr/lib/libcrypto.0.9.8.dylib",
-    "root/private/etc/ssh/moduli",
     "root/private/etc/ssh/sshd_config",
-    "root/private/etc/ssh/ssh_host_rsa_key",
-    "root/Library/LaunchDaemons/com.openssh.sshd.plist",
-    "data/root/.ssh/authorized_keys_pocketjs",
+    "data/root/.ssh/authorized_keys",
   ];
   const validPolicy =
     receipt.policy?.passwordAuthentication === false &&
-    receipt.policy.listenAddress === "127.0.0.1" &&
+    receipt.policy.productVersion === "3.1.3" &&
+    receipt.policy.buildVersion === "7E18" &&
+    receipt.policy.mountPolicy === "rw-root-data" &&
+    receipt.policy.preserveDeviceSshd === true &&
+    receipt.policy.preserveDeviceHostKey === true &&
+    receipt.policy.preserveDeviceLaunchdPlist === true &&
     receipt.policy.sftp === false &&
     receipt.policy.afc2 === false &&
     receipt.policy.fstabMutation === false &&
     receipt.policy.basebandMutation === false;
   if (
-    receipt.schemaVersion !== 1 ||
-    receipt.deviceHelper?.protocol !== "PJS2G002" ||
+    receipt.schemaVersion !== 2 ||
+    receipt.deviceHelper?.protocol !== "PJS2G003" ||
+    receipt.deviceHelper.signed !== true ||
     receipt.deviceHelper.sourceSha256 !==
       sha256File(join(repository, "hosts/iphone2g/device_tool.c")) ||
     !validPolicy ||
@@ -1191,6 +1089,528 @@ function verifiedBootstrapReceipt(): BootstrapReceipt {
     }
   }
   return receipt;
+}
+
+const LEGACY_SSH_OPTIONS = [
+  "-o",
+  "HostKeyAlgorithms=+ssh-rsa",
+  "-o",
+  "PubkeyAcceptedAlgorithms=+ssh-rsa",
+  "-o",
+  "KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
+  "-o",
+  "Ciphers=+aes128-cbc,3des-cbc,aes192-cbc,aes256-cbc",
+  "-o",
+  "MACs=+hmac-sha1,hmac-md5",
+] as const;
+
+function legacyKitBinary(name: "iproxy" | "sshpass"): string {
+  const architecture = process.arch === "arm64" ? "arm64" : "x86_64";
+  const bundled = join(
+    iphone2gLegacyKitPath(),
+    "bin/macos",
+    architecture,
+    name,
+  );
+  if (existsSync(bundled)) return bundled;
+  const host = commandPath(name);
+  if (host) return host;
+  throw new Error(
+    `PocketJS iPhone 2G: ${name} is unavailable; run setup-sources first`,
+  );
+}
+
+function tunnelIsListening(): boolean {
+  const probe = run("/usr/bin/nc", [
+    "-z",
+    "-w",
+    "1",
+    "127.0.0.1",
+    String(IPHONE2G_TOOLCHAIN.deployment.localPort),
+  ]);
+  return probe.exitCode === 0;
+}
+
+async function withManagedTunnel<T>(
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  if (tunnelIsListening()) return await operation();
+  const iproxy = legacyKitBinary("iproxy");
+  const child = Bun.spawn({
+    cmd: [
+      iproxy,
+      String(IPHONE2G_TOOLCHAIN.deployment.localPort),
+      String(IPHONE2G_TOOLCHAIN.deployment.devicePort),
+      "-s",
+      "127.0.0.1",
+    ],
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  try {
+    for (let attempt = 0; attempt < 20 && !tunnelIsListening(); attempt += 1) {
+      if (child.exitCode !== null) break;
+      await Bun.sleep(100);
+    }
+    if (!tunnelIsListening()) {
+      const stderr = await new Response(child.stderr).text();
+      throw new Error(
+        `PocketJS iPhone 2G: iproxy did not open USB port ${IPHONE2G_TOOLCHAIN.deployment.localPort}${stderr.trim() ? `: ${stderr.trim()}` : ""}`,
+      );
+    }
+    return await operation();
+  } finally {
+    if (child.exitCode === null) child.kill();
+    await child.exited;
+  }
+}
+
+function runTunnel(): never {
+  const iproxy = legacyKitBinary("iproxy");
+  if (tunnelIsListening()) {
+    throw new Error(
+      `PocketJS iPhone 2G: local port ${IPHONE2G_TOOLCHAIN.deployment.localPort} is already in use`,
+    );
+  }
+  const result = Bun.spawnSync({
+    cmd: [
+      iproxy,
+      String(IPHONE2G_TOOLCHAIN.deployment.localPort),
+      String(IPHONE2G_TOOLCHAIN.deployment.devicePort),
+      "-s",
+      "127.0.0.1",
+    ],
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  process.exit(result.exitCode);
+}
+
+function passwordSshArgs(remoteCommand: string): string[] {
+  return [
+    "-e",
+    "/usr/bin/ssh",
+    "-T",
+    "-p",
+    String(IPHONE2G_TOOLCHAIN.deployment.localPort),
+    "-o",
+    "BatchMode=no",
+    "-o",
+    "ConnectTimeout=3",
+    "-o",
+    "NumberOfPasswordPrompts=1",
+    "-o",
+    "PreferredAuthentications=password",
+    "-o",
+    "PubkeyAuthentication=no",
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "UserKnownHostsFile=/dev/null",
+    ...LEGACY_SSH_OPTIONS,
+    `${IPHONE2G_TOOLCHAIN.deployment.bootstrapUser}@127.0.0.1`,
+    remoteCommand,
+  ];
+}
+
+function provisionalKeySshArgs(remoteCommand: string): string[] {
+  return [
+    "/usr/bin/ssh",
+    "-T",
+    "-p",
+    String(IPHONE2G_TOOLCHAIN.deployment.localPort),
+    "-i",
+    identityPath(),
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "IdentitiesOnly=yes",
+    "-o",
+    "ConnectTimeout=3",
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "UserKnownHostsFile=/dev/null",
+    ...LEGACY_SSH_OPTIONS,
+    `${IPHONE2G_TOOLCHAIN.deployment.bootstrapUser}@127.0.0.1`,
+    remoteCommand,
+  ];
+}
+
+function passwordCommand(
+  command: readonly string[],
+  input?: Uint8Array,
+): BinaryCommandResult {
+  const remote = command.join(" ");
+  return runBinary(
+    legacyKitBinary("sshpass"),
+    passwordSshArgs(remote),
+    input,
+    repository,
+    { ...process.env, SSHPASS: "alpine" },
+  );
+}
+
+function provisionalKeyCommand(
+  command: readonly string[],
+  input?: Uint8Array,
+): BinaryCommandResult {
+  return runBinary(
+    provisionalKeySshArgs(command.join(" "))[0],
+    provisionalKeySshArgs(command.join(" ")).slice(1),
+    input,
+  );
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function passwordShell(
+  script: string,
+  input?: Uint8Array,
+): BinaryCommandResult {
+  return passwordCommand(["/bin/sh", "-c", shellQuote(script)], input);
+}
+
+type BootstrapCommand = (
+  command: readonly string[],
+  input?: Uint8Array,
+) => BinaryCommandResult;
+
+function bootstrapShell(
+  runCommand: BootstrapCommand,
+  script: string,
+  input?: Uint8Array,
+): BinaryCommandResult {
+  return runCommand(["/bin/sh", "-c", shellQuote(script)], input);
+}
+
+function assert313DeviceAndMounts(runCommand: BootstrapCommand): void {
+  const version = bootstrapShell(
+    runCommand,
+    "/usr/bin/sw_vers -productVersion; /usr/bin/sw_vers -buildVersion; /usr/sbin/sysctl -n hw.machine",
+  );
+  if (
+    version.exitCode !== 0 ||
+    version.stdout.toString() !== "3.1.3\n7E18\niPhone1,1\n"
+  ) {
+    throw new Error(
+      "PocketJS iPhone 2G: bootstrap requires a normally booted iPhone1,1 on 3.1.3 (7E18)",
+    );
+  }
+  const mounts = runCommand(["/sbin/mount"]);
+  const lines = mounts.stdout.toString().split(/\r?\n/);
+  const root = lines.find((line) => line.includes(" on / ("));
+  const data = lines.find((line) => line.includes(" on /private/var ("));
+  if (
+    mounts.exitCode !== 0 ||
+    !root ||
+    !data ||
+    root.includes("read-only") ||
+    data.includes("read-only")
+  ) {
+    throw new Error(
+      "PocketJS iPhone 2G: 3.1.3 root and data volumes must both remain read/write",
+    );
+  }
+}
+
+function mergeAuthorizedKeys(existing: Buffer, pocketKey: Buffer): Buffer {
+  if (existing.length > 256 * 1024 || existing.includes(0)) {
+    throw new Error(
+      "PocketJS iPhone 2G: refusing an invalid existing authorized_keys",
+    );
+  }
+  const key = pocketKey.toString("utf8").trim();
+  const lines = existing.toString("utf8").split(/\r?\n/).filter(Boolean);
+  if (!lines.includes(key)) lines.push(key);
+  return Buffer.from(`${lines.join("\n")}\n`);
+}
+
+async function readUntilMarker(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  marker: string,
+  accumulated: { text: string },
+): Promise<void> {
+  while (!accumulated.text.includes(marker)) {
+    const chunk = await reader.read();
+    if (chunk.done) {
+      throw new Error(
+        `PocketJS iPhone 2G: bootstrap controller exited before ${marker}`,
+      );
+    }
+    accumulated.text += Buffer.from(chunk.value).toString();
+  }
+}
+
+export function bootstrapControllerScript(identifier: string): string {
+  const transaction = `/private/var/tmp/pocketjs-bootstrap-${identifier}`;
+  const suffix = `.pocketjs-${identifier}`;
+  const script = `set -eu
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+txn=${transaction}
+helper=/usr/libexec/pocketjs-device
+auth=/private/var/root/.ssh/authorized_keys
+config=/private/etc/ssh/sshd_config
+suffix=${suffix}
+rollback() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  set +e
+  for target in "$config" "$auth" "$helper"; do
+    backup="$target$suffix.old"
+    if test -f "$backup"; then
+      /bin/rm -f "$target"
+      /bin/mv "$backup" "$target"
+    elif test -f "$txn/absent$(echo "$target" | /bin/sed 's,/,-,g')"; then
+      /bin/rm -f "$target"
+    fi
+    /bin/rm -f "$target$suffix.new"
+  done
+  test ! -f "$txn/created-ssh" || /bin/rmdir /private/var/root/.ssh >/dev/null 2>&1
+  /bin/rm -rf "$txn"
+  exit "$result"
+}
+trap 'exit 97' HUP INT TERM
+trap rollback EXIT
+for tool in /bin/cp /bin/mv /bin/rm /bin/chmod /bin/chown /usr/bin/cmp /usr/sbin/sshd; do
+  test -x "$tool"
+done
+if test ! -d /private/var/root/.ssh; then
+  /bin/mkdir /private/var/root/.ssh
+  /bin/chmod 700 /private/var/root/.ssh
+  /bin/chown 0:0 /private/var/root/.ssh
+  : > "$txn/created-ssh"
+fi
+for spec in \
+  "0:$helper:755" \
+  "1:$auth:600" \
+  "2:$config:644"; do
+  index=${"${spec%%:*}"}
+  rest=${"${spec#*:}"}
+  target=${"${rest%:*}"}
+  mode=${"${rest##*:}"}
+  test ! -e "$target$suffix.new"
+  /bin/cp "$txn/payload/$index" "$target$suffix.new"
+  /bin/chmod "$mode" "$target$suffix.new"
+  /bin/chown 0:0 "$target$suffix.new"
+  /usr/bin/cmp "$txn/payload/$index" "$target$suffix.new"
+done
+swap() {
+  target="$1"
+  if test -e "$target"; then
+    test -f "$target"
+    /bin/mv "$target" "$target$suffix.old"
+  else
+    : > "$txn/absent$(echo "$target" | /bin/sed 's,/,-,g')"
+  fi
+  /bin/mv "$target$suffix.new" "$target"
+}
+swap "$helper"
+swap "$auth"
+/bin/sync
+echo PJS_BOOTSTRAP_KEY_READY
+IFS= read decision
+test "$decision" = secure
+/usr/sbin/sshd -t -f "$config$suffix.new"
+swap "$config"
+echo PJS_BOOTSTRAP_SECURE_READY
+IFS= read decision
+test "$decision" = commit
+trap - EXIT HUP INT TERM
+/bin/rm -f "$helper$suffix.old" "$auth$suffix.old" "$config$suffix.old"
+/bin/rm -rf "$txn"
+echo PJS_BOOTSTRAP_COMMITTED
+`;
+  const syntax = runBinary("/bin/sh", ["-n"], Buffer.from(script));
+  if (syntax.exitCode !== 0) {
+    throw new Error(
+      `PocketJS iPhone 2G: generated bootstrap transaction is invalid: ${syntax.stderr.trim()}`,
+    );
+  }
+  return script;
+}
+
+function verifyInstalledBootstrap(receipt: BootstrapReceipt): void {
+  const version = deviceCommand(["/usr/libexec/pocketjs-device", "version"]);
+  const helper = deviceCommand(["/usr/libexec/pocketjs-device", "self"]);
+  const mounts = deviceCommand(["/usr/libexec/pocketjs-device", "mount-state"]);
+  if (
+    version.exitCode !== 0 ||
+    version.stdout.toString() !== "pocketjs-iphone2g-device 4\n" ||
+    helper.exitCode !== 0 ||
+    sha256Bytes(helper.stdout) !==
+      receipt.files["root/usr/libexec/pocketjs-device"].sha256 ||
+    mounts.exitCode !== 0 ||
+    mounts.stdout.toString() !== "root_readwrite=1\ndata_readwrite=1\n"
+  ) {
+    throw new Error(
+      "PocketJS iPhone 2G: installed signed helper/key mount contract failed",
+    );
+  }
+}
+
+async function installBootstrap(): Promise<void> {
+  prepareBootstrap();
+  const receipt = verifiedBootstrapReceipt();
+  const stage = join(iphone2gCacheRoot(), "bootstrap/stage");
+  await withManagedTunnel(async () => {
+    let bootstrapCommand: BootstrapCommand | undefined;
+    let bootstrapAuthentication: "key" | "password" | undefined;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      if (provisionalKeyCommand(["/bin/true"]).exitCode === 0) {
+        bootstrapCommand = provisionalKeyCommand;
+        bootstrapAuthentication = "key";
+        break;
+      }
+      if (passwordCommand(["/bin/true"]).exitCode === 0) {
+        bootstrapCommand = passwordCommand;
+        bootstrapAuthentication = "password";
+        break;
+      }
+      await Bun.sleep(250);
+    }
+    if (!bootstrapCommand || !bootstrapAuthentication) {
+      throw new Error(
+        "PocketJS iPhone 2G: neither the dedicated key nor temporary root/alpine SSH is available over USB",
+      );
+    }
+    assert313DeviceAndMounts(bootstrapCommand);
+
+    const remoteHostKey = bootstrapCommand([
+      "/bin/cat",
+      "/private/etc/ssh/ssh_host_rsa_key.pub",
+    ]);
+    const hostKey = remoteHostKey.stdout.toString().trim();
+    if (remoteHostKey.exitCode !== 0 || !hostKey.startsWith("ssh-rsa ")) {
+      throw new Error(
+        "PocketJS iPhone 2G: existing CustomHJ RSA host public key is unavailable",
+      );
+    }
+    const knownHosts = join(iphone2gCacheRoot(), "bootstrap/known_hosts");
+    writeFileSync(
+      knownHosts,
+      `[127.0.0.1]:${IPHONE2G_TOOLCHAIN.deployment.localPort} ${hostKey.split(/\s+/).slice(0, 2).join(" ")}\n`,
+      { mode: 0o600 },
+    );
+    chmodSync(knownHosts, 0o600);
+    writeDeviceSshConfig();
+
+    try {
+      verifyInstalledBootstrap(receipt);
+      if (passwordCommand(["/bin/true"]).exitCode !== 0) {
+        console.log(
+          "PocketJS iPhone 2G: key-only bootstrap already matches; no device changes needed",
+        );
+        return;
+      }
+    } catch {}
+
+    const currentKeys = bootstrapShell(
+      bootstrapCommand,
+      "test ! -f /private/var/root/.ssh/authorized_keys || /bin/cat /private/var/root/.ssh/authorized_keys",
+    );
+    if (currentKeys.exitCode !== 0) {
+      throw new Error(
+        "PocketJS iPhone 2G: could not read existing authorized_keys",
+      );
+    }
+    const authorizedKeys = mergeAuthorizedKeys(
+      currentKeys.stdout,
+      readFileSync(join(stage, "data/root/.ssh/authorized_keys")),
+    );
+    const payloads = [
+      readFileSync(join(stage, "root/usr/libexec/pocketjs-device")),
+      authorizedKeys,
+      readFileSync(join(stage, "root/private/etc/ssh/sshd_config")),
+    ];
+    const identifier = randomBytes(16).toString("hex");
+    const transaction = `/private/var/tmp/pocketjs-bootstrap-${identifier}`;
+    const prepare = bootstrapShell(
+      bootstrapCommand,
+      `umask 077; test ! -e ${transaction}; /bin/mkdir -p ${transaction}/payload`,
+    );
+    if (prepare.exitCode !== 0) {
+      throw new Error(
+        "PocketJS iPhone 2G: could not create bootstrap staging area",
+      );
+    }
+    for (let index = 0; index < payloads.length; index += 1) {
+      const upload = bootstrapShell(
+        bootstrapCommand,
+        `/bin/cat > ${transaction}/payload/${index}`,
+        payloads[index],
+      );
+      const readback = bootstrapCommand([
+        "/bin/cat",
+        `${transaction}/payload/${index}`,
+      ]);
+      if (
+        upload.exitCode !== 0 ||
+        readback.exitCode !== 0 ||
+        sha256Bytes(readback.stdout) !== sha256Bytes(payloads[index])
+      ) {
+        bootstrapShell(bootstrapCommand, `/bin/rm -rf ${transaction}`);
+        throw new Error(
+          `PocketJS iPhone 2G: bootstrap payload ${index} failed readback`,
+        );
+      }
+    }
+
+    const controllerRemote = `/bin/sh -c ${shellQuote(bootstrapControllerScript(identifier))}`;
+    const controllerCommand =
+      bootstrapAuthentication === "key"
+        ? provisionalKeySshArgs(controllerRemote)
+        : [legacyKitBinary("sshpass"), ...passwordSshArgs(controllerRemote)];
+    const controller = Bun.spawn({
+      cmd: controllerCommand,
+      env:
+        bootstrapAuthentication === "password"
+          ? { ...process.env, SSHPASS: "alpine" }
+          : process.env,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const reader = controller.stdout.getReader();
+    const output = { text: "" };
+    try {
+      await readUntilMarker(reader, "PJS_BOOTSTRAP_KEY_READY\n", output);
+      verifyInstalledBootstrap(receipt);
+      controller.stdin.write("secure\n");
+      await controller.stdin.flush();
+      await readUntilMarker(reader, "PJS_BOOTSTRAP_SECURE_READY\n", output);
+      verifyInstalledBootstrap(receipt);
+      const passwordRejected = passwordCommand(["/bin/true"]);
+      if (passwordRejected.exitCode === 0) {
+        throw new Error("PocketJS iPhone 2G: password SSH remained enabled");
+      }
+      controller.stdin.write("commit\n");
+      controller.stdin.end();
+      await readUntilMarker(reader, "PJS_BOOTSTRAP_COMMITTED\n", output);
+      if ((await controller.exited) !== 0) {
+        throw new Error("PocketJS iPhone 2G: bootstrap commit failed");
+      }
+    } catch (error) {
+      try {
+        controller.stdin.write("rollback\n");
+        controller.stdin.end();
+      } catch {}
+      await controller.exited;
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+    console.log(
+      "PocketJS iPhone 2G: signed helper and client key verified; password SSH disabled",
+    );
+    console.log(
+      "PocketJS iPhone 2G: preserved CustomHJ sshd, host key, and launchd plist",
+    );
+  });
 }
 
 function deviceSshConfig(): string {
@@ -1225,32 +1645,23 @@ function sha256Bytes(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function rootMountLine(): string | undefined {
+function ensureDeviceMountPolicy(): void {
+  const state = deviceCommand(["/usr/libexec/pocketjs-device", "mount-state"]);
   const mounts = deviceCommand(["/sbin/mount"]);
-  if (mounts.exitCode !== 0) return undefined;
-  return mounts.stdout
-    .toString()
-    .split(/\r?\n/)
-    .find((line) => line.includes(" on / "));
-}
-
-function ensureDeviceRootReadOnly(): void {
-  const state = deviceCommand(["/usr/libexec/pocketjs-device", "root-state"]);
-  if (state.exitCode === 0 && state.stdout.toString() === "root_readonly=1\n")
-    return;
-  const remount = deviceCommand(["/sbin/mount", "-ur", "/"]);
-  const verified = deviceCommand([
-    "/usr/libexec/pocketjs-device",
-    "root-state",
-  ]);
+  const lines = mounts.stdout.toString().split(/\r?\n/);
+  const root = lines.find((line) => line.includes(" on / ("));
+  const data = lines.find((line) => line.includes(" on /private/var ("));
   if (
-    remount.exitCode !== 0 ||
-    verified.exitCode !== 0 ||
-    verified.stdout.toString() !== "root_readonly=1\n" ||
-    !rootMountLine()?.includes("read-only")
+    state.exitCode !== 0 ||
+    state.stdout.toString() !== "root_readwrite=1\ndata_readwrite=1\n" ||
+    mounts.exitCode !== 0 ||
+    !root ||
+    !data ||
+    root.includes("read-only") ||
+    data.includes("read-only")
   ) {
     throw new Error(
-      "PocketJS iPhone 2G: CRITICAL: device root could not be returned read-only",
+      "PocketJS iPhone 2G: CRITICAL: 3.1.3 root/data read-write policy changed",
     );
   }
 }
@@ -1262,7 +1673,7 @@ function rollbackDeviceInstall(identifier: string): string | undefined {
     identifier,
   ]);
   try {
-    ensureDeviceRootReadOnly();
+    ensureDeviceMountPolicy();
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
@@ -1308,7 +1719,7 @@ function deploymentPackage(bundle: string, identifier: string): Buffer {
     );
   }
   const parts: Buffer[] = [
-    Buffer.from("PJS2G002", "ascii"),
+    Buffer.from("PJS2G003", "ascii"),
     Buffer.from(identifier, "ascii"),
   ];
   for (const name of DEVICE_BUNDLE_FILES) {
@@ -1344,7 +1755,7 @@ function deployDemo(): void {
     sha256Bytes(remoteHelper.stdout) !==
       receipt.files["root/usr/libexec/pocketjs-device"].sha256 ||
     remoteVersion.exitCode !== 0 ||
-    remoteVersion.stdout.toString() !== "pocketjs-iphone2g-device 3\n"
+    remoteVersion.stdout.toString() !== "pocketjs-iphone2g-device 4\n"
   ) {
     throw new Error(
       "PocketJS iPhone 2G: installed device helper does not match the verified bootstrap",
@@ -1398,7 +1809,7 @@ function deployDemo(): void {
         );
       }
     }
-    ensureDeviceRootReadOnly();
+    ensureDeviceMountPolicy();
     const commit = deviceCommand([
       "/usr/libexec/pocketjs-device",
       "commit",
@@ -1409,11 +1820,21 @@ function deployDemo(): void {
         `PocketJS iPhone 2G: device transaction commit failed (${commit.exitCode})`,
       );
     }
-    ensureDeviceRootReadOnly();
+    ensureDeviceMountPolicy();
   } catch (error) {
     const rollback = rollbackDeviceInstall(identifier);
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`${detail}${rollback ? `\n${rollback}` : ""}`);
+  }
+  const refresh = deviceCommand([
+    "/bin/sh",
+    "-c",
+    shellQuote("cd / && /bin/su mobile -c '/usr/bin/uicache'"),
+  ]);
+  if (refresh.exitCode !== 0) {
+    throw new Error(
+      `PocketJS iPhone 2G: app committed, but uicache refresh failed (${refresh.exitCode})${refresh.stderr.trim() ? `: ${refresh.stderr.trim()}` : ""}`,
+    );
   }
   const restart = deviceCommand([
     "/bin/launchctl",
@@ -1426,10 +1847,47 @@ function deployDemo(): void {
     );
   }
   console.log(
-    "PocketJS iPhone 2G: app installed, read back byte-exactly, and root returned read-only",
+    "PocketJS iPhone 2G: app installed, read back byte-exactly, with root/data still read-write",
   );
   console.log(
-    "PocketJS iPhone 2G: SpringBoard restarted; launch PocketJS Demo for live acceptance",
+    "PocketJS iPhone 2G: application cache refreshed and SpringBoard restarted; launch PocketJS Demo for live acceptance",
+  );
+}
+
+function launchDemo(): void {
+  const localReceipt = join(
+    repository,
+    "dist/iphone2g/PocketJSDemo.app/build-receipt.json",
+  );
+  if (!existsSync(localReceipt)) {
+    throw new Error(
+      "PocketJS iPhone 2G: build and deploy the demo before launching it",
+    );
+  }
+  const remoteReceipt = deviceCommand([
+    "/usr/libexec/pocketjs-device",
+    "read",
+    "build-receipt.json",
+  ]);
+  if (
+    remoteReceipt.exitCode !== 0 ||
+    sha256Bytes(remoteReceipt.stdout) !== sha256File(localReceipt)
+  ) {
+    throw new Error(
+      "PocketJS iPhone 2G: installed app does not match the current local build; deploy first",
+    );
+  }
+  const launch = deviceCommand([
+    "/usr/bin/uiopen",
+    "pocketjs-iphone2g-demo://launch",
+  ]);
+  if (launch.exitCode !== 0) {
+    throw new Error(
+      `PocketJS iPhone 2G: SpringBoard launch request failed (${launch.exitCode})${launch.stderr.trim() ? `: ${launch.stderr.trim()}` : ""}`,
+    );
+  }
+  console.log(
+    "PocketJS iPhone 2G: launch requested through SpringBoard; tap the blue target for acceptance",
   );
 }
 
@@ -1476,6 +1934,11 @@ function printDeviceStatus(): void {
     "last_touch_y",
     "last_touch_hit",
   ].every((name) => /^(0|[1-9][0-9]*)$/.test(fields[name] ?? ""));
+  const positiveAcceptanceCounters = [
+    "guest_frames",
+    "touch_sequences",
+    "last_touch_hit",
+  ].every((name) => /^[1-9][0-9]*$/.test(fields[name] ?? ""));
   if (
     JSON.stringify(fieldNames) !== JSON.stringify(expectedFields) ||
     fields.schema !== "1" ||
@@ -1483,52 +1946,61 @@ function printDeviceStatus(): void {
     !receipt?.buildId ||
     fields.build_id !== receipt.buildId ||
     !countersAreValid ||
+    !positiveAcceptanceCounters ||
     !["0", "1"].includes(fields.touch_down) ||
-    !["starting", "running", "failed", "terminated"].includes(fields.state) ||
-    (fields.state !== "failed" && fields.error !== "")
+    fields.state !== "running" ||
+    fields.error !== ""
   ) {
-    throw new Error("PocketJS iPhone 2G: malformed runtime acceptance record");
+    throw new Error(
+      "PocketJS iPhone 2G: runtime acceptance requires running frames and a successful touch hit",
+    );
   }
   process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
 }
 
 function usage(): never {
   console.error(
-    "usage: bun tools/iphone2g.ts <doctor|setup-sources|setup-csu|prepare-bootstrap|build-demo|build-runtime|build-probe|build|deploy|device-status>",
+    "usage: bun tools/iphone2g.ts <doctor|setup-sources|setup-csu|prepare-bootstrap|install-bootstrap|tunnel|build-demo|build-runtime|build-probe|build|deploy|launch|device-status>",
   );
   process.exit(64);
 }
 
-try {
-  if (command === "doctor") doctor();
-  else if (command === "setup-csu") {
-    ensureCsu();
-    console.log(
-      `PocketJS iPhone 2G: verified Apple Csu -> ${iphone2gCsuPath()}`,
-    );
-  } else if (command === "setup-sources") {
-    ensureSources();
-    console.log(
-      `PocketJS iPhone 2G: verified Apple Csu -> ${iphone2gCsuPath()}`,
-    );
-    console.log(
-      `PocketJS iPhone 2G: verified QuickJS -> ${iphone2gQuickJsPath()}`,
-    );
-    console.log(
-      `PocketJS iPhone 2G: verified Legacy-iOS-Kit -> ${iphone2gLegacyKitPath()}`,
-    );
-  } else if (command === "build-demo") buildDemo();
-  else if (command === "prepare-bootstrap") prepareBootstrap();
-  else if (command === "build-runtime" || command === "build-probe") {
-    buildDemo();
-    buildRuntime();
-  } else if (command === "build") {
-    buildDemo();
-    buildRuntime();
-  } else if (command === "deploy") deployDemo();
-  else if (command === "device-status") printDeviceStatus();
-  else usage();
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+if (import.meta.main) {
+  try {
+    if (command === "doctor") doctor();
+    else if (command === "setup-csu") {
+      ensureCsu();
+      console.log(
+        `PocketJS iPhone 2G: verified Apple Csu -> ${iphone2gCsuPath()}`,
+      );
+    } else if (command === "setup-sources") {
+      ensureSources();
+      console.log(
+        `PocketJS iPhone 2G: verified Apple Csu -> ${iphone2gCsuPath()}`,
+      );
+      console.log(
+        `PocketJS iPhone 2G: verified QuickJS -> ${iphone2gQuickJsPath()}`,
+      );
+      console.log(
+        `PocketJS iPhone 2G: verified Legacy-iOS-Kit -> ${iphone2gLegacyKitPath()}`,
+      );
+    } else if (command === "build-demo") buildDemo();
+    else if (command === "prepare-bootstrap") prepareBootstrap();
+    else if (command === "install-bootstrap") await installBootstrap();
+    else if (command === "tunnel") runTunnel();
+    else if (command === "build-runtime" || command === "build-probe") {
+      buildDemo();
+      buildRuntime();
+    } else if (command === "build") {
+      buildDemo();
+      buildRuntime();
+    } else if (command === "deploy") await withManagedTunnel(deployDemo);
+    else if (command === "launch") await withManagedTunnel(launchDemo);
+    else if (command === "device-status")
+      await withManagedTunnel(printDeviceStatus);
+    else usage();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }

@@ -23,10 +23,18 @@ export interface IPhone2GToolchainManifest {
   readonly cachePath: string;
   readonly device: {
     readonly productType: "iPhone1,1";
-    readonly productVersion: "1.1.4";
-    readonly buildVersion: "4A102";
+    readonly productVersion: "3.1.3";
+    readonly buildVersion: "7E18";
     readonly usbVendorId: string;
     readonly normalModeProductId: string;
+  };
+  readonly deployment: {
+    readonly rootMount: "/";
+    readonly dataMount: "/private/var";
+    readonly mountPolicy: "read-write";
+    readonly devicePort: 22;
+    readonly localPort: 2222;
+    readonly bootstrapUser: "root";
   };
   readonly compiler: {
     readonly target: "armv6-apple-darwin8";

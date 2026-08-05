@@ -1,24 +1,51 @@
-# iPhone 2G / iPhone OS 1.1.4 host
+# iPhone 2G / iPhone OS 3.1.3 host
 
-This is the deliberately private first-stage host for the original iPhone.
-It validates the risky platform seam before the target is advertised in the
-production registry: Xcode 26 emits ARMv6, `ld-classic` links against the
-byte-verified stock 4A102 sysroot, and UIKit 229 presents a real 320-pixel-wide
-touch surface.
+This is the deliberately private PocketJS host for the original iPhone
+(`iPhone1,1`). The connected-device target is iPhone OS 3.1.3 (`7E18`). Xcode
+26 still emits ARMv6 and `ld-classic` links against the byte-verified stock
+1.1.4 (`4A102`) sysroot, so 1.1.4 is the executable's linker ABI floor rather
+than the installed-system target.
 
 The host is C on purpose. Modern `ld-classic` can link ARMv6 code and stock
 ObjC libraries, but crashes while translating ObjC1 class-reference
 relocations emitted for an `@implementation`. `runtime.c` therefore registers
-its view and delegate with the Objective-C runtime API. Device input is read
-from the iPhone OS 1.x `GSEvent`; it is exposed to PocketJS as the
-hardware-neutral `input.touch` capability.
+its view and delegate through the Objective-C runtime API. It uses the 3.x
+application lifecycle and UIKit touch selectors on the current phone, while
+retaining the older 1.x event path as an ABI fallback. Device input is exposed
+to PocketJS as the hardware-neutral `input.touch` capability.
 
-Run the read-only checks and build the complete demo bundle:
+Run the local checks, install the key-only USB deployment helper, build, and
+deploy the complete demo bundle:
 
 ```sh
-bun tools/iphone2g.ts doctor
-bun tools/iphone2g.ts build
+bun iphone2g doctor
+bun iphone2g prepare-bootstrap
+bun iphone2g install-bootstrap
+bun iphone2g build
+bun iphone2g deploy
+bun iphone2g launch
 ```
+
+`install-bootstrap` preserves the working CustomHJ `sshd`, device host key,
+and launchd plist. It installs only the signed `pocketjs-device` helper, merges
+the dedicated client key, pins the existing device host key, and disables
+password SSH only after key authentication and helper verification succeed.
+The USB tunnel is managed automatically for install, deploy, launch, and
+status; use `bun iphone2g tunnel` only when a persistent foreground forward is
+useful.
+
+After `deploy` refreshes the application cache and restarts SpringBoard,
+`launch` verifies the installed build receipt and asks SpringBoard to open
+**PocketJS** through its private URL scheme. Tap the blue target on the phone,
+then run:
+
+```sh
+bun iphone2g device-status
+```
+
+That command accepts only a status record for the current build with running
+guest frames and a successful physical touch hit. A successful build or
+byte-exact installation alone is not live runtime acceptance.
 
 Artifacts are written to `dist/iphone2g/PocketJSDemo.app`. The app contains
 the generated Solid/PocketJS guest, pinned QuickJS, PocketJS raster core, and
@@ -27,6 +54,8 @@ pairing records, SSH keys, ramdisks, historical bootstrap packages, and Cargo
 target cache live only under the shared Pocket Stack cache. They are never
 copied into the repository.
 
-Deployment is intentionally gated on a raw pre-change filesystem image and a
-key-only SSH bootstrap. See `docs/IPHONE2G.md`; do not run ZiPhone, change the
-baseband, alter activation, enable AFC2, or make the stock `fstab` writable.
+See `docs/IPHONE2G.md` for the exact workflow and the archived 1.1.4 recovery
+incident. The current deployment does not enter DFU, restore firmware, alter
+activation or baseband state, enable AFC2, replace CustomHJ SSH components, or
+change `fstab`; the restored 3.1.3 root and data volumes remain read/write by
+design.

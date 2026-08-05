@@ -16,6 +16,9 @@ import {
 const REPOSITORY = fileURLToPath(new URL("../", import.meta.url));
 const MANIFEST_PATH = join(REPOSITORY, "apps/iphone2g-demo/pocket.json");
 const ENTRY_PATH = join(REPOSITORY, "apps/iphone2g-demo/main.tsx");
+const APP_PATH = join(REPOSITORY, "apps/iphone2g-demo/app.tsx");
+const INFO_PLIST_PATH = join(REPOSITORY, "hosts/iphone2g/Info.plist");
+const RUNTIME_PATH = join(REPOSITORY, "hosts/iphone2g/runtime.c");
 const ROOT_TSCONFIG = join(REPOSITORY, "tsconfig.json");
 const JSX_DECLARATIONS = join(REPOSITORY, "framework/src/jsx.d.ts");
 
@@ -99,5 +102,30 @@ describe("private iPhone 2G build profile", () => {
         file.endsWith("/apps/iphone2g-demo/app.tsx"),
       ),
     ).toBe(true);
+  });
+
+  test("targets the restored 7E18 runtime with UIKit 3 launch and touch fallbacks", () => {
+    const info = readFileSync(INFO_PLIST_PATH, "utf8");
+    const runtime = readFileSync(RUNTIME_PATH, "utf8");
+    const app = readFileSync(APP_PATH, "utf8");
+
+    expect(info).toContain("<key>MinimumOSVersion</key>\n  <string>3.1.3</string>");
+    expect(info).toContain("<key>CFBundleSupportedPlatforms</key>");
+    expect(info).toContain("<string>iPhoneOS</string>");
+    expect(info).toContain("<string>pocketjs-iphone2g-demo</string>");
+    expect(info).toContain("<key>UIStatusBarHidden</key>\n  <true/>");
+
+    expect(runtime).toContain('dlsym(handle, "UIGraphicsGetCurrentContext")');
+    expect(runtime).toContain('dlsym(handle, "UICurrentContext")');
+    expect(runtime).toContain('dlsym(handle, "GSEventGetLocationInWindow")');
+    expect(runtime).not.toContain("extern CGPoint GSEventGetLocationInWindow");
+    expect(runtime).toContain('sel_registerName("touchesBegan:withEvent:")');
+    expect(runtime).toContain('sel_registerName("touchesCancelled:withEvent:")');
+    expect(runtime).toContain("g_last_touch_hit = g_touch_hit");
+    expect(runtime).toContain("g_last_touch_hit,");
+    expect(runtime).toContain('sel_registerName("application:didFinishLaunchingWithOptions:")');
+    expect(runtime).toContain('responds_to(g_window, "makeKeyAndVisible")');
+    expect(runtime).not.toContain("extern CGContextRef UICurrentContext");
+    expect(app).toContain("iPhone OS 3.1.3 / 7E18 / 320 x 480");
   });
 });

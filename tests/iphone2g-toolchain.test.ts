@@ -59,11 +59,19 @@ describe("canonical iPhone 2G toolchain", () => {
   test("pins the exact stock device, firmware, compiler, transport, and bootstrap", () => {
     expect(IPHONE2G_TOOLCHAIN).toMatchObject({
       schemaVersion: 1,
-      toolchainVersion: "iphoneos-1.1.4-armv6-v1",
+      toolchainVersion: "iphoneos-3.1.3-armv6-v2",
       device: {
         productType: "iPhone1,1",
-        productVersion: "1.1.4",
-        buildVersion: "4A102",
+        productVersion: "3.1.3",
+        buildVersion: "7E18",
+      },
+      deployment: {
+        rootMount: "/",
+        dataMount: "/private/var",
+        mountPolicy: "read-write",
+        devicePort: 22,
+        localPort: 2222,
+        bootstrapUser: "root",
       },
       compiler: {
         target: "armv6-apple-darwin8",
@@ -92,12 +100,10 @@ describe("canonical iPhone 2G toolchain", () => {
     expect(Object.keys(IPHONE2G_TOOLCHAIN.compiler.sysrootFiles)).toEqual([
       "usr/lib/libSystem.B.dylib",
       "usr/lib/libgcc_s.1.dylib",
-      "usr/lib/libgcc_s_v6.1.dylib",
       "usr/lib/libobjc.A.dylib",
       "System/Library/Frameworks/UIKit.framework/UIKit",
       "System/Library/Frameworks/Foundation.framework/Foundation",
       "System/Library/Frameworks/CoreGraphics.framework/CoreGraphics",
-      "System/Library/Frameworks/GraphicsServices.framework/GraphicsServices",
     ]);
     for (const digest of Object.values(
       IPHONE2G_TOOLCHAIN.compiler.sysrootFiles,

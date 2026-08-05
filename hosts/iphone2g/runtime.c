@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 /*
- * iPhone OS 1.1.4 UIKit host for PocketJS.
+ * iPhone OS 1.1.4-3.1.3 UIKit host for PocketJS.
  *
  * This translation unit intentionally contains no Objective-C metadata.  The
  * delegate and view classes are registered at runtime so ld-classic never has
@@ -83,9 +83,8 @@ extern void *objc_msgSend(void);
 extern void *objc_msgSend_stret(void);
 
 extern int UIApplicationMain(int argc, char **argv, id principal_class_name, id delegate_class_name);
-extern CGContextRef UICurrentContext(void);
-extern CGPoint GSEventGetLocationInWindow(GSEventRef event);
 extern uint8_t *getsectdata(const char *segment_name, const char *section_name, size_t *size);
+extern void *dlsym(void *handle, const char *symbol);
 
 extern void CGContextSetRGBFillColor(
   CGContextRef context,
@@ -151,6 +150,7 @@ static int g_touch_down;
 static int g_touch_x;
 static int g_touch_y;
 static int g_touch_hit;
+static int g_last_touch_hit;
 static int g_touch_needs_hit;
 static int g_touch_was_sent;
 static int g_touch_release_after_frame;
@@ -202,7 +202,7 @@ static void write_acceptance_record(void) {
     g_touch_down,
     g_touch_x,
     g_touch_y,
-    g_touch_hit,
+    g_last_touch_hit,
     g_state == POCKET_STATE_FAILED ? g_status_message : ""
   );
   if (length <= 0) return;
@@ -235,6 +235,25 @@ static id send_id_rect(id receiver, const char *selector, CGRect rect) {
 
 static id send_id_object(id receiver, const char *selector, id value) {
   return ((id (*)(id, SEL, id))objc_msgSend)(receiver, sel_registerName(selector), value);
+}
+
+static BOOL send_bool_selector(id receiver, const char *selector, SEL value) {
+  return ((BOOL (*)(id, SEL, SEL))objc_msgSend)(
+    receiver,
+    sel_registerName(selector),
+    value
+  );
+}
+
+static BOOL responds_to(id receiver, const char *selector) {
+  if (receiver == NULL) {
+    return NO;
+  }
+  return send_bool_selector(
+    receiver,
+    "respondsToSelector:",
+    sel_registerName(selector)
+  );
 }
 
 static id send_id_timer(
@@ -298,6 +317,33 @@ static CGRect send_rect(id receiver, const char *selector) {
     sel_registerName(selector)
   );
   return result;
+}
+
+static CGPoint send_point_object(id receiver, const char *selector, id value) {
+  CGPoint result;
+  ((void (*)(CGPoint *, id, SEL, id))objc_msgSend_stret)(
+    &result,
+    receiver,
+    sel_registerName(selector),
+    value
+  );
+  return result;
+}
+
+static CGContextRef current_graphics_context(void) {
+  typedef CGContextRef (*CurrentContextFunction)(void);
+  static CurrentContextFunction function;
+  static int resolved;
+
+  if (!resolved) {
+    void *handle = (void *)(intptr_t)-2; /* Darwin RTLD_DEFAULT. */
+    function = (CurrentContextFunction)dlsym(handle, "UIGraphicsGetCurrentContext");
+    if (function == NULL) {
+      function = (CurrentContextFunction)dlsym(handle, "UICurrentContext");
+    }
+    resolved = 1;
+  }
+  return function == NULL ? NULL : function();
 }
 
 static void draw_text_bytes(
@@ -519,10 +565,9 @@ static int draw_framebuffer(CGContextRef context, CGRect bounds) {
   return 1;
 }
 
-static void update_touch_location(id event) {
-  CGPoint point = GSEventGetLocationInWindow((GSEventRef)event);
-  float local_x = point.x - g_content_frame.origin.x;
-  float local_y = point.y - g_content_frame.origin.y;
+static void update_touch_point(CGPoint point) {
+  float local_x = point.x;
+  float local_y = point.y;
   float view_width = g_content_frame.size.width;
   float view_height = g_content_frame.size.height;
   int logical_width = g_framebuffer_width == 0
@@ -551,6 +596,40 @@ static void update_touch_location(id event) {
   } else if (g_touch_y >= logical_height) {
     g_touch_y = logical_height - 1;
   }
+}
+
+static int update_gsevent_location(id event) {
+  typedef CGPoint (*GSEventLocationFunction)(GSEventRef event);
+  static GSEventLocationFunction function;
+  static int resolved;
+  CGPoint point;
+
+  if (!resolved) {
+    void *handle = (void *)(intptr_t)-2; /* Darwin RTLD_DEFAULT. */
+    function = (GSEventLocationFunction)dlsym(handle, "GSEventGetLocationInWindow");
+    resolved = 1;
+  }
+  if (function == NULL) {
+    return 0;
+  }
+  point = function((GSEventRef)event);
+  point.x -= g_content_frame.origin.x;
+  point.y -= g_content_frame.origin.y;
+  update_touch_point(point);
+  return 1;
+}
+
+static int update_uitouch_location(id self, id touches) {
+  id touch;
+  if (touches == NULL) {
+    return 0;
+  }
+  touch = send_id(touches, "anyObject");
+  if (touch == NULL) {
+    return 0;
+  }
+  update_touch_point(send_point_object(touch, "locationInView:", self));
+  return 1;
 }
 
 static int boot_embedded_runtime(void) {
@@ -605,6 +684,7 @@ static void pocket_tick(id self, SEL command, id timer) {
 
   if (g_touch_down && g_touch_needs_hit) {
     g_touch_hit = pocket_runtime_hit_test_bounds((float)g_touch_x, (float)g_touch_y);
+    g_last_touch_hit = g_touch_hit;
     g_touch_needs_hit = 0;
   }
   record_this_frame = g_record_next_frame;
@@ -632,12 +712,15 @@ static void pocket_tick(id self, SEL command, id timer) {
 }
 
 static void pocket_draw_rect(id self, SEL command, CGRect rect) {
-  CGContextRef context = UICurrentContext();
+  CGContextRef context = current_graphics_context();
   CGRect bounds;
   (void)command;
   (void)rect;
 
   if (context == NULL) {
+    if (g_state != POCKET_STATE_FAILED) {
+      fail_runtime("UIKit did not expose a current graphics context");
+    }
     return;
   }
   bounds = send_rect(self, "bounds");
@@ -650,16 +733,14 @@ static void pocket_draw_rect(id self, SEL command, CGRect rect) {
   }
 }
 
-static void pocket_mouse_down(id self, SEL command, id event) {
-  (void)self;
-  (void)command;
-  update_touch_location(event);
+static void begin_touch(void) {
   g_touch_down = 1;
   g_touch_sequences += 1;
   g_touch_was_sent = 0;
   g_touch_release_after_frame = 0;
   if (g_state == POCKET_STATE_RUNNING) {
     g_touch_hit = pocket_runtime_hit_test_bounds((float)g_touch_x, (float)g_touch_y);
+    g_last_touch_hit = g_touch_hit;
     g_touch_needs_hit = 0;
   } else {
     g_touch_hit = 0;
@@ -667,21 +748,10 @@ static void pocket_mouse_down(id self, SEL command, id event) {
   }
 }
 
-static void pocket_mouse_dragged(id self, SEL command, id event) {
-  (void)self;
-  (void)command;
-  if (g_touch_down) {
-    update_touch_location(event);
-  }
-}
-
-static void pocket_mouse_up(id self, SEL command, id event) {
-  (void)self;
-  (void)command;
+static void end_touch(void) {
   if (!g_touch_down) {
     return;
   }
-  update_touch_location(event);
   g_record_next_frame = 1;
   if (g_touch_was_sent) {
     g_touch_down = 0;
@@ -693,21 +763,102 @@ static void pocket_mouse_up(id self, SEL command, id event) {
   }
 }
 
-static void pocket_application_did_finish_launching(id self, SEL command, id application) {
+static void pocket_mouse_down(id self, SEL command, id event) {
+  (void)self;
+  (void)command;
+  if (update_gsevent_location(event)) {
+    begin_touch();
+  }
+}
+
+static void pocket_mouse_dragged(id self, SEL command, id event) {
+  (void)self;
+  (void)command;
+  if (g_touch_down) {
+    update_gsevent_location(event);
+  }
+}
+
+static void pocket_mouse_up(id self, SEL command, id event) {
+  (void)self;
+  (void)command;
+  if (!g_touch_down) {
+    return;
+  }
+  update_gsevent_location(event);
+  end_touch();
+}
+
+static void pocket_touches_began(
+  id self,
+  SEL command,
+  id touches,
+  id event
+) {
+  (void)command;
+  (void)event;
+  if (update_uitouch_location(self, touches)) {
+    begin_touch();
+  }
+}
+
+static void pocket_touches_moved(
+  id self,
+  SEL command,
+  id touches,
+  id event
+) {
+  (void)command;
+  (void)event;
+  if (g_touch_down) {
+    (void)update_uitouch_location(self, touches);
+  }
+}
+
+static void pocket_touches_ended(
+  id self,
+  SEL command,
+  id touches,
+  id event
+) {
+  (void)command;
+  (void)event;
+  if (g_touch_down) {
+    (void)update_uitouch_location(self, touches);
+    end_touch();
+  }
+}
+
+static void launch_application(id self, id application) {
   Class hardware_class = objc_getClass("UIHardware");
   Class window_class = objc_getClass("UIWindow");
   CGRect frame;
-  (void)command;
 
-  /* 4A102 otherwise reserves the 20 px status bar and reports a 320x460 rect. */
-  send_void_float((id)hardware_class, "_setStatusBarHeight:", 0.0f);
-  send_status_bar_mode(application, 2, 0, 0.0f, 0);
+  if (g_window != NULL) {
+    return;
+  }
+
+  if (responds_to(application, "setStatusBarHidden:")) {
+    send_void_bool(application, "setStatusBarHidden:", YES);
+  } else {
+    /* 4A102 otherwise reserves the 20 px status bar and reports 320x460. */
+    send_void_float((id)hardware_class, "_setStatusBarHeight:", 0.0f);
+    send_status_bar_mode(application, 2, 0, 0.0f, 0);
+  }
   frame.origin.x = 0.0f;
   frame.origin.y = 0.0f;
   frame.size.width = (float)POCKET_LOGICAL_WIDTH;
   frame.size.height = (float)POCKET_LOGICAL_HEIGHT;
   g_content_frame = frame;
-  g_window = send_id_rect(send_id((id)window_class, "alloc"), "initWithContentRect:", frame);
+  if (responds_to(application, "setStatusBarHidden:")) {
+    g_window = send_id_rect(send_id((id)window_class, "alloc"), "initWithFrame:", frame);
+  } else {
+    g_window = send_id_rect(
+      send_id((id)window_class, "alloc"),
+      "initWithContentRect:",
+      frame
+    );
+  }
   g_view = send_id_rect(send_id(objc_getClass("PocketJSRuntimeView"), "alloc"), "initWithFrame:", frame);
 
   if (g_window == NULL || g_view == NULL) {
@@ -719,10 +870,18 @@ static void pocket_application_did_finish_launching(id self, SEL command, id app
   g_state = POCKET_STATE_STARTING;
   copy_status_message("Starting embedded demo");
   write_acceptance_record();
-  send_void_object(g_window, "setContentView:", g_view);
-  send_void_object(g_window, "orderFront:", self);
-  send_void_object(g_window, "makeKey:", self);
-  send_void_bool(g_window, "_setHidden:", NO);
+  if (responds_to(g_view, "setMultipleTouchEnabled:")) {
+    send_void_bool(g_view, "setMultipleTouchEnabled:", NO);
+  }
+  if (responds_to(g_window, "makeKeyAndVisible")) {
+    send_void_object(g_window, "addSubview:", g_view);
+    send_void(g_window, "makeKeyAndVisible");
+  } else {
+    send_void_object(g_window, "setContentView:", g_view);
+    send_void_object(g_window, "orderFront:", self);
+    send_void_object(g_window, "makeKey:", self);
+    send_void_bool(g_window, "_setHidden:", NO);
+  }
   send_void(g_view, "setNeedsDisplay");
 
   g_timer = send_id_timer(
@@ -737,18 +896,52 @@ static void pocket_application_did_finish_launching(id self, SEL command, id app
   if (g_timer == NULL) {
     fail_runtime("UIKit could not schedule the 30 Hz runtime timer");
   }
-  (void)application;
 }
 
-static void pocket_application_will_terminate(id self, SEL command) {
-  (void)self;
+static void pocket_application_did_finish_launching(id self, SEL command, id application) {
   (void)command;
+  launch_application(self, application);
+}
+
+static BOOL pocket_application_did_finish_launching_with_options(
+  id self,
+  SEL command,
+  id application,
+  id options
+) {
+  (void)command;
+  (void)options;
+  launch_application(self, application);
+  return g_window == NULL ? NO : YES;
+}
+
+static void terminate_application(void) {
+  if (g_state == POCKET_STATE_TERMINATED) {
+    return;
+  }
   stop_timer();
   g_state = POCKET_STATE_TERMINATED;
   copy_status_message("Application terminated");
   write_acceptance_record();
   pocket_runtime_shutdown();
   g_framebuffer = NULL;
+}
+
+static void pocket_application_will_terminate(id self, SEL command) {
+  (void)self;
+  (void)command;
+  terminate_application();
+}
+
+static void pocket_application_will_terminate_with_application(
+  id self,
+  SEL command,
+  id application
+) {
+  (void)self;
+  (void)command;
+  (void)application;
+  terminate_application();
 }
 
 static Class register_view_class(void) {
@@ -783,6 +976,30 @@ static Class register_view_class(void) {
     ) &&
     class_addMethod(
       cls,
+      sel_registerName("touchesBegan:withEvent:"),
+      (void (*)(void))pocket_touches_began,
+      "v@:@@"
+    ) &&
+    class_addMethod(
+      cls,
+      sel_registerName("touchesMoved:withEvent:"),
+      (void (*)(void))pocket_touches_moved,
+      "v@:@@"
+    ) &&
+    class_addMethod(
+      cls,
+      sel_registerName("touchesEnded:withEvent:"),
+      (void (*)(void))pocket_touches_ended,
+      "v@:@@"
+    ) &&
+    class_addMethod(
+      cls,
+      sel_registerName("touchesCancelled:withEvent:"),
+      (void (*)(void))pocket_touches_ended,
+      "v@:@@"
+    ) &&
+    class_addMethod(
+      cls,
       sel_registerName("pocketJSTick:"),
       (void (*)(void))pocket_tick,
       "v@:@"
@@ -808,9 +1025,21 @@ static Class register_delegate_class(void) {
     ) &&
     class_addMethod(
       cls,
+      sel_registerName("application:didFinishLaunchingWithOptions:"),
+      (void (*)(void))pocket_application_did_finish_launching_with_options,
+      "c@:@@"
+    ) &&
+    class_addMethod(
+      cls,
       sel_registerName("applicationWillTerminate"),
       (void (*)(void))pocket_application_will_terminate,
       "v@:"
+    ) &&
+    class_addMethod(
+      cls,
+      sel_registerName("applicationWillTerminate:"),
+      (void (*)(void))pocket_application_will_terminate_with_application,
+      "v@:@"
     );
   if (!methods_added) {
     return NULL;

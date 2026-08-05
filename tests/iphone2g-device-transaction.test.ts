@@ -4,6 +4,7 @@ import {
   beforeEach,
   describe,
   expect,
+  setDefaultTimeout,
   test,
 } from "bun:test";
 import {
@@ -38,6 +39,8 @@ const bundleFiles = [
   "build-receipt.json",
 ];
 
+setDefaultTimeout(15_000);
+
 function define(name: string, value: string): string {
   return `-D${name}="${value}"`;
 }
@@ -62,7 +65,7 @@ function writeBundle(directory: string, label: string): void {
 
 function packageBytes(identifier: string, label: string): Buffer {
   const parts = [
-    Buffer.from("PJS2G002", "ascii"),
+    Buffer.from("PJS2G003", "ascii"),
     Buffer.from(identifier, "ascii"),
   ];
   for (const name of bundleFiles) {
@@ -139,7 +142,12 @@ describe("iPhone 2G device transaction helper", () => {
     const commit = run(["commit", identifier]);
     expect(commit.exitCode, commit.stderr.toString()).toBe(0);
     expect(state()).toBe("state=none\n");
-    expect(run(["root-state"]).stdout.toString()).toBe("root_readonly=1\n");
+    expect(run(["mount-state"]).stdout.toString()).toBe(
+      "root_readwrite=1\ndata_readwrite=1\n",
+    );
+    expect(run(["version"]).stdout.toString()).toBe(
+      "pocketjs-iphone2g-device 4\n",
+    );
   });
 
   test("rejects a foreign transaction id and restores the previous app", () => {

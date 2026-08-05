@@ -14,7 +14,7 @@ export default function IPhone2GDemo() {
           POCKETJS DEVICE LAB
         </Text>
         <Text class="text-3xl font-bold text-white">iPhone 2G</Text>
-        <Text class="text-sm text-slate-300">iPhoneOS 1.1.4 / 320 x 480</Text>
+        <Text class="text-sm text-slate-300">iPhone OS 3.1.3 / 7E18 / 320 x 480</Text>
       </View>
 
       <View class="flex-col gap-3">
