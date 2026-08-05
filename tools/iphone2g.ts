@@ -556,13 +556,7 @@ function buildRuntime(): void {
     join(bundle, "Info.plist"),
   );
   cpSync(join(repository, "hosts/iphone2g/PkgInfo"), join(bundle, "PkgInfo"));
-  cpSync(join(repository, "assets/images/logo.png"), join(bundle, "Icon.png"));
-  mustRun("sips", [
-    "--resampleHeightWidth",
-    "57",
-    "57",
-    join(bundle, "Icon.png"),
-  ]);
+  cpSync(join(repository, "hosts/iphone2g/Icon.png"), join(bundle, "Icon.png"));
   chmodSync(executable, 0o755);
   for (const name of ["Info.plist", "PkgInfo", "Icon.png"])
     chmodSync(join(bundle, name), 0o644);
@@ -1917,6 +1911,11 @@ function printDeviceStatus(): void {
     "last_touch_x",
     "last_touch_y",
     "last_touch_hit",
+    "tilt_samples",
+    "tilt_changes",
+    "tilt_x_milli",
+    "tilt_y_milli",
+    "acceleration_z_milli",
     "error",
   ];
   const fields = Object.fromEntries(pairs);
@@ -1933,26 +1932,36 @@ function printDeviceStatus(): void {
     "last_touch_x",
     "last_touch_y",
     "last_touch_hit",
+    "tilt_samples",
+    "tilt_changes",
   ].every((name) => /^(0|[1-9][0-9]*)$/.test(fields[name] ?? ""));
+  const signedTiltFieldsAreValid = [
+    "tilt_x_milli",
+    "tilt_y_milli",
+    "acceleration_z_milli",
+  ].every((name) => /^-?(0|[1-9][0-9]*)$/.test(fields[name] ?? ""));
   const positiveAcceptanceCounters = [
     "guest_frames",
     "touch_sequences",
     "last_touch_hit",
+    "tilt_samples",
+    "tilt_changes",
   ].every((name) => /^[1-9][0-9]*$/.test(fields[name] ?? ""));
   if (
     JSON.stringify(fieldNames) !== JSON.stringify(expectedFields) ||
-    fields.schema !== "1" ||
+    fields.schema !== "2" ||
     !/^[0-9a-f]{32}$/.test(fields.build_id ?? "") ||
     !receipt?.buildId ||
     fields.build_id !== receipt.buildId ||
     !countersAreValid ||
+    !signedTiltFieldsAreValid ||
     !positiveAcceptanceCounters ||
     !["0", "1"].includes(fields.touch_down) ||
     fields.state !== "running" ||
     fields.error !== ""
   ) {
     throw new Error(
-      "PocketJS iPhone 2G: runtime acceptance requires running frames and a successful touch hit",
+      "PocketJS iPhone 2G: runtime acceptance requires running frames, a successful touch hit, and observed tilt",
     );
   }
   process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);

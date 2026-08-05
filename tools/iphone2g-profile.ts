@@ -10,12 +10,12 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
  * Transitional iPhone 2G profile used only by the private device toolchain.
  *
  * It deliberately stays out of the production `POCKET_TARGETS` registry until
- * the iPhoneOS 1.1.4 host has passed the full hardware acceptance suite. The
- * application owns the original 320x480 display and receives touch input in
- * the same logical coordinate space.
+ * the iPhone OS 3.1.3 host has passed the full hardware acceptance suite. The
+ * application owns the original 320x480 display and receives touch plus a
+ * calibrated, gravity-derived screen-plane tilt axis in that logical space.
  */
 export const IPHONE2G_DEV_TARGET_ID = "iphone2g-dev";
-export const IPHONE2G_DEV_HOST_ABI = 6;
+export const IPHONE2G_DEV_HOST_ABI = 7;
 export const IPHONE2G_VIEWPORT = [320, 480] as const;
 
 export const IPHONE2G_DEV_CONTRACTS = definePlatformContractRegistry(
@@ -31,7 +31,7 @@ export const IPHONE2G_DEV_CONTRACTS = definePlatformContractRegistry(
         presentations: ["native"],
         rasterDensity: 1,
       },
-      capabilities: ["input.touch", "text.glyphs.baked"],
+      capabilities: ["input.tilt", "input.touch", "text.glyphs.baked"],
     },
   }),
 );

@@ -104,6 +104,7 @@ import {
   TILESET_HEADER_SIZE,
   TILESET_MAGIC,
   TILESET_VERSION,
+  TILT_CENTER,
   TRANSITION_MASK_ALL,
   VALUE_KIND,
   type PropName,
@@ -434,6 +435,11 @@ export function generateRust(): string {
   put("/// axis 0..255 with 128 = center. Hosts without a stick omit the arg;");
   put("/// the runtime defaults to this value (so old tapes/goldens hold).");
   put(`pub const ANALOG_CENTER: u32 = ${hex(ANALOG_CENTER, 4)};`);
+  put("");
+  put("/// frame argument five: calibrated logical-screen tilt packs (x << 8) | y,");
+  put("/// each axis 0..255 with 128 = level. Positive X is right and positive Y");
+  put("/// is down; hosts without input.tilt omit the argument and default here.");
+  put(`pub const TILT_CENTER: u32 = ${hex(TILT_CENTER, 4)};`);
   put("");
 
   // --- audio module -------------------------------------------------------------

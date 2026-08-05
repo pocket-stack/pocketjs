@@ -62,6 +62,10 @@ typedef enum {
 #define POCKET_STATUS_CAPACITY 256
 #define POCKET_STATUS_COLUMNS 42
 #define POCKET_STATUS_LINES 5
+#define POCKET_TILT_CALIBRATION_SAMPLES 8UL
+#define POCKET_TILT_SENSITIVITY 1.5f
+#define POCKET_TILT_TRIGGER 0.18f
+#define POCKET_TILT_REARM 0.08f
 #define POCKET_ACCEPTANCE_PATH "/private/var/tmp/pocketjs-iphone2g.status"
 #define POCKET_ACCEPTANCE_TEMP "/private/var/tmp/pocketjs-iphone2g.status.new"
 #ifndef POCKET_BUILD_ID
@@ -136,6 +140,7 @@ extern void CGImageRelease(CGImageRef image);
 static id g_window;
 static id g_view;
 static id g_timer;
+static id g_accelerometer;
 static CGRect g_content_frame;
 static PocketState g_state = POCKET_STATE_STARTING;
 static char g_status_message[POCKET_STATUS_CAPACITY];
@@ -157,6 +162,18 @@ static int g_touch_release_after_frame;
 static int g_record_next_frame;
 static unsigned long g_guest_frames;
 static unsigned long g_touch_sequences;
+static unsigned long g_tilt_samples;
+static unsigned long g_tilt_changes;
+static float g_acceleration_x;
+static float g_acceleration_y;
+static float g_acceleration_z;
+static float g_calibration_sum_x;
+static float g_calibration_sum_y;
+static float g_calibration_x;
+static float g_calibration_y;
+static float g_tilt_x;
+static float g_tilt_y;
+static int g_tilt_active;
 
 static size_t cstring_length(const char *text) {
   size_t length = 0;
@@ -193,8 +210,10 @@ static void write_acceptance_record(void) {
   int length = snprintf(
     record,
     sizeof(record),
-    "schema=1\nbuild_id=%s\nstate=%s\nguest_frames=%lu\ntouch_sequences=%lu\n"
-    "touch_down=%d\nlast_touch_x=%d\nlast_touch_y=%d\nlast_touch_hit=%d\nerror=%s\n",
+    "schema=2\nbuild_id=%s\nstate=%s\nguest_frames=%lu\ntouch_sequences=%lu\n"
+    "touch_down=%d\nlast_touch_x=%d\nlast_touch_y=%d\nlast_touch_hit=%d\n"
+    "tilt_samples=%lu\ntilt_changes=%lu\ntilt_x_milli=%d\ntilt_y_milli=%d\n"
+    "acceleration_z_milli=%d\nerror=%s\n",
     POCKET_BUILD_ID,
     state,
     g_guest_frames,
@@ -203,6 +222,11 @@ static void write_acceptance_record(void) {
     g_touch_x,
     g_touch_y,
     g_last_touch_hit,
+    g_tilt_samples,
+    g_tilt_changes,
+    (int)(g_tilt_x * 1000.0f),
+    (int)(g_tilt_y * 1000.0f),
+    (int)(g_acceleration_z * 1000.0f),
     g_state == POCKET_STATE_FAILED ? g_status_message : ""
   );
   if (length <= 0) return;
@@ -290,6 +314,14 @@ static void send_void_bool(id receiver, const char *selector, BOOL value) {
 
 static void send_void_float(id receiver, const char *selector, float value) {
   ((void (*)(id, SEL, float))objc_msgSend)(receiver, sel_registerName(selector), value);
+}
+
+static void send_void_double(id receiver, const char *selector, double value) {
+  ((void (*)(id, SEL, double))objc_msgSend)(receiver, sel_registerName(selector), value);
+}
+
+static double send_double(id receiver, const char *selector) {
+  return ((double (*)(id, SEL))objc_msgSend)(receiver, sel_registerName(selector));
 }
 
 static void send_status_bar_mode(
@@ -439,10 +471,18 @@ static void stop_timer(void) {
   }
 }
 
+static void stop_accelerometer(void) {
+  if (g_accelerometer != NULL) {
+    send_void_object(g_accelerometer, "setDelegate:", NULL);
+    g_accelerometer = NULL;
+  }
+}
+
 static void fail_runtime(const char *message) {
   copy_status_message(message);
   g_state = POCKET_STATE_FAILED;
   stop_timer();
+  stop_accelerometer();
   pocket_runtime_shutdown();
   g_framebuffer = NULL;
   g_framebuffer_width = 0;
@@ -666,6 +706,108 @@ static int boot_embedded_runtime(void) {
   return 1;
 }
 
+static float clamp_tilt(float value) {
+  if (value < -1.0f) return -1.0f;
+  if (value > 1.0f) return 1.0f;
+  return value;
+}
+
+static float absolute_float(float value) {
+  return value < 0.0f ? -value : value;
+}
+
+static int encode_tilt_axis(float value) {
+  int encoded = (int)(128.0f + clamp_tilt(value) * 127.0f);
+  if (encoded < 0) return 0;
+  if (encoded > 255) return 255;
+  return encoded;
+}
+
+static int packed_tilt(void) {
+  return (encode_tilt_axis(g_tilt_x) << 8) | encode_tilt_axis(g_tilt_y);
+}
+
+static void pocket_accelerometer_did_accelerate(
+  id self,
+  SEL command,
+  id accelerometer,
+  id acceleration
+) {
+  float raw_x;
+  float raw_y;
+  float raw_z;
+  float magnitude;
+  (void)self;
+  (void)command;
+  (void)accelerometer;
+  if (acceleration == NULL) return;
+
+  raw_x = (float)send_double(acceleration, "x");
+  raw_y = (float)send_double(acceleration, "y");
+  raw_z = (float)send_double(acceleration, "z");
+  if (
+    raw_x != raw_x || raw_y != raw_y || raw_z != raw_z ||
+    raw_x < -4.0f || raw_x > 4.0f ||
+    raw_y < -4.0f || raw_y > 4.0f ||
+    raw_z < -4.0f || raw_z > 4.0f
+  ) return;
+
+  g_tilt_samples += 1;
+  if (g_tilt_samples == 1) {
+    g_acceleration_x = raw_x;
+    g_acceleration_y = raw_y;
+    g_acceleration_z = raw_z;
+  } else {
+    g_acceleration_x = g_acceleration_x * 0.8f + raw_x * 0.2f;
+    g_acceleration_y = g_acceleration_y * 0.8f + raw_y * 0.2f;
+    g_acceleration_z = g_acceleration_z * 0.8f + raw_z * 0.2f;
+  }
+
+  if (g_tilt_samples <= POCKET_TILT_CALIBRATION_SAMPLES) {
+    g_calibration_sum_x += raw_x;
+    g_calibration_sum_y += raw_y;
+    if (g_tilt_samples == POCKET_TILT_CALIBRATION_SAMPLES) {
+      g_calibration_x = g_calibration_sum_x / (float)POCKET_TILT_CALIBRATION_SAMPLES;
+      g_calibration_y = g_calibration_sum_y / (float)POCKET_TILT_CALIBRATION_SAMPLES;
+      g_record_next_frame = 1;
+    }
+    return;
+  }
+
+  /* UIKit Y points toward the screen top; PocketJS screen-plane Y points down. */
+  g_tilt_x = clamp_tilt((g_acceleration_x - g_calibration_x) * POCKET_TILT_SENSITIVITY);
+  g_tilt_y = clamp_tilt((g_calibration_y - g_acceleration_y) * POCKET_TILT_SENSITIVITY);
+  magnitude = absolute_float(g_tilt_x);
+  if (absolute_float(g_tilt_y) > magnitude) magnitude = absolute_float(g_tilt_y);
+  if (!g_tilt_active && magnitude >= POCKET_TILT_TRIGGER) {
+    g_tilt_active = 1;
+    g_tilt_changes += 1;
+    g_record_next_frame = 1;
+  } else if (g_tilt_active && magnitude <= POCKET_TILT_REARM) {
+    g_tilt_active = 0;
+    g_record_next_frame = 1;
+  } else if (g_tilt_samples % 30UL == 0) {
+    g_record_next_frame = 1;
+  }
+}
+
+static int start_accelerometer(id delegate) {
+  Class accelerometer_class = objc_getClass("UIAccelerometer");
+  if (accelerometer_class == NULL) return 0;
+  g_accelerometer = send_id((id)accelerometer_class, "sharedAccelerometer");
+  if (
+    g_accelerometer == NULL ||
+    !responds_to(g_accelerometer, "setUpdateInterval:") ||
+    !responds_to(g_accelerometer, "setDelegate:")
+  ) {
+    g_accelerometer = NULL;
+    return 0;
+  }
+  send_void_double(g_accelerometer, "setUpdateInterval:", 1.0 / 30.0);
+  send_void_object(g_accelerometer, "setDelegate:", delegate);
+  return 1;
+}
+
 static void pocket_tick(id self, SEL command, id timer) {
   int delivered_touch;
   int record_this_frame;
@@ -690,7 +832,13 @@ static void pocket_tick(id self, SEL command, id timer) {
   record_this_frame = g_record_next_frame;
   g_record_next_frame = 0;
   delivered_touch = g_touch_down;
-  if (!pocket_runtime_frame(g_touch_down, g_touch_x, g_touch_y, g_touch_hit)) {
+  if (!pocket_runtime_frame(
+    g_touch_down,
+    g_touch_x,
+    g_touch_y,
+    g_touch_hit,
+    packed_tilt()
+  )) {
     fail_runtime(pocket_runtime_error());
     return;
   }
@@ -884,6 +1032,11 @@ static void launch_application(id self, id application) {
   }
   send_void(g_view, "setNeedsDisplay");
 
+  if (!start_accelerometer(self)) {
+    fail_runtime("iPhone OS did not expose the required tilt sensor");
+    return;
+  }
+
   g_timer = send_id_timer(
     (id)objc_getClass("NSTimer"),
     "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:",
@@ -920,6 +1073,7 @@ static void terminate_application(void) {
     return;
   }
   stop_timer();
+  stop_accelerometer();
   g_state = POCKET_STATE_TERMINATED;
   copy_status_message("Application terminated");
   write_acceptance_record();
@@ -1040,6 +1194,12 @@ static Class register_delegate_class(void) {
       sel_registerName("applicationWillTerminate:"),
       (void (*)(void))pocket_application_will_terminate_with_application,
       "v@:@"
+    ) &&
+    class_addMethod(
+      cls,
+      sel_registerName("accelerometer:didAccelerate:"),
+      (void (*)(void))pocket_accelerometer_did_accelerate,
+      "v@:@@"
     );
   if (!methods_added) {
     return NULL;

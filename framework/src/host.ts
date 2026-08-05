@@ -298,19 +298,33 @@ export function getOps(): HostOps {
 // Frame hookup
 // ---------------------------------------------------------------------------
 // Every host drives frames the same way: once per vblank/rAF tick it calls
-// `globalThis.frame(buttons, analog?, touches?)` with the PSP button bitmask (spec BTN)
-// and, when the host has an analog stick, the packed nub value
-// (x << 8 | y, each axis 0..255, 128 = center — spec ANALOG_CENTER). Hosts
-// without a stick pass one argument; the runtime defaults to center, so every
-// pre-analog host, tape and golden is unchanged. index.ts composes input
-// edge-detection + the renderer's end-of-frame sweep into that entry point
-// via installFrameHandler.
+// `globalThis.frame(buttons, analog?, touches?, hits?, tilt?)` with the PSP
+// button bitmask (spec BTN) and, when the host has an analog stick, the packed
+// nub value (x << 8 | y, each axis 0..255, 128 = center — spec ANALOG_CENTER).
+// Hosts without a stick omit it. `touches` are packed contacts and `hits` are
+// their optional host-resolved node ids. A host advertising input.tilt
+// calibrates gravity into the logical screen plane and packs
+// right/down-positive X/Y bytes into argument five (spec TILT_CENTER);
+// omission defaults to center. index.ts composes input edge-detection + the
+// renderer's end-of-frame sweep into that entry point via installFrameHandler.
 
 export function installFrameHandler(
-  fn: (buttons: number, analog?: number, touches?: readonly number[]) => void,
+  fn: (
+    buttons: number,
+    analog?: number,
+    touches?: readonly number[],
+    hits?: readonly number[],
+    tilt?: number,
+  ) => void,
 ): void {
   (globalThis as {
-    frame?: (buttons: number, analog?: number, touches?: readonly number[]) => void;
+    frame?: (
+      buttons: number,
+      analog?: number,
+      touches?: readonly number[],
+      hits?: readonly number[],
+      tilt?: number,
+    ) => void;
   }).frame = fn;
 }
 

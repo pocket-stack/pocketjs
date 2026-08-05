@@ -5,8 +5,9 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
-import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
-import { frameworkName } from "@pocketjs/framework";
+import { createSpriteAnimation, onFrame } from "@pocketjs/framework/lifecycle";
+import { tiltX, tiltY } from "@pocketjs/framework/input";
+import { frameworkName } from "@pocketjs/framework/solid";
 
 const SPINNER_FRAME_STEP = 3;
 const SPINNER_FRAMES = [
@@ -29,13 +30,34 @@ function Stat(props: { label: string; value: string; cls: string }) {
   );
 }
 
-export default function Hero() {
+export interface HeroProps {
+  actionLabel?: string;
+  deviceLabel?: string;
+  headline?: string;
+  presentationHz?: number;
+  runtimeLabel?: string;
+  tilt?: boolean;
+}
+
+export default function Hero(props: HeroProps = {}) {
   const [count, setCount] = createSignal(0);
+  const [tilt, setTilt] = createSignal({ x: 0, y: 0 });
   const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, { frameStep: SPINNER_FRAME_STEP });
   let underline: NodeMirror | undefined;
   onMount(() => {
     // Underline sweeps in once on mount — native tween, zero steady-state JS.
     if (underline) animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
+  });
+  onFrame(() => {
+    if (!props.tilt) return;
+    // Quantize the frame-latched host input so sensor noise does not trigger
+    // a Solid/layout update on every 30 Hz accelerometer callback.
+    const next = {
+      x: Math.round(tiltX() * 20) / 20,
+      y: Math.round(tiltY() * 20) / 20,
+    };
+    const current = tilt();
+    if (next.x !== current.x || next.y !== current.y) setTilt(next);
   });
   return (
     <View
@@ -47,11 +69,17 @@ export default function Hero() {
             <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
           <View class="flex-col">
             <Text class="text-base text-slate-950 font-bold tracking-wide">PocketJS</Text>
-            <Text class="text-xs text-slate-500 tracking-wide">{frameworkName()} + RUST + SCEGU</Text>
+            <Text class="text-xs text-slate-500 tracking-wide">
+              {frameworkName()} + {props.runtimeLabel ?? "RUST + SCEGU"}
+            </Text>
           </View>
         </View>
         <View class="flex-row gap-4">
-          <Stat label="FPS" value="60" cls="text-lg text-emerald-600 font-bold" />
+          <Stat
+            label="FPS"
+            value={String(props.presentationHz ?? 60)}
+            cls="text-lg text-emerald-600 font-bold"
+          />
           <Stat label="NODES" value="42" cls="text-lg text-blue-600 font-bold" />
           <Stat label="DRAWS" value="9" cls="text-lg text-amber-600 font-bold" />
         </View>
@@ -59,19 +87,31 @@ export default function Hero() {
 
       <View class="flex-col gap-2">
         <Text class="text-xs text-blue-600 tracking-wide">ONE RUST CORE · ONE JSX APP</Text>
-        <View class="flex-row flex-wrap items-center justify-between">
-          <Text class="text-4xl text-slate-950 font-bold">JSX at 60 FPS.</Text>
+        <View
+          class="flex-row flex-wrap items-center justify-between"
+          style={{ translateX: tilt().x * 14, translateY: tilt().y * 10 }}
+        >
+          <Text class="text-4xl text-slate-950 font-bold">
+            {props.headline ?? "JSX at 60 FPS."}
+          </Text>
           <Image class="w-10 h-10" src={spinnerSrc()} />
         </View>
         <View
           ref={underline}
           class="h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"
-          style={{ translateX: count() * 2 }}
+          style={{ translateX: count() * 2 + tilt().x * 22 }}
         />
         <View debugName="Description" class="flex-row flex-wrap gap-1">
           <Text class="text-sm text-slate-600">Flexbox, springs and baked type —</Text>
-          <Text class="text-sm text-slate-600">running on a 2005 handheld.</Text>
+          <Text class="text-sm text-slate-600">
+            {props.deviceLabel ?? "running on a 2005 handheld."}
+          </Text>
         </View>
+        <Show when={props.tilt}>
+          <Text class="text-xs text-cyan-600 tracking-wide">
+            TILT X {tilt().x.toFixed(2)} · Y {tilt().y.toFixed(2)}
+          </Text>
+        </Show>
       </View>
 
       <View class="flex-row flex-wrap items-center gap-4">
@@ -80,7 +120,9 @@ export default function Hero() {
           focusable
           onPress={() => setCount(count() + 1)}
         >
-          <Text class="text-base text-white font-bold">Press Circle</Text>
+          <Text class="text-base text-white font-bold">
+            {props.actionLabel ?? "Press Circle"}
+          </Text>
         </View>
         <Text class="text-sm text-slate-600">Count: {count()}</Text>
         <Show when={count() > 3}>

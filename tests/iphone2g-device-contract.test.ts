@@ -151,6 +151,10 @@ describe("iPhone 2G device transport contract", () => {
       "build-receipt.json",
     ]);
     expect(deviceNames).toEqual(hostNames);
+    expect(toolSource).toContain('join(repository, "hosts/iphone2g/Icon.png")');
+    expect(toolSource).not.toContain(
+      'join(repository, "assets/images/logo.png"), join(bundle, "Icon.png")',
+    );
     expect(toolSource).toContain('Buffer.from("PJS2G003", "ascii")');
     expect(toolSource).toContain('Buffer.from(identifier, "ascii")');
     expect(toolSource).toContain(
@@ -206,14 +210,18 @@ describe("iPhone 2G device transport contract", () => {
     );
   });
 
-  test("treats device-status as live frame and touch acceptance", () => {
+  test("treats device-status as live frame, touch, and tilt acceptance", () => {
     expect(toolSource).toContain("const positiveAcceptanceCounters = [");
     expect(toolSource).toContain('"guest_frames"');
     expect(toolSource).toContain('"touch_sequences"');
     expect(toolSource).toContain('"last_touch_hit"');
+    expect(toolSource).toContain('"tilt_samples"');
+    expect(toolSource).toContain('"tilt_changes"');
+    expect(toolSource).toContain('"tilt_x_milli"');
+    expect(toolSource).toContain('"tilt_y_milli"');
     expect(toolSource).toContain('fields.state !== "running"');
     expect(toolSource).toContain(
-      "runtime acceptance requires running frames and a successful touch hit",
+      "runtime acceptance requires running frames, a successful touch hit, and observed tilt",
     );
   });
 

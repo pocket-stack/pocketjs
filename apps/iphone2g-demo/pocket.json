@@ -2,12 +2,12 @@
   "$schema": "https://pocketjs.dev/schema/pocket-2.json",
   "pocket": 2,
   "id": "dev.pocket-stack.iphone2g-demo",
-  "name": "pocketjs-iphone2g-demo",
-  "title": "PocketJS: iPhone 2G Touch",
+  "name": "pocketjs-iphone2g-hero",
+  "title": "PocketJS: iPhone 2G Hero",
   "version": "0.1.0",
   "engine": {
     "capabilities": {
-      "requires": ["input.touch", "text.glyphs.baked"]
+      "requires": ["input.tilt", "input.touch", "text.glyphs.baked"]
     }
   },
   "app": {

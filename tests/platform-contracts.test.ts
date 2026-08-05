@@ -140,6 +140,13 @@ describe("pocket.json v2 schema", () => {
 });
 
 describe("platform registry", () => {
+  test("registers input.tilt without claiming it on an existing production host", () => {
+    expect(POCKET_CAPABILITIES).toContain("input.tilt");
+    for (const target of Object.values(POCKET_TARGETS)) {
+      expect(target.capabilities).not.toContain("input.tilt");
+    }
+  });
+
   test("production advertises only the truthful stock-host profiles", () => {
     expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "pocketbook", "macos-widget"]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);

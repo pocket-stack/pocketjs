@@ -110,7 +110,7 @@ erase authorization, and a separately verified exit route.
 | `bun iphone2g build` | Builds and `ldid`-signs the 3.1.3-targeted `dist/iphone2g/PocketJSDemo.app` against the 1.1.4 ABI sysroot. | None |
 | `bun iphone2g deploy` | Rebuilds a signed bundle, verifies the installed helper, performs a transactional install with byte-exact readback and rollback, checks that root and data remain read/write, commits, refreshes the application cache as `mobile`, and restarts SpringBoard. | Key-only USB SSH; managed tunnel |
 | `bun iphone2g launch` | Verifies that the installed build receipt matches the current local bundle, then asks SpringBoard to open the demo through its private `pocketjs-iphone2g-demo` URL scheme. | Key-only USB SSH; managed tunnel |
-| `bun iphone2g device-status` | Verifies that the device record matches the current build and reports a running guest with positive frame, touch-sequence, and touch-hit counters and no runtime error. | Key-only USB SSH; managed tunnel |
+| `bun iphone2g device-status` | Verifies that the device record matches the current build and reports a running guest with positive frame, touch-hit, accelerometer-sample, and observed-tilt counters and no runtime error. | Key-only USB SSH; managed tunnel |
 
 `setup-csu`, `build-demo`, and `build-runtime` remain lower-level entry points.
 `build-probe` is a compatibility alias for the full guest-plus-runtime build;
@@ -128,7 +128,7 @@ bun iphone2g install-bootstrap
 bun iphone2g build
 bun iphone2g deploy
 bun iphone2g launch
-# On the phone: tap the blue target.
+# On the phone: tap the Hero action, then tilt the phone and return it to level.
 bun iphone2g device-status
 ```
 
@@ -151,12 +151,12 @@ idempotent when the verified helper and policy already match.
 installation, byte-for-byte device readback, mount-policy preservation, and a
 SpringBoard restart. `launch` checks that the installed receipt matches the
 current local build before asking SpringBoard to open it. The operator must
-still produce a physical touch hit. Only a subsequent successful
-`device-status` is the machine-readable runtime/touch gate. The 2026-08-05
-receipt for build `a573f3851c3546967b2a16b0e764167f` reported
-`state=running`, `guest_frames=729`, `touch_sequences=37`,
-`last_touch_hit=15`, and an empty `error`, passing that gate for the exact
-build.
+still produce a physical touch hit and a deliberate tilt. Only a subsequent
+successful `device-status` is the machine-readable runtime/input gate. The
+2026-08-05 Hero receipt for build `fce001d6cdafc61e7b1ebbbdd5ebacfa`
+reported `state=running`, `guest_frames=1098`, `touch_sequences=44`,
+`last_touch_hit=51`, `tilt_samples=960`, `tilt_changes=1`, and an empty
+`error`, passing that gate for the exact build.
 
 By default, proprietary and device-specific material lives outside the
 repository at:
@@ -1193,14 +1193,16 @@ live receipt:
   host key, and launchd plist hashes still matched their pre-bootstrap values.
 
 This proves signing, bootstrap policy, byte-exact installation, transactional
-commit completion, and mount-policy preservation. Icon launch, drawing, and
-physical touch are layer 4 evidence.
+commit completion, and mount-policy preservation. SpringBoard icon rendering,
+Hero drawing, physical touch, and physical tilt are layer 4 evidence.
 
-### 4. PocketJS runtime and input acceptance — passed for the current build
+### 4. PocketJS Hero runtime and input acceptance — passed for the current build
 
-- Across the live-hardware session, the operator observed the expected
-  320-by-480 `TAP ME` UI and exercised the target rather than seeing an
-  immediate return to SpringBoard.
+- The iPhone app now mounts the shared PocketJS Hero at 320 by 480, adapts its
+  action copy for touch, reports the 30 Hz presentation rate, and moves the
+  headline and underline from the hardware-neutral `input.tilt` signal.
+- Its dedicated 59-by-60 RGBA SpringBoard icon has transparent rounded corners
+  instead of reusing the square cross-platform logo.
 - After the final deploy and SpringBoard launch, the current-build runtime
   record was validated with:
 
@@ -1210,22 +1212,28 @@ physical touch are layer 4 evidence.
 
 
   ```text
-  schema=1
-  build_id=a573f3851c3546967b2a16b0e764167f
+  schema=2
+  build_id=fce001d6cdafc61e7b1ebbbdd5ebacfa
   state=running
-  guest_frames=729
-  touch_sequences=37
+  guest_frames=1098
+  touch_sequences=44
   touch_down=0
-  last_touch_x=51
-  last_touch_y=261
-  last_touch_hit=15
+  last_touch_x=72
+  last_touch_y=411
+  last_touch_hit=51
+  tilt_samples=960
+  tilt_changes=1
+  tilt_x_milli=7
+  tilt_y_milli=-13
+  acceleration_z_milli=-1004
   error=
   ```
 
   The command requires the device record to match the local build receipt and
-  accepted this record only after the current build produced running frames
-  and successful physical touch hits. At device time 16:20, the newest
-  `PocketJSDemo` crash report still predated the final launch at 15:55.
+  accepted this record only after the current build produced running frames,
+  a successful physical touch hit, live accelerometer samples, and an observed
+  tilt excursion. The status returns calibrated logical-screen X/Y tilt rather
+  than exposing UIKit sensor coordinates to app code.
 - A device-side `/sbin/reboot` stopped services but remained on its shutdown
   spinner. Holding Home + Power completed the restart; this is a successful
   forced-restart recovery receipt, not evidence that unattended `/sbin/reboot`

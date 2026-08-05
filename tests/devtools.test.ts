@@ -15,7 +15,14 @@ if (Bun.resolveSync("solid-js", import.meta.dir).endsWith("server.js")) {
 
 import { installHost, type Host, type HostOps } from "../framework/src/host.ts";
 import { render as publicRender } from "../framework/src/index.ts";
-import { expandTape, expandTapeTouch, fmt, type Tape } from "../framework/src/devtools.ts";
+import {
+  expandTape,
+  expandTapeTilt,
+  expandTapeTouch,
+  fmt,
+  type Tape,
+} from "../framework/src/devtools.ts";
+import { tiltRaw } from "../framework/src/input-api.ts";
 import { touches, __packTouch } from "../framework/src/touch.ts";
 import { onFrame } from "../framework/src/lifecycle.ts";
 import {
@@ -30,7 +37,7 @@ import { resetStyles } from "../framework/src/styles.ts";
 import { resetInput } from "../framework/src/input.ts";
 import { resetPack } from "../framework/src/pak.ts";
 import { Named, View } from "../framework/src/components.ts";
-import { BTN, ROOT_ID } from "../contracts/spec/spec.ts";
+import { BTN, ROOT_ID, TILT_CENTER } from "../contracts/spec/spec.ts";
 
 // ---------------------------------------------------------------------------
 // Mock host with the DevTools ops + an in-process transport
@@ -364,6 +371,7 @@ describe("tape v2 touch track", () => {
     frame(0);
     const tape = sent("tape")[0].tape as Tape;
     expect(tape.v).toBe(2);
+    expect("tilt" in tape).toBe(false);
     expect(tape.frames).toBe(4);
     expect(tape.touch).toEqual([
       [1, [__packTouch(1, 100, 50)]],
@@ -420,6 +428,103 @@ describe("tape v2 touch track", () => {
   test("expandTapeTouch on a v1 tape is all undefined", () => {
     const tape: Tape = { v: 1, frames: 3, masks: [[0, 3]] };
     expect(expandTapeTouch(tape)).toEqual([undefined, undefined, undefined]);
+  });
+});
+
+describe("tape v3 tilt track", () => {
+  function frameTilt(tilt?: number): void {
+    (globalThis as {
+      frame?: (
+        buttons: number,
+        analog?: number,
+        touches?: readonly number[],
+        hits?: readonly number[],
+        tilt?: number,
+      ) => void;
+    }).frame!(0, undefined, undefined, undefined, tilt);
+  }
+
+  test("center-only sessions retain the pre-tilt v1 shape", () => {
+    mountApp(() => View({}));
+    frameTilt();
+    frameTilt(TILT_CENTER);
+    push({ t: "dumpTape" });
+    frame();
+    const tape = sent("tape")[0].tape as Tape;
+    expect(tape).toEqual({
+      v: 1,
+      app: "devtools-test",
+      frames: 2,
+      masks: [[0, 2]],
+      startFrame: 0,
+    });
+  });
+
+  test("non-center samples export an optional RLE v3 track", () => {
+    mountApp(() => View({}));
+    frameTilt();
+    frameTilt(0xc080);
+    frameTilt(0xc080);
+    frameTilt();
+    push({ t: "dumpTape" });
+    frame();
+    const tape = sent("tape")[0].tape as Tape;
+    expect(tape.v).toBe(3);
+    expect(tape.frames).toBe(4);
+    expect(tape.tilt).toEqual([
+      [TILT_CENTER, 1],
+      [0xc080, 2],
+      [TILT_CENTER, 1],
+    ]);
+    expect(Array.from(expandTapeTilt(tape))).toEqual([
+      TILT_CENTER,
+      0xc080,
+      0xc080,
+      TILT_CENTER,
+    ]);
+  });
+
+  test("replay owns tilt and centers old tapes instead of leaking live input", () => {
+    const seen: number[] = [];
+    mountApp(() => {
+      onFrame(() => seen.push(tiltRaw()));
+      return View({});
+    });
+    push({ t: "replay", tape: { v: 1, frames: 2, masks: [[0, 2]] } satisfies Tape });
+    frameTilt(0xff00);
+    frameTilt(0xff00);
+    frameTilt(0xff00); // tape exhausted: live tilt resumes
+    expect(seen).toEqual([TILT_CENTER, TILT_CENTER, 0xff00]);
+  });
+
+  test("v3 replay delivers its recorded tilt track", () => {
+    const seen: number[] = [];
+    mountApp(() => {
+      onFrame(() => seen.push(tiltRaw()));
+      return View({});
+    });
+    push({
+      t: "replay",
+      tape: {
+        v: 3,
+        frames: 3,
+        masks: [[0, 3]],
+        tilt: [[0x4080, 1], [0xc080, 2]],
+      } satisfies Tape,
+    });
+    frameTilt(0xffff);
+    frameTilt(0xffff);
+    frameTilt(0xffff);
+    expect(seen).toEqual([0x4080, 0xc080, 0xc080]);
+  });
+
+  test("a pre-v3 tape expands to centered tilt", () => {
+    const tape: Tape = { v: 2, frames: 3, masks: [[0, 3]], touch: [] };
+    expect(Array.from(expandTapeTilt(tape))).toEqual([
+      TILT_CENTER,
+      TILT_CENTER,
+      TILT_CENTER,
+    ]);
   });
 });
 
