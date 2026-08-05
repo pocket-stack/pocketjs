@@ -44,7 +44,11 @@ describe("published npm artifacts", () => {
       "engine/core/Cargo.toml",
       "engine/wasm/src",
       "engine/wasm/Cargo.toml",
-      "engine/symbian",
+      "engine/symbian/src",
+      "engine/symbian/targets",
+      "engine/symbian/Cargo.toml",
+      "engine/symbian/Cargo.lock",
+      "engine/symbian/rust-toolchain.toml",
       "hosts/psp/src",
       "hosts/psp/targets",
       "hosts/psp/build.rs",
@@ -107,6 +111,13 @@ describe("published npm artifacts", () => {
       "engine/pocket3d/crates/pocket3d-bsp/src/lib.rs",
     ]));
     expect(files).not.toContain("engine/pocket3d/Cargo.toml");
+    // Cargo build output must never pack: directory-wholesale crate entries
+    // swallow target/ once a cargo test has run there, and cargo's hard
+    // links make the registry reject the tarball outright (E415, the
+    // v0.8.0 publish failure).
+    expect(
+      files.some((file) => /(^|\/)target\//.test(file) || file.includes(".fingerprint")),
+    ).toBe(false);
     // Git-only platform integrations must not leak into the tarball.
     expect(files).not.toContain("engine/backends/esp32p4-ppa/src/lib.rs");
     expect(files.some((file) => file.startsWith("engine/backends/"))).toBe(false);
