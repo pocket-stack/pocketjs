@@ -10,8 +10,9 @@ floor, not a claim that the connected phone still runs 1.1.4. The bundle's
 `PocketJSDemo.app` is an ARMv6 UIKit host containing the generated PocketJS
 JavaScript and asset pack, pinned QuickJS, and the PocketJS raster core.
 Building the bundle proves the compiler, linker, and packaging seam. It does
-not prove that the 1.1.4-ABI binary runs correctly on 3.1.3. Deployment,
-drawing, and touch remain separate live-hardware acceptance gates.
+not by itself prove that the 1.1.4-ABI binary runs correctly on 3.1.3.
+Deployment, drawing, and touch are therefore recorded as separate
+live-hardware acceptance gates below.
 
 ## Current status
 
@@ -23,11 +24,15 @@ drawing, and touch remain separate live-hardware acceptance gates.
 | Device access | SpringBoard, Cydia, `sshd`, and USB SSH | **Pass** |
 | Build ABI | 1.1.4 (`4A102`) sysroot and linker ABI floor | **Pass, local only** |
 | 3.1.3 package/deployment | Signed bundle plus transactional install/readback | **Pass** |
-| PocketJS runtime | Guest frames, visible UI, and physical touch | **Pending** |
+| PocketJS runtime/input | Current-build guest frames and successful physical touch hits | **Pass, live device** |
+| Installed-bundle persistence | Previous build remained complete across Home + Power restart | **Pass, forced restart** |
+| Clean unattended reboot | `/sbin/reboot` stalled and required Home + Power | **Not established** |
 
-The target remains private and experimental until the PocketJS runtime row
-passes. In particular, a successful install and the presence of SpringBoard,
-Cydia, or SSH are not PocketJS runtime acceptance.
+The target remains private and experimental even though the exact
+build/deploy/runtime/input path now has a live-device receipt. Passing that
+receipt does not broaden support beyond `iPhone1,1` on 3.1.3 (`7E18`). In
+particular, a successful install and the presence of SpringBoard, Cydia, or SSH
+alone are not PocketJS runtime acceptance.
 
 ## Verified 3.1.3 recovery receipt
 
@@ -63,8 +68,9 @@ the expected whole-filesystem-disk size is 8,120,172,544 bytes.
 
 ## Safety and scope
 
-The supported device/installed-OS tuple for continued development is exact;
-end-to-end PocketJS support remains pending the acceptance gates below:
+The supported device/installed-OS tuple for continued development is exact.
+The end-to-end build, deployment, runtime, and touch-input path is verified for
+this tuple, with the reboot caveat recorded in acceptance layer 4:
 
 - device: `iPhone1,1` (original iPhone / iPhone 2G);
 - installed OS: iPhone OS 3.1.3, build `7E18`;
@@ -146,9 +152,11 @@ installation, byte-for-byte device readback, mount-policy preservation, and a
 SpringBoard restart. `launch` checks that the installed receipt matches the
 current local build before asking SpringBoard to open it. The operator must
 still produce a physical touch hit. Only a subsequent successful
-`device-status` is the machine-readable runtime/touch gate; until that live
-receipt is collected, the PocketJS runtime row in the status table remains
-pending.
+`device-status` is the machine-readable runtime/touch gate. The 2026-08-05
+receipt for build `a573f3851c3546967b2a16b0e764167f` reported
+`state=running`, `guest_frames=729`, `touch_sequences=37`,
+`last_touch_hit=15`, and an empty `error`, passing that gate for the exact
+build.
 
 By default, proprietary and device-specific material lives outside the
 repository at:
@@ -1176,33 +1184,63 @@ live receipt:
   the identifier-matched transaction. An independent readback matched all five
   local files and `transaction-state` returned `state=none`.
 - The helper and independent mount checks still reported read/write root and
-  data volumes after installation and commit, and SpringBoard restarted.
+  data volumes after installation and commit. The application cache was
+  refreshed as `mobile`, SpringBoard restarted, and the PocketJS app, Cydia,
+  and `sshd` remained present.
+- After the cold restart described below, `install-bootstrap` again reported
+  an exact match without changing the device. Key-only SSH worked, a separate
+  password-only attempt was rejected, and the original CustomHJ `sshd`, RSA
+  host key, and launchd plist hashes still matched their pre-bootstrap values.
 
-This proves signing, bootstrap policy, byte-exact installation, rollback
-discipline, and mount-policy preservation. Icon launch, drawing, and physical
-touch remain layer 4 evidence.
+This proves signing, bootstrap policy, byte-exact installation, transactional
+commit completion, and mount-policy preservation. Icon launch, drawing, and
+physical touch are layer 4 evidence.
 
-### 4. PocketJS runtime acceptance — pending
+### 4. PocketJS runtime and input acceptance — passed for the current build
 
-- Launching the icon presents the expected 320-by-480 PocketJS UI rather than
-  immediately returning to SpringBoard.
-- Each physical tap on `TAP ME` visibly increments `Touch count`.
-- After at least one tap, validate the device-local runtime record:
+- Across the live-hardware session, the operator observed the expected
+  320-by-480 `TAP ME` UI and exercised the target rather than seeing an
+  immediate return to SpringBoard.
+- After the final deploy and SpringBoard launch, the current-build runtime
+  record was validated with:
 
   ```sh
   bun iphone2g device-status
   ```
 
-  The command rejects malformed or stale records and requires `build_id` to
-  match the local `build-receipt.json`. Require `state=running`, `guest_frames`
-  greater than zero, `touch_sequences` greater than zero, a nonzero
-  `last_touch_hit`, and an empty `error`. This complements the visible result;
-  it does not replace it.
-- The app survives quit/relaunch and a normal reboot.
-- After unplug/replug, USB SSH still works and the filesystem retains the
-  verified post-deployment mount policy.
-- Capture a dated photo or video plus the build receipt and exact device
-  identity as the acceptance record.
+
+  ```text
+  schema=1
+  build_id=a573f3851c3546967b2a16b0e764167f
+  state=running
+  guest_frames=729
+  touch_sequences=37
+  touch_down=0
+  last_touch_x=51
+  last_touch_y=261
+  last_touch_hit=15
+  error=
+  ```
+
+  The command requires the device record to match the local build receipt and
+  accepted this record only after the current build produced running frames
+  and successful physical touch hits. At device time 16:20, the newest
+  `PocketJSDemo` crash report still predated the final launch at 15:55.
+- A device-side `/sbin/reboot` stopped services but remained on its shutdown
+  spinner. Holding Home + Power completed the restart; this is a successful
+  forced-restart recovery receipt, not evidence that unattended `/sbin/reboot`
+  works on this installation.
+- After that restart, the phone re-enumerated in normal USB mode and again
+  reported `iPhone1,1`, 3.1.3, `7E18`, and `FactoryActivated`. Key-only SSH,
+  helper version 4, and read/write root/data mounts all survived.
+- The final deployment transaction found the complete pre-restart build
+  `b9c69d6f30e24e0f24f05817ad3ec6c4` in the app location and moved its receipt
+  into the transaction backup before installing the current build. This
+  proves bundle persistence across the forced restart; it does not turn the
+  stalled `/sbin/reboot` into a clean-reboot result.
+
+A dated photo or video remains useful supplemental evidence. It is not a
+replacement for the build-matched status receipt above.
 
 The changing Solid signal is the critical runtime proof: the native host must
 have loaded and executed the embedded generated guest bundle, rendered its

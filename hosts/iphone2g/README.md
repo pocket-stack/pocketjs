@@ -47,6 +47,14 @@ That command accepts only a status record for the current build with running
 guest frames and a successful physical touch hit. A successful build or
 byte-exact installation alone is not live runtime acceptance.
 
+The 2026-08-05 live receipt for build
+`a573f3851c3546967b2a16b0e764167f` reported a running guest with 729 frames,
+37 touch sequences, a successful hit value of 15, and no runtime error. The
+phone also retained the complete previous app bundle, key-only SSH, and the
+helper across a Home + Power restart after device-side `/sbin/reboot` stalled
+on its shutdown spinner. That is a forced-restart recovery result, not proof
+that unattended `/sbin/reboot` completes on this installation.
+
 Artifacts are written to `dist/iphone2g/PocketJSDemo.app`. The app contains
 the generated Solid/PocketJS guest, pinned QuickJS, PocketJS raster core, and
 UIKit host. Firmware, the decrypted sysroot, Apple Csu and QuickJS sources,
