@@ -7,7 +7,7 @@
   "version": "0.1.0",
   "engine": {
     "capabilities": {
-      "requires": ["input.tilt", "input.touch", "text.glyphs.baked"]
+      "requires": ["input.touch", "text.glyphs.baked"]
     }
   },
   "app": {

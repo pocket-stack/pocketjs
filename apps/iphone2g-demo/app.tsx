@@ -8,7 +8,6 @@ export default function IPhone2GHero() {
       headline="JSX on ARMv6."
       presentationHz={30}
       runtimeLabel="RUST + QUICKJS + UIKIT"
-      tilt
     />
   );
 }

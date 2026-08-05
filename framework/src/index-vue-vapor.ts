@@ -29,7 +29,6 @@ import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.ts";
-import { __setTilt } from "./tilt.ts";
 import { __resetTouches, __setTouches } from "./touch.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
 import { __drainEffects, resetEffects } from "./effects.ts";
@@ -202,16 +201,9 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   resetEffects();
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md), same as the Solid path.
   installFrameHandler(
-    wrapFrameHandler((
-      buttons: number,
-      analog: number,
-      touches?: readonly number[],
-      _hits?: readonly number[],
-      tilt?: number,
-    ) => {
+    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[]) => {
       __advanceClock();
       __setAnalog(analog);
-      __setTilt(tilt);
       __setTouches(touches);
       __drainEffects();
       runFrameHooks(buttons);

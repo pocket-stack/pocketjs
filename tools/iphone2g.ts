@@ -1911,11 +1911,6 @@ function printDeviceStatus(): void {
     "last_touch_x",
     "last_touch_y",
     "last_touch_hit",
-    "tilt_samples",
-    "tilt_changes",
-    "tilt_x_milli",
-    "tilt_y_milli",
-    "acceleration_z_milli",
     "error",
   ];
   const fields = Object.fromEntries(pairs);
@@ -1932,36 +1927,26 @@ function printDeviceStatus(): void {
     "last_touch_x",
     "last_touch_y",
     "last_touch_hit",
-    "tilt_samples",
-    "tilt_changes",
   ].every((name) => /^(0|[1-9][0-9]*)$/.test(fields[name] ?? ""));
-  const signedTiltFieldsAreValid = [
-    "tilt_x_milli",
-    "tilt_y_milli",
-    "acceleration_z_milli",
-  ].every((name) => /^-?(0|[1-9][0-9]*)$/.test(fields[name] ?? ""));
   const positiveAcceptanceCounters = [
     "guest_frames",
     "touch_sequences",
     "last_touch_hit",
-    "tilt_samples",
-    "tilt_changes",
   ].every((name) => /^[1-9][0-9]*$/.test(fields[name] ?? ""));
   if (
     JSON.stringify(fieldNames) !== JSON.stringify(expectedFields) ||
-    fields.schema !== "2" ||
+    fields.schema !== "1" ||
     !/^[0-9a-f]{32}$/.test(fields.build_id ?? "") ||
     !receipt?.buildId ||
     fields.build_id !== receipt.buildId ||
     !countersAreValid ||
-    !signedTiltFieldsAreValid ||
     !positiveAcceptanceCounters ||
     !["0", "1"].includes(fields.touch_down) ||
     fields.state !== "running" ||
     fields.error !== ""
   ) {
     throw new Error(
-      "PocketJS iPhone 2G: runtime acceptance requires running frames, a successful touch hit, and observed tilt",
+      "PocketJS iPhone 2G: runtime acceptance requires running frames and a successful touch hit",
     );
   }
   process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);

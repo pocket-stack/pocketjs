@@ -1440,17 +1440,6 @@ export const BTN = {
 export const ANALOG_CENTER = 0x8080;
 
 // ---------------------------------------------------------------------------
-// Calibrated screen-plane tilt (the frame contract's fifth argument)
-// ---------------------------------------------------------------------------
-// Hosts that advertise input.tilt calibrate their sensor and rotate it into
-// the logical screen plane before calling `globalThis.frame`. The packed u16
-// is (x << 8) | y, each axis 0..255 with 128 = level/center; positive X points
-// right and positive Y points down. Hosts without tilt omit argument five and
-// the runtime supplies center. Normalization is framework policy.
-
-export const TILT_CENTER = 0x8080;
-
-// ---------------------------------------------------------------------------
 // Fixed timestep
 // ---------------------------------------------------------------------------
 /** Core animation/tick timestep: exactly 1/60 s. Frame content is a pure

@@ -135,10 +135,6 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // keys (Backspace/Enter/arrows/Home/End/…), key repeat included. The OSK
   // is the fallback spelling on targets without it.
   "input.text",
-  // Per-frame calibrated gravity projected into the logical screen plane.
-  // The host packs right/down-positive X/Y bytes into frame argument five;
-  // framework input APIs own normalization and the center fallback.
-  "input.tilt",
   "input.touch",
   // Credit-based s16 PCM streaming through the audio module's own namespace
   // (`globalThis.audio`, contracts/spec/audio.ts). Registered ahead of any

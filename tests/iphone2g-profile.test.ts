@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,11 +49,11 @@ describe("private iPhone 2G build profile", () => {
         presentations: ["native"],
         rasterDensity: 1,
       },
-      capabilities: ["input.tilt", "input.touch", "text.glyphs.baked"],
+      capabilities: ["input.touch", "text.glyphs.baked"],
     });
   });
 
-  test("resolves the touch-and-tilt Hero demo to an exact device plan", () => {
+  test("resolves the touch-only Hero demo to an exact device plan", () => {
     const plan = resolveIPhone2GBuildPlan(demoManifest());
 
     expect(plan.target).toEqual({
@@ -66,7 +67,6 @@ describe("private iPhone 2G build profile", () => {
       rasterDensity: 1,
     });
     expect(plan.features).toEqual({
-      "input.tilt": true,
       "input.touch": true,
       "text.glyphs.baked": true,
     });
@@ -107,19 +107,28 @@ describe("private iPhone 2G build profile", () => {
     ).toBe(true);
   });
 
-  test("ships a precomposed classic SpringBoard icon", async () => {
+  test("ships a precomposed skeuomorphic metal SpringBoard icon", async () => {
+    expect(
+      createHash("sha256").update(readFileSync(ICON_PATH)).digest("hex"),
+    ).toBe("198a1c3768a028d825da6b1e2213434766ad1ed0fe9c4350f901440cad062a2f");
     const image = await loadImage(ICON_PATH);
     expect([image.width, image.height]).toEqual([59, 60]);
     const canvas = createCanvas(image.width, image.height);
     const context = canvas.getContext("2d");
     context.drawImage(image, 0, 0);
+    const pixelAt = (x: number, y: number) =>
+      Array.from(context.getImageData(x, y, 1, 1).data);
     const alphaAt = (x: number, y: number) =>
-      context.getImageData(x, y, 1, 1).data[3];
+      pixelAt(x, y)[3];
     expect(alphaAt(0, 0)).toBe(0);
     expect(alphaAt(58, 0)).toBe(0);
     expect(alphaAt(0, 59)).toBe(0);
     expect(alphaAt(58, 59)).toBe(0);
     expect(alphaAt(29, 29)).toBe(255);
+    expect(pixelAt(10, 48)).toEqual([5, 5, 4, 255]);
+    expect(pixelAt(29, 0)).toEqual([176, 180, 188, 255]);
+    expect(pixelAt(29, 8)).toEqual([110, 109, 109, 255]);
+    expect(pixelAt(29, 29).slice(0, 3)).toEqual([249, 249, 249]);
   });
 
   test("targets the restored 7E18 runtime with UIKit 3 launch and touch fallbacks", () => {
@@ -139,11 +148,6 @@ describe("private iPhone 2G build profile", () => {
     expect(runtime).not.toContain("extern CGPoint GSEventGetLocationInWindow");
     expect(runtime).toContain('sel_registerName("touchesBegan:withEvent:")');
     expect(runtime).toContain('sel_registerName("touchesCancelled:withEvent:")');
-    expect(runtime).toContain('objc_getClass("UIAccelerometer")');
-    expect(runtime).toContain('sel_registerName("accelerometer:didAccelerate:")');
-    expect(runtime).toContain('send_void_double(g_accelerometer, "setUpdateInterval:", 1.0 / 30.0)');
-    expect(runtime).toContain('send_void_object(g_accelerometer, "setDelegate:", delegate)');
-    expect(runtime).toContain("packed_tilt()");
     expect(runtime).toContain("g_last_touch_hit = g_touch_hit");
     expect(runtime).toContain("g_last_touch_hit,");
     expect(runtime).toContain('sel_registerName("application:didFinishLaunchingWithOptions:")');
@@ -152,6 +156,5 @@ describe("private iPhone 2G build profile", () => {
     expect(app).toContain('actionLabel="Tap Hero"');
     expect(app).toContain('headline="JSX on ARMv6."');
     expect(app).toContain("presentationHz={30}");
-    expect(app).toContain("tilt");
   });
 });

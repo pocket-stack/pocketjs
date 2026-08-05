@@ -5,8 +5,7 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
-import { createSpriteAnimation, onFrame } from "@pocketjs/framework/lifecycle";
-import { tiltX, tiltY } from "@pocketjs/framework/input";
+import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
 import { frameworkName } from "@pocketjs/framework/solid";
 
 const SPINNER_FRAME_STEP = 3;
@@ -36,28 +35,15 @@ export interface HeroProps {
   headline?: string;
   presentationHz?: number;
   runtimeLabel?: string;
-  tilt?: boolean;
 }
 
 export default function Hero(props: HeroProps = {}) {
   const [count, setCount] = createSignal(0);
-  const [tilt, setTilt] = createSignal({ x: 0, y: 0 });
   const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, { frameStep: SPINNER_FRAME_STEP });
   let underline: NodeMirror | undefined;
   onMount(() => {
     // Underline sweeps in once on mount — native tween, zero steady-state JS.
     if (underline) animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
-  });
-  onFrame(() => {
-    if (!props.tilt) return;
-    // Quantize the frame-latched host input so sensor noise does not trigger
-    // a Solid/layout update on every 30 Hz accelerometer callback.
-    const next = {
-      x: Math.round(tiltX() * 20) / 20,
-      y: Math.round(tiltY() * 20) / 20,
-    };
-    const current = tilt();
-    if (next.x !== current.x || next.y !== current.y) setTilt(next);
   });
   return (
     <View
@@ -87,10 +73,7 @@ export default function Hero(props: HeroProps = {}) {
 
       <View class="flex-col gap-2">
         <Text class="text-xs text-blue-600 tracking-wide">ONE RUST CORE · ONE JSX APP</Text>
-        <View
-          class="flex-row flex-wrap items-center justify-between"
-          style={{ translateX: tilt().x * 14, translateY: tilt().y * 10 }}
-        >
+        <View class="flex-row flex-wrap items-center justify-between">
           <Text class="text-4xl text-slate-950 font-bold">
             {props.headline ?? "JSX at 60 FPS."}
           </Text>
@@ -99,7 +82,7 @@ export default function Hero(props: HeroProps = {}) {
         <View
           ref={underline}
           class="h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"
-          style={{ translateX: count() * 2 + tilt().x * 22 }}
+          style={{ translateX: count() * 2 }}
         />
         <View debugName="Description" class="flex-row flex-wrap gap-1">
           <Text class="text-sm text-slate-600">Flexbox, springs and baked type —</Text>
@@ -107,11 +90,6 @@ export default function Hero(props: HeroProps = {}) {
             {props.deviceLabel ?? "running on a 2005 handheld."}
           </Text>
         </View>
-        <Show when={props.tilt}>
-          <Text class="text-xs text-cyan-600 tracking-wide">
-            TILT X {tilt().x.toFixed(2)} · Y {tilt().y.toFixed(2)}
-          </Text>
-        </Show>
       </View>
 
       <View class="flex-row flex-wrap items-center gap-4">

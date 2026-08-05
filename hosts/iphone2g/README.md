@@ -12,9 +12,7 @@ relocations emitted for an `@implementation`. `runtime.c` therefore registers
 its view and delegate through the Objective-C runtime API. It uses the 3.x
 application lifecycle and UIKit touch selectors on the current phone, while
 retaining the older 1.x event path as an ABI fallback. Device input is exposed
-to PocketJS as the hardware-neutral `input.touch` and `input.tilt`
-capabilities. The host calibrates and filters `UIAccelerometer` gravity before
-projecting it onto the logical screen plane; app code never imports UIKit.
+to PocketJS as the hardware-neutral `input.touch` capability.
 
 Run the local checks, install the key-only USB deployment helper, build, and
 deploy the complete demo bundle:
@@ -38,27 +36,25 @@ useful.
 
 After `deploy` refreshes the application cache and restarts SpringBoard,
 `launch` verifies the installed build receipt and asks SpringBoard to open
-**PocketJS** through its private URL scheme. Tap the Hero action, deliberately
-tilt the phone, return it near level, then run:
+**PocketJS** through its private URL scheme. Tap the Hero action, then run:
 
 ```sh
 bun iphone2g device-status
 ```
 
 That command accepts only a status record for the current build with running
-guest frames, a successful physical touch hit, live accelerometer samples, and
-an observed tilt excursion. A successful build or byte-exact installation
-alone is not live runtime acceptance.
+guest frames and a successful physical touch hit. A successful build or
+byte-exact installation alone is not live runtime acceptance.
 
-The 2026-08-05 live Hero receipt for build
-`fce001d6cdafc61e7b1ebbbdd5ebacfa` reported 1,098 running guest frames, 44
-touch sequences, a successful hit value of 51, 960 accelerometer samples, one
-observed tilt excursion, and no runtime error. The app bundle also carries a
-dedicated 59-by-60 transparent-corner icon for the classic SpringBoard. The
-phone retained the complete previous app bundle, key-only SSH, and the helper
-across a Home + Power restart after device-side `/sbin/reboot` stalled on its
-shutdown spinner. That is a forced-restart recovery result, not proof that
-unattended `/sbin/reboot` completes on this installation.
+The current live Hero receipt for build
+`ba1c0b15af4fdb72c6a98334332a8954` reported 118 running guest frames, 11
+touch sequences, a successful hit value of 46, and no runtime error. The app
+bundle carries a dedicated 59-by-60 transparent-corner icon with black enamel,
+a chrome bevel, and a pre-baked glass highlight for the classic SpringBoard.
+The phone retained the complete previous app bundle, key-only SSH, and the
+helper across a Home + Power restart after device-side `/sbin/reboot` stalled
+on its shutdown spinner. That is a forced-restart recovery result, not proof
+that unattended `/sbin/reboot` completes on this installation.
 
 Artifacts are written to `dist/iphone2g/PocketJSDemo.app`. The app contains
 the generated Solid/PocketJS guest, pinned QuickJS, PocketJS raster core, and

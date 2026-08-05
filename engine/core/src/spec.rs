@@ -474,11 +474,6 @@ pub mod btn {
 /// the runtime defaults to this value (so old tapes/goldens hold).
 pub const ANALOG_CENTER: u32 = 0x8080;
 
-/// frame argument five: calibrated logical-screen tilt packs (x << 8) | y,
-/// each axis 0..255 with 128 = level. Positive X is right and positive Y
-/// is down; hosts without input.tilt omit the argument and default here.
-pub const TILT_CENTER: u32 = 0x8080;
-
 /// AUDIO module boundary (contracts/spec/audio.ts — `globalThis.audio`).
 /// Credit-based PCM streaming; events batch to tick boundaries via poll().
 /// Frames consumed on virtual tick n at 60 ticks/s (the determinism

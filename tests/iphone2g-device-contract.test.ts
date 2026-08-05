@@ -210,18 +210,14 @@ describe("iPhone 2G device transport contract", () => {
     );
   });
 
-  test("treats device-status as live frame, touch, and tilt acceptance", () => {
+  test("treats device-status as live frame and touch acceptance", () => {
     expect(toolSource).toContain("const positiveAcceptanceCounters = [");
     expect(toolSource).toContain('"guest_frames"');
     expect(toolSource).toContain('"touch_sequences"');
     expect(toolSource).toContain('"last_touch_hit"');
-    expect(toolSource).toContain('"tilt_samples"');
-    expect(toolSource).toContain('"tilt_changes"');
-    expect(toolSource).toContain('"tilt_x_milli"');
-    expect(toolSource).toContain('"tilt_y_milli"');
     expect(toolSource).toContain('fields.state !== "running"');
     expect(toolSource).toContain(
-      "runtime acceptance requires running frames, a successful touch hit, and observed tilt",
+      "runtime acceptance requires running frames and a successful touch hit",
     );
   });
 

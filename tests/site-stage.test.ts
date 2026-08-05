@@ -86,6 +86,19 @@ test("homepage declares the live settings stage and visible model attribution", 
   }
 });
 
+test("public PocketJS icon surfaces keep the metal mark on a black backing", () => {
+  const favicon = readFileSync(ROOT + "site/assets/favicon.svg", "utf8");
+  const backing = '<rect width="32" height="32" rx="7" fill="#0a0a0c"/>';
+  expect(favicon).toContain(backing);
+  expect(favicon.indexOf(backing)).toBeLessThan(favicon.indexOf('stroke="url(#pj-edge)"'));
+
+  const readme = readFileSync(ROOT + "README.md", "utf8");
+  expect(readme).toContain('src="./site/assets/favicon.svg"');
+
+  const ogImage = readFileSync(ROOT + "site/assets/og-image.svg", "utf8");
+  expect(ogImage).toContain('<rect width="1200" height="630" fill="#05070d"/>');
+});
+
 test("single-LOD web package rewrites every profile reference to a copied asset", () => {
   const output = mkdtempSync(join(tmpdir(), "pocketjs-stage-"));
   try {

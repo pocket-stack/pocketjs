@@ -1,10 +1,10 @@
 // PocketJS runtime entry: render(<App/>) / mount(<App/>).
 //
 // Frame contract (every host): once per vblank/rAF tick the host calls
-// `globalThis.frame(buttons, analog?, touches?, hits?, tilt?)` (host.ts).
-// render() installs that handler as app frame hooks, input edge-detection +
-// focus + onPress, THEN the renderer's end-of-frame sweep [R] — so Solid
-// effects triggered by input run before detached subtrees are destroyed.
+// `globalThis.frame(buttons)` (spec BTN bitmask). render() installs that
+// handler as app frame hooks, input edge-detection + focus + onPress, THEN the
+// renderer's end-of-frame sweep [R] — so Solid effects triggered by input run
+// before detached subtrees are destroyed.
 
 // queueMicrotask polyfill (QuickJS lacks it; Solid's resource/transition paths
 // reference it lazily, so installing at module-eval time is early enough).
@@ -44,7 +44,6 @@ import { handleFrame, setHitRoot, setInputRoot } from "./input.ts";
 import { __runGestures, resetGestures } from "./gesture.ts";
 import { installTouchActivation } from "./touch-activation.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
-import { __setTilt } from "./tilt.ts";
 import { __resetTouches, __setTouches } from "./touch.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
 import { __drainEffects, resetEffects } from "./effects.ts";
@@ -266,16 +265,9 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md): flight recorder +
   // debug channel; one branch per frame when no transport is connected.
   installFrameHandler(
-    wrapFrameHandler((
-      buttons: number,
-      analog: number,
-      touches?: readonly number[],
-      hits?: readonly number[],
-      tilt?: number,
-    ) => {
+    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[], hits?: readonly number[]) => {
       __advanceClock(); // virtual frame++, fire due after() timers
       __setAnalog(analog); // latch the nub before any app code reads it
-      __setTilt(tilt); // latch calibrated screen-plane tilt before app hooks
       __setTouches(touches, hits); // latch contacts + their host-resolved hit facts
       __drainEffects(); // frame-boundary deliveries enter the world first
       __runGestures(); // contact lifecycles resolve before app hooks read them

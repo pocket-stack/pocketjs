@@ -7,10 +7,9 @@
 #include <stdint.h>
 #include <string.h>
 
-#define POCKETJS_HOST_ABI 7
+#define POCKETJS_HOST_ABI 6
 #define POCKETJS_SIMULATION_HZ 30
 #define POCKETJS_ANALOG_CENTER 32896
-#define POCKETJS_TILT_CENTER 32896
 
 typedef enum {
   HostCreateNode,
@@ -567,13 +566,7 @@ int pocket_runtime_boot(
   return 1;
 }
 
-int pocket_runtime_frame(
-  int touch_down,
-  int touch_x,
-  int touch_y,
-  int touch_hit,
-  int tilt_packed
-) {
+int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit) {
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
   JSValue touch_array = JS_NewArray(context);
   JSValue hit_array = JS_NewArray(context);
@@ -607,19 +600,13 @@ int pocket_runtime_frame(
       return 0;
     }
   }
-  JSValue arguments[5] = {
+  JSValue arguments[4] = {
     JS_NewInt32(context, 0),
     JS_NewInt32(context, POCKETJS_ANALOG_CENTER),
     touch_array,
     hit_array,
-    JS_NewInt32(
-      context,
-      tilt_packed < 0 || tilt_packed > 0xffff
-        ? POCKETJS_TILT_CENTER
-        : tilt_packed
-    ),
   };
-  JSValue result = JS_Call(context, frame_function, global, 5, arguments);
+  JSValue result = JS_Call(context, frame_function, global, 4, arguments);
   JS_FreeValue(context, hit_array);
   JS_FreeValue(context, touch_array);
   if (JS_IsException(result)) {

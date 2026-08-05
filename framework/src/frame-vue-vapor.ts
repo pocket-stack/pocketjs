@@ -2,7 +2,6 @@
 
 import { computed, onScopeDispose, shallowRef, type ComputedRef } from "vue";
 import { __resetAnalog } from "./analog.ts";
-import { __resetTilt } from "./tilt.ts";
 
 export { __setAnalog, analogRaw, analogX, analogY } from "./analog.ts";
 
@@ -15,7 +14,6 @@ export function resetFrameHooks(): void {
   callbacks.clear();
   buttonHandlerBlockDepth = 0;
   __resetAnalog();
-  __resetTilt();
 }
 
 export function runFrameHooks(buttons: number): void {

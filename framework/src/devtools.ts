@@ -10,7 +10,7 @@
 // step/inspect/eval) stay live inside a frozen world — the core side of the
 // freeze is ui.debugPause (spec op 21).
 
-import { ANALOG_CENTER, TILT_CENTER } from "../../contracts/spec/spec.ts";
+import { ANALOG_CENTER } from "../../contracts/spec/spec.ts";
 import type { HostOps } from "./host.ts";
 import { rootMirror, setTreeMutationHook, type NodeMirror } from "./native-tree.ts";
 
@@ -25,7 +25,7 @@ export interface DevtoolsTransport {
 
 /** Input tape: the complete session input, RLE-encoded (docs/DEVTOOLS.md §4). */
 export interface Tape {
-  v: 1 | 2 | 3;
+  v: 1 | 2;
   app?: string;
   /** Total frames represented by `masks`. */
   frames: number;
@@ -42,10 +42,6 @@ export interface Tape {
    *  touch-free session exports v:1 with no track — byte-identical to
    *  pre-touch tapes — and replays every frame as no-contacts. */
   touch?: [number, number[]][];
-  /** v3: [packedTilt, runLength] pairs (spec TILT_CENTER packing), same
-   *  total frame count as `masks`. Omitted when every frame was centered,
-   *  keeping pre-tilt v1/v2 tapes byte-identical. */
-  tilt?: [number, number][];
   /** Absolute frame index of masks[0] (0 unless the ring wrapped). */
   startFrame?: number;
 }
@@ -60,10 +56,9 @@ interface DevtoolsState {
   transport: DevtoolsTransport | null;
   app: string | undefined;
   frame: number; // frames actually executed (== core frame counter)
-  // tape ring (masks + packed analog/tilt + touch share indices/start/len)
+  // tape ring (masks + packed analog + touch share indices/start/len)
   tape: Uint16Array;
   tapeAnalog: Uint16Array;
-  tapeTilt: Uint16Array;
   /** Touch ring — allocated lazily on the first frame that HAS contacts, so
    *  touch-free sessions (every PSP session) never pay for it. */
   tapeTouch: (number[] | null)[] | null;
@@ -74,7 +69,6 @@ interface DevtoolsState {
   replayMasks: Uint16Array | null;
   replayAnalog: Uint16Array | null;
   replayTouch: (number[] | undefined)[] | null;
-  replayTilt: Uint16Array | null;
   replayAt: number;
   // pause
   paused: boolean;
@@ -98,7 +92,6 @@ const state: DevtoolsState = {
   frame: 0,
   tape: new Uint16Array(TAPE_CAP),
   tapeAnalog: new Uint16Array(TAPE_CAP),
-  tapeTilt: new Uint16Array(TAPE_CAP),
   tapeTouch: null,
   tapeStart: 0,
   tapeLen: 0,
@@ -106,7 +99,6 @@ const state: DevtoolsState = {
   replayMasks: null,
   replayAnalog: null,
   replayTouch: null,
-  replayTilt: null,
   replayAt: 0,
   paused: false,
   stepQueued: 0,
@@ -143,7 +135,6 @@ export function initDevtools(ops: HostOps): void {
   state.replayMasks = null;
   state.replayAnalog = null;
   state.replayTouch = null;
-  state.replayTilt = null;
   state.paused = false;
   state.stepQueued = 0;
   state.inspectReportId = null;
@@ -183,26 +174,13 @@ export function initDevtools(ops: HostOps): void {
 
 /** Wrap the composed frame handler (render()'s input+hooks+sweep closure). */
 export function wrapFrameHandler(
-  h: (
-    buttons: number,
-    analog: number,
-    touches?: readonly number[],
-    hits?: readonly number[],
-    tilt?: number,
-  ) => void,
-): (
-  buttons: number,
-  analog?: number,
-  touches?: readonly number[],
-  hits?: readonly number[],
-  tilt?: number,
-) => void {
+  h: (buttons: number, analog: number, touches?: readonly number[], hits?: readonly number[]) => void,
+): (buttons: number, analog?: number, touches?: readonly number[], hits?: readonly number[]) => void {
   return (
     buttons: number,
     analogArg?: number,
     touchArg?: readonly number[],
     hitsArg?: readonly number[],
-    tiltArg?: number,
   ) => {
     state.hostCalls++;
     if (state.transport) {
@@ -213,14 +191,10 @@ export function wrapFrameHandler(
     let analog = analogArg === undefined ? ANALOG_CENTER : analogArg & 0xffff;
     let touch = touchArg;
     let hits = hitsArg;
-    let tilt = tiltArg === undefined ? TILT_CENTER : tiltArg & 0xffff;
     if (state.replayMasks) {
       if (state.replayAt < state.replayMasks.length) {
         mask = state.replayMasks[state.replayAt];
         analog = state.replayAnalog ? state.replayAnalog[state.replayAt] : ANALOG_CENTER;
-        // Replay owns tilt even for old tapes without a tilt track. Centering
-        // here prevents a live sensor sample from changing deterministic runs.
-        tilt = state.replayTilt ? state.replayTilt[state.replayAt] : TILT_CENTER;
         // Replay owns EVERY input track: live hardware touch must not leak
         // into the deterministic tape. A v1 tape (no touch track) replays
         // every frame as no-contacts.
@@ -236,7 +210,6 @@ export function wrapFrameHandler(
         state.replayMasks = null; // tape exhausted: back to live input
         state.replayAnalog = null;
         state.replayTouch = null;
-        state.replayTilt = null;
         send({ t: "replayDone", frame: state.frame });
       }
     }
@@ -245,10 +218,10 @@ export function wrapFrameHandler(
       state.stepQueued--;
       state.ops?.debugStep?.(); // arm exactly one core tick
     }
-    recordMask(mask, analog, touch, tilt);
+    recordMask(mask, analog, touch);
     state.frame++;
     try {
-      h(mask, analog, touch, hits, tilt);
+      h(mask, analog, touch, hits);
     } catch (e) {
       send({
         t: "error",
@@ -266,12 +239,7 @@ export function wrapFrameHandler(
 // tape
 // ---------------------------------------------------------------------------
 
-function recordMask(
-  mask: number,
-  analog: number,
-  touch: readonly number[] | undefined,
-  tilt: number,
-): void {
+function recordMask(mask: number, analog: number, touch?: readonly number[]): void {
   // Defensive copy: hosts may reuse the packed-contact buffer across frames.
   const contacts = touch && touch.length > 0 ? touch.slice(0, 8) : null;
   if (contacts && !state.tapeTouch) {
@@ -283,13 +251,11 @@ function recordMask(
     const at = (state.tapeStart + state.tapeLen) % TAPE_CAP;
     state.tape[at] = mask;
     state.tapeAnalog[at] = analog;
-    state.tapeTilt[at] = tilt;
     if (state.tapeTouch) state.tapeTouch[at] = contacts;
     state.tapeLen++;
   } else {
     state.tape[state.tapeStart] = mask;
     state.tapeAnalog[state.tapeStart] = analog;
-    state.tapeTilt[state.tapeStart] = tilt;
     if (state.tapeTouch) state.tapeTouch[state.tapeStart] = contacts;
     state.tapeStart = (state.tapeStart + 1) % TAPE_CAP;
     state.tapeFirstFrame++;
@@ -334,13 +300,6 @@ function exportTape(): Tape {
       tape.touch = touch;
     }
   }
-  // Tilt upgrades a tape to v3 only when a frame differs from center. This
-  // preserves the complete JSON shape of every pre-tilt and center-only tape.
-  const tilt = rlePairs(state.tapeTilt);
-  if (tilt.length > 1 || (tilt.length === 1 && tilt[0][0] !== TILT_CENTER)) {
-    tape.v = 3;
-    tape.tilt = tilt;
-  }
   return tape;
 }
 
@@ -367,13 +326,6 @@ export function expandTapeAnalog(tape: Tape): Uint16Array {
   let total = 0;
   for (const [, n] of tape.masks) total += n;
   return expandPairs(tape.analog ?? [], ANALOG_CENTER, total);
-}
-
-/** Expand a tape's calibrated tilt track (center-filled when absent). */
-export function expandTapeTilt(tape: Tape): Uint16Array {
-  let total = 0;
-  for (const [, n] of tape.masks) total += n;
-  return expandPairs(tape.tilt ?? [], TILT_CENTER, total);
 }
 
 /** Expand a tape's sparse touch track into one packed-contact array (or
@@ -509,7 +461,6 @@ function handleMessage(line: string): void {
         state.replayMasks = expandTape(tape);
         state.replayAnalog = tape.analog ? expandTapeAnalog(tape) : null;
         state.replayTouch = tape.touch ? expandTapeTouch(tape) : null;
-        state.replayTilt = tape.tilt ? expandTapeTilt(tape) : null;
         state.replayAt = 0;
       }
       break;
@@ -718,7 +669,6 @@ const api = {
     state.replayMasks = expandTape(tape);
     state.replayAnalog = tape.analog ? expandTapeAnalog(tape) : null;
     state.replayTouch = tape.touch ? expandTapeTouch(tape) : null;
-    state.replayTilt = tape.tilt ? expandTapeTilt(tape) : null;
     state.replayAt = 0;
   },
 };
