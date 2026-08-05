@@ -55,6 +55,13 @@ export const WALL_APPS: Record<string, Script> = {
     : f === 1040 ? BTN.LTRIGGER
     : f === 1280 ? BTN.RTRIGGER
     : 0,
+  // DeepZoom poster: zoom to 100%, pan onto the rings, settle, then fit and
+  // repeat. Frame 720 (the baked poster) holds the full-color ring view.
+  "zoomlab-main": (f) =>
+    (f >= 60 && f < 180) || (f >= 840 && f < 960) ? BTN.RTRIGGER
+    : (f >= 180 && f < 360) || (f >= 960 && f < 1140) ? BTN.LEFT
+    : f === 780 || f === 1380 ? BTN.CROSS
+    : 0,
   // Settings: walk the list, flip toggles, ride the brightness slider.
   "settings-main": (f) => {
     const step = f % 720; // run the golden walk twice
@@ -113,6 +120,18 @@ export const WALL_APPS: Record<string, Script> = {
     : f === 920 ? BTN.RIGHT
     : f === 960 ? BTN.CIRCLE
     : f === 1160 ? BTN.START
+    : 0,
+  // Deterministic café: build two carts and place two orders. Frame 720 lands
+  // on the first green confirmation receipt; the final menu holds into the cut.
+  "cafe-main": (f) =>
+    f === 60 ? BTN.CIRCLE
+    : f === 90 ? BTN.DOWN
+    : f === 120 || f === 180 ? BTN.CIRCLE
+    : f === 630 ? BTN.START
+    : f === 840 ? BTN.CIRCLE
+    : f === 900 || f === 1020 ? BTN.DOWN
+    : f === 960 || f === 1080 ? BTN.CIRCLE
+    : f === 1200 ? BTN.START
     : 0,
 };
 

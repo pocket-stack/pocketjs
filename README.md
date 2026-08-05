@@ -25,7 +25,7 @@ native code. Neither path ships a browser DOM, browser layout engine, or
 runtime CSS engine.
 
 <a href="https://pocketjs.dev">
-  <img src="./site/assets/pocketjs-demo-wall.jpg" alt="A wall of PocketJS software: interfaces, a launcher, 3D motion, media, a digital character, and application demos, including Motion Lab studies credited to yui540" />
+  <img src="./site/assets/pocketjs-demo-wall.jpg" alt="A wall of PocketJS software: music, deep-zoom graphics, messaging, a digital character, galleries, DevTools, dashboards, media, and a café app, including Motion Lab studies credited to yui540" />
 </a>
 
 ## What it carries
