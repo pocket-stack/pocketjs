@@ -30,8 +30,15 @@ budget, including animated transitions and input feedback.
 | Gallery | Settings |
 | --- | --- |
 | ![Gallery demo UI showing a paged texture grid](./assets/screenshots/gallery.png) | ![Settings demo UI showing toggles, a slider and theme swatches](./assets/screenshots/settings.png) |
-| **Motion Lab — baked keyframe timelines** | **Motion Lab — 3D pipeline** |
+| **Motion Lab — baked keyframe timelines · (yui540)** | **Motion Lab — 3D pipeline · (yui540)** |
 | ![Motion studies: menu, d-pad, share, hover, reload and keypad animating from compile-time keyframe timelines](./assets/screenshots/motions-53.gif) | ![3D motion studies: a swinging door, spinning cubes, page flips and a room transition, painter-sorted by the core](./assets/screenshots/motions-3d.gif) |
+
+The original motion studies are by [yui540](https://yui540.com/). PocketJS
+accepts yui540's two stated conditions for continued use: Motion Lab carries
+the requested `(yui540)` on-screen credit, and any other yui540 animation
+requires separate permission before it is ported. The accepted scope is
+recorded in
+[`apps/motions/ATTRIBUTION.md`](./apps/motions/ATTRIBUTION.md).
 
 ## Quickstart
 

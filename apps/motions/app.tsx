@@ -1,4 +1,6 @@
 // apps/motions — yui540 motion studies on baked keyframe timelines.
+// Attribution and the project-specific permission boundary are recorded in
+// ./ATTRIBUTION.md. Keep the requested `(yui540)` credit on every page.
 //
 // Four pages mirror the original portfolio pages — motions/53, /56, /30 and
 // /64 — each a grid of SIX tiles playing together (3x2 here for the PSP's
@@ -673,8 +675,12 @@ export default function Motions() {
           </>
         )}
       </Show>
-      <View debugName="Footer" class="absolute left-[8] bottom-[1] flex-row">
-        <Text class="text-xs text-[#555]">{page().source}</Text>
+      <View
+        debugName="Footer"
+        class="absolute left-0 bottom-[1] w-full flex-row justify-between px-[8]"
+      >
+        <Text class="text-xs text-[#666]">{page().source}</Text>
+        <Text class="text-xs font-bold text-[#888]">(yui540)</Text>
       </View>
     </View>
   );

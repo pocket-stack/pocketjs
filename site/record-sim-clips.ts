@@ -16,7 +16,7 @@
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { createWasmUi } from "../hosts/web/wasm-ops.js";
-import { BTN, SCREEN_H, SCREEN_W } from "../spec/spec.ts";
+import { BTN, SCREEN_H, SCREEN_W } from "../contracts/spec/spec.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const SITE = ROOT + "site/";
@@ -167,8 +167,15 @@ async function recordOne(app: string): Promise<void> {
     b.frame(script(f));
     b.tick();
     if (f % (SIM_HZ / OUT_FPS) === 0) {
-      ff.stdin.write(b.render().slice());
-      if (f % 120 === 0) await ff.stdin.flush();
+      const rgba = b.render().slice();
+      const expectedBytes = SCREEN_W * SCREEN_H * 4;
+      if (rgba.byteLength !== expectedBytes) {
+        throw new Error(
+          `record-sim: ${app} frame ${f} has ${rgba.byteLength} RGBA bytes; expected ${expectedBytes}`,
+        );
+      }
+      ff.stdin.write(rgba);
+      await ff.stdin.flush();
     }
   }
   await ff.stdin.end();

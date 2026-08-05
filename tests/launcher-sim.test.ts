@@ -71,6 +71,10 @@ describe("launcher registry admission", () => {
     expect(outputs).toContain("hero-main");
     expect(outputs).toContain("cafe-main");
     expect(outputs).toContain("im-main");
+    expect(outputs).toContain("motions-main");
+    expect(
+      registry.apps.find((app) => app.output === "motions-main")?.title,
+    ).toContain("yui540");
     expect(registry.apps.length).toBeGreaterThanOrEqual(15);
     // One entry per output (the root manifest duplicates apps/hero).
     expect(new Set(outputs).size).toBe(outputs.length);

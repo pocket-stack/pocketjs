@@ -20,6 +20,7 @@
 
 import { $ } from "bun";
 import { existsSync, mkdirSync } from "node:fs";
+import { ensureMotionCredits, renderMotionCreditBadge } from "./motion-credit.ts";
 import { ensureSimClip } from "./record-sim-clips.ts";
 
 const SITE = new URL(".", import.meta.url).pathname;
@@ -60,6 +61,12 @@ const sim = (app: string): Clip => ({ src: ensureSimClip(app) });
 
 async function main() {
   mkdirSync(CACHE, { recursive: true });
+  const creditResult = ensureMotionCredits();
+  if (creditResult.stamped.length > 0) {
+    console.log(`  stamped ${creditResult.stamped.length} missing Motion Lab credit(s)`);
+  }
+  const motionCredit = CACHE + "motion-credit-large.png";
+  await Bun.write(motionCredit, renderMotionCreditBadge("large"));
 
   // The widget capture fades into the brand end card at ~10 s; cut before the
   // fade so the looping tile only ever shows the character.
@@ -104,6 +111,10 @@ async function main() {
     inputs.push("-stream_loop", "-1", "-t", String(DUR + 2), "-i", c.src);
     return idx++;
   };
+  const addStillInput = (src: string): number => {
+    inputs.push("-loop", "1", "-framerate", String(FPS), "-t", String(DUR + 2), "-i", src);
+    return idx++;
+  };
   const norm = (w: number, h: number) =>
     `fps=${FPS},scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,` +
     `tpad=stop_mode=clone:stop_duration=2,trim=duration=${DUR},setpts=PTS-STARTPTS`;
@@ -114,9 +125,15 @@ async function main() {
       const ch = TILE_H / 2;
       const cells = tile.map(addInput);
       cells.forEach((input, c) => filters.push(`[${input}:v]${norm(cw, ch)}[q${t}_${c}]`));
+      const grid = `grid${t}`;
       filters.push(
-        `[q${t}_0][q${t}_1][q${t}_2][q${t}_3]xstack=inputs=4:layout=0_0|${cw}_0|0_${ch}|${cw}_${ch}[t${t}]`,
+        `[q${t}_0][q${t}_1][q${t}_2][q${t}_3]xstack=inputs=4:layout=0_0|${cw}_0|0_${ch}|${cw}_${ch}[${grid}]`,
       );
+      // The four-up normalization cover-crops each source GIF, so composite
+      // one tile-level credit afterwards instead of relying on a cell badge.
+      const credit = addStillInput(motionCredit);
+      filters.push(`[${credit}:v]fps=${FPS},setpts=PTS-STARTPTS[credit${t}]`);
+      filters.push(`[${grid}][credit${t}]overlay=W-w-4:H-h-1:shortest=1[t${t}]`);
     } else {
       filters.push(`[${addInput(tile)}:v]${norm(TILE_W, TILE_H)}[t${t}]`);
     }
