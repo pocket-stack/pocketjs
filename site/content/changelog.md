@@ -3,6 +3,72 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.8.0 — August 5, 2026
+
+**The runtime learns to be touched and heard, and reaches four new kinds
+of machine.** PocketJS 0.8.0 makes Octane the third first-class framework
+beside Solid and Vue Vapor, grows a real touch system with gesture
+physics and a deterministic audio pipeline, and adds four machine
+families: Symbian phones, PocketBook e-readers, the ESP32-P4, and the
+Playdate. The [landing page](/) now tells that story: rich interactive
+JavaScript where no browser fits.
+
+- **Octane, the third framework.** Dominic Gannaway's compiled
+  implementation of the React programming model (`useState`, `useEffect`,
+  JSX, no virtual DOM) drives the same native tree as Solid and Vue Vapor
+  through a universal framework driver. Every Vue Vapor demo has an Octane
+  twin; 14 of the 23 committed Octane PSP goldens are byte-identical to
+  the Vue Vapor frame, and the [three-framework
+  benchmark](/blog/octane-on-psp/) lands every demo inside the 16.7 ms
+  frame budget on real hardware. The port also uncovered that every PSP
+  build since 2021 had shipped an unoptimized QuickJS interpreter; the fix
+  speeds up every guest app.
+- **A real touch system.** Per-contact snapshots carry host-resolved hit
+  facts; a gesture layer sits on top with a kinetic scroller tuned to
+  iOS-feel physics, axis dominance that defers instead of killing so a
+  thumb can arc, and tap activation that presses any focusable.
+  `VirtualList` turns the IM thread pattern into a component. The OSK
+  gains a modern touch press model, backspace auto-repeat, and
+  `TextField`, the editable activation semantic. DevTools tapes add a
+  sparse touch track, e2e gains scripted touch input and the first touch
+  goldens, and
+  [docs/TOUCH.md](https://github.com/pocket-stack/pocketjs/blob/main/docs/TOUCH.md)
+  writes down the measured cost model.
+- **Audio, credit-based and deterministic.** `globalThis.audio` is a
+  spec-first PCM streaming interface: apps push samples against a credit
+  budget and hosts drain it, with a web worklet, a sim sink, and a PSP
+  hardware channel behind the same contract. Playback defers until fed, so
+  replays stay byte-stable, and the music demo plays real WAV files.
+- **Symbian, the first phone family.** PocketJS apps run natively on a
+  2011 Nokia E7 as installed Symbian applications with their own UIDs: a
+  GLES2 renderer, an app catalog, live portrait and landscape relayout,
+  and the slide-out QWERTY. The write-up is [Symbian Wanted a Frame
+  Function](/blog/pocketjs-on-symbian/).
+- **PocketBook, the first e-ink surface.** The inkview host renders
+  incrementally and chooses partial, dynamic, or full refresh per update
+  from tile diffs, on a display that fights every frame.
+- **ESP32-P4, rendered by damage.** An RGB565 raster path and a hybrid
+  PPA hardware backend (contributed by @HalfSweet, hardware-verified on an
+  M5Stack Tab5 at 1280×720), built on new backend-independent damage
+  rendering and transactional strip rendering with a strip-equals-full
+  parity suite.
+- **Playdate, the fifth Pocket Vapor target.** The 400×240 1-bit panel
+  as a 50×30 grid, `.pdx` packaging for device and Simulator, and the
+  crank arriving through the hardware-neutral `RelativeAxis` contract:
+  hosts preserve signed millidegrees, apps own their detents, and
+  admission is checked per target against the real Vue oracle.
+- **Vita system services.** The Cover Flow launcher ports to Vita, and
+  the svc mailbox goes wireless: a PKNT wire protocol, RAM-assembled
+  `.pkst` streams, a video plane, and audio over WiFi TCP.
+- **Toolchain.** `--font-regular`/`--font-bold` source overrides in the
+  build, Vue SFC template comments handled correctly, and the npm files
+  map pinned to its governed surface.
+- **Compatibility:** apps and the npm packages build unchanged.
+  **Breaking** for native embedders only: `render_scaled_argb` now emits
+  the documented little-endian ARGB8888 word layout instead of the
+  byte-swapped surface it produced before; re-check any code that consumed
+  the old order.
+
 ## 0.7.0 — July 23, 2026
 
 **Vue compiles all the way down.** Pocket Vapor takes a real Vue Vapor
