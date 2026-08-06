@@ -64,6 +64,18 @@ uint32_t ui_framebuffer_stride(void);
 size_t ui_framebuffer_len(void);
 
 /*
+ * Incremental-raster statistics. Without these a per-frame damage-planning
+ * failure — which silently draws a complete frame — is indistinguishable from
+ * the machine being slow.
+ */
+uint64_t ui_damage_attempts(void);
+uint64_t ui_damage_failures(void);
+uint64_t ui_damage_full_redraws(void);
+uint32_t ui_damage_regions(void);
+uint64_t ui_damage_pixels(void);
+int32_t ui_damage_bounds(int32_t *out);
+
+/*
  * Hardware DrawList path. The core walks its own DrawList straight into the
  * OpenGL ES 1.1 fixed-function pipeline instead of rasterizing to a
  * framebuffer, so the CPU never touches a pixel. Callers must have a current

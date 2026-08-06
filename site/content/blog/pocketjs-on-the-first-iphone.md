@@ -273,42 +273,106 @@ None of the three was found by a test. The first two were found by a measurement
 
 ## What the numbers actually are
 
-Same binary, same `CADisplayLink`, switched by the marker file, screen on, complete UI on both paths:
+Same binary, same `CADisplayLink`, switched by a marker file, screen on,
+complete UI on both paths — and with one change that turns out to matter more
+than the renderer choice.
 
-<svg viewBox="0 0 760 262" width="100%" role="img" aria-label="Benchmark of the two render paths on the same binary. OpenGL ES 1.1 delivers 46.7 to 49.4 frames per second, with 1.7 to 1.8 milliseconds in JavaScript plus core and 15.7 to 16.8 milliseconds submitting to the GPU, totalling 19.4 to 20.5 milliseconds. The software rasterizer delivers 21.9 to 26.5 frames per second, with 1.4 to 2.7 milliseconds in JavaScript plus core, 9.6 to 11.5 milliseconds rasterizing, and 22.1 to 26.9 milliseconds for the full-screen CGImage composite, totalling 33.9 to 40.8 milliseconds. The GPU path is roughly 1.8 to 2 times faster, and the CGImage composite is the single largest cost anywhere." font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+<svg viewBox="0 0 760 286" width="100%" role="img" aria-label="Benchmark of the two render paths on the same binary. The software rasterizer with a damage-scoped composite delivers 59.99 frames per second: 1.44 milliseconds in JavaScript plus core, 5.93 milliseconds rasterizing only damaged spans, and 0.26 milliseconds compositing only the damaged rectangle, totalling 7.63 milliseconds. The OpenGL ES 1.1 path delivers 48.6 to 50.7 frames per second: 1.8 to 2.3 milliseconds in JavaScript plus core and 12.8 to 16.2 milliseconds submitting the whole DrawList, totalling 17.2 to 19.7 milliseconds. Before the composite was scoped the software path was 21.9 to 26.5 frames per second with a 22 to 27 millisecond full-screen composite." font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
   <text x="14" y="20" fill="#64748b" font-size="11">ONE BINARY · ONE DISPLAY LINK · COMPLETE UI ON BOTH · MEAN ms PER FRAME</text>
   <line x1="14" y1="28" x2="746" y2="28" stroke="#1e293b"/>
   <text x="14" y="52" fill="#64748b" font-size="11">PATH</text>
-  <text x="150" y="52" fill="#64748b" font-size="11">FPS</text>
-  <text x="248" y="52" fill="#64748b" font-size="11">JS + CORE</text>
-  <text x="368" y="52" fill="#64748b" font-size="11">DRAW</text>
-  <text x="500" y="52" fill="#64748b" font-size="11">COMPOSITE</text>
-  <text x="646" y="52" fill="#64748b" font-size="11">TOTAL</text>
+  <text x="186" y="52" fill="#64748b" font-size="11">FPS</text>
+  <text x="284" y="52" fill="#64748b" font-size="11">JS + CORE</text>
+  <text x="404" y="52" fill="#64748b" font-size="11">DRAW</text>
+  <text x="536" y="52" fill="#64748b" font-size="11">COMPOSITE</text>
+  <text x="666" y="52" fill="#64748b" font-size="11">TOTAL</text>
   <rect x="8" y="62" width="738" height="30" rx="7" fill="#0c1a22" stroke="#22d3ee" stroke-width="1.2"/>
-  <text x="14" y="82" fill="#f1f5f9" font-size="12" font-weight="700">OpenGL ES 1.1</text>
-  <text x="150" y="82" fill="#22d3ee" font-size="12">46.7–49.4</text>
-  <text x="248" y="82" fill="#22d3ee" font-size="12">1.7–1.8</text>
-  <text x="368" y="82" fill="#22d3ee" font-size="12">15.7–16.8</text>
-  <text x="500" y="82" fill="#22d3ee" font-size="12">—</text>
-  <text x="646" y="82" fill="#22d3ee" font-size="12">19.4–20.5</text>
-  <text x="14" y="116" fill="#e2e8f0" font-size="12" font-weight="700">software raster</text>
-  <text x="150" y="116" fill="#eab308" font-size="12">21.9–26.5</text>
-  <text x="248" y="116" fill="#94a3b8" font-size="12">1.4–2.7</text>
-  <text x="368" y="116" fill="#94a3b8" font-size="12">9.6–11.5</text>
-  <text x="500" y="116" fill="#eab308" font-size="12">22.1–26.9</text>
-  <text x="646" y="116" fill="#eab308" font-size="12">33.9–40.8</text>
-  <line x1="14" y1="134" x2="746" y2="134" stroke="#1e293b"/>
-  <text x="14" y="156" fill="#e2e8f0" font-size="11">The GPU path is 1.8–2× faster. The single largest cost anywhere is the software path's full-screen</text>
-  <text x="14" y="174" fill="#e2e8f0" font-size="11">CGImage composite at 22–27 ms — the stage that was never being timed.</text>
-  <text x="14" y="200" fill="#64748b" font-size="11">Enabling texturing raised GL submit from ~11 ms to ~16 ms, because it is now actually sampling. That</text>
-  <text x="14" y="218" fill="#64748b" font-size="11">is the cost of drawing the whole UI instead of colour blocks.</text>
-  <line x1="14" y1="234" x2="746" y2="234" stroke="#1e293b"/>
-  <text x="14" y="256" fill="#38bdf8" font-size="11">Frame rate comes from the device: window_frames and window_us, not two coarse samples differenced.</text>
+  <text x="14" y="82" fill="#f1f5f9" font-size="12" font-weight="700">software, scoped</text>
+  <text x="186" y="82" fill="#22d3ee" font-size="12">59.99</text>
+  <text x="284" y="82" fill="#22d3ee" font-size="12">1.44</text>
+  <text x="404" y="82" fill="#22d3ee" font-size="12">5.93</text>
+  <text x="536" y="82" fill="#22d3ee" font-size="12">0.26</text>
+  <text x="666" y="82" fill="#22d3ee" font-size="12">7.63</text>
+  <text x="14" y="116" fill="#e2e8f0" font-size="12" font-weight="700">OpenGL ES 1.1</text>
+  <text x="186" y="116" fill="#94a3b8" font-size="12">48.6–50.7</text>
+  <text x="284" y="116" fill="#94a3b8" font-size="12">1.8–2.3</text>
+  <text x="404" y="116" fill="#eab308" font-size="12">12.8–16.2</text>
+  <text x="536" y="116" fill="#94a3b8" font-size="12">—</text>
+  <text x="666" y="116" fill="#eab308" font-size="12">17.2–19.7</text>
+  <text x="14" y="146" fill="#64748b" font-size="12">software, full-screen</text>
+  <text x="186" y="146" fill="#64748b" font-size="12">21.9–26.5</text>
+  <text x="284" y="146" fill="#64748b" font-size="12">1.4–2.7</text>
+  <text x="404" y="146" fill="#64748b" font-size="12">9.6–11.5</text>
+  <text x="536" y="146" fill="#64748b" font-size="12">22.1–26.9</text>
+  <text x="666" y="146" fill="#64748b" font-size="12">33.9–40.8</text>
+  <line x1="14" y1="164" x2="746" y2="164" stroke="#1e293b"/>
+  <text x="14" y="186" fill="#e2e8f0" font-size="11">The third row is the second row's own past. Scoping the composite to the damage rectangle took it from</text>
+  <text x="14" y="204" fill="#e2e8f0" font-size="11">22–27 ms to 0.26 ms, and the software path from 22–26 fps to a locked 60.</text>
+  <text x="14" y="230" fill="#64748b" font-size="11">The GL path is unchanged: it does no damage tracking, and re-fills the whole screen every frame.</text>
+  <text x="14" y="248" fill="#64748b" font-size="11">Giving it the same treatment — scissor to the plan's bounds — is the open work.</text>
+  <line x1="14" y1="264" x2="746" y2="264" stroke="#1e293b"/>
+  <text x="14" y="282" fill="#38bdf8" font-size="11">Frame rate comes from the device: window_frames and window_us, not two coarse samples differenced.</text>
 </svg>
 
-Getting these required fixing the ruler as well as the renderer. The earlier fps figures came from differencing two fetched status records, whose timestamps have one-second resolution and which are only written every heartbeat — worth about ±4 fps of uncertainty, comfortably enough to hide the discrepancy that eventually exposed bug one.
+Getting these required fixing the ruler as well as the renderer. The earlier fps
+figures came from differencing two fetched status records, whose timestamps have
+one-second resolution and which are only written every heartbeat — worth about
+±4 fps of uncertainty, comfortably enough to hide the discrepancy that exposed
+bug one.
 
-**47–49 fps, not 60.** GL's measured work is 19.4–20.5 ms against a 16.67 ms budget, so it misses roughly every fifth vsync and `CADisplayLink` hands back the next one. The honest next step is damage-aware submission — scissoring to the rectangle the core already tracks, so the GPU stops re-filling a full-screen gradient sixty times a second — and since the backend now serves two GPU generations, that is a decision about shared code rather than a patch.
+### The composite was never damage-limited
+
+The rasterizer always was. `ui_render_incremental` writes only the spans the
+damage plan covers, and it works: instrumenting the plan the core already
+returns — and which `engine/symbian` was discarding — gives
+`damage_failures=0`, two full redraws in 361 frames, and an **empty** plan on
+most frames, because a mostly-still UI mostly does not change.
+
+The composite threw all of that away. The tick called `setNeedsDisplay`, which
+invalidates the whole view, and `pocket_draw_rect` began with `(void)rect;` —
+discarding the dirty rectangle UIKit hands you — then re-read full `bounds` and
+rebuilt a `CGImage` over all 320×480. Every frame. That is the 22–27 ms.
+
+Two changes, neither clever:
+
+- An empty damage plan now invalidates **nothing**, so the frame costs no
+  composite at all. In one sample that was 626 of 961 frames.
+- A non-empty plan goes to `setNeedsDisplayInRect:`, and `drawRect:` clips to
+  whatever UIKit passes back.
+
+This needs no preservation guarantee, which is what makes it sounder than the
+GL equivalent: when UIKit does discard the backing store it passes the full
+bounds, and the code draws the full frame. The fallback is the default.
+
+**And this is where the earlier claim gets superseded rather than corrected.**
+"The GPU path is 1.8–2× faster" was true of the code as it stood. Then the CPU
+path got the optimization the GPU path still lacks, and the ordering flipped.
+That is not a fourth measurement bug; it is the first time the instrument was
+good enough to aim.
+
+Verifying it needed the capture again, and the capture had a trap of its own.
+The two paths disagree about pixel format: `glReadPixels` gives R,G,B,A
+bottom-up, while the core's ARGB32 words are B,G,R,A top-down. Comparing the
+software capture without swapping red and blue reports a mean difference of
+9.3/255 and produces a picture in which every blue is orange — a completely
+convincing failure that is entirely in the comparison. Swapped, after 2,581
+frames of damage-limited rendering:
+
+```text
+mean abs channel diff : 0.039 / 255
+worst single channel  : 186, in 109 pixels
+```
+
+Those 109 pixels sit inside x 37..56, y 253..281 — within the animating
+spinner's own 40×40 box, at a different phase than the reference. Everywhere
+else the framebuffer is identical after 2,581 incremental frames, which is the
+test that matters: the framebuffer persists and only damaged spans are
+rewritten, so under-reported damage would accumulate as staleness that a
+from-scratch render catches.
+
+**Locked 60 fps on a 2007 iPhone, compositing 0.26 ms per frame.** The GPU path
+stays in the tree, opt-in, correct and pixel-verified, waiting for the same
+treatment.
 
 ## The icon, which took four tries
 
@@ -348,8 +412,8 @@ This is **not** a production PocketJS target.
 
 - The build profile lives in `tools/`, deliberately outside the production registry, with a test asserting it stays there.
 - Everything is verified on **one** device: `iPhone1,1` running iPhone OS 3.1.3. The pixel parity above is one frame, at rest, on one phone — a strong result, and not a golden suite.
-- **47–49 fps, not a locked 60.** GL's work exceeds the 16.67 ms budget, so vsyncs are missed. Damage-aware submission is the open work.
-- The software fallback now composites correctly, but it is a fallback at 22–27 ms of CGImage per frame. Its cost is probably not inherent: the composite applies a Y-flip CTM, which likely pushes old CoreGraphics onto a general resampling path instead of a direct copy. Pre-flipping in the rasterizer is untested.
+- The default path holds **59.99 fps**; the GL path, which is opt-in, delivers 48.6–50.7 because its work exceeds the 16.67 ms budget. Damage-aware GL submission is the open work, and it is now clearly worth doing.
+- `Ui::draw()` calls `draw::build()` unconditionally, so the whole DrawList is rebuilt from the tree every frame on **both** paths. That cost sits inside the timed window and nobody has separated it yet. It is the next thing to measure.
 - To reproduce any of this you need a jailbroken `iPhone1,1` on 3.1.3, because the host relies on an `ldid` pseudo-signature being accepted and on SSH over USB. Getting a device into that state is out of scope here and there is no repository command for it.
 - No firmware, system file or extracted sysroot is in the repository. You supply your own copies of the historical inputs under their original terms; the toolchain verifies their hashes.
 
@@ -363,7 +427,11 @@ The runtime went onto it without a fork. What changed was a toolchain, a host, o
 
 The rest of it is a lesson about evidence I would rather have learned more cheaply. We published that a GPU backend lost to a CPU rasterizer by 2.4×. Every number in that claim was real. The stage we forgot to time was the largest one; the fallback we measured against was not drawing; and the renderer we were defending was painting rectangles where the text should be. **Three separate mistakes, each individually plausible, composing into a confident published conclusion that was exactly backwards.**
 
-What broke the chain was not a cleverer benchmark. It was `glReadPixels` — pulling the actual pixels off the actual phone and subtracting them from the reference — and a person picking up the device to say it still looked like colour blocks. On hardware you can only touch one machine at a time, the cheapest instrument you can build is the one that shows you what the machine is really doing, and the most valuable participant is whoever is holding it.
+What broke the chain was not a cleverer benchmark. It was `glReadPixels` — pulling the actual pixels off the actual phone and subtracting them from the reference — and a person picking up the device to say it still looked like colour blocks.
+
+And once the instrument existed it kept paying. It showed that the rasterizer's damage plan was fine and the *composite* was throwing it away, which is worth 22 ms a frame and a locked 60. It caught a red/blue swap in my own comparison that would otherwise have read as a rendering bug. It proved 2,581 frames of incremental rendering leave no stale pixels. Every one of those is a question I would previously have answered by looking at the screen and forming an impression.
+
+On hardware you can only touch one machine at a time. The cheapest thing you can build is the instrument that shows you what the machine is really doing — and the most valuable participant is whoever is holding it.
 
 ---
 

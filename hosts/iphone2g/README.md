@@ -60,13 +60,17 @@ helper across a Home + Power restart after device-side `/sbin/reboot` stalled
 on its shutdown spinner. That is a forced-restart recovery result, not proof
 that unattended `/sbin/reboot` completes on this installation.
 
-The host renders through **OpenGL ES 1.1** on the device's PowerVR MBX Lite,
-with the software rasterizer as a fallback. The GPU path is 1.8-2x faster and
-is verified pixel-for-pixel against the reference core by reading the device
-framebuffer back with `glReadPixels` (mean absolute channel difference 0.04 of
-255). `docs/IPHONE2G.md` documents both paths, the marker files that select
-between them and request a capture, and the ES 1.1 state that has no ES 2
-equivalent.
+The host has two render paths. **The software rasterizer is the default** and
+holds a locked 60 fps at ~7.6 ms per frame, because both the rasterize and the
+composite are limited to the damaged rectangle. The OpenGL ES 1.1 backend for
+the device's PowerVR MBX Lite is opt-in (`touch
+/private/var/tmp/pocketjs-iphone2g.gles1`), correct, and pixel-verified, but
+costs 17-20 ms because it re-submits the whole DrawList every frame.
+
+Both paths are verified against the reference core by capturing the device's own
+output; `docs/IPHONE2G.md` documents the marker files, the byte-order and
+orientation difference between the two captures, and the ES 1.1 state that has
+no ES 2 equivalent.
 
 Artifacts are written to `dist/iphone2g/PocketJSDemo.app`. The app contains
 the generated Solid/PocketJS guest, pinned QuickJS, PocketJS raster core, and

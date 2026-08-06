@@ -71,11 +71,18 @@ typedef enum {
 #define POCKET_STATUS_HEARTBEAT_FRAMES 60UL
 #define POCKET_ACCEPTANCE_PATH "/private/var/tmp/pocketjs-iphone2g.status"
 /*
- * Presence of this file forces the software rasterizer. It exists so the two
- * render paths can be measured against each other on one build, instead of
- * comparing numbers from two binaries that differ in more than the renderer.
+ * The renderer is chosen by this marker, and the default is the software
+ * rasterizer because it is measurably faster here: with the composite scoped to
+ * the damage rectangle it holds a locked 60 fps at ~7.5 ms per frame, where the
+ * OpenGL ES 1.1 path costs ~17-20 ms and delivers 48-51. The GL backend is
+ * correct and pixel-verified, it simply re-submits and re-fills the entire
+ * DrawList every frame; giving it the same damage treatment is the open work.
+ *
+ * Touch the file to opt into GL. Two places must agree on the answer — setup_gl
+ * and the view's +layerClass — because a CAEAGLLayer never receives drawRect:
+ * and so cannot composite a software frame.
  */
-#define POCKET_FORCE_SOFTWARE_PATH "/private/var/tmp/pocketjs-iphone2g.software"
+#define POCKET_PREFER_GL_PATH "/private/var/tmp/pocketjs-iphone2g.gles1"
 /*
  * Touch this file and the next GL frame is read back with glReadPixels and
  * written next to it, then the request is cleared. It exists so device output
@@ -132,6 +139,7 @@ extern void CGContextRestoreGState(CGContextRef context);
 extern void CGContextTranslateCTM(CGContextRef context, float tx, float ty);
 extern void CGContextScaleCTM(CGContextRef context, float sx, float sy);
 extern void CGContextDrawImage(CGContextRef context, CGRect rect, CGImageRef image);
+extern void CGContextClipToRect(CGContextRef context, CGRect rect);
 extern CGColorSpaceRef CGColorSpaceCreateDeviceRGB(void);
 extern void CGColorSpaceRelease(CGColorSpaceRef color_space);
 extern CGDataProviderRef CGDataProviderCreateWithData(
@@ -235,6 +243,13 @@ static unsigned long g_last_record_attempt_frame;
 static unsigned long g_blit_us_total;
 static unsigned long g_blit_frames;
 static unsigned long g_blit_us_mean;
+/*
+ * Cumulative drawRect: calls. The ratio of this to guest_frames is what
+ * distinguishes a cheap composite from a frozen screen — a scoped invalidation
+ * that never fires looks exactly like a very fast one.
+ */
+static unsigned long g_composites;
+static unsigned long g_damage_regions_last;
 
 static unsigned long g_window_start_us;
 static unsigned long g_window_start_frame;
@@ -291,7 +306,9 @@ static void write_acceptance_record(void) {
     "touch_down=%d\nlast_touch_x=%d\nlast_touch_y=%d\nlast_touch_hit=%d\n"
     "action_name=%s\naction_value=%d\naction_sequence=%lu\n"
     "renderer=%s\nclock=%s\nframe_us=%lu\nsubmit_us=%lu\npresent_us=%lu\n"
-    "window_frames=%lu\nwindow_us=%lu\nblit_us=%lu\nerror=%s\n",
+    "window_frames=%lu\nwindow_us=%lu\nblit_us=%lu\n"
+    "damage_attempts=%lu\ndamage_failures=%lu\ndamage_full_redraws=%lu\n"
+    "damage_pixels=%lu\ncomposites=%lu\ndamage_regions_last=%lu\nerror=%s\n",
     POCKET_BUILD_ID,
     state,
     (long)getpid(),
@@ -315,6 +332,12 @@ static void write_acceptance_record(void) {
     g_window_frames,
     g_window_us,
     g_blit_us_mean,
+    pocket_runtime_damage_attempts(),
+    pocket_runtime_damage_failures(),
+    pocket_runtime_damage_full_redraws(),
+    pocket_runtime_damage_pixels(),
+    g_composites,
+    g_damage_regions_last,
     g_state == POCKET_STATE_FAILED ? g_status_message : ""
   );
   g_last_record_attempt_frame = g_guest_frames;
@@ -397,6 +420,10 @@ static void send_void(id receiver, const char *selector) {
 
 static void send_void_object(id receiver, const char *selector, id value) {
   ((void (*)(id, SEL, id))objc_msgSend)(receiver, sel_registerName(selector), value);
+}
+
+static void send_void_rect(id receiver, const char *selector, CGRect rect) {
+  ((void (*)(id, SEL, CGRect))objc_msgSend)(receiver, sel_registerName(selector), rect);
 }
 
 static void send_void_bool(id receiver, const char *selector, BOOL value) {
@@ -600,7 +627,7 @@ static int refresh_framebuffer(void) {
   return 1;
 }
 
-static int draw_framebuffer(CGContextRef context, CGRect bounds) {
+static int draw_framebuffer(CGContextRef context, CGRect bounds, CGRect dirty) {
   CGColorSpaceRef color_space;
   CGDataProviderRef provider;
   CGImageRef image;
@@ -671,6 +698,14 @@ static int draw_framebuffer(CGContextRef context, CGRect bounds) {
   CGContextSaveGState(context);
   CGContextTranslateCTM(context, 0.0f, destination.size.height);
   CGContextScaleCTM(context, 1.0f, -1.0f);
+  /*
+   * After that flip the space is top-down with the origin at the top left,
+   * which is the same space UIKit expressed `dirty` in, so it clips directly.
+   * A degenerate rect means draw everything rather than nothing.
+   */
+  if (dirty.size.width > 0.0f && dirty.size.height > 0.0f) {
+    CGContextClipToRect(context, dirty);
+  }
   CGContextDrawImage(context, destination, image);
   CGContextRestoreGState(context);
 
@@ -857,10 +892,10 @@ static BOOL send_bool_class_object(Class cls, const char *selector, id value) {
 static Class pocket_layer_class(id self, SEL command) {
   (void)self;
   (void)command;
-  if (access(POCKET_FORCE_SOFTWARE_PATH, F_OK) == 0) {
-    return objc_getClass("CALayer");
+  if (access(POCKET_PREFER_GL_PATH, F_OK) == 0) {
+    return objc_getClass("CAEAGLLayer");
   }
-  return objc_getClass("CAEAGLLayer");
+  return objc_getClass("CALayer");
 }
 
 static int resolve_gl_extension(void) {
@@ -918,7 +953,7 @@ static int setup_gl(id view) {
   int32_t status;
   int forced_software;
 
-  forced_software = access(POCKET_FORCE_SOFTWARE_PATH, F_OK) == 0;
+  forced_software = access(POCKET_PREFER_GL_PATH, F_OK) != 0;
   if (forced_software) return 0;
   if (eagl == NULL || objc_getClass("CAEAGLLayer") == NULL) return 0;
   if (!resolve_gl_extension()) return 0;
@@ -981,6 +1016,34 @@ static int setup_gl(id view) {
   return 1;
 }
 
+/* Shared by both capture paths: write `length` bytes and clear the request. */
+static void write_capture(const uint8_t *pixels, size_t length) {
+  int descriptor = open(POCKET_CAPTURE_OUTPUT_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  size_t written = 0;
+  if (descriptor < 0) {
+    return;
+  }
+  while (written < length) {
+    ssize_t count = write(descriptor, pixels + written, length - written);
+    if (count <= 0) break;
+    written += (size_t)count;
+  }
+  (void)fsync(descriptor);
+  (void)close(descriptor);
+  (void)unlink(POCKET_CAPTURE_REQUEST_PATH);
+}
+
+/* The rasterizer's own framebuffer: top-down, ARGB32 words (BGRA bytes). */
+static void capture_software_frame_if_requested(void) {
+  if (access(POCKET_CAPTURE_REQUEST_PATH, F_OK) != 0) {
+    return;
+  }
+  if (g_framebuffer == NULL || g_framebuffer_length == 0) {
+    return;
+  }
+  write_capture(g_framebuffer, g_framebuffer_length);
+}
+
 /*
  * Read the just-drawn frame back off the GPU when asked. GL reports rows
  * bottom-up; the raw dump is left in that order and the host-side tool flips
@@ -989,8 +1052,6 @@ static int setup_gl(id view) {
 static void capture_frame_if_requested(void) {
   size_t length;
   uint8_t *pixels;
-  int descriptor;
-  size_t written = 0;
 
   if (access(POCKET_CAPTURE_REQUEST_PATH, F_OK) != 0) {
     return;
@@ -1006,19 +1067,8 @@ static void capture_frame_if_requested(void) {
   glFinish();
   /* GL_RGBA + GL_UNSIGNED_BYTE is the one combination ES 1.1 always allows. */
   glReadPixels(0, 0, g_gl_width, g_gl_height, 0x1908U, 0x1401U, pixels);
-  descriptor = open(POCKET_CAPTURE_OUTPUT_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  if (descriptor >= 0) {
-    while (written < length) {
-      ssize_t count = write(descriptor, pixels + written, length - written);
-      if (count <= 0) break;
-      written += (size_t)count;
-    }
-    (void)fsync(descriptor);
-    (void)close(descriptor);
-  }
+  write_capture(pixels, length);
   free(pixels);
-  /* One shot: clearing the request is what proves the capture ran. */
-  (void)unlink(POCKET_CAPTURE_REQUEST_PATH);
 }
 
 /*
@@ -1094,6 +1144,45 @@ static int boot_embedded_runtime(void) {
   return 1;
 }
 
+/*
+ * Ask UIKit to recomposite only the rectangle the core says changed.
+ *
+ * An empty damage plan means nothing changed, so nothing is invalidated and the
+ * frame costs no composite at all — which is most frames for a UI that is
+ * mostly still. When the plan is non-empty the rect is handed to
+ * setNeedsDisplayInRect:, and drawRect: clips to whatever UIKit passes back.
+ *
+ * If setNeedsDisplayInRect: is unavailable, or the plan covers everything, this
+ * degrades to invalidating the whole view — the behaviour it replaces.
+ */
+static void invalidate_damaged_region(void) {
+  int bounds[4];
+  CGRect dirty;
+
+  if (g_view == NULL) {
+    return;
+  }
+  if (!pocket_runtime_damage_bounds(bounds)) {
+    /* Empty plan: the previous composite is still correct. */
+    return;
+  }
+  if (!responds_to(g_view, "setNeedsDisplayInRect:")) {
+    send_void(g_view, "setNeedsDisplay");
+    return;
+  }
+  /* Damage is half-open logical pixels, top-left origin — the view's space. */
+  dirty.origin.x = (float)bounds[0];
+  dirty.origin.y = (float)bounds[1];
+  dirty.size.width = (float)(bounds[2] - bounds[0]);
+  dirty.size.height = (float)(bounds[3] - bounds[1]);
+  if (dirty.size.width <= 0.0f || dirty.size.height <= 0.0f) {
+    return;
+  }
+  g_damage_regions_last = (unsigned long)(bounds[2] - bounds[0]) *
+    (unsigned long)(bounds[3] - bounds[1]);
+  send_void_rect(g_view, "setNeedsDisplayInRect:", dirty);
+}
+
 static void pocket_tick(id self, SEL command, id timer) {
   int completed_touch;
   int delivered_touch;
@@ -1164,6 +1253,13 @@ static void pocket_tick(id self, SEL command, id timer) {
     if (!refresh_framebuffer()) {
       return;
     }
+    /*
+     * Capture the software framebuffer on request too. This is the test that
+     * matters for a damage-limited rasterizer: the framebuffer persists across
+     * frames and only damaged spans are rewritten, so under-reported damage
+     * shows up as staleness that a from-scratch reference render will catch.
+     */
+    capture_software_frame_if_requested();
   }
   finished_us = now_us();
   if (finished_us >= frame_started_us) {
@@ -1200,7 +1296,7 @@ static void pocket_tick(id self, SEL command, id timer) {
     write_acceptance_record();
   }
   if (!g_gl_ready) {
-    send_void(g_view, "setNeedsDisplay");
+    invalidate_damaged_region();
   }
 }
 
@@ -1209,7 +1305,6 @@ static void pocket_draw_rect(id self, SEL command, CGRect rect) {
   CGRect bounds;
   unsigned long blit_started_us = now_us();
   (void)command;
-  (void)rect;
 
   if (context == NULL) {
     if (g_state != POCKET_STATE_FAILED) {
@@ -1219,7 +1314,14 @@ static void pocket_draw_rect(id self, SEL command, CGRect rect) {
   }
   bounds = send_rect(self, "bounds");
   if (g_state == POCKET_STATE_RUNNING) {
-    if (!draw_framebuffer(context, bounds)) {
+    /*
+     * `rect` is what UIKit decided needs recompositing, which is normally the
+     * damage rectangle we asked for. Honouring it is the difference between
+     * blitting 320x480 and blitting what changed. When UIKit has discarded the
+     * backing store it passes the full bounds and this is a no-op, so no
+     * preservation guarantee is being relied on.
+     */
+    if (!draw_framebuffer(context, bounds, rect)) {
       draw_status(context, bounds);
     }
   } else {
@@ -1227,6 +1329,7 @@ static void pocket_draw_rect(id self, SEL command, CGRect rect) {
   }
   g_blit_us_total += now_us() - blit_started_us;
   g_blit_frames += 1;
+  g_composites += 1;
 }
 
 static void begin_touch(void) {

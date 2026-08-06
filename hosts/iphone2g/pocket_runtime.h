@@ -26,6 +26,17 @@ const uint8_t *pocket_runtime_render(void);
  */
 
 /*
+ * Damage statistics for the software raster path, and the most recent plan's
+ * bounds so the host can scope its composite. `bounds` receives x0,y0,x1,y1 in
+ * logical pixels, top-left origin; the return is zero when nothing changed.
+ */
+unsigned long pocket_runtime_damage_attempts(void);
+unsigned long pocket_runtime_damage_failures(void);
+unsigned long pocket_runtime_damage_full_redraws(void);
+unsigned long pocket_runtime_damage_pixels(void);
+int pocket_runtime_damage_bounds(int *bounds);
+
+/*
  * Hardware path. `pocket_runtime_gl_initialize` needs a current OpenGL ES 1.1
  * context and returns zero if the GPU pipeline cannot be established, which is
  * the host's signal to keep using the software rasterizer above.

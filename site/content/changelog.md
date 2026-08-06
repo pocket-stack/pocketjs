@@ -3,6 +3,47 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.9.2 — August 6, 2026
+
+**A locked 60 fps on a 2007 iPhone, because the composite was the only stage that was never damage-limited.**
+PocketJS 0.9.2 makes the software rasterizer scope its screen composite to the
+damaged rectangle, which takes the original iPhone from 22–26 fps to **59.99**,
+and exposes the damage statistics that made the diagnosis possible. The
+[deep dive](/blog/pocketjs-on-the-first-iphone/) has the numbers.
+
+- **The composite now follows the damage plan.** The rasterizer was always
+  incremental; the composite was not. The tick called `setNeedsDisplay` on the
+  whole view and `drawRect:` discarded the dirty rectangle UIKit passes, so every
+  frame rebuilt a `CGImage` over all 320×480 — **22–27 ms**. An empty plan now
+  invalidates nothing (626 of 961 frames in one sample), and a non-empty plan
+  goes to `setNeedsDisplayInRect:` with `drawRect:` clipping to what it is
+  handed. The composite costs **0.26 ms**, and the frame **7.63 ms** of a
+  16.67 ms budget. No preservation guarantee is relied on: when UIKit discards
+  the backing store it passes full bounds and the full frame is drawn.
+- **Damage is observable.** `engine/symbian` was discarding the `DamagePlan` the
+  incremental rasterizer returns. Six new C ABI accessors expose attempts,
+  failures, policy-chosen full redraws, region count, pixel area and union
+  bounds, and four of them ride in the device record. **`damage_failures` is the
+  one that matters:** planning that errors silently draws a complete frame, and
+  without a counter that is indistinguishable from a slow machine. A
+  `composites` counter sits beside it, because a scoped invalidation that never
+  fires looks exactly like a very fast one.
+- **The software rasterizer is now the default on this target**, and the OpenGL
+  ES 1.1 backend is opt-in. The GL path is correct and pixel-verified but costs
+  17.2–19.7 ms and delivers 48.6–50.7 fps, because it re-submits and re-fills
+  the entire DrawList every frame. **This supersedes rather than corrects
+  0.9.1:** the GPU path really was faster than the CPU path as that code stood;
+  the CPU path then got an optimization the GPU path still lacks.
+- **Both paths can be captured and diffed.** The capture works on the software
+  path too, which is the test that matters for a damage-limited rasterizer —
+  the framebuffer persists and only damaged spans are rewritten, so
+  under-reported damage would accumulate as staleness. After **2,581 frames**:
+  mean absolute channel difference 0.039 of 255, with the only residue inside
+  the animating spinner's own 40×40 box. Note the two captures disagree about
+  format — `glReadPixels` is R,G,B,A bottom-up, the core's ARGB32 words are
+  B,G,R,A top-down — and comparing the software one unswapped reports a
+  convincing 9.3/255 failure that is entirely in the comparison.
+
 ## 0.9.1 — August 6, 2026
 
 **The GPU path on the original iPhone was never losing; three stacked measurement bugs said it was.**
@@ -17,7 +58,8 @@ dive](/blog/pocketjs-on-the-first-iphone/) tells it in order.
   **1.8–2× faster**: 46.7–49.4 fps against 21.9–26.5, and 19.4–20.5 ms per
   frame against 33.9–40.8. The old comparison timed GL's rasterize *and*
   present against software's rasterize *only*, because the software
-  composite runs in `drawRect:` later in the run loop.
+  composite runs in `drawRect:` later in the run loop. (0.9.2 then scoped that
+  composite and the ordering flipped again — see above.)
 - **Fixed: the software fallback never composited.** `+layerClass` returned
   `CAEAGLLayer` unconditionally, and a GL-backed layer never receives
   `drawRect:`. The documented fallback — the one the host drops to whenever GL

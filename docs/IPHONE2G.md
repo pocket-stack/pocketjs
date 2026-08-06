@@ -312,78 +312,119 @@ or touch on the phone.
 
 ## Render paths
 
-The host has two, and reports which one ran.
+The host has two. **The software rasterizer is the default** because it is
+measurably faster here; the GL backend is opt-in.
 
 | Path | Mechanism | Measured on `iPhone1,1` / 3.1.3 |
 | --- | --- | --- |
-| OpenGL ES 1.1 | The core walks its DrawList into the fixed-function pipeline; the CPU never touches a pixel. | **46.7–49.4 fps**, 1.7–1.8 ms guest + 15.7–16.8 ms submit |
-| Software raster | The core rasterizes ARGB32; `drawRect:` composites it as one `CGImage`. | **21.9–26.5 fps**, 1.4–2.7 ms guest + 9.6–11.5 ms raster + 22.1–26.9 ms composite |
+| Software raster (default) | The core rasterizes only the damaged spans; `drawRect:` composites only the damaged rectangle. | **59.99 fps**, 1.44 ms guest + 5.93 ms raster + 0.26 ms composite |
+| OpenGL ES 1.1 | The core walks its whole DrawList into the fixed-function pipeline every frame. | **48.6–50.7 fps**, 1.8–2.3 ms guest + 12.8–16.2 ms submit |
 
-The GPU path is **1.8–2× faster**, and the largest single cost anywhere is the
-software path's full-screen `CGImage` composite. Both figures come from one
-binary with the frame loop on `CADisplayLink`.
+The software path holds a **locked 60** at ~7.6 ms of a 16.67 ms budget. The GL
+path is correct and pixel-verified but costs 17–20 ms, because it re-submits and
+re-fills everything every frame; giving it the same damage treatment — scissor
+to the plan's bounds — is the open work.
 
-`renderer=` and `clock=` in the acceptance record name the path and the clock
-that actually ran. Neither is inferred: a GL failure falls back to the
-rasterizer by design, so without those fields a hardware receipt and a software
-receipt are byte-identical.
+### What made the difference
 
-Two fields make the rate exact rather than estimated. `window_frames` and
-`window_us` are counted on the device between record writes, because
-differencing two fetched records is worth about ±4 fps — the record is written
-once per heartbeat and its timestamp has one-second resolution.
+Scoping the composite, not the rasterizer. The rasterizer was always
+damage-limited; the composite was not. `setNeedsDisplay` invalidated the whole
+view and `pocket_draw_rect` discarded the rect UIKit passed, so every frame
+rebuilt a `CGImage` and blitted all 320×480. That cost **22–27 ms**. Now:
+
+- an **empty** damage plan invalidates nothing, so the frame costs no composite
+  at all — 626 of 961 frames in one sample;
+- a non-empty plan goes to `setNeedsDisplayInRect:`, and `drawRect:` clips to
+  whatever UIKit passes back.
+
+The composite fell from 22–27 ms to **0.26 ms**. No preservation guarantee is
+relied on: when UIKit discards the backing store it passes the full bounds and
+the code draws the full frame.
 
 ### Selecting a path
 
 ```sh
-# force the software rasterizer for the next launch
-ssh … 'touch /private/var/tmp/pocketjs-iphone2g.software'
-# back to the GPU
-ssh … 'rm -f /private/var/tmp/pocketjs-iphone2g.software'
+# opt into OpenGL ES 1.1 for the next launch
+ssh … 'touch /private/var/tmp/pocketjs-iphone2g.gles1'
+# back to the default software rasterizer
+ssh … 'rm -f /private/var/tmp/pocketjs-iphone2g.gles1'
 ```
 
-The marker is read in two places, and **both must agree**: `setup_gl` consults
+The marker is read in two places and **both must agree**: `setup_gl` consults
 it, and so does the view's `+layerClass`. A `CAEAGLLayer` never receives
 `drawRect:`, so a view backed by one cannot composite a software frame at all.
-Returning `CAEAGLLayer` unconditionally left the documented fallback computing
+Returning `CAEAGLLayer` unconditionally once left the software path computing
 frames that could not reach the screen.
 
 The app must be restarted for a change to take effect, and iPhone OS 3 has no
-third-party multitasking, so kill it rather than expecting a relaunch to
-replace it:
+third-party multitasking, so kill it rather than expecting a relaunch to replace
+it:
 
 ```sh
 ssh … 'kill -9 $(sed -n "s/^pid=//p" /private/var/tmp/pocketjs-iphone2g.status)'
 bun iphone2g launch
 ```
 
-Note that `ps ax` prints nothing on this installation. Use `kill -0 <pid>` to
-test liveness; `ps ax | grep` reports a running process as absent.
+`ps ax` prints nothing on this installation. Use `kill -0 <pid>` for liveness;
+`ps ax | grep` reports a running process as absent.
+
+### Reading the record
+
+`renderer=` and `clock=` name the path and the clock that actually ran. Neither
+is inferred: a GL failure falls back to the rasterizer by design, so without
+those fields a hardware receipt and a software receipt are byte-identical.
+
+`window_frames` and `window_us` are counted on the device between record writes,
+so the frame rate is exact. Differencing two fetched records is worth about
+±4 fps — the record is written once per heartbeat and its timestamp has
+one-second resolution.
+
+`damage_attempts`, `damage_failures`, `damage_full_redraws` and `damage_pixels`
+come from the plan the incremental rasterizer returns, which used to be
+discarded. **`damage_failures` is the one to watch:** planning that returns an
+error silently draws a complete frame, and without a counter that is
+indistinguishable from the machine being slow. `composites` counts `drawRect:`
+calls — compare it against `guest_frames`, because a scoped invalidation that
+never fires looks exactly like a very fast one.
 
 ### Pixel parity against the reference core
 
-The GPU path is verified by reading the device's own framebuffer back, not by
+Both paths can be verified by capturing the device's own output rather than by
 looking at the screen:
 
 ```sh
 ssh … 'touch /private/var/tmp/pocketjs-iphone2g.capture'
-# the next GL frame is written to pocketjs-iphone2g.frame.rgba and the
-# request is cleared; 614,400 bytes for 320x480 RGBA
+# the next frame is written to pocketjs-iphone2g.frame.rgba and the request is
+# cleared; 614,400 bytes for 320x480
 ssh … 'cat /private/var/tmp/pocketjs-iphone2g.frame.rgba' > device-frame.rgba
 ```
 
-`glReadPixels` reports rows **bottom-up**, so the host-side tool flips them.
-Rendering the same guest bundle through the wasm core at the same viewport,
-200 frames in with animations settled and no presses, gives:
+**The two paths differ in byte order and orientation, and getting this wrong
+produces a convincing false failure:**
+
+| Path | Bytes | Rows |
+| --- | --- | --- |
+| GL (`glReadPixels`, `GL_RGBA`) | R,G,B,A | bottom-up |
+| Software (the core's ARGB32 words) | B,G,R,A | top-down |
+
+The wasm reference core emits R,G,B,A top-down. Comparing the software capture
+without swapping red and blue reports a mean difference of 9.3/255 and a picture
+in which every blue is orange.
+
+Against the same guest rendered by the reference core, 200 frames in with
+animations settled:
 
 ```text
-mean abs channel diff : 0.04 / 255
-channels off by >32   : 0 of 460800
-worst single channel  : 7
+GL path                     mean 0.04 / 255, worst channel 7
+software, after 2581 frames mean 0.039 / 255, worst channel 186
 ```
 
-The residue is antialiased glyph edges: the GPU interpolates the gradient and
-filters the font atlas where the software rasterizer does exact integer math.
+Both residues are the animating spinner at a different phase — for the software
+capture the differing pixels sit inside x 37..56, y 253..281, within the
+spinner's own 40×40 box, with `damage_failures=0`. That is the test that matters
+for a damage-limited rasterizer: the framebuffer persists across frames and only
+damaged spans are rewritten, so under-reported damage accumulates as staleness
+a from-scratch reference render will catch.
 
 ### ES 1.1 state the ES 2 pipeline does not need
 

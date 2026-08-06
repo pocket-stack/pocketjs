@@ -94,6 +94,21 @@ fn allocation_error(_layout: Layout) -> ! {
 static mut UI: Option<Ui> = None;
 static mut FRAMEBUFFER: Vec<u8> = Vec::new();
 static mut DAMAGE_TRACKER: DamageTracker<DEFAULT_DAMAGE_REGIONS> = DamageTracker::new();
+/*
+ * Damage statistics for the incremental raster path.
+ *
+ * These exist because the failure mode they describe is invisible without
+ * them: when damage planning returns Err the renderer quietly draws a complete
+ * frame, and a per-frame failure is then indistinguishable from the machine
+ * simply being slow. `failures` counts planning that FAILED; `full_redraws`
+ * counts a plan that legitimately chose to cover everything.
+ */
+static mut DAMAGE_ATTEMPTS: u64 = 0;
+static mut DAMAGE_FAILURES: u64 = 0;
+static mut DAMAGE_FULL_REDRAWS: u64 = 0;
+static mut DAMAGE_REGIONS: u32 = 0;
+static mut DAMAGE_PIXELS: u64 = 0;
+static mut DAMAGE_BOUNDS: [i32; 4] = [0, 0, 0, 0];
 static mut FRAMEBUFFER_WIDTH: u32 = 0;
 static mut FRAMEBUFFER_HEIGHT: u32 = 0;
 static mut FRAMEBUFFER_STRIDE: u32 = 0;
@@ -574,31 +589,104 @@ fn render_at_scale(scale: u32, incremental: bool) -> *const u8 {
         }
 
         if incremental {
-            if raster::render_scaled_argb_incremental(
+            DAMAGE_ATTEMPTS = DAMAGE_ATTEMPTS.wrapping_add(1);
+            match raster::render_scaled_argb_incremental(
                 instance_ref,
                 &(*draw_list).words,
                 &mut FRAMEBUFFER,
                 scale,
                 &mut DAMAGE_TRACKER,
                 DamagePolicy::default(),
-            )
-            .is_err()
-            {
-                raster::render_scaled_argb(
-                    instance_ref,
-                    &(*draw_list).words,
-                    &mut FRAMEBUFFER,
-                    scale,
-                );
-                DAMAGE_TRACKER.invalidate();
+            ) {
+                Ok(plan) => {
+                    // The plan is the only evidence that damage is doing
+                    // anything. Discarding it is what made a per-frame
+                    // full-redraw regression indistinguishable from a slow
+                    // machine, so record it instead.
+                    let bounds = plan.bounds();
+                    DAMAGE_REGIONS = plan.region_count() as u32;
+                    DAMAGE_PIXELS = plan.area();
+                    DAMAGE_BOUNDS = [bounds.x0, bounds.y0, bounds.x1, bounds.y1];
+                    if plan.is_full_redraw() {
+                        DAMAGE_FULL_REDRAWS = DAMAGE_FULL_REDRAWS.wrapping_add(1);
+                    }
+                }
+                Err(_) => {
+                    // Silent fallback to a complete frame. Counted separately
+                    // from a policy-chosen full redraw, because this one means
+                    // damage planning FAILED.
+                    DAMAGE_FAILURES = DAMAGE_FAILURES.wrapping_add(1);
+                    DAMAGE_REGIONS = 0;
+                    DAMAGE_PIXELS = (width as u64) * (height as u64);
+                    DAMAGE_BOUNDS = [0, 0, width as i32, height as i32];
+                    raster::render_scaled_argb(
+                        instance_ref,
+                        &(*draw_list).words,
+                        &mut FRAMEBUFFER,
+                        scale,
+                    );
+                    DAMAGE_TRACKER.invalidate();
+                }
             }
         } else {
             raster::render_scaled_argb(instance_ref, &(*draw_list).words, &mut FRAMEBUFFER, scale);
             DAMAGE_TRACKER.invalidate();
+            DAMAGE_REGIONS = 0;
+            DAMAGE_PIXELS = (width as u64) * (height as u64);
+            DAMAGE_BOUNDS = [0, 0, width as i32, height as i32];
         }
 
         remember_framebuffer_geometry(width, height);
         FRAMEBUFFER.as_ptr()
+    }
+}
+
+/// Incremental-raster statistics, so a host can tell a working damage plan
+/// from a silent per-frame fallback. Counts are cumulative; the region,
+/// pixel and bounds values describe the most recent frame.
+#[no_mangle]
+pub extern "C" fn ui_damage_attempts() -> u64 {
+    unsafe { DAMAGE_ATTEMPTS }
+}
+
+/// Times damage planning returned an error and a complete frame was drawn.
+#[no_mangle]
+pub extern "C" fn ui_damage_failures() -> u64 {
+    unsafe { DAMAGE_FAILURES }
+}
+
+/// Times a successful plan covered the whole target by policy.
+#[no_mangle]
+pub extern "C" fn ui_damage_full_redraws() -> u64 {
+    unsafe { DAMAGE_FULL_REDRAWS }
+}
+
+/// Regions in the most recent plan; 0 means nothing changed.
+#[no_mangle]
+pub extern "C" fn ui_damage_regions() -> u32 {
+    unsafe { DAMAGE_REGIONS }
+}
+
+/// Logical pixels the most recent plan covers.
+#[no_mangle]
+pub extern "C" fn ui_damage_pixels() -> u64 {
+    unsafe { DAMAGE_PIXELS }
+}
+
+/// Union bounds of the most recent plan, packed x0,y0,x1,y1 into the caller's
+/// four ints. Half-open, logical pixels, top-left origin — the same space the
+/// DrawList uses. Returns 0 when the plan is empty.
+#[no_mangle]
+pub extern "C" fn ui_damage_bounds(out: *mut i32) -> i32 {
+    if out.is_null() {
+        return 0;
+    }
+    unsafe {
+        let bounds = DAMAGE_BOUNDS;
+        for (index, value) in bounds.iter().enumerate() {
+            *out.add(index) = *value;
+        }
+        i32::from(bounds[2] > bounds[0] && bounds[3] > bounds[1])
     }
 }
 

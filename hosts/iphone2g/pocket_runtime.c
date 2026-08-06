@@ -694,6 +694,37 @@ const uint8_t *pocket_runtime_render(void) {
   return ui_render_incremental();
 }
 
+unsigned long pocket_runtime_damage_attempts(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return (unsigned long)ui_damage_attempts();
+}
+
+unsigned long pocket_runtime_damage_failures(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return (unsigned long)ui_damage_failures();
+}
+
+unsigned long pocket_runtime_damage_full_redraws(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return (unsigned long)ui_damage_full_redraws();
+}
+
+unsigned long pocket_runtime_damage_pixels(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return (unsigned long)ui_damage_pixels();
+}
+
+int pocket_runtime_damage_bounds(int *bounds) {
+  int32_t packed[4];
+  if (runtime == 0 || context == 0 || runtime_failed || bounds == 0) return 0;
+  if (!ui_damage_bounds(packed)) return 0;
+  bounds[0] = (int)packed[0];
+  bounds[1] = (int)packed[1];
+  bounds[2] = (int)packed[2];
+  bounds[3] = (int)packed[3];
+  return 1;
+}
+
 int pocket_runtime_gl_initialize(void) {
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
   return ui_gl_initialize() != 0;
