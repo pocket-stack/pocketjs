@@ -499,6 +499,26 @@ pub mod audio {
     pub const EVENT_ENDED: &str = "ended";
 }
 
+/// DB module boundary (contracts/spec/db.ts — `globalThis.db`).
+/// SQLite behind five synchronous ops; rows cross as one JSON line per
+/// query() call. The module owns no clock and emits no events.
+pub mod db {
+    pub const OP_OPEN: u8 = 1;
+    pub const OP_CLOSE: u8 = 2;
+    pub const OP_EXEC: u8 = 3;
+    pub const OP_QUERY: u8 = 4;
+    pub const OP_LAST_ERROR: u8 = 5;
+    /// The in-memory database name (private to the handle).
+    pub const MEMORY: &str = ":memory:";
+    /// Marker key for a BLOB value inside a row or a parameter list.
+    pub const BLOB_KEY: &str = "$b";
+    /// Largest integer magnitude that crosses the boundary losslessly.
+    pub const MAX_SAFE_INTEGER: i64 = 9007199254740991;
+    pub const MAX_DATABASES: usize = 4;
+    /// Result-row ceiling per query() call (exceeding it fails the op).
+    pub const MAX_RESULT_ROWS: usize = 4096;
+}
+
 /// NET module boundary (contracts/spec/net.ts — `globalThis.net`).
 /// Bounded whole-response HTTP; completions batch to tick boundaries.
 pub mod net {

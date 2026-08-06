@@ -55,6 +55,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   audio: { file: "framework/src/audio-api.ts", aliases: TWINS },
   clock: { file: "framework/src/clock.ts", aliases: TWINS },
   config: { file: "framework/src/config.ts" },
+  db: { file: "framework/src/db-api.ts", aliases: TWINS },
   components: {
     file: {
       solid: "framework/src/components.ts",

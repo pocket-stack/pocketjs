@@ -1,4 +1,4 @@
-// Deterministic codegen: contracts/spec/{spec,audio,net}.ts -> engine/core/src/spec.rs.
+// Deterministic codegen: contracts/spec/{spec,audio,db,net}.ts -> engine/core/src/spec.rs.
 //
 // Run from PocketJS/:  bun contracts/spec/gen-rust.ts
 //
@@ -16,6 +16,14 @@ import {
   AUDIO_RING_FRAMES,
   audioFramesForTick,
 } from "./audio.ts";
+import {
+  DB_BLOB_KEY,
+  DB_MAX_DATABASES,
+  DB_MAX_RESULT_ROWS,
+  DB_MAX_SAFE_INTEGER,
+  DB_MEMORY,
+  DB_OP,
+} from "./db.ts";
 import {
   NET_DEFAULT_RESPONSE_BYTES,
   NET_DEFAULT_TIMEOUT_MS,
@@ -476,6 +484,30 @@ export function generateRust(): string {
   for (const [name, v] of Object.entries(AUDIO_EVENT)) {
     put(`    pub const EVENT_${screaming(name)}: &str = ${JSON.stringify(v)};`);
   }
+  put("}");
+  put("");
+
+  // --- db module -----------------------------------------------------------
+  // The db MODULE's boundary (contracts/spec/db.ts): SQLite behind five
+  // synchronous ops, mounted as `globalThis.db`, independent of the ui
+  // surface. A native host implementing it reads these constants; the
+  // reference implementation is engine/crates/pocket-db.
+  put("/// DB module boundary (contracts/spec/db.ts — `globalThis.db`).");
+  put("/// SQLite behind five synchronous ops; rows cross as one JSON line per");
+  put("/// query() call. The module owns no clock and emits no events.");
+  put("pub mod db {");
+  for (const [name, v] of Object.entries(DB_OP)) {
+    put(`    pub const OP_${screaming(name)}: u8 = ${v};`);
+  }
+  put(`    /// The in-memory database name (private to the handle).`);
+  put(`    pub const MEMORY: &str = ${JSON.stringify(DB_MEMORY)};`);
+  put(`    /// Marker key for a BLOB value inside a row or a parameter list.`);
+  put(`    pub const BLOB_KEY: &str = ${JSON.stringify(DB_BLOB_KEY)};`);
+  put(`    /// Largest integer magnitude that crosses the boundary losslessly.`);
+  put(`    pub const MAX_SAFE_INTEGER: i64 = ${DB_MAX_SAFE_INTEGER};`);
+  put(`    pub const MAX_DATABASES: usize = ${DB_MAX_DATABASES};`);
+  put(`    /// Result-row ceiling per query() call (exceeding it fails the op).`);
+  put(`    pub const MAX_RESULT_ROWS: usize = ${DB_MAX_RESULT_ROWS};`);
   put("}");
   put("");
 
