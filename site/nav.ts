@@ -57,10 +57,10 @@ export interface BlogPost {
 export const BLOG_POSTS: BlogPost[] = [
   {
     slug: "pocket-pi-on-esp32-p4",
-    title: "Just Enough Node: The Whole Pi Coding Agent on an ESP32-P4",
+    title: "Just Enough Node: Porting the Pi Coding Agent to the ESP32-P4",
     date: "2026-08-06",
     description:
-      "The Pi coding agent assumes Node ≥ 22, and microcontrollers have JavaScript engines, not runtimes — no Node compatibility, no ESM loading, no fetch. So we built just enough of one in Rust around QuickJS: the full desktop profile boots a 9 MB bundle that wants 46.6 MB of heap; the board has 32 MB; upstream pi-agent-core fits in 304 KB. The result is the whole agent resident on an ESP32-P4 — loop, tools, LittleFS workspace, self-set schedules, persistence across power cuts — with no companion server running the loop. And because its behavior stays TypeScript and files rather than compiled firmware, the agent can revise itself without a reflash.",
+      "Pi is a TypeScript coding agent harness people build on, and it runs wherever Node ≥ 22 runs — nowhere near a microcontroller. We wanted the complete agent living on embedded hardware, not a screen paired to a server, so we ported it layer by layer: a Node-shaped runtime in Rust around QuickJS (the unmodified 9 MB pi-coding-agent runs on the desktop with no Node installed), a 304 KB pi-agent-core profile for the board after the 46.6 MB measurement, native Rust tools standing in for POSIX on LittleFS, a streaming model transport over Wi-Fi or UART, and a PocketJS UI wired end to end. What Pi assumes, what the chip lacks, what broke, and how it ran.",
     author: { name: 'Siwei "Jerry" Yuan', url: "https://github.com/siwei-yuan" },
   },
   {
