@@ -3,6 +3,53 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.9.0 — August 6, 2026
+
+**The runtime reaches the original iPhone, and its GPU backend learns a second generation.**
+PocketJS 0.9.0 adds an experimental ARMv6 target for the 2007 `iPhone1,1`
+running iPhone OS 3.1.3, generalizes the hardware DrawList backend so it
+serves both OpenGL ES 2 and the fixed-function OpenGL ES 1.1 that older
+GPUs speak, and hardens what the project accepts as proof that something
+ran on hardware. The [deep dive](/blog/pocketjs-on-the-first-iphone/)
+includes the part where the new GPU path lost to the software rasterizer.
+
+- **An ARMv6 UIKit host for the original iPhone.** Current Xcode still
+  emits ARMv6 and `ld-classic` still links a 2008 sysroot, so the host is
+  built against an iPhone OS 1.1.4 ABI floor and targets 3.1.3, probing
+  both UIKit generations at runtime with `respondsToSelector:` and
+  `dlsym`. It contains **no Objective-C**: the classic linker crashes on
+  the ObjC1 relocations current Clang emits, so the view and app delegate
+  are registered through `objc_allocateClassPair` at startup. The guest
+  JavaScript and asset pack ride inside the executable as Mach-O sections,
+  and deployment is a signed transaction with byte-exact readback and
+  rollback over key-only USB SSH. The target stays deliberately outside
+  the production registry, with a test asserting it.
+- **The GL backend now serves two GPU generations.** `engine/symbian`'s
+  renderer split into a generation-independent DrawList walker plus two
+  pipelines: the existing ES 2 shader program, and a new fixed-function ES
+  1.1 path for GPUs that predate shaders. The two shader lines turned out
+  to have exact fixed-function equivalents — the pixel-to-NDC transform is
+  `glOrthof`, and `texture2D(…) * v_color` is `GL_MODULATE` — so the
+  interleaved vertex layout is reused byte for byte. All ten backend tests
+  pass on either pipeline, and Symbian's verified ES 2 output is unchanged.
+- **A GPU path measured, and reported honestly.** On the iPhone's PowerVR
+  MBX Lite the new hardware path is **2.4× slower** than the software
+  rasterizer it was meant to replace: 12.4–15.5 ms to submit a frame
+  against 5.5–6.1 ms to rasterize one. The cause is not the GPU but the
+  algorithm — the software path is damage-tracked and the GL path redraws
+  everything — and making the submission damage-aware is the open work.
+  The device record now reports which renderer and which clock actually
+  ran rather than leaving it to be inferred, and a marker file selects
+  between both paths so they can be measured from one binary.
+- **Runtime acceptance got harder to fool.** A review found that the
+  first "it runs on hardware" receipt could pass before the finger lifted
+  and could be re-read from a process that had already died. The record is
+  now schema 2 and requires a live PID, an advancing heartbeat, a
+  completed touch release, and an application-reported action — which
+  arrives through the new `reportAppAction` framework surface and its
+  optional host sink, so the evidence path runs through the reactive
+  graph. Frame-loop timings ride in the same record.
+
 ## 0.8.0 — August 5, 2026
 
 **The runtime learns to be touched and heard, and reaches four new kinds
