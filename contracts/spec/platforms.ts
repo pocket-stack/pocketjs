@@ -158,6 +158,16 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // device target appends the id to its profile only when its native host
   // ships the module.
   "data.sqlite",
+  // A per-app file tree behind the fs module's own namespace
+  // (`globalThis.fs`, contracts/spec/fs.ts): nine synchronous ops, every
+  // path confined to the app's own data root — apps cannot name, let alone
+  // reach, each other's trees. Registered ahead of any stock TARGET
+  // advertising it: the sim host and the engine/crates/pocket-fs reference
+  // core implement and test the whole contract, so apps can already declare
+  // the requirement and fail admission where the module is absent. A device
+  // target appends the id to its profile only when its native host ships
+  // the module.
+  "data.fs",
   // Copy/cut/paste round-trips with the OS clipboard.
   "host.clipboard",
   // The logical viewport is runtime-mutable: the app is told about live

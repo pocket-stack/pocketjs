@@ -22,6 +22,9 @@
 // `data.sqlite` in pocket.json `requires` so admission catches it first.
 
 import { DB_BLOB_KEY, DB_MAX_SAFE_INTEGER, DB_MEMORY } from "../../contracts/spec/db.ts";
+// QuickJS has no btoa/Buffer; the codec lives in bytes.ts (cold path),
+// shared with the fs SDK.
+import { base64ToBytes, bytesToBase64 } from "./bytes.ts";
 
 export { DB_MAX_RESULT_ROWS, DB_MAX_SAFE_INTEGER, DB_MEMORY } from "../../contracts/spec/db.ts";
 
@@ -50,46 +53,6 @@ export function dbHost(): DbOps | null {
 /** A value crossing the boundary: what a row cell or a bound parameter is. */
 export type SqlValue = null | number | string | boolean | Uint8Array;
 export type SqlParams = readonly SqlValue[] | Readonly<Record<string, SqlValue>>;
-
-const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/** QuickJS has no btoa/Buffer; the codec is spelled out (cold path). */
-function bytesToBase64(bytes: Uint8Array): string {
-  let out = "";
-  for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i];
-    const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
-    const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
-    out += B64[a >> 2] + B64[((a & 3) << 4) | (b >> 4)];
-    out += i + 1 < bytes.length ? B64[((b & 15) << 2) | (c >> 6)] : "=";
-    out += i + 2 < bytes.length ? B64[c & 63] : "=";
-  }
-  return out;
-}
-
-const B64_INV: Record<string, number> = {};
-for (let i = 0; i < B64.length; i++) B64_INV[B64[i]] = i;
-
-function base64ToBytes(s: string): Uint8Array {
-  let pad = 0;
-  while (s.endsWith("=")) {
-    pad++;
-    s = s.slice(0, -1);
-  }
-  const out = new Uint8Array(Math.floor((s.length * 3) / 4));
-  let o = 0;
-  for (let i = 0; i < s.length; i += 4) {
-    const n =
-      (B64_INV[s[i]] << 18) |
-      ((B64_INV[s[i + 1]] ?? 0) << 12) |
-      ((B64_INV[s[i + 2]] ?? 0) << 6) |
-      (B64_INV[s[i + 3]] ?? 0);
-    out[o++] = n >> 16;
-    if (o < out.length) out[o++] = (n >> 8) & 0xff;
-    if (o < out.length) out[o++] = n & 0xff;
-  }
-  return out;
-}
 
 function encodeValue(v: SqlValue): unknown {
   if (v instanceof Uint8Array) return { [DB_BLOB_KEY]: bytesToBase64(v) };

@@ -1647,6 +1647,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pocket-fs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.23.1",
+ "pocket-mod",
+ "pocketjs-core",
+ "serde_json",
+]
+
+[[package]]
 name = "pocket-mod"
 version = "0.1.0"
 dependencies = [

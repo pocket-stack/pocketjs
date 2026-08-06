@@ -519,6 +519,36 @@ pub mod db {
     pub const MAX_RESULT_ROWS: usize = 4096;
 }
 
+/// FS module boundary (contracts/spec/fs.ts — `globalThis.fs`).
+/// A per-app file tree behind nine synchronous ops; every path resolves
+/// under the app's own data root. No clock, no events, no mtime.
+pub mod fs {
+    pub const OP_READ: u8 = 1;
+    pub const OP_WRITE: u8 = 2;
+    pub const OP_REMOVE: u8 = 3;
+    pub const OP_LIST: u8 = 4;
+    pub const OP_STAT: u8 = 5;
+    pub const OP_MKDIR: u8 = 6;
+    pub const OP_RENAME: u8 = 7;
+    pub const OP_USAGE: u8 = 8;
+    pub const OP_LAST_ERROR: u8 = 9;
+    /// write() modes.
+    pub const WRITE_TRUNCATE: u32 = 0;
+    pub const WRITE_APPEND: u32 = 1;
+    /// Marker key for a bytes payload (db's blob spelling).
+    pub const BLOB_KEY: &str = "$b";
+    /// Maximum UTF-8 bytes in one path segment.
+    pub const MAX_SEGMENT_BYTES: usize = 64;
+    /// Maximum segments in a path.
+    pub const MAX_DEPTH: usize = 8;
+    /// Maximum total path length in bytes.
+    pub const MAX_PATH_BYTES: usize = 160;
+    /// Payload ceiling per read()/write() call, in bytes.
+    pub const MAX_IO_BYTES: usize = 65536;
+    /// Entries per list() call (paged via offset + eof).
+    pub const MAX_DIR_ENTRIES: usize = 256;
+}
+
 /// NET module boundary (contracts/spec/net.ts — `globalThis.net`).
 /// Bounded whole-response HTTP; completions batch to tick boundaries.
 pub mod net {

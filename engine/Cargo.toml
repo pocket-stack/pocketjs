@@ -12,6 +12,7 @@
 resolver = "2"
 members = [
     "crates/pocket-db",
+    "crates/pocket-fs",
     "crates/pocket-mod",
     "crates/pocket-net",
     "crates/pocket-ui-surface",
@@ -45,6 +46,7 @@ repository = "https://github.com/pocket-stack/pocketjs"
 pocket3d = { path = "pocket3d/crates/pocket3d" }
 pocket3d-bsp = { path = "pocket3d/crates/pocket3d-bsp" }
 pocket-db = { path = "crates/pocket-db" }
+pocket-fs = { path = "crates/pocket-fs" }
 pocket-mod = { path = "crates/pocket-mod" }
 pocket-net = { path = "crates/pocket-net" }
 pocket-ui-surface = { path = "crates/pocket-ui-surface" }

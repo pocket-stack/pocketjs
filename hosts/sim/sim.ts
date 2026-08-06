@@ -242,6 +242,7 @@ export async function bootWorld(
   g.frame = undefined;
   g.audio = undefined; // audio module namespace: absent unless extraGlobals mounts one
   g.db = undefined; // db module namespace: absent unless extraGlobals mounts one
+  g.fs = undefined; // fs module namespace: absent unless extraGlobals mounts one
   g.__pocketApp = app;
   g.__simHz = hz;
   g.__pocketEffectTrace = (e: EffectEvent) => effects.push(e);
