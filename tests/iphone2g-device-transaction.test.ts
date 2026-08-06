@@ -91,7 +91,15 @@ beforeAll(() => {
   const compile = Bun.spawnSync({
     cmd: [
       "cc",
-      "-std=c99",
+      // The gnu dialect, not strict c99, because that is what actually builds
+      // this file for the device. Under -std=c99 glibc defines __STRICT_ANSI__
+      // and hides the POSIX declarations device_tool.c legitimately uses
+      // (sigaction, lstat, fchmod, sync), so the test passed on macOS — whose
+      // headers expose them regardless — and failed only on Linux CI.
+      "-std=gnu99",
+      // Stated explicitly as well, so the POSIX surface does not depend on a
+      // dialect side-effect. glibc needs this for sync(); macOS ignores it.
+      "-D_DEFAULT_SOURCE",
       "-Wall",
       "-Wextra",
       "-Werror",
