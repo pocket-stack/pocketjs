@@ -57,10 +57,10 @@ export interface BlogPost {
 export const BLOG_POSTS: BlogPost[] = [
   {
     slug: "pocketjs-on-the-first-iphone",
-    title: "JSX on ARMv6: PocketJS on the First iPhone",
+    title: "We Wrote the GPU Backend and the CPU Won: PocketJS on the First iPhone",
     date: "2026-08-06",
     description:
-      "Xcode 26 still compiles ARMv6, but its classic linker crashes on the Objective-C metadata its own compiler emits — so the UIKit host for a 2007 iPhone is C that registers its classes through the Objective-C runtime at startup. Inside: a 1.1.4 sysroot used as an ABI floor for a 3.1.3 phone, one binary probing two UIKits, a software rasterizer blitted as a CGImage thirty times a second, and the one-way NAND format change that made the phone's original OS unbootable forever. Plus the review that proved our first \"it runs on hardware\" receipt was measuring geometry, not reactivity.",
+      "Xcode 26 still compiles ARMv6, but its classic linker crashes on the Objective-C metadata its own compiler emits \u2014 so the UIKit host for a 2007 iPhone is C that registers its classes through the Objective-C runtime at startup. Then we wrote the fixed-function OpenGL ES 1.1 backend the PowerVR MBX Lite needs, ran it on the device, and measured it: the software rasterizer is 2.4\u00d7 faster, because we had quietly replaced a damage-tracked renderer with one that redraws everything. Also inside: a 1.1.4 sysroot used as an ABI floor for a 3.1.3 phone, one binary probing two UIKits, and the review that proved our first \"it runs on hardware\" receipt was measuring geometry, not reactivity.",
     author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
   },
   {
