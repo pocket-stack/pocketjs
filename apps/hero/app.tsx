@@ -5,7 +5,8 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
-import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
+import { createSpriteAnimation, onFrame } from "@pocketjs/framework/lifecycle";
+import { focusNode, hitFocusable, touches } from "@pocketjs/framework/input";
 import { frameworkName } from "@pocketjs/framework";
 
 const SPINNER_FRAME_STEP = 3;
@@ -36,6 +37,25 @@ export default function Hero() {
   onMount(() => {
     // Underline sweeps in once on mount — native tween, zero steady-state JS.
     if (underline) animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
+  });
+
+  // Hover IS focus: a touch host (Vita, PocketBook) and a host that presents a
+  // mouse as a contact both report an absolute point, so resolve it to the
+  // focusable under it. onFrame runs BEFORE input edge detection, so the press
+  // that arrives in this same frame lands on the node just focused here rather
+  // than on whatever the d-pad left focused. Hosts with neither report no
+  // contact and this is a no-op — the d-pad stays the portable default.
+  let hovered: NodeMirror | null = null;
+  onFrame(() => {
+    const [contact] = touches();
+    if (!contact) return;
+    // A miss must clear focus, not leave it where it was: `handleFrame` fires
+    // onPress on whatever is focused, so keeping the last hit would make a
+    // press on empty space activate the button the pointer had merely passed
+    // over. Pass null through, exactly as cursorFrame does for the nub cursor.
+    const node = hitFocusable(contact.x, contact.y);
+    if (node !== hovered) focusNode(node);
+    hovered = node;
   });
   return (
     <View
