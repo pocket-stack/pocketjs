@@ -28,7 +28,7 @@ import {
   vdomHelperCode,
   vdomHelperId,
 } from "@vue-jsx-vapor/runtime/raw";
-import { OG_IMAGE_URL, SITE_DESC, SITE_TITLE, SITE_URL, renderPage } from "./templates.ts";
+import { OG_IMAGE_URL, SITE_DESC, SITE_TITLE, SITE_URL, injectSiteFooterDescription, renderPage } from "./templates.ts";
 import { BLOG_POSTS, DOC_NAV, type DocSection } from "./nav.ts";
 import { emitSingleLodStagePackage } from "./stage-package.ts";
 
@@ -442,7 +442,7 @@ async function main() {
 // footer + CSS). site/home.html holds the body; site/assets/home.css the styles.
 const HOME_DESC = SITE_DESC;
 function renderHome(): string {
-  const body = readFileSync(SITE + "home.html", "utf8");
+  const body = injectSiteFooterDescription(readFileSync(SITE + "home.html", "utf8"));
   const jsonLd = JSON.stringify({
     "@context": "https://schema.org",
     "@type": "SoftwareSourceCode",

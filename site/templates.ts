@@ -10,7 +10,19 @@ export const SITE_URL = "https://pocketjs.dev";
 export const SITE_TITLE = "PocketJS · Compact JavaScript Runtime for Rich Interactive Software";
 export const SITE_DESC =
   "A compact JavaScript runtime for building UI, games, 3D experiences and AI-native applications across radically different devices. A tiny JavaScript guest where it fits; the framework compiled away where it doesn't.";
+// Shared by the standalone homepage and every page rendered through renderPage().
+export const SITE_FOOTER_DESC =
+  "A compact JavaScript runtime for UI, games, 3D and AI-native software, carried to radically different devices by a tiny native core.";
+export const SITE_FOOTER_DESC_SLOT = "{{SITE_FOOTER_DESC}}";
 export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
+
+export function injectSiteFooterDescription(template: string): string {
+  const slots = template.split(SITE_FOOTER_DESC_SLOT).length - 1;
+  if (slots !== 1) {
+    throw new Error(`Expected ${SITE_FOOTER_DESC_SLOT} exactly once in the homepage template; found ${slots}`);
+  }
+  return template.replace(SITE_FOOTER_DESC_SLOT, () => SITE_FOOTER_DESC);
+}
 
 export interface PageOpts {
   title: string | null; // null uses the bare wordmark (homepage)
@@ -69,7 +81,7 @@ const footer = `<footer class="mt-24 border-t border-line/70 bg-ink-2/60">
     <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <div class="flex items-center gap-2 font-semibold text-slate-100">${LOGO}<span>PocketJS</span></div>
-        <p class="mt-3 max-w-xs text-sm text-slate-400">Vue Vapor and Solid UI under 8 MB RAM, rendered through a tiny native core.</p>
+        <p class="mt-3 max-w-xs text-sm text-slate-400">${SITE_FOOTER_DESC}</p>
       </div>
       <div class="text-sm">
         <h4 class="mb-3 font-semibold text-slate-200">Docs</h4>

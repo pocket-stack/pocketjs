@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emitSingleLodStagePackage } from "../site/stage-package.ts";
 import { BTN, PocketHost } from "../site/playground/host.js";
+import {
+  SITE_FOOTER_DESC,
+  SITE_FOOTER_DESC_SLOT,
+  injectSiteFooterDescription,
+  renderPage,
+} from "../site/templates.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const PACKAGE = ROOT + "engine/pocket3d/examples/handheld/assets/dibad-psp/";
@@ -88,6 +94,24 @@ test("homepage declares the live launcher and visible attributions", () => {
     const source = readFileSync(ROOT + ".github/workflows/" + workflow, "utf8");
     expect(source).toContain("bun run site:build");
   }
+});
+
+test("homepage and shared pages use one footer description", () => {
+  const homeTemplate = readFileSync(ROOT + "site/home.html", "utf8");
+  const siteBuild = readFileSync(ROOT + "site/build.ts", "utf8");
+  expect(homeTemplate).toContain(SITE_FOOTER_DESC_SLOT);
+  expect(homeTemplate).not.toContain(SITE_FOOTER_DESC);
+  expect(siteBuild).toContain('injectSiteFooterDescription(readFileSync(SITE + "home.html", "utf8"))');
+
+  const homepage = injectSiteFooterDescription(homeTemplate);
+  const sharedPage = renderPage({ title: "Docs", active: "docs", body: "" });
+  for (const html of [homepage, sharedPage]) {
+    expect(html.split(SITE_FOOTER_DESC)).toHaveLength(2);
+    expect(html).not.toContain(SITE_FOOTER_DESC_SLOT);
+  }
+
+  expect(() => injectSiteFooterDescription("")).toThrow("found 0");
+  expect(() => injectSiteFooterDescription(SITE_FOOTER_DESC_SLOT.repeat(2))).toThrow("found 2");
 });
 
 test("public PocketJS icon surfaces keep the metal mark on a black backing", () => {
