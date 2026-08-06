@@ -22,6 +22,7 @@ const APP_PATH = join(REPOSITORY, "apps/iphone2g-demo/app.tsx");
 const INFO_PLIST_PATH = join(REPOSITORY, "hosts/iphone2g/Info.plist");
 const ICON_PATH = join(REPOSITORY, "hosts/iphone2g/Icon.png");
 const RUNTIME_PATH = join(REPOSITORY, "hosts/iphone2g/runtime.c");
+const POCKET_RUNTIME_PATH = join(REPOSITORY, "hosts/iphone2g/pocket_runtime.c");
 const ROOT_TSCONFIG = join(REPOSITORY, "tsconfig.json");
 const JSX_DECLARATIONS = join(REPOSITORY, "framework/src/jsx.d.ts");
 
@@ -118,8 +119,7 @@ describe("private iPhone 2G build profile", () => {
     context.drawImage(image, 0, 0);
     const pixelAt = (x: number, y: number) =>
       Array.from(context.getImageData(x, y, 1, 1).data);
-    const alphaAt = (x: number, y: number) =>
-      pixelAt(x, y)[3];
+    const alphaAt = (x: number, y: number) => pixelAt(x, y)[3];
     expect(alphaAt(0, 0)).toBe(0);
     expect(alphaAt(58, 0)).toBe(0);
     expect(alphaAt(0, 59)).toBe(0);
@@ -131,12 +131,15 @@ describe("private iPhone 2G build profile", () => {
     expect(pixelAt(29, 29).slice(0, 3)).toEqual([249, 249, 249]);
   });
 
-  test("targets the restored 7E18 runtime with UIKit 3 launch and touch fallbacks", () => {
+  test("targets the restored 7E18 runtime with UIKit 3 and action-level acceptance", () => {
     const info = readFileSync(INFO_PLIST_PATH, "utf8");
     const runtime = readFileSync(RUNTIME_PATH, "utf8");
+    const pocketRuntime = readFileSync(POCKET_RUNTIME_PATH, "utf8");
     const app = readFileSync(APP_PATH, "utf8");
 
-    expect(info).toContain("<key>MinimumOSVersion</key>\n  <string>3.1.3</string>");
+    expect(info).toContain(
+      "<key>MinimumOSVersion</key>\n  <string>3.1.3</string>",
+    );
     expect(info).toContain("<key>CFBundleSupportedPlatforms</key>");
     expect(info).toContain("<string>iPhoneOS</string>");
     expect(info).toContain("<string>pocketjs-iphone2g-demo</string>");
@@ -147,14 +150,28 @@ describe("private iPhone 2G build profile", () => {
     expect(runtime).toContain('dlsym(handle, "GSEventGetLocationInWindow")');
     expect(runtime).not.toContain("extern CGPoint GSEventGetLocationInWindow");
     expect(runtime).toContain('sel_registerName("touchesBegan:withEvent:")');
-    expect(runtime).toContain('sel_registerName("touchesCancelled:withEvent:")');
-    expect(runtime).toContain("g_last_touch_hit = g_touch_hit");
-    expect(runtime).toContain("g_last_touch_hit,");
-    expect(runtime).toContain('sel_registerName("application:didFinishLaunchingWithOptions:")');
+    expect(runtime).toContain(
+      'sel_registerName("touchesCancelled:withEvent:")',
+    );
+    expect(runtime).toContain(
+      '"schema=2\\nbuild_id=%s\\nstate=%s\\npid=%ld\\nwritten_at=%ld\\nheartbeat=%lu\\n"',
+    );
+    expect(runtime).toContain(
+      "completed_touch = !delivered_touch && g_touch_awaiting_completion",
+    );
+    expect(runtime).toContain("g_completed_touch_sequences += 1");
+    expect(runtime).toContain("POCKET_STATUS_HEARTBEAT_FRAMES");
+    expect(runtime).not.toContain("g_guest_frames == 1 || delivered_touch");
+    expect(pocketRuntime).toContain('"__reportAppAction"');
+    expect(pocketRuntime).toContain("reported_action_sequence += 1");
+    expect(runtime).toContain(
+      'sel_registerName("application:didFinishLaunchingWithOptions:")',
+    );
     expect(runtime).toContain('responds_to(g_window, "makeKeyAndVisible")');
     expect(runtime).not.toContain("extern CGContextRef UICurrentContext");
     expect(app).toContain('actionLabel="Tap Hero"');
     expect(app).toContain('headline="JSX on ARMv6."');
-    expect(app).toContain("presentationHz={30}");
+    expect(app).toContain('reportAppAction("hero_tap", count)');
+    expect(app).toContain("presentationHz={60}");
   });
 });

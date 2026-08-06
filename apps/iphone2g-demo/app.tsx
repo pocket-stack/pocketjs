@@ -1,4 +1,5 @@
 import Hero from "../hero/app.tsx";
+import { reportAppAction } from "@pocketjs/framework/host";
 
 export default function IPhone2GHero() {
   return (
@@ -6,7 +7,8 @@ export default function IPhone2GHero() {
       actionLabel="Tap Hero"
       deviceLabel="running on a 2007 touchscreen."
       headline="JSX on ARMv6."
-      presentationHz={30}
+      onAction={(count) => reportAppAction("hero_tap", count)}
+      presentationHz={60}
       runtimeLabel="RUST + QUICKJS + UIKIT"
     />
   );

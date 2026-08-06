@@ -63,4 +63,23 @@ uint32_t ui_framebuffer_height(void);
 uint32_t ui_framebuffer_stride(void);
 size_t ui_framebuffer_len(void);
 
+/*
+ * Hardware DrawList path. The core walks its own DrawList straight into the
+ * OpenGL ES 1.1 fixed-function pipeline instead of rasterizing to a
+ * framebuffer, so the CPU never touches a pixel. Callers must have a current
+ * context; these return zero on any GL failure so the host can fall back to
+ * the software rasterizer above.
+ */
+int32_t ui_gl_initialize(void);
+void ui_gl_reset_resources(void);
+void ui_gl_shutdown(void);
+int32_t ui_gl_render(
+  int32_t target_x,
+  int32_t target_y,
+  int32_t target_width,
+  int32_t target_height,
+  int32_t window_width,
+  int32_t window_height
+);
+
 #endif

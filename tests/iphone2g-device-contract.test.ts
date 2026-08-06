@@ -3,12 +3,25 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { bootstrapControllerScript } from "../tools/iphone2g.ts";
+import {
+  assertIPhone2GStatusAdvanced,
+  bootstrapControllerScript,
+  classifyPasswordAuthenticationProbe,
+  deriveIPhone2GGuestArtifacts,
+  parseIPhone2GDeviceStatus,
+  quoteOpenSshConfigValue,
+  readUntilMarker,
+} from "../tools/iphone2g.ts";
+import { resolveIPhone2GBuildPlan } from "../tools/iphone2g-profile.ts";
 
 const repository = fileURLToPath(new URL("..", import.meta.url));
 const toolSource = readFileSync(join(repository, "tools/iphone2g.ts"), "utf8");
 const deviceSource = readFileSync(
   join(repository, "hosts/iphone2g/device_tool.c"),
+  "utf8",
+);
+const pocketRuntimeSource = readFileSync(
+  join(repository, "hosts/iphone2g/pocket_runtime.c"),
   "utf8",
 );
 
@@ -35,7 +48,194 @@ function withoutWhitespace(source: string): string {
   return source.replace(/\s+/g, "");
 }
 
+function runtimeStatus(
+  overrides: Partial<Record<string, string>> = {},
+): string {
+  const values: Record<string, string> = {
+    schema: "2",
+    build_id: "a".repeat(32),
+    state: "running",
+    pid: "321",
+    written_at: "1785900000",
+    heartbeat: "7",
+    guest_frames: "210",
+    touch_sequences: "2",
+    completed_touch_sequences: "2",
+    touch_down: "0",
+    last_touch_x: "71",
+    last_touch_y: "409",
+    last_touch_hit: "46",
+    action_name: "hero_tap",
+    action_value: "2",
+    action_sequence: "2",
+    error: "",
+    ...overrides,
+  };
+  return (
+    [
+      "schema",
+      "build_id",
+      "state",
+      "pid",
+      "written_at",
+      "heartbeat",
+      "guest_frames",
+      "touch_sequences",
+      "completed_touch_sequences",
+      "touch_down",
+      "last_touch_x",
+      "last_touch_y",
+      "last_touch_hit",
+      "action_name",
+      "action_value",
+      "action_sequence",
+      "error",
+    ]
+      .map((name) => `${name}=${values[name]}`)
+      .join("\n") + "\n"
+  );
+}
+
 describe("iPhone 2G device transport contract", () => {
+  test("accepts only a released app action from a live, advancing runtime", () => {
+    const buildId = "a".repeat(32);
+    const previous = parseIPhone2GDeviceStatus(runtimeStatus(), buildId);
+    const current = parseIPhone2GDeviceStatus(
+      runtimeStatus({
+        written_at: "1785900002",
+        heartbeat: "8",
+        guest_frames: "270",
+      }),
+      buildId,
+    );
+    expect(() => assertIPhone2GStatusAdvanced(previous, current)).not.toThrow();
+
+    for (const overrides of [
+      { touch_down: "1" },
+      { completed_touch_sequences: "0" },
+      { action_name: "" },
+      { action_value: "0" },
+      { action_sequence: "0" },
+    ]) {
+      expect(() =>
+        parseIPhone2GDeviceStatus(runtimeStatus(overrides), buildId),
+      ).toThrow("released touch and completed Hero action");
+    }
+    expect(() => assertIPhone2GStatusAdvanced(previous, previous)).toThrow(
+      "status is stale",
+    );
+    const replacement = parseIPhone2GDeviceStatus(
+      runtimeStatus({ pid: "322", heartbeat: "8", guest_frames: "270" }),
+      buildId,
+    );
+    expect(() => assertIPhone2GStatusAdvanced(previous, replacement)).toThrow(
+      "process was replaced",
+    );
+    expect(toolSource).toContain("kill -0 ${pid}");
+    expect(toolSource).toContain("await Bun.sleep(1_500)");
+  });
+
+  test("derives guest artifacts and native identity from one verified build plan", () => {
+    const manifest = JSON.parse(
+      readFileSync(join(repository, "apps/iphone2g-demo/pocket.json"), "utf8"),
+    );
+    manifest.app.output = "renamed-iphone-guest";
+    const plan = resolveIPhone2GBuildPlan(manifest);
+    const artifacts = deriveIPhone2GGuestArtifacts(plan, "/tmp/guest-output");
+
+    expect(artifacts.javaScript).toBe(
+      "/tmp/guest-output/renamed-iphone-guest.js",
+    );
+    expect(artifacts.pack).toBe("/tmp/guest-output/renamed-iphone-guest.pak");
+    expect(artifacts.inputs).toMatchObject({
+      appOutput: "renamed-iphone-guest",
+      target: "iphone2g-dev",
+      hostAbi: 6,
+    });
+    expect(toolSource).toContain(
+      "rmSync(output, { recursive: true, force: true })",
+    );
+    expect(toolSource).toContain(
+      '`-DPOCKETJS_TARGET_ID="${hostInputs.target}"`',
+    );
+    expect(toolSource).toContain("`-DPOCKETJS_HOST_ABI=${hostInputs.hostAbi}`");
+    expect(pocketRuntimeSource).toContain(
+      "POCKETJS_TARGET_ID must come from the verified ResolvedBuildPlan",
+    );
+    expect(pocketRuntimeSource).not.toContain(
+      'JS_NewString(context, "iphone2g-dev")',
+    );
+  });
+
+  test("quotes override paths as single OpenSSH config values", () => {
+    expect(quoteOpenSshConfigValue("/tmp/Pocket JS/#keys/device key")).toBe(
+      '"/tmp/Pocket JS/#keys/device key"',
+    );
+    expect(quoteOpenSshConfigValue('/tmp/key "quoted"')).toBe(
+      '"/tmp/key \\"quoted\\""',
+    );
+    expect(quoteOpenSshConfigValue("/tmp/back\\slash")).toBe(
+      '"/tmp/back\\\\slash"',
+    );
+    expect(() => quoteOpenSshConfigValue("/tmp/key\nnext")).toThrow(
+      "cannot contain NUL or newlines",
+    );
+    expect(toolSource).toContain(
+      "IdentityFile ${quoteOpenSshConfigValue(identityPath())}",
+    );
+    expect(toolSource).toContain(
+      "UserKnownHostsFile ${quoteOpenSshConfigValue(knownHosts)}",
+    );
+  });
+
+  test("distinguishes an explicit password-policy rejection from transport and credential failures", () => {
+    expect(
+      classifyPasswordAuthenticationProbe({ exitCode: 0, stderr: "" }),
+    ).toBe("accepted");
+    expect(
+      classifyPasswordAuthenticationProbe({
+        exitCode: 255,
+        stderr: "root@127.0.0.1: Permission denied (publickey).\n",
+      }),
+    ).toBe("rejected");
+    for (const result of [
+      {
+        exitCode: 255,
+        stderr: "Permission denied (publickey,password).\n",
+      },
+      { exitCode: 255, stderr: "Connection timed out\n" },
+      { exitCode: 255, stderr: "no matching key exchange method found\n" },
+      { exitCode: 5, stderr: "Permission denied, please try again.\n" },
+    ]) {
+      expect(classifyPasswordAuthenticationProbe(result)).toBe("indeterminate");
+    }
+  });
+
+  test("places a hard deadline on every bootstrap marker wait", async () => {
+    const complete = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from("prefix PJS_"));
+        controller.enqueue(Buffer.from("BOOTSTRAP_READY\n"));
+        controller.close();
+      },
+    }).getReader();
+    const output = { text: "" };
+    await readUntilMarker(complete, "PJS_BOOTSTRAP_READY\n", output, 100);
+    expect(output.text).toContain("PJS_BOOTSTRAP_READY\n");
+    complete.releaseLock();
+
+    const stalled = new ReadableStream<Uint8Array>().getReader();
+    try {
+      await expect(
+        readUntilMarker(stalled, "PJS_BOOTSTRAP_NEVER\n", { text: "" }, 5),
+      ).rejects.toThrow("timed out waiting for PJS_BOOTSTRAP_NEVER");
+    } finally {
+      await stalled.cancel();
+      stalled.releaseLock();
+    }
+    expect(toolSource).toContain("await waitForBootstrapRollback(transaction)");
+  });
+
   test("stages only the signed helper, key-only config, and client key", () => {
     const expectedModes = sourceBlock(
       toolSource,
@@ -92,6 +292,12 @@ describe("iPhone 2G device transport contract", () => {
     expect(toolSource).toContain("PreferredAuthentications=password");
     expect(toolSource).toContain("PubkeyAuthentication=no");
     expect(toolSource).toContain("password SSH remained enabled");
+    expect(toolSource).toContain("classifyPasswordAuthenticationProbe");
+    expect(toolSource).toContain("installedSshPolicyIsSecure(policy)");
+    expect(toolSource).toContain('"/usr/sbin/sshd",\n    "-t"');
+    expect(toolSource).toContain(
+      'receipt.files["root/private/etc/ssh/sshd_config"].sha256',
+    );
     expect(toolSource).toContain(
       "preserved CustomHJ sshd, host key, and launchd plist",
     );
@@ -195,7 +401,7 @@ describe("iPhone 2G device transport contract", () => {
     expect(toolSource).toContain("bundleFiles,");
     expect(toolSource).toContain("buildId,");
     expect(toolSource).toContain("hostTools,");
-    expect(toolSource).toContain("fields.build_id !== receipt.buildId");
+    expect(toolSource).toContain("fields.build_id !== expectedBuildId");
     expect(toolSource).toContain('receiptMode: "0644"');
     expect(toolSource).toContain("signed: true");
     expect(toolSource).toContain('signer: "ldid -S"');
@@ -210,14 +416,18 @@ describe("iPhone 2G device transport contract", () => {
     );
   });
 
-  test("treats device-status as live frame and touch acceptance", () => {
-    expect(toolSource).toContain("const positiveAcceptanceCounters = [");
+  test("treats device-status as live released-action acceptance", () => {
+    expect(toolSource).toContain("const positiveAcceptanceCounters");
     expect(toolSource).toContain('"guest_frames"');
     expect(toolSource).toContain('"touch_sequences"');
-    expect(toolSource).toContain('"last_touch_hit"');
+    expect(toolSource).toContain('"completed_touch_sequences"');
+    expect(toolSource).toContain('fields.action_name !== "hero_tap"');
+    expect(toolSource).toContain('fields.touch_down !== "0"');
     expect(toolSource).toContain('fields.state !== "running"');
+    expect(toolSource).toContain("assertDeviceProcessAlive");
+    expect(toolSource).toContain("assertIPhone2GStatusAdvanced");
     expect(toolSource).toContain(
-      "runtime acceptance requires running frames and a successful touch hit",
+      "runtime acceptance requires a released touch and completed Hero action",
     );
   });
 

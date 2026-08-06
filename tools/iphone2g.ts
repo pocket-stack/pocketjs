@@ -23,7 +23,14 @@ import {
   iphone2gSysrootPath,
   sha256File,
 } from "./iphone2g-toolchain.ts";
-import { resolveIPhone2GBuildPlan } from "./iphone2g-profile.ts";
+import {
+  IPHONE2G_DEV_TARGET_ID,
+  resolveIPhone2GBuildPlan,
+} from "./iphone2g-profile.ts";
+import {
+  extractHostBuildInputs,
+  type HostBuildInputs,
+} from "../framework/src/manifest/host-build-inputs.ts";
 
 const repository = fileURLToPath(new URL("..", import.meta.url));
 const command = Bun.argv[2] ?? "doctor";
@@ -277,14 +284,76 @@ function ensureCsu(): void {
   }
 }
 
-function buildDemo(): void {
-  const manifestPath = join(repository, "apps/iphone2g-demo/pocket.json");
-  const plan = resolveIPhone2GBuildPlan(
-    JSON.parse(readFileSync(manifestPath, "utf8")),
+export interface IPhone2GGuestArtifacts {
+  readonly inputs: HostBuildInputs;
+  readonly javaScript: string;
+  readonly pack: string;
+}
+
+export function deriveIPhone2GGuestArtifacts(
+  plan: unknown,
+  outputDirectory: string,
+): IPhone2GGuestArtifacts {
+  const inputs = extractHostBuildInputs(plan, {
+    expectedTarget: IPHONE2G_DEV_TARGET_ID,
+  });
+  return {
+    inputs,
+    javaScript: join(outputDirectory, `${inputs.appOutput}.js`),
+    pack: join(outputDirectory, `${inputs.appOutput}.pak`),
+  };
+}
+
+function iphone2gManifestPath(): string {
+  return join(repository, "apps/iphone2g-demo/pocket.json");
+}
+
+function iphone2gPlanPath(): string {
+  return join(repository, ".pocket/iphone2g/iphone2g-demo.plan.json");
+}
+
+function iphone2gGuestOutputDirectory(): string {
+  return join(repository, "dist/iphone2g/guest");
+}
+
+function currentIPhone2GBuildPlan() {
+  return resolveIPhone2GBuildPlan(
+    JSON.parse(readFileSync(iphone2gManifestPath(), "utf8")),
   );
-  const planPath = join(repository, ".pocket/iphone2g/iphone2g-demo.plan.json");
-  const output = join(repository, "dist/iphone2g/guest");
+}
+
+function readIPhone2GGuestArtifacts(): IPhone2GGuestArtifacts {
+  const planPath = iphone2gPlanPath();
+  if (!existsSync(planPath)) {
+    throw new Error(
+      "PocketJS iPhone 2G: resolved build plan is absent; run `bun tools/iphone2g.ts build-demo`",
+    );
+  }
+  const storedPlan = JSON.parse(readFileSync(planPath, "utf8")) as unknown;
+  const currentPlan = currentIPhone2GBuildPlan();
+  const artifacts = deriveIPhone2GGuestArtifacts(
+    storedPlan,
+    iphone2gGuestOutputDirectory(),
+  );
+  if (
+    typeof storedPlan !== "object" ||
+    storedPlan === null ||
+    !("planHash" in storedPlan) ||
+    storedPlan.planHash !== currentPlan.planHash
+  ) {
+    throw new Error(
+      "PocketJS iPhone 2G: resolved build plan is stale; rerun `bun tools/iphone2g.ts build-demo`",
+    );
+  }
+  return artifacts;
+}
+
+function buildDemo(): void {
+  const plan = currentIPhone2GBuildPlan();
+  const planPath = iphone2gPlanPath();
+  const output = iphone2gGuestOutputDirectory();
   mkdirSync(dirname(planPath), { recursive: true });
+  rmSync(output, { recursive: true, force: true });
   mkdirSync(output, { recursive: true });
   writeFileSync(planPath, `${JSON.stringify(plan, null, 2)}\n`);
   mustRun(process.execPath, [
@@ -293,6 +362,12 @@ function buildDemo(): void {
     `--project-root=${repository}`,
     `--outdir=${output}`,
   ]);
+  const artifacts = deriveIPhone2GGuestArtifacts(plan, output);
+  if (!existsSync(artifacts.javaScript) || !existsSync(artifacts.pack)) {
+    throw new Error(
+      `PocketJS iPhone 2G: build did not produce ${artifacts.inputs.appOutput}.{js,pak}`,
+    );
+  }
   console.log(`PocketJS iPhone 2G: guest bundle -> ${output}`);
 }
 
@@ -333,14 +408,10 @@ function buildRuntime(): void {
   // disposable native-object directory so subsequent demo builds reuse it.
   const rustTarget = join(iphone2gCacheRoot(), "build/rust-target");
   const bundle = join(repository, "dist/iphone2g/PocketJSDemo.app");
-  const guestJavaScript = join(
-    repository,
-    "dist/iphone2g/guest/iphone2g-demo-main.js",
-  );
-  const guestPack = join(
-    repository,
-    "dist/iphone2g/guest/iphone2g-demo-main.pak",
-  );
+  const guestArtifacts = readIPhone2GGuestArtifacts();
+  const { inputs: hostInputs } = guestArtifacts;
+  const guestJavaScript = guestArtifacts.javaScript;
+  const guestPack = guestArtifacts.pack;
   if (!existsSync(guestJavaScript) || !existsSync(guestPack)) {
     throw new Error(
       "PocketJS iPhone 2G: guest bundle is absent; run `bun tools/iphone2g.ts build-demo`",
@@ -405,13 +476,21 @@ function buildRuntime(): void {
     [
       ...firstPartyWarnings,
       `-DPOCKET_BUILD_ID="${buildId}"`,
+      `-DPOCKET_LOGICAL_WIDTH=${hostInputs.viewport.logical[0]}`,
+      `-DPOCKET_LOGICAL_HEIGHT=${hostInputs.viewport.logical[1]}`,
       "-Wno-cast-function-type-mismatch",
     ],
   );
   compile(
     join(repository, "hosts/iphone2g/pocket_runtime.c"),
     join(build, "pocket_runtime.o"),
-    [...firstPartyWarnings, "-isystem", quickjs],
+    [
+      ...firstPartyWarnings,
+      `-DPOCKETJS_TARGET_ID="${hostInputs.target}"`,
+      `-DPOCKETJS_HOST_ABI=${hostInputs.hostAbi}`,
+      "-isystem",
+      quickjs,
+    ],
   );
   compile(
     join(repository, "hosts/iphone2g/compat.c"),
@@ -462,7 +541,9 @@ function buildRuntime(): void {
       "--release",
       "--locked",
       "--features",
-      "bare-platform",
+      // The MBX Lite predates shaders, so this target takes the core's
+      // fixed-function GL pipeline rather than Symbian's ES 2 one.
+      "bare-platform,gles1",
       "--target",
       rustTargetSpec,
       "-Z",
@@ -541,6 +622,8 @@ function buildRuntime(): void {
     "Foundation",
     "-framework",
     "CoreGraphics",
+    "-framework",
+    "OpenGLES",
     "-lobjc",
     "-lSystem",
     "-lgcc_s.1",
@@ -573,6 +656,8 @@ function buildRuntime(): void {
     "UIKit.framework/UIKit",
     "Foundation.framework/Foundation",
     "CoreGraphics.framework/CoreGraphics",
+    // Core ES 1.1 lives here and its install name is unchanged on 3.1.3.
+    "OpenGLES.framework/OpenGLES",
     "libobjc.A.dylib",
     "libSystem.B.dylib",
     "libgcc_s.1.dylib",
@@ -587,6 +672,15 @@ function buildRuntime(): void {
     throw new Error(
       "PocketJS iPhone 2G: GraphicsServices must remain a dlsym-only 1.x fallback on 3.1.3",
     );
+  }
+  // EAGL and OES_framebuffer_object are absent from the 1.1.4 OpenGLES, so a
+  // link-time reference to either means the binary would be rejected by dyld.
+  for (const runtimeOnly of ["_glGenFramebuffersOES", "_glBindFramebufferOES"]) {
+    if (symbols.includes(`U ${runtimeOnly}`)) {
+      throw new Error(
+        `PocketJS iPhone 2G: ${runtimeOnly} must be resolved with dlsym, not linked`,
+      );
+    }
   }
   for (const marker of [
     "LC_VERSION_MIN_IPHONEOS",
@@ -655,6 +749,7 @@ function buildRuntime(): void {
         rustToolchain: IPHONE2G_TOOLCHAIN.compiler.rustToolchain,
         hostTools,
         buildId,
+        hostContract: hostInputs,
         guestJavaScriptSha256: sha256File(guestJavaScript),
         guestJavaScriptBytes: lstatSync(guestJavaScript).size,
         guestPackSha256: sha256File(guestPack),
@@ -839,6 +934,15 @@ function verifyRsaKey(
   return publicLines[0].trim();
 }
 
+export function quoteOpenSshConfigValue(value: string): string {
+  if (/\0|\r|\n/.test(value)) {
+    throw new Error(
+      "PocketJS iPhone 2G: SSH config paths cannot contain NUL or newlines",
+    );
+  }
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
 function writeDeviceSshConfig(): string {
   const cache = iphone2gCacheRoot();
   const sshConfig = join(cache, "bootstrap/ssh_config");
@@ -850,9 +954,9 @@ function writeDeviceSshConfig(): string {
   HostName 127.0.0.1
   Port ${IPHONE2G_TOOLCHAIN.deployment.localPort}
   User ${IPHONE2G_TOOLCHAIN.deployment.bootstrapUser}
-  IdentityFile ${identityPath()}
+  IdentityFile ${quoteOpenSshConfigValue(identityPath())}
   IdentitiesOnly yes
-  UserKnownHostsFile ${knownHosts}
+  UserKnownHostsFile ${quoteOpenSshConfigValue(knownHosts)}
   StrictHostKeyChecking yes
   HostKeyAlgorithms +ssh-rsa
   PubkeyAcceptedAlgorithms +ssh-rsa
@@ -1243,8 +1347,37 @@ function passwordCommand(
     passwordSshArgs(remote),
     input,
     repository,
-    { ...process.env, SSHPASS: "alpine" },
+    { ...process.env, LANG: "C", LC_ALL: "C", SSHPASS: "alpine" },
   );
+}
+
+export type PasswordAuthenticationProbeState =
+  "accepted" | "rejected" | "indeterminate";
+
+export function classifyPasswordAuthenticationProbe(
+  result: Pick<BinaryCommandResult, "exitCode" | "stderr">,
+): PasswordAuthenticationProbeState {
+  if (result.exitCode === 0) return "accepted";
+  if (result.exitCode !== 255) return "indeterminate";
+
+  const denials = [
+    ...result.stderr.matchAll(/Permission denied \(([^)\r\n]+)\)\.?/g),
+  ];
+  const offered = denials
+    .at(-1)?.[1]
+    ?.split(",")
+    .map((method) => method.trim().toLowerCase())
+    .filter(Boolean);
+  if (
+    !offered?.length ||
+    offered.some(
+      (method) =>
+        method === "password" || method.startsWith("keyboard-interactive"),
+    )
+  ) {
+    return "indeterminate";
+  }
+  return "rejected";
 }
 
 function provisionalKeyCommand(
@@ -1324,13 +1457,41 @@ function mergeAuthorizedKeys(existing: Buffer, pocketKey: Buffer): Buffer {
   return Buffer.from(`${lines.join("\n")}\n`);
 }
 
-async function readUntilMarker(
+const BOOTSTRAP_MARKER_TIMEOUT_MS = 15_000;
+const BOOTSTRAP_ROLLBACK_TIMEOUT_MS = 20_000;
+
+class BootstrapMarkerTimeoutError extends Error {
+  constructor(readonly marker: string) {
+    super(`PocketJS iPhone 2G: timed out waiting for ${marker.trim()}`);
+    this.name = "BootstrapMarkerTimeoutError";
+  }
+}
+
+export async function readUntilMarker(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   marker: string,
   accumulated: { text: string },
+  timeoutMs = BOOTSTRAP_MARKER_TIMEOUT_MS,
 ): Promise<void> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("PocketJS iPhone 2G: bootstrap marker timeout is invalid");
+  }
+  const deadline = Date.now() + timeoutMs;
   while (!accumulated.text.includes(marker)) {
-    const chunk = await reader.read();
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new BootstrapMarkerTimeoutError(marker);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const chunk = await Promise.race([
+      reader.read(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new BootstrapMarkerTimeoutError(marker)),
+          remaining,
+        );
+      }),
+    ]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
     if (chunk.done) {
       throw new Error(
         `PocketJS iPhone 2G: bootstrap controller exited before ${marker}`,
@@ -1447,6 +1608,73 @@ function verifyInstalledBootstrap(receipt: BootstrapReceipt): void {
   }
 }
 
+interface InstalledSshPolicyInspection {
+  readonly configMatches: boolean;
+  readonly syntaxValid: boolean;
+  readonly passwordAuthentication: PasswordAuthenticationProbeState;
+}
+
+function inspectInstalledSshPolicy(
+  receipt: BootstrapReceipt,
+): InstalledSshPolicyInspection {
+  const config = deviceCommand(["/bin/cat", "/private/etc/ssh/sshd_config"]);
+  const syntax = deviceCommand([
+    "/usr/sbin/sshd",
+    "-t",
+    "-f",
+    "/private/etc/ssh/sshd_config",
+  ]);
+  const passwordProbe = passwordCommand(["/bin/true"]);
+  const passwordAuthentication =
+    classifyPasswordAuthenticationProbe(passwordProbe);
+  if (passwordAuthentication === "indeterminate") {
+    const detail = passwordProbe.stderr.trim().replaceAll(/\s+/g, " ");
+    throw new Error(
+      `PocketJS iPhone 2G: could not prove that password SSH was rejected (${passwordProbe.exitCode})${detail ? `: ${detail}` : ""}`,
+    );
+  }
+  return {
+    configMatches:
+      config.exitCode === 0 &&
+      sha256Bytes(config.stdout) ===
+        receipt.files["root/private/etc/ssh/sshd_config"].sha256,
+    syntaxValid: syntax.exitCode === 0,
+    passwordAuthentication,
+  };
+}
+
+function installedSshPolicyIsSecure(
+  inspection: InstalledSshPolicyInspection,
+): boolean {
+  return (
+    inspection.configMatches &&
+    inspection.syntaxValid &&
+    inspection.passwordAuthentication === "rejected"
+  );
+}
+
+async function waitForBootstrapRollback(transaction: string): Promise<void> {
+  const deadline = Date.now() + BOOTSTRAP_ROLLBACK_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    for (const runCommand of [provisionalKeyCommand, passwordCommand]) {
+      const result = bootstrapShell(
+        runCommand,
+        `test ! -e ${transaction} && echo PJS_BOOTSTRAP_ROLLED_BACK`,
+      );
+      if (
+        result.exitCode === 0 &&
+        result.stdout.toString() === "PJS_BOOTSTRAP_ROLLED_BACK\n"
+      ) {
+        return;
+      }
+    }
+    await Bun.sleep(250);
+  }
+  throw new Error(
+    `PocketJS iPhone 2G: CRITICAL: remote bootstrap rollback was not confirmed for ${transaction}`,
+  );
+}
+
 async function installBootstrap(): Promise<void> {
   prepareBootstrap();
   const receipt = verifiedBootstrapReceipt();
@@ -1493,15 +1721,20 @@ async function installBootstrap(): Promise<void> {
     chmodSync(knownHosts, 0o600);
     writeDeviceSshConfig();
 
+    let installedBootstrapMatches = false;
     try {
       verifyInstalledBootstrap(receipt);
-      if (passwordCommand(["/bin/true"]).exitCode !== 0) {
+      installedBootstrapMatches = true;
+    } catch {}
+    if (installedBootstrapMatches) {
+      const policy = inspectInstalledSshPolicy(receipt);
+      if (installedSshPolicyIsSecure(policy)) {
         console.log(
           "PocketJS iPhone 2G: key-only bootstrap already matches; no device changes needed",
         );
         return;
       }
-    } catch {}
+    }
 
     const currentKeys = bootstrapShell(
       bootstrapCommand,
@@ -1578,9 +1811,14 @@ async function installBootstrap(): Promise<void> {
       await controller.stdin.flush();
       await readUntilMarker(reader, "PJS_BOOTSTRAP_SECURE_READY\n", output);
       verifyInstalledBootstrap(receipt);
-      const passwordRejected = passwordCommand(["/bin/true"]);
-      if (passwordRejected.exitCode === 0) {
+      const policy = inspectInstalledSshPolicy(receipt);
+      if (policy.passwordAuthentication === "accepted") {
         throw new Error("PocketJS iPhone 2G: password SSH remained enabled");
+      }
+      if (!installedSshPolicyIsSecure(policy)) {
+        throw new Error(
+          "PocketJS iPhone 2G: installed sshd policy failed byte-exact readback or syntax validation",
+        );
       }
       controller.stdin.write("commit\n");
       controller.stdin.end();
@@ -1589,13 +1827,34 @@ async function installBootstrap(): Promise<void> {
         throw new Error("PocketJS iPhone 2G: bootstrap commit failed");
       }
     } catch (error) {
-      try {
-        controller.stdin.write("rollback\n");
-        controller.stdin.end();
-      } catch {}
+      const markerTimedOut = error instanceof BootstrapMarkerTimeoutError;
+      if (markerTimedOut) {
+        if (controller.exitCode === null) {
+          controller.kill();
+          const exitedAfterTerm = await Promise.race([
+            controller.exited.then(() => true),
+            Bun.sleep(2_000).then(() => false),
+          ]);
+          if (!exitedAfterTerm && controller.exitCode === null) {
+            controller.kill(9);
+          }
+        }
+      } else {
+        try {
+          controller.stdin.write("rollback\n");
+          controller.stdin.end();
+        } catch {}
+      }
       await controller.exited;
+      if (
+        markerTimedOut &&
+        !output.text.includes("PJS_BOOTSTRAP_COMMITTED\n")
+      ) {
+        await waitForBootstrapRollback(transaction);
+      }
       throw error;
     } finally {
+      await reader.cancel().catch(() => {});
       reader.releaseLock();
     }
     console.log(
@@ -1885,14 +2144,41 @@ function launchDemo(): void {
   );
 }
 
-function printDeviceStatus(): void {
-  const status = deviceCommand(["/usr/libexec/pocketjs-device", "status"]);
-  if (status.exitCode !== 0) {
-    throw new Error(
-      "PocketJS iPhone 2G: no runtime acceptance record is available; launch the app first",
-    );
-  }
-  const text = status.stdout.toString();
+const IPHONE2G_STATUS_FIELDS = [
+  "schema",
+  "build_id",
+  "state",
+  "pid",
+  "written_at",
+  "heartbeat",
+  "guest_frames",
+  "touch_sequences",
+  "completed_touch_sequences",
+  "touch_down",
+  "last_touch_x",
+  "last_touch_y",
+  "last_touch_hit",
+  "action_name",
+  "action_value",
+  "action_sequence",
+  "error",
+] as const;
+
+export type IPhone2GDeviceStatus = Readonly<
+  Record<(typeof IPHONE2G_STATUS_FIELDS)[number], string>
+>;
+
+function statusCounter(
+  fields: IPhone2GDeviceStatus,
+  name: keyof IPhone2GDeviceStatus,
+): bigint {
+  return BigInt(fields[name]);
+}
+
+export function parseIPhone2GDeviceStatus(
+  text: string,
+  expectedBuildId: string,
+): IPhone2GDeviceStatus {
   const lines = text.trim().split(/\r?\n/);
   const pairs = lines.map((line) => {
     const separator = line.indexOf("=");
@@ -1901,19 +2187,101 @@ function printDeviceStatus(): void {
       : [line, ""];
   });
   const fieldNames = pairs.map(([name]) => name);
-  const expectedFields = [
-    "schema",
-    "build_id",
-    "state",
-    "guest_frames",
-    "touch_sequences",
-    "touch_down",
-    "last_touch_x",
-    "last_touch_y",
-    "last_touch_hit",
-    "error",
-  ];
-  const fields = Object.fromEntries(pairs);
+  const fields = Object.fromEntries(pairs) as IPhone2GDeviceStatus;
+  const countersAreValid = (
+    [
+      "pid",
+      "written_at",
+      "heartbeat",
+      "guest_frames",
+      "touch_sequences",
+      "completed_touch_sequences",
+      "last_touch_x",
+      "last_touch_y",
+      "last_touch_hit",
+      "action_value",
+      "action_sequence",
+    ] as const
+  ).every((name) => /^(0|[1-9][0-9]*)$/.test(fields[name] ?? ""));
+  const positiveAcceptanceCounters = (
+    [
+      "pid",
+      "written_at",
+      "heartbeat",
+      "guest_frames",
+      "touch_sequences",
+      "completed_touch_sequences",
+      "action_value",
+      "action_sequence",
+    ] as const
+  ).every((name) => /^[1-9][0-9]*$/.test(fields[name] ?? ""));
+  if (
+    JSON.stringify(fieldNames) !== JSON.stringify(IPHONE2G_STATUS_FIELDS) ||
+    fields.schema !== "2" ||
+    !/^[0-9a-f]{32}$/.test(fields.build_id ?? "") ||
+    fields.build_id !== expectedBuildId ||
+    !countersAreValid ||
+    !positiveAcceptanceCounters ||
+    fields.touch_down !== "0" ||
+    fields.action_name !== "hero_tap" ||
+    statusCounter(fields, "completed_touch_sequences") >
+      statusCounter(fields, "touch_sequences") ||
+    fields.state !== "running" ||
+    fields.error !== ""
+  ) {
+    throw new Error(
+      "PocketJS iPhone 2G: runtime acceptance requires a released touch and completed Hero action",
+    );
+  }
+  return fields;
+}
+
+export function assertIPhone2GStatusAdvanced(
+  previous: IPhone2GDeviceStatus,
+  current: IPhone2GDeviceStatus,
+): void {
+  if (
+    current.build_id !== previous.build_id ||
+    current.pid !== previous.pid ||
+    statusCounter(current, "heartbeat") <=
+      statusCounter(previous, "heartbeat") ||
+    statusCounter(current, "written_at") <
+      statusCounter(previous, "written_at") ||
+    statusCounter(current, "guest_frames") <=
+      statusCounter(previous, "guest_frames") ||
+    statusCounter(current, "action_sequence") <
+      statusCounter(previous, "action_sequence")
+  ) {
+    throw new Error(
+      "PocketJS iPhone 2G: runtime status is stale or the accepted process was replaced",
+    );
+  }
+}
+
+function assertDeviceProcessAlive(pid: string): void {
+  const result = deviceCommand(["/bin/sh", "-c", shellQuote(`kill -0 ${pid}`)]);
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `PocketJS iPhone 2G: accepted runtime process ${pid} is no longer alive`,
+    );
+  }
+}
+
+function readCurrentDeviceStatus(buildId: string): {
+  readonly text: string;
+  readonly fields: IPhone2GDeviceStatus;
+} {
+  const status = deviceCommand(["/usr/libexec/pocketjs-device", "status"]);
+  if (status.exitCode !== 0) {
+    throw new Error(
+      "PocketJS iPhone 2G: no runtime acceptance record is available; launch the app first",
+    );
+  }
+  const text = status.stdout.toString();
+  return { text, fields: parseIPhone2GDeviceStatus(text, buildId) };
+}
+
+async function printDeviceStatus(): Promise<void> {
   const receiptPath = join(
     repository,
     "dist/iphone2g/PocketJSDemo.app/build-receipt.json",
@@ -1921,35 +2289,21 @@ function printDeviceStatus(): void {
   const receipt = existsSync(receiptPath)
     ? (JSON.parse(readFileSync(receiptPath, "utf8")) as { buildId?: string })
     : undefined;
-  const countersAreValid = [
-    "guest_frames",
-    "touch_sequences",
-    "last_touch_x",
-    "last_touch_y",
-    "last_touch_hit",
-  ].every((name) => /^(0|[1-9][0-9]*)$/.test(fields[name] ?? ""));
-  const positiveAcceptanceCounters = [
-    "guest_frames",
-    "touch_sequences",
-    "last_touch_hit",
-  ].every((name) => /^[1-9][0-9]*$/.test(fields[name] ?? ""));
-  if (
-    JSON.stringify(fieldNames) !== JSON.stringify(expectedFields) ||
-    fields.schema !== "1" ||
-    !/^[0-9a-f]{32}$/.test(fields.build_id ?? "") ||
-    !receipt?.buildId ||
-    fields.build_id !== receipt.buildId ||
-    !countersAreValid ||
-    !positiveAcceptanceCounters ||
-    !["0", "1"].includes(fields.touch_down) ||
-    fields.state !== "running" ||
-    fields.error !== ""
-  ) {
+  if (!receipt?.buildId || !/^[0-9a-f]{32}$/.test(receipt.buildId)) {
     throw new Error(
-      "PocketJS iPhone 2G: runtime acceptance requires running frames and a successful touch hit",
+      "PocketJS iPhone 2G: current local build receipt is absent or invalid",
     );
   }
-  process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+
+  const previous = readCurrentDeviceStatus(receipt.buildId);
+  assertDeviceProcessAlive(previous.fields.pid);
+  await Bun.sleep(1_500);
+  const current = readCurrentDeviceStatus(receipt.buildId);
+  assertDeviceProcessAlive(current.fields.pid);
+  assertIPhone2GStatusAdvanced(previous.fields, current.fields);
+  process.stdout.write(
+    current.text.endsWith("\n") ? current.text : `${current.text}\n`,
+  );
 }
 
 function usage(): never {

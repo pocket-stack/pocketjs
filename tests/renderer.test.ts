@@ -27,6 +27,7 @@ import {
   detectHost,
   installHost,
   parseHexColor,
+  reportAppAction,
   type Host,
   type HostOps,
 } from "../framework/src/host.ts";
@@ -49,7 +50,11 @@ import {
   setStyleResolver,
   type NodeMirror,
 } from "../framework/src/renderer.ts";
-import { registerStyles, resetStyles, resolveStyle } from "../framework/src/styles.ts";
+import {
+  registerStyles,
+  resetStyles,
+  resolveStyle,
+} from "../framework/src/styles.ts";
 import {
   getFocused,
   focusNode,
@@ -59,10 +64,25 @@ import {
   resetInput,
   setInputRoot,
 } from "../framework/src/input.ts";
-import { mount as publicMount, render as publicRender } from "../framework/src/index.ts";
-import { pushButtonHandlerBlock, onButtonPress, onFrame } from "../framework/src/lifecycle.ts";
+import {
+  mount as publicMount,
+  render as publicRender,
+} from "../framework/src/index.ts";
+import {
+  pushButtonHandlerBlock,
+  onButtonPress,
+  onFrame,
+} from "../framework/src/lifecycle.ts";
 import { rootMirror } from "../framework/src/renderer.ts";
-import { ActionBar, ActionHandler, FocusGrid, Modal, Portal, Text, View } from "../framework/src/components.ts";
+import {
+  ActionBar,
+  ActionHandler,
+  FocusGrid,
+  Modal,
+  Portal,
+  Text,
+  View,
+} from "../framework/src/components.ts";
 import {
   DeepZoom,
   type DeepZoomGesture,
@@ -181,7 +201,11 @@ beforeEach(() => {
   resetInput();
   setStyleResolver(resolveStyle);
   root = freshRoot();
-  const g = globalThis as { ui?: HostOps; __pak?: ArrayBuffer; frame?: (buttons: number) => void };
+  const g = globalThis as {
+    ui?: HostOps;
+    __pak?: ArrayBuffer;
+    frame?: (buttons: number) => void;
+  };
   delete g.ui;
   delete g.__pak;
   delete g.frame;
@@ -195,16 +219,23 @@ describe("pak image formats", () => {
       {
         width: 2,
         height: 1,
-        rgba: new Uint8Array([
-          255, 0, 0, 255,
-          0, 0, 255, 255,
-        ]),
+        rgba: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]),
       },
       PSM.PSM_5650,
     );
     expect(Array.from(image)).toEqual([
-      2, 0, 1, 0, PSM.PSM_5650, 0, 0, 0,
-      0x1f, 0x00, 0x00, 0xf8,
+      2,
+      0,
+      1,
+      0,
+      PSM.PSM_5650,
+      0,
+      0,
+      0,
+      0x1f,
+      0x00,
+      0x00,
+      0xf8,
     ]);
 
     expect(() =>
@@ -514,7 +545,9 @@ describe("setProperty dispatch table [R]", () => {
     expect(resolveStyle("p-2 px-4 m-1")).toBe(2);
     expect(resolveStyle("px-4 m-1 p-2")).toBeUndefined();
     const el = createElement("view");
-    expect(() => setProp(el, "class", "px-4 m-1 p-2", undefined)).toThrow(/unknown class/);
+    expect(() => setProp(el, "class", "px-4 m-1 p-2", undefined)).toThrow(
+      /unknown class/,
+    );
     // Commutative anagrams (same record => same id) keep aliasing.
     registerStyles({ "bg-red p-2": 7, "p-2 bg-red": 7 });
     expect(resolveStyle("p-2 bg-red")).toBe(7);
@@ -821,6 +854,21 @@ describe("focus + onPress (input.ts)", () => {
 });
 
 describe("host detection (host.ts)", () => {
+  test("reports completed app actions only when the host provides an acceptance sink", () => {
+    const reports: Array<[string, number]> = [];
+    host.ops.__reportAppAction = (name, value) => reports.push([name, value]);
+
+    reportAppAction("hero_tap", 1);
+    expect(reports).toEqual([["hero_tap", 1]]);
+
+    delete host.ops.__reportAppAction;
+    expect(() => reportAppAction("hero_tap", 2)).not.toThrow();
+    expect(() => reportAppAction("Hero tap", 3)).toThrow(/app action names/);
+    expect(() => reportAppAction("hero_tap", 0x80000000)).toThrow(
+      /signed 32-bit/,
+    );
+  });
+
   test("resolved build contract rejects the wrong native target or ABI", () => {
     const ops = makeMockHost().ops;
     ops.__host = "vita";
@@ -852,9 +900,10 @@ describe("host detection (host.ts)", () => {
     // injected/strict host (crash-on-miss on hardware + double asset feed).
     const psp = makeMockHost();
     psp.ops.__host = "psp";
-    (psp.ops as HostOps & { __textures?: Record<string, number> }).__textures = {
-      "logo.png": 0,
-    };
+    (psp.ops as HostOps & { __textures?: Record<string, number> }).__textures =
+      {
+        "logo.png": 0,
+      };
     const g = globalThis as { ui?: HostOps };
     g.ui = psp.ops;
     try {
@@ -868,7 +917,9 @@ describe("host detection (host.ts)", () => {
         ops: psp.ops,
         styles: { "p-2": 0 },
       });
-      expect(psp.of("loadStyles", "loadFontAtlas", "uploadTexture")).toEqual([]);
+      expect(psp.of("loadStyles", "loadFontAtlas", "uploadTexture")).toEqual(
+        [],
+      );
       dispose();
     } finally {
       delete g.ui;
@@ -881,21 +932,31 @@ describe("host detection (host.ts)", () => {
     symbian.ops.__hostAbi = 4;
     const g = globalThis as { ui?: HostOps; __pak?: ArrayBuffer };
     const pak = pack([
-      { key: "ui:styles", dtype: PAK_DTYPE.u8, data: new Uint8Array([1, 2, 3]) },
-      { key: "ui:font.0", dtype: PAK_DTYPE.u8, data: new Uint8Array([4, 5, 6]) },
+      {
+        key: "ui:styles",
+        dtype: PAK_DTYPE.u8,
+        data: new Uint8Array([1, 2, 3]),
+      },
+      {
+        key: "ui:font.0",
+        dtype: PAK_DTYPE.u8,
+        data: new Uint8Array([4, 5, 6]),
+      },
     ]);
     g.ui = symbian.ops;
-    g.__pak = pak.buffer.slice(pak.byteOffset, pak.byteOffset + pak.byteLength) as ArrayBuffer;
+    g.__pak = pak.buffer.slice(
+      pak.byteOffset,
+      pak.byteOffset + pak.byteLength,
+    ) as ArrayBuffer;
     try {
       const dispose = publicRender(() => createElement("view"), {
         ops: symbian.ops,
         styles: {},
       });
       expect(detectHost(symbian.ops).kind).toBe("native");
-      expect(symbian.of("loadStyles", "loadFontAtlas").map(([name]) => name)).toEqual([
-        "loadFontAtlas",
-        "loadStyles",
-      ]);
+      expect(
+        symbian.of("loadStyles", "loadFontAtlas").map(([name]) => name),
+      ).toEqual(["loadFontAtlas", "loadStyles"]);
       dispose();
     } finally {
       delete g.ui;
@@ -977,7 +1038,10 @@ describe("public render() (index.ts)", () => {
     dispose();
     expect(rootMirror.children.length).toBe(0);
     // layer roots are destroyed once each (native destroy recurses).
-    expect(host.of("destroyNode").map((c) => c[1])).toEqual([appLayer.id, overlayLayer.id]);
+    expect(host.of("destroyNode").map((c) => c[1])).toEqual([
+      appLayer.id,
+      overlayLayer.id,
+    ]);
   });
 
   test("native resize hook reflows a live tree without remounting or losing state", () => {
@@ -988,13 +1052,16 @@ describe("public render() (index.ts)", () => {
     ops.__viewport = { w: 640, h: 360 };
     const [count, setCount] = createSignal(7);
 
-    const dispose = publicRender(() => {
-      const content = createElement("view");
-      const label = createElement("text");
-      insert(label, () => `count:${count()}`);
-      insertNode(content, label);
-      return content;
-    }, { ops });
+    const dispose = publicRender(
+      () => {
+        const content = createElement("view");
+        const label = createElement("text");
+        insert(label, () => `count:${count()}`);
+        insertNode(content, label);
+        return content;
+      },
+      { ops },
+    );
     const [appLayer, overlayLayer] = rootMirror.children;
     const content = appLayer.children[0];
     const label = content.children[0];
@@ -1010,20 +1077,28 @@ describe("public render() (index.ts)", () => {
     expect(content.children[0]).toBe(label);
     expect(label.children[0]).toBe(dynamicText);
     expect(dynamicText.text).toBe("count:7");
-    expect(host.of("setProp")).toEqual(expect.arrayContaining([
-      ["setProp", appLayer.id, PROP.width, 360],
-      ["setProp", appLayer.id, PROP.height, 640],
-      ["setProp", overlayLayer.id, PROP.width, 360],
-      ["setProp", overlayLayer.id, PROP.height, 640],
-    ]));
-    expect(host.of("createNode", "destroyNode", "insertBefore", "removeChild")).toEqual([]);
+    expect(host.of("setProp")).toEqual(
+      expect.arrayContaining([
+        ["setProp", appLayer.id, PROP.width, 360],
+        ["setProp", appLayer.id, PROP.height, 640],
+        ["setProp", overlayLayer.id, PROP.width, 360],
+        ["setProp", overlayLayer.id, PROP.height, 640],
+      ]),
+    );
+    expect(
+      host.of("createNode", "destroyNode", "insertBefore", "removeChild"),
+    ).toEqual([]);
 
     host.clear();
     setCount(8);
     expect(label.children[0]).toBe(dynamicText);
     expect(dynamicText.text).toBe("count:8");
-    expect(host.of("replaceText")).toEqual([["replaceText", dynamicText.id, "count:8"]]);
-    expect(host.of("createNode", "destroyNode", "insertBefore", "removeChild")).toEqual([]);
+    expect(host.of("replaceText")).toEqual([
+      ["replaceText", dynamicText.id, "count:8"],
+    ]);
+    expect(
+      host.of("createNode", "destroyNode", "insertBefore", "removeChild"),
+    ).toEqual([]);
 
     dispose();
     expect(globals.__pocketResizeViewport).toBeUndefined();
@@ -1039,14 +1114,16 @@ describe("public render() (index.ts)", () => {
       h: 500,
       bg: 0xff202020,
       tile: 100,
-      levels: [{
-        scale: 1,
-        cols: 10,
-        rows: 5,
-        key: "ui:tile.live-viewport",
-        grid: Array<string>(5).fill("aaaaaaaaaa"),
-        solids: [0xff808080],
-      }],
+      levels: [
+        {
+          scale: 1,
+          cols: 10,
+          rows: 5,
+          key: "ui:tile.live-viewport",
+          grid: Array<string>(5).fill("aaaaaaaaaa"),
+          solids: [0xff808080],
+        },
+      ],
     };
     const views: DeepZoomView[] = [];
     let gesture: DeepZoomGesture | null = null;
@@ -1075,10 +1152,12 @@ describe("public render() (index.ts)", () => {
     frame();
     expect(views.at(-1)?.minZoom).toBeCloseTo(0.36);
     expect(views.at(-1)?.zoom).toBeCloseTo(0.36);
-    expect(host.of("setProp")).toEqual(expect.arrayContaining([
-      ["setProp", container.id, PROP.width, 360],
-      ["setProp", container.id, PROP.height, 640],
-    ]));
+    expect(host.of("setProp")).toEqual(
+      expect.arrayContaining([
+        ["setProp", container.id, PROP.width, 360],
+        ["setProp", container.id, PROP.height, 640],
+      ]),
+    );
     expect(rootMirror.children[0].children[0]).toBe(container);
     expect(container.children[1]).toBe(activeWorld);
 
@@ -1112,14 +1191,16 @@ describe("public render() (index.ts)", () => {
       h: 500,
       bg: 0xff202020,
       tile: 100,
-      levels: [{
-        scale: 1,
-        cols: 10,
-        rows: 5,
-        key: "ui:tile.fixed-viewport",
-        grid: Array<string>(5).fill("aaaaaaaaaa"),
-        solids: [0xff808080],
-      }],
+      levels: [
+        {
+          scale: 1,
+          cols: 10,
+          rows: 5,
+          key: "ui:tile.fixed-viewport",
+          grid: Array<string>(5).fill("aaaaaaaaaa"),
+          solids: [0xff808080],
+        },
+      ],
     };
     ops.__viewport = { w: 640, h: 360 };
 
@@ -1147,10 +1228,13 @@ describe("public render() (index.ts)", () => {
     expect(views.at(-1)?.minZoom).toBeCloseTo(0.48);
     expect(views.at(-1)?.zoom).toBeCloseTo(0.48);
     expect(
-      host.of("setProp").filter((call) =>
-        call[1] === container.id &&
-        (call[2] === PROP.width || call[2] === PROP.height)
-      ),
+      host
+        .of("setProp")
+        .filter(
+          (call) =>
+            call[1] === container.id &&
+            (call[2] === PROP.width || call[2] === PROP.height),
+        ),
     ).toEqual([]);
 
     dispose();
@@ -1238,7 +1322,9 @@ describe("public render() (index.ts)", () => {
     expect(host.of("removeChild")).toEqual([]);
     expect(host.of("destroyNode")).toEqual([]);
     expect(host.of("animate")).toEqual([]);
-    expect(host.of("setProp").map((call) => [call[1], call[2], call[3]])).toEqual(
+    expect(
+      host.of("setProp").map((call) => [call[1], call[2], call[3]]),
+    ).toEqual(
       expect.arrayContaining([
         [backdrop.id, PROP.opacity, 0],
         [panel.id, PROP.opacity, 0],
@@ -1253,7 +1339,9 @@ describe("public render() (index.ts)", () => {
     expect(host.of("removeChild")).toEqual([]);
     expect(host.of("destroyNode")).toEqual([]);
     expect(host.of("animate")).toEqual([]);
-    expect(host.of("setProp").map((call) => [call[1], call[2], call[3]])).toEqual(
+    expect(
+      host.of("setProp").map((call) => [call[1], call[2], call[3]]),
+    ).toEqual(
       expect.arrayContaining([
         [backdrop.id, PROP.opacity, 0.62],
         [panel.id, PROP.opacity, 1],
@@ -1278,7 +1366,10 @@ describe("public render() (index.ts)", () => {
               open: false,
               class: "modal-frame",
               panelClass: "modal-panel",
-              children: View({ ref: (node) => (hiddenModalItem = node), focusable: true }),
+              children: View({
+                ref: (node) => (hiddenModalItem = node),
+                focusable: true,
+              }),
             }),
           ],
         }),
@@ -1334,24 +1425,31 @@ describe("public render() (index.ts)", () => {
   });
 
   test("mount() hides host, pak image, and frame boilerplate", () => {
-    const g = globalThis as { ui?: HostOps; __pak?: ArrayBuffer; frame?: (buttons: number) => void };
+    const g = globalThis as {
+      ui?: HostOps;
+      __pak?: ArrayBuffer;
+      frame?: (buttons: number) => void;
+    };
     g.ui = host.ops;
     const image = encodeImageEntry(
       { width: 1, height: 1, rgba: new Uint8Array([10, 20, 30, 255]) },
       PSM.PSM_8888,
     );
-    const pak = pack([{ key: "ui:img.logo.png", dtype: PAK_DTYPE.u8, data: image }]);
-    g.__pak = pak.buffer.slice(pak.byteOffset, pak.byteOffset + pak.byteLength) as ArrayBuffer;
+    const pak = pack([
+      { key: "ui:img.logo.png", dtype: PAK_DTYPE.u8, data: image },
+    ]);
+    g.__pak = pak.buffer.slice(
+      pak.byteOffset,
+      pak.byteOffset + pak.byteLength,
+    ) as ArrayBuffer;
 
     const before: number[] = [];
-    const dispose = publicMount(
-      () => {
-        onFrame((buttons) => before.push(buttons));
-        const img = createElement("image");
-        setProp(img, "src", "logo.png", undefined);
-        return img;
-      },
-    );
+    const dispose = publicMount(() => {
+      onFrame((buttons) => before.push(buttons));
+      const img = createElement("image");
+      setProp(img, "src", "logo.png", undefined);
+      return img;
+    });
 
     expect(host.of("uploadTexture")).toEqual([["uploadTexture"]]);
     expect(host.of("setImage").length).toBe(1);
@@ -1374,8 +1472,13 @@ describe("public render() (index.ts)", () => {
       PSM.PSM_8888,
       IMG_FLAG_LINEAR,
     );
-    const pak = pack([{ key: "ui:img.logo.png", dtype: PAK_DTYPE.u8, data: image }]);
-    g.__pak = pak.buffer.slice(pak.byteOffset, pak.byteOffset + pak.byteLength) as ArrayBuffer;
+    const pak = pack([
+      { key: "ui:img.logo.png", dtype: PAK_DTYPE.u8, data: image },
+    ]);
+    g.__pak = pak.buffer.slice(
+      pak.byteOffset,
+      pak.byteOffset + pak.byteLength,
+    ) as ArrayBuffer;
 
     const dispose = publicMount(() => createElement("view"));
 
@@ -1394,14 +1497,14 @@ describe("public render() (index.ts)", () => {
     let backgroundPresses = 0;
     let systemPresses = 0;
 
-    const dispose = publicMount(
-      () => {
-        onFrame(() => frames++);
-        onButtonPress(BTN.SELECT, () => backgroundPresses++);
-        onButtonPress(BTN.SELECT, () => systemPresses++, { allowWhenBlocked: true });
-        return createElement("view");
-      },
-    );
+    const dispose = publicMount(() => {
+      onFrame(() => frames++);
+      onButtonPress(BTN.SELECT, () => backgroundPresses++);
+      onButtonPress(BTN.SELECT, () => systemPresses++, {
+        allowWhenBlocked: true,
+      });
+      return createElement("view");
+    });
     const unblock = pushButtonHandlerBlock();
 
     g.frame?.(BTN.SELECT);
@@ -1425,15 +1528,14 @@ describe("public render() (index.ts)", () => {
     g.ui = host.ops;
     let presses = 0;
 
-    const dispose = publicMount(
-      () =>
-        View({
-          children: ActionHandler({
-            button: BTN.SELECT,
-            active: enabled,
-            onPress: () => presses++,
-          }),
+    const dispose = publicMount(() =>
+      View({
+        children: ActionHandler({
+          button: BTN.SELECT,
+          active: enabled,
+          onPress: () => presses++,
         }),
+      }),
     );
 
     g.frame?.(BTN.SELECT);
@@ -1455,15 +1557,14 @@ describe("public render() (index.ts)", () => {
     g.ui = host.ops;
     let presses = 0;
 
-    const dispose = publicMount(
-      () =>
-        View({
-          children: ActionHandler({
-            button: BTN.SELECT,
-            latched: true,
-            onPress: () => presses++,
-          }),
+    const dispose = publicMount(() =>
+      View({
+        children: ActionHandler({
+          button: BTN.SELECT,
+          latched: true,
+          onPress: () => presses++,
         }),
+      }),
     );
 
     g.frame?.(BTN.SELECT);

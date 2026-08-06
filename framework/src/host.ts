@@ -64,7 +64,13 @@ export interface HostOps {
    * texture (a `cols`-wide grid of `frames` cells); the core auto-plays it,
    * one cell every `step` vblanks. `frames <= 0` clears it. Zero per-frame JS.
    */
-  setSprite(id: number, atlas: number, frames: number, cols: number, step: number): void;
+  setSprite(
+    id: number,
+    atlas: number,
+    frames: number,
+    cols: number,
+    step: number,
+  ): void;
   /** from = current value; easing: spec ENUMS.Easing ordinal → animId. */
   animate(
     id: number,
@@ -95,7 +101,13 @@ export interface HostOps {
   /** Bind the cursor sprite: an uploaded texture drawn topmost every frame,
    *  offset by its hotspot; never laid out, never hit-tested. tex < 0 hides
    *  it; w/h <= 0 draw at the texture's own pixel size. */
-  setCursor?(tex: number, hotX: number, hotY: number, w: number, h: number): void;
+  setCursor?(
+    tex: number,
+    hotX: number,
+    hotY: number,
+    w: number,
+    h: number,
+  ): void;
   /** Move the cursor hotspot to a logical point. */
   setCursorPos?(x: number, y: number): void;
   /** web/test hosts only — on PSP the native bin feeds core from the pak. */
@@ -186,6 +198,12 @@ export interface HostOps {
   /** OP.appShot — texture handle of the SELECT summon's frozen frame
    *  (256×128 PSM_8888), -1 when none was captured. */
   appShot?(): number;
+  /**
+   * Optional host-owned acceptance sink. Applications report a completed,
+   * user-visible action; hosts that do not collect hardware receipts omit it.
+   * The leading underscores keep this diagnostic outside the portable OP ABI.
+   */
+  __reportAppAction?(name: string, value: number): void;
   /** Framework target/profile identity (for example "psp" or "vita"). */
   __host?: string;
   /** Version of the JS/native HostOps ABI implemented by this namespace. */
@@ -196,7 +214,10 @@ export interface HostOps {
  *  is resized to it at mount); console hosts omit it — the spec screen is
  *  the viewport. One accessor so every consumer reads the same contract. */
 export function hostViewport(ops: HostOps): { w: number; h: number } | null {
-  return (ops as HostOps & { __viewport?: { w: number; h: number } }).__viewport ?? null;
+  return (
+    (ops as HostOps & { __viewport?: { w: number; h: number } }).__viewport ??
+    null
+  );
 }
 
 export interface Host {
@@ -213,7 +234,8 @@ let current: Host | null = null;
 
 export function embeddedBuildHostContract(): BuildHostContract | null {
   const target = typeof __POCKET_TARGET__ === "string" ? __POCKET_TARGET__ : "";
-  const hostAbi = typeof __POCKET_HOST_ABI__ === "number" ? __POCKET_HOST_ABI__ : 0;
+  const hostAbi =
+    typeof __POCKET_HOST_ABI__ === "number" ? __POCKET_HOST_ABI__ : 0;
   return target && hostAbi > 0 ? { target, hostAbi } : null;
 }
 
@@ -258,17 +280,33 @@ export function assertNativeHostContract(
 export function detectHost(injected?: HostOps): Host {
   const native = (globalThis as { ui?: HostOps & { __textures?: unknown } }).ui;
   const nativeMarked =
-    native !== undefined && (typeof native.__host === "string" || native.__textures !== undefined);
+    native !== undefined &&
+    (typeof native.__host === "string" || native.__textures !== undefined);
   if (injected) {
     if (native !== undefined && injected === native && nativeMarked) {
       assertNativeHostContract(native);
-      return { ops: injected, kind: "native", target: native.__host ?? "unknown", strict: false };
+      return {
+        ops: injected,
+        kind: "native",
+        target: native.__host ?? "unknown",
+        strict: false,
+      };
     }
-    return { ops: injected, kind: "injected", target: injected.__host ?? "injected", strict: true };
+    return {
+      ops: injected,
+      kind: "injected",
+      target: injected.__host ?? "injected",
+      strict: true,
+    };
   }
   if (native !== undefined && nativeMarked) {
     assertNativeHostContract(native);
-    return { ops: native, kind: "native", target: native.__host ?? "unknown", strict: false };
+    return {
+      ops: native,
+      kind: "native",
+      target: native.__host ?? "unknown",
+      strict: false,
+    };
   }
   if (native) {
     return { ops: native, kind: "injected", target: "injected", strict: true };
@@ -294,6 +332,27 @@ export function getOps(): HostOps {
   return getHost().ops;
 }
 
+const APP_ACTION_NAME = /^[a-z][a-z0-9_.-]{0,62}$/;
+
+/**
+ * Report a completed, user-visible application action to an optional native
+ * acceptance sink. This is diagnostic evidence, not an input mechanism; on
+ * hosts without a sink it is intentionally a no-op.
+ */
+export function reportAppAction(name: string, value: number): void {
+  if (!APP_ACTION_NAME.test(name)) {
+    throw new Error(
+      "PocketJS: app action names must start with a lowercase letter and contain only a-z, 0-9, _, . or -",
+    );
+  }
+  if (!Number.isInteger(value) || value < -0x80000000 || value > 0x7fffffff) {
+    throw new Error(
+      "PocketJS: app action values must be signed 32-bit integers",
+    );
+  }
+  getOps().__reportAppAction?.(name, value);
+}
+
 // ---------------------------------------------------------------------------
 // Frame hookup
 // ---------------------------------------------------------------------------
@@ -309,9 +368,15 @@ export function getOps(): HostOps {
 export function installFrameHandler(
   fn: (buttons: number, analog?: number, touches?: readonly number[]) => void,
 ): void {
-  (globalThis as {
-    frame?: (buttons: number, analog?: number, touches?: readonly number[]) => void;
-  }).frame = fn;
+  (
+    globalThis as {
+      frame?: (
+        buttons: number,
+        analog?: number,
+        touches?: readonly number[],
+      ) => void;
+    }
+  ).frame = fn;
 }
 
 export type ResizeViewportHook = (width: number, height: number) => void;
@@ -321,12 +386,15 @@ export type ResizeViewportHook = (width: number, height: number) => void;
  * global hook lifecycle to a particular renderer. Restores any previous hook
  * only when the installed callback still owns the slot.
  */
-export function installResizeViewportHook(resizeViewport: ResizeViewportHook): () => void {
+export function installResizeViewportHook(
+  resizeViewport: ResizeViewportHook,
+): () => void {
   const globals = globalThis as typeof globalThis & {
     __pocketResizeViewport?: ResizeViewportHook;
   };
   const previous = globals.__pocketResizeViewport;
-  const hook: ResizeViewportHook = (width, height) => resizeViewport(width, height);
+  const hook: ResizeViewportHook = (width, height) =>
+    resizeViewport(width, height);
   globals.__pocketResizeViewport = hook;
   return () => {
     if (globals.__pocketResizeViewport !== hook) return;
@@ -346,11 +414,14 @@ export function parseHexColor(s: string): number {
     hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
   }
   if (hex.length !== 6 && hex.length !== 8) {
-    throw new Error(`PocketJS: bad color '${s}' (expected #rgb/#rrggbb/#rrggbbaa)`);
+    throw new Error(
+      `PocketJS: bad color '${s}' (expected #rgb/#rrggbb/#rrggbbaa)`,
+    );
   }
   // Full-string validation: parseInt would silently accept a valid PREFIX
   // ("#ff00zz" -> 0xff00) and paint a wrong color instead of throwing.
-  if (!/^[0-9a-fA-F]+$/.test(hex)) throw new Error(`PocketJS: bad color '${s}'`);
+  if (!/^[0-9a-fA-F]+$/.test(hex))
+    throw new Error(`PocketJS: bad color '${s}'`);
   const n = parseInt(hex, 16);
   if (hex.length === 6) {
     return abgr((n >>> 16) & 255, (n >>> 8) & 255, n & 255, 255);
@@ -363,13 +434,18 @@ export function parseHexColor(s: string): number {
  * f32 props pass through, color/int props travel as their u32 bits. Strings
  * are parsed ('#rrggbb' for colors, numeric strings otherwise).
  */
-export function encodePropValue(prop: PropName, value: number | string): number {
+export function encodePropValue(
+  prop: PropName,
+  value: number | string,
+): number {
   const kind = PROP_VALUE_KIND[prop];
   if (typeof value === "string") {
     if (kind === VALUE_KIND.color) return parseHexColor(value);
     const n = Number(value);
     if (Number.isNaN(n)) {
-      throw new Error(`PocketJS: non-numeric value '${value}' for prop '${prop}'`);
+      throw new Error(
+        `PocketJS: non-numeric value '${value}' for prop '${prop}'`,
+      );
     }
     value = n;
   }

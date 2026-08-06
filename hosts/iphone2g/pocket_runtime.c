@@ -7,9 +7,15 @@
 #include <stdint.h>
 #include <string.h>
 
-#define POCKETJS_HOST_ABI 6
-#define POCKETJS_SIMULATION_HZ 30
+#ifndef POCKETJS_TARGET_ID
+#error "POCKETJS_TARGET_ID must come from the verified ResolvedBuildPlan"
+#endif
+#ifndef POCKETJS_HOST_ABI
+#error "POCKETJS_HOST_ABI must come from the verified ResolvedBuildPlan"
+#endif
+#define POCKETJS_SIMULATION_HZ 60
 #define POCKETJS_ANALOG_CENTER 32896
+#define POCKETJS_ACTION_NAME_CAPACITY 64
 
 typedef enum {
   HostCreateNode,
@@ -42,6 +48,7 @@ typedef enum {
   HostDebugRectWH,
   HostDebugPause,
   HostDebugStep,
+  HostReportAppAction,
 } HostOperation;
 
 static JSRuntime *runtime;
@@ -49,6 +56,9 @@ static JSContext *context;
 static JSValue global;
 static JSValue frame_function;
 static char last_error[512];
+static char reported_action_name[POCKETJS_ACTION_NAME_CAPACITY];
+static int32_t reported_action_value;
+static unsigned long reported_action_sequence;
 static int runtime_failed;
 
 static void clear_error(void) {
@@ -148,6 +158,19 @@ static int string_argument(
   }
   *text = JS_ToCStringLen2(ctx, length, argv[index], 0);
   return *text != 0;
+}
+
+static int valid_action_name(const char *name, size_t length) {
+  size_t index;
+  if (length == 0 || length >= POCKETJS_ACTION_NAME_CAPACITY ||
+      name[0] < 'a' || name[0] > 'z') return 0;
+  for (index = 1; index < length; index += 1) {
+    char value = name[index];
+    if ((value < 'a' || value > 'z') &&
+        (value < '0' || value > '9') &&
+        value != '_' && value != '.' && value != '-') return 0;
+  }
+  return 1;
 }
 
 static int bytes_argument(
@@ -369,6 +392,22 @@ static JSValue host_operation(
     case HostDebugStep:
       ui_debug_step();
       return JS_UNDEFINED;
+    case HostReportAppAction:
+      if (!string_argument(ctx, argc, argv, 0, &text, &text_length)) return JS_EXCEPTION;
+      if (!int_argument(ctx, argc, argv, 1, &a)) {
+        JS_FreeCString(ctx, text);
+        return JS_EXCEPTION;
+      }
+      if (!valid_action_name(text, text_length)) {
+        JS_FreeCString(ctx, text);
+        return JS_ThrowRangeError(ctx, "invalid PocketJS app action name");
+      }
+      memcpy(reported_action_name, text, text_length);
+      reported_action_name[text_length] = '\0';
+      reported_action_value = a;
+      reported_action_sequence += 1;
+      JS_FreeCString(ctx, text);
+      return JS_UNDEFINED;
   }
   return JS_ThrowInternalError(ctx, "unknown PocketJS HostOp");
 }
@@ -424,7 +463,8 @@ static int install_host(int width, int height) {
       !add_host_operation(context, ui, "debugRectXY", 0, HostDebugRectXY) ||
       !add_host_operation(context, ui, "debugRectWH", 0, HostDebugRectWH) ||
       !add_host_operation(context, ui, "debugPause", 1, HostDebugPause) ||
-      !add_host_operation(context, ui, "debugStep", 0, HostDebugStep)) {
+      !add_host_operation(context, ui, "debugStep", 0, HostDebugStep) ||
+      !add_host_operation(context, ui, "__reportAppAction", 2, HostReportAppAction)) {
     JS_FreeValue(context, ui);
     return 0;
   }
@@ -444,7 +484,7 @@ static int install_host(int width, int height) {
     JS_FreeValue(context, ui);
     return 0;
   }
-  if (JS_SetPropertyStr(context, ui, "__host", JS_NewString(context, "iphone2g-dev")) < 0 ||
+  if (JS_SetPropertyStr(context, ui, "__host", JS_NewString(context, POCKETJS_TARGET_ID)) < 0 ||
       JS_SetPropertyStr(
         context,
         ui,
@@ -495,6 +535,9 @@ int pocket_runtime_boot(
 ) {
   clear_error();
   pocket_runtime_shutdown();
+  reported_action_name[0] = '\0';
+  reported_action_value = 0;
+  reported_action_sequence = 0;
   ui_init(1);
   ui_set_viewport((float)width, (float)height);
 
@@ -634,9 +677,41 @@ int pocket_runtime_hit_test_bounds(float x, float y) {
   return ui_hit_test_bounds(x, y);
 }
 
+const char *pocket_runtime_action_name(void) {
+  return reported_action_name;
+}
+
+int pocket_runtime_action_value(void) {
+  return (int)reported_action_value;
+}
+
+unsigned long pocket_runtime_action_sequence(void) {
+  return reported_action_sequence;
+}
+
 const uint8_t *pocket_runtime_render(void) {
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
   return ui_render_incremental();
+}
+
+int pocket_runtime_gl_initialize(void) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return ui_gl_initialize() != 0;
+}
+
+int pocket_runtime_gl_render(int width, int height) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  if (width <= 0 || height <= 0) return 0;
+  /*
+   * The drawable is exactly the app's logical viewport, so the target
+   * rectangle is the whole window and no letterboxing arithmetic applies.
+   */
+  return ui_gl_render(0, 0, width, height, width, height) != 0;
+}
+
+void pocket_runtime_gl_shutdown(void) {
+  if (runtime == 0 || context == 0) return;
+  ui_gl_shutdown();
 }
 
 uint32_t pocket_runtime_width(void) {

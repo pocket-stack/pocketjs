@@ -46,6 +46,10 @@ const SUITE: readonly Stage[] = [
       "tests/note.test.ts",
       "tests/site-stage.test.ts",
       "tests/host-build-inputs.test.ts",
+      "tests/iphone2g-profile.test.ts",
+      "tests/iphone2g-device-contract.test.ts",
+      "tests/iphone2g-toolchain.test.ts",
+      "tests/iphone2g-device-transaction.test.ts",
       "tests/platform-runtime.test.ts",
       "tests/app-check.test.ts",
       "tests/vue-sfc.test.ts",
@@ -65,6 +69,7 @@ const SUITE: readonly Stage[] = [
       "tests/npm-package.test.ts",
       "tests/video-outro.test.ts",
       "tests/osk-layout.test.ts",
+      "tests/test-suite.test.ts",
     ],
   },
   {
@@ -137,15 +142,21 @@ const SUITE: readonly Stage[] = [
 // ---------------------------------------------------------------------------
 
 const args = process.argv.slice(2);
-const stageFilter = args.find((a) => a.startsWith("--stage="))?.slice("--stage=".length);
-const selected = SUITE.filter((s) => !stageFilter || s.name.includes(stageFilter));
+const stageFilter = args
+  .find((a) => a.startsWith("--stage="))
+  ?.slice("--stage=".length);
+const selected = SUITE.filter(
+  (s) => !stageFilter || s.name.includes(stageFilter),
+);
 
 if (args.includes("--list")) {
   for (const s of SUITE) {
     const what = [
       s.prep ? `${s.prep.length} build(s)` : "",
       s.script ? s.script.join(" ") : "",
-      s.tests ? `${s.tests.length} test file(s)${s.browser ? " [browser]" : ""}` : "",
+      s.tests
+        ? `${s.tests.length} test file(s)${s.browser ? " [browser]" : ""}`
+        : "",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -172,7 +183,11 @@ for (const stage of selected) {
   const started = Date.now();
   console.log(`\n== ${stage.name} ==`);
   for (const cmd of stage.prep ?? []) {
-    const p = Bun.spawnSync(cmd as string[], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+    const p = Bun.spawnSync(cmd as string[], {
+      cwd: ROOT,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     if (p.exitCode !== 0) {
       fail(stage.name, cmd, p.stdout.toString() + p.stderr.toString());
     }
@@ -192,10 +207,16 @@ for (const stage of selected) {
       ...(stage.browser ? ["--conditions=browser"] : []),
       ...stage.tests,
     ];
-    const p = Bun.spawnSync(cmd, { cwd: ROOT, stdout: "inherit", stderr: "inherit" });
+    const p = Bun.spawnSync(cmd, {
+      cwd: ROOT,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
     if (p.exitCode !== 0) fail(stage.name, cmd);
   }
-  console.log(`   ${stage.name}: ok (${((Date.now() - started) / 1000).toFixed(1)}s)`);
+  console.log(
+    `   ${stage.name}: ok (${((Date.now() - started) / 1000).toFixed(1)}s)`,
+  );
 }
 console.log(
   `\ntest: ${selected.length}/${SUITE.length} stage(s) green in ${((Date.now() - t0) / 1000).toFixed(1)}s`,

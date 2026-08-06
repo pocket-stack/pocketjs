@@ -42,15 +42,19 @@ After `deploy` refreshes the application cache and restarts SpringBoard,
 bun iphone2g device-status
 ```
 
-That command accepts only a status record for the current build with running
-guest frames and a successful physical touch hit. A successful build or
-byte-exact installation alone is not live runtime acceptance.
+That command accepts only a fresh schema-2 status record for the current build.
+**The recorded process must still be alive, its heartbeat must be recent, a
+touch release must have completed, and the application must have reported a
+changed `hero_tap` count.** A bounds hit, successful build, or byte-exact
+installation alone is not live runtime acceptance.
 
-The current live Hero receipt for build
-`ba1c0b15af4fdb72c6a98334332a8954` reported 118 running guest frames, 11
-touch sequences, a successful hit value of 46, and no runtime error. The app
-bundle carries a dedicated 59-by-60 transparent-corner icon with black enamel,
-a chrome bevel, and a pre-baked glass highlight for the classic SpringBoard.
+The earlier schema-1 receipt for build
+`ba1c0b15af4fdb72c6a98334332a8954` reported 118 running guest frames and 11
+touch sequences. It is retained as historical evidence but is no longer
+accepted because it lacks process liveness, heartbeat, release completion, and
+application-action fields. The app bundle carries a dedicated 59-by-60
+transparent-corner icon with black enamel, a chrome bevel, and a pre-baked
+glass highlight for the classic SpringBoard.
 The phone retained the complete previous app bundle, key-only SSH, and the
 helper across a Home + Power restart after device-side `/sbin/reboot` stalled
 on its shutdown spinner. That is a forced-restart recovery result, not proof

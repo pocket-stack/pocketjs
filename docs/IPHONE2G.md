@@ -16,17 +16,17 @@ live-hardware acceptance gates below.
 
 ## Current status
 
-| Layer | Target | Status |
-| --- | --- | --- |
-| Device hardware | `iPhone1,1`, ARMv6, normal USB `05ac:1290` | **Pass** |
-| Installed system | iPhone OS 3.1.3 (`7E18`), FactoryActivated | **Pass** |
-| Recovery | Legacy-iOS-Kit CustomHJ erase restore | **Pass** |
-| Device access | SpringBoard, Cydia, `sshd`, and USB SSH | **Pass** |
-| Build ABI | 1.1.4 (`4A102`) sysroot and linker ABI floor | **Pass, local only** |
-| 3.1.3 package/deployment | Signed bundle plus transactional install/readback | **Pass** |
-| PocketJS runtime/input | Current-build guest frames and successful physical touch hits | **Pass, live device** |
-| Installed-bundle persistence | Previous build remained complete across Home + Power restart | **Pass, forced restart** |
-| Clean unattended reboot | `/sbin/reboot` stalled and required Home + Power | **Not established** |
+| Layer                        | Target                                                        | Status                   |
+| ---------------------------- | ------------------------------------------------------------- | ------------------------ |
+| Device hardware              | `iPhone1,1`, ARMv6, normal USB `05ac:1290`                    | **Pass**                 |
+| Installed system             | iPhone OS 3.1.3 (`7E18`), FactoryActivated                    | **Pass**                 |
+| Recovery                     | Legacy-iOS-Kit CustomHJ erase restore                         | **Pass**                 |
+| Device access                | SpringBoard, Cydia, `sshd`, and USB SSH                       | **Pass**                 |
+| Build ABI                    | 1.1.4 (`4A102`) sysroot and linker ABI floor                  | **Pass, local only**     |
+| 3.1.3 package/deployment     | Signed bundle plus transactional install/readback             | **Pass**                 |
+| PocketJS runtime/input       | Current-build guest frames and successful physical touch hits | **Pass, live device**    |
+| Installed-bundle persistence | Previous build remained complete across Home + Power restart  | **Pass, forced restart** |
+| Clean unattended reboot      | `/sbin/reboot` stalled and required Home + Power              | **Not established**      |
 
 The target remains private and experimental even though the exact
 build/deploy/runtime/input path now has a live-device receipt. Passing that
@@ -100,17 +100,17 @@ erase authorization, and a separately verified exit route.
 `package.json` exposes `bun iphone2g`, which dispatches to
 `tools/iphone2g.ts`:
 
-| Command | Current meaning | Device access |
-| --- | --- | --- |
-| `bun iphone2g doctor` | Checks the local 1.1.4 ABI inputs, `ldid`, and pinned source/recovery artifacts. It does not certify the device. | None |
-| `bun iphone2g setup-sources` | Clones and verifies Apple `Csu-76`, QuickJS, and Legacy-iOS-Kit checkouts if absent. | None |
-| `bun iphone2g prepare-bootstrap` | Builds and signs the ARMv6 `pocketjs-device` helper, creates or verifies the dedicated RSA client key, and stages the 3.1.3 key-only SSH policy plus receipt. It does not contact the phone. | None |
-| `bun iphone2g install-bootstrap` | Rebuilds/verifies the stage, checks the exact `iPhone1,1`/3.1.3/`7E18` tuple and read/write mounts, pins the existing CustomHJ RSA host key, merges the client key, installs the signed helper, and disables password SSH only after key/helper checks pass. The transaction preserves the device `sshd`, host key, and launchd plist and rolls back on failure. | USB SSH; managed tunnel |
-| `bun iphone2g tunnel` | Runs a foreground `127.0.0.1:2222` to device port 22 usbmux forward for repeated manual access. Install, deploy, and status start a temporary tunnel themselves when one is not already listening. | USB |
-| `bun iphone2g build` | Builds and `ldid`-signs the 3.1.3-targeted `dist/iphone2g/PocketJSDemo.app` against the 1.1.4 ABI sysroot. | None |
-| `bun iphone2g deploy` | Rebuilds a signed bundle, verifies the installed helper, performs a transactional install with byte-exact readback and rollback, checks that root and data remain read/write, commits, refreshes the application cache as `mobile`, and restarts SpringBoard. | Key-only USB SSH; managed tunnel |
-| `bun iphone2g launch` | Verifies that the installed build receipt matches the current local bundle, then asks SpringBoard to open the demo through its private `pocketjs-iphone2g-demo` URL scheme. | Key-only USB SSH; managed tunnel |
-| `bun iphone2g device-status` | Verifies that the device record matches the current build and reports a running guest with positive frame and touch-hit counters and no runtime error. | Key-only USB SSH; managed tunnel |
+| Command                          | Current meaning                                                                                                                                                                                                                                                                                                                                                  | Device access                    |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `bun iphone2g doctor`            | Checks the local 1.1.4 ABI inputs, `ldid`, and pinned source/recovery artifacts. It does not certify the device.                                                                                                                                                                                                                                                 | None                             |
+| `bun iphone2g setup-sources`     | Clones and verifies Apple `Csu-76`, QuickJS, and Legacy-iOS-Kit checkouts if absent.                                                                                                                                                                                                                                                                             | None                             |
+| `bun iphone2g prepare-bootstrap` | Builds and signs the ARMv6 `pocketjs-device` helper, creates or verifies the dedicated RSA client key, and stages the 3.1.3 key-only SSH policy plus receipt. It does not contact the phone.                                                                                                                                                                     | None                             |
+| `bun iphone2g install-bootstrap` | Rebuilds/verifies the stage, checks the exact `iPhone1,1`/3.1.3/`7E18` tuple and read/write mounts, pins the existing CustomHJ RSA host key, merges the client key, installs the signed helper, and disables password SSH only after key/helper checks pass. The transaction preserves the device `sshd`, host key, and launchd plist and rolls back on failure. | USB SSH; managed tunnel          |
+| `bun iphone2g tunnel`            | Runs a foreground `127.0.0.1:2222` to device port 22 usbmux forward for repeated manual access. Install, deploy, and status start a temporary tunnel themselves when one is not already listening.                                                                                                                                                               | USB                              |
+| `bun iphone2g build`             | Builds and `ldid`-signs the 3.1.3-targeted `dist/iphone2g/PocketJSDemo.app` against the 1.1.4 ABI sysroot.                                                                                                                                                                                                                                                       | None                             |
+| `bun iphone2g deploy`            | Rebuilds a signed bundle, verifies the installed helper, performs a transactional install with byte-exact readback and rollback, checks that root and data remain read/write, commits, refreshes the application cache as `mobile`, and restarts SpringBoard.                                                                                                    | Key-only USB SSH; managed tunnel |
+| `bun iphone2g launch`            | Verifies that the installed build receipt matches the current local bundle, then asks SpringBoard to open the demo through its private `pocketjs-iphone2g-demo` URL scheme.                                                                                                                                                                                      | Key-only USB SSH; managed tunnel |
+| `bun iphone2g device-status`     | Verifies a fresh schema-2 record for the current build: the recorded PID is alive, the heartbeat advances, the guest is producing frames, a touch release completed, the Hero action changed application state, and no runtime error is present.                                                                                                                 | Key-only USB SSH; managed tunnel |
 
 `setup-csu`, `build-demo`, and `build-runtime` remain lower-level entry points.
 `build-probe` is a compatibility alias for the full guest-plus-runtime build;
@@ -151,9 +151,10 @@ idempotent when the verified helper and policy already match.
 installation, byte-for-byte device readback, mount-policy preservation, and a
 SpringBoard restart. `launch` checks that the installed receipt matches the
 current local build before asking SpringBoard to open it. The operator must
-still produce a physical touch hit. Only a subsequent successful
-`device-status` is the machine-readable runtime/input gate. The exact current
-Hero receipt is recorded in the hardware-acceptance section below.
+still tap and release the Hero action. Only a subsequent successful
+`device-status` is the machine-readable runtime/input gate. **A bounds hit
+alone is not accepted:** the record must contain a completed touch sequence
+and the application-reported `hero_tap` count.
 
 By default, proprietary and device-specific material lives outside the
 repository at:
@@ -346,7 +347,7 @@ Three consequences are easy to get wrong, so state them plainly:
   the MBR, every allocated `disk0s1` block and every allocated `disk0s2` block
   matched the backup by SHA-256, and the era-matched `fsck_hfs -q` reported both
   volumes `FILESYSTEM CLEAN`. 1.1.4 iBoot still refused to boot, because the
-  rejection happens *below* the partition table.
+  rejection happens _below_ the partition table.
 - **The step is not read-only, despite touching neither OS nor baseband.** The
   paragraph below is accurate that the ramdisk does not flash the installed OS
   or the baseband. It changes NAND metadata anyway, and that is enough to make
@@ -360,10 +361,10 @@ restore**, which reformatted the NAND as part of the restore. The table is
 scoped to the pinned Kit revision and this lab; it is not a universal statement
 about all hand-built restore research:
 
-| Target | Status in this lab |
-| --- | --- |
-| 3.1.3 (`7E18`) | **Verified** — the CustomHJ erase restore completed and normal boot/USB/SSH passed. |
-| 2.0 – 3.1.2 | Not tested here; the pinned Kit exposes an `Other (Custom IPSW)` path. |
+| Target               | Status in this lab                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| 3.1.3 (`7E18`)       | **Verified** — the CustomHJ erase restore completed and normal boot/USB/SSH passed.                 |
+| 2.0 – 3.1.2          | Not tested here; the pinned Kit exposes an `Other (Custom IPSW)` path.                              |
 | 1.x, including 1.1.4 | **No validated route in this repository.** The pinned `restore.sh` says its 1.x path will not work. |
 
 The project therefore retargeted this development phone to 3.1.3. The original
@@ -620,16 +621,16 @@ key-only policy, and emits a receipt. The default outputs are:
 The stage contains exactly eight device files, not eight historical package
 files:
 
-| Volume | Device path | Source | Mode | Verification |
-| --- | --- | --- | --- | --- |
-| root | `/usr/sbin/sshd` | OpenSSH package | `0755` | `eeed899b324e3b41bf1d3e344c0d04cd66b80c28d083eeb0a8cb4b46dfc9ee65` |
-| root | `/usr/libexec/pocketjs-device` | Built from `hosts/iphone2g/device_tool.c` | `0755` | Recorded in receipt |
-| root | `/usr/lib/libcrypto.0.9.8.dylib` | OpenSSL package | `0555` | `931efb9afc2d24f635a76ae82878e3c09eb5aa03860370fc380c3de2b8fdf2ee` |
-| root | `/private/etc/ssh/moduli` | OpenSSH package | `0644` | `51faf2d997593725ff18ac57c2ca6ce91400673106f71fce5d995d29b633b180` |
-| root | `/private/etc/ssh/sshd_config` | Generated policy | `0644` | Recorded in receipt |
-| root | `/private/etc/ssh/ssh_host_rsa_key` | Generated host key | `0600` | Recorded in receipt |
-| root | `/Library/LaunchDaemons/com.openssh.sshd.plist` | Generated launch policy | `0644` | Recorded in receipt |
-| data | `/private/var/root/.ssh/authorized_keys_pocketjs` | Dedicated client public key | `0600` | Recorded in receipt |
+| Volume | Device path                                       | Source                                    | Mode   | Verification                                                       |
+| ------ | ------------------------------------------------- | ----------------------------------------- | ------ | ------------------------------------------------------------------ |
+| root   | `/usr/sbin/sshd`                                  | OpenSSH package                           | `0755` | `eeed899b324e3b41bf1d3e344c0d04cd66b80c28d083eeb0a8cb4b46dfc9ee65` |
+| root   | `/usr/libexec/pocketjs-device`                    | Built from `hosts/iphone2g/device_tool.c` | `0755` | Recorded in receipt                                                |
+| root   | `/usr/lib/libcrypto.0.9.8.dylib`                  | OpenSSL package                           | `0555` | `931efb9afc2d24f635a76ae82878e3c09eb5aa03860370fc380c3de2b8fdf2ee` |
+| root   | `/private/etc/ssh/moduli`                         | OpenSSH package                           | `0644` | `51faf2d997593725ff18ac57c2ca6ce91400673106f71fce5d995d29b633b180` |
+| root   | `/private/etc/ssh/sshd_config`                    | Generated policy                          | `0644` | Recorded in receipt                                                |
+| root   | `/private/etc/ssh/ssh_host_rsa_key`               | Generated host key                        | `0600` | Recorded in receipt                                                |
+| root   | `/Library/LaunchDaemons/com.openssh.sshd.plist`   | Generated launch policy                   | `0644` | Recorded in receipt                                                |
+| data   | `/private/var/root/.ssh/authorized_keys_pocketjs` | Dedicated client public key               | `0600` | Recorded in receipt                                                |
 
 `/private/var/root/.ssh` itself is a directory, mode `0700`, and is not counted
 as a ninth file. All installed files and this directory must be owned by
@@ -1193,10 +1194,10 @@ This proves signing, bootstrap policy, byte-exact installation, transactional
 commit completion, and mount-policy preservation. SpringBoard icon rendering,
 Hero drawing, and physical touch are layer 4 evidence.
 
-### 4. PocketJS Hero runtime and input acceptance — passed for the current build
+### 4. Historical PocketJS Hero runtime receipt
 
 - The iPhone app now mounts the shared PocketJS Hero at 320 by 480, adapts its
-  action copy for touch, and reports the 30 Hz presentation rate.
+  action copy for touch, and reports the 60 Hz presentation rate.
 - Its dedicated 59-by-60 RGBA SpringBoard icon keeps the black-backed metal
   mark but pre-bakes a bright chrome bevel, curved glass highlight, inner
   shading, and transparent rounded corners in the original iPhone idiom. It
@@ -1207,7 +1208,6 @@ Hero drawing, and physical touch are layer 4 evidence.
   ```sh
   bun iphone2g device-status
   ```
-
 
   ```text
   schema=1
@@ -1222,9 +1222,12 @@ Hero drawing, and physical touch are layer 4 evidence.
   error=
   ```
 
-  The command requires the device record to match the local build receipt and
-  accepts the record only after the current build produces running frames and
-  a successful physical touch hit.
+  This schema-1 record predates the hardened acceptance protocol. It confirms
+  that the previous guest produced frames and received a touch bounds hit, but
+  **the current `device-status` command does not accept it** because it has no
+  PID, timestamp, heartbeat, completed-release counter, or application action.
+  A current receipt must report schema 2 and a `hero_tap` action after release.
+
 - A device-side `/sbin/reboot` stopped services but remained on its shutdown
   spinner. Holding Home + Power completed the restart; this is a successful
   forced-restart recovery receipt, not evidence that unattended `/sbin/reboot`
@@ -1239,12 +1242,13 @@ Hero drawing, and physical touch are layer 4 evidence.
   stalled `/sbin/reboot` into a clean-reboot result.
 
 A dated photo or video remains useful supplemental evidence. It is not a
-replacement for the build-matched status receipt above.
+replacement for a fresh, build-matched schema-2 status receipt.
 
-The changing Solid signal is the critical runtime proof: the native host must
-have loaded and executed the embedded generated guest bundle, rendered its
-PocketJS tree, and returned physical touch through the PocketJS input path.
-Build or upload success alone does not meet that criterion.
+**The changed Solid count after a completed release is the application-level
+runtime proof.** The native host must load and execute the embedded guest,
+render its PocketJS tree, deliver physical touch through the PocketJS input
+path, and receive `hero_tap` from the reactive count effect. Build, upload, or
+a bounds hit alone does not meet that criterion.
 
 ## Primary references
 

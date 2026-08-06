@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 /*
@@ -57,12 +59,23 @@ typedef enum {
 
 #define YES ((BOOL)1)
 #define NO ((BOOL)0)
-#define POCKET_LOGICAL_WIDTH 320
-#define POCKET_LOGICAL_HEIGHT 480
+#ifndef POCKET_LOGICAL_WIDTH
+#error "POCKET_LOGICAL_WIDTH must come from the verified ResolvedBuildPlan"
+#endif
+#ifndef POCKET_LOGICAL_HEIGHT
+#error "POCKET_LOGICAL_HEIGHT must come from the verified ResolvedBuildPlan"
+#endif
 #define POCKET_STATUS_CAPACITY 256
 #define POCKET_STATUS_COLUMNS 42
 #define POCKET_STATUS_LINES 5
+#define POCKET_STATUS_HEARTBEAT_FRAMES 60UL
 #define POCKET_ACCEPTANCE_PATH "/private/var/tmp/pocketjs-iphone2g.status"
+/*
+ * Presence of this file forces the software rasterizer. It exists so the two
+ * render paths can be measured against each other on one build, instead of
+ * comparing numbers from two binaries that differ in more than the renderer.
+ */
+#define POCKET_FORCE_SOFTWARE_PATH "/private/var/tmp/pocketjs-iphone2g.software"
 #define POCKET_ACCEPTANCE_TEMP "/private/var/tmp/pocketjs-iphone2g.status.new"
 #ifndef POCKET_BUILD_ID
 #define POCKET_BUILD_ID "unknown"
@@ -77,6 +90,8 @@ typedef enum {
 extern Class objc_getClass(const char *name);
 extern Class objc_allocateClassPair(Class superclass, const char *name, size_t extra_bytes);
 extern void objc_registerClassPair(Class cls);
+/* For a class pair this returns the metaclass, where class methods live. */
+extern Class object_getClass(id object);
 extern BOOL class_addMethod(Class cls, SEL name, void (*implementation)(void), const char *types);
 extern SEL sel_registerName(const char *name);
 extern void *objc_msgSend(void);
@@ -154,9 +169,36 @@ static int g_last_touch_hit;
 static int g_touch_needs_hit;
 static int g_touch_was_sent;
 static int g_touch_release_after_frame;
-static int g_record_next_frame;
+static int g_touch_awaiting_completion;
+/*
+ * Which path actually drew the last frame. This is recorded rather than
+ * inferred: a GL failure falls back to the software rasterizer silently and by
+ * design, so without this field a hardware receipt and a software one are
+ * byte-identical, and "it runs on the GPU" would be an assumption.
+ */
+static const char *g_renderer = "software";
+/*
+ * Which clock drives the frame loop, recorded for the same reason as the
+ * renderer. NSTimer at 1/60 s does not actually deliver 60 frames on this
+ * device — measured ~57 — because the run loop schedules it approximately.
+ * CADisplayLink (iPhone OS 3.1 and later) fires with the display instead.
+ */
+static const char *g_clock = "nstimer";
+/* Mean microseconds per stage since the previous record, from gettimeofday. */
+static unsigned long g_frame_us_total;
+static unsigned long g_present_us_total;
+static unsigned long g_submit_us_total;
+static unsigned long g_timed_frames;
+static unsigned long g_frame_us_mean;
+static unsigned long g_present_us_mean;
+static unsigned long g_submit_us_mean;
+
 static unsigned long g_guest_frames;
 static unsigned long g_touch_sequences;
+static unsigned long g_completed_touch_sequences;
+static unsigned long g_status_heartbeat;
+static unsigned long g_last_record_attempt_frame;
+static unsigned long g_observed_action_sequence;
 
 static size_t cstring_length(const char *text) {
   size_t length = 0;
@@ -182,9 +224,18 @@ static void copy_status_message(const char *message) {
   g_status_message[index] = '\0';
 }
 
+/* Microseconds on a clock that exists in this libc; only used for deltas. */
+static unsigned long now_us(void) {
+  struct timeval now;
+  if (gettimeofday(&now, NULL) != 0) return 0;
+  return (unsigned long)now.tv_sec * 1000000UL + (unsigned long)now.tv_usec;
+}
+
 /* Best-effort, device-local proof fetched through the scoped USB SSH helper. */
 static void write_acceptance_record(void) {
-  char record[640];
+  char record[768];
+  unsigned long next_heartbeat = g_status_heartbeat + 1;
+  time_t written_at = time(NULL);
   const char *state = g_state == POCKET_STATE_RUNNING
     ? "running"
     : g_state == POCKET_STATE_FAILED
@@ -193,18 +244,34 @@ static void write_acceptance_record(void) {
   int length = snprintf(
     record,
     sizeof(record),
-    "schema=1\nbuild_id=%s\nstate=%s\nguest_frames=%lu\ntouch_sequences=%lu\n"
-    "touch_down=%d\nlast_touch_x=%d\nlast_touch_y=%d\nlast_touch_hit=%d\nerror=%s\n",
+    "schema=2\nbuild_id=%s\nstate=%s\npid=%ld\nwritten_at=%ld\nheartbeat=%lu\n"
+    "guest_frames=%lu\ntouch_sequences=%lu\ncompleted_touch_sequences=%lu\n"
+    "touch_down=%d\nlast_touch_x=%d\nlast_touch_y=%d\nlast_touch_hit=%d\n"
+    "action_name=%s\naction_value=%d\naction_sequence=%lu\n"
+    "renderer=%s\nclock=%s\nframe_us=%lu\nsubmit_us=%lu\npresent_us=%lu\nerror=%s\n",
     POCKET_BUILD_ID,
     state,
+    (long)getpid(),
+    (long)written_at,
+    next_heartbeat,
     g_guest_frames,
     g_touch_sequences,
+    g_completed_touch_sequences,
     g_touch_down,
     g_touch_x,
     g_touch_y,
     g_last_touch_hit,
+    pocket_runtime_action_name(),
+    pocket_runtime_action_value(),
+    pocket_runtime_action_sequence(),
+    g_renderer,
+    g_clock,
+    g_frame_us_mean,
+    g_submit_us_mean,
+    g_present_us_mean,
     g_state == POCKET_STATE_FAILED ? g_status_message : ""
   );
+  g_last_record_attempt_frame = g_guest_frames;
   if (length <= 0) return;
   if ((size_t)length >= sizeof(record)) length = (int)sizeof(record) - 1;
 
@@ -221,7 +288,9 @@ static void write_acceptance_record(void) {
   }
   (void)close(descriptor);
   if (written == (size_t)length) {
-    (void)rename(POCKET_ACCEPTANCE_TEMP, POCKET_ACCEPTANCE_PATH);
+    if (rename(POCKET_ACCEPTANCE_TEMP, POCKET_ACCEPTANCE_PATH) == 0) {
+      g_status_heartbeat = next_heartbeat;
+    }
   }
 }
 
@@ -422,7 +491,7 @@ static void draw_status(CGContextRef context, CGRect bounds) {
     CGContextSetRGBFillColor(context, 0.9f, 0.95f, 1.0f, 1.0f);
     draw_text(context, 18.0f, fill.size.height - 82.0f, "Starting embedded demo...", 20.0f);
     CGContextSetRGBFillColor(context, 0.52f, 0.68f, 0.82f, 1.0f);
-    draw_text(context, 18.0f, fill.size.height - 112.0f, "JS + PAK / 320x480 / 30 Hz", 13.0f);
+    draw_text(context, 18.0f, fill.size.height - 112.0f, "JS + PAK / 320x480 / 60 Hz", 13.0f);
   }
 }
 
@@ -632,6 +701,244 @@ static int update_uitouch_location(id self, id touches) {
   return 1;
 }
 
+/*
+ * OpenGL ES 1.1 presentation.
+ *
+ * The core ES 1.1 entry points are in the 1.1.4 OpenGLES.framework, so they
+ * link normally. The framebuffer-object extension and EAGL are NOT — that
+ * framework predates both — so every one of them is resolved at runtime, the
+ * same way the 1.x GSEvent path is. That also means this whole block degrades
+ * to "no GL" rather than "will not load" on anything that lacks them, and the
+ * software rasterizer stays the fallback.
+ */
+#define POCKET_GL_FRAMEBUFFER_OES 0x8d40u
+#define POCKET_GL_RENDERBUFFER_OES 0x8d41u
+#define POCKET_GL_COLOR_ATTACHMENT0_OES 0x8ce0u
+#define POCKET_GL_FRAMEBUFFER_COMPLETE_OES 0x8cd5u
+#define POCKET_GL_RENDERBUFFER_WIDTH_OES 0x8d42u
+#define POCKET_GL_RENDERBUFFER_HEIGHT_OES 0x8d43u
+
+typedef void (*GlGenObjects)(int32_t count, uint32_t *names);
+typedef void (*GlBindObject)(uint32_t target, uint32_t name);
+typedef void (*GlFramebufferRenderbuffer)(
+  uint32_t target,
+  uint32_t attachment,
+  uint32_t renderbuffer_target,
+  uint32_t renderbuffer
+);
+typedef void (*GlGetRenderbufferParameteriv)(
+  uint32_t target,
+  uint32_t parameter,
+  int32_t *value
+);
+typedef uint32_t (*GlCheckFramebufferStatus)(uint32_t target);
+typedef void (*GlDeleteObjects)(int32_t count, const uint32_t *names);
+
+static id g_gl_context;
+static uint32_t g_gl_framebuffer;
+static uint32_t g_gl_renderbuffer;
+static int g_gl_ready;
+static int32_t g_gl_width;
+static int32_t g_gl_height;
+
+static GlGenObjects gl_gen_framebuffers;
+static GlBindObject gl_bind_framebuffer;
+static GlGenObjects gl_gen_renderbuffers;
+static GlBindObject gl_bind_renderbuffer;
+static GlFramebufferRenderbuffer gl_framebuffer_renderbuffer;
+static GlGetRenderbufferParameteriv gl_get_renderbuffer_parameteriv;
+static GlCheckFramebufferStatus gl_check_framebuffer_status;
+static GlDeleteObjects gl_delete_framebuffers;
+static GlDeleteObjects gl_delete_renderbuffers;
+
+static BOOL send_bool_uint_object(
+  id receiver,
+  const char *selector,
+  uint32_t target,
+  id drawable
+) {
+  return ((BOOL (*)(id, SEL, uint32_t, id))objc_msgSend)(
+    receiver,
+    sel_registerName(selector),
+    target,
+    drawable
+  );
+}
+
+static BOOL send_bool_uint(id receiver, const char *selector, uint32_t target) {
+  return ((BOOL (*)(id, SEL, uint32_t))objc_msgSend)(
+    receiver,
+    sel_registerName(selector),
+    target
+  );
+}
+
+static id send_id_int(id receiver, const char *selector, int value) {
+  return ((id (*)(id, SEL, int))objc_msgSend)(
+    receiver,
+    sel_registerName(selector),
+    value
+  );
+}
+
+static BOOL send_bool_class_object(Class cls, const char *selector, id value) {
+  return ((BOOL (*)(Class, SEL, id))objc_msgSend)(
+    cls,
+    sel_registerName(selector),
+    value
+  );
+}
+
+/* The layer class UIKit asks our view for; absent before iPhone OS 2. */
+static Class pocket_layer_class(id self, SEL command) {
+  (void)self;
+  (void)command;
+  return objc_getClass("CAEAGLLayer");
+}
+
+static int resolve_gl_extension(void) {
+  void *handle = (void *)(intptr_t)-2; /* Darwin RTLD_DEFAULT. */
+  gl_gen_framebuffers = (GlGenObjects)dlsym(handle, "glGenFramebuffersOES");
+  gl_bind_framebuffer = (GlBindObject)dlsym(handle, "glBindFramebufferOES");
+  gl_gen_renderbuffers = (GlGenObjects)dlsym(handle, "glGenRenderbuffersOES");
+  gl_bind_renderbuffer = (GlBindObject)dlsym(handle, "glBindRenderbufferOES");
+  gl_framebuffer_renderbuffer =
+    (GlFramebufferRenderbuffer)dlsym(handle, "glFramebufferRenderbufferOES");
+  gl_get_renderbuffer_parameteriv =
+    (GlGetRenderbufferParameteriv)dlsym(handle, "glGetRenderbufferParameterivOES");
+  gl_check_framebuffer_status =
+    (GlCheckFramebufferStatus)dlsym(handle, "glCheckFramebufferStatusOES");
+  gl_delete_framebuffers = (GlDeleteObjects)dlsym(handle, "glDeleteFramebuffersOES");
+  gl_delete_renderbuffers = (GlDeleteObjects)dlsym(handle, "glDeleteRenderbuffersOES");
+  return gl_gen_framebuffers != NULL && gl_bind_framebuffer != NULL &&
+    gl_gen_renderbuffers != NULL && gl_bind_renderbuffer != NULL &&
+    gl_framebuffer_renderbuffer != NULL && gl_get_renderbuffer_parameteriv != NULL &&
+    gl_check_framebuffer_status != NULL && gl_delete_framebuffers != NULL &&
+    gl_delete_renderbuffers != NULL;
+}
+
+static void teardown_gl(void) {
+  if (g_gl_context != NULL) {
+    Class eagl = objc_getClass("EAGLContext");
+    if (eagl != NULL) {
+      send_bool_class_object(eagl, "setCurrentContext:", g_gl_context);
+    }
+  }
+  /* The core's textures belong to this context, so release them while it is
+   * still current — and only if it ever got as far as owning any. */
+  if (g_gl_ready) {
+    pocket_runtime_gl_shutdown();
+  }
+  if (g_gl_framebuffer != 0 && gl_delete_framebuffers != NULL) {
+    gl_delete_framebuffers(1, &g_gl_framebuffer);
+    g_gl_framebuffer = 0;
+  }
+  if (g_gl_renderbuffer != 0 && gl_delete_renderbuffers != NULL) {
+    gl_delete_renderbuffers(1, &g_gl_renderbuffer);
+    g_gl_renderbuffer = 0;
+  }
+  g_gl_ready = 0;
+  g_gl_context = NULL;
+}
+
+/*
+ * Build the drawable. Returns 0 for every failure, including "this OS has no
+ * EAGL", so a false result is never a fatal condition — only a slower one.
+ */
+static int setup_gl(id view) {
+  Class eagl = objc_getClass("EAGLContext");
+  id layer;
+  int32_t status;
+  int forced_software;
+
+  forced_software = access(POCKET_FORCE_SOFTWARE_PATH, F_OK) == 0;
+  if (forced_software) return 0;
+  if (eagl == NULL || objc_getClass("CAEAGLLayer") == NULL) return 0;
+  if (!resolve_gl_extension()) return 0;
+
+  layer = send_id(view, "layer");
+  if (layer == NULL || !responds_to(layer, "setOpaque:")) return 0;
+  /* An opaque layer lets the window server skip blending the whole screen. */
+  send_void_bool(layer, "setOpaque:", YES);
+
+  g_gl_context = send_id_int(send_id((id)eagl, "alloc"), "initWithAPI:", 1);
+  if (g_gl_context == NULL) return 0;
+  if (!send_bool_class_object(eagl, "setCurrentContext:", g_gl_context)) {
+    g_gl_context = NULL;
+    return 0;
+  }
+
+  gl_gen_framebuffers(1, &g_gl_framebuffer);
+  gl_bind_framebuffer(POCKET_GL_FRAMEBUFFER_OES, g_gl_framebuffer);
+  gl_gen_renderbuffers(1, &g_gl_renderbuffer);
+  gl_bind_renderbuffer(POCKET_GL_RENDERBUFFER_OES, g_gl_renderbuffer);
+  if (g_gl_framebuffer == 0 || g_gl_renderbuffer == 0) {
+    teardown_gl();
+    return 0;
+  }
+  if (!send_bool_uint_object(
+    g_gl_context,
+    "renderbufferStorage:fromDrawable:",
+    POCKET_GL_RENDERBUFFER_OES,
+    layer
+  )) {
+    teardown_gl();
+    return 0;
+  }
+  gl_framebuffer_renderbuffer(
+    POCKET_GL_FRAMEBUFFER_OES,
+    POCKET_GL_COLOR_ATTACHMENT0_OES,
+    POCKET_GL_RENDERBUFFER_OES,
+    g_gl_renderbuffer
+  );
+  status = (int32_t)gl_check_framebuffer_status(POCKET_GL_FRAMEBUFFER_OES);
+  if ((uint32_t)status != POCKET_GL_FRAMEBUFFER_COMPLETE_OES) {
+    teardown_gl();
+    return 0;
+  }
+  gl_get_renderbuffer_parameteriv(
+    POCKET_GL_RENDERBUFFER_OES,
+    POCKET_GL_RENDERBUFFER_WIDTH_OES,
+    &g_gl_width
+  );
+  gl_get_renderbuffer_parameteriv(
+    POCKET_GL_RENDERBUFFER_OES,
+    POCKET_GL_RENDERBUFFER_HEIGHT_OES,
+    &g_gl_height
+  );
+  if (g_gl_width <= 0 || g_gl_height <= 0) {
+    teardown_gl();
+    return 0;
+  }
+  g_gl_ready = 1;
+  return 1;
+}
+
+/*
+ * Draw one frame through the GPU. Zero means fall back for good.
+ *
+ * `submitted_us` is set to the cost of walking the DrawList into GL, which is
+ * the number that says whether there is headroom. The remaining time is
+ * `presentRenderbuffer:` blocking until the next vsync — waiting, not working,
+ * and it necessarily grows to fill the frame once the loop is display-synced.
+ */
+static int present_gl(unsigned long *submitted_us) {
+  Class eagl = objc_getClass("EAGLContext");
+  unsigned long started;
+  if (!g_gl_ready || eagl == NULL) return 0;
+  if (!send_bool_class_object(eagl, "setCurrentContext:", g_gl_context)) return 0;
+  started = now_us();
+  gl_bind_framebuffer(POCKET_GL_FRAMEBUFFER_OES, g_gl_framebuffer);
+  if (!pocket_runtime_gl_render(g_gl_width, g_gl_height)) return 0;
+  gl_bind_renderbuffer(POCKET_GL_RENDERBUFFER_OES, g_gl_renderbuffer);
+  *submitted_us = now_us() - started;
+  return send_bool_uint(
+    g_gl_context,
+    "presentRenderbuffer:",
+    POCKET_GL_RENDERBUFFER_OES
+  ) ? 1 : 0;
+}
+
 static int boot_embedded_runtime(void) {
   size_t java_script_length = 0;
   size_t pack_length = 0;
@@ -663,12 +970,30 @@ static int boot_embedded_runtime(void) {
   }
 
   g_state = POCKET_STATE_RUNNING;
+  /*
+   * GL comes up only after the core exists, because the backend allocates its
+   * white texture and vertex buffer against the live Ui. Both halves must
+   * succeed together or neither counts.
+   */
+  if (setup_gl(g_view)) {
+    if (pocket_runtime_gl_initialize()) {
+      g_renderer = "gles1";
+      copy_status_message("Running on OpenGL ES 1.1");
+    } else {
+      teardown_gl();
+    }
+  }
   return 1;
 }
 
 static void pocket_tick(id self, SEL command, id timer) {
+  int completed_touch;
   int delivered_touch;
-  int record_this_frame;
+  int reported_action;
+  unsigned long frame_started_us;
+  unsigned long present_started_us;
+  unsigned long finished_us;
+  unsigned long submitted_us = 0;
   (void)self;
   (void)command;
   (void)timer;
@@ -687,13 +1012,13 @@ static void pocket_tick(id self, SEL command, id timer) {
     g_last_touch_hit = g_touch_hit;
     g_touch_needs_hit = 0;
   }
-  record_this_frame = g_record_next_frame;
-  g_record_next_frame = 0;
   delivered_touch = g_touch_down;
+  frame_started_us = now_us();
   if (!pocket_runtime_frame(g_touch_down, g_touch_x, g_touch_y, g_touch_hit)) {
     fail_runtime(pocket_runtime_error());
     return;
   }
+  present_started_us = now_us();
   g_guest_frames += 1;
   if (delivered_touch) {
     g_touch_was_sent = 1;
@@ -702,13 +1027,54 @@ static void pocket_tick(id self, SEL command, id timer) {
     g_touch_down = 0;
     g_touch_release_after_frame = 0;
   }
-  if (!refresh_framebuffer()) {
-    return;
+  completed_touch = !delivered_touch && g_touch_awaiting_completion;
+  if (completed_touch) {
+    g_completed_touch_sequences += 1;
+    g_touch_awaiting_completion = 0;
   }
-  if (g_guest_frames == 1 || delivered_touch || record_this_frame) {
+  reported_action = pocket_runtime_action_sequence() != g_observed_action_sequence;
+  g_observed_action_sequence = pocket_runtime_action_sequence();
+  if (g_gl_ready) {
+    /*
+     * On the GPU path the core walks its DrawList straight into GL, so there
+     * is no framebuffer to publish and no drawRect: to schedule. A failure
+     * here is not fatal: drop to the software rasterizer permanently and let
+     * the next tick take the CGImage route.
+     */
+    if (!present_gl(&submitted_us)) {
+      teardown_gl();
+      g_renderer = "software";
+      copy_status_message("OpenGL ES present failed; using software raster");
+    }
+  }
+  if (!g_gl_ready) {
+    if (!refresh_framebuffer()) {
+      return;
+    }
+  }
+  finished_us = now_us();
+  if (finished_us >= frame_started_us) {
+    g_frame_us_total += present_started_us - frame_started_us;
+    g_present_us_total += finished_us - present_started_us;
+    g_submit_us_total += submitted_us;
+    g_timed_frames += 1;
+  }
+  if (g_guest_frames == 1 || completed_touch || reported_action ||
+      g_guest_frames - g_last_record_attempt_frame >= POCKET_STATUS_HEARTBEAT_FRAMES) {
+    if (g_timed_frames > 0) {
+      g_frame_us_mean = g_frame_us_total / g_timed_frames;
+      g_present_us_mean = g_present_us_total / g_timed_frames;
+      g_submit_us_mean = g_submit_us_total / g_timed_frames;
+      g_frame_us_total = 0;
+      g_present_us_total = 0;
+      g_submit_us_total = 0;
+      g_timed_frames = 0;
+    }
     write_acceptance_record();
   }
-  send_void(g_view, "setNeedsDisplay");
+  if (!g_gl_ready) {
+    send_void(g_view, "setNeedsDisplay");
+  }
 }
 
 static void pocket_draw_rect(id self, SEL command, CGRect rect) {
@@ -738,6 +1104,7 @@ static void begin_touch(void) {
   g_touch_sequences += 1;
   g_touch_was_sent = 0;
   g_touch_release_after_frame = 0;
+  g_touch_awaiting_completion = 0;
   if (g_state == POCKET_STATE_RUNNING) {
     g_touch_hit = pocket_runtime_hit_test_bounds((float)g_touch_x, (float)g_touch_y);
     g_last_touch_hit = g_touch_hit;
@@ -752,13 +1119,13 @@ static void end_touch(void) {
   if (!g_touch_down) {
     return;
   }
-  g_record_next_frame = 1;
+  g_touch_awaiting_completion = 1;
   if (g_touch_was_sent) {
     g_touch_down = 0;
     g_touch_hit = 0;
     g_touch_needs_hit = 0;
   } else {
-    /* Keep a very short tap alive until at least one 30 Hz guest frame. */
+    /* Keep a very short tap alive until at least one 60 Hz guest frame. */
     g_touch_release_after_frame = 1;
   }
 }
@@ -829,6 +1196,62 @@ static void pocket_touches_ended(
   }
 }
 
+/*
+ * Build an NSString without linking Foundation's constant symbols, which is
+ * how the default run-loop mode is named. NSDefaultRunLoopMode is exactly
+ * @"kCFRunLoopDefaultMode".
+ */
+static id run_loop_default_mode(void) {
+  Class string_class = objc_getClass("NSString");
+  if (string_class == NULL) {
+    return NULL;
+  }
+  return ((id (*)(id, SEL, const char *))objc_msgSend)(
+    (id)string_class,
+    sel_registerName("stringWithUTF8String:"),
+    "kCFRunLoopDefaultMode"
+  );
+}
+
+/* Returns the retained display link, or NULL when the OS predates it. */
+static id start_display_link(void) {
+  Class link_class = objc_getClass("CADisplayLink");
+  Class run_loop_class = objc_getClass("NSRunLoop");
+  id link;
+  id run_loop;
+  id mode;
+
+  if (link_class == NULL || run_loop_class == NULL) {
+    return NULL;
+  }
+  if (!responds_to((id)link_class, "displayLinkWithTarget:selector:")) {
+    return NULL;
+  }
+  link = ((id (*)(id, SEL, id, SEL))objc_msgSend)(
+    (id)link_class,
+    sel_registerName("displayLinkWithTarget:selector:"),
+    g_view,
+    sel_registerName("pocketJSTick:")
+  );
+  if (link == NULL) {
+    return NULL;
+  }
+  run_loop = send_id((id)run_loop_class, "currentRunLoop");
+  mode = run_loop_default_mode();
+  if (run_loop == NULL || mode == NULL) {
+    return NULL;
+  }
+  ((void (*)(id, SEL, id, id))objc_msgSend)(
+    link,
+    sel_registerName("addToRunLoop:forMode:"),
+    run_loop,
+    mode
+  );
+  /* Autoreleased by the class method; the run loop keeps it alive, and the
+   * host retains it so `invalidate` still has a valid receiver at shutdown. */
+  return send_id(link, "retain");
+}
+
 static void launch_application(id self, id application) {
   Class hardware_class = objc_getClass("UIHardware");
   Class window_class = objc_getClass("UIWindow");
@@ -884,17 +1307,28 @@ static void launch_application(id self, id application) {
   }
   send_void(g_view, "setNeedsDisplay");
 
-  g_timer = send_id_timer(
-    (id)objc_getClass("NSTimer"),
-    "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:",
-    1.0 / 30.0,
-    g_view,
-    sel_registerName("pocketJSTick:"),
-    NULL,
-    YES
-  );
+  /*
+   * Prefer the display's own clock. CADisplayLink arrived in iPhone OS 3.1, so
+   * it is resolved by name and NSTimer stays the fallback for anything older —
+   * the record says which one actually drove the frames.
+   */
+  g_timer = start_display_link();
+  if (g_timer != NULL) {
+    g_clock = "displaylink";
+  } else {
+    g_timer = send_id_timer(
+      (id)objc_getClass("NSTimer"),
+      "scheduledTimerWithTimeInterval:target:selector:userInfo:repeats:",
+      1.0 / 60.0,
+      g_view,
+      sel_registerName("pocketJSTick:"),
+      NULL,
+      YES
+    );
+    g_clock = "nstimer";
+  }
   if (g_timer == NULL) {
-    fail_runtime("UIKit could not schedule the 30 Hz runtime timer");
+    fail_runtime("UIKit could not schedule the 60 Hz runtime timer");
   }
 }
 
@@ -923,6 +1357,7 @@ static void terminate_application(void) {
   g_state = POCKET_STATE_TERMINATED;
   copy_status_message("Application terminated");
   write_acceptance_record();
+  teardown_gl();
   pocket_runtime_shutdown();
   g_framebuffer = NULL;
 }
@@ -1006,6 +1441,23 @@ static Class register_view_class(void) {
     );
   if (!methods_added) {
     return NULL;
+  }
+  /*
+   * +layerClass is what makes UIKit back this view with a CAEAGLLayer instead
+   * of a plain one, which is the only way to get a GL drawable. It goes on the
+   * metaclass, and only when the class exists — on iPhone OS 1.x it does not,
+   * and the view then stays an ordinary software-drawn UIView.
+   */
+  if (objc_getClass("CAEAGLLayer") != NULL) {
+    Class meta = object_getClass((id)cls);
+    if (meta != NULL) {
+      class_addMethod(
+        meta,
+        sel_registerName("layerClass"),
+        (void (*)(void))pocket_layer_class,
+        "#@:"
+      );
+    }
   }
   objc_registerClassPair(cls);
   return cls;

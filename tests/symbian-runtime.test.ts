@@ -361,12 +361,12 @@ describe("experimental Nokia E7 runtime profile", () => {
 
   test("keeps the Hero's horizontal regions wrap-safe in portrait", () => {
     const hero = readFileSync(join(repository, "apps/hero/app.tsx"), "utf8");
-    expect(hero).toContain(
-      'debugName="Header" class="flex-row flex-wrap items-center justify-between"',
+    expect(hero).toMatch(
+      /debugName="Header"\s+class="flex-row flex-wrap items-center justify-between"/,
     );
     expect(hero).toContain('class="flex-row flex-wrap items-center justify-between"');
-    expect(hero).toContain(
-      'debugName="Description" class="flex-row flex-wrap gap-1"',
+    expect(hero).toMatch(
+      /debugName="Description"\s+class="flex-row flex-wrap gap-1"/,
     );
     expect(hero).toContain('class="flex-row flex-wrap items-center gap-4"');
   });

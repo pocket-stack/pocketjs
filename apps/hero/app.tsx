@@ -2,8 +2,13 @@
 // Uses all three public primitives, class literals, a dynamic style object,
 // focus + onPress, and a signal in text — the exact surface phase v1 supports.
 
-import { createSignal, onMount, Show } from "solid-js";
-import { Image, Text, View, type NodeMirror } from "@pocketjs/framework/components";
+import { createEffect, createSignal, onMount, Show } from "solid-js";
+import {
+  Image,
+  Text,
+  View,
+  type NodeMirror,
+} from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
 import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
 import { frameworkName } from "@pocketjs/framework/solid";
@@ -33,28 +38,41 @@ export interface HeroProps {
   actionLabel?: string;
   deviceLabel?: string;
   headline?: string;
+  onAction?: (count: number) => void;
   presentationHz?: number;
   runtimeLabel?: string;
 }
 
 export default function Hero(props: HeroProps = {}) {
   const [count, setCount] = createSignal(0);
-  const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, { frameStep: SPINNER_FRAME_STEP });
+  createEffect(() => {
+    const completedCount = count();
+    if (completedCount > 0) props.onAction?.(completedCount);
+  });
+  const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, {
+    frameStep: SPINNER_FRAME_STEP,
+  });
   let underline: NodeMirror | undefined;
   onMount(() => {
     // Underline sweeps in once on mount — native tween, zero steady-state JS.
-    if (underline) animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
+    if (underline)
+      animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
   });
   return (
     <View
       debugName="HeroScreen"
       class="w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100"
     >
-      <View debugName="Header" class="flex-row flex-wrap items-center justify-between">
+      <View
+        debugName="Header"
+        class="flex-row flex-wrap items-center justify-between"
+      >
         <View class="flex-row items-center gap-3">
-            <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
+          <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
           <View class="flex-col">
-            <Text class="text-base text-slate-950 font-bold tracking-wide">PocketJS</Text>
+            <Text class="text-base text-slate-950 font-bold tracking-wide">
+              PocketJS
+            </Text>
             <Text class="text-xs text-slate-500 tracking-wide">
               {frameworkName()} + {props.runtimeLabel ?? "RUST + SCEGU"}
             </Text>
@@ -66,13 +84,23 @@ export default function Hero(props: HeroProps = {}) {
             value={String(props.presentationHz ?? 60)}
             cls="text-lg text-emerald-600 font-bold"
           />
-          <Stat label="NODES" value="42" cls="text-lg text-blue-600 font-bold" />
-          <Stat label="DRAWS" value="9" cls="text-lg text-amber-600 font-bold" />
+          <Stat
+            label="NODES"
+            value="42"
+            cls="text-lg text-blue-600 font-bold"
+          />
+          <Stat
+            label="DRAWS"
+            value="9"
+            cls="text-lg text-amber-600 font-bold"
+          />
         </View>
       </View>
 
       <View class="flex-col gap-2">
-        <Text class="text-xs text-blue-600 tracking-wide">ONE RUST CORE · ONE JSX APP</Text>
+        <Text class="text-xs text-blue-600 tracking-wide">
+          ONE RUST CORE · ONE JSX APP
+        </Text>
         <View class="flex-row flex-wrap items-center justify-between">
           <Text class="text-4xl text-slate-950 font-bold">
             {props.headline ?? "JSX at 60 FPS."}
@@ -85,7 +113,9 @@ export default function Hero(props: HeroProps = {}) {
           style={{ translateX: count() * 2 }}
         />
         <View debugName="Description" class="flex-row flex-wrap gap-1">
-          <Text class="text-sm text-slate-600">Flexbox, springs and baked type —</Text>
+          <Text class="text-sm text-slate-600">
+            Flexbox, springs and baked type —
+          </Text>
           <Text class="text-sm text-slate-600">
             {props.deviceLabel ?? "running on a 2005 handheld."}
           </Text>
@@ -104,7 +134,9 @@ export default function Hero(props: HeroProps = {}) {
         </View>
         <Text class="text-sm text-slate-600">Count: {count()}</Text>
         <Show when={count() > 3}>
-          <Text class="text-sm text-emerald-600">Reactive on real hardware.</Text>
+          <Text class="text-sm text-emerald-600">
+            Reactive on real hardware.
+          </Text>
         </Show>
       </View>
     </View>
