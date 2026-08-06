@@ -9,18 +9,29 @@
 //!
 //! Storage policy is the host's: [`Storage::Memory`] for tests and
 //! throwaway guests, [`Storage::Dir`] to map each logical database name to
-//! `<dir>/<name>.sqlite` — the app's own data root. `ATTACH` is refused by
-//! a real SQLite authorizer (not string inspection), which keeps that root
-//! the sandbox boundary; `load_extension` stays off (rusqlite's default).
+//! `<dir>/<name>.sqlite` — an ORDINARY file in the app's own data root,
+//! the same root the fs module is typically bound to. That is deliberate:
+//! the database is the app's own asset, visible and touchable like any of
+//! its files (backup = a file copy). An app that overwrites its own
+//! database corrupts its own data — the same trust class as deleting its
+//! own files, and SQLite fails loudly (SQLITE_CORRUPT), not unsafely.
+//! `ATTACH` is refused by a real SQLite authorizer (not string
+//! inspection), which keeps that root the sandbox boundary;
+//! `load_extension` stays off (rusqlite's default).
 //!
-//! Porting note (the ESP32/LittleFS path): everything in this file above
-//! rusqlite is portable. A device host swaps the storage layer — SQLite's
-//! own VFS is the port point, exactly as a DrawList backend is the ui
-//! module's — and keeps the op semantics bit-identical.
+//! ESP32/LittleFS: this crate carries its own ESP-IDF support (the
+//! `espidf` module below — newlib symbol shims, the `unix-none` VFS, the
+//! flash-friendly pragmas), all behind `cfg(target_os = "espidf")`;
+//! desktop builds never see it. The build-environment recipe a firmware
+//! needs (C flags, header shim) is documented in docs/DB.md — validated
+//! on an ESP32-P4 with a LittleFS workspace, where data survived reopen
+//! and power cycling.
 
+#[cfg(feature = "mount")]
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
+#[cfg(feature = "mount")]
 use std::rc::Rc;
 
 use base64::Engine as _;
@@ -36,8 +47,9 @@ pub enum Storage {
     /// Every database, named or `:memory:`, is in-memory (tests, previews).
     /// Named databases still share a handle for the module's lifetime.
     Memory,
-    /// A named database maps to `<dir>/<name>.sqlite`. The host passes the
-    /// app's own data root; the guest never sees the path.
+    /// A named database maps to `<dir>/<name>.sqlite` — an ordinary file
+    /// in the app's own data root (created on first open), the same root
+    /// the fs module is typically bound to. The guest never sees the path.
     Dir(PathBuf),
 }
 
@@ -81,7 +93,12 @@ impl DbModule {
         }
         let conn = match &self.storage {
             Storage::Memory => Connection::open_in_memory(),
-            Storage::Dir(dir) if !memory => Connection::open(dir.join(format!("{name}.sqlite"))),
+            Storage::Dir(dir) if !memory => {
+                if std::fs::create_dir_all(dir).is_err() {
+                    return -1;
+                }
+                open_file(&dir.join(format!("{name}.sqlite")))
+            }
             Storage::Dir(_) => Connection::open_in_memory(),
         };
         let conn = match conn {
@@ -120,10 +137,10 @@ impl DbModule {
 
     /// `close(handle)` (spec OP_CLOSE) — idempotent.
     pub fn close(&mut self, handle: i32) {
-        if let Some(db) = self.dbs.remove(&handle) {
-            if db.name != spec::MEMORY {
-                self.by_name.remove(&db.name);
-            }
+        if let Some(db) = self.dbs.remove(&handle)
+            && db.name != spec::MEMORY
+        {
+            self.by_name.remove(&db.name);
         }
     }
 
@@ -167,6 +184,97 @@ impl DbModule {
             Some(db) => db.last_error.clone(),
             None => "database is closed".to_owned(),
         }
+    }
+}
+
+/// Open a persistent database file the platform way. Desktop: the default
+/// VFS. ESP-IDF: the `unix-none` VFS — LittleFS has no fcntl file locks,
+/// and a Pocket guest's module instance is the file's only writer — plus
+/// the flash-friendly pragmas the ESP32-P4 probe validated (TRUNCATE
+/// journal: WAL is compiled out on MCU builds; NORMAL sync; a 32 KiB page
+/// cache sized for a device heap).
+fn open_file(path: &std::path::Path) -> rusqlite::Result<Connection> {
+    #[cfg(not(target_os = "espidf"))]
+    {
+        Connection::open(path)
+    }
+    #[cfg(target_os = "espidf")]
+    {
+        let conn = Connection::open_with_flags_and_vfs(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+                | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+                | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            "unix-none",
+        )?;
+        conn.query_row("PRAGMA journal_mode=TRUNCATE", [], |_| Ok(()))?;
+        conn.execute_batch("PRAGMA synchronous=NORMAL; PRAGMA cache_size=-32;")?;
+        Ok(conn)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ESP-IDF (ESP32) support
+// ---------------------------------------------------------------------------
+// SQLite's unix VFS keeps a syscall table referencing a handful of POSIX
+// symbols newlib does not provide. Under this crate's configuration
+// (unix-none VFS, `-Dlstat=stat`, no symlinks, no dotlock files) the first
+// five are never actually called — no-op successes are the honest
+// implementations for a filesystem with no users, permissions or symlinks.
+// nanosleep IS called (the busy handler sleeps); it routes through
+// ESP-IDF's usleep. Compiled only for espidf; a desktop build never sees
+// these. The build-environment recipe these link against is in docs/DB.md.
+#[cfg(target_os = "espidf")]
+mod espidf {
+    #[repr(C)]
+    pub struct Timespec {
+        tv_sec: i64, // espidf_time64: 64-bit time_t
+        tv_nsec: i32,
+    }
+
+    unsafe extern "C" {
+        fn usleep(microseconds: u32) -> i32;
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn geteuid() -> u32 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn fchmod(_fd: i32, _mode: u32) -> i32 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn fchown(_fd: i32, _owner: u32, _group: u32) -> i32 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn utimes(
+        _path: *const core::ffi::c_char,
+        _times: *const core::ffi::c_void,
+    ) -> i32 {
+        0
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn readlink(
+        _path: *const core::ffi::c_char,
+        _buf: *mut core::ffi::c_char,
+        _len: usize,
+    ) -> isize {
+        -1 // never a symlink on LittleFS
+    }
+
+    #[unsafe(no_mangle)]
+    extern "C" fn nanosleep(request: *const Timespec, _remain: *mut Timespec) -> i32 {
+        let request = unsafe { &*request };
+        let micros = (request.tv_sec as u64)
+            .saturating_mul(1_000_000)
+            .saturating_add((request.tv_nsec as u64) / 1_000);
+        unsafe { usleep(micros.min(u32::MAX as u64) as u32) }
     }
 }
 
@@ -312,6 +420,9 @@ fn encode_cell(cell: ValueRef<'_>) -> Result<Json, String> {
 
 /// Mount the module as `globalThis.db` on a pocket-mod [`Guest`] — one JS
 /// function per spec op, marshaled as (i32, String) -> i32/String.
+/// Feature `mount` (default); a host with its own QuickJS wiring turns it
+/// off and spells these five functions itself.
+#[cfg(feature = "mount")]
 pub fn mount(guest: &pocket_mod::Guest, module: Rc<RefCell<DbModule>>) -> anyhow::Result<()> {
     use pocket_mod::qjs::Function;
     guest.mount("db", |ctx, ns| {
@@ -477,9 +588,13 @@ mod tests {
             let sel = rows(&m.query(h, "SELECT v FROM snap", "[]"));
             assert_eq!(sel["rows"], json!([[42]]));
         }
+        // The database is an ordinary file in the data root — the app's own
+        // asset, visible to a co-mounted fs module like any of its files.
+        assert!(dir.join("ledger.sqlite").is_file());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    #[cfg(feature = "mount")]
     #[test]
     fn mounted_namespace_serves_a_quickjs_guest() {
         let guest = pocket_mod::Guest::new().unwrap();

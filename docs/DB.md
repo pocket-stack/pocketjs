@@ -45,11 +45,16 @@ INTEGER, fractional as REAL (the bun:sqlite convention).
 
 **Storage rule.** `open(name)` is the only path to a database: names are
 filename-safe tokens (`DB_NAME_PATTERN`) or `:memory:`, and the host maps a
-name to a real file under the app's own data root. The guest never sees a
-path. `ATTACH` — the one SQL statement that names a file — is refused
-(engine/crates/pocket-db uses a real SQLite authorizer), and
-`load_extension` stays disabled, so the data root stays the sandbox
-boundary.
+name to a real file under the app's own data root — the reference core
+spells that mapping `<data root>/<name>.sqlite`. The database is an
+ORDINARY file in the app's home, deliberately visible to a co-mounted fs
+module: it is the app's own asset (backup = a file copy), and an app that
+overwrites its own database corrupts its own data — the same trust class
+as deleting its own files (SQLite fails loudly on a corrupt image). The
+guest never sees a path. `ATTACH` — the one SQL statement that names a
+file — is refused (engine/crates/pocket-db uses a real SQLite
+authorizer), and `load_extension` stays disabled, so the data root stays
+the sandbox boundary.
 
 **Ceilings.** `DB_MAX_DATABASES` (4) open handles; `DB_MAX_RESULT_ROWS`
 (4096) rows per `query()` call, above which the op fails with "add LIMIT or
@@ -95,7 +100,7 @@ transaction is also the flash-wear discipline on device hosts.
 |---|---|---|
 | sim (`hosts/sim/db.ts`) | bun:sqlite behind the op namespace, injected via `bootWorld` `extraGlobals` | ships with the test host; `tests/db.test.ts` runs the contract and an oracle comparison against bun:sqlite directly |
 | reference core (`engine/crates/pocket-db`) | rusqlite (bundled SQLite) + the ATTACH authorizer, mountable on any `pocket-mod` guest as `globalThis.db` | tested including a live QuickJS guest round-trip |
-| consoles / devices | — | a target appends `data.sqlite` to its profile when its native host ships the module; the port point is SQLite's VFS (POSIX on desktop, LittleFS-backed on MCU hosts) |
+| consoles / devices | — | a target appends `data.sqlite` to its profile when its native host ships the module; the port point is SQLite's VFS (POSIX on desktop, LittleFS-backed on MCU hosts). ESP-IDF support ships in the crate — see below |
 
 ## Adoption path
 
@@ -110,3 +115,45 @@ the spec, the SDK, or any app:
    functions elsewhere;
 3. append `data.sqlite` to the target's profile in
    `contracts/spec/platforms.ts`.
+
+## ESP32 / ESP-IDF
+
+`pocket-db` carries its own ESP-IDF support behind
+`cfg(target_os = "espidf")` — desktop builds never see it:
+
+- **newlib shims** for the POSIX symbols SQLite's syscall table references
+  but newlib lacks (`geteuid`/`fchmod`/`fchown`/`utimes`/`readlink` no-ops
+  that are honest on a filesystem with no users or symlinks, and
+  `nanosleep` routed through `usleep` for the busy handler);
+- **the `unix-none` VFS** on open — LittleFS has no fcntl file locks, and
+  a module instance is its files' only writer — plus flash-friendly
+  pragmas (`journal_mode=TRUNCATE`, `synchronous=NORMAL`,
+  `cache_size=-32`).
+
+What the crate cannot carry is the build environment; a firmware adds, in
+its `.cargo/config.toml` (values validated on an ESP32-P4, ESP-IDF v5.5.x,
+LittleFS workspace — where a 288-row transaction landed in ~0.4 s on
+~70–80 KB of heap and survived power cycling):
+
+```toml
+[env]
+# The vendored sqlite3.c, tuned for the device: temp tables in memory, no
+# mmap, no WAL (shared memory), no dynamic extension loading; lstat does
+# not exist on newlib and the VFS never follows symlinks anyway.
+LIBSQLITE3_FLAGS = "-DSQLITE_TEMP_STORE=3 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_MAX_MMAP_SIZE=0 -DSQLITE_OMIT_WAL -DSQLITE_OMIT_LOAD_EXTENSION -Dlstat=stat"
+# CC_/AR_/CFLAGS_riscv32imafc_esp_espidf point at the ESP-IDF gcc as usual.
+# newlib has no sys/ioctl.h: put an EMPTY sys/ioctl.h in a shim directory
+# and add `-isystem <that dir>` to CFLAGS. Setting CFLAGS in [env] replaces
+# cargo's derived flags, so repeat the arch flags (-mabi/-march) alongside.
+```
+
+`sqlite3_os_init` for the `unix-none` VFS, journal-file creation, and
+power-loss recovery all run against ESP-IDF's VFS layer over LittleFS —
+no SQLite source patches, no custom VFS to write.
+
+A firmware that brings its own QuickJS embedding depends with
+`default-features = false`: that drops the `mount` helper and its
+pocket-mod/rquickjs dependency, so the MCU build compiles only the module
+core plus SQLite. Verified: `cargo check` for `riscv32imafc-esp-espidf`
+compiles the crate and the bundled `libsqlite3.a` clean under this
+recipe.
