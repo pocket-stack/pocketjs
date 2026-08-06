@@ -278,6 +278,16 @@ pub unsafe fn write_pcm(handle: i32, pcm: &[i16]) -> i32 {
         }
     }
     WRITE_POS[slot].store(write.wrapping_add(n), Ordering::Release);
+    // Keep the credit mirror honest. LAST_FREE models "the free count the
+    // guest last saw", and the guest subtracts what it wrote from its own
+    // mirror (music.ts `this.free -= accepted`). Without this line the two
+    // mirrors diverge by every accepted frame, and when the mixer happens to
+    // drain the ring completely between two polls, poll() reads
+    // free == LAST_FREE == RING_FRAMES both times, sends no credit, and the
+    // guest's mirror decays monotonically until `want <= 0` and it stops
+    // feeding — silently, forever. Symptom: audio plays for a couple of
+    // seconds and stops. Only reachable when the guest actually writes PCM.
+    LAST_FREE[slot] = LAST_FREE[slot].saturating_sub(n);
     n as i32
 }
 

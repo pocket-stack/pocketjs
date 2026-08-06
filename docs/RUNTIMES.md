@@ -174,6 +174,14 @@ The PSP UI runtime, in the same notation: a QuickJS guest + the `ui` surface
 + the sceGu backend. It was the first instance of the pattern all along; the
 architecture names it and makes it repeatable.
 
+[Pocket Voxel](https://github.com/pocket-stack/pocket-voxel) inverts the
+ownership split the other instances share: the GAME STATE lives in the
+QuickJS guest (a TypeScript port of a Game Boy RPG engine) and the Rust core
+owns only the retained diorama scene — cooked voxel chunks, billboards,
+camera rungs, a GB UI tile layer — behind its own `voxel` surface, next to
+the mounted `audio` module. It incubated in this repo and now lives in its
+own repository, vendoring this engine the way OpenStrike does.
+
 And the composition is now proven portable: **OpenStrike runs on a real PSP**
 as `openstrike-core` (the same FPS simulation) + `pocket3d-gu` over a cooked
 map + the `pocketjs-psp` host library + the same `strike` surface mounted

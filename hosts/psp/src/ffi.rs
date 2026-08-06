@@ -1056,9 +1056,20 @@ pub unsafe fn register(
     // JS_SetPropertyStr consumes ownership of ui_obj.
     JS_SetPropertyStr(ctx, global, b"ui\0".as_ptr() as *const _, ui_obj);
 
-    // The audio MODULE mounts as its own namespace (capability audio.pcm =
-    // spec namespace, contracts/spec/audio.ts) — the pocket-mod
-    // `mount("audio", …)` shape spelled in raw QuickJS.
+    register_audio(ctx, global);
+}
+
+/// Install `globalThis.audio` — the audio MODULE as its own namespace
+/// (capability audio.pcm = spec namespace, contracts/spec/audio.ts), the
+/// pocket-mod `mount("audio", …)` shape spelled in raw QuickJS.
+///
+/// Separate from [`register`] so a host with its own surface instead of `ui`
+/// (pocketvoxel-psp's `voxel`) can mount the module without the UI ops. The
+/// mixer thread and hardware channel start lazily on the first createStream.
+///
+/// # Safety
+/// QuickJS context alive, worker thread.
+pub unsafe fn register_audio(ctx: *mut JSContext, global: JSValue) {
     let audio_obj = JS_NewObject(ctx);
     add_fn(ctx, audio_obj, b"createStream\0", js_audio_create_stream, 2);
     add_fn(ctx, audio_obj, b"destroyStream\0", js_audio_destroy_stream, 1);
