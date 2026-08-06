@@ -26,6 +26,9 @@ default = ["standalone-extension-provider"]
 standalone-extension-provider = []
 # Reuse the no_std C ABI on Mach-O targets whose OS cfg is not `none`.
 bare-platform = []
+# Compile the fixed-function OpenGL ES 1.1 pipeline instead of the ES 2 one,
+# for GPUs that predate shaders (the original iPhone's PowerVR MBX Lite).
+gles1 = []
 
 [dependencies]
 pocketjs-core = { path = "../core" }

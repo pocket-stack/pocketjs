@@ -1,16 +1,35 @@
-//! OpenGL ES 2 DrawList backend for the Nokia E7 Qt host.
+//! Hardware DrawList backend, shared by two GL generations.
 //!
-//! QGLWidget owns the EGL context. These entry points are called only while
-//! that context is current. Geometry remains the core's deterministic,
-//! CPU-clipped DrawList; the GPU owns rasterization, texture filtering,
-//! blending, and presentation.
+//! The host owns the context; these entry points are called only while it is
+//! current. Geometry remains the core's deterministic, CPU-clipped DrawList;
+//! the GPU owns rasterization, texture filtering, blending, and presentation.
+//!
+//! Everything in this module — the DrawList walk, the image and font-atlas
+//! caches, batching by texture and scissor, and the physical clip arithmetic —
+//! is generation-independent. The parts that are not live in [`es2`] (a shader
+//! program, for the Nokia E7's OpenGL ES 2) and [`es1`] (the fixed-function
+//! matrix stack and client arrays, for the original iPhone's OpenGL ES 1.1
+//! MBX Lite). Exactly one is compiled in, chosen by the `gles1` feature, and
+//! both satisfy the same small interface: `new`, `destroy`, `begin_frame`,
+//! `set_blend`, `bind_vertices`, `unbind_vertices`.
 
 #![cfg_attr(test, allow(dead_code))]
 
+// Only the selected generation is compiled; the other's extern bindings and
+// enum values would otherwise be dead code on every build.
+#[cfg(feature = "gles1")]
+mod es1;
+#[cfg(not(feature = "gles1"))]
+mod es2;
+
+#[cfg(feature = "gles1")]
+use es1::Pipeline;
+#[cfg(not(feature = "gles1"))]
+use es2::Pipeline;
+
 use alloc::{vec, vec::Vec};
-use core::ffi::{c_char, c_void};
+use core::ffi::c_void;
 use core::mem::size_of;
-use core::ptr;
 
 use pocketjs_core::spec;
 use pocketjs_core::text::Atlas;
@@ -20,23 +39,16 @@ type GLenum = u32;
 type GLuint = u32;
 type GLint = i32;
 type GLsizei = i32;
-type GLboolean = u8;
 type GLbitfield = u32;
 type GLfloat = f32;
 type GLsizeiptr = isize;
 
-const GL_FALSE: GLboolean = 0;
 const GL_FLOAT: GLenum = 0x1406;
 const GL_UNSIGNED_BYTE: GLenum = 0x1401;
 const GL_TRIANGLES: GLenum = 0x0004;
 const GL_ARRAY_BUFFER: GLenum = 0x8892;
 const GL_DYNAMIC_DRAW: GLenum = 0x88e8;
-const GL_VERTEX_SHADER: GLenum = 0x8b31;
-const GL_FRAGMENT_SHADER: GLenum = 0x8b30;
-const GL_COMPILE_STATUS: GLenum = 0x8b81;
-const GL_LINK_STATUS: GLenum = 0x8b82;
 const GL_TEXTURE_2D: GLenum = 0x0de1;
-const GL_TEXTURE0: GLenum = 0x84c0;
 const GL_RGBA: GLenum = 0x1908;
 const GL_LUMINANCE_ALPHA: GLenum = 0x190a;
 const GL_LINEAR: GLint = 0x2601;
@@ -48,7 +60,6 @@ const GL_TEXTURE_WRAP_S: GLenum = 0x2802;
 const GL_TEXTURE_WRAP_T: GLenum = 0x2803;
 const GL_UNPACK_ALIGNMENT: GLenum = 0x0cf5;
 const GL_BLEND: GLenum = 0x0be2;
-const GL_ONE: GLenum = 1;
 const GL_SRC_ALPHA: GLenum = 0x0302;
 const GL_ONE_MINUS_SRC_ALPHA: GLenum = 0x0303;
 const GL_COLOR_BUFFER_BIT: GLbitfield = 0x0000_4000;
@@ -59,48 +70,22 @@ const GL_MAX_TEXTURE_SIZE: GLenum = 0x0d33;
 const GL_NO_ERROR: GLenum = 0;
 
 unsafe extern "C" {
-    fn glActiveTexture(texture: GLenum);
-    fn glAttachShader(program: GLuint, shader: GLuint);
-    fn glBindAttribLocation(program: GLuint, index: GLuint, name: *const c_char);
     fn glBindBuffer(target: GLenum, buffer: GLuint);
     fn glBindTexture(target: GLenum, texture: GLuint);
-    fn glBlendFuncSeparate(
-        source_rgb: GLenum,
-        destination_rgb: GLenum,
-        source_alpha: GLenum,
-        destination_alpha: GLenum,
-    );
     fn glBufferData(target: GLenum, size: GLsizeiptr, data: *const c_void, usage: GLenum);
     fn glClear(mask: GLbitfield);
     fn glClearColor(red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat);
-    fn glCompileShader(shader: GLuint);
-    fn glCreateProgram() -> GLuint;
-    fn glCreateShader(kind: GLenum) -> GLuint;
     fn glDeleteBuffers(count: GLsizei, buffers: *const GLuint);
-    fn glDeleteProgram(program: GLuint);
-    fn glDeleteShader(shader: GLuint);
     fn glDeleteTextures(count: GLsizei, textures: *const GLuint);
     fn glDisable(capability: GLenum);
-    fn glDisableVertexAttribArray(index: GLuint);
     fn glDrawArrays(mode: GLenum, first: GLint, count: GLsizei);
     fn glEnable(capability: GLenum);
-    fn glEnableVertexAttribArray(index: GLuint);
     fn glGenBuffers(count: GLsizei, buffers: *mut GLuint);
     fn glGenTextures(count: GLsizei, textures: *mut GLuint);
     fn glGetError() -> GLenum;
     fn glGetIntegerv(parameter: GLenum, value: *mut GLint);
-    fn glGetProgramiv(program: GLuint, parameter: GLenum, value: *mut GLint);
-    fn glGetShaderiv(shader: GLuint, parameter: GLenum, value: *mut GLint);
-    fn glGetUniformLocation(program: GLuint, name: *const c_char) -> GLint;
-    fn glLinkProgram(program: GLuint);
     fn glPixelStorei(parameter: GLenum, value: GLint);
     fn glScissor(x: GLint, y: GLint, width: GLsizei, height: GLsizei);
-    fn glShaderSource(
-        shader: GLuint,
-        count: GLsizei,
-        source: *const *const c_char,
-        length: *const GLint,
-    );
     fn glTexImage2D(
         target: GLenum,
         level: GLint,
@@ -113,53 +98,8 @@ unsafe extern "C" {
         pixels: *const c_void,
     );
     fn glTexParameteri(target: GLenum, parameter: GLenum, value: GLint);
-    fn glUniform1i(location: GLint, value: GLint);
-    fn glUniform2f(location: GLint, x: GLfloat, y: GLfloat);
-    fn glUseProgram(program: GLuint);
-    fn glVertexAttribPointer(
-        index: GLuint,
-        size: GLint,
-        kind: GLenum,
-        normalized: GLboolean,
-        stride: GLsizei,
-        pointer: *const c_void,
-    );
     fn glViewport(x: GLint, y: GLint, width: GLsizei, height: GLsizei);
 }
-
-const VERTEX_SHADER: &[u8] = b"
-attribute vec2 a_position;
-attribute vec2 a_uv;
-attribute vec4 a_color;
-uniform vec2 u_viewport;
-varying mediump vec2 v_uv;
-varying lowp vec4 v_color;
-void main() {
-    vec2 ndc = vec2(
-        a_position.x * 2.0 / u_viewport.x - 1.0,
-        1.0 - a_position.y * 2.0 / u_viewport.y
-    );
-    gl_Position = vec4(ndc, 0.0, 1.0);
-    v_uv = a_uv;
-    v_color = a_color;
-}
-\0";
-
-const FRAGMENT_SHADER: &[u8] = b"
-precision mediump float;
-uniform sampler2D u_texture;
-varying mediump vec2 v_uv;
-varying lowp vec4 v_color;
-void main() {
-    gl_FragColor = texture2D(u_texture, v_uv) * v_color;
-}
-\0";
-
-const ATTR_POSITION: &[u8] = b"a_position\0";
-const ATTR_UV: &[u8] = b"a_uv\0";
-const ATTR_COLOR: &[u8] = b"a_color\0";
-const UNIFORM_VIEWPORT: &[u8] = b"u_viewport\0";
-const UNIFORM_TEXTURE: &[u8] = b"u_texture\0";
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -217,10 +157,9 @@ struct FontTexture {
 }
 
 struct Renderer {
-    program: GLuint,
+    pipeline: Pipeline,
     vertex_buffer: GLuint,
     white: GLuint,
-    viewport_uniform: GLint,
     images: Vec<Option<ImageTexture>>,
     fonts: Vec<Option<FontTexture>>,
     vertices: Vec<Vertex>,
@@ -266,57 +205,6 @@ unsafe fn clear_errors() {
         if glGetError() == GL_NO_ERROR {
             break;
         }
-    }
-}
-
-unsafe fn compile_shader(kind: GLenum, source: &[u8]) -> Option<GLuint> {
-    let shader = glCreateShader(kind);
-    if shader == 0 {
-        return None;
-    }
-    let pointer = source.as_ptr() as *const c_char;
-    glShaderSource(shader, 1, &pointer, ptr::null());
-    glCompileShader(shader);
-    let mut ok = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &mut ok);
-    if ok == 0 {
-        glDeleteShader(shader);
-        None
-    } else {
-        Some(shader)
-    }
-}
-
-unsafe fn create_program() -> Option<GLuint> {
-    let vertex = compile_shader(GL_VERTEX_SHADER, VERTEX_SHADER)?;
-    let fragment = match compile_shader(GL_FRAGMENT_SHADER, FRAGMENT_SHADER) {
-        Some(shader) => shader,
-        None => {
-            glDeleteShader(vertex);
-            return None;
-        }
-    };
-    let program = glCreateProgram();
-    if program == 0 {
-        glDeleteShader(vertex);
-        glDeleteShader(fragment);
-        return None;
-    }
-    glAttachShader(program, vertex);
-    glAttachShader(program, fragment);
-    glBindAttribLocation(program, 0, ATTR_POSITION.as_ptr() as *const c_char);
-    glBindAttribLocation(program, 1, ATTR_UV.as_ptr() as *const c_char);
-    glBindAttribLocation(program, 2, ATTR_COLOR.as_ptr() as *const c_char);
-    glLinkProgram(program);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
-    let mut ok = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &mut ok);
-    if ok == 0 {
-        glDeleteProgram(program);
-        None
-    } else {
-        Some(program)
     }
 }
 
@@ -426,45 +314,33 @@ fn font_luminance_alpha(coverage: &[u8]) -> Vec<u8> {
 impl Renderer {
     unsafe fn new() -> Option<Self> {
         clear_errors();
-        let program = create_program()?;
-        glUseProgram(program);
-        let viewport_uniform =
-            glGetUniformLocation(program, UNIFORM_VIEWPORT.as_ptr() as *const c_char);
-        let texture_uniform =
-            glGetUniformLocation(program, UNIFORM_TEXTURE.as_ptr() as *const c_char);
-        if viewport_uniform < 0 || texture_uniform < 0 {
-            glDeleteProgram(program);
-            return None;
-        }
-        glUniform1i(texture_uniform, 0);
+        let mut pipeline = Pipeline::new()?;
 
         let mut vertex_buffer = 0;
         glGenBuffers(1, &mut vertex_buffer);
         if vertex_buffer == 0 {
-            glDeleteProgram(program);
+            pipeline.destroy();
             return None;
         }
         let mut max_texture_size = 0;
         glGetIntegerv(GL_MAX_TEXTURE_SIZE, &mut max_texture_size);
         if max_texture_size <= 0 || glGetError() != GL_NO_ERROR {
             glDeleteBuffers(1, &vertex_buffer);
-            glDeleteProgram(program);
+            pipeline.destroy();
             return None;
         }
-        glActiveTexture(GL_TEXTURE0);
         let white = match upload_texture(&[255, 255, 255, 255], 1, 1, GL_RGBA, false) {
             Some(texture) => texture,
             None => {
                 glDeleteBuffers(1, &vertex_buffer);
-                glDeleteProgram(program);
+                pipeline.destroy();
                 return None;
             }
         };
         Some(Self {
-            program,
+            pipeline,
             vertex_buffer,
             white,
-            viewport_uniform,
             images: Vec::new(),
             fonts: Vec::new(),
             vertices: Vec::new(),
@@ -477,10 +353,9 @@ impl Renderer {
         self.reset_resources();
         glDeleteTextures(1, &self.white);
         glDeleteBuffers(1, &self.vertex_buffer);
-        glDeleteProgram(self.program);
+        self.pipeline.destroy();
         self.white = 0;
         self.vertex_buffer = 0;
-        self.program = 0;
     }
 
     unsafe fn reset_resources(&mut self) {
@@ -1008,13 +883,8 @@ impl Renderer {
         }
         self.build(words, logical_width, logical_height);
 
-        glUseProgram(self.program);
-        glUniform2f(
-            self.viewport_uniform,
-            logical_width as f32,
-            logical_height as f32,
-        );
-        glActiveTexture(GL_TEXTURE0);
+        self.pipeline
+            .begin_frame(logical_width as f32, logical_height as f32);
         glViewport(
             target_x,
             window_height - target_y - target_height,
@@ -1024,12 +894,7 @@ impl Renderer {
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE);
         glEnable(GL_BLEND);
-        glBlendFuncSeparate(
-            GL_SRC_ALPHA,
-            GL_ONE_MINUS_SRC_ALPHA,
-            GL_ONE,
-            GL_ONE_MINUS_SRC_ALPHA,
-        );
+        self.pipeline.set_blend();
         glEnable(GL_SCISSOR_TEST);
 
         if !self.vertices.is_empty() {
@@ -1040,13 +905,7 @@ impl Renderer {
                 self.vertices.as_ptr() as *const c_void,
                 GL_DYNAMIC_DRAW,
             );
-            let stride = size_of::<Vertex>() as i32;
-            glEnableVertexAttribArray(0);
-            glEnableVertexAttribArray(1);
-            glEnableVertexAttribArray(2);
-            glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, ptr::null());
-            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, 8usize as *const c_void);
-            glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, 1, stride, 16usize as *const c_void);
+            self.pipeline.bind_vertices(size_of::<Vertex>() as i32);
         }
 
         let mut bound = 0;
@@ -1072,9 +931,7 @@ impl Renderer {
             glDrawArrays(GL_TRIANGLES, command.first, command.count);
         }
         glDisable(GL_SCISSOR_TEST);
-        glDisableVertexAttribArray(0);
-        glDisableVertexAttribArray(1);
-        glDisableVertexAttribArray(2);
+        self.pipeline.unbind_vertices();
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindTexture(GL_TEXTURE_2D, 0);
         glGetError() == GL_NO_ERROR
@@ -1198,10 +1055,9 @@ mod tests {
             dirty: false,
         });
         Renderer {
-            program: 0,
+            pipeline: Pipeline::stub(),
             vertex_buffer: 0,
             white: 1,
-            viewport_uniform: 0,
             images,
             fonts: Vec::new(),
             vertices: Vec::new(),
