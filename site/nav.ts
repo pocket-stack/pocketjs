@@ -64,6 +64,14 @@ export const BLOG_POSTS: BlogPost[] = [
     author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
   },
   {
+    slug: "pocket-pi-on-esp32-p4",
+    title: "Just Enough Node: Porting the Pi Coding Agent to the ESP32-P4",
+    date: "2026-08-06",
+    description:
+      "Pi is a TypeScript coding agent harness people build on, and it runs wherever Node ≥ 22 runs — nowhere near a microcontroller. We wanted the complete agent living on embedded hardware, not a screen paired to a server, so we ported it layer by layer: a Node-shaped runtime in Rust around QuickJS (the unmodified 9 MB pi-coding-agent runs on the desktop with no Node installed), a 304 KB pi-agent-core profile for the board after the 46.6 MB measurement, native Rust tools standing in for POSIX on LittleFS, a streaming model transport over Wi-Fi or UART, and a PocketJS UI wired end to end. What Pi assumes, what the chip lacks, what broke, and how it ran.",
+    author: { name: 'Siwei "Jerry" Yuan', url: "https://github.com/siwei-yuan" },
+  },
+  {
     slug: "octane-on-psp",
     title: "useState at 333 MHz: Octane Is PocketJS's Third Framework",
     date: "2026-07-30",

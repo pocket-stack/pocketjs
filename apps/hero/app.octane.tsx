@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "octane";
 import { Image, Sprite, Text, View, type NodeMirror } from "@pocketjs/framework/octane/components";
-import { animate } from "@pocketjs/framework/octane/animation";
+import { animate, jump } from "@pocketjs/framework/octane/animation";
 import { frameworkName } from "@pocketjs/framework/octane";
 
 const Stat = (props: { label: string; value: string; cls: string }) => {
@@ -20,8 +20,35 @@ const Spinner = () => {
   return <Sprite class="w-10 h-10" sprite="spinner-atlas.svg" />;
 };
 
-export default function Hero() {
+// The count lives here rather than in Hero: octane scopes a setState replay to
+// the nearest owner that has a committed range, and the root component has
+// none — root state always replays the whole tree (176.9 -> 37.8 ms per press
+// on PSP for this app). Anything else the count drives has to leave the render
+// path with it, hence the underline moving through jump() below.
+const CounterRow = (props: { onCount: (next: number) => void }) => {
   const [count, setCount] = useState(0);
+  return (
+    <View class="flex-row items-center gap-4">
+      <View
+        class="px-4 py-2 rounded-xl shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
+        focusable
+        onPress={() => {
+          const next = count + 1;
+          setCount(next);
+          props.onCount(next);
+        }}
+      >
+        <Text class="text-base text-white font-bold">Press Circle</Text>
+      </View>
+      <Text class="text-sm text-slate-600">{`Count: ${count}`}</Text>
+      {count > 3 ? (
+        <Text class="text-sm text-emerald-600">Reactive on real hardware.</Text>
+      ) : null}
+    </View>
+  );
+};
+
+export default function Hero() {
   const underline = useRef<NodeMirror | null>(null);
 
   useLayoutEffect(() => {
@@ -58,28 +85,20 @@ export default function Hero() {
             underline.current = node;
           }}
           class="h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"
-          style={{ translateX: count * 2 }}
+          // Constant, never re-applied: it keeps the transform on the node so
+          // jump()'s edge rounding matches the pre-refactor raster exactly.
+          style={{ translateX: 0 }}
         />
         <Text class="text-sm text-slate-600">
           Flexbox, springs and baked type - running through Octane.
         </Text>
       </View>
 
-      <View class="flex-row items-center gap-4">
-        <View
-          class="px-4 py-2 rounded-xl shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
-          focusable
-          onPress={() => {
-            setCount(count + 1);
-          }}
-        >
-          <Text class="text-base text-white font-bold">Press Circle</Text>
-        </View>
-        <Text class="text-sm text-slate-600">{`Count: ${count}`}</Text>
-        {count > 3 ? (
-          <Text class="text-sm text-emerald-600">Reactive on real hardware.</Text>
-        ) : null}
-      </View>
+      <CounterRow
+        onCount={(next: number) => {
+          if (underline.current) jump(underline.current, "translateX", next * 2);
+        }}
+      />
     </View>
   );
 }

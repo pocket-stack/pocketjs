@@ -8,13 +8,21 @@
 // stays legible. Writes apps/<demo>/psp/{Psp.toml,icon0.png,pic1.png};
 // tools/psp.ts picks the fragment up for EVERY framework build of the demo.
 //
-//   bun tools/gen-demo-covers.ts            (all demos)
-//   bun tools/gen-demo-covers.ts hero music (a subset)
+// --framework=<fw> bakes a VARIANT set into apps/<demo>/psp/<fw>/ instead:
+// same layout, plus the framework's name on the tile, in the PIC1 corner and
+// in the XMB title, so a demo's framework twins are distinguishable on a
+// memory stick that holds several of them. tools/psp.ts prefers the variant
+// directory when building that framework.
+//
+//   bun tools/gen-demo-covers.ts                      (all demos, default fw)
+//   bun tools/gen-demo-covers.ts hero music           (a subset)
+//   bun tools/gen-demo-covers.ts --framework=octane   (the Octane twins)
 
 import { createCanvas, GlobalFonts, type SKRSContext2D } from "@napi-rs/canvas";
 import { mkdirSync } from "node:fs";
 import { runScenario } from "../hosts/sim/sim.ts";
 import { BTN } from "../contracts/spec/spec.ts";
+import { FRAMEWORKS, parseFramework } from "../framework/compiler/jsx-plugin.ts";
 
 const ROOT = new URL("../", import.meta.url).pathname;
 GlobalFonts.registerFromPath(ROOT + "assets/fonts/Inter-Bold.ttf", "Inter");
@@ -213,12 +221,22 @@ const DEMOS: DemoCover[] = [
   },
 ];
 
-const only = new Set(Bun.argv.slice(2));
+const args = Bun.argv.slice(2);
+const frameworkArg = args.find((a) => a.startsWith("--framework="));
+// No flag = the shared, framework-neutral cover set the default build uses.
+const framework = frameworkArg
+  ? parseFramework(frameworkArg.slice("--framework=".length), "--framework")
+  : null;
+const frameworkLabel = framework === null ? null : FRAMEWORKS[framework].label;
+const only = new Set(args.filter((a) => !a.startsWith("--")));
 const selected = only.size === 0 ? DEMOS : DEMOS.filter((d) => only.has(d.dir));
 if (selected.length === 0) throw new Error(`no demos match: ${[...only].join(", ")}`);
 
 for (const demo of selected) {
-  const out = `${ROOT}apps/${demo.dir}/psp/`;
+  const out =
+    framework === null
+      ? `${ROOT}apps/${demo.dir}/psp/`
+      : `${ROOT}apps/${demo.dir}/psp/${framework}/`;
   mkdirSync(out, { recursive: true });
 
   // ICON0 — 144×80 family tile: mark left, two-line wordmark right, accent rule.
@@ -238,13 +256,19 @@ for (const demo of selected) {
     g.fillText(demo.word[1], 66, 55);
     g.fillStyle = demo.accent;
     g.fillRect(67, 61, 26, 2);
+    if (frameworkLabel !== null) {
+      // The whole point of the variant set: name the framework on the tile so
+      // two builds of one demo are not the same icon in the XMB.
+      g.font = "bold 10px Inter";
+      g.fillText(frameworkLabel.toUpperCase(), 67, 75);
+    }
     await Bun.write(out + "icon0.png", c.toBuffer("image/png"));
   }
 
   // PIC1 — a real frame of the demo via the sim pump the goldens use.
   {
     const trace = await runScenario({
-      app: demo.bundle,
+      app: framework === null ? demo.bundle : demo.bundle + FRAMEWORKS[framework].outputSuffix,
       hz: 60,
       seconds: demo.seconds,
       script: demo.script,
@@ -261,17 +285,42 @@ for (const demo of selected) {
     grad.addColorStop(0.55, "rgba(0,0,0,0)");
     g.fillStyle = grad;
     g.fillRect(0, 0, 480, 272);
+    if (frameworkLabel !== null) {
+      // Bottom-right, clear of the XMB's left column and its bottom text row.
+      const text = frameworkLabel.toUpperCase();
+      g.font = "bold 13px Inter";
+      const w = g.measureText(text).width;
+      roundRect(g, 480 - 22 - w - 20, 272 - 46, w + 20, 24, 12);
+      g.fillStyle = "rgba(8,14,20,0.72)";
+      g.fill();
+      g.strokeStyle = demo.accent;
+      g.lineWidth = 1;
+      g.stroke();
+      g.fillStyle = demo.accent;
+      g.fillText(text, 480 - 22 - w - 10, 272 - 29);
+    }
     await Bun.write(out + "pic1.png", c.toBuffer("image/png"));
   }
 
-  const toml = `# XMB metadata for the ${demo.title} EBOOT. tools/psp.ts copies this to
-# hosts/psp/Psp.toml when building this demo (any framework); cargo-psp packs
+  const title = frameworkLabel === null ? demo.title : `${demo.title} (${frameworkLabel})`;
+  const scope =
+    framework === null
+      ? "when building this demo (any framework)"
+      : `when building this demo with --framework=${framework}`;
+  const regen =
+    framework === null
+      ? `bun tools/gen-demo-covers.ts ${demo.dir}`
+      : `bun tools/gen-demo-covers.ts --framework=${framework} ${demo.dir}`;
+  const toml = `# XMB metadata for the ${title} EBOOT. tools/psp.ts copies this to
+# hosts/psp/Psp.toml ${scope}; cargo-psp packs
 # it into PARAM.SFO / ICON0 / PIC1.
-# Regenerate the art with: bun tools/gen-demo-covers.ts ${demo.dir}
-title = "${demo.title}"
+# Regenerate the art with: ${regen}
+title = "${title}"
 xmb_icon_png = "icon0.png"
 xmb_background_png = "pic1.png"
 `;
   await Bun.write(out + "Psp.toml", toml);
-  console.log(`covers: apps/${demo.dir}/psp/ (icon0 144x80, pic1 480x272, "${demo.title}")`);
+  console.log(
+    `covers: ${out.slice(ROOT.length)} (icon0 144x80, pic1 480x272, "${title}")`,
+  );
 }

@@ -1,5 +1,7 @@
 PocketJS just grew an animation engine. Not a tween helper — a compile-time keyframe system with CSS-grade choreography, a stroke-arc primitive, and a real 3D transform pipeline, all running at a locked 60 FPS on a 2004 Sony PSP. The homepage hero is running it right now, live in WebAssembly; on hardware it is the same Rust core behind the same binary style table.
 
+> The four motion studies shown here are original work by [yui540](https://yui540.com/). yui540 offered PocketJS continued use of them on two conditions: Motion Lab carries the requested `(yui540)` on-screen credit, and PocketJS obtains separate permission before porting another yui540 animation. PocketJS accepts both conditions.
+
 <img class="w-full rounded-xl border border-line" src="/assets/blog/page-3d.gif" alt="The 3D page of the motion studies: a swinging door, spinning cubes, a rising slab, a stretching cube, page flips and a room transition — every face a projected quad" />
 
 The forcing function was a fidelity exercise: port a set of [yui540](https://yui540.com/)'s motion studies — beautifully engineered functional-UI animations written in CSS `@keyframes` — *one-to-one*, timings, easings and all, onto a machine with a 333 MHz MIPS CPU, no CSS engine, and an 8 MB memory budget. Feature parity was the contract; the interesting engineering came from everything that contract flushed out. This post covers the architecture and the four hardware lessons that shaped it.

@@ -48,12 +48,16 @@ test("homepage Stage package has one semantic screen and its declared suppressio
   }
 });
 
-test("homepage declares the live settings stage and visible model attribution", () => {
+test("homepage declares the live launcher and visible attributions", () => {
   const home = readFileSync(ROOT + "site/home.html", "utf8");
   expect(home).toContain("data-pocket-stage");
   expect(home).toContain("The live Pocket Launcher");
   expect(home).toContain("Dibad");
   expect(home).toContain("creativecommons.org/licenses/by/4.0");
+  expect(home).toContain("Motion studies by (yui540) &middot; credited per author request");
+  expect(home).toMatch(
+    /<div class="lp-hero__wall" aria-hidden="true">[\s\S]*?<\/div>\s*<\/div>\s*<a class="lp-hero__motion-credit"/,
+  );
   expect(home).not.toContain("Drag to orbit");
   expect(home).not.toContain("lp-stage__hint");
 

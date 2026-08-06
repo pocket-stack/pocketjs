@@ -15,11 +15,11 @@
 //   site/assets/pocketjs-demo-wall.jpg   poster frame for first paint
 //
 // Every tile is normalized to the same clock (24 fps, exactly 24 s, cover-
-// cropped to PSP-shaped 480x272) so the xstack grid never drifts; small
-// 154x121 motion-study GIFs are packed four-up into 2x2 sub-grids.
+// cropped to PSP-shaped 480x272) so the xstack grid never drifts.
 
 import { $ } from "bun";
 import { existsSync, mkdirSync } from "node:fs";
+import { ensureMotionCredits } from "./motion-credit.ts";
 import { ensureSimClip } from "./record-sim-clips.ts";
 
 const SITE = new URL(".", import.meta.url).pathname;
@@ -60,7 +60,10 @@ const sim = (app: string): Clip => ({ src: ensureSimClip(app) });
 
 async function main() {
   mkdirSync(CACHE, { recursive: true });
-
+  const creditResult = ensureMotionCredits();
+  if (creditResult.stamped.length > 0) {
+    console.log(`  stamped ${creditResult.stamped.length} missing Motion Lab credit(s)`);
+  }
   // The widget capture fades into the brand end card at ~10 s; cut before the
   // fade so the looping tile only ever shows the character.
   const characterFull = await r2("pocket-character-widget-c6cf80c4.mp4");
@@ -69,13 +72,13 @@ async function main() {
     await $`ffmpeg -y -v error -t 9.8 -i ${characterFull} -c:v libx264 -preset medium -crf 14 -an ${character}`;
   }
 
-  // Row-major 4x4 grid: 9 headless sim recordings of the in-repo demos, six
-  // engine-rendered GIF loops, and the Pocket Character widget. Light
-  // motion-study tiles sit far apart so the wall reads as many demos.
-  const tiles: (Clip | Clip[])[] = [
+  // Row-major 4x4 grid: 11 headless sim recordings of the in-repo demos, four
+  // engine-rendered GIF loops, and the Pocket Character widget. The two
+  // remaining motion-study tiles sit far apart so the wall reads as many demos.
+  const tiles: Clip[] = [
     // row 1
     sim("music-main"), // EVERGREEN grid -> Now Playing, track skips
-    [loop(BLOG + "menu.gif"), loop(BLOG + "spin.gif"), loop(BLOG + "reveal.gif"), loop(BLOG + "room.gif")],
+    sim("zoomlab-main"), // streamed DeepZoom poster -> zoomed concentric rings
     sim("im-main"), // Pocket Talk: thread scroll -> OSK typing -> sent
     loop(ROOT + "assets/screenshots/motions-53.gif"),
     // row 2
@@ -92,7 +95,7 @@ async function main() {
     sim("library-main"), // Game Library covers and detail pages
     sim("notifications-main"),
     sim("hero-main"), // "JSX at 60 FPS." counter card
-    [loop(BLOG + "share.gif"), loop(BLOG + "reload.gif"), loop(BLOG + "dpad.gif"), loop(BLOG + "spin.gif")],
+    sim("cafe-main"), // deterministic menu -> order -> confirmation
   ];
 
   const inputs: string[] = [];
@@ -109,17 +112,7 @@ async function main() {
     `tpad=stop_mode=clone:stop_duration=2,trim=duration=${DUR},setpts=PTS-STARTPTS`;
 
   tiles.forEach((tile, t) => {
-    if (Array.isArray(tile)) {
-      const cw = TILE_W / 2;
-      const ch = TILE_H / 2;
-      const cells = tile.map(addInput);
-      cells.forEach((input, c) => filters.push(`[${input}:v]${norm(cw, ch)}[q${t}_${c}]`));
-      filters.push(
-        `[q${t}_0][q${t}_1][q${t}_2][q${t}_3]xstack=inputs=4:layout=0_0|${cw}_0|0_${ch}|${cw}_${ch}[t${t}]`,
-      );
-    } else {
-      filters.push(`[${addInput(tile)}:v]${norm(TILE_W, TILE_H)}[t${t}]`);
-    }
+    filters.push(`[${addInput(tile)}:v]${norm(TILE_W, TILE_H)}[t${t}]`);
   });
   const layout = tiles.map((_, i) => `${(i % COLS) * TILE_W}_${Math.floor(i / COLS) * TILE_H}`).join("|");
   filters.push(

@@ -293,9 +293,35 @@ a.lp-btn--primary:hover {
     radial-gradient(88% 76% at 50% 40%, rgba(5, 7, 13, 0.9), rgba(5, 7, 13, 0.66) 52%, rgba(5, 7, 13, 0.32) 76%, rgba(5, 7, 13, 0.14) 100%),
     linear-gradient(180deg, rgba(5, 7, 13, 0.92) 0%, rgba(5, 7, 13, 0.4) 24%, rgba(5, 7, 13, 0.32) 60%, var(--bg) 97%);
 }
+.lp-hero__motion-credit {
+  position: absolute;
+  right: clamp(1rem, 2vw, 2rem);
+  bottom: 1rem;
+  z-index: 2;
+  padding: 0.28rem 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 0.4rem;
+  background: rgba(5, 7, 13, 0.68);
+  color: rgba(226, 234, 246, 0.76);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.25;
+  text-decoration: none;
+  backdrop-filter: blur(4px);
+}
+.lp-hero__motion-credit:hover { color: #fff; border-color: rgba(148, 163, 184, 0.42); }
 @media (prefers-reduced-motion: reduce) {
   /* home.js also pauses the video; keeping the poster frame visible is fine. */
   .lp-hero__wall-video { display: none; }
+}
+@media (max-width: 640px) {
+  .lp-hero__motion-credit {
+    right: 50%;
+    transform: translateX(50%);
+    width: max-content;
+    max-width: calc(100% - 2rem);
+    text-align: center;
+  }
 }
 .lp-hero__in {
   position: relative;
