@@ -34,10 +34,19 @@
 //   - While the cursor is enabled, d-pad focus traversal and the CIRCLE
 //     press of the classic model are suppressed; onButtonPress hooks are
 //     untouched (they run in frame.ts before this module).
+//
+// Real pointer mode (input.pointer capability, host-driven):
+//   - Ordered move/down/up/leave/cancel edges arrive in the versioned frame
+//     input payload. It neither enables nor renders the virtual cursor.
+//   - Hover is focus. Primary down arms the hovered node; release over that
+//     same node fires onPress. Leave lifts the active look but preserves the
+//     capture; cancel/blur clears it without firing.
+//   - DOWN then UP in one host tick is intentionally valid and fires once.
 
 import { BTN, IMG_FLAG_RLE, PSM, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { ticksPerFrame } from "./clock.ts";
 import { analogX, analogY } from "./frame.ts";
+import { pointerEvents, type PointerEvent } from "./frame-input.ts";
 import { getHost, getOps, hostViewport, type HostOps } from "./host.ts";
 import { get as pakGet } from "./pak.ts";
 import type { NodeMirror } from "./renderer.ts";
@@ -49,6 +58,33 @@ let prevButtons = 0;
 const focusScopeStack: NodeMirror[] = [];
 const focusGridStack: FocusGridRegistration[] = [];
 const focusControllerStack: FocusControllerRegistration[] = [];
+
+export interface PointerSnapshot {
+  readonly x: number;
+  readonly y: number;
+  readonly down: boolean;
+}
+
+interface RealPointerState {
+  x: number;
+  y: number;
+  present: boolean;
+  primaryDown: boolean;
+  pressTarget: NodeMirror | null;
+  target: NodeMirror | null;
+  gen: number;
+}
+
+const realPointer: RealPointerState = {
+  x: 0,
+  y: 0,
+  present: false,
+  primaryDown: false,
+  pressTarget: null,
+  target: null,
+  gen: -1,
+};
+let handledPointerBatch: readonly PointerEvent[] = pointerEvents();
 
 /** Bind the focus manager to a mirror tree root (index.ts render()). The
  *  cursor SURVIVES a rebind (enableCursor at module top runs before mount);
@@ -65,6 +101,12 @@ export function setInputRoot(r: NodeMirror | null): void {
   focusScopeStack.length = 0;
   focusGridStack.length = 0;
   focusControllerStack.length = 0;
+  realPointer.present = false;
+  realPointer.primaryDown = false;
+  realPointer.pressTarget = null;
+  realPointer.target = null;
+  realPointer.gen = -1;
+  handledPointerBatch = pointerEvents();
   if (cursor) {
     cursor.pressTarget = null;
     cursor.target = null;
@@ -124,6 +166,13 @@ function setPressedNode(node: NodeMirror | null): void {
 
 export function getFocused(): NodeMirror | null {
   return focused;
+}
+
+/** Current real-pointer position, or null after leave/cancel/before entry. */
+export function pointer(): PointerSnapshot | null {
+  return realPointer.present
+    ? Object.freeze({ x: realPointer.x, y: realPointer.y, down: realPointer.primaryDown })
+    : null;
 }
 
 function activeFocusRoot(): NodeMirror | null {
@@ -735,6 +784,119 @@ export function resolveTouchHit(
   return findMirror(hitRoot ?? root, query(x, y));
 }
 
+function pointerPoint(x: number, y: number): [number, number] {
+  // Read the viewport for every delivered event. Desktop hosts update
+  // __viewport from the live resize callback, so pointer bounds never retain
+  // the virtual cursor's old cached dimensions.
+  const vp = hostViewport(getOps());
+  const w = Math.max(1, vp?.w ?? SCREEN_W);
+  const h = Math.max(1, vp?.h ?? SCREEN_H);
+  return [Math.min(Math.max(x, 0), w - 1), Math.min(Math.max(y, 0), h - 1)];
+}
+
+function realPointerHit(x: number, y: number): NodeMirror | null {
+  const ops = getOps();
+  if (!ops.hitTest) return null;
+  return cursorTarget(findMirror(hitRoot ?? root, ops.hitTest(x, y)));
+}
+
+function pointRealPointer(event: Extract<PointerEvent, { x: number }>): NodeMirror | null {
+  const [x, y] = pointerPoint(event.x, event.y);
+  realPointer.x = x;
+  realPointer.y = y;
+  realPointer.present = true;
+  realPointer.target = realPointerHit(x, y);
+  realPointer.gen = inputGen;
+  if (realPointer.target !== focused) focusNode(realPointer.target);
+  return realPointer.target;
+}
+
+/**
+ * Consume the current frame's ordered real-pointer batch once. Runtimes call
+ * this before app frame hooks so pointerEvents(), pointer(), and focus agree;
+ * handleFrame calls it too for direct/unit-test users.
+ */
+export function handlePointerInput(): boolean {
+  const events = pointerEvents();
+  if (events === handledPointerBatch) {
+    if (!realPointer.present || realPointer.gen === inputGen) return false;
+    // A component/style/scope change under a parked pointer can change the
+    // hover answer without a host motion event (for example a menu remount).
+    realPointer.gen = inputGen;
+    realPointer.target = realPointerHit(realPointer.x, realPointer.y);
+    if (realPointer.target !== focused) focusNode(realPointer.target);
+    if (realPointer.pressTarget) {
+      setPressedNode(
+        realPointer.primaryDown && realPointer.target === realPointer.pressTarget
+          ? realPointer.pressTarget
+          : null,
+      );
+    }
+    return true;
+  }
+  handledPointerBatch = events;
+  if (events.length === 0) return false;
+
+  for (const event of events) {
+    if (event.type === "leave") {
+      realPointer.present = false;
+      realPointer.target = null;
+      setPressedNode(null);
+      if (focused) focusNode(null);
+      continue;
+    }
+    if (event.type === "cancel") {
+      realPointer.present = false;
+      realPointer.primaryDown = false;
+      realPointer.pressTarget = null;
+      realPointer.target = null;
+      setPressedNode(null);
+      if (focused) focusNode(null);
+      continue;
+    }
+
+    const target = pointRealPointer(event);
+    if (event.type === "move") {
+      if (realPointer.pressTarget) {
+        setPressedNode(
+          realPointer.primaryDown && target === realPointer.pressTarget
+            ? realPointer.pressTarget
+            : null,
+        );
+      }
+      continue;
+    }
+    if (event.button !== 0) continue;
+
+    if (event.type === "down") {
+      // A malformed duplicate down cannot strand the previous capture.
+      if (realPointer.pressTarget) setPressedNode(null);
+      realPointer.primaryDown = true;
+      realPointer.pressTarget = target;
+      setPressedNode(target);
+      continue;
+    }
+
+    // Explicit UP is the only successful completion edge. A cancel never
+    // travels this branch and therefore can never synthesize onPress.
+    realPointer.primaryDown = false;
+    const captured = realPointer.pressTarget;
+    const fire = captured !== null && target === captured;
+    realPointer.pressTarget = null;
+    setPressedNode(null);
+    if (fire) firePressFrom(captured);
+  }
+  // onPress may synchronously remount the node under a stationary pointer.
+  if (realPointer.present && realPointer.gen !== inputGen) {
+    realPointer.gen = inputGen;
+    realPointer.target = realPointerHit(realPointer.x, realPointer.y);
+    if (realPointer.target !== focused) focusNode(realPointer.target);
+  } else {
+    realPointer.gen = inputGen;
+  }
+  return true;
+}
+
 /** One cursor-mode frame. Returns false when the host predates the cursor
  *  ops — the caller then falls through to the classic d-pad model, so a
  *  stale host never loses input. */
@@ -825,7 +987,13 @@ export function handleFrame(buttons: number): void {
   const pressed = buttons & ~prevButtons;
   const released = prevButtons & ~buttons;
   prevButtons = buttons;
-  if (cursor && cursorFrame(buttons, pressed, released)) return;
+  const realPointerHandled = handlePointerInput();
+  if (cursor) {
+    // The physical pointer and the virtual cursor are independent input
+    // paths. When both happen to be enabled, the device that delivered an
+    // event owns this frame; no sprite operation is required by the real one.
+    if (realPointerHandled || cursorFrame(buttons, pressed, released)) return;
+  }
   if (released & BTN.CIRCLE) setPressedNode(null);
   if (pressed === 0) return;
   if (pressed & BTN.DOWN) moveFocus("down");

@@ -15,7 +15,18 @@ if (Bun.resolveSync("solid-js", import.meta.dir).endsWith("server.js")) {
 
 import { installHost, type Host, type HostOps } from "../framework/src/host.ts";
 import { render as publicRender } from "../framework/src/index.ts";
-import { expandTape, expandTapeTouch, fmt, type Tape } from "../framework/src/devtools.ts";
+import {
+  expandTape,
+  expandTapeInput,
+  expandTapeTouch,
+  fmt,
+  type Tape,
+} from "../framework/src/devtools.ts";
+import {
+  POINTER_EVENT,
+  pointerEvents,
+  type FrameInput,
+} from "../framework/src/frame-input.ts";
 import { touches, __packTouch } from "../framework/src/touch.ts";
 import { onFrame } from "../framework/src/lifecycle.ts";
 import {
@@ -420,6 +431,98 @@ describe("tape v2 touch track", () => {
   test("expandTapeTouch on a v1 tape is all undefined", () => {
     const tape: Tape = { v: 1, frames: 3, masks: [[0, 3]] };
     expect(expandTapeTouch(tape)).toEqual([undefined, undefined, undefined]);
+  });
+});
+
+describe("tape v3 frame-input track", () => {
+  function frameInput(input?: FrameInput): void {
+    (
+      globalThis as {
+        frame?: (
+          b: number,
+          a?: number,
+          t?: readonly number[],
+          h?: readonly number[],
+          input?: FrameInput,
+        ) => void;
+      }
+    ).frame!(0, undefined, undefined, undefined, input);
+  }
+
+  test("pointer edge batches export sparsely and preserve fast-click order", () => {
+    mountApp(() => View({}));
+    frameInput();
+    frameInput({
+      v: 1,
+      pointer: [
+        [POINTER_EVENT.DOWN, 4095, 3072],
+        [POINTER_EVENT.UP, 4095, 3072],
+      ],
+    });
+    frameInput({ v: 1, pointer: [[POINTER_EVENT.CANCEL]] });
+    push({ t: "dumpTape" });
+    frameInput();
+    const tape = sent("tape")[0].tape as Tape;
+    expect(tape.v).toBe(3);
+    expect(tape.input).toEqual([
+      [
+        1,
+        {
+          v: 1,
+          pointer: [
+            [POINTER_EVENT.DOWN, 4095, 3072, 0, 0],
+            [POINTER_EVENT.UP, 4095, 3072, 0, 0],
+          ],
+        },
+      ],
+      [2, { v: 1, pointer: [[POINTER_EVENT.CANCEL]] }],
+    ]);
+    expect(expandTapeInput(tape)[1]).toEqual(tape.input![0][1]);
+  });
+
+  test("v3 replay restores pointer events and scrubs live pointer hardware", () => {
+    const seen: string[][] = [];
+    mountApp(() => {
+      onFrame(() => seen.push(pointerEvents().map((event) => event.type)));
+      return View({});
+    });
+    const tape: Tape = {
+      v: 3,
+      frames: 3,
+      masks: [[0, 3]],
+      input: [
+        [
+          1,
+          {
+            v: 1,
+            pointer: [
+              [POINTER_EVENT.DOWN, 10, 20],
+              [POINTER_EVENT.UP, 10, 20],
+            ],
+          },
+        ],
+      ],
+    };
+    push({ t: "replay", tape });
+    const live: FrameInput = { v: 1, pointer: [[POINTER_EVENT.MOVE, 999, 999]] };
+    frameInput(live);
+    frameInput(live);
+    frameInput(live);
+    frameInput(live);
+    expect(seen).toEqual([[], ["down", "up"], [], ["move"]]);
+  });
+
+  test("old tapes replay every frame with no versioned input", () => {
+    const seen: number[] = [];
+    mountApp(() => {
+      onFrame(() => seen.push(pointerEvents().length));
+      return View({});
+    });
+    push({ t: "replay", tape: { v: 1, frames: 2, masks: [[0, 2]] } satisfies Tape });
+    const live: FrameInput = { v: 1, pointer: [[POINTER_EVENT.MOVE, 1, 1]] };
+    frameInput(live);
+    frameInput(live);
+    expect(seen).toEqual([0, 0]);
   });
 });
 

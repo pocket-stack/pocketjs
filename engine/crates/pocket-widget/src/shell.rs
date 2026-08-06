@@ -586,13 +586,13 @@ impl<D: Driver> ApplicationHandler for WidgetApp<D> {
                             state.resizing = Some((cursor, size));
                             // The grip press is a window gesture, not app
                             // input — take the button back.
-                            state.input.inject_mouse_button(MouseButton::Left, false);
+                            state.input.cancel_mouse_button(MouseButton::Left);
                         } else if self.driver.drag_at(cursor) {
                             let _ = state.window.drag_window();
                             // macOS swallows the release once the OS drag
                             // session starts; clear the button so the next
                             // press edges.
-                            state.input.inject_mouse_button(MouseButton::Left, false);
+                            state.input.cancel_mouse_button(MouseButton::Left);
                         }
                     }
                 }

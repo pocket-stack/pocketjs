@@ -22,10 +22,12 @@ import { createWasmUi } from "../hosts/web/wasm-ops.js";
 import {
   expandTape,
   expandTapeAnalog,
+  expandTapeInput,
   expandTapeTouch,
   type Tape,
 } from "../framework/src/devtools.ts";
 import { __packTouch } from "../framework/src/touch.ts";
+import type { FrameInput } from "../framework/src/frame-input.ts";
 import { encodePNG } from "../tests/png.ts";
 import { SCREEN_H, SCREEN_W } from "../contracts/spec/spec.ts";
 
@@ -76,7 +78,13 @@ function fnv1a(bytes: Uint8Array): string {
 }
 
 interface BootResult {
-  frame: (buttons: number, analog?: number, touches?: readonly number[]) => void;
+  frame: (
+    buttons: number,
+    analog?: number,
+    touches?: readonly number[],
+    hits?: readonly number[],
+    input?: FrameInput,
+  ) => void;
   tick: () => void;
   render: () => Uint8Array;
   outbox: string[];
@@ -147,6 +155,7 @@ async function cmdReplay(): Promise<void> {
   const masks = expandTape(tape);
   const analogs = expandTapeAnalog(tape);
   const touches = expandTapeTouch(tape);
+  const inputs = expandTapeInput(tape);
   const hashesOut = argValue("--hashes");
   const assertPath = argValue("--assert");
   const pngFrames = new Set(
@@ -161,7 +170,7 @@ async function cmdReplay(): Promise<void> {
   if (pngFrames.size) mkdirSync(outdir, { recursive: true });
   const hashes: string[] = [];
   for (let f = 0; f < masks.length; f++) {
-    b.frame(masks[f], analogs[f], touches[f]);
+    b.frame(masks[f], analogs[f], touches[f], undefined, inputs[f]);
     b.tick();
     const fb = b.render();
     const h = fnv1a(fb);
@@ -199,11 +208,12 @@ async function cmdTree(): Promise<void> {
   const masks = expandTape(tape);
   const analogs = expandTapeAnalog(tape);
   const touches = expandTapeTouch(tape);
+  const inputs = expandTapeInput(tape);
   const at = Number(argValue("--at") ?? masks.length);
   const upTo = Math.min(at, masks.length);
   const b = await boot(app);
   for (let f = 0; f < upTo; f++) {
-    b.frame(masks[f], analogs[f], touches[f]);
+    b.frame(masks[f], analogs[f], touches[f], undefined, inputs[f]);
     b.tick();
   }
   b.outbox.length = 0;

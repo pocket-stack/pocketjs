@@ -17,6 +17,7 @@ import {
   VALUE_KIND,
   type PropName,
 } from "../../contracts/spec/spec.ts";
+import type { FrameInput } from "./frame-input.ts";
 
 // Replaced by tools/build.ts for manifest-driven builds. `typeof` keeps
 // legacy/test bundles valid until they opt into a ResolvedBuildPlan.
@@ -357,7 +358,8 @@ export function reportAppAction(name: string, value: number): void {
 // Frame hookup
 // ---------------------------------------------------------------------------
 // Every host drives frames the same way: once per vblank/rAF tick it calls
-// `globalThis.frame(buttons, analog?, touches?)` with the PSP button bitmask (spec BTN)
+// `globalThis.frame(buttons, analog?, touches?, hits?, input?)` with the PSP
+// button bitmask (spec BTN)
 // and, when the host has an analog stick, the packed nub value
 // (x << 8 | y, each axis 0..255, 128 = center — spec ANALOG_CENTER). Hosts
 // without a stick pass one argument; the runtime defaults to center, so every
@@ -366,7 +368,13 @@ export function reportAppAction(name: string, value: number): void {
 // via installFrameHandler.
 
 export function installFrameHandler(
-  fn: (buttons: number, analog?: number, touches?: readonly number[]) => void,
+  fn: (
+    buttons: number,
+    analog?: number,
+    touches?: readonly number[],
+    hits?: readonly number[],
+    input?: FrameInput,
+  ) => void,
 ): void {
   (
     globalThis as {
@@ -374,6 +382,8 @@ export function installFrameHandler(
         buttons: number,
         analog?: number,
         touches?: readonly number[],
+        hits?: readonly number[],
+        input?: FrameInput,
       ) => void;
     }
   ).frame = fn;

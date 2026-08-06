@@ -2,10 +2,10 @@
 
 PocketJS is a **closed, deterministic world**: the core ticks a fixed 1/60 s
 step (`spec.FIXED_DT`), animation clocks count frames (never wall time), the
-runtime bans schedulers/RNG/wall-clock, and the *entire* per-frame input is one
-PSP button bitmask passed through `globalThis.frame(buttons)`. Frame content is
-a pure function of frame index — that is already what byte-exact goldens rely
-on.
+runtime bans schedulers/RNG/wall-clock, and every per-frame input track passes
+through `globalThis.frame`: buttons, analog, touch, and the versioned input
+extension used by real pointer edges. Frame content is a pure function of
+frame index — that is already what byte-exact goldens rely on.
 
 DevTools turns that property into debugging capabilities that open-world
 frameworks (browser, RN, Flutter) structurally cannot offer:
@@ -69,8 +69,10 @@ poll transport → flush outbox → (paused? maybe step : record + run frame)
 ```
 
 - **Flight recorder (always on, even with no transport):** every frame's mask
-  goes into a `Uint16Array` ring (36 000 frames ≈ 10 min ≈ 72 KB). Any crash
-  or "what just happened?" moment can be exported after the fact.
+  and analog value go into typed-array rings; touch and versioned frame-input
+  payloads allocate sparse tracks only when used. Pointer batches retain exact
+  edge order, including down+up in one tick. Any crash or "what just happened?"
+  moment can be exported after the fact.
 - **Component tree:** serialized from the existing JS mirror tree
   (`NodeMirror`), so reads never cross FFI. Semantic names come from
   (a) a `debugName` prop on any host component and (b) the `<Named

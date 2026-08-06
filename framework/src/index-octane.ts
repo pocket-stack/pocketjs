@@ -28,9 +28,10 @@ import {
 } from "./renderer-octane.ts";
 import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
-import { handleFrame, setInputRoot } from "./input.ts";
+import { handleFrame, handlePointerInput, setHitRoot, setInputRoot } from "./input.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-octane.tsx";
 import { __resetTouches, __setTouches } from "./touch.ts";
+import { __resetFrameInput, __setFrameInput, type FrameInput } from "./frame-input.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
 import { __drainEffects, resetEffects } from "./effects.ts";
 import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
@@ -197,16 +198,25 @@ export function render(code: OctaneRenderRoot, opts: RenderOptions = {}): () => 
   overlayLayer = overlayRoot;
 
   setInputRoot(appRoot);
+  setHitRoot(rootMirror);
   resetFrameHooks();
   resetClock(); // clock policy + effect shell (docs/DETERMINISM.md), same as Solid
   resetEffects();
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md), same as the Solid path.
   installFrameHandler(
-    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[]) => {
+    wrapFrameHandler((
+      buttons: number,
+      analog: number,
+      touches?: readonly number[],
+      hits?: readonly number[],
+      input?: FrameInput,
+    ) => {
       __advanceClock();
       __setAnalog(analog);
-      __setTouches(touches);
+      __setTouches(touches, hits);
+      __setFrameInput(input);
       __drainEffects();
+      handlePointerInput();
       // Octane schedules re-renders on the microtask queue; the sync boundary
       // drains them before the sweep so a frame's commits land in that frame.
       flushUniversalSync(() => {
@@ -222,8 +232,10 @@ export function render(code: OctaneRenderRoot, opts: RenderOptions = {}): () => 
   return () => {
     removeResizeViewportHook();
     __resetTouches();
+    __resetFrameInput();
     dispose();
     setInputRoot(null);
+    setHitRoot(null);
     setOverlayRoot(null);
     appLayer = null;
     overlayLayer = null;
