@@ -56,6 +56,14 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "pocket-voxel",
+    title: "Pocket Voxel: The Lua Was the Spec",
+    date: "2026-08-07",
+    description:
+      "Two beloved Lua projects — a Game Boy creature-RPG re-implemented on LÖVE, and a mod that presents it as a walking 3D voxel diorama — rewritten as a TypeScript gameplay guest and a Rust scene core, running on a real 2004 PSP off a cartridge you dump yourself. Inside: why the rewrite inverts the family's usual split (the entire game state lives in QuickJS at a couple of ops per tick), a from-first-principles module design where every formula cites the Lua line it ports and luajit re-runs the original as a bit-for-bit oracle, a voxelizer that moved from runtime to cook time, the three hardware bugs the emulator never showed — one of which perfect determinism could never catch — and a 102-to-34-millisecond performance campaign that ended with a rule about boundaries you can see.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "pocketjs-on-the-first-iphone",
     title: "No Shaders, No Objective-C: PocketJS on the First iPhone",
     date: "2026-08-06",
