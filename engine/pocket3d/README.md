@@ -1,7 +1,7 @@
 # Pocket3D
 
 A small, modern, extensible 3D runtime in Rust — the native desktop base of
-the Pocket runtime family (see [docs/RUNTIMES.md](../RUNTIMES.md)). Built on
+the Pocket runtime family (see [docs/RUNTIMES.md](../../docs/RUNTIMES.md)). Built on
 **wgpu** (Metal/Vulkan/DX12) + **winit**, with GoldSrc **BSP maps as a
 first-class world format**.
 
