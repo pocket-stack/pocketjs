@@ -159,9 +159,24 @@ export function initDevtools(ops: HostOps): void {
 
 /** Wrap the composed frame handler (render()'s input+hooks+sweep closure). */
 export function wrapFrameHandler(
-  h: (buttons: number, analog: number, touches?: readonly number[]) => void,
-): (buttons: number, analog?: number, touches?: readonly number[]) => void {
-  return (buttons: number, analogArg?: number, touchArg?: readonly number[]) => {
+  h: (
+    buttons: number,
+    analog: number,
+    touches?: readonly number[],
+    pointer?: number,
+  ) => void,
+): (
+  buttons: number,
+  analog?: number,
+  touches?: readonly number[],
+  pointer?: number,
+) => void {
+  return (
+    buttons: number,
+    analogArg?: number,
+    touchArg?: readonly number[],
+    pointerArg?: number,
+  ) => {
     state.hostCalls++;
     if (state.transport) {
       pollTransport();
@@ -170,13 +185,15 @@ export function wrapFrameHandler(
     let mask = buttons;
     let analog = analogArg === undefined ? ANALOG_CENTER : analogArg & 0xffff;
     let touch = touchArg;
+    let point = pointerArg;
     if (state.replayMasks) {
       if (state.replayAt < state.replayMasks.length) {
         mask = state.replayMasks[state.replayAt];
         analog = state.replayAnalog ? state.replayAnalog[state.replayAt] : ANALOG_CENTER;
-        // A replay that predates touch input must not leak live hardware state
-        // into the deterministic tape.
+        // A replay that predates touch/pointer input must not leak live
+        // hardware state into the deterministic tape.
         touch = undefined;
+        point = undefined;
         state.replayAt++;
       } else {
         state.replayMasks = null; // tape exhausted: back to live input
@@ -192,7 +209,7 @@ export function wrapFrameHandler(
     recordMask(mask, analog);
     state.frame++;
     try {
-      h(mask, analog, touch);
+      h(mask, analog, touch, point);
     } catch (e) {
       send({
         t: "error",

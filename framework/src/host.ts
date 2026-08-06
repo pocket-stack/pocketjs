@@ -303,10 +303,20 @@ export function getOps(): HostOps {
 // via installFrameHandler.
 
 export function installFrameHandler(
-  fn: (buttons: number, analog?: number, touches?: readonly number[]) => void,
+  fn: (
+    buttons: number,
+    analog?: number,
+    touches?: readonly number[],
+    pointer?: number,
+  ) => void,
 ): void {
   (globalThis as {
-    frame?: (buttons: number, analog?: number, touches?: readonly number[]) => void;
+    frame?: (
+      buttons: number,
+      analog?: number,
+      touches?: readonly number[],
+      pointer?: number,
+    ) => void;
   }).frame = fn;
 }
 

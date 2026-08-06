@@ -136,6 +136,44 @@ impl Guest {
         Ok(())
     }
 
+    /// One guest turn with touch contacts and a real absolute pointer.
+    ///
+    /// `pointer` packs the host's mouse/trackpad as
+    /// `(down << 20) | (y << 10) | x` (framework/src/pointer.ts): 10 bits per
+    /// axis, so logical coordinates must be ≤ 1023. `None` means the host has
+    /// no pointer this frame — a pointer that left the window — and leaves the
+    /// guest's cursor parked rather than snapping it to an origin.
+    ///
+    /// This is the 4-arg `globalThis.frame(buttons, analog, touches, pointer)`
+    /// path for `input.pointer` targets. Hosts whose pointer is a panel
+    /// contact rather than a hovering device use [`Guest::frame_with_touches`].
+    pub fn frame_with_pointer(
+        &self,
+        buttons: u32,
+        analog: u32,
+        touches: &[u32],
+        pointer: Option<u32>,
+    ) -> Result<()> {
+        self.ctx.with(|ctx| -> Result<()> {
+            let frame: Option<Function> = ctx.globals().get("frame").ok();
+            if let Some(frame) = frame {
+                let arr = rquickjs::Array::new(ctx.clone())
+                    .map_err(|e| anyhow!("pocket-mod: allocating touch array: {e}"))?;
+                for (i, t) in touches.iter().enumerate() {
+                    arr.set(i, *t)
+                        .map_err(|e| anyhow!("pocket-mod: setting touch {i}: {e}"))?;
+                }
+                frame
+                    .call::<_, ()>((buttons, analog, arr, pointer))
+                    .catch(&ctx)
+                    .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
+            }
+            Ok(())
+        })?;
+        self.drain_jobs();
+        Ok(())
+    }
+
     /// Drain the microtask/job queue (promise reactions). Job exceptions are
     /// logged, not fatal — matching how hosts treat stray rejections.
     pub fn drain_jobs(&self) {
@@ -319,6 +357,32 @@ mod tests {
             .unwrap();
         let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
         assert_eq!(res, "0:0:-1");
+    }
+
+    #[test]
+    fn frame_carries_a_packed_pointer() {
+        let g = Guest::new().unwrap();
+        g.eval(
+            "boot",
+            "globalThis.res = ''; \
+             globalThis.frame = (b, a, t, p) => { \
+               globalThis.res = b + ':' + (p === undefined ? 'none' : p); \
+             };",
+        )
+        .unwrap();
+        // (down<<20)|(y<<10)|x — pointer held at logical (10, 20):
+        let packed = (1u32 << 20) | (20 << 10) | 10;
+        g.frame_with_pointer(0, pocketjs_core::spec::ANALOG_CENTER, &[], Some(packed))
+            .unwrap();
+        let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
+        assert_eq!(res, format!("0:{packed}"));
+
+        // A host whose pointer left the window passes none, and the guest must
+        // be able to tell that apart from a pointer parked at the origin.
+        g.frame_with_pointer(0, pocketjs_core::spec::ANALOG_CENTER, &[], None)
+            .unwrap();
+        let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
+        assert_eq!(res, "0:none");
     }
 
     #[test]

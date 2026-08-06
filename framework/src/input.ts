@@ -34,12 +34,29 @@
 //   - While the cursor is enabled, d-pad focus traversal and the CIRCLE
 //     press of the classic model are suppressed; onButtonPress hooks are
 //     untouched (they run in frame.ts before this module).
+//
+// Host pointer mode (input.pointer capability, enableCursor({source:
+// "pointer"})):
+//   - A REAL absolute pointer (mouse/trackpad) drives the same cursor state
+//     machine, so hover/press/`active:`/onPress behave identically — only the
+//     position source and the press edge change. The host passes position and
+//     button state as the 4th frame argument (framework/src/pointer.ts); the
+//     nub, `speed`, `dpadSpeed` and `button` do not apply.
+//   - This is a different guarantee from input.cursor, which SYNTHESIZES a
+//     pointer from the nub: a real one reports hover, so `focus:` styles track
+//     the mouse before any click, and clicks land where the user is pointing
+//     rather than on whatever the d-pad last focused.
+//   - A frame with no pointer (it left the window) holds the last position and
+//     reports no edge, so an in-flight press stays armed until a real release.
+//   - Replay scrubs the pointer exactly like touch, so tapes stay
+//     deterministic (docs/DETERMINISM.md).
 
 import { BTN, IMG_FLAG_RLE, PSM, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
 import { ticksPerFrame } from "./clock.ts";
 import { analogX, analogY } from "./frame.ts";
 import { getHost, getOps, hostViewport, type HostOps } from "./host.ts";
 import { get as pakGet } from "./pak.ts";
+import { pointer } from "./pointer.ts";
 import type { NodeMirror } from "./renderer.ts";
 
 let root: NodeMirror | null = null;
@@ -67,6 +84,7 @@ export function setInputRoot(r: NodeMirror | null): void {
   focusControllerStack.length = 0;
   if (cursor) {
     cursor.pressTarget = null;
+    cursor.prevDown = false;
     cursor.target = null;
     cursor.spriteDirty = true;
     cursor.fresh = true;
@@ -423,11 +441,27 @@ export interface CursorOptions {
   /** Also steer with the d-pad at this px/s while the nub is centered
    *  (0, the default, leaves the d-pad to the app). */
   dpadSpeed?: number;
-  /** Button mask that presses/clicks the hovered node. Default CIRCLE. */
+  /** Button mask that presses/clicks the hovered node. Default CIRCLE.
+   *  Ignored when `source` is "pointer" — a real pointer carries its own
+   *  button state. */
   button?: number;
   /** Starting position. Default: viewport center. */
   start?: [number, number];
+  /**
+   * Where the cursor's position comes from.
+   *
+   * - "analog" (default) — the nub steers it as a velocity (input.cursor).
+   * - "pointer" — the host's REAL absolute pointer drives it, and its button
+   *   supplies the press/release edges (input.pointer). `speed`, `dpadSpeed`
+   *   and `button` do not apply. Hosts that never pass the pointer frame
+   *   argument leave the cursor parked, so declaring "pointer" on a host
+   *   without one degrades to a stationary cursor rather than breaking.
+   */
+  source?: CursorSource;
 }
+
+/** Position source for the virtual cursor. */
+export type CursorSource = "analog" | "pointer";
 
 interface CursorState {
   /** Position; -1 until the first frame centers it in the viewport. */
@@ -439,6 +473,10 @@ interface CursorState {
   speed: number;
   dpadSpeed: number;
   button: number;
+  source: CursorSource;
+  /** Previous frame's pointer button state, for edge detection in "pointer"
+   *  mode. Unused when the nub steers. */
+  prevDown: boolean;
   /** Armed by the press edge; fires on release while still hovered. */
   pressTarget: NodeMirror | null;
   /** Uploaded sprite texture (-1 until the lazy first-frame init). */
@@ -543,6 +581,8 @@ export function enableCursor(opts: CursorOptions = {}): () => void {
     speed: opts.speed ?? 240,
     dpadSpeed: opts.dpadSpeed ?? 0,
     button: opts.button ?? BTN.CIRCLE,
+    source: opts.source ?? prev?.source ?? "analog",
+    prevDown: prev?.prevDown ?? false,
     pressTarget: null,
     tex: prev ? prev.tex : -1,
     sprite,
@@ -688,25 +728,51 @@ function cursorFrame(buttons: number, pressed: number, released: number): boolea
   }
   if (c.spriteDirty) cursorInitSprite(c, ops);
 
-  // -- steer: px per VIRTUAL second, hz-invariant via the tick count -------
-  let vx = analogX() * c.speed;
-  let vy = analogY() * c.speed;
-  if (c.dpadSpeed > 0 && vx === 0 && vy === 0) {
-    if (buttons & BTN.LEFT) vx = -c.dpadSpeed;
-    if (buttons & BTN.RIGHT) vx = c.dpadSpeed;
-    if (buttons & BTN.UP) vy = -c.dpadSpeed;
-    if (buttons & BTN.DOWN) vy = c.dpadSpeed;
-  }
+  // -- steer -----------------------------------------------------------------
+  // "analog": px per VIRTUAL second, hz-invariant via the tick count.
+  // "pointer": the host's absolute position, adopted as-is.
   let moved = c.fresh;
-  if (vx !== 0 || vy !== 0) {
-    const dt = ticksPerFrame() / 60;
-    const nx = Math.min(Math.max(c.x + vx * dt, 0), c.vw - 1);
-    const ny = Math.min(Math.max(c.y + vy * dt, 0), c.vh - 1);
-    if (nx !== c.x || ny !== c.y) {
-      c.x = nx;
-      c.y = ny;
-      moved = true;
+  let pressEdge: boolean;
+  let releaseEdge: boolean;
+  if (c.source === "pointer") {
+    const p = pointer();
+    if (p) {
+      const nx = Math.min(Math.max(p.x, 0), c.vw - 1);
+      const ny = Math.min(Math.max(p.y, 0), c.vh - 1);
+      if (nx !== c.x || ny !== c.y) {
+        c.x = nx;
+        c.y = ny;
+        moved = true;
+      }
     }
+    // A frame with no pointer (it left the window) holds the last position
+    // and reports no edge, so an in-flight press stays armed until the
+    // pointer comes back and actually releases.
+    const down = p ? p.down : c.prevDown;
+    pressEdge = down && !c.prevDown;
+    releaseEdge = !down && c.prevDown;
+    c.prevDown = down;
+  } else {
+    let vx = analogX() * c.speed;
+    let vy = analogY() * c.speed;
+    if (c.dpadSpeed > 0 && vx === 0 && vy === 0) {
+      if (buttons & BTN.LEFT) vx = -c.dpadSpeed;
+      if (buttons & BTN.RIGHT) vx = c.dpadSpeed;
+      if (buttons & BTN.UP) vy = -c.dpadSpeed;
+      if (buttons & BTN.DOWN) vy = c.dpadSpeed;
+    }
+    if (vx !== 0 || vy !== 0) {
+      const dt = ticksPerFrame() / 60;
+      const nx = Math.min(Math.max(c.x + vx * dt, 0), c.vw - 1);
+      const ny = Math.min(Math.max(c.y + vy * dt, 0), c.vh - 1);
+      if (nx !== c.x || ny !== c.y) {
+        c.x = nx;
+        c.y = ny;
+        moved = true;
+      }
+    }
+    pressEdge = (pressed & c.button) !== 0;
+    releaseEdge = (released & c.button) !== 0;
   }
   if (moved) ops.setCursorPos(c.x, c.y);
 
@@ -715,9 +781,9 @@ function cursorFrame(buttons: number, pressed: number, released: number): boolea
   //    edged (clicks always resolve against live geometry), or inputGen
   //    ticked (tree/style/focusable/scope changes). A parked cursor over a
   //    quiet tree costs nothing per frame. -----------------------------------
-  const edges = (pressed | released) & c.button;
+  const edges = pressEdge || releaseEdge;
   const gen = inputGen;
-  if (moved || edges !== 0 || gen !== c.gen) {
+  if (moved || edges || gen !== c.gen) {
     c.gen = gen;
     c.fresh = false;
     c.target = cursorTarget(findMirror(hitRoot ?? root, ops.hitTest(c.x, c.y)));
@@ -725,21 +791,21 @@ function cursorFrame(buttons: number, pressed: number, released: number): boolea
   const target = c.target;
   if (target !== focused) focusNode(target);
 
-  // -- press/click on the configured button ---------------------------------
-  if (pressed & c.button && target) {
+  // -- press/click on the configured button (or the pointer's own) ----------
+  if (pressEdge && target) {
     c.pressTarget = target;
   }
   if (c.pressTarget) {
     // Held: pressed visuals only while still over the armed node (leave to
     // pop back up, re-enter to re-press).
     setPressedNode(target === c.pressTarget ? c.pressTarget : null);
-    if (released & c.button) {
+    if (releaseEdge) {
       const fire = target === c.pressTarget;
       c.pressTarget = null;
       setPressedNode(null);
       if (fire) firePress();
     }
-  } else if (released & c.button) {
+  } else if (releaseEdge) {
     // A press that predates the cursor (classic-mode latch, or a press held
     // across enableCursor) still releases its `active:` visual.
     setPressedNode(null);

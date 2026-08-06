@@ -21,6 +21,7 @@ import {
   setInputRoot,
 } from "../framework/src/input.ts";
 import { __setAnalog } from "../framework/src/frame.ts";
+import { __packPointer, __resetPointer, __setPointer } from "../framework/src/pointer.ts";
 import { resetClock } from "../framework/src/clock.ts";
 import type { NodeMirror } from "../framework/src/renderer.ts";
 import { ANALOG_CENTER, BTN, NODE_TYPE, PSM, ROOT_ID, SCREEN_H, SCREEN_W } from "../contracts/spec/spec.ts";
@@ -117,6 +118,7 @@ beforeEach(() => {
   resetInput();
   resetClock();
   __setAnalog(ANALOG_CENTER);
+  __resetPointer();
   root = mk(ROOT_ID, null);
   setInputRoot(root);
 });
@@ -349,5 +351,129 @@ describe("re-enable", () => {
     handleFrame(BTN.CIRCLE); // still held
     handleFrame(0); // released: no stuck visual, no spurious press
     expect(host.of("setActive").pop()).toEqual(["setActive", row.id, 0]);
+  });
+});
+
+// input.pointer: a REAL absolute pointer drives the cursor, and its own button
+// supplies the press edges. Nub deflection must not move it, and the click has
+// to land on whatever the pointer is over — the guarantee input.cursor cannot
+// make.
+describe("host pointer source", () => {
+  /** Deliver one host frame carrying an absolute pointer. */
+  function point(x: number, y: number, down: boolean, buttons = 0): void {
+    __setPointer(__packPointer(x, y, down));
+    handleFrame(buttons);
+  }
+
+  test("the cursor adopts the host position instead of integrating the nub", () => {
+    enableCursor({ source: "pointer" });
+    point(0, 0, false); // first frame: latch viewport + sprite
+    host.clear();
+    point(140, 96, false);
+    expect(host.of("setCursorPos")).toEqual([["setCursorPos", 140, 96]]);
+    expect([cursorX(), cursorY()]).toEqual([140, 96]);
+
+    // A fully deflected nub must not budge a host-driven pointer.
+    host.clear();
+    __setAnalog(0x00ff);
+    point(140, 96, false);
+    expect(host.of("setCursorPos")).toEqual([]);
+    expect([cursorX(), cursorY()]).toEqual([140, 96]);
+  });
+
+  test("hover focuses what is under the pointer with no button held", () => {
+    const row = mk(11, root, { focusable: true });
+    enableCursor({ source: "pointer" });
+    host.hitResult = row.id;
+    point(40, 40, false);
+    expect(getFocused()).toBe(row);
+    // Hover alone must not look pressed.
+    expect(host.of("setActive")).toEqual([]);
+  });
+
+  test("press, hold and release over a node fire its onPress once", () => {
+    let fired = 0;
+    const row = mk(12, root, { focusable: true, onPress: () => fired++ });
+    enableCursor({ source: "pointer" });
+    host.hitResult = row.id;
+    point(40, 40, false);
+    host.clear();
+
+    point(40, 40, true); // press edge arms + shows active
+    expect(host.of("setActive").pop()).toEqual(["setActive", row.id, 1]);
+    expect(fired).toBe(0);
+
+    point(42, 41, true); // dragging inside the node keeps it armed
+    expect(fired).toBe(0);
+
+    point(42, 41, false); // release over the armed node fires
+    expect(fired).toBe(1);
+    expect(host.of("setActive").pop()).toEqual(["setActive", row.id, 0]);
+
+    // The button staying up must not re-fire.
+    point(42, 41, false);
+    expect(fired).toBe(1);
+  });
+
+  test("releasing away from the armed node cancels the click", () => {
+    let fired = 0;
+    const row = mk(13, root, { focusable: true, onPress: () => fired++ });
+    const other = mk(14, root, { focusable: true });
+    enableCursor({ source: "pointer" });
+    host.hitResult = row.id;
+    point(10, 10, false);
+    point(10, 10, true); // armed on row
+
+    host.hitResult = other.id; // pointer slid onto a different node
+    point(90, 90, true);
+    expect(host.of("setActive").pop()).toEqual(["setActive", row.id, 0]);
+    point(90, 90, false);
+    expect(fired).toBe(0);
+  });
+
+  test("the PSP button mask does not click a host-driven cursor", () => {
+    let fired = 0;
+    const row = mk(15, root, { focusable: true, onPress: () => fired++ });
+    enableCursor({ source: "pointer" });
+    host.hitResult = row.id;
+    point(10, 10, false);
+    // CIRCLE in the mask is the classic model's click; a real pointer carries
+    // its own button, so the mask must not synthesize a second one.
+    point(10, 10, false, BTN.CIRCLE);
+    point(10, 10, false, 0);
+    expect(fired).toBe(0);
+  });
+
+  test("a frame with no pointer holds position and keeps a press armed", () => {
+    let fired = 0;
+    const row = mk(16, root, { focusable: true, onPress: () => fired++ });
+    enableCursor({ source: "pointer" });
+    host.hitResult = row.id;
+    point(30, 30, false);
+    point(30, 30, true); // armed
+
+    __setPointer(undefined); // pointer left the window mid-press
+    handleFrame(0);
+    expect([cursorX(), cursorY()]).toEqual([30, 30]);
+    expect(fired).toBe(0);
+
+    point(30, 30, false); // it came back and released
+    expect(fired).toBe(1);
+  });
+
+  test("out-of-range coordinates clamp into the viewport", () => {
+    enableCursor({ source: "pointer" });
+    point(0, 0, false);
+    point(SCREEN_W + 500, SCREEN_H + 500, false);
+    expect([cursorX(), cursorY()]).toEqual([SCREEN_W - 1, SCREEN_H - 1]);
+  });
+
+  test("the default source is still the analog nub", () => {
+    enableCursor();
+    handleFrame(0);
+    host.clear();
+    __setAnalog(0x00ff); // full deflection steers the classic cursor
+    handleFrame(0);
+    expect(host.of("setCursorPos").length).toBe(1);
   });
 });

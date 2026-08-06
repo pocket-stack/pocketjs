@@ -43,6 +43,7 @@ import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setHitRoot, setInputRoot } from "./input.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
 import { __resetTouches, __setTouches } from "./touch.ts";
+import { __resetPointer, __setPointer } from "./pointer.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
 import { __drainEffects, resetEffects } from "./effects.ts";
 import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
@@ -255,10 +256,16 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md): flight recorder +
   // debug channel; one branch per frame when no transport is connected.
   installFrameHandler(
-    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[]) => {
+    wrapFrameHandler((
+      buttons: number,
+      analog: number,
+      touches?: readonly number[],
+      pointer?: number,
+    ) => {
       __advanceClock(); // virtual frame++, fire due after() timers
       __setAnalog(analog); // latch the nub before any app code reads it
       __setTouches(touches); // latch logical front-panel contacts for this frame
+      __setPointer(pointer); // latch the host's absolute pointer (input.pointer)
       __drainEffects(); // frame-boundary deliveries enter the world first
       runFrameHooks(buttons); // app lifecycle callbacks: onFrame/onButtonPress/etc.
       handleFrame(buttons); // edge-detect, focus nav, onPress (runs effects)
@@ -271,6 +278,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   return () => {
     removeResizeViewportHook();
     __resetTouches();
+    __resetPointer();
     dispose(); // tears down reactivity only — universal keeps the nodes
     setInputRoot(null); // drops focus state (native focus dies with the nodes)
     setHitRoot(null);
