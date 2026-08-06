@@ -368,6 +368,27 @@ bun iphone2g launch
 `ps ax` prints nothing on this installation. Use `kill -0 <pid>` for liveness;
 `ps ax | grep` reports a running process as absent.
 
+### Sampling, and how much to trust one window
+
+Take several windows. One is not enough, and the two paths differ in how stable
+they are.
+
+The software path is tight and reproducible. Five long-window samples over one
+run: **59.98, 59.97, 59.97, 47.97, 59.68 fps**, with `js+core` 1.42–1.44 ms,
+raster 5.96–5.98 ms and composite 0.25–0.26 ms. The single dip came with raster
+at 7.96 ms and is transient.
+
+The OpenGL ES 1.1 path fluctuates by roughly a factor of two in submit cost, and
+this is unexplained. The same five-sample run gave **46.95, 53.19, 47.60, 50.76,
+59.98 fps** with submit 15.40, 12.72, 15.79, 14.62 and **7.68 ms**. It is not
+warm-up — the cost goes up as well as down. The 7.68 ms sample arrived after the
+device had been untouched for about a minute, so display dimming changing what
+the window server composites is a candidate, but nothing here establishes it.
+
+**Do not quote a single GL window as the frame rate.** The steady-state range is
+47–53 fps; the outlier is recorded because leaving it out would be dishonest and
+folding it in would be worse.
+
 ### Reading the record
 
 `renderer=` and `clock=` name the path and the clock that actually ran. Neither
