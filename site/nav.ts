@@ -57,10 +57,10 @@ export interface BlogPost {
 export const BLOG_POSTS: BlogPost[] = [
   {
     slug: "pocket-pi-on-esp32-p4",
-    title: "46 MB of Agent, 32 MB of PSRAM: Pocket Pi on the ESP32-P4",
+    title: "Just Enough Node: The Whole Pi Coding Agent on an ESP32-P4",
     date: "2026-08-06",
     description:
-      "Booting the full pi-coding-agent bundle takes 46.6 MB of QuickJS heap; the ESP32-P4 has 32 MB of PSRAM for everything. So Pocket Pi grew a second profile: upstream pi-agent-core as a 304 KB bundle in QuickJS — PocketJS's engine — with the Pi tools as native Rust capabilities and a PocketJS draw-list UI on the 720×1280 panel. The agent reads and writes its own LittleFS workspace, wakes itself on its own schedules, and survives a pulled power cable. Zero PocketJS engine changes. Also: the screen that kept turning blue, the bundle QuickJS parsed for four minutes, and the apostrophe the font atlas couldn't draw.",
+      "Microcontrollers have JavaScript engines, not JavaScript runtimes: no Node compatibility, no ESM loading, no fetch. The Pi coding agent assumes Node ≥ 22 — so we built just enough of one in Rust around QuickJS, measured by what Pi actually touches, and put the whole agent on an ESP32-P4: loop, tools, LittleFS workspace, self-set schedules, persistence across power cuts. No companion server runs the loop, and because behavior stays TypeScript and files rather than compiled Rust, the agent can revise itself without a firmware release. Zero PocketJS engine changes. Also: the screen that kept turning blue, the bundle QuickJS parsed for four minutes, and the apostrophe the font atlas couldn't draw.",
     author: { name: 'Siwei "Jerry" Yuan', url: "https://github.com/siwei-yuan" },
   },
   {

@@ -2,19 +2,25 @@
 
 <p class="text-sm text-slate-500 -mt-4">Four screens of the same <code>pocket-pi-device-ui</code> crate the ESP32-P4 firmware compiles — identity, a self-created schedule, the LittleFS workspace, the file viewer — captured in the macOS simulator host, which shares the draw list, font atlases and touch hit map with the board.</p>
 
-[Pocket Pi](https://github.com/pocket-stack/pocket-pi) runs the [Pi coding agent](https://github.com/badlogic/pi-mono) in QuickJS. On the desktop it boots the full, unmodified `pi-coding-agent` bundle — and just constructing that runtime, before any model call, takes 46.6 MB of JS heap. The ESP32-P4 has 32 MB of PSRAM, total, for everything: framebuffers, Wi-Fi, TLS, filesystem, and the agent.
+The [Pi coding agent](https://github.com/badlogic/pi-mono) now runs on an ESP32-P4 — not as a screen for an agent living on a server, but complete: the loop, the tools, the workspace, the schedules, and every byte of state on the board ([PR #9](https://github.com/pocket-stack/pocket-pi/pull/9)). The interesting part is not that a microcontroller can chat. It is that Pi is a TypeScript harness that assumes Node ≥ 22, and nothing like Node existed on this chip. Embedded JavaScript has always meant an *engine* — an interpreter and a language — never a *runtime* a real server-side program can boot on. [Pocket Pi](https://github.com/pocket-stack/pocket-pi) is that runtime, built in Rust around QuickJS and measured out by exactly what Pi touches.
 
-This post is how the same agent — loop, tools, workspace, scheduler, persistence — now runs on that board anyway ([PR #9](https://github.com/pocket-stack/pocket-pi/pull/9), 85 files), with a PocketJS touch UI on a 720×1280 panel, reading and writing its own filesystem, waking itself up on its own schedule, and surviving a pulled power cable. If you are new here: [PocketJS](/blog/introducing-pocketjs/) runs real web-framework components on 2004 handhelds inside an 8 MB budget. This time its runtime got a different kind of tenant.
+If you are new here: [PocketJS](/blog/introducing-pocketjs/) runs real web-framework components on 2004 handhelds inside an 8 MB budget. This post is about what its engine carries when the tenant is not a UI but an agent.
 
-## The loop was never the heavy part
+## Why Pi, and why all of it
 
-The obvious ports were dead on arrival. Claude Code is a closed binary with no RISC-V build — no porting entry point at all. Codex is open-source Rust, but it leans on processes, PTYs, Git, and a sandbox; you would rewrite the operating-system-shaped half before touching agent logic.
+Two decisions shaped this project, and both are worth defending because the obvious alternatives are genuinely tempting.
 
-Pi is different by design: an agent loop, a tool registry with explicit schemas, and a provider transport — and nothing in that trio inherently needs Node. Strip away the desktop platform and the plan fits in one sentence: QuickJS hosts the loop, and everything Pi expects from an operating system becomes a native Rust capability with a schema.
+**The whole agent runs on the device.** The default architecture for "AI hardware" is a thin client: the device renders, a server thinks. That is the easy build, and it quietly makes the device an accessory — its brain has a hosting bill, its schedules fire only while a backend exists, its files live in someone else's region. We wanted the opposite: the agent loop, the tool executor, the workspace, and the scheduler resident on the board, so that "wake up in a minute and check the file you wrote" involves no machine other than the one on the desk. Inference still comes from a model API over the network — the same dependency a laptop has — but every decision *about* the model reply, every tool call, and every persisted byte happens locally.
 
-## The measurement that split the runtime
+**The harness stays TypeScript.** The natural instinct on a microcontroller is to write the agent harness in Rust — it is already the firmware language, and an agent loop is just a loop. We had that option and declined it, for a reason that compounds over time: in a Rust harness, the agent's behavior is compiled, so a new tool composition or a revised policy is a firmware release. In Pi, behavior is data. Tools are schema'd values, extensions are factory functions, memory is a directory of Markdown. Pocket Pi's desktop profile already exploits this — extensions are TypeScript transpiled at runtime with oxc and injected through Pi's `extensionFactories` seam, so the agent can extend itself without anyone recompiling anything. QuickJS does not care whether the bundle it loads was baked at build time or written five minutes ago by the loop it hosts. An agent that can edit files can, in principle, edit itself — and that property is why porting Pi's runtime was worth more than reimplementing Pi's loop.
 
-The first idea was to compile the desktop profile for the board unchanged. So we measured it:
+Pi itself earns the port: it is a deliberately minimal harness with a real extension ecosystem, and its three parts — loop, tool registry, provider transport — are cleanly separated. Nothing in that trio inherently needs Node. It just assumes Node, everywhere, casually, the way server-side JavaScript does.
+
+## The runtime nobody had built
+
+Microcontrollers have JavaScript engines: QuickJS, JerryScript, Espruino, Moddable XS. Each gives you ECMAScript; some give you a module system of their own. None gives you the floor a real TypeScript program stands on — Node-compatible builtins, `fetch` and streams, buffers, an event loop wired into the host's I/O, an ESM graph with dynamic loading. That gap between *an interpreter on a chip* and *a runtime that boots server-side software* is exactly the part nobody had shipped for this class of hardware.
+
+So Pocket Pi is a runtime family, in Rust, around QuickJS — with two compositions, because we measured before choosing:
 
 <svg viewBox="0 0 760 210" width="100%" role="img" aria-label="Bar chart of QuickJS heap requirements. Booting the full pi-coding-agent takes 46.6 megabytes, of which 27.4 megabytes is compiled JS functions. The ESP32-P4's total PSRAM is 32 megabytes, which must also hold framebuffers and Wi-Fi. One pi-agent-core conversation turn holds about 1.3 megabytes." font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
   <rect x="0" y="0" width="760" height="210" rx="12" fill="#0b0f1a"/>
@@ -32,7 +38,11 @@ The first idea was to compile the desktop profile for the board unchanged. So we
   <text x="50" y="200" fill="#34d399" font-size="12">~1.3 MB</text>
 </svg>
 
-That chart closed the debate in an afternoon. What shipped is one runtime family, two profiles, three hosts:
+The **desktop composition** runs the full, unmodified `pi-coding-agent` — sessions, extensions, the works — with no Node or Bun on the machine. Its Rust host implements the Node surface Pi's 9 MB bundle actually exercises: filesystem, `path`, `Buffer`, events, streams, `process`, synchronous subprocesses, and a global streaming `fetch`. It even rewrites indirect ESM re-exports at build time, because Pi's dependency graph contains re-export cycles that QuickJS's module loader refuses. That composition is a real Node-shaped runtime; it is also, as the chart says, a 46.6 MB tenant. The board has 32 MB.
+
+The **embedded composition** is the same idea taken to its floor. Upstream `pi-agent-core` — the loop, the turn state, the tool-call protocol — bundles to **304 KB** and holds a conversation turn in about **1.3 MB** of heap. The Rust host under it provides only what that core touches: `TextEncoder`, a microtask pump, `URL`, a streaming model transport, and native tool dispatch. Nothing speculative. We know the list is honest because every missing item announced itself: the first on-device tool call died with `URL is not defined`.
+
+One runtime family, two profiles, three hosts:
 
 <svg viewBox="0 0 760 330" width="100%" role="img" aria-label="Architecture diagram. Two profile boxes at the top: crates/pocket-pi, the full desktop profile running the unmodified 9 megabyte pi-coding-agent bundle, feeding hosts/macos; and crates/pocket-pi-embedded, the embedded profile running pi-agent-core as a 304 kilobyte bundle, feeding crates/pocket-pi-device-ui, which fans out to firmware/esp32-p4 for the physical board and hosts/esp32-p4-sim for the macOS simulator." font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
   <rect x="0" y="0" width="760" height="330" rx="12" fill="#0b0f1a"/>
@@ -60,49 +70,11 @@ That chart closed the debate in an afternoon. What shipped is one runtime family
   <text x="36" y="312" fill="#64748b" font-size="11">two profiles of one agent — not three forks</text>
 </svg>
 
-The desktop profile keeps the full `pi-coding-agent` behind a Node/Web compatibility layer — Pi itself is never patched. The embedded profile runs upstream `pi-agent-core` with only the shims it genuinely needs: `TextEncoder`, microtasks, `URL`. We learned about `URL` the honest way: the first on-device tool call died with `URL is not defined`.
-
-The whole firmware image is 3.4 MB — 21% of the app partition. Both profiles keep the Pi Harness contract intact, which is the point: this is a smaller composition of the same agent, not a lookalike.
-
-## PocketJS on both sides of the glass
-
-PocketJS contributed two halves of this device.
-
-The invisible half: **QuickJS, PocketJS's engine, hosts the agent itself.** The same runtime that runs pre-bundled UI code on a PSP turns out to be exactly the right size for `pi-agent-core` — bounded, embeddable, no JIT, and a heap you can steer into PSRAM. The agent's brain runs where PocketJS apps run.
-
-The visible half is the glass. Chat with streamed replies, a workspace file browser, Wi-Fi settings, an on-screen keyboard, and a telemetry bar are a Rust crate emitting PocketJS draw lists straight to the panel:
-
-<svg viewBox="0 0 760 150" width="100%" role="img" aria-label="Render pipeline. A PocketJS draw list flows into damage regions, then the P4's PPA hardware blitter, then three RGB565 framebuffers totaling 5.5 megabytes, then two-lane MIPI-DSI scanout to the 720 by 1280 panel." font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
-  <rect x="0" y="0" width="760" height="150" rx="12" fill="#0b0f1a"/>
-  <rect x="24" y="46" width="110" height="52" rx="10" fill="#111827" stroke="#34d399" stroke-width="1.5"/>
-  <text x="79" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">PocketJS</text>
-  <text x="79" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">draw list</text>
-  <line x1="134" y1="72" x2="158" y2="72" stroke="#475569" stroke-width="1.5"/>
-  <rect x="158" y="46" width="110" height="52" rx="10" fill="#111827" stroke="#475569" stroke-width="1.5"/>
-  <text x="213" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">damage</text>
-  <text x="213" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">regions</text>
-  <line x1="268" y1="72" x2="292" y2="72" stroke="#475569" stroke-width="1.5"/>
-  <rect x="292" y="46" width="110" height="52" rx="10" fill="#111827" stroke="#475569" stroke-width="1.5"/>
-  <text x="347" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">PPA</text>
-  <text x="347" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">hardware blit</text>
-  <line x1="402" y1="72" x2="426" y2="72" stroke="#475569" stroke-width="1.5"/>
-  <rect x="426" y="46" width="130" height="52" rx="10" fill="#111827" stroke="#38bdf8" stroke-width="1.5"/>
-  <text x="491" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">3× RGB565</text>
-  <text x="491" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">5.5 MB PSRAM</text>
-  <line x1="556" y1="72" x2="580" y2="72" stroke="#475569" stroke-width="1.5"/>
-  <rect x="580" y="46" width="156" height="52" rx="10" fill="#111827" stroke="#f59e0b" stroke-width="1.5"/>
-  <text x="658" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">MIPI-DSI</text>
-  <text x="658" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">720×1280 panel</text>
-  <text x="24" y="128" fill="#64748b" font-size="11">quiet frames are nearly free; a full redraw is 921,600 pixels</text>
-</svg>
-
-Linking the renderer into the firmware cost about **24 KB of code**. And the number we care most about: **zero PocketJS engine changes** — the port pins an unmodified upstream revision. Fonts, hit maps, and framebuffer plumbing live in the product crate, where they belong.
-
-The same UI crate compiles into the firmware and into a macOS simulator: one draw list, one set of font atlases, one touch hit map — that is what the hero image above is showing. The simulator maps mouse clicks into panel coordinates and dispatches them through the same `handle_tap` as the hardware touch controller; it swaps Mac directories for LittleFS and a wgpu window for MIPI-DSI, nothing else. Screens and tool flows iterate in seconds on the Mac; the physical board stays the acceptance target.
+Pi itself is never patched in either profile, and the Pi Harness contract — the model decides when to call a tool, tools return structured results, the loop knows nothing about transports — survives intact. This is a smaller composition of the same agent, not a lookalike. The whole firmware image is 3.4 MB, 21% of the app partition.
 
 ## What the board actually runs
 
-The target is a Waveshare ESP32-P4 dev kit: dual-core RISC-V at 400 MHz, 32 MB PSRAM, 32 MB flash, a 5-inch touch panel. The P4 has no radio of its own; Wi-Fi lives on an onboard ESP32-C6 across SDIO.
+The target is a Waveshare ESP32-P4 dev kit: dual-core RISC-V at 400 MHz, 32 MB PSRAM, 32 MB flash, a 5-inch 720×1280 touch panel. The P4 has no radio of its own; Wi-Fi lives on an onboard ESP32-C6 across SDIO.
 
 <svg viewBox="0 0 760 430" width="100%" role="img" aria-label="Board architecture. Inside the ESP32-P4: QuickJS runs the pi-agent-core bundle; native Rust tools provide read, write, edit, find, grep, ls, an allowlisted bash, device.status, time.now, workspace.context, and schedule operations; the PocketJS UI renders chat, files, settings, keyboard, and telemetry; an 8 megabyte LittleFS workspace persists schedules, files, and chat history. Below the streaming model boundary sit two backends: UartBackend bridging to a Mac's Codex or Claude CLI, and WirelessBackend speaking HTTPS to OpenAI, OpenRouter, or Anthropic." font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
   <rect x="0" y="0" width="760" height="430" rx="12" fill="#0b0f1a"/>
@@ -136,11 +108,37 @@ The target is a Waveshare ESP32-P4 dev kit: dual-core RISC-V at 400 MHz, 32 MB P
   <text x="560" y="382" fill="#94a3b8" font-size="11" text-anchor="middle">HTTPS → OpenAI / OpenRouter / Anthropic</text>
 </svg>
 
-Schedules persist to `/workspace/.pi-agent/schedule.json`; missed wakes collapse into one catch-up run. Chat history is append-only JSONL with rotation, restored into both the UI and the model context on boot. The Pi runtime reads tool definitions from the executable registry itself, so advertised and executable tools cannot drift.
+The tools are the agent's operating system, and they are all native Rust behind Pi's schemas: six file tools on an 8 MB LittleFS partition, `device.status`, `time.now`, a `workspace.context` memory aggregator, and four `schedule.*` operations for one-off and recurring wake prompts. Schedules persist to `/workspace/.pi-agent/schedule.json`; missed wakes collapse into one catch-up run. Chat history is append-only JSONL, restored into both the UI and the model context on boot. The Pi runtime reads tool definitions from the executable registry itself, so advertised and executable tools cannot drift. And one confession: `bash` is an allowlisted dispatcher, not a shell — an ESP32 has no processes, no pipes, no `/bin`, and pretending otherwise would just teach the model to fail.
 
-One confession about `bash`: it is an allowlisted command dispatcher, not a shell. An ESP32 has no processes, no pipes, no `/bin` — pretending otherwise would just teach the model to fail. It advertises what exists (`ls`, `cat`, `grep`, `wifi status`, `reboot`) and rejects backticks.
+The glass is PocketJS's other contribution. The same engine that hosts the agent has a sibling crate emitting draw lists straight to the panel:
 
-The model is the one thing not on the board, by design. `WirelessBackend` speaks Chat Completions and Anthropic Messages over the C6's Wi-Fi; `UartBackend` streams through a Mac's logged-in Codex or Claude Code CLI during development. Either way, the loop, the tools, the workspace, the scheduler, and every byte of state live on the board. Inference is a remote dependency — same as your laptop.
+<svg viewBox="0 0 760 150" width="100%" role="img" aria-label="Render pipeline. A PocketJS draw list flows into damage regions, then the P4's PPA hardware blitter, then three RGB565 framebuffers totaling 5.5 megabytes, then two-lane MIPI-DSI scanout to the 720 by 1280 panel." font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+  <rect x="0" y="0" width="760" height="150" rx="12" fill="#0b0f1a"/>
+  <rect x="24" y="46" width="110" height="52" rx="10" fill="#111827" stroke="#34d399" stroke-width="1.5"/>
+  <text x="79" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">PocketJS</text>
+  <text x="79" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">draw list</text>
+  <line x1="134" y1="72" x2="158" y2="72" stroke="#475569" stroke-width="1.5"/>
+  <rect x="158" y="46" width="110" height="52" rx="10" fill="#111827" stroke="#475569" stroke-width="1.5"/>
+  <text x="213" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">damage</text>
+  <text x="213" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">regions</text>
+  <line x1="268" y1="72" x2="292" y2="72" stroke="#475569" stroke-width="1.5"/>
+  <rect x="292" y="46" width="110" height="52" rx="10" fill="#111827" stroke="#475569" stroke-width="1.5"/>
+  <text x="347" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">PPA</text>
+  <text x="347" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">hardware blit</text>
+  <line x1="402" y1="72" x2="426" y2="72" stroke="#475569" stroke-width="1.5"/>
+  <rect x="426" y="46" width="130" height="52" rx="10" fill="#111827" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="491" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">3× RGB565</text>
+  <text x="491" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">5.5 MB PSRAM</text>
+  <line x1="556" y1="72" x2="580" y2="72" stroke="#475569" stroke-width="1.5"/>
+  <rect x="580" y="46" width="156" height="52" rx="10" fill="#111827" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="658" y="68" fill="#f1f5f9" font-size="12" text-anchor="middle">MIPI-DSI</text>
+  <text x="658" y="86" fill="#94a3b8" font-size="11" text-anchor="middle">720×1280 panel</text>
+  <text x="24" y="128" fill="#64748b" font-size="11">quiet frames are nearly free; a full redraw is 921,600 pixels</text>
+</svg>
+
+Linking the renderer cost about **24 KB of code**, and — the number we care most about — **zero PocketJS engine changes**: the port pins an unmodified upstream revision. The same UI crate also compiles into a macOS simulator (that is what the hero image shows): one draw list, one set of font atlases, one touch hit map, with mouse clicks dispatched through the same `handle_tap` as the hardware touch controller. Product flows iterate in seconds on the Mac; the board stays the acceptance target.
+
+The model is the one thing not on the board, by design: `WirelessBackend` speaks Chat Completions and Anthropic Messages over the C6's Wi-Fi, and `UartBackend` streams through a Mac's logged-in Codex or Claude Code CLI during development. Inference is a remote dependency — same as your laptop. Everything that decides, executes, and remembers is local.
 
 ## Things that break at this size
 
@@ -169,26 +167,11 @@ Each step closes a specific skeptic's loophole: real tool calls instead of scrip
 ## The gaps, named, because that is house policy
 
 - The board runs the embedded `pi-agent-core` profile, not the desktop `pi-coding-agent` unchanged. That distinction is load-bearing and 46.6 MB wide.
+- The embedded runtime is not general Node: it implements what `pi-agent-core` exercises, and a dependency that wants more will say so at parse or boot.
 - File tools and the on-device viewer handle UTF-8 text — Markdown, JSON, CSV, code. No PDFs, no images.
 - `bash` is an allowlisted dispatcher, not POSIX.
 - Inference is remote; the model is a provisioned network service.
 - Model transport errors still render as chat text rather than a proper faulted state.
-
-## Apps are files
-
-Here is where this goes. On this device, an app is **tools plus a view**: tools produce structured data, a view projects it onto the panel. A search app is a pair of research tools plus a history screen; a portfolio app is a set of read-only brokerage tools plus a positions screen. Both halves are declarative enough to live as files — in the agent's own workspace:
-
-```text
-apps/research/
-├── app.toml           id · version · entry · permissions
-├── src/tools.ts       agent-editable
-├── src/view.ts        agent-editable
-└── releases/<hash>/   immutable, validated, rollback target
-```
-
-That changes what "installing software" means. The agent already reads, writes, edits, and greps its filesystem; add a manifest and a draft → validate → release lifecycle, and the agent can iterate its own apps — merge two tools into one, add a field to a result, redesign a view, promote the draft, roll it back. The plan is an `APPS` tab next to Chat and Files, where every app has a product view *and* a files view: the UI it presents, and the source the agent maintains.
-
-The vision in one sentence: everything essential about an agent — its memory, its schedules, its tools, and eventually its apps — as files on an 8 MB flash partition, with a loop that can revise them and a screen that can show them. Self-evolution as a filesystem property, on a microcontroller, powered by PocketJS.
 
 ## Try it
 
@@ -207,4 +190,6 @@ espflash flash --baud 921600 --port "$DEVICE_PORT" \
 python3 tools/uart-model-bridge.py "$DEVICE_PORT" --backend uart --provider codex
 ```
 
-An agent turned out to be the cheap part of an agent: the loop, the tools, the schedules, and the memory fit in 304 KB of JavaScript and an 8 MB flash partition, with room to spare on a microcontroller. Ask it who it is. It knows.
+Where this goes next follows from the same property that justified the port: behavior as files. Apps as tools-plus-a-view in the agent's own workspace, revisable by the agent itself, are the obvious continuation — a post for when it is real.
+
+The missing piece was never the agent, and it was never the chip. It was the runtime between them — and it turned out to be 304 KB of JavaScript standing on a Rust floor measured to fit. Ask the board who it is. It knows.
