@@ -118,7 +118,91 @@ apps/voxelmon/game/          (~11k lines of TypeScript)
 
 The discipline that pays off most is the smallest-sounding one: **rules take their randomness as an argument.** The Lua test harness injects fixed and sequenced RNGs to pin behavior; because the TS mirrors that shape, the same injectors drive both sides of the parity suite, and a damage-roll disagreement is a diff, not a debugging session. The suite currently stands at **226 tests and 47,715 assertions**, and the heaviest of them are exactly these cross-language matrices.
 
-Above the rules, the world layer is where a from-scratch rewrite would silently drift, because this is where thirty-year-old game feel lives. The reference is full of numbers that are *load-bearing* without being documented anywhere except the original 8-bit assembly: a step is 16 ticks; a direction press has a 4-tick window where it turns you in place before it walks you; bonking a wall animates a walk-in-place; every text beat and HP-drain speed traces to a cited line of the original asm via the Lua's own timing table, which the port copies constant-for-constant. This is where "the spec is executable" stops being a slogan: you don't have to *notice* that ledge hops can land off-map, or that warp entry is positionally disabled after arrival, because the oracle's test harness already encodes it, and a tape that walks the route fails if you got it wrong.
+What does a frame actually look like? Here is the whole per-tick shape, trimmed of its profiler hooks. Sixty times a second the host calls the guest exactly once; the guest updates only the *top* of its state stack (a textbox freezes the world beneath it, exactly as upstream's stack works), then lets `scene.ts` diff what changed into surface ops:
+
+```ts
+// game.ts: one guest turn per host tick, exactly once
+tick(buttons: number): void {
+  this.input.setButtons(buttons);
+  this.input.step();                  // edge-per-step input, Input.lua:109
+  const top = this.stack[this.stack.length - 1];
+  top?.update();                      // ONLY the top state runs this tick
+  this.scene.emit(this);              // diff game state into surface ops
+  this.driveAudio();                  // hand the core its music/sfx cues
+  this.host.frameDone(this.tickIndex, buttons);
+  this.tickIndex += 1;
+}
+```
+
+While you walk, the top state is the overworld controller, and its update is a preserved copy of the reference's order, because that order is load-bearing: the script VM must win over the d-pad, and an emotion bubble freezes NPCs but not the player's step animation. Trimmed:
+
+```ts
+// world/overworld.ts: OverworldController.lua:883 update, same order
+update(): void {
+  this.runner.update();               // the script VM gets the frame first
+  if (this.emote) {                   // an emote bubble holds the world for
+    this.player.update();             // a beat; only the player animates
+    return;
+  }
+  for (const npc of this.npcs) {
+    npc.update(this.map, this.entities, this.shell.npcRng, this.tilePairs);
+  }
+  this.updateScriptMoves();
+  const scripted = this.runner.isRunning() || this.scriptMoves.length > 0;
+  if (!scripted && !this.transitioning) this.handleInput();
+  const stepped = this.player.update();       // 16-tick grid steps
+  if (stepped && !scripted) this.onStepComplete();
+}
+```
+
+That last call, `onStepComplete()`, is the landed-step gauntlet, again in the original's order: warp-entry staleness, the standing-on-warp flag, arrival warps, held-direction collision warps, and only then the wild-encounter roll for the cell you landed on (grass, surfed water, or, on indoor maps outside the forest tileset, every tile, exactly as `wild_encounters.asm` has it). Walking into Route 1's tall grass and meeting a wild bird is that final line rolling against the ported encounter table.
+
+Above the rules, this world layer is where a from-scratch rewrite would silently drift, because this is where thirty-year-old game feel lives. The reference is full of numbers that are *load-bearing* without being documented anywhere except the original 8-bit assembly: a step is 16 ticks; a direction press has a 4-tick window where it turns you in place before it walks you; bonking a wall animates a walk-in-place; every text beat and HP-drain speed traces to a cited line of the original asm via the Lua's own timing table, which the port copies constant-for-constant. This is where "the spec is executable" stops being a slogan: you don't have to *notice* that ledge hops can land off-map, or that warp entry is positionally disabled after arrival, because the oracle's test harness already encodes it, and a tape that walks the route fails if you got it wrong.
+
+Battle needed a different backbone, and the reference's is worth copying precisely because you would not design it from scratch: **the battle engine is a message and action queue, and the queue is the engine.** Text pages, HP-bar drains, animation beats, and state mutations are all rows, executed in order by one pump; the builders keep upstream's insertion semantics (`say` appends, `sayNext` inserts right after the row being executed), because half of Gen 1's battle feel is *when* a line of text appears relative to the HP bar it explains. Here is a faint, composed as rows:
+
+```ts
+// battle/battle.ts: BattleState.lua:3624 onFaint, as queue rows
+onFaint(battler: WildBattler): void {
+  if (battler.faintQueued) return;
+  battler.faintQueued = true;
+  this.actNext(() => { battler.fainted = true; }); // staging hides the card
+  this.insertNext({ wait: FAINT_SLIDE });
+  if (!battler.isPlayer) {
+    // core.asm:792: the victory theme starts AS THE SLIDE LANDS, before
+    // the fainted text and the exp text, not after the box is dismissed
+    this.actNext(() => this.audioCues.push("music:victory"));
+  }
+  this.sayNext(`${displayName(battler)}\nfainted!`);
+  if (battler.isPlayer) this.act(() => this.playerMonFainted());
+  else this.act(() => this.enemyMonFainted());
+}
+```
+
+Even damage is a row: `applyDamage` subtracts hit points and queues `drainNext(target, hp)`, and that row holds the pump while the bar ticks down at the reference's own drain speed from the ported timing table. The formulas the rows *carry* (damage, crit, accuracy, catch) come only from `rules/`; the queue never computes, it sequences.
+
+Evolution is the layering at its cleanest, because one feature crosses all three floors: a pure rule, a battle-exit hook, and text pages. The rule half lives in `rules/evolution.ts` and is careful about a Gen 1 subtlety that is easy to get wrong: after a battle, only mons that gained a level in *that* battle are checked, so a mon that qualified earlier waits for its next level-up:
+
+```ts
+// rules/evolution.ts: Evolution.lua:195 checkParty, the decision half.
+// Pure: returns the queue, mutates nothing; the caller owns the pages.
+export function checkParty<T extends EvoMon>(
+  data: VoxelmonData,
+  party: readonly T[],
+  leveledUp: ReadonlySet<T> | null | undefined,
+): { mon: T; to: string; evo: EvolutionEntry }[] {
+  const pending = [];
+  if (!leveledUp) return pending;
+  for (const mon of party) {
+    if (!leveledUp.has(mon)) continue;   // only mons that leveled THIS battle
+    const hit = pendingFor(data, mon, { kind: "levelup" });
+    if (hit) pending.push({ mon, to: hit[0], evo: hit[1] });
+  }
+  return pending;
+}
+```
+
+The shell half runs where upstream's `afterBattle` runs, at the battle-exit site, and drives the pending list one page at a time: `apply` mutates the mon (stats recalculated for the new base stats, current HP keeping the same HP *lost*, dex flags set), the "Congratulations!" page shows, and then the *evolved* species' learnset is checked at exactly this level, because a mon that evolves at a learnset level gains that move and one that evolves a level later does not. None of that nuance was designed here. All of it was read out of the Lua, ported with its citation, and pinned by a test.
 
 ## The renderer moved from run time to cook time
 
