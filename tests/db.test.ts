@@ -65,6 +65,22 @@ describe("sim host ops", () => {
     expect(lastError(h)).toContain("ATTACH");
     const result = JSON.parse(query(h, "attach database ':memory:' as other", "[]"));
     expect(result.error).toContain("ATTACH");
+    // Every spelling SQLite accepts, not just the DATABASE-keyword form:
+    // bare string, and an expression filename (which on the reference core
+    // reaches the authorizer as NULL and is caught by SQLITE_LIMIT_ATTACHED).
+    expect(exec(h, "ATTACH ':memory:' AS o1")).toBe(1);
+    expect(exec(h, "ATTACH hex('2f746d702f78') AS o2")).toBe(1);
+  });
+
+  test("a named parameter without the $/:/@ prefix fails like the reference core", () => {
+    const { ns } = mount();
+    const open = ns.open as (name: string) => number;
+    const exec = ns.exec as (h: number, sql: string) => number;
+    const query = ns.query as (h: number, sql: string, args: string) => string;
+    const h = open(DB_MEMORY);
+    exec(h, "CREATE TABLE t (a, b)");
+    const result = JSON.parse(query(h, "INSERT INTO t VALUES ($a, $b)", '{"a":1,"$b":2}'));
+    expect(result.error).toBe("unknown parameter: a");
   });
 
   test("ops on a closed handle fail with 'database is closed'", () => {
@@ -217,6 +233,11 @@ describe("Database SDK", () => {
     first.run("INSERT INTO snap VALUES (42)");
     const second = new Database("ledger");
     expect(second.query("SELECT v FROM snap").get()).toEqual({ v: 42 });
+    // Through an actual close(), too — the way Storage::Dir keeps the file
+    // on a device host.
+    second.close();
+    const third = new Database("ledger");
+    expect(third.query("SELECT v FROM snap").get()).toEqual({ v: 42 });
   });
 
   test("SQL errors surface as thrown Errors with SQLite's message", () => {
@@ -260,10 +281,13 @@ describe("bun:sqlite oracle", () => {
 
 describe("spec constants", () => {
   test("DB_NAME_PATTERN accepts tokens and refuses paths", () => {
-    for (const good of ["app", "portfolio-history", "a.b_c-1", "A"]) {
+    // 57 chars is the ceiling: `<name>.sqlite` (+7 bytes) stays within the
+    // fs module's 64-byte segment ceiling, keeping the database file
+    // addressable by a co-mounted fs module.
+    for (const good of ["app", "portfolio-history", "a.b_c-1", "A", "a".repeat(57)]) {
       expect(DB_NAME_PATTERN.test(good)).toBe(true);
     }
-    for (const bad of ["", ".hidden", "-lead", "a/b", "a\\b", "..", "a".repeat(65)]) {
+    for (const bad of ["", ".hidden", "-lead", "a/b", "a\\b", "..", "a".repeat(58)]) {
       expect(DB_NAME_PATTERN.test(bad)).toBe(false);
     }
   });

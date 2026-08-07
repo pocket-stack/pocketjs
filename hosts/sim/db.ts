@@ -4,14 +4,22 @@
 // Bun's built-in SQLite is the same engine a device host links, so the sim
 // runs the real dialect — only the storage policy is sim-shaped: every
 // database, named or DB_MEMORY, lives in memory (no disk, no cleanup), and
-// named databases persist for the life of the host object so an app reload
-// inside one scenario keeps its data, the way a device keeps its files.
+// named databases persist for the life of the host object — across close()
+// and reopen (the image is stashed with serialize()) and across an app
+// reload inside one scenario — the way a device keeps its files.
 //
-// Two dev-host caveats, both spec-permitted:
-//   - ATTACH is refused by a whole-string match, not a real authorizer
-//     (engine/crates/pocket-db carries the authoritative refusal); a string
-//     literal containing "attach database" is a false positive a test can
+// Three dev-host caveats, all spec-permitted:
+//   - ATTACH is refused by matching the word anywhere in the sql — the only
+//     net that catches every spelling SQLite accepts (`ATTACH DATABASE f`,
+//     `ATTACH 'f'`, `ATTACH hex(...)`) without an authorizer, which
+//     bun:sqlite does not expose (engine/crates/pocket-db carries the
+//     authoritative refusal: authorizer + SQLITE_LIMIT_ATTACHED=0). A string
+//     literal containing the word "attach" is a false positive a test can
 //     spell around.
+//   - a named parameter whose key lacks the $ / : / @ prefix is refused here
+//     (the reference core fails it with "unknown parameter"), but a PREFIXED
+//     key the statement never mentions is silently ignored — bun:sqlite
+//     offers no parameter-name introspection to close that last gap.
 //   - SQL time and randomness are NOT pinned — bun:sqlite exposes no VFS
 //     hook. The spec already forbids golden-tested apps from depending on
 //     them; tests/db.test.ts stays on deterministic SQL.
@@ -72,11 +80,14 @@ function decodeParam(v: unknown): unknown {
   return v;
 }
 
-const ATTACH = /\battach\s+(database\b|')/i;
+const ATTACH = /\battach\b/i;
 
 export function createSimDbHost(): SimDbHost {
   const dbs = new Map<number, SimDb>();
   const byName = new Map<string, number>();
+  // Serialized images of closed named databases — reopening restores them,
+  // the way Storage::Dir keeps the file after close on a device host.
+  const closedImages = new Map<string, Uint8Array>();
   const log: string[] = [];
   let nextHandle = 1;
 
@@ -93,19 +104,28 @@ export function createSimDbHost(): SimDbHost {
         if (existing !== undefined) return existing;
       }
       if (dbs.size >= DB_MAX_DATABASES) return -1;
-      const bun = new BunDatabase(":memory:", { safeIntegers: true });
+      const image = name !== DB_MEMORY ? closedImages.get(name) : undefined;
+      const bun = image
+        ? BunDatabase.deserialize(image, { safeIntegers: true })
+        : new BunDatabase(":memory:", { safeIntegers: true });
       const handle = nextHandle++;
       dbs.set(handle, { bun, name, lastError: "" });
-      if (name !== DB_MEMORY) byName.set(name, handle);
+      if (name !== DB_MEMORY) {
+        closedImages.delete(name);
+        byName.set(name, handle);
+      }
       return handle;
     },
     close(handle: number): void {
       log.push(`op close ${handle}`);
       const db = live(handle);
       if (!db) return;
+      if (db.name !== DB_MEMORY) {
+        closedImages.set(db.name, db.bun.serialize());
+        byName.delete(db.name);
+      }
       db.bun.close();
       dbs.delete(handle);
-      if (db.name !== DB_MEMORY) byName.delete(db.name);
     },
     exec(handle: number, sql: string): number {
       log.push(`op exec ${handle}`);
@@ -134,6 +154,13 @@ export function createSimDbHost(): SimDbHost {
       }
       try {
         const parsed = JSON.parse(args) as unknown[] | Record<string, unknown>;
+        if (!Array.isArray(parsed)) {
+          // The spec spells named parameters $x / :x / @x; bun would bind a
+          // bare key anyway, the reference core fails it — fail like the core.
+          for (const key of Object.keys(parsed)) {
+            if (!/^[$:@]/.test(key)) throw new Error(`unknown parameter: ${key}`);
+          }
+        }
         const params = Array.isArray(parsed)
           ? parsed.map(decodeParam)
           : Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, decodeParam(v)]));
@@ -173,6 +200,7 @@ export function createSimDbHost(): SimDbHost {
       for (const db of dbs.values()) db.bun.close();
       dbs.clear();
       byName.clear();
+      closedImages.clear();
     },
   };
 }

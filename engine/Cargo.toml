@@ -70,8 +70,10 @@ memmap2 = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # bundled: compile the vendored sqlite3.c — the same source a device host
-# compiles with its own toolchain; hooks: the authorizer that refuses ATTACH.
-rusqlite = { version = "0.40", features = ["bundled", "hooks"] }
+# compiles with its own toolchain; hooks: the authorizer that refuses ATTACH;
+# limits: SQLITE_LIMIT_ATTACHED=0, the backstop that refuses ATTACH spellings
+# the authorizer cannot see (an expression filename reaches it as NULL).
+rusqlite = { version = "0.40", features = ["bundled", "hooks", "limits"] }
 base64 = "0.23"
 env_logger = "0.11"
 font8x8 = "0.3"

@@ -15,9 +15,10 @@
 //! its files (backup = a file copy). An app that overwrites its own
 //! database corrupts its own data — the same trust class as deleting its
 //! own files, and SQLite fails loudly (SQLITE_CORRUPT), not unsafely.
-//! `ATTACH` is refused by a real SQLite authorizer (not string
-//! inspection), which keeps that root the sandbox boundary;
-//! `load_extension` stays off (rusqlite's default).
+//! `ATTACH` is refused twice over — a real SQLite authorizer for the
+//! literal spelling, and `SQLITE_LIMIT_ATTACHED=0` for the expression
+//! spelling the authorizer cannot see — which keeps that root the sandbox
+//! boundary; `load_extension` stays off (rusqlite's default).
 //!
 //! ESP32/LittleFS: this crate carries its own ESP-IDF support (the
 //! `espidf` module below — newlib symbol shims, the `unix-none` VFS, the
@@ -115,6 +116,17 @@ impl DbModule {
                     _ => Authorization::Allow,
                 }
             }))
+            .is_err()
+        {
+            return -1;
+        }
+        // The authorizer only sees a FILENAME literal: `ATTACH <expr> AS x`
+        // reaches it with a NULL filename, which rusqlite maps to
+        // AuthAction::Unknown — allowed by the catch-all above. The engine
+        // attach limit closes every spelling; the authorizer stays for the
+        // clearer "not authorized" on the literal form.
+        if conn
+            .set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_ATTACHED, 0)
             .is_err()
         {
             return -1;
@@ -279,11 +291,12 @@ mod espidf {
 }
 
 /// Logical persistent-database names (spec DB_NAME_PATTERN):
-/// `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, spelled out to keep regex out of
-/// the dependency tree.
+/// `^[A-Za-z0-9][A-Za-z0-9._-]{0,56}$`, spelled out to keep regex out of
+/// the dependency tree. 57 chars keeps `<name>.sqlite` within the fs
+/// module's 64-byte segment ceiling.
 fn valid_name(name: &str) -> bool {
     let bytes = name.as_bytes();
-    if bytes.is_empty() || bytes.len() > 64 {
+    if bytes.is_empty() || bytes.len() > 57 {
         return false;
     }
     if !bytes[0].is_ascii_alphanumeric() {
@@ -500,7 +513,11 @@ mod tests {
         assert_eq!(m.open("../escape"), -1);
         assert_eq!(m.open(".hidden"), -1);
         assert_eq!(m.open(""), -1);
-        assert_eq!(m.open(&"a".repeat(65)), -1);
+        // 57 is the ceiling: `<name>.sqlite` stays a valid fs segment.
+        assert_eq!(m.open(&"a".repeat(58)), -1);
+        let longest = m.open(&"a".repeat(57));
+        assert!(longest > 0);
+        m.close(longest);
         for i in 0..spec::MAX_DATABASES {
             assert!(m.open(&format!("app-{i}")) > 0);
         }
@@ -523,6 +540,26 @@ mod tests {
         assert!(m.last_error(h).contains("not authorized"), "{}", m.last_error(h));
         let line = m.query(h, "ATTACH DATABASE ':memory:' AS other", "[]");
         assert!(rows(&line)["error"].as_str().unwrap().contains("not authorized"));
+    }
+
+    #[test]
+    fn attach_with_an_expression_filename_is_refused_by_the_attach_limit() {
+        // `ATTACH <expr> AS x` reaches the authorizer with a NULL filename
+        // (AuthAction::Unknown), so only SQLITE_LIMIT_ATTACHED=0 refuses it.
+        let mut m = module();
+        let h = m.open(spec::MEMORY);
+        assert_eq!(m.exec(h, "ATTACH hex('2f746d702f78') AS other"), 1);
+        assert!(
+            m.last_error(h).contains("attached databases"),
+            "{}",
+            m.last_error(h)
+        );
+        let line = m.query(h, "ATTACH ':memory:' AS other", "[]");
+        let error = rows(&line)["error"].as_str().unwrap().to_owned();
+        assert!(
+            error.contains("not authorized") || error.contains("attached databases"),
+            "{error}"
+        );
     }
 
     #[test]

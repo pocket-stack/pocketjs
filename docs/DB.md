@@ -44,17 +44,20 @@ store money in cents. Booleans bind as 1/0; integer-valued numbers bind as
 INTEGER, fractional as REAL (the bun:sqlite convention).
 
 **Storage rule.** `open(name)` is the only path to a database: names are
-filename-safe tokens (`DB_NAME_PATTERN`) or `:memory:`, and the host maps a
-name to a real file under the app's own data root — the reference core
+filename-safe tokens (`DB_NAME_PATTERN`, ≤ 57 chars so `<name>.sqlite`
+stays within the fs module's 64-byte segment ceiling) or `:memory:`, and
+the host maps a name to a real file under the app's own data root — the reference core
 spells that mapping `<data root>/<name>.sqlite`. The database is an
 ORDINARY file in the app's home, deliberately visible to a co-mounted fs
 module: it is the app's own asset (backup = a file copy), and an app that
 overwrites its own database corrupts its own data — the same trust class
 as deleting its own files (SQLite fails loudly on a corrupt image). The
 guest never sees a path. `ATTACH` — the one SQL statement that names a
-file — is refused (engine/crates/pocket-db uses a real SQLite
-authorizer), and `load_extension` stays disabled, so the data root stays
-the sandbox boundary.
+file — is refused twice over (engine/crates/pocket-db uses a real SQLite
+authorizer for the literal spelling and **`SQLITE_LIMIT_ATTACHED=0`** for
+the expression spelling that reaches an authorizer with a NULL filename),
+and `load_extension` stays disabled, so the data root stays the sandbox
+boundary.
 
 **Ceilings.** `DB_MAX_DATABASES` (4) open handles; `DB_MAX_RESULT_ROWS`
 (4096) rows per `query()` call, above which the op fails with "add LIMIT or

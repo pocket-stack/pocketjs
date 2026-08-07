@@ -117,9 +117,12 @@ export const DB_MEMORY = ":memory:";
 /**
  * Logical persistent-database names: a filename-safe token, no paths, no
  * extensions games. The host maps a name to a real file under the app's own
- * data root; the mapping is host policy and never guest-visible.
+ * data root; the mapping is host policy and never guest-visible. The 57-char
+ * ceiling keeps the reference mapping `<name>.sqlite` (+7 bytes) within the
+ * fs module's 64-byte segment ceiling, so a co-mounted fs module can always
+ * address the database file the docs call "visible like any of its files".
  */
-export const DB_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+export const DB_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,56}$/;
 
 // ---------------------------------------------------------------------------
 // Data contract — resource ceilings
