@@ -36,7 +36,7 @@ four kinds of software, each backed by shipped open-source work.
 | Software | What PocketJS provides | Proof |
 | --- | --- | --- |
 | **User interfaces** | Solid, Vue Vapor, and Octane over one native tree, with flexbox, compile-time Tailwind, baked motion, touch, focus, and text input | [Three frameworks, one core](https://pocketjs.dev/blog/octane-on-psp/) |
-| **Games** | Scriptable native simulation and rendering cores composed with a full JSX HUD | [OpenStrike at 60 FPS on a real PSP](https://pocketjs.dev/blog/shipping-openstrike/) |
+| **Games** | Scriptable native simulation and rendering cores composed with a full JSX HUD | [OpenStrike at 60 FPS on a real PSP](https://pocketjs.dev/blog/shipping-openstrike/) · [A creature-RPG as a voxel diorama](https://pocketjs.dev/blog/pocket-voxel/) |
 | **3D experiences** | Portable BSP worlds, native 3D backends, and VRM digital humans with one-process desktop surfaces | [Pocket Character](https://pocketjs.dev/blog/pocket-character/) |
 | **AI-native apps** | When time, randomness, and effects enter through the virtual clock, seeded state, and recorded contracts, fixed-step sessions can be replayed, forked, and diffed byte-for-byte; small enough to host an agent in the guest | [The runtime agents want](https://pocketjs.dev/blog/ui-runtime-that-cant-flake/) · [Pocket Pi](https://github.com/pocket-stack/pocket-pi) |
 
@@ -182,11 +182,18 @@ Start with [Platform contracts](https://pocketjs.dev/docs/platform-contracts/),
 | --- | --- |
 | [**Pocket Launcher**](./docs/LAUNCHER.md) | Whole-app lifecycle, target admission, frozen shots, and Guest switching on PSP and Vita |
 | [**OpenStrike**](https://github.com/pocket-stack/open-strike) | A scriptable FPS core, portable BSP worlds, and a Solid HUD at a locked 60 FPS on real PSP hardware |
+| [**Pocket Voxel**](https://github.com/pocket-stack/pocket-voxel) | A ROM-fed Game Boy creature-RPG as a walking voxel diorama: the whole game state lives in the TypeScript Guest over a Rust scene core, at a locked 30 FPS on real PSP hardware |
 | [**Pocket Figma**](https://github.com/pocket-stack/pocket-figma) | A 14,430-node Figma document baked into streamed tiles for pan and zoom on a PSP |
 | [**Pocket YouTube**](https://github.com/pocket-stack/pocket-youtube) | USB host services, search, video, audio, seeking, CJK text, and a system keyboard on a PSP |
 | [**Pocket Character**](https://github.com/pocket-stack/pocket-character) | A VRM digital human in one native transparent desktop process instead of an Electron stage |
 | [**Pocket Vapor Todo**](./vapor/README.md) | A strict Vue Vapor program lowered to console ROMs and firmware, checked step-by-step against a real Vue oracle |
 | [**Pocket Pi**](https://github.com/pocket-stack/pocket-pi) | A coding agent running inside the QuickJS Guest environment without Node underneath |
+
+<p align="center">
+  <a href="https://github.com/pocket-stack/pocket-voxel"><img src="./site/assets/blog/voxel-psp-pallet-town.png" width="720" alt="Pocket Voxel on a real PSP: Pallet Town as a voxel diorama with gabled roofs, carved bushes, flowers, an NPC and the player on the path, in per-tile color." /></a>
+</p>
+
+<p align="center"><em>Pocket Voxel, captured on a PSP-2000: the flat Game Boy world standing up as geometry. <a href="https://pocketjs.dev/blog/pocket-voxel/">The making-of story</a>.</em></p>
 
 ## Platforms and evidence
 
