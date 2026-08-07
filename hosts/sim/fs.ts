@@ -170,6 +170,9 @@ export function createSimFsHost(options?: { quotaBytes?: number }): SimFsHost {
       if (files.has(path)) return errLine("not a directory");
       if (!isDir(path)) return errLine("not found");
       const names = childrenOf(path);
+      // Clamp like the reference core: a negative offset must not wrap to
+      // slice-from-the-end.
+      offset = Math.max(0, offset);
       const page = names.slice(offset, offset + FS_MAX_DIR_ENTRIES);
       return ok(
         JSON.stringify({

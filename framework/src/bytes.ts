@@ -22,11 +22,7 @@ const B64_INV: Record<string, number> = {};
 for (let i = 0; i < B64.length; i++) B64_INV[B64[i]] = i;
 
 export function base64ToBytes(s: string): Uint8Array {
-  let pad = 0;
-  while (s.endsWith("=")) {
-    pad++;
-    s = s.slice(0, -1);
-  }
+  while (s.endsWith("=")) s = s.slice(0, -1);
   const out = new Uint8Array(Math.floor((s.length * 3) / 4));
   let o = 0;
   for (let i = 0; i < s.length; i += 4) {

@@ -74,6 +74,12 @@ directory and clears it on construction, so a crash orphan cannot
 outlive the next boot). Append is not atomic. LittleFS's rename is
 atomic, so device hosts inherit the contract by the same moves.
 
+**The op is the atomic unit.** A file larger than `FS_MAX_IO_BYTES`
+crosses as one truncate plus appends (the SDK's chunking), so power loss
+between chunks can leave the leading chunks only. An app that needs
+whole-file atomicity above 64 KiB writes to a sibling name and
+`rename`s over the target — the same move the module itself makes.
+
 **Ceilings.** `FS_MAX_IO_BYTES` (64 KiB) per read/write payload — the SDK
 chunks larger files, so the ceiling bounds marshaling, not file size.
 `FS_MAX_DIR_ENTRIES` (256) per `list()` call, paged via offset + eof — a

@@ -16,8 +16,8 @@ Runtime  =  Host  +  mounted Modules  +  Guest
 ┌────────────────────────── Runtime ──────────────────────────┐
 │  Guest        product code (QuickJS bundle / wasm host eval) │
 │  ─────────  one namespace per mounted module  ─────────────  │
-│  Modules      ui        audio      net       strike          │
-│               core+spec core+spec  core+spec core+spec       │
+│  Modules      ui · audio · db · fs · net · strike            │
+│               core+spec, one per module                      │
 │  Substrate    pocket3d · platform drivers (no guest API)     │
 │  Host         PSP EBOOT · Vita · browser · headless sim      │
 └──────────────────────────────────────────────────────────────┘
@@ -45,11 +45,12 @@ Core   native side: owns the domain's state and clock
 The **core** owns the domain's state and its clock; per-entity, per-frame
 work happens only there, and the core never calls into the guest. The
 **SDK** is ordinary guest code shaped for its domain — JSX components for
-`ui`, `decodeWav` and a `WavPlayer` for `audio`, `fetch` and buffered
-responses for `net`, a mod API for OpenStrike's `strike`. The two sides can
-be replaced independently because the **spec** between them does not move:
-swap Solid for Vue Vapor, or rewrite the layout engine, and the other side
-cannot tell.
+`ui`, `decodeWav` and a `WavPlayer` for `audio`, a `Database` with prepared
+statements for `db`, `file()` and the node:fs sync subset for `fs`, `fetch`
+and buffered responses for `net`, a mod API for OpenStrike's `strike`. The
+two sides can be replaced independently because the **spec** between them
+does not move: swap Solid for Vue Vapor, or rewrite the layout engine, and
+the other side cannot tell.
 
 `ui` (pocketjs-core + the `ui.*` ops + the JSX SDK) was the first module.
 `strike` was the second. `audio` — credit-based PCM streaming — is the

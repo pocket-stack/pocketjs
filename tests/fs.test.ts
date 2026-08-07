@@ -266,5 +266,12 @@ describe("spec constants", () => {
     expect(fsValidPath(Array(8).fill("a").join("/"))).toBe(true);
     expect(fsValidPath("名".repeat(22))).toBe(false); // 66 UTF-8 bytes > segment cap
     expect(fsValidPath("名".repeat(21))).toBe(true);
+    // Ill-formed Unicode has no UTF-8 spelling: a lone surrogate would be
+    // byte-exact on a JS host but mangled by the QuickJS-to-native bridge,
+    // so the shared predicate refuses it; the paired form stays valid.
+    expect(fsValidPath("a\uD800b")).toBe(false);
+    expect(fsValidPath("a\uDC00b")).toBe(false);
+    expect(fsValidPath("tail\uDBFF")).toBe(false);
+    expect(fsValidPath("😀.txt")).toBe(true); // a real surrogate pair
   });
 });

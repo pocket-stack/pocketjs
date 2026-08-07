@@ -136,6 +136,12 @@ export const FS_WRITE_APPEND = 1;
 // write() accepts either; read() always returns bytes — the file does not
 // remember which spelling wrote it, and the SDK's .text() decodes UTF-8
 // guest-side (QuickJS has no TextDecoder; the SDK carries the codec).
+//
+// A text payload must be well-formed Unicode, like a path segment: an
+// unpaired surrogate has no UTF-8 spelling, so what happens to one is
+// host-dependent (a JS host lossily encodes U+FFFD where a JSON-parsing
+// native core fails the op). Arbitrary byte data belongs in the bytes
+// spelling, never in a string.
 
 /** Marker key for a bytes payload (same spelling as db's DB_BLOB_KEY). */
 export const FS_BLOB_KEY = "$b";
@@ -152,7 +158,11 @@ export const FS_BLOB_KEY = "$b";
 //   "/" in a name     unrepresentable — it IS the separator, on every
 //                     filesystem on earth;
 //   control chars     C0 (U+0000..U+001F) and DEL (U+007F);
-//   oversize          a segment > FS_MAX_SEGMENT_BYTES of UTF-8.
+//   oversize          a segment > FS_MAX_SEGMENT_BYTES of UTF-8;
+//   lone surrogates   ill-formed Unicode has no UTF-8 spelling — a JS host
+//                     could store one byte-exactly while the QuickJS-to-
+//                     native bridge mangles it into a DIFFERENT name, so
+//                     the shared predicate refuses it on every host.
 //
 // No name is reserved to the host. "" names the root and is valid only
 // where an op says so (list, stat). Total path <= FS_MAX_PATH_BYTES of
@@ -185,9 +195,24 @@ function utf8Bytes(s: string): number {
   return n;
 }
 
+/** True when `s` is well-formed Unicode (every surrogate is paired). */
+function wellFormed(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xdc00 && c <= 0xdfff) return false; // low with no high before it
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = s.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      i++;
+    }
+  }
+  return true;
+}
+
 /** True when `segment` is one valid path segment under the grammar above. */
 export function fsValidSegment(segment: string): boolean {
   if (segment.length === 0 || segment === "." || segment === "..") return false;
+  if (!wellFormed(segment)) return false;
   // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f]/.test(segment)) return false;
   return utf8Bytes(segment) <= FS_MAX_SEGMENT_BYTES;
