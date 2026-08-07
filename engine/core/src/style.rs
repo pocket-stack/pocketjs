@@ -302,6 +302,9 @@ pub struct Resolved {
     pub arc_start: f32,
     pub arc_sweep: f32,
     pub arc_width: f32,
+    /// Host opt-in raster cache mode. The ordinary flat DrawList ignores it;
+    /// `Ui::draw_retained` may isolate supported subtrees into layers.
+    pub raster_cache: u8,
 }
 
 impl Default for Resolved {
@@ -363,6 +366,7 @@ impl Default for Resolved {
             arc_start: 0.0,
             arc_sweep: 0.0,
             arc_width: 0.0,
+            raster_cache: spec::RasterCache::None as u8,
         }
     }
 }
@@ -438,6 +442,7 @@ impl Resolved {
             p::ARC_START => self.arc_start = f,
             p::ARC_SWEEP => self.arc_sweep = f,
             p::ARC_WIDTH => self.arc_width = f,
+            p::RASTER_CACHE => self.raster_cache = bits as u8,
             _ => {}
         }
     }
@@ -512,6 +517,7 @@ impl Resolved {
             p::ARC_START => self.arc_start.to_bits(),
             p::ARC_SWEEP => self.arc_sweep.to_bits(),
             p::ARC_WIDTH => self.arc_width.to_bits(),
+            p::RASTER_CACHE => self.raster_cache as u32,
             _ => 0,
         }
     }

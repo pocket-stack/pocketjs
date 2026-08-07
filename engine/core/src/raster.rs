@@ -426,6 +426,25 @@ pub fn render_scaled_argb(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
     render_scaled_impl(ui, words, &mut target, scale, true);
 }
 
+/// Render transparent ARGB pixels into an explicitly sized logical surface.
+/// This is the retained-layer counterpart of [`render_scaled_argb`]: fonts
+/// and textures still come from `ui`, but the target need not match its
+/// viewport.
+pub fn render_scaled_argb_surface(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    logical_width: u32,
+    logical_height: u32,
+    scale: u32,
+) {
+    let mut target = RgbaTarget::<true> { bytes: fb };
+    let (width, _height, screen) =
+        target_geometry_surface(&target, logical_width, logical_height, scale);
+    target.clear_transparent();
+    render_scaled_clipped(ui, words, &mut target, width, scale as i32, screen);
+}
+
 /// Execute a complete DrawList into a little-endian RGB565 framebuffer.
 pub fn render_scaled_rgb565(ui: &Ui, words: &[u32], fb: &mut [u16], scale: u32) {
     let mut target = Rgb565Target { pixels: fb };
@@ -523,6 +542,33 @@ pub fn render_scaled_argb_regions(
     render_scaled_regions_impl(ui, words, &mut target, scale, regions);
 }
 
+/// Repaint logical damage rectangles on an explicitly sized retained ARGB
+/// surface. Each rectangle is cleared transparent before replaying the full
+/// layer DrawList under that clip.
+pub fn render_scaled_argb_surface_regions(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    logical_width: u32,
+    logical_height: u32,
+    scale: u32,
+    regions: &[DamageRect],
+) {
+    let mut target = RgbaTarget::<true> { bytes: fb };
+    let (width, height, screen) =
+        target_geometry_surface(&target, logical_width, logical_height, scale);
+    render_damage_regions(
+        ui,
+        words,
+        &mut target,
+        width,
+        height,
+        scale as i32,
+        screen,
+        regions,
+    );
+}
+
 /// RGB565 equivalent of [`render_scaled_regions`].
 pub fn render_scaled_rgb565_regions(
     ui: &Ui,
@@ -575,6 +621,43 @@ pub fn render_scaled_argb_incremental<const MAX_REGIONS: usize>(
         policy,
         DAMAGE_SIGNATURE_ARGB8,
     )
+}
+
+/// Incrementally render an explicitly sized retained ARGB surface.
+pub fn render_scaled_argb_surface_incremental<const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    logical_width: u32,
+    logical_height: u32,
+    scale: u32,
+    tracker: &mut DamageTracker<MAX_REGIONS>,
+    policy: DamagePolicy,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    let mut target = RgbaTarget::<true> { bytes: fb };
+    let (width, height, screen) =
+        target_geometry_surface(&target, logical_width, logical_height, scale);
+    let damage_target = DamageTarget::new(
+        width as u32,
+        height as u32,
+        scale,
+        DAMAGE_SIGNATURE_ARGB8,
+    );
+    let plan = tracker
+        .prepare_surface(ui, words, damage_target, logical_width, logical_height)?
+        .with_policy(policy)?;
+    render_damage_regions(
+        ui,
+        words,
+        &mut target,
+        width,
+        height,
+        scale as i32,
+        screen,
+        plan.regions(),
+    );
+    tracker.commit(ui, words, damage_target);
+    Ok(plan)
 }
 
 /// Incrementally render native RGB565 pixels.
@@ -686,6 +769,47 @@ fn target_geometry<T: RenderTarget>(ui: &Ui, target: &T, scale: u32) -> (i32, i3
         y1: height,
     };
     (width, height, screen)
+}
+
+fn target_geometry_surface<T: RenderTarget>(
+    target: &T,
+    logical_width: u32,
+    logical_height: u32,
+    scale: u32,
+) -> (i32, i32, Clip) {
+    assert!(
+        (1..=MAX_RENDER_SCALE).contains(&scale),
+        "render scale must be 1 through 4"
+    );
+    let width = logical_width
+        .checked_mul(scale)
+        .expect("scaled surface width overflow");
+    let height = logical_height
+        .checked_mul(scale)
+        .expect("scaled surface height overflow");
+    assert!(width > 0 && height > 0, "surface must have positive dimensions");
+    assert!(
+        width <= i32::MAX as u32 && height <= i32::MAX as u32,
+        "scaled surface dimensions exceed raster limits"
+    );
+    let expected = width as usize * height as usize;
+    assert_eq!(
+        target.pixel_len(),
+        expected,
+        "scaled framebuffer has the wrong pixel count"
+    );
+    let width = width as i32;
+    let height = height as i32;
+    (
+        width,
+        height,
+        Clip {
+            x0: 0,
+            y0: 0,
+            x1: width,
+            y1: height,
+        },
+    )
 }
 
 #[allow(clippy::too_many_arguments)]

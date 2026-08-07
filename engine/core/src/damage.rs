@@ -315,13 +315,54 @@ impl<const MAX_REGIONS: usize> DamageTracker<MAX_REGIONS> {
         words: &[u32],
         target: DamageTarget,
     ) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+        let screen = target_screen(ui, target)?;
+        self.prepare_for_screen(ui, words, target, screen)
+    }
+
+    /// Compute damage for a persistent surface whose logical dimensions are
+    /// independent of the UI viewport, such as a retained raster layer.
+    pub fn prepare_surface(
+        &self,
+        ui: &Ui,
+        words: &[u32],
+        target: DamageTarget,
+        logical_width: u32,
+        logical_height: u32,
+    ) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+        if logical_width == 0
+            || logical_height == 0
+            || logical_width
+                .checked_mul(target.scale)
+                .ok_or(DamageError::InvalidTarget)?
+                != target.width
+            || logical_height
+                .checked_mul(target.scale)
+                .ok_or(DamageError::InvalidTarget)?
+                != target.height
+        {
+            return Err(DamageError::InvalidTarget);
+        }
+        self.prepare_for_screen(
+            ui,
+            words,
+            target,
+            DamageRect::new(0, 0, logical_width as i32, logical_height as i32),
+        )
+    }
+
+    fn prepare_for_screen(
+        &self,
+        ui: &Ui,
+        words: &[u32],
+        target: DamageTarget,
+        screen: DamageRect,
+    ) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
         if MAX_REGIONS == 0 {
             return Err(DamageError::InvalidCapacity);
         }
         if target.scale == 0 {
             return Err(DamageError::InvalidTarget);
         }
-        let screen = target_screen(ui, target)?;
         let full_redraw =
             !self.valid || self.target != target || self.raster_revision != ui.raster_revision();
         let damage = if full_redraw {
@@ -516,6 +557,42 @@ fn validate_draw_list(ui: &Ui, words: &[u32], screen: DamageRect) -> Result<(), 
     }
 }
 
+/// Return conservative disjoint coverage rectangles for a DrawList on an
+/// explicitly sized logical surface. Backends can use these rectangles to
+/// composite transparent regular passes without blending the whole target.
+pub fn draw_list_coverage<const MAX_REGIONS: usize>(
+    ui: &Ui,
+    words: &[u32],
+    logical_width: u32,
+    logical_height: u32,
+) -> Result<DamagePlan<MAX_REGIONS>, DamageError> {
+    if MAX_REGIONS == 0 {
+        return Err(DamageError::InvalidCapacity);
+    }
+    if logical_width == 0
+        || logical_height == 0
+        || logical_width > i32::MAX as u32
+        || logical_height > i32::MAX as u32
+    {
+        return Err(DamageError::InvalidTarget);
+    }
+    let screen = DamageRect::new(0, 0, logical_width as i32, logical_height as i32);
+    let mut decoder = DamageDecoder::new(words, screen);
+    let mut coverage = DamagePlan::empty(screen);
+    while let Some(op) = decoder
+        .next(ui)
+        .map_err(|_| DamageError::MalformedDrawList)?
+    {
+        if op.code != spec::draw_op::SCISSOR && op.code != spec::draw_op::SCISSOR_POP {
+            coverage.add(op.bounds, screen);
+        }
+    }
+    if !decoder.is_balanced() {
+        return Err(DamageError::MalformedDrawList);
+    }
+    Ok(coverage)
+}
+
 fn glyph_run_bounds(ui: &Ui, words: &[u32], clip: DamageRect) -> DamageRect {
     if words.len() < 3 || words[2] >> 24 == 0 {
         return DamageRect::empty();
@@ -626,6 +703,31 @@ mod tests {
         assert!(!changed.is_full_redraw());
         assert_eq!(changed.region_count(), 2);
         assert_eq!(changed.area(), 32);
+    }
+
+    #[test]
+    fn coverage_ignores_scissors_and_keeps_disjoint_painted_regions() {
+        let mut ui = Ui::new();
+        ui.set_viewport(40.0, 20.0);
+        let words = vec![
+            spec::draw_op::SCISSOR,
+            xy_word(2, 1),
+            wh_word(36, 18),
+            spec::draw_op::RECT,
+            xy_word(3, 2),
+            wh_word(4, 5),
+            0xffff_ffff,
+            spec::draw_op::RECT,
+            xy_word(30, 12),
+            wh_word(5, 4),
+            0xffff_ffff,
+            spec::draw_op::SCISSOR_POP,
+        ];
+        let coverage = draw_list_coverage::<DEFAULT_DAMAGE_REGIONS>(&ui, &words, 40, 20)
+            .expect("valid coverage");
+        assert_eq!(coverage.region_count(), 2);
+        assert_eq!(coverage.area(), 40);
+        assert_eq!(coverage.bounds(), DamageRect::new(3, 2, 35, 16));
     }
 
     #[test]
