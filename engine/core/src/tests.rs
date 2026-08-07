@@ -188,6 +188,290 @@ fn abgr(r: u8, g: u8, b: u8, a: u8) -> u32 {
     ((a as u32) << 24) | ((b as u32) << 16) | ((g as u32) << 8) | r as u32
 }
 
+#[test]
+fn retained_layer_translation_only_changes_composite_position() {
+    use crate::RetainedPass;
+
+    let mut ui = Ui::new();
+    ui.set_viewport(64.0, 32.0);
+
+    let background = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(background, spec::prop::WIDTH, 64.0);
+    ui.set_prop(background, spec::prop::HEIGHT, 32.0);
+    ui.set_prop(background, spec::prop::BG_COLOR, abgr(8, 16, 32, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, background, 0);
+
+    let layer = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(layer, spec::prop::POS_TYPE, spec::PosType::Absolute as u8 as f64);
+    ui.set_prop(layer, spec::prop::INSET_L, 8.0);
+    ui.set_prop(layer, spec::prop::INSET_T, 4.0);
+    ui.set_prop(layer, spec::prop::WIDTH, 24.0);
+    ui.set_prop(layer, spec::prop::HEIGHT, 16.0);
+    ui.set_prop(layer, spec::prop::BG_COLOR, abgr(24, 160, 96, 192) as f64);
+    ui.set_prop(layer, spec::prop::OVERFLOW, spec::Overflow::Hidden as u8 as f64);
+    ui.set_prop(
+        layer,
+        spec::prop::RASTER_CACHE,
+        spec::RasterCache::Retained as u8 as f64,
+    );
+    ui.insert_before(spec::ROOT_ID, layer, 0);
+
+    let overlay = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(overlay, spec::prop::POS_TYPE, spec::PosType::Absolute as u8 as f64);
+    ui.set_prop(overlay, spec::prop::INSET_L, 10.0);
+    ui.set_prop(overlay, spec::prop::INSET_T, 6.0);
+    ui.set_prop(overlay, spec::prop::WIDTH, 6.0);
+    ui.set_prop(overlay, spec::prop::HEIGHT, 6.0);
+    ui.set_prop(overlay, spec::prop::Z_INDEX, 2.0);
+    ui.set_prop(overlay, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, overlay, 0);
+
+    let snapshot = |ui: &mut Ui| {
+        ui.draw_retained()
+            .passes
+            .iter()
+            .map(|pass| match pass {
+                RetainedPass::Draw(draw) => (0, 0, 0, draw.words.clone()),
+                RetainedPass::Layer(layer) => {
+                    (layer.node_id, layer.x, layer.y, layer.draw.words.clone())
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let before = snapshot(&mut ui);
+    assert_eq!(before.len(), 3, "background, retained layer, foreground overlay");
+    assert_eq!(before[1].0, layer);
+
+    ui.set_prop(layer, spec::prop::TRANSLATE_Y, 3.0);
+    let after = snapshot(&mut ui);
+
+    assert_eq!(before[0], after[0], "content before the layer stays retained");
+    assert_eq!(before[2], after[2], "content after the layer stays retained");
+    assert_eq!(before[1].0, after[1].0);
+    assert_eq!(before[1].1, after[1].1);
+    assert_eq!(before[1].2 + 3, after[1].2);
+    assert_eq!(before[1].3, after[1].3, "layer raster words do not move");
+}
+
+fn composite_argb_pixel(dst: &mut [u8], src: &[u8]) {
+    let a = src[3] as u32;
+    if a == 0 {
+        return;
+    }
+    if a == 255 || dst[3] == 0 {
+        dst.copy_from_slice(src);
+        return;
+    }
+    let dst_a = dst[3] as u32;
+    let out_a = a + (dst_a * (255 - a) + 127) / 255;
+    let dst_w = dst_a * (255 - a);
+    let div = out_a * 255;
+    let half = div / 2;
+    for channel in 0..3 {
+        dst[channel] = ((src[channel] as u32 * a * 255
+            + dst[channel] as u32 * dst_w
+            + half)
+            / div) as u8;
+    }
+    dst[3] = out_a as u8;
+}
+
+fn raster_retained_for_test(ui: &Ui, frame: &crate::RetainedFrame) -> Vec<u8> {
+    use crate::RetainedPass;
+
+    let (width, height) = ui.viewport();
+    let width = width as usize;
+    let height = height as usize;
+    let mut output = vec![0u8; width * height * 4];
+    for pass in &frame.passes {
+        match pass {
+            RetainedPass::Draw(draw) => {
+                let mut pixels = vec![0u8; output.len()];
+                crate::raster::render_scaled_argb(ui, &draw.words, &mut pixels, 1);
+                for (dst, src) in output.chunks_exact_mut(4).zip(pixels.chunks_exact(4)) {
+                    composite_argb_pixel(dst, src);
+                }
+            }
+            RetainedPass::Layer(layer) => {
+                let layer_width = layer.width as usize;
+                let layer_height = layer.height as usize;
+                let mut pixels = vec![0u8; layer_width * layer_height * 4];
+                crate::raster::render_scaled_argb_surface(
+                    ui,
+                    &layer.draw.words,
+                    &mut pixels,
+                    layer.width,
+                    layer.height,
+                    1,
+                );
+                for local_y in 0..layer_height {
+                    let global_y = layer.y + local_y as i32;
+                    if global_y < 0
+                        || global_y >= height as i32
+                        || global_y < layer.clip.y0
+                        || global_y >= layer.clip.y1
+                    {
+                        continue;
+                    }
+                    for local_x in 0..layer_width {
+                        let global_x = layer.x + local_x as i32;
+                        if global_x < 0
+                            || global_x >= width as i32
+                            || global_x < layer.clip.x0
+                            || global_x >= layer.clip.x1
+                        {
+                            continue;
+                        }
+                        let src = (local_y * layer_width + local_x) * 4;
+                        let dst = (global_y as usize * width + global_x as usize) * 4;
+                        composite_argb_pixel(&mut output[dst..dst + 4], &pixels[src..src + 4]);
+                    }
+                }
+            }
+        }
+    }
+    output
+}
+
+#[test]
+fn retained_layers_match_flat_argb_pixels_when_translated_and_clipped() {
+    let mut ui = Ui::new();
+    ui.set_viewport(48.0, 28.0);
+
+    let background = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(background, spec::prop::WIDTH, 48.0);
+    ui.set_prop(background, spec::prop::HEIGHT, 28.0);
+    ui.set_prop(background, spec::prop::BG_COLOR, abgr(7, 18, 31, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, background, 0);
+
+    let clip = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(clip, spec::prop::POS_TYPE, spec::PosType::Absolute as u8 as f64);
+    ui.set_prop(clip, spec::prop::INSET_L, 6.0);
+    ui.set_prop(clip, spec::prop::INSET_T, 5.0);
+    ui.set_prop(clip, spec::prop::WIDTH, 28.0);
+    ui.set_prop(clip, spec::prop::HEIGHT, 14.0);
+    ui.set_prop(clip, spec::prop::OVERFLOW, spec::Overflow::Hidden as u8 as f64);
+    ui.insert_before(spec::ROOT_ID, clip, 0);
+
+    let layer = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(layer, spec::prop::POS_TYPE, spec::PosType::Absolute as u8 as f64);
+    ui.set_prop(layer, spec::prop::INSET_L, -3.0);
+    ui.set_prop(layer, spec::prop::INSET_T, 2.0);
+    ui.set_prop(layer, spec::prop::WIDTH, 36.0);
+    ui.set_prop(layer, spec::prop::HEIGHT, 10.0);
+    ui.set_prop(layer, spec::prop::BG_COLOR, abgr(220, 70, 40, 173) as f64);
+    ui.set_prop(layer, spec::prop::OVERFLOW, spec::Overflow::Hidden as u8 as f64);
+    ui.set_prop(
+        layer,
+        spec::prop::RASTER_CACHE,
+        spec::RasterCache::Retained as u8 as f64,
+    );
+    ui.insert_before(clip, layer, 0);
+
+    let child = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(child, spec::prop::POS_TYPE, spec::PosType::Absolute as u8 as f64);
+    ui.set_prop(child, spec::prop::INSET_L, 8.0);
+    ui.set_prop(child, spec::prop::INSET_T, 2.0);
+    ui.set_prop(child, spec::prop::WIDTH, 11.0);
+    ui.set_prop(child, spec::prop::HEIGHT, 5.0);
+    ui.set_prop(child, spec::prop::BG_COLOR, abgr(45, 190, 240, 211) as f64);
+    ui.insert_before(layer, child, 0);
+
+    let overlay = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(overlay, spec::prop::POS_TYPE, spec::PosType::Absolute as u8 as f64);
+    ui.set_prop(overlay, spec::prop::INSET_L, 14.0);
+    ui.set_prop(overlay, spec::prop::INSET_T, 9.0);
+    ui.set_prop(overlay, spec::prop::WIDTH, 8.0);
+    ui.set_prop(overlay, spec::prop::HEIGHT, 4.0);
+    ui.set_prop(overlay, spec::prop::Z_INDEX, 3.0);
+    ui.set_prop(overlay, spec::prop::BG_COLOR, abgr(250, 245, 210, 231) as f64);
+    ui.insert_before(spec::ROOT_ID, overlay, 0);
+
+    for translate_y in [-4.0, 0.0, 6.0] {
+        ui.set_prop(layer, spec::prop::TRANSLATE_Y, translate_y);
+        let flat = ui.draw().words.clone();
+        let retained = ui.draw_retained().clone();
+        let mut expected = vec![0u8; 48 * 28 * 4];
+        crate::raster::render_scaled_argb(&ui, &flat, &mut expected, 1);
+        let actual = raster_retained_for_test(&ui, &retained);
+        let max_delta = actual
+            .iter()
+            .zip(&expected)
+            .map(|(&a, &b)| a.abs_diff(b))
+            .max()
+            .unwrap_or(0);
+        assert!(
+            max_delta <= 1,
+            "retained composition must preserve flat pixels within compositor rounding at \
+             translateY={translate_y}; max channel delta={max_delta}"
+        );
+    }
+}
+
+#[test]
+fn retained_layer_falls_back_when_overflow_visible() {
+    use crate::RetainedPass;
+
+    let mut ui = Ui::new();
+    ui.set_viewport(32.0, 32.0);
+
+    // Root with default overflow:visible + rasterCache should NOT become a
+    // layer, because out-of-bounds children would be clipped.
+    let root = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(root, spec::prop::POS_TYPE, spec::PosType::Absolute as u8 as f64);
+    ui.set_prop(root, spec::prop::INSET_L, 4.0);
+    ui.set_prop(root, spec::prop::INSET_T, 4.0);
+    ui.set_prop(root, spec::prop::WIDTH, 8.0);
+    ui.set_prop(root, spec::prop::HEIGHT, 8.0);
+    ui.set_prop(root, spec::prop::BG_COLOR, abgr(200, 100, 50, 255) as f64);
+    ui.set_prop(
+        root,
+        spec::prop::RASTER_CACHE,
+        spec::RasterCache::Retained as u8 as f64,
+    );
+    ui.insert_before(spec::ROOT_ID, root, 0);
+
+    let frame = ui.draw_retained();
+    assert_eq!(frame.passes.len(), 1, "overflow:visible must fall back to a single Draw pass");
+    assert!(
+        matches!(&frame.passes[0], RetainedPass::Draw(_)),
+        "expected Draw pass, got Layer"
+    );
+}
+
+#[test]
+fn retained_layer_falls_back_when_shadow_present() {
+    use crate::RetainedPass;
+
+    let mut ui = Ui::new();
+    ui.set_viewport(32.0, 32.0);
+
+    // Shadow draws outside the node bounds, so a retained surface would clip it.
+    let node = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(node, spec::prop::POS_TYPE, spec::PosType::Absolute as u8 as f64);
+    ui.set_prop(node, spec::prop::INSET_L, 4.0);
+    ui.set_prop(node, spec::prop::INSET_T, 4.0);
+    ui.set_prop(node, spec::prop::WIDTH, 16.0);
+    ui.set_prop(node, spec::prop::HEIGHT, 16.0);
+    ui.set_prop(node, spec::prop::BG_COLOR, abgr(80, 120, 160, 255) as f64);
+    ui.set_prop(node, spec::prop::SHADOW, 2.0);
+    ui.set_prop(node, spec::prop::OVERFLOW, spec::Overflow::Hidden as u8 as f64);
+    ui.set_prop(
+        node,
+        spec::prop::RASTER_CACHE,
+        spec::RasterCache::Retained as u8 as f64,
+    );
+    ui.insert_before(spec::ROOT_ID, node, 0);
+
+    let frame = ui.draw_retained();
+    assert_eq!(frame.passes.len(), 1, "shadow must fall back to a single Draw pass");
+    assert!(
+        matches!(&frame.passes[0], RetainedPass::Draw(_)),
+        "expected Draw pass, got Layer"
+    );
+}
+
 // ---- DrawList decoding helpers ------------------------------------------------
 
 fn decode_xy(word: u32) -> (i32, i32) {

@@ -22,6 +22,7 @@
 
 use alloc::vec::Vec;
 
+use crate::damage::DamageRect;
 use crate::layout::{floorf, roundf};
 use crate::spec;
 use crate::style::{self, StyleTable, NO_GRADIENT};
@@ -32,6 +33,7 @@ use crate::tree::Tree;
 /// Format pinned in contracts/spec/spec.ts ("DRAWLIST op format"); op codes in
 /// spec::draw_op. On wasm the host reads this as a Uint32Array; on PSP,
 /// hosts/psp/src/ge.rs walks it into sceGu calls.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DrawList {
     pub words: Vec<u32>,
 }
@@ -46,6 +48,37 @@ impl Default for DrawList {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// One subtree isolated by [`Ui::draw_retained`](crate::Ui::draw_retained).
+///
+/// `draw` is expressed in layer-local coordinates and does not change when
+/// an otherwise unchanged layer is translated. Capable hosts retain its
+/// transparent pixels and composite them at (`x`, `y`) under `clip`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RetainedLayer {
+    pub node_id: i32,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub clip: DamageRect,
+    pub draw: DrawList,
+}
+
+/// Ordered output of a retained draw. Regular passes and cached layers must
+/// be composited in sequence to preserve z-order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RetainedPass {
+    Draw(DrawList),
+    Layer(RetainedLayer),
+}
+
+/// Host-facing retained frame. Ordinary [`Ui::draw`](crate::Ui::draw) keeps
+/// producing the original single flat DrawList for backwards compatibility.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RetainedFrame {
+    pub passes: Vec<RetainedPass>,
 }
 
 // ---- small math (no_std: no libm, no micromath — local polyfills) -----------
@@ -803,6 +836,100 @@ struct Walker<'a> {
     inspect_hit: Option<Clip>,
 }
 
+trait PaintSink {
+    fn retains_layers(&self) -> bool;
+    fn draw_list(&mut self) -> &mut DrawList;
+
+    fn push_scissor(&mut self, clip: Clip) {
+        let draw = self.draw_list();
+        draw.words.push(spec::draw_op::SCISSOR);
+        draw.words.push(xy_word(clip.x0, clip.y0));
+        draw.words.push(wh_word(clip.x1 - clip.x0, clip.y1 - clip.y0));
+    }
+
+    fn pop_scissor(&mut self) {
+        self.draw_list().words.push(spec::draw_op::SCISSOR_POP);
+    }
+
+    fn push_layer(&mut self, _layer: RetainedLayer) {}
+}
+
+struct FlatSink<'a> {
+    draw: &'a mut DrawList,
+}
+
+impl PaintSink for FlatSink<'_> {
+    fn retains_layers(&self) -> bool {
+        false
+    }
+
+    fn draw_list(&mut self) -> &mut DrawList {
+        self.draw
+    }
+}
+
+struct RetainedSink<'a> {
+    frame: &'a mut RetainedFrame,
+    clips: Vec<Clip>,
+}
+
+impl RetainedSink<'_> {
+    fn new(frame: &mut RetainedFrame) -> RetainedSink<'_> {
+        frame.passes.clear();
+        frame.passes.push(RetainedPass::Draw(DrawList::new()));
+        RetainedSink {
+            frame,
+            clips: Vec::new(),
+        }
+    }
+
+    fn current_draw(&mut self) -> &mut DrawList {
+        match self.frame.passes.last_mut() {
+            Some(RetainedPass::Draw(draw)) => draw,
+            _ => unreachable!("retained frame always ends in a regular draw pass"),
+        }
+    }
+}
+
+impl PaintSink for RetainedSink<'_> {
+    fn retains_layers(&self) -> bool {
+        true
+    }
+
+    fn draw_list(&mut self) -> &mut DrawList {
+        self.current_draw()
+    }
+
+    fn push_scissor(&mut self, clip: Clip) {
+        let draw = self.current_draw();
+        draw.words.push(spec::draw_op::SCISSOR);
+        draw.words.push(xy_word(clip.x0, clip.y0));
+        draw.words.push(wh_word(clip.x1 - clip.x0, clip.y1 - clip.y0));
+        self.clips.push(clip);
+    }
+
+    fn pop_scissor(&mut self) {
+        self.current_draw().words.push(spec::draw_op::SCISSOR_POP);
+        self.clips.pop();
+    }
+
+    fn push_layer(&mut self, layer: RetainedLayer) {
+        let depth = self.clips.len();
+        for _ in 0..depth {
+            self.current_draw().words.push(spec::draw_op::SCISSOR_POP);
+        }
+        self.frame.passes.push(RetainedPass::Layer(layer));
+        let mut next = DrawList::new();
+        for &clip in &self.clips {
+            next.words.push(spec::draw_op::SCISSOR);
+            next.words.push(xy_word(clip.x0, clip.y0));
+            next.words
+                .push(wh_word(clip.x1 - clip.x0, clip.y1 - clip.y0));
+        }
+        self.frame.passes.push(RetainedPass::Draw(next));
+    }
+}
+
 /// Build the full DrawList for the current (laid-out) tree. `frame` is the
 /// core's vblank counter (Ui.frame); animated sprites pick their cell from it.
 /// `screen` is the viewport every coordinate is clipped to. `cursor` is the
@@ -825,6 +952,77 @@ pub fn build(
     cursor: Option<(u32, f32, f32, f32, f32)>,
 ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
     dl.words.clear();
+    let mut sink = FlatSink { draw: dl };
+    build_with_sink(
+        tree,
+        styles,
+        fonts,
+        frame,
+        screen,
+        textures,
+        tex_free,
+        discs,
+        raster_density,
+        &mut sink,
+        inspect_id,
+        inspect_prev,
+        cursor,
+    )
+}
+
+/// Build ordered regular/layer passes for hosts with transparent retained
+/// composition. Unsupported layer transforms fall back into the surrounding
+/// regular pass, so opting in never drops content.
+#[allow(clippy::too_many_arguments)]
+pub fn build_retained(
+    tree: &Tree,
+    styles: &StyleTable,
+    fonts: &Fonts,
+    frame: u64,
+    screen: (f32, f32),
+    textures: &mut Vec<crate::TexSlot>,
+    tex_free: &mut Vec<u32>,
+    discs: &mut DiscCache,
+    raster_density: u32,
+    retained: &mut RetainedFrame,
+    inspect_id: i32,
+    inspect_prev: Option<(f32, f32, f32, f32)>,
+    cursor: Option<(u32, f32, f32, f32, f32)>,
+) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
+    let mut sink = RetainedSink::new(retained);
+    build_with_sink(
+        tree,
+        styles,
+        fonts,
+        frame,
+        screen,
+        textures,
+        tex_free,
+        discs,
+        raster_density,
+        &mut sink,
+        inspect_id,
+        inspect_prev,
+        cursor,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_with_sink<S: PaintSink>(
+    tree: &Tree,
+    styles: &StyleTable,
+    fonts: &Fonts,
+    frame: u64,
+    screen: (f32, f32),
+    textures: &mut Vec<crate::TexSlot>,
+    tex_free: &mut Vec<u32>,
+    discs: &mut DiscCache,
+    raster_density: u32,
+    sink: &mut S,
+    inspect_id: i32,
+    inspect_prev: Option<(f32, f32, f32, f32)>,
+    cursor: Option<(u32, f32, f32, f32, f32)>,
+) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
     // DevTools (docs/DEVTOOLS.md): slot of the inspected node, u32::MAX = none.
     // Nodes inside a perspective subtree take the paint_3d path and are not
     // captured (only the 2D walk composes a world Affine per node).
@@ -848,7 +1046,7 @@ pub fn build(
         inspect_hit: None,
     };
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
-    w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), dl);
+    w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), sink);
     let target = w.inspect_hit.map(|c| (c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0));
     // Highlight glide: the drawn box exponentially approaches the target
     // (~0.35/draw ≈ converged in 6 draws), so switching the inspected node
@@ -874,13 +1072,13 @@ pub fn build(
         (None, _) => None,
     };
     if let Some((x, y, bw, bh)) = drawn {
-        w.emit_highlight(dl, &Clip { x0: x, y0: y, x1: x + bw, y1: y + bh });
+        w.emit_highlight(sink.draw_list(), &Clip { x0: x, y0: y, x1: x + bw, y1: y + bh });
     }
     // Virtual cursor sprite: appended last so nothing paints over it (even
     // the DevTools highlight sits under the pointer the user is steering).
     if let Some((tex, cx, cy, cw, ch)) = cursor {
         w.emit_tex_quad(
-            dl,
+            sink.draw_list(),
             &Affine::translate(cx, cy),
             cw,
             ch,
@@ -897,7 +1095,14 @@ pub fn build(
 }
 
 impl<'a> Walker<'a> {
-    fn paint(&mut self, slot: u32, parent_world: Affine, opacity: f32, clip: Clip, dl: &mut DrawList) {
+    fn paint<S: PaintSink>(
+        &mut self,
+        slot: u32,
+        parent_world: Affine,
+        opacity: f32,
+        clip: Clip,
+        sink: &mut S,
+    ) {
         let node = &self.tree.slots[slot as usize];
         let r = style::resolve(node, self.styles, true);
         if r.display == spec::Display::None as u8 {
@@ -915,25 +1120,80 @@ impl<'a> Walker<'a> {
             return;
         }
 
-        // -- background + shadow --------------------------------------------
-        let has_grad = r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32;
-        let bg_color = scale_alpha(r.bg_color, op);
-        let border_color = scale_alpha(r.border_color, op);
-        let rounded_border = r.radius > 0.0 && r.border_width > 0.0 && alpha(border_color) > 0;
-        let rounded_ring = rounded_border && (has_grad || alpha(bg_color) > 0);
-
-        if r.shadow > 0 && (alpha(bg_color) > 0 || has_grad) {
-            self.emit_shadow(dl, &world, l.w, l.h, r.radius, r.shadow, op, &clip);
+        // Retained raster caches deliberately support translation-only layer
+        // roots with overflow:hidden and no shadow. Scaling/rotation/perspective
+        // paint into the regular DrawList; overflow:visible risks clipping
+        // out-of-bounds children, and shadow draws outside the node bounds,
+        // so both fall back to preserve flat behavior.
+        let translation_only = world.a == 1.0 && world.b == 0.0 && world.c == 0.0 && world.d == 1.0;
+        if sink.retains_layers()
+            && r.raster_cache == spec::RasterCache::Retained as u8
+            && translation_only
+            && r.perspective <= 0.0
+            && r.overflow == spec::Overflow::Hidden as u8
+            && r.shadow == 0
+            && l.w > 0.0
+            && l.h > 0.0
+        {
+            let width = roundf(l.w).max(1.0) as u32;
+            let height = roundf(l.h).max(1.0) as u32;
+            let x = roundf(world.tx) as i32;
+            let y = roundf(world.ty) as i32;
+            let local_parent = Affine::translate(-world.tx, -world.ty).then(&parent_world);
+            let local_clip = Clip {
+                x0: 0.0,
+                y0: 0.0,
+                x1: width as f32,
+                y1: height as f32,
+            };
+            let previous_screen = self.screen;
+            self.screen = (width as f32, height as f32);
+            let mut draw = DrawList::new();
+            {
+                let mut flat = FlatSink { draw: &mut draw };
+                self.paint(slot, local_parent, opacity, local_clip, &mut flat);
+            }
+            self.screen = previous_screen;
+            sink.push_layer(RetainedLayer {
+                node_id: node.id(slot),
+                x,
+                y,
+                width,
+                height,
+                clip: DamageRect::new(
+                    roundf(clip.x0) as i32,
+                    roundf(clip.y0) as i32,
+                    roundf(clip.x1) as i32,
+                    roundf(clip.y1) as i32,
+                ),
+                draw,
+            });
+            return;
         }
 
-        let is_arc = r.arc_width > 0.0 && r.arc_sweep != 0.0;
-        if is_arc {
+        {
+            let dl = sink.draw_list();
+            // -- background + shadow ----------------------------------------
+            let has_grad =
+                r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32;
+            let bg_color = scale_alpha(r.bg_color, op);
+            let border_color = scale_alpha(r.border_color, op);
+            let rounded_border =
+                r.radius > 0.0 && r.border_width > 0.0 && alpha(border_color) > 0;
+            let rounded_ring = rounded_border && (has_grad || alpha(bg_color) > 0);
+
+            if r.shadow > 0 && (alpha(bg_color) > 0 || has_grad) {
+                self.emit_shadow(dl, &world, l.w, l.h, r.radius, r.shadow, op, &clip);
+            }
+
+            let is_arc = r.arc_width > 0.0 && r.arc_sweep != 0.0;
+            if is_arc {
             // Arc primitive: the bg color strokes an annular sector instead
             // of filling the box (spec.ts PROP.arcStart/arcSweep/arcWidth).
             if alpha(bg_color) > 0 {
                 self.emit_arc(dl, &world, l.w, l.h, &r, bg_color, &clip);
             }
-        } else if rounded_ring {
+            } else if rounded_ring {
             self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, Fill::Flat(border_color), &clip);
             let bw = r.border_width.min(l.w * 0.5).min(l.h * 0.5);
             if has_grad {
@@ -956,20 +1216,20 @@ impl<'a> Walker<'a> {
                     &clip,
                 );
             }
-        } else if has_grad {
+            } else if has_grad {
             let fill = Fill::Grad {
                 from: scale_alpha(r.grad_from, op),
                 to: scale_alpha(r.grad_to, op),
                 dir: r.grad_dir,
             };
             self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, fill, &clip);
-        } else if alpha(bg_color) > 0 {
+            } else if alpha(bg_color) > 0 {
             self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, Fill::Flat(bg_color), &clip);
-        }
+            }
 
-        // -- border: 4 inset strips ------------------------------------------
-        let bw = r.border_width;
-        if !rounded_ring && bw > 0.0 && alpha(border_color) > 0 {
+            // -- border: 4 inset strips --------------------------------------
+            let bw = r.border_width;
+            if !rounded_ring && bw > 0.0 && alpha(border_color) > 0 {
             if rounded_border {
                 self.emit_rounded_border(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, bw, Fill::Flat(border_color), &clip);
             } else {
@@ -981,19 +1241,22 @@ impl<'a> Walker<'a> {
                 self.emit_box(dl, &world, 0.0, bwy, bwx, l.h - bwy, bc, &clip); // left
                 self.emit_box(dl, &world, l.w - bwx, bwy, l.w, l.h - bwy, bc, &clip); // right
             }
-        }
+            }
 
         // -- bevel rings: classic-chrome 3D edges (spec.ts PROP.bevelOuter*..) --
         // Two nested inset rings of 4 strips each. Per ring, light paints
         // top+left first, then dark paints bottom+right FULL-LENGTH, so dark
         // owns the shared corners (98.css box-shadow stacking). Square only:
         // radius > 0 disables bevels (the compiler rejects the combination).
-        if (r.bevel_outer_light | r.bevel_outer_dark | r.bevel_inner_light | r.bevel_inner_dark)
+            if (r.bevel_outer_light
+                | r.bevel_outer_dark
+                | r.bevel_inner_light
+                | r.bevel_inner_dark)
             != 0
             && r.bevel_width > 0.0
             && r.radius <= 0.0
             && !is_arc
-        {
+            {
             let bvw = r.bevel_width;
             let rings = [
                 (0.0, r.bevel_outer_light, r.bevel_outer_dark),
@@ -1021,17 +1284,17 @@ impl<'a> Walker<'a> {
                     self.emit_box(dl, &world, x1 - bvw, y0, x1, y1, fd, &clip); // right
                 }
             }
-        }
+            }
 
-        // -- text run ----------------------------------------------------------
-        if node.node_type == spec::NodeType::Text as u8 {
-            self.emit_text(dl, node, &r, &world, op, &clip, l.w);
-            // Text children are absorbed into the run — do not recurse.
-            return;
-        }
+            // -- text run ----------------------------------------------------
+            if node.node_type == spec::NodeType::Text as u8 {
+                self.emit_text(dl, node, &r, &world, op, &clip, l.w);
+                // Text children are absorbed into the run — do not recurse.
+                return;
+            }
 
-        // -- image / animated sprite -------------------------------------------
-        if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
+            // -- image / animated sprite -------------------------------------
+            if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
             // Plain image samples the whole texture; a sprite samples the
             // current frame's atlas cell (auto-played from the vblank counter).
             let (fu0, fv0, fu1, fv1) = if node.sprite_frames > 0 {
@@ -1050,7 +1313,20 @@ impl<'a> Walker<'a> {
             } else {
                 (0.0, 0.0, 1.0, 1.0)
             };
-            self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip, fu0, fv0, fu1, fv1);
+                self.emit_tex_quad(
+                    dl,
+                    &world,
+                    l.w,
+                    l.h,
+                    node.tex as u32,
+                    op,
+                    &clip,
+                    fu0,
+                    fv0,
+                    fu1,
+                    fv1,
+                );
+            }
         }
 
         // -- children (overflow-hidden scissor around them; z-index stable
@@ -1065,18 +1341,25 @@ impl<'a> Walker<'a> {
             if child_clip.is_empty() {
                 return; // nothing of the subtree can be visible
             }
-            dl.words.push(spec::draw_op::SCISSOR);
-            dl.words.push(xy_word(child_clip.x0, child_clip.y0));
-            dl.words.push(wh_word(child_clip.x1 - child_clip.x0, child_clip.y1 - child_clip.y0));
+            sink.push_scissor(child_clip);
             scissored = true;
         }
 
         if r.perspective > 0.0 {
             // 3D context root: the subtree composes 3x4 matrices, projects
             // through r.perspective about this node's center and painter-sorts.
-            self.paint_3d(slot, &world, op, &child_clip, dl, r.perspective, l.w, l.h);
+            self.paint_3d(
+                slot,
+                &world,
+                op,
+                &child_clip,
+                sink.draw_list(),
+                r.perspective,
+                l.w,
+                l.h,
+            );
             if scissored {
-                dl.words.push(spec::draw_op::SCISSOR_POP);
+                sink.pop_scissor();
             }
             return;
         }
@@ -1085,11 +1368,11 @@ impl<'a> Walker<'a> {
         // never disagree with painted stacking.
         let (tree, styles) = (self.tree, self.styles);
         for_children_in_paint_order(tree, styles, slot, |cs| {
-            self.paint(cs, world, op, child_clip, dl);
+            self.paint(cs, world, op, child_clip, sink);
         });
 
         if scissored {
-            dl.words.push(spec::draw_op::SCISSOR_POP);
+            sink.pop_scissor();
         }
     }
 

@@ -96,7 +96,8 @@ PocketJS/
                        pak container constants (magic/header/entry/align/fnv1a) [R]
     gen-rust.ts        codegen → engine/core/src/spec.rs (committed)
   engine/core/                Rust lib `pocketjs-core` — #![no_std] + alloc
-    framework/src/lib.rs         pub struct Ui: apply-ops, tick(1/60), draw() → &DrawList
+    framework/src/lib.rs         pub struct Ui: apply-ops, tick(1/60), draw() → &DrawList;
+                       draw_retained() → ordered Draw/Layer passes for capable hosts
     framework/src/spec.rs        GENERATED — tests/contract.ts re-runs gen-rust.ts and
                        byte-compares this file (airtight drift guard) [R]
     framework/src/tree.rs        node arena: Vec<Node> + free list + GENERATION COUNTER
