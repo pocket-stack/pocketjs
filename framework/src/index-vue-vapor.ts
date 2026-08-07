@@ -32,6 +32,7 @@ import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.t
 import { __resetTouches, __setTouches } from "./touch.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
 import { __drainEffects, resetEffects } from "./effects.ts";
+import { runServicePumps } from "./services.ts";
 import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
 import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
 import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
@@ -205,6 +206,7 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
       __advanceClock();
       __setAnalog(analog);
       __setTouches(touches);
+      runServicePumps();
       __drainEffects();
       runFrameHooks(buttons);
       handleFrame(buttons);

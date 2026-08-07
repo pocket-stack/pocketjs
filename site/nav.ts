@@ -31,6 +31,7 @@ export const DOC_NAV: DocSection[] = [
       { slug: "input-focus", title: "Input & focus" },
       { slug: "app-shell", title: "App shell & overlays" },
       { slug: "devtools", title: "DevTools" },
+      { slug: "net", title: "Networking" },
     ],
   },
   {
@@ -176,4 +177,3 @@ export const BLOG_POSTS: BlogPost[] = [
     author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
   },
 ];
-

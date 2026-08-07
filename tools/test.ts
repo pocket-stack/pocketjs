@@ -59,6 +59,8 @@ const SUITE: readonly Stage[] = [
       "tests/kinetics.test.ts",
       "tests/osk-controller.test.ts",
       "tests/audio.test.ts",
+      "tests/net.test.ts",
+      "tests/net-web.test.js",
       "tests/vita-package.test.ts",
       "tests/psp-toolchain.test.ts",
       "tests/symbian-data.test.ts",

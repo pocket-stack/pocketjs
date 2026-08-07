@@ -80,6 +80,7 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   kinetics: { file: { solid: "framework/src/kinetics.ts" } },
   launcher: { file: "framework/src/launcher.ts" },
   manifest: { file: "framework/src/manifest/index.ts" },
+  net: { file: "framework/src/net-api.ts", aliases: TWINS },
   osk: { file: { solid: "framework/src/osk.tsx" } },
   package: { file: "contracts/spec/pocket-package.ts" },
   platform: { file: "framework/src/platform.ts" },

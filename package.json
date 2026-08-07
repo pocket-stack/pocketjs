@@ -98,6 +98,7 @@
     "./kinetics": "./framework/src/kinetics.ts",
     "./launcher": "./framework/src/launcher.ts",
     "./manifest": "./framework/src/manifest/index.ts",
+    "./net": "./framework/src/net-api.ts",
     "./osk": "./framework/src/osk.tsx",
     "./package": "./contracts/spec/pocket-package.ts",
     "./platform": "./framework/src/platform.ts",
@@ -117,6 +118,7 @@
     "./vue-vapor/effects": "./framework/src/effects.ts",
     "./vue-vapor/lifecycle": "./framework/src/lifecycle-vue-vapor.ts",
     "./vue-vapor/input": "./framework/src/input-api.ts",
+    "./vue-vapor/net": "./framework/src/net-api.ts",
     "./vue-vapor/renderer": "./framework/src/renderer-vue-vapor.ts",
     "./octane": "./framework/src/index-octane.ts",
     "./octane/animation": "./framework/src/animation.ts",
@@ -126,6 +128,7 @@
     "./octane/effects": "./framework/src/effects.ts",
     "./octane/lifecycle": "./framework/src/lifecycle-octane.ts",
     "./octane/input": "./framework/src/input-api.ts",
+    "./octane/net": "./framework/src/net-api.ts",
     "./octane/renderer": "./framework/src/renderer-octane.ts"
   },
   "description": "High-performance JSX UI outside the browser, with native rendering, standard Vue Vapor and Solid support, a Tailwind design system, and 60 FPS animation under an 8 MB memory budget.",

@@ -1598,6 +1598,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pocket-net"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pocket-mod",
+ "pocketjs-core",
+ "rquickjs",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "pocket-stage"
 version = "0.1.0"
 dependencies = [
