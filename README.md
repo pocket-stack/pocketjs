@@ -226,7 +226,7 @@ validation level are tracked in the [changelog](https://pocketjs.dev/changelog/)
 | Build a Guest application | [Getting started](https://pocketjs.dev/docs/getting-started/) |
 | Compare Solid, Vue Vapor, Vue SFC, and Octane | [Frameworks](https://pocketjs.dev/docs/frameworks/) |
 | Compile for machines without a JS engine | [Pocket Vapor](./vapor/README.md) |
-| Add or embed a native host | [Native contract](https://pocketjs.dev/docs/native-contract/) · [Platform contracts](https://pocketjs.dev/docs/platform-contracts/) |
+| Add or embed a native host | [Native contract](https://pocketjs.dev/docs/native-contract/) · [Platform contracts](https://pocketjs.dev/docs/platform-contracts/) · [Pointer input](./docs/POINTER.md) |
 | Build a game or specialized runtime | [Runtime family](./docs/RUNTIMES.md) · [Pocket3D](./engine/pocket3d/README.md) |
 | Debug, replay, and verify | [DevTools](./docs/DEVTOOLS.md) · [Determinism](./docs/DETERMINISM.md) |
 | Browse complete examples | [`apps/`](./apps/) · [PocketJS blog](https://pocketjs.dev/blog/) |

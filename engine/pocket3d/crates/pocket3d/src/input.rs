@@ -191,6 +191,7 @@ impl Input {
         self.mouse_down.clear();
         self.mouse_pressed.clear();
         self.mouse_delta = Vec2::ZERO;
+        self.cursor = None;
         self.edits.clear();
         self.ime.clear();
         self.scroll = Vec2::ZERO;
@@ -291,6 +292,16 @@ impl Input {
         } else {
             self.mouse_down.remove(&id);
         }
+    }
+
+    /// Host policy consumed this press (window move/resize, mode switch):
+    /// remove both level and pending edge, and publish a cancellation edge to
+    /// pointer consumers. This is deliberately distinct from an injected UP.
+    pub fn cancel_mouse_button(&mut self, button: MouseButton) {
+        let id = button_id(button);
+        self.mouse_down.remove(&id);
+        self.mouse_pressed.remove(&id);
+        self.interaction_cancelled = true;
     }
 
     pub fn inject_mouse_delta(&mut self, dx: f32, dy: f32) {
@@ -396,13 +407,25 @@ mod tests {
         assert!(!input.scroll_gesture_ended());
 
         input.inject_mouse_button(MouseButton::Left, true);
+        input.inject_cursor(12.0, 34.0);
         input.on_window_event(&WindowEvent::Focused(false));
         assert!(!input.mouse_button_down(MouseButton::Left));
+        assert_eq!(input.cursor(), None);
         assert!(input.scroll_gesture_ended());
         assert!(input.interaction_cancelled());
 
         input.end_frame();
         assert!(!input.scroll_gesture_ended());
         assert!(!input.interaction_cancelled());
+    }
+
+    #[test]
+    fn host_consumed_mouse_press_becomes_cancel_not_fast_click() {
+        let mut input = Input::default();
+        input.inject_mouse_button(MouseButton::Left, true);
+        input.cancel_mouse_button(MouseButton::Left);
+        assert!(!input.mouse_button_pressed(MouseButton::Left));
+        assert!(!input.mouse_button_down(MouseButton::Left));
+        assert!(input.interaction_cancelled());
     }
 }

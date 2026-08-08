@@ -26,6 +26,53 @@ use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime};
 // Surface crates implement ops against the same rquickjs the guest uses.
 pub use rquickjs as qjs;
 
+/// Real-pointer edge kind in the versioned frame-input payload. Numeric
+/// values are pinned to `framework/src/frame-input.ts::POINTER_EVENT`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PointerEventKind {
+    Move = 0,
+    Down = 1,
+    Up = 2,
+    Leave = 3,
+    Cancel = 4,
+}
+
+/// One ordered real-pointer edge. Coordinates are logical viewport pixels;
+/// they remain ordinary f64 values on the JS wire (no 9/10-bit packing).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PointerEvent {
+    pub kind: PointerEventKind,
+    pub x: f64,
+    pub y: f64,
+    /// 0 is the primary button.
+    pub button: u8,
+    /// Bit 0 is Shift; future modifiers append bits.
+    pub modifiers: u8,
+}
+
+impl PointerEvent {
+    pub const fn at(kind: PointerEventKind, x: f64, y: f64) -> Self {
+        Self {
+            kind,
+            x,
+            y,
+            button: 0,
+            modifiers: 0,
+        }
+    }
+
+    pub const fn boundary(kind: PointerEventKind) -> Self {
+        Self::at(kind, 0.0, 0.0)
+    }
+}
+
+/// Version 1 host input appended as frame() argument 5. The first four
+/// positional tracks remain buttons, analog, touches, and touch hit facts.
+pub struct FrameInput<'a> {
+    pub pointer: &'a [PointerEvent],
+}
+
 /// One QuickJS realm hosting one guest program.
 pub struct Guest {
     rt: Runtime,
@@ -127,6 +174,79 @@ impl Guest {
                 }
                 frame
                     .call::<_, ()>((buttons, analog, arr))
+                    .catch(&ctx)
+                    .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
+            }
+            Ok(())
+        })?;
+        self.drain_jobs();
+        Ok(())
+    }
+
+    /// One guest turn with the versioned frame-input extension. Pointer
+    /// events are ordered edges, so `[Down, Up]` in one slice preserves a
+    /// complete fast click. Leave and Cancel are explicit and never inferred
+    /// from a missing sampled level.
+    pub fn frame_with_input(
+        &self,
+        buttons: u32,
+        analog: u32,
+        touches: &[u32],
+        touch_hits: &[u32],
+        input: &FrameInput<'_>,
+    ) -> Result<()> {
+        self.ctx.with(|ctx| -> Result<()> {
+            let frame: Option<Function> = ctx.globals().get("frame").ok();
+            if let Some(frame) = frame {
+                let touch_arr = rquickjs::Array::new(ctx.clone())
+                    .map_err(|e| anyhow!("pocket-mod: allocating touch array: {e}"))?;
+                for (i, value) in touches.iter().enumerate() {
+                    touch_arr
+                        .set(i, *value)
+                        .map_err(|e| anyhow!("pocket-mod: setting touch {i}: {e}"))?;
+                }
+                let hit_arr = rquickjs::Array::new(ctx.clone())
+                    .map_err(|e| anyhow!("pocket-mod: allocating touch-hit array: {e}"))?;
+                for (i, value) in touch_hits.iter().enumerate() {
+                    hit_arr
+                        .set(i, *value)
+                        .map_err(|e| anyhow!("pocket-mod: setting touch hit {i}: {e}"))?;
+                }
+                let payload = Object::new(ctx.clone())
+                    .map_err(|e| anyhow!("pocket-mod: allocating frame input: {e}"))?;
+                payload
+                    .set("v", 1u8)
+                    .map_err(|e| anyhow!("pocket-mod: setting frame input version: {e}"))?;
+                let pointer = rquickjs::Array::new(ctx.clone())
+                    .map_err(|e| anyhow!("pocket-mod: allocating pointer batch: {e}"))?;
+                for (i, event) in input.pointer.iter().enumerate() {
+                    let raw = rquickjs::Array::new(ctx.clone())
+                        .map_err(|e| anyhow!("pocket-mod: allocating pointer event {i}: {e}"))?;
+                    raw.set(0, event.kind as u8)
+                        .map_err(|e| anyhow!("pocket-mod: setting pointer kind {i}: {e}"))?;
+                    if !matches!(
+                        event.kind,
+                        PointerEventKind::Leave | PointerEventKind::Cancel
+                    ) {
+                        raw.set(1, event.x)
+                            .map_err(|e| anyhow!("pocket-mod: setting pointer x {i}: {e}"))?;
+                        raw.set(2, event.y)
+                            .map_err(|e| anyhow!("pocket-mod: setting pointer y {i}: {e}"))?;
+                        raw.set(3, event.button)
+                            .map_err(|e| anyhow!("pocket-mod: setting pointer button {i}: {e}"))?;
+                        raw.set(4, event.modifiers).map_err(|e| {
+                            anyhow!("pocket-mod: setting pointer modifiers {i}: {e}")
+                        })?;
+                    }
+                    pointer
+                        .set(i, raw)
+                        .map_err(|e| anyhow!("pocket-mod: setting pointer event {i}: {e}"))?;
+                }
+                payload
+                    .set("pointer", pointer)
+                    .map_err(|e| anyhow!("pocket-mod: setting pointer batch: {e}"))?;
+                frame
+                    .call::<_, ()>((buttons, analog, touch_arr, hit_arr, payload))
                     .catch(&ctx)
                     .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
             }
@@ -319,6 +439,40 @@ mod tests {
             .unwrap();
         let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
         assert_eq!(res, "0:0:-1");
+    }
+
+    #[test]
+    fn frame_carries_ordered_full_resolution_pointer_edges() {
+        let g = Guest::new().unwrap();
+        g.eval(
+            "boot",
+            "globalThis.res = ''; \
+             globalThis.frame = (_b, _a, _t, _h, input) => { \
+               globalThis.res = input.v + ':' + input.pointer.map(e => e.join(',')).join('|'); \
+             };",
+        )
+        .unwrap();
+        let events = [
+            PointerEvent {
+                kind: PointerEventKind::Down,
+                x: 4095.5,
+                y: 3071.25,
+                button: 0,
+                modifiers: 1,
+            },
+            PointerEvent::at(PointerEventKind::Up, 4095.5, 3071.25),
+            PointerEvent::boundary(PointerEventKind::Cancel),
+        ];
+        g.frame_with_input(
+            0,
+            pocketjs_core::spec::ANALOG_CENTER,
+            &[],
+            &[],
+            &FrameInput { pointer: &events },
+        )
+        .unwrap();
+        let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
+        assert_eq!(res, "1:1,4095.5,3071.25,0,1|2,4095.5,3071.25,0,0|4");
     }
 
     #[test]

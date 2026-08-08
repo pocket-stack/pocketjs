@@ -12,10 +12,11 @@
 //!   cargo run -p note-widget -- --file ~/notes/todo.md --width 380 --height 520
 //!
 //! The host is the guest's companion process over the spec svc channel
-//! (ops 30..32): real keyboard/mouse/wheel/resize go in as JSON lines,
-//! save/quit intents come back. Clicks synthesize BTN_CIRCLE, so the
-//! framework's hover-focus + onPress pipeline dispatches them — the app
-//! never sees a platform event, only spec inputs. Drag the header to move,
+//! (ops 30..32): keyboard/wheel/resize go in as JSON lines and save/quit
+//! intents come back. Mouse input uses pocket-mod's versioned frame-input
+//! pointer batch, so hover, fast clicks, drag, leave and cancellation all
+//! reach the framework without private svc messages or synthesized buttons.
+//! Drag the header to move,
 //! drag the dotted corner (or any edge, macOS) to resize, ⌘Q/⌘W quits.
 
 mod cjk;
@@ -24,11 +25,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use glam::Vec2;
-use pocket3d::gpu::{Gpu, OFFSCREEN_FORMAT, OffscreenTarget};
-use pocket3d::input::{EditKey, ImeInput, Input};
-use pocket_mod::Guest;
+use pocket_mod::{FrameInput, Guest, PointerEvent, PointerEventKind};
 use pocket_ui_wgpu::{UiRenderer, UiSurface};
 use pocket_widget::shell::{FlatWidget, WidgetConfig};
+use pocket3d::gpu::{Gpu, OFFSCREEN_FORMAT, OffscreenTarget};
+use pocket3d::input::{EditKey, ImeInput, Input};
 use winit::keyboard::KeyCode;
 
 /// Header strip height in logical px — mirrors HEADER_H in apps/note/app.tsx.
@@ -37,8 +38,6 @@ const HEADER_H: f32 = 30.0;
 const HEADER_BUTTONS_W: f32 = 112.0;
 /// Resize grip square in the bottom-right corner, logical px.
 const GRIP: f32 = 18.0;
-/// The spec CIRCLE bit — the framework's onPress button.
-const BTN_CIRCLE: u32 = 0x2000;
 /// Ticks a scripted drag takes from press to its final position.
 const DRAG_TICKS: u64 = 8;
 
@@ -60,9 +59,10 @@ struct NoteGame {
     dirty: bool,
     exit: bool,
     booted: bool,
-    /// Last (x, y, primary-down) sent over svc — mouse lines go out on any
-    /// change, including press/release without movement.
+    /// Last logical position + primary level used to derive ordered pointer
+    /// edges. The level is host state only; the guest receives explicit edges.
     last_mouse: Option<(f32, f32, bool)>,
+    pointer_inside: bool,
     /// The guest's ••• menu is up: stop claiming header drags/resizes so
     /// clicks anywhere reach the backdrop and close it.
     guest_menu_open: bool,
@@ -115,6 +115,7 @@ impl NoteGame {
             exit: false,
             booted: false,
             last_mouse: None,
+            pointer_inside: false,
             guest_menu_open: false,
             scale: 1.0,
             ticks: 0,
@@ -246,23 +247,16 @@ impl NoteGame {
             let (_, ev) = self.script.remove(i);
             match ev {
                 ScriptEvent::Click(x, y) => {
-                    // Hover first (focuses the target), then hold CIRCLE for
-                    // a few ticks — the same order a real pointer produces.
-                    self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false}));
                     self.script_click_until = self.ticks + 4;
                     self.script_shift = false;
                     self.script_drag = Some((x, y, x, y, self.ticks));
                 }
                 ScriptEvent::ShiftClick(x, y) => {
-                    self.svc(
-                        serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false, "sh": true}),
-                    );
                     self.script_click_until = self.ticks + 4;
                     self.script_shift = true;
                     self.script_drag = Some((x, y, x, y, self.ticks));
                 }
                 ScriptEvent::Drag(x0, y0, x1, y1) => {
-                    self.svc(serde_json::json!({"t": "mouse", "x": x0, "y": y0, "d": false}));
                     self.script_click_until = self.ticks + DRAG_TICKS + 2;
                     self.script_drag = Some((x0, y0, x1, y1, self.ticks));
                 }
@@ -344,7 +338,7 @@ impl FlatWidget for NoteGame {
             self.svc(serde_json::json!({"t": "resize", "w": logical.0, "h": logical.1}));
         }
 
-        // Keyboard / wheel / pointer → svc lines (logical px).
+        // Keyboard / wheel → svc lines (the pointer uses frame input below).
         self.forward_edits(input);
         self.forward_ime(input);
         let scroll = input.scroll();
@@ -357,16 +351,12 @@ impl FlatWidget for NoteGame {
         }
         let script_down = self.ticks < self.script_click_until;
         // Down-edge OR level: a fast click can press AND release inside one
-        // 60 Hz tick — level sampling alone would drop it entirely (the
-        // guest would see no press, no CIRCLE, and a stale selection).
+        // 60 Hz tick. The frame input below preserves both ordered edges.
         let pressed_edge = input.mouse_button_pressed(winit::event::MouseButton::Left);
-        let level_down =
-            input.mouse_button_down(winit::event::MouseButton::Left) || script_down;
-        let mouse_down = level_down || pressed_edge;
+        let level_down = input.mouse_button_down(winit::event::MouseButton::Left) || script_down;
 
-        // Pointer → svc: one line per (position, button) change, so the
-        // guest sees press and release edges even without movement. A
-        // release with the cursor gone reuses the last known position.
+        // Pointer coordinates are logical numbers, never packed — the stock
+        // macos-widget contract permits a 4096x4096 live viewport.
         let pos = if let Some((x0, y0, x1, y1, start)) = self.script_drag {
             let t = ((self.ticks.saturating_sub(start)) as f32 / DRAG_TICKS as f32).min(1.0);
             if t >= 1.0 && !script_down {
@@ -378,33 +368,70 @@ impl FlatWidget for NoteGame {
             input
                 .cursor()
                 .map(|c| (c.x / scale as f32, c.y / scale as f32))
-                .or(self.last_mouse.map(|(x, y, _)| (x, y)))
         };
         let shift = input.key_down(KeyCode::ShiftLeft)
             || input.key_down(KeyCode::ShiftRight)
             || self.script_shift;
-        if let Some((x, y)) = pos {
+        let modifiers = u8::from(shift);
+        let mut pointer = Vec::with_capacity(3);
+        let event = |kind, x: f32, y: f32| PointerEvent {
+            kind,
+            x: x as f64,
+            y: y as f64,
+            button: 0,
+            modifiers,
+        };
+
+        if input.interaction_cancelled() {
+            pointer.push(PointerEvent::boundary(PointerEventKind::Cancel));
+            self.last_mouse = None;
+            self.pointer_inside = false;
+        } else if let Some((x, y)) = pos {
+            let previous_down = self.last_mouse.is_some_and(|(_, _, down)| down);
+            let moved = !self.pointer_inside
+                || self
+                    .last_mouse
+                    .is_none_or(|(last_x, last_y, _)| last_x != x || last_y != y);
+            if moved {
+                pointer.push(event(PointerEventKind::Move, x, y));
+            }
             if pressed_edge && !level_down {
-                // The whole click fit inside this tick: deliver both edges
-                // in order so the guest still runs press → release.
-                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": true, "sh": shift}));
-                self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false, "sh": shift}));
-                self.last_mouse = Some((x, y, false));
-            } else {
-                let m = (x, y, mouse_down);
-                if self.last_mouse != Some(m) {
-                    self.last_mouse = Some(m);
-                    self.svc(
-                        serde_json::json!({"t": "mouse", "x": x, "y": y, "d": mouse_down, "sh": shift}),
-                    );
+                // The complete click fit before this tick. Never collapse it
+                // back into an up level: DOWN then UP must reach the guest.
+                pointer.push(event(PointerEventKind::Down, x, y));
+                pointer.push(event(PointerEventKind::Up, x, y));
+            } else if !previous_down && level_down {
+                pointer.push(event(PointerEventKind::Down, x, y));
+            } else if previous_down && !level_down {
+                pointer.push(event(PointerEventKind::Up, x, y));
+            }
+            self.last_mouse = Some((x, y, level_down));
+            self.pointer_inside = true;
+        } else {
+            let previous_down = self.last_mouse.is_some_and(|(_, _, down)| down);
+            if self.pointer_inside {
+                pointer.push(PointerEvent::boundary(PointerEventKind::Leave));
+            }
+            if previous_down && !level_down {
+                // A release outside cannot be a successful click at the last
+                // in-window coordinate. Cancel the capture explicitly.
+                pointer.push(PointerEvent::boundary(PointerEventKind::Cancel));
+                if let Some((x, y, _)) = self.last_mouse {
+                    self.last_mouse = Some((x, y, false));
                 }
             }
+            self.pointer_inside = false;
         }
 
-        // The guest turn (Law 3: exactly one per tick). Clicks are CIRCLE —
-        // hover already focused what's under the pointer.
-        let buttons = if mouse_down { BTN_CIRCLE } else { 0 };
-        self.guest.frame(buttons)?;
+        // The guest turn (Law 3: exactly one per tick). Real pointer input is
+        // frame argument 5; the button mask stays independent and empty.
+        self.guest.frame_with_input(
+            0,
+            pocketjs_core::spec::ANALOG_CENTER,
+            &[],
+            &[],
+            &FrameInput { pointer: &pointer },
+        )?;
         self.surface.tick();
 
         // Guest → host intents.

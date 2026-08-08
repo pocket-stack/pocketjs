@@ -1212,6 +1212,7 @@ dependencies = [
  "pocket-ui-wgpu",
  "pocket-widget",
  "pocket3d",
+ "pocketjs-core",
  "serde_json",
  "wgpu",
  "winit",

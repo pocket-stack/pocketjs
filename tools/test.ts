@@ -82,6 +82,7 @@ const SUITE: readonly Stage[] = [
       "tests/touch-activation.test.ts",
       "tests/portal-hit.test.ts",
       "tests/cursor.test.ts",
+      "tests/pointer-input.test.ts",
       "tests/action-handler-vue-vapor.test.ts",
       "tests/vue-vapor-dom.test.ts",
       "tests/vue-vapor-pak.test.ts",
@@ -91,6 +92,16 @@ const SUITE: readonly Stage[] = [
       "tests/clock.test.ts",
       "tests/tiles.test.ts",
     ],
+  },
+  {
+    name: "pointer framework parity",
+    prep: [
+      ["bun", "tools/build.ts", "hero-main"],
+      ["bun", "tools/build.ts", "hero-vue-vapor-main", "--framework=vue-vapor"],
+      ["bun", "tools/build.ts", "hero-main", "--framework=octane"],
+    ],
+    browser: true,
+    tests: ["tests/pointer-frameworks.test.ts"],
   },
   {
     name: "vue-sfc journeys",

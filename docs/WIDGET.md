@@ -120,9 +120,9 @@ one `render_words_scaled` pass on dirty frames. It exercises everything the
   windows keep macOS edge-resize; the shell also tracks an explicit
   grip-corner drag (`resize_at`, `WidgetConfig::resizable`/`min_size`).
 - **The svc channel is the desktop companion contract.** The spec mailbox
-  (ops 30..32) needs no new ops for a host that lives in-process: real
-  keyboard/mouse/wheel/resize go to the guest as JSON lines
-  (`{t:"ch"|"key"|"mouse"|"scroll"|"resize"|"load"}`), save/quit intents
+  (ops 30..32) carries text/wheel/resize data as JSON lines
+  (`{t:"ch"|"key"|"scroll"|"resize"|"load"}`), while the real mouse uses
+  the versioned frame-input contract ([POINTER.md](./POINTER.md)). Save/quit intents
   come back (`{t:"save"|"quit"}`). The app source retains a svc-less
   read-only fallback, but the current Note manifest is dynamic-only; it must
   add a fixed viewport variant before a PSP or embedded host can admit that
@@ -145,11 +145,11 @@ one `render_words_scaled` pass on dirty frames. It exercises everything the
   assert identity (`__host`/`__hostAbi` vs the plan's target), and
   `bun run note` builds through the manifest — density and features come from
   the profile, not flags.
-- **Clicks are CIRCLE.** The host synthesizes the spec press button while
-  the mouse is down; the app resolves hover → focus (`hitFocusable` +
-  `focusNode`) from svc mouse moves, and the framework's stock onPress
-  pipeline dispatches — including into Portal overlays (the hit-test root
-  now spans the overlay layer, fixing menus for every cursor-mode app).
+- **Clicks are pointer edges.** The host delivers full-resolution ordered
+  move/down/up/leave/cancel events through `Guest::frame_with_input`.
+  Framework hover-focus, `active:`, cancellation and onPress dispatch need no
+  synthesized CIRCLE or private mouse messages; Note reads `pointerEvents()`
+  only for its content caret/drag selection.
 - **Text editing without an OSK.** The `pocket3d` `Input` grew a per-frame
   edit-keystroke stream (chars with layout applied, named keys, repeats)
   and a wheel accumulator; the guest's editor (measured soft wrap, caret

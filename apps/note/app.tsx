@@ -5,18 +5,18 @@
 // scroll — the IM thread contract: an untransformed overflow-hidden clip
 // around a translateY canvas that mounts only the visible slice. Edit mode
 // soft-wraps the raw source (editor.ts) with a real caret, drag selection
-// and an undo/redo stack. The desktop host feeds keys/mouse/resizes through
-// the svc channel (svc.ts) and synthesizes CIRCLE for clicks, so
-// hover-focus + the stock onPress pipeline dispatch the chrome (toggle,
-// menu) while content pointer gestures (caret, drag-select) ride the svc
-// mouse stream directly; on hosts without svc (PSP, sim, goldens) the app
+// and an undo/redo stack. The desktop host feeds keys/resizes through svc;
+// its real mouse uses the framework's versioned pointer frame input. The
+// framework owns hover-focus + onPress while this app consumes the same
+// ordered edge batch for content caret/drag selection. On hosts without svc
+// (PSP, sim, goldens) the app
 // is a read-only note scrolled by d-pad — unmodified-app base case.
 
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Focusable, Image, Portal, Text, View } from "@pocketjs/framework/components";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
-import { BTN, focusNode, hitFocusable } from "@pocketjs/framework/input";
-import { resizeViewport, type NodeMirror } from "@pocketjs/framework";
+import { BTN, pointerEvents } from "@pocketjs/framework/input";
+import { resizeViewport } from "@pocketjs/framework";
 import { hasFeature } from "@pocketjs/framework/platform";
 import { parseMarkdown } from "./markdown.ts";
 import {
@@ -157,7 +157,6 @@ export default function Note(): ReturnType<typeof View> {
   const [preedit, setPreedit] = createSignal<{ text: string; cursor: number } | null>(null);
   const [scrollV, setScrollV] = createSignal(0);
   const [scrollE, setScrollE] = createSignal(0);
-  const [mouse, setMouse] = createSignal({ x: -1, y: -1 });
 
   const ink = () => (dark() ? INK.dark : INK.light);
   const contentW = () => Math.min(vp().w - PAD_X * 2, MAX_CONTENT_W);
@@ -232,9 +231,6 @@ export default function Note(): ReturnType<typeof View> {
   let goalX = 0;
   let goalSticky = false;
   let saveIn = -1;
-  let lastHover: NodeMirror | null = null;
-  /** Re-run hover→focus next frame (a mode switch remounted the target). */
-  let rehover = false;
 
   const markDirty = () => {
     saveIn = SAVE_DEBOUNCE;
@@ -302,14 +298,12 @@ export default function Note(): ReturnType<typeof View> {
     setScrollE(Math.max(0, Math.min(maxScrollE(), y - viewH() / 3)));
     setEditing(true);
     goalSticky = false;
-    rehover = true;
   };
   const leaveEdit = () => {
     setPreedit(null);
     setEditing(false);
     if (saveIn > 0) save();
     setScrollV(Math.max(0, Math.min(maxScrollV(), scrollV())));
-    rehover = true;
   };
 
   const handleKey = (k: string, shift = false) => {
@@ -437,14 +431,13 @@ export default function Note(): ReturnType<typeof View> {
     }
   };
 
-  // ---- pointer gestures over the content (svc mouse stream) --------------
-  // Chrome (toggle, menu) rides the framework's hover-focus + CIRCLE press;
-  // content needs press/drag/release, which BTN bits can't carry.
+  // ---- pointer gestures over the content ---------------------------------
+  // Chrome activation is framework-owned; content consumes the same ordered
+  // edge batch for caret placement and drag selection.
   let press: { x: number; y: number; dragged: boolean; content: boolean } | null = null;
   /** Preview selection anchor — persists across clicks so shift-click
    *  extends from the last plain click. */
   let pvAnchor: RowPos | null = null;
-  let prevDown = false;
 
   const editPosAt = (x: number, y: number): number => {
     const line = Math.floor((y - HEADER_H + scrollE() - EDGE_PAD) / BODY_LINE_H);
@@ -545,19 +538,6 @@ export default function Note(): ReturnType<typeof View> {
       case "key":
         if (ev.k) handleKey(ev.k, ev.sh ?? false);
         break;
-      case "mouse": {
-        const p = { x: ev.x ?? -1, y: ev.y ?? -1 };
-        const down = ev.d ?? false;
-        setMouse(p);
-        if (down && !prevDown) pointerDown(p.x, p.y, ev.sh ?? false);
-        else if (down) pointerMove(p.x, p.y, true);
-        if (!down && prevDown) pointerUp(p.x, p.y);
-        prevDown = down;
-        const n = hitFocusable(p.x, p.y);
-        if (n && n !== lastHover) focusNode(n);
-        lastHover = n;
-        break;
-      }
       case "scroll": {
         const dy = ev.dy ?? 0;
         if (editing()) setScrollE(Math.max(0, Math.min(maxScrollE(), scrollE() - dy)));
@@ -570,6 +550,26 @@ export default function Note(): ReturnType<typeof View> {
   let lastCaretRect = { x: -1, y: -1, h: -1 };
   onFrame(() => {
     if (saveIn > 0 && --saveIn === 0) save();
+    for (const event of pointerEvents()) {
+      switch (event.type) {
+        case "down":
+          if (event.button === 0) pointerDown(event.x, event.y, event.shift);
+          break;
+        case "move":
+          pointerMove(event.x, event.y, true);
+          break;
+        case "up":
+          if (event.button === 0) pointerUp(event.x, event.y);
+          break;
+        case "leave":
+          // A held pointer may re-enter; keep the selection capture but stop
+          // extending it while no logical position exists.
+          break;
+        case "cancel":
+          press = null;
+          break;
+      }
+    }
     if (!svc) return;
     for (const ev of svc.poll()) handleEvent(ev);
     if (editing()) {
@@ -581,17 +581,6 @@ export default function Note(): ReturnType<typeof View> {
       if (rect.x !== lastCaretRect.x || rect.y !== lastCaretRect.y) {
         lastCaretRect = rect;
         svc.send({ t: "caret", ...rect });
-      }
-    }
-    if (rehover) {
-      // The frame after a mode switch: the node under the pointer was
-      // remounted, so hover-focus it again without waiting for a move.
-      rehover = false;
-      const m = mouse();
-      if (m.x >= 0) {
-        const n = hitFocusable(m.x, m.y);
-        if (n) focusNode(n);
-        lastHover = n;
       }
     }
   });

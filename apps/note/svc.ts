@@ -1,9 +1,9 @@
 // apps/note/svc.ts — the widget host protocol over the spec svc channel
 // (ops 30..32, HostOps svcOpen/svcPoll/svcSend).
 //
-// The desktop widget host is the app's companion process: it forwards the
-// real keyboard, mouse and window into the guest as JSON lines, and the
-// guest sends intents (save, quit) back. One poll per frame, per the
+// The desktop widget host is the app's companion process: it forwards text,
+// wheel and window data as JSON lines (real pointer input uses frame input),
+// and the guest sends intents (save, quit) back. One poll per frame, per the
 // HostOps contract. Hosts without the channel (goldens, hosts/sim, PSP)
 // feature-detect to null and the app runs standalone on its sample doc —
 // an unmodified-app base case, per docs/RUNTIMES.md rule 5.
@@ -21,10 +21,6 @@
 //   {t:"ime", s, c}            IME composition: preedit text + caret char
 //                              index within it (null clears); commits
 //                              arrive as plain {t:"ch"} lines
-//   {t:"mouse", x, y, d, sh}   pointer moved / pressed / released — d is
-//                              the primary-button state (a line is sent on
-//                              every press/release even without movement),
-//                              sh the shift modifier (extends selections)
 //   {t:"scroll", dy}           wheel delta in logical px
 //
 // guest → host lines:
@@ -39,17 +35,13 @@
 import { getOps } from "@pocketjs/framework";
 
 export interface HostEvent {
-  t: "hello" | "resize" | "load" | "ch" | "key" | "mouse" | "scroll" | "paste" | "ime";
+  t: "hello" | "resize" | "load" | "ch" | "key" | "scroll" | "paste" | "ime";
   w?: number;
   h?: number;
   text?: string;
   s?: string;
   k?: string;
-  x?: number;
-  y?: number;
-  /** Primary mouse button held ("mouse" events). */
-  d?: boolean;
-  /** Shift held (mouse presses and named keys) — extends selections. */
+  /** Shift held for named editing keys — extends selections. */
   sh?: boolean;
   dy?: number;
   /** IME preedit caret (char index into s), null when composition ends. */

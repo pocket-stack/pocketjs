@@ -135,9 +135,9 @@ The first *flat* pocket-widget runtime: no scene at all — the borderless,
 resizable, always-on-top window IS a live `ui` surface, rendered at Retina
 density (density-2 pak + `render_words_scaled`) and demand-driven like every
 widget. The guest is `apps/note` (markdown view/edit, popup menu); the host
-forwards the real keyboard/mouse/wheel/resize over the spec svc channel and
-synthesizes CIRCLE for clicks, so the framework's hover-focus + onPress
-pipeline does all dispatch.
+forwards text/wheel/resize over svc and sends its mouse through the versioned
+frame-input pointer batch. The framework owns hover-focus, cancellation and
+onPress; the app reads the same edges for caret/drag selection.
 
 ```sh
 bun tools/build.ts note-main --density=2   # from the repo root
