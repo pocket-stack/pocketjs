@@ -245,7 +245,7 @@ PocketJS 0.4 is deliberately scoped. It does **not** yet include:
 - Render-to-texture opacity groups (per-vertex alpha is used instead — wrong on
   overlap, fine for demos)
 - Kerning
-- 3DS / Android hosts
+- Android hosts
 
 These are omissions, not silent failures: unsupported class tokens and
 disallowed patterns surface as loud compile-time or dev errors. See the full

@@ -397,5 +397,9 @@ pak (base64-in-JS is the known QuickJS boot killer).
 
 Kinetic scroll views, CLUT/swizzled textures, render-to-texture opacity groups
 (per-vertex alpha propagation instead — wrong on overlap, fine for demos),
-kerning, `hover:`, percentage sizes beyond `-full`, 3DS/Android hosts,
+kerning, `hover:`, percentage sizes beyond `-full`, Android hosts,
 `rounded-full` on runtime-sized nodes.
+
+The 3DS left this list with `hosts/3ds` — a QuickJS guest over a PICA200
+backend, admitted through the `3ds-dev` profile in `tools/3ds-profile.ts` until
+it passes on hardware.

@@ -475,6 +475,7 @@ describe("semantic resolution", () => {
     // note is dynamic-only. A new demo missing here fails the test on
     // purpose.
     const expected: Record<string, [boolean, boolean, boolean, boolean]> = {
+      "3ds-demo": [false, false, false, true], // built by the private 3ds-dev profile (400x240 native); macos-app also admits its fixed buttons+glyphs contract
       "blackberry-classic-demo": [false, false, false, true], // built by the private blackberry-{qnx,android}-dev profiles; macos-app also admits its fixed 360x360 buttons+glyphs contract
       cafe: [true, true, false, true],
       cards: [true, true, false, true],

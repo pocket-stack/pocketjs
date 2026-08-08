@@ -1,0 +1,12 @@
+<svg width="64" height="64" viewBox="0 0 64 64">
+  <rect x="0" y="0" width="32" height="32" fill="#ef4444" />
+  <rect x="32" y="0" width="32" height="32" fill="#10b981" />
+  <rect x="0" y="32" width="32" height="32" fill="#3b82f6" />
+  <rect x="32" y="32" width="32" height="32" fill="#f59e0b" />
+  <path d="M0 58 L0 64 L64 6 L64 0 Z" fill="#f8fafc" />
+  <rect x="5" y="5" width="10" height="10" fill="#0f172a" />
+  <rect x="0" y="0" width="64" height="2" fill="#f8fafc" />
+  <rect x="0" y="62" width="64" height="2" fill="#f8fafc" />
+  <rect x="0" y="0" width="2" height="64" fill="#f8fafc" />
+  <rect x="62" y="0" width="2" height="64" fill="#f8fafc" />
+</svg>

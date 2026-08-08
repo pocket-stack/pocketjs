@@ -240,6 +240,31 @@ export const GOLDEN_SPECS: GoldenSpec[] = [
   },
 ];
 
+/**
+ * Specs for the 400x240 Nintendo 3DS top screen (tools/3ds-profile.ts), kept
+ * out of GOLDEN_SPECS on purpose: that array drives the 480x272 wasm oracle in
+ * tests/golden.ts and the Vita driver, and neither can run an app whose only
+ * viewport is 400x240. Same GoldenSpec type and the same encoders, so
+ * tests/e2e/azahar.ts shares every mechanism with the other drivers.
+ *
+ * The spec name is the app DIRECTORY, as in every other driver. The built
+ * artifact is a different string — `resolve.ts` refuses a derived output that
+ * does not start with a letter, so apps/3ds-demo builds as
+ * pocket3ds-demo-main — and the driver reads it off the manifest rather than
+ * from the spec.
+ */
+export const THREE_DS_GOLDEN_SPECS: GoldenSpec[] = [
+  {
+    name: "3ds-demo",
+    frames: 24,
+    capture: [2, 12, 22],
+    // Frame 4 presses RIGHT (BTN.RIGHT = 0x20) and frame 8 releases it, so the
+    // frame-12 and frame-22 captures carry a native focus: variant the guest
+    // never re-rendered for. Edge detection needs the release.
+    input: (frame) => (frame >= 4 && frame < 8 ? 0x20 : 0),
+  },
+];
+
 export function encodeThresholdInput(spec: GoldenSpec): string {
   const lastFrame = Math.max(...spec.capture);
   const entries: string[] = [];
