@@ -55,7 +55,15 @@ unsafe fn raw_realloc(p: *mut c_void, size: usize) -> *mut c_void {
     }
     let base = (p as *mut u8).sub(HEADER);
     let old = *(base as *mut usize);
-    // No in-place grow in the free-list heap: allocate, copy, free.
+    // In-place when the block already spans the new size: the arena rounds
+    // every request up to its power-of-two class, so a grow that stays inside
+    // the class owns those bytes already. QuickJS grows its string and array
+    // builders geometrically, so this skips both the copy and the churn that
+    // would strand the old block in a class nothing asks for again.
+    if arena::same_class(old + HEADER, size + HEADER, 16) {
+        *(base as *mut usize) = size;
+        return p;
+    }
     let np = raw_alloc(size);
     if np.is_null() {
         return ptr::null_mut();

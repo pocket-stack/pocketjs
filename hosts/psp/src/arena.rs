@@ -128,6 +128,18 @@ fn class_of(need: usize) -> usize {
     c
 }
 
+/// True when `old` and `new` bytes land in the same class, i.e. a block already
+/// sized for `old` also holds `new`. A grow that stays inside its class owns the
+/// bytes already, so a caller can keep the pointer instead of copying (see
+/// qjs_alloc's realloc: QuickJS grows buffers geometrically, and half of those
+/// grows stay in class).
+#[inline]
+pub fn same_class(old: usize, new: usize, align: usize) -> bool {
+    let a = if align < 16 { 16 } else { align };
+    let norm = |n: usize| if n > a { n } else { a };
+    old != 0 && new != 0 && class_of(norm(old)) == class_of(norm(new))
+}
+
 /// Allocate `size` bytes aligned to `align` from the arena (null on OOM).
 #[inline]
 pub unsafe fn alloc(size: usize, align: usize) -> *mut u8 {
@@ -152,11 +164,43 @@ pub unsafe fn alloc(size: usize, align: usize) -> *mut u8 {
     // Carve a fresh 2^c block from the bump pointer, aligned to `a` (minimal waste).
     let p = (BUMP + a - 1) & !(a - 1);
     let np = p + (1usize << c);
-    if np > BUMP_END {
-        return ptr::null_mut();
+    if np <= BUMP_END {
+        BUMP = np;
+        return p as *mut u8;
     }
-    BUMP = np;
-    p as *mut u8
+    // The bump is spent. Before failing, split a larger free block: classes
+    // strand memory, because a buffer grown geometrically frees each old size
+    // into a class nothing asks for again (a one-shot boot that parses a
+    // megabyte of JSON can strand megabytes this way). Halving a free 2^k
+    // block yields two 2^(k-1) blocks, so any larger class can serve this one.
+    // Deliberately last: until the bump runs dry this allocator behaves exactly
+    // as before, and big blocks stay whole for the callers that want them.
+    let mut c2 = c + 1;
+    while c2 < NCLASS {
+        let big = FREE[c2];
+        if big.is_null() {
+            c2 += 1;
+            continue;
+        }
+        FREE[c2] = *(big as *mut *mut u8);
+        let base = big as usize;
+        let mut k = c2;
+        while k > c {
+            k -= 1;
+            let half = (base + (1usize << k)) as *mut u8;
+            *(half as *mut *mut u8) = FREE[k];
+            FREE[k] = half;
+        }
+        if base & (a - 1) == 0 {
+            return base as *mut u8;
+        }
+        // Alignment miss (only for align > 16): keep the block in its class
+        // rather than leaking it, and report OOM like the pre-split path did.
+        *(base as *mut *mut u8) = FREE[c];
+        FREE[c] = base as *mut u8;
+        break;
+    }
+    ptr::null_mut()
 }
 
 /// Free a pointer previously returned by `alloc` with the SAME size + align.
