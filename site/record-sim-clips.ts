@@ -62,20 +62,6 @@ export const WALL_APPS: Record<string, Script> = {
     : (f >= 180 && f < 360) || (f >= 960 && f < 1140) ? BTN.LEFT
     : f === 780 || f === 1380 ? BTN.CROSS
     : 0,
-  // Settings: walk the list, flip toggles, ride the brightness slider.
-  "settings-main": (f) => {
-    const step = f % 720; // run the golden walk twice
-    return step === 40 ? BTN.DOWN
-      : step === 100 ? BTN.CIRCLE
-      : step === 160 ? BTN.DOWN
-      : step === 220 ? BTN.CIRCLE
-      : step === 280 ? BTN.DOWN
-      : step === 340 ? BTN.CIRCLE
-      : step === 400 || step === 440 || step === 480 ? BTN.DOWN
-      : step === 540 ? BTN.CIRCLE
-      : step === 620 ? BTN.UP
-      : 0;
-  },
   // Mission Control: tab across the dashboard panels.
   "stats-main": (f) => (f > 0 && f % 300 === 0 ? BTN.RIGHT : 0),
   // Game Library: browse covers, open a game, back out, open another.
@@ -87,25 +73,6 @@ export const WALL_APPS: Record<string, Script> = {
     : f === 840 ? BTN.CIRCLE
     : f === 1240 ? BTN.TRIANGLE
     : 0,
-  // Feature Cards: slide focus across the cards, expanding as we go.
-  "cards-main": (f) =>
-    f === 60 || f === 120 ? BTN.RIGHT
-    : f === 260 ? BTN.CIRCLE
-    : f === 500 ? BTN.RIGHT
-    : f === 640 ? BTN.CIRCLE
-    : f === 880 ? BTN.RIGHT
-    : f === 1020 ? BTN.CIRCLE
-    : f === 1260 ? BTN.RIGHT
-    : 0,
-  // Notifications: walk the feed, act on one, keep walking.
-  "notifications-main": (f) => {
-    const step = f % 800;
-    return step === 100 || step === 200 ? BTN.DOWN
-      : step === 300 ? BTN.CIRCLE
-      : step === 500 ? BTN.DOWN
-      : step === 620 ? BTN.CIRCLE
-      : 0;
-  },
   // Pocket Talk: open a thread, scroll history, then type on the OSK and
   // send — the delivery receipt lands before the loop cut.
   "im-main": (f) =>

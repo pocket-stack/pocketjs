@@ -7,9 +7,10 @@
 // captures are social-media material, not landing-page material): headless
 // sim recordings of the in-repo demos (site/record-sim-clips.ts, recorded on
 // demand into gitignored site/.cache/demo-wall/sim/), the engine-rendered
-// GIF loops from site/assets/blog/, and the Pocket Character desktop-widget
-// screen capture from R2. The two outputs ARE committed, like the old hero
-// mp4 was:
+// GIF loops from site/assets/blog/, the Pocket Character desktop-widget
+// screen capture from R2, and committed frames from the three satellite apps
+// that ship in their own repos (see `shots()` below). The two outputs ARE
+// committed, like the old hero mp4 was:
 //
 //   site/assets/pocketjs-demo-wall.mp4   4x4 wall of 480x272 tiles, 24 s loop
 //   site/assets/pocketjs-demo-wall.jpg   poster frame for first paint
@@ -26,6 +27,7 @@ const SITE = new URL(".", import.meta.url).pathname;
 const ROOT = SITE + "../";
 const CACHE = SITE + ".cache/demo-wall/";
 const BLOG = SITE + "assets/blog/";
+const WALL = SITE + "assets/wall/"; // stills the wall uses that no page embeds
 
 const OUT_MP4 = SITE + "assets/pocketjs-demo-wall.mp4";
 const OUT_JPG = SITE + "assets/pocketjs-demo-wall.jpg";
@@ -58,6 +60,30 @@ type Clip = { src: string };
 const loop = (src: string): Clip => ({ src });
 const sim = (app: string): Clip => ({ src: ensureSimClip(app) });
 
+// Three tiles are satellite apps with their own repos (pocket-stack's
+// open-strike, pocket-voxel and pocket-figma), so this script cannot boot
+// them the way it boots the in-repo demos. Their tiles are frames those
+// runtimes rendered themselves, each held for an equal share of the loop and
+// hard-cut into the next — still engine output, sampled instead of recorded.
+// Any one of them becomes a sim() clip the day its repo records a headless run.
+async function shots(name: string, frames: string[]): Promise<Clip> {
+  const out = CACHE + `shots-${name}.mp4`;
+  if (!existsSync(out)) {
+    const hold = DUR / frames.length;
+    const inputs = frames.flatMap((f) => ["-loop", "1", "-t", String(hold), "-i", f]);
+    const scaled = frames
+      .map(
+        (_, i) =>
+          `[${i}:v]scale=${TILE_W}:${TILE_H}:force_original_aspect_ratio=increase,` +
+          `crop=${TILE_W}:${TILE_H},setsar=1[s${i}]`,
+      )
+      .join(";");
+    const filter = `${scaled};${frames.map((_, i) => `[s${i}]`).join("")}concat=n=${frames.length}:v=1:a=0[v]`;
+    await $`ffmpeg -y -v error ${inputs} -filter_complex ${filter} -map [v] -r ${FPS} -c:v libx264 -preset medium -crf 14 -pix_fmt yuv420p ${out}`;
+  }
+  return { src: out };
+}
+
 async function main() {
   mkdirSync(CACHE, { recursive: true });
   const creditResult = ensureMotionCredits();
@@ -72,9 +98,28 @@ async function main() {
     await $`ffmpeg -y -v error -t 9.8 -i ${characterFull} -c:v libx264 -preset medium -crf 14 -an ${character}`;
   }
 
-  // Row-major 4x4 grid: 11 headless sim recordings of the in-repo demos, four
-  // engine-rendered GIF loops, and the Pocket Character widget. The two
-  // remaining motion-study tiles sit far apart so the wall reads as many demos.
+  // The three satellite tiles: a shooter, a creature-RPG and a design-document
+  // viewer, each cutting through three of its own frames across the loop.
+  const openStrike = await shots("open-strike", [
+    WALL + "openstrike-psp-menu.png", // map select, "O DEPLOY"
+    BLOG + "openstrike-psp-dust2.png", // the sunlit dust2 courtyard
+    BLOG + "openstrike-psp-fire.png", // muzzle flash, ammo down to 28
+  ]);
+  const voxel = await shots("pocket-voxel", [
+    BLOG + "voxel-psp-bedroom.png", // the bedroom the run starts in
+    BLOG + "voxel-psp-pallet-town.png", // the town as a voxel diorama
+    BLOG + "voxel-psp-route-1.png", // extruded encounter grass
+  ]);
+  const figma = await shots("pocket-figma", [
+    BLOG + "figma-psp-fit.png", // whole page fit to screen at 8%
+    BLOG + "figma-psp-cover-zoom.png", // the Paper Kit cover at 59%
+    BLOG + "figma-sim-calendar.png", // a calendar component at 100%
+  ]);
+
+  // Row-major 4x4 grid: eight headless sim recordings of the in-repo demos,
+  // four engine-rendered GIF loops, the Pocket Character widget and the three
+  // satellite sequences. The two remaining motion-study tiles sit far apart,
+  // as do the satellites, so the wall reads as many programs at once.
   const tiles: Clip[] = [
     // row 1
     sim("music-main"), // EVERGREEN grid -> Now Playing, track skips
@@ -85,15 +130,15 @@ async function main() {
     loop(character), // Pocket Character breathing on the desktop
     sim("gallery-main"), // photo pages under the shoulder buttons
     loop(BLOG + "devtools-highlight-glide.gif"),
-    sim("cards-main"), // Feature Cards focus walk
+    openStrike, // OpenStrike on PSP: deploy, dust2, fire
     // row 3
     sim("stats-main"), // Mission Control dashboard tabs
     loop(BLOG + "page-3d.gif"),
-    sim("settings-main"), // toggles, sliders and theme swaps
+    figma, // Pocket Figma: page fit, cover at 59%, component at 100%
     loop(BLOG + "pocket-youtube-journey.gif"),
     // row 4
     sim("library-main"), // Game Library covers and detail pages
-    sim("notifications-main"),
+    voxel, // Pocket Voxel on PSP: bedroom, town, route
     sim("hero-main"), // "JSX at 60 FPS." counter card
     sim("cafe-main"), // deterministic menu -> order -> confirmation
   ];
