@@ -3,6 +3,44 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.9.3 — August 8, 2026
+
+**The PSP arena no longer strands the memory a QuickJS boot needs.**
+A guest whose boot parses a megabyte of JSON could exhaust the heap while
+megabytes sat free, because the arena's power-of-two size classes never hand a
+block to a different class. 0.9.3 closes that, and
+[Pocket Voxel](https://github.com/pocket-stack/pocket-voxel) boots on a real
+PSP-2000 at the default arena size again.
+
+- **`realloc` keeps the pointer when the new size stays inside the block's
+  class.** The arena rounds every request up to a power of two, so a grow that
+  stays in class already owns those bytes. QuickJS grows its string and array
+  builders geometrically, and the previous allocator answered every one of those
+  grows with an allocate, a copy, and a free that put the old block into a class
+  nothing asked for again. A boot parsing 1.15 MB of game data stranded
+  megabytes this way.
+- **`arena::alloc` splits a larger free block when the bump is spent**, halving
+  down to the class it needs. It runs last on purpose: a heap with room behaves
+  exactly as it did in 0.9.2, and large blocks stay whole for the callers that
+  want them.
+- **A null exception object is an out-of-memory signature.** `[PocketJS js
+  error] null` followed by `JS_Eval threw` means QuickJS could not allocate an
+  `Error` to throw, so the guest source is not the suspect. The same halt line
+  covers every eval failure, which is what made this one read as a code bug for
+  a day.
+- **`globalThis.audio` mounts without the `ui` surface.** `register_audio` is
+  split out of `register`, so a host that owns its own surface can still offer
+  the `audio.pcm` capability. The credit mirror also decays with the hardware
+  stream: `poll()` never subtracted what `write()` accepted, so a ring the mixer
+  drained completely between two polls sent no credit and the guest went
+  permanently silent after a couple of seconds.
+
+Measured on the hardware that found it. The same guest bundle peaks at
+**12.3 MB** under desktop QuickJS and needed more than **15.5 MB** on the device
+before this release; it now boots inside the **14.3 MB** an XMB launch leaves
+after a 32 MB pak, with the emulator journey green at 11 of 11 marks and
+frame-hash goldens byte-identical at both quality rungs.
+
 ## 0.9.2 — August 6, 2026
 
 **A locked 60 fps on a 2007 iPhone, because the composite was the only stage that was never damage-limited.**

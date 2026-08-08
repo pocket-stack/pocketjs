@@ -4,7 +4,7 @@
   "id": "dev.pocket-stack.hero",
   "name": "pocketjs-hero",
   "title": "PocketJS Hero",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "engine": {
     "capabilities": {
       "requires": [
