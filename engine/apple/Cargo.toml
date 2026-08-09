@@ -1,0 +1,25 @@
+# pocket-apple — the PocketJS Apple host core: one pocket-mod guest realm,
+# the pocket-ui-surface `ui` mount, and pocketjs-core's software rasterizer
+# behind a small C ABI consumed by PocketSurfaceView (UIKit).
+#
+# rquickjs needs its `bindgen` feature here: it ships no pregenerated
+# bindings for aarch64-apple-ios targets.
+
+[package]
+name = "pocket-apple"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The PocketJS `ui` surface for Apple platforms: pocket-mod guest, pak feeding, software raster DrawList behind a C ABI"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+pocket-mod = { workspace = true }
+pocket-ui-surface = { workspace = true }
+pocketjs-core = { workspace = true }
+rquickjs = { workspace = true, features = ["bindgen"] }
+anyhow = { workspace = true }
+log = { workspace = true }

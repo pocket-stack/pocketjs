@@ -348,6 +348,13 @@ impl UiSurface {
                 ui.borrow_mut().ui.hit_test(x as f32, y as f32)
             });
 
+            // Touch-path hit authority (spec op 42): the gesture layer
+            // prefers the bounds hit over the ink-claiming hitTest above.
+            let ui = self.inner.clone();
+            op!("hitTestBounds", move |x: f64, y: f64| {
+                ui.borrow_mut().ui.hit_test_bounds(x as f32, y as f32)
+            });
+
             let ui = self.inner.clone();
             op!("setCursor", move |tex: i32, hot_x: f64, hot_y: f64, w: f64, h: f64| {
                 ui.borrow_mut().ui.set_cursor(tex, hot_x as f32, hot_y as f32, w as f32, h as f32)

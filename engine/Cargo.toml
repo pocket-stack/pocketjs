@@ -11,6 +11,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "apple",
     "crates/pocket-db",
     "crates/pocket-fs",
     "crates/pocket-mod",

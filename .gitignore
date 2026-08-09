@@ -31,3 +31,4 @@ tests/goldens/web/*.actual.png
 tests/goldens/psp/*.actual.png
 # irecovery readline history, written when the iPhone 2G runbook drives iBoot
 .irecovery
+engine/apple/dist/
