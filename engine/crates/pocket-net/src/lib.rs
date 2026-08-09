@@ -6,16 +6,16 @@
 //! socket, TLS, HTTP parser, executor or thread. A runtime supplies an
 //! [`HttpTransport`] implemented with the platform facility it already owns
 //! (for example ESP-IDF HTTP, ureq, NSURLSession, or an application service).
-//! The transport may work on other threads, but [`NetSurface::begin_tick`] is
+//! The transport may work on other threads, but [`NetCore::begin_tick`] is
 //! the only point at which its completions enter the single-threaded core.
+//!
+//! Feature `mount` (default) adds [`NetSurface`], the pocket-mod adapter that
+//! installs the five ops as `globalThis.net`. A host with its own QuickJS
+//! wiring turns it off (`default-features = false`) and drives [`NetCore`]
+//! directly — the MCU build then never compiles an engine it doesn't use.
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
-use std::rc::Rc;
 
-use anyhow::Result;
-use pocket_mod::Guest;
-use pocket_mod::qjs::{ArrayBuffer, Function};
 use pocketjs_core::spec::net as spec;
 use serde::{Deserialize, Serialize};
 
@@ -316,12 +316,32 @@ impl<T: HttpTransport> NetCore<T> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Mount
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mount")]
+use std::cell::RefCell;
+#[cfg(feature = "mount")]
+use std::rc::Rc;
+
+#[cfg(feature = "mount")]
+use anyhow::Result;
+#[cfg(feature = "mount")]
+use pocket_mod::Guest;
+#[cfg(feature = "mount")]
+use pocket_mod::qjs::{ArrayBuffer, Function};
+
 /// Clone-cheap mounted NET module. The host keeps a copy and calls
 /// [`begin_tick`](Self::begin_tick); the namespace closures share the core.
+/// Feature `mount` (default); a host with its own QuickJS wiring turns it
+/// off and drives [`NetCore`] directly, spelling the five ops itself.
+#[cfg(feature = "mount")]
 pub struct NetSurface<T: HttpTransport> {
     inner: Rc<RefCell<NetCore<T>>>,
 }
 
+#[cfg(feature = "mount")]
 impl<T: HttpTransport> Clone for NetSurface<T> {
     fn clone(&self) -> Self {
         Self {
@@ -330,6 +350,7 @@ impl<T: HttpTransport> Clone for NetSurface<T> {
     }
 }
 
+#[cfg(feature = "mount")]
 impl<T: HttpTransport + 'static> NetSurface<T> {
     pub fn new(transport: T) -> Self {
         Self {
@@ -610,6 +631,7 @@ mod tests {
         assert_eq!(core.transport_mut().cancelled, vec![handle]);
     }
 
+    #[cfg(feature = "mount")]
     #[test]
     fn mounted_surface_copies_into_guest_owned_arraybuffer() {
         let guest = Guest::new().unwrap();

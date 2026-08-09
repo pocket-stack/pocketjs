@@ -15,6 +15,7 @@ import {
   type NetErrorCode,
   type NetMethod,
 } from "../../contracts/spec/net.ts";
+import { stringToUtf8, utf8ToString } from "./bytes.ts";
 import { registerServicePump } from "./services.ts";
 
 export {
@@ -92,7 +93,11 @@ export class PocketResponse {
   }
 
   async text(): Promise<string> {
-    return decodeUtf8(this.data);
+    try {
+      return utf8ToString(this.data);
+    } catch {
+      throw new Error("net: response is not valid UTF-8");
+    }
   }
 
   async json<T = unknown>(): Promise<T> {
@@ -245,7 +250,7 @@ function normalizeHeaders(input: Readonly<Record<string, string>> | undefined): 
       throw new NetError(NET_ERROR.invalidRequest, `net: invalid header ${rawName}`);
     }
     count++;
-    bytes += utf8Length(name) + utf8Length(value) + 4;
+    bytes += stringToUtf8(name).byteLength + stringToUtf8(value).byteLength + 4;
     if (count > NET_MAX_HEADERS || bytes > NET_MAX_HEADER_BYTES) {
       throw new NetError(NET_ERROR.invalidRequest, "net: request headers exceed limits");
     }
@@ -256,7 +261,7 @@ function normalizeHeaders(input: Readonly<Record<string, string>> | undefined): 
 
 function requestBody(body: FetchOptions["body"]): Uint8Array {
   if (body === undefined) return new Uint8Array(0);
-  if (typeof body === "string") return encodeUtf8(body);
+  if (typeof body === "string") return stringToUtf8(body);
   if (body instanceof Uint8Array) return body.slice();
   if (body instanceof ArrayBuffer) return new Uint8Array(body.slice(0));
   throw new NetError(NET_ERROR.invalidRequest, "net: body must be string or bytes");
@@ -324,82 +329,4 @@ export function fetch(url: string, options: FetchOptions = {}): Promise<PocketRe
       ? Promise.reject(error)
       : reject(NET_ERROR.invalidRequest, String(error));
   }
-}
-
-function utf8Length(s: string): number {
-  let n = 0;
-  for (let i = 0; i < s.length; i++) {
-    const code = s.codePointAt(i)!;
-    if (code > 0xffff) i++;
-    n += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
-  }
-  return n;
-}
-
-function encodeUtf8(s: string): Uint8Array {
-  const out = new Uint8Array(utf8Length(s));
-  let o = 0;
-  for (let i = 0; i < s.length; i++) {
-    let code = s.codePointAt(i)!;
-    if (code > 0xffff) i++;
-    else if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
-    if (code < 0x80) out[o++] = code;
-    else if (code < 0x800) {
-      out[o++] = 0xc0 | (code >> 6);
-      out[o++] = 0x80 | (code & 0x3f);
-    } else if (code < 0x10000) {
-      out[o++] = 0xe0 | (code >> 12);
-      out[o++] = 0x80 | ((code >> 6) & 0x3f);
-      out[o++] = 0x80 | (code & 0x3f);
-    } else {
-      out[o++] = 0xf0 | (code >> 18);
-      out[o++] = 0x80 | ((code >> 12) & 0x3f);
-      out[o++] = 0x80 | ((code >> 6) & 0x3f);
-      out[o++] = 0x80 | (code & 0x3f);
-    }
-  }
-  return out;
-}
-
-function decodeUtf8(bytes: Uint8Array): string {
-  let out = "";
-  let i = 0;
-  while (i < bytes.length) {
-    const a = bytes[i++];
-    if (a < 0x80) {
-      out += String.fromCharCode(a);
-      continue;
-    }
-    let code: number;
-    let extra: number;
-    if ((a & 0xe0) === 0xc0) {
-      code = a & 0x1f;
-      extra = 1;
-    } else if ((a & 0xf0) === 0xe0) {
-      code = a & 0x0f;
-      extra = 2;
-    } else if ((a & 0xf8) === 0xf0) {
-      code = a & 0x07;
-      extra = 3;
-    } else throw new Error("net: response is not valid UTF-8");
-    if (i + extra > bytes.length) throw new Error("net: response is not valid UTF-8");
-    for (let k = 0; k < extra; k++) {
-      const b = bytes[i++];
-      if ((b & 0xc0) !== 0x80) throw new Error("net: response is not valid UTF-8");
-      code = (code << 6) | (b & 0x3f);
-    }
-    if (
-      code > 0x10ffff ||
-      (code >= 0xd800 && code <= 0xdfff) ||
-      (extra === 1 && code < 0x80) ||
-      (extra === 2 && code < 0x800) ||
-      (extra === 3 && code < 0x10000)
-    ) throw new Error("net: response is not valid UTF-8");
-    if (code < 0x10000) out += String.fromCharCode(code);
-    else {
-      code -= 0x10000;
-      out += String.fromCharCode(0xd800 + (code >> 10), 0xdc00 + (code & 0x3ff));
-    }
-  }
-  return out;
 }

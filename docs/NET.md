@@ -64,6 +64,11 @@ tick boundary. Network threads never call QuickJS. The reference core turns
 drained completions into one JSON event batch; the guest consumes that batch
 during its next normal turn.
 
+`NetSurface` — the one-line `globalThis.net` install on `pocket-mod` hosts —
+is the crate's `mount` feature (default). A host with its own QuickJS wiring
+depends with `default-features = false` and drives `NetCore` directly, so the
+MCU build never compiles an engine it doesn't use (the `pocket-fs` pattern).
+
 For a runtime using `NetSurface<T>`, the host loop is:
 
 ```text

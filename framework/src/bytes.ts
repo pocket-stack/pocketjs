@@ -1,4 +1,4 @@
-// Byte codecs shared by the data-module SDKs (db, fs). Internal — not a
+// Byte codecs shared by the module SDKs (db, fs, net). Internal — not a
 // framework subpath. QuickJS has no btoa/Buffer/TextEncoder/TextDecoder, so
 // the codecs are spelled out; every caller is a cold path (payloads cross
 // the boundary far less often than draw ops).
@@ -34,6 +34,39 @@ export function base64ToBytes(s: string): Uint8Array {
     out[o++] = n >> 16;
     if (o < out.length) out[o++] = (n >> 8) & 0xff;
     if (o < out.length) out[o++] = n & 0xff;
+  }
+  return out;
+}
+
+/** UTF-8 encode. Lone surrogates become U+FFFD, so the output is always
+ *  well-formed UTF-8 (the byte shape every module boundary requires). */
+export function stringToUtf8(s: string): Uint8Array {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const code = s.codePointAt(i)!;
+    if (code > 0xffff) i++;
+    n += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+  }
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (let i = 0; i < s.length; i++) {
+    let code = s.codePointAt(i)!;
+    if (code > 0xffff) i++;
+    else if (code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
+    if (code < 0x80) out[o++] = code;
+    else if (code < 0x800) {
+      out[o++] = 0xc0 | (code >> 6);
+      out[o++] = 0x80 | (code & 0x3f);
+    } else if (code < 0x10000) {
+      out[o++] = 0xe0 | (code >> 12);
+      out[o++] = 0x80 | ((code >> 6) & 0x3f);
+      out[o++] = 0x80 | (code & 0x3f);
+    } else {
+      out[o++] = 0xf0 | (code >> 18);
+      out[o++] = 0x80 | ((code >> 12) & 0x3f);
+      out[o++] = 0x80 | ((code >> 6) & 0x3f);
+      out[o++] = 0x80 | (code & 0x3f);
+    }
   }
   return out;
 }

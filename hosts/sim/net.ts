@@ -7,6 +7,7 @@ import {
   NET_MAX_INFLIGHT,
   NET_MAX_RESPONSE_BYTES,
 } from "../../contracts/spec/net.ts";
+import { stringToUtf8 } from "../../framework/src/bytes.ts";
 import type { NetOps } from "../../framework/src/net-api.ts";
 
 export interface SimNetRequest {
@@ -46,25 +47,7 @@ export interface SimNetHost {
 
 function bytes(value: string | Uint8Array | undefined): Uint8Array {
   if (value instanceof Uint8Array) return value.slice();
-  const s = value ?? "";
-  const out: number[] = [];
-  for (let i = 0; i < s.length; i++) {
-    let code = s.codePointAt(i)!;
-    if (code > 0xffff) i++;
-    if (code < 0x80) out.push(code);
-    else if (code < 0x800) out.push(0xc0 | (code >> 6), 0x80 | (code & 63));
-    else if (code < 0x10000) {
-      out.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 63), 0x80 | (code & 63));
-    } else {
-      out.push(
-        0xf0 | (code >> 18),
-        0x80 | ((code >> 12) & 63),
-        0x80 | ((code >> 6) & 63),
-        0x80 | (code & 63),
-      );
-    }
-  }
-  return Uint8Array.from(out);
+  return stringToUtf8(value ?? "");
 }
 
 export function createSimNetHost(routes: Readonly<Record<string, SimNetRoute>>): SimNetHost {
