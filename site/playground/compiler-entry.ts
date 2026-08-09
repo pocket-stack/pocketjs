@@ -13,7 +13,6 @@ import { transformAsync, type PluginObj } from "@babel/core";
 import solidPreset from "babel-preset-solid";
 import tsPreset from "@babel/preset-typescript";
 import { transformVueJsxVapor } from "vue-jsx-vapor/api";
-import { compile as octaneCompile } from "octane/compiler";
 import { parse as parseFont, type Font } from "opentype.js";
 
 import { compileClasses, fontSlotInfo } from "../../framework/compiler/tailwind.ts";
@@ -176,9 +175,10 @@ function collectorPlugin(out: Collected, framework: PlaygroundFramework): Plugin
 
 /** Run the exact build transform in the browser. Throws with a code frame on
  *  lint/syntax errors (message carries the frame). */
-async function transform(
+export async function transformAppSource(
   source: string,
   framework: PlaygroundFramework,
+  baseUrl = typeof location === "undefined" ? "https://pocketjs.dev/" : location.href,
 ): Promise<{ code: string; collected: Collected }> {
   const collected: Collected = { classStrings: [], codepoints: new Set() };
   let res;
@@ -197,7 +197,7 @@ async function transform(
       "app.tsx",
       {
         compiler: {
-          runtimeModuleName: new URL("/pg/vue-jsx-vapor/vapor.js", location.href).href,
+          runtimeModuleName: new URL("/pg/vue-jsx-vapor/vapor.js", baseUrl).href,
         },
       },
       false,
@@ -222,7 +222,11 @@ async function transform(
       configFile: false,
       sourceMaps: false,
     });
-    res = octaneCompile(source, "app.tsx", { mode: "client", renderer: OCTANE_RENDERER }) as {
+    // Load this branch lazily. Octane marks its package side-effect free; a
+    // static import from 0.1.26 was pruned by Bun while its call site survived,
+    // leaving every Octane demo with an undefined minified binding.
+    const { compile } = await import("octane/compiler");
+    res = compile(source, "app.tsx", { mode: "client", renderer: OCTANE_RENDERER }) as {
       code: string;
     };
   } else {
@@ -340,7 +344,7 @@ export async function compileApp(
   } = {},
 ): Promise<CompileResult> {
   const framework = opts.framework ?? "solid";
-  const { code, collected } = await transform(source, framework);
+  const { code, collected } = await transformAppSource(source, framework);
 
   const styles = compileClasses(collected.classStrings);
   const atlases = await bakeAtlases(collected.codepoints, styles.usedFontSlots, opts.extraChars ?? "");

@@ -30,6 +30,8 @@ function loadCompiler() {
 const $ = (sel) => document.querySelector(sel);
 
 async function main() {
+  const query = new URLSearchParams(location.search);
+  const verifyMode = query.get("verify") === "1";
   const canvas = $("#pg-canvas");
   const statusEl = $("#pg-status");
   const errorEl = $("#pg-error");
@@ -49,10 +51,13 @@ async function main() {
 
   // --- host -----------------------------------------------------------------
   const host = new PocketHost();
+  if (verifyMode) globalThis.__pgHost = host;
   await host.mount(canvas, {
     wasmUrl: PG + "pocketjs.wasm",
     onError: (e) => showError(String(e && e.stack ? e.stack : e)),
     onLog: () => {},
+    showHud: !verifyMode,
+    idleAfterMs: verifyMode ? 0 : Infinity,
   });
 
   // --- editor ---------------------------------------------------------------
@@ -172,6 +177,10 @@ async function main() {
       try {
         await import(/* @vite-ignore */ bootUrl);
         host.begin();
+        // Browser regression mode advances exact virtual frames itself. Stop
+        // the RAF after begin()'s single initial frame so ambient animation or
+        // HUD timing cannot masquerade as an input result.
+        if (verifyMode) host.stop();
         const ms = Math.round(performance.now() - t0);
         const fwLabel = { "vue-vapor": "Vue Vapor", octane: "Octane" }[activeFramework] || "Solid";
         setStatus(
@@ -232,8 +241,8 @@ async function main() {
   canvas.addEventListener("click", () => canvas.focus());
 
   // boot with the first demo (or a fallback), honoring ?demo=
-  const boot = new URLSearchParams(location.search).get("demo");
-  const bootFramework = new URLSearchParams(location.search).get("framework");
+  const boot = query.get("demo");
+  const bootFramework = query.get("framework");
   if (boot && demos.some((d) => d.name === boot)) demoSel.value = boot;
   if (
     (bootFramework === "vue-vapor" || bootFramework === "octane") &&

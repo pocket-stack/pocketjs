@@ -34,6 +34,7 @@ export {
   pushFocusGrid,
   pushFocusScope,
 } from "../../framework/src/input-api.ts";
+export { createWavPlayer } from "../../framework/src/audio-api.ts";
 
 import {
   resetRendererState,

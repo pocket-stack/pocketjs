@@ -19,7 +19,7 @@
 // a bare `export *` would hit, e.g. app-`render` vs universal-`render`).
 
 // ---- public app surface -----------------------------------------------------
-export { frameworkName, mount, render } from "../../framework/src/index.ts";
+export { frameworkName, mount, registerTexture, render } from "../../framework/src/index.ts";
 export {
   View,
   Text,
@@ -37,7 +37,13 @@ export {
   Lazy,
   Gallery,
 } from "../../framework/src/components.ts";
-export { animate, spring, cancelAnim } from "../../framework/src/animation.ts";
+export {
+  animate,
+  spring,
+  cancelAnim,
+  jump,
+  createJumpBatch,
+} from "../../framework/src/animation.ts";
 export {
   onFrame,
   onButtonPress,
@@ -46,11 +52,17 @@ export {
 } from "../../framework/src/lifecycle.ts";
 export {
   BTN,
+  enableCursor,
   focusNode,
   getFocused,
   pushFocusGrid,
   pushFocusScope,
+  touches,
 } from "../../framework/src/input-api.ts";
+export { createWavPlayer } from "../../framework/src/audio-api.ts";
+export { ticksPerFrame } from "../../framework/src/clock.ts";
+export { getOps, hostViewport } from "../../framework/src/host.ts";
+export { appTable, frozenShot, launchApp } from "../../framework/src/launcher.ts";
 
 // ---- universal-renderer surface (what babel-preset-solid imports from the
 // `moduleName` specifier — must exist under this one module) ------------------
