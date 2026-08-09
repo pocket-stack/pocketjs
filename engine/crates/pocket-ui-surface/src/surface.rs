@@ -208,6 +208,12 @@ impl UiSurface {
         }
     }
 
+    /// Declare how many ticks make one second of virtual time (default 60).
+    /// Ignored once the core has ticked (see `Ui::set_tick_rate`).
+    pub fn set_tick_rate(&self, hz: u32) {
+        self.inner.borrow_mut().ui.set_tick_rate(hz);
+    }
+
     /// Advance the core one fixed-dt frame (call once per host tick, after
     /// the guest turn, before rendering).
     pub fn tick(&self) {

@@ -30,7 +30,7 @@
 import { createSignal, type Accessor } from "solid-js";
 import { BTN, SCREEN_H } from "../../contracts/spec/spec.ts";
 import { analogY } from "./analog.ts";
-import { simulationHz, ticksPerFrame } from "./clock.ts";
+import { simulationHz, ticksPerFrame, TICKS_PER_SECOND } from "./clock.ts";
 import { onFrame } from "./frame.ts";
 
 export type ScrollerState = "idle" | "tracking" | "fling" | "spring" | "chase" | "tween";
@@ -89,11 +89,15 @@ export interface Scroller {
   step(): void;
 }
 
-// Fling decay per 1/60 s tick. 0.9672 ≡ UIScrollView's 0.998/ms at 16.667 ms
-// (0.998^16.667); 0.846 ≡ the 0.99/ms paging rate. Literals on purpose —
-// computing them at runtime would put a transcendental in the sim path.
-const DECAY_NORMAL = 0.9672;
-const DECAY_FAST = 0.846;
+// Fling decay per tick, quoted for a 1/60 s tick. 0.9672 ≡ UIScrollView's
+// 0.998/ms at 16.667 ms (0.998^16.667); 0.846 ≡ the 0.99/ms paging rate.
+// Literals on purpose — computing them from the per-ms rate would put a
+// transcendental in the sim path. A realm on another tick rate re-bases them
+// once here, so the decay stays the same per second of virtual time.
+const perTick = (at60: number) =>
+  TICKS_PER_SECOND === 60 ? at60 : at60 ** (60 / TICKS_PER_SECOND);
+const DECAY_NORMAL = perTick(0.9672);
+const DECAY_FAST = perTick(0.846);
 /** Fling rest threshold, px per virtual second. */
 const FLING_MIN_V = 4;
 /** Rubber-band slope at the edge (the classic iOS coefficient). */
@@ -108,7 +112,7 @@ const SPRING_SETTLE_V = 8;
 /** The apps/im chase pump constants. */
 const CHASE_RATE = 0.3;
 const CHASE_SNAP = 0.6;
-const TICK_DT = 1 / 60;
+const TICK_DT = 1 / TICKS_PER_SECOND;
 
 /** Displayed rubber travel for `x` px of out-of-bounds drag: asymptote d,
  *  slope RUBBER_COEFF at the edge. */

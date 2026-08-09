@@ -63,6 +63,11 @@ NS_ASSUME_NONNULL_BEGIN
 // Convenience: reads <name>.js and <name>.pak from a directory.
 - (BOOL)loadAppNamed:(NSString *)name fromDirectory:(NSString *)directory;
 
+// Ticks per second of guest virtual time, and the rate the display link is
+// pinned to. 0 means the 60 Hz default. Read once, by start; the bundle must
+// have been built for the same rate (`pocket ios build --hz=<n>`).
+@property(nonatomic) uint32_t tickRate;
+
 // Starts/stops the CADisplayLink. start after evalBundle succeeds.
 - (void)start;
 - (void)stop;

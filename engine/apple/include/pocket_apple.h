@@ -3,10 +3,11 @@
 // handle from one thread (in practice the main thread, with CADisplayLink).
 //
 // Call order per handle:
-//   create -> load_pak* -> [set_identity] -> eval_bundle
+//   create -> load_pak* -> [set_identity] -> eval_bundle -> [set_tick_rate]
 //   -> per tick: frame, render -> destroy
 // load_pak/set_identity are rejected after eval_bundle: the surface publishes
-// both to the guest when `ui` is mounted.
+// both to the guest when `ui` is mounted. set_tick_rate is rejected after the
+// first frame: the step size has to be constant for a realm's whole run.
 
 #ifndef POCKET_APPLE_H
 #define POCKET_APPLE_H
@@ -49,6 +50,11 @@ PocketApple *pocket_apple_create(uint32_t density, uint32_t logical_width,
 
 int32_t pocket_apple_set_identity(PocketApple *handle, const char *host_id,
                                   uint32_t host_abi);
+
+// Ticks per second of guest virtual time (1..240, default 60); rejected after
+// the first frame. The bundle must be built for the same rate, and the
+// display link must be driven at it.
+int32_t pocket_apple_set_tick_rate(PocketApple *handle, uint32_t hz);
 
 int32_t pocket_apple_load_pak(PocketApple *handle, const uint8_t *bytes,
                               size_t length);
@@ -136,6 +142,10 @@ const char *pocket_apple_core_svc_poll(PocketAppleCore *handle);
 int32_t pocket_apple_core_post_event(PocketAppleCore *handle, const char *line);
 void pocket_apple_core_drain_effects(PocketAppleCore *handle, PocketAppleEffectCallback callback,
                                      void *context);
+
+// Ticks per second of the core's virtual time (1..240, default 60); rejected
+// after the first tick. Same bundle/display-link pairing as the guest mode.
+int32_t pocket_apple_core_set_tick_rate(PocketAppleCore *handle, uint32_t hz);
 
 void pocket_apple_core_tick(PocketAppleCore *handle);
 int32_t pocket_apple_core_render(PocketAppleCore *handle, PocketAppleFrame *out);

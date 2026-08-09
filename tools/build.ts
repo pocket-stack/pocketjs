@@ -87,6 +87,7 @@ let configFlagged = false;
 let useConfig = true;
 let planPath: string | undefined;
 let densityFlag: number | undefined;
+let hzFlag: number | undefined;
 let projectRoot = process.cwd();
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
@@ -99,6 +100,7 @@ for (const a of args) {
   else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
   else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
   else if (a.startsWith("--density=")) densityFlag = Number(a.slice("--density=".length));
+  else if (a.startsWith("--hz=")) hzFlag = Number(a.slice("--hz=".length));
   else if (!a.startsWith("-")) appArg = a;
 }
 
@@ -116,7 +118,7 @@ if (planPath) {
 }
 
 if (!appArg) {
-  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor|octane] [--extra-chars=...] [--density=N]");
+  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor|octane] [--extra-chars=...] [--density=N] [--hz=N]");
   process.exit(1);
 }
 
@@ -205,8 +207,17 @@ if (densityFlag !== undefined && (!Number.isInteger(densityFlag) || densityFlag 
   throw new Error("PocketJS build: --density wants an integer from 1 through 255");
 }
 const rasterDensity = buildPlan?.viewport.rasterDensity ?? densityFlag ?? 1;
+
+// Tick rate: the realm's virtual-time step, baked into the bundle because
+// every ms-to-frame conversion in the framework resolves against it. The
+// plan does not own it, so --hz is accepted with or without --plan.
+if (hzFlag !== undefined && (!Number.isInteger(hzFlag) || hzFlag < 1 || hzFlag > 240)) {
+  throw new Error("PocketJS build: --hz wants an integer from 1 through 240");
+}
+const tickHz = hzFlag ?? 60;
 console.log(
   `PocketJS build: ${appName} (${entry}, framework=${framework}` +
+    `${tickHz === 60 ? "" : `, ${tickHz}Hz`}` +
     `${buildPlan ? `, target=${buildPlan.target.id}, raster=${rasterDensity}x, plan=${buildPlan.planHash.slice(0, 20)}…` : ""})`,
 );
 
@@ -469,6 +480,7 @@ const result = await Bun.build({
     __POCKET_HOST_ABI__: String(buildPlan?.target.hostAbi ?? 0),
     __POCKET_FEATURES__: JSON.stringify(buildPlan?.features ?? {}),
     __POCKET_PIXEL_RATIO__: String(rasterDensity),
+    __POCKET_TICK_HZ__: String(tickHz),
     ...(framework === "vue-vapor"
       ? { document: "globalThis.__pocketDocument" }
       : {}),

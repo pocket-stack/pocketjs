@@ -14,7 +14,9 @@
 //! Call order per handle: `create` → `load_pak`* → `eval_bundle` → per tick
 //! `frame` then `render` → `destroy`. `load_pak` and `set_identity` are
 //! rejected after `eval_bundle` because the surface publishes both to the
-//! guest at mount time.
+//! guest at mount time. `set_tick_rate` survives `eval_bundle` (nothing about
+//! it reaches the guest at mount) but is rejected after the first `frame`,
+//! because the step size has to be constant for a realm's whole run.
 
 use std::cell::RefCell;
 use std::ffi::{c_char, CString};
@@ -31,6 +33,11 @@ use pocketjs_core::spec;
 
 pub const POCKET_APPLE_ABI_VERSION: u32 = 1;
 pub const POCKET_APPLE_MAX_DAMAGE_REGIONS: usize = DEFAULT_DAMAGE_REGIONS;
+
+/// Accepted `set_tick_rate` range: covers every Apple display cadence from a
+/// throttled 1 Hz up to the 240 Hz headroom above ProMotion's 120.
+pub(crate) const MIN_TICK_HZ: u32 = 1;
+pub(crate) const MAX_TICK_HZ: u32 = 240;
 
 const OK: i32 = 0;
 const ERR_BAD_ARGUMENT: i32 = -1;
@@ -61,6 +68,7 @@ pub struct PocketApple {
     logical_width: u32,
     logical_height: u32,
     mounted: bool,
+    ticked: bool,
     effect_callback: Option<(PocketAppleEffectCallback, *mut std::ffi::c_void)>,
 }
 
@@ -145,6 +153,7 @@ pub extern "C" fn pocket_apple_create(
             logical_width,
             logical_height,
             mounted: false,
+            ticked: false,
             effect_callback: None,
         }))
     });
@@ -173,6 +182,26 @@ pub extern "C" fn pocket_apple_set_identity(
             }
             Err(_) => ERR_BAD_ARGUMENT,
         }
+    })
+}
+
+/// Ticks (and therefore `pocket_apple_frame` calls) per second of guest
+/// virtual time. 1..=240; the guest bundle must be built for the same rate.
+/// Unlike `set_identity` this is accepted after `eval_bundle` (nothing about
+/// it is published to the guest at mount) but not after the first frame.
+#[unsafe(no_mangle)]
+pub extern "C" fn pocket_apple_set_tick_rate(handle: *mut PocketApple, hz: u32) -> i32 {
+    with_handle(handle, ERR_PANIC, |state| {
+        if state.ticked {
+            set_last_error("tick rate must be set before the first frame");
+            return ERR_BAD_STATE;
+        }
+        if !(MIN_TICK_HZ..=MAX_TICK_HZ).contains(&hz) {
+            set_last_error("tick rate must be 1 through 240 Hz");
+            return ERR_BAD_ARGUMENT;
+        }
+        state.surface.set_tick_rate(hz);
+        OK
     })
 }
 
@@ -256,6 +285,7 @@ pub extern "C" fn pocket_apple_frame(
             set_last_error("frame before eval_bundle");
             return ERR_BAD_STATE;
         }
+        state.ticked = true;
         let touch_words: &[u32] = if touches.is_null() || touch_count == 0 {
             &[]
         } else {

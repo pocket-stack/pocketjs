@@ -766,6 +766,38 @@ fn ui_rejects_zero_raster_density() {
 }
 
 #[test]
+fn tick_rate_is_fixed_once_the_realm_has_ticked() {
+    let mut ui = Ui::new();
+    assert_eq!(ui.tick_rate(), 60, "spec default");
+    ui.set_tick_rate(0);
+    assert_eq!(ui.tick_rate(), 60, "0 Hz is not a rate");
+    ui.set_tick_rate(120);
+    assert_eq!(ui.tick_rate(), 120);
+    ui.tick();
+    ui.set_tick_rate(60);
+    assert_eq!(ui.tick_rate(), 120, "a running realm keeps its step size");
+}
+
+#[test]
+fn a_120_hz_realm_runs_a_tween_over_twice_the_frames() {
+    let mut at = |hz: u32| {
+        let mut ui = Ui::new();
+        ui.set_tick_rate(hz);
+        let n = ui.create_node(0);
+        ui.insert_before(spec::ROOT_ID, n, 0);
+        ui.animate(n, spec::prop::OPACITY, 0.0, 200, 0, 0);
+        let mut frames = 0;
+        while ui.resolved_style(n).unwrap().opacity > 0.0 && frames < 1000 {
+            ui.tick();
+            frames += 1;
+        }
+        frames
+    };
+    assert_eq!(at(60), 12, "200 ms at 60 Hz");
+    assert_eq!(at(120), 24, "the same 200 ms of virtual time");
+}
+
+#[test]
 fn transparent_rounded_border_draws_an_outline_not_square_strips() {
     let mut ui = Ui::new();
     let blue = abgr(37, 99, 235, 255);
@@ -1405,8 +1437,9 @@ fn size_full_sentinel_is_not_animatable() {
 
 #[test]
 fn huge_durations_do_not_overflow() {
-    assert!(crate::anim::ms_to_frames(u32::MAX) >= 1); // would panic pre-fix
-    assert_eq!(crate::anim::ms_to_frames(100_000_000), 6_000_000);
+    assert!(crate::anim::ms_to_frames(u32::MAX, 60) >= 1); // would panic pre-fix
+    assert!(crate::anim::ms_to_frames(u32::MAX, 240) >= 1);
+    assert_eq!(crate::anim::ms_to_frames(100_000_000, 60), 6_000_000);
     let mut ui = Ui::new();
     let n = ui.create_node(0);
     ui.insert_before(spec::ROOT_ID, n, 0);

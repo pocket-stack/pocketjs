@@ -15,6 +15,9 @@
 static const char *const kPocketSurfaceHostId = "ios-dev";
 static const uint32_t kPocketSurfaceHostAbi = 7;
 
+// spec FIXED_DT — the rate a realm runs at when `tickRate` is left unset.
+static const uint32_t kPocketSurfaceDefaultTickRate = 60;
+
 typedef struct {
   __weak UITouch *touch;
   CGPoint point;
@@ -204,10 +207,18 @@ static void PocketSurfaceEffectTrampoline(const char *line, void *context) {
     return;
   }
   _running = YES;
+  uint32_t rate = _tickRate > 0 ? _tickRate : kPocketSurfaceDefaultTickRate;
+  // ERR_BAD_STATE here means a restart after the realm already ticked, which
+  // keeps the rate the first start declared.
+  if (_handle != NULL) {
+    pocket_apple_set_tick_rate(_handle, rate);
+  } else if (_coreHandle != NULL) {
+    pocket_apple_core_set_tick_rate(_coreHandle, rate);
+  }
   _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(handleDisplayTick:)];
   if (@available(iOS 15.0, *)) {
-    // The core advances in exact 1/60 s steps; cap the link to match.
-    _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(60, 60, 60);
+    // The core advances in exact 1/rate s steps; pin the link to match.
+    _displayLink.preferredFrameRateRange = CAFrameRateRangeMake(rate, rate, rate);
   }
   [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 }

@@ -28,6 +28,9 @@ const DEFAULT_SHELL = resolve(ROOT, "hosts/apple/ns-shell");
 const XCFRAMEWORK_SCRIPT = resolve(ROOT, "engine/apple/build-xcframework.sh");
 const XCFRAMEWORK_DIST = resolve(ROOT, "engine/apple/dist/PocketApple.xcframework");
 const MIN_IOS_RUNTIME = 16;
+/** Display cadences a PocketSurfaceView can be pinned to: 60, or ProMotion. */
+const IOS_TICK_RATES = [60, 120];
+const IOS_DEFAULT_TICK_RATE = 60;
 
 interface CommandResult {
   exitCode: number;
@@ -75,6 +78,16 @@ function flagValue(args: readonly string[], name: string): string | undefined {
   if (inline) return inline.slice(name.length + 1);
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+function tickRateFlag(args: readonly string[]): number {
+  const raw = flagValue(args, "--hz");
+  if (raw === undefined) return IOS_DEFAULT_TICK_RATE;
+  const hz = Number(raw);
+  if (!IOS_TICK_RATES.includes(hz)) {
+    throw new Error(`pocket ios: --hz wants ${IOS_TICK_RATES.join(" or ")}`);
+  }
+  return hz;
 }
 
 function check(label: string, ok: boolean, detail?: string): boolean {
@@ -287,7 +300,7 @@ function normalizeDemoName(demo: string): string {
   return demo.replace(/-main$/, "");
 }
 
-async function buildGuest(demoArg: string, density: number): Promise<GuestArtifacts> {
+async function buildGuest(demoArg: string, density: number, tickHz: number): Promise<GuestArtifacts> {
   const demo = normalizeDemoName(demoArg);
   const manifest = demoManifestFor(ROOT, demo);
   const plan = resolveIOSDevBuildPlan(manifest, density);
@@ -299,7 +312,13 @@ async function buildGuest(demoArg: string, density: number): Promise<GuestArtifa
   const outdir = resolve(ROOT, `dist/ios/${demo}`);
   const built = await spawn(
     "bun",
-    ["tools/build.ts", `--plan=${planPath}`, `--project-root=${ROOT}`, `--outdir=${outdir}`],
+    [
+      "tools/build.ts",
+      `--plan=${planPath}`,
+      `--project-root=${ROOT}`,
+      `--outdir=${outdir}`,
+      `--hz=${tickHz}`,
+    ],
     { inherit: true },
   );
   if (built.exitCode !== 0) throw new Error(`pocket ios: guest build failed for ${demo}`);
@@ -316,6 +335,7 @@ async function buildGuest(demoArg: string, density: number): Promise<GuestArtifa
 interface StageOptions {
   shellDir: string;
   externalGuest: boolean;
+  tickHz: number;
   pluginPath?: string;
   runtimeTgz?: string;
 }
@@ -328,7 +348,15 @@ function stageAssets(artifacts: GuestArtifacts, options: StageOptions): void {
   cpSync(artifacts.planPath, resolve(assets, `${artifacts.appOutput}.plan.json`));
   writeFileSync(
     resolve(assets, "current.json"),
-    JSON.stringify({ app: artifacts.appOutput, externalGuest: options.externalGuest }, null, 2) + "\n",
+    JSON.stringify(
+      {
+        app: artifacts.appOutput,
+        externalGuest: options.externalGuest,
+        tickHz: options.tickHz,
+      },
+      null,
+      2,
+    ) + "\n",
   );
 }
 
@@ -383,6 +411,7 @@ async function play(demoArg: string, args: readonly string[]): Promise<void> {
   const options: StageOptions = {
     shellDir: resolve(flagValue(args, "--shell-dir") ?? DEFAULT_SHELL),
     externalGuest: args.includes("--external-guest"),
+    tickHz: tickRateFlag(args),
     pluginPath: flagValue(args, "--plugin-path"),
     runtimeTgz: flagValue(args, "--runtime-tgz"),
   };
@@ -411,7 +440,7 @@ async function play(demoArg: string, args: readonly string[]): Promise<void> {
       throw new Error("pocket ios: --no-build but no prior guest artifacts — drop the flag");
     }
   } else {
-    artifacts = await buildGuest(demoArg, density);
+    artifacts = await buildGuest(demoArg, density, options.tickHz);
   }
   stageAssets(artifacts, options);
   await installShellDependencies(options);
@@ -442,13 +471,17 @@ const HELP = `PocketJS Apple / iOS toolchain
   pocket ios setup                  add the two Rust iOS targets; print install hints for the rest
   pocket ios devices                list the arm64 iOS simulators this target can run on
   pocket ios native [--force]       build engine/apple/dist/PocketApple.xcframework
-  pocket ios build <app> [--density=1..${IOS_DEV_MAX_DENSITY}]
+  pocket ios build <app> [--density=1..${IOS_DEV_MAX_DENSITY}] [--hz=${IOS_TICK_RATES.join("|")}]
                                     resolve the ${IOS_DEV_TARGET_ID} plan and emit dist/ios/<app>/
   pocket ios stage <app> [flags]    build + copy assets into the shell, without launching
   pocket ios play <app> [flags]     stage, then build and launch the shell on the simulator
 
 flags for stage/play:
   --density=1..${IOS_DEV_MAX_DENSITY}      guest raster density (default ${IOS_DEV_DEFAULT_DENSITY}; glyphs bake at this scale)
+  --hz=${IOS_TICK_RATES.join("|")}         ticks per second of guest time (default ${IOS_DEFAULT_TICK_RATE}; 120 for ProMotion)
+                      Glyphs are density-baked; timing is hz-baked. A bundle
+                      only runs correctly at the hz it was built with, so the
+                      shell is staged with that rate.
   --external-guest    evaluate the guest in the shell's own runtime (PocketHostView)
   --device=<name|udid>  pick a specific simulator (default: booted, else newest runtime)
   --rebuild-native    rebuild PocketApple.xcframework first (needs Rust iOS targets)
@@ -482,7 +515,7 @@ export async function iosMain(args: readonly string[] = Bun.argv.slice(2)): Prom
       case "build": {
         if (!rest[0] || rest[0].startsWith("--")) throw new Error("pocket ios build: missing app name");
         const density = Number(flagValue(rest, "--density") ?? IOS_DEV_DEFAULT_DENSITY);
-        const artifacts = await buildGuest(rest[0], density);
+        const artifacts = await buildGuest(rest[0], density, tickRateFlag(rest));
         console.log(`pocket ios: built ${artifacts.bundle}`);
         return;
       }
