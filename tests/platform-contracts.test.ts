@@ -344,6 +344,7 @@ describe("semantic resolution", () => {
       "hero-vue-vapor": [true, true, false],
       im: [true, true, false],
       "iphone2g-demo": [false, false, false], // admitted only by the private iphone2g-dev profile
+      nsengine: [false, true, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract
       "ipod-nano": [false, false, false], // admitted by the package-shaped macos-embedded target
       launcher: [true, true, false], // the Cover Flow deck (docs/LAUNCHER.md) is an ordinary console app
       library: [true, true, false],

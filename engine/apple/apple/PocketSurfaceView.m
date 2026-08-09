@@ -8,6 +8,13 @@
 // word's id bits for the touch's lifetime.
 #define POCKET_MAX_TOUCHES 8
 
+// Platform-contract identity published to plan-built guests
+// (framework/src/host.ts assertNativeHostContract). Must match the ios-dev
+// profile in tools/ios-profile.ts; external-guest hosts publish the same pair
+// on the ui namespace they mount.
+static const char *const kPocketSurfaceHostId = "ios-dev";
+static const uint32_t kPocketSurfaceHostAbi = 7;
+
 typedef struct {
   __weak UITouch *touch;
   CGPoint point;
@@ -64,6 +71,9 @@ typedef struct {
     _density = density;
     _handle = pocket_apple_create(density, logicalWidth, logicalHeight);
     if (_handle == NULL) {
+      [self captureError];
+    } else if (pocket_apple_set_identity(_handle, kPocketSurfaceHostId,
+                                         kPocketSurfaceHostAbi) != 0) {
       [self captureError];
     }
     _colorSpace = CGColorSpaceCreateDeviceRGB();

@@ -8,9 +8,11 @@
 //   pocket check|compile|build --target <psp|vita> [...args]
 //                            resolve pocket.json once, then build from its plan
 //   pocket play vita <demo> build, install and launch a demo in Vita3K
+//   pocket play ios <demo>  build, stage and launch a demo on the iOS simulator
 //   pocket dev|psp|vita|hw|psplink|devtools|tape [...args]
 //                            low-level passthrough to the checkout's bun scripts
 //   pocket symbian <cmd>      Nokia E7 toolchain doctor/setup/build/deploy
+//   pocket ios <cmd>          Apple iOS doctor/setup/build/play on the simulator
 //
 // The published CLI ships the same manifest consumed by PocketJS build scripts.
 
@@ -368,6 +370,7 @@ const SCRIPTS = {
   psp: "tools/psp.ts",
   vita: "tools/vita.ts",
   symbian: "tools/symbian.ts",
+  ios: "tools/ios.ts",
   hw: "tools/hw.ts",
   psplink: "tools/psplink.ts",
   devtools: "tools/devtools.ts",
@@ -412,10 +415,12 @@ const HELP = `${C.bold("pocket")} — the PocketJS toolchain CLI
                            check + emit JS/pak from one resolved build plan
   pocket build --target T  check + compile + package PSP or Vita artifacts
   pocket play vita <app>   build, install and launch a demo in Vita3K
+  pocket play ios <app>    build, stage and launch a demo on the iOS simulator
   pocket dev <app>-main    build + serve an app in the browser
   pocket psp <app>         build the PSP EBOOT
   pocket vita <app>        build the PS Vita VPK
   pocket symbian <cmd>      Nokia E7 doctor/setup/build-probe/deploy
+  pocket ios <cmd>         Apple iOS doctor/setup/build/play on the simulator
   pocket hw <app>          build + run on a real PSP over PSPLINK
   pocket psplink           interactive multi-app switcher on a real PSP
   pocket devtools [app]    DevTools panel + USB debug bridge (one command)
@@ -441,6 +446,7 @@ switch (cmd) {
   case "psp":
   case "vita":
   case "symbian":
+  case "ios":
   case "hw":
   case "psplink":
   case "devtools":

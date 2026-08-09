@@ -23,6 +23,7 @@ pocketjs/
 │  ├─ esp32p4/    reusable ESP-IDF PPA adapter + component smoke build
 │  ├─ pocketbook/ PocketBook e-reader host (inkview, standalone lone-bin crate)
 │  ├─ symbian/    Nokia E7 Qt/QuickJS runtime + visible toolchain probe
+│  ├─ apple/      NativeScript iOS shell over engine/apple + @nativescript/pocketjs
 │  ├─ web/        browser dev host (wasm core)
 │  └─ sim/        deterministic headless simulation host (docs/DETERMINISM.md)
 ├─ framework/    Guest: @pocketjs/framework

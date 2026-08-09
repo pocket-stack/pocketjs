@@ -69,7 +69,7 @@ describe("published PocketJS CLI", () => {
   script: import.meta.url,
   args: Bun.argv.slice(2),
 }));\n`;
-    for (const name of ["pocket", "play", "symbian", "vita"]) {
+    for (const name of ["pocket", "play", "symbian", "vita", "ios"]) {
       writeFileSync(join(scripts, `${name}.ts`), recorder);
     }
 
@@ -82,6 +82,8 @@ describe("published PocketJS CLI", () => {
       { cliArgs: ["symbian", "doctor", "--device"], script: "symbian.ts", args: ["doctor", "--device"] },
       { cliArgs: ["symbian", "coda", "usb"], script: "symbian.ts", args: ["coda", "usb"] },
       { cliArgs: ["symbian", "coda", "usb", "launch"], script: "symbian.ts", args: ["coda", "usb", "launch"] },
+      { cliArgs: ["ios", "play", "nsengine"], script: "ios.ts", args: ["play", "nsengine"] },
+      { cliArgs: ["play", "ios", "nsengine"], script: "play.ts", args: ["ios", "nsengine"] },
     ];
 
     for (const fixture of cases) {

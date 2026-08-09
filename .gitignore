@@ -32,3 +32,10 @@ tests/goldens/psp/*.actual.png
 # irecovery readline history, written when the iPhone 2G runbook drives iBoot
 .irecovery
 engine/apple/dist/
+# NativeScript shell working state (hosts/apple/ns-shell): `pocket ios` stages
+# guest assets, and the ns CLI owns platforms/ and hooks/ (node_modules/ is
+# ignored repo-wide above).
+hosts/apple/ns-shell/platforms/
+hosts/apple/ns-shell/hooks/
+hosts/apple/ns-shell/src/assets/pocket/
+hosts/apple/ns-shell/package-lock.json

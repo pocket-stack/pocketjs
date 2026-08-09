@@ -151,6 +151,7 @@
     "psp:switch": "bun psplink",
     "vita": "bun tools/vita.ts",
     "symbian": "bun tools/symbian.ts",
+    "ios": "bun tools/ios.ts",
     "iphone2g": "bun tools/iphone2g.ts",
     "vita:art": "bun tools/generate-vita-livearea.ts",
     "vita:art:check": "bun tools/generate-vita-livearea.ts --check",
