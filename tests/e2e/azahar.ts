@@ -8,17 +8,24 @@
 //
 // Environment: AZAHAR (the .app bundle), AZAHAR_CONFIG (the settings to clone),
 // E2E_AZAHAR_APP (one spec name instead of the default set), E2E_AZAHAR_3DSX
-// (run a .3dsx that is already built), E2E_AZAHAR_TIMEOUT_MS.
+// (run a .3dsx that is already built), E2E_AZAHAR_TIMEOUT_MS,
+// E2E_AZAHAR_GRAPHICS_API (0 software, 2 Vulkan).
 //
 // Determinism: the core steps a fixed dt (contracts/spec/spec.ts FIXED_DT) and
 // the baked input tape is indexed by the same frame counter that names the
 // dumped files, so a frame is a pure function of its index. The capture is a GX
 // display transfer of the PICA200 render target — a real GPU readback, not a
-// CPU oracle — and it is byte-identical run to run under one renderer. It is
-// NOT identical between renderers: a shaded triangle differed on every measured
-// frame between Software (graphics_api=0) and Vulkan (graphics_api=2), 34% of
-// pixels on the first, so the fixture pins the backend and a golden belongs to
-// the pinned one.
+// CPU oracle — and it is byte-identical run to run under one renderer.
+//
+// It is NOT byte-identical BETWEEN renderers, so the fixture pins one and a
+// golden belongs to the pinned one. Measured on Azahar 2125.1.2 with the RGB8
+// readback in place, Vulkan (graphics_api=2) against these Software
+// (graphics_api=0) goldens: 5.1% of pixels differ, 99.5% of those by 1 or 2 of
+// 255 — the two rasterizers round texture filtering and TEV blending
+// differently — and 24 pixels along the logo's one diagonal edge differ by more,
+// up to 157. Both renderers produce the same picture; only Software produces it
+// the same way on every machine, which is why it is the pin.
+// E2E_AZAHAR_GRAPHICS_API=2 re-measures that.
 //
 // Azahar has no headless mode, ignores SIGTERM, and does not exit when the
 // guest returns from main(); the driver therefore owns both its lifetime
@@ -62,6 +69,9 @@ const sourceUserDir = sourceConfig.replace(/\/config\/[^/]+$/, "");
 // Set to run a .3dsx that is already built (the tools/3ds.ts build is skipped).
 const prebuilt = process.env.E2E_AZAHAR_3DSX;
 const romDir = process.env.E2E_AZAHAR_ROM_DIR ?? `${ROOT}dist/3ds`;
+// Azahar's renderer: 0 software, 2 Vulkan. The default is the software
+// rasterizer, which is the same on every machine.
+const graphicsApi = process.env.E2E_AZAHAR_GRAPHICS_API ?? "0";
 
 // The 3DS top screen is 400x240; the stock 480x272 demo corpus does not fit it
 // on either axis and the resolver has no scaling fallback, so this driver runs
@@ -137,12 +147,12 @@ function writeFixture(): void {
       ? config.replace(new RegExp(`^${key}\\\\default=.*$`, "m"), () => `${key}\\default=false`)
       : config.replace(new RegExp(`^${key}=.*$`, "m"), () => `${key}=${value}\n${key}\\default=false`);
   };
-  // The renderers do not agree: the same capture hashed differently under
-  // Software and Vulkan on every measured frame, while each backend was
-  // byte-stable across runs. Goldens therefore belong to one backend, and it is
-  // the software rasterizer — the one that does not depend on the developer's
-  // GPU driver.
-  set("graphics_api", "0");
+  // The renderers agree on the picture but not on every byte: a Vulkan capture
+  // differs from these goldens on 5.1% of pixels, almost all by 1 or 2 of 255
+  // (see the header). Goldens therefore belong to one backend, and it is the
+  // software rasterizer — the one that does not depend on the developer's GPU
+  // driver.
+  set("graphics_api", graphicsApi);
   // The capture transfers a 240x400 render target; any internal upscale changes
   // what comes back.
   set("resolution_factor", "1");
@@ -275,7 +285,7 @@ try {
 mkdirSync(GOLDENS, { recursive: true });
 // Emulator provenance: byte-exact goldens are only promised for the Azahar
 // build and the renderer they were recorded with.
-const buildStamp = `${Bun.spawnSync([azaharBinary, "--version"]).stdout.toString().trim()}, graphics_api=0`;
+const buildStamp = `${Bun.spawnSync([azaharBinary, "--version"]).stdout.toString().trim()}, graphics_api=${graphicsApi}`;
 const stampPath = `${GOLDENS}/AZAHAR-BUILD.txt`;
 const recordedStamp = existsSync(stampPath) ? readFileSync(stampPath, "utf8").trim() : null;
 let passed = 0;

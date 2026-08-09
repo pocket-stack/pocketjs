@@ -119,7 +119,11 @@ static uint8_t *read_file(const char *path, size_t *length) {
  * never be confused with a previous run's (tests/e2e/azahar.ts). */
 #define CAPTURE_DIR "sdmc:/pocketjs-captures"
 
+/* The PPF's own RGB8 staging buffer, and the A,B,G,R buffer the file holds. */
+#define CAPTURE_RGB_BYTES ((size_t)VIEW_W * VIEW_H * 3)
+
 static u32 *capture_buffer;
+static u8 *capture_rgb;
 static const char CAPTURE_INPUT[] = POCKETJS_CAPTURE_INPUT;
 
 /* Read one unsigned value, decimal or 0x-prefixed hex, from [start, end). */
@@ -198,13 +202,24 @@ static int32_t scripted_buttons(uint32_t frame) {
  *
  * NOT gfxGetFramebuffer after C3D_FrameEnd: that buffer has already been
  * swapped and reads back black. An explicit display transfer untiles the
- * PICA200 colour buffer into linear CPU-readable memory, and the result is
- * byte-identical across runs and across Azahar's Software and Vulkan
- * renderers.
+ * PICA200 colour buffer into linear CPU-readable memory.
+ *
+ * **The transfer's output format must be GX_TRANSFER_FMT_RGB8, not RGBA8.**
+ * Asking the PPF for a 32-bit linear output out of this 240x400 tiled colour
+ * buffer returns rows that are each individually correct and progressively
+ * misregistered — every fourth output row slips a further 64 texels — which
+ * reads as a shredded screen while the same frame presents perfectly. Azahar's
+ * software rasterizer happens to answer the 32-bit request correctly, so the
+ * bug only shows under a hardware renderer; measured against a known probe
+ * rectangle in the Pocket Voxel host, RGBA8 out matched 74.6% of it and RGB8
+ * out matched 100.0%. RGB8 is also the format citro3d's own presentation
+ * transfer uses (DISPLAY_TRANSFER_FLAGS above), so the capture travels the
+ * path the screen travels. The dropped alpha byte was never read: the decode
+ * takes R, G and B only.
  *
  * The bytes stay in the rotated screen orientation — 240 wide by 400 tall,
- * column-major — and each RGBA8 word is byte order A, B, G, R. The e2e driver
- * decodes with src[(x * 240 + (239 - y)) * 4] -> dst[y * 400 + x].
+ * column-major — and each capture word is byte order A, B, G, R. The e2e
+ * driver decodes with src[(x * 240 + (239 - y)) * 4] -> dst[y * 400 + x].
  */
 static bool capture_write(uint32_t frame) {
   /* C3D_FrameEnd only queues the frame. The colour buffer is not finished
@@ -213,14 +228,24 @@ static bool capture_write(uint32_t frame) {
   C3D_SyncDisplayTransfer(
     (u32 *)target->frameBuf.colorBuf,
     GX_BUFFER_DIM(VIEW_H, VIEW_W),
-    capture_buffer,
+    (u32 *)capture_rgb,
     GX_BUFFER_DIM(VIEW_H, VIEW_W),
     GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
       GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
-      GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+      GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
       GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO)
   );
-  GSPGPU_InvalidateDataCache(capture_buffer, (s32)CAPTURE_BYTES);
+  GSPGPU_InvalidateDataCache(capture_rgb, (s32)CAPTURE_RGB_BYTES);
+
+  /* Widen B, G, R back into the A, B, G, R word the golden format states, so
+   * the on-device format change costs the driver nothing. */
+  uint8_t *out = (uint8_t *)capture_buffer;
+  for (size_t i = 0; i < (size_t)VIEW_W * VIEW_H; i += 1) {
+    out[i * 4 + 0] = 0xff;
+    out[i * 4 + 1] = capture_rgb[i * 3 + 0];
+    out[i * 4 + 2] = capture_rgb[i * 3 + 1];
+    out[i * 4 + 3] = capture_rgb[i * 3 + 2];
+  }
 
   /* Named by the process-global frame counter, which is also what indexes the
    * baked input tape: input at frame N and file fN are the same frame. */
@@ -295,7 +320,8 @@ int main(void) {
 #ifdef POCKETJS_CAPTURE
   mkdir(CAPTURE_DIR, 0777);
   capture_buffer = linearAlloc(CAPTURE_BYTES);
-  if (capture_buffer == NULL) fail("capture buffer allocation failed");
+  capture_rgb = linearAlloc(CAPTURE_RGB_BYTES);
+  if (capture_buffer == NULL || capture_rgb == NULL) fail("capture buffer allocation failed");
   uint32_t frame = 0;
 #endif
 

@@ -25,6 +25,7 @@ src/qjs.c             QuickJS embedding: globalThis.ui -> ui_* calls
 src/input.c           3DS keys and circle pad -> the PSP BTN bitmask
 src/vshader.v.pica    the PICA200 vertex shader
 Makefile              run INSIDE the container by tools/3ds.ts
+app.rsf               the CIA descriptor makerom reads
 icon.png              48x48 SMDH icon
 ```
 
@@ -46,6 +47,7 @@ reaches outside `hosts/3ds` except through them.
 ```sh
 bun tools/3ds.ts 3ds-demo              # dist/3ds/<output>.3dsx
 bun tools/3ds.ts 3ds-demo --capture    # the deterministic e2e binary
+bun tools/3ds.ts 3ds-demo --cia        # also dist/3ds/<output>.cia
 ```
 
 Two build-time facts are load-bearing:
@@ -59,6 +61,62 @@ Two build-time facts are load-bearing:
 - **`__stacksize__` is raised to 1 MiB.** devkitPro's 3dsx crt0 gives the main
   thread 32 KiB, and QuickJS's interpreter plus the guest's render pass recurse
   far past that.
+
+## The CIA, and the memory region it asks for
+
+`--cia` writes `dist/3ds/<output>.cia` next to the `.3dsx`, from the same ELF
+and the same staged romfs directory.
+
+**A `.3dsx` runs under the Homebrew Launcher and lives inside hbmenu's memory
+allocation. A CIA is its own installed title and asks the kernel for its own
+memory region.** That request is `SystemMode: 64MB` in `app.rsf` — the largest
+region an Old 3DS gives an application, out of the console's 128 MiB — plus
+`SystemModeExt: 124MB`, which a New 3DS honours and an Old 3DS ignores. A guest
+whose arena, expanded textures and pak add up past what hbmenu hands out has no
+way to ask for more as a `.3dsx`. That is why the format is here: Pocket Voxel's
+12 MiB arena plus ~14 MiB of expanded textures plus a 30.6 MiB pak is exactly
+the budget that may not fit under the Homebrew Launcher on a real console.
+
+Three facts about the packaging itself:
+
+- **No banner is required.** makerom needs one only for a title that plays an
+  animated banner in HOME Menu. The SMDH passed as `-icon` already carries the
+  icon and the title strings, and `-exefslogo` supplies the boot logo.
+- **The romfs is a directory, not an image.** makerom builds the romfs itself
+  from `RomFs.RootPath`, pointed at the same directory 3dsxtool embeds. Handing
+  it the raw romfs binary that `mkromfs3ds` produces — the container 3dsxtool
+  takes — fails with `Invalid RomFS Binary`; the two packagers share the staged
+  directory and nothing else.
+- **makerom ships in neither devkitPro nor Homebrew**, so `tools/3ds.ts` clones
+  `github.com/3DSGuy/Project_CTR` shallow into `dist/3ds/makerom/src`, builds it
+  in the same container as everything else, and caches the binary against the
+  container image and the checked out revision. mbedtls, blz and yaml are
+  vendored in that repository, so the clone is the only step that needs the
+  network.
+
+The title's identity comes from the resolved plan, never from a literal per app
+(`ciaUniqueId`, `ciaProductCode`, `ciaProcessName` in `tools/3ds.ts`): the
+**unique id is `0xFF000 | hash(app.id) & 0xFFF`**, inside the `0xFF000-0xFFFFF`
+block that no retail or system title uses, so an app keeps one title id across
+rebuilds and an install replaces its predecessor instead of accumulating. The
+product code is `CTR-P-` plus four characters of the app id. The RSF's
+`BasicInfo.Title` is the exheader's process name, which is 8 bytes — the cut
+happens in TypeScript rather than silently inside makerom, and the title HOME
+Menu shows is the SMDH's, still whole.
+
+Azahar installs one and then boots the installed title from its own SD card:
+
+```sh
+azahar -i dist/3ds/pocket3ds-demo-main.cia
+azahar "$HOME/Library/Application Support/Azahar/sdmc/Nintendo 3DS/\
+00000000000000000000000000000000/00000000000000000000000000000000/\
+title/00040000/0ffc1900/content/0429b6bc.app"
+```
+
+`00040000` is the application category and `0ffc1900` is this demo's unique id
+shifted up by its 8-bit variation; `tools/3ds.ts` prints the whole title id when
+it writes the file. A capture build installed and booted this way produced
+frames **byte-identical to the `.3dsx` goldens** in `tests/goldens/3ds/`.
 
 ## What `globalThis.ui` has to publish
 
@@ -131,16 +189,33 @@ finished. The bytes stay in the screen's rotated orientation, 240 wide by 400
 tall, so the driver decodes `src[(x * 240 + (239 - y)) * 4]` into
 `dst[y * 400 + x]` and reads the channels back as A, B, G, R.
 
+**That transfer's output format is `GX_TRANSFER_FMT_RGB8`, and `main.c` widens
+B, G, R into the A, B, G, R capture word itself.** Asking the transfer engine
+for a 32-bit linear output out of this 240x400 tiled colour buffer returns rows
+that are each individually correct and progressively misregistered — every
+fourth output row slips a further 64 texels — while the same frame presents
+perfectly on the screen. Azahar's software rasterizer answers the 32-bit request
+correctly, so the wrong format is invisible until something renders through a
+GPU: the identical build and the identical CIA both came back shredded under
+Vulkan. Measured in the Pocket Voxel host against a known probe rectangle,
+RGBA8 out matched 74.6% of it and RGB8 out matched 100.0%. RGB8 is also the
+format citro3d's own presentation transfer uses, so the capture travels the path
+the screen travels; the alpha byte it drops was never read, because the decode
+takes R, G and B only.
+
 ```sh
 bun tests/e2e/azahar.ts
 ```
 
-**Azahar's two renderers do not agree.** The same build and the same frame
-differed in **48.7% of pixels** between Software (`graphics_api=0`) and Vulkan
-(`graphics_api=2`) on an Apple M3 Max: under Vulkan small quads came back as
-periodic bands while Software reproduced the geometry exactly. A golden
-therefore belongs to one backend, and the e2e fixture pins it. Two independent
-Software runs of the demo produced **20 byte-identical frames**.
+**Azahar's two renderers agree on the picture but not on every byte.** With the
+RGB8 readback in place, a Vulkan (`graphics_api=2`) capture of the demo differs
+from the committed Software (`graphics_api=0`) goldens on **5.1% of pixels,
+99.5% of them by 1 or 2 of 255** — the two rasterizers round texture filtering
+and TEV blending differently — plus **24 pixels along the logo's one diagonal
+edge**, by up to 157. A golden therefore still belongs to one backend, and the
+e2e fixture pins it to Software, the backend that does not depend on the
+developer's GPU driver. `E2E_AZAHAR_GRAPHICS_API=2 bun tests/e2e/azahar.ts`
+re-measures the gap.
 
 Azahar derives its whole user directory from `$HOME` and has no switch for any
 part of it, so a run gets its own config and SD card by getting its own `$HOME`.

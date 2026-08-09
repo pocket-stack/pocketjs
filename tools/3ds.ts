@@ -4,6 +4,7 @@
 //
 //   bun tools/3ds.ts 3ds-demo
 //   bun tools/3ds.ts 3ds-demo --capture           (e2e frame-dump build)
+//   bun tools/3ds.ts 3ds-demo --cia               (also emit an installable CIA)
 //   bun tools/3ds.ts --plan=<resolved-plan.json> --project-root=<dir>
 //
 // The toolchain spans two environments. The Rust half compiles on macOS:
@@ -17,7 +18,9 @@
 //   2. cargo build --release -> hosts/3ds/core/target/armv6k-nintendo-3ds/release/
 //                               libpocketjs_3ds_core.a   (macOS)
 //   3. QuickJS               -> dist/3ds/quickjs/libquickjs.a  (container, cached)
+//   3b. makerom (--cia)      -> dist/3ds/makerom/bin/makerom    (container, cached)
 //   4. hosts/3ds/Makefile    -> dist/3ds/<output>.3dsx          (container)
+//                               dist/3ds/<output>.cia  under --cia
 //
 // <output> is the resolved plan's app.output, not the bare app argument.
 //
@@ -52,6 +55,14 @@
 //   POCKETJS_CAP_START     first frame to dump
 //   POCKETJS_CAP_N         how many frames to dump
 //
+// and, only under --cia, the five the CIA goal needs:
+//
+//   POCKETJS_OUT_CIA       the .cia path to write ("" disables the goal)
+//   POCKETJS_MAKEROM       the makerom binary built by ensureMakerom()
+//   POCKETJS_CIA_TITLE     exheader process name, the manifest title cut to 8 B
+//   POCKETJS_CIA_PRODUCT   CTR-P-XXXX product code
+//   POCKETJS_CIA_UNIQUE_ID title id unique part, e.g. 0xFF3D0
+//
 // The default goal must produce POCKETJS_OUT_3DSX and nothing outside
 // POCKETJS_BUILD_DIR and dist/3ds/.
 
@@ -63,6 +74,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { availableParallelism, homedir } from "node:os";
@@ -118,6 +130,13 @@ const QUICKJS_HEADERS = [
   "quickjs.h",
 ] as const;
 
+// makerom is what turns the ELF into an installable title. It ships in neither
+// devkitPro nor Homebrew, so --cia clones and builds it: every dependency
+// (mbedtls, blz, yaml) is vendored in the repository, so the clone is the only
+// step that needs the network and the build runs in the same offline container
+// as everything else.
+const MAKEROM_REPOSITORY = "https://github.com/3DSGuy/Project_CTR";
+
 /** The devkitARM ABI, published by the toolchain itself in 3dsvars.sh. */
 const ARM_ARCHITECTURE_FLAGS = [
   "-march=armv6k",
@@ -169,6 +188,8 @@ export interface ThreeDsArguments {
   readonly packageDir: string;
   readonly skipBuild: boolean;
   readonly capture: boolean;
+  /** Also package the ELF as an installable CIA title. */
+  readonly cia: boolean;
   readonly configPath: string;
   readonly configFlagged: boolean;
   readonly useConfig: boolean;
@@ -195,6 +216,7 @@ export function parse3dsArguments(
   let packageDir = `${root}dist/3ds`;
   let skipBuild = false;
   let capture = false;
+  let cia = false;
   let configPath = `${root}pocket.config.ts`;
   let configFlagged = false;
   let useConfig = true;
@@ -203,6 +225,7 @@ export function parse3dsArguments(
 
   for (const a of argv) {
     if (a === "--capture") capture = true;
+    else if (a === "--cia") cia = true;
     else if (a === "--skip-build") skipBuild = true;
     else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
     else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
@@ -227,6 +250,7 @@ export function parse3dsArguments(
     packageDir,
     skipBuild,
     capture,
+    cia,
     configPath,
     configFlagged,
     useConfig,
@@ -237,8 +261,8 @@ export function parse3dsArguments(
 
 const USAGE =
   "usage: bun tools/3ds.ts <app> [--plan=<resolved-plan.json>] [--project-root=<dir>] " +
-  "[--outdir=<dir>] [--package-outdir=<dir>] [--skip-build] [--capture] [cargo args…]   " +
-  "e.g. bun tools/3ds.ts 3ds-demo --capture";
+  "[--outdir=<dir>] [--package-outdir=<dir>] [--skip-build] [--capture] [--cia] [cargo args…]   " +
+  "e.g. bun tools/3ds.ts 3ds-demo --cia";
 
 // ---------------------------------------------------------------------------
 // Container plumbing
@@ -489,6 +513,146 @@ export async function ensureQuickJs(
 }
 
 // ---------------------------------------------------------------------------
+// makerom (--cia)
+// ---------------------------------------------------------------------------
+
+/**
+ * Clone and build makerom, and cache the binary. The stamp covers the checked
+ * out revision and the container image, so a re-clone or a new devkitARM
+ * release rebuilds and nothing else does.
+ *
+ * The clone happens on macOS because the container runs with --network=none;
+ * the build happens in the container because that is where this repository's
+ * device toolchain lives. makerom vendors mbedtls, blz and yaml, so nothing
+ * after the clone reaches the network.
+ */
+export async function ensureMakerom(
+  cacheDirectory: string,
+  imageId: string,
+  mounts: readonly Mount[],
+): Promise<string> {
+  const checkout = join(cacheDirectory, "src");
+  const project = join(checkout, "makerom");
+  const binary = join(project, "bin", "makerom");
+  const stampPath = join(cacheDirectory, ".stamp");
+
+  if (!existsSync(join(project, "makefile"))) {
+    if (!Bun.which("git")) {
+      throw new Error("PocketJS 3ds: --cia needs git on PATH to fetch makerom.");
+    }
+    mkdirSync(cacheDirectory, { recursive: true });
+    rmSync(checkout, { recursive: true, force: true });
+    console.log(`PocketJS 3ds: cloning ${MAKEROM_REPOSITORY} …`);
+    const clone = await capture("git", [
+      "clone",
+      "--depth",
+      "1",
+      MAKEROM_REPOSITORY,
+      checkout,
+    ]);
+    if (clone.exitCode !== 0) {
+      rmSync(checkout, { recursive: true, force: true });
+      throw new Error(
+        `PocketJS 3ds: could not clone ${MAKEROM_REPOSITORY} into ${checkout}.\n` +
+          (clone.stderr.trim() || clone.stdout.trim()) +
+          "\nmakerom is the only tool that builds a CIA and ships in neither " +
+          "devkitPro nor Homebrew. With no network, clone it by hand into that " +
+          "path and rerun; the build itself is offline.",
+      );
+    }
+  }
+
+  const head = await capture("git", ["rev-parse", "HEAD"], checkout);
+  const stamp = `${imageId} ${head.exitCode === 0 ? head.stdout.trim() : "unknown"}`;
+  if (
+    existsSync(binary) &&
+    existsSync(stampPath) &&
+    readFileSync(stampPath, "utf8").trim() === stamp
+  ) {
+    console.log(`PocketJS 3ds: makerom cached (${binary})`);
+    return binary;
+  }
+
+  console.log("PocketJS 3ds: building makerom …");
+  await runContainer(
+    ["make deps", `make -j${availableParallelism()}`].join("\n"),
+    mounts,
+    containerPathFor(project, mounts),
+    {},
+    "makerom build",
+  );
+  if (!existsSync(binary)) {
+    throw new Error(`PocketJS 3ds: the makerom build did not produce ${binary}`);
+  }
+  writeFileSync(stampPath, `${stamp}\n`);
+  return binary;
+}
+
+// ---------------------------------------------------------------------------
+// CIA identity
+// ---------------------------------------------------------------------------
+
+/** FNV-1a over the UTF-8 bytes; the hash this repository already stamps with. */
+function fnv1a32(text: string): number {
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoder().encode(text)) {
+    hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  }
+  return hash;
+}
+
+/**
+ * The unique part of the title id, `0x0004000000<unique>00`.
+ *
+ * **Unique ids 0xFF000-0xFFFFF are the homebrew block**: no retail game and no
+ * system title is assigned one, so an installed CIA cannot collide with a title
+ * the console already has. The low 12 bits come from the manifest's app id, so
+ * an app keeps its title id across rebuilds — an install replaces the previous
+ * one instead of accumulating — and two apps get different ids without anyone
+ * choosing a number by hand.
+ */
+export function ciaUniqueId(appId: string): string {
+  return `0x${(0xff000 | (fnv1a32(appId) & 0xfff)).toString(16).toUpperCase()}`;
+}
+
+/**
+ * The full 64-bit title id as hex: category 0x00040000 (a CTR application),
+ * then the unique id shifted up by the 8-bit variation, which is 0. It names
+ * the directory the installed title lands in, on an SD card and in Azahar
+ * alike: `Nintendo 3DS/<id>/<id>/title/00040000/<low 32 bits>/content/`.
+ */
+export function ciaTitleId(appId: string): string {
+  const unique = 0xff000 | (fnv1a32(appId) & 0xfff);
+  return `00040000${((unique << 8) >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+/**
+ * The product code, `CTR-P-XXXX`. Nintendo assigns retail codes; homebrew
+ * invents its own, so the four characters are the app id's last dotted segment
+ * reduced to A-Z0-9, extended from the id's hash when it is shorter than four.
+ * The shape is the one makerom validates even without `FreeProductCode`.
+ */
+export function ciaProductCode(appId: string): string {
+  const segment = appId.split(".").pop() || appId;
+  const letters = segment.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const filler = fnv1a32(appId).toString(36).toUpperCase();
+  return `CTR-P-${`${letters}${filler}`.slice(0, 4)}`;
+}
+
+/**
+ * The exheader's process name, which is **8 bytes** — makerom truncates a
+ * longer BasicInfo.Title to it silently, so the cut happens here where it is
+ * visible. Characters that would end the RSF's quoted scalar or start another
+ * substitution are dropped first. The title HOME Menu shows is the SMDH's, not
+ * this one, and keeps the manifest string whole.
+ */
+export function ciaProcessName(title: string, appId: string): string {
+  const printable = title.replace(/[^\x20-\x7e]/g, "").replace(/["\\$]/g, "");
+  const cut = printable.slice(0, 8).trim();
+  return cut || `PJ${(fnv1a32(appId) & 0xffff).toString(16).toUpperCase().padStart(4, "0")}`;
+}
+
+// ---------------------------------------------------------------------------
 // Build plan
 // ---------------------------------------------------------------------------
 
@@ -612,8 +776,12 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
   }
 
   await ensureQuickJs(quickJsDirectory, imageId, mounts);
+  const makerom = args.cia
+    ? await ensureMakerom(join(distributionRoot, "makerom"), imageId, mounts)
+    : "";
 
   const output = join(args.packageDir, `${inputs.appOutput}.3dsx`);
+  const ciaOutput = join(args.packageDir, `${inputs.appOutput}.cia`);
   const makeEnvironment: Record<string, string> = {
     ...hostBuildEnvironment(inputs, {
       outputDirectory: containerPathFor(args.outputDir, mounts),
@@ -633,9 +801,19 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
     POCKETJS_CAPTURE_INPUT: process.env.POCKETJS_CAPTURE_INPUT ?? "",
     POCKETJS_CAP_START: process.env.POCKETJS_CAP_START ?? "",
     POCKETJS_CAP_N: process.env.POCKETJS_CAP_N ?? "",
+    // The CIA goal is off unless POCKETJS_OUT_CIA names a file. Title, product
+    // code and unique id are all derived from the resolved plan.
+    POCKETJS_OUT_CIA: args.cia ? containerPathFor(ciaOutput, mounts) : "",
+    POCKETJS_MAKEROM: args.cia ? containerPathFor(makerom, mounts) : "",
+    POCKETJS_CIA_TITLE: ciaProcessName(plan.app.title, plan.app.id),
+    POCKETJS_CIA_PRODUCT: ciaProductCode(plan.app.id),
+    POCKETJS_CIA_UNIQUE_ID: ciaUniqueId(plan.app.id),
   };
 
-  console.log(`PocketJS 3ds: make (${CONTAINER_IMAGE}${args.capture ? ", capture" : ""})`);
+  const notes = [args.capture ? "capture" : "", args.cia ? "cia" : ""].filter(Boolean);
+  console.log(
+    `PocketJS 3ds: make (${CONTAINER_IMAGE}${notes.length > 0 ? `, ${notes.join(", ")}` : ""})`,
+  );
   await runContainer(
     `make -j${availableParallelism()}`,
     mounts,
@@ -647,6 +825,14 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
     throw new Error(`PocketJS 3ds: the container build did not produce ${output}`);
   }
   console.log(`output: ${output}`);
+  if (args.cia) {
+    if (!existsSync(ciaOutput)) {
+      throw new Error(`PocketJS 3ds: the container build did not produce ${ciaOutput}`);
+    }
+    console.log(
+      `output: ${ciaOutput} (title id ${ciaTitleId(plan.app.id)}, install with \`azahar -i\`)`,
+    );
+  }
   return output;
 }
 

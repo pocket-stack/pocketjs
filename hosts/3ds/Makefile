@@ -23,10 +23,15 @@
 #   POCKETJS_CAPTURE_INPUT   baked input tape, "frame:mask,frame:mask"
 #   POCKETJS_CAP_START       first frame to dump
 #   POCKETJS_CAP_N           how many frames to dump
+#   POCKETJS_OUT_CIA         the .cia to write; empty leaves the goal off
+#   POCKETJS_MAKEROM         the makerom binary tools/3ds.ts built and cached
+#   POCKETJS_CIA_TITLE       exheader process name (8 bytes)
+#   POCKETJS_CIA_PRODUCT     CTR-P-XXXX product code
+#   POCKETJS_CIA_UNIQUE_ID   title id unique part, e.g. 0xFF3D0
 #
 # The tape and the capture window travel INSIDE the binary: a capture run never
 # reads the emulator's filesystem for its input. Nothing is written outside
-# POCKETJS_BUILD_DIR and POCKETJS_OUT_3DSX.
+# POCKETJS_BUILD_DIR, POCKETJS_OUT_3DSX and POCKETJS_OUT_CIA.
 
 DEVKITPRO ?= /opt/devkitpro
 DEVKITARM ?= $(DEVKITPRO)/devkitARM
@@ -39,6 +44,8 @@ OUT := $(POCKETJS_OUT_3DSX)
 # are staged under one.
 ROMFS := $(BUILD)/romfs
 ICON ?= $(CURDIR)/icon.png
+CIA := $(POCKETJS_OUT_CIA)
+RSF := $(CURDIR)/app.rsf
 
 CC := $(DEVKITARM)/bin/arm-none-eabi-gcc
 PICASSO := $(DEVKITPRO)/tools/bin/picasso
@@ -84,6 +91,9 @@ SMDH := $(BUILD)/pocketjs-3ds.smdh
 
 .PHONY: all clean
 all: $(OUT)
+ifneq ($(CIA),)
+all: $(CIA)
+endif
 
 $(BUILD) $(ROMFS):
 	mkdir -p $@
@@ -136,5 +146,42 @@ $(OUT): $(ELF) $(SMDH) $(ROMFS)/app.js $(ROMFS)/app.pak
 	mkdir -p $(dir $(OUT))
 	$(THREEDSXTOOL) $(ELF) $@ --romfs=$(ROMFS) --smdh=$(SMDH)
 
+ifneq ($(CIA),)
+# The CIA's identity arrives as -D substitutions, not in a file, and make cannot
+# see a changed environment variable — the same trap FLAGS_STAMP covers for
+# CFLAGS. A stamp carrying the three values makes a renamed or re-issued title
+# rebuild the .cia.
+CIA_ARGS := $(POCKETJS_CIA_TITLE) $(POCKETJS_CIA_PRODUCT) $(POCKETJS_CIA_UNIQUE_ID)
+CIA_STAMP := $(BUILD)/cia.stamp
+.PHONY: $(CIA_STAMP).probe
+$(CIA_STAMP).probe: | $(BUILD)
+	@printf '%s\n' "$(CIA_ARGS)" > $(CIA_STAMP).new
+	@cmp -s $(CIA_STAMP).new $(CIA_STAMP) || mv $(CIA_STAMP).new $(CIA_STAMP)
+	@rm -f $(CIA_STAMP).new
+$(CIA_STAMP): $(CIA_STAMP).probe ;
+
+# makerom, not 3dsxtool: a CIA is its own installed title, so it carries the
+# exheader that asks for the 64MB application memory region (app.rsf), which a
+# .3dsx cannot do — it inherits whatever the Homebrew Launcher was given.
+#
+# The romfs is the SAME staged directory the .3dsx embeds, and makerom builds
+# the image itself from RomFs.RootPath. It rejects a prebuilt raw romfs binary
+# (the container format 3dsxtool takes) with "Invalid RomFS Binary", so there is
+# nothing to share but the directory.
+#
+# -target t is the test target: makerom signs with the fixed test keys rather
+# than Nintendo's retail ones, which is what Azahar installs. No banner is
+# passed — makerom needs one only for a title that plays an animated banner in
+# HOME Menu, and the SMDH already carries the icon and the title strings.
+$(CIA): $(ELF) $(SMDH) $(ROMFS)/app.js $(ROMFS)/app.pak $(RSF) $(CIA_STAMP)
+	mkdir -p $(dir $(CIA))
+	$(POCKETJS_MAKEROM) -f cia -o $@ -rsf $(RSF) -target t -exefslogo \
+	  -DAPP_TITLE="$(POCKETJS_CIA_TITLE)" \
+	  -DAPP_PRODUCT_CODE="$(POCKETJS_CIA_PRODUCT)" \
+	  -DAPP_UNIQUE_ID=$(POCKETJS_CIA_UNIQUE_ID) \
+	  -DAPP_ROMFS=$(ROMFS) \
+	  -elf $(ELF) -icon $(SMDH)
+endif
+
 clean:
-	rm -rf $(BUILD) $(OUT)
+	rm -rf $(BUILD) $(OUT) $(CIA)

@@ -15,6 +15,12 @@ import {
   THREE_DS_DEV_TARGET_ID,
   THREE_DS_VIEWPORT,
 } from "../tools/3ds-profile.ts";
+import {
+  ciaProcessName,
+  ciaProductCode,
+  ciaTitleId,
+  ciaUniqueId,
+} from "../tools/3ds.ts";
 
 /** A guest app declaring the top screen exactly: 400x240 logical, native. */
 function topScreenManifest(): Record<string, any> {
@@ -168,5 +174,70 @@ describe("private Nintendo 3DS build profile", () => {
     expect(qjs).toContain('JS_SetPropertyStr(context, ui, "__viewport", viewport)');
     expect(qjs).toContain("ui_viewport_width()");
     expect(qjs).toContain("ui_viewport_height()");
+  });
+});
+
+describe("CIA title identity", () => {
+  const APP = "dev.pocket-stack.3ds-demo";
+
+  test("puts the unique id in the homebrew block and keeps it stable", () => {
+    // 0xFF000-0xFFFFF is the range no retail or system title is assigned, so an
+    // installed CIA cannot collide with one the console already has.
+    for (const app of [APP, "dev.pocket-stack.voxel", "a", ""]) {
+      const unique = Number.parseInt(ciaUniqueId(app), 16);
+      expect(unique).toBeGreaterThanOrEqual(0xff000);
+      expect(unique).toBeLessThanOrEqual(0xfffff);
+    }
+    // Derived, so a rebuild replaces the installed title instead of adding one.
+    expect(ciaUniqueId(APP)).toBe(ciaUniqueId(APP));
+    expect(ciaUniqueId(APP)).not.toBe(ciaUniqueId("dev.pocket-stack.voxel"));
+  });
+
+  test("names the directory the installed title lands in", () => {
+    // 00040000 is the application category; the low word is the unique id
+    // shifted up by the 8-bit variation, which is 0.
+    const unique = Number.parseInt(ciaUniqueId(APP), 16);
+    expect(ciaTitleId(APP)).toBe(`00040000${((unique << 8) >>> 0).toString(16).padStart(8, "0")}`);
+  });
+
+  test("emits a product code makerom accepts without FreeProductCode", () => {
+    // makerom's IsValidProductCode: 10..16 characters, CTR or KTR, '-' at 3 and
+    // 5, digits or uppercase letters elsewhere.
+    for (const app of [APP, "x", "dev.pocket-stack.a-b", "UPPER.case.9"]) {
+      expect(ciaProductCode(app)).toMatch(/^CTR-[A-Z0-9]-[A-Z0-9]{4}$/);
+    }
+    expect(ciaProductCode(APP)).toBe("CTR-P-3DSD");
+  });
+
+  test("cuts the process name to the 8 bytes the exheader holds", () => {
+    // makerom truncates BasicInfo.Title to 8 silently; doing it here keeps the
+    // cut visible. The SMDH still carries the manifest title whole.
+    expect(ciaProcessName("PocketJS: 3DS Top Screen", APP)).toBe("PocketJS");
+    expect(ciaProcessName("", APP)).not.toBe("");
+    // Characters that would end the RSF's quoted scalar or open another
+    // substitution are dropped before the cut.
+    expect(ciaProcessName('a"b\\c$d', APP)).toBe("abcd");
+    for (const title of ["", "字", 'a"b', "a".repeat(40)]) {
+      const name = ciaProcessName(title, APP);
+      expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(8);
+      expect(name).toMatch(/^[\x20-\x7e]+$/);
+    }
+  });
+
+  test("the RSF asks for the memory region that is the point of a CIA", () => {
+    const rsf = readFileSync(
+      join(new URL("..", import.meta.url).pathname, "hosts/3ds/app.rsf"),
+      "utf8",
+    );
+    // A .3dsx inherits hbmenu's allocation; a CIA asks for its own region.
+    expect(rsf).toMatch(/^\s+SystemMode\s+: 64MB$/m);
+    expect(rsf).toMatch(/^\s+SystemModeExt\s+: 124MB$/m);
+    // The four values hosts/3ds/Makefile substitutes; a rename breaks here.
+    for (const name of ["APP_TITLE", "APP_PRODUCT_CODE", "APP_UNIQUE_ID", "APP_ROMFS"]) {
+      expect(rsf).toContain(`$(${name})`);
+    }
+    // makerom builds the romfs from a directory; the raw image 3dsxtool embeds
+    // is rejected as "Invalid RomFS Binary".
+    expect(rsf).toMatch(/^RomFs:\n {2}RootPath: \$\(APP_ROMFS\)$/m);
   });
 });
