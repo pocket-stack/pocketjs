@@ -293,10 +293,22 @@ const nearestPow2 = (n: number) => {
   return Math.max(8, Math.min(512, p));
 };
 
+function svgImageBlob(source: string): Blob {
+  const normalized = /<svg\b[^>]*\bxmlns\s*=/i.test(source)
+    ? source
+    : source.replace(/<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+  return new Blob([normalized], { type: "image/svg+xml" });
+}
+
 async function rasterizeImage(name: string): Promise<DecodedImage> {
   const res = await fetch(assetBase + name).catch(() => null);
   if (!res || !res.ok) return placeholderImage();
-  const blob = await res.blob();
+  // SVG markup copied from app directories is also accepted by native builds,
+  // where an XML namespace is optional. Browser image decoders require it on
+  // standalone SVG blobs, so normalize the root before creating the image URL.
+  const blob = name.toLowerCase().endsWith(".svg")
+    ? svgImageBlob(await res.text())
+    : await res.blob();
   const url = URL.createObjectURL(blob);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {

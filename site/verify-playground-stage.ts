@@ -34,6 +34,56 @@ const probe = `(async () => {
     }
     return value >>> 0;
   };
+  const spinnerFrameHash = () => {
+    const context = framebuffer.getContext("2d");
+    const data = context.getImageData(360, 70, 120, 140).data;
+    let value = 2166136261;
+    for (let i = 0; i < data.length; i += 4) {
+      value ^= data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | (data[i + 3] << 24);
+      value = Math.imul(value, 16777619);
+    }
+    return value >>> 0;
+  };
+
+  // The Hero spinner advances every three guest frames. Sampling its authored
+  // framebuffer region catches both a stalled guest and SVG decode fallback:
+  // eight failed SVGs previously produced one identical checker hash while the
+  // Stage upload counters continued to advance.
+  const spinnerStartTick = receipt()?.guestTicks ?? 0;
+  const spinnerHashes = new Set();
+  const stageUploadHashes = new Set();
+  let stageUploadCalls = 0;
+  const contextPrototypes = new Set(
+    [window.WebGLRenderingContext, window.WebGL2RenderingContext]
+      .filter(Boolean)
+      .map((Context) => Context.prototype),
+  );
+  for (const prototype of contextPrototypes) {
+    for (const name of ["texImage2D", "texSubImage2D"]) {
+      const original = prototype[name];
+      if (typeof original !== "function") continue;
+      prototype[name] = function (...args) {
+        if (args.includes(framebuffer)) {
+          stageUploadCalls++;
+          stageUploadHashes.add(spinnerFrameHash());
+        }
+        return original.apply(this, args);
+      };
+    }
+  }
+  let spinnerEndTick = spinnerStartTick;
+  for (let i = 0; i < 64; i++) {
+    spinnerHashes.add(spinnerFrameHash());
+    spinnerEndTick = receipt()?.guestTicks ?? spinnerEndTick;
+    if (
+      spinnerHashes.size >= 8
+      && stageUploadHashes.size >= 8
+      && spinnerEndTick - spinnerStartTick >= 24
+    ) break;
+    // Vary the interval so the verifier cannot phase-lock with the 3-tick
+    // animation step and repeatedly skip the same authored frame.
+    await sleep(37 + (i % 5) * 7);
+  }
 
   credit.focus();
   const enter = new KeyboardEvent("keydown", {
@@ -136,6 +186,10 @@ const probe = `(async () => {
     secondDownPart,
     releasedAfterSecond: afterSecond?.pressedPart == null,
     lowerFramebufferChanged: hashBefore !== hashAfter,
+    spinnerGuestTicks: spinnerEndTick - spinnerStartTick,
+    spinnerFramebufferHashes: spinnerHashes.size,
+    spinnerStageUploadCalls: stageUploadCalls,
+    spinnerStageUploadHashes: stageUploadHashes.size,
     wasmLoads: resources.filter((path) => path.endsWith("/pg/pocketjs.wasm")).length,
     launcherLoads: resources.filter((path) => path.startsWith("/stage/apps/")),
     receipt: afterSecond,
@@ -181,6 +235,11 @@ const checks = {
     && result.secondDownPart === "btn_circle"
     && result.releasedAfterSecond,
   liveFramebuffer: result.lowerFramebufferChanged && result.receipt?.screenUploads > 1,
+  animatedStageTexture:
+    result.spinnerGuestTicks >= 24
+    && result.spinnerFramebufferHashes >= 8
+    && result.spinnerStageUploadCalls >= 8
+    && result.spinnerStageUploadHashes >= 8,
   noBrowserErrors: report.pageErrors.length === 0 && report.consoleErrors.length === 0,
 };
 const failures = Object.entries(checks)

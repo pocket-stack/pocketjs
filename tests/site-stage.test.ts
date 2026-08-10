@@ -146,6 +146,64 @@ test("playground wraps its live framebuffer in the homepage PSP model", () => {
   expect(css).toContain(".pg-stage.has-error .pg-stage__viewport:focus-visible .pg-stage__screen");
 });
 
+test("playground spinner SVGs declare the browser image namespace", () => {
+  const spinnerDir = ROOT + "assets/images/";
+  const spinnerFiles = readdirSync(spinnerDir)
+    .filter((file) => /^spinner-(?:0[0-7]|atlas)\.svg$/.test(file))
+    .sort();
+  expect(spinnerFiles).toEqual([
+    "spinner-00.svg",
+    "spinner-01.svg",
+    "spinner-02.svg",
+    "spinner-03.svg",
+    "spinner-04.svg",
+    "spinner-05.svg",
+    "spinner-06.svg",
+    "spinner-07.svg",
+    "spinner-atlas.svg",
+  ]);
+
+  for (const file of spinnerFiles) {
+    const svg = readFileSync(spinnerDir + file, "utf8");
+    expect(svg).toMatch(/<svg\b[^>]*\bxmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+  }
+
+  const compiler = readFileSync(ROOT + "site/playground/compiler-entry.ts", "utf8");
+  expect(compiler).toContain("function svgImageBlob(source: string): Blob");
+  expect(compiler).toContain("www.w3.org/2000/svg");
+  expect(compiler).toContain("? svgImageBlob(await res.text())");
+});
+
+test("site build binds Vue Vapor runtime and JSX helper to the Pocket document", () => {
+  const build = readFileSync(ROOT + "site/build.ts", "utf8");
+  expect(build).toContain('document: "globalThis.__pocketDocument"');
+
+  const runtimeStart = build.indexOf("async function bundleVueVapor");
+  const helperStart = build.indexOf("function patchVaporHelperCode");
+  const writerStart = build.indexOf("function writeVueVaporHelpers");
+  const headersStart = build.indexOf("function writeStaticHeaders");
+  expect(runtimeStart).toBeGreaterThan(-1);
+  expect(helperStart).toBeGreaterThan(runtimeStart);
+  expect(writerStart).toBeGreaterThan(helperStart);
+  expect(headersStart).toBeGreaterThan(writerStart);
+
+  const runtimeBuild = build.slice(runtimeStart, helperStart);
+  expect(runtimeBuild).toContain("...VUE_VAPOR_DOCUMENT_DEFINE");
+  expect(runtimeBuild).toContain('if (!code.includes("globalThis.__pocketDocument"))');
+  expect(runtimeBuild).toContain("Vue Vapor browser runtime does not target the PocketJS document facade");
+
+  const helperBuild = build.slice(helperStart, writerStart);
+  expect(helperBuild).toContain("define: VUE_VAPOR_DOCUMENT_DEFINE");
+
+  const helperWriter = build.slice(writerStart, headersStart);
+  expect(helperWriter).toContain("const isVaporHelper = id === vaporHelperId");
+  expect(helperWriter).toContain("isVaporHelper ? patchVaporHelperCode(code) : code");
+  expect(helperWriter).toContain(
+    'if (isVaporHelper && !output.includes("globalThis.__pocketDocument"))',
+  );
+  expect(helperWriter).toContain("Vue Vapor JSX helper does not target the PocketJS document facade");
+});
+
 test("homepage and shared pages use one footer description", () => {
   const homeTemplate = readFileSync(ROOT + "site/home.html", "utf8");
   const siteBuild = readFileSync(ROOT + "site/build.ts", "utf8");
