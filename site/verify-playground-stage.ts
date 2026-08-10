@@ -171,7 +171,8 @@ const probe = `(async () => {
     afterSecond = receipt();
   }
 
-  const resources = performance.getEntriesByType("resource").map((entry) => new URL(entry.name).pathname);
+  const resourceEntries = performance.getEntriesByType("resource");
+  const resources = resourceEntries.map((entry) => new URL(entry.name).pathname);
   return {
     stageReady: stage.dataset.ready,
     hasError: stage.classList.contains("has-error"),
@@ -192,6 +193,13 @@ const probe = `(async () => {
     spinnerStageUploadHashes: stageUploadHashes.size,
     wasmLoads: resources.filter((path) => path.endsWith("/pg/pocketjs.wasm")).length,
     launcherLoads: resources.filter((path) => path.startsWith("/stage/apps/")),
+    modelResources: resourceEntries
+      .filter((entry) => new URL(entry.name).pathname === "/stage/psp_lod3_eco.glb")
+      .map((entry) => ({
+        duration: Math.round(entry.duration),
+        transferSize: entry.transferSize,
+        decodedBodySize: entry.decodedBodySize,
+      })),
     receipt: afterSecond,
   };
 })()`;
@@ -216,6 +224,18 @@ if (exitCode !== 0) throw new Error(stderr || stdout || `site verifier exited ${
 
 const report = JSON.parse(stdout);
 const result = report.probe;
+const modelLoaded = result.modelResources.some(
+  (resource: { decodedBodySize: number }) => resource.decodedBodySize > 0,
+);
+const loadedModelUrl = new URL("/stage/psp_lod3_eco.glb", url).href;
+const expectedCanceledModelRequest =
+  `net::ERR_ABORTED: ${loadedModelUrl} (type=Fetch, canceled=true)`;
+// CDP can report a canceled Fetch for this URL after ResourceTiming shows the
+// complete body. Accept only that exact cancellation when the browser receipt
+// also proves the model loaded and the Stage became ready.
+const unexpectedNetworkErrors = (report.networkErrors ?? []).filter(
+  (error: string) => !(modelLoaded && result.stageReady === "true" && error === expectedCanceledModelRequest),
+);
 const checks = {
   stageReady:
     result.stageReady === "true"
@@ -224,7 +244,8 @@ const checks = {
   sharedPackage:
     result.receipt?.profileUrl === "/stage/psp-profile.json"
     && result.receipt?.modelUrl === "/stage/psp_lod3_eco.glb"
-    && result.receipt?.screenCanvasId === "pg-canvas",
+    && result.receipt?.screenCanvasId === "pg-canvas"
+    && modelLoaded,
   onePlaygroundRuntime: result.wasmLoads === 1 && result.launcherLoads.length === 0,
   creditKeepsEnter: result.creditEnterPrevented === false,
   resetReleasesModelInput:
@@ -240,13 +261,16 @@ const checks = {
     && result.spinnerFramebufferHashes >= 8
     && result.spinnerStageUploadCalls >= 8
     && result.spinnerStageUploadHashes >= 8,
-  noBrowserErrors: report.pageErrors.length === 0 && report.consoleErrors.length === 0,
+  noBrowserErrors:
+    report.pageErrors.length === 0
+    && report.consoleErrors.length === 0
+    && unexpectedNetworkErrors.length === 0,
 };
 const failures = Object.entries(checks)
   .filter(([, passed]) => !passed)
   .map(([name]) => name);
 
-console.log(JSON.stringify({ ...report, checks }, null, 2));
+console.log(JSON.stringify({ ...report, unexpectedNetworkErrors, checks }, null, 2));
 if (failures.length) {
   throw new Error(`Playground Stage smoke failed: ${failures.join(", ")}`);
 }

@@ -6,7 +6,12 @@
 
 export * from "../../framework/src/renderer-octane.ts";
 
-export { frameworkName, mount, render } from "../../framework/src/index-octane.ts";
+export {
+  frameworkName,
+  mount,
+  render,
+  setTextContent,
+} from "../../framework/src/index-octane.ts";
 export {
   View,
   Text,
@@ -24,7 +29,7 @@ export {
   Lazy,
   Gallery,
 } from "../../framework/src/components-octane.tsx";
-export { animate, spring, cancelAnim } from "../../framework/src/animation.ts";
+export { animate, spring, cancelAnim, jump } from "../../framework/src/animation.ts";
 export {
   useFrame,
   useButtonPress,
@@ -38,6 +43,7 @@ export {
   pushFocusGrid,
   pushFocusScope,
 } from "../../framework/src/input-api.ts";
+export { createWavPlayer } from "../../framework/src/audio-api.ts";
 
 import {
   resetRendererState,

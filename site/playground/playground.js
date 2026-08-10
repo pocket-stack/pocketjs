@@ -30,6 +30,8 @@ function loadCompiler() {
 const $ = (sel) => document.querySelector(sel);
 
 async function main() {
+  const query = new URLSearchParams(location.search);
+  const verifyMode = query.get("verify") === "1";
   const canvas = $("#pg-canvas");
   const statusEl = $("#pg-status");
   const errorEl = $("#pg-error");
@@ -51,6 +53,7 @@ async function main() {
 
   // --- host -----------------------------------------------------------------
   const host = new PocketHost();
+  if (verifyMode) globalThis.__pgHost = host;
   let stageController = null;
   const hostReady = host.mount(canvas, {
     wasmUrl: PG + "pocketjs.wasm",
@@ -58,6 +61,8 @@ async function main() {
     onError: (e) => showError(String(e && e.stack ? e.stack : e)),
     onLog: () => {},
     onBlit: () => stageController?.refreshScreen(),
+    showHud: !verifyMode,
+    idleAfterMs: verifyMode ? 0 : Infinity,
   });
   stageRoot.addEventListener("pointerdown", () => stageKeyboardTarget.focus(), true);
   canvas.addEventListener("click", () => stageKeyboardTarget.focus());
@@ -67,23 +72,29 @@ async function main() {
   // by the landing page wrap this host's live framebuffer. Loading the shell
   // separately keeps Three.js out of the editor bundle and lets compilation
   // start even while the model is still arriving.
-  void import("/assets/pocket-stage-web.js")
-    .then(({ mountPocketStage }) => mountPocketStage(stageRoot, {
-      host,
-      readyText: "Playground PSP ready",
-      errorText: "The PSP model could not be loaded. Using the 2D preview.",
-      receiptName: "__playgroundStageReceipt",
-    }))
-    .then((controller) => {
-      stageController = controller;
-      stageController?.refreshScreen();
-    })
-    .catch((error) => {
-      stageRoot.classList.add("has-error");
-      const stageStatus = stageRoot.querySelector("[data-stage-status]");
-      if (stageStatus) stageStatus.textContent = "The PSP model could not be loaded. Using the 2D preview.";
-      console.error("Playground PSP module failed", error);
-    });
+  // The full demo matrix drives the hidden framebuffer deterministically and
+  // exits each isolated browser as soon as its receipt is complete. Its Stage
+  // shell has a separate raycast/WebGL verifier, so avoid starting GLB fetches
+  // that would still be in flight when a short matrix run closes the page.
+  if (!verifyMode) {
+    void import("/assets/pocket-stage-web.js")
+      .then(({ mountPocketStage }) => mountPocketStage(stageRoot, {
+        host,
+        readyText: "Playground PSP ready",
+        errorText: "The PSP model could not be loaded. Using the 2D preview.",
+        receiptName: "__playgroundStageReceipt",
+      }))
+      .then((controller) => {
+        stageController = controller;
+        stageController?.refreshScreen();
+      })
+      .catch((error) => {
+        stageRoot.classList.add("has-error");
+        const stageStatus = stageRoot.querySelector("[data-stage-status]");
+        if (stageStatus) stageStatus.textContent = "The PSP model could not be loaded. Using the 2D preview.";
+        console.error("Playground PSP module failed", error);
+      });
+  }
 
   // --- editor ---------------------------------------------------------------
   let compileTimer = 0;
@@ -206,6 +217,10 @@ async function main() {
       try {
         await import(/* @vite-ignore */ bootUrl);
         host.begin();
+        // Browser regression mode advances exact virtual frames itself. Stop
+        // the RAF after begin()'s single initial frame so ambient animation or
+        // HUD timing cannot masquerade as an input result.
+        if (verifyMode) host.stop();
         const ms = Math.round(performance.now() - t0);
         const fwLabel = { "vue-vapor": "Vue Vapor", octane: "Octane" }[activeFramework] || "Solid";
         setStatus(
@@ -249,8 +264,8 @@ async function main() {
   });
 
   // boot with the first demo (or a fallback), honoring ?demo=
-  const boot = new URLSearchParams(location.search).get("demo");
-  const bootFramework = new URLSearchParams(location.search).get("framework");
+  const boot = query.get("demo");
+  const bootFramework = query.get("framework");
   if (boot && demos.some((d) => d.name === boot)) demoSel.value = boot;
   if (
     (bootFramework === "vue-vapor" || bootFramework === "octane") &&

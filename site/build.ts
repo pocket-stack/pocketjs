@@ -16,6 +16,7 @@
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { marked } from "marked";
 import { createHighlighter } from "shiki";
 import {
@@ -65,6 +66,21 @@ const shimPlugin: import("bun").BunPlugin = {
       if (SHIM_MAP[a.path]) return { path: SHIMS + SHIM_MAP[a.path] };
       if (SHIM_EMPTY.has(a.path)) return { path: SHIMS + "empty.js" };
       return undefined;
+    });
+  },
+};
+
+// octane 0.1.26's package root re-exports compile() from compile.js while the
+// package is marked side-effect free. Bun 1.3.14 can retain the re-export
+// binding but prune its declaration in a browser bundle. Resolve the browser
+// compiler straight to the owning module; normal Bun/Node consumers keep using
+// the public `octane/compiler` subpath in source.
+const octaneBrowserCompilerPlugin: import("bun").BunPlugin = {
+  name: "octane-browser-compiler",
+  setup(b) {
+    b.onResolve({ filter: /^octane\/compiler$/ }, () => {
+      const packageDir = dirname(Bun.resolveSync("octane/package.json", ROOT));
+      return { path: join(packageDir, "dist/compiler/compile.js") };
     });
   },
 };
@@ -247,14 +263,31 @@ type DemoVariant = { framework: "solid" | "vue-vapor" | "octane"; source: string
 type DemoEntry = { name: string; title: string; variants: DemoVariant[] };
 
 function inlinePlaygroundImports(name: string, source: string): string | null {
+  if (name === "launcher") {
+    const registryPath = ROOT + "apps/launcher/registry.generated.ts";
+    const registrySource = readFileSync(registryPath, "utf8");
+    const registryStart = registrySource.indexOf("export const REGISTRY");
+    if (registryStart < 0) throw new Error("launcher registry has no REGISTRY export");
+    const registry = registrySource.slice(registryStart).replace(/^export\s+/gm, "");
+    const withDefaultRegistry = source.replace(
+      "export default function Launcher(props: LauncherProps) {",
+      "export default function Launcher(props: LauncherProps = { registry: REGISTRY }) {",
+    );
+    if (withDefaultRegistry === source) {
+      throw new Error("launcher Playground wrapper could not supply its registry");
+    }
+    return registry + "\n" + withDefaultRegistry;
+  }
   if (!/from\s+["']\.\.?\//.test(source)) return source;
-  if (name !== "gallery") return null;
-  const tilesPath = ROOT + "apps/gallery/tiles.ts";
-  const tiles = readFileSync(tilesPath, "utf8").replace(/^export\s+/gm, "");
-  return source.replace(
-    /import\s+\{\s*GALLERY_PAGES,\s*TILES_PER_PAGE,\s*TILE_SRCS\s*\}\s+from\s+["']\.\/tiles\.ts["'];\n?/,
-    tiles + "\n",
-  );
+  if (name === "gallery") {
+    const tilesPath = ROOT + "apps/gallery/tiles.ts";
+    const tiles = readFileSync(tilesPath, "utf8").replace(/^export\s+/gm, "");
+    return source.replace(
+      /import\s+\{\s*GALLERY_PAGES,\s*TILES_PER_PAGE,\s*TILE_SRCS\s*\}\s+from\s+["']\.\/tiles\.ts["'];\n?/,
+      tiles + "\n",
+    );
+  }
+  return null;
 }
 
 function demoSpriteMeta(name: string): SpriteMeta | undefined {
@@ -318,6 +351,122 @@ function copyDemoAssets(): void {
       if (/\.(?:png|svg)$/i.test(file)) copy(dir + file, "demo-assets/" + file);
     }
   }
+  const launcherCovers = ROOT + "apps/launcher/covers/";
+  if (existsSync(launcherCovers)) copy(launcherCovers, "demo-assets/covers/");
+}
+
+type BabelImport = {
+  type: "ImportDeclaration";
+  source: { value: string };
+  specifiers: Array<
+    | { type: "ImportDefaultSpecifier" }
+    | { type: "ImportNamespaceSpecifier" }
+    | { type: "ImportSpecifier"; imported: { type: string; name?: string; value?: string } }
+  >;
+};
+
+/**
+ * Link every generated variant against the exact browser import map and the
+ * actual emitted bundle exports. A site build used to stop after writing the
+ * editable source into demos.json, so missing subpath mappings and curated
+ * facade exports could ship while every build stayed green.
+ */
+async function verifyPlaygroundModules(demos: DemoEntry[]): Promise<void> {
+  // Import the emitted browser artifact rather than its source entry. This is
+  // what catches bundler-only failures such as a retained call whose imported
+  // binding was tree-shaken out. Bust Bun's ESM cache for repeated builds in
+  // one process.
+  const compilerUrl = pathToFileURL(OUT + "pg/compiler.js");
+  compilerUrl.searchParams.set("build", String(Date.now()));
+  const [{ transformAppSource }, { transformAsync }] = await Promise.all([
+    import(compilerUrl.href) as Promise<typeof import("./playground/compiler-entry.ts")>,
+    import("@babel/core"),
+  ]);
+  const scanner = new Bun.Transpiler({ loader: "js" });
+  const exportCache = new Map<string, Set<string>>();
+  const failures: string[] = [];
+
+  const emittedPath = (specifier: string): string | null => {
+    const mapped = PLAYGROUND_IMPORTS[specifier];
+    if (mapped) return mapped;
+    if (specifier.startsWith("/pg/")) return specifier;
+    try {
+      const url = new URL(specifier);
+      if (url.origin === "https://pocketjs.dev" && url.pathname.startsWith("/pg/")) {
+        return url.pathname;
+      }
+    } catch {
+      // Bare specifier: the missing-map error below should name it directly.
+    }
+    return null;
+  };
+
+  const moduleExports = async (path: string): Promise<Set<string> | null> => {
+    const cached = exportCache.get(path);
+    if (cached) return cached;
+    const file = OUT + path.replace(/^\//, "");
+    if (!existsSync(file)) return null;
+    const exports = new Set(scanner.scan(readFileSync(file, "utf8")).exports);
+    exportCache.set(path, exports);
+    return exports;
+  };
+
+  for (const demo of demos) {
+    for (const variant of demo.variants) {
+      const label = `${demo.name}/${variant.framework}`;
+      try {
+        const { code } = await transformAppSource(
+          variant.source,
+          variant.framework,
+          "https://pocketjs.dev/",
+        );
+        if (!scanner.scan(code).exports.includes("default")) {
+          failures.push(`${label}: transformed module has no default export`);
+        }
+        const parsed = await transformAsync(code, {
+          filename: `${label}.js`,
+          ast: true,
+          code: false,
+          babelrc: false,
+          configFile: false,
+          sourceMaps: false,
+        });
+        const imports = (parsed?.ast?.program.body ?? []).filter(
+          (node) => node.type === "ImportDeclaration",
+        ) as unknown as BabelImport[];
+        for (const node of imports) {
+          const specifier = node.source.value;
+          const target = emittedPath(specifier);
+          if (!target) {
+            failures.push(`${label}: import map has no entry for ${specifier}`);
+            continue;
+          }
+          const exports = await moduleExports(target);
+          if (!exports) {
+            failures.push(`${label}: mapped module does not exist: ${specifier} -> ${target}`);
+            continue;
+          }
+          for (const imported of node.specifiers) {
+            if (imported.type === "ImportNamespaceSpecifier") continue;
+            const name = imported.type === "ImportDefaultSpecifier"
+              ? "default"
+              : imported.imported.name ?? imported.imported.value;
+            if (name && !exports.has(name)) {
+              failures.push(`${label}: ${specifier} does not export ${name}`);
+            }
+          }
+        }
+      } catch (error) {
+        failures.push(`${label}: transform failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`playground module audit failed:\n  ${failures.join("\n  ")}`);
+  }
+  const variants = demos.reduce((count, demo) => count + demo.variants.length, 0);
+  console.log(`  playground modules linked  (${variants} variants)`);
 }
 
 async function main() {
@@ -333,7 +482,11 @@ async function main() {
   writeVueVaporHelpers();
   await bundle("playground/runtime-entry.ts", "pg/runtime.js", { external: ["solid-js", "solid-js/universal"] });
   await bundle("playground/runtime-vue-vapor-entry.ts", "pg/runtime-vue-vapor.js", { external: ["vue"] });
-  await bundle("playground/compiler-entry.ts", "pg/compiler.js", { shims: true, prelude: PROCESS_PRELUDE });
+  await bundle("playground/compiler-entry.ts", "pg/compiler.js", {
+    shims: true,
+    prelude: PROCESS_PRELUDE,
+    plugins: [octaneBrowserCompilerPlugin],
+  });
   // Octane framework modules must pass through the Octane compiler (hook call
   // sites get slots; JSX lowers to universal plans), so this bundle runs under
   // the same jsxPlugin the real build uses. Self-contained: the universal
@@ -393,6 +546,7 @@ async function main() {
   const demos = demoManifest();
   write("pg/demos.json", JSON.stringify(demos));
   console.log(`  pg/demos.json  (${demos.length} demos: ${demos.map((d) => d.name).join(", ")})`);
+  await verifyPlaygroundModules(demos);
 
   // 4. static assets + Tailwind CSS (compiled AFTER pages exist so the content
   //    scan sees every class; we render pages to a temp first, then compile).
@@ -536,41 +690,47 @@ async function compileCss() {
   console.log(`  assets/site.css  (${(bytes / 1024).toFixed(0)} KiB)`);
 }
 
-// import-map so compiled apps resolve PocketJS to one runtime and Solid to its
-// own dependency bundle.
-const IMPORT_MAP = `<script type="importmap">
-{"imports":{
-  "solid-js":"/pg/solid.js",
-  "solid-js/universal":"/pg/solid-universal.js",
-  "vue":"/pg/vue-vapor.js",
-  "/vue-jsx-vapor/props":"/pg/vue-jsx-vapor/props.js",
-  "/vue-jsx-vapor/vdom":"/pg/vue-jsx-vapor/vdom.js",
-  "/vue-jsx-vapor/vapor":"/pg/vue-jsx-vapor/vapor.js",
-  "/vue-jsx-vapor/ssr":"/pg/vue-jsx-vapor/ssr.js",
-  "@pocketjs/framework":"/pg/runtime.js",
-  "@pocketjs/framework/components":"/pg/runtime.js",
-  "@pocketjs/framework/animation":"/pg/runtime.js",
-  "@pocketjs/framework/lifecycle":"/pg/runtime.js",
-  "@pocketjs/framework/input":"/pg/runtime.js",
-  "@pocketjs/framework/renderer":"/pg/runtime.js",
-  "@pocketjs/framework/solid":"/pg/runtime.js",
-  "@pocketjs/framework/solid/components":"/pg/runtime.js",
-  "@pocketjs/framework/solid/lifecycle":"/pg/runtime.js",
-  "@pocketjs/framework/solid/renderer":"/pg/runtime.js",
-  "@pocketjs/framework/vue-vapor":"/pg/runtime-vue-vapor.js",
-  "@pocketjs/framework/vue-vapor/animation":"/pg/runtime-vue-vapor.js",
-  "@pocketjs/framework/vue-vapor/components":"/pg/runtime-vue-vapor.js",
-  "@pocketjs/framework/vue-vapor/input":"/pg/runtime-vue-vapor.js",
-  "@pocketjs/framework/vue-vapor/lifecycle":"/pg/runtime-vue-vapor.js",
-  "@pocketjs/framework/vue-vapor/renderer":"/pg/runtime-vue-vapor.js",
-  "@pocketjs/framework/octane":"/pg/runtime-octane.js",
-  "@pocketjs/framework/octane/animation":"/pg/runtime-octane.js",
-  "@pocketjs/framework/octane/components":"/pg/runtime-octane.js",
-  "@pocketjs/framework/octane/input":"/pg/runtime-octane.js",
-  "@pocketjs/framework/octane/lifecycle":"/pg/runtime-octane.js",
-  "@pocketjs/framework/octane/renderer":"/pg/runtime-octane.js"
-}}
-</script>`;
+// Compiled apps resolve every supported public subpath to one singleton
+// runtime per framework. Keep the object available to the build-time link
+// audit below; JSON.stringify is the one source of truth for the page.
+const PLAYGROUND_IMPORTS: Record<string, string> = {
+  "solid-js": "/pg/solid.js",
+  "solid-js/universal": "/pg/solid-universal.js",
+  vue: "/pg/vue-vapor.js",
+  "/vue-jsx-vapor/props": "/pg/vue-jsx-vapor/props.js",
+  "/vue-jsx-vapor/vdom": "/pg/vue-jsx-vapor/vdom.js",
+  "/vue-jsx-vapor/vapor": "/pg/vue-jsx-vapor/vapor.js",
+  "/vue-jsx-vapor/ssr": "/pg/vue-jsx-vapor/ssr.js",
+  "@pocketjs/framework": "/pg/runtime.js",
+  "@pocketjs/framework/animation": "/pg/runtime.js",
+  "@pocketjs/framework/audio": "/pg/runtime.js",
+  "@pocketjs/framework/clock": "/pg/runtime.js",
+  "@pocketjs/framework/components": "/pg/runtime.js",
+  "@pocketjs/framework/host": "/pg/runtime.js",
+  "@pocketjs/framework/input": "/pg/runtime.js",
+  "@pocketjs/framework/launcher": "/pg/runtime.js",
+  "@pocketjs/framework/lifecycle": "/pg/runtime.js",
+  "@pocketjs/framework/renderer": "/pg/runtime.js",
+  "@pocketjs/framework/solid": "/pg/runtime.js",
+  "@pocketjs/framework/solid/components": "/pg/runtime.js",
+  "@pocketjs/framework/solid/lifecycle": "/pg/runtime.js",
+  "@pocketjs/framework/solid/renderer": "/pg/runtime.js",
+  "@pocketjs/framework/vue-vapor": "/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/animation": "/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/audio": "/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/components": "/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/input": "/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/lifecycle": "/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/vue-vapor/renderer": "/pg/runtime-vue-vapor.js",
+  "@pocketjs/framework/octane": "/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/animation": "/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/audio": "/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/components": "/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/input": "/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/lifecycle": "/pg/runtime-octane.js",
+  "@pocketjs/framework/octane/renderer": "/pg/runtime-octane.js",
+};
+const IMPORT_MAP = `<script type="importmap">${JSON.stringify({ imports: PLAYGROUND_IMPORTS })}</script>`;
 
 type Highlight = (text: string, rawLang: string) => string;
 

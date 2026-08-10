@@ -8,11 +8,16 @@
 // the nub path is covered by tests/cursor.test.ts).
 
 import { Text, View } from "@pocketjs/framework/components";
-import { createSignal } from "solid-js";
+import { enableCursor } from "@pocketjs/framework/input";
+import { createSignal, onCleanup } from "solid-js";
 
 const ROWS = ["REPLAY TAPE", "OPEN MEMORY STICK", "LAUNCH SHELL"] as const;
 
 export default function CursorDemo() {
+  // Keep the feature opt-in with the editable component so the Playground
+  // exercises the same cursor path as the packaged entry. Disposing the demo
+  // restores classic d-pad focus before another Playground app mounts.
+  onCleanup(enableCursor({ dpadSpeed: 60 }));
   const [status, setStatus] = createSignal("hover a row, press CIRCLE");
   return (
     <View class="w-full h-full flex-col items-center justify-center gap-[10] bg-[#008080]">
