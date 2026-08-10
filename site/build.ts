@@ -397,12 +397,10 @@ async function main() {
     active: "playground",
     body: readFileSync(SITE + "playground/page.html", "utf8"),
     bodyClass: "pg-page",
-    head: IMPORT_MAP + '\n<link rel="stylesheet" href="/assets/screen.css">',
+    head: IMPORT_MAP,
     scripts: ['<script type="module" src="/pg/playground.bundle.js"></script>'],
     path: "/playground/",
   }));
-  copy(SITE + "assets/screen.css", "assets/screen.css");
-
   // 6. homepage — bespoke "cinematic" design: its own chrome + home.css +
   //    home.js (the baked demo wall + lazy Pocket Stage). Not wrapped in the shared
   //    header/footer (those stay for docs + playground).

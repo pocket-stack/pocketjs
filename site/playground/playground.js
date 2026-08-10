@@ -16,7 +16,7 @@ import { EditorView, basicSetup } from "codemirror";
 import { EditorState } from "@codemirror/state";
 import { javascript } from "@codemirror/lang-javascript";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { PocketHost, BTN } from "./host.js";
+import { PocketHost } from "./host.js";
 
 // Dynamic-import the heavy (3 MB) compiler + the shared runtime lazily, with
 // computed specifiers so the bundler leaves them external (served from /pg/).
@@ -37,6 +37,8 @@ async function main() {
   const frameworkBtns = [...document.querySelectorAll("[data-framework]")];
   const runBtn = $("#pg-run");
   const resetBtn = $("#pg-reset");
+  const stageRoot = $("[data-playground-stage]");
+  const stageKeyboardTarget = stageRoot.querySelector("[data-stage-viewport]");
 
   const setStatus = (s, kind = "") => {
     statusEl.textContent = s;
@@ -49,11 +51,39 @@ async function main() {
 
   // --- host -----------------------------------------------------------------
   const host = new PocketHost();
-  await host.mount(canvas, {
+  let stageController = null;
+  const hostReady = host.mount(canvas, {
     wasmUrl: PG + "pocketjs.wasm",
+    keyboardTarget: stageKeyboardTarget,
     onError: (e) => showError(String(e && e.stack ? e.stack : e)),
     onLog: () => {},
+    onBlit: () => stageController?.refreshScreen(),
   });
+  stageRoot.addEventListener("pointerdown", () => stageKeyboardTarget.focus(), true);
+  canvas.addEventListener("click", () => stageKeyboardTarget.focus());
+  await hostReady;
+
+  // The same authored GLB, camera, screen material, and raycast controls used
+  // by the landing page wrap this host's live framebuffer. Loading the shell
+  // separately keeps Three.js out of the editor bundle and lets compilation
+  // start even while the model is still arriving.
+  void import("/assets/pocket-stage-web.js")
+    .then(({ mountPocketStage }) => mountPocketStage(stageRoot, {
+      host,
+      readyText: "Playground PSP ready",
+      errorText: "The PSP model could not be loaded. Using the 2D preview.",
+      receiptName: "__playgroundStageReceipt",
+    }))
+    .then((controller) => {
+      stageController = controller;
+      stageController?.refreshScreen();
+    })
+    .catch((error) => {
+      stageRoot.classList.add("has-error");
+      const stageStatus = stageRoot.querySelector("[data-stage-status]");
+      if (stageStatus) stageStatus.textContent = "The PSP model could not be loaded. Using the 2D preview.";
+      console.error("Playground PSP module failed", error);
+    });
 
   // --- editor ---------------------------------------------------------------
   let compileTimer = 0;
@@ -151,6 +181,10 @@ async function main() {
         globalThis.__pgDispose?.();
       } catch {}
       globalThis.__pgDispose = null;
+      // A model tap may still be waiting for the old guest's next tick. End it
+      // before reset() clears that callback so neither the host bit nor the
+      // Stage pointer latch can leak into the newly compiled app.
+      stageController?.releaseInput();
       host.reset();
       globalThis.__pgStyles = result.styleMap;
       globalThis.__pgPak = result.pak;
@@ -213,23 +247,6 @@ async function main() {
     const v = currentVariant();
     if (v) setDoc(v.source);
   });
-
-  // virtual gamepad
-  for (const el of document.querySelectorAll("[data-btn]")) {
-    const bit = parseInt(el.dataset.btn, 16);
-    const set = (down) => (e) => {
-      e.preventDefault();
-      el.classList.toggle("is-down", down);
-      host.press(bit, down);
-    };
-    el.addEventListener("mousedown", set(true));
-    el.addEventListener("mouseup", set(false));
-    el.addEventListener("mouseleave", set(false));
-    el.addEventListener("touchstart", set(true), { passive: false });
-    el.addEventListener("touchend", set(false));
-    el.addEventListener("touchcancel", set(false));
-  }
-  canvas.addEventListener("click", () => canvas.focus());
 
   // boot with the first demo (or a fallback), honoring ?demo=
   const boot = new URLSearchParams(location.search).get("demo");

@@ -96,6 +96,56 @@ test("homepage declares the live launcher and visible attributions", () => {
   }
 });
 
+test("playground wraps its live framebuffer in the homepage PSP model", () => {
+  const home = readFileSync(ROOT + "site/home.html", "utf8");
+  const playground = readFileSync(ROOT + "site/playground/page.html", "utf8");
+  for (const marker of [
+    "data-pocket-stage",
+    "data-stage-viewport",
+    "data-stage-canvas",
+    "data-stage-screen",
+    "data-stage-status",
+  ]) {
+    expect(home).toContain(marker);
+    expect(playground).toContain(marker);
+  }
+  expect(playground).toContain('id="pg-canvas" class="pg-stage__screen" data-stage-screen');
+  expect(playground).toContain("Dibad");
+  expect(playground).toContain("creativecommons.org/licenses/by/4.0");
+  expect(playground).not.toContain("screen-emu");
+  expect(playground).not.toContain("data-btn");
+
+  const homeGlue = readFileSync(ROOT + "site/assets/home.js", "utf8");
+  const playgroundGlue = readFileSync(ROOT + "site/playground/playground.js", "utf8");
+  for (const glue of [homeGlue, playgroundGlue]) {
+    expect(glue).toContain('import("/assets/pocket-stage-web.js")');
+    expect(glue).toContain("mountPocketStage");
+  }
+  expect(playgroundGlue).toContain("host,");
+  expect(playgroundGlue).toContain("stageController?.refreshScreen()");
+  expect(playgroundGlue).toContain("stageController?.releaseInput();\n      host.reset();");
+
+  const adapter = readFileSync(ROOT + "site/assets/pocket-stage-web.js", "utf8");
+  expect(adapter).toContain("const stageHost = suppliedHost ?? new PocketHost()");
+  expect(adapter).toContain("if (suppliedHost)");
+  expect(adapter).toContain("const onSuppliedHostError = stageHost.onError");
+  expect(adapter).toContain("releaseButton();\n        onSuppliedHostError(error);");
+  expect(adapter).toContain("const modelUrl = STAGE_ROOT + profile.lods.orbit");
+  expect(adapter).toContain("loader.loadAsync(modelUrl)");
+  expect(adapter).toContain("screenCanvasId: screenCanvas.id || null");
+  expect(adapter).toContain("lastPressedPart");
+  expect(adapter).toContain("return { refreshScreen, releaseInput: releaseButton }");
+
+  const build = readFileSync(ROOT + "site/build.ts", "utf8");
+  expect(build).not.toContain("screen.css");
+  expect(existsSync(ROOT + "site/assets/screen.css")).toBe(false);
+
+  const css = readFileSync(ROOT + "site/assets/tailwind.css", "utf8");
+  expect(css).toContain(".pg-stage.has-error .pg-stage__canvas { display: none; }");
+  expect(css).toContain(".pg-stage.has-error .pg-stage__screen");
+  expect(css).toContain(".pg-stage.has-error .pg-stage__viewport:focus-visible .pg-stage__screen");
+});
+
 test("homepage and shared pages use one footer description", () => {
   const homeTemplate = readFileSync(ROOT + "site/home.html", "utf8");
   const siteBuild = readFileSync(ROOT + "site/build.ts", "utf8");
@@ -165,4 +215,23 @@ test("a fast button tap is released only after one guest turn observes it", () =
   host._safeFrame();
   expect(seen).toEqual([BTN.CIRCLE, 0]);
   host.rafId = 0;
+});
+
+test("a deferred button release can be canceled before a host reset", () => {
+  const host = new PocketHost();
+  host.wasm = { init() {}, ops: {}, tick() {}, drawHash: () => 0n };
+  host.frameCb = () => {};
+  host.rafId = 1;
+
+  host.press(BTN.CIRCLE, true);
+  const cancelRelease = host.afterNextTick(() => host.press(BTN.CIRCLE, false));
+  const releaseInput = () => {
+    cancelRelease();
+    host.press(BTN.CIRCLE, false);
+  };
+
+  releaseInput();
+  host.rafId = 0;
+  host.reset();
+  expect(host.held & BTN.CIRCLE).toBe(0);
 });

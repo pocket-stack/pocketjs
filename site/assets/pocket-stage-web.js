@@ -172,7 +172,14 @@ function easeInOut(t) {
   return t * t * (3 - 2 * t);
 }
 
-export async function mountPocketStage(root) {
+/**
+ * Mount the authored PSP model around a PocketHost framebuffer.
+ *
+ * The homepage owns its launcher host, while the Playground supplies the host
+ * that already owns the live-compiled app. Keeping both paths here means the
+ * GLB, screen material, camera, and authored button hit regions stay identical.
+ */
+export async function mountPocketStage(root, options = {}) {
   const viewport = root.querySelector("[data-stage-viewport]");
   const canvas = root.querySelector("[data-stage-canvas]");
   const screenCanvas = root.querySelector("[data-stage-screen]");
@@ -190,7 +197,7 @@ export async function mountPocketStage(root) {
     });
   } catch (error) {
     root.classList.add("has-error");
-    status.textContent = "Interactive 3D is unavailable in this browser.";
+    status.textContent = options.errorText ?? "Interactive 3D is unavailable in this browser.";
     console.error("Pocket Stage WebGL startup failed", error);
     return;
   }
@@ -237,9 +244,12 @@ export async function mountPocketStage(root) {
   let focused = false;
   let savedDeskPose = null;
   let pressed = null;
+  let lastPressedPart = null;
   let cancelRelease = null;
   let wheelSnapTimer = 0;
   let ready = false;
+  let screenUploads = 0;
+  const suppliedHost = options.host ?? null;
 
   const renderNow = () => {
     renderRaf = 0;
@@ -256,6 +266,13 @@ export async function mountPocketStage(root) {
   const invalidate = () => {
     if (!inViewport || document.hidden || renderRaf) return;
     renderRaf = requestAnimationFrame(renderNow);
+  };
+
+  const refreshScreen = () => {
+    if (!screenTexture) return;
+    screenTexture.needsUpdate = true;
+    screenUploads++;
+    invalidate();
   };
 
   const resize = () => {
@@ -370,6 +387,7 @@ export async function mountPocketStage(root) {
     event.preventDefault();
     event.stopImmediatePropagation();
     pressed = { bit, pointerId: event.pointerId, tickAtPress: host.tickCount };
+    lastPressedPart = part.name;
     root.dataset.pressedPart = part.name;
     canvas.setPointerCapture(event.pointerId);
     host.press(bit, true);
@@ -416,7 +434,10 @@ export async function mountPocketStage(root) {
     inViewport = visible;
     if (!visible || document.hidden) {
       releaseButton();
-      host?.stop();
+      // A supplied host belongs to the Playground compiler lifecycle. The
+      // shell may pause its own WebGL work, but it must not stop an app that
+      // has just been reset or started outside this adapter.
+      if (!suppliedHost) host?.stop();
       if (renderRaf) cancelAnimationFrame(renderRaf);
       renderRaf = 0;
       if (cameraRaf) cancelAnimationFrame(cameraRaf);
@@ -424,7 +445,7 @@ export async function mountPocketStage(root) {
       controls.enabled = !focused;
       return;
     }
-    host?.wake();
+    if (!suppliedHost) host?.wake();
     invalidate();
   };
 
@@ -436,29 +457,35 @@ export async function mountPocketStage(root) {
   document.addEventListener("visibilitychange", () => setVisible(inViewport));
 
   try {
-    const stageHost = new PocketHost();
+    const stageHost = suppliedHost ?? new PocketHost();
     host = stageHost;
-    let textureReady = false;
-    const hostReady = stageHost.mount(screenCanvas, {
-      wasmUrl: "/pg/pocketjs.wasm",
-      keyboardTarget: canvas,
-      showHud: false,
-      idleAfterMs: 1200,
-      onBlit: () => {
-        if (!textureReady || !screenTexture) return;
-        screenTexture.needsUpdate = true;
-        invalidate();
-      },
-      onError: (error) => {
+    if (suppliedHost) {
+      const onSuppliedHostError = stageHost.onError;
+      stageHost.onError = (error) => {
         releaseButton();
-        root.classList.add("has-error");
-        status.textContent = "The Pocket app stopped unexpectedly.";
-        console.error("Pocket Stage guest failed", error);
-      },
-    });
+        onSuppliedHostError(error);
+      };
+    }
+    const hostReady = suppliedHost
+      ? Promise.resolve(stageHost)
+      : stageHost.mount(screenCanvas, {
+          wasmUrl: "/pg/pocketjs.wasm",
+          keyboardTarget: canvas,
+          showHud: false,
+          idleAfterMs: 1200,
+          onBlit: refreshScreen,
+          onError: (error) => {
+            releaseButton();
+            root.classList.add("has-error");
+            status.textContent = "The Pocket app stopped unexpectedly.";
+            console.error("Pocket Stage guest failed", error);
+          },
+        });
 
-    const profileResponse = await fetch(STAGE_ROOT + "psp-profile.json").then(failResponse);
+    const profileUrl = STAGE_ROOT + "psp-profile.json";
+    const profileResponse = await fetch(profileUrl).then(failResponse);
     const profile = await profileResponse.json();
+    const modelUrl = STAGE_ROOT + profile.lods.orbit;
     // The package's view block is the same camera authority the native
     // pocket-stage runtime reads; the adapter carries no model facts.
     const view = profile.view ?? {};
@@ -468,51 +495,61 @@ export async function mountPocketStage(root) {
     controls.target.fromArray(view.desk_target_mm ?? [0, 0, 0]);
     controls.update();
     focusDistanceMm = view.focus_distance_mm ?? focusDistanceMm;
-    // The stage boots the Pocket Launcher (docs/LAUNCHER.md) — the same
-    // multi-app deck the PSP EBOOT ships, on the wasm core. Each app
-    // arrives as a `.pocket` package (contracts/spec/pocket-package.ts, footer-hash
-    // verified on decode); the wasm host renders the psp variant, exactly
-    // like the handheld. apps.json is the registry twin next to them.
-    const bundleCache = new Map();
-    const fetchBundle = async (output) => {
-      if (!bundleCache.has(output)) {
-        bundleCache.set(
-          output,
-          fetch(STAGE_ROOT + "apps/" + output + ".pocket")
-            .then(failResponse)
-            .then((r) => r.arrayBuffer())
-            .then((buffer) => {
-              const pkg = decodePocketPackage(new Uint8Array(buffer));
-              const variant = findVariant(pkg, "psp");
-              if (!variant) throw new Error(output + ".pocket has no psp variant");
-              const js = findSection(variant, POCKET_SECTION.js);
-              const pak = findSection(variant, POCKET_SECTION.pak) ?? new Uint8Array(0);
-              // The js section carries its QuickJS NUL — strip it for eval-
-              // by-source; copy the pak out of the shared package buffer.
-              return {
-                js: new TextDecoder().decode(js.subarray(0, js.length - 1)),
-                pak: pak.slice().buffer,
-              };
-            }),
-        );
-      }
-      return bundleCache.get(output);
-    };
     const loader = new GLTFLoader();
-    const [model, registryResponse, launcherBundle] = await Promise.all([
-      loader.loadAsync(STAGE_ROOT + profile.lods.orbit),
-      fetch(STAGE_ROOT + "apps/apps.json").then(failResponse),
-      fetchBundle("launcher-main"),
-      hostReady,
-    ]);
-    const registry = await registryResponse.json();
-    stageHost.enableAppSwitching({
-      launcher: "launcher-main",
-      apps: registry.apps,
-      fetchBundle,
-      onSwitch: () => invalidate(),
-    });
-    const { js: appSource, pak } = launcherBundle;
+    let model;
+    let registry = null;
+    let fetchBundle = null;
+    let launcherBundle = null;
+    if (suppliedHost) {
+      [model] = await Promise.all([
+        loader.loadAsync(modelUrl),
+        hostReady,
+      ]);
+    } else {
+      // The homepage stage boots the Pocket Launcher (docs/LAUNCHER.md) — the
+      // same multi-app deck the PSP EBOOT ships. The Playground skips this
+      // branch because its supplied host already owns the live-compiled app.
+      const bundleCache = new Map();
+      fetchBundle = async (output) => {
+        if (!bundleCache.has(output)) {
+          bundleCache.set(
+            output,
+            fetch(STAGE_ROOT + "apps/" + output + ".pocket")
+              .then(failResponse)
+              .then((r) => r.arrayBuffer())
+              .then((buffer) => {
+                const pkg = decodePocketPackage(new Uint8Array(buffer));
+                const variant = findVariant(pkg, "psp");
+                if (!variant) throw new Error(output + ".pocket has no psp variant");
+                const js = findSection(variant, POCKET_SECTION.js);
+                const pak = findSection(variant, POCKET_SECTION.pak) ?? new Uint8Array(0);
+                // The js section carries its QuickJS NUL — strip it for eval-
+                // by-source; copy the pak out of the shared package buffer.
+                return {
+                  js: new TextDecoder().decode(js.subarray(0, js.length - 1)),
+                  pak: pak.slice().buffer,
+                };
+              }),
+          );
+        }
+        return bundleCache.get(output);
+      };
+      const [loadedModel, registryResponse, loadedLauncher] = await Promise.all([
+        loader.loadAsync(modelUrl),
+        fetch(STAGE_ROOT + "apps/apps.json").then(failResponse),
+        fetchBundle("launcher-main"),
+        hostReady,
+      ]);
+      model = loadedModel;
+      registry = await registryResponse.json();
+      launcherBundle = loadedLauncher;
+      stageHost.enableAppSwitching({
+        launcher: "launcher-main",
+        apps: registry.apps,
+        fetchBundle,
+        onSwitch: () => invalidate(),
+      });
+    }
 
     screenTexture = new THREE.CanvasTexture(screenCanvas);
     screenTexture.colorSpace = THREE.SRGBColorSpace;
@@ -520,7 +557,6 @@ export async function mountPocketStage(root) {
     screenTexture.generateMipmaps = false;
     screenTexture.minFilter = THREE.LinearFilter;
     screenTexture.magFilter = THREE.LinearFilter;
-    textureReady = true;
 
     const canonical = canonicalizeModel(model.scene, profile);
     bindPackageMaterials(canonical, profile, screenTexture);
@@ -528,40 +564,52 @@ export async function mountPocketStage(root) {
     proxyGroup = buildPickProxies(profile);
     scene.add(proxyGroup);
 
-    stageHost.runIIFE(appSource, pak);
-    screenTexture.needsUpdate = true;
+    if (launcherBundle) {
+      const { js: appSource, pak } = launcherBundle;
+      stageHost.runIIFE(appSource, pak);
+    }
+    refreshScreen();
     ready = true;
     root.dataset.ready = "true";
     root.classList.add("is-ready");
-    status.textContent = "Pocket Stage ready";
-    if (!inViewport || document.hidden) stageHost.stop();
+    status.textContent = options.readyText ?? "Pocket Stage ready";
+    if ((!inViewport || document.hidden) && !suppliedHost) stageHost.stop();
     invalidate();
 
     // Warm the deck's apps once the hero is up: sequential, idle-priority —
     // a launch then swaps instantly instead of showing a fetch hold.
-    const prefetch = async () => {
-      for (const app of registry.apps) {
-        try {
-          await fetchBundle(app.output);
-        } catch {
-          // offline or trimmed deploy — the launch path will surface it
+    if (registry && fetchBundle) {
+      const prefetch = async () => {
+        for (const app of registry.apps) {
+          try {
+            await fetchBundle(app.output);
+          } catch {
+            // offline or trimmed deploy — the launch path will surface it
+          }
         }
-      }
-    };
-    ("requestIdleCallback" in window ? requestIdleCallback : setTimeout)(prefetch);
+      };
+      ("requestIdleCallback" in window ? requestIdleCallback : setTimeout)(prefetch);
+    }
 
     // Exposed only as a receipt for the local/CI browser verifier.
-    globalThis.__pocketStageReceipt = () => ({
+    const receiptName = options.receiptName ?? "__pocketStageReceipt";
+    globalThis[receiptName] = () => ({
       ready,
       stageFrames: renderCount,
       guestTicks: stageHost.tickCount,
       screenFrames: stageHost.blitCount,
+      screenUploads,
+      screenCanvasId: screenCanvas.id || null,
+      profileUrl,
+      modelUrl,
       focused,
       pressedPart: root.dataset.pressedPart || null,
+      lastPressedPart,
     });
+    return { refreshScreen, releaseInput: releaseButton };
   } catch (error) {
     root.classList.add("has-error");
-    status.textContent = "Pocket Stage could not be loaded.";
+    status.textContent = options.errorText ?? "Pocket Stage could not be loaded.";
     console.error("Pocket Stage load failed", error);
   }
 }

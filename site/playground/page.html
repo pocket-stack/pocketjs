@@ -22,43 +22,37 @@
     </div>
 
     <div class="pg-preview-pane">
-      <div class="w-full max-w-[620px]">
-        <div class="screen-emu" aria-label="480×272 screen, rendered live by the Rust core in WebAssembly">
-          <button class="emu-shoulder l" data-btn="0x0100" aria-label="Left shoulder (L trigger)">L</button>
-          <button class="emu-shoulder r" data-btn="0x0200" aria-label="Right shoulder (R trigger)">R</button>
-          <div class="emu-pad">
-            <div class="emu-dpad">
-              <svg class="emu-cross" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d="M36 3 H64 V36 H97 V64 H64 V97 H36 V64 H3 V36 H36 Z" fill="rgba(51,66,97,0.55)" stroke="rgba(255,255,255,0.34)" stroke-width="2.5" stroke-linejoin="round"/></svg>
-              <button class="emu-key up" data-btn="0x0010" aria-label="Up"><svg viewBox="0 0 24 24"><path d="M12 8 l6 8 h-12 z" fill="currentColor"/></svg></button>
-              <button class="emu-key down" data-btn="0x0040" aria-label="Down"><svg viewBox="0 0 24 24"><path d="M12 16 l6 -8 h-12 z" fill="currentColor"/></svg></button>
-              <button class="emu-key left" data-btn="0x0080" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M8 12 l8 -6 v12 z" fill="currentColor"/></svg></button>
-              <button class="emu-key right" data-btn="0x0020" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M16 12 l-8 -6 v12 z" fill="currentColor"/></svg></button>
-            </div>
-            <div class="emu-nub" aria-hidden="true"></div>
-          </div>
-          <div class="emu-screen">
-            <canvas id="pg-canvas" width="480" height="272" tabindex="0"></canvas>
-          </div>
-          <div class="emu-faces">
-            <button class="emu-key tri" data-btn="0x1000" aria-label="Triangle"><svg viewBox="0 0 24 24"><path d="M12 5 L19.5 18.5 L4.5 18.5 Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/></svg></button>
-            <button class="emu-key sq" data-btn="0x8000" aria-label="Square"><svg viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="1.6" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
-            <button class="emu-key ci" data-btn="0x2000" aria-label="Circle"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.2" fill="none" stroke="currentColor" stroke-width="2.4"/></svg></button>
-            <button class="emu-key cross" data-btn="0x4000" aria-label="Cross"><svg viewBox="0 0 24 24"><path d="M6.5 6.5 L17.5 17.5 M17.5 6.5 L6.5 17.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
-          </div>
-          <div class="emu-sys">
-            <div class="emu-speaker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-            <span class="emu-brand" aria-hidden="true">POCKETJS</span>
-            <div class="emu-sysbtns">
-              <button class="emu-sys-btn" data-btn="0x0001">SELECT</button>
-              <button class="emu-sys-btn" data-btn="0x0008">START</button>
+      <div class="w-full max-w-[720px]">
+        <figure class="pg-stage" data-pocket-stage data-playground-stage>
+          <div
+            class="pg-stage__viewport"
+            data-stage-viewport
+            tabindex="0"
+            role="group"
+            aria-label="Interactive 3D PSP running the live Playground example. Drag to rotate, click the device controls, or use the keyboard."
+            aria-describedby="pg-hint"
+          >
+            <canvas
+              class="pg-stage__canvas"
+              data-stage-canvas
+              aria-hidden="true"
+            ></canvas>
+            <canvas id="pg-canvas" class="pg-stage__screen" data-stage-screen width="480" height="272" aria-hidden="true"></canvas>
+            <div class="pg-stage__status" data-stage-status role="status" aria-live="polite">
+              <span class="pg-stage__status-dot" aria-hidden="true"></span>
+              Loading PSP model&hellip;
             </div>
           </div>
-        </div>
+          <figcaption class="pg-stage__credit">
+            PSP model by <a href="https://sketchfab.com/3d-models/playstation-portable-psp-eg02-b76c7f9158204a39929a9c97d0b813d0" target="_blank" rel="noreferrer">Dibad</a>
+            &middot; <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+          </figcaption>
+        </figure>
       </div>
       <pre id="pg-error" class="pg-error" hidden></pre>
-      <p class="pg-hint">
+      <p class="pg-hint" id="pg-hint">
         Edit the code — the preview recompiles live (Solid, Vue Vapor or Octane + Tailwind + baked fonts → a <code>.pak</code>,
-        rendered by the Rust core in WebAssembly). Click the screen, then use the on-screen controls, or the
+        rendered by the Rust core in WebAssembly). Click the PSP, then use its controls, or the
         keyboard: arrows = d-pad · Z/Enter = ◯ · X = ✕ · A = ▢ · S = △.
       </p>
     </div>
