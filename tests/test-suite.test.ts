@@ -30,4 +30,15 @@ describe("declared test suite", () => {
     expect(iphone2gTests).not.toHaveLength(0);
     expect(iphone2gTests.filter((file) => !declared.has(file))).toEqual([]);
   });
+
+  test("runs every iOS test in the CI unit stage", () => {
+    const declared = unitTestFiles();
+    const iosTests = readdirSync(join(repository, "tests"))
+      .filter((file) => /^ios-.*\.test\.ts$/.test(file))
+      .map((file) => `tests/${file}`)
+      .sort();
+
+    expect(iosTests).not.toHaveLength(0);
+    expect(iosTests.filter((file) => !declared.has(file))).toEqual([]);
+  });
 });

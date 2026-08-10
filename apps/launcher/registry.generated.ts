@@ -18,6 +18,7 @@ export interface RegistryApp {
 
 export const REGISTRY: readonly RegistryApp[] = [
   { output: "note-main", id: "dev.pocket-stack.note", title: "Pocket Note", cover: "covers/cover-note-main.png", refl: "covers/refl-note-main.png" },
+  { output: "nsengine-main", id: "dev.pocket-stack.nsengine", title: "PocketJS NS Engine", cover: "covers/cover-nsengine-main.png", refl: "covers/refl-nsengine-main.png" },
   { output: "cafe-main", id: "dev.pocket-stack.cafe", title: "PocketJS: Café", cover: "covers/cover-cafe-main.png", refl: "covers/refl-cafe-main.png" },
   { output: "chrome-main", id: "dev.pocket-stack.chrome", title: "PocketJS: Chrome", cover: "covers/cover-chrome-main.png", refl: "covers/refl-chrome-main.png" },
   { output: "cursor-main", id: "dev.pocket-stack.cursor", title: "PocketJS: Cursor", cover: "covers/cover-cursor-main.png", refl: "covers/refl-cursor-main.png" },

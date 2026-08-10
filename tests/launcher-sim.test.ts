@@ -87,9 +87,21 @@ describe("launcher registry admission", () => {
     }
   });
 
-  test("Vita admits the same current demo set through its own target profile", () => {
-    expect(vitaRegistry.apps).toEqual(registry.apps);
-    expect(vitaRegistry.apps).toHaveLength(17);
+  test("Vita admits every PSP demo, plus the touch-only surfaces", () => {
+    // Everything PSP admits, Vita admits (same entries, same metadata).
+    for (const app of registry.apps) {
+      expect(vitaRegistry.apps).toContainEqual(app);
+    }
+    // The Vita-only delta is exactly the demos requiring input.touch, which
+    // PSP does not advertise. The committed display registry is the union
+    // (scanDisplayRegistry); each host intersects at runtime.
+    const pspOutputs = new Set(registry.apps.map((a) => a.output));
+    const vitaOnly = vitaRegistry.apps
+      .map((a) => a.output)
+      .filter((output) => !pspOutputs.has(output));
+    expect(vitaOnly).toEqual(["nsengine-main"]);
+    expect(registry.apps).toHaveLength(17);
+    expect(vitaRegistry.apps).toHaveLength(18);
   });
 
   test("committed registry.generated.ts is fresh (re-run tools/launcher.ts scan)", async () => {

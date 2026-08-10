@@ -38,7 +38,7 @@ interface CommandResult {
 async function spawn(
   command: string,
   args: readonly string[],
-  options: { inherit?: boolean; cwd?: string } = {},
+  options: { inherit?: boolean; cwd?: string; timeoutMs?: number } = {},
 ): Promise<CommandResult> {
   const child = Bun.spawn({
     cmd: [command, ...args],
@@ -47,10 +47,27 @@ async function spawn(
     stderr: options.inherit ? "inherit" : "pipe",
     stdin: "ignore",
   });
-  const exitCode = await child.exited;
-  const stdout = options.inherit ? "" : await new Response(child.stdout as ReadableStream).text();
-  const stderr = options.inherit ? "" : await new Response(child.stderr as ReadableStream).text();
-  return { exitCode, stdout, stderr };
+  let timedOut = false;
+  const timer = options.timeoutMs
+    ? setTimeout(() => {
+        timedOut = true;
+        child.kill();
+      }, options.timeoutMs)
+    : undefined;
+  // Drain both pipes concurrently with the exit wait (the tools/symbian.ts
+  // shape): `simctl list -j` output routinely outruns the 64 KB pipe buffer,
+  // and awaiting exited first deadlocks against a blocked child.
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    options.inherit ? Promise.resolve("") : new Response(child.stdout as ReadableStream).text(),
+    options.inherit ? Promise.resolve("") : new Response(child.stderr as ReadableStream).text(),
+  ]);
+  if (timer) clearTimeout(timer);
+  return {
+    exitCode: timedOut ? 124 : exitCode,
+    stdout,
+    stderr: timedOut ? `${stderr}\ncommand timed out` : stderr,
+  };
 }
 
 function flagValue(args: readonly string[], name: string): string | undefined {
