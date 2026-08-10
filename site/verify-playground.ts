@@ -35,7 +35,10 @@ interface PlaygroundProbe {
   interactionError: string | null;
   controlFrameAlive: boolean;
   interactionFrameAlive: boolean;
+  invalidNodeInserts: number;
+  invalidTextWrites: number;
   pressed: string[];
+  textWrites: string[];
   canvas: CanvasProbe | null;
 }
 
@@ -95,6 +98,38 @@ const INPUTS: Record<string, string[]> = {
   notifications: [DOWN, CIRCLE],
   settings: [DOWN, CIRCLE],
   stats: [RIGHT],
+};
+
+// A rendered canvas is not enough: a DOM/native-tree mismatch can preserve
+// every styled box while silently dropping Text children. These sentinels are
+// required to reach the actual host setText op on each fresh app mount.
+const EXPECTED_TEXT: Record<string, readonly [string, string]> = {
+  cards: ["Feature Cards", "3 MODULES"],
+  chrome: ["POCKETJS — CHROME", "480 x 272"],
+  cursor: ["REPLAY TAPE", "hover a row, press CIRCLE"],
+  gallery: ["SYNTHWAVE", "01 / 04"],
+  hero: ["PocketJS", "Press Circle"],
+  launcher: ["Pocket Note", "browse only — this host cannot switch apps"],
+  library: ["Game Library", "5 TITLES"],
+  motions: ["MOTIONS/53", "(yui540)"],
+  music: ["Now Playing", "MIDNIGHT REPLAY"],
+  notifications: ["Notifications", "UPDATE AVAILABLE"],
+  settings: ["Settings", "4 OPTIONS"],
+  stats: ["Mission Control", "LIVE TELEMETRY"],
+};
+
+// Vue's static template() text comes from the Vue runtime bundle, while
+// expressions/loops come from the vue-jsx-vapor helper bundle. Assert a
+// dynamic child too so either split artifact regressing fails the matrix.
+const EXPECTED_VUE_DYNAMIC_TEXT: Partial<Record<string, string>> = {
+  cards: "Layout",
+  gallery: "SYNTHWAVE",
+  hero: "Vue Vapor",
+  library: "NEON DRIFT",
+  music: "MIDNIGHT REPLAY",
+  notifications: "UPDATE AVAILABLE",
+  settings: "SOUND EFFECTS",
+  stats: "PLAYERS ONLINE",
 };
 
 const EXPECTED_VARIANTS: Record<string, Framework[]> = {
@@ -226,7 +261,11 @@ function makeProbe(buttons: string[]) {
     let interactionError = null;
     let controlFrameAlive = false;
     let interactionFrameAlive = false;
+    let invalidNodeInserts = 0;
+    let invalidTextWrites = 0;
     const pressed = [];
+    const textWritesByNode = new Map();
+    const insertedNodeIds = new Set();
     if (host && ctx) {
       // Control run: advance the same exact number of virtual frames with no
       // buttons. The verifier query disables HUD and ambient RAF advancement.
@@ -247,35 +286,69 @@ function makeProbe(buttons: string[]) {
       // including for demos whose normal UI animates continuously.
       const runButton = document.querySelector('#pg-run');
       if (!runButton) throw new Error('Playground Run button is missing');
-      runButton.click();
-      if (document.querySelector('#pg-status')?.dataset.kind !== 'busy') {
-        throw new Error('Playground fresh rerun did not start');
-      }
-      await waitForRun();
-      host.stop();
-      for (const value of sequence) {
-        const button = document.querySelector('[data-btn="' + value + '"]');
-        if (!button) continue;
-        button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-        host.stop();
-        for (let i = 0; i < edgeFrames; i++) {
-          host._safeFrame();
-          await Promise.resolve();
+      const originalSetText = host.ops.setText;
+      const originalReplaceText = host.ops.replaceText;
+      const originalInsertBefore = host.ops.insertBefore;
+      const recordText = (id, value) => {
+        if (!Number.isInteger(id) || id <= 0) {
+          invalidTextWrites++;
+          return;
         }
-        button.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-        host.stop();
-        for (let i = 0; i < edgeFrames; i++) {
-          host._safeFrame();
-          await Promise.resolve();
+        let values = textWritesByNode.get(id);
+        if (!values) textWritesByNode.set(id, values = new Set());
+        values.add(String(value));
+      };
+      host.ops.setText = (id, value) => {
+        recordText(id, value);
+        return originalSetText(id, value);
+      };
+      host.ops.replaceText = (id, value) => {
+        recordText(id, value);
+        return originalReplaceText(id, value);
+      };
+      host.ops.insertBefore = (parent, node, anchor) => {
+        const valid = Number.isInteger(parent) && parent > 0 &&
+          Number.isInteger(node) && node > 0 &&
+          Number.isInteger(anchor) && anchor >= 0;
+        if (valid) insertedNodeIds.add(node);
+        else invalidNodeInserts++;
+        return originalInsertBefore(parent, node, anchor);
+      };
+      try {
+        runButton.click();
+        if (document.querySelector('#pg-status')?.dataset.kind !== 'busy') {
+          throw new Error('Playground fresh rerun did not start');
         }
-        pressed.push(value);
+        await waitForRun();
+        host.stop();
+        for (const value of sequence) {
+          const button = document.querySelector('[data-btn="' + value + '"]');
+          if (!button) continue;
+          button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+          host.stop();
+          for (let i = 0; i < edgeFrames; i++) {
+            host._safeFrame();
+            await Promise.resolve();
+          }
+          button.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+          host.stop();
+          for (let i = 0; i < edgeFrames; i++) {
+            host._safeFrame();
+            await Promise.resolve();
+          }
+          pressed.push(value);
+        }
+        host.held = 0;
+        host._blit();
+        interactionHash = hash(ctx, canvas.width, canvas.height);
+        const interactionErrorEl = document.querySelector('#pg-error');
+        interactionError = interactionErrorEl && !interactionErrorEl.hidden ? interactionErrorEl.textContent : null;
+        interactionFrameAlive = typeof host.frameCb === 'function';
+      } finally {
+        host.ops.setText = originalSetText;
+        host.ops.replaceText = originalReplaceText;
+        host.ops.insertBefore = originalInsertBefore;
       }
-      host.held = 0;
-      host._blit();
-      interactionHash = hash(ctx, canvas.width, canvas.height);
-      const interactionErrorEl = document.querySelector('#pg-error');
-      interactionError = interactionErrorEl && !interactionErrorEl.hidden ? interactionErrorEl.textContent : null;
-      interactionFrameAlive = typeof host.frameCb === 'function';
     }
     let canvasResult = null;
     if (ctx) {
@@ -307,7 +380,12 @@ function makeProbe(buttons: string[]) {
       interactionError,
       controlFrameAlive,
       interactionFrameAlive,
+      invalidNodeInserts,
+      invalidTextWrites,
       pressed,
+      textWrites: [...textWritesByNode]
+        .filter(([id]) => insertedNodeIds.has(id))
+        .flatMap(([, values]) => [...values]),
       canvas: canvasResult,
     };
   })()`;
@@ -361,8 +439,23 @@ async function verifyVariant(demo: string, framework: Framework) {
   if (!probe.controlFrameAlive) errors.push("no-input control frame loop stopped");
   if (probe.interactionError) errors.push(`input run reported ${probe.interactionError}`);
   if (!probe.interactionFrameAlive) errors.push("input run frame loop stopped");
+  if (probe.invalidNodeInserts > 0) {
+    errors.push(`${probe.invalidNodeInserts} host insert(s) used invalid native node IDs`);
+  }
+  if (probe.invalidTextWrites > 0) {
+    errors.push(`${probe.invalidTextWrites} host text write(s) used an invalid native node id`);
+  }
   if (probe.pressed.length !== INPUTS[demo].length) {
     errors.push(`only ${probe.pressed.length}/${INPUTS[demo].length} controls were found`);
+  }
+  for (const expectedText of EXPECTED_TEXT[demo]) {
+    if (!probe.textWrites.some((value) => value.includes(expectedText))) {
+      errors.push(`host never rendered expected text ${JSON.stringify(expectedText)}`);
+    }
+  }
+  const expectedVueText = framework === "vue-vapor" ? EXPECTED_VUE_DYNAMIC_TEXT[demo] : undefined;
+  if (expectedVueText && !probe.textWrites.some((value) => value.includes(expectedVueText))) {
+    errors.push(`Vue helper never rendered dynamic text ${JSON.stringify(expectedVueText)}`);
   }
   if (!probe.canvas || probe.canvas.w !== 480 || probe.canvas.h !== 272) {
     errors.push("480x272 canvas is missing");

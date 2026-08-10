@@ -95,6 +95,14 @@ const PROCESS_PRELUDE =
   `removeListener:function(){},emit:function(){},emitWarning:function(){},exit:function(){},` +
   `hrtime:function(){return[0,0]},browser:true});globalThis.global||=globalThis;\n`;
 
+// Vue Vapor's DOM helpers must target PocketJS's native-tree facade, not the
+// embedding playground page. Native app builds apply this same define across
+// the whole guest bundle in tools/build.ts; the site's split Vue runtime and
+// JSX helper bundles need it independently.
+const VUE_VAPOR_DOCUMENT_DEFINE = {
+  document: "globalThis.__pocketDocument",
+} as const;
+
 async function bundle(
   entry: string,
   outfile: string,
@@ -180,7 +188,10 @@ async function bundleVueVapor(outfile: string) {
     target: "browser",
     format: "esm",
     conditions: ["browser"],
-    define: { "process.env.NODE_ENV": '"production"' },
+    define: {
+      "process.env.NODE_ENV": '"production"',
+      ...VUE_VAPOR_DOCUMENT_DEFINE,
+    },
     minify: true,
     sourcemap: "none",
   });
@@ -189,12 +200,15 @@ async function bundleVueVapor(outfile: string) {
     throw new Error("bundle failed: vue-vapor");
   }
   const code = await res.outputs[0].text();
+  if (!code.includes("globalThis.__pocketDocument")) {
+    throw new Error("Vue Vapor browser runtime does not target the PocketJS document facade");
+  }
   write(outfile, code);
   console.log(`  ${outfile}  (${(code.length / 1024).toFixed(0)} KiB)`);
 }
 
 function patchVaporHelperCode(code: string): string {
-  return code.replace(
+  const patched = code.replace(
     `if (i && i.appContext.vapor && p === "__vapor") {
           return true;
         }
@@ -207,19 +221,28 @@ function patchVaporHelperCode(code: string): string {
         }
         return Reflect.get`,
   );
+  return new Bun.Transpiler({
+    loader: "js",
+    define: VUE_VAPOR_DOCUMENT_DEFINE,
+  }).transformSync(patched);
 }
 
 function writeVueVaporHelpers(): void {
   const helpers = new Map([
     [propsHelperId, propsHelperCode],
     [vdomHelperId, vdomHelperCode],
-    [vaporHelperId, patchVaporHelperCode(vaporHelperCode)],
+    [vaporHelperId, vaporHelperCode],
     [ssrHelperId, ssrHelperCode],
   ]);
   for (const [id, code] of helpers) {
     const name = id.split("/").pop();
     if (!name) continue;
-    write(`pg/vue-jsx-vapor/${name}.js`, code);
+    const isVaporHelper = id === vaporHelperId;
+    const output = isVaporHelper ? patchVaporHelperCode(code) : code;
+    if (isVaporHelper && !output.includes("globalThis.__pocketDocument")) {
+      throw new Error("Vue Vapor JSX helper does not target the PocketJS document facade");
+    }
+    write(`pg/vue-jsx-vapor/${name}.js`, output);
   }
   console.log("  pg/vue-jsx-vapor/*  (4 helpers)");
 }
