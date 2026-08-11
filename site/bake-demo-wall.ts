@@ -111,8 +111,8 @@ async function main() {
     BLOG + "voxel-psp-route-1.png", // extruded encounter grass
   ]);
   const figma = await shots("pocket-figma", [
-    BLOG + "figma-psp-fit.png", // whole page fit to screen at 8%
-    BLOG + "figma-psp-cover-zoom.png", // the Paper Kit cover at 59%
+    BLOG + "figma-psp-fit.png", // the Welcome page fit to screen at 8%
+    BLOG + "figma-psp-components-fit.png", // 26,000 pixels of canvas at 3%
     BLOG + "figma-sim-calendar.png", // a calendar component at 100%
   ]);
 

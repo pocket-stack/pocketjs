@@ -74,10 +74,14 @@ test("homepage plays the machine collage", () => {
   }
 
   // The hero collage: eight machines, every screen a real capture. The Figma
-  // screen is the 8% zoomed-out still (the closer zooms are not used).
+  // screen is the zoomed-out page fit; the kit's cover art is never shown,
+  // here or anywhere else on the site (site/bake-demo-wall.ts included).
   expect(home).toContain("data-collage");
   expect(home.match(/class="lp-dev /g)?.length).toBe(8);
-  expect(home).toContain("/assets/wall/figma-8pct.jpg");
+  expect(home).toContain("/assets/blog/figma-psp-fit.png");
+  for (const file of ["site/home.html", "site/bake-demo-wall.ts", "site/content/blog/pocket-figma.md"]) {
+    expect(readFileSync(ROOT + file, "utf8")).not.toContain("figma-psp-cover-zoom");
+  }
   expect(home).toContain("333 MHz / 32 MB");
   expect(home).toContain("4.19 MHz / 8 KB");
   expect(home).toContain("Rich interactive JavaScript where no browser fits.");
