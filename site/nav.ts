@@ -57,6 +57,14 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "pocket-pi-agent-native-runtime",
+    title: "Tools, State, and a View: Taking Pocket Pi Toward an Agent-Native Runtime",
+    date: "2026-08-11",
+    description:
+      "The first Pocket Pi put a complete Pi agent on an ESP32-P4, but every product surface still arrived as Rust firmware. The next step is an App runtime designed around how an agent acts: Apps package public Tools, private Data Actions, durable SQLite state and a fixed PocketJS View; the Pi Agent itself becomes a resident System App; and Agent Tools, local schedules and human actions all meet at one transactional data layer. Inside: why the View never owns the network, why an Agent changes state instead of screens, and how PocketJS net, fs and db make the same App source practical on a simulator and a 32 MB board.",
+    author: { name: 'Siwei "Jerry" Yuan', url: "https://github.com/siwei-yuan" },
+  },
+  {
     slug: "pocket-voxel",
     title: "Pocket Voxel: A Creature-RPG From First Principles",
     date: "2026-08-07",
