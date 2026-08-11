@@ -21,6 +21,7 @@ export class PocketHost {
   tickCount: number;
   blitCount: number;
   press(bit: number, down: boolean): void;
+  reset(): void;
   afterNextTick(callback: () => void): () => void;
   _safeFrame(): boolean;
 }

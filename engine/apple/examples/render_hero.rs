@@ -1,6 +1,8 @@
 //! Renders a guest bundle through the pocket-apple C ABI and writes PPM
-//! snapshots. Usage:
-//!   cargo run -p pocket-apple --example render_hero -- ../dist/hero.js ../dist/hero.pak /tmp/hero
+//! snapshots. Build the MOUNTED demo entry first — the bare app name builds a
+//! component-only bundle that installs no frame() and cannot boot here:
+//!   bun tools/build.ts hero-main
+//!   cargo run -p pocket-apple --example render_hero -- ../dist/hero-main.js ../dist/hero-main.pak /tmp/hero
 //! Exit is nonzero if two independent instances disagree on the final frame
 //! (determinism check) or the frame is blank.
 
@@ -93,8 +95,8 @@ static LOGGER: StderrLogger = StderrLogger;
 fn main() {
     let _ = log::set_logger(&LOGGER).map(|_| log::set_max_level(log::LevelFilter::Debug));
     let args: Vec<String> = std::env::args().collect();
-    let bundle_path = args.get(1).map(String::as_str).unwrap_or("../dist/hero.js");
-    let pak_path = args.get(2).map(String::as_str).unwrap_or("../dist/hero.pak");
+    let bundle_path = args.get(1).map(String::as_str).unwrap_or("../dist/hero-main.js");
+    let pak_path = args.get(2).map(String::as_str).unwrap_or("../dist/hero-main.pak");
     let out_base = args.get(3).map(String::as_str).unwrap_or("/tmp/hero");
 
     let bundle = std::fs::read(bundle_path).expect("read bundle");

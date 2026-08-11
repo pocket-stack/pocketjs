@@ -26,6 +26,23 @@ function setupTabs(tabAttr, panelAttr) {
 
 // Pause the wall when it can't be seen (scrolled away) or shouldn't move
 // (prefers-reduced-motion — the CSS also hides it there).
+function setupCodeCardName() {
+  const nameEl = document.getElementById("lp-codecard-name");
+  if (!nameEl) return;
+  const names = {
+    solid: "Counter.tsx",
+    vue: "Counter.vue",
+    octane: "Counter.tsrx",
+  };
+  const tabs = [...document.querySelectorAll("[data-code-tab]")];
+  for (const tab of tabs) {
+    tab.addEventListener("click", () => {
+      const key = tab.dataset.codeTab;
+      if (key && names[key]) nameEl.textContent = names[key];
+    });
+  }
+}
+
 function setupDemoWall() {
   const video = document.querySelector(".lp-hero__wall-video");
   if (!video) return;
@@ -75,6 +92,7 @@ function setupPocketStage() {
 }
 
 setupTabs("code-tab", "code-panel");
+setupCodeCardName();
 setupTabs("tgt-tab", "tgt-panel");
 setupDemoWall();
 setupPocketStage();
