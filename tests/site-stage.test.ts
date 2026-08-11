@@ -63,6 +63,21 @@ test("homepage rotates the machine matrix and keeps the wall credits", () => {
   expect(home).toMatch(
     /<div class="lp-hero__wall" aria-hidden="true">[\s\S]*?<\/div>\s*<\/div>\s*<a class="lp-hero__motion-credit"/,
   );
+  // House style: no em dashes anywhere on the landing page.
+  expect(home).not.toContain("&mdash;");
+  expect(home).not.toContain("—");
+
+  // The rotating hero claim: the h1 is the selector. Each machine has a rail
+  // chip and two synchronized panels (title slide + specs/meta), and the
+  // machine's silicon is stated as spec chips.
+  const rotTabs = home.match(/data-rot-tab="([a-z0-9]+)"/g) ?? [];
+  const rotPanels = home.match(/data-rot-panel="([a-z0-9]+)"/g) ?? [];
+  expect(rotTabs.length).toBeGreaterThanOrEqual(7);
+  expect(rotPanels.length).toBe(rotTabs.length * 2);
+  expect(home).toContain("Rich interactive JavaScript where no browser fits");
+  expect(home).toContain('<h1 class="lp-rot__stage">');
+  expect(home).toContain("on a 1989 Game&nbsp;Boy.");
+  expect(home).toContain("32&nbsp;MB RAM");
 
   // The machine matrix: same chips and panels, and every panel re-lights the
   // same fixed roster of flagship apps so partial support stays visible.
@@ -80,12 +95,14 @@ test("homepage rotates the machine matrix and keeps the wall credits", () => {
   expect(rowStates.length).toBe(roster.length * panels.length);
   expect(home).toContain('li class="is-no"');
 
-  // The rotation glue and the sweep animation it arms.
+  // The rotation glue and the sweep animations it arms.
   const homeGlue = readFileSync(ROOT + "site/assets/home.js", "utf8");
+  expect(homeGlue).toContain("setupRotatingHero");
   expect(homeGlue).toContain("setupMachineMatrix");
   expect(homeGlue).toContain("prefers-reduced-motion");
   const homeCss = readFileSync(ROOT + "site/assets/home.css", "utf8");
   expect(homeCss).not.toContain(".lp-stage");
+  expect(homeCss).toContain(".lp-rot.is-auto .lp-rot__chip.is-active::after");
   expect(homeCss).toContain(".lp-mx.is-auto .lp-mx__chip.is-active::after");
 
   // The playground stage still ships the Pocket Launcher family as .pocket

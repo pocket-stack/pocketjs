@@ -2,10 +2,10 @@
    PocketJS — "Build modern apps for impossible devices" landing page
    Direction: Docs navy with brushed metal accents. All classes are .lp-* scoped.
    The hero plays the baked demo wall (site/bake-demo-wall.ts) as a full-bleed
-   background and rotates the machine matrix (.lp-mx) below its CTA: one fixed
-   roster of flagship apps re-lit per machine. The page then walks the platform
-   story: proof strip → target selector → .pocket → device taxonomy →
-   showcase → closing CTA.
+   background under a rotating claim (.lp-rot): the title IS the selector, one
+   app-on-machine statement at a time with its silicon underneath. The page
+   then walks the platform story: what-runs-where matrix → pillars → target
+   selector → .pocket → device taxonomy → showcase → closing CTA.
    ========================================================================== */
 
 @font-face {
@@ -332,56 +332,6 @@ a.lp-btn--primary:hover {
   align-items: center;
   text-align: center;
 }
-.lp-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  margin-bottom: 0.75rem;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ink-2);
-  text-decoration: none;
-  padding: 0.38rem 0.9rem 0.38rem 0.45rem;
-  border-radius: 999px;
-  border: 1px solid var(--line-2);
-  background:
-    linear-gradient(180deg, rgba(20, 29, 49, 0.84), rgba(11, 15, 26, 0.74)),
-    rgba(15, 22, 38, 0.76);
-  backdrop-filter: blur(6px);
-  transition: border-color 0.25s ease, color 0.25s ease;
-}
-.lp-eyebrow:hover { border-color: rgba(96, 165, 250, 0.5); color: var(--ink); }
-.lp-eyebrow__tag {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: #04060b;
-  padding: 0.22rem 0.55rem;
-  border-radius: 999px;
-  background: var(--metal-lite);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56), inset 0 -6px 10px rgba(20, 37, 64, 0.13);
-}
-.lp-eyebrow__arw { opacity: 0.55; }
-.lp-h1 {
-  margin-top: 1.5rem;
-  font-weight: 800;
-  letter-spacing: -0.035em;
-  line-height: 1.02;
-  font-size: clamp(2.45rem, 7.4vw, 5.3rem);
-  color: var(--ink);
-}
-.lp-h1 .lp-grad {
-  display: block;
-  filter: drop-shadow(0 8px 30px rgba(96, 165, 250, 0.14));
-}
-.lp-sub {
-  margin: 1.6rem auto 0;
-  max-width: 680px;
-  font-size: clamp(1.05rem, 2.3vw, 1.3rem);
-  line-height: 1.55;
-  color: var(--ink-2);
-}
 .lp-hero__cta {
   display: flex;
   flex-wrap: wrap;
@@ -389,6 +339,181 @@ a.lp-btn--primary:hover {
   gap: 0.85rem;
   margin-top: 2.1rem;
 }
+
+/* ---- Rotating hero claim ---------------------------------------------------
+   The title is the selector: one app-on-machine statement at a time, its
+   silicon underneath, a machine rail to steer. Slides stack in a single grid
+   cell so the hero never changes height; home.js crossfades and rotates, and
+   the countdown sweep under the active chip runs only while .is-auto is set. */
+.lp-rot__kicker {
+  font: 600 12px/1.6 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  text-shadow: 0 1px 12px rgba(5, 7, 13, 0.9);
+}
+.lp-rot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+.lp-rot__stage {
+  display: grid;
+  justify-items: center;
+  margin-top: 1rem;
+}
+.lp-rot__slide {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  pointer-events: none;
+}
+.lp-rot__slide.is-active {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.lp-rot__what {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  font-size: clamp(2.35rem, 7vw, 5.4rem);
+  color: var(--ink);
+  text-shadow: 0 18px 42px rgba(3, 9, 20, 0.55);
+}
+.lp-rot__where {
+  margin-top: 0.4rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  font-size: clamp(1.65rem, 4.6vw, 3.4rem);
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 8px 30px rgba(96, 165, 250, 0.14));
+}
+.lp-rot__metas {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  margin-top: 1.2rem;
+}
+.lp-rot__meta {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.5s ease 0.06s, transform 0.5s ease 0.06s;
+  pointer-events: none;
+}
+.lp-rot__meta.is-active {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.lp-rot__specs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+}
+.lp-rot__specs span {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: rgba(5, 7, 13, 0.62);
+  color: var(--steel-1);
+  font: 500 12px/1.2 var(--mono);
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+.lp-rot__also {
+  margin-top: 0.9rem;
+  max-width: 660px;
+  color: var(--ink-2);
+  font-size: 0.95rem;
+  line-height: 1.55;
+  text-shadow: 0 1px 10px rgba(5, 7, 13, 0.8);
+}
+.lp-rot__also a {
+  color: var(--ink);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.lp-rot__rail {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 1.6rem;
+  max-width: 100%;
+}
+.lp-rot__chip {
+  position: relative;
+  appearance: none;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 0.5rem 0.85rem;
+  background: rgba(5, 7, 13, 0.58);
+  color: var(--ink-2);
+  font: 600 13px/1 var(--font);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.lp-rot__chip:hover { color: var(--ink); border-color: rgba(96, 165, 250, 0.4); }
+.lp-rot__chip.is-active {
+  color: #04060b;
+  font-weight: 700;
+  border-color: rgba(226, 232, 240, 0.5);
+  background: var(--metal-lite);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -6px 10px rgba(20, 37, 64, 0.12);
+}
+.lp-rot__chip:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+.lp-rot__chip-tag {
+  margin-left: 0.38rem;
+  font: 500 10px/1 var(--mono);
+  opacity: 0.6;
+}
+.lp-rot__chip::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(23, 37, 62, 0.55);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.lp-rot.is-auto .lp-rot__chip.is-active::after {
+  animation: lp-mx-sweep var(--rot-period, 7000ms) linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-rot__slide, .lp-rot__meta { transition: none; }
+}
+@media (max-width: 640px) {
+  .lp-rot__chip { padding: 0.46rem 0.66rem; font-size: 12px; }
+  .lp-rot__chip-tag { display: none; }
+}
+
+/* ---- What runs where -------------------------------------------------------
+   The honest grid behind the hero's rotating claims. */
+.lp-where {
+  background:
+    radial-gradient(40% 52% at 50% 0%, rgba(96, 165, 250, 0.05), transparent 70%);
+}
+.lp-where .lp-mx { margin: clamp(2rem, 4.5vw, 3rem) auto 0; }
 
 /* ---- Machine matrix --------------------------------------------------------
    The hero's proof object: pick a machine (or let it rotate), read its silicon,
@@ -588,60 +713,6 @@ a.lp-btn--primary:hover {
 @media (max-width: 560px) {
   .lp-mx__apps li { grid-template-columns: 13px 1fr; }
   .lp-mx__apps li span { grid-column: 2; margin-top: -0.15rem; }
-}
-
-/* ---- Proof strip ----------------------------------------------------------
-   Five seconds of "this actually happened": six clickable field results in a
-   band that reads like a wire ticker, each linking to its story. */
-.lp-proofstrip {
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(15, 22, 38, 0.45), rgba(9, 12, 20, 0.3));
-}
-.lp-proofstrip__row {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-}
-.lp-proofstrip__row li { min-width: 0; }
-.lp-proofstrip__row li + li { border-left: 1px solid var(--line); }
-.lp-fact {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  height: 100%;
-  padding: 1.15rem 1.1rem 1.2rem;
-  text-decoration: none;
-  transition: background 0.22s ease;
-}
-.lp-fact:hover { background: rgba(20, 29, 49, 0.55); }
-.lp-fact b {
-  font-size: 0.94rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
-  color: var(--ink);
-}
-.lp-fact span {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  line-height: 1.45;
-  letter-spacing: 0.01em;
-  color: var(--muted);
-}
-.lp-fact:hover span { color: var(--ink-2); }
-@media (max-width: 1080px) {
-  .lp-proofstrip__row { grid-template-columns: repeat(3, 1fr); }
-  .lp-proofstrip__row li:nth-child(4) { border-left: 0; }
-  .lp-proofstrip__row li:nth-child(n + 4) { border-top: 1px solid var(--line); }
-}
-@media (max-width: 640px) {
-  .lp-proofstrip__row { grid-template-columns: repeat(2, 1fr); }
-  .lp-proofstrip__row li { border-left: 0; }
-  .lp-proofstrip__row li:nth-child(even) { border-left: 1px solid var(--line); }
-  .lp-proofstrip__row li:nth-child(n + 3) { border-top: 1px solid var(--line); }
 }
 
 /* ---- Section scaffolding -------------------------------------------------- */

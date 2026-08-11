@@ -64,20 +64,20 @@ function setupDemoWall() {
   io.observe(video);
 }
 
-// The machine matrix: chip tabs like the other groups, plus a rotation that
-// advances every MX_PERIOD ms. Rotation pauses while the matrix is hovered,
-// focused, or off screen, and stops for good on any manual pick — the sweep
-// on the active chip only runs while `is-auto` is set.
-function setupMachineMatrix() {
-  const root = document.querySelector("[data-mx]");
+// Shared carousel spine for the hero claim and the machine matrix: chip tabs
+// plus a rotation that advances every `period` ms. Rotation pauses while the
+// widget is hovered, focused, or off screen, and stops for good on any manual
+// pick — the countdown sweep on the active chip only runs while `is-auto` is
+// set. `show(panel, active)` applies each widget's own visibility scheme.
+function setupRotator(root, tabAttr, panelAttr, period, show) {
   if (!root) return;
-  const chips = root.querySelector(".lp-mx__chips");
-  const tabs = [...root.querySelectorAll("[data-mx-tab]")];
-  const panels = [...root.querySelectorAll("[data-mx-panel]")];
+  const tabs = [...root.querySelectorAll(`[data-${tabAttr}]`)];
+  const panels = [...root.querySelectorAll(`[data-${panelAttr}]`)];
   if (tabs.length === 0) return;
+  const key = tabAttr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  const panelKey = panelAttr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  const rail = tabs[0].parentElement;
 
-  const MX_PERIOD = 6000;
-  root.style.setProperty("--mx-period", `${MX_PERIOD}ms`);
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   let index = 0;
   let timer = 0;
@@ -86,18 +86,18 @@ function setupMachineMatrix() {
   let manual = false; // a real pick parks the carousel
 
   const select = (name) => {
-    index = Math.max(0, tabs.findIndex((tab) => tab.dataset.mxTab === name));
+    index = Math.max(0, tabs.findIndex((tab) => tab.dataset[key] === name));
     for (const tab of tabs) {
-      const active = tab.dataset.mxTab === name;
+      const active = tab.dataset[key] === name;
       tab.classList.toggle("is-active", active);
       tab.setAttribute("aria-selected", active ? "true" : "false");
     }
     for (const panel of panels) {
-      panel.hidden = panel.dataset.mxPanel !== name;
+      show(panel, panel.dataset[panelKey] === name);
     }
     const active = tabs[index];
-    if (chips && active && chips.scrollWidth > chips.clientWidth) {
-      chips.scrollTo({ left: Math.max(0, active.offsetLeft - 24), behavior: "smooth" });
+    if (rail && active && rail.scrollWidth > rail.clientWidth) {
+      rail.scrollTo({ left: Math.max(0, active.offsetLeft - 24), behavior: "smooth" });
     }
   };
 
@@ -113,15 +113,15 @@ function setupMachineMatrix() {
     void root.offsetWidth;
     root.classList.add("is-auto");
     timer = setInterval(() => {
-      select(tabs[(index + 1) % tabs.length].dataset.mxTab);
-    }, MX_PERIOD);
+      select(tabs[(index + 1) % tabs.length].dataset[key]);
+    }, period);
   };
 
   for (const tab of tabs) {
     tab.addEventListener("click", () => {
       manual = true;
       stop();
-      select(tab.dataset.mxTab);
+      select(tab.dataset[key]);
     });
   }
   root.addEventListener("mouseenter", () => { engaged = true; stop(); });
@@ -142,10 +142,40 @@ function setupMachineMatrix() {
     { threshold: 0.25 },
   );
   io.observe(root);
+
+  // Normalize the static markup once (aria/inert on the non-active panels).
+  const initial = tabs.find((tab) => tab.classList.contains("is-active")) ?? tabs[0];
+  select(initial.dataset[key]);
+}
+
+// The hero claim: slides stack in one grid cell and crossfade via `is-active`,
+// so inactive ones stay in the DOM (and in the page height) but are inert.
+function setupRotatingHero() {
+  const root = document.querySelector("[data-rot]");
+  if (!root) return;
+  const PERIOD = 7000;
+  root.style.setProperty("--rot-period", `${PERIOD}ms`);
+  setupRotator(root, "rot-tab", "rot-panel", PERIOD, (panel, active) => {
+    panel.classList.toggle("is-active", active);
+    panel.setAttribute("aria-hidden", active ? "false" : "true");
+    panel.inert = !active;
+  });
+}
+
+// The machine matrix: plain hidden-attribute panels, like the other tab groups.
+function setupMachineMatrix() {
+  const root = document.querySelector("[data-mx]");
+  if (!root) return;
+  const PERIOD = 6000;
+  root.style.setProperty("--mx-period", `${PERIOD}ms`);
+  setupRotator(root, "mx-tab", "mx-panel", PERIOD, (panel, active) => {
+    panel.hidden = !active;
+  });
 }
 
 setupTabs("code-tab", "code-panel");
 setupCodeCardName();
 setupTabs("tgt-tab", "tgt-panel");
 setupDemoWall();
+setupRotatingHero();
 setupMachineMatrix();
