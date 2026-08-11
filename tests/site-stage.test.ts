@@ -54,29 +54,43 @@ test("homepage Stage package has one semantic screen and its declared suppressio
   }
 });
 
-test("homepage declares the live launcher and visible attributions", () => {
+test("homepage rotates the machine matrix and keeps the wall credits", () => {
   const home = readFileSync(ROOT + "site/home.html", "utf8");
-  expect(home).toContain("data-pocket-stage");
-  expect(home).toContain("The live Pocket Launcher");
-  expect(home).toContain("Dibad");
-  expect(home).toContain("creativecommons.org/licenses/by/4.0");
+  // The 3D stage moved to the playground; the homepage must not mount it.
+  expect(home).not.toContain("data-pocket-stage");
+  expect(home).not.toContain("lp-stage");
   expect(home).toContain("Motion studies by (yui540) &middot; credited per author request");
   expect(home).toMatch(
     /<div class="lp-hero__wall" aria-hidden="true">[\s\S]*?<\/div>\s*<\/div>\s*<a class="lp-hero__motion-credit"/,
   );
-  expect(home).not.toContain("Drag to orbit");
-  expect(home).not.toContain("lp-stage__hint");
 
+  // The machine matrix: same chips and panels, and every panel re-lights the
+  // same fixed roster of flagship apps so partial support stays visible.
+  const chips = home.match(/data-mx-tab="([a-z0-9]+)"/g) ?? [];
+  const panels = home.match(/data-mx-panel="([a-z0-9]+)"/g) ?? [];
+  expect(chips.length).toBeGreaterThanOrEqual(7);
+  expect(panels.length).toBe(chips.length);
+  const roster = ["Pocket Figma", "Pocket YouTube", "OpenStrike", "Pocket Voxel", "Pocket Character", "Pocket Pi", "Launcher + app deck"];
+  for (const name of roster) {
+    const rows = home.split(`<strong>${name}</strong>`).length - 1;
+    expect(rows).toBe(panels.length);
+  }
+  // Honesty: every app row carries an explicit state, and "not yet" exists.
+  const rowStates = home.match(/li class="is-(hw|built|no)"/g) ?? [];
+  expect(rowStates.length).toBe(roster.length * panels.length);
+  expect(home).toContain('li class="is-no"');
+
+  // The rotation glue and the sweep animation it arms.
+  const homeGlue = readFileSync(ROOT + "site/assets/home.js", "utf8");
+  expect(homeGlue).toContain("setupMachineMatrix");
+  expect(homeGlue).toContain("prefers-reduced-motion");
   const homeCss = readFileSync(ROOT + "site/assets/home.css", "utf8");
-  const viewportCss = homeCss.match(/\.lp-stage__viewport \{([\s\S]*?)\n\}/)?.[1] ?? "";
-  expect(viewportCss).toContain("background: transparent");
-  expect(viewportCss).not.toContain("border:");
-  expect(viewportCss).not.toContain("box-shadow:");
-  expect(viewportCss).not.toContain("backdrop-filter:");
-  expect(homeCss).not.toContain(".lp-stage__viewport::before");
+  expect(homeCss).not.toContain(".lp-stage");
+  expect(homeCss).toContain(".lp-mx.is-auto .lp-mx__chip.is-active::after");
 
-  // The stage ships the Pocket Launcher family as .pocket packages
-  // (docs/LAUNCHER.md / docs/PLATFORM.md) — the deploy chain must build and copy them.
+  // The playground stage still ships the Pocket Launcher family as .pocket
+  // packages (docs/LAUNCHER.md / docs/PLATFORM.md) — the deploy chain must
+  // keep building and copying them.
   const build = readFileSync(ROOT + "site/build.ts", "utf8");
   expect(build).toContain("dist/launcher-registry.json");
   expect(build).toContain('copy(source, `stage/apps/${output}.pocket`)');
@@ -96,8 +110,7 @@ test("homepage declares the live launcher and visible attributions", () => {
   }
 });
 
-test("playground wraps its live framebuffer in the homepage PSP model", () => {
-  const home = readFileSync(ROOT + "site/home.html", "utf8");
+test("playground wraps its live framebuffer in the PSP model", () => {
   const playground = readFileSync(ROOT + "site/playground/page.html", "utf8");
   for (const marker of [
     "data-pocket-stage",
@@ -106,7 +119,6 @@ test("playground wraps its live framebuffer in the homepage PSP model", () => {
     "data-stage-screen",
     "data-stage-status",
   ]) {
-    expect(home).toContain(marker);
     expect(playground).toContain(marker);
   }
   expect(playground).toContain('id="pg-canvas" class="pg-stage__screen" data-stage-screen');
@@ -115,12 +127,12 @@ test("playground wraps its live framebuffer in the homepage PSP model", () => {
   expect(playground).not.toContain("screen-emu");
   expect(playground).not.toContain("data-btn");
 
+  // The stage is playground-only now: the homepage must not pull the module.
   const homeGlue = readFileSync(ROOT + "site/assets/home.js", "utf8");
+  expect(homeGlue).not.toContain("pocket-stage-web.js");
   const playgroundGlue = readFileSync(ROOT + "site/playground/playground.js", "utf8");
-  for (const glue of [homeGlue, playgroundGlue]) {
-    expect(glue).toContain('import("/assets/pocket-stage-web.js")');
-    expect(glue).toContain("mountPocketStage");
-  }
+  expect(playgroundGlue).toContain('import("/assets/pocket-stage-web.js")');
+  expect(playgroundGlue).toContain("mountPocketStage");
   expect(playgroundGlue).toContain("host,");
   expect(playgroundGlue).toContain("stageController?.refreshScreen()");
   expect(playgroundGlue).toContain("stageController?.releaseInput();\n      host.reset();");
