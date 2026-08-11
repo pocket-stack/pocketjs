@@ -8,7 +8,7 @@
     "@nativescript/pocketjs": "^0.1.0"
   },
   "devDependencies": {
-    "@nativescript/ios-quickjs": "9.0.0-preview.10",
+    "@nativescript/ios-quickjs": "9.0.0-preview.3",
     "@nativescript/types": "~9.0.0",
     "@nativescript/webpack": "~5.0.32",
     "nativescript": "9.1.0-alpha.17",
