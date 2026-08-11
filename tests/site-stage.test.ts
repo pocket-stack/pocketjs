@@ -54,30 +54,49 @@ test("homepage Stage package has one semantic screen and its declared suppressio
   }
 });
 
-test("homepage rotates the machine matrix and keeps the wall credits", () => {
+test("homepage plays the machine collage and keeps the matrix honest", () => {
   const home = readFileSync(ROOT + "site/home.html", "utf8");
   // The 3D stage moved to the playground; the homepage must not mount it.
   expect(home).not.toContain("data-pocket-stage");
   expect(home).not.toContain("lp-stage");
-  expect(home).toContain("Motion studies by (yui540) &middot; credited per author request");
-  expect(home).toMatch(
-    /<div class="lp-hero__wall" aria-hidden="true">[\s\S]*?<\/div>\s*<\/div>\s*<a class="lp-hero__motion-credit"/,
-  );
-  // House style: no em dashes anywhere on the landing page.
-  expect(home).not.toContain("&mdash;");
-  expect(home).not.toContain("—");
+  // House style: no em dashes anywhere on the landing surfaces.
+  for (const file of [
+    "site/home.html",
+    "site/for/shell.html",
+    "site/for/interfaces.html",
+    "site/for/games.html",
+    "site/for/worlds.html",
+    "site/for/agents.html",
+  ]) {
+    const source = readFileSync(ROOT + file, "utf8");
+    expect(source).not.toContain("&mdash;");
+    expect(source).not.toContain("—");
+  }
 
-  // The rotating hero claim: the h1 is the selector. Each machine has a rail
-  // chip and two synchronized panels (title slide + specs/meta), and the
-  // machine's silicon is stated as spec chips.
-  const rotTabs = home.match(/data-rot-tab="([a-z0-9]+)"/g) ?? [];
-  const rotPanels = home.match(/data-rot-panel="([a-z0-9]+)"/g) ?? [];
-  expect(rotTabs.length).toBeGreaterThanOrEqual(7);
-  expect(rotPanels.length).toBe(rotTabs.length * 2);
-  expect(home).toContain("Rich interactive JavaScript where no browser fits");
-  expect(home).toContain('<h1 class="lp-rot__stage">');
-  expect(home).toContain("on a 1989 Game&nbsp;Boy.");
-  expect(home).toContain("32&nbsp;MB RAM");
+  // The hero collage: eight machines, every screen a real capture. The Figma
+  // screen is the 8% zoomed-out still (the closer zooms are not used).
+  expect(home).toContain("data-collage");
+  expect(home.match(/class="lp-dev /g)?.length).toBe(8);
+  expect(home).toContain("/assets/wall/figma-8pct.jpg");
+  expect(home).toContain("333 MHz / 32 MB");
+  expect(home).toContain("4.19 MHz / 8 KB");
+  expect(home).toContain("Rich interactive JavaScript where no browser fits.");
+  expect(home).toContain("PocketJS is a compact JavaScript runtime");
+
+  // The use-case cards link the four /for/ pages.
+  for (const slug of ["interfaces", "games", "worlds", "agents"]) {
+    expect(home).toContain(`href="/for/${slug}/"`);
+  }
+  // The retired sections stay retired.
+  expect(home).not.toContain("Ship the application");
+  expect(home).not.toContain("Built for every kind of impossible");
+  expect(home).not.toContain("lp-pkg");
+  expect(home).not.toContain("lp-imposs");
+
+  // The /for/ pages are rendered with the homepage chrome.
+  const build0 = readFileSync(ROOT + "site/build.ts", "utf8");
+  expect(build0).toContain("renderForPage");
+  expect(build0).toContain('for/shell.html');
 
   // The machine matrix: same chips and panels, and every panel re-lights the
   // same fixed roster of flagship apps so partial support stays visible.
@@ -95,14 +114,16 @@ test("homepage rotates the machine matrix and keeps the wall credits", () => {
   expect(rowStates.length).toBe(roster.length * panels.length);
   expect(home).toContain('li class="is-no"');
 
-  // The rotation glue and the sweep animations it arms.
+  // The collage + rotation glue and the sweep animation it arms.
   const homeGlue = readFileSync(ROOT + "site/assets/home.js", "utf8");
-  expect(homeGlue).toContain("setupRotatingHero");
+  expect(homeGlue).toContain("setupHeroCollage");
   expect(homeGlue).toContain("setupMachineMatrix");
   expect(homeGlue).toContain("prefers-reduced-motion");
+  expect(homeGlue).not.toContain("setupRotatingHero");
   const homeCss = readFileSync(ROOT + "site/assets/home.css", "utf8");
   expect(homeCss).not.toContain(".lp-stage");
-  expect(homeCss).toContain(".lp-rot.is-auto .lp-rot__chip.is-active::after");
+  expect(homeCss).not.toContain(".lp-rot");
+  expect(homeCss).toContain(".lp-dev");
   expect(homeCss).toContain(".lp-mx.is-auto .lp-mx__chip.is-active::after");
 
   // The playground stage still ships the Pocket Launcher family as .pocket

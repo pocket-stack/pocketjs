@@ -34,103 +34,62 @@
   </header>
 
   <main>
-    <!-- HERO: behind the copy, every demo and satellite app plays at once:
-         a baked 4x4 wall of real recordings (site/bake-demo-wall.ts). -->
+    <!-- HERO: the machine collage. Eight devices, every screen a real capture
+         playing at once, cropped live out of the baked demo wall's known 4x4
+         tile grid (site/bake-demo-wall.ts). The Figma screen is a still of the
+         8% zoomed-out spread. The collage sits on a fixed 1440x820 canvas that
+         cover-scales to fill the first viewport, so narrow screens crop the
+         sides instead of stacking devices; scroll past it and it is gone. -->
     <section class="lp-hero">
-      <div class="lp-hero__wall" aria-hidden="true">
-        <video class="lp-hero__wall-video" autoplay muted loop playsinline preload="metadata" poster="/assets/pocketjs-demo-wall.jpg">
-          <source src="/assets/pocketjs-demo-wall.mp4" type="video/mp4" />
-        </video>
-        <div class="lp-hero__wall-scrim"></div>
-      </div>
-      <a class="lp-hero__motion-credit" href="https://yui540.com/" target="_blank" rel="noreferrer">
-        Motion studies by (yui540) &middot; credited per author request
-      </a>
-      <div class="lp-container lp-hero__in">
-        <!-- ROTATING CLAIM: the title is the selector. One app-on-machine
-             statement at a time, its silicon underneath, a machine rail to
-             steer. Every slide stays in the DOM; home.js crossfades. -->
-        <p class="lp-rot__kicker">Rich interactive JavaScript where no browser fits</p>
-        <div class="lp-rot" data-rot aria-label="What PocketJS runs, machine by machine">
-          <h1 class="lp-rot__stage">
-            <span class="lp-rot__slide is-active" id="lp-rot-psp" role="tabpanel" aria-labelledby="lp-rot-tab-psp" data-rot-panel="psp">
-              <span class="lp-rot__what">A real Figma file</span>
-              <span class="lp-rot__where">on a 2004 Sony&nbsp;PSP.</span>
-            </span>
-            <span class="lp-rot__slide" id="lp-rot-gb" role="tabpanel" aria-labelledby="lp-rot-tab-gb" data-rot-panel="gb">
-              <span class="lp-rot__what">Real Vue components</span>
-              <span class="lp-rot__where">on a 1989 Game&nbsp;Boy.</span>
-            </span>
-            <span class="lp-rot__slide" id="lp-rot-e7" role="tabpanel" aria-labelledby="lp-rot-tab-e7" data-rot-panel="e7">
-              <span class="lp-rot__what">A CS-like FPS</span>
-              <span class="lp-rot__where">on a 2011 Nokia.</span>
-            </span>
-            <span class="lp-rot__slide" id="lp-rot-vita" role="tabpanel" aria-labelledby="lp-rot-tab-vita" data-rot-panel="vita">
-              <span class="lp-rot__what">A creature-RPG diorama</span>
-              <span class="lp-rot__where">on a PS&nbsp;Vita.</span>
-            </span>
-            <span class="lp-rot__slide" id="lp-rot-i2g" role="tabpanel" aria-labelledby="lp-rot-tab-i2g" data-rot-panel="i2g">
-              <span class="lp-rot__what">Touch UI, no shaders</span>
-              <span class="lp-rot__where">on the first iPhone.</span>
-            </span>
-            <span class="lp-rot__slide" id="lp-rot-p4" role="tabpanel" aria-labelledby="lp-rot-tab-p4" data-rot-panel="p4">
-              <span class="lp-rot__what">A whole coding agent</span>
-              <span class="lp-rot__where">in 32&nbsp;MB of PSRAM.</span>
-            </span>
-            <span class="lp-rot__slide" id="lp-rot-mac" role="tabpanel" aria-labelledby="lp-rot-tab-mac" data-rot-panel="mac">
-              <span class="lp-rot__what">A VRM digital human</span>
-              <span class="lp-rot__where">in one native process.</span>
-            </span>
-          </h1>
-          <div class="lp-rot__metas">
-            <div class="lp-rot__meta is-active" data-rot-panel="psp">
-              <p class="lp-rot__specs" aria-label="Sony PSP hardware"><span>333&nbsp;MHz MIPS</span><span>32&nbsp;MB RAM</span><span>480&times;272</span><span>2004</span></p>
-              <p class="lp-rot__also">Also running: YouTube over one USB cable, a CS-like FPS at a locked 60&nbsp;fps, and the 17-app Cover Flow deck. <a href="/blog/pocket-figma/">Read the story &rarr;</a></p>
-            </div>
-            <div class="lp-rot__meta" data-rot-panel="gb">
-              <p class="lp-rot__specs" aria-label="Game Boy hardware"><span>4.19&nbsp;MHz SM83</span><span>8&nbsp;KB RAM</span><span>160&times;144</span><span>1989</span></p>
-              <p class="lp-rot__also">No JS engine, no GC, no malloc: the framework compiles away. The same source builds GBA, NES and Playdate carts. <a href="/blog/pocket-vapor/">Read the story &rarr;</a></p>
-            </div>
-            <div class="lp-rot__meta" data-rot-panel="e7">
-              <p class="lp-rot__specs" aria-label="Nokia E7 hardware"><span>680&nbsp;MHz ARM11</span><span>256&nbsp;MB RAM</span><span>640&times;360 AMOLED</span><span>Symbian Belle</span></p>
-              <p class="lp-rot__also">All eight maps, verified on the device. Also running: the same Figma viewer and the Cover Flow launcher, as native Symbian installs. <a href="/blog/pocketjs-on-symbian/">Read the story &rarr;</a></p>
-            </div>
-            <div class="lp-rot__meta" data-rot-panel="vita">
-              <p class="lp-rot__specs" aria-label="PS Vita hardware"><span>4&times; Cortex&#8209;A9</span><span>512&nbsp;MB RAM</span><span>960&times;544 OLED</span><span>2011</span></p>
-              <p class="lp-rot__also">The same cooked pak as the PSP, twice the pixels, zero forks. Also running: OpenStrike and the 17-app deck. <a href="/blog/pocket-voxel/">Read the story &rarr;</a></p>
-            </div>
-            <div class="lp-rot__meta" data-rot-panel="i2g">
-              <p class="lp-rot__specs" aria-label="iPhone 2G hardware"><span>412&nbsp;MHz ARM11</span><span>128&nbsp;MB RAM</span><span>320&times;480</span><span>2007</span></p>
-              <p class="lp-rot__also">A locked 60&nbsp;fps, proved by reading the phone&rsquo;s framebuffer back over USB. One touch demo so far; the rest is next. <a href="/blog/pocketjs-on-the-first-iphone/">Read the story &rarr;</a></p>
-            </div>
-            <div class="lp-rot__meta" data-rot-panel="p4">
-              <p class="lp-rot__specs" aria-label="ESP32-P4 hardware"><span>400&nbsp;MHz RISC&#8209;V</span><span>32&nbsp;MB PSRAM</span><span>1280&times;720 touch</span><span>no OS</span></p>
-              <p class="lp-rot__also">Pocket Pi lives on the board: QuickJS, LittleFS and a PocketJS touch UI, with no operating system underneath. <a href="/blog/pocket-pi-on-esp32-p4/">Read the story &rarr;</a></p>
-            </div>
-            <div class="lp-rot__meta" data-rot-panel="mac">
-              <p class="lp-rot__specs" aria-label="macOS footprint"><span>118&nbsp;MB</span><span>3.9% of one core</span><span>no Electron</span></p>
-              <p class="lp-rot__also">airi&rsquo;s character as one native process, in a transparent always-on-top window. The full pi coding agent runs here too, with no Node. <a href="/blog/pocket-character/">Read the story &rarr;</a></p>
-            </div>
-          </div>
-          <div class="lp-rot__rail" role="tablist" aria-label="Pick a machine">
-            <button class="lp-rot__chip is-active" type="button" role="tab" id="lp-rot-tab-psp" aria-selected="true" aria-controls="lp-rot-psp" data-rot-tab="psp">Sony PSP<span class="lp-rot__chip-tag">2004</span></button>
-            <button class="lp-rot__chip" type="button" role="tab" id="lp-rot-tab-gb" aria-selected="false" aria-controls="lp-rot-gb" data-rot-tab="gb">Game Boy<span class="lp-rot__chip-tag">1989</span></button>
-            <button class="lp-rot__chip" type="button" role="tab" id="lp-rot-tab-e7" aria-selected="false" aria-controls="lp-rot-e7" data-rot-tab="e7">Nokia E7<span class="lp-rot__chip-tag">2011</span></button>
-            <button class="lp-rot__chip" type="button" role="tab" id="lp-rot-tab-vita" aria-selected="false" aria-controls="lp-rot-vita" data-rot-tab="vita">PS Vita<span class="lp-rot__chip-tag">2011</span></button>
-            <button class="lp-rot__chip" type="button" role="tab" id="lp-rot-tab-i2g" aria-selected="false" aria-controls="lp-rot-i2g" data-rot-tab="i2g">iPhone 2G<span class="lp-rot__chip-tag">2007</span></button>
-            <button class="lp-rot__chip" type="button" role="tab" id="lp-rot-tab-p4" aria-selected="false" aria-controls="lp-rot-p4" data-rot-tab="p4">ESP32&#8209;P4<span class="lp-rot__chip-tag">MCU</span></button>
-            <button class="lp-rot__chip" type="button" role="tab" id="lp-rot-tab-mac" aria-selected="false" aria-controls="lp-rot-mac" data-rot-tab="mac">Your Mac<span class="lp-rot__chip-tag">2026</span></button>
-          </div>
+      <div class="lp-hero__canvas" data-collage aria-hidden="true">
+        <div class="lp-dev lp-dev--gb lp-gb">
+          <div class="lp-gb__screen"><div class="lp-gb__t">TODO x3</div><div class="lp-gb__done">SHIP GBA CART</div><div class="lp-gb__done">SHIP NES CART</div><div>SHIP PLAYDATE</div><div>&gt; NEW ITEM_</div></div>
+          <div class="lp-gb__dpad"></div><div class="lp-gb__btns"><i></i><i></i></div>
+          <span class="lp-dev__cap"><b>Vue, compiled</b> &middot; Game Boy &middot; 4.19 MHz / 8 KB</span>
         </div>
+        <div class="lp-dev lp-dev--figma lp-psp">
+          <div class="lp-shot"><img src="/assets/wall/figma-8pct.jpg" alt="" /></div>
+          <span class="lp-dev__cap"><b>Pocket Figma</b> &middot; Sony PSP &middot; 333 MHz / 32 MB</span>
+        </div>
+        <div class="lp-dev lp-dev--pi lp-p4">
+          <div class="lp-p4__term"><span class="lp-t-p">pi&nbsp;&gt;</span> fix the failing build<br /><span class="lp-t-d">plan</span>&nbsp; read Makefile, patch CFLAGS<br /><span class="lp-t-d">tool</span>&nbsp; fs.write src/config.h ok<br /><span class="lp-t-d">tool</span>&nbsp; proc.run make ... exit 0<br /><span class="lp-t-p">pi&nbsp;&gt;</span> done. 2 files changed_</div>
+          <span class="lp-dev__cap"><b>Pocket Pi</b> &middot; ESP32&#8209;P4 &middot; 400 MHz / 32 MB PSRAM</span>
+        </div>
+        <div class="lp-dev lp-dev--yt lp-psp lp-psp--silver">
+          <div class="lp-shot"><video src="/assets/pocketjs-demo-wall.mp4" style="--c:3;--r:2" autoplay muted loop playsinline></video></div>
+          <span class="lp-dev__cap"><b>Pocket YouTube</b> &middot; Sony PSP &middot; over one USB cable</span>
+        </div>
+        <div class="lp-dev lp-dev--mac lp-macw">
+          <div class="lp-shot"><video src="/assets/pocketjs-demo-wall.mp4" style="--c:0;--r:1" autoplay muted loop playsinline></video></div>
+          <span class="lp-dev__cap"><b>Pocket Character</b> &middot; macOS widget &middot; 118 MB, no Electron</span>
+        </div>
+        <div class="lp-dev lp-dev--e7 lp-e7">
+          <div class="lp-shot"><video src="/assets/pocketjs-demo-wall.mp4" style="--c:3;--r:1" autoplay muted loop playsinline></video></div>
+          <span class="lp-dev__cap"><b>OpenStrike</b> &middot; Nokia E7 &middot; 680 MHz / 256 MB</span>
+        </div>
+        <div class="lp-dev lp-dev--voxel lp-vita">
+          <div class="lp-shot"><video src="/assets/pocketjs-demo-wall.mp4" style="--c:1;--r:3" autoplay muted loop playsinline></video></div>
+          <span class="lp-dev__cap"><b>Pocket Voxel</b> &middot; PS Vita &middot; 4&times; Cortex&#8209;A9 / 512 MB</span>
+        </div>
+        <div class="lp-dev lp-dev--pb lp-pb">
+          <div class="lp-shot lp-shot--eink"><video src="/assets/pocketjs-demo-wall.mp4" style="--c:2;--r:3" autoplay muted loop playsinline></video></div>
+          <span class="lp-dev__cap"><b>First light</b> &middot; PocketBook &middot; e-ink</span>
+        </div>
+      </div>
+      <div class="lp-container lp-hero__in">
+        <h1 class="lp-h1">Rich interactive JavaScript where no browser fits.</h1>
+        <p class="lp-sub">
+          PocketJS is a compact JavaScript runtime for UI, games, 3D and
+          AI-native apps on radically different devices: consoles, phones,
+          e&#8209;readers, microcontrollers, desktops.
+        </p>
         <div class="lp-hero__cta">
           <a class="lp-btn lp-btn--primary" href="/docs/getting-started/">Get started</a>
-          <a class="lp-btn lp-btn--ghost" href="/playground/">Open the playground</a>
           <a class="lp-btn lp-btn--ghost" href="https://github.com/pocket-stack/pocketjs" target="_blank" rel="noreferrer">
             Star on GitHub
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 4.7 18 5 18 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
           </a>
         </div>
-
       </div>
     </section>
 
@@ -285,35 +244,6 @@
             <span><b class="is-hw"></b>verified on the machine</span>
             <span><b class="is-built"></b>builds today, hardware pass pending</span>
             <span><b class="is-no"></b>not yet</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- PILLARS: the value proposition itself: four kinds of software, one runtime. -->
-    <section class="lp-section lp-pillars">
-      <div class="lp-container">
-        <div class="lp-secthead lp-reveal">
-          <span class="lp-kicker">Rich interactive software</span>
-          <h2 class="lp-h2">Interfaces, games, worlds. And agents.</h2>
-          <p class="lp-lead">This is not a UI kit with ambitions. The runtime already carries four kinds of software, all of it shipped and open source.</p>
-        </div>
-        <div class="lp-proof-grid">
-          <div class="lp-proof lp-reveal">
-            <h3>User interfaces</h3>
-            <p>Solid, Vue Vapor and Octane components share one native tree, with flexbox layout, compile-time Tailwind, baked motion, a system keyboard, and a touch stack with real gesture physics. <a href="/docs/frameworks/">Three frameworks, one tree &rarr;</a></p>
-          </div>
-          <div class="lp-proof lp-reveal">
-            <h3>Games</h3>
-            <p>A locked 60&nbsp;FPS on 2004 silicon, with receipts: BSP worlds, bots and tracers under a JSX HUD, and input tapes that replay whole matches frame for frame. <a href="/blog/shipping-openstrike/">OpenStrike, shipped &rarr;</a></p>
-          </div>
-          <div class="lp-proof lp-reveal">
-            <h3>3D experiences</h3>
-            <p>A portable BSP engine, a painter-sorted motion pipeline, and VRM digital humans with spring-bone physics. The same scene runs on desktop wgpu or the PSP&rsquo;s GE. <a href="/blog/pocket-character/">One process, whole character &rarr;</a></p>
-          </div>
-          <div class="lp-proof lp-reveal">
-            <h3>AI-native apps</h3>
-            <p>Every frame is a pure function of an input tape, so sessions are data an agent can drive, replay and diff. Small enough to host one, too: <a href="https://github.com/pocket-stack/pocket-pi" target="_blank" rel="noreferrer">a real coding agent</a> runs inside the QuickJS guest, no Node underneath. <a href="/blog/ui-runtime-that-cant-flake/">The runtime agents want &rarr;</a></p>
           </div>
         </div>
       </div>
@@ -536,135 +466,48 @@
       </div>
     </section>
 
-    <!-- .POCKET: the platform story: ship the application, not the port. -->
-    <section class="lp-section lp-pkg">
-      <div class="lp-container">
-        <div class="lp-pkg__split">
-          <div class="lp-pkg__copy lp-reveal">
-            <span class="lp-kicker">The .pocket format</span>
-            <h2 class="lp-h2">Ship the application,<br />not the port.</h2>
-            <p>A <span class="lp-mono">.pocket</span> file describes what the app <em>is</em> and what it <em>needs</em>: identity, capabilities, build plan, payloads. Each device decides how it should run: which viewport, which presentation, which execution class. If a target can&rsquo;t honor the contract, it says so before launch, not after.</p>
-            <div class="lp-pkg__verbs" aria-label="Package toolchain verbs">
-              <span class="lp-mono">build --all-targets</span>
-              <span class="lp-mono">inspect</span>
-              <span class="lp-mono">verify</span>
-              <span class="lp-mono">thin</span>
-            </div>
-          </div>
-          <div class="lp-pkg__tree lp-reveal" aria-label="Anatomy of a .pocket package">
-            <div class="lp-pkg__tree-bar">
-              <span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span><span class="lp-dot" aria-hidden="true"></span>
-              <span class="lp-codecard__name">my-app.pocket</span>
-            </div>
-            <pre class="lp-pkg__pre"><code><b>my-app.pocket</b>
-├─ <i>identity</i>       app id, version, entry
-├─ <i>capabilities</i>   input.touch · display.viewport.live · …
-├─ <i>build plan</i>     how every target gets produced
-├─ <i>payloads</i>       guest bundle · AOT program
-└─ <i>assets</i>         style packs · fonts · tiles</code></pre>
-            <p class="lp-pkg__cap">One deterministic file. Every target re-verifies the plan before launch.</p>
-          </div>
-        </div>
-
-        <div class="lp-sys lp-reveal">
-          <div class="lp-sys__head">
-            <h3>System software, built into the runtime</h3>
-            <p>Not just rectangles on unusual screens, but the pieces apps need to become an ecosystem.</p>
-          </div>
-          <div class="lp-sys__grid">
-            <article class="lp-proof">
-              <h3>App launcher</h3>
-              <p>A Cover Flow deck that cold-boots, freezes and switches whole apps, verified on the PSP, the Vita and a 2011 Nokia.</p>
-            </article>
-            <article class="lp-proof">
-              <h3>Capability contracts</h3>
-              <p>A registry of real, tested hosts. Apps declare needs; targets admit or refuse them at build time.</p>
-            </article>
-            <article class="lp-proof">
-              <h3>Input &amp; OSK</h3>
-              <p>D-pad focus, analog, a virtual cursor, real touch with gestures, kinetic scroll and tap-to-press, and a system keyboard any app summons with one call.</p>
-            </article>
-            <article class="lp-proof">
-              <h3>Host services</h3>
-              <p>USB companions bring what the device lacks: yt-dlp on a Mac becomes YouTube on a PSP.</p>
-            </article>
-            <article class="lp-proof">
-              <h3>Time-travel DevTools</h3>
-              <p>Every session records itself. Step to any frame and inspect the native tree, over USB to real hardware.</p>
-            </article>
-            <article class="lp-proof">
-              <h3>Deterministic core</h3>
-              <p>A virtual clock makes every frame a pure function of the input tape. Goldens compare framebuffers byte for byte. <a href="/blog/ui-runtime-that-cant-flake/">The UI runtime that can&rsquo;t flake &rarr;</a></p>
-            </article>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- DEVICE TAXONOMY: impossible, classified by constraint rather than by nostalgia. -->
-    <section class="lp-section lp-imposs" id="devices">
+    <!-- USE CASES: four kinds of software, each a capture-backed card that
+         opens its own /for/ page. Copy stays short here; the pages carry
+         the story. -->
+    <section class="lp-section lp-uses">
       <div class="lp-container">
         <div class="lp-secthead lp-reveal">
-          <span class="lp-kicker">Radically different devices</span>
-          <h2 class="lp-h2">Built for every kind of impossible.</h2>
-          <p class="lp-lead">Radically different doesn&rsquo;t mean old. It means no browser, no modern OS, no JS engine, no continuous refresh, or no vendor left to care.</p>
+          <span class="lp-kicker">Rich interactive software</span>
+          <h2 class="lp-h2">Interfaces, games, worlds. And agents.</h2>
         </div>
-        <div class="lp-imposs__grid">
-          <article class="lp-imp lp-reveal">
-            <h3>Consoles &amp; handhelds</h3>
-            <p>No OS to lean on, and 333&nbsp;MHz is the fast one.</p>
-            <ul class="lp-chips">
-              <li class="is-live"><b></b>Sony PSP</li>
-              <li class="is-live"><b></b>PS Vita</li>
-              <li class="is-live"><b></b>Game Boy Advance</li>
-              <li class="is-live"><b></b>Game Boy</li>
-              <li class="is-live"><b></b>NES</li>
-              <li class="is-wip"><b></b>Playdate</li>
-              <li><b></b>Nintendo 3DS</li>
-            </ul>
-          </article>
-          <article class="lp-imp lp-reveal">
-            <h3>Abandoned smartphones</h3>
-            <p>The vendor moved on. The hardware didn&rsquo;t.</p>
-            <ul class="lp-chips">
-              <li class="is-live"><b></b>Symbian Belle</li>
-              <li class="is-live"><b></b>iPhone 2G</li>
-              <li><b></b>MeeGo</li>
-              <li><b></b>BlackBerry</li>
-              <li><b></b>Windows Phone</li>
-            </ul>
-          </article>
-          <article class="lp-imp lp-reveal">
-            <h3>E-ink surfaces</h3>
-            <p>A screen that fights every frame, so the runtime picks partial, dynamic or full refresh per update.</p>
-            <ul class="lp-chips">
-              <li class="is-wip"><b></b>PocketBook</li>
-              <li><b></b>Kindle</li>
-            </ul>
-          </article>
-          <article class="lp-imp lp-reveal">
-            <h3>Microcontrollers</h3>
-            <p>Kilobytes, not gigabytes. Sometimes no allocator at all.</p>
-            <ul class="lp-chips">
-              <li class="is-live"><b></b>ESP32 MeowBit</li>
-              <li class="is-live"><b></b>ESP32&#8209;P4</li>
-              <li class="is-live"><b></b>M5Stack Tab5</li>
-            </ul>
-            <p class="lp-imp__note">The MeowBit runs <a href="/blog/pocket-vapor/">Pocket Vapor</a>, the compile-away pipeline; the P4 boards run the native renderer with a QuickJS guest.</p>
-          </article>
-          <article class="lp-imp lp-reveal">
-            <h3>Native desktop surfaces</h3>
-            <p>Modern machines that deserve better than a bundled browser per app.</p>
-            <ul class="lp-chips">
-              <li class="is-live"><b></b>macOS widgets</li>
-              <li class="is-live"><b></b>Transparent windows</li>
-              <li class="is-wip"><b></b>iOS</li>
-            </ul>
-          </article>
-          <div class="lp-imp lp-imp--legend lp-reveal">
-            <div class="vb-legend"><span><b class="is-live"></b>shipping</span><span><b class="is-wip"></b>in progress</span><span><b></b>planned</span></div>
-            <p>Every &ldquo;shipping&rdquo; chip is a real, tested host in the registry, not a roadmap slide. <a href="/docs/platform-contracts/">See the target profiles &rarr;</a></p>
-          </div>
+        <div class="lp-uc-grid">
+          <a class="lp-uc lp-reveal" href="/for/interfaces/">
+            <span class="lp-uc__bg" style="background-image: url('/assets/wall/card-im.jpg')" aria-hidden="true"></span>
+            <div class="lp-uc__body">
+              <h3>User interfaces</h3>
+              <p>Solid, Vue Vapor and Octane share one native tree: flexbox, compiled Tailwind, baked motion, a system keyboard.</p>
+              <span class="lp-uc__more">Read more &rarr;</span>
+            </div>
+          </a>
+          <a class="lp-uc lp-reveal" href="/for/games/">
+            <span class="lp-uc__bg" style="background-image: url('/assets/wall/card-openstrike.jpg')" aria-hidden="true"></span>
+            <div class="lp-uc__body">
+              <h3>Games</h3>
+              <p>A locked 60&nbsp;fps on 2004 silicon: BSP worlds, bots, and input tapes that replay whole matches.</p>
+              <span class="lp-uc__more">Read more &rarr;</span>
+            </div>
+          </a>
+          <a class="lp-uc lp-reveal" href="/for/worlds/">
+            <span class="lp-uc__bg" style="background-image: url('/assets/wall/card-voxel.jpg')" aria-hidden="true"></span>
+            <div class="lp-uc__body">
+              <h3>3D worlds</h3>
+              <p>One portable 3D core for desktop wgpu and the PSP&rsquo;s GE, up to VRM humans with spring-bone physics.</p>
+              <span class="lp-uc__more">Read more &rarr;</span>
+            </div>
+          </a>
+          <a class="lp-uc lp-uc--term lp-reveal" href="/for/agents/">
+            <span class="lp-uc__bg lp-uc__bg--term" aria-hidden="true"><span class="lp-t-p">pi&nbsp;&gt;</span> fix the failing build<br /><span class="lp-t-d">tool</span>&nbsp; fs.write src/config.h ok<br /><span class="lp-t-d">tool</span>&nbsp; proc.run make ... exit 0<br /><span class="lp-t-p">pi&nbsp;&gt;</span> done. 2 files changed_</span>
+            <div class="lp-uc__body">
+              <h3>AI-native apps</h3>
+              <p>Every frame is a pure function of an input tape, and the runtime is small enough to host the agent itself.</p>
+              <span class="lp-uc__more">Read more &rarr;</span>
+            </div>
+          </a>
         </div>
       </div>
     </section>

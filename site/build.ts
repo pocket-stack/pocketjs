@@ -567,6 +567,11 @@ async function main() {
   if (existsSync(SITE + "assets/blog/")) {
     for (const f of readdirSync(SITE + "assets/blog/")) copy(SITE + "assets/blog/" + f, "assets/blog/" + f);
   }
+  // Wall crops: hero-collage stills + use-case card backgrounds, extracted
+  // from the baked demo wall's known tile grid.
+  if (existsSync(SITE + "assets/wall/")) {
+    for (const f of readdirSync(SITE + "assets/wall/")) copy(SITE + "assets/wall/" + f, "assets/wall/" + f);
+  }
 
   // 5. playground page
   write("playground/index.html", renderPage({
@@ -584,6 +589,13 @@ async function main() {
   write("index.html", renderHome());
   copy(SITE + "assets/home.css", "assets/home.css");
   await bundle("assets/home.js", "assets/home.js");
+
+  // 6b. /for/ use-case pages — landing-styled (home.css chrome, no hero).
+  //     site/for/shell.html carries the shared nav + footer; each fragment
+  //     carries the page's main content.
+  for (const page of FOR_PAGES) {
+    write(`for/${page.slug}/index.html`, renderForPage(page));
+  }
 
   // 7. docs + blog (setupMarkdown installs the shared marked/shiki renderer)
   const highlight = await setupMarkdown();
@@ -673,6 +685,70 @@ function renderHome(): string {
 <body>
 ${body}
 <script type="module" src="/assets/home.js"></script>
+</body>
+</html>`;
+}
+
+// The /for/ pages share the homepage's bespoke chrome (home.css, no shared
+// Tailwind shell): site/for/shell.html holds the nav + footer, and
+// site/for/<slug>.html the main content. Linked from the use-case cards.
+const FOR_PAGES = [
+  {
+    slug: "interfaces",
+    title: "PocketJS for user interfaces",
+    desc: "Components, signals and Tailwind classes in Solid, Vue Vapor or Octane become one native tree that runs on every machine in the registry.",
+  },
+  {
+    slug: "games",
+    title: "PocketJS for games",
+    desc: "Rust engine cores under JavaScript gameplay: OpenStrike holds a locked 60 fps on a 333 MHz PSP while the HUD stays a Solid app.",
+  },
+  {
+    slug: "worlds",
+    title: "PocketJS for 3D worlds",
+    desc: "Pocket3D cooks a scene once and renders it through wgpu, sceGu, GXM and OpenGL ES, up to VRM humans with spring-bone physics.",
+  },
+  {
+    slug: "agents",
+    title: "PocketJS for AI-native apps",
+    desc: "A virtual clock makes every frame a pure function of an input tape: sessions agents can drive, replay and diff, on a runtime small enough to host the agent itself.",
+  },
+];
+
+function renderForPage(page: { slug: string; title: string; desc: string }): string {
+  const shell = injectSiteFooterDescription(readFileSync(SITE + "for/shell.html", "utf8"));
+  const main = readFileSync(SITE + `for/${page.slug}.html`, "utf8");
+  if (!shell.includes("{{FOR_MAIN}}")) throw new Error("for/shell.html must contain {{FOR_MAIN}}");
+  const body = shell.replace("{{FOR_MAIN}}", main);
+  const url = `${SITE_URL}/for/${page.slug}/`;
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${page.title} · PocketJS</title>
+<meta name="description" content="${page.desc}">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="${url}">
+<meta property="og:title" content="${page.title} · PocketJS">
+<meta property="og:description" content="${page.desc}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="PocketJS">
+<meta property="og:url" content="${url}">
+<meta property="og:image" content="${OG_IMAGE_URL}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="${page.title} · PocketJS">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${page.title} · PocketJS">
+<meta name="twitter:description" content="${page.desc}">
+<meta name="twitter:image" content="${OG_IMAGE_URL}">
+<meta name="theme-color" content="#05070d">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/home.css">
+</head>
+<body>
+${body}
 </body>
 </html>`;
 }

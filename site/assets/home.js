@@ -1,8 +1,9 @@
-// site/assets/home.js — homepage behaviors. The background remains a cheap
-// baked demo wall; the machine matrix below the CTA auto-rotates through the
-// machines until the visitor takes over. Tab groups (framework tabs on the
-// code card, target chips on the selector, machine chips on the matrix) are
-// static HTML — JS only toggles state.
+// site/assets/home.js — homepage behaviors. The hero is a machine collage on
+// a fixed canvas that cover-scales to the viewport, its screens cropped live
+// out of the baked demo wall. The machine matrix below auto-rotates until the
+// visitor takes over. Tab groups (framework tabs on the code card, target
+// chips on the selector, machine chips on the matrix) are static HTML — JS
+// only toggles state.
 
 function setupTabs(tabAttr, panelAttr) {
   const tabs = [...document.querySelectorAll(`[data-${tabAttr}]`)];
@@ -25,8 +26,6 @@ function setupTabs(tabAttr, panelAttr) {
   }
 }
 
-// Pause the wall when it can't be seen (scrolled away) or shouldn't move
-// (prefers-reduced-motion — the CSS also hides it there).
 function setupCodeCardName() {
   const nameEl = document.getElementById("lp-codecard-name");
   if (!nameEl) return;
@@ -44,14 +43,28 @@ function setupCodeCardName() {
   }
 }
 
-function setupDemoWall() {
-  const video = document.querySelector(".lp-hero__wall-video");
-  if (!video) return;
+// The hero collage: a fixed 1440x820 canvas cover-scaled to fill the hero, so
+// narrow screens crop the collage's sides instead of stacking the devices.
+// The screen videos pause off screen and under prefers-reduced-motion.
+function setupHeroCollage() {
+  const hero = document.querySelector(".lp-hero");
+  const canvas = document.querySelector("[data-collage]");
+  if (!hero || !canvas) return;
+  const fit = () => {
+    const s = Math.max(hero.clientWidth / 1440, hero.clientHeight / 820);
+    canvas.style.transform = `translate(-50%, -50%) scale(${s})`;
+  };
+  addEventListener("resize", fit);
+  fit();
+
+  const videos = [...canvas.querySelectorAll("video")];
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   let visible = true;
   const apply = () => {
-    if (reduced.matches || !visible) video.pause();
-    else video.play().catch(() => {});
+    for (const video of videos) {
+      if (reduced.matches || !visible) video.pause();
+      else video.play().catch(() => {});
+    }
   };
   reduced.addEventListener?.("change", apply);
   const io = new IntersectionObserver(
@@ -61,14 +74,15 @@ function setupDemoWall() {
     },
     { threshold: 0.05 },
   );
-  io.observe(video);
+  io.observe(hero);
+  apply();
 }
 
-// Shared carousel spine for the hero claim and the machine matrix: chip tabs
-// plus a rotation that advances every `period` ms. Rotation pauses while the
-// widget is hovered, focused, or off screen, and stops for good on any manual
-// pick — the countdown sweep on the active chip only runs while `is-auto` is
-// set. `show(panel, active)` applies each widget's own visibility scheme.
+// Carousel spine for the machine matrix: chip tabs plus a rotation that
+// advances every `period` ms. Rotation pauses while the widget is hovered,
+// focused, or off screen, and stops for good on any manual pick — the
+// countdown sweep on the active chip only runs while `is-auto` is set.
+// `show(panel, active)` applies the widget's visibility scheme.
 function setupRotator(root, tabAttr, panelAttr, period, show) {
   if (!root) return;
   const tabs = [...root.querySelectorAll(`[data-${tabAttr}]`)];
@@ -143,23 +157,9 @@ function setupRotator(root, tabAttr, panelAttr, period, show) {
   );
   io.observe(root);
 
-  // Normalize the static markup once (aria/inert on the non-active panels).
+  // Normalize the static markup once (aria on the non-active panels).
   const initial = tabs.find((tab) => tab.classList.contains("is-active")) ?? tabs[0];
   select(initial.dataset[key]);
-}
-
-// The hero claim: slides stack in one grid cell and crossfade via `is-active`,
-// so inactive ones stay in the DOM (and in the page height) but are inert.
-function setupRotatingHero() {
-  const root = document.querySelector("[data-rot]");
-  if (!root) return;
-  const PERIOD = 7000;
-  root.style.setProperty("--rot-period", `${PERIOD}ms`);
-  setupRotator(root, "rot-tab", "rot-panel", PERIOD, (panel, active) => {
-    panel.classList.toggle("is-active", active);
-    panel.setAttribute("aria-hidden", active ? "false" : "true");
-    panel.inert = !active;
-  });
 }
 
 // The machine matrix: plain hidden-attribute panels, like the other tab groups.
@@ -176,6 +176,5 @@ function setupMachineMatrix() {
 setupTabs("code-tab", "code-panel");
 setupCodeCardName();
 setupTabs("tgt-tab", "tgt-panel");
-setupDemoWall();
-setupRotatingHero();
+setupHeroCollage();
 setupMachineMatrix();
