@@ -54,7 +54,7 @@ test("homepage Stage package has one semantic screen and its declared suppressio
   }
 });
 
-test("homepage plays the machine collage and keeps the matrix honest", () => {
+test("homepage plays the machine collage", () => {
   const home = readFileSync(ROOT + "site/home.html", "utf8");
   // The 3D stage moved to the playground; the homepage must not mount it.
   expect(home).not.toContain("data-pocket-stage");
@@ -98,33 +98,21 @@ test("homepage plays the machine collage and keeps the matrix honest", () => {
   expect(build0).toContain("renderForPage");
   expect(build0).toContain('for/shell.html');
 
-  // The machine matrix: same chips and panels, and every panel re-lights the
-  // same fixed roster of flagship apps so partial support stays visible.
-  const chips = home.match(/data-mx-tab="([a-z0-9]+)"/g) ?? [];
-  const panels = home.match(/data-mx-panel="([a-z0-9]+)"/g) ?? [];
-  expect(chips.length).toBeGreaterThanOrEqual(7);
-  expect(panels.length).toBe(chips.length);
-  const roster = ["Pocket Figma", "Pocket YouTube", "OpenStrike", "Pocket Voxel", "Pocket Character", "Pocket Pi", "Launcher + app deck"];
-  for (const name of roster) {
-    const rows = home.split(`<strong>${name}</strong>`).length - 1;
-    expect(rows).toBe(panels.length);
-  }
-  // Honesty: every app row carries an explicit state, and "not yet" exists.
-  const rowStates = home.match(/li class="is-(hw|built|no)"/g) ?? [];
-  expect(rowStates.length).toBe(roster.length * panels.length);
-  expect(home).toContain('li class="is-no"');
+  // The what-runs-where matrix is retired too.
+  expect(home).not.toContain("data-mx");
+  expect(home).not.toContain("What runs where");
 
-  // The collage + rotation glue and the sweep animation it arms.
+  // The collage glue and styles.
   const homeGlue = readFileSync(ROOT + "site/assets/home.js", "utf8");
   expect(homeGlue).toContain("setupHeroCollage");
-  expect(homeGlue).toContain("setupMachineMatrix");
   expect(homeGlue).toContain("prefers-reduced-motion");
   expect(homeGlue).not.toContain("setupRotatingHero");
+  expect(homeGlue).not.toContain("setupMachineMatrix");
   const homeCss = readFileSync(ROOT + "site/assets/home.css", "utf8");
   expect(homeCss).not.toContain(".lp-stage");
   expect(homeCss).not.toContain(".lp-rot");
+  expect(homeCss).not.toContain(".lp-mx");
   expect(homeCss).toContain(".lp-dev");
-  expect(homeCss).toContain(".lp-mx.is-auto .lp-mx__chip.is-active::after");
 
   // The playground stage still ships the Pocket Launcher family as .pocket
   // packages (docs/LAUNCHER.md / docs/PLATFORM.md) — the deploy chain must
