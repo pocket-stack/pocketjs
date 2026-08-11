@@ -30,25 +30,17 @@
 
 The [first Pocket Pi port](/blog/pocket-pi-on-esp32-p4/) answered a fairly unreasonable question: could a complete Pi coding agent live on an ESP32-P4, with its loop, tools, schedules, files and interface on the board rather than behind a remote screen? The answer was yes. That post ended with one deliberately unfulfilled sentence: Apps as tools-plus-a-view were the obvious continuation, and we would write about them when they were real.
 
-They are real now ([Pocket Pi PR #11](https://github.com/pocket-stack/pocket-pi/pull/11)). The work started as “put Exa and Robinhood on the device” and became a redesign of the runtime underneath them. We did not want two more features welded into firmware. We wanted a definition of App that made sense to an Agent, to a human and to a 32 MB board at the same time.
+They are real now ([**Pocket Pi PR #11**](https://github.com/pocket-stack/pocket-pi/pull/11)). We did not want more features just simply welded into firmware. We wanted a definition of App that made sense to an Agent, to a human and to a 32 MB board at the same time.
 
 This post is about that architecture: what the first Pocket Pi still got wrong, what we mean by an agent-native runtime, why the data layer became the center of the system, and how PocketJS makes the result portable without hiding the constraints of the ESP32-P4.
 
 ## What Pocket Pi was
 
-The first port was deliberately direct. QuickJS ran the embedded `pi-agent-core` bundle. Native Rust supplied everything the board lacked: workspace tools over LittleFS, schedules, model transports, bounded shell-like operations, Wi-Fi, credentials, touch, display and the product UI. That was exactly the right shape for proving that the Agent really lived on the board.
-
-It was also still heavy on Rust firmware.
+The [previous post](/blog/pocket-pi-on-esp32-p4/) covers the original port in detail. QuickJS ran the embedded `pi-agent-core` bundle, while native Rust supplied the workspace, schedules, model transport, device capabilities and product UI. That was the right architecture for proving that the complete Agent really lived on the board.
 
 <img class="w-full rounded-xl border border-line" src="/assets/blog/pocket-pi-esp32-hero.png" alt="The original Pocket Pi device UI, implemented as a native Rust product surface, showing Agent chat, schedules, the LittleFS workspace browser and a file reader." />
 
-The Agent loop was TypeScript, but the product around it was native. Rust owned the screen state, file browser, schedule panels, input handling and composition of every device capability. The boundary was roughly “Agent in JavaScript, product in firmware.”
-
-That boundary gave the first version a useful property: there were very few moving parts. A native Tool could talk directly to LittleFS or a board service; a native screen could render the result; the firmware knew every possible state. For a proof, this was an advantage. The device could demonstrate Agent turns, file writes, autonomous wakes and persistence without first inventing an application platform.
-
-The cost appeared as soon as we tried to add complete products. A Robinhood experience is not one Tool. It has Agent-facing capabilities, provider mapping, a refresh cadence, durable portfolio state and a View. Exa has the same categories with a different protocol and data model. If all of those pieces live in Rust, every new App expands the trusted firmware, adds another product-specific state machine, and requires another firmware release.
-
-The original Pocket Pi therefore proved that an Agent could run on embedded hardware, but it did not yet prove that software could expand around that Agent. The Agent was portable TypeScript. The products it could use were not.
+It was also still heavy on Rust firmware. The Agent loop was TypeScript, but Rust owned the screen state, file browser, schedules and composition of product capabilities. The boundary was roughly “Agent in JavaScript, product in firmware.” That kept the proof small, but it meant each complete new product would add its Tools, state and View back into firmware. The Agent was portable; the products around it were not yet portable Apps.
 
 ## The problem with the old architecture
 
@@ -72,17 +64,15 @@ Three core concepts fell out of that definition.
 
 1. **An App is Agent-facing capability, App-owned state and a human-facing fixed View in one versioned unit.** The Agent sees semantic Tools. The human sees a stable product interface. Both belong to the same App and both are backed by the same local state.
 2. **State is the only coordination surface between capability and View.** Agent Tools, App Schedules and human actions enter the same Data Actions. A successful action changes durable state. The View projects that state; neither the Agent nor the Data Action pushes presentation into the View.
-3. **The Agent decides why and when; the App deterministically owns how, what to save and how to display it.** A recurring refresh does not need a model turn. Provider decoding does not belong in Agent reasoning. The Agent composes Apps; it is not the implementation of every App.
+3. **The Agent is itself a native App and the first-class coordinator of every other App.** As the resident System App, Pi Agent owns `/workspace` and the cross-App Tool Catalog. This gives it system-level access to every App's public Tools and the authority to manage App data through those contracts, while private storage and implementation remain isolated.
 
-This makes the Agent/App relationship much clearer. An App exposes meaningful operations rather than UI controls. The Agent can combine those operations across products and use its workspace for memory, plans and context. The App keeps its provider protocol, tables and presentation private. A human and an Agent can work with the same product without pretending they have the same interface.
-
-It also makes **the Agent itself an App**, but a special one. Pi Agent has code, state and a Root View like other Apps; unlike them, it owns the top-level `/workspace`, sees the cross-App Tool Catalog and stays resident for the lifetime of the system. “Agent as App” gives its loop and View one release boundary. “System App” gives it the ownership and lifecycle required to orchestrate everything else.
+Together, these concepts define the Agent/App relationship. An App exposes meaningful operations rather than UI controls. Pi Agent can combine those operations across products and manage App data through public contracts, not by reaching into private SQLite tables. Its System App status gives it the wider ownership and persistent lifecycle required to orchestrate everything else.
 
 Finally, agent-native Apps must be expandable and transportable. Expandable means a new product can bring its Tools, Data Actions, schema and View without adding that product's meaning to firmware. Transportable means the same App source can run anywhere the required PocketJS and AgentOS capabilities exist. It does not mean one byte-identical binary on every board: assets, viewport and ABI can still produce target-specific artifacts. The contract is portable; the hardware remains real.
 
 ## The new Pocket Pi architecture
 
-The new runtime has four layers. The design is less about where a file sits than about which layer is allowed to know what.
+The new runtime has four layers. They are the implementation consequence of the three core concepts: Apps own product meaning, state connects capability to View, and the resident Agent coordinates Apps through their public contracts.
 
 <svg viewBox="0 0 760 535" width="100%" role="img" aria-label="Four-layer Pocket Pi architecture. App bundles at the top contain descriptors, Tools, Data Actions, SQLite schemas and Views. Pocket Pi AgentOS below provides the System App lifecycle, App Supervisor, Tool Router, scheduler, Data Action runner and revision delivery. PocketJS provides QuickJS Guests, bundles, UI and net, fs and db module contracts. Native host adapters at the bottom provide macOS or ESP32-P4 display, touch, LittleFS, SQLite, TLS, credentials, MCP and model transport." font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
   <rect x="0" y="0" width="760" height="535" rx="12" fill="#0b0f1a"/>
@@ -114,13 +104,7 @@ The new runtime has four layers. The design is less about where a file sits than
   <text x="565" y="498" fill="#64748b" font-size="10" text-anchor="middle">credentials · MCP · model transport · limits</text>
 </svg>
 
-At the bottom, the **native Host** owns hardware, secrets and scarce resources: display and touch drivers, filesystem mounts, TLS, credentials, MCP sessions, model transport, clocks and limits. Native does not mean product-specific. The Host knows how to make an authenticated bounded request; it does not know what an Exa result means or how a Robinhood portfolio should look.
-
-Above it, **PocketJS** supplies the portable application floor: isolated QuickJS Guests, compiled TypeScript/TSX bundles, retained UI, and module contracts for networking, files and SQLite. PocketJS deliberately does not know that Pi Agent owns `/workspace`, which App is foreground or which App owns a Tool. Those are Pocket Pi product semantics, not universal JavaScript-runtime rules.
-
-**Pocket Pi AgentOS** adds those semantics. `AppSupervisor` owns System and ordinary App lifecycles. The Tool Catalog and Router establish which App owns which capability. The Scheduler distinguishes a model-starting Agent wake from an App task that can run deterministically without the model. The Data Action runner keeps slow work away from the View. Revision delivery tells a foreground View that newer committed state exists.
-
-At the top, **App bundles** own product meaning. The current bundle shape makes the boundary concrete:
+The **native Host** owns hardware, secrets and resource policy. **PocketJS** supplies portable QuickJS, UI, NET, FS and DB contracts. **Pocket Pi AgentOS** adds App ownership, lifecycle, Tool routing and scheduling. **App bundles** own the product itself: capabilities, data behavior and View. The current bundle shape makes that boundary concrete:
 
 | Artifact | Architectural role |
 | --- | --- |
@@ -131,27 +115,11 @@ At the top, **App bundles** own product meaning. The current bundle shape makes 
 
 “Fixed View” means fixed for one App release, not hardcoded in firmware. It can evolve with the bundle. It is fixed in the other direction: the Agent does not invent it on every turn, and Data Actions cannot bypass the data layer to push arbitrary presentation into it. That gives the human a stable interface and gives the App author a bounded target to design and test.
 
-### Agent as a resident System App
+### App data is the boundary
 
-Pi Agent's `agent.js` and Root View `app.js` run in the same PocketJS Guest. `AppSupervisor` creates that System App once and keeps it resident. Opening Exa or Robinhood changes only which View produces the foreground DrawList and receives touch input.
+This is the most important part of the architecture because it makes all three core concepts enforceable. Data must be separated in two directions: **an App's Data from its View**, and **one App's Data from every other App**.
 
-This design follows from the Agent's role. The Agent owns long-lived conversation, context, pending model and Tool work, workspace files, memory and system-level schedules. None of those should be scoped to the screen currently visible. If opening another App rebuilt the Agent Guest, foreground navigation would silently become a context-reset operation.
-
-Ordinary Apps have a narrower boundary. Their filesystem and SQLite mounts are App-scoped. They can expose Tools to Pi Agent, run their own local Tasks and display their own View, but they do not gain access to another App's data or the top-level workspace. The special privilege belongs to the System App, not to every QuickJS Guest.
-
-This also resolves an apparent tension in “Agent as App.” Pi Agent participates in the same bundle and View model, so its behavior can evolve as code rather than firmware. It remains system-level because its lifetime, workspace mount and Tool Catalog scope are different. Common packaging does not require equal authority.
-
-### Apps as portable product units
-
-An ordinary App has two execution planes. The **data plane** runs Tools, local Tasks and provider work, then commits SQLite. The **view plane** reads a bounded projection of that state and renders it with PocketJS. They may use separate QuickJS execution contexts so slow network work never becomes View work, but they still belong to one App, share one state owner and version together.
-
-This is the unit that can expand Pocket Pi. Adding an App should require a descriptor, its Data Actions, schema, View and assets. The AgentOS runtime admits the declared capabilities, registers Tools and Schedules, mounts storage and manages lifecycle. The Host does not acquire a new product-specific screen or response parser.
-
-The same unit is what can move to another device. A new host implements PocketJS modules and the AgentOS lifecycle contracts once. Compatible Apps then reuse their product source and state model. A different viewport may produce a different View artifact, and a different ABI may produce a different bundle, but the App does not acquire board-specific business logic.
-
-### State, not screens: separating Data from View
-
-This is the core of the architecture.
+#### Separating Data from View
 
 We started from four first-principles observations.
 
@@ -204,66 +172,64 @@ This is why the Agent never calls `update_view`. Asking the model to synchronize
 
 It also means we do not persist every Tool payload. A Tool result can return directly to the Agent while the App stores only the domain facts its fixed View and future actions own. Exa can keep a bounded search-history projection without archiving every fetched document. Robinhood can store normalized portfolio state without turning SQLite into a cache of arbitrary provider JSON. The data model describes the product, not the transport.
 
+#### Separating one App's Data from another
+
+The second separation is enforced below SQLite through PocketJS FS. Every ordinary App receives a filesystem mount rooted at its own data directory. Its SQLite database is physically a file inside that mount, so database isolation is part of the same filesystem capability: the App has no path that names another App's files or database.
+
+Pi Agent is the deliberate exception. As the first-class System App, it owns `/workspace` and manages other Apps through their declared Tools and data operations. It does not need to bypass their private schemas. This preserves both halves of core concept three: the Agent has system-wide authority, while each App remains the owner of how its data is represented and changed.
+
+Encoding this boundary in the PocketJS FS mount matters for transportability. An App should not stay isolated because its code remembers an ESP-specific directory convention. It should stay isolated because every compatible Host mounts the same capability-scoped filesystem contract, whether the physical storage is LittleFS on the board or a directory in the simulator.
+
+The macOS simulator makes the ownership boundary visible using the same Files View and AgentOS layout as the board. At the root, Pi Agent can see its own system state, data and the `apps/` boundary. Inside an ordinary App, the active release and private `data/` directory are siblings: code can change as a versioned release while App-owned state survives independently. The same App state then supports a stable human View.
+
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 10px; overflow: hidden; border: 1px solid #d8d5cf; border-radius: 14px; background: #f4f1eb">
+  <img src="/assets/blog/pocket-pi-agentos-files.png" style="display: block; width: 100%; margin: 0; border-radius: 6px" alt="Pocket Pi Files View at /workspace, showing Pi Agent-owned system state, data and the ordinary apps boundary." />
+  <img src="/assets/blog/pocket-pi-agentos-exa-files.png" style="display: block; width: 100%; margin: 0; border-radius: 6px" alt="Pocket Pi Files View inside /workspace/apps/exa, showing its private data and versioned releases." />
+  <img src="/assets/blog/pocket-pi-agentos-exa.png" style="display: block; width: 100%; margin: 0; border-radius: 6px" alt="The Exa Research Pocket App projecting its local SQLite-backed search history." />
+  <img src="/assets/blog/pocket-pi-agentos-robinhood.png" style="display: block; width: 100%; margin: 0; border-radius: 6px" alt="The Robinhood Pocket App projecting its normalized portfolio state." />
+</div>
+
 The state boundary is what makes background autonomy possible without making the model the operating system for every task. A five-minute App refresh can run locally, commit state and update the next View without waking the Agent. The Agent remains responsible for judgment and cross-App composition; deterministic product maintenance stays inside the App.
 
-### How the architecture maps to the code
+### Agent as a resident System App
 
-| Architecture concept | Current implementation |
-| --- | --- |
-| Resident Agent System App | `apps/pi-agent/agent.js` and `app.js` share the System Guest owned by `AppSupervisor` |
-| Ordinary App release | `apps/exa` and `apps/robinhood` each contain `agent-app.json`, `data-action.js`, View bundle and App assets |
-| Public capability ownership | `AppCatalog` reads descriptors; `RoutedToolHost` routes namespaced Tools to the owning App |
-| Background product work | `AppDataRunner` executes App Data Actions outside the foreground View path |
-| Durable state and View invalidation | one App-scoped `DbModule` owner plus a monotonic App revision delivered as `dataChanged` |
-| Autonomous local work | `AppScheduleStore` routes `AppTask` schedules into the same Data Actions without a model turn |
-| Hardware boundary | simulator and ESP32 hosts implement filesystem, SQLite, network, credentials, model, display and input adapters |
+Pi Agent's loop and Root View run in the same PocketJS Guest. `AppSupervisor` creates this System App once and keeps it resident; opening an ordinary App changes only the foreground View. This follows directly from core concept three: conversation, context, workspace and cross-App work must outlive whichever screen is visible.
 
-The names are implementation details; the ownership is the architecture. A future Supervisor can discover Apps dynamically or load Views lazily without changing the rule that Tools and Schedules enter Data Actions, Data Actions commit App state, and Views project it.
+Pi Agent still participates in the same App release model, so its behavior and View can evolve as code rather than firmware. It is first-class at the system level because its lifetime, `/workspace` mount and Tool Catalog scope are wider than those of ordinary Apps.
+
+The Root View exposes that relationship directly: Apps remain isolated product units, while Pi Agent can discover and use each App's public Tools.
+
+### Apps as portable product units
+
+An ordinary App brings a descriptor, Data Actions, schema, View and assets. AgentOS admits its capabilities and manages its lifecycle; the Host does not acquire a product-specific screen or response parser. That is core concept one turned into a release boundary.
+
+The same boundary makes the App transportable. A new host implements PocketJS modules and AgentOS contracts once; compatible Apps reuse their product source and state model, even when viewport- or ABI-specific artifacts differ.
+
+Exa and Robinhood are two examples of the same contract producing very different products. Each View is stable and human-readable, but neither owns the truth it displays: Exa projects local research history from its SQLite state, while Robinhood projects normalized portfolio state maintained by its Data Actions and Schedule.
 
 ## Optimizing the experience on ESP32
 
-Moving product code out of Rust is useful only if the new boundary fits the board. PocketJS gives Pocket Pi a set of portable, bounded modules so App code can stay high-level while the ESP32 host retains control of resources.
+Moving product code out of Rust matters only if the new boundary fits the board. PocketJS modules make the core concepts practical without hiding ESP32 resource policy:
 
-### NET: standard App code, native transport policy
+| PocketJS module | App owns | Host owns | Why it matters |
+| --- | --- | --- | --- |
+| NET | `fetch()` calls, request shape and domain decoding | TLS, credentials, endpoint policy and limits | Product networking stays portable without exposing secrets |
+| FS | files relative to the App root | the physical mount, quota and release storage | App data isolation is enforced below App code |
+| DB | schema, transactions and bounded projections | SQLite storage binding and limits | durable state remains the only bridge to the View |
+| UI | the View and its data bindings | DrawList rendering, display and input | product presentation leaves firmware |
 
-At the App boundary, Exa uses `fetch()` from PocketJS. The App chooses its endpoint, request shape and domain decoding. Below that API, the ESP32 Host owns DNS, TLS, HTTP, API-key injection, endpoint policy, timeouts and response limits.
+The architecture is also the optimization. App source is compiled off-device. Data Actions batch product changes into transactions. Background Apps perform no View work, normal frames read memory rather than SQLite, and only a selected dirty View produces a new DrawList. There is no ESP-only product path that bypasses the state model.
 
-This separation does two things. It keeps credentials and board networking out of the Bundle, and it keeps Exa semantics out of firmware. A macOS simulator can provide another transport adapter behind the same PocketJS contract. The App still sees `fetch`; the Host still gets to enforce what a 32 MB device can safely receive.
-
-Robinhood uses a native MCP capability rather than plain fetch, but the ownership rule is identical. Native code owns authentication, sessions, framing and limits. The App owns which operations make sense, how responses become domain state and which parts appear in the View.
-
-### FS: isolation begins at the mount
-
-PocketJS FS presents paths relative to an App's mounted root. Pocket Pi uses that to express ownership physically: Pi Agent receives the top-level `/workspace`; an ordinary App receives only its own data tree.
-
-SQLite databases are files inside those scoped roots. The physical database isolation therefore begins with the FS mount, while the DB module adds SQLite operations and ownership on top. This is why FS and DB are separate capabilities but one storage boundary: an App cannot spell another App's path, and it cannot open another App's database through a different name.
-
-The same filesystem contract also supports versioned App releases. Source is compiled off-device into Bundles and assets; the board activates a complete release rather than compiling TSX or mutating firmware. That keeps build complexity off the ESP32 while preserving a path to atomic installation and rollback later.
-
-### DB: make the durable path the efficient path
-
-PocketJS DB gives the Bundle SQLite without giving it unrestricted storage. The App owns its schema, transactions and queries. The Host owns the physical mount and limits.
-
-The architecture aligns with the board's performance constraints. Data Actions group product changes into one transaction rather than many small flash writes. Views query bounded projections rather than raw provider payloads or unbounded history. Normal frames read memory, not SQLite. Background Apps do no View work. Only the selected, dirty PocketJS View produces a new DrawList for the display.
-
-This is an important property of the design: the correct data flow is also the cheap one. We did not add a separate ESP-only fast path that bypasses App state. Doing so would make the simulator and hardware run different products. Instead, the portable contract itself requires bounded networking, App-scoped storage, transactional writes and bounded View projections.
-
-### One App contract, different hosts
-
-The macOS ESP32-P4 simulator and the physical board now run the same embedded AgentOS, App descriptors, Data Actions, SQLite schemas and PocketJS Views. They do not run the same host binary. The simulator maps contracts to macOS windows, input, files and HTTP; the board maps them to MIPI-DSI, touch, LittleFS, ESP networking and hardware rendering.
-
-That is the practical meaning of transportability. A Host publishes the capabilities and resource profile it supports. An App that fits those requirements can reuse its product source without board-specific native logic. Target-specific build artifacts remain possible and honest; the ownership boundary stays the same.
-
-The physical ESP32-P4 run closed the important architectural loops: the resident Agent used App Tools, Exa completed search and fetch through PocketJS networking, Robinhood completed its read-only refresh through native MCP, and both Apps persisted the state their Views consume. The point of that evidence is not the individual providers. It is that two very different transports fit the same App model without returning their product logic to firmware.
+The simulator and physical ESP32-P4 therefore run the same AgentOS contracts, App Data Actions, schemas and Views over different Host adapters. Exa and Robinhood use different transports, but both fit the same App model and persist the state their Views consume. That is the evidence we care about: the architecture survives the board without moving product meaning back into firmware.
 
 ## Where this goes
 
-The current version is intentionally a fixed built-in catalog. Pocket Pi seeds known App releases at boot and loads the three current Views. That is enough to prove the runtime boundary; it is not yet a Marketplace.
+Today, a fixed View is still a compiled PocketJS bundle. The more interesting next step is to make a View a composition of bounded, prebuilt pieces: cards, lists, charts, navigation, actions and typed bindings to an App's data projections.
 
-A real Marketplace is the next architectural extension. It needs signed release manifests, artifact hashes, declared capabilities, staging, atomic activation, App-owned schema migrations, rollback and a recovery path. Installing or removing an App must rebuild the Tool Catalog without exposing credentials or letting a partial Bundle become active. Once the catalog grows beyond a few built-ins, measured startup and memory costs can drive lazy loading, pinning or another residency policy.
+An App could then ship a small declarative View graph instead of requiring every layout change to compile new JavaScript. The on-device Agent could rearrange components, change bindings or assemble a new View from approved building blocks, while the runtime validates viewport rules, data access and resource budgets. The Agent would be changing presentation directly on the board without compiling TSX or gaining arbitrary native access.
 
-More hardware follows the same logic. A new device implements PocketJS modules and Pocket Pi Host contracts for its display, input, storage, network and resource limits. Apps remain Tools, Data Actions, SQLite state and a fixed View. A larger screen may use another View artifact; a smaller memory budget may load fewer Guests; neither change should move product semantics into the board adapter.
+Data/View separation is what makes that safe and useful. The Agent can rebuild how App state is shown without rewriting the Data Actions that produce it, changing private tables or creating another source of truth. Current fixed Views and future composable Views remain two projections over the same durable App-owned data.
 
-The first Pocket Pi put an Agent on an ESP32-P4. This architecture takes the next step: it gives the Agent a local software environment that can expand without expanding firmware, gives humans stable Views over the same state the Agent changes, and gives each App a boundary that can survive a new release, a new View and eventually a new piece of hardware.
+A Marketplace would then distribute verified App releases and, eventually, reusable View components; signatures, capabilities, atomic activation and rollback remain necessary, but they are supporting infrastructure rather than the main idea. More hardware follows the same contract: each device supplies PocketJS and AgentOS capabilities, while Apps keep their Tools, data model and View composition.
 
-The central idea is not that the Agent can operate the interface. It is that the Agent and the interface operate the same durable product.
+The first Pocket Pi put an Agent on an ESP32-P4. This architecture gives that Agent a local software environment it can coordinate today—and, with composable Views, reshape directly tomorrow.
