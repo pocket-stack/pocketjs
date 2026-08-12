@@ -58,10 +58,10 @@ export interface BlogPost {
 export const BLOG_POSTS: BlogPost[] = [
   {
     slug: "pocket-pi-agent-native-runtime",
-    title: "Tools, State, and a View: Taking Pocket Pi Toward an Agent-Native Runtime",
+    title: "Designing Apps for Humans and Agents in an Agent-Native Runtime",
     date: "2026-08-11",
     description:
-      "The first Pocket Pi put a complete Pi agent on an ESP32-P4, but every product surface still arrived as Rust firmware. The next step is an App runtime designed around how an agent acts: Apps package public Tools, private Data Actions, durable SQLite state and a fixed PocketJS View; the Pi Agent itself becomes a resident System App; and Agent Tools, local schedules and human actions all meet at one transactional data layer. Inside: why the View never owns the network, why an Agent changes state instead of screens, and how PocketJS net, fs and db make the same App source practical on a simulator and a 32 MB board.",
+      "What should an App be when both a human and an Agent can act on it? Pocket Pi derives the answer from first principles: each App is a firmware-independent product unit executed by one or more isolated PocketJS Guests, built from App-owned SQLite Data, actor-neutral Actions, and a fixed human-facing View. Tools and UI intents become two surfaces over the same behavior; a resident Pi Agent coordinates many isolated Apps and can help evolve each complete product boundary without teaching firmware what the product means.",
     author: { name: 'Siwei "Jerry" Yuan', url: "https://github.com/siwei-yuan" },
   },
   {
