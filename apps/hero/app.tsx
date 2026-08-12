@@ -82,7 +82,7 @@ export default function Hero(props: HeroProps = {}) {
         <View class="flex-row gap-4">
           <Stat
             label="FPS"
-            value={String(props.presentationHz ?? 60)}
+            value={String(props.presentationHz ?? TICKS_PER_SECOND)}
             cls="text-lg text-emerald-600 font-bold"
           />
           <Stat

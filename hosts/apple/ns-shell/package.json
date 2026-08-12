@@ -5,7 +5,7 @@
   "main": "src/app.ts",
   "dependencies": {
     "@nativescript/core": "9.1.0-alpha.11",
-    "@nativescript/pocketjs": "^0.1.0"
+    "@nativescript/pocketjs": "0.2.0"
   },
   "devDependencies": {
     "@nativescript/ios-quickjs": "9.0.0-preview.3",
