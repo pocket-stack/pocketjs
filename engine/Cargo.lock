@@ -748,6 +748,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f22fb22f065b308be0d8724e3706c7fa3fc2a6c7d6899df4cad7860e7a75436"
 dependencies = [
  "libm",
+ "serde_core",
 ]
 
 [[package]]
@@ -1720,6 +1721,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
+name = "playable-world"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "glam",
+ "pocket3d",
+ "pocket3d-world",
+ "serde",
+ "serde_json",
+ "winit",
+]
+
+[[package]]
 name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1889,6 +1904,14 @@ dependencies = [
  "env_logger",
  "log",
  "pocket3d-bsp",
+]
+
+[[package]]
+name = "pocket3d-world"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "serde",
 ]
 
 [[package]]

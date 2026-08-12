@@ -40,7 +40,8 @@ engine/pocket3d/
 └── examples/
     ├── uihost/            # PocketJS UI demos in a native macOS window
     ├── handheld/          # first pocket-stage package + transitional 3D host
-    └── note-widget/       # a markdown sticky note — the flat pocket-widget form
+    ├── note-widget/       # a markdown sticky note — the flat pocket-widget form
+    └── playable-world/    # deterministic bodies, attachments, cutting, heat + fire
 ```
 
 Dependency shape: `pocket3d-bsp` knows nothing about rendering; `pocket3d`
@@ -185,6 +186,9 @@ scroll; the ••• menu has theme/reset/close, edits autosave to `--file`
 - New world format → produce a `WorldSource` (+ implement `TraceWorld`).
 - New game → implement the `Game` trait; compose a `Scene`; mount surfaces
   with `pocket-mod` (see docs/RUNTIMES.md for the discipline).
+- Systemic world rules → use `pocket3d-world` for deterministic bodies,
+  attachments, structural damage, and reactive materials; keep rendering in
+  a `Game` adapter (see `examples/playable-world`).
 - More passes (decals, particles-with-physics, shadow maps) slot into
   `Renderer::render` alongside the existing ones, or hang off
   `Game::overlay`.

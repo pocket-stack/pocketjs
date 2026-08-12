@@ -1,0 +1,17 @@
+[package]
+name = "playable-world"
+description = "A deterministic reactive-world POC rendered by Pocket3D"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+pocket3d = { workspace = true }
+pocket3d-world = { workspace = true }
+winit = { workspace = true }
+glam = { workspace = true, features = ["std"] }
+anyhow = { workspace = true }
+env_logger = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

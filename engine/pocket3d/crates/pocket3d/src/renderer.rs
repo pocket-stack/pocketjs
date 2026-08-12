@@ -13,15 +13,33 @@ use crate::scene::Scene;
 use crate::texture::{GpuTexture, Samplers, create_rgba_texture};
 use crate::world::{WorldBatchKind, WorldVertex};
 
+fn finite_or(value: f32, fallback: f32) -> f32 {
+    if value.is_finite() { value } else { fallback }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct GlobalsRaw {
     view_proj: [[f32; 4]; 4],
+    inverse_view_proj: [[f32; 4]; 4],
     cam_pos: [f32; 4],
     sky_zenith: [f32; 4],
     sky_horizon: [f32; 4],
-    sun_dir: [f32; 4],
-    sun_color: [f32; 4],
+    sky_sun_dir: [f32; 4],
+    sky_sun_color: [f32; 4],
+    model_sun_dir: [f32; 4],
+    model_sun_color: [f32; 4],
+    model_ambient: [f32; 4],
+    /// x: band count, y: wrap, z: enabled.
+    toon: [f32; 4],
+    /// rgb: color, w: strength.
+    rim_color: [f32; 4],
+    /// x: exponent.
+    rim_params: [f32; 4],
+    /// rgb: color, w: enabled.
+    fog_color: [f32; 4],
+    /// x: start, y: end.
+    fog_params: [f32; 4],
 }
 
 pub struct Renderer {
@@ -35,6 +53,7 @@ pub struct Renderer {
     world_opaque: wgpu::RenderPipeline,
     world_alphatest: wgpu::RenderPipeline,
     world_sky: wgpu::RenderPipeline,
+    world_background_sky: wgpu::RenderPipeline,
     models: ModelPass,
     sprites: SpritePass,
     hud: HudPass,
@@ -84,6 +103,12 @@ impl Renderer {
             bind_group_layouts: &[&globals_bgl, &world_material_layout],
             push_constant_ranges: &[],
         });
+        let background_sky_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("world background sky layout"),
+                bind_group_layouts: &[&globals_bgl],
+                push_constant_ranges: &[],
+            });
         let make_world_pipeline = |label: &str, fs_entry: &str| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(label),
@@ -124,6 +149,37 @@ impl Renderer {
         let world_opaque = make_world_pipeline("world opaque", "fs_opaque");
         let world_alphatest = make_world_pipeline("world alphatest", "fs_alphatest");
         let world_sky = make_world_pipeline("world sky", "fs_sky");
+        let world_background_sky = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("world background sky"),
+            layout: Some(&background_sky_layout),
+            vertex: wgpu::VertexState {
+                module: &world_shader,
+                entry_point: Some("vs_background_sky"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &world_shader,
+                entry_point: Some("fs_background_sky"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
         let models = ModelPass::new(gpu, color_format, &globals_bgl);
         let model_material_layout = models.material_layout.clone();
@@ -140,6 +196,7 @@ impl Renderer {
             world_opaque,
             world_alphatest,
             world_sky,
+            world_background_sky,
             models,
             sprites,
             hud: HudPass::new(gpu, color_format),
@@ -164,13 +221,55 @@ impl Renderer {
         self.ensure_depth(gpu, size);
         let aspect = size.0 as f32 / size.1 as f32;
 
+        let view_proj = camera.view_proj(aspect);
+        let toon = match scene.lighting.toon {
+            Some(toon) => [
+                toon.steps as f32,
+                finite_or(toon.wrap, 0.0).clamp(0.0, 1.0),
+                1.0,
+                0.0,
+            ],
+            None => [0.0; 4],
+        };
+        let (rim_color, rim_params) = match scene.lighting.rim {
+            Some(rim) => (
+                rim.color
+                    .extend(finite_or(rim.strength, 0.0).max(0.0))
+                    .to_array(),
+                [finite_or(rim.power, 1.0).max(0.0001), 0.0, 0.0, 0.0],
+            ),
+            None => ([0.0; 4], [1.0, 0.0, 0.0, 0.0]),
+        };
+        let (fog_color, fog_params) = match scene.lighting.fog {
+            Some(fog)
+                if fog.color.is_finite()
+                    && fog.start.is_finite()
+                    && fog.end.is_finite()
+                    && fog.end > fog.start =>
+            {
+                (
+                    fog.color.extend(1.0).to_array(),
+                    [fog.start, fog.end, 0.0, 0.0],
+                )
+            }
+            _ => ([0.0; 4], [0.0, 1.0, 0.0, 0.0]),
+        };
         let globals = GlobalsRaw {
-            view_proj: camera.view_proj(aspect).to_cols_array_2d(),
+            view_proj: view_proj.to_cols_array_2d(),
+            inverse_view_proj: view_proj.inverse().to_cols_array_2d(),
             cam_pos: camera.pos.extend(scene.time).to_array(),
             sky_zenith: scene.sky.zenith.extend(1.0).to_array(),
             sky_horizon: scene.sky.horizon.extend(1.0).to_array(),
-            sun_dir: scene.sky.sun_dir.extend(0.0).to_array(),
-            sun_color: scene.sky.sun_color.extend(1.0).to_array(),
+            sky_sun_dir: scene.sky.sun_dir.extend(0.0).to_array(),
+            sky_sun_color: scene.sky.sun_color.extend(1.0).to_array(),
+            model_sun_dir: scene.lighting.sun_dir.extend(0.0).to_array(),
+            model_sun_color: scene.lighting.sun_color.extend(1.0).to_array(),
+            model_ambient: scene.lighting.ambient.extend(1.0).to_array(),
+            toon,
+            rim_color,
+            rim_params,
+            fog_color,
+            fog_params,
         };
         gpu.queue
             .write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
@@ -221,6 +320,11 @@ impl Renderer {
             });
 
             pass.set_bind_group(0, &self.globals_bg, &[]);
+
+            if scene.draw_sky {
+                pass.set_pipeline(&self.world_background_sky);
+                pass.draw(0..3, 0..1);
+            }
 
             if let Some(world) = &scene.world {
                 pass.set_vertex_buffer(0, world.vbuf.slice(..));
@@ -321,8 +425,21 @@ const JOINT_WINDOW: u64 = 512 * 64;
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct InstanceRaw {
     model: [[f32; 4]; 4],
+    normal_model: [[f32; 4]; 4],
     tint: [f32; 4],
     params: [f32; 4],
+}
+
+/// CPU-side inverse-transpose for instance transforms. A singular transform
+/// cannot define a true normal matrix, so retain the old linear transform as
+/// a finite fallback for zero-scale hiding and transition animations.
+fn model_normal_matrix(model: Mat4) -> Mat4 {
+    let determinant = model.determinant();
+    if determinant.is_finite() && determinant.abs() > 1e-8 {
+        model.inverse().transpose()
+    } else {
+        Mat4::from_cols(model.x_axis, model.y_axis, model.z_axis, glam::Vec4::W)
+    }
 }
 
 pub(crate) struct ModelDraw {
@@ -530,6 +647,7 @@ impl ModelPass {
         for (i, inst) in all.iter().enumerate() {
             let raw = InstanceRaw {
                 model: inst.transform.to_cols_array_2d(),
+                normal_model: model_normal_matrix(inst.transform).to_cols_array_2d(),
                 tint: inst.tint,
                 params: [inst.lit, inst.cutout, 0.0, 0.0],
             };
@@ -1098,5 +1216,67 @@ impl HudPass {
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vbuf.slice(..));
         pass.draw(0..hud.verts.len() as u32, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::{Quat, Vec3};
+    #[cfg(not(target_arch = "wasm32"))]
+    use wgpu::naga::{
+        front::wgsl::parse_str,
+        valid::{Capabilities, ValidationFlags, Validator},
+    };
+
+    use super::{GlobalsRaw, InstanceRaw, model_normal_matrix};
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn renderer_shaders_pass_cpu_validation() {
+        for (label, source) in [
+            ("world.wgsl", include_str!("shaders/world.wgsl")),
+            ("model.wgsl", include_str!("shaders/model.wgsl")),
+            ("sprite.wgsl", include_str!("shaders/sprite.wgsl")),
+            ("hud.wgsl", include_str!("shaders/hud.wgsl")),
+        ] {
+            let module = parse_str(source).unwrap_or_else(|error| panic!("{label}: {error}"));
+            Validator::new(ValidationFlags::all(), Capabilities::empty())
+                .validate(&module)
+                .unwrap_or_else(|error| panic!("{label}: {error}"));
+        }
+    }
+
+    #[test]
+    fn gpu_uniform_structs_retain_wgsl_alignment() {
+        assert_eq!(std::mem::size_of::<GlobalsRaw>(), 336);
+        assert_eq!(std::mem::size_of::<InstanceRaw>(), 160);
+        assert_eq!(std::mem::align_of::<GlobalsRaw>(), 4);
+        assert_eq!(std::mem::align_of::<InstanceRaw>(), 4);
+    }
+
+    #[test]
+    fn normal_matrix_preserves_tangent_orthogonality_after_nonuniform_scale() {
+        let tangent = Vec3::new(1.0, 1.0, 0.0).normalize();
+        let normal = Vec3::new(1.0, -1.0, 0.0).normalize();
+        let model = glam::Mat4::from_scale_rotation_translation(
+            Vec3::new(2.0, 0.5, 3.0),
+            Quat::from_rotation_y(0.7),
+            Vec3::new(4.0, 5.0, 6.0),
+        );
+
+        let world_tangent = model.transform_vector3(tangent).normalize();
+        let world_normal = model_normal_matrix(model)
+            .transform_vector3(normal)
+            .normalize();
+        assert!(world_tangent.dot(world_normal).abs() < 1e-5);
+
+        let old_world_normal = model.transform_vector3(normal).normalize();
+        assert!(world_tangent.dot(old_world_normal).abs() > 0.1);
+    }
+
+    #[test]
+    fn singular_normal_matrix_fallback_stays_finite() {
+        let normal = model_normal_matrix(glam::Mat4::from_scale(Vec3::new(1.0, 0.0, 2.0)));
+        assert!(normal.to_cols_array().iter().all(|value| value.is_finite()));
     }
 }
