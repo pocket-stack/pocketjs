@@ -17,7 +17,7 @@ import {
 } from "./playdate.ts";
 
 const RUNTIME = join(import.meta.dir, "..", "runtime");
-const CC65_LIB = "/opt/homebrew/share/cc65/lib/none.lib";
+const CC65_LIB = process.env.CC65_LIB ?? "/opt/homebrew/share/cc65/lib/none.lib";
 
 // The GBA BIOS validates these 156 bytes at boot on real hardware; every
 // homebrew toolchain (gbafix, devkitARM, tonc) ships the same table.
