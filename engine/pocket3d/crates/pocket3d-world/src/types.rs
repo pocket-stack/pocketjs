@@ -205,10 +205,15 @@ impl Structure {
 /// flow.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReactiveMaterial {
+    /// Sensible heat capacity of the dry body in simulation energy units per
+    /// degree Celsius. Retained liquid water contributes its own capacity.
     pub heat_capacity: f32,
     pub conductivity: f32,
     pub ignition_temperature_c: f32,
+    /// Maximum normalized fuel mass consumed per second while combustion is
+    /// active.
     pub burn_rate: f32,
+    /// Combustion energy released per normalized unit of fuel consumed.
     pub heat_output: f32,
     pub drying_rate: f32,
     /// Multiplies the ignition penalty contributed by moisture.
@@ -224,7 +229,7 @@ impl ReactiveMaterial {
             conductivity: 0.26,
             ignition_temperature_c: 235.0,
             burn_rate: 0.018,
-            heat_output: 520.0,
+            heat_output: 28_900.0,
             drying_rate: 0.055,
             moisture_resistance: 1.8,
             cook_temperature_c: 90.0,
@@ -238,7 +243,7 @@ impl ReactiveMaterial {
             conductivity: 0.42,
             ignition_temperature_c: 310.0,
             burn_rate: 0.012,
-            heat_output: 210.0,
+            heat_output: 17_500.0,
             drying_rate: 0.035,
             moisture_resistance: 2.4,
             cook_temperature_c: 72.0,
@@ -252,7 +257,7 @@ impl ReactiveMaterial {
             conductivity: 1.0,
             ignition_temperature_c: 80.0,
             burn_rate: 0.07,
-            heat_output: 880.0,
+            heat_output: 12_600.0,
             drying_rate: 0.2,
             moisture_resistance: 0.6,
             cook_temperature_c: f32::INFINITY,
@@ -264,7 +269,8 @@ impl ReactiveMaterial {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReactiveState {
     pub temperature_c: f32,
-    /// `0` is dry and `1` is saturated.
+    /// Retained liquid-water mass. `0` is dry and `1` is the saturation
+    /// capacity used by [`Interaction::Douse`]; excess water runs off.
     pub moisture: f32,
     /// Normalized remaining combustible mass.
     pub fuel: f32,
@@ -474,13 +480,37 @@ pub struct StepReport {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WorldConfig {
     pub fixed_dt: f32,
     pub gravity: Vec3,
     pub reaction_radius: f32,
     pub ambient_exchange: f32,
     pub contact_heat_exchange: f32,
-    pub douse_cooling_c: f32,
+    /// Temperature of liquid water introduced by [`Interaction::Douse`].
+    pub water_inlet_temperature_c: f32,
+    /// Sensible heat capacity per normalized unit of retained liquid water.
+    pub water_specific_heat: f32,
+    /// Latent heat removed when one normalized unit of water evaporates.
+    pub water_vaporization_heat: f32,
+    /// Temperature above which retained water can evaporate in this compact
+    /// phase model.
+    pub water_boiling_temperature_c: f32,
+    /// Fraction of combustion energy retained by the burning entity. The
+    /// remainder can be absorbed by nearby reactive entities; it is never
+    /// duplicated per neighbour.
+    pub combustion_local_heat_fraction: f32,
+    /// Extra temperature required to enter combustion.
+    pub ignition_temperature_margin_c: f32,
+    /// Temperature margin below the moisture-adjusted ignition point at which
+    /// established combustion stops.
+    pub extinction_temperature_margin_c: f32,
+    /// Maximum retained water mass at which a non-burning entity may ignite.
+    pub ignition_max_moisture: f32,
+    /// Retained water mass at which established combustion is extinguished.
+    /// This should be greater than `ignition_max_moisture` to provide
+    /// hysteresis.
+    pub extinction_min_moisture: f32,
     pub sleep_linear_speed: f32,
     pub sleep_angular_speed: f32,
     pub sleep_turns: u16,
@@ -494,7 +524,15 @@ impl Default for WorldConfig {
             reaction_radius: 3.2,
             ambient_exchange: 0.018,
             contact_heat_exchange: 0.42,
-            douse_cooling_c: 190.0,
+            water_inlet_temperature_c: 18.0,
+            water_specific_heat: 4.18,
+            water_vaporization_heat: 2_256.0,
+            water_boiling_temperature_c: 100.0,
+            combustion_local_heat_fraction: 0.35,
+            ignition_temperature_margin_c: 8.0,
+            extinction_temperature_margin_c: 18.0,
+            ignition_max_moisture: 0.55,
+            extinction_min_moisture: 0.72,
             sleep_linear_speed: 0.035,
             sleep_angular_speed: 0.04,
             sleep_turns: 45,

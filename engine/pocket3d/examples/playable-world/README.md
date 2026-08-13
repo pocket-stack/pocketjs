@@ -98,6 +98,10 @@ cargo run --locked --manifest-path engine/Cargo.toml -p playable-world -- \
 cargo run --locked --manifest-path engine/Cargo.toml -p playable-world -- \
   --headless --scenario character-water --ticks 47 --size 1440x900 \
   --screenshot /tmp/playable-world-character-water.png
+
+cargo run --locked --manifest-path engine/Cargo.toml -p playable-world -- \
+  --headless --scenario campfire-douse --ticks 390 --size 1440x900 \
+  --receipt /tmp/playable-world-campfire-douse.json
 ```
 
 `cargo test --locked --manifest-path engine/Cargo.toml -p playable-world`
@@ -106,3 +110,10 @@ skinned primitives, material separation, triangle budget, animation priority,
 camera target, foot-to-ground transform, hand socket, and water corridor. The
 `character-carry` and `character-water` runs also fail if their interaction is
 not active at the captured frame.
+
+`campfire-douse` places the explorer at close range without changing the world
+material rules, waits for the two ordinary logs to ignite, and sends one
+deterministic Q burst through the curved spray tube. Its receipt records emitted
+and delivered water and fails unless the flame plus both logs are extinguished,
+the per-tick water budget is conserved, and all three remain out for at least
+three seconds after spraying stops.

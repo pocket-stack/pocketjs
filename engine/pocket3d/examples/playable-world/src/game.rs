@@ -31,10 +31,18 @@ const CHOP_REACH: f32 = 2.55;
 const ACTION_REACH: f32 = 4.6;
 const AXE_SWING_TURNS: u16 = 18;
 const WATER_BURST_TURNS: u16 = 24;
-const WATER_JET_LENGTH: f32 = 5.2;
-const WATER_DOUSE_PER_TURN: f32 = 0.11;
-const WATER_SAMPLE_COUNT: usize = 18;
+const WATER_JET_LENGTH: f32 = 2.8;
+const WATER_NEAR_RADIUS: f32 = 0.12;
+const WATER_FAR_RADIUS: f32 = 0.42;
+const WATER_FORWARD_SPEED: f32 = 5.0;
+const WATER_LIFT_SPEED: f32 = 1.1;
+const WATER_GRAVITY: f32 = 9.81;
+const WATER_BREAKUP_LENGTH: f32 = 3.2;
+const WATER_DOUSE_BUDGET_PER_TURN: f32 = 0.22;
+const WATER_SAMPLE_COUNT: usize = 12;
+const WATER_POINT_COUNT: usize = WATER_SAMPLE_COUNT + 1;
 const WATER_NOZZLE_HEIGHT: f32 = 0.92;
+const CAMPFIRE_DOUSE_STABILITY_TURNS: u64 = 180;
 const HELD_APPLE_SOCKET_OFFSET: Vec3 = Vec3::new(0.0, 0.12, 0.0);
 const HELD_APPLE_ATTACHMENT_OFFSET: Vec3 = Vec3::new(0.37, 0.05, -0.22);
 const CAMERA_FOCUS_HEIGHT: f32 = 1.15;
@@ -172,6 +180,29 @@ struct WaterJet {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+struct WaterJetSample {
+    center: Vec3,
+    distance: f32,
+    radius: f32,
+    retention: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WaterContact {
+    distance: f32,
+    coverage: f32,
+    retention: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WaterDose {
+    target: EntityId,
+    amount: f32,
+    distance: f32,
+    coverage: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct WaterHudState {
     spraying: bool,
     progress: f32,
@@ -199,45 +230,119 @@ fn water_jet(player: Transform) -> WaterJet {
         origin,
         direction,
         length: WATER_JET_LENGTH,
-        near_radius: 0.16,
-        far_radius: 0.72,
+        near_radius: WATER_NEAR_RADIUS,
+        far_radius: WATER_FAR_RADIUS,
     }
 }
 
-/// Deterministic points for the visible ribbon and droplets. The stream has a
-/// slight ballistic fall and stable turn-indexed curl; it never samples wall
-/// time or random state.
-fn water_jet_sample_points(jet: WaterJet, burst_age: u16) -> [Vec3; WATER_SAMPLE_COUNT] {
-    let right = jet.direction.cross(Vec3::Y).normalize_or(Vec3::X);
-    let up = right.cross(jet.direction).normalize_or(Vec3::Y);
+/// Deterministic centerline and cross-section samples shared by rendering and
+/// hit testing. Distance, rather than sample index, drives the ballistic arc
+/// and breakup loss so changing visual density cannot change gameplay.
+fn water_jet_samples(jet: WaterJet) -> [WaterJetSample; WATER_POINT_COUNT] {
     std::array::from_fn(|index| {
-        let t = (index + 1) as f32 / WATER_SAMPLE_COUNT as f32;
-        let phase = burst_age as f32 * 0.61 + index as f32 * 1.73;
-        let spread = 0.018 + t * 0.075;
-        // Lift the stream slightly after it leaves the waist nozzle, then let
-        // it arc back down near the end of its reach.
-        jet.origin
-            + jet.direction * (jet.length * t)
-            + Vec3::Y * (0.78 * t - 0.56 * t * t)
-            + right * phase.sin() * spread
-            + up * phase.cos() * spread * 0.42
+        let fraction = index as f32 / WATER_SAMPLE_COUNT as f32;
+        let distance = jet.length * fraction;
+        let flight_time = distance / WATER_FORWARD_SPEED;
+        let lift = WATER_LIFT_SPEED * flight_time - 0.5 * WATER_GRAVITY * flight_time * flight_time;
+        WaterJetSample {
+            center: jet.origin + jet.direction * distance + Vec3::Y * lift,
+            distance,
+            radius: jet.near_radius + (jet.far_radius - jet.near_radius) * fraction,
+            retention: (-distance / WATER_BREAKUP_LENGTH).exp(),
+        }
     })
 }
 
-/// Pure cone/corridor test between a finite water-jet segment and a collider's
-/// oriented capsule segment. Spheres are represented by a zero-length segment.
-fn water_jet_hits_target(jet: WaterJet, transform: Transform, collider: Option<Collider>) -> bool {
+/// Return the strongest overlap between the sampled curved jet and a target's
+/// oriented capsule. Spheres are represented by a zero-length segment.
+fn water_jet_contact(
+    jet: WaterJet,
+    transform: Transform,
+    collider: Option<Collider>,
+) -> Option<WaterContact> {
     let collider = collider.unwrap_or(Collider::Sphere { radius: 0.20 });
     let axis = transform.rotation * Vec3::Y;
     let half_height = collider.half_height() * transform.scale.y.abs();
     let target_radius = collider.radius() * transform.scale.abs().max_element().max(f32::EPSILON);
     let target_a = transform.position - axis * half_height;
     let target_b = transform.position + axis * half_height;
-    let jet_b = jet.origin + jet.direction * jet.length;
-    let (jet_fraction, distance_squared) =
-        segment_distance_from_first(jet.origin, jet_b, target_a, target_b);
-    let spray_radius = jet.near_radius + (jet.far_radius - jet.near_radius) * jet_fraction;
-    distance_squared <= (spray_radius + target_radius).powi(2)
+
+    // The tube has a rounded outlet, but it cannot reach an object whose whole
+    // capsule lies behind the actor-facing nozzle plane.
+    let target_forward = (target_a - jet.origin)
+        .dot(jet.direction)
+        .max((target_b - jet.origin).dot(jet.direction));
+    if target_forward <= 0.0 {
+        return None;
+    }
+
+    let samples = water_jet_samples(jet);
+    samples
+        .windows(2)
+        .filter_map(|segment| {
+            let (fraction, distance_squared) = segment_distance_from_first(
+                segment[0].center,
+                segment[1].center,
+                target_a,
+                target_b,
+            );
+            let spray_radius =
+                segment[0].radius + (segment[1].radius - segment[0].radius) * fraction;
+            let reach = spray_radius + target_radius;
+            if distance_squared > reach * reach {
+                return None;
+            }
+            let radial_fraction = distance_squared.sqrt() / reach.max(f32::EPSILON);
+            let coverage = (1.0 - radial_fraction * radial_fraction).clamp(0.0, 1.0);
+            let distance =
+                segment[0].distance + (segment[1].distance - segment[0].distance) * fraction;
+            let retention =
+                segment[0].retention + (segment[1].retention - segment[0].retention) * fraction;
+            Some(WaterContact {
+                distance,
+                coverage,
+                retention,
+            })
+        })
+        .max_by(|a, b| (a.coverage * a.retention).total_cmp(&(b.coverage * b.retention)))
+}
+
+fn allocate_water_doses(
+    contacts: impl IntoIterator<Item = (EntityId, WaterContact)>,
+    budget: f32,
+) -> Vec<WaterDose> {
+    let contacts: Vec<_> = contacts
+        .into_iter()
+        .filter_map(|(target, contact)| {
+            let weight = contact.coverage * contact.retention;
+            (weight.is_finite() && weight > 0.0).then_some((target, contact, weight))
+        })
+        .collect();
+    let total_weight: f32 = contacts.iter().map(|(_, _, weight)| weight).sum();
+    let scale = budget.max(0.0) / total_weight.max(1.0);
+    contacts
+        .into_iter()
+        .map(|(target, contact, weight)| WaterDose {
+            target,
+            amount: weight * scale,
+            distance: contact.distance,
+            coverage: contact.coverage,
+        })
+        .collect()
+}
+
+fn water_curtain_point(
+    sample: WaterJetSample,
+    right: Vec3,
+    up: Vec3,
+    side: f32,
+    sample_index: usize,
+    burst_age: u16,
+) -> Vec3 {
+    let phase = burst_age as f32 * 0.53 + sample_index as f32 * 1.37;
+    let lateral = sample.radius * (0.66 + phase.sin() * 0.12);
+    let vertical = sample.radius * phase.cos() * 0.10;
+    sample.center + right * side.signum() * lateral + up * vertical
 }
 
 /// Return the normalized position on the first segment and the squared
@@ -503,6 +608,10 @@ struct RuntimeReceipts {
     cooked: BTreeSet<EntityId>,
     charred: BTreeSet<EntityId>,
     peak_temperature: BTreeMap<EntityId, f32>,
+    last_ignited_tick: BTreeMap<EntityId, u64>,
+    water_emitted: f32,
+    water_delivered: BTreeMap<EntityId, f32>,
+    last_water_tick: Option<u64>,
     contact_count: u64,
     landmarks: Vec<TimedEvent>,
 }
@@ -527,6 +636,7 @@ impl RuntimeReceipts {
                 }
                 WorldEvent::Ignited { entity } => {
                     self.ignited.insert(*entity);
+                    self.last_ignited_tick.insert(*entity, report.tick);
                     self.push_landmark(report.tick, event.clone());
                 }
                 WorldEvent::Extinguished { entity } => {
@@ -557,6 +667,14 @@ impl RuntimeReceipts {
     fn push_landmark(&mut self, tick: u64, event: WorldEvent) {
         if self.landmarks.len() < 128 {
             self.landmarks.push(TimedEvent { tick, event });
+        }
+    }
+
+    fn observe_water(&mut self, tick: u64, budget: f32, doses: &[WaterDose]) {
+        self.water_emitted += budget.max(0.0);
+        self.last_water_tick = Some(tick);
+        for dose in doses {
+            *self.water_delivered.entry(dose.target).or_default() += dose.amount;
         }
     }
 }
@@ -598,6 +716,32 @@ pub struct AcceptanceReceipt {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct WaterDoseReceipt {
+    pub entity: u64,
+    pub amount: f32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CampfireDouseReceipt {
+    pub entities: Vec<u64>,
+    pub all_extinguished: bool,
+    pub all_not_burning: bool,
+    pub reignited_after_spray: Vec<u64>,
+    pub post_spray_turns: u64,
+    pub required_stability_turns: u64,
+    pub passed: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WaterReceipt {
+    pub emitted: f32,
+    pub delivered: f32,
+    pub delivered_by_entity: Vec<WaterDoseReceipt>,
+    pub last_spray_tick: Option<u64>,
+    pub campfire_douse: CampfireDouseReceipt,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct WorldReceipt {
     pub schema: &'static str,
     pub scenario: String,
@@ -611,6 +755,7 @@ pub struct WorldReceipt {
     pub extinguished_entities: Vec<u64>,
     pub cooked_entities: Vec<u64>,
     pub charred_entities: Vec<u64>,
+    pub water: WaterReceipt,
     pub acceptance: AcceptanceReceipt,
     pub landmarks: Vec<TimedEvent>,
     pub entities: Vec<EntityReceipt>,
@@ -697,6 +842,7 @@ impl WorldGame {
 
     pub fn runtime_receipt(&self, scenario: impl Into<String>) -> WorldReceipt {
         let acceptance = self.acceptance();
+        let water = self.water_receipt();
         let entities = self
             .world
             .entities()
@@ -731,6 +877,7 @@ impl WorldGame {
             extinguished_entities: ids(&self.receipts.extinguished),
             cooked_entities: ids(&self.receipts.cooked),
             charred_entities: ids(&self.receipts.charred),
+            water,
             acceptance,
             landmarks: self.receipts.landmarks.clone(),
             entities,
@@ -749,6 +896,111 @@ impl WorldGame {
 
     pub fn water_burst_active(&self) -> bool {
         self.water_burst_turns > 0
+    }
+
+    pub fn prepare_campfire_douse_scenario(&mut self) {
+        let Some(fire_position) = self
+            .world
+            .entity(self.ids.fire)
+            .map(|fire| fire.transform.position)
+        else {
+            return;
+        };
+        let player_xz = Vec2::new(fire_position.x, fire_position.z + 2.30);
+        if let Some(player) = self.world.entity_mut(self.ids.player) {
+            player.transform.position =
+                player_capsule_center(player_xz, OrchardEnvironment::height_at(player_xz));
+            player.transform.rotation = Quat::IDENTITY;
+            if let Some(body) = player.body.as_mut() {
+                body.linear_velocity = Vec3::ZERO;
+                body.angular_velocity = Vec3::ZERO;
+            }
+        }
+        self.orbit_yaw = 0.72;
+        self.orbit_pitch = -0.16;
+        self.message = "Let the logs catch, then soak the whole campfire".into();
+        self.message_turns = 120;
+    }
+
+    fn water_receipt(&self) -> WaterReceipt {
+        let delivered_by_entity: Vec<_> = self
+            .receipts
+            .water_delivered
+            .iter()
+            .map(|(&entity, &amount)| WaterDoseReceipt {
+                entity: entity.0,
+                amount,
+            })
+            .collect();
+        let delivered = delivered_by_entity
+            .iter()
+            .map(|dose| dose.amount)
+            .sum::<f32>()
+            .max(0.0)
+            .min(self.receipts.water_emitted.max(0.0));
+        WaterReceipt {
+            emitted: self.receipts.water_emitted,
+            delivered,
+            delivered_by_entity,
+            last_spray_tick: self.receipts.last_water_tick,
+            campfire_douse: self.campfire_douse_receipt(),
+        }
+    }
+
+    fn campfire_douse_receipt(&self) -> CampfireDouseReceipt {
+        let entities: Vec<_> = std::iter::once(self.ids.fire)
+            .chain(self.ids.camp_logs.iter().copied())
+            .collect();
+        let last_spray_tick = self.receipts.last_water_tick;
+        // With the world chemistry contract, a cooled/saturated non-burning
+        // entity has no active combustion left. Requiring a legacy transition
+        // event would exclude logs that were in their ignition hysteresis band
+        // when the burst began but were quenched before a burning frame.
+        let all_extinguished = entities.iter().all(|entity| {
+            self.receipts.water_delivered.contains_key(entity)
+                && self.world.entity(*entity).is_some_and(|entity| {
+                    entity
+                        .reactive_state
+                        .is_some_and(|state| !state.burning && state.moisture > 0.0)
+                })
+        });
+        let all_not_burning = entities.iter().all(|entity| {
+            self.world
+                .entity(*entity)
+                .and_then(|entity| entity.reactive_state)
+                .is_some_and(|state| !state.burning)
+        });
+        let reignited_after_spray: Vec<_> = entities
+            .iter()
+            .filter(|entity| {
+                last_spray_tick.is_some_and(|last_spray| {
+                    self.receipts
+                        .last_ignited_tick
+                        .get(entity)
+                        .is_some_and(|last_ignited| *last_ignited > last_spray)
+                })
+            })
+            .map(|entity| entity.0)
+            .collect();
+        let post_spray_turns = last_spray_tick
+            .map(|last_spray| self.world.tick().saturating_sub(last_spray))
+            .unwrap_or(0);
+        let passed = all_extinguished
+            && all_not_burning
+            && reignited_after_spray.is_empty()
+            && self.receipts.water_emitted > 0.0
+            && self.receipts.water_delivered.values().copied().sum::<f32>()
+                <= self.receipts.water_emitted + 1e-5
+            && post_spray_turns >= CAMPFIRE_DOUSE_STABILITY_TURNS;
+        CampfireDouseReceipt {
+            entities: entities.into_iter().map(|entity| entity.0).collect(),
+            all_extinguished,
+            all_not_burning,
+            reignited_after_spray,
+            post_spray_turns,
+            required_stability_turns: CAMPFIRE_DOUSE_STABILITY_TURNS,
+            passed,
+        }
     }
 
     pub fn acceptance(&self) -> AcceptanceReceipt {
@@ -982,32 +1234,38 @@ impl WorldGame {
         Some(water_jet(player.transform))
     }
 
-    fn water_targets(&self, jet: WaterJet) -> Vec<EntityId> {
+    fn water_contacts(&self, jet: WaterJet) -> Vec<(EntityId, WaterContact)> {
         self.world
             .entities()
-            .filter(|(_, entity)| {
-                !entity.has_tag("player")
+            .filter_map(|(&id, entity)| {
+                (!entity.has_tag("player")
                     && entity.reactive_material.is_some()
-                    && entity.reactive_state.is_some()
-                    && water_jet_hits_target(jet, entity.transform, entity.collider)
+                    && entity.reactive_state.is_some())
+                .then(|| water_jet_contact(jet, entity.transform, entity.collider))
+                .flatten()
+                .map(|contact| (id, contact))
             })
-            .map(|(&id, _)| id)
             .collect()
     }
 
-    fn queue_water_douse(&mut self) -> Vec<EntityId> {
+    fn queue_water_douse(&mut self) -> Vec<WaterDose> {
         let Some(jet) = self.current_water_jet() else {
             return Vec::new();
         };
-        let targets = self.water_targets(jet);
-        for &target in &targets {
+        let doses = allocate_water_doses(self.water_contacts(jet), WATER_DOUSE_BUDGET_PER_TURN);
+        for dose in &doses {
             self.world.queue_interaction(Interaction::Douse {
-                target,
-                amount: WATER_DOUSE_PER_TURN,
+                target: dose.target,
+                amount: dose.amount,
             });
         }
-        self.last_target = targets.first().copied().or(self.last_target);
-        targets
+        self.receipts.observe_water(
+            self.world.tick().saturating_add(1),
+            WATER_DOUSE_BUDGET_PER_TURN,
+            &doses,
+        );
+        self.last_target = doses.first().map(|dose| dose.target).or(self.last_target);
+        doses
     }
 
     fn nearest_reactive(
@@ -1408,51 +1666,43 @@ impl WorldGame {
             return;
         };
         let burst_age = WATER_BURST_TURNS.saturating_sub(self.water_burst_turns);
-        let points = water_jet_sample_points(jet, burst_age);
+        let samples = water_jet_samples(jet);
         let right = jet.direction.cross(Vec3::Y).normalize_or(Vec3::X);
-        self.scene.beams.push(Beam {
-            a: jet.origin,
-            b: points[2],
-            width: 0.12,
-            color: [0.50, 0.94, 1.0, 0.96],
-        });
-        let mut previous = jet.origin;
-        for (index, point) in points.into_iter().enumerate() {
-            let fade = 1.0 - index as f32 / WATER_SAMPLE_COUNT as f32 * 0.48;
+        let up = right.cross(jet.direction).normalize_or(Vec3::Y);
+        for segment in samples.windows(2) {
+            let sample = segment[1];
+            let fade = 0.34 + sample.retention * 0.66;
             self.scene.beams.push(Beam {
-                a: previous,
-                b: point,
-                width: 0.095 - index as f32 / WATER_SAMPLE_COUNT as f32 * 0.035,
+                a: segment[0].center,
+                b: sample.center,
+                width: 0.10 - sample.distance / jet.length * 0.035,
                 color: [0.12, 0.68, 1.0, 0.94 * fade],
             });
             self.scene.sprites.push(Sprite {
-                pos: point,
-                size: 0.14 + index as f32 * 0.0045,
+                pos: sample.center,
+                size: 0.13 + sample.radius * 0.10,
                 color: [0.30, 0.84, 1.0, 0.86 * fade],
             });
-            previous = point;
         }
-        // Two diverging curtains share the exact same waist nozzle and stay
-        // inside the gameplay cone. This keeps the spray visible from a rear
-        // camera even when the central ribbon sits behind the explorer.
+        // Two deterministic curtains stay within the same sampled
+        // cross-sections used by hit testing. They make the short burst read
+        // from a rear camera without inventing a second gameplay trajectory.
         for side in [-1.0_f32, 1.0] {
             let mut previous = jet.origin;
-            for (index, center) in points.into_iter().enumerate() {
-                let t = (index + 1) as f32 / WATER_SAMPLE_COUNT as f32;
-                let flutter = (burst_age as f32 * 0.53 + index as f32 * 1.37).sin() * 0.055 * t;
-                let point =
-                    center + right * side * (jet.far_radius * 0.84 * t.powf(1.18) + flutter);
-                let fade = 1.0 - t * 0.58;
+            for (index, sample) in samples.iter().copied().enumerate().skip(1) {
+                let fraction = sample.distance / jet.length;
+                let point = water_curtain_point(sample, right, up, side, index, burst_age);
+                let fade = (0.34 + sample.retention * 0.66) * (1.0 - fraction * 0.18);
                 self.scene.beams.push(Beam {
                     a: previous,
                     b: point,
-                    width: 0.060 - t * 0.022,
+                    width: 0.058 - fraction * 0.018,
                     color: [0.16, 0.72, 1.0, 0.78 * fade],
                 });
-                if index % 2 == 0 {
+                if index % 2 == 1 {
                     self.scene.sprites.push(Sprite {
                         pos: point,
-                        size: 0.11 + t * 0.075,
+                        size: 0.10 + sample.radius * 0.16,
                         color: [0.42, 0.88, 1.0, 0.75 * fade],
                     });
                 }
@@ -2150,6 +2400,13 @@ pub fn apply_carry_script(input: &mut Input, turn: u64) {
     }
 }
 
+pub fn apply_campfire_douse_script(input: &mut Input, turn: u64) {
+    input.inject_key(KeyCode::KeyQ, turn == 120);
+    if turn == 121 {
+        input.inject_key(KeyCode::KeyQ, false);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::f32::consts::PI;
@@ -2381,38 +2638,55 @@ mod tests {
         );
 
         let jet = water_jet(player);
-        let first = water_jet_sample_points(jet, 7);
-        let second = water_jet_sample_points(jet, 7);
+        let first = water_jet_samples(jet);
+        let second = water_jet_samples(jet);
         assert_eq!(first, second);
-        assert!(first.iter().all(|point| point.is_finite()));
+        assert!(first.iter().all(|sample| sample.center.is_finite()));
+        assert_eq!(first[0].center, origin);
+        assert!((first[WATER_SAMPLE_COUNT].distance - WATER_JET_LENGTH).abs() < 1e-6);
+        assert!(first[1].center.y > origin.y, "the short stream first rises");
         assert!(
-            (first[WATER_SAMPLE_COUNT - 1] - origin).dot(direction)
-                > (first[0] - origin).dot(direction)
+            first[WATER_SAMPLE_COUNT].center.y < origin.y,
+            "the shared ballistic centerline lands below its outlet"
         );
+        assert!(
+            first
+                .windows(2)
+                .all(|pair| pair[0].distance < pair[1].distance)
+        );
+        assert!(first.windows(2).all(|pair| pair[0].radius < pair[1].radius));
+        assert!(
+            first
+                .windows(2)
+                .all(|pair| pair[0].retention > pair[1].retention)
+        );
+
+        let right = jet.direction.cross(Vec3::Y).normalize_or(Vec3::X);
+        let up = right.cross(jet.direction).normalize_or(Vec3::Y);
+        for side in [-1.0, 1.0] {
+            for (index, sample) in first.iter().copied().enumerate().skip(1) {
+                let point = water_curtain_point(sample, right, up, side, index, 7);
+                assert!(
+                    point.distance(sample.center) <= sample.radius + 1e-5,
+                    "visible curtains must stay inside the gameplay cross-section"
+                );
+            }
+        }
     }
 
     #[test]
-    fn water_corridor_hits_front_capsules_but_not_back_or_wide_targets() {
+    fn curved_water_tube_hits_near_and_far_but_not_side_or_back_targets() {
         let jet = water_jet(Transform::from_translation(Vec3::Y * PLAYER_HEIGHT));
-        let capsule = Some(Collider::CapsuleY {
-            radius: 0.35,
-            half_height: 1.4,
-        });
-        assert!(water_jet_hits_target(
-            jet,
-            Transform::from_translation(Vec3::new(0.0, 1.5, -3.0)),
-            capsule,
-        ));
-        assert!(!water_jet_hits_target(
-            jet,
-            Transform::from_translation(Vec3::new(0.0, 1.5, 1.0)),
-            capsule,
-        ));
-        assert!(!water_jet_hits_target(
-            jet,
-            Transform::from_translation(Vec3::new(2.4, 1.5, -3.0)),
-            capsule,
-        ));
+        let samples = water_jet_samples(jet);
+        let sphere = Some(Collider::Sphere { radius: 0.18 });
+        let near = Transform::from_translation(samples[5].center);
+        let far = Transform::from_translation(samples[10].center);
+        let side = Transform::from_translation(samples[8].center + Vec3::X * 1.1);
+        let back = Transform::from_translation(jet.origin - jet.direction * 0.15);
+        assert!(water_jet_contact(jet, near, sphere).is_some());
+        assert!(water_jet_contact(jet, far, sphere).is_some());
+        assert!(water_jet_contact(jet, side, sphere).is_none());
+        assert!(water_jet_contact(jet, back, sphere).is_none());
     }
 
     #[test]
@@ -2437,39 +2711,87 @@ mod tests {
     }
 
     #[test]
-    fn one_water_burst_douses_every_reactive_target_in_the_corridor() {
+    fn water_budget_is_conserved_and_near_centered_targets_receive_more() {
         let mut game = WorldGame::new(7);
         let jet = game.current_water_jet().unwrap();
-        let mut spawn_target = |distance: f32, lateral: f32| {
-            let mut target = EntityBundle::new(Transform::from_translation(
-                jet.origin + jet.direction * distance + Vec3::X * lateral,
-            ))
-            .named("water test target")
-            .tagged("water-test");
+        let samples = water_jet_samples(jet);
+        let mut spawn_target = |position: Vec3| {
+            let mut target = EntityBundle::new(Transform::from_translation(position))
+                .named("water test target")
+                .tagged("water-test");
             target.body = Some(Body::static_body());
             target.collider = Some(Collider::Sphere { radius: 0.18 });
             target.reactive_material = Some(ReactiveMaterial::wood());
             target.reactive_state = Some(ReactiveState::new(24.0, 0.0, 1.0));
             game.world.spawn(target)
         };
-        let near = spawn_target(1.5, 0.05);
-        let far = spawn_target(3.8, -0.24);
+        let near = spawn_target(samples[5].center);
+        let far = spawn_target(samples[10].center);
+        let outside = spawn_target(samples[8].center + Vec3::X * 1.1);
+        let behind = spawn_target(jet.origin - jet.direction * 0.2);
 
         game.begin_water_burst();
-        let targets = game.queue_water_douse();
-        assert!(targets.contains(&near));
-        assert!(targets.contains(&far));
+        let doses = game.queue_water_douse();
+        let amount = |id| {
+            doses
+                .iter()
+                .find(|dose| dose.target == id)
+                .map(|dose| dose.amount)
+                .unwrap_or(0.0)
+        };
+        assert!(amount(near) > amount(far));
+        assert!(amount(far) > 0.0);
+        assert_eq!(amount(outside), 0.0);
+        assert_eq!(amount(behind), 0.0);
+        assert!(
+            doses.iter().map(|dose| dose.amount).sum::<f32>() <= WATER_DOUSE_BUDGET_PER_TURN + 1e-6
+        );
+        assert!(doses.iter().all(|dose| dose.coverage > 0.0));
+        assert!(
+            doses
+                .iter()
+                .find(|dose| dose.target == near)
+                .unwrap()
+                .distance
+                < doses
+                    .iter()
+                    .find(|dose| dose.target == far)
+                    .unwrap()
+                    .distance
+        );
         game.world.step(&game.environment);
-        for id in [near, far] {
-            let moisture = game
-                .world
+        let moisture = |id| {
+            game.world
                 .entity(id)
                 .unwrap()
                 .reactive_state
                 .unwrap()
-                .moisture;
-            assert!(moisture >= WATER_DOUSE_PER_TURN);
+                .moisture
+        };
+        assert!(moisture(near) > moisture(far));
+        assert!(moisture(outside) < 1e-5);
+        assert!(moisture(behind) < 1e-5);
+    }
+
+    #[test]
+    fn scripted_campfire_douse_extinguishes_all_three_and_stays_out() {
+        let mut game = WorldGame::new(7);
+        game.prepare_campfire_douse_scenario();
+        let mut input = Input::default();
+        for turn in 0..390 {
+            apply_campfire_douse_script(&mut input, turn);
+            game.frame(1.0 / 60.0, &input);
+            game.tick(1.0 / 60.0, &input);
+            input.end_frame();
         }
+        let receipt = game.water_receipt();
+        assert!(receipt.delivered <= receipt.emitted + 1e-5);
+        assert_eq!(receipt.campfire_douse.entities.len(), 3);
+        assert!(
+            receipt.campfire_douse.passed,
+            "{:#?}",
+            receipt.campfire_douse
+        );
     }
 
     #[test]

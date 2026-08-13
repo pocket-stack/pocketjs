@@ -32,6 +32,19 @@ A wet apple can have the same bounce as a dry apple while requiring more heat
 to ignite. A stone can conduct heat without holding fuel. The renderer reads
 the resulting state but does not decide whether an object burns or breaks.
 
+**Heat and retained water use one energy budget.** `Douse` adds normalized
+liquid-water mass at `WorldConfig::water_inlet_temperature_c`; the dry
+material's `heat_capacity` and the water contribution from
+`water_specific_heat` determine the energy-conserving mixed temperature.
+Evaporation begins above `water_boiling_temperature_c` and removes both the
+water's sensible heat and `water_vaporization_heat` for each unit evaporated,
+so evaporation cannot exceed the available thermal energy. A material's
+`heat_output` is combustion energy per unit of fuel: each turn releases only
+`fuel_consumed * heat_output`, retains
+`combustion_local_heat_fraction` in the source, and distributes at most the
+remaining budget among nearby receivers. Adding receivers divides that budget;
+it does not duplicate heat.
+
 ## Fixed update
 
 One simulation turn uses this order:
@@ -53,6 +66,13 @@ Physics callbacks do not directly run game behavior. They produce contact
 records containing both IDs, position, normal, impulse, and both physical
 surfaces. Structure and reaction rules consume these records in their assigned
 phase. This prevents a contact insertion order from changing the result.
+
+**Gameplay fixes must preserve the shared simulation rules.** Collision,
+integration, attachment, structure, and reaction solvers must not branch on an
+entity ID, tag, recipe, or scenario. Change the shared rule, state the invariant
+that the change preserves, and test that invariant across at least two entity
+configurations, material combinations, or collider combinations. A scenario
+regression test is additional coverage, not the proof of the shared rule.
 
 ## Orchard composition
 

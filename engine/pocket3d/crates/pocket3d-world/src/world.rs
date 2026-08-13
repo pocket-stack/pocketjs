@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
@@ -194,7 +194,7 @@ impl World {
         let mut events = Vec::new();
         let mut fracture_causes: BTreeMap<EntityId, (Vec3, f32)> = BTreeMap::new();
 
-        self.consume_interactions(&mut events, &mut fracture_causes);
+        self.consume_interactions(&mut fracture_causes);
         self.sync_attachments();
         self.step_reactions(environment, &mut events);
         self.integrate_bodies();
@@ -218,11 +218,8 @@ impl World {
         }
     }
 
-    fn consume_interactions(
-        &mut self,
-        events: &mut Vec<WorldEvent>,
-        fractures: &mut BTreeMap<EntityId, (Vec3, f32)>,
-    ) {
+    fn consume_interactions(&mut self, fractures: &mut BTreeMap<EntityId, (Vec3, f32)>) {
+        let config = self.config;
         for interaction in std::mem::take(&mut self.interactions) {
             match interaction {
                 Interaction::Cut {
@@ -276,31 +273,29 @@ impl World {
                     if let (Some(material), Some(state)) =
                         (entity.reactive_material, entity.reactive_state.as_mut())
                     {
-                        state.temperature_c +=
-                            finite_non_negative(energy) / material.heat_capacity.max(0.05);
+                        add_sensible_heat(state, material, config, finite_non_negative(energy));
                     }
                 }
                 Interaction::Douse { target, amount } => {
                     let Some(entity) = self.entities.get_mut(&target) else {
                         continue;
                     };
-                    let Some(state) = entity.reactive_state.as_mut() else {
+                    let (Some(material), Some(state)) =
+                        (entity.reactive_material, entity.reactive_state.as_mut())
+                    else {
                         continue;
                     };
                     let amount = finite_non_negative(amount);
                     if amount <= 0.0 {
                         continue;
                     }
-                    state.moisture = (state.moisture + amount).clamp(0.0, 1.0);
-                    state.temperature_c =
-                        (state.temperature_c - amount * self.config.douse_cooling_c).max(-50.0);
-                    let below_ignition = entity.reactive_material.is_some_and(|material| {
-                        state.temperature_c < material.ignition_temperature_c
-                    });
-                    if state.burning && (state.moisture >= 0.82 || below_ignition) {
-                        state.burning = false;
-                        events.push(WorldEvent::Extinguished { entity: target });
-                    }
+                    mix_liquid_water(
+                        state,
+                        material,
+                        config,
+                        amount,
+                        config.water_inlet_temperature_c,
+                    );
                 }
             }
         }
@@ -350,6 +345,7 @@ impl World {
         events: &mut Vec<WorldEvent>,
     ) {
         let dt = self.config.fixed_dt;
+        let config = self.config;
         let ids: Vec<_> = self
             .entities
             .iter()
@@ -358,153 +354,192 @@ impl World {
             })
             .map(|(&id, _)| id)
             .collect();
+        let previous_burning: BTreeMap<_, _> = ids
+            .iter()
+            .map(|&id| {
+                (
+                    id,
+                    self.entities[&id].reactive_state.expect("filtered").burning,
+                )
+            })
+            .collect();
 
-        // Ambient exchange and evaporation are local, so apply them first in
-        // stable ID order.
+        // Ambient exchange is an external energy flux. Cool bodies can also
+        // absorb a small amount of ambient water; it enters at ambient
+        // temperature and therefore follows the same sensible-heat mixing law
+        // as explicit dousing.
         for &id in &ids {
             let position = self.entities[&id].transform.position;
             let sample = environment.sample(position);
             let entity = self.entities.get_mut(&id).expect("id came from map");
             let material = entity.reactive_material.expect("filtered");
             let state = entity.reactive_state.as_mut().expect("filtered");
-            let exchange = self.config.ambient_exchange * dt / material.heat_capacity.max(0.05);
-            state.temperature_c +=
+            let capacity = thermal_capacity(material, *state, config);
+            let exchange = finite_non_negative(config.ambient_exchange) * dt / capacity;
+            let temperature_delta =
                 (sample.ambient_temperature_c - state.temperature_c) * exchange.clamp(0.0, 1.0);
-            if state.temperature_c > 55.0 {
-                let heat = ((state.temperature_c - 55.0) / 120.0).clamp(0.0, 4.0);
-                state.moisture =
-                    (state.moisture - material.drying_rate * heat * dt).clamp(0.0, 1.0);
-            } else {
-                state.moisture = (state.moisture
-                    + sample.ambient_moisture.clamp(0.0, 1.0) * 0.002 * dt)
-                    .clamp(0.0, 1.0);
+            add_sensible_heat(state, material, config, temperature_delta * capacity);
+            if state.temperature_c <= 55.0 {
+                let absorbed = sample.ambient_moisture.clamp(0.0, 1.0) * 0.002 * dt;
+                mix_liquid_water(
+                    state,
+                    material,
+                    config,
+                    absorbed,
+                    sample.ambient_temperature_c,
+                );
             }
         }
 
-        // Read an immutable snapshot to make pair order irrelevant. Heat
-        // deltas accumulate before any target temperature changes.
-        let snapshots: Vec<_> = ids
-            .iter()
-            .map(|&id| {
-                let entity = &self.entities[&id];
-                let (shape_a, shape_b, radius) = reaction_shape(entity);
-                (
-                    id,
-                    entity.transform.position,
-                    shape_a,
-                    shape_b,
-                    radius,
-                    entity.reactive_material.expect("filtered"),
-                    entity.reactive_state.expect("filtered"),
-                )
-            })
-            .collect();
-        let mut heat_delta: BTreeMap<EntityId, f32> = BTreeMap::new();
+        // Close objects exchange energy in both directions, independently of
+        // burning. Pair transfer is capped at the shared equilibrium
+        // temperature, so a large fixed step cannot create energy by crossing
+        // the two temperatures.
+        let snapshots = reaction_snapshots(&self.entities, &ids, config);
+        let mut sensible_energy_delta: BTreeMap<EntityId, f32> = BTreeMap::new();
+        for i in 0..snapshots.len() {
+            for j in i + 1..snapshots.len() {
+                let a = snapshots[i];
+                let b = snapshots[j];
+                let (point_a, point_b) =
+                    closest_segment_points(a.shape_a, a.shape_b, b.shape_a, b.shape_b);
+                let reach = a.radius + b.radius + 0.35;
+                if point_a.distance_squared(point_b) > reach * reach {
+                    continue;
+                }
+                let conductivity = (a.material.conductivity + b.material.conductivity) * 0.5;
+                let requested = (a.state.temperature_c - b.state.temperature_c)
+                    * conductivity
+                    * finite_non_negative(config.contact_heat_exchange)
+                    * dt;
+                let equilibrium_limit = (a.state.temperature_c - b.state.temperature_c).abs()
+                    / (a.capacity.recip() + b.capacity.recip());
+                let transfer = requested.clamp(-equilibrium_limit, equilibrium_limit);
+                *sensible_energy_delta.entry(a.id).or_default() -= transfer;
+                *sensible_energy_delta.entry(b.id).or_default() += transfer;
+            }
+        }
+        apply_sensible_energy_deltas(&mut self.entities, sensible_energy_delta, config);
 
-        for &(
-            source_id,
-            _source_pos,
-            source_a,
-            source_b,
-            source_radius,
-            source_material,
-            source_state,
-        ) in &snapshots
-        {
-            if !source_state.burning || source_state.fuel <= 0.0 {
+        // Determine which entities actually combust during this interval from
+        // their post-interaction, post-conduction state. Fuel is the sole
+        // source of combustion energy: no fuel consumed means no heat emitted.
+        let snapshots = reaction_snapshots(&self.entities, &ids, config);
+        let local_fraction = clamp_unit(config.combustion_local_heat_fraction);
+        let mut combustion_energy_delta: BTreeMap<EntityId, f32> = BTreeMap::new();
+        let mut combustion_sources = Vec::new();
+        for source in &snapshots {
+            let was_burning = previous_burning[&source.id];
+            if !combustion_is_active(source.material, source.state, was_burning, config) {
                 continue;
             }
-            for &(target_id, target_pos, target_a, target_b, target_radius, target_material, _) in
-                &snapshots
-            {
-                if target_id == source_id {
+            let fuel_consumed = (finite_non_negative(source.material.burn_rate)
+                * combustion_rate_factor(source.material, source.state, config)
+                * dt)
+                .min(finite_non_negative(source.state.fuel));
+            if fuel_consumed <= 0.0 {
+                continue;
+            }
+            let released = fuel_consumed * finite_non_negative(source.material.heat_output);
+            *combustion_energy_delta.entry(source.id).or_default() += released * local_fraction;
+            combustion_sources.push((*source, fuel_consumed, released * (1.0 - local_fraction)));
+        }
+
+        for &(source, _, transferable_energy) in &combustion_sources {
+            if transferable_energy <= 0.0 {
+                continue;
+            }
+            let mut receivers = Vec::new();
+            let mut total_weight = 0.0;
+            for target in &snapshots {
+                if target.id == source.id {
                     continue;
                 }
-                let (source_point, target_point) =
-                    closest_segment_points(source_a, source_b, target_a, target_b);
+                let (source_point, target_point) = closest_segment_points(
+                    source.shape_a,
+                    source.shape_b,
+                    target.shape_a,
+                    target.shape_b,
+                );
                 let delta = target_point - source_point;
                 let distance = delta.length();
-                let reach = self.config.reaction_radius + source_radius + target_radius;
-                if !distance.is_finite() || distance >= reach {
+                let reach =
+                    finite_non_negative(config.reaction_radius) + source.radius + target.radius;
+                if !distance.is_finite() || reach <= 0.0 || distance >= reach {
                     continue;
                 }
-                let sample = environment.sample(target_pos);
+                let sample = environment.sample(target.position);
                 let wind_alignment = if distance > 0.001 && sample.wind.length_squared() > 0.001 {
                     sample.wind.normalize().dot(delta / distance).max(0.0)
                 } else {
                     0.0
                 };
-                let attenuation =
-                    (1.0 - distance / reach).max(0.0).powi(2) * (1.0 + wind_alignment * 0.35);
-                let amount = source_material.heat_output * attenuation * dt
-                    / target_material.heat_capacity.max(0.05);
-                *heat_delta.entry(target_id).or_default() += amount;
+                let weight = ((1.0 - distance / reach).max(0.0).powi(2)
+                    * (1.0 + wind_alignment * 0.35))
+                    .min(1.0);
+                if weight > 0.0 {
+                    receivers.push((target.id, weight));
+                    total_weight += weight;
+                }
+            }
+            if total_weight > 0.0 {
+                // Geometry controls how much of the outgoing budget is
+                // captured; receiver count only divides that fixed budget.
+                // This prevents cloning heat by adding overlapping entities.
+                let capture = receivers
+                    .iter()
+                    .map(|(_, weight)| *weight)
+                    .fold(0.0_f32, f32::max);
+                let absorbed = transferable_energy * capture;
+                for (target, weight) in receivers {
+                    *combustion_energy_delta.entry(target).or_default() +=
+                        absorbed * weight / total_weight;
+                }
             }
         }
 
-        // Close objects exchange heat in both directions, independently of
-        // burning. This is what lets a hot log cook fruit after its flame dies.
-        for i in 0..snapshots.len() {
-            for j in i + 1..snapshots.len() {
-                let (a_id, _, a0, a1, ar, a_mat, a_state) = snapshots[i];
-                let (b_id, _, b0, b1, br, b_mat, b_state) = snapshots[j];
-                let (point_a, point_b) = closest_segment_points(a0, a1, b0, b1);
-                let reach = ar + br + 0.35;
-                if point_a.distance_squared(point_b) > reach * reach {
-                    continue;
-                }
-                let conductivity = (a_mat.conductivity + b_mat.conductivity) * 0.5;
-                let transfer = (a_state.temperature_c - b_state.temperature_c)
-                    * conductivity
-                    * self.config.contact_heat_exchange
-                    * dt;
-                *heat_delta.entry(a_id).or_default() -= transfer / a_mat.heat_capacity.max(0.05);
-                *heat_delta.entry(b_id).or_default() += transfer / b_mat.heat_capacity.max(0.05);
-            }
-        }
-        for (id, delta) in heat_delta {
-            if let Some(state) = self
+        for &(source, fuel_consumed, _) in &combustion_sources {
+            let state = self
                 .entities
-                .get_mut(&id)
+                .get_mut(&source.id)
                 .and_then(|entity| entity.reactive_state.as_mut())
-            {
-                state.temperature_c = (state.temperature_c + delta).clamp(-50.0, 2000.0);
-            }
+                .expect("source came from reactive snapshot");
+            state.fuel = (state.fuel - fuel_consumed).max(0.0);
+        }
+        let combusted: BTreeSet<_> = combustion_sources
+            .iter()
+            .map(|(source, _, _)| source.id)
+            .collect();
+        apply_sensible_energy_deltas(&mut self.entities, combustion_energy_delta, config);
+
+        // Evaporation is a phase change, not a free moisture decrement. It can
+        // remove only as much water as both the material transfer rate and the
+        // available sensible heat permit, and every removed unit pays latent
+        // heat before the final temperature is derived.
+        for &id in &ids {
+            let entity = self.entities.get_mut(&id).expect("id came from map");
+            let material = entity.reactive_material.expect("filtered");
+            let state = entity.reactive_state.as_mut().expect("filtered");
+            evaporate_liquid_water(state, material, config, dt);
         }
 
         for id in ids {
             let entity = self.entities.get_mut(&id).expect("id came from map");
             let material = entity.reactive_material.expect("filtered");
             let state = entity.reactive_state.as_mut().expect("filtered");
-            let ignition = material.ignition_temperature_c
-                * (1.0 + state.moisture * material.moisture_resistance.max(0.0));
-            if !state.burning
-                && !state.burned_out
-                && state.fuel > 0.0
-                && state.temperature_c >= ignition
-            {
-                state.burning = true;
-                events.push(WorldEvent::Ignited { entity: id });
-            }
-
-            if state.burning {
-                if state.moisture >= 0.82 {
-                    state.burning = false;
-                    events.push(WorldEvent::Extinguished { entity: id });
-                } else {
-                    state.fuel = (state.fuel - material.burn_rate.max(0.0) * dt).max(0.0);
-                    state.moisture =
-                        (state.moisture - material.drying_rate.max(0.0) * 2.0 * dt).max(0.0);
-                    let sustained =
-                        material.ignition_temperature_c + material.heat_output.max(0.0) * 0.22;
-                    state.temperature_c = state.temperature_c.max(sustained.min(1400.0));
-                    if state.fuel <= 0.0 {
-                        state.burning = false;
-                        if !state.burned_out {
-                            state.burned_out = true;
-                            events.push(WorldEvent::BurnedOut { entity: id });
-                        }
-                    }
+            let was_burning = previous_burning[&id];
+            if state.fuel <= 0.0 && (was_burning || combusted.contains(&id)) {
+                state.burning = false;
+                if !state.burned_out {
+                    state.burned_out = true;
+                    events.push(WorldEvent::BurnedOut { entity: id });
+                }
+            } else {
+                state.burning = combustion_is_active(material, *state, was_burning, config);
+                match (was_burning, state.burning) {
+                    (false, true) => events.push(WorldEvent::Ignited { entity: id }),
+                    (true, false) => events.push(WorldEvent::Extinguished { entity: id }),
+                    _ => {}
                 }
             }
 
@@ -847,7 +882,15 @@ impl World {
         hash.f32(self.config.reaction_radius);
         hash.f32(self.config.ambient_exchange);
         hash.f32(self.config.contact_heat_exchange);
-        hash.f32(self.config.douse_cooling_c);
+        hash.f32(self.config.water_inlet_temperature_c);
+        hash.f32(self.config.water_specific_heat);
+        hash.f32(self.config.water_vaporization_heat);
+        hash.f32(self.config.water_boiling_temperature_c);
+        hash.f32(self.config.combustion_local_heat_fraction);
+        hash.f32(self.config.ignition_temperature_margin_c);
+        hash.f32(self.config.extinction_temperature_margin_c);
+        hash.f32(self.config.ignition_max_moisture);
+        hash.f32(self.config.extinction_min_moisture);
         hash.f32(self.config.sleep_linear_speed);
         hash.f32(self.config.sleep_angular_speed);
         hash.u64(self.config.sleep_turns as u64);
@@ -986,6 +1029,221 @@ impl World {
             }
         }
         hash.finish()
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ReactionSnapshot {
+    id: EntityId,
+    position: Vec3,
+    shape_a: Vec3,
+    shape_b: Vec3,
+    radius: f32,
+    material: ReactiveMaterial,
+    state: ReactiveState,
+    capacity: f32,
+}
+
+fn reaction_snapshots(
+    entities: &BTreeMap<EntityId, Entity>,
+    ids: &[EntityId],
+    config: WorldConfig,
+) -> Vec<ReactionSnapshot> {
+    ids.iter()
+        .map(|&id| {
+            let entity = &entities[&id];
+            let (shape_a, shape_b, radius) = reaction_shape(entity);
+            let material = entity.reactive_material.expect("filtered");
+            let state = entity.reactive_state.expect("filtered");
+            ReactionSnapshot {
+                id,
+                position: entity.transform.position,
+                shape_a,
+                shape_b,
+                radius,
+                material,
+                state,
+                capacity: thermal_capacity(material, state, config),
+            }
+        })
+        .collect()
+}
+
+fn dry_heat_capacity(material: ReactiveMaterial) -> f32 {
+    if material.heat_capacity.is_finite() {
+        material.heat_capacity.max(0.05)
+    } else {
+        0.05
+    }
+}
+
+fn liquid_water_heat_capacity(config: WorldConfig) -> f32 {
+    finite_non_negative(config.water_specific_heat)
+}
+
+fn thermal_capacity(material: ReactiveMaterial, state: ReactiveState, config: WorldConfig) -> f32 {
+    dry_heat_capacity(material) + clamp_unit(state.moisture) * liquid_water_heat_capacity(config)
+}
+
+fn sensible_energy(material: ReactiveMaterial, state: ReactiveState, config: WorldConfig) -> f32 {
+    thermal_capacity(material, state, config) * state.temperature_c
+}
+
+fn add_sensible_heat(
+    state: &mut ReactiveState,
+    material: ReactiveMaterial,
+    config: WorldConfig,
+    energy: f32,
+) {
+    if !energy.is_finite() || !state.temperature_c.is_finite() {
+        return;
+    }
+    state.temperature_c += energy / thermal_capacity(material, *state, config);
+}
+
+fn mix_liquid_water(
+    state: &mut ReactiveState,
+    material: ReactiveMaterial,
+    config: WorldConfig,
+    requested_mass: f32,
+    inlet_temperature_c: f32,
+) -> f32 {
+    let current_water = clamp_unit(state.moisture);
+    state.moisture = current_water;
+    let incoming = finite_non_negative(requested_mass);
+    if incoming <= 0.0 || !state.temperature_c.is_finite() {
+        return 0.0;
+    }
+    let water_capacity = liquid_water_heat_capacity(config);
+    let inlet_temperature_c = if inlet_temperature_c.is_finite() {
+        inlet_temperature_c
+    } else {
+        state.temperature_c
+    };
+    let initial_energy = sensible_energy(material, *state, config);
+    let mixed_water = current_water + incoming;
+    let mixed_capacity = dry_heat_capacity(material) + mixed_water * water_capacity;
+    let mixed_energy = initial_energy + incoming * water_capacity * inlet_temperature_c;
+    state.temperature_c = mixed_energy / mixed_capacity;
+    state.moisture = mixed_water.min(1.0);
+    // Water beyond saturation leaves at the mixed temperature. Removing that
+    // mass and its sensible energy does not change the retained temperature.
+    state.moisture - current_water
+}
+
+fn evaporate_liquid_water(
+    state: &mut ReactiveState,
+    material: ReactiveMaterial,
+    config: WorldConfig,
+    dt: f32,
+) -> f32 {
+    let water = clamp_unit(state.moisture);
+    state.moisture = water;
+    let boiling_temperature_c = if config.water_boiling_temperature_c.is_finite() {
+        config.water_boiling_temperature_c
+    } else {
+        100.0
+    };
+    if water <= 0.0
+        || !state.temperature_c.is_finite()
+        || state.temperature_c <= boiling_temperature_c
+    {
+        return 0.0;
+    }
+
+    let superheat = state.temperature_c - boiling_temperature_c;
+    let water_capacity = liquid_water_heat_capacity(config);
+    let latent_heat = finite_non_negative(config.water_vaporization_heat);
+    let capacity = thermal_capacity(material, *state, config);
+    let phase_energy_per_mass = latent_heat + water_capacity * superheat;
+    let energy_limited = if phase_energy_per_mass > 0.0 {
+        capacity * superheat / phase_energy_per_mass
+    } else {
+        water
+    };
+    let transfer_multiplier = (1.0 + superheat / 120.0).clamp(1.0, 4.0);
+    let rate_limited =
+        finite_non_negative(material.drying_rate) * transfer_multiplier * finite_non_negative(dt);
+    let evaporated = water.min(energy_limited).min(rate_limited);
+    if evaporated <= 0.0 {
+        return 0.0;
+    }
+
+    let initial_temperature = state.temperature_c;
+    let initial_energy = sensible_energy(material, *state, config);
+    let exported_energy = evaporated * (water_capacity * initial_temperature + latent_heat);
+    state.moisture = water - evaporated;
+    state.temperature_c =
+        (initial_energy - exported_energy) / thermal_capacity(material, *state, config);
+    evaporated
+}
+
+fn moisture_adjusted_ignition(material: ReactiveMaterial, state: ReactiveState) -> f32 {
+    finite_non_negative(material.ignition_temperature_c)
+        * (1.0 + clamp_unit(state.moisture) * finite_non_negative(material.moisture_resistance))
+}
+
+fn combustion_is_active(
+    material: ReactiveMaterial,
+    state: ReactiveState,
+    was_burning: bool,
+    config: WorldConfig,
+) -> bool {
+    if state.burned_out
+        || finite_non_negative(state.fuel) <= 0.0
+        || !state.temperature_c.is_finite()
+    {
+        return false;
+    }
+    let adjusted_ignition = moisture_adjusted_ignition(material, state);
+    let ignition_temperature =
+        adjusted_ignition + finite_non_negative(config.ignition_temperature_margin_c);
+    let extinction_temperature =
+        adjusted_ignition - finite_non_negative(config.extinction_temperature_margin_c);
+    let ignition_moisture = clamp_unit(config.ignition_max_moisture);
+    let extinction_moisture = clamp_unit(config.extinction_min_moisture).max(ignition_moisture);
+    if was_burning {
+        state.moisture < extinction_moisture && state.temperature_c >= extinction_temperature
+    } else {
+        state.moisture <= ignition_moisture && state.temperature_c >= ignition_temperature
+    }
+}
+
+fn combustion_rate_factor(
+    material: ReactiveMaterial,
+    state: ReactiveState,
+    config: WorldConfig,
+) -> f32 {
+    let dry_fraction = 1.0 - clamp_unit(state.moisture);
+    let adjusted_ignition = moisture_adjusted_ignition(material, state);
+    let lower = adjusted_ignition - finite_non_negative(config.extinction_temperature_margin_c);
+    let upper = adjusted_ignition + finite_non_negative(config.ignition_temperature_margin_c);
+    let span = upper - lower;
+    let thermal_fraction = if span > 1e-6 {
+        ((state.temperature_c - lower) / span).clamp(0.0, 1.0)
+    } else if state.temperature_c >= upper {
+        1.0
+    } else {
+        0.0
+    };
+    dry_fraction * thermal_fraction
+}
+
+fn apply_sensible_energy_deltas(
+    entities: &mut BTreeMap<EntityId, Entity>,
+    deltas: BTreeMap<EntityId, f32>,
+    config: WorldConfig,
+) {
+    for (id, energy) in deltas {
+        let Some(entity) = entities.get_mut(&id) else {
+            continue;
+        };
+        let (Some(material), Some(state)) =
+            (entity.reactive_material, entity.reactive_state.as_mut())
+        else {
+            continue;
+        };
+        add_sensible_heat(state, material, config, energy);
     }
 }
 
@@ -1212,6 +1470,32 @@ mod tests {
         entity
     }
 
+    fn static_reactive_entity(
+        position: Vec3,
+        material: ReactiveMaterial,
+        state: ReactiveState,
+    ) -> EntityBundle {
+        let mut entity = reactive_entity(position, material, state);
+        entity.body = Some(Body::static_body());
+        entity
+    }
+
+    fn entity_sensible_energy(world: &World, id: EntityId) -> f32 {
+        let entity = world.entity(id).unwrap();
+        sensible_energy(
+            entity.reactive_material.unwrap(),
+            entity.reactive_state.unwrap(),
+            *world.config(),
+        )
+    }
+
+    fn assert_close(actual: f32, expected: f32, tolerance: f32) {
+        assert!(
+            (actual - expected).abs() <= tolerance,
+            "expected {expected}, got {actual} (tolerance {tolerance})"
+        );
+    }
+
     #[test]
     fn same_seed_and_script_have_the_same_hash_and_events() {
         let run = || {
@@ -1339,6 +1623,472 @@ mod tests {
         world.step(&FlatEnvironment::default());
         assert!(world.entity(dry).unwrap().reactive_state.unwrap().burning);
         assert!(!world.entity(wet).unwrap().reactive_state.unwrap().burning);
+    }
+
+    #[test]
+    fn douse_mixes_sensible_heat_conservatively_for_different_materials_and_water() {
+        let cases = [
+            (
+                ReactiveMaterial::wood(),
+                WorldConfig {
+                    ambient_exchange: 0.0,
+                    contact_heat_exchange: 0.0,
+                    water_inlet_temperature_c: 12.0,
+                    water_specific_heat: 4.18,
+                    ..WorldConfig::default()
+                },
+                ReactiveState::new(82.0, 0.20, 0.0),
+                0.35,
+            ),
+            (
+                ReactiveMaterial::fruit(),
+                WorldConfig {
+                    ambient_exchange: 0.0,
+                    contact_heat_exchange: 0.0,
+                    water_inlet_temperature_c: 31.0,
+                    water_specific_heat: 2.65,
+                    ..WorldConfig::default()
+                },
+                ReactiveState::new(67.0, 0.10, 0.0),
+                0.45,
+            ),
+        ];
+
+        for (material, config, state, water_added) in cases {
+            let initial_energy = sensible_energy(material, state, config);
+            let expected_energy = initial_energy
+                + water_added * config.water_specific_heat * config.water_inlet_temperature_c;
+            let mut world = World::new(config);
+            let id = world.spawn(static_reactive_entity(Vec3::ZERO, material, state));
+            world.queue_interaction(Interaction::Douse {
+                target: id,
+                amount: water_added,
+            });
+            world.step(&FlatEnvironment::default());
+
+            let final_state = world.entity(id).unwrap().reactive_state.unwrap();
+            assert_close(final_state.moisture, state.moisture + water_added, 1e-6);
+            assert_close(entity_sensible_energy(&world, id), expected_energy, 1e-3);
+        }
+    }
+
+    #[test]
+    fn contact_exchange_conserves_pair_energy_across_materials() {
+        let config = WorldConfig {
+            fixed_dt: 0.75,
+            gravity: Vec3::ZERO,
+            reaction_radius: 0.0,
+            ambient_exchange: 0.0,
+            contact_heat_exchange: 0.9,
+            ..WorldConfig::default()
+        };
+        let mut world = World::new(config);
+        let wood = world.spawn(static_reactive_entity(
+            Vec3::ZERO,
+            ReactiveMaterial::wood(),
+            ReactiveState::new(90.0, 0.25, 0.0),
+        ));
+        let fruit = world.spawn(static_reactive_entity(
+            Vec3::new(0.1, 0.0, 0.0),
+            ReactiveMaterial::fruit(),
+            ReactiveState::new(25.0, 0.40, 0.0),
+        ));
+        let before = entity_sensible_energy(&world, wood) + entity_sensible_energy(&world, fruit);
+
+        world.step(&FlatEnvironment::default());
+
+        let after = entity_sensible_energy(&world, wood) + entity_sensible_energy(&world, fruit);
+        assert_close(after, before, 1e-3);
+        assert!(
+            world
+                .entity(wood)
+                .unwrap()
+                .reactive_state
+                .unwrap()
+                .temperature_c
+                > world
+                    .entity(fruit)
+                    .unwrap()
+                    .reactive_state
+                    .unwrap()
+                    .temperature_c
+        );
+    }
+
+    #[test]
+    fn evaporation_pays_latent_heat_for_multiple_material_and_water_configs() {
+        let cases = [
+            (
+                ReactiveMaterial::wood(),
+                WorldConfig {
+                    fixed_dt: 1.0,
+                    ambient_exchange: 0.0,
+                    contact_heat_exchange: 0.0,
+                    water_specific_heat: 4.18,
+                    water_vaporization_heat: 1_000.0,
+                    ..WorldConfig::default()
+                },
+            ),
+            (
+                ReactiveMaterial::fruit(),
+                WorldConfig {
+                    fixed_dt: 1.0,
+                    ambient_exchange: 0.0,
+                    contact_heat_exchange: 0.0,
+                    water_specific_heat: 2.5,
+                    water_vaporization_heat: 650.0,
+                    ..WorldConfig::default()
+                },
+            ),
+        ];
+
+        for (mut material, config) in cases {
+            material.drying_rate = 10.0;
+            let initial_state = ReactiveState::new(180.0, 0.50, 0.0);
+            let initial_energy = sensible_energy(material, initial_state, config);
+            let mut world = World::new(config);
+            let id = world.spawn(static_reactive_entity(Vec3::ZERO, material, initial_state));
+
+            world.step(&FlatEnvironment::default());
+
+            let final_state = world.entity(id).unwrap().reactive_state.unwrap();
+            let evaporated = initial_state.moisture - final_state.moisture;
+            assert!(evaporated > 0.0 && final_state.moisture > 0.0);
+            assert_close(
+                final_state.temperature_c,
+                config.water_boiling_temperature_c,
+                1e-4,
+            );
+            let exported = evaporated
+                * (config.water_specific_heat * initial_state.temperature_c
+                    + config.water_vaporization_heat);
+            assert_close(
+                entity_sensible_energy(&world, id) + exported,
+                initial_energy,
+                2e-3,
+            );
+        }
+    }
+
+    #[test]
+    fn sufficient_douse_stays_extinguished_without_external_heat() {
+        let cases = [
+            (
+                ReactiveMaterial::wood(),
+                WorldConfig {
+                    water_inlet_temperature_c: 16.0,
+                    ..WorldConfig::default()
+                },
+            ),
+            (
+                ReactiveMaterial::fruit(),
+                WorldConfig {
+                    water_inlet_temperature_c: 24.0,
+                    water_vaporization_heat: 1_800.0,
+                    ..WorldConfig::default()
+                },
+            ),
+        ];
+        for (material, config) in cases {
+            let mut state = ReactiveState::new(650.0, 0.0, 1.0);
+            state.burning = true;
+            let mut world = World::new(config);
+            let id = world.spawn(static_reactive_entity(Vec3::ZERO, material, state));
+            world.queue_interaction(Interaction::Douse {
+                target: id,
+                amount: 1.0,
+            });
+            let report = world.step(&FlatEnvironment::default());
+            assert_eq!(
+                report
+                    .events
+                    .iter()
+                    .filter(|event| matches!(event, WorldEvent::Extinguished { entity } if *entity == id))
+                    .count(),
+                1
+            );
+            for _ in 0..600 {
+                let report = world.step(&FlatEnvironment::default());
+                assert!(
+                    !report.events.iter().any(
+                        |event| matches!(event, WorldEvent::Ignited { entity } if *entity == id)
+                    )
+                );
+            }
+            let final_state = world.entity(id).unwrap().reactive_state.unwrap();
+            assert!(!final_state.burning);
+            assert!(
+                final_state.temperature_c
+                    < moisture_adjusted_ignition(material, final_state)
+                        + config.ignition_temperature_margin_c
+            );
+        }
+    }
+
+    #[test]
+    fn external_heat_must_evaporate_water_before_reignition() {
+        let config = WorldConfig {
+            fixed_dt: 0.1,
+            gravity: Vec3::ZERO,
+            reaction_radius: 0.0,
+            ambient_exchange: 0.0,
+            contact_heat_exchange: 0.0,
+            water_specific_heat: 4.0,
+            water_vaporization_heat: 220.0,
+            ignition_temperature_margin_c: 0.0,
+            extinction_temperature_margin_c: 10.0,
+            ignition_max_moisture: 0.15,
+            extinction_min_moisture: 0.30,
+            ..WorldConfig::default()
+        };
+        let mut material = ReactiveMaterial::wood();
+        material.heat_capacity = 2.0;
+        material.ignition_temperature_c = 150.0;
+        material.drying_rate = 10.0;
+        let mut world = World::new(config);
+        let id = world.spawn(static_reactive_entity(
+            Vec3::ZERO,
+            material,
+            ReactiveState::new(20.0, 0.80, 1.0),
+        ));
+
+        for _ in 0..20 {
+            let report = world.step(&FlatEnvironment::default());
+            assert!(
+                !report
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, WorldEvent::Ignited { entity } if *entity == id))
+            );
+        }
+        assert_close(
+            world.entity(id).unwrap().reactive_state.unwrap().moisture,
+            0.80,
+            1e-6,
+        );
+
+        let mut saw_evaporation = false;
+        let mut ignited_state = None;
+        for _ in 0..120 {
+            let before = world.entity(id).unwrap().reactive_state.unwrap().moisture;
+            world.queue_interaction(Interaction::Ignite {
+                target: id,
+                energy: 40.0,
+            });
+            let report = world.step(&FlatEnvironment::default());
+            let state = world.entity(id).unwrap().reactive_state.unwrap();
+            saw_evaporation |= state.moisture < before;
+            if report
+                .events
+                .iter()
+                .any(|event| matches!(event, WorldEvent::Ignited { entity } if *entity == id))
+            {
+                ignited_state = Some(state);
+                break;
+            }
+        }
+        let state =
+            ignited_state.expect("continued external heat should eventually ignite dry fuel");
+        assert!(saw_evaporation);
+        assert!(state.moisture <= config.ignition_max_moisture);
+        assert!(
+            state.temperature_c
+                >= moisture_adjusted_ignition(material, state)
+                    + config.ignition_temperature_margin_c
+        );
+    }
+
+    #[test]
+    fn fuel_loss_exactly_funds_combustion_energy_with_dry_fraction() {
+        let config = WorldConfig {
+            fixed_dt: 0.5,
+            gravity: Vec3::ZERO,
+            reaction_radius: 0.0,
+            ambient_exchange: 0.0,
+            contact_heat_exchange: 0.0,
+            combustion_local_heat_fraction: 1.0,
+            ..WorldConfig::default()
+        };
+        let mut material = ReactiveMaterial::wood();
+        material.heat_capacity = 2.0;
+        material.ignition_temperature_c = 50.0;
+        material.burn_rate = 0.20;
+        material.heat_output = 1_000.0;
+        material.drying_rate = 0.0;
+        let mut state = ReactiveState::new(200.0, 0.25, 1.0);
+        state.burning = true;
+        let mut world = World::new(config);
+        let id = world.spawn(static_reactive_entity(Vec3::ZERO, material, state));
+        let initial_energy = entity_sensible_energy(&world, id);
+
+        world.step(&FlatEnvironment::default());
+
+        let final_state = world.entity(id).unwrap().reactive_state.unwrap();
+        let fuel_consumed = state.fuel - final_state.fuel;
+        assert_close(
+            fuel_consumed,
+            material.burn_rate * 0.75 * config.fixed_dt,
+            1e-6,
+        );
+        assert_close(
+            entity_sensible_energy(&world, id) - initial_energy,
+            fuel_consumed * material.heat_output,
+            2e-3,
+        );
+    }
+
+    #[test]
+    fn spatial_combustion_budget_is_not_duplicated_by_receiver_count() {
+        let run = |receiver_count: usize| {
+            let config = WorldConfig {
+                fixed_dt: 0.5,
+                gravity: Vec3::ZERO,
+                reaction_radius: 1.0,
+                ambient_exchange: 0.0,
+                contact_heat_exchange: 0.0,
+                combustion_local_heat_fraction: 0.25,
+                ..WorldConfig::default()
+            };
+            let mut source_material = ReactiveMaterial::wood();
+            source_material.heat_capacity = 2.0;
+            source_material.ignition_temperature_c = 50.0;
+            source_material.burn_rate = 0.2;
+            source_material.heat_output = 1_000.0;
+            source_material.drying_rate = 0.0;
+            let mut source_state = ReactiveState::new(200.0, 0.0, 1.0);
+            source_state.burning = true;
+            let mut world = World::new(config);
+            let source = world.spawn(static_reactive_entity(
+                Vec3::ZERO,
+                source_material,
+                source_state,
+            ));
+            let mut receivers = Vec::new();
+            for _ in 0..receiver_count {
+                let mut receiver_material = ReactiveMaterial::fruit();
+                receiver_material.ignition_temperature_c = 10_000.0;
+                receiver_material.drying_rate = 0.0;
+                receivers.push(world.spawn(static_reactive_entity(
+                    Vec3::ZERO,
+                    receiver_material,
+                    ReactiveState::new(20.0, 0.0, 0.0),
+                )));
+            }
+            let source_before = entity_sensible_energy(&world, source);
+            let receiver_before: f32 = receivers
+                .iter()
+                .map(|&id| entity_sensible_energy(&world, id))
+                .sum();
+            world.step(&FlatEnvironment::default());
+            let source_after = entity_sensible_energy(&world, source);
+            let receiver_after: f32 = receivers
+                .iter()
+                .map(|&id| entity_sensible_energy(&world, id))
+                .sum();
+            let final_source = world.entity(source).unwrap().reactive_state.unwrap();
+            let released = (source_state.fuel - final_source.fuel) * source_material.heat_output;
+            (
+                source_after - source_before,
+                receiver_after - receiver_before,
+                released,
+            )
+        };
+
+        let one = run(1);
+        let three = run(3);
+        let expected_released = 0.2 * 0.5 * 1_000.0;
+        assert_close(one.2, expected_released, 1e-3);
+        assert_close(three.2, expected_released, 1e-3);
+        assert_close(one.0, one.2 * 0.25, 2e-3);
+        assert_close(three.0, three.2 * 0.25, 2e-3);
+        assert_close(one.1, one.2 * 0.75, 2e-3);
+        assert_close(three.1, three.2 * 0.75, 2e-3);
+        assert_close(one.1, three.1, 2e-3);
+        assert_close(one.0 + one.1, one.2, 3e-3);
+        assert_close(three.0 + three.1, three.2, 3e-3);
+    }
+
+    #[test]
+    fn generic_three_material_cluster_stays_out_after_dousing() {
+        let config = WorldConfig::default();
+        let materials = [
+            ReactiveMaterial::flame(),
+            ReactiveMaterial::wood(),
+            ReactiveMaterial::fruit(),
+        ];
+        let mut world = World::new(config);
+        let ids: Vec<_> = materials
+            .into_iter()
+            .enumerate()
+            .map(|(index, material)| {
+                let mut state = ReactiveState::new(800.0, 0.0, 1.0);
+                state.burning = true;
+                world.spawn(static_reactive_entity(
+                    Vec3::new(index as f32 * 0.3, 0.0, 0.0),
+                    material,
+                    state,
+                ))
+            })
+            .collect();
+        for &id in &ids {
+            world.queue_interaction(Interaction::Douse {
+                target: id,
+                amount: 1.0,
+            });
+        }
+        let report = world.step(&FlatEnvironment::default());
+        for &id in &ids {
+            assert_eq!(
+                report
+                    .events
+                    .iter()
+                    .filter(|event| matches!(event, WorldEvent::Extinguished { entity } if *entity == id))
+                    .count(),
+                1
+            );
+        }
+        for _ in 0..600 {
+            let report = world.step(&FlatEnvironment::default());
+            assert!(
+                !report
+                    .events
+                    .iter()
+                    .any(|event| matches!(event, WorldEvent::Ignited { .. }))
+            );
+        }
+        assert!(
+            ids.iter()
+                .all(|&id| { !world.entity(id).unwrap().reactive_state.unwrap().burning })
+        );
+    }
+
+    #[test]
+    fn one_entity_emits_at_most_one_combustion_transition_per_tick() {
+        let mut material = ReactiveMaterial::wood();
+        material.ignition_temperature_c = 100.0;
+        let mut state = ReactiveState::new(900.0, 0.0, 1.0);
+        state.burning = true;
+        let mut world = World::with_seed(17);
+        let id = world.spawn(static_reactive_entity(Vec3::ZERO, material, state));
+        world.queue_interaction(Interaction::Douse {
+            target: id,
+            amount: 1.0,
+        });
+
+        let report = world.step(&FlatEnvironment::default());
+        let transitions: Vec<_> = report
+            .events
+            .iter()
+            .filter(|event| {
+                matches!(event, WorldEvent::Ignited { entity } | WorldEvent::Extinguished { entity } if *entity == id)
+            })
+            .collect();
+        assert_eq!(transitions.len(), 1);
+        assert!(matches!(transitions[0], WorldEvent::Extinguished { .. }));
+        let next = world.step(&FlatEnvironment::default());
+        assert!(!next.events.iter().any(|event| {
+            matches!(event, WorldEvent::Ignited { entity } | WorldEvent::Extinguished { entity } if *entity == id)
+        }));
     }
 
     #[test]
@@ -1480,6 +2230,29 @@ mod tests {
         changed_config.spawn(EntityBundle::default());
         changed_config.config_mut().ambient_exchange += 0.01;
         assert_ne!(baseline.state_hash(), changed_config.state_hash());
+
+        macro_rules! assert_config_field_hashed {
+            ($field:ident) => {{
+                let mut changed = World::with_seed(4);
+                changed.spawn(EntityBundle::default());
+                changed.config_mut().$field += 0.125;
+                assert_ne!(
+                    baseline.state_hash(),
+                    changed.state_hash(),
+                    "WorldConfig::{} must affect state_hash",
+                    stringify!($field)
+                );
+            }};
+        }
+        assert_config_field_hashed!(water_inlet_temperature_c);
+        assert_config_field_hashed!(water_specific_heat);
+        assert_config_field_hashed!(water_vaporization_heat);
+        assert_config_field_hashed!(water_boiling_temperature_c);
+        assert_config_field_hashed!(combustion_local_heat_fraction);
+        assert_config_field_hashed!(ignition_temperature_margin_c);
+        assert_config_field_hashed!(extinction_temperature_margin_c);
+        assert_config_field_hashed!(ignition_max_moisture);
+        assert_config_field_hashed!(extinction_min_moisture);
 
         let mut empty_name = World::with_seed(4);
         empty_name.spawn(EntityBundle::default().named(""));
@@ -1629,7 +2402,7 @@ mod tests {
         let mut world = World::new(config);
 
         let mut flame_material = ReactiveMaterial::flame();
-        flame_material.burn_rate = 0.0;
+        flame_material.burn_rate = 0.1;
         let mut flame_state = ReactiveState::new(720.0, 0.0, 1.0);
         flame_state.burning = true;
         let mut flame = reactive_entity(Vec3::ZERO, flame_material, flame_state);

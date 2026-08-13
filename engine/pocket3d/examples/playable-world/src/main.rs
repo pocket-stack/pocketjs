@@ -6,7 +6,7 @@ mod game;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail, ensure};
-use game::{WorldGame, apply_carry_script, apply_orchard_script};
+use game::{WorldGame, apply_campfire_douse_script, apply_carry_script, apply_orchard_script};
 use pocket3d::app::{AppConfig, Game};
 use pocket3d::gpu::{Gpu, OFFSCREEN_FORMAT, OffscreenTarget};
 use pocket3d::input::Input;
@@ -20,6 +20,7 @@ const SCENARIOS: &[&str] = &[
     "character-chop",
     "character-carry",
     "character-water",
+    "campfire-douse",
 ];
 const CHARACTER_CARRY_CAPTURE_TICK: u64 = 360;
 const CHARACTER_WATER_CAPTURE_TICK: u64 = 47;
@@ -94,6 +95,9 @@ fn run_headless(args: Args) -> Result<()> {
     let mut renderer = Renderer::new(&gpu, OFFSCREEN_FORMAT)?;
     let mut game = WorldGame::new(args.seed);
     game.init(&gpu, &mut renderer)?;
+    if args.scenario == "campfire-douse" {
+        game.prepare_campfire_douse_scenario();
+    }
     let mut input = Input::default();
     for turn in 0..args.ticks {
         apply_scenario_script(&mut input, &args.scenario, turn);
@@ -144,6 +148,13 @@ fn run_headless(args: Args) -> Result<()> {
             "character-water acceptance failed: water burst was not active at capture"
         );
     }
+    if args.scenario == "campfire-douse" {
+        ensure!(
+            receipt.water.campfire_douse.passed,
+            "campfire-douse acceptance failed: {:#?}",
+            receipt.water.campfire_douse
+        );
+    }
     println!(
         "playable-world: {} turns, state {}, systemic acceptance {}",
         receipt.ticks, receipt.state_hash, receipt.acceptance.playable_chain_complete
@@ -189,7 +200,7 @@ fn parse_args() -> Result<Args> {
             }
             "-h" | "--help" => {
                 println!(
-                    "playable-world\n\n  --headless\n  --scenario orchard-fire|idle|character-walk|character-chop|character-carry|character-water\n  --ticks N\n  --seed N\n  --size WIDTHxHEIGHT\n  --screenshot PATH\n  --receipt PATH"
+                    "playable-world\n\n  --headless\n  --scenario orchard-fire|idle|character-walk|character-chop|character-carry|character-water|campfire-douse\n  --ticks N\n  --seed N\n  --size WIDTHxHEIGHT\n  --screenshot PATH\n  --receipt PATH"
                 );
                 std::process::exit(0);
             }
@@ -231,6 +242,7 @@ fn apply_scenario_script(input: &mut Input, scenario: &str, turn: u64) {
                 input.inject_key(KeyCode::KeyQ, false);
             }
         }
+        "campfire-douse" => apply_campfire_douse_script(input, turn),
         "idle" => {}
         _ => unreachable!("scenario was validated before playback"),
     }
@@ -271,6 +283,10 @@ mod tests {
         let mut water = Input::default();
         apply_scenario_script(&mut water, "character-water", 35);
         assert!(water.key_down(KeyCode::KeyQ));
+
+        let mut campfire = Input::default();
+        apply_scenario_script(&mut campfire, "campfire-douse", 120);
+        assert!(campfire.key_down(KeyCode::KeyQ));
     }
 
     #[test]
