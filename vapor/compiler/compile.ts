@@ -18,6 +18,7 @@
 
 import ts from "typescript";
 import { FONT8 } from "./font.gen.ts";
+import { sccpRefConstants } from "./sccp.ts";
 import { rgb555, rgb565, StyleTable, type StyleIssue } from "./styles.ts";
 import { BACKDROP } from "./styles.ts";
 
@@ -260,6 +261,11 @@ class AppCompiler {
   private styleErrors: string[] = [];
   private styleWarnings: string[] = [];
 
+  /** SCCP result: refs proven constant (name -> value). Reads of these fold
+   * through constNum, so they never register dependencies and decidable
+   * ternary/if branches drop their dead arm from masks and ROM alike. */
+  private sccpFolded: Map<string, number> | null = null;
+
   constructor(
     private sf: ts.SourceFile,
     private title: string,
@@ -298,6 +304,14 @@ class AppCompiler {
     }
     if (!component) this.err(this.sf, "missing `export default () => ...` component");
     if (!this.vueRef || !this.vueComputed) this.err(this.sf, 'component must import { ref, computed } from "vue"');
+    // SCCP runs before setup analysis so computed/effect dep collection sees
+    // folded ref reads. foldConst here is module-level only: sccpFolded is
+    // still null, so constNum cannot consult the result being computed.
+    this.sccpFolded = sccpRefConstants({
+      component,
+      refLocalName: this.vueRef,
+      foldConst: (e) => this.constNum(e) ?? this.constBool(e),
+    });
     this.scanSetup(component);
     return this.emit();
   }
@@ -821,8 +835,11 @@ class AppCompiler {
 
   private viewMaxLen(e: ts.Expression): number {
     e = this.unparen(e);
-    if (ts.isConditionalExpression(e))
+    if (ts.isConditionalExpression(e)) {
+      const cf = this.constNum(e.condition) ?? this.constBool(e.condition);
+      if (cf !== null) return this.viewMaxLen(cf ? e.whenTrue : e.whenFalse);
       return Math.max(this.viewMaxLen(e.whenTrue), this.viewMaxLen(e.whenFalse));
+    }
     if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
       const inner = this.viewMaxLen(e.expression.expression);
       if (e.expression.name.text === "filter") return inner;
@@ -840,15 +857,30 @@ class AppCompiler {
     return this.target.poolCap;
   }
 
-  /** Comparisons over compile-time numbers fold to 0/1 (SCREEN.width < 30). */
+  /** Comparisons over compile-time numbers fold to 0/1 (SCREEN.width < 30),
+   * plus !x and short-circuit &&/|| over foldable operands — SCCP-folded
+   * ref reads arrive through constNum, so `!locked.value` folds too. */
   private constBool(e: ts.Expression): number | null {
     e = this.unparen(e);
+    const K = ts.SyntaxKind;
+    if (ts.isPrefixUnaryExpression(e) && e.operator === K.ExclamationToken) {
+      const v = this.constNum(e.operand) ?? this.constBool(e.operand);
+      return v === null ? null : v ? 0 : 1;
+    }
     if (!ts.isBinaryExpression(e)) return null;
+    const op = e.operatorToken.kind;
+    if (op === K.AmpersandAmpersandToken || op === K.BarBarToken) {
+      const l = this.constNum(e.left) ?? this.constBool(e.left);
+      if (l === null) return null; // short-circuit needs a decided left
+      if (op === K.AmpersandAmpersandToken && !l) return 0;
+      if (op === K.BarBarToken && l) return 1;
+      const r = this.constNum(e.right) ?? this.constBool(e.right);
+      return r === null ? null : r ? 1 : 0;
+    }
     const l = this.constNum(e.left);
     const r = this.constNum(e.right);
     if (l === null || r === null) return null;
-    const K = ts.SyntaxKind;
-    switch (e.operatorToken.kind) {
+    switch (op) {
       case K.LessThanToken: return l < r ? 1 : 0;
       case K.GreaterThanToken: return l > r ? 1 : 0;
       case K.LessThanEqualsToken: return l <= r ? 1 : 0;
@@ -875,6 +907,19 @@ class AppCompiler {
     const sub = this.substProp(e);
     if (sub) return this.constNum(sub);
     if (ts.isNumericLiteral(e)) return Number(e.text);
+    if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken) {
+      const v = this.constNum(e.operand);
+      return v === null ? null : -v;
+    }
+    // SCCP-folded ref reads: `flag.value` where flag is proven constant.
+    // Scope check keeps shadowing locals (map/filter params) out.
+    {
+      const base = this.valueBase(e);
+      if (base !== null && this.sccpFolded?.has(base)) {
+        const b = this.scope.get(base);
+        if (!b || b.kind === "ref") return this.sccpFolded.get(base)!;
+      }
+    }
     if (ts.isIdentifier(e)) {
       const b = this.scope.get(e.text);
       if (b?.kind === "const" && typeof b.value === "number") return b.value;
@@ -918,6 +963,11 @@ class AppCompiler {
   private compileViewInto(e: ts.Expression, target: string, out: string[], ind: string): void {
     e = this.unparen(e);
     if (ts.isConditionalExpression(e)) {
+      const cf = this.constNum(e.condition) ?? this.constBool(e.condition);
+      if (cf !== null) {
+        this.compileViewInto(cf ? e.whenTrue : e.whenFalse, target, out, ind);
+        return;
+      }
       const cond = this.compileExpr(e.condition, out, ind);
       out.push(`${ind}if (${this.condition(cond)}) {`);
       this.compileViewInto(e.whenTrue, target, out, ind + "  ");
@@ -1283,6 +1333,14 @@ class AppCompiler {
       return;
     }
     if (ts.isIfStatement(stmt)) {
+      // decidable condition (SCCP-folded refs, SCREEN geometry): emit only
+      // the taken branch — the dead arm leaves ROM and the dep set entirely
+      const cf = this.constNum(stmt.expression) ?? this.constBool(stmt.expression);
+      if (cf !== null) {
+        if (cf) this.compileStmt(stmt.thenStatement, out, ind);
+        else if (stmt.elseStatement) this.compileStmt(stmt.elseStatement, out, ind);
+        return;
+      }
       const cond = this.compileExpr(stmt.expression, out, ind);
       out.push(`${ind}if (${this.condition(cond)}) {`);
       this.compileStmt(stmt.thenStatement, out, ind + "  ");
@@ -1832,6 +1890,13 @@ class AppCompiler {
       e.whenFalse.kind !== ts.SyntaxKind.NullKeyword
     )
       this.err(e, "conditional children must be {cond ? <row/> : null}");
+    // decidable condition: the row is unconditionally present (a plain row
+    // unit, static if its paint has no deps) or not present at all
+    const cf = this.constNum(e.condition) ?? this.constBool(e.condition);
+    if (cf !== null) {
+      if (cf) return this.compileRowUnit(whenTrue);
+      return { span: [0, 0], deps: new Set(), decls: [], body: [], isStatic: true };
+    }
     const deps = new Set<string>();
     const prev = this.curDeps;
     this.curDeps = deps;
@@ -2165,7 +2230,12 @@ class AppCompiler {
     // ---- reports ----
     const graphLines: string[] = [];
     graphLines.push("refs:");
-    for (const r of this.refs) graphLines.push(`  bit ${r.index}: ${r.name} (${r.refTy})`);
+    for (const r of this.refs) {
+      const folded = this.sccpFolded?.has(r.name)
+        ? ` = const ${this.sccpFolded.get(r.name)} (sccp: reads folded, never dirty)`
+        : "";
+      graphLines.push(`  bit ${r.index}: ${r.name} (${r.refTy})${folded}`);
+    }
     graphLines.push("computeds:");
     for (const comp of this.computeds)
       graphLines.push(

@@ -70,6 +70,24 @@ graph is a superset, never a subset. This is the one deliberate divergence
 from Vue's dynamic dependency collection, and the E2E oracle keeps it
 honest.
 
+Before setup analysis, a sparse conditional constant propagation pass
+(`vapor/compiler/sccp.ts`) tightens that superset. Every ref starts at
+its seed constant; write sites collected across the component body lower
+it, except writes behind a guard that is decidably false under the current
+environment. The pass is optimistic and iterates to a fixpoint, so
+mutually-gated refs converge (`if (a.value) b.value = true;
+if (b.value) a.value = true;` with both seeded `false` keeps both
+constant). A ref proven constant folds at every read: it registers no
+dependencies, decidable ternaries and `if`s compile only the taken arm,
+and the dead arm's refs leave the effect mask — and the ROM — entirely.
+Folded refs keep their state slot, seed, and debug-block entry, so the
+oracle and device grids stay comparable. Soundness rests on two subset
+rules the compiler already enforces: assignments occur only in statement
+position (if/ternary conditions are the complete guard vocabulary), and
+no closure escapes setup (every function in the component body is assumed
+callable). Locals are not tracked — a write whose right side reads a
+local lowers the ref to not-a-constant.
+
 ## 3. Memory: arenas, not GC
 
 The runtime never calls `malloc` and never frees:
