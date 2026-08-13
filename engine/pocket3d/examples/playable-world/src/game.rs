@@ -28,6 +28,18 @@ const CHOP_REACH: f32 = 2.55;
 const ACTION_REACH: f32 = 4.6;
 const AXE_SWING_TURNS: u16 = 18;
 
+fn camera_relative_movement(axis: Vec2, yaw: f32) -> Vec3 {
+    if axis.length_squared() == 0.0 {
+        return Vec3::ZERO;
+    }
+    let axis = axis.normalize();
+    let forward = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+    // `Camera::right` for the same yaw. At yaw 0 the camera faces -Z,
+    // therefore screen-right is +X.
+    let right = Vec3::new(-forward.z, 0.0, forward.x);
+    (right * axis.x + forward * axis.y).normalize_or_zero()
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct OrchardEnvironment {
     pub temperature_c: f32,
@@ -515,13 +527,7 @@ impl WorldGame {
             (input.key_down(KeyCode::KeyD) as i32 - input.key_down(KeyCode::KeyA) as i32) as f32,
             (input.key_down(KeyCode::KeyW) as i32 - input.key_down(KeyCode::KeyS) as i32) as f32,
         );
-        let mut movement = Vec3::ZERO;
-        if axis.length_squared() > 0.0 {
-            let axis = axis.normalize();
-            let forward = Vec3::new(-self.orbit_yaw.sin(), 0.0, -self.orbit_yaw.cos());
-            let right = Vec3::new(forward.z, 0.0, -forward.x);
-            movement = (right * axis.x + forward * axis.y).normalize_or_zero();
-        }
+        let movement = camera_relative_movement(axis, self.orbit_yaw);
         let mut position = self.player_position();
         let previous = position;
         position += movement * MOVE_SPEED * dt;
@@ -1710,5 +1716,22 @@ mod tests {
                 assert!((normal.length() - 1.0).abs() < 1e-4);
             }
         }
+    }
+
+    #[test]
+    fn lateral_input_uses_the_camera_right_basis() {
+        for yaw in [0.0, FRAC_PI_2, PI, -FRAC_PI_2, 0.713] {
+            let camera = Camera {
+                yaw,
+                ..Camera::default()
+            };
+            let d_movement = camera_relative_movement(Vec2::X, yaw);
+            let a_movement = camera_relative_movement(-Vec2::X, yaw);
+
+            assert!(d_movement.distance(camera.right()) < 1e-6);
+            assert!(a_movement.distance(-camera.right()) < 1e-6);
+            assert!(d_movement.dot(camera.forward_flat()).abs() < 1e-6);
+        }
+        assert_eq!(camera_relative_movement(Vec2::X, 0.0), Vec3::X);
     }
 }
