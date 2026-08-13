@@ -15,3 +15,6 @@ anyhow = { workspace = true }
 env_logger = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+gltf = { workspace = true }

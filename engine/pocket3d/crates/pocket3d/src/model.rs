@@ -809,6 +809,31 @@ impl ModelAsset {
         Self::load_glb_opts(gpu, layout, samplers, path, &ModelLoadOptions::default())
     }
 
+    /// Load a self-contained binary glTF model directly from memory.
+    ///
+    /// `label` is used for diagnostics. External buffer or image URIs are not
+    /// supported by this entry point; embed those resources in the GLB.
+    pub fn load_glb_bytes(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        bytes: &[u8],
+        label: &str,
+    ) -> Result<Arc<Self>> {
+        let imported = import_glb_slice(bytes, label)?;
+        let mut cache = ModelTextureCache::new();
+        Self::load_glb_imported(
+            gpu,
+            layout,
+            samplers,
+            Path::new(label),
+            &ModelLoadOptions::default(),
+            &[],
+            &mut cache,
+            imported,
+        )
+    }
+
     pub fn load_glb_opts(
         gpu: &Gpu,
         layout: &wgpu::BindGroupLayout,
@@ -926,8 +951,26 @@ impl ModelAsset {
                 );
             }
         }
-        let (doc, buffers, images) =
+        let imported =
             gltf::import(path).with_context(|| format!("importing {}", path.display()))?;
+
+        Self::load_glb_imported(
+            gpu, layout, samplers, path, opts, overrides, cache, imported,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn load_glb_imported(
+        gpu: &Gpu,
+        layout: &wgpu::BindGroupLayout,
+        samplers: &Samplers,
+        path: &Path,
+        opts: &ModelLoadOptions,
+        overrides: &[MaterialTextureOverride<'_>],
+        cache: &mut ModelTextureCache,
+        imported: ImportedGltf,
+    ) -> Result<Arc<Self>> {
+        let (doc, buffers, images) = imported;
 
         // --- textures ------------------------------------------------------
         // Only upload images a material actually samples (VRM files carry
@@ -1568,15 +1611,55 @@ impl ModelInstance {
     }
 }
 
+type ImportedGltf = (
+    gltf::Document,
+    Vec<gltf::buffer::Data>,
+    Vec<gltf::image::Data>,
+);
+
+fn import_glb_slice(bytes: &[u8], label: &str) -> Result<ImportedGltf> {
+    gltf::import_slice(bytes).with_context(|| format!("importing embedded GLB {label}"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
     use super::{
-        MaterialBaseColorMode, MaterialRaw, ModelTextureCacheKey,
+        MaterialBaseColorMode, MaterialRaw, ModelTextureCacheKey, import_glb_slice,
         pocket3d_base_color_mode_from_extras, pocket3d_role_from_extras, semantic_material_matches,
         to_rgba8, validate_normalized_texcoord0,
     };
+
+    fn minimal_glb() -> Vec<u8> {
+        let mut json = br#"{"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[]}]}"#.to_vec();
+        while !json.len().is_multiple_of(4) {
+            json.push(b' ');
+        }
+        let total_len = 12 + 8 + json.len();
+        let mut glb = Vec::with_capacity(total_len);
+        glb.extend_from_slice(b"glTF");
+        glb.extend_from_slice(&2u32.to_le_bytes());
+        glb.extend_from_slice(&(total_len as u32).to_le_bytes());
+        glb.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        glb.extend_from_slice(b"JSON");
+        glb.extend_from_slice(&json);
+        glb
+    }
+
+    #[test]
+    fn embedded_glb_imports_from_memory() {
+        let (doc, buffers, images) = import_glb_slice(&minimal_glb(), "embedded-test.glb").unwrap();
+        assert_eq!(doc.scenes().count(), 1);
+        assert!(buffers.is_empty());
+        assert!(images.is_empty());
+    }
+
+    #[test]
+    fn embedded_glb_error_includes_label() {
+        let err = import_glb_slice(b"not a glb", "player.glb").unwrap_err();
+        assert!(format!("{err:#}").contains("player.glb"));
+    }
 
     #[test]
     fn material_role_reads_pocket3d_extras() {

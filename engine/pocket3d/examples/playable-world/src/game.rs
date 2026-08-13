@@ -1,15 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::f32::consts::{FRAC_PI_2, PI, TAU};
+use std::f32::consts::{FRAC_PI_2, TAU};
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result, ensure};
 use glam::{Mat4, Quat, Vec2, Vec3};
+use pocket3d::anim::AnimState;
 use pocket3d::app::Game;
 use pocket3d::camera::Camera;
 use pocket3d::gpu::Gpu;
 use pocket3d::hud::Hud;
 use pocket3d::input::Input;
-use pocket3d::model::ModelAsset;
+use pocket3d::model::{ModelAsset, ModelInstance};
 use pocket3d::renderer::Renderer;
 use pocket3d::scene::{DistanceFog, ModelLighting, RimLighting, Scene, Sky, Sprite, ToonLighting};
 use pocket3d_world::{
@@ -27,6 +28,90 @@ const MOVE_SPEED: f32 = 3.55;
 const CHOP_REACH: f32 = 2.55;
 const ACTION_REACH: f32 = 4.6;
 const AXE_SWING_TURNS: u16 = 18;
+const CAMERA_FOCUS_HEIGHT: f32 = 1.15;
+const CAMERA_ORBIT_LIFT: f32 = 1.2;
+const CAMERA_ORBIT_DISTANCE: f32 = 6.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExplorerAction {
+    Idle,
+    Walk,
+    Chop,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ExplorerAnimations {
+    idle: usize,
+    walk: usize,
+    chop: usize,
+    walk_duration: f32,
+    chop_duration: f32,
+}
+
+fn explorer_action(moving: bool, chop_turns: u16) -> ExplorerAction {
+    if chop_turns > 0 {
+        ExplorerAction::Chop
+    } else if moving {
+        ExplorerAction::Walk
+    } else {
+        ExplorerAction::Idle
+    }
+}
+
+fn explorer_animation(
+    action: ExplorerAction,
+    animations: ExplorerAnimations,
+    scene_time: f32,
+    walk_phase: f32,
+    chop_turns: u16,
+) -> AnimState {
+    match action {
+        ExplorerAction::Idle => AnimState {
+            clip: animations.idle,
+            time: scene_time,
+            speed: 1.0,
+            looping: true,
+        },
+        ExplorerAction::Walk => AnimState {
+            clip: animations.walk,
+            time: walk_phase.rem_euclid(TAU) / TAU * animations.walk_duration,
+            speed: 1.0,
+            looping: true,
+        },
+        ExplorerAction::Chop => {
+            let progress =
+                1.0 - chop_turns.min(AXE_SWING_TURNS) as f32 / AXE_SWING_TURNS.max(1) as f32;
+            AnimState {
+                clip: animations.chop,
+                time: progress * animations.chop_duration,
+                speed: 1.0,
+                looping: false,
+            }
+        }
+    }
+}
+
+fn player_capsule_center(xz: Vec2, ground_height: f32) -> Vec3 {
+    Vec3::new(xz.x, ground_height + PLAYER_HEIGHT, xz.y)
+}
+
+fn grounded_explorer_transform(player: Transform, model_min_y: f32) -> Mat4 {
+    let ground_height = player.position.y - PLAYER_HEIGHT;
+    let translation = Vec3::new(
+        player.position.x,
+        ground_height - model_min_y * player.scale.y,
+        player.position.z,
+    );
+    Mat4::from_scale_rotation_translation(player.scale, player.rotation, translation)
+}
+
+fn player_camera_pose(foot: Vec3, orbit_yaw: f32, orbit_pitch: f32) -> (Vec3, Vec3) {
+    let focus = foot + Vec3::Y * CAMERA_FOCUS_HEIGHT;
+    let rotation =
+        Quat::from_rotation_y(orbit_yaw) * Quat::from_rotation_x(orbit_pitch.clamp(-0.72, 0.34));
+    let offset = rotation * Vec3::new(0.0, CAMERA_ORBIT_LIFT, CAMERA_ORBIT_DISTANCE);
+    (focus + offset, focus)
+}
 
 fn camera_relative_movement(axis: Vec2, yaw: f32) -> Vec3 {
     if axis.length_squared() == 0.0 {
@@ -117,17 +202,13 @@ struct WorldAssets {
     grass: Arc<ModelAsset>,
     rock: Arc<ModelAsset>,
     shadow: Arc<ModelAsset>,
-    body: Arc<ModelAsset>,
-    head: Arc<ModelAsset>,
-    boot: Arc<ModelAsset>,
-    cape: Arc<ModelAsset>,
-    axe_handle: Arc<ModelAsset>,
-    axe_head: Arc<ModelAsset>,
+    explorer: Arc<ModelAsset>,
+    explorer_animations: ExplorerAnimations,
     flame: Arc<ModelAsset>,
 }
 
 impl WorldAssets {
-    fn load(gpu: &Gpu, renderer: &Renderer) -> Self {
+    fn load(gpu: &Gpu, renderer: &Renderer) -> Result<Self> {
         let layout = &renderer.model_material_layout;
         let samplers = &renderer.samplers;
         let white = [255_u8, 255, 255, 255];
@@ -159,7 +240,42 @@ impl WorldAssets {
         let centered_cylinder = |segments| {
             art::cylinder(1.0, 1.0, segments).transformed(Mat4::from_translation(Vec3::NEG_Y * 0.5))
         };
-        Self {
+        let explorer = ModelAsset::load_glb_bytes(
+            gpu,
+            layout,
+            samplers,
+            include_bytes!("../assets/character/explorer.glb"),
+            "playable-world explorer.glb",
+        )?;
+        ensure!(
+            explorer.clips.len() == 3
+                && ["Idle", "Walk", "Chop"]
+                    .iter()
+                    .all(|name| explorer.clip_named(name).is_some()),
+            "explorer.glb must contain exactly the Idle, Walk, and Chop clips"
+        );
+        ensure!(
+            explorer.aabb.0.y.abs() <= 0.01,
+            "explorer.glb rest-pose AABB must meet the authored foot plane at Y=0; got min Y {}",
+            explorer.aabb.0.y
+        );
+        let clip = |name: &str| {
+            let index = explorer
+                .clip_named(name)
+                .with_context(|| format!("explorer.glb is missing the {name} clip"))?;
+            Ok::<_, anyhow::Error>((index, explorer.clips[index].duration.max(0.001)))
+        };
+        let (idle, _) = clip("Idle")?;
+        let (walk, walk_duration) = clip("Walk")?;
+        let (chop, chop_duration) = clip("Chop")?;
+        let explorer_animations = ExplorerAnimations {
+            idle,
+            walk,
+            chop,
+            walk_duration,
+            chop_duration,
+        };
+        Ok(Self {
             ground,
             trunk: upload(centered_cylinder(12), "world trunk"),
             branch: upload(centered_cylinder(9), "world branch"),
@@ -173,20 +289,10 @@ impl WorldAssets {
             grass: upload(art::grass_tuft_seeded(1.0, 1.0, 7, 0x1177), "world grass"),
             rock: upload(art::rock(1.0, 0x8118), "world rock"),
             shadow: upload(art::disc(1.0, 28), "world contact shadow"),
-            body: upload(centered_cylinder(10), "explorer body"),
-            head: upload(
-                art::irregular_icosphere(1.0, 1, 0x901, 0.035),
-                "explorer head",
-            ),
-            boot: upload(
-                art::irregular_icosphere(1.0, 0, 0x902, 0.08),
-                "explorer boot",
-            ),
-            cape: upload(art::cone(1.0, 1.0, 9), "explorer cape"),
-            axe_handle: upload(centered_cylinder(8), "axe handle"),
-            axe_head: upload(art::rock(1.0, 0xa8e), "axe head"),
+            explorer,
+            explorer_animations,
             flame: upload(art::cone(1.0, 1.0, 9), "stylized flame"),
-        }
+        })
     }
 }
 
@@ -543,8 +649,8 @@ impl WorldGame {
                 position.z = root.z + push.y;
             }
         }
-        position.y =
-            OrchardEnvironment::height_at(Vec2::new(position.x, position.z)) + PLAYER_HEIGHT;
+        let xz = Vec2::new(position.x, position.z);
+        position = player_capsule_center(xz, OrchardEnvironment::height_at(xz));
         if let Some(player) = self.world.entity_mut(self.ids.player) {
             let velocity = (position - previous) / dt.max(0.0001);
             player.transform.position = position;
@@ -752,12 +858,10 @@ impl WorldGame {
     }
 
     fn update_camera(&mut self) {
-        let target = self.player_position() + Vec3::Y * 0.72;
-        let rotation = Quat::from_rotation_y(self.orbit_yaw)
-            * Quat::from_rotation_x(self.orbit_pitch.clamp(-0.72, 0.34));
-        let offset = rotation * Vec3::new(0.0, 1.45, 7.6);
-        self.camera.pos = target + offset;
-        self.camera.look_at(target + Vec3::Y * 0.2);
+        let foot = self.player_position() - Vec3::Y * PLAYER_HEIGHT;
+        let (position, focus) = player_camera_pose(foot, self.orbit_yaw, self.orbit_pitch);
+        self.camera.pos = position;
+        self.camera.look_at(focus);
     }
 
     fn rebuild_scene(&mut self, time: f32, size: (u32, u32)) {
@@ -934,7 +1038,7 @@ impl WorldGame {
             ));
         }
         self.render_campfire(&assets);
-        self.render_player(&assets);
+        self.render_player(&assets, time);
         self.render_combustion(&assets, time);
         self.update_camera();
         self.update_hud(size);
@@ -965,7 +1069,7 @@ impl WorldGame {
         }
     }
 
-    fn render_player(&mut self, assets: &WorldAssets) {
+    fn render_player(&mut self, assets: &WorldAssets, time: f32) {
         let Some((player_transform, moving)) = self.world.entity(self.ids.player).map(|player| {
             (
                 player.transform,
@@ -976,92 +1080,24 @@ impl WorldGame {
         }) else {
             return;
         };
-        let base = transform_matrix(player_transform);
-        let bob = if moving {
-            self.walk_phase.sin() * 0.035
-        } else {
-            0.0
-        };
         self.push_shadow(
             &assets.shadow,
             player_transform.position,
             0.43,
             [0.14, 0.20, 0.09, 1.0],
         );
-        self.scene.models.push(art::instance(
-            &assets.body,
-            base * Mat4::from_scale_rotation_translation(
-                Vec3::new(0.32, 0.82, 0.28),
-                Quat::IDENTITY,
-                Vec3::new(0.0, 0.47 + bob, 0.0),
-            ),
-            [0.18, 0.47, 0.55, 1.0],
-        ));
-        self.scene.models.push(art::instance(
-            &assets.head,
-            base * Mat4::from_scale_rotation_translation(
-                Vec3::new(0.28, 0.31, 0.27),
-                Quat::IDENTITY,
-                Vec3::new(0.0, 1.08 + bob, -0.015),
-            ),
-            [0.92, 0.68, 0.42, 1.0],
-        ));
-        self.scene.models.push(art::instance(
-            &assets.cape,
-            base * Mat4::from_scale_rotation_translation(
-                Vec3::new(0.39, 0.86, 0.28),
-                Quat::from_rotation_x(PI),
-                Vec3::new(0.0, 0.88 + bob, 0.18),
-            ),
-            [0.82, 0.60, 0.18, 1.0],
-        ));
-        let stride = if moving {
-            self.walk_phase.sin() * 0.11
-        } else {
-            0.0
-        };
-        for side in [-1.0_f32, 1.0] {
-            self.scene.models.push(art::instance(
-                &assets.boot,
-                base * Mat4::from_scale_rotation_translation(
-                    Vec3::new(0.16, 0.12, 0.25),
-                    Quat::IDENTITY,
-                    Vec3::new(side * 0.17, 0.08, stride * side - 0.04),
-                ),
-                [0.22, 0.14, 0.075, 1.0],
-            ));
-        }
-        let swing_progress = if self.axe_swing_turns > 0 {
-            1.0 - self.axe_swing_turns as f32 / AXE_SWING_TURNS as f32
-        } else {
-            0.0
-        };
-        let swing = if self.axe_swing_turns > 0 {
-            (swing_progress * PI).sin() * -1.75 + 0.55
-        } else {
-            0.52
-        };
-        let axe_root = base
-            * Mat4::from_scale_rotation_translation(
-                Vec3::ONE,
-                Quat::from_rotation_z(swing) * Quat::from_rotation_x(-0.22),
-                Vec3::new(0.43, 0.72 + bob, -0.04),
-            );
-        self.scene.models.push(art::instance(
-            &assets.axe_handle,
-            axe_root * Mat4::from_scale(Vec3::new(0.052, 0.78, 0.052)),
-            [0.47, 0.25, 0.10, 1.0],
-        ));
-        self.scene.models.push(art::instance(
-            &assets.axe_head,
-            axe_root
-                * Mat4::from_scale_rotation_translation(
-                    Vec3::new(0.25, 0.18, 0.085),
-                    Quat::from_rotation_z(0.22),
-                    Vec3::new(0.12, 0.37, 0.0),
-                ),
-            [0.31, 0.38, 0.39, 1.0],
-        ));
+        let action = explorer_action(moving, self.axe_swing_turns);
+        let mut explorer = ModelInstance::new(assets.explorer.clone());
+        explorer.transform =
+            grounded_explorer_transform(player_transform, assets.explorer.aabb.0.y);
+        explorer.anim = explorer_animation(
+            action,
+            assets.explorer_animations,
+            time,
+            self.walk_phase,
+            self.axe_swing_turns,
+        );
+        self.scene.models.push(explorer);
     }
 
     fn render_combustion(&mut self, assets: &WorldAssets, time: f32) {
@@ -1291,7 +1327,7 @@ impl WorldGame {
 
 impl Game for WorldGame {
     fn init(&mut self, gpu: &Gpu, renderer: &mut Renderer) -> Result<()> {
-        self.assets = Some(WorldAssets::load(gpu, renderer));
+        self.assets = Some(WorldAssets::load(gpu, renderer)?);
         Ok(())
     }
 
@@ -1351,10 +1387,9 @@ impl Game for WorldGame {
 fn build_world(seed: u64, environment: &OrchardEnvironment) -> (World, WorldIds) {
     let mut world = World::with_seed(seed);
     let player_xz = Vec2::new(0.0, 7.0);
-    let mut player = EntityBundle::new(Transform::from_translation(Vec3::new(
-        player_xz.x,
-        OrchardEnvironment::height_at(player_xz) + PLAYER_HEIGHT,
-        player_xz.y,
+    let mut player = EntityBundle::new(Transform::from_translation(player_capsule_center(
+        player_xz,
+        OrchardEnvironment::height_at(player_xz),
     )))
     .named("explorer")
     .tagged("player");
@@ -1673,6 +1708,8 @@ pub fn apply_orchard_script(input: &mut Input, turn: u64) {
 
 #[cfg(test)]
 mod tests {
+    use std::f32::consts::PI;
+
     use super::*;
 
     fn scripted_run(seed: u64, turns: u64) -> WorldGame {
@@ -1733,5 +1770,74 @@ mod tests {
             assert!(d_movement.dot(camera.forward_flat()).abs() < 1e-6);
         }
         assert_eq!(camera_relative_movement(Vec2::X, 0.0), Vec3::X);
+    }
+
+    #[test]
+    fn explorer_feet_stay_on_ground_for_every_facing_yaw() {
+        let xz = Vec2::new(3.25, -4.5);
+        let ground = -0.37;
+        let center = player_capsule_center(xz, ground);
+        assert_eq!(center.y - PLAYER_HEIGHT, ground);
+
+        let model_min_y = -0.025;
+        for yaw in [0.0, FRAC_PI_2, PI, -FRAC_PI_2, 0.713] {
+            let player = Transform {
+                position: center,
+                rotation: Quat::from_rotation_y(yaw),
+                scale: Vec3::ONE,
+            };
+            let render = grounded_explorer_transform(player, model_min_y);
+            let rendered_foot = render.transform_point3(Vec3::new(0.0, model_min_y, 0.0));
+            assert!((rendered_foot.y - ground).abs() < 1e-6);
+            assert!(Vec2::new(rendered_foot.x, rendered_foot.z).distance(xz) < 1e-6);
+        }
+    }
+
+    #[test]
+    fn explorer_action_is_idle_walk_or_chop_with_chop_priority() {
+        assert_eq!(explorer_action(false, 0), ExplorerAction::Idle);
+        assert_eq!(explorer_action(true, 0), ExplorerAction::Walk);
+        assert_eq!(explorer_action(false, 1), ExplorerAction::Chop);
+        assert_eq!(explorer_action(true, 1), ExplorerAction::Chop);
+
+        let animations = ExplorerAnimations {
+            idle: 3,
+            walk: 5,
+            chop: 7,
+            walk_duration: 0.8,
+            chop_duration: 0.6,
+        };
+        let idle = explorer_animation(ExplorerAction::Idle, animations, 2.25, 0.0, 0);
+        assert_eq!(idle.clip, 3);
+        assert_eq!(idle.time, 2.25);
+        assert!(idle.looping);
+
+        let walk = explorer_animation(ExplorerAction::Walk, animations, 0.0, PI, 0);
+        assert_eq!(walk.clip, 5);
+        assert!((walk.time - 0.4).abs() < 1e-6);
+        assert!(walk.looping);
+
+        let chop = explorer_animation(
+            ExplorerAction::Chop,
+            animations,
+            99.0,
+            99.0,
+            AXE_SWING_TURNS / 2,
+        );
+        assert_eq!(chop.clip, 7);
+        assert!((chop.time - 0.3).abs() < 1e-6);
+        assert!(!chop.looping);
+    }
+
+    #[test]
+    fn third_person_camera_tracks_the_visual_foot_position() {
+        let foot = Vec3::new(4.0, -0.2, -3.0);
+        for yaw in [0.0, FRAC_PI_2, PI, -FRAC_PI_2] {
+            let (position, focus) = player_camera_pose(foot, yaw, -0.16);
+            assert_eq!(focus, foot + Vec3::Y * CAMERA_FOCUS_HEIGHT);
+            let expected_distance =
+                (CAMERA_ORBIT_LIFT.powi(2) + CAMERA_ORBIT_DISTANCE.powi(2)).sqrt();
+            assert!((position.distance(focus) - expected_distance).abs() < 1e-5);
+        }
     }
 }

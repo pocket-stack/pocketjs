@@ -74,10 +74,27 @@ collide, heat nearby fruit, propagate fire, exhaust its fuel, and cool down.
 
 ## Presentation
 
-All meshes are generated from mathematical primitives in this repository.
-The scene uses a small set of reusable assets with per-instance transforms and
-tints: terrain, trunk, canopy, apple, rock, grass, explorer parts, axe parts,
-and shadow discs. Fire and embers use the additive sprite pass.
+Environment meshes are generated from mathematical primitives in this
+repository. The scene uses reusable assets with per-instance transforms and
+tints for terrain, trunk, canopy, apple, rock, grass, and shadow discs. Fire
+and embers use the additive sprite pass.
+
+**The explorer uses Pocket3D's normal glTF skin and clip path.** A reproducible
+Blender generator authors the face, hair, clothing layers, hands, boots, axe,
+19-joint armature, and `Idle`, `Walk`, and `Chop` actions. The self-contained
+GLB is embedded in the executable and loaded through `ModelAsset`; the example
+does not define a second animation renderer.
+
+The simulation places the player capsule center at `ground + PLAYER_HEIGHT`.
+The presentation transform separately maps the model's authored rest-pose
+minimum Y to the sampled terrain height. **The collision origin stays at the
+capsule center while the rendered feet stay on the ground plane.** Camera focus
+is derived from that visual foot position.
+
+Animation selection is deterministic: an active chop overrides walking, a
+nonzero planar velocity selects walking, and the remaining state selects idle.
+The axe is part of the same skin and is rigidly weighted to `axe.R`, below the
+right hand, so hand, forearm, upper-arm, and axe motion share one sampled pose.
 
 The Pocket3D lighting extension is opt-in. The example enables diffuse bands,
 wrapped light, rim light, warm/cool ambient balance, and distance fog. Existing
@@ -86,6 +103,8 @@ Pocket3D scenes retain their previous defaults.
 **A PNG is rendering evidence, not simulation evidence.** The headless command
 also writes a receipt with the seed, tick count, state hash, ordered events,
 tree state, detached-fruit count, temperatures, fuel, and cooking state.
+The Blender receipt separately records asset topology, bone and clip contracts,
+rest-pose ground contact, hand and axe travel, and self-contained GLB checks.
 
 ## Growth path
 
@@ -105,6 +124,8 @@ small algorithms:
   keeping collision and reactions authoritative in Rust.
 - Batch repeated meshes in the renderer and cull against the camera before
   increasing vegetation density.
+- Add animation cross-fades and upper-body action layers while retaining the
+  current named-clip contract and fixed-step gameplay state.
 - Define renderer feature tiers for desktop wgpu, GLES2, PSP GU, and Vita GXM;
   do not assume the desktop shader path is available on device backends.
 
