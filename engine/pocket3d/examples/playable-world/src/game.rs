@@ -34,6 +34,7 @@ const WATER_BURST_TURNS: u16 = 24;
 const WATER_JET_LENGTH: f32 = 5.2;
 const WATER_DOUSE_PER_TURN: f32 = 0.11;
 const WATER_SAMPLE_COUNT: usize = 18;
+const WATER_NOZZLE_HEIGHT: f32 = 0.92;
 const HELD_APPLE_SOCKET_OFFSET: Vec3 = Vec3::new(0.0, 0.12, 0.0);
 const HELD_APPLE_ATTACHMENT_OFFSET: Vec3 = Vec3::new(0.37, 0.05, -0.22);
 const CAMERA_FOCUS_HEIGHT: f32 = 1.15;
@@ -176,9 +177,9 @@ struct WaterHudState {
     progress: f32,
 }
 
-/// Place the outlet between the explorer's legs and aim it along the actor's
-/// local forward axis. This intentionally depends on the actor transform, not
-/// the orbit camera, so turning and spraying cannot disagree.
+/// Place the outlet at the explorer's waist and aim it along the actor's local
+/// forward axis. This intentionally depends on the actor transform, not the
+/// orbit camera, so turning and spraying cannot disagree.
 fn water_nozzle_and_direction(player: Transform) -> (Vec3, Vec3) {
     let direction = (player.rotation * Vec3::NEG_Z)
         .with_y(0.0)
@@ -186,7 +187,7 @@ fn water_nozzle_and_direction(player: Transform) -> (Vec3, Vec3) {
     let foot_y = player.position.y - PLAYER_HEIGHT * player.scale.y;
     let origin = Vec3::new(
         player.position.x,
-        foot_y + 0.46 * player.scale.y,
+        foot_y + WATER_NOZZLE_HEIGHT * player.scale.y,
         player.position.z,
     ) + direction * 0.10;
     (origin, direction)
@@ -213,8 +214,8 @@ fn water_jet_sample_points(jet: WaterJet, burst_age: u16) -> [Vec3; WATER_SAMPLE
         let t = (index + 1) as f32 / WATER_SAMPLE_COUNT as f32;
         let phase = burst_age as f32 * 0.61 + index as f32 * 1.73;
         let spread = 0.018 + t * 0.075;
-        // Lift the stream above the grass after it leaves the between-leg
-        // nozzle, then let it arc back down near the end of its reach.
+        // Lift the stream slightly after it leaves the waist nozzle, then let
+        // it arc back down near the end of its reach.
         jet.origin
             + jet.direction * (jet.length * t)
             + Vec3::Y * (0.78 * t - 0.56 * t * t)
@@ -1431,9 +1432,9 @@ impl WorldGame {
             });
             previous = point;
         }
-        // Two diverging curtains share the exact same between-leg nozzle and
-        // stay inside the gameplay cone. This keeps the spray visible from a
-        // rear camera even when the central ribbon sits behind the explorer.
+        // Two diverging curtains share the exact same waist nozzle and stay
+        // inside the gameplay cone. This keeps the spray visible from a rear
+        // camera even when the central ribbon sits behind the explorer.
         for side in [-1.0_f32, 1.0] {
             let mut previous = jet.origin;
             for (index, center) in points.into_iter().enumerate() {
@@ -2372,7 +2373,12 @@ mod tests {
         };
         let (origin, direction) = water_nozzle_and_direction(player);
         assert!(direction.distance(Vec3::NEG_X) < 1e-6);
-        assert!((origin.y - (1.0 - PLAYER_HEIGHT + 0.46)).abs() < 1e-6);
+        let foot_y = player.position.y - PLAYER_HEIGHT * player.scale.y;
+        assert!((origin.y - (foot_y + WATER_NOZZLE_HEIGHT)).abs() < 1e-6);
+        assert!(
+            origin.y > player.position.y,
+            "nozzle should sit at the waist"
+        );
 
         let jet = water_jet(player);
         let first = water_jet_sample_points(jet, 7);

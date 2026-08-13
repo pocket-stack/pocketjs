@@ -28,8 +28,9 @@ Controls:
 - Mouse movement or arrow keys orbit the camera.
 - `Space` swings the axe at the nearest tree or log.
 - `F` casts an ember at the aimed reactive object.
-- `Q` fires a short forward water burst. The stream always appears, even over
-  empty ground, and douses every reactive object inside its widening corridor.
+- `Q` fires a short forward water burst from the explorer's waist. The stream
+  always appears, even over empty ground, and douses every reactive object
+  inside its widening corridor.
 - `E` picks up or drops the nearest apple.
 - `R` resets the world to the initial seed.
 - `Escape` releases or captures the mouse; close the window to quit.
