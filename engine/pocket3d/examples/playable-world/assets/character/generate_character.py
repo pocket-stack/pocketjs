@@ -161,6 +161,13 @@ def custom_mesh(name, vertices, faces, material, bone, bevel=0.0, smooth=False):
     return finish_mesh(obj, material, smooth, bevel, bone)
 
 
+def tag_vertices(obj, group_name):
+    """Mark source geometry for Blender-side QA without adding a deform bone."""
+    group = obj.vertex_groups.new(name=group_name)
+    group.add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
+    return obj
+
+
 def create_armature():
     data = bpy.data.armatures.new("ExplorerRig")
     armature = bpy.data.objects.new("ExplorerRig", data)
@@ -182,19 +189,22 @@ def create_armature():
         "chest": ((0, 0, 1.30), (0, 0, 1.56), "spine"),
         "neck": ((0, 0, 1.56), (0, 0, 1.68), "chest"),
         "head": ((0, 0, 1.68), (0, 0, 2.05), "neck"),
-        "upper_arm.L": ((0.28, 0, 1.49), (0.57, 0.01, 1.32), "chest"),
-        "forearm.L": ((0.57, 0.01, 1.32), (0.77, 0.06, 1.10), "upper_arm.L"),
-        "hand.L": ((0.77, 0.06, 1.10), (0.87, 0.10, 1.01), "forearm.L"),
-        "upper_arm.R": ((-0.28, 0, 1.49), (-0.57, 0.01, 1.32), "chest"),
-        "forearm.R": ((-0.57, 0.01, 1.32), (-0.77, 0.06, 1.10), "upper_arm.R"),
-        "hand.R": ((-0.77, 0.06, 1.10), (-0.87, 0.10, 1.01), "forearm.R"),
+        # The arm chains hang beside the torso. Blender local X is explicitly
+        # rolled to the character's left/right axis below, so local-X rotation
+        # produces front/back (+/-Y) swing instead of shoulder abduction.
+        "upper_arm.L": ((0.35, 0, 1.49), (0.35, 0.015, 1.20), "chest"),
+        "forearm.L": ((0.35, 0.015, 1.20), (0.36, 0.04, 0.96), "upper_arm.L"),
+        "hand.L": ((0.36, 0.04, 0.96), (0.37, 0.10, 0.84), "forearm.L"),
+        "upper_arm.R": ((-0.35, 0, 1.49), (-0.35, 0.015, 1.20), "chest"),
+        "forearm.R": ((-0.35, 0.015, 1.20), (-0.36, 0.04, 0.96), "upper_arm.R"),
+        "hand.R": ((-0.36, 0.04, 0.96), (-0.37, 0.10, 0.84), "forearm.R"),
         "thigh.L": ((0.16, 0, 0.78), (0.17, 0, 0.46), "hips"),
         "shin.L": ((0.17, 0, 0.46), (0.17, 0, 0.16), "thigh.L"),
         "foot.L": ((0.17, 0, 0.16), (0.17, 0.18, 0.055), "shin.L"),
         "thigh.R": ((-0.16, 0, 0.78), (-0.17, 0, 0.46), "hips"),
         "shin.R": ((-0.17, 0, 0.46), (-0.17, 0, 0.16), "thigh.R"),
         "foot.R": ((-0.17, 0, 0.16), (-0.17, 0.18, 0.055), "shin.R"),
-        "axe.R": ((-0.86, 0.09, 1.04), (-0.70, 0.08, 0.40), "hand.R"),
+        "axe.R": ((-0.37, 0.085, 0.91), (-0.31, 0.075, 0.20), "hand.R"),
     }
     for name, (head, tail, _) in defs.items():
         bone = data.edit_bones.new(name)
@@ -204,6 +214,11 @@ def create_armature():
     for name, (_, _, parent) in defs.items():
         if parent:
             data.edit_bones[name].parent = data.edit_bones[parent]
+    for name in (
+        "upper_arm.L", "forearm.L", "hand.L",
+        "upper_arm.R", "forearm.R", "hand.R", "axe.R",
+    ):
+        data.edit_bones[name].align_roll(Vector((0, 1, 0)))
     bpy.ops.object.mode_set(mode="POSE")
     for pose_bone in armature.pose.bones:
         pose_bone.rotation_mode = "XYZ"
@@ -265,8 +280,8 @@ def create_character():
 
     # Sleeves, bracers, and modeled hands with thumbs.
     arm_defs = [
-        ("L", (0.29,0,1.49), (0.57,.01,1.32), (0.77,.06,1.10), (0.86,.10,1.02), "upper_arm.L", "forearm.L", "hand.L", 1),
-        ("R", (-0.29,0,1.49), (-0.57,.01,1.32), (-0.77,.06,1.10), (-0.86,.10,1.02), "upper_arm.R", "forearm.R", "hand.R", -1),
+        ("L", (0.30,0,1.49), (0.35,.015,1.20), (0.36,.04,.96), (0.37,.08,.89), "upper_arm.L", "forearm.L", "hand.L", 1),
+        ("R", (-0.30,0,1.49), (-0.35,.015,1.20), (-0.36,.04,.96), (-0.37,.08,.89), "upper_arm.R", "forearm.R", "hand.R", -1),
     ]
     for side, shoulder, elbow, wrist, palm, upper_b, fore_b, hand_b, sign in arm_defs:
         cone_between(f"Tunic sleeve.{side}", shoulder, elbow, 0.18, 0.135, tunic_hi, upper_b, 12)
@@ -275,7 +290,7 @@ def create_character():
         uv_sphere(f"Hand palm.{side}", palm, (0.105,0.085,0.115), skin_light, hand_b, 12, 8)
         uv_sphere(f"Hand thumb.{side}", (palm[0] + sign*.073, palm[1]+.065, palm[2]+.02), (0.05,.045,.068), skin, hand_b, 10, 6)
     # Shoulder guard offsets one side and breaks the primitive silhouette.
-    ico("Shoulder guard.L", (0.34, 0.01, 1.48), (.20,.17,.17), leather_hi, "upper_arm.L", 2)
+    ico("Shoulder guard.L", (0.32, 0.01, 1.46), (.19,.16,.16), leather_hi, "upper_arm.L", 2)
 
     # Expressive head: jaw, ears, nose, inset eyes, brows, hair cap and locks.
     uv_sphere("Head", (0, 0.015, 1.79), (0.285,0.25,0.32), skin_light, "head", 18, 12)
@@ -304,18 +319,28 @@ def create_character():
         cube(name, loc, scale, hair_hi, "head", .05, rot)
 
     # Axe is a real hand-bound assembly, rigidly weighted to axe.R.
-    axe_top = Vector((-0.62, 0.075, 0.18))
-    axe_bottom = Vector((-0.86, 0.09, 1.05))
-    cylinder_between("Axe handle", axe_top, axe_bottom, .035, leather_hi, "axe.R", 12)
-    # Blade around handle's lower endpoint in rest pose; broad curved silhouette.
+    axe_lower = Vector((-0.31, 0.075, 0.20))
+    axe_grip = Vector((-0.37, 0.085, 0.91))
+    tag_vertices(
+        cylinder_between("Axe handle", axe_lower, axe_grip, .035, leather_hi, "axe.R", 12),
+        "QA.axe_handle",
+    )
+    # The right hand is on -X. The blade extends farther into -X than the
+    # handle, keeping the cutting edge on the outside of the body.
     blade_vertices = [
-        (-.665,.05,.28),(-.48,.05,.36),(-.39,.05,.29),(-.43,.05,.15),(-.61,.05,.11),
-        (-.665,.10,.28),(-.48,.10,.36),(-.39,.10,.29),(-.43,.10,.15),(-.61,.10,.11),
+        (-.32,.045,.34),(-.53,.045,.40),(-.68,.045,.31),(-.62,.045,.14),(-.36,.045,.11),
+        (-.32,.105,.34),(-.53,.105,.40),(-.68,.105,.31),(-.62,.105,.14),(-.36,.105,.11),
     ]
     blade_faces = [(0,1,2,3,4),(5,9,8,7,6),(0,5,6,1),(1,6,7,2),(2,7,8,3),(3,8,9,4),(4,9,5,0)]
-    custom_mesh("Axe blade", blade_vertices, blade_faces, metal, "axe.R", .018)
-    cube("Axe cutting edge", (-.405,.075,.235), (.022,.035,.12), metal_hi, "axe.R", .012, (0,math.radians(-10),0))
-    cylinder_between("Axe grip wrap", (-.80,.085,.82), (-.86,.09,1.04), .048, cream, "axe.R", 12)
+    tag_vertices(custom_mesh("Axe blade", blade_vertices, blade_faces, metal, "axe.R", .018), "QA.axe_blade")
+    tag_vertices(
+        cube("Axe cutting edge", (-.655,.075,.255), (.022,.038,.12), metal_hi, "axe.R", .012, (0,math.radians(10),0)),
+        "QA.axe_blade",
+    )
+    tag_vertices(
+        cylinder_between("Axe grip wrap", (-.35,.082,.70), axe_grip, .048, cream, "axe.R", 12),
+        "QA.axe_handle",
+    )
 
 
 def join_character_meshes():
@@ -387,12 +412,25 @@ def join_character_meshes():
     missing_groups = sorted(required_groups - present_groups)
     if missing_groups:
         raise RuntimeError(f"Joined mesh lost vertex groups: {missing_groups}")
-    weighted_counts = {group.name: 0 for group in active.vertex_groups}
+    missing_qa_groups = sorted({"QA.axe_blade", "QA.axe_handle"} - present_groups)
+    if missing_qa_groups:
+        raise RuntimeError(f"Joined mesh lost QA groups: {missing_qa_groups}")
+    deform_bones = {bone.name for bone in ARMATURE.data.bones}
+    deform_group_indices = {
+        group.index: group.name
+        for group in active.vertex_groups
+        if group.name in deform_bones
+    }
+    weighted_counts = {name: 0 for name in deform_bones}
     for vertex in active.data.vertices:
-        memberships = [entry for entry in vertex.groups if entry.weight > 0.00001]
+        memberships = [
+            entry
+            for entry in vertex.groups
+            if entry.group in deform_group_indices and entry.weight > 0.00001
+        ]
         if len(memberships) != 1 or abs(memberships[0].weight - 1.0) > 0.0001:
             raise RuntimeError(f"Vertex {vertex.index} is not rigidly weighted: {memberships}")
-        weighted_counts[active.vertex_groups[memberships[0].group].name] += 1
+        weighted_counts[deform_group_indices[memberships[0].group]] += 1
     if weighted_counts.get("hand.R", 0) == 0 or weighted_counts.get("axe.R", 0) == 0:
         raise RuntimeError(f"Right hand or axe weights missing: {weighted_counts}")
 
@@ -443,9 +481,9 @@ def action_begin(name):
 def create_actions():
     idle = action_begin("Idle")
     idle_poses = {
-        1: ({"chest": (0.0,0.0,-.025), "head": (.015,0,.025), "upper_arm.L": (.03,0,-.02), "upper_arm.R": (-.03,0,.02)}, {"hips": (0,0,0)}),
-        24: ({"chest": (.025,0,.025), "head": (-.02,.015,-.035), "upper_arm.L": (-.035,.015,.025), "upper_arm.R": (.035,-.015,-.025)}, {"hips": (0,0,.014)}),
-        48: ({"chest": (0.0,0.0,-.025), "head": (.015,0,.025), "upper_arm.L": (.03,0,-.02), "upper_arm.R": (-.03,0,.02)}, {"hips": (0,0,0)}),
+        1: ({"chest": (0.0,0.0,-.025), "head": (.015,0,.025), "upper_arm.L": (.03,0,0), "upper_arm.R": (-.03,0,0)}, {"hips": (0,0,0)}),
+        24: ({"chest": (.025,0,.025), "head": (-.02,.015,-.035), "upper_arm.L": (-.035,0,0), "upper_arm.R": (.035,0,0)}, {"hips": (0,0,.014)}),
+        48: ({"chest": (0.0,0.0,-.025), "head": (.015,0,.025), "upper_arm.L": (.03,0,0), "upper_arm.R": (-.03,0,0)}, {"hips": (0,0,0)}),
     }
     for frame,(rots,locs) in idle_poses.items(): key_pose(idle,frame,rots,locs)
     idle["loop"] = True
@@ -455,20 +493,20 @@ def create_actions():
     walk_poses = {
         1: ({"thigh.L": (-.55,0,.03), "shin.L": (.18,0,0), "foot.L": (.15,0,0),
              "thigh.R": (.48,0,-.03), "shin.R": (.46,0,0), "foot.R": (-.18,0,0),
-             "upper_arm.L": (.40,0,-.06), "forearm.L": (-.18,0,0),
-             "upper_arm.R": (-.40,0,.06), "forearm.R": (-.12,0,0), "chest": (0,0,.06)}, {"hips": (0,-.029,0)}),
+             "upper_arm.L": (.58,0,0), "forearm.L": (-.18,0,0),
+             "upper_arm.R": (-.58,0,0), "forearm.R": (-.12,0,0)}, {"hips": (0,-.029,0)}),
         9: ({"thigh.L": (-.05,0,0), "shin.L": (.18,0,0), "thigh.R": (.04,0,0), "shin.R": (.18,0,0),
-             "upper_arm.L": (.05,0,0), "upper_arm.R": (-.05,0,0), "chest": (0,0,0)}, {"hips": (0,0,0)}),
+             "upper_arm.L": (.05,0,0), "upper_arm.R": (-.05,0,0)}, {"hips": (0,0,0)}),
         17: ({"thigh.L": (.48,0,-.03), "shin.L": (.46,0,0), "foot.L": (-.18,0,0),
               "thigh.R": (-.55,0,.03), "shin.R": (.18,0,0), "foot.R": (.15,0,0),
-              "upper_arm.L": (-.40,0,.06), "forearm.L": (-.12,0,0),
-              "upper_arm.R": (.40,0,-.06), "forearm.R": (-.18,0,0), "chest": (0,0,-.06)}, {"hips": (0,-.030,0)}),
+              "upper_arm.L": (-.58,0,0), "forearm.L": (-.12,0,0),
+              "upper_arm.R": (.58,0,0), "forearm.R": (-.18,0,0)}, {"hips": (0,-.030,0)}),
         25: ({"thigh.L": (.04,0,0), "shin.L": (.18,0,0), "thigh.R": (-.05,0,0), "shin.R": (.18,0,0),
-              "upper_arm.L": (-.05,0,0), "upper_arm.R": (.05,0,0), "chest": (0,0,0)}, {"hips": (0,0,0)}),
+              "upper_arm.L": (-.05,0,0), "upper_arm.R": (.05,0,0)}, {"hips": (0,0,0)}),
         33: ({"thigh.L": (-.55,0,.03), "shin.L": (.18,0,0), "foot.L": (.15,0,0),
               "thigh.R": (.48,0,-.03), "shin.R": (.46,0,0), "foot.R": (-.18,0,0),
-              "upper_arm.L": (.40,0,-.06), "forearm.L": (-.18,0,0),
-              "upper_arm.R": (-.40,0,.06), "forearm.R": (-.12,0,0), "chest": (0,0,.06)}, {"hips": (0,-.029,0)}),
+              "upper_arm.L": (.58,0,0), "forearm.L": (-.18,0,0),
+              "upper_arm.R": (-.58,0,0), "forearm.R": (-.12,0,0)}, {"hips": (0,-.029,0)}),
     }
     for frame,(rots,locs) in walk_poses.items(): key_pose(walk,frame,rots,locs)
     walk["loop"] = True
@@ -656,9 +694,21 @@ def canonicalize_glb():
 
 
 def render_previews(actions):
-    for name, frame in (("idle",24),("walk",5),("chop",14)):
-        ARMATURE.animation_data.action = actions[name.capitalize()]
+    camera = bpy.context.scene.camera
+    views = (
+        ("idle", "Idle", 24, (3.4, 5.7, 2.55)),
+        ("walk", "Walk", 1, (3.4, 5.7, 2.55)),
+        ("chop", "Chop", 22, (3.4, 5.7, 2.55)),
+        # Orthographic intent with a perspective camera: the centered rear and
+        # side views make lateral arm abduction impossible to hide.
+        ("walk-rear", "Walk", 1, (0.0, -5.8, 2.1)),
+        ("walk-side", "Walk", 1, (5.8, 0.0, 2.1)),
+    )
+    for name, action_name, frame, camera_location in views:
+        ARMATURE.animation_data.action = actions[action_name]
         bpy.context.scene.frame_set(frame)
+        camera.location = camera_location
+        look_at(camera, Vector((0, 0.05, 1.05)))
         bpy.context.scene.render.filepath = str(PREVIEW_DIR / f"{name}.png")
         bpy.ops.render.render(write_still=True)
     ARMATURE.animation_data.action = actions["Idle"]
@@ -757,7 +807,7 @@ def validate_scene_rest_pose():
     return min_z
 
 
-def weighted_group_min_z(group_name):
+def weighted_group_vertex_indices(group_name):
     mesh_object = CHARACTER_OBJECTS[0]
     group = mesh_object.vertex_groups.get(group_name)
     if group is None:
@@ -769,12 +819,32 @@ def weighted_group_min_z(group_name):
     ]
     if not vertex_indices:
         raise RuntimeError(f"Weighted group {group_name} has no vertices")
+    return vertex_indices
+
+
+def weighted_group_min_z(group_name):
+    mesh_object = CHARACTER_OBJECTS[0]
+    vertex_indices = weighted_group_vertex_indices(group_name)
     depsgraph = bpy.context.evaluated_depsgraph_get()
     evaluated = mesh_object.evaluated_get(depsgraph)
     mesh = evaluated.to_mesh()
     minimum = min((evaluated.matrix_world @ mesh.vertices[index].co).z for index in vertex_indices)
     evaluated.to_mesh_clear()
     return minimum
+
+
+def weighted_group_centroid(group_name):
+    mesh_object = CHARACTER_OBJECTS[0]
+    vertex_indices = weighted_group_vertex_indices(group_name)
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    evaluated = mesh_object.evaluated_get(depsgraph)
+    mesh = evaluated.to_mesh()
+    centroid = sum(
+        (evaluated.matrix_world @ mesh.vertices[index].co for index in vertex_indices),
+        Vector((0, 0, 0)),
+    ) / len(vertex_indices)
+    evaluated.to_mesh_clear()
+    return centroid
 
 
 def validate_action_motion(actions):
@@ -786,6 +856,49 @@ def validate_action_motion(actions):
     walk_stride = (tail("Walk", 1, "foot.L") - tail("Walk", 17, "foot.L")).length
     chop_hand_travel = (tail("Chop", 1, "hand.R") - tail("Chop", 14, "hand.R")).length
     chop_axe_swing = (tail("Chop", 14, "axe.R") - tail("Chop", 22, "axe.R")).length
+
+    walk_hands = {
+        side: (tail("Walk", 1, f"hand.{side}"), tail("Walk", 17, f"hand.{side}"))
+        for side in ("L", "R")
+    }
+    walk_hand_deltas = {
+        side: positions[1] - positions[0]
+        for side, positions in walk_hands.items()
+    }
+    walk_arm_forward_travel = min(abs(delta.y) for delta in walk_hand_deltas.values())
+    walk_arm_lateral_drift = max(abs(delta.x) for delta in walk_hand_deltas.values())
+    walk_arm_phase_error = abs(walk_hand_deltas["L"].y + walk_hand_deltas["R"].y)
+    walk_arm_local_x_alignment = min(
+        abs(ARMATURE.data.bones[name].matrix_local.to_3x3().col[0].normalized().dot(Vector((1, 0, 0))))
+        for name in ("upper_arm.L", "upper_arm.R")
+    )
+
+    ARMATURE.animation_data.action = actions["Idle"]
+    bpy.context.scene.frame_set(1)
+    axe_blade_rest_centroid = weighted_group_centroid("QA.axe_blade")
+    axe_handle_rest_centroid = weighted_group_centroid("QA.axe_handle")
+    axe_outward_offsets = []
+    axe_center_clearances = []
+    for action_name, action in actions.items():
+        ARMATURE.animation_data.action = action
+        frame_start, frame_end = (int(round(value)) for value in action.frame_range)
+        for frame in range(frame_start, frame_end + 1):
+            bpy.context.scene.frame_set(frame)
+            blade = weighted_group_centroid("QA.axe_blade")
+            handle = weighted_group_centroid("QA.axe_handle")
+            # Right side is Blender -X. Positive offset means blade is farther
+            # outward than its handle; positive clearance means it stays on the
+            # right side of the character center.
+            axe_outward_offsets.append(handle.x - blade.x)
+            axe_center_clearances.append(-blade.x)
+    ARMATURE.animation_data.action = actions["Chop"]
+    bpy.context.scene.frame_set(14)
+    chop_blade_windup = weighted_group_centroid("QA.axe_blade")
+    bpy.context.scene.frame_set(22)
+    chop_blade_impact = weighted_group_centroid("QA.axe_blade")
+    axe_blade_forward_travel = abs(chop_blade_impact.y - chop_blade_windup.y)
+    axe_blade_outward_min = min(axe_outward_offsets)
+    axe_blade_center_clearance_min = min(axe_center_clearances)
 
     walk_contacts = []
     ARMATURE.animation_data.action = actions["Walk"]
@@ -802,6 +915,21 @@ def validate_action_motion(actions):
         raise RuntimeError(f"Walk stride is static: {walk_stride}")
     if chop_hand_travel < 0.25 or chop_axe_swing < 0.45:
         raise RuntimeError(f"Chop is static: hand={chop_hand_travel}, axe={chop_axe_swing}")
+    if walk_arm_local_x_alignment < 0.995:
+        raise RuntimeError(f"Arm local X is not lateral: {walk_arm_local_x_alignment}")
+    if walk_arm_forward_travel < 0.40:
+        raise RuntimeError(f"Walk arms do not travel front/back: {walk_arm_forward_travel}")
+    if walk_arm_lateral_drift > 0.05:
+        raise RuntimeError(f"Walk arms drift laterally: {walk_arm_lateral_drift}")
+    if walk_hand_deltas["L"].y * walk_hand_deltas["R"].y >= 0 or walk_arm_phase_error > 0.05:
+        raise RuntimeError(f"Walk arms are not opposed: {walk_hand_deltas}")
+    if axe_blade_outward_min < 0.075 or axe_blade_center_clearance_min < 0.20:
+        raise RuntimeError(
+            f"Axe blade turns inward: offset={axe_blade_outward_min}, "
+            f"center_clearance={axe_blade_center_clearance_min}"
+        )
+    if axe_blade_forward_travel < 0.50:
+        raise RuntimeError(f"Axe does not chop forward: {axe_blade_forward_travel}")
     if max(abs(value) for value in walk_contacts) > 0.008:
         raise RuntimeError(f"Walk has no planted foot: {walk_contacts}")
     if max(abs(value) for value in chop_contacts) > 0.002:
@@ -810,6 +938,18 @@ def validate_action_motion(actions):
         "walk_stride_m": round(walk_stride, 4),
         "chop_hand_travel_m": round(chop_hand_travel, 4),
         "chop_axe_swing_m": round(chop_axe_swing, 4),
+        "walk_arm_forward_travel_m": round(walk_arm_forward_travel, 4),
+        "walk_arm_lateral_drift_m": round(walk_arm_lateral_drift, 4),
+        "walk_arm_phase_error_m": round(walk_arm_phase_error, 4),
+        "walk_arm_local_x_alignment": round(walk_arm_local_x_alignment, 5),
+        "axe_blade_outward": True,
+        "axe_blade_outward_min_m": round(axe_blade_outward_min, 4),
+        "axe_blade_center_clearance_min_m": round(axe_blade_center_clearance_min, 4),
+        "axe_blade_forward_travel_m": round(axe_blade_forward_travel, 4),
+        "axe_blade_rest_centroid_blender_xyz": [round(value, 4) for value in axe_blade_rest_centroid],
+        "axe_handle_rest_centroid_blender_xyz": [round(value, 4) for value in axe_handle_rest_centroid],
+        "axe_blade_rest_outward_from_handle_m": round(axe_handle_rest_centroid.x - axe_blade_rest_centroid.x, 4),
+        "axe_blade_rest_center_clearance_m": round(-axe_blade_rest_centroid.x, 4),
         "walk_contact_max_error_m": round(max(abs(value) for value in walk_contacts), 4),
         "chop_contact_max_error_m": round(max(abs(value) for value in chop_contacts), 4),
     }
@@ -889,7 +1029,13 @@ def main():
             "blend": BLEND_PATH.name,
             "glb": GLB_PATH.name,
             "glb_sha256": hashlib.sha256(GLB_PATH.read_bytes()).hexdigest(),
-            "previews": [] if args.skip_previews else ["previews/idle.png", "previews/walk.png", "previews/chop.png"],
+            "previews": [] if args.skip_previews else [
+                "previews/idle.png",
+                "previews/walk.png",
+                "previews/chop.png",
+                "previews/walk-rear.png",
+                "previews/walk-side.png",
+            ],
         },
         "geometry": {
             "source_vertices": len(explorer_mesh.data.vertices),

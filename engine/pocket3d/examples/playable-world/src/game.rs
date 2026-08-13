@@ -12,7 +12,9 @@ use pocket3d::hud::Hud;
 use pocket3d::input::Input;
 use pocket3d::model::{ModelAsset, ModelInstance};
 use pocket3d::renderer::Renderer;
-use pocket3d::scene::{DistanceFog, ModelLighting, RimLighting, Scene, Sky, Sprite, ToonLighting};
+use pocket3d::scene::{
+    Beam, DistanceFog, ModelLighting, RimLighting, Scene, Sky, Sprite, ToonLighting,
+};
 use pocket3d_world::{
     Attachment, Body, BodyMode, Collider, EntityBundle, EntityId, Environment, EnvironmentSample,
     Interaction, PhysicalSurface, ReactiveMaterial, ReactiveState, StepReport, Structure,
@@ -28,6 +30,12 @@ const MOVE_SPEED: f32 = 3.55;
 const CHOP_REACH: f32 = 2.55;
 const ACTION_REACH: f32 = 4.6;
 const AXE_SWING_TURNS: u16 = 18;
+const WATER_BURST_TURNS: u16 = 24;
+const WATER_JET_LENGTH: f32 = 5.2;
+const WATER_DOUSE_PER_TURN: f32 = 0.11;
+const WATER_SAMPLE_COUNT: usize = 18;
+const HELD_APPLE_SOCKET_OFFSET: Vec3 = Vec3::new(0.0, 0.12, 0.0);
+const HELD_APPLE_ATTACHMENT_OFFSET: Vec3 = Vec3::new(0.37, 0.05, -0.22);
 const CAMERA_FOCUS_HEIGHT: f32 = 1.15;
 const CAMERA_ORBIT_LIFT: f32 = 1.2;
 const CAMERA_ORBIT_DISTANCE: f32 = 6.0;
@@ -46,6 +54,12 @@ struct ExplorerAnimations {
     chop: usize,
     walk_duration: f32,
     chop_duration: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ExplorerPose {
+    transform: Mat4,
+    anim: AnimState,
 }
 
 fn explorer_action(moving: bool, chop_turns: u16) -> ExplorerAction {
@@ -91,6 +105,28 @@ fn explorer_animation(
     }
 }
 
+fn explorer_pose(
+    player: Transform,
+    moving: bool,
+    model_min_y: f32,
+    animations: ExplorerAnimations,
+    scene_time: f32,
+    walk_phase: f32,
+    chop_turns: u16,
+) -> ExplorerPose {
+    let action = explorer_action(moving, chop_turns);
+    ExplorerPose {
+        transform: grounded_explorer_transform(player, model_min_y),
+        anim: explorer_animation(action, animations, scene_time, walk_phase, chop_turns),
+    }
+}
+
+fn held_apple_socket_transform(explorer_transform: Mat4, hand_transform: Mat4) -> Mat4 {
+    let palm = explorer_transform
+        .transform_point3(hand_transform.transform_point3(HELD_APPLE_SOCKET_OFFSET));
+    Mat4::from_translation(palm)
+}
+
 fn player_capsule_center(xz: Vec2, ground_height: f32) -> Vec3 {
     Vec3::new(xz.x, ground_height + PLAYER_HEIGHT, xz.y)
 }
@@ -123,6 +159,139 @@ fn camera_relative_movement(axis: Vec2, yaw: f32) -> Vec3 {
     // therefore screen-right is +X.
     let right = Vec3::new(-forward.z, 0.0, forward.x);
     (right * axis.x + forward * axis.y).normalize_or_zero()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WaterJet {
+    origin: Vec3,
+    direction: Vec3,
+    length: f32,
+    near_radius: f32,
+    far_radius: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WaterHudState {
+    spraying: bool,
+    progress: f32,
+}
+
+/// Place the outlet between the explorer's legs and aim it along the actor's
+/// local forward axis. This intentionally depends on the actor transform, not
+/// the orbit camera, so turning and spraying cannot disagree.
+fn water_nozzle_and_direction(player: Transform) -> (Vec3, Vec3) {
+    let direction = (player.rotation * Vec3::NEG_Z)
+        .with_y(0.0)
+        .normalize_or(Vec3::NEG_Z);
+    let foot_y = player.position.y - PLAYER_HEIGHT * player.scale.y;
+    let origin = Vec3::new(
+        player.position.x,
+        foot_y + 0.46 * player.scale.y,
+        player.position.z,
+    ) + direction * 0.10;
+    (origin, direction)
+}
+
+fn water_jet(player: Transform) -> WaterJet {
+    let (origin, direction) = water_nozzle_and_direction(player);
+    WaterJet {
+        origin,
+        direction,
+        length: WATER_JET_LENGTH,
+        near_radius: 0.16,
+        far_radius: 0.72,
+    }
+}
+
+/// Deterministic points for the visible ribbon and droplets. The stream has a
+/// slight ballistic fall and stable turn-indexed curl; it never samples wall
+/// time or random state.
+fn water_jet_sample_points(jet: WaterJet, burst_age: u16) -> [Vec3; WATER_SAMPLE_COUNT] {
+    let right = jet.direction.cross(Vec3::Y).normalize_or(Vec3::X);
+    let up = right.cross(jet.direction).normalize_or(Vec3::Y);
+    std::array::from_fn(|index| {
+        let t = (index + 1) as f32 / WATER_SAMPLE_COUNT as f32;
+        let phase = burst_age as f32 * 0.61 + index as f32 * 1.73;
+        let spread = 0.018 + t * 0.075;
+        // Lift the stream above the grass after it leaves the between-leg
+        // nozzle, then let it arc back down near the end of its reach.
+        jet.origin
+            + jet.direction * (jet.length * t)
+            + Vec3::Y * (0.78 * t - 0.56 * t * t)
+            + right * phase.sin() * spread
+            + up * phase.cos() * spread * 0.42
+    })
+}
+
+/// Pure cone/corridor test between a finite water-jet segment and a collider's
+/// oriented capsule segment. Spheres are represented by a zero-length segment.
+fn water_jet_hits_target(jet: WaterJet, transform: Transform, collider: Option<Collider>) -> bool {
+    let collider = collider.unwrap_or(Collider::Sphere { radius: 0.20 });
+    let axis = transform.rotation * Vec3::Y;
+    let half_height = collider.half_height() * transform.scale.y.abs();
+    let target_radius = collider.radius() * transform.scale.abs().max_element().max(f32::EPSILON);
+    let target_a = transform.position - axis * half_height;
+    let target_b = transform.position + axis * half_height;
+    let jet_b = jet.origin + jet.direction * jet.length;
+    let (jet_fraction, distance_squared) =
+        segment_distance_from_first(jet.origin, jet_b, target_a, target_b);
+    let spray_radius = jet.near_radius + (jet.far_radius - jet.near_radius) * jet_fraction;
+    distance_squared <= (spray_radius + target_radius).powi(2)
+}
+
+/// Return the normalized position on the first segment and the squared
+/// distance between the two closest points.
+fn segment_distance_from_first(a0: Vec3, a1: Vec3, b0: Vec3, b1: Vec3) -> (f32, f32) {
+    const EPSILON: f32 = 1e-8;
+    let d1 = a1 - a0;
+    let d2 = b1 - b0;
+    let r = a0 - b0;
+    let a = d1.length_squared();
+    let e = d2.length_squared();
+    let f = d2.dot(r);
+
+    let (mut s, t) = if a <= EPSILON && e <= EPSILON {
+        (0.0, 0.0)
+    } else if a <= EPSILON {
+        (0.0, (f / e).clamp(0.0, 1.0))
+    } else {
+        let c = d1.dot(r);
+        if e <= EPSILON {
+            ((-c / a).clamp(0.0, 1.0), 0.0)
+        } else {
+            let b = d1.dot(d2);
+            let denominator = a * e - b * b;
+            let mut s = if denominator.abs() > EPSILON {
+                ((b * f - c * e) / denominator).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let mut t = (b * s + f) / e;
+            if t < 0.0 {
+                t = 0.0;
+                s = (-c / a).clamp(0.0, 1.0);
+            } else if t > 1.0 {
+                t = 1.0;
+                s = ((b - c) / a).clamp(0.0, 1.0);
+            }
+            (s, t)
+        }
+    };
+    s = s.clamp(0.0, 1.0);
+    let point_a = a0 + d1 * s;
+    let point_b = b0 + d2 * t;
+    (s, point_a.distance_squared(point_b))
+}
+
+fn water_hud_state(remaining_turns: u16) -> WaterHudState {
+    WaterHudState {
+        spraying: remaining_turns > 0,
+        progress: if remaining_turns > 0 {
+            remaining_turns.min(WATER_BURST_TURNS) as f32 / WATER_BURST_TURNS as f32
+        } else {
+            1.0
+        },
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -204,6 +373,7 @@ struct WorldAssets {
     shadow: Arc<ModelAsset>,
     explorer: Arc<ModelAsset>,
     explorer_animations: ExplorerAnimations,
+    explorer_left_hand: usize,
     flame: Arc<ModelAsset>,
 }
 
@@ -275,6 +445,9 @@ impl WorldAssets {
             walk_duration,
             chop_duration,
         };
+        let explorer_left_hand = explorer
+            .node_named("hand.L")
+            .context("explorer.glb is missing the hand.L pickup socket")?;
         Ok(Self {
             ground,
             trunk: upload(centered_cylinder(12), "world trunk"),
@@ -291,6 +464,7 @@ impl WorldAssets {
             shadow: upload(art::disc(1.0, 28), "world contact shadow"),
             explorer,
             explorer_animations,
+            explorer_left_hand,
             flame: upload(art::cone(1.0, 1.0, 9), "stylized flame"),
         })
     }
@@ -455,7 +629,9 @@ pub struct WorldGame {
     pending: PendingActions,
     held_apple: Option<EntityId>,
     axe_swing_turns: u16,
+    water_burst_turns: u16,
     walk_phase: f32,
+    presentation_time: f32,
     message: String,
     message_turns: u16,
     receipts: RuntimeReceipts,
@@ -507,7 +683,9 @@ impl WorldGame {
             pending: PendingActions::default(),
             held_apple: None,
             axe_swing_turns: 0,
+            water_burst_turns: 0,
             walk_phase: 0.0,
+            presentation_time: 0.0,
             message: "Approach the old apple tree".into(),
             message_turns: 240,
             receipts: RuntimeReceipts::default(),
@@ -556,6 +734,20 @@ impl WorldGame {
             landmarks: self.receipts.landmarks.clone(),
             entities,
         }
+    }
+
+    pub fn is_holding_apple(&self) -> bool {
+        self.held_apple.is_some_and(|apple_id| {
+            self.world.entity(apple_id).is_some_and(|apple| {
+                apple
+                    .attachment
+                    .is_some_and(|attachment| attachment.parent == self.ids.player)
+            })
+        })
+    }
+
+    pub fn water_burst_active(&self) -> bool {
+        self.water_burst_turns > 0
     }
 
     pub fn acceptance(&self) -> AcceptanceReceipt {
@@ -615,8 +807,11 @@ impl WorldGame {
         self.world = world;
         self.ids = ids;
         self.receipts = RuntimeReceipts::default();
+        self.pending = PendingActions::default();
         self.held_apple = None;
         self.axe_swing_turns = 0;
+        self.water_burst_turns = 0;
+        self.last_target = None;
         self.message = "World reset from seed".into();
         self.message_turns = 150;
     }
@@ -664,6 +859,41 @@ impl WorldGame {
         }
         if movement.length_squared() > 0.0 {
             self.walk_phase += dt * 8.5;
+        }
+    }
+
+    fn sync_held_apple_to_hand(&mut self) {
+        let Some(apple_id) = self.held_apple else {
+            return;
+        };
+        let Some(position) = self
+            .assets
+            .as_ref()
+            .and_then(|assets| self.held_apple_socket_position(assets, self.presentation_time))
+        else {
+            return;
+        };
+        let Some(player_transform) = self
+            .world
+            .entity(self.ids.player)
+            .map(|player| player.transform)
+        else {
+            return;
+        };
+        let local_position = inverse_transform_point(player_transform, position);
+        if let Some(apple) = self.world.entity_mut(apple_id) {
+            apple.transform.position = position;
+            apple.transform.rotation = Quat::IDENTITY;
+            apple.transform.scale = Vec3::ONE;
+            if let Some(attachment) = apple
+                .attachment
+                .as_mut()
+                .filter(|attachment| attachment.parent == self.ids.player)
+            {
+                attachment.local.position = local_position;
+                attachment.local.rotation = Quat::IDENTITY;
+                attachment.local.scale = Vec3::ONE;
+            }
         }
     }
 
@@ -742,19 +972,41 @@ impl WorldGame {
         self.say("Ember transferred heat into the material", 110);
     }
 
-    fn douse_nearest(&mut self) {
-        let player = self.player_position();
-        let target = self.nearest_reactive(player, ACTION_REACH, true);
-        let Some(target) = target else {
-            self.say("No burning material in water range", 90);
-            return;
+    fn begin_water_burst(&mut self) {
+        self.water_burst_turns = WATER_BURST_TURNS;
+    }
+
+    fn current_water_jet(&self) -> Option<WaterJet> {
+        let player = self.world.entity(self.ids.player)?;
+        Some(water_jet(player.transform))
+    }
+
+    fn water_targets(&self, jet: WaterJet) -> Vec<EntityId> {
+        self.world
+            .entities()
+            .filter(|(_, entity)| {
+                !entity.has_tag("player")
+                    && entity.reactive_material.is_some()
+                    && entity.reactive_state.is_some()
+                    && water_jet_hits_target(jet, entity.transform, entity.collider)
+            })
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
+    fn queue_water_douse(&mut self) -> Vec<EntityId> {
+        let Some(jet) = self.current_water_jet() else {
+            return Vec::new();
         };
-        self.world.queue_interaction(Interaction::Douse {
-            target,
-            amount: 1.0,
-        });
-        self.last_target = Some(target);
-        self.say("Water raised moisture and removed heat", 110);
+        let targets = self.water_targets(jet);
+        for &target in &targets {
+            self.world.queue_interaction(Interaction::Douse {
+                target,
+                amount: WATER_DOUSE_PER_TURN,
+            });
+        }
+        self.last_target = targets.first().copied().or(self.last_target);
+        targets
     }
 
     fn nearest_reactive(
@@ -781,9 +1033,24 @@ impl WorldGame {
 
     fn pickup_or_drop(&mut self) {
         if let Some(apple_id) = self.held_apple.take() {
-            let forward = Vec3::new(-self.orbit_yaw.sin(), 0.0, -self.orbit_yaw.cos());
+            let forward = self
+                .world
+                .entity(self.ids.player)
+                .map(|player| player.transform.rotation * Vec3::NEG_Z)
+                .unwrap_or(Vec3::NEG_Z)
+                .with_y(0.0)
+                .normalize_or(Vec3::NEG_Z);
+            let socket_position = self
+                .assets
+                .as_ref()
+                .and_then(|assets| self.held_apple_socket_position(assets, self.presentation_time));
             if let Some(apple) = self.world.entity_mut(apple_id) {
                 apple.attachment = None;
+                if let Some(position) = socket_position {
+                    apple.transform.position = position;
+                    apple.transform.rotation = Quat::IDENTITY;
+                    apple.transform.scale = Vec3::ONE;
+                }
                 if let Some(body) = apple.body.as_mut() {
                     body.mode = BodyMode::Dynamic;
                     body.linear_velocity = forward * 2.2 + Vec3::Y * 1.1;
@@ -819,12 +1086,15 @@ impl WorldGame {
         if let Some(apple) = self.world.entity_mut(apple_id) {
             apple.attachment = Some(Attachment {
                 parent: self.ids.player,
-                local: Transform::from_translation(Vec3::new(0.48, 0.55, -0.12)),
+                // Keep the simulation proxy close to the authored left hand.
+                // Rendering uses the sampled hand.L socket below, including
+                // the active Idle/Walk/Chop animation.
+                local: Transform::from_translation(HELD_APPLE_ATTACHMENT_OFFSET),
                 release_impulse: Vec3::ZERO,
             });
         }
         self.held_apple = Some(apple_id);
-        self.say("Picked up apple through Attachment", 95);
+        self.say("Picked up apple in the explorer's left hand", 95);
     }
 
     fn say(&mut self, message: impl Into<String>, turns: u16) {
@@ -967,6 +1237,9 @@ impl WorldGame {
             .iter()
             .flat_map(|tree| tree.apples.iter().copied())
             .collect();
+        let held_apple_matrix = self
+            .held_apple
+            .zip(self.held_apple_render_transform(&assets, time));
         for apple_id in apples {
             let Some((apple_transform, state, detached)) =
                 self.world.entity(apple_id).map(|apple| {
@@ -990,7 +1263,10 @@ impl WorldGame {
                     ((state.temperature_c - 40.0) / 240.0).clamp(0.0, 1.0),
                 )
             };
-            let matrix = transform_matrix(apple_transform);
+            let held = held_apple_matrix.is_some_and(|(held_id, _)| held_id == apple_id);
+            let matrix = held_apple_matrix
+                .filter(|(held_id, _)| *held_id == apple_id)
+                .map_or_else(|| transform_matrix(apple_transform), |(_, matrix)| matrix);
             self.scene.models.push(art::instance(
                 &assets.apple,
                 matrix * Mat4::from_scale(Vec3::new(0.205, 0.225, 0.205)),
@@ -1006,7 +1282,7 @@ impl WorldGame {
                     ),
                 [0.20, 0.42, 0.12, 1.0],
             ));
-            if detached {
+            if detached && !held {
                 self.push_shadow(
                     &assets.shadow,
                     apple_transform.position,
@@ -1039,6 +1315,7 @@ impl WorldGame {
         }
         self.render_campfire(&assets);
         self.render_player(&assets, time);
+        self.render_water_burst();
         self.render_combustion(&assets, time);
         self.update_camera();
         self.update_hud(size);
@@ -1070,14 +1347,11 @@ impl WorldGame {
     }
 
     fn render_player(&mut self, assets: &WorldAssets, time: f32) {
-        let Some((player_transform, moving)) = self.world.entity(self.ids.player).map(|player| {
-            (
-                player.transform,
-                player
-                    .body
-                    .is_some_and(|body| body.linear_velocity.length_squared() > 0.05),
-            )
-        }) else {
+        let Some(player_transform) = self
+            .world
+            .entity(self.ids.player)
+            .map(|player| player.transform)
+        else {
             return;
         };
         self.push_shadow(
@@ -1086,18 +1360,109 @@ impl WorldGame {
             0.43,
             [0.14, 0.20, 0.09, 1.0],
         );
-        let action = explorer_action(moving, self.axe_swing_turns);
+        let Some(pose) = self.current_explorer_pose(assets, time) else {
+            return;
+        };
         let mut explorer = ModelInstance::new(assets.explorer.clone());
-        explorer.transform =
-            grounded_explorer_transform(player_transform, assets.explorer.aabb.0.y);
-        explorer.anim = explorer_animation(
-            action,
+        explorer.transform = pose.transform;
+        explorer.anim = pose.anim;
+        self.scene.models.push(explorer);
+    }
+
+    fn current_explorer_pose(&self, assets: &WorldAssets, time: f32) -> Option<ExplorerPose> {
+        let player = self.world.entity(self.ids.player)?;
+        let moving = player
+            .body
+            .is_some_and(|body| body.linear_velocity.length_squared() > 0.05);
+        Some(explorer_pose(
+            player.transform,
+            moving,
+            assets.explorer.aabb.0.y,
             assets.explorer_animations,
             time,
             self.walk_phase,
             self.axe_swing_turns,
-        );
-        self.scene.models.push(explorer);
+        ))
+    }
+
+    fn held_apple_socket_position(&self, assets: &WorldAssets, time: f32) -> Option<Vec3> {
+        let pose = self.current_explorer_pose(assets, time)?;
+        let hand = assets
+            .explorer
+            .sampled_node_transform(assets.explorer_left_hand, &pose.anim)?;
+        Some(held_apple_socket_transform(pose.transform, hand).transform_point3(Vec3::ZERO))
+    }
+
+    fn held_apple_render_transform(&self, assets: &WorldAssets, time: f32) -> Option<Mat4> {
+        self.held_apple?;
+        self.held_apple_socket_position(assets, time)
+            .map(Mat4::from_translation)
+    }
+
+    fn render_water_burst(&mut self) {
+        if self.water_burst_turns == 0 {
+            return;
+        }
+        let Some(jet) = self.current_water_jet() else {
+            return;
+        };
+        let burst_age = WATER_BURST_TURNS.saturating_sub(self.water_burst_turns);
+        let points = water_jet_sample_points(jet, burst_age);
+        let right = jet.direction.cross(Vec3::Y).normalize_or(Vec3::X);
+        self.scene.beams.push(Beam {
+            a: jet.origin,
+            b: points[2],
+            width: 0.12,
+            color: [0.50, 0.94, 1.0, 0.96],
+        });
+        let mut previous = jet.origin;
+        for (index, point) in points.into_iter().enumerate() {
+            let fade = 1.0 - index as f32 / WATER_SAMPLE_COUNT as f32 * 0.48;
+            self.scene.beams.push(Beam {
+                a: previous,
+                b: point,
+                width: 0.095 - index as f32 / WATER_SAMPLE_COUNT as f32 * 0.035,
+                color: [0.12, 0.68, 1.0, 0.94 * fade],
+            });
+            self.scene.sprites.push(Sprite {
+                pos: point,
+                size: 0.14 + index as f32 * 0.0045,
+                color: [0.30, 0.84, 1.0, 0.86 * fade],
+            });
+            previous = point;
+        }
+        // Two diverging curtains share the exact same between-leg nozzle and
+        // stay inside the gameplay cone. This keeps the spray visible from a
+        // rear camera even when the central ribbon sits behind the explorer.
+        for side in [-1.0_f32, 1.0] {
+            let mut previous = jet.origin;
+            for (index, center) in points.into_iter().enumerate() {
+                let t = (index + 1) as f32 / WATER_SAMPLE_COUNT as f32;
+                let flutter = (burst_age as f32 * 0.53 + index as f32 * 1.37).sin() * 0.055 * t;
+                let point =
+                    center + right * side * (jet.far_radius * 0.84 * t.powf(1.18) + flutter);
+                let fade = 1.0 - t * 0.58;
+                self.scene.beams.push(Beam {
+                    a: previous,
+                    b: point,
+                    width: 0.060 - t * 0.022,
+                    color: [0.16, 0.72, 1.0, 0.78 * fade],
+                });
+                if index % 2 == 0 {
+                    self.scene.sprites.push(Sprite {
+                        pos: point,
+                        size: 0.11 + t * 0.075,
+                        color: [0.42, 0.88, 1.0, 0.75 * fade],
+                    });
+                }
+                previous = point;
+            }
+        }
+        self.scene.sprites.push(Sprite {
+            pos: jet.origin,
+            size: 0.22,
+            color: [0.52, 0.94, 1.0, 0.96],
+        });
     }
 
     fn render_combustion(&mut self, assets: &WorldAssets, time: f32) {
@@ -1238,6 +1603,38 @@ impl WorldGame {
             ),
         );
 
+        let water = water_hud_state(self.water_burst_turns);
+        self.hud
+            .rect(20.0, 132.0, 224.0, 55.0, [0.025, 0.075, 0.105, 0.82]);
+        self.hud.text(
+            36.0,
+            141.0,
+            1.25,
+            if water.spraying {
+                [0.45, 0.90, 1.0, 1.0]
+            } else {
+                [0.64, 0.82, 0.86, 1.0]
+            },
+            if water.spraying {
+                "WATER SPRAYING"
+            } else {
+                "WATER READY"
+            },
+        );
+        self.hud
+            .rect(36.0, 169.0, 192.0, 7.0, [0.025, 0.12, 0.16, 0.92]);
+        self.hud.rect(
+            36.0,
+            169.0,
+            192.0 * water.progress,
+            7.0,
+            if water.spraying {
+                [0.12, 0.68, 0.98, 0.95]
+            } else {
+                [0.20, 0.48, 0.62, 0.78]
+            },
+        );
+
         let target_id = self
             .last_target
             .or_else(|| self.nearest_reactive(self.player_position(), 6.0, false));
@@ -1369,16 +1766,39 @@ impl Game for WorldGame {
         if std::mem::take(&mut self.pending.pickup) {
             self.pickup_or_drop();
         }
-        if std::mem::take(&mut self.pending.douse) {
-            self.douse_nearest();
+        self.sync_held_apple_to_hand();
+        let water_started = std::mem::take(&mut self.pending.douse);
+        if water_started {
+            self.begin_water_burst();
+        }
+        let water_targets = if self.water_burst_turns > 0 {
+            self.queue_water_douse()
+        } else {
+            Vec::new()
+        };
+        if water_started {
+            if water_targets.is_empty() {
+                self.say("Water burst sprayed across the open ground", 90);
+            } else {
+                self.say(
+                    format!(
+                        "Water burst soaked {} reactive material{}",
+                        water_targets.len(),
+                        if water_targets.len() == 1 { "" } else { "s" }
+                    ),
+                    110,
+                );
+            }
         }
         let report = self.world.step(&self.environment);
         self.observe_report(&report);
         self.axe_swing_turns = self.axe_swing_turns.saturating_sub(1);
+        self.water_burst_turns = self.water_burst_turns.saturating_sub(1);
         self.message_turns = self.message_turns.saturating_sub(1);
     }
 
     fn compose(&mut self, _alpha: f32, time: f32, size: (u32, u32)) -> (&Scene, &Camera, &Hud) {
+        self.presentation_time = time;
         self.rebuild_scene(time, size);
         (&self.scene, &self.camera, &self.hud)
     }
@@ -1665,6 +2085,17 @@ fn transform_matrix(transform: Transform) -> Mat4 {
     Mat4::from_scale_rotation_translation(transform.scale, transform.rotation, transform.position)
 }
 
+fn inverse_transform_point(transform: Transform, world: Vec3) -> Vec3 {
+    let scale = transform.scale.map(|component| {
+        if component.abs() > f32::EPSILON {
+            component
+        } else {
+            1.0
+        }
+    });
+    (transform.rotation.inverse() * (world - transform.position)) / scale
+}
+
 fn horizontal_distance_squared(a: Vec3, b: Vec3) -> f32 {
     Vec2::new(a.x - b.x, a.z - b.z).length_squared()
 }
@@ -1692,7 +2123,7 @@ fn ids(set: &BTreeSet<EntityId>) -> Vec<u64> {
     set.iter().map(|id| id.0).collect()
 }
 
-pub fn apply_orchard_script(input: &mut Input, turn: u64) {
+fn apply_tree_fall_script(input: &mut Input, turn: u64) {
     input.inject_key(KeyCode::KeyW, turn < 101);
     for action_turn in [108_u64, 138, 168] {
         input.inject_key(KeyCode::Space, turn == action_turn);
@@ -1700,9 +2131,21 @@ pub fn apply_orchard_script(input: &mut Input, turn: u64) {
             input.inject_key(KeyCode::Space, false);
         }
     }
+}
+
+pub fn apply_orchard_script(input: &mut Input, turn: u64) {
+    apply_tree_fall_script(input, turn);
     input.inject_key(KeyCode::KeyF, turn == 228);
     if turn == 229 {
         input.inject_key(KeyCode::KeyF, false);
+    }
+}
+
+pub fn apply_carry_script(input: &mut Input, turn: u64) {
+    apply_tree_fall_script(input, turn);
+    input.inject_key(KeyCode::KeyE, turn == 300);
+    if turn == 301 {
+        input.inject_key(KeyCode::KeyE, false);
     }
 }
 
@@ -1830,6 +2273,85 @@ mod tests {
     }
 
     #[test]
+    fn held_apple_socket_composes_instance_hand_and_palm_offset() {
+        let explorer = Mat4::from_scale_rotation_translation(
+            Vec3::splat(1.2),
+            Quat::from_rotation_y(0.7),
+            Vec3::new(3.0, -0.2, 5.0),
+        );
+        let hand = Mat4::from_rotation_translation(
+            Quat::from_rotation_x(-0.45),
+            Vec3::new(0.36, 0.96, -0.04),
+        );
+        let socket = held_apple_socket_transform(explorer, hand);
+        let expected = explorer.transform_point3(hand.transform_point3(HELD_APPLE_SOCKET_OFFSET));
+        assert!(socket.transform_point3(Vec3::ZERO).distance(expected) < 1e-6);
+        let (scale, _, _) = socket.to_scale_rotation_translation();
+        assert!(scale.distance(Vec3::ONE) < 1e-6);
+
+        let reached_hand = Mat4::from_translation(Vec3::new(0.0, 0.0, -0.3)) * hand;
+        let reached = held_apple_socket_transform(explorer, reached_hand);
+        assert!(
+            reached
+                .transform_point3(Vec3::ZERO)
+                .distance(socket.transform_point3(Vec3::ZERO))
+                > 0.25
+        );
+
+        let parent = Transform {
+            position: Vec3::new(-4.0, 0.7, 2.0),
+            rotation: Quat::from_rotation_y(-0.9),
+            scale: Vec3::new(1.2, 0.8, 1.5),
+        };
+        let local = inverse_transform_point(parent, expected);
+        assert!(parent.transform_point(local).distance(expected) < 1e-5);
+    }
+
+    #[test]
+    fn picking_up_a_loose_apple_anchors_its_proxy_at_the_left_hand() {
+        let mut game = WorldGame::new(7);
+        let apple_id = game.ids.trees[0].apples[0];
+        let player_position = game.player_position();
+        let apple = game.world.entity_mut(apple_id).unwrap();
+        apple.attachment = None;
+        apple.transform.position = player_position;
+
+        game.pickup_or_drop();
+
+        assert_eq!(game.held_apple, Some(apple_id));
+        let attachment = game
+            .world
+            .entity(apple_id)
+            .and_then(|apple| apple.attachment)
+            .unwrap();
+        assert_eq!(attachment.parent, game.ids.player);
+        assert_eq!(attachment.local.position, HELD_APPLE_ATTACHMENT_OFFSET);
+        assert!(attachment.local.position.y.abs() < 0.1);
+
+        let player_forward = game
+            .world
+            .entity(game.ids.player)
+            .unwrap()
+            .transform
+            .rotation
+            * Vec3::NEG_Z;
+        game.orbit_yaw = PI;
+        game.pickup_or_drop();
+        let dropped = game.world.entity(apple_id).unwrap();
+        assert!(dropped.attachment.is_none());
+        assert!(
+            dropped
+                .body
+                .unwrap()
+                .linear_velocity
+                .with_y(0.0)
+                .normalize()
+                .dot(player_forward.with_y(0.0).normalize())
+                > 0.999
+        );
+    }
+
+    #[test]
     fn third_person_camera_tracks_the_visual_foot_position() {
         let foot = Vec3::new(4.0, -0.2, -3.0);
         for yaw in [0.0, FRAC_PI_2, PI, -FRAC_PI_2] {
@@ -1839,5 +2361,131 @@ mod tests {
                 (CAMERA_ORBIT_LIFT.powi(2) + CAMERA_ORBIT_DISTANCE.powi(2)).sqrt();
             assert!((position.distance(focus) - expected_distance).abs() < 1e-5);
         }
+    }
+
+    #[test]
+    fn water_nozzle_tracks_facing_and_samples_are_deterministic() {
+        let player = Transform {
+            position: Vec3::new(2.0, 1.0, -3.0),
+            rotation: Quat::from_rotation_y(FRAC_PI_2),
+            scale: Vec3::ONE,
+        };
+        let (origin, direction) = water_nozzle_and_direction(player);
+        assert!(direction.distance(Vec3::NEG_X) < 1e-6);
+        assert!((origin.y - (1.0 - PLAYER_HEIGHT + 0.46)).abs() < 1e-6);
+
+        let jet = water_jet(player);
+        let first = water_jet_sample_points(jet, 7);
+        let second = water_jet_sample_points(jet, 7);
+        assert_eq!(first, second);
+        assert!(first.iter().all(|point| point.is_finite()));
+        assert!(
+            (first[WATER_SAMPLE_COUNT - 1] - origin).dot(direction)
+                > (first[0] - origin).dot(direction)
+        );
+    }
+
+    #[test]
+    fn water_corridor_hits_front_capsules_but_not_back_or_wide_targets() {
+        let jet = water_jet(Transform::from_translation(Vec3::Y * PLAYER_HEIGHT));
+        let capsule = Some(Collider::CapsuleY {
+            radius: 0.35,
+            half_height: 1.4,
+        });
+        assert!(water_jet_hits_target(
+            jet,
+            Transform::from_translation(Vec3::new(0.0, 1.5, -3.0)),
+            capsule,
+        ));
+        assert!(!water_jet_hits_target(
+            jet,
+            Transform::from_translation(Vec3::new(0.0, 1.5, 1.0)),
+            capsule,
+        ));
+        assert!(!water_jet_hits_target(
+            jet,
+            Transform::from_translation(Vec3::new(2.4, 1.5, -3.0)),
+            capsule,
+        ));
+    }
+
+    #[test]
+    fn q_starts_a_visible_burst_even_over_empty_ground() {
+        let mut game = WorldGame::new(7);
+        let player_xz = Vec2::new(-18.0, 18.0);
+        let player = game.world.entity_mut(game.ids.player).unwrap();
+        player.transform.position =
+            player_capsule_center(player_xz, OrchardEnvironment::height_at(player_xz));
+        player.transform.rotation = Quat::IDENTITY;
+
+        let mut input = Input::default();
+        input.inject_key(KeyCode::KeyQ, true);
+        game.frame(1.0 / 60.0, &input);
+        game.tick(1.0 / 60.0, &input);
+
+        assert_eq!(game.water_burst_turns, WATER_BURST_TURNS - 1);
+        assert!(game.message.contains("open ground"));
+        let hud = water_hud_state(game.water_burst_turns);
+        assert!(hud.spraying);
+        assert!(hud.progress > 0.0 && hud.progress < 1.0);
+    }
+
+    #[test]
+    fn one_water_burst_douses_every_reactive_target_in_the_corridor() {
+        let mut game = WorldGame::new(7);
+        let jet = game.current_water_jet().unwrap();
+        let mut spawn_target = |distance: f32, lateral: f32| {
+            let mut target = EntityBundle::new(Transform::from_translation(
+                jet.origin + jet.direction * distance + Vec3::X * lateral,
+            ))
+            .named("water test target")
+            .tagged("water-test");
+            target.body = Some(Body::static_body());
+            target.collider = Some(Collider::Sphere { radius: 0.18 });
+            target.reactive_material = Some(ReactiveMaterial::wood());
+            target.reactive_state = Some(ReactiveState::new(24.0, 0.0, 1.0));
+            game.world.spawn(target)
+        };
+        let near = spawn_target(1.5, 0.05);
+        let far = spawn_target(3.8, -0.24);
+
+        game.begin_water_burst();
+        let targets = game.queue_water_douse();
+        assert!(targets.contains(&near));
+        assert!(targets.contains(&far));
+        game.world.step(&game.environment);
+        for id in [near, far] {
+            let moisture = game
+                .world
+                .entity(id)
+                .unwrap()
+                .reactive_state
+                .unwrap()
+                .moisture;
+            assert!(moisture >= WATER_DOUSE_PER_TURN);
+        }
+    }
+
+    #[test]
+    fn water_hud_and_reset_return_to_ready() {
+        let ready = water_hud_state(0);
+        assert_eq!(
+            ready,
+            WaterHudState {
+                spraying: false,
+                progress: 1.0,
+            }
+        );
+        let halfway = water_hud_state(WATER_BURST_TURNS / 2);
+        assert!(halfway.spraying);
+        assert!((halfway.progress - 0.5).abs() < 1e-6);
+
+        let mut game = WorldGame::new(7);
+        game.begin_water_burst();
+        game.last_target = Some(game.ids.fire);
+        game.reset_world();
+        assert_eq!(game.water_burst_turns, 0);
+        assert_eq!(game.last_target, None);
+        assert!(!water_hud_state(game.water_burst_turns).spraying);
     }
 }

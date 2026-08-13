@@ -27,10 +27,12 @@ To write into a separate directory or omit the studio renders:
 ```
 
 The generator validates the triangle budget, bone and clip names, rigid skin
-weights, planted-foot error, hand and axe travel during `Chop`, embedded GLB
+weights, planted-foot error, opposing front/back arm travel during `Walk`, the
+axe blade's outward clearance and forward travel during `Chop`, embedded GLB
 buffers, and a fresh Blender import. It exits nonzero when a contract fails and
 writes the measured values plus the GLB SHA-256 digest to `receipt.json`.
 
 The committed studio renders show the exact generated `Idle`, `Walk`, and
-`Chop` poses. `explorer.blend` remains editable; `generate_character.py` is the
-source of truth for reproducible changes.
+`Chop` poses. `walk-rear.png` and `walk-side.png` verify the walk swing from
+orthogonal directions. `explorer.blend` remains editable;
+`generate_character.py` is the source of truth for reproducible changes.

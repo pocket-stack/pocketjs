@@ -45,11 +45,13 @@
   "outputs": {
     "blend": "explorer.blend",
     "glb": "explorer.glb",
-    "glb_sha256": "ad45e89c4d5d96afb337a6317b24442d5574289975c916250eb02e538348347a",
+    "glb_sha256": "7948c785bb7bf5df2cab1254ac5cda35d036a2b6c9ff910ae19a88f87c95dbc1",
     "previews": [
       "previews/idle.png",
       "previews/walk.png",
-      "previews/chop.png"
+      "previews/chop.png",
+      "previews/walk-rear.png",
+      "previews/walk-side.png"
     ]
   },
   "rig": {
@@ -101,10 +103,26 @@
   },
   "schema": "pocket3d-character-receipt-v1",
   "tests": {
+    "axe_blade_center_clearance_min_m": 0.5439,
+    "axe_blade_forward_travel_m": 1.4226,
+    "axe_blade_outward": true,
+    "axe_blade_outward_min_m": 0.1961,
+    "axe_blade_rest_center_clearance_m": 0.5958,
+    "axe_blade_rest_centroid_blender_xyz": [
+      -0.5958,
+      0.038,
+      0.2705
+    ],
+    "axe_blade_rest_outward_from_handle_m": 0.2304,
+    "axe_handle_rest_centroid_blender_xyz": [
+      -0.3654,
+      0.0574,
+      0.6869
+    ],
     "blender_rest_min_z": -0.0,
-    "chop_axe_swing_m": 2.1115,
+    "chop_axe_swing_m": 1.7829,
     "chop_contact_max_error_m": 0.0,
-    "chop_hand_travel_m": 1.1672,
+    "chop_hand_travel_m": 1.1607,
     "fresh_import": {
       "actions": [
         "Chop",
@@ -137,6 +155,10 @@
       "passed": true
     },
     "glb_self_contained": true,
+    "walk_arm_forward_travel_m": 0.7032,
+    "walk_arm_lateral_drift_m": 0.0001,
+    "walk_arm_local_x_alignment": 1.0,
+    "walk_arm_phase_error_m": 0.0,
     "walk_contact_max_error_m": 0.004,
     "walk_stride_m": 0.7688
   }

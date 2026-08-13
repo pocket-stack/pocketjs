@@ -6,14 +6,23 @@ mod game;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail, ensure};
-use game::{WorldGame, apply_orchard_script};
+use game::{WorldGame, apply_carry_script, apply_orchard_script};
 use pocket3d::app::{AppConfig, Game};
 use pocket3d::gpu::{Gpu, OFFSCREEN_FORMAT, OffscreenTarget};
 use pocket3d::input::Input;
 use pocket3d::renderer::Renderer;
 use winit::keyboard::KeyCode;
 
-const SCENARIOS: &[&str] = &["orchard-fire", "idle", "character-walk", "character-chop"];
+const SCENARIOS: &[&str] = &[
+    "orchard-fire",
+    "idle",
+    "character-walk",
+    "character-chop",
+    "character-carry",
+    "character-water",
+];
+const CHARACTER_CARRY_CAPTURE_TICK: u64 = 360;
+const CHARACTER_WATER_CAPTURE_TICK: u64 = 47;
 
 #[derive(Debug)]
 struct Args {
@@ -69,6 +78,18 @@ fn run_headless(args: Args) -> Result<()> {
             SCENARIOS.join(", ")
         );
     }
+    if args.scenario == "character-carry" {
+        ensure!(
+            args.ticks == CHARACTER_CARRY_CAPTURE_TICK,
+            "character-carry requires --ticks {CHARACTER_CARRY_CAPTURE_TICK} so the captured frame proves the held apple"
+        );
+    }
+    if args.scenario == "character-water" {
+        ensure!(
+            args.ticks == CHARACTER_WATER_CAPTURE_TICK,
+            "character-water requires --ticks {CHARACTER_WATER_CAPTURE_TICK} so the captured frame proves the active water burst"
+        );
+    }
     let gpu = Gpu::new_headless()?;
     let mut renderer = Renderer::new(&gpu, OFFSCREEN_FORMAT)?;
     let mut game = WorldGame::new(args.seed);
@@ -109,6 +130,18 @@ fn run_headless(args: Args) -> Result<()> {
             receipt.acceptance.playable_chain_complete,
             "orchard-fire acceptance failed: {:#?}",
             receipt.acceptance
+        );
+    }
+    if args.scenario == "character-carry" {
+        ensure!(
+            game.is_holding_apple(),
+            "character-carry acceptance failed: no apple attached to the explorer"
+        );
+    }
+    if args.scenario == "character-water" {
+        ensure!(
+            game.water_burst_active(),
+            "character-water acceptance failed: water burst was not active at capture"
         );
     }
     println!(
@@ -156,7 +189,7 @@ fn parse_args() -> Result<Args> {
             }
             "-h" | "--help" => {
                 println!(
-                    "playable-world\n\n  --headless\n  --scenario orchard-fire|idle|character-walk|character-chop\n  --ticks N\n  --seed N\n  --size WIDTHxHEIGHT\n  --screenshot PATH\n  --receipt PATH"
+                    "playable-world\n\n  --headless\n  --scenario orchard-fire|idle|character-walk|character-chop|character-carry|character-water\n  --ticks N\n  --seed N\n  --size WIDTHxHEIGHT\n  --screenshot PATH\n  --receipt PATH"
                 );
                 std::process::exit(0);
             }
@@ -183,6 +216,19 @@ fn apply_scenario_script(input: &mut Input, scenario: &str, turn: u64) {
             input.inject_key(KeyCode::Space, turn == 108);
             if turn == 109 {
                 input.inject_key(KeyCode::Space, false);
+            }
+        }
+        "character-carry" => {
+            apply_carry_script(input, turn);
+            input.inject_key(KeyCode::KeyS, (302..332).contains(&turn));
+            input.inject_key(KeyCode::ArrowLeft, (334..356).contains(&turn));
+            input.inject_key(KeyCode::KeyD, (357..359).contains(&turn));
+        }
+        "character-water" => {
+            input.inject_key(KeyCode::ArrowLeft, turn < 35);
+            input.inject_key(KeyCode::KeyQ, turn == 35);
+            if turn == 36 {
+                input.inject_key(KeyCode::KeyQ, false);
             }
         }
         "idle" => {}
@@ -217,6 +263,14 @@ mod tests {
         let mut chop = Input::default();
         apply_scenario_script(&mut chop, "character-chop", 108);
         assert!(chop.key_down(KeyCode::Space));
+
+        let mut carry = Input::default();
+        apply_scenario_script(&mut carry, "character-carry", 300);
+        assert!(carry.key_down(KeyCode::KeyE));
+
+        let mut water = Input::default();
+        apply_scenario_script(&mut water, "character-water", 35);
+        assert!(water.key_down(KeyCode::KeyQ));
     }
 
     #[test]

@@ -28,7 +28,8 @@ Controls:
 - Mouse movement or arrow keys orbit the camera.
 - `Space` swings the axe at the nearest tree or log.
 - `F` casts an ember at the aimed reactive object.
-- `Q` pours water on the nearest burning object.
+- `Q` fires a short forward water burst. The stream always appears, even over
+  empty ground, and douses every reactive object inside its widening corridor.
 - `E` picks up or drops the nearest apple.
 - `R` resets the world to the initial seed.
 - `Escape` releases or captures the mouse; close the window to quit.
@@ -88,9 +89,19 @@ cargo run --locked --manifest-path engine/Cargo.toml -p playable-world -- \
 cargo run --locked --manifest-path engine/Cargo.toml -p playable-world -- \
   --headless --scenario character-chop --ticks 117 --size 1440x900 \
   --screenshot /tmp/playable-world-character-chop.png
+
+cargo run --locked --manifest-path engine/Cargo.toml -p playable-world -- \
+  --headless --scenario character-carry --ticks 360 --size 1440x900 \
+  --screenshot /tmp/playable-world-character-carry.png
+
+cargo run --locked --manifest-path engine/Cargo.toml -p playable-world -- \
+  --headless --scenario character-water --ticks 47 --size 1440x900 \
+  --screenshot /tmp/playable-world-character-water.png
 ```
 
 `cargo test --locked --manifest-path engine/Cargo.toml -p playable-world`
 also parses the checked-in GLB and checks the clip names, required joints,
 skinned primitives, material separation, triangle budget, animation priority,
-camera target, and foot-to-ground transform.
+camera target, foot-to-ground transform, hand socket, and water corridor. The
+`character-carry` and `character-water` runs also fail if their interaction is
+not active at the captured frame.
