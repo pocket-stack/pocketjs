@@ -186,7 +186,11 @@ MEMORY {
   CHR: start = $0000, size = $2000, type = ro, file = %O, fill = yes;
   ZP: start = $0002, size = $00fa, type = rw;
   DEBUGRAM: start = $0200, size = $0358, type = rw;
-  RAM: start = $0558, size = $01a8, type = rw;
+  # RAM ends at $0720; the cc65 soft stack runs $0720-$07FF (crt0 inits sp
+  # to $07FF). The 32-byte extension over the old $0700 boundary is funded
+  # by the overlay allocator: the >=42 B of vp_sb/vp_view frames it moved
+  # off the deepest stack path exceed the 32 B taken, so stack margin grows.
+  RAM: start = $0558, size = $01c8, type = rw;
 }
 SEGMENTS {
   HEADER: load = HDR, type = ro;

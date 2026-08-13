@@ -101,8 +101,19 @@ The runtime never calls `malloc` and never frees:
   inside their record. Exceeding a budget drops the operation and raises a
   tripwire flag the debug block exposes — never UB.
 - **Bounded strings** — a `ref<string>` is a `{len, bytes[24]}` slot;
-  string expressions build into stack scratch and assign through a
+  string expressions build into overlay scratch and assign through a
   change-compare (Vue's `Object.is` set gate, by value).
+- **Overlay slots for frame-local temporaries** — materialized view
+  chains and string scratch compile to shared static slots, not
+  per-site statics or C-stack frames. Every temporary is tagged with the
+  generated function that owns it; two temporaries share a slot unless
+  their owners can be live at the same time — same function, or one
+  reachable from the other in the static call graph (helpers, computed
+  accessors, keymap dispatch). The subset forbids recursion and nothing
+  runs from interrupts, so reachability is the whole liveness story. On
+  the 6502 and SM83 this also converts stack-relative addressing into
+  absolute addressing, which is smaller and faster; the compiler prints
+  the overlay plan (slots, bytes, temps served) with the memory plan.
 
 Nothing is ever collected because nothing is ever untracked: object shapes
 are closed (the TS subset forbids dynamic keys), so lifetime is the pool
