@@ -47,6 +47,10 @@ use winit::keyboard::KeyCode;
 use device::Device;
 use media::MediaService;
 
+/// The cadence this shell drives — one value owns WidgetConfig.tick_hz AND
+/// the realm's declared rate (boot's set_tick_rate), so they cannot drift.
+const TICK_HZ: u32 = 60;
+
 /// Keys the widget polls for held state (the shared uihost map + I/J/K/L
 /// as a keyboard nub).
 const KEYS: [KeyCode; 14] = [
@@ -1122,6 +1126,12 @@ fn boot(args: &Args, settings: &device::StageSettings) -> Result<(Guest, UiSurfa
     // profile. The outer OS window is widget-shaped; the mounted screen is a
     // fixed embedded target (contracts/spec/platforms.ts), so macos-widget is wrong.
     surface.set_identity("macos-embedded", 3);
+    // The rate the shell drives (WidgetConfig.tick_hz below) — declared so
+    // the realm converts ms animations at the driven cadence.
+    anyhow::ensure!(
+        surface.set_tick_rate(TICK_HZ),
+        "declaring the {TICK_HZ} Hz tick rate failed"
+    );
     // A package declares both its host adapter contract and the guest-facing
     // channel name. Only that exact channel may open; a typo or unrelated app
     // cannot discover the media companion accidentally.
@@ -1231,6 +1241,7 @@ fn main() -> Result<()> {
             WidgetConfig {
                 title: "Pocket Stage".into(),
                 size: settings.window_size,
+                tick_hz: TICK_HZ as f32,
                 max_fps: args.max_fps,
                 ..Default::default()
             },

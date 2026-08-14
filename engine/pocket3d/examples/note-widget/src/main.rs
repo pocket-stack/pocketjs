@@ -31,6 +31,10 @@ use pocket_ui_wgpu::{UiRenderer, UiSurface};
 use pocket_widget::shell::{FlatWidget, WidgetConfig};
 use winit::keyboard::KeyCode;
 
+/// The cadence this shell drives — one value owns WidgetConfig.tick_hz AND
+/// the realm's declared rate (boot's set_tick_rate), so they cannot drift.
+const TICK_HZ: u32 = 60;
+
 /// Header strip height in logical px — mirrors HEADER_H in apps/note/app.tsx.
 const HEADER_H: f32 = 30.0;
 /// Header pixels reserved for the toggle/••• buttons (not a drag region).
@@ -740,6 +744,12 @@ fn boot(args: &Args) -> Result<(Guest, UiSurface)> {
     // The platform-contract identity plan-built bundles assert
     // (contracts/spec/platforms.ts POCKET_TARGETS["macos-widget"]).
     surface.set_identity("macos-widget", 3);
+    // The rate the shell drives (WidgetConfig.tick_hz below) — declared so
+    // the realm converts ms animations at the driven cadence.
+    anyhow::ensure!(
+        surface.set_tick_rate(TICK_HZ),
+        "declaring the {TICK_HZ} Hz tick rate failed"
+    );
     surface.feed_pak(&pak);
     let guest = Guest::new()?;
     surface.mount(&guest)?;
@@ -770,6 +780,7 @@ fn main() -> Result<()> {
             WidgetConfig {
                 title: "Pocket Note".into(),
                 size: args.size,
+                tick_hz: TICK_HZ as f32,
                 resizable: true,
                 min_size: (240, 180),
                 ime: true,

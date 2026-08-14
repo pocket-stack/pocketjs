@@ -42,7 +42,11 @@ pub struct WidgetConfig {
     pub title: String,
     /// Initial window size in logical px.
     pub size: (u32, u32),
-    /// Fixed simulation rate — the guest cadence (60 = the PSP's).
+    /// Fixed simulation rate — the guest cadence (60 = the PSP's). A game
+    /// embedding a PocketJS realm must declare this same rate on its surface
+    /// before mount (`UiSurface::set_tick_rate`): the core converts ms
+    /// animations at the declared rate, so an undeclared non-60 cadence runs
+    /// them at the wrong wall-clock speed.
     pub tick_hz: f32,
     /// Render cap for the active case (eases, drags). The loop sleeps
     /// between frames; dirt reported while pacing is latched, never lost.

@@ -10,6 +10,9 @@ export interface ResolvedBuildPlanContent {
   readonly target: {
     readonly id: string;
     readonly hostAbi: number;
+    /** The fixed rate the target's host drives (TargetProfile.tickHz); the
+     *  build bakes it. Omitted when the host selects the rate per run. */
+    readonly tickHz?: number;
   };
   readonly viewport: {
     readonly logical: Viewport;

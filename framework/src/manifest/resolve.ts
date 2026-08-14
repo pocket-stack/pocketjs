@@ -355,6 +355,10 @@ export function resolveBuildPlan(
     target: {
       id: request.target,
       hostAbi: profile.hostAbi,
+      // Omitted (not undefined) when the profile names no fixed rate:
+      // canonicalJson refuses undefined values, and rate-less plans keep
+      // their pre-tickHz hash.
+      ...(profile.tickHz !== undefined ? { tickHz: profile.tickHz } : {}),
     },
     viewport: {
       logical,
