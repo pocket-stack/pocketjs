@@ -40,7 +40,7 @@ import {
 } from "../framework/compiler/jsx-plugin.ts";
 import type { PocketConfig } from "../framework/src/config.ts";
 import { verifyPlanHash, type ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
-import { registerAnimationTheme } from "../framework/compiler/animation.ts";
+import { registerAnimationTheme, setAnimationTickRate } from "../framework/compiler/animation.ts";
 import { compileClasses, generateStylesModule } from "../framework/compiler/tailwind.ts";
 import { bakeAtlases } from "../framework/compiler/bake-font.ts";
 import { bakeSvg } from "../framework/compiler/bake-svg.ts";
@@ -290,6 +290,9 @@ console.log(`  pass 1: ${visited.size} module(s), ${classStrings.length} candida
 // ---------------------------------------------------------------------------
 
 registerAnimationTheme(config.theme);
+// Keyframe timelines are frame-baked; they must count frames at the same
+// rate the realm ticks (transition-* stays in ms and converts at runtime).
+setAnimationTickRate(tickHz);
 const styles = compileClasses(classStrings);
 if (styles.records.length === 0) {
   console.warn("  tailwind: no class literals compiled — is the app unstyled?");

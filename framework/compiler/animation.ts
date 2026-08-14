@@ -3,10 +3,13 @@
 // Tailwind-config-shaped input (`theme.keyframes` + `theme.animation`, same
 // authoring surface as tailwind.config.js) compiles into the styles.bin ANIM
 // TABLE (spec.ts): each CSS `animation` shorthand entry becomes per-prop
-// SEGMENT lists with frame-precise endpoints at the fixed 60 Hz dt. The core
-// never interprets percentages, calc() or easing strings at runtime — a
-// timeline is pure data ("prop P: bits A -> bits B over frames [t0,t1) under
-// easing E"), which is what keeps playback deterministic and byte-exact.
+// SEGMENT lists with frame-precise endpoints at the realm's declared tick
+// rate (default 60 Hz; tools/build.ts --hz declares another and the core
+// plays one segment frame per tick, so the table must bake at the same rate
+// the realm runs). The core never interprets percentages, calc() or easing
+// strings at runtime — a timeline is pure data ("prop P: bits A -> bits B
+// over frames [t0,t1) under easing E"), which is what keeps playback
+// deterministic and byte-exact.
 //
 // Bake-ability rules ([R], same spirit as `rounded-full`):
 //   - keyframe values must be build-time absolute: px numbers, degrees,
@@ -99,6 +102,22 @@ export function registerAnimationTheme(theme: AnimationTheme | undefined): void 
   resetAnimationBake();
 }
 
+/** The tick rate timelines bake at — one segment frame is one core tick. */
+let bakeHz = 60;
+
+/** Declare the realm's tick rate before compileClasses (build.ts passes its
+ *  --hz value). Timelines already baked at another rate are dropped: a table
+ *  can only ever hold frames counted at one rate. */
+export function setAnimationTickRate(hz: number): void {
+  if (!Number.isInteger(hz) || hz < 1 || hz > 240) {
+    err(`tick rate must be an integer from 1 through 240, got ${hz}`);
+  }
+  if (hz !== bakeHz) {
+    bakeHz = hz;
+    resetAnimationBake();
+  }
+}
+
 /** Drop all baked state (tests / fresh compile passes). */
 export function resetAnimationBake(): void {
   baked = [];
@@ -132,9 +151,9 @@ function parseTime(tok: string): number | null {
   return m[2] === "s" ? v * 1000 : v;
 }
 
-/** ms -> whole 60 Hz frames (round-half-up, min 0). */
+/** ms -> whole frames at the declared tick rate (round-half-up, min 0). */
 export function msToFrames(ms: number): number {
-  return Math.max(0, Math.round((ms * 60) / 1000));
+  return Math.max(0, Math.round((ms * bakeHz) / 1000));
 }
 
 /** px-dimension value: number | "12px" | "12" | "0". */
