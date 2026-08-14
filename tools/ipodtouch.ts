@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   cpSync,
   existsSync,
@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
+import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractHostBuildInputs } from "../framework/src/manifest/host-build-inputs.ts";
@@ -18,7 +19,6 @@ import {
 } from "./ipodtouch-profile.ts";
 
 const REPOSITORY = fileURLToPath(new URL("..", import.meta.url));
-const COMMAND = Bun.argv[2] ?? "doctor";
 const DEVICE_TYPE = "iPod7,1";
 const DEVICE_VERSION = "12.5.8";
 const DEVICE_BUILD = "16H88";
@@ -108,11 +108,21 @@ function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-function hashInputs(paths: readonly string[]): string {
+interface BuildIdentityInput {
+  readonly label: string;
+  readonly path: string;
+}
+
+function hashInputs(inputs: readonly (string | BuildIdentityInput)[]): string {
   const hash = createHash("sha256");
-  for (const path of paths) {
-    hash.update(path.slice(REPOSITORY.length));
-    hash.update(readFileSync(path));
+  for (const input of inputs) {
+    const path = typeof input === "string" ? input : input.path;
+    const label = typeof input === "string" ? path.slice(REPOSITORY.length) : input.label;
+    const bytes = readFileSync(path);
+    hash.update(`${Buffer.byteLength(label)}:`);
+    hash.update(label);
+    hash.update(`${bytes.byteLength}:`);
+    hash.update(bytes);
   }
   return hash.digest("hex").slice(0, 32);
 }
@@ -194,16 +204,18 @@ function verifyDeviceIdentity(): string {
   return udid;
 }
 
-function sshArgs(command: string): string[] {
+function sshArgs(port: number, command: string): string[] {
   return [
     "-i",
     KEY_PATH,
     "-p",
-    String(LOCAL_PORT),
+    String(port),
     "-o",
     "BatchMode=yes",
     "-o",
     "ConnectTimeout=3",
+    "-o",
+    `HostKeyAlias=[127.0.0.1]:${LOCAL_PORT}`,
     "-o",
     "StrictHostKeyChecking=yes",
     "root@127.0.0.1",
@@ -211,12 +223,12 @@ function sshArgs(command: string): string[] {
   ];
 }
 
-function remote(command: string): CommandResult {
-  return run("ssh", sshArgs(command));
+function remote(port: number, command: string): CommandResult {
+  return run("ssh", sshArgs(port, command));
 }
 
-function mustRemote(command: string): string {
-  const result = remote(command);
+function mustRemote(port: number, command: string): string {
+  const result = remote(port, command);
   if (result.exitCode !== 0) {
     throw new Error(
       `pocket ipodtouch: device command failed (${result.exitCode}):\n${
@@ -227,11 +239,34 @@ function mustRemote(command: string): string {
   return result.stdout.trim();
 }
 
-async function withTunnel<T>(operation: () => Promise<T> | T): Promise<T> {
-  if (remote("true").exitCode === 0) return await operation();
+async function availableLocalPort(): Promise<number> {
+  return await new Promise<number>((resolvePort, reject) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        server.close();
+        reject(new Error("pocket ipodtouch: could not allocate a loopback port"));
+        return;
+      }
+      const port = address.port;
+      server.close((error) => error ? reject(error) : resolvePort(port));
+    });
+  });
+}
+
+async function withTunnel<T>(
+  operation: (port: number, udid: string) => Promise<T> | T,
+): Promise<T> {
+  // Always bind a fresh iproxy to the verified UDID. A listener already using
+  // LOCAL_PORT may point at another device, so it is only the known-host alias
+  // for SSH verification and for the explicit long-running `tunnel` command.
   const udid = verifyDeviceIdentity();
+  const port = await availableLocalPort();
   const tunnel = Bun.spawn({
-    cmd: ["iproxy", "-u", udid, `${LOCAL_PORT}:${DEVICE_PORT}`],
+    cmd: ["iproxy", "-u", udid, `${port}:${DEVICE_PORT}`],
     cwd: REPOSITORY,
     stdout: "ignore",
     stderr: "pipe",
@@ -239,13 +274,18 @@ async function withTunnel<T>(operation: () => Promise<T> | T): Promise<T> {
   try {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await Bun.sleep(200);
-      if (remote("true").exitCode === 0) return await operation();
+      if (remote(port, "true").exitCode === 0) return await operation(port, udid);
       if (tunnel.exitCode !== null) break;
     }
+    if (tunnel.exitCode === null) tunnel.kill();
+    await tunnel.exited;
     const stderr = await new Response(tunnel.stderr as ReadableStream).text();
     throw new Error(`pocket ipodtouch: USB SSH tunnel did not become ready${stderr ? `:\n${stderr}` : ""}`);
   } finally {
-    tunnel.kill();
+    if (tunnel.exitCode === null) {
+      tunnel.kill();
+      await tunnel.exited;
+    }
   }
 }
 
@@ -268,10 +308,12 @@ async function doctor(): Promise<void> {
     return;
   }
 
-  const udid = verifyDeviceIdentity();
-  console.log(`[ok] device identity: ${DEVICE_TYPE} ${DEVICE_VERSION} (${DEVICE_BUILD}), ${udid.slice(0, 8)}…`);
-  await withTunnel(() => {
+  await withTunnel((port, udid) => {
+    console.log(
+      `[ok] device identity: ${DEVICE_TYPE} ${DEVICE_VERSION} (${DEVICE_BUILD}), ${udid.slice(0, 8)}…`,
+    );
     const remoteInfo = mustRemote(
+      port,
       "set -eu; test \"$(uname -m)\" = iPod7,1; test -x /usr/bin/ldid; test -x /usr/bin/uicache; test -x /usr/bin/uiopen; test -w /Applications; echo jailbreak-usb-ready",
     );
     console.log(`[ok] jailbreak transport: ${remoteInfo}`);
@@ -306,10 +348,14 @@ async function build(): Promise<void> {
     CARGO_TARGET_DIR: rustTarget,
     IPHONEOS_DEPLOYMENT_TARGET: DEPLOYMENT_TARGET,
   };
-  mustRun("cargo", ["build", "-p", "pocket-apple", "--release", "--target", "aarch64-apple-ios"], {
-    cwd: join(REPOSITORY, "engine"),
-    env: rustEnv,
-  });
+  mustRun(
+    "cargo",
+    ["build", "-p", "pocket-apple", "--release", "--locked", "--target", "aarch64-apple-ios"],
+    {
+      cwd: join(REPOSITORY, "engine"),
+      env: rustEnv,
+    },
+  );
   const rustLibrary = join(rustTarget, "aarch64-apple-ios/release/libpocket_apple.a");
   if (!existsSync(rustLibrary)) {
     throw new Error(`pocket ipodtouch: missing Rust static library at ${rustLibrary}`);
@@ -332,10 +378,16 @@ async function build(): Promise<void> {
     join(REPOSITORY, "hosts/ipodtouch/PkgInfo"),
     join(REPOSITORY, "hosts/ipodtouch/runtime.m"),
     join(REPOSITORY, "hosts/ipodtouch/Icon.svg"),
+    join(REPOSITORY, "tools/ipodtouch.ts"),
     join(REPOSITORY, "tools/ipodtouch-icon.ts"),
+    join(REPOSITORY, "engine/apple/include/pocket_apple.h"),
     join(REPOSITORY, "engine/apple/apple/PocketSurfaceView.h"),
     join(REPOSITORY, "engine/apple/apple/PocketSurfaceView.m"),
     join(REPOSITORY, "engine/apple/src/lib.rs"),
+    {
+      label: "native/libpocket_apple.a",
+      path: rustLibrary,
+    },
   ]);
   const executable = join(bundle, "PocketJSiPod");
   mustRun("xcrun", [
@@ -403,76 +455,154 @@ async function build(): Promise<void> {
   console.log(`build_id=${buildId}`);
 }
 
+interface DeploymentPaths {
+  readonly archive: string;
+  readonly unpack: string;
+  readonly stage: string;
+  readonly backup: string;
+  readonly lock: string;
+}
+
+export function ipodTouchDeploymentPaths(transactionId: string): DeploymentPaths {
+  if (!/^[0-9a-f]{24}$/.test(transactionId)) {
+    throw new Error("pocket ipodtouch: deployment transaction id must be 24 lowercase hex digits");
+  }
+  return {
+    archive: `/private/var/tmp/pocketjs-ipodtouch-${transactionId}.app.tar`,
+    unpack: `/Applications/.PocketJSiPod.app.pocketjs-unpack-${transactionId}`,
+    stage: `/Applications/.PocketJSiPod.app.pocketjs-stage-${transactionId}`,
+    backup: `/Applications/.PocketJSiPod.app.pocketjs-backup-${transactionId}`,
+    lock: "/private/var/tmp/pocketjs-ipodtouch.deploy.lock",
+  };
+}
+
+export function deploymentInstallCommand(transactionId: string, paths: DeploymentPaths): string {
+  return (
+    "set -eu; " +
+    `dest=${INSTALL_PATH}; stage=${paths.stage}; backup=${paths.backup}; ` +
+    "had_previous=0; installed_new=0; " +
+    "rollback() { status=$?; trap - EXIT HUP INT TERM; set +e; " +
+    "if [ \"$installed_new\" -eq 1 ]; then rm -rf \"$dest\"; fi; " +
+    "if [ \"$had_previous\" -eq 1 ] && [ -e \"$backup\" ]; then " +
+    "mv \"$backup\" \"$dest\"; " +
+    "chown -R root:wheel \"$dest\"; chmod 755 \"$dest/PocketJSiPod\"; " +
+    "/usr/bin/uicache -p \"$dest\"; fi; exit \"$status\"; }; " +
+    "trap rollback EXIT HUP INT TERM; " +
+    "if [ -e \"$dest\" ]; then mv \"$dest\" \"$backup\"; had_previous=1; fi; " +
+    "mv \"$stage\" \"$dest\"; installed_new=1; chown -R root:wheel \"$dest\"; " +
+    "chmod 755 \"$dest/PocketJSiPod\"; test -x \"$dest/PocketJSiPod\"; " +
+    "/usr/bin/ldid -e \"$dest/PocketJSiPod\" >/dev/null; " +
+    "/usr/bin/uicache -p \"$dest\"; trap - EXIT HUP INT TERM; " +
+    "rm -rf \"$backup\"; " +
+    `echo installed-${transactionId}`
+  );
+}
+
 async function deploy(): Promise<void> {
   await build();
   const receipt = readReceipt();
-  const archive = join(REPOSITORY, ".pocket-build/ipodtouch/PocketJSiPod.app.tar");
+  const transactionId = randomBytes(12).toString("hex");
+  const paths = ipodTouchDeploymentPaths(transactionId);
+  const archive = join(REPOSITORY, `.pocket-build/ipodtouch/PocketJSiPod.app-${transactionId}.tar`);
   mkdirSync(dirname(archive), { recursive: true });
-  rmSync(archive, { force: true });
   mustRun(
     "tar",
     ["-cf", archive, "-C", dirname(bundleDirectory()), BUNDLE_NAME],
     { env: { ...process.env, COPYFILE_DISABLE: "1" } },
   );
 
-  await withTunnel(() => {
-    mustRun("scp", [
-      "-O",
-      "-i",
-      KEY_PATH,
-      "-P",
-      String(LOCAL_PORT),
-      "-o",
-      "BatchMode=yes",
-      "-o",
-      "StrictHostKeyChecking=yes",
-      archive,
-      "root@127.0.0.1:/private/var/tmp/pocketjs-ipodtouch.app.tar",
-    ]);
-    mustRemote(
-      "set -eu; " +
-        "stage=/Applications/.PocketJSiPod.app.pocketjs-stage; " +
-        "unpack=/Applications/.PocketJSiPod.app.pocketjs-unpack; " +
-        "rm -rf \"$stage\" \"$unpack\"; mkdir -p \"$unpack\"; " +
-        "tar -xf /private/var/tmp/pocketjs-ipodtouch.app.tar -C \"$unpack\"; " +
-        "test -d \"$unpack/PocketJSiPod.app\"; mv \"$unpack/PocketJSiPod.app\" \"$stage\"; rmdir \"$unpack\"; " +
-        "test -x \"$stage/PocketJSiPod\"; /usr/bin/ldid -e \"$stage/PocketJSiPod\" >/dev/null; " +
-        "cd \"$stage\"; /usr/bin/sha256sum " + Object.keys(receipt.files).join(" "),
-    );
-    const hashes = mustRemote(
-      "cd /Applications/.PocketJSiPod.app.pocketjs-stage && /usr/bin/sha256sum " +
-        Object.keys(receipt.files).join(" "),
-    );
-    const remoteFiles = new Map(
-      hashes.split("\n").map((line) => {
-        const match = line.match(/^([0-9a-f]{64})\s+(.+)$/);
-        if (!match) throw new Error(`pocket ipodtouch: malformed device hash line: ${line}`);
-        return [match[2], match[1]];
-      }),
-    );
-    for (const [name, expected] of Object.entries(receipt.files)) {
-      if (remoteFiles.get(name) !== expected) {
-        throw new Error(`pocket ipodtouch: device readback mismatch for ${name}`);
+  try {
+    await withTunnel(async (port) => {
+      mustRun("scp", [
+        "-O",
+        "-i",
+        KEY_PATH,
+        "-P",
+        String(port),
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        `HostKeyAlias=[127.0.0.1]:${LOCAL_PORT}`,
+        "-o",
+        "StrictHostKeyChecking=yes",
+        archive,
+        `root@127.0.0.1:${paths.archive}`,
+      ]);
+
+      let lockHeld = false;
+      let operationError: unknown;
+      try {
+        mustRemote(
+          port,
+          "set -eu; " +
+            `lock=${paths.lock}; tx=${transactionId}; ` +
+            "if mkdir \"$lock\" 2>/dev/null; then printf '%s\\n' \"$tx\" > \"$lock/owner\"; " +
+            "else owner=$(cat \"$lock/owner\" 2>/dev/null || echo unknown); " +
+            "echo \"deployment busy (owner $owner)\" >&2; exit 73; fi",
+        );
+        lockHeld = true;
+        mustRemote(
+          port,
+          "set -eu; " +
+            `stage=${paths.stage}; unpack=${paths.unpack}; archive=${paths.archive}; ` +
+            "rm -rf \"$stage\" \"$unpack\"; mkdir -p \"$unpack\"; " +
+            "tar -xf \"$archive\" -C \"$unpack\"; " +
+            "test -d \"$unpack/PocketJSiPod.app\"; " +
+            "mv \"$unpack/PocketJSiPod.app\" \"$stage\"; rmdir \"$unpack\"; " +
+            "test -x \"$stage/PocketJSiPod\"; " +
+            "/usr/bin/ldid -e \"$stage/PocketJSiPod\" >/dev/null",
+        );
+        const fileNames = Object.keys(receipt.files);
+        if (fileNames.some((name) => !/^[A-Za-z0-9@._-]+$/.test(name))) {
+          throw new Error("pocket ipodtouch: receipt contains an unsafe bundle file name");
+        }
+        const hashes = mustRemote(
+          port,
+          `cd ${paths.stage} && /usr/bin/sha256sum ${fileNames.join(" ")}`,
+        );
+        const remoteFiles = new Map(
+          hashes.split("\n").map((line) => {
+            const match = line.match(/^([0-9a-f]{64})\s+(.+)$/);
+            if (!match) throw new Error(`pocket ipodtouch: malformed device hash line: ${line}`);
+            return [match[2], match[1]];
+          }),
+        );
+        for (const [name, expected] of Object.entries(receipt.files)) {
+          if (remoteFiles.get(name) !== expected) {
+            throw new Error(`pocket ipodtouch: device readback mismatch for ${name}`);
+          }
+        }
+        mustRemote(port, deploymentInstallCommand(transactionId, paths));
+      } catch (error) {
+        operationError = error;
+        throw error;
+      } finally {
+        const cleanup = remote(
+          port,
+          "set +e; " +
+            `rm -rf ${paths.stage} ${paths.unpack} ${paths.archive}; ` +
+            (lockHeld
+              ? `lock=${paths.lock}; tx=${transactionId}; ` +
+                "if [ -f \"$lock/owner\" ] && [ \"$(cat \"$lock/owner\")\" = \"$tx\" ]; then rm -rf \"$lock\"; fi"
+              : "true"),
+        );
+        if (cleanup.exitCode !== 0 && operationError === undefined) {
+          throw new Error(
+            `pocket ipodtouch: deployment cleanup failed (${cleanup.exitCode}):\n${cleanup.stderr.trim()}`,
+          );
+        }
       }
-    }
-    mustRemote(
-      "set -eu; " +
-        "dest=/Applications/PocketJSiPod.app; stage=/Applications/.PocketJSiPod.app.pocketjs-stage; " +
-        "backup=/Applications/.PocketJSiPod.app.pocketjs-backup; rm -rf \"$backup\"; " +
-        "if [ -e \"$dest\" ]; then mv \"$dest\" \"$backup\"; fi; " +
-        "if mv \"$stage\" \"$dest\"; then rm -rf \"$backup\"; " +
-        "else status=$?; [ ! -e \"$backup\" ] || mv \"$backup\" \"$dest\"; exit $status; fi; " +
-        "chown -R root:wheel \"$dest\"; chmod 755 \"$dest/PocketJSiPod\"; " +
-        "/usr/bin/uicache -p \"$dest\"; rm -f /private/var/tmp/pocketjs-ipodtouch.app.tar; echo installed",
-    );
-  });
+    });
+  } finally {
+    rmSync(archive, { force: true });
+  }
   console.log(`deployed ${receipt.buildId} to ${INSTALL_PATH} with byte-exact readback`);
 }
 
 async function launch(): Promise<void> {
   const receipt = readReceipt();
-  await withTunnel(async () => {
-    const installed = mustRemote(`cat ${INSTALL_PATH}/build-receipt.json`);
+  await withTunnel(async (port) => {
+    const installed = mustRemote(port, `cat ${INSTALL_PATH}/build-receipt.json`);
     const installedReceipt = JSON.parse(installed) as BuildReceipt;
     if (installedReceipt.buildId !== receipt.buildId) {
       throw new Error(
@@ -480,6 +610,7 @@ async function launch(): Promise<void> {
       );
     }
     mustRemote(
+      port,
       `killall PocketJSiPod 2>/dev/null || true; rm -f ${STATUS_PATH} ${FRAME_PATH}; ` +
         "/usr/bin/uiopen pocketjs-ipodtouch://launch; echo launch-requested",
     );
@@ -488,17 +619,17 @@ async function launch(): Promise<void> {
   await status(false);
 }
 
-async function readDeviceStatus(): Promise<DeviceStatus> {
-  const raw = mustRemote(`cat ${STATUS_PATH}`);
+async function readDeviceStatus(port: number): Promise<DeviceStatus> {
+  const raw = mustRemote(port, `cat ${STATUS_PATH}`);
   return JSON.parse(raw) as DeviceStatus;
 }
 
 async function status(requireAction: boolean): Promise<void> {
   const receipt = readReceipt();
-  await withTunnel(async () => {
-    const first = await readDeviceStatus();
+  await withTunnel(async (port) => {
+    const first = await readDeviceStatus(port);
     await Bun.sleep(1200);
-    const current = await readDeviceStatus();
+    const current = await readDeviceStatus(port);
     if (current.schema !== 1 || current.bundle_id !== BUNDLE_ID) {
       throw new Error("pocket ipodtouch: malformed device status identity");
     }
@@ -516,7 +647,7 @@ async function status(requireAction: boolean): Promise<void> {
     if (Date.now() / 1000 - current.written_at > 5) {
       throw new Error("pocket ipodtouch: status heartbeat is stale");
     }
-    mustRemote(`kill -0 ${current.pid}`);
+    mustRemote(port, `kill -0 ${current.pid}`);
     if (
       current.screen_points[0] !== 320 ||
       current.screen_points[1] !== 568 ||
@@ -541,16 +672,18 @@ async function status(requireAction: boolean): Promise<void> {
 
 async function capture(): Promise<void> {
   const destination = join(REPOSITORY, "dist/ipodtouch/device-frame.png");
-  await withTunnel(() => {
-    mustRemote(`test -s ${FRAME_PATH}`);
+  await withTunnel((port) => {
+    mustRemote(port, `test -s ${FRAME_PATH}`);
     mustRun("scp", [
       "-O",
       "-i",
       KEY_PATH,
       "-P",
-      String(LOCAL_PORT),
+      String(port),
       "-o",
       "BatchMode=yes",
+      "-o",
+      `HostKeyAlias=[127.0.0.1]:${LOCAL_PORT}`,
       "-o",
       "StrictHostKeyChecking=yes",
       `root@127.0.0.1:${FRAME_PATH}`,
@@ -585,34 +718,41 @@ function usage(): void {
   bun ipodtouch tunnel`);
 }
 
-switch (COMMAND) {
-  case "doctor":
-    await doctor();
-    break;
-  case "build":
-    await build();
-    break;
-  case "deploy":
-    await deploy();
-    break;
-  case "launch":
-    await launch();
-    break;
-  case "status":
-    await status(Bun.argv.includes("--require-action"));
-    break;
-  case "capture":
-    await capture();
-    break;
-  case "tunnel":
-    tunnel();
-    break;
-  case "help":
-  case "--help":
-  case "-h":
-    usage();
-    break;
-  default:
-    usage();
-    throw new Error(`pocket ipodtouch: unknown command ${COMMAND}`);
+export async function main(args: readonly string[] = Bun.argv.slice(2)): Promise<void> {
+  const command = args[0] ?? "doctor";
+  switch (command) {
+    case "doctor":
+      await doctor();
+      break;
+    case "build":
+      await build();
+      break;
+    case "deploy":
+      await deploy();
+      break;
+    case "launch":
+      await launch();
+      break;
+    case "status":
+      await status(args.includes("--require-action"));
+      break;
+    case "capture":
+      await capture();
+      break;
+    case "tunnel":
+      tunnel();
+      break;
+    case "help":
+    case "--help":
+    case "-h":
+      usage();
+      break;
+    default:
+      usage();
+      throw new Error(`pocket ipodtouch: unknown command ${command}`);
+  }
+}
+
+if (import.meta.main) {
+  await main();
 }

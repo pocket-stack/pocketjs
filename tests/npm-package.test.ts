@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
 
@@ -17,6 +20,22 @@ function packedFiles(cwd: string): string[] {
   ) as { files: Array<{ path: string }> } | undefined;
   expect(report?.files, result.stdout.toString().slice(0, 200)).toBeDefined();
   return report!.files.map((file) => file.path);
+}
+
+function packArchive(cwd: string, destination: string): string {
+  const result = Bun.spawnSync({
+    cmd: ["npm", "pack", "--json", "--pack-destination", destination],
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(result.exitCode, result.stderr.toString()).toBe(0);
+  const parsed = JSON.parse(result.stdout.toString()) as unknown;
+  const report = (
+    Array.isArray(parsed) ? parsed[0] : Object.values(parsed as object)[0]
+  ) as { filename: string } | undefined;
+  expect(report?.filename).toBeDefined();
+  return join(destination, report!.filename);
 }
 
 describe("published npm artifacts", () => {
@@ -59,6 +78,28 @@ describe("published npm artifacts", () => {
       "assets/images/spinner-05.svg",
       "assets/images/spinner-06.svg",
       "assets/images/spinner-07.svg",
+      "engine/Cargo.toml",
+      "engine/Cargo.lock",
+      "engine/apple/apple",
+      "engine/apple/include",
+      "engine/apple/src",
+      "engine/apple/Cargo.toml",
+      "engine/crates/pocket-db/src",
+      "engine/crates/pocket-db/Cargo.toml",
+      "engine/crates/pocket-fs/src",
+      "engine/crates/pocket-fs/Cargo.toml",
+      "engine/crates/pocket-mod/src",
+      "engine/crates/pocket-mod/Cargo.toml",
+      "engine/crates/pocket-net/src",
+      "engine/crates/pocket-net/Cargo.toml",
+      "engine/crates/pocket-ui-surface/src",
+      "engine/crates/pocket-ui-surface/Cargo.toml",
+      "engine/crates/pocket-ui-wgpu/src",
+      "engine/crates/pocket-ui-wgpu/Cargo.toml",
+      "engine/crates/pocket-vrm/src",
+      "engine/crates/pocket-vrm/Cargo.toml",
+      "engine/crates/pocket-widget/src",
+      "engine/crates/pocket-widget/Cargo.toml",
       "engine/core/src",
       "engine/core/Cargo.toml",
       "engine/wasm/src",
@@ -90,6 +131,16 @@ describe("published npm artifacts", () => {
       "engine/pocket3d/crates/pocket3d-gles2/src",
       "engine/pocket3d/crates/pocket3d-gles2/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-gles2/Cargo.lock",
+      "engine/pocket3d/crates/pocket3d/src",
+      "engine/pocket3d/crates/pocket3d/Cargo.toml",
+      "engine/pocket3d/crates/pocket3d-cook/src",
+      "engine/pocket3d/crates/pocket3d-cook/Cargo.toml",
+      "engine/pocket3d/examples/handheld/src",
+      "engine/pocket3d/examples/handheld/Cargo.toml",
+      "engine/pocket3d/examples/note-widget/src",
+      "engine/pocket3d/examples/note-widget/Cargo.toml",
+      "engine/pocket3d/examples/uihost/src",
+      "engine/pocket3d/examples/uihost/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-bsp/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-bsp/src",
       "pocket.config.ts",
@@ -132,6 +183,16 @@ describe("published npm artifacts", () => {
       "engine/symbian/Cargo.toml",
       "engine/symbian/rust-toolchain.toml",
       "engine/symbian/src/lib.rs",
+      "engine/Cargo.toml",
+      "engine/Cargo.lock",
+      "engine/apple/Cargo.toml",
+      "engine/apple/apple/PocketSurfaceView.m",
+      "engine/apple/include/pocket_apple.h",
+      "engine/apple/src/lib.rs",
+      "engine/crates/pocket-mod/Cargo.toml",
+      "engine/crates/pocket-mod/src/lib.rs",
+      "engine/crates/pocket-ui-surface/Cargo.toml",
+      "engine/crates/pocket-ui-surface/src/lib.rs",
       "tools/cli/symbian-toolchain.json",
       "tools/symbian/coda-usb-probe.c",
       "tools/symbian/Dockerfile.dockerignore",
@@ -175,4 +236,39 @@ describe("published npm artifacts", () => {
       "symbian-toolchain.json",
     ]);
   });
+
+  test("framework tarball resolves the Apple native workspace", () => {
+    const scratch = mkdtempSync(join(tmpdir(), "pocketjs-npm-apple-"));
+    try {
+      const archive = packArchive(root, scratch);
+      const extract = Bun.spawnSync({
+        cmd: ["tar", "-xf", archive, "-C", scratch],
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(extract.exitCode, extract.stderr.toString()).toBe(0);
+      const metadata = Bun.spawnSync({
+        cmd: [
+          "cargo",
+          "metadata",
+          "--format-version=1",
+          "--no-deps",
+          "--manifest-path",
+          join(scratch, "package/engine/Cargo.toml"),
+        ],
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(metadata.exitCode, metadata.stderr.toString()).toBe(0);
+      const packages = (JSON.parse(metadata.stdout.toString()) as {
+        packages: Array<{ name: string }>;
+      }).packages.map((entry) => entry.name);
+      expect(packages).toContain("pocket-apple");
+      expect(packages).toContain("pocket-mod");
+      expect(packages).toContain("pocket-ui-surface");
+      expect(existsSync(join(scratch, "package/engine/core/Cargo.toml"))).toBe(true);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

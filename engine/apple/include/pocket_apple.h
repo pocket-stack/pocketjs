@@ -69,7 +69,9 @@ int32_t pocket_apple_eval_bundle(PocketApple *handle, const uint8_t *source,
 // touches: up to 8 packed words in logical coordinates. Legacy words carry
 // x:9, y:9, id:8 with bit 31 clear. Wide words set bit 31 and carry x:10,
 // y:10, id:8. A contact present this tick means down/move, absent means
-// released. analog 0 means centered (0x8080).
+// released. The Apple core resolves and carries the committed-frame hit fact
+// for each contact and delivers it as frame() argument 4. analog 0 means
+// centered (0x8080).
 int32_t pocket_apple_frame(PocketApple *handle, uint32_t buttons,
                            uint32_t analog, const uint32_t *touches,
                            size_t touch_count);

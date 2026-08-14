@@ -43,19 +43,25 @@ bun ipodtouch launch
 `build` resolves `apps/ipodtouch-demo/pocket.json`, builds its Solid guest and
 pak, compiles `pocket-apple` for arm64 iOS 12, links a UIKit executable, and
 pseudo-signs it with `ldid`. Generated output is
-`dist/ipodtouch/PocketJSiPod.app`.
+`dist/ipodtouch/PocketJSiPod.app`. **The build ID hashes the compiled
+`libpocket_apple.a` in addition to the guest and host inputs, so any transitive
+native-code change produces a different device receipt.**
 
 `deploy` performs these checks before replacing the installed bundle:
 
 1. Re-identify the USB device as the exact tested model, system version, build,
    and activated state.
-2. Connect to the jailbreak's USB-only SSH endpoint with the dedicated key in
-   `~/.cache/pocket-stack/ipodtouch/keys`.
-3. Extract into an application-directory staging path.
+2. Start a new `iproxy` tunnel bound to that UDID and verify the jailbreak's
+   SSH host key with the dedicated key in `~/.cache/pocket-stack/ipodtouch/keys`.
+   **Deploy, launch, status, and capture never reuse an existing local tunnel.**
+3. Acquire a device-side deployment lock and extract through transaction-unique
+   archive, unpack, stage, and backup paths.
 4. Verify the staged executable's pseudo-signature and compare every recorded
    file with its local SHA-256 hash.
-5. Rename the old bundle to a rollback path, commit the stage, set ownership,
-   and register the exact bundle with `uicache`.
+5. Rename the old bundle to its transaction backup, commit the stage, set
+   ownership, verify the executable, and register the exact bundle with
+   `uicache`. **The prior bundle is deleted only after every post-install check
+   succeeds; any earlier failure restores and re-registers it.**
 
 The installed path is `/Applications/PocketJSiPod.app`. The command does not
 modify activation, firmware, root filesystem mounts, jailbreak packages, or
@@ -105,7 +111,9 @@ input receipt.**
 
 The 320 x 568 logical surface exceeds the legacy touch wire's 9-bit Y range.
 **The Apple host emits the framework's wide 10-bit touch form for this surface,**
-so the bottom action remains hittable instead of being clamped to Y=511.
+so the bottom action remains hittable instead of being clamped to Y=511. **At
+the down edge, the Apple core resolves the committed-frame bounds hit once and
+carries that hit fact beside the contact as `frame()` argument 4 until release.**
 
 The jailbreak is semi-tethered: after a full reboot, run Checkra1n again before
 using deploy or launch. The installed app and dedicated SSH public key remain

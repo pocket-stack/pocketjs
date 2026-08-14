@@ -20,6 +20,10 @@ import {
   IPODTOUCH_ICON_OUTPUTS,
   bakeIPodTouchArtwork,
 } from "../tools/ipodtouch-icon.ts";
+import {
+  deploymentInstallCommand,
+  ipodTouchDeploymentPaths,
+} from "../tools/ipodtouch.ts";
 
 const REPOSITORY = fileURLToPath(new URL("../", import.meta.url));
 const MANIFEST = join(REPOSITORY, "apps/ipodtouch-demo/pocket.json");
@@ -28,6 +32,8 @@ const ICON = join(REPOSITORY, "hosts/ipodtouch/Icon.svg");
 const INFO = join(REPOSITORY, "hosts/ipodtouch/Info.plist");
 const RUNTIME = join(REPOSITORY, "hosts/ipodtouch/runtime.m");
 const SURFACE = join(REPOSITORY, "engine/apple/apple/PocketSurfaceView.m");
+const APPLE_CORE = join(REPOSITORY, "engine/apple/src/lib.rs");
+const POCKET_MOD = join(REPOSITORY, "engine/crates/pocket-mod/src/lib.rs");
 const ICON_TOOL = join(REPOSITORY, "tools/ipodtouch-icon.ts");
 const TOOL = join(REPOSITORY, "tools/ipodtouch.ts");
 const OUTPUT = mkdtempSync(join(tmpdir(), "pocketjs-ipodtouch-icon-"));
@@ -132,6 +138,8 @@ describe("private iPod touch 6 profile", () => {
     const info = readFileSync(INFO, "utf8");
     const runtime = readFileSync(RUNTIME, "utf8");
     const surface = readFileSync(SURFACE, "utf8");
+    const appleCore = readFileSync(APPLE_CORE, "utf8");
+    const pocketMod = readFileSync(POCKET_MOD, "utf8");
     const tool = readFileSync(TOOL, "utf8");
 
     expect(info).toContain("<string>12.0</string>");
@@ -162,15 +170,60 @@ describe("private iPod touch 6 profile", () => {
     expect(surface).toContain("_logicalWidth > 512 || _logicalHeight > 512");
     expect(surface).toContain("0x80000000u");
     expect(surface).toContain("((y & 0x3ff) << 10)");
+    expect(appleCore).toContain("ui.touch_hits(touch_words, &mut touch_hits)");
+    expect(appleCore).toContain("state.guest.frame_with_touch_hits(");
+    expect(pocketMod).toContain("pub fn frame_with_touch_hits(");
     expect(tool).toContain('const DEVICE_TYPE = "iPod7,1"');
     expect(tool).toContain('const DEVICE_VERSION = "12.5.8"');
     expect(tool).toContain('const DEVICE_PORT = 44');
     expect(tool).toContain('POCKETJS_IPODTOUCH_PORT ?? "2223"');
     expect(tool).toContain('`${LOCAL_PORT}:${DEVICE_PORT}`');
     expect(tool).toContain('COPYFILE_DISABLE: "1"');
+    expect(tool).toContain('label: "native/libpocket_apple.a"');
+    expect(tool).toContain("path: rustLibrary");
+    expect(tool).toContain('join(REPOSITORY, "tools/ipodtouch.ts")');
+    expect(tool).toContain("const port = await availableLocalPort()");
+    expect(tool).toContain('cmd: ["iproxy", "-u", udid, `${port}:${DEVICE_PORT}`]');
+    expect(tool).not.toContain('if (remote("true").exitCode === 0)');
+    const tunnelSource = tool.slice(
+      tool.indexOf("async function withTunnel"),
+      tool.indexOf("async function doctor"),
+    );
+    expect(tunnelSource.indexOf("verifyDeviceIdentity()")).toBeLessThan(
+      tunnelSource.indexOf("Bun.spawn"),
+    );
+    expect(tool.indexOf("await tunnel.exited")).toBeLessThan(
+      tool.indexOf("new Response(tunnel.stderr"),
+    );
     expect(tool).toContain('join(REPOSITORY, "hosts/ipodtouch/Info.plist")');
     expect(tool).toContain('join(REPOSITORY, "tools/ipodtouch-icon.ts")');
-    expect(tool).toContain(".PocketJSiPod.app.pocketjs-stage");
+    expect(tool).toContain("pocketjs-ipodtouch.deploy.lock");
+    expect(tool.indexOf('if mkdir \\"$lock\\"')).toBeLessThan(
+      tool.indexOf('rm -rf \\"$stage\\" \\"$unpack\\"'),
+    );
+    expect(tool).toContain('[ \\"$(cat \\"$lock/owner\\")\\" = \\"$tx\\" ]');
     expect(tool).toContain("byte-exact readback");
+  });
+
+  test("uses isolated deployment paths and retains rollback through validation", () => {
+    const first = ipodTouchDeploymentPaths("a".repeat(24));
+    const second = ipodTouchDeploymentPaths("b".repeat(24));
+    expect(first.archive).not.toBe(second.archive);
+    expect(first.stage).not.toBe(second.stage);
+    expect(first.backup).not.toBe(second.backup);
+    expect(first.lock).toBe(second.lock);
+    expect(() => ipodTouchDeploymentPaths("../unsafe")).toThrow("24 lowercase hex digits");
+
+    const install = deploymentInstallCommand("a".repeat(24), first);
+    expect(install).toContain("trap rollback EXIT HUP INT TERM");
+    expect(install).toContain('if [ "$installed_new" -eq 1 ]; then rm -rf "$dest"; fi');
+    expect(install).toContain('if [ "$had_previous" -eq 1 ] && [ -e "$backup" ]');
+    expect(install).toContain('mv "$backup" "$dest"');
+    expect(install.lastIndexOf("/usr/bin/uicache")).toBeLessThan(
+      install.lastIndexOf("trap - EXIT HUP INT TERM"),
+    );
+    expect(install.lastIndexOf("trap - EXIT HUP INT TERM")).toBeLessThan(
+      install.lastIndexOf('rm -rf "$backup"'),
+    );
   });
 });
