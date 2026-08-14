@@ -97,17 +97,27 @@ describe("private iPod touch 6 profile", () => {
   test("bakes opaque iOS artwork from one SVG source", async () => {
     const source = readFileSync(ICON, "utf8");
     expect(source).toContain('viewBox="0 0 1024 1024"');
-    expect(source).toContain('id="chrome"');
-    expect(source).toContain('id="enamel"');
+    expect(source).toContain('id="ios7-background"');
+    expect(source).toContain('id="ios7-highlight"');
+    expect(source).toContain('id="pocket-ambient"');
+    expect(source).toContain('stop-color="#05070d"');
+    expect(source).toContain('stop-color="#60a5fa"');
+    expect(source).toContain('stop-color="#22d3ee"');
     expect(source).toContain('data-brand-source="site/assets/favicon.svg"');
-    expect(source).toContain('transform="translate(128 128) scale(24)"');
+    expect(source).toContain('transform="translate(96 96) scale(26)"');
     expect(source).toContain('<circle cx="10" cy="16" r="3.1"');
     expect(source).toContain('<rect x="16" y="12.6" width="10" height="2.2" rx="1.1"');
     expect(source).toContain('<rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1"');
     expect(source).not.toContain("<text");
     const baker = readFileSync(ICON_TOOL, "utf8");
     expect(baker).toContain("const ICON_SUPERSAMPLE = 8");
-    expect(baker).toContain('context.imageSmoothingQuality = "high"');
+    expect(baker).toContain("function svgForRasterSize(size: number)");
+    expect(baker).toContain("function exactAreaDownsample");
+    expect(baker).toContain("samplesPerPixel");
+    expect(source).not.toContain("<filter");
+    expect(source).not.toContain('id="pocketSilhouette"');
+    expect(source).not.toContain('id="chrome"');
+    expect(source).not.toContain('id="enamel"');
 
     await bakeIPodTouchArtwork(OUTPUT);
     for (const [name, size] of Object.entries(IPODTOUCH_ICON_OUTPUTS)) {

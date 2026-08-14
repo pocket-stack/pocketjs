@@ -1,4 +1,4 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { createCanvas, loadImage, type Canvas } from "@napi-rs/canvas";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,78 +15,99 @@ export const IPODTOUCH_ICON_OUTPUTS = {
 
 const ICON_SUPERSAMPLE = 8;
 
-async function iconImage() {
-  return loadImage(readFileSync(IPODTOUCH_ICON_SOURCE));
+function svgForRasterSize(size: number): Buffer {
+  const source = readFileSync(IPODTOUCH_ICON_SOURCE, "utf8");
+  const sized = source.replace(
+    'width="1024" height="1024"',
+    `width="${size}" height="${size}"`,
+  );
+  if (sized === source) {
+    throw new Error("pocket ipodtouch: SVG canvas declaration changed");
+  }
+  return Buffer.from(sized);
 }
 
-function opaquePng(
-  image: Awaited<ReturnType<typeof iconImage>>,
-  width: number,
-  height: number,
-  draw: (context: ReturnType<ReturnType<typeof createCanvas>["getContext"]>) => void,
-): Buffer {
-  const canvas = createCanvas(width, height);
-  const context = canvas.getContext("2d");
-  context.fillStyle = "#020304";
-  context.fillRect(0, 0, width, height);
-  draw(context);
-  const corners = context.getImageData(0, 0, width, height).data;
-  for (let index = 3; index < corners.length; index += 4) {
-    if (corners[index] !== 255) {
+function exactAreaDownsample(source: Canvas, targetSize: number): Canvas {
+  const sourceContext = source.getContext("2d");
+  const sourcePixels = sourceContext.getImageData(0, 0, source.width, source.height).data;
+  const output = createCanvas(targetSize, targetSize);
+  const outputContext = output.getContext("2d");
+  const outputPixels = outputContext.createImageData(targetSize, targetSize);
+  const outputData = outputPixels.data;
+  const samplesPerPixel = ICON_SUPERSAMPLE * ICON_SUPERSAMPLE;
+
+  for (let y = 0; y < targetSize; y += 1) {
+    for (let x = 0; x < targetSize; x += 1) {
+      const totals = [0, 0, 0, 0];
+      for (let sampleY = 0; sampleY < ICON_SUPERSAMPLE; sampleY += 1) {
+        const sourceY = y * ICON_SUPERSAMPLE + sampleY;
+        for (let sampleX = 0; sampleX < ICON_SUPERSAMPLE; sampleX += 1) {
+          const sourceX = x * ICON_SUPERSAMPLE + sampleX;
+          const sourceIndex = (sourceY * source.width + sourceX) * 4;
+          totals[0] += sourcePixels[sourceIndex];
+          totals[1] += sourcePixels[sourceIndex + 1];
+          totals[2] += sourcePixels[sourceIndex + 2];
+          totals[3] += sourcePixels[sourceIndex + 3];
+        }
+      }
+      const outputIndex = (y * targetSize + x) * 4;
+      outputData[outputIndex] = Math.round(totals[0] / samplesPerPixel);
+      outputData[outputIndex + 1] = Math.round(totals[1] / samplesPerPixel);
+      outputData[outputIndex + 2] = Math.round(totals[2] / samplesPerPixel);
+      outputData[outputIndex + 3] = Math.round(totals[3] / samplesPerPixel);
+    }
+  }
+
+  outputContext.putImageData(outputPixels, 0, 0);
+  return output;
+}
+
+function assertOpaque(canvas: Canvas): void {
+  const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+  for (let index = 3; index < pixels.length; index += 4) {
+    if (pixels[index] !== 255) {
       throw new Error("pocket ipodtouch: baked iOS artwork must be fully opaque");
     }
   }
-  return canvas.toBuffer("image/png");
 }
 
-function drawSupersampledIcon(
-  context: ReturnType<ReturnType<typeof createCanvas>["getContext"]>,
-  image: Awaited<ReturnType<typeof iconImage>>,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-): void {
-  const source = createCanvas(width * ICON_SUPERSAMPLE, height * ICON_SUPERSAMPLE);
-  const sourceContext = source.getContext("2d");
-  sourceContext.fillStyle = "#020304";
-  sourceContext.fillRect(0, 0, source.width, source.height);
-  sourceContext.drawImage(image, 0, 0, source.width, source.height);
-
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(source, x, y, width, height);
+async function rasterizeIcon(size: number): Promise<Canvas> {
+  const rasterSize = size * ICON_SUPERSAMPLE;
+  const image = await loadImage(svgForRasterSize(rasterSize));
+  if (image.width !== rasterSize || image.height !== rasterSize) {
+    throw new Error(
+      `pocket ipodtouch: SVG rasterized at ${image.width}x${image.height}, expected ${rasterSize}x${rasterSize}`,
+    );
+  }
+  const source = createCanvas(rasterSize, rasterSize);
+  source.getContext("2d").drawImage(image, 0, 0);
+  const output = exactAreaDownsample(source, size);
+  assertOpaque(output);
+  return output;
 }
 
 export async function bakeIPodTouchArtwork(outputDirectory: string): Promise<string[]> {
-  const image = await iconImage();
   mkdirSync(outputDirectory, { recursive: true });
   const written: string[] = [];
 
   for (const [name, size] of Object.entries(IPODTOUCH_ICON_OUTPUTS)) {
     const target = resolve(outputDirectory, name);
-    writeFileSync(target, opaquePng(image, size, size, (context) => {
-      drawSupersampledIcon(context, image, 0, 0, size, size);
-    }));
+    const icon = await rasterizeIcon(size);
+    writeFileSync(target, icon.toBuffer("image/png"));
     written.push(target);
   }
 
+  const launchIcon = await rasterizeIcon(224);
   for (const [name, height] of [["Default@2x.png", 960], ["Default-568h@2x.png", 1136]] as const) {
     const width = 640;
-    const iconSize = 224;
     const target = resolve(outputDirectory, name);
-    writeFileSync(target, opaquePng(image, width, height, (context) => {
-      context.fillStyle = "#020617";
-      context.fillRect(0, 0, width, height);
-      drawSupersampledIcon(
-        context,
-        image,
-        (width - iconSize) / 2,
-        (height - iconSize) / 2,
-        iconSize,
-        iconSize,
-      );
-    }));
+    const canvas = createCanvas(width, height);
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#020617";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(launchIcon, (width - launchIcon.width) / 2, (height - launchIcon.height) / 2);
+    assertOpaque(canvas);
+    writeFileSync(target, canvas.toBuffer("image/png"));
     written.push(target);
   }
 

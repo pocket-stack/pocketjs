@@ -69,15 +69,19 @@ observed brightness and idle-timer state.
 
 ## App icon
 
-`hosts/ipodtouch/Icon.svg` is the only authored icon source. It retains the
-iPhone 2G demo icon's black enamel face, chrome bevel, glass highlight, and
-the exact compact Pocket mark geometry from `site/assets/favicon.svg`.
+`hosts/ipodtouch/Icon.svg` is the only authored icon source. It uses the Pocket
+homepage's `#05070d`, `#070a11`, and `#101827` dark surfaces with restrained
+`#60a5fa` and `#22d3ee` iOS 7-style ambient highlights. There is no baked outer
+frame; SpringBoard applies the installed rounded mask. The centered light mark
+preserves the exact compact Pocket geometry from `site/assets/favicon.svg`.
 `tools/ipodtouch-icon.ts` rasterizes that SVG into the
 57, 114, 120, and 180-pixel iOS PNG names and produces the opaque 4-inch launch
-images. The rasterizer renders the SVG at eight times the target dimensions
-before a high-quality downsample so curved internal edges remain antialiased at
-57 pixels. **No generated PNG is committed.** The bundle receipt hashes every
-baked file that deployment reads back from the device.
+images. For each output, the rasterizer asks the SVG renderer for an eight-times
+target-sized vector raster and reduces each 8 x 8 sample block with an exact
+area average. The small mark uses gradients without SVG filters, clipping, or
+fractional inner strokes, so curved internal edges are sampled once and remain
+antialiased at 57 pixels. **No generated PNG is committed.** The bundle receipt
+hashes every baked file that deployment reads back from the device.
 
 ## Hardware acceptance
 
