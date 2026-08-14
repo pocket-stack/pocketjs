@@ -74,6 +74,16 @@ pub extern "C" fn ui_set_viewport(width: f32, height: f32) {
     ui().set_viewport(width, height);
 }
 
+/// Declare the realm's tick rate — the same lifecycle as the native
+/// surfaces: 1..=MAX_TICK_HZ, rejected once the first `ui_tick` has run
+/// (a mid-run rate change would change the fixed step under live
+/// animations). `ui_init` resets the rate to the spec 60 with the rest of
+/// the core — redeclare after every reset. Returns 1 applied / 0 rejected.
+#[no_mangle]
+pub extern "C" fn ui_set_tick_rate(hz: u32) -> i32 {
+    i32::from(ui().set_tick_rate(hz))
+}
+
 /// Allocate `len` bytes of scratch in linear memory for host -> wasm buffers.
 #[no_mangle]
 pub extern "C" fn ui_alloc(len: usize) -> *mut u8 {
@@ -233,7 +243,8 @@ pub extern "C" fn ui_measure_text(ptr: *const u8, len: usize, font_slot: u32) ->
 
 // ---- frame ------------------------------------------------------------------
 
-/// Advance one fixed-dt (1/60 s) frame: animations, then layout if dirty.
+/// Advance one fixed-dt frame (1/60 s unless `ui_set_tick_rate` declared
+/// another rate): animations, then layout if dirty.
 #[no_mangle]
 pub extern "C" fn ui_tick() {
     ui().tick()

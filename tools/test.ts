@@ -137,6 +137,15 @@ const SUITE: readonly Stage[] = [
     tests: ["tests/audio-sim.test.ts"],
   },
   {
+    name: "tick-rate sim",
+    prep: [
+      ["bun", "tools/wasm.ts"],
+      ["bun", "tools/build.ts", "cafe-main", "--hz=120", "--outdir=dist/tick-rate-120"],
+    ],
+    browser: true,
+    tests: ["tests/tick-rate-sim.test.ts"],
+  },
+  {
     name: "launcher sim",
     prep: [["bun", "tools/launcher.ts", "covers"]],
     browser: true,
