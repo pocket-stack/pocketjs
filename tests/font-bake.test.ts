@@ -51,3 +51,55 @@ describe("font atlas density", () => {
     expect(() => bakeSlot(font, 0, 16, false, codepoints, 256)).toThrow(/rasterDensity/);
   });
 });
+
+describe("open contours", () => {
+  /**
+   * A face whose one glyph is exactly the commands given.
+   *
+   * The point is the command list, not the face: opentype.js emits no `Z` for
+   * either outline format, and a TrueType contour returns to its start point on
+   * its own while a CFF contour does not. So the difference between the two
+   * formats, as this module sees it, is precisely the presence of that last
+   * point — which is what these two paths are.
+   */
+  const face = (commands: unknown[]): typeof font => {
+    const glyph = { advanceWidth: 600, getPath: () => ({ commands }) };
+    return {
+      unitsPerEm: 1000,
+      ascender: 800,
+      descender: -200,
+      tables: { hhea: { lineGap: 0 } },
+      charToGlyphIndex: (ch: string) => (ch === "A" ? 1 : 0),
+      glyphs: { get: () => glyph },
+    } as unknown as typeof font;
+  };
+
+  const SQUARE = [
+    { type: "M", x: 2, y: 2 },
+    { type: "L", x: 12, y: 2 },
+    { type: "L", x: 12, y: 12 },
+    { type: "L", x: 2, y: 12 },
+  ];
+  const CLOSED = [...SQUARE, { type: "L", x: 2, y: 2 }];
+
+  const bake = (commands: unknown[]) => bakeSlot(face(commands), 0, 16, false, [0x41], 1);
+
+  test("bake the same coverage as the closed outline they mean", () => {
+    const open = bake(SQUARE);
+    const closed = bake(CLOSED);
+    expect([...open.bytes]).toEqual([...closed.bytes]);
+  });
+
+  test("and that coverage is the filled square, not an empty cell", () => {
+    // Without this the assertion above is satisfied by two empty cells.
+    const { bytes, glyphCount, coverageW, coverageH } = bake(SQUARE);
+    const coverage = bytes.subarray(
+      FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE + coverageW * coverageH, // gid 1
+    );
+    const inked = coverage.filter((sample) => sample > 0).length;
+    // 10x10 px of ink, minus antialiasing at the edges; assert the order of
+    // magnitude rather than the exact count.
+    expect(inked).toBeGreaterThan(80);
+    expect(coverage.some((sample) => sample === 255)).toBe(true);
+  });
+});
