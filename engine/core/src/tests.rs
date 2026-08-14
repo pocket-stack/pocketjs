@@ -769,13 +769,28 @@ fn ui_rejects_zero_raster_density() {
 fn tick_rate_is_fixed_once_the_realm_has_ticked() {
     let mut ui = Ui::new();
     assert_eq!(ui.tick_rate(), 60, "spec default");
-    ui.set_tick_rate(0);
-    assert_eq!(ui.tick_rate(), 60, "0 Hz is not a rate");
-    ui.set_tick_rate(120);
+    assert!(!ui.set_tick_rate(0), "0 Hz is not a rate");
+    assert_eq!(ui.tick_rate(), 60);
+    assert!(!ui.set_tick_rate(crate::MAX_TICK_HZ + 1), "above the ceiling");
+    assert_eq!(ui.tick_rate(), 60);
+    assert!(ui.set_tick_rate(crate::MAX_TICK_HZ), "the ceiling itself is a rate");
+    assert!(ui.set_tick_rate(120));
     assert_eq!(ui.tick_rate(), 120);
     ui.tick();
-    ui.set_tick_rate(60);
+    assert!(!ui.set_tick_rate(60));
     assert_eq!(ui.tick_rate(), 120, "a running realm keeps its step size");
+}
+
+#[test]
+fn tick_rate_is_fixed_even_when_every_tick_was_paused() {
+    let mut ui = Ui::new();
+    ui.debug_pause(true);
+    ui.tick();
+    assert!(
+        !ui.set_tick_rate(120),
+        "a swallowed tick still starts the run — the frame counter alone would readmit a rate change here"
+    );
+    assert_eq!(ui.tick_rate(), 60);
 }
 
 #[test]

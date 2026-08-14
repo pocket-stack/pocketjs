@@ -209,9 +209,12 @@ impl UiSurface {
     }
 
     /// Declare how many ticks make one second of virtual time (default 60).
-    /// Ignored once the core has ticked (see `Ui::set_tick_rate`).
-    pub fn set_tick_rate(&self, hz: u32) {
-        self.inner.borrow_mut().ui.set_tick_rate(hz);
+    /// Call before `mount`: the mount publishes the rate to the guest as
+    /// `ui.__tickHz`, and bundles refuse a rate other than the one they were
+    /// built for. Rejected once the core has ticked (see `Ui::set_tick_rate`);
+    /// returns whether the rate was applied.
+    pub fn set_tick_rate(&self, hz: u32) -> bool {
+        self.inner.borrow_mut().ui.set_tick_rate(hz)
     }
 
     /// Advance the core one fixed-dt frame (call once per host tick, after
@@ -527,6 +530,10 @@ impl UiSurface {
             if let Some(abi) = inner.host_abi {
                 ns.set("__hostAbi", abi)?;
             }
+            // The realm's declared tick rate. Bundles bake theirs the way
+            // glyphs bake density, and refuse a host running another —
+            // which is why set_tick_rate must precede mount.
+            ns.set("__tickHz", inner.ui.tick_rate())?;
 
             Ok(())
         })

@@ -202,19 +202,33 @@ static void PocketSurfaceEffectTrampoline(const char *line, void *context) {
   return [self loadPak:pak] && [self evalBundle:bundle label:name];
 }
 
+- (void)setTickRate:(uint32_t)tickRate {
+  // Applied to the realm immediately: the rate has to be declared before the
+  // bundle evaluates (the mount publishes it as ui.__tickHz, and mount-time
+  // animate() calls convert ms to frames at the rate in force). A rejected
+  // set surfaces through lastError/onError and leaves the old rate pinned.
+  uint32_t rate = tickRate > 0 ? tickRate : kPocketSurfaceDefaultTickRate;
+  int32_t status = 0;
+  if (_coreHandle != NULL) {
+    status = pocket_apple_core_set_tick_rate(_coreHandle, rate);
+  } else if (_handle != NULL) {
+    status = pocket_apple_set_tick_rate(_handle, rate);
+  }
+  if (status != 0) {
+    [self captureError];
+    return;
+  }
+  _tickRate = tickRate;
+}
+
 - (void)start {
   if (_running || (_handle == NULL && _coreHandle == NULL)) {
     return;
   }
   _running = YES;
+  // The realm's rate was declared through setTickRate before the bundle
+  // evaluated; the display link is pinned to the same cadence here.
   uint32_t rate = _tickRate > 0 ? _tickRate : kPocketSurfaceDefaultTickRate;
-  // ERR_BAD_STATE here means a restart after the realm already ticked, which
-  // keeps the rate the first start declared.
-  if (_handle != NULL) {
-    pocket_apple_set_tick_rate(_handle, rate);
-  } else if (_coreHandle != NULL) {
-    pocket_apple_core_set_tick_rate(_coreHandle, rate);
-  }
   _displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(handleDisplayTick:)];
   if (@available(iOS 15.0, *)) {
     // The core advances in exact 1/rate s steps; pin the link to match.

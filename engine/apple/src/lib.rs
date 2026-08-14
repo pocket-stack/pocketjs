@@ -11,12 +11,13 @@
 //! is `Rc<RefCell<..>>`). Create, drive, and destroy a handle from one thread —
 //! in practice the main thread, alongside CADisplayLink.
 //!
-//! Call order per handle: `create` → `load_pak`* → `eval_bundle` → per tick
-//! `frame` then `render` → `destroy`. `load_pak` and `set_identity` are
-//! rejected after `eval_bundle` because the surface publishes both to the
-//! guest at mount time. `set_tick_rate` survives `eval_bundle` (nothing about
-//! it reaches the guest at mount) but is rejected after the first `frame`,
-//! because the step size has to be constant for a realm's whole run.
+//! Call order per handle: `create` → `load_pak`* → [`set_identity`] →
+//! [`set_tick_rate`] → `eval_bundle` → per tick `frame` then `render` →
+//! `destroy`. `load_pak`, `set_identity` and `set_tick_rate` are all
+//! rejected after `eval_bundle` because the surface publishes them to the
+//! guest at mount time — and the guest converts its mount-time `animate()`
+//! durations to frames at the rate in force while the bundle evaluates, so
+//! a rate declared later would have silently converted them at 60.
 
 use std::cell::RefCell;
 use std::ffi::{c_char, CString};
@@ -35,9 +36,10 @@ pub const POCKET_APPLE_ABI_VERSION: u32 = 1;
 pub const POCKET_APPLE_MAX_DAMAGE_REGIONS: usize = DEFAULT_DAMAGE_REGIONS;
 
 /// Accepted `set_tick_rate` range: covers every Apple display cadence from a
-/// throttled 1 Hz up to the 240 Hz headroom above ProMotion's 120.
+/// throttled 1 Hz up to the 240 Hz headroom above ProMotion's 120 (the
+/// core's own ceiling — `pocketjs_core::MAX_TICK_HZ`).
 pub(crate) const MIN_TICK_HZ: u32 = 1;
-pub(crate) const MAX_TICK_HZ: u32 = 240;
+pub(crate) const MAX_TICK_HZ: u32 = pocketjs_core::MAX_TICK_HZ;
 
 const OK: i32 = 0;
 const ERR_BAD_ARGUMENT: i32 = -1;
@@ -68,7 +70,6 @@ pub struct PocketApple {
     logical_width: u32,
     logical_height: u32,
     mounted: bool,
-    ticked: bool,
     effect_callback: Option<(PocketAppleEffectCallback, *mut std::ffi::c_void)>,
 }
 
@@ -153,7 +154,6 @@ pub extern "C" fn pocket_apple_create(
             logical_width,
             logical_height,
             mounted: false,
-            ticked: false,
             effect_callback: None,
         }))
     });
@@ -187,20 +187,25 @@ pub extern "C" fn pocket_apple_set_identity(
 
 /// Ticks (and therefore `pocket_apple_frame` calls) per second of guest
 /// virtual time. 1..=240; the guest bundle must be built for the same rate.
-/// Unlike `set_identity` this is accepted after `eval_bundle` (nothing about
-/// it is published to the guest at mount) but not after the first frame.
+/// Rejected after `eval_bundle`, like `set_identity`: the mount publishes
+/// the rate to the guest as `ui.__tickHz`, and the bundle's mount-time
+/// `animate()` calls convert ms to frames at the rate in force while it
+/// evaluates.
 #[unsafe(no_mangle)]
 pub extern "C" fn pocket_apple_set_tick_rate(handle: *mut PocketApple, hz: u32) -> i32 {
     with_handle(handle, ERR_PANIC, |state| {
-        if state.ticked {
-            set_last_error("tick rate must be set before the first frame");
+        if state.mounted {
+            set_last_error("tick rate must be set before eval_bundle");
             return ERR_BAD_STATE;
         }
         if !(MIN_TICK_HZ..=MAX_TICK_HZ).contains(&hz) {
             set_last_error("tick rate must be 1 through 240 Hz");
             return ERR_BAD_ARGUMENT;
         }
-        state.surface.set_tick_rate(hz);
+        if !state.surface.set_tick_rate(hz) {
+            set_last_error("tick rate must be set before the realm ticks");
+            return ERR_BAD_STATE;
+        }
         OK
     })
 }
@@ -285,7 +290,6 @@ pub extern "C" fn pocket_apple_frame(
             set_last_error("frame before eval_bundle");
             return ERR_BAD_STATE;
         }
-        state.ticked = true;
         let touch_words: &[u32] = if touches.is_null() || touch_count == 0 {
             &[]
         } else {

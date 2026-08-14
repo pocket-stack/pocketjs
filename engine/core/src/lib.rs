@@ -58,6 +58,11 @@ const TEX_PALETTE_BYTES: usize = 1024;
 /// `set_tick_rate` declares another one before the first `tick()`.
 const DEFAULT_TICK_HZ: u32 = 60;
 
+/// Highest declarable tick rate. Above this the `ms * hz` intermediate in
+/// `ms_to_frames` would overflow its `as u32` narrowing for ordinary
+/// durations, and no display drives faster anyway.
+pub const MAX_TICK_HZ: u32 = 240;
+
 /// One uploaded texture. Pixels are copied into 16-byte-aligned storage so
 /// the PSP GE can sample them directly (the wasm rasterizer reads them via
 /// `Ui::texture`).
@@ -258,6 +263,10 @@ pub struct Ui {
     touch_table: touch::HitTable,
     /// Frame counter advanced by `tick()` (drives fixed-dt animation).
     frame: u64,
+    /// Whether `tick()` has ever run. The `set_tick_rate` gate — `frame`
+    /// alone would miss a realm whose every tick was swallowed by
+    /// `debug_pause`, leaving the step size mutable mid-run.
+    ticked: bool,
     /// Seconds of virtual time one `tick()` advances.
     dt: f32,
     /// The integer rate backing `dt`. Kept alongside it so duration-ms to
@@ -317,6 +326,7 @@ impl Ui {
             cursor_pos: (0.0, 0.0),
             touch_table: touch::HitTable::default(),
             frame: 0,
+            ticked: false,
             dt: spec::FIXED_DT,
             tick_hz: DEFAULT_TICK_HZ,
             inspect_id: 0,
@@ -333,15 +343,17 @@ impl Ui {
     }
 
     /// Declare how many `tick()` calls make one second of virtual time
-    /// (spec default 60). Ignored once the first `tick()` has run: a realm's
-    /// frame content is a pure function of its frame index, so the step size
-    /// has to be constant for the whole run.
-    pub fn set_tick_rate(&mut self, hz: u32) {
-        if hz == 0 || self.frame != 0 {
-            return;
+    /// (spec default 60, at most `MAX_TICK_HZ`). Rejected once the first
+    /// `tick()` has run — even a `debug_pause`d one: a realm's frame content
+    /// is a pure function of its frame index, so the step size has to be
+    /// constant for the whole run. Returns whether the rate was applied.
+    pub fn set_tick_rate(&mut self, hz: u32) -> bool {
+        if hz == 0 || hz > MAX_TICK_HZ || self.ticked {
+            return false;
         }
         self.tick_hz = hz;
         self.dt = 1.0 / hz as f32;
+        true
     }
 
     /// Ticks per second of virtual time (see `set_tick_rate`).
@@ -958,6 +970,7 @@ impl Ui {
     /// step, then re-run layout if dirty. Call once per vblank, BEFORE
     /// `draw()`.
     pub fn tick(&mut self) {
+        self.ticked = true;
         if self.paused {
             if !self.step_pending {
                 return;

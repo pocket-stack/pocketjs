@@ -3,6 +3,8 @@
 //! component-only bundle that installs no frame() and cannot boot here:
 //!   bun tools/build.ts hero-main
 //!   cargo run -p pocket-apple --example render_hero -- ../dist/hero-main.js ../dist/hero-main.pak /tmp/hero
+//! A bundle built with --hz=N needs POCKET_TICK_HZ=N in the environment —
+//! bundles refuse a host whose declared rate differs from their baked one.
 //! Exit is nonzero if two independent instances disagree on the final frame
 //! (determinism check) or the frame is blank.
 
@@ -10,7 +12,8 @@ use std::ffi::CString;
 
 use pocket_apple::{
     pocket_apple_create, pocket_apple_destroy, pocket_apple_eval_bundle, pocket_apple_frame,
-    pocket_apple_last_error, pocket_apple_load_pak, pocket_apple_render, PocketAppleFrame,
+    pocket_apple_last_error, pocket_apple_load_pak, pocket_apple_render,
+    pocket_apple_set_tick_rate, PocketAppleFrame,
 };
 
 const WIDTH: u32 = 480;
@@ -26,7 +29,7 @@ fn last_error() -> String {
     }
 }
 
-fn run_instance(bundle: &[u8], pak: &[u8]) -> (Vec<u8>, u32, u32, u64) {
+fn run_instance(bundle: &[u8], pak: &[u8], tick_hz: Option<u32>) -> (Vec<u8>, u32, u32, u64) {
     let handle = pocket_apple_create(DENSITY, WIDTH, HEIGHT);
     assert!(!handle.is_null(), "create failed: {}", last_error());
     assert_eq!(
@@ -35,6 +38,14 @@ fn run_instance(bundle: &[u8], pak: &[u8]) -> (Vec<u8>, u32, u32, u64) {
         "load_pak failed: {}",
         last_error()
     );
+    if let Some(hz) = tick_hz {
+        assert_eq!(
+            pocket_apple_set_tick_rate(handle, hz),
+            0,
+            "set_tick_rate({hz}) failed: {}",
+            last_error()
+        );
+    }
     let label = CString::new("hero").unwrap();
     assert_eq!(
         pocket_apple_eval_bundle(handle, bundle.as_ptr(), bundle.len(), label.as_ptr()),
@@ -101,9 +112,12 @@ fn main() {
 
     let bundle = std::fs::read(bundle_path).expect("read bundle");
     let pak = std::fs::read(pak_path).expect("read pak");
+    let tick_hz = std::env::var("POCKET_TICK_HZ")
+        .ok()
+        .map(|raw| raw.parse::<u32>().expect("POCKET_TICK_HZ must be an integer"));
 
-    let (first, w, h, damage_a) = run_instance(&bundle, &pak);
-    let (second, _, _, damage_b) = run_instance(&bundle, &pak);
+    let (first, w, h, damage_a) = run_instance(&bundle, &pak, tick_hz);
+    let (second, _, _, damage_b) = run_instance(&bundle, &pak, tick_hz);
 
     let non_blank = first.chunks_exact(4).any(|px| px[0] != 0 || px[1] != 0 || px[2] != 0);
     let deterministic = first == second;
