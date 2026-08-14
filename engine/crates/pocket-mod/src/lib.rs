@@ -36,7 +36,18 @@ impl Guest {
     /// Create an empty realm with `console.*` installed. Mount surfaces and
     /// eval the product bundle next; drop and rebuild for a hot reload.
     pub fn new() -> Result<Guest> {
-        let rt = Runtime::new()?;
+        Self::from_runtime(Runtime::new()?)
+    }
+
+    /// Create an empty realm backed by a host-selected QuickJS allocator.
+    pub fn new_with_alloc<A>(allocator: A) -> Result<Guest>
+    where
+        A: qjs::allocator::Allocator + 'static,
+    {
+        Self::from_runtime(Runtime::new_with_alloc(allocator)?)
+    }
+
+    fn from_runtime(rt: Runtime) -> Result<Guest> {
         let ctx = Context::full(&rt)?;
         ctx.with(|ctx| install_console(&ctx))
             .map_err(|e| anyhow!("pocket-mod: installing console: {e}"))?;
