@@ -22,6 +22,11 @@ import {
 // legacy/test bundles valid until they opt into a ResolvedBuildPlan.
 declare const __POCKET_TARGET__: string;
 declare const __POCKET_HOST_ABI__: number;
+// Replaced by tools/build.ts in EVERY build (default 60, `--hz` declares
+// another). Read at call time, not module time, so tests can exercise the
+// non-60 paths through a globalThis stand-in — a bundler define replaces the
+// identifier with a literal either way.
+declare const __POCKET_TICK_HZ__: number;
 
 export interface BuildHostContract {
   readonly target: string;
@@ -208,6 +213,10 @@ export interface HostOps {
   __host?: string;
   /** Version of the JS/native HostOps ABI implemented by this namespace. */
   __hostAbi?: number;
+  /** Ticks per second of virtual time the host drives this realm at. Absent
+   *  means the spec default 60 — hosts that predate per-realm rates only
+   *  ever ran 60. Bundles bake their rate (`--hz`) and refuse another. */
+  __tickHz?: number;
 }
 
 /** Desktop hosts publish their logical UI size as `ui.__viewport` (the core
@@ -239,11 +248,28 @@ export function embeddedBuildHostContract(): BuildHostContract | null {
   return target && hostAbi > 0 ? { target, hostAbi } : null;
 }
 
-/** Fail before mounting when a bundle was packaged with the wrong native host. */
+/** Fail before mounting when a bundle was packaged with the wrong native
+ *  host, or baked for a tick rate the host does not drive. The rate check
+ *  runs for every native mount — plan-less bundles bake a rate too. */
 export function assertNativeHostContract(
   ops: HostOps,
   expected: BuildHostContract | null = embeddedBuildHostContract(),
 ): void {
+  const baked =
+    typeof __POCKET_TICK_HZ__ === "number" && __POCKET_TICK_HZ__ > 0
+      ? __POCKET_TICK_HZ__
+      : 60;
+  const declared = ops.__tickHz ?? 60;
+  if (declared !== baked) {
+    throw new Error(
+      ops.__tickHz === undefined
+        ? `PocketJS: this bundle bakes ${baked} Hz virtual time but the host declares no ui.__tickHz, ` +
+          "which means the 60 Hz default — declare the rate before mount and drive the surface at it " +
+          "(pocket_apple set_tick_rate before eval_bundle; PocketSurfaceView.tickRate)"
+        : `PocketJS: tick-rate mismatch (bundle baked at ${baked} Hz, host drives ${declared} Hz) — ` +
+          "a bundle only runs correctly at the rate it was built with (`--hz`), like glyphs at their density",
+    );
+  }
   if (!expected) return;
   if (typeof ops.__host !== "string") {
     throw new Error(

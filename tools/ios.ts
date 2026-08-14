@@ -80,9 +80,11 @@ function flagValue(args: readonly string[], name: string): string | undefined {
   return index >= 0 ? args[index + 1] : undefined;
 }
 
-function tickRateFlag(args: readonly string[]): number {
+/** The explicit --hz value, or undefined when the flag is absent — callers
+ *  fall back to the default (fresh builds) or the build stamp (--no-build). */
+function tickRateFlag(args: readonly string[]): number | undefined {
   const raw = flagValue(args, "--hz");
-  if (raw === undefined) return IOS_DEFAULT_TICK_RATE;
+  if (raw === undefined) return undefined;
   const hz = Number(raw);
   if (!IOS_TICK_RATES.includes(hz)) {
     throw new Error(`pocket ios: --hz wants ${IOS_TICK_RATES.join(" or ")}`);
@@ -296,6 +298,19 @@ interface GuestArtifacts {
   planPath: string;
 }
 
+/** What a build baked into its artifacts — the facts staging must agree
+ *  with. Written next to the artifacts because the resolved plan cannot
+ *  carry them: the plan is hash-sealed and does not own the tick rate. */
+interface BuildStamp {
+  app: string;
+  tickHz: number;
+  density: number;
+}
+
+function buildStampPath(demo: string): string {
+  return resolve(ROOT, `dist/ios/${demo}/build-stamp.json`);
+}
+
 function normalizeDemoName(demo: string): string {
   return demo.replace(/-main$/, "");
 }
@@ -318,6 +333,9 @@ async function buildGuest(demoArg: string, density: number, tickHz: number): Pro
       `--project-root=${ROOT}`,
       `--outdir=${outdir}`,
       `--hz=${tickHz}`,
+      // The headline/FPS copy renders the baked rate's digits; pin them so
+      // glyph coverage never depends on incidental literals elsewhere.
+      "--extra-chars=0123456789",
     ],
     { inherit: true },
   );
@@ -329,6 +347,8 @@ async function buildGuest(demoArg: string, density: number, tickHz: number): Pro
   if (!existsSync(bundle) || !existsSync(pak)) {
     throw new Error(`pocket ios: expected ${bundle} and ${pak} after the build`);
   }
+  const stamp: BuildStamp = { app: inputs.appOutput, tickHz, density };
+  writeFileSync(buildStampPath(demo), JSON.stringify(stamp, null, 2) + "\n");
   return { appOutput: inputs.appOutput, bundle, pak, planPath };
 }
 
@@ -408,10 +428,11 @@ async function vendPluginXcframework(options: StageOptions): Promise<void> {
 
 async function play(demoArg: string, args: readonly string[]): Promise<void> {
   const density = Number(flagValue(args, "--density") ?? IOS_DEV_DEFAULT_DENSITY);
+  const requestedHz = tickRateFlag(args);
   const options: StageOptions = {
     shellDir: resolve(flagValue(args, "--shell-dir") ?? DEFAULT_SHELL),
     externalGuest: args.includes("--external-guest"),
-    tickHz: tickRateFlag(args),
+    tickHz: requestedHz ?? IOS_DEFAULT_TICK_RATE,
     pluginPath: flagValue(args, "--plugin-path"),
     runtimeTgz: flagValue(args, "--runtime-tgz"),
   };
@@ -439,6 +460,26 @@ async function play(demoArg: string, args: readonly string[]): Promise<void> {
     if (!existsSync(artifacts.bundle) || !existsSync(artifacts.pak)) {
       throw new Error("pocket ios: --no-build but no prior guest artifacts — drop the flag");
     }
+    // Timing (and glyph scale) are baked into the reused artifacts; staging
+    // must repeat the bundle's facts, never the flags' defaults. Bundles
+    // refuse a mismatched rate at mount, so a stale stage fails on-device.
+    if (!existsSync(buildStampPath(demo))) {
+      throw new Error(
+        "pocket ios: --no-build but the prior build predates build stamps — rebuild once without it",
+      );
+    }
+    const stamp = JSON.parse(readFileSync(buildStampPath(demo), "utf8")) as BuildStamp;
+    if (requestedHz !== undefined && requestedHz !== stamp.tickHz) {
+      throw new Error(
+        `pocket ios: --no-build reuses a ${stamp.tickHz} Hz build but --hz=${requestedHz} was asked — rebuild, or drop --hz`,
+      );
+    }
+    if (flagValue(args, "--density") !== undefined && density !== stamp.density) {
+      throw new Error(
+        `pocket ios: --no-build reuses a density-${stamp.density} build but --density=${density} was asked — rebuild, or drop --density`,
+      );
+    }
+    options.tickHz = stamp.tickHz;
   } else {
     artifacts = await buildGuest(demoArg, density, options.tickHz);
   }
@@ -515,7 +556,7 @@ export async function iosMain(args: readonly string[] = Bun.argv.slice(2)): Prom
       case "build": {
         if (!rest[0] || rest[0].startsWith("--")) throw new Error("pocket ios build: missing app name");
         const density = Number(flagValue(rest, "--density") ?? IOS_DEV_DEFAULT_DENSITY);
-        const artifacts = await buildGuest(rest[0], density, tickRateFlag(rest));
+        const artifacts = await buildGuest(rest[0], density, tickRateFlag(rest) ?? IOS_DEFAULT_TICK_RATE);
         console.log(`pocket ios: built ${artifacts.bundle}`);
         return;
       }
