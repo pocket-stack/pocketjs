@@ -1442,6 +1442,8 @@ export const ANALOG_CENTER = 0x8080;
 // ---------------------------------------------------------------------------
 // Fixed timestep
 // ---------------------------------------------------------------------------
-/** Core animation/tick timestep: exactly 1/60 s. Frame content is a pure
- *  function of frame index — this is what makes byte-exact goldens possible. */
+/** Core animation/tick timestep: exactly 1/60 s unless the realm declared
+ *  another rate before its first tick (Ui::set_tick_rate; still fixed for
+ *  the whole run — 1/hz s, hz at most 240). Frame content is a pure function
+ *  of frame index — this is what makes byte-exact goldens possible. */
 export const FIXED_DT = 1 / 60;

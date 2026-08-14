@@ -33,6 +33,16 @@ core ticks. The core never changes: ms-based animations, transitions and
 baked timelines cover the same **virtual time** at every rate — a 300 ms
 tween is 300 ms at 60 Hz and 300 ms at 2 Hz, just sampled coarser.
 
+The 60 above is the **spec default tick rate**, not a constant of the model:
+a realm may declare another whole rate (1..240) before its first tick
+(`Ui::set_tick_rate`; `tools/build.ts --hz` bakes the same rate into the
+bundle), and the step stays fixed at `1/hz` s for the whole run — the frame
+counter remains the only clock. The declared rate is part of the mount
+contract: the host publishes it as `ui.__tickHz` and a bundle refuses a host
+driving any rate but the one it was built with. Everything this document
+derives holds per realm with 60 read as that realm's rate; the committed
+goldens and tapes all run the default.
+
 Hosts publish the policy as `globalThis.__simHz` before the bundle evals
 (web host: `?hz=2`; sim host: scenario option; PSP: standalone packages at
 60, multi-app packages at 20). Apps read time through the clock API and stay

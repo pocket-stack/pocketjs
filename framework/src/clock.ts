@@ -22,9 +22,21 @@ declare const __POCKET_TICK_HZ__: number;
  * Core ticks per second of virtual time. The realm's tick rate is baked into
  * the bundle, so a bundle only runs correctly on a surface driven at the same
  * rate. Spec default is FIXED_DT = 1/60 s per tick; 120 is the ProMotion rate.
+ * A number that is not a whole 1..240 rate throws HERE, at boot: downstream,
+ * divisorsOf(59.94) is [] and every tick loop would silently no-op.
  */
-export const TICKS_PER_SECOND =
-  typeof __POCKET_TICK_HZ__ === "number" && __POCKET_TICK_HZ__ > 0 ? __POCKET_TICK_HZ__ : 60;
+export const TICKS_PER_SECOND = validTickHz(
+  typeof __POCKET_TICK_HZ__ === "number" ? __POCKET_TICK_HZ__ : 60,
+);
+
+function validTickHz(hz: number): number {
+  if (!Number.isInteger(hz) || hz < 1 || hz > 240) {
+    throw new Error(
+      `PocketJS: __POCKET_TICK_HZ__ must be an integer from 1 through 240, got ${hz}`,
+    );
+  }
+  return hz;
+}
 
 /** The simulation rates that divide the core tick rate exactly. */
 export const VALID_HZ: readonly number[] = divisorsOf(TICKS_PER_SECOND);

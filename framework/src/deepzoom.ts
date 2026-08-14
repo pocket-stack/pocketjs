@@ -133,8 +133,10 @@ const DPAD_SPEED = 5 * TICK_SCALE;
 // Zoom factor per tick while a trigger is held (~×2 in 20 ticks at 60 Hz).
 const ZOOM_STEP = perTick(1.035);
 // Velocity smoothing per tick: approach factor toward the input target, and
-// the decay once input releases (momentum glide).
-const VEL_APPROACH = 1 - perTick(1 - 0.35);
+// the decay once input releases (momentum glide). The approach rebase runs
+// through the complement, so its 60 path takes the early return explicitly —
+// 1 - (1 - 0.35) recovering 0.35 exactly is float luck, not construction.
+const VEL_APPROACH = TICK_SCALE === 1 ? 0.35 : 1 - perTick(1 - 0.35);
 const VEL_DECAY = perTick(0.88);
 // Switch mip level only when the ideal level differs this long (frames), so
 // a zoom hovering at a boundary doesn't thrash mount/unmount.
