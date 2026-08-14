@@ -31,7 +31,10 @@ use pocketjs_core::raster;
 use pocketjs_core::Ui;
 
 pub mod extension;
-#[cfg(any(target_os = "none", feature = "bare-platform", test))]
+#[cfg(all(
+    any(target_os = "none", feature = "bare-platform", test),
+    not(feature = "software-only")
+))]
 mod gl;
 
 #[cfg(any(target_os = "none", feature = "bare-platform", test))]
@@ -43,12 +46,44 @@ const fn c_allocator_supports_alignment(alignment: usize) -> bool {
     alignment <= C_MALLOC_ALIGNMENT
 }
 
-#[cfg(any(target_os = "none", feature = "bare-platform"))]
+#[cfg(all(
+    any(target_os = "none", feature = "bare-platform"),
+    not(feature = "host-allocator")
+))]
 unsafe extern "C" {
     fn malloc(size: usize) -> *mut c_void;
     fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
     fn free(ptr: *mut c_void);
+}
+
+#[cfg(all(
+    any(target_os = "none", feature = "bare-platform"),
+    feature = "host-allocator"
+))]
+unsafe extern "C" {
+    fn pocket_host_alloc(size: usize) -> *mut c_void;
+    fn pocket_host_realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
+    fn pocket_host_free(ptr: *mut c_void);
+}
+
+#[cfg(any(target_os = "none", feature = "bare-platform"))]
+unsafe extern "C" {
     fn abort() -> !;
+}
+
+#[cfg(feature = "boot-stage")]
+unsafe extern "C" {
+    fn pocket_host_boot_stage(stage: i32);
+}
+
+#[inline]
+fn report_boot_stage(stage: i32) {
+    #[cfg(feature = "boot-stage")]
+    unsafe {
+        pocket_host_boot_stage(stage);
+    }
+    #[cfg(not(feature = "boot-stage"))]
+    let _ = stage;
 }
 
 #[cfg(any(target_os = "none", feature = "bare-platform"))]
@@ -60,10 +95,16 @@ unsafe impl GlobalAlloc for CAllocator {
         if !c_allocator_supports_alignment(layout.align()) {
             return core::ptr::null_mut();
         }
-        malloc(layout.size().max(1)).cast()
+        #[cfg(feature = "host-allocator")]
+        return pocket_host_alloc(layout.size().max(1)).cast();
+        #[cfg(not(feature = "host-allocator"))]
+        return malloc(layout.size().max(1)).cast();
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+        #[cfg(feature = "host-allocator")]
+        pocket_host_free(ptr.cast());
+        #[cfg(not(feature = "host-allocator"))]
         free(ptr.cast());
     }
 
@@ -71,7 +112,10 @@ unsafe impl GlobalAlloc for CAllocator {
         if !c_allocator_supports_alignment(layout.align()) {
             return core::ptr::null_mut();
         }
-        realloc(ptr.cast(), size.max(1)).cast()
+        #[cfg(feature = "host-allocator")]
+        return pocket_host_realloc(ptr.cast(), size.max(1)).cast();
+        #[cfg(not(feature = "host-allocator"))]
+        return realloc(ptr.cast(), size.max(1)).cast();
     }
 }
 
@@ -163,7 +207,11 @@ fn clear_framebuffer() {
 /// Reset the single UI instance. `raster_density == 0` selects density 1.
 #[no_mangle]
 pub extern "C" fn ui_init(raster_density: u32) {
-    #[cfg(any(target_os = "none", feature = "bare-platform"))]
+    report_boot_stage(101);
+    #[cfg(all(
+        any(target_os = "none", feature = "bare-platform"),
+        not(feature = "software-only")
+    ))]
     unsafe {
         // This call may happen without a current GL context, so the backend
         // only marks its caches stale and defers replacement until render.
@@ -172,13 +220,18 @@ pub extern "C" fn ui_init(raster_density: u32) {
     unsafe {
         UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
     }
+    report_boot_stage(102);
     clear_framebuffer();
+    report_boot_stage(103);
 }
 
 /// Drop all retained UI, texture, font, and framebuffer allocations.
 #[no_mangle]
 pub extern "C" fn ui_shutdown() {
-    #[cfg(any(target_os = "none", feature = "bare-platform"))]
+    #[cfg(all(
+        any(target_os = "none", feature = "bare-platform"),
+        not(feature = "software-only")
+    ))]
     unsafe {
         gl::invalidate_resources();
     }
@@ -388,7 +441,10 @@ pub extern "C" fn ui_load_styles(ptr: *const u8, len: usize) -> i32 {
 pub extern "C" fn ui_load_font_atlas(ptr: *const u8, len: usize) -> i32 {
     let blob = unsafe { bytes(ptr, len) };
     let loaded = ui().load_font_atlas(blob);
-    #[cfg(any(target_os = "none", feature = "bare-platform"))]
+    #[cfg(all(
+        any(target_os = "none", feature = "bare-platform"),
+        not(feature = "software-only")
+    ))]
     if loaded {
         if let Some(&slot) = blob.get(12) {
             unsafe {
@@ -415,17 +471,26 @@ pub extern "C" fn ui_tick() {
 
 #[no_mangle]
 pub extern "C" fn ui_gl_initialize() -> i32 {
-    #[cfg(any(target_os = "none", feature = "bare-platform"))]
+    #[cfg(all(
+        any(target_os = "none", feature = "bare-platform"),
+        not(feature = "software-only")
+    ))]
     unsafe {
         return gl::initialize() as i32;
     }
-    #[cfg(not(any(target_os = "none", feature = "bare-platform")))]
+    #[cfg(any(
+        feature = "software-only",
+        not(any(target_os = "none", feature = "bare-platform"))
+    ))]
     0
 }
 
 #[no_mangle]
 pub extern "C" fn ui_gl_reset_resources() {
-    #[cfg(any(target_os = "none", feature = "bare-platform"))]
+    #[cfg(all(
+        any(target_os = "none", feature = "bare-platform"),
+        not(feature = "software-only")
+    ))]
     unsafe {
         gl::reset_resources();
     }
@@ -433,7 +498,10 @@ pub extern "C" fn ui_gl_reset_resources() {
 
 #[no_mangle]
 pub extern "C" fn ui_gl_shutdown() {
-    #[cfg(any(target_os = "none", feature = "bare-platform"))]
+    #[cfg(all(
+        any(target_os = "none", feature = "bare-platform"),
+        not(feature = "software-only")
+    ))]
     unsafe {
         gl::shutdown();
     }
@@ -448,7 +516,10 @@ pub extern "C" fn ui_gl_render(
     window_width: i32,
     window_height: i32,
 ) -> i32 {
-    #[cfg(any(target_os = "none", feature = "bare-platform"))]
+    #[cfg(all(
+        any(target_os = "none", feature = "bare-platform"),
+        not(feature = "software-only")
+    ))]
     unsafe {
         return gl::render(
             ui(),
@@ -460,7 +531,10 @@ pub extern "C" fn ui_gl_render(
             window_height,
         ) as i32;
     }
-    #[cfg(not(any(target_os = "none", feature = "bare-platform")))]
+    #[cfg(any(
+        feature = "software-only",
+        not(any(target_os = "none", feature = "bare-platform"))
+    ))]
     {
         let _ = (
             target_x,
@@ -486,7 +560,10 @@ pub extern "C" fn ui_gl_render_over(
     window_width: i32,
     window_height: i32,
 ) -> i32 {
-    #[cfg(any(target_os = "none", feature = "bare-platform"))]
+    #[cfg(all(
+        any(target_os = "none", feature = "bare-platform"),
+        not(feature = "software-only")
+    ))]
     unsafe {
         return gl::render_over(
             ui(),
@@ -498,7 +575,10 @@ pub extern "C" fn ui_gl_render_over(
             window_height,
         ) as i32;
     }
-    #[cfg(not(any(target_os = "none", feature = "bare-platform")))]
+    #[cfg(any(
+        feature = "software-only",
+        not(any(target_os = "none", feature = "bare-platform"))
+    ))]
     {
         let _ = (
             target_x,

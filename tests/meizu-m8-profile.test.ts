@@ -1,0 +1,126 @@
+import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { POCKET_TARGETS } from "../contracts/spec/platforms.ts";
+import { checkAppTypes } from "../framework/compiler/app-check.ts";
+import { verifyPlanHash } from "../framework/src/manifest/plan.ts";
+import {
+  MEIZU_M8_DEV_CONTRACTS,
+  MEIZU_M8_DEV_HOST_ABI,
+  MEIZU_M8_DEV_TARGET_ID,
+  MEIZU_M8_LOGICAL_VIEWPORT,
+  MEIZU_M8_PHYSICAL_VIEWPORT,
+  resolveMeizuM8BuildPlan,
+} from "../tools/meizu-m8-profile.ts";
+
+const repository = join(import.meta.dir, "..");
+const manifestPath = join(repository, "apps/meizu-m8-demo/pocket.json");
+
+function manifest(): Record<string, any> {
+  return JSON.parse(readFileSync(manifestPath, "utf8"));
+}
+
+describe("private Meizu M8 build profile", () => {
+  test("uses the WinCE display and touch contract without changing public targets", () => {
+    expect(POCKET_TARGETS).not.toHaveProperty(MEIZU_M8_DEV_TARGET_ID);
+    expect(MEIZU_M8_DEV_CONTRACTS.targets[MEIZU_M8_DEV_TARGET_ID]).toEqual({
+      hostAbi: MEIZU_M8_DEV_HOST_ABI,
+      platform: "wince",
+      form: "takeover",
+      display: {
+        physicalViewport: MEIZU_M8_PHYSICAL_VIEWPORT,
+        logicalViewports: [MEIZU_M8_LOGICAL_VIEWPORT],
+        presentations: ["stretch"],
+        rasterDensity: 1,
+      },
+      capabilities: ["input.touch", "text.glyphs.baked"],
+    });
+  });
+
+  test("resolves the demo to the exact hardware plan", () => {
+    const plan = resolveMeizuM8BuildPlan(manifest());
+    expect(plan.target).toEqual({
+      id: MEIZU_M8_DEV_TARGET_ID,
+      hostAbi: MEIZU_M8_DEV_HOST_ABI,
+    });
+    expect(plan.viewport).toEqual({
+      logical: MEIZU_M8_LOGICAL_VIEWPORT,
+      physical: MEIZU_M8_PHYSICAL_VIEWPORT,
+      presentation: "stretch",
+      rasterDensity: 1,
+    });
+    expect(plan.features).toEqual({
+      "input.touch": true,
+      "text.glyphs.baked": true,
+    });
+    expect(verifyPlanHash(plan)).toBe(true);
+  });
+
+  test("rejects unsupported buttons and physical-coordinate logical height", () => {
+    const needsButtons = manifest();
+    needsButtons.engine.capabilities.requires.push("input.buttons");
+    expect(() => resolveMeizuM8BuildPlan(needsButtons)).toThrow("input.buttons");
+
+    const tooTall = manifest();
+    tooTall.app.viewport.fixed.logical = [480, 720];
+    expect(() => resolveMeizuM8BuildPlan(tooTall)).toThrow("480x720");
+  });
+
+  test("type-checks explicit PocketJS imports in the Solid demo", () => {
+    const result = checkAppTypes({
+      entry: join(repository, "apps/meizu-m8-demo/main.tsx"),
+      tsconfigPath: join(repository, "tsconfig.json"),
+      declarationFiles: [join(repository, "framework/src/jsx.d.ts")],
+    });
+    expect(
+      result.diagnostics
+        .filter((diagnostic) => diagnostic.category === "error")
+        .map((diagnostic) => diagnostic.message),
+    ).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  test("pins the device, SDK, compiler image, QuickJS, and RAPI source", () => {
+    const toolchain = JSON.parse(
+      readFileSync(join(repository, "tools/cli/meizu-m8-toolchain.json"), "utf8"),
+    );
+    expect(toolchain).toMatchObject({
+      toolchainVersion: "meizu-m8-wince6-armv4i-v1",
+      device: {
+        name: "MEIZU M8SE USB Serial",
+        usbVendorId: "0547",
+        usbProductId: "2720",
+        platform: "Windows CE 6.0",
+        physicalViewport: [480, 720],
+      },
+      transport: {
+        protocol: "WceUsbSh ActiveSync serial",
+        bulkInEndpoint: "81",
+        bulkOutEndpoint: "02",
+      },
+    });
+    expect(toolchain.sdk.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(toolchain.compiler.image).toContain("@sha256:");
+    expect(toolchain.compiler.quickJsRevision).toMatch(/^[0-9a-f]{40}$/);
+    expect(toolchain.rapi.revision).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  test("the WinCE host records rendering and action-level hardware receipts", () => {
+    const runtime = readFileSync(join(repository, "hosts/meizu-m8/runtime.c"), "utf8");
+    const bridge = readFileSync(join(repository, "tools/meizu-m8/usb-serial.c"), "utf8");
+    const stopOld = readFileSync(join(repository, "hosts/meizu-m8/stop-old.c"), "utf8");
+    const app = readFileSync(join(repository, "apps/meizu-m8-demo/app.tsx"), "utf8");
+    expect(runtime).toContain("StretchDIBits(");
+    expect(runtime).toContain('"gdi_composites=%lu\\r\\n"');
+    expect(runtime).toContain("pocket_runtime_hit_test_bounds");
+    expect(runtime).toContain("pocket_runtime_action_sequence");
+    expect(runtime).toContain('L".frame.bmp"');
+    expect(runtime).toContain("POCKET_WIDEN(POCKET_BUILD_ID)");
+    expect(runtime).toContain('"capture_successes=%lu\\r\\n"');
+    expect(bridge).toContain('"CLIENTSERVER"');
+    expect(stopOld).toContain("PROCESS_TERMINATE");
+    expect(stopOld).toContain("WM_CLOSE");
+    expect(stopOld).toContain('L"PocketJS-"');
+    expect(app).toContain('reportAppAction("hero_tap", count)');
+  });
+});

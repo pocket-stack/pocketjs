@@ -17,6 +17,13 @@
 #define POCKETJS_ANALOG_CENTER 32896
 #define POCKETJS_ACTION_NAME_CAPACITY 64
 
+#if defined(POCKET_RUNTIME_REPORT_BOOT_STAGE)
+extern void pocket_host_boot_stage(int stage);
+#define REPORT_BOOT_STAGE(stage) pocket_host_boot_stage(stage)
+#else
+#define REPORT_BOOT_STAGE(stage) ((void)(stage))
+#endif
+
 typedef enum {
   HostCreateNode,
   HostDestroyNode,
@@ -535,11 +542,14 @@ int pocket_runtime_boot(
 ) {
   clear_error();
   pocket_runtime_shutdown();
+  REPORT_BOOT_STAGE(1);
   reported_action_name[0] = '\0';
   reported_action_value = 0;
   reported_action_sequence = 0;
   ui_init(1);
+  REPORT_BOOT_STAGE(2);
   ui_set_viewport((float)width, (float)height);
+  REPORT_BOOT_STAGE(3);
 
   runtime = JS_NewRuntime();
   if (runtime == 0) {
@@ -547,6 +557,7 @@ int pocket_runtime_boot(
     pocket_runtime_shutdown();
     return 0;
   }
+  REPORT_BOOT_STAGE(4);
   JS_SetMaxStackSize(runtime, 256 * 1024);
   context = JS_NewContext(runtime);
   if (context == 0) {
@@ -554,12 +565,14 @@ int pocket_runtime_boot(
     pocket_runtime_shutdown();
     return 0;
   }
+  REPORT_BOOT_STAGE(5);
   global = JS_GetGlobalObject(context);
   if (!install_host(width, height)) {
     take_exception(context);
     pocket_runtime_shutdown();
     return 0;
   }
+  REPORT_BOOT_STAGE(6);
 
   JSValue pack_value = JS_NewArrayBuffer(
     context,
@@ -581,6 +594,7 @@ int pocket_runtime_boot(
     pocket_runtime_shutdown();
     return 0;
   }
+  REPORT_BOOT_STAGE(7);
 
   JSValue result = JS_Eval(
     context,
@@ -594,6 +608,7 @@ int pocket_runtime_boot(
     pocket_runtime_shutdown();
     return 0;
   }
+  REPORT_BOOT_STAGE(8);
   JS_FreeValue(context, result);
   frame_function = JS_GetPropertyStr(context, global, "frame");
   if (JS_IsException(frame_function) || !JS_IsFunction(context, frame_function)) {
@@ -602,10 +617,12 @@ int pocket_runtime_boot(
     pocket_runtime_shutdown();
     return 0;
   }
+  REPORT_BOOT_STAGE(9);
   if (!drain_jobs()) {
     pocket_runtime_shutdown();
     return 0;
   }
+  REPORT_BOOT_STAGE(10);
   return 1;
 }
 

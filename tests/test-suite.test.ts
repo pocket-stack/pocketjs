@@ -41,4 +41,15 @@ describe("declared test suite", () => {
     expect(iosTests).not.toHaveLength(0);
     expect(iosTests.filter((file) => !declared.has(file))).toEqual([]);
   });
+
+  test("runs every Meizu M8 test in the CI unit stage", () => {
+    const declared = unitTestFiles();
+    const meizuM8Tests = readdirSync(join(repository, "tests"))
+      .filter((file) => /^meizu-m8-.*\.test\.ts$/.test(file))
+      .map((file) => `tests/${file}`)
+      .sort();
+
+    expect(meizuM8Tests).not.toHaveLength(0);
+    expect(meizuM8Tests.filter((file) => !declared.has(file))).toEqual([]);
+  });
 });
