@@ -275,8 +275,9 @@ pub extern "C" fn pocket_apple_eval_bundle(
     })
 }
 
-/// `touches`: up to 8 packed words, `(id & 0xff) << 18 | (y & 0x1ff) << 9 |
-/// (x & 0x1ff)` in logical coordinates. Pass `analog = 0x8080` when centered.
+/// `touches`: up to 8 packed words in logical coordinates. Legacy words carry
+/// x:9, y:9, id:8 with bit 31 clear. Wide words set bit 31 and carry x:10,
+/// y:10, id:8. Pass `analog = 0x8080` when centered.
 #[unsafe(no_mangle)]
 pub extern "C" fn pocket_apple_frame(
     handle: *mut PocketApple,

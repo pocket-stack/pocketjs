@@ -20,6 +20,15 @@ NS_ASSUME_NONNULL_BEGIN
                           logicalHeight:(uint32_t)logicalHeight
                                 density:(uint32_t)density;
 
+// Standalone hosts that share PocketSurfaceView's ABI but publish a distinct
+// platform target use this initializer. The default initializer above keeps
+// publishing ios-dev/7 for the NativeScript shell.
++ (instancetype)surfaceWithLogicalWidth:(uint32_t)logicalWidth
+                          logicalHeight:(uint32_t)logicalHeight
+                                density:(uint32_t)density
+                                 hostId:(NSString *)hostId
+                                hostAbi:(uint32_t)hostAbi;
+
 // External-guest mode: no embedded QuickJS realm — the embedding runtime
 // (e.g. NativeScript) owns the guest, mounts globalThis.ui over the ui*
 // methods below, and receives onTick to run globalThis.frame each display
@@ -73,11 +82,22 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Starts/stops the CADisplayLink. start after evalBundle succeeds.
 - (void)start;
+
+// Starts a 60 Hz main-run-loop timer instead of CADisplayLink. Connected
+// device hosts use this only when their runtime does not deliver display-link
+// callbacks; it is mutually exclusive with start.
+- (void)startWithFixedFrameTimer;
 - (void)stop;
 
 // Guest -> host effect lines (JSON by convention), delivered on the main
 // thread during the display tick.
 @property(nonatomic, copy, nullable) void (^onEffect)(NSString *line);
+
+// Called after a guest frame has advanced and rendered successfully. Native
+// device hosts use this for liveness and touch receipts without observing or
+// changing application state.
+@property(nonatomic, copy, nullable) void (^onFrame)
+    (uint64_t frameNumber, NSUInteger touchCount);
 
 // Host -> guest: queued for the guest's next poll (frame-boundary delivery).
 - (void)postEvent:(NSString *)line;

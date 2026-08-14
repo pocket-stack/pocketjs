@@ -26,13 +26,24 @@ typedef struct {
   BOOL used;
 } PocketTouchSlot;
 
+@interface PocketSurfaceView ()
+- (instancetype)initWithFrame:(CGRect)frame
+                 logicalWidth:(uint32_t)logicalWidth
+                logicalHeight:(uint32_t)logicalHeight
+                      density:(uint32_t)density
+                       hostId:(NSString *)hostId
+                      hostAbi:(uint32_t)hostAbi;
+@end
+
 @implementation PocketSurfaceView {
   PocketApple *_handle;
   PocketAppleCore *_coreHandle;
   CADisplayLink *_displayLink;
+  NSTimer *_frameTimer;
   CGColorSpaceRef _colorSpace;
   PocketTouchSlot _touchSlots[POCKET_MAX_TOUCHES];
   uint32_t _density;
+  uint64_t _frameNumber;
   BOOL _running;
 }
 
@@ -43,6 +54,19 @@ typedef struct {
                         logicalWidth:logicalWidth
                        logicalHeight:logicalHeight
                              density:density];
+}
+
++ (instancetype)surfaceWithLogicalWidth:(uint32_t)logicalWidth
+                          logicalHeight:(uint32_t)logicalHeight
+                                density:(uint32_t)density
+                                 hostId:(NSString *)hostId
+                                hostAbi:(uint32_t)hostAbi {
+  return [[self alloc] initWithFrame:CGRectZero
+                        logicalWidth:logicalWidth
+                       logicalHeight:logicalHeight
+                             density:density
+                              hostId:hostId
+                             hostAbi:hostAbi];
 }
 
 + (instancetype)externalSurfaceWithLogicalWidth:(uint32_t)logicalWidth
@@ -67,6 +91,20 @@ typedef struct {
                  logicalWidth:(uint32_t)logicalWidth
                 logicalHeight:(uint32_t)logicalHeight
                       density:(uint32_t)density {
+  return [self initWithFrame:frame
+                logicalWidth:logicalWidth
+               logicalHeight:logicalHeight
+                     density:density
+                      hostId:[NSString stringWithUTF8String:kPocketSurfaceHostId]
+                     hostAbi:kPocketSurfaceHostAbi];
+}
+
+- (instancetype)initWithFrame:(CGRect)frame
+                 logicalWidth:(uint32_t)logicalWidth
+                logicalHeight:(uint32_t)logicalHeight
+                      density:(uint32_t)density
+                       hostId:(NSString *)hostId
+                      hostAbi:(uint32_t)hostAbi {
   self = [super initWithFrame:frame];
   if (self) {
     _logicalWidth = logicalWidth;
@@ -75,8 +113,8 @@ typedef struct {
     _handle = pocket_apple_create(density, logicalWidth, logicalHeight);
     if (_handle == NULL) {
       [self captureError];
-    } else if (pocket_apple_set_identity(_handle, kPocketSurfaceHostId,
-                                         kPocketSurfaceHostAbi) != 0) {
+    } else if (hostId.length == 0 || hostAbi == 0 ||
+               pocket_apple_set_identity(_handle, hostId.UTF8String, hostAbi) != 0) {
       [self captureError];
     }
     _colorSpace = CGColorSpaceCreateDeviceRGB();
@@ -99,6 +137,7 @@ typedef struct {
 - (void)dealloc {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   [_displayLink invalidate];
+  [_frameTimer invalidate];
   if (_handle != NULL) {
     pocket_apple_destroy(_handle);
     _handle = NULL;
@@ -237,20 +276,42 @@ static void PocketSurfaceEffectTrampoline(const char *line, void *context) {
   [_displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 }
 
+- (void)startWithFixedFrameTimer {
+  if (_running || (_handle == NULL && _coreHandle == NULL)) {
+    return;
+  }
+  _running = YES;
+  _frameTimer = [NSTimer timerWithTimeInterval:(1.0 / 60.0)
+                                        target:self
+                                      selector:@selector(handleFixedTimerTick:)
+                                      userInfo:nil
+                                       repeats:YES];
+  [[NSRunLoop mainRunLoop] addTimer:_frameTimer forMode:NSRunLoopCommonModes];
+}
+
 - (void)stop {
   _running = NO;
   [_displayLink invalidate];
   _displayLink = nil;
+  [_frameTimer invalidate];
+  _frameTimer = nil;
 }
 
 - (void)appDidEnterBackground {
   _displayLink.paused = YES;
+  _frameTimer.fireDate = [NSDate distantFuture];
 }
 
 - (void)appWillEnterForeground {
   if (_running) {
     _displayLink.paused = NO;
+    _frameTimer.fireDate = [NSDate date];
   }
+}
+
+- (void)handleFixedTimerTick:(NSTimer *)timer {
+  (void)timer;
+  [self handleDisplayTick:nil];
 }
 
 // The layer letterboxes with resizeAspect; touches must invert the same fit.
@@ -275,9 +336,12 @@ static void PocketSurfaceEffectTrampoline(const char *line, void *context) {
   if (x < 0 || y < 0 || x >= _logicalWidth || y >= _logicalHeight) {
     return NO;
   }
-  // Packed coordinates carry 9 bits per axis.
-  *outX = (uint32_t)MIN(x, 511.0);
-  *outY = (uint32_t)MIN(y, 511.0);
+  // Preserve legacy words for compact surfaces. A viewport whose axis exceeds
+  // 512 logical pixels uses the append-only 10-bit wire form.
+  BOOL wide = _logicalWidth > 512 || _logicalHeight > 512;
+  CGFloat maxCoordinate = wide ? 1023.0 : 511.0;
+  *outX = (uint32_t)MIN(x, maxCoordinate);
+  *outY = (uint32_t)MIN(y, maxCoordinate);
   return YES;
 }
 
@@ -342,7 +406,13 @@ static void PocketSurfaceEffectTrampoline(const char *line, void *context) {
     uint32_t x = 0;
     uint32_t y = 0;
     if ([self logicalPointForPoint:_touchSlots[slot].point outX:&x outY:&y]) {
-      words[count++] = ((uint32_t)(slot & 0xff) << 18) | ((y & 0x1ff) << 9) | (x & 0x1ff);
+      if (_logicalWidth > 512 || _logicalHeight > 512) {
+        words[count++] = 0x80000000u | ((uint32_t)(slot & 0xff) << 20) |
+                         ((y & 0x3ff) << 10) | (x & 0x3ff);
+      } else {
+        words[count++] = ((uint32_t)(slot & 0xff) << 18) |
+                         ((y & 0x1ff) << 9) | (x & 0x1ff);
+      }
     }
     _touchSlots[slot].reported = YES;
     if (!_touchSlots[slot].live) {
@@ -398,6 +468,10 @@ static void PocketSurfaceEffectTrampoline(const char *line, void *context) {
       return;
     }
     [self presentFrame:&frame];
+    _frameNumber += 1;
+    if (self.onFrame != nil) {
+      self.onFrame(_frameNumber, count);
+    }
     return;
   }
 
@@ -416,6 +490,10 @@ static void PocketSurfaceEffectTrampoline(const char *line, void *context) {
     return;
   }
   [self presentFrame:&frame];
+  _frameNumber += 1;
+  if (self.onFrame != nil) {
+    self.onFrame(_frameNumber, count);
+  }
 }
 
 // ---- external-guest ui.* ops --------------------------------------------

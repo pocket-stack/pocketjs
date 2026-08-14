@@ -102,7 +102,9 @@ describe("private iOS build profile", () => {
     const surface = readFileSync(SURFACE_VIEW_PATH, "utf8");
     expect(surface).toContain(`kPocketSurfaceHostId = "${IOS_DEV_TARGET_ID}"`);
     expect(surface).toContain(`kPocketSurfaceHostAbi = ${IOS_DEV_HOST_ABI}`);
-    expect(surface).toContain("pocket_apple_set_identity(_handle, kPocketSurfaceHostId,");
+    expect(surface).toContain("hostId:[NSString stringWithUTF8String:kPocketSurfaceHostId]");
+    expect(surface).toContain("hostAbi:kPocketSurfaceHostAbi");
+    expect(surface).toContain("pocket_apple_set_identity(_handle, hostId.UTF8String, hostAbi)");
   });
 
   test("the tick rate is declared before the bundle evaluates and published at mount", () => {
