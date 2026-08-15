@@ -65,6 +65,14 @@ export const BLOG_POSTS: BlogPost[] = [
     author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
   },
   {
+    slug: "agent-native-runtime-embedded-systems",
+    title: "Taking a Step Further Towards an Agent-Native Runtime on Embedded Systems",
+    date: "2026-08-15",
+    description:
+      "Pocket Pi's Bundle-first runtime proved installable Apps on an ESP32-P4. This post derives the next architecture from first principles: protected native mechanisms, one PocketJS substrate, a JavaScript System Framework, bounded Guests, durable App Data, and a path from source-native revision to hardware portability and System OTA.",
+    author: { name: 'Siwei "Jerry" Yuan', url: "https://github.com/siwei-yuan" },
+  },
+  {
     slug: "pocket-pi-agent-native-runtime",
     title: "Designing Apps for Humans and Agents in an Agent-Native Runtime",
     date: "2026-08-11",
