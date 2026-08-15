@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { POCKET_TARGETS } from "../contracts/spec/platforms.ts";
@@ -21,7 +21,13 @@ import {
   IPHONE_CLASSIC_ICON_SOURCE,
   IPHONE_CLASSIC_RETINA_ICON_FILE,
 } from "../tools/iphone-classic-icon.ts";
-import { deploymentInstallCommand, iphone4sDeploymentPaths } from "../tools/iphone4s.ts";
+import {
+  buildReceiptsMatch,
+  deploymentAcquireLockCommand,
+  deploymentInstallCommand,
+  deploymentRenewLockCommand,
+  iphone4sDeploymentPaths,
+} from "../tools/iphone4s.ts";
 
 const repository = join(import.meta.dir, "..");
 
@@ -77,6 +83,9 @@ describe("private iPhone 4S profile", () => {
     expect(tool).toContain("byte-exact readback");
     expect(tool).toContain('"build-receipt.json": sha256(receiptPath())');
     expect(tool).toContain("/bin/su mobile -c 'touch ${CAPTURE_REQUEST_PATH}'");
+    expect(tool).toContain('label: "native/runtime.build-id-input.o"');
+    expect(tool).toContain('label: "native/pocket_runtime.o"');
+    expect(tool).toContain("...quickJsObjects.map");
   });
 
   test("shares the current touch-hit host and keeps transactional rollback", () => {
@@ -91,6 +100,11 @@ describe("private iPhone 4S profile", () => {
     expect(runtime).toContain('send_void_float(g_view, "setContentScaleFactor:"');
     expect(runtime).toContain("g_gl_width != POCKET_LOGICAL_WIDTH * POCKET_RASTER_DENSITY");
     expect(runtime).not.toContain("fsync(");
+    expect(guest).toContain("#define POCKET_RASTER_DENSITY 1");
+    expect(guest).toContain("ui_init(POCKET_RASTER_DENSITY)");
+    expect(readFileSync(join(repository, "tools/iphone4s.ts"), "utf8").match(
+      /`-DPOCKET_RASTER_DENSITY=\$\{inputs\.viewport\.rasterDensity\}`/g,
+    )).toHaveLength(2);
 
     const first = iphone4sDeploymentPaths("a".repeat(24));
     const second = iphone4sDeploymentPaths("b".repeat(24));
@@ -99,8 +113,86 @@ describe("private iPhone 4S profile", () => {
     expect(first.lock).toBe(second.lock);
     const install = deploymentInstallCommand("a".repeat(24), first);
     expect(install).toContain("trap rollback EXIT HUP INT TERM");
+    expect(install).toContain("prepared > \"$lock/phase\"");
+    expect(install).toContain("previous > \"$lock/origin\"");
+    expect(install).toContain("committed > \"$lock/phase\"");
     expect(install.lastIndexOf("uicache")).toBeLessThan(install.lastIndexOf("trap - EXIT HUP INT TERM"));
     expect(install.lastIndexOf("trap - EXIT HUP INT TERM")).toBeLessThan(install.lastIndexOf('rm -rf "$backup"'));
+
+    const acquire = deploymentAcquireLockCommand("a".repeat(24), first, 1_000, 1_600);
+    expect(acquire).toContain('lease=$(cat "$lock/expires"');
+    expect(acquire).toContain('[ "$lease" -gt "$now" ]');
+    expect(acquire).toContain('reclaim=$lock/reclaim');
+    expect(acquire).toContain('reclaim_lease=$(cat "$reclaim/expires"');
+    expect(acquire).toContain('mkdir "$reclaim"');
+    expect(acquire).toContain('case "$owner" in *[!0-9a-f]*)');
+    expect(acquire).toContain('[ "$phase" = committed ]');
+    expect(acquire).toContain('mv "$backup" "$dest"');
+    expect(acquire).toContain('[ "$origin" = empty ]');
+    expect(() => deploymentAcquireLockCommand("a".repeat(24), first, 1_000, 1_000)).toThrow();
+    const renew = deploymentRenewLockCommand("a".repeat(24), first, 2_000);
+    expect(renew).toContain('test "$(cat "$lock/owner")" = "$tx"');
+    expect(renew).toContain('> "$lock/expires"');
+  });
+
+  test("compares the complete installed receipt rather than only its build ID", () => {
+    const receipt = {
+      schema: 1 as const,
+      buildId: "a".repeat(32),
+      bundleId: "dev.pocket-stack.iphone4s-demo",
+      target: "iphone4s-dev",
+      hostAbi: 5,
+      deploymentTarget: "6.0",
+      files: { "PocketJSiPhone4S": "1".repeat(64), "Info.plist": "2".repeat(64) },
+    };
+    expect(buildReceiptsMatch(receipt, {
+      ...receipt,
+      files: { "Info.plist": "2".repeat(64), "PocketJSiPhone4S": "1".repeat(64) },
+    })).toBe(true);
+    expect(buildReceiptsMatch(receipt, {
+      ...receipt,
+      files: { ...receipt.files, "PocketJSiPhone4S": "3".repeat(64) },
+    })).toBe(false);
+  });
+
+  test("leases the deployment lock and reclaims incomplete or expired owners", () => {
+    const output = mkdtempSync(join(tmpdir(), "pocket-iphone4s-lock-"));
+    const lock = join(output, "deploy.lock");
+    const paths = { ...iphone4sDeploymentPaths("a".repeat(24)), lock };
+    const runShell = (command: string) => Bun.spawnSync({
+      cmd: ["/bin/sh", "-c", command],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    try {
+      const first = runShell(deploymentAcquireLockCommand("a".repeat(24), paths, 1_000, 1_600));
+      expect(first.exitCode).toBe(0);
+      expect(readFileSync(join(lock, "owner"), "utf8").trim()).toBe("a".repeat(24));
+      expect(readFileSync(join(lock, "expires"), "utf8").trim()).toBe("1600");
+
+      const active = runShell(deploymentAcquireLockCommand("b".repeat(24), paths, 1_100, 1_700));
+      expect(active.exitCode).toBe(73);
+      expect(active.stderr.toString()).toContain("deployment busy");
+
+      writeFileSync(join(lock, "owner"), "legacy-incomplete\n");
+      writeFileSync(join(lock, "expires"), "0\n");
+      const recovered = runShell(deploymentAcquireLockCommand("b".repeat(24), paths, 2_000, 2_600));
+      expect(recovered.exitCode).toBe(0);
+      expect(readFileSync(join(lock, "owner"), "utf8").trim()).toBe("b".repeat(24));
+
+      writeFileSync(join(lock, "expires"), "0\n");
+      const reclaim = join(lock, "reclaim");
+      mkdirSync(reclaim);
+      writeFileSync(join(reclaim, "owner"), "interrupted-recovery\n");
+      writeFileSync(join(reclaim, "expires"), "0\n");
+      const reclaimRecovered = runShell(
+        deploymentAcquireLockCommand("c".repeat(24), paths, 3_000, 3_600),
+      );
+      expect(reclaimRecovered.exitCode).toBe(0);
+      expect(readFileSync(join(lock, "owner"), "utf8").trim()).toBe("c".repeat(24));
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+    }
   });
 
   test("keeps the iPhone 2G icon byte-exact and independently rasterizes its Retina reconstruction", async () => {

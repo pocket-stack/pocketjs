@@ -56,6 +56,7 @@ const STATUS_PATH = "/private/var/tmp/pocketjs-iphone4s.status";
 const FRAME_PATH = "/private/var/tmp/pocketjs-iphone4s.frame.rgba";
 const CAPTURE_REQUEST_PATH = "/private/var/tmp/pocketjs-iphone4s.capture";
 const DEPLOYMENT_TARGET = IPHONE4S_TOOLCHAIN.compiler.minimumVersion;
+const DEPLOYMENT_LEASE_SECONDS = 10 * 60;
 
 interface CommandResult {
   readonly exitCode: number;
@@ -78,6 +79,8 @@ interface BuildReceipt {
   readonly deploymentTarget: string;
   readonly files: Readonly<Record<string, string>>;
 }
+
+const BUILD_ID_PLACEHOLDER = "00000000000000000000000000000000";
 
 interface DeviceStatus {
   readonly schema: number;
@@ -172,6 +175,22 @@ function hashInputs(inputs: readonly (string | BuildIdentityInput)[]): string {
     hash.update(bytes);
   }
   return hash.digest("hex").slice(0, 32);
+}
+
+export function buildReceiptsMatch(left: BuildReceipt, right: BuildReceipt): boolean {
+  if (
+    left.schema !== right.schema ||
+    left.buildId !== right.buildId ||
+    left.bundleId !== right.bundleId ||
+    left.target !== right.target ||
+    left.hostAbi !== right.hostAbi ||
+    left.deploymentTarget !== right.deploymentTarget
+  ) return false;
+  const leftFiles = Object.entries(left.files).sort(([a], [b]) => a.localeCompare(b));
+  const rightFiles = Object.entries(right.files).sort(([a], [b]) => a.localeCompare(b));
+  return leftFiles.length === rightFiles.length && leftFiles.every(
+    ([name, digest], index) => rightFiles[index]?.[0] === name && rightFiles[index]?.[1] === digest,
+  );
 }
 
 function commandPath(name: string): string | undefined {
@@ -654,16 +673,38 @@ async function build(): Promise<void> {
   cpSync(join(REPOSITORY, "hosts/iphone4s/PkgInfo"), join(bundle, "PkgInfo"));
   await bakeClassicIPhoneArtwork(bundle);
 
+  const firstParty = [
+    ...warnings,
+    `-DPOCKET_LOGICAL_WIDTH=${inputs.viewport.logical[0]}`,
+    `-DPOCKET_LOGICAL_HEIGHT=${inputs.viewport.logical[1]}`,
+    `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
+  ];
+  const crtGlobalsObject = join(nativeBuild, "crt_globals.o");
+  const runtimeIdentityObject = join(nativeBuild, "runtime.build-id-input.o");
+  const pocketRuntimeObject = join(nativeBuild, "pocket_runtime.o");
+  const compatObject = join(nativeBuild, "compat.o");
+  compile(join(REPOSITORY, "hosts/iphone2g/crt_globals.c"), crtGlobalsObject, warnings);
+  compile(join(REPOSITORY, "hosts/iphone4s/runtime.c"), runtimeIdentityObject, [
+    ...firstParty,
+    `-DPOCKET_BUILD_ID=\"${BUILD_ID_PLACEHOLDER}\"`,
+    "-Wno-cast-function-type-mismatch",
+  ]);
+  compile(join(REPOSITORY, "hosts/iphone2g/pocket_runtime.c"), pocketRuntimeObject, [
+    ...warnings,
+    `-DPOCKETJS_TARGET_ID=\"${inputs.target}\"`,
+    `-DPOCKETJS_HOST_ABI=${inputs.hostAbi}`,
+    `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`,
+    "-isystem",
+    quickjs,
+  ]);
+  compile(join(REPOSITORY, "hosts/iphone2g/compat.c"), compatObject, warnings);
+
   const buildId = hashInputs([
     planPath(),
     guestJavaScript,
     guestPak,
     join(REPOSITORY, "hosts/iphone4s/Info.plist"),
     join(REPOSITORY, "hosts/iphone4s/PkgInfo"),
-    join(REPOSITORY, "hosts/iphone4s/runtime.c"),
-    join(REPOSITORY, "hosts/iphone2g/runtime.c"),
-    join(REPOSITORY, "hosts/iphone2g/pocket_runtime.c"),
-    join(REPOSITORY, "hosts/iphone2g/compat.c"),
     join(REPOSITORY, "hosts/iphone2g/Icon.png"),
     join(REPOSITORY, "hosts/iphone4s/Icon.svg"),
     join(REPOSITORY, "tools/iphone-classic-icon.ts"),
@@ -678,25 +719,26 @@ async function build(): Promise<void> {
     { label: "sysroot/libSystem.tbd", path: join(sysroot, "usr/lib/libSystem.tbd") },
     { label: "sysroot/libobjc.tbd", path: join(sysroot, "usr/lib/libobjc.tbd") },
     { label: "sysroot/libgcc_s.1.tbd", path: join(sysroot, "usr/lib/libgcc_s.1.tbd") },
-    {
-      label: "native/libpocketjs_symbian_core.a",
-      path: rustLibrary,
-    },
+    { label: "native/csu-start.o", path: join(nativeBuild, "csu-start.o") },
+    { label: "native/csu-dyld-glue.o", path: join(nativeBuild, "csu-dyld-glue.o") },
+    { label: "native/crt_globals.o", path: crtGlobalsObject },
+    { label: "native/runtime.build-id-input.o", path: runtimeIdentityObject },
+    { label: "native/pocket_runtime.o", path: pocketRuntimeObject },
+    { label: "native/compat.o", path: compatObject },
+    ...quickJsObjects.map((path) => ({ label: `native/${path.slice(nativeBuild.length + 1)}`, path })),
+    { label: "native/libpocketjs_symbian_core.a", path: rustLibrary },
+    { label: `bundle/${IPHONE_CLASSIC_ICON_FILE}`, path: join(bundle, IPHONE_CLASSIC_ICON_FILE) },
+    { label: `bundle/${IPHONE_CLASSIC_RETINA_ICON_FILE}`, path: join(bundle, IPHONE_CLASSIC_RETINA_ICON_FILE) },
+    { label: "bundle/Default@2x.png", path: join(bundle, "Default@2x.png") },
+    { label: "bundle/Default-568h@2x.png", path: join(bundle, "Default-568h@2x.png") },
   ]);
 
-  const firstParty = [...warnings, `-DPOCKET_BUILD_ID=\"${buildId}\"`,
-    `-DPOCKET_LOGICAL_WIDTH=${inputs.viewport.logical[0]}`,
-    `-DPOCKET_LOGICAL_HEIGHT=${inputs.viewport.logical[1]}`,
-    `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`];
-  compile(join(REPOSITORY, "hosts/iphone2g/crt_globals.c"), join(nativeBuild, "crt_globals.o"), warnings);
-  compile(join(REPOSITORY, "hosts/iphone4s/runtime.c"), join(nativeBuild, "runtime.o"), [
-    ...firstParty, "-Wno-cast-function-type-mismatch",
+  const runtimeObject = join(nativeBuild, "runtime.o");
+  compile(join(REPOSITORY, "hosts/iphone4s/runtime.c"), runtimeObject, [
+    ...firstParty,
+    `-DPOCKET_BUILD_ID=\"${buildId}\"`,
+    "-Wno-cast-function-type-mismatch",
   ]);
-  compile(join(REPOSITORY, "hosts/iphone2g/pocket_runtime.c"), join(nativeBuild, "pocket_runtime.o"), [
-    ...warnings, `-DPOCKETJS_TARGET_ID=\"${inputs.target}\"`, `-DPOCKETJS_HOST_ABI=${inputs.hostAbi}`,
-    "-isystem", quickjs,
-  ]);
-  compile(join(REPOSITORY, "hosts/iphone2g/compat.c"), join(nativeBuild, "compat.o"), warnings);
 
   const embeddedJavaScript = join(nativeBuild, "app.js.bin");
   writeFileSync(embeddedJavaScript, Buffer.concat([readFileSync(guestJavaScript), Buffer.from([0])]));
@@ -706,9 +748,9 @@ async function build(): Promise<void> {
     "-no_pie", "-no_uuid", "-no_function_starts", "-no_data_in_code_info",
     "-no_source_version", "-no_compact_unwind", "-no_adhoc_codesign", "-no_encryption",
     "-e", "start", "-o", executable, join(nativeBuild, "csu-start.o"),
-    join(nativeBuild, "csu-dyld-glue.o"), join(nativeBuild, "crt_globals.o"),
-    join(nativeBuild, "runtime.o"), join(nativeBuild, "pocket_runtime.o"),
-    join(nativeBuild, "compat.o"), "-force_load", rustLibrary, ...quickJsObjects,
+    join(nativeBuild, "csu-dyld-glue.o"), crtGlobalsObject,
+    runtimeObject, pocketRuntimeObject, compatObject,
+    "-force_load", rustLibrary, ...quickJsObjects,
     "-sectcreate", "__DATA", "__pocket_js", embeddedJavaScript,
     "-sectcreate", "__DATA", "__pocket_pak", guestPak,
     "-framework", "UIKit", "-framework", "Foundation", "-framework", "CoreGraphics",
@@ -771,10 +813,94 @@ export function iphone4sDeploymentPaths(transactionId: string): DeploymentPaths 
   };
 }
 
+function assertDeploymentLease(nowEpochSeconds: number, expiresEpochSeconds: number): void {
+  if (
+    !Number.isSafeInteger(nowEpochSeconds) ||
+    !Number.isSafeInteger(expiresEpochSeconds) ||
+    nowEpochSeconds < 0 ||
+    expiresEpochSeconds <= nowEpochSeconds
+  ) {
+    throw new Error("pocket iphone4s: deployment lease must be a future integer epoch");
+  }
+}
+
+export function deploymentAcquireLockCommand(
+  transactionId: string,
+  paths: DeploymentPaths,
+  nowEpochSeconds: number,
+  expiresEpochSeconds: number,
+): string {
+  if (!/^[0-9a-f]{24}$/.test(transactionId)) {
+    throw new Error("pocket iphone4s: deployment transaction id must be 24 lowercase hex digits");
+  }
+  assertDeploymentLease(nowEpochSeconds, expiresEpochSeconds);
+  return (
+    "set -eu; " +
+    `lock=${paths.lock}; tx=${transactionId}; now=${nowEpochSeconds}; expires=${expiresEpochSeconds}; ` +
+    `dest=${INSTALL_PATH}; ` +
+    "if ! mkdir \"$lock\" 2>/dev/null; then " +
+    "owner=$(cat \"$lock/owner\" 2>/dev/null || true); " +
+    "lease=$(cat \"$lock/expires\" 2>/dev/null || true); " +
+    "case \"$lease\" in ''|*[!0-9]*) sleep 1; owner=$(cat \"$lock/owner\" 2>/dev/null || true); " +
+    "lease=$(cat \"$lock/expires\" 2>/dev/null || true) ;; esac; active=0; " +
+    "case \"$lease\" in ''|*[!0-9]*) ;; *) [ \"$lease\" -gt \"$now\" ] && active=1 || true ;; esac; " +
+    "if [ \"$active\" -eq 1 ]; then echo \"deployment busy (owner ${owner:-unknown}, lease $lease)\" >&2; exit 73; fi; " +
+    "reclaim=$lock/reclaim; " +
+    "if ! mkdir \"$reclaim\" 2>/dev/null; then " +
+    "reclaim_lease=$(cat \"$reclaim/expires\" 2>/dev/null || true); " +
+    "case \"$reclaim_lease\" in ''|*[!0-9]*) sleep 1; " +
+    "reclaim_lease=$(cat \"$reclaim/expires\" 2>/dev/null || true) ;; esac; reclaim_active=0; " +
+    "case \"$reclaim_lease\" in ''|*[!0-9]*) ;; *) [ \"$reclaim_lease\" -gt \"$now\" ] && reclaim_active=1 || true ;; esac; " +
+    "if [ \"$reclaim_active\" -eq 1 ]; then echo \"deployment recovery busy\" >&2; exit 73; fi; " +
+    "expired_reclaim=$lock/reclaim-expired-$tx; " +
+    "if ! mv \"$reclaim\" \"$expired_reclaim\" 2>/dev/null; then echo \"deployment recovery busy\" >&2; exit 73; fi; " +
+    "if ! mkdir \"$reclaim\" 2>/dev/null; then rm -rf \"$expired_reclaim\"; echo \"deployment recovery busy\" >&2; exit 73; fi; " +
+    "rm -rf \"$expired_reclaim\"; fi; " +
+    "printf '%s\\n' \"$tx\" > \"$reclaim/owner\"; printf '%s\\n' \"$expires\" > \"$reclaim/expires\"; " +
+    "trap 'status=$?; set +e; test -f \"$reclaim/owner\" && test \"$(cat \"$reclaim/owner\")\" = \"$tx\" && rm -rf \"$reclaim\"; exit \"$status\"' EXIT HUP INT TERM; " +
+    "lease=$(cat \"$lock/expires\" 2>/dev/null || true); active=0; " +
+    "case \"$lease\" in ''|*[!0-9]*) ;; *) [ \"$lease\" -gt \"$now\" ] && active=1 || true ;; esac; " +
+    "if [ \"$active\" -eq 1 ]; then echo \"deployment busy (lease $lease)\" >&2; exit 73; fi; " +
+    "valid_owner=0; case \"$owner\" in " +
+    "????????????????????????) case \"$owner\" in *[!0-9a-f]*) ;; *) valid_owner=1 ;; esac ;; esac; " +
+    "if [ \"$valid_owner\" -eq 1 ]; then " +
+    "backup=/Applications/.PocketJSiPhone4S.app.pocketjs-backup-${owner}; " +
+    "stage=/Applications/.PocketJSiPhone4S.app.pocketjs-stage-${owner}; " +
+    "unpack=/Applications/.PocketJSiPhone4S.app.pocketjs-unpack-${owner}; " +
+    "archive=/private/var/tmp/pocketjs-iphone4s-${owner}.app.tar; " +
+    "phase=$(cat \"$lock/phase\" 2>/dev/null || true); origin=$(cat \"$lock/origin\" 2>/dev/null || true); " +
+    "if [ \"$phase\" = committed ]; then rm -rf \"$backup\"; " +
+    "elif [ -e \"$backup\" ]; then rm -rf \"$dest\"; mv \"$backup\" \"$dest\"; " +
+    "chown -R root:wheel \"$dest\"; chmod 755 \"$dest/PocketJSiPhone4S\"; " +
+    "elif [ \"$origin\" = empty ]; then rm -rf \"$dest\"; fi; " +
+    "rm -rf \"$stage\" \"$unpack\" \"$archive\"; fi; " +
+    "rm -f \"$lock/phase\" \"$lock/origin\"; " +
+    "printf '%s\\n' \"$tx\" > \"$lock/owner\"; printf '%s\\n' \"$expires\" > \"$lock/expires\"; " +
+    "rm -rf \"$reclaim\"; trap - EXIT HUP INT TERM; " +
+    "else printf '%s\\n' \"$tx\" > \"$lock/owner\"; printf '%s\\n' \"$expires\" > \"$lock/expires\"; fi"
+  );
+}
+
+export function deploymentRenewLockCommand(
+  transactionId: string,
+  paths: DeploymentPaths,
+  expiresEpochSeconds: number,
+): string {
+  if (!/^[0-9a-f]{24}$/.test(transactionId) || !Number.isSafeInteger(expiresEpochSeconds)) {
+    throw new Error("pocket iphone4s: invalid deployment lease renewal");
+  }
+  return (
+    "set -eu; " +
+    `lock=${paths.lock}; tx=${transactionId}; expires=${expiresEpochSeconds}; ` +
+    "test -f \"$lock/owner\"; test \"$(cat \"$lock/owner\")\" = \"$tx\"; " +
+    "printf '%s\\n' \"$expires\" > \"$lock/expires\""
+  );
+}
+
 export function deploymentInstallCommand(transactionId: string, paths: DeploymentPaths): string {
   return (
     "set -eu; " +
-    `dest=${INSTALL_PATH}; stage=${paths.stage}; backup=${paths.backup}; ` +
+    `dest=${INSTALL_PATH}; stage=${paths.stage}; backup=${paths.backup}; lock=${paths.lock}; ` +
     "had_previous=0; installed_new=0; " +
     "rollback() { status=$?; trap - EXIT HUP INT TERM; set +e; " +
     "if [ \"$installed_new\" -eq 1 ]; then rm -rf \"$dest\"; fi; " +
@@ -783,11 +909,16 @@ export function deploymentInstallCommand(transactionId: string, paths: Deploymen
     "chown -R root:wheel \"$dest\"; chmod 755 \"$dest/PocketJSiPhone4S\"; " +
     "/bin/su mobile -c /usr/bin/uicache; fi; exit \"$status\"; }; " +
     "trap rollback EXIT HUP INT TERM; " +
-    "if [ -e \"$dest\" ]; then mv \"$dest\" \"$backup\"; had_previous=1; fi; " +
-    "mv \"$stage\" \"$dest\"; installed_new=1; chown -R root:wheel \"$dest\"; " +
+    "printf '%s\\n' prepared > \"$lock/phase\"; " +
+    "if [ -e \"$dest\" ]; then printf '%s\\n' previous > \"$lock/origin\"; " +
+    "mv \"$dest\" \"$backup\"; had_previous=1; " +
+    "else printf '%s\\n' empty > \"$lock/origin\"; fi; " +
+    "mv \"$stage\" \"$dest\"; installed_new=1; printf '%s\\n' installed > \"$lock/phase\"; " +
+    "chown -R root:wheel \"$dest\"; " +
     "chmod 755 \"$dest/PocketJSiPhone4S\"; test -x \"$dest/PocketJSiPhone4S\"; " +
     "/usr/bin/ldid -e \"$dest/PocketJSiPhone4S\" >/dev/null; " +
-    "/bin/su mobile -c /usr/bin/uicache; trap - EXIT HUP INT TERM; " +
+    "/bin/su mobile -c /usr/bin/uicache; printf '%s\\n' committed > \"$lock/phase\"; " +
+    "trap - EXIT HUP INT TERM; " +
     "rm -rf \"$backup\"; " +
     `echo installed-${transactionId}`
   );
@@ -833,14 +964,13 @@ async function deploy(): Promise<void> {
       let lockHeld = false;
       let operationError: unknown;
       try {
-        mustRemote(
-          port,
-          "set -eu; " +
-            `lock=${paths.lock}; tx=${transactionId}; ` +
-            "if mkdir \"$lock\" 2>/dev/null; then printf '%s\\n' \"$tx\" > \"$lock/owner\"; " +
-            "else owner=$(cat \"$lock/owner\" 2>/dev/null || echo unknown); " +
-            "echo \"deployment busy (owner $owner)\" >&2; exit 73; fi",
-        );
+        const acquireTime = Math.floor(Date.now() / 1000);
+        mustRemote(port, deploymentAcquireLockCommand(
+          transactionId,
+          paths,
+          acquireTime,
+          acquireTime + DEPLOYMENT_LEASE_SECONDS,
+        ));
         lockHeld = true;
         mustRemote(
           port,
@@ -853,6 +983,11 @@ async function deploy(): Promise<void> {
             "test -x \"$stage/PocketJSiPhone4S\"; " +
             "/usr/bin/ldid -e \"$stage/PocketJSiPhone4S\" >/dev/null",
         );
+        mustRemote(port, deploymentRenewLockCommand(
+          transactionId,
+          paths,
+          Math.floor(Date.now() / 1000) + DEPLOYMENT_LEASE_SECONDS,
+        ));
         const expectedFiles = { ...receipt.files, "build-receipt.json": sha256(receiptPath()) };
         const fileNames = Object.keys(expectedFiles);
         if (fileNames.some((name) => !/^[A-Za-z0-9@._-]+$/.test(name))) {
@@ -872,6 +1007,11 @@ async function deploy(): Promise<void> {
             throw new Error(`pocket iphone4s: device readback mismatch for ${name}`);
           }
         }
+        mustRemote(port, deploymentRenewLockCommand(
+          transactionId,
+          paths,
+          Math.floor(Date.now() / 1000) + DEPLOYMENT_LEASE_SECONDS,
+        ));
         mustRemote(port, deploymentInstallCommand(transactionId, paths));
       } catch (error) {
         operationError = error;
@@ -899,16 +1039,20 @@ async function deploy(): Promise<void> {
   console.log(`deployed ${receipt.buildId} to ${INSTALL_PATH} with byte-exact readback`);
 }
 
+function verifyInstalledReceipt(port: number, receipt: BuildReceipt): void {
+  const installed = mustRemote(port, `cat ${INSTALL_PATH}/build-receipt.json`);
+  const installedReceipt = JSON.parse(installed) as BuildReceipt;
+  if (!buildReceiptsMatch(installedReceipt, receipt)) {
+    throw new Error(
+      `pocket iphone4s: installed receipt does not match local build ${receipt.buildId}`,
+    );
+  }
+}
+
 async function launch(): Promise<void> {
   const receipt = readReceipt();
   await withTunnel(async (port) => {
-    const installed = mustRemote(port, `cat ${INSTALL_PATH}/build-receipt.json`);
-    const installedReceipt = JSON.parse(installed) as BuildReceipt;
-    if (installedReceipt.buildId !== receipt.buildId) {
-      throw new Error(
-        `pocket iphone4s: installed build ${installedReceipt.buildId} does not match local ${receipt.buildId}`,
-      );
-    }
+    verifyInstalledReceipt(port, receipt);
     mustRemote(
       port,
       `killall PocketJSiPhone4S 2>/dev/null || true; rm -f ${STATUS_PATH} ${FRAME_PATH}; ` +
@@ -955,6 +1099,7 @@ async function readDeviceStatus(port: number): Promise<DeviceStatus> {
 async function status(requireAction: boolean): Promise<void> {
   const receipt = readReceipt();
   await withTunnel(async (port) => {
+    verifyInstalledReceipt(port, receipt);
     const first = await readDeviceStatus(port);
     await Bun.sleep(1200);
     const current = await readDeviceStatus(port);

@@ -13,6 +13,9 @@
 #ifndef POCKETJS_HOST_ABI
 #error "POCKETJS_HOST_ABI must come from the verified ResolvedBuildPlan"
 #endif
+#ifndef POCKET_RASTER_DENSITY
+#define POCKET_RASTER_DENSITY 1
+#endif
 #define POCKETJS_SIMULATION_HZ 60
 #define POCKETJS_ANALOG_CENTER 32896
 #define POCKETJS_ACTION_NAME_CAPACITY 64
@@ -546,7 +549,7 @@ int pocket_runtime_boot(
   reported_action_name[0] = '\0';
   reported_action_value = 0;
   reported_action_sequence = 0;
-  ui_init(1);
+  ui_init(POCKET_RASTER_DENSITY);
   REPORT_BOOT_STAGE(2);
   ui_set_viewport((float)width, (float)height);
   REPORT_BOOT_STAGE(3);

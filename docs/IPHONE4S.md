@@ -66,14 +66,19 @@ bun iphone4s status
 `build` resolves `apps/iphone4s-demo/pocket.json`, builds the Solid guest, builds
 the no-std retained UI core for ARMv7, embeds the JS and PAK into the executable,
 links against the derived iOS 6 stubs, and signs the bundle with `ldid`.
-**The build ID includes the guest, host sources, native archive, toolchain
-manifest, and generated linker stubs.**
+**The build ID hashes the guest and artwork plus every object, archive, and
+linker stub used by the native link.** The host runtime is first compiled with
+a fixed 32-byte identity placeholder so all transitive headers and compiled
+code affect that ID before the final ID-bearing object is produced. `launch`
+and `status` also require the complete installed file-hash receipt to match the
+local receipt.
 
-The iPhone 4S host requires OpenGL ES 1.1 and sets the UIKit view's content
-scale to 2 before allocating its renderbuffer. **A valid runtime receipt must
-report the `gles1` renderer, density 2, and a 640×960 drawable for the 320×480
-logical viewport.** It fails instead of silently presenting the software
-rasterizer through a `CAEAGLLayer` when that contract cannot be established.
+The iPhone 4S host requires OpenGL ES 1.1, initializes the retained UI core at
+the resolved density 2, and sets the UIKit view's content scale to 2 before
+allocating its renderbuffer. **A valid runtime receipt must report the `gles1`
+renderer, density 2, and a 640×960 drawable for the 320×480 logical viewport.**
+It fails instead of silently presenting the software rasterizer through a
+`CAEAGLLayer` when that contract cannot be established.
 
 SpringBoard artwork uses `hosts/iphone2g/Icon.png` as its single source.
 The 1× `PocketClassic-v3.png` is copied byte-for-byte. The Retina
@@ -86,18 +91,20 @@ older bundle resource name. `UIPrerenderedIcon` keeps iOS from adding a second
 gloss treatment.
 
 `deploy` verifies the exact device identity before opening a fresh UDID-scoped
-USB tunnel. It acquires a device-side lock, uses transaction-specific paths,
-checks every staged file with device-side SHA-256, keeps the previous bundle
-through ownership, signature, and application-cache validation, and rolls back
-on failure.
+USB tunnel. It acquires and renews a device-side lease, uses
+transaction-specific paths, checks every staged file with device-side SHA-256,
+keeps the previous bundle through ownership, signature, and application-cache
+validation, and rolls back on failure. **A later deployment atomically takes
+over an expired or incomplete lease and reconciles only the previous
+transaction's validated archive, stage, unpack, and backup paths.**
 
 ## Hardware acceptance
 
 The host writes `/private/var/tmp/pocketjs-iphone4s.status` from the device frame
 loop. `status` requires a live PID, an advancing heartbeat and guest frame
-counter, a matching build ID, and an empty runtime error. The record reports the
-actual renderer, drawable size, raster density, and clock instead of inferring
-them from the build.
+counter, a byte-exact installed build receipt, a matching build ID, and an
+empty runtime error. The record reports the actual renderer, drawable size,
+raster density, and clock instead of inferring them from the build.
 
 ```sh
 bun iphone4s status --require-action
