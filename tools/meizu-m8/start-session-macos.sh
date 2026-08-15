@@ -117,8 +117,25 @@ done
 umask 077
 printf '%s\n' "$DBUS_ADDRESS" >"$DBUS_ADDRESS_FILE"
 
+find_pocketjs_ppp_interface() {
+  for interface in $(ifconfig -l); do
+    case "$interface" in
+      ppp*)
+        if ifconfig "$interface" 2>/dev/null | \
+          grep -q 'inet 192\.168\.131\.1'; then
+          printf '%s\n' "$interface"
+          return 0
+        fi
+        ;;
+    esac
+  done
+  return 1
+}
+
 attempt=0
-while ! ifconfig ppp0 2>/dev/null | grep -q 'inet 192\.168\.131\.1'; do
+PPP_INTERFACE=""
+while [ -z "$PPP_INTERFACE" ]; do
+  PPP_INTERFACE=$(find_pocketjs_ppp_interface || true)
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 120 ]; then
     echo "PPP did not negotiate within 120 seconds; see $PPPD_LOG" >&2
@@ -141,6 +158,6 @@ while ! DBUS_SYSTEM_BUS_ADDRESS=$DBUS_ADDRESS gdbus call --system \
   sleep 1
 done
 
-echo "PocketJS Meizu M8: PPP and SynCE are connected"
+echo "PocketJS Meizu M8: PPP and SynCE are connected on $PPP_INTERFACE"
 echo "PocketJS Meizu M8: keep this terminal open during deploy"
 wait "$DCCM_PID"

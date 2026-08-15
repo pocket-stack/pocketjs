@@ -10,11 +10,6 @@
     "cpu": "ARMV4I",
     "physicalViewport": [480, 720]
   },
-  "sdk": {
-    "version": "0.8.2",
-    "url": "http://download.meizu.com/m8/sdk/M8SDK.zip",
-    "sha256": "c5a60abf849bf55b4c2d5d3466046f619a04ed015ff22ce5f05c189ec2657f3e"
-  },
   "compiler": {
     "image": "ghcr.io/enlyze/windows-ce-build-environment-arm@sha256:22ea23d697accaab2b98fb12d81ccc1faade90f9fe490f554ae7c5c194dfe27c",
     "prefix": "arm-mingw32ce",

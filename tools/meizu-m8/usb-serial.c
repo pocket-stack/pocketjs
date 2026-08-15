@@ -158,6 +158,28 @@ static int bytes_contain(
     return 0;
 }
 
+static int stream_contains_clientserver(
+    size_t *matched,
+    const unsigned char *bytes,
+    size_t length
+) {
+    static const unsigned char handshake[] = "CLIENTSERVER";
+    const size_t handshake_length = sizeof(handshake) - 1;
+    for (size_t offset = 0; offset < length; ++offset) {
+        if (bytes[offset] == handshake[*matched]) {
+            *matched += 1;
+        } else {
+            /* CLIENTSERVER has no proper prefix ending in its current byte. */
+            *matched = bytes[offset] == handshake[0] ? 1U : 0U;
+        }
+        if (*matched == handshake_length) {
+            *matched = 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int open_meizu_device(
     libusb_context **context,
     libusb_device_handle **handle,
@@ -344,6 +366,7 @@ static int bridge(
     unsigned char buffer[TransferCapacity];
     int saw_client = 0;
     int handshake_complete = 0;
+    size_t clientserver_match_length = 0;
     int64_t last_client_write_ms = 0;
     int exit_code = EXIT_SUCCESS;
     while (!stopped) {
@@ -358,6 +381,7 @@ static int bridge(
             }
             saw_client = 0;
             handshake_complete = 0;
+            clientserver_match_length = 0;
             last_client_write_ms = 0;
             fputs("USB=function reset requested\n", stderr);
             fflush(stderr);
@@ -379,12 +403,14 @@ static int bridge(
                 }
                 saw_client = 1;
                 handshake_complete = 0;
+                clientserver_match_length = 0;
                 last_client_write_ms = 0;
             } else if (write_all(master, buffer, transferred) != 0) {
                 fputs("PTY=unavailable; replaying ActiveSync handshake\n", stderr);
                 fflush(stderr);
                 saw_client = 1;
                 handshake_complete = 0;
+                clientserver_match_length = 0;
                 last_client_write_ms = 0;
                 continue;
             }
@@ -396,6 +422,7 @@ static int bridge(
             }
             saw_client = 0;
             handshake_complete = 0;
+            clientserver_match_length = 0;
             last_client_write_ms = 0;
             continue;
         }
@@ -433,8 +460,11 @@ static int bridge(
         if (poll(&pending, 1, 0) > 0 && (pending.revents & POLLIN) != 0) {
             const ssize_t read_length = read(master, buffer, sizeof(buffer));
             if (read_length > 0) {
-                if (!handshake_complete &&
-                    bytes_contain(buffer, (int)read_length, "CLIENTSERVER")) {
+                if (!handshake_complete && stream_contains_clientserver(
+                    &clientserver_match_length,
+                    buffer,
+                    (size_t)read_length
+                )) {
                     fputs("USB=ActiveSync CLIENTSERVER\n", stderr);
                     fflush(stderr);
                     handshake_complete = 1;
@@ -447,6 +477,7 @@ static int bridge(
                     }
                     saw_client = 0;
                     handshake_complete = 0;
+                    clientserver_match_length = 0;
                     last_client_write_ms = 0;
                 }
             } else if (read_length < 0 && errno != EAGAIN && errno != EINTR) {

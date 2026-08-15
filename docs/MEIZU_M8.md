@@ -8,7 +8,7 @@ The port targets the USB identity `0547:2720`, exposed by the phone as `MEIZU M8
 
 ## Build
 
-Install Docker, Bun, Rustup, libusb, GLib, D-Bus, gettext, Autoconf, Automake, and libtool. Download the Meizu SDK archive to `~/.cache/pocket-stack/meizu-m8/downloads/M8SDK.zip`. The tool verifies its SHA-256 digest against `tools/cli/meizu-m8-toolchain.json`.
+Install Docker, Bun, Rustup, libusb, GLib, D-Bus, gettext, Autoconf, Automake, and libtool. **The native build uses the digest-pinned CeGCC container and a clean pinned QuickJS checkout; the Meizu SDK archive is not a build input.**
 
 ```sh
 bun install --frozen-lockfile

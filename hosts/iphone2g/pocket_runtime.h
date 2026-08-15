@@ -14,6 +14,13 @@ int pocket_runtime_boot(
 );
 /* `pack` is borrowed by QuickJS and must remain valid until shutdown. */
 int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit);
+int pocket_runtime_frame_ticks(
+  int touch_down,
+  int touch_x,
+  int touch_y,
+  int touch_hit,
+  unsigned int tick_count
+);
 int pocket_runtime_hit_test(float x, float y);
 int pocket_runtime_hit_test_bounds(float x, float y);
 const char *pocket_runtime_action_name(void);

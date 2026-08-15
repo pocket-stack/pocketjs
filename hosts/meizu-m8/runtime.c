@@ -26,6 +26,8 @@
   L"\\Temp\\pocketjs-meizu-m8-" POCKET_WIDEN(POCKET_BUILD_ID) L".status"
 #define POCKET_FRAME_PATH \
   L"\\Temp\\pocketjs-meizu-m8-" POCKET_WIDEN(POCKET_BUILD_ID) L".frame.bmp"
+#define POCKET_FRAME_TEMP_PATH \
+  L"\\Temp\\pocketjs-meizu-m8-" POCKET_WIDEN(POCKET_BUILD_ID) L".frame.tmp"
 
 extern const unsigned char pocket_app_js[];
 extern const unsigned int pocket_app_js_len;
@@ -38,7 +40,8 @@ static int touch_down;
 static int touch_x;
 static int touch_y;
 static int touch_hit;
-static int touch_needs_hit;
+static int touch_was_sent;
+static int touch_release_after_frame;
 static unsigned long frames;
 static unsigned long gdi_composites;
 static unsigned long touch_sequences;
@@ -63,8 +66,9 @@ static void write_status(const char *state) {
   DWORD written = 0;
   HANDLE file;
   const char *action_name = pocket_runtime_action_name();
-  int length = sprintf(
+  int length = snprintf(
     record,
+    sizeof(record),
     "schema=1\r\n"
     "build_id=%s\r\n"
     "state=%s\r\n"
@@ -79,7 +83,7 @@ static void write_status(const char *state) {
     "last_touch_x=%d\r\n"
     "last_touch_y=%d\r\n"
     "last_touch_hit=%d\r\n"
-    "action_name=%s\r\n"
+    "action_name=%.63s\r\n"
     "action_value=%d\r\n"
     "action_sequence=%lu\r\n"
     "capture_attempts=%lu\r\n"
@@ -88,7 +92,7 @@ static void write_status(const char *state) {
     "renderer=gdi-software\r\n"
     "logical_viewport=%dx%d\r\n"
     "physical_viewport=%dx%d\r\n"
-    "error=%s\r\n",
+    "error=%.383s\r\n",
     POCKET_BUILD_ID,
     state,
     boot_stage,
@@ -114,7 +118,8 @@ static void write_status(const char *state) {
     GetSystemMetrics(SM_CYSCREEN),
     runtime_error
   );
-  if (length <= 0 || length >= (int)sizeof(record)) return;
+  if (length <= 0) return;
+  if (length >= (int)sizeof(record)) length = (int)sizeof(record) - 1;
   file = CreateFileW(
     POCKET_STATUS_PATH,
     GENERIC_WRITE,
@@ -180,9 +185,9 @@ static void write_framebuffer_bmp(void) {
   put_u16_le(header, 28, 32);
   put_u32_le(header, 34, pixel_bytes);
   file = CreateFileW(
-    POCKET_FRAME_PATH,
+    POCKET_FRAME_TEMP_PATH,
     GENERIC_WRITE,
-    FILE_SHARE_READ,
+    0,
     NULL,
     CREATE_ALWAYS,
     FILE_ATTRIBUTE_NORMAL,
@@ -198,10 +203,17 @@ static void write_framebuffer_bmp(void) {
       written != pixel_bytes) {
     capture_error = GetLastError();
     CloseHandle(file);
+    DeleteFileW(POCKET_FRAME_TEMP_PATH);
     return;
   }
   FlushFileBuffers(file);
   CloseHandle(file);
+  DeleteFileW(POCKET_FRAME_PATH);
+  if (!MoveFileW(POCKET_FRAME_TEMP_PATH, POCKET_FRAME_PATH)) {
+    capture_error = GetLastError();
+    DeleteFileW(POCKET_FRAME_TEMP_PATH);
+    return;
+  }
   capture_successes += 1;
 }
 
@@ -223,13 +235,11 @@ static void physical_to_logical(HWND window, LPARAM position, int *x, int *y) {
 static void render_frame(HWND window) {
   unsigned long action_sequence;
   int action_advanced;
+  int delivered_touch;
   int bounds[4];
   RECT dirty;
-  if (touch_down && touch_needs_hit) {
-    touch_hit = pocket_runtime_hit_test_bounds((float)touch_x, (float)touch_y);
-    touch_needs_hit = 0;
-  }
-  if (!pocket_runtime_frame(touch_down, touch_x, touch_y, touch_hit)) {
+  delivered_touch = touch_down;
+  if (!pocket_runtime_frame_ticks(touch_down, touch_x, touch_y, touch_hit, 1)) {
     copy_error(pocket_runtime_error());
     write_status("failed");
     KillTimer(window, POCKET_TIMER_ID);
@@ -238,6 +248,12 @@ static void render_frame(HWND window) {
   }
   framebuffer = pocket_runtime_render();
   frames += 1;
+  if (delivered_touch) touch_was_sent = 1;
+  if (touch_release_after_frame) {
+    touch_down = 0;
+    touch_hit = 0;
+    touch_release_after_frame = 0;
+  }
   action_sequence = pocket_runtime_action_sequence();
   action_advanced = action_sequence > observed_action_sequence;
   if (action_advanced) {
@@ -328,19 +344,26 @@ static LRESULT CALLBACK window_proc(
       SetCapture(window);
       physical_to_logical(window, parameter, &touch_x, &touch_y);
       touch_down = 1;
-      touch_needs_hit = 1;
+      touch_hit = pocket_runtime_hit_test_bounds((float)touch_x, (float)touch_y);
+      touch_was_sent = 0;
+      touch_release_after_frame = 0;
       touch_sequences += 1;
       return 0;
     case WM_MOUSEMOVE:
-      if (touch_down) {
+      if (touch_down && !touch_release_after_frame) {
         physical_to_logical(window, parameter, &touch_x, &touch_y);
-        touch_needs_hit = 1;
       }
       return 0;
     case WM_LBUTTONUP:
+      if (!touch_down || touch_release_after_frame) return 0;
       physical_to_logical(window, parameter, &touch_x, &touch_y);
-      touch_down = 0;
-      touch_needs_hit = 0;
+      if (touch_was_sent) {
+        touch_down = 0;
+        touch_hit = 0;
+      } else {
+        /* Keep a short tap alive until one 60 Hz guest frame sees it. */
+        touch_release_after_frame = 1;
+      }
       ReleaseCapture();
       return 0;
     case WM_CLOSE:

@@ -626,7 +626,14 @@ int pocket_runtime_boot(
   return 1;
 }
 
-int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit) {
+int pocket_runtime_frame_ticks(
+  int touch_down,
+  int touch_x,
+  int touch_y,
+  int touch_hit,
+  unsigned int tick_count
+) {
+  unsigned int tick;
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
   JSValue touch_array = JS_NewArray(context);
   JSValue hit_array = JS_NewArray(context);
@@ -681,9 +688,13 @@ int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit
     runtime_failed = 1;
     return 0;
   }
-  ui_tick();
-  ui_tick();
+  for (tick = 0; tick < tick_count; ++tick) ui_tick();
   return 1;
+}
+
+int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit) {
+  /* The original iPhone host presents at 30 Hz and advances two 60 Hz ticks. */
+  return pocket_runtime_frame_ticks(touch_down, touch_x, touch_y, touch_hit, 2);
 }
 
 int pocket_runtime_hit_test(float x, float y) {

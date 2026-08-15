@@ -13,12 +13,29 @@ import {
   MEIZU_M8_PHYSICAL_VIEWPORT,
   resolveMeizuM8BuildPlan,
 } from "../tools/meizu-m8-profile.ts";
+import { validateMeizuM8FramebufferBmp } from "../tools/meizu-m8/validation.ts";
 
 const repository = join(import.meta.dir, "..");
 const manifestPath = join(repository, "apps/meizu-m8-demo/pocket.json");
 
 function manifest(): Record<string, any> {
   return JSON.parse(readFileSync(manifestPath, "utf8"));
+}
+
+function framebufferBmp(width = 480, height = 720): Buffer {
+  const pixelBytes = width * height * 4;
+  const bytes = Buffer.alloc(54 + pixelBytes);
+  bytes.write("BM", 0, "ascii");
+  bytes.writeUInt32LE(bytes.length, 2);
+  bytes.writeUInt32LE(54, 10);
+  bytes.writeUInt32LE(40, 14);
+  bytes.writeInt32LE(width, 18);
+  bytes.writeInt32LE(-height, 22);
+  bytes.writeUInt16LE(1, 26);
+  bytes.writeUInt16LE(32, 28);
+  bytes.writeUInt32LE(0, 30);
+  bytes.writeUInt32LE(pixelBytes, 34);
+  return bytes;
 }
 
 describe("private Meizu M8 build profile", () => {
@@ -81,7 +98,7 @@ describe("private Meizu M8 build profile", () => {
     expect(result.ok).toBe(true);
   });
 
-  test("pins the device, SDK, compiler image, QuickJS, and RAPI source", () => {
+  test("pins the device, compiler image, QuickJS, and RAPI source", () => {
     const toolchain = JSON.parse(
       readFileSync(join(repository, "tools/cli/meizu-m8-toolchain.json"), "utf8"),
     );
@@ -100,10 +117,32 @@ describe("private Meizu M8 build profile", () => {
         bulkOutEndpoint: "02",
       },
     });
-    expect(toolchain.sdk.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(toolchain).not.toHaveProperty("sdk");
     expect(toolchain.compiler.image).toContain("@sha256:");
     expect(toolchain.compiler.quickJsRevision).toMatch(/^[0-9a-f]{40}$/);
     expect(toolchain.rapi.revision).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  test("accepts only a complete native BGRA framebuffer capture", () => {
+    const complete = framebufferBmp();
+    expect(() => validateMeizuM8FramebufferBmp(complete, 480, 720)).not.toThrow();
+    expect(() => validateMeizuM8FramebufferBmp(
+      complete.subarray(0, complete.length - 1),
+      480,
+      720,
+    )).toThrow("payload is incomplete");
+
+    const wrongOffset = Buffer.from(complete);
+    wrongOffset.writeUInt32LE(122, 10);
+    expect(() => validateMeizuM8FramebufferBmp(wrongOffset, 480, 720)).toThrow(
+      "unsupported BMP layout",
+    );
+
+    const wrongPixelSize = Buffer.from(complete);
+    wrongPixelSize.writeUInt32LE(1, 34);
+    expect(() => validateMeizuM8FramebufferBmp(wrongPixelSize, 480, 720)).toThrow(
+      "payload is incomplete",
+    );
   });
 
   test("the WinCE host records rendering and action-level hardware receipts", () => {
@@ -121,14 +160,28 @@ describe("private Meizu M8 build profile", () => {
       join(repository, "hosts/iphone2g/pocket_runtime.c"),
       "utf8",
     );
+    const toolchainManifest = readFileSync(
+      join(repository, "tools/cli/meizu-m8-toolchain.json"),
+      "utf8",
+    );
     expect(runtime).toContain("SetDIBitsToDevice(");
+    expect(runtime).toContain("snprintf(");
+    expect(runtime).not.toContain("sprintf(");
     expect(runtime).not.toContain("HWND_TOPMOST");
     expect(runtime).toContain("word == VK_HOME || word == VK_ESCAPE");
     expect(runtime).not.toContain("case WM_ACTIVATE:");
     expect(guestRuntime).toContain("0x80000000U | (y << 10) | x");
+    expect(guestRuntime).toContain("return pocket_runtime_frame_ticks(touch_down, touch_x, touch_y, touch_hit, 2)");
+    expect(runtime).toContain("pocket_runtime_frame_ticks(touch_down, touch_x, touch_y, touch_hit, 1)");
+    expect(runtime).toContain("touch_hit = pocket_runtime_hit_test_bounds");
+    expect(runtime).toContain("touch_release_after_frame = 1");
+    expect(runtime).not.toContain("touch_needs_hit");
     expect(tooling).toContain('fields.logical_viewport !== receipt.hostContract.viewport.logical.join("x")');
-    expect(tooling).toContain("bytes.readInt32LE(18)");
-    expect(tooling).toContain("bytes.readInt32LE(22)");
+    expect(tooling).toContain("validateMeizuM8FramebufferBmp(bytes");
+    expect(tooling).toContain('"--porcelain=v1"');
+    expect(tooling).toContain('"--untracked-files=all"');
+    expect(tooling).not.toContain("M8SDK.zip");
+    expect(toolchainManifest).not.toContain('"sdk"');
     expect(tooling).toContain('"SOFTWARE\\\\Meizu\\\\MiniOneShell\\\\Main\\\\PocketJS"');
     expect(tooling).toContain('"ExecFileName"');
     expect(tooling).toContain('"DefaultIcon"');
@@ -141,12 +194,17 @@ describe("private Meizu M8 build profile", () => {
     expect(tooling).toContain("shipped iPhone 2G PocketJS Icon.png");
     expect(sessionScript).toContain('/usr/bin/pgrep -P "$PPPD_PID"');
     expect(sessionScript).toContain('kill -KILL "$PPPD_PID"');
+    expect(sessionScript).toContain("find_pocketjs_ppp_interface");
+    expect(sessionScript).toContain('ifconfig "$interface"');
+    expect(sessionScript).not.toContain("ifconfig ppp0");
     expect(runtime).toContain('"gdi_composites=%lu\\r\\n"');
     expect(runtime).toContain("pocket_runtime_hit_test_bounds");
     expect(runtime).toContain("pocket_runtime_action_sequence");
     expect(runtime).toContain('L".frame.bmp"');
     expect(runtime).toContain("POCKET_WIDEN(POCKET_BUILD_ID)");
     expect(runtime).toContain('"capture_successes=%lu\\r\\n"');
+    expect(bridge).toContain("stream_contains_clientserver(");
+    expect(bridge).toContain("clientserver_match_length");
     expect(bridge).toContain('"CLIENTSERVER"');
     expect(stopOld).toContain("PROCESS_TERMINATE");
     expect(stopOld).toContain("WM_CLOSE");

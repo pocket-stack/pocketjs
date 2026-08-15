@@ -142,9 +142,11 @@ export default function Hero(props: HeroProps = {}) {
             : "h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"}
           style={{ translateX: count() * (props.largeLayout ? 3 : 2) }}
         />
-        <View debugName="Description" class={props.largeLayout
-          ? "flex-row flex-wrap gap-[6]"
-          : "flex-row flex-wrap gap-1"}>
+        <View
+          debugName="Description"
+          class="flex-row flex-wrap gap-1"
+          style={{ gap: props.largeLayout ? 6 : 4 }}
+        >
           <Text class={props.largeLayout ? "text-xl text-slate-600" : "text-sm text-slate-600"}>
             Flexbox, springs and baked type —
           </Text>
@@ -154,9 +156,10 @@ export default function Hero(props: HeroProps = {}) {
         </View>
       </View>
 
-      <View class={props.largeLayout
-        ? "flex-row flex-wrap items-center gap-6"
-        : "flex-row flex-wrap items-center gap-4"}>
+      <View
+        class="flex-row flex-wrap items-center gap-4"
+        style={{ gap: props.largeLayout ? 24 : 16 }}
+      >
         <View
           class={props.largeLayout
             ? "px-6 py-3 rounded-[18px] shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"

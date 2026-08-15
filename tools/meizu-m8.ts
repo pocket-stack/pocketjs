@@ -18,6 +18,7 @@ import {
   type HostBuildInputs,
 } from "../framework/src/manifest/host-build-inputs.ts";
 import { resolveMeizuM8BuildPlan } from "./meizu-m8-profile.ts";
+import { validateMeizuM8FramebufferBmp } from "./meizu-m8/validation.ts";
 
 const repository = fileURLToPath(new URL("..", import.meta.url));
 const command = Bun.argv[2] ?? "doctor";
@@ -26,7 +27,6 @@ const toolchain = JSON.parse(
 ) as {
   readonly toolchainVersion: string;
   readonly cachePath: string;
-  readonly sdk: { readonly sha256: string };
   readonly compiler: {
     readonly image: string;
     readonly rustToolchain: string;
@@ -179,6 +179,18 @@ function ensureQuickJs(): void {
     if (revision !== toolchain.compiler.quickJsRevision) {
       throw new Error(
         `PocketJS Meizu M8: refusing unpinned QuickJS checkout ${revision}`,
+      );
+    }
+    const changes = mustRun("git", [
+      "-C",
+      quickJsCheckout,
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+    ]);
+    if (changes !== "") {
+      throw new Error(
+        `PocketJS Meizu M8: refusing dirty QuickJS checkout:\n${changes}`,
       );
     }
     return;
@@ -650,25 +662,27 @@ function capture(): void {
     destination,
   ], repository, synceEnvironment());
   const bytes = readFileSync(destination);
-  if (bytes.length < 54 || bytes.subarray(0, 2).toString("ascii") !== "BM") {
-    throw new Error("PocketJS Meizu M8: device capture is not a BMP framebuffer");
-  }
-  const width = bytes.readInt32LE(18);
-  const height = Math.abs(bytes.readInt32LE(22));
   const [expectedWidth, expectedHeight] = receipt.hostContract.viewport.physical;
-  if (width !== expectedWidth || height !== expectedHeight) {
-    throw new Error(
-      `PocketJS Meizu M8: device framebuffer is ${width}x${height}, expected ${expectedWidth}x${expectedHeight}`,
-    );
-  }
+  validateMeizuM8FramebufferBmp(bytes, expectedWidth, expectedHeight);
   console.log(`PocketJS Meizu M8: device framebuffer -> ${destination}`);
 }
 
 function doctor(): void {
-  const sdk = join(cache, "downloads/M8SDK.zip");
-  const quickJsOk = existsSync(join(quickJsCheckout, ".git")) &&
-    run("git", ["-C", quickJsCheckout, "rev-parse", "HEAD"]).stdout.trim() ===
-      toolchain.compiler.quickJsRevision;
+  const quickJsRevision = existsSync(join(quickJsCheckout, ".git"))
+    ? run("git", ["-C", quickJsCheckout, "rev-parse", "HEAD"])
+    : undefined;
+  const quickJsStatus = quickJsRevision?.exitCode === 0
+    ? run("git", [
+      "-C",
+      quickJsCheckout,
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+    ])
+    : undefined;
+  const quickJsOk = quickJsRevision?.stdout.trim() ===
+      toolchain.compiler.quickJsRevision &&
+    quickJsStatus?.exitCode === 0 && quickJsStatus.stdout.trim() === "";
   const docker = commandPath("docker");
   const image = docker ? run(docker, ["image", "inspect", toolchain.compiler.image]) : undefined;
   const checks = [
@@ -676,8 +690,7 @@ function doctor(): void {
     check("pinned CeGCC image", image?.exitCode === 0, toolchain.compiler.image),
     check("libusb", run("pkg-config", ["--exists", "libusb-1.0"]).exitCode === 0, "libusb-1.0"),
     check("Rust nightly", run("rustup", ["run", toolchain.compiler.rustToolchain, "rustc", "--version"]).exitCode === 0, toolchain.compiler.rustToolchain),
-    check("Meizu M8 SDK", existsSync(sdk) && sha256(sdk) === toolchain.sdk.sha256, sdk),
-    check("pinned QuickJS", quickJsOk, quickJsCheckout),
+    check("clean pinned QuickJS", quickJsOk, quickJsCheckout),
     check("SynCE RAPI", existsSync(join(cache, "host/bin/pcp")), join(cache, "host/bin")),
   ];
   console.log(`cache: ${cache}`);
