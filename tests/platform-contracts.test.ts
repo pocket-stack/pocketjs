@@ -345,6 +345,7 @@ describe("semantic resolution", () => {
       im: [true, true, false],
       "iphone16-demo": [false, true, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract
       "iphone2g-demo": [false, false, false], // admitted only by the private iphone2g-dev profile
+      "iphone4s-demo": [false, false, false], // admitted only by the private iphone4s-dev profile
       "ipodtouch-demo": [false, false, false], // admitted only by the private ipodtouch-dev profile
       "meizu-m8-demo": [false, false, false], // admitted only by the private meizu-m8-dev profile
       nsengine: [false, true, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract

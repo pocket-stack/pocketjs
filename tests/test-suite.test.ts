@@ -53,6 +53,17 @@ describe("declared test suite", () => {
     expect(meizuM8Tests.filter((file) => !declared.has(file))).toEqual([]);
   });
 
+  test("runs every iPhone 4S test in the CI unit stage", () => {
+    const declared = unitTestFiles();
+    const iphone4sTests = readdirSync(join(repository, "tests"))
+      .filter((file) => /^iphone4s-.*\.test\.ts$/.test(file))
+      .map((file) => `tests/${file}`)
+      .sort();
+
+    expect(iphone4sTests).not.toHaveLength(0);
+    expect(iphone4sTests.filter((file) => !declared.has(file))).toEqual([]);
+  });
+
   test("runs every iPod touch test in the CI unit stage", () => {
     const declared = unitTestFiles();
     const ipodtouchTests = readdirSync(join(repository, "tests"))

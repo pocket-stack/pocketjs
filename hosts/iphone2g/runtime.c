@@ -69,7 +69,9 @@ typedef enum {
 #define POCKET_STATUS_COLUMNS 42
 #define POCKET_STATUS_LINES 5
 #define POCKET_STATUS_HEARTBEAT_FRAMES 60UL
+#ifndef POCKET_ACCEPTANCE_PATH
 #define POCKET_ACCEPTANCE_PATH "/private/var/tmp/pocketjs-iphone2g.status"
+#endif
 /*
  * The renderer is chosen by this marker, and the default is the software
  * rasterizer because it is measurably faster here: with the composite scoped to
@@ -82,16 +84,24 @@ typedef enum {
  * and the view's +layerClass — because a CAEAGLLayer never receives drawRect:
  * and so cannot composite a software frame.
  */
+#ifndef POCKET_PREFER_GL_PATH
 #define POCKET_PREFER_GL_PATH "/private/var/tmp/pocketjs-iphone2g.gles1"
+#endif
 /*
  * Touch this file and the next GL frame is read back with glReadPixels and
  * written next to it, then the request is cleared. It exists so device output
  * can be compared against the reference core's render pixel by pixel, instead
  * of against somebody's description of what the screen looked like.
  */
+#ifndef POCKET_CAPTURE_REQUEST_PATH
 #define POCKET_CAPTURE_REQUEST_PATH "/private/var/tmp/pocketjs-iphone2g.capture"
+#endif
+#ifndef POCKET_CAPTURE_OUTPUT_PATH
 #define POCKET_CAPTURE_OUTPUT_PATH "/private/var/tmp/pocketjs-iphone2g.frame.rgba"
+#endif
+#ifndef POCKET_ACCEPTANCE_TEMP
 #define POCKET_ACCEPTANCE_TEMP "/private/var/tmp/pocketjs-iphone2g.status.new"
+#endif
 #ifndef POCKET_BUILD_ID
 #define POCKET_BUILD_ID "unknown"
 #endif
