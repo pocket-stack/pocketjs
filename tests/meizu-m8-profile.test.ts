@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { POCKET_TARGETS } from "../contracts/spec/platforms.ts";
@@ -134,6 +135,10 @@ describe("private Meizu M8 build profile", () => {
     expect(shellIcon.subarray(1, 4).toString("ascii")).toBe("PNG");
     expect(shellIcon.readUInt32BE(16)).toBe(80);
     expect(shellIcon.readUInt32BE(20)).toBe(80);
+    expect(createHash("sha256").update(shellIcon).digest("hex")).toBe(
+      "f0955dd664d26809c4b82d7dfd230cc81365ba2531e9418250e6dd6ddd93c28b",
+    );
+    expect(tooling).toContain("shipped iPhone 2G PocketJS Icon.png");
     expect(sessionScript).toContain('/usr/bin/pgrep -P "$PPPD_PID"');
     expect(sessionScript).toContain('kill -KILL "$PPPD_PID"');
     expect(runtime).toContain('"gdi_composites=%lu\\r\\n"');

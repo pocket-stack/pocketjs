@@ -38,6 +38,7 @@ const toolchain = JSON.parse(
 };
 const cache = join(homedir(), ".cache/pocket-stack", toolchain.cachePath);
 const manifestPath = join(repository, "apps/meizu-m8-demo/pocket.json");
+// 80x80 M8 Shell derivative of the shipped iPhone 2G PocketJS Icon.png.
 const shellIcon = join(repository, "apps/meizu-m8-demo/icon80.png");
 const planPath = join(repository, ".pocket/meizu-m8/meizu-m8-demo.plan.json");
 const guestDirectory = join(repository, "dist/meizu-m8/guest");
@@ -474,7 +475,7 @@ function deploy(): void {
   const remoteDirectory = "/Program Files/PocketJS";
   const remoteFilename = `PocketJS-${receipt.buildId}.exe`;
   const remoteStopFilename = `PocketJSStop-${receipt.buildId}.exe`;
-  const remoteIconFilename = "PocketJS80.png";
+  const remoteIconFilename = `PocketJS80-${receipt.buildId}.png`;
   const remoteExecutable = `:${remoteDirectory}/${remoteFilename}`;
   const remoteStopExecutable = `:${remoteDirectory}/${remoteStopFilename}`;
   const remoteIcon = `:${remoteDirectory}/${remoteIconFilename}`;
