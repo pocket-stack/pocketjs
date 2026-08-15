@@ -222,50 +222,6 @@ pub struct ReactiveMaterial {
     pub char_temperature_c: f32,
 }
 
-impl ReactiveMaterial {
-    pub fn wood() -> Self {
-        Self {
-            heat_capacity: 2.4,
-            conductivity: 0.26,
-            ignition_temperature_c: 235.0,
-            burn_rate: 0.018,
-            heat_output: 28_900.0,
-            drying_rate: 0.055,
-            moisture_resistance: 1.8,
-            cook_temperature_c: 90.0,
-            char_temperature_c: 285.0,
-        }
-    }
-
-    pub fn fruit() -> Self {
-        Self {
-            heat_capacity: 3.6,
-            conductivity: 0.42,
-            ignition_temperature_c: 310.0,
-            burn_rate: 0.012,
-            heat_output: 17_500.0,
-            drying_rate: 0.035,
-            moisture_resistance: 2.4,
-            cook_temperature_c: 72.0,
-            char_temperature_c: 185.0,
-        }
-    }
-
-    pub fn flame() -> Self {
-        Self {
-            heat_capacity: 0.25,
-            conductivity: 1.0,
-            ignition_temperature_c: 80.0,
-            burn_rate: 0.07,
-            heat_output: 12_600.0,
-            drying_rate: 0.2,
-            moisture_resistance: 0.6,
-            cook_temperature_c: f32::INFINITY,
-            char_temperature_c: f32::INFINITY,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReactiveState {
     pub temperature_c: f32,

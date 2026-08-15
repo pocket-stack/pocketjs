@@ -1457,6 +1457,48 @@ impl StableHash {
 mod tests {
     use super::*;
 
+    fn wood_material_fixture() -> ReactiveMaterial {
+        ReactiveMaterial {
+            heat_capacity: 2.4,
+            conductivity: 0.26,
+            ignition_temperature_c: 235.0,
+            burn_rate: 0.018,
+            heat_output: 28_900.0,
+            drying_rate: 0.055,
+            moisture_resistance: 1.8,
+            cook_temperature_c: 90.0,
+            char_temperature_c: 285.0,
+        }
+    }
+
+    fn fruit_material_fixture() -> ReactiveMaterial {
+        ReactiveMaterial {
+            heat_capacity: 3.6,
+            conductivity: 0.42,
+            ignition_temperature_c: 310.0,
+            burn_rate: 0.012,
+            heat_output: 17_500.0,
+            drying_rate: 0.035,
+            moisture_resistance: 2.4,
+            cook_temperature_c: 72.0,
+            char_temperature_c: 185.0,
+        }
+    }
+
+    fn flame_material_fixture() -> ReactiveMaterial {
+        ReactiveMaterial {
+            heat_capacity: 0.25,
+            conductivity: 1.0,
+            ignition_temperature_c: 80.0,
+            burn_rate: 0.07,
+            heat_output: 12_600.0,
+            drying_rate: 0.2,
+            moisture_resistance: 0.6,
+            cook_temperature_c: f32::INFINITY,
+            char_temperature_c: f32::INFINITY,
+        }
+    }
+
     fn reactive_entity(
         position: Vec3,
         material: ReactiveMaterial,
@@ -1502,7 +1544,7 @@ mod tests {
             let mut world = World::with_seed(73);
             let id = world.spawn(reactive_entity(
                 Vec3::new(0.0, 2.0, 0.0),
-                ReactiveMaterial::fruit(),
+                fruit_material_fixture(),
                 ReactiveState::new(20.0, 0.2, 0.4),
             ));
             world.queue_interaction(Interaction::Impulse {
@@ -1543,7 +1585,7 @@ mod tests {
 
         let mut apple = reactive_entity(
             Vec3::ZERO,
-            ReactiveMaterial::fruit(),
+            fruit_material_fixture(),
             ReactiveState::new(20.0, 0.35, 0.35),
         )
         .named("apple")
@@ -1596,7 +1638,7 @@ mod tests {
 
     #[test]
     fn moisture_raises_ignition_threshold_without_changing_surface() {
-        let mut material = ReactiveMaterial::wood();
+        let mut material = wood_material_fixture();
         material.ignition_temperature_c = 100.0;
         material.heat_capacity = 1.0;
         let mut world = World::with_seed(1);
@@ -1629,7 +1671,7 @@ mod tests {
     fn douse_mixes_sensible_heat_conservatively_for_different_materials_and_water() {
         let cases = [
             (
-                ReactiveMaterial::wood(),
+                wood_material_fixture(),
                 WorldConfig {
                     ambient_exchange: 0.0,
                     contact_heat_exchange: 0.0,
@@ -1641,7 +1683,7 @@ mod tests {
                 0.35,
             ),
             (
-                ReactiveMaterial::fruit(),
+                fruit_material_fixture(),
                 WorldConfig {
                     ambient_exchange: 0.0,
                     contact_heat_exchange: 0.0,
@@ -1685,12 +1727,12 @@ mod tests {
         let mut world = World::new(config);
         let wood = world.spawn(static_reactive_entity(
             Vec3::ZERO,
-            ReactiveMaterial::wood(),
+            wood_material_fixture(),
             ReactiveState::new(90.0, 0.25, 0.0),
         ));
         let fruit = world.spawn(static_reactive_entity(
             Vec3::new(0.1, 0.0, 0.0),
-            ReactiveMaterial::fruit(),
+            fruit_material_fixture(),
             ReactiveState::new(25.0, 0.40, 0.0),
         ));
         let before = entity_sensible_energy(&world, wood) + entity_sensible_energy(&world, fruit);
@@ -1719,7 +1761,7 @@ mod tests {
     fn evaporation_pays_latent_heat_for_multiple_material_and_water_configs() {
         let cases = [
             (
-                ReactiveMaterial::wood(),
+                wood_material_fixture(),
                 WorldConfig {
                     fixed_dt: 1.0,
                     ambient_exchange: 0.0,
@@ -1730,7 +1772,7 @@ mod tests {
                 },
             ),
             (
-                ReactiveMaterial::fruit(),
+                fruit_material_fixture(),
                 WorldConfig {
                     fixed_dt: 1.0,
                     ambient_exchange: 0.0,
@@ -1774,14 +1816,14 @@ mod tests {
     fn sufficient_douse_stays_extinguished_without_external_heat() {
         let cases = [
             (
-                ReactiveMaterial::wood(),
+                wood_material_fixture(),
                 WorldConfig {
                     water_inlet_temperature_c: 16.0,
                     ..WorldConfig::default()
                 },
             ),
             (
-                ReactiveMaterial::fruit(),
+                fruit_material_fixture(),
                 WorldConfig {
                     water_inlet_temperature_c: 24.0,
                     water_vaporization_heat: 1_800.0,
@@ -1841,7 +1883,7 @@ mod tests {
             extinction_min_moisture: 0.30,
             ..WorldConfig::default()
         };
-        let mut material = ReactiveMaterial::wood();
+        let mut material = wood_material_fixture();
         material.heat_capacity = 2.0;
         material.ignition_temperature_c = 150.0;
         material.drying_rate = 10.0;
@@ -1909,7 +1951,7 @@ mod tests {
             combustion_local_heat_fraction: 1.0,
             ..WorldConfig::default()
         };
-        let mut material = ReactiveMaterial::wood();
+        let mut material = wood_material_fixture();
         material.heat_capacity = 2.0;
         material.ignition_temperature_c = 50.0;
         material.burn_rate = 0.20;
@@ -1949,7 +1991,7 @@ mod tests {
                 combustion_local_heat_fraction: 0.25,
                 ..WorldConfig::default()
             };
-            let mut source_material = ReactiveMaterial::wood();
+            let mut source_material = wood_material_fixture();
             source_material.heat_capacity = 2.0;
             source_material.ignition_temperature_c = 50.0;
             source_material.burn_rate = 0.2;
@@ -1965,7 +2007,7 @@ mod tests {
             ));
             let mut receivers = Vec::new();
             for _ in 0..receiver_count {
-                let mut receiver_material = ReactiveMaterial::fruit();
+                let mut receiver_material = fruit_material_fixture();
                 receiver_material.ignition_temperature_c = 10_000.0;
                 receiver_material.drying_rate = 0.0;
                 receivers.push(world.spawn(static_reactive_entity(
@@ -2012,9 +2054,9 @@ mod tests {
     fn generic_three_material_cluster_stays_out_after_dousing() {
         let config = WorldConfig::default();
         let materials = [
-            ReactiveMaterial::flame(),
-            ReactiveMaterial::wood(),
-            ReactiveMaterial::fruit(),
+            flame_material_fixture(),
+            wood_material_fixture(),
+            fruit_material_fixture(),
         ];
         let mut world = World::new(config);
         let ids: Vec<_> = materials
@@ -2064,7 +2106,7 @@ mod tests {
 
     #[test]
     fn one_entity_emits_at_most_one_combustion_transition_per_tick() {
-        let mut material = ReactiveMaterial::wood();
+        let mut material = wood_material_fixture();
         material.ignition_temperature_c = 100.0;
         let mut state = ReactiveState::new(900.0, 0.0, 1.0);
         state.burning = true;
@@ -2096,13 +2138,13 @@ mod tests {
         let mut world = World::with_seed(2);
         let mut flame = reactive_entity(
             Vec3::new(0.0, 0.25, 0.0),
-            ReactiveMaterial::flame(),
+            flame_material_fixture(),
             ReactiveState::new(720.0, 0.0, 1.0),
         );
         flame.reactive_state.as_mut().unwrap().burning = true;
         flame.body = Some(Body::static_body());
         world.spawn(flame);
-        let mut wood_material = ReactiveMaterial::wood();
+        let mut wood_material = wood_material_fixture();
         wood_material.ignition_temperature_c = 145.0;
         let wood = world.spawn(reactive_entity(
             Vec3::new(0.75, 0.25, 0.0),
@@ -2140,7 +2182,7 @@ mod tests {
         let mut world = World::with_seed(55);
         world.spawn(reactive_entity(
             Vec3::new(0.0, 1.0, 0.0),
-            ReactiveMaterial::fruit(),
+            fruit_material_fixture(),
             ReactiveState::new(20.0, 0.2, 0.3),
         ));
         let environment = FlatEnvironment::default();
@@ -2206,7 +2248,7 @@ mod tests {
     fn zero_or_invalid_douse_does_not_extinguish_a_fire() {
         for amount in [0.0, -1.0, f32::NAN] {
             let mut world = World::with_seed(3);
-            let mut material = ReactiveMaterial::wood();
+            let mut material = wood_material_fixture();
             material.ignition_temperature_c = 100.0;
             let mut state = ReactiveState::new(400.0, 0.0, 1.0);
             state.burning = true;
@@ -2401,7 +2443,7 @@ mod tests {
         };
         let mut world = World::new(config);
 
-        let mut flame_material = ReactiveMaterial::flame();
+        let mut flame_material = flame_material_fixture();
         flame_material.burn_rate = 0.1;
         let mut flame_state = ReactiveState::new(720.0, 0.0, 1.0);
         flame_state.burning = true;
@@ -2414,7 +2456,7 @@ mod tests {
         flame.transform.rotation = Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
         world.spawn(flame);
 
-        let mut wood_material = ReactiveMaterial::wood();
+        let mut wood_material = wood_material_fixture();
         wood_material.ignition_temperature_c = 50.0;
         wood_material.heat_capacity = 1.0;
         let target = world.spawn(reactive_entity(
