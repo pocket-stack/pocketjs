@@ -110,6 +110,10 @@ describe("private Meizu M8 build profile", () => {
     const bridge = readFileSync(join(repository, "tools/meizu-m8/usb-serial.c"), "utf8");
     const stopOld = readFileSync(join(repository, "hosts/meizu-m8/stop-old.c"), "utf8");
     const tooling = readFileSync(join(repository, "tools/meizu-m8.ts"), "utf8");
+    const sessionScript = readFileSync(
+      join(repository, "tools/meizu-m8/start-session-macos.sh"),
+      "utf8",
+    );
     const app = readFileSync(join(repository, "apps/meizu-m8-demo/app.tsx"), "utf8");
     const guestRuntime = readFileSync(
       join(repository, "hosts/iphone2g/pocket_runtime.c"),
@@ -123,6 +127,8 @@ describe("private Meizu M8 build profile", () => {
     expect(tooling).toContain('fields.logical_viewport !== receipt.hostContract.viewport.logical.join("x")');
     expect(tooling).toContain("bytes.readInt32LE(18)");
     expect(tooling).toContain("bytes.readInt32LE(22)");
+    expect(sessionScript).toContain('/usr/bin/pgrep -P "$PPPD_PID"');
+    expect(sessionScript).toContain('kill -KILL "$PPPD_PID"');
     expect(runtime).toContain('"gdi_composites=%lu\\r\\n"');
     expect(runtime).toContain("pocket_runtime_hit_test_bounds");
     expect(runtime).toContain("pocket_runtime_action_sequence");

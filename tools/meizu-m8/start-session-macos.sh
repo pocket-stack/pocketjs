@@ -12,10 +12,27 @@ if [ "${1:-}" = "--pppd-supervisor" ]; then
     192.168.131.1:192.168.131.129 ms-dns 192.168.131.1 \
     connect "$SERIAL_CHAT" logfile "$PPPD_LOG" &
   PPPD_PID=$!
-  trap 'kill "$PPPD_PID" 2>/dev/null || true' EXIT INT TERM
+  stop_pppd() {
+    for child_pid in $(/usr/bin/pgrep -P "$PPPD_PID" 2>/dev/null || true); do
+      kill "$child_pid" 2>/dev/null || true
+    done
+    kill "$PPPD_PID" 2>/dev/null || true
+    stop_attempt=0
+    while kill -0 "$PPPD_PID" 2>/dev/null && [ "$stop_attempt" -lt 3 ]; do
+      stop_attempt=$((stop_attempt + 1))
+      sleep 1
+    done
+    if kill -0 "$PPPD_PID" 2>/dev/null; then
+      for child_pid in $(/usr/bin/pgrep -P "$PPPD_PID" 2>/dev/null || true); do
+        kill -KILL "$child_pid" 2>/dev/null || true
+      done
+      kill -KILL "$PPPD_PID" 2>/dev/null || true
+    fi
+  }
+  trap stop_pppd EXIT INT TERM
   while kill -0 "$PPPD_PID" 2>/dev/null; do
     if [ -f "$STOP_FILE" ]; then
-      kill "$PPPD_PID" 2>/dev/null || true
+      stop_pppd
     fi
     sleep 1
   done
