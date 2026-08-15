@@ -15,7 +15,7 @@ import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractHostBuildInputs } from "../framework/src/manifest/host-build-inputs.ts";
-import { bakeIPodTouchArtwork } from "./ipodtouch-icon.ts";
+import { bakeClassicIPhoneArtwork } from "./iphone-classic-icon.ts";
 import {
   IPHONE4S_TOOLCHAIN,
   inspectIPhone4SToolchain,
@@ -28,6 +28,8 @@ import {
 } from "./iphone4s-toolchain.ts";
 import {
   IPHONE4S_DEV_TARGET_ID,
+  IPHONE4S_PHYSICAL_VIEWPORT,
+  IPHONE4S_RASTER_DENSITY,
   resolveIPhone4SBuildPlan,
 } from "./iphone4s-profile.ts";
 
@@ -57,6 +59,12 @@ interface CommandResult {
   readonly stderr: string;
 }
 
+interface BinaryCommandResult {
+  readonly exitCode: number;
+  readonly stdout: Buffer;
+  readonly stderr: string;
+}
+
 interface BuildReceipt {
   readonly schema: 1;
   readonly buildId: string;
@@ -81,6 +89,9 @@ interface DeviceStatus {
   readonly heartbeat: number;
   readonly renderer: string;
   readonly clock: string;
+  readonly raster_density: number;
+  readonly drawable_width: number;
+  readonly drawable_height: number;
   readonly error: string;
 }
 
@@ -100,6 +111,21 @@ function run(
   return {
     exitCode: result.exitCode,
     stdout: result.stdout.toString(),
+    stderr: result.stderr.toString(),
+  };
+}
+
+function runBinary(executable: string, args: readonly string[]): BinaryCommandResult {
+  const result = Bun.spawnSync({
+    cmd: [executable, ...args],
+    cwd: REPOSITORY,
+    env: process.env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  return {
+    exitCode: result.exitCode,
+    stdout: Buffer.from(result.stdout),
     stderr: result.stderr.toString(),
   };
 }
@@ -622,7 +648,7 @@ async function build(): Promise<void> {
   mkdirSync(bundle, { recursive: true });
   cpSync(join(REPOSITORY, "hosts/iphone4s/Info.plist"), join(bundle, "Info.plist"));
   cpSync(join(REPOSITORY, "hosts/iphone4s/PkgInfo"), join(bundle, "PkgInfo"));
-  await bakeIPodTouchArtwork(bundle);
+  await bakeClassicIPhoneArtwork(bundle);
 
   const buildId = hashInputs([
     planPath(),
@@ -634,7 +660,8 @@ async function build(): Promise<void> {
     join(REPOSITORY, "hosts/iphone2g/runtime.c"),
     join(REPOSITORY, "hosts/iphone2g/pocket_runtime.c"),
     join(REPOSITORY, "hosts/iphone2g/compat.c"),
-    join(REPOSITORY, "hosts/ipodtouch/Icon.svg"),
+    join(REPOSITORY, "hosts/iphone2g/Icon.png"),
+    join(REPOSITORY, "tools/iphone-classic-icon.ts"),
     join(REPOSITORY, "tools/iphone4s.ts"),
     join(REPOSITORY, "tools/iphone4s-toolchain.ts"),
     join(REPOSITORY, "tools/cli/iphone4s-toolchain.json"),
@@ -654,7 +681,8 @@ async function build(): Promise<void> {
 
   const firstParty = [...warnings, `-DPOCKET_BUILD_ID=\"${buildId}\"`,
     `-DPOCKET_LOGICAL_WIDTH=${inputs.viewport.logical[0]}`,
-    `-DPOCKET_LOGICAL_HEIGHT=${inputs.viewport.logical[1]}`];
+    `-DPOCKET_LOGICAL_HEIGHT=${inputs.viewport.logical[1]}`,
+    `-DPOCKET_RASTER_DENSITY=${inputs.viewport.rasterDensity}`];
   compile(join(REPOSITORY, "hosts/iphone2g/crt_globals.c"), join(nativeBuild, "crt_globals.o"), warnings);
   compile(join(REPOSITORY, "hosts/iphone4s/runtime.c"), join(nativeBuild, "runtime.o"), [
     ...firstParty, "-Wno-cast-function-type-mismatch",
@@ -697,8 +725,6 @@ async function build(): Promise<void> {
     "PkgInfo",
     "Icon.png",
     "Icon@2x.png",
-    "Icon-60@2x.png",
-    "Icon-60@3x.png",
     "Default@2x.png",
     "Default-568h@2x.png",
   ];
@@ -914,6 +940,9 @@ async function readDeviceStatus(port: number): Promise<DeviceStatus> {
     action_sequence: number("action_sequence"),
     renderer: values.get("renderer") ?? "",
     clock: values.get("clock") ?? "",
+    raster_density: number("raster_density"),
+    drawable_width: number("drawable_width"),
+    drawable_height: number("drawable_height"),
     error: values.get("error") ?? "",
   };
 }
@@ -934,6 +963,17 @@ async function status(requireAction: boolean): Promise<void> {
     }
     if (current.state !== "running" || current.error !== "") {
       throw new Error(`pocket iphone4s: guest state=${current.state} error=${current.error || "none"}`);
+    }
+    if (
+      current.renderer !== "gles1" ||
+      current.raster_density !== IPHONE4S_RASTER_DENSITY ||
+      current.drawable_width !== IPHONE4S_PHYSICAL_VIEWPORT[0] ||
+      current.drawable_height !== IPHONE4S_PHYSICAL_VIEWPORT[1]
+    ) {
+      throw new Error(
+        `pocket iphone4s: expected GLES1 Retina ${IPHONE4S_PHYSICAL_VIEWPORT.join("x")}, got ` +
+          `${current.renderer} ${current.drawable_width}x${current.drawable_height} @${current.raster_density}x`,
+      );
     }
     if (current.guest_frames <= first.guest_frames) {
       throw new Error("pocket iphone4s: guest frame counter did not advance");
@@ -956,40 +996,45 @@ async function status(requireAction: boolean): Promise<void> {
 async function capture(): Promise<void> {
   const rawDestination = join(REPOSITORY, "dist/iphone4s/device-frame.rgba");
   const destination = join(REPOSITORY, "dist/iphone4s/device-frame.png");
+  rmSync(rawDestination, { force: true });
+  rmSync(destination, { force: true });
   let renderer = "";
+  let width = 0;
+  let height = 0;
   await withTunnel(async (port) => {
-    renderer = (await readDeviceStatus(port)).renderer;
-    mustRemote(port, `rm -f ${FRAME_PATH}; touch ${CAPTURE_REQUEST_PATH}`);
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      await Bun.sleep(200);
-      if (remote(port, `test -s ${FRAME_PATH}`).exitCode === 0) break;
+    try {
+      const status = await readDeviceStatus(port);
+      renderer = status.renderer;
+      width = status.drawable_width;
+      height = status.drawable_height;
+      if (
+        renderer !== "gles1" ||
+        width !== IPHONE4S_PHYSICAL_VIEWPORT[0] ||
+        height !== IPHONE4S_PHYSICAL_VIEWPORT[1] ||
+        status.raster_density !== IPHONE4S_RASTER_DENSITY
+      ) {
+        throw new Error(`pocket iphone4s: refusing non-Retina capture ${renderer} ${width}x${height}`);
+      }
+      mustRemote(
+        port,
+        `rm -f ${FRAME_PATH} ${CAPTURE_REQUEST_PATH}; ` +
+          `/bin/su mobile -c 'touch ${CAPTURE_REQUEST_PATH}'`,
+      );
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await Bun.sleep(200);
+        if (remote(port, `test -s ${FRAME_PATH}`).exitCode === 0) break;
+      }
+      mustRemote(port, `test -s ${FRAME_PATH}`);
+      const frame = runBinary("ssh", sshArgs(port, `cat ${FRAME_PATH}`));
+      if (frame.exitCode !== 0) {
+        throw new Error(`pocket iphone4s: device frame download failed (${frame.exitCode}):\n${frame.stderr.trim()}`);
+      }
+      writeFileSync(rawDestination, frame.stdout);
+    } finally {
+      remote(port, `rm -f ${CAPTURE_REQUEST_PATH} ${FRAME_PATH}`);
     }
-    mustRemote(port, `test -s ${FRAME_PATH}`);
-    mustRun("scp", [
-      "-O",
-      "-i",
-      KEY_PATH,
-      "-P",
-      String(port),
-      "-o",
-      "BatchMode=yes",
-      "-o",
-      `HostKeyAlias=[127.0.0.1]:${LOCAL_PORT}`,
-      "-o",
-      "StrictHostKeyChecking=yes",
-      "-o",
-      `UserKnownHostsFile=${KNOWN_HOSTS_PATH}`,
-      "-o",
-      "HostKeyAlgorithms=+ssh-rsa",
-      "-o",
-      "PubkeyAcceptedAlgorithms=+ssh-rsa",
-      `root@127.0.0.1:${FRAME_PATH}`,
-      rawDestination,
-    ]);
   });
   const raw = readFileSync(rawDestination);
-  const width = 320;
-  const height = 480;
   if (raw.byteLength !== width * height * 4) throw new Error(`pocket iphone4s: capture has ${raw.byteLength} bytes`);
   const canvas = createCanvas(width, height);
   const image = canvas.getContext("2d").createImageData(width, height);

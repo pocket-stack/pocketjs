@@ -69,6 +69,18 @@ links against the derived iOS 6 stubs, and signs the bundle with `ldid`.
 **The build ID includes the guest, host sources, native archive, toolchain
 manifest, and generated linker stubs.**
 
+The iPhone 4S host requires OpenGL ES 1.1 and sets the UIKit view's content
+scale to 2 before allocating its renderbuffer. **A valid runtime receipt must
+report the `gles1` renderer, density 2, and a 640×960 drawable for the 320×480
+logical viewport.** It fails instead of silently presenting the software
+rasterizer through a `CAEAGLLayer` when that contract cannot be established.
+
+SpringBoard artwork uses `hosts/iphone2g/Icon.png` as its single source.
+`Icon.png` is copied byte-for-byte and `Icon@2x.png` is baked as an exact 2×
+integer expansion, retaining the original icon's transparent rounded corners,
+chrome bevel, enamel face, and curved glass highlight. `UIPrerenderedIcon` keeps
+iOS from adding a second gloss treatment.
+
 `deploy` verifies the exact device identity before opening a fresh UDID-scoped
 USB tunnel. It acquires a device-side lock, uses transaction-specific paths,
 checks every staged file with device-side SHA-256, keeps the previous bundle
@@ -80,7 +92,8 @@ on failure.
 The host writes `/private/var/tmp/pocketjs-iphone4s.status` from the device frame
 loop. `status` requires a live PID, an advancing heartbeat and guest frame
 counter, a matching build ID, and an empty runtime error. The record reports the
-actual renderer and clock instead of inferring them from the build.
+actual renderer, drawable size, raster density, and clock instead of inferring
+them from the build.
 
 ```sh
 bun iphone4s status --require-action
@@ -91,6 +104,8 @@ bun iphone4s capture
 `hero_tap` action that changed guest state. **Touch down resolves the committed
 frame's bounds hit once and carries that hit fact through the contact.**
 
-`capture` requests the next device-rendered frame, downloads the raw 320×480
-buffer, normalizes software BGRA or OpenGL bottom-up RGBA pixels, and writes
-`dist/iphone4s/device-frame.png`.
+`capture` accepts only the 640×960 GLES1 Retina drawable, requests the next
+device-rendered frame, downloads its bottom-up RGBA pixels, and writes the
+physical-resolution `dist/iphone4s/device-frame.png`. The one-shot marker is
+created as `mobile` and removed in cleanup; leaving a root-owned marker in the
+sticky temporary directory would force a full GPU readback on every frame.

@@ -45,6 +45,7 @@ export interface HeroProps {
   onAction?: (count: number) => void;
   presentationHz?: number;
   runtimeLabel?: string;
+  spinnerFrameStep?: number;
 }
 
 export default function Hero(props: HeroProps = {}) {
@@ -54,7 +55,7 @@ export default function Hero(props: HeroProps = {}) {
     if (completedCount > 0) props.onAction?.(completedCount);
   });
   const spinnerSrc = createSpriteAnimation(SPINNER_FRAMES, {
-    frameStep: SPINNER_FRAME_STEP,
+    frameStep: props.spinnerFrameStep ?? SPINNER_FRAME_STEP,
   });
   let underline: NodeMirror | undefined;
   onMount(() => {

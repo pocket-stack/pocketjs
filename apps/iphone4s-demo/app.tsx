@@ -10,6 +10,7 @@ export default function IPhone4SHero() {
       onAction={(count) => reportAppAction("hero_tap", count)}
       presentationHz={60}
       runtimeLabel="RUST + QUICKJS + UIKIT"
+      spinnerFrameStep={6}
     />
   );
 }

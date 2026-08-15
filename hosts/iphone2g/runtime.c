@@ -65,6 +65,15 @@ typedef enum {
 #ifndef POCKET_LOGICAL_HEIGHT
 #error "POCKET_LOGICAL_HEIGHT must come from the verified ResolvedBuildPlan"
 #endif
+#ifndef POCKET_RASTER_DENSITY
+#define POCKET_RASTER_DENSITY 1
+#endif
+#ifndef POCKET_GL_DEFAULT
+#define POCKET_GL_DEFAULT 0
+#endif
+#ifndef POCKET_REQUIRE_GL
+#define POCKET_REQUIRE_GL 0
+#endif
 #define POCKET_STATUS_CAPACITY 256
 #define POCKET_STATUS_COLUMNS 42
 #define POCKET_STATUS_LINES 5
@@ -198,6 +207,8 @@ static uint32_t g_framebuffer_width;
 static uint32_t g_framebuffer_height;
 static uint32_t g_framebuffer_stride;
 static size_t g_framebuffer_length;
+static int32_t g_drawable_width;
+static int32_t g_drawable_height;
 
 static int g_touch_down;
 static int g_touch_x;
@@ -300,7 +311,7 @@ static unsigned long now_us(void) {
 
 /* Best-effort, device-local proof fetched through the scoped USB SSH helper. */
 static void write_acceptance_record(void) {
-  char record[768];
+  char record[896];
   unsigned long next_heartbeat = g_status_heartbeat + 1;
   time_t written_at = time(NULL);
   const char *state = g_state == POCKET_STATE_RUNNING
@@ -315,7 +326,8 @@ static void write_acceptance_record(void) {
     "guest_frames=%lu\ntouch_sequences=%lu\ncompleted_touch_sequences=%lu\n"
     "touch_down=%d\nlast_touch_x=%d\nlast_touch_y=%d\nlast_touch_hit=%d\n"
     "action_name=%s\naction_value=%d\naction_sequence=%lu\n"
-    "renderer=%s\nclock=%s\nframe_us=%lu\nsubmit_us=%lu\npresent_us=%lu\n"
+    "renderer=%s\nclock=%s\nraster_density=%d\ndrawable_width=%ld\ndrawable_height=%ld\n"
+    "frame_us=%lu\nsubmit_us=%lu\npresent_us=%lu\n"
     "window_frames=%lu\nwindow_us=%lu\nblit_us=%lu\n"
     "damage_attempts=%lu\ndamage_failures=%lu\ndamage_full_redraws=%lu\n"
     "damage_pixels=%lu\ncomposites=%lu\ndamage_regions_last=%lu\nerror=%s\n",
@@ -336,6 +348,9 @@ static void write_acceptance_record(void) {
     pocket_runtime_action_sequence(),
     g_renderer,
     g_clock,
+    POCKET_RASTER_DENSITY,
+    (long)g_drawable_width,
+    (long)g_drawable_height,
     g_frame_us_mean,
     g_submit_us_mean,
     g_present_us_mean,
@@ -361,9 +376,6 @@ static void write_acceptance_record(void) {
     ssize_t count = write(descriptor, record + written, (size_t)length - written);
     if (count <= 0) break;
     written += (size_t)count;
-  }
-  if (written == (size_t)length) {
-    (void)fsync(descriptor);
   }
   (void)close(descriptor);
   if (written == (size_t)length) {
@@ -601,6 +613,8 @@ static void fail_runtime(const char *message) {
   g_framebuffer_height = 0;
   g_framebuffer_stride = 0;
   g_framebuffer_length = 0;
+  g_drawable_width = 0;
+  g_drawable_height = 0;
   write_acceptance_record();
   if (g_view != NULL) {
     send_void(g_view, "setNeedsDisplay");
@@ -634,6 +648,8 @@ static int refresh_framebuffer(void) {
   g_framebuffer_height = height;
   g_framebuffer_stride = stride;
   g_framebuffer_length = length;
+  g_drawable_width = (int32_t)width;
+  g_drawable_height = (int32_t)height;
   return 1;
 }
 
@@ -899,10 +915,14 @@ static BOOL send_bool_class_object(Class cls, const char *selector, id value) {
  * this at view creation, before setup_gl runs, so the decision has to be made
  * from the same marker file setup_gl consults.
  */
+static int pocket_prefers_gl(void) {
+  return POCKET_GL_DEFAULT || access(POCKET_PREFER_GL_PATH, F_OK) == 0;
+}
+
 static Class pocket_layer_class(id self, SEL command) {
   (void)self;
   (void)command;
-  if (access(POCKET_PREFER_GL_PATH, F_OK) == 0) {
+  if (pocket_prefers_gl()) {
     return objc_getClass("CAEAGLLayer");
   }
   return objc_getClass("CALayer");
@@ -951,6 +971,10 @@ static void teardown_gl(void) {
   }
   g_gl_ready = 0;
   g_gl_context = NULL;
+  g_gl_width = 0;
+  g_gl_height = 0;
+  g_drawable_width = 0;
+  g_drawable_height = 0;
 }
 
 /*
@@ -963,7 +987,7 @@ static int setup_gl(id view) {
   int32_t status;
   int forced_software;
 
-  forced_software = access(POCKET_PREFER_GL_PATH, F_OK) != 0;
+  forced_software = !pocket_prefers_gl();
   if (forced_software) return 0;
   if (eagl == NULL || objc_getClass("CAEAGLLayer") == NULL) return 0;
   if (!resolve_gl_extension()) return 0;
@@ -1022,6 +1046,15 @@ static int setup_gl(id view) {
     teardown_gl();
     return 0;
   }
+  if (
+    g_gl_width != POCKET_LOGICAL_WIDTH * POCKET_RASTER_DENSITY ||
+    g_gl_height != POCKET_LOGICAL_HEIGHT * POCKET_RASTER_DENSITY
+  ) {
+    teardown_gl();
+    return 0;
+  }
+  g_drawable_width = g_gl_width;
+  g_drawable_height = g_gl_height;
   g_gl_ready = 1;
   return 1;
 }
@@ -1038,7 +1071,6 @@ static void write_capture(const uint8_t *pixels, size_t length) {
     if (count <= 0) break;
     written += (size_t)count;
   }
-  (void)fsync(descriptor);
   (void)close(descriptor);
   (void)unlink(POCKET_CAPTURE_REQUEST_PATH);
 }
@@ -1151,6 +1183,12 @@ static int boot_embedded_runtime(void) {
       teardown_gl();
     }
   }
+#if POCKET_REQUIRE_GL
+  if (!g_gl_ready) {
+    fail_runtime("Required Retina OpenGL ES drawable is unavailable");
+    return 0;
+  }
+#endif
   return 1;
 }
 
@@ -1250,6 +1288,10 @@ static void pocket_tick(id self, SEL command, id timer) {
      */
     if (!present_gl(&submitted_us)) {
       teardown_gl();
+#if POCKET_REQUIRE_GL
+      fail_runtime("Required OpenGL ES present failed");
+      return;
+#else
       g_renderer = "software-on-eagl-layer";
       /*
        * The view is already CAEAGLLayer-backed at this point, so drawRect: will
@@ -1257,6 +1299,7 @@ static void pocket_tick(id self, SEL command, id timer) {
        * it as its own state rather than as a working software path.
        */
       copy_status_message("OpenGL ES present failed; layer cannot composite raster");
+#endif
     }
   }
   if (!g_gl_ready) {
@@ -1531,6 +1574,21 @@ static void launch_application(id self, id application) {
     g_state = POCKET_STATE_FAILED;
     copy_status_message("UIKit could not create the PocketJS window");
     return;
+  }
+
+  if (POCKET_RASTER_DENSITY > 1) {
+    id layer;
+    if (!responds_to(g_view, "setContentScaleFactor:")) {
+      g_state = POCKET_STATE_FAILED;
+      copy_status_message("UIKit view cannot configure Retina scale");
+      write_acceptance_record();
+      return;
+    }
+    send_void_float(g_view, "setContentScaleFactor:", (float)POCKET_RASTER_DENSITY);
+    layer = send_id(g_view, "layer");
+    if (layer != NULL && responds_to(layer, "setContentsScale:")) {
+      send_void_float(layer, "setContentsScale:", (float)POCKET_RASTER_DENSITY);
+    }
   }
 
   g_state = POCKET_STATE_STARTING;

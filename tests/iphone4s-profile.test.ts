@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { POCKET_TARGETS } from "../contracts/spec/platforms.ts";
 import { verifyPlanHash } from "../framework/src/manifest/plan.ts";
@@ -13,6 +15,10 @@ import {
   resolveIPhone4SBuildPlan,
 } from "../tools/iphone4s-profile.ts";
 import { IPHONE4S_TOOLCHAIN } from "../tools/iphone4s-toolchain.ts";
+import {
+  bakeClassicIPhoneArtwork,
+  IPHONE_CLASSIC_ICON_SOURCE,
+} from "../tools/iphone-classic-icon.ts";
 import { deploymentInstallCommand, iphone4sDeploymentPaths } from "../tools/iphone4s.ts";
 
 const repository = join(import.meta.dir, "..");
@@ -68,6 +74,7 @@ describe("private iPhone 4S profile", () => {
     expect(tool).toContain("POCKETJS_IPHONE4S_IPSW");
     expect(tool).toContain("byte-exact readback");
     expect(tool).toContain('"build-receipt.json": sha256(receiptPath())');
+    expect(tool).toContain("/bin/su mobile -c 'touch ${CAPTURE_REQUEST_PATH}'");
   });
 
   test("shares the current touch-hit host and keeps transactional rollback", () => {
@@ -75,8 +82,13 @@ describe("private iPhone 4S profile", () => {
     const runtime = readFileSync(join(repository, "hosts/iphone2g/runtime.c"), "utf8");
     const guest = readFileSync(join(repository, "hosts/iphone2g/pocket_runtime.c"), "utf8");
     expect(wrapper).toContain('#include "../iphone2g/runtime.c"');
+    expect(wrapper).toContain("#define POCKET_GL_DEFAULT 1");
+    expect(wrapper).toContain("#define POCKET_REQUIRE_GL 1");
     expect(runtime).toContain("pocket_runtime_hit_test_bounds");
     expect(guest).toContain("hit_array");
+    expect(runtime).toContain('send_void_float(g_view, "setContentScaleFactor:"');
+    expect(runtime).toContain("g_gl_width != POCKET_LOGICAL_WIDTH * POCKET_RASTER_DENSITY");
+    expect(runtime).not.toContain("fsync(");
 
     const first = iphone4sDeploymentPaths("a".repeat(24));
     const second = iphone4sDeploymentPaths("b".repeat(24));
@@ -87,5 +99,35 @@ describe("private iPhone 4S profile", () => {
     expect(install).toContain("trap rollback EXIT HUP INT TERM");
     expect(install.lastIndexOf("uicache")).toBeLessThan(install.lastIndexOf("trap - EXIT HUP INT TERM"));
     expect(install.lastIndexOf("trap - EXIT HUP INT TERM")).toBeLessThan(install.lastIndexOf('rm -rf "$backup"'));
+  });
+
+  test("bakes the iPhone 2G icon byte-exactly and integer-scales its Retina variant", async () => {
+    const output = mkdtempSync(join(tmpdir(), "pocket-iphone4s-artwork-"));
+    try {
+      await bakeClassicIPhoneArtwork(output);
+      expect(readFileSync(join(output, "Icon.png"))).toEqual(readFileSync(IPHONE_CLASSIC_ICON_SOURCE));
+
+      const one = await loadImage(join(output, "Icon.png"));
+      const two = await loadImage(join(output, "Icon@2x.png"));
+      expect([one.width, one.height]).toEqual([59, 60]);
+      expect([two.width, two.height]).toEqual([118, 120]);
+      const oneCanvas = createCanvas(one.width, one.height);
+      const twoCanvas = createCanvas(two.width, two.height);
+      oneCanvas.getContext("2d").drawImage(one, 0, 0);
+      twoCanvas.getContext("2d").drawImage(two, 0, 0);
+      const onePixels = oneCanvas.getContext("2d").getImageData(0, 0, one.width, one.height).data;
+      const twoPixels = twoCanvas.getContext("2d").getImageData(0, 0, two.width, two.height).data;
+      const expected = new Uint8ClampedArray(twoPixels.length);
+      for (let y = 0; y < two.height; y += 1) {
+        for (let x = 0; x < two.width; x += 1) {
+          const source = (Math.floor(y / 2) * one.width + Math.floor(x / 2)) * 4;
+          const target = (y * two.width + x) * 4;
+          expected.set(onePixels.subarray(source, source + 4), target);
+        }
+      }
+      expect(twoPixels).toEqual(expected);
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+    }
   });
 });
