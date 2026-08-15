@@ -211,6 +211,9 @@ default.
 Only `font-bold` exists for weight (no `font-normal` / `font-semibold`), and
 only `tracking-wide` for tracking.
 
+The baked size utilities are `text-xs`, `text-sm`, `text-base`, `text-lg`,
+`text-xl`, `text-2xl`, `text-4xl`, and `text-5xl` (54px).
+
 ## Transform
 
 Transforms are animatable and do **not** trigger relayout — prefer them for

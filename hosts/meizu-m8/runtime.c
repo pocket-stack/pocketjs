@@ -49,7 +49,6 @@ static unsigned long capture_successes;
 static unsigned long capture_error;
 static int capture_pending;
 static int boot_stage;
-static int runtime_ready;
 static char runtime_error[512];
 
 static void copy_error(const char *message) {
@@ -325,11 +324,6 @@ static LRESULT CALLBACK window_proc(
         return 0;
       }
       return DefWindowProcW(window, message, word, parameter);
-    case WM_ACTIVATE:
-      if (runtime_ready && LOWORD(word) == WA_INACTIVE) {
-        PostMessageW(window, WM_CLOSE, 0, 0);
-      }
-      return 0;
     case WM_LBUTTONDOWN:
       SetCapture(window);
       physical_to_logical(window, parameter, &touch_x, &touch_y);
@@ -355,7 +349,6 @@ static LRESULT CALLBACK window_proc(
     case WM_DESTROY:
       KillTimer(window, POCKET_TIMER_ID);
       write_status("terminated");
-      runtime_ready = 0;
       pocket_runtime_shutdown();
       PostQuitMessage(0);
       return 0;
@@ -429,7 +422,6 @@ int WINAPI WinMain(
     DestroyWindow(window_handle);
     return 4;
   }
-  runtime_ready = 1;
   if (SetTimer(window_handle, POCKET_TIMER_ID, POCKET_TIMER_MS, NULL) == 0) {
     copy_error("SetTimer failed");
     write_status("failed");

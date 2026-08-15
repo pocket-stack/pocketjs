@@ -25,11 +25,13 @@ const SPINNER_FRAMES = [
   "spinner-07.svg",
 ];
 
-function Stat(props: { label: string; value: string; cls: string }) {
+function Stat(props: { label: string; value: string; cls: string; largeLayout?: boolean }) {
   return (
     <View class="flex-col items-end">
       <Text class={props.cls}>{props.value}</Text>
-      <Text class="text-xs text-slate-500 tracking-wide">{props.label}</Text>
+      <Text class={props.largeLayout
+        ? "text-lg text-slate-500 tracking-wide"
+        : "text-xs text-slate-500 tracking-wide"}>{props.label}</Text>
     </View>
   );
 }
@@ -38,6 +40,7 @@ export interface HeroProps {
   actionLabel?: string;
   deviceLabel?: string;
   headline?: string;
+  largeLayout?: boolean;
   onAction?: (count: number) => void;
   presentationHz?: number;
   runtimeLabel?: string;
@@ -56,85 +59,122 @@ export default function Hero(props: HeroProps = {}) {
   onMount(() => {
     // Underline sweeps in once on mount — native tween, zero steady-state JS.
     if (underline)
-      animate(underline, "width", 210, { dur: 700, easing: "out", delay: 150 });
+      animate(underline, "width", props.largeLayout ? 315 : 210, {
+        dur: 700,
+        easing: "out",
+        delay: 150,
+      });
   });
   return (
     <View
       debugName="HeroScreen"
-      class="w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100"
+      class={props.largeLayout
+        ? "w-full h-full flex-col justify-between p-[30] bg-gradient-to-b from-slate-50 to-slate-100"
+        : "w-full h-full flex-col justify-between p-5 bg-gradient-to-b from-slate-50 to-slate-100"}
     >
       <View
         debugName="Header"
         class="flex-row flex-wrap items-center justify-between"
       >
-        <View class="flex-row items-center gap-3">
-          <Image class="w-10 h-10 rounded-lg shadow" src="logo.png" />
+        <View class={props.largeLayout ? "flex-row items-center gap-[18]" : "flex-row items-center gap-3"}>
+          <Image class={props.largeLayout
+            ? "w-[60] h-[60] rounded-xl shadow"
+            : "w-10 h-10 rounded-lg shadow"} src="logo.png" />
           <View class="flex-col">
-            <Text class="text-base text-slate-950 font-bold tracking-wide">
+            <Text class={props.largeLayout
+              ? "text-2xl text-slate-950 font-bold tracking-wide"
+              : "text-base text-slate-950 font-bold tracking-wide"}>
               PocketJS
             </Text>
-            <Text class="text-xs text-slate-500 tracking-wide">
+            <Text class={props.largeLayout
+              ? "text-lg text-slate-500 tracking-wide"
+              : "text-xs text-slate-500 tracking-wide"}>
               {frameworkName()} + {props.runtimeLabel ?? "RUST + SCEGU"}
             </Text>
           </View>
         </View>
-        <View class="flex-row gap-4">
+        <View class={props.largeLayout ? "flex-row gap-6" : "flex-row gap-4"}>
           <Stat
             label="FPS"
             value={String(props.presentationHz ?? 60)}
-            cls="text-lg text-emerald-600 font-bold"
+            cls={props.largeLayout
+              ? "text-2xl text-emerald-600 font-bold"
+              : "text-lg text-emerald-600 font-bold"}
+            largeLayout={props.largeLayout}
           />
           <Stat
             label="NODES"
             value="42"
-            cls="text-lg text-blue-600 font-bold"
+            cls={props.largeLayout
+              ? "text-2xl text-blue-600 font-bold"
+              : "text-lg text-blue-600 font-bold"}
+            largeLayout={props.largeLayout}
           />
           <Stat
             label="DRAWS"
             value="9"
-            cls="text-lg text-amber-600 font-bold"
+            cls={props.largeLayout
+              ? "text-2xl text-amber-600 font-bold"
+              : "text-lg text-amber-600 font-bold"}
+            largeLayout={props.largeLayout}
           />
         </View>
       </View>
 
-      <View class="flex-col gap-2">
-        <Text class="text-xs text-blue-600 tracking-wide">
+      <View class={props.largeLayout ? "flex-col gap-3" : "flex-col gap-2"}>
+        <Text class={props.largeLayout
+          ? "text-lg text-blue-600 tracking-wide"
+          : "text-xs text-blue-600 tracking-wide"}>
           ONE RUST CORE · ONE JSX APP
         </Text>
         <View class="flex-row flex-wrap items-center justify-between">
-          <Text class="text-4xl text-slate-950 font-bold">
+          <Text class={props.largeLayout
+            ? "text-5xl text-slate-950 font-bold"
+            : "text-4xl text-slate-950 font-bold"}>
             {props.headline ?? "JSX at 60 FPS."}
           </Text>
-          <Image class="w-10 h-10" src={spinnerSrc()} />
+          <Image class={props.largeLayout ? "w-[60] h-[60]" : "w-10 h-10"} src={spinnerSrc()} />
         </View>
         <View
           ref={underline}
-          class="h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"
-          style={{ translateX: count() * 2 }}
+          class={props.largeLayout
+            ? "h-[6] w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"
+            : "h-1 w-0 rounded-full shadow bg-gradient-to-r from-blue-500 to-cyan-500"}
+          style={{ translateX: count() * (props.largeLayout ? 3 : 2) }}
         />
-        <View debugName="Description" class="flex-row flex-wrap gap-1">
-          <Text class="text-sm text-slate-600">
+        <View debugName="Description" class={props.largeLayout
+          ? "flex-row flex-wrap gap-[6]"
+          : "flex-row flex-wrap gap-1"}>
+          <Text class={props.largeLayout ? "text-xl text-slate-600" : "text-sm text-slate-600"}>
             Flexbox, springs and baked type —
           </Text>
-          <Text class="text-sm text-slate-600">
+          <Text class={props.largeLayout ? "text-xl text-slate-600" : "text-sm text-slate-600"}>
             {props.deviceLabel ?? "running on a 2005 handheld."}
           </Text>
         </View>
       </View>
 
-      <View class="flex-row flex-wrap items-center gap-4">
+      <View class={props.largeLayout
+        ? "flex-row flex-wrap items-center gap-6"
+        : "flex-row flex-wrap items-center gap-4"}>
         <View
-          class="px-4 py-2 rounded-xl shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
+          class={props.largeLayout
+            ? "px-6 py-3 rounded-[18px] shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"
+            : "px-4 py-2 rounded-xl shadow-md bg-blue-600 border-blue-500 focus:bg-blue-500 active:bg-blue-700 transition-colors duration-150"}
           focusable
           onPress={() => setCount(count() + 1)}
         >
-          <Text class="text-base text-white font-bold">
+          <Text class={props.largeLayout
+            ? "text-2xl text-white font-bold"
+            : "text-base text-white font-bold"}>
             {props.actionLabel ?? "Press Circle"}
           </Text>
         </View>
-        <Text class="text-sm text-slate-600">Count: {count()}</Text>
+        <Text class={props.largeLayout ? "text-xl text-slate-600" : "text-sm text-slate-600"}>
+          Count: {count()}
+        </Text>
         <Show when={count() > 3}>
-          <Text class="text-sm text-emerald-600">
+          <Text class={props.largeLayout ? "text-xl text-emerald-600" : "text-sm text-emerald-600"}>
             Reactive on real hardware.
           </Text>
         </Show>

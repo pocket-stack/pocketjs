@@ -190,6 +190,12 @@ describe("text", () => {
     expect(m.get(PROP.fontSlot)).toBe(fontSlotFor(24, true));
     expect(m.get(PROP.textColor)).toBe(abgr(255, 255, 255));
   });
+  test("appends 54px regular and bold slots without renumbering legacy slots", () => {
+    expect(fontSlotFor(36, true)).toBe(13);
+    expect(fontSlotFor(54, false)).toBe(14);
+    expect(fontSlotFor(54, true)).toBe(15);
+    expect(props(parseClassLiteral("text-5xl font-bold")).get(PROP.fontSlot)).toBe(15);
+  });
   test("font-bold alone defaults to 16px bold", () => {
     const m = props(parseClassLiteral("font-bold"));
     expect(m.get(PROP.fontSlot)).toBe(fontSlotFor(16, true));

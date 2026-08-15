@@ -1,7 +1,8 @@
 // framework/compiler/bake-font.ts — bakes Inter into FONT ATLAS blobs (spec.ts format).
 //
 // One blob per font slot (a (weight, px) pair — slot table pinned in
-// framework/compiler/tailwind.ts, sizes 12/14/16/18/20/24/36, regular + bold [R]).
+// framework/compiler/tailwind.ts, legacy sizes 12/14/16/18/20/24/36 in slots
+// 0..13 plus append-only 54px regular/bold slots 14..15 [R]).
 // Charset = codepoints collected from the AST scan + ASCII 32..126 ALWAYS +
 // an extraChars option [R]. Codepoints the font does not map are simply left
 // out — the core resolves cmap misses to gid 0 (tofu) at runtime.

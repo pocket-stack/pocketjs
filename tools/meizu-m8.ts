@@ -38,6 +38,7 @@ const toolchain = JSON.parse(
 };
 const cache = join(homedir(), ".cache/pocket-stack", toolchain.cachePath);
 const manifestPath = join(repository, "apps/meizu-m8-demo/pocket.json");
+const shellIcon = join(repository, "apps/meizu-m8-demo/icon80.png");
 const planPath = join(repository, ".pocket/meizu-m8/meizu-m8-demo.plan.json");
 const guestDirectory = join(repository, "dist/meizu-m8/guest");
 const nativeBuild = join(repository, ".pocket-build/meizu-m8/runtime");
@@ -463,6 +464,7 @@ function deploy(): void {
   const pmkdir = synceTool("pmkdir");
   const pcp = synceTool("pcp");
   const prun = synceTool("prun");
+  const registry = synceTool("registry");
   const receipt = JSON.parse(
     readFileSync(join(outputDirectory, "build-receipt.json"), "utf8"),
   ) as { readonly buildId: string };
@@ -472,8 +474,10 @@ function deploy(): void {
   const remoteDirectory = "/Program Files/PocketJS";
   const remoteFilename = `PocketJS-${receipt.buildId}.exe`;
   const remoteStopFilename = `PocketJSStop-${receipt.buildId}.exe`;
+  const remoteIconFilename = "PocketJS80.png";
   const remoteExecutable = `:${remoteDirectory}/${remoteFilename}`;
   const remoteStopExecutable = `:${remoteDirectory}/${remoteStopFilename}`;
+  const remoteIcon = `:${remoteDirectory}/${remoteIconFilename}`;
   const env = synceEnvironment();
   const mkdirResult = run(pmkdir, [remoteDirectory], repository, env);
   if (mkdirResult.exitCode !== 0 && !mkdirResult.stderr.includes("already exists")) {
@@ -501,13 +505,40 @@ function deploy(): void {
   if (copyResult.exitCode !== 0 && !copyResult.stderr.includes("already exists")) {
     throw new Error(`PocketJS Meizu M8: remote copy failed: ${copyResult.stderr}`);
   }
+  const iconCopyResult = run(pcp, [shellIcon, remoteIcon], repository, env);
+  if (iconCopyResult.exitCode !== 0 &&
+      !iconCopyResult.stderr.includes("already exists")) {
+    throw new Error(`PocketJS Meizu M8: shell icon copy failed: ${iconCopyResult.stderr}`);
+  }
+  const shellKey = "SOFTWARE\\Meizu\\MiniOneShell\\Main\\PocketJS";
+  const createShellKey = run(registry, ["-n", "HKLM", shellKey], repository, env);
+  if (createShellKey.exitCode !== 0 &&
+      !`${createShellKey.stdout}\n${createShellKey.stderr}`.includes("already exists")) {
+    throw new Error(`PocketJS Meizu M8: shell registry key failed: ${createShellKey.stderr}`);
+  }
+  const shellValues = [
+    ["sz", "DisplayName", "PocketJS"],
+    ["sz", "ExecFileName", `\\Program Files\\PocketJS\\${remoteFilename}`],
+    ["sz", "ProgramID", "{E785E2C6-7AC7-4041-9C3D-F49C8AB36374}"],
+    ["sz", "DefaultIcon", `\\Program Files\\PocketJS\\${remoteIconFilename}`],
+    ["dword", "Order", "1"],
+    ["dword", "Page", "1"],
+  ] as const;
+  for (const [type, name, value] of shellValues) {
+    mustRun(
+      registry,
+      ["-t", type, "-w", "HKLM", shellKey, name, value],
+      repository,
+      env,
+    );
+  }
   mustRun(
     prun,
     [`\\Program Files\\PocketJS\\${remoteFilename}`],
     repository,
     env,
   );
-  console.log(`PocketJS Meizu M8: deployed and launched ${remoteExecutable}`);
+  console.log(`PocketJS Meizu M8: deployed, registered, and launched ${remoteExecutable}`);
 }
 
 function setupRapi(): void {

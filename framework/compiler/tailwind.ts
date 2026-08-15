@@ -38,14 +38,20 @@ import { bakedTimelines, loopToFrames, resolveAnimation } from "./animation.ts";
 // Font slots (build-assigned, pinned here — bake-font.ts uses the same table)
 // ---------------------------------------------------------------------------
 
-/** Baked px sizes, index-aligned with slot numbers (docs/DESIGN.md pinned slots). */
+/** Legacy baked px sizes, index-aligned with slots 0..6 and 7..13. */
 export const FONT_PX = [12, 14, 16, 18, 20, 24, 36] as const;
+const LARGE_FONT_PX = 54;
+const LARGE_FONT_REGULAR_SLOT = 14;
+const LARGE_FONT_BOLD_SLOT = 15;
 const TEXT_SIZE_PX: Record<string, number> = {
-  xs: 12, sm: 14, base: 16, lg: 18, xl: 20, "2xl": 24, "4xl": 36,
+  xs: 12, sm: 14, base: 16, lg: 18, xl: 20, "2xl": 24, "4xl": 36, "5xl": 54,
 };
 
 /** Slot index for a (px, weight) pair: 0..6 regular, 7..13 bold. */
 export function fontSlotFor(px: number, bold: boolean): number {
+  if (px === LARGE_FONT_PX) {
+    return bold ? LARGE_FONT_BOLD_SLOT : LARGE_FONT_REGULAR_SLOT;
+  }
   const i = (FONT_PX as readonly number[]).indexOf(px);
   if (i < 0) throw new Error(`PocketJS tailwind: no font slot for ${px}px`);
   return bold ? 7 + i : i;
@@ -53,6 +59,8 @@ export function fontSlotFor(px: number, bold: boolean): number {
 
 /** (px, bold) for a slot index — inverse of fontSlotFor. */
 export function fontSlotInfo(slot: number): { px: number; bold: boolean } {
+  if (slot === LARGE_FONT_REGULAR_SLOT) return { px: LARGE_FONT_PX, bold: false };
+  if (slot === LARGE_FONT_BOLD_SLOT) return { px: LARGE_FONT_PX, bold: true };
   const bold = slot >= 7;
   const px = FONT_PX[bold ? slot - 7 : slot];
   if (px === undefined) throw new Error(`PocketJS tailwind: bad font slot ${slot}`);

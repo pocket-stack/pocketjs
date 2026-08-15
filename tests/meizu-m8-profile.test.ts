@@ -115,6 +115,7 @@ describe("private Meizu M8 build profile", () => {
       "utf8",
     );
     const app = readFileSync(join(repository, "apps/meizu-m8-demo/app.tsx"), "utf8");
+    const shellIcon = readFileSync(join(repository, "apps/meizu-m8-demo/icon80.png"));
     const guestRuntime = readFileSync(
       join(repository, "hosts/iphone2g/pocket_runtime.c"),
       "utf8",
@@ -122,11 +123,17 @@ describe("private Meizu M8 build profile", () => {
     expect(runtime).toContain("SetDIBitsToDevice(");
     expect(runtime).not.toContain("HWND_TOPMOST");
     expect(runtime).toContain("word == VK_HOME || word == VK_ESCAPE");
-    expect(runtime).toContain("LOWORD(word) == WA_INACTIVE");
+    expect(runtime).not.toContain("case WM_ACTIVATE:");
     expect(guestRuntime).toContain("0x80000000U | (y << 10) | x");
     expect(tooling).toContain('fields.logical_viewport !== receipt.hostContract.viewport.logical.join("x")');
     expect(tooling).toContain("bytes.readInt32LE(18)");
     expect(tooling).toContain("bytes.readInt32LE(22)");
+    expect(tooling).toContain('"SOFTWARE\\\\Meizu\\\\MiniOneShell\\\\Main\\\\PocketJS"');
+    expect(tooling).toContain('"ExecFileName"');
+    expect(tooling).toContain('"DefaultIcon"');
+    expect(shellIcon.subarray(1, 4).toString("ascii")).toBe("PNG");
+    expect(shellIcon.readUInt32BE(16)).toBe(80);
+    expect(shellIcon.readUInt32BE(20)).toBe(80);
     expect(sessionScript).toContain('/usr/bin/pgrep -P "$PPPD_PID"');
     expect(sessionScript).toContain('kill -KILL "$PPPD_PID"');
     expect(runtime).toContain('"gdi_composites=%lu\\r\\n"');
@@ -141,6 +148,7 @@ describe("private Meizu M8 build profile", () => {
     expect(stopOld).toContain('L"PocketJS-"');
     expect(app).toContain('reportAppAction("hero_tap", count)');
     expect(app).toContain('headline="JSX on M8"');
+    expect(app).toContain("largeLayout");
     expect(app).not.toContain("JSX on Meizu M8");
   });
 });
