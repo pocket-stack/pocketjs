@@ -30,7 +30,7 @@ describe("private Meizu M8 build profile", () => {
       display: {
         physicalViewport: MEIZU_M8_PHYSICAL_VIEWPORT,
         logicalViewports: [MEIZU_M8_LOGICAL_VIEWPORT],
-        presentations: ["stretch"],
+        presentations: ["native"],
         rasterDensity: 1,
       },
       capabilities: ["input.touch", "text.glyphs.baked"],
@@ -46,7 +46,7 @@ describe("private Meizu M8 build profile", () => {
     expect(plan.viewport).toEqual({
       logical: MEIZU_M8_LOGICAL_VIEWPORT,
       physical: MEIZU_M8_PHYSICAL_VIEWPORT,
-      presentation: "stretch",
+      presentation: "native",
       rasterDensity: 1,
     });
     expect(plan.features).toEqual({
@@ -56,14 +56,14 @@ describe("private Meizu M8 build profile", () => {
     expect(verifyPlanHash(plan)).toBe(true);
   });
 
-  test("rejects unsupported buttons and physical-coordinate logical height", () => {
+  test("rejects unsupported buttons and a non-native logical viewport", () => {
     const needsButtons = manifest();
     needsButtons.engine.capabilities.requires.push("input.buttons");
     expect(() => resolveMeizuM8BuildPlan(needsButtons)).toThrow("input.buttons");
 
-    const tooTall = manifest();
-    tooTall.app.viewport.fixed.logical = [480, 720];
-    expect(() => resolveMeizuM8BuildPlan(tooTall)).toThrow("480x720");
+    const stretched = manifest();
+    stretched.app.viewport.fixed.logical = [320, 480];
+    expect(() => resolveMeizuM8BuildPlan(stretched)).toThrow("320x480");
   });
 
   test("type-checks explicit PocketJS imports in the Solid demo", () => {
@@ -109,8 +109,20 @@ describe("private Meizu M8 build profile", () => {
     const runtime = readFileSync(join(repository, "hosts/meizu-m8/runtime.c"), "utf8");
     const bridge = readFileSync(join(repository, "tools/meizu-m8/usb-serial.c"), "utf8");
     const stopOld = readFileSync(join(repository, "hosts/meizu-m8/stop-old.c"), "utf8");
+    const tooling = readFileSync(join(repository, "tools/meizu-m8.ts"), "utf8");
     const app = readFileSync(join(repository, "apps/meizu-m8-demo/app.tsx"), "utf8");
-    expect(runtime).toContain("StretchDIBits(");
+    const guestRuntime = readFileSync(
+      join(repository, "hosts/iphone2g/pocket_runtime.c"),
+      "utf8",
+    );
+    expect(runtime).toContain("SetDIBitsToDevice(");
+    expect(runtime).not.toContain("HWND_TOPMOST");
+    expect(runtime).toContain("word == VK_HOME || word == VK_ESCAPE");
+    expect(runtime).toContain("LOWORD(word) == WA_INACTIVE");
+    expect(guestRuntime).toContain("0x80000000U | (y << 10) | x");
+    expect(tooling).toContain('fields.logical_viewport !== receipt.hostContract.viewport.logical.join("x")');
+    expect(tooling).toContain("bytes.readInt32LE(18)");
+    expect(tooling).toContain("bytes.readInt32LE(22)");
     expect(runtime).toContain('"gdi_composites=%lu\\r\\n"');
     expect(runtime).toContain("pocket_runtime_hit_test_bounds");
     expect(runtime).toContain("pocket_runtime_action_sequence");
@@ -122,5 +134,7 @@ describe("private Meizu M8 build profile", () => {
     expect(stopOld).toContain("WM_CLOSE");
     expect(stopOld).toContain('L"PocketJS-"');
     expect(app).toContain('reportAppAction("hero_tap", count)');
+    expect(app).toContain('headline="JSX on M8"');
+    expect(app).not.toContain("JSX on Meizu M8");
   });
 });

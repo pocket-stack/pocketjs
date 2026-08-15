@@ -564,7 +564,15 @@ function status(requireAction = false): void {
   mkdirSync(nativeBuild, { recursive: true });
   const receipt = JSON.parse(
     readFileSync(join(outputDirectory, "build-receipt.json"), "utf8"),
-  ) as { readonly buildId: string };
+  ) as {
+    readonly buildId: string;
+    readonly hostContract: {
+      readonly viewport: {
+        readonly logical: readonly [number, number];
+        readonly physical: readonly [number, number];
+      };
+    };
+  };
   const first = readDeviceStatus(destination, receipt.buildId);
   mustRun("/bin/sleep", ["2"]);
   const fields = readDeviceStatus(destination, receipt.buildId);
@@ -573,6 +581,10 @@ function status(requireAction = false): void {
   }
   if (fields.build_id !== receipt.buildId) {
     throw new Error("PocketJS Meizu M8: device is running a stale build");
+  }
+  if (fields.logical_viewport !== receipt.hostContract.viewport.logical.join("x") ||
+      fields.physical_viewport !== receipt.hostContract.viewport.physical.join("x")) {
+    throw new Error("PocketJS Meizu M8: device is not rendering the resolved viewport");
   }
   if (Number(fields.guest_frames) < 1 || Number(fields.gdi_composites) < 1) {
     throw new Error("PocketJS Meizu M8: guest frames have not reached the LCD compositor");
@@ -593,7 +605,12 @@ function capture(): void {
   const destination = join(nativeBuild, "device-frame.bmp");
   const receipt = JSON.parse(
     readFileSync(join(outputDirectory, "build-receipt.json"), "utf8"),
-  ) as { readonly buildId: string };
+  ) as {
+    readonly buildId: string;
+    readonly hostContract: {
+      readonly viewport: { readonly physical: readonly [number, number] };
+    };
+  };
   mkdirSync(nativeBuild, { recursive: true });
   rmSync(destination, { force: true });
   mustRun(synceTool("pcp"), [
@@ -603,6 +620,14 @@ function capture(): void {
   const bytes = readFileSync(destination);
   if (bytes.length < 54 || bytes.subarray(0, 2).toString("ascii") !== "BM") {
     throw new Error("PocketJS Meizu M8: device capture is not a BMP framebuffer");
+  }
+  const width = bytes.readInt32LE(18);
+  const height = Math.abs(bytes.readInt32LE(22));
+  const [expectedWidth, expectedHeight] = receipt.hostContract.viewport.physical;
+  if (width !== expectedWidth || height !== expectedHeight) {
+    throw new Error(
+      `PocketJS Meizu M8: device framebuffer is ${width}x${height}, expected ${expectedWidth}x${expectedHeight}`,
+    );
   }
   console.log(`PocketJS Meizu M8: device framebuffer -> ${destination}`);
 }

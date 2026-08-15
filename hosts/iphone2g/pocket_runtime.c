@@ -638,9 +638,11 @@ int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit
     return 0;
   }
   if (touch_down) {
-    uint32_t x = (uint32_t)(touch_x < 0 ? 0 : touch_x > 511 ? 511 : touch_x);
-    uint32_t y = (uint32_t)(touch_y < 0 ? 0 : touch_y > 511 ? 511 : touch_y);
-    uint32_t packed = (y << 9) | x;
+    uint32_t x = (uint32_t)(touch_x < 0 ? 0 : touch_x > 1023 ? 1023 : touch_x);
+    uint32_t y = (uint32_t)(touch_y < 0 ? 0 : touch_y > 1023 ? 1023 : touch_y);
+    uint32_t packed = x > 511 || y > 511
+      ? 0x80000000U | (y << 10) | x
+      : (y << 9) | x;
     if (JS_SetPropertyUint32(
           context,
           touch_array,

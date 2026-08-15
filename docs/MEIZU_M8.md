@@ -1,6 +1,8 @@
 # Meizu M8 / M8SE
 
-PocketJS runs on the original Meizu M8 as a Windows CE 6 ARM application. **The host embeds QuickJS and the Rust software renderer in one `PocketJS.exe`, then copies the 320×480 BGRA framebuffer to the 480×720 LCD with GDI.** The logical height stays below the 9-bit touch-coordinate limit in Host ABI 8.
+PocketJS runs on the original Meizu M8 as a Windows CE 6 ARM application. **The host embeds QuickJS and the Rust software renderer in one `PocketJS.exe`, then copies its native 480×720 BGRA framebuffer to the 480×720 LCD with GDI without stretching.** Host ABI 8 uses its wide touch-word format for the full native coordinate range.
+
+**The PocketJS window is not system-topmost.** Pressing Home or Escape closes it, and losing foreground activation also closes it so the Windows CE shell can regain the display.
 
 The port targets the USB identity `0547:2720`, exposed by the phone as `MEIZU M8SE USB Serial`. **USB deployment uses the phone's WceUsbSh ActiveSync serial function, PPP, and RAPI; it does not flash firmware or modify a partition.**
 
@@ -32,6 +34,6 @@ bun meizu-m8 accept
 bun meizu-m8 capture
 ```
 
-`deploy` creates `\Program Files\PocketJS`, runs a helper that attempts to terminate only earlier `PocketJS.exe` and `PocketJS-*.exe` processes, copies a build-ID-qualified executable, and launches it through RAPI. **Status and framebuffer receipts use build-ID-qualified paths, so an earlier process cannot overwrite the current build's evidence.** `status` requires advancing guest frames plus successful GDI composites. `capture` retrieves the current build's device-generated framebuffer BMP from `\Temp`.
+`deploy` creates `\Program Files\PocketJS`, runs a helper that attempts to terminate only earlier `PocketJS.exe` and `PocketJS-*.exe` processes, copies a build-ID-qualified executable, and launches it through RAPI. **Status and framebuffer receipts use build-ID-qualified paths, so an earlier process cannot overwrite the current build's evidence.** `status` requires advancing guest frames, successful GDI composites, and the resolved 480×720 logical and physical viewports. `capture` retrieves the current build's device-generated framebuffer BMP from `\Temp` and rejects a frame that is not 480×720.
 
 Tap the blue Hero control before running `accept`. **Acceptance requires `action_name=hero_tap`, a positive action value and sequence, and a completed touch sequence in the live device status.**

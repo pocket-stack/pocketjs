@@ -9,13 +9,13 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
 /**
  * Development profile for the original Windows CE 6 Meizu M8/M8SE.
  *
- * The 320x480 logical surface stays inside HostFrameInput's 9-bit touch
- * coordinates and is stretched by the GDI host to the device's 480x720 LCD.
+ * The logical surface matches the 480x720 LCD. Host ABI 8's wide touch words
+ * carry the full native coordinate range without device-specific app input.
  * It remains private until the full hardware acceptance receipt passes.
  */
 export const MEIZU_M8_DEV_TARGET_ID = "meizu-m8-dev";
 export const MEIZU_M8_DEV_HOST_ABI = 8;
-export const MEIZU_M8_LOGICAL_VIEWPORT = [320, 480] as const;
+export const MEIZU_M8_LOGICAL_VIEWPORT = [480, 720] as const;
 export const MEIZU_M8_PHYSICAL_VIEWPORT = [480, 720] as const;
 
 export const MEIZU_M8_DEV_CONTRACTS = definePlatformContractRegistry(
@@ -28,7 +28,7 @@ export const MEIZU_M8_DEV_CONTRACTS = definePlatformContractRegistry(
       display: {
         physicalViewport: MEIZU_M8_PHYSICAL_VIEWPORT,
         logicalViewports: [MEIZU_M8_LOGICAL_VIEWPORT],
-        presentations: ["stretch"],
+        presentations: ["native"],
         rasterDensity: 1,
       },
       capabilities: ["input.touch", "text.glyphs.baked"],

@@ -16,8 +16,8 @@
     "framework": "solid",
     "viewport": {
       "fixed": {
-        "logical": [320, 480],
-        "presentation": "stretch"
+        "logical": [480, 720],
+        "presentation": "native"
       }
     }
   }

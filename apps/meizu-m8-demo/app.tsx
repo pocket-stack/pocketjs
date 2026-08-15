@@ -6,7 +6,7 @@ export default function MeizuM8Hero() {
     <Hero
       actionLabel="Tap Hero"
       deviceLabel="running on a 2009 Windows CE touchscreen."
-      headline="JSX on Meizu M8."
+      headline="JSX on M8"
       onAction={(count) => reportAppAction("hero_tap", count)}
       presentationHz={60}
       runtimeLabel="RUST + QUICKJS + GDI"
