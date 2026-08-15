@@ -52,4 +52,15 @@ describe("declared test suite", () => {
     expect(meizuM8Tests).not.toHaveLength(0);
     expect(meizuM8Tests.filter((file) => !declared.has(file))).toEqual([]);
   });
+
+  test("runs every iPod touch test in the CI unit stage", () => {
+    const declared = unitTestFiles();
+    const ipodtouchTests = readdirSync(join(repository, "tests"))
+      .filter((file) => /^ipodtouch-.*\.test\.ts$/.test(file))
+      .map((file) => `tests/${file}`)
+      .sort();
+
+    expect(ipodtouchTests).not.toHaveLength(0);
+    expect(ipodtouchTests.filter((file) => !declared.has(file))).toEqual([]);
+  });
 });

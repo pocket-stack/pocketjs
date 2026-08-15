@@ -5,7 +5,7 @@
 import { $ } from "bun";
 import { join } from "node:path";
 
-const prefix = (await $`brew --prefix mgba`.text()).trim();
+const prefix = process.env.MGBA_PREFIX ?? (await $`brew --prefix mgba`.text()).trim();
 const here = import.meta.dir;
 const out = join(here, "mgba_runner");
 

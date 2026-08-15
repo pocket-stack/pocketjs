@@ -27,7 +27,7 @@
 
 import { onCleanup, type JSX as SolidJSX } from "solid-js";
 import { BTN, ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
-import { ticksPerFrame } from "./clock.ts";
+import { ticksPerFrame, TICKS_PER_SECOND } from "./clock.ts";
 import { getOps, hostViewport } from "./host.ts";
 import { analogX, analogY, onFrame } from "./frame.ts";
 import * as hot from "./hot.ts";
@@ -117,21 +117,27 @@ export interface DeepZoomProps {
   onView?: (view: DeepZoomView) => void;
 }
 
-// Motion constants are PER 1/60s TICK and scaled by the virtual-clock policy
-// (ticksPerFrame = 60/simulationHz) each frame, so a one-second nub hold pans
-// the same document distance at every simulationHz — DeepZoom trajectories
-// obey the same subsampling property as core animations (docs/DETERMINISM.md).
-//
+// Motion constants are PER TICK and scaled by the virtual-clock policy
+// (ticksPerFrame = TICKS_PER_SECOND/simulationHz) each frame, so a one-second
+// nub hold pans the same document distance at every simulationHz — DeepZoom
+// trajectories obey the same subsampling property as core animations
+// (docs/DETERMINISM.md). They are quoted for the spec 1/60 s tick and
+// re-based once here for a realm that declared another rate, so a second of
+// held input also travels the same distance at every tick rate.
+const TICK_SCALE = 60 / TICKS_PER_SECOND;
+const perTick = (at60: number) => (TICK_SCALE === 1 ? at60 : at60 ** TICK_SCALE);
 // Screen-space pan speed at full nub tilt (px/tick) — zoom-invariant.
-const PAN_SPEED = 7;
+const PAN_SPEED = 7 * TICK_SCALE;
 // D-pad pan speed (px/tick) for stickless hosts.
-const DPAD_SPEED = 5;
-// Zoom factor per tick while a trigger is held (~×2 in 20 ticks).
-const ZOOM_STEP = 1.035;
+const DPAD_SPEED = 5 * TICK_SCALE;
+// Zoom factor per tick while a trigger is held (~×2 in 20 ticks at 60 Hz).
+const ZOOM_STEP = perTick(1.035);
 // Velocity smoothing per tick: approach factor toward the input target, and
-// the decay once input releases (momentum glide).
-const VEL_APPROACH = 0.35;
-const VEL_DECAY = 0.88;
+// the decay once input releases (momentum glide). The approach rebase runs
+// through the complement, so its 60 path takes the early return explicitly —
+// 1 - (1 - 0.35) recovering 0.35 exactly is float luck, not construction.
+const VEL_APPROACH = TICK_SCALE === 1 ? 0.35 : 1 - perTick(1 - 0.35);
+const VEL_DECAY = perTick(0.88);
 // Switch mip level only when the ideal level differs this long (frames), so
 // a zoom hovering at a boundary doesn't thrash mount/unmount.
 const LEVEL_DEBOUNCE = 8;
@@ -402,11 +408,11 @@ export function DeepZoom(props: DeepZoomProps): SolidJSX.Element {
     syncLiveViewport();
     if (doc !== props.doc) initDoc(props.doc); // app swapped pages
 
-    // Virtual-clock scaling: 60/simulationHz ticks elapse per frame. The
-    // integrator runs ONCE PER TICK (not once per frame with a dt factor) so
-    // a low-hz trajectory is the exact subsample of the 60 Hz one — the same
-    // discrete recurrence, evaluated at the same tick indices, from inputs
-    // held constant across the frame (docs/DETERMINISM.md).
+    // Virtual-clock scaling: TICKS_PER_SECOND/simulationHz ticks elapse per
+    // frame. The integrator runs ONCE PER TICK (not once per frame with a dt
+    // factor) so a low-hz trajectory is the exact subsample of the full-rate
+    // one — the same discrete recurrence, evaluated at the same tick indices,
+    // from inputs held constant across the frame (docs/DETERMINISM.md).
     const dt = ticksPerFrame();
 
     const gesture = props.gestureSource?.() ?? null;

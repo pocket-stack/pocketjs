@@ -6,7 +6,7 @@ import { Application, File, Frame, GridLayout, Page, Screen, knownFolders } from
 import { PocketHostView, PocketView } from '@nativescript/pocketjs';
 
 type BridgeCommand = { t?: string; id?: number; kind?: string; payload?: { n?: number } };
-type StagedApp = { app: string; externalGuest?: boolean };
+type StagedApp = { app: string; externalGuest?: boolean; tickHz?: number };
 type StagedPlan = { viewport: { logical: [number, number]; rasterDensity: number } };
 
 function readJson<T>(relativePath: string): T {
@@ -30,6 +30,9 @@ function createMainPage(): Page {
   // Glyph atlases bake at build density; the surface must raster at the same
   // scale or text renders soft. Never leave this to the screen-scale default.
   pocket.density = plan.viewport.rasterDensity;
+  // Virtual time is baked into the bundle the same way glyphs are baked into
+  // the atlases: the display link has to run at the rate it was built for.
+  pocket.tickRate = staged.tickHz ?? 60;
   const width = Screen.mainScreen.widthDIPs;
   pocket.width = width as never;
   pocket.height = Math.round((width * logicalHeight) / logicalWidth) as never;

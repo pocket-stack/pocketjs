@@ -12,8 +12,10 @@
 //!     from its old parent first. anchor 0 = append.
 //!   - `destroy_node` destroys the subtree, frees its anim tracks, and clears
 //!     focus if the focused node is inside.
-//!   - `tick()` advances EXACTLY spec::FIXED_DT per call (frame content is a
-//!     pure function of frame index — byte-exact goldens depend on it).
+//!   - `tick()` advances EXACTLY one fixed step per call — spec::FIXED_DT
+//!     unless `set_tick_rate` declared another rate before the first tick
+//!     (frame content is a pure function of frame index — byte-exact
+//!     goldens depend on it).
 //!   - `draw()` output is fully CPU-clipped: every coordinate in the DrawList
 //!     is inside [0, SCREEN_W] x [0, SCREEN_H] (see spec.ts DRAWLIST comment).
 //!
@@ -51,6 +53,15 @@ pub use draw::DrawList;
 
 /// CLUT byte size: 256 entries x u32 ABGR (the GE CLUT8 palette).
 const TEX_PALETTE_BYTES: usize = 1024;
+
+/// Integer form of `spec::FIXED_DT` — the tick rate a realm runs at unless
+/// `set_tick_rate` declares another one before the first `tick()`.
+const DEFAULT_TICK_HZ: u32 = 60;
+
+/// Highest declarable tick rate. Above this the `ms * hz` intermediate in
+/// `ms_to_frames` would overflow its `as u32` narrowing for ordinary
+/// durations, and no display drives faster anyway.
+pub const MAX_TICK_HZ: u32 = 240;
 
 /// One uploaded texture. Pixels are copied into 16-byte-aligned storage so
 /// the PSP GE can sample them directly (the wasm rasterizer reads them via
@@ -252,6 +263,16 @@ pub struct Ui {
     touch_table: touch::HitTable,
     /// Frame counter advanced by `tick()` (drives fixed-dt animation).
     frame: u64,
+    /// Whether `tick()` has ever run. The `set_tick_rate` gate — `frame`
+    /// alone would miss a realm whose every tick was swallowed by
+    /// `debug_pause`, leaving the step size mutable mid-run.
+    ticked: bool,
+    /// Seconds of virtual time one `tick()` advances.
+    dt: f32,
+    /// The integer rate backing `dt`. Kept alongside it so duration-ms to
+    /// frame-count conversions stay exact integer arithmetic (round-tripping
+    /// through `1.0 / dt` would perturb byte-exact goldens).
+    tick_hz: u32,
     /// DevTools (spec ops 18..22, docs/DEVTOOLS.md). All default-off.
     inspect_id: i32,
     /// World AABB (x, y, w, h) of the inspected node, captured by the last
@@ -305,6 +326,9 @@ impl Ui {
             cursor_pos: (0.0, 0.0),
             touch_table: touch::HitTable::default(),
             frame: 0,
+            ticked: false,
+            dt: spec::FIXED_DT,
+            tick_hz: DEFAULT_TICK_HZ,
             inspect_id: 0,
             inspect_rect: None,
             inspect_drawn: None,
@@ -316,6 +340,25 @@ impl Ui {
     /// Raster pixels per logical UI pixel for core-owned bitmap resources.
     pub fn raster_density(&self) -> u32 {
         self.raster_density
+    }
+
+    /// Declare how many `tick()` calls make one second of virtual time
+    /// (spec default 60, at most `MAX_TICK_HZ`). Rejected once the first
+    /// `tick()` has run — even a `debug_pause`d one: a realm's frame content
+    /// is a pure function of its frame index, so the step size has to be
+    /// constant for the whole run. Returns whether the rate was applied.
+    pub fn set_tick_rate(&mut self, hz: u32) -> bool {
+        if hz == 0 || hz > MAX_TICK_HZ || self.ticked {
+            return false;
+        }
+        self.tick_hz = hz;
+        self.dt = 1.0 / hz as f32;
+        true
+    }
+
+    /// Ticks per second of virtual time (see `set_tick_rate`).
+    pub fn tick_rate(&self) -> u32 {
+        self.tick_hz
     }
 
     /// Monotonic token for texture/font/style contents consumed by renderers.
@@ -754,6 +797,7 @@ impl Ui {
             dur_ms,
             easing,
             delay_ms,
+            self.tick_hz,
         );
         if anim_id > 0 {
             let node = &mut self.tree.slots[slot as usize];
@@ -922,9 +966,11 @@ impl Ui {
 
     // ---- frame -------------------------------------------------------------
 
-    /// Advance one frame: tick animations by exactly spec::FIXED_DT, then
-    /// re-run layout if dirty. Call once per vblank, BEFORE `draw()`.
+    /// Advance one frame: tick animations by exactly one `set_tick_rate`
+    /// step, then re-run layout if dirty. Call once per vblank, BEFORE
+    /// `draw()`.
     pub fn tick(&mut self) {
+        self.ticked = true;
         if self.paused {
             if !self.step_pending {
                 return;
@@ -937,7 +983,7 @@ impl Ui {
             if !self.anims.tracks[tslot as usize].alive {
                 continue;
             }
-            let (value, done) = self.anims.tracks[tslot as usize].step();
+            let (value, done) = self.anims.tracks[tslot as usize].step(self.dt);
             let (node_id, prop, kind, to) = {
                 let t = &self.anims.tracks[tslot as usize];
                 (t.node, t.prop, t.kind, t.to)
@@ -1365,6 +1411,7 @@ impl Ui {
                         tr.dur_ms as u32,
                         tr.easing,
                         tr.delay_ms as u32,
+                        self.tick_hz,
                     );
                     if aid > 0 {
                         spawned[prop as usize] = true;

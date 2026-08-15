@@ -60,7 +60,7 @@ export {
   touches,
 } from "../../framework/src/input-api.ts";
 export { createWavPlayer } from "../../framework/src/audio-api.ts";
-export { ticksPerFrame } from "../../framework/src/clock.ts";
+export { TICKS_PER_SECOND, ticksPerFrame } from "../../framework/src/clock.ts";
 export { getOps, hostViewport } from "../../framework/src/host.ts";
 export { appTable, frozenShot, launchApp } from "../../framework/src/launcher.ts";
 

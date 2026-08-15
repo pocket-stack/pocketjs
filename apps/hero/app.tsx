@@ -10,6 +10,7 @@ import {
   type NodeMirror,
 } from "@pocketjs/framework/components";
 import { animate } from "@pocketjs/framework/animation";
+import { TICKS_PER_SECOND } from "@pocketjs/framework/clock";
 import { createSpriteAnimation } from "@pocketjs/framework/lifecycle";
 import { frameworkName } from "@pocketjs/framework/solid";
 
@@ -96,7 +97,7 @@ export default function Hero(props: HeroProps = {}) {
         <View class={props.largeLayout ? "flex-row gap-6" : "flex-row gap-4"}>
           <Stat
             label="FPS"
-            value={String(props.presentationHz ?? 60)}
+            value={String(props.presentationHz ?? TICKS_PER_SECOND)}
             cls={props.largeLayout
               ? "text-2xl text-emerald-600 font-bold"
               : "text-lg text-emerald-600 font-bold"}
@@ -131,7 +132,7 @@ export default function Hero(props: HeroProps = {}) {
           <Text class={props.largeLayout
             ? "text-5xl text-slate-950 font-bold"
             : "text-4xl text-slate-950 font-bold"}>
-            {props.headline ?? "JSX at 60 FPS."}
+            {props.headline ?? `JSX at ${TICKS_PER_SECOND} FPS.`}
           </Text>
           <Image class={props.largeLayout ? "w-[60] h-[60]" : "w-10 h-10"} src={spinnerSrc()} />
         </View>

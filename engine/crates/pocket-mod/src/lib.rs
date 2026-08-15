@@ -127,6 +127,36 @@ impl Guest {
     /// instead; this is the 3-arg `globalThis.frame(buttons, analog, touches)`
     /// path for touch targets (Vita, PocketBook).
     pub fn frame_with_touches(&self, buttons: u32, analog: u32, touches: &[u32]) -> Result<()> {
+        self.frame_with_touch_facts(buttons, analog, touches, None)
+    }
+
+    /// One guest turn with touch contacts and host-resolved hit facts. `hits`
+    /// is parallel to `touches`: the host resolves each contact against the
+    /// committed frame at its down edge and carries that node id until release.
+    pub fn frame_with_touch_hits(
+        &self,
+        buttons: u32,
+        analog: u32,
+        touches: &[u32],
+        hits: &[i32],
+    ) -> Result<()> {
+        if touches.len() != hits.len() {
+            anyhow::bail!(
+                "pocket-mod: touch hit facts must be parallel to contacts ({} touches, {} hits)",
+                touches.len(),
+                hits.len()
+            );
+        }
+        self.frame_with_touch_facts(buttons, analog, touches, Some(hits))
+    }
+
+    fn frame_with_touch_facts(
+        &self,
+        buttons: u32,
+        analog: u32,
+        touches: &[u32],
+        hits: Option<&[i32]>,
+    ) -> Result<()> {
         self.ctx.with(|ctx| -> Result<()> {
             let frame: Option<Function> = ctx.globals().get("frame").ok();
             if let Some(frame) = frame {
@@ -136,10 +166,24 @@ impl Guest {
                     arr.set(i, *t)
                         .map_err(|e| anyhow!("pocket-mod: setting touch {i}: {e}"))?;
                 }
-                frame
-                    .call::<_, ()>((buttons, analog, arr))
-                    .catch(&ctx)
-                    .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
+                if let Some(hits) = hits {
+                    let hit_arr = rquickjs::Array::new(ctx.clone())
+                        .map_err(|e| anyhow!("pocket-mod: allocating touch hit array: {e}"))?;
+                    for (i, hit) in hits.iter().enumerate() {
+                        hit_arr
+                            .set(i, *hit)
+                            .map_err(|e| anyhow!("pocket-mod: setting touch hit {i}: {e}"))?;
+                    }
+                    frame
+                        .call::<_, ()>((buttons, analog, arr, hit_arr))
+                        .catch(&ctx)
+                        .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
+                } else {
+                    frame
+                        .call::<_, ()>((buttons, analog, arr))
+                        .catch(&ctx)
+                        .map_err(|e| anyhow!("pocket-mod: frame() threw: {e}"))?;
+                }
             }
             Ok(())
         })?;
@@ -330,6 +374,33 @@ mod tests {
             .unwrap();
         let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
         assert_eq!(res, "0:0:-1");
+    }
+
+    #[test]
+    fn frame_carries_parallel_touch_hit_facts() {
+        let g = Guest::new().unwrap();
+        g.eval(
+            "boot",
+            "globalThis.res = ''; \
+             globalThis.frame = (b, a, t, h) => { \
+               globalThis.res = t.length + ':' + h.length + ':' + h[0]; \
+             };",
+        )
+        .unwrap();
+        g.frame_with_touch_hits(
+            0,
+            pocketjs_core::spec::ANALOG_CENTER,
+            &[(20u32 << 9) | 10],
+            &[42],
+        )
+        .unwrap();
+        let res: String = g.with(|ctx| ctx.globals().get("res").unwrap());
+        assert_eq!(res, "1:1:42");
+
+        let error = g
+            .frame_with_touch_hits(0, pocketjs_core::spec::ANALOG_CENTER, &[1], &[])
+            .unwrap_err();
+        assert!(error.to_string().contains("parallel to contacts"));
     }
 
     #[test]

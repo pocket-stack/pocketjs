@@ -14,10 +14,13 @@ use pocketjs_core::damage::{DamagePolicy, DamageTracker};
 use pocketjs_core::raster;
 use pocketjs_core::Ui;
 
-use crate::{set_last_error, PocketAppleFrame, POCKET_APPLE_MAX_DAMAGE_REGIONS};
+use crate::{
+    set_last_error, PocketAppleFrame, MAX_TICK_HZ, MIN_TICK_HZ, POCKET_APPLE_MAX_DAMAGE_REGIONS,
+};
 
 const OK: i32 = 0;
 const ERR_BAD_ARGUMENT: i32 = -1;
+const ERR_BAD_STATE: i32 = -2;
 const ERR_PANIC: i32 = -4;
 
 pub struct SpriteReg {
@@ -40,6 +43,10 @@ pub struct PocketAppleCore {
     svc_in: VecDeque<String>,
     svc_out: VecDeque<String>,
     svc_poll_batch: CString,
+    ticked: bool,
+    /// Whether any `core_animate` ran — an ms-to-frames conversion at the
+    /// rate then in force, which `set_tick_rate` must therefore precede.
+    animated: bool,
 }
 
 fn with_core<R>(
@@ -111,6 +118,8 @@ pub extern "C" fn pocket_apple_core_create(
             svc_in: VecDeque::new(),
             svc_out: VecDeque::new(),
             svc_poll_batch: CString::default(),
+            ticked: false,
+            animated: false,
         }))
     });
     result.unwrap_or(std::ptr::null_mut())
@@ -312,6 +321,7 @@ pub extern "C" fn pocket_apple_core_animate(
     delay_ms: u32,
 ) -> i32 {
     with_core(handle, -1, |state| {
+        state.animated = true;
         state
             .ui
             .animate(id, prop as u8, to, duration_ms, easing as u8, delay_ms)
@@ -490,9 +500,36 @@ pub extern "C" fn pocket_apple_core_drain_effects(
 
 // ---- frame ----------------------------------------------------------------
 
+/// Ticks per second of the core's virtual time. 1..=240; the guest bundle
+/// mounted over this core must be built for the same rate, and the ui
+/// namespace the embedder mounts must declare it as `ui.__tickHz`. Rejected
+/// after the first `core_animate` or tick: animate converts ms to frames at
+/// the rate then in force, so declare the rate before the guest evaluates.
+#[unsafe(no_mangle)]
+pub extern "C" fn pocket_apple_core_set_tick_rate(handle: *mut PocketAppleCore, hz: u32) -> i32 {
+    with_core(handle, ERR_PANIC, |state| {
+        if state.ticked || state.animated {
+            set_last_error("tick rate must be set before the first animate or tick");
+            return ERR_BAD_STATE;
+        }
+        if !(MIN_TICK_HZ..=MAX_TICK_HZ).contains(&hz) {
+            set_last_error("tick rate must be 1 through 240 Hz");
+            return ERR_BAD_ARGUMENT;
+        }
+        if !state.ui.set_tick_rate(hz) {
+            set_last_error("tick rate must be set before the realm ticks");
+            return ERR_BAD_STATE;
+        }
+        OK
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn pocket_apple_core_tick(handle: *mut PocketAppleCore) {
-    with_core(handle, (), |state| state.ui.tick());
+    with_core(handle, (), |state| {
+        state.ticked = true;
+        state.ui.tick();
+    });
 }
 
 #[unsafe(no_mangle)]

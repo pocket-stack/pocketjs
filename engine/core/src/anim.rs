@@ -1,7 +1,8 @@
-//! Tween/spring tracks — fixed dt = spec::FIXED_DT per tick, never wall
-//! clock. Frame content is a pure function of frame index (byte-exact
-//! goldens depend on it): easings are polynomial closed forms, springs are a
-//! deterministic semi-implicit-Euler damped oscillator at the fixed dt.
+//! Tween/spring tracks — fixed dt per tick (the realm's tick rate, spec
+//! default spec::FIXED_DT), never wall clock. Frame content is a pure
+//! function of frame index (byte-exact goldens depend on it): easings are
+//! polynomial closed forms, springs are a deterministic semi-implicit-Euler
+//! damped oscillator at that fixed dt.
 //!
 //! Value plumbing (see lib.rs): a running track writes its per-frame value
 //! into the node's `anim_values`; on completion a transition track simply
@@ -12,12 +13,12 @@ use alloc::vec::Vec;
 
 use crate::spec;
 
-/// Convert a duration in ms to whole 60 Hz frames (>= 1). Widened to u64 so
-/// host-controlled durations near u32::MAX cannot overflow `ms * 60` (the
-/// result always fits back in u32: max ~257.7M frames).
+/// Convert a duration in ms to whole `hz`-rate frames (>= 1). Widened to u64
+/// so host-controlled durations near u32::MAX cannot overflow `ms * hz` (the
+/// result always fits back in u32: max ~257.7M frames at 60 Hz).
 #[inline]
-pub fn ms_to_frames(ms: u32) -> u32 {
-    (((ms as u64 * 60 + 500) / 1000) as u32).max(1)
+pub fn ms_to_frames(ms: u32, hz: u32) -> u32 {
+    (((ms as u64 * hz as u64 + 500) / 1000) as u32).max(1)
 }
 
 /// Where a track came from (decides completion semantics — see lib.rs).
@@ -192,8 +193,8 @@ pub fn interp(from: u32, to: u32, f: f32, is_color: bool) -> u32 {
 }
 
 impl Track {
-    /// Advance one fixed-dt frame. Returns (current raw value, done).
-    pub fn step(&mut self) -> (u32, bool) {
+    /// Advance one fixed-`dt` frame. Returns (current raw value, done).
+    pub fn step(&mut self, dt: f32) -> (u32, bool) {
         self.elapsed += 1;
         if self.elapsed <= self.delay {
             return (self.from, false);
@@ -209,8 +210,8 @@ impl Track {
                 (180.0f32, 12.0f32) // underdamped: visible bounce
             };
             let a = k * (1.0 - self.spring_x) - c * self.spring_v;
-            self.spring_v += a * spec::FIXED_DT;
-            self.spring_x += self.spring_v * spec::FIXED_DT;
+            self.spring_v += a * dt;
+            self.spring_x += self.spring_v * dt;
             let done = absf(1.0 - self.spring_x) < 0.0005 && absf(self.spring_v) < 0.01;
             let f = if done { 1.0 } else { self.spring_x };
             (interp(self.from, self.to, f, self.is_color), done)
@@ -274,6 +275,7 @@ impl Anims {
         dur_ms: u32,
         easing: u8,
         delay_ms: u32,
+        hz: u32,
     ) -> i32 {
         self.kill_for(node, prop);
         let slot = match self.free.pop() {
@@ -312,8 +314,8 @@ impl Anims {
             kind,
             from,
             to,
-            delay: if delay_ms == 0 { 0 } else { ms_to_frames(delay_ms) },
-            dur: ms_to_frames(dur_ms),
+            delay: if delay_ms == 0 { 0 } else { ms_to_frames(delay_ms, hz) },
+            dur: ms_to_frames(dur_ms, hz),
             easing,
             elapsed: 0,
             spring_x: 0.0,

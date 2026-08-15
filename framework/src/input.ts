@@ -36,7 +36,7 @@
 //     untouched (they run in frame.ts before this module).
 
 import { BTN, IMG_FLAG_RLE, PSM, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
-import { ticksPerFrame } from "./clock.ts";
+import { ticksPerFrame, TICKS_PER_SECOND } from "./clock.ts";
 import { analogX, analogY } from "./frame.ts";
 import { getHost, getOps, hostViewport, type HostOps } from "./host.ts";
 import { get as pakGet } from "./pak.ts";
@@ -765,7 +765,7 @@ function cursorFrame(buttons: number, pressed: number, released: number): boolea
   }
   let moved = c.fresh;
   if (vx !== 0 || vy !== 0) {
-    const dt = ticksPerFrame() / 60;
+    const dt = ticksPerFrame() / TICKS_PER_SECOND;
     const nx = Math.min(Math.max(c.x + vx * dt, 0), c.vw - 1);
     const ny = Math.min(Math.max(c.y + vy * dt, 0), c.vh - 1);
     if (nx !== c.x || ny !== c.y) {

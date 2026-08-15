@@ -102,7 +102,33 @@ describe("private iOS build profile", () => {
     const surface = readFileSync(SURFACE_VIEW_PATH, "utf8");
     expect(surface).toContain(`kPocketSurfaceHostId = "${IOS_DEV_TARGET_ID}"`);
     expect(surface).toContain(`kPocketSurfaceHostAbi = ${IOS_DEV_HOST_ABI}`);
-    expect(surface).toContain("pocket_apple_set_identity(_handle, kPocketSurfaceHostId,");
+    expect(surface).toContain("hostId:[NSString stringWithUTF8String:kPocketSurfaceHostId]");
+    expect(surface).toContain("hostAbi:kPocketSurfaceHostAbi");
+    expect(surface).toContain("pocket_apple_set_identity(_handle, hostId.UTF8String, hostAbi)");
+  });
+
+  test("the tick rate is declared before the bundle evaluates and published at mount", () => {
+    // Bundles bake their rate and refuse a host whose ui.__tickHz differs
+    // (framework/src/host.ts assertNativeHostContract), which only works if
+    // the rate reaches the realm before eval: the C ABI orders
+    // [set_tick_rate] ahead of eval_bundle, the surface applies the property
+    // in its setter (start only pins the display link), and the mounted
+    // namespace carries __tickHz.
+    const header = readFileSync(
+      join(REPOSITORY, "engine/apple/include/pocket_apple.h"),
+      "utf8",
+    );
+    expect(header).toContain("[set_tick_rate] -> eval_bundle");
+    const surface = readFileSync(SURFACE_VIEW_PATH, "utf8");
+    expect(surface).toContain("- (void)setTickRate:");
+    expect(surface.slice(surface.indexOf("- (void)start"))).not.toContain(
+      "set_tick_rate",
+    );
+    const mount = readFileSync(
+      join(REPOSITORY, "engine/crates/pocket-ui-surface/src/surface.rs"),
+      "utf8",
+    );
+    expect(mount).toContain('ns.set("__tickHz", inner.ui.tick_rate())');
   });
 
   test("type-checks the nsengine demo's explicit imports", () => {

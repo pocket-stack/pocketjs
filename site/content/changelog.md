@@ -3,6 +3,74 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.10.0 — August 15, 2026
+
+**Apps reach the network, a database and their own files, and a realm declares the rate its virtual time runs at.**
+0.10.0 adds three modules — `net`, `db` and `fs` — each behind its own
+append-only op spec, a deterministic sim host and a reference Rust core, and
+turns the core's fixed 1/60 s step into a per-realm constant chosen before the
+first tick. Every default remains 60 and the 60 Hz path is the identical
+expression throughout, so existing bundles, tapes and frame-hash goldens are
+byte-for-byte unchanged.
+
+- **`net` — bounded whole-response HTTP.** `fetch()` and `globalThis.net` over
+  five ops (`start`, `take`, `cancel`, `poll`, `lastError`), with the bounds in
+  the spec rather than in each host: **2 in flight**, **64 KB** of request,
+  **128 KB** of response by default and **256 KB** at most, 32 headers. The
+  transport never calls into QuickJS — completions are staged to tick
+  boundaries and drained one batch per tick — so a network answer cannot land
+  in the middle of a frame. Transport adapters stay host-owned; the browser dev
+  host, the sim and `engine/crates/pocket-net` exercise the contract without
+  granting network access to every host.
+- **`db` — SQLite behind five synchronous ops.** `open`, `close`, `exec`,
+  `query`, `lastError`, with rows arriving as one JSON line per `query()` call
+  rather than a cursor: at most **4 databases** per app, **4096 rows** per
+  result, names matched against a fixed pattern, and storage the host confines
+  to the app. `:memory:` is spelled the same as SQLite spells it.
+- **`fs` — a per-app file tree behind nine ops.** `read`, `write`, `remove`,
+  `list`, `stat`, `mkdir`, `rename`, `usage`, `lastError`, plus a
+  `readFileSync`/`writeFileSync` surface for code that expects one. **Every
+  path is confined to the app's own data root** — apps cannot name, let alone
+  reach, each other's trees — and the shape of a path is bounded too: **160
+  bytes**, **8 levels**, 64 bytes per segment.
+- **No stock target advertises the three capabilities yet.** `net.http`,
+  `data.sqlite` and `data.fs` are registered ahead of any console host shipping
+  them, exactly as `audio.pcm` was: the sim host and the reference cores
+  implement the whole contract, so an app can declare the requirement today,
+  run against the sim (and, for `net`, the browser dev host), and fail
+  admission cleanly where the module is absent. A device target appends the id
+  to its profile when its native host ships the module — not before.
+- **A realm declares its tick rate before its first tick.** `Ui::set_tick_rate`
+  threads `dt` through the spring integrators and every ms-to-frame conversion,
+  keeping exact integer hz alongside it so frame counts stay integers;
+  `tools/build.ts --hz` bakes the same rate into the bundle, and clock,
+  kinetics, input, deepzoom and the styles.bin ANIM TABLE all derive their
+  per-tick constants from it. The rate is **fixed for the whole run** — a
+  realm's frame content stays a pure function of its frame index, which is what
+  keeps goldens byte-exact.
+- **A bundle refuses a host that drives another rate.** The host publishes its
+  rate as `ui.__tickHz` and the bundle checks it where it already checks target
+  and host ABI. **An absent `__tickHz` means 60**, so every host that predates
+  per-realm rates keeps mounting every bundle built the ordinary way. Without
+  this a 120-baked bundle mounted on a 60-stepped core and ran at half speed
+  silently; it now fails at mount with both rates named.
+- **Modern iOS runs guests, as a transitional target.** `pocket ios
+  doctor|build|stage|play` builds against an `ios-dev` plan and launches inside
+  a NativeScript shell on an arm64 simulator, over the `pocket-apple` crate:
+  one guest realm, one UI surface, and the software rasterizer driven
+  incrementally through a damage tracker behind a small C ABI, with a UIKit
+  view compositing only what changed. The profile stays **out of
+  `POCKET_TARGETS`** until it has device-level acceptance, following the same
+  convention the iPhone 2G target used. **Known limitation:** the 120 Hz path
+  needs `@nativescript/pocketjs` 0.2.1, which is not published yet — against
+  the current 0.2.0 plugin a 120 Hz bundle refuses to mount (loudly, by the
+  rule above) while 60 Hz is unaffected.
+- **Hosts choose the guest allocator**, so an embedder with its own arena no
+  longer has to accept the default one.
+- **Site**: the landing page leads with a machine collage and per-audience
+  `/for/` pages, the in-browser playground reuses the landing PSP model, and
+  every playground demo is validated and restored on build.
+
 ## 0.9.3 — August 8, 2026
 
 **The PSP arena no longer strands the memory a QuickJS boot needs.**

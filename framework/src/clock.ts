@@ -13,11 +13,41 @@
 // hz-portable express time in seconds — `after(seconds, cb)` here, ms-based
 // animation/transition classes in styles — never in raw frame counts.
 
-/** Core ticks per second of virtual time (spec FIXED_DT = 1/60 s per tick). */
-export const TICKS_PER_SECOND = 60;
+// Replaced by tools/build.ts (`--hz=`). `typeof` keeps bundles built by
+// anything else, and the test/sim runs that import this module directly,
+// valid at the spec rate.
+declare const __POCKET_TICK_HZ__: number;
+
+/**
+ * Core ticks per second of virtual time. The realm's tick rate is baked into
+ * the bundle, so a bundle only runs correctly on a surface driven at the same
+ * rate. Spec default is FIXED_DT = 1/60 s per tick; 120 is the ProMotion rate.
+ * A number that is not a whole 1..240 rate throws HERE, at boot: downstream,
+ * divisorsOf(59.94) is [] and every tick loop would silently no-op.
+ */
+export const TICKS_PER_SECOND = validTickHz(
+  typeof __POCKET_TICK_HZ__ === "number" ? __POCKET_TICK_HZ__ : 60,
+);
+
+function validTickHz(hz: number): number {
+  if (!Number.isInteger(hz) || hz < 1 || hz > 240) {
+    throw new Error(
+      `PocketJS: __POCKET_TICK_HZ__ must be an integer from 1 through 240, got ${hz}`,
+    );
+  }
+  return hz;
+}
 
 /** The simulation rates that divide the core tick rate exactly. */
-export const VALID_HZ: readonly number[] = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
+export const VALID_HZ: readonly number[] = divisorsOf(TICKS_PER_SECOND);
+
+function divisorsOf(n: number): number[] {
+  const out: number[] = [];
+  for (let d = 1; d <= n; d++) {
+    if (n % d === 0) out.push(d);
+  }
+  return out;
+}
 
 let hz = TICKS_PER_SECOND;
 let frame = -1; // advanced to 0 on the first pump; -1 = "before boot frame"
@@ -29,7 +59,7 @@ interface Timer {
 }
 let timers: Timer[] = [];
 
-/** Snap an arbitrary rate to the nearest exact divisor of 60. */
+/** Snap an arbitrary rate to the nearest exact divisor of TICKS_PER_SECOND. */
 export function normalizeHz(raw: number): number {
   if (!Number.isFinite(raw) || raw <= 0) return TICKS_PER_SECOND;
   let best = VALID_HZ[0];
@@ -44,7 +74,7 @@ export function simulationHz(): number {
   return hz;
 }
 
-/** Core ticks the host must run per virtual frame (60 / hz, always exact). */
+/** Core ticks the host runs per virtual frame (TICKS_PER_SECOND / hz, exact). */
 export function ticksPerFrame(): number {
   return TICKS_PER_SECOND / hz;
 }

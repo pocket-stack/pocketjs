@@ -894,6 +894,42 @@ describe("host detection (host.ts)", () => {
     ).toThrow(/ABI mismatch/);
   });
 
+  test("tick-rate pairing: bundle-baked hz must match the host's declared rate", () => {
+    const ops = makeMockHost().ops;
+
+    // A 60-baked bundle accepts hosts that predate __tickHz (they only ever
+    // ran 60) and hosts that declare 60 — with or without a plan contract.
+    expect(() => assertNativeHostContract(ops, null)).not.toThrow();
+    ops.__tickHz = 60;
+    expect(() => assertNativeHostContract(ops, null)).not.toThrow();
+
+    // A host driving another rate is refused even when the plan matches.
+    ops.__host = "vita";
+    ops.__hostAbi = 1;
+    ops.__tickHz = 120;
+    expect(() =>
+      assertNativeHostContract(ops, { target: "vita", hostAbi: 1 }),
+    ).toThrow(/tick-rate mismatch/);
+
+    // A non-60 bundle (the define is read at call time — see host.ts) needs
+    // the host to declare that exact rate; silence means the 60 default.
+    const globals = globalThis as { __POCKET_TICK_HZ__?: number };
+    try {
+      globals.__POCKET_TICK_HZ__ = 120;
+      expect(() => assertNativeHostContract(ops, null)).not.toThrow();
+      delete ops.__tickHz;
+      expect(() => assertNativeHostContract(ops, null)).toThrow(
+        /declares no ui\.__tickHz/,
+      );
+      ops.__tickHz = 60;
+      expect(() => assertNativeHostContract(ops, null)).toThrow(
+        /tick-rate mismatch/,
+      );
+    } finally {
+      delete globals.__POCKET_TICK_HZ__;
+    }
+  });
+
   test("native namespace passed explicitly stays native / non-strict", () => {
     // Demo entries pass globalThis.ui to render(); object identity must keep
     // the namespace native instead of turning it into an
