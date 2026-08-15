@@ -31,6 +31,8 @@ engine/pocket3d/
 │   │   └── app            #   winit loop (fixed-step sim, mouse capture, overlay hook)
 │   ├── pocket3d-bsp/      # GoldSrc BSP v30 + WAD3: geometry, lightmaps,
 │   │                      # entities, clipnode hull tracing (no GPU deps)
+│   ├── pocket3d-world/    # renderer-free fixed-step bodies, structures,
+│   │                      # attachments, heat, moisture, and combustion
 │   ├── pocket-mod/        # guest hosting: one QuickJS realm, mounted surfaces,
 │   │                      # one guest turn per tick (the mod-runtime mechanism)
 │   ├── pocket-ui-wgpu/    # the PocketJS `ui` surface on this base: pak feeding,
@@ -185,6 +187,9 @@ scroll; the ••• menu has theme/reset/close, edits autosave to `--file`
 - New world format → produce a `WorldSource` (+ implement `TraceWorld`).
 - New game → implement the `Game` trait; compose a `Scene`; mount surfaces
   with `pocket-mod` (see docs/RUNTIMES.md for the discipline).
+- **Systemic simulation stays renderer-independent.** Use `pocket3d-world`
+  for deterministic bodies, attachments, structural damage, and reactive
+  materials, then translate its state into a `Scene` inside the game adapter.
 - More passes (decals, particles-with-physics, shadow maps) slot into
   `Renderer::render` alongside the existing ones, or hang off
   `Game::overlay`.

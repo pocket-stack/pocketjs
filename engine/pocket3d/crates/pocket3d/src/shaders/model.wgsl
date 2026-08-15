@@ -2,15 +2,30 @@
 
 struct Globals {
     view_proj: mat4x4f,
+    inverse_view_proj: mat4x4f,
     cam_pos: vec4f,
     sky_zenith: vec4f,
     sky_horizon: vec4f,
-    sun_dir: vec4f,
-    sun_color: vec4f,
+    sky_sun_dir: vec4f,
+    sky_sun_color: vec4f,
+    model_sun_dir: vec4f,
+    model_sun_color: vec4f,
+    model_ambient: vec4f,
+    // x: band count, y: wrap, z: enabled
+    toon: vec4f,
+    // rgb: color, w: strength
+    rim_color: vec4f,
+    // x: exponent
+    rim_params: vec4f,
+    // rgb: color, w: enabled
+    fog_color: vec4f,
+    // x: start, y: end
+    fog_params: vec4f,
 }
 
 struct Instance {
     model: mat4x4f,
+    normal_model: mat4x4f,
     tint: vec4f,
     // x: lit amount, y: alpha-test cutoff (0 = off), z/w unused
     params: vec4f,
@@ -48,6 +63,14 @@ struct VsOut {
     @location(2) world_pos: vec3f,
 }
 
+fn safe_normalize(v: vec3f) -> vec3f {
+    let length_squared = dot(v, v);
+    if length_squared > 1e-10 {
+        return v * inverseSqrt(length_squared);
+    }
+    return vec3f(0.0);
+}
+
 @vertex
 fn vs_main(in: VsIn) -> VsOut {
     var skin = mat4x4f(
@@ -63,15 +86,43 @@ fn vs_main(in: VsIn) -> VsOut {
             + in.weights.z * joints[in.joints.z]
             + in.weights.w * joints[in.joints.w];
     }
-    let world = instance.model * skin;
-    let wp = world * vec4f(in.pos, 1.0);
+    let skinned_pos = skin * vec4f(in.pos, 1.0);
+    let skinned_normal = (skin * vec4f(in.normal, 0.0)).xyz;
+    let wp = instance.model * skinned_pos;
 
     var out: VsOut;
     out.clip = globals.view_proj * wp;
     out.uv = in.uv;
-    out.normal = normalize((world * vec4f(in.normal, 0.0)).xyz);
+    out.normal = safe_normalize(
+        (instance.normal_model * vec4f(skinned_normal, 0.0)).xyz,
+    );
     out.world_pos = wp.xyz;
     return out;
+}
+
+fn diffuse_amount(normal: vec3f) -> f32 {
+    let light_dir = safe_normalize(globals.model_sun_dir.xyz);
+    let lambert = dot(normal, light_dir);
+    if globals.toon.z < 0.5 {
+        return max(lambert, 0.0);
+    }
+
+    let wrap = clamp(globals.toon.y, 0.0, 1.0);
+    var diffuse = clamp((lambert + wrap) / (1.0 + wrap), 0.0, 1.0);
+    let steps = floor(globals.toon.x + 0.5);
+    if steps >= 2.0 {
+        let highest_band = steps - 1.0;
+        diffuse = min(floor(diffuse * steps), highest_band) / highest_band;
+    }
+    return diffuse;
+}
+
+fn distance_fog(world_pos: vec3f) -> f32 {
+    if globals.fog_color.w < 0.5 {
+        return 0.0;
+    }
+    let distance_to_camera = distance(world_pos, globals.cam_pos.xyz);
+    return smoothstep(globals.fog_params.x, globals.fog_params.y, distance_to_camera);
 }
 
 @fragment
@@ -93,19 +144,29 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     if material.params.z > 0.5 && !front_facing {
         n = -n;
     }
-    let sun = max(dot(n, normalize(globals.sun_dir.xyz)), 0.0);
-    // Hemisphere ambient: sky color from above, warm bounce from below.
+    let sun = diffuse_amount(n);
+    // Colored shadow fill below and cool sky fill above. The coefficients
+    // retain the previous default exposure while making model ambient active.
     let hemi = mix(
-        globals.sky_horizon.rgb * 0.35,
-        globals.sky_zenith.rgb * 0.55 + vec3f(0.25),
+        globals.model_ambient.rgb * 0.72,
+        globals.model_ambient.rgb * 0.58 + globals.sky_zenith.rgb * 0.56,
         n.y * 0.5 + 0.5,
     );
+    let view_dir = safe_normalize(globals.cam_pos.xyz - in.world_pos);
+    let rim = pow(1.0 - max(dot(n, view_dir), 0.0), globals.rim_params.x)
+        * globals.rim_color.w;
     let lit_amount = instance.params.x * (1.0 - material.params.x);
     let lighting = mix(
         vec3f(1.0),
-        hemi + globals.sun_color.rgb * sun * 0.9,
+        hemi + globals.model_sun_color.rgb * sun * 0.95
+            + globals.rim_color.rgb * rim,
         lit_amount,
     );
     let alpha = select(1.0, albedo.a, material.params.w > 0.5);
-    return vec4f(albedo.rgb * lighting, alpha);
+    let color = mix(
+        albedo.rgb * lighting,
+        globals.fog_color.rgb,
+        distance_fog(in.world_pos),
+    );
+    return vec4f(color, alpha);
 }
