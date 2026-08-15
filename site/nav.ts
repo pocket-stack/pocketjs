@@ -57,6 +57,14 @@ export interface BlogPost {
 
 export const BLOG_POSTS: BlogPost[] = [
   {
+    slug: "pocketjs-on-windows-ce",
+    title: "A Message Pump, a USB Cable, and 345,600 Pixels: PocketJS on Windows CE",
+    date: "2026-08-16",
+    description:
+      "A real Solid app on a 2009 Meizu M8: one Windows CE ARM executable containing QuickJS and a Rust software renderer, a native 480×720 framebuffer handed to GDI, and an ActiveSync serial function turned into PPP and RAPI on a 2026 Mac. What the Win32 message-pump model is, why USB connected did not mean pixels visible, and how one physical phone found the scaling, touch, Home-key, and icon-cache bugs.",
+    author: { name: 'Yifeng "Evan" Wang', url: "https://github.com/doodlewind" },
+  },
+  {
     slug: "pocket-pi-agent-native-runtime",
     title: "Designing Apps for Humans and Agents in an Agent-Native Runtime",
     date: "2026-08-11",
