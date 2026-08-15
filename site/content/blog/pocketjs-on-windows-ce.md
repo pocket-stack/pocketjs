@@ -4,7 +4,7 @@ That sounds almost disappointingly familiar after [Symbian's active objects](/bl
 
 So [PocketJS](/blog/introducing-pocketjs/) now runs a real Solid application on a 2009 Windows CE 6 phone as one native ARM executable: QuickJS, a Rust layout and software-rendering core, the guest JavaScript bundle, and its assets all inside `PocketJS.exe`. The core rasterizes a native 480×720 BGRA framebuffer; GDI hands those pixels to the LCD without stretching.
 
-<img class="w-full rounded-xl border border-line" src="/assets/blog/meizu-m8-native-dialog.png" alt="A real Meizu M8 Windows CE desktop at 480 by 720. Over the phone's foliage wallpaper and Synchronizing panel is a classic native dialog titled PocketJS - Meizu M8, with a blue title bar, information icon, explanatory text, and OK button." />
+<img class="mx-auto w-full max-w-sm rounded-xl border border-line" src="/assets/blog/meizu-m8-native-dialog.png" alt="A real Meizu M8 Windows CE desktop at 480 by 720. Over the phone's foliage wallpaper and Synchronizing panel is a classic native dialog titled PocketJS - Meizu M8, with a blue title bar, information icon, explanatory text, and OK button." />
 
 <p class="text-sm text-slate-500 -mt-4">A <code>MessageBoxW</code> running on the connected M8, captured from the phone's desktop through GDI and RAPI. It is not a recreation. The “Synchronizing” window behind it is also part of the story: USB connected did not mean our pixels were on top.</p>
 
