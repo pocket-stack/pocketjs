@@ -76,10 +76,14 @@ logical viewport.** It fails instead of silently presenting the software
 rasterizer through a `CAEAGLLayer` when that contract cannot be established.
 
 SpringBoard artwork uses `hosts/iphone2g/Icon.png` as its single source.
-`Icon.png` is copied byte-for-byte and `Icon@2x.png` is baked as an exact 2×
-integer expansion, retaining the original icon's transparent rounded corners,
-chrome bevel, enamel face, and curved glass highlight. `UIPrerenderedIcon` keeps
-iOS from adding a second gloss treatment.
+The 1× `PocketClassic-v3.png` is copied byte-for-byte. The Retina
+`PocketClassic-v3@2x.png` is independently rasterized from
+`hosts/iphone4s/Icon.svg` with 8× supersampling, retaining the original icon's
+transparent rounded corners, chrome bevel, enamel face, Pocket mark, and curved
+glass highlight without duplicating each 1× source pixel into a 2×2 block. The
+versioned basename prevents SpringBoard from reusing artwork cached under an
+older bundle resource name. `UIPrerenderedIcon` keeps iOS from adding a second
+gloss treatment.
 
 `deploy` verifies the exact device identity before opening a fresh UDID-scoped
 USB tunnel. It acquires a device-side lock, uses transaction-specific paths,

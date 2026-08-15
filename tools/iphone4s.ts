@@ -15,7 +15,11 @@ import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractHostBuildInputs } from "../framework/src/manifest/host-build-inputs.ts";
-import { bakeClassicIPhoneArtwork } from "./iphone-classic-icon.ts";
+import {
+  bakeClassicIPhoneArtwork,
+  IPHONE_CLASSIC_ICON_FILE,
+  IPHONE_CLASSIC_RETINA_ICON_FILE,
+} from "./iphone-classic-icon.ts";
 import {
   IPHONE4S_TOOLCHAIN,
   inspectIPhone4SToolchain,
@@ -661,6 +665,7 @@ async function build(): Promise<void> {
     join(REPOSITORY, "hosts/iphone2g/pocket_runtime.c"),
     join(REPOSITORY, "hosts/iphone2g/compat.c"),
     join(REPOSITORY, "hosts/iphone2g/Icon.png"),
+    join(REPOSITORY, "hosts/iphone4s/Icon.svg"),
     join(REPOSITORY, "tools/iphone-classic-icon.ts"),
     join(REPOSITORY, "tools/iphone4s.ts"),
     join(REPOSITORY, "tools/iphone4s-toolchain.ts"),
@@ -723,8 +728,8 @@ async function build(): Promise<void> {
     "PocketJSiPhone4S",
     "Info.plist",
     "PkgInfo",
-    "Icon.png",
-    "Icon@2x.png",
+    IPHONE_CLASSIC_ICON_FILE,
+    IPHONE_CLASSIC_RETINA_ICON_FILE,
     "Default@2x.png",
     "Default-568h@2x.png",
   ];

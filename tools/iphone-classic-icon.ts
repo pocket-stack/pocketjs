@@ -7,28 +7,61 @@ const REPOSITORY = fileURLToPath(new URL("..", import.meta.url));
 
 /** The installed iPhone 2G artwork is the single source for legacy iPhone icons. */
 export const IPHONE_CLASSIC_ICON_SOURCE = resolve(REPOSITORY, "hosts/iphone2g/Icon.png");
+export const IPHONE_CLASSIC_RETINA_SOURCE = resolve(REPOSITORY, "hosts/iphone4s/Icon.svg");
+export const IPHONE_CLASSIC_ICON_FILE = "PocketClassic-v3.png";
+export const IPHONE_CLASSIC_RETINA_ICON_FILE = "PocketClassic-v3@2x.png";
 
-function integerScale(source: Canvas, scale: number): Canvas {
-  if (!Number.isInteger(scale) || scale < 1) {
-    throw new Error("pocket iphone artwork: scale must be a positive integer");
-  }
-  const sourceData = source.getContext("2d").getImageData(0, 0, source.width, source.height).data;
-  const output = createCanvas(source.width * scale, source.height * scale);
-  const image = output.getContext("2d").createImageData(output.width, output.height);
-  for (let y = 0; y < output.height; y += 1) {
-    const sourceY = Math.floor(y / scale);
-    for (let x = 0; x < output.width; x += 1) {
-      const sourceX = Math.floor(x / scale);
-      const sourceIndex = (sourceY * source.width + sourceX) * 4;
-      const targetIndex = (y * output.width + x) * 4;
-      image.data[targetIndex] = sourceData[sourceIndex];
-      image.data[targetIndex + 1] = sourceData[sourceIndex + 1];
-      image.data[targetIndex + 2] = sourceData[sourceIndex + 2];
-      image.data[targetIndex + 3] = sourceData[sourceIndex + 3];
+const ICON_SUPERSAMPLE = 8;
+
+function exactAreaDownsample(source: Canvas, targetWidth: number, targetHeight: number): Canvas {
+  const sourcePixels = source.getContext("2d").getImageData(0, 0, source.width, source.height).data;
+  const output = createCanvas(targetWidth, targetHeight);
+  const outputPixels = output.getContext("2d").createImageData(targetWidth, targetHeight);
+  const samplesPerPixel = ICON_SUPERSAMPLE * ICON_SUPERSAMPLE;
+  for (let y = 0; y < targetHeight; y += 1) {
+    for (let x = 0; x < targetWidth; x += 1) {
+      const totals = [0, 0, 0, 0];
+      for (let sampleY = 0; sampleY < ICON_SUPERSAMPLE; sampleY += 1) {
+        for (let sampleX = 0; sampleX < ICON_SUPERSAMPLE; sampleX += 1) {
+          const sourceIndex = (
+            ((y * ICON_SUPERSAMPLE + sampleY) * source.width) +
+            (x * ICON_SUPERSAMPLE + sampleX)
+          ) * 4;
+          totals[0] += sourcePixels[sourceIndex];
+          totals[1] += sourcePixels[sourceIndex + 1];
+          totals[2] += sourcePixels[sourceIndex + 2];
+          totals[3] += sourcePixels[sourceIndex + 3];
+        }
+      }
+      const targetIndex = (y * targetWidth + x) * 4;
+      outputPixels.data[targetIndex] = Math.round(totals[0] / samplesPerPixel);
+      outputPixels.data[targetIndex + 1] = Math.round(totals[1] / samplesPerPixel);
+      outputPixels.data[targetIndex + 2] = Math.round(totals[2] / samplesPerPixel);
+      outputPixels.data[targetIndex + 3] = Math.round(totals[3] / samplesPerPixel);
     }
   }
-  output.getContext("2d").putImageData(image, 0, 0);
+  output.getContext("2d").putImageData(outputPixels, 0, 0);
   return output;
+}
+
+async function rasterizeRetinaArtwork(width: number, height: number): Promise<Canvas> {
+  const svg = readFileSync(IPHONE_CLASSIC_RETINA_SOURCE, "utf8");
+  const rasterWidth = width * ICON_SUPERSAMPLE;
+  const rasterHeight = height * ICON_SUPERSAMPLE;
+  const sized = svg.replace(
+    'width="590" height="600"',
+    `width="${rasterWidth}" height="${rasterHeight}"`,
+  );
+  if (sized === svg) throw new Error("pocket iphone artwork: SVG canvas declaration changed");
+  const image = await loadImage(Buffer.from(sized));
+  if (image.width !== rasterWidth || image.height !== rasterHeight) {
+    throw new Error(
+      `pocket iphone artwork: SVG rasterized at ${image.width}x${image.height}, expected ${rasterWidth}x${rasterHeight}`,
+    );
+  }
+  const supersampled = createCanvas(rasterWidth, rasterHeight);
+  supersampled.getContext("2d").drawImage(image, 0, 0);
+  return exactAreaDownsample(supersampled, width, height);
 }
 
 function assertOpaque(canvas: Canvas): void {
@@ -42,16 +75,12 @@ function assertOpaque(canvas: Canvas): void {
 
 export async function bakeClassicIPhoneArtwork(outputDirectory: string): Promise<string[]> {
   mkdirSync(outputDirectory, { recursive: true });
-  const image = await loadImage(readFileSync(IPHONE_CLASSIC_ICON_SOURCE));
-  const source = createCanvas(image.width, image.height);
-  source.getContext("2d").drawImage(image, 0, 0);
-
-  const icon = resolve(outputDirectory, "Icon.png");
-  const retinaIcon = resolve(outputDirectory, "Icon@2x.png");
+  const icon = resolve(outputDirectory, IPHONE_CLASSIC_ICON_FILE);
+  const retinaIcon = resolve(outputDirectory, IPHONE_CLASSIC_RETINA_ICON_FILE);
   cpSync(IPHONE_CLASSIC_ICON_SOURCE, icon);
-  writeFileSync(retinaIcon, integerScale(source, 2).toBuffer("image/png"));
+  writeFileSync(retinaIcon, (await rasterizeRetinaArtwork(118, 120)).toBuffer("image/png"));
 
-  const launchIcon = integerScale(source, 4);
+  const launchIcon = await rasterizeRetinaArtwork(236, 240);
   const written = [icon, retinaIcon];
   for (const [name, height] of [["Default@2x.png", 960], ["Default-568h@2x.png", 1136]] as const) {
     const target = resolve(outputDirectory, name);

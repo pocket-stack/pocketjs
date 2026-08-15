@@ -17,7 +17,9 @@ import {
 import { IPHONE4S_TOOLCHAIN } from "../tools/iphone4s-toolchain.ts";
 import {
   bakeClassicIPhoneArtwork,
+  IPHONE_CLASSIC_ICON_FILE,
   IPHONE_CLASSIC_ICON_SOURCE,
+  IPHONE_CLASSIC_RETINA_ICON_FILE,
 } from "../tools/iphone-classic-icon.ts";
 import { deploymentInstallCommand, iphone4sDeploymentPaths } from "../tools/iphone4s.ts";
 
@@ -101,14 +103,14 @@ describe("private iPhone 4S profile", () => {
     expect(install.lastIndexOf("trap - EXIT HUP INT TERM")).toBeLessThan(install.lastIndexOf('rm -rf "$backup"'));
   });
 
-  test("bakes the iPhone 2G icon byte-exactly and integer-scales its Retina variant", async () => {
+  test("keeps the iPhone 2G icon byte-exact and independently rasterizes its Retina reconstruction", async () => {
     const output = mkdtempSync(join(tmpdir(), "pocket-iphone4s-artwork-"));
     try {
       await bakeClassicIPhoneArtwork(output);
-      expect(readFileSync(join(output, "Icon.png"))).toEqual(readFileSync(IPHONE_CLASSIC_ICON_SOURCE));
+      expect(readFileSync(join(output, IPHONE_CLASSIC_ICON_FILE))).toEqual(readFileSync(IPHONE_CLASSIC_ICON_SOURCE));
 
-      const one = await loadImage(join(output, "Icon.png"));
-      const two = await loadImage(join(output, "Icon@2x.png"));
+      const one = await loadImage(join(output, IPHONE_CLASSIC_ICON_FILE));
+      const two = await loadImage(join(output, IPHONE_CLASSIC_RETINA_ICON_FILE));
       expect([one.width, one.height]).toEqual([59, 60]);
       expect([two.width, two.height]).toEqual([118, 120]);
       const oneCanvas = createCanvas(one.width, one.height);
@@ -125,7 +127,12 @@ describe("private iPhone 4S profile", () => {
           expected.set(onePixels.subarray(source, source + 4), target);
         }
       }
-      expect(twoPixels).toEqual(expected);
+      expect(twoPixels).not.toEqual(expected);
+      let antialiasedAlphaPixels = 0;
+      for (let index = 3; index < twoPixels.length; index += 4) {
+        if (twoPixels[index] > 0 && twoPixels[index] < 255) antialiasedAlphaPixels += 1;
+      }
+      expect(antialiasedAlphaPixels).toBeGreaterThan(100);
     } finally {
       rmSync(output, { recursive: true, force: true });
     }
