@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -43,7 +43,7 @@ jobs:
       # npm (not bun) does the publishing. Trusted Publishing needs npm >=
       # 11.5.1 (Node 22 bundles 10.x), and no registry-url: setup-node's
       # auth-token .npmrc placeholder would fail without a token env var.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -57,7 +57,7 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo + wasm target
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
