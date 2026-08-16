@@ -177,6 +177,13 @@ describe("platform registry", () => {
       presentations: ["integer-fit"],
       rasterDensity: 2,
     });
+    // The one fixed-cadence stock host: the profile owns the 30 Hz rate
+    // (hosts/pocketbook declares it, plan builds bake it). Every other
+    // target drives — or stages per run — the spec 60, so it names none.
+    expect(POCKET_TARGETS.pocketbook.tickHz).toBe(30);
+    expect(POCKET_TARGETS.psp.tickHz).toBeUndefined();
+    expect(POCKET_TARGETS.vita.tickHz).toBeUndefined();
+    expect(POCKET_TARGETS["macos-widget"].tickHz).toBeUndefined();
     // The desktop widget target: dynamic viewport, real pointer/text/IME,
     // runtime glyph baking — and honestly NO nub or synthesized cursor.
     expect(POCKET_TARGETS["macos-widget"].capabilities).toEqual([
@@ -268,6 +275,16 @@ describe("semantic resolution", () => {
       "text.glyphs.baked": true,
     });
     expect(result.plan.planHash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(verifyPlanHash(result.plan)).toBe(true);
+  });
+
+  test("a fixed-rate target's plan carries the profile rate", () => {
+    const onButtons = structuredClone(portableInput) as any;
+    onButtons.engine.capabilities.requires = ["input.buttons", "text.glyphs.baked"];
+    const result = validateAndResolveBuildPlan(onButtons, { target: "pocketbook" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.target).toEqual({ id: "pocketbook", hostAbi: 5, tickHz: 30 });
     expect(verifyPlanHash(result.plan)).toBe(true);
   });
 

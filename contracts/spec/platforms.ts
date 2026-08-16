@@ -97,6 +97,12 @@ export interface TargetProfile<C extends string = string> {
   /** Shell posture (see TARGET_FORMS). */
   readonly form: TargetForm;
   readonly display: DisplayProfile;
+  /** Core ticks per second the stock host drives, when the target fixes it.
+   *  The single owner of a fixed cadence: the host declares it before mount
+   *  (UiSurface::set_tick_rate) and plan builds bake it, so bundle and host
+   *  pair by construction. Absent = the host drives (or stages per run,
+   *  like ios-dev's --hz) the spec 60. */
+  readonly tickHz?: number;
   /** Framework APIs implemented and tested by this stock host. */
   readonly capabilities: readonly C[];
 }
@@ -256,6 +262,10 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       presentations: ["integer-fit"],
       rasterDensity: 2,
     },
+    // E-ink doesn't need 60; 30 keeps animations smooth while sparing CPU
+    // and battery. hosts/pocketbook TICK_HZ mirrors this value the way its
+    // HOST_ID/HOST_ABI consts mirror the identity above.
+    tickHz: 30,
     capabilities: ["input.buttons", "input.touch", "text.glyphs.baked"],
   },
   // The flat pocket-widget shell (examples/note-widget is the stock host):

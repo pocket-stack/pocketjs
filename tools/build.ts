@@ -209,12 +209,24 @@ if (densityFlag !== undefined && (!Number.isInteger(densityFlag) || densityFlag 
 const rasterDensity = buildPlan?.viewport.rasterDensity ?? densityFlag ?? 1;
 
 // Tick rate: the realm's virtual-time step, baked into the bundle because
-// every ms-to-frame conversion in the framework resolves against it. The
-// plan does not own it, so --hz is accepted with or without --plan.
+// every ms-to-frame conversion in the framework resolves against it. A
+// fixed-rate target owns it through the plan (pocketbook drives 30); --hz
+// serves plan-less builds and targets whose host stages the rate per run
+// (ios-dev), where the plan carries none.
 if (hzFlag !== undefined && (!Number.isInteger(hzFlag) || hzFlag < 1 || hzFlag > 240)) {
   throw new Error("PocketJS build: --hz wants an integer from 1 through 240");
 }
-const tickHz = hzFlag ?? 60;
+if (
+  buildPlan?.target.tickHz !== undefined &&
+  hzFlag !== undefined &&
+  hzFlag !== buildPlan.target.tickHz
+) {
+  throw new Error(
+    `PocketJS build: --hz=${hzFlag} conflicts with the ${buildPlan.target.id} plan rate ` +
+      `${buildPlan.target.tickHz} — the target's host drives that rate`,
+  );
+}
+const tickHz = hzFlag ?? buildPlan?.target.tickHz ?? 60;
 console.log(
   `PocketJS build: ${appName} (${entry}, framework=${framework}` +
     `${tickHz === 60 ? "" : `, ${tickHz}Hz`}` +

@@ -31,9 +31,14 @@ use framebuffer::DirtyRect;
 const HOST_ID: &str = "pocketbook";
 const HOST_ABI: u32 = 5;
 
-/// Logical tick cadence. E-ink doesn't need 60 fps; ~30 fps keeps animations
-/// smooth while sparing CPU and battery.
-const TICK_MS: u64 = 33;
+/// The declared realm rate — core ticks per second. E-ink doesn't need 60;
+/// 30 keeps animations smooth while sparing CPU and battery. Must match
+/// `pocketbook.tickHz` in contracts/spec/platforms.ts: plan-built bundles
+/// bake that rate and refuse a host driving any other.
+const TICK_HZ: u32 = 30;
+/// Wall-clock step between ticks, derived from the declared rate so ms-based
+/// animations run wall-true.
+const TICK: Duration = Duration::from_micros(1_000_000 / TICK_HZ as u64);
 
 /// Logical viewport the pocketbook target profile bakes bundles for
 /// (contracts/spec/platforms.ts). Must match the bundle: the framework lays
@@ -110,6 +115,10 @@ fn run(iv: &'static inkview::bindings::Inkview, rx: mpsc::Receiver<Event>) -> Re
     let surface =
         UiSurface::new_with_density((geo.logical_w as f32, geo.logical_h as f32), geo.density);
     surface.set_identity(HOST_ID, HOST_ABI);
+    anyhow::ensure!(
+        surface.set_tick_rate(TICK_HZ),
+        "declaring the {TICK_HZ} Hz tick rate failed"
+    );
     surface.feed_pak(&pak);
 
     let guest = Guest::new()?;
@@ -146,7 +155,7 @@ fn run(iv: &'static inkview::bindings::Inkview, rx: mpsc::Receiver<Event>) -> Re
     let mut last_tick = Instant::now();
     loop {
         // Pull events until the tick deadline, then drain any burst.
-        let deadline = last_tick + Duration::from_millis(TICK_MS);
+        let deadline = last_tick + TICK;
         let mut quit = false;
         let mut full = false;
         loop {

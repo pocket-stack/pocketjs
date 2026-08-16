@@ -186,7 +186,8 @@ mod refresh;
 const LOGICAL_W: u32 = 480;
 const LOGICAL_H: u32 = 320; // 480×320 @ density 2 → 960×640, integer-fit on panel
 const DENSITY: u32 = 2;
-const TICK_MS: u64 = 33; // ~30 fps logical tick; e-ink doesn't need 60
+const TICK_HZ: u32 = 30; // the declared realm rate; e-ink doesn't need 60
+const TICK: Duration = Duration::from_micros(1_000_000 / TICK_HZ as u64);
 
 fn main() -> Result<()> {
     env_logger::init();
@@ -216,6 +217,9 @@ fn main() -> Result<()> {
 
         let surface = UiSurface::new_with_density((LOGICAL_W as f32, LOGICAL_H as f32), DENSITY);
         surface.set_identity("pocketbook", HOST_ABI); // §8 — must match platforms.ts
+        // The declared realm rate — must match pocketbook.tickHz in
+        // platforms.ts; plan builds bake it and refuse any other host rate.
+        anyhow::ensure!(surface.set_tick_rate(TICK_HZ), "tick rate refused");
         surface.feed_pak(&pak);
 
         let guest = Guest::new()?;
@@ -232,7 +236,7 @@ fn main() -> Result<()> {
 
         while running {
             // Pull events until the tick deadline; drain everything pending.
-            let deadline = last_tick + Duration::from_millis(TICK_MS);
+            let deadline = last_tick + TICK;
             loop {
                 let now = Instant::now();
                 if now >= deadline { break; }
