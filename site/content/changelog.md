@@ -3,6 +3,68 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## 0.10.1 — August 16, 2026
+
+**Three more physical phones run PocketJS, Pocket Vapor compiles a smaller reactive graph, and Pocket3D gains a deterministic systemic world.**
+0.10.1 carries the connected-device work completed after 0.10.0 together with
+the compiler, renderer and tooling fixes those devices exposed. The new phone
+profiles remain private development targets: each one records an exact
+hardware and firmware tuple, and none advertises a production capability from
+a build or upload alone.
+
+- **Windows CE runs a real Solid guest on the Meizu M8.** One ARM executable
+  embeds QuickJS, the app and its assets, and the Rust software renderer; the
+  native host copies a 480×720 BGRA framebuffer to the LCD through GDI without
+  stretching. The host turns WinCE messages into wide touch coordinates,
+  closes cleanly on Home or Escape, registers a build-qualified MiniOneShell
+  icon, and deploys over the phone's ActiveSync serial function through PPP
+  and RAPI. Status requires advancing guest frames, successful GDI composites
+  and matching logical and physical viewports; acceptance additionally
+  requires a completed touch and changed application action. The
+  [field report](/blog/pocketjs-on-windows-ce/) follows the port from the first
+  clipped 320×480 frame to the native, readable result.
+- **The sixth-generation iPod touch has a transactional native host.** The
+  tested `iPod7,1` on iOS 12.5.8 runs an arm64 UIKit application at a 320×568
+  logical viewport and density 2. Each deploy re-identifies the device, opens
+  a fresh UDID-scoped USB tunnel, verifies the staged bundle byte by byte, and
+  keeps a rollback copy until SpringBoard registration succeeds. Wide touch
+  words preserve the bottom of the 568-point surface, while the device receipt
+  proves a live process, advancing frames, completed release and `hero_tap`.
+- **The iPhone 4S runs the retained UI through OpenGL ES 1.1 at Retina
+  density.** The private iOS 6.1.3 host builds an ARMv7 bundle against locally
+  derived, hash-pinned linker stubs and requires the physical runtime to report
+  a 640×960 GLES1 drawable for its 320×480 logical viewport. Transaction leases,
+  staged file hashes, signature checks and rollback keep a failed install from
+  replacing the working application; the captured device frame comes from the
+  actual Retina renderbuffer.
+- **The modern iOS shell's 120 Hz path is complete.** Its NativeScript plugin
+  pin moves to `@nativescript/pocketjs` 0.2.1, whose native bridge publishes the
+  requested tick rate before guest evaluation. This closes 0.10.0's known
+  limitation: a 120 Hz bundle and host now establish the same mount invariant
+  instead of refusing the unpublished 0.2.0 bridge.
+- **Pocket Vapor removes work that static analysis proves unreachable.** A
+  sparse conditional constant-propagation pass folds constant ref reads,
+  selects decidable branches, and removes their dead dependencies and ROM.
+  Frame-local view and bounded-string temporaries now share statically colored
+  overlay slots when their generated owners cannot be live together, reducing
+  permanent RAM and stack pressure on the NES and Game Boy. Linux parity runs
+  can supply `MGBA_PREFIX` and `CC65_LIB` without changing the macOS defaults.
+- **`pocket3d-world` is a renderer-independent fixed-step simulation.** Stable
+  entity IDs, seeded randomness and ordered phases cover sphere and capsule
+  bodies, attachments, structural damage, retained water, heat, fuel and
+  combustion. Inputs, initial state and configuration replay to a stable state
+  hash; shared collision and reaction laws are tested as general invariants,
+  while concrete material recipes remain application-owned. Pocket3D model
+  sockets and the optional stylized scene path present that state without
+  moving simulation policy into the renderer.
+- **Font and desktop-host regressions are closed.** The font baker now closes
+  implicitly closed CFF contours before scanline filling, retaining their final
+  edge, and the Note and widget launchers resolve their Cargo outputs from the
+  current `engine/` workspace rather than the retired nested path.
+- **Release automation runs on the current Node 24-backed GitHub Actions.** The
+  checkout, cache and setup-node upgrades preserve the existing OIDC trusted
+  publishing, build gates and deployment behavior.
+
 ## 0.10.0 — August 15, 2026
 
 **Apps reach the network, a database and their own files, and a realm declares the rate its virtual time runs at.**

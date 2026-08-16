@@ -149,6 +149,9 @@ describe("published npm artifacts", () => {
       "engine/pocket3d/examples/uihost/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-bsp/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-bsp/src",
+      "engine/pocket3d/crates/pocket3d-world/Cargo.toml",
+      "engine/pocket3d/crates/pocket3d-world/README.md",
+      "engine/pocket3d/crates/pocket3d-world/src",
       "pocket.config.ts",
       "pocket.json",
       "tsconfig.json",
@@ -212,6 +215,9 @@ describe("published npm artifacts", () => {
       "engine/pocket3d/crates/pocket3d-gles2/src/lib.rs",
       "engine/pocket3d/crates/pocket3d-bsp/Cargo.toml",
       "engine/pocket3d/crates/pocket3d-bsp/src/lib.rs",
+      "engine/pocket3d/crates/pocket3d-world/Cargo.toml",
+      "engine/pocket3d/crates/pocket3d-world/README.md",
+      "engine/pocket3d/crates/pocket3d-world/src/lib.rs",
     ]));
     expect(files).not.toContain("engine/pocket3d/Cargo.toml");
     // Cargo build output must never pack: directory-wholesale crate entries
@@ -275,6 +281,7 @@ describe("published npm artifacts", () => {
       expect(packages).toContain("pocket-apple");
       expect(packages).toContain("pocket-mod");
       expect(packages).toContain("pocket-ui-surface");
+      expect(packages).toContain("pocket3d-world");
       expect(existsSync(join(scratch, "package/engine/core/Cargo.toml"))).toBe(true);
     } finally {
       rmSync(scratch, { recursive: true, force: true });
