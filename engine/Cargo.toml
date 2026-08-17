@@ -30,6 +30,7 @@ members = [
 ]
 exclude = [
     "backends/esp32p4-ppa",
+    "backends/gpui",
     "core",
     "wasm",
     "pocket3d/crates/pocket3d-gu",

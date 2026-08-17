@@ -1368,6 +1368,26 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //                           perspective variation (projectively correct UVs
 //                           at every cell corner), so interior texture lines
 //                           do not kink at triangle diagonals.
+//   TEXT_RUN    (7 words):  op, runIndex (u32 into the DrawList's text-run
+//                           side table), originX, originY, boxW (f32 bits,
+//                           content-box top-left + width in logical px),
+//                           color, styleHash. Emitted ONLY when the host
+//                           installed a native text measurer (docs/BACKENDS.md)
+//                           for translation-only, tracking-0 runs; every other
+//                           run keeps GLYPH_RUN, so fixed-function backends
+//                           (PSP GE, PPA, software raster) never see this op.
+//                           The run string + per-run style (font slot, align,
+//                           line height) ride in DrawList.text_runs — the
+//                           backend shapes and paints with the host text
+//                           system. originX/Y are f32 (NOT the i16 XY packing)
+//                           and are exempt from the i16 clip guarantee: a run
+//                           may start off-viewport, and the core brackets any
+//                           partially-clipped run in SCISSOR/SCISSOR_POP.
+//                           styleHash is FNV-1a32 over the run string + style
+//                           record: identical word streams must render
+//                           identical pixels, so demand-render hashes and
+//                           damage diffs stay truthful without reading the
+//                           side table.
 
 export const DRAW_OP = {
   rect: 1,
@@ -1378,6 +1398,7 @@ export const DRAW_OP = {
   scissorPop: 6,
   tri: 7,
   texTri: 8,
+  textRun: 9,
 } as const;
 
 // ---------------------------------------------------------------------------

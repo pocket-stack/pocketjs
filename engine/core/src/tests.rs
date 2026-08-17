@@ -201,7 +201,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
 /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
 /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
 /// balanced, only known ops. Returns per-op counts (indexed by op code).
-fn validate_drawlist(words: &[u32]) -> [u32; 9] {
+fn validate_drawlist(words: &[u32]) -> [u32; 10] {
     let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
     let xy_ok = |w: u32| {
         let (x, y) = decode_xy(w);
@@ -213,7 +213,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 9] {
         let (w, h) = decode_wh(whw);
         assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
     };
-    let mut counts = [0u32; 9];
+    let mut counts = [0u32; 10];
     let mut depth = 0i32;
     let mut i = 0usize;
     while i < words.len() {
@@ -272,6 +272,16 @@ fn validate_drawlist(words: &[u32]) -> [u32; 9] {
                 }
                 i += 12;
             }
+            spec::draw_op::TEXT_RUN => {
+                // Native-text op: origin is f32 (exempt from the i16 clip
+                // guarantee), box width is finite and non-negative.
+                for f in [f32::from_bits(words[i + 2]), f32::from_bits(words[i + 3])] {
+                    assert!(f.is_finite(), "TEXT_RUN origin not finite: {f}");
+                }
+                let box_w = f32::from_bits(words[i + 4]);
+                assert!(box_w.is_finite() && box_w >= 0.0, "bad TEXT_RUN boxW: {box_w}");
+                i += 7;
+            }
             other => panic!("unknown draw op {other} at word {i}"),
         }
     }
@@ -307,6 +317,7 @@ fn tex_tri_runs(words: &[u32]) -> Vec<(u32, usize)> {
             spec::draw_op::SCISSOR => { previous_was_tex_tri = false; i += 3; }
             spec::draw_op::SCISSOR_POP => { previous_was_tex_tri = false; i += 1; }
             spec::draw_op::TRI => { previous_was_tex_tri = false; i += 7; }
+            spec::draw_op::TEXT_RUN => { previous_was_tex_tri = false; i += 7; }
             other => panic!("unknown draw op {other} at word {i}"),
         }
     }
@@ -3374,4 +3385,175 @@ fn hit_pass_layers_never_swallow_bounds_hits() {
     let toast = abs_box(&mut ui, overlay, 15.0, 15.0, 30.0, 20.0);
     assert_eq!(ui.hit_test_bounds(20.0, 20.0), toast);
     assert_eq!(ui.hit_test(20.0, 20.0), toast, "ink walk honors overlay content too");
+}
+
+// ---- native text (TEXT_RUN, docs/BACKENDS.md) -----------------------------------
+
+/// A deterministic fake native measurer: 7 px per char, 12 px default lines.
+fn fake_native_measure() -> crate::text::MeasureFn {
+    alloc::boxed::Box::new(|text: &str, _slot, _tracking, line_h| {
+        let lines = text.split('\n').count() as f32;
+        let w = text
+            .split('\n')
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(0) as f32
+            * 7.0;
+        let lh = if line_h.is_nan() { 12.0 } else { line_h };
+        (w, lines * lh)
+    })
+}
+
+#[test]
+fn native_measure_routes_layout_and_emits_text_run() {
+    let mut ui = Ui::new();
+    // Atlas registered so the BAKED path would measure differently (A=6, B=5).
+    ui.load_font_atlas(&encode_atlas(
+        0,
+        8,
+        8,
+        7,
+        10,
+        3,
+        &[(0xfffd, 0, 8), ('A' as u32, 1, 6), ('B' as u32, 2, 5)],
+    ));
+    ui.set_text_measure(Some(fake_native_measure()));
+    // The JS-facing measureText op routes to the same provider as layout.
+    assert_eq!(ui.measure_text("AB", 0), 14.0);
+    let color = abgr(10, 20, 30, 255);
+    let t = ui.create_node(spec::NodeType::Text as u8);
+    ui.set_prop(t, spec::prop::WIDTH, 30.0);
+    ui.set_prop(t, spec::prop::TEXT_COLOR, color as f64);
+    ui.set_text(t, "AB");
+    ui.insert_before(spec::ROOT_ID, t, 0);
+    ui.tick();
+    let dl = ui.draw();
+    let words = dl.words.clone();
+    assert_eq!(dl.text_runs.len(), 1);
+    assert_eq!(dl.text_runs[0].text.as_str(), "AB");
+    assert_eq!(dl.text_runs[0].slot, 0);
+    let counts = validate_drawlist(&words);
+    assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 1);
+    assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 0);
+    let i = words.iter().position(|&w| w == spec::draw_op::TEXT_RUN).unwrap();
+    assert_eq!(words[i + 1], 0, "first run indexes side-table slot 0");
+    assert_eq!(f32::from_bits(words[i + 2]), 0.0);
+    assert_eq!(f32::from_bits(words[i + 3]), 0.0);
+    assert_eq!(f32::from_bits(words[i + 4]), 30.0, "boxW = laid-out box width");
+    assert_eq!(words[i + 5], color);
+    // taffy sized the leaf's main axis from the native metrics (12 px line),
+    // not the atlas (10 px line).
+    let l = ui.layout_of(t).unwrap();
+    assert_eq!((l.2, l.3), (30.0, 12.0));
+}
+
+#[test]
+fn tracked_and_rotated_runs_fall_back_to_glyph_run() {
+    let mut ui = Ui::new();
+    ui.load_font_atlas(&encode_atlas(
+        0,
+        8,
+        8,
+        7,
+        10,
+        3,
+        &[(0xfffd, 0, 8), ('A' as u32, 1, 6), ('B' as u32, 2, 5)],
+    ));
+    ui.set_text_measure(Some(fake_native_measure()));
+    // Tracked run: baked measurement AND baked glyphs (consistent pair).
+    let tracked = ui.create_node(spec::NodeType::Text as u8);
+    ui.set_prop(tracked, spec::prop::TRACKING, 2.0);
+    ui.set_text(tracked, "AB");
+    ui.insert_before(spec::ROOT_ID, tracked, 0);
+    // Rotated run: native metrics for layout, but glyph anchors must
+    // transform exactly, so paint falls back to the baked atlas.
+    let rotated = ui.create_node(spec::NodeType::Text as u8);
+    // Small explicit width keeps the rotated cells on-screen (off-screen
+    // cells are dropped, which would empty the run).
+    ui.set_prop(rotated, spec::prop::WIDTH, 20.0);
+    ui.set_prop(rotated, spec::prop::ROTATE, 45.0);
+    ui.set_text(rotated, "AB");
+    ui.insert_before(spec::ROOT_ID, rotated, 0);
+    ui.tick();
+    let words = ui.draw().words.clone();
+    let counts = validate_drawlist(&words);
+    assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
+    assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 2);
+    // Column layout: width cross-stretches, so the measurement provider is
+    // observable through the main-axis HEIGHT. Tracked leaf measured with the
+    // atlas (10 px line); rotated leaf measured natively (12 px line).
+    assert_eq!(ui.layout_of(tracked).unwrap().3, 10.0);
+    assert_eq!(ui.layout_of(rotated).unwrap().3, 12.0);
+}
+
+#[test]
+fn clipped_text_run_is_scissor_bracketed() {
+    let mut ui = Ui::new();
+    ui.set_text_measure(Some(fake_native_measure()));
+    // overflow-hidden 20x10 box; the run measures 28 px -> exceeds the clip.
+    let mut s = StyleSpec::new();
+    s.base = alloc::vec![(spec::prop::OVERFLOW, spec::Overflow::Hidden as u32)];
+    assert!(ui.load_styles(&encode_styles(&[s])));
+    let wrap = ui.create_node(spec::NodeType::View as u8);
+    ui.set_style(wrap, 0);
+    ui.set_prop(wrap, spec::prop::WIDTH, 20.0);
+    ui.set_prop(wrap, spec::prop::HEIGHT, 10.0);
+    let t = ui.create_node(spec::NodeType::Text as u8);
+    ui.set_text(t, "AAAA");
+    ui.insert_before(wrap, t, 0);
+    ui.insert_before(spec::ROOT_ID, wrap, 0);
+    ui.tick();
+    let words = ui.draw().words.clone();
+    validate_drawlist(&words);
+    let i = words.iter().position(|&w| w == spec::draw_op::TEXT_RUN).unwrap();
+    assert_eq!(words[i - 3], spec::draw_op::SCISSOR, "run bracketed by its own scissor");
+    assert_eq!(decode_xy(words[i - 2]), (0, 0));
+    assert_eq!(decode_wh(words[i - 1]), (20, 10), "scissor = current clip");
+    assert_eq!(words[i + 7], spec::draw_op::SCISSOR_POP);
+}
+
+#[test]
+fn text_run_style_hash_tracks_content() {
+    let mut ui = Ui::new();
+    ui.set_text_measure(Some(fake_native_measure()));
+    let t = ui.create_node(spec::NodeType::Text as u8);
+    ui.set_text(t, "AB");
+    ui.insert_before(spec::ROOT_ID, t, 0);
+    ui.tick();
+    let words_ab = ui.draw().words.clone();
+    let i = words_ab.iter().position(|&w| w == spec::draw_op::TEXT_RUN).unwrap();
+    // Same length, same geometry, different content: the word stream MUST
+    // differ (demand-render hashes only see words).
+    ui.set_text(t, "BA");
+    ui.tick();
+    let words_ba = ui.draw().words.clone();
+    let j = words_ba.iter().position(|&w| w == spec::draw_op::TEXT_RUN).unwrap();
+    assert_eq!(i, j);
+    assert_eq!(words_ab[i + 4], words_ba[j + 4], "geometry unchanged");
+    assert_ne!(words_ab[i + 6], words_ba[j + 6], "styleHash tracks the run string");
+}
+
+#[test]
+fn clearing_native_measure_restores_baked_goldens_path() {
+    let mut ui = Ui::new();
+    ui.load_font_atlas(&encode_atlas(
+        0,
+        8,
+        8,
+        7,
+        10,
+        3,
+        &[(0xfffd, 0, 8), ('A' as u32, 1, 6), ('B' as u32, 2, 5)],
+    ));
+    ui.set_text_measure(Some(fake_native_measure()));
+    assert_eq!(ui.measure_text("AB", 0), 14.0);
+    ui.set_text_measure(None);
+    assert_eq!(ui.measure_text("AB", 0), 11.0);
+    let t = ui.create_node(spec::NodeType::Text as u8);
+    ui.set_text(t, "AB");
+    ui.insert_before(spec::ROOT_ID, t, 0);
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
+    assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
 }

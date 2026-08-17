@@ -424,6 +424,7 @@ impl<'a> DamageDecoder<'a> {
             spec::draw_op::SCISSOR_POP => 1,
             spec::draw_op::TRI => 7,
             spec::draw_op::TEX_TRI => 12,
+            spec::draw_op::TEXT_RUN => 7,
             _ => return Err(()),
         };
         let end = start.checked_add(len).ok_or(())?;
@@ -455,6 +456,10 @@ impl<'a> DamageDecoder<'a> {
             }
             spec::draw_op::TRI => triangle_bounds([words[1], words[2], words[3]], self.clip),
             spec::draw_op::TEX_TRI => triangle_bounds([words[2], words[5], words[8]], self.clip),
+            // Native-text runs carry no glyph geometry the tracker can
+            // measure; the core keeps every partially-clipped run inside a
+            // scissor, so the current clip is a sound (conservative) bound.
+            spec::draw_op::TEXT_RUN => self.clip,
             _ => return Err(()),
         };
         Ok(Some(DecodedOp {

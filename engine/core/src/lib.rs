@@ -1200,6 +1200,16 @@ impl Ui {
         &self.draw_list
     }
 
+    /// Install (or clear) a native text measurer (text::MeasureFn). Native-
+    /// text backends (docs/BACKENDS.md) call this BEFORE the guest mounts:
+    /// every text leaf's metrics change provider, so the layout tree is
+    /// rebuilt. Fixed-function hosts never call this, so goldens are
+    /// unaffected.
+    pub fn set_text_measure(&mut self, f: Option<text::MeasureFn>) {
+        self.fonts.set_native_measure(f);
+        self.layout.dirty = true;
+    }
+
     /// Resize the logical viewport (root node + layout bounds + draw clip).
     /// Defaults to the PSP's 480x272; desktop hosts call this with their
     /// surface size. Values are clamped to the DrawList's i16 coordinate

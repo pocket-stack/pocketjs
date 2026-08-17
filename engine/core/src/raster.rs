@@ -789,6 +789,13 @@ fn render_scaled_clipped<T: RenderTarget>(
                 tex_tri(ui, target, width, scale, clip, &words[i + 1..i + 12]);
                 i += 12;
             }
+            draw_op::TEXT_RUN => {
+                // Native-text op (host text system shapes the run); the
+                // software rasterizer has no shaper, so hosts that raster run
+                // with baked measurement and never receive it. Skipped, not a
+                // stop: the op is a known member of the closed set.
+                i += 7;
+            }
             // The op set is closed per DrawList version; anything else means
             // corrupt data — stop instead of misinterpreting the stream.
             _ => return,

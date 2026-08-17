@@ -193,6 +193,7 @@
     "widget": "bun tools/widget.ts",
     "widget:ipod": "bun tools/widget.ts --stage ipod",
     "note": "bun tools/note.ts",
+    "macos": "bun tools/macos.ts",
     "psp": "bun tools/psp.ts",
     "psp:all": "bun tools/psp-all.ts",
     "psp:switch": "bun psplink",

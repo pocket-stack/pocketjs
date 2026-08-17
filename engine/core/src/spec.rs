@@ -430,6 +430,7 @@ pub mod draw_op {
     pub const SCISSOR_POP: u32 = 6;
     pub const TRI: u32 = 7;
     pub const TEX_TRI: u32 = 8;
+    pub const TEXT_RUN: u32 = 9;
 }
 
 /// .pak container constants (byte-compatible with dreamcart's format;

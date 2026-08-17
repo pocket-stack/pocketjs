@@ -179,6 +179,15 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // the font atlases at runtime (system-font rasterization + loadFontAtlas
   // reload). Required by any app that accepts arbitrary text input.
   "text.glyphs.runtime",
+  // Text measurement and shaping come from the host text system: full
+  // Unicode coverage (CJK/emoji/fallback fonts) with proportional metrics
+  // beyond the baked charset, and `measureText` observes the same provider
+  // layout does. A different guarantee than text.glyphs.baked — pixels are
+  // deterministic per host, not byte-exact across hosts — hence a different
+  // id (see the header rule). Apps opt in per plan (`enhances`); a host
+  // grants it by installing a core text measurer before the guest mounts
+  // (docs/BACKENDS.md).
+  "text.layout.native",
 ] as const);
 
 export type PocketCapabilityId = CapabilityId<typeof POCKET_CAPABILITIES>;
@@ -196,6 +205,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   readonly vita: TargetProfile<PocketCapabilityId>;
   readonly pocketbook: TargetProfile<PocketCapabilityId>;
   readonly "macos-widget": TargetProfile<PocketCapabilityId>;
+  readonly "macos-app": TargetProfile<PocketCapabilityId>;
 }>({
   psp: {
     hostAbi: 1,
@@ -284,6 +294,35 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "display.viewport.live",
       "text.glyphs.baked",
       "text.glyphs.runtime",
+    ],
+  },
+  // The gpui app frame (hosts/macos is the stock host): a resizable ordinary
+  // window on Zed's gpui/Metal, painting the DrawList as vector quads and
+  // host-shaped text instead of rasterized atlas cells (docs/BACKENDS.md).
+  // Same desktop HostOps wire generation as macos-widget (hostAbi 3). An app
+  // frame, not a widget shell, so fixed-viewport apps run size-locked
+  // (acceptsFixed) with their baked glyph pipeline intact; apps that enhance
+  // text.layout.native get host text measurement and shaping instead.
+  "macos-app": {
+    hostAbi: 3,
+    platform: "macos",
+    form: "window",
+    display: {
+      physicalViewport: [1440, 960],
+      logicalViewports: [[720, 480]],
+      dynamicViewport: { min: [240, 180], max: [4096, 4096], acceptsFixed: true },
+      presentations: ["native"],
+      rasterDensity: 2,
+    },
+    capabilities: [
+      "input.buttons",
+      "input.ime",
+      "input.pointer",
+      "input.text",
+      "host.clipboard",
+      "display.viewport.live",
+      "text.glyphs.baked",
+      "text.layout.native",
     ],
   },
 });

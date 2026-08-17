@@ -640,6 +640,13 @@ impl UiRenderer {
                     self.verts.extend_from_slice(&v);
                     i += 7;
                 }
+                spec::draw_op::TEXT_RUN => {
+                    // Native-text op: emitted only when the host installed a
+                    // native measurer, which the portable wgpu backend never
+                    // does — its glyphs are the baked atlas. Skipped, not a
+                    // stop: the op is a known member of the closed set.
+                    i += 7;
+                }
                 // The op set is closed per DrawList version; anything else
                 // means corrupt data — stop instead of misinterpreting.
                 _ => break,

@@ -141,7 +141,13 @@ describe("pocket.json v2 schema", () => {
 
 describe("platform registry", () => {
   test("production advertises only the truthful stock-host profiles", () => {
-    expect(Object.keys(POCKET_TARGETS)).toEqual(["psp", "vita", "pocketbook", "macos-widget"]);
+    expect(Object.keys(POCKET_TARGETS)).toEqual([
+      "psp",
+      "vita",
+      "pocketbook",
+      "macos-widget",
+      "macos-app",
+    ]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
     expect(POCKET_TARGETS.psp.capabilities).toEqual([
       "input.analog.left",
@@ -192,6 +198,26 @@ describe("platform registry", () => {
     expect(POCKET_TARGETS["macos-widget"].display.dynamicViewport).toEqual({
       min: [240, 180],
       max: [4096, 4096],
+    });
+    // The gpui app frame: same desktop wire generation as the widget shell
+    // (hostAbi 3), a general window that ALSO hosts fixed-viewport apps
+    // (acceptsFixed), and host text layout instead of runtime glyph baking.
+    expect(POCKET_TARGETS["macos-app"].hostAbi).toBe(3);
+    expect(POCKET_TARGETS["macos-app"].form).toBe("window");
+    expect(POCKET_TARGETS["macos-app"].capabilities).toEqual([
+      "input.buttons",
+      "input.ime",
+      "input.pointer",
+      "input.text",
+      "host.clipboard",
+      "display.viewport.live",
+      "text.glyphs.baked",
+      "text.layout.native",
+    ]);
+    expect(POCKET_TARGETS["macos-app"].display.dynamicViewport).toEqual({
+      min: [240, 180],
+      max: [4096, 4096],
+      acceptsFixed: true,
     });
   });
 
@@ -328,40 +354,42 @@ describe("semantic resolution", () => {
 
   test("every committed demo manifest lands on the expected admission matrix", async () => {
     const { readdirSync, existsSync } = await import("node:fs");
-    // demo -> [psp, vita, macos-widget] admission. Fixed-only console demos
-    // stay off the desktop widget (its profile presents "native" over a
-    // dynamic viewport, not the console integer-fit contract); Hero declares
-    // both policies, while the note is dynamic-only. A new demo missing here
-    // fails the test on purpose.
-    const expected: Record<string, [boolean, boolean, boolean]> = {
-      cafe: [true, true, false],
-      cards: [true, true, false],
-      chrome: [true, true, false],
-      cursor: [true, true, false],
-      gallery: [true, true, false],
-      hero: [true, true, true],
-      "hero-vue-sfc": [true, true, false],
-      "hero-vue-vapor": [true, true, false],
-      im: [true, true, false],
-      "iphone16-demo": [false, true, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract
-      "iphone2g-demo": [false, false, false], // admitted only by the private iphone2g-dev profile
-      "iphone4s-demo": [false, false, false], // admitted only by the private iphone4s-dev profile
-      "ipodtouch-demo": [false, false, false], // admitted only by the private ipodtouch-dev profile
-      "meizu-m8-demo": [false, false, false], // admitted only by the private meizu-m8-dev profile
-      nsengine: [false, true, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract
-      "ipod-nano": [false, false, false], // admitted by the package-shaped macos-embedded target
-      launcher: [true, true, false], // the Cover Flow deck (docs/LAUNCHER.md) is an ordinary console app
-      library: [true, true, false],
-      motions: [true, true, false],
-      music: [true, true, false],
-      note: [false, false, true],
-      notifications: [true, true, false],
-      settings: [true, true, false],
-      stats: [true, true, false],
-      "vue-sfc-lab": [true, true, false],
-      zoomlab: [true, true, false],
+    // demo -> [psp, vita, macos-widget, macos-app] admission. Fixed-only
+    // console demos stay off the desktop widget (its profile presents
+    // "native" over a dynamic viewport, not the console integer-fit
+    // contract) but land on the macos-app frame, which hosts fixed apps
+    // size-locked (acceptsFixed); Hero declares both policies, while the
+    // note is dynamic-only. A new demo missing here fails the test on
+    // purpose.
+    const expected: Record<string, [boolean, boolean, boolean, boolean]> = {
+      cafe: [true, true, false, true],
+      cards: [true, true, false, true],
+      chrome: [true, true, false, true],
+      cursor: [true, true, false, true],
+      gallery: [true, true, false, true],
+      hero: [true, true, true, true],
+      "hero-vue-sfc": [true, true, false, true],
+      "hero-vue-vapor": [true, true, false, true],
+      im: [true, true, false, true],
+      "iphone16-demo": [false, true, false, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract
+      "iphone2g-demo": [false, false, false, false], // admitted only by the private iphone2g-dev profile
+      "iphone4s-demo": [false, false, false, false], // admitted only by the private iphone4s-dev profile
+      "ipodtouch-demo": [false, false, false, false], // admitted only by the private ipodtouch-dev profile
+      "meizu-m8-demo": [false, false, false, false], // admitted only by the private meizu-m8-dev profile
+      nsengine: [false, true, false, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract
+      "ipod-nano": [false, false, false, false], // admitted by the package-shaped macos-embedded target
+      launcher: [true, true, false, true], // the Cover Flow deck (docs/LAUNCHER.md) is an ordinary console app
+      library: [true, true, false, true],
+      motions: [true, true, false, true],
+      music: [true, true, false, true],
+      note: [false, false, true, true],
+      notifications: [true, true, false, true],
+      settings: [true, true, false, true],
+      stats: [true, true, false, true],
+      "vue-sfc-lab": [true, true, false, true],
+      zoomlab: [true, true, false, true],
     };
-    const targets = ["psp", "vita", "macos-widget"] as const;
+    const targets = ["psp", "vita", "macos-widget", "macos-app"] as const;
     for (const demo of readdirSync(new URL("../apps/", import.meta.url)).sort()) {
       const url = new URL(`../apps/${demo}/pocket.json`, import.meta.url);
       if (!existsSync(url)) continue;

@@ -28,17 +28,31 @@ use crate::style::{self, StyleTable, NO_GRADIENT};
 use crate::text::Fonts;
 use crate::tree::Tree;
 
+/// One TEXT_RUN side-table entry: the run string plus the style a native-text
+/// backend needs to shape it (geometry and color ride in the op words).
+/// `line_height` NAN = the slot's default.
+pub struct TextRunInfo {
+    pub text: alloc::string::String,
+    pub slot: u8,
+    /// spec::TextAlign ordinal.
+    pub align: u8,
+    pub line_height: f32,
+}
+
 /// The core -> backend command list: flat little-endian u32 words.
 /// Format pinned in contracts/spec/spec.ts ("DRAWLIST op format"); op codes in
 /// spec::draw_op. On wasm the host reads this as a Uint32Array; on PSP,
 /// hosts/psp/src/ge.rs walks it into sceGu calls.
 pub struct DrawList {
     pub words: Vec<u32>,
+    /// TEXT_RUN side table, indexed by the op's runIndex word. Rebuilt with
+    /// `words` every build(); empty unless a native measurer is installed.
+    pub text_runs: Vec<TextRunInfo>,
 }
 
 impl DrawList {
     pub fn new() -> Self {
-        DrawList { words: Vec::new() }
+        DrawList { words: Vec::new(), text_runs: Vec::new() }
     }
 }
 
@@ -124,6 +138,14 @@ impl Affine {
     #[inline]
     fn is_axis_aligned(&self) -> bool {
         self.b == 0.0 && self.c == 0.0 && self.a > 0.0 && self.d > 0.0
+    }
+
+    /// True when the transform is a pure translation (the TEXT_RUN gate:
+    /// native-shaped runs place a whole box, so any scale/rotation falls back
+    /// to GLYPH_RUN, whose per-glyph anchors transform exactly).
+    #[inline]
+    fn is_translation(&self) -> bool {
+        self.a == 1.0 && self.b == 0.0 && self.c == 0.0 && self.d == 1.0
     }
 }
 
@@ -825,6 +847,7 @@ pub fn build(
     cursor: Option<(u32, f32, f32, f32, f32)>,
 ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
     dl.words.clear();
+    dl.text_runs.clear();
     // DevTools (docs/DEVTOOLS.md): slot of the inspected node, u32::MAX = none.
     // Nodes inside a perspective subtree take the paint_3d path and are not
     // captured (only the 2D walk composes a world Affine per node).
@@ -2259,8 +2282,6 @@ impl<'a> Walker<'a> {
             return;
         }
         let slot = r.font_slot as u8;
-        let Some(atlas) = self.fonts.atlas(slot) else { return };
-        let (cell_w, cell_h) = (atlas.cell_w as f32, atlas.cell_h as f32);
         let mut run = alloc::string::String::new();
         // paint() gives us the node ref; re-walk its subtree for the run.
         // (node.children ids resolve through self.tree.)
@@ -2268,6 +2289,15 @@ impl<'a> Walker<'a> {
         if run.is_empty() {
             return;
         }
+        // Native text path: translation-only tracking-0 runs emit TEXT_RUN
+        // (the gate mirrors Fonts::measure_run's, so a node's layout metrics
+        // always come from the same provider as its painted glyphs).
+        if self.fonts.native_active() && r.tracking == 0.0 && world.is_translation() {
+            self.emit_text_native(dl, run, r, world, color, clip, box_w);
+            return;
+        }
+        let Some(atlas) = self.fonts.atlas(slot) else { return };
+        let (cell_w, cell_h) = (atlas.cell_w as f32, atlas.cell_h as f32);
         let mut scratch = core::mem::take(&mut self.glyph_scratch);
         scratch.clear();
         self.fonts
@@ -2304,6 +2334,73 @@ impl<'a> Walker<'a> {
             dl.words[start + 1] = (slot as u32) | (n << 16);
         }
         self.glyph_scratch = scratch;
+    }
+
+    /// Emit one TEXT_RUN (native text path; format in spec.ts). The origin is
+    /// f32 and may sit off-viewport, so a run not fully inside the clip is
+    /// bracketed in SCISSOR/SCISSOR_POP — the one place the core emits a
+    /// scissor for its own op rather than for children.
+    fn emit_text_native(
+        &mut self,
+        dl: &mut DrawList,
+        run: alloc::string::String,
+        r: &style::Resolved,
+        world: &Affine,
+        color: u32,
+        clip: &Clip,
+        box_w: f32,
+    ) {
+        let slot = r.font_slot as u8;
+        // Routes to the native measurer (tracking is 0 on this path).
+        let (mw, mh) = self.fonts.measure_run(&run, slot, r.tracking, r.line_height);
+        if mw <= 0.0 || mh <= 0.0 {
+            return;
+        }
+        let (ox, oy) = world.apply(0.0, 0.0);
+        // Alignment places lines inside box_w, so box_w ∪ measured width
+        // bounds every glyph the backend can paint.
+        let ext_w = box_w.max(mw);
+        if ox + ext_w <= clip.x0 || ox >= clip.x1 || oy + mh <= clip.y0 || oy >= clip.y1 {
+            return;
+        }
+        let clipped =
+            ox < clip.x0 || oy < clip.y0 || ox + ext_w > clip.x1 || oy + mh > clip.y1;
+        if clipped {
+            dl.words.push(spec::draw_op::SCISSOR);
+            dl.words.push(xy_word(clip.x0, clip.y0));
+            dl.words.push(wh_word(clip.x1 - clip.x0, clip.y1 - clip.y0));
+        }
+        // styleHash: the side table must not be able to change behind an
+        // identical word stream (demand-render hashes only see words).
+        let mut h: u32 = 0x811c_9dc5;
+        let mut mix = |byte: u8| {
+            h ^= byte as u32;
+            h = h.wrapping_mul(0x0100_0193);
+        };
+        for b in run.as_bytes() {
+            mix(*b);
+        }
+        mix(slot);
+        mix(r.text_align);
+        for b in r.line_height.to_bits().to_le_bytes() {
+            mix(b);
+        }
+        dl.words.push(spec::draw_op::TEXT_RUN);
+        dl.words.push(dl.text_runs.len() as u32);
+        dl.words.push(ox.to_bits());
+        dl.words.push(oy.to_bits());
+        dl.words.push(box_w.to_bits());
+        dl.words.push(color);
+        dl.words.push(h);
+        dl.text_runs.push(TextRunInfo {
+            text: run,
+            slot,
+            align: r.text_align,
+            line_height: r.line_height,
+        });
+        if clipped {
+            dl.words.push(spec::draw_op::SCISSOR_POP);
+        }
     }
 }
 
