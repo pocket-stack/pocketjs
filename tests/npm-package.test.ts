@@ -56,6 +56,11 @@ describe("published npm artifacts", () => {
       "contracts/schema",
       "contracts/spec",
       "tools",
+      // The desktop benchmark's Electron/Tauri comparison apps are git-only
+      // fixtures under the wholesale tools entry: their cargo target/ would
+      // otherwise pack (the v0.8.0 E415 failure mode) and nothing in the
+      // tarball consumes them.
+      "!tools/bench-desktop",
       "apps/hero/app.tsx",
       "apps/iphone2g-demo",
       "apps/iphone4s-demo",

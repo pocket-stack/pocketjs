@@ -253,6 +253,26 @@ describe("platform registry", () => {
 });
 
 describe("semantic resolution", () => {
+  test("the note resolves native text on macos-app and baked text elsewhere", async () => {
+    // The flagship contract behind tools/macos.ts's --native-text flag:
+    // text.layout.native is an ENHANCEMENT — true exactly where the gpui
+    // host implements it, false on the widget shell, and never a hard
+    // requirement (the note keeps running on macos-widget).
+    const note = await Bun.file(new URL("../apps/note/pocket.json", import.meta.url)).json();
+    const onApp = validateAndResolveBuildPlan(note, { target: "macos-app" });
+    expect(onApp.ok).toBe(true);
+    if (!onApp.ok) return;
+    expect(onApp.plan.features["text.layout.native"]).toBe(true);
+    expect(onApp.plan.features["text.glyphs.runtime"]).toBe(false);
+    expect(onApp.plan.target.hostAbi).toBe(3);
+
+    const onWidget = validateAndResolveBuildPlan(note, { target: "macos-widget" });
+    expect(onWidget.ok).toBe(true);
+    if (!onWidget.ok) return;
+    expect(onWidget.plan.features["text.layout.native"]).toBe(false);
+    expect(onWidget.plan.features["text.glyphs.runtime"]).toBe(true);
+  });
+
   test("guest resolution honors the declared execution classes", () => {
     const dual = structuredClone(portableInput) as Record<string, any>;
     dual.execution = { classes: ["guest", "aot"] };

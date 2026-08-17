@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"Let the bench page invoke the ready command.","local":true,"windows":["main"],"permissions":["core:default"]}}

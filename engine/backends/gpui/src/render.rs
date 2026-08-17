@@ -75,7 +75,7 @@ fn shaped_key(text: &str, slot: u8, color: u32) -> u64 {
 
 /// RGBA (straight) -> BGRA in place — gpui's RenderImage byte order.
 fn rgba_to_bgra(pixels: &mut [u8]) {
-    for px in pixels.chunks_exact_mut(4) {
+    for px in pixels.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
 }
@@ -329,6 +329,7 @@ impl GpuiRenderer {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn paint_glyph_run(
         &mut self,
         ui: &Ui,
@@ -341,7 +342,7 @@ impl GpuiRenderer {
     ) {
         let Some(atlas) = ui.font_atlas(slot) else { return };
         let (cell_w, cell_h) = (atlas.cell_w as f32, atlas.cell_h as f32);
-        for cell in cells.chunks_exact(2) {
+        for cell in cells.as_chunks::<2>().0 {
             let (x, y) = decode_xy(cell[0]);
             let gid = (cell[1] & 0xffff) as u16;
             let image = match self.glyphs.get(&(slot, gid, color)) {
@@ -382,15 +383,14 @@ impl GpuiRenderer {
         if live as u32 != handle {
             return None; // stale generation-tagged handle
         }
-        if let Some(c) = self.images.get(&slot) {
-            if c.revision == revision && c.tint == tint {
+        if let Some(c) = self.images.get(&slot)
+            && c.revision == revision && c.tint == tint {
                 return Some((c.image.clone(), c.size));
             }
-        }
         let mut rgba = to_rgba8(&view)?;
         if tint != 0xffff_ffff {
             let t = abgr(tint);
-            for p in rgba.chunks_exact_mut(4) {
+            for p in rgba.as_chunks_mut::<4>().0 {
                 p[0] = (p[0] as f32 * t.r) as u8;
                 p[1] = (p[1] as f32 * t.g) as u8;
                 p[2] = (p[2] as f32 * t.b) as u8;
@@ -483,7 +483,7 @@ impl GpuiRenderer {
         *i = end;
         let batch = &words[start..end];
         if !needs_raster {
-            for tri in batch.chunks_exact(7) {
+            for tri in batch.as_chunks::<7>().0 {
                 let color = abgr(tri[4]);
                 let (x0, y0) = decode_xy(tri[1]);
                 let (x1, y1) = decode_xy(tri[2]);
@@ -602,7 +602,7 @@ fn to_rgba8(view: &pocketjs_core::TexView) -> Option<Vec<u8>> {
                 return None;
             }
             let mut out = Vec::with_capacity(count * 4);
-            for px in pixels[..count * 2].chunks_exact(2) {
+            for px in pixels[..count * 2].as_chunks::<2>().0 {
                 let v = u16::from_le_bytes([px[0], px[1]]) as u32;
                 let r = v & 0x1f;
                 let g = (v >> 5) & 0x3f;
@@ -623,7 +623,7 @@ fn to_rgba8(view: &pocketjs_core::TexView) -> Option<Vec<u8>> {
                 return None;
             }
             let mut out = Vec::with_capacity(count * 4);
-            for px in pixels[..count * 2].chunks_exact(2) {
+            for px in pixels[..count * 2].as_chunks::<2>().0 {
                 let v = u16::from_le_bytes([px[0], px[1]]) as u32;
                 out.push(((v & 0xf) * 17) as u8);
                 out.push((((v >> 4) & 0xf) * 17) as u8);

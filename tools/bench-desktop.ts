@@ -326,6 +326,10 @@ async function benchApp(l: Launcher): Promise<AppResult> {
   }
   await sleep((END_S * 1000 + t0) - Date.now() > 0 ? (END_S * 1000 + t0) - Date.now() : 0);
   const procs = Math.max(...idle.map((s) => s.procs), 0);
+  // The web page reports STORM-DONE <inserted>; the pocket host's storm is
+  // tick-driven (exact by construction), so absence there is fine.
+  const stormDone = reported.find((r) => r.startsWith("STORM-DONE"));
+  if (viaHttp && !stormDone) console.warn(`${l.name}: no STORM-DONE report`);
   await killTree(proc.pid);
   return {
     name: l.name,
@@ -335,6 +339,7 @@ async function benchApp(l: Launcher): Promise<AppResult> {
     footprintMb: fp,
     diskMb: await l.disk(),
     procs,
+    stormDone,
   };
 }
 
@@ -411,9 +416,7 @@ const base = `${root}docs/bench/gpui-vs-tauri-electron-${date}`;
 await Bun.write(`${base}.json`, JSON.stringify(json, null, 2) + "\n");
 
 const row = (r: (typeof summary)[number]) =>
-  `| ${r.name} | ${r.processes} | ${r.coldStartMsMedian} | ${r.idleRssMb} | ${
-    r.footprintMb ?? "—"
-  } | ${r.idleCpuPct} | ${r.stormCpuPct} | ${r.stormRssMb} | ${r.diskMb} |`;
+  `| ${r.name} | ${r.processes} | ${r.coldStartMsMedian} | ${r.idleRssMb} | ${r.idleCpuPct} | ${r.stormCpuPct} | ${r.stormRssMb} | ${r.diskMb} |`;
 
 const md = `# Desktop markdown editor: gpui backend vs Tauri vs Electron (${date})
 
@@ -424,12 +427,11 @@ byte-identical plain-text markdown editor page shelled by Tauri v2
 spawn to each app's own first-painted-frame READY report, median of
 ${COLD_RUNS}; idle = ${IDLE_S} s hands-off, \`ps\` process-tree samples every
 5 s, medians; storm = ${CPS} chars/s typed for ${STORM_S} s through each
-app's real edit path (svc lines / \`execCommand\`), sampled every 1 s;
-physical memory from \`footprint\` at idle. Reproduce:
+app's real edit path (svc lines / \`execCommand\`), sampled every 1 s. Reproduce:
 \`bun tools/bench-desktop.ts\`.
 
-| app | procs | cold start (ms) | idle RSS (MB) | footprint (MB) | idle CPU (%) | storm CPU (%) | storm RSS (MB) | disk (MB) |
-|---|---|---|---|---|---|---|---|---|
+| app | procs | cold start (ms) | idle RSS (MB) | idle CPU (%) | storm CPU (%) | storm RSS (MB) | disk (MB) |
+|---|---|---|---|---|---|---|---|
 ${summary.map(row).join("\n")}
 
 Fairness notes:

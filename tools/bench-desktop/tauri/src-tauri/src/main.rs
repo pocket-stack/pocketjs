@@ -17,8 +17,8 @@ fn main() {
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App(url.into()))
                 .title("Bench Note")
                 .inner_size(420.0, 560.0)
-                .build()?
-                .open_devtools();
+                .focused(true)
+                .build()?;
             Ok(())
         })
         .run(tauri::generate_context!())
