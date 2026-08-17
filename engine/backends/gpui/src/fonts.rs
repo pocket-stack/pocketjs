@@ -88,20 +88,55 @@ pub fn slot_line_height(ts: &WindowTextSystem, cfg: &TextConfig, slot: u8) -> f3
 /// BEFORE the guest mounts). Same `'\n'`-only break contract as the baked
 /// `Fonts::measure_run`; tracking never reaches this path (the core routes
 /// tracked runs to the baked pair — see engine/core/src/text.rs).
+///
+/// Measured widths are cached per (line, slot): a keystroke makes the core
+/// rebuild its whole layout tree (text change = structure dirt), which
+/// re-measures every text leaf — but only the edited line's width actually
+/// changed. The cache makes the other N-1 lookups free instead of N-1
+/// CoreText shapes per tick.
 pub fn native_measure(ts: Arc<WindowTextSystem>, cfg: TextConfig) -> MeasureFn {
+    let widths: std::cell::RefCell<std::collections::HashMap<(String, u8), f32>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    let line_heights: std::cell::RefCell<[Option<f32>; 16]> =
+        std::cell::RefCell::new([None; 16]);
     Box::new(move |text: &str, slot: u8, _tracking: f32, line_h: f32| {
         let (size, bold) = slot_px(slot);
-        let lh = if line_h.is_nan() { slot_line_height(&ts, &cfg, slot) } else { line_h };
+        let lh = if line_h.is_nan() {
+            let mut heights = line_heights.borrow_mut();
+            let entry = &mut heights[(slot as usize).min(15)];
+            match *entry {
+                Some(h) => h,
+                None => {
+                    let h = slot_line_height(&ts, &cfg, slot);
+                    *entry = Some(h);
+                    h
+                }
+            }
+        } else {
+            line_h
+        };
         let mut max_w = 0.0f32;
         let mut lines = 0u32;
+        let mut cache = widths.borrow_mut();
+        if cache.len() > 16384 {
+            cache.clear(); // crude cap; refills from the live document
+        }
         for line in text.split('\n') {
             lines += 1;
             if line.is_empty() {
                 continue;
             }
-            let run = cfg.run(line.len(), bold, gpui::black());
-            let shaped = ts.layout_line(line, px(size), &[run], None);
-            max_w = max_w.max(f32::from(shaped.width));
+            let key = (line.to_string(), slot);
+            let w = match cache.get(&key) {
+                Some(w) => *w,
+                None => {
+                    let run = cfg.run(line.len(), bold, gpui::black());
+                    let w = f32::from(ts.layout_line(line, px(size), &[run], None).width);
+                    cache.insert(key, w);
+                    w
+                }
+            };
+            max_w = max_w.max(w);
         }
         (max_w, lines as f32 * lh)
     })

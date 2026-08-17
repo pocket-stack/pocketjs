@@ -89,6 +89,9 @@ struct Args {
     density: u32,
     script: Vec<ScriptEvent>,
     quit_after_ticks: Option<u64>,
+    /// Benchmark typing storm: (chars/sec, start tick, duration ticks) —
+    /// svc `ch` lines through the same edit path real typing takes.
+    storm: Option<(u32, u64, u64)>,
 }
 
 fn parse_args() -> Result<Args> {
@@ -105,6 +108,7 @@ fn parse_args() -> Result<Args> {
         density: 2,
         script: Vec::new(),
         quit_after_ticks: None,
+        storm: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -140,6 +144,13 @@ fn parse_args() -> Result<Args> {
                 args.script.push(ScriptEvent::Click(t.parse()?, x.parse()?, y.parse()?));
             }
             "--quit-after" => args.quit_after_ticks = Some(val("--quit-after")?.parse()?),
+            "--storm" => {
+                // --storm CPS@START+DUR (ticks)
+                let v = val("--storm")?;
+                let (cps, rest) = v.split_once('@').ok_or_else(|| anyhow!("--storm CPS@START+DUR"))?;
+                let (start, dur) = rest.split_once('+').ok_or_else(|| anyhow!("--storm CPS@START+DUR"))?;
+                args.storm = Some((cps.parse()?, start.parse()?, dur.parse()?));
+            }
             other => return Err(anyhow!("unknown flag {other}")),
         }
     }
@@ -408,6 +419,20 @@ impl PocketRoot {
         if !self.script.is_empty() {
             self.run_script();
         }
+        if let Some((cps, start, dur)) = self.args.storm {
+            if self.ticks >= start && self.ticks < start + dur {
+                // Whole chars this tick, error-free over time (i*cps/60).
+                let i = self.ticks - start;
+                let n = ((i + 1) * cps as u64) / 60 - (i * cps as u64) / 60;
+                if n > 0 {
+                    const STORM: &[u8] = b"the quick brown fox jumps over the lazy dog ";
+                    let s: String = (0..n)
+                        .map(|k| STORM[((i * 8 + k) % STORM.len() as u64) as usize] as char)
+                        .collect();
+                    self.svc(serde_json::json!({"t": "ch", "s": s}));
+                }
+            }
+        }
         let buttons = if self.args.editor {
             // Clicks are CIRCLE — hover already focused what's under the
             // pointer (note-widget's contract).
@@ -621,6 +646,13 @@ fn button_for(key: &str) -> Option<u32> {
     })
 }
 
+fn epoch_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
 fn fnv1a64(words: &[u32]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for w in words {
@@ -806,6 +838,11 @@ impl Render for PocketRoot {
                             );
                         }
                         frames.set(frames.get() + 1);
+                        if frames.get() == 1 {
+                            // First painted frame — the bench runner's
+                            // cold-start marker (tools/bench-desktop.ts).
+                            println!("READY {}", epoch_ms());
+                        }
                         surface.with_ui(|ui| {
                             renderer.borrow_mut().paint(ui, origin, window, cx);
                         });

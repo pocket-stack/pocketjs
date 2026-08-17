@@ -1,0 +1,56 @@
+name: macOS gpui backend
+
+# The first macOS lane in CI: the gpui backend (engine/backends/gpui) and
+# the macos-app host (hosts/macos) are standalone crates excluded from the
+# ubuntu release workspace, so this is the only place they build. Compile +
+# clippy only — gpui needs a window server for anything more; behavior is
+# pinned by engine/core's TEXT_RUN tests (ubuntu) and the note --proof
+# acceptance run (docs/BACKENDS.md).
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/macos.yml"
+      - "engine/core/**"
+      - "engine/crates/pocket-ui-surface/**"
+      - "engine/backends/gpui/**"
+      - "hosts/macos/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/macos.yml"
+      - "engine/core/**"
+      - "engine/crates/pocket-ui-surface/**"
+      - "engine/backends/gpui/**"
+      - "hosts/macos/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: gpui backend + host
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine/backends/gpui
+            hosts/macos
+
+      - name: Test core (TEXT_RUN + native measure gates)
+        run: cargo test --locked --manifest-path engine/core/Cargo.toml
+
+      - name: Clippy gpui backend
+        run: cargo clippy --locked --manifest-path engine/backends/gpui/Cargo.toml -- -D warnings
+
+      - name: Build macos-app host
+        run: cargo build --locked --manifest-path hosts/macos/Cargo.toml

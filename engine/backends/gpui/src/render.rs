@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use gpui::{
     fill, linear_color_stop, linear_gradient, point, px, size, App, Bounds, ContentMask, Hsla,
-    Path, Pixels, Point, RenderImage, Rgba, SharedString, Window,
+    Path, Pixels, Point, RenderImage, Rgba, ShapedLine, SharedString, Window,
 };
 use image::{Frame, ImageBuffer};
 use pocketjs_core::draw::DrawList;
@@ -53,6 +53,22 @@ fn fnv64(words: &[u32]) -> u64 {
             h ^= b as u64;
             h = h.wrapping_mul(0x0000_0100_0000_01b3);
         }
+    }
+    h
+}
+
+fn shaped_key(text: &str, slot: u8, color: u32) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut mix = |byte: u8| {
+        h ^= byte as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    for b in text.as_bytes() {
+        mix(*b);
+    }
+    mix(slot);
+    for b in color.to_le_bytes() {
+        mix(b);
     }
     h
 }
@@ -101,6 +117,12 @@ pub struct GpuiRenderer {
     /// Tri-batch raster fallback cache, keyed by batch content hash.
     rasters: HashMap<u64, CachedRaster>,
     rasters_used: HashSet<u64>,
+    /// Shaped-line cache: an editor keystroke or caret blink repaints the
+    /// whole window, but only the edited line's shape changes — everything
+    /// else replays. Keyed by (text, slot, color) hash, text-verified
+    /// against collisions, swept to the lines the last paint used.
+    shaped: HashMap<u64, (String, ShapedLine)>,
+    shaped_used: HashSet<u64>,
 }
 
 impl GpuiRenderer {
@@ -113,6 +135,8 @@ impl GpuiRenderer {
             images: HashMap::new(),
             rasters: HashMap::new(),
             rasters_used: HashSet::new(),
+            shaped: HashMap::new(),
+            shaped_used: HashSet::new(),
         }
     }
 
@@ -121,6 +145,7 @@ impl GpuiRenderer {
         self.glyphs.clear();
         self.images.clear();
         self.rasters.clear();
+        self.shaped.clear();
     }
 
     /// Replay the current DrawList at `origin` (the canvas element's origin,
@@ -136,12 +161,16 @@ impl GpuiRenderer {
             }
         }
         self.rasters_used.clear();
+        self.shaped_used.clear();
         let dl = ui.current_draw_list();
         let mut i = 0usize;
         self.walk(ui, dl, &mut i, origin, window, cx);
         let used = std::mem::take(&mut self.rasters_used);
         self.rasters.retain(|h, _| used.contains(h));
         self.rasters_used = used;
+        let used = std::mem::take(&mut self.shaped_used);
+        self.shaped.retain(|h, _| used.contains(h));
+        self.shaped_used = used;
     }
 
     /// Interpret ops until the list ends or a SCISSOR_POP closes this scope.
@@ -261,13 +290,27 @@ impl GpuiRenderer {
         let mut y = oy;
         for line in entry.text.split('\n') {
             if !line.is_empty() {
-                let run = self.cfg.run(line.len(), bold, color);
-                let shaped = ts.shape_line(
-                    SharedString::from(line.to_string()),
-                    px(size_px),
-                    &[run],
-                    None,
-                );
+                let key = shaped_key(line, entry.slot, words[4]);
+                self.shaped_used.insert(key);
+                let cached = self
+                    .shaped
+                    .get(&key)
+                    .filter(|(text, _)| text == line)
+                    .map(|(_, s)| s.clone());
+                let shaped = match cached {
+                    Some(s) => s,
+                    None => {
+                        let run = self.cfg.run(line.len(), bold, color);
+                        let s = ts.shape_line(
+                            SharedString::from(line.to_string()),
+                            px(size_px),
+                            &[run],
+                            None,
+                        );
+                        self.shaped.insert(key, (line.to_string(), s.clone()));
+                        s
+                    }
+                };
                 let dx = match entry.align {
                     a if a == spec::TextAlign::Center as u8 => {
                         (box_w - f32::from(shaped.width)) * 0.5
