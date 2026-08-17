@@ -14,6 +14,7 @@
 
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Focusable, Image, Portal, Text, View } from "@pocketjs/framework/components";
+import { after } from "@pocketjs/framework/clock";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN, focusNode, hitFocusable } from "@pocketjs/framework/input";
 import { resizeViewport, type NodeMirror } from "@pocketjs/framework";
@@ -151,6 +152,17 @@ export default function Note(): ReturnType<typeof View> {
   const [dark, setDark] = createSignal(true);
   const [menuOpen, setMenuOpenRaw] = createSignal(false);
   const [caret, setCaret] = createSignal(0);
+  /** Browser caret discipline: SOLID while typing or moving, and a crisp
+   *  square-wave blink (animate-caret, pocket.config.ts) after a 0.6 s
+   *  rest. The <Show> swap remounts the blinking node, restarting the wave
+   *  at its ON phase — exactly a browser's reset-on-input. */
+  const [caretResting, setCaretResting] = createSignal(true);
+  let caretRestTimer: (() => void) | null = null;
+  const wakeCaret = () => {
+    setCaretResting(false);
+    caretRestTimer?.();
+    caretRestTimer = after(0.6, () => setCaretResting(true));
+  };
   const [anchor, setAnchor] = createSignal(0);
   const [vsel, setVsel] = createSignal<{ start: RowPos; end: RowPos } | null>(null);
   /** IME composition riding at the caret: not in the document until commit. */
@@ -522,15 +534,20 @@ export default function Note(): ReturnType<typeof View> {
         break;
       case "ch":
         if (editing() && ev.s) {
+          wakeCaret();
           setPreedit(null); // a commit replaces the preedit it finalizes
           mutate("type", (s) => typeText(s, ev.s!));
         }
         break;
       case "paste":
-        if (editing() && ev.text) mutate("other", (s) => typeText(s, ev.text!));
+        if (editing() && ev.text) {
+          wakeCaret();
+          mutate("other", (s) => typeText(s, ev.text!));
+        }
         break;
       case "ime": {
         if (!editing()) break;
+        wakeCaret();
         const text = ev.s ?? "";
         if (text === "") {
           setPreedit(null);
@@ -543,12 +560,16 @@ export default function Note(): ReturnType<typeof View> {
         break;
       }
       case "key":
-        if (ev.k) handleKey(ev.k, ev.sh ?? false);
+        if (ev.k) {
+          if (editing()) wakeCaret();
+          handleKey(ev.k, ev.sh ?? false);
+        }
         break;
       case "mouse": {
         const p = { x: ev.x ?? -1, y: ev.y ?? -1 };
         const down = ev.d ?? false;
         setMouse(p);
+        if (down && !prevDown && editing()) wakeCaret();
         if (down && !prevDown) pointerDown(p.x, p.y, ev.sh ?? false);
         else if (down) pointerMove(p.x, p.y, true);
         if (!down && prevDown) pointerUp(p.x, p.y);
@@ -804,16 +825,32 @@ export default function Note(): ReturnType<typeof View> {
               )}
             </For>
             <Show when={!editSel()}>
-              <View
-                class="absolute animate-pulse rounded-sm"
-                style={{
-                  width: 2,
-                  insetL: caretPx() - 1,
-                  insetT: EDGE_PAD + caretRow() * BODY_LINE_H + (BODY_LINE_H - CARET_H) / 2,
-                  height: CARET_H,
-                  bgColor: ink().accent,
-                }}
-              />
+              <Show
+                when={caretResting()}
+                fallback={
+                  <View
+                    class="absolute rounded-sm"
+                    style={{
+                      width: 2,
+                      insetL: caretPx() - 1,
+                      insetT: EDGE_PAD + caretRow() * BODY_LINE_H + (BODY_LINE_H - CARET_H) / 2,
+                      height: CARET_H,
+                      bgColor: ink().accent,
+                    }}
+                  />
+                }
+              >
+                <View
+                  class="absolute animate-caret rounded-sm"
+                  style={{
+                    width: 2,
+                    insetL: caretPx() - 1,
+                    insetT: EDGE_PAD + caretRow() * BODY_LINE_H + (BODY_LINE_H - CARET_H) / 2,
+                    height: CARET_H,
+                    bgColor: ink().accent,
+                  }}
+                />
+              </Show>
             </Show>
           </View>
           {scrollbar(scrollE(), editTotal())}
