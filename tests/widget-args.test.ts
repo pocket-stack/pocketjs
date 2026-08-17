@@ -111,6 +111,18 @@ describe("widget wrapper arguments", () => {
     });
   });
 
+  test("selects Pocket Music's app and companion profile", () => {
+    expect(parseWidgetArgs(["--stage", "pocket-music", "--focus"])).toEqual({
+      stage: "pocket-music",
+      app: "pocket-music-main",
+      proof: false,
+      pass: ["--focus"],
+    });
+    const stage = widgetStageConfig("pocket-music");
+    expect(stage.profile.endsWith("/ipod-nano-2/pocket-music-profile.json")).toBe(true);
+    expect(stage.display).toEqual({ logicalSize: [176, 132], rasterDensity: 1 });
+  });
+
   test("keeps profile admission within the native density contract", () => {
     expect(
       stageDisplayFacts({ display: { logical_size: [176, 132], raster_density: 4 } }),

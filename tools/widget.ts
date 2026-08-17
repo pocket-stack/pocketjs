@@ -33,7 +33,7 @@ export const STAGE_TARGET_ID = "macos-embedded";
 // Same current desktop HostOps wire generation as macos-widget; form and
 // capabilities differ even though the native UI surface implementation is shared.
 export const STAGE_HOST_ABI = 3;
-export type WidgetStage = "psp" | "ipod";
+export type WidgetStage = "psp" | "ipod" | "pocket-music";
 
 export interface StageDisplayFacts {
   readonly logicalSize: readonly [number, number];
@@ -57,6 +57,13 @@ const STAGE_REGISTRY: Record<WidgetStage, { defaultApp: string; profile: string 
   ipod: {
     defaultApp: "ipod-nano-main",
     profile: resolvePath(root, "engine/pocket3d/examples/handheld/assets/ipod-nano-2/profile.json"),
+  },
+  "pocket-music": {
+    defaultApp: "pocket-music-main",
+    profile: resolvePath(
+      root,
+      "engine/pocket3d/examples/handheld/assets/ipod-nano-2/pocket-music-profile.json",
+    ),
   },
 };
 

@@ -41,6 +41,10 @@ struct DeviceProfile {
     rotary: Option<RotaryProfile>,
     #[serde(default)]
     media: Option<MediaProfile>,
+    #[serde(default)]
+    companion: Option<CompanionProfile>,
+    #[serde(default)]
+    window_title: Option<String>,
 }
 
 /// Every package states its own display facts; the runtime carries no
@@ -107,6 +111,13 @@ struct MediaTrackProfile {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct CompanionProfile {
+    service: String,
+    channel: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct LodProfile {
     settled: String,
     orbit: String,
@@ -165,6 +176,12 @@ pub struct MediaSettings {
 }
 
 #[derive(Clone, Debug)]
+pub struct CompanionSettings {
+    pub service: String,
+    pub channel: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct StageSettings {
     pub logical_size: (u32, u32),
     pub raster_density: u32,
@@ -172,6 +189,8 @@ pub struct StageSettings {
     pub window_size: (u32, u32),
     pub view: ViewSettings,
     pub media: Option<MediaSettings>,
+    pub companion: Option<CompanionSettings>,
+    pub window_title: String,
 }
 
 #[derive(Clone, Debug)]
@@ -311,6 +330,10 @@ pub fn load_settings(profile_path: &Path) -> Result<StageSettings> {
             })
         })
         .transpose()?;
+    let companion = profile.companion.map(|companion| CompanionSettings {
+        service: companion.service,
+        channel: companion.channel,
+    });
     Ok(StageSettings {
         logical_size: (logical[0], logical[1]),
         raster_density: density,
@@ -326,6 +349,8 @@ pub fn load_settings(profile_path: &Path) -> Result<StageSettings> {
             fov_y: profile.view.fov_y_degrees.to_radians(),
         },
         media,
+        companion,
+        window_title: profile.window_title.unwrap_or_else(|| "Pocket Stage".into()),
     })
 }
 
@@ -782,6 +807,24 @@ fn validate_profile(profile: &DeviceProfile) -> Result<()> {
             );
         }
     }
+    ensure!(
+        profile.media.is_none() || profile.companion.is_none(),
+        "a stage profile cannot declare both media and companion services"
+    );
+    if let Some(companion) = &profile.companion {
+        ensure!(
+            companion.service == "pocket-music@1",
+            "unsupported companion service {}",
+            companion.service
+        );
+        ensure!(
+            !companion.channel.trim().is_empty(),
+            "companion service channel is empty"
+        );
+    }
+    if let Some(title) = &profile.window_title {
+        ensure!(!title.trim().is_empty(), "window title is empty");
+    }
     Ok(())
 }
 
@@ -816,6 +859,21 @@ mod tests {
         assert_eq!(media.channel, "ipod-nano");
         assert_eq!(media.tracks.len(), 3);
         assert!(media.tracks.iter().all(|track| track.path.is_file()));
+    }
+
+    #[test]
+    fn pocket_music_profile_declares_only_its_bounded_companion() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/ipod-nano-2/pocket-music-profile.json");
+        let profile = read_profile(&path).unwrap();
+        validate_profile(&profile).unwrap();
+        let settings = load_settings(&path).unwrap();
+        assert_eq!(settings.logical_size, (176, 132));
+        assert_eq!(settings.window_title, "Pocket Music");
+        assert!(settings.media.is_none());
+        let companion = settings.companion.unwrap();
+        assert_eq!(companion.service, "pocket-music@1");
+        assert_eq!(companion.channel, "pocket-music");
     }
 
     #[test]

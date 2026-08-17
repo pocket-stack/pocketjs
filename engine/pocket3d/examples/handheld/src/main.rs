@@ -24,6 +24,7 @@
 
 mod device;
 mod media;
+mod pocket_music;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -46,6 +47,7 @@ use winit::keyboard::KeyCode;
 
 use device::Device;
 use media::MediaService;
+use pocket_music::PocketMusicService;
 
 /// Keys the widget polls for held state (the shared uihost map + I/J/K/L
 /// as a keyboard nub).
@@ -430,6 +432,7 @@ struct StageGame {
     profile_path: PathBuf,
     settings: device::StageSettings,
     media: Option<MediaService>,
+    pocket_music: Option<PocketMusicService>,
     svc_booted: bool,
     last_unknown_svc_warning_tick: Option<u64>,
 
@@ -481,6 +484,7 @@ impl StageGame {
         profile_path: PathBuf,
         settings: device::StageSettings,
         media: Option<MediaService>,
+        pocket_music: Option<PocketMusicService>,
     ) -> Self {
         let initial_window = settings.window_size;
         let scene = Scene {
@@ -501,6 +505,7 @@ impl StageGame {
             profile_path,
             settings,
             media,
+            pocket_music,
             svc_booted: false,
             last_unknown_svc_warning_tick: None,
             embedded: None,
@@ -806,6 +811,11 @@ impl WidgetGame for StageGame {
             {
                 embedded.surface().svc_push(media.hello_line());
             }
+            if let Some(pocket_music) = &self.pocket_music
+                && let Some(embedded) = self.embedded.as_ref()
+            {
+                embedded.surface().svc_push(pocket_music.disconnected_line());
+            }
             self.svc_booted = true;
         }
         self.guest.frame_with_analog(buttons, analog)?;
@@ -816,6 +826,20 @@ impl WidgetGame for StageGame {
         }
         if let Some(embedded) = self.embedded.as_ref() {
             let surface = embedded.surface();
+            if let Some(pocket_music) = self.pocket_music.as_mut() {
+                for line in surface.svc_drain_matching(PocketMusicService::is_guest_line) {
+                    match pocket_music.handle_guest_line(&line) {
+                        Ok(true) => {}
+                        Ok(false) => unreachable!("Pocket Music predicate and handler disagree"),
+                        Err(error) => {
+                            log::warn!("pocket-stage: bad Pocket Music svc line: {error:#}")
+                        }
+                    }
+                }
+                for line in pocket_music.tick(self.ticks) {
+                    surface.svc_push(line);
+                }
+            }
             if let Some(media) = self.media.as_mut() {
                 // Each registered adapter selectively takes its namespace in
                 // FIFO order. `svc_push` is the opposite (host → guest) path.
@@ -1125,7 +1149,18 @@ fn boot(args: &Args, settings: &device::StageSettings) -> Result<(Guest, UiSurfa
     // A package declares both its host adapter contract and the guest-facing
     // channel name. Only that exact channel may open; a typo or unrelated app
     // cannot discover the media companion accidentally.
-    surface.set_svc_allowlist(settings.media.iter().map(|media| media.channel.as_str()));
+    surface.set_svc_allowlist(
+        settings
+            .media
+            .iter()
+            .map(|media| media.channel.as_str())
+            .chain(
+                settings
+                    .companion
+                    .iter()
+                    .map(|companion| companion.channel.as_str()),
+            ),
+    );
     surface.feed_pak(&pak);
     let guest = Guest::new()?;
     surface.mount(&guest)?;
@@ -1209,6 +1244,11 @@ fn main() -> Result<()> {
         );
     }
     let media = settings.media.clone().map(MediaService::new).transpose()?;
+    let pocket_music = settings
+        .companion
+        .clone()
+        .map(PocketMusicService::new)
+        .transpose()?;
     let (guest, surface) = boot(&args, &settings)?;
     let mut game = StageGame::new(
         guest,
@@ -1217,6 +1257,7 @@ fn main() -> Result<()> {
         args.profile.clone(),
         settings.clone(),
         media,
+        pocket_music,
     );
     game.orbit = OrbitState::new(args.orbit.map(f32::to_radians));
     game.quit_after = args.auto_quit.map(|s| (s * 60.0) as u64);
@@ -1229,7 +1270,7 @@ fn main() -> Result<()> {
     } else {
         pocket_widget::run(
             WidgetConfig {
-                title: "Pocket Stage".into(),
+                title: settings.window_title,
                 size: settings.window_size,
                 max_fps: args.max_fps,
                 ..Default::default()

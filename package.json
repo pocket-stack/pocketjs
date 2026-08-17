@@ -192,6 +192,8 @@
     "play": "bun tools/play.ts",
     "widget": "bun tools/widget.ts",
     "widget:ipod": "bun tools/widget.ts --stage ipod",
+    "pocket-music": "bun tools/pocket-music.ts",
+    "ipodnano:rockbox": "bun tools/ipodnano-rockbox.ts",
     "note": "bun tools/note.ts",
     "psp": "bun tools/psp.ts",
     "psp:all": "bun tools/psp-all.ts",

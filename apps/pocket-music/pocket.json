@@ -1,0 +1,30 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.pocket-music",
+  "name": "pocket-music",
+  "title": "Pocket Music",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "text.glyphs.baked",
+        "input.buttons"
+      ]
+    }
+  },
+  "app": {
+    "entry": "apps/pocket-music/main.tsx",
+    "output": "pocket-music-main",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [
+          176,
+          132
+        ],
+        "presentation": "native"
+      }
+    }
+  }
+}

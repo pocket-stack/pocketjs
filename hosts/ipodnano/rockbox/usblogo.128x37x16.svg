@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="37" viewBox="0 0 128 37">
+  <rect width="128" height="37" fill="#000000"/>
+  <!-- Rockbox right-aligns this 128 px bitmap on the 176 px display. -->
+  <text x="40" y="25" text-anchor="middle" fill="#f3f7fd" font-family="Helvetica" font-size="20" font-weight="700">PocketJS</text>
+</svg>
