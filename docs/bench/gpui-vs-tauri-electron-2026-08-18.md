@@ -7,18 +7,17 @@ byte-identical plain-text markdown editor page shelled by Tauri v2
 spawn to each app's own first-painted-frame READY report, median of
 3; idle = 60 s hands-off, `ps` process-tree samples every
 5 s, medians; storm = 120 chars/s typed for 30 s through each
-app's real edit path (svc lines / `execCommand`), sampled every 1 s.
-Reproduce: `bun tools/bench-desktop.ts`.
+app's real edit path (svc lines / `execCommand`), sampled every 1 s. Reproduce:
+`bun tools/bench-desktop.ts`.
 
 | app | procs | cold start (ms) | idle RSS (MB) | idle CPU (%) | storm CPU (%) | storm RSS (MB) | disk (MB) |
 |---|---|---|---|---|---|---|---|
-| pocket | 1 | 145 | 84 | 4.25 | 48.2 | 89 | 10 |
-| tauri | 4 | 391 | 192 | 3 | 15.6 | 207 | 9 |
-| electron | 5 | 328 | 382 | 0.55 | 38.3 | 485 | 242 |
+| pocket | 1 | 128 | 84 | 2.7 | 47.6 | 87 | 10 |
+| tauri | 4 | 398 | 193 | 2.25 | 16.7 | 207 | 9 |
+| electron | 5 | 319 | 382 | 0.5 | 38.6 | 486 | 242 |
 
-Both web shells confirmed the full storm landed (STORM-DONE 3597/3598 of
-3600 due characters); the pocket storm is tick-driven and exact by
-construction.
+Both web shells confirmed the full storm landed (STORM-DONE ~3600
+characters); the pocket storm is tick-driven and exact by construction.
 
 Fairness notes:
 
@@ -35,14 +34,13 @@ Fairness notes:
   same convention for pocket (host binary + bundle + pak).
 - CPU is `ps pcpu` (percent of one core, decaying average) summed over the
   process tree, WebKit XPC helpers attributed to Tauri by spawn-delta.
-  `footprint` physical memory was collected too (see the json) but is
-  omitted from the table: Electron's hardened helper processes refuse task
-  inspection without elevated privileges, so tree totals are not comparable
-  across stacks — RSS is the uniform metric.
+  `footprint` physical memory is collected into the json but omitted here:
+  Electron's hardened helper processes refuse task inspection without
+  elevated privileges, so tree totals are not comparable — RSS is the
+  uniform metric.
 - The pocket storm CPU RAMPS with document length (samples in the json):
   the note re-parses and re-wraps the whole growing document through the
   QuickJS interpreter on every keystroke — an app-level O(n) the web
-  editors' native contenteditable machinery does not pay (profiled:
-  `JS_CallInternal` + regex backtracking dominate, not rendering or text
-  measurement). Idle-in-edit-mode CPU is the app's caret blink repainting
-  through the full pipeline; Electron's caret belongs to the compositor.
+  editors' native contenteditable machinery does not pay. The caret is a
+  square wave demand rendering skips between edges (apps/note/
+  pocket.config.ts), so idle repaints are ~2/s, not 60.

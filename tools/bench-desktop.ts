@@ -448,7 +448,17 @@ Fairness notes:
   dist\`; Tauri reuses the system WKWebView, so its disk is just the binary —
   same convention for pocket (host binary + bundle + pak).
 - CPU is \`ps pcpu\` (percent of one core, decaying average) summed over the
-  process tree.
+  process tree, WebKit XPC helpers attributed to Tauri by spawn-delta.
+  \`footprint\` physical memory is collected into the json but omitted here:
+  Electron's hardened helper processes refuse task inspection without
+  elevated privileges, so tree totals are not comparable — RSS is the
+  uniform metric.
+- The pocket storm CPU RAMPS with document length (samples in the json):
+  the note re-parses and re-wraps the whole growing document through the
+  QuickJS interpreter on every keystroke — an app-level O(n) the web
+  editors' native contenteditable machinery does not pay. The caret is a
+  square wave demand rendering skips between edges (apps/note/
+  pocket.config.ts), so idle repaints are ~2/s, not 60.
 `;
 
 await Bun.write(`${base}.md`, md);
