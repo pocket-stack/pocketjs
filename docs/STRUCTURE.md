@@ -35,7 +35,7 @@ pocketjs/
 ├─ vapor/        Pocket Vapor: the AOT compiler family (Vue Vapor subset → GBA/GB/NES)
 ├─ contracts/    single sources of truth binding the layers
 │  ├─ spec/       op contract, platform contracts, manifest + package spec, gen-rust
-│  └─ schema/     published JSON schemas (pocket-2.json)
+│  └─ schema/     published JSON schemas (pocket-2.json, pocket-3.json)
 ├─ apps/         demo apps (pocket.json manifests; built by tools/build.ts)
 ├─ tools/        every command: build/dev/device/release bun scripts (flat),
 │                plus cli/ (@pocketjs/cli), psplink/, imagegen/, and
@@ -67,8 +67,14 @@ New things go where the axis says — never invent a top-level directory:
 
 ## Invariants the layout preserves
 
-- **npm surface is frozen**: `@pocketjs/framework/*` export *keys* never
-  change; the `exports`/`files` maps in package.json absorb internal moves.
+- **npm export keys are generated from `framework/compiler/subpaths.ts`**:
+  additions and breaking removals update that registry and the generated
+  `package.json` map together. Internal moves keep an existing key stable.
+- **Network modules use one package namespace**: shared support values are in
+  `@pocketjs/framework/net`; protocol modules are `net/http`, `net/websocket`,
+  `net/mqtt`, `net/tcp`, and `net/udp`. These modules do not publish
+  `vue-vapor` or `octane` aliases. The former `net` fetch value API and its
+  framework-prefixed aliases are removed.
 - **Cargo stays non-workspace where toolchains demand it**: `engine/core`,
   `engine/wasm`, `engine/symbian`, `engine/backends/esp32p4-ppa`, `hosts/psp`,
   `hosts/vita`, `hosts/pocketbook`, and the gu/vita 3D crates each stand alone

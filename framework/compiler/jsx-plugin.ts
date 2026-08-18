@@ -5,7 +5,9 @@ import type { ParserOptions } from "@babel/parser";
 import solidPreset from "babel-preset-solid";
 import tsPreset from "@babel/preset-typescript"; // untyped - see framework/compiler/ambient.d.ts
 import { transformVueJsxVapor } from "vue-jsx-vapor/api";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { compileVueSfc } from "./vue-sfc-compile.ts";
 import {
   propsHelperCode,
@@ -28,6 +30,12 @@ import babelCorePkg from "@babel/core/package.json";
 import tsPresetPkg from "@babel/preset-typescript/package.json";
 import type { PocketFramework } from "../src/config.ts";
 import { POCKET_FRAMEWORKS, SUBPATHS } from "./subpaths.ts";
+import {
+  NETWORK_BINDING_RESERVED_IDENTIFIER,
+  NETWORK_PRIVATE_PREFIX,
+  NETWORK_PRIVATE_SPECIFIER,
+  type NetworkPrivateBuildContext,
+} from "./network-private.ts";
 
 export type { PocketFramework };
 
@@ -83,6 +91,40 @@ const PACKAGE_NAME = "@pocketjs/framework";
 const CACHE_DIR = new URL("../../.cache/transforms/", import.meta.url).pathname;
 const CACHE_VERSION = "2"; // manual backstop; compiler sources are hashed in below
 const COMPILER_DIR = new URL("./", import.meta.url).pathname;
+const NETWORK_HTTP_BINDING_FRAMEWORK_SOURCE = realpathSync(new URL(
+  "../src/net/http-binding.ts",
+  import.meta.url,
+).pathname);
+const NETWORK_V1_BINDING_FRAMEWORK_SOURCE = realpathSync(new URL(
+  "../src/net/network-v1-binding.ts",
+  import.meta.url,
+).pathname);
+const NETWORK_LIMITS_FRAMEWORK_SOURCE = realpathSync(new URL(
+  "../src/net/network-limits.ts",
+  import.meta.url,
+).pathname);
+const NETWORK_HTTP_FRAMEWORK_SOURCE = realpathSync(new URL(
+  "../src/net/http.ts",
+  import.meta.url,
+).pathname);
+const NETWORK_INDEX_FRAMEWORK_SOURCE = realpathSync(new URL(
+  "../src/net/index.ts",
+  import.meta.url,
+).pathname);
+const NETWORK_PRIVATE_FRAMEWORK_SOURCES = new Set([
+  NETWORK_HTTP_BINDING_FRAMEWORK_SOURCE,
+  NETWORK_V1_BINDING_FRAMEWORK_SOURCE,
+  NETWORK_LIMITS_FRAMEWORK_SOURCE,
+]);
+const NETWORK_PUBLIC_FRAMEWORK_SPECIFIER_BY_SOURCE = new Map<string, string>([
+  [realpathSync(new URL("../src/net/http.ts", import.meta.url).pathname), `${PACKAGE_NAME}/net/http`],
+  [realpathSync(new URL("../src/net/websocket.ts", import.meta.url).pathname), `${PACKAGE_NAME}/net/websocket`],
+  [realpathSync(new URL("../src/net/mqtt.ts", import.meta.url).pathname), `${PACKAGE_NAME}/net/mqtt`],
+  [realpathSync(new URL("../src/net/tcp.ts", import.meta.url).pathname), `${PACKAGE_NAME}/net/tcp`],
+  [realpathSync(new URL("../src/net/udp.ts", import.meta.url).pathname), `${PACKAGE_NAME}/net/udp`],
+]);
+const FRAMEWORK_SOURCE_ROOT = realpathSync(new URL("../src/", import.meta.url).pathname);
+const NETWORK_PRIVATE_NAMESPACE = "pocketjs-network-private-v1";
 
 /**
  * Hash of this package's own compiler sources: transform behavior lives here,
@@ -216,6 +258,343 @@ interface Collected {
 
 export type BuildFeatures = Readonly<Record<string, boolean>>;
 
+const NETWORK_SURFACE_DEMANDS: Readonly<
+  Record<string, Readonly<Record<string, readonly string[]>>>
+> = {
+  [`${PACKAGE_NAME}/net/http`]: {
+    fetch: ["network.http.client"],
+    serve: ["network.http.server"],
+  },
+  [`${PACKAGE_NAME}/net/websocket`]: {
+    connect: ["network.websocket.client"],
+    serve: ["network.websocket.server"],
+    upgrade: [
+      "network.http.server",
+      "network.websocket.server",
+      "network.websocket.server.upgrade",
+    ],
+  },
+  [`${PACKAGE_NAME}/net/mqtt`]: {
+    connect: ["network.mqtt.client"],
+  },
+  [`${PACKAGE_NAME}/net/tcp`]: {
+    connect: ["network.tcp.client"],
+    listen: ["network.tcp.server"],
+  },
+  [`${PACKAGE_NAME}/net/udp`]: {
+    udpSocket: ["network.udp"],
+  },
+};
+
+/** Value implementations that are declared for type-checking but cannot be
+ * linked into a PocketJS application until their Guest Binding is complete. */
+const STAGED_NETWORK_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
+  [`${PACKAGE_NAME}/net/http`]: new Set(["fetch", "serve", "Headers", "Request", "Response"]),
+  [`${PACKAGE_NAME}/net/websocket`]: new Set(["connect", "serve", "upgrade"]),
+  [`${PACKAGE_NAME}/net/mqtt`]: new Set(["connect"]),
+  [`${PACKAGE_NAME}/net/tcp`]: new Set(["connect", "listen"]),
+  [`${PACKAGE_NAME}/net/udp`]: new Set(["udpSocket"]),
+};
+
+function makeNetworkDemandGate(
+  features: BuildFeatures | undefined,
+  testOnlyStagedHttpClientFetch = false,
+): PluginObj {
+  const requireCapabilities = (
+    path: { buildCodeFrameError(message: string): Error },
+    source: string,
+    exportNames: readonly string[] | null,
+  ): void => {
+    const surface = NETWORK_SURFACE_DEMANDS[source];
+    if (!surface) return;
+    const names = exportNames ?? [
+      ...new Set([...Object.keys(surface), ...(STAGED_NETWORK_VALUES[source] ?? [])]),
+    ];
+    const demanded = new Set<string>();
+    for (const name of names) {
+      for (const capability of surface[name] ?? []) demanded.add(capability);
+    }
+    const missing = [...demanded].filter((capability) => features?.[capability] !== true);
+    if (missing.length === 0) return;
+    const selected = exportNames === null ? "namespace/all value exports" :
+      exportNames.map((name) => `\`${name}\``).join(", ");
+    throw path.buildCodeFrameError(
+      `PocketJS: ${source} ${selected} requires admitted ` +
+        `${missing.length === 1 ? "capability" : "capabilities"} ${missing.map((id) => `\`${id}\``).join(", ")}. ` +
+        "The ResolvedBuildPlan does not provide them.",
+    );
+  };
+
+  const requireReadySurface = (
+    path: { buildCodeFrameError(message: string): Error },
+    source: string,
+    exportNames: readonly string[] | null,
+  ): void => {
+    const staged = STAGED_NETWORK_VALUES[source];
+    if (!staged) return;
+    const names = exportNames ?? [...staged];
+    const unavailable = names.filter((name) =>
+      staged.has(name) && !(
+        testOnlyStagedHttpClientFetch &&
+        source === `${PACKAGE_NAME}/net/http` &&
+        name === "fetch"
+      )
+    );
+    if (unavailable.length === 0) return;
+    throw path.buildCodeFrameError(
+      `PocketJS: ${source} ${unavailable.map((name) => `\`${name}\``).join(", ")} ` +
+        "is a staged surface whose Guest Binding is not available in this build.",
+    );
+  };
+
+  const checkSurface = (
+    path: { buildCodeFrameError(message: string): Error },
+    source: string,
+    exportNames: readonly string[] | null,
+  ): void => {
+    requireCapabilities(path, source, exportNames);
+    requireReadySurface(path, source, exportNames);
+  };
+
+  return {
+    name: "pocketjs-network-demand-gate",
+    visitor: {
+      ImportDeclaration(path) {
+        const source = path.node.source.value;
+        if (!NETWORK_SURFACE_DEMANDS[source] || path.node.importKind === "type") return;
+        let allValues = path.node.specifiers.length === 0;
+        const names: string[] = [];
+        for (const specifier of path.node.specifiers) {
+          if (specifier.type === "ImportSpecifier") {
+            if (specifier.importKind === "type") continue;
+            names.push(
+              specifier.imported.type === "Identifier"
+                ? specifier.imported.name
+                : specifier.imported.value,
+            );
+          } else {
+            allValues = true;
+          }
+        }
+        checkSurface(path, source, allValues ? null : names);
+      },
+      ExportNamedDeclaration(path) {
+        const source = path.node.source?.value;
+        if (!source || !NETWORK_SURFACE_DEMANDS[source] || path.node.exportKind === "type") return;
+        let allValues = false;
+        const names: string[] = [];
+        for (const specifier of path.node.specifiers) {
+          if (specifier.type !== "ExportSpecifier") {
+            allValues = true;
+            continue;
+          }
+          if (specifier.exportKind === "type") continue;
+          const local = specifier.local as
+            | { readonly type: "Identifier"; readonly name: string }
+            | { readonly type: "StringLiteral"; readonly value: string };
+          names.push(local.type === "Identifier" ? local.name : local.value);
+        }
+        checkSurface(path, source, allValues ? null : names);
+      },
+      ExportAllDeclaration(path) {
+        const source = path.node.source.value;
+        if (path.node.exportKind === "type") return;
+        checkSurface(path, source, null);
+      },
+      CallExpression(path) {
+        const dynamicImport = path.node.callee.type === "Import";
+        const commonJsRequire = path.node.callee.type === "Identifier" &&
+          path.node.callee.name === "require";
+        if (!dynamicImport && !commonJsRequire) return;
+
+        const argumentPaths = path.get("arguments");
+        const argumentPath = Array.isArray(argumentPaths) && argumentPaths.length === 1
+          ? argumentPaths[0]
+          : undefined;
+        const evaluated = argumentPath?.evaluate();
+        if (!evaluated?.confident || typeof evaluated.value !== "string") {
+          throw path.buildCodeFrameError(
+            "PocketJS: dynamic import and require specifiers must be compile-time strings; " +
+              "an unresolved specifier could bypass network capability admission.",
+          );
+        }
+        checkSurface(path, evaluated.value, null);
+      },
+    },
+  };
+}
+
+function canonicalFile(path: string): string | null {
+  if (path === "") return null;
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
+}
+
+function resolveFileLikeSpecifier(path: string, resolveDir: string): string | null {
+  let candidate: string;
+  if (path.startsWith("file:")) {
+    try {
+      const url = new globalThis.URL(path);
+      if (url.protocol !== "file:") return null;
+      // Bun treats search/hash as module identity suffixes while loading the
+      // same file. Canonicalize the underlying file before applying the
+      // private-module policy.
+      url.search = "";
+      url.hash = "";
+      candidate = fileURLToPath(url);
+    } catch {
+      return null;
+    }
+  } else {
+    if (!isAbsolute(path) && !path.startsWith(".")) return null;
+    const suffix = path.search(/[?#]/u);
+    candidate = suffix === -1 ? path : path.slice(0, suffix);
+  }
+  try {
+    return Bun.resolveSync(candidate, resolveDir);
+  } catch {
+    return null;
+  }
+}
+
+function isNetworkBindingFrameworkSource(path: string): boolean {
+  const canonical = canonicalFile(path);
+  return canonical !== null && NETWORK_PRIVATE_FRAMEWORK_SOURCES.has(canonical);
+}
+
+function isAllowedPrivateNetworkSourceImport(
+  target: string,
+  importer: string,
+): boolean {
+  if (importer === NETWORK_PRIVATE_SPECIFIER) {
+    return target === NETWORK_V1_BINDING_FRAMEWORK_SOURCE;
+  }
+  const canonicalImporter = canonicalFile(importer);
+  if (target === NETWORK_HTTP_BINDING_FRAMEWORK_SOURCE) {
+    return canonicalImporter === NETWORK_HTTP_FRAMEWORK_SOURCE ||
+      canonicalImporter === NETWORK_V1_BINDING_FRAMEWORK_SOURCE;
+  }
+  if (target === NETWORK_LIMITS_FRAMEWORK_SOURCE) {
+    return canonicalImporter === NETWORK_INDEX_FRAMEWORK_SOURCE ||
+      canonicalImporter === NETWORK_V1_BINDING_FRAMEWORK_SOURCE;
+  }
+  return false;
+}
+
+function isFrameworkSource(path: string): boolean {
+  const canonical = canonicalFile(path);
+  if (canonical === null) return false;
+  const fromRoot = relative(FRAMEWORK_SOURCE_ROOT, canonical);
+  return fromRoot !== "" && fromRoot !== ".." &&
+    !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot);
+}
+
+function preparePrivateNetworkFrameworkSource(
+  path: string,
+  source: string,
+  enabled: boolean,
+): string {
+  void path;
+  void enabled;
+  return source;
+}
+
+function makePrivateNetworkIdentifierGate(
+  path: string,
+  context: NetworkPrivateBuildContext | undefined,
+): PluginObj {
+  // Only the compiler-rewritten capture module may name the private slot.
+  // Treat every other source path—including an application deliberately
+  // placed below framework/src—as untrusted input.
+  const frameworkOwned = isNetworkBindingFrameworkSource(path);
+  const reservedIdentifiers = context === undefined
+    ? undefined
+    : new Set([
+        NETWORK_BINDING_RESERVED_IDENTIFIER,
+        context.takeIdentifier,
+        context.bindingIdentifier,
+        context.pendingIdentifier,
+        context.argumentsIdentifier,
+      ]);
+  return {
+    name: "pocketjs-private-network-identifier",
+    visitor: {
+      Program(program) {
+        if (reservedIdentifiers === undefined || frameworkOwned) return;
+        program.traverse({
+          Identifier(identifierPath) {
+            if (!reservedIdentifiers.has(identifierPath.node.name)) return;
+            throw identifierPath.buildCodeFrameError(
+              "PocketJS: application source cannot reference the private network binding identifier.",
+            );
+          },
+          ReferencedIdentifier(identifierPath) {
+            if (identifierPath.node.name !== "arguments") return;
+            const argumentOwner = identifierPath.findParent(
+              (parent) => parent.isFunction() && !parent.isArrowFunctionExpression(),
+            );
+            if (argumentOwner) return;
+            throw identifierPath.buildCodeFrameError(
+              "PocketJS: top-level application arguments cannot reference the private network binding factory.",
+            );
+          },
+          CallExpression(callPath) {
+            if (
+              callPath.node.callee.type !== "Identifier" ||
+              callPath.node.callee.name !== "eval"
+            ) return;
+            // Network artifacts contain compiler-owned lexical capture state.
+            // Preserve eval of global code while preventing application code
+            // from inspecting any surrounding bundler/factory scope.
+            callPath.node.callee = {
+              type: "SequenceExpression",
+              expressions: [
+                { type: "NumericLiteral", value: 0 },
+                { type: "Identifier", name: "eval" },
+              ],
+            };
+          },
+        });
+      },
+    },
+  };
+}
+
+async function transformPrivateNetworkJavaScript(
+  path: string,
+  source: string,
+  context: NetworkPrivateBuildContext,
+): Promise<string> {
+  const transformed = await transformAsync(source, {
+    filename: path,
+    sourceType: "unambiguous",
+    presets: [],
+    parserOpts: JSX_PARSER_OPTS,
+    plugins: [makePrivateNetworkIdentifierGate(path, context)],
+    babelrc: false,
+    configFile: false,
+    sourceMaps: false,
+  });
+  if (!transformed?.code && transformed?.code !== "") {
+    throw new TypeError(`PocketJS transform produced no output for ${path}`);
+  }
+  return transformed.code;
+}
+
+function privateNetworkModuleSource(context: NetworkPrivateBuildContext): string {
+  return `
+import { mountNetworkV1HttpBinding } from ${JSON.stringify(NETWORK_V1_BINDING_FRAMEWORK_SOURCE)};
+const ${context.bindingIdentifier} = ${context.takeIdentifier}();
+mountNetworkV1HttpBinding(${context.bindingIdentifier}, Object.freeze({
+  planHashBytes: Object.freeze(${JSON.stringify(context.planHashBytes)}),
+  featureIds: Object.freeze(${JSON.stringify(context.featureIds)}),
+}));
+`;
+}
+
 /** Fold only calls proven to reference the public platform import. */
 function makeFeatureFolder(features: BuildFeatures): PluginObj {
   return {
@@ -334,6 +713,9 @@ async function hashKey(
   src: string,
   framework: PocketFramework,
   features: BuildFeatures | undefined,
+  privateNetworkEnabled: boolean,
+  testOnlyStagedHttpClientFetch: boolean,
+  testOnlyStagedHttpsClientFetch: boolean,
 ): Promise<string> {
   const h = new Bun.CryptoHasher("sha256");
   h.update(
@@ -365,6 +747,14 @@ async function hashKey(
             Object.entries(features).sort(([left], [right]) => left.localeCompare(right)),
           )) +
       "\0" +
+      (privateNetworkEnabled ? "private-network-v1" : "no-private-network") +
+      "\0" +
+      (testOnlyStagedHttpClientFetch
+        ? "test-only-staged-http-client-fetch"
+        : testOnlyStagedHttpsClientFetch
+          ? "test-only-staged-https-client-fetch"
+          : "staged-network-closed") +
+      "\0" +
       path +
       "\0",
   );
@@ -387,17 +777,21 @@ function resolvePackageSubpath(spec: string): string | null {
 /**
  * Resolve an `@pocketjs/framework[/…]` import to a module file, or null to
  * let Bun's package.json resolution (or an error) take over. A framework
- * prefix (`vue-vapor/audio`) pins that framework's view; a bare subpath
- * resolves through the ACTIVE framework — both are lookups into the same
- * SUBPATHS-derived table, so the registry is the only authority.
+ * prefix (`vue-vapor/audio`) pins that framework's published alias; a bare
+ * subpath resolves through the ACTIVE framework. Both are lookups into the
+ * same SUBPATHS-derived table, so an absent `aliases` declaration cannot be
+ * bypassed by compiler resolution.
  */
 export function packagePath(spec: string, framework: PocketFramework): string | null {
   const subpath = resolvePackageSubpath(spec);
   if (subpath === null) return null;
   for (const fw of POCKET_FRAMEWORKS) {
-    if (subpath === fw) return RESOLVED[fw][""] ?? null;
+    if (subpath === fw) {
+      return SUBPATHS[""]?.aliases?.includes(fw) ? (RESOLVED[fw][""] ?? null) : null;
+    }
     if (subpath.startsWith(fw + "/")) {
-      return RESOLVED[fw][subpath.slice(fw.length + 1)] ?? null;
+      const name = subpath.slice(fw.length + 1);
+      return SUBPATHS[name]?.aliases?.includes(fw) ? (RESOLVED[fw][name] ?? null) : null;
     }
   }
   return RESOLVED[framework][subpath] ?? null;
@@ -429,8 +823,16 @@ export async function transformFile(
   path: string,
   src: string,
   framework: PocketFramework,
-  options: { features?: BuildFeatures } = {},
+  options: {
+    features?: BuildFeatures;
+    networkPrivate?: NetworkPrivateBuildContext;
+  } = {},
 ): Promise<TransformResult> {
+  src = preparePrivateNetworkFrameworkSource(
+    path,
+    src,
+    options.networkPrivate !== undefined,
+  );
   const isVueSfc = path.endsWith(".vue");
   if (isVueSfc && framework !== "vue-vapor") {
     throw new Error(
@@ -438,7 +840,15 @@ export async function transformFile(
         `(set app.framework in pocket.json or pass --framework=vue-vapor)`,
     );
   }
-  const key = await hashKey(path, src, framework, options.features);
+  const key = await hashKey(
+    path,
+    src,
+    framework,
+    options.features,
+    options.networkPrivate !== undefined,
+    options.networkPrivate?.testOnlyStagedHttpClientFetch === true,
+    options.networkPrivate?.testOnlyStagedHttpsClientFetch === true,
+  );
   const cacheFile = CACHE_DIR + key + ".json";
   const cached = (await Bun.file(cacheFile).json().catch(() => null)) as CacheEntry | null;
   if (cached && typeof cached.code === "string") {
@@ -457,6 +867,12 @@ export async function transformFile(
       presets: [],
       parserOpts: JSX_PARSER_OPTS,
       plugins: [
+        makePrivateNetworkIdentifierGate(path, options.networkPrivate),
+        makeNetworkDemandGate(
+          options.features,
+          options.networkPrivate?.testOnlyStagedHttpClientFetch === true ||
+            options.networkPrivate?.testOnlyStagedHttpsClientFetch === true,
+        ),
         ...(options.features === undefined ? [] : [makeFeatureFolder(options.features)]),
         makeCollector(collected, framework),
       ],
@@ -483,6 +899,12 @@ export async function transformFile(
   const collected: Collected = { classStrings: [], textCodepoints: new Set() };
   const opts = transformOptions(framework);
   const plugins = [
+    makePrivateNetworkIdentifierGate(path, options.networkPrivate),
+    makeNetworkDemandGate(
+      options.features,
+      options.networkPrivate?.testOnlyStagedHttpClientFetch === true ||
+        options.networkPrivate?.testOnlyStagedHttpsClientFetch === true,
+    ),
     ...(options.features === undefined ? [] : [makeFeatureFolder(options.features)]),
     makeCollector(collected, framework),
   ];
@@ -567,11 +989,84 @@ export function jsxPlugin(
     entry?: string;
     features?: BuildFeatures;
     generatedStyles?: string;
+    networkPrivate?: NetworkPrivateBuildContext;
   } = {},
 ): BunPlugin {
   return {
     name: `pocketjs-${framework}-jsx`,
     setup(build) {
+      // Private installer/capture modules are inaccessible in every artifact
+      // mode, including a plain build with no network factory. Resolve the
+      // canonical target so absolute paths and symlink aliases are equivalent.
+      build.onResolve({ filter: /.*/ }, (args) => {
+        const resolved = resolveFileLikeSpecifier(args.path, args.resolveDir);
+        if (resolved === null) return undefined;
+        const target = canonicalFile(resolved);
+        if (target === null) return undefined;
+        const publicSpecifier = NETWORK_PUBLIC_FRAMEWORK_SPECIFIER_BY_SOURCE.get(target);
+        if (publicSpecifier !== undefined) {
+          throw new TypeError(
+            `PocketJS: application resolver rejected direct access to ${publicSpecifier}; ` +
+              `import the canonical ${publicSpecifier} package surface so capability demand can be verified.`,
+          );
+        }
+        if (!NETWORK_PRIVATE_FRAMEWORK_SOURCES.has(target)) return undefined;
+        if (isAllowedPrivateNetworkSourceImport(target, args.importer)) return undefined;
+        throw new TypeError(
+          "PocketJS: application resolver rejected direct access to a private network binding module.",
+        );
+      });
+      if (opts.networkPrivate !== undefined) {
+        const context = opts.networkPrivate;
+        if (!opts.entry) {
+          throw new TypeError("PocketJS compiler: network factory requires an application entry");
+        }
+        build.onResolve({ filter: /^pocketjs:network-bootstrap-v1-/ }, (args) => {
+          if (args.path !== context.bootstrapSpecifier || args.importer !== "") {
+            throw new TypeError(
+              "PocketJS: application resolver rejected the private network bootstrap.",
+            );
+          }
+          return { path: context.bootstrapSpecifier, namespace: NETWORK_PRIVATE_NAMESPACE };
+        });
+        build.onLoad(
+          { filter: /.*/, namespace: NETWORK_PRIVATE_NAMESPACE },
+          (args) => {
+            if (args.path === context.bootstrapSpecifier) {
+              return {
+                contents:
+                  `import ${JSON.stringify(NETWORK_PRIVATE_SPECIFIER)};\n` +
+                  `import ${JSON.stringify(opts.entry)};\n`,
+                loader: "js",
+              };
+            }
+            if (args.path === NETWORK_PRIVATE_SPECIFIER) {
+              return { contents: privateNetworkModuleSource(context), loader: "js" };
+            }
+            return undefined;
+          },
+        );
+        build.onResolve({ filter: /^pocketjs:internal\// }, (args) => {
+          const fromBootstrap =
+            args.importer === context.bootstrapSpecifier;
+          const fromFrameworkBinding = isNetworkBindingFrameworkSource(args.importer);
+          if (
+            args.path !== NETWORK_PRIVATE_SPECIFIER ||
+            (!fromBootstrap && !fromFrameworkBinding)
+          ) {
+            throw new TypeError(
+              `PocketJS: application resolver rejected private network binding import ${JSON.stringify(args.path)}.`,
+            );
+          }
+          return { path: NETWORK_PRIVATE_SPECIFIER, namespace: NETWORK_PRIVATE_NAMESPACE };
+        });
+      } else {
+        build.onResolve({ filter: /^pocketjs:internal\// }, (args) => {
+          throw new TypeError(
+            `PocketJS: application resolver rejected private network binding import ${JSON.stringify(args.path)}.`,
+          );
+        });
+      }
       // External applications may have their own node_modules. Resolve both
       // sides of the renderer boundary to PocketJS's browser-mode Solid copy,
       // otherwise identical packages at different paths form two reactive
@@ -633,13 +1128,32 @@ export function jsxPlugin(
         if (framework === "vue-vapor" && args.path === opts.entry) {
           src = `import "@pocketjs/framework/prelude";\n${src}`;
         }
-        const { code } = await transformFile(args.path, src, framework, { features: opts.features });
+        const { code } = await transformFile(args.path, src, framework, {
+          features: opts.features,
+          networkPrivate: opts.networkPrivate,
+        });
         return { contents: code, loader: "js" };
       });
       build.onLoad({ filter: /\.vue$/ }, async (args) => {
         const src = await Bun.file(args.path).text();
-        const { code } = await transformFile(args.path, src, framework, { features: opts.features });
+        const { code } = await transformFile(args.path, src, framework, {
+          features: opts.features,
+          networkPrivate: opts.networkPrivate,
+        });
         return { contents: code, loader: "js" };
+      });
+      build.onLoad({ filter: /\.[cm]?jsx?$/ }, async (args) => {
+        const context = opts.networkPrivate;
+        if (context === undefined || isFrameworkSource(args.path)) return undefined;
+        const source = await Bun.file(args.path).text();
+        const needsPrivateCheck = !args.path.includes("/node_modules/") ||
+          source.includes(context.token) ||
+          source.includes(NETWORK_BINDING_RESERVED_IDENTIFIER) ||
+          /\b(?:arguments|eval)\b/.test(source) ||
+          /\\u(?:\{[0-9a-fA-F]+\}|[0-9a-fA-F]{4})/.test(source);
+        if (!needsPrivateCheck) return undefined;
+        const code = await transformPrivateNetworkJavaScript(args.path, source, context);
+        return { contents: code, loader: args.path.endsWith("x") ? "jsx" : "js" };
       });
     },
   };

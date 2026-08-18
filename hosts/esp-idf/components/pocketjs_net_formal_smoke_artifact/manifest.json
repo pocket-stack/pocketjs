@@ -1,0 +1,66 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-3.json",
+  "pocket": 3,
+  "id": "dev.pocketjs.esp-formal-network-smoke",
+  "name": "esp-formal-network-smoke",
+  "title": "ESP formal network smoke",
+  "version": "1.0.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "network.http.client"
+      ]
+    }
+  },
+  "permissions": {
+    "network": {
+      "connect": [
+        {
+          "protocol": "http",
+          "host": "172.16.10.126",
+          "port": 8088
+        }
+      ],
+      "listen": [],
+      "localNetwork": true,
+      "insecureTransport": true,
+      "broadcast": false,
+      "multicast": false,
+      "allowInvalidTlsForDevelopment": false,
+      "browserAmbientCredentials": false,
+      "browserOpaqueWebSocketRedirects": false,
+      "credentials": []
+    }
+  },
+  "resources": {
+    "network": {
+      "minimum": {
+        "runtime": {
+          "connections": 1,
+          "pendingOperations": 1,
+          "completionDescriptors": 8,
+          "nativeBufferBytes": 65536
+        },
+        "http": {
+          "connections": 1,
+          "inflightRequests": 1,
+          "headerBytes": 4096,
+          "headerCount": 16,
+          "bufferedBodyBytes": 4096
+        }
+      }
+    }
+  },
+  "app": {
+    "entry": "app.ts",
+    "output": "esp-formal-network-smoke",
+    "framework": "solid",
+    "viewport": {
+      "logical": [
+        1,
+        1
+      ],
+      "presentation": "native"
+    }
+  }
+}

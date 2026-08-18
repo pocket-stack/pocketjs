@@ -144,11 +144,6 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // appends the id to its profile only when its native host ships the module
   // (the ring/thread discipline to copy is hosts/psp/src/audio.rs).
   "audio.pcm",
-  // Bounded whole-response HTTP through `fetch()` and the net module's own
-  // namespace (`globalThis.net`, contracts/spec/net.ts). Transport adapters
-  // remain host-owned; the browser dev host, deterministic sim and reference
-  // core exercise the contract without granting network access to every host.
-  "net.http",
   // SQLite behind the db module's own namespace (`globalThis.db`,
   // contracts/spec/db.ts): five synchronous ops, rows as one JSON line per
   // query() call, per-app storage the host confines. Registered ahead of any

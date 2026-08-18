@@ -4,7 +4,7 @@ import { fetch as pocketFetch } from "../framework/src/net-api.ts";
 import { runServicePumps } from "../framework/src/services.ts";
 import { createNetHost } from "../hosts/web/net.js";
 
-test("browser net adapter uses native fetch but delivers only at beginFrame", async () => {
+test("internal NET v1 browser fixture delivers only at beginFrame", async () => {
   const calls = [];
   const host = createNetHost(async (url, options) => {
     calls.push({ url, options });
@@ -41,7 +41,7 @@ test("browser net adapter uses native fetch but delivers only at beginFrame", as
   }
 });
 
-test("browser net adapter enforces response maxBytes while reading", async () => {
+test("internal NET v1 browser fixture enforces response maxBytes while reading", async () => {
   const host = createNetHost(async () => new Response("12345"));
   globalThis.net = host.ns;
   try {

@@ -1,0 +1,3 @@
+dependencies:
+  pocketjs_net_esp_runtime:
+    override_path: ../../..

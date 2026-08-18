@@ -1,6 +1,6 @@
-// Deterministic virtual-clock NET module for conformance tests. It never uses
-// ambient host networking: routes are fixtures, and completions become visible
-// only after tick(), exactly like a native transport crossing a tick boundary.
+// Internal NET v1 migration fixture. The stock sim does not install it.
+// Conformance tests may mount it explicitly to retain the bounded parser and
+// virtual-tick completion behavior while the new Network Guest Binding lands.
 
 import {
   NET_ERROR,

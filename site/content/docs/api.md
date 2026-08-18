@@ -724,7 +724,8 @@ This is the stable build/custom-host boundary:
 | Export | Purpose |
 | --- | --- |
 | `POCKET_MANIFEST_SCHEMA_ID` / `POCKET_MANIFEST_VERSION` | Canonical format-2 identity. |
-| `pocketManifestV2Schema` / `validatePocketManifest` | Strict schema and structured diagnostics. |
+| `POCKET_MANIFEST_V3_SCHEMA_ID` / `POCKET_MANIFEST_V3_VERSION` | Canonical format-3 identity for network admission inputs. |
+| `pocketManifestV2Schema` / `pocketManifestV3Schema` / `validatePocketManifest` | Strict versioned schemas and structured diagnostics. |
 | `extractHostBuildInputs(plan, options?)` | Verify a plan checksum and project it onto stable native-host inputs. |
 | `hostBuildEnvironment(inputs, options)` | Produce the target-neutral Cargo environment for a custom host. |
 | `vitaTitleId(applicationId)` | Deterministically derive a stable Vita Title ID. |

@@ -146,7 +146,7 @@ The grammar is implemented once, as infrastructure every runtime reuses:
 | Crate | Role |
 | --- | --- |
 | `pocket-mod` | Guest hosting: QuickJS realm lifecycle, surface mounting (`mount("ui", ops)`), per-tick pump (frame call + job drain + timers), console, hot reload. The "mod runtime" capability, as a library. |
-| `pocket-net` | Transport-neutral NET core and `globalThis.net` surface: validates bounded HTTP requests, owns handles/bodies and tick event batches, and accepts a host-owned `HttpTransport` adapter. See [NET.md](./NET.md). |
+| `pocket-net` | Internal NET v1 migration core: bounded HTTP validation, handle/body ownership, completion batches, and the old `HttpTransport` adapter. Stock hosts do not mount it. See [NET.md](./NET.md). |
 | `pocket-ui-wgpu` | The `ui` surface, desktop edition: feeds paks to `pocketjs-core`, exposes the 17 `HostOps` ops to the guest, renders the DrawList through wgpu into any render target — a window (standalone app host) or an overlay pass over a 3D scene (game HUD). |
 | `pocket-widget` | The desktop-widget capability (WIDGET.md): a widget window shell whose guest ticks at a fixed rate while GPU frames render on demand, embedded `ui` surfaces bound onto meshes, and cursor-ray part picking mapped to declared inputs. `pocket-stage` is the first runtime on it; its bundled PSP stage runs admitted fixed-viewport apps unmodified. |
 | `pocketjs-core` | The 2D UI core (unchanged; now viewport-parameterized). |
@@ -156,6 +156,12 @@ The grammar is implemented once, as infrastructure every runtime reuses:
 | `pocketjs-psp` (lib) | Guest hosting + `ui` surface, PSP edition: the arena allocator, the QuickJS embedding, the DrawList GE backend (with an overlay mode for 3D compositing), pak feeding, and the DevTools mailbox — everything the 2D EBOOT proved, linkable by game EBOOTs. |
 | `pocket3d-vita` | The 3D substrate, Vita edition: CPU projection and six-plane clipping into vita2d/GXM at 960x544, painter-sorted so a PocketJS HUD can share the same scene. |
 | `pocketjs-vita` (lib) | Guest hosting + `ui` surface, Vita edition: QuickJS, density-2 pak/font resources, controller/dual-analog input, logical-coordinate front-panel contacts and a native-density 960x544 vita2d backend over the portable 480x272 logical layout. |
+
+**Stock web and sim hosts do not install `globalThis.net`, and `net.http` is
+not a registered capability.** The replacement network package uses
+`@pocketjs/framework/net` and protocol subpaths. Native network access will be
+registered through a private framework binding only after a stock host passes
+the protocol and hardware gates.
 
 A specialized runtime is then a thin composition. OpenStrike is:
 

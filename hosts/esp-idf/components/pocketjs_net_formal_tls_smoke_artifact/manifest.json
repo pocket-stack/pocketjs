@@ -1,0 +1,64 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-3.json",
+  "pocket": 3,
+  "id": "dev.pocketjs.esp-formal-network-tls-smoke",
+  "name": "esp-formal-network-tls-smoke",
+  "title": "ESP formal TLS network smoke",
+  "version": "1.0.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "network.http.client",
+        "network.http.client.tls"
+      ]
+    }
+  },
+  "permissions": {
+    "network": {
+      "connect": [
+        {
+          "protocol": "https",
+          "host": "pocketjs.test",
+          "port": 8443
+        }
+      ],
+      "listen": [],
+      "localNetwork": true,
+      "insecureTransport": false,
+      "broadcast": false,
+      "multicast": false,
+      "allowInvalidTlsForDevelopment": false,
+      "browserAmbientCredentials": false,
+      "browserOpaqueWebSocketRedirects": false,
+      "credentials": []
+    }
+  },
+  "resources": {
+    "network": {
+      "minimum": {
+        "runtime": {
+          "connections": 1,
+          "pendingOperations": 1,
+          "completionDescriptors": 8,
+          "nativeBufferBytes": 65536
+        },
+        "http": {
+          "connections": 1,
+          "inflightRequests": 1,
+          "headerBytes": 4096,
+          "headerCount": 16,
+          "bufferedBodyBytes": 4096
+        }
+      }
+    }
+  },
+  "app": {
+    "entry": "app.ts",
+    "output": "esp-formal-network-tls-smoke",
+    "framework": "solid",
+    "viewport": {
+      "logical": [1, 1],
+      "presentation": "native"
+    }
+  }
+}

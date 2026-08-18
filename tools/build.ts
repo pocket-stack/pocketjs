@@ -24,6 +24,8 @@
 //   --outdir=<path>              write <app>.js/.pak here instead of dist/
 //                                (external repos build their apps against a
 //                                vendored PocketJS and keep outputs local)
+//   --network-factory            emit a one-shot private-binding factory;
+//                                requires a verified plan with network inputs
 
 import { existsSync, statSync } from "node:fs";
 import { resolve as resolvePath, join, dirname } from "node:path";
@@ -61,6 +63,11 @@ import {
   placeholderImage,
   type PakBlob,
 } from "../framework/compiler/pak.ts";
+import {
+  createNetworkFactoryBuildContext,
+  finalizeBundleArtifact,
+  selectBundleArtifactMode,
+} from "./network-bundle-factory.ts";
 
 const ROOT = resolvePath(fileURLToPath(new URL("..", import.meta.url))); // pocketjs/
 let DIST = join(ROOT, "dist/");
@@ -89,6 +96,9 @@ let planPath: string | undefined;
 let densityFlag: number | undefined;
 let hzFlag: number | undefined;
 let projectRoot = process.cwd();
+let networkFactoryRequested = false;
+let testOnlyStagedHttpClientFetchRequested = false;
+let testOnlyStagedHttpsClientFetchRequested = false;
 for (const a of args) {
   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
   else if (a.startsWith("--font-regular=")) regularFontPath = resolvePath(a.slice("--font-regular=".length));
@@ -101,6 +111,13 @@ for (const a of args) {
   else if (a.startsWith("--outdir=")) DIST = resolvePath(a.slice("--outdir=".length)) + "/";
   else if (a.startsWith("--density=")) densityFlag = Number(a.slice("--density=".length));
   else if (a.startsWith("--hz=")) hzFlag = Number(a.slice("--hz=".length));
+  else if (a === "--network-factory") networkFactoryRequested = true;
+  else if (a === "--test-only-staged-http-client-fetch") {
+    testOnlyStagedHttpClientFetchRequested = true;
+  }
+  else if (a === "--test-only-staged-https-client-fetch") {
+    testOnlyStagedHttpsClientFetchRequested = true;
+  }
   else if (!a.startsWith("-")) appArg = a;
 }
 
@@ -117,8 +134,16 @@ if (planPath) {
   if (!configFlagged) configPath = resolvePath(projectRoot, "pocket.config.ts");
 }
 
+const bundleArtifactMode = selectBundleArtifactMode(
+  buildPlan,
+  networkFactoryRequested,
+);
+let networkPrivate = bundleArtifactMode === "network-factory"
+  ? createNetworkFactoryBuildContext(buildPlan!)
+  : undefined;
+
 if (!appArg) {
-  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor|octane] [--extra-chars=...] [--density=N] [--hz=N]");
+  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--network-factory] [--framework=solid|vue-vapor|octane] [--extra-chars=...] [--density=N] [--hz=N]");
   process.exit(1);
 }
 
@@ -164,6 +189,139 @@ function resolveEntry(arg: string): string {
 }
 
 const requestedEntry = resolveEntry(appArg);
+if (
+  testOnlyStagedHttpClientFetchRequested &&
+  testOnlyStagedHttpsClientFetchRequested
+) {
+  throw new Error("PocketJS build: test-only staged network permits are mutually exclusive");
+}
+if (testOnlyStagedHttpClientFetchRequested) {
+  const expectedEntry = join(
+    ROOT,
+    "hosts/esp-idf/components/pocketjs_net_formal_smoke_artifact/app.ts",
+  );
+  const features = buildPlan?.features ?? {};
+  const enabledFeatures = Object.entries(features)
+    .filter(([, enabled]) => enabled)
+    .map(([name]) => name)
+    .sort();
+  const providers = buildPlan?.network?.providers;
+  const backendRoles = Object.keys(providers?.backendByRole ?? {}).sort();
+  const tlsRoles = Object.keys(providers?.tlsByRole ?? {}).sort();
+  if (
+    !networkFactoryRequested ||
+    bundleArtifactMode !== "network-factory" ||
+    networkPrivate === undefined ||
+    buildPlan?.target.id !== "esp-formal-network-smoke-test" ||
+    buildPlan.target.hostAbi !== 1 ||
+    buildPlan.planHash !==
+      "sha256:04856acc82e7aa31648b015e62a63a4cadf6f48a3d1d3f46f3987539520b63fd" ||
+    buildPlan.app.id !== "dev.pocketjs.esp-formal-network-smoke" ||
+    buildPlan.app.output !== "esp-formal-network-smoke" ||
+    requestedEntry !== expectedEntry ||
+    enabledFeatures.length !== 1 ||
+    enabledFeatures[0] !== "network.http.client" ||
+    backendRoles.length !== 1 ||
+    backendRoles[0] !== "http.client" ||
+    providers?.backendByRole["http.client"] !==
+      "pocketjs.net.http-client-core.v1.experimental" ||
+    tlsRoles.length !== 0 ||
+    providers?.netDriverId !== "pocketjs.net.esp-idf.transport.v1.experimental"
+  ) {
+    throw new Error(
+      "PocketJS build: --test-only-staged-http-client-fetch is restricted to " +
+        "the exact ESP formal network smoke plan and entry",
+    );
+  }
+  networkPrivate = Object.freeze({
+    ...networkPrivate,
+    testOnlyStagedHttpClientFetch: true as const,
+  });
+  console.warn(
+    "PocketJS build: TEST ONLY staged HTTP client fetch permit; " +
+      "public capability admission remains closed",
+  );
+}
+if (testOnlyStagedHttpsClientFetchRequested) {
+  const exactArtifacts = [
+    {
+      targetId: "esp-formal-network-tls-smoke-test",
+      planHash:
+        "sha256:9240cfa29c1678b49b6fed67104a39b2ad32f5dedab372af1c2a0bde3d602654",
+      appId: "dev.pocketjs.esp-formal-network-tls-smoke",
+      output: "esp-formal-network-tls-smoke",
+      entry: join(
+        ROOT,
+        "hosts/esp-idf/components/pocketjs_net_formal_tls_smoke_artifact/app.ts",
+      ),
+    },
+    {
+      targetId: "esp-formal-network-tls-conformance-test",
+      planHash:
+        "sha256:fe3014e4d3628eb60aaeedd414432eb8c9a5932e904b258a9d05a17c7f6abcce",
+      appId: "dev.pocketjs.esp-formal-network-tls-conformance",
+      output: "esp-formal-network-tls-conformance",
+      entry: join(
+        ROOT,
+        "hosts/esp-idf/components/pocketjs_net_formal_tls_conformance_artifact/app.ts",
+      ),
+    },
+  ] as const;
+  const exactArtifact = exactArtifacts.some((artifact) =>
+    buildPlan?.target.id === artifact.targetId &&
+    buildPlan.planHash === artifact.planHash &&
+    buildPlan.app.id === artifact.appId &&
+    buildPlan.app.output === artifact.output &&
+    requestedEntry === artifact.entry
+  );
+  const features = buildPlan?.features ?? {};
+  const enabledFeatures = Object.entries(features)
+    .filter(([, enabled]) => enabled)
+    .map(([name]) => name)
+    .sort();
+  const providers = buildPlan?.network?.providers;
+  const backendRoles = Object.keys(providers?.backendByRole ?? {}).sort();
+  const tlsRoles = Object.keys(providers?.tlsByRole ?? {}).sort();
+  const tlsProvider = providers?.tlsByRole["http.client"];
+  const connect = buildPlan?.network?.policy.connect ?? [];
+  if (
+    !networkFactoryRequested ||
+    bundleArtifactMode !== "network-factory" ||
+    networkPrivate === undefined ||
+    !exactArtifact ||
+    buildPlan?.target.hostAbi !== 1 ||
+    enabledFeatures.length !== 2 ||
+    enabledFeatures[0] !== "network.http.client" ||
+    enabledFeatures[1] !== "network.http.client.tls" ||
+    backendRoles.length !== 1 ||
+    backendRoles[0] !== "http.client" ||
+    providers?.backendByRole["http.client"] !==
+      "pocketjs.net.http-client-core.v1.experimental" ||
+    tlsRoles.length !== 1 ||
+    tlsRoles[0] !== "http.client" ||
+    tlsProvider?.source !== "provider" ||
+    tlsProvider.id !== "pocketjs.net.esp-idf.esp-tls.v1.experimental" ||
+    providers?.netDriverId !== "pocketjs.net.esp-idf.transport.v1.experimental" ||
+    connect.length !== 1 ||
+    connect[0]?.protocol !== "https" ||
+    connect[0]?.host !== "pocketjs.test" ||
+    connect[0]?.port.min !== 8443 ||
+    connect[0]?.port.max !== 8443
+  ) {
+    throw new Error(
+      "PocketJS build: --test-only-staged-https-client-fetch is restricted to " +
+        "the exact ESP formal TLS test plans and entries",
+    );
+  }
+  networkPrivate = Object.freeze({
+    ...networkPrivate,
+    testOnlyStagedHttpsClientFetch: true as const,
+  });
+  console.warn(
+    "PocketJS build: TEST ONLY staged HTTPS client fetch permit; " +
+      "public capability admission remains closed",
+  );
+}
 // An app directory can carry its own pocket.config.ts (theme/keyframes local
 // to the app); it wins over the repo root config unless --config was given.
 if (!configFlagged && useConfig) {
@@ -268,7 +426,10 @@ async function walk(file: string): Promise<void> {
   if (file.endsWith("/styles.generated.ts")) return;
   const src = await Bun.file(file).text();
   // Throws with a code frame on lint errors.
-  const res = await transformFile(file, src, framework, { features: buildPlan?.features });
+  const res = await transformFile(file, src, framework, {
+    features: buildPlan?.features,
+    networkPrivate,
+  });
   for (const s of res.classStrings) {
     if (!seenClass.has(s)) {
       seenClass.add(s);
@@ -466,7 +627,7 @@ if (!existsSync(frameworkConfig.rendererPath)) {
 // particular, external apps and renderer-solid.ts must share PocketJS's
 // browser-mode Solid runtime even when the app has its own node_modules.
 const result = await Bun.build({
-  entrypoints: [entry],
+  entrypoints: [networkPrivate?.bootstrapSpecifier ?? entry],
   outdir: DIST,
   naming: `${outName}.js`,
   format: "iife",
@@ -494,6 +655,7 @@ const result = await Bun.build({
     entry,
     features: buildPlan?.features,
     generatedStyles,
+    networkPrivate,
   })],
 });
 if (!result.success) {
@@ -502,7 +664,22 @@ if (!result.success) {
   process.exit(1);
 }
 const bundle = result.outputs.find((o) => o.path.endsWith(".js"));
-console.log(`  pass 2: ${DIST}${outName}.js (${bundle ? (await bundle.arrayBuffer()).byteLength : 0} bytes)`);
+let bundleBytes = 0;
+if (bundle) {
+  const bundledSource = await bundle.text();
+  const artifactSource = finalizeBundleArtifact(
+    bundledSource,
+    bundleArtifactMode,
+    networkPrivate,
+  );
+  if (artifactSource !== bundledSource) {
+    await Bun.write(bundle.path, artifactSource);
+  }
+  bundleBytes = new TextEncoder().encode(artifactSource).byteLength;
+}
+console.log(
+  `  pass 2: ${DIST}${outName}.js (${bundleBytes} bytes, artifact=${bundleArtifactMode})`,
+);
 console.log("PocketJS build: done");
 
 // ---------------------------------------------------------------------------

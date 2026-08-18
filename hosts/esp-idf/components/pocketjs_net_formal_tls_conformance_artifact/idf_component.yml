@@ -1,0 +1,10 @@
+version: "0.1.0"
+description: Test-only PocketJS formal ESP TLS HTTPS conformance artifact
+license: MIT
+repository: https://github.com/pocket-stack/pocketjs
+documentation: https://github.com/pocket-stack/pocketjs/tree/main/hosts/esp-idf
+targets:
+  - esp32p4
+  - esp32s3
+dependencies:
+  idf: "==6.0.2"

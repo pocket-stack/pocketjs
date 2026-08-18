@@ -1,0 +1,45 @@
+{
+  "status": "staged-partial-port",
+  "fetchSnapshot": "586cd2a44c2a865b37c166dc0740f3fb8bb220d6",
+  "wptSnapshot": "6437d68e10721ed4b9b68101ec1ab1a1b67a3995",
+  "cases": [
+    {
+      "path": "fetch/api/headers/header-setcookie.any.js",
+      "sourceSha256": "b587804553ca837bf953fea9b40c94237af803710f56f45e98750b450da42be2",
+      "tests": [
+        "Headers.prototype.get combines set-cookie headers in order",
+        "Headers iterator does not combine set-cookie headers",
+        "Headers iterator preserves set-cookie ordering",
+        "Headers.prototype.getSetCookie with multiple headers",
+        "Set-Cookie is a forbidden response header"
+      ]
+    },
+    {
+      "path": "fetch/api/headers/headers-combine.any.js",
+      "sourceSha256": "8bc26fcc318dc1fb0d0b60f2a4dd6d5fdaa8ac2e148d20856f6186b5d4f4971d",
+      "tests": [
+        "Create headers using same name for different values",
+        "Iterate combined values",
+        "Iterate combined values in sorted order"
+      ]
+    },
+    {
+      "path": "fetch/api/headers/headers-errors.any.js",
+      "sourceSha256": "4b4b9c8d9b72a52c5200feaa67f018cc91d05e9ee0c98a2a18ad56f44873047b",
+      "tests": [
+        "Create headers giving an array having one string as init argument",
+        "Create headers giving an array having three strings as init argument",
+        "Headers forEach throws if argument is not callable"
+      ]
+    },
+    {
+      "path": "fetch/api/headers/headers-normalize.any.js",
+      "sourceSha256": "8f914199d80ed14cd5dec7992464a10981e0b5b74fd26b70768f04f1fd1fb4c1",
+      "tests": [
+        "Create headers with not normalized values",
+        "Check append method with not normalized values",
+        "Check set method with not normalized values"
+      ]
+    }
+  ]
+}

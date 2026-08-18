@@ -1,10 +1,73 @@
 import { createHash } from "node:crypto";
-import type { PocketManifestV2 } from "../../../contracts/spec/pocket-manifest.ts";
+import type {
+  NetworkConnectProtocol,
+  NetworkListenProtocol,
+  NetworkResourceMinimum,
+  PocketManifest,
+} from "../../../contracts/spec/pocket-manifest.ts";
 import type { PresentationMode, Viewport } from "../../../contracts/spec/platforms.ts";
 
+export type NetworkBackendRole =
+  | "http.client"
+  | "http.server"
+  | "websocket.client"
+  | "websocket.server"
+  | "mqtt.client";
+
+export type NetworkTlsRole = NetworkBackendRole | "tcp.client" | "tcp.server";
+
+export interface ResolvedNetworkProviders {
+  readonly backendByRole: Readonly<Partial<Record<NetworkBackendRole, string>>>;
+  readonly tlsByRole: Readonly<Partial<Record<NetworkTlsRole, Readonly<{
+    source: "provider" | "backend";
+    id: string;
+  }>>>>;
+  readonly netDriverId: string;
+}
+
+export type ResolvedNetworkPort =
+  | Readonly<{ min: number; max: number }>
+  | Readonly<{ ephemeral: true }>;
+
+export interface ResolvedNetworkConnectPermission {
+  readonly protocol: NetworkConnectProtocol;
+  readonly host: string;
+  readonly port: Exclude<ResolvedNetworkPort, Readonly<{ ephemeral: true }>>;
+}
+
+export interface ResolvedNetworkListenPermission {
+  readonly protocol: NetworkListenProtocol;
+  readonly address: string;
+  readonly port: ResolvedNetworkPort;
+}
+
+export interface ResolvedNetworkPolicy {
+  readonly version: 1;
+  readonly connect: readonly ResolvedNetworkConnectPermission[];
+  readonly listen: readonly ResolvedNetworkListenPermission[];
+  readonly localNetwork: boolean;
+  readonly insecureTransport: boolean;
+  readonly broadcast: boolean;
+  readonly multicast: boolean;
+  readonly allowInvalidTlsForDevelopment: boolean;
+  readonly browserAmbientCredentials: boolean;
+  readonly browserOpaqueWebSocketRedirects: boolean;
+  readonly credentials: readonly string[];
+}
+
+export interface ResolvedNetworkResourcePlan {
+  readonly minimum: NetworkResourceMinimum;
+}
+
+export interface ResolvedNetworkBuildPlan {
+  readonly policy: ResolvedNetworkPolicy;
+  readonly providers: ResolvedNetworkProviders;
+  readonly resources: ResolvedNetworkResourcePlan;
+}
+
 export interface ResolvedBuildPlanContent {
-  readonly app: Pick<PocketManifestV2, "id" | "title"> &
-    Pick<PocketManifestV2["app"], "entry" | "framework"> & {
+  readonly app: Pick<PocketManifest, "id" | "title"> &
+    Pick<PocketManifest["app"], "entry" | "framework"> & {
     readonly output: string;
   };
   readonly target: {
@@ -20,6 +83,10 @@ export interface ResolvedBuildPlanContent {
   };
   /** Required APIs are true; enhancements reflect target availability. */
   readonly features: Readonly<Record<string, boolean>>;
+  /** One selected provider option per format-3 requiresOneOf group. */
+  readonly selectedCapabilityOptions?: readonly (readonly string[])[];
+  /** Present only when the build has admitted network authority. */
+  readonly network?: ResolvedNetworkBuildPlan;
 }
 
 export interface ResolvedBuildPlan extends ResolvedBuildPlanContent {

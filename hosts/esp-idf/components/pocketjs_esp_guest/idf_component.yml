@@ -1,0 +1,5 @@
+dependencies:
+  idf:
+    version: ">=6.0,<6.1"
+  espressif/quickjs-ng:
+    version: "0.14.0"

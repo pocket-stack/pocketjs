@@ -1,6 +1,6 @@
-// Browser dev host for the PocketJS NET module. Browser fetch is the physical
-// transport; this adapter supplies the bounded contract and tick batching from
-// contracts/spec/net.ts without exposing browser globals as the guest API.
+// Internal NET v1 migration fixture. The stock web runtime does not import or
+// publish this adapter. Tests install it explicitly while bounded reads and
+// tick-staged completion delivery are migrated to the new Network Guest Binding.
 
 const MAX_INFLIGHT = 2;
 const MAX_REQUEST_BYTES = 64 * 1024;

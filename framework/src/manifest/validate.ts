@@ -1,8 +1,10 @@
 import {
+  POCKET_MANIFEST_V3_SCHEMA_ID,
+  pocketManifestV3Schema,
   pocketManifestV2Schema,
   type JsonSchema,
   type JsonSchemaObject,
-  type PocketManifestV2,
+  type PocketManifest,
 } from "../../../contracts/spec/pocket-manifest.ts";
 
 export interface ContractDiagnostic {
@@ -174,9 +176,18 @@ function validateSchema(
   }
 }
 
-export function validatePocketManifest(input: unknown): ValidationResult<PocketManifestV2> {
+export function validatePocketManifest(input: unknown): ValidationResult<PocketManifest> {
   const diagnostics: ContractDiagnostic[] = [];
-  validateSchema(input, pocketManifestV2Schema, "", diagnostics);
+  const record = input !== null && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : undefined;
+  const format3 = record?.pocket === 3 || record?.$schema === POCKET_MANIFEST_V3_SCHEMA_ID;
+  validateSchema(
+    input,
+    format3 ? pocketManifestV3Schema : pocketManifestV2Schema,
+    "",
+    diagnostics,
+  );
   if (diagnostics.length > 0) return { ok: false, diagnostics };
-  return { ok: true, value: input as PocketManifestV2 };
+  return { ok: true, value: input as PocketManifest };
 }

@@ -1,0 +1,392 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  defineCapabilityRegistry,
+  definePlatformContractRegistry,
+  defineTargetRegistry,
+  type CapabilityId,
+  type TargetProfile,
+} from "../../../../contracts/spec/platforms.ts";
+import {
+  networkV1FeatureIdsFromBuildPlan,
+  networkV1PlanHashBytes,
+} from "../../../../contracts/spec/network/network-v1.ts";
+import type { HostNetworkResolutionProfile } from
+  "../../../../framework/src/manifest/network.ts";
+import {
+  verifyPlanHash,
+  type ResolvedBuildPlan,
+} from "../../../../framework/src/manifest/plan.ts";
+import { validateAndResolveBuildPlan } from
+  "../../../../framework/src/manifest/resolve.ts";
+import {
+  testArtifactOutputDirectory,
+  writeTestArtifactOutputs,
+  type GeneratedTestArtifactOutput,
+} from "../../../../tools/test-artifact-output.ts";
+
+const COMPONENT = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(COMPONENT, "../../../..");
+const TARGET_ID = "esp-formal-network-smoke-test";
+const ORIGIN = "http://172.16.10.126:8088";
+const SCHEME = "http";
+const HOST = "172.16.10.126";
+const PORT = 8088;
+const REPORT_GLOBAL = "__pocketjsFormalNetworkSmokeReportV1";
+const PUBLIC_HTTP_SPECIFIER = "@pocketjs/framework/net/http";
+
+const TEST_CAPABILITIES = defineCapabilityRegistry([
+  "network.http.client",
+] as const);
+
+type TestCapability = CapabilityId<typeof TEST_CAPABILITIES>;
+
+const TEST_TARGET_DEFINITIONS = {
+  [TARGET_ID]: {
+    hostAbi: 1,
+    platform: "esp-idf-formal-network-test",
+    form: "takeover",
+    display: {
+      physicalViewport: [1, 1],
+      logicalViewports: [[1, 1]],
+      presentations: ["native"],
+      rasterDensity: 1,
+    },
+    capabilities: ["network.http.client"],
+  },
+} as const satisfies Readonly<Record<string, TargetProfile<TestCapability>>>;
+
+const TEST_TARGETS = defineTargetRegistry<
+  TestCapability,
+  typeof TEST_TARGET_DEFINITIONS
+>(TEST_TARGET_DEFINITIONS);
+
+const TEST_CONTRACTS = definePlatformContractRegistry(
+  TEST_CAPABILITIES,
+  TEST_TARGETS,
+);
+
+const TEST_NETWORK_PROFILE: HostNetworkResolutionProfile = {
+  providers: {
+    backendByRole: {
+      "http.client": "pocketjs.net.http-client-core.v1.experimental",
+    },
+    tlsByRole: {},
+    netDriverId: "pocketjs.net.esp-idf.transport.v1.experimental",
+  },
+  hardLimits: {
+    runtime: {
+      connections: 4,
+      pendingOperations: 8,
+      completionDescriptors: 8,
+      nativeBufferBytes: 524288,
+    },
+    http: {
+      connections: 4,
+      inflightRequests: 8,
+      headerBytes: 8192,
+      headerCount: 60,
+      bufferedBodyBytes: 16384,
+    },
+  },
+  developmentBuild: false,
+};
+
+interface GeneratedMetadata {
+  readonly schemaVersion: 1;
+  readonly testOnly: true;
+  readonly target: {
+    readonly id: string;
+    readonly hostAbi: number;
+  };
+  readonly planHash: string;
+  readonly planHashBytes: readonly number[];
+  readonly featureIds: readonly number[];
+  readonly providers: {
+    readonly httpClientBackendId: string;
+    readonly netDriverId: string;
+  };
+  readonly factory: {
+    readonly sourceBytes: number;
+    readonly storageBytes: number;
+    readonly sha256: string;
+  };
+  readonly endpoint: {
+    readonly origin: string;
+    readonly scheme: string;
+    readonly host: string;
+    readonly port: number;
+    readonly healthUrl: string;
+    readonly echoUrl: string;
+  };
+  readonly reportGlobal: string;
+  readonly stagedSurfaceBuild: {
+    readonly publicSpecifier: string;
+    readonly permit: "test-only-staged-http-client-fetch";
+    readonly exactAppId: string;
+    readonly exactTargetId: string;
+    readonly productionGateChanged: false;
+  };
+}
+
+const encoder = new TextEncoder();
+
+function textBytes(value: string): Uint8Array {
+  return encoder.encode(value);
+}
+
+function cBytes(bytes: readonly number[], columns = 12): string {
+  const lines: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += columns) {
+    lines.push(
+      `    ${bytes.slice(offset, offset + columns)
+        .map((byte) => `0x${byte.toString(16).padStart(2, "0")}`)
+        .join(", ")},`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function cFeatureIds(ids: readonly number[]): string {
+  return ids
+    .map((id) => `    (pocketjs_network_v1_feature_id_t)0x${id.toString(16).padStart(4, "0")},`)
+    .join("\n");
+}
+
+function cString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function metadataSource(
+  plan: ResolvedBuildPlan,
+  metadata: GeneratedMetadata,
+): string {
+  const digest = metadata.factory.sha256.slice("sha256:".length);
+  const planDigest = plan.planHash.slice("sha256:".length);
+  const artifactHash = Array.from(Buffer.from(digest, "hex"));
+  return `// GENERATED by generate.ts; do not edit.
+// SPDX-License-Identifier: MIT
+
+#include "pocketjs/net/formal_smoke_artifact.h"
+
+extern const uint8_t embedded_factory_start[]
+    asm("_binary_factory_js_bin_start");
+
+const uint8_t *const pocketjs_net_formal_smoke_factory_bytes =
+    embedded_factory_start;
+const size_t pocketjs_net_formal_smoke_factory_length =
+    ${metadata.factory.sourceBytes}U;
+const size_t pocketjs_net_formal_smoke_factory_storage_length =
+    ${metadata.factory.storageBytes}U;
+
+const char pocketjs_net_formal_smoke_plan_hash[] = ${cString(plan.planHash)};
+const uint8_t pocketjs_net_formal_smoke_plan_hash_bytes
+    [POCKETJS_NETWORK_V1_PLAN_HASH_BYTES] = {
+${cBytes(metadata.planHashBytes)}
+};
+
+const pocketjs_network_v1_feature_id_t
+    pocketjs_net_formal_smoke_feature_ids[] = {
+${cFeatureIds(metadata.featureIds)}
+};
+const uint16_t pocketjs_net_formal_smoke_feature_count =
+    ${metadata.featureIds.length}U;
+
+const char pocketjs_net_formal_smoke_http_client_backend_id[] =
+    ${cString(metadata.providers.httpClientBackendId)};
+const char pocketjs_net_formal_smoke_net_driver_id[] =
+    ${cString(metadata.providers.netDriverId)};
+
+const char pocketjs_net_formal_smoke_factory_sha256[] =
+    ${cString(`sha256:${digest}`)};
+const uint8_t pocketjs_net_formal_smoke_factory_sha256_bytes[32] = {
+${cBytes(artifactHash)}
+};
+
+const pocketjs_net_formal_smoke_endpoint_t
+    pocketjs_net_formal_smoke_endpoint = {
+        .origin = ${cString(metadata.endpoint.origin)},
+        .scheme = ${cString(metadata.endpoint.scheme)},
+        .host = ${cString(metadata.endpoint.host)},
+        .port = ${metadata.endpoint.port}U,
+        .health_url = ${cString(metadata.endpoint.healthUrl)},
+        .echo_url = ${cString(metadata.endpoint.echoUrl)},
+};
+
+const char pocketjs_net_formal_smoke_report_global[] =
+    ${cString(metadata.reportGlobal)};
+
+_Static_assert(sizeof(pocketjs_net_formal_smoke_plan_hash) ==
+                   sizeof("sha256:${planDigest}"),
+               "plan hash text length drifted");
+_Static_assert(sizeof(pocketjs_net_formal_smoke_factory_sha256) ==
+                   sizeof("sha256:${digest}"),
+               "artifact hash text length drifted");
+`;
+}
+
+async function resolvePlan(): Promise<ResolvedBuildPlan> {
+  const manifest = await Bun.file(join(COMPONENT, "manifest.json")).json();
+  const result = validateAndResolveBuildPlan(
+    manifest,
+    { target: TARGET_ID, network: TEST_NETWORK_PROFILE },
+    TEST_CONTRACTS,
+  );
+  if (!result.ok) {
+    const detail = result.diagnostics
+      .map((item) => `${item.code} ${item.path}: ${item.message}`)
+      .join("\n");
+    throw new Error(`formal smoke manifest did not resolve:\n${detail}`);
+  }
+  if (!verifyPlanHash(result.plan) || result.plan.network === undefined) {
+    throw new Error("formal smoke resolver did not produce a verified network plan");
+  }
+  if (
+    result.plan.app.id !== "dev.pocketjs.esp-formal-network-smoke" ||
+    result.plan.app.entry !== "app.ts" ||
+    result.plan.target.id !== TARGET_ID
+  ) {
+    throw new Error("formal smoke plan identity escaped its exact test-only allowlist");
+  }
+  const connect = result.plan.network.policy.connect;
+  const backend = result.plan.network.providers.backendByRole["http.client"];
+  const driver = result.plan.network.providers.netDriverId;
+  if (
+    connect.length !== 1 ||
+    connect[0]?.protocol !== SCHEME ||
+    connect[0]?.host !== HOST ||
+    connect[0]?.port.min !== PORT ||
+    connect[0]?.port.max !== PORT ||
+    backend !== "pocketjs.net.http-client-core.v1.experimental" ||
+    driver !== "pocketjs.net.esp-idf.transport.v1.experimental" ||
+    Object.keys(result.plan.network.providers.backendByRole).length !== 1 ||
+    Object.keys(result.plan.network.providers.tlsByRole).length !== 0
+  ) {
+    throw new Error("formal smoke plan endpoint or provider selection drifted");
+  }
+  return result.plan;
+}
+
+async function assertPublicBuildInput(): Promise<void> {
+  const source = await Bun.file(join(COMPONENT, "app.ts")).text();
+  const marker = `"${PUBLIC_HTTP_SPECIFIER}"`;
+  if (source.split(marker).length !== 2) {
+    throw new Error("formal smoke app must contain exactly one public HTTP import");
+  }
+}
+
+async function buildFactory(plan: ResolvedBuildPlan): Promise<Uint8Array> {
+  await assertPublicBuildInput();
+  const temporary = await mkdtemp(join(tmpdir(), "pocketjs-formal-smoke-"));
+  try {
+    const planPath = join(temporary, "resolved-plan.json");
+    const output = join(temporary, "dist");
+    await Bun.write(planPath, `${JSON.stringify(plan, null, 2)}\n`);
+    const buildProcess = Bun.spawn([
+      process.execPath,
+      join(ROOT, "tools/build.ts"),
+      `--plan=${planPath}`,
+      `--project-root=${COMPONENT}`,
+      `--outdir=${output}`,
+      "--no-config",
+      "--network-factory",
+      "--test-only-staged-http-client-fetch",
+    ], {
+      cwd: ROOT,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      buildProcess.exited,
+      new Response(buildProcess.stdout).text(),
+      new Response(buildProcess.stderr).text(),
+    ]);
+    if (exitCode !== 0) {
+      throw new Error(`formal smoke factory build failed:\n${stdout}\n${stderr}`);
+    }
+    const builtSource = await Bun.file(
+      join(output, "esp-formal-network-smoke.js"),
+    ).text();
+    const source = textBytes(builtSource.replace(/[\t ]+$/gm, ""));
+    if (source.length === 0 || source.includes(0)) {
+      throw new Error("formal smoke factory source is empty or contains an interior NUL");
+    }
+    const terminated = new Uint8Array(source.length + 1);
+    terminated.set(source);
+    return terminated;
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
+
+async function expectedOutputs(): Promise<readonly GeneratedTestArtifactOutput[]> {
+  const plan = await resolvePlan();
+  const factory = await buildFactory(plan);
+  const source = factory.subarray(0, factory.length - 1);
+  const sourceHash = createHash("sha256").update(source).digest("hex");
+  const planHashBytes = Array.from(networkV1PlanHashBytes(plan.planHash));
+  const featureIds = Array.from(networkV1FeatureIdsFromBuildPlan(plan.features));
+  const metadata: GeneratedMetadata = {
+    schemaVersion: 1,
+    testOnly: true,
+    target: { id: plan.target.id, hostAbi: plan.target.hostAbi },
+    planHash: plan.planHash,
+    planHashBytes,
+    featureIds,
+    providers: {
+      httpClientBackendId:
+        plan.network!.providers.backendByRole["http.client"]!,
+      netDriverId: plan.network!.providers.netDriverId,
+    },
+    factory: {
+      sourceBytes: source.length,
+      storageBytes: factory.length,
+      sha256: `sha256:${sourceHash}`,
+    },
+    endpoint: {
+      origin: ORIGIN,
+      scheme: SCHEME,
+      host: HOST,
+      port: PORT,
+      healthUrl: `${ORIGIN}/health`,
+      echoUrl: `${ORIGIN}/echo`,
+    },
+    reportGlobal: REPORT_GLOBAL,
+    stagedSurfaceBuild: {
+      publicSpecifier: PUBLIC_HTTP_SPECIFIER,
+      permit: "test-only-staged-http-client-fetch",
+      exactAppId: plan.app.id,
+      exactTargetId: plan.target.id,
+      productionGateChanged: false,
+    },
+  };
+  return [
+    {
+      name: "resolved-plan.json",
+      bytes: textBytes(`${JSON.stringify(plan, null, 2)}\n`),
+    },
+    {
+      name: "metadata.json",
+      bytes: textBytes(`${JSON.stringify(metadata, null, 2)}\n`),
+    },
+    { name: "factory.js.bin", bytes: factory },
+    {
+      name: "formal_smoke_metadata.c",
+      bytes: textBytes(metadataSource(plan, metadata)),
+    },
+  ];
+}
+
+export async function generate(outputDirectory: string): Promise<void> {
+  const outputs = await expectedOutputs();
+  await writeTestArtifactOutputs(outputDirectory, outputs);
+}
+
+if (import.meta.main) {
+  const outputDirectory = testArtifactOutputDirectory(process.argv.slice(2));
+  await generate(outputDirectory);
+  console.log(`PocketJS formal smoke artifact generated in ${outputDirectory}`);
+}

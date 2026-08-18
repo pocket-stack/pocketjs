@@ -243,6 +243,12 @@ export async function bootWorld(
   g.audio = undefined; // audio module namespace: absent unless extraGlobals mounts one
   g.db = undefined; // db module namespace: absent unless extraGlobals mounts one
   g.fs = undefined; // fs module namespace: absent unless extraGlobals mounts one
+  // Do not leak an old NET v1 fixture from a previous test into a stock sim
+  // guest. Migration tests can still install the fixture explicitly through
+  // extraGlobals after this reset.
+  if (!Reflect.deleteProperty(g, "net")) {
+    throw new Error("sim: legacy globalThis.net is not configurable");
+  }
   g.__pocketApp = app;
   g.__simHz = hz;
   g.__pocketEffectTrace = (e: EffectEvent) => effects.push(e);

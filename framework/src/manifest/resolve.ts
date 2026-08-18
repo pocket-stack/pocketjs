@@ -1,5 +1,5 @@
 import { DYNAMIC_FORMS, TARGET_FORMS } from "../../../contracts/spec/platforms.ts";
-import type { PocketManifestV2 } from "../../../contracts/spec/pocket-manifest.ts";
+import type { PocketManifest } from "../../../contracts/spec/pocket-manifest.ts";
 import {
   POCKET_PLATFORM_CONTRACTS,
   type PlatformContractRegistry,
@@ -12,10 +12,15 @@ import {
   type ResolvedBuildPlan,
   type ResolvedBuildPlanContent,
 } from "./plan.ts";
+import {
+  resolveNetworkBuildPlan,
+  type HostNetworkResolutionProfile,
+} from "./network.ts";
 import { validatePocketManifest, type ContractDiagnostic } from "./validate.ts";
 
 export interface ResolveBuildRequest {
   readonly target: string;
+  readonly network?: HostNetworkResolutionProfile;
 }
 
 export type ResolutionResult =
@@ -32,7 +37,7 @@ function sameViewport(left: Viewport, right: Viewport): boolean {
 
 /** The app's viewport intent, normalized: the bare `{logical, presentation}`
  *  spelling is shorthand for `{fixed: ...}`. */
-function normalizeViewport(viewport: PocketManifestV2["app"]["viewport"]): {
+function normalizeViewport(viewport: PocketManifest["app"]["viewport"]): {
   fixed?: { logical: Viewport; presentation: PresentationMode };
   dynamic?: { default: Viewport; min?: Viewport; max?: Viewport };
 } {
@@ -53,7 +58,7 @@ const within = (v: Viewport, min: Viewport, max: Viewport): boolean =>
  * pushing diagnostics.
  */
 function resolveViewport(
-  manifest: PocketManifestV2,
+  manifest: PocketManifest,
   profile: TargetProfile,
   diagnostics: ContractDiagnostic[],
 ): { logical: Viewport; presentation: PresentationMode; physical: Viewport } | null {
@@ -246,7 +251,7 @@ export function validatePlatformContractRegistry(
 }
 
 export function resolveBuildPlan(
-  manifest: PocketManifestV2,
+  manifest: PocketManifest,
   request: ResolveBuildRequest,
   registry: PlatformContractRegistry = POCKET_PLATFORM_CONTRACTS,
 ): ResolutionResult {
@@ -279,45 +284,112 @@ export function resolveBuildPlan(
   const provided = new Set<string>(profile.capabilities);
   const seen = new Map<string, string>();
   const featureAvailability = new Map<string, boolean>();
+  const selectedCapabilityOptions: string[][] = [];
 
-  for (const [kind, capabilities] of [
-    ["requires", manifest.engine.capabilities.requires],
-    ["enhances", manifest.engine.capabilities.enhances ?? []],
-  ] as const) {
-    capabilities.forEach((capability, index) => {
-      const path = capabilityPath(kind, index);
-      const previous = seen.get(capability);
-      if (previous) {
-        diagnostics.push({
-          code: "capability.duplicate",
-          path,
-          message: `capability was already declared at ${previous}`,
-        });
-        return;
-      }
-      seen.set(capability, path);
+  manifest.engine.capabilities.requires.forEach((capability, index) => {
+    const path = capabilityPath("requires", index);
+    const previous = seen.get(capability);
+    if (previous) {
+      diagnostics.push({
+        code: "capability.duplicate",
+        path,
+        message: `capability was already declared at ${previous}`,
+      });
+      return;
+    }
+    seen.set(capability, path);
 
-      if (!known.has(capability)) {
-        diagnostics.push({
-          code: "capability.unknown",
-          path,
-          message: `unknown capability ${JSON.stringify(capability)}`,
-        });
-        return;
+    if (!known.has(capability)) {
+      diagnostics.push({
+        code: "capability.unknown",
+        path,
+        message: `unknown capability ${JSON.stringify(capability)}`,
+      });
+      return;
+    }
+    if (!provided.has(capability)) {
+      diagnostics.push({
+        code: "capability.unavailable",
+        path,
+        message: `target ${request.target} does not provide ${capability}`,
+      });
+      return;
+    }
+    featureAvailability.set(capability, true);
+  });
+
+  if (manifest.pocket === 3) {
+    for (const [groupIndex, group] of (manifest.engine.capabilities.requiresOneOf ?? []).entries()) {
+      const groupPath = `/engine/capabilities/requiresOneOf/${groupIndex}`;
+      const normalizedOptions: string[][] = [];
+      let groupValid = true;
+      for (const [optionIndex, option] of group.options.entries()) {
+        const optionPath = `${groupPath}/options/${optionIndex}`;
+        const normalized = [...option].sort();
+        normalizedOptions.push(normalized);
+        for (const [capabilityIndex, capability] of option.entries()) {
+          const path = `${optionPath}/${capabilityIndex}`;
+          const previous = seen.get(capability);
+          if (previous && !previous.startsWith(groupPath + "/")) {
+            diagnostics.push({
+              code: "capability.duplicate",
+              path,
+              message: `capability was already declared at ${previous}`,
+            });
+            groupValid = false;
+          } else if (!previous) {
+            seen.set(capability, path);
+          }
+          if (!known.has(capability)) {
+            diagnostics.push({
+              code: "capability.unknown",
+              path,
+              message: `unknown capability ${JSON.stringify(capability)}`,
+            });
+            groupValid = false;
+          } else if (!featureAvailability.has(capability)) {
+            featureAvailability.set(capability, false);
+          }
+        }
       }
 
-      const available = provided.has(capability);
-      const required = kind === "requires";
-      if (required && !available) {
+      const selected = groupValid
+        ? normalizedOptions.find((option) => option.every((capability) => provided.has(capability)))
+        : undefined;
+      if (!selected) {
         diagnostics.push({
-          code: "capability.unavailable",
-          path,
-          message: `target ${request.target} does not provide ${capability}`,
+          code: "capability.noProviderAlternative",
+          path: `${groupPath}/options`,
+          message: `target ${request.target} does not provide every capability in any listed option`,
         });
-        return;
+        continue;
       }
-      featureAvailability.set(capability, required || available);
-    });
+      selectedCapabilityOptions.push(selected);
+      for (const capability of selected) featureAvailability.set(capability, true);
+    }
+  }
+
+  for (const [index, capability] of (manifest.engine.capabilities.enhances ?? []).entries()) {
+    const path = capabilityPath("enhances", index);
+    const previous = seen.get(capability);
+    if (previous) {
+      diagnostics.push({
+        code: "capability.duplicate",
+        path,
+        message: `capability was already declared at ${previous}`,
+      });
+      continue;
+    }
+    seen.set(capability, path);
+    if (!known.has(capability)) {
+      diagnostics.push({
+        code: "capability.unknown",
+        path,
+        message: `unknown capability ${JSON.stringify(capability)}`,
+      });
+      continue;
+    }
+    featureAvailability.set(capability, provided.has(capability));
   }
 
   // A derived output must satisfy the same artifact-name contract an explicit
@@ -334,15 +406,17 @@ export function resolveBuildPlan(
     });
   }
 
-  if (diagnostics.length > 0 || !resolvedViewport) return { ok: false, diagnostics };
-
-  const logical: Viewport = [resolvedViewport.logical[0], resolvedViewport.logical[1]];
-  const physical: Viewport = [resolvedViewport.physical[0], resolvedViewport.physical[1]];
   // Plain codepoint sort — the same ordering canonicalJson uses for the plan
   // hash, so the pretty plan.json never depends on ICU collation.
   const features = Object.fromEntries(
     [...featureAvailability.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
   );
+  const network = resolveNetworkBuildPlan(manifest, features, request.network, diagnostics);
+
+  if (diagnostics.length > 0 || !resolvedViewport) return { ok: false, diagnostics };
+
+  const logical: Viewport = [resolvedViewport.logical[0], resolvedViewport.logical[1]];
+  const physical: Viewport = [resolvedViewport.physical[0], resolvedViewport.physical[1]];
 
   const content: ResolvedBuildPlanContent = {
     app: {
@@ -363,6 +437,8 @@ export function resolveBuildPlan(
       rasterDensity: profile.display.rasterDensity,
     },
     features,
+    ...(selectedCapabilityOptions.length > 0 ? { selectedCapabilityOptions } : {}),
+    ...(network ? { network } : {}),
   };
   return { ok: true, plan: finalizeBuildPlan(content) };
 }

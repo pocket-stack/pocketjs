@@ -503,10 +503,10 @@ async function main() {
   await bundle("assets/pocket-stage-web.js", "assets/pocket-stage-web.js");
 
   // 2. runtime assets
-  // Keep the editor-facing URL byte-identical to the schema used by the
-  // validator. The deployed path is POCKET_MANIFEST_SCHEMA_ID —
-  // /schema/pocket-2.json, independent of where the repo keeps the file.
+  // Keep the editor-facing URLs byte-identical to the versioned schemas used
+  // by the validator, independent of where the repo keeps the files.
   copy(ROOT + "contracts/schema/pocket-2.json", "schema/pocket-2.json");
+  copy(ROOT + "contracts/schema/pocket-3.json", "schema/pocket-3.json");
   copy(ROOT + "hosts/web/pocketjs.wasm", "pg/pocketjs.wasm");
   copy(ROOT + "assets/fonts/Inter-Regular.ttf", "pg/fonts/Inter-Regular.ttf");
   copy(ROOT + "assets/fonts/Inter-Bold.ttf", "pg/fonts/Inter-Bold.ttf");

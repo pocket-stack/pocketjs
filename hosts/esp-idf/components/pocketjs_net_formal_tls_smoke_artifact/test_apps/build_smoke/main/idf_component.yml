@@ -1,0 +1,3 @@
+dependencies:
+  pocketjs_net_formal_tls_smoke_artifact:
+    override_path: ../../..
