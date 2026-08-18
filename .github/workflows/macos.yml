@@ -45,13 +45,16 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
+          # note.test.ts boots the sim host, which builds the wasm core.
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             engine/backends/gpui
             hosts/macos
+            engine/wasm
 
       - uses: oven-sh/setup-bun@v2
 
