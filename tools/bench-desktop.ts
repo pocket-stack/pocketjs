@@ -181,7 +181,8 @@ function launchers(storm: boolean): Launcher[] {
         "--editor",
         "--title", "Pocket Note",
         // The pencil toggle puts the note into edit mode, like the web
-        // editors' contenteditable surface.
+        // editors' contenteditable surface. READY is opt-in on the host.
+        "--announce-ready",
         "--click", "350,15@10",
         ...(storm ? ["--storm", `${CPS}@${stormStartTick}+${stormTicks}`] : []),
       ],
