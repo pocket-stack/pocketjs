@@ -5,19 +5,17 @@ PocketJS app) on the gpui `macos-app` host with native text layout, and one
 byte-identical plain-text markdown editor page shelled by Tauri v2
 (WKWebView) and Electron. **Apple M3 Max, macOS 26.5.2.** Protocol: cold start =
 spawn to each app's own first-painted-frame READY report, median of
-3; idle = 60 s hands-off, `ps` process-tree samples every
-5 s, medians; storm = 120 chars/s typed for 30 s through each
+3; idle = 60 s hands-off after a 20 s
+settle (pcpu is a decaying average — the settle flushes launch work), `ps`
+process-tree samples every 5 s, medians; storm = 120 chars/s typed for 30 s through each
 app's real edit path (svc lines / `execCommand`), sampled every 1 s. Reproduce:
 `bun tools/bench-desktop.ts`.
 
 | app | procs | cold start (ms) | idle RSS (MB) | idle CPU (%) | storm CPU (%) | storm RSS (MB) | disk (MB) |
 |---|---|---|---|---|---|---|---|
-| pocket | 1 | 128 | 84 | 2.7 | 47.6 | 87 | 10 |
-| tauri | 4 | 398 | 193 | 2.25 | 16.7 | 207 | 9 |
-| electron | 5 | 319 | 382 | 0.5 | 38.6 | 486 | 242 |
-
-Both web shells confirmed the full storm landed (STORM-DONE ~3600
-characters); the pocket storm is tick-driven and exact by construction.
+| pocket | 1 | 149 | 83 | 3.65 | 47.9 | 87 | 10 |
+| tauri | 4 | 380 | 193 | 3.45 | 16.4 | 208 | 9 |
+| electron | 5 | 301 | 382 | 0.55 | 39.6 | 487 | 242 |
 
 Fairness notes:
 
@@ -41,6 +39,11 @@ Fairness notes:
 - The pocket storm CPU RAMPS with document length (samples in the json):
   the note re-parses and re-wraps the whole growing document through the
   QuickJS interpreter on every keystroke — an app-level O(n) the web
-  editors' native contenteditable machinery does not pay. The caret is a
-  square wave demand rendering skips between edges (apps/note/
-  pocket.config.ts), so idle repaints are ~2/s, not 60.
+  editors' native contenteditable machinery does not pay.
+- Idle CPU at these magnitudes is protocol-sensitive: pcpu medians for the
+  pocket and Tauri editors drift ±1.5 points across runs (footprint scans,
+  caffeinate assertions, thermal state), so read the STRUCTURAL number
+  instead — the pocket governor receipt shows 84 repaints over 2400 idle
+  ticks (~2/s, exactly the caret square wave's edges; before the square
+  wave it was 88% of ticks). Electron idles lower because its caret blinks
+  in the compositor, not through an app repaint.

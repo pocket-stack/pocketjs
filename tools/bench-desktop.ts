@@ -41,7 +41,10 @@ const APPS = (argv.find((a) => a.startsWith("--apps="))?.split("=")[1] ?? "pocke
   .split(",");
 
 const PORT = 45077;
-const PRE_S = 2; // settle after READY before idle sampling starts
+// Settle after READY before idle sampling: `ps pcpu` is a decaying average
+// (over up to a minute), so sampling right after boot carries launch work
+// into the idle medians for every app. 20 s lets the decay flush.
+const PRE_S = 20;
 const STORM_START_S = PRE_S + IDLE_S + 3;
 const END_S = STORM_START_S + STORM_S + 3;
 
@@ -425,8 +428,9 @@ PocketJS app) on the gpui \`macos-app\` host with native text layout, and one
 byte-identical plain-text markdown editor page shelled by Tauri v2
 (WKWebView) and Electron. **${machine}, macOS ${os}.** Protocol: cold start =
 spawn to each app's own first-painted-frame READY report, median of
-${COLD_RUNS}; idle = ${IDLE_S} s hands-off, \`ps\` process-tree samples every
-5 s, medians; storm = ${CPS} chars/s typed for ${STORM_S} s through each
+${COLD_RUNS}; idle = ${IDLE_S} s hands-off after a ${PRE_S} s
+settle (pcpu is a decaying average — the settle flushes launch work), \`ps\`
+process-tree samples every 5 s, medians; storm = ${CPS} chars/s typed for ${STORM_S} s through each
 app's real edit path (svc lines / \`execCommand\`), sampled every 1 s. Reproduce:
 \`bun tools/bench-desktop.ts\`.
 
