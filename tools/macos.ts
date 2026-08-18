@@ -59,7 +59,10 @@ await $`cargo build --release`.cwd(`${root}hosts/macos`);
 const bin = `${root}hosts/macos/target/release/pocket-macos`;
 const env = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? "info" };
 
-// Host flags from the resolved contract, not from convention:
+// Host flags: the capability-shaped ones derive from the resolved plan;
+// --editor is the ONE name-convention exception (companion selection,
+// issue #295), and --fixed re-reads the manifest because the plan does not
+// yet carry the fixed/dynamic viewport policy (also #295):
 //   fixed        — the app declared only a fixed viewport (size-locked run)
 //   native-text  — text.layout.native resolved true (host installs the
 //                  CoreText measurer before mount)

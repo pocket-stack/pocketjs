@@ -93,6 +93,9 @@ jobs:
       - name: Test core (TEXT_RUN + native measure gates)
         run: cargo test --locked --manifest-path engine/core/Cargo.toml
 
+      - name: Test ui surface (svcOpen deny-by-default, string ops)
+        run: cargo test --locked --manifest-path engine/Cargo.toml -p pocket-ui-surface
+
       - name: rustfmt
         run: |
           cargo fmt --check --manifest-path engine/backends/gpui/Cargo.toml

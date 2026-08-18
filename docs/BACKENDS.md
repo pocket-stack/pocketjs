@@ -47,12 +47,13 @@ text can come from the host text system.
   (8 header words + payload) — the DrawList stays the complete `Vec<u32>`
   pixel truth, so snapshots, demand-render hashes and damage word-diffs are
   exact by construction. The provider is chosen once per node at layout
-  build and recorded (`Node::text_native`); paint follows the record, and
-  a paint-only transform that leaves it stale (rotate/scale don't relayout)
-  is detected during the draw walk and self-heals by the next tick, in both
-  directions. Tracked, scaled and rotated runs keep the baked `GLYPH_RUN`
-  pair — measurement and glyphs always come from the same provider per
-  node.
+  build and recorded (`Node::text_native`); layout and paint gate on ONE
+  shared predicate (`Resolved::declares_transform`), and when a paint-only
+  transform changes the answer, `Ui::draw` relayouts and repaints before
+  returning — every frame that leaves `draw()` is provider-correct, in
+  both directions, with no oscillation on canceling transforms. Tracked,
+  scaled and rotated runs keep the baked `GLYPH_RUN` pair — measurement
+  and glyphs always come from the same provider per node.
 - **Monospace is a slot family.** `font-mono` resolves to dedicated slots
   (16..18; framework/compiler/tailwind.ts MONO_FONT_PX) baked from JetBrains
   Mono on the portable side and mapped to the same family through the host
