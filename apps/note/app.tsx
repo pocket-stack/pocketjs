@@ -14,7 +14,7 @@
 
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Focusable, Image, Portal, Text, View } from "@pocketjs/framework/components";
-import { after } from "@pocketjs/framework/clock";
+import { after, virtualNow } from "@pocketjs/framework/clock";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN, focusNode, hitFocusable } from "@pocketjs/framework/input";
 import { resizeViewport, type NodeMirror } from "@pocketjs/framework";
@@ -46,6 +46,7 @@ import {
   selBounds,
   typeText,
   undo,
+  wordRangeAt,
   type EditKind,
   type SelEdit,
 } from "./editor.ts";
@@ -54,6 +55,7 @@ import {
   rowChFromX,
   rowFromY,
   rowSelSpan,
+  rowText,
   selectedText,
   type RowPos,
 } from "./select.ts";
@@ -457,6 +459,20 @@ export default function Note(): ReturnType<typeof View> {
    *  extends from the last plain click. */
   let pvAnchor: RowPos | null = null;
   let prevDown = false;
+  /** Double-click detection on the virtual clock: a second plain press
+   *  within 0.4 s and 3 px of the last selects the word under it. */
+  let lastPress: { t: number; x: number; y: number } | null = null;
+  const doubleClicked = (x: number, y: number, shift: boolean): boolean => {
+    const now = virtualNow();
+    const dbl =
+      !shift &&
+      lastPress !== null &&
+      now - lastPress.t <= 0.4 &&
+      Math.abs(x - lastPress.x) <= 3 &&
+      Math.abs(y - lastPress.y) <= 3;
+    lastPress = dbl ? null : { t: now, x, y }; // a triple starts a new pair
+    return dbl;
+  };
 
   const editPosAt = (x: number, y: number): number => {
     const line = Math.floor((y - HEADER_H + scrollE() - EDGE_PAD) / BODY_LINE_H);
@@ -472,8 +488,19 @@ export default function Note(): ReturnType<typeof View> {
     const content = y >= HEADER_H && !menuOpen() && !preedit();
     press = { x, y, dragged: false, content };
     if (!content) return;
+    const dbl = doubleClicked(x, y, shift);
     if (editing()) {
       const pos = editPosAt(x, y);
+      if (dbl) {
+        // Double click selects the word (or space/punctuation run) under
+        // the pointer; a drag afterwards extends from its start.
+        const [start, end] = wordRangeAt(doc(), pos);
+        setAnchor(start);
+        setCaret(end);
+        breakRun(history);
+        goalSticky = false;
+        return;
+      }
       setCaret(pos);
       // Shift-click keeps the anchor: the span from the previous caret
       // (or selection anchor) to the clicked point becomes the selection.
@@ -484,6 +511,23 @@ export default function Note(): ReturnType<typeof View> {
       const here = viewPosAt(x, y);
       const [start, end] = cmpPos(pvAnchor, here) <= 0 ? [pvAnchor, here] : [here, pvAnchor];
       setVsel({ start, end });
+    } else if (dbl) {
+      // Preview double click: word selection within the clicked row (code
+      // blocks are atomic — any hit selects the whole block, matching
+      // rowSelSpan's granularity).
+      const here = viewPosAt(x, y);
+      const row = viewLayout().rows[here.row];
+      if (row && row.kind !== "hr") {
+        const text = row.kind === "code" ? row.text : rowText(row);
+        if (text.length > 0) {
+          const [s, e] =
+            row.kind === "code" ? ([0, text.length] as const) : wordRangeAt(text, here.ch);
+          if (e > s) {
+            pvAnchor = { row: here.row, ch: s };
+            setVsel({ start: { row: here.row, ch: s }, end: { row: here.row, ch: e } });
+          }
+        }
+      }
     } else {
       setVsel(null);
       pvAnchor = viewPosAt(x, y);

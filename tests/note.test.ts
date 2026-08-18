@@ -15,6 +15,7 @@ import {
   lineEnd,
   lineStart,
   moveVertical,
+  wordRangeAt,
 } from "../apps/note/editor.ts";
 import { runScenario, treeHasText } from "../hosts/sim/sim.ts";
 
@@ -399,5 +400,42 @@ describe("preview selection", () => {
     expect(selectedText(wrapped, { row: 0, ch: 0 }, { row: 2, ch: 9 })).toBe(
       "alpha beta gamma\nhard line",
     );
+  });
+});
+
+describe("double-click word selection", () => {
+  test("selects the word around the caret", () => {
+    //         0123456789012345
+    const d = "# Pocket Note";
+    expect(wordRangeAt(d, 4)).toEqual([2, 8]); // inside "Pocket"
+    expect(wordRangeAt(d, 2)).toEqual([2, 8]); // at its first char
+    expect(wordRangeAt(d, 9)).toEqual([9, 13]); // "Note"
+  });
+
+  test("a caret just past a word still selects that word", () => {
+    const d = "one two";
+    // caretFromX rounds to the nearest boundary: index 3 is the space,
+    // but the click was on "one"'s right half.
+    expect(wordRangeAt(d, 3)).toEqual([0, 3]);
+    expect(wordRangeAt(d, 7)).toEqual([4, 7]); // end of document
+  });
+
+  test("whitespace and punctuation select as runs, browser-style", () => {
+    expect(wordRangeAt("a   b", 2)).toEqual([1, 4]); // space run
+    expect(wordRangeAt("a --- b", 3)).toEqual([2, 5]); // punct run
+    expect(wordRangeAt("x\ny", 1)).toEqual([0, 1]); // end of line: the word wins
+    expect(wordRangeAt("x\n\ny", 2)).toEqual([2, 3]); // an empty line's newline
+  });
+
+  test("non-ASCII counts as word characters (CJK, emoji pairs)", () => {
+    const d = "见 中文排版 ok";
+    expect(wordRangeAt(d, 3)).toEqual([2, 6]); // 中文排版 as one run
+    const e = "a 😀😀 b";
+    expect(wordRangeAt(e, 3)).toEqual([2, 6]); // surrogate pairs intact
+  });
+
+  test("degenerate inputs", () => {
+    expect(wordRangeAt("", 0)).toEqual([0, 0]);
+    expect(wordRangeAt("w", 5)).toEqual([0, 1]); // clamped past the end
   });
 });

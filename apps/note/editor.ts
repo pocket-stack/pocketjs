@@ -152,6 +152,44 @@ export function moveVertical(
   return caretFromX(doc, lines, target, goalX, measure);
 }
 
+/** Character class for double-click selection: 0 = word (ASCII
+ *  alphanumerics/underscore plus everything non-ASCII — CJK, accents,
+ *  emoji surrogates), 1 = space/tab, 2 = newline, 3 = punctuation. No
+ *  regex: QuickJS-portable and byte-deterministic. */
+function charClass(c: string): number {
+  if (c === " " || c === "\t") return 1;
+  if (c === "\n") return 2;
+  const code = c.charCodeAt(0);
+  if (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    c === "_" ||
+    code > 0xbf
+  ) {
+    return 0;
+  }
+  return 3;
+}
+
+/** [start, end) of the double-click selection at caret index `i`: the
+ *  word around the position, or — browser-style — the whitespace or
+ *  punctuation run when the click lands on one. A caret rounds to the
+ *  NEAREST boundary, so a click on a word's right half can land just past
+ *  it; the word to the left wins over the space to its right. */
+export function wordRangeAt(doc: string, i: number): [number, number] {
+  if (doc.length === 0) return [0, 0];
+  let at = Math.max(0, Math.min(i, doc.length - 1));
+  if (at > 0 && charClass(doc[at]) !== 0 && charClass(doc[at - 1]) === 0) at -= 1;
+  const cls = charClass(doc[at]);
+  if (cls === 2) return [at, at + 1]; // a newline is its own run
+  let start = at;
+  let end = at + 1;
+  while (start > 0 && charClass(doc[start - 1]) === cls) start--;
+  while (end < doc.length && charClass(doc[end]) === cls) end++;
+  return [start, end];
+}
+
 export function lineStart(lines: DLine[], caret: number): number {
   return lines[caretLine(lines, caret)].start;
 }

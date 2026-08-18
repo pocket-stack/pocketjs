@@ -2,8 +2,10 @@
 //
 // Doubles as the font-atlas charset anchor: the baker harvests codepoints
 // from source literals, so everything the sample renders is guaranteed
-// baked. Typing sticks to ASCII (always baked, 32..126); other input
-// renders as tofu until a CJK-capable atlas lands (known v1 limit).
+// baked. Beyond the baked set, the widget host rasterizes new glyphs at
+// runtime (text.glyphs.runtime) and the gpui host shapes through the OS
+// text system (text.layout.native, docs/BACKENDS.md) — tofu is a
+// console-target concern only.
 
 export const SAMPLE_DOC = `# Pocket Note
 
@@ -16,12 +18,13 @@ A markdown sticky for your desktop — one process, a real PocketJS app.
   - one level of nesting
 - Quotes, rules, fenced code
 
-> The window is the ui surface: same core, same DrawList,
-> same bytes as the PSP build.
+> The window is the ui surface: same core, same DrawList —
+> painted from baked atlases by wgpu, or with native text
+> by gpui (docs/BACKENDS.md).
 
 \`\`\`
-bun tools/build.ts note-main --density=2
-cargo run -p note-widget
+bun run macos note   # gpui backend, native text
+bun run note         # wgpu widget, baked atlases
 \`\`\`
 
 ---
