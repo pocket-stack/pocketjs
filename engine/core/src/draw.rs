@@ -28,31 +28,19 @@ use crate::style::{self, StyleTable, NO_GRADIENT};
 use crate::text::Fonts;
 use crate::tree::Tree;
 
-/// One TEXT_RUN side-table entry: the run string plus the style a native-text
-/// backend needs to shape it (geometry and color ride in the op words).
-/// `line_height` NAN = the slot's default.
-pub struct TextRunInfo {
-    pub text: alloc::string::String,
-    pub slot: u8,
-    /// spec::TextAlign ordinal.
-    pub align: u8,
-    pub line_height: f32,
-}
-
 /// The core -> backend command list: flat little-endian u32 words.
 /// Format pinned in contracts/spec/spec.ts ("DRAWLIST op format"); op codes in
 /// spec::draw_op. On wasm the host reads this as a Uint32Array; on PSP,
-/// hosts/psp/src/ge.rs walks it into sceGu calls.
+/// hosts/psp/src/ge.rs walks it into sceGu calls. The words are the COMPLETE
+/// pixel truth — TEXT_RUN packs its run string's UTF-8 bytes into the stream,
+/// so snapshots, hashes and damage diffs never need side data.
 pub struct DrawList {
     pub words: Vec<u32>,
-    /// TEXT_RUN side table, indexed by the op's runIndex word. Rebuilt with
-    /// `words` every build(); empty unless a native measurer is installed.
-    pub text_runs: Vec<TextRunInfo>,
 }
 
 impl DrawList {
     pub fn new() -> Self {
-        DrawList { words: Vec::new(), text_runs: Vec::new() }
+        DrawList { words: Vec::new() }
     }
 }
 
@@ -138,14 +126,6 @@ impl Affine {
     #[inline]
     fn is_axis_aligned(&self) -> bool {
         self.b == 0.0 && self.c == 0.0 && self.a > 0.0 && self.d > 0.0
-    }
-
-    /// True when the transform is a pure translation (the TEXT_RUN gate:
-    /// native-shaped runs place a whole box, so any scale/rotation falls back
-    /// to GLYPH_RUN, whose per-glyph anchors transform exactly).
-    #[inline]
-    fn is_translation(&self) -> bool {
-        self.a == 1.0 && self.b == 0.0 && self.c == 0.0 && self.d == 1.0
     }
 }
 
@@ -847,7 +827,6 @@ pub fn build(
     cursor: Option<(u32, f32, f32, f32, f32)>,
 ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
     dl.words.clear();
-    dl.text_runs.clear();
     // DevTools (docs/DEVTOOLS.md): slot of the inspected node, u32::MAX = none.
     // Nodes inside a perspective subtree take the paint_3d path and are not
     // captured (only the 2D walk composes a world Affine per node).
@@ -2289,10 +2268,12 @@ impl<'a> Walker<'a> {
         if run.is_empty() {
             return;
         }
-        // Native text path: translation-only tracking-0 runs emit TEXT_RUN
-        // (the gate mirrors Fonts::measure_run's, so a node's layout metrics
-        // always come from the same provider as its painted glyphs).
-        if self.fonts.native_active() && r.tracking == 0.0 && world.is_translation() {
+        // The node's measurement provider was RECORDED at layout time
+        // (layout.rs build(): native iff a measurer is installed, tracking
+        // is 0 and the subtree declared no transform). Paint follows the
+        // record unconditionally — a node's painted glyphs always come from
+        // the provider that sized its box, never a mid-frame re-decision.
+        if node.text_native {
             self.emit_text_native(dl, run, r, world, color, clip, box_w);
             return;
         }
@@ -2336,10 +2317,12 @@ impl<'a> Walker<'a> {
         self.glyph_scratch = scratch;
     }
 
-    /// Emit one TEXT_RUN (native text path; format in spec.ts). The origin is
-    /// f32 and may sit off-viewport, so a run not fully inside the clip is
-    /// bracketed in SCISSOR/SCISSOR_POP — the one place the core emits a
-    /// scissor for its own op rather than for children.
+    /// Emit one TEXT_RUN (native text path; format in spec.ts): header words
+    /// plus the run string's UTF-8 bytes packed into the stream — the words
+    /// alone are the complete pixel truth. The origin is f32 and may sit
+    /// off-viewport, so a run not fully inside the clip is bracketed in
+    /// SCISSOR/SCISSOR_POP — the one place the core emits a scissor for its
+    /// own op rather than for children.
     fn emit_text_native(
         &mut self,
         dl: &mut DrawList,
@@ -2351,7 +2334,8 @@ impl<'a> Walker<'a> {
         box_w: f32,
     ) {
         let slot = r.font_slot as u8;
-        // Routes to the native measurer (tracking is 0 on this path).
+        // Routes to the native measurer (the recorded-provider gate holds
+        // tracking at 0 on this path).
         let (mw, mh) = self.fonts.measure_run(&run, slot, r.tracking, r.line_height);
         if mw <= 0.0 || mh <= 0.0 {
             return;
@@ -2370,34 +2354,20 @@ impl<'a> Walker<'a> {
             dl.words.push(xy_word(clip.x0, clip.y0));
             dl.words.push(wh_word(clip.x1 - clip.x0, clip.y1 - clip.y0));
         }
-        // styleHash: the side table must not be able to change behind an
-        // identical word stream (demand-render hashes only see words).
-        let mut h: u32 = 0x811c_9dc5;
-        let mut mix = |byte: u8| {
-            h ^= byte as u32;
-            h = h.wrapping_mul(0x0100_0193);
-        };
-        for b in run.as_bytes() {
-            mix(*b);
-        }
-        mix(slot);
-        mix(r.text_align);
-        for b in r.line_height.to_bits().to_le_bytes() {
-            mix(b);
-        }
+        let bytes = run.as_bytes();
         dl.words.push(spec::draw_op::TEXT_RUN);
-        dl.words.push(dl.text_runs.len() as u32);
+        dl.words.push((slot as u32) | ((r.text_align as u32) << 8));
         dl.words.push(ox.to_bits());
         dl.words.push(oy.to_bits());
         dl.words.push(box_w.to_bits());
+        dl.words.push(r.line_height.to_bits());
         dl.words.push(color);
-        dl.words.push(h);
-        dl.text_runs.push(TextRunInfo {
-            text: run,
-            slot,
-            align: r.text_align,
-            line_height: r.line_height,
-        });
+        dl.words.push(bytes.len() as u32);
+        for chunk in bytes.chunks(4) {
+            let mut w = [0u8; 4];
+            w[..chunk.len()].copy_from_slice(chunk);
+            dl.words.push(u32::from_le_bytes(w));
+        }
         if clipped {
             dl.words.push(spec::draw_op::SCISSOR_POP);
         }

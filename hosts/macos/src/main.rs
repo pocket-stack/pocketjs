@@ -10,17 +10,19 @@
 //!
 //! Determinism (docs/DETERMINISM.md): the guest ticks on a fixed 60 Hz
 //! virtual clock from a foreground timer loop — exactly one `guest.frame()`
-//! + `surface.tick()` per tick, NEVER from a paint callback. Painting is
-//! demand-driven: a tick that changes the DrawList content hash notifies the
-//! window; unchanged ticks paint nothing (the pocket-widget governor's
+//! plus one `surface.tick()` per tick, NEVER from a paint callback. Painting
+//! is demand-driven: a tick that changes the DrawList content hash notifies
+//! the window; unchanged ticks paint nothing (the pocket-widget governor's
 //! discipline, restated on gpui).
 //!
 //! Input modes:
-//!   console — PSP button mapping (arrows = D-pad, Z/Enter = CROSS, …), for
-//!             fixed-viewport console apps, letterboxed & size-locked.
-//!   editor  — the svc JSON-line protocol note-widget speaks
-//!             (apps/note/svc.ts): keyboard/IME/pointer/scroll forwarded as
-//!             lines, guest intents (save/quit/copy/caret) handled here.
+//! - console — PSP button mapping (arrows = D-pad, Z/Enter = CROSS, …), for
+//!   fixed-viewport console apps, letterboxed & size-locked.
+//! - editor — the NOTE COMPANION adapter, the svc JSON-line dialect
+//!   note-widget speaks (apps/note/svc.ts): keyboard/IME/pointer/scroll
+//!   forwarded as lines, guest intents (save/quit/copy/caret) handled here.
+//!   An app protocol, not a capability: the live-viewport hook and button
+//!   map work for every app regardless of this flag.
 
 use std::cell::{Cell, RefCell};
 use std::ops::Range;
@@ -199,11 +201,10 @@ fn register_fonts(cx: &App) {
             faces.push(std::borrow::Cow::Owned(bytes));
         }
     }
-    if !faces.is_empty() {
-        if let Err(e) = cx.text_system().add_fonts(faces) {
+    if !faces.is_empty()
+        && let Err(e) = cx.text_system().add_fonts(faces) {
             log::warn!("pocket-macos: font registration failed: {e}");
         }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -407,20 +408,34 @@ impl PocketRoot {
         }
         // Window resizes land here (render records them), so the relayout is
         // part of the tick transaction, never of a paint.
-        if let Some(vp) = self.pending_viewport.take() {
-            if vp != self.viewport && !self.args.fixed {
+        if let Some(vp) = self.pending_viewport.take()
+            && vp != self.viewport && !self.args.fixed {
                 self.viewport = vp;
                 self.surface.with_ui(|ui| ui.set_viewport(vp.0 as f32, vp.1 as f32));
+                // display.viewport.live is a HOST capability, not an editor
+                // protocol: every dynamic app gets the framework's live-
+                // viewport hook (framework/src/host.ts installResizeViewport-
+                // Hook), inside the tick transaction. The note's svc resize
+                // line is its companion dialect on top; its own
+                // resizeViewport call is idempotent against this one.
+                if let Err(e) = self.guest.eval(
+                    "resize-hook",
+                    &format!(
+                        "globalThis.__pocketResizeViewport && globalThis.__pocketResizeViewport({}, {});",
+                        vp.0, vp.1
+                    ),
+                ) {
+                    log::warn!("pocket-macos: resize hook failed: {e}");
+                }
                 if self.args.editor {
                     self.svc(serde_json::json!({"t": "resize", "w": vp.0, "h": vp.1}));
                 }
             }
-        }
         if !self.script.is_empty() {
             self.run_script();
         }
-        if let Some((cps, start, dur)) = self.args.storm {
-            if self.ticks >= start && self.ticks < start + dur {
+        if let Some((cps, start, dur)) = self.args.storm
+            && self.ticks >= start && self.ticks < start + dur {
                 // Whole chars this tick, error-free over time (i*cps/60).
                 let i = self.ticks - start;
                 let n = ((i + 1) * cps as u64) / 60 - (i * cps as u64) / 60;
@@ -432,7 +447,6 @@ impl PocketRoot {
                     self.svc(serde_json::json!({"t": "ch", "s": s}));
                 }
             }
-        }
         let buttons = if self.args.editor {
             // Clicks are CIRCLE — hover already focused what's under the
             // pointer (note-widget's contract).
@@ -483,11 +497,10 @@ impl PocketRoot {
         }
 
         self.ticks += 1;
-        if let Some(limit) = self.args.quit_after_ticks {
-            if self.ticks >= limit {
+        if let Some(limit) = self.args.quit_after_ticks
+            && self.ticks >= limit {
                 self.exit = true;
             }
-        }
         if self.exit {
             println!(
                 "pocket-macos: {} ticks, {} frames rendered ({:.1}%)",
@@ -515,11 +528,9 @@ impl PocketRoot {
                     "v" => {
                         if let Some(text) =
                             cx.read_from_clipboard().and_then(|item| item.text())
-                        {
-                            if !text.is_empty() {
+                            && !text.is_empty() {
                                 self.svc(serde_json::json!({"t": "paste", "text": text}));
                             }
-                        }
                     }
                     _ => {}
                 }
@@ -546,11 +557,10 @@ impl PocketRoot {
             } else if self.marked.is_none() {
                 // Plain typing (IME composition delivers through the input
                 // handler instead — no double-input path).
-                if let Some(s) = &ks.key_char {
-                    if !s.is_empty() {
+                if let Some(s) = &ks.key_char
+                    && !s.is_empty() {
                         self.svc(serde_json::json!({"t": "ch", "s": s}));
                     }
-                }
             }
         } else {
             if ks.modifiers.platform && (ks.key == "q" || ks.key == "w") {
@@ -564,11 +574,10 @@ impl PocketRoot {
     }
 
     fn on_key_up(&mut self, e: &KeyUpEvent, _w: &mut Window, _cx: &mut Context<Self>) {
-        if !self.args.editor {
-            if let Some(bit) = button_for(&e.keystroke.key) {
+        if !self.args.editor
+            && let Some(bit) = button_for(&e.keystroke.key) {
                 self.buttons &= !bit;
             }
-        }
     }
 
     fn logical_pos(&self, position: Point<Pixels>) -> (f32, f32) {

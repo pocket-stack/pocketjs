@@ -424,7 +424,11 @@ impl<'a> DamageDecoder<'a> {
             spec::draw_op::SCISSOR_POP => 1,
             spec::draw_op::TRI => 7,
             spec::draw_op::TEX_TRI => 12,
-            spec::draw_op::TEXT_RUN => 7,
+            spec::draw_op::TEXT_RUN => {
+                // 8 header words + ceil(byteLen/4) packed UTF-8 words.
+                let bytes = *self.words.get(start + 7).ok_or(())? as usize;
+                8usize.checked_add(bytes.div_ceil(4)).ok_or(())?
+            }
             _ => return Err(()),
         };
         let end = start.checked_add(len).ok_or(())?;

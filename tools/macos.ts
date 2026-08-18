@@ -54,10 +54,15 @@ const env = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? "info" };
 //   fixed        — the app declared only a fixed viewport (size-locked run)
 //   native-text  — text.layout.native resolved true (host installs the
 //                  CoreText measurer before mount)
-//   editor       — input.text resolved true (svc editor protocol; console
-//                  button mapping otherwise)
+//   editor       — the NOTE COMPANION adapter (apps/note/svc.ts dialect):
+//                  an app protocol, NOT a capability. Capabilities resolve
+//                  independently of it — the live-viewport hook and the
+//                  button map are host-generic for every app; text/IME/
+//                  clipboard delivery rides the companion today (the same
+//                  stock-host bar as macos-widget, PR #129).
 const viewport = manifest.app.viewport;
 const fixed = !("dynamic" in viewport) || !viewport.dynamic;
+const editor = manifest.name === "pocket-note";
 const flags: string[] = [
   "--app",
   plan.app.output,
@@ -70,7 +75,7 @@ const flags: string[] = [
 ];
 if (fixed) flags.push("--fixed");
 if (plan.features["text.layout.native"]) flags.push("--native-text");
-if (plan.features["input.text"]) flags.push("--editor");
+if (editor) flags.push("--editor");
 
 if (proof) {
   const file = `${root}dist/macos-proof.md`;
@@ -85,7 +90,7 @@ if (proof) {
   console.log("\nproof: typing landed at the caret through the svc protocol and the\ndebounced autosave wrote the file back out through the gpui host.");
 } else {
   const fileFlags =
-    plan.features["input.text"] && !rest.some((f) => f === "--file")
+    editor && !rest.some((f) => f === "--file")
       ? ["--file", `${process.env.HOME}/.pocket-note.md`]
       : [];
   await $`${bin} ${flags} ${fileFlags} ${rest}`.env(env);

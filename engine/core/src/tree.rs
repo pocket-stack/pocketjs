@@ -83,6 +83,12 @@ pub struct Node {
     pub taffy: Option<taffy::NodeId>,
     /// Rounded layout output (position relative to parent).
     pub layout: LayoutRect,
+    /// Text nodes: the measurement provider RECORDED at the last layout
+    /// build — true = the host's native measurer sized this box, so paint
+    /// MUST emit TEXT_RUN; false = baked atlas metrics, GLYPH_RUN. One
+    /// provider per node per layout, never re-decided at paint time
+    /// (docs/BACKENDS.md).
+    pub text_native: bool,
 }
 
 impl Node {
@@ -107,6 +113,7 @@ impl Node {
             active: false,
             taffy: None,
             layout: LayoutRect::default(),
+            text_native: false,
         }
     }
 

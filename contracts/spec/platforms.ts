@@ -303,6 +303,13 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   // frame, not a widget shell, so fixed-viewport apps run size-locked
   // (acceptsFixed) with their baked glyph pipeline intact; apps that enhance
   // text.layout.native get host text measurement and shaping instead.
+  // Delivery paths, stated plainly: input.buttons (keyboard map) and
+  // display.viewport.live (the __pocketResizeViewport hook, every dynamic
+  // app) are host-generic; input.pointer/input.text/input.ime/host.clipboard
+  // ride an app companion adapter today (the note's svc dialect — the same
+  // stock-host bar macos-widget set in #129). A host-generic pointer feed
+  // needs framework surface beyond the 9-bit touch packing and is tracked
+  // as follow-up work, not implied here.
   "macos-app": {
     hostAbi: 3,
     platform: "macos",

@@ -15,7 +15,6 @@ use gpui::{
     Path, Pixels, Point, RenderImage, Rgba, ShapedLine, SharedString, Window,
 };
 use image::{Frame, ImageBuffer};
-use pocketjs_core::draw::DrawList;
 use pocketjs_core::{spec, Ui};
 use smallvec::SmallVec;
 
@@ -162,9 +161,9 @@ impl GpuiRenderer {
         }
         self.rasters_used.clear();
         self.shaped_used.clear();
-        let dl = ui.current_draw_list();
+        let words = &ui.current_draw_list().words;
         let mut i = 0usize;
-        self.walk(ui, dl, &mut i, origin, window, cx);
+        self.walk(ui, words, &mut i, origin, window, cx);
         let used = std::mem::take(&mut self.rasters_used);
         self.rasters.retain(|h, _| used.contains(h));
         self.rasters_used = used;
@@ -177,13 +176,12 @@ impl GpuiRenderer {
     fn walk(
         &mut self,
         ui: &Ui,
-        dl: &DrawList,
+        words: &[u32],
         i: &mut usize,
         origin: Point<Pixels>,
         window: &mut Window,
         cx: &mut App,
     ) {
-        let words = &dl.words;
         while *i < words.len() {
             match words[*i] {
                 spec::draw_op::RECT => {
@@ -244,7 +242,7 @@ impl GpuiRenderer {
                     // with_content_mask intersects with the enclosing mask,
                     // matching the core's already-intersected scissor rects.
                     window.with_content_mask(Some(mask), |window| {
-                        self.walk(ui, dl, i, origin, window, cx)
+                        self.walk(ui, words, i, origin, window, cx)
                     });
                 }
                 spec::draw_op::SCISSOR_POP => {
@@ -252,11 +250,12 @@ impl GpuiRenderer {
                     return;
                 }
                 spec::draw_op::TRI | spec::draw_op::TEX_TRI => {
-                    self.paint_tri_batch(ui, dl, i, origin, window, cx);
+                    self.paint_tri_batch(ui, words, i, origin, window, cx);
                 }
                 spec::draw_op::TEXT_RUN => {
-                    self.paint_text_run(dl, &words[*i + 1..*i + 7], origin, window, cx);
-                    *i += 7;
+                    let len = 8 + (words[*i + 7] as usize).div_ceil(4);
+                    self.paint_text_run(&words[*i..*i + len], origin, window, cx);
+                    *i += len;
                 }
                 // The op set is closed per DrawList version; anything else
                 // means corrupt data — stop instead of misinterpreting.
@@ -267,30 +266,41 @@ impl GpuiRenderer {
 
     // ---- text ---------------------------------------------------------------
 
+    /// Paint one TEXT_RUN from its op words (`words[0]` = the op word; the
+    /// run string's UTF-8 bytes ride in the stream — spec.ts word format).
     fn paint_text_run(
         &mut self,
-        dl: &DrawList,
         words: &[u32],
         origin: Point<Pixels>,
         window: &mut Window,
         cx: &mut App,
     ) {
-        let Some(entry) = dl.text_runs.get(words[0] as usize) else { return };
-        let ox = f32::from_bits(words[1]);
-        let oy = f32::from_bits(words[2]);
-        let box_w = f32::from_bits(words[3]);
-        let color: Hsla = abgr(words[4]).into();
-        let (size_px, bold) = slot_px(entry.slot);
+        let slot = (words[1] & 0xff) as u8;
+        let align = ((words[1] >> 8) & 0xff) as u8;
+        let ox = f32::from_bits(words[2]);
+        let oy = f32::from_bits(words[3]);
+        let box_w = f32::from_bits(words[4]);
+        let line_height = f32::from_bits(words[5]);
+        let color_word = words[6];
+        let byte_len = words[7] as usize;
+        let mut bytes = Vec::with_capacity(byte_len);
+        for w in &words[8..8 + byte_len.div_ceil(4)] {
+            bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        bytes.truncate(byte_len);
+        let text = String::from_utf8_lossy(&bytes);
+        let color: Hsla = abgr(color_word).into();
+        let (size_px, bold) = slot_px(slot);
         let ts = window.text_system().clone();
-        let lh = if entry.line_height.is_nan() {
-            slot_line_height(&ts, &self.cfg, entry.slot)
+        let lh = if line_height.is_nan() {
+            slot_line_height(&ts, &self.cfg, slot)
         } else {
-            entry.line_height
+            line_height
         };
         let mut y = oy;
-        for line in entry.text.split('\n') {
+        for line in text.split('\n') {
             if !line.is_empty() {
-                let key = shaped_key(line, entry.slot, words[4]);
+                let key = shaped_key(line, slot, color_word);
                 self.shaped_used.insert(key);
                 let cached = self
                     .shaped
@@ -311,7 +321,7 @@ impl GpuiRenderer {
                         s
                     }
                 };
-                let dx = match entry.align {
+                let dx = match align {
                     a if a == spec::TextAlign::Center as u8 => {
                         (box_w - f32::from(shaped.width)) * 0.5
                     }
@@ -455,13 +465,12 @@ impl GpuiRenderer {
     fn paint_tri_batch(
         &mut self,
         ui: &Ui,
-        dl: &DrawList,
+        words: &[u32],
         i: &mut usize,
         origin: Point<Pixels>,
         window: &mut Window,
         _cx: &mut App,
     ) {
-        let words = &dl.words;
         let start = *i;
         let mut end = start;
         let mut needs_raster = false;

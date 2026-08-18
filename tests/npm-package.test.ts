@@ -61,6 +61,11 @@ describe("published npm artifacts", () => {
       // otherwise pack (the v0.8.0 E415 failure mode) and nothing in the
       // tarball consumes them.
       "!tools/bench-desktop",
+      // The gpui host wrapper builds hosts/macos + engine/backends/gpui,
+      // which are git-only (like the ESP32-P4 backend) — shipping the
+      // entry point without its build inputs would be a tarball tool that
+      // cannot run.
+      "!tools/macos.ts",
       "apps/hero/app.tsx",
       "apps/iphone2g-demo",
       "apps/iphone4s-demo",

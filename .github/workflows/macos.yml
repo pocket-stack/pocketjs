@@ -11,18 +11,24 @@ on:
   pull_request:
     paths:
       - ".github/workflows/macos.yml"
+      - "contracts/spec/**"
       - "engine/core/**"
       - "engine/crates/pocket-ui-surface/**"
       - "engine/backends/gpui/**"
       - "hosts/macos/**"
+      - "tools/macos.ts"
+      - "apps/note/**"
   push:
     branches: [main]
     paths:
       - ".github/workflows/macos.yml"
+      - "contracts/spec/**"
       - "engine/core/**"
       - "engine/crates/pocket-ui-surface/**"
       - "engine/backends/gpui/**"
       - "hosts/macos/**"
+      - "tools/macos.ts"
+      - "apps/note/**"
   workflow_dispatch: {}
 
 permissions:
@@ -51,6 +57,9 @@ jobs:
 
       - name: Clippy gpui backend
         run: cargo clippy --locked --manifest-path engine/backends/gpui/Cargo.toml -- -D warnings
+
+      - name: Clippy macos-app host
+        run: cargo clippy --locked --manifest-path hosts/macos/Cargo.toml -- -D warnings
 
       - name: Build macos-app host
         run: cargo build --locked --manifest-path hosts/macos/Cargo.toml

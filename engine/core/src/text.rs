@@ -286,15 +286,37 @@ impl Fonts {
 
     /// Measure a run: (max line width, line count x line height). Empty text
     /// or an unregistered slot measures (0, 0). With a native measurer
-    /// installed, tracking-0 runs route to it (matching draw.rs's TEXT_RUN
-    /// emission gate — see `MeasureFn`).
+    /// installed, tracking-0 runs route to it — the auto-gate the JS-facing
+    /// `measureText` op uses. Layout does NOT call this: it picks a provider
+    /// per node and records it (`measure_run_provider`; layout.rs build()).
     pub fn measure_run(&self, text: &str, slot: u8, tracking: f32, line_h_override: f32) -> (f32, f32) {
+        self.measure_run_provider(
+            self.native.is_some() && tracking == 0.0,
+            text,
+            slot,
+            tracking,
+            line_h_override,
+        )
+    }
+
+    /// Measure with an EXPLICIT provider choice. `native: true` requires an
+    /// installed measurer (falls back to the atlas without one); layout
+    /// records the choice on the node so paint always uses the provider
+    /// that sized the box (docs/BACKENDS.md).
+    pub fn measure_run_provider(
+        &self,
+        native: bool,
+        text: &str,
+        slot: u8,
+        tracking: f32,
+        line_h_override: f32,
+    ) -> (f32, f32) {
         if text.is_empty() {
             return (0.0, 0.0);
         }
-        if tracking == 0.0 {
-            if let Some(native) = &self.native {
-                return native(text, slot, tracking, line_h_override);
+        if native {
+            if let Some(f) = &self.native {
+                return f(text, slot, tracking, line_h_override);
             }
         }
         let Some(atlas) = self.atlas(slot) else { return (0.0, 0.0) };
