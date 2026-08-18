@@ -371,6 +371,15 @@ pub fn render_scaled_rgb565(ui: &Ui, words: &[u32], fb: &mut [u16], scale: u32) 
     render_scaled_impl(ui, words, &mut target, scale, true);
 }
 
+/// Execute DrawList words over an existing RGBA8 framebuffer without
+/// clearing it. Render backends composite these into their own scene (the
+/// gpui tri-batch fallback keeps uncovered pixels transparent this way —
+/// the clearing variants paint the full-frame opaque-black background).
+pub fn render_scaled_over(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
+    let mut target = RgbaTarget::<false> { bytes: fb };
+    render_scaled_impl(ui, words, &mut target, scale, false);
+}
+
 /// Execute DrawList words over an existing RGB565 framebuffer without
 /// clearing it. Hardware backends use this for ordered fallback segments.
 pub fn render_scaled_rgb565_over(ui: &Ui, words: &[u32], fb: &mut [u16], scale: u32) {
@@ -1316,6 +1325,31 @@ mod tests {
         let width = spec::SCREEN_W as usize * scale as usize;
         let offset = (y * width + x) * 4;
         fb[offset..offset + 4].try_into().unwrap()
+    }
+
+    #[test]
+    fn render_scaled_over_composites_without_clearing() {
+        // The OVER variant must leave untouched pixels exactly as supplied
+        // (a transparent scratch stays transparent outside the ops — the
+        // gpui tri-batch fallback's contract), while the clearing variant
+        // paints the opaque-black background everywhere.
+        let ui = Ui::new();
+        let words = [
+            spec::draw_op::RECT,
+            xy_word(10, 10),
+            wh_word(20, 20),
+            0xff00_00ff, // opaque red (ABGR)
+        ];
+        let mut over = framebuffer(1);
+        over.fill(7); // sentinel: pre-existing content
+        render_scaled_over(&ui, &words, &mut over, 1);
+        assert_eq!(rgba(&over, 1, 15, 15), [255, 0, 0, 255], "op painted");
+        assert_eq!(rgba(&over, 1, 5, 5), [7, 7, 7, 7], "untouched pixel preserved");
+
+        let mut cleared = framebuffer(1);
+        cleared.fill(7);
+        render_scaled(&ui, &words, &mut cleared, 1);
+        assert_eq!(rgba(&cleared, 1, 5, 5), [0, 0, 0, 255], "clearing variant blacks out");
     }
 
     #[test]

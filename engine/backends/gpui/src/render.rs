@@ -606,6 +606,9 @@ impl GpuiRenderer {
         // asserts the pixel count), so raster the batch into a reusable
         // viewport-sized scratch at density and crop the bbox out. The
         // batch words are already viewport-space — no translation needed.
+        // The OVER variant leaves the zeroed scratch's uncovered pixels
+        // fully transparent (the clearing variant paints the full-frame
+        // opaque-black background — the ROOM-card black-edge bug).
         let (bw, bh) = ((max_x - min_x) as u32, (max_y - min_y) as u32);
         let scale = self.raster_scale;
         let (vw, vh) = ui.viewport();
@@ -616,7 +619,7 @@ impl GpuiRenderer {
         let full = (fw * fh * 4) as usize;
         self.raster_scratch.resize(full, 0);
         self.raster_scratch[..full].fill(0);
-        pocketjs_core::raster::render_scaled(ui, batch, &mut self.raster_scratch, scale);
+        pocketjs_core::raster::render_scaled_over(ui, batch, &mut self.raster_scratch, scale);
         let (pw, ph) = (bw * scale, bh * scale);
         let mut bgra = Vec::with_capacity((pw * ph * 4) as usize);
         let (ox_px, oy_px) = (min_x as u32 * scale, min_y as u32 * scale);

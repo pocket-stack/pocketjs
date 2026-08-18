@@ -71,6 +71,8 @@ enum ScriptEvent {
     Type(u64, String),
     /// Press-and-release the pointer at logical (x, y) at a tick.
     Click(u64, f32, f32),
+    /// Hold a console button for ~6 ticks starting at a tick.
+    Press(u64, u32),
 }
 
 struct Args {
@@ -159,6 +161,17 @@ fn parse_args() -> Result<Args> {
             }
             "--quit-after" => args.quit_after_ticks = Some(val("--quit-after")?.parse()?),
             "--announce-ready" => args.announce_ready = true,
+            "--press" => {
+                // --press NAME@TICK (console button script: up/down/left/
+                // right/cross/circle/square/triangle/l/r/start/select)
+                let v = val("--press")?;
+                let (name, t) = v
+                    .rsplit_once('@')
+                    .ok_or_else(|| anyhow!("--press NAME@TICK"))?;
+                let bit =
+                    button_for(name).ok_or_else(|| anyhow!("--press: unknown button {name}"))?;
+                args.script.push(ScriptEvent::Press(t.parse()?, bit));
+            }
             "--storm" => {
                 // --storm CPS@START+DUR (ticks)
                 let v = val("--storm")?;
@@ -258,6 +271,8 @@ struct PocketRoot {
 
     // console input
     buttons: u32,
+    /// Buttons currently held by the --press script.
+    script_buttons: u32,
     // editor input
     mouse_down: bool,
     click_edge: bool,
@@ -329,6 +344,7 @@ impl PocketRoot {
             pending_viewport: None,
             canvas_origin: Rc::new(Cell::new(point(px(0.0), px(0.0)))),
             buttons: 0,
+            script_buttons: 0,
             mouse_down: false,
             click_edge: false,
             last_mouse: None,
@@ -408,20 +424,24 @@ impl PocketRoot {
 
     fn run_script(&mut self) {
         let tick = self.ticks;
-        let events: Vec<ScriptEvent> = self
-            .script
-            .iter()
-            .filter(|e| matches!(e, ScriptEvent::Type(t, _) | ScriptEvent::Click(t, _, _) if *t == tick))
-            .cloned()
-            .collect();
-        for ev in events {
+        for ev in self.script.clone() {
             match ev {
-                ScriptEvent::Type(_, s) => self.svc(serde_json::json!({"t": "ch", "s": s})),
-                ScriptEvent::Click(_, x, y) => {
+                ScriptEvent::Type(t, s) if t == tick => {
+                    self.svc(serde_json::json!({"t": "ch", "s": s}))
+                }
+                ScriptEvent::Click(t, x, y) if t == tick => {
                     self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": true}));
                     self.svc(serde_json::json!({"t": "mouse", "x": x, "y": y, "d": false}));
                     self.click_edge = true;
                 }
+                // Held for 6 ticks so edge-detected button handlers latch.
+                ScriptEvent::Press(t, bit) if tick >= t && tick < t + 6 => {
+                    self.script_buttons |= bit;
+                }
+                ScriptEvent::Press(t, bit) if tick == t + 6 => {
+                    self.script_buttons &= !bit;
+                }
+                _ => {}
             }
         }
     }
@@ -691,8 +711,8 @@ fn button_for(key: &str) -> Option<u32> {
         "x" | "backspace" => BTN_CIRCLE,
         "a" => BTN_SQUARE,
         "s" => BTN_TRIANGLE,
-        "q" => BTN_LTRIGGER,
-        "w" => BTN_RTRIGGER,
+        "q" | "l" => BTN_LTRIGGER,
+        "w" | "r" => BTN_RTRIGGER,
         "tab" => BTN_SELECT,
         "space" => BTN_START,
         _ => return None,
