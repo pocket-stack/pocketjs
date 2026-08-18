@@ -20,12 +20,14 @@
       272
     ],
     "presentation": "integer-fit",
-    "rasterDensity": 1
+    "rasterDensity": 1,
+    "policy": "fixed"
   },
   "features": {
     "input.analog.left": true,
     "input.buttons": true,
     "text.glyphs.baked": true
   },
-  "planHash": "sha256:b8224b08498af9535f31343a15fd769f1dfba05868f46cc4db94d174200ba1ad"
+  "companions": [],
+  "planHash": "sha256:e3a257d89114161e6faecb37249f3cba37f444034a951c80a8ffcaed5a593ddf"
 }

@@ -66,6 +66,7 @@ describe("private iPhone 2G build profile", () => {
       physical: IPHONE2G_VIEWPORT,
       presentation: "native",
       rasterDensity: 1,
+      policy: "fixed",
     });
     expect(plan.features).toEqual({
       "input.touch": true,

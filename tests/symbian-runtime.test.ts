@@ -146,8 +146,10 @@ describe("experimental Nokia E7 runtime profile", () => {
           physical: liveViewport ? [640, 360] : [480, 272],
           presentation: "native",
           rasterDensity: 1,
+          policy: liveViewport ? "dynamic" : "fixed",
         },
         features: {},
+        companions: [],
         planHash: `sha256:${"0".repeat(64)}`,
       },
       packageBytes: new Uint8Array(bytes),
@@ -334,6 +336,7 @@ describe("experimental Nokia E7 runtime profile", () => {
       physical: [640, 360],
       presentation: "native",
       rasterDensity: 1,
+      policy: "dynamic",
     });
     expect(plan.features["display.viewport.live"]).toBe(true);
     expect(plan.planHash).toMatch(/^sha256:[a-f0-9]{64}$/);
@@ -346,6 +349,7 @@ describe("experimental Nokia E7 runtime profile", () => {
       physical: [480, 272],
       presentation: "integer-fit",
       rasterDensity: 1,
+      policy: "fixed",
     });
     expect(psp.plan.features["display.viewport.live"]).toBe(false);
   });

@@ -27,8 +27,10 @@ function plan(
       physical: [640, 360],
       presentation: "native",
       rasterDensity: 1,
+      policy: "dynamic",
     },
     features: {},
+    companions: [],
     planHash: `sha256:${"0".repeat(64)}`,
   };
 }

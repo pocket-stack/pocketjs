@@ -69,6 +69,7 @@ describe("private iPod touch 6 profile", () => {
       physical: IPODTOUCH_PHYSICAL_VIEWPORT,
       presentation: "native",
       rasterDensity: IPODTOUCH_RASTER_DENSITY,
+      policy: "fixed",
     });
     expect(plan.features).toEqual({ "input.touch": true, "text.glyphs.baked": true });
     expect(plan.app.entry).toBe("apps/ipodtouch-demo/main.tsx");

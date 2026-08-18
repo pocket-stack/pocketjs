@@ -58,6 +58,12 @@ int32_t pocket_apple_set_identity(PocketApple *handle, const char *host_id,
 // must be driven at the same rate.
 int32_t pocket_apple_set_tick_rate(PocketApple *handle, uint32_t hz);
 
+/* Declare the exact companion service names this host serves (comma-
+ * separated svcOpen names). Deny-by-default: never calling this means
+ * svcOpen answers false for every service. Before eval_bundle. */
+int32_t pocket_apple_set_svc_allowlist(PocketApple *handle,
+                                       const char *comma_separated);
+
 int32_t pocket_apple_load_pak(PocketApple *handle, const uint8_t *bytes,
                               size_t length);
 

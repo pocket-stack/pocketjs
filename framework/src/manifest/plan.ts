@@ -17,9 +17,16 @@ export interface ResolvedBuildPlanContent {
     readonly presentation: PresentationMode;
     /** Target-owned raster samples per logical pixel; layout stays logical. */
     readonly rasterDensity: number;
+    /** Which manifest viewport variant the target resolved — hosts derive
+     *  size-locking from the plan, never by re-reading the manifest. */
+    readonly policy: "fixed" | "dynamic";
   };
   /** Required APIs are true; enhancements reflect target availability. */
   readonly features: Readonly<Record<string, boolean>>;
+  /** Companion service names from the manifest (app.companions): the exact
+   *  svcOpen strings the app's adapters speak. Hosts build their svc
+   *  allowlist from this list (issue #295). */
+  readonly companions: readonly string[];
 }
 
 export interface ResolvedBuildPlan extends ResolvedBuildPlanContent {

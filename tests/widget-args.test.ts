@@ -154,6 +154,7 @@ describe("Pocket Stage manifest admission", () => {
       physical: [480, 272],
       presentation: "integer-fit",
       rasterDensity: 1,
+      policy: "fixed",
     });
   });
 
@@ -180,6 +181,7 @@ describe("Pocket Stage manifest admission", () => {
       physical: [176, 132],
       presentation: "native",
       rasterDensity: 1,
+      policy: "fixed",
     });
   });
 });

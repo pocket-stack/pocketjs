@@ -90,6 +90,8 @@ struct Args {
     native_text: bool,
     /// svc editor protocol instead of console buttons.
     editor: bool,
+    /// Companion service names from the plan (svcOpen allowlist).
+    companions: Vec<String>,
     density: u32,
     script: Vec<ScriptEvent>,
     quit_after_ticks: Option<u64>,
@@ -112,6 +114,7 @@ fn parse_args() -> Result<Args> {
         fixed: false,
         native_text: false,
         editor: false,
+        companions: Vec::new(),
         density: 2,
         script: Vec::new(),
         quit_after_ticks: None,
@@ -137,6 +140,13 @@ fn parse_args() -> Result<Args> {
             "--fixed" => args.fixed = true,
             "--native-text" => args.native_text = true,
             "--editor" => args.editor = true,
+            "--companions" => {
+                args.companions = val("--companions")?
+                    .split(',')
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect();
+            }
             "--density" => args.density = val("--density")?.parse::<u32>()?.clamp(1, 4),
             "--type" => {
                 // --type TEXT@TICK
@@ -297,10 +307,11 @@ impl PocketRoot {
             args.density,
         );
         surface.set_identity(HOST_ID, HOST_ABI);
-        // svcOpen denies by default (pocket-ui-surface); the adapter being
-        // on is the one companion this host declares.
-        if args.editor {
-            surface.set_svc_allowlist(["note"]);
+        // svcOpen denies by default (pocket-ui-surface); the allowlist is
+        // exactly the plan's companion list (tools/macos.ts --companions,
+        // issue #295) — never an app-name convention.
+        if !args.companions.is_empty() {
+            surface.set_svc_allowlist(args.companions.iter().map(String::as_str));
         }
         surface.feed_pak(&pak);
         let cfg = TextConfig::new("Inter");

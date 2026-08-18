@@ -57,6 +57,7 @@ describe("private iPhone 4S profile", () => {
       physical: IPHONE4S_PHYSICAL_VIEWPORT,
       presentation: "native",
       rasterDensity: IPHONE4S_RASTER_DENSITY,
+      policy: "fixed",
     });
     expect(plan.app.entry).toBe("apps/iphone4s-demo/main.tsx");
     expect(plan.app.output).toBe("iphone4s-demo-main");

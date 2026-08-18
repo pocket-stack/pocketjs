@@ -66,6 +66,14 @@ export interface PocketManifestV2 {
     readonly output?: string;
     readonly framework: "solid" | "vue-vapor" | "octane";
     readonly viewport: ManifestViewport;
+    /**
+     * Companion service names the app's svc adapters speak (the exact
+     * strings it passes to `svcOpen`). Hosts derive their svc allowlist
+     * and adapter wiring from the resolved plan's copy of this list —
+     * never from app-name conventions (issue #295). Absent = the app
+     * runs standalone everywhere; svcOpen answers false by default.
+     */
+    readonly companions?: readonly string[];
   };
 }
 
@@ -182,6 +190,16 @@ export const pocketManifestV2Schema = {
           pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
         },
         framework: { enum: ["solid", "vue-vapor", "octane"] },
+        companions: {
+          type: "array",
+          items: {
+            type: "string",
+            minLength: 1,
+            maxLength: 64,
+            pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          },
+          uniqueItems: true,
+        },
         viewport: {
           anyOf: [
             // Shorthand: a bare fixed viewport (format-2 compatibility).

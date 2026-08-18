@@ -66,6 +66,7 @@ describe("private Meizu M8 build profile", () => {
       physical: MEIZU_M8_PHYSICAL_VIEWPORT,
       presentation: "native",
       rasterDensity: 1,
+      policy: "fixed",
     });
     expect(plan.features).toEqual({
       "input.touch": true,

@@ -65,6 +65,7 @@ describe("private iOS build profile", () => {
       physical: [480 * IOS_DEV_DEFAULT_DENSITY, 272 * IOS_DEV_DEFAULT_DENSITY],
       presentation: "integer-fit",
       rasterDensity: IOS_DEV_DEFAULT_DENSITY,
+      policy: "fixed",
     });
     expect(plan.features).toEqual({
       "input.touch": true,

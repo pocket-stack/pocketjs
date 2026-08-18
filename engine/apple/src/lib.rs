@@ -185,6 +185,36 @@ pub extern "C" fn pocket_apple_set_identity(
     })
 }
 
+/// Declare the exact companion service names this host serves (comma-
+/// separated; svcOpen answers false for everything else — and for
+/// everything when this is never called, per the surface's deny-by-default
+/// contract). Must be called before `eval_bundle`, like `set_identity`.
+#[unsafe(no_mangle)]
+pub extern "C" fn pocket_apple_set_svc_allowlist(
+    handle: *mut PocketApple,
+    comma_separated: *const c_char,
+) -> i32 {
+    with_handle(handle, ERR_PANIC, |state| {
+        if state.mounted {
+            set_last_error("svc allowlist must be set before eval_bundle");
+            return ERR_BAD_STATE;
+        }
+        if comma_separated.is_null() {
+            return ERR_BAD_ARGUMENT;
+        }
+        let names = unsafe { std::ffi::CStr::from_ptr(comma_separated) };
+        match names.to_str() {
+            Ok(names) => {
+                state
+                    .surface
+                    .set_svc_allowlist(names.split(',').filter(|s| !s.is_empty()));
+                OK
+            }
+            Err(_) => ERR_BAD_ARGUMENT,
+        }
+    })
+}
+
 /// Ticks (and therefore `pocket_apple_frame` calls) per second of guest
 /// virtual time. 1..=240; the guest bundle must be built for the same rate.
 /// Rejected after `eval_bundle`, like `set_identity`: the mount publishes

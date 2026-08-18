@@ -56,7 +56,12 @@ function resolveViewport(
   manifest: PocketManifestV2,
   profile: TargetProfile,
   diagnostics: ContractDiagnostic[],
-): { logical: Viewport; presentation: PresentationMode; physical: Viewport } | null {
+): {
+  logical: Viewport;
+  presentation: PresentationMode;
+  physical: Viewport;
+  policy: "fixed" | "dynamic";
+} | null {
   const viewport = normalizeViewport(manifest.app.viewport);
   const { physicalViewport, logicalViewports, dynamicViewport, presentations, rasterDensity } =
     profile.display;
@@ -82,6 +87,7 @@ function resolveViewport(
         logical: size,
         presentation: "native",
         physical: [size[0] * rasterDensity, size[1] * rasterDensity],
+        policy: "dynamic",
       };
     }
     if (viewport.fixed) {
@@ -107,6 +113,7 @@ function resolveViewport(
         logical: size,
         presentation: "native",
         physical: [size[0] * rasterDensity, size[1] * rasterDensity],
+        policy: "fixed",
       };
     }
     diagnostics.push({
@@ -168,7 +175,14 @@ function resolveViewport(
       ok = false;
     }
   }
-  return ok ? { logical, presentation, physical: [physicalViewport[0], physicalViewport[1]] } : null;
+  return ok
+    ? {
+        logical,
+        presentation,
+        physical: [physicalViewport[0], physicalViewport[1]],
+        policy: "fixed",
+      }
+    : null;
 }
 
 /** Validate framework-owned registry data before trusting it in resolution. */
@@ -361,8 +375,10 @@ export function resolveBuildPlan(
       physical,
       presentation: resolvedViewport.presentation,
       rasterDensity: profile.display.rasterDensity,
+      policy: resolvedViewport.policy,
     },
     features,
+    companions: manifest.app.companions ?? [],
   };
   return { ok: true, plan: finalizeBuildPlan(content) };
 }

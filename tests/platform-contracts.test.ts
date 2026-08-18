@@ -270,6 +270,23 @@ describe("semantic resolution", () => {
     if (!onWidget.ok) return;
     expect(onWidget.plan.features["text.layout.native"]).toBe(false);
     expect(onWidget.plan.features["text.glyphs.runtime"]).toBe(true);
+
+    // The companion adapter is PLAN data now (issue #295): hosts build
+    // their svc allowlist and adapter wiring from this list, never from
+    // app-name conventions; the viewport policy rides along so hosts
+    // derive size-locking from the plan too.
+    expect(onApp.plan.companions).toEqual(["note"]);
+    expect(onApp.plan.viewport.policy).toBe("dynamic");
+    const hero = await Bun.file(new URL("../apps/hero/pocket.json", import.meta.url)).json();
+    const heroOnApp = validateAndResolveBuildPlan(hero, { target: "macos-app" });
+    expect(heroOnApp.ok).toBe(true);
+    if (!heroOnApp.ok) return;
+    expect(heroOnApp.plan.companions).toEqual([]);
+    expect(heroOnApp.plan.viewport.policy).toBe("dynamic");
+    const heroOnPsp = validateAndResolveBuildPlan(hero, { target: "psp" });
+    expect(heroOnPsp.ok).toBe(true);
+    if (!heroOnPsp.ok) return;
+    expect(heroOnPsp.plan.viewport.policy).toBe("fixed");
   });
 
   test("guest resolution honors the declared execution classes", () => {
@@ -306,6 +323,7 @@ describe("semantic resolution", () => {
       physical: [480, 272],
       presentation: "integer-fit",
       rasterDensity: 1,
+      policy: "fixed",
     });
     expect(result.plan.features).toEqual({
       "input.analog.left": true,
@@ -505,6 +523,7 @@ describe("semantic resolution", () => {
       physical: [960, 544],
       presentation: "integer-fit",
       rasterDensity: 2,
+      policy: "fixed",
     });
     expect(result.plan.features).toEqual({
       "input.analog.left": true,
@@ -564,6 +583,7 @@ describe("semantic resolution", () => {
       physical: [960, 544],
       presentation: "integer-fit",
       rasterDensity: 2,
+      policy: "fixed",
     });
     expect(Object.values(result.plan.features).every(Boolean)).toBe(true);
   });

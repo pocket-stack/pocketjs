@@ -59,22 +59,17 @@ await $`cargo build --release`.cwd(`${root}hosts/macos`);
 const bin = `${root}hosts/macos/target/release/pocket-macos`;
 const env = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? "info" };
 
-// Host flags: the capability-shaped ones derive from the resolved plan;
-// --editor is the ONE name-convention exception (companion selection,
-// issue #295), and --fixed re-reads the manifest because the plan does not
-// yet carry the fixed/dynamic viewport policy (also #295):
-//   fixed        — the app declared only a fixed viewport (size-locked run)
+// Every host flag derives from the resolved plan (issue #295 landed the
+// companion list and viewport policy in it):
+//   fixed        — plan.viewport.policy (size-locked run)
 //   native-text  — text.layout.native resolved true (host installs the
 //                  CoreText measurer before mount)
-//   editor       — the NOTE COMPANION adapter (apps/note/svc.ts dialect):
-//                  an app protocol, NOT a capability. Capabilities resolve
-//                  independently of it — the live-viewport hook and the
-//                  button map are host-generic for every app; text/IME/
-//                  clipboard delivery rides the companion today (the same
-//                  stock-host bar as macos-widget, PR #129).
-const viewport = manifest.app.viewport;
-const fixed = !("dynamic" in viewport) || !viewport.dynamic;
-const editor = manifest.name === "pocket-note";
+//   companions   — plan.companions: the svc names the app speaks; the host
+//                  builds its svcOpen allowlist from exactly this list
+//   editor       — the NOTE companion dialect (apps/note/svc.ts) — wired
+//                  when the app declares the "note" companion
+const fixed = plan.viewport.policy === "fixed";
+const editor = plan.companions.includes("note");
 const flags: string[] = [
   "--app",
   plan.app.output,
@@ -87,6 +82,7 @@ const flags: string[] = [
 ];
 if (fixed) flags.push("--fixed");
 if (plan.features["text.layout.native"]) flags.push("--native-text");
+if (plan.companions.length > 0) flags.push("--companions", plan.companions.join(","));
 if (editor) flags.push("--editor");
 
 if (proof) {

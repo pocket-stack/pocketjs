@@ -26,6 +26,9 @@
     "entry": "apps/note/main.tsx",
     "output": "note-main",
     "framework": "solid",
+    "companions": [
+      "note"
+    ],
     "viewport": {
       "dynamic": {
         "default": [
