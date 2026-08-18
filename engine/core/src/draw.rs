@@ -128,13 +128,6 @@ impl Affine {
         self.b == 0.0 && self.c == 0.0 && self.a > 0.0 && self.d > 0.0
     }
 
-    /// True when the transform is a pure translation (the paint-time half
-    /// of the text-provider gate; layout.rs transformed() is the build-time
-    /// half).
-    #[inline]
-    fn is_translation(&self) -> bool {
-        self.a == 1.0 && self.b == 0.0 && self.c == 0.0 && self.d == 1.0
-    }
 }
 
 // ---- 3D transforms (perspective subtrees) ---------------------------------------
@@ -869,7 +862,7 @@ pub fn build(
         provider_stale: false,
     };
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
-    w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), dl);
+    w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), false, dl);
     let provider_stale = w.provider_stale;
     let target = w.inspect_hit.map(|c| (c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0));
     // Highlight glide: the drawn box exponentially approaches the target
@@ -919,9 +912,24 @@ pub fn build(
 }
 
 impl<'a> Walker<'a> {
-    fn paint(&mut self, slot: u32, parent_world: Affine, opacity: f32, clip: Clip, dl: &mut DrawList) {
+    fn paint(
+        &mut self,
+        slot: u32,
+        parent_world: Affine,
+        opacity: f32,
+        clip: Clip,
+        in_transform: bool,
+        dl: &mut DrawList,
+    ) {
         let node = &self.tree.slots[slot as usize];
         let r = style::resolve(node, self.styles, true);
+        // The provider gate accumulates EXACTLY like layout.rs build() —
+        // one shared predicate (Resolved::declares_transform), so the draw
+        // walk and the layout record can only diverge when a transform
+        // VALUE changed since the last relayout, never on equivalent-but-
+        // differently-composed matrices (a scale canceled by a child's
+        // inverse must not oscillate the record).
+        let in_transform = in_transform || r.declares_transform();
         if r.display == spec::Display::None as u8 {
             return;
         }
@@ -1047,7 +1055,7 @@ impl<'a> Walker<'a> {
 
         // -- text run ----------------------------------------------------------
         if node.node_type == spec::NodeType::Text as u8 {
-            self.emit_text(dl, node, &r, &world, op, &clip, l.w);
+            self.emit_text(dl, node, &r, &world, op, &clip, l.w, in_transform);
             // Text children are absorbed into the run — do not recurse.
             return;
         }
@@ -1107,7 +1115,7 @@ impl<'a> Walker<'a> {
         // never disagree with painted stacking.
         let (tree, styles) = (self.tree, self.styles);
         for_children_in_paint_order(tree, styles, slot, |cs| {
-            self.paint(cs, world, op, child_clip, dl);
+            self.paint(cs, world, op, child_clip, in_transform, dl);
         });
 
         if scissored {
@@ -1184,7 +1192,7 @@ impl<'a> Walker<'a> {
                     let node = &self.tree.slots[slot as usize];
                     let r = style::resolve(node, self.styles, true);
                     let anchor = Affine::translate(origin.0, origin.1);
-                    self.emit_text(dl, node, &r, &anchor, opacity, clip, node.layout.w);
+                    self.emit_text(dl, node, &r, &anchor, opacity, clip, node.layout.w, true);
                 }
             }
         }
@@ -2280,6 +2288,7 @@ impl<'a> Walker<'a> {
         op: f32,
         clip: &Clip,
         box_w: f32,
+        in_transform: bool,
     ) {
         let color = scale_alpha(r.text_color, op);
         if alpha(color) == 0 {
@@ -2305,7 +2314,7 @@ impl<'a> Walker<'a> {
         let desired_native = !self.in_3d
             && self.fonts.native_active()
             && r.tracking == 0.0
-            && world.is_translation();
+            && !in_transform;
         if desired_native != node.text_native {
             self.provider_stale = true;
         }

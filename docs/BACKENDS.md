@@ -119,5 +119,5 @@ contracts/spec/platforms.ts). On exit the host prints its governor receipt
 | pixel goldens | `tests/golden-specs.ts`, tape hashes | opted out (note-style verification) |
 | rotated/3D content | native | portable rasterizer as a local sub-backend |
 
-The desktop benchmark against Tauri and Electron lives in
-`tools/bench-desktop.ts` (results in `docs/bench/`).
+The desktop benchmark against Tauri and Electron (harness, comparison
+apps, results) lives in its own stacked PR — pocket-stack/pocketjs#294.

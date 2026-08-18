@@ -26,7 +26,6 @@
     "contracts/spec",
     "tools",
     "!tools/bench-desktop",
-    "!tools/macos.ts",
     "apps/hero/app.tsx",
     "apps/iphone2g-demo",
     "apps/iphone4s-demo",

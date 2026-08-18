@@ -49,20 +49,6 @@ impl MeasureCtx {
     }
 }
 
-/// The native-text provider gate (docs/BACKENDS.md): text under any declared
-/// non-translation transform keeps the baked pair, because GLYPH_RUN
-/// transforms each glyph's anchor while a TEXT_RUN places one whole box.
-/// Pure translations don't count — TEXT_RUN handles those exactly.
-fn transformed(r: &Resolved) -> bool {
-    r.rotate != 0.0
-        || r.scale != 1.0
-        || r.scale_x != 1.0
-        || r.scale_y != 1.0
-        || r.rotate_x != 0.0
-        || r.rotate_y != 0.0
-        || r.perspective > 0.0
-}
-
 /// The layout engine: one TaffyTree + the dirty flag.
 pub struct LayoutEngine {
     pub taffy: TaffyTree<MeasureCtx>,
@@ -265,7 +251,7 @@ fn build(
     in_transform: bool,
 ) -> Option<taffy::NodeId> {
     let resolved = style::resolve(&tree.slots[slot as usize], styles, true);
-    let in_transform = in_transform || transformed(&resolved);
+    let in_transform = in_transform || resolved.declares_transform();
     let node_type = tree.slots[slot as usize].node_type;
     if node_type == spec::NodeType::Text as u8 {
         let mut run = String::new();

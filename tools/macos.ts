@@ -20,6 +20,15 @@ import { $ } from "bun";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 
 const root = new URL("..", import.meta.url).pathname;
+// The host and the gpui backend are git-only crates (npm files map ships
+// this wrapper for parity with tools/note.ts, whose widget host is git-only
+// too) — fail with directions instead of a cargo error mid-build.
+if (!existsSync(`${root}hosts/macos/Cargo.toml`)) {
+  console.error(
+    "bun run macos needs a git checkout: hosts/macos and engine/backends/gpui are not part of the npm package (github.com/pocket-stack/pocketjs).",
+  );
+  process.exit(1);
+}
 const argv = process.argv.slice(2).filter((a) => a !== "--");
 const proof = argv.includes("--proof");
 const rest = argv.filter((f) => f !== "--proof");

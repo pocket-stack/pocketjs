@@ -3547,12 +3547,12 @@ fn clipped_text_run_is_scissor_bracketed() {
 }
 
 #[test]
-fn provider_self_heals_after_a_paint_only_transform() {
+fn provider_re_decides_within_the_same_draw_after_a_paint_only_transform() {
     // rotate/scale are paint-only (no relayout), so a transform set after
     // layout leaves the recorded provider stale. The draw walk detects the
-    // divergence and schedules a relayout: the stale pair paints at most
-    // ONE frame, then measurement AND glyphs re-decide together — in both
-    // directions.
+    // divergence and Ui::draw re-decides + REPAINTS before returning: every
+    // frame that leaves draw() is provider-correct, in both directions —
+    // zero stale frames.
     let mut ui = Ui::new();
     ui.load_font_atlas(&encode_atlas(
         0,
@@ -3573,27 +3573,60 @@ fn provider_self_heals_after_a_paint_only_transform() {
     assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 1);
     assert_eq!(ui.layout_of(t).unwrap().3, 12.0, "native line height sized the box");
 
-    // Into the transform: the first draw may still paint the recorded pair
-    // (consistent box+glyphs), but it must flag the divergence…
+    // Into the transform: the VERY NEXT draw is already the baked pair.
     ui.set_prop(t, spec::prop::ROTATE, 30.0);
-    ui.tick();
-    let _ = ui.draw();
-    // …and the next draw re-decides BOTH sides to the baked pair.
     ui.tick();
     let counts = validate_drawlist(&ui.draw().words.clone());
     assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
     assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
     assert_eq!(ui.layout_of(t).unwrap().3, 10.0, "box re-measured with the atlas");
 
-    // Out of the transform: same self-healing back to the native pair.
+    // Out of the transform: same, back to the native pair immediately.
     ui.set_prop(t, spec::prop::ROTATE, 0.0);
-    ui.tick();
-    let _ = ui.draw();
     ui.tick();
     let counts = validate_drawlist(&ui.draw().words.clone());
     assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 1);
     assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 0);
     assert_eq!(ui.layout_of(t).unwrap().3, 12.0, "box re-measured natively");
+}
+
+#[test]
+fn canceling_transforms_do_not_oscillate_the_provider() {
+    // Parent scale 0.5, child text scale 2.0: the composed world matrix is
+    // numerically a translation again, but BOTH the layout build and the
+    // draw walk gate on the same declared-transform path predicate — the
+    // node stays on the baked pair with no divergence flag, so repeated
+    // draws never schedule spurious relayouts.
+    let mut ui = Ui::new();
+    ui.load_font_atlas(&encode_atlas(
+        0,
+        8,
+        8,
+        7,
+        10,
+        3,
+        &[(0xfffd, 0, 8), ('A' as u32, 1, 6), ('B' as u32, 2, 5)],
+    ));
+    ui.set_text_measure(Some(fake_native_measure()));
+    let wrap = ui.create_node(spec::NodeType::View as u8);
+    ui.set_prop(wrap, spec::prop::WIDTH, 40.0);
+    ui.set_prop(wrap, spec::prop::SCALE, 0.5);
+    let t = ui.create_node(spec::NodeType::Text as u8);
+    ui.set_prop(t, spec::prop::SCALE, 2.0);
+    ui.set_text(t, "AB");
+    ui.insert_before(wrap, t, 0);
+    ui.insert_before(spec::ROOT_ID, wrap, 0);
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0, "declared path wins");
+    assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
+    assert_eq!(ui.layout_of(t).unwrap().3, 10.0, "baked metrics sized the box");
+    // The killer assertion: a second and third draw must not have been
+    // dirtied by a provider oscillation.
+    let _ = ui.draw();
+    assert!(!ui.layout.needs(), "no spurious relayout scheduled");
+    let _ = ui.draw();
+    assert!(!ui.layout.needs());
 }
 
 #[test]

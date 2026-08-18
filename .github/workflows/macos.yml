@@ -19,6 +19,11 @@ on:
       - "hosts/macos/**"
       - "tools/macos.ts"
       - "apps/note/**"
+      - "framework/compiler/**"
+      - "assets/fonts/**"
+      - "tests/platform-contracts.test.ts"
+      - "tests/note.test.ts"
+      - "tests/font-bake.test.ts"
   push:
     branches: [main]
     paths:
@@ -30,6 +35,11 @@ on:
       - "hosts/macos/**"
       - "tools/macos.ts"
       - "apps/note/**"
+      - "framework/compiler/**"
+      - "assets/fonts/**"
+      - "tests/platform-contracts.test.ts"
+      - "tests/note.test.ts"
+      - "tests/font-bake.test.ts"
   workflow_dispatch: {}
 
 permissions:

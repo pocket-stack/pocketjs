@@ -1186,15 +1186,39 @@ impl Ui {
             self.inspect_drawn,
             cursor,
         );
+        let (mut target, mut drawn) = (target, drawn);
+        if provider_stale {
+            // A paint-only transform change (rotate/scale never relayout)
+            // left some text node's recorded provider stale. Re-decide and
+            // REPAINT within this same draw — the frame that leaves here is
+            // always provider-correct. One retry suffices: the draw walk
+            // and layout build share one gate (Resolved::declares_transform
+            // accumulated down identical recursions), so the rebuilt record
+            // matches the repaint's expectation by construction.
+            self.layout.dirty = true;
+            layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
+            let retry = draw::build(
+                &self.tree,
+                &self.styles,
+                &self.fonts,
+                self.frame,
+                self.layout.viewport,
+                &mut self.textures,
+                &mut self.tex_free,
+                &mut self.discs,
+                self.raster_density,
+                &mut self.draw_list,
+                self.inspect_id,
+                self.inspect_drawn,
+                cursor,
+            );
+            target = retry.0;
+            drawn = retry.1;
+            debug_assert!(!retry.2, "provider gate must be stable after re-decision");
+        }
         self.inspect_drawn = drawn;
         if self.inspect_id != 0 {
             self.inspect_rect = target;
-        }
-        if provider_stale {
-            // A paint-only transform left some text node's recorded
-            // measurement provider stale (draw.rs emit_text): relayout on
-            // the next draw re-decides the pair with current transforms.
-            self.layout.dirty = true;
         }
         &self.draw_list
     }

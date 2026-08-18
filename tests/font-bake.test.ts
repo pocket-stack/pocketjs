@@ -103,3 +103,36 @@ describe("open contours", () => {
     expect(coverage.some((sample) => sample === 255)).toBe(true);
   });
 });
+
+describe("monospace slots", () => {
+  test("font-mono resolves to the mono slot family and bakes uniform advances", async () => {
+    const { fontSlotFor, fontSlotInfo } = await import("../framework/compiler/tailwind.ts");
+    const { DEFAULT_MONO } = await import("../framework/compiler/bake-font.ts");
+    expect(fontSlotFor(14, false, true)).toBe(17);
+    expect(fontSlotFor(14, true, true)).toBe(17); // bold-under-mono lands on the mono slot
+    expect(fontSlotInfo(17)).toEqual({ px: 14, bold: false, mono: true });
+    // Existing slots are untouched by the widening (byte-stability).
+    expect(fontSlotFor(14, false)).toBe(1);
+    expect(fontSlotFor(54, true)).toBe(15);
+
+    // The monospace PROPERTY, asserted on the baked atlas: every glyph
+    // advance equal — exactly what code-column alignment relies on — where
+    // the proportional face over the same chars must differ.
+    const mono = parseFont(await Bun.file(DEFAULT_MONO).arrayBuffer());
+    const chars = [0x69, 0x6c, 0x6d, 0x57, 0x2e]; // i l m W .
+    // cmap entries: u32 cp, u16 gid, u8 advance, u8 xoff (spec.ts); the
+    // tofu (0xfffd) advance is the cell width, so it is excluded.
+    const glyphAdvances = (baked: ReturnType<typeof bakeSlot>): Set<number> => {
+      const view = new DataView(baked.bytes.buffer, baked.bytes.byteOffset);
+      const out = new Set<number>();
+      for (let g = 0; g < chars.length + 1; g++) {
+        const at = FONT_HEADER_SIZE + g * FONT_CMAP_ENTRY_SIZE;
+        if (view.getUint32(at, true) === 0xfffd) continue;
+        out.add(view.getUint8(at + 6));
+      }
+      return out;
+    };
+    expect(glyphAdvances(bakeSlot(mono, 17, 14, false, chars, 1)).size).toBe(1);
+    expect(glyphAdvances(bakeSlot(font, 1, 14, false, chars, 1)).size).toBeGreaterThan(1);
+  });
+});

@@ -277,6 +277,15 @@ impl PocketRoot {
             args.density,
         );
         surface.set_identity(HOST_ID, HOST_ABI);
+        // svcOpen must answer TRUTHFULLY: without --editor this host serves
+        // no companion, and an open allowlist would let the note believe
+        // its adapter is live (enabling edit/pointer UI the host never
+        // feeds). Adapter on -> exactly "note"; off -> nothing.
+        if args.editor {
+            surface.set_svc_allowlist(["note"]);
+        } else {
+            surface.set_svc_allowlist(std::iter::empty::<&str>());
+        }
         surface.feed_pak(&pak);
         let cfg = TextConfig::new("Inter");
         if args.native_text {
@@ -520,7 +529,7 @@ impl PocketRoot {
         }
 
         // Tick before draw; arm a paint only when the content hash moved
-        // (TEXT_RUN's styleHash word keeps the words the whole truth).
+        // (TEXT_RUN packs its run bytes into the words — the whole truth).
         let hash = self.surface.with_ui(|ui| fnv1a64(&ui.draw().words));
         if hash != self.hash {
             self.hash = hash;
@@ -887,7 +896,8 @@ impl Render for PocketRoot {
                         frames.set(frames.get() + 1);
                         if frames.get() == 1 {
                             // First painted frame — the bench runner's
-                            // cold-start marker (tools/bench-desktop.ts).
+                            // cold-start marker (the desktop benchmark
+                            // runner — PR #294).
                             println!("READY {}", epoch_ms());
                         }
                         surface.with_ui(|ui| {
