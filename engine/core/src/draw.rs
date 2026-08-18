@@ -127,6 +127,14 @@ impl Affine {
     fn is_axis_aligned(&self) -> bool {
         self.b == 0.0 && self.c == 0.0 && self.a > 0.0 && self.d > 0.0
     }
+
+    /// True when the transform is a pure translation (the paint-time half
+    /// of the text-provider gate; layout.rs transformed() is the build-time
+    /// half).
+    #[inline]
+    fn is_translation(&self) -> bool {
+        self.a == 1.0 && self.b == 0.0 && self.c == 0.0 && self.d == 1.0
+    }
 }
 
 // ---- 3D transforms (perspective subtrees) ---------------------------------------
@@ -793,6 +801,15 @@ struct Walker<'a> {
     /// [0, screen.0] x [0, screen.1] (i16-safe; hosts cap it well under 32k).
     screen: (f32, f32),
     glyph_scratch: Vec<crate::text::GlyphPos>,
+    /// Inside a perspective subtree (paint_3d): text always uses the baked
+    /// pair there, so the provider-divergence check must not fire.
+    in_3d: bool,
+    /// Set when a text node's RECORDED provider no longer matches what the
+    /// current world transform calls for (a paint-only transform changed
+    /// after layout, in either direction). Ui::draw() turns this into a
+    /// relayout, so the pair re-decides on the NEXT tick — the stale pair
+    /// paints for at most one frame.
+    provider_stale: bool,
     /// Core texture slots + free list (baked corner discs allocate lazily
     /// during the walk, through the same slot storage as uploads).
     textures: &'a mut Vec<crate::TexSlot>,
@@ -825,7 +842,7 @@ pub fn build(
     inspect_id: i32,
     inspect_prev: Option<(f32, f32, f32, f32)>,
     cursor: Option<(u32, f32, f32, f32, f32)>,
-) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>) {
+) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>, bool) {
     dl.words.clear();
     // DevTools (docs/DEVTOOLS.md): slot of the inspected node, u32::MAX = none.
     // Nodes inside a perspective subtree take the paint_3d path and are not
@@ -848,9 +865,12 @@ pub fn build(
         raster_density,
         inspect_slot,
         inspect_hit: None,
+        in_3d: false,
+        provider_stale: false,
     };
     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
     w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), dl);
+    let provider_stale = w.provider_stale;
     let target = w.inspect_hit.map(|c| (c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0));
     // Highlight glide: the drawn box exponentially approaches the target
     // (~0.35/draw ≈ converged in 6 draws), so switching the inspected node
@@ -895,7 +915,7 @@ pub fn build(
             1.0,
         );
     }
-    (target, drawn)
+    (target, drawn, provider_stale)
 }
 
 impl<'a> Walker<'a> {
@@ -1113,6 +1133,10 @@ impl<'a> Walker<'a> {
         w: f32,
         h: f32,
     ) {
+        // Text under a perspective root always uses the baked pair; the
+        // provider-divergence check is suspended for the subtree.
+        let was_3d = self.in_3d;
+        self.in_3d = true;
         let (cx, cy) = (w * 0.5, h * 0.5);
         let mut items: Vec<(f32, Item3)> = Vec::new();
         let mut tex_cells: Vec<TexCell> = Vec::new();
@@ -1164,6 +1188,7 @@ impl<'a> Walker<'a> {
                 }
             }
         }
+        self.in_3d = was_3d;
     }
 
     /// Depth-first 3D collection. `m` maps node-local 3D coords into the
@@ -2271,8 +2296,19 @@ impl<'a> Walker<'a> {
         // The node's measurement provider was RECORDED at layout time
         // (layout.rs build(): native iff a measurer is installed, tracking
         // is 0 and the subtree declared no transform). Paint follows the
-        // record unconditionally — a node's painted glyphs always come from
-        // the provider that sized its box, never a mid-frame re-decision.
+        // record — a node's painted glyphs always come from the provider
+        // that sized its box — but a paint-only transform (rotate/scale
+        // don't relayout) can leave the record stale in either direction:
+        // flag it, and Ui::draw() schedules the relayout that re-decides
+        // the pair for the next tick. The stale pair paints one frame; an
+        // animation crossing identity re-decides twice per cycle.
+        let desired_native = !self.in_3d
+            && self.fonts.native_active()
+            && r.tracking == 0.0
+            && world.is_translation();
+        if desired_native != node.text_native {
+            self.provider_stale = true;
+        }
         if node.text_native {
             self.emit_text_native(dl, run, r, world, color, clip, box_w);
             return;

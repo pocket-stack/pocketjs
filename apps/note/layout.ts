@@ -20,6 +20,7 @@ export const FONT_H1 = 12; //       fontSlotFor(24, true)  — text-2xl bold
 export const FONT_H2 = 11; //       fontSlotFor(20, true)  — text-xl bold
 export const FONT_H3 = 10; //       fontSlotFor(18, true)  — text-lg bold
 export const FONT_META = 0; //      fontSlotFor(12, false) — text-xs
+export const FONT_CODE = 17; //     fontSlotFor(14, false, mono) — text-sm font-mono
 
 export const BODY_LINE_H = 20;
 const H_LINE: Record<"h1" | "h2" | "h3", number> = { h1: 32, h2: 26, h3: 22 };
@@ -96,6 +97,7 @@ export interface ViewLayout {
 }
 
 function slotFor(style: SpanStyle, base: number, bold: number): number {
+  if (style === "code") return FONT_CODE; // inline code is monospace
   return style === "bold" ? bold : base;
 }
 

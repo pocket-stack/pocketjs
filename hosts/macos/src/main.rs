@@ -32,11 +32,11 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow};
 use gpui::{
-    App, AppContext as _, Application, Bounds, ClipboardItem, Context, Entity, EntityInputHandler, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, KeyDownEvent, KeyUpEvent, MouseButton,
+    App, AppContext as _, Application, Bounds, ClipboardItem, Context, Entity, EntityInputHandler,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, KeyUpEvent, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
-    ScrollWheelEvent, SharedString, Styled, TitlebarOptions, UTF16Selection, Window,
-    WindowBounds, WindowOptions, canvas, div, point, px, size,
+    ScrollWheelEvent, SharedString, Styled, TitlebarOptions, UTF16Selection, Window, WindowBounds,
+    WindowOptions, canvas, div, point, px, size,
 };
 use pocket_mod::Guest;
 use pocket_ui_gpui::{GpuiRenderer, TextConfig, native_measure};
@@ -135,22 +135,34 @@ fn parse_args() -> Result<Args> {
             "--type" => {
                 // --type TEXT@TICK
                 let v = val("--type")?;
-                let (s, t) = v.rsplit_once('@').ok_or_else(|| anyhow!("--type TEXT@TICK"))?;
-                args.script.push(ScriptEvent::Type(t.parse()?, s.to_string()));
+                let (s, t) = v
+                    .rsplit_once('@')
+                    .ok_or_else(|| anyhow!("--type TEXT@TICK"))?;
+                args.script
+                    .push(ScriptEvent::Type(t.parse()?, s.to_string()));
             }
             "--click" => {
                 // --click X,Y@TICK
                 let v = val("--click")?;
-                let (xy, t) = v.rsplit_once('@').ok_or_else(|| anyhow!("--click X,Y@TICK"))?;
-                let (x, y) = xy.split_once(',').ok_or_else(|| anyhow!("--click X,Y@TICK"))?;
-                args.script.push(ScriptEvent::Click(t.parse()?, x.parse()?, y.parse()?));
+                let (xy, t) = v
+                    .rsplit_once('@')
+                    .ok_or_else(|| anyhow!("--click X,Y@TICK"))?;
+                let (x, y) = xy
+                    .split_once(',')
+                    .ok_or_else(|| anyhow!("--click X,Y@TICK"))?;
+                args.script
+                    .push(ScriptEvent::Click(t.parse()?, x.parse()?, y.parse()?));
             }
             "--quit-after" => args.quit_after_ticks = Some(val("--quit-after")?.parse()?),
             "--storm" => {
                 // --storm CPS@START+DUR (ticks)
                 let v = val("--storm")?;
-                let (cps, rest) = v.split_once('@').ok_or_else(|| anyhow!("--storm CPS@START+DUR"))?;
-                let (start, dur) = rest.split_once('+').ok_or_else(|| anyhow!("--storm CPS@START+DUR"))?;
+                let (cps, rest) = v
+                    .split_once('@')
+                    .ok_or_else(|| anyhow!("--storm CPS@START+DUR"))?;
+                let (start, dur) = rest
+                    .split_once('+')
+                    .ok_or_else(|| anyhow!("--storm CPS@START+DUR"))?;
                 args.storm = Some((cps.parse()?, start.parse()?, dur.parse()?));
             }
             other => return Err(anyhow!("unknown flag {other}")),
@@ -165,8 +177,10 @@ fn dist_dir() -> Option<PathBuf> {
     if let Ok(d) = std::env::var("POCKETJS_DIST") {
         return Some(PathBuf::from(d));
     }
-    let from_manifest =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dist").canonicalize().ok();
+    let from_manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../dist")
+        .canonicalize()
+        .ok();
     from_manifest.or_else(|| {
         let cwd = PathBuf::from("dist");
         cwd.is_dir().then_some(cwd)
@@ -175,9 +189,12 @@ fn dist_dir() -> Option<PathBuf> {
 
 fn resolve_asset(explicit: Option<PathBuf>, app: &str, ext: &str) -> Result<PathBuf> {
     if let Some(p) = explicit {
-        return p.canonicalize().with_context(|| format!("missing {}", p.display()));
+        return p
+            .canonicalize()
+            .with_context(|| format!("missing {}", p.display()));
     }
-    let dist = dist_dir().ok_or_else(|| anyhow!("cannot find PocketJS dist/ (set POCKETJS_DIST)"))?;
+    let dist =
+        dist_dir().ok_or_else(|| anyhow!("cannot find PocketJS dist/ (set POCKETJS_DIST)"))?;
     let candidates = [format!("{app}.{ext}"), format!("{app}-main.{ext}")];
     for c in &candidates {
         let p = dist.join(c);
@@ -196,15 +213,20 @@ fn resolve_asset(explicit: Option<PathBuf>, app: &str, ext: &str) -> Result<Path
 fn register_fonts(cx: &App) {
     let fonts_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/fonts");
     let mut faces = Vec::new();
-    for name in ["Inter-Regular.ttf", "Inter-Bold.ttf"] {
+    for name in [
+        "Inter-Regular.ttf",
+        "Inter-Bold.ttf",
+        "JetBrainsMono-Regular.ttf",
+    ] {
         if let Ok(bytes) = std::fs::read(fonts_dir.join(name)) {
             faces.push(std::borrow::Cow::Owned(bytes));
         }
     }
     if !faces.is_empty()
-        && let Err(e) = cx.text_system().add_fonts(faces) {
-            log::warn!("pocket-macos: font registration failed: {e}");
-        }
+        && let Err(e) = cx.text_system().add_fonts(faces)
+    {
+        log::warn!("pocket-macos: font registration failed: {e}");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -247,8 +269,8 @@ impl PocketRoot {
         let pak_path = resolve_asset(args.pak.clone(), &args.app, "pak")?;
         let bundle = std::fs::read_to_string(&js_path)
             .with_context(|| format!("reading {}", js_path.display()))?;
-        let pak = std::fs::read(&pak_path)
-            .with_context(|| format!("reading {}", pak_path.display()))?;
+        let pak =
+            std::fs::read(&pak_path).with_context(|| format!("reading {}", pak_path.display()))?;
 
         let surface = UiSurface::new_with_density(
             (args.viewport.0 as f32, args.viewport.1 as f32),
@@ -409,16 +431,19 @@ impl PocketRoot {
         // Window resizes land here (render records them), so the relayout is
         // part of the tick transaction, never of a paint.
         if let Some(vp) = self.pending_viewport.take()
-            && vp != self.viewport && !self.args.fixed {
-                self.viewport = vp;
-                self.surface.with_ui(|ui| ui.set_viewport(vp.0 as f32, vp.1 as f32));
-                // display.viewport.live is a HOST capability, not an editor
-                // protocol: every dynamic app gets the framework's live-
-                // viewport hook (framework/src/host.ts installResizeViewport-
-                // Hook), inside the tick transaction. The note's svc resize
-                // line is its companion dialect on top; its own
-                // resizeViewport call is idempotent against this one.
-                if let Err(e) = self.guest.eval(
+            && vp != self.viewport
+            && !self.args.fixed
+        {
+            self.viewport = vp;
+            self.surface
+                .with_ui(|ui| ui.set_viewport(vp.0 as f32, vp.1 as f32));
+            // display.viewport.live is a HOST capability, not an editor
+            // protocol: every dynamic app gets the framework's live-
+            // viewport hook (framework/src/host.ts installResizeViewport-
+            // Hook), inside the tick transaction. The note's svc resize
+            // line is its companion dialect on top; its own
+            // resizeViewport call is idempotent against this one.
+            if let Err(e) = self.guest.eval(
                     "resize-hook",
                     &format!(
                         "globalThis.__pocketResizeViewport && globalThis.__pocketResizeViewport({}, {});",
@@ -427,30 +452,36 @@ impl PocketRoot {
                 ) {
                     log::warn!("pocket-macos: resize hook failed: {e}");
                 }
-                if self.args.editor {
-                    self.svc(serde_json::json!({"t": "resize", "w": vp.0, "h": vp.1}));
-                }
+            if self.args.editor {
+                self.svc(serde_json::json!({"t": "resize", "w": vp.0, "h": vp.1}));
             }
+        }
         if !self.script.is_empty() {
             self.run_script();
         }
         if let Some((cps, start, dur)) = self.args.storm
-            && self.ticks >= start && self.ticks < start + dur {
-                // Whole chars this tick, error-free over time (i*cps/60).
-                let i = self.ticks - start;
-                let n = ((i + 1) * cps as u64) / 60 - (i * cps as u64) / 60;
-                if n > 0 {
-                    const STORM: &[u8] = b"the quick brown fox jumps over the lazy dog ";
-                    let s: String = (0..n)
-                        .map(|k| STORM[((i * 8 + k) % STORM.len() as u64) as usize] as char)
-                        .collect();
-                    self.svc(serde_json::json!({"t": "ch", "s": s}));
-                }
+            && self.ticks >= start
+            && self.ticks < start + dur
+        {
+            // Whole chars this tick, error-free over time (i*cps/60).
+            let i = self.ticks - start;
+            let n = ((i + 1) * cps as u64) / 60 - (i * cps as u64) / 60;
+            if n > 0 {
+                const STORM: &[u8] = b"the quick brown fox jumps over the lazy dog ";
+                let s: String = (0..n)
+                    .map(|k| STORM[((i * 8 + k) % STORM.len() as u64) as usize] as char)
+                    .collect();
+                self.svc(serde_json::json!({"t": "ch", "s": s}));
             }
+        }
         let buttons = if self.args.editor {
             // Clicks are CIRCLE — hover already focused what's under the
             // pointer (note-widget's contract).
-            if self.mouse_down || self.click_edge { BTN_CIRCLE } else { 0 }
+            if self.mouse_down || self.click_edge {
+                BTN_CIRCLE
+            } else {
+                0
+            }
         } else {
             self.buttons
         };
@@ -498,9 +529,10 @@ impl PocketRoot {
 
         self.ticks += 1;
         if let Some(limit) = self.args.quit_after_ticks
-            && self.ticks >= limit {
-                self.exit = true;
-            }
+            && self.ticks >= limit
+        {
+            self.exit = true;
+        }
         if self.exit {
             println!(
                 "pocket-macos: {} ticks, {} frames rendered ({:.1}%)",
@@ -526,11 +558,11 @@ impl PocketRoot {
                     "c" => self.svc(serde_json::json!({"t": "key", "k": "Copy"})),
                     "x" => self.svc(serde_json::json!({"t": "key", "k": "Cut"})),
                     "v" => {
-                        if let Some(text) =
-                            cx.read_from_clipboard().and_then(|item| item.text())
-                            && !text.is_empty() {
-                                self.svc(serde_json::json!({"t": "paste", "text": text}));
-                            }
+                        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text())
+                            && !text.is_empty()
+                        {
+                            self.svc(serde_json::json!({"t": "paste", "text": text}));
+                        }
                     }
                     _ => {}
                 }
@@ -558,9 +590,10 @@ impl PocketRoot {
                 // Plain typing (IME composition delivers through the input
                 // handler instead — no double-input path).
                 if let Some(s) = &ks.key_char
-                    && !s.is_empty() {
-                        self.svc(serde_json::json!({"t": "ch", "s": s}));
-                    }
+                    && !s.is_empty()
+                {
+                    self.svc(serde_json::json!({"t": "ch", "s": s}));
+                }
             }
         } else {
             if ks.modifiers.platform && (ks.key == "q" || ks.key == "w") {
@@ -575,9 +608,10 @@ impl PocketRoot {
 
     fn on_key_up(&mut self, e: &KeyUpEvent, _w: &mut Window, _cx: &mut Context<Self>) {
         if !self.args.editor
-            && let Some(bit) = button_for(&e.keystroke.key) {
-                self.buttons &= !bit;
-            }
+            && let Some(bit) = button_for(&e.keystroke.key)
+        {
+            self.buttons &= !bit;
+        }
     }
 
     fn logical_pos(&self, position: Point<Pixels>) -> (f32, f32) {
@@ -700,7 +734,10 @@ impl EntityInputHandler for PocketRoot {
         _cx: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
         let len = self.marked.as_ref().map_or(0, |s| s.encode_utf16().count());
-        Some(UTF16Selection { range: len..len, reversed: false })
+        Some(UTF16Selection {
+            range: len..len,
+            reversed: false,
+        })
     }
 
     fn marked_text_range(
@@ -741,10 +778,8 @@ impl EntityInputHandler for PocketRoot {
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
-        let caret_utf16 = new_selected_range.map_or_else(
-            || new_text.encode_utf16().count(),
-            |r| r.start,
-        );
+        let caret_utf16 =
+            new_selected_range.map_or_else(|| new_text.encode_utf16().count(), |r| r.start);
         // The guest protocol wants a CHAR index into the preedit.
         let mut chars = 0usize;
         let mut u16s = 0usize;
@@ -768,7 +803,10 @@ impl EntityInputHandler for PocketRoot {
     ) -> Option<Bounds<Pixels>> {
         let (x, y, w, h) = self.caret_rect?;
         Some(Bounds::new(
-            point(element_bounds.origin.x + px(x), element_bounds.origin.y + px(y)),
+            point(
+                element_bounds.origin.x + px(x),
+                element_bounds.origin.y + px(y),
+            ),
             size(px(w), px(h)),
         ))
     }
@@ -806,10 +844,10 @@ impl Render for PocketRoot {
         let renderer = self.renderer.clone();
         let frames = self.frames.clone();
         let canvas_origin = self.canvas_origin.clone();
-        let fixed = self.args.fixed.then_some((
-            self.args.viewport.0 as f32,
-            self.args.viewport.1 as f32,
-        ));
+        let fixed = self
+            .args
+            .fixed
+            .then_some((self.args.viewport.0 as f32, self.args.viewport.1 as f32));
         let entity: Entity<PocketRoot> = cx.entity();
         let focus = self.focus.clone();
         let ime = self.args.editor;
@@ -888,7 +926,11 @@ fn main() -> Result<()> {
             app_id: Some("dev.pocket-stack.macos".into()),
             ..Default::default()
         };
-        let args = ARGS.lock().unwrap().take().expect("args stashed before run");
+        let args = ARGS
+            .lock()
+            .unwrap()
+            .take()
+            .expect("args stashed before run");
         let window = cx.open_window(options, |window, cx| {
             cx.new(|cx| match PocketRoot::boot(args, window, cx) {
                 Ok(root) => root,

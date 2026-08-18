@@ -18,7 +18,7 @@ import { after, virtualNow } from "@pocketjs/framework/clock";
 import { onButtonPress, onFrame } from "@pocketjs/framework/lifecycle";
 import { BTN, focusNode, hitFocusable } from "@pocketjs/framework/input";
 import { resizeViewport, type NodeMirror } from "@pocketjs/framework";
-import { hasFeature } from "@pocketjs/framework/platform";
+import { platform } from "@pocketjs/framework/platform";
 import { parseMarkdown } from "./markdown.ts";
 import {
   BODY_LINE_H,
@@ -113,6 +113,8 @@ type Ink = (typeof INK)["dark"];
 
 function segFontClass(seg: Seg): string {
   switch (seg.slot) {
+    case 17:
+      return "absolute text-sm font-mono";
     case 12:
       return "absolute text-2xl font-bold";
     case 11:
@@ -143,11 +145,18 @@ function segColor(seg: Seg, ink: Ink): string {
 
 export default function Note(): ReturnType<typeof View> {
   const svc = connectSvc();
-  // Capability gates (build-time platform contract, compiler-foldable):
-  // no text input → the editor never opens (a PSP build is a read-only
-  // note); no pointer → d-pad drives scrolling.
-  const canEdit = hasFeature("input.text");
-  const hasPointer = hasFeature("input.pointer");
+  // Editing and pointer gestures arrive over the COMPANION svc adapter
+  // (svc.ts), so their gates track its runtime presence — never a target
+  // capability id (the macos-app profile deliberately registers neither:
+  // pointer/text there are companion-delivered, not host-generic). Without
+  // a companion (PSP, sim, goldens) the note is a read-only d-pad note —
+  // the unmodified-app base case, unchanged.
+  const canEdit = svc !== null;
+  const hasPointer = svc !== null;
+  // Widget chrome (card corners, resize grip, the Close menu item) belongs
+  // to the frameless always-on-top shell; on a real window (macos-app) the
+  // OS provides corners, resizing and closing.
+  const widgetChrome = platform.target === "macos-widget";
   const [vp, setVp] = createSignal({ w: 480, h: 272 });
   const [doc, setDoc] = createSignal(SAMPLE_DOC);
   const [editing, setEditing] = createSignal(false);
@@ -716,9 +725,13 @@ export default function Note(): ReturnType<typeof View> {
   return (
     <View
       class={
-        dark()
-          ? "flex-col w-full h-full rounded-xl overflow-hidden bg-[#11151b]"
-          : "flex-col w-full h-full rounded-xl overflow-hidden bg-[#fbfaf6]"
+        widgetChrome
+          ? dark()
+            ? "flex-col w-full h-full rounded-xl overflow-hidden bg-[#11151b]"
+            : "flex-col w-full h-full rounded-xl overflow-hidden bg-[#fbfaf6]"
+          : dark()
+            ? "flex-col w-full h-full overflow-hidden bg-[#11151b]"
+            : "flex-col w-full h-full overflow-hidden bg-[#fbfaf6]"
       }
     >
       {/* Header: the host's drag region (everything left of the buttons). */}
@@ -901,7 +914,9 @@ export default function Note(): ReturnType<typeof View> {
         </Focusable>
       </Show>
 
-      {/* Resize grip affordance (the host claims the actual corner drag). */}
+      {/* Resize grip affordance (the widget host claims the corner drag;
+          a real window resizes at its OS edges — no affordance to draw). */}
+      <Show when={widgetChrome}>
       <View class="absolute" style={{ insetR: 4, insetB: 4, width: 12, height: 12 }}>
         <For each={[{ x: 8, y: 0 }, { x: 4, y: 4 }, { x: 8, y: 4 }, { x: 0, y: 8 }, { x: 4, y: 8 }, { x: 8, y: 8 }]}>
           {(d) => (
@@ -912,6 +927,7 @@ export default function Note(): ReturnType<typeof View> {
           )}
         </For>
       </View>
+      </Show>
 
       {/* The ••• menu: portal overlay, backdrop press closes. */}
       <Show when={menuOpen()}>
@@ -962,6 +978,9 @@ export default function Note(): ReturnType<typeof View> {
                 setMenuOpen(false);
               }}
             />
+            {/* A real window closes from its titlebar / Cmd-W — the item is
+                widget-shell chrome only. */}
+            <Show when={widgetChrome}>
             <View style={{ height: 1, bgColor: ink().hr }} />
             <MenuItem
               label="Close widget"
@@ -973,6 +992,7 @@ export default function Note(): ReturnType<typeof View> {
                 setMenuOpen(false);
               }}
             />
+            </Show>
           </View>
         </Portal>
       </Show>
@@ -1066,7 +1086,7 @@ function MdRow(props: {
       >
         {highlight}
         <Text
-          class="absolute text-sm"
+          class="absolute text-sm font-mono"
           style={{ insetL: 8, insetT: 8, lineHeight: 18, textColor: props.ink().code }}
         >
           {row.text}

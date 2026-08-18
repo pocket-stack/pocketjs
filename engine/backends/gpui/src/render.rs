@@ -11,14 +11,14 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use gpui::{
-    fill, linear_color_stop, linear_gradient, point, px, size, App, Bounds, ContentMask, Hsla,
-    Path, Pixels, Point, RenderImage, Rgba, ShapedLine, SharedString, Window,
+    App, Bounds, ContentMask, Hsla, Path, Pixels, Point, RenderImage, Rgba, ShapedLine,
+    SharedString, Window, fill, linear_color_stop, linear_gradient, point, px, size,
 };
 use image::{Frame, ImageBuffer};
-use pocketjs_core::{spec, Ui};
+use pocketjs_core::{Ui, spec};
 use smallvec::SmallVec;
 
-use crate::fonts::{slot_line_height, slot_px, TextConfig};
+use crate::fonts::{TextConfig, slot_line_height, slot_px};
 
 /// u32 ABGR (the DrawList color packing) -> straight-alpha Rgba.
 fn abgr(c: u32) -> Rgba {
@@ -189,7 +189,10 @@ impl GpuiRenderer {
                     let (w, h) = decode_wh(words[*i + 2]);
                     let color = abgr(words[*i + 3]);
                     window.paint_quad(fill(
-                        Bounds::new(point(px(x) + origin.x, px(y) + origin.y), size(px(w), px(h))),
+                        Bounds::new(
+                            point(px(x) + origin.x, px(y) + origin.y),
+                            size(px(w), px(h)),
+                        ),
                         color,
                     ));
                     *i += 4;
@@ -209,7 +212,10 @@ impl GpuiRenderer {
                         _ => 180.0, // ToBottom
                     };
                     window.paint_quad(fill(
-                        Bounds::new(point(px(x) + origin.x, px(y) + origin.y), size(px(w), px(h))),
+                        Bounds::new(
+                            point(px(x) + origin.x, px(y) + origin.y),
+                            size(px(w), px(h)),
+                        ),
                         linear_gradient(
                             angle,
                             linear_color_stop(from, 0.0),
@@ -222,7 +228,15 @@ impl GpuiRenderer {
                     let slot = (words[*i + 1] & 0xff) as u8;
                     let n = (words[*i + 1] >> 16) as usize;
                     let color = words[*i + 2];
-                    self.paint_glyph_run(ui, slot, color, &words[*i + 3..*i + 3 + 2 * n], origin, window, cx);
+                    self.paint_glyph_run(
+                        ui,
+                        slot,
+                        color,
+                        &words[*i + 3..*i + 3 + 2 * n],
+                        origin,
+                        window,
+                        cx,
+                    );
                     *i += 3 + 2 * n;
                 }
                 spec::draw_op::TEX_QUAD => {
@@ -290,7 +304,7 @@ impl GpuiRenderer {
         bytes.truncate(byte_len);
         let text = String::from_utf8_lossy(&bytes);
         let color: Hsla = abgr(color_word).into();
-        let (size_px, bold) = slot_px(slot);
+        let (size_px, bold, mono) = slot_px(slot);
         let ts = window.text_system().clone();
         let lh = if line_height.is_nan() {
             slot_line_height(&ts, &self.cfg, slot)
@@ -310,7 +324,7 @@ impl GpuiRenderer {
                 let shaped = match cached {
                     Some(s) => s,
                     None => {
-                        let run = self.cfg.run(line.len(), bold, color);
+                        let run = self.cfg.run(line.len(), bold, mono, color);
                         let s = ts.shape_line(
                             SharedString::from(line.to_string()),
                             px(size_px),
@@ -350,7 +364,9 @@ impl GpuiRenderer {
         window: &mut Window,
         _cx: &mut App,
     ) {
-        let Some(atlas) = ui.font_atlas(slot) else { return };
+        let Some(atlas) = ui.font_atlas(slot) else {
+            return;
+        };
         let (cell_w, cell_h) = (atlas.cell_w as f32, atlas.cell_h as f32);
         for cell in cells.as_chunks::<2>().0 {
             let (x, y) = decode_xy(cell[0]);
@@ -371,7 +387,9 @@ impl GpuiRenderer {
                         let a = (cov as f32 * tint.a) as u8;
                         bgra.extend_from_slice(&[b, g, r, a]);
                     }
-                    let Some(image) = render_image(cw, ch, bgra) else { continue };
+                    let Some(image) = render_image(cw, ch, bgra) else {
+                        continue;
+                    };
                     self.glyphs.insert((slot, gid, color), image.clone());
                     image
                 }
@@ -387,16 +405,23 @@ impl GpuiRenderer {
     // ---- textures -------------------------------------------------------------
 
     /// Convert (and tint) a live core texture into the image cache.
-    fn texture_image(&mut self, ui: &Ui, handle: u32, tint: u32) -> Option<(Arc<RenderImage>, (u32, u32))> {
+    fn texture_image(
+        &mut self,
+        ui: &Ui,
+        handle: u32,
+        tint: u32,
+    ) -> Option<(Arc<RenderImage>, (u32, u32))> {
         let slot = handle & spec::TEX_SLOT_MASK;
         let (live, revision, view) = ui.texture_at_versioned(slot)?;
         if live as u32 != handle {
             return None; // stale generation-tagged handle
         }
         if let Some(c) = self.images.get(&slot)
-            && c.revision == revision && c.tint == tint {
-                return Some((c.image.clone(), c.size));
-            }
+            && c.revision == revision
+            && c.tint == tint
+        {
+            return Some((c.image.clone(), c.size));
+        }
         let mut rgba = to_rgba8(&view)?;
         if tint != 0xffff_ffff {
             let t = abgr(tint);
@@ -411,7 +436,12 @@ impl GpuiRenderer {
         let image = render_image(view.w, view.h, rgba)?;
         self.images.insert(
             slot,
-            CachedImage { revision, tint, size: (view.w, view.h), image: image.clone() },
+            CachedImage {
+                revision,
+                tint,
+                size: (view.w, view.h),
+                image: image.clone(),
+            },
         );
         Some((image, (view.w, view.h)))
     }
@@ -430,7 +460,9 @@ impl GpuiRenderer {
         let (u0, v0) = (f32::from_bits(words[3]), f32::from_bits(words[4]));
         let (u1, v1) = (f32::from_bits(words[5]), f32::from_bits(words[6]));
         let tint = words[7];
-        let Some((image, _)) = self.texture_image(ui, handle, tint) else { return };
+        let Some((image, _)) = self.texture_image(ui, handle, tint) else {
+            return;
+        };
         let dst = Bounds::new(
             point(px(x) + origin.x, px(y) + origin.y),
             size(px(w), px(h)),
@@ -445,7 +477,10 @@ impl GpuiRenderer {
             let full_w = w / du;
             let full_h = h / dv;
             let img_bounds = Bounds::new(
-                point(px(x - u0 * full_w) + origin.x, px(y - v0 * full_h) + origin.y),
+                point(
+                    px(x - u0 * full_w) + origin.x,
+                    px(y - v0 * full_h) + origin.y,
+                ),
                 size(px(full_w), px(full_h)),
             );
             window.with_content_mask(Some(ContentMask { bounds: dst }), |window| {
@@ -558,7 +593,11 @@ impl GpuiRenderer {
                 max_x = max_x.max(x.ceil() as i32);
                 max_y = max_y.max(y.ceil() as i32);
             }
-            j += if batch[j] == spec::draw_op::TEX_TRI { 12 } else { 7 };
+            j += if batch[j] == spec::draw_op::TEX_TRI {
+                12
+            } else {
+                7
+            };
         }
         if min_x >= max_x || min_y >= max_y {
             return;
@@ -576,7 +615,11 @@ impl GpuiRenderer {
                 let (x, y) = decode_xy(patched[k]);
                 patched[k] = xy_word(x as i32 - min_x, y as i32 - min_y);
             }
-            j += if patched[j] == spec::draw_op::TEX_TRI { 12 } else { 7 };
+            j += if patched[j] == spec::draw_op::TEX_TRI {
+                12
+            } else {
+                7
+            };
         }
         let (bw, bh) = ((max_x - min_x) as u32, (max_y - min_y) as u32);
         let scale = self.raster_scale;
@@ -584,7 +627,9 @@ impl GpuiRenderer {
         let mut bgra = vec![0u8; (pw * ph * 4) as usize];
         pocketjs_core::raster::render_scaled(ui, &patched, &mut bgra, scale);
         rgba_to_bgra(&mut bgra);
-        let Some(image) = render_image(pw, ph, bgra) else { return };
+        let Some(image) = render_image(pw, ph, bgra) else {
+            return;
+        };
         self.rasters.insert(
             hash,
             CachedRaster {

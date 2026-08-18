@@ -859,7 +859,9 @@ export const WIRE_MARK_FLAG_ENDED = 1 << 0;
 // regular + bold — see docs/DESIGN.md). Slot indices are assigned by the build and
 // carried in each atlas header; the core just indexes a table.
 
-export const MAX_FONT_SLOTS = 16;
+// 0..6 regular / 7..13 bold (FONT_PX sizes), 14/15 the 54 px display pair,
+// 16..18 monospace regular (12/14/16 px — `font-mono`, code spans).
+export const MAX_FONT_SLOTS = 24;
 
 // ---------------------------------------------------------------------------
 // STYLE TABLE binary format — styles.bin  (version 2)

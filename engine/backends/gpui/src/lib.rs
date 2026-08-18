@@ -22,5 +22,5 @@
 mod fonts;
 mod render;
 
-pub use fonts::{native_measure, slot_line_height, slot_px, TextConfig};
+pub use fonts::{TextConfig, native_measure, slot_line_height, slot_px};
 pub use render::GpuiRenderer;

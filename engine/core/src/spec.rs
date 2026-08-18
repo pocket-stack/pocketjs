@@ -35,7 +35,7 @@ pub const TEX_MAX_DIM: u32 = 512;
 pub const TEX_SLOT_BITS: u32 = 20;
 pub const TEX_SLOT_MASK: u32 = 0xfffff;
 /// Max baked font-atlas slots.
-pub const MAX_FONT_SLOTS: usize = 16;
+pub const MAX_FONT_SLOTS: usize = 24;
 /// Transition mask value meaning "every animatable prop".
 pub const TRANSITION_MASK_ALL: u32 = 0xffffffff;
 /// Core tick timestep: exactly 1/60 s (fixed — enables byte-exact goldens).

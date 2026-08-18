@@ -202,14 +202,13 @@ describe("platform registry", () => {
     // The gpui app frame: same desktop wire generation as the widget shell
     // (hostAbi 3), a general window that ALSO hosts fixed-viewport apps
     // (acceptsFixed), and host text layout instead of runtime glyph baking.
+    // Deliberately NARROW: only host-generic behavior registers — pointer/
+    // text/IME/clipboard reach the note via its companion svc adapter and
+    // are not target capabilities here (the platforms.ts header rule).
     expect(POCKET_TARGETS["macos-app"].hostAbi).toBe(3);
     expect(POCKET_TARGETS["macos-app"].form).toBe("window");
     expect(POCKET_TARGETS["macos-app"].capabilities).toEqual([
       "input.buttons",
-      "input.ime",
-      "input.pointer",
-      "input.text",
-      "host.clipboard",
       "display.viewport.live",
       "text.glyphs.baked",
       "text.layout.native",

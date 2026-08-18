@@ -37,6 +37,7 @@ import { fontSlotInfo } from "./tailwind.ts";
 const FONTS_DIR = resolve(fileURLToPath(new URL("../../assets/fonts/", import.meta.url)));
 export const DEFAULT_REGULAR = join(FONTS_DIR, "Inter-Regular.ttf");
 export const DEFAULT_BOLD = join(FONTS_DIR, "Inter-Bold.ttf");
+export const DEFAULT_MONO = join(FONTS_DIR, "JetBrainsMono-Regular.ttf");
 
 export interface BakedAtlas {
   slot: number;
@@ -63,6 +64,7 @@ export interface BakeOptions {
   rasterDensity?: number;
   regularTtf?: string;
   boldTtf?: string;
+  monoTtf?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -403,15 +405,25 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
   }
   const chars = [...cps].sort((a, b) => a - b);
 
-  const fonts: Record<"regular" | "bold", Font | null> = { regular: null, bold: null };
+  const fonts: Record<"regular" | "bold" | "mono", Font | null> = {
+    regular: null,
+    bold: null,
+    mono: null,
+  };
   const results: BakedAtlas[] = [];
   for (const slot of [...opts.slots].sort((a, b) => a - b)) {
     if (slot < 0 || slot >= MAX_FONT_SLOTS) {
       throw new Error(`PocketJS bake-font: slot ${slot} out of range (0..${MAX_FONT_SLOTS - 1})`);
     }
-    const { px, bold } = fontSlotInfo(slot);
-    const key = bold ? "bold" : "regular";
-    fonts[key] ??= await loadFont(bold ? (opts.boldTtf ?? DEFAULT_BOLD) : (opts.regularTtf ?? DEFAULT_REGULAR));
+    const { px, bold, mono } = fontSlotInfo(slot);
+    const key = mono ? "mono" : bold ? "bold" : "regular";
+    fonts[key] ??= await loadFont(
+      mono
+        ? (opts.monoTtf ?? DEFAULT_MONO)
+        : bold
+          ? (opts.boldTtf ?? DEFAULT_BOLD)
+          : (opts.regularTtf ?? DEFAULT_REGULAR),
+    );
     results.push(bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity));
   }
   return results;

@@ -43,12 +43,21 @@ text can come from the host text system.
   chain (CJK, emoji, everything), with **no runtime atlas baking and no
   tofu**.
 - **The op is `TEXT_RUN` (9).** With a measurer installed, translation-only
-  tracking-0 runs carry the run string + style through a DrawList side
-  table; the backend shapes and paints each line. A `styleHash` word keeps
-  identical word streams pixel-identical, so demand-render hashes and
-  damage diffs never need the side table. Tracked, scaled and rotated runs
-  keep the baked `GLYPH_RUN` pair — measurement and glyphs always come from
-  the same provider per node.
+  tracking-0 runs pack the run string's UTF-8 bytes INTO the word stream
+  (8 header words + payload) — the DrawList stays the complete `Vec<u32>`
+  pixel truth, so snapshots, demand-render hashes and damage word-diffs are
+  exact by construction. The provider is chosen once per node at layout
+  build and recorded (`Node::text_native`); paint follows the record, and
+  a paint-only transform that leaves it stale (rotate/scale don't relayout)
+  is detected during the draw walk and self-heals by the next tick, in both
+  directions. Tracked, scaled and rotated runs keep the baked `GLYPH_RUN`
+  pair — measurement and glyphs always come from the same provider per
+  node.
+- **Monospace is a slot family.** `font-mono` resolves to dedicated slots
+  (16..18; framework/compiler/tailwind.ts MONO_FONT_PX) baked from JetBrains
+  Mono on the portable side and mapped to the same family through the host
+  text system on gpui — the note's code blocks are monospace on every
+  backend.
 - **Prefix additivity is preserved.** Ligatures, contextual alternates and
   kerning are disabled in the native shaping configuration
   (`engine/backends/gpui/src/fonts.rs`), because app editor math measures
@@ -92,9 +101,11 @@ bun run macos note --proof
 ```
 
 `tools/macos.ts` resolves the manifest against `macos-app`, writes the
-plan, builds the bundle + pak, and derives every host flag (`--fixed`,
-`--native-text`, `--editor`) from the resolved plan — never from
-convention. On exit the host prints its governor receipt
+plan, builds the bundle + pak, and derives the capability-shaped host flags
+(`--fixed`, `--native-text`) from the resolved plan. `--editor` is NOT a
+capability: it enables the note's companion svc adapter (an app protocol —
+the profile deliberately registers no pointer/text/IME/clipboard ids, see
+contracts/spec/platforms.ts). On exit the host prints its governor receipt
 (`pocket-macos: N ticks, M frames rendered`); a settled app shows M ≪ N.
 
 ## Choosing a backend

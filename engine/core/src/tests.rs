@@ -3547,12 +3547,12 @@ fn clipped_text_run_is_scissor_bracketed() {
 }
 
 #[test]
-fn recorded_provider_survives_a_paint_only_transform() {
-    // The consistency invariant: paint follows the provider RECORDED at
-    // layout time. A transform prop set after the layout (visual props
-    // don't relayout) must not flip the node to baked glyphs against its
-    // native-measured box — the run stays TEXT_RUN at the transformed
-    // anchor until the next structural relayout re-decides.
+fn provider_self_heals_after_a_paint_only_transform() {
+    // rotate/scale are paint-only (no relayout), so a transform set after
+    // layout leaves the recorded provider stale. The draw walk detects the
+    // divergence and schedules a relayout: the stale pair paints at most
+    // ONE frame, then measurement AND glyphs re-decide together — in both
+    // directions.
     let mut ui = Ui::new();
     ui.load_font_atlas(&encode_atlas(
         0,
@@ -3571,25 +3571,29 @@ fn recorded_provider_survives_a_paint_only_transform() {
     ui.tick();
     let counts = validate_drawlist(&ui.draw().words.clone());
     assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 1);
-    let measured_h = ui.layout_of(t).unwrap().3;
-    assert_eq!(measured_h, 12.0, "native line height sized the box");
+    assert_eq!(ui.layout_of(t).unwrap().3, 12.0, "native line height sized the box");
+
+    // Into the transform: the first draw may still paint the recorded pair
+    // (consistent box+glyphs), but it must flag the divergence…
     ui.set_prop(t, spec::prop::ROTATE, 30.0);
     ui.tick();
-    let words = ui.draw().words.clone();
-    if ui.layout_of(t).unwrap().3 == 12.0 {
-        // No relayout ran: the box is still native-sized, so the paint MUST
-        // still be native (consistent pair beats transform fidelity).
-        let counts = validate_drawlist(&words);
-        assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 1);
-        assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 0);
-    } else {
-        // The transform prop happened to trigger a relayout: then BOTH
-        // sides must have re-decided to the baked pair together.
-        assert_eq!(ui.layout_of(t).unwrap().3, 10.0);
-        let counts = validate_drawlist(&words);
-        assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
-        assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
-    }
+    let _ = ui.draw();
+    // …and the next draw re-decides BOTH sides to the baked pair.
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
+    assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
+    assert_eq!(ui.layout_of(t).unwrap().3, 10.0, "box re-measured with the atlas");
+
+    // Out of the transform: same self-healing back to the native pair.
+    ui.set_prop(t, spec::prop::ROTATE, 0.0);
+    ui.tick();
+    let _ = ui.draw();
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 1);
+    assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 0);
+    assert_eq!(ui.layout_of(t).unwrap().3, 12.0, "box re-measured natively");
 }
 
 #[test]

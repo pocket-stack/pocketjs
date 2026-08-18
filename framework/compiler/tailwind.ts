@@ -43,12 +43,22 @@ export const FONT_PX = [12, 14, 16, 18, 20, 24, 36] as const;
 const LARGE_FONT_PX = 54;
 const LARGE_FONT_REGULAR_SLOT = 14;
 const LARGE_FONT_BOLD_SLOT = 15;
+/** Monospace sizes (`font-mono`; code spans). Regular weight only — a bold
+ *  request under font-mono still lands on the mono slot for its size. */
+export const MONO_FONT_PX = [12, 14, 16] as const;
+const MONO_SLOT_BASE = 16;
 const TEXT_SIZE_PX: Record<string, number> = {
   xs: 12, sm: 14, base: 16, lg: 18, xl: 20, "2xl": 24, "4xl": 36, "5xl": 54,
 };
 
-/** Slot index for a (px, weight) pair: 0..6 regular, 7..13 bold. */
-export function fontSlotFor(px: number, bold: boolean): number {
+/** Slot index for a (px, weight, family) triple: 0..6 regular, 7..13 bold,
+ *  14/15 the 54 px pair, 16..18 monospace. */
+export function fontSlotFor(px: number, bold: boolean, mono = false): number {
+  if (mono) {
+    const i = (MONO_FONT_PX as readonly number[]).indexOf(px);
+    if (i < 0) throw new Error(`PocketJS tailwind: no monospace font slot for ${px}px`);
+    return MONO_SLOT_BASE + i;
+  }
   if (px === LARGE_FONT_PX) {
     return bold ? LARGE_FONT_BOLD_SLOT : LARGE_FONT_REGULAR_SLOT;
   }
@@ -57,14 +67,19 @@ export function fontSlotFor(px: number, bold: boolean): number {
   return bold ? 7 + i : i;
 }
 
-/** (px, bold) for a slot index — inverse of fontSlotFor. */
-export function fontSlotInfo(slot: number): { px: number; bold: boolean } {
-  if (slot === LARGE_FONT_REGULAR_SLOT) return { px: LARGE_FONT_PX, bold: false };
-  if (slot === LARGE_FONT_BOLD_SLOT) return { px: LARGE_FONT_PX, bold: true };
+/** (px, bold, mono) for a slot index — inverse of fontSlotFor. */
+export function fontSlotInfo(slot: number): { px: number; bold: boolean; mono: boolean } {
+  if (slot >= MONO_SLOT_BASE) {
+    const px = MONO_FONT_PX[slot - MONO_SLOT_BASE];
+    if (px === undefined) throw new Error(`PocketJS tailwind: bad font slot ${slot}`);
+    return { px, bold: false, mono: true };
+  }
+  if (slot === LARGE_FONT_REGULAR_SLOT) return { px: LARGE_FONT_PX, bold: false, mono: false };
+  if (slot === LARGE_FONT_BOLD_SLOT) return { px: LARGE_FONT_PX, bold: true, mono: false };
   const bold = slot >= 7;
   const px = FONT_PX[bold ? slot - 7 : slot];
   if (px === undefined) throw new Error(`PocketJS tailwind: bad font slot ${slot}`);
-  return { px, bold };
+  return { px, bold, mono: false };
 }
 
 /** Default text style when no text-size/weight utility applies: 16px regular. */
@@ -161,6 +176,7 @@ type Decl = readonly [number, number]; // [propId, u32 value]
 
 /** Per-variant parse accumulator (pseudo-utilities resolved at literal level). */
 interface VariantAcc {
+  mono?: boolean;
   decls: Decl[];
   sizePx?: number;
   bold?: boolean;
@@ -280,6 +296,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
     case "rounded-full": acc.roundedFull = true; acc.sawRounded = true; return true;
     case "border": D.push([PROP.borderWidth, px(1)]); return true;
     case "font-bold": acc.bold = true; return true;
+    case "font-mono": acc.mono = true; return true;
     case "tracking-wide": acc.trackingWide = true; return true;
   }
   if (tok in SHADOWS) { D.push([PROP.shadow, int(SHADOWS[tok])]); return true; }
@@ -598,8 +615,9 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
     const v = acc[name];
     const effPx = v.sizePx ?? base.sizePx ?? 16;
     const effBold = v.bold ?? base.bold ?? false;
-    if (v.sizePx !== undefined || v.bold !== undefined) {
-      v.decls.push([PROP.fontSlot, int(fontSlotFor(effPx, effBold))]);
+    const effMono = v.mono ?? base.mono ?? false;
+    if (v.sizePx !== undefined || v.bold !== undefined || v.mono !== undefined) {
+      v.decls.push([PROP.fontSlot, int(fontSlotFor(effPx, effBold, effMono))]);
     }
     if (v.trackingWide) {
       v.decls.push([PROP.tracking, px(0.025 * effPx)]); // Tailwind tracking-wide = 0.025em

@@ -11,25 +11,27 @@
 use std::sync::Arc;
 
 use gpui::{
-    px, Font, FontFeatures, FontStyle, FontWeight, SharedString, TextRun, WindowTextSystem,
+    Font, FontFeatures, FontStyle, FontWeight, SharedString, TextRun, WindowTextSystem, px,
 };
 use pocketjs_core::text::MeasureFn;
 
 /// Slot -> px mirror of the compiler's slot registry
 /// (framework/compiler/tailwind.ts FONT_PX: slots 0..6 regular, 7..13 bold,
-/// 14/15 the 54 px display pair) — the same hand-mirror note-widget's
-/// cjk.rs keeps.
+/// 14/15 the 54 px display pair, 16..18 monospace 12/14/16) — the same
+/// hand-mirror note-widget's cjk.rs keeps.
 const FONT_PX: [f32; 7] = [12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 36.0];
 const LARGE_PX: f32 = 54.0;
+const MONO_PX: [f32; 3] = [12.0, 14.0, 16.0];
 
-/// (font px, bold) for a font slot; unknown slots read as slot 1 (14 px).
-pub fn slot_px(slot: u8) -> (f32, bool) {
+/// (font px, bold, mono) for a font slot; unknown slots read as slot 1.
+pub fn slot_px(slot: u8) -> (f32, bool, bool) {
     match slot {
-        0..=6 => (FONT_PX[slot as usize], false),
-        7..=13 => (FONT_PX[(slot - 7) as usize], true),
-        14 => (LARGE_PX, false),
-        15 => (LARGE_PX, true),
-        _ => (FONT_PX[1], false),
+        0..=6 => (FONT_PX[slot as usize], false, false),
+        7..=13 => (FONT_PX[(slot - 7) as usize], true, false),
+        14 => (LARGE_PX, false, false),
+        15 => (LARGE_PX, true, false),
+        16..=18 => (MONO_PX[(slot - 16) as usize], false, true),
+        _ => (FONT_PX[1], false, false),
     }
 }
 
@@ -39,16 +41,26 @@ pub struct TextConfig {
     /// Font family (the host registers Inter from assets/fonts by default;
     /// ".SystemUIFont" is the gpui spelling of the system face).
     pub family: SharedString,
+    /// Monospace family for the mono slots (16..18) — JetBrains Mono from
+    /// assets/fonts, with the OS fallback chain behind it.
+    pub mono_family: SharedString,
 }
 
 impl TextConfig {
     pub fn new(family: impl Into<SharedString>) -> TextConfig {
-        TextConfig { family: family.into() }
+        TextConfig {
+            family: family.into(),
+            mono_family: "JetBrains Mono".into(),
+        }
     }
 
-    pub fn font(&self, bold: bool) -> Font {
+    pub fn font(&self, bold: bool, mono: bool) -> Font {
         Font {
-            family: self.family.clone(),
+            family: if mono {
+                self.mono_family.clone()
+            } else {
+                self.family.clone()
+            },
             // Additive advances (see module doc): no ligatures, no kerning.
             features: FontFeatures(Arc::new(vec![
                 ("liga".into(), 0),
@@ -56,15 +68,19 @@ impl TextConfig {
                 ("kern".into(), 0),
             ])),
             fallbacks: None,
-            weight: if bold { FontWeight::BOLD } else { FontWeight::NORMAL },
+            weight: if bold {
+                FontWeight::BOLD
+            } else {
+                FontWeight::NORMAL
+            },
             style: FontStyle::Normal,
         }
     }
 
-    pub fn run(&self, len: usize, bold: bool, color: gpui::Hsla) -> TextRun {
+    pub fn run(&self, len: usize, bold: bool, mono: bool, color: gpui::Hsla) -> TextRun {
         TextRun {
             len,
-            font: self.font(bold),
+            font: self.font(bold, mono),
             color,
             background_color: None,
             underline: None,
@@ -77,8 +93,8 @@ impl TextConfig {
 /// counterpart of the baked atlas header's `lineHeight`
 /// (framework/compiler/bake-font.ts rounds ascent + descent + lineGap).
 pub fn slot_line_height(ts: &WindowTextSystem, cfg: &TextConfig, slot: u8) -> f32 {
-    let (size, bold) = slot_px(slot);
-    let font_id = ts.resolve_font(&cfg.font(bold));
+    let (size, bold, mono) = slot_px(slot);
+    let font_id = ts.resolve_font(&cfg.font(bold, mono));
     let ascent = f32::from(ts.ascent(font_id, px(size)));
     let descent = f32::from(ts.descent(font_id, px(size)));
     (ascent + descent).ceil()
@@ -97,13 +113,13 @@ pub fn slot_line_height(ts: &WindowTextSystem, cfg: &TextConfig, slot: u8) -> f3
 pub fn native_measure(ts: Arc<WindowTextSystem>, cfg: TextConfig) -> MeasureFn {
     let widths: std::cell::RefCell<std::collections::HashMap<(String, u8), f32>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
-    let line_heights: std::cell::RefCell<[Option<f32>; 16]> =
-        std::cell::RefCell::new([None; 16]);
+    // Sized to spec::MAX_FONT_SLOTS (24) — mono slots live at 16..18.
+    let line_heights: std::cell::RefCell<[Option<f32>; 24]> = std::cell::RefCell::new([None; 24]);
     Box::new(move |text: &str, slot: u8, _tracking: f32, line_h: f32| {
-        let (size, bold) = slot_px(slot);
+        let (size, bold, mono) = slot_px(slot);
         let lh = if line_h.is_nan() {
             let mut heights = line_heights.borrow_mut();
-            let entry = &mut heights[(slot as usize).min(15)];
+            let entry = &mut heights[(slot as usize).min(23)];
             match *entry {
                 Some(h) => h,
                 None => {
@@ -130,7 +146,7 @@ pub fn native_measure(ts: Arc<WindowTextSystem>, cfg: TextConfig) -> MeasureFn {
             let w = match cache.get(&key) {
                 Some(w) => *w,
                 None => {
-                    let run = cfg.run(line.len(), bold, gpui::black());
+                    let run = cfg.run(line.len(), bold, mono, gpui::black());
                     let w = f32::from(ts.layout_line(line, px(size), &[run], None).width);
                     cache.insert(key, w);
                     w

@@ -1171,7 +1171,7 @@ impl Ui {
         } else {
             None
         };
-        let (target, drawn) = draw::build(
+        let (target, drawn, provider_stale) = draw::build(
             &self.tree,
             &self.styles,
             &self.fonts,
@@ -1189,6 +1189,12 @@ impl Ui {
         self.inspect_drawn = drawn;
         if self.inspect_id != 0 {
             self.inspect_rect = target;
+        }
+        if provider_stale {
+            // A paint-only transform left some text node's recorded
+            // measurement provider stale (draw.rs emit_text): relayout on
+            // the next draw re-decides the pair with current transforms.
+            self.layout.dirty = true;
         }
         &self.draw_list
     }

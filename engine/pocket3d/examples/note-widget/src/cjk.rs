@@ -25,7 +25,14 @@ const MAX_GLYPHS: u16 = 6000;
 /// 12/14/16/18/20/24/36, bold = +7 at the same px). tests/note.test.ts pins
 /// the same table.
 fn slot_px(slot: u8) -> f32 {
-    [12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 36.0][(slot % 7) as usize]
+    match slot {
+        // Mono slots (16..18) — mirrors tailwind.ts MONO_FONT_PX; CJK has no
+        // separate monospace face, so the system CJK font extends these too.
+        16 => 12.0,
+        17 => 14.0,
+        18 => 16.0,
+        s => [12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 36.0][(s % 7) as usize],
+    }
 }
 
 /// System fonts that cover CJK, tried in order; the first whose face maps
