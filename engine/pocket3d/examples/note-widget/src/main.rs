@@ -740,6 +740,8 @@ fn boot(args: &Args) -> Result<(Guest, UiSurface)> {
     // The platform-contract identity plan-built bundles assert
     // (contracts/spec/platforms.ts POCKET_TARGETS["macos-widget"]).
     surface.set_identity("macos-widget", 3);
+    // svcOpen is deny-by-default: this host IS the note companion, declared.
+    surface.set_svc_allowlist(["note"]);
     surface.feed_pak(&pak);
     let guest = Guest::new()?;
     surface.mount(&guest)?;

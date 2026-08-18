@@ -94,6 +94,9 @@ struct Args {
     /// Benchmark typing storm: (chars/sec, start tick, duration ticks) —
     /// svc `ch` lines through the same edit path real typing takes.
     storm: Option<(u32, u64, u64)>,
+    /// Print "READY <epoch_ms>" on the first painted frame — the desktop
+    /// benchmark runner's cold-start marker (PR #294). Off by default.
+    announce_ready: bool,
 }
 
 fn parse_args() -> Result<Args> {
@@ -111,6 +114,7 @@ fn parse_args() -> Result<Args> {
         script: Vec::new(),
         quit_after_ticks: None,
         storm: None,
+        announce_ready: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -154,6 +158,7 @@ fn parse_args() -> Result<Args> {
                     .push(ScriptEvent::Click(t.parse()?, x.parse()?, y.parse()?));
             }
             "--quit-after" => args.quit_after_ticks = Some(val("--quit-after")?.parse()?),
+            "--announce-ready" => args.announce_ready = true,
             "--storm" => {
                 // --storm CPS@START+DUR (ticks)
                 let v = val("--storm")?;
@@ -277,14 +282,10 @@ impl PocketRoot {
             args.density,
         );
         surface.set_identity(HOST_ID, HOST_ABI);
-        // svcOpen must answer TRUTHFULLY: without --editor this host serves
-        // no companion, and an open allowlist would let the note believe
-        // its adapter is live (enabling edit/pointer UI the host never
-        // feeds). Adapter on -> exactly "note"; off -> nothing.
+        // svcOpen denies by default (pocket-ui-surface); the adapter being
+        // on is the one companion this host declares.
         if args.editor {
             surface.set_svc_allowlist(["note"]);
-        } else {
-            surface.set_svc_allowlist(std::iter::empty::<&str>());
         }
         surface.feed_pak(&pak);
         let cfg = TextConfig::new("Inter");
@@ -852,6 +853,7 @@ impl Render for PocketRoot {
         let surface = self.surface.clone();
         let renderer = self.renderer.clone();
         let frames = self.frames.clone();
+        let announce_ready = self.args.announce_ready;
         let canvas_origin = self.canvas_origin.clone();
         let fixed = self
             .args
@@ -894,10 +896,9 @@ impl Render for PocketRoot {
                             );
                         }
                         frames.set(frames.get() + 1);
-                        if frames.get() == 1 {
-                            // First painted frame — the bench runner's
-                            // cold-start marker (the desktop benchmark
-                            // runner — PR #294).
+                        if announce_ready && frames.get() == 1 {
+                            // First painted frame — the benchmark runner's
+                            // cold-start marker (--announce-ready; PR #294).
                             println!("READY {}", epoch_ms());
                         }
                         surface.with_ui(|ui| {

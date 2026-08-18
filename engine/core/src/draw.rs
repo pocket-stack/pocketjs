@@ -798,10 +798,10 @@ struct Walker<'a> {
     /// pair there, so the provider-divergence check must not fire.
     in_3d: bool,
     /// Set when a text node's RECORDED provider no longer matches what the
-    /// current world transform calls for (a paint-only transform changed
-    /// after layout, in either direction). Ui::draw() turns this into a
-    /// relayout, so the pair re-decides on the NEXT tick — the stale pair
-    /// paints for at most one frame.
+    /// declared-transform path calls for (a paint-only transform changed
+    /// since the last relayout, in either direction). Ui::draw() re-decides
+    /// and REPAINTS before returning, so no frame with a stale pair ever
+    /// leaves draw() (see lib.rs draw()).
     provider_stale: bool,
     /// Core texture slots + free list (baked corner discs allocate lazily
     /// during the walk, through the same slot storage as uploads).
@@ -2308,9 +2308,9 @@ impl<'a> Walker<'a> {
         // record — a node's painted glyphs always come from the provider
         // that sized its box — but a paint-only transform (rotate/scale
         // don't relayout) can leave the record stale in either direction:
-        // flag it, and Ui::draw() schedules the relayout that re-decides
-        // the pair for the next tick. The stale pair paints one frame; an
-        // animation crossing identity re-decides twice per cycle.
+        // flag it, and Ui::draw() relayouts and REPAINTS within this same
+        // draw, so the frame that leaves is provider-correct. An animation
+        // crossing exact identity re-decides twice per cycle.
         let desired_native = !self.in_3d
             && self.fonts.native_active()
             && r.tracking == 0.0

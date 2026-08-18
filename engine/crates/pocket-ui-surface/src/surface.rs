@@ -74,10 +74,11 @@ struct Inner {
     /// widget host *is* the companion process, so lines just cross a queue.
     svc_in: VecDeque<String>,
     svc_out: VecDeque<String>,
-    /// Companion service names accepted by `svcOpen`. `None` preserves the
-    /// historical desktop-host default of accepting any name; a Stage sets an
-    /// exact package-authored allowlist (which may be empty).
-    svc_allowlist: Option<Vec<String>>,
+    /// Companion service names accepted by `svcOpen`. Deny-all by default —
+    /// svcOpen must answer TRUTHFULLY, and a host that serves a companion
+    /// declares it explicitly (an implicit allow-any default let apps
+    /// believe in adapters nobody feeds).
+    svc_allowlist: Vec<String>,
     /// Platform-contract identity published as `ui.__host`/`ui.__hostAbi`.
     /// Bundles built from a resolved plan refuse hosts whose identity does
     /// not match their target (framework/src/host.ts assertNativeHostContract).
@@ -114,7 +115,7 @@ impl UiSurface {
                 sprites: Vec::new(),
                 svc_in: VecDeque::new(),
                 svc_out: VecDeque::new(),
-                svc_allowlist: None,
+                svc_allowlist: Vec::new(),
                 host_id: "desktop".into(),
                 host_abi: None,
             })),
@@ -130,20 +131,17 @@ impl UiSurface {
         inner.host_abi = Some(host_abi);
     }
 
-    /// Restrict `svcOpen` to exact companion service names. An empty list
-    /// advertises no service. Call this before `mount`, which installs the
-    /// host-op closure into the guest.
+    /// Declare the exact companion service names this host serves (svcOpen
+    /// answers false for everything else — and for everything, by default).
+    /// Call this before `mount`, which installs the host-op closure into
+    /// the guest.
     pub fn set_svc_allowlist<I, S>(&self, services: I)
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.inner.borrow_mut().svc_allowlist = Some(
-            services
-                .into_iter()
-                .map(Into::into)
-                .collect::<Vec<String>>(),
-        );
+        self.inner.borrow_mut().svc_allowlist =
+            services.into_iter().map(Into::into).collect::<Vec<String>>();
     }
 
     /// Queue one JSON line for the guest's next `svcPoll` (host → guest).
@@ -508,10 +506,7 @@ impl UiSurface {
             let ui = self.inner.clone();
             op!("svcOpen", move |app: LossyString| {
                 let inner = ui.borrow();
-                match &inner.svc_allowlist {
-                    None => true,
-                    Some(names) => names.iter().any(|name| name == &app.0),
-                }
+                inner.svc_allowlist.iter().any(|name| name == &app.0)
             });
 
             let ui = self.inner.clone();
@@ -595,6 +590,21 @@ fn decode_pix_header(blob: &[u8], pixels_off: usize) -> Option<(u32, u32, u32, &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn svc_open_denies_by_default() {
+        // Truthful-by-default: a host that never declares a companion must
+        // answer false — apps otherwise enable UI over a channel nobody
+        // feeds (the macos-app --editor regression, review round 3).
+        let guest = Guest::new().unwrap();
+        let surface = UiSurface::new((16.0, 16.0));
+        surface.mount(&guest).unwrap();
+        guest
+            .eval("service", "globalThis.serviceOpen = ui.svcOpen('note');")
+            .unwrap();
+        let open: bool = guest.with(|ctx| ctx.globals().get("serviceOpen").unwrap());
+        assert!(!open);
+    }
 
     #[test]
     fn empty_service_allowlist_disables_the_companion() {
