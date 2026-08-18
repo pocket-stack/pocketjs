@@ -176,7 +176,9 @@ describe("editor caret", () => {
 describe("note-main boots standalone", () => {
   test("sample note renders without a widget host", async () => {
     const trace = await runScenario({ app: "note-main", seconds: 2 });
-    expect(treeHasText(trace.tree, "POCKET NOTE")).toBe(true);
+    // The POCKET NOTE wordmark is widget-chrome (hidden off macos-widget),
+    // so the structural smoke pins sample-document content instead.
+    expect(treeHasText(trace.tree, "Pocket Note")).toBe(true);
     expect(treeHasText(trace.tree, "What works")).toBe(true);
   }, 30000);
 });
