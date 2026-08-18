@@ -63,8 +63,9 @@ import { connectSvc, type HostEvent } from "./svc.ts";
 import { SAMPLE_DOC } from "./sample.ts";
 
 const HEADER_H = 30;
-/** Minimum side padding of the content column. */
-const PAD_X = 22;
+/** Minimum side padding of the content column (the floor narrow windows
+ *  pin to — kept roomy so text never hugs the window edge). */
+const PAD_X = 28;
 /** The content column stops growing here and centers (markdown-app feel). */
 const MAX_CONTENT_W = 560;
 const OVERSCAN = 40;
@@ -734,11 +735,15 @@ export default function Note(): ReturnType<typeof View> {
             : "flex-col w-full h-full overflow-hidden bg-[#fbfaf6]"
       }
     >
-      {/* Header: the host's drag region (everything left of the buttons). */}
+      {/* Header: the host's drag region (everything left of the buttons).
+          The wordmark is widget identity — a real window already carries
+          the title in its OS titlebar. */}
       <View class="flex-row items-center gap-2 px-3" style={{ height: HEADER_H }}>
-        <Text class="text-xs font-bold tracking-wide" style={{ textColor: ink().header }}>
-          POCKET NOTE
-        </Text>
+        <Show when={widgetChrome}>
+          <Text class="text-xs font-bold tracking-wide" style={{ textColor: ink().header }}>
+            POCKET NOTE
+          </Text>
+        </Show>
         <View class="flex-1" />
         {/* Preview/edit segmented toggle (text-input hosts only). */}
         <Show when={canEdit}>
