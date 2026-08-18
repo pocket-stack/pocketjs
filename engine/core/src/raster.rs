@@ -140,6 +140,20 @@ trait RenderTarget {
         let len = self.pixel_len();
         self.fill_opaque(0, len, 0, 0, 0);
     }
+
+    /// Clear to fully transparent on ARGB targets so hosts can composite
+    /// the scene over their own background layers. Defaults to clearing
+    /// black, so opaque targets are unchanged.
+    #[inline]
+    fn clear_transparent(&mut self) {
+        self.clear_black();
+    }
+
+    /// Region-scoped transparent clear (used for incremental damage repaints).
+    #[inline]
+    fn fill_transparent(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32) {
+        self.fill_opaque(start, len, r, g, b);
+    }
 }
 
 struct RgbaTarget<'a, const ARGB: bool> {
@@ -171,6 +185,34 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
         if a == 0 {
             return;
         }
+        // Transparent destination: write straight color + coverage and let
+        // the host composite (no blending against a black backdrop).
+        if ARGB && self.bytes[o + ai] == 0 {
+            self.bytes[o + ri] = r as u8;
+            self.bytes[o + gi] = g as u8;
+            self.bytes[o + bi] = b as u8;
+            self.bytes[o + ai] = a as u8;
+            return;
+        }
+        if ARGB {
+            // Straight-alpha src-over for destinations that already hold
+            // content. The previous "blend against opaque black and force
+            // alpha 255" flattened semi-transparent destination pixels
+            // (glyph edges over another layer, translucent backgrounds) on
+            // layered surfaces. For opaque destinations this reduces to the
+            // old mix (same rgb, alpha 255).
+            let dst_a = self.bytes[o + ai] as u32;
+            let out_a = a + (dst_a * (255 - a) + 127) / 255;
+            let dst_w = dst_a * (255 - a);
+            let div = out_a * 255;
+            let half = div / 2;
+            let over = |s: u32, d: u8| ((s * a * 255 + d as u32 * dst_w + half) / div) as u8;
+            self.bytes[o + ri] = over(r, self.bytes[o + ri]);
+            self.bytes[o + gi] = over(g, self.bytes[o + gi]);
+            self.bytes[o + bi] = over(b, self.bytes[o + bi]);
+            self.bytes[o + ai] = out_a as u8;
+            return;
+        }
         let ia = 255 - a;
         let mix = |s: u32, d: u8| ((s * a + d as u32 * ia + 127) / 255) as u8;
         self.bytes[o + ri] = mix(r, self.bytes[o + ri]);
@@ -183,6 +225,25 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
     fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32) {
         let byte_start = start * 4;
         fill_opaque_span::<ARGB>(&mut self.bytes[byte_start..byte_start + len * 4], r, g, b);
+    }
+
+    #[inline]
+    fn clear_transparent(&mut self) {
+        if ARGB {
+            self.bytes.fill(0);
+        } else {
+            self.clear_black();
+        }
+    }
+
+    #[inline]
+    fn fill_transparent(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32) {
+        if ARGB {
+            let byte_start = start * 4;
+            self.bytes[byte_start..byte_start + len * 4].fill(0);
+        } else {
+            self.fill_opaque(start, len, r, g, b);
+        }
     }
 }
 
@@ -363,6 +424,25 @@ pub fn render_scaled(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
 pub fn render_scaled_argb(ui: &Ui, words: &[u32], fb: &mut [u8], scale: u32) {
     let mut target = RgbaTarget::<true> { bytes: fb };
     render_scaled_impl(ui, words, &mut target, scale, true);
+}
+
+/// Render transparent ARGB pixels into an explicitly sized logical surface.
+/// This is the retained-layer counterpart of [`render_scaled_argb`]: fonts
+/// and textures still come from `ui`, but the target need not match its
+/// viewport.
+pub fn render_scaled_argb_surface(
+    ui: &Ui,
+    words: &[u32],
+    fb: &mut [u8],
+    logical_width: u32,
+    logical_height: u32,
+    scale: u32,
+) {
+    let mut target = RgbaTarget::<true> { bytes: fb };
+    let (width, _height, screen) =
+        target_geometry_surface(&target, logical_width, logical_height, scale);
+    target.clear_transparent();
+    render_scaled_clipped(ui, words, &mut target, width, scale as i32, screen);
 }
 
 /// Execute a complete DrawList into a little-endian RGB565 framebuffer.
@@ -546,7 +626,7 @@ fn render_scaled_impl<T: RenderTarget>(
 ) {
     let (width, _height, screen) = target_geometry(ui, target, scale);
     if clear {
-        target.clear_black();
+        target.clear_transparent();
     }
     render_scaled_clipped(ui, words, target, width, scale as i32, screen);
 }
@@ -627,6 +707,47 @@ fn target_geometry<T: RenderTarget>(ui: &Ui, target: &T, scale: u32) -> (i32, i3
     (width, height, screen)
 }
 
+fn target_geometry_surface<T: RenderTarget>(
+    target: &T,
+    logical_width: u32,
+    logical_height: u32,
+    scale: u32,
+) -> (i32, i32, Clip) {
+    assert!(
+        (1..=MAX_RENDER_SCALE).contains(&scale),
+        "render scale must be 1 through 4"
+    );
+    let width = logical_width
+        .checked_mul(scale)
+        .expect("scaled surface width overflow");
+    let height = logical_height
+        .checked_mul(scale)
+        .expect("scaled surface height overflow");
+    assert!(width > 0 && height > 0, "surface must have positive dimensions");
+    assert!(
+        width <= i32::MAX as u32 && height <= i32::MAX as u32,
+        "scaled surface dimensions exceed raster limits"
+    );
+    let expected = width as usize * height as usize;
+    assert_eq!(
+        target.pixel_len(),
+        expected,
+        "scaled framebuffer has the wrong pixel count"
+    );
+    let width = width as i32;
+    let height = height as i32;
+    (
+        width,
+        height,
+        Clip {
+            x0: 0,
+            y0: 0,
+            x1: width,
+            y1: height,
+        },
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_damage_regions<T: RenderTarget>(
     ui: &Ui,
@@ -663,7 +784,7 @@ fn clear_black_rect<T: RenderTarget>(target: &mut T, stride: i32, rect: Clip) {
     let row_pixels = (rect.x1 - rect.x0) as usize;
     for y in rect.y0..rect.y1 {
         let start = (y * stride + rect.x0) as usize;
-        target.fill_opaque(start, row_pixels, 0, 0, 0);
+        target.fill_transparent(start, row_pixels, 0, 0, 0);
     }
 }
 
@@ -1355,6 +1476,13 @@ mod tests {
     fn argb_output_uses_le_argb8888_memory_layout() {
         let ui = Ui::new();
         let words = vec![
+            // Seed a fullscreen opaque rect so both targets carry content in
+            // every pixel: under the transparent-clear contract uncovered
+            // ARGB pixels have alpha 0 while RGBA clears to opaque black.
+            draw_op::RECT,
+            xy_word(0, 0),
+            wh_word(spec::SCREEN_W as u16, spec::SCREEN_H as u16),
+            0xff10_1010,
             draw_op::RECT,
             xy_word(3, 4),
             wh_word(7, 5),
@@ -1390,6 +1518,32 @@ mod tests {
             assert_eq!(argb_fb[o + 2], rgba_fb[o], "red at pixel {px}");
             assert_eq!(argb_fb[o + 3], rgba_fb[o + 3], "alpha at pixel {px}");
         }
+    }
+
+    #[test]
+    fn straight_alpha_src_over_matches_reference_math() {
+        // A semi-transparent src over a semi-transparent dst must follow true
+        // straight-alpha src-over, not "blend against black + force alpha".
+        let ui = Ui::new();
+        let words = vec![
+            draw_op::RECT,
+            xy_word(2, 2),
+            wh_word(3, 3),
+            0x4066_9966, // dst (ABGR): a=64, r=102, g=153, b=102
+            draw_op::RECT,
+            xy_word(2, 2),
+            wh_word(3, 3),
+            0x8033_2211, // src (ABGR): a=128, r=17, g=34, b=51
+        ];
+        let mut fb = framebuffer(1);
+        render_scaled_argb(&ui, &words, &mut fb, 1);
+        let o = (3 * spec::SCREEN_W as usize + 3) * 4; // pixel (3,3)
+        // out_a = 128 + (64*127 + 127)/255 = 160
+        // dst_w = 64*127 = 8128; div = 160*255 = 40800; half = div/2
+        // r = (17*128*255 + 102*8128 + 20400)/40800 = 34
+        // g = (34*128*255 + 153*8128 + 20400)/40800 = 58
+        // b = (51*128*255 + 102*8128 + 20400)/40800 = 61
+        assert_eq!(&fb[o..o + 4], &[61, 58, 34, 160]); // LE ARGB: B,G,R,A
     }
 
     #[test]

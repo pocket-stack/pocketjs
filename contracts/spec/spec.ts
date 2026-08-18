@@ -354,6 +354,10 @@ export const PROP = {
   //                    center = node center, outer radius = min(w,h)/2, color
   //                    = bgColor. Axis-aligned worlds only (rotation belongs
   //                    in arcStart).
+  rasterCache: 143, //  enum RasterCache. Retained asks capable hosts to cache
+  //                    this subtree as a transparent raster layer and apply
+  //                    translation during composition. Flat draw() output is
+  //                    unchanged; hosts opt in through Ui.draw_retained().
 } as const;
 
 export type PropName = keyof typeof PROP;
@@ -485,6 +489,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
   rotateX: VALUE_KIND.f32, rotateY: VALUE_KIND.f32,
   translateZ: VALUE_KIND.f32, perspective: VALUE_KIND.f32,
   arcStart: VALUE_KIND.f32, arcSweep: VALUE_KIND.f32, arcWidth: VALUE_KIND.f32,
+  rasterCache: VALUE_KIND.int,
 };
 
 // ---------------------------------------------------------------------------
@@ -502,6 +507,7 @@ export const ENUMS = {
   TextAlign: { Left: 0, Center: 1, Right: 2 },
   /** Gradient direction: `bg-gradient-to-t|b|l|r`. */
   GradDir: { ToTop: 0, ToBottom: 1, ToLeft: 2, ToRight: 3 },
+  RasterCache: { None: 0, Retained: 1 },
   /**
    * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
    * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.

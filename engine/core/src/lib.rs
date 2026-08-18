@@ -49,7 +49,7 @@ pub mod touch;
 pub mod tree;
 pub mod wire;
 
-pub use draw::DrawList;
+pub use draw::{DrawList, RetainedFrame, RetainedLayer, RetainedPass};
 
 /// CLUT byte size: 256 entries x u32 ABGR (the GE CLUT8 palette).
 const TEX_PALETTE_BYTES: usize = 1024;
@@ -250,6 +250,7 @@ pub struct Ui {
     raster_revision: u64,
     focused: i32,
     draw_list: DrawList,
+    retained_frame: RetainedFrame,
     /// Virtual cursor sprite (spec ops 28/29, input.cursor capability):
     /// texture handle (< 0 = hidden), hotspot offset into the sprite,
     /// logical draw size (0 = the texture's own pixel size), and the
@@ -320,6 +321,7 @@ impl Ui {
             raster_revision: 1,
             focused: 0,
             draw_list: DrawList::new(),
+            retained_frame: RetainedFrame::default(),
             cursor_tex: -1,
             cursor_hot: (0.0, 0.0),
             cursor_size: (0.0, 0.0),
@@ -1198,6 +1200,65 @@ impl Ui {
     /// several dirty strips from one stable frame snapshot.
     pub fn current_draw_list(&self) -> &DrawList {
         &self.draw_list
+    }
+
+    /// Build ordered transparent raster-cache passes for capable hosts.
+    ///
+    /// A node whose `rasterCache` prop is `RasterCache::Retained` becomes a
+    /// [`RetainedPass::Layer`] when its world transform is translation-only.
+    /// Its local DrawList remains stable while (`x`, `y`) changes, so the host
+    /// can retain pixels and move them in a compositor. Unsupported transforms
+    /// stay in a regular pass. [`draw`](Self::draw) remains byte-compatible and
+    /// ignores this hint.
+    pub fn draw_retained(&mut self) -> &RetainedFrame {
+        if self.layout.needs() {
+            layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
+        }
+        let cursor = if self.cursor_tex >= 0 {
+            tex_resolve(&self.textures, self.cursor_tex)
+                .and_then(|slot| self.textures[slot as usize].tex.as_ref())
+                .map(|t| {
+                    let w = if self.cursor_size.0 > 0.0 {
+                        self.cursor_size.0
+                    } else {
+                        t.w as f32
+                    };
+                    let h = if self.cursor_size.1 > 0.0 {
+                        self.cursor_size.1
+                    } else {
+                        t.h as f32
+                    };
+                    (
+                        self.cursor_tex as u32,
+                        self.cursor_pos.0 - self.cursor_hot.0,
+                        self.cursor_pos.1 - self.cursor_hot.1,
+                        w,
+                        h,
+                    )
+                })
+        } else {
+            None
+        };
+        let (target, drawn) = draw::build_retained(
+            &self.tree,
+            &self.styles,
+            &self.fonts,
+            self.frame,
+            self.layout.viewport,
+            &mut self.textures,
+            &mut self.tex_free,
+            &mut self.discs,
+            self.raster_density,
+            &mut self.retained_frame,
+            self.inspect_id,
+            self.inspect_drawn,
+            cursor,
+        );
+        self.inspect_drawn = drawn;
+        if self.inspect_id != 0 {
+            self.inspect_rect = target;
+        }
+        &self.retained_frame
     }
 
     /// Resize the logical viewport (root node + layout bounds + draw clip).
