@@ -41,10 +41,6 @@ fn decode_wh(word: u32) -> (f32, f32) {
     ((word & 0xffff) as f32, ((word >> 16) & 0xffff) as f32)
 }
 
-fn xy_word(x: i32, y: i32) -> u32 {
-    ((x as i16 as u16) as u32) | (((y as i16 as u16) as u32) << 16)
-}
-
 fn fnv64(words: &[u32]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for w in words {
@@ -116,6 +112,9 @@ pub struct GpuiRenderer {
     /// Tri-batch raster fallback cache, keyed by batch content hash.
     rasters: HashMap<u64, CachedRaster>,
     rasters_used: HashSet<u64>,
+    /// Reusable full-viewport RGBA scratch for the raster fallback (the
+    /// core rasterizer renders whole framebuffers).
+    raster_scratch: Vec<u8>,
     /// Shaped-line cache: an editor keystroke or caret blink repaints the
     /// whole window, but only the edited line's shape changes — everything
     /// else replays. Keyed by (text, slot, color) hash, text-verified
@@ -134,6 +133,7 @@ impl GpuiRenderer {
             images: HashMap::new(),
             rasters: HashMap::new(),
             rasters_used: HashSet::new(),
+            raster_scratch: Vec::new(),
             shaped: HashMap::new(),
             shaped_used: HashSet::new(),
         }
@@ -602,30 +602,28 @@ impl GpuiRenderer {
         if min_x >= max_x || min_y >= max_y {
             return;
         }
-        // Translate the batch to the bbox origin and raster at density.
-        let mut patched = batch.to_vec();
-        let mut j = 0usize;
-        while j < patched.len() {
-            let idxs: &[usize] = if patched[j] == spec::draw_op::TEX_TRI {
-                &[j + 2, j + 5, j + 8]
-            } else {
-                &[j + 1, j + 2, j + 3]
-            };
-            for &k in idxs {
-                let (x, y) = decode_xy(patched[k]);
-                patched[k] = xy_word(x as i32 - min_x, y as i32 - min_y);
-            }
-            j += if patched[j] == spec::draw_op::TEX_TRI {
-                12
-            } else {
-                7
-            };
-        }
+        // The core rasterizer renders full-viewport framebuffers (it
+        // asserts the pixel count), so raster the batch into a reusable
+        // viewport-sized scratch at density and crop the bbox out. The
+        // batch words are already viewport-space — no translation needed.
         let (bw, bh) = ((max_x - min_x) as u32, (max_y - min_y) as u32);
         let scale = self.raster_scale;
+        let (vw, vh) = ui.viewport();
+        let (fw, fh) = (
+            (vw.ceil() as u32).max(1) * scale,
+            (vh.ceil() as u32).max(1) * scale,
+        );
+        let full = (fw * fh * 4) as usize;
+        self.raster_scratch.resize(full, 0);
+        self.raster_scratch[..full].fill(0);
+        pocketjs_core::raster::render_scaled(ui, batch, &mut self.raster_scratch, scale);
         let (pw, ph) = (bw * scale, bh * scale);
-        let mut bgra = vec![0u8; (pw * ph * 4) as usize];
-        pocketjs_core::raster::render_scaled(ui, &patched, &mut bgra, scale);
+        let mut bgra = Vec::with_capacity((pw * ph * 4) as usize);
+        let (ox_px, oy_px) = (min_x as u32 * scale, min_y as u32 * scale);
+        for row in 0..ph {
+            let start = (((oy_px + row) * fw + ox_px) * 4) as usize;
+            bgra.extend_from_slice(&self.raster_scratch[start..start + (pw * 4) as usize]);
+        }
         rgba_to_bgra(&mut bgra);
         let Some(image) = render_image(pw, ph, bgra) else {
             return;
