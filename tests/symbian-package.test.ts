@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { DENY_ALL_NETWORK_POLICY } from "../contracts/spec/network-policy.ts";
 import type { ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
 import {
   symbianDataBaseForEmbeddedBytes,
@@ -31,6 +32,7 @@ function plan(
     },
     features: {},
     companions: [],
+    network: DENY_ALL_NETWORK_POLICY,
     planHash: `sha256:${"0".repeat(64)}`,
   };
 }

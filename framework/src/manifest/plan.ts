@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ResolvedNetworkPolicy } from "../../../contracts/spec/network-policy.ts";
 import type { PocketManifestV2 } from "../../../contracts/spec/pocket-manifest.ts";
 import type { PresentationMode, Viewport } from "../../../contracts/spec/platforms.ts";
 
@@ -27,6 +28,11 @@ export interface ResolvedBuildPlanContent {
    *  svcOpen strings the app's adapters speak. Hosts build their svc
    *  allowlist from this list (issue #295). */
   readonly companions: readonly string[];
+  /** The network endpoint policy resolved from `permissions.network`
+   *  (format 3), or the deny-all policy. Hosts hand its canonical JSON to
+   *  their network core at runtime creation and never author one
+   *  themselves (contracts/spec/network-policy.ts). */
+  readonly network: ResolvedNetworkPolicy;
 }
 
 export interface ResolvedBuildPlan extends ResolvedBuildPlanContent {

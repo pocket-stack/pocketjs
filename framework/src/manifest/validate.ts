@@ -1,8 +1,14 @@
 import {
+  POCKET_MANIFEST_V3_VERSION,
+  POCKET_MANIFEST_VERSION,
+  POCKET_MANIFEST_VERSIONS,
   pocketManifestV2Schema,
+  pocketManifestV3Schema,
   type JsonSchema,
   type JsonSchemaObject,
+  type PocketManifest,
   type PocketManifestV2,
+  type PocketManifestV3,
 } from "../../../contracts/spec/pocket-manifest.ts";
 
 export interface ContractDiagnostic {
@@ -174,9 +180,38 @@ function validateSchema(
   }
 }
 
-export function validatePocketManifest(input: unknown): ValidationResult<PocketManifestV2> {
+/**
+ * Validate a manifest of either accepted format. The `pocket` field selects
+ * the schema: 2 (capabilities + viewport) or 3 (format 2 plus the top-level
+ * `permissions` block). A manifest with any other format value is reported
+ * at `/pocket` instead of failing every format-2 constant check.
+ */
+export function validatePocketManifest(input: unknown): ValidationResult<PocketManifest> {
   const diagnostics: ContractDiagnostic[] = [];
+  const format = input !== null && typeof input === "object" && !Array.isArray(input)
+    ? (input as { pocket?: unknown }).pocket
+    : undefined;
+  if (format === POCKET_MANIFEST_V3_VERSION) {
+    validateSchema(input, pocketManifestV3Schema, "", diagnostics);
+    if (diagnostics.length > 0) return { ok: false, diagnostics };
+    return { ok: true, value: input as PocketManifestV3 };
+  }
+  if (format !== undefined && format !== POCKET_MANIFEST_VERSION) {
+    return {
+      ok: false,
+      diagnostics: [{
+        code: "schema.enum",
+        path: "/pocket",
+        message: `expected one of ${POCKET_MANIFEST_VERSIONS.join(", ")}`,
+      }],
+    };
+  }
   validateSchema(input, pocketManifestV2Schema, "", diagnostics);
   if (diagnostics.length > 0) return { ok: false, diagnostics };
   return { ok: true, value: input as PocketManifestV2 };
+}
+
+/** The format-3 `permissions` block, or undefined for format 2. */
+export function manifestPermissions(manifest: PocketManifest): PocketManifestV3["permissions"] {
+  return manifest.pocket === POCKET_MANIFEST_V3_VERSION ? manifest.permissions : undefined;
 }

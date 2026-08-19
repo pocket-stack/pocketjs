@@ -16,7 +16,7 @@ Runtime  =  Host  +  mounted Modules  +  Guest
 ┌────────────────────────── Runtime ──────────────────────────┐
 │  Guest        product code (QuickJS bundle / wasm host eval) │
 │  ─────────  one namespace per mounted module  ─────────────  │
-│  Modules      ui · audio · db · fs · net · strike            │
+│  Modules      ui · audio · db · fs · net/ws/httpd · strike   │
 │               core+spec, one per module                      │
 │  Substrate    pocket3d · platform drivers (no guest API)     │
 │  Host         PSP EBOOT · Vita · browser · headless sim      │
@@ -46,8 +46,9 @@ The **core** owns the domain's state and its clock; per-entity, per-frame
 work happens only there, and the core never calls into the guest. The
 **SDK** is ordinary guest code shaped for its domain — JSX components for
 `ui`, `decodeWav` and a `WavPlayer` for `audio`, a `Database` with prepared
-statements for `db`, `file()` and the node:fs sync subset for `fs`, `fetch`
-and buffered responses for `net`, a mod API for OpenStrike's `strike`. The
+statements for `db`, `file()` and the node:fs sync subset for `fs`, `fetch`,
+`serve` and `connect` over streaming bodies for the network modules, a mod
+API for OpenStrike's `strike`. The
 two sides can be replaced independently because the **spec** between them
 does not move: swap Solid for Vue Vapor, or rewrite the layout engine, and
 the other side cannot tell.
@@ -55,8 +56,9 @@ the other side cannot tell.
 `ui` (pocketjs-core + the `ui.*` ops + the JSX SDK) was the first module.
 `strike` was the second. `audio` — credit-based PCM streaming — is the
 third, and the first written spec-first: the protocol existed before any
-host implemented it. `net` applies the same shape to bounded HTTP while
-leaving sockets, TLS, and the concrete client library in each host.
+host implemented it. The network modules (`net`, `httpd`, `ws`) apply the
+same shape to HTTP and WebSocket: one spec per role, a core that owns the
+wire and the limits, and hosts that mount only the roles they admit.
 
 ## Spec
 
@@ -109,7 +111,7 @@ assembly:
 | PSP UI runtime | PSP EBOOT | `ui` + `audio` | any PocketJS app |
 | Music demo in the browser | browser dev host | `ui` + `audio` | `apps/music` |
 | OpenStrike | its own Rust bin | `strike` + `ui` (HUD) | round rules, weapons, bots — all JS |
-| Headless CI | Bun sim | `ui` + virtual `audio` + fixture `net` | the same bundles, byte-for-byte |
+| Headless CI | Bun sim | `ui` + virtual `audio` + fixture `net`/`httpd`/`ws` | the same bundles, byte-for-byte |
 
 ## The three laws
 
@@ -160,5 +162,5 @@ framework, and the app did not change. A new domain — networking, haptics,
 a camera — lands the same way: write the spec, build the core against it,
 mount it in a host, ship the SDK with a headless test.
 
-The NET module is the networking instance of this rule. Its API and host
-adapter boundary are documented in [NET module](/docs/net/).
+The network modules are the networking instance of this rule. Their APIs
+and host boundaries are documented in [Networking](/docs/net/).

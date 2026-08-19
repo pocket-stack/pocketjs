@@ -550,36 +550,168 @@ pub mod fs {
     pub const MAX_DIR_ENTRIES: usize = 256;
 }
 
-/// NET module boundary (contracts/spec/net.ts — `globalThis.net`).
-/// Bounded whole-response HTTP; completions batch to tick boundaries.
+/// NET module boundary (contracts/spec/net.ts — `globalThis.net`, spec v2).
+/// Streaming HTTP/1.1 client; completions batch to tick boundaries.
 pub mod net {
+    pub const SPEC_MAJOR: u32 = 2;
+    pub const SPEC_MINOR: u32 = 0;
     pub const OP_START: u8 = 1;
     pub const OP_TAKE: u8 = 2;
     pub const OP_CANCEL: u8 = 3;
     pub const OP_POLL: u8 = 4;
     pub const OP_LAST_ERROR: u8 = 5;
-    pub const MAX_INFLIGHT: usize = 2;
-    pub const MAX_REQUEST_BYTES: usize = 65536;
-    pub const DEFAULT_RESPONSE_BYTES: usize = 131072;
-    pub const MAX_RESPONSE_BYTES: usize = 262144;
-    pub const MAX_HEADERS: usize = 32;
-    pub const MAX_HEADER_BYTES: usize = 8192;
+    pub const OP_READ_INTO: u8 = 6;
+    pub const OP_LIMITS: u8 = 7;
+    pub const OP_WRITE: u8 = 8;
+    pub const OP_END_BODY: u8 = 9;
+    pub const MAX_INFLIGHT: usize = 8;
+    pub const MAX_REQUEST_BYTES: usize = 262144;
+    pub const DEFAULT_QUEUE_BYTES: usize = 32768;
+    pub const MAX_QUEUE_BYTES: usize = 262144;
+    pub const DEFAULT_AGGREGATE_BYTES: usize = 1048576;
+    pub const MAX_AGGREGATE_BYTES: usize = 8388608;
+    pub const MAX_EVENTS_PER_TICK: usize = 128;
+    pub const MAX_TICK_BYTES: usize = 262144;
+    pub const MAX_HEADERS: usize = 64;
+    pub const MAX_HEADER_BYTES: usize = 16384;
     pub const DEFAULT_TIMEOUT_MS: u32 = 30000;
     pub const MAX_TIMEOUT_MS: u32 = 120000;
-    pub const MAX_REDIRECTS: usize = 3;
-    pub const METHODS: [&str; 7] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
-    pub const EVENT_DONE: &str = "done";
+    pub const MAX_REDIRECTS: usize = 5;
+    pub const TLS_MIN_VERSION: &str = "1.2";
+    pub const METHODS_FORBIDDEN: [&str; 3] = ["CONNECT", "TRACE", "TRACK"];
+    /// HTTP semantics shared by client, server and SDK (see net.ts).
+    pub const HTTP_CORE_OWNED_REQUEST_HEADERS: [&str; 10] = ["host", "connection", "content-length", "transfer-encoding", "trailer", "te", "upgrade", "keep-alive", "expect", "proxy-connection"];
+    pub const HTTP_BODYLESS_STATUS: [u16; 2] = [204, 304];
+    pub const HTTP_NULL_BODY_STATUS: [u16; 5] = [101, 103, 204, 205, 304];
+    pub const HTTP_REDIRECT_STATUS: [u16; 5] = [301, 302, 303, 307, 308];
+    pub const HTTP_REDIRECT_POST_TO_GET_STATUS: [u16; 2] = [301, 302];
+    pub const HTTP_REDIRECT_ANY_TO_GET_STATUS: [u16; 1] = [303];
+    pub const EVENT_HEADERS: &str = "headers";
+    pub const EVENT_READABLE: &str = "readable";
+    pub const EVENT_END: &str = "end";
     pub const EVENT_ERROR: &str = "error";
-    pub const ERROR_UNAVAILABLE: &str = "unavailable";
+    pub const EVENT_DRAIN: &str = "drain";
+    /// Error vocabulary shared by net, ws and httpd.
     pub const ERROR_INVALID_REQUEST: &str = "invalid_request";
+    pub const ERROR_INVALID_STATE: &str = "invalid_state";
+    pub const ERROR_UNSUPPORTED: &str = "unsupported";
+    pub const ERROR_PERMISSION_DENIED: &str = "permission_denied";
     pub const ERROR_BUSY: &str = "busy";
+    pub const ERROR_RESOURCE_LIMIT: &str = "resource_limit";
     pub const ERROR_DNS: &str = "dns";
     pub const ERROR_CONNECT: &str = "connect";
-    pub const ERROR_TLS: &str = "tls";
+    pub const ERROR_ADDRESS_IN_USE: &str = "address_in_use";
+    pub const ERROR_CLOSED: &str = "closed";
     pub const ERROR_TIMEOUT: &str = "timeout";
+    pub const ERROR_TLS_CERTIFICATE_INVALID: &str = "tls_certificate_invalid";
+    pub const ERROR_TLS_HOSTNAME_MISMATCH: &str = "tls_hostname_mismatch";
+    pub const ERROR_TLS_HANDSHAKE_FAILED: &str = "tls_handshake_failed";
+    pub const ERROR_TLS_CLOCK_UNTRUSTED: &str = "tls_clock_untrusted";
     pub const ERROR_REDIRECT: &str = "redirect";
     pub const ERROR_RESPONSE_TOO_LARGE: &str = "response_too_large";
     pub const ERROR_PROTOCOL: &str = "protocol";
+    pub const ERROR_WEBSOCKET_HANDSHAKE_FAILED: &str = "websocket_handshake_failed";
+    pub const ERROR_WEBSOCKET_PROTOCOL_ERROR: &str = "websocket_protocol_error";
+    pub const ERROR_MESSAGE_TOO_LARGE: &str = "message_too_large";
     pub const ERROR_CANCELLED: &str = "cancelled";
     pub const ERROR_OTHER: &str = "other";
+    pub const ERROR_UNAVAILABLE: &str = "unavailable";
+}
+
+/// WS module boundary (contracts/spec/ws.ts — `globalThis.ws`, spec v2).
+/// RFC 6455 client; messages batch to tick boundaries.
+pub mod ws {
+    pub const SPEC_MAJOR: u32 = 2;
+    pub const SPEC_MINOR: u32 = 0;
+    pub const OP_CONNECT: u8 = 1;
+    pub const OP_SEND: u8 = 2;
+    pub const OP_RECEIVE_INTO: u8 = 3;
+    pub const OP_CLOSE: u8 = 4;
+    pub const OP_TERMINATE: u8 = 5;
+    pub const OP_BUFFERED_AMOUNT: u8 = 6;
+    pub const OP_POLL: u8 = 7;
+    pub const OP_LAST_ERROR: u8 = 8;
+    pub const OP_LIMITS: u8 = 9;
+    pub const SEND_ACCEPTED: i32 = 0;
+    pub const SEND_ACCEPTED_HIGH_WATER: i32 = 1;
+    pub const SEND_CLOSED: i32 = -1;
+    pub const SEND_BACKPRESSURE: i32 = -2;
+    pub const SEND_INVALID: i32 = -3;
+    pub const OPCODE_TEXT: u8 = 1;
+    pub const OPCODE_BINARY: u8 = 2;
+    pub const OPCODE_PING: u8 = 9;
+    pub const OPCODE_PONG: u8 = 10;
+    pub const EVENT_OPEN: &str = "open";
+    pub const EVENT_MESSAGE: &str = "message";
+    pub const EVENT_PING: &str = "ping";
+    pub const EVENT_PONG: &str = "pong";
+    pub const EVENT_DRAIN: &str = "drain";
+    pub const EVENT_ERROR: &str = "error";
+    pub const EVENT_CLOSE: &str = "close";
+    pub const BLOB_KEY: &str = "$b";
+    pub const FORBIDDEN_HEADERS: [&str; 9] = ["host", "connection", "upgrade", "content-length", "sec-websocket-key", "sec-websocket-version", "sec-websocket-protocol", "sec-websocket-extensions", "sec-websocket-accept"];
+    pub const MAX_SOCKETS: usize = 8;
+    pub const MAX_MESSAGE_BYTES: usize = 1048576;
+    pub const MAX_RECEIVE_QUEUE_BYTES: usize = 1048576;
+    pub const MAX_RECEIVE_QUEUE_MESSAGES: usize = 64;
+    pub const MAX_SEND_QUEUE_BYTES: usize = 1048576;
+    pub const SEND_HIGH_WATER_BYTES: usize = 262144;
+    pub const SEND_LOW_WATER_BYTES: usize = 65536;
+    pub const MAX_HANDSHAKE_HEADERS: usize = 64;
+    pub const MAX_HANDSHAKE_HEADER_BYTES: usize = 16384;
+    pub const MAX_EVENTS_PER_TICK: usize = 128;
+    pub const MAX_TICK_BYTES: usize = 262144;
+    pub const DEFAULT_CONNECT_MS: u32 = 30000;
+    pub const MAX_CONNECT_MS: u32 = 120000;
+    pub const DEFAULT_CLOSE_MS: u32 = 5000;
+    pub const CONTROL_PAYLOAD_MAX: usize = 125;
+}
+
+/// HTTPD module boundary (contracts/spec/httpd.ts — `globalThis.httpd`, spec v2).
+/// HTTP/1.1 server; requests batch to tick boundaries.
+pub mod httpd {
+    pub const SPEC_MAJOR: u32 = 2;
+    pub const SPEC_MINOR: u32 = 0;
+    pub const OP_LISTEN: u8 = 1;
+    pub const OP_STOP: u8 = 2;
+    pub const OP_RESPOND: u8 = 3;
+    pub const OP_WRITE: u8 = 4;
+    pub const OP_END_BODY: u8 = 5;
+    pub const OP_READ_INTO: u8 = 6;
+    pub const OP_ABORT: u8 = 7;
+    pub const OP_POLL: u8 = 8;
+    pub const OP_LAST_ERROR: u8 = 9;
+    pub const OP_LIMITS: u8 = 10;
+    pub const SEND_ACCEPTED: i32 = 0;
+    pub const SEND_INVALID_REQUEST: i32 = -1;
+    pub const SEND_BACKPRESSURE: i32 = -2;
+    pub const SEND_INVALID: i32 = -3;
+    pub const EVENT_LISTENING: &str = "listening";
+    pub const EVENT_CLOSED: &str = "closed";
+    pub const EVENT_ERROR: &str = "error";
+    pub const EVENT_REQUEST: &str = "request";
+    pub const EVENT_READABLE: &str = "readable";
+    pub const EVENT_END: &str = "end";
+    pub const EVENT_DRAIN: &str = "drain";
+    pub const EVENT_ABORTED: &str = "aborted";
+    pub const MAX_SERVERS: usize = 2;
+    pub const MAX_CONNECTIONS: usize = 16;
+    pub const MAX_INFLIGHT: usize = 8;
+    pub const MAX_BACKLOG: usize = 16;
+    pub const MAX_HEADERS: usize = 64;
+    pub const MAX_HEADER_BYTES: usize = 16384;
+    pub const MAX_TARGET_BYTES: usize = 2048;
+    pub const DEFAULT_REQUEST_QUEUE_BYTES: usize = 32768;
+    pub const MAX_REQUEST_QUEUE_BYTES: usize = 262144;
+    pub const MAX_SEND_QUEUE_BYTES: usize = 262144;
+    pub const SEND_HIGH_WATER_BYTES: usize = 131072;
+    pub const SEND_LOW_WATER_BYTES: usize = 32768;
+    pub const MAX_EVENTS_PER_TICK: usize = 128;
+    pub const MAX_TICK_BYTES: usize = 262144;
+    pub const DEFAULT_HEADER_MS: u32 = 10000;
+    pub const DEFAULT_BODY_IDLE_MS: u32 = 30000;
+    pub const DEFAULT_HANDLER_MS: u32 = 30000;
+    pub const DEFAULT_KEEP_ALIVE_MS: u32 = 15000;
+    pub const DEFAULT_CLOSE_MS: u32 = 5000;
+    pub const MAX_TIMEOUT_MS: u32 = 120000;
 }

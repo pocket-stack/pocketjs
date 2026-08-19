@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   generatePocketManifestV2Schema,
+  generatePocketManifestV3Schema,
   POCKET_MANIFEST_SCHEMA_ID,
-  type PocketManifestV2,
+  POCKET_MANIFEST_V3_SCHEMA_ID,
+  type PocketManifest,
 } from "../contracts/spec/pocket-manifest.ts";
+import { DENY_ALL_NETWORK_POLICY, canonicalNetworkPolicyJson } from "../contracts/spec/network-policy.ts";
 import {
   POCKET_CAPABILITIES,
   POCKET_PLATFORM_CONTRACTS,
@@ -28,7 +31,7 @@ const portableInput: unknown = await Bun.file(fixtureUrl("portable-psp")).json()
 const invalidExtraInput: unknown = await Bun.file(fixtureUrl("invalid-extra-field")).json();
 const touchInput: unknown = await Bun.file(fixtureUrl("requires-touch")).json();
 
-function manifest(input: unknown): PocketManifestV2 {
+function manifest(input: unknown): PocketManifest {
   const result = validatePocketManifest(input);
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   return result.value;
@@ -136,6 +139,172 @@ describe("pocket.json v2 schema", () => {
       path: "/execution/classes/0",
       message: 'expected one of "guest", "aot"',
     });
+  });
+});
+
+describe("pocket.json v3 schema (format 2 + permissions)", () => {
+  function formatThree(): Record<string, any> {
+    const input = structuredClone(portableInput) as Record<string, any>;
+    input.$schema = POCKET_MANIFEST_V3_SCHEMA_ID;
+    input.pocket = 3;
+    return input;
+  }
+
+  test("uses its own schema path and the committed JSON Schema is byte-exact", async () => {
+    expect(POCKET_MANIFEST_V3_SCHEMA_ID).toBe("https://pocketjs.dev/schema/pocket-3.json");
+    const committed = await Bun.file(new URL("../contracts/schema/pocket-3.json", import.meta.url)).text();
+    expect(committed).toBe(generatePocketManifestV3Schema());
+  });
+
+  test("accepts a format-3 manifest with and without permissions; refuses other formats", () => {
+    expect(validatePocketManifest(formatThree()).ok).toBe(true);
+    const withNetwork = formatThree();
+    withNetwork.permissions = {
+      network: {
+        connect: [{ protocol: "https", host: "api.example.com", port: 443 }],
+        listen: [{ protocol: "http", address: "127.0.0.1", port: "ephemeral" }],
+        credentials: ["device-cert"],
+        localNetwork: false,
+        insecureTransport: true,
+      },
+    };
+    expect(validatePocketManifest(withNetwork).ok).toBe(true);
+
+    // Format 2 stays strict: `permissions` is an unknown field there.
+    const twoWithPermissions = structuredClone(portableInput) as Record<string, any>;
+    twoWithPermissions.permissions = { network: {} };
+    const two = validatePocketManifest(twoWithPermissions);
+    expect(two.ok).toBe(false);
+    if (!two.ok) expect(two.diagnostics).toContainEqual({ code: "schema.additionalProperty", path: "/permissions", message: "unknown property" });
+
+    const four = structuredClone(portableInput) as Record<string, any>;
+    four.pocket = 4;
+    const result = validatePocketManifest(four);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.diagnostics).toEqual([{ code: "schema.enum", path: "/pocket", message: "expected one of 2, 3" }]);
+  });
+
+  test("rejects malformed network permissions at their JSON Pointer", () => {
+    const bad = formatThree();
+    bad.permissions = {
+      network: {
+        connect: [
+          { protocol: "ftp", host: "x", port: 21 },
+          { protocol: "https", host: "", port: 443 },
+          { protocol: "https", host: "api.example.com", port: 70000 },
+          { protocol: "https", host: "api.example.com", port: "ephemeral" },
+        ],
+        listen: [{ protocol: "http", address: "0.0.0.0", port: 0 }],
+        broadcast: true,
+      },
+    };
+    const result = validatePocketManifest(bad);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.map((item) => [item.code, item.path])).toEqual(expect.arrayContaining([
+      ["schema.enum", "/permissions/network/connect/0/protocol"],
+      ["schema.minLength", "/permissions/network/connect/1/host"],
+      ["schema.anyOf", "/permissions/network/connect/2/port"],
+      ["schema.anyOf", "/permissions/network/connect/3/port"],
+      ["schema.anyOf", "/permissions/network/listen/0/port"],
+      ["schema.additionalProperty", "/permissions/network/broadcast"],
+    ]));
+  });
+
+  test("resolves permissions into the plan's canonical network policy", () => {
+    const input = formatThree();
+    input.permissions = {
+      network: {
+        connect: [
+          { protocol: "https", host: "Api.Example.COM.", port: 443 },
+          { protocol: "https", host: "*.Devices.example.com", port: { min: 8443, max: 8443 } },
+          { protocol: "http", host: "[2001:DB8:0:0:0:0:0:1]", port: { min: 8000, max: 8100 } },
+        ],
+        listen: [
+          { protocol: "http", address: "0.0.0.0", port: 8080 },
+          { protocol: "http", address: "127.0.0.1", port: "ephemeral" },
+        ],
+        credentials: ["device-cert", "backup-cert"],
+        insecureTransport: true,
+      },
+    };
+    const result = validateAndResolveBuildPlan(input, { target: "psp" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.network).toEqual({
+      version: 1,
+      connect: [
+        { protocol: "http", host: "2001:db8::1", port: { min: 8000, max: 8100 } },
+        { protocol: "https", host: "*.devices.example.com", port: 8443 },
+        { protocol: "https", host: "api.example.com", port: 443 },
+      ],
+      listen: [
+        { protocol: "http", address: "0.0.0.0", port: 8080 },
+        { protocol: "http", address: "127.0.0.1", port: "ephemeral" },
+      ],
+      credentials: ["backup-cert", "device-cert"],
+      localNetwork: false,
+      insecureTransport: true,
+      allowInvalidTlsForDevelopment: false,
+    });
+    expect(verifyPlanHash(result.plan)).toBe(true);
+    // The same intent in another order yields the same plan hash: the
+    // policy is canonical, not positional.
+    const shuffled = structuredClone(input);
+    shuffled.permissions.network.connect.reverse();
+    shuffled.permissions.network.listen.reverse();
+    shuffled.permissions.network.credentials.reverse();
+    const again = validateAndResolveBuildPlan(shuffled, { target: "psp" });
+    expect(again.ok && again.plan.planHash).toBe(result.plan.planHash);
+    // And a different policy is a different plan.
+    const wider = structuredClone(input);
+    wider.permissions.network.localNetwork = true;
+    const widerPlan = validateAndResolveBuildPlan(wider, { target: "psp" });
+    expect(widerPlan.ok && widerPlan.plan.planHash).not.toBe(result.plan.planHash);
+  });
+
+  test("format 2 and a permission-less format 3 resolve to the deny-all policy", () => {
+    const two = validateAndResolveBuildPlan(portableInput, { target: "psp" });
+    const three = validateAndResolveBuildPlan(formatThree(), { target: "psp" });
+    expect(two.ok && three.ok).toBe(true);
+    if (!two.ok || !three.ok) return;
+    expect(two.plan.network).toEqual(DENY_ALL_NETWORK_POLICY);
+    expect(three.plan.network).toEqual(DENY_ALL_NETWORK_POLICY);
+    expect(canonicalNetworkPolicyJson(two.plan.network)).toBe(canonicalNetworkPolicyJson(three.plan.network));
+  });
+
+  test("refuses semantic policy faults: bare wildcard, reversed range, duplicates, dev-only TLS", () => {
+    const input = formatThree();
+    input.permissions = {
+      network: {
+        connect: [
+          { protocol: "https", host: "*", port: 443 },
+          { protocol: "https", host: "api.example.com", port: { min: 9000, max: 8000 } },
+          { protocol: "https", host: "api.example.com", port: 443 },
+          { protocol: "https", host: "API.example.com", port: { min: 443, max: 443 } },
+          { protocol: "https", host: "*.1.2.3.4", port: 443 },
+        ],
+        listen: [{ protocol: "http", address: "localhost", port: 8080 }],
+        allowInvalidTlsForDevelopment: true,
+      },
+    };
+    const result = validateAndResolveBuildPlan(input, { target: "psp" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.map((item) => [item.code, item.path])).toEqual([
+      ["network.invalidHost", "/permissions/network/connect/0/host"],
+      ["network.reversedPortRange", "/permissions/network/connect/1/port"],
+      ["network.duplicateRule", "/permissions/network/connect/3"],
+      ["network.invalidHost", "/permissions/network/connect/4/host"],
+      ["network.invalidAddress", "/permissions/network/listen/0/address"],
+      ["network.developmentOnly", "/permissions/network/allowInvalidTlsForDevelopment"],
+    ]);
+    // A development build admits the dev-only switch.
+    const devOnly = formatThree();
+    devOnly.permissions = { network: { allowInvalidTlsForDevelopment: true } };
+    expect(validateAndResolveBuildPlan(devOnly, { target: "psp" }).ok).toBe(false);
+    const dev = validateAndResolveBuildPlan(devOnly, { target: "psp", development: true });
+    expect(dev.ok && dev.plan.network.allowInvalidTlsForDevelopment).toBe(true);
   });
 });
 

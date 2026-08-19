@@ -1,0 +1,151 @@
+{
+  "$comment": "Shared conformance vectors for the network policy (contracts/spec/network-policy.ts). Every policy parser and matcher — the TypeScript reference, engine/net (C), engine/crates/pocket-net (Rust) — must reproduce these decisions exactly. `policies` are canonical ResolvedNetworkPolicy documents; `invalid` documents must be refused by every parser; `connect`, `address` and `listen` are enforcement decisions.",
+  "version": 1,
+  "policies": {
+    "deny-all": {
+      "version": 1,
+      "connect": [],
+      "listen": [],
+      "credentials": [],
+      "localNetwork": false,
+      "insecureTransport": false,
+      "allowInvalidTlsForDevelopment": false
+    },
+    "standard": {
+      "version": 1,
+      "connect": [
+        {"protocol": "http", "host": "192.168.1.20", "port": 8080},
+        {"protocol": "http", "host": "localhost", "port": {"min": 8000, "max": 8100}},
+        {"protocol": "https", "host": "*.devices.example.com", "port": 443},
+        {"protocol": "https", "host": "api.example.com", "port": 443},
+        {"protocol": "ws", "host": "echo.example.com", "port": 80}
+      ],
+      "listen": [
+        {"protocol": "http", "address": "0.0.0.0", "port": 8080},
+        {"protocol": "http", "address": "127.0.0.1", "port": "ephemeral"}
+      ],
+      "credentials": ["device-cert"],
+      "localNetwork": true,
+      "insecureTransport": true,
+      "allowInvalidTlsForDevelopment": false
+    },
+    "secure-only": {
+      "version": 1,
+      "connect": [
+        {"protocol": "http", "host": "api.example.com", "port": 80},
+        {"protocol": "https", "host": "api.example.com", "port": 443},
+        {"protocol": "ws", "host": "api.example.com", "port": 80}
+      ],
+      "listen": [],
+      "credentials": [],
+      "localNetwork": false,
+      "insecureTransport": false,
+      "allowInvalidTlsForDevelopment": false
+    },
+    "ipv6": {
+      "version": 1,
+      "connect": [
+        {"protocol": "https", "host": "2001:db8::1", "port": 443}
+      ],
+      "listen": [
+        {"protocol": "https", "address": "::", "port": 8443}
+      ],
+      "credentials": [],
+      "localNetwork": false,
+      "insecureTransport": false,
+      "allowInvalidTlsForDevelopment": false
+    }
+  },
+  "invalid": [
+    {"name": "bare wildcard host", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "*", "port": 443}]}},
+    {"name": "wildcard over an IP literal", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "*.1.2.3.4", "port": 443}]}},
+    {"name": "wildcard without a suffix", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "*.", "port": 443}]}},
+    {"name": "empty host", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "", "port": 443}]}},
+    {"name": "non-ASCII host", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "bücher.example", "port": 443}]}},
+    {"name": "host with a space", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "api example.com", "port": 443}]}},
+    {"name": "label starting with a hyphen", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "-api.example.com", "port": 443}]}},
+    {"name": "empty label", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "api..example.com", "port": 443}]}},
+    {"name": "IPv4 literal with leading zeros", "policy": {"version": 1, "connect": [{"protocol": "http", "host": "192.168.001.020", "port": 8080}]}},
+    {"name": "hostname whose last label is numeric", "policy": {"version": 1, "connect": [{"protocol": "http", "host": "host.123", "port": 8080}]}},
+    {"name": "unknown protocol", "policy": {"version": 1, "connect": [{"protocol": "ftp", "host": "files.example.com", "port": 21}]}},
+    {"name": "connect port zero", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "api.example.com", "port": 0}]}},
+    {"name": "connect port above 65535", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "api.example.com", "port": 65536}]}},
+    {"name": "reversed port range", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "api.example.com", "port": {"min": 9000, "max": 8000}}]}},
+    {"name": "ephemeral connect port", "policy": {"version": 1, "connect": [{"protocol": "https", "host": "api.example.com", "port": "ephemeral"}]}},
+    {"name": "listen on a hostname", "policy": {"version": 1, "listen": [{"protocol": "http", "address": "localhost", "port": 8080}]}},
+    {"name": "listen port above 65535", "policy": {"version": 1, "listen": [{"protocol": "http", "address": "0.0.0.0", "port": 70000}]}},
+    {"name": "listen port zero spelled as a number", "policy": {"version": 1, "listen": [{"protocol": "http", "address": "0.0.0.0", "port": 0}]}},
+    {"name": "unsupported version", "policy": {"version": 2, "connect": []}},
+    {"name": "connect is not an array", "policy": {"version": 1, "connect": {"protocol": "https", "host": "api.example.com", "port": 443}}}
+  ],
+  "connect": [
+    {"policy": "standard", "protocol": "https", "host": "api.example.com", "port": 443, "allowed": true},
+    {"policy": "standard", "protocol": "https", "host": "API.EXAMPLE.COM.", "port": 443, "allowed": true},
+    {"policy": "standard", "protocol": "https", "host": "api.example.com", "port": 8443, "allowed": false},
+    {"policy": "standard", "protocol": "http", "host": "api.example.com", "port": 443, "allowed": false},
+    {"policy": "standard", "protocol": "https", "host": "a.devices.example.com", "port": 443, "allowed": true},
+    {"policy": "standard", "protocol": "https", "host": "devices.example.com", "port": 443, "allowed": false},
+    {"policy": "standard", "protocol": "https", "host": "a.b.devices.example.com", "port": 443, "allowed": false},
+    {"policy": "standard", "protocol": "https", "host": "xdevices.example.com", "port": 443, "allowed": false},
+    {"policy": "standard", "protocol": "https", "host": ".devices.example.com", "port": 443, "allowed": false},
+    {"policy": "standard", "protocol": "http", "host": "192.168.1.20", "port": 8080, "allowed": true},
+    {"policy": "standard", "protocol": "http", "host": "192.168.001.020", "port": 8080, "allowed": false},
+    {"policy": "standard", "protocol": "http", "host": "192.168.1.20", "port": 80, "allowed": false},
+    {"policy": "standard", "protocol": "http", "host": "localhost", "port": 8000, "allowed": true},
+    {"policy": "standard", "protocol": "http", "host": "localhost", "port": 8050, "allowed": true},
+    {"policy": "standard", "protocol": "http", "host": "LOCALHOST", "port": 8100, "allowed": true},
+    {"policy": "standard", "protocol": "http", "host": "localhost", "port": 8101, "allowed": false},
+    {"policy": "standard", "protocol": "http", "host": "localhost", "port": 7999, "allowed": false},
+    {"policy": "standard", "protocol": "ws", "host": "echo.example.com", "port": 80, "allowed": true},
+    {"policy": "standard", "protocol": "wss", "host": "echo.example.com", "port": 443, "allowed": false},
+    {"policy": "standard", "protocol": "ws", "host": "echo.example.com", "port": 8080, "allowed": false},
+    {"policy": "secure-only", "protocol": "https", "host": "api.example.com", "port": 443, "allowed": true},
+    {"policy": "secure-only", "protocol": "http", "host": "api.example.com", "port": 80, "allowed": false},
+    {"policy": "secure-only", "protocol": "ws", "host": "api.example.com", "port": 80, "allowed": false},
+    {"policy": "deny-all", "protocol": "https", "host": "api.example.com", "port": 443, "allowed": false},
+    {"policy": "ipv6", "protocol": "https", "host": "2001:db8::1", "port": 443, "allowed": true},
+    {"policy": "ipv6", "protocol": "https", "host": "[2001:DB8:0:0:0:0:0:1]", "port": 443, "allowed": true},
+    {"policy": "ipv6", "protocol": "https", "host": "2001:db8::2", "port": 443, "allowed": false}
+  ],
+  "address": [
+    {"address": "8.8.8.8", "public": true, "multicast": false},
+    {"address": "0.0.0.0", "public": false, "multicast": false},
+    {"address": "10.0.0.1", "public": false, "multicast": false},
+    {"address": "127.0.0.1", "public": false, "multicast": false},
+    {"address": "169.254.1.1", "public": false, "multicast": false},
+    {"address": "172.16.0.1", "public": false, "multicast": false},
+    {"address": "172.31.255.255", "public": false, "multicast": false},
+    {"address": "172.32.0.1", "public": true, "multicast": false},
+    {"address": "192.168.0.1", "public": false, "multicast": false},
+    {"address": "100.64.0.1", "public": false, "multicast": false},
+    {"address": "100.127.255.255", "public": false, "multicast": false},
+    {"address": "100.128.0.1", "public": true, "multicast": false},
+    {"address": "224.0.0.1", "public": false, "multicast": true},
+    {"address": "239.255.255.250", "public": false, "multicast": true},
+    {"address": "255.255.255.255", "public": false, "multicast": false},
+    {"address": "::1", "public": false, "multicast": false},
+    {"address": "::", "public": false, "multicast": false},
+    {"address": "fe80::1", "public": false, "multicast": false},
+    {"address": "febf::1", "public": false, "multicast": false},
+    {"address": "fec0::1", "public": true, "multicast": false},
+    {"address": "fc00::1", "public": false, "multicast": false},
+    {"address": "fd12:3456::1", "public": false, "multicast": false},
+    {"address": "ff02::1", "public": false, "multicast": true},
+    {"address": "2001:db8::1", "public": true, "multicast": false},
+    {"address": "::ffff:10.0.0.1", "public": false, "multicast": false},
+    {"address": "::ffff:8.8.8.8", "public": true, "multicast": false}
+  ],
+  "listen": [
+    {"policy": "standard", "protocol": "http", "address": "0.0.0.0", "port": 8080, "allowed": true},
+    {"policy": "standard", "protocol": "http", "address": "0.0.0.0", "port": 8081, "allowed": false},
+    {"policy": "standard", "protocol": "http", "address": "127.0.0.1", "port": 0, "allowed": true},
+    {"policy": "standard", "protocol": "http", "address": "127.0.0.1", "port": 8080, "allowed": false},
+    {"policy": "standard", "protocol": "https", "address": "0.0.0.0", "port": 8080, "allowed": false},
+    {"policy": "standard", "protocol": "http", "address": "::", "port": 8080, "allowed": false},
+    {"policy": "secure-only", "protocol": "http", "address": "0.0.0.0", "port": 8080, "allowed": false},
+    {"policy": "ipv6", "protocol": "https", "address": "::", "port": 8443, "allowed": true},
+    {"policy": "ipv6", "protocol": "https", "address": "0:0:0:0:0:0:0:0", "port": 8443, "allowed": true},
+    {"policy": "ipv6", "protocol": "https", "address": "::1", "port": 8443, "allowed": false},
+    {"policy": "ipv6", "protocol": "http", "address": "::", "port": 8443, "allowed": false}
+  ]
+}

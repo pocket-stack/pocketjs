@@ -9,7 +9,9 @@
 //      (framework/compiler/subpaths.ts) and byte-compares: the npm surface
 //      can never drift from the one declaration. Fix = `bun tools/gen-exports.ts`.
 
+import { generateC } from "../contracts/spec/gen-c.ts";
 import { generateRust } from "../contracts/spec/gen-rust.ts";
+import { generateWeb } from "../contracts/spec/gen-web.ts";
 import { withGeneratedExports } from "../tools/gen-exports.ts";
 import {
   abgr,
@@ -45,6 +47,26 @@ check(
   committed !== null && committed === expected,
   "engine/core/src/spec.rs matches spec.ts",
   "run `bun contracts/spec/gen-rust.ts` and commit the result",
+);
+
+// ---- (a2) generated network spec.h is in sync ------------------------------
+
+const specHPath = new URL("../engine/net/include/pocketjs/net/spec.h", import.meta.url).pathname;
+const committedH = await Bun.file(specHPath).text().catch(() => null);
+check(
+  committedH !== null && committedH === generateC(),
+  "engine/net/include/pocketjs/net/spec.h matches contracts/spec/{net,ws,httpd}.ts",
+  "run `bun contracts/spec/gen-c.ts` and commit the result",
+);
+
+// ---- (a3) generated browser-host mirror is in sync --------------------------
+
+const webSpecPath = new URL("../hosts/web/net-spec.js", import.meta.url).pathname;
+const committedWeb = await Bun.file(webSpecPath).text().catch(() => null);
+check(
+  committedWeb !== null && committedWeb === generateWeb(),
+  "hosts/web/net-spec.js matches contracts/spec/net.ts",
+  "run `bun contracts/spec/gen-web.ts` and commit the result",
 );
 
 // ---- (c) package.json exports match the subpath registry ---------------------

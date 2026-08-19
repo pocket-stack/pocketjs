@@ -1,3 +1,4 @@
+import { networkPermissionsSchema, type NetworkPermissions } from "./network-policy.ts";
 import {
   EXECUTION_CLASSES,
   PRESENTATION_MODES,
@@ -6,8 +7,16 @@ import {
   type Viewport,
 } from "./platforms.ts";
 
+/** Format 2: the capability/viewport manifest. */
 export const POCKET_MANIFEST_VERSION = 2 as const;
 export const POCKET_MANIFEST_SCHEMA_ID = "https://pocketjs.dev/schema/pocket-2.json";
+/** Format 3: format 2 plus the top-level `permissions` block (network
+ * endpoint permissions, contracts/spec/network-policy.ts). Both formats are
+ * accepted by the validator; the resolver produces the same plan shape for
+ * both (a format-2 manifest resolves to a deny-all network policy). */
+export const POCKET_MANIFEST_V3_VERSION = 3 as const;
+export const POCKET_MANIFEST_V3_SCHEMA_ID = "https://pocketjs.dev/schema/pocket-3.json";
+export const POCKET_MANIFEST_VERSIONS = [POCKET_MANIFEST_VERSION, POCKET_MANIFEST_V3_VERSION] as const;
 
 export type JsonPrimitive = boolean | number | string;
 export type JsonValue = JsonPrimitive | null | JsonValue[] | { [key: string]: JsonValue };
@@ -77,6 +86,19 @@ export interface PocketManifestV2 {
   };
 }
 
+/** Format 3: format 2 fields plus `permissions`. */
+export interface PocketManifestV3 extends Omit<PocketManifestV2, "$schema" | "pocket"> {
+  readonly $schema: typeof POCKET_MANIFEST_V3_SCHEMA_ID;
+  readonly pocket: typeof POCKET_MANIFEST_V3_VERSION;
+  /** What this build may reach. Omitted blocks deny everything. */
+  readonly permissions?: {
+    readonly network?: NetworkPermissions;
+  };
+}
+
+/** Either accepted manifest format. */
+export type PocketManifest = PocketManifestV2 | PocketManifestV3;
+
 /** A fixed-screen viewport declaration (takeover/kiosk/embedded targets). */
 export interface FixedViewportSpec {
   readonly logical: Viewport;
@@ -108,6 +130,162 @@ const capabilityIdSchema = {
   pattern: "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$",
 } as const satisfies JsonSchema;
 
+/** Properties shared by every manifest format (identity, capabilities, app). */
+const manifestProperties = {
+  id: {
+    type: "string",
+    minLength: 3,
+    pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
+  },
+  name: {
+    type: "string",
+    minLength: 1,
+    maxLength: 64,
+    pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+  },
+  title: { type: "string", minLength: 1, maxLength: 128 },
+  version: {
+    type: "string",
+    pattern: "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+  },
+  execution: {
+    type: "object",
+    additionalProperties: false,
+    required: ["classes"],
+    properties: {
+      classes: {
+        type: "array",
+        items: { enum: EXECUTION_CLASSES },
+        minItems: 1,
+        uniqueItems: true,
+      },
+    },
+  },
+  engine: {
+    type: "object",
+    additionalProperties: false,
+    required: ["capabilities"],
+    properties: {
+      capabilities: {
+        type: "object",
+        additionalProperties: false,
+        required: ["requires"],
+        properties: {
+          requires: {
+            type: "array",
+            items: capabilityIdSchema,
+            minItems: 1,
+            uniqueItems: true,
+          },
+          enhances: {
+            type: "array",
+            items: capabilityIdSchema,
+            uniqueItems: true,
+          },
+        },
+      },
+    },
+  },
+  app: {
+    type: "object",
+    additionalProperties: false,
+    required: ["entry", "framework", "viewport"],
+    properties: {
+      entry: {
+        type: "string",
+        minLength: 1,
+        pattern: "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+\\.tsx?$",
+      },
+      output: {
+        type: "string",
+        minLength: 1,
+        maxLength: 64,
+        pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+      },
+      framework: { enum: ["solid", "vue-vapor", "octane"] },
+      companions: {
+        type: "array",
+        items: {
+          type: "string",
+          minLength: 1,
+          maxLength: 64,
+          pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+        },
+        uniqueItems: true,
+      },
+      viewport: {
+        anyOf: [
+          // Shorthand: a bare fixed viewport (format-2 compatibility).
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["logical", "presentation"],
+            properties: {
+              logical: {
+                type: "array",
+                items: { type: "integer", minimum: 1 },
+                minItems: 2,
+                maxItems: 2,
+              },
+              presentation: { enum: PRESENTATION_MODES },
+            },
+          },
+          // Policy variants: fixed and/or dynamic. An empty object is
+          // schema-valid but semantically caught by the resolver
+          // (viewport.fixedRequired / viewport.dynamicRequired).
+          {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              fixed: {
+                type: "object",
+                additionalProperties: false,
+                required: ["logical", "presentation"],
+                properties: {
+                  logical: {
+                    type: "array",
+                    items: { type: "integer", minimum: 1 },
+                    minItems: 2,
+                    maxItems: 2,
+                  },
+                  presentation: { enum: PRESENTATION_MODES },
+                },
+              },
+              dynamic: {
+                type: "object",
+                additionalProperties: false,
+                required: ["default"],
+                properties: {
+                  default: {
+                    type: "array",
+                    items: { type: "integer", minimum: 1 },
+                    minItems: 2,
+                    maxItems: 2,
+                  },
+                  min: {
+                    type: "array",
+                    items: { type: "integer", minimum: 1 },
+                    minItems: 2,
+                    maxItems: 2,
+                  },
+                  max: {
+                    type: "array",
+                    items: { type: "integer", minimum: 1 },
+                    minItems: 2,
+                    maxItems: 2,
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+} as const satisfies Readonly<Record<string, JsonSchema>>;
+
+const manifestRequired = ["$schema", "pocket", "id", "name", "title", "version", "engine", "app"] as const;
+
 /** Strict format-2 application intent. Platform facts stay in target profiles. */
 export const pocketManifestV2Schema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -115,158 +293,31 @@ export const pocketManifestV2Schema = {
   title: "Pocket application manifest, format 2",
   type: "object",
   additionalProperties: false,
-  required: ["$schema", "pocket", "id", "name", "title", "version", "engine", "app"],
+  required: manifestRequired,
   properties: {
     $schema: { const: POCKET_MANIFEST_SCHEMA_ID },
     pocket: { const: POCKET_MANIFEST_VERSION },
-    id: {
-      type: "string",
-      minLength: 3,
-      pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$",
-    },
-    name: {
-      type: "string",
-      minLength: 1,
-      maxLength: 64,
-      pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-    },
-    title: { type: "string", minLength: 1, maxLength: 128 },
-    version: {
-      type: "string",
-      pattern: "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
-    },
-    execution: {
+    ...manifestProperties,
+  },
+} as const satisfies JsonSchema;
+
+/** Format 3: format 2 plus `permissions` (the network endpoint policy). */
+export const pocketManifestV3Schema = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: POCKET_MANIFEST_V3_SCHEMA_ID,
+  title: "Pocket application manifest, format 3",
+  type: "object",
+  additionalProperties: false,
+  required: manifestRequired,
+  properties: {
+    $schema: { const: POCKET_MANIFEST_V3_SCHEMA_ID },
+    pocket: { const: POCKET_MANIFEST_V3_VERSION },
+    ...manifestProperties,
+    permissions: {
       type: "object",
       additionalProperties: false,
-      required: ["classes"],
       properties: {
-        classes: {
-          type: "array",
-          items: { enum: EXECUTION_CLASSES },
-          minItems: 1,
-          uniqueItems: true,
-        },
-      },
-    },
-    engine: {
-      type: "object",
-      additionalProperties: false,
-      required: ["capabilities"],
-      properties: {
-        capabilities: {
-          type: "object",
-          additionalProperties: false,
-          required: ["requires"],
-          properties: {
-            requires: {
-              type: "array",
-              items: capabilityIdSchema,
-              minItems: 1,
-              uniqueItems: true,
-            },
-            enhances: {
-              type: "array",
-              items: capabilityIdSchema,
-              uniqueItems: true,
-            },
-          },
-        },
-      },
-    },
-    app: {
-      type: "object",
-      additionalProperties: false,
-      required: ["entry", "framework", "viewport"],
-      properties: {
-        entry: {
-          type: "string",
-          minLength: 1,
-          pattern: "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+\\.tsx?$",
-        },
-        output: {
-          type: "string",
-          minLength: 1,
-          maxLength: 64,
-          pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-        },
-        framework: { enum: ["solid", "vue-vapor", "octane"] },
-        companions: {
-          type: "array",
-          items: {
-            type: "string",
-            minLength: 1,
-            maxLength: 64,
-            pattern: "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-          },
-          uniqueItems: true,
-        },
-        viewport: {
-          anyOf: [
-            // Shorthand: a bare fixed viewport (format-2 compatibility).
-            {
-              type: "object",
-              additionalProperties: false,
-              required: ["logical", "presentation"],
-              properties: {
-                logical: {
-                  type: "array",
-                  items: { type: "integer", minimum: 1 },
-                  minItems: 2,
-                  maxItems: 2,
-                },
-                presentation: { enum: PRESENTATION_MODES },
-              },
-            },
-            // Policy variants: fixed and/or dynamic. An empty object is
-            // schema-valid but semantically caught by the resolver
-            // (viewport.fixedRequired / viewport.dynamicRequired).
-            {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                fixed: {
-                  type: "object",
-                  additionalProperties: false,
-                  required: ["logical", "presentation"],
-                  properties: {
-                    logical: {
-                      type: "array",
-                      items: { type: "integer", minimum: 1 },
-                      minItems: 2,
-                      maxItems: 2,
-                    },
-                    presentation: { enum: PRESENTATION_MODES },
-                  },
-                },
-                dynamic: {
-                  type: "object",
-                  additionalProperties: false,
-                  required: ["default"],
-                  properties: {
-                    default: {
-                      type: "array",
-                      items: { type: "integer", minimum: 1 },
-                      minItems: 2,
-                      maxItems: 2,
-                    },
-                    min: {
-                      type: "array",
-                      items: { type: "integer", minimum: 1 },
-                      minItems: 2,
-                      maxItems: 2,
-                    },
-                    max: {
-                      type: "array",
-                      items: { type: "integer", minimum: 1 },
-                      minItems: 2,
-                      maxItems: 2,
-                    },
-                  },
-                },
-              },
-            },
-          ],
-        },
+        network: networkPermissionsSchema,
       },
     },
   },
@@ -274,4 +325,8 @@ export const pocketManifestV2Schema = {
 
 export function generatePocketManifestV2Schema(): string {
   return JSON.stringify(pocketManifestV2Schema, null, 2) + "\n";
+}
+
+export function generatePocketManifestV3Schema(): string {
+  return JSON.stringify(pocketManifestV3Schema, null, 2) + "\n";
 }

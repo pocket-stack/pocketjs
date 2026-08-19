@@ -1,4 +1,4 @@
-// Deterministic codegen: contracts/spec/{spec,audio,db,net}.ts -> engine/core/src/spec.rs.
+// Deterministic codegen: contracts/spec/{spec,audio,db,fs,net,ws,httpd}.ts -> engine/core/src/spec.rs.
 //
 // Run from PocketJS/:  bun contracts/spec/gen-rust.ts
 //
@@ -36,20 +36,92 @@ import {
   FS_WRITE_TRUNCATE,
 } from "./fs.ts";
 import {
-  NET_DEFAULT_RESPONSE_BYTES,
+  HTTPD_DEFAULT_BODY_IDLE_MS,
+  HTTPD_DEFAULT_CLOSE_MS,
+  HTTPD_DEFAULT_HANDLER_MS,
+  HTTPD_DEFAULT_HEADER_MS,
+  HTTPD_DEFAULT_KEEP_ALIVE_MS,
+  HTTPD_DEFAULT_REQUEST_QUEUE_BYTES,
+  HTTPD_EVENT,
+  HTTPD_MAX_BACKLOG,
+  HTTPD_MAX_CONNECTIONS,
+  HTTPD_MAX_EVENTS_PER_TICK,
+  HTTPD_MAX_HEADERS,
+  HTTPD_MAX_HEADER_BYTES,
+  HTTPD_MAX_INFLIGHT,
+  HTTPD_MAX_REQUEST_QUEUE_BYTES,
+  HTTPD_MAX_SEND_QUEUE_BYTES,
+  HTTPD_MAX_SERVERS,
+  HTTPD_MAX_TARGET_BYTES,
+  HTTPD_MAX_TICK_BYTES,
+  HTTPD_MAX_TIMEOUT_MS,
+  HTTPD_OP,
+  HTTPD_SEND_ACCEPTED,
+  HTTPD_SEND_BACKPRESSURE,
+  HTTPD_SEND_HIGH_WATER_BYTES,
+  HTTPD_SEND_INVALID,
+  HTTPD_SEND_INVALID_REQUEST,
+  HTTPD_SEND_LOW_WATER_BYTES,
+  HTTPD_SPEC_MAJOR,
+  HTTPD_SPEC_MINOR,
+} from "./httpd.ts";
+import {
+  NET_DEFAULT_AGGREGATE_BYTES,
+  NET_DEFAULT_QUEUE_BYTES,
   NET_DEFAULT_TIMEOUT_MS,
   NET_ERROR,
   NET_EVENT,
+  NET_MAX_AGGREGATE_BYTES,
+  NET_MAX_EVENTS_PER_TICK,
   NET_MAX_HEADER_BYTES,
   NET_MAX_HEADERS,
   NET_MAX_INFLIGHT,
+  NET_MAX_QUEUE_BYTES,
   NET_MAX_REDIRECTS,
   NET_MAX_REQUEST_BYTES,
-  NET_MAX_RESPONSE_BYTES,
+  NET_MAX_TICK_BYTES,
   NET_MAX_TIMEOUT_MS,
-  NET_METHODS,
+  HTTP_BODYLESS_STATUS,
+  HTTP_CORE_OWNED_REQUEST_HEADERS,
+  HTTP_NULL_BODY_STATUS,
+  HTTP_REDIRECT_ANY_TO_GET_STATUS,
+  HTTP_REDIRECT_POST_TO_GET_STATUS,
+  HTTP_REDIRECT_STATUS,
+  NET_METHODS_FORBIDDEN,
   NET_OP,
+  NET_SPEC_MAJOR,
+  NET_SPEC_MINOR,
+  NET_TLS_MIN_VERSION,
 } from "./net.ts";
+import {
+  WS_BLOB_KEY,
+  WS_CONTROL_PAYLOAD_MAX,
+  WS_DEFAULT_CLOSE_MS,
+  WS_DEFAULT_CONNECT_MS,
+  WS_EVENT,
+  WS_FORBIDDEN_HEADERS,
+  WS_MAX_CONNECT_MS,
+  WS_MAX_EVENTS_PER_TICK,
+  WS_MAX_HANDSHAKE_HEADERS,
+  WS_MAX_HANDSHAKE_HEADER_BYTES,
+  WS_MAX_MESSAGE_BYTES,
+  WS_MAX_RECEIVE_QUEUE_BYTES,
+  WS_MAX_RECEIVE_QUEUE_MESSAGES,
+  WS_MAX_SEND_QUEUE_BYTES,
+  WS_MAX_SOCKETS,
+  WS_MAX_TICK_BYTES,
+  WS_OP,
+  WS_OPCODE,
+  WS_SEND_ACCEPTED,
+  WS_SEND_ACCEPTED_HIGH_WATER,
+  WS_SEND_BACKPRESSURE,
+  WS_SEND_CLOSED,
+  WS_SEND_HIGH_WATER_BYTES,
+  WS_SEND_INVALID,
+  WS_SEND_LOW_WATER_BYTES,
+  WS_SPEC_MAJOR,
+  WS_SPEC_MINOR,
+} from "./ws.ts";
 import {
   ANALOG_CENTER,
   ANIMATABLE,
@@ -552,29 +624,123 @@ export function generateRust(): string {
   put("}");
   put("");
 
-  // --- net module ---------------------------------------------------------------
-  put("/// NET module boundary (contracts/spec/net.ts — `globalThis.net`).");
-  put("/// Bounded whole-response HTTP; completions batch to tick boundaries.");
+  // --- net module (HTTP Client) ------------------------------------------------
+  put("/// NET module boundary (contracts/spec/net.ts — `globalThis.net`, spec v2).");
+  put("/// Streaming HTTP/1.1 client; completions batch to tick boundaries.");
   put("pub mod net {");
+  put(`    pub const SPEC_MAJOR: u32 = ${NET_SPEC_MAJOR};`);
+  put(`    pub const SPEC_MINOR: u32 = ${NET_SPEC_MINOR};`);
   for (const [name, v] of Object.entries(NET_OP)) {
     put(`    pub const OP_${screaming(name)}: u8 = ${v};`);
   }
   put(`    pub const MAX_INFLIGHT: usize = ${NET_MAX_INFLIGHT};`);
   put(`    pub const MAX_REQUEST_BYTES: usize = ${NET_MAX_REQUEST_BYTES};`);
-  put(`    pub const DEFAULT_RESPONSE_BYTES: usize = ${NET_DEFAULT_RESPONSE_BYTES};`);
-  put(`    pub const MAX_RESPONSE_BYTES: usize = ${NET_MAX_RESPONSE_BYTES};`);
+  put(`    pub const DEFAULT_QUEUE_BYTES: usize = ${NET_DEFAULT_QUEUE_BYTES};`);
+  put(`    pub const MAX_QUEUE_BYTES: usize = ${NET_MAX_QUEUE_BYTES};`);
+  put(`    pub const DEFAULT_AGGREGATE_BYTES: usize = ${NET_DEFAULT_AGGREGATE_BYTES};`);
+  put(`    pub const MAX_AGGREGATE_BYTES: usize = ${NET_MAX_AGGREGATE_BYTES};`);
+  put(`    pub const MAX_EVENTS_PER_TICK: usize = ${NET_MAX_EVENTS_PER_TICK};`);
+  put(`    pub const MAX_TICK_BYTES: usize = ${NET_MAX_TICK_BYTES};`);
   put(`    pub const MAX_HEADERS: usize = ${NET_MAX_HEADERS};`);
   put(`    pub const MAX_HEADER_BYTES: usize = ${NET_MAX_HEADER_BYTES};`);
   put(`    pub const DEFAULT_TIMEOUT_MS: u32 = ${NET_DEFAULT_TIMEOUT_MS};`);
   put(`    pub const MAX_TIMEOUT_MS: u32 = ${NET_MAX_TIMEOUT_MS};`);
   put(`    pub const MAX_REDIRECTS: usize = ${NET_MAX_REDIRECTS};`);
-  put(`    pub const METHODS: [&str; ${NET_METHODS.length}] = [${NET_METHODS.map((method) => JSON.stringify(method)).join(", ")}];`);
+  put(`    pub const TLS_MIN_VERSION: &str = ${JSON.stringify(NET_TLS_MIN_VERSION)};`);
+  put(`    pub const METHODS_FORBIDDEN: [&str; ${NET_METHODS_FORBIDDEN.length}] = [${NET_METHODS_FORBIDDEN.map((method) => JSON.stringify(method)).join(", ")}];`);
+  put("    /// HTTP semantics shared by client, server and SDK (see net.ts).");
+  put(`    pub const HTTP_CORE_OWNED_REQUEST_HEADERS: [&str; ${HTTP_CORE_OWNED_REQUEST_HEADERS.length}] = [${HTTP_CORE_OWNED_REQUEST_HEADERS.map((name) => JSON.stringify(name)).join(", ")}];`);
+  put(`    pub const HTTP_BODYLESS_STATUS: [u16; ${HTTP_BODYLESS_STATUS.length}] = [${HTTP_BODYLESS_STATUS.join(", ")}];`);
+  put(`    pub const HTTP_NULL_BODY_STATUS: [u16; ${HTTP_NULL_BODY_STATUS.length}] = [${HTTP_NULL_BODY_STATUS.join(", ")}];`);
+  put(`    pub const HTTP_REDIRECT_STATUS: [u16; ${HTTP_REDIRECT_STATUS.length}] = [${HTTP_REDIRECT_STATUS.join(", ")}];`);
+  put(`    pub const HTTP_REDIRECT_POST_TO_GET_STATUS: [u16; ${HTTP_REDIRECT_POST_TO_GET_STATUS.length}] = [${HTTP_REDIRECT_POST_TO_GET_STATUS.join(", ")}];`);
+  put(`    pub const HTTP_REDIRECT_ANY_TO_GET_STATUS: [u16; ${HTTP_REDIRECT_ANY_TO_GET_STATUS.length}] = [${HTTP_REDIRECT_ANY_TO_GET_STATUS.join(", ")}];`);
   for (const [name, v] of Object.entries(NET_EVENT)) {
     put(`    pub const EVENT_${screaming(name)}: &str = ${JSON.stringify(v)};`);
   }
+  put("    /// Error vocabulary shared by net, ws and httpd.");
   for (const [name, v] of Object.entries(NET_ERROR)) {
     put(`    pub const ERROR_${screaming(name)}: &str = ${JSON.stringify(v)};`);
   }
+  put("}");
+  put("");
+
+  // --- ws module (WebSocket Client) --------------------------------------------
+  put("/// WS module boundary (contracts/spec/ws.ts — `globalThis.ws`, spec v2).");
+  put("/// RFC 6455 client; messages batch to tick boundaries.");
+  put("pub mod ws {");
+  put(`    pub const SPEC_MAJOR: u32 = ${WS_SPEC_MAJOR};`);
+  put(`    pub const SPEC_MINOR: u32 = ${WS_SPEC_MINOR};`);
+  for (const [name, v] of Object.entries(WS_OP)) {
+    put(`    pub const OP_${screaming(name)}: u8 = ${v};`);
+  }
+  put(`    pub const SEND_ACCEPTED: i32 = ${WS_SEND_ACCEPTED};`);
+  put(`    pub const SEND_ACCEPTED_HIGH_WATER: i32 = ${WS_SEND_ACCEPTED_HIGH_WATER};`);
+  put(`    pub const SEND_CLOSED: i32 = ${WS_SEND_CLOSED};`);
+  put(`    pub const SEND_BACKPRESSURE: i32 = ${WS_SEND_BACKPRESSURE};`);
+  put(`    pub const SEND_INVALID: i32 = ${WS_SEND_INVALID};`);
+  for (const [name, v] of Object.entries(WS_OPCODE)) {
+    put(`    pub const OPCODE_${screaming(name)}: u8 = ${v};`);
+  }
+  for (const [name, v] of Object.entries(WS_EVENT)) {
+    put(`    pub const EVENT_${screaming(name)}: &str = ${JSON.stringify(v)};`);
+  }
+  put(`    pub const BLOB_KEY: &str = ${JSON.stringify(WS_BLOB_KEY)};`);
+  put(`    pub const FORBIDDEN_HEADERS: [&str; ${WS_FORBIDDEN_HEADERS.length}] = [${WS_FORBIDDEN_HEADERS.map((h) => JSON.stringify(h)).join(", ")}];`);
+  put(`    pub const MAX_SOCKETS: usize = ${WS_MAX_SOCKETS};`);
+  put(`    pub const MAX_MESSAGE_BYTES: usize = ${WS_MAX_MESSAGE_BYTES};`);
+  put(`    pub const MAX_RECEIVE_QUEUE_BYTES: usize = ${WS_MAX_RECEIVE_QUEUE_BYTES};`);
+  put(`    pub const MAX_RECEIVE_QUEUE_MESSAGES: usize = ${WS_MAX_RECEIVE_QUEUE_MESSAGES};`);
+  put(`    pub const MAX_SEND_QUEUE_BYTES: usize = ${WS_MAX_SEND_QUEUE_BYTES};`);
+  put(`    pub const SEND_HIGH_WATER_BYTES: usize = ${WS_SEND_HIGH_WATER_BYTES};`);
+  put(`    pub const SEND_LOW_WATER_BYTES: usize = ${WS_SEND_LOW_WATER_BYTES};`);
+  put(`    pub const MAX_HANDSHAKE_HEADERS: usize = ${WS_MAX_HANDSHAKE_HEADERS};`);
+  put(`    pub const MAX_HANDSHAKE_HEADER_BYTES: usize = ${WS_MAX_HANDSHAKE_HEADER_BYTES};`);
+  put(`    pub const MAX_EVENTS_PER_TICK: usize = ${WS_MAX_EVENTS_PER_TICK};`);
+  put(`    pub const MAX_TICK_BYTES: usize = ${WS_MAX_TICK_BYTES};`);
+  put(`    pub const DEFAULT_CONNECT_MS: u32 = ${WS_DEFAULT_CONNECT_MS};`);
+  put(`    pub const MAX_CONNECT_MS: u32 = ${WS_MAX_CONNECT_MS};`);
+  put(`    pub const DEFAULT_CLOSE_MS: u32 = ${WS_DEFAULT_CLOSE_MS};`);
+  put(`    pub const CONTROL_PAYLOAD_MAX: usize = ${WS_CONTROL_PAYLOAD_MAX};`);
+  put("}");
+  put("");
+
+  // --- httpd module (HTTP Server) ----------------------------------------------
+  put("/// HTTPD module boundary (contracts/spec/httpd.ts — `globalThis.httpd`, spec v2).");
+  put("/// HTTP/1.1 server; requests batch to tick boundaries.");
+  put("pub mod httpd {");
+  put(`    pub const SPEC_MAJOR: u32 = ${HTTPD_SPEC_MAJOR};`);
+  put(`    pub const SPEC_MINOR: u32 = ${HTTPD_SPEC_MINOR};`);
+  for (const [name, v] of Object.entries(HTTPD_OP)) {
+    put(`    pub const OP_${screaming(name)}: u8 = ${v};`);
+  }
+  put(`    pub const SEND_ACCEPTED: i32 = ${HTTPD_SEND_ACCEPTED};`);
+  put(`    pub const SEND_INVALID_REQUEST: i32 = ${HTTPD_SEND_INVALID_REQUEST};`);
+  put(`    pub const SEND_BACKPRESSURE: i32 = ${HTTPD_SEND_BACKPRESSURE};`);
+  put(`    pub const SEND_INVALID: i32 = ${HTTPD_SEND_INVALID};`);
+  for (const [name, v] of Object.entries(HTTPD_EVENT)) {
+    put(`    pub const EVENT_${screaming(name)}: &str = ${JSON.stringify(v)};`);
+  }
+  put(`    pub const MAX_SERVERS: usize = ${HTTPD_MAX_SERVERS};`);
+  put(`    pub const MAX_CONNECTIONS: usize = ${HTTPD_MAX_CONNECTIONS};`);
+  put(`    pub const MAX_INFLIGHT: usize = ${HTTPD_MAX_INFLIGHT};`);
+  put(`    pub const MAX_BACKLOG: usize = ${HTTPD_MAX_BACKLOG};`);
+  put(`    pub const MAX_HEADERS: usize = ${HTTPD_MAX_HEADERS};`);
+  put(`    pub const MAX_HEADER_BYTES: usize = ${HTTPD_MAX_HEADER_BYTES};`);
+  put(`    pub const MAX_TARGET_BYTES: usize = ${HTTPD_MAX_TARGET_BYTES};`);
+  put(`    pub const DEFAULT_REQUEST_QUEUE_BYTES: usize = ${HTTPD_DEFAULT_REQUEST_QUEUE_BYTES};`);
+  put(`    pub const MAX_REQUEST_QUEUE_BYTES: usize = ${HTTPD_MAX_REQUEST_QUEUE_BYTES};`);
+  put(`    pub const MAX_SEND_QUEUE_BYTES: usize = ${HTTPD_MAX_SEND_QUEUE_BYTES};`);
+  put(`    pub const SEND_HIGH_WATER_BYTES: usize = ${HTTPD_SEND_HIGH_WATER_BYTES};`);
+  put(`    pub const SEND_LOW_WATER_BYTES: usize = ${HTTPD_SEND_LOW_WATER_BYTES};`);
+  put(`    pub const MAX_EVENTS_PER_TICK: usize = ${HTTPD_MAX_EVENTS_PER_TICK};`);
+  put(`    pub const MAX_TICK_BYTES: usize = ${HTTPD_MAX_TICK_BYTES};`);
+  put(`    pub const DEFAULT_HEADER_MS: u32 = ${HTTPD_DEFAULT_HEADER_MS};`);
+  put(`    pub const DEFAULT_BODY_IDLE_MS: u32 = ${HTTPD_DEFAULT_BODY_IDLE_MS};`);
+  put(`    pub const DEFAULT_HANDLER_MS: u32 = ${HTTPD_DEFAULT_HANDLER_MS};`);
+  put(`    pub const DEFAULT_KEEP_ALIVE_MS: u32 = ${HTTPD_DEFAULT_KEEP_ALIVE_MS};`);
+  put(`    pub const DEFAULT_CLOSE_MS: u32 = ${HTTPD_DEFAULT_CLOSE_MS};`);
+  put(`    pub const MAX_TIMEOUT_MS: u32 = ${HTTPD_MAX_TIMEOUT_MS};`);
   put("}");
 
   return L.join("\n") + "\n";

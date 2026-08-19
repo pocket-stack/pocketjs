@@ -1,5 +1,6 @@
 import { DYNAMIC_FORMS, TARGET_FORMS } from "../../../contracts/spec/platforms.ts";
-import type { PocketManifestV2 } from "../../../contracts/spec/pocket-manifest.ts";
+import { resolveNetworkPolicy } from "../../../contracts/spec/network-policy.ts";
+import type { PocketManifest, PocketManifestV2 } from "../../../contracts/spec/pocket-manifest.ts";
 import {
   POCKET_PLATFORM_CONTRACTS,
   type PlatformContractRegistry,
@@ -12,10 +13,13 @@ import {
   type ResolvedBuildPlan,
   type ResolvedBuildPlanContent,
 } from "./plan.ts";
-import { validatePocketManifest, type ContractDiagnostic } from "./validate.ts";
+import { manifestPermissions, validatePocketManifest, type ContractDiagnostic } from "./validate.ts";
 
 export interface ResolveBuildRequest {
   readonly target: string;
+  /** A development build: admits `permissions.network.allowInvalidTlsForDevelopment`.
+   *  Production admission (the default) refuses it. */
+  readonly development?: boolean;
 }
 
 export type ResolutionResult =
@@ -53,7 +57,7 @@ const within = (v: Viewport, min: Viewport, max: Viewport): boolean =>
  * pushing diagnostics.
  */
 function resolveViewport(
-  manifest: PocketManifestV2,
+  manifest: PocketManifest,
   profile: TargetProfile,
   diagnostics: ContractDiagnostic[],
 ): {
@@ -260,7 +264,7 @@ export function validatePlatformContractRegistry(
 }
 
 export function resolveBuildPlan(
-  manifest: PocketManifestV2,
+  manifest: PocketManifest,
   request: ResolveBuildRequest,
   registry: PlatformContractRegistry = POCKET_PLATFORM_CONTRACTS,
 ): ResolutionResult {
@@ -348,7 +352,15 @@ export function resolveBuildPlan(
     });
   }
 
-  if (diagnostics.length > 0 || !resolvedViewport) return { ok: false, diagnostics };
+  // The network policy is plan truth: normalized here, covered by planHash,
+  // handed to the host's core verbatim. A format-2 manifest (no
+  // `permissions`) resolves to the deny-all policy.
+  const network = resolveNetworkPolicy(manifestPermissions(manifest)?.network, {
+    development: request.development === true,
+  });
+  if (!network.ok) diagnostics.push(...network.diagnostics);
+
+  if (diagnostics.length > 0 || !resolvedViewport || !network.ok) return { ok: false, diagnostics };
 
   const logical: Viewport = [resolvedViewport.logical[0], resolvedViewport.logical[1]];
   const physical: Viewport = [resolvedViewport.physical[0], resolvedViewport.physical[1]];
@@ -379,6 +391,7 @@ export function resolveBuildPlan(
     },
     features,
     companions: manifest.app.companions ?? [],
+    network: network.policy,
   };
   return { ok: true, plan: finalizeBuildPlan(content) };
 }

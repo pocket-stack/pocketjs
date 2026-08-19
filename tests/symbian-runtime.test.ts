@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { DENY_ALL_NETWORK_POLICY } from "../contracts/spec/network-policy.ts";
 import {
   existsSync,
   mkdtempSync,
@@ -150,6 +151,7 @@ describe("experimental Nokia E7 runtime profile", () => {
         },
         features: {},
         companions: [],
+        network: DENY_ALL_NETWORK_POLICY,
         planHash: `sha256:${"0".repeat(64)}`,
       },
       packageBytes: new Uint8Array(bytes),

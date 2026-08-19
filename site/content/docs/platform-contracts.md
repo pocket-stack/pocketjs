@@ -66,6 +66,16 @@ Format 2 is strict JSON data. A PSP-shaped portable app can say:
 The manifest contains no physical resolution, scale factor, Vita flag, native
 crate path, or host ABI. Those are framework-owned facts.
 
+**Format 3** (`"pocket": 3`, `https://pocketjs.dev/schema/pocket-3.json`) is
+format 2 plus a top-level `permissions` block. Its only member today is
+`permissions.network` — the endpoints the app may connect to and listen on,
+the host credential ids it may name, and the `localNetwork` /
+`insecureTransport` / `allowInvalidTlsForDevelopment` switches
+(`contracts/spec/network-policy.ts`). The resolver normalizes it into
+`ResolvedBuildPlan.network`, covered by `planHash`, and hosts enforce that
+policy on every network command; a format-2 manifest resolves to the
+deny-all policy. See the [network](/docs/net/) page.
+
 `requires` is the compatibility floor. Resolution fails before compilation if
 the selected host does not provide one of those APIs. `enhances` declares an
 optional API for which the app has a fallback. Its availability becomes a
