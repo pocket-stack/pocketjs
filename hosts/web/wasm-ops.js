@@ -42,6 +42,9 @@ export async function createWasmUi(wasm, options = {}) {
 
   const init = (rasterDensity = initialDensity) => {
     ex.ui_init(integerInRange(rasterDensity, "rasterDensity", 1, 255));
+    // ui_init builds a fresh core at the spec 60 — retract the published
+    // rate so a runner that resets must redeclare before the next eval.
+    delete ops.__tickHz;
     // Older wasm binaries predate ui_set_viewport (same convention as
     // drawHash): tolerate them at the stock size, fail loud otherwise.
     if (ex.ui_set_viewport) ex.ui_set_viewport(viewportWidth, viewportHeight);
@@ -49,7 +52,6 @@ export async function createWasmUi(wasm, options = {}) {
       throw new Error("this pocketjs.wasm predates ui_set_viewport — rebuild it: bun tools/wasm.ts");
     }
   };
-  init(initialDensity);
 
   // Copy bytes into wasm scratch, run fn(ptr, len), free. Views are rebuilt
   // per call: memory.buffer is detached whenever linear memory grows.
@@ -125,6 +127,20 @@ export async function createWasmUi(wasm, options = {}) {
   }
   if (ex.ui_set_cursor_pos) ops.setCursorPos = (x, y) => ex.ui_set_cursor_pos(x, y);
 
+  // Per-realm tick rate — feature-detected so a stale pocketjs.wasm predating
+  // it still boots at the spec 60. An applied rate is published as
+  // ops.__tickHz, the same mount fact the native surfaces publish; declare it
+  // before eval and before the first tick (the core rejects it afterwards).
+  if (ex.ui_set_tick_rate) {
+    ops.setTickRate = (hz) => {
+      const applied = ex.ui_set_tick_rate(hz) !== 0;
+      if (applied) ops.__tickHz = hz;
+      return applied;
+    };
+  }
+
+  init(initialDensity);
+
   function framebufferView(ptr, scale) {
     if (!ptr) throw new Error(`pocketjs.wasm rejected render scale ${scale}`);
     return new Uint8Array(
@@ -139,7 +155,7 @@ export async function createWasmUi(wasm, options = {}) {
     exports: ex,
     /** Reset the core and set raster samples per logical pixel (default 1). */
     init,
-    /** Advance exactly one fixed-dt (1/60 s) frame. */
+    /** Advance exactly one fixed-dt frame (1/60 s unless a rate was declared). */
     tick: () => ex.ui_tick(),
     /** Hash the current DrawList without rasterizing it (BigInt, wasm i64). */
     drawHash: ex.ui_draw_hash ? () => ex.ui_draw_hash() : null,

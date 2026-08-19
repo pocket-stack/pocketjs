@@ -4,9 +4,11 @@
 // built app bundle against the wasm core (the SAME HostOps binding the
 // browser host and tests/golden.ts use), then drives virtual frames as fast
 // as the CPU allows. The clock policy is explicit: `hz` virtual frames per
-// virtual second, each one JS frame() transaction plus 60/hz core ticks —
-// so ms-based animations cover the same virtual time at every rate, and a
-// low-rate world is a strict subsampling of the 60 Hz world's trajectory.
+// virtual second, each one JS frame() transaction plus tickHz/hz core ticks
+// (tickHz = the realm's declared rate, spec 60 unless the scenario declares
+// the rate its bundle was built with) — so ms-based animations cover the
+// same virtual time at every rate, and a low-rate world is a strict
+// subsampling of the full-rate world's trajectory.
 //
 // Input is a SCRIPT in virtual seconds (`{ at, press }`), not frame counts,
 // so one user journey drives every simulation rate. The run product is a
@@ -27,7 +29,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 import { createWasmUi } from "../web/wasm-ops.js";
-import { normalizeHz, TICKS_PER_SECOND } from "../../framework/src/clock.ts";
+import { TICKS_PER_SECOND } from "../../framework/src/clock.ts";
 import { createTouchHitFacts, __packTouch } from "../../framework/src/touch.ts";
 
 const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url))); // PocketJS/
@@ -56,8 +58,13 @@ export interface ScriptEvent {
 export interface Scenario {
   /** Built bundle name under dist/ (e.g. "cafe-main"). */
   app: string;
-  /** Virtual frames per second; must divide 60. Default 60. */
+  /** Virtual frames per second; must divide the tick rate. Default = tickHz. */
   hz?: number;
+  /** Core ticks per virtual second — the realm's declared rate. MUST equal
+   *  the rate the bundle was built with (`tools/build.ts --hz`); the sim
+   *  cannot read the baked rate, it can only drive the one you declare.
+   *  Default 60, the spec rate every plain build bakes. */
+  tickHz?: number;
   /** Journey length in virtual seconds. */
   seconds: number;
   script?: ScriptEvent[];
@@ -159,24 +166,27 @@ export function touchGlide(
   t0: number,
   t1: number,
   id = 0,
+  gridHz = 60,
 ): ScriptEvent[] {
   if (t1 <= t0) throw new Error("sim: touchGlide needs t1 > t0");
   const out: ScriptEvent[] = [];
-  // Emit one event per frame at EVERY valid hz's grid: use the 60 Hz frame
-  // grid (the finest), and scriptToMasks' rounding lands each event on the
-  // active rate's frame. Same-frame duplicates collapse level-triggered.
-  const f0 = Math.round(t0 * 60);
-  const f1 = Math.round(t1 * 60);
+  // Emit one event per frame at EVERY valid hz's grid: use the realm's tick
+  // rate as the finest grid (60 for every committed tape — pass the
+  // scenario's tickHz for a declared-rate run), and scriptToMasks' rounding
+  // lands each event on the active rate's frame. Same-frame duplicates
+  // collapse level-triggered.
+  const f0 = Math.round(t0 * gridHz);
+  const f1 = Math.round(t1 * gridHz);
   for (let f = f0; f < f1; f++) {
     const t = (f - f0) / (f1 - f0);
     out.push({
-      at: f / 60,
+      at: f / gridHz,
       touch: [
         { id, x: Math.round(x0 + (x1 - x0) * t), y: Math.round(y0 + (y1 - y0) * t) },
       ],
     });
   }
-  out.push({ at: f1 / 60, touch: [] });
+  out.push({ at: f1 / gridHz, touch: [] });
   return out;
 }
 
@@ -198,6 +208,9 @@ export interface SimWorld {
   render: () => Uint8Array;
   ticksPerFrame: number;
   hz: number;
+  /** The realm's declared core rate (pair rate-aware companions with it,
+   *  e.g. createSimAudioSink(world.tickHz)). */
+  tickHz: number;
   effects: EffectEvent[];
   getTree: () => unknown;
 }
@@ -207,6 +220,11 @@ export interface SimViewportOptions {
   height?: number;
   rasterDensity?: number;
   renderScale?: number;
+}
+
+export interface SimBootOptions extends SimViewportOptions {
+  /** Core ticks per virtual second (see Scenario.tickHz). Default 60. */
+  tickHz?: number;
 }
 
 /**
@@ -221,13 +239,31 @@ export async function bootWorld(
   hz: number,
   extraGlobals?: Record<string, unknown>,
   mutateOps?: (ops: Record<string, unknown>) => void,
-  viewport: SimViewportOptions = {},
+  options: SimBootOptions = {},
 ): Promise<SimWorld> {
+  const tickHz = options.tickHz ?? TICKS_PER_SECOND;
+  if (!Number.isInteger(tickHz) || tickHz < 1 || tickHz > 240) {
+    throw new Error(`sim: tickHz must be an integer from 1 through 240, got ${tickHz}`);
+  }
+  if (tickHz % hz !== 0) {
+    throw new Error(`sim: hz=${hz} does not divide the tick rate ${tickHz}`);
+  }
   ensureBuilt(WASM_PATH, [process.execPath, "tools/wasm.ts"]);
   ensureBuilt(DIST + app + ".js", [process.execPath, "tools/build.ts", app]);
   if (!wasmBytes) wasmBytes = await Bun.file(WASM_PATH).arrayBuffer();
-  const wasm = await createWasmUi(wasmBytes, viewport);
-  const renderScale = viewport.renderScale ?? 1;
+  const wasm = await createWasmUi(wasmBytes, options);
+  // Declare before eval, the same order the native surfaces enforce: eval
+  // runs mount-time animate()/spring() and those convert ms at the rate.
+  if (tickHz !== TICKS_PER_SECOND) {
+    const setTickRate = (wasm.ops as { setTickRate?: (hz: number) => boolean }).setTickRate;
+    if (!setTickRate) {
+      throw new Error("sim: this pocketjs.wasm predates ui_set_tick_rate — rebuild it: bun tools/wasm.ts");
+    }
+    if (!setTickRate(tickHz)) {
+      throw new Error(`sim: the core refused tick rate ${tickHz}`);
+    }
+  }
+  const renderScale = options.renderScale ?? 1;
   const g = globalThis as Record<string, unknown>;
   const effects: EffectEvent[] = [];
   const inbox: string[] = [];
@@ -272,8 +308,9 @@ export async function bootWorld(
     frame,
     tick: wasm.tick,
     render: () => wasm.renderScaled(renderScale),
-    ticksPerFrame: TICKS_PER_SECOND / hz,
+    ticksPerFrame: tickHz / hz,
     hz,
+    tickHz,
     effects,
     // Tree probe: ask the DevTools shim, flush with one extra frame (the
     // shim polls its transport at frame start). The probe frame advances the
@@ -282,7 +319,7 @@ export async function bootWorld(
       outbox.length = 0;
       inbox.push(JSON.stringify({ t: "getTree" }));
       frame(0);
-      for (let t = 0; t < TICKS_PER_SECOND / hz; t++) wasm.tick();
+      for (let t = 0; t < tickHz / hz; t++) wasm.tick();
       for (const line of outbox) {
         const msg = JSON.parse(line) as { t: string; root?: unknown };
         if (msg.t === "tree") return msg.root;
@@ -294,13 +331,14 @@ export async function bootWorld(
 
 /** Run one scenario to completion and return its trace. */
 export async function runScenario(scenario: Scenario, chaos?: ChaosOptions): Promise<Trace> {
-  const hz = normalizeHz(scenario.hz ?? TICKS_PER_SECOND);
-  if (hz !== (scenario.hz ?? TICKS_PER_SECOND)) {
-    throw new Error(`sim: hz=${scenario.hz} does not divide ${TICKS_PER_SECOND}`);
+  const tickHz = scenario.tickHz ?? TICKS_PER_SECOND;
+  const hz = scenario.hz ?? tickHz;
+  if (!Number.isInteger(hz) || hz < 1 || tickHz % hz !== 0) {
+    throw new Error(`sim: hz=${scenario.hz} does not divide the tick rate ${tickHz}`);
   }
   const frames = Math.round(scenario.seconds * hz);
   const { masks, analogs, touches } = scriptToMasks(scenario.script ?? [], hz, frames);
-  const world = await bootWorld(scenario.app, hz);
+  const world = await bootWorld(scenario.app, hz, undefined, undefined, { tickHz });
   const hashes: string[] = [];
   let garbage: unknown[] = [];
   for (let f = 0; f < frames; f++) {
