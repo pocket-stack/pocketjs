@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  DENY_ALL_NETWORK_POLICY,
+  canonicalNetworkPolicyJson,
+} from "../contracts/spec/network-policy.ts";
+import {
   extractHostBuildInputs,
   hostBuildEnvironment,
 } from "../framework/src/manifest/host-build-inputs.ts";
@@ -22,13 +26,67 @@ describe("custom host build boundary", () => {
       appOutput: "main",
       target: "psp",
       hostAbi: 1,
+      planHash: plan.planHash,
       viewport: {
         logical: [480, 272],
         physical: [480, 272],
         presentation: "integer-fit",
         rasterDensity: 1,
       },
+      features: {
+        "input.analog.left": true,
+        "input.buttons": true,
+        "text.glyphs.baked": true,
+      },
+      // A format-2 manifest carries no permissions: the host receives the
+      // deny-all policy, spelled in the canonical form every core parses.
+      network: {
+        policy: DENY_ALL_NETWORK_POLICY,
+        policyJson: canonicalNetworkPolicyJson(DENY_ALL_NETWORK_POLICY),
+      },
     });
+    expect(extractHostBuildInputs(plan).network.policyJson).toBe(
+      '{"allowInvalidTlsForDevelopment":false,"connect":[],"credentials":[],"insecureTransport":false,"listen":[],"localNetwork":false,"version":1}',
+    );
+  });
+
+  test("projects a format-3 network policy verbatim and refuses a tampered one", () => {
+    const manifest = structuredClone(portableInput) as Record<string, any>;
+    manifest.$schema = "https://pocketjs.dev/schema/pocket-3.json";
+    manifest.pocket = 3;
+    manifest.permissions = {
+      network: {
+        connect: [
+          { protocol: "https", host: "API.Example.com.", port: 443 },
+          { protocol: "http", host: "192.168.1.20", port: { min: 8080, max: 8080 } },
+        ],
+        listen: [{ protocol: "http", address: "0:0:0:0:0:0:0:0", port: "ephemeral" }],
+        credentials: ["device-cert"],
+        insecureTransport: true,
+        localNetwork: true,
+      },
+    };
+    const result = validateAndResolveBuildPlan(manifest, { target: "psp" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const inputs = extractHostBuildInputs(result.plan);
+    expect(inputs.network.policy).toEqual({
+      version: 1,
+      connect: [
+        { protocol: "http", host: "192.168.1.20", port: 8080 },
+        { protocol: "https", host: "api.example.com", port: 443 },
+      ],
+      listen: [{ protocol: "http", address: "::", port: "ephemeral" }],
+      credentials: ["device-cert"],
+      localNetwork: true,
+      insecureTransport: true,
+      allowInvalidTlsForDevelopment: false,
+    });
+    expect(inputs.network.policyJson).toBe(canonicalNetworkPolicyJson(result.plan.network));
+    // Widening the policy after resolution breaks the checksum.
+    const widened = structuredClone(result.plan) as any;
+    widened.network.connect.push({ protocol: "https", host: "evil.example", port: 443 });
+    expect(() => extractHostBuildInputs(widened)).toThrow("invalid ResolvedBuildPlan checksum");
   });
 
   test("rejects a modified plan and an unexpected target", () => {
@@ -56,6 +114,8 @@ describe("custom host build boundary", () => {
       POCKETJS_PHYSICAL_HEIGHT: "272",
       POCKETJS_PRESENTATION: "integer-fit",
       POCKETJS_RASTER_DENSITY: "1",
+      POCKETJS_PLAN_HASH: inputs.planHash,
+      POCKETJS_NETWORK_POLICY: canonicalNetworkPolicyJson(DENY_ALL_NETWORK_POLICY),
     });
   });
 });

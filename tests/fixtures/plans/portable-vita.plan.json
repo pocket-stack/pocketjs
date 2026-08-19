@@ -29,5 +29,14 @@
     "text.glyphs.baked": true
   },
   "companions": [],
-  "planHash": "sha256:5b2ab23a3d3b54e0ef54bdd706092cd8350561d978f6cb1280a0c72afa647e96"
+  "network": {
+    "version": 1,
+    "connect": [],
+    "listen": [],
+    "credentials": [],
+    "localNetwork": false,
+    "insecureTransport": false,
+    "allowInvalidTlsForDevelopment": false
+  },
+  "planHash": "sha256:85ff09c126edf5758b21166b4e9cad6d1b02bffd49461d1af8605f90a5cec909"
 }

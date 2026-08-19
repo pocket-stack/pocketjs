@@ -1,90 +1,120 @@
 # Networking
 
-PocketJS provides a small, bounded HTTP client through the NET module. It is
-fetch-shaped without importing the browser's complete networking stack.
+PocketJS networking is a set of explicitly imported modules: an HTTP client
+and server in `@pocketjs/framework/net/http`, a WebSocket client in
+`@pocketjs/framework/net/websocket`, and the shared support types in
+`@pocketjs/framework/net`. Each module sits on its own spec-pinned guest
+boundary (`globalThis.net`, `globalThis.httpd`, `globalThis.ws`) that a host
+mounts only when it ships the capability.
 
 ```ts
-import { fetch } from "@pocketjs/framework/net";
+import { fetch, serve, Response } from "@pocketjs/framework/net/http";
+import { connect } from "@pocketjs/framework/net/websocket";
+import { AbortController, NetworkError, URL } from "@pocketjs/framework/net";
 
-const response = await fetch("https://api.example.com/items", {
+const controller = new AbortController();
+const response = await fetch("http://api.example.test/items", {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ name: "Pocket" }),
-  timeoutMs: 5_000,
-  maxBytes: 64 * 1024,
+  timeouts: { headersMs: 5_000 },
+  signal: controller.signal,
+});
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+const items = await response.json();
+
+const server = await serve({
+  hostname: "0.0.0.0",
+  port: 8080,
+  fetch: (request) => Response.json({ path: new URL(request.url).pathname }),
 });
 
-if (!response.ok) throw new Error(`HTTP ${response.status}`);
-const data = await response.json();
+const socket = await connect("ws://broker.example.test/telemetry", {
+  protocols: ["telemetry.v1"],
+  socket: {
+    message(socket, data) { socket.send(data); },
+    close(_socket, code) { console.log("closed", code); },
+  },
+});
 ```
 
-The public surface includes common application methods, string and byte
-request bodies, headers, a timeout, a response-size budget, and buffered
-`text()`, `json()`, `bytes()` and `arrayBuffer()` reads. It deliberately omits
-streams, cookies, cache, `Request`, `Headers`, `AbortSignal`, WebSocket,
-servers, and raw sockets.
+The objects follow the WHATWG Fetch shapes (`Headers`, `Request`,
+`Response`, `RequestInit` with `method/headers/body/signal/redirect` plus the
+PocketJS `timeouts/maxRedirects/tls/limits`) with two deliberate deviations:
+body locking, repeat consumption and detached input fail with a
+`NetworkError`, and every network, permission, timeout and resource failure
+is a `NetworkError` too. HTTP status codes do not reject: a 404 resolves with
+`ok === false`.
 
-## Why responses are buffered
+## Streaming bodies
 
-The first version resolves `fetch` only after the body is complete. The
-native transport still reads chunks and stops as soon as `maxBytes` is
-exceeded; the transport-neutral core checks the final size again. This keeps
-the JS API and every embedded adapter small without allowing an unbounded
-response into memory.
+`fetch()` resolves when the response head is visible; the body streams
+through `response.body`, a `BodyStream` that supports `for await`,
+`readInto(destination)` and `cancel()`. `text()`, `json()` and
+`arrayBuffer()` aggregate the same stream and reject with
+`response_too_large` past their cap. Bytes wait in a bounded native queue
+until the application reads them; **when the queue is full the host stops
+reading the socket and TCP flow control holds the peer**, so a slow reader
+never grows memory past `queueBytes`. `clone()` creates a bounded tee whose
+backlog never exceeds the aggregate limit — cancel the branch you do not
+read.
 
-The default body budget is 128 KiB and the absolute maximum is 256 KiB. A
-request body is limited to 64 KiB. Media downloads and other payloads that
-fundamentally require streaming are not NET v1 use cases.
+## When results arrive
 
-## Tick delivery and polling
+Network completions reach the guest only at frame boundaries. The host
+freezes the visible set before each `frame()`, the framework's service pump
+polls each module once inside `frame()`, and Promise reactions run in the
+same tick's job drain. **A network round trip therefore reaches application
+code within one frame period** (16.7 ms at 60 Hz), and the order of events
+is the same on every host and in a replay.
 
-Network work may happen on native threads, but those threads never call the
-guest. The host drains completions at a tick boundary, then the framework
-settles fetch Promises in the guest's normal turn.
+## Capabilities and permissions
 
-There is no idle native poll. The first pending fetch registers a small
-framework-neutral service pump and the final completion removes it. While
-requests are pending the SDK calls `net.poll()` once per guest tick; that one
-call returns the entire visible completion batch.
+Importing a module grants nothing. Capabilities are split by protocol, role
+and TLS — `network.http.client`, `network.http.client.tls`,
+`network.http.server`, `network.websocket.client`, … — and the application
+declares its endpoints in the manifest (format 3, `permissions.network`:
+`connect` rules with protocol, host and port or range; `listen` rules with
+address and port; `insecureTransport`; `localNetwork`). The Build Plan
+resolver normalizes them into the plan's network policy, the host hands that
+policy to its core verbatim, and **every command is checked against it**:
+the connect rule before DNS, each resolved address after DNS, the listen rule
+before bind, the endpoint rule again on every redirect. A format-2 manifest
+resolves to a deny-all policy. No stock target advertises a network
+capability yet; a target advertises one only when its native host ships and
+tests the module.
 
-## What belongs where
+## Errors
 
-| Layer | Artifact | Responsibility |
-| --- | --- | --- |
-| SDK | `framework/src/net-api.ts` | fetch-shaped guest API and Promise delivery |
-| Spec | `contracts/spec/net.ts` | ops, events, limits, errors, ownership and tick contract |
-| Core | `engine/crates/pocket-net` | handles, validation, bodies and a transport interface |
-| Sim | `hosts/sim/net.ts` | deterministic fixture routes |
-| Browser host | `hosts/web/net.js` | bounded adapter over browser fetch |
-| Host adapter | the owning runtime | DNS, TLS, HTTP client library, workers and credentials |
+`NetworkError` carries a stable `code` and a derived `category`:
 
-PocketJS does not force one HTTP library on every platform. A desktop host can
-adapt `ureq`, an ESP host can adapt `esp_http_client`, and an Apple host can
-adapt `URLSession`. A product-specific runtime keeps that adapter in its own
-repository. Only adapters for hosts owned and tested by PocketJS belong under
-this repository's `hosts/` directory.
-
-The Rust boundary is deliberately only `start`, `cancel`, and non-blocking
-`drain`. The reference core supplies every portable rule around it, so
-changing an HTTP library cannot change what guest code observes.
+| Category | Codes |
+| --- | --- |
+| runtime | `cancelled` `timeout` `closed` `invalid_request` `invalid_state` `busy` `resource_limit` `unsupported` `permission_denied` `unavailable` |
+| resolver | `dns` |
+| transport | `connect` `address_in_use` |
+| tls | `tls_certificate_invalid` `tls_hostname_mismatch` `tls_handshake_failed` `tls_clock_untrusted` |
+| protocol | `redirect` `response_too_large` `protocol` `websocket_handshake_failed` `websocket_protocol_error` `message_too_large` |
 
 ## Limits
 
-| Resource | V1 limit |
-| --- | ---: |
-| Concurrent requests | 2 |
-| Request body | 64 KiB |
-| Response body | 128 KiB default, 256 KiB maximum |
-| Headers | 32 fields / 8 KiB |
-| Timeout | 30 s default, 120 s maximum |
-| Redirects | 3 |
+`getNetworkLimits()` returns a frozen snapshot of the mounted modules'
+effective limits (spec ceilings tightened by the host): concurrent handles,
+request-body cap, receive-queue defaults and maxima, aggregate caps,
+per-tick event/byte budgets, header limits, timeouts, redirects and TLS
+features. Applications choose chunk and queue sizes from it; they cannot
+raise a limit.
 
-Supported methods are `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and
-`OPTIONS`. `CONNECT` and `TRACE` have tunnel, proxy, and security semantics
-that do not belong in an application fetch primitive. A closed method set also
-means every host can make the same guarantee.
+## Where the pieces live
 
-Transport failures reject with `NetError` and a portable `code` such as
-`dns`, `connect`, `tls`, `timeout`, or `response_too_large`. HTTP status codes
-do not reject: a 404 response resolves with `ok === false`, like browser
-fetch.
+| Layer | Artifact |
+| --- | --- |
+| SDK | `framework/src/net/*` |
+| Specs | `contracts/spec/net.ts`, `contracts/spec/ws.ts`, `contracts/spec/httpd.ts` |
+| Reference cores | `engine/net` (portable C: HTTP client/server, WebSocket client, BSD/lwIP driver), `engine/crates/pocket-net` (Rust HTTP client core over `HttpClientBackend`) |
+| Deterministic hosts | `hosts/sim/net.ts`, `hosts/sim/httpd.ts`, `hosts/sim/ws.ts` |
+| Browser host | `hosts/web/net.js` |
+| ESP-IDF host | `hosts/esp-idf` (AtomS3R, Tab5) |
+
+The pinned boundaries are `contracts/spec/net.ts`, `contracts/spec/ws.ts`
+and `contracts/spec/httpd.ts`; the engineering summary is `docs/NET.md`.

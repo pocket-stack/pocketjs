@@ -3,6 +3,46 @@
 Engine and site milestones, newest first. Versions track the
 `@pocketjs/framework` npm package.
 
+## Unreleased
+
+**The network modules: streaming HTTP client, HTTP server and WebSocket client over one policy the Build Plan owns.**
+This is a **breaking migration** of the 0.10.0 `net` module, not an additive
+feature, and the first network capability with a hardware-proven native core.
+
+- **Breaking: `@pocketjs/framework/net` is a support module now.** `fetch`,
+  `Headers`, `Request`, `Response`, `BodyStream` and `serve` moved to
+  `@pocketjs/framework/net/http`; the WebSocket client is
+  `@pocketjs/framework/net/websocket` (`connect`). The root `net` subpath
+  exports `AbortController`, `AbortSignal`, `URL`, `NetworkError`,
+  `getNetworkLimits` and the shared types. `fetch` returns a streaming
+  `Response` (`body.readInto`, `for await`, `text()`/`json()`/`arrayBuffer()`
+  under an aggregate cap) instead of the whole-response `PocketResponse`;
+  `NetError` is `NetworkError` with a stable `code`/`category`.
+  Migration: `import { fetch } from "@pocketjs/framework/net"` →
+  `import { fetch } from "@pocketjs/framework/net/http"`.
+- **Breaking: the capability id `net.http` is gone.** Manifests declare the
+  role-split ids `network.http.client`, `network.http.client.tls`,
+  `network.http.server`, `network.http.server.tls`,
+  `network.websocket.client`, `network.websocket.client.tls`. No stock target
+  advertises them yet; a target adds an id only when its native host ships
+  and tests the module.
+- **Manifest format 3: `permissions.network` is the single source of the
+  network policy.** A format-3 `pocket.json` (`"pocket": 3`,
+  `https://pocketjs.dev/schema/pocket-3.json`) declares connect rules
+  (protocol, host, port or range), listen rules, host credential ids and the
+  `localNetwork` / `insecureTransport` / `allowInvalidTlsForDevelopment`
+  switches. The resolver normalizes them into `ResolvedBuildPlan.network`
+  (covered by `planHash`); `extractHostBuildInputs()` hands custom hosts the
+  canonical policy JSON (`POCKETJS_NETWORK_POLICY`) that every network core
+  enforces on each command. Format 2 stays valid and resolves to the deny-all
+  policy. The contract, its reference matcher and shared vectors live in
+  `contracts/spec/network-policy.ts` and `contracts/spec/vectors/`.
+- **Portable C core, ESP-IDF host, TLS.** `engine/net` (HTTP/1.1 client and
+  server, RFC 6455 client, bounded queues with backpressure, tick-boundary
+  delivery) runs on AtomS3R and Tab5 under ESP-IDF v6.0.2 with ESP-TLS;
+  `engine/crates/pocket-net` is the Rust HTTP client core for Rust hosts.
+  `@pocketjs/framework/headless` runs the frame transaction without a UI.
+
 ## 0.10.1 — August 16, 2026
 
 **Three more physical phones run PocketJS, Pocket Vapor compiles a smaller reactive graph, and Pocket3D gains a deterministic systemic world.**

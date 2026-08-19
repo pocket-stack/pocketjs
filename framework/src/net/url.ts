@@ -1,0 +1,312 @@
+// URL for the network modules. QuickJS has no WHATWG URL; the module ships a
+// bounded parser for the schemes the modules speak (http, https, ws, wss) with
+// the property surface apps use — href, protocol, username, password, host,
+// hostname, port, pathname, search, hash, origin — plus relative resolution
+// against a base (redirect Location). Other schemes parse as opaque
+// `scheme:rest` values so `new URL("mailto:x")` does not throw here; the
+// protocol modules reject them at their own scheme check.
+
+const SPECIAL_PORTS: Record<string, string> = {
+  "http:": "80",
+  "https:": "443",
+  "ws:": "80",
+  "wss:": "443",
+};
+
+function isSpecial(protocol: string): boolean {
+  return protocol in SPECIAL_PORTS;
+}
+
+const HEX = "0123456789ABCDEF";
+
+/** Percent-encode bytes outside the "path/query safe" set (UTF-8 encoding
+ * non-ASCII first). Existing `%XX` escapes pass through untouched. */
+function percentEncode(s: string, extra: string): string {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 0x25 && /^[0-9a-fA-F]{2}$/.test(s.slice(i + 1, i + 3))) {
+      out += s.slice(i, i + 3);
+      i += 2;
+      continue;
+    }
+    if (c > 0x20 && c < 0x7f && !extra.includes(s[i])) {
+      out += s[i];
+      continue;
+    }
+    // UTF-8 encode the code point (surrogate pairs included).
+    let cp = c;
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+      const lo = s.charCodeAt(i + 1);
+      if (lo >= 0xdc00 && lo <= 0xdfff) {
+        cp = 0x10000 + ((c - 0xd800) << 10) + (lo - 0xdc00);
+        i++;
+      }
+    }
+    const bytes: number[] = [];
+    if (cp < 0x80) bytes.push(cp);
+    else if (cp < 0x800) bytes.push(0xc0 | (cp >> 6), 0x80 | (cp & 63));
+    else if (cp < 0x10000) bytes.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+    else {
+      bytes.push(
+        0xf0 | (cp >> 18),
+        0x80 | ((cp >> 12) & 63),
+        0x80 | ((cp >> 6) & 63),
+        0x80 | (cp & 63),
+      );
+    }
+    for (const b of bytes) out += "%" + HEX[b >> 4] + HEX[b & 15];
+  }
+  return out;
+}
+
+const PATH_EXTRA = ' "<>`{}#?';
+const QUERY_EXTRA = ' "<>#';
+const FRAGMENT_EXTRA = ' "<>`';
+
+function removeDotSegments(path: string): string {
+  const out: string[] = [];
+  const segments = path.split("/");
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const last = i === segments.length - 1;
+    if (seg === "." || seg === "%2e" || seg === "%2E") {
+      if (last) out.push("");
+      continue;
+    }
+    if (seg === ".." || /^(\.|%2e){2}$/i.test(seg)) {
+      if (out.length > 1) out.pop();
+      if (last) out.push("");
+      continue;
+    }
+    out.push(seg);
+  }
+  let joined = out.join("/");
+  if (!joined.startsWith("/")) joined = "/" + joined;
+  return joined;
+}
+
+interface HostParts {
+  hostname: string;
+  port: string;
+}
+
+function parseHost(input: string, protocol: string): HostParts {
+  let host = input;
+  let port = "";
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    if (end < 0) throw new TypeError("Invalid URL: unterminated IPv6 literal");
+    const literal = host.slice(1, end).toLowerCase();
+    if (!/^[0-9a-f:.]+$/.test(literal) || !literal.includes(":")) {
+      throw new TypeError("Invalid URL: invalid IPv6 literal");
+    }
+    const rest = host.slice(end + 1);
+    if (rest.startsWith(":")) port = rest.slice(1);
+    else if (rest.length) throw new TypeError("Invalid URL: bad host");
+    host = "[" + literal + "]";
+  } else {
+    const colon = host.lastIndexOf(":");
+    if (colon >= 0) {
+      port = host.slice(colon + 1);
+      host = host.slice(0, colon);
+    }
+    host = host.toLowerCase();
+    if (host.length === 0 && isSpecial(protocol)) throw new TypeError("Invalid URL: empty host");
+    if (/[\x00- #%/:<>?@[\\\]^|\x7f]/.test(host)) {
+      throw new TypeError("Invalid URL: forbidden host code point");
+    }
+    // The v1 modules speak ASCII hostnames only (IDNA A-labels).
+    for (let i = 0; i < host.length; i++) {
+      if (host.charCodeAt(i) > 0x7e) throw new TypeError("Invalid URL: non-ASCII hostname");
+    }
+  }
+  if (port.length) {
+    if (!/^[0-9]{1,5}$/.test(port)) throw new TypeError("Invalid URL: bad port");
+    const n = Number(port);
+    if (n > 65535) throw new TypeError("Invalid URL: bad port");
+    port = String(n);
+    if (SPECIAL_PORTS[protocol] === port) port = "";
+  }
+  return { hostname: host, port };
+}
+
+export class URL {
+  private _protocol = "";
+  private _username = "";
+  private _password = "";
+  private _hostname = "";
+  private _port = "";
+  private _pathname = "";
+  private _search = "";
+  private _hash = "";
+  /** For non-special schemes: everything after `scheme:`, kept verbatim. */
+  private _opaque: string | null = null;
+
+  constructor(input: string | URL, base?: string | URL) {
+    const text = String(input).trim();
+    const baseUrl = base === undefined ? null : base instanceof URL ? base : new URL(base);
+    const m = /^([a-zA-Z][a-zA-Z0-9+.-]*):(.*)$/s.exec(text);
+    if (m) {
+      const protocol = m[1].toLowerCase() + ":";
+      let rest = m[2];
+      if (!isSpecial(protocol)) {
+        this._protocol = protocol;
+        this._opaque = rest;
+        return;
+      }
+      // Special scheme: authority is required.
+      rest = rest.replace(/\\/g, "/");
+      if (!rest.startsWith("//")) {
+        if (baseUrl && baseUrl._protocol === protocol && baseUrl._opaque === null) {
+          this.assignRelative(baseUrl, rest);
+          return;
+        }
+        throw new TypeError("Invalid URL: missing authority");
+      }
+      this._protocol = protocol;
+      this.parseAuthorityAndPath(rest.slice(2));
+      return;
+    }
+    if (!baseUrl) throw new TypeError("Invalid URL: relative URL without a base");
+    if (baseUrl._opaque !== null) throw new TypeError("Invalid URL: opaque base");
+    this.assignRelative(baseUrl, text.replace(/\\/g, "/"));
+  }
+
+  private parseAuthorityAndPath(rest: string): void {
+    let end = rest.length;
+    for (let i = 0; i < rest.length; i++) {
+      const ch = rest[i];
+      if (ch === "/" || ch === "?" || ch === "#") {
+        end = i;
+        break;
+      }
+    }
+    let authority = rest.slice(0, end);
+    const remainder = rest.slice(end);
+    const at = authority.lastIndexOf("@");
+    if (at >= 0) {
+      const cred = authority.slice(0, at);
+      authority = authority.slice(at + 1);
+      const colon = cred.indexOf(":");
+      this._username = colon < 0 ? cred : cred.slice(0, colon);
+      this._password = colon < 0 ? "" : cred.slice(colon + 1);
+    }
+    const host = parseHost(authority, this._protocol);
+    this._hostname = host.hostname;
+    this._port = host.port;
+    this.assignPathSearchHash(remainder, "/");
+  }
+
+  private assignPathSearchHash(remainder: string, defaultPath: string): void {
+    let path = remainder;
+    let search = "";
+    let hash = "";
+    const hashAt = path.indexOf("#");
+    if (hashAt >= 0) {
+      hash = path.slice(hashAt);
+      path = path.slice(0, hashAt);
+    }
+    const queryAt = path.indexOf("?");
+    if (queryAt >= 0) {
+      search = path.slice(queryAt);
+      path = path.slice(0, queryAt);
+    }
+    if (path.length === 0) path = defaultPath;
+    this._pathname = removeDotSegments(percentEncode(path, PATH_EXTRA));
+    this._search = search.length > 1 ? "?" + percentEncode(search.slice(1), QUERY_EXTRA) : "";
+    this._hash = hash.length > 1 ? "#" + percentEncode(hash.slice(1), FRAGMENT_EXTRA) : "";
+  }
+
+  private assignRelative(base: URL, rel: string): void {
+    this._protocol = base._protocol;
+    if (rel.startsWith("//")) {
+      this.parseAuthorityAndPath(rel.slice(2));
+      return;
+    }
+    this._username = base._username;
+    this._password = base._password;
+    this._hostname = base._hostname;
+    this._port = base._port;
+    if (rel.length === 0) {
+      this._pathname = base._pathname;
+      this._search = base._search;
+      this._hash = "";
+      return;
+    }
+    if (rel.startsWith("/")) {
+      this.assignPathSearchHash(rel, "/");
+      return;
+    }
+    if (rel.startsWith("?")) {
+      this._pathname = base._pathname;
+      this.assignPathSearchHash(base._pathname + rel, "/");
+      return;
+    }
+    if (rel.startsWith("#")) {
+      this._pathname = base._pathname;
+      this._search = base._search;
+      this._hash = rel.length > 1 ? "#" + percentEncode(rel.slice(1), FRAGMENT_EXTRA) : "";
+      return;
+    }
+    const dir = base._pathname.slice(0, base._pathname.lastIndexOf("/") + 1);
+    this.assignPathSearchHash(dir + rel, "/");
+  }
+
+  get protocol(): string {
+    return this._protocol;
+  }
+  get username(): string {
+    return this._username;
+  }
+  get password(): string {
+    return this._password;
+  }
+  get hostname(): string {
+    return this._hostname;
+  }
+  get port(): string {
+    return this._port;
+  }
+  get host(): string {
+    return this._port ? `${this._hostname}:${this._port}` : this._hostname;
+  }
+  get pathname(): string {
+    return this._opaque !== null ? this._opaque : this._pathname;
+  }
+  get search(): string {
+    return this._search;
+  }
+  get hash(): string {
+    return this._hash;
+  }
+  get origin(): string {
+    return this._opaque !== null ? "null" : `${this._protocol}//${this.host}`;
+  }
+  get href(): string {
+    if (this._opaque !== null) return this._protocol + this._opaque;
+    const cred = this._username
+      ? this._username + (this._password ? ":" + this._password : "") + "@"
+      : "";
+    return `${this._protocol}//${cred}${this.host}${this._pathname}${this._search}${this._hash}`;
+  }
+  /** Numeric port, applying the scheme default. */
+  get effectivePort(): number {
+    return Number(this._port || SPECIAL_PORTS[this._protocol] || 0);
+  }
+  toString(): string {
+    return this.href;
+  }
+  toJSON(): string {
+    return this.href;
+  }
+
+  static canParse(input: string | URL, base?: string | URL): boolean {
+    try {
+      new URL(input, base);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}

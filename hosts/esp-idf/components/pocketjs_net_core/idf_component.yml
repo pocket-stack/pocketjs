@@ -1,0 +1,5 @@
+description: PocketJS network core (HTTP client, HTTP server, WebSocket client) over lwIP sockets.
+version: "0.1.0"
+dependencies:
+  idf:
+    version: ">=5.4"

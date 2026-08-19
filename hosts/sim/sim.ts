@@ -243,6 +243,9 @@ export async function bootWorld(
   g.audio = undefined; // audio module namespace: absent unless extraGlobals mounts one
   g.db = undefined; // db module namespace: absent unless extraGlobals mounts one
   g.fs = undefined; // fs module namespace: absent unless extraGlobals mounts one
+  g.net = undefined; // HTTP Client module namespace (hosts/sim/net.ts): absent unless mounted
+  g.ws = undefined; // WebSocket Client module namespace (hosts/sim/ws.ts): absent unless mounted
+  g.httpd = undefined; // HTTP Server module namespace (hosts/sim/httpd.ts): absent unless mounted
   g.__pocketApp = app;
   g.__simHz = hz;
   g.__pocketEffectTrace = (e: EffectEvent) => effects.push(e);

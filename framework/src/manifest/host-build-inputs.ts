@@ -1,4 +1,9 @@
 import {
+  canonicalNetworkPolicyJson,
+  parseNetworkPolicyJson,
+  type ResolvedNetworkPolicy,
+} from "../../../contracts/spec/network-policy.ts";
+import {
   PRESENTATION_MODES,
   type PresentationMode,
   type Viewport,
@@ -10,11 +15,23 @@ export interface HostBuildInputs {
   readonly appOutput: string;
   readonly target: string;
   readonly hostAbi: number;
+  /** The plan checksum the host records next to the artifacts it embeds. */
+  readonly planHash: string;
   readonly viewport: {
     readonly logical: Viewport;
     readonly physical: Viewport;
     readonly presentation: PresentationMode;
     readonly rasterDensity: number;
+  };
+  /** Resolved feature availability (required ids true, enhancements as the
+   *  target provides them): the host mounts exactly the network roles the
+   *  plan turned on. */
+  readonly features: Readonly<Record<string, boolean>>;
+  /** The network policy the host hands to its core, verbatim: the resolved
+   *  policy object and its canonical JSON (byte-identical across hosts). */
+  readonly network: {
+    readonly policy: ResolvedNetworkPolicy;
+    readonly policyJson: string;
   };
 }
 
@@ -55,6 +72,7 @@ function hasHostInputShape(input: unknown): input is ResolvedBuildPlan {
     (input.viewport.rasterDensity as number) > 255
   ) return false;
   if (typeof input.planHash !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.planHash)) return false;
+  if (!isRecord(input.network)) return false;
   return Object.values(input.features).every((available) => typeof available === "boolean");
 }
 
@@ -89,16 +107,26 @@ export function extractHostBuildInputs(
       `PocketJS host build: expected target ${options.expectedTarget}, got ${plan.target.id}`,
     );
   }
+  // Round-trip the plan's policy through the contract parser: the host
+  // receives a policy the reference normalizer accepts, never a hand-edited
+  // object that happened to keep the checksum.
+  const policyJson = canonicalNetworkPolicyJson(parseNetworkPolicyJson(JSON.stringify(plan.network)));
   return {
     appOutput: plan.app.output,
     target: plan.target.id,
     hostAbi: plan.target.hostAbi,
+    planHash: plan.planHash,
     viewport: {
       logical: plan.viewport.logical,
       physical: plan.viewport.physical,
       presentation: plan.viewport.presentation,
       rasterDensity: plan.viewport.rasterDensity,
     },
+    features: Object.freeze({ ...plan.features }),
+    network: Object.freeze({
+      policy: parseNetworkPolicyJson(policyJson),
+      policyJson,
+    }),
   };
 }
 
@@ -119,5 +147,7 @@ export function hostBuildEnvironment(
     POCKETJS_PHYSICAL_HEIGHT: String(inputs.viewport.physical[1]),
     POCKETJS_PRESENTATION: inputs.viewport.presentation,
     POCKETJS_RASTER_DENSITY: String(inputs.viewport.rasterDensity),
+    POCKETJS_PLAN_HASH: inputs.planHash,
+    POCKETJS_NETWORK_POLICY: inputs.network.policyJson,
   };
 }

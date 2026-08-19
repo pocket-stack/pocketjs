@@ -1,0 +1,47 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-3.json",
+  "pocket": 3,
+  "id": "dev.pocket-stack.net-smoke",
+  "name": "net-smoke",
+  "title": "PocketJS network smoke",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "network.http.client",
+        "network.http.server",
+        "network.websocket.client"
+      ],
+      "enhances": [
+        "network.http.client.tls"
+      ]
+    }
+  },
+  "app": {
+    "entry": "app.ts",
+    "output": "app",
+    "framework": "solid",
+    "viewport": {
+      "logical": [128, 128],
+      "presentation": "native"
+    }
+  },
+  "permissions": {
+    "network": {
+      "connect": [
+        { "protocol": "https", "host": "example.com", "port": 443 },
+        { "protocol": "https", "host": "expired.badssl.com", "port": 443 },
+        { "protocol": "https", "host": "wrong.host.badssl.com", "port": 443 },
+        { "protocol": "https", "host": "self-signed.badssl.com", "port": 443 },
+        { "protocol": "https", "host": "untrusted-root.badssl.com", "port": 443 }
+      ],
+      "listen": [
+        { "protocol": "http", "address": "0.0.0.0", "port": 8080 }
+      ],
+      "credentials": [],
+      "localNetwork": true,
+      "insecureTransport": true,
+      "allowInvalidTlsForDevelopment": false
+    }
+  }
+}

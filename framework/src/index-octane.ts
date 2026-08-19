@@ -29,11 +29,11 @@ import {
 import { setOverlayRoot } from "./overlay.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
-import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-octane.tsx";
-import { __resetTouches, __setTouches } from "./touch.ts";
-import { __advanceClock, resetClock } from "./clock.ts";
-import { __drainEffects, resetEffects } from "./effects.ts";
-import { runServicePumps } from "./services.ts";
+import { resetFrameHooks, runFrameHooks } from "./frame-octane.tsx";
+import { __resetTouches } from "./touch.ts";
+import { resetClock } from "./clock.ts";
+import { resetEffects } from "./effects.ts";
+import { runFramePrelude } from "./frame-prelude.ts";
 import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
 import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
 import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
@@ -204,11 +204,7 @@ export function render(code: OctaneRenderRoot, opts: RenderOptions = {}): () => 
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md), same as the Solid path.
   installFrameHandler(
     wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[]) => {
-      __advanceClock();
-      __setAnalog(analog);
-      __setTouches(touches);
-      runServicePumps();
-      __drainEffects();
+      runFramePrelude({ analog, touches }); // clock → input latches → pumps → effects (frame-prelude.ts)
       // Octane schedules re-renders on the microtask queue; the sync boundary
       // drains them before the sweep so a frame's commits land in that frame.
       flushUniversalSync(() => {

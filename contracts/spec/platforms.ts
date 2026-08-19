@@ -144,11 +144,24 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // appends the id to its profile only when its native host ships the module
   // (the ring/thread discipline to copy is hosts/psp/src/audio.rs).
   "audio.pcm",
-  // Bounded whole-response HTTP through `fetch()` and the net module's own
-  // namespace (`globalThis.net`, contracts/spec/net.ts). Transport adapters
-  // remain host-owned; the browser dev host, deterministic sim and reference
-  // core exercise the contract without granting network access to every host.
-  "net.http",
+  // Network capabilities are split by protocol, role and TLS.
+  // Each id names one module
+  // boundary: `network.http.client` is `fetch()` over `globalThis.net`
+  // (contracts/spec/net.ts), `network.http.server` is `serve()` over
+  // `globalThis.httpd` (contracts/spec/httpd.ts), `network.websocket.client`
+  // is `connect()` over `globalThis.ws` (contracts/spec/ws.ts); the `.tls`
+  // ids are the TLS roles a host admits separately. Registered ahead of any
+  // stock TARGET advertising them: the sim hosts, the browser dev host and
+  // the reference cores (engine/net, engine/crates/pocket-net) implement and
+  // test the contracts, so apps can already declare the requirement and fail
+  // admission where the modules are absent. A device target appends an id to
+  // its profile only when its native host ships and tests the module.
+  "network.http.client",
+  "network.http.client.tls",
+  "network.http.server",
+  "network.http.server.tls",
+  "network.websocket.client",
+  "network.websocket.client.tls",
   // SQLite behind the db module's own namespace (`globalThis.db`,
   // contracts/spec/db.ts): five synchronous ops, rows as one JSON line per
   // query() call, per-app storage the host confines. Registered ahead of any
