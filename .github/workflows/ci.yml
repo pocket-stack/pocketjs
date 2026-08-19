@@ -1,0 +1,167 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same PR to save minutes.
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── JavaScript: install, test, typecheck ──────────────────────────
+  js:
+    name: JavaScript & TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build wasm core (required by tests)
+        run: bun tools/wasm.ts
+
+      - name: Test JavaScript and package contracts
+        run: bun run test
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+  # ── Rust: core, workspace, Symbian bridge ─────────────────────────
+  rust:
+    name: Rust (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: core
+            manifest: engine/core/Cargo.toml
+            workspace: false
+          - label: workspace
+            manifest: engine/Cargo.toml
+            workspace: true
+          - label: symbian
+            manifest: engine/symbian/Cargo.toml
+            workspace: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ matrix.workspace == 'true' && 'engine/target' || format('{0}/target', matrix.manifest == 'engine/core/Cargo.toml' && 'engine/core' || 'engine/symbian') }}
+          key: ${{ runner.os }}-rust-${{ matrix.label }}-${{ hashFiles('engine/**/Cargo.toml', 'engine/**/Cargo.lock', 'engine/**/src/**') }}
+          restore-keys: ${{ runner.os }}-rust-${{ matrix.label }}-
+
+      - name: Test Rust (${{ matrix.label }})
+        run: cargo test --locked --manifest-path ${{ matrix.manifest }}${{ matrix.workspace == 'true' && ' --workspace' || '' }}
+
+  # ── Renderer golden image comparison ──────────────────────────────
+  goldens:
+    name: Renderer goldens
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [js]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build wasm core
+        run: bun tools/wasm.ts
+
+      - name: Test renderer goldens
+        run: bun tests/golden.ts
+
+  # ── Deterministic tape replay ─────────────────────────────────────
+  tape:
+    name: Tape replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [js]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build wasm core
+        run: bun tools/wasm.ts
+
+      - name: Test deterministic tape replay
+        run: bun run tape:check
+
+  # ── Documentation & schema parity ─────────────────────────────────
+  docs:
+    name: Docs & schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [js]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build documentation and verify schema parity
+        run: |
+          bun run site:build
+          cmp contracts/schema/pocket-2.json site/dist/schema/pocket-2.json
