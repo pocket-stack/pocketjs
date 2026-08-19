@@ -280,6 +280,15 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
                 }
                 i += 12;
             }
+            spec::draw_op::POLY => {
+                let n = words[i + 1] as usize;
+                assert!((3..=8).contains(&n), "POLY vertex count {n} not in 3..=8");
+                assert!(i + 3 + n <= words.len(), "truncated POLY");
+                for k in 0..n {
+                    xy_ok(words[i + 3 + k]);
+                }
+                i += 3 + n;
+            }
             spec::draw_op::TEXT_RUN => {
                 // Native-text op: origin is f32 (exempt from the i16 clip
                 // guarantee), box width is finite and non-negative, and the
@@ -329,6 +338,10 @@ fn tex_tri_runs(words: &[u32]) -> Vec<(u32, usize)> {
             spec::draw_op::SCISSOR => { previous_was_tex_tri = false; i += 3; }
             spec::draw_op::SCISSOR_POP => { previous_was_tex_tri = false; i += 1; }
             spec::draw_op::TRI => { previous_was_tex_tri = false; i += 7; }
+            spec::draw_op::POLY => {
+                previous_was_tex_tri = false;
+                i += 3 + words[i + 1] as usize;
+            }
             spec::draw_op::TEXT_RUN => {
                 previous_was_tex_tri = false;
                 i += 8 + (words[i + 7] as usize).div_ceil(4);
@@ -577,12 +590,12 @@ fn fixed_dt_animation_is_deterministic() {
     for f in &a {
         validate_drawlist(f);
     }
-    // The rotated frames must actually exercise the TRI path.
-    let tri_frames = a
+    // The rotated frames must actually exercise the POLY path.
+    let poly_frames = a
         .iter()
-        .filter(|f| validate_drawlist(f)[spec::draw_op::TRI as usize] > 0)
+        .filter(|f| validate_drawlist(f)[spec::draw_op::POLY as usize] > 0)
         .count();
-    assert!(tri_frames > 0, "rotation should emit TRI ops");
+    assert!(poly_frames > 0, "rotation should emit POLY ops");
 }
 
 #[test]
@@ -712,7 +725,7 @@ fn drawlist_clip_invariant_offscreen_rects() {
     let words = ui.draw().words.clone();
     let counts = validate_drawlist(&words);
     assert!(counts[spec::draw_op::RECT as usize] > 0);
-    assert!(counts[spec::draw_op::TRI as usize] > 0, "rotated offscreen boxes clip into TRIs");
+    assert!(counts[spec::draw_op::POLY as usize] > 0, "rotated offscreen boxes clip into POLY");
     assert!(counts[spec::draw_op::GRAD_RECT as usize] > 0);
     // Find the gradient and check the endpoint re-interpolation: the rect
     // spans x 380..580, the clip keeps 380..480 = fractions 0.0..0.5, so the
@@ -733,6 +746,7 @@ fn drawlist_clip_invariant_offscreen_rects() {
                 i += 6;
             }
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             spec::draw_op::SCISSOR => i += 3,
@@ -813,6 +827,7 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
             spec::draw_op::RECT => i += 4,
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => {
                 corner_quads += 1;
@@ -984,6 +999,7 @@ fn transparent_rounded_border_draws_an_outline_not_square_strips() {
             }
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             spec::draw_op::SCISSOR => i += 3,
@@ -1085,6 +1101,7 @@ fn overflow_hidden_emits_balanced_intersected_scissors() {
             spec::draw_op::RECT => i += 4,
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             _ => i += 1,
@@ -1115,6 +1132,7 @@ fn overflow_hidden_emits_balanced_intersected_scissors() {
             }
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             _ => i += 1,
@@ -1436,6 +1454,7 @@ fn zindex_orders_siblings_stably() {
             }
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             _ => i += 1,
@@ -2053,9 +2072,10 @@ fn perspective_subtree_emits_depth_sorted_tris() {
     ui.set_style(f, 1);
     ui.tick();
     let words = ui.draw().words.clone();
-    // A rotateY'd face must land on the TRI path (perspective projection).
+    // A rotateY'd face must land on the POLY path (perspective projection).
     let mut i = 0;
     let mut tris = 0;
+    let mut polys = 0;
     while i < words.len() {
         let op = words[i];
         i += match op {
@@ -2064,6 +2084,10 @@ fn perspective_subtree_emits_depth_sorted_tris() {
             x if x == spec::draw_op::TRI => {
                 tris += 1;
                 7
+            }
+            x if x == spec::draw_op::POLY => {
+                polys += 1;
+                3 + words[i + 1] as usize
             }
             x if x == spec::draw_op::GLYPH_RUN => {
                 let n = (words[i + 1] >> 16) as usize;
@@ -2074,7 +2098,8 @@ fn perspective_subtree_emits_depth_sorted_tris() {
             _ => 1, // SCISSOR_POP
         };
     }
-    assert!(tris >= 2, "expected projected face triangles, got {tris}");
+    assert_eq!(tris, 0, "flat 3D face must not fan into TRI");
+    assert!(polys >= 1, "expected projected face polygon, got {polys}");
 }
 
 #[test]
@@ -2160,6 +2185,7 @@ fn arc_primitive_emits_coverage_rects() {
             }
             x if x == spec::draw_op::GRAD_RECT => 6,
             x if x == spec::draw_op::TRI => 7,
+            x if x == spec::draw_op::POLY => 3 + words[i + 1] as usize,
             x if x == spec::draw_op::GLYPH_RUN => {
                 let c = (words[i + 1] >> 16) as usize;
                 3 + 2 * c
@@ -2171,6 +2197,224 @@ fn arc_primitive_emits_coverage_rects() {
     }
     // The half-ring rasterizes into many small coverage runs (not one box).
     assert!(rects > 20, "expected arc coverage runs, got {rects}");
+}
+
+// ---- POLY: convex coverage over a clipped rotated box ----------------------------
+
+fn place_box(ui: &mut Ui, w: f64, h: f64, x: f64, y: f64) -> i32 {
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, w);
+    ui.set_prop(n, spec::prop::HEIGHT, h);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_L, x);
+    ui.set_prop(n, spec::prop::INSET_T, y);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    n
+}
+
+/// Distinct R-channel values, and how many partial pixels have all eight
+/// neighbours non-background. That second count is the diagonal-seam
+/// regression: per-triangle coverage leaves it non-zero inside one box.
+/// Render the current DrawList into a fresh screen-sized RGBA buffer.
+fn raster_fb(ui: &mut Ui) -> alloc::vec::Vec<u8> {
+    let words = ui.draw().words.clone();
+    let mut fb = alloc::vec![0u8; spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4];
+    crate::raster::render(ui, &words, &mut fb);
+    fb
+}
+
+fn poly_luminance_stats(fb: &[u8]) -> (usize, u32) {
+    let w = spec::SCREEN_W as usize;
+    let h = spec::SCREEN_H as usize;
+    let mut seen = [false; 256];
+    let mut interior_partial = 0u32;
+    for y in 0..h {
+        for x in 0..w {
+            let v = fb[(y * w + x) * 4];
+            seen[v as usize] = true;
+            if v > 0 && v < 255 && x > 0 && y > 0 && x + 1 < w && y + 1 < h {
+                let nb = [
+                    (-1isize, -1),
+                    (0, -1),
+                    (1, -1),
+                    (-1, 0),
+                    (1, 0),
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                ];
+                if nb.iter().all(|&(dx, dy)| {
+                    fb[(((y as isize + dy) as usize) * w + (x as isize + dx) as usize) * 4] > 0
+                }) {
+                    interior_partial += 1;
+                }
+            }
+        }
+    }
+    (seen.iter().filter(|&&on| on).count(), interior_partial)
+}
+
+#[test]
+fn rotated_flat_box_emits_one_poly_gradient_stays_tri() {
+    let mut ui = Ui::new();
+    let flat = place_box(&mut ui, 80.0, 50.0, 100.0, 80.0);
+    ui.set_prop(flat, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(flat, spec::prop::ROTATE, 20.0);
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert_eq!(counts[spec::draw_op::POLY as usize], 1, "one POLY for the whole box");
+    assert_eq!(counts[spec::draw_op::TRI as usize], 0, "flat fill must not fan into TRI");
+
+    let mut ui = Ui::new();
+    let grad = place_box(&mut ui, 80.0, 50.0, 100.0, 80.0);
+    ui.set_prop(grad, spec::prop::GRAD_FROM, abgr(255, 0, 0, 255) as f64);
+    ui.set_prop(grad, spec::prop::GRAD_TO, abgr(0, 0, 255, 255) as f64);
+    ui.set_prop(grad, spec::prop::GRAD_DIR, spec::GradDir::ToRight as u32 as f64);
+    ui.set_prop(grad, spec::prop::ROTATE, 20.0);
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert!(counts[spec::draw_op::TRI as usize] >= 2, "rotated gradient still fans TRI");
+    assert_eq!(counts[spec::draw_op::POLY as usize], 0, "gradient must not emit POLY");
+}
+
+#[test]
+fn rotated_flat_box_raster_has_coverage_levels() {
+    let mut ui = Ui::new();
+    let n = place_box(&mut ui, 240.0, 160.0, 120.0, 56.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(n, spec::prop::ROTATE, 20.0);
+    ui.tick();
+    let fb = raster_fb(&mut ui);
+    let (levels, _) = poly_luminance_stats(&fb);
+    assert!(
+        levels > 2,
+        "4×4 coverage must produce more than binary edges, got {levels} levels"
+    );
+}
+
+#[test]
+fn rotated_flat_box_has_no_interior_partial_pixels() {
+    let mut ui = Ui::new();
+    let n = place_box(&mut ui, 240.0, 160.0, 120.0, 56.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(n, spec::prop::ROTATE, 20.0);
+    ui.tick();
+    let fb = raster_fb(&mut ui);
+    let (_, interior_partial) = poly_luminance_stats(&fb);
+    assert_eq!(
+        interior_partial, 0,
+        "coverage over the whole polygon must not leave a seam"
+    );
+}
+
+#[test]
+fn clipped_polygon_closes_against_the_screen_edge() {
+    let mut ui = Ui::new();
+    let n = place_box(&mut ui, 80.0, 60.0, 0.0, 80.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(n, spec::prop::TRANSLATE_X, -25.0);
+    ui.set_prop(n, spec::prop::ROTATE, 25.0);
+    ui.tick();
+    let words = ui.draw().words.clone();
+    let counts = validate_drawlist(&words);
+    assert_eq!(counts[spec::draw_op::POLY as usize], 1);
+    let mut i = 0usize;
+    let mut nverts = 0usize;
+    let mut on_edge = false;
+    while i < words.len() {
+        if words[i] == spec::draw_op::POLY {
+            nverts = words[i + 1] as usize;
+            for k in 0..nverts {
+                let (x, _) = decode_xy(words[i + 3 + k]);
+                if x == 0 {
+                    on_edge = true;
+                }
+            }
+            break;
+        }
+        i += match words[i] {
+            spec::draw_op::RECT => 4,
+            spec::draw_op::GRAD_RECT => 6,
+            spec::draw_op::TRI => 7,
+            spec::draw_op::POLY => 3 + words[i + 1] as usize,
+            spec::draw_op::GLYPH_RUN => 3 + 2 * ((words[i + 1] >> 16) as usize),
+            spec::draw_op::TEX_QUAD => 9,
+            spec::draw_op::TEX_TRI => 12,
+            spec::draw_op::SCISSOR => 3,
+            _ => 1,
+        };
+    }
+    assert!((3..=8).contains(&nverts), "clipped POLY N={nverts}");
+    assert!(on_edge, "clip against x=0 must leave a vertex on that edge");
+
+    let fb = raster_fb(&mut ui);
+    let w = spec::SCREEN_W as usize;
+    let h = spec::SCREEN_H as usize;
+    let mut edge_hits = 0u32;
+    let mut white = 0u32;
+    for y in 0..h {
+        if fb[y * w * 4] > 0 {
+            edge_hits += 1;
+        }
+        for x in 0..w {
+            if fb[(y * w + x) * 4] == 255 {
+                white += 1;
+            }
+        }
+    }
+    assert!(edge_hits > 0, "the clipped edge must paint x=0, not leave a hole");
+    assert!(white > 0, "the clipped polygon must still have an interior");
+    let (_, interior_partial) = poly_luminance_stats(&fb);
+    assert_eq!(interior_partial, 0, "clip must not open an interior seam");
+}
+
+#[test]
+fn rotated_3d_face_emits_poly_textured_still_tex_tri() {
+    let mut ui = Ui::new();
+    let pixels = alloc::vec![0xffu8; 8 * 8 * 4];
+    let tex = ui.upload_texture(&pixels, 8, 8, spec::psm::PSM_8888);
+    assert!(tex >= 0);
+
+    let stage = place_box(&mut ui, 200.0, 200.0, 40.0, 36.0);
+    ui.set_prop(stage, spec::prop::PERSPECTIVE, 400.0);
+
+    let face = ui.create_node(0);
+    ui.set_prop(face, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(face, spec::prop::WIDTH, 80.0);
+    ui.set_prop(face, spec::prop::HEIGHT, 80.0);
+    ui.set_prop(face, spec::prop::INSET_L, 20.0);
+    ui.set_prop(face, spec::prop::INSET_T, 20.0);
+    ui.set_prop(face, spec::prop::BG_COLOR, abgr(200, 200, 200, 255) as f64);
+    ui.set_prop(face, spec::prop::ROTATE_Y, 40.0);
+    ui.insert_before(stage, face, 0);
+
+    let card = ui.create_node(0);
+    ui.set_prop(card, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(card, spec::prop::WIDTH, 80.0);
+    ui.set_prop(card, spec::prop::HEIGHT, 80.0);
+    ui.set_prop(card, spec::prop::INSET_L, 110.0);
+    ui.set_prop(card, spec::prop::INSET_T, 20.0);
+    ui.set_prop(card, spec::prop::ROTATE_Y, 40.0);
+    ui.insert_before(stage, card, 0);
+
+    let img = ui.create_node(spec::NodeType::Image as u8);
+    ui.set_prop(img, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(img, spec::prop::WIDTH, 80.0);
+    ui.set_prop(img, spec::prop::HEIGHT, 80.0);
+    ui.set_image(img, tex);
+    ui.insert_before(card, img, 0);
+
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert!(
+        counts[spec::draw_op::POLY as usize] >= 1,
+        "solid 3D face must emit POLY, got {}",
+        counts[spec::draw_op::POLY as usize]
+    );
+    assert!(
+        counts[spec::draw_op::TEX_TRI as usize] > 0,
+        "textured 3D face must still emit TEX_TRI"
+    );
 }
 
 // ---- DevTools ops (spec ops 18..22, docs/DEVTOOLS.md) ----------------------------

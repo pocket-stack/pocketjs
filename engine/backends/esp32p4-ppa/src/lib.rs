@@ -601,6 +601,23 @@ impl Renderer {
                     }
                     i += 7;
                 }
+                spec::draw_op::POLY if i + 3 <= words.len() => {
+                    let n = words[i + 1] as usize;
+                    if !(3..=8).contains(&n) || i + 3 + n > words.len() {
+                        return None;
+                    }
+                    if !polygon_bounds(&words[i + 3..i + 3 + n], clip).is_empty() {
+                        self.software_op(
+                            ui,
+                            destination,
+                            surface,
+                            clip,
+                            &words[i..i + 3 + n],
+                            stats,
+                        );
+                    }
+                    i += 3 + n;
+                }
                 spec::draw_op::TEX_TRI if i + 12 <= words.len() => {
                     if !triangle_bounds([words[i + 2], words[i + 5], words[i + 8]], clip).is_empty()
                     {
@@ -971,6 +988,30 @@ fn triangle_bounds(vertices: [u32; 3], clip: Clip) -> Clip {
         y0: y0.min(y1).min(y2),
         x1: x0.max(x1).max(x2),
         y1: y0.max(y1).max(y2),
+    }
+    .intersect(clip)
+}
+
+fn polygon_bounds(vertices: &[u32], clip: Clip) -> Clip {
+    if vertices.is_empty() {
+        return Clip::empty();
+    }
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+    for &word in vertices {
+        let (x, y) = xy(word);
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+    Clip {
+        x0: min_x,
+        y0: min_y,
+        x1: max_x,
+        y1: max_y,
     }
     .intersect(clip)
 }

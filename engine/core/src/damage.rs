@@ -424,6 +424,13 @@ impl<'a> DamageDecoder<'a> {
             spec::draw_op::SCISSOR_POP => 1,
             spec::draw_op::TRI => 7,
             spec::draw_op::TEX_TRI => 12,
+            spec::draw_op::POLY => {
+                let n = self.words.get(start + 1).copied().ok_or(())? as usize;
+                if !(3..=8).contains(&n) {
+                    return Err(());
+                }
+                3usize.checked_add(n).ok_or(())?
+            }
             spec::draw_op::TEXT_RUN => {
                 // 8 header words + ceil(byteLen/4) packed UTF-8 words.
                 let bytes = *self.words.get(start + 7).ok_or(())? as usize;
@@ -461,6 +468,7 @@ impl<'a> DamageDecoder<'a> {
             }
             spec::draw_op::TRI => triangle_bounds([words[1], words[2], words[3]], self.clip),
             spec::draw_op::TEX_TRI => triangle_bounds([words[2], words[5], words[8]], self.clip),
+            spec::draw_op::POLY => polygon_bounds(&words[3..], self.clip),
             // Native-text runs carry no glyph geometry the tracker can
             // measure; the core keeps every partially-clipped run inside a
             // scissor, so the current clip is a sound (conservative) bound.
@@ -561,6 +569,24 @@ fn triangle_bounds(vertices: [u32; 3], clip: DamageRect) -> DamageRect {
         y0.max(y1).max(y2),
     )
     .intersect(clip)
+}
+
+fn polygon_bounds(vertices: &[u32], clip: DamageRect) -> DamageRect {
+    if vertices.is_empty() {
+        return DamageRect::empty();
+    }
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+    for &word in vertices {
+        let (x, y) = xy(word);
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+    DamageRect::new(min_x, min_y, max_x, max_y).intersect(clip)
 }
 
 #[inline]

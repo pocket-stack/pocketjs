@@ -9,7 +9,9 @@
 //!     interpolation, texture modulation.
 //!   - Triangle coverage uses exact integer edge functions evaluated at
 //!     doubled pixel-center coordinates (vertex coords are i16 integers, so
-//!     nothing ever rounds).
+//!     nothing ever rounds). Convex POLY coverage uses the same edge
+//!     functions in 4·F fixed point (quarter-pixel sample offsets stay
+//!     integral); no float enters that inner loop.
 //!   - The only f32 involved is gradient/texture-coordinate interpolation —
 //!     plain IEEE-754 add/mul/div on finite values (identical on every
 //!     platform; no transcendental calls, no NaN paths: every divisor is
@@ -806,6 +808,17 @@ fn render_scaled_clipped<T: RenderTarget>(
                 tex_tri(ui, target, width, scale, clip, &words[i + 1..i + 12]);
                 i += 12;
             }
+            draw_op::POLY => {
+                if i + 3 > words.len() {
+                    return;
+                }
+                let n = words[i + 1] as usize;
+                if n < 3 || n > POLY_MAX_VERTS || i + 3 + n > words.len() {
+                    return;
+                }
+                poly(target, width, scale, clip, words[i + 2], &words[i + 3..i + 3 + n]);
+                i += 3 + n;
+            }
             draw_op::TEXT_RUN => {
                 // Native-text op (host text system shapes the run); the
                 // software rasterizer has no shaper, so hosts that raster run
@@ -959,6 +972,184 @@ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p: 
                     mix(a0, a1, a2),
                 );
             }
+        }
+    }
+}
+
+// ---- POLY: convex polygon, 4×4 coverage over the whole shape ----------------------
+
+/// Sutherland-Hodgman clipping a quad against a rect yields at most 8 vertices.
+const POLY_MAX_VERTS: usize = 8;
+
+/// 4×4 sample offsets in 4·F units: ±1, ±3 so quarter-pixel positions stay integral.
+const POLY_SAMPLE_OFF: [i64; 4] = [-3, -1, 1, 3];
+
+#[inline]
+fn poly_hits(
+    n: usize,
+    f0: &[i64; POLY_MAX_VERTS],
+    step: &[i64; POLY_MAX_VERTS],
+    dx: &[i64; POLY_MAX_VERTS],
+    dy: &[i64; POLY_MAX_VERTS],
+    px: i32,
+) -> u32 {
+    let mut hits = 0u32;
+    for &oy in &POLY_SAMPLE_OFF {
+        for &ox in &POLY_SAMPLE_OFF {
+            let mut inside = true;
+            for e in 0..n {
+                if f0[e] + step[e] * px as i64 + dx[e] * ox + dy[e] * oy < 0 {
+                    inside = false;
+                    break;
+                }
+            }
+            if inside {
+                hits += 1;
+            }
+        }
+    }
+    hits
+}
+
+fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, color: u32, verts: &[u32]) {
+    let n = verts.len();
+    if n < 3 || n > POLY_MAX_VERTS {
+        return;
+    }
+    let (r, g, b, a) = channels(color);
+    if a == 0 {
+        return;
+    }
+
+    let mut xs = [0i32; POLY_MAX_VERTS];
+    let mut ys = [0i32; POLY_MAX_VERTS];
+    let mut min_x = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut min_y = i32::MAX;
+    let mut max_y = i32::MIN;
+    for i in 0..n {
+        let (x, y) = xy(verts[i], scale);
+        xs[i] = x;
+        ys[i] = y;
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+    }
+    min_x = min_x.max(clip.x0);
+    max_x = max_x.min(clip.x1);
+    min_y = min_y.max(clip.y0);
+    max_y = max_y.min(clip.y1);
+    if min_x >= max_x || min_y >= max_y {
+        return;
+    }
+
+    // Doubled screen coords. F(px,py) = c + dx·px + dy·py, wound so inside is F >= 0.
+    let mut vx = [0i64; POLY_MAX_VERTS];
+    let mut vy = [0i64; POLY_MAX_VERTS];
+    for i in 0..n {
+        vx[i] = 2 * xs[i] as i64;
+        vy[i] = 2 * ys[i] as i64;
+    }
+    let mut area = 0i64;
+    for i in 0..n {
+        let j = if i + 1 == n { 0 } else { i + 1 };
+        area += vx[i] * vy[j] - vx[j] * vy[i];
+    }
+    if area == 0 {
+        return;
+    }
+    let ccw = area > 0;
+
+    let mut e_c = [0i64; POLY_MAX_VERTS];
+    let mut e_dx = [0i64; POLY_MAX_VERTS];
+    let mut e_dy = [0i64; POLY_MAX_VERTS];
+    for i in 0..n {
+        let (ia, ib) = if ccw {
+            (i, if i + 1 == n { 0 } else { i + 1 })
+        } else {
+            (if i + 1 == n { 0 } else { i + 1 }, i)
+        };
+        let (ax, ay, bx, by) = (vx[ia], vy[ia], vx[ib], vy[ib]);
+        let dx = -(by - ay);
+        let dy = bx - ax;
+        e_c[i] = -(dx * ax + dy * ay);
+        e_dx[i] = dx;
+        e_dy[i] = dy;
+    }
+
+    // Work in 4·F so the ±1/±3 sample offsets stay integral.
+    let mut bound = [0i64; POLY_MAX_VERTS];
+    let mut step = [0i64; POLY_MAX_VERTS];
+    for i in 0..n {
+        bound[i] = 3 * (e_dx[i].abs() + e_dy[i].abs());
+        step[i] = 8 * e_dx[i];
+    }
+    let opaque = a >= 255;
+    let mut f0 = [0i64; POLY_MAX_VERTS];
+    for row in min_y..max_y {
+        let sy = 2 * row as i64 + 1;
+        let sx = 2 * min_x as i64 + 1;
+        for i in 0..n {
+            f0[i] = 4 * (e_c[i] + e_dx[i] * sx + e_dy[i] * sy);
+        }
+        let span = max_x - min_x;
+        let solve = |e: usize, thr: i64| -> (i32, i32) {
+            let (f, s) = (f0[e], step[e]);
+            if s == 0 {
+                return if f >= thr { (0, span) } else { (0, 0) };
+            }
+            let k = thr - f;
+            if s > 0 {
+                (((k + s - 1).div_euclid(s)).clamp(0, span as i64) as i32, span)
+            } else {
+                (0, ((k.div_euclid(s)) + 1).clamp(0, span as i64) as i32)
+            }
+        };
+        let (mut il, mut ih, mut tl, mut th) = (0, span, 0, span);
+        for e in 0..n {
+            let (l, h) = solve(e, bound[e]);
+            il = il.max(l);
+            ih = ih.min(h);
+            let (l, h) = solve(e, -bound[e]);
+            tl = tl.max(l);
+            th = th.min(h);
+        }
+        if th <= tl {
+            continue;
+        }
+        if ih < il {
+            il = tl;
+            ih = tl;
+        }
+        for col in tl..il {
+            let hits = poly_hits(n, &f0, &step, &e_dx, &e_dy, col);
+            if hits == 0 {
+                continue;
+            }
+            target.blend((row * stride + min_x + col) as usize, r, g, b, a * hits / 16);
+        }
+        if ih > il {
+            if opaque {
+                target.fill_opaque(
+                    (row * stride + min_x + il) as usize,
+                    (ih - il) as usize,
+                    r,
+                    g,
+                    b,
+                );
+            } else {
+                for col in il..ih {
+                    target.blend((row * stride + min_x + col) as usize, r, g, b, a);
+                }
+            }
+        }
+        for col in ih..th {
+            let hits = poly_hits(n, &f0, &step, &e_dx, &e_dy, col);
+            if hits == 0 {
+                continue;
+            }
+            target.blend((row * stride + min_x + col) as usize, r, g, b, a * hits / 16);
         }
     }
 }

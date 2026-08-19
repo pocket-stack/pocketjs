@@ -426,7 +426,7 @@ pub mod font_atlas {
 /// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).
 /// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,
 /// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12,
-/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9.
+/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9, POLY 3+N.
 pub mod draw_op {
     pub const RECT: u32 = 1;
     pub const GRAD_RECT: u32 = 2;
@@ -438,6 +438,7 @@ pub mod draw_op {
     pub const TEX_TRI: u32 = 8;
     pub const TEXT_RUN: u32 = 9;
     pub const SURFACE_QUAD: u32 = 10;
+    pub const POLY: u32 = 11;
 }
 
 /// .pak container constants (byte-compatible with dreamcart's format;
