@@ -403,6 +403,7 @@ describe("semantic resolution", () => {
       cards: [true, true, false, true],
       chrome: [true, true, false, true],
       cursor: [true, true, false, true],
+      desk98: [false, false, true, true], // dynamic-only desktop compositor; the desk companion is macos-app's
       gallery: [true, true, false, true],
       hero: [true, true, true, true],
       "hero-vue-sfc": [true, true, false, true],

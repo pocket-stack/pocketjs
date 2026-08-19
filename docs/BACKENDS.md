@@ -103,11 +103,35 @@ bun run macos note --proof
 
 `tools/macos.ts` resolves the manifest against `macos-app`, writes the
 plan, builds the bundle + pak, and derives the capability-shaped host flags
-(`--fixed`, `--native-text`) from the resolved plan. `--editor` is NOT a
-capability: it enables the note's companion svc adapter (an app protocol —
-the profile deliberately registers no pointer/text/IME/clipboard ids, see
-contracts/spec/platforms.ts). On exit the host prints its governor receipt
-(`pocket-macos: N ticks, M frames rendered`); a settled app shows M ≪ N.
+(`--fixed`, `--native-text`, `--companions`) from the resolved plan.
+`--editor` is NOT a capability: it enables the note's companion svc adapter
+(an app protocol — the profile deliberately registers no
+pointer/text/IME/clipboard ids, see contracts/spec/platforms.ts). On exit
+the host prints its governor receipt (`pocket-macos: N ticks, M frames
+rendered`); a settled app shows M ≪ N.
+
+## The desk companion
+
+The host speaks a second svc dialect when the plan's companion list names
+`desk` (apps/desk98/svc.ts): the note dialect's input lines extended with
+**right-button mouse lines (`b:2`), alt/ctl key modifiers, F1–F12, a boot
+epoch in the hello**, and a `{t:"cursor"}` guest intent that sets the
+window's pointer shape. `apps/desk98` — a Windows 98 desktop compositor —
+is the reference consumer: the guest owns every window (drag, resize,
+z-order, menus, Minesweeper) by hit-testing the raw pointer stream itself,
+window moves ride paint-only translate props, and raises ride zIndex, so a
+drag never relayouts and an idle desktop keeps the demand-render governor
+at a few frames per second. Its W95FA pixel font is baked per-app into
+slots 19–21 through `apps/desk98/pak.json` (`gen-assets.ts`) — the repo
+slot table (0–18) never moves.
+
+```
+bun run macos desk98      # the full desktop; drag, Alt+Tab, Ctrl+Esc, Alt+F4
+```
+
+Scripted acceptance drives the same dialect from flags: `--mouse
+X,Y[,d|u|r]@TICK` (drags, right clicks), `--key [alt+][ctl+]NAME@TICK`,
+`--type TEXT@TICK`.
 
 ## Choosing a backend
 

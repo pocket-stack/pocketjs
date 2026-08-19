@@ -85,6 +85,14 @@ if (plan.features["text.layout.native"]) flags.push("--native-text");
 if (plan.companions.length > 0) flags.push("--companions", plan.companions.join(","));
 if (editor) flags.push("--editor");
 
+if (proof && !editor) {
+  console.error(
+    "bun run macos --proof drives the NOTE companion protocol (scripted typing + autosave); " +
+      `${appDir} declares [${plan.companions.join(", ")}]. Script other apps with the host's ` +
+      "--mouse/--key/--type/--click flags directly.",
+  );
+  process.exit(1);
+}
 if (proof) {
   const file = `${root}dist/macos-proof.md`;
   await $`rm -f ${file}`;

@@ -23,6 +23,12 @@
 //!   forwarded as lines, guest intents (save/quit/copy/caret) handled here.
 //!   An app protocol, not a capability: the live-viewport hook and button
 //!   map work for every app regardless of this flag.
+//! - desk — the DESK COMPANION adapter (apps/desk98/svc.ts): the same
+//!   input-line dialect as the editor, extended with right-button mouse
+//!   lines (b:2), alt/ctl key modifiers, F1–F12, a boot epoch in the hello
+//!   (for the guest's wall clock), and a {t:"cursor"} guest intent that sets
+//!   the window's pointer shape. Wired when the plan's companion list names
+//!   "desk"; the note dialect stays byte-compatible (extra fields ignored).
 
 use std::cell::{Cell, RefCell};
 use std::ops::Range;
@@ -32,11 +38,11 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow};
 use gpui::{
-    App, AppContext as _, Application, Bounds, ClipboardItem, Context, Entity, EntityInputHandler,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent, KeyUpEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
-    ScrollWheelEvent, SharedString, Styled, TitlebarOptions, UTF16Selection, Window, WindowBounds,
-    WindowOptions, canvas, div, point, px, size,
+    App, AppContext as _, Application, Bounds, ClipboardItem, Context, CursorStyle, Entity,
+    EntityInputHandler, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
+    KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    Point, Render, ScrollWheelEvent, SharedString, Styled, TitlebarOptions, UTF16Selection, Window,
+    WindowBounds, WindowOptions, canvas, div, point, px, size,
 };
 use pocket_mod::Guest;
 use pocket_ui_gpui::{GpuiRenderer, TextConfig, native_measure};
@@ -73,6 +79,11 @@ enum ScriptEvent {
     Click(u64, f32, f32),
     /// Hold a console button for ~6 ticks starting at a tick.
     Press(u64, u32),
+    /// Raw pointer line at a tick: kind 'd' presses, 'u' releases, 'm' moves
+    /// with the current scripted button state (drag scripting).
+    Mouse(u64, f32, f32, char),
+    /// Named key with optional alt+/ctl+/sh+ prefixes (svc `key` line).
+    Key(u64, String, bool, bool, bool),
 }
 
 struct Args {
@@ -168,6 +179,51 @@ fn parse_args() -> Result<Args> {
                     .ok_or_else(|| anyhow!("--click X,Y@TICK"))?;
                 args.script
                     .push(ScriptEvent::Click(t.parse()?, x.parse()?, y.parse()?));
+            }
+            "--mouse" => {
+                // --mouse X,Y[,d|u|r]@TICK — scripted pointer line (m = move,
+                // r = right press+release).
+                let v = val("--mouse")?;
+                let (spec, t) = v
+                    .rsplit_once('@')
+                    .ok_or_else(|| anyhow!("--mouse X,Y[,d|u]@TICK"))?;
+                let parts: Vec<&str> = spec.split(',').collect();
+                if parts.len() < 2 || parts.len() > 3 {
+                    return Err(anyhow!("--mouse X,Y[,d|u]@TICK"));
+                }
+                let kind = parts
+                    .get(2)
+                    .map_or('m', |s| s.chars().next().unwrap_or('m'));
+                args.script.push(ScriptEvent::Mouse(
+                    t.parse()?,
+                    parts[0].parse()?,
+                    parts[1].parse()?,
+                    kind,
+                ));
+            }
+            "--key" => {
+                // --key [alt+][ctl+][sh+]NAME@TICK — scripted svc key line.
+                let v = val("--key")?;
+                let (mut name, t) = v
+                    .rsplit_once('@')
+                    .ok_or_else(|| anyhow!("--key NAME@TICK"))?;
+                let (mut alt, mut ctl, mut sh) = (false, false, false);
+                loop {
+                    if let Some(rest) = name.strip_prefix("alt+") {
+                        alt = true;
+                        name = rest;
+                    } else if let Some(rest) = name.strip_prefix("ctl+") {
+                        ctl = true;
+                        name = rest;
+                    } else if let Some(rest) = name.strip_prefix("sh+") {
+                        sh = true;
+                        name = rest;
+                    } else {
+                        break;
+                    }
+                }
+                args.script
+                    .push(ScriptEvent::Key(t.parse()?, name.to_string(), alt, ctl, sh));
             }
             "--quit-after" => args.quit_after_ticks = Some(val("--quit-after")?.parse()?),
             "--announce-ready" => args.announce_ready = true,
@@ -283,7 +339,13 @@ struct PocketRoot {
     buttons: u32,
     /// Buttons currently held by the --press script.
     script_buttons: u32,
-    // editor input
+    /// Primary-button state of the --mouse script.
+    script_mouse: bool,
+    // editor/desk input
+    /// The desk companion is in the plan — the extended input dialect.
+    desk: bool,
+    /// Pointer shape requested by the guest ({t:"cursor"} intent).
+    cursor_style: CursorStyle,
     mouse_down: bool,
     click_edge: bool,
     last_mouse: Option<(f32, f32, bool)>,
@@ -340,6 +402,7 @@ impl PocketRoot {
         let focus = cx.focus_handle();
         let viewport = args.viewport;
         let script = args.script.clone();
+        let desk = args.companions.iter().any(|c| c == "desk");
         let root = PocketRoot {
             surface,
             guest,
@@ -356,6 +419,9 @@ impl PocketRoot {
             canvas_origin: Rc::new(Cell::new(point(px(0.0), px(0.0)))),
             buttons: 0,
             script_buttons: 0,
+            script_mouse: false,
+            desk,
+            cursor_style: CursorStyle::Arrow,
             mouse_down: false,
             click_edge: false,
             last_mouse: None,
@@ -411,10 +477,25 @@ impl PocketRoot {
         self.surface.svc_push(value.to_string());
     }
 
+    /// Input lines flow when either JSON-line dialect is wired.
+    fn forward_input(&self) -> bool {
+        self.args.editor || self.desk
+    }
+
     /// The svc hello: viewport first, then the document (order matters — the
-    /// app lays text out against the viewport it was just told about).
+    /// app lays text out against the viewport it was just told about). The
+    /// epoch anchors the guest's wall clock (desk taskbar); the note dialect
+    /// ignores it.
     fn send_hello(&mut self) {
-        self.svc(serde_json::json!({"t": "hello", "w": self.viewport.0, "h": self.viewport.1}));
+        log::debug!(
+            "pocket-macos: svc hello (desk={}, editor={})",
+            self.desk,
+            self.args.editor
+        );
+        self.svc(serde_json::json!({
+            "t": "hello", "w": self.viewport.0, "h": self.viewport.1,
+            "epoch": epoch_ms() as u64,
+        }));
         if let Some(file) = &self.args.file {
             let text = std::fs::read_to_string(file).unwrap_or_default();
             if !text.is_empty() {
@@ -452,6 +533,37 @@ impl PocketRoot {
                 ScriptEvent::Press(t, bit) if tick == t + 6 => {
                     self.script_buttons &= !bit;
                 }
+                ScriptEvent::Mouse(t, x, y, kind) if t == tick => {
+                    if kind == 'r' {
+                        // Right click: press + release in one tick (b:2 lines).
+                        self.svc(serde_json::json!(
+                            {"t": "mouse", "x": x, "y": y, "d": true, "b": 2, "sh": false}
+                        ));
+                        self.svc(serde_json::json!(
+                            {"t": "mouse", "x": x, "y": y, "d": false, "b": 2, "sh": false}
+                        ));
+                    } else {
+                        let down = match kind {
+                            'd' => {
+                                self.script_mouse = true;
+                                true
+                            }
+                            'u' => {
+                                self.script_mouse = false;
+                                false
+                            }
+                            _ => self.script_mouse,
+                        };
+                        self.svc(serde_json::json!(
+                            {"t": "mouse", "x": x, "y": y, "d": down, "sh": false}
+                        ));
+                    }
+                }
+                ScriptEvent::Key(t, ref k, alt, ctl, sh) if t == tick => {
+                    self.svc(serde_json::json!(
+                        {"t": "key", "k": k, "sh": sh, "alt": alt, "ctl": ctl}
+                    ));
+                }
                 _ => {}
             }
         }
@@ -465,7 +577,7 @@ impl PocketRoot {
         }
         if !self.booted {
             self.booted = true;
-            if self.args.editor {
+            if self.forward_input() {
                 self.send_hello();
             }
         }
@@ -493,7 +605,7 @@ impl PocketRoot {
                 ) {
                     log::warn!("pocket-macos: resize hook failed: {e}");
                 }
-            if self.args.editor {
+            if self.forward_input() {
                 self.svc(serde_json::json!({"t": "resize", "w": vp.0, "h": vp.1}));
             }
         }
@@ -524,7 +636,7 @@ impl PocketRoot {
                 0
             }
         } else {
-            self.buttons
+            self.buttons | self.script_buttons
         };
         self.click_edge = false;
         if let Err(e) = self.guest.frame(buttons) {
@@ -553,6 +665,13 @@ impl PocketRoot {
                             1.0,
                             v["h"].as_f64().unwrap_or(20.0) as f32,
                         ));
+                    }
+                    Some("cursor") => {
+                        let style = cursor_for(v["k"].as_str().unwrap_or("default"));
+                        if style != self.cursor_style {
+                            self.cursor_style = style;
+                            cx.notify();
+                        }
                     }
                     other => log::warn!("pocket-macos: unknown intent {other:?}"),
                 },
@@ -588,7 +707,7 @@ impl PocketRoot {
 
     fn on_key_down(&mut self, e: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
         let ks = &e.keystroke;
-        if self.args.editor {
+        if self.forward_input() {
             let shift = ks.modifiers.shift;
             if ks.modifiers.platform {
                 match ks.key.as_str() {
@@ -623,10 +742,26 @@ impl PocketRoot {
                 "pageup" => Some("PageUp"),
                 "pagedown" => Some("PageDown"),
                 "escape" => Some("Escape"),
+                // Desk-dialect chord keys (Alt+F4, Ctrl+Esc, Alt+Tab).
+                "f1" => Some("F1"),
+                "f2" => Some("F2"),
+                "f3" => Some("F3"),
+                "f4" => Some("F4"),
+                "f5" => Some("F5"),
+                "f6" => Some("F6"),
+                "f7" => Some("F7"),
+                "f8" => Some("F8"),
+                "f9" => Some("F9"),
+                "f10" => Some("F10"),
+                "f11" => Some("F11"),
+                "f12" => Some("F12"),
                 _ => None,
             };
             if let Some(k) = named {
-                self.svc(serde_json::json!({"t": "key", "k": k, "sh": shift}));
+                self.svc(serde_json::json!({
+                    "t": "key", "k": k, "sh": shift,
+                    "alt": ks.modifiers.alt, "ctl": ks.modifiers.control,
+                }));
             } else if self.marked.is_none() {
                 // Plain typing (IME composition delivers through the input
                 // handler instead — no double-input path).
@@ -648,7 +783,7 @@ impl PocketRoot {
     }
 
     fn on_key_up(&mut self, e: &KeyUpEvent, _w: &mut Window, _cx: &mut Context<Self>) {
-        if !self.args.editor
+        if !self.forward_input()
             && let Some(bit) = button_for(&e.keystroke.key)
         {
             self.buttons &= !bit;
@@ -673,42 +808,76 @@ impl PocketRoot {
 
     fn on_mouse_down(&mut self, e: &MouseDownEvent, w: &mut Window, _cx: &mut Context<Self>) {
         self.focus.focus(w);
-        if e.button != MouseButton::Left {
-            return;
-        }
-        self.mouse_down = true;
-        self.click_edge = true;
-        if self.args.editor {
-            let (x, y) = self.logical_pos(e.position);
-            self.push_mouse(x, y, true, e.modifiers.shift);
+        match e.button {
+            MouseButton::Left => {
+                self.mouse_down = true;
+                self.click_edge = true;
+                if self.forward_input() {
+                    let (x, y) = self.logical_pos(e.position);
+                    self.push_mouse(x, y, true, e.modifiers.shift);
+                }
+            }
+            // Right button is desk-dialect only (b:2 lines would read as
+            // primary presses to the note protocol).
+            MouseButton::Right if self.desk => {
+                let (x, y) = self.logical_pos(e.position);
+                self.svc(serde_json::json!(
+                    {"t": "mouse", "x": x, "y": y, "d": true, "b": 2, "sh": e.modifiers.shift}
+                ));
+            }
+            _ => {}
         }
     }
 
     fn on_mouse_up(&mut self, e: &MouseUpEvent, _w: &mut Window, _cx: &mut Context<Self>) {
-        if e.button != MouseButton::Left {
-            return;
-        }
-        self.mouse_down = false;
-        if self.args.editor {
-            let (x, y) = self.logical_pos(e.position);
-            self.push_mouse(x, y, false, e.modifiers.shift);
+        match e.button {
+            MouseButton::Left => {
+                self.mouse_down = false;
+                if self.forward_input() {
+                    let (x, y) = self.logical_pos(e.position);
+                    self.push_mouse(x, y, false, e.modifiers.shift);
+                }
+            }
+            MouseButton::Right if self.desk => {
+                let (x, y) = self.logical_pos(e.position);
+                self.svc(serde_json::json!(
+                    {"t": "mouse", "x": x, "y": y, "d": false, "b": 2, "sh": e.modifiers.shift}
+                ));
+            }
+            _ => {}
         }
     }
 
     fn on_mouse_move(&mut self, e: &MouseMoveEvent, _w: &mut Window, _cx: &mut Context<Self>) {
-        if self.args.editor {
+        if self.forward_input() {
             let (x, y) = self.logical_pos(e.position);
             self.push_mouse(x, y, self.mouse_down, e.modifiers.shift);
         }
     }
 
     fn on_scroll(&mut self, e: &ScrollWheelEvent, w: &mut Window, _cx: &mut Context<Self>) {
-        if self.args.editor {
+        if self.forward_input() {
             let dy = f32::from(e.delta.pixel_delta(w.line_height()).y);
             if dy != 0.0 {
                 self.svc(serde_json::json!({"t": "scroll", "dy": dy}));
             }
         }
+    }
+}
+
+/// {t:"cursor"} intent → pointer shape. Keys mirror CSS cursor names the
+/// desk dialect uses; unknown keys fall back to the arrow.
+fn cursor_for(k: &str) -> CursorStyle {
+    match k {
+        "text" => CursorStyle::IBeam,
+        "pointer" => CursorStyle::PointingHand,
+        "move" => CursorStyle::OpenHand,
+        "grabbing" => CursorStyle::ClosedHand,
+        "ew" => CursorStyle::ResizeLeftRight,
+        "ns" => CursorStyle::ResizeUpDown,
+        "nwse" => CursorStyle::ResizeUpLeftDownRight,
+        "nesw" => CursorStyle::ResizeUpRightDownLeft,
+        _ => CursorStyle::Arrow,
     }
 }
 
@@ -892,16 +1061,19 @@ impl Render for PocketRoot {
             .then_some((self.args.viewport.0 as f32, self.args.viewport.1 as f32));
         let entity: Entity<PocketRoot> = cx.entity();
         let focus = self.focus.clone();
-        let ime = self.args.editor;
+        let ime = self.forward_input();
 
         div()
             .size_full()
             .bg(gpui::black())
+            .cursor(self.cursor_style)
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key_down))
             .on_key_up(cx.listener(Self::on_key_up))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::on_mouse_down))
+            .on_mouse_up(MouseButton::Right, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
             .child(

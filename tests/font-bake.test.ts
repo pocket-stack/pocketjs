@@ -136,3 +136,44 @@ describe("monospace slots", () => {
     expect(glyphAdvances(bakeSlot(font, 1, 14, false, chars, 1)).size).toBeGreaterThan(1);
   });
 });
+
+describe("fill rule", () => {
+  // W95FA (a bitmap-font conversion) builds glyphs from stroke rectangles
+  // that SHARE EDGES — under the old even-odd pairing the shared spans
+  // cancelled and 'h' lost its ascender (rendered identical to 'n').
+  // Nonzero winding is the TrueType/CFF rule; this pins it.
+  test("edge-sharing strokes survive (nonzero winding, not even-odd)", async () => {
+    const w95 = parseFont(
+      await Bun.file(new URL("../assets/fonts/W95FA.otf", import.meta.url)).arrayBuffer(),
+    );
+    const chars = ["h", "n"].map((c) => c.codePointAt(0)!);
+    const atlas = bakeSlot(w95, 0, 12.5, false, chars, 2);
+    const view = new DataView(atlas.bytes.buffer, atlas.bytes.byteOffset, atlas.bytes.byteLength);
+    const cellBytes = atlas.coverageW * atlas.coverageH;
+    const cellsOff = FONT_HEADER_SIZE + atlas.glyphCount * FONT_CMAP_ENTRY_SIZE;
+    const cellOf = (cp: number): Uint8Array => {
+      for (let i = 0; i < atlas.glyphCount; i++) {
+        const e = FONT_HEADER_SIZE + i * FONT_CMAP_ENTRY_SIZE;
+        if (view.getUint32(e, true) === cp) {
+          const gid = view.getUint16(e + 4, true);
+          return atlas.bytes.subarray(cellsOff + gid * cellBytes, cellsOff + (gid + 1) * cellBytes);
+        }
+      }
+      throw new Error(`codepoint ${cp} missing`);
+    };
+    const h = cellOf(chars[0]);
+    const n = cellOf(chars[1]);
+    expect(h.some((b) => b > 0)).toBe(true);
+    expect(Buffer.from(h).equals(Buffer.from(n))).toBe(false);
+    // The ascender: 'h' must have ink strictly above 'n''s topmost row.
+    const topInk = (cell: Uint8Array): number => {
+      for (let y = 0; y < atlas.coverageH; y++) {
+        for (let x = 0; x < atlas.coverageW; x++) {
+          if (cell[y * atlas.coverageW + x] > 0) return y;
+        }
+      }
+      return atlas.coverageH;
+    };
+    expect(topInk(h)).toBeLessThan(topInk(n));
+  });
+});

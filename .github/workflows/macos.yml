@@ -19,10 +19,12 @@ on:
       - "hosts/macos/**"
       - "tools/macos.ts"
       - "apps/note/**"
+      - "apps/desk98/**"
       - "framework/compiler/**"
       - "assets/fonts/**"
       - "tests/platform-contracts.test.ts"
       - "tests/note.test.ts"
+      - "tests/desk98.test.ts"
       - "tests/font-bake.test.ts"
       - "tests/npm-package.test.ts"
       - "package.json"
@@ -37,10 +39,12 @@ on:
       - "hosts/macos/**"
       - "tools/macos.ts"
       - "apps/note/**"
+      - "apps/desk98/**"
       - "framework/compiler/**"
       - "assets/fonts/**"
       - "tests/platform-contracts.test.ts"
       - "tests/note.test.ts"
+      - "tests/desk98.test.ts"
       - "tests/font-bake.test.ts"
       - "tests/npm-package.test.ts"
       - "package.json"
@@ -75,8 +79,8 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
-      - name: Contract + note + platform + npm package tests
-        run: bun test tests/platform-contracts.test.ts tests/note.test.ts tests/font-bake.test.ts tests/npm-package.test.ts && bun tests/contract.ts
+      - name: Contract + note + desk98 + platform + npm package tests
+        run: bun test tests/platform-contracts.test.ts tests/note.test.ts tests/desk98.test.ts tests/font-bake.test.ts tests/npm-package.test.ts && bun tests/contract.ts
 
       - name: Compile the note against macos-app (plan + bundle + pak)
         run: |
@@ -89,6 +93,18 @@ jobs:
           mkdirSync(".pocket/macos-app", { recursive: true });
           await Bun.write(".pocket/macos-app/note-main.plan.json", JSON.stringify(r.plan, null, 2) + "\n");'
           bun tools/build.ts --plan=.pocket/macos-app/note-main.plan.json
+
+      - name: Compile desk98 against macos-app (W95FA pak.json splice + SVG icons)
+        run: |
+          bun -e '
+          import { validateAndResolveBuildPlan } from "./framework/src/manifest/resolve.ts";
+          import { mkdirSync } from "node:fs";
+          const m = await Bun.file("apps/desk98/pocket.json").json();
+          const r = validateAndResolveBuildPlan(m, { target: "macos-app" });
+          if (!r.ok) throw new Error(JSON.stringify(r.diagnostics));
+          mkdirSync(".pocket/macos-app", { recursive: true });
+          await Bun.write(".pocket/macos-app/desk98-main.plan.json", JSON.stringify(r.plan, null, 2) + "\n");'
+          bun tools/build.ts --plan=.pocket/macos-app/desk98-main.plan.json
 
       - name: Test core (TEXT_RUN + native measure gates)
         run: cargo test --locked --manifest-path engine/core/Cargo.toml

@@ -8,8 +8,9 @@
 // out — the core resolves cmap misses to gid 0 (tofu) at runtime.
 //
 // Rasterization: opentype.js outlines, flattened to polylines, scanline
-// even-odd fill with horizontally-biased supersampling into 8-bit coverage
-// cells. Atlas v3 keeps cell/line/cmap metrics in LOGICAL px while baking the
+// nonzero-winding fill (the TrueType/CFF rule — even-odd cancels the shared
+// edges and overlaps some outlines are built from) with horizontally-biased
+// supersampling into 8-bit coverage cells. Atlas v3 keeps cell/line/cmap metrics in LOGICAL px while baking the
 // bitmap at `rasterDensity` samples per logical px. A Vita density-2 build can
 // therefore draw sharp 2x coverage without changing PSP-compatible layout.
 // Cells are tight in logical space: cellW = max inked logical width over the
@@ -165,32 +166,47 @@ function rasterize(contours: Contour[], cellW: number, cellH: number): Uint8Arra
   const sw = cellW * SS_X;
   const samplesPerPixel = SS_X * SS_Y;
   const counts = new Uint16Array(cellW); // covered subsamples per pixel column, one row at a time
-  const xs: number[] = [];
+  // Crossings for one scanline: x position + winding direction (+1 downward,
+  // -1 upward in y-down space). Nonzero winding — pairing sorted crossings
+  // (even-odd) erases the interior wherever two contours share an edge or
+  // overlap, which pixel-font outlines (stroke rectangles sharing stem edges)
+  // and composite glyphs (accent over base) legitimately do.
+  const edges: { x: number; w: number }[] = [];
   for (let row = 0; row < cellH; row++) {
     counts.fill(0);
     for (let sub = 0; sub < SS_Y; sub++) {
       const y = row + (sub + 0.5) / SS_Y;
-      xs.length = 0;
+      edges.length = 0;
       for (const c of contours) {
         for (let i = 0; i < c.length - 1; i++) {
           const p0 = c[i];
           const p1 = c[i + 1];
-          if ((p0.y <= y && p1.y > y) || (p1.y <= y && p0.y > y)) {
-            xs.push(p0.x + ((y - p0.y) * (p1.x - p0.x)) / (p1.y - p0.y));
+          if (p0.y <= y && p1.y > y) {
+            edges.push({ x: p0.x + ((y - p0.y) * (p1.x - p0.x)) / (p1.y - p0.y), w: 1 });
+          } else if (p1.y <= y && p0.y > y) {
+            edges.push({ x: p0.x + ((y - p0.y) * (p1.x - p0.x)) / (p1.y - p0.y), w: -1 });
           }
         }
       }
-      if (xs.length < 2) continue;
-      xs.sort((a, b) => a - b);
-      for (let k = 0; k + 1 < xs.length; k += 2) {
-        // subcolumn centers inside [xs[k], xs[k+1])
-        let s0 = Math.ceil(xs[k] * SS_X - 0.5);
-        let s1 = Math.floor(xs[k + 1] * SS_X - 0.5);
-        if (s0 < 0) s0 = 0;
-        if (s1 >= sw) s1 = sw - 1;
-        for (let s = s0; s <= s1; s++) {
-          const center = (s + 0.5) / SS_X;
-          if (center >= xs[k] && center < xs[k + 1]) counts[(s / SS_X) | 0]++;
+      if (edges.length < 2) continue;
+      edges.sort((a, b) => a.x - b.x);
+      let wind = 0;
+      let spanX = 0;
+      for (const e of edges) {
+        const prev = wind;
+        wind += e.w;
+        if (prev === 0 && wind !== 0) {
+          spanX = e.x;
+        } else if (prev !== 0 && wind === 0) {
+          // subcolumn centers inside [spanX, e.x)
+          let s0 = Math.ceil(spanX * SS_X - 0.5);
+          let s1 = Math.floor(e.x * SS_X - 0.5);
+          if (s0 < 0) s0 = 0;
+          if (s1 >= sw) s1 = sw - 1;
+          for (let s = s0; s <= s1; s++) {
+            const center = (s + 0.5) / SS_X;
+            if (center >= spanX && center < e.x) counts[(s / SS_X) | 0]++;
+          }
         }
       }
     }
