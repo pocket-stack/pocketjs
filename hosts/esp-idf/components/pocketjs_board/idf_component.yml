@@ -1,0 +1,13 @@
+description: Wi-Fi station bring-up for the AtomS3R (ESP32-S3) and Tab5 (ESP32-P4 + C6) PocketJS profiles.
+version: "0.1.0"
+dependencies:
+  idf:
+    version: ">=5.4"
+  espressif/esp_wifi_remote:
+    version: "1.6.4"
+    rules:
+      - if: "target in [esp32p4]"
+  espressif/esp_hosted:
+    version: "2.12.12"
+    rules:
+      - if: "target in [esp32p4]"

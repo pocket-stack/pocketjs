@@ -72,6 +72,7 @@ const SUITE: readonly Stage[] = [
       "tests/network-policy.test.ts",
       "tests/net-policy-hosts.test.ts",
       "tests/http-semantics.test.ts",
+      "tests/esp-idf-profile.test.ts",
       "tests/vita-package.test.ts",
       "tests/psp-toolchain.test.ts",
       "tests/symbian-data.test.ts",

@@ -1,0 +1,63 @@
+menu "PocketJS network smoke"
+
+    config SMOKE_BOARD_NAME
+        string "Board name reported by the guest"
+        default "esp32"
+
+    config SMOKE_WIFI_SSID
+        string "Wi-Fi SSID"
+        default ""
+
+    config SMOKE_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+
+    config SMOKE_MAC_HOST
+        string "Workstation peer address (tools/net-peer.ts); empty disables"
+        default ""
+
+    config SMOKE_MAC_HTTP_PORT
+        int "Workstation peer HTTP port"
+        default 8790
+
+    config SMOKE_MAC_WS_PORT
+        int "Workstation peer WebSocket port"
+        default 8791
+
+    config SMOKE_PEER_HOST
+        string "Peer board address; empty disables the board-to-board suite"
+        default ""
+
+    config SMOKE_PEER_PORT
+        int "Peer board HTTP port"
+        default 8080
+
+    config SMOKE_PEER_PING
+        bool "Ping the peer board every ~2 s after the suite"
+        default y
+
+    config SMOKE_SERVE_PORT
+        int "Port the guest serves on"
+        default 8080
+
+    config SMOKE_TICK_HZ
+        int "Guest tick rate"
+        default 60
+
+    config SMOKE_GUEST_MEMORY_KB
+        int "QuickJS memory limit (KiB)"
+        default 4096
+
+    config SMOKE_GUEST_STACK_KB
+        int "Guest owner task stack (KiB)"
+        default 32
+
+    config SMOKE_ENABLE_TLS
+        bool "Run the HTTPS/TLS suite against public hosts (needs internet + SNTP)"
+        default n
+
+    config SMOKE_TLS_HOST
+        string "Public HTTPS host for the positive TLS check"
+        default "example.com"
+
+endmenu

@@ -1,0 +1,5 @@
+description: ESP-TLS TlsProvider for the PocketJS network core (HTTPS/WSS on ESP-IDF).
+version: "0.1.0"
+dependencies:
+  idf:
+    version: ">=5.4"

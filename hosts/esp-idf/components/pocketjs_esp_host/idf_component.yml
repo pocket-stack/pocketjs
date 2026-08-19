@@ -1,0 +1,7 @@
+description: PocketJS QuickJS-ng guest owner with the network modules for ESP-IDF.
+version: "0.1.0"
+dependencies:
+  idf:
+    version: ">=5.4"
+  espressif/quickjs-ng:
+    version: "0.14.0"
