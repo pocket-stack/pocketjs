@@ -8,7 +8,9 @@
 //   {t:"resize", w, h}         live window resize
 //   {t:"ch", s}                typed characters
 //   {t:"key", k, sh, alt, ctl} named key + modifiers (adds F1..F12)
-//   {t:"paste", text}          system clipboard (⌘V)
+//   {t:"key", k, cmd:true}     ⌘ chord — k is the raw lowercase key ("w",
+//                              "m", "`", "c", …); ⌘Q/⌘V stay host-side
+//   {t:"paste", text}          system clipboard (⌘V or a paste-req reply)
 //   {t:"ime", s, c}            IME preedit + caret char index (null clears)
 //   {t:"mouse", x, y, d, sh}   primary-button pointer stream
 //   {t:"mouse", x, y, d, b:2}  right-button press/release (desk-only lines)
@@ -17,6 +19,7 @@
 // guest → host intents:
 //   {t:"quit"}                 Shut Down
 //   {t:"copy", text}           put text on the system clipboard
+//   {t:"paste-req"}            ask for the clipboard (host answers {t:"paste"})
 //   {t:"caret", x, y, h}       caret rect — docks the IME candidate window
 //   {t:"cursor", k}            pointer shape: default|text|pointer|move|
 //                              grabbing|ew|ns|nwse|nesw
@@ -39,6 +42,8 @@ export interface HostEvent {
   sh?: boolean;
   alt?: boolean;
   ctl?: boolean;
+  /** ⌘ held — k is then the raw lowercase key name ("w", "m", "`", …). */
+  cmd?: boolean;
   dy?: number;
   text?: string;
   /** IME preedit caret (char index into s), null when composition ends. */
@@ -63,6 +68,7 @@ export interface Svc {
     line:
       | { t: "quit" }
       | { t: "copy"; text: string }
+      | { t: "paste-req" }
       | { t: "caret"; x: number; y: number; h: number }
       | { t: "cursor"; k: CursorKind },
   ): void;

@@ -114,24 +114,31 @@ rendered`); a settled app shows M ≪ N.
 
 The host speaks a second svc dialect when the plan's companion list names
 `desk` (apps/desk98/svc.ts): the note dialect's input lines extended with
-**right-button mouse lines (`b:2`), alt/ctl key modifiers, F1–F12, a boot
-epoch in the hello**, and a `{t:"cursor"}` guest intent that sets the
-window's pointer shape. `apps/desk98` — a Windows 98 desktop compositor —
-is the reference consumer: the guest owns every window (drag, resize,
-z-order, menus, Minesweeper) by hit-testing the raw pointer stream itself,
-window moves ride paint-only translate props, and raises ride zIndex, so a
-drag never relayouts and an idle desktop keeps the demand-render governor
-at a few frames per second. Its W95FA pixel font is baked per-app into
-slots 19–21 through `apps/desk98/pak.json` (`gen-assets.ts`) — the repo
-slot table (0–18) never moves.
+**right-button mouse lines (`b:2`), alt/ctl key modifiers, F1–F12,
+cmd-flagged ⌘ chords, a boot epoch in the hello**, a `{t:"cursor"}` guest
+intent that sets the window's pointer shape, and a `{t:"paste-req"}` guest
+intent the host answers with a paste line (menu-driven Paste). ⌘Q quits
+and ⌘V pastes host-side; every other ⌘ chord reaches the guest, so the
+compositor owns its shortcuts (⌘W close, ⌘M minimize, ⌘` cycle windows,
+⌘Esc Start menu, ⌘A/C/X editing). Plain typing arrives only through the
+IME input handler (`insertText:` → one `ch` line per keypress).
+
+`apps/desk98` — a Windows 98 desktop compositor written in Vue Vapor SFCs
+— is the reference consumer: the guest owns every window (drag, resize,
+z-order, menus, text selection, Minesweeper) by hit-testing the raw
+pointer stream itself, window moves ride paint-only translate props, and
+raises ride zIndex, so a drag never relayouts and an idle desktop keeps
+the demand-render governor at a few frames per second. Its W95FA pixel
+font is baked per-app into slots 19–21 through `apps/desk98/pak.json`
+(`gen-assets.ts`) — the repo slot table (0–18) never moves.
 
 ```
-bun run macos desk98      # the full desktop; drag, Alt+Tab, Ctrl+Esc, Alt+F4
+bun run macos desk98      # the full desktop; drag-select, Cmd+`, Cmd+W, Cmd+Esc
 ```
 
 Scripted acceptance drives the same dialect from flags: `--mouse
-X,Y[,d|u|r]@TICK` (drags, right clicks), `--key [alt+][ctl+]NAME@TICK`,
-`--type TEXT@TICK`.
+X,Y[,d|u|r]@TICK` (drags, right clicks), `--key
+[cmd+][alt+][ctl+]NAME@TICK`, `--type TEXT@TICK`.
 
 ## Choosing a backend
 

@@ -25,10 +25,13 @@
 //!   map work for every app regardless of this flag.
 //! - desk — the DESK COMPANION adapter (apps/desk98/svc.ts): the same
 //!   input-line dialect as the editor, extended with right-button mouse
-//!   lines (b:2), alt/ctl key modifiers, F1–F12, a boot epoch in the hello
-//!   (for the guest's wall clock), and a {t:"cursor"} guest intent that sets
-//!   the window's pointer shape. Wired when the plan's companion list names
-//!   "desk"; the note dialect stays byte-compatible (extra fields ignored).
+//!   lines (b:2), alt/ctl key modifiers, F1–F12, cmd-flagged ⌘ chords
+//!   (except ⌘Q = host quit and ⌘V = host-side paste), a boot epoch in the
+//!   hello (for the guest's wall clock), a {t:"cursor"} guest intent that
+//!   sets the window's pointer shape, and a {t:"paste-req"} guest intent
+//!   answered with a paste line (menu-driven Paste). Wired when the plan's
+//!   companion list names "desk"; the note dialect stays byte-compatible
+//!   (extra fields ignored).
 
 use std::cell::{Cell, RefCell};
 use std::ops::Range;
@@ -82,8 +85,8 @@ enum ScriptEvent {
     /// Raw pointer line at a tick: kind 'd' presses, 'u' releases, 'm' moves
     /// with the current scripted button state (drag scripting).
     Mouse(u64, f32, f32, char),
-    /// Named key with optional alt+/ctl+/sh+ prefixes (svc `key` line).
-    Key(u64, String, bool, bool, bool),
+    /// Named key with optional cmd+/alt+/ctl+/sh+ prefixes (svc `key` line).
+    Key(u64, String, bool, bool, bool, bool),
 }
 
 struct Args {
@@ -202,14 +205,17 @@ fn parse_args() -> Result<Args> {
                 ));
             }
             "--key" => {
-                // --key [alt+][ctl+][sh+]NAME@TICK — scripted svc key line.
+                // --key [cmd+][alt+][ctl+][sh+]NAME@TICK — scripted svc key line.
                 let v = val("--key")?;
                 let (mut name, t) = v
                     .rsplit_once('@')
                     .ok_or_else(|| anyhow!("--key NAME@TICK"))?;
-                let (mut alt, mut ctl, mut sh) = (false, false, false);
+                let (mut cmd, mut alt, mut ctl, mut sh) = (false, false, false, false);
                 loop {
-                    if let Some(rest) = name.strip_prefix("alt+") {
+                    if let Some(rest) = name.strip_prefix("cmd+") {
+                        cmd = true;
+                        name = rest;
+                    } else if let Some(rest) = name.strip_prefix("alt+") {
                         alt = true;
                         name = rest;
                     } else if let Some(rest) = name.strip_prefix("ctl+") {
@@ -222,8 +228,14 @@ fn parse_args() -> Result<Args> {
                         break;
                     }
                 }
-                args.script
-                    .push(ScriptEvent::Key(t.parse()?, name.to_string(), alt, ctl, sh));
+                args.script.push(ScriptEvent::Key(
+                    t.parse()?,
+                    name.to_string(),
+                    cmd,
+                    alt,
+                    ctl,
+                    sh,
+                ));
             }
             "--quit-after" => args.quit_after_ticks = Some(val("--quit-after")?.parse()?),
             "--announce-ready" => args.announce_ready = true,
@@ -559,9 +571,9 @@ impl PocketRoot {
                         ));
                     }
                 }
-                ScriptEvent::Key(t, ref k, alt, ctl, sh) if t == tick => {
+                ScriptEvent::Key(t, ref k, cmd, alt, ctl, sh) if t == tick => {
                     self.svc(serde_json::json!(
-                        {"t": "key", "k": k, "sh": sh, "alt": alt, "ctl": ctl}
+                        {"t": "key", "k": k, "cmd": cmd, "sh": sh, "alt": alt, "ctl": ctl}
                     ));
                 }
                 _ => {}
@@ -658,6 +670,15 @@ impl PocketRoot {
                             v["text"].as_str().unwrap_or_default().to_string(),
                         ));
                     }
+                    Some("paste-req") => {
+                        // The guest can't read the system clipboard; answer a
+                        // menu-driven Paste with the dialect's paste line.
+                        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text())
+                            && !text.is_empty()
+                        {
+                            self.svc(serde_json::json!({"t": "paste", "text": text}));
+                        }
+                    }
                     Some("caret") => {
                         self.caret_rect = Some((
                             v["x"].as_f64().unwrap_or(0.0) as f32,
@@ -710,6 +731,32 @@ impl PocketRoot {
         if self.forward_input() {
             let shift = ks.modifiers.shift;
             if ks.modifiers.platform {
+                if self.desk {
+                    // Desk dialect: ⌘Q quits the host (macOS convention) and
+                    // ⌘V pastes here (the guest can't read the clipboard);
+                    // every other chord goes to the guest as a cmd-flagged
+                    // key line — the compositor owns its own shortcuts
+                    // (⌘W close, ⌘M minimize, ⌘` cycle, ⌘C/X/A editing).
+                    match ks.key.as_str() {
+                        "q" => self.exit = true,
+                        "v" => {
+                            if let Some(text) =
+                                cx.read_from_clipboard().and_then(|item| item.text())
+                                && !text.is_empty()
+                            {
+                                self.svc(serde_json::json!({"t": "paste", "text": text}));
+                            }
+                        }
+                        k => self.svc(serde_json::json!({
+                            "t": "key", "k": k, "cmd": true, "sh": shift,
+                            "alt": ks.modifiers.alt, "ctl": ks.modifiers.control,
+                        })),
+                    }
+                    // Consumed: don't let AppKit hunt the (empty) menu bar
+                    // for a key equivalent and beep.
+                    cx.stop_propagation();
+                    return;
+                }
                 match ks.key.as_str() {
                     "q" | "w" => self.exit = true,
                     "z" => self.svc(
@@ -762,15 +809,12 @@ impl PocketRoot {
                     "t": "key", "k": k, "sh": shift,
                     "alt": ks.modifiers.alt, "ctl": ks.modifiers.control,
                 }));
-            } else if self.marked.is_none() {
-                // Plain typing (IME composition delivers through the input
-                // handler instead — no double-input path).
-                if let Some(s) = &ks.key_char
-                    && !s.is_empty()
-                {
-                    self.svc(serde_json::json!({"t": "ch", "s": s}));
-                }
             }
+            // Plain typing is NOT emitted here. gpui hands the unhandled key
+            // event to the input context after this listener, and insertText:
+            // always reaches the registered input handler — so the character
+            // arrives once through replace_text_in_range. Emitting key_char
+            // here as well delivered every keypress twice.
         } else {
             if ks.modifiers.platform && (ks.key == "q" || ks.key == "w") {
                 self.exit = true;

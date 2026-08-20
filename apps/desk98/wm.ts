@@ -5,13 +5,12 @@
 //
 // Chrome anatomy (theme.ts metrics): a window is a face-gray box with a 3px
 // raised frame (padding), an 18px caption (+1px hairline), an optional 18px
-// menu bar, then content. Caption controls sit flush right: [min][zoom]
-// 2px [close], each 16×14, vertically 2px under the caption top.
+// menu bar, then content. Caption controls sit flush right and flush against
+// each other — [min][zoom][close], each 16×14, 2px under the caption top.
 
 import {
   BTN_H,
   BTN_W,
-  CLOSE_GAP,
   FRAME,
   MENU_H,
   RESIZE_BAND,
@@ -47,15 +46,13 @@ export interface ChromeOpts {
   menuWidths: readonly number[];
 }
 
-/** Left x of each caption button, right-aligned inside the frame. */
+/** Left x of each caption button, right-aligned inside the frame, flush. */
 export function captionButtonXs(w: number, buttons: readonly CaptionButton[]): number[] {
   const xs: number[] = [];
   let right = w - FRAME - 2;
   for (let i = buttons.length - 1; i >= 0; i--) {
     xs.unshift(right - BTN_W);
     right -= BTN_W;
-    // The classic 2px gap sits between close and its neighbors only.
-    if (buttons[i] === "close" && i > 0) right -= CLOSE_GAP;
   }
   return xs;
 }

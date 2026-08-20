@@ -117,6 +117,12 @@ const SUITE: readonly Stage[] = [
     tests: ["tests/octane-smoke.test.ts"],
   },
   {
+    name: "desk98 sim",
+    prep: [["bun", "tools/build.ts", "desk98-main", "--framework=vue-vapor"]],
+    browser: true,
+    tests: ["tests/desk98-sim.test.ts"],
+  },
+  {
     name: "cafe sim (determinism)",
     prep: [["bun", "tools/build.ts", "cafe-main"]],
     browser: true,

@@ -70,6 +70,44 @@ async function loadSnapped(): Promise<Font> {
       }
     }
   }
+
+  // W95FA ships no backtick (cp 96 → .notdef, the drawn tofu box), but the
+  // desktop's ⌘` shortcut copy needs one. Synthesize it: mirror the
+  // apostrophe's ink around its own x bounds (the mark leans the other way;
+  // bounds are snapped 40-multiples, so the mirror stays on the pixel grid)
+  // into a donor glyph outside the ASCII set, and remap cp 96 onto it.
+  const apoGi = font.charToGlyphIndex("'");
+  const apo = font.glyphs.get(apoGi);
+  const apoCmds = (apo.path as { commands: Array<Record<string, number | string>> }).commands;
+  const xs: number[] = [];
+  for (const cmd of apoCmds) {
+    for (const key of ["x", "x1", "x2"]) {
+      if (typeof cmd[key] === "number") xs.push(cmd[key] as number);
+    }
+  }
+  const pivot = Math.min(...xs) + Math.max(...xs);
+  let donorGid = -1;
+  for (let gi = font.glyphs.length - 1; gi > 0; gi--) {
+    if (!gids.has(gi)) {
+      donorGid = gi;
+      break;
+    }
+  }
+  if (donorGid < 0) throw new Error("gen-assets: no donor gid for the synthetic backtick");
+  const donor = font.glyphs.get(donorGid);
+  const donorPath = donor.path as { commands: Array<Record<string, number | string>> };
+  donorPath.commands.length = 0;
+  for (const cmd of apoCmds) {
+    const m: Record<string, number | string> = { ...cmd };
+    for (const key of ["x", "x1", "x2"]) {
+      if (typeof m[key] === "number") m[key] = pivot - (m[key] as number);
+    }
+    donorPath.commands.push(m);
+  }
+  donor.advanceWidth = apo.advanceWidth;
+  const origIndex = font.charToGlyphIndex.bind(font);
+  font.charToGlyphIndex = (s: string) => (s === "`" ? donorGid : origIndex(s));
+
   return font;
 }
 

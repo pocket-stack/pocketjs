@@ -1,8 +1,7 @@
 // tests/desk98.test.ts — PocketJS 98: window-manager chrome math, the
-// Minesweeper rules and Notepad line editing (all pure), plus a sim boot
-// smoke test of the standalone desktop.
-//
-//   bun tools/build.ts desk98-main && bun test tests/desk98.test.ts
+// Minesweeper rules, Notepad line editing and the selection model (all
+// pure). The sim boot smoke lives in tests/desk98-sim.test.ts (needs the
+// vue-vapor bundle prebuilt).
 
 import { describe, expect, test } from "bun:test";
 import {
@@ -23,8 +22,22 @@ import {
   reveal,
   toggleFlag,
 } from "../apps/desk98/mines.ts";
-import { backspace, colFromX, del, insertText, moveCaret } from "../apps/desk98/notepad.ts";
-import { runScenario, treeHasText } from "../hosts/sim/sim.ts";
+import {
+  applyMove,
+  backspace,
+  colFromX,
+  del,
+  deleteSel,
+  hasSel,
+  insertText,
+  moveCaret,
+  rowSelSpan,
+  selectAll,
+  selectedText,
+  selRange,
+  wordRangeAt,
+  type Doc,
+} from "../apps/desk98/notepad.ts";
 
 // ---------------------------------------------------------------------------
 // wm.ts — chrome hit regions
@@ -39,12 +52,12 @@ const OPTS: ChromeOpts = {
 };
 
 describe("caption buttons", () => {
-  test("min/zoom adjacent, close 2px apart, flush right inside the frame", () => {
+  test("all three buttons sit flush against each other, flush right", () => {
     const xs = captionButtonXs(400, ["min", "max", "close"]);
     // close right edge at w - FRAME(3) - 2.
     expect(xs[2] + 16).toBe(400 - 3 - 2);
-    expect(xs[1]).toBe(xs[2] - 16 - 2); // the classic close gap
-    expect(xs[0]).toBe(xs[1] - 16); // min/zoom adjacent
+    expect(xs[1]).toBe(xs[2] - 16); // no close gap
+    expect(xs[0]).toBe(xs[1] - 16);
   });
 
   test("close-only dialogs place the single button flush right", () => {
@@ -259,16 +272,81 @@ describe("notepad editing", () => {
 });
 
 // ---------------------------------------------------------------------------
-// sim smoke: the standalone desktop (no desk companion) boots a static
-// arrangement — the unmodified-app base case.
+// notepad.ts — selection model
 // ---------------------------------------------------------------------------
 
-describe("desk98-main boots standalone", () => {
-  test("desktop, taskbar and the boot windows render", async () => {
-    const trace = await runScenario({ app: "desk98-main", seconds: 2 });
-    expect(treeHasText(trace.tree, "Start")).toBe(true);
-    expect(treeHasText(trace.tree, "Minesweeper")).toBe(true);
-    expect(treeHasText(trace.tree, "My Computer")).toBe(true);
-    expect(treeHasText(trace.tree, "Welcome to PocketJS 98.")).toBe(true);
-  }, 30000);
+describe("notepad selection", () => {
+  const sel: Doc = {
+    lines: ["hello world", "second line", "third"],
+    caret: { row: 1, col: 4 },
+    anchor: { row: 0, col: 6 },
+  };
+
+  test("selRange orders anchor/caret either way; collapsed = none", () => {
+    expect(selRange(sel)).toEqual({ from: { row: 0, col: 6 }, to: { row: 1, col: 4 } });
+    const flipped: Doc = { ...sel, caret: sel.anchor as { row: number; col: number }, anchor: sel.caret };
+    expect(selRange(flipped)).toEqual(selRange(sel));
+    expect(hasSel({ lines: ["a"], caret: { row: 0, col: 1 }, anchor: { row: 0, col: 1 } })).toBe(false);
+    expect(hasSel({ lines: ["a"], caret: { row: 0, col: 1 } })).toBe(false);
+  });
+
+  test("selectedText joins the range with newlines", () => {
+    expect(selectedText(sel)).toBe("world\nseco");
+    const one: Doc = { lines: ["hello"], caret: { row: 0, col: 4 }, anchor: { row: 0, col: 1 } };
+    expect(selectedText(one)).toBe("ell");
+  });
+
+  test("deleteSel merges the edge lines and lands the caret at the start", () => {
+    const d = deleteSel(sel);
+    expect(d.lines).toEqual(["hello nd line", "third"]);
+    expect(d.caret).toEqual({ row: 0, col: 6 });
+    expect(hasSel(d)).toBe(false);
+  });
+
+  test("typing replaces the selection; backspace/delete just remove it", () => {
+    const typed = insertText(sel, "X");
+    expect(typed.lines).toEqual(["hello Xnd line", "third"]);
+    expect(typed.caret).toEqual({ row: 0, col: 7 });
+    expect(backspace(sel).lines).toEqual(["hello nd line", "third"]);
+    expect(del(sel).lines).toEqual(["hello nd line", "third"]);
+  });
+
+  test("shift extends from the caret; a plain move collapses to the edge", () => {
+    const start: Doc = { lines: ["abc def"], caret: { row: 0, col: 4 } };
+    const ext = applyMove(start, "Right", true);
+    expect(ext.anchor).toEqual({ row: 0, col: 4 });
+    expect(ext.caret).toEqual({ row: 0, col: 5 });
+    const left = applyMove(sel, "Left", false);
+    expect(left.caret).toEqual({ row: 0, col: 6 }); // collapse to from
+    expect(hasSel(left)).toBe(false);
+    const right = applyMove(sel, "Right", false);
+    expect(right.caret).toEqual({ row: 1, col: 4 }); // collapse to to
+  });
+
+  test("selectAll spans the whole document", () => {
+    const all = selectAll({ lines: ["ab", "cde"], caret: { row: 0, col: 0 } });
+    expect(all.anchor).toEqual({ row: 0, col: 0 });
+    expect(all.caret).toEqual({ row: 1, col: 3 });
+    expect(selectedText(all)).toBe("ab\ncde");
+  });
+
+  test("wordRangeAt picks word, whitespace and punctuation runs", () => {
+    expect(wordRangeAt("foo bar_baz!", 5)).toEqual({ from: 4, to: 11 });
+    expect(wordRangeAt("foo bar", 3)).toEqual({ from: 3, to: 4 }); // the space run
+    expect(wordRangeAt("a==b", 1)).toEqual({ from: 1, to: 3 }); // punct run
+    expect(wordRangeAt("", 0)).toEqual({ from: 0, to: 0 });
+  });
+
+  test("rowSelSpan covers edge rows partially and middle rows fully", () => {
+    const tall: Doc = {
+      lines: ["aaaa", "bbbb", "cccc"],
+      caret: { row: 2, col: 2 },
+      anchor: { row: 0, col: 1 },
+    };
+    expect(rowSelSpan(tall, 0)).toEqual({ from: 1, to: 4 });
+    expect(rowSelSpan(tall, 1)).toEqual({ from: 0, to: 4 });
+    expect(rowSelSpan(tall, 2)).toEqual({ from: 0, to: 2 });
+    expect(rowSelSpan(tall, 3)).toBeNull();
+    expect(rowSelSpan({ lines: ["x"], caret: { row: 0, col: 0 } }, 0)).toBeNull();
+  });
 });

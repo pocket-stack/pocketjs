@@ -1,10 +1,12 @@
 // apps/desk98/state.ts — compositor state: window controls, popups, desktop
-// icons. Hot geometry lives in per-window signals so a drag re-evaluates one
+// icons. Hot geometry lives in per-window refs so a drag re-evaluates one
 // window's style binding, not the world; the window LIST only changes on
 // open/close (a reorder would rebuild the layout tree — z rides zIndex).
 
-import { createSignal, type Accessor } from "solid-js";
+import { ref, shallowRef, type Ref, type ShallowRef } from "vue";
 import type { CaptionButton, Geo } from "./wm.ts";
+import type { Doc } from "./notepad.ts";
+import type { Mines } from "./mines.ts";
 
 export type WinKind = "notepad" | "mines" | "folder" | "about" | "shutdown";
 
@@ -12,7 +14,8 @@ export interface MenuDef {
   label: string;
   /** Hit width in px (measured at open — mirrors the render's px-[6] pads). */
   width: number;
-  items: PopupItem[];
+  /** Built at open — disabled states follow live state (selection, …). */
+  items: () => PopupItem[];
 }
 
 export interface PopupItem {
@@ -42,23 +45,63 @@ export interface WinCtl {
   minW: number;
   minH: number;
   menus: MenuDef[] | null;
-  geo: Accessor<Geo>;
-  setGeo: (g: Geo) => void;
-  z: Accessor<number>;
-  setZ: (z: number) => void;
-  minimized: Accessor<boolean>;
-  setMinimized: (m: boolean) => void;
-  maximized: Accessor<boolean>;
-  setMaximized: (m: boolean) => void;
+  geo: ShallowRef<Geo>;
+  z: Ref<number>;
+  minimized: Ref<boolean>;
+  maximized: Ref<boolean>;
   /** Geometry to restore on un-maximize. */
   restoreGeo: Geo | null;
-  pressedBtn: Accessor<CaptionButton | null>;
-  setPressedBtn: (b: CaptionButton | null) => void;
+  pressedBtn: Ref<CaptionButton | null>;
   /** Open menu-bar index, -1 closed. */
-  openMenu: Accessor<number>;
-  setOpenMenu: (i: number) => void;
-  /** Program-specific state bag (notepad lines, the mines board, …). */
+  openMenu: Ref<number>;
+  /** Program-specific state bag (PadData, MinesData, …). */
   data: unknown;
+}
+
+// Program state bags. Vue refs instead of accessor/setter pairs — templates
+// read `.value` explicitly (refs nested in objects never auto-unwrap).
+
+export interface PadData {
+  kind: "notepad";
+  doc: ShallowRef<Doc>;
+  scroll: Ref<number>;
+  preedit: Ref<{ s: string; c: number } | null>;
+}
+
+export interface MinesData {
+  kind: "mines";
+  /** Mutated in place by mines.ts rules — re-assign + triggerRef to paint. */
+  board: ShallowRef<Mines>;
+  /** Cell index held by the primary button, -1 none. */
+  held: Ref<number>;
+  smileyHeld: Ref<boolean>;
+  /** Seconds shown by the timer (app.vue advances it while playing). */
+  elapsed: Ref<number>;
+}
+
+export interface FolderRow {
+  icon: string;
+  name: string;
+  size: string;
+  type: string;
+  open?: () => void;
+}
+
+export interface FolderData {
+  kind: "folder";
+  rows: FolderRow[];
+  selected: Ref<number>;
+}
+
+export interface AboutData {
+  kind: "about";
+  armed: Ref<string | null>;
+}
+
+export interface ShutdownData {
+  kind: "shutdown";
+  choice: Ref<number>;
+  armed: Ref<string | null>;
 }
 
 export interface TaskEntry {
@@ -87,12 +130,6 @@ export function createWin(spec: {
   menus?: MenuDef[] | null;
   data?: unknown;
 }): WinCtl {
-  const [geo, setGeo] = createSignal<Geo>(spec.geo);
-  const [z, setZ] = createSignal(0);
-  const [minimized, setMinimized] = createSignal(false);
-  const [maximized, setMaximized] = createSignal(false);
-  const [pressedBtn, setPressedBtn] = createSignal<CaptionButton | null>(null);
-  const [openMenu, setOpenMenu] = createSignal(-1);
   return {
     id: nextId++,
     kind: spec.kind,
@@ -103,19 +140,13 @@ export function createWin(spec: {
     minW: spec.minW ?? 200,
     minH: spec.minH ?? 120,
     menus: spec.menus ?? null,
-    geo,
-    setGeo,
-    z,
-    setZ,
-    minimized,
-    setMinimized,
-    maximized,
-    setMaximized,
+    geo: shallowRef<Geo>(spec.geo),
+    z: ref(0),
+    minimized: ref(false),
+    maximized: ref(false),
     restoreGeo: null,
-    pressedBtn,
-    setPressedBtn,
-    openMenu,
-    setOpenMenu,
+    pressedBtn: ref<CaptionButton | null>(null),
+    openMenu: ref(-1),
     data: spec.data,
   };
 }
