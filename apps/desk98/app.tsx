@@ -77,14 +77,20 @@ import {
   caretXY,
   del,
   deleteSel,
+  docEquals,
+  emptyHistory,
   hasSel,
   insertText,
+  record,
+  redoStep,
   selectAll,
   selectedText,
+  undoStep,
   wordRangeAt,
   type Caret,
   type CaretMove,
   type Doc,
+  type EditKind,
 } from "./notepad.ts";
 import { newMines, reveal, toggleFlag } from "./mines.ts";
 import { CAPTION_ACTIVE, CAPTION_INACTIVE, FRAME, TASK_H } from "./theme.ts";
@@ -293,8 +299,7 @@ export default function App() {
     const p = focusedPad();
     if (!p || !hasSel(p.d.doc.value)) return;
     copySel();
-    p.d.doc.value = deleteSel(p.d.doc.value);
-    scrollCaretIntoView(p.w);
+    applyEdit(p.w, "other", deleteSel(p.d.doc.value));
   }
 
   function pasteReq(): void {
@@ -321,6 +326,7 @@ export default function App() {
       scroll: ref(0),
       preedit: ref<{ s: string; c: number } | null>(null),
       wrap: ref(true),
+      hist: emptyHistory(),
     };
     const w = createWin({
       kind: "notepad",
@@ -337,7 +343,7 @@ export default function App() {
             {
               label: "New",
               act: () => {
-                data.doc.value = { lines: [""], caret: { row: 0, col: 0 } };
+                applyEdit(w, "other", { lines: [""], caret: { row: 0, col: 0 } });
               },
             },
             { sep: true, label: "" },
@@ -354,6 +360,23 @@ export default function App() {
           label: "Edit",
           width: measure("Edit") + 12,
           items: () => [
+            {
+              label: "Undo",
+              shortcut: "Cmd+Z",
+              disabled: data.hist.undo.length === 0,
+              act: () => {
+                undoIn(w);
+              },
+            },
+            {
+              label: "Redo",
+              shortcut: "Cmd+Shift+Z",
+              disabled: data.hist.redo.length === 0,
+              act: () => {
+                redoIn(w);
+              },
+            },
+            { sep: true, label: "" },
             { label: "Cut", shortcut: "Cmd+X", disabled: !hasSel(data.doc.value), act: cutSel },
             { label: "Copy", shortcut: "Cmd+C", disabled: !hasSel(data.doc.value), act: copySel },
             { label: "Paste", shortcut: "Cmd+V", act: pasteReq },
@@ -574,7 +597,7 @@ export default function App() {
     const d = padOf(w);
     const t = new Date(epoch + (virtualNow() - epochAt) * 1000);
     const stamp = `${pad2(t.getHours())}:${pad2(t.getMinutes())} ${pad2(t.getMonth() + 1)}/${pad2(t.getDate())}/${t.getFullYear()}`;
-    d.doc.value = insertText(d.doc.value, stamp);
+    applyEdit(w, "other", insertText(d.doc.value, stamp));
   }
 
   // ---- desktop icons + start menu ----------------------------------------------
@@ -1213,8 +1236,16 @@ export default function App() {
   }
 
   /** macOS-style ⌘ chords (host forwards them cmd-flagged, raw lowercase k). */
-  function onCmd(k: string) {
+  function onCmd(k: string, shift: boolean) {
     switch (k) {
+      case "z": {
+        const p = focusedPad();
+        if (p) {
+          if (shift) redoIn(p.w);
+          else undoIn(p.w);
+        }
+        return;
+      }
       case "escape":
         toggleStart();
         return;
@@ -1251,7 +1282,7 @@ export default function App() {
   function onKey(ev: HostEvent) {
     const k = ev.k ?? "";
     if (ev.cmd) {
-      onCmd(k);
+      onCmd(k, ev.sh ?? false);
       return;
     }
     if (k === "Escape") {
@@ -1273,17 +1304,17 @@ export default function App() {
       const doc = d.doc.value;
       switch (k) {
         case "Enter":
-          d.doc.value = insertText(doc, "\n");
-          break;
+          applyEdit(w, "other", insertText(doc, "\n"));
+          return;
         case "Backspace":
-          d.doc.value = backspace(doc);
-          break;
+          applyEdit(w, "erase", backspace(doc));
+          return;
         case "Delete":
-          d.doc.value = del(doc);
-          break;
+          applyEdit(w, "erase", del(doc));
+          return;
         case "Tab":
-          d.doc.value = insertText(doc, "    ");
-          break;
+          applyEdit(w, "type", insertText(doc, "    "));
+          return;
         case "Left":
         case "Right":
         case "Up":
@@ -1320,10 +1351,40 @@ export default function App() {
     else if (y - d.scroll.value > viewH - PAD_LINE_H) d.scroll.value = y - viewH + PAD_LINE_H;
   }
 
-  function typeInto(w: WinCtl, s: string) {
+  /** Apply an EDIT (never a plain caret/selection move) with an undo
+   *  snapshot. Coalescing lives in notepad.ts record(); no-op edits record
+   *  nothing. */
+  function applyEdit(w: WinCtl, kind: EditKind, next: Doc) {
     const d = padOf(w);
-    d.doc.value = insertText(d.doc.value, s);
+    const prev = d.doc.value;
+    if (docEquals(prev, next)) return;
+    d.hist = record(d.hist, prev, next, kind);
+    d.doc.value = next;
     scrollCaretIntoView(w);
+  }
+
+  function undoIn(w: WinCtl) {
+    const d = padOf(w);
+    const r = undoStep(d.hist, d.doc.value);
+    if (!r) return;
+    d.hist = r.h;
+    d.doc.value = r.doc;
+    d.preedit.value = null;
+    scrollCaretIntoView(w);
+  }
+
+  function redoIn(w: WinCtl) {
+    const d = padOf(w);
+    const r = redoStep(d.hist, d.doc.value);
+    if (!r) return;
+    d.hist = r.h;
+    d.doc.value = r.doc;
+    d.preedit.value = null;
+    scrollCaretIntoView(w);
+  }
+
+  function typeInto(w: WinCtl, s: string, kind: EditKind = "type") {
+    applyEdit(w, kind, insertText(padOf(w).doc.value, s));
   }
 
   // ---- taskbar --------------------------------------------------------------------
@@ -1401,7 +1462,7 @@ export default function App() {
       }
       case "paste": {
         const w = focused();
-        if (w?.kind === "notepad" && ev.text) typeInto(w, ev.text);
+        if (w?.kind === "notepad" && ev.text) typeInto(w, ev.text, "other");
         break;
       }
       case "ime": {
@@ -1409,7 +1470,7 @@ export default function App() {
         if (w?.kind === "notepad") {
           const d = padOf(w);
           // Composition replaces the selection the moment it starts.
-          if (ev.s && hasSel(d.doc.value)) d.doc.value = deleteSel(d.doc.value);
+          if (ev.s && hasSel(d.doc.value)) applyEdit(w, "other", deleteSel(d.doc.value));
           d.preedit.value = ev.s ? { s: ev.s, c: ev.c ?? ev.s.length } : null;
         }
         break;

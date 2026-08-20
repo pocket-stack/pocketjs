@@ -30,6 +30,73 @@ export interface Doc {
 }
 
 // ---------------------------------------------------------------------------
+// Undo/redo history
+// ---------------------------------------------------------------------------
+// Docs are immutable values (every edit returns a fresh one), so history is
+// plain snapshots — O(1) per step, structure shared. Coalescing: consecutive
+// edits of the same CONTINUOUS kind ("type" runs, "erase" runs) collapse
+// into one undo unit; "other" edits (Enter, paste, cut, Time/Date, New)
+// always stand alone. Continuity is checked against `tip` — the doc the
+// last recorded edit produced — so a caret move or click between keystrokes
+// breaks the group without recording anything itself.
+
+export type EditKind = "type" | "erase" | "other";
+
+export interface History {
+  undo: readonly Doc[];
+  redo: readonly Doc[];
+  kind: EditKind | null;
+  tip: Doc | null;
+}
+
+const HISTORY_DEPTH = 200;
+
+export function emptyHistory(): History {
+  return { undo: [], redo: [], kind: null, tip: null };
+}
+
+/** Two docs hold the same text + caret + selection (cheap: shared strings). */
+export function docEquals(a: Doc, b: Doc): boolean {
+  if (a.lines.length !== b.lines.length) return false;
+  for (let i = 0; i < a.lines.length; i++) if (a.lines[i] !== b.lines[i]) return false;
+  const sameCaret = a.caret.row === b.caret.row && a.caret.col === b.caret.col;
+  const an = a.anchor ?? null;
+  const bn = b.anchor ?? null;
+  const sameAnchor =
+    an === bn || (an !== null && bn !== null && an.row === bn.row && an.col === bn.col);
+  return sameCaret && sameAnchor;
+}
+
+/** Record an edit prev → next. Clears the redo stack; coalesces per the
+ *  rules above; caps the depth. */
+export function record(h: History, prev: Doc, next: Doc, kind: EditKind): History {
+  const cont = kind !== "other" && kind === h.kind && h.tip === prev;
+  let undo = cont ? h.undo : [...h.undo, prev];
+  if (undo.length > HISTORY_DEPTH) undo = undo.slice(undo.length - HISTORY_DEPTH);
+  return { undo, redo: [], kind, tip: next };
+}
+
+/** Pop one undo unit; null when empty. The current doc moves to redo. */
+export function undoStep(h: History, current: Doc): { h: History; doc: Doc } | null {
+  if (h.undo.length === 0) return null;
+  const doc = h.undo[h.undo.length - 1];
+  return {
+    h: { undo: h.undo.slice(0, -1), redo: [...h.redo, current], kind: null, tip: null },
+    doc,
+  };
+}
+
+/** Pop one redo unit; null when empty. The current doc moves back to undo. */
+export function redoStep(h: History, current: Doc): { h: History; doc: Doc } | null {
+  if (h.redo.length === 0) return null;
+  const doc = h.redo[h.redo.length - 1];
+  return {
+    h: { undo: [...h.undo, current], redo: h.redo.slice(0, -1), kind: null, tip: null },
+    doc,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Selection
 // ---------------------------------------------------------------------------
 

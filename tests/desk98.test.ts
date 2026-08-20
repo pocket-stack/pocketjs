@@ -31,14 +31,19 @@ import {
   colFromX,
   del,
   deleteSel,
+  docEquals,
+  emptyHistory,
   hasSel,
   insertText,
   moveCaret,
+  record,
+  redoStep,
   rowSelSpan,
   segSelSpan,
   selectAll,
   selectedText,
   selRange,
+  undoStep,
   vrowOf,
   wordRangeAt,
   wrapDoc,
@@ -275,6 +280,81 @@ describe("notepad editing", () => {
     expect(colFromX("abcd", 2, measure)).toBe(0); // < half of the first char
     expect(colFromX("abcd", 4, measure)).toBe(1);
     expect(colFromX("abcd", 100, measure)).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// notepad.ts — undo/redo history
+// ---------------------------------------------------------------------------
+
+describe("notepad history", () => {
+  const D = (s: string, col: number): Doc => ({ lines: [s], caret: { row: 0, col } });
+
+  test("a typing run coalesces into one undo unit; redo replays it whole", () => {
+    let h = emptyHistory();
+    let doc = D("", 0);
+    for (const ch of ["a", "b", "c"]) {
+      const next = insertText(doc, ch);
+      h = record(h, doc, next, "type");
+      doc = next;
+    }
+    expect(doc.lines).toEqual(["abc"]);
+    expect(h.undo.length).toBe(1);
+    const u = undoStep(h, doc)!;
+    expect(u.doc.lines).toEqual([""]);
+    const r = redoStep(u.h, u.doc)!;
+    expect(r.doc.lines).toEqual(["abc"]);
+    expect(undoStep(emptyHistory(), doc)).toBeNull();
+  });
+
+  test("a caret move between keystrokes breaks the group (tip mismatch)", () => {
+    let h = emptyHistory();
+    const d0 = D("xy", 2);
+    const d1 = insertText(d0, "a");
+    h = record(h, d0, d1, "type");
+    // A plain caret move produces a doc record() never saw as its tip.
+    const moved: Doc = { lines: d1.lines, caret: { row: 0, col: 0 } };
+    const d2 = insertText(moved, "b");
+    h = record(h, moved, d2, "type");
+    expect(h.undo.length).toBe(2);
+  });
+
+  test("erase runs coalesce separately; other edits never coalesce", () => {
+    let h = emptyHistory();
+    let doc = D("abc", 3);
+    for (let i = 0; i < 2; i++) {
+      const next = backspace(doc);
+      h = record(h, doc, next, "erase");
+      doc = next;
+    }
+    expect(h.undo.length).toBe(1);
+    for (let i = 0; i < 2; i++) {
+      const next = insertText(doc, "\n");
+      h = record(h, doc, next, "other");
+      doc = next;
+    }
+    expect(h.undo.length).toBe(3);
+  });
+
+  test("a new edit clears redo; undo restores the selection", () => {
+    let h = emptyHistory();
+    const sel: Doc = { lines: ["hello"], caret: { row: 0, col: 5 }, anchor: { row: 0, col: 0 } };
+    const cut = deleteSel(sel);
+    h = record(h, sel, cut, "other");
+    const u = undoStep(h, cut)!;
+    expect(u.doc.anchor).toEqual({ row: 0, col: 0 });
+    expect(u.h.redo.length).toBe(1);
+    const again = record(u.h, u.doc, insertText(u.doc, "!"), "type");
+    expect(again.redo.length).toBe(0);
+  });
+
+  test("docEquals sees text/caret/anchor, not object identity", () => {
+    expect(docEquals(D("a", 1), { lines: ["a"], caret: { row: 0, col: 1 } })).toBe(true);
+    expect(docEquals(D("a", 1), D("a", 0))).toBe(false);
+    expect(docEquals(D("a", 1), { lines: ["b"], caret: { row: 0, col: 1 } })).toBe(false);
+    expect(
+      docEquals(D("a", 1), { lines: ["a"], caret: { row: 0, col: 1 }, anchor: { row: 0, col: 0 } }),
+    ).toBe(false);
   });
 });
 

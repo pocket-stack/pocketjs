@@ -166,5 +166,19 @@ describe("desk98 desk companion journey", () => {
     svc.push({ t: "key", k: "w", cmd: true });
     await step(world, 2);
     expect(treeHasText(world.getTree(), "Untitled - Notepad")).toBe(false);
+
+    // Undo/redo: a typing run coalesces into ONE unit — ⌘Z pulls both
+    // characters back out at once, ⌘⇧Z replays them.
+    for (const ch of ["Q", "Q"]) svc.push({ t: "ch", s: ch });
+    await step(world, 2);
+    expect(treeHasText(world.getTree(), "[PASTED]QQ")).toBe(true);
+    svc.push({ t: "key", k: "z", cmd: true });
+    await step(world, 2);
+    const afterUndo = world.getTree();
+    expect(treeHasText(afterUndo, "[PASTED]QQ")).toBe(false);
+    expect(treeHasText(afterUndo, "[PASTED]")).toBe(true);
+    svc.push({ t: "key", k: "z", cmd: true, sh: true });
+    await step(world, 2);
+    expect(treeHasText(world.getTree(), "[PASTED]QQ")).toBe(true);
   }, 30000);
 });

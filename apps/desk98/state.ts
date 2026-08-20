@@ -5,7 +5,7 @@
 
 import { ref, shallowRef, type Ref, type ShallowRef } from "vue";
 import type { CaptionButton, Geo } from "./wm.ts";
-import type { Doc } from "./notepad.ts";
+import type { Doc, History } from "./notepad.ts";
 import type { Mines } from "./mines.ts";
 
 export type WinKind = "notepad" | "mines" | "folder" | "about" | "shutdown";
@@ -70,6 +70,9 @@ export interface PadData {
   preedit: Ref<{ s: string; c: number } | null>;
   /** Word wrap (Edit menu toggle): reflow to the window width. */
   wrap: Ref<boolean>;
+  /** Undo/redo snapshots (notepad.ts History). Plain field: nothing renders
+   *  from it — the Edit/context menus read it when they build their items. */
+  hist: History;
 }
 
 export interface MinesData {
