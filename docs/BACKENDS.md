@@ -123,7 +123,7 @@ compositor owns its shortcuts (⌘W close, ⌘M minimize, ⌘` cycle windows,
 ⌘Esc Start menu, ⌘A/C/X editing). Plain typing arrives only through the
 IME input handler (`insertText:` → one `ch` line per keypress).
 
-`apps/desk98` — a Windows 98 desktop compositor written in Vue Vapor SFCs
+`apps/desk98` — a Windows 98 desktop compositor written in Vue Vapor JSX
 — is the reference consumer: the guest owns every window (drag, resize,
 z-order, menus, text selection, Minesweeper) by hit-testing the raw
 pointer stream itself, window moves ride paint-only translate props, and

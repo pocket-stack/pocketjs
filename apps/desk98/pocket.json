@@ -21,7 +21,7 @@
     }
   },
   "app": {
-    "entry": "apps/desk98/main.ts",
+    "entry": "apps/desk98/main.tsx",
     "output": "desk98-main",
     "framework": "vue-vapor",
     "companions": [
