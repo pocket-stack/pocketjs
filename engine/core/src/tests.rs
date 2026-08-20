@@ -982,6 +982,42 @@ fn overflow_hidden_emits_balanced_intersected_scissors() {
 }
 
 #[test]
+fn wrap_text_greedy_breaks_and_native_override() {
+    let mut ui = Ui::new();
+    // A=6, B=5, space=4 (synthetic atlas, slot 2).
+    let blob = encode_atlas(
+        2,
+        8,
+        8,
+        7,
+        10,
+        4,
+        &[
+            (' ' as u32, 3, 4),
+            ('A' as u32, 1, 6),
+            ('B' as u32, 2, 5),
+            (0xfffd, 0, 8),
+        ],
+    );
+    assert!(ui.load_font_atlas(&blob));
+    // Fits (or empty): no breaks.
+    assert!(ui.wrap_text("AA AA", 2, 100.0).is_empty());
+    assert!(ui.wrap_text("", 2, 30.0).is_empty());
+    // Greedy: "AA AA " = 28px + hanging space, third word overflows 30px →
+    // break BEFORE it (col 6); the trailing space stays on the upper row.
+    assert_eq!(ui.wrap_text("AA AA AA", 2, 30.0), alloc::vec![6]);
+    // A word wider than a whole row splits at character level.
+    assert_eq!(ui.wrap_text("AAAAA", 2, 13.0), alloc::vec![2, 4]);
+    // A native wrapper overrides the greedy path; clearing restores it.
+    ui.set_text_wrap(Some(alloc::boxed::Box::new(|_t: &str, _s: u8, _w: f32| {
+        alloc::vec![7, 9]
+    })));
+    assert_eq!(ui.wrap_text("AA AA AA", 2, 30.0), alloc::vec![7, 9]);
+    ui.set_text_wrap(None);
+    assert_eq!(ui.wrap_text("AA AA AA", 2, 30.0), alloc::vec![6]);
+}
+
+#[test]
 fn text_measurement_against_synthetic_atlas() {
     let mut ui = Ui::new();
     let blob = encode_atlas(

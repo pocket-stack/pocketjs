@@ -215,6 +215,14 @@ pub struct GlyphPos {
 /// before the guest mounts; fixed-function hosts never install one.
 pub type MeasureFn = alloc::boxed::Box<dyn Fn(&str, u8, f32, f32) -> (f32, f32)>;
 
+/// A host-installed native line wrapper: `(text, slot, max_w) -> soft-break
+/// columns` (ascending, in UTF-16 code units — the guest slices JS strings
+/// with them). Installed by native-text backends through `Ui::set_text_wrap`
+/// next to the measurer, so break positions and measured advances always
+/// come from the same provider; without one, `wrap_text` computes greedy
+/// breaks over whatever provider `measure_run` resolves to.
+pub type WrapFn = alloc::boxed::Box<dyn Fn(&str, u8, f32) -> alloc::vec::Vec<u32>>;
+
 /// The per-core atlas registry.
 pub struct Fonts {
     slots: [Option<Atlas>; spec::MAX_FONT_SLOTS],
@@ -226,6 +234,8 @@ pub struct Fonts {
     /// runs keep the baked path on BOTH sides so a node's measured metrics
     /// always match its painted glyphs.
     native: Option<MeasureFn>,
+    /// Native line wrapper (OP wrapText); absent = greedy over `measure_run`.
+    wrap_native: Option<WrapFn>,
 }
 
 impl Default for Fonts {
@@ -240,6 +250,7 @@ impl Fonts {
             slots: Default::default(),
             misses: Cell::new(0),
             native: None,
+            wrap_native: None,
         }
     }
 
@@ -247,6 +258,11 @@ impl Fonts {
     /// every text leaf's metrics change provider.
     pub fn set_native_measure(&mut self, f: Option<MeasureFn>) {
         self.native = f;
+    }
+
+    /// Install (or clear) the native line wrapper (OP wrapText).
+    pub fn set_native_wrap(&mut self, f: Option<WrapFn>) {
+        self.wrap_native = f;
     }
 
     /// True when a native measurer is installed.
@@ -340,6 +356,92 @@ impl Fonts {
         }
         max_w = max_w.max(line_w);
         (max_w, lines as f32 * lh)
+    }
+
+    /// Soft-wrap break columns for ONE line of text under `max_w` px
+    /// (ascending, UTF-16 code units; empty = the line fits). With a native
+    /// wrapper installed it decides; otherwise greedy word wrap over
+    /// whatever provider `measure_run` resolves to (atlas advances, or the
+    /// native measurer for tracking-0 native apps) — break positions always
+    /// derive from the metrics that size and paint the text.
+    ///
+    /// Greedy rules (pinned by the JS-fallback parity test): break BEFORE
+    /// the word that overflows; space runs never break — they hang past
+    /// `max_w` on the row they follow (classic Notepad); a word wider than a
+    /// whole row splits at character level.
+    pub fn wrap_text(&self, text: &str, slot: u8, max_w: f32) -> Vec<u32> {
+        if let Some(f) = &self.wrap_native {
+            return f(text, slot, max_w);
+        }
+        self.wrap_greedy(text, slot, max_w)
+    }
+
+    fn wrap_greedy(&self, text: &str, slot: u8, max_w: f32) -> Vec<u32> {
+        let mut breaks = Vec::new();
+        if text.is_empty() || max_w.is_nan() || max_w <= 0.0 {
+            return breaks;
+        }
+        let width = |a: usize, b: usize| self.measure_run(&text[a..b], slot, 0.0, f32::NAN).0;
+        if width(0, text.len()) <= max_w {
+            return breaks;
+        }
+        // Per-char byte offsets + running UTF-16 columns (the guest slices
+        // JS strings, whose indices are UTF-16 code units).
+        let chars: Vec<(usize, char)> = text.char_indices().collect();
+        let n = chars.len();
+        let mut u16_at = Vec::with_capacity(n + 1);
+        let mut acc = 0u32;
+        for &(_, c) in &chars {
+            u16_at.push(acc);
+            acc += c.len_utf16() as u32;
+        }
+        u16_at.push(acc);
+        let byte_at = |ci: usize| if ci < n { chars[ci].0 } else { text.len() };
+        let w = |a: usize, b: usize| width(byte_at(a), byte_at(b));
+
+        let mut seg_from = 0usize; // char index of the current visual row start
+        let mut x = 0f32; // committed row width (hanging spaces included)
+        let mut i = 0usize;
+        while i < n {
+            if chars[i].1 == ' ' {
+                let mut j = i;
+                while j < n && chars[j].1 == ' ' {
+                    j += 1;
+                }
+                x += w(i, j);
+                i = j;
+                continue;
+            }
+            let mut j = i;
+            while j < n && chars[j].1 != ' ' {
+                j += 1;
+            }
+            let word_w = w(i, j);
+            if i > seg_from && x + word_w > max_w {
+                breaks.push(u16_at[i]);
+                seg_from = i;
+                x = 0.0;
+            }
+            if word_w > max_w {
+                // A word wider than a whole row: hard character chunks.
+                let mut cw = 0f32;
+                for k in i..j {
+                    let ch_w = w(k, k + 1);
+                    if k > seg_from && cw + ch_w > max_w {
+                        breaks.push(u16_at[k]);
+                        seg_from = k;
+                        cw = 0.0;
+                    }
+                    cw += ch_w;
+                }
+                x = cw;
+                i = j;
+                continue;
+            }
+            x += word_w;
+            i = j;
+        }
+        breaks
     }
 
     /// Inline-run layout: place every glyph (cell top-left, relative to the

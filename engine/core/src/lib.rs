@@ -518,6 +518,13 @@ impl Ui {
         self.fonts.measure_run(text, font_slot, 0.0, f32::NAN).0
     }
 
+    /// Soft-wrap break columns for one line of `text` at `font_slot` under
+    /// `max_w` px (OP wrapText): ascending UTF-16 columns, empty when the
+    /// line fits. Provider rules in [`text::Fonts::wrap_text`].
+    pub fn wrap_text(&self, text: &str, font_slot: u8, max_w: f32) -> Vec<u32> {
+        self.fonts.wrap_text(text, font_slot, max_w)
+    }
+
     // ---- assets ----------------------------------------------------------
 
     /// Upload a texture (raw pixels in `psm` format — spec::psm::*, pow2
@@ -1238,6 +1245,13 @@ impl Ui {
     pub fn set_text_measure(&mut self, f: Option<text::MeasureFn>) {
         self.fonts.set_native_measure(f);
         self.layout.dirty = true;
+    }
+
+    /// Install (or clear) a native line wrapper (text::WrapFn) next to the
+    /// measurer — OP wrapText then returns the host's break positions.
+    /// A pure query: no layout state depends on it.
+    pub fn set_text_wrap(&mut self, f: Option<text::WrapFn>) {
+        self.fonts.set_native_wrap(f);
     }
 
     /// Resize the logical viewport (root node + layout bounds + draw clip).

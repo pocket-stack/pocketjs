@@ -11,7 +11,7 @@ import { Image, View } from "@pocketjs/framework/components";
 import { getOps } from "@pocketjs/framework/host";
 import { T98 } from "./chrome.tsx";
 import { FONT, FRAME } from "./theme.ts";
-import { caretXY, segSelSpan, wrapDoc, type VSeg } from "./notepad.ts";
+import { caretXY, segSelSpan, segsFromBreaks, wrapLine, type VSeg } from "./notepad.ts";
 import { MINES_W, type Cell } from "./mines.ts";
 import type { AboutData, FolderData, MinesData, PadData, ShutdownData, WinCtl } from "./state.ts";
 
@@ -52,16 +52,37 @@ export function padWrapW(w: WinCtl): number {
   return d.wrap.value ? Math.max(40, w.geo.value.w - FRAME * 2 - PAD_PAD * 2) : Infinity;
 }
 
+/** One line's visual segments: the host wrapText op when present (spec op
+ *  43 — the platform half: core greedy over the slot's measure provider,
+ *  gpui's LineWrapper for native-text apps), else the same greedy rules in
+ *  JS over measureText. A parity test pins the two equal on baked hosts. */
+function wrapLineHost(line: string, maxW: number): { from: number; to: number }[] {
+  const ops = getOps();
+  if (Number.isFinite(maxW) && ops.wrapText) {
+    return segsFromBreaks(line.length, ops.wrapText(line, FONT, maxW));
+  }
+  return wrapLine(line, maxW, padWidth);
+}
+
+/** The whole document as visual segments through the host/fallback path. */
+export function wrapDocHost(lines: string[], maxW: number): VSeg[] {
+  const out: VSeg[] = [];
+  for (let row = 0; row < lines.length; row++) {
+    for (const s of wrapLineHost(lines[row], maxW)) out.push({ row, from: s.from, to: s.to });
+  }
+  return out;
+}
+
 /** The window's visual segments — the ONE layout both the render below and
  *  app.tsx hit-testing/caret movement read. */
 export function padSegs(w: WinCtl): VSeg[] {
   const d = w.data as PadData;
-  return wrapDoc(d.doc.value.lines, padWrapW(w), padWidth);
+  return wrapDocHost(d.doc.value.lines, padWrapW(w));
 }
 
 export function NotepadView(props: { data: PadData; wrapW: number; active: boolean }) {
   const d = props.data;
-  const segsAll = () => wrapDoc(d.doc.value.lines, props.wrapW, padWidth);
+  const segsAll = () => wrapDocHost(d.doc.value.lines, props.wrapW);
   const caretPos = () => caretXY(segsAll(), d.doc.value.lines, d.doc.value.caret, padWidth);
   const caretX = () => {
     const pre = d.preedit.value;

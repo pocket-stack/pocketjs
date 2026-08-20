@@ -48,7 +48,7 @@ use gpui::{
     WindowBounds, WindowOptions, canvas, div, point, px, size,
 };
 use pocket_mod::Guest;
-use pocket_ui_gpui::{GpuiRenderer, TextConfig, native_measure};
+use pocket_ui_gpui::{GpuiRenderer, TextConfig, native_measure, native_wrap};
 use pocket_ui_surface::UiSurface;
 
 const HOST_ID: &str = "macos-app";
@@ -393,6 +393,10 @@ impl PocketRoot {
             // BEFORE mount: measurement feeds layout, and the guest must
             // never observe a provider swap (engine/core/src/lib.rs).
             surface.set_text_measure(native_measure(window.text_system().clone(), cfg.clone()));
+            // The wrapText op's break positions then come from gpui's
+            // LineWrapper through the SAME TextConfig — measurement, wrap
+            // and paint stay one provider.
+            surface.set_text_wrap(native_wrap(window.text_system().clone(), cfg.clone()));
         }
         let guest = Guest::new()?;
         surface.mount(&guest)?;

@@ -258,6 +258,13 @@ impl UiSurface {
         self.inner.borrow_mut().ui.set_text_measure(Some(f));
     }
 
+    /// Install a native line wrapper next to the measurer (OP wrapText —
+    /// break positions then come from the host text system). Same call-
+    /// before-`mount` rule so the guest never observes a provider swap.
+    pub fn set_text_wrap(&self, f: pocketjs_core::text::WrapFn) {
+        self.inner.borrow_mut().ui.set_text_wrap(Some(f));
+    }
+
     /// Borrow the core (the renderer reads the DrawList/textures/atlases
     /// through this; hosts can use it for `set_viewport` on resize).
     pub fn with_ui<R>(&self, f: impl FnOnce(&mut Ui) -> R) -> R {
@@ -429,6 +436,14 @@ impl UiSurface {
             op!("measureText", move |s: LossyString, slot: i32| {
                 ui.borrow_mut().ui.measure_text(&s.0, slot as u8) as f64
             });
+
+            let ui = self.inner.clone();
+            op!(
+                "wrapText",
+                move |s: LossyString, slot: i32, max_w: f64| -> Vec<u32> {
+                    ui.borrow_mut().ui.wrap_text(&s.0, slot as u8, max_w as f32)
+                }
+            );
 
             // ---- streamed textures (spec ops 23..25) ---------------------
             let ui = self.inner.clone();

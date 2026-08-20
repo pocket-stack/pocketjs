@@ -286,6 +286,23 @@ export function wrapDoc(lines: string[], maxW: number, width: (s: string) => num
   return out;
 }
 
+/** Segments of one line from host-computed break columns (the wrapText op:
+ *  ascending UTF-16 indices, empty = fits). */
+export function segsFromBreaks(
+  len: number,
+  breaks: readonly number[],
+): { from: number; to: number }[] {
+  if (breaks.length === 0) return [{ from: 0, to: len }];
+  const segs: { from: number; to: number }[] = [];
+  let from = 0;
+  for (const b of breaks) {
+    segs.push({ from, to: b });
+    from = b;
+  }
+  segs.push({ from, to: len });
+  return segs;
+}
+
 /** Index of the visual segment a caret sits on. A caret at a soft-wrap
  *  boundary column belongs to the next row's start unless it carries end
  *  affinity (End key, clicks past a wrapped row's text). */

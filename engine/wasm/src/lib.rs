@@ -31,6 +31,10 @@ use pocketjs_core::raster;
 static mut UI: Option<Ui> = None;
 static mut FRAMEBUFFER: Vec<u8> = Vec::new();
 static mut DAMAGE_TRACKER: DamageTracker<DEFAULT_DAMAGE_REGIONS> = DamageTracker::new();
+/// wrapText result staging (same lifetime contract as FRAMEBUFFER: the
+/// pointer from `ui_wrap_text_ptr` stays valid until the next wrapText or
+/// init call on this instance).
+static mut WRAP_BREAKS: Vec<u32> = Vec::new();
 
 #[inline]
 fn ui() -> &'static mut Ui {
@@ -229,6 +233,24 @@ pub extern "C" fn ui_load_font_atlas(ptr: *const u8, len: usize) -> i32 {
 #[no_mangle]
 pub extern "C" fn ui_measure_text(ptr: *const u8, len: usize, font_slot: u32) -> f32 {
     ui().measure_text(unsafe { text(ptr, len) }, font_slot as u8)
+}
+
+/// OP wrapText: stage the soft-wrap break columns (ascending UTF-16 code
+/// units) for one line under `max_w` px and return their count; the host
+/// reads them from `ui_wrap_text_ptr` before its next wasm call.
+#[no_mangle]
+pub extern "C" fn ui_wrap_text(ptr: *const u8, len: usize, font_slot: u32, max_w: f32) -> u32 {
+    let breaks = ui().wrap_text(unsafe { text(ptr, len) }, font_slot as u8, max_w);
+    unsafe {
+        WRAP_BREAKS = breaks;
+        WRAP_BREAKS.len() as u32
+    }
+}
+
+/// The staged wrapText columns (valid until the next wrapText/init call).
+#[no_mangle]
+pub extern "C" fn ui_wrap_text_ptr() -> *const u32 {
+    unsafe { WRAP_BREAKS.as_ptr() }
 }
 
 // ---- frame ------------------------------------------------------------------

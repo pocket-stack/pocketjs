@@ -65,6 +65,15 @@ text can come from the host text system.
   caret positions as prefix widths through `measureText`
   (`apps/note/layout.ts`, `apps/im/wrap.ts`) and prefix sums only equal
   shaped positions when advances are additive.
+- **Soft-wrap breaks are a host op.** `wrapText` (spec op 43) returns the
+  break columns for one line under a pixel width. The core computes greedy
+  word wrap over the slot's measure provider; a native-text app gets gpui's
+  own `LineWrapper` instead (`native_wrap`, installed next to the measurer
+  through the same `TextConfig` — Zed's editor WrapMap consumes the same
+  machinery). The wrapped COORDINATE SPACE — visual rows, caret/selection
+  mapping, hit testing — stays app-side (apps/desk98/notepad.ts is the
+  reference): the op is only the "where does this line break" half, exactly
+  the platform/editor split Zed uses.
 - **Two ops keep a pixel-exact escape hatch.** Gouraud `TRI` and `TEX_TRI`
   batches (rotated gradients and images, 3D subtrees) have no gpui vector
   equivalent, so consecutive batches raster through

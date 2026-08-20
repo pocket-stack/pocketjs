@@ -95,6 +95,7 @@ pub mod op {
     pub const APP_LAUNCH: u8 = 40;
     pub const APP_SHOT: u8 = 41;
     pub const HIT_TEST_BOUNDS: u8 = 42;
+    pub const WRAP_TEXT: u8 = 43;
 }
 
 /// Property ids (u8, stable, append-only). Groups:

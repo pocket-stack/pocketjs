@@ -11,9 +11,10 @@
 use std::sync::Arc;
 
 use gpui::{
-    Font, FontFeatures, FontStyle, FontWeight, SharedString, TextRun, WindowTextSystem, px,
+    Font, FontFeatures, FontStyle, FontWeight, LineFragment, SharedString, TextRun,
+    WindowTextSystem, px,
 };
-use pocketjs_core::text::MeasureFn;
+use pocketjs_core::text::{MeasureFn, WrapFn};
 
 /// Slot -> px mirror of the compiler's slot registry
 /// (framework/compiler/tailwind.ts FONT_PX: slots 0..6 regular, 7..13 bold,
@@ -110,6 +111,49 @@ pub fn slot_line_height(ts: &WindowTextSystem, cfg: &TextConfig, slot: u8) -> f3
 /// re-measures every text leaf — but only the edited line's width actually
 /// changed. The cache makes the other N-1 lookups free instead of N-1
 /// CoreText shapes per tick.
+/// Build the core line wrapper (installed via `UiSurface::set_text_wrap`
+/// next to the measurer): gpui's own `LineWrapper` — the exact machinery
+/// Zed's editor WrapMap consumes — decides the soft-break positions with
+/// the same font the measurer sizes and the painter shapes, so break
+/// columns, measured advances and painted glyphs always agree (the additive
+/// shaping configuration above is what makes them provably consistent).
+/// Returns ascending UTF-16 columns per the wrapText op contract.
+pub fn native_wrap(ts: Arc<WindowTextSystem>, cfg: TextConfig) -> WrapFn {
+    Box::new(move |text: &str, slot: u8, max_w: f32| {
+        if text.is_empty() || max_w.is_nan() || max_w <= 0.0 {
+            return Vec::new();
+        }
+        let (size, bold, mono) = slot_px(slot);
+        let mut wrapper = ts.line_wrapper(cfg.font(bold, mono), px(size));
+        let fragments = [LineFragment::text(text)];
+        // Boundary.ix is the UTF-8 byte index where the next visual row
+        // starts (Zed slices `line[prev.ix..boundary.ix]`); convert to the
+        // UTF-16 columns the guest slices JS strings with.
+        let byte_breaks: Vec<usize> = wrapper
+            .wrap_line(&fragments, px(max_w))
+            .map(|b| b.ix)
+            .collect();
+        drop(wrapper);
+        if byte_breaks.is_empty() {
+            return Vec::new();
+        }
+        let mut breaks = Vec::with_capacity(byte_breaks.len());
+        let mut next = byte_breaks.iter().copied().peekable();
+        let mut col = 0u32;
+        for (byte_ix, ch) in text.char_indices() {
+            while next.peek() == Some(&byte_ix) {
+                breaks.push(col);
+                next.next();
+            }
+            if next.peek().is_none() {
+                break;
+            }
+            col += ch.len_utf16() as u32;
+        }
+        breaks
+    })
+}
+
 pub fn native_measure(ts: Arc<WindowTextSystem>, cfg: TextConfig) -> MeasureFn {
     let widths: std::cell::RefCell<std::collections::HashMap<(String, u8), f32>> =
         std::cell::RefCell::new(std::collections::HashMap::new());

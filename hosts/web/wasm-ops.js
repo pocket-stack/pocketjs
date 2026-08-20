@@ -125,6 +125,18 @@ export async function createWasmUi(wasm, options = {}) {
   }
   if (ex.ui_set_cursor_pos) ops.setCursorPos = (x, y) => ex.ui_set_cursor_pos(x, y);
 
+  // Text wrap (spec op 43) — feature-detected; apps fall back to the same
+  // greedy rules over measureText when absent. The staged columns must be
+  // copied INSIDE the closure: the view over linear memory dies on the next
+  // alloc/grow (and withStr frees its scratch right after fn returns).
+  if (ex.ui_wrap_text) {
+    ops.wrapText = (str, fontSlot, maxW) =>
+      withStr(str, (p, l) => {
+        const n = ex.ui_wrap_text(p, l, fontSlot, maxW);
+        return Array.from(new Uint32Array(ex.memory.buffer, ex.ui_wrap_text_ptr(), n));
+      });
+  }
+
   function framebufferView(ptr, scale) {
     if (!ptr) throw new Error(`pocketjs.wasm rejected render scale ${scale}`);
     return new Uint8Array(

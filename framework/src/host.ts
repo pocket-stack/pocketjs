@@ -121,6 +121,14 @@ export interface HostOps {
   loadFontAtlas?(buf: Uint8Array): void;
   /** JS-side convenience; layout measures natively. → width in px. */
   measureText(str: string, fontSlot: number): number;
+  /** Soft-wrap break columns for ONE line under maxW px (spec op 43):
+   *  ascending UTF-16 code-unit indices, empty = the line fits. The engine
+   *  computes greedy word wrap over the same provider that measures and
+   *  paints the slot; native-text backends may install the host text
+   *  system's wrapper (gpui LineWrapper) whose positions win. Optional:
+   *  hosts that predate it — apps fall back to the same greedy rules over
+   *  measureText (apps/desk98/notepad.ts wrapLine, parity-tested). */
+  wrapText?(str: string, fontSlot: number, maxW: number): number[];
 
   // -- streamed textures (spec ops 23..25) — deep-zoom tile canvases. Native
   //    hosts (PSP, uihost) implement loadTileTexture so tile bytes never

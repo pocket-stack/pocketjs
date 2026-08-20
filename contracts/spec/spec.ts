@@ -241,6 +241,26 @@ export const OP = {
   //                      contract note on that argument). The guest only
   //                      issues this op when no fact channel exists (devtools
   //                      replay, injected test hosts, older wasm builds).
+  // -- text wrap (the platform half of soft-wrap layout; docs/BACKENDS.md) --
+  wrapText: 43, //        (str: string, fontSlot: i32, maxW: f32) -> u32[].
+  //                      Soft-wrap break columns for ONE line of text under
+  //                      maxW px, ascending UTF-16 code-unit indices (empty
+  //                      = the line fits). The engine computes
+  //                      greedy word wrap over the SAME provider that
+  //                      measures and paints the slot (atlas advances, or
+  //                      the native measurer for native-text apps): break
+  //                      BEFORE the word that overflows, space runs hang
+  //                      past maxW on the row they follow, a word wider than
+  //                      a whole row splits at character level. Native-text
+  //                      backends may install a host wrapper next to the
+  //                      measurer (Ui::set_text_wrap — gpui's LineWrapper)
+  //                      and its break positions win. Wrapped-coordinate
+  //                      bookkeeping (visual rows, caret/selection mapping)
+  //                      stays app-side — this op is the "where may it
+  //                      break" half only. Hosts without it: the framework
+  //                      falls back to the same greedy rules over
+  //                      measureText (apps/desk98/notepad.ts wrapLine is the
+  //                      pinned reference; a parity test holds them equal).
 } as const;
 
 // ---------------------------------------------------------------------------
