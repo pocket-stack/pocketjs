@@ -24,7 +24,10 @@ import {
 } from "../apps/desk98/mines.ts";
 import {
   applyMove,
+  applyMoveWrapped,
   backspace,
+  caretAtPoint,
+  caretXY,
   colFromX,
   del,
   deleteSel,
@@ -32,10 +35,14 @@ import {
   insertText,
   moveCaret,
   rowSelSpan,
+  segSelSpan,
   selectAll,
   selectedText,
   selRange,
+  vrowOf,
   wordRangeAt,
+  wrapDoc,
+  wrapLine,
   type Doc,
 } from "../apps/desk98/notepad.ts";
 
@@ -335,6 +342,83 @@ describe("notepad selection", () => {
     expect(wordRangeAt("foo bar", 3)).toEqual({ from: 3, to: 4 }); // the space run
     expect(wordRangeAt("a==b", 1)).toEqual({ from: 1, to: 3 }); // punct run
     expect(wordRangeAt("", 0)).toEqual({ from: 0, to: 0 });
+  });
+
+  test("word wrap: greedy word breaks, hanging spaces, char fallback", () => {
+    const w6 = (s: string) => s.length * 6;
+    // Row capacity 7.5 chars: "aaa bbb" fits (42px), the trailing space
+    // hangs, "ccc" opens the next visual row.
+    expect(wrapLine("aaa bbb ccc", 45, w6)).toEqual([
+      { from: 0, to: 8 },
+      { from: 8, to: 11 },
+    ]);
+    // Exact fit and no-wrap widths pass through as one segment.
+    expect(wrapLine("aaa", 18, w6)).toEqual([{ from: 0, to: 3 }]);
+    expect(wrapLine("aaa bbb ccc", Infinity, w6)).toEqual([{ from: 0, to: 11 }]);
+    expect(wrapLine("", 45, w6)).toEqual([{ from: 0, to: 0 }]);
+    // A word wider than a whole row breaks at character level.
+    expect(wrapLine("abcdefgh", 18, w6)).toEqual([
+      { from: 0, to: 3 },
+      { from: 3, to: 6 },
+      { from: 6, to: 8 },
+    ]);
+    // Segments tile the document in reading order.
+    expect(wrapDoc(["aaa bbb ccc", "", "dd"], 45, w6)).toEqual([
+      { row: 0, from: 0, to: 8 },
+      { row: 0, from: 8, to: 11 },
+      { row: 1, from: 0, to: 0 },
+      { row: 2, from: 0, to: 2 },
+    ]);
+  });
+
+  test("word wrap: caret ↔ visual row mapping with end affinity", () => {
+    const w6 = (s: string) => s.length * 6;
+    const lines = ["aaa bbb ccc"];
+    const segs = wrapDoc(lines, 45, w6);
+    // The wrap boundary column belongs to the next row's start by default,
+    // to the earlier row's end under end affinity.
+    expect(vrowOf(segs, { row: 0, col: 8 })).toBe(1);
+    expect(vrowOf(segs, { row: 0, col: 8, end: true })).toBe(0);
+    expect(vrowOf(segs, { row: 0, col: 3 })).toBe(0);
+    expect(vrowOf(segs, { row: 0, col: 11 })).toBe(1);
+    expect(caretXY(segs, lines, { row: 0, col: 9 }, w6)).toEqual({ vrow: 1, x: 6 });
+    expect(caretXY(segs, lines, { row: 0, col: 8, end: true }, w6)).toEqual({ vrow: 0, x: 48 });
+    // Clicking past a wrapped row's text keeps the caret on that row.
+    expect(caretAtPoint(segs, lines, 0, 100, w6)).toEqual({ row: 0, col: 8, end: true });
+    // At the last row of the line no affinity is needed.
+    expect(caretAtPoint(segs, lines, 1, 100, w6)).toEqual({ row: 0, col: 11 });
+  });
+
+  test("word wrap: Up/Down step visual rows, Home/End take the row bounds", () => {
+    const w6 = (s: string) => s.length * 6;
+    const lines = ["aaa bbb ccc"];
+    const segs = wrapDoc(lines, 45, w6);
+    const doc: Doc = { lines, caret: { row: 0, col: 1 } };
+    const down = applyMoveWrapped(doc, "Down", false, segs, w6);
+    expect(down.caret).toEqual({ row: 0, col: 9 }); // same x, next visual row
+    const up = applyMoveWrapped({ lines, caret: { row: 0, col: 9 } }, "Up", false, segs, w6);
+    expect(up.caret).toEqual({ row: 0, col: 1 });
+    const end = applyMoveWrapped(doc, "End", false, segs, w6);
+    expect(end.caret).toEqual({ row: 0, col: 8, end: true }); // visual row end
+    const home = applyMoveWrapped({ lines, caret: { row: 0, col: 9 } }, "Home", false, segs, w6);
+    expect(home.caret).toEqual({ row: 0, col: 8 }); // visual row start
+    const ext = applyMoveWrapped(doc, "Down", true, segs, w6);
+    expect(ext.anchor).toEqual({ row: 0, col: 1 });
+    expect(ext.caret).toEqual({ row: 0, col: 9 });
+    // With one segment per line (wrap off) the move is the logical one.
+    const flat = wrapDoc(["ab", "c"], Infinity, w6);
+    const d2 = applyMoveWrapped({ lines: ["ab", "c"], caret: { row: 0, col: 2 } }, "Down", false, flat, w6);
+    expect(d2.caret).toEqual({ row: 1, col: 1 });
+  });
+
+  test("word wrap: selection spans intersect visual segments", () => {
+    const w6 = (s: string) => s.length * 6;
+    const lines = ["aaa bbb ccc"];
+    const segs = wrapDoc(lines, 45, w6);
+    const doc: Doc = { lines, caret: { row: 0, col: 10 }, anchor: { row: 0, col: 2 } };
+    expect(segSelSpan(doc, segs[0])).toEqual({ from: 2, to: 8 });
+    expect(segSelSpan(doc, segs[1])).toEqual({ from: 8, to: 10 });
+    expect(segSelSpan({ lines, caret: { row: 0, col: 3 }, anchor: { row: 0, col: 1 } }, segs[1])).toBeNull();
   });
 
   test("rowSelSpan covers edge rows partially and middle rows fully", () => {

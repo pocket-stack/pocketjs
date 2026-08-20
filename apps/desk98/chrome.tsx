@@ -138,7 +138,9 @@ export function PopupPanel(props: { popup: Popup; hover: number }) {
                 : "h-[18] flex-row items-center gap-[5] pl-[4] pr-[8]"
             }
           >
-            {item.icon ? (
+            {item.checked ? (
+              <Image class="w-[16] h-[16]" src="icons/check-16.svg" />
+            ) : item.icon ? (
               <Image class="w-[16] h-[16]" src={item.icon} />
             ) : (
               <View class="w-[16] h-[16]" />

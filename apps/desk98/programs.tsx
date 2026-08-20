@@ -10,10 +10,10 @@ import { computed } from "vue";
 import { Image, View } from "@pocketjs/framework/components";
 import { getOps } from "@pocketjs/framework/host";
 import { T98 } from "./chrome.tsx";
-import { FONT } from "./theme.ts";
-import { rowSelSpan } from "./notepad.ts";
+import { FONT, FRAME } from "./theme.ts";
+import { caretXY, segSelSpan, wrapDoc, type VSeg } from "./notepad.ts";
 import { MINES_W, type Cell } from "./mines.ts";
-import type { AboutData, FolderData, MinesData, PadData, ShutdownData } from "./state.ts";
+import type { AboutData, FolderData, MinesData, PadData, ShutdownData, WinCtl } from "./state.ts";
 
 export function measure(s: string): number {
   const ops = getOps();
@@ -27,26 +27,56 @@ export function measure(s: string): number {
 export const PAD_LINE_H = 16;
 export const PAD_PAD = 3; // inset of the text from the white well
 
-/** Row text split at the selection edges; one segment when unselected. */
-function segs(d: PadData, line: string, row: number): { t: string; sel: boolean }[] {
-  const span = rowSelSpan(d.doc.value, row);
-  if (!span) return [{ t: line, sel: false }];
-  return [
-    { t: line.slice(0, span.from), sel: false },
-    { t: line.slice(span.from, span.to), sel: true },
-    { t: line.slice(span.to), sel: false },
-  ];
+// Wrap math runs on every render, keystroke and pointer move, so word/prefix
+// widths ride a bounded cache (advances are additive — a cached width is
+// exact forever; the atlas never changes at runtime).
+const widthCache = new Map<string, number>();
+
+/** Cached slot-19 width — the `width` function every wrap helper takes. */
+export function padWidth(s: string): number {
+  if (s === "") return 0;
+  let w = widthCache.get(s);
+  if (w === undefined) {
+    if (widthCache.size > 4096) widthCache.clear();
+    w = measure(s);
+    widthCache.set(s, w);
+  }
+  return w;
 }
 
-export function NotepadView(props: { data: PadData; active: boolean }) {
+/** Wrap width for a notepad window: the content well minus the 3px text
+ *  insets (mirrors NotepadView's left-[3] + right margin). Infinity when
+ *  Word Wrap is off — every line becomes one visual segment. */
+export function padWrapW(w: WinCtl): number {
+  const d = w.data as PadData;
+  return d.wrap.value ? Math.max(40, w.geo.value.w - FRAME * 2 - PAD_PAD * 2) : Infinity;
+}
+
+/** The window's visual segments — the ONE layout both the render below and
+ *  app.tsx hit-testing/caret movement read. */
+export function padSegs(w: WinCtl): VSeg[] {
+  const d = w.data as PadData;
+  return wrapDoc(d.doc.value.lines, padWrapW(w), padWidth);
+}
+
+export function NotepadView(props: { data: PadData; wrapW: number; active: boolean }) {
   const d = props.data;
-  const caretRow = () => d.doc.value.caret.row;
+  const segsAll = () => wrapDoc(d.doc.value.lines, props.wrapW, padWidth);
+  const caretPos = () => caretXY(segsAll(), d.doc.value.lines, d.doc.value.caret, padWidth);
   const caretX = () => {
-    const doc = d.doc.value;
-    const line = doc.lines[doc.caret.row] ?? "";
     const pre = d.preedit.value;
-    const head = line.slice(0, doc.caret.col);
-    return measure(pre ? head + pre.s.slice(0, pre.c) : head);
+    return caretPos().x + (pre ? padWidth(pre.s.slice(0, pre.c)) : 0);
+  };
+  /** Visual-segment text split at the selection edges. */
+  const parts = (seg: VSeg): { t: string; sel: boolean }[] => {
+    const line = d.doc.value.lines[seg.row];
+    const span = segSelSpan(d.doc.value, seg);
+    if (!span) return [{ t: line.slice(seg.from, seg.to), sel: false }];
+    return [
+      { t: line.slice(seg.from, span.from), sel: false },
+      { t: line.slice(span.from, span.to), sel: true },
+      { t: line.slice(span.to, seg.to), sel: false },
+    ];
   };
   return (
     <View class="flex-1 flex-col bg-[#ffffff] bevel-[#808080,#ffffff,#000000,#dfdfdf] overflow-hidden">
@@ -55,25 +85,25 @@ export function NotepadView(props: { data: PadData; active: boolean }) {
           class="absolute left-[3] top-[3] right-0 flex-col"
           style={{ translateY: -d.scroll.value }}
         >
-          {d.doc.value.lines.map((line, row) => (
+          {segsAll().map((seg, vi) => (
             <View class="h-[16] flex-row items-center">
-              {row === caretRow() && d.preedit.value ? (
+              {vi === caretPos().vrow && d.preedit.value ? (
                 [
-                  <T98 t={line.slice(0, d.doc.value.caret.col)} />,
+                  <T98 t={d.doc.value.lines[seg.row].slice(seg.from, d.doc.value.caret.col)} />,
                   <View class="flex-col">
                     <T98 t={d.preedit.value.s} />
                     <View class="h-[1] bg-[#000000]" />
                   </View>,
-                  <T98 t={line.slice(d.doc.value.caret.col)} />,
+                  <T98 t={d.doc.value.lines[seg.row].slice(d.doc.value.caret.col, seg.to)} />,
                 ]
               ) : (
-                segs(d, line, row).map((seg) =>
-                  seg.sel ? (
+                parts(seg).map((p) =>
+                  p.sel ? (
                     <View class="bg-[#000080] flex-row">
-                      <T98 cls="text-[#ffffff]" t={seg.t} />
+                      <T98 cls="text-[#ffffff]" t={p.t} />
                     </View>
                   ) : (
-                    <T98 t={seg.t} />
+                    <T98 t={p.t} />
                   ),
                 )
               )}
@@ -87,7 +117,7 @@ export function NotepadView(props: { data: PadData; active: boolean }) {
               insetL: 0,
               insetT: 0,
               translateX: 3 + caretX(),
-              translateY: 3 + caretRow() * PAD_LINE_H - d.scroll.value + 1,
+              translateY: 3 + caretPos().vrow * PAD_LINE_H - d.scroll.value + 1,
             }}
           />
         ) : null}

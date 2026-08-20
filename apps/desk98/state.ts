@@ -23,6 +23,8 @@ export interface PopupItem {
   icon?: string;
   shortcut?: string;
   disabled?: boolean;
+  /** Toggle state — renders a checkmark in the icon slot. */
+  checked?: boolean;
   sep?: boolean;
   sub?: PopupItem[];
   act?: () => void;
@@ -66,6 +68,8 @@ export interface PadData {
   doc: ShallowRef<Doc>;
   scroll: Ref<number>;
   preedit: Ref<{ s: string; c: number } | null>;
+  /** Word wrap (Edit menu toggle): reflow to the window width. */
+  wrap: Ref<boolean>;
 }
 
 export interface MinesData {
