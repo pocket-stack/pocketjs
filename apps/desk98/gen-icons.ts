@@ -363,25 +363,26 @@ const ICONS: Icon[] = [
   },
   {
     // Recycle 16 shares the desktop art; folder-16 doubles as Documents.
-    // PocketJS favicon motif (site/assets/favicon.svg) as a single-color
-    // pixel mark — rounded pocket frame, lens, two bars. The 16px copy is
-    // used by Start/task buttons; the 32px copy is every Pocket app icon.
+    // PocketJS favicon motif (site/assets/favicon.svg) with a white pocket
+    // frame around a solid black interior. Pixels outside the white frame
+    // stay transparent; the lens and two bars remain white. The 16px copy is
+    // used by task buttons; the 32px copy is every Pocket app icon.
     file: "pocket-app-16.svg",
     big: "pocket-app.svg",
     rows: [
       "................",
       "................",
       "................",
-      "..kkkkkkkkkkkk..",
-      ".k............k.",
-      ".k............k.",
-      ".k..kk..kkkkk.k.",
-      ".k.kkkk.......k.",
-      ".k.kkkk.kkk...k.",
-      ".k..kk........k.",
-      ".k............k.",
-      ".k............k.",
-      "..kkkkkkkkkkkk..",
+      "..wwwwwwwwwwww..",
+      ".wkkkkkkkkkkkkw.",
+      ".wkkkkkkkkkkkkw.",
+      ".wkkwwkkwwwwwkw.",
+      ".wkwwwwkkkkkkkw.",
+      ".wkwwwwkwwwkkkw.",
+      ".wkkwwkkkkkkkkw.",
+      ".wkkkkkkkkkkkkw.",
+      ".wkkkkkkkkkkkkw.",
+      "..wwwwwwwwwwww..",
       "................",
       "................",
       "................",
