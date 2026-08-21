@@ -583,12 +583,14 @@ async function main() {
     scripts: ['<script type="module" src="/pg/playground.bundle.js"></script>'],
     path: "/playground/",
   }));
-  // 6. homepage — bespoke "cinematic" design: its own chrome + home.css +
-  //    home.js (the baked demo wall + lazy Pocket Stage). Not wrapped in the shared
+  // 6. homepage — bespoke design with its own chrome, landing.css and
+  //    landing.js (the framework code tabs). Not wrapped in the shared
   //    header/footer (those stay for docs + playground).
   write("index.html", renderHome());
+  copy(SITE + "assets/landing.css", "assets/landing.css");
+  await bundle("assets/landing.js", "assets/landing.js");
+  // home.css stays for the /for/ pages, which keep the .lp-* chrome.
   copy(SITE + "assets/home.css", "assets/home.css");
-  await bundle("assets/home.js", "assets/home.js");
 
   // 6b. /for/ use-case pages — landing-styled (home.css chrome, no hero).
   //     site/for/shell.html carries the shared nav + footer; each fragment
@@ -625,9 +627,12 @@ async function main() {
   console.log("pocketjs.dev build: done -> site/dist/");
 }
 
-// The homepage is a standalone document (cinematic design owns its own header +
-// footer + CSS). site/home.html holds the body; site/assets/home.css the styles.
-const HOME_DESC = SITE_DESC;
+// The homepage is a standalone document (its design owns its own header +
+// footer + CSS). site/home.html holds the body; site/assets/landing.css the
+// styles. Display faces come from Google Fonts; the fallback stacks keep the
+// page readable when that request fails.
+const HOME_DESC =
+  "PocketJS is a UI runtime that keeps JSX, Tailwind and reactive state, then removes every layer below them: no DOM, no CSS engine, no WebView. A QuickJS guest on a Rust core that lays out and draws every pixel itself.";
 function renderHome(): string {
   const body = injectSiteFooterDescription(readFileSync(SITE + "home.html", "utf8"));
   const jsonLd = JSON.stringify({
@@ -679,12 +684,15 @@ function renderHome(): string {
 <meta name="twitter:image" content="${OG_IMAGE_URL}">
 <meta name="theme-color" content="#05070d">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/assets/home.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&family=VT323&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/landing.css">
 <script type="application/ld+json">${jsonLd}</script>
 </head>
 <body>
 ${body}
-<script type="module" src="/assets/home.js"></script>
+<script type="module" src="/assets/landing.js"></script>
 </body>
 </html>`;
 }

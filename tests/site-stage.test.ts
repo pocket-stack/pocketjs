@@ -54,9 +54,9 @@ test("homepage Stage package has one semantic screen and its declared suppressio
   }
 });
 
-test("homepage plays the machine collage", () => {
+test("homepage ships the four-chapter landing", () => {
   const home = readFileSync(ROOT + "site/home.html", "utf8");
-  // The 3D stage moved to the playground; the homepage must not mount it.
+  // The 3D stage lives in the playground; the homepage must not mount it.
   expect(home).not.toContain("data-pocket-stage");
   expect(home).not.toContain("lp-stage");
   // House style: no em dashes anywhere on the landing surfaces.
@@ -73,71 +73,74 @@ test("homepage plays the machine collage", () => {
     expect(source).not.toContain("—");
   }
 
-  // The hero collage: eight machines, every screen a real capture. The Figma
-  // screen is the zoomed-out page fit; the kit's cover art is never shown,
-  // here or anywhere else on the site (site/bake-demo-wall.ts included).
-  expect(home).toContain("data-collage");
-  expect(home.match(/class="lp-dev /g)?.length).toBe(8);
-  expect(home).toContain("/assets/blog/figma-psp-fit.png");
+  // The hero: the demo wall runs full bleed behind the headline, and the kit's
+  // cover art is never shown here or anywhere else (site/bake-demo-wall.ts too).
+  expect(home).toContain('class="hero-bg"');
+  expect(home).toContain("/assets/pocketjs-demo-wall.mp4");
+  expect(home).toContain("/assets/pocketjs-demo-wall.jpg");
+  expect(home).toContain("A very ambitious");
+  expect(home).toContain("PocketJS is a UI runtime that keeps JSX, Tailwind and reactive state");
   for (const file of ["site/home.html", "site/bake-demo-wall.ts", "site/content/blog/pocket-figma.md"]) {
     expect(readFileSync(ROOT + file, "utf8")).not.toContain("figma-psp-cover-zoom");
   }
-  expect(home).toContain("333 MHz / 32 MB");
-  expect(home).toContain("4.19 MHz / 8 KB");
-  expect(home).toContain("Rich interactive JavaScript where no browser fits.");
-  expect(home).toContain("PocketJS is a compact JavaScript runtime");
 
-  // The use-case cards link the four /for/ pages.
-  for (const slug of ["interfaces", "games", "worlds", "agents"]) {
-    expect(home).toContain(`href="/for/${slug}/"`);
+  // Four chapters, in order, each with its pixel-font heading.
+  const chapters = ["write", "measured", "frame", "ecosystem"];
+  let at = -1;
+  for (const id of chapters) {
+    const next = home.indexOf(`<section class="sect" id="${id}">`);
+    expect(next).toBeGreaterThan(at);
+    at = next;
   }
-  // The retired sections stay retired.
-  expect(home).not.toContain("Ship the application");
-  expect(home).not.toContain("Built for every kind of impossible");
-  expect(home).not.toContain("lp-pkg");
-  expect(home).not.toContain("lp-imposs");
+  for (const verb of ["Modern DX", "Performance", "Architecture", "Ecosystem"]) {
+    expect(home).toContain(`<span class="verb metal lit">${verb}</span>`);
+  }
 
-  // The /for/ pages are rendered with the homepage chrome.
+  // The two hand-drawn diagrams and the redrawn flake histogram.
+  expect(home).toContain('class="vs-col vs-pocket"');
+  expect(home).toContain('class="vs-col vs-web"');
+  expect(home).toContain('class="hist"');
+  // The histogram carries the published run: 22 outcomes, 9/60, frame 144.
+  expect(home).toContain("22 outcomes");
+  expect(home).toContain("assertion 9/60");
+  expect(home).toContain("frame 144, every run, forever");
+
+  // Framework code tabs: Solid, Vue Vapor, Octane. No plain-Vue SFC tab.
+  for (const label of ["Counter.tsx · Solid", "Vue Vapor", "Octane"]) {
+    expect(home).toContain(label);
+  }
+  expect(home).not.toContain("Counter.vue");
+
+  // Retired surfaces stay retired.
+  expect(home).not.toContain("data-collage");
+  expect(home).not.toContain("lp-dev");
+  expect(home).not.toContain("data-mx");
+  expect(home).not.toContain("What runs where");
+  expect(home).not.toContain("Rich interactive JavaScript where no browser fits.");
+  // Ambitions are a manifesto topic, not landing copy.
+  expect(home.toLowerCase()).not.toContain("ambition ");
+
+  // Closing band: Pocket Lab, plus the two calls to action.
+  expect(home).toContain("https://pocketlab.build");
+  expect(home).toContain("Star on GitHub");
+  expect(home).toContain("See use cases");
+
+  // The /for/ pages are rendered with the shared landing chrome.
   const build0 = readFileSync(ROOT + "site/build.ts", "utf8");
   expect(build0).toContain("renderForPage");
   expect(build0).toContain('for/shell.html');
+  expect(build0).toContain('copy(SITE + "assets/home.css", "assets/home.css")');
 
-  // The what-runs-where matrix is retired too.
-  expect(home).not.toContain("data-mx");
-  expect(home).not.toContain("What runs where");
-
-  // The collage glue and styles.
-  const homeGlue = readFileSync(ROOT + "site/assets/home.js", "utf8");
-  expect(homeGlue).toContain("setupHeroCollage");
-  expect(homeGlue).toContain("prefers-reduced-motion");
-  expect(homeGlue).not.toContain("setupRotatingHero");
-  expect(homeGlue).not.toContain("setupMachineMatrix");
+  // Homepage glue and styles: landing.css/landing.js, with home.css kept for /for/.
+  const glue = readFileSync(ROOT + "site/assets/landing.js", "utf8");
+  expect(glue).toContain("data-subtabs");
+  expect(existsSync(ROOT + "site/assets/home.js")).toBe(false);
+  const landingCss = readFileSync(ROOT + "site/assets/landing.css", "utf8");
+  expect(landingCss).toContain(".hero-bg");
+  expect(landingCss).toContain("prefers-reduced-motion");
+  expect(landingCss).not.toContain(".lp-dev");
   const homeCss = readFileSync(ROOT + "site/assets/home.css", "utf8");
-  expect(homeCss).not.toContain(".lp-stage");
-  expect(homeCss).not.toContain(".lp-rot");
-  expect(homeCss).not.toContain(".lp-mx");
-  expect(homeCss).toContain(".lp-dev");
-
-  // The playground stage still ships the Pocket Launcher family as .pocket
-  // packages (docs/LAUNCHER.md / docs/PLATFORM.md) — the deploy chain must
-  // keep building and copying them.
-  const build = readFileSync(ROOT + "site/build.ts", "utf8");
-  expect(build).toContain("dist/launcher-registry.json");
-  expect(build).toContain('copy(source, `stage/apps/${output}.pocket`)');
-  expect(build).toContain("emitSingleLodStagePackage");
-
-  const adapter = readFileSync(ROOT + "site/assets/pocket-stage-web.js", "utf8");
-  expect(adapter).toContain("profile.lods.orbit");
-  expect(adapter).toContain("decodePocketPackage");
-
-  const siteBuild = readFileSync(ROOT + "tools/site-build.ts", "utf8");
-  expect(siteBuild).toContain('run("tools/launcher.ts", "pack")');
-  expect(siteBuild).toContain('run("tools/build.ts", "hero")');
-
-  for (const workflow of ["deploy.yml", "release.yml"]) {
-    const source = readFileSync(ROOT + ".github/workflows/" + workflow, "utf8");
-    expect(source).toContain("bun run site:build");
-  }
+  expect(homeCss).toContain(".lp-nav");
 });
 
 test("playground wraps its live framebuffer in the PSP model", () => {
@@ -158,7 +161,7 @@ test("playground wraps its live framebuffer in the PSP model", () => {
   expect(playground).not.toContain("data-btn");
 
   // The stage is playground-only now: the homepage must not pull the module.
-  const homeGlue = readFileSync(ROOT + "site/assets/home.js", "utf8");
+  const homeGlue = readFileSync(ROOT + "site/assets/landing.js", "utf8");
   expect(homeGlue).not.toContain("pocket-stage-web.js");
   const playgroundGlue = readFileSync(ROOT + "site/playground/playground.js", "utf8");
   expect(playgroundGlue).toContain('import("/assets/pocket-stage-web.js")');
