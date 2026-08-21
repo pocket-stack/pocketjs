@@ -180,8 +180,8 @@
           </div>
         </div>
         <div class="receipts"><span>Refs</span>
-          <a href="/docs/overview/architecture/">docs/architecture</a>
-          <a href="/docs/overview/frameworks/">docs/frameworks</a>
+          <a href="/docs/architecture/">docs/architecture</a>
+          <a href="/docs/frameworks/">docs/frameworks</a>
         </div>
       </div>
     </div>
@@ -364,7 +364,7 @@
               <span class="c tick"></span><span class="c tick"></span><span class="c tick"></span><span class="c tick"></span>
             </div>
           </div>
-          <p class="foot">A reply that arrives partway through frame +3 is <b>queued, not applied</b>. It is
+          <p class="pnote">A reply that arrives partway through frame +3 is <b>queued, not applied</b>. It is
             delivered at the start of frame +4, in FIFO order, before any app hook runs. Nothing lands halfway
             through a transaction: <b>no wall clock, no microtask races, no mid-frame callbacks</b>, and
             <b>after()</b> replaces setTimeout with a deadline measured in frames.</p>
@@ -446,15 +446,64 @@
   </div>
 </section>
 
+<section class="sect" id="beyond">
+  <div class="wrap">
+    <div class="shead">
+      <span class="vwrap"><span class="verb metal lit">Beyond 2D UI</span><span class="vrail"></span></span>
+      <span class="fill"></span><span class="hud">mount what the content needs</span>
+    </div>
+    <p class="slede">PocketJS is an application runtime with a game engine's architecture, so <b>a game and an
+      app are built the same way</b>.</p>
+    <div class="cols" style="grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)">
+      <div class="mods">
+        <div class="mods-head">
+          <span class="lb">one guest, different cores</span>
+          <span class="mods-now">
+            <i class="ph1">Pocket Talk</i><i class="ph2">OpenStrike</i><i class="ph3">Pocket Voxel</i>
+          </span>
+        </div>
+        <div class="mods-guest">
+          <b>guest program</b><span>your JavaScript, one frame at a time</span>
+        </div>
+        <div class="mods-bus"><span class="spark"></span></div>
+        <div class="mods-row">
+          <span class="mod always wide">ui<em>tree, layout, draw, input, focus</em></span>
+        </div>
+        <div class="mods-row four">
+          <span class="mod m1">net<em>poll batches</em></span>
+          <span class="mod m23">audio<em>pcm mixer</em></span>
+          <span class="mod m2">strike<em>bsp, bots, hits</em></span>
+          <span class="mod m3">voxel<em>chunks, meshing</em></span>
+        </div>
+        <p class="pnote">Cores are <b>independent native modules, loaded the way a kernel loads drivers</b>. An
+          app takes the ones its content needs and the rest never enters the build. Adding one widens what your
+          program is allowed to ask for; it never changes how your program is written.</p>
+      </div>
+      <div>
+        <div class="frame screens">
+          <div class="scr">
+            <img class="ph1" src="/assets/wall/card-im.jpg" alt="Pocket Talk, a message thread with the system keyboard">
+            <img class="ph2" src="/assets/blog/openstrike-psp-fire.png" alt="OpenStrike, a muzzle flash over a crate with a Solid JSX HUD">
+            <img class="ph3" src="/assets/blog/voxel-psp-route-1.png" alt="Pocket Voxel, a route of extruded voxel grass and carved trees">
+          </div>
+        </div>
+        <div class="receipts"><span>Refs</span>
+          <a href="/blog/shipping-openstrike/">shipping openstrike</a>
+          <a href="/blog/pocket-voxel/">pocket voxel</a>
+          <a href="/docs/concepts/">docs/concepts</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="sect" id="ecosystem">
   <div class="wrap">
     <div class="shead">
       <span class="vwrap"><span class="verb metal lit">Ecosystem</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">shipped on the runtime</span>
     </div>
-    <p class="slede">An app, a game and a mod are the same kind of artifact here: guest programs customizing native
-      cores through declared vocabularies. <b>ui was the first such core; the FPS core was the second; audio was the
-      third.</b> Everything below runs on the chapters above.</p>
+    <p class="slede">All of it runs on the chapters above, on the machines this runtime was built for.</p>
     <div class="eco">
       <article class="ecard">
         <div class="scr"><img src="/assets/blog/openstrike-psp-dust2.png" alt="OpenStrike on PSP with a Solid JSX HUD"></div>
@@ -514,9 +563,8 @@
     <div class="labband">
       <div>
         <span class="lb">the organization behind it</span>
-        <p><strong>Pocket Lab</strong> grew on top of this runtime: an open source organization with no venture
-          money, shipping systemic open worlds, voxel dioramas and digital humans.
-          <strong>The joy of creating should belong to everyone.</strong></p>
+        <p><strong>Pocket Lab</strong> is an independent, non-VC-backed organization built on this runtime, so
+          that <strong>the joy of creating belongs to everyone</strong>.</p>
       </div>
       <div class="labctas">
         <a class="btn btn--pri" href="https://pocketlab.build">Visit Pocket Lab</a>

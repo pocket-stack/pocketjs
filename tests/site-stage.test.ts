@@ -99,7 +99,7 @@ test("homepage ships the four-chapter landing", () => {
   // The two hand-drawn diagrams and the redrawn flake histogram.
   expect(home).toContain('class="vs-col vs-pocket"');
   expect(home).toContain('class="vs-col vs-web"');
-  // the browser column shows the cross-thread bookkeeping, not just more layers
+  // the browser column names the threads it hands work across
   expect(home).toContain("1 thread, 1 process");
   expect(home).toContain("4 threads, 2 processes");
   expect(home.match(/class="hop"/g)?.length).toBe(3);

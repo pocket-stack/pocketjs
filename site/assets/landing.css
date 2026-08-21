@@ -235,6 +235,70 @@ img,video{max-width:100%;display:block}
   4%{border-color:rgba(176,125,28,.9);color:#e8b752;background:rgba(176,125,28,.18)}
   12%,100%{border-color:rgba(176,125,28,.4);color:var(--c3);background:rgba(176,125,28,.05)}}
 
+/* Beyond 2D UI: one guest, a rotating set of native cores. A single 10.5s
+   cycle drives the composition name, which cores are mounted, and the screen,
+   so the three read as one machine being reassembled. */
+.mods{border:1px solid var(--line);background:var(--panel);padding:1.1rem 1.2rem 1.2rem}
+.mods-head{display:flex;justify-content:space-between;align-items:baseline;gap:1rem;margin-bottom:1rem}
+.mods-head .lb{font-family:var(--mono);font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ph)}
+.mods-now{position:relative;font-family:var(--px);font-size:1.3rem;line-height:1;min-width:9rem;text-align:right}
+.mods-now i{position:absolute;right:0;top:0;font-style:normal;white-space:nowrap;opacity:0;
+  background:var(--metal-ph);-webkit-background-clip:text;background-clip:text;color:transparent}
+.mods-guest{border:1px solid rgba(78,240,138,.35);background:linear-gradient(180deg,rgba(78,240,138,.07),transparent);
+  padding:.6rem .8rem;text-align:center;animation:guestbeat 3.5s ease-in-out infinite}
+.mods-guest b{display:block;font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;color:var(--ink)}
+.mods-guest span{display:block;margin-top:.15rem;font-family:var(--mono);font-size:.58rem;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted)}
+@keyframes guestbeat{0%,100%{box-shadow:0 0 0 rgba(78,240,138,0)}50%{box-shadow:0 0 22px rgba(78,240,138,.10) inset}}
+/* the op vocabulary crossing between guest and cores */
+.mods-bus{position:relative;height:1.5rem;margin:0 auto;width:1px;background:linear-gradient(180deg,rgba(78,240,138,.5),rgba(78,240,138,.15));overflow:visible}
+.mods-bus .spark{position:absolute;left:-2px;width:5px;height:5px;border-radius:50%;background:var(--ph);
+  box-shadow:0 0 9px rgba(78,240,138,.9);animation:busdrop 3.5s cubic-bezier(.4,0,.6,1) infinite}
+@keyframes busdrop{0%{top:0;opacity:0}12%{opacity:1}70%{top:1.2rem;opacity:1}88%,100%{top:1.2rem;opacity:0}}
+.mods-row{display:flex;flex-wrap:wrap;gap:.4rem;justify-content:center;margin-top:.4rem}
+.mods-row.four{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.mod.wide{width:100%}
+.mod{font-family:var(--mono);font-size:.62rem;line-height:1.3;border:1px solid var(--line);background:var(--bg);
+  padding:.35rem .45rem;color:var(--muted);text-align:center}
+.mod em{display:block;font-style:normal;font-size:.54rem;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--steel-3);margin-top:.15rem}
+.mod.always{border-color:rgba(78,240,138,.45);color:var(--ink-2)}
+.mod.always em{color:var(--ph-2)}
+/* mounted windows inside the shared cycle: 1 = 0-33%, 2 = 33-66%, 3 = 66-100% */
+.mod.m1,.mod.m2,.mod.m3,.mod.m23{animation-duration:10.5s;animation-timing-function:linear;animation-iteration-count:infinite}
+.mod.m1{animation-name:mount1} .mod.m2{animation-name:mount2}
+.mod.m3{animation-name:mount3} .mod.m23{animation-name:mount23}
+@keyframes mount1{0%,31%{border-color:rgba(78,240,138,.45);color:var(--ink-2);background:rgba(78,240,138,.06)}
+  35%,100%{border-color:var(--line);color:var(--muted);background:var(--bg)}}
+@keyframes mount2{0%,32%{border-color:var(--line);color:var(--muted);background:var(--bg)}
+  36%,64%{border-color:rgba(78,240,138,.45);color:var(--ink-2);background:rgba(78,240,138,.06)}
+  68%,100%{border-color:var(--line);color:var(--muted);background:var(--bg)}}
+@keyframes mount3{0%,65%{border-color:var(--line);color:var(--muted);background:var(--bg)}
+  69%,98%{border-color:rgba(78,240,138,.45);color:var(--ink-2);background:rgba(78,240,138,.06)}
+  100%{border-color:var(--line);color:var(--muted);background:var(--bg)}}
+@keyframes mount23{0%,32%{border-color:var(--line);color:var(--muted);background:var(--bg)}
+  36%,98%{border-color:rgba(78,240,138,.45);color:var(--ink-2);background:rgba(78,240,138,.06)}
+  100%{border-color:var(--line);color:var(--muted);background:var(--bg)}}
+.mods .pnote{margin-top:.9rem;padding-top:.7rem;border-top:1px dashed var(--line);
+  font-family:var(--mono);font-size:.66rem;color:var(--muted);line-height:1.65}
+.mods .pnote b{color:var(--ink-2);font-weight:500}
+/* the screen crossfades with the composition */
+.screens .scr{aspect-ratio:16/9;position:relative}
+.screens img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}
+/* the name and the screen switch on a hard cut: a crossfade would overlap two
+   names into garbled text and two screenshots into a double exposure */
+.ph1,.ph2,.ph3{animation-duration:10.5s;animation-timing-function:steps(1,end);animation-iteration-count:infinite}
+.ph1{animation-name:phase1} .ph2{animation-name:phase2} .ph3{animation-name:phase3}
+@keyframes phase1{0%{opacity:1}33.34%{opacity:0}100%{opacity:0}}
+@keyframes phase2{0%{opacity:0}33.34%{opacity:1}66.67%{opacity:0}100%{opacity:0}}
+@keyframes phase3{0%{opacity:0}66.67%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion: reduce){
+  .mods-guest,.mods-bus .spark,.mod,.ph1,.ph2,.ph3{animation:none}
+  .mods-now i.ph1{opacity:1}
+  .screens img.ph3{opacity:1}
+  .mod.m1,.mod.m2,.mod.m3,.mod.m23{border-color:rgba(78,240,138,.3);color:var(--ink-2)}
+}
+
 /* frame + effect animation */
 .tl{border:1px solid var(--line);background:var(--panel);padding:1.1rem 1.2rem 1.2rem;overflow:hidden}
 .tl .lb{font-family:var(--mono);font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ph);margin-bottom:1.1rem}
@@ -265,9 +329,9 @@ img,video{max-width:100%;display:block}
   font-family:var(--mono);font-size:.6rem;color:var(--ph);white-space:nowrap;
   background:rgba(6,11,9,.95);border:1px solid rgba(78,240,138,.45);padding:.14rem .35rem}
 @keyframes deliver{0%,49%{opacity:0} 51%,66%{opacity:1} 70%,100%{opacity:0}}
-.tl .foot{margin-top:1rem;padding-top:.7rem;border-top:1px dashed var(--line);
+.tl .pnote{margin-top:1rem;padding-top:.7rem;border-top:1px dashed var(--line);
   font-family:var(--mono);font-size:.66rem;color:var(--muted);line-height:1.7}
-.tl .foot b{color:var(--ink-2);font-weight:500}
+.tl .pnote b{color:var(--ink-2);font-weight:500}
 @media (prefers-reduced-motion: reduce){
   .stack .pulse,.fanout i,.cells .c.tick,.cells .ph,.wallclock .arrive,.deliver,.cursor{animation:none}
   .wallclock .arrive,.deliver{opacity:1}
