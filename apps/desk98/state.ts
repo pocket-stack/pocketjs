@@ -7,8 +7,10 @@ import { ref, shallowRef, type Ref, type ShallowRef } from "vue";
 import type { CaptionButton, Geo } from "./wm.ts";
 import type { Doc, History } from "./notepad.ts";
 import type { Mines } from "./mines.ts";
+import type { PocketAppSpec } from "./pocket-apps.ts";
 
-export type WinKind = "notepad" | "mines" | "folder" | "about" | "shutdown";
+export type WinKind =
+  "notepad" | "mines" | "folder" | "pocket" | "about" | "shutdown";
 
 export interface MenuDef {
   label: string;
@@ -98,6 +100,15 @@ export interface FolderData {
   kind: "folder";
   rows: FolderRow[];
   selected: Ref<number>;
+}
+
+export interface PocketData {
+  kind: "pocket";
+  app: PocketAppSpec;
+  /** Host-reported realm lifecycle. The fallback reports an isolated boot
+   *  error whenever the host has no child DrawList to paint. */
+  status: Ref<"starting" | "ready" | "error">;
+  error: Ref<string>;
 }
 
 export interface AboutData {

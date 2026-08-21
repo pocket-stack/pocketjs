@@ -9,6 +9,9 @@ import {
   clampMove,
   contentTop,
   cursorForDir,
+  desktopIconAt,
+  desktopIconPosition,
+  desktopIconRows,
   hitRegion,
   maximizedGeo,
   resizeGeo,
@@ -50,6 +53,42 @@ import {
   wrapLine,
   type Doc,
 } from "../apps/desk98/notepad.ts";
+import { POCKET_APPS, pocketPortalSource } from "../apps/desk98/pocket-apps.ts";
+import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
+
+describe("Pocket app desktop catalog", () => {
+  test("all eleven simple demos resolve to the cataloged macos-app viewport", async () => {
+    expect(POCKET_APPS).toHaveLength(11);
+    expect(new Set(POCKET_APPS.map((app) => app.output)).size).toBe(
+      POCKET_APPS.length,
+    );
+    expect(
+      new Set(POCKET_APPS.map((app) => pocketPortalSource(app.output))).size,
+    ).toBe(POCKET_APPS.length);
+
+    for (const app of POCKET_APPS) {
+      const manifest = await Bun.file(`apps/${app.dir}/pocket.json`).json();
+      const resolution = validateAndResolveBuildPlan(manifest, {
+        target: "macos-app",
+      });
+      expect(resolution.ok).toBe(true);
+      if (!resolution.ok) continue;
+      expect(resolution.plan.app.output).toBe(app.output);
+      expect(resolution.plan.viewport.logical).toEqual(app.viewport);
+    }
+  });
+
+  test("sixteen desktop icons flow into non-overlapping columns above the taskbar", () => {
+    const rows = desktopIconRows(600);
+    expect(rows).toBe(9);
+    expect(desktopIconPosition(0, rows)).toEqual({ x: 8, y: 8 });
+    expect(desktopIconPosition(8, rows)).toEqual({ x: 8, y: 472 });
+    expect(desktopIconPosition(9, rows)).toEqual({ x: 90, y: 8 });
+    expect(desktopIconAt(45, 30, 16, rows)).toBe(0);
+    expect(desktopIconAt(120, 30, 16, rows)).toBe(9);
+    expect(desktopIconAt(85, 30, 16, rows)).toBe(-1);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // wm.ts — chrome hit regions
@@ -81,7 +120,9 @@ describe("caption buttons", () => {
 describe("hitRegion", () => {
   test("caption bar drags, buttons claim their cells", () => {
     // Caption strip, left of the buttons.
-    expect(hitRegion(GEO, OPTS, 100 + 200, 50 + 10)).toEqual({ kind: "caption" });
+    expect(hitRegion(GEO, OPTS, 100 + 200, 50 + 10)).toEqual({
+      kind: "caption",
+    });
     const xs = captionButtonXs(GEO.w, OPTS.buttons);
     for (const [i, name] of (["min", "max", "close"] as const).entries()) {
       const r = hitRegion(GEO, OPTS, 100 + xs[i] + 8, 50 + 3 + 2 + 7);
@@ -90,11 +131,26 @@ describe("hitRegion", () => {
   });
 
   test("resize bands claim edges and corners with the right directions", () => {
-    expect(hitRegion(GEO, OPTS, 100 + 200, 50 + 1)).toEqual({ kind: "resize", dir: "n" });
-    expect(hitRegion(GEO, OPTS, 100 + 1, 50 + 150)).toEqual({ kind: "resize", dir: "w" });
-    expect(hitRegion(GEO, OPTS, 100 + 399, 50 + 299)).toEqual({ kind: "resize", dir: "se" });
-    expect(hitRegion(GEO, OPTS, 100 + 1, 50 + 299)).toEqual({ kind: "resize", dir: "sw" });
-    expect(hitRegion(GEO, OPTS, 100 + 399, 50 + 1)).toEqual({ kind: "resize", dir: "ne" });
+    expect(hitRegion(GEO, OPTS, 100 + 200, 50 + 1)).toEqual({
+      kind: "resize",
+      dir: "n",
+    });
+    expect(hitRegion(GEO, OPTS, 100 + 1, 50 + 150)).toEqual({
+      kind: "resize",
+      dir: "w",
+    });
+    expect(hitRegion(GEO, OPTS, 100 + 399, 50 + 299)).toEqual({
+      kind: "resize",
+      dir: "se",
+    });
+    expect(hitRegion(GEO, OPTS, 100 + 1, 50 + 299)).toEqual({
+      kind: "resize",
+      dir: "sw",
+    });
+    expect(hitRegion(GEO, OPTS, 100 + 399, 50 + 1)).toEqual({
+      kind: "resize",
+      dir: "ne",
+    });
   });
 
   test("maximized and fixed windows expose no resize bands", () => {
@@ -109,8 +165,14 @@ describe("hitRegion", () => {
 
   test("menu bar items hit by accumulated widths, content below them", () => {
     const menuY = 50 + 3 + 18 + 1 + 9;
-    expect(hitRegion(GEO, OPTS, 100 + 3 + 10, menuY)).toEqual({ kind: "menu", index: 0 });
-    expect(hitRegion(GEO, OPTS, 100 + 3 + 34 + 10, menuY)).toEqual({ kind: "menu", index: 1 });
+    expect(hitRegion(GEO, OPTS, 100 + 3 + 10, menuY)).toEqual({
+      kind: "menu",
+      index: 0,
+    });
+    expect(hitRegion(GEO, OPTS, 100 + 3 + 34 + 10, menuY)).toEqual({
+      kind: "menu",
+      index: 1,
+    });
     const r = hitRegion(GEO, OPTS, 100 + 50, 50 + contentTop(OPTS) + 20);
     expect(r).toEqual({ kind: "content", cx: 47, cy: 20 });
   });
@@ -124,7 +186,12 @@ describe("hitRegion", () => {
 describe("resizeGeo", () => {
   const orig: Geo = { x: 100, y: 50, w: 400, h: 300 };
   test("east/south follow the pointer, west/north anchor the far edge", () => {
-    expect(resizeGeo(orig, "se", 40, 30, 200, 120)).toEqual({ x: 100, y: 50, w: 440, h: 330 });
+    expect(resizeGeo(orig, "se", 40, 30, 200, 120)).toEqual({
+      x: 100,
+      y: 50,
+      w: 440,
+      h: 330,
+    });
     const west = resizeGeo(orig, "w", 60, 0, 200, 120);
     expect(west.w).toBe(340);
     expect(west.x + west.w).toBe(orig.x + orig.w); // right edge pinned
@@ -190,7 +257,9 @@ describe("minesweeper", () => {
       expect(m.revealed).toBeGreaterThan(1);
     }
     // Whatever the layout, revealed count matches cells marked revealed.
-    expect(m.cells.filter((c) => c.state === "revealed").length).toBe(m.revealed);
+    expect(m.cells.filter((c) => c.state === "revealed").length).toBe(
+      m.revealed,
+    );
   });
 
   test("flags toggle and never reveal", () => {
@@ -211,7 +280,9 @@ describe("minesweeper", () => {
     reveal(m, mine);
     expect(m.phase).toBe("lost");
     expect(m.bust).toBe(mine);
-    expect(m.cells.filter((c) => c.mine && c.state === "revealed").length).toBe(MINES_N);
+    expect(m.cells.filter((c) => c.mine && c.state === "revealed").length).toBe(
+      MINES_N,
+    );
 
     const w = newMines(5);
     reveal(w, 0);
@@ -256,19 +327,27 @@ describe("notepad editing", () => {
   });
 
   test("caret movement clamps and wraps", () => {
-    expect(moveCaret({ lines: ["ab", "c"], caret: { row: 0, col: 2 } }, "Right")).toEqual({
+    expect(
+      moveCaret({ lines: ["ab", "c"], caret: { row: 0, col: 2 } }, "Right"),
+    ).toEqual({
       row: 1,
       col: 0,
     });
-    expect(moveCaret({ lines: ["ab", "c"], caret: { row: 1, col: 0 } }, "Left")).toEqual({
+    expect(
+      moveCaret({ lines: ["ab", "c"], caret: { row: 1, col: 0 } }, "Left"),
+    ).toEqual({
       row: 0,
       col: 2,
     });
-    expect(moveCaret({ lines: ["ab", "c"], caret: { row: 0, col: 2 } }, "Down")).toEqual({
+    expect(
+      moveCaret({ lines: ["ab", "c"], caret: { row: 0, col: 2 } }, "Down"),
+    ).toEqual({
       row: 1,
       col: 1,
     });
-    expect(moveCaret({ lines: ["ab", "c"], caret: { row: 1, col: 1 } }, "End")).toEqual({
+    expect(
+      moveCaret({ lines: ["ab", "c"], caret: { row: 1, col: 1 } }, "End"),
+    ).toEqual({
       row: 1,
       col: 1,
     });
@@ -288,7 +367,10 @@ describe("notepad editing", () => {
 // ---------------------------------------------------------------------------
 
 describe("notepad history", () => {
-  const D = (s: string, col: number): Doc => ({ lines: [s], caret: { row: 0, col } });
+  const D = (s: string, col: number): Doc => ({
+    lines: [s],
+    caret: { row: 0, col },
+  });
 
   test("a typing run coalesces into one undo unit; redo replays it whole", () => {
     let h = emptyHistory();
@@ -338,7 +420,11 @@ describe("notepad history", () => {
 
   test("a new edit clears redo; undo restores the selection", () => {
     let h = emptyHistory();
-    const sel: Doc = { lines: ["hello"], caret: { row: 0, col: 5 }, anchor: { row: 0, col: 0 } };
+    const sel: Doc = {
+      lines: ["hello"],
+      caret: { row: 0, col: 5 },
+      anchor: { row: 0, col: 0 },
+    };
     const cut = deleteSel(sel);
     h = record(h, sel, cut, "other");
     const u = undoStep(h, cut)!;
@@ -349,11 +435,19 @@ describe("notepad history", () => {
   });
 
   test("docEquals sees text/caret/anchor, not object identity", () => {
-    expect(docEquals(D("a", 1), { lines: ["a"], caret: { row: 0, col: 1 } })).toBe(true);
-    expect(docEquals(D("a", 1), D("a", 0))).toBe(false);
-    expect(docEquals(D("a", 1), { lines: ["b"], caret: { row: 0, col: 1 } })).toBe(false);
     expect(
-      docEquals(D("a", 1), { lines: ["a"], caret: { row: 0, col: 1 }, anchor: { row: 0, col: 0 } }),
+      docEquals(D("a", 1), { lines: ["a"], caret: { row: 0, col: 1 } }),
+    ).toBe(true);
+    expect(docEquals(D("a", 1), D("a", 0))).toBe(false);
+    expect(
+      docEquals(D("a", 1), { lines: ["b"], caret: { row: 0, col: 1 } }),
+    ).toBe(false);
+    expect(
+      docEquals(D("a", 1), {
+        lines: ["a"],
+        caret: { row: 0, col: 1 },
+        anchor: { row: 0, col: 0 },
+      }),
     ).toBe(false);
   });
 });
@@ -370,16 +464,33 @@ describe("notepad selection", () => {
   };
 
   test("selRange orders anchor/caret either way; collapsed = none", () => {
-    expect(selRange(sel)).toEqual({ from: { row: 0, col: 6 }, to: { row: 1, col: 4 } });
-    const flipped: Doc = { ...sel, caret: sel.anchor as { row: number; col: number }, anchor: sel.caret };
+    expect(selRange(sel)).toEqual({
+      from: { row: 0, col: 6 },
+      to: { row: 1, col: 4 },
+    });
+    const flipped: Doc = {
+      ...sel,
+      caret: sel.anchor as { row: number; col: number },
+      anchor: sel.caret,
+    };
     expect(selRange(flipped)).toEqual(selRange(sel));
-    expect(hasSel({ lines: ["a"], caret: { row: 0, col: 1 }, anchor: { row: 0, col: 1 } })).toBe(false);
+    expect(
+      hasSel({
+        lines: ["a"],
+        caret: { row: 0, col: 1 },
+        anchor: { row: 0, col: 1 },
+      }),
+    ).toBe(false);
     expect(hasSel({ lines: ["a"], caret: { row: 0, col: 1 } })).toBe(false);
   });
 
   test("selectedText joins the range with newlines", () => {
     expect(selectedText(sel)).toBe("world\nseco");
-    const one: Doc = { lines: ["hello"], caret: { row: 0, col: 4 }, anchor: { row: 0, col: 1 } };
+    const one: Doc = {
+      lines: ["hello"],
+      caret: { row: 0, col: 4 },
+      anchor: { row: 0, col: 1 },
+    };
     expect(selectedText(one)).toBe("ell");
   });
 
@@ -434,7 +545,9 @@ describe("notepad selection", () => {
     ]);
     // Exact fit and no-wrap widths pass through as one segment.
     expect(wrapLine("aaa", 18, w6)).toEqual([{ from: 0, to: 3 }]);
-    expect(wrapLine("aaa bbb ccc", Infinity, w6)).toEqual([{ from: 0, to: 11 }]);
+    expect(wrapLine("aaa bbb ccc", Infinity, w6)).toEqual([
+      { from: 0, to: 11 },
+    ]);
     expect(wrapLine("", 45, w6)).toEqual([{ from: 0, to: 0 }]);
     // A word wider than a whole row breaks at character level.
     expect(wrapLine("abcdefgh", 18, w6)).toEqual([
@@ -461,10 +574,20 @@ describe("notepad selection", () => {
     expect(vrowOf(segs, { row: 0, col: 8, end: true })).toBe(0);
     expect(vrowOf(segs, { row: 0, col: 3 })).toBe(0);
     expect(vrowOf(segs, { row: 0, col: 11 })).toBe(1);
-    expect(caretXY(segs, lines, { row: 0, col: 9 }, w6)).toEqual({ vrow: 1, x: 6 });
-    expect(caretXY(segs, lines, { row: 0, col: 8, end: true }, w6)).toEqual({ vrow: 0, x: 48 });
+    expect(caretXY(segs, lines, { row: 0, col: 9 }, w6)).toEqual({
+      vrow: 1,
+      x: 6,
+    });
+    expect(caretXY(segs, lines, { row: 0, col: 8, end: true }, w6)).toEqual({
+      vrow: 0,
+      x: 48,
+    });
     // Clicking past a wrapped row's text keeps the caret on that row.
-    expect(caretAtPoint(segs, lines, 0, 100, w6)).toEqual({ row: 0, col: 8, end: true });
+    expect(caretAtPoint(segs, lines, 0, 100, w6)).toEqual({
+      row: 0,
+      col: 8,
+      end: true,
+    });
     // At the last row of the line no affinity is needed.
     expect(caretAtPoint(segs, lines, 1, 100, w6)).toEqual({ row: 0, col: 11 });
   });
@@ -476,18 +599,36 @@ describe("notepad selection", () => {
     const doc: Doc = { lines, caret: { row: 0, col: 1 } };
     const down = applyMoveWrapped(doc, "Down", false, segs, w6);
     expect(down.caret).toEqual({ row: 0, col: 9 }); // same x, next visual row
-    const up = applyMoveWrapped({ lines, caret: { row: 0, col: 9 } }, "Up", false, segs, w6);
+    const up = applyMoveWrapped(
+      { lines, caret: { row: 0, col: 9 } },
+      "Up",
+      false,
+      segs,
+      w6,
+    );
     expect(up.caret).toEqual({ row: 0, col: 1 });
     const end = applyMoveWrapped(doc, "End", false, segs, w6);
     expect(end.caret).toEqual({ row: 0, col: 8, end: true }); // visual row end
-    const home = applyMoveWrapped({ lines, caret: { row: 0, col: 9 } }, "Home", false, segs, w6);
+    const home = applyMoveWrapped(
+      { lines, caret: { row: 0, col: 9 } },
+      "Home",
+      false,
+      segs,
+      w6,
+    );
     expect(home.caret).toEqual({ row: 0, col: 8 }); // visual row start
     const ext = applyMoveWrapped(doc, "Down", true, segs, w6);
     expect(ext.anchor).toEqual({ row: 0, col: 1 });
     expect(ext.caret).toEqual({ row: 0, col: 9 });
     // With one segment per line (wrap off) the move is the logical one.
     const flat = wrapDoc(["ab", "c"], Infinity, w6);
-    const d2 = applyMoveWrapped({ lines: ["ab", "c"], caret: { row: 0, col: 2 } }, "Down", false, flat, w6);
+    const d2 = applyMoveWrapped(
+      { lines: ["ab", "c"], caret: { row: 0, col: 2 } },
+      "Down",
+      false,
+      flat,
+      w6,
+    );
     expect(d2.caret).toEqual({ row: 1, col: 1 });
   });
 
@@ -495,10 +636,19 @@ describe("notepad selection", () => {
     const w6 = (s: string) => s.length * 6;
     const lines = ["aaa bbb ccc"];
     const segs = wrapDoc(lines, 45, w6);
-    const doc: Doc = { lines, caret: { row: 0, col: 10 }, anchor: { row: 0, col: 2 } };
+    const doc: Doc = {
+      lines,
+      caret: { row: 0, col: 10 },
+      anchor: { row: 0, col: 2 },
+    };
     expect(segSelSpan(doc, segs[0])).toEqual({ from: 2, to: 8 });
     expect(segSelSpan(doc, segs[1])).toEqual({ from: 8, to: 10 });
-    expect(segSelSpan({ lines, caret: { row: 0, col: 3 }, anchor: { row: 0, col: 1 } }, segs[1])).toBeNull();
+    expect(
+      segSelSpan(
+        { lines, caret: { row: 0, col: 3 }, anchor: { row: 0, col: 1 } },
+        segs[1],
+      ),
+    ).toBeNull();
   });
 
   test("rowSelSpan covers edge rows partially and middle rows fully", () => {
@@ -511,6 +661,8 @@ describe("notepad selection", () => {
     expect(rowSelSpan(tall, 1)).toEqual({ from: 0, to: 4 });
     expect(rowSelSpan(tall, 2)).toEqual({ from: 0, to: 2 });
     expect(rowSelSpan(tall, 3)).toBeNull();
-    expect(rowSelSpan({ lines: ["x"], caret: { row: 0, col: 0 } }, 0)).toBeNull();
+    expect(
+      rowSelSpan({ lines: ["x"], caret: { row: 0, col: 0 } }, 0),
+    ).toBeNull();
   });
 });

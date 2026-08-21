@@ -31,7 +31,9 @@
 //!   sets the window's pointer shape, and a {t:"paste-req"} guest intent
 //!   answered with a paste line (menu-driven Paste). Wired when the plan's
 //!   companion list names "desk"; the note dialect stays byte-compatible
-//!   (extra fields ignored).
+//!   (extra fields ignored). Desk98 may also open catalog apps as independent
+//!   `Guest` + `UiSurface` pairs. Every pair owns a separate QuickJS Runtime
+//!   and Context but all pairs tick and paint on this one process/thread.
 
 use std::cell::{Cell, RefCell};
 use std::ops::Range;
@@ -41,11 +43,11 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow};
 use gpui::{
-    App, AppContext as _, Application, Bounds, ClipboardItem, Context, CursorStyle, Entity,
-    EntityInputHandler, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
-    KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, Render, ScrollWheelEvent, SharedString, Styled, TitlebarOptions, UTF16Selection, Window,
-    WindowBounds, WindowOptions, canvas, div, point, px, size,
+    App, AppContext as _, Application, Bounds, ClipboardItem, ContentMask, Context, CursorStyle,
+    Entity, EntityInputHandler, FocusHandle, Focusable, InteractiveElement, IntoElement,
+    KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString, Styled, TitlebarOptions,
+    UTF16Selection, Window, WindowBounds, WindowOptions, canvas, div, point, px, size,
 };
 use pocket_mod::Guest;
 use pocket_ui_gpui::{GpuiRenderer, TextConfig, native_measure, native_wrap};
@@ -89,6 +91,43 @@ enum ScriptEvent {
     Key(u64, String, bool, bool, bool, bool),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PocketAppSpec {
+    output: String,
+    title: String,
+    viewport: (u32, u32),
+    density: u32,
+}
+
+/// tools/macos.ts passes `output:WIDTHxHEIGHT:density:title`. splitn keeps
+/// the app title free to contain further colons (all manifests use
+/// "PocketJS: …" titles).
+fn parse_pocket_app_spec(value: &str) -> Result<PocketAppSpec> {
+    let mut fields = value.splitn(4, ':');
+    let output = fields.next().unwrap_or_default();
+    let viewport = fields
+        .next()
+        .ok_or_else(|| anyhow!("--pocket-app output:WIDTHxHEIGHT:density:title"))?;
+    let density = fields
+        .next()
+        .ok_or_else(|| anyhow!("--pocket-app output:WIDTHxHEIGHT:density:title"))?;
+    let title = fields
+        .next()
+        .ok_or_else(|| anyhow!("--pocket-app output:WIDTHxHEIGHT:density:title"))?;
+    let (w, h) = viewport
+        .split_once('x')
+        .ok_or_else(|| anyhow!("--pocket-app viewport must be WIDTHxHEIGHT"))?;
+    if output.is_empty() || title.is_empty() {
+        return Err(anyhow!("--pocket-app output and title must not be empty"));
+    }
+    Ok(PocketAppSpec {
+        output: output.to_string(),
+        title: title.to_string(),
+        viewport: (w.parse()?, h.parse()?),
+        density: density.parse::<u32>()?.clamp(1, 4),
+    })
+}
+
 struct Args {
     app: String,
     js: Option<PathBuf>,
@@ -106,6 +145,8 @@ struct Args {
     editor: bool,
     /// Companion service names from the plan (svcOpen allowlist).
     companions: Vec<String>,
+    /// Desk98 child apps admitted and built by tools/macos.ts.
+    pocket_apps: Vec<PocketAppSpec>,
     density: u32,
     script: Vec<ScriptEvent>,
     quit_after_ticks: Option<u64>,
@@ -129,6 +170,7 @@ fn parse_args() -> Result<Args> {
         native_text: false,
         editor: false,
         companions: Vec::new(),
+        pocket_apps: Vec::new(),
         density: 2,
         script: Vec::new(),
         quit_after_ticks: None,
@@ -160,6 +202,10 @@ fn parse_args() -> Result<Args> {
                     .filter(|s| !s.is_empty())
                     .map(str::to_string)
                     .collect();
+            }
+            "--pocket-app" => {
+                args.pocket_apps
+                    .push(parse_pocket_app_spec(&val("--pocket-app")?)?);
             }
             "--density" => args.density = val("--density")?.parse::<u32>()?.clamp(1, 4),
             "--type" => {
@@ -326,6 +372,201 @@ fn register_fonts(cx: &App) {
 }
 
 // ---------------------------------------------------------------------------
+// Desk98 Pocket app scheduler
+// ---------------------------------------------------------------------------
+
+struct PocketAppCatalogEntry {
+    spec: PocketAppSpec,
+    /// Transparent native image handle in the Desk98 shell surface. The GPUI
+    /// renderer calls back here when that handle appears as a TEX_QUAD.
+    portal: u32,
+}
+
+struct PocketAppRealm {
+    spec: PocketAppSpec,
+    portal: u32,
+    surface: UiSurface,
+    guest: Guest,
+    renderer: GpuiRenderer,
+    pending_buttons: u32,
+    visible: bool,
+    focused: bool,
+    failed: bool,
+}
+
+struct PocketAppManager {
+    catalog: Vec<PocketAppCatalogEntry>,
+    realms: Vec<PocketAppRealm>,
+}
+
+impl PocketAppManager {
+    fn new(specs: &[PocketAppSpec], shell: &UiSurface) -> Result<Self> {
+        let mut catalog: Vec<PocketAppCatalogEntry> = Vec::with_capacity(specs.len());
+        for spec in specs {
+            if catalog.iter().any(|entry| entry.spec.output == spec.output) {
+                return Err(anyhow!("duplicate Desk98 Pocket app {}", spec.output));
+            }
+            let name = format!("pocket-app/{}", spec.output);
+            let portal = shell
+                .register_host_image(name)
+                .ok_or_else(|| anyhow!("reserving portal texture for {}", spec.output))?;
+            catalog.push(PocketAppCatalogEntry {
+                spec: spec.clone(),
+                portal: portal as u32,
+            });
+        }
+        Ok(Self {
+            catalog,
+            realms: Vec::new(),
+        })
+    }
+
+    fn open(&mut self, output: &str) -> Result<bool> {
+        if self.realms.iter().any(|realm| realm.spec.output == output) {
+            return Ok(false);
+        }
+        let entry = self
+            .catalog
+            .iter()
+            .find(|entry| entry.spec.output == output)
+            .ok_or_else(|| anyhow!("Pocket app {output:?} is not in the Desk98 catalog"))?;
+        let js_path = resolve_asset(None, output, "js")?;
+        let pak_path = resolve_asset(None, output, "pak")?;
+        let bundle = std::fs::read_to_string(&js_path)
+            .with_context(|| format!("reading {}", js_path.display()))?;
+        let pak =
+            std::fs::read(&pak_path).with_context(|| format!("reading {}", pak_path.display()))?;
+
+        let surface = UiSurface::new_with_density(
+            (entry.spec.viewport.0 as f32, entry.spec.viewport.1 as f32),
+            entry.spec.density,
+        );
+        surface.set_identity(HOST_ID, HOST_ABI);
+        surface.set_tick_rate(TICK_HZ as u32);
+        surface.feed_pak(&pak);
+        let guest = Guest::new()?;
+        surface.mount(&guest)?;
+        guest.eval(output, &bundle)?;
+        if !guest.has_frame() {
+            return Err(anyhow!("{output} evaluated but installed no frame()"));
+        }
+
+        self.realms.push(PocketAppRealm {
+            spec: entry.spec.clone(),
+            portal: entry.portal,
+            surface,
+            guest,
+            renderer: GpuiRenderer::new(TextConfig::new("Inter"), entry.spec.density),
+            pending_buttons: 0,
+            visible: true,
+            focused: true,
+            failed: false,
+        });
+        log::info!(
+            "pocket-macos: opened Desk98 realm {} ({}, {}x{}, runtime+context isolated)",
+            output,
+            entry.spec.title,
+            entry.spec.viewport.0,
+            entry.spec.viewport.1
+        );
+        Ok(true)
+    }
+
+    fn close(&mut self, output: &str) -> bool {
+        let before = self.realms.len();
+        self.realms.retain(|realm| realm.spec.output != output);
+        let closed = self.realms.len() != before;
+        if closed {
+            log::info!("pocket-macos: dropped Desk98 realm {output}");
+        }
+        closed
+    }
+
+    fn input(&mut self, output: &str, buttons: u32) {
+        if let Some(realm) = self
+            .realms
+            .iter_mut()
+            .find(|realm| realm.spec.output == output)
+        {
+            realm.pending_buttons |= buttons;
+        }
+    }
+
+    fn set_state(&mut self, output: &str, visible: bool, focused: bool) {
+        if let Some(realm) = self
+            .realms
+            .iter_mut()
+            .find(|realm| realm.spec.output == output)
+        {
+            realm.visible = visible;
+            realm.focused = focused;
+        }
+    }
+
+    /// One turn per open realm. A throw stops only that realm; the desktop
+    /// and its siblings continue on the same host tick.
+    fn tick(&mut self) -> Vec<(String, String)> {
+        let mut failures = Vec::new();
+        for realm in &mut self.realms {
+            if realm.failed {
+                continue;
+            }
+            let buttons = std::mem::take(&mut realm.pending_buttons);
+            if let Err(error) = realm.guest.frame(buttons) {
+                realm.failed = true;
+                failures.push((realm.spec.output.clone(), error.to_string()));
+                continue;
+            }
+            realm.surface.tick();
+        }
+        failures
+    }
+
+    fn visible_hash(&self) -> u64 {
+        let mut hash = 0xcbf2_9ce4_8422_2325u64;
+        for realm in &self.realms {
+            if !realm.visible || realm.failed {
+                continue;
+            }
+            let child = realm.surface.with_ui(|ui| fnv1a64(&ui.draw().words));
+            for byte in realm
+                .portal
+                .to_le_bytes()
+                .into_iter()
+                .chain(child.to_le_bytes())
+            {
+                hash ^= byte as u64;
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        hash
+    }
+
+    fn paint(
+        &mut self,
+        portal: u32,
+        full: Bounds<Pixels>,
+        clip: Bounds<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        let Some(realm) = self
+            .realms
+            .iter_mut()
+            .find(|realm| realm.portal == portal && !realm.failed)
+        else {
+            return false;
+        };
+        window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+            realm.surface.with_ui(|ui| {
+                realm.renderer.paint(ui, full.origin, window, cx);
+            });
+        });
+        true
+    }
+}
+
+// ---------------------------------------------------------------------------
 // the root view
 // ---------------------------------------------------------------------------
 
@@ -333,6 +574,7 @@ struct PocketRoot {
     surface: UiSurface,
     guest: Guest,
     renderer: Rc<RefCell<GpuiRenderer>>,
+    pocket_apps: Rc<RefCell<PocketAppManager>>,
     focus: FocusHandle,
     args: Args,
 
@@ -388,6 +630,12 @@ impl PocketRoot {
             surface.set_svc_allowlist(args.companions.iter().map(String::as_str));
         }
         surface.feed_pak(&pak);
+        // Portal marker names must be in ui.__textures before the Desk98
+        // bundle evaluates and resolves its <Image src="pocket-app/...">.
+        let pocket_apps = Rc::new(RefCell::new(PocketAppManager::new(
+            &args.pocket_apps,
+            &surface,
+        )?));
         let cfg = TextConfig::new("Inter");
         if args.native_text {
             // BEFORE mount: measurement feeds layout, and the guest must
@@ -423,6 +671,7 @@ impl PocketRoot {
             surface,
             guest,
             renderer,
+            pocket_apps,
             focus,
             args,
             booted: false,
@@ -698,15 +947,61 @@ impl PocketRoot {
                             cx.notify();
                         }
                     }
+                    Some("pocket-open") => {
+                        let app = v["app"].as_str().unwrap_or_default();
+                        let result = self.pocket_apps.borrow_mut().open(app);
+                        match result {
+                            Ok(_) => self.svc(serde_json::json!({
+                                "t": "pocket-status", "app": app, "status": "ready"
+                            })),
+                            Err(error) => {
+                                log::error!("pocket-macos: opening Desk98 realm {app}: {error:#}");
+                                self.svc(serde_json::json!({
+                                    "t": "pocket-status", "app": app, "status": "error",
+                                    "message": error.to_string()
+                                }));
+                            }
+                        }
+                    }
+                    Some("pocket-close") => {
+                        let app = v["app"].as_str().unwrap_or_default();
+                        self.pocket_apps.borrow_mut().close(app);
+                    }
+                    Some("pocket-input") => {
+                        let app = v["app"].as_str().unwrap_or_default();
+                        let buttons = v["buttons"].as_u64().unwrap_or(0) as u32;
+                        self.pocket_apps.borrow_mut().input(app, buttons);
+                    }
+                    Some("pocket-state") => {
+                        let app = v["app"].as_str().unwrap_or_default();
+                        self.pocket_apps.borrow_mut().set_state(
+                            app,
+                            v["visible"].as_bool().unwrap_or(true),
+                            v["focused"].as_bool().unwrap_or(false),
+                        );
+                    }
                     other => log::warn!("pocket-macos: unknown intent {other:?}"),
                 },
                 Err(e) => log::warn!("pocket-macos: bad svc line from guest: {e}"),
             }
         }
 
+        // Child realms run after their shell commands have been applied and
+        // before the composite hash is sampled. One realm throwing cannot
+        // terminate or corrupt its siblings.
+        let failures = self.pocket_apps.borrow_mut().tick();
+        for (app, message) in failures {
+            log::error!("pocket-macos: Desk98 realm {app} frame failed: {message}");
+            self.svc(serde_json::json!({
+                "t": "pocket-status", "app": app, "status": "error", "message": message
+            }));
+        }
+
         // Tick before draw; arm a paint only when the content hash moved
         // (TEXT_RUN packs its run bytes into the words — the whole truth).
-        let hash = self.surface.with_ui(|ui| fnv1a64(&ui.draw().words));
+        let shell_hash = self.surface.with_ui(|ui| fnv1a64(&ui.draw().words));
+        let child_hash = self.pocket_apps.borrow().visible_hash();
+        let hash = shell_hash ^ child_hash.rotate_left(17);
         if hash != self.hash {
             self.hash = hash;
             cx.notify();
@@ -1100,6 +1395,7 @@ impl Render for PocketRoot {
 
         let surface = self.surface.clone();
         let renderer = self.renderer.clone();
+        let pocket_apps = self.pocket_apps.clone();
         let frames = self.frames.clone();
         let announce_ready = self.args.announce_ready;
         let canvas_origin = self.canvas_origin.clone();
@@ -1153,7 +1449,17 @@ impl Render for PocketRoot {
                             println!("READY {}", epoch_ms());
                         }
                         surface.with_ui(|ui| {
-                            renderer.borrow_mut().paint(ui, origin, window, cx);
+                            renderer.borrow_mut().paint_with_portals(
+                                ui,
+                                origin,
+                                window,
+                                cx,
+                                &mut |portal, full, clip, window, cx| {
+                                    pocket_apps
+                                        .borrow_mut()
+                                        .paint(portal, full, clip, window, cx)
+                                },
+                            );
                         });
                     },
                 )
@@ -1220,3 +1526,47 @@ fn main() -> Result<()> {
 
 /// Application::run wants a 'static closure; stash the parsed args for it.
 static ARGS: std::sync::Mutex<Option<Args>> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pocket_app_arg_keeps_colons_in_the_title() {
+        assert_eq!(
+            parse_pocket_app_spec("hero-main:640x360:2:PocketJS: Hero").unwrap(),
+            PocketAppSpec {
+                output: "hero-main".into(),
+                title: "PocketJS: Hero".into(),
+                viewport: (640, 360),
+                density: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn pocket_app_arg_rejects_incomplete_values() {
+        assert!(parse_pocket_app_spec("hero-main:640x360:2").is_err());
+        assert!(parse_pocket_app_spec(":640x360:2:Hero").is_err());
+        assert!(parse_pocket_app_spec("hero-main:wide:2:Hero").is_err());
+    }
+
+    #[test]
+    fn pocket_app_guests_do_not_share_quickjs_globals() {
+        let hero = Guest::new().unwrap();
+        let settings = Guest::new().unwrap();
+        hero.eval("hero", "globalThis.realmProbe = 41;").unwrap();
+        settings
+            .eval(
+                "settings",
+                "globalThis.realmProbeWasAbsent = typeof realmProbe === 'undefined';",
+            )
+            .unwrap();
+
+        let hero_probe: i32 = hero.with(|ctx| ctx.globals().get("realmProbe").unwrap());
+        let settings_absent: bool =
+            settings.with(|ctx| ctx.globals().get("realmProbeWasAbsent").unwrap());
+        assert_eq!(hero_probe, 41);
+        assert!(settings_absent);
+    }
+}

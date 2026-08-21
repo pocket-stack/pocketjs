@@ -142,8 +142,33 @@ Its W95FA pixel font is baked per-app into slots 19–21 through
 `apps/desk98/pak.json` (`gen-assets.ts`) — the repo slot table (0–18)
 never moves.
 
+Desk98 also publishes the current small demo set from
+`apps/desk98/pocket-apps.ts`: Hero, Settings, Motions, Cards, Chrome,
+Cursor, Gallery, Library, Music, Notifications and Stats. The same catalog
+drives the desktop icons and `tools/macos.ts` builds. **Catalog validation
+rejects desktop entries without matching macOS artifacts.**
+
+- **Opening a Pocket app creates a new `Guest`, QuickJS `Runtime`, QuickJS
+  `Context`, `UiSurface` and `GpuiRenderer` inside the existing macOS
+  process.** Its globals, native node tree, textures, animation clock and
+  button state are not shared with the Desk98 shell or another app.
+- **The Desk98 window content is a GPUI paint portal, not a captured
+  bitmap.** The shell emits an ordinary image `TEX_QUAD`; the macOS renderer
+  replaces its registered texture handle with the child surface's DrawList
+  at that exact point in painter order. **The Desk98 window manager applies
+  clipping, overlapping-window order, minimizing and task switching.**
+- **Every open realm receives one guest turn and one core tick per host
+  tick.** Only the focused Pocket window receives hardware-neutral button
+  pulses. Minimized realms keep running but are excluded from the visible
+  composite hash, so their background animation does not repaint the desk.
+  Closing a window drops that app's `Guest`, which destroys its QuickJS
+  runtime and context without affecting siblings.
+- **A child exception stops only that child realm.** The host reports the
+  error into the app window while the shell and other realms continue.
+
 ```
 bun run macos desk98      # the full desktop; drag-select, Cmd+`, Cmd+W, Cmd+Esc
+bun run macos desk98 --build-only # shell + 11 app bundles + release host
 ```
 
 Scripted acceptance drives the same dialect from flags: `--mouse

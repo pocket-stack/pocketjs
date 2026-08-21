@@ -96,17 +96,8 @@ jobs:
           await Bun.write(".pocket/macos-app/note-main.plan.json", JSON.stringify(r.plan, null, 2) + "\n");'
           bun tools/build.ts --plan=.pocket/macos-app/note-main.plan.json
 
-      - name: Compile desk98 against macos-app (vue-vapor, W95FA pak.json splice + SVG icons)
-        run: |
-          bun -e '
-          import { validateAndResolveBuildPlan } from "./framework/src/manifest/resolve.ts";
-          import { mkdirSync } from "node:fs";
-          const m = await Bun.file("apps/desk98/pocket.json").json();
-          const r = validateAndResolveBuildPlan(m, { target: "macos-app" });
-          if (!r.ok) throw new Error(JSON.stringify(r.diagnostics));
-          mkdirSync(".pocket/macos-app", { recursive: true });
-          await Bun.write(".pocket/macos-app/desk98-main.plan.json", JSON.stringify(r.plan, null, 2) + "\n");'
-          bun tools/build.ts --plan=.pocket/macos-app/desk98-main.plan.json
+      - name: Compile desk98, its Pocket app catalog and the release host
+        run: bun run macos desk98 --build-only
 
       - name: desk98 sim smoke (vue-vapor bundle)
         run: |

@@ -363,8 +363,33 @@ const ICONS: Icon[] = [
   },
   {
     // Recycle 16 shares the desktop art; folder-16 doubles as Documents.
-    // Start logo: the PocketJS favicon motif (site/assets/favicon.svg) as a
-    // single-color pixel mark — rounded pocket frame, lens, two bars.
+    // PocketJS favicon motif (site/assets/favicon.svg) as a single-color
+    // pixel mark — rounded pocket frame, lens, two bars. The 16px copy is
+    // used by Start/task buttons; the 32px copy is every Pocket app icon.
+    file: "pocket-app-16.svg",
+    big: "pocket-app.svg",
+    rows: [
+      "................",
+      "................",
+      "................",
+      "..kkkkkkkkkkkk..",
+      ".k............k.",
+      ".k............k.",
+      ".k..kk..kkkkk.k.",
+      ".k.kkkk.......k.",
+      ".k.kkkk.kkk...k.",
+      ".k..kk........k.",
+      ".k............k.",
+      ".k............k.",
+      "..kkkkkkkkkkkk..",
+      "................",
+      "................",
+      "................",
+    ],
+  },
+  {
+    // Start button copy of the same product mark. Kept as its established
+    // filename because chrome.tsx refers to it directly.
     file: "start-logo.svg",
     rows: [
       "................",

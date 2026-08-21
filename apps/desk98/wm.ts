@@ -27,6 +27,46 @@ export interface Geo {
   h: number;
 }
 
+export const DESK_ICON_X = 8;
+export const DESK_ICON_Y = 8;
+export const DESK_ICON_W = 74;
+export const DESK_ICON_H = 48;
+export const DESK_ICON_X_STRIDE = 82;
+export const DESK_ICON_Y_STRIDE = 58;
+
+/** Column-major desktop icon grid. More icons add columns while every cell
+ *  above the taskbar keeps the same classic 74x48 hit target. */
+export function desktopIconRows(viewportH: number): number {
+  return Math.max(
+    1,
+    Math.floor((viewportH - TASK_H - DESK_ICON_Y * 2) / DESK_ICON_Y_STRIDE),
+  );
+}
+
+export function desktopIconPosition(
+  index: number,
+  rows: number,
+): { x: number; y: number } {
+  return {
+    x: DESK_ICON_X + Math.floor(index / Math.max(1, rows)) * DESK_ICON_X_STRIDE,
+    y: DESK_ICON_Y + (index % Math.max(1, rows)) * DESK_ICON_Y_STRIDE,
+  };
+}
+
+export function desktopIconAt(
+  x: number,
+  y: number,
+  count: number,
+  rows: number,
+): number {
+  for (let i = 0; i < count; i++) {
+    const p = desktopIconPosition(i, rows);
+    if (x >= p.x && x < p.x + DESK_ICON_W && y >= p.y && y < p.y + DESK_ICON_H)
+      return i;
+  }
+  return -1;
+}
+
 export type CaptionButton = "min" | "max" | "close";
 export type Dir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 
@@ -47,7 +87,10 @@ export interface ChromeOpts {
 }
 
 /** Left x of each caption button, right-aligned inside the frame, flush. */
-export function captionButtonXs(w: number, buttons: readonly CaptionButton[]): number[] {
+export function captionButtonXs(
+  w: number,
+  buttons: readonly CaptionButton[],
+): number[] {
   const xs: number[] = [];
   let right = w - FRAME - 2;
   for (let i = buttons.length - 1; i >= 0; i--) {
@@ -59,11 +102,18 @@ export function captionButtonXs(w: number, buttons: readonly CaptionButton[]): n
 
 /** Content-area top inside the window (frame + caption + menu bar). */
 export function contentTop(opts: Pick<ChromeOpts, "menuWidths">): number {
-  return FRAME + TITLE_H + TITLE_GAP + (opts.menuWidths.length > 0 ? MENU_H : 0);
+  return (
+    FRAME + TITLE_H + TITLE_GAP + (opts.menuWidths.length > 0 ? MENU_H : 0)
+  );
 }
 
 /** Hit-test a point in window-local coordinates against the chrome. */
-export function hitRegion(geo: Geo, opts: ChromeOpts, px: number, py: number): Region | null {
+export function hitRegion(
+  geo: Geo,
+  opts: ChromeOpts,
+  px: number,
+  py: number,
+): Region | null {
   const x = px - geo.x;
   const y = py - geo.y;
   if (x < 0 || y < 0 || x >= geo.w || y >= geo.h) return null;
@@ -112,7 +162,8 @@ export function hitRegion(geo: Geo, opts: ChromeOpts, px: number, py: number): R
   if (opts.menuWidths.length > 0 && y >= menuTop && y < menuTop + MENU_H) {
     let mx = FRAME;
     for (let i = 0; i < opts.menuWidths.length; i++) {
-      if (x >= mx && x < mx + opts.menuWidths[i]) return { kind: "menu", index: i };
+      if (x >= mx && x < mx + opts.menuWidths[i])
+        return { kind: "menu", index: i };
       mx += opts.menuWidths[i];
     }
   }
@@ -163,7 +214,13 @@ export function maximizedGeo(vpW: number, vpH: number): Geo {
 }
 
 /** Cascade position for the i-th opened window. */
-export function cascadePos(i: number, vpW: number, vpH: number, w: number, h: number): Geo {
+export function cascadePos(
+  i: number,
+  vpW: number,
+  vpH: number,
+  w: number,
+  h: number,
+): Geo {
   const step = 24;
   const cols = Math.max(1, Math.floor((vpH - TASK_H - h - 8) / step) + 1);
   const k = i % Math.max(1, cols);

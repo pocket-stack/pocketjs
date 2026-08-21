@@ -14,7 +14,8 @@
 // Shortcuts are macOS-style: the host forwards ⌘ chords as cmd-flagged key
 // lines (⌘Q quits and ⌘V pastes host-side) — ⌘W closes, ⌘M minimizes,
 // ⌘` cycles, ⌘N opens Notepad, ⌘Esc toggles Start, ⌘A/C/X edit the
-// focused Notepad.
+// focused Notepad. Pocket app windows forward hardware-neutral console-button
+// pulses to their own QuickJS guests through the same desk companion.
 //
 // Without the desk companion (sim, goldens, consoles) the app boots a
 // static arrangement and just renders it — the unmodified-app base case.
@@ -29,6 +30,8 @@ import {
   clampMove,
   contentTop,
   cursorForDir,
+  desktopIconAt,
+  desktopIconRows,
   hitRegion,
   maximizedGeo,
   resizeGeo,
@@ -45,6 +48,7 @@ import {
   type FolderRow,
   type MinesData,
   type PadData,
+  type PocketData,
   type Popup,
   type PopupItem,
   type ShutdownData,
@@ -66,6 +70,7 @@ import {
   padSegs,
   padWidth,
   padWrapW,
+  PocketAppView,
   SHUTDOWN_GEO,
   ShutdownView,
   shutdownHit,
@@ -93,13 +98,26 @@ import {
   type EditKind,
 } from "./notepad.ts";
 import { newMines, reveal, toggleFlag } from "./mines.ts";
+import {
+  POCKET_APPS,
+  POCKET_ICON,
+  POCKET_ICON_SMALL,
+  type PocketAppSpec,
+} from "./pocket-apps.ts";
 import { CAPTION_ACTIVE, CAPTION_INACTIVE, FRAME, TASK_H } from "./theme.ts";
-import { CaptionButtons, DesktopIcons, PopupPanel, StartMenu, T98, Taskbar } from "./chrome.tsx";
+import {
+  CaptionButtons,
+  DesktopIcons,
+  PopupPanel,
+  StartMenu,
+  T98,
+  Taskbar,
+} from "./chrome.tsx";
 
 const WELCOME = [
   "Welcome to PocketJS 98.",
   "",
-  "This desktop is one PocketJS guest: the windows, the taskbar, the Start menu and this Notepad are Vue Vapor JSX over the same DrawList contract the consoles boot, painted by the gpui backend.",
+  "The desktop shell is one PocketJS guest. Every Pocket app icon starts another isolated QuickJS guest in the same gpui process; each guest keeps its own globals, UI tree and fixed clock.",
   "",
   "Word wrap is on (Edit > Word Wrap) - these paragraphs are single logical lines; resize the window and they reflow live.",
   "",
@@ -129,6 +147,7 @@ type Drag =
 const padOf = (w: WinCtl) => w.data as PadData;
 const minesOf = (w: WinCtl) => w.data as MinesData;
 const folderOf = (w: WinCtl) => w.data as FolderData;
+const pocketOf = (w: WinCtl) => w.data as PocketData;
 const aboutOf = (w: WinCtl) => w.data as AboutData;
 const shutdownOf = (w: WinCtl) => w.data as ShutdownData;
 
@@ -155,7 +174,11 @@ function Window98(props: { win: WinCtl; active: boolean }) {
       <View class={props.active ? CAPTION_ACTIVE : CAPTION_INACTIVE}>
         <Image class="w-[16] h-[16] mr-[3]" src={w.icon} />
         <View class="flex-1 flex-row overflow-hidden">
-          <T98 bold cls={props.active ? "text-[#ffffff]" : "text-[#c0c0c0]"} t={w.title} />
+          <T98
+            bold
+            cls={props.active ? "text-[#ffffff]" : "text-[#c0c0c0]"}
+            t={w.title}
+          />
         </View>
         <CaptionButtons win={w} />
       </View>
@@ -170,7 +193,9 @@ function Window98(props: { win: WinCtl; active: boolean }) {
               }
             >
               <T98
-                cls={w.openMenu.value === i ? "text-[#ffffff]" : "text-[#000000]"}
+                cls={
+                  w.openMenu.value === i ? "text-[#ffffff]" : "text-[#000000]"
+                }
                 t={menu.label}
               />
             </View>
@@ -179,11 +204,17 @@ function Window98(props: { win: WinCtl; active: boolean }) {
       ) : null}
       <View class="flex-1 flex-col overflow-hidden">
         {w.kind === "notepad" ? (
-          <NotepadView data={padOf(w)} wrapW={padWrapW(w)} active={props.active} />
+          <NotepadView
+            data={padOf(w)}
+            wrapW={padWrapW(w)}
+            active={props.active}
+          />
         ) : w.kind === "mines" ? (
           <MinesView data={minesOf(w)} />
         ) : w.kind === "folder" ? (
           <FolderView data={folderOf(w)} resizable={w.resizable} />
+        ) : w.kind === "pocket" ? (
+          <PocketAppView data={pocketOf(w)} />
         ) : w.kind === "about" ? (
           <AboutView data={aboutOf(w)} />
         ) : (
@@ -250,6 +281,10 @@ export default function App() {
   }
 
   function closeWin(id: number) {
+    const closing = byId(id);
+    if (closing?.kind === "pocket") {
+      svc?.send({ t: "pocket-close", app: pocketOf(closing).app.output });
+    }
     wins.value = wins.value.filter((w) => w.id !== id);
     stack = stack.filter((x) => x !== id);
     applyZ();
@@ -315,7 +350,9 @@ export default function App() {
   // ---- programs ---------------------------------------------------------------
 
   function openNotepad(title: string, content: string[]) {
-    const existing = wins.value.find((w) => w.kind === "notepad" && w.title === title);
+    const existing = wins.value.find(
+      (w) => w.kind === "notepad" && w.title === title,
+    );
     if (existing) return raise(existing.id);
     const data: PadData = {
       kind: "notepad",
@@ -343,7 +380,10 @@ export default function App() {
             {
               label: "New",
               act: () => {
-                applyEdit(w, "other", { lines: [""], caret: { row: 0, col: 0 } });
+                applyEdit(w, "other", {
+                  lines: [""],
+                  caret: { row: 0, col: 0 },
+                });
               },
             },
             { sep: true, label: "" },
@@ -377,8 +417,18 @@ export default function App() {
               },
             },
             { sep: true, label: "" },
-            { label: "Cut", shortcut: "Cmd+X", disabled: !hasSel(data.doc.value), act: cutSel },
-            { label: "Copy", shortcut: "Cmd+C", disabled: !hasSel(data.doc.value), act: copySel },
+            {
+              label: "Cut",
+              shortcut: "Cmd+X",
+              disabled: !hasSel(data.doc.value),
+              act: cutSel,
+            },
+            {
+              label: "Copy",
+              shortcut: "Cmd+C",
+              disabled: !hasSel(data.doc.value),
+              act: copySel,
+            },
             { label: "Paste", shortcut: "Cmd+V", act: pasteReq },
             {
               label: "Select All",
@@ -431,7 +481,15 @@ export default function App() {
       kind: "mines",
       title: "Minesweeper",
       icon: "icons/mines-16.svg",
-      geo: { ...cascadePos(wins.value.length, vp.value.w, vp.value.h, MINES_GEO.w, MINES_GEO.h) },
+      geo: {
+        ...cascadePos(
+          wins.value.length,
+          vp.value.w,
+          vp.value.h,
+          MINES_GEO.w,
+          MINES_GEO.h,
+        ),
+      },
       buttons: ["min", "close"],
       resizable: false,
       menus: [
@@ -467,6 +525,42 @@ export default function App() {
     addWin(w);
   }
 
+  function openPocketApp(app: PocketAppSpec) {
+    const existing = wins.value.find(
+      (w) => w.kind === "pocket" && pocketOf(w).app.output === app.output,
+    );
+    if (existing) return raise(existing.id);
+    const data: PocketData = {
+      kind: "pocket",
+      app,
+      status: ref("starting"),
+      error: ref(""),
+    };
+    // Content is exactly the child plan's logical viewport. Portal painting
+    // therefore needs no scale or second raster pass.
+    const outerW = app.viewport[0] + FRAME * 2;
+    const outerH = app.viewport[1] + contentTop({ menuWidths: [] }) + FRAME;
+    const w = createWin({
+      kind: "pocket",
+      title: `PocketJS: ${app.title}`,
+      icon: POCKET_ICON_SMALL,
+      geo: cascadePos(
+        wins.value.length,
+        vp.value.w,
+        vp.value.h,
+        outerW,
+        outerH,
+      ),
+      buttons: ["min", "close"],
+      resizable: false,
+      minW: outerW,
+      minH: outerH,
+      data,
+    });
+    addWin(w);
+    svc?.send({ t: "pocket-open", app: app.output });
+  }
+
   function minesNew(w: WinCtl) {
     const d = minesOf(w);
     d.board.value = newMines((virtualNow() * 1000) | 0);
@@ -474,8 +568,16 @@ export default function App() {
     minesStart = 0;
   }
 
-  function openFolder(title: string, icon: string, rows: FolderRow[], geoW = 420, geoH = 280) {
-    const existing = wins.value.find((w) => w.kind === "folder" && w.title === title);
+  function openFolder(
+    title: string,
+    icon: string,
+    rows: FolderRow[],
+    geoW = 420,
+    geoH = 280,
+  ) {
+    const existing = wins.value.find(
+      (w) => w.kind === "folder" && w.title === title,
+    );
     if (existing) return raise(existing.id);
     const data: FolderData = { kind: "folder", rows, selected: ref(-1) };
     const w = createWin({
@@ -501,18 +603,53 @@ export default function App() {
           openDriveC();
         },
       },
-      { icon: "icons/cdrom-16.svg", name: "(D:)", size: "", type: "CD-ROM Disc" },
-      { icon: "icons/folder-16.svg", name: "Control Panel", size: "", type: "System Folder" },
-      { icon: "icons/folder-16.svg", name: "Printers", size: "", type: "System Folder" },
+      {
+        icon: "icons/cdrom-16.svg",
+        name: "(D:)",
+        size: "",
+        type: "CD-ROM Disc",
+      },
+      {
+        icon: "icons/folder-16.svg",
+        name: "Control Panel",
+        size: "",
+        type: "System Folder",
+      },
+      {
+        icon: "icons/folder-16.svg",
+        name: "Printers",
+        size: "",
+        type: "System Folder",
+      },
     ]);
   }
 
   function openDriveC() {
     openFolder("(C:)", "icons/drive-16.svg", [
-      { icon: "icons/folder-16.svg", name: "Program Files", size: "", type: "File Folder" },
-      { icon: "icons/folder-16.svg", name: "Windows", size: "", type: "File Folder" },
-      { icon: "icons/file-16.svg", name: "AUTOEXEC.BAT", size: "1 KB", type: "MS-DOS Batch File" },
-      { icon: "icons/file-16.svg", name: "CONFIG.SYS", size: "1 KB", type: "System file" },
+      {
+        icon: "icons/folder-16.svg",
+        name: "Program Files",
+        size: "",
+        type: "File Folder",
+      },
+      {
+        icon: "icons/folder-16.svg",
+        name: "Windows",
+        size: "",
+        type: "File Folder",
+      },
+      {
+        icon: "icons/file-16.svg",
+        name: "AUTOEXEC.BAT",
+        size: "1 KB",
+        type: "MS-DOS Batch File",
+      },
+      {
+        icon: "icons/file-16.svg",
+        name: "CONFIG.SYS",
+        size: "1 KB",
+        type: "System file",
+      },
       {
         icon: "icons/notepad-16.svg",
         name: "README.TXT",
@@ -614,18 +751,15 @@ export default function App() {
       },
     },
     { icon: "icons/mines.svg", label: "Minesweeper", open: openMines },
+    ...POCKET_APPS.map((app) => ({
+      icon: POCKET_ICON,
+      label: app.title,
+      open: () => openPocketApp(app),
+    })),
   ];
-  const ICON_X = 8;
-  const ICON_W = 74;
-  const ICON_STRIDE = 58;
-  const ICON_CELL_H = 48;
 
   function iconAt(x: number, y: number): number {
-    if (x < ICON_X || x >= ICON_X + ICON_W) return -1;
-    const rel = y - 8;
-    if (rel < 0 || rel % ICON_STRIDE >= ICON_CELL_H) return -1;
-    const i = Math.floor(rel / ICON_STRIDE);
-    return i >= 0 && i < icons.length ? i : -1;
+    return desktopIconAt(x, y, icons.length, desktopIconRows(vp.value.h));
   }
 
   const startItems = (): PopupItem[] => [
@@ -641,6 +775,11 @@ export default function App() {
           },
         },
         { label: "Minesweeper", icon: "icons/mines-16.svg", act: openMines },
+        ...POCKET_APPS.map((app) => ({
+          label: app.title,
+          icon: POCKET_ICON_SMALL,
+          act: () => openPocketApp(app),
+        })),
       ],
     },
     {
@@ -688,7 +827,11 @@ export default function App() {
       if (it.sep) continue;
       w = Math.max(
         w,
-        26 + measure(it.label) + (it.shortcut ? 20 + measure(it.shortcut) : 0) + (it.sub ? 14 : 0) + 14,
+        26 +
+          measure(it.label) +
+          (it.shortcut ? 20 + measure(it.shortcut) : 0) +
+          (it.sub ? 14 : 0) +
+          14,
       );
     }
     const h = 2 + items.reduce((a, it) => a + (it.sep ? START_SEP : 18), 0);
@@ -743,7 +886,10 @@ export default function App() {
   }
 
   /** Topmost visible window under the point, with its chrome region. */
-  function hitWindows(x: number, y: number): { win: WinCtl; region: Region } | null {
+  function hitWindows(
+    x: number,
+    y: number,
+  ): { win: WinCtl; region: Region } | null {
     for (let i = stack.length - 1; i >= 0; i--) {
       const w = byId(stack[i]);
       if (!w || w.minimized.value) continue;
@@ -760,7 +906,9 @@ export default function App() {
       now - lastClick.t < 0.4 &&
       Math.abs(mx - lastClick.x) < 4 &&
       Math.abs(my - lastClick.y) < 4;
-    lastClick = hit ? { key: "", t: -1, x: 0, y: 0 } : { key, t: now, x: mx, y: my };
+    lastClick = hit
+      ? { key: "", t: -1, x: 0, y: 0 }
+      : { key, t: now, x: mx, y: my };
     return hit;
   }
 
@@ -863,7 +1011,14 @@ export default function App() {
         return;
       }
       if (region.kind === "resize") {
-        drag = { type: "resize", id: w.id, dir: region.dir, sx: mx, sy: my, orig: w.geo.value };
+        drag = {
+          type: "resize",
+          id: w.id,
+          dir: region.dir,
+          sx: mx,
+          sy: my,
+          orig: w.geo.value,
+        };
         return;
       }
       if (region.kind === "menu") {
@@ -873,7 +1028,11 @@ export default function App() {
           const mxs = w.menus.slice(0, open).reduce((a, m) => a + m.width, 0);
           const g = w.geo.value;
           popup.value = {
-            popup: buildPopup(g.x + FRAME + mxs, g.y + FRAME + 18 + 1 + 18, w.menus[open].items()),
+            popup: buildPopup(
+              g.x + FRAME + mxs,
+              g.y + FRAME + 18 + 1 + 18,
+              w.menus[open].items(),
+            ),
             winId: w.id,
           };
         }
@@ -906,7 +1065,9 @@ export default function App() {
         return;
       }
       // Click places the caret; shift-click extends; dragging selects.
-      const anchor = shift ? (doc.anchor ?? doc.caret) : { row: caret.row, col: caret.col };
+      const anchor = shift
+        ? (doc.anchor ?? doc.caret)
+        : { row: caret.row, col: caret.col };
       d.doc.value = { lines: doc.lines, caret, anchor };
       drag = { type: "textsel", id: w.id };
       return;
@@ -932,7 +1093,12 @@ export default function App() {
     }
     if (w.kind === "about") {
       const g = w.geo.value;
-      const hit = aboutHit(g.w - FRAME * 2, g.h - FRAME - contentTop({ menuWidths: [] }), cx, cy);
+      const hit = aboutHit(
+        g.w - FRAME * 2,
+        g.h - FRAME - contentTop({ menuWidths: [] }),
+        cx,
+        cy,
+      );
       if (hit === "ok") {
         drag = { type: "dialogbtn", id: w.id, tag: "ok" };
         aboutOf(w).armed.value = "ok";
@@ -942,7 +1108,12 @@ export default function App() {
     if (w.kind === "shutdown") {
       const g = w.geo.value;
       const d = shutdownOf(w);
-      const hit = shutdownHit(g.w - FRAME * 2, g.h - FRAME - contentTop({ menuWidths: [] }), cx, cy);
+      const hit = shutdownHit(
+        g.w - FRAME * 2,
+        g.h - FRAME - contentTop({ menuWidths: [] }),
+        cx,
+        cy,
+      );
       if (hit === "radio0") d.choice.value = 0;
       else if (hit === "radio1") d.choice.value = 1;
       else if (hit === "ok" || hit === "cancel") {
@@ -1054,8 +1225,12 @@ export default function App() {
         if (item.sub) {
           if (startFly.value?.index !== i) {
             let oy = startY() + 1;
-            for (let k = 0; k < i; k++) oy += startItems()[k].sep ? START_SEP : START_ROW;
-            startFly.value = { index: i, popup: buildPopup(2 + 182 - 3, oy, item.sub) };
+            for (let k = 0; k < i; k++)
+              oy += startItems()[k].sep ? START_SEP : START_ROW;
+            startFly.value = {
+              index: i,
+              popup: buildPopup(2 + 182 - 3, oy, item.sub),
+            };
             flyHover.value = -1;
           }
         } else if (startFly.value) {
@@ -1075,7 +1250,9 @@ export default function App() {
           const r = hitRegion(w.geo.value, chromeOpts(w), mx, my);
           if (r?.kind === "menu" && r.index !== w.openMenu.value) {
             w.openMenu.value = r.index;
-            const mxs = w.menus.slice(0, r.index).reduce((a, m) => a + m.width, 0);
+            const mxs = w.menus
+              .slice(0, r.index)
+              .reduce((a, m) => a + m.width, 0);
             const g = w.geo.value;
             popup.value = {
               popup: buildPopup(
@@ -1095,7 +1272,11 @@ export default function App() {
       const w = byId(drag.id);
       if (w) {
         w.geo.value = clampMove(
-          { ...drag.orig, x: drag.orig.x + (mx - drag.sx), y: drag.orig.y + (my - drag.sy) },
+          {
+            ...drag.orig,
+            x: drag.orig.x + (mx - drag.sx),
+            y: drag.orig.y + (my - drag.sy),
+          },
           vp.value.w,
           vp.value.h,
         );
@@ -1105,7 +1286,14 @@ export default function App() {
     if (drag?.type === "resize") {
       const w = byId(drag.id);
       if (w) {
-        w.geo.value = resizeGeo(drag.orig, drag.dir, mx - drag.sx, my - drag.sy, w.minW, w.minH);
+        w.geo.value = resizeGeo(
+          drag.orig,
+          drag.dir,
+          mx - drag.sx,
+          my - drag.sy,
+          w.minW,
+          w.minH,
+        );
       }
       sendCursor(cursorForDir(drag.dir));
       return;
@@ -1124,7 +1312,11 @@ export default function App() {
           caret.col !== doc.caret.col ||
           (caret.end ?? false) !== (doc.caret.end ?? false)
         ) {
-          d.doc.value = { lines: doc.lines, caret, anchor: doc.anchor ?? doc.caret };
+          d.doc.value = {
+            lines: doc.lines,
+            caret,
+            anchor: doc.anchor ?? doc.caret,
+          };
         }
       }
       sendCursor("text");
@@ -1134,7 +1326,8 @@ export default function App() {
       const w = byId(drag.id);
       if (w) {
         const r = hitRegion(w.geo.value, chromeOpts(w), mx, my);
-        w.pressedBtn.value = r?.kind === "button" && r.button === drag.btn ? drag.btn : null;
+        w.pressedBtn.value =
+          r?.kind === "button" && r.button === drag.btn ? drag.btn : null;
       }
       return;
     }
@@ -1158,9 +1351,12 @@ export default function App() {
         let over: string | null = null;
         if (r?.kind === "content") {
           over =
-            w.kind === "about" ? aboutHit(cw, chh, r.cx, r.cy) : shutdownHit(cw, chh, r.cx, r.cy);
+            w.kind === "about"
+              ? aboutHit(cw, chh, r.cx, r.cy)
+              : shutdownHit(cw, chh, r.cx, r.cy);
         }
-        const armed = w.kind === "about" ? aboutOf(w).armed : shutdownOf(w).armed;
+        const armed =
+          w.kind === "about" ? aboutOf(w).armed : shutdownOf(w).armed;
         armed.value = over === drag.tag ? drag.tag : null;
       }
       return;
@@ -1171,7 +1367,8 @@ export default function App() {
     const hover = hitWindows(mx, my);
     if (hover) {
       if (hover.region.kind === "resize") k = cursorForDir(hover.region.dir);
-      else if (hover.region.kind === "content" && hover.win.kind === "notepad") k = "text";
+      else if (hover.region.kind === "content" && hover.win.kind === "notepad")
+        k = "text";
     }
     sendCursor(k);
   }
@@ -1200,7 +1397,8 @@ export default function App() {
           const was = md.board.value.phase;
           md.board.value = reveal(md.board.value, i);
           triggerRef(md.board);
-          if (was === "ready" && md.board.value.phase === "playing") minesStart = virtualNow();
+          if (was === "ready" && md.board.value.phase === "playing")
+            minesStart = virtualNow();
         }
       }
       return;
@@ -1210,14 +1408,16 @@ export default function App() {
       if (w) {
         minesOf(w).smileyHeld.value = false;
         const r = hitRegion(w.geo.value, chromeOpts(w), mx, my);
-        if (r?.kind === "content" && minesHit(r.cx, r.cy)?.type === "smiley") minesNew(w);
+        if (r?.kind === "content" && minesHit(r.cx, r.cy)?.type === "smiley")
+          minesNew(w);
       }
       return;
     }
     if (d.type === "dialogbtn") {
       const w = byId(d.id);
       if (w) {
-        const armedRef = w.kind === "about" ? aboutOf(w).armed : shutdownOf(w).armed;
+        const armedRef =
+          w.kind === "about" ? aboutOf(w).armed : shutdownOf(w).armed;
         const armed = armedRef.value;
         armedRef.value = null;
         if (armed === d.tag) {
@@ -1291,6 +1491,13 @@ export default function App() {
     }
     const w = focused();
     if (!w) return;
+    if (w.kind === "pocket") {
+      const buttons = pocketButtonForKey(k);
+      if (buttons !== 0) {
+        svc?.send({ t: "pocket-input", app: pocketOf(w).app.output, buttons });
+      }
+      return;
+    }
     if (w.kind === "mines" && k === "F2") {
       minesNew(w);
       return;
@@ -1321,7 +1528,13 @@ export default function App() {
         case "Down":
         case "Home":
         case "End":
-          d.doc.value = applyMoveWrapped(doc, k as CaretMove, ev.sh ?? false, padSegs(w), padWidth);
+          d.doc.value = applyMoveWrapped(
+            doc,
+            k as CaretMove,
+            ev.sh ?? false,
+            padSegs(w),
+            padWidth,
+          );
           break;
         default:
           return;
@@ -1338,17 +1551,57 @@ export default function App() {
     if (w.kind === "about" && k === "Enter") closeWin(w.id);
   }
 
+  function pocketButtonForKey(k: string): number {
+    switch (k.toLowerCase()) {
+      case "up":
+        return 0x0010;
+      case "right":
+        return 0x0020;
+      case "down":
+        return 0x0040;
+      case "left":
+        return 0x0080;
+      case "q":
+        return 0x0100;
+      case "w":
+        return 0x0200;
+      case "s":
+        return 0x1000;
+      case "x":
+      case "backspace":
+        return 0x2000;
+      case "z":
+      case "enter":
+        return 0x4000;
+      case "a":
+        return 0x8000;
+      case "tab":
+        return 0x0001;
+      case "space":
+      case " ":
+        return 0x0008;
+      default:
+        return 0;
+    }
+  }
+
   function padViewH(w: WinCtl): number {
     return w.geo.value.h - FRAME - contentTop(chromeOpts(w)) - 2;
   }
 
   function scrollCaretIntoView(w: WinCtl) {
     const d = padOf(w);
-    const vrow = caretXY(padSegs(w), d.doc.value.lines, d.doc.value.caret, padWidth).vrow;
+    const vrow = caretXY(
+      padSegs(w),
+      d.doc.value.lines,
+      d.doc.value.caret,
+      padWidth,
+    ).vrow;
     const y = vrow * PAD_LINE_H;
     const viewH = padViewH(w);
     if (y - d.scroll.value < 0) d.scroll.value = Math.max(0, y);
-    else if (y - d.scroll.value > viewH - PAD_LINE_H) d.scroll.value = y - viewH + PAD_LINE_H;
+    else if (y - d.scroll.value > viewH - PAD_LINE_H)
+      d.scroll.value = y - viewH + PAD_LINE_H;
   }
 
   /** Apply an EDIT (never a plain caret/selection move) with an undo
@@ -1458,6 +1711,27 @@ export default function App() {
       case "ch": {
         const w = focused();
         if (w?.kind === "notepad" && ev.s) typeInto(w, ev.s);
+        else if (w?.kind === "pocket" && ev.s) {
+          const buttons = pocketButtonForKey(ev.s);
+          if (buttons !== 0) {
+            svc?.send({
+              t: "pocket-input",
+              app: pocketOf(w).app.output,
+              buttons,
+            });
+          }
+        }
+        break;
+      }
+      case "pocket-status": {
+        const win = wins.value.find(
+          (w) => w.kind === "pocket" && pocketOf(w).app.output === ev.app,
+        );
+        if (win) {
+          const data = pocketOf(win);
+          data.status.value = ev.status === "ready" ? "ready" : "error";
+          data.error.value = ev.message ?? "";
+        }
         break;
       }
       case "paste": {
@@ -1470,7 +1744,8 @@ export default function App() {
         if (w?.kind === "notepad") {
           const d = padOf(w);
           // Composition replaces the selection the moment it starts.
-          if (ev.s && hasSel(d.doc.value)) applyEdit(w, "other", deleteSel(d.doc.value));
+          if (ev.s && hasSel(d.doc.value))
+            applyEdit(w, "other", deleteSel(d.doc.value));
           d.preedit.value = ev.s ? { s: ev.s, c: ev.c ?? ev.s.length } : null;
         }
         break;
@@ -1481,7 +1756,10 @@ export default function App() {
           const d = padOf(hover.win);
           const contentH = padSegs(hover.win).length * PAD_LINE_H + 6;
           const maxY = Math.max(0, contentH - padViewH(hover.win));
-          d.scroll.value = Math.max(0, Math.min(maxY, d.scroll.value + (ev.dy ?? 0)));
+          d.scroll.value = Math.max(
+            0,
+            Math.min(maxY, d.scroll.value + (ev.dy ?? 0)),
+          );
         }
         break;
       }
@@ -1527,10 +1805,29 @@ export default function App() {
       const doc = d.doc.value;
       const pos = caretXY(padSegs(fw), doc.lines, doc.caret, padWidth);
       const x = g.x + FRAME + 4 + pos.x;
-      const y = g.y + contentTop(chromeOpts(fw)) + 3 + pos.vrow * PAD_LINE_H - d.scroll.value;
+      const y =
+        g.y +
+        contentTop(chromeOpts(fw)) +
+        3 +
+        pos.vrow * PAD_LINE_H -
+        d.scroll.value;
       if (x !== lastCaret.x || y !== lastCaret.y) {
         lastCaret = { x, y, h: PAD_LINE_H };
         svc.send({ t: "caret", x, y, h: PAD_LINE_H });
+      }
+    }
+
+    // The host uses this to exclude minimized realms from the composite
+    // demand-render hash. Every open realm still receives one fixed tick.
+    if (svc) {
+      for (const w of wins.value) {
+        if (w.kind !== "pocket") continue;
+        svc.send({
+          t: "pocket-state",
+          app: pocketOf(w).app.output,
+          visible: !w.minimized.value,
+          focused: focusId.value === w.id,
+        });
       }
     }
   });
@@ -1539,17 +1836,29 @@ export default function App() {
 
   return (
     <View class="absolute inset-0 bg-[#008080] overflow-hidden">
-      <DesktopIcons icons={icons} selected={iconSel.value} />
+      <DesktopIcons
+        icons={icons}
+        selected={iconSel.value}
+        rows={desktopIconRows(vp.value.h)}
+      />
       {wins.value.map((w) => (
         <Window98 win={w} active={focusId.value === w.id} />
       ))}
       {startOpen.value ? (
-        <StartMenu x={2} y={startY()} h={startH()} items={startItems()} hover={startHover.value} />
+        <StartMenu
+          x={2}
+          y={startY()}
+          h={startH()}
+          items={startItems()}
+          hover={startHover.value}
+        />
       ) : null}
       {startOpen.value && startFly.value ? (
         <PopupPanel popup={startFly.value.popup} hover={flyHover.value} />
       ) : null}
-      {popup.value ? <PopupPanel popup={popup.value.popup} hover={popupHover.value} /> : null}
+      {popup.value ? (
+        <PopupPanel popup={popup.value.popup} hover={popupHover.value} />
+      ) : null}
       <Taskbar
         entries={taskEntries()}
         activeId={focusId.value}

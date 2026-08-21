@@ -236,6 +236,30 @@ impl UiSurface {
         }
     }
 
+    /// Reserve a host-owned image name before [`mount`](Self::mount).
+    ///
+    /// The macOS Desk98 host uses a transparent 1x1 texture as a DrawList
+    /// marker: the shell binds it like any pak image, then the GPUI backend
+    /// replaces that TEX_QUAD with an isolated child surface at paint time.
+    /// Keeping the marker inside the ordinary generation-tagged texture table
+    /// means every other backend safely renders it as transparent.
+    pub fn register_host_image(&self, name: impl Into<String>) -> Option<i32> {
+        let mut inner = self.inner.borrow_mut();
+        let name = name.into();
+        if let Some((_, handle)) = inner.textures.iter().find(|(known, _)| known == &name) {
+            return Some(*handle);
+        }
+        let handle =
+            inner
+                .ui
+                .upload_texture(&[0, 0, 0, 0], 1, 1, pocketjs_core::spec::psm::PSM_8888);
+        if handle < 0 {
+            return None;
+        }
+        inner.textures.push((name, handle));
+        Some(handle)
+    }
+
     /// Declare how many ticks make one second of virtual time (default 60).
     /// Call before `mount`: the mount publishes the rate to the guest as
     /// `ui.__tickHz`, and bundles refuse a rate other than the one they were
@@ -674,5 +698,26 @@ mod tests {
             vec!["media"]
         );
         assert_eq!(surface.svc_drain(), vec!["alpha", "omega"]);
+    }
+
+    #[test]
+    fn host_image_is_published_as_an_ordinary_native_texture() {
+        let guest = Guest::new().unwrap();
+        let surface = UiSurface::new((16.0, 16.0));
+        let handle = surface.register_host_image("pocket-app/hero-main").unwrap();
+        assert_eq!(
+            surface.register_host_image("pocket-app/hero-main"),
+            Some(handle)
+        );
+        surface.mount(&guest).unwrap();
+        guest
+            .eval(
+                "host-image",
+                "globalThis.portal = ui.__textures['pocket-app/hero-main'];",
+            )
+            .unwrap();
+        let published: i32 = guest.with(|ctx| ctx.globals().get("portal").unwrap());
+        assert_eq!(published, handle);
+        surface.with_ui(|ui| assert_eq!(ui.texture(handle).unwrap().pixels, &[0, 0, 0, 0]));
     }
 }

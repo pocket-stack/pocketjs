@@ -11,9 +11,24 @@ import { Image, View } from "@pocketjs/framework/components";
 import { getOps } from "@pocketjs/framework/host";
 import { T98 } from "./chrome.tsx";
 import { FONT, FRAME } from "./theme.ts";
-import { caretXY, segSelSpan, segsFromBreaks, wrapLine, type VSeg } from "./notepad.ts";
+import {
+  caretXY,
+  segSelSpan,
+  segsFromBreaks,
+  wrapLine,
+  type VSeg,
+} from "./notepad.ts";
 import { MINES_W, type Cell } from "./mines.ts";
-import type { AboutData, FolderData, MinesData, PadData, ShutdownData, WinCtl } from "./state.ts";
+import { pocketPortalSource } from "./pocket-apps.ts";
+import type {
+  AboutData,
+  FolderData,
+  MinesData,
+  PadData,
+  PocketData,
+  ShutdownData,
+  WinCtl,
+} from "./state.ts";
 
 export function measure(s: string): number {
   const ops = getOps();
@@ -49,14 +64,19 @@ export function padWidth(s: string): number {
  *  Word Wrap is off — every line becomes one visual segment. */
 export function padWrapW(w: WinCtl): number {
   const d = w.data as PadData;
-  return d.wrap.value ? Math.max(40, w.geo.value.w - FRAME * 2 - PAD_PAD * 2) : Infinity;
+  return d.wrap.value
+    ? Math.max(40, w.geo.value.w - FRAME * 2 - PAD_PAD * 2)
+    : Infinity;
 }
 
 /** One line's visual segments: the host wrapText op when present (spec op
  *  43 — the platform half: core greedy over the slot's measure provider,
  *  gpui's LineWrapper for native-text apps), else the same greedy rules in
  *  JS over measureText. A parity test pins the two equal on baked hosts. */
-function wrapLineHost(line: string, maxW: number): { from: number; to: number }[] {
+function wrapLineHost(
+  line: string,
+  maxW: number,
+): { from: number; to: number }[] {
   const ops = getOps();
   if (Number.isFinite(maxW) && ops.wrapText) {
     return segsFromBreaks(line.length, ops.wrapText(line, FONT, maxW));
@@ -68,7 +88,8 @@ function wrapLineHost(line: string, maxW: number): { from: number; to: number }[
 export function wrapDocHost(lines: string[], maxW: number): VSeg[] {
   const out: VSeg[] = [];
   for (let row = 0; row < lines.length; row++) {
-    for (const s of wrapLineHost(lines[row], maxW)) out.push({ row, from: s.from, to: s.to });
+    for (const s of wrapLineHost(lines[row], maxW))
+      out.push({ row, from: s.from, to: s.to });
   }
   return out;
 }
@@ -80,10 +101,15 @@ export function padSegs(w: WinCtl): VSeg[] {
   return wrapDocHost(d.doc.value.lines, padWrapW(w));
 }
 
-export function NotepadView(props: { data: PadData; wrapW: number; active: boolean }) {
+export function NotepadView(props: {
+  data: PadData;
+  wrapW: number;
+  active: boolean;
+}) {
   const d = props.data;
   const segsAll = () => wrapDocHost(d.doc.value.lines, props.wrapW);
-  const caretPos = () => caretXY(segsAll(), d.doc.value.lines, d.doc.value.caret, padWidth);
+  const caretPos = () =>
+    caretXY(segsAll(), d.doc.value.lines, d.doc.value.caret, padWidth);
   const caretX = () => {
     const pre = d.preedit.value;
     return caretPos().x + (pre ? padWidth(pre.s.slice(0, pre.c)) : 0);
@@ -108,26 +134,34 @@ export function NotepadView(props: { data: PadData; wrapW: number; active: boole
         >
           {segsAll().map((seg, vi) => (
             <View class="h-[16] flex-row items-center">
-              {vi === caretPos().vrow && d.preedit.value ? (
-                [
-                  <T98 t={d.doc.value.lines[seg.row].slice(seg.from, d.doc.value.caret.col)} />,
-                  <View class="flex-col">
-                    <T98 t={d.preedit.value.s} />
-                    <View class="h-[1] bg-[#000000]" />
-                  </View>,
-                  <T98 t={d.doc.value.lines[seg.row].slice(d.doc.value.caret.col, seg.to)} />,
-                ]
-              ) : (
-                parts(seg).map((p) =>
-                  p.sel ? (
-                    <View class="bg-[#000080] flex-row">
-                      <T98 cls="text-[#ffffff]" t={p.t} />
-                    </View>
-                  ) : (
-                    <T98 t={p.t} />
-                  ),
-                )
-              )}
+              {vi === caretPos().vrow && d.preedit.value
+                ? [
+                    <T98
+                      t={d.doc.value.lines[seg.row].slice(
+                        seg.from,
+                        d.doc.value.caret.col,
+                      )}
+                    />,
+                    <View class="flex-col">
+                      <T98 t={d.preedit.value.s} />
+                      <View class="h-[1] bg-[#000000]" />
+                    </View>,
+                    <T98
+                      t={d.doc.value.lines[seg.row].slice(
+                        d.doc.value.caret.col,
+                        seg.to,
+                      )}
+                    />,
+                  ]
+                : parts(seg).map((p) =>
+                    p.sel ? (
+                      <View class="bg-[#000080] flex-row">
+                        <T98 cls="text-[#ffffff]" t={p.t} />
+                      </View>
+                    ) : (
+                      <T98 t={p.t} />
+                    ),
+                  )}
             </View>
           ))}
         </View>
@@ -143,6 +177,32 @@ export function NotepadView(props: { data: PadData; wrapW: number; active: boole
           />
         ) : null}
       </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pocket app portal — the host replaces this native texture draw with the
+// matching isolated realm's DrawList at the exact point in the shell's paint
+// order. The fallback remains visible in sim or after an isolated boot error.
+// ---------------------------------------------------------------------------
+
+export function PocketAppView(props: { data: PocketData }) {
+  const message = () =>
+    props.data.status.value === "error"
+      ? props.data.error.value || `${props.data.app.title} could not start.`
+      : `Starting ${props.data.app.title}...`;
+  return (
+    <View class="flex-1 relative overflow-hidden bg-[#000000]">
+      <View class="absolute inset-0 flex-col items-center justify-center bg-[#c0c0c0] px-[20]">
+        <Image class="w-[32] h-[32] mb-[8]" src="icons/pocket-app.svg" />
+        <T98 t={message()} />
+        <T98 cls="text-[#808080] mt-[5]" t="Arrow keys + Z/X/A/S + Q/W" />
+      </View>
+      <Image
+        class="absolute inset-0"
+        src={pocketPortalSource(props.data.app.output)}
+      />
     </View>
   );
 }
@@ -168,7 +228,8 @@ export function minesHit(cx: number, cy: number): MinesHit {
   }
   const x = Math.floor((cx - M_CELLS_X) / M_CELL);
   const y = Math.floor((cy - M_CELLS_Y) / M_CELL);
-  if (x >= 0 && x < 9 && y >= 0 && y < 9) return { type: "cell", i: y * MINES_W + x };
+  if (x >= 0 && x < 9 && y >= 0 && y < 9)
+    return { type: "cell", i: y * MINES_W + x };
   return null;
 }
 
@@ -210,13 +271,55 @@ function Digit(props: { ch: string }) {
   const on = (bit: number) => (((SEGS[props.ch] ?? 0) >> bit) & 1) === 1;
   return (
     <View class="w-[13] h-[23] bg-[#000000] relative">
-      <View class={on(0) ? "absolute left-[2] top-[1] w-[9] h-[2] bg-[#ff0000]" : "absolute left-[2] top-[1] w-[9] h-[2] bg-[#3a0000]"} />
-      <View class={on(1) ? "absolute left-[10] top-[2] w-[2] h-[9] bg-[#ff0000]" : "absolute left-[10] top-[2] w-[2] h-[9] bg-[#3a0000]"} />
-      <View class={on(2) ? "absolute left-[10] top-[12] w-[2] h-[9] bg-[#ff0000]" : "absolute left-[10] top-[12] w-[2] h-[9] bg-[#3a0000]"} />
-      <View class={on(3) ? "absolute left-[2] top-[20] w-[9] h-[2] bg-[#ff0000]" : "absolute left-[2] top-[20] w-[9] h-[2] bg-[#3a0000]"} />
-      <View class={on(4) ? "absolute left-[1] top-[12] w-[2] h-[9] bg-[#ff0000]" : "absolute left-[1] top-[12] w-[2] h-[9] bg-[#3a0000]"} />
-      <View class={on(5) ? "absolute left-[1] top-[2] w-[2] h-[9] bg-[#ff0000]" : "absolute left-[1] top-[2] w-[2] h-[9] bg-[#3a0000]"} />
-      <View class={on(6) ? "absolute left-[2] top-[10] w-[9] h-[3] bg-[#ff0000]" : "absolute left-[2] top-[10] w-[9] h-[3] bg-[#3a0000]"} />
+      <View
+        class={
+          on(0)
+            ? "absolute left-[2] top-[1] w-[9] h-[2] bg-[#ff0000]"
+            : "absolute left-[2] top-[1] w-[9] h-[2] bg-[#3a0000]"
+        }
+      />
+      <View
+        class={
+          on(1)
+            ? "absolute left-[10] top-[2] w-[2] h-[9] bg-[#ff0000]"
+            : "absolute left-[10] top-[2] w-[2] h-[9] bg-[#3a0000]"
+        }
+      />
+      <View
+        class={
+          on(2)
+            ? "absolute left-[10] top-[12] w-[2] h-[9] bg-[#ff0000]"
+            : "absolute left-[10] top-[12] w-[2] h-[9] bg-[#3a0000]"
+        }
+      />
+      <View
+        class={
+          on(3)
+            ? "absolute left-[2] top-[20] w-[9] h-[2] bg-[#ff0000]"
+            : "absolute left-[2] top-[20] w-[9] h-[2] bg-[#3a0000]"
+        }
+      />
+      <View
+        class={
+          on(4)
+            ? "absolute left-[1] top-[12] w-[2] h-[9] bg-[#ff0000]"
+            : "absolute left-[1] top-[12] w-[2] h-[9] bg-[#3a0000]"
+        }
+      />
+      <View
+        class={
+          on(5)
+            ? "absolute left-[1] top-[2] w-[2] h-[9] bg-[#ff0000]"
+            : "absolute left-[1] top-[2] w-[2] h-[9] bg-[#3a0000]"
+        }
+      />
+      <View
+        class={
+          on(6)
+            ? "absolute left-[2] top-[10] w-[9] h-[3] bg-[#ff0000]"
+            : "absolute left-[2] top-[10] w-[9] h-[3] bg-[#3a0000]"
+        }
+      />
     </View>
   );
 }
@@ -225,7 +328,9 @@ function Digit(props: { ch: string }) {
 function Counter(props: { value: number }) {
   const text = computed(() => {
     const v = Math.max(-99, Math.min(999, Math.round(props.value)));
-    return v < 0 ? "-" + String(-v).padStart(2, "0") : String(v).padStart(3, "0");
+    return v < 0
+      ? "-" + String(-v).padStart(2, "0")
+      : String(v).padStart(3, "0");
   });
   return (
     <View class="flex-row bevel-[#808080,#ffffff] p-[1] gap-0">
@@ -240,7 +345,8 @@ function Counter(props: { value: number }) {
  *  mine), flag/mine art, colored adjacency digit. */
 function MinesCell(props: { data: MinesData; i: number }) {
   const c = (): Cell => props.data.board.value.cells[props.i];
-  const heldDown = () => props.data.held.value === props.i && c().state === "hidden";
+  const heldDown = () =>
+    props.data.held.value === props.i && c().state === "hidden";
   // The hidden/revealed swap must sit in a JSX child position — a bare
   // ternary returned from the component body evaluates once at setup.
   return (
@@ -253,7 +359,9 @@ function MinesCell(props: { data: MinesData; i: number }) {
               : "absolute inset-0 bg-[#c0c0c0] bevel-[#ffffff,#808080] bevel-w-[2] flex-col justify-center items-center"
           }
         >
-          {c().state === "flag" ? <Image class="w-[8] h-[8]" src="icons/flag.svg" /> : null}
+          {c().state === "flag" ? (
+            <Image class="w-[8] h-[8]" src="icons/flag.svg" />
+          ) : null}
         </View>
       ) : (
         <View
@@ -266,7 +374,11 @@ function MinesCell(props: { data: MinesData; i: number }) {
           {c().mine ? (
             <Image class="w-[8] h-[8]" src="icons/mine.svg" />
           ) : c().adj > 0 ? (
-            <T98 bold cls={NUM_COLORS[c().adj] || "text-[#000000]"} t={String(c().adj)} />
+            <T98
+              bold
+              cls={NUM_COLORS[c().adj] || "text-[#000000]"}
+              t={String(c().adj)}
+            />
           ) : null}
         </View>
       )}
@@ -358,13 +470,28 @@ export function FolderView(props: { data: FolderData; resizable: boolean }) {
           >
             <Image class="w-[16] h-[16] mr-[4]" src={row.icon} />
             <View class="flex-1 flex-row overflow-hidden">
-              <T98 cls={d.selected.value === i ? "text-[#ffffff]" : "text-[#000000]"} t={row.name} />
+              <T98
+                cls={
+                  d.selected.value === i ? "text-[#ffffff]" : "text-[#000000]"
+                }
+                t={row.name}
+              />
             </View>
             <View class="w-[60] flex-row justify-end">
-              <T98 cls={d.selected.value === i ? "text-[#ffffff]" : "text-[#000000]"} t={row.size} />
+              <T98
+                cls={
+                  d.selected.value === i ? "text-[#ffffff]" : "text-[#000000]"
+                }
+                t={row.size}
+              />
             </View>
             <View class="w-[100] flex-row pl-[6]">
-              <T98 cls={d.selected.value === i ? "text-[#ffffff]" : "text-[#000000]"} t={row.type} />
+              <T98
+                cls={
+                  d.selected.value === i ? "text-[#ffffff]" : "text-[#000000]"
+                }
+                t={row.type}
+              />
             </View>
           </View>
         ))}
@@ -378,7 +505,9 @@ export function FolderView(props: { data: FolderData; resizable: boolean }) {
         <View class="flex-1 h-[18] flex-row items-center px-[6] bevel-[#808080,#ffffff]">
           <T98 t={`${d.rows.length} object(s)`} />
         </View>
-        {props.resizable ? <Image class="w-[16] h-[16]" src="icons/grip.svg" /> : null}
+        {props.resizable ? (
+          <Image class="w-[16] h-[16]" src="icons/grip.svg" />
+        ) : null}
       </View>
     </View>
   );
@@ -409,7 +538,12 @@ function Button98(props: { label: string; armed: boolean }) {
 }
 
 /** Content-local button hits for the About dialog. */
-export function aboutHit(contentW: number, contentH: number, cx: number, cy: number): "ok" | null {
+export function aboutHit(
+  contentW: number,
+  contentH: number,
+  cx: number,
+  cy: number,
+): "ok" | null {
   const x = contentW - 10 - 75;
   const y = contentH - 10 - 23;
   return cx >= x && cx < x + 75 && cy >= y && cy < y + 23 ? "ok" : null;
@@ -456,7 +590,8 @@ export function shutdownHit(
   }
   for (const i of [0, 1]) {
     const ry = 46 + i * 20;
-    if (cx >= 56 && cx < 220 && cy >= ry && cy < ry + 18) return i === 0 ? "radio0" : "radio1";
+    if (cx >= 56 && cx < 220 && cy >= ry && cy < ry + 18)
+      return i === 0 ? "radio0" : "radio1";
   }
   return null;
 }

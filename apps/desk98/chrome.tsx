@@ -13,12 +13,18 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 import { FONT, FONT_B, FONT_XL } from "./theme.ts";
 import type { CaptionButton } from "./wm.ts";
 import type { DeskIcon, Popup, TaskEntry, WinCtl } from "./state.ts";
+import { desktopIconPosition } from "./wm.ts";
 
 /** W95FA text. Slots 19/20/21 ride the style prop — the class table never
  *  sees them (baked per-app via pak.json, docs in gen-assets.ts). Text rides
  *  the `t` prop; `cls` replaces the class attr so nothing falls through to
  *  a user component's attrs. */
-export function T98(props: { t: string; cls?: string; bold?: boolean; xl?: boolean }) {
+export function T98(props: {
+  t: string;
+  cls?: string;
+  bold?: boolean;
+  xl?: boolean;
+}) {
   return (
     <Text
       class={props.cls ?? "text-[#000000]"}
@@ -52,8 +58,16 @@ export function CaptionButtons(props: { win: WinCtl }) {
           }
         >
           <Image
-            class={w.pressedBtn.value === btn ? "w-[8] h-[8] ml-[1] mt-[1]" : "w-[8] h-[8]"}
-            src={btn === "max" && w.maximized.value ? "icons/cap-restore.svg" : BTN_ICON[btn]}
+            class={
+              w.pressedBtn.value === btn
+                ? "w-[8] h-[8] ml-[1] mt-[1]"
+                : "w-[8] h-[8]"
+            }
+            src={
+              btn === "max" && w.maximized.value
+                ? "icons/cap-restore.svg"
+                : BTN_ICON[btn]
+            }
           />
         </View>
       ))}
@@ -169,7 +183,9 @@ export function PopupPanel(props: { popup: Popup; hover: number }) {
                 t={item.shortcut}
               />
             ) : null}
-            {item.sub ? <Image class="w-[8] h-[8] ml-[2]" src="icons/menu-arrow.svg" /> : null}
+            {item.sub ? (
+              <Image class="w-[8] h-[8] ml-[2]" src="icons/menu-arrow.svg" />
+            ) : null}
           </View>
         ),
       )}
@@ -228,7 +244,9 @@ export function StartMenu(props: {
                   t={item.label}
                 />
               </View>
-              {item.sub ? <Image class="w-[8] h-[8]" src="icons/menu-arrow.svg" /> : null}
+              {item.sub ? (
+                <Image class="w-[8] h-[8]" src="icons/menu-arrow.svg" />
+              ) : null}
             </View>
           ),
         )}
@@ -237,12 +255,22 @@ export function StartMenu(props: {
   );
 }
 
-/** Desktop icons: a left column of 32px art + label, teal behind. */
-export function DesktopIcons(props: { icons: DeskIcon[]; selected: number }) {
+/** Desktop icons: column-major 32px art + labels, teal behind. */
+export function DesktopIcons(props: {
+  icons: DeskIcon[];
+  selected: number;
+  rows: number;
+}) {
   return (
-    <View class="absolute left-0 top-0 flex-col gap-[10] p-[8]">
+    <View class="absolute inset-0">
       {props.icons.map((icon, i) => (
-        <View class="w-[74] flex-col items-center gap-[3]">
+        <View
+          class="absolute left-0 top-0 w-[74] h-[48] flex-col items-center gap-[3]"
+          style={{
+            translateX: desktopIconPosition(i, props.rows).x,
+            translateY: desktopIconPosition(i, props.rows).y,
+          }}
+        >
           <Image class="w-[32] h-[32]" src={icon.icon} />
           <View class={props.selected === i ? "bg-[#000080] px-[2]" : "px-[2]"}>
             <T98 cls="text-[#ffffff]" t={icon.label} />
