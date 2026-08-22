@@ -70,9 +70,9 @@
       <span class="fill"></span><span class="hud">solid · vue vapor · octane</span>
     </div>
     <p class="slede">Write components as you already do, in
-      <a class="pl" href="https://www.solidjs.com" target="_blank" rel="noreferrer">Solid</a>,
-      <a class="pl" href="https://vuejs.org" target="_blank" rel="noreferrer">Vue Vapor</a> or
-      <a class="pl" href="https://github.com/octanejs/octane" target="_blank" rel="noreferrer">Octane</a>. Each one compiles to the
+      <a class="olink" href="https://www.solidjs.com" target="_blank" rel="noreferrer">Solid</a>,
+      <a class="olink" href="https://vuejs.org" target="_blank" rel="noreferrer">Vue Vapor</a> or
+      <a class="olink" href="https://github.com/octanejs/octane" target="_blank" rel="noreferrer">Octane</a>. Each one compiles to the
       same native tree and runs on QuickJS, so <b>the framework you pick changes your code and nothing below
       it</b>.</p>
     <div class="cols" style="grid-template-columns:minmax(0,1.4fr) minmax(0,1fr)">
@@ -366,7 +366,7 @@
       measure</b>: a journey that takes six seconds in front of a user is a few dozen frames in CI.</p>
     <div class="cols">
       <div>
-        <div class="pl">
+        <div class="tl">
           <span class="lb">where an effect actually lands</span>
           <div class="lane">
             <span class="ln">wall clock</span>
@@ -534,50 +534,48 @@
       <span class="fill"></span><span class="hud">run on the metal, not emulated</span>
     </div>
     <p class="slede">The list below is not a roadmap. Each entry has booted the runtime on the real thing, and
-      <b>the fork between them is one native submission layer, never the application</b>.</p>
+      <b>the fork between them is one native submission layer, never the application</b>. Every entry links to
+      the post or the pull request that brought it up.</p>
     <div class="cols" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
       <div class="cpanel">
         <span class="lb">operating systems</span>
         <div class="cgrid">
-          <span class="cchip">PSP system software<em>MIPS, 32 MB</em></span>
-          <span class="cchip">PS Vita system software<em>ARM, GXM</em></span>
-          <span class="cchip">iPhone OS 3.1.3<em>ARMv6, GL ES 1.1</em></span>
-          <span class="cchip">iOS 6.1.3<em>ARMv7</em></span>
-          <span class="cchip">iOS 12.5.8<em>arm64</em></span>
-          <span class="cchip">iOS, current<em>NativeScript host</em></span>
-          <span class="cchip">macOS<em>Metal window and widget</em></span>
-          <span class="cchip">Symbian Belle<em>Qt, GLES2</em></span>
-          <span class="cchip">Windows CE 6<em>GDI framebuffer</em></span>
-          <span class="cchip">BlackBerry 10.3<em>QNX, native ELF</em></span>
-          <span class="cchip">Android 4.3<em>BlackBerry runtime, JNI</em></span>
-          <span class="cchip">PocketBook e-ink<em>inkview, partial refresh</em></span>
-          <span class="cchip">ESP-IDF<em>RGB565 and PPA</em></span>
-          <span class="cchip">the browser<em>WebAssembly core</em></span>
+          <a class="cchip" href="/blog/introducing-pocketjs/">PSP system software<em>MIPS, 32 MB</em></a>
+          <a class="cchip" href="/blog/pocketjs-on-ps-vita/">PS Vita system software<em>ARM, GXM</em></a>
+          <a class="cchip" href="/blog/pocketjs-on-the-first-iphone/">iPhone OS 3.1.3<em>ARMv6, GL ES 1.1</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/tree/main/hosts/iphone4s">iOS 6.1.3<em>ARMv7</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/pull/278">iOS 12.5.8<em>arm64</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/pull/256">iOS, current<em>NativeScript host</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/pull/293">macOS<em>Metal window and widget</em></a>
+          <a class="cchip" href="/blog/pocketjs-on-symbian/">Symbian Belle<em>Qt, GLES2</em></a>
+          <a class="cchip" href="/blog/pocketjs-on-windows-ce/">Windows CE 6<em>GDI framebuffer</em></a>
+          <a class="cchip" href="/blog/blackberry-classic/">BlackBerry 10.3<em>QNX, native ELF</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/pull/298">Android 4.3<em>BlackBerry runtime, JNI</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/pull/172">PocketBook e-ink<em>inkview, partial refresh</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/pull/160">ESP-IDF<em>RGB565 and PPA</em></a>
+          <a class="cchip" href="/playground/">the browser<em>WebAssembly core</em></a>
         </div>
       </div>
       <div class="cpanel">
         <span class="lb">devices it has booted on</span>
         <div class="cgrid">
-          <span class="cchip">Sony PSP<em>2004</em></span>
-          <span class="cchip">PS Vita<em>2011</em></span>
-          <span class="cchip">iPhone<em>2007</em></span>
-          <span class="cchip">iPhone 4S<em>2011</em></span>
-          <span class="cchip">iPod touch 6<em>2015</em></span>
-          <span class="cchip">Nokia E7<em>2011</em></span>
-          <span class="cchip">Meizu M8<em>2009</em></span>
-          <span class="cchip">BlackBerry Classic<em>2014</em></span>
-          <span class="cchip">PocketBook reader<em>e-ink</em></span>
-          <span class="cchip">ESP32-P4 devkit<em>microcontroller</em></span>
-          <span class="cchip">Mac<em>Apple silicon</em></span>
+          <a class="cchip" href="/blog/shipping-openstrike/">Sony PSP<em>2004</em></a>
+          <a class="cchip" href="/blog/pocketjs-on-ps-vita/">PS Vita<em>2011</em></a>
+          <a class="cchip" href="/blog/pocketjs-on-the-first-iphone/">iPhone<em>2007</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/tree/main/hosts/iphone4s">iPhone 4S<em>2011</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/pull/278">iPod touch 6<em>2015</em></a>
+          <a class="cchip" href="/blog/pocketjs-on-symbian/">Nokia E7<em>2011</em></a>
+          <a class="cchip" href="/blog/pocketjs-on-windows-ce/">Meizu M8<em>2009</em></a>
+          <a class="cchip" href="/blog/blackberry-classic/">BlackBerry Classic<em>2014</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/pull/172">PocketBook reader<em>e-ink</em></a>
+          <a class="cchip" href="/blog/pocket-pi-on-esp32-p4/">ESP32-P4 devkit<em>microcontroller</em></a>
+          <a class="cchip" href="https://github.com/pocket-stack/pocketjs/pull/293">Mac<em>Apple silicon</em></a>
         </div>
       </div>
     </div>
     <div class="receipts" data-refs><span>Refs</span>
-      <a href="/blog/pocketjs-on-ps-vita/">ps vita</a>
-      <a href="/blog/pocketjs-on-the-first-iphone/">first iphone</a>
-      <a href="/blog/pocketjs-on-symbian/">symbian</a>
-      <a href="/blog/pocketjs-on-windows-ce/">windows ce</a>
       <a href="/docs/platform-contracts/">docs/platform-contracts</a>
+      <a href="/docs/native-contract/">docs/native-contract</a>
     </div>
   </div>
 </section>

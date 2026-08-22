@@ -25,8 +25,9 @@ if (scale) {
   }
 }
 
-// Reference links leave the page: open them in their own tab.
-for (const a of document.querySelectorAll("[data-refs] a")) {
+// Reference links leave the reading flow: open them in their own tab. The
+// compatibility chips are receipts too, so they behave the same way.
+for (const a of document.querySelectorAll("[data-refs] a, .cgrid a")) {
   a.target = "_blank";
   a.rel = "noreferrer";
 }

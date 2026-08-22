@@ -99,6 +99,12 @@ test("homepage ships the four-chapter landing", () => {
     expect(home).toContain(`<span class="verb metal lit">${verb}</span>`);
   }
 
+  // The effect timeline keeps its own panel class. A short class name shared
+  // with a prose link rule once underlined the entire panel in link green.
+  expect(home).toContain('<div class="tl">');
+  expect(home).not.toContain('class="pl"');
+  expect(home).toContain('<a class="olink"');
+
   // The two hand-drawn diagrams and the redrawn flake histogram.
   expect(home).toContain('class="vs-col vs-pocket"');
   expect(home).toContain('class="vs-col vs-web"');
@@ -174,10 +180,51 @@ test("homepage ships the four-chapter landing", () => {
   expect(existsSync(ROOT + "site/assets/home.js")).toBe(false);
   const landingCss = readFileSync(ROOT + "site/assets/landing.css", "utf8");
   expect(landingCss).toContain(".hero-bg");
+  // no bare `.pl` rule: it collided with the timeline panel's own class
+  expect(landingCss).not.toMatch(/^\.pl[{:,]/m);
+  // the delivery marker is positioned over the frame grid, never placed in it:
+  // a grid item at column 5 pushes frame +4 and everything after it one cell right
+  expect(landingCss).toMatch(/^\.deliver\{position:absolute;/m);
+  expect(landingCss).not.toMatch(/^\.deliver\{grid-column/m);
   expect(landingCss).toContain("prefers-reduced-motion");
   expect(landingCss).not.toContain(".lp-dev");
   const homeCss = readFileSync(ROOT + "site/assets/home.css", "utf8");
   expect(homeCss).toContain(".lp-nav");
+});
+
+test("every compatibility entry cites a receipt that resolves", () => {
+  const home = readFileSync(ROOT + "site/home.html", "utf8");
+  const compat = home.slice(home.indexOf('id="compat"'), home.indexOf('id="ecosystem"'));
+
+  // Not a roadmap: no entry may sit there unsourced, so every chip is a link.
+  expect(compat).not.toContain('<span class="cchip"');
+  const chips = [...compat.matchAll(/<a class="cchip" href="([^"]+)"/g)].map((m) => m[1]);
+  expect(chips.length).toBeGreaterThanOrEqual(24);
+
+  for (const href of chips) {
+    if (href.startsWith("/blog/")) {
+      expect(existsSync(`${ROOT}site/content/blog/${href.slice(6, -1)}.md`)).toBe(true);
+    } else if (href.startsWith("/docs/")) {
+      expect(existsSync(`${ROOT}site/content/docs/${href.slice(6, -1)}.md`)).toBe(true);
+    } else if (href === "/playground/") {
+      // the browser's receipt is the live page itself
+      expect(existsSync(ROOT + "site/playground/page.html")).toBe(true);
+    } else if (href.includes("/tree/main/")) {
+      // a source link is only honest if that path is still there
+      expect(existsSync(ROOT + href.split("/tree/main/")[1])).toBe(true);
+    } else {
+      // otherwise it is a pull request on this repo
+      expect(href).toMatch(/^https:\/\/github\.com\/pocket-stack\/pocketjs\/pull\/\d+$/);
+    }
+  }
+
+  // Vapor cartridge targets are a separate story and stay out of this chapter.
+  for (const absent of ["Playdate", "MeowBit", "Game Boy", "GBA", "NES"]) {
+    expect(compat).not.toContain(absent);
+  }
+
+  // Receipts, so they open in their own tab like the rest of the references.
+  expect(readFileSync(ROOT + "site/assets/landing.js", "utf8")).toContain('[data-refs] a, .cgrid a');
 });
 
 test("the PSP stage looks straight at the screen", () => {

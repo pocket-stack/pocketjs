@@ -258,8 +258,7 @@
   background:rgba(6,11,9,.95);border:1px solid rgba(176,125,28,.55);padding:.14rem .35rem}
 .wallclock .arrive::after{content:"";position:absolute;left:.1rem;top:1.4rem;width:1px;height:.5rem;background:var(--c3)}
 @keyframes arrive{0%,38%{opacity:0} 41%,49%{opacity:1} 52%,100%{opacity:0}}
-.deliver{grid-column:5;grid-row:1;justify-self:start;position:relative;width:2px;
-  margin:-.1rem 0 -.1rem -2px;background:var(--ph);
+.deliver{position:absolute;left:calc(50% - 1px);top:-.1rem;bottom:-.1rem;width:2px;background:var(--ph);
   box-shadow:0 0 10px rgba(78,240,138,.8);animation:deliver 4.8s linear infinite;opacity:0}
 .deliver::after{content:"delivered at the boundary";position:absolute;left:.35rem;top:-1.55rem;
   font-family:var(--mono);font-size:.6rem;color:var(--ph);white-space:nowrap;
@@ -379,7 +378,7 @@
 }
 @media (max-width:620px){
   /* the mid-frame arrival chip must not widen the page on a phone */
-  .wallclock .arrive{left:22%;font-size:.52rem;padding:.1rem .28rem}
+  .wallclock .arrive{font-size:.52rem;padding:.1rem .28rem}
   .lane{grid-template-columns:4.4rem minmax(0,1fr)}
   .dl{grid-template-columns:5.4rem minmax(0,1fr) 3.9rem}
   .dscale{margin-left:5.4rem}
@@ -402,10 +401,12 @@
 .read b.st{background:var(--metal);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
 .read span{position:relative;display:block;margin-top:.35rem;font-size:.74rem;line-height:1.45;color:var(--muted)}
 
-/* framework names in prose: plain text with a hairline, nothing louder */
-.pl{color:inherit;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;
+/* framework names in prose: plain text with a hairline, nothing louder. Named
+   .olink, not .pl: short layout class names collide with prose classes, and a
+   link rule that leaks onto a panel underlines the whole panel. */
+.olink{color:inherit;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;
   text-decoration-color:rgba(185,195,212,.4)}
-.pl:hover{color:var(--ph);text-decoration-color:rgba(78,240,138,.6)}
+.olink:hover{color:var(--ph);text-decoration-color:rgba(78,240,138,.6)}
 
 /* motion: six recorded clips, engine output, looping */
 .mgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem}
@@ -423,8 +424,15 @@
 .cpanel .lb{display:block;font-family:var(--mono);font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;
   color:var(--ph);margin-bottom:.9rem}
 .cgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}
-.cchip{font-family:var(--mono);font-size:.64rem;line-height:1.25;border:1px solid var(--line);background:var(--bg);
-  padding:.4rem .5rem;color:var(--ink-2)}
+.cchip{position:relative;display:block;font-family:var(--mono);font-size:.64rem;line-height:1.25;
+  border:1px solid var(--line);background:var(--bg);padding:.4rem 1.3rem .4rem .5rem;color:var(--ink-2);
+  text-decoration:none;transition:color .12s,border-color .12s,background .12s}
+/* each entry carries its receipt, so the chip needs to read as a link */
+.cchip::after{content:"↗";position:absolute;right:.45rem;top:.32rem;font-size:.6rem;line-height:1;
+  color:var(--muted);opacity:.5;transition:color .12s,opacity .12s}
+.cchip:hover{color:var(--ph);border-color:rgba(78,240,138,.45);background:rgba(78,240,138,.05)}
+.cchip:hover em{color:rgba(78,240,138,.7)}
+.cchip:hover::after{color:var(--ph);opacity:1}
 .cchip em{display:block;font-style:normal;font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;
   color:var(--muted);margin-top:.15rem}
 @media (max-width:620px){
