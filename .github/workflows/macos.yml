@@ -27,13 +27,11 @@ on:
       - "framework/src/manifest/**"
       - "hosts/web/wasm-ops.js"
       - "apps/note/**"
-      - "apps/desk98/**"
       - "framework/compiler/**"
       - "assets/fonts/**"
       - "tests/platform-contracts.test.ts"
       - "tests/note.test.ts"
-      - "tests/desk98.test.ts"
-      - "tests/desk98-sim.test.ts"
+      - "tests/pocket-system.test.ts"
       - "tests/font-bake.test.ts"
       - "tests/npm-package.test.ts"
       - "package.json"
@@ -56,13 +54,11 @@ on:
       - "framework/src/manifest/**"
       - "hosts/web/wasm-ops.js"
       - "apps/note/**"
-      - "apps/desk98/**"
       - "framework/compiler/**"
       - "assets/fonts/**"
       - "tests/platform-contracts.test.ts"
       - "tests/note.test.ts"
-      - "tests/desk98.test.ts"
-      - "tests/desk98-sim.test.ts"
+      - "tests/pocket-system.test.ts"
       - "tests/font-bake.test.ts"
       - "tests/npm-package.test.ts"
       - "package.json"
@@ -97,8 +93,8 @@ jobs:
       - name: Install JS dependencies
         run: bun install --frozen-lockfile
 
-      - name: Contract + note + desk98 + platform + npm package tests
-        run: bun test tests/platform-contracts.test.ts tests/note.test.ts tests/desk98.test.ts tests/font-bake.test.ts tests/npm-package.test.ts && bun tests/contract.ts
+      - name: Contract + System + note + platform + npm package tests
+        run: bun test tests/platform-contracts.test.ts tests/pocket-system.test.ts tests/note.test.ts tests/font-bake.test.ts tests/npm-package.test.ts && bun tests/contract.ts
 
       - name: Compile the note against macos-app (plan + bundle + pak)
         run: |
@@ -111,14 +107,6 @@ jobs:
           mkdirSync(".pocket/macos-app", { recursive: true });
           await Bun.write(".pocket/macos-app/note-main.plan.json", JSON.stringify(r.plan, null, 2) + "\n");'
           bun tools/build.ts --plan=.pocket/macos-app/note-main.plan.json
-
-      - name: Compile desk98, its Pocket app catalog and the release host
-        run: bun run macos desk98 --build-only
-
-      - name: desk98 sim smoke (vue-vapor bundle)
-        run: |
-          bun tools/build.ts desk98-main --framework=vue-vapor
-          bun test --conditions=browser tests/desk98-sim.test.ts
 
       - name: Test core (TEXT_RUN + native measure gates)
         run: cargo test --locked --manifest-path engine/core/Cargo.toml

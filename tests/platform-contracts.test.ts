@@ -155,9 +155,9 @@ describe("Pocket System v1 schema", () => {
     expect(committed).toBe(generatePocketSystemV1Schema());
   });
 
-  test("validates the Pocket Desktop installation model", async () => {
+  test("validates a managed desktop installation model", async () => {
     const system = await Bun.file(
-      new URL("../apps/desk98/pocket.system.json", import.meta.url),
+      new URL("./fixtures/systems/managed-desktop.json", import.meta.url),
     ).json();
     expect(validatePocketSystem(system).ok).toBe(true);
   });
@@ -433,7 +433,6 @@ describe("semantic resolution", () => {
       cards: [true, true, false, true],
       chrome: [true, true, false, true],
       cursor: [true, true, false, true],
-      desk98: [false, false, false, false], // admitted only after the System resolver assigns the System UI role
       gallery: [true, true, false, true],
       hero: [true, true, true, true],
       "hero-vue-sfc": [true, true, false, true],
@@ -469,7 +468,7 @@ describe("semantic resolution", () => {
       });
     }
     const systemUI = await Bun.file(
-      new URL("../apps/desk98/pocket.json", import.meta.url),
+      new URL("./fixtures/manifests/system-ui.json", import.meta.url),
     ).json();
     expect(
       validateAndResolveBuildPlan(systemUI, {

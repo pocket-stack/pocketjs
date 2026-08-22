@@ -71,9 +71,8 @@ text can come from the host text system.
   own `LineWrapper` instead (`native_wrap`, installed next to the measurer
   through the same `TextConfig` — Zed's editor WrapMap consumes the same
   machinery). The wrapped COORDINATE SPACE — visual rows, caret/selection
-  mapping, hit testing — stays app-side (apps/desk98/notepad.ts is the
-  reference): the op is only the "where does this line break" half, exactly
-  the platform/editor split Zed uses.
+  mapping and hit testing — stays app-side: the op is only the "where does
+  this line break" half, matching the platform/editor split Zed uses.
 - **Two ops keep a pixel-exact escape hatch.** Gouraud `TRI` and `TEX_TRI`
   batches (rotated gradients and images, 3D subtrees) have no gpui vector
   equivalent, so consecutive batches raster through
@@ -139,29 +138,15 @@ companion carries shell UI input, clipboard requests and cursor intents. It
 does not carry package lifecycle, focus, per-frame visibility or button
 routing.**
 
-`apps/desk98` — a Windows 98 desktop compositor written in Vue Vapor JSX
-— is the reference consumer: the guest owns every window (drag, resize,
-z-order, menus, text selection, word-wrap layout, Minesweeper) by
-hit-testing the raw pointer stream itself, window moves ride paint-only
-translate props, and raises ride zIndex, so a drag never relayouts and an
-idle desktop keeps the demand-render governor at a few frames per second.
-Its W95FA pixel font is baked per-app into slots 19–21 through
-`apps/desk98/pak.json` (`gen-assets.ts`) — the repo slot table (0–18)
-never moves.
-
-Pocket Desktop declares the demo packages in
-`apps/desk98/pocket.system.json`: Hero, Settings, Motions, Cards, Chrome,
-Cursor, Gallery, Library, Music, Notifications and Stats. The Pocket System
-manifest marks required catalog entries, while
-`installation.installedPackages` records the separate current installation
-snapshot. It identifies Desk98 through `roles.systemUI` and declares
-`backgroundExecution: "suspend"`. The desktop catalog reads System-owned
-presentation metadata. **Every installed entry reaches the native host as a
-complete `ResolvedBuildPlan`; ordinary applications resolve without the
-System UI-only compositor capability.**
+The themeable [Pocket Desktop](https://github.com/pocket-stack/pocket-desktop)
+product is maintained separately and consumes these contracts as an external
+Pocket System. Its manifest owns the app catalog, installation snapshot,
+System UI role and background-execution policy. **Every installed entry
+reaches the native host as a complete `ResolvedBuildPlan`; ordinary
+applications resolve without the System UI-only compositor capability.**
 
 - **`hosts/macos` implements a generic `AppSupervisor`; the System contract
-  does not expose that implementation.** The host contains no Desk98 catalog
+  does not expose that implementation.** The host contains no product catalog
   or package-name rules. Live `<CompositorSurface package>` bindings create
   one AppInstance with its own `Guest`, QuickJS `Runtime`, QuickJS `Context`,
   `UiSurface` and `GpuiRenderer` inside the existing process. Their globals,
@@ -180,11 +165,6 @@ System UI-only compositor capability.**
 - **A child exception marks only that AppInstance as `Failed`.** The shell and
   sibling instances continue; the host records the package failure without a
   companion hot path.
-
-```
-bun run macos desk98      # the full desktop; drag-select, Cmd+`, Cmd+W, Cmd+Esc
-bun run macos desk98 --build-only # shell + 11 app bundles + release host
-```
 
 Scripted acceptance drives the same dialect from flags: `--mouse
 X,Y[,d|u|r]@TICK` (drags, right clicks), `--key

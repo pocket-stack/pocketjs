@@ -35,6 +35,11 @@ export {
   type ValidationResult,
 } from "./validate.ts";
 export {
+  validateAndResolveBuildPlan,
+  type ResolutionResult,
+  type ResolveBuildRequest,
+} from "./resolve.ts";
+export {
   resolveSystemPlan,
   validateAndResolveSystemPlan,
   validatePocketSystem,

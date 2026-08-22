@@ -261,10 +261,8 @@ export const OP = {
   //                      and its break positions win. Wrapped-coordinate
   //                      bookkeeping (visual rows, caret/selection mapping)
   //                      stays app-side — this op is the "where may it
-  //                      break" half only. Hosts without it: the framework
-  //                      falls back to the same greedy rules over
-  //                      measureText (apps/desk98/notepad.ts wrapLine is the
-  //                      pinned reference; a parity test holds them equal).
+  //                      break" half only. Hosts without it: applications
+  //                      implement matching greedy rules over measureText.
   setCompositorSurface: 44, // (id, surfaceHandle, focusedInt). Binds an
   //                      Pocket System package surface to a NODE_TYPE.surface
   //                      node. The core emits SURFACE_QUAD in ordinary paint

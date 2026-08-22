@@ -129,8 +129,8 @@ export interface HostOps {
    *  computes greedy word wrap over the same provider that measures and
    *  paints the slot; native-text backends may install the host text
    *  system's wrapper (gpui LineWrapper) whose positions win. Optional:
-   *  hosts that predate it — apps fall back to the same greedy rules over
-   *  measureText (apps/desk98/notepad.ts wrapLine, parity-tested). */
+   *  hosts that predate it — apps fall back to matching greedy rules over
+   *  measureText. */
   wrapText?(str: string, fontSlot: number, maxW: number): number[];
 
   // -- streamed textures (spec ops 23..25) — deep-zoom tile canvases. Native

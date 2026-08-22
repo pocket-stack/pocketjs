@@ -7,7 +7,6 @@
 //   bun run macos note -- --file todo.md
 //   bun run macos note --proof       # headless-ish acceptance: scripted
 //                                    # typing, autosave round-trips, quits
-//   bun run macos desk98 --build-only # shell + all Pocket app realms + host
 //
 // Everything host-facing derives from resolved contracts. An ordinary app
 // becomes one ResolvedBuildPlan. A directory with pocket.system.json becomes
