@@ -19,11 +19,23 @@ export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 // Every icon a browser, a phone home screen or a Safari tab asks for. All of it
 // is rendered from site/assets/favicon.svg by `bun tools/icons.ts`, so the three
 // <head>s on this site (here, the homepage and the /for/ pages) share one list.
+//
+// iOS ignores the manifest when an apple-touch-icon exists and picks the link
+// whose `sizes` is closest to the size it wants, so every rung of that ladder is
+// declared: an iPhone asking for 180 must not settle for a scaled 152. ICON_V
+// versions those URLs because iOS caches the home screen icon per URL and keeps
+// serving a page screenshot if the first fetch ever came up empty; bump it when
+// the drawing changes.
+const ICON_V = "2";
 export const ICON_LINKS = [
   '<link rel="icon" href="/favicon.svg" type="image/svg+xml">',
   '<link rel="icon" href="/favicon.ico" sizes="48x48">',
   '<link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96">',
-  '<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">',
+  `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=${ICON_V}">`,
+  `<link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167.png?v=${ICON_V}">`,
+  `<link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152.png?v=${ICON_V}">`,
+  `<link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120.png?v=${ICON_V}">`,
+  '<meta name="apple-mobile-web-app-title" content="PocketJS">',
   '<link rel="mask-icon" href="/safari-pinned-tab.svg" color="#4ef08a">',
   '<link rel="manifest" href="/site.webmanifest">',
 ].join("\n");

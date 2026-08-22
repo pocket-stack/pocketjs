@@ -564,6 +564,11 @@ async function main() {
     "favicon.ico",
     "favicon-96.png",
     "apple-touch-icon.png",
+    // what an iOS client fetches from the root when it reads no link tag
+    "apple-touch-icon-precomposed.png",
+    "apple-touch-icon-167.png",
+    "apple-touch-icon-152.png",
+    "apple-touch-icon-120.png",
     "icon-192.png",
     "icon-512.png",
     "icon-512-maskable.png",
