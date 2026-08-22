@@ -3,7 +3,7 @@
 # Standalone on purpose (excluded from engine/Cargo.toml, own Cargo.lock,
 # same policy as backends/esp32p4-ppa): gpui builds only where a display
 # server exists, and the ubuntu release workspace build must not depend on
-# it. Built through hosts/macos (the stock macos-app host) and by
+# it. Built through hosts/desktop (the stock macos-app host) and by
 # .github/workflows/macos.yml.
 
 [package]

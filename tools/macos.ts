@@ -1,5 +1,5 @@
 // bun run macos [app] [flags…] — build + launch a PocketJS app on the gpui
-// macOS host (hosts/macos over the macos-app target; docs/BACKENDS.md).
+// macOS host (hosts/desktop over the macos-app target; docs/BACKENDS.md).
 //
 //   bun run macos                    # the note, native text (the flagship)
 //   bun run macos hero               # a fixed-viewport console demo,
@@ -13,7 +13,7 @@
 // one ResolvedSystemPlan containing complete installed-package
 // plans; the host receives that file without child-plan field projection.
 // The windowed run stays attached to your terminal — ⌘Q quits. On exit the
-// host prints its governor receipt: "pocket-macos: N ticks, M frames
+// host prints its governor receipt: "pocket-desktop-host: N ticks, M frames
 // rendered" — a settled app should show M ≪ N.
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
@@ -30,9 +30,9 @@ const root = new URL("..", import.meta.url).pathname;
 // The host and the gpui backend are git-only crates (npm files map ships
 // this wrapper for parity with tools/note.ts, whose widget host is git-only
 // too) — fail with directions instead of a cargo error mid-build.
-if (!existsSync(`${root}hosts/macos/Cargo.toml`)) {
+if (!existsSync(`${root}hosts/desktop/Cargo.toml`)) {
   console.error(
-    "bun run macos needs a git checkout: hosts/macos and engine/backends/gpui are not part of the npm package (github.com/pocket-stack/pocketjs).",
+    "bun run macos needs a git checkout: hosts/desktop and engine/backends/gpui are not part of the npm package (github.com/pocket-stack/pocketjs).",
   );
   process.exit(1);
 }
@@ -45,7 +45,7 @@ const appDir = appArg.replace(/-main$/, "");
 
 const manifestPath = `${root}apps/${appDir}/pocket.json`;
 if (!existsSync(manifestPath)) {
-  throw new Error(`pocket-macos: no manifest at apps/${appDir}/pocket.json`);
+  throw new Error(`pocket-desktop-host: no manifest at apps/${appDir}/pocket.json`);
 }
 const systemPath = `${root}apps/${appDir}/pocket.system.json`;
 let systemPlan: ResolvedSystemPlan | undefined;
@@ -56,7 +56,7 @@ if (existsSync(systemPath)) {
   const system = validatePocketSystem(rawSystem);
   if (!system.ok) {
     throw new Error(
-      `pocket-macos: invalid Pocket System at apps/${appDir}/pocket.system.json: ` +
+      `pocket-desktop-host: invalid Pocket System at apps/${appDir}/pocket.system.json: ` +
         system.diagnostics
           .map((d) => `${d.path || "/"}: ${d.message}`)
           .join("; "),
@@ -77,7 +77,7 @@ if (existsSync(systemPath)) {
   });
   if (!resolution.ok) {
     throw new Error(
-      `pocket-macos: ${system.value.title} did not resolve against macos-app: ` +
+      `pocket-desktop-host: ${system.value.title} did not resolve against macos-app: ` +
         resolution.diagnostics
           .map((d) => `${d.path || "/"}: ${d.message}`)
           .join("; "),
@@ -92,7 +92,7 @@ if (existsSync(systemPath)) {
   });
   if (!resolution.ok) {
     throw new Error(
-      `pocket-macos: ${appDir} did not resolve against macos-app: ${resolution.diagnostics
+      `pocket-desktop-host: ${appDir} did not resolve against macos-app: ${resolution.diagnostics
         .map((d) => `${d.path || "/"}: ${d.message}`)
         .join("; ")}`,
     );
@@ -121,19 +121,19 @@ if (systemPlan) {
   systemPlanPath = `${root}.pocket/macos-app/${systemPlan.system.name}.system.plan.json`;
   await Bun.write(systemPlanPath, JSON.stringify(systemPlan, null, 2) + "\n");
 }
-await $`cargo build --release`.cwd(`${root}hosts/macos`);
+await $`cargo build --release`.cwd(`${root}hosts/desktop`);
 
 if (buildOnly) {
   console.log(
     (systemPlan
-      ? `pocket-macos: built SystemUI ${plan.app.output} + ` +
+      ? `pocket-desktop-host: built SystemUI ${plan.app.output} + ` +
         `${systemPlan.applications.length} application packages`
-      : `pocket-macos: built ${plan.app.output}`) + " + release host",
+      : `pocket-desktop-host: built ${plan.app.output}`) + " + release host",
   );
   process.exit(0);
 }
 
-const bin = `${root}hosts/macos/target/release/pocket-macos`;
+const bin = `${root}hosts/desktop/target/release/pocket-desktop-host`;
 const env = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? "info" };
 
 // Every host flag derives from the resolved plan (issue #295 landed the

@@ -1,0 +1,39 @@
+import { describe, expect, test } from "bun:test";
+import { validateSystemPlan } from "../hosts/web/system-engine.js";
+import { validateAndResolveSystemPlan } from "@pocketjs/framework/manifest";
+import systemInput from "./fixtures/systems/managed-desktop.json";
+
+async function resolvedWebSystem() {
+  const installed = new Set(systemInput.installation.installedPackages);
+  const packages = await Promise.all(
+    systemInput.applications.catalog
+      .filter((entry) => installed.has(entry.package))
+      .map(async (entry) => ({
+        source: entry.manifest,
+        manifest: await Bun.file(entry.manifest).json(),
+      })),
+  );
+  const result = validateAndResolveSystemPlan(systemInput, {
+    target: "web-app",
+    packages,
+  });
+  if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+  return result.plan;
+}
+
+describe("browser Pocket System host", () => {
+  test("accepts a complete resolved web System plan", async () => {
+    const plan = await resolvedWebSystem();
+    expect(() => validateSystemPlan(plan)).not.toThrow();
+  });
+
+  test("rejects child companions and artifact collisions at its trust boundary", async () => {
+    const companions = structuredClone(await resolvedWebSystem());
+    companions.applications[0].plan.companions = ["note"];
+    expect(() => validateSystemPlan(companions)).toThrow("unsupported companions");
+
+    const collision = structuredClone(await resolvedWebSystem());
+    collision.applications[1].plan.app.output = collision.applications[0].plan.app.output;
+    expect(() => validateSystemPlan(collision)).toThrow("duplicate or missing artifact output");
+  });
+});

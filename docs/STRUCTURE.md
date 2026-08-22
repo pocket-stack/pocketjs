@@ -10,7 +10,7 @@ pocketjs/
 ├─ engine/       Cores: the Rust simulation cores
 │  ├─ core/       pocketjs-core — retained UI tree, taffy layout, damage + raster (standalone crate)
 │  ├─ backends/    platform render backends (ESP32-P4 PPA is a standalone no_std
-│  │              crate; gpui is the standalone macOS Metal backend with native
+│  │              crate; gpui is the standalone native desktop backend with native
 │  │              text layout — docs/BACKENDS.md)
 │  ├─ wasm/       core compiled to wasm32 for web/sim hosts (standalone crate)
 │  ├─ symbian/    no_std Symbian UI static library: C ABI, capture raster + GLES2 DrawList backend (standalone crate)
@@ -26,8 +26,8 @@ pocketjs/
 │  ├─ pocketbook/ PocketBook e-reader host (inkview, standalone lone-bin crate)
 │  ├─ symbian/    Nokia E7 Qt/QuickJS runtime + visible toolchain probe
 │  ├─ apple/      NativeScript iOS shell over engine/apple + @nativescript/pocketjs
-│  ├─ macos/      gpui (Metal) window host — the macos-app target (standalone lone-bin crate)
-│  ├─ web/        browser dev host (wasm core)
+│  ├─ desktop/    gpui window host — macos-app + linux-app (standalone lone-bin crate)
+│  ├─ web/        browser dev + Pocket System host (wasm core, isolated iframe Realms)
 │  └─ sim/        deterministic headless simulation host (docs/DETERMINISM.md)
 ├─ framework/    Guest: @pocketjs/framework
 │  ├─ src/        the TS runtime (Solid + Vue Vapor renderers, components, input, osk…)

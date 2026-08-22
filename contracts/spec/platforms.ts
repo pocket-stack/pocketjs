@@ -218,6 +218,8 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   readonly pocketbook: TargetProfile<PocketCapabilityId>;
   readonly "macos-widget": TargetProfile<PocketCapabilityId>;
   readonly "macos-app": TargetProfile<PocketCapabilityId>;
+  readonly "linux-app": TargetProfile<PocketCapabilityId>;
+  readonly "web-app": TargetProfile<PocketCapabilityId>;
 }>({
   psp: {
     hostAbi: 1,
@@ -308,7 +310,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "text.glyphs.runtime",
     ],
   },
-  // The gpui app frame (hosts/macos is the stock host): a resizable ordinary
+  // The gpui app frame (hosts/desktop is the stock host): a resizable ordinary
   // window on Zed's gpui/Metal, painting the DrawList as vector quads and
   // host-shaped text instead of rasterized atlas cells (docs/BACKENDS.md).
   // HostAbi 4 adds the independent compositor-surface op. An app frame, not a
@@ -338,6 +340,54 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "display.viewport.live",
       "text.glyphs.baked",
       "text.layout.native",
+    ],
+    roleCapabilities: {
+      systemUI: ["ui.compositor-surfaces"],
+    },
+  },
+  // The same gpui AppSupervisor/compositor host on Linux. Linux defaults to
+  // one raster sample per logical pixel while keeping native text layout and
+  // the same dynamic/fixed application admission contract as macOS.
+  "linux-app": {
+    hostAbi: 4,
+    platform: "linux",
+    form: "window",
+    display: {
+      physicalViewport: [1280, 800],
+      logicalViewports: [[800, 600]],
+      dynamicViewport: { min: [240, 180], max: [4096, 4096], acceptsFixed: true },
+      presentations: ["native"],
+      rasterDensity: 1,
+    },
+    capabilities: [
+      "input.buttons",
+      "display.viewport.live",
+      "text.glyphs.baked",
+      "text.layout.native",
+    ],
+    roleCapabilities: {
+      systemUI: ["ui.compositor-surfaces"],
+    },
+  },
+  // Browser Pocket System host: one iframe JavaScript Realm and one wasm Ui
+  // per package, scheduled and composited by hosts/web/system-engine.js. The
+  // shell viewport follows the browser canvas; acceptsFixed admits installed
+  // console-shaped applications inside compositor surfaces.
+  "web-app": {
+    hostAbi: 4,
+    platform: "web",
+    form: "window",
+    display: {
+      physicalViewport: [800, 600],
+      logicalViewports: [[800, 600]],
+      dynamicViewport: { min: [320, 240], max: [4096, 4096], acceptsFixed: true },
+      presentations: ["native"],
+      rasterDensity: 1,
+    },
+    capabilities: [
+      "input.buttons",
+      "display.viewport.live",
+      "text.glyphs.baked",
     ],
     roleCapabilities: {
       systemUI: ["ui.compositor-surfaces"],

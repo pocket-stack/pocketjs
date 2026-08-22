@@ -1,20 +1,19 @@
-# pocket-macos — the PocketJS UI runtime in a gpui (Metal) macOS window:
-# the stock host of the `macos-app` target (contracts/spec/platforms.ts).
+# pocket-desktop-host — the PocketJS UI runtime in a native gpui window:
+# the stock host of the `macos-app` and `linux-app` targets.
 #
 # STANDALONE LONE-BIN CRATE (same model as hosts/pocketbook): outside any
 # workspace with its own Cargo.lock, path-depending on the engine crates.
-# gpui must never enter the ubuntu release workspace build, which is also why
+# gpui stays outside the release workspace, which is also why
 # engine/backends/gpui sits on the engine exclude list.
 #
-# Build + run through `bun run macos <app>` (tools/macos.ts), or directly:
-#   cargo run --release --manifest-path hosts/macos/Cargo.toml -- --app note-main
+# Build + run through the product wrapper, or directly with a resolved plan.
 
 [package]
-name = "pocket-macos"
+name = "pocket-desktop-host"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "PocketJS UI runtime host on gpui/Metal — the macos-app target"
+description = "PocketJS UI runtime host on gpui for macOS and Linux app targets"
 
 [dependencies]
 pocketjs-core = { path = "../../engine/core", features = ["std"] }

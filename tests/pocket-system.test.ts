@@ -21,6 +21,22 @@ async function packageInputs(system: any = systemInput) {
 }
 
 describe("Pocket System resolution", () => {
+  test("resolves the same installed package model for the browser System host", async () => {
+    const resolution = validateAndResolveSystemPlan(systemInput, {
+      target: "web-app",
+      packages: await packageInputs(),
+    });
+    expect(resolution.ok).toBe(true);
+    if (!resolution.ok) return;
+    expect(resolution.plan.target).toEqual({ id: "web-app", hostAbi: 4 });
+    expect(resolution.plan.systemUI.plan.features["ui.compositor-surfaces"]).toBe(true);
+    expect(
+      resolution.plan.applications.every(
+        (entry) => entry.plan.features["ui.compositor-surfaces"] !== true,
+      ),
+    ).toBe(true);
+  });
+
   test("preserves each installed package's complete resolved plan", async () => {
     const packages = await packageInputs();
     const resolution = validateAndResolveSystemPlan(systemInput, {

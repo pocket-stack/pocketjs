@@ -1,4 +1,4 @@
-//! pocket-macos — the PocketJS UI runtime in a gpui window.
+//! pocket-desktop-host — the PocketJS UI runtime in a native gpui window.
 //!
 //! The same app bundle + pak the consoles boot runs here in a QuickJS guest
 //! (pocket-mod) driving the same pocketjs-core, painted by the gpui backend
@@ -25,8 +25,8 @@
 //!   map work for every app regardless of this flag.
 //! - System UI shell — the `system-ui` companion adapter: the same
 //!   input-line dialect as the editor, extended with right-button mouse
-//!   lines (b:2), alt/ctl key modifiers, F1–F12, cmd-flagged ⌘ chords
-//!   (except ⌘Q = host quit and ⌘V = host-side paste), a boot epoch in the
+//!   lines (b:2), alt/ctl key modifiers, F1–F12, platform-command chords
+//!   (except command-Q = host quit and command-V = host-side paste), a boot epoch in the
 //!   hello (for the guest's wall clock), a {t:"cursor"} guest intent that
 //!   sets the window's pointer shape, and a {t:"paste-req"} guest intent
 //!   answered with a paste line (menu-driven Paste). Wired when the plan's
@@ -58,7 +58,12 @@ use pocket_ui_gpui::{GpuiRenderer, TextConfig, native_measure, native_wrap};
 use pocket_ui_surface::UiSurface;
 use serde::Deserialize;
 
+#[cfg(target_os = "macos")]
 const HOST_ID: &str = "macos-app";
+#[cfg(target_os = "linux")]
+const HOST_ID: &str = "linux-app";
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+compile_error!("pocket-desktop-host supports macOS and Linux");
 const HOST_ABI: u32 = 4;
 const TICK_HZ: f64 = 60.0;
 const MAX_CATCHUP_TICKS: u32 = 6;
@@ -520,7 +525,7 @@ fn resolve_asset(explicit: Option<PathBuf>, app: &str, ext: &str) -> Result<Path
         }
     }
     Err(anyhow!(
-        "no {ext} for app '{app}' in {} — build it first: bun run macos {app}",
+        "no {ext} for app '{app}' in {} — build its resolved package artifacts first",
         dist.display()
     ))
 }
@@ -542,7 +547,7 @@ fn register_fonts(cx: &App) {
     if !faces.is_empty()
         && let Err(e) = cx.text_system().add_fonts(faces)
     {
-        log::warn!("pocket-macos: font registration failed: {e}");
+        log::warn!("pocket-desktop-host: font registration failed: {e}");
     }
 }
 
@@ -710,7 +715,7 @@ impl AppSupervisor {
             state: AppInstanceState::Running,
         });
         log::info!(
-            "pocket-macos: started AppInstance {} ({}, {}x{}, plan={})",
+            "pocket-desktop-host: started AppInstance {} ({}, {}x{}, plan={})",
             entry.package.package,
             plan.app.title,
             plan.viewport.logical[0],
@@ -740,7 +745,7 @@ impl AppSupervisor {
             keep
         });
         for package in dropped {
-            log::info!("pocket-macos: removed AppInstance {package}");
+            log::info!("pocket-desktop-host: removed AppInstance {package}");
         }
         self.suppressed.retain(|handle| live.contains(handle));
 
@@ -972,7 +977,7 @@ impl PocketRoot {
             identity.map_or(HOST_ABI, |(_, abi)| abi),
         );
         // svcOpen denies by default (pocket-ui-surface); the allowlist is
-        // exactly the plan's companion list (tools/macos.ts --companions,
+        // exactly the plan's companion list (the product launcher derives it,
         // issue #295) — never an app-name convention.
         if !args.companions.is_empty() {
             surface.set_svc_allowlist(args.companions.iter().map(String::as_str));
@@ -1004,7 +1009,7 @@ impl PocketRoot {
             ));
         }
         log::info!(
-            "pocket-macos: booted {} ({} bytes js, {} bytes pak), native_text={}",
+            "pocket-desktop-host: booted {} ({} bytes js, {} bytes pak), native_text={}",
             args.app,
             bundle.len(),
             pak.len(),
@@ -1103,7 +1108,7 @@ impl PocketRoot {
     /// ignores it.
     fn send_hello(&mut self) {
         log::debug!(
-            "pocket-macos: svc hello (system_ui={}, editor={})",
+            "pocket-desktop-host: svc hello (system_ui={}, editor={})",
             self.system_ui_input,
             self.args.editor
         );
@@ -1124,8 +1129,8 @@ impl PocketRoot {
         let tmp = file.with_extension("md.tmp");
         let write = std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, file));
         match write {
-            Ok(()) => log::info!("pocket-macos: saved {} bytes", text.len()),
-            Err(e) => log::warn!("pocket-macos: save failed: {e}"),
+            Ok(()) => log::info!("pocket-desktop-host: saved {} bytes", text.len()),
+            Err(e) => log::warn!("pocket-desktop-host: save failed: {e}"),
         }
     }
 
@@ -1218,7 +1223,7 @@ impl PocketRoot {
                         vp.0, vp.1
                     ),
                 ) {
-                    log::warn!("pocket-macos: resize hook failed: {e}");
+                    log::warn!("pocket-desktop-host: resize hook failed: {e}");
                 }
             if self.forward_input() {
                 self.svc(serde_json::json!({"t": "resize", "w": vp.0, "h": vp.1}));
@@ -1255,7 +1260,7 @@ impl PocketRoot {
         };
         self.click_edge = false;
         if let Err(e) = self.guest.frame(buttons) {
-            log::error!("pocket-macos: guest frame error: {e}");
+            log::error!("pocket-desktop-host: guest frame error: {e}");
             self.exit = true;
             return;
         }
@@ -1270,7 +1275,7 @@ impl PocketRoot {
             .borrow_mut()
             .sync(&self.surface, self.text_system.clone());
         for (package, message) in sync_failures {
-            log::error!("pocket-macos: starting AppInstance {package}: {message}");
+            log::error!("pocket-desktop-host: starting AppInstance {package}: {message}");
         }
 
         // Guest → host intents (editor protocol).
@@ -1309,9 +1314,9 @@ impl PocketRoot {
                             cx.notify();
                         }
                     }
-                    other => log::warn!("pocket-macos: unknown intent {other:?}"),
+                    other => log::warn!("pocket-desktop-host: unknown intent {other:?}"),
                 },
-                Err(e) => log::warn!("pocket-macos: bad svc line from guest: {e}"),
+                Err(e) => log::warn!("pocket-desktop-host: bad svc line from guest: {e}"),
             }
         }
 
@@ -1320,7 +1325,7 @@ impl PocketRoot {
         // corrupt sibling instances.
         let failures = self.app_supervisor.borrow_mut().tick();
         for (package, message) in failures {
-            log::error!("pocket-macos: AppInstance {package} frame failed: {message}");
+            log::error!("pocket-desktop-host: AppInstance {package} frame failed: {message}");
         }
 
         // Tick before draw; arm a paint only when the content hash moved
@@ -1341,7 +1346,7 @@ impl PocketRoot {
         }
         if self.exit {
             println!(
-                "pocket-macos: {} ticks, {} frames rendered ({:.1}%)",
+                "pocket-desktop-host: {} ticks, {} frames rendered ({:.1}%)",
                 self.ticks,
                 self.frames.get(),
                 self.frames.get() as f64 / self.ticks.max(1) as f64 * 100.0
@@ -1369,11 +1374,11 @@ impl PocketRoot {
             let shift = ks.modifiers.shift;
             if ks.modifiers.platform {
                 if self.system_ui_input {
-                    // The System UI dialect reserves ⌘Q for the host and
-                    // ⌘V pastes here (the guest can't read the clipboard);
+                    // The System UI dialect reserves command-Q for the host and
+                    // command-V pastes here (the guest can't read the clipboard);
                     // every other chord goes to the guest as a cmd-flagged
                     // key line — the compositor owns its own shortcuts
-                    // (⌘W close, ⌘M minimize, ⌘` cycle, ⌘C/X/A editing).
+                    // (command-W close, command-M minimize, command-` cycle).
                     match ks.key.as_str() {
                         "q" => self.exit = true,
                         "v" => {
@@ -1389,8 +1394,8 @@ impl PocketRoot {
                             "alt": ks.modifiers.alt, "ctl": ks.modifiers.control,
                         })),
                     }
-                    // Consumed: don't let AppKit hunt the (empty) menu bar
-                    // for a key equivalent and beep.
+                    // Consumed: don't let the platform menu system hunt for
+                    // an unavailable key equivalent.
                     cx.stop_propagation();
                     return;
                 }
@@ -1859,7 +1864,7 @@ fn main() -> Result<()> {
             }),
             is_resizable: resizable,
             window_min_size: Some(size(px(240.0), px(180.0))),
-            app_id: Some("dev.pocket-stack.macos".into()),
+            app_id: Some("dev.pocket-stack.desktop-host".into()),
             ..Default::default()
         };
         let args = ARGS
@@ -1871,7 +1876,7 @@ fn main() -> Result<()> {
             cx.new(|cx| match PocketRoot::boot(args, window, cx) {
                 Ok(root) => root,
                 Err(e) => {
-                    eprintln!("pocket-macos: {e:#}");
+                    eprintln!("pocket-desktop-host: {e:#}");
                     std::process::exit(1);
                 }
             })
@@ -1884,7 +1889,7 @@ fn main() -> Result<()> {
                 cx.activate(true);
             }
             Err(e) => {
-                eprintln!("pocket-macos: open_window failed: {e:#}");
+                eprintln!("pocket-desktop-host: open_window failed: {e:#}");
                 std::process::exit(1);
             }
         }
@@ -1990,7 +1995,7 @@ mod tests {
                 "title": "Pocket Desktop",
                 "version": "0.1.0"
             },
-            "target": { "id": "macos-app", "hostAbi": 4 },
+            "target": { "id": HOST_ID, "hostAbi": 4 },
             "roles": { "systemUI": "dev.pocket-stack.shell" },
             "lifecycle": { "backgroundExecution": "suspend" },
             "installation": {
@@ -2009,7 +2014,7 @@ mod tests {
                         "entry": "apps/shell/main.tsx",
                         "framework": "solid"
                     },
-                    "target": { "id": "macos-app", "hostAbi": 4 },
+                    "target": { "id": HOST_ID, "hostAbi": 4 },
                     "viewport": {
                         "logical": [800, 600],
                         "physical": [1600, 1200],

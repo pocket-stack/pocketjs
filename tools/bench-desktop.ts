@@ -1,5 +1,5 @@
 // bun tools/bench-desktop.ts — the desktop markdown-editor benchmark:
-// the pocket note on the gpui host (hosts/macos, docs/BACKENDS.md) against
+// the pocket note on the gpui host (hosts/desktop, docs/BACKENDS.md) against
 // byte-identical web editors shelled by Tauri v2 (WKWebView) and Electron
 // (tools/bench-desktop/). Protocol follows the pocket-character measurement
 // (site/content/blog/pocket-character.md): same machine, hands off, process
@@ -153,7 +153,7 @@ interface Launcher {
   disk: () => Promise<number>;
 }
 
-const pocketBin = `${root}hosts/macos/target/release/pocket-macos`;
+const pocketBin = `${root}hosts/desktop/target/release/pocket-desktop-host`;
 const electronDir = `${root}tools/bench-desktop/electron`;
 const electronBin = `${electronDir}/node_modules/.bin/electron`;
 const tauriBin = `${root}tools/bench-desktop/tauri/src-tauri/target/release/bench-tauri`;

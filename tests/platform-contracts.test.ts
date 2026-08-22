@@ -171,6 +171,8 @@ describe("platform registry", () => {
       "pocketbook",
       "macos-widget",
       "macos-app",
+      "linux-app",
+      "web-app",
     ]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
     expect(POCKET_TARGETS.psp.capabilities).toEqual([
@@ -244,6 +246,51 @@ describe("platform registry", () => {
       min: [240, 180],
       max: [4096, 4096],
       acceptsFixed: true,
+    });
+    expect(POCKET_TARGETS["linux-app"]).toEqual({
+      hostAbi: 4,
+      platform: "linux",
+      form: "window",
+      display: {
+        physicalViewport: [1280, 800],
+        logicalViewports: [[800, 600]],
+        dynamicViewport: {
+          min: [240, 180],
+          max: [4096, 4096],
+          acceptsFixed: true,
+        },
+        presentations: ["native"],
+        rasterDensity: 1,
+      },
+      capabilities: [
+        "input.buttons",
+        "display.viewport.live",
+        "text.glyphs.baked",
+        "text.layout.native",
+      ],
+      roleCapabilities: { systemUI: ["ui.compositor-surfaces"] },
+    });
+    expect(POCKET_TARGETS["web-app"]).toEqual({
+      hostAbi: 4,
+      platform: "web",
+      form: "window",
+      display: {
+        physicalViewport: [800, 600],
+        logicalViewports: [[800, 600]],
+        dynamicViewport: {
+          min: [320, 240],
+          max: [4096, 4096],
+          acceptsFixed: true,
+        },
+        presentations: ["native"],
+        rasterDensity: 1,
+      },
+      capabilities: [
+        "input.buttons",
+        "display.viewport.live",
+        "text.glyphs.baked",
+      ],
+      roleCapabilities: { systemUI: ["ui.compositor-surfaces"] },
     });
   });
 

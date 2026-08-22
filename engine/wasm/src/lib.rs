@@ -30,6 +30,20 @@ use pocketjs_core::raster;
 
 static mut UI: Option<Ui> = None;
 static mut FRAMEBUFFER: Vec<u8> = Vec::new();
+#[derive(Clone, Copy)]
+struct CompositorTexture {
+    texture: i32,
+    width: u32,
+    height: u32,
+}
+
+/// Browser System hosts upload visible child AppInstance framebuffers here.
+/// Values are core texture handles indexed by the shell's compositor-surface
+/// handle. They remain outside the guest HostOps contract.
+static mut COMPOSITOR_TEXTURES: Vec<Option<CompositorTexture>> = Vec::new();
+/// Staged compositor frame records. Each record is ten u32 words:
+/// handle, full x/y/w/h f32 bits, clip x/y/w/h f32 bits, focused (0/1).
+static mut COMPOSITOR_FRAMES: Vec<u32> = Vec::new();
 static mut DAMAGE_TRACKER: DamageTracker<DEFAULT_DAMAGE_REGIONS> = DamageTracker::new();
 /// wrapText result staging (same lifetime contract as FRAMEBUFFER: the
 /// pointer from `ui_wrap_text_ptr` stays valid until the next wrapText or
@@ -67,6 +81,8 @@ pub extern "C" fn ui_init(raster_density: u32) {
     unsafe {
         UI = Some(Ui::new_with_raster_density(raster_density.max(1)));
         FRAMEBUFFER.clear();
+        COMPOSITOR_TEXTURES.clear();
+        COMPOSITOR_FRAMES.clear();
         DAMAGE_TRACKER = DamageTracker::new();
     }
 }
@@ -167,6 +183,95 @@ pub extern "C" fn ui_set_image(id: i32, tex: i32) {
 #[no_mangle]
 pub extern "C" fn ui_set_compositor_surface(id: i32, surface: i32, focused: i32) {
     ui().set_compositor_surface(id, surface, focused != 0)
+}
+
+/// Replace one browser compositor surface's retained RGBA8 framebuffer.
+/// This is a host-only wasm ABI: guest code can declare a surface binding,
+/// but cannot upload or inspect another AppInstance's pixels.
+#[no_mangle]
+pub extern "C" fn ui_compositor_upload_surface(
+    surface: u32,
+    ptr: *const u8,
+    len: usize,
+    width: u32,
+    height: u32,
+) -> i32 {
+    let Some(expected) = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(4))
+    else {
+        return -1;
+    };
+    if width == 0 || height == 0 || expected != len {
+        return -1;
+    }
+    let slot = surface as usize;
+    unsafe {
+        if COMPOSITOR_TEXTURES.len() <= slot {
+            COMPOSITOR_TEXTURES.resize(slot + 1, None);
+        }
+        if let Some(previous) = COMPOSITOR_TEXTURES[slot] {
+            ui().free_texture(previous.texture);
+        }
+        let texture = ui().upload_texture(
+            bytes(ptr, len),
+            width,
+            height,
+            pocketjs_core::spec::psm::PSM_8888,
+        );
+        if texture < 0 {
+            COMPOSITOR_TEXTURES[slot] = None;
+            return -1;
+        }
+        COMPOSITOR_TEXTURES[slot] = Some(CompositorTexture {
+            texture,
+            width,
+            height,
+        });
+        texture
+    }
+}
+
+/// Release one retained browser compositor surface framebuffer.
+#[no_mangle]
+pub extern "C" fn ui_compositor_free_surface(surface: u32) {
+    let slot = surface as usize;
+    unsafe {
+        if let Some(entry) = COMPOSITOR_TEXTURES.get_mut(slot).and_then(Option::take) {
+            ui().free_texture(entry.texture);
+        }
+    }
+}
+
+/// Stage the shell's visible compositor frames in exact painter order.
+#[no_mangle]
+pub extern "C" fn ui_compositor_frames() -> u32 {
+    let frames = ui().compositor_surface_frames();
+    unsafe {
+        COMPOSITOR_FRAMES.clear();
+        COMPOSITOR_FRAMES.reserve(frames.len() * 10);
+        for frame in frames {
+            COMPOSITOR_FRAMES.extend_from_slice(&[
+                frame.handle,
+                frame.full[0].to_bits(),
+                frame.full[1].to_bits(),
+                frame.full[2].to_bits(),
+                frame.full[3].to_bits(),
+                frame.clip[0].to_bits(),
+                frame.clip[1].to_bits(),
+                frame.clip[2].to_bits(),
+                frame.clip[3].to_bits(),
+                u32::from(frame.focused),
+            ]);
+        }
+        (COMPOSITOR_FRAMES.len() / 10) as u32
+    }
+}
+
+/// Pointer to records staged by [`ui_compositor_frames`].
+#[no_mangle]
+pub extern "C" fn ui_compositor_frames_ptr() -> *const u32 {
+    unsafe { COMPOSITOR_FRAMES.as_ptr() }
 }
 
 #[no_mangle]
@@ -286,6 +391,87 @@ fn draw_hash(words: &[u32]) -> u64 {
     hash
 }
 
+fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+    let op = *words.get(at)?;
+    Some(match op {
+        pocketjs_core::spec::draw_op::RECT => 4,
+        pocketjs_core::spec::draw_op::GRAD_RECT => 6,
+        pocketjs_core::spec::draw_op::GLYPH_RUN => 3 + 2 * ((*words.get(at + 1)? >> 16) as usize),
+        pocketjs_core::spec::draw_op::TEX_QUAD => 9,
+        pocketjs_core::spec::draw_op::SCISSOR => 3,
+        pocketjs_core::spec::draw_op::SCISSOR_POP => 1,
+        pocketjs_core::spec::draw_op::TRI => 7,
+        pocketjs_core::spec::draw_op::TEX_TRI => 12,
+        pocketjs_core::spec::draw_op::TEXT_RUN => 8 + (*words.get(at + 7)? as usize).div_ceil(4),
+        pocketjs_core::spec::draw_op::SURFACE_QUAD => 9,
+        _ => return None,
+    })
+}
+
+#[inline]
+fn packed_xy(x: i32, y: i32) -> u32 {
+    (x as i16 as u16 as u32) | ((y as i16 as u16 as u32) << 16)
+}
+
+#[inline]
+fn packed_wh(width: i32, height: i32) -> u32 {
+    (width as u16 as u32) | ((height as u16 as u32) << 16)
+}
+
+/// Translate host-only SURFACE_QUAD instructions into ordinary texture quads
+/// for the browser software compositor. Missing child rasters remain surface
+/// instructions, preserving the shell's already-painted loading fallback.
+fn composited_words(words: &[u32]) -> Vec<u32> {
+    let mut out = words.to_vec();
+    let mut at = 0usize;
+    while at < out.len() {
+        let Some(len) = draw_op_len(&out, at) else {
+            break;
+        };
+        let Some(end) = at.checked_add(len) else {
+            break;
+        };
+        if end > out.len() {
+            break;
+        }
+        if out[at] == pocketjs_core::spec::draw_op::SURFACE_QUAD {
+            let surface = out[at + 1] as usize;
+            let entry = unsafe { COMPOSITOR_TEXTURES.get(surface).and_then(|entry| *entry) };
+            if let Some(entry) = entry {
+                let full_x = f32::from_bits(out[at + 2]);
+                let full_y = f32::from_bits(out[at + 3]);
+                let clip_xy = out[at + 6];
+                let clip_wh = out[at + 7];
+                let clip_x = clip_xy as u16 as i16 as i32;
+                let clip_y = (clip_xy >> 16) as u16 as i16 as i32;
+                let clip_w = (clip_wh & 0xffff) as i32;
+                let clip_h = (clip_wh >> 16) as i32;
+                let x0 = clip_x.max(full_x.ceil() as i32);
+                let y0 = clip_y.max(full_y.ceil() as i32);
+                let x1 = (clip_x + clip_w).min((full_x + entry.width as f32).ceil() as i32);
+                let y1 = (clip_y + clip_h).min((full_y + entry.height as f32).ceil() as i32);
+                if x0 < x1 && y0 < y1 {
+                    let u0 = ((x0 as f32 - full_x) / entry.width as f32).clamp(0.0, 1.0);
+                    let v0 = ((y0 as f32 - full_y) / entry.height as f32).clamp(0.0, 1.0);
+                    let u1 = ((x1 as f32 - full_x) / entry.width as f32).clamp(0.0, 1.0);
+                    let v1 = ((y1 as f32 - full_y) / entry.height as f32).clamp(0.0, 1.0);
+                    out[at] = pocketjs_core::spec::draw_op::TEX_QUAD;
+                    out[at + 1] = entry.texture as u32;
+                    out[at + 2] = packed_xy(x0, y0);
+                    out[at + 3] = packed_wh(x1 - x0, y1 - y0);
+                    out[at + 4] = u0.to_bits();
+                    out[at + 5] = v0.to_bits();
+                    out[at + 6] = u1.to_bits();
+                    out[at + 7] = v1.to_bits();
+                    out[at + 8] = 0xffff_ffff;
+                }
+            }
+        }
+        at = end;
+    }
+    out
+}
+
 // ---- DevTools ops (spec ops 18..22, docs/DEVTOOLS.md) -----------------------------
 
 #[no_mangle]
@@ -353,6 +539,38 @@ fn render_at_scale(scale: u32) -> *const u8 {
     }
 }
 
+fn render_composited_at_scale(scale: u32) -> *const u8 {
+    if !(1..=raster::MAX_RENDER_SCALE).contains(&scale) {
+        return core::ptr::null();
+    }
+    let u = ui();
+    let (viewport_w, viewport_h) = u.viewport();
+    let Some(bytes) = (viewport_w as usize)
+        .checked_mul(scale as usize)
+        .and_then(|width| {
+            (viewport_h as usize)
+                .checked_mul(scale as usize)
+                .and_then(|height| width.checked_mul(height))
+        })
+        .and_then(|pixels| pixels.checked_mul(4))
+    else {
+        return core::ptr::null();
+    };
+    let dl: *const pocketjs_core::DrawList = u.draw();
+    let words = unsafe { composited_words(&(*dl).words) };
+    let u_ref: &Ui = unsafe { &*(u as *const Ui) };
+    unsafe {
+        FRAMEBUFFER.resize(bytes, 0);
+        if scale == 1 {
+            raster::render(u_ref, &words, &mut FRAMEBUFFER);
+        } else {
+            raster::render_scaled(u_ref, &words, &mut FRAMEBUFFER, scale);
+        }
+        DAMAGE_TRACKER.invalidate();
+        FRAMEBUFFER.as_ptr()
+    }
+}
+
 fn render_incremental_at_scale(scale: u32) -> *const u8 {
     if !(1..=raster::MAX_RENDER_SCALE).contains(&scale) {
         return core::ptr::null();
@@ -409,6 +627,19 @@ pub extern "C" fn ui_render_scaled(scale: u32) -> *const u8 {
     render_at_scale(scale)
 }
 
+/// Rasterize the shell with retained child AppInstance framebuffers inserted
+/// at SURFACE_QUAD painter positions.
+#[no_mangle]
+pub extern "C" fn ui_render_composited() -> *const u8 {
+    render_composited_at_scale(1)
+}
+
+/// Integer-scaled equivalent of [`ui_render_composited`].
+#[no_mangle]
+pub extern "C" fn ui_render_composited_scaled(scale: u32) -> *const u8 {
+    render_composited_at_scale(scale)
+}
+
 /// Incrementally rasterize at the logical viewport size.
 #[no_mangle]
 pub extern "C" fn ui_render_incremental() -> *const u8 {
@@ -423,7 +654,10 @@ pub extern "C" fn ui_render_incremental_scaled(scale: u32) -> *const u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::draw_hash;
+    use super::{
+        composited_words, draw_hash, packed_wh, packed_xy, CompositorTexture, COMPOSITOR_TEXTURES,
+    };
+    use pocketjs_core::{raster, spec, Ui};
 
     #[test]
     fn draw_hash_is_stable_and_content_sensitive() {
@@ -431,5 +665,48 @@ mod tests {
         assert_eq!(draw_hash(&words), draw_hash(&words));
         assert_ne!(draw_hash(&words), draw_hash(&[0x0102_0304, 0x0506_0709]));
         assert_ne!(draw_hash(&[]), draw_hash(&words));
+    }
+
+    #[test]
+    fn browser_compositor_keeps_child_between_shell_ops() {
+        let mut ui = Ui::new();
+        ui.set_viewport(4.0, 4.0);
+        let red = [255u8, 0, 0, 255].repeat(16);
+        let texture = ui.upload_texture(&red, 4, 4, spec::psm::PSM_8888);
+        unsafe {
+            COMPOSITOR_TEXTURES = vec![Some(CompositorTexture {
+                texture,
+                width: 4,
+                height: 4,
+            })];
+        }
+        let words = [
+            spec::draw_op::RECT,
+            packed_xy(0, 0),
+            packed_wh(4, 4),
+            0xff00_0000,
+            spec::draw_op::SURFACE_QUAD,
+            0,
+            0.0f32.to_bits(),
+            0.0f32.to_bits(),
+            4.0f32.to_bits(),
+            4.0f32.to_bits(),
+            packed_xy(0, 0),
+            packed_wh(4, 4),
+            1,
+            spec::draw_op::RECT,
+            packed_xy(1, 1),
+            packed_wh(2, 2),
+            0xff00_ff00,
+        ];
+        let translated = composited_words(&words);
+        assert_eq!(translated[4], spec::draw_op::TEX_QUAD);
+        assert_eq!(translated[13], spec::draw_op::RECT);
+
+        let mut framebuffer = vec![0; 4 * 4 * 4];
+        raster::render(&ui, &translated, &mut framebuffer);
+        assert_eq!(&framebuffer[0..4], &[255, 0, 0, 255]);
+        let center = (1 * 4 + 1) * 4;
+        assert_eq!(&framebuffer[center..center + 4], &[0, 255, 0, 255]);
     }
 }

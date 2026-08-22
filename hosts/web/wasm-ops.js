@@ -36,11 +36,16 @@ export async function createWasmUi(wasm, options = {}) {
     return value;
   }
 
-  const viewportWidth = integerInRange(options.width ?? FB_W, "viewport width", 1, 32000);
-  const viewportHeight = integerInRange(options.height ?? FB_H, "viewport height", 1, 32000);
+  let viewportWidth = integerInRange(options.width ?? FB_W, "viewport width", 1, 32000);
+  let viewportHeight = integerInRange(options.height ?? FB_H, "viewport height", 1, 32000);
   const initialDensity = integerInRange(options.rasterDensity ?? 1, "rasterDensity", 1, 255);
+  // node id -> { handle, focused }. The core owns geometry/painter order;
+  // this mirror gives a browser AppSupervisor the complete lifecycle binding
+  // set, including surfaces currently hidden by shell opacity.
+  const compositorBindings = new Map();
 
   const init = (rasterDensity = initialDensity) => {
+    compositorBindings.clear();
     ex.ui_init(integerInRange(rasterDensity, "rasterDensity", 1, 255));
     // Older wasm binaries predate ui_set_viewport (same convention as
     // drawHash): tolerate them at the stock size, fail loud otherwise.
@@ -69,7 +74,10 @@ export async function createWasmUi(wasm, options = {}) {
   const ops = {
     __viewport: { w: viewportWidth, h: viewportHeight },
     createNode: (type) => ex.ui_create_node(type),
-    destroyNode: (id) => ex.ui_destroy_node(id),
+    destroyNode: (id) => {
+      compositorBindings.delete(id);
+      ex.ui_destroy_node(id);
+    },
     insertBefore: (parent, child, anchor) => ex.ui_insert_before(parent, child, anchor),
     removeChild: (parent, child) => ex.ui_remove_child(parent, child),
     setStyle: (id, styleId) => ex.ui_set_style(id, styleId),
@@ -84,8 +92,11 @@ export async function createWasmUi(wasm, options = {}) {
     replaceText: (id, str) => withStr(str, (p, l) => ex.ui_replace_text(id, p, l)),
     uploadTexture: (buf, w, h, psm) => withBytes(buf, (p, l) => ex.ui_upload_texture(p, l, w, h, psm)),
     setImage: (id, tex) => ex.ui_set_image(id, tex),
-    setCompositorSurface: (id, surface, focused) =>
-      ex.ui_set_compositor_surface(id, surface, focused),
+    setCompositorSurface: (id, surface, focused) => {
+      if (surface < 0) compositorBindings.delete(id);
+      else compositorBindings.set(id, { handle: surface, focused: focused !== 0 });
+      ex.ui_set_compositor_surface(id, surface, focused);
+    },
     setSprite: (id, atlas, frames, cols, step) => ex.ui_set_sprite(id, atlas, frames, cols, step),
     animate: (id, propId, to, durMs, easing, delayMs) =>
       ex.ui_animate(id, propId, to, durMs, easing, delayMs),
@@ -153,10 +164,55 @@ export async function createWasmUi(wasm, options = {}) {
     exports: ex,
     /** Reset the core and set raster samples per logical pixel (default 1). */
     init,
+    /** Resize a dynamic browser viewport and keep the guest-visible fact aligned. */
+    resizeViewport(width, height) {
+      viewportWidth = integerInRange(width, "viewport width", 1, 32000);
+      viewportHeight = integerInRange(height, "viewport height", 1, 32000);
+      if (!ex.ui_set_viewport) {
+        throw new Error("this pocketjs.wasm predates ui_set_viewport — rebuild it: bun tools/wasm.ts");
+      }
+      ex.ui_set_viewport(viewportWidth, viewportHeight);
+      ops.__viewport.w = viewportWidth;
+      ops.__viewport.h = viewportHeight;
+    },
     /** Advance exactly one fixed-dt (1/60 s) frame. */
     tick: () => ex.ui_tick(),
     /** Hash the current DrawList without rasterizing it (BigInt, wasm i64). */
     drawHash: ex.ui_draw_hash ? () => ex.ui_draw_hash() : null,
+    /** Every live shell binding, including hidden/minimized surface nodes. */
+    compositorBindings() {
+      return Array.from(compositorBindings.values(), (entry) => ({ ...entry }));
+    },
+    /** Visible child frames in exact shell painter order. */
+    compositorFrames() {
+      if (!ex.ui_compositor_frames || !ex.ui_compositor_frames_ptr) return [];
+      const count = ex.ui_compositor_frames();
+      const ptr = ex.ui_compositor_frames_ptr();
+      const words = new Uint32Array(ex.memory.buffer, ptr, count * 10);
+      const floats = new Float32Array(ex.memory.buffer, ptr, count * 10);
+      const frames = [];
+      for (let i = 0; i < count; i++) {
+        const at = i * 10;
+        frames.push({
+          handle: words[at],
+          full: [floats[at + 1], floats[at + 2], floats[at + 3], floats[at + 4]],
+          clip: [floats[at + 5], floats[at + 6], floats[at + 7], floats[at + 8]],
+          focused: words[at + 9] !== 0,
+          order: i,
+        });
+      }
+      return frames;
+    },
+    /** Retain one child RGBA8 framebuffer in the shell compositor. */
+    uploadCompositorSurface(handle, pixels, width, height) {
+      if (!ex.ui_compositor_upload_surface) return -1;
+      return withBytes(pixels, (ptr, len) =>
+        ex.ui_compositor_upload_surface(handle, ptr, len, width, height),
+      );
+    },
+    freeCompositorSurface(handle) {
+      if (ex.ui_compositor_free_surface) ex.ui_compositor_free_surface(handle);
+    },
     /** Rasterize the byte-exact framebuffer at the logical viewport size. */
     render() {
       return framebufferView(ex.ui_render(), 1);
@@ -165,6 +221,14 @@ export async function createWasmUi(wasm, options = {}) {
     renderScaled(scale) {
       scale = integerInRange(scale, "render scale", 1, 4);
       return framebufferView(ex.ui_render_scaled(scale), scale);
+    },
+    /** Render shell chrome and child rasters in SURFACE_QUAD painter order. */
+    renderComposited(scale = 1) {
+      scale = integerInRange(scale, "render scale", 1, 4);
+      const ptr = scale === 1
+        ? ex.ui_render_composited?.()
+        : ex.ui_render_composited_scaled?.(scale);
+      return framebufferView(ptr || ex.ui_render_scaled(scale), scale);
     },
     /** Repaint only changed regions, falling back for older wasm builds. */
     renderIncremental() {

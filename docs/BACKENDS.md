@@ -30,8 +30,8 @@ hosts, the PSP GE walker, the ESP32-P4 PPA and Symbian GLES2 ports.
 ## The gpui backend
 
 `engine/backends/gpui` (`pocket-ui-gpui`) paints the same DrawList through
-[gpui](https://gpui.rs) — Zed's Metal renderer — and is embedded by
-`hosts/macos`, the stock host of the `macos-app` target. Boxes, gradients
+[gpui](https://gpui.rs) — Zed's native GPU renderer — and is embedded by
+`hosts/desktop`, the stock host of the `macos-app` and `linux-app` targets. Boxes, gradients
 and images become antialiased vector quads instead of upscaled raster;
 text can come from the host text system.
 
@@ -39,7 +39,7 @@ text can come from the host text system.
   `enhances: ["text.layout.native"]` gets a core text measurer installed
   before the guest mounts (`Ui::set_text_measure`): taffy leaf sizes, the
   `measureText` op and painted glyphs all come from one provider — CoreText
-  through gpui's text system. Codepoint coverage is the OS font fallback
+  through gpui's platform text system. Codepoint coverage is the OS font fallback
   chain (CJK, emoji, everything), with **no runtime atlas baking and no
   tofu**.
 - **The op is `TEXT_RUN` (9).** With a measurer installed, translation-only
@@ -95,13 +95,13 @@ instead of `text.glyphs.baked` — and why gpui-hosted apps verify like the
 note does (pure-math unit tests over an injected measurer, sim traces,
 `--proof` acceptance runs) instead of joining `tests/golden-specs.ts`.
 
-## The `macos-app` target
+## Native desktop targets
 
-`contracts/spec/platforms.ts` registers the profile: hostAbi 4 (the
-compositor-surface wire generation), `form: "window"`,
-dynamic viewport with `acceptsFixed` — a general app frame, not a widget
-shell. Fixed-viewport console apps run size-locked and letterboxed with
-their baked glyph pipeline intact; the manifest decides everything else:
+`contracts/spec/platforms.ts` registers `macos-app` and `linux-app` at
+hostAbi 4 with `form: "window"`, a dynamic viewport and `acceptsFixed`.
+Both profiles use the same generic host. macOS resolves density 2; Linux
+resolves density 1. Fixed-viewport console apps run size-locked and
+letterboxed with their baked glyph pipeline intact.
 
 ```
 bun run macos note        # dynamic viewport, native text, svc editor protocol
@@ -119,8 +119,23 @@ viewport or title fields.
 `--editor` is NOT a capability: it enables the note's companion svc adapter
 (an app protocol — the profile deliberately registers no
 pointer/text/IME/clipboard ids, see contracts/spec/platforms.ts). On exit
-the host prints its governor receipt (`pocket-macos: N ticks, M frames
+the host prints its governor receipt (`pocket-desktop-host: N ticks, M frames
 rendered`); a settled app shows M ≪ N.
+
+## Browser System host
+
+**`web-app` runs every package in an independent same-origin iframe
+JavaScript Realm with its own wasm `Ui`.** `hosts/web/system-engine.js`
+derives the package catalog, surface handles and lifecycle policy from one
+`ResolvedSystemPlan`. Live shell bindings create and remove AppInstances;
+focus and visible painter order determine scheduling.
+
+The wasm software compositor retains each visible child framebuffer and
+replaces `SURFACE_QUAD` with a texture quad only during the host render.
+Full bounds determine the child coordinate origin, clip bounds constrain the
+visible pixels, and the instruction remains at its original DrawList offset.
+Shell chrome emitted after the surface therefore stays above the child. A
+missing child raster leaves the shell's loading fallback visible.
 
 ## System UI companion input
 
@@ -145,7 +160,7 @@ System UI role and background-execution policy. **Every installed entry
 reaches the native host as a complete `ResolvedBuildPlan`; ordinary
 applications resolve without the System UI-only compositor capability.**
 
-- **`hosts/macos` implements a generic `AppSupervisor`; the System contract
+- **`hosts/desktop` implements a generic `AppSupervisor`; the System contract
   does not expose that implementation.** The host contains no product catalog
   or package-name rules. Live `<CompositorSurface package>` bindings create
   one AppInstance with its own `Guest`, QuickJS `Runtime`, QuickJS `Context`,
@@ -174,8 +189,8 @@ X,Y[,d|u|r]@TICK` (drags, right clicks), `--key
 
 |                    | portable                                                         | gpui                                        |
 | ------------------ | ---------------------------------------------------------------- | ------------------------------------------- |
-| hosts              | PSP, Vita, PocketBook, ESP32-P4, Symbian, web, sim, macOS widget | macOS (`hosts/macos`)                       |
-| text measurement   | core, atlas advance tables                                       | host text system (CoreText), per-app opt-in |
+| hosts              | PSP, Vita, PocketBook, ESP32-P4, Symbian, web, sim, macOS widget | macOS and Linux (`hosts/desktop`)           |
+| text measurement   | core, atlas advance tables                                       | gpui platform text system, per-app opt-in   |
 | codepoint coverage | baked charset (+ runtime extension)                              | OS fallback chain, color emoji              |
 | pixel determinism  | byte-exact across hosts                                          | per-host; transactions still deterministic  |
 | pixel goldens      | `tests/golden-specs.ts`, tape hashes                             | opted out (note-style verification)         |
