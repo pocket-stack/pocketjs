@@ -571,10 +571,23 @@ fn dir_write(
     // directory, sync, then rename over the target (same filesystem —
     // cross-directory rename is atomic).
     std::fs::create_dir_all(tmp_dir).map_err(|e| e.to_string())?;
+    // The temp name must not collide with a leftover from a crash. Prefer
+    // create_new, but fall back to create+truncate: ESP-IDF's FATFS VFS
+    // fails O_EXCL opens with ENOENT, and the swept, module-owned tmp dir
+    // plus the monotonic counter still make the name unique.
     let mut suffix = tmp_counter;
     let (tmp, mut file) = loop {
         let candidate = tmp_dir.join(suffix.to_string());
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&candidate) {
+        let new = std::fs::OpenOptions::new().write(true).create_new(true).open(&candidate);
+        let opened = match new {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&candidate),
+            other => other,
+        };
+        match opened {
             Ok(file) => break (candidate, file),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => suffix += 1,
             Err(e) => return Err(e.to_string()),
@@ -586,7 +599,21 @@ fn dir_write(
         .map_err(|e| e.to_string());
     drop(file);
     landed
-        .and_then(|()| std::fs::rename(&tmp, &full).map_err(|e| e.to_string()))
+        .and_then(|()| {
+            // FATFS f_rename refuses to overwrite an existing destination
+            // (surfaced as EEXIST); POSIX rename replaces it. Remove the
+            // stale target first when the filesystem requires it — the
+            // atomic-overwrite contract is not representable there.
+            match std::fs::rename(&tmp, &full) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    std::fs::remove_file(&full)
+                        .and_then(|()| std::fs::rename(&tmp, &full))
+                        .map_err(|e| e.to_string())
+                }
+                Err(e) => Err(e.to_string()),
+            }
+        })
         .inspect_err(|_| {
             let _ = std::fs::remove_file(&tmp);
         })
