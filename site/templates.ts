@@ -7,7 +7,7 @@ const GH = "https://github.com/pocket-stack/pocketjs";
 const DISCORD = "https://discord.gg/cTce4eXzSK";
 const X_URL = "https://x.com/pocket_js";
 export const SITE_URL = "https://pocketjs.dev";
-export const SITE_TITLE = "PocketJS · Compact JavaScript Runtime for Rich Interactive Software";
+export const SITE_TITLE = "PocketJS JavaScript UI runtime";
 export const SITE_DESC =
   "A compact JavaScript runtime for building UI, games, 3D experiences and AI-native applications across radically different devices. A tiny JavaScript guest where it fits; the framework compiled away where it doesn't.";
 // Shared by the standalone homepage and every page rendered through renderPage().
@@ -15,6 +15,18 @@ export const SITE_FOOTER_DESC =
   "A compact JavaScript runtime for UI, games, 3D and AI-native software, carried to radically different devices by a tiny native core.";
 export const SITE_FOOTER_DESC_SLOT = "{{SITE_FOOTER_DESC}}";
 export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
+
+// Every icon a browser, a phone home screen or a Safari tab asks for. All of it
+// is rendered from site/assets/favicon.svg by `bun tools/icons.ts`, so the three
+// <head>s on this site (here, the homepage and the /for/ pages) share one list.
+export const ICON_LINKS = [
+  '<link rel="icon" href="/favicon.svg" type="image/svg+xml">',
+  '<link rel="icon" href="/favicon.ico" sizes="48x48">',
+  '<link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96">',
+  '<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">',
+  '<link rel="mask-icon" href="/safari-pinned-tab.svg" color="#4ef08a">',
+  '<link rel="manifest" href="/site.webmanifest">',
+].join("\n");
 
 export function injectSiteFooterDescription(template: string): string {
   const slots = template.split(SITE_FOOTER_DESC_SLOT).length - 1;
@@ -140,7 +152,7 @@ export function renderPage(o: PageOpts): string {
 <meta name="twitter:description" content="${desc}">
 <meta name="twitter:image" content="${OG_IMAGE_URL}">
 <meta name="theme-color" content="#05070d">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+${ICON_LINKS}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&family=VT323&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">

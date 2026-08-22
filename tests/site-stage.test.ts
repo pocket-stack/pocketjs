@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { emitSingleLodStagePackage } from "../site/stage-package.ts";
 import { BTN, PocketHost } from "../site/playground/host.js";
 import {
+  ICON_LINKS,
   SITE_FOOTER_DESC,
   SITE_FOOTER_DESC_SLOT,
+  SITE_TITLE,
   injectSiteFooterDescription,
   renderPage,
 } from "../site/templates.ts";
@@ -363,6 +365,75 @@ test("the footer description belongs to the shared chrome, not the homepage", ()
 
   expect(() => injectSiteFooterDescription("")).toThrow("found 0");
   expect(() => injectSiteFooterDescription(SITE_FOOTER_DESC_SLOT.repeat(2))).toThrow("found 2");
+});
+
+test("the icon family is rendered from one drawing and linked from every head", () => {
+  const svg = readFileSync(ROOT + "site/assets/favicon.svg", "utf8");
+  const ihdr = (file: string): [number, number] => {
+    const png = readFileSync(ROOT + "site/assets/" + file);
+    expect(png.subarray(0, 8).toString("latin1")).toBe("\x89PNG\r\n\x1a\n");
+    return [png.readUInt32BE(16), png.readUInt32BE(20)];
+  };
+  for (const [file, size] of [
+    ["favicon-96.png", 96],
+    ["apple-touch-icon.png", 180],
+    ["icon-192.png", 192],
+    ["icon-512.png", 512],
+    ["icon-512-maskable.png", 512],
+  ] as const) {
+    expect(ihdr(file)).toEqual([size, size]);
+  }
+
+  // favicon.ico carries 16, 32 and 48 as PNG payloads in one container
+  const ico = readFileSync(ROOT + "site/assets/favicon.ico");
+  expect(ico.readUInt16LE(0)).toBe(0);
+  expect(ico.readUInt16LE(2)).toBe(1);
+  const count = ico.readUInt16LE(4);
+  expect(count).toBe(3);
+  const sizes: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const entry = 6 + i * 16;
+    const size = ico.readUInt32LE(entry + 8);
+    const offset = ico.readUInt32LE(entry + 12);
+    const png = ico.subarray(offset, offset + size);
+    expect(png.subarray(0, 8).toString("latin1")).toBe("\x89PNG\r\n\x1a\n");
+    expect(png.readUInt32BE(16)).toBe(ico[entry]);
+    sizes.push(ico[entry]);
+  }
+  expect(sizes).toEqual([16, 32, 48]);
+
+  // Safari paints the pinned-tab mask itself: solid black, no gradients.
+  const mask = readFileSync(ROOT + "site/assets/safari-pinned-tab.svg", "utf8");
+  expect(mask).toContain('viewBox="0 0 16 16"');
+  expect(mask).not.toContain("Gradient");
+  expect(mask).not.toContain("#0a0a0c");
+
+  const manifest = JSON.parse(readFileSync(ROOT + "site/assets/site.webmanifest", "utf8")) as {
+    name: string;
+    icons: { src: string; sizes: string; purpose?: string }[];
+  };
+  expect(manifest.name).toBe(SITE_TITLE);
+  expect(manifest.icons.some((i) => i.purpose === "maskable")).toBe(true);
+  for (const icon of manifest.icons) {
+    expect(existsSync(ROOT + "site/assets/" + icon.src.slice(1))).toBe(true);
+  }
+
+  // One list, shared by all three heads on this site, and every file it names
+  // is copied to the site root by the build.
+  const build = readFileSync(ROOT + "site/build.ts", "utf8");
+  expect(build.match(/\$\{ICON_LINKS\}/g)?.length).toBe(2);
+  expect(readFileSync(ROOT + "site/templates.ts", "utf8")).toContain("${ICON_LINKS}");
+  for (const href of [...ICON_LINKS.matchAll(/href="\/([^"]+)"/g)].map((m) => m[1])) {
+    expect(existsSync(ROOT + "site/assets/" + href)).toBe(true);
+    expect(build).toContain(`"${href}"`);
+  }
+  // The tab title says what this is.
+  expect(SITE_TITLE).toBe("PocketJS JavaScript UI runtime");
+
+  // The generator reads the one drawing and nothing else.
+  const gen = readFileSync(ROOT + "tools/icons.ts", "utf8");
+  expect(gen).toContain("favicon.svg");
+  expect(svg).toContain("<svg");
 });
 
 test("public PocketJS icon surfaces keep the metal mark on a black backing", () => {

@@ -29,7 +29,15 @@ import {
   vdomHelperCode,
   vdomHelperId,
 } from "@vue-jsx-vapor/runtime/raw";
-import { OG_IMAGE_URL, SITE_DESC, SITE_TITLE, SITE_URL, injectSiteFooterDescription, renderPage } from "./templates.ts";
+import {
+  ICON_LINKS,
+  OG_IMAGE_URL,
+  SITE_DESC,
+  SITE_TITLE,
+  SITE_URL,
+  injectSiteFooterDescription,
+  renderPage,
+} from "./templates.ts";
 import { BLOG_POSTS, DOC_NAV, type DocSection } from "./nav.ts";
 import { emitSingleLodStagePackage } from "./stage-package.ts";
 
@@ -550,7 +558,20 @@ async function main() {
 
   // 4. static assets + Tailwind CSS (compiled AFTER pages exist so the content
   //    scan sees every class; we render pages to a temp first, then compile).
-  for (const asset of ["favicon.svg", "og-image.svg", "og-image.png"]) {
+  for (const asset of [
+    // the icon family, rendered from favicon.svg by tools/icons.ts
+    "favicon.svg",
+    "favicon.ico",
+    "favicon-96.png",
+    "apple-touch-icon.png",
+    "icon-192.png",
+    "icon-512.png",
+    "icon-512-maskable.png",
+    "safari-pinned-tab.svg",
+    "site.webmanifest",
+    "og-image.svg",
+    "og-image.png",
+  ]) {
     if (existsSync(SITE + "assets/" + asset)) copy(SITE + "assets/" + asset, asset);
   }
   // OpenStrike desktop screenshot (referenced by the shipping-openstrike post).
@@ -715,7 +736,7 @@ function renderHome(): string {
 <meta name="twitter:description" content="${HOME_DESC}">
 <meta name="twitter:image" content="${OG_IMAGE_URL}">
 <meta name="theme-color" content="#05070d">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+${ICON_LINKS}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&family=VT323&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -784,7 +805,7 @@ function renderForPage(page: { slug: string; title: string; desc: string }): str
 <meta name="twitter:description" content="${page.desc}">
 <meta name="twitter:image" content="${OG_IMAGE_URL}">
 <meta name="theme-color" content="#05070d">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+${ICON_LINKS}
 <link rel="stylesheet" href="/assets/home.css">
 </head>
 <body>
