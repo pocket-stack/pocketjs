@@ -70,6 +70,17 @@ export function focusCanvas(canvas) {
   canvas.focus({ preventScroll: true });
 }
 
+export function createSurfaceCatalog(applications) {
+  const catalog = new Map();
+  const surfaces = {};
+  applications.forEach((entry, index) => {
+    const handle = index + 1;
+    catalog.set(handle, entry);
+    surfaces[entry.package] = handle;
+  });
+  return { catalog, surfaces };
+}
+
 export function validateSystemPlan(plan) {
   if (!plan || plan.target?.id !== "web-app" || plan.target?.hostAbi !== 4) {
     throw new Error("browser System host requires a web-app ABI 4 ResolvedSystemPlan");
@@ -153,12 +164,7 @@ export async function mountPocketSystem(canvas, options = {}) {
   context.imageSmoothingEnabled = false;
   let image = context.createImageData(viewport[0], viewport[1]);
 
-  const catalog = new Map();
-  const surfaces = {};
-  plan.applications.forEach((entry, handle) => {
-    catalog.set(handle, entry);
-    surfaces[entry.package] = handle;
-  });
+  const { catalog, surfaces } = createSurfaceCatalog(plan.applications);
   const artifact = (entry, extension) =>
     absolute(`${entry.plan.app.output}.${extension}`, distBase);
   const shellRealm = await createRealm(instanceUrl, {

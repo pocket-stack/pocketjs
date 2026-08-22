@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { focusCanvas, validateSystemPlan } from "../hosts/web/system-engine.js";
+import {
+  createSurfaceCatalog,
+  focusCanvas,
+  validateSystemPlan,
+} from "../hosts/web/system-engine.js";
 import { validateAndResolveSystemPlan } from "@pocketjs/framework/manifest";
 import systemInput from "./fixtures/systems/managed-desktop.json";
 
@@ -30,6 +34,15 @@ describe("browser Pocket System host", () => {
       },
     });
     expect(options).toEqual({ preventScroll: true });
+  });
+
+  test("assigns one-based compositor handles in installation order", async () => {
+    const plan = await resolvedWebSystem();
+    const { catalog, surfaces } = createSurfaceCatalog(plan.applications);
+    expect(catalog.get(0)).toBeUndefined();
+    expect(catalog.get(1)).toBe(plan.applications[0]);
+    expect(surfaces[plan.applications[0].package]).toBe(1);
+    expect(surfaces[plan.applications[1].package]).toBe(2);
   });
 
   test("accepts a complete resolved web System plan", async () => {
