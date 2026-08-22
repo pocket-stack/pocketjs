@@ -7,7 +7,7 @@ const GH = "https://github.com/pocket-stack/pocketjs";
 const DISCORD = "https://discord.gg/cTce4eXzSK";
 const X_URL = "https://x.com/pocket_js";
 export const SITE_URL = "https://pocketjs.dev";
-export const SITE_TITLE = "PocketJS JavaScript UI runtime";
+export const SITE_TITLE = "PocketJS · JavaScript UI runtime";
 export const SITE_DESC =
   "A compact JavaScript runtime for building UI, games, 3D experiences and AI-native applications across radically different devices. A tiny JavaScript guest where it fits; the framework compiled away where it doesn't.";
 // Shared by the standalone homepage and every page rendered through renderPage().

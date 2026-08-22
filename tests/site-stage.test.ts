@@ -461,7 +461,7 @@ test("the icon family is rendered from one drawing and linked from every head", 
   // Nothing links it, but iOS fetches this path from the root on its own.
   expect(build).toContain('"apple-touch-icon-precomposed.png"');
   // The tab title says what this is.
-  expect(SITE_TITLE).toBe("PocketJS JavaScript UI runtime");
+  expect(SITE_TITLE).toBe("PocketJS · JavaScript UI runtime");
 
   // The generator reads the one drawing and nothing else.
   const gen = readFileSync(ROOT + "tools/icons.ts", "utf8");
