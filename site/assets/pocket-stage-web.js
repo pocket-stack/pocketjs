@@ -491,7 +491,7 @@ export async function mountPocketStage(root, options = {}) {
     const view = profile.view ?? {};
     camera.fov = view.fov_y_degrees ?? camera.fov;
     camera.updateProjectionMatrix();
-    camera.position.fromArray(view.desk_position_mm ?? [0, 46, 190]);
+    camera.position.fromArray(options.deskPositionMm ?? view.desk_position_mm ?? [0, 0, 190]);
     controls.target.fromArray(view.desk_target_mm ?? [0, 0, 0]);
     controls.update();
     focusDistanceMm = view.focus_distance_mm ?? focusDistanceMm;
@@ -506,9 +506,11 @@ export async function mountPocketStage(root, options = {}) {
         hostReady,
       ]);
     } else {
-      // The homepage stage boots the Pocket Launcher (docs/LAUNCHER.md) — the
-      // same multi-app deck the PSP EBOOT ships. The Playground skips this
-      // branch because its supplied host already owns the live-compiled app.
+      // Without a supplied host the stage boots a package of its own: the
+      // Pocket Launcher deck (docs/LAUNCHER.md) by default, or whatever
+      // options.bootApp names, which is how the homepage boots one app
+      // directly. The Playground skips this branch because its supplied host
+      // already owns the live-compiled app.
       const bundleCache = new Map();
       fetchBundle = async (output) => {
         if (!bundleCache.has(output)) {
@@ -537,7 +539,7 @@ export async function mountPocketStage(root, options = {}) {
       const [loadedModel, registryResponse, loadedLauncher] = await Promise.all([
         loader.loadAsync(modelUrl),
         fetch(STAGE_ROOT + "apps/apps.json").then(failResponse),
-        fetchBundle("launcher-main"),
+        fetchBundle(options.bootApp ?? "launcher-main"),
         hostReady,
       ]);
       model = loadedModel;

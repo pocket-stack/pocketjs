@@ -593,7 +593,11 @@ async function main() {
   //    landing.js (the framework code tabs). Not wrapped in the shared
   //    header/footer (those stay for docs + playground).
   write("index.html", renderHome());
-  copy(SITE + "assets/landing.css", "assets/landing.css");
+  // The homepage ships one stylesheet: the same tokens and chrome the Tailwind
+  // build imports, plus the landing sections, concatenated in layer order.
+  write("assets/landing.css", ["tokens.css", "base.css", "chrome.css", "landing.css"]
+    .map((f) => readFileSync(SITE + "assets/" + f, "utf8"))
+    .join("\n"));
   await bundle("assets/landing.js", "assets/landing.js");
   // home.css stays for the /for/ pages, which keep the .lp-* chrome.
   copy(SITE + "assets/home.css", "assets/home.css");

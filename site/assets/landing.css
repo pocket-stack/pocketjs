@@ -1,67 +1,4 @@
-/* pocketjs.dev landing page. Homepage only; the /for/ pages keep home.css. */
-:root{
-  --bg:#05070d; --bg-2:#080b13; --panel:#0d1220; --panel-2:#101828;
-  --line:rgba(43,58,85,.55); --line-2:rgba(74,94,130,.6);
-  --ink:#f3f7fd; --ink-2:#b9c3d4; --muted:#7b8aa1;
-  --steel-1:#d8e1ec; --steel-2:#a7b3c5; --steel-3:#66748a;
-  --metal:linear-gradient(100deg,#f4f8ff,#a7b3c5 55%,#d8e1ec);
-  --metal-ph:linear-gradient(100deg,#f2fbf5,#a9d8bd 42%,#cfe4dc 70%,#eef7f2);
-  --ph:#4ef08a; --ph-2:#9de5c7; --sky:#60a5fa;
-  /* chart marks: validated for the dark surface (lightness band, chroma, CVD, contrast) */
-  --c1:#1ba468; --c2:#4a86e8; --c3:#b07d1c; --c1-deep:#0f6c44;
-  --track:rgba(74,94,130,.22);
-  --px:"VT323",ui-monospace,monospace;
-  --sans:"IBM Plex Sans",-apple-system,system-ui,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
-}
-*{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;
-  background-image:
-    radial-gradient(ellipse 55% 34% at 50% -6%, rgba(78,240,138,.10), transparent),
-    radial-gradient(ellipse 58% 40% at 50% -4%, rgba(216,225,236,.06), transparent),
-    radial-gradient(ellipse 40% 30% at 90% 14%, rgba(78,240,138,.05), transparent)}
-body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:100;
-  background:repeating-linear-gradient(0deg, rgba(3,18,11,.16) 0 1px, transparent 1px 3px)}
-body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:99;
-  background:radial-gradient(ellipse 92% 86% at 50% 50%, transparent 68%, rgba(2,5,4,.30) 100%)}
-.wrap{max-width:1160px;margin:0 auto;padding:0 clamp(1.25rem,4vw,2.5rem)}
-a{color:inherit;text-decoration:none}
-img,video{max-width:100%;display:block}
-.hud{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.metal{background:var(--metal);-webkit-background-clip:text;background-clip:text;color:transparent}
-.metal.lit{background:var(--metal-ph);-webkit-background-clip:text;background-clip:text}
-.lit{filter:drop-shadow(0 0 14px rgba(78,240,138,.42)) drop-shadow(0 0 34px rgba(78,240,138,.20))}
-.cursor{display:inline-block;width:.5em;height:.95em;background:var(--ph);vertical-align:-.1em;margin-left:.15em;
-  box-shadow:0 0 8px rgba(78,240,138,.55);animation:blink 1.1s steps(1) infinite}
-@keyframes blink{50%{opacity:0}}
-
-/* nav */
-.nav{position:sticky;top:0;z-index:50;border-bottom:1px solid var(--line);background:rgba(5,7,13,.88);backdrop-filter:blur(9px)}
-.nav .wrap{display:flex;align-items:center;justify-content:space-between;height:3.6rem}
-.mark{display:flex;align-items:center;gap:.55rem}
-.mark .nm{font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
-.nav-links{display:flex;align-items:center;gap:1.5rem;font-family:var(--mono);font-size:.74rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
-.nav-links a:hover{color:var(--ph)}
-.nav-links .ico{display:flex;align-items:center;color:var(--ink-2)}
-.nav-links .ico svg{width:1.05rem;height:1.05rem;display:block}
-.nav-links .ico:hover{color:var(--ph)}
-.menu{position:relative}
-.menu-btn{appearance:none;background:none;border:none;cursor:pointer;color:var(--ink-2);
-  font:inherit;text-transform:uppercase;letter-spacing:.1em;display:flex;align-items:center;gap:.35rem;padding:0}
-.menu-btn svg{transition:transform .15s}
-.menu:hover .menu-btn,.menu:focus-within .menu-btn{color:var(--ph)}
-.menu:hover .menu-btn svg,.menu:focus-within .menu-btn svg{transform:rotate(180deg)}
-.menu-list{position:absolute;top:calc(100% + .75rem);left:50%;transform:translateX(-50%) translateY(-.35rem);
-  min-width:9.5rem;border:1px solid var(--line-2);background:rgba(8,11,19,.97);backdrop-filter:blur(9px);
-  display:flex;flex-direction:column;opacity:0;visibility:hidden;transition:opacity .14s,transform .14s,visibility .14s;
-  box-shadow:0 18px 44px rgba(0,0,0,.55)}
-.menu:hover .menu-list,.menu:focus-within .menu-list{opacity:1;visibility:visible;transform:translateX(-50%) translateY(0)}
-.menu-list::before{content:"";position:absolute;left:0;right:0;top:-.75rem;height:.75rem}
-.menu-list a{padding:.6rem .9rem;border-bottom:1px solid var(--line)}
-.menu-list a:last-child{border-bottom:none}
-.menu-list a:hover{background:var(--panel);color:var(--ph)}
-
+/* pocketjs.dev homepage sections. Tokens and chrome live beside this file. */
 /* hero: the demo wall runs full bleed behind everything, nav included */
 .hero{position:relative;overflow:hidden;margin-top:-3.6rem;padding:calc(3.6rem + clamp(3rem,8vw,6rem)) 0 clamp(3rem,8vw,6rem);
   min-height:min(92vh,880px);display:flex;align-items:center}
@@ -89,12 +26,6 @@ img,video{max-width:100%;display:block}
 .hero .sub{margin-top:1.5rem;color:var(--ink-2);max-width:52ch;font-size:1.05rem}
 .hero .sub strong{color:var(--ink)}
 .hero .ctas{margin-top:1.7rem;display:flex;gap:.8rem;flex-wrap:wrap}
-.btn{font-family:var(--mono);font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;padding:.72rem 1.25rem;border:1px solid var(--line-2)}
-.btn--pri{background:linear-gradient(180deg,#f4f8ff,#c9d5e4);color:#0b1220;border-color:transparent;font-weight:600;
-  box-shadow:0 1px 0 rgba(255,255,255,.35) inset, 0 0 18px rgba(216,225,236,.16)}
-.btn--pri:hover{filter:brightness(1.05)}
-.btn--sec{color:var(--ink-2)} .btn--sec:hover{color:var(--ph);border-color:rgba(78,240,138,.55)}
-
 /* terminal */
 .term{border:1px solid var(--line-2);background:#060a0c;box-shadow:inset 0 0 40px rgba(78,240,138,.045)}
 .term .bar{display:flex;align-items:center;gap:.45rem;border-bottom:1px solid var(--line);padding:.5rem .8rem;background:var(--panel)}
@@ -317,13 +248,18 @@ img,video{max-width:100%;display:block}
 .cells .ph{position:absolute;top:-.2rem;bottom:-.2rem;width:calc(12.5% - 2px);border:1px solid rgba(78,240,138,.55);
   box-shadow:0 0 14px rgba(78,240,138,.22) inset;animation:sweep 4.8s steps(8) infinite;pointer-events:none}
 @keyframes sweep{from{transform:translateX(0)} to{transform:translateX(800%)}}
-.wallclock{position:relative;height:1.6rem;margin-bottom:.1rem}
-.wallclock .arrive{position:absolute;left:43%;top:0;font-family:var(--mono);font-size:.6rem;color:var(--c3);
-  white-space:nowrap;animation:arrive 4.8s linear infinite;opacity:0;
+/* the arrive chip sits in the fourth cell of the same eight-column grid the
+   tape uses, so it points at frame +3 in every engine instead of at a
+   hand-tuned percentage (Safari resolved that differently) */
+.wallclock{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:2px;height:1.6rem;margin-bottom:.1rem}
+.wallclock .arrive{grid-column:4;grid-row:1;position:relative;justify-self:start;align-self:start;
+  font-family:var(--mono);font-size:.6rem;color:var(--c3);white-space:nowrap;
+  animation:arrive 4.8s linear infinite;opacity:0;
   background:rgba(6,11,9,.95);border:1px solid rgba(176,125,28,.55);padding:.14rem .35rem}
 .wallclock .arrive::after{content:"";position:absolute;left:.1rem;top:1.4rem;width:1px;height:.5rem;background:var(--c3)}
 @keyframes arrive{0%,38%{opacity:0} 41%,49%{opacity:1} 52%,100%{opacity:0}}
-.deliver{position:absolute;left:50%;top:-.1rem;bottom:-.1rem;width:2px;background:var(--ph);
+.deliver{grid-column:5;grid-row:1;justify-self:start;position:relative;width:2px;
+  margin:-.1rem 0 -.1rem -2px;background:var(--ph);
   box-shadow:0 0 10px rgba(78,240,138,.8);animation:deliver 4.8s linear infinite;opacity:0}
 .deliver::after{content:"delivered at the boundary";position:absolute;left:.35rem;top:-1.55rem;
   font-family:var(--mono);font-size:.6rem;color:var(--ph);white-space:nowrap;
@@ -430,11 +366,6 @@ img,video{max-width:100%;display:block}
 .spon-gallery a:hover{filter:none;border-color:rgba(78,240,138,.65);transform:translateY(-2px)}
 .spon-gallery img{width:100%;height:100%;object-fit:cover}
 
-.foot{border-top:1px solid var(--line);padding:2.2rem 0 3rem;background:var(--bg-2)}
-.foot .wrap{display:flex;flex-wrap:wrap;gap:1.4rem;justify-content:space-between;align-items:center}
-.foot .cols2{display:flex;gap:1.8rem;flex-wrap:wrap;font-family:var(--mono);font-size:.72rem;color:var(--ink-2)}
-.foot .cols2 a:hover{color:var(--ph)}
-
 @media (max-width:1000px){
   /* the hero is a flex row on wide screens; stack it here so the note flows below */
   .hero{min-height:auto;display:block}
@@ -459,3 +390,50 @@ img,video{max-width:100%;display:block}
 .eco{grid-template-columns:1fr}.row{grid-template-columns:4.4rem minmax(0,1fr) 4rem}}
 
 
+
+/* readout tiles: a machine-reported number and what it means */
+.reads{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem}
+.read{border:1px solid var(--line);padding:.85rem 1rem .95rem;position:relative;overflow:hidden;
+  background:linear-gradient(180deg, rgba(78,240,138,.05), transparent), var(--panel)}
+.read::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.05) 0 1px, transparent 1px 3px)}
+.read b{display:block;font-family:var(--px);font-size:2.1rem;line-height:1;color:var(--ph);
+  text-shadow:0 0 18px rgba(78,240,138,.55)}
+.read b.st{background:var(--metal);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
+.read span{position:relative;display:block;margin-top:.35rem;font-size:.74rem;line-height:1.45;color:var(--muted)}
+
+/* framework names in prose: plain text with a hairline, nothing louder */
+.pl{color:inherit;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;
+  text-decoration-color:rgba(185,195,212,.4)}
+.pl:hover{color:var(--ph);text-decoration-color:rgba(78,240,138,.6)}
+
+/* motion: six recorded clips, engine output, looping */
+.mgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem}
+.mcell{border:1px solid rgba(78,240,138,.20);background:#000;padding:.4rem}
+.mcell .scr{position:relative;overflow:hidden;background:#000;aspect-ratio:154/121}
+.mcell .scr::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.06) 0 1px, transparent 1px 3px);
+  box-shadow:inset 0 0 26px rgba(78,240,138,.10)}
+.mcell img{width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
+.mcell figcaption{font-family:var(--mono);font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);padding:.4rem .1rem 0}
+
+/* compatibility: what it runs on, split by operating system and by device */
+.cpanel{border:1px solid var(--line);background:var(--panel);padding:1.1rem 1.2rem 1.2rem}
+.cpanel .lb{display:block;font-family:var(--mono);font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ph);margin-bottom:.9rem}
+.cgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}
+.cchip{font-family:var(--mono);font-size:.64rem;line-height:1.25;border:1px solid var(--line);background:var(--bg);
+  padding:.4rem .5rem;color:var(--ink-2)}
+.cchip em{display:block;font-style:normal;font-size:.55rem;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin-top:.15rem}
+@media (max-width:620px){
+  .mgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cgrid{grid-template-columns:1fr}
+}
+
+/* motion: the handheld floats on the page, no frame and no plate behind it */
+.motion-stage{margin:0;border:0;background:transparent;padding:0}
+.motion-stage .pg-stage__viewport{background:transparent;border:0}
+.motion-stage .pg-stage__status{justify-content:center}
+.spon-cta{margin-top:1.4rem;display:inline-flex;gap:.5rem;align-items:center}

@@ -1,83 +1,75 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* One design system. tokens.css holds the values, chrome.css the shared shell;
+   the @theme mapping below re-exports the same tokens as Tailwind utilities so
+   a docs page and the homepage cannot drift apart. */
+@import "./tokens.css";
+@import "./chrome.css" layer(components);
+
 /* Scan every place a class can appear (TS template strings, HTML, JS glue,
    raw HTML embedded in blog/docs markdown). */
 @source "../**/*.{ts,html,js,md}";
 
-@font-face {
-  font-family: "Inter";
-  src: url("/pg/fonts/Inter-Regular.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
+/* ---- theme: utilities resolve to the tokens, never to their own copies ---- */
+@theme inline {
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+  --font-px: var(--px);
+  --font-math: var(--math);
+
+  --color-ink: var(--bg);
+  --color-ink-2: var(--bg-2);
+  --color-surface: var(--panel);
+  --color-surface-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+
+  --color-fg: var(--ink);
+  --color-fg-2: var(--ink-2);
+  --color-muted: var(--muted);
+
+  --color-steel: var(--steel-2);
+  --color-steel-1: var(--steel-1);
+  --color-phosphor: var(--ph);
+  --color-phosphor-2: var(--ph-2);
+  --color-brand: var(--sky);
+  --color-brand-2: var(--ph);
+  --color-brand-3: var(--sky);
 }
 
-@font-face {
-  font-family: "Inter";
-  src: url("/pg/fonts/Inter-Bold.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
-/* ---- brand theme ---------------------------------------------------------- */
-@theme {
-  --font-sans:
-    Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono:
-    ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
-
-  /* near-black navy base + layered surfaces */
-  --color-ink: #05070d;
-  --color-ink-2: #070a11;
-  --color-surface: #0b0f1a;
-  --color-surface-2: #101827;
-  --color-line: #1e293b;
-  --color-line-2: #2b3a55;
-
-  /* the blue→cyan brand ramp (matches the logo + demos) */
-  --color-brand: #38bdf8;
-  --color-brand-2: #22d3ee;
-  --color-brand-3: #60a5fa;
-}
-
-/* ---- base ----------------------------------------------------------------- */
+/* ---- base: chrome.css sets the ground; this adds prose-only defaults ------ */
 @layer base {
-  html {
-    scroll-behavior: smooth;
-    -webkit-text-size-adjust: 100%;
-  }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
   body {
-    background:
-      radial-gradient(42% 72% at 0% 6%, color-mix(in oklab, var(--color-brand-3) 10%, transparent), transparent 66%),
-      radial-gradient(36% 70% at 100% 12%, color-mix(in oklab, var(--color-brand-2) 6%, transparent), transparent 68%),
-      linear-gradient(180deg, #070a11 0%, var(--color-ink) 48%, #070a11 100%);
-    color: var(--color-slate-300);
-    font-family: var(--font-sans);
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse 55% 34% at 50% -6%, rgba(78, 240, 138, 0.1), transparent),
+      radial-gradient(ellipse 58% 40% at 50% -4%, rgba(216, 225, 236, 0.06), transparent),
+      radial-gradient(ellipse 40% 30% at 90% 14%, rgba(78, 240, 138, 0.05), transparent);
+    color: var(--ink-2);
+    font-family: var(--sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
-  ::selection {
-    background: color-mix(in oklab, var(--color-brand) 40%, transparent);
-    color: #fff;
-  }
-  a {
-    color: inherit;
-    text-decoration: none;
-  }
-  /* Edge-only page glow, shared with the landing page direction. */
+  /* the same tube glass the homepage sits behind */
   body::before {
     content: "";
     position: fixed;
-    inset: 0 0 auto 0;
-    height: 620px;
+    inset: 0;
     pointer-events: none;
-    z-index: -1;
-    background:
-      radial-gradient(42% 72% at 0% 6%, color-mix(in oklab, var(--color-brand-3) 9%, transparent), transparent 66%),
-      radial-gradient(36% 70% at 100% 12%, color-mix(in oklab, var(--color-brand-2) 5%, transparent), transparent 68%);
+    z-index: 100;
+    background: repeating-linear-gradient(0deg, rgba(3, 18, 11, 0.16) 0 1px, transparent 1px 3px);
   }
+  a { color: inherit; text-decoration: none; }
+  ::selection { background: color-mix(in oklab, var(--ph) 32%, transparent); color: #04170c; }
+}
+
+/* prose links carry the accent the rest of the system uses for references */
+@layer components {
+  .prose a { color: var(--sky); font-weight: 500; }
+  .prose a:hover { color: var(--ph); }
+  .prose :where(code):not(:where(pre *)) { color: var(--ph-2); }
 }
 
 /* ---- reusable brand bits -------------------------------------------------- */
@@ -89,152 +81,6 @@
 }
 
 @layer components {
-  .site-nav {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    border-bottom: 1px solid var(--color-line);
-    background:
-      linear-gradient(180deg, rgba(20, 29, 49, 0.46), rgba(9, 12, 20, 0.82)),
-      rgba(9, 12, 20, 0.78);
-    backdrop-filter: blur(14px) saturate(1.25);
-    -webkit-backdrop-filter: blur(14px) saturate(1.25);
-  }
-  .site-nav__in {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    max-width: 1160px;
-    height: 62px;
-    margin: 0 auto;
-    padding: 0 clamp(1.25rem, 4vw, 2.75rem);
-  }
-  .site-brand {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.55rem;
-    color: var(--color-slate-100);
-    font-weight: 700;
-    letter-spacing: -0.02em;
-  }
-  .site-brand svg {
-    width: 26px;
-    height: 26px;
-    flex: none;
-  }
-  .site-nav__links {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.25rem;
-    min-width: 0;
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-  .site-nav__link {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    color: var(--color-slate-300);
-    border-radius: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    transition:
-      color 0.2s ease,
-      background 0.2s ease;
-  }
-  .site-nav__link:hover,
-  .site-nav__link.on {
-    color: var(--color-slate-50);
-    background: rgba(20, 29, 49, 0.9);
-  }
-  .site-nav__gh svg {
-    width: 18px;
-    height: 18px;
-  }
-  .site-nav__discord {
-    color: #cfd3ff;
-  }
-  .site-nav__discord svg {
-    width: 18px;
-    height: 18px;
-  }
-  .site-nav__x {
-    display: inline-flex;
-    align-items: center;
-  }
-  .site-nav__x svg {
-    width: 16px;
-    height: 16px;
-  }
-  .site-nav__3d {
-    color: #a9e7ff;
-    background: transparent;
-    border: 1px solid transparent;
-  }
-  .site-nav__3d svg {
-    width: 16px;
-    height: 16px;
-  }
-  .site-nav__3d:hover {
-    color: #e4f5ff;
-    background: linear-gradient(180deg, rgba(56, 152, 224, 0.16), rgba(56, 152, 224, 0.06));
-    border-color: rgba(120, 190, 240, 0.32);
-  }
-  .site-nav__3d.on {
-    color: #e4f5ff;
-    background: linear-gradient(180deg, rgba(56, 152, 224, 0.28), rgba(56, 152, 224, 0.12));
-    border-color: rgba(150, 210, 250, 0.55);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  }
-  @media (max-width: 480px) {
-    .site-nav__ghlabel {
-      display: none;
-    }
-    .site-nav__optional {
-      display: none;
-    }
-    .site-nav__link {
-      padding: 0.5rem 0.32rem;
-      font-size: 12px;
-    }
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    border-radius: 0.6rem;
-    padding: 0.5rem 0.95rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-    border: 1px solid var(--color-line-2);
-    background: var(--color-surface-2);
-    color: var(--color-slate-100);
-    cursor: pointer;
-    transition:
-      transform 0.12s ease,
-      background 0.12s ease,
-      border-color 0.12s ease;
-  }
-  .btn:hover {
-    border-color: var(--color-brand);
-    transform: translateY(-1px);
-  }
-  .btn-primary {
-    border-color: rgba(226, 232, 240, 0.44);
-    color: #05070d;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 40%),
-      linear-gradient(112deg, #eef3fa 0%, #d2dbe7 26%, #b3becc 45%, #e8edf4 67%, #c2ccd9 100%);
-  }
-  .btn-primary:hover {
-    filter: brightness(1.06);
-  }
-  .btn-ghost {
-    background: transparent;
-  }
-
   .card {
     border: 1px solid var(--color-line);
     background: color-mix(in oklab, var(--color-surface) 70%, transparent);
@@ -289,28 +135,6 @@
   }
 
   /* ---- handheld device frame (hero + playground) ------------------------- */
-  .pocket-frame {
-    width: 100%;
-    max-width: 440px;
-    padding: 14px;
-    border-radius: 22px;
-    border: 1px solid var(--color-line-2);
-    background:
-      linear-gradient(160deg, color-mix(in oklab, var(--color-surface-2) 90%, #fff 4%), var(--color-ink-2));
-    box-shadow:
-      0 1px 0 rgba(255, 255, 255, 0.05) inset,
-      0 30px 60px -30px rgba(0, 0, 0, 0.7),
-      0 0 0 1px rgba(56, 189, 248, 0.05);
-  }
-  .pocket-screen {
-    position: relative;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #000;
-    border: 1px solid #05070d;
-    box-shadow: 0 0 0 6px #05070d, 0 0 18px -8px rgba(56, 189, 248, 0.22) inset;
-    aspect-ratio: 480 / 272;
-  }
   .pocket-screen canvas,
   .pg-screen canvas {
     display: block;
@@ -318,15 +142,6 @@
     height: 100%;
     image-rendering: pixelated;
     outline: none;
-  }
-  .pocket-loading {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--color-slate-500);
   }
 
   /* ---- code sample card -------------------------------------------------- */
@@ -444,110 +259,6 @@
       radial-gradient(42% 60% at 0% 8%, color-mix(in oklab, var(--color-brand-3) 7%, transparent), transparent 70%),
       radial-gradient(36% 58% at 100% 12%, color-mix(in oklab, var(--color-brand-2) 4%, transparent), transparent 72%),
       var(--color-ink);
-  }
-  .pg-stage {
-    width: 100%;
-    margin: 0;
-    outline: none;
-  }
-  .pg-stage__viewport {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    overflow: hidden;
-    outline: none;
-  }
-  .pg-stage__canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    outline: none;
-    cursor: grab;
-    touch-action: none;
-  }
-  .pg-stage__canvas:active { cursor: grabbing; }
-  .pg-stage__viewport:focus-visible .pg-stage__canvas {
-    border-radius: 0.8rem;
-    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--color-brand-2) 78%, white);
-  }
-  .pg-stage__screen { display: none; }
-  .pg-stage__status {
-    position: absolute;
-    left: 50%;
-    bottom: 0.7rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    max-width: calc(100% - 2rem);
-    padding: 0.45rem 0.75rem;
-    border: 1px solid rgba(85, 103, 133, 0.56);
-    border-radius: 999px;
-    color: var(--color-slate-300);
-    background: rgba(6, 10, 18, 0.82);
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    line-height: 1.25;
-    text-align: center;
-    transform: translateX(-50%);
-    backdrop-filter: blur(8px);
-    transition: opacity 0.25s ease, transform 0.25s ease;
-  }
-  .pg-stage__status-dot {
-    width: 6px;
-    height: 6px;
-    flex: none;
-    border-radius: 50%;
-    background: #9de5c7;
-    box-shadow: 0 0 10px rgba(157, 229, 199, 0.82);
-    animation: pg-stage-pulse 1.1s ease-in-out infinite alternate;
-  }
-  .pg-stage.is-ready .pg-stage__status {
-    opacity: 0;
-    transform: translate(-50%, 5px);
-    pointer-events: none;
-  }
-  .pg-stage.has-error .pg-stage__viewport { height: auto; }
-  .pg-stage.has-error .pg-stage__canvas { display: none; }
-  .pg-stage.has-error .pg-stage__screen {
-    display: block;
-    width: min(100%, 480px);
-    height: auto;
-    margin: 0 auto;
-    border-radius: 0.65rem;
-    background: #000;
-    image-rendering: pixelated;
-    box-shadow: 0 0 0 1px var(--color-line-2), 0 24px 54px -34px #000;
-  }
-  .pg-stage.has-error .pg-stage__viewport:focus-visible .pg-stage__screen {
-    box-shadow:
-      0 0 0 2px color-mix(in oklab, var(--color-brand-2) 78%, white),
-      0 24px 54px -34px #000;
-  }
-  .pg-stage.has-error .pg-stage__status {
-    color: #fecaca;
-    border-color: rgba(248, 113, 113, 0.44);
-  }
-  .pg-stage.has-error .pg-stage__status-dot {
-    background: #f87171;
-    box-shadow: none;
-    animation: none;
-  }
-  .pg-stage__credit {
-    padding: 0.35rem 0.35rem 0;
-    color: var(--color-slate-600);
-    font-size: 0.66rem;
-    line-height: 1.4;
-    text-align: right;
-  }
-  .pg-stage__credit a {
-    color: var(--color-slate-400);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-  .pg-stage__credit a:hover { color: var(--color-slate-200); }
-  @keyframes pg-stage-pulse {
-    from { opacity: 0.35; transform: scale(0.78); }
-    to { opacity: 1; transform: scale(1); }
   }
   .pg-error {
     width: 100%; max-width: 620px; margin: 0; padding: 0.75rem 0.9rem;

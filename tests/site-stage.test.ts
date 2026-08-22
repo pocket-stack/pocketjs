@@ -57,7 +57,10 @@ test("homepage Stage package has one semantic screen and its declared suppressio
 test("homepage ships the four-chapter landing", () => {
   const home = readFileSync(ROOT + "site/home.html", "utf8");
   // The 3D stage lives in the playground; the homepage must not mount it.
-  expect(home).not.toContain("data-pocket-stage");
+  // the motion chapter mounts the real runtime in the PSP model, booting one
+  // app directly rather than the launcher deck
+  expect(home).toContain("data-motion-stage");
+  expect(home).toContain("data-stage-viewport");
   expect(home).not.toContain("lp-stage");
   // House style: no em dashes anywhere on the landing surfaces.
   for (const file of [
@@ -134,7 +137,10 @@ test("homepage ships the four-chapter landing", () => {
   expect(home).toContain('<div class="spon-gallery">{{SPONSOR_GALLERY}}</div>');
   expect(home).toContain('<span class="verb metal lit">Sponsors</span>');
   const sponsorSection = home.slice(home.indexOf('id="sponsors"'), home.indexOf("<footer"));
-  for (const pitch of ["$", "tier", "Tier", "become a sponsor", "Become a sponsor", "Sponsor on GitHub"]) {
+  // one line of thanks and one way in; still no amounts and no tier ladder
+  expect(sponsorSection).toContain("thanks to your support");
+  expect(sponsorSection).toContain("https://github.com/sponsors/doodlewind");
+  for (const pitch of ["$", "tier", "Tier", "monthly"]) {
     expect(sponsorSection).not.toContain(pitch);
   }
   const roster = JSON.parse(readFileSync(ROOT + "site/sponsors.json", "utf8")) as {
@@ -174,6 +180,15 @@ test("homepage ships the four-chapter landing", () => {
   expect(homeCss).toContain(".lp-nav");
 });
 
+test("the PSP stage looks straight at the screen", () => {
+  const profile = JSON.parse(
+    readFileSync(ROOT + "engine/pocket3d/examples/handheld/assets/dibad-psp/profile.json", "utf8"),
+  ) as { view: { desk_position_mm: number[]; desk_target_mm: number[] } };
+  // a level camera: no downward tilt on the playground or the homepage
+  expect(profile.view.desk_position_mm[1]).toBe(0);
+  expect(profile.view.desk_target_mm[1]).toBe(0);
+});
+
 test("playground wraps its live framebuffer in the PSP model", () => {
   const playground = readFileSync(ROOT + "site/playground/page.html", "utf8");
   for (const marker of [
@@ -191,9 +206,11 @@ test("playground wraps its live framebuffer in the PSP model", () => {
   expect(playground).not.toContain("screen-emu");
   expect(playground).not.toContain("data-btn");
 
-  // The stage is playground-only now: the homepage must not pull the module.
+  // Both surfaces share one stage module; the homepage boots a single app and
+  // the playground supplies its own live-compiled host.
   const homeGlue = readFileSync(ROOT + "site/assets/landing.js", "utf8");
-  expect(homeGlue).not.toContain("pocket-stage-web.js");
+  expect(homeGlue).toContain('import("/assets/pocket-stage-web.js")');
+  expect(homeGlue).toContain('bootApp: "motions-main"');
   const playgroundGlue = readFileSync(ROOT + "site/playground/playground.js", "utf8");
   expect(playgroundGlue).toContain('import("/assets/pocket-stage-web.js")');
   expect(playgroundGlue).toContain("mountPocketStage");
@@ -216,7 +233,9 @@ test("playground wraps its live framebuffer in the PSP model", () => {
   expect(build).not.toContain("screen.css");
   expect(existsSync(ROOT + "site/assets/screen.css")).toBe(false);
 
-  const css = readFileSync(ROOT + "site/assets/tailwind.css", "utf8");
+  // the stage's own styles moved into the shared chrome, which both the
+  // playground and the homepage load
+  const css = readFileSync(ROOT + "site/assets/chrome.css", "utf8");
   expect(css).toContain(".pg-stage.has-error .pg-stage__canvas { display: none; }");
   expect(css).toContain(".pg-stage.has-error .pg-stage__screen");
   expect(css).toContain(".pg-stage.has-error .pg-stage__viewport:focus-visible .pg-stage__screen");
