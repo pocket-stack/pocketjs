@@ -78,6 +78,8 @@ const table: StyleRecord[] = [
     base: [
       { prop: PROP.width, value: f32Bits(120) },
       { prop: PROP.bgColor, value: abgr(30, 41, 59) },
+      { prop: PROP.gradVia, value: abgr(59, 130, 246) },
+      { prop: PROP.gradViaPos, value: f32Bits(0.5) },
       { prop: PROP.flexDir, value: ENUMS.FlexDir.Col },
     ],
     focus: [{ prop: PROP.bgColor, value: abgr(129, 140, 248) }],

@@ -313,8 +313,24 @@ fn ceilf(x: f32) -> f32 {
 #[derive(Clone, Copy)]
 enum Fill {
     Flat(u32),
-    /// from/to already opacity-scaled; dir = spec::GradDir ordinal.
-    Grad { from: u32, to: u32, dir: u32 },
+    /// Colors already opacity-scaled; dir = spec::GradDir ordinal. The
+    /// optional middle stop is `(color, position)` along from -> to.
+    Grad { from: u32, via: Option<(u32, f32)>, to: u32, dir: u32 },
+}
+
+fn gradient_color(from: u32, via: Option<(u32, f32)>, to: u32, f: f32) -> u32 {
+    let f = clampf(f, 0.0, 1.0);
+    if let Some((middle, position)) = via {
+        let position = clampf(position, 0.0, 1.0);
+        if position > 0.0 && position < 1.0 {
+            return if f <= position {
+                lerp_color(from, middle, f / position)
+            } else {
+                lerp_color(middle, to, (f - position) / (1.0 - position))
+            };
+        }
+    }
+    lerp_color(from, to, f)
 }
 
 /// Color of a local-rect corner under a fill. Corner order: 0 TL, 1 TR,
@@ -322,7 +338,7 @@ enum Fill {
 fn corner_color(fill: &Fill, corner: usize) -> u32 {
     match *fill {
         Fill::Flat(c) => c,
-        Fill::Grad { from, to, dir } => {
+        Fill::Grad { from, to, dir, .. } => {
             let at_from = match dir {
                 d if d == spec::GradDir::ToTop as u32 => corner == 2 || corner == 3, // from at bottom
                 d if d == spec::GradDir::ToLeft as u32 => corner == 1 || corner == 2, // from at right
@@ -392,7 +408,7 @@ fn vertical_gradient(fill: &Fill) -> bool {
 fn fill_color_at(fill: &Fill, x0: f32, y0: f32, x1: f32, y1: f32, sx0: i32, sy: i32, sx1: i32, coverage: u32) -> u32 {
     let color = match *fill {
         Fill::Flat(color) => color,
-        Fill::Grad { from, to, dir } => {
+        Fill::Grad { from, via, to, dir } => {
             let horizontal = dir == spec::GradDir::ToLeft as u32 || dir == spec::GradDir::ToRight as u32;
             let (p, denom) = if horizontal {
                 (((sx0 + sx1) as f32 * 0.5) - x0, x1 - x0)
@@ -400,11 +416,12 @@ fn fill_color_at(fill: &Fill, x0: f32, y0: f32, x1: f32, y1: f32, sx0: i32, sy: 
                 (sy as f32 + 0.5 - y0, y1 - y0)
             };
             let f = if denom <= 0.0 { 0.0 } else { clampf(p / denom, 0.0, 1.0) };
-            if dir == spec::GradDir::ToTop as u32 || dir == spec::GradDir::ToLeft as u32 {
-                lerp_color(to, from, f)
+            let directed = if dir == spec::GradDir::ToTop as u32 || dir == spec::GradDir::ToLeft as u32 {
+                1.0 - f
             } else {
-                lerp_color(from, to, f)
-            }
+                f
+            };
+            gradient_color(from, via, to, directed)
         }
     };
     scale_alpha_coverage(color, coverage)
@@ -969,6 +986,7 @@ impl<'a> Walker<'a> {
             if has_grad {
                 let fill = Fill::Grad {
                     from: scale_alpha(r.grad_from, op),
+                    via: r.grad_via_pos.is_finite().then(|| (scale_alpha(r.grad_via, op), clampf(r.grad_via_pos, 0.0, 1.0))),
                     to: scale_alpha(r.grad_to, op),
                     dir: r.grad_dir,
                 };
@@ -989,6 +1007,7 @@ impl<'a> Walker<'a> {
         } else if has_grad {
             let fill = Fill::Grad {
                 from: scale_alpha(r.grad_from, op),
+                via: r.grad_via_pos.is_finite().then(|| (scale_alpha(r.grad_via, op), clampf(r.grad_via_pos, 0.0, 1.0))),
                 to: scale_alpha(r.grad_to, op),
                 dir: r.grad_dir,
             };
@@ -1274,7 +1293,12 @@ impl<'a> Walker<'a> {
         // Background -> one flat quad (gradients flatten to the mid-blend;
         // radius/border/shadow are outside the 3D contract).
         let color = if r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32 {
-            lerp_color(r.grad_from, r.grad_to, 0.5)
+            gradient_color(
+                r.grad_from,
+                r.grad_via_pos.is_finite().then(|| (r.grad_via, clampf(r.grad_via_pos, 0.0, 1.0))),
+                r.grad_to,
+                0.5,
+            )
         } else {
             r.bg_color
         };
@@ -1557,6 +1581,35 @@ impl<'a> Walker<'a> {
         if x1 <= x0 || y1 <= y0 {
             return;
         }
+        // Draw a three-stop gradient as two ordinary two-stop boxes. This
+        // preserves the backend DrawList contract: every backend still sees
+        // GRAD_RECT/TRI, while clipping and rotated painter order remain in
+        // the core that resolved the Tailwind style.
+        if let Fill::Grad { from, via: Some((middle, position)), to, dir } = fill {
+            let position = clampf(position, 0.0, 1.0);
+            if position > 0.0 && position < 1.0 {
+                let first = Fill::Grad { from, via: None, to: middle, dir };
+                let second = Fill::Grad { from: middle, via: None, to, dir };
+                if dir == spec::GradDir::ToRight as u32 {
+                    let split = x0 + (x1 - x0) * position;
+                    self.emit_box(dl, world, x0, y0, split, y1, first, clip);
+                    self.emit_box(dl, world, split, y0, x1, y1, second, clip);
+                } else if dir == spec::GradDir::ToLeft as u32 {
+                    let split = x1 - (x1 - x0) * position;
+                    self.emit_box(dl, world, split, y0, x1, y1, first, clip);
+                    self.emit_box(dl, world, x0, y0, split, y1, second, clip);
+                } else if dir == spec::GradDir::ToTop as u32 {
+                    let split = y1 - (y1 - y0) * position;
+                    self.emit_box(dl, world, x0, split, x1, y1, first, clip);
+                    self.emit_box(dl, world, x0, y0, x1, split, second, clip);
+                } else {
+                    let split = y0 + (y1 - y0) * position;
+                    self.emit_box(dl, world, x0, y0, x1, split, first, clip);
+                    self.emit_box(dl, world, x0, split, x1, y1, second, clip);
+                }
+                return;
+            }
+        }
         if world.is_axis_aligned() {
             let (sx0, sy0) = world.apply(x0, y0);
             let (sx1, sy1) = world.apply(x1, y1);
@@ -1576,7 +1629,7 @@ impl<'a> Walker<'a> {
                     dl.words.push(wh_word(c.x1 - c.x0, c.y1 - c.y0));
                     dl.words.push(color);
                 }
-                Fill::Grad { from, to, dir } => {
+                Fill::Grad { from, to, dir, .. } => {
                     // Re-interpolate the endpoint colors over the clipped
                     // span so the visible slice keeps the exact gradient.
                     let (f0, f1) = if dir == spec::GradDir::ToLeft as u32 || dir == spec::GradDir::ToRight as u32 {

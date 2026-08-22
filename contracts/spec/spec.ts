@@ -347,6 +347,8 @@ export const PROP = {
   bevelInnerLight: 79, // color u32 ABGR
   bevelInnerDark: 80, //  color u32 ABGR
   bevelWidth: 81, //      f32 px per ring (default 1)
+  gradVia: 82, //         color u32 ABGR (optional middle gradient stop)
+  gradViaPos: 83, //      f32 0..1; NAN = no middle stop
 
   // -- text (96..127) --------------------------------------------------------
   textColor: 96, //     color u32 ABGR
@@ -505,6 +507,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
   bevelOuterLight: VALUE_KIND.color, bevelOuterDark: VALUE_KIND.color,
   bevelInnerLight: VALUE_KIND.color, bevelInnerDark: VALUE_KIND.color,
   bevelWidth: VALUE_KIND.f32,
+  gradVia: VALUE_KIND.color, gradViaPos: VALUE_KIND.f32,
   textColor: VALUE_KIND.color, fontSlot: VALUE_KIND.int,
   textAlign: VALUE_KIND.int, lineHeight: VALUE_KIND.f32, tracking: VALUE_KIND.f32,
   translateX: VALUE_KIND.f32, translateY: VALUE_KIND.f32,

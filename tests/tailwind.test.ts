@@ -124,11 +124,13 @@ describe("flex", () => {
 describe("visual", () => {
   test("bg + gradient + border + shadow + opacity + rounded", () => {
     const m = props(
-      parseClassLiteral("bg-slate-900 bg-gradient-to-b from-indigo-500 to-transparent border border-white shadow-md opacity-50 rounded-lg"),
+      parseClassLiteral("bg-slate-900 bg-gradient-to-b from-indigo-500 via-[#4263eb] to-transparent border border-white shadow-md opacity-50 rounded-lg"),
     );
     expect(m.get(PROP.bgColor)).toBe(abgr(0x0f, 0x17, 0x2a));
     expect(m.get(PROP.gradDir)).toBe(ENUMS.GradDir.ToBottom);
     expect(m.get(PROP.gradFrom)).toBe(abgr(0x63, 0x66, 0xf1));
+    expect(m.get(PROP.gradVia)).toBe(abgr(0x42, 0x63, 0xeb));
+    expect(f32Of(m, PROP.gradViaPos)).toBe(0.5);
     expect(m.get(PROP.gradTo)).toBe(0);
     expect(f32Of(m, PROP.borderWidth)).toBe(1);
     expect(m.get(PROP.borderColor)).toBe(abgr(255, 255, 255));

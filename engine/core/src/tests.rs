@@ -743,6 +743,49 @@ fn drawlist_clip_invariant_offscreen_rects() {
 }
 
 #[test]
+fn three_stop_gradient_splits_into_clipped_drawlist_segments() {
+    let mut ui = Ui::new();
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, 100.0);
+    ui.set_prop(n, spec::prop::HEIGHT, 20.0);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_T, 10.0);
+    ui.set_prop(n, spec::prop::INSET_L, -25.0);
+    ui.set_prop(n, spec::prop::GRAD_FROM, abgr(0, 0, 0, 255) as f64);
+    ui.set_prop(n, spec::prop::GRAD_VIA, abgr(100, 100, 100, 255) as f64);
+    ui.set_prop(n, spec::prop::GRAD_VIA_POS, 0.5);
+    ui.set_prop(n, spec::prop::GRAD_TO, abgr(200, 200, 200, 255) as f64);
+    ui.set_prop(n, spec::prop::GRAD_DIR, spec::GradDir::ToRight as u32 as f64);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    ui.tick();
+
+    let words = ui.draw().words.clone();
+    validate_drawlist(&words);
+    let mut segments = Vec::new();
+    let mut i = 0usize;
+    while i < words.len() {
+        match words[i] {
+            spec::draw_op::RECT => i += 4,
+            spec::draw_op::GRAD_RECT => {
+                let (x, _) = decode_xy(words[i + 1]);
+                let (w, _) = decode_wh(words[i + 2]);
+                segments.push((x, w, words[i + 3], words[i + 4], words[i + 5]));
+                i += 6;
+            }
+            spec::draw_op::TRI => i += 7,
+            spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
+            spec::draw_op::TEX_QUAD => i += 9,
+            spec::draw_op::SCISSOR => i += 3,
+            _ => i += 1,
+        }
+    }
+    assert_eq!(segments, vec![
+        (0, 25, abgr(50, 50, 50, 255), abgr(100, 100, 100, 255), spec::GradDir::ToRight as u32),
+        (25, 50, abgr(100, 100, 100, 255), abgr(200, 200, 200, 255), spec::GradDir::ToRight as u32),
+    ]);
+}
+
+#[test]
 fn rounded_boxes_emit_subpixel_edge_coverage() {
     let mut ui = Ui::new();
     let n = ui.create_node(0);
@@ -956,24 +999,52 @@ fn transparent_rounded_border_draws_an_outline_not_square_strips() {
 #[test]
 fn rounded_gradients_emit_rect_coverage_spans() {
     let mut ui = Ui::new();
+    let from = abgr(251, 191, 36, 255);
+    let via = abgr(255, 255, 255, 255);
     let n = ui.create_node(0);
     ui.set_prop(n, spec::prop::WIDTH, 120.0);
     ui.set_prop(n, spec::prop::HEIGHT, 12.0);
     ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
-    ui.set_prop(n, spec::prop::INSET_T, 20.0);
+    ui.set_prop(n, spec::prop::INSET_T, 20.5);
     ui.set_prop(n, spec::prop::INSET_L, 20.0);
     ui.set_prop(n, spec::prop::RADIUS, 6.0);
-    ui.set_prop(n, spec::prop::GRAD_FROM, abgr(251, 191, 36, 255) as f64);
+    ui.set_prop(n, spec::prop::GRAD_FROM, from as f64);
+    ui.set_prop(n, spec::prop::GRAD_VIA, via as f64);
+    ui.set_prop(n, spec::prop::GRAD_VIA_POS, 0.5);
     ui.set_prop(n, spec::prop::GRAD_TO, abgr(217, 119, 6, 255) as f64);
-    ui.set_prop(n, spec::prop::GRAD_DIR, spec::GradDir::ToRight as u32 as f64);
+    ui.set_prop(n, spec::prop::GRAD_DIR, spec::GradDir::ToBottom as u32 as f64);
     ui.insert_before(spec::ROOT_ID, n, 0);
     ui.tick();
-    let counts = validate_drawlist(&ui.draw().words.clone());
+    let words = ui.draw().words.clone();
+    let counts = validate_drawlist(&words);
     assert!(counts[spec::draw_op::RECT as usize] > 0);
     assert_eq!(
         counts[spec::draw_op::GRAD_RECT as usize], 0,
         "rounded gradients must not rely on 1px-high GRAD_RECT triangle strips"
     );
+    let (_, layout_y, _, layout_h) = ui.layout_of(n).unwrap();
+    let target_y = 26;
+    let gradient_fraction = (target_y as f32 + 0.5 - layout_y) / layout_h;
+    let expected = crate::anim::interp(from, via, gradient_fraction / 0.5, true);
+    let mut via_segment = false;
+    let mut i = 0usize;
+    while i < words.len() {
+        match words[i] {
+            spec::draw_op::RECT => {
+                let (x, y) = decode_xy(words[i + 1]);
+                let (w, h) = decode_wh(words[i + 2]);
+                via_segment |= x <= 80 && 80 < x + w && y <= target_y && target_y < y + h
+                    && words[i + 3] == expected;
+                i += 4;
+            }
+            spec::draw_op::TRI => i += 7,
+            spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
+            spec::draw_op::TEX_QUAD => i += 9,
+            spec::draw_op::SCISSOR => i += 3,
+            _ => i += 1,
+        }
+    }
+    assert!(via_segment, "the rounded span path must preserve the middle stop");
 }
 
 #[test]

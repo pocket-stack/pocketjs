@@ -317,7 +317,7 @@ widths):
 - **box**: `w-N|full|[px]`, `h-N|full|[px]`, `min/max-w/h-N`, `p*/m*-N`,
   `absolute|relative`, `inset/top/right/bottom/left-N`, `hidden`,
   `overflow-hidden` (scissor), `z-N`
-- **visual**: `bg-{palette}`, `bg-gradient-to-t|b|l|r` + `from-{c}`/`to-{c}`
+- **visual**: `bg-{palette}`, `bg-gradient-to-t|b|l|r` + `from-{c}`/optional `via-{c}`/`to-{c}`
   (per-vertex gouraud for square boxes; alpha-covered RECT spans for rounded
   boxes), `rounded|-sm|-md|-lg|-xl` (axis-aligned boxes get deterministic
   subpixel edge coverage; **`rounded-full` only on nodes whose w/h are

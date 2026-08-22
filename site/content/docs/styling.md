@@ -62,7 +62,7 @@ Utilities use Tailwind's default value scales.
 |---|---|
 | Layout | `flex`, `flex-row`, `flex-col`, `justify-center`, `items-start`, `gap-4`, `grow`, `shrink-0`, `flex-1`, `flex-wrap` |
 | Box | `w-12`, `h-full`, `min-w-4`, `max-h-40`, `p-2`, `px-4`, `mt-2`, `absolute`, `inset-0`, `hidden`, `overflow-hidden`, `z-10` |
-| Visual | `bg-blue-600`, `bg-gradient-to-b`, `from-slate-800`, `to-slate-950`, `rounded-md`, `opacity-50`, `shadow-lg`, `border`, `border-slate-700` |
+| Visual | `bg-blue-600`, `bg-gradient-to-b`, `from-slate-800`, `via-slate-900`, `to-slate-950`, `rounded-md`, `opacity-50`, `shadow-lg`, `border`, `border-slate-700` |
 | Text | `text-slate-50`, `text-xl`, `font-bold`, `text-center`, `leading-6`, `tracking-wide` |
 | Transform | `translate-x-2`, `scale-95`, `rotate-45`, `rotate-y-[35]`, `translate-z-[-40]`, `perspective-[800]` |
 | Arc | `arc-start-[45]`, `arc-sweep-[315]`, `arc-width-[5]` |

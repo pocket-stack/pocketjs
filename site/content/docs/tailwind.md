@@ -89,6 +89,7 @@ Colors are consumed through these prefixes:
 | `text-{color}` | text color | `text-emerald-400` |
 | `border-{color}` | border color (also sets a 1px border) | `border-slate-600` |
 | `from-{color}` | gradient start stop | `from-sky-500` |
+| `via-{color}` | optional 50% gradient stop | `via-blue-600` |
 | `to-{color}` | gradient end stop | `to-blue-700` |
 
 An unrecognized family or shade (e.g. `bg-slate-999`, `text-brand-500`) does not
@@ -142,6 +143,7 @@ or arbitrary px; `p-N` and `m-N` fan out to all four sides, `px`/`py` and
 | `bg-{color}` | background color |
 | `bg-gradient-to-t` \| `-b` \| `-l` \| `-r` | gradient direction (top / bottom / left / right) |
 | `from-{color}` | gradient start color |
+| `via-{color}` | optional middle color at 50% |
 | `to-{color}` | gradient end color |
 | `rounded` | 4px corner radius |
 | `rounded-sm` | 2px |
@@ -157,10 +159,11 @@ or arbitrary px; `p-N` and `m-N` fan out to all four sides, `px`/`py` and
 | `border-{color}` | border color **and** a 1px border |
 
 Gradients only run along the four cardinal directions (no diagonals). Set a
-direction with `bg-gradient-to-*` and the stops with `from-*` / `to-*`:
+direction with `bg-gradient-to-*` and the stops with `from-*`, optional
+`via-*`, and `to-*`:
 
 ```tsx
-<View class="bg-gradient-to-b from-sky-500 to-blue-700 w-full h-16" />
+<View class="bg-gradient-to-b from-sky-400 via-blue-600 to-blue-800 w-full h-16" />
 ```
 
 **Border width** is fixed at 1px. `border-2`, `border-4`, etc. do not exist —

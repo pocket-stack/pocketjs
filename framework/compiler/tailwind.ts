@@ -368,10 +368,13 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
       D.push([PROP.bgColor, c]);
       return true;
     }
-    case "from": case "to": {
+    case "from": case "via": case "to": {
       const c = colorValue(rest);
       if (c === null) return false;
-      D.push([head === "from" ? PROP.gradFrom : PROP.gradTo, c]);
+      if (head === "from") D.push([PROP.gradFrom, c]);
+      else if (head === "via") {
+        D.push([PROP.gradVia, c], [PROP.gradViaPos, px(0.5)]);
+      } else D.push([PROP.gradTo, c]);
       return true;
     }
     case "rounded": {
