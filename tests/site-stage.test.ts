@@ -227,6 +227,53 @@ test("every compatibility entry cites a receipt that resolves", () => {
 
   // Receipts, so they open in their own tab like the rest of the references.
   expect(readFileSync(ROOT + "site/assets/landing.js", "utf8")).toContain('[data-refs] a, .cgrid a');
+
+  // Keeping the hardware bootable is its own project, and the chapter says where.
+  expect(compat).toContain('<a class="olink" href="https://museum.pocketlab.build/"');
+});
+
+test("the Pocket Lab family is one click away from every page", () => {
+  const home = readFileSync(ROOT + "site/home.html", "utf8");
+  const templates = readFileSync(ROOT + "site/templates.ts", "utf8");
+  for (const source of [home, templates]) {
+    // Resources menu: the two sibling sites, in order.
+    expect(source).toMatch(
+      /<a href="https:\/\/pocketlab\.build">Lab<\/a>\s*\n\s*<a href="https:\/\/museum\.pocketlab\.build">Museum<\/a>/,
+    );
+    // Footer: the same pair in its own group rather than appended to a row of
+    // nine flat links.
+    expect(source).toMatch(
+      /<span class="fgrp"><span class="fdot" aria-hidden="true">·<\/span>\s*\n\s*<a href="https:\/\/pocketlab\.build">Pocket Lab<\/a>\s*\n\s*<a href="https:\/\/museum\.pocketlab\.build">Pocket Museum<\/a>/,
+    );
+    // Every divider opens a group instead of trailing one, so a wrapped footer
+    // never ends a line with a lone dot.
+    expect(source.match(/<span class="fdot"/g)).toHaveLength(2);
+    expect(source.match(/<span class="fgrp"><span class="fdot"/g)).toHaveLength(2);
+    expect(source.match(/<span class="fgrp">/g)).toHaveLength(3);
+    expect(source.match(/museum\.pocketlab\.build/g)?.length).toBeGreaterThanOrEqual(2);
+  }
+  const chromeCss = readFileSync(ROOT + "site/assets/chrome.css", "utf8");
+  expect(chromeCss).toContain(".foot .cols2 .fdot{");
+  expect(chromeCss).toContain(".foot .cols2 .fgrp{display:flex;");
+});
+
+test("the motion stage tells the reader which buttons change the study", () => {
+  const home = readFileSync(ROOT + "site/home.html", "utf8");
+  const hint = home.match(/<p class="stage-hint">([^<]+)<\/p>/);
+  expect(hint).not.toBeNull();
+  const line = hint![1];
+  // What the hint claims has to be what the guest app binds: left and right on
+  // the d-pad, or the two shoulders. Nothing else steps the studies.
+  const app = readFileSync(ROOT + "apps/motions/app.tsx", "utf8");
+  expect(app).toContain("onButtonPress(BTN.RIGHT | BTN.RTRIGGER");
+  expect(app).toContain("onButtonPress(BTN.LEFT | BTN.LTRIGGER");
+  expect(line).toContain("d-pad");
+  expect(line).toContain("L and R");
+  // It rides with the model: shown once the runtime is live, gone in the 2D
+  // fallback, where there is no model to press.
+  const landingCss = readFileSync(ROOT + "site/assets/landing.css", "utf8");
+  expect(landingCss).toContain(".pg-stage.is-ready .stage-hint{opacity:1}");
+  expect(landingCss).toContain(".pg-stage.has-error .stage-hint{display:none}");
 });
 
 test("the PSP stage looks straight at the screen", () => {

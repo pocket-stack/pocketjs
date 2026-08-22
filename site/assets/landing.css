@@ -444,4 +444,11 @@
 .motion-stage{margin:0;border:0;background:transparent;padding:0}
 .motion-stage .pg-stage__viewport{background:transparent;border:0}
 .motion-stage .pg-stage__status{justify-content:center}
+/* The status pill fades out once the runtime is live, so the control hint is its
+   own line under the model. It appears with the model and never in the 2D
+   fallback, where there are no buttons to press. */
+.stage-hint{margin:.55rem 0 0;font-family:var(--mono);font-size:.66rem;line-height:1.4;
+  color:var(--muted);text-align:center;opacity:0;transition:opacity .3s ease}
+.pg-stage.is-ready .stage-hint{opacity:1}
+.pg-stage.has-error .stage-hint{display:none}
 .spon-cta{margin-top:1.4rem;display:inline-flex;gap:.5rem;align-items:center}

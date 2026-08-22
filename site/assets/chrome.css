@@ -50,8 +50,14 @@
 /* footer */
 .foot{border-top:1px solid var(--line);padding:2.2rem 0 3rem;background:var(--bg-2)}
 .foot .wrap{display:flex;flex-wrap:wrap;gap:1.4rem;justify-content:space-between;align-items:center}
-.foot .cols2{display:flex;gap:1.8rem;flex-wrap:wrap;font-family:var(--mono);font-size:.72rem;color:var(--ink-2)}
+.foot .cols2{display:flex;gap:1.3rem;flex-wrap:wrap;font-family:var(--mono);font-size:.72rem;color:var(--ink-2)}
 .foot .cols2 a:hover{color:var(--ph)}
+/* The row carries three groups: this site, the Pocket Lab family, then the
+   accounts. A muted dot marks each boundary, so the footer stays one line of
+   links instead of growing headings. The dot is the first child of the group it
+   opens, so wrapping can never leave one stranded at the end of a line. */
+.foot .cols2 .fgrp{display:flex;gap:1.3rem;flex-wrap:wrap;align-items:baseline}
+.foot .cols2 .fdot{color:var(--muted);opacity:.6}
 
 
 /* the interactive 3D stage: one implementation for the playground and the homepage */

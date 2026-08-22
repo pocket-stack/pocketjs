@@ -23,6 +23,7 @@
         </button>
         <div class="menu-list">
           <a href="https://pocketlab.build">Lab</a>
+          <a href="https://museum.pocketlab.build">Museum</a>
           <a href="/playground/">Playground</a>
           <a href="/changelog/">Changelog</a>
         </div>
@@ -213,6 +214,7 @@
                   aria-label="The motion studies running on the PocketJS runtime"></canvas>
         </div>
         <figcaption class="pg-stage__status" data-stage-status><span class="pg-stage__status-dot"></span>Loading the motion studies</figcaption>
+        <p class="stage-hint">Press left or right on the d-pad, or the L and R shoulders, to switch studies.</p>
       </figure>
     </div>
   </div>
@@ -533,9 +535,11 @@
       <span class="vwrap"><span class="verb metal lit">Compatibility</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">run on the metal, not emulated</span>
     </div>
-    <p class="slede">The list below is not a roadmap. Each entry has booted the runtime on the real thing, and
-      <b>the fork between them is one native submission layer, never the application</b>. Every entry links to
-      the post or the pull request that brought it up.</p>
+    <p class="slede">Not a roadmap. Every entry below has booted the runtime on the real machine, and
+      <b>what changes between them is one native submission layer, never the application</b>. Each links to the
+      post or pull request that brought it up. Keeping the hardware bootable is its own work, so we started
+      <a class="olink" href="https://museum.pocketlab.build/" target="_blank" rel="noreferrer">Pocket Museum</a>
+      to repair these machines and keep them running.</p>
     <div class="cols" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
       <div class="cpanel">
         <span class="lb">operating systems</span>
@@ -685,14 +689,21 @@
       <span class="nm">PocketJS</span>
     </span>
     <nav class="cols2" aria-label="Footer">
-      <a href="/docs/overview/">Docs</a>
-      <a href="/playground/">Playground</a>
-      <a href="/blog/">Blog</a>
-      <a href="/changelog/">Changelog</a>
-      <a href="https://pocketlab.build">Pocket Lab</a>
-      <a href="https://github.com/pocket-stack/pocketjs" target="_blank" rel="noreferrer">GitHub</a>
-      <a href="https://x.com/pocket_js" target="_blank" rel="noreferrer">X</a>
-      <a href="https://discord.gg/cTce4eXzSK" target="_blank" rel="noreferrer">Discord</a>
+      <span class="fgrp">
+        <a href="/docs/overview/">Docs</a>
+        <a href="/playground/">Playground</a>
+        <a href="/blog/">Blog</a>
+        <a href="/changelog/">Changelog</a>
+      </span>
+      <span class="fgrp"><span class="fdot" aria-hidden="true">·</span>
+        <a href="https://pocketlab.build">Pocket Lab</a>
+        <a href="https://museum.pocketlab.build">Pocket Museum</a>
+      </span>
+      <span class="fgrp"><span class="fdot" aria-hidden="true">·</span>
+        <a href="https://github.com/pocket-stack/pocketjs" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="https://x.com/pocket_js" target="_blank" rel="noreferrer">X</a>
+        <a href="https://discord.gg/cTce4eXzSK" target="_blank" rel="noreferrer">Discord</a>
+      </span>
     </nav>
     <span class="hud">© 2026 PocketJS · MIT · a Pocket Lab project</span>
   </div>

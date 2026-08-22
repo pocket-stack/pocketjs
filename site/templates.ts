@@ -106,6 +106,7 @@ function header(active: string): string {
         </button>
         <div class="menu-list">
           <a href="https://pocketlab.build">Lab</a>
+          <a href="https://museum.pocketlab.build">Museum</a>
           <a href="/playground/">Playground</a>
           <a href="/changelog/">Changelog</a>
         </div>
@@ -122,14 +123,21 @@ const footer = `<footer class="foot">
   <div class="wrap">
     <span class="hud">© ${YEAR} PocketJS · MIT · a Pocket Lab project</span>
     <nav class="cols2" aria-label="Footer">
-      <a href="/docs/overview/">Docs</a>
-      <a href="/playground/">Playground</a>
-      <a href="/blog/">Blog</a>
-      <a href="/changelog/">Changelog</a>
-      <a href="https://pocketlab.build">Pocket Lab</a>
-      <a href="${GH}" target="_blank" rel="noreferrer">GitHub</a>
-      <a href="${X_URL}" target="_blank" rel="noreferrer">X</a>
-      <a href="${DISCORD}" target="_blank" rel="noreferrer">Discord</a>
+      <span class="fgrp">
+        <a href="/docs/overview/">Docs</a>
+        <a href="/playground/">Playground</a>
+        <a href="/blog/">Blog</a>
+        <a href="/changelog/">Changelog</a>
+      </span>
+      <span class="fgrp"><span class="fdot" aria-hidden="true">·</span>
+        <a href="https://pocketlab.build">Pocket Lab</a>
+        <a href="https://museum.pocketlab.build">Pocket Museum</a>
+      </span>
+      <span class="fgrp"><span class="fdot" aria-hidden="true">·</span>
+        <a href="${GH}" target="_blank" rel="noreferrer">GitHub</a>
+        <a href="${X_URL}" target="_blank" rel="noreferrer">X</a>
+        <a href="${DISCORD}" target="_blank" rel="noreferrer">Discord</a>
+      </span>
     </nav>
     <span class="hud">${SITE_FOOTER_DESC}</span>
   </div>
