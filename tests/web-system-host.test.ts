@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateSystemPlan } from "../hosts/web/system-engine.js";
+import { focusCanvas, validateSystemPlan } from "../hosts/web/system-engine.js";
 import { validateAndResolveSystemPlan } from "@pocketjs/framework/manifest";
 import systemInput from "./fixtures/systems/managed-desktop.json";
 
@@ -22,6 +22,16 @@ async function resolvedWebSystem() {
 }
 
 describe("browser Pocket System host", () => {
+  test("focusing the canvas cannot move a double-click onto another surface", () => {
+    let options: FocusOptions | undefined;
+    focusCanvas({
+      focus(next: FocusOptions) {
+        options = next;
+      },
+    });
+    expect(options).toEqual({ preventScroll: true });
+  });
+
   test("accepts a complete resolved web System plan", async () => {
     const plan = await resolvedWebSystem();
     expect(() => validateSystemPlan(plan)).not.toThrow();

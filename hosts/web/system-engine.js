@@ -66,6 +66,10 @@ function absolute(url, base = location.href) {
   return new URL(url, base).href;
 }
 
+export function focusCanvas(canvas) {
+  canvas.focus({ preventScroll: true });
+}
+
 export function validateSystemPlan(plan) {
   if (!plan || plan.target?.id !== "web-app" || plan.target?.hostAbi !== 4) {
     throw new Error("browser System host requires a web-app ABI 4 ResolvedSystemPlan");
@@ -329,7 +333,7 @@ export async function mountPocketSystem(canvas, options = {}) {
 
   const onPointerMove = (event) => sendMouse(event, primaryDown);
   const onPointerDown = (event) => {
-    canvas.focus();
+    focusCanvas(canvas);
     if (event.button === 0) primaryDown = true;
     if (event.button === 0 || event.button === 2) sendMouse(event, true, event.button === 2 ? 2 : 1);
     event.preventDefault();
