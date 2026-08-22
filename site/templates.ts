@@ -26,11 +26,20 @@ export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 // versions those URLs because iOS caches the home screen icon per URL and keeps
 // serving a page screenshot if the first fetch ever came up empty; bump it when
 // the drawing changes.
+//
+// Two of these entries exist for Safari specifically. The sizes-less
+// apple-touch-icon is the form Apple documents, at the root name Safari looks
+// for on its own, with no query on it: bookmarks and the Favorites grid read
+// that path rather than the sized ladder the home screen picks from. And Safari
+// could not render an SVG favicon until version 26, so a large PNG favicon has
+// to be declared as well or every Safari before that has only the 96 to scale.
 const ICON_V = "2";
 export const ICON_LINKS = [
   '<link rel="icon" href="/favicon.svg" type="image/svg+xml">',
   '<link rel="icon" href="/favicon.ico" sizes="48x48">',
   '<link rel="icon" href="/favicon-96.png" type="image/png" sizes="96x96">',
+  '<link rel="icon" href="/icon-192.png" type="image/png" sizes="192x192">',
+  '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
   `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=${ICON_V}">`,
   `<link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167.png?v=${ICON_V}">`,
   `<link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152.png?v=${ICON_V}">`,

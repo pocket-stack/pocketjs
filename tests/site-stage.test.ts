@@ -401,6 +401,17 @@ test("the icon family is rendered from one drawing and linked from every head", 
   expect(ICON_LINKS).toContain("?v=");
   expect(ICON_LINKS).toContain('name="apple-mobile-web-app-title"');
 
+  // Safari's bookmarks and Favorites grid read the plain root name, so that one
+  // link carries neither a size nor a query.
+  expect(ICON_LINKS).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png">');
+  // Safari could not render an SVG favicon before version 26, so the raster
+  // favicons have to reach a size a Favorites tile can use.
+  const pngFavicons = [...ICON_LINKS.matchAll(/rel="icon" href="\/([^"]+\.png)" type="image\/png" sizes="(\d+)x/g)];
+  expect(Math.max(...pngFavicons.map((m) => Number(m[2])))).toBeGreaterThanOrEqual(192);
+  for (const [, file, size] of pngFavicons) {
+    expect(ihdr(file)).toEqual([Number(size), Number(size)]);
+  }
+
   // favicon.ico carries 16, 32 and 48 as PNG payloads in one container
   const ico = readFileSync(ROOT + "site/assets/favicon.ico");
   expect(ico.readUInt16LE(0)).toBe(0);
