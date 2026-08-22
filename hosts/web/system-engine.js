@@ -264,10 +264,15 @@ export async function mountPocketSystem(canvas, options = {}) {
       if (visible.has(fact.handle)) {
         const pixels = child.api.render();
         const [width, height] = child.api.viewport;
-        shell.uploadSurface(fact.handle, pixels, width, height);
+        const texture = shell.uploadSurface(fact.handle, pixels, width, height);
+        if (texture < 0) {
+          throw new Error(`failed to upload compositor surface ${fact.handle}`);
+        }
         if (!child.composited) {
           child.composited = true;
-          log(`composited AppInstance ${child.entry.package}`);
+          log(
+            `composited AppInstance ${child.entry.package} (${width}x${height} into ${fact.full[2]}x${fact.full[3]})`,
+          );
         }
       }
     }
