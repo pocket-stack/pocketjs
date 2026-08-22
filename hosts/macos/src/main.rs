@@ -869,16 +869,16 @@ impl AppSupervisor {
             if !instance.visible || instance.state == AppInstanceState::Failed {
                 continue;
             }
-            let child = instance.surface.with_ui(|ui| fnv1a64(&ui.draw().words));
-            for byte in instance
-                .surface_handle
-                .to_le_bytes()
-                .into_iter()
-                .chain(child.to_le_bytes())
-            {
-                hash ^= byte as u64;
-                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-            }
+            instance.surface.with_ui(|ui| {
+                let draw_hash = fnv1a64(&ui.draw().words);
+                let raster_revision = ui.raster_revision();
+                mix_app_instance_repaint_hash(
+                    &mut hash,
+                    instance.surface_handle,
+                    draw_hash,
+                    raster_revision,
+                );
+            });
         }
         hash
     }
@@ -1607,6 +1607,23 @@ fn fnv1a64(words: &[u32]) -> u64 {
     h
 }
 
+fn mix_app_instance_repaint_hash(
+    hash: &mut u64,
+    surface_handle: u32,
+    draw_hash: u64,
+    raster_revision: u64,
+) {
+    for byte in surface_handle
+        .to_le_bytes()
+        .into_iter()
+        .chain(draw_hash.to_le_bytes())
+        .chain(raster_revision.to_le_bytes())
+    {
+        *hash ^= byte as u64;
+        *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // IME (EntityInputHandler): composition forwards over svc exactly like
 // note-widget's winit path — preedit as {t:"ime"}, commits as {t:"ch"},
@@ -1933,6 +1950,35 @@ mod tests {
             settings.with(|ctx| ctx.globals().get("realmProbeWasAbsent").unwrap());
         assert_eq!(hero_probe, 41);
         assert!(settings_absent);
+    }
+
+    #[test]
+    fn app_instance_repaint_hash_includes_raster_revision() {
+        let surface = UiSurface::new((16.0, 16.0));
+        let texture = surface.with_ui(|ui| {
+            ui.upload_texture(
+                &[0xff, 0xff, 0xff, 0xff],
+                1,
+                1,
+                pocketjs_core::spec::psm::PSM_8888,
+            )
+        });
+        assert!(texture >= 0);
+
+        let (words_before, revision_before) =
+            surface.with_ui(|ui| (ui.draw().words.clone(), ui.raster_revision()));
+        let mut hash_before = 0xcbf2_9ce4_8422_2325u64;
+        mix_app_instance_repaint_hash(&mut hash_before, 7, fnv1a64(&words_before), revision_before);
+
+        surface.with_ui(|ui| ui.free_texture(texture));
+        let (words_after, revision_after) =
+            surface.with_ui(|ui| (ui.draw().words.clone(), ui.raster_revision()));
+        let mut hash_after = 0xcbf2_9ce4_8422_2325u64;
+        mix_app_instance_repaint_hash(&mut hash_after, 7, fnv1a64(&words_after), revision_after);
+
+        assert_eq!(words_after, words_before);
+        assert_ne!(revision_after, revision_before);
+        assert_ne!(hash_after, hash_before);
     }
 
     #[test]
