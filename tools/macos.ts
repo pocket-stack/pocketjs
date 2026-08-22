@@ -9,9 +9,10 @@
 //                                    # typing, autosave round-trips, quits
 //   bun run macos desk98 --build-only # shell + all Pocket app realms + host
 //
-// Everything host-facing derives from the platform contract: the manifest
-// resolves against POCKET_TARGETS["macos-app"], and the plan's viewport,
-// density and features become host flags (--fixed, --native-text, --editor).
+// Everything host-facing derives from resolved contracts. An ordinary app
+// becomes one ResolvedBuildPlan. A directory with pocket.environment.json
+// becomes one ResolvedEnvironmentPlan containing complete installed-package
+// plans; the host receives that file without child-plan field projection.
 // The windowed run stays attached to your terminal — ⌘Q quits. On exit the
 // host prints its governor receipt: "pocket-macos: N ticks, M frames
 // rendered" — a settled app should show M ≪ N.
@@ -19,7 +20,12 @@ import { existsSync, mkdirSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { $ } from "bun";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
-import { POCKET_APPS } from "../apps/desk98/pocket-apps.ts";
+import {
+  validateAndResolveEnvironmentPlan,
+  validatePocketEnvironment,
+  type ResolvedEnvironmentPlan,
+} from "../framework/src/manifest/environment.ts";
+import type { ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
 
 const root = new URL("..", import.meta.url).pathname;
 // The host and the gpui backend are git-only crates (npm files map ships
@@ -42,70 +48,83 @@ const manifestPath = `${root}apps/${appDir}/pocket.json`;
 if (!existsSync(manifestPath)) {
   throw new Error(`pocket-macos: no manifest at apps/${appDir}/pocket.json`);
 }
-const manifest = await Bun.file(manifestPath).json();
-const resolution = validateAndResolveBuildPlan(manifest, {
-  target: "macos-app",
-});
-if (!resolution.ok) {
-  throw new Error(
-    `pocket-macos: ${appDir} did not resolve against macos-app: ${resolution.diagnostics
-      .map((d) => `${d.path || "/"}: ${d.message}`)
-      .join("; ")}`,
+const environmentPath = `${root}apps/${appDir}/pocket.environment.json`;
+let environmentPlan: ResolvedEnvironmentPlan | undefined;
+let plan: ResolvedBuildPlan;
+
+if (existsSync(environmentPath)) {
+  const rawEnvironment = await Bun.file(environmentPath).json();
+  const environment = validatePocketEnvironment(rawEnvironment);
+  if (!environment.ok) {
+    throw new Error(
+      `pocket-macos: invalid Environment at apps/${appDir}/pocket.environment.json: ` +
+        environment.diagnostics
+          .map((d) => `${d.path || "/"}: ${d.message}`)
+          .join("; "),
+    );
+  }
+  const packages = await Promise.all(
+    environment.value.applications.packages.map(async (entry) => ({
+      source: entry.manifest,
+      manifest: await Bun.file(`${root}${entry.manifest}`).json(),
+    })),
   );
+  const resolution = validateAndResolveEnvironmentPlan(rawEnvironment, {
+    target: "macos-app",
+    packages,
+  });
+  if (!resolution.ok) {
+    throw new Error(
+      `pocket-macos: ${environment.value.title} did not resolve against macos-app: ` +
+        resolution.diagnostics
+          .map((d) => `${d.path || "/"}: ${d.message}`)
+          .join("; "),
+    );
+  }
+  environmentPlan = resolution.plan;
+  const shell = environmentPlan.supervisor.packages.find(
+    (entry) => entry.package === environmentPlan!.supervisor.shell,
+  );
+  if (!shell) throw new Error("pocket-macos: resolved Environment has no shell package");
+  plan = shell.plan;
+} else {
+  const manifest = await Bun.file(manifestPath).json();
+  const resolution = validateAndResolveBuildPlan(manifest, {
+    target: "macos-app",
+  });
+  if (!resolution.ok) {
+    throw new Error(
+      `pocket-macos: ${appDir} did not resolve against macos-app: ${resolution.diagnostics
+        .map((d) => `${d.path || "/"}: ${d.message}`)
+        .join("; ")}`,
+    );
+  }
+  plan = resolution.plan;
 }
-const plan = resolution.plan;
+
 const planPath = `${root}.pocket/macos-app/${plan.app.output}.plan.json`;
 mkdirSync(resolvePath(planPath, ".."), { recursive: true });
-await Bun.write(planPath, JSON.stringify(plan, null, 2) + "\n");
-
-// Desk98 is a shell plus a fixed catalog of independent guest bundles. Build
-// every catalog plan against the same macos-app contract before the shell;
-// the host creates a QuickJS runtime/context only when its icon is opened.
-const pocketAppPlans: Array<typeof plan> = [];
-if (appDir === "desk98") {
-  for (const app of POCKET_APPS) {
-    const childManifest = await Bun.file(
-      `${root}apps/${app.dir}/pocket.json`,
-    ).json();
-    const childResolution = validateAndResolveBuildPlan(childManifest, {
-      target: "macos-app",
-    });
-    if (!childResolution.ok) {
-      throw new Error(
-        `pocket-macos: Desk98 app ${app.dir} did not resolve against macos-app: ${childResolution.diagnostics
-          .map((d) => `${d.path || "/"}: ${d.message}`)
-          .join("; ")}`,
-      );
-    }
-    const child = childResolution.plan;
-    if (
-      child.app.output !== app.output ||
-      child.viewport.logical[0] !== app.viewport[0] ||
-      child.viewport.logical[1] !== app.viewport[1]
-    ) {
-      throw new Error(
-        `pocket-macos: Desk98 catalog drift for ${app.dir}: expected ${app.output} ` +
-          `${app.viewport[0]}x${app.viewport[1]}, plan has ${child.app.output} ` +
-          `${child.viewport.logical[0]}x${child.viewport.logical[1]}`,
-      );
-    }
-    const childPlanPath = `${root}.pocket/macos-app/${child.app.output}.plan.json`;
-    await Bun.write(childPlanPath, JSON.stringify(child, null, 2) + "\n");
-    await $`bun tools/build.ts --plan=${childPlanPath} --project-root=${root}`.cwd(
-      root,
-    );
-    pocketAppPlans.push(child);
-  }
+const installedPlans = environmentPlan
+  ? environmentPlan.supervisor.packages.map((entry) => entry.plan)
+  : [plan];
+for (const packagePlan of installedPlans) {
+  const packagePlanPath = `${root}.pocket/macos-app/${packagePlan.app.output}.plan.json`;
+  await Bun.write(packagePlanPath, JSON.stringify(packagePlan, null, 2) + "\n");
+  await $`bun tools/build.ts --plan=${packagePlanPath} --project-root=${root}`.cwd(root);
 }
 
-await $`bun tools/build.ts --plan=${planPath} --project-root=${root}`.cwd(root);
+let environmentPlanPath: string | undefined;
+if (environmentPlan) {
+  environmentPlanPath = `${root}.pocket/macos-app/${environmentPlan.environment.name}.environment.plan.json`;
+  await Bun.write(environmentPlanPath, JSON.stringify(environmentPlan, null, 2) + "\n");
+}
 await $`cargo build --release`.cwd(`${root}hosts/macos`);
 
 if (buildOnly) {
   console.log(
     `pocket-macos: built ${plan.app.output}` +
-      (pocketAppPlans.length > 0
-        ? ` + ${pocketAppPlans.length} isolated Desk98 apps`
+      (environmentPlan
+        ? ` + ${environmentPlan.supervisor.packages.length - 1} supervised packages`
         : "") +
       " + release host",
   );
@@ -126,28 +145,24 @@ const env = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? "info" };
 //                  when the app declares the "note" companion
 const fixed = plan.viewport.policy === "fixed";
 const editor = plan.companions.includes("note");
-const flags: string[] = [
-  "--app",
-  plan.app.output,
-  "--title",
-  plan.app.title,
-  "--viewport",
-  `${plan.viewport.logical[0]}x${plan.viewport.logical[1]}`,
-  "--density",
-  String(plan.viewport.rasterDensity),
-];
-if (fixed) flags.push("--fixed");
-if (plan.features["text.layout.native"]) flags.push("--native-text");
-if (plan.companions.length > 0)
-  flags.push("--companions", plan.companions.join(","));
-if (editor) flags.push("--editor");
-for (const child of pocketAppPlans) {
-  flags.push(
-    "--pocket-app",
-    `${child.app.output}:${child.viewport.logical[0]}x${child.viewport.logical[1]}:` +
-      `${child.viewport.rasterDensity}:${child.app.title}`,
-  );
-}
+const flags: string[] = environmentPlanPath
+  ? ["--environment-plan", environmentPlanPath]
+  : [
+      "--app",
+      plan.app.output,
+      "--title",
+      plan.app.title,
+      "--viewport",
+      `${plan.viewport.logical[0]}x${plan.viewport.logical[1]}`,
+      "--density",
+      String(plan.viewport.rasterDensity),
+      ...(fixed ? ["--fixed"] : []),
+      ...(plan.features["text.layout.native"] ? ["--native-text"] : []),
+      ...(plan.companions.length > 0
+        ? ["--companions", plan.companions.join(",")]
+        : []),
+      ...(editor ? ["--editor"] : []),
+    ];
 
 if (proof && !editor) {
   console.error(

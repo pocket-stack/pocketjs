@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  generatePocketEnvironmentV1Schema,
+  POCKET_ENVIRONMENT_SCHEMA_ID,
+} from "../contracts/spec/pocket-environment.ts";
+import {
   generatePocketManifestV2Schema,
   POCKET_MANIFEST_SCHEMA_ID,
   type PocketManifestV2,
@@ -22,6 +26,7 @@ import {
   validatePlatformContractRegistry,
 } from "../framework/src/manifest/resolve.ts";
 import { validatePocketManifest } from "../framework/src/manifest/validate.ts";
+import { validatePocketEnvironment } from "../framework/src/manifest/environment.ts";
 
 const fixtureUrl = (name: string) => new URL(`./fixtures/manifests/${name}.json`, import.meta.url);
 const portableInput: unknown = await Bun.file(fixtureUrl("portable-psp")).json();
@@ -139,6 +144,25 @@ describe("pocket.json v2 schema", () => {
   });
 });
 
+describe("Pocket Environment v1 schema", () => {
+  test("uses the deployed schema path and matches the committed JSON Schema", async () => {
+    expect(POCKET_ENVIRONMENT_SCHEMA_ID).toBe(
+      "https://pocketjs.dev/schema/pocket-environment-1.json",
+    );
+    const committed = await Bun.file(
+      new URL("../contracts/schema/pocket-environment-1.json", import.meta.url),
+    ).text();
+    expect(committed).toBe(generatePocketEnvironmentV1Schema());
+  });
+
+  test("validates the Pocket Desktop installation model", async () => {
+    const environment = await Bun.file(
+      new URL("../apps/desk98/pocket.environment.json", import.meta.url),
+    ).json();
+    expect(validatePocketEnvironment(environment).ok).toBe(true);
+  });
+});
+
 describe("platform registry", () => {
   test("production advertises only the truthful stock-host profiles", () => {
     expect(Object.keys(POCKET_TARGETS)).toEqual([
@@ -200,15 +224,16 @@ describe("platform registry", () => {
       max: [4096, 4096],
     });
     // The gpui app frame: same desktop wire generation as the widget shell
-    // (hostAbi 3), a general window that ALSO hosts fixed-viewport apps
+    // (hostAbi 4 adds compositor surfaces), a general window that ALSO hosts fixed-viewport apps
     // (acceptsFixed), and host text layout instead of runtime glyph baking.
     // Deliberately NARROW: only host-generic behavior registers — pointer/
     // text/IME/clipboard reach the note via its companion svc adapter and
     // are not target capabilities here (the platforms.ts header rule).
-    expect(POCKET_TARGETS["macos-app"].hostAbi).toBe(3);
+    expect(POCKET_TARGETS["macos-app"].hostAbi).toBe(4);
     expect(POCKET_TARGETS["macos-app"].form).toBe("window");
     expect(POCKET_TARGETS["macos-app"].capabilities).toEqual([
       "input.buttons",
+      "runtime.supervisor",
       "display.viewport.live",
       "text.glyphs.baked",
       "text.layout.native",
@@ -249,6 +274,26 @@ describe("platform registry", () => {
       message: "widget-form targets must declare display.dynamicViewport",
     });
   });
+
+  test("pins runtime supervisor profiles to their public capability", () => {
+    const missingCapability = structuredClone(POCKET_PLATFORM_CONTRACTS) as any;
+    missingCapability.targets["macos-app"].capabilities = missingCapability.targets[
+      "macos-app"
+    ].capabilities.filter((capability: string) => capability !== "runtime.supervisor");
+    expect(validatePlatformContractRegistry(missingCapability)).toContainEqual({
+      code: "registry.supervisorCapabilityMissing",
+      path: "/targets/macos-app/capabilities",
+      message: "a target with runtime.supervisor profile must advertise runtime.supervisor",
+    });
+
+    const missingProfile = structuredClone(POCKET_PLATFORM_CONTRACTS) as any;
+    delete missingProfile.targets["macos-app"].runtime;
+    expect(validatePlatformContractRegistry(missingProfile)).toContainEqual({
+      code: "registry.supervisorProfileMissing",
+      path: "/targets/macos-app/runtime",
+      message: "runtime.supervisor capability requires a runtime supervisor profile",
+    });
+  });
 });
 
 describe("semantic resolution", () => {
@@ -263,7 +308,7 @@ describe("semantic resolution", () => {
     if (!onApp.ok) return;
     expect(onApp.plan.features["text.layout.native"]).toBe(true);
     expect(onApp.plan.features["text.glyphs.runtime"]).toBe(false);
-    expect(onApp.plan.target.hostAbi).toBe(3);
+    expect(onApp.plan.target.hostAbi).toBe(4);
 
     const onWidget = validateAndResolveBuildPlan(note, { target: "macos-widget" });
     expect(onWidget.ok).toBe(true);
@@ -405,7 +450,7 @@ describe("semantic resolution", () => {
       cards: [true, true, false, true],
       chrome: [true, true, false, true],
       cursor: [true, true, false, true],
-      desk98: [false, false, true, true], // dynamic-only desktop compositor; the desk companion is macos-app's
+      desk98: [false, false, false, true], // Environment shell requires macos-app's native RuntimeSupervisor
       gallery: [true, true, false, true],
       hero: [true, true, true, true],
       "hero-vue-sfc": [true, true, false, true],

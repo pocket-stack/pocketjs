@@ -123,12 +123,11 @@ pub struct GpuiRenderer {
     shaped_used: HashSet<u64>,
 }
 
-/// Optional TEX_QUAD replacement used by compositor hosts. `full` is the
-/// image node's unclipped logical bounds reconstructed from its UV window;
-/// `clip` is the DrawList-visible destination. Returning true means the host
-/// painted that marker and normal texture sampling must be skipped.
-pub type PortalPainter<'a> =
-    dyn FnMut(u32, Bounds<Pixels>, Bounds<Pixels>, &mut Window, &mut App) -> bool + 'a;
+/// Native SURFACE_QUAD painter. `full` is the shell node's unclipped bounds,
+/// `clip` is its visible destination, and `focused` is the shell focus fact.
+/// This path is independent of image textures and preserves DrawList order.
+pub type CompositorPainter<'a> =
+    dyn FnMut(u32, Bounds<Pixels>, Bounds<Pixels>, bool, &mut Window, &mut App) + 'a;
 
 impl GpuiRenderer {
     pub fn new(cfg: TextConfig, raster_scale: u32) -> GpuiRenderer {
@@ -158,21 +157,19 @@ impl GpuiRenderer {
     /// window coordinates, logical px — gpui applies the display scale).
     pub fn paint(&mut self, ui: &Ui, origin: Point<Pixels>, window: &mut Window, cx: &mut App) {
         let mut none =
-            |_: u32, _: Bounds<Pixels>, _: Bounds<Pixels>, _: &mut Window, _: &mut App| false;
-        self.paint_with_portals(ui, origin, window, cx, &mut none);
+            |_: u32, _: Bounds<Pixels>, _: Bounds<Pixels>, _: bool, _: &mut Window, _: &mut App| {};
+        self.paint_with_compositor(ui, origin, window, cx, &mut none);
     }
 
-    /// Replay a DrawList while allowing the host to replace selected image
-    /// markers with other surfaces. The child paint runs at the marker's
-    /// exact place in painter order, so shell z-order and scissors remain the
-    /// only window-composition authority.
-    pub fn paint_with_portals(
+    /// Replay a DrawList and delegate explicit SURFACE_QUAD instructions to
+    /// the native compositor at their exact place in painter order.
+    pub fn paint_with_compositor(
         &mut self,
         ui: &Ui,
         origin: Point<Pixels>,
         window: &mut Window,
         cx: &mut App,
-        portals: &mut PortalPainter<'_>,
+        compositor: &mut CompositorPainter<'_>,
     ) {
         // Runtime atlas growth (loadFontAtlas reload) invalidates that
         // slot's glyph cells — same trigger the wgpu backend re-uploads on.
@@ -187,7 +184,7 @@ impl GpuiRenderer {
         self.shaped_used.clear();
         let words = &ui.current_draw_list().words;
         let mut i = 0usize;
-        self.walk(ui, words, &mut i, origin, window, cx, portals);
+        self.walk(ui, words, &mut i, origin, window, cx, compositor);
         let used = std::mem::take(&mut self.rasters_used);
         self.rasters.retain(|h, _| used.contains(h));
         self.rasters_used = used;
@@ -206,7 +203,7 @@ impl GpuiRenderer {
         origin: Point<Pixels>,
         window: &mut Window,
         cx: &mut App,
-        portals: &mut PortalPainter<'_>,
+        compositor: &mut CompositorPainter<'_>,
     ) {
         while *i < words.len() {
             match words[*i] {
@@ -266,7 +263,34 @@ impl GpuiRenderer {
                     *i += 3 + 2 * n;
                 }
                 spec::draw_op::TEX_QUAD => {
-                    self.paint_tex_quad(ui, &words[*i + 1..*i + 9], origin, window, cx, portals);
+                    self.paint_tex_quad(ui, &words[*i + 1..*i + 9], origin, window);
+                    *i += 9;
+                }
+                spec::draw_op::SURFACE_QUAD => {
+                    let full = Bounds::new(
+                        point(
+                            px(f32::from_bits(words[*i + 2])) + origin.x,
+                            px(f32::from_bits(words[*i + 3])) + origin.y,
+                        ),
+                        size(
+                            px(f32::from_bits(words[*i + 4])),
+                            px(f32::from_bits(words[*i + 5])),
+                        ),
+                    );
+                    let (x, y) = decode_xy(words[*i + 6]);
+                    let (w, h) = decode_wh(words[*i + 7]);
+                    let clip = Bounds::new(
+                        point(px(x) + origin.x, px(y) + origin.y),
+                        size(px(w), px(h)),
+                    );
+                    compositor(
+                        words[*i + 1],
+                        full,
+                        clip,
+                        words[*i + 8] & 1 != 0,
+                        window,
+                        cx,
+                    );
                     *i += 9;
                 }
                 spec::draw_op::SCISSOR => {
@@ -282,7 +306,7 @@ impl GpuiRenderer {
                     // with_content_mask intersects with the enclosing mask,
                     // matching the core's already-intersected scissor rects.
                     window.with_content_mask(Some(mask), |window| {
-                        self.walk(ui, words, i, origin, window, cx, portals)
+                        self.walk(ui, words, i, origin, window, cx, compositor)
                     });
                 }
                 spec::draw_op::SCISSOR_POP => {
@@ -478,8 +502,6 @@ impl GpuiRenderer {
         words: &[u32],
         origin: Point<Pixels>,
         window: &mut Window,
-        cx: &mut App,
-        portals: &mut PortalPainter<'_>,
     ) {
         let handle = words[0];
         let (x, y) = decode_xy(words[1]);
@@ -492,9 +514,6 @@ impl GpuiRenderer {
             size(px(w), px(h)),
         );
         let (du, dv) = (u1 - u0, v1 - v0);
-        // DrawList clipping re-interpolates UVs. Recover the original node
-        // bounds so a portal realm keeps coordinate (0,0) even when its desk
-        // window is partly off-screen or under an enclosing scissor.
         let full = if du > 0.0 && dv > 0.0 {
             let full_w = w / du;
             let full_h = h / dv;
@@ -508,9 +527,6 @@ impl GpuiRenderer {
         } else {
             dst
         };
-        if portals(handle, full, dst, window, cx) {
-            return;
-        }
         let Some((image, _)) = self.texture_image(ui, handle, tint) else {
             return;
         };

@@ -9,7 +9,8 @@
     "capabilities": {
       "requires": [
         "text.glyphs.baked",
-        "input.buttons"
+        "input.buttons",
+        "runtime.supervisor"
       ],
       "enhances": [
         "input.text",

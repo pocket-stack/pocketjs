@@ -32,7 +32,11 @@ let ops: {
 beforeAll(async () => {
   ensureBuilt(WASM_PATH, [process.execPath, "tools/wasm.ts"]);
   const wasm = await createWasmUi(await Bun.file(WASM_PATH).arrayBuffer());
-  ops = wasm.ops;
+  ops = {
+    loadFontAtlas: wasm.ops.loadFontAtlas!,
+    measureText: wasm.ops.measureText!,
+    wrapText: wasm.ops.wrapText,
+  };
   const atlas = await Bun.file(join(ROOT, "apps/desk98/fonts/w95fa-19.bin")).arrayBuffer();
   ops.loadFontAtlas(new Uint8Array(atlas));
 });

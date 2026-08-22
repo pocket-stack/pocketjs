@@ -48,6 +48,7 @@ pub enum NodeType {
     View = 0,
     Text = 1,
     Image = 2,
+    Surface = 3,
 }
 
 /// UI op codes (the engine/wasm/FFI ABI identity of each `ui.*` op; 0 reserved).
@@ -96,6 +97,7 @@ pub mod op {
     pub const APP_SHOT: u8 = 41;
     pub const HIT_TEST_BOUNDS: u8 = 42;
     pub const WRAP_TEXT: u8 = 43;
+    pub const SET_COMPOSITOR_SURFACE: u8 = 44;
 }
 
 /// Property ids (u8, stable, append-only). Groups:
@@ -421,7 +423,8 @@ pub mod font_atlas {
 
 /// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).
 /// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,
-/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7.
+/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12,
+/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9.
 pub mod draw_op {
     pub const RECT: u32 = 1;
     pub const GRAD_RECT: u32 = 2;
@@ -432,6 +435,7 @@ pub mod draw_op {
     pub const TRI: u32 = 7;
     pub const TEX_TRI: u32 = 8;
     pub const TEXT_RUN: u32 = 9;
+    pub const SURFACE_QUAD: u32 = 10;
 }
 
 /// .pak container constants (byte-compatible with dreamcart's format;

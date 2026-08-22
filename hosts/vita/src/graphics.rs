@@ -750,6 +750,9 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                 }
                 i += 1;
             }
+            spec::draw_op::SURFACE_QUAD if i + 9 <= words.len() => {
+                i += 9;
+            }
             _ => break,
         }
     }
@@ -802,6 +805,7 @@ fn validate_texture_residency(ui: &Ui, words: &[u32]) -> io::Result<()> {
             }
             spec::draw_op::SCISSOR => i.checked_add(3),
             spec::draw_op::SCISSOR_POP => i.checked_add(1),
+            spec::draw_op::SURFACE_QUAD => i.checked_add(9),
             op => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,

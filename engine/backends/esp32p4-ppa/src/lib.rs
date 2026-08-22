@@ -608,6 +608,11 @@ impl Renderer {
                     }
                     i += 12;
                 }
+                spec::draw_op::SURFACE_QUAD if i + 9 <= words.len() => {
+                    // No RuntimeSupervisor on the PPA target; preserve the
+                    // shell fallback and keep decoding later shell ops.
+                    i += 9;
+                }
                 _ => return None,
             }
         }

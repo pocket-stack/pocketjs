@@ -29,7 +29,18 @@ import {
 } from "./renderer.ts";
 import { setDebugName } from "./native-tree.ts";
 
-export { View, Text, Image, Sprite, type ViewProps, type TextProps, type ImageProps, type SpriteProps } from "./primitives.ts";
+export {
+  View,
+  Text,
+  Image,
+  Sprite,
+  CompositorSurface,
+  type ViewProps,
+  type TextProps,
+  type ImageProps,
+  type SpriteProps,
+  type CompositorSurfaceProps,
+} from "./primitives.ts";
 export {
   DeepZoom,
   type DeepZoomGesture,

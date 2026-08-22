@@ -429,6 +429,7 @@ impl<'a> DamageDecoder<'a> {
                 let bytes = *self.words.get(start + 7).ok_or(())? as usize;
                 8usize.checked_add(bytes.div_ceil(4)).ok_or(())?
             }
+            spec::draw_op::SURFACE_QUAD => 9,
             _ => return Err(()),
         };
         let end = start.checked_add(len).ok_or(())?;
@@ -464,6 +465,7 @@ impl<'a> DamageDecoder<'a> {
             // measure; the core keeps every partially-clipped run inside a
             // scissor, so the current clip is a sound (conservative) bound.
             spec::draw_op::TEXT_RUN => self.clip,
+            spec::draw_op::SURFACE_QUAD => logical_rect(words[6], words[7]).intersect(self.clip),
             _ => return Err(()),
         };
         Ok(Some(DecodedOp {

@@ -23,7 +23,7 @@
 //!   forwarded as lines, guest intents (save/quit/copy/caret) handled here.
 //!   An app protocol, not a capability: the live-viewport hook and button
 //!   map work for every app regardless of this flag.
-//! - desk — the DESK COMPANION adapter (apps/desk98/svc.ts): the same
+//! - environment shell — an extended companion adapter: the same
 //!   input-line dialect as the editor, extended with right-button mouse
 //!   lines (b:2), alt/ctl key modifiers, F1–F12, cmd-flagged ⌘ chords
 //!   (except ⌘Q = host quit and ⌘V = host-side paste), a boot epoch in the
@@ -31,14 +31,17 @@
 //!   sets the window's pointer shape, and a {t:"paste-req"} guest intent
 //!   answered with a paste line (menu-driven Paste). Wired when the plan's
 //!   companion list names "desk"; the note dialect stays byte-compatible
-//!   (extra fields ignored). Desk98 may also open catalog apps as independent
-//!   `Guest` + `UiSurface` pairs. Every pair owns a separate QuickJS Runtime
-//!   and Context but all pairs tick and paint on this one process/thread.
+//!   (extra fields ignored). A resolved Environment may also bind installed
+//!   packages as compositor surfaces. RuntimeSupervisor owns every independent
+//!   `Guest` + `UiSurface` pair and schedules them on this one process/thread.
 
 use std::cell::{Cell, RefCell};
+use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow};
@@ -47,14 +50,16 @@ use gpui::{
     Entity, EntityInputHandler, FocusHandle, Focusable, InteractiveElement, IntoElement,
     KeyDownEvent, KeyUpEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     ParentElement, Pixels, Point, Render, ScrollWheelEvent, SharedString, Styled, TitlebarOptions,
-    UTF16Selection, Window, WindowBounds, WindowOptions, canvas, div, point, px, size,
+    UTF16Selection, Window, WindowBounds, WindowOptions, WindowTextSystem, canvas, div, point, px,
+    size,
 };
 use pocket_mod::Guest;
 use pocket_ui_gpui::{GpuiRenderer, TextConfig, native_measure, native_wrap};
 use pocket_ui_surface::UiSurface;
+use serde::Deserialize;
 
 const HOST_ID: &str = "macos-app";
-const HOST_ABI: u32 = 3;
+const HOST_ABI: u32 = 4;
 const TICK_HZ: f64 = 60.0;
 const MAX_CATCHUP_TICKS: u32 = 6;
 
@@ -91,41 +96,148 @@ enum ScriptEvent {
     Key(u64, String, bool, bool, bool, bool),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PocketAppSpec {
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // serde requires the complete package plan; not every field is consumed yet.
+struct ResolvedAppPlan {
+    id: String,
     output: String,
     title: String,
-    viewport: (u32, u32),
-    density: u32,
+    version: String,
+    entry: String,
+    framework: String,
 }
 
-/// tools/macos.ts passes `output:WIDTHxHEIGHT:density:title`. splitn keeps
-/// the app title free to contain further colons (all manifests use
-/// "PocketJS: …" titles).
-fn parse_pocket_app_spec(value: &str) -> Result<PocketAppSpec> {
-    let mut fields = value.splitn(4, ':');
-    let output = fields.next().unwrap_or_default();
-    let viewport = fields
-        .next()
-        .ok_or_else(|| anyhow!("--pocket-app output:WIDTHxHEIGHT:density:title"))?;
-    let density = fields
-        .next()
-        .ok_or_else(|| anyhow!("--pocket-app output:WIDTHxHEIGHT:density:title"))?;
-    let title = fields
-        .next()
-        .ok_or_else(|| anyhow!("--pocket-app output:WIDTHxHEIGHT:density:title"))?;
-    let (w, h) = viewport
-        .split_once('x')
-        .ok_or_else(|| anyhow!("--pocket-app viewport must be WIDTHxHEIGHT"))?;
-    if output.is_empty() || title.is_empty() {
-        return Err(anyhow!("--pocket-app output and title must not be empty"));
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolvedTargetPlan {
+    id: String,
+    host_abi: u32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct ResolvedViewportPlan {
+    logical: [u32; 2],
+    physical: [u32; 2],
+    presentation: String,
+    raster_density: u32,
+    policy: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolvedPackagePlan {
+    app: ResolvedAppPlan,
+    target: ResolvedTargetPlan,
+    viewport: ResolvedViewportPlan,
+    features: HashMap<String, bool>,
+    companions: Vec<String>,
+    plan_hash: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
+struct EnvironmentIdentity {
+    id: String,
+    name: String,
+    title: String,
+    version: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct EnvironmentPackagePlan {
+    package: String,
+    source: String,
+    installation: String,
+    plan: ResolvedPackagePlan,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[allow(dead_code)]
+struct EnvironmentInstallationPlan {
+    model: String,
+    mutable: bool,
+    packages: Vec<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct SupervisorPlan {
+    shell: String,
+    background: String,
+    packages: Vec<EnvironmentPackagePlan>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResolvedEnvironmentPlan {
+    environment: EnvironmentIdentity,
+    target: ResolvedTargetPlan,
+    #[allow(dead_code)]
+    // Environment owns install/uninstall; supervisor consumes its installed set.
+    installation: EnvironmentInstallationPlan,
+    supervisor: SupervisorPlan,
+    #[allow(dead_code)]
+    plan_hash: String,
+}
+
+impl ResolvedEnvironmentPlan {
+    fn validate_for_host(&self) -> Result<&EnvironmentPackagePlan> {
+        if self.target.id != HOST_ID || self.target.host_abi != HOST_ABI {
+            return Err(anyhow!(
+                "Environment targets {} ABI {}, host is {} ABI {}",
+                self.target.id,
+                self.target.host_abi,
+                HOST_ID,
+                HOST_ABI
+            ));
+        }
+        let mut packages = HashSet::new();
+        for package in &self.supervisor.packages {
+            if !packages.insert(&package.package) {
+                return Err(anyhow!("duplicate supervised package {}", package.package));
+            }
+            if package.plan.app.id != package.package {
+                return Err(anyhow!(
+                    "package {} carries plan for {}",
+                    package.package,
+                    package.plan.app.id
+                ));
+            }
+            if package.installation == "available" {
+                return Err(anyhow!(
+                    "available package {} must not enter RuntimeSupervisor",
+                    package.package
+                ));
+            }
+            if package.plan.target.id != self.target.id
+                || package.plan.target.host_abi != self.target.host_abi
+            {
+                return Err(anyhow!(
+                    "package {} resolved for {} ABI {}, not Environment target",
+                    package.package,
+                    package.plan.target.id,
+                    package.plan.target.host_abi
+                ));
+            }
+        }
+        let shell = self
+            .supervisor
+            .packages
+            .iter()
+            .find(|package| package.package == self.supervisor.shell)
+            .ok_or_else(|| anyhow!("Environment supervisor shell has no resolved package plan"))?;
+        if shell.installation != "required" {
+            return Err(anyhow!("Environment shell package must be required"));
+        }
+        if shell.plan.features.get("runtime.supervisor") != Some(&true) {
+            return Err(anyhow!("Environment shell plan lacks runtime.supervisor"));
+        }
+        Ok(shell)
     }
-    Ok(PocketAppSpec {
-        output: output.to_string(),
-        title: title.to_string(),
-        viewport: (w.parse()?, h.parse()?),
-        density: density.parse::<u32>()?.clamp(1, 4),
-    })
 }
 
 struct Args {
@@ -145,8 +257,8 @@ struct Args {
     editor: bool,
     /// Companion service names from the plan (svcOpen allowlist).
     companions: Vec<String>,
-    /// Desk98 child apps admitted and built by tools/macos.ts.
-    pocket_apps: Vec<PocketAppSpec>,
+    /// Complete Environment resolution. None runs one ordinary package.
+    environment: Option<ResolvedEnvironmentPlan>,
     density: u32,
     script: Vec<ScriptEvent>,
     quit_after_ticks: Option<u64>,
@@ -170,13 +282,14 @@ fn parse_args() -> Result<Args> {
         native_text: false,
         editor: false,
         companions: Vec::new(),
-        pocket_apps: Vec::new(),
+        environment: None,
         density: 2,
         script: Vec::new(),
         quit_after_ticks: None,
         storm: None,
         announce_ready: false,
     };
+    let mut environment_plan_path = None;
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
         let mut val = |name: &str| -> Result<String> {
@@ -203,9 +316,8 @@ fn parse_args() -> Result<Args> {
                     .map(str::to_string)
                     .collect();
             }
-            "--pocket-app" => {
-                args.pocket_apps
-                    .push(parse_pocket_app_spec(&val("--pocket-app")?)?);
+            "--environment-plan" => {
+                environment_plan_path = Some(PathBuf::from(val("--environment-plan")?));
             }
             "--density" => args.density = val("--density")?.parse::<u32>()?.clamp(1, 4),
             "--type" => {
@@ -310,6 +422,34 @@ fn parse_args() -> Result<Args> {
             other => return Err(anyhow!("unknown flag {other}")),
         }
     }
+    if let Some(path) = environment_plan_path {
+        let bytes = std::fs::read(&path)
+            .with_context(|| format!("reading Environment plan {}", path.display()))?;
+        let environment: ResolvedEnvironmentPlan = serde_json::from_slice(&bytes)
+            .with_context(|| format!("decoding Environment plan {}", path.display()))?;
+        let shell = environment.validate_for_host()?;
+        args.app = shell.plan.app.output.clone();
+        args.title = environment.environment.title.clone();
+        args.viewport = (
+            shell.plan.viewport.logical[0],
+            shell.plan.viewport.logical[1],
+        );
+        args.fixed = shell.plan.viewport.policy == "fixed";
+        args.native_text = shell
+            .plan
+            .features
+            .get("text.layout.native")
+            .copied()
+            .unwrap_or(false);
+        args.companions = shell.plan.companions.clone();
+        args.editor = args.companions.iter().any(|companion| companion == "note");
+        args.density = shell.plan.viewport.raster_density.clamp(1, 4);
+        // Environment package assets are selected only by their resolved
+        // outputs; command-line bundle overrides cannot replace the shell.
+        args.js = None;
+        args.pak = None;
+        args.environment = Some(environment);
+    }
     Ok(args)
 }
 
@@ -372,64 +512,118 @@ fn register_fonts(cx: &App) {
 }
 
 // ---------------------------------------------------------------------------
-// Desk98 Pocket app scheduler
+// Native RuntimeSupervisor
 // ---------------------------------------------------------------------------
 
-struct PocketAppCatalogEntry {
-    spec: PocketAppSpec,
-    /// Transparent native image handle in the Desk98 shell surface. The GPUI
-    /// renderer calls back here when that handle appears as a TEX_QUAD.
-    portal: u32,
+struct SupervisorCatalogEntry {
+    package: EnvironmentPackagePlan,
+    /// Native compositor handle published to the shell as `ui.__surfaces`.
+    surface_handle: u32,
 }
 
-struct PocketAppRealm {
-    spec: PocketAppSpec,
-    portal: u32,
+struct SupervisedRealm {
+    package: EnvironmentPackagePlan,
+    surface_handle: u32,
     surface: UiSurface,
     guest: Guest,
     renderer: GpuiRenderer,
-    pending_buttons: u32,
+    buttons: u32,
     visible: bool,
     focused: bool,
+    order: usize,
     failed: bool,
 }
 
-struct PocketAppManager {
-    catalog: Vec<PocketAppCatalogEntry>,
-    realms: Vec<PocketAppRealm>,
+struct RuntimeSupervisor {
+    catalog: Vec<SupervisorCatalogEntry>,
+    realms: Vec<SupervisedRealm>,
+    suppressed: HashSet<u32>,
+    background: String,
 }
 
-impl PocketAppManager {
-    fn new(specs: &[PocketAppSpec], shell: &UiSurface) -> Result<Self> {
-        let mut catalog: Vec<PocketAppCatalogEntry> = Vec::with_capacity(specs.len());
-        for spec in specs {
-            if catalog.iter().any(|entry| entry.spec.output == spec.output) {
-                return Err(anyhow!("duplicate Desk98 Pocket app {}", spec.output));
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SchedulingFact {
+    visible: bool,
+    focused: bool,
+    order: usize,
+    failed: bool,
+}
+
+fn focused_realm(facts: &[SchedulingFact]) -> Option<usize> {
+    facts
+        .iter()
+        .enumerate()
+        .filter(|(_, fact)| fact.visible && fact.focused && !fact.failed)
+        .max_by_key(|(_, fact)| fact.order)
+        .map(|(index, _)| index)
+}
+
+fn scheduled_realms(facts: &[SchedulingFact], resident: bool) -> Vec<usize> {
+    let mut schedule: Vec<usize> = facts
+        .iter()
+        .enumerate()
+        .filter(|(_, fact)| !fact.failed && (fact.visible || resident))
+        .map(|(index, _)| index)
+        .collect();
+    schedule.sort_by_key(|index| {
+        let fact = facts[*index];
+        (!fact.focused, Reverse(fact.order))
+    });
+    schedule
+}
+
+impl RuntimeSupervisor {
+    fn new(environment: Option<&ResolvedEnvironmentPlan>, shell: &UiSurface) -> Result<Self> {
+        let Some(environment) = environment else {
+            return Ok(Self {
+                catalog: Vec::new(),
+                realms: Vec::new(),
+                suppressed: HashSet::new(),
+                background: "visible".into(),
+            });
+        };
+        environment.validate_for_host()?;
+        if environment.supervisor.background != "visible"
+            && environment.supervisor.background != "resident"
+        {
+            return Err(anyhow!("unknown RuntimeSupervisor background policy"));
+        }
+        let mut catalog = Vec::new();
+        for package in &environment.supervisor.packages {
+            if package.package == environment.supervisor.shell {
+                continue;
             }
-            let name = format!("pocket-app/{}", spec.output);
-            let portal = shell
-                .register_host_image(name)
-                .ok_or_else(|| anyhow!("reserving portal texture for {}", spec.output))?;
-            catalog.push(PocketAppCatalogEntry {
-                spec: spec.clone(),
-                portal: portal as u32,
+            let surface_handle = shell
+                .register_compositor_surface(package.package.clone())
+                .ok_or_else(|| anyhow!("reserving compositor surface for {}", package.package))?;
+            catalog.push(SupervisorCatalogEntry {
+                package: package.clone(),
+                surface_handle: surface_handle as u32,
             });
         }
         Ok(Self {
             catalog,
             realms: Vec::new(),
+            suppressed: HashSet::new(),
+            background: environment.supervisor.background.clone(),
         })
     }
 
-    fn open(&mut self, output: &str) -> Result<bool> {
-        if self.realms.iter().any(|realm| realm.spec.output == output) {
+    fn open(&mut self, surface_handle: u32, text_system: Arc<WindowTextSystem>) -> Result<bool> {
+        if self
+            .realms
+            .iter()
+            .any(|realm| realm.surface_handle == surface_handle)
+        {
             return Ok(false);
         }
         let entry = self
             .catalog
             .iter()
-            .find(|entry| entry.spec.output == output)
-            .ok_or_else(|| anyhow!("Pocket app {output:?} is not in the Desk98 catalog"))?;
+            .find(|entry| entry.surface_handle == surface_handle)
+            .ok_or_else(|| anyhow!("unknown compositor surface handle {surface_handle}"))?;
+        let plan = &entry.package.plan;
+        let output = &plan.app.output;
         let js_path = resolve_asset(None, output, "js")?;
         let pak_path = resolve_asset(None, output, "pak")?;
         let bundle = std::fs::read_to_string(&js_path)
@@ -438,11 +632,27 @@ impl PocketAppManager {
             std::fs::read(&pak_path).with_context(|| format!("reading {}", pak_path.display()))?;
 
         let surface = UiSurface::new_with_density(
-            (entry.spec.viewport.0 as f32, entry.spec.viewport.1 as f32),
-            entry.spec.density,
+            (
+                plan.viewport.logical[0] as f32,
+                plan.viewport.logical[1] as f32,
+            ),
+            plan.viewport.raster_density,
         );
-        surface.set_identity(HOST_ID, HOST_ABI);
+        surface.set_identity(&plan.target.id, plan.target.host_abi);
         surface.set_tick_rate(TICK_HZ as u32);
+        if !plan.companions.is_empty() {
+            surface.set_svc_allowlist(plan.companions.iter().map(String::as_str));
+        }
+        let cfg = TextConfig::new("Inter");
+        if plan
+            .features
+            .get("text.layout.native")
+            .copied()
+            .unwrap_or(false)
+        {
+            surface.set_text_measure(native_measure(text_system.clone(), cfg.clone()));
+            surface.set_text_wrap(native_wrap(text_system, cfg.clone()));
+        }
         surface.feed_pak(&pak);
         let guest = Guest::new()?;
         surface.mount(&guest)?;
@@ -451,70 +661,158 @@ impl PocketAppManager {
             return Err(anyhow!("{output} evaluated but installed no frame()"));
         }
 
-        self.realms.push(PocketAppRealm {
-            spec: entry.spec.clone(),
-            portal: entry.portal,
+        self.realms.push(SupervisedRealm {
+            package: entry.package.clone(),
+            surface_handle: entry.surface_handle,
             surface,
             guest,
-            renderer: GpuiRenderer::new(TextConfig::new("Inter"), entry.spec.density),
-            pending_buttons: 0,
-            visible: true,
-            focused: true,
+            renderer: GpuiRenderer::new(cfg, plan.viewport.raster_density),
+            buttons: 0,
+            visible: false,
+            focused: false,
+            order: 0,
             failed: false,
         });
         log::info!(
-            "pocket-macos: opened Desk98 realm {} ({}, {}x{}, runtime+context isolated)",
-            output,
-            entry.spec.title,
-            entry.spec.viewport.0,
-            entry.spec.viewport.1
+            "pocket-macos: opened isolated realm {} ({}, {}x{}, plan={})",
+            entry.package.package,
+            plan.app.title,
+            plan.viewport.logical[0],
+            plan.viewport.logical[1],
+            plan.plan_hash
         );
         Ok(true)
     }
 
-    fn close(&mut self, output: &str) -> bool {
-        let before = self.realms.len();
-        self.realms.retain(|realm| realm.spec.output != output);
-        let closed = self.realms.len() != before;
-        if closed {
-            log::info!("pocket-macos: dropped Desk98 realm {output}");
-        }
-        closed
-    }
+    /// Reconcile realm lifecycle and scheduling facts from the shell core.
+    /// The companion protocol is not involved in this per-frame path.
+    fn sync(
+        &mut self,
+        shell: &UiSurface,
+        text_system: Arc<WindowTextSystem>,
+    ) -> Vec<(String, String)> {
+        let bindings = shell.with_ui(|ui| ui.compositor_surface_bindings());
+        let frames = shell.with_ui(|ui| ui.compositor_surface_frames());
+        let live: HashSet<u32> = bindings.iter().map(|(handle, _)| *handle).collect();
 
-    fn input(&mut self, output: &str, buttons: u32) {
-        if let Some(realm) = self
-            .realms
-            .iter_mut()
-            .find(|realm| realm.spec.output == output)
-        {
-            realm.pending_buttons |= buttons;
+        let mut dropped = Vec::new();
+        self.realms.retain(|realm| {
+            let keep = live.contains(&realm.surface_handle);
+            if !keep {
+                dropped.push(realm.package.package.clone());
+            }
+            keep
+        });
+        for package in dropped {
+            log::info!("pocket-macos: dropped isolated realm {package}");
         }
-    }
+        self.suppressed.retain(|handle| live.contains(handle));
 
-    fn set_state(&mut self, output: &str, visible: bool, focused: bool) {
-        if let Some(realm) = self
-            .realms
-            .iter_mut()
-            .find(|realm| realm.spec.output == output)
-        {
-            realm.visible = visible;
-            realm.focused = focused;
-        }
-    }
-
-    /// One turn per open realm. A throw stops only that realm; the desktop
-    /// and its siblings continue on the same host tick.
-    fn tick(&mut self) -> Vec<(String, String)> {
         let mut failures = Vec::new();
-        for realm in &mut self.realms {
-            if realm.failed {
+        for (handle, _) in &bindings {
+            if self
+                .realms
+                .iter()
+                .any(|realm| realm.surface_handle == *handle)
+                || self.suppressed.contains(handle)
+            {
                 continue;
             }
-            let buttons = std::mem::take(&mut realm.pending_buttons);
-            if let Err(error) = realm.guest.frame(buttons) {
+            if let Err(error) = self.open(*handle, text_system.clone()) {
+                let package = self
+                    .catalog
+                    .iter()
+                    .find(|entry| entry.surface_handle == *handle)
+                    .map_or_else(
+                        || format!("surface:{handle}"),
+                        |entry| entry.package.package.clone(),
+                    );
+                self.suppressed.insert(*handle);
+                failures.push((package, error.to_string()));
+            }
+        }
+
+        for realm in &mut self.realms {
+            realm.visible = false;
+            realm.focused = bindings
+                .iter()
+                .find(|(handle, _)| *handle == realm.surface_handle)
+                .is_some_and(|(_, focused)| *focused);
+            if !realm.focused {
+                realm.buttons = 0;
+            }
+        }
+        for frame in frames {
+            if let Some(realm) = self
+                .realms
+                .iter_mut()
+                .find(|realm| realm.surface_handle == frame.handle)
+            {
+                realm.visible = true;
+                realm.focused = frame.focused;
+                realm.order = frame.order;
+                if !frame.focused {
+                    realm.buttons = 0;
+                }
+            }
+        }
+        for realm in &mut self.realms {
+            if !realm.visible {
+                realm.focused = false;
+            }
+            if !realm.focused {
+                realm.buttons = 0;
+            }
+        }
+        failures
+    }
+
+    /// Focus is a compositor fact. Route hardware-neutral buttons to the
+    /// top focused visible surface and keep their held state across ticks.
+    fn set_focused_button(&mut self, button: u32, down: bool) -> bool {
+        let facts: Vec<SchedulingFact> = self
+            .realms
+            .iter()
+            .map(|realm| SchedulingFact {
+                visible: realm.visible,
+                focused: realm.focused,
+                order: realm.order,
+                failed: realm.failed,
+            })
+            .collect();
+        let Some(index) = focused_realm(&facts) else {
+            return false;
+        };
+        let realm = &mut self.realms[index];
+        if down {
+            realm.buttons |= button;
+        } else {
+            realm.buttons &= !button;
+        }
+        true
+    }
+
+    /// Scheduling happens in the native compositor: visible policy suspends
+    /// hidden realms; resident policy keeps them active. Focused/top surfaces
+    /// receive their turn first, then the remaining realms in painter order.
+    fn tick(&mut self) -> Vec<(String, String)> {
+        let mut failures = Vec::new();
+        let facts: Vec<SchedulingFact> = self
+            .realms
+            .iter()
+            .map(|realm| SchedulingFact {
+                visible: realm.visible,
+                focused: realm.focused,
+                order: realm.order,
+                failed: realm.failed,
+            })
+            .collect();
+        let schedule = scheduled_realms(&facts, self.background == "resident");
+        for index in schedule {
+            let realm = &mut self.realms[index];
+            if let Err(error) = realm.guest.frame(realm.buttons) {
                 realm.failed = true;
-                failures.push((realm.spec.output.clone(), error.to_string()));
+                failures.push((realm.package.package.clone(), error.to_string()));
                 continue;
             }
             realm.surface.tick();
@@ -530,7 +828,7 @@ impl PocketAppManager {
             }
             let child = realm.surface.with_ui(|ui| fnv1a64(&ui.draw().words));
             for byte in realm
-                .portal
+                .surface_handle
                 .to_le_bytes()
                 .into_iter()
                 .chain(child.to_le_bytes())
@@ -544,7 +842,7 @@ impl PocketAppManager {
 
     fn paint(
         &mut self,
-        portal: u32,
+        surface_handle: u32,
         full: Bounds<Pixels>,
         clip: Bounds<Pixels>,
         window: &mut Window,
@@ -553,7 +851,7 @@ impl PocketAppManager {
         let Some(realm) = self
             .realms
             .iter_mut()
-            .find(|realm| realm.portal == portal && !realm.failed)
+            .find(|realm| realm.surface_handle == surface_handle && !realm.failed)
         else {
             return false;
         };
@@ -574,7 +872,8 @@ struct PocketRoot {
     surface: UiSurface,
     guest: Guest,
     renderer: Rc<RefCell<GpuiRenderer>>,
-    pocket_apps: Rc<RefCell<PocketAppManager>>,
+    supervisor: Rc<RefCell<RuntimeSupervisor>>,
+    text_system: Arc<WindowTextSystem>,
     focus: FocusHandle,
     args: Args,
 
@@ -595,9 +894,9 @@ struct PocketRoot {
     script_buttons: u32,
     /// Primary-button state of the --mouse script.
     script_mouse: bool,
-    // editor/desk input
-    /// The desk companion is in the plan — the extended input dialect.
-    desk: bool,
+    // editor/environment-shell input
+    /// The extended shell companion is in the resolved shell plan.
+    extended_shell_input: bool,
     /// Pointer shape requested by the guest ({t:"cursor"} intent).
     cursor_style: CursorStyle,
     mouse_down: bool,
@@ -622,7 +921,15 @@ impl PocketRoot {
             (args.viewport.0 as f32, args.viewport.1 as f32),
             args.density,
         );
-        surface.set_identity(HOST_ID, HOST_ABI);
+        let identity = args
+            .environment
+            .as_ref()
+            .and_then(|environment| environment.validate_for_host().ok())
+            .map(|shell| (&shell.plan.target.id, shell.plan.target.host_abi));
+        surface.set_identity(
+            identity.map_or(HOST_ID, |(target, _)| target.as_str()),
+            identity.map_or(HOST_ABI, |(_, abi)| abi),
+        );
         // svcOpen denies by default (pocket-ui-surface); the allowlist is
         // exactly the plan's companion list (tools/macos.ts --companions,
         // issue #295) — never an app-name convention.
@@ -630,21 +937,22 @@ impl PocketRoot {
             surface.set_svc_allowlist(args.companions.iter().map(String::as_str));
         }
         surface.feed_pak(&pak);
-        // Portal marker names must be in ui.__textures before the Desk98
-        // bundle evaluates and resolves its <Image src="pocket-app/...">.
-        let pocket_apps = Rc::new(RefCell::new(PocketAppManager::new(
-            &args.pocket_apps,
+        // Installed package handles must be in ui.__surfaces before the shell
+        // evaluates and resolves its CompositorSurface package bindings.
+        let supervisor = Rc::new(RefCell::new(RuntimeSupervisor::new(
+            args.environment.as_ref(),
             &surface,
         )?));
+        let text_system = window.text_system().clone();
         let cfg = TextConfig::new("Inter");
         if args.native_text {
             // BEFORE mount: measurement feeds layout, and the guest must
             // never observe a provider swap (engine/core/src/lib.rs).
-            surface.set_text_measure(native_measure(window.text_system().clone(), cfg.clone()));
+            surface.set_text_measure(native_measure(text_system.clone(), cfg.clone()));
             // The wrapText op's break positions then come from gpui's
             // LineWrapper through the SAME TextConfig — measurement, wrap
             // and paint stay one provider.
-            surface.set_text_wrap(native_wrap(window.text_system().clone(), cfg.clone()));
+            surface.set_text_wrap(native_wrap(text_system.clone(), cfg.clone()));
         }
         let guest = Guest::new()?;
         surface.mount(&guest)?;
@@ -666,12 +974,13 @@ impl PocketRoot {
         let focus = cx.focus_handle();
         let viewport = args.viewport;
         let script = args.script.clone();
-        let desk = args.companions.iter().any(|c| c == "desk");
+        let extended_shell_input = args.companions.iter().any(|c| c == "desk");
         let root = PocketRoot {
             surface,
             guest,
             renderer,
-            pocket_apps,
+            supervisor,
+            text_system,
             focus,
             args,
             booted: false,
@@ -685,7 +994,7 @@ impl PocketRoot {
             buttons: 0,
             script_buttons: 0,
             script_mouse: false,
-            desk,
+            extended_shell_input,
             cursor_style: CursorStyle::Arrow,
             mouse_down: false,
             click_edge: false,
@@ -744,7 +1053,7 @@ impl PocketRoot {
 
     /// Input lines flow when either JSON-line dialect is wired.
     fn forward_input(&self) -> bool {
-        self.args.editor || self.desk
+        self.args.editor || self.extended_shell_input
     }
 
     /// The svc hello: viewport first, then the document (order matters — the
@@ -753,8 +1062,8 @@ impl PocketRoot {
     /// ignores it.
     fn send_hello(&mut self) {
         log::debug!(
-            "pocket-macos: svc hello (desk={}, editor={})",
-            self.desk,
+            "pocket-macos: svc hello (environment_shell={}, editor={})",
+            self.extended_shell_input,
             self.args.editor
         );
         self.svc(serde_json::json!({
@@ -911,6 +1220,17 @@ impl PocketRoot {
         }
         self.surface.tick();
 
+        // Live surface bindings are the lifecycle boundary. The shell core
+        // supplies focus, visibility, geometry and painter order directly to
+        // the native supervisor; no companion message participates here.
+        let sync_failures = self
+            .supervisor
+            .borrow_mut()
+            .sync(&self.surface, self.text_system.clone());
+        for (package, message) in sync_failures {
+            log::error!("pocket-macos: opening isolated realm {package}: {message}");
+        }
+
         // Guest → host intents (editor protocol).
         for line in self.surface.svc_drain() {
             match serde_json::from_str::<serde_json::Value>(&line) {
@@ -947,39 +1267,6 @@ impl PocketRoot {
                             cx.notify();
                         }
                     }
-                    Some("pocket-open") => {
-                        let app = v["app"].as_str().unwrap_or_default();
-                        let result = self.pocket_apps.borrow_mut().open(app);
-                        match result {
-                            Ok(_) => self.svc(serde_json::json!({
-                                "t": "pocket-status", "app": app, "status": "ready"
-                            })),
-                            Err(error) => {
-                                log::error!("pocket-macos: opening Desk98 realm {app}: {error:#}");
-                                self.svc(serde_json::json!({
-                                    "t": "pocket-status", "app": app, "status": "error",
-                                    "message": error.to_string()
-                                }));
-                            }
-                        }
-                    }
-                    Some("pocket-close") => {
-                        let app = v["app"].as_str().unwrap_or_default();
-                        self.pocket_apps.borrow_mut().close(app);
-                    }
-                    Some("pocket-input") => {
-                        let app = v["app"].as_str().unwrap_or_default();
-                        let buttons = v["buttons"].as_u64().unwrap_or(0) as u32;
-                        self.pocket_apps.borrow_mut().input(app, buttons);
-                    }
-                    Some("pocket-state") => {
-                        let app = v["app"].as_str().unwrap_or_default();
-                        self.pocket_apps.borrow_mut().set_state(
-                            app,
-                            v["visible"].as_bool().unwrap_or(true),
-                            v["focused"].as_bool().unwrap_or(false),
-                        );
-                    }
                     other => log::warn!("pocket-macos: unknown intent {other:?}"),
                 },
                 Err(e) => log::warn!("pocket-macos: bad svc line from guest: {e}"),
@@ -989,18 +1276,15 @@ impl PocketRoot {
         // Child realms run after their shell commands have been applied and
         // before the composite hash is sampled. One realm throwing cannot
         // terminate or corrupt its siblings.
-        let failures = self.pocket_apps.borrow_mut().tick();
-        for (app, message) in failures {
-            log::error!("pocket-macos: Desk98 realm {app} frame failed: {message}");
-            self.svc(serde_json::json!({
-                "t": "pocket-status", "app": app, "status": "error", "message": message
-            }));
+        let failures = self.supervisor.borrow_mut().tick();
+        for (package, message) in failures {
+            log::error!("pocket-macos: isolated realm {package} frame failed: {message}");
         }
 
         // Tick before draw; arm a paint only when the content hash moved
         // (TEXT_RUN packs its run bytes into the words — the whole truth).
         let shell_hash = self.surface.with_ui(|ui| fnv1a64(&ui.draw().words));
-        let child_hash = self.pocket_apps.borrow().visible_hash();
+        let child_hash = self.supervisor.borrow().visible_hash();
         let hash = shell_hash ^ child_hash.rotate_left(17);
         if hash != self.hash {
             self.hash = hash;
@@ -1027,11 +1311,23 @@ impl PocketRoot {
 
     fn on_key_down(&mut self, e: &KeyDownEvent, _w: &mut Window, cx: &mut Context<Self>) {
         let ks = &e.keystroke;
+        if !ks.modifiers.platform
+            && !ks.modifiers.alt
+            && !ks.modifiers.control
+            && let Some(button) = button_for(&ks.key)
+            && self
+                .supervisor
+                .borrow_mut()
+                .set_focused_button(button, true)
+        {
+            cx.stop_propagation();
+            return;
+        }
         if self.forward_input() {
             let shift = ks.modifiers.shift;
             if ks.modifiers.platform {
-                if self.desk {
-                    // Desk dialect: ⌘Q quits the host (macOS convention) and
+                if self.extended_shell_input {
+                    // The extended shell dialect reserves ⌘Q for the host and
                     // ⌘V pastes here (the guest can't read the clipboard);
                     // every other chord goes to the guest as a cmd-flagged
                     // key line — the compositor owns its own shortcuts
@@ -1125,7 +1421,16 @@ impl PocketRoot {
         }
     }
 
-    fn on_key_up(&mut self, e: &KeyUpEvent, _w: &mut Window, _cx: &mut Context<Self>) {
+    fn on_key_up(&mut self, e: &KeyUpEvent, _w: &mut Window, cx: &mut Context<Self>) {
+        if let Some(button) = button_for(&e.keystroke.key)
+            && self
+                .supervisor
+                .borrow_mut()
+                .set_focused_button(button, false)
+        {
+            cx.stop_propagation();
+            return;
+        }
         if !self.forward_input()
             && let Some(bit) = button_for(&e.keystroke.key)
         {
@@ -1160,9 +1465,9 @@ impl PocketRoot {
                     self.push_mouse(x, y, true, e.modifiers.shift);
                 }
             }
-            // Right button is desk-dialect only (b:2 lines would read as
+            // Right button is extended-shell-only (b:2 lines would read as
             // primary presses to the note protocol).
-            MouseButton::Right if self.desk => {
+            MouseButton::Right if self.extended_shell_input => {
                 let (x, y) = self.logical_pos(e.position);
                 self.svc(serde_json::json!(
                     {"t": "mouse", "x": x, "y": y, "d": true, "b": 2, "sh": e.modifiers.shift}
@@ -1181,7 +1486,7 @@ impl PocketRoot {
                     self.push_mouse(x, y, false, e.modifiers.shift);
                 }
             }
-            MouseButton::Right if self.desk => {
+            MouseButton::Right if self.extended_shell_input => {
                 let (x, y) = self.logical_pos(e.position);
                 self.svc(serde_json::json!(
                     {"t": "mouse", "x": x, "y": y, "d": false, "b": 2, "sh": e.modifiers.shift}
@@ -1209,7 +1514,7 @@ impl PocketRoot {
 }
 
 /// {t:"cursor"} intent → pointer shape. Keys mirror CSS cursor names the
-/// desk dialect uses; unknown keys fall back to the arrow.
+/// The extended shell dialect uses these names; unknown keys use the arrow.
 fn cursor_for(k: &str) -> CursorStyle {
     match k {
         "text" => CursorStyle::IBeam,
@@ -1395,7 +1700,7 @@ impl Render for PocketRoot {
 
         let surface = self.surface.clone();
         let renderer = self.renderer.clone();
-        let pocket_apps = self.pocket_apps.clone();
+        let supervisor = self.supervisor.clone();
         let frames = self.frames.clone();
         let announce_ready = self.args.announce_ready;
         let canvas_origin = self.canvas_origin.clone();
@@ -1449,15 +1754,19 @@ impl Render for PocketRoot {
                             println!("READY {}", epoch_ms());
                         }
                         surface.with_ui(|ui| {
-                            renderer.borrow_mut().paint_with_portals(
+                            renderer.borrow_mut().paint_with_compositor(
                                 ui,
                                 origin,
                                 window,
                                 cx,
-                                &mut |portal, full, clip, window, cx| {
-                                    pocket_apps
-                                        .borrow_mut()
-                                        .paint(portal, full, clip, window, cx)
+                                &mut |surface_handle, full, clip, _focused, window, cx| {
+                                    supervisor.borrow_mut().paint(
+                                        surface_handle,
+                                        full,
+                                        clip,
+                                        window,
+                                        cx,
+                                    );
                                 },
                             );
                         });
@@ -1532,27 +1841,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pocket_app_arg_keeps_colons_in_the_title() {
-        assert_eq!(
-            parse_pocket_app_spec("hero-main:640x360:2:PocketJS: Hero").unwrap(),
-            PocketAppSpec {
-                output: "hero-main".into(),
-                title: "PocketJS: Hero".into(),
-                viewport: (640, 360),
-                density: 2,
-            }
-        );
+    fn native_schedule_uses_visibility_focus_and_shell_painter_order() {
+        let facts = [
+            SchedulingFact {
+                visible: true,
+                focused: false,
+                order: 10,
+                failed: false,
+            },
+            SchedulingFact {
+                visible: false,
+                focused: false,
+                order: 20,
+                failed: false,
+            },
+            SchedulingFact {
+                visible: true,
+                focused: true,
+                order: 30,
+                failed: false,
+            },
+            SchedulingFact {
+                visible: true,
+                focused: true,
+                order: 25,
+                failed: true,
+            },
+        ];
+        assert_eq!(focused_realm(&facts), Some(2));
+        assert_eq!(scheduled_realms(&facts, false), vec![2, 0]);
+        assert_eq!(scheduled_realms(&facts, true), vec![2, 1, 0]);
     }
 
     #[test]
-    fn pocket_app_arg_rejects_incomplete_values() {
-        assert!(parse_pocket_app_spec("hero-main:640x360:2").is_err());
-        assert!(parse_pocket_app_spec(":640x360:2:Hero").is_err());
-        assert!(parse_pocket_app_spec("hero-main:wide:2:Hero").is_err());
-    }
-
-    #[test]
-    fn pocket_app_guests_do_not_share_quickjs_globals() {
+    fn supervised_guests_do_not_share_quickjs_globals() {
         let hero = Guest::new().unwrap();
         let settings = Guest::new().unwrap();
         hero.eval("hero", "globalThis.realmProbe = 41;").unwrap();

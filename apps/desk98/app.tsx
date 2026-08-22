@@ -14,8 +14,8 @@
 // Shortcuts are macOS-style: the host forwards ⌘ chords as cmd-flagged key
 // lines (⌘Q quits and ⌘V pastes host-side) — ⌘W closes, ⌘M minimizes,
 // ⌘` cycles, ⌘N opens Notepad, ⌘Esc toggles Start, ⌘A/C/X edit the
-// focused Notepad. Pocket app windows forward hardware-neutral console-button
-// pulses to their own QuickJS guests through the same desk companion.
+// focused Notepad. Pocket app input and scheduling are owned by the native
+// compositor using the focused surface fact emitted by this shell.
 //
 // Without the desk companion (sim, goldens, consoles) the app boots a
 // static arrangement and just renders it — the unmodified-app base case.
@@ -214,7 +214,7 @@ function Window98(props: { win: WinCtl; active: boolean }) {
         ) : w.kind === "folder" ? (
           <FolderView data={folderOf(w)} resizable={w.resizable} />
         ) : w.kind === "pocket" ? (
-          <PocketAppView data={pocketOf(w)} />
+          <PocketAppView data={pocketOf(w)} active={props.active} />
         ) : w.kind === "about" ? (
           <AboutView data={aboutOf(w)} />
         ) : (
@@ -281,10 +281,6 @@ export default function App() {
   }
 
   function closeWin(id: number) {
-    const closing = byId(id);
-    if (closing?.kind === "pocket") {
-      svc?.send({ t: "pocket-close", app: pocketOf(closing).app.output });
-    }
     wins.value = wins.value.filter((w) => w.id !== id);
     stack = stack.filter((x) => x !== id);
     applyZ();
@@ -527,17 +523,15 @@ export default function App() {
 
   function openPocketApp(app: PocketAppSpec) {
     const existing = wins.value.find(
-      (w) => w.kind === "pocket" && pocketOf(w).app.output === app.output,
+      (w) => w.kind === "pocket" && pocketOf(w).app.package === app.package,
     );
     if (existing) return raise(existing.id);
     const data: PocketData = {
       kind: "pocket",
       app,
-      status: ref("starting"),
-      error: ref(""),
     };
-    // Content is exactly the child plan's logical viewport. Portal painting
-    // therefore needs no scale or second raster pass.
+    // Content is exactly the child plan's logical viewport. Native surface
+    // composition therefore needs no scale or second raster pass.
     const outerW = app.viewport[0] + FRAME * 2;
     const outerH = app.viewport[1] + contentTop({ menuWidths: [] }) + FRAME;
     const w = createWin({
@@ -558,7 +552,6 @@ export default function App() {
       data,
     });
     addWin(w);
-    svc?.send({ t: "pocket-open", app: app.output });
   }
 
   function minesNew(w: WinCtl) {
@@ -1492,10 +1485,7 @@ export default function App() {
     const w = focused();
     if (!w) return;
     if (w.kind === "pocket") {
-      const buttons = pocketButtonForKey(k);
-      if (buttons !== 0) {
-        svc?.send({ t: "pocket-input", app: pocketOf(w).app.output, buttons });
-      }
+      // The CompositorSurface focused flag routes input natively.
       return;
     }
     if (w.kind === "mines" && k === "F2") {
@@ -1549,40 +1539,6 @@ export default function App() {
       return;
     }
     if (w.kind === "about" && k === "Enter") closeWin(w.id);
-  }
-
-  function pocketButtonForKey(k: string): number {
-    switch (k.toLowerCase()) {
-      case "up":
-        return 0x0010;
-      case "right":
-        return 0x0020;
-      case "down":
-        return 0x0040;
-      case "left":
-        return 0x0080;
-      case "q":
-        return 0x0100;
-      case "w":
-        return 0x0200;
-      case "s":
-        return 0x1000;
-      case "x":
-      case "backspace":
-        return 0x2000;
-      case "z":
-      case "enter":
-        return 0x4000;
-      case "a":
-        return 0x8000;
-      case "tab":
-        return 0x0001;
-      case "space":
-      case " ":
-        return 0x0008;
-      default:
-        return 0;
-    }
   }
 
   function padViewH(w: WinCtl): number {
@@ -1711,27 +1667,6 @@ export default function App() {
       case "ch": {
         const w = focused();
         if (w?.kind === "notepad" && ev.s) typeInto(w, ev.s);
-        else if (w?.kind === "pocket" && ev.s) {
-          const buttons = pocketButtonForKey(ev.s);
-          if (buttons !== 0) {
-            svc?.send({
-              t: "pocket-input",
-              app: pocketOf(w).app.output,
-              buttons,
-            });
-          }
-        }
-        break;
-      }
-      case "pocket-status": {
-        const win = wins.value.find(
-          (w) => w.kind === "pocket" && pocketOf(w).app.output === ev.app,
-        );
-        if (win) {
-          const data = pocketOf(win);
-          data.status.value = ev.status === "ready" ? "ready" : "error";
-          data.error.value = ev.message ?? "";
-        }
         break;
       }
       case "paste": {
@@ -1817,19 +1752,6 @@ export default function App() {
       }
     }
 
-    // The host uses this to exclude minimized realms from the composite
-    // demand-render hash. Every open realm still receives one fixed tick.
-    if (svc) {
-      for (const w of wins.value) {
-        if (w.kind !== "pocket") continue;
-        svc.send({
-          t: "pocket-state",
-          app: pocketOf(w).app.output,
-          visible: !w.minimized.value,
-          focused: focusId.value === w.id,
-        });
-      }
-    }
   });
 
   // ---- render -------------------------------------------------------------

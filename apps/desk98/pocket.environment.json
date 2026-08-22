@@ -1,0 +1,91 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-environment-1.json",
+  "pocketEnvironment": 1,
+  "id": "dev.pocket-stack.desktop",
+  "name": "pocket-desktop",
+  "title": "Pocket Desktop",
+  "version": "0.1.0",
+  "runtime": {
+    "supervisor": {
+      "shell": "dev.pocket-stack.desk98",
+      "background": "visible"
+    }
+  },
+  "applications": {
+    "model": "managed",
+    "mutable": true,
+    "packages": [
+      {
+        "package": "dev.pocket-stack.desk98",
+        "manifest": "apps/desk98/pocket.json",
+        "installation": "required"
+      },
+      {
+        "package": "dev.pocket-stack.hero",
+        "manifest": "apps/hero/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Hero", "viewport": [640, 360] }
+      },
+      {
+        "package": "dev.pocket-stack.settings",
+        "manifest": "apps/settings/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Settings", "viewport": [480, 272] }
+      },
+      {
+        "package": "dev.pocket-stack.motions",
+        "manifest": "apps/motions/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Motions", "viewport": [480, 272] }
+      },
+      {
+        "package": "dev.pocket-stack.cards",
+        "manifest": "apps/cards/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Cards", "viewport": [480, 272] }
+      },
+      {
+        "package": "dev.pocket-stack.chrome",
+        "manifest": "apps/chrome/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Chrome", "viewport": [480, 272] }
+      },
+      {
+        "package": "dev.pocket-stack.cursor",
+        "manifest": "apps/cursor/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Cursor", "viewport": [480, 272] }
+      },
+      {
+        "package": "dev.pocket-stack.gallery",
+        "manifest": "apps/gallery/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Gallery", "viewport": [480, 272] }
+      },
+      {
+        "package": "dev.pocket-stack.library",
+        "manifest": "apps/library/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Library", "viewport": [480, 272] }
+      },
+      {
+        "package": "dev.pocket-stack.music",
+        "manifest": "apps/music/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Music", "viewport": [480, 272] }
+      },
+      {
+        "package": "dev.pocket-stack.notifications",
+        "manifest": "apps/notifications/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Notifications", "viewport": [480, 272] }
+      },
+      {
+        "package": "dev.pocket-stack.stats",
+        "manifest": "apps/stats/pocket.json",
+        "installation": "installed",
+        "presentation": { "title": "Stats", "viewport": [480, 272] }
+      }
+    ]
+  }
+}

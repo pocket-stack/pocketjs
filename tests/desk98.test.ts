@@ -53,28 +53,47 @@ import {
   wrapLine,
   type Doc,
 } from "../apps/desk98/notepad.ts";
-import { POCKET_APPS, pocketPortalSource } from "../apps/desk98/pocket-apps.ts";
+import { POCKET_APPS } from "../apps/desk98/pocket-apps.ts";
+import environment from "../apps/desk98/pocket.environment.json";
+import { validateAndResolveEnvironmentPlan } from "../framework/src/manifest/environment.ts";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 
 describe("Pocket app desktop catalog", () => {
-  test("all eleven simple demos resolve to the cataloged macos-app viewport", async () => {
+  test("the Environment preserves every installed package's complete resolved plan", async () => {
     expect(POCKET_APPS).toHaveLength(11);
-    expect(new Set(POCKET_APPS.map((app) => app.output)).size).toBe(
+    expect(new Set(POCKET_APPS.map((app) => app.package)).size).toBe(
       POCKET_APPS.length,
     );
-    expect(
-      new Set(POCKET_APPS.map((app) => pocketPortalSource(app.output))).size,
-    ).toBe(POCKET_APPS.length);
 
-    for (const app of POCKET_APPS) {
-      const manifest = await Bun.file(`apps/${app.dir}/pocket.json`).json();
+    const packages = await Promise.all(
+      environment.applications.packages.map(async (entry) => ({
+        source: entry.manifest,
+        manifest: await Bun.file(entry.manifest).json(),
+      })),
+    );
+    const environmentResolution = validateAndResolveEnvironmentPlan(
+      environment,
+      { target: "macos-app", packages },
+    );
+    expect(environmentResolution.ok).toBe(true);
+    if (!environmentResolution.ok) return;
+    expect(environmentResolution.plan.supervisor.shell).toBe(
+      "dev.pocket-stack.desk98",
+    );
+    expect(environmentResolution.plan.supervisor.packages).toHaveLength(12);
+
+    for (const entry of environment.applications.packages) {
+      const manifest = packages.find((item) => item.source === entry.manifest)!
+        .manifest;
       const resolution = validateAndResolveBuildPlan(manifest, {
         target: "macos-app",
       });
       expect(resolution.ok).toBe(true);
       if (!resolution.ok) continue;
-      expect(resolution.plan.app.output).toBe(app.output);
-      expect(resolution.plan.viewport.logical).toEqual(app.viewport);
+      const supervised = environmentResolution.plan.supervisor.packages.find(
+        (item) => item.package === entry.package,
+      );
+      expect(supervised?.plan).toEqual(resolution.plan);
     }
   });
 

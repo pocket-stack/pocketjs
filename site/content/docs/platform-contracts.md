@@ -3,7 +3,9 @@
 PocketJS keeps application intent separate from host facts. An app writes
 `pocket.json`; PocketJS owns a profile for each stock target. The resolver
 combines them once, writes a small target-specific `ResolvedBuildPlan`, and all
-later build stages consume that answer.
+later build stages consume that answer. A product that runs several installed
+Pocket packages also writes `pocket.environment.json`; its resolver retains
+one complete package plan per installed app in a `ResolvedEnvironmentPlan`.
 
 ```text
   pocket.json           target profile
@@ -30,6 +32,9 @@ Cargo, packagers, and custom hosts.
 | Capability registry | PocketJS | Names of framework APIs that can be requested |
 | Target profile | Stock host | Host ABI, display facts, and APIs actually implemented and tested |
 | `ResolvedBuildPlan` | Resolver | One build's target-specific inputs |
+| `pocket.environment.json` | Product environment | Installed, required and available package state plus shell presentation |
+| `ResolvedEnvironmentPlan` | Environment resolver | Complete plans for the shell and every installed package |
+| Runtime supervisor | Stock host | Realm lifecycle, focused input, scheduling and native composition for resolved installed packages |
 | Backend | PocketJS or custom host | How those inputs become an EBOOT, VPK, or another package |
 
 Apps never claim what a device provides. Profiles never advertise raw hardware
@@ -149,6 +154,52 @@ meaningfully different API, it can receive a new identifier once that API is
 real. The registry remains data; specialized compatibility rules should live
 with the feature that needs them, not in a universal constraint language.
 
+## Environments and runtime supervision
+
+**An Environment is a product-level package installation model.** Pocket
+Desktop uses a mutable managed model with `required`, `installed` and
+`available` entries. A future headless product, mobile launcher or handheld
+launcher can use the same contract with different product UI. The Environment
+selects its shell and a background policy, and it owns future install/uninstall
+operations.
+
+**A runtime supervisor does not install packages.** A target profile with
+`runtime.supervisor` promises native realm isolation and native composition.
+After resolution, the supervisor creates, schedules and destroys realms only
+for the installed set that the Environment handed it. Each realm receives its
+package's complete `ResolvedBuildPlan`, including target identity, feature
+booleans, companion allowlist, viewport policy, raster density and package
+identity.
+
+```text
+ pocket.environment.json       pocket.json for each catalog entry
+          └──────────── resolve for one target ────────────┘
+                                │
+                                ▼
+                   ResolvedEnvironmentPlan
+                     ├─ installation catalog
+                     ├─ shell ResolvedBuildPlan
+                     └─ installed app ResolvedBuildPlan ...
+                                │
+                                ▼
+                    native RuntimeSupervisor
+                  isolated realm + UI surface per app
+```
+
+The shell renders `<CompositorSurface package="…">`. The framework binds it
+through the compositor namespace, and the core emits `SURFACE_QUAD` with the
+full destination, clipped destination and focused state at the node's exact
+DrawList position. **Texture handles and `TEX_QUAD` remain image-only.** The
+native compositor reads live surface bindings for realm lifecycle and reads
+visible surface instructions for focus, scheduling, clipping and painter
+order. Companion services remain package-specific cold/control protocols; they
+do not carry these per-frame facts.
+
+The generic macOS host discovers no desktop product names or app catalog. It
+loads the resolved Environment, registers its installed package ids, and
+derives each realm from the nested package plan. Pocket Desktop supplies the
+Windows-style shell and icon/window behavior entirely as its Environment UI.
+
 ## Resolution and PSP-to-Vita compatibility
 
 The resolver performs the same steps for every registered target:
@@ -183,11 +234,14 @@ The generated plan is cross-process build IR, not public app configuration:
 ```json
 {
   "app": { "id": "dev.pocket-stack.telemetry", "title": "Pocket Telemetry",
-           "entry": "app/main.tsx", "output": "main", "framework": "solid" },
+           "version": "1.0.0", "entry": "app/main.tsx", "output": "main",
+           "framework": "solid" },
   "target": { "id": "vita", "hostAbi": 2 },
   "viewport": { "logical": [480, 272], "physical": [960, 544],
-                "presentation": "integer-fit", "rasterDensity": 2 },
+                "presentation": "integer-fit", "rasterDensity": 2,
+                "policy": "fixed" },
   "features": { "input.analog.left": true },
+  "companions": [],
   "planHash": "sha256:…"
 }
 ```

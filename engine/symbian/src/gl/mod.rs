@@ -809,6 +809,9 @@ impl Renderer {
                     clip = clip_stack.pop().unwrap_or(full);
                     index += 1;
                 }
+                spec::draw_op::SURFACE_QUAD if index + 9 <= words.len() => {
+                    index += 9;
+                }
                 _ => break,
             }
         }

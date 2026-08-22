@@ -137,6 +137,7 @@ describe("experimental Nokia E7 runtime profile", () => {
           output,
           id,
           title,
+          version: "0.1.0",
           entry: "app.tsx",
           framework: "solid",
         },

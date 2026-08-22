@@ -201,7 +201,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
 /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
 /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
 /// balanced, only known ops. Returns per-op counts (indexed by op code).
-fn validate_drawlist(words: &[u32]) -> [u32; 10] {
+fn validate_drawlist(words: &[u32]) -> [u32; 11] {
     let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
     let xy_ok = |w: u32| {
         let (x, y) = decode_xy(w);
@@ -213,7 +213,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 10] {
         let (w, h) = decode_wh(whw);
         assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
     };
-    let mut counts = [0u32; 10];
+    let mut counts = [0u32; 11];
     let mut depth = 0i32;
     let mut i = 0usize;
     while i < words.len() {
@@ -244,6 +244,14 @@ fn validate_drawlist(words: &[u32]) -> [u32; 10] {
                     let f = f32::from_bits(words[i + uv]);
                     assert!((0.0..=1.0).contains(&f), "UV out of range: {f}");
                 }
+                i += 9;
+            }
+            spec::draw_op::SURFACE_QUAD => {
+                for word in i + 2..i + 6 {
+                    assert!(f32::from_bits(words[word]).is_finite());
+                }
+                rect_ok(words[i + 6], words[i + 7]);
+                assert_eq!(words[i + 8] & !1, 0, "unknown surface flags");
                 i += 9;
             }
             spec::draw_op::SCISSOR => {
@@ -317,6 +325,7 @@ fn tex_tri_runs(words: &[u32]) -> Vec<(u32, usize)> {
                 i += 3 + 2 * ((words[i + 1] >> 16) as usize);
             }
             spec::draw_op::TEX_QUAD => { previous_was_tex_tri = false; i += 9; }
+            spec::draw_op::SURFACE_QUAD => { previous_was_tex_tri = false; i += 9; }
             spec::draw_op::SCISSOR => { previous_was_tex_tri = false; i += 3; }
             spec::draw_op::SCISSOR_POP => { previous_was_tex_tri = false; i += 1; }
             spec::draw_op::TRI => { previous_was_tex_tri = false; i += 7; }
@@ -384,6 +393,67 @@ fn insert_before_dom_move_semantics() {
     ui.insert_before(b, wrap, 0);
     ui.tick();
     assert_eq!(ui.layout_of(wrap).unwrap().1, 40.0); // still under root, after c+a
+}
+
+#[test]
+fn clipped_compositor_surface_keeps_full_geometry_and_shell_z_order() {
+    let mut ui = Ui::new();
+    let absolute_box = |ui: &mut Ui, node: i32, x: f64, y: f64, w: f64, h: f64, z: f64| {
+        ui.set_prop(node, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+        ui.set_prop(node, spec::prop::INSET_L, x);
+        ui.set_prop(node, spec::prop::INSET_T, y);
+        ui.set_prop(node, spec::prop::WIDTH, w);
+        ui.set_prop(node, spec::prop::HEIGHT, h);
+        ui.set_prop(node, spec::prop::Z_INDEX, z);
+    };
+
+    let under = ui.create_node(spec::NodeType::View as u8);
+    absolute_box(&mut ui, under, 0.0, 0.0, 200.0, 160.0, 0.0);
+    ui.set_prop(under, spec::prop::BG_COLOR, abgr(1, 2, 3, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, under, 0);
+
+    let clipper = ui.create_node(spec::NodeType::View as u8);
+    absolute_box(&mut ui, clipper, 20.0, 30.0, 80.0, 60.0, 1.0);
+    ui.set_prop(
+        clipper,
+        spec::prop::OVERFLOW,
+        spec::Overflow::Hidden as u32 as f64,
+    );
+    ui.insert_before(spec::ROOT_ID, clipper, 0);
+
+    let surface = ui.create_node(spec::NodeType::Surface as u8);
+    absolute_box(&mut ui, surface, 0.0, 0.0, 100.0, 100.0, 0.0);
+    ui.set_compositor_surface(surface, 7, true);
+    ui.insert_before(clipper, surface, 0);
+
+    let over = ui.create_node(spec::NodeType::View as u8);
+    absolute_box(&mut ui, over, 0.0, 0.0, 12.0, 12.0, 2.0);
+    ui.set_prop(over, spec::prop::BG_COLOR, abgr(4, 5, 6, 255) as f64);
+    ui.insert_before(spec::ROOT_ID, over, 0);
+
+    let words = ui.draw().words.clone();
+    validate_drawlist(&words);
+    let surface_at = words
+        .iter()
+        .position(|word| *word == spec::draw_op::SURFACE_QUAD)
+        .unwrap();
+    let under_at = words
+        .windows(4)
+        .position(|op| op[0] == spec::draw_op::RECT && op[3] == abgr(1, 2, 3, 255))
+        .unwrap();
+    let over_at = words
+        .windows(4)
+        .position(|op| op[0] == spec::draw_op::RECT && op[3] == abgr(4, 5, 6, 255))
+        .unwrap();
+    assert!(under_at < surface_at && surface_at < over_at);
+
+    let frames = ui.compositor_surface_frames();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].handle, 7);
+    assert_eq!(frames[0].full, [20.0, 30.0, 100.0, 100.0]);
+    assert_eq!(frames[0].clip, [20.0, 30.0, 80.0, 60.0]);
+    assert!(frames[0].focused);
+    assert_eq!(ui.compositor_surface_bindings(), vec![(7, true)]);
 }
 
 #[test]

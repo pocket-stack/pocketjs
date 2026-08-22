@@ -64,7 +64,19 @@ export interface SpriteProps {
   ref?: RefProp;
 }
 
-function primitive(tag: "view" | "text" | "image", props: Record<string, unknown>): SolidJSX.Element {
+export interface CompositorSurfaceProps {
+  class?: string;
+  style?: StyleObject;
+  /** Stable package id from the resolved Environment installation model. */
+  package: string;
+  /** Shell focus fact consumed by the native compositor scheduler. */
+  focused?: boolean;
+  debugName?: string;
+  ref?: RefProp;
+  nodeRef?: RefProp;
+}
+
+function primitive(tag: "view" | "text" | "image" | "surface", props: Record<string, unknown>): SolidJSX.Element {
   const el = createElement(tag);
   spread(el, props, false);
   callRef(props.nodeRef as RefProp, el);
@@ -81,6 +93,12 @@ export function Text(props: TextProps): SolidJSX.Element {
 
 export function Image(props: ImageProps): SolidJSX.Element {
   return primitive("image", props as Record<string, unknown>);
+}
+
+/** A package realm composed by a native RuntimeSupervisor. It participates in
+ *  ordinary layout, clipping and z-order but has no image/texture semantics. */
+export function CompositorSurface(props: CompositorSurfaceProps): SolidJSX.Element {
+  return primitive("surface", props as unknown as Record<string, unknown>);
 }
 
 /**

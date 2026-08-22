@@ -15,7 +15,6 @@
 //   {t:"mouse", x, y, d, sh}   primary-button pointer stream
 //   {t:"mouse", x, y, d, b:2}  right-button press/release (desk-only lines)
 //   {t:"scroll", dy}           wheel delta in logical px
-//   {t:"pocket-status", app, status, message?} isolated realm boot result
 //
 // guest → host intents:
 //   {t:"quit"}                 Shut Down
@@ -24,10 +23,6 @@
 //   {t:"caret", x, y, h}       caret rect — docks the IME candidate window
 //   {t:"cursor", k}            pointer shape: default|text|pointer|move|
 //                              grabbing|ew|ns|nwse|nesw
-//   {t:"pocket-open", app}      create one Guest/UiSurface for a catalog app
-//   {t:"pocket-close", app}     drop that app's Guest and QuickJS runtime
-//   {t:"pocket-input", app, buttons} one hardware-neutral button pulse
-//   {t:"pocket-state", app, visible, focused} scheduler/painter facts
 
 import { getOps } from "@pocketjs/framework";
 
@@ -40,8 +35,7 @@ export interface HostEvent {
     | "mouse"
     | "scroll"
     | "paste"
-    | "ime"
-    | "pocket-status";
+    | "ime";
   w?: number;
   h?: number;
   epoch?: number;
@@ -62,9 +56,6 @@ export interface HostEvent {
   text?: string;
   /** IME preedit caret (char index into s), null when composition ends. */
   c?: number | null;
-  app?: string;
-  status?: "ready" | "error";
-  message?: string;
 }
 
 export type CursorKind =
@@ -87,11 +78,7 @@ export interface Svc {
       | { t: "copy"; text: string }
       | { t: "paste-req" }
       | { t: "caret"; x: number; y: number; h: number }
-      | { t: "cursor"; k: CursorKind }
-      | { t: "pocket-open"; app: string }
-      | { t: "pocket-close"; app: string }
-      | { t: "pocket-input"; app: string; buttons: number }
-      | { t: "pocket-state"; app: string; visible: boolean; focused: boolean },
+      | { t: "cursor"; k: CursorKind },
   ): void;
 }
 

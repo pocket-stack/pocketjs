@@ -41,19 +41,38 @@ describe("desk98-main boots standalone", () => {
 interface MockSvc {
   push: (line: Record<string, unknown>) => void;
   sent: () => Record<string, unknown>[];
+  surfaces: () => readonly [number, number, number][];
   mutateOps: (ops: Record<string, unknown>) => void;
 }
 
 function mockSvc(): MockSvc {
   const toGuest: string[] = [];
   const fromGuest: Record<string, unknown>[] = [];
+  const surfaceBindings: [number, number, number][] = [];
   return {
     push: (line) => toGuest.push(JSON.stringify(line)),
     sent: () => fromGuest,
+    surfaces: () => surfaceBindings,
     mutateOps: (ops) => {
-      // The real desk companion is the native macos-app host. Mark this mock
-      // native-shaped so unresolved portal marker images stay transparent in
-      // sim; the host registers their texture handles before bundle eval.
+      // Environment package handles are independent of svc. Keep the real
+      // WASM core op underneath so this test exercises SURFACE_QUAD creation.
+      const setCompositorSurface = ops.setCompositorSurface as (
+        node: number,
+        surface: number,
+        focused: number,
+      ) => void;
+      ops.__surfaces = {
+        "dev.pocket-stack.hero": 1,
+        "dev.pocket-stack.settings": 2,
+      };
+      ops.setCompositorSurface = (
+        node: number,
+        surface: number,
+        focused: number,
+      ) => {
+        surfaceBindings.push([node, surface, focused]);
+        setCompositorSurface(node, surface, focused);
+      };
       ops.__host = "macos-app";
       ops.svcOpen = (name: string) => name === "desk";
       ops.svcPoll = () => {
@@ -195,7 +214,7 @@ describe("desk98 desk companion journey", () => {
     expect(treeHasText(world.getTree(), "[PASTED]QQ")).toBe(true);
   }, 30000);
 
-  test("desktop icons open independent Pocket app windows and route focused input", async () => {
+  test("desktop windows bind package surfaces and publish native focus", async () => {
     const svc = mockSvc();
     const world = await bootWorld(APP, 60, undefined, svc.mutateOps);
     svc.push({ t: "hello", w: 800, h: 600, epoch: 1755650000000 });
@@ -214,46 +233,21 @@ describe("desk98 desk companion journey", () => {
     // nine rows, so both remain in the first column at y=298 and y=356.
     await doubleClick(45, 320);
     expect(treeHasText(world.getTree(), "PocketJS: Hero")).toBe(true);
-    expect(
-      svc
-        .sent()
-        .some((line) => line.t === "pocket-open" && line.app === "hero-main"),
-    ).toBe(true);
+    expect(svc.surfaces().filter(([, surface]) => surface === 1).at(-1)?.[2]).toBe(1);
 
     await doubleClick(45, 378);
     let tree = world.getTree();
     expect(treeHasText(tree, "PocketJS: Hero")).toBe(true);
     expect(treeHasText(tree, "PocketJS: Settings")).toBe(true);
-    expect(
-      svc
-        .sent()
-        .some(
-          (line) => line.t === "pocket-open" && line.app === "settings-main",
-        ),
-    ).toBe(true);
-
-    // Settings is focused: named and character input become button pulses
-    // for that realm only. The host maps these to one guest frame.
-    svc.push({ t: "key", k: "Right" });
-    svc.push({ t: "ch", s: "z" });
-    await step(world, 2);
-    const inputs = svc.sent().filter((line) => line.t === "pocket-input");
-    expect(inputs.slice(-2)).toEqual([
-      { t: "pocket-input", app: "settings-main", buttons: 0x0020 },
-      { t: "pocket-input", app: "settings-main", buttons: 0x4000 },
-    ]);
+    expect(svc.surfaces().filter(([, surface]) => surface === 1).at(-1)?.[2]).toBe(0);
+    expect(svc.surfaces().filter(([, surface]) => surface === 2).at(-1)?.[2]).toBe(1);
+    expect(svc.sent().some((line) => String(line.t).startsWith("pocket-"))).toBe(false);
 
     svc.push({ t: "key", k: "w", cmd: true });
     await step(world, 2);
     tree = world.getTree();
     expect(treeHasText(tree, "PocketJS: Settings")).toBe(false);
     expect(treeHasText(tree, "PocketJS: Hero")).toBe(true);
-    expect(
-      svc
-        .sent()
-        .some(
-          (line) => line.t === "pocket-close" && line.app === "settings-main",
-        ),
-    ).toBe(true);
+    expect(svc.sent().some((line) => String(line.t).startsWith("pocket-"))).toBe(false);
   }, 30000);
 });

@@ -23,6 +23,7 @@ pocket-ui-surface = { path = "../../engine/crates/pocket-ui-surface" }
 pocket-ui-gpui = { path = "../../engine/backends/gpui" }
 gpui = "0.2.2"
 serde_json = "1"
+serde = { version = "1", features = ["derive"] }
 anyhow = "1"
 log = "0.4"
 env_logger = "0.11"

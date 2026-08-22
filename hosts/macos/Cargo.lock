@@ -3939,6 +3939,7 @@ dependencies = [
  "pocket-ui-gpui",
  "pocket-ui-surface",
  "pocketjs-core",
+ "serde",
  "serde_json",
 ]
 

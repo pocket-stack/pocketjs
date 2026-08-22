@@ -651,6 +651,12 @@ impl UiRenderer {
                     }
                     i += 8 + (words[i + 7] as usize).div_ceil(4);
                 }
+                spec::draw_op::SURFACE_QUAD => {
+                    if i + 9 > words.len() {
+                        break;
+                    }
+                    i += 9;
+                }
                 // The op set is closed per DrawList version; anything else
                 // means corrupt data — stop instead of misinterpreting.
                 _ => break,

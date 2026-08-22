@@ -98,8 +98,8 @@ note does (pure-math unit tests over an injected measurer, sim traces,
 
 ## The `macos-app` target
 
-`contracts/spec/platforms.ts` registers the profile: hostAbi 3 (the desktop
-HostOps wire generation macos-widget already speaks), `form: "window"`,
+`contracts/spec/platforms.ts` registers the profile: hostAbi 4 (the
+compositor-surface wire generation), `form: "window"`,
 dynamic viewport with `acceptsFixed` — a general app frame, not a widget
 shell. Fixed-viewport console apps run size-locked and letterboxed with
 their baked glyph pipeline intact; the manifest decides everything else:
@@ -112,16 +112,20 @@ bun run macos note --proof
 
 `tools/macos.ts` resolves the manifest against `macos-app`, writes the
 plan, builds the bundle + pak, and derives the capability-shaped host flags
-(`--fixed`, `--native-text`, `--companions`) from the resolved plan.
+(`--fixed`, `--native-text`, `--companions`) from the resolved plan. If the
+selected app directory also contains `pocket.environment.json`, the tool
+resolves every installed package and starts the host with one complete
+`ResolvedEnvironmentPlan`; it does not project child plans into command-line
+viewport or title fields.
 `--editor` is NOT a capability: it enables the note's companion svc adapter
 (an app protocol — the profile deliberately registers no
 pointer/text/IME/clipboard ids, see contracts/spec/platforms.ts). On exit
 the host prints its governor receipt (`pocket-macos: N ticks, M frames
 rendered`); a settled app shows M ≪ N.
 
-## The desk companion
+## Environment-shell companion input
 
-The host speaks a second svc dialect when the plan's companion list names
+The host speaks an extended svc dialect when the shell plan's companion list names
 `desk` (apps/desk98/svc.ts): the note dialect's input lines extended with
 **right-button mouse lines (`b:2`), alt/ctl key modifiers, F1–F12,
 cmd-flagged ⌘ chords, a boot epoch in the hello**, a `{t:"cursor"}` guest
@@ -130,7 +134,10 @@ intent the host answers with a paste line (menu-driven Paste). ⌘Q quits
 and ⌘V pastes host-side; every other ⌘ chord reaches the guest, so the
 compositor owns its shortcuts (⌘W close, ⌘M minimize, ⌘` cycle windows,
 ⌘Esc Start menu, ⌘A/C/X editing). Plain typing arrives only through the
-IME input handler (`insertText:` → one `ch` line per keypress).
+IME input handler (`insertText:` → one `ch` line per keypress). **This
+companion carries shell UI input, clipboard requests and cursor intents. It
+does not carry package lifecycle, focus, per-frame visibility or button
+routing.**
 
 `apps/desk98` — a Windows 98 desktop compositor written in Vue Vapor JSX
 — is the reference consumer: the guest owns every window (drag, resize,
@@ -142,29 +149,32 @@ Its W95FA pixel font is baked per-app into slots 19–21 through
 `apps/desk98/pak.json` (`gen-assets.ts`) — the repo slot table (0–18)
 never moves.
 
-Desk98 also publishes the current small demo set from
-`apps/desk98/pocket-apps.ts`: Hero, Settings, Motions, Cards, Chrome,
-Cursor, Gallery, Library, Music, Notifications and Stats. The same catalog
-drives the desktop icons and `tools/macos.ts` builds. **Catalog validation
-rejects desktop entries without matching macOS artifacts.**
+Pocket Desktop declares the demo packages in
+`apps/desk98/pocket.environment.json`: Hero, Settings, Motions, Cards,
+Chrome, Cursor, Gallery, Library, Music, Notifications and Stats. The
+Environment owns the required/installed/available state and the desktop
+catalog reads its presentation metadata. **Every installed entry resolves to
+an unmodified `ResolvedBuildPlan`; features, companions, target identity,
+viewport policy and package identity reach the native host together.**
 
-- **Opening a Pocket app creates a new `Guest`, QuickJS `Runtime`, QuickJS
-  `Context`, `UiSurface` and `GpuiRenderer` inside the existing macOS
-  process.** Its globals, native node tree, textures, animation clock and
-  button state are not shared with the Desk98 shell or another app.
-- **The Desk98 window content is a GPUI paint portal, not a captured
-  bitmap.** The shell emits an ordinary image `TEX_QUAD`; the macOS renderer
-  replaces its registered texture handle with the child surface's DrawList
-  at that exact point in painter order. **The Desk98 window manager applies
-  clipping, overlapping-window order, minimizing and task switching.**
-- **Every open realm receives one guest turn and one core tick per host
-  tick.** Only the focused Pocket window receives hardware-neutral button
-  pulses. Minimized realms keep running but are excluded from the visible
-  composite hash, so their background animation does not repaint the desk.
-  Closing a window drops that app's `Guest`, which destroys its QuickJS
-  runtime and context without affecting siblings.
-- **A child exception stops only that child realm.** The host reports the
-  error into the app window while the shell and other realms continue.
+- **`hosts/macos` implements a generic `RuntimeSupervisor`; it contains no
+  Desk98 catalog or package-name rules.** Live `<CompositorSurface package>`
+  bindings create one `Guest`, QuickJS `Runtime`, QuickJS `Context`,
+  `UiSurface` and `GpuiRenderer` per package inside the existing process.
+  Their globals, node trees, textures, clocks and button state are isolated.
+- **Compositor surfaces use `SURFACE_QUAD`, not `TEX_QUAD`.** The instruction
+  carries the package-surface handle, unclipped bounds, clipped visible bounds
+  and focused state. GPUI invokes the native compositor at that exact DrawList
+  position, so shell content before and after it keeps its painter order and
+  clipping never changes the child coordinate origin.
+- **Realm lifecycle and scheduling come from the shell core's live surface
+  bindings.** Destroying a binding drops its realm. Hidden bindings suspend
+  under the Environment's `visible` background policy; `resident` keeps them
+  ticking. Focused visible realms run first, and hardware-neutral buttons go
+  only to the top focused surface.
+- **A child exception stops only that child realm.** The shell and sibling
+  realms continue; the host records the package failure without adding a
+  companion hot path.
 
 ```
 bun run macos desk98      # the full desktop; drag-select, Cmd+`, Cmd+W, Cmd+Esc

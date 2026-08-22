@@ -7,7 +7,11 @@
 // below caption (and menu bar if present).
 
 import { computed } from "vue";
-import { Image, View } from "@pocketjs/framework/components";
+import {
+  CompositorSurface,
+  Image,
+  View,
+} from "@pocketjs/framework/components";
 import { getOps } from "@pocketjs/framework/host";
 import { T98 } from "./chrome.tsx";
 import { FONT, FRAME } from "./theme.ts";
@@ -19,7 +23,6 @@ import {
   type VSeg,
 } from "./notepad.ts";
 import { MINES_W, type Cell } from "./mines.ts";
-import { pocketPortalSource } from "./pocket-apps.ts";
 import type {
   AboutData,
   FolderData,
@@ -182,26 +185,23 @@ export function NotepadView(props: {
 }
 
 // ---------------------------------------------------------------------------
-// Pocket app portal — the host replaces this native texture draw with the
-// matching isolated realm's DrawList at the exact point in the shell's paint
-// order. The fallback remains visible in sim or after an isolated boot error.
+// Pocket app surface — an explicit native-compositor instruction at this exact
+// point in shell paint order. The fallback remains visible without a runtime
+// supervisor or while the isolated package has no DrawList to paint.
 // ---------------------------------------------------------------------------
 
-export function PocketAppView(props: { data: PocketData }) {
-  const message = () =>
-    props.data.status.value === "error"
-      ? props.data.error.value || `${props.data.app.title} could not start.`
-      : `Starting ${props.data.app.title}...`;
+export function PocketAppView(props: { data: PocketData; active: boolean }) {
   return (
     <View class="flex-1 relative overflow-hidden bg-[#000000]">
       <View class="absolute inset-0 flex-col items-center justify-center bg-[#c0c0c0] px-[20]">
         <Image class="w-[32] h-[32] mb-[8]" src="icons/pocket-app.svg" />
-        <T98 t={message()} />
+        <T98 t={`Starting ${props.data.app.title}...`} />
         <T98 cls="text-[#808080] mt-[5]" t="Arrow keys + Z/X/A/S + Q/W" />
       </View>
-      <Image
+      <CompositorSurface
         class="absolute inset-0"
-        src={pocketPortalSource(props.data.app.output)}
+        package={props.data.app.package}
+        focused={props.active}
       />
     </View>
   );

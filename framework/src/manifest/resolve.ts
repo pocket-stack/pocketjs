@@ -255,6 +255,31 @@ export function validatePlatformContractRegistry(
       }
       provided.add(capability);
     });
+    const supervisor = target.runtime?.supervisor;
+    if (
+      supervisor &&
+      (supervisor.isolation !== "realm" || supervisor.compositor !== "native")
+    ) {
+      diagnostics.push({
+        code: "registry.invalidRuntimeSupervisor",
+        path: `/targets/${targetId}/runtime/supervisor`,
+        message: "runtime supervisor must provide realm isolation and native composition",
+      });
+    }
+    if (supervisor && !provided.has("runtime.supervisor")) {
+      diagnostics.push({
+        code: "registry.supervisorCapabilityMissing",
+        path: `/targets/${targetId}/capabilities`,
+        message: "a target with runtime.supervisor profile must advertise runtime.supervisor",
+      });
+    }
+    if (!supervisor && provided.has("runtime.supervisor")) {
+      diagnostics.push({
+        code: "registry.supervisorProfileMissing",
+        path: `/targets/${targetId}/runtime`,
+        message: "runtime.supervisor capability requires a runtime supervisor profile",
+      });
+    }
   }
   return diagnostics;
 }

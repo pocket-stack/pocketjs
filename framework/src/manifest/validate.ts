@@ -39,7 +39,7 @@ function matchesType(value: unknown, type: NonNullable<JsonSchemaObject["type"]>
   }
 }
 
-function validateSchema(
+export function validateSchema(
   value: unknown,
   schema: JsonSchema,
   path: string,

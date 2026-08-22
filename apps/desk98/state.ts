@@ -105,10 +105,6 @@ export interface FolderData {
 export interface PocketData {
   kind: "pocket";
   app: PocketAppSpec;
-  /** Host-reported realm lifecycle. The fallback reports an isolated boot
-   *  error whenever the host has no child DrawList to paint. */
-  status: Ref<"starting" | "ready" | "error">;
-  error: Ref<string>;
 }
 
 export interface AboutData {

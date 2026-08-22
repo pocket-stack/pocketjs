@@ -808,6 +808,9 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                 }
                 i += 1;
             }
+            spec::draw_op::SURFACE_QUAD if i + 9 <= n => {
+                i += 9;
+            }
             _ => break, // unknown/truncated op: stop rather than desync
         }
     }

@@ -5,7 +5,10 @@
 //! Boot contract mirrors the PSP host (`hosts/psp/src/ffi.rs` + `pak.rs`):
 //! styles/atlases feed the core natively BEFORE the bundle evals, pak images
 //! and sprites upload natively, and the (name → handle) tables are exposed
-//! as `ui.__textures` / `ui.__sprites`, which is exactly what routes
+//! as `ui.__textures` / `ui.__sprites`. Environment shells additionally get
+//! a separate `ui.__surfaces` package-id table from RuntimeSupervisor; surface
+//! handles never enter the texture table.
+//! This is exactly what routes
 //! `framework/src/host.ts::detectHost` onto its PSP branch. One desktop addition:
 //! `ui.__viewport = {w, h}` tells the framework the logical UI size (the PSP
 //! host omits it and the framework defaults to 480x272).
@@ -69,6 +72,8 @@ struct Inner {
     /// pak image name → core texture handle (`ui.__textures`).
     textures: Vec<(String, i32)>,
     sprites: Vec<SpriteReg>,
+    /// Installed Environment package id -> native compositor surface handle.
+    surfaces: Vec<(String, i32)>,
     /// Host service channel (spec ops 30..32): in-process JSON-line queues.
     /// On consoles the mailbox is files under a tethered share; here the
     /// widget host *is* the companion process, so lines just cross a queue.
@@ -113,6 +118,7 @@ impl UiSurface {
                 pak: Vec::new(),
                 textures: Vec::new(),
                 sprites: Vec::new(),
+                surfaces: Vec::new(),
                 svc_in: VecDeque::new(),
                 svc_out: VecDeque::new(),
                 svc_allowlist: Vec::new(),
@@ -236,27 +242,16 @@ impl UiSurface {
         }
     }
 
-    /// Reserve a host-owned image name before [`mount`](Self::mount).
-    ///
-    /// The macOS Desk98 host uses a transparent 1x1 texture as a DrawList
-    /// marker: the shell binds it like any pak image, then the GPUI backend
-    /// replaces that TEX_QUAD with an isolated child surface at paint time.
-    /// Keeping the marker inside the ordinary generation-tagged texture table
-    /// means every other backend safely renders it as transparent.
-    pub fn register_host_image(&self, name: impl Into<String>) -> Option<i32> {
+    /// Register an installed Environment package before [`mount`](Self::mount).
+    /// Handles live in the compositor namespace and are never valid textures.
+    pub fn register_compositor_surface(&self, package: impl Into<String>) -> Option<i32> {
         let mut inner = self.inner.borrow_mut();
-        let name = name.into();
-        if let Some((_, handle)) = inner.textures.iter().find(|(known, _)| known == &name) {
+        let package = package.into();
+        if let Some((_, handle)) = inner.surfaces.iter().find(|(known, _)| known == &package) {
             return Some(*handle);
         }
-        let handle =
-            inner
-                .ui
-                .upload_texture(&[0, 0, 0, 0], 1, 1, pocketjs_core::spec::psm::PSM_8888);
-        if handle < 0 {
-            return None;
-        }
-        inner.textures.push((name, handle));
+        let handle = i32::try_from(inner.surfaces.len()).ok()?;
+        inner.surfaces.push((package, handle));
         Some(handle)
     }
 
@@ -370,6 +365,13 @@ impl UiSurface {
                 .borrow_mut()
                 .ui
                 .set_image(id, tex));
+
+            let ui = self.inner.clone();
+            op!("setCompositorSurface", move |id: i32, surface: i32, focused: i32| {
+                ui.borrow_mut()
+                    .ui
+                    .set_compositor_surface(id, surface, focused != 0)
+            });
 
             let ui = self.inner.clone();
             op!("setSprite", move |id: i32,
@@ -588,6 +590,12 @@ impl UiSurface {
             }
             ns.set("__sprites", sprites)?;
 
+            let surfaces = Object::new(ctx.clone())?;
+            for (package, handle) in &inner.surfaces {
+                surfaces.set(package.as_str(), *handle)?;
+            }
+            ns.set("__surfaces", surfaces)?;
+
             let (vw, vh) = inner.ui.viewport();
             let viewport = Object::new(ctx.clone())?;
             viewport.set("w", vw as f64)?;
@@ -701,23 +709,30 @@ mod tests {
     }
 
     #[test]
-    fn host_image_is_published_as_an_ordinary_native_texture() {
+    fn compositor_surface_has_its_own_namespace_and_core_binding() {
         let guest = Guest::new().unwrap();
         let surface = UiSurface::new((16.0, 16.0));
-        let handle = surface.register_host_image("pocket-app/hero-main").unwrap();
+        let handle = surface
+            .register_compositor_surface("dev.pocket-stack.hero")
+            .unwrap();
         assert_eq!(
-            surface.register_host_image("pocket-app/hero-main"),
+            surface.register_compositor_surface("dev.pocket-stack.hero"),
             Some(handle)
         );
         surface.mount(&guest).unwrap();
         guest
             .eval(
-                "host-image",
-                "globalThis.portal = ui.__textures['pocket-app/hero-main'];",
+                "surface",
+                "globalThis.surface = ui.__surfaces['dev.pocket-stack.hero'];\
+                 globalThis.node = ui.createNode(3);\
+                 ui.setCompositorSurface(globalThis.node, globalThis.surface, 1);",
             )
             .unwrap();
-        let published: i32 = guest.with(|ctx| ctx.globals().get("portal").unwrap());
+        let published: i32 = guest.with(|ctx| ctx.globals().get("surface").unwrap());
         assert_eq!(published, handle);
-        surface.with_ui(|ui| assert_eq!(ui.texture(handle).unwrap().pixels, &[0, 0, 0, 0]));
+        surface.with_ui(|ui| {
+            assert!(ui.texture(handle).is_none());
+            assert_eq!(ui.compositor_surface_bindings(), vec![(handle as u32, true)]);
+        });
     }
 }

@@ -10,7 +10,7 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | Import path | Exports |
 | --- | --- |
 | `@pocketjs/framework` | `mount`, `render`, host/runtime helpers, types |
-| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar`, `Named`, `Grid`, `Lazy`, `Gallery`, `DeepZoom` (Solid) |
+| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `CompositorSurface`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar`, `Named`, `Grid`, `Lazy`, `Gallery`, `DeepZoom` (Solid) |
 | `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
 | `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
 | `octane` | `useState`, `useEffect`, `useMemo`, `useRef`, `useLayoutEffect`, `useEffectEvent` |
@@ -21,7 +21,7 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | `@pocketjs/framework/clock` | `simulationHz`, `ticksPerFrame`, `virtualFrame`, `virtualNow`, `after` |
 | `@pocketjs/framework/effects` | `installEffectDriver`, `runEffect`, effect types |
 | `@pocketjs/framework/hot` | `text`, `prop` |
-| `@pocketjs/framework/manifest` | contracts/schema/manifest types, validator, `extractHostBuildInputs`, `hostBuildEnvironment`, `vitaTitleId` |
+| `@pocketjs/framework/manifest` | app and Environment schema/types/resolvers, `extractHostBuildInputs`, `hostBuildEnvironment`, `vitaTitleId` |
 
 ---
 
@@ -103,7 +103,9 @@ or generation-tagged contracts. Each op is documented in full on the
 | `measureText` | `(str, fontSlot) => number` | Measured width in px. |
 | `loadTileTexture?` / `freeTexture?` | tile key/index or handle | Stream and release generation-tagged DeepZoom textures. |
 | `uploadImgEntry?` | `(blob) => number` | Upload a self-contained baked image entry; returns a handle or `-1`. |
+| `setCompositorSurface?` | `(id, surface, focused) => void` | Bind an Environment package surface to a type-3 node. |
 | `debugInspect?` … `debugStep?` | debug-only | Optional DevTools inspection and pause/step surface. |
+| `__surfaces?` | `Record<string, number>` | Installed package ids to native compositor handles; separate from textures. |
 | `__host?` / `__hostAbi?` | metadata | Native target and HostOps ABI handshake. |
 
 ### `Host`
@@ -144,7 +146,7 @@ Bind an image key (the `src` string) to an `uploadTexture` handle so `<Image src
 ### `missCounters`
 
 ```ts
-const missCounters: { unknownClass: number; unknownTexture: number }
+const missCounters: { unknownClass: number; unknownTexture: number; unknownSurface: number }
 ```
 
 On a non-strict native host, an unknown class or texture increments a counter
@@ -202,9 +204,10 @@ function View(props: ViewProps): JSX.Element
 function Text(props: TextProps): JSX.Element
 function Image(props: ImageProps): JSX.Element
 function Sprite(props: SpriteProps): JSX.Element
+function CompositorSurface(props: CompositorSurfaceProps): JSX.Element
 ```
 
-The host primitives, wrapped React Native-style. `View` is the flex container/box, `Text` renders baked-font text, `Image` draws an uploaded texture by `src` key, and `Sprite` draws an auto-playing animation from a baked sprite atlas by `sprite` key.
+The host primitives, wrapped React Native-style. `View` is the flex container/box, `Text` renders baked-font text, `Image` draws an uploaded texture by `src` key, and `Sprite` draws an auto-playing animation from a baked sprite atlas by `sprite` key. `CompositorSurface` is reserved for Environment shells and places an installed package realm into shell layout and painter order.
 
 **`ViewProps`**
 
@@ -221,6 +224,7 @@ The host primitives, wrapped React Native-style. `View` is the flex container/bo
 **`TextProps`** — `class`, `style`, `ref`, `children`, `debugName`.
 **`ImageProps`** — `class`, `src` (`string`), `style`, `ref`, `debugName`.
 **`SpriteProps`** — `class`, `sprite` (`string` — a `ui:sprite.<name>` atlas key), `style`, `ref`, `debugName`.
+**`CompositorSurfaceProps`** — `class`, `style`, `package` (installed reverse-DNS package id), `focused`, `ref`, `debugName`.
 
 `Sprite` is a native animated primitive: its atlas (a pow2 texture holding a grid of frames) is baked into the pak, and the Rust core cycles the frame cells per vblank — deterministic and with **zero per-frame JS**. It auto-plays from the first frame the moment it is displayed, so a sprite revealed by paging or a `Show`/`Lazy` starts animating on its own. Bake atlases by listing them in a demo's `sprites.json` (`{ "<atlas>.png": { cols, rows, frames, step } }`); `step` is vblanks per frame (fps = 60/step). See `apps/gallery` (its covers are shader-baked animated sprites).
 

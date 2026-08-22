@@ -17,6 +17,7 @@ function plan(
     app: {
       id,
       title,
+      version: "0.1.0",
       entry: "app/main.tsx",
       output,
       framework: "solid",
