@@ -1,7 +1,7 @@
-// apps/desk98/svc.ts — the desk companion protocol over the spec svc channel
+// apps/desk98/svc.ts — the System UI input protocol over the spec svc channel
 // (HostOps svcOpen/svcPoll/svcSend), the note dialect's input lines extended
-// for a desktop compositor. hosts/macos speaks it when the plan's companion
-// list names "desk".
+// for a native compositor. hosts/macos speaks it when the resolved System UI
+// plan.s companion list names "system-ui".
 //
 // host → guest lines (superset of apps/note/svc.ts):
 //   {t:"hello", w, h, epoch}   viewport at boot + wall-clock ms (taskbar clock)
@@ -13,7 +13,7 @@
 //   {t:"paste", text}          system clipboard (⌘V or a paste-req reply)
 //   {t:"ime", s, c}            IME preedit + caret char index (null clears)
 //   {t:"mouse", x, y, d, sh}   primary-button pointer stream
-//   {t:"mouse", x, y, d, b:2}  right-button press/release (desk-only lines)
+//   {t:"mouse", x, y, d, b:2}  right-button press/release
 //   {t:"scroll", dy}           wheel delta in logical px
 //
 // guest → host intents:
@@ -85,7 +85,7 @@ export interface Svc {
 /** Probe the channel; null = standalone (sim, goldens — static desktop). */
 export function connectSvc(): Svc | null {
   const ops = getOps();
-  if (!ops.svcOpen || !ops.svcPoll || !ops.svcSend || !ops.svcOpen("desk"))
+  if (!ops.svcOpen || !ops.svcPoll || !ops.svcSend || !ops.svcOpen("system-ui"))
     return null;
   const poll = ops.svcPoll.bind(ops);
   const send = ops.svcSend.bind(ops);

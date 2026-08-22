@@ -54,46 +54,225 @@ import {
   type Doc,
 } from "../apps/desk98/notepad.ts";
 import { POCKET_APPS } from "../apps/desk98/pocket-apps.ts";
-import environment from "../apps/desk98/pocket.environment.json";
-import { validateAndResolveEnvironmentPlan } from "../framework/src/manifest/environment.ts";
+import system from "../apps/desk98/pocket.system.json";
+import { validateAndResolveSystemPlan } from "../framework/src/manifest/system.ts";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 
 describe("Pocket app desktop catalog", () => {
-  test("the Environment preserves every installed package's complete resolved plan", async () => {
+  async function packageInputs() {
+    const installed = new Set(system.installation.installedPackages);
+    return Promise.all(
+      system.applications.catalog
+        .filter((entry) => installed.has(entry.package))
+        .map(async (entry) => ({
+          source: entry.manifest,
+          manifest: await Bun.file(entry.manifest).json(),
+        })),
+    );
+  }
+
+  test("the Pocket System preserves every installed package's complete resolved plan", async () => {
     expect(POCKET_APPS).toHaveLength(11);
     expect(new Set(POCKET_APPS.map((app) => app.package)).size).toBe(
       POCKET_APPS.length,
     );
 
-    const packages = await Promise.all(
-      environment.applications.packages.map(async (entry) => ({
-        source: entry.manifest,
-        manifest: await Bun.file(entry.manifest).json(),
-      })),
-    );
-    const environmentResolution = validateAndResolveEnvironmentPlan(
-      environment,
-      { target: "macos-app", packages },
-    );
-    expect(environmentResolution.ok).toBe(true);
-    if (!environmentResolution.ok) return;
-    expect(environmentResolution.plan.supervisor.shell).toBe(
+    const packages = await packageInputs();
+    const systemResolution = validateAndResolveSystemPlan(system, {
+      target: "macos-app",
+      packages,
+    });
+    expect(systemResolution.ok).toBe(true);
+    if (!systemResolution.ok) return;
+    expect(systemResolution.plan.roles.systemUI).toBe(
       "dev.pocket-stack.desk98",
     );
-    expect(environmentResolution.plan.supervisor.packages).toHaveLength(12);
+    expect(systemResolution.plan.systemUI.package).toBe(
+      "dev.pocket-stack.desk98",
+    );
+    expect(systemResolution.plan.installation).toEqual({
+      installedPackages: system.installation.installedPackages,
+    });
+    expect(systemResolution.plan.applications).toHaveLength(11);
+    const resolvedPackages = [
+      systemResolution.plan.systemUI,
+      ...systemResolution.plan.applications,
+    ];
 
-    for (const entry of environment.applications.packages) {
-      const manifest = packages.find((item) => item.source === entry.manifest)!
-        .manifest;
+    for (const entry of system.applications.catalog) {
+      if (!system.installation.installedPackages.includes(entry.package))
+        continue;
+      const manifest = packages.find(
+        (item) => item.source === entry.manifest,
+      )!.manifest;
       const resolution = validateAndResolveBuildPlan(manifest, {
         target: "macos-app",
+        role:
+          entry.package === system.roles.systemUI ? "systemUI" : "application",
       });
       expect(resolution.ok).toBe(true);
       if (!resolution.ok) continue;
-      const supervised = environmentResolution.plan.supervisor.packages.find(
+      const resolved = resolvedPackages.find(
         (item) => item.package === entry.package,
       );
-      expect(supervised?.plan).toEqual(resolution.plan);
+      expect(resolved?.plan).toEqual(resolution.plan);
+    }
+  });
+
+  test("rejects duplicate artifact outputs before any package build", async () => {
+    const packages = await packageInputs();
+    const hero = packages.find(
+      (entry) => entry.source === "apps/hero/pocket.json",
+    )!;
+    (hero.manifest as any).app.output = "settings-main";
+    const result = validateAndResolveSystemPlan(system, {
+      target: "macos-app",
+      packages,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.map((item) => item.code)).toContain(
+      "system.duplicateOutput",
+    );
+  });
+
+  test("keeps catalog availability separate from the installed package snapshot", async () => {
+    const available = structuredClone(system);
+    available.installation.installedPackages =
+      available.installation.installedPackages.filter(
+        (packageId) => packageId !== "dev.pocket-stack.hero",
+      );
+    const packages = (await packageInputs()).filter(
+      (entry) => entry.source !== "apps/hero/pocket.json",
+    );
+    const result = validateAndResolveSystemPlan(available, {
+      target: "macos-app",
+      packages,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(available.applications.catalog).toContainEqual(
+      expect.objectContaining({ package: "dev.pocket-stack.hero" }),
+    );
+    expect(result.plan.installation.installedPackages).not.toContain(
+      "dev.pocket-stack.hero",
+    );
+    expect(
+      result.plan.applications.map((entry) => entry.package),
+    ).not.toContain("dev.pocket-stack.hero");
+  });
+
+  test("rejects installation snapshots that omit required or name unknown packages", async () => {
+    const missingSystemUI = structuredClone(system);
+    missingSystemUI.installation.installedPackages =
+      missingSystemUI.installation.installedPackages.filter(
+        (packageId) => packageId !== "dev.pocket-stack.desk98",
+      );
+    const missing = validateAndResolveSystemPlan(missingSystemUI, {
+      target: "macos-app",
+      packages: (await packageInputs()).filter(
+        (entry) => entry.source !== "apps/desk98/pocket.json",
+      ),
+    });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.diagnostics.map((item) => item.code)).toContain(
+        "system.requiredPackageNotInstalled",
+      );
+    }
+
+    const unknownPackage = structuredClone(system);
+    unknownPackage.installation.installedPackages.push(
+      "dev.pocket-stack.unknown",
+    );
+    const unknown = validateAndResolveSystemPlan(unknownPackage, {
+      target: "macos-app",
+      packages: await packageInputs(),
+    });
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) {
+      expect(unknown.diagnostics.map((item) => item.code)).toContain(
+        "system.installedPackageUnknown",
+      );
+    }
+  });
+
+  test("grants compositor surfaces only to the System UI role", async () => {
+    const required = await packageInputs();
+    const requiredHero = required.find(
+      (entry) => entry.source === "apps/hero/pocket.json",
+    )!;
+    (requiredHero.manifest as any).engine.capabilities.requires.push(
+      "ui.compositor-surfaces",
+    );
+    const rejected = validateAndResolveSystemPlan(system, {
+      target: "macos-app",
+      packages: required,
+    });
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.diagnostics.map((item) => item.code)).toContain(
+        "capability.unavailable",
+      );
+    }
+
+    const enhanced = await packageInputs();
+    const enhancedHero = enhanced.find(
+      (entry) => entry.source === "apps/hero/pocket.json",
+    )!;
+    (enhancedHero.manifest as any).engine.capabilities.enhances.push(
+      "ui.compositor-surfaces",
+    );
+    const accepted = validateAndResolveSystemPlan(system, {
+      target: "macos-app",
+      packages: enhanced,
+    });
+    expect(accepted.ok).toBe(true);
+    if (accepted.ok) {
+      const hero = accepted.plan.applications.find(
+        (entry) => entry.package === "dev.pocket-stack.hero",
+      );
+      expect(hero?.plan.features["ui.compositor-surfaces"]).toBe(false);
+    }
+  });
+
+  test("requires a hard compositor-surface dependency from System UI", async () => {
+    const packages = await packageInputs();
+    const shell = packages.find(
+      (entry) => entry.source === "apps/desk98/pocket.json",
+    )!;
+    const capabilities = (shell.manifest as any).engine.capabilities;
+    capabilities.requires = capabilities.requires.filter(
+      (capability: string) => capability !== "ui.compositor-surfaces",
+    );
+    capabilities.enhances.push("ui.compositor-surfaces");
+    const result = validateAndResolveSystemPlan(system, {
+      target: "macos-app",
+      packages,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.diagnostics.map((item) => item.code)).toContain(
+        "system.systemUICapabilityMissing",
+      );
+    }
+  });
+
+  test("rejects child companions until an AppInstance adapter exists", async () => {
+    const packages = await packageInputs();
+    const hero = packages.find(
+      (entry) => entry.source === "apps/hero/pocket.json",
+    )!;
+    (hero.manifest as any).app.companions = ["note"];
+    const result = validateAndResolveSystemPlan(system, {
+      target: "macos-app",
+      packages,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.diagnostics.map((item) => item.code)).toContain(
+        "system.childCompanionUnsupported",
+      );
     }
   });
 

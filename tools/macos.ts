@@ -10,8 +10,8 @@
 //   bun run macos desk98 --build-only # shell + all Pocket app realms + host
 //
 // Everything host-facing derives from resolved contracts. An ordinary app
-// becomes one ResolvedBuildPlan. A directory with pocket.environment.json
-// becomes one ResolvedEnvironmentPlan containing complete installed-package
+// becomes one ResolvedBuildPlan. A directory with pocket.system.json becomes
+// one ResolvedSystemPlan containing complete installed-package
 // plans; the host receives that file without child-plan field projection.
 // The windowed run stays attached to your terminal — ⌘Q quits. On exit the
 // host prints its governor receipt: "pocket-macos: N ticks, M frames
@@ -21,10 +21,10 @@ import { resolve as resolvePath } from "node:path";
 import { $ } from "bun";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 import {
-  validateAndResolveEnvironmentPlan,
-  validatePocketEnvironment,
-  type ResolvedEnvironmentPlan,
-} from "../framework/src/manifest/environment.ts";
+  validateAndResolveSystemPlan,
+  validatePocketSystem,
+  type ResolvedSystemPlan,
+} from "../framework/src/manifest/system.ts";
 import type { ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -48,45 +48,44 @@ const manifestPath = `${root}apps/${appDir}/pocket.json`;
 if (!existsSync(manifestPath)) {
   throw new Error(`pocket-macos: no manifest at apps/${appDir}/pocket.json`);
 }
-const environmentPath = `${root}apps/${appDir}/pocket.environment.json`;
-let environmentPlan: ResolvedEnvironmentPlan | undefined;
+const systemPath = `${root}apps/${appDir}/pocket.system.json`;
+let systemPlan: ResolvedSystemPlan | undefined;
 let plan: ResolvedBuildPlan;
 
-if (existsSync(environmentPath)) {
-  const rawEnvironment = await Bun.file(environmentPath).json();
-  const environment = validatePocketEnvironment(rawEnvironment);
-  if (!environment.ok) {
+if (existsSync(systemPath)) {
+  const rawSystem = await Bun.file(systemPath).json();
+  const system = validatePocketSystem(rawSystem);
+  if (!system.ok) {
     throw new Error(
-      `pocket-macos: invalid Environment at apps/${appDir}/pocket.environment.json: ` +
-        environment.diagnostics
+      `pocket-macos: invalid Pocket System at apps/${appDir}/pocket.system.json: ` +
+        system.diagnostics
           .map((d) => `${d.path || "/"}: ${d.message}`)
           .join("; "),
     );
   }
+  const installed = new Set(system.value.installation.installedPackages);
   const packages = await Promise.all(
-    environment.value.applications.packages.map(async (entry) => ({
-      source: entry.manifest,
-      manifest: await Bun.file(`${root}${entry.manifest}`).json(),
-    })),
+    system.value.applications.catalog
+      .filter((entry) => installed.has(entry.package))
+      .map(async (entry) => ({
+        source: entry.manifest,
+        manifest: await Bun.file(`${root}${entry.manifest}`).json(),
+      })),
   );
-  const resolution = validateAndResolveEnvironmentPlan(rawEnvironment, {
+  const resolution = validateAndResolveSystemPlan(rawSystem, {
     target: "macos-app",
     packages,
   });
   if (!resolution.ok) {
     throw new Error(
-      `pocket-macos: ${environment.value.title} did not resolve against macos-app: ` +
+      `pocket-macos: ${system.value.title} did not resolve against macos-app: ` +
         resolution.diagnostics
           .map((d) => `${d.path || "/"}: ${d.message}`)
           .join("; "),
     );
   }
-  environmentPlan = resolution.plan;
-  const shell = environmentPlan.supervisor.packages.find(
-    (entry) => entry.package === environmentPlan!.supervisor.shell,
-  );
-  if (!shell) throw new Error("pocket-macos: resolved Environment has no shell package");
-  plan = shell.plan;
+  systemPlan = resolution.plan;
+  plan = systemPlan.systemUI.plan;
 } else {
   const manifest = await Bun.file(manifestPath).json();
   const resolution = validateAndResolveBuildPlan(manifest, {
@@ -104,29 +103,33 @@ if (existsSync(environmentPath)) {
 
 const planPath = `${root}.pocket/macos-app/${plan.app.output}.plan.json`;
 mkdirSync(resolvePath(planPath, ".."), { recursive: true });
-const installedPlans = environmentPlan
-  ? environmentPlan.supervisor.packages.map((entry) => entry.plan)
+const installedPlans = systemPlan
+  ? [
+      systemPlan.systemUI.plan,
+      ...systemPlan.applications.map((entry) => entry.plan),
+    ]
   : [plan];
 for (const packagePlan of installedPlans) {
   const packagePlanPath = `${root}.pocket/macos-app/${packagePlan.app.output}.plan.json`;
   await Bun.write(packagePlanPath, JSON.stringify(packagePlan, null, 2) + "\n");
-  await $`bun tools/build.ts --plan=${packagePlanPath} --project-root=${root}`.cwd(root);
+  await $`bun tools/build.ts --plan=${packagePlanPath} --project-root=${root}`.cwd(
+    root,
+  );
 }
 
-let environmentPlanPath: string | undefined;
-if (environmentPlan) {
-  environmentPlanPath = `${root}.pocket/macos-app/${environmentPlan.environment.name}.environment.plan.json`;
-  await Bun.write(environmentPlanPath, JSON.stringify(environmentPlan, null, 2) + "\n");
+let systemPlanPath: string | undefined;
+if (systemPlan) {
+  systemPlanPath = `${root}.pocket/macos-app/${systemPlan.system.name}.system.plan.json`;
+  await Bun.write(systemPlanPath, JSON.stringify(systemPlan, null, 2) + "\n");
 }
 await $`cargo build --release`.cwd(`${root}hosts/macos`);
 
 if (buildOnly) {
   console.log(
-    `pocket-macos: built ${plan.app.output}` +
-      (environmentPlan
-        ? ` + ${environmentPlan.supervisor.packages.length - 1} supervised packages`
-        : "") +
-      " + release host",
+    (systemPlan
+      ? `pocket-macos: built SystemUI ${plan.app.output} + ` +
+        `${systemPlan.applications.length} application packages`
+      : `pocket-macos: built ${plan.app.output}`) + " + release host",
   );
   process.exit(0);
 }
@@ -145,8 +148,8 @@ const env = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? "info" };
 //                  when the app declares the "note" companion
 const fixed = plan.viewport.policy === "fixed";
 const editor = plan.companions.includes("note");
-const flags: string[] = environmentPlanPath
-  ? ["--environment-plan", environmentPlanPath]
+const flags: string[] = systemPlanPath
+  ? ["--system-plan", systemPlanPath]
   : [
       "--app",
       plan.app.output,

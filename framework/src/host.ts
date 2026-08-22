@@ -64,8 +64,8 @@ export interface HostOps {
   uploadTexture(buf: Uint8Array, w: number, h: number, psm: number): number;
   /** texHandle < 0 clears the image (handles are 0-based: 0 is a real one). */
   setImage(id: number, texHandle: number): void;
-  /** Bind a native RuntimeSupervisor surface to a surface node. Optional on
-   *  hosts without runtime.supervisor; handle < 0 clears the binding. */
+  /** Bind a native application surface to a surface node. Optional on
+   *  hosts without ui.compositor-surfaces; handle < 0 clears the binding. */
   setCompositorSurface?(id: number, handle: number, focused: number): void;
   /**
    * Bind an animated sprite atlas to an image node: `atlas` is an uploaded
@@ -228,7 +228,7 @@ export interface HostOps {
    *  means the spec default 60 — hosts that predate per-realm rates only
    *  ever ran 60. Bundles bake their rate (`--hz`) and refuse another. */
   __tickHz?: number;
-  /** Environment package id -> supervisor surface handle. Separate from the
+  /** Pocket System package id -> compositor surface handle. Separate from the
    *  texture namespace: compositor surfaces are not images. */
   __surfaces?: Record<string, number>;
 }

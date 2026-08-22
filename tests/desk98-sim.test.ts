@@ -1,9 +1,9 @@
 // tests/desk98-sim.test.ts — desk98 in the sim. Two worlds:
 //
-//   1. standalone (no desk companion): the app boots a static arrangement —
+//   1. standalone (no System UI companion): the app boots a static arrangement —
 //      the unmodified-app base case.
-//   2. a mock desk companion: svcOpen/svcPoll/svcSend installed before eval
-//      (bootWorld mutateOps), so the whole desk dialect journey runs
+//   2. a mock System UI companion: svcOpen/svcPoll/svcSend installed before eval
+//      (bootWorld mutateOps), so the whole input dialect journey runs
 //      headless — typing, drag selection, ⌘ chords, the notepad context
 //      menu, paste-req — with guest intents (copy payloads!) asserted on
 //      the wire.
@@ -35,7 +35,7 @@ describe("desk98-main boots standalone", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The desk companion journey
+// The System UI companion journey
 // ---------------------------------------------------------------------------
 
 interface MockSvc {
@@ -54,7 +54,7 @@ function mockSvc(): MockSvc {
     sent: () => fromGuest,
     surfaces: () => surfaceBindings,
     mutateOps: (ops) => {
-      // Environment package handles are independent of svc. Keep the real
+      // Pocket System package handles are independent of svc. Keep the real
       // WASM core op underneath so this test exercises SURFACE_QUAD creation.
       const setCompositorSurface = ops.setCompositorSurface as (
         node: number,
@@ -74,7 +74,7 @@ function mockSvc(): MockSvc {
         setCompositorSurface(node, surface, focused);
       };
       ops.__host = "macos-app";
-      ops.svcOpen = (name: string) => name === "desk";
+      ops.svcOpen = (name: string) => name === "system-ui";
       ops.svcPoll = () => {
         if (toGuest.length === 0) return null;
         const batch = toGuest.join("\n");
@@ -106,7 +106,7 @@ function mouse(svc: MockSvc, x: number, y: number, d: boolean, b?: number) {
   );
 }
 
-describe("desk98 desk companion journey", () => {
+describe("desk98 System UI companion journey", () => {
   test("typing, selection, ⌘ chords, context menu and paste-req", async () => {
     const svc = mockSvc();
     const world = await bootWorld(APP, 60, undefined, svc.mutateOps);

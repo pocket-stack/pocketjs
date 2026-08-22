@@ -241,7 +241,7 @@ children[], …}`) so reconciler *reads* never cross the FFI. Handles are `i32`
 | replaceText | `(id, str)` | Solid universal calls this on text updates |
 | uploadTexture | `(buf, w, h, psm) → handle` | pow2 ≤512, copied + 16B-aligned |
 | setImage | `(id, texHandle)` | texHandle < 0 clears (handles are 0-based: 0 is the first upload); also clears any sprite binding |
-| setCompositorSurface | `(id, surfaceHandle, focused)` | binds a type-3 node to an Environment package surface; emits `SURFACE_QUAD` with full geometry, clipped geometry and focus at the node's exact painter position. Surface handles use a separate namespace from textures |
+| setCompositorSurface | `(id, surfaceHandle, focused)` | binds a type-3 node to a Pocket System application surface; emits `SURFACE_QUAD` with full geometry, clipped geometry and focus at the node's exact painter position. Surface handles use a separate namespace from textures |
 | setSprite | `(id, atlas, frames, cols, step)` | binds an ANIMATED SPRITE ATLAS to an image node: the atlas texture holds a `cols`-wide grid of `frames` cells; the core auto-plays it, drawing cell `(frame−start)/step % frames` as a TEX_QUAD UV sub-rect — derived at draw time from the vblank counter, so zero per-frame JS and byte-exact goldens. `frames ≤ 0` clears **[R]** |
 | animate | `(id, propId, to:f64, durMs, easing, delayMs) → animId` | from = current |
 | cancelAnim | `(animId)` | |

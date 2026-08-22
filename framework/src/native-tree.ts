@@ -601,11 +601,11 @@ function setCompositorBinding(node: NodeMirror): void {
   const bind = ops.setCompositorSurface;
   if (!bind) {
     // A compositor surface is an enhancement on plan-less dev/sim hosts; the
-    // environment shell keeps its fallback content visible there.
+    // System UI shell keeps its fallback content visible there.
     return;
   }
   if (!ops.__surfaces) {
-    // Surface handles exist only when a resolved Environment has been loaded.
+    // Surface handles exist only when a resolved Pocket System has been loaded.
     // Plan-less dev/sim hosts render the shell's fallback content.
     return;
   }
@@ -622,7 +622,7 @@ function setCompositorBinding(node: NodeMirror): void {
   if (handle === undefined) {
     if (getHost().strict) {
       throw new Error(
-        `PocketJS: package ${JSON.stringify(packageId)} is not installed in this Environment`,
+        `PocketJS: package ${JSON.stringify(packageId)} is not installed in this Pocket System`,
       );
     }
     missCounters.unknownSurface++;

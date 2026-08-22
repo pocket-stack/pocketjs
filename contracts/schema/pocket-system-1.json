@@ -1,24 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pocketjs.dev/schema/pocket-environment-1.json",
-  "title": "Pocket environment, format 1",
+  "$id": "https://pocketjs.dev/schema/pocket-system-1.json",
+  "title": "Pocket system, format 1",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "$schema",
-    "pocketEnvironment",
+    "pocketSystem",
     "id",
     "name",
     "title",
     "version",
-    "runtime",
-    "applications"
+    "roles",
+    "applications",
+    "installation"
   ],
   "properties": {
     "$schema": {
-      "const": "https://pocketjs.dev/schema/pocket-environment-1.json"
+      "const": "https://pocketjs.dev/schema/pocket-system-1.json"
     },
-    "pocketEnvironment": {
+    "pocketSystem": {
       "const": 1
     },
     "id": {
@@ -41,33 +42,17 @@
       "type": "string",
       "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
     },
-    "runtime": {
+    "roles": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "supervisor"
+        "systemUI"
       ],
       "properties": {
-        "supervisor": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "shell",
-            "background"
-          ],
-          "properties": {
-            "shell": {
-              "type": "string",
-              "minLength": 3,
-              "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
-            },
-            "background": {
-              "enum": [
-                "visible",
-                "resident"
-              ]
-            }
-          }
+        "systemUI": {
+          "type": "string",
+          "minLength": 3,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
         }
       }
     },
@@ -75,18 +60,34 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "model",
-        "mutable",
-        "packages"
+        "installPolicy",
+        "backgroundExecution",
+        "catalog"
       ],
       "properties": {
-        "model": {
-          "const": "managed"
+        "installPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "model",
+            "mutable"
+          ],
+          "properties": {
+            "model": {
+              "const": "managed"
+            },
+            "mutable": {
+              "type": "boolean"
+            }
+          }
         },
-        "mutable": {
-          "type": "boolean"
+        "backgroundExecution": {
+          "enum": [
+            "suspend",
+            "continue"
+          ]
         },
-        "packages": {
+        "catalog": {
           "type": "array",
           "minItems": 1,
           "items": {
@@ -95,7 +96,7 @@
             "required": [
               "package",
               "manifest",
-              "installation"
+              "required"
             ],
             "properties": {
               "package": {
@@ -108,12 +109,8 @@
                 "minLength": 1,
                 "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+\\.json$"
               },
-              "installation": {
-                "enum": [
-                  "required",
-                  "installed",
-                  "available"
-                ]
+              "required": {
+                "type": "boolean"
               },
               "presentation": {
                 "type": "object",
@@ -140,6 +137,24 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "installation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installedPackages"
+      ],
+      "properties": {
+        "installedPackages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
           }
         }
       }

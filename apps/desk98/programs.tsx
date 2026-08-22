@@ -187,7 +187,7 @@ export function NotepadView(props: {
 // ---------------------------------------------------------------------------
 // Pocket app surface — an explicit native-compositor instruction at this exact
 // point in shell paint order. The fallback remains visible without a runtime
-// supervisor or while the isolated package has no DrawList to paint.
+// AppSupervisor or while the isolated package has no DrawList to paint.
 // ---------------------------------------------------------------------------
 
 export function PocketAppView(props: { data: PocketData; active: boolean }) {

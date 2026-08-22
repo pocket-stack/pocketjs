@@ -6,15 +6,18 @@ export {
   type PocketManifestV2,
 } from "../../../contracts/spec/pocket-manifest.ts";
 export {
-  POCKET_ENVIRONMENT_SCHEMA_ID,
-  POCKET_ENVIRONMENT_VERSION,
-  pocketEnvironmentV1Schema,
-  type EnvironmentInstallationState,
-  type PocketEnvironmentPackageV1,
-  type PocketEnvironmentV1,
-  type SupervisorBackgroundPolicy,
-} from "../../../contracts/spec/pocket-environment.ts";
+  BACKGROUND_EXECUTION_POLICIES,
+  POCKET_SYSTEM_SCHEMA_ID,
+  POCKET_SYSTEM_VERSION,
+  pocketSystemV1Schema,
+  type BackgroundExecutionPolicy,
+  type PocketSystemInstallationStateV1,
+  type PocketSystemManifestV1,
+  type PocketSystemPackageV1,
+  type PocketSystemV1,
+} from "../../../contracts/spec/pocket-system.ts";
 export {
+  type PackageRole,
   type PocketCapabilityId,
   type PresentationMode,
   type Viewport,
@@ -32,12 +35,13 @@ export {
   type ValidationResult,
 } from "./validate.ts";
 export {
-  resolveEnvironmentPlan,
-  validateAndResolveEnvironmentPlan,
-  validatePocketEnvironment,
-  type EnvironmentPackageInput,
-  type EnvironmentResolutionResult,
-  type ResolvedEnvironmentPackage,
-  type ResolvedEnvironmentPlan,
-} from "./environment.ts";
+  resolveSystemPlan,
+  validateAndResolveSystemPlan,
+  validatePocketSystem,
+  type ResolvedSystemPackage,
+  type ResolvedSystemPlan,
+  type ResolveSystemRequest,
+  type SystemPackageInput,
+  type SystemResolutionResult,
+} from "./system.ts";
 export { vitaTitleId } from "./vita-package.ts";

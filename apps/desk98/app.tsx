@@ -17,7 +17,7 @@
 // focused Notepad. Pocket app input and scheduling are owned by the native
 // compositor using the focused surface fact emitted by this shell.
 //
-// Without the desk companion (sim, goldens, consoles) the app boots a
+// Without the System UI companion (sim, goldens, consoles) the app boots a
 // static arrangement and just renders it — the unmodified-app base case.
 
 import { ref, shallowRef, triggerRef } from "vue";

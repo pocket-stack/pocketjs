@@ -285,7 +285,7 @@ pub struct Ui {
     step_pending: bool,
 }
 
-/// One visible supervised surface in the shell DrawList. `order` is its op
+/// One visible application surface in the shell DrawList. `order` is its op
 /// offset and therefore its exact position relative to shell text/chrome.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CompositorSurfaceFrame {
@@ -708,8 +708,8 @@ impl Ui {
         }
     }
 
-    /// Bind an Environment package surface to a compositor-surface node.
-    /// Handles belong to the native RuntimeSupervisor, not the texture table;
+    /// Bind a Pocket System package surface to a compositor-surface node.
+    /// Handles belong to the native compositor, not the texture table;
     /// the core only retains the handle and emits its geometry in painter order.
     pub fn set_compositor_surface(&mut self, id: i32, surface: i32, focused: bool) {
         let Some(slot) = self.tree.resolve(id) else { return };
@@ -722,7 +722,7 @@ impl Ui {
     }
 
     /// All live bindings, including surfaces hidden by opacity/display. The
-    /// supervisor uses this lifecycle view to distinguish minimize from close.
+    /// AppSupervisor uses this lifecycle view to distinguish minimize from close.
     pub fn compositor_surface_bindings(&self) -> Vec<(u32, bool)> {
         self.tree
             .slots

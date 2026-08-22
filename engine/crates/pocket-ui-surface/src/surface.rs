@@ -5,8 +5,8 @@
 //! Boot contract mirrors the PSP host (`hosts/psp/src/ffi.rs` + `pak.rs`):
 //! styles/atlases feed the core natively BEFORE the bundle evals, pak images
 //! and sprites upload natively, and the (name → handle) tables are exposed
-//! as `ui.__textures` / `ui.__sprites`. Environment shells additionally get
-//! a separate `ui.__surfaces` package-id table from RuntimeSupervisor; surface
+//! as `ui.__textures` / `ui.__sprites`. Pocket System shells additionally get
+//! a separate `ui.__surfaces` package-id table from the native compositor; surface
 //! handles never enter the texture table.
 //! This is exactly what routes
 //! `framework/src/host.ts::detectHost` onto its PSP branch. One desktop addition:
@@ -72,7 +72,7 @@ struct Inner {
     /// pak image name → core texture handle (`ui.__textures`).
     textures: Vec<(String, i32)>,
     sprites: Vec<SpriteReg>,
-    /// Installed Environment package id -> native compositor surface handle.
+    /// Installed Pocket System package id -> native compositor surface handle.
     surfaces: Vec<(String, i32)>,
     /// Host service channel (spec ops 30..32): in-process JSON-line queues.
     /// On consoles the mailbox is files under a tethered share; here the
@@ -242,7 +242,7 @@ impl UiSurface {
         }
     }
 
-    /// Register an installed Environment package before [`mount`](Self::mount).
+    /// Register an installed Pocket System package before [`mount`](Self::mount).
     /// Handles live in the compositor namespace and are never valid textures.
     pub fn register_compositor_surface(&self, package: impl Into<String>) -> Option<i32> {
         let mut inner = self.inner.borrow_mut();

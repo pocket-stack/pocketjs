@@ -21,7 +21,7 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | `@pocketjs/framework/clock` | `simulationHz`, `ticksPerFrame`, `virtualFrame`, `virtualNow`, `after` |
 | `@pocketjs/framework/effects` | `installEffectDriver`, `runEffect`, effect types |
 | `@pocketjs/framework/hot` | `text`, `prop` |
-| `@pocketjs/framework/manifest` | app and Environment schema/types/resolvers, `extractHostBuildInputs`, `hostBuildEnvironment`, `vitaTitleId` |
+| `@pocketjs/framework/manifest` | app and Pocket System schema/types/resolvers, `extractHostBuildInputs`, `hostBuildEnvironment`, `vitaTitleId` |
 
 ---
 
@@ -103,7 +103,7 @@ or generation-tagged contracts. Each op is documented in full on the
 | `measureText` | `(str, fontSlot) => number` | Measured width in px. |
 | `loadTileTexture?` / `freeTexture?` | tile key/index or handle | Stream and release generation-tagged DeepZoom textures. |
 | `uploadImgEntry?` | `(blob) => number` | Upload a self-contained baked image entry; returns a handle or `-1`. |
-| `setCompositorSurface?` | `(id, surface, focused) => void` | Bind an Environment package surface to a type-3 node. |
+| `setCompositorSurface?` | `(id, surface, focused) => void` | Bind a Pocket System application surface to a type-3 node. |
 | `debugInspect?` … `debugStep?` | debug-only | Optional DevTools inspection and pause/step surface. |
 | `__surfaces?` | `Record<string, number>` | Installed package ids to native compositor handles; separate from textures. |
 | `__host?` / `__hostAbi?` | metadata | Native target and HostOps ABI handshake. |
@@ -207,7 +207,7 @@ function Sprite(props: SpriteProps): JSX.Element
 function CompositorSurface(props: CompositorSurfaceProps): JSX.Element
 ```
 
-The host primitives, wrapped React Native-style. `View` is the flex container/box, `Text` renders baked-font text, `Image` draws an uploaded texture by `src` key, and `Sprite` draws an auto-playing animation from a baked sprite atlas by `sprite` key. `CompositorSurface` is reserved for Environment shells and places an installed package realm into shell layout and painter order.
+The host primitives, wrapped React Native-style. `View` is the flex container/box, `Text` renders baked-font text, `Image` draws an uploaded texture by `src` key, and `Sprite` draws an auto-playing animation from a baked sprite atlas by `sprite` key. `CompositorSurface` is reserved for System UI shells and places an installed package AppInstance into shell layout and painter order.
 
 **`ViewProps`**
 

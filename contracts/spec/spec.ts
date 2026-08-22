@@ -35,7 +35,7 @@ export const NODE_TYPE = {
   view: 0,
   text: 1,
   image: 2,
-  /** A native-compositor slot for another supervised Pocket package. */
+  /** A native-compositor slot for an installed Pocket application. */
   surface: 3,
 } as const;
 
@@ -266,11 +266,11 @@ export const OP = {
   //                      measureText (apps/desk98/notepad.ts wrapLine is the
   //                      pinned reference; a parity test holds them equal).
   setCompositorSurface: 44, // (id, surfaceHandle, focusedInt). Binds an
-  //                      Environment package surface to a NODE_TYPE.surface
+  //                      Pocket System package surface to a NODE_TYPE.surface
   //                      node. The core emits SURFACE_QUAD in ordinary paint
   //                      order with BOTH full and clipped bounds; no image or
   //                      texture semantics are involved. focusedInt is the
-  //                      shell's focus fact consumed by the native supervisor
+  //                      shell's focus fact consumed by the native compositor
   //                      for input and scheduling. handle < 0 clears.
 } as const;
 

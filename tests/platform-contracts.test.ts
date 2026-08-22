@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  generatePocketEnvironmentV1Schema,
-  POCKET_ENVIRONMENT_SCHEMA_ID,
-} from "../contracts/spec/pocket-environment.ts";
+  generatePocketSystemV1Schema,
+  POCKET_SYSTEM_SCHEMA_ID,
+} from "../contracts/spec/pocket-system.ts";
 import {
   generatePocketManifestV2Schema,
   POCKET_MANIFEST_SCHEMA_ID,
@@ -26,7 +26,7 @@ import {
   validatePlatformContractRegistry,
 } from "../framework/src/manifest/resolve.ts";
 import { validatePocketManifest } from "../framework/src/manifest/validate.ts";
-import { validatePocketEnvironment } from "../framework/src/manifest/environment.ts";
+import { validatePocketSystem } from "../framework/src/manifest/system.ts";
 
 const fixtureUrl = (name: string) => new URL(`./fixtures/manifests/${name}.json`, import.meta.url);
 const portableInput: unknown = await Bun.file(fixtureUrl("portable-psp")).json();
@@ -144,22 +144,22 @@ describe("pocket.json v2 schema", () => {
   });
 });
 
-describe("Pocket Environment v1 schema", () => {
+describe("Pocket System v1 schema", () => {
   test("uses the deployed schema path and matches the committed JSON Schema", async () => {
-    expect(POCKET_ENVIRONMENT_SCHEMA_ID).toBe(
-      "https://pocketjs.dev/schema/pocket-environment-1.json",
+    expect(POCKET_SYSTEM_SCHEMA_ID).toBe(
+      "https://pocketjs.dev/schema/pocket-system-1.json",
     );
     const committed = await Bun.file(
-      new URL("../contracts/schema/pocket-environment-1.json", import.meta.url),
+      new URL("../contracts/schema/pocket-system-1.json", import.meta.url),
     ).text();
-    expect(committed).toBe(generatePocketEnvironmentV1Schema());
+    expect(committed).toBe(generatePocketSystemV1Schema());
   });
 
   test("validates the Pocket Desktop installation model", async () => {
-    const environment = await Bun.file(
-      new URL("../apps/desk98/pocket.environment.json", import.meta.url),
+    const system = await Bun.file(
+      new URL("../apps/desk98/pocket.system.json", import.meta.url),
     ).json();
-    expect(validatePocketEnvironment(environment).ok).toBe(true);
+    expect(validatePocketSystem(system).ok).toBe(true);
   });
 });
 
@@ -233,11 +233,13 @@ describe("platform registry", () => {
     expect(POCKET_TARGETS["macos-app"].form).toBe("window");
     expect(POCKET_TARGETS["macos-app"].capabilities).toEqual([
       "input.buttons",
-      "runtime.supervisor",
       "display.viewport.live",
       "text.glyphs.baked",
       "text.layout.native",
     ]);
+    expect(POCKET_TARGETS["macos-app"].roleCapabilities).toEqual({
+      systemUI: ["ui.compositor-surfaces"],
+    });
     expect(POCKET_TARGETS["macos-app"].display.dynamicViewport).toEqual({
       min: [240, 180],
       max: [4096, 4096],
@@ -275,25 +277,6 @@ describe("platform registry", () => {
     });
   });
 
-  test("pins runtime supervisor profiles to their public capability", () => {
-    const missingCapability = structuredClone(POCKET_PLATFORM_CONTRACTS) as any;
-    missingCapability.targets["macos-app"].capabilities = missingCapability.targets[
-      "macos-app"
-    ].capabilities.filter((capability: string) => capability !== "runtime.supervisor");
-    expect(validatePlatformContractRegistry(missingCapability)).toContainEqual({
-      code: "registry.supervisorCapabilityMissing",
-      path: "/targets/macos-app/capabilities",
-      message: "a target with runtime.supervisor profile must advertise runtime.supervisor",
-    });
-
-    const missingProfile = structuredClone(POCKET_PLATFORM_CONTRACTS) as any;
-    delete missingProfile.targets["macos-app"].runtime;
-    expect(validatePlatformContractRegistry(missingProfile)).toContainEqual({
-      code: "registry.supervisorProfileMissing",
-      path: "/targets/macos-app/runtime",
-      message: "runtime.supervisor capability requires a runtime supervisor profile",
-    });
-  });
 });
 
 describe("semantic resolution", () => {
@@ -450,7 +433,7 @@ describe("semantic resolution", () => {
       cards: [true, true, false, true],
       chrome: [true, true, false, true],
       cursor: [true, true, false, true],
-      desk98: [false, false, false, true], // Environment shell requires macos-app's native RuntimeSupervisor
+      desk98: [false, false, false, false], // admitted only after the System resolver assigns the System UI role
       gallery: [true, true, false, true],
       hero: [true, true, true, true],
       "hero-vue-sfc": [true, true, false, true],
@@ -485,6 +468,15 @@ describe("semantic resolution", () => {
         expect(`${demo}@${target}:${result.ok}`).toBe(`${demo}@${target}:${expected[demo][i]}`);
       });
     }
+    const systemUI = await Bun.file(
+      new URL("../apps/desk98/pocket.json", import.meta.url),
+    ).json();
+    expect(
+      validateAndResolveBuildPlan(systemUI, {
+        target: "macos-app",
+        role: "systemUI",
+      }).ok,
+    ).toBe(true);
     // The demo shelf rule the site build applies: only psp-admissible
     // manifests are shown — the note stays off the landing/playground.
     const note = await Bun.file(new URL("../apps/note/pocket.json", import.meta.url)).json();

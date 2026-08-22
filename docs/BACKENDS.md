@@ -113,9 +113,9 @@ bun run macos note --proof
 `tools/macos.ts` resolves the manifest against `macos-app`, writes the
 plan, builds the bundle + pak, and derives the capability-shaped host flags
 (`--fixed`, `--native-text`, `--companions`) from the resolved plan. If the
-selected app directory also contains `pocket.environment.json`, the tool
+selected app directory also contains `pocket.system.json`, the tool
 resolves every installed package and starts the host with one complete
-`ResolvedEnvironmentPlan`; it does not project child plans into command-line
+`ResolvedSystemPlan`; it does not project child plans into command-line
 viewport or title fields.
 `--editor` is NOT a capability: it enables the note's companion svc adapter
 (an app protocol — the profile deliberately registers no
@@ -123,10 +123,10 @@ pointer/text/IME/clipboard ids, see contracts/spec/platforms.ts). On exit
 the host prints its governor receipt (`pocket-macos: N ticks, M frames
 rendered`); a settled app shows M ≪ N.
 
-## Environment-shell companion input
+## System UI companion input
 
-The host speaks an extended svc dialect when the shell plan's companion list names
-`desk` (apps/desk98/svc.ts): the note dialect's input lines extended with
+The host speaks the `system-ui` svc dialect when the resolved System UI plan
+declares that companion. The protocol extends the note dialect's input lines with
 **right-button mouse lines (`b:2`), alt/ctl key modifiers, F1–F12,
 cmd-flagged ⌘ chords, a boot epoch in the hello**, a `{t:"cursor"}` guest
 intent that sets the window's pointer shape, and a `{t:"paste-req"}` guest
@@ -150,30 +150,35 @@ Its W95FA pixel font is baked per-app into slots 19–21 through
 never moves.
 
 Pocket Desktop declares the demo packages in
-`apps/desk98/pocket.environment.json`: Hero, Settings, Motions, Cards,
-Chrome, Cursor, Gallery, Library, Music, Notifications and Stats. The
-Environment owns the required/installed/available state and the desktop
-catalog reads its presentation metadata. **Every installed entry resolves to
-an unmodified `ResolvedBuildPlan`; features, companions, target identity,
-viewport policy and package identity reach the native host together.**
+`apps/desk98/pocket.system.json`: Hero, Settings, Motions, Cards, Chrome,
+Cursor, Gallery, Library, Music, Notifications and Stats. The Pocket System
+manifest marks required catalog entries, while
+`installation.installedPackages` records the separate current installation
+snapshot. It identifies Desk98 through `roles.systemUI` and declares
+`backgroundExecution: "suspend"`. The desktop catalog reads System-owned
+presentation metadata. **Every installed entry reaches the native host as a
+complete `ResolvedBuildPlan`; ordinary applications resolve without the
+System UI-only compositor capability.**
 
-- **`hosts/macos` implements a generic `RuntimeSupervisor`; it contains no
-  Desk98 catalog or package-name rules.** Live `<CompositorSurface package>`
-  bindings create one `Guest`, QuickJS `Runtime`, QuickJS `Context`,
-  `UiSurface` and `GpuiRenderer` per package inside the existing process.
-  Their globals, node trees, textures, clocks and button state are isolated.
+- **`hosts/macos` implements a generic `AppSupervisor`; the System contract
+  does not expose that implementation.** The host contains no Desk98 catalog
+  or package-name rules. Live `<CompositorSurface package>` bindings create
+  one AppInstance with its own `Guest`, QuickJS `Runtime`, QuickJS `Context`,
+  `UiSurface` and `GpuiRenderer` inside the existing process. Their globals,
+  node trees, textures, clocks and button state are isolated.
 - **Compositor surfaces use `SURFACE_QUAD`, not `TEX_QUAD`.** The instruction
   carries the package-surface handle, unclipped bounds, clipped visible bounds
   and focused state. GPUI invokes the native compositor at that exact DrawList
   position, so shell content before and after it keeps its painter order and
   clipping never changes the child coordinate origin.
-- **Realm lifecycle and scheduling come from the shell core's live surface
-  bindings.** Destroying a binding drops its realm. Hidden bindings suspend
-  under the Environment's `visible` background policy; `resident` keeps them
-  ticking. Focused visible realms run first, and hardware-neutral buttons go
-  only to the top focused surface.
-- **A child exception stops only that child realm.** The shell and sibling
-  realms continue; the host records the package failure without adding a
+- **AppInstance lifecycle and scheduling come from the shell core's live
+  surface bindings.** Destroying a binding removes its instance. Hidden
+  instances become `Suspended` under `backgroundExecution: "suspend"`;
+  `"continue"` keeps them `Running`. This policy does not govern memory
+  residency. Focused visible instances run first, and hardware-neutral buttons
+  go only to the top focused surface.
+- **A child exception marks only that AppInstance as `Failed`.** The shell and
+  sibling instances continue; the host records the package failure without a
   companion hot path.
 
 ```
@@ -187,14 +192,14 @@ X,Y[,d|u|r]@TICK` (drags, right clicks), `--key
 
 ## Choosing a backend
 
-| | portable | gpui |
-|---|---|---|
-| hosts | PSP, Vita, PocketBook, ESP32-P4, Symbian, web, sim, macOS widget | macOS (`hosts/macos`) |
-| text measurement | core, atlas advance tables | host text system (CoreText), per-app opt-in |
-| codepoint coverage | baked charset (+ runtime extension) | OS fallback chain, color emoji |
-| pixel determinism | byte-exact across hosts | per-host; transactions still deterministic |
-| pixel goldens | `tests/golden-specs.ts`, tape hashes | opted out (note-style verification) |
-| rotated/3D content | native | portable rasterizer as a local sub-backend |
+|                    | portable                                                         | gpui                                        |
+| ------------------ | ---------------------------------------------------------------- | ------------------------------------------- |
+| hosts              | PSP, Vita, PocketBook, ESP32-P4, Symbian, web, sim, macOS widget | macOS (`hosts/macos`)                       |
+| text measurement   | core, atlas advance tables                                       | host text system (CoreText), per-app opt-in |
+| codepoint coverage | baked charset (+ runtime extension)                              | OS fallback chain, color emoji              |
+| pixel determinism  | byte-exact across hosts                                          | per-host; transactions still deterministic  |
+| pixel goldens      | `tests/golden-specs.ts`, tape hashes                             | opted out (note-style verification)         |
+| rotated/3D content | native                                                           | portable rasterizer as a local sub-backend  |
 
 The desktop benchmark against Tauri and Electron (harness, comparison
 apps, results) lives in its own stacked PR — pocket-stack/pocketjs#294.

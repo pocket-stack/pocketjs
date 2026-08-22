@@ -1083,7 +1083,7 @@ impl<'a> Walker<'a> {
             self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip, fu0, fv0, fu1, fv1);
         }
 
-        // -- supervised package surface --------------------------------------
+        // -- installed application surface -----------------------------------
         if node.node_type == spec::NodeType::Surface as u8 && node.compositor_surface >= 0 {
             self.emit_compositor_surface(
                 dl,

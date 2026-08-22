@@ -758,7 +758,7 @@ fn render_scaled_clipped<T: RenderTarget>(
                 i += 9;
             }
             // Native compositor instruction: software surfaces have no
-            // package supervisor and leave the shell fallback visible.
+            // application compositor and leave the shell fallback visible.
             draw_op::SURFACE_QUAD => {
                 if i + 9 > words.len() {
                     return;

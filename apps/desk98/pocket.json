@@ -10,7 +10,7 @@
       "requires": [
         "text.glyphs.baked",
         "input.buttons",
-        "runtime.supervisor"
+        "ui.compositor-surfaces"
       ],
       "enhances": [
         "input.text",
@@ -26,7 +26,7 @@
     "output": "desk98-main",
     "framework": "vue-vapor",
     "companions": [
-      "desk"
+      "system-ui"
     ],
     "viewport": {
       "dynamic": {
