@@ -377,12 +377,29 @@ test("the icon family is rendered from one drawing and linked from every head", 
   for (const [file, size] of [
     ["favicon-96.png", 96],
     ["apple-touch-icon.png", 180],
+    ["apple-touch-icon-precomposed.png", 180],
+    ["apple-touch-icon-167.png", 167],
+    ["apple-touch-icon-152.png", 152],
+    ["apple-touch-icon-120.png", 120],
     ["icon-192.png", 192],
     ["icon-512.png", 512],
     ["icon-512-maskable.png", 512],
   ] as const) {
     expect(ihdr(file)).toEqual([size, size]);
   }
+
+  // iOS picks the apple-touch-icon closest to the size it wants and ignores the
+  // manifest when one exists, so every rung it can ask for must be declared and
+  // must really be that size on disk.
+  const rungs = [...ICON_LINKS.matchAll(/rel="apple-touch-icon" sizes="(\d+)x\d+" href="\/([^"?]+)/g)];
+  expect(rungs.map((m) => Number(m[1]))).toEqual([180, 167, 152, 120]);
+  for (const [, size, file] of rungs) {
+    expect(ihdr(file)).toEqual([Number(size), Number(size)]);
+  }
+  // Cache-busted: iOS keys the home screen icon by URL and keeps a page
+  // screenshot if the first fetch came up empty.
+  expect(ICON_LINKS).toContain("?v=");
+  expect(ICON_LINKS).toContain('name="apple-mobile-web-app-title"');
 
   // favicon.ico carries 16, 32 and 48 as PNG payloads in one container
   const ico = readFileSync(ROOT + "site/assets/favicon.ico");
@@ -414,6 +431,9 @@ test("the icon family is rendered from one drawing and linked from every head", 
   };
   expect(manifest.name).toBe(SITE_TITLE);
   expect(manifest.icons.some((i) => i.purpose === "maskable")).toBe(true);
+  // No SVG in the manifest: no home screen on either platform renders one, and
+  // a "sizes":"any" entry outranks the rasters when a picker sorts by size.
+  expect(manifest.icons.every((i) => i.src.endsWith(".png"))).toBe(true);
   for (const icon of manifest.icons) {
     expect(existsSync(ROOT + "site/assets/" + icon.src.slice(1))).toBe(true);
   }
@@ -423,10 +443,12 @@ test("the icon family is rendered from one drawing and linked from every head", 
   const build = readFileSync(ROOT + "site/build.ts", "utf8");
   expect(build.match(/\$\{ICON_LINKS\}/g)?.length).toBe(2);
   expect(readFileSync(ROOT + "site/templates.ts", "utf8")).toContain("${ICON_LINKS}");
-  for (const href of [...ICON_LINKS.matchAll(/href="\/([^"]+)"/g)].map((m) => m[1])) {
+  for (const href of [...ICON_LINKS.matchAll(/href="\/([^"]+)"/g)].map((m) => m[1].split("?")[0])) {
     expect(existsSync(ROOT + "site/assets/" + href)).toBe(true);
     expect(build).toContain(`"${href}"`);
   }
+  // Nothing links it, but iOS fetches this path from the root on its own.
+  expect(build).toContain('"apple-touch-icon-precomposed.png"');
   // The tab title says what this is.
   expect(SITE_TITLE).toBe("PocketJS JavaScript UI runtime");
 

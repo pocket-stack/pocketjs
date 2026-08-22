@@ -9,8 +9,16 @@
 //   favicon.ico            16 + 32 + 48, PNG payloads in one container
 //   favicon-96.png         crawlers and older Android that want a raster
 //   apple-touch-icon.png   180, iOS home screen and Safari favourites
+//   apple-touch-icon-*.png 120/152/167, so iOS never has to rescale
+//   ...-precomposed.png    what older iOS fetches from the root with no link
 //   icon-192/512.png       web app manifest
 //   icon-512-maskable.png  Android adaptive icons, artwork inside the safe zone
+//
+// iOS picks the apple-touch-icon whose `sizes` is closest to what it wants and
+// ignores the manifest when one exists, so the ladder below is what actually
+// lands on a home screen. Two devices, two answers: 180 for iPhone, 152 and
+// 167 for iPad. Anything that reads no link tag at all falls back to fetching
+// /apple-touch-icon.png and /apple-touch-icon-precomposed.png from the root.
 //
 // Chrome does the rasterizing: it is the same renderer that will draw the SVG
 // favicon, so the raster and the vector agree. The ICO container is written by
@@ -33,6 +41,10 @@ type Job = { file: string; size: number; bleed: boolean };
 const PNGS: Job[] = [
   { file: "favicon-96.png", size: 96, bleed: false },
   { file: "apple-touch-icon.png", size: 180, bleed: true },
+  { file: "apple-touch-icon-precomposed.png", size: 180, bleed: true },
+  { file: "apple-touch-icon-167.png", size: 167, bleed: true },
+  { file: "apple-touch-icon-152.png", size: 152, bleed: true },
+  { file: "apple-touch-icon-120.png", size: 120, bleed: true },
   { file: "icon-192.png", size: 192, bleed: false },
   { file: "icon-512.png", size: 512, bleed: false },
   { file: "icon-512-maskable.png", size: 512, bleed: true },
