@@ -201,7 +201,7 @@ export async function mountPocketSystem(canvas, options = {}) {
       viewport: entry.plan.viewport.logical,
       rasterDensity: entry.plan.viewport.rasterDensity,
       companions: [],
-    }).then((realm) => ({ ...realm, entry }));
+    }).then((realm) => ({ ...realm, entry, composited: false }));
     children.set(handle, pending);
     try {
       const child = await pending;
@@ -265,6 +265,10 @@ export async function mountPocketSystem(canvas, options = {}) {
         const pixels = child.api.render();
         const [width, height] = child.api.viewport;
         shell.uploadSurface(fact.handle, pixels, width, height);
+        if (!child.composited) {
+          child.composited = true;
+          log(`composited AppInstance ${child.entry.package}`);
+        }
       }
     }
   }
