@@ -180,13 +180,15 @@ describe("experimental Nokia E7 runtime profile", () => {
     expect([...catalog.blob.subarray(16)]).toEqual([4, 5]);
   });
 
-  test("does not register an unproven production target", () => {
+  test("keeps the experimental E7 target out of the production registry", () => {
     expect(Object.keys(POCKET_TARGETS)).toEqual([
       "psp",
       "vita",
       "pocketbook",
       "macos-widget",
       "macos-app",
+      "linux-app",
+      "web-app",
     ]);
     expect(POCKET_TARGETS).not.toHaveProperty(SYMBIAN_E7_DEV_TARGET_ID);
     expect(SYMBIAN_E7_DEV_HOST_ABI).toBe(4);
