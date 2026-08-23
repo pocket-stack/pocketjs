@@ -6,6 +6,7 @@ import solidPreset from "babel-preset-solid";
 import tsPreset from "@babel/preset-typescript"; // untyped - see framework/compiler/ambient.d.ts
 import { transformVueJsxVapor } from "vue-jsx-vapor/api";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { compileVueSfc } from "./vue-sfc-compile.ts";
 import {
   propsHelperCode,
@@ -31,10 +32,10 @@ import { POCKET_FRAMEWORKS, SUBPATHS } from "./subpaths.ts";
 
 export type { PocketFramework };
 
-export const RENDERER_PATH = new URL("../src/renderer.ts", import.meta.url).pathname;
-export const RENDERER_SOLID_PATH = new URL("../src/renderer-solid.ts", import.meta.url).pathname;
-export const RENDERER_VUE_VAPOR_PATH = new URL("../src/renderer-vue-vapor.ts", import.meta.url).pathname;
-export const RENDERER_OCTANE_PATH = new URL("../src/renderer-octane.ts", import.meta.url).pathname;
+export const RENDERER_PATH = fileURLToPath(new URL("../src/renderer.ts", import.meta.url));
+export const RENDERER_SOLID_PATH = fileURLToPath(new URL("../src/renderer-solid.ts", import.meta.url));
+export const RENDERER_VUE_VAPOR_PATH = fileURLToPath(new URL("../src/renderer-vue-vapor.ts", import.meta.url));
+export const RENDERER_OCTANE_PATH = fileURLToPath(new URL("../src/renderer-octane.ts", import.meta.url));
 
 /**
  * subpath -> absolute module file, per framework — derived once from the
@@ -53,34 +54,29 @@ const RESOLVED: Record<PocketFramework, Record<string, string>> = (() => {
   for (const [name, decl] of Object.entries(SUBPATHS)) {
     for (const fw of POCKET_FRAMEWORKS) {
       const rel = typeof decl.file === "string" ? decl.file : decl.file[fw];
-      if (rel) out[fw][name] = new URL(rel, root).pathname;
+      if (rel) out[fw][name] = fileURLToPath(new URL(rel, root));
     }
   }
   return out;
 })();
-const OCTANE_PROFILING_STUB_PATH = new URL(
-  "../src/octane-profiling-stub.ts",
-  import.meta.url,
-).pathname;
-const GENERATED_STYLES_PATH = new URL(
-  "../src/styles.generated.ts",
-  import.meta.url,
-).pathname;
-const VUE_VAPOR_RUNTIME_PATH = new URL(
-  "../../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js",
-  import.meta.url,
-).pathname;
-const SOLID_RUNTIME_PATH = new URL(
-  "../../node_modules/solid-js/dist/solid.js",
-  import.meta.url,
-).pathname;
-const SOLID_UNIVERSAL_RUNTIME_PATH = new URL(
-  "../../node_modules/solid-js/universal/dist/universal.js",
-  import.meta.url,
-).pathname;
+const OCTANE_PROFILING_STUB_PATH = fileURLToPath(
+  new URL("../src/octane-profiling-stub.ts", import.meta.url),
+);
+const GENERATED_STYLES_PATH = fileURLToPath(
+  new URL("../src/styles.generated.ts", import.meta.url),
+);
+const VUE_VAPOR_RUNTIME_PATH = fileURLToPath(
+  new URL("../../node_modules/vue/dist/vue.runtime-with-vapor.esm-browser.prod.js", import.meta.url),
+);
+const SOLID_RUNTIME_PATH = fileURLToPath(
+  new URL("../../node_modules/solid-js/dist/solid.js", import.meta.url),
+);
+const SOLID_UNIVERSAL_RUNTIME_PATH = fileURLToPath(
+  new URL("../../node_modules/solid-js/universal/dist/universal.js", import.meta.url),
+);
 
 const PACKAGE_NAME = "@pocketjs/framework";
-const CACHE_DIR = new URL("../../.cache/transforms/", import.meta.url).pathname;
+const CACHE_DIR = fileURLToPath(new URL("../../.cache/transforms/", import.meta.url));
 const CACHE_VERSION = "2"; // manual backstop; compiler sources are hashed in below
 const COMPILER_DIR = new URL("./", import.meta.url).pathname;
 
@@ -275,7 +271,11 @@ function makeCollector(out: Collected, framework: PocketFramework): PluginObj {
             },
             JSXText(path) {
               const raw = path.node.extra?.raw;
-              if (typeof raw === "string" && raw !== path.node.value) {
+              // The parser normalizes CRLF to LF in node.value while
+              // extra.raw keeps the source bytes — line endings are not
+              // entities, so compare like-for-like (CRLF checkouts must
+              // build exactly like LF ones).
+              if (typeof raw === "string" && raw.replace(/\r\n/g, "\n") !== path.node.value) {
                 throw path.buildCodeFrameError(
                   "PocketJS: HTML entities in JSX text are not decoded by the JSX renderer - " +
                     'write the literal character (é, ♥) or a string expression {"\\u00e9"} instead.',
@@ -403,8 +403,14 @@ export function packagePath(spec: string, framework: PocketFramework): string | 
   return RESOLVED[framework][subpath] ?? null;
 }
 
+/** Bun reports native paths (`\` separators on Windows); normalize before
+ *  matching the `/node_modules/` prefix written in source specifiers. */
+function isNodeModuleFile(path: string): boolean {
+  return path.replace(/\\/g, "/").includes("/node_modules/");
+}
+
 export function frameworkVariantPath(path: string, framework: PocketFramework): string {
-  if (framework === "solid" || path.includes("/node_modules/") || path.endsWith(".d.ts")) return path;
+  if (framework === "solid" || isNodeModuleFile(path) || path.endsWith(".d.ts")) return path;
   const variant = path.replace(/(\.tsx?)$/, `${FRAMEWORKS[framework].outputSuffix}$1`);
   return variant !== path && existsSync(variant) ? variant : path;
 }
@@ -607,7 +613,7 @@ export function jsxPlugin(
           path: OCTANE_PROFILING_STUB_PATH,
         }));
         build.onResolve({ filter: /^\.\/profiling\.js$/ }, (args) =>
-          args.importer.includes("/node_modules/octane/dist/")
+          args.importer.replace(/\\/g, "/").includes("/node_modules/octane/dist/")
             ? { path: OCTANE_PROFILING_STUB_PATH }
             : undefined,
         );
@@ -625,7 +631,7 @@ export function jsxPlugin(
         });
       }
       build.onLoad({ filter: /\.tsx?$/ }, async (args) => {
-        if (args.path.includes("/node_modules/") || args.path.endsWith(".d.ts")) return undefined;
+        if (isNodeModuleFile(args.path) || args.path.endsWith(".d.ts")) return undefined;
         let src = args.path === GENERATED_STYLES_PATH &&
             opts.generatedStyles !== undefined
           ? opts.generatedStyles

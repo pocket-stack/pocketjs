@@ -265,7 +265,7 @@ async function walk(file: string): Promise<void> {
   // output [R]. Other generated modules (e.g. the launcher's registry) are
   // ordinary app data whose literals — cover asset paths, title glyphs —
   // pass 1 must see like any hand-written module's.
-  if (file.endsWith("/styles.generated.ts")) return;
+  if (file.replace(/\\/g, "/").endsWith("/styles.generated.ts")) return;
   const src = await Bun.file(file).text();
   // Throws with a code frame on lint errors.
   const res = await transformFile(file, src, framework, { features: buildPlan?.features });
