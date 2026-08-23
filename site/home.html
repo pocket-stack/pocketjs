@@ -54,9 +54,7 @@
         <span class="rail"></span>
       </div>
       <p class="sub">PocketJS is a portable application runtime that turns modern component code into
-        <strong>native pixels across radically different hardware</strong>. JSX, Tailwind and reactive state
-        stay; every layer below them is gone: no DOM, no CSS engine, no WebView, just a QuickJS guest on a Rust
-        core that lays out and draws every pixel itself.</p>
+        native pixels across radically different hardware.</p>
       <div class="ctas">
         <a class="btn btn--pri" href="#ecosystem">See use cases</a>
         <a class="btn btn--sec" href="https://github.com/pocket-stack/pocketjs">Star on GitHub</a>
@@ -205,8 +203,8 @@
     <div class="cols" style="grid-template-columns:minmax(0,1fr) minmax(0,1.1fr)">
       <p class="slede" style="margin-bottom:0">Animation is compiled. Keyframe timelines and spring curves are
         baked into the style table at build time and advanced by the Rust core on its own clock, so <b>a page can
-        animate with no per-frame JavaScript at all</b>. What runs beside this is the real thing: the yui540 motion
-        studies, in WebAssembly, inside the handheld they were written for.</p>
+        animate with no per-frame JavaScript at all</b>. The panel beside this runs the yui540 motion studies
+        in WebAssembly, inside the handheld they were written for.</p>
       <figure class="pg-stage motion-stage" data-pocket-stage data-motion-stage>
         <div class="pg-stage__viewport" data-stage-viewport tabindex="0" role="group"
              aria-label="Interactive 3D PSP running the yui540 motion studies. Drag to rotate, click the device controls, or use the keyboard.">
@@ -363,8 +361,8 @@
       <span class="vwrap"><span class="verb metal lit">Architecture</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">the frame contract</span>
     </div>
-    <p class="slede">A UI framework usually leaves time alone. This runtime does not: <b>time is the frame
-      counter</b>, and one <code>frame(buttons)</code> call is a transaction nothing outside it can interrupt.
+    <p class="slede">PocketJS makes <b>time the frame counter</b>: one <code>frame(buttons)</code> call is a
+      transaction nothing outside it can interrupt.
       Nothing waits on a wall clock, so <b>tests run as fast as the CPU allows without changing the timing they
       measure</b>: a journey that takes six seconds in front of a user is a few dozen frames in CI.</p>
     <div class="cols">
@@ -536,9 +534,10 @@
       <span class="vwrap"><span class="verb metal lit">Compatibility</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">run on the metal, not emulated</span>
     </div>
-    <p class="slede">Not a roadmap. Every entry below has booted the runtime on the real machine, and
-      <b>what changes between them is one native submission layer, never the application</b>. Each links to the
-      post or pull request that brought it up. Keeping the hardware bootable is its own work, so we started
+    <p class="slede">PocketJS has booted on every operating system below, on the real machine, and
+      <b>what changes between them is one native submission layer, never the application</b>. Each entry links
+      to the post or pull request that brought it up. Keeping the hardware bootable is its own work, so we
+      started
       <a class="olink" href="https://museum.pocketlab.build/" target="_blank" rel="noreferrer">Pocket Museum</a>
       to repair these machines and keep them running.</p>
     <div class="cols" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
@@ -591,7 +590,9 @@
       <span class="vwrap"><span class="verb metal lit">Ecosystem</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">shipped on the runtime</span>
     </div>
-    <p class="slede">All of it runs on the chapters above, on the machines this runtime was built for.</p>
+    <p class="slede">PocketJS carries complete applications on the machines this runtime was built for:
+      games, a design-file viewer, a desktop companion, a streaming client, and the debugger itself. Each card
+      links to how it was built.</p>
     <div class="eco">
       <article class="ecard">
         <div class="scr"><img src="/assets/blog/openstrike-psp-dust2.png" alt="OpenStrike on PSP with a Solid JSX HUD"></div>

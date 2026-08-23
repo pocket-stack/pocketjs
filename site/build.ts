@@ -666,9 +666,8 @@ async function main() {
 // The homepage is a standalone document (its design owns its own header +
 // footer + CSS). site/home.html holds the body; site/assets/landing.css the
 // styles. Display faces come from Google Fonts; the fallback stacks keep the
-// page readable when that request fails.
-const HOME_DESC =
-  "PocketJS is a portable application runtime that turns modern component code into native pixels across radically different hardware. JSX, Tailwind and reactive state stay; no DOM, no CSS engine, no WebView, just a QuickJS guest on a Rust core that lays out and draws every pixel itself.";
+// page readable when that request fails. Its meta description is the shared
+// SITE_DESC, so the positioning sentence is stated in exactly one place.
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -724,11 +723,11 @@ function renderHome(): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${SITE_TITLE}</title>
-<meta name="description" content="${HOME_DESC}">
+<meta name="description" content="${SITE_DESC}">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="${SITE_URL}/">
 <meta property="og:title" content="${SITE_TITLE}">
-<meta property="og:description" content="${HOME_DESC}">
+<meta property="og:description" content="${SITE_DESC}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="PocketJS">
 <meta property="og:url" content="${SITE_URL}/">
@@ -738,7 +737,7 @@ function renderHome(): string {
 <meta property="og:image:alt" content="${SITE_TITLE}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${SITE_TITLE}">
-<meta name="twitter:description" content="${HOME_DESC}">
+<meta name="twitter:description" content="${SITE_DESC}">
 <meta name="twitter:image" content="${OG_IMAGE_URL}">
 <meta name="theme-color" content="#05070d">
 ${ICON_LINKS}

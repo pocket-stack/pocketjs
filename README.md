@@ -151,10 +151,11 @@ Browser or WebView · 4 threads, 2 processes
 
 ### The frame contract
 
-Time is the frame counter. One `frame(buttons)` call is a transaction that
-nothing outside it can interrupt, and nothing waits on a wall clock, so tests
-run as fast as the CPU allows without changing the timing they measure: a
-journey that takes six seconds in front of a user is a few dozen frames in CI.
+PocketJS makes time the frame counter. One `frame(buttons)` call is a
+transaction that nothing outside it can interrupt, and nothing waits on a wall
+clock, so tests run as fast as the CPU allows without changing the timing they
+measure: a journey that takes six seconds in front of a user is a few dozen
+frames in CI.
 
 ```text
 state n+1 = F(state n, input n)
@@ -252,8 +253,9 @@ See also: [Core concepts](https://pocketjs.dev/docs/concepts/) ·
 
 ## Hardware support
 
-Every entry below has booted the runtime on the real machine. What changes
-between them is one native submission layer, never the application. Keeping the
+PocketJS has booted on every operating system below, on the real machine. What
+changes between them is one native submission layer, never the application, and
+each row links to the post or pull request that brought it up. Keeping the
 hardware bootable is its own work, tracked in
 [Pocket Museum](https://museum.pocketlab.build/).
 
@@ -287,6 +289,9 @@ records what has been verified and how. See
 [Native contract](https://pocketjs.dev/docs/native-contract/).
 
 ## Applications
+
+PocketJS carries complete applications on the hardware listed above. Each row
+links to how it was built.
 
 | Project | Scope |
 | --- | --- |
