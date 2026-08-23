@@ -2,9 +2,10 @@
 
 This is the fastest path from an empty checkout to JSX running on screen. You'll
 write a component, mount it, build it, and see it in the browser dev host — the
-same source and `pocket.json` can also be compiled into target-specific PSP and
-PS Vita packages. The logical 480×272 UI stays portable while each target owns
-its native renderer, raster density, and HostOps ABI.
+same source and `pocket.json` can also be compiled into target-specific packages
+for PSP, PS Vita, and the other registered targets. The logical 480×272 UI stays
+portable while each target owns its native renderer, raster density, and HostOps
+ABI.
 
 If you only want to *try* PocketJS, skip the toolchain entirely and open the
 online [Playground](/playground/): it runs the Rust core as WebAssembly in your

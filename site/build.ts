@@ -668,7 +668,7 @@ async function main() {
 // styles. Display faces come from Google Fonts; the fallback stacks keep the
 // page readable when that request fails.
 const HOME_DESC =
-  "PocketJS is a UI runtime that keeps JSX, Tailwind and reactive state, then removes every layer below them: no DOM, no CSS engine, no WebView. A QuickJS guest on a Rust core that lays out and draws every pixel itself.";
+  "PocketJS is a portable application runtime that turns modern component code into native pixels across radically different hardware. JSX, Tailwind and reactive state stay; no DOM, no CSS engine, no WebView, just a QuickJS guest on a Rust core that lays out and draws every pixel itself.";
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 

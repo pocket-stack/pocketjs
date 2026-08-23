@@ -1,8 +1,9 @@
 # Architecture
 
-PocketJS is a JSX UI stack that runs apps on real Sony PSP and PS Vita hardware,
-in PPSSPP and Vita3K, in desktop/browser hosts, and under headless Bun. It gets
-there with one principle:
+PocketJS is a portable application runtime that turns modern component code
+into native pixels across radically different hardware: real Sony PSP and PS
+Vita units, PPSSPP and Vita3K, desktop and browser hosts, and headless Bun. It
+gets there with one principle:
 **one Rust core, framework-specific JS adapters, one layout engine everywhere.**
 
 The JavaScript side can be Solid, Vue Vapor, or Octane. Solid uses its

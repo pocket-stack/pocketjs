@@ -83,8 +83,10 @@ test("homepage ships the four-chapter landing", () => {
   expect(home).toContain('class="hero-bg"');
   expect(home).toContain("/assets/pocketjs-demo-wall.mp4");
   expect(home).toContain("/assets/pocketjs-demo-wall.jpg");
-  expect(home).toContain("A very ambitious");
-  expect(home).toContain("PocketJS is a UI runtime that keeps JSX, Tailwind and reactive state");
+  expect(home).toContain("UI runtime for<br>every kind of<br>computer");
+  expect(home).toContain(
+    "PocketJS is a portable application runtime that turns modern component code into",
+  );
   for (const file of ["site/home.html", "site/bake-demo-wall.ts", "site/content/blog/pocket-figma.md"]) {
     expect(readFileSync(ROOT + file, "utf8")).not.toContain("figma-psp-cover-zoom");
   }

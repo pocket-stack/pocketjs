@@ -1,11 +1,12 @@
 # Overview
 
-PocketJS lets you build **Solid**, **Vue Vapor**, or **Octane** interfaces for
-Sony PSP and
-PS Vita hardware. It compiles class strings and font glyphs at build time, then
-renders real flexbox, sub-pixel text and native animation through a compact
-`no_std` Rust core. One application manifest resolves into target-specific PSP
-and Vita artifacts; browser, desktop, PPSSPP/Vita3K, and headless hosts exercise
+PocketJS is a portable application runtime that turns modern component code
+into native pixels across radically different hardware. You write **Solid**,
+**Vue Vapor**, or **Octane** components; the runtime compiles class strings and
+font glyphs at build time, then renders flexbox layout, sub-pixel text and
+native animation through a compact `no_std` Rust core. One application manifest
+resolves into target-specific artifacts, from Sony PSP and PS Vita packages to
+desktop and e-reader hosts; browser, PPSSPP/Vita3K, and headless hosts exercise
 the same logical UI and HostOps semantics.
 
 If you know Solid, Vue, or React, you already know most of PocketJS. The

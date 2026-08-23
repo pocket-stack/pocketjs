@@ -9,10 +9,10 @@ const X_URL = "https://x.com/pocket_js";
 export const SITE_URL = "https://pocketjs.dev";
 export const SITE_TITLE = "PocketJS · JavaScript UI runtime";
 export const SITE_DESC =
-  "A compact JavaScript runtime for building UI, games, 3D experiences and AI-native applications across radically different devices. A tiny JavaScript guest where it fits; the framework compiled away where it doesn't.";
+  "PocketJS is a portable application runtime that turns modern component code into native pixels across radically different hardware. Solid, Vue Vapor and Octane components compile to one native tree that a Rust core lays out and draws, with no DOM, CSS engine or WebView underneath.";
 // Shared by the standalone homepage and every page rendered through renderPage().
 export const SITE_FOOTER_DESC =
-  "A compact JavaScript runtime for UI, games, 3D and AI-native software, carried to radically different devices by a tiny native core.";
+  "A portable application runtime that turns modern component code into native pixels, carried to radically different hardware by a compact native core.";
 export const SITE_FOOTER_DESC_SLOT = "{{SITE_FOOTER_DESC}}";
 export const OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 
