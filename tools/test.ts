@@ -57,6 +57,7 @@ const SUITE: readonly Stage[] = [
       "tests/iphone2g-device-contract.test.ts",
       "tests/iphone2g-toolchain.test.ts",
       "tests/iphone2g-device-transaction.test.ts",
+      "tests/compiler-portability.test.ts",
       "tests/platform-runtime.test.ts",
       "tests/app-check.test.ts",
       "tests/vue-sfc.test.ts",
