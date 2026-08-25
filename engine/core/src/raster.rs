@@ -1101,9 +1101,14 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
             }
             let k = thr - f;
             if s > 0 {
+                // First col with f >= thr is ceil(k/s); div_euclid floors for s > 0.
                 (((k + s - 1).div_euclid(s)).clamp(0, span as i64) as i32, span)
             } else {
-                (0, ((k.div_euclid(s)) + 1).clamp(0, span as i64) as i32)
+                // s < 0 flips the inequality: cols satisfying it are 0..=floor(k/s).
+                // div_euclid CEILS for a negative divisor, so it must not be used
+                // here — it returned floor+1 and handed one boundary column to
+                // fill_opaque. floor(k/s) == (-k).div_euclid(-s), with -s > 0.
+                (0, (((-k).div_euclid(-s)) + 1).clamp(0, span as i64) as i32)
             }
         };
         let (mut il, mut ih, mut tl, mut th) = (0, span, 0, span);
