@@ -1,6 +1,24 @@
 Pick a character. Pick a stage. Point your webcam at your face, and join the meeting as neither — a VRM performer on a composed set, mirroring your expressions in real time, delivered to Zoom as an ordinary camera device. That's Pocket Live: the livestreaming chain — tracking, character, stage, program, delivery — built as a small native runtime instead of a streaming app's worth of processes.
 
-[Pocket Character](/blog/pocket-character/) was the seed: airi's idle VRM widget rebuilt as one native process, 118 MB and 4 % of a core where the Electron tree spends 2.2 GB and 44 %. That post ends where the character starts breathing. This one is about everything a *live* character needs that an idle one doesn't — a face to mirror, a set to stand on, a video contract to honor, and an audience on the other side of a conferencing app that only trusts things which look like webcams.
+[Pocket Character](/blog/pocket-character/) was the seed: airi's idle VRM widget rebuilt as one native process, 118 MB and 4 % of a core where the Electron tree spends 2.2 GB and 44 %. That post ends where the character starts breathing. This one is about everything a *live* character needs that an idle one doesn't — a face to mirror, a set to stand on, a video contract to honor, and an audience on the other side of a conferencing app that only trusts things which look like webcams. End to end:
+
+```
+real camera ──▶ tracking (blendshapes + skeleton, NDJSON)
+                   │
+                   ▼
+             character sim (VRM: expressions, motion, springs)
+                   │
+                   ▼
+             stage compositor (background mode: virtual · camera ·
+                   │            matte · clean · split · transparent)
+                   ▼
+             program output (fixed-size texture, e.g. 1920×1080)
+                   │
+                   ├──▶ on-screen preview / fullscreen per monitor
+                   └──▶ virtual camera ──▶ Zoom / Teams / FaceTime / OBS
+```
+
+The widget's one rule carries over unchanged — things that happen sixty times a second run in Rust, things that happen occasionally run in JavaScript, things that don't change at all are data — and it matters here for a new reason: **the character itself is nearly free, so the budget goes where live actually needs it**, tracking inference and video delivery. Every arrow in that diagram is a narrow, boring protocol (JSON lines, plain objects, BGRA bytes behind a C struct), every box is replaceable, and the chain is built to run for *hours* next to your real meeting on your own machine — which makes idle cost, latency, and privacy product features rather than engineering hygiene.
 
 ## A performance is a file
 
@@ -60,7 +78,19 @@ The program contract doubles as a privacy line, enforced by construction rather 
 
 Delivery is the most platform-shaped stage, and the design is worth describing even though it's the part still being built (the Xcode skeleton is in-tree; the design doc is in the repo). Zoom trusts only devices in the OS camera list, so the program must *be* a camera. macOS has a before-and-after story here: the old mechanism, DAL plugins, injected your code into Zoom's own process — unsandboxed, routinely rejected by hardening policies, deprecated since macOS 12.3. The modern mechanism is the **CoreMediaIO Camera Extension**: the fake camera is a separate, sandboxed system-extension process, the same path OBS moved to in v28.
 
-It works like a post office with the OS as the carrier. The extension publishes one device with two same-format streams — a *sink* only Pocket Live writes, and a *source* that Zoom, Teams and FaceTime read. The host pushes frames into the sink; the extension keeps only the newest and re-emits it on a steady 30 fps clock; the OS handles the IPC, buffer validation, permission prompts, and fan-out to multiple simultaneous readers. Host and meeting app never touch.
+It works like a post office with the OS as the carrier. The extension publishes one device with two same-format streams — a *sink* only Pocket Live writes, and a *source* that Zoom, Teams and FaceTime read:
+
+```
+Pocket Live host ──frames──▶ sink stream ("Pocket Live In")
+                                │  OS handles IPC, validation, fan-out
+                                ▼
+                     extension keeps only the newest frame
+                                │  re-emitted on a steady 30 fps clock
+                                ▼
+              source stream ("Pocket Live Camera") ──▶ Zoom / Teams / FaceTime
+```
+
+The host pushes frames into the sink; the extension keeps only the newest and re-emits it on a steady clock; the OS handles the IPC, buffer validation, permission prompts, and fan-out to multiple simultaneous readers. Host and meeting app never touch.
 
 The design decisions worth stealing, in order of how much pain they prevent:
 
@@ -79,6 +109,8 @@ The distinction worth defending is *why* each process exists. An Electron tree's
 ## What this doesn't claim
 
 Status, honestly: the character runtime, plugin/vibe system, tracking pipeline and background modes run today; the virtual camera is a completed design with its extension skeleton in-tree, staged behind the prove-the-platform-first plan above — this post describes that design, not a shipped device. No audio: the microphone stays whatever the meeting app already uses. And none of this makes Pocket Live a streaming *platform* — there's no scene switching, no overlays-as-apps, no RTMP. It's the narrower bet that the live chain itself — track, perform, compose, deliver — fits in a runtime small enough to sit beside your actual work, on the machine you're already using, for hours.
+
+If you're keeping score on the choices, two invariants decided every contested one: **idle costs almost nothing** (the show runs for hours beside real work), and **the host knows nothing about specific content** (a performance is a vibe file, not a build). The roads not taken — three-vrm, ML matting, OBS's virtual camera, ARKit-over-iPhone, dlopen plugins — are mostly the pragmatic picks for someone shipping fast; each just breaks one of those two lines somewhere.
 
 ---
 
