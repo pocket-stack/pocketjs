@@ -1,270 +1,189 @@
-# Pocket Live — the Electron digital human, rebuilt native
+# Pocket Live — a native live-performance runtime
 
-*How the Electron "digital human" was rebuilt on the Pocket runtime family —
-every technology choice, the principle they all follow from, and for each
-layer, the roads not taken and why. The widget itself measures 1 process /
-118 MB / 3.9 % CPU against airi's 8 / 2184 MB / 44.4 %; tracking and the
-virtual camera add processes — deliberately, at isolation boundaries — and
-§10 accounts for them honestly.*
+*A VRM character, driven by your real face, performing on a composed stage,
+delivered to Zoom as a camera — the full livestreaming chain as one small
+native runtime. This page walks the chain stage by stage: what each piece
+chose, the alternatives, and the principles that decided between them.*
 
 This document is the design-rationale companion to
 [pocket-character](https://github.com/pocket-stack/pocket-character) (the
 repo Pocket Live grew out of) and to [WIDGET.md](WIDGET.md), which
-generalizes what it proved. WIDGET.md names the *capability*; this page
-explains the *choices* — with alternatives, so the next runtime doesn't have
-to re-derive them.
+generalizes its widget shell. The widget was the seed; the product is the
+**live chain** built on top of it.
 
-## 1. The category, and the question
+## 1. The product is a chain
 
-There is a category of app that is delightful in concept and horrifying in
-Activity Monitor: the desktop companion character. A little anime figure
-floats in a transparent, always-on-top window — idling, blinking every few
-seconds, eyes darting in small saccades, hair swaying with physics. You can
-drag her around your screen. Behind her sit two bigger pieces: driving her
-expressions from the real webcam (face tracking), and presenting her
-composed program as a camera to Zoom (the virtual camera).
+A user picks a *vibe* — "牛来 · 百花奖舞台" is one JSON file: a character
+id, a stage id, `tracking: camera`, `output_size: 1920x1080` — and goes
+live. From that point five stages run continuously:
 
-The reference implementation is [airi](https://github.com/moeru-ai/airi),
-an open-source Electron app that does all of the above. Pocket Live began
-as an experiment with a sharp question behind it: *same character, same
-model file, same blink timing, same window geometry — what does it cost on
-the Pocket architecture instead?*
+```
+real camera ──▶ tracking (blendshapes + skeleton, NDJSON)
+                   │
+                   ▼
+             character sim (VRM: expressions, motion, springs)
+                   │
+                   ▼
+             stage compositor (background mode: virtual · camera ·
+                   │            matte · clean · split · transparent)
+                   ▼
+             program output (fixed-size texture, e.g. 1920×1080)
+                   │
+                   ├──▶ on-screen preview / fullscreen per monitor
+                   └──▶ virtual camera ──▶ Zoom / Teams / FaceTime / OBS
+```
 
-The measured answer (same machine, same ≥60 s steady-state methodology,
-full process tree; **parity scope** — the idle widget alone, no face
-tracking, no virtual camera, on both sides):
+Every arrow is a narrow protocol, every stage is replaceable, and the
+sections below take them in order. The design constraint that shapes all of
+them: this chain runs for **hours**, next to the user's real meeting or
+stream, on their own machine — so idle cost, latency, and privacy are
+product features, not engineering hygiene.
 
-| | airi (Electron, VRM stage) | Pocket Live widget |
-| --- | --- | --- |
-| Processes | 8 | 1 |
-| RSS | 2184 MB | 118 MB |
-| CPU (of one core) | 44.4 % | 3.9 % |
+## 2. The foundation, briefly
 
-Better than an order of magnitude, and no single heroic optimization
-explains it. It falls out of one architectural principle applied
-consistently.
-
-## 2. Why Electron costs what it costs
-
-First, a defense of airi: it isn't slow because it's badly written. It's
-slow because of what it stands on. Electron means every app ships a
-complete Chrome browser; even to draw one little character, you pay for the
-whole vehicle:
-
-- **A process tree.** Main process, GPU process, network service, audio
-  service, a renderer per window — that's the 8 processes, each with its
-  own memory baseline. Gigabytes follow.
-- **A web rendering path.** three.js maintains the entire 3D scene graph in
-  JavaScript. Every frame — 60 times a second, rAF-driven — JS computes
-  spring-bone physics, expression lerps, and skeletal matrices, then hands
-  the result to WebGL. Per-frame JS allocates; the garbage collector chases
-  it forever. That's where the CPU goes.
-- **Pure waste at the edges.** airi's main process polls the global cursor
-  at 60 Hz even when nothing consumes it.
-
-The expensive part was never "draw a character." The character's math is
-tiny. The expensive part is the vehicle.
-
-## 3. The one idea everything else follows from
-
-Every technology choice in the repo is a corollary of a single rule:
+The rendering core descends from the pocket-character parity experiment —
+the same character widget that costs 8 processes / 2184 MB / 44 % CPU on
+Electron measured 1 process / 118 MB / 3.9 % on the Pocket stack. That
+result, and the shell/VRM/guest split behind it, are covered in
+[WIDGET.md](WIDGET.md) and the pocket-character repo; here it earns one
+paragraph because everything below inherits its one rule:
 
 > **Things that happen 60 times per second run in Rust. Things that happen
 > occasionally run in JavaScript. Things that don't change at all are
 > data.**
 
-What the character actually does each frame is a fixed pipeline with zero
-decisions in it:
+Concretely: winit + wgpu host, engine crates for VRM (`pocket-vrm`:
+parsing, VRMA retargeting, verlet spring bones — upstreamed in
+[#125](https://github.com/pocket-stack/pocketjs/pull/125)), and a QuickJS
+guest that receives per-tick facts and queues intent commands. A
+character's personality is a guest bundle, not a build. For the live
+chain this foundation matters for one reason: **the character itself is
+nearly free**, so the budget can be spent where live actually needs it —
+tracking inference and video delivery.
 
-```
-sample clip → apply blink/expression → solve springs → skin → draw
-```
+## 3. Tracking: the performer's face and body
 
-Pure math, no branching on intent — so the whole pipeline lives native
-(`crates/pocket-character-core` plus the engine crates), compiled,
-allocation-free, GC-free. *Decisions* — which motion plays on click, when
-to swap expressions, whether to track the mouse — happen a few times per
-second at most. Those live in a QuickJS guest: per tick the core pushes a
-handful of read-only facts (`blink`, `hovered`, `fps`) through
-`character.__dispatch(state, events)`, and the guest queues commands
-(`SetTracking`, `PlayClip`, `SetExpression`, `Quit`) that the core applies
-at the end of the frame. This is the RUNTIMES.md ⟨Cores, Surfaces, Guest⟩
-shape with exactly one core and one surface.
+The chain's input stage turns the real camera into semantic control
+signals. The launcher exposes it as `--tracking off | mock | camera`:
+`off` is the idle widget, `mock` replays synthetic signals (develop and
+demo the whole chain with no camera at all), `camera` runs the real
+pipeline.
 
-The analogy that sticks: **Rust is the cerebellum, JavaScript is the
-cortex.** Walking, blinking, heartbeat — continuous control that never
-touches conscious thought — versus "that's a friend, wave." Electron's
-architecture makes the cortex operate every heartbeat by hand.
+The real pipeline is two cooperating processes beside the host:
 
-A side effect that became the product: a character's *personality* is just
-a guest bundle. Swap the bundle, get a different character; the host
-doesn't recompile. The airi-parity personality is deliberately near-empty —
-32 lines — because airi's default behavior barely requires decisions.
+- **`mediapipe_face_bridge.py`** runs Google's MediaPipe Face/Pose/Hand
+  Landmarker and emits **52 blendshape coefficients** — semantic values
+  like "left eye closed 0.8," "mouth smile 0.3" — plus a small set of
+  skeletal points. The 52 names were defined by Apple's ARKit and became
+  the industry's face-tracking vocabulary; they map almost directly onto
+  VRM expressions, which is the whole reason the character can mirror the
+  performer without a hand-authored mapping layer.
+- **`pocket-vision-bridge`** is the native Apple Vision path; a
+  `--face-only` flag on the MediaPipe side keeps body and hands here. The
+  hybrid exists because Vision gives facial *geometry* but not blendshape
+  coefficients (expressions would have to be reverse-engineered from
+  landmarks), while MediaPipe gives coefficients directly. Each does what
+  it's best at.
 
-## 4. The shell: native Rust, not Electron, not Tauri
+Three rules keep the stage honest:
 
-The product is a single binary: a winit window configured transparent,
-undecorated, always-on-top, 450×600 (airi's exact stage geometry), rendered
-with wgpu, frame-paced at 60 fps — *paced* meaning the loop sleeps until
-the next deadline rather than spinning. The window plumbing (`AppConfig`
-widget mode, transparent clear, `max_fps` pacing) went upstream in
-[#125](https://github.com/pocket-stack/pocketjs/pull/125) and is being
-generalized as [WIDGET.md](WIDGET.md)'s `shell`.
+1. **Narrow protocol.** The sidecar emits newline-delimited JSON and
+   nothing else; MediaPipe's internal result objects may not leak into the
+   host. Swap the tracker tomorrow — the host doesn't change.
+2. **One camera claim.** The host opens the camera once; frames reach the
+   sidecar through a shared-memory ring (mmap, no copies, no second
+   permission prompt, no device contention with the meeting app).
+3. **No persistence, no network.** Frames are never written and never
+   leave the machine. Tracking output is numbers, not pixels.
 
-The alternatives, and why they lose *here*:
+Alternatives, and why they lost:
 
-| Shell | Principle | Why not |
+| Tracker | Principle | Why not |
 | --- | --- | --- |
-| Electron | bundle Chromium + Node; full web ecosystem | the measured baseline being compared against |
-| Tauri | reuse the system WebView, Rust backend | fixes the memory story, not the rendering one — per-frame 3D is still rAF-driven JS inside a WebView, its worst workload |
-| Unity / Godot | mature VRM ecosystems (UniVRM, godot-vrm) | a game engine's resting heart rate is antithetical to "idle costs almost nothing"; frameless transparent overlays are second-class there |
-| Swift/AppKit + Metal | leanest possible build | platform lock-in, and loses the reusable core/surface/guest pattern the runtime family shares |
+| ARKit (`ARFaceAnchor`) | TrueDepth depth camera; the quality ceiling | Macs have no TrueDepth — VTubers bridge an iPhone as a peripheral; fine for hobbyists, terrible onboarding |
+| Apple Vision only | native, zero extra runtime | no blendshape output; expressions from raw landmarks is a research project |
+| OpenSeeFace | the beloved community veteran, pure RGB/CPU | newer models have outrun it |
+| NVIDIA Maxine | best-in-class GPU inference | needs an NVIDIA GPU; not on a Mac |
 
-## 5. VRM rendering: engine crates, not three-vrm, not bevy_vrm
+## 4. The stage: characters, backgrounds, and the compositor
 
-A primer if VRM is new: it's an open humanoid-avatar standard (a glTF
-extension) specifying skeleton naming, blend-shape expressions, and —
-crucially — the spring-bone physics that make hair and clothes sway.
-Everything is documented; you can implement it from the spec.
-
-That matters because airi's *actual* out-of-the-box character is
-**Live2D**, a 2.5D mesh-deformation format ubiquitous in VTubing — and
-rendering its `.moc3` files requires linking Live2D's proprietary,
-closed-source Cubism Core, which cannot be vendored into an open runtime.
-So the parity target is airi's VRM stage, with the identical model
-(VRoid's AvatarSample_A), identical idle animation, identical source URLs.
-Apples to apples.
-
-VRM support was built as generic crates and PR'd upstream (#125):
-`pocket-vrm` (VRM 0.x parsing, VRMA retargeting, spring-bone verlet solver,
-eye look-at) and morph-target/pose machinery in `pocket3d`. Two details
-carry most of the performance story:
-
-- **Blinking is free while it isn't happening.** Facial expressions use
-  morph targets: the artist pre-sculpts a "closed eyes" mesh and the
-  runtime interpolates vertex positions by a weight. The naive approach
-  interpolates and re-uploads every frame; here morph deltas are computed
-  and uploaded **only when a weight changes**. A blink is a 0.2 s sine
-  pulse every 1–6 s — over 95 % of frames pay literally zero for the face.
-- **Hair physics is a few vector ops.** Spring bones are chains of point
-  masses solved with verlet integration — velocity represented implicitly
-  as "current minus last position," a couple of adds per particle per
-  frame. The math was never expensive; airi pays for running it in
-  allocating, GC'd JavaScript. Here it's preallocated Rust arrays stepping
-  allocation-free.
-
-The alternatives:
-
-- [@pixiv/three-vrm](https://github.com/pixiv/three-vrm) — the most mature
-  VRM runtime anywhere, and it's three.js: airi's path.
-- [bevy_vrm](https://github.com/unavi-xyz/bevy_vrm) — essentially the only
-  off-the-shelf Rust option (VRM 0.0/1.0), but it brings all of Bevy's ECS
-  and render graph with it. The game-engine tax again.
-- UniVRM — official, excellent, requires Unity.
-- Writing the solver from the public spec was a bounded amount of work in
-  exchange for a crate any Pocket app can now use.
-
-## 6. The scripting layer: QuickJS, not V8
-
-JS-engine selection has a simple intuition: V8 is fast because of its JIT,
-and the JIT costs tens of megabytes of baseline memory plus a heavyweight
-runtime. But this guest reads a few properties per tick — **throughput is
-irrelevant; footprint is everything**. QuickJS is ~1 MB, JIT-free, and
-starts in microseconds: the exact sweet spot for "policy only."
-
-Why JS rather than Lua or Rhai (both even cheaper to embed)? Because plugin
-authors write **TypeScript** — the typed SDK (`plugin-sdk/character.ts`) is
-the plugin contract, and Bun bundles it. The type system is part of the
-product surface. WASM (wasmtime, Extism) deserves a mention: strongest
-sandbox, language-agnostic, and wrong for this shape of problem — every
-host↔guest exchange crosses a serialization boundary, exactly the wrong
-trade when the pattern is "hand the guest a state object every tick."
-QuickJS mounts plain JS objects directly.
-
-## 7. Content: plugins are data, not code
-
-The content architecture has three layers:
+What the audience sees behind the character is the **background mode**, a
+first-class launcher/vibe setting:
 
 ```
-runtime host
-  ├─ character plugin  (VRM + VRMA + policy bundle + render framing)
-  ├─ background plugin (one WGSL pixel function + compositor defaults)
-  └─ vibe preset       (character id + background id + tracking/output)
+--background-mode  transparent | virtual | camera | matte | clean | split
 ```
 
-A character plugin is a `plugin.json` manifest pointing at a model,
-animations, a policy bundle, and framing parameters (FOV, anchor height,
-camera distance). A background plugin is a manifest plus one WGSL shader —
-literally a pure function from pixel coordinates to color. A vibe is a JSON
-file containing only IDs: "this character + this stage + these settings."
+- `transparent` — the desktop-widget mode: no stage, character over your
+  desktop.
+- `virtual` — a procedural stage: one WGSL pixel function per background
+  plugin (the 百花奖 stage is ~a page of shader: film strips, gold
+  particles, spotlight wash). No video decode, no image assets, resolution
+  independent, costs microseconds per frame.
+- `camera` — the real camera as the backdrop (character over your room).
+- `matte` / `clean` — background replacement without a green screen. The
+  clean-plate approach is the notable one: the background manifest carries
+  `clean_plate_delay_seconds` — step out of frame, the compositor captures
+  the empty room, and from then on "you" can be subtracted from the feed
+  by difference against the plate. The alternative is ML person
+  segmentation (MediaPipe selfie-segmentation and friends), which needs no
+  choreography but costs continuous inference and produces the familiar
+  hair-eating halo; a captured plate is free per-frame and pixel-exact for
+  a static camera, which a desk setup is.
+- `split` — side-by-side (real feed + character), the format for "show
+  the performer and the puppet" comparisons; character plugins carry a
+  separate `split_camera_distance` framing parameter for it.
 
-The load-bearing rule: **the host recognizes no specific character.** It
-consumes manifest paths. A character whose model has licensing restrictions
-lives outside the repo via `.gitignore`, but architecturally it is not a
-special case — just another manifest the host has never heard of.
+Content above the compositor is **data, not code** — the three-layer
+plugin architecture:
 
-Both places where plugins get to *execute* anything — the QuickJS bundle
-and the WGSL function — are sandboxes; neither can touch the host process.
-Compare the classic alternative, dynamic-library plugins (`dlopen`):
-unlimited power, and a plugin crash is a host crash with no security
-boundary anywhere. The WASM component model sandboxes as well but brings a
-heavy toolchain. For "swap the skin, swap the personality," data-driven is
-exactly the right amount of power.
+```
+character plugin   plugin.json → VRM + VRMA + policy bundle + framing
+background plugin  plugin.json → one WGSL function + compositor defaults
+vibe preset        ids only: character + background + tracking + output
+```
 
-## 8. Face tracking: a MediaPipe sidecar over the narrowest pipe
+The host recognizes no specific character; it consumes manifest paths. A
+model with licensing restrictions stays out of the repo via `.gitignore`
+yet is architecturally unremarkable — just another manifest. The two
+places plugins *execute* anything — the QuickJS policy bundle and the WGSL
+function — are both sandboxes. The dlopen-style alternative (native plugin
+libraries) offers unlimited power and no boundary: a plugin crash is a
+show crash, mid-stream. For "swap the performer, swap the stage,"
+data-driven is exactly the right amount of power — and it makes a *show*
+reproducible: a vibe file is a complete, versionable description of a
+performance setup.
 
-To drive the character from a real face, a Python sidecar runs Google's
-MediaPipe and emits **52 blendshape coefficients** — semantic values like
-"left eye closed: 0.8," "mouth smile: 0.3." The 52 names were defined by
-Apple's ARKit and became the industry's de facto face-tracking vocabulary,
-which is convenient: they map almost directly onto VRM expressions.
+## 5. Program output: the show is a texture, not a window
 
-Three deliberate moves:
+A window is a terrible video contract: it can be transparent, resized,
+Retina-scaled, occluded, minimized, portrait-shaped. So the live chain
+promotes the **program** to a first-class render target — a fixed-size
+texture (vibes carry `output_size`, e.g. 1920×1080) that the scene,
+stage, and effects render into. The on-screen window becomes a *preview*
+blitted from that texture (`--fullscreen --monitor "DELL U2723QE"` for a
+dedicated display), and every consumer downstream sees the same pixels
+regardless of what the user does to the window.
 
-1. **Process isolation behind a narrow protocol.** The sidecar emits
-   newline-delimited JSON and nothing else; MediaPipe's internal result
-   objects are explicitly not allowed to leak into the host. Swap the
-   tracker tomorrow — the host doesn't change. No networking; frames are
-   never persisted.
-2. **Shared-memory frames.** The camera is opened once, by the host;
-   frames reach Python through an mmap ring. No second camera claim, no
-   copies.
-3. **A hybrid escape hatch.** A `--face-only` flag keeps body and hands on
-   Apple's native Vision path. Why hybrid: Vision gives facial geometry but
-   *not* blendshape coefficients — expressions would have to be
-   reverse-engineered from landmarks. MediaPipe gives the coefficients
-   directly. Each does what it's best at.
+The program contract is also a privacy line: final composition happens
+*before* the texture, alpha forced to 1, debug skeletons / tracking
+points / FPS overlays / window chrome excluded by construction, and the
+raw camera feed can never become an implicit background — it participates
+in tracking and in the modes that explicitly request it, nothing else.
 
-The alternatives map the landscape: ARKit's TrueDepth tracking is the
-quality ceiling, but Macs have no TrueDepth camera — VTubers bridge an
-iPhone as a peripheral, a fine hobbyist workflow and a terrible onboarding
-story. OpenSeeFace is the beloved community veteran that newer models have
-outrun. NVIDIA Maxine needs an NVIDIA GPU; on a Mac, that's a no.
-(Kalidokit-style libraries solve the *next* link — landmark → rig solving —
-which here is done on the Rust side.)
+## 6. Delivery: convincing Zoom you're a webcam
 
-## 9. The virtual camera: convincing Zoom you're a webcam
+The most platform-flavored stage. Zoom only trusts devices in the OS
+camera list, so the program must be registered as a camera. macOS has a
+before-and-after story: the old mechanism, **DAL plugins**, injected your
+code into Zoom's own process — unsandboxed, routinely rejected by
+hardening policies, deprecated in macOS 12.3. The modern mechanism is the
+**CoreMediaIO Camera Extension** (12.3+): the fake camera is a separate,
+sandboxed system-extension process. OBS migrated to it in v28 for the
+same reasons.
 
-The most platform-flavored piece (design in the pocket-character repo's
-`docs/virtual-camera.md`; Swift host + extension skeleton in
-`native/PocketLiveCamera/`). The goal: a "Pocket Live Camera" entry in
-Zoom's device list showing the final composed program — character, virtual
-background, effects — never the raw webcam, never the debug HUD.
-
-Zoom only trusts devices in the OS camera list, so you must register a fake
-camera with the system. macOS has a before-and-after story here. The old
-mechanism, DAL plugins, worked by **injecting your code into Zoom's own
-process** — unsandboxed, routinely rejected by hardening policies,
-deprecated by Apple in macOS 12.3. The modern mechanism is the
-**CoreMediaIO Camera Extension** (macOS 12.3+): the fake camera is a
-separate, sandboxed system-extension process. OBS migrated to it in v28 for
-the same reasons. Depending on OBS's virtual camera instead would make
-"user has OBS installed" a product prerequisite and route the program
-through OBS; Syphon/NDI share textures between production tools but never
-appear as a camera to conferencing apps.
-
-The design works like a post office with the OS as the mail carrier. The
-extension publishes one device with two same-format streams:
+The design works like a post office with the OS as the carrier. One
+device, two same-format streams:
 
 ```
 Pocket Live host ──frames──▶ sink stream ("Pocket Live In")
@@ -276,76 +195,90 @@ Pocket Live host ──frames──▶ sink stream ("Pocket Live In")
               source stream ("Pocket Live Camera") ──▶ Zoom / Teams / FaceTime
 ```
 
-Host and Zoom never touch. Permission prompts, buffer validation, multiple
-simultaneous readers — all the OS's problem.
+Host and Zoom never touch. Permission prompts, buffer validation,
+multiple simultaneous readers — the OS's problem. Decisions worth
+stealing:
 
-Three decisions worth stealing:
+- **The render thread never waits for the camera.** GPU→CPU readback runs
+  through three rotating staging buffers with async map callbacks; if all
+  three are busy the frame is dropped and counted. For live video,
+  dropping beats queueing — latency is the product.
+- **720p30 for v1, on purpose.** One readback plus one row-copy is
+  ~111 MB/s — comfortably affordable — and most conferencing links
+  re-scale and re-encode anyway. Zero-copy IOSurface interop via wgpu's
+  unstable HAL is explicitly deferred until measurement demands it.
+- **Prove the platform first.** Step one of the plan is a template
+  extension, signed and notarized, *enumerated by Zoom* — because signing
+  and system-extension approval are where this can actually die, not
+  throughput.
+- **Privacy as a state machine.** The extension never opens the real
+  camera (it doesn't even hold the entitlement). Host silent for 500 ms →
+  a locally-generated "paused" placeholder. No failure mode falls back to
+  the performer's real face — the extension outliving a host crash is
+  precisely what makes that guarantee enforceable.
 
-- **The render thread never waits for the camera.** A GPU frame reaches the
-  system via GPU→CPU readback, which is slow; the design rotates three
-  staging buffers with async map callbacks, and if all three are busy the
-  frame is dropped and a counter incremented. For live video, dropping
-  beats queueing — latency is the product.
-- **Prove the platform before optimizing.** v1 accepts a full readback plus
-  one row-copy per frame (720p30 ≈ 111 MB/s — comfortably affordable) and
-  explicitly refuses wgpu's unstable HAL for zero-copy IOSurface interop.
-  Step one of the plan: get a template extension signed, notarized,
-  installed, and *enumerated by Zoom* — because signing and system-extension
-  approval are where the project can actually die, not throughput.
-- **Privacy as a state machine, not a policy.** The extension never opens
-  the real camera (it doesn't even request the entitlement). If the host
-  stops publishing for 500 ms, viewers see a "paused" placeholder generated
-  inside the extension. No failure mode — none — falls back to the real
-  face.
+The alternatives: depending on **OBS's virtual camera** makes "user has
+OBS installed" a product prerequisite and routes the show through OBS;
+**Syphon/NDI** share textures between production tools but never appear
+as a camera to conferencing apps; **screen-sharing the window** surrenders
+resolution, framing, and the privacy line all at once.
 
-## 10. The whole thing on one napkin
+## 7. Measuring a live chain honestly
+
+The parity experiment's methodology carries over, extended for the
+multi-process reality: `measure-live.ts` walks the launcher's full process
+tree, tags each process by role — `renderer`, `vision`, `mediapipe`,
+`launcher` — and reports median/p10/p90 per role over a settled sampling
+window. There is no pretending the chain is one process: **with
+everything on, it is three processes of our code** (host, MediaPipe
+sidecar, camera extension) plus the Vision bridge when active.
+
+The distinction worth defending is *why* each process exists. Electron's
+eight arrive before you draw anything — they are the vehicle. The live
+chain's extras each mark a boundary that genuinely wants to be a process:
+the sidecar quarantines a Python/ML runtime behind a JSON pipe (crash it,
+the show keeps rendering and the character keeps idling), and the camera
+extension is OS-mandated, sandboxed, and alive even when the host is dead
+— which is exactly what §6's placeholder guarantee is made of. Processes
+bought at isolation boundaries, not paid as vehicle tax; every one of
+them terminates with its feature, and idle cost returns to the
+one-process baseline.
+
+## 8. The whole thing on one napkin
 
 ```
-┌─ desktop widget (the 1-process core) ────────────────────┐
+┌─ host (the 1-process core) ──────────────────────────────┐
 │                                                           │
 │  Rust @ 60 Hz                 QuickJS sandbox (low-freq)  │
 │  anim → blink → springs ◀── commands ── policy bundle     │
-│  → wgpu draw       ── facts ──▶   (new character =        │
-│        │                           new bundle)            │
-│                                                           │
+│  → stage compositor ── facts ──▶  (new character =        │
+│  → program texture                 new bundle)            │
+│        │                                                  │
 │  content is data: plugin.json + VRM + WGSL + vibe.json    │
 └──────┬──────────────────────────────▲────────────────────┘
-       │ 720p BGRA frames             │ blendshapes (NDJSON)
+       │ BGRA frames                  │ blendshapes (NDJSON)
        ▼                              │
- CMIO system extension          MediaPipe sidecar
+ CMIO system extension       MediaPipe / Vision sidecars
  (the fake camera)                    ▲ shared-memory frames
        │                              │
        ▼                              │
      Zoom                    real camera (tracking only)
 ```
 
-An honest process count first: with everything on, this is **three
-processes of our code** (host, MediaPipe sidecar, camera extension), not
-one. The 1-process figure is the parity-scope widget, and stays true
-whenever tracking and the camera are off. The distinction worth defending
-is *why* each extra process exists. Electron's 8 arrive before you draw
-anything — they are the vehicle. Pocket Live's extras each mark a boundary
-that genuinely wants to be a process: the sidecar quarantines a Python/ML
-runtime behind a JSON pipe (crash it, the character keeps idling), and the
-camera extension is OS-mandated — sandboxed, running even when the host is
-dead, which is exactly what lets it show a placeholder instead of your real
-face when Pocket Live crashes. Processes bought at isolation boundaries,
-not paid as vehicle tax — and both terminate with their feature; idle cost
-returns to the one-process baseline.
+Every seam is a narrow, boring protocol: plain JS objects
+(facts/commands), JSON lines, BGRA bytes behind a C struct. Any box can
+be replaced without the others noticing — and each section above listed
+what it would be replaced *with*.
 
-Every seam in this diagram is a **narrow, boring protocol**: plain JS
-objects (facts/commands), JSON lines, BGRA bytes behind a C struct. Any box
-can be replaced without the others noticing.
+Two invariants decided every contested choice: **idle costs almost
+nothing** (the show runs for hours beside real work), and **the host
+knows nothing about specific content** (a performance is data — a vibe
+file — not a build). The alternatives that lost — three-vrm, ML matting,
+OBS's virtual camera, ARKit-over-iPhone, dlopen plugins — are mostly the
+pragmatic choices for someone shipping fast; they just each break one of
+those two lines somewhere.
 
-That is also the honest way to summarize the alternatives question.
-Electron, three-vrm, bevy_vrm, V8, OBS's virtual camera, ARKit-over-iPhone
-— none of them are wrong, and most are the *pragmatic* choice for someone
-shipping fast. They just each violate one of this project's two invariants
-somewhere: **idle costs almost nothing**, and **the host knows nothing
-about specific content**. Hold those two lines, and the rest of the
-architecture more or less designs itself.
-
-Measurement methodology, from-scratch build steps, and the full airi
-comparison — including how to script airi into VRM mode for a fair fight,
-and the CPU-percentage footgun in Activity Monitor — live in the
-pocket-character repo's README and REPORT.
+Measurement methodology and build steps live in the pocket-character
+repo's README and REPORT; the virtual-camera design in its
+`docs/virtual-camera.md`; the plugin contract in its
+`docs/PLUGIN_ARCHITECTURE.md`.
