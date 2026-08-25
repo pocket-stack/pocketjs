@@ -13,9 +13,9 @@ generalizes its widget shell. The widget was the seed; the product is the
 
 ## 1. The product is a chain
 
-A user picks a *vibe* — "牛来 · 百花奖舞台" is one JSON file: a character
-id, a stage id, `tracking: camera`, `output_size: 1920x1080` — and goes
-live. From that point five stages run continuously:
+A user picks a *vibe* — one JSON file naming a character id, a stage id,
+`tracking: camera`, `output_size: 1920x1080` — and goes live. From that
+point five stages run continuously:
 
 ```
 real camera ──▶ tracking (blendshapes + skeleton, NDJSON)
@@ -117,9 +117,9 @@ first-class launcher/vibe setting:
 - `transparent` — the desktop-widget mode: no stage, character over your
   desktop.
 - `virtual` — a procedural stage: one WGSL pixel function per background
-  plugin (the 百花奖 stage is ~a page of shader: film strips, gold
-  particles, spotlight wash). No video decode, no image assets, resolution
-  independent, costs microseconds per frame.
+  plugin (the checked-in award-stage shader is about a page: film strips,
+  drifting gold particles, a spotlight wash). No video decode, no image
+  assets, resolution independent, costs microseconds per frame.
 - `camera` — the real camera as the backdrop (character over your room).
 - `matte` / `clean` — background replacement without a green screen. The
   clean-plate approach is the notable one: the background manifest carries
