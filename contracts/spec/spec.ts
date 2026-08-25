@@ -1410,19 +1410,19 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //                           emits these for ROTATED solid boxes and for
 //                           projected 3D faces after Sutherland-Hodgman
 //                           clipping. N > 8 falls back to a TRI fan.
-//                           THE OP CARRIES GEOMETRY ONLY. Unlike rounded
-//                           corners, shadows and arcs — which bake coverage
-//                           into alpha RECT spans in the core, so every
-//                           backend draws the same pixels — how a POLY is
-//                           filled is left to the backend, and the backends
-//                           differ. engine/core/src/raster.rs samples 4x4
-//                           over the whole polygon, which is what keeps a
-//                           box's shared diagonal from reading as an interior
-//                           edge; esp32p4-ppa inherits that by delegating to
-//                           it. wgpu, PSP GE, Vita GXM and Symbian GLES2 have
-//                           no per-pixel coverage, decode POLY as a triangle
-//                           fan, and fill it binary — the same picture they
-//                           draw for TRI today.
+//                           Coverage is decided ONCE, in the core:
+//                           raster::poly_spans samples 4x4 over the whole
+//                           polygon and returns scanline runs, which is what
+//                           keeps a box's shared diagonal from reading as an
+//                           interior edge. raster.rs fills those runs itself;
+//                           esp32p4-ppa inherits that by delegating to it; the
+//                           PSP GE has no per-pixel coverage and does not need
+//                           it, drawing the same runs as alpha sprites the way
+//                           it already draws rounded corners and shadows.
+//                           wgpu, Vita GXM and Symbian GLES2 still decode POLY
+//                           as a triangle fan and fill it binary, so on those
+//                           three a rotated edge is the picture TRI draws
+//                           today rather than the one the core computed.
 //   TEXT_RUN    (8 + ceil(n/4) words):
 //                           op,
 //                           word1: bits 0-7 fontSlot,
