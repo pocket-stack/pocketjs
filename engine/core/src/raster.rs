@@ -1040,10 +1040,79 @@ pub fn poly_spans<F: FnMut(PolySpan)>(
     poly_spans_impl(scale, Clip { x0: clip.0, y0: clip.1, x1: clip.2, y1: clip.3 }, verts, &mut emit);
 }
 
-/// Generic, not `&mut dyn FnMut`: the boxed call cost ~30% of a frame on a
+/// How many spans `poly_spans` can emit, without sampling any coverage.
+///
+/// A backend that must size a vertex buffer before it can fill one needs a
+/// number up front, and running the whole solve twice to get an exact count
+/// costs more than over-allocating by the boundary columns whose coverage
+/// turns out to be zero. Never less than the count `poly_spans` produces.
+pub fn poly_span_bound(scale: i32, clip: (i32, i32, i32, i32), verts: &[u32]) -> usize {
+    let mut n = 0usize;
+    poly_rows(
+        scale,
+        Clip { x0: clip.0, y0: clip.1, x1: clip.2, y1: clip.3 },
+        verts,
+        &mut |r: &PolyRow| {
+            n += (r.il - r.tl) as usize + (r.th - r.ih) as usize;
+            if r.ih > r.il {
+                n += 1;
+            }
+        },
+    );
+    n
+}
+
+/// Generic, not `&mut dyn FnMut`: the boxed call cost ~a fifth of a frame on a
 /// scene of large rotated bars, which is the whole margin this op has.
 #[inline]
 fn poly_spans_impl<F: FnMut(PolySpan)>(scale: i32, clip: Clip, verts: &[u32], emit: &mut F) {
+    poly_rows(scale, clip, verts, &mut |r: &PolyRow| {
+        for col in r.tl..r.il {
+            let hits = r.hits(col);
+            if hits == 0 {
+                continue;
+            }
+            emit(PolySpan { x: r.min_x + col, y: r.y, len: 1, hits });
+        }
+        if r.ih > r.il {
+            emit(PolySpan { x: r.min_x + r.il, y: r.y, len: r.ih - r.il, hits: 16 });
+        }
+        for col in r.ih..r.th {
+            let hits = r.hits(col);
+            if hits == 0 {
+                continue;
+            }
+            emit(PolySpan { x: r.min_x + col, y: r.y, len: 1, hits });
+        }
+    });
+}
+
+/// One scanline of the span solve. `tl..il` and `ih..th` are the columns whose
+/// coverage has to be sampled; `il..ih` is the run every sample falls inside.
+/// Columns are relative to `min_x`.
+struct PolyRow<'a> {
+    y: i32,
+    min_x: i32,
+    tl: i32,
+    il: i32,
+    ih: i32,
+    th: i32,
+    n: usize,
+    f0: &'a [i64; POLY_MAX_VERTS],
+    step: &'a [i64; POLY_MAX_VERTS],
+    e_dx: &'a [i64; POLY_MAX_VERTS],
+    e_dy: &'a [i64; POLY_MAX_VERTS],
+}
+
+impl PolyRow<'_> {
+    #[inline]
+    fn hits(&self, col: i32) -> u32 {
+        poly_hits(self.n, self.f0, self.step, self.e_dx, self.e_dy, col)
+    }
+}
+
+#[inline]
+fn poly_rows<F: FnMut(&PolyRow)>(scale: i32, clip: Clip, verts: &[u32], row_fn: &mut F) {
     let n = verts.len();
     if n < 3 || n > POLY_MAX_VERTS {
         return;
@@ -1154,23 +1223,19 @@ fn poly_spans_impl<F: FnMut(PolySpan)>(scale: i32, clip: Clip, verts: &[u32], em
             il = tl;
             ih = tl;
         }
-        for col in tl..il {
-            let hits = poly_hits(n, &f0, &step, &e_dx, &e_dy, col);
-            if hits == 0 {
-                continue;
-            }
-            emit(PolySpan { x: min_x + col, y: row, len: 1, hits });
-        }
-        if ih > il {
-            emit(PolySpan { x: min_x + il, y: row, len: ih - il, hits: 16 });
-        }
-        for col in ih..th {
-            let hits = poly_hits(n, &f0, &step, &e_dx, &e_dy, col);
-            if hits == 0 {
-                continue;
-            }
-            emit(PolySpan { x: min_x + col, y: row, len: 1, hits });
-        }
+        row_fn(&PolyRow {
+            y: row,
+            min_x,
+            tl,
+            il,
+            ih,
+            th,
+            n,
+            f0: &f0,
+            step: &step,
+            e_dx: &e_dx,
+            e_dy: &e_dy,
+        });
     }
 }
 

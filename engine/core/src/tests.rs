@@ -4562,3 +4562,54 @@ fn poly_spans_drawn_as_alpha_rects_match_the_rasterized_poly() {
     }
     assert!(checked > 20, "expected many cases, checked {checked}");
 }
+
+#[test]
+fn poly_span_bound_covers_every_span_without_sampling() {
+    // A backend sizes its vertex buffer from this before it can fill one, so a
+    // bound below the real count would truncate the polygon. It over-counts
+    // only the boundary columns whose coverage turns out to be zero, so it
+    // must also stay close enough to be worth using instead of a second solve.
+    let mut worst_slack = 0f64;
+    let mut cases = 0u32;
+    for &deg in &[3.0f64, 17.0, 28.0, 45.0, 76.0, 122.0, 181.0, 244.0, 311.0, 355.0] {
+        for &(w, h, x, y, tx, ty) in &[
+            (240.0f64, 160.0, 120.0, 56.0, 0.0, 0.0),
+            (11.0, 4.0, 48.0, 59.0, 0.0, 0.0),
+            (73.0, 48.0, 59.0, 26.0, 0.0, 0.0),
+            (200.0, 140.0, 200.0, 110.0, 230.0, 0.0),
+            (200.0, 140.0, 200.0, 110.0, -230.0, -140.0),
+        ] {
+            let mut ui = Ui::new();
+            let n = place_box(&mut ui, w, h, x, y);
+            ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+            ui.set_prop(n, spec::prop::TRANSLATE_X, tx);
+            ui.set_prop(n, spec::prop::TRANSLATE_Y, ty);
+            ui.set_prop(n, spec::prop::ROTATE, deg);
+            ui.tick();
+            let words = ui.draw().words.clone();
+            let Some((_, verts)) = find_poly(&words) else { continue };
+            let clip = (0, 0, spec::SCREEN_W as i32, spec::SCREEN_H as i32);
+
+            let mut actual = 0usize;
+            crate::raster::poly_spans(1, clip, &verts, |_| actual += 1);
+            let bound = crate::raster::poly_span_bound(1, clip, &verts);
+
+            assert!(
+                bound >= actual,
+                "bound {bound} < actual {actual} at rotate={deg} box={w}x{h} — a backend would truncate"
+            );
+            if actual > 0 {
+                let slack = bound as f64 / actual as f64;
+                if slack > worst_slack {
+                    worst_slack = slack;
+                }
+                cases += 1;
+            }
+        }
+    }
+    assert!(cases > 30, "expected many cases, got {cases}");
+    assert!(
+        worst_slack < 1.5,
+        "bound is {worst_slack:.2}x the real span count — too loose to allocate from"
+    );
+}
