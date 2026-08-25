@@ -4484,3 +4484,81 @@ fn clearing_native_measure_restores_baked_goldens_path() {
     assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
     assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
 }
+
+#[test]
+fn poly_spans_drawn_as_alpha_rects_match_the_rasterized_poly() {
+    // The backend-agnostic half of POLY. A host with no per-pixel coverage can
+    // ask the core for the polygon's spans and draw them as alpha sprites —
+    // the RECT path every backend already runs for rounded corners and
+    // shadows. If that lands on the same bytes as raster.rs filling the spans
+    // itself, then coverage stops being a property of which backend decoded
+    // the op.
+    let mut checked = 0u32;
+    for &deg in &[7.0f64, 20.0, 33.0, 45.0, 61.0, 118.0, 200.0, 289.0, 340.0] {
+        for &(w, h, x, y) in &[
+            (240.0f64, 160.0, 120.0, 56.0),
+            (11.0, 4.0, 48.0, 59.0),
+            (73.0, 48.0, 59.0, 26.0),
+        ] {
+            let mut ui = Ui::new();
+            let n = place_box(&mut ui, w, h, x, y);
+            ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+            ui.set_prop(n, spec::prop::ROTATE, deg);
+            ui.tick();
+
+            let words = ui.draw().words.clone();
+            let Some((color, verts)) = find_poly(&words) else { continue };
+            let actual = raster_fb(&mut ui);
+
+            // What a fixed-function backend would submit: the same spans, as
+            // whole-pixel RECTs whose alpha is the span's coverage.
+            let (r, g, b, a) = (
+                color & 0xff,
+                (color >> 8) & 0xff,
+                (color >> 16) & 0xff,
+                color >> 24,
+            );
+            let mut span_words = strip_poly_ops(&words);
+            crate::raster::poly_spans(
+                1,
+                (0, 0, spec::SCREEN_W as i32, spec::SCREEN_H as i32),
+                &verts,
+                |s| {
+                    let cov = a * s.hits / 16;
+                    if cov == 0 {
+                        return;
+                    }
+                    span_words.push(spec::draw_op::RECT);
+                    span_words.push((s.x as u16 as u32) | ((s.y as u16 as u32) << 16));
+                    span_words.push((s.len as u16 as u32) | (1u32 << 16));
+                    span_words.push((cov << 24) | (b << 16) | (g << 8) | r);
+                },
+            );
+
+            let mut expected =
+                alloc::vec![0u8; spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4];
+            crate::raster::render(&ui, &span_words, &mut expected);
+
+            if actual != expected {
+                let width = spec::SCREEN_W as usize;
+                let mut diffs = 0u32;
+                let mut first = None;
+                for i in 0..width * spec::SCREEN_H as usize {
+                    let (p, q) = (&actual[i * 4..i * 4 + 4], &expected[i * 4..i * 4 + 4]);
+                    if p != q {
+                        diffs += 1;
+                        if first.is_none() {
+                            first = Some((i % width, i / width, [p[0], p[1], p[2]], [q[0], q[1], q[2]]));
+                        }
+                    }
+                }
+                let (px, py, pa, pe) = first.unwrap();
+                panic!(
+                    "span replay != rasterized POLY at rotate={deg} box={w}x{h} — {diffs} px differ; first ({px},{py}) raster={pa:?} spans={pe:?}"
+                );
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked > 20, "expected many cases, checked {checked}");
+}

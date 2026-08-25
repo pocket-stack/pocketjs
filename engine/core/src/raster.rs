@@ -1011,13 +1011,41 @@ fn poly_hits(
     hits
 }
 
-fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, color: u32, verts: &[u32]) {
+/// One horizontal run of constant coverage inside a POLY: `len` pixels
+/// starting at (`x`, `y`), covered by `hits` of the 16 samples.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PolySpan {
+    pub x: i32,
+    pub y: i32,
+    pub len: i32,
+    pub hits: u32,
+}
+
+/// Decide a POLY's coverage and hand it out as spans.
+///
+/// This is the only place a polygon's edge softness is computed. The software
+/// rasterizer below fills the spans itself; a backend whose hardware has no
+/// per-pixel coverage can draw the same spans as alpha sprites and land on the
+/// same pixels, because both are consuming one function's numbers rather than
+/// each deciding what a polygon edge looks like.
+///
+/// `clip` is (x0, y0, x1, y1) in destination pixels, x1/y1 exclusive.
+/// Spans arrive in scanline order, left to right, and never overlap.
+pub fn poly_spans<F: FnMut(PolySpan)>(
+    scale: i32,
+    clip: (i32, i32, i32, i32),
+    verts: &[u32],
+    mut emit: F,
+) {
+    poly_spans_impl(scale, Clip { x0: clip.0, y0: clip.1, x1: clip.2, y1: clip.3 }, verts, &mut emit);
+}
+
+/// Generic, not `&mut dyn FnMut`: the boxed call cost ~30% of a frame on a
+/// scene of large rotated bars, which is the whole margin this op has.
+#[inline]
+fn poly_spans_impl<F: FnMut(PolySpan)>(scale: i32, clip: Clip, verts: &[u32], emit: &mut F) {
     let n = verts.len();
     if n < 3 || n > POLY_MAX_VERTS {
-        return;
-    }
-    let (r, g, b, a) = channels(color);
-    if a == 0 {
         return;
     }
 
@@ -1085,7 +1113,6 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
         bound[i] = 3 * (e_dx[i].abs() + e_dy[i].abs());
         step[i] = 8 * e_dx[i];
     }
-    let opaque = a >= 255;
     let mut f0 = [0i64; POLY_MAX_VERTS];
     for row in min_y..max_y {
         let sy = 2 * row as i64 + 1;
@@ -1132,31 +1159,38 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
             if hits == 0 {
                 continue;
             }
-            target.blend((row * stride + min_x + col) as usize, r, g, b, a * hits / 16);
+            emit(PolySpan { x: min_x + col, y: row, len: 1, hits });
         }
         if ih > il {
-            if opaque {
-                target.fill_opaque(
-                    (row * stride + min_x + il) as usize,
-                    (ih - il) as usize,
-                    r,
-                    g,
-                    b,
-                );
-            } else {
-                for col in il..ih {
-                    target.blend((row * stride + min_x + col) as usize, r, g, b, a);
-                }
-            }
+            emit(PolySpan { x: min_x + il, y: row, len: ih - il, hits: 16 });
         }
         for col in ih..th {
             let hits = poly_hits(n, &f0, &step, &e_dx, &e_dy, col);
             if hits == 0 {
                 continue;
             }
-            target.blend((row * stride + min_x + col) as usize, r, g, b, a * hits / 16);
+            emit(PolySpan { x: min_x + col, y: row, len: 1, hits });
         }
     }
+}
+
+fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, color: u32, verts: &[u32]) {
+    let (r, g, b, a) = channels(color);
+    if a == 0 {
+        return;
+    }
+    let opaque = a >= 255;
+    poly_spans_impl(scale, clip, verts, &mut |s: PolySpan| {
+        let off = (s.y * stride + s.x) as usize;
+        if s.hits == 16 && opaque {
+            target.fill_opaque(off, s.len as usize, r, g, b);
+            return;
+        }
+        let cov = a * s.hits / 16;
+        for i in 0..s.len as usize {
+            target.blend(off + i, r, g, b, cov);
+        }
+    });
 }
 
 // ---- GLYPH_RUN: coverage atlas cells -----------------------------------------------
