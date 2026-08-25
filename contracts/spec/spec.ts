@@ -1409,10 +1409,20 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //                           colour, vertices CCW after raster setup. The core
 //                           emits these for ROTATED solid boxes and for
 //                           projected 3D faces after Sutherland-Hodgman
-//                           clipping. Coverage is 4×4 samples over the whole
-//                           polygon (interior run + boundary pixels) so a
-//                           box's shared diagonal is not an interior edge.
-//                           N > 8 falls back to a TRI fan.
+//                           clipping. N > 8 falls back to a TRI fan.
+//                           THE OP CARRIES GEOMETRY ONLY. Unlike rounded
+//                           corners, shadows and arcs — which bake coverage
+//                           into alpha RECT spans in the core, so every
+//                           backend draws the same pixels — how a POLY is
+//                           filled is left to the backend, and the backends
+//                           differ. engine/core/src/raster.rs samples 4x4
+//                           over the whole polygon, which is what keeps a
+//                           box's shared diagonal from reading as an interior
+//                           edge; esp32p4-ppa inherits that by delegating to
+//                           it. wgpu, PSP GE, Vita GXM and Symbian GLES2 have
+//                           no per-pixel coverage, decode POLY as a triangle
+//                           fan, and fill it binary — the same picture they
+//                           draw for TRI today.
 //   TEXT_RUN    (8 + ceil(n/4) words):
 //                           op,
 //                           word1: bits 0-7 fontSlot,
