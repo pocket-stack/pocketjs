@@ -1,5 +1,5 @@
 {
-  "count": 14,
+  "count": 15,
   "sponsors": [
     {
       "login": "ZephyrCloudIO",
@@ -60,6 +60,12 @@
       "name": "Peng Xiao",
       "url": "https://github.com/pengx17",
       "avatar": "/assets/sponsors/pengx17.png"
+    },
+    {
+      "login": "Richeir",
+      "name": "Richeir",
+      "url": "https://github.com/Richeir",
+      "avatar": "/assets/sponsors/Richeir.png"
     },
     {
       "login": "ThaddeusJiang",
