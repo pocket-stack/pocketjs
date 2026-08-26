@@ -1,0 +1,19 @@
+# PR CI — runs validation on every pull request targeting main.
+# Cancels superseded runs on the same PR to save minutes.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml

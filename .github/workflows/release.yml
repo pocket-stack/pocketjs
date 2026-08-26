@@ -22,9 +22,16 @@ permissions:
   id-token: write # npm --provenance
 
 jobs:
+# ── Shared validation (reusable workflow) ─────────────────────────
+# Runs the same gates as PR CI.  Defined once in validate.yml so the
+# two callers cannot drift apart.
+validate:
+  uses: ./.github/workflows/validate.yml
+
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: [validate]
     steps:
       - uses: actions/checkout@v7
 
@@ -50,57 +57,6 @@ jobs:
       - name: Upgrade npm for Trusted Publishing
         run: npm install -g npm@latest
 
-      # hosts/web/pocketjs.wasm is a gitignored build artifact shipped in the
-      # framework tarball, so build it from engine/core/wasm. Stable Rust suffices.
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache cargo + wasm target
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            engine/wasm/target
-          key: ${{ runner.os }}-wasm-${{ hashFiles('engine/wasm/Cargo.toml', 'engine/core/Cargo.toml', 'engine/wasm/src/**', 'engine/core/src/**') }}
-          restore-keys: ${{ runner.os }}-wasm-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build wasm (core + software rasterizer)
-        run: bun tools/wasm.ts
-
-      - name: Test JavaScript and package contracts
-        run: bun run test
-
-      # The app build at the start of `bun run test` generates the local style
-      # module that TypeScript intentionally imports.
-      - name: Typecheck
-        run: bunx tsc --noEmit
-
-      - name: Test Rust core
-        run: cargo test --locked --manifest-path engine/core/Cargo.toml
-
-      - name: Test desktop 3D and widget workspace
-        run: cargo test --locked --manifest-path engine/Cargo.toml --workspace
-
-      # The bridge is a standalone workspace because only its device build
-      # needs nightly build-std. Host tests stay stable-compatible.
-      - name: Test Symbian bridge
-        run: cargo test --locked --manifest-path engine/symbian/Cargo.toml
-
-      - name: Test renderer goldens
-        run: bun tests/golden.ts
-
-      - name: Test deterministic tape replay
-        run: bun run tape:check
-
-      - name: Build documentation and public schema
-        run: |
-          bun run site:build
-          cmp contracts/schema/pocket-2.json site/dist/schema/pocket-2.json
 
       - name: Publish @pocketjs/framework
         run: |

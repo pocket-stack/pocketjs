@@ -1,0 +1,237 @@
+# Reusable validation workflow — called by both CI (pull_request) and
+# Release (tag push / workflow_dispatch). Every hermetic test gate that
+# matters before merge lives here so the logic is defined once and cannot
+# drift between the two callers.
+#
+# Job layout:
+#   wasm        → builds pocketjs.wasm, uploads as artifact
+#   js          → bun test + tsc (downloads wasm artifact)
+#   rust-*      → cargo test for core / workspace / symbian (independent)
+#   goldens     → renderer golden comparison (downloads wasm artifact)
+#   tape        → deterministic tape replay (downloads wasm artifact)
+#   docs        → site build + schema parity (downloads wasm artifact)
+
+name: Validate
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Shared wasm build ──────────────────────────────────────────────
+  wasm:
+    name: Build wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo + wasm target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            engine/wasm/target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('engine/wasm/Cargo.toml', 'engine/core/Cargo.toml', 'engine/wasm/src/**', 'engine/core/src/**') }}
+          restore-keys: ${{ runner.os }}-wasm-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build wasm (core + software rasterizer)
+        run: bun tools/wasm.ts
+
+      - name: Upload wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pocketjs-wasm
+          path: hosts/web/pocketjs.wasm
+          retention-days: 1
+
+  # ── JavaScript: install, test, typecheck ───────────────────────────
+  js:
+    name: JavaScript & TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [wasm]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Download wasm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pocketjs-wasm
+          path: hosts/web
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test JavaScript and package contracts
+        run: bun run test
+
+      # The app build at the start of `bun run test` generates the local
+      # style module that TypeScript intentionally imports.
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+  # ── Rust: core, workspace, Symbian bridge ──────────────────────────
+  # These jobs are independent — they do not need the wasm artifact.
+  rust:
+    name: Rust (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: core
+            manifest: engine/core/Cargo.toml
+            workspace: false
+            cache-target: engine/core/target
+          - label: workspace
+            manifest: engine/Cargo.toml
+            workspace: true
+            cache-target: engine/target
+          - label: symbian
+            manifest: engine/symbian/Cargo.toml
+            workspace: false
+            cache-target: engine/symbian/target
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ matrix.cache-target }}
+          key: ${{ runner.os }}-rust-${{ matrix.label }}-${{ hashFiles('engine/**/Cargo.toml', 'engine/**/Cargo.lock', 'engine/**/src/**') }}
+          restore-keys: ${{ runner.os }}-rust-${{ matrix.label }}-
+
+      - name: Test Rust (${{ matrix.label }})
+        run: >
+          cargo test --locked --manifest-path ${{ matrix.manifest }}
+          ${{ matrix.workspace && '--workspace' || '' }}
+
+  # ── Renderer golden image comparison ───────────────────────────────
+  goldens:
+    name: Renderer goldens
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [wasm]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Download wasm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pocketjs-wasm
+          path: hosts/web
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test renderer goldens
+        run: bun tests/golden.ts
+
+  # ── Deterministic tape replay ──────────────────────────────────────
+  tape:
+    name: Tape replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [wasm]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Download wasm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pocketjs-wasm
+          path: hosts/web
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test deterministic tape replay
+        run: bun run tape:check
+
+  # ── Documentation & schema parity ──────────────────────────────────
+  docs:
+    name: Docs & schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [wasm]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - name: Download wasm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pocketjs-wasm
+          path: hosts/web
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build documentation and public schema
+        run: |
+          bun run site:build
+          cmp contracts/schema/pocket-2.json site/dist/schema/pocket-2.json
