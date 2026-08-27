@@ -268,9 +268,47 @@ static void capture_done(void) {
 
 #endif /* POCKETJS_CAPTURE */
 
-/* Report a boot or runtime failure to the driver as itself rather than as a
- * timeout, then park: Azahar does not stop when the app returns from main. */
+/*
+ * Boot progress, printed on the bottom screen the app does not otherwise use.
+ *
+ * Everything below runs before the frame loop, and a build that dies there
+ * leaves BOTH screens black with HOME dead — nothing has reached
+ * aptMainLoop() yet — so on hardware the only exit is holding the power
+ * button and the only evidence is a file on a card that needs the console
+ * booted again to read. The last line left standing names the stage that
+ * failed, and names it even when the stage hung instead of returning, which
+ * no error file can report.
+ *
+ * Compiled out under POCKETJS_CAPTURE: the e2e build keeps the frame path its
+ * goldens were taken from, and its driver reads the top render target rather
+ * than a screen.
+ */
+#ifndef POCKETJS_CAPTURE
+
+static bool trace_started = false;
+
+static void boot_trace(const char *stage) {
+  if (!trace_started) {
+    consoleInit(GFX_BOTTOM, NULL);
+    trace_started = true;
+    printf("PocketJS %s boot\n", POCKETJS_TARGET_ID);
+  }
+  printf("%s\n", stage);
+  /* No frame has been presented yet, so the console's writes reach the panel
+   * only because this pushes them there. */
+  gfxFlushBuffers();
+  gfxSwapBuffers();
+  gspWaitForVBlank();
+}
+
+#else
+#define boot_trace(stage) ((void)(stage))
+#endif
+
+/* Report a boot or runtime failure as itself rather than as a timeout, then
+ * park. */
 static void fail(const char *message) {
+  const char *text = message == NULL || message[0] == '\0' ? "unknown failure" : message;
 #ifdef POCKETJS_CAPTURE
   mkdir(CAPTURE_DIR, 0777);
   FILE *file = fopen(CAPTURE_DIR "/error.txt", "wb");
@@ -278,11 +316,31 @@ static void fail(const char *message) {
   FILE *file = fopen("sdmc:/pocketjs-error.txt", "wb");
 #endif
   if (file != NULL) {
-    fputs(message == NULL || message[0] == '\0' ? "unknown failure" : message, file);
+    fputs(text, file);
     fputs("\n", file);
     fclose(file);
   }
+
+#ifdef POCKETJS_CAPTURE
+  /* Park: Azahar does not stop when the app returns from main, and a still
+   * process is what the driver kills. */
   for (;;) gspWaitForVBlank();
+#else
+  /* On hardware the message has to be readable without pulling the card, and
+   * HOME has to keep working: parking in a bare loop costs the user a forced
+   * power-off, which is also the one way to lose the file just written. */
+  char line[256];
+  snprintf(line, sizeof line, "FAILED: %s", text);
+  boot_trace(line);
+  boot_trace("Press HOME to exit.");
+  while (aptMainLoop()) {
+    gfxFlushBuffers();
+    gfxSwapBuffers();
+    gspWaitForVBlank();
+  }
+  gfxExit();
+  exit(1);
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -291,31 +349,39 @@ static void fail(const char *message) {
 
 int main(void) {
   gfxInitDefault();
+  boot_trace("gfx");
   /* No-op on an Old 3DS; on a New 3DS it unlocks the faster clock and the
    * extra cache, which the QuickJS guest feels directly. */
   osSetSpeedupEnable(true);
   C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
+  boot_trace("citro3d");
 
   target = C3D_RenderTargetCreate(VIEW_H, VIEW_W, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
   if (target == NULL) fail("C3D_RenderTargetCreate failed");
   C3D_RenderTargetSetOutput(target, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
+  boot_trace("render target");
 
   if (R_FAILED(romfsInit())) fail("romfsInit failed: the .3dsx has no romfs");
+  boot_trace("romfs");
 
   size_t source_length = 0;
   uint8_t *source = read_file("romfs:/app.js", &source_length);
   if (source == NULL) fail("romfs:/app.js is missing or unreadable");
   size_t pack_length = 0;
   uint8_t *pack = read_file("romfs:/app.pak", &pack_length);
+  boot_trace("bundle read");
 
   /* The core is fed from the pak natively, before any JS runs: styles.bin,
    * font atlases and images never transit the QuickJS heap. */
   ui_init(POCKETJS_RASTER_DENSITY);
   ui_set_viewport((float)VIEW_W, (float)VIEW_H);
   if (pack != NULL) ui_feed_pak(pack, pack_length);
+  boot_trace("core + pak");
 
   if (!gfx_init(VIEW_W, VIEW_H)) fail("PICA200 backend failed to initialize");
+  boot_trace("PICA200 backend");
   if (!qjs_boot((const char *)source, source_length, pack, pack_length)) fail(qjs_last_error());
+  boot_trace("guest booted, entering frame loop");
 
 #ifdef POCKETJS_CAPTURE
   mkdir(CAPTURE_DIR, 0777);
