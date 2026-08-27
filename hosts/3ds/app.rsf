@@ -187,8 +187,16 @@ SystemControlInfo:
   SaveDataSize: 0K
   RemasterVersion: 0
   # The main thread's stack. hosts/3ds/src/main.c raises the 3dsx crt0's
-  # 32 KiB with __stacksize__; a CIA takes the number from here instead.
-  StackSize: 0x40000
+  # 32 KiB with __stacksize__; a CIA takes the number from here instead, so the
+  # two formats do NOT get the same stack and a .3dsx that survives proves
+  # nothing about the CIA.
+  #
+  # 1 MiB, not 256 KiB: QuickJS recurses through both its parser and its
+  # interpreter, and a bundle deep enough to overrun the stack does not fault
+  # where it overran — it smashes a return address and the CPU takes a prefetch
+  # abort at whatever the stack happened to hold, with PC equal to SP. That is
+  # the signature this host produced on a New 3DS LL at 256 KiB.
+  StackSize: 0x100000
   Dependency:
     ac: 0x0004013000002402
     am: 0x0004013000001502
