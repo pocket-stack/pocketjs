@@ -21,7 +21,6 @@
 
 #include <3ds.h>
 #include <citro3d.h>
-#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -269,63 +268,6 @@ static void capture_done(void) {
 
 #endif /* POCKETJS_CAPTURE */
 
-/*
- * Boot progress, printed on the bottom screen the app does not otherwise use.
- *
- * Everything below runs before the frame loop, and a build that dies there
- * leaves BOTH screens black with HOME dead — nothing has reached
- * aptMainLoop() yet — so on hardware the only exit is holding the power
- * button and the only evidence is a file on a card that needs the console
- * booted again to read. The last line left standing names the stage that
- * failed, and names it even when the stage hung instead of returning, which
- * no error file can report.
- *
- * Compiled out under POCKETJS_CAPTURE: the e2e build keeps the frame path its
- * goldens were taken from, and its driver reads the top render target rather
- * than a screen.
- */
-#ifndef POCKETJS_CAPTURE
-
-static bool trace_started = false;
-
-static void boot_trace(const char *stage) {
-  if (!trace_started) {
-    consoleInit(GFX_BOTTOM, NULL);
-    trace_started = true;
-    printf("PocketJS %s boot\n", POCKETJS_TARGET_ID);
-  }
-  printf("%s\n", stage);
-  /* No frame has been presented yet, so the console's writes reach the panel
-   * only because this pushes them there. */
-  gfxFlushBuffers();
-  gfxSwapBuffers();
-  gspWaitForVBlank();
-}
-
-/*
- * Frame-loop progress. printf only, never a swap or a VBlank wait: once
- * C3D_FrameBegin has run, the GX queue belongs to citro3d, and boot_trace's
- * present-by-hand would fight it. The console's screen is single-buffered, so
- * a cache flush is all a line needs to reach the panel.
- *
- * The first two frames log every stage; after that a once-a-second heartbeat
- * distinguishes "the loop is running but the top screen shows nothing" (a
- * present problem, HOME still works) from "a call never returned" (the last
- * stage line names it, HOME dead).
- */
-static void run_trace(const char *format, ...) {
-  va_list args;
-  va_start(args, format);
-  vprintf(format, args);
-  va_end(args);
-  putchar('\n');
-  gfxFlushBuffers();
-}
-
-#else
-#define boot_trace(stage) ((void)(stage))
-#endif
-
 /* Report a boot or runtime failure as itself rather than as a timeout, then
  * park. */
 static void fail(const char *message) {
@@ -350,10 +292,11 @@ static void fail(const char *message) {
   /* On hardware the message has to be readable without pulling the card, and
    * HOME has to keep working: parking in a bare loop costs the user a forced
    * power-off, which is also the one way to lose the file just written. */
-  char line[256];
-  snprintf(line, sizeof line, "FAILED: %s", text);
-  boot_trace(line);
-  boot_trace("Press HOME to exit.");
+  consoleInit(GFX_BOTTOM, NULL);
+  printf("PocketJS %s\nFAILED: %s\nPress HOME to exit.\n", POCKETJS_TARGET_ID, text);
+  gfxFlushBuffers();
+  gfxSwapBuffers();
+  gspWaitForVBlank();
   while (aptMainLoop()) {
     gfxFlushBuffers();
     gfxSwapBuffers();
@@ -370,39 +313,31 @@ static void fail(const char *message) {
 
 int main(void) {
   gfxInitDefault();
-  boot_trace("gfx");
   /* No-op on an Old 3DS; on a New 3DS it unlocks the faster clock and the
    * extra cache, which the QuickJS guest feels directly. */
   osSetSpeedupEnable(true);
   C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
-  boot_trace("citro3d");
 
   target = C3D_RenderTargetCreate(VIEW_H, VIEW_W, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
   if (target == NULL) fail("C3D_RenderTargetCreate failed");
   C3D_RenderTargetSetOutput(target, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
-  boot_trace("render target");
 
   if (R_FAILED(romfsInit())) fail("romfsInit failed: the .3dsx has no romfs");
-  boot_trace("romfs");
 
   size_t source_length = 0;
   uint8_t *source = read_file("romfs:/app.js", &source_length);
   if (source == NULL) fail("romfs:/app.js is missing or unreadable");
   size_t pack_length = 0;
   uint8_t *pack = read_file("romfs:/app.pak", &pack_length);
-  boot_trace("bundle read");
 
   /* The core is fed from the pak natively, before any JS runs: styles.bin,
    * font atlases and images never transit the QuickJS heap. */
   ui_init(POCKETJS_RASTER_DENSITY);
   ui_set_viewport((float)VIEW_W, (float)VIEW_H);
   if (pack != NULL) ui_feed_pak(pack, pack_length);
-  boot_trace("core + pak");
 
   if (!gfx_init(VIEW_W, VIEW_H)) fail("PICA200 backend failed to initialize");
-  boot_trace("PICA200 backend");
   if (!qjs_boot((const char *)source, source_length, pack, pack_length)) fail(qjs_last_error());
-  boot_trace("guest booted, entering frame loop");
 
 #ifdef POCKETJS_CAPTURE
   mkdir(CAPTURE_DIR, 0777);
@@ -413,26 +348,6 @@ int main(void) {
 #endif
 #ifndef POCKETJS_CAPTURE
   uint32_t run_frame = 0;
-  /*
-   * Hardware bisect, latched once from whatever is held while the app starts:
-   * L skips every draw (clear and present only), R draws everything with the
-   * white texture (no image or font texture objects), Y never touches the
-   * scissor registers. Nothing held is the full pipeline. One build answers
-   * four experiments; the bottom screen names the active one.
-   */
-  hidScanInput();
-  u32 debug_held = hidKeysHeld();
-  bool skip_render = (debug_held & KEY_L) != 0;
-  bool force_white = (debug_held & KEY_R) != 0;
-  bool no_scissor = (debug_held & KEY_Y) != 0;
-  gfx_debug_modes(force_white, no_scissor);
-  run_trace(
-    "mode:%s%s%s%s",
-    skip_render ? " [L no-draw]" : "",
-    force_white ? " [R white-tex]" : "",
-    no_scissor ? " [Y no-scissor]" : "",
-    !skip_render && !force_white && !no_scissor ? " [full]" : ""
-  );
 #endif
 
   while (aptMainLoop()) {
@@ -456,9 +371,6 @@ int main(void) {
 #ifdef POCKETJS_CAPTURE
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 #else
-    bool tracing = run_frame < 2;
-    if (tracing) run_trace("f%lu guest ok, %lu words", (unsigned long)run_frame, (unsigned long)words);
-    if (tracing) run_trace("f%lu begin...", (unsigned long)run_frame);
     /*
      * Watchdog in place of C3D_FRAME_SYNCDRAW's unbounded wait: SYNCDRAW never
      * returns when the GPU hangs on the previous frame's command list, which
@@ -484,38 +396,14 @@ int main(void) {
         fail(verdict);
       }
     }
-    if (tracing) run_trace("f%lu begin ok", (unsigned long)run_frame);
 #endif
     C3D_RenderTargetClear(target, C3D_CLEAR_ALL, 0x000000ff, 0);
     C3D_FrameDrawOn(target);
     /* C3D_FrameDrawOn resets the viewport, so this comes after it. */
     C3D_SetViewport(0, 0, VIEW_H, VIEW_W);
-#ifdef POCKETJS_CAPTURE
     gfx_render(ui_draw_list_ptr(), words);
-#else
-    if (!skip_render) gfx_render(ui_draw_list_ptr(), words);
-    if (tracing) {
-      if (skip_render) run_trace("f%lu draws skipped", (unsigned long)run_frame);
-      else {
-        run_trace(
-          "f%lu gpu queued, %lu cmds %lu verts",
-          (unsigned long)run_frame,
-          (unsigned long)gfx_frame_commands(),
-          (unsigned long)gfx_frame_vertices()
-        );
-      }
-    }
-#endif
     C3D_FrameEnd(0);
 #ifndef POCKETJS_CAPTURE
-    if (tracing) run_trace("f%lu end ok", (unsigned long)run_frame);
-    else if (run_frame % 60 == 0) {
-      run_trace(
-        "f%lu alive, drop=%lu",
-        (unsigned long)run_frame,
-        (unsigned long)gfx_dropped_vertices()
-      );
-    }
     run_frame += 1;
 #endif
 

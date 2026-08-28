@@ -401,5 +401,7 @@ kerning, `hover:`, percentage sizes beyond `-full`, Android hosts,
 `rounded-full` on runtime-sized nodes.
 
 The 3DS left this list with `hosts/3ds` — a QuickJS guest over a PICA200
-backend, admitted through the `3ds-dev` profile in `tools/3ds-profile.ts` until
-it passes on hardware.
+backend. **The CIA boots and renders on a New 3DS LL.** The `3ds-dev` profile
+in `tools/3ds-profile.ts` stays outside the production registry until its
+synthesized-cursor, sprite, streamed-texture and large-atlas paths have direct
+coverage.

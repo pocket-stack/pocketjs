@@ -6,6 +6,11 @@ backend walks that DrawList into **PICA200 draw calls through citro3d**. The
 app owns the whole panel — **400x240, rasterDensity 1, presentation `native`**
 — under the out-of-registry `3ds-dev` profile in `tools/3ds-profile.ts`.
 
+**The CIA boots and renders the calibration app on a New 3DS LL.** The profile
+remains out of the production registry because the current hardware and golden
+suite does not directly exercise the synthesized cursor, sprites, streamed
+textures or a large font atlas.
+
 `hosts/psp` puts its GPU backend in Rust because the `psp` crate has bindings
 for the GE. citro3d is a C library of mostly `static inline` functions, so here
 the split is the other way round and matches `hosts/iphone2g`: **C owns the
@@ -37,7 +42,7 @@ Two toolchains, one repository:
   rustc target, so `core/.cargo/config.toml` only has to ask for `build-std`;
   `core/rust-toolchain.toml` pins the nightly. The target defaults to unwind,
   so the crate sets `panic = "abort"`.
-- The **C half builds in `devkitpro/devkitarm`**, which brings
+- The **C half builds in the digest-pinned `devkitpro/devkitarm` image**, which brings
   `arm-none-eabi-gcc`, libctru, citro3d, `picasso`, `smdhtool` and `3dsxtool`.
 
 `tools/3ds.ts` drives both and hands this Makefile container paths in
@@ -87,12 +92,12 @@ Three facts about the packaging itself:
   it the raw romfs binary that `mkromfs3ds` produces — the container 3dsxtool
   takes — fails with `Invalid RomFS Binary`; the two packagers share the staged
   directory and nothing else.
-- **makerom ships in neither devkitPro nor Homebrew**, so `tools/3ds.ts` clones
-  `github.com/3DSGuy/Project_CTR` shallow into `dist/3ds/makerom/src`, builds it
-  in the same container as everything else, and caches the binary against the
-  container image and the checked out revision. mbedtls, blz and yaml are
-  vendored in that repository, so the clone is the only step that needs the
-  network.
+- **makerom ships in neither devkitPro nor Homebrew**, so `tools/3ds.ts` fetches
+  one pinned `github.com/3DSGuy/Project_CTR` revision into
+  `dist/3ds/makerom/src`, builds it in the same container as everything else,
+  and caches the binary against the container image and revision. mbedtls, blz
+  and yaml are vendored in that repository, so the fetch is the only step that
+  needs the network.
 
 The title's identity comes from the resolved plan, never from a literal per app
 (`ciaUniqueId`, `ciaProductCode`, `ciaProcessName` in `tools/3ds.ts`): the

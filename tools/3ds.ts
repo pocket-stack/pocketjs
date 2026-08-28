@@ -101,7 +101,11 @@ const TARGET_ID = THREE_DS_DEV_TARGET_ID;
 const RUST_TARGET = "armv6k-nintendo-3ds";
 /** Produced by the `pocketjs-3ds-core` staticlib crate in hosts/3ds/core. */
 const CORE_STATIC_LIBRARY = "libpocketjs_3ds_core.a";
-const CONTAINER_IMAGE = "devkitpro/devkitarm:latest";
+// Pin the image that produced the hardware-tested CIA. A floating `latest`
+// tag makes fresh machines silently pick a different compiler/libctru/citro3d
+// stack; the digest still resolves through the ordinary Docker registry.
+export const THREE_DS_CONTAINER_IMAGE =
+  "devkitpro/devkitarm@sha256:116afba8df8453961de2936ffab20dd441edf4d682856c1ec8b0e53d7ed0bbf5";
 const CONTAINER_REPOSITORY = "/repo";
 const CONTAINER_OUTPUT = "/out";
 
@@ -136,6 +140,8 @@ const QUICKJS_HEADERS = [
 // step that needs the network and the build runs in the same offline container
 // as everything else.
 const MAKEROM_REPOSITORY = "https://github.com/3DSGuy/Project_CTR";
+/** Project_CTR revision used to package the hardware-tested CIA. */
+export const MAKEROM_REVISION = "e8f5f529c54ff9b22a2491a480ffa69206bf7b19";
 
 /** The devkitARM ABI, published by the toolchain itself in 3dsvars.sh. */
 const ARM_ARCHITECTURE_FLAGS = [
@@ -190,7 +196,6 @@ export interface ThreeDsArguments {
   readonly capture: boolean;
   /** Also package the ELF as an installable CIA title. */
   readonly cia: boolean;
-  readonly configPath: string;
   readonly configFlagged: boolean;
   readonly useConfig: boolean;
   /** Forwarded to tools/build.ts. */
@@ -217,7 +222,6 @@ export function parse3dsArguments(
   let skipBuild = false;
   let capture = false;
   let cia = false;
-  let configPath = `${root}pocket.config.ts`;
   let configFlagged = false;
   let useConfig = true;
   const buildFlags: string[] = [];
@@ -232,7 +236,6 @@ export function parse3dsArguments(
     else if (a.startsWith("--outdir=")) outputDir = resolvePath(a.slice("--outdir=".length)) + "/";
     else if (a.startsWith("--package-outdir=")) packageDir = resolvePath(a.slice("--package-outdir=".length));
     else if (a.startsWith("--config=")) {
-      configPath = resolvePath(root, a.slice("--config=".length));
       configFlagged = true;
       buildFlags.push(a);
     } else if (a === "--no-config") {
@@ -251,7 +254,6 @@ export function parse3dsArguments(
     skipBuild,
     capture,
     cia,
-    configPath,
     configFlagged,
     useConfig,
     buildFlags,
@@ -263,6 +265,45 @@ const USAGE =
   "usage: bun tools/3ds.ts <app> [--plan=<resolved-plan.json>] [--project-root=<dir>] " +
   "[--outdir=<dir>] [--package-outdir=<dir>] [--skip-build] [--capture] [--cia] [cargo args…]   " +
   "e.g. bun tools/3ds.ts 3ds-demo --cia";
+
+export interface CaptureDefines {
+  readonly input: string;
+  readonly start: string;
+  readonly count: string;
+}
+
+/**
+ * Validate the three values compiled into a capture binary. Besides giving
+ * direct `--capture` builds a complete 0..0 default window, the narrow grammar
+ * keeps environment text from becoming C or shell syntax in the Makefile's
+ * `-D` arguments.
+ */
+export function captureDefines(
+  environment: Readonly<Record<string, string | undefined>>,
+): CaptureDefines {
+  const input = environment.POCKETJS_CAPTURE_INPUT ?? "";
+  const start = environment.POCKETJS_CAP_START ?? "0";
+  const count = environment.POCKETJS_CAP_N ?? "1";
+  const integer = "(?:0[xX][0-9a-fA-F]+|[0-9]+)";
+  const tape = new RegExp(`^(?:${integer}:${integer})(?:,${integer}:${integer})*$`);
+  if (input !== "" && !tape.test(input)) {
+    throw new Error(
+      "PocketJS 3ds: POCKETJS_CAPTURE_INPUT must be frame:mask pairs separated by commas",
+    );
+  }
+  const boundedDecimal = (name: string, value: string, allowZero: boolean): void => {
+    if (!/^[0-9]+$/.test(value)) {
+      throw new Error(`PocketJS 3ds: ${name} must be an unsigned decimal integer`);
+    }
+    const parsed = BigInt(value);
+    if (parsed > 0xffff_ffffn || (!allowZero && parsed === 0n)) {
+      throw new Error(`PocketJS 3ds: ${name} is outside its supported range`);
+    }
+  };
+  boundedDecimal("POCKETJS_CAP_START", start, true);
+  boundedDecimal("POCKETJS_CAP_N", count, false);
+  return { input, start, count };
+}
 
 // ---------------------------------------------------------------------------
 // Container plumbing
@@ -347,7 +388,7 @@ async function runContainer(
   for (const [key, value] of Object.entries(environment)) {
     args.push("-e", `${key}=${value}`);
   }
-  args.push(CONTAINER_IMAGE, "bash", "-c", `${CONTAINER_PREAMBLE}\n${script}`);
+  args.push(THREE_DS_CONTAINER_IMAGE, "bash", "-c", `${CONTAINER_PREAMBLE}\n${script}`);
   const child = Bun.spawn({
     cmd: ["docker", ...args],
     cwd: repository,
@@ -356,7 +397,9 @@ async function runContainer(
   });
   const exitCode = await child.exited;
   if (exitCode !== 0) {
-    throw new Error(`PocketJS 3ds: ${label} failed in ${CONTAINER_IMAGE} (${exitCode})`);
+    throw new Error(
+      `PocketJS 3ds: ${label} failed in ${THREE_DS_CONTAINER_IMAGE} (${exitCode})`,
+    );
   }
 }
 
@@ -384,12 +427,12 @@ async function preflightContainer(): Promise<string> {
     "inspect",
     "--format",
     "{{.Id}}",
-    CONTAINER_IMAGE,
+    THREE_DS_CONTAINER_IMAGE,
   ]);
   if (image.exitCode !== 0) {
     throw new Error(
-      `PocketJS 3ds: the ${CONTAINER_IMAGE} image is not present locally. Run:\n` +
-        `  docker pull ${CONTAINER_IMAGE}`,
+      `PocketJS 3ds: the ${THREE_DS_CONTAINER_IMAGE} image is not present locally. Run:\n` +
+        `  docker pull ${THREE_DS_CONTAINER_IMAGE}`,
     );
   }
   return image.stdout.trim();
@@ -536,34 +579,42 @@ export async function ensureMakerom(
   const binary = join(project, "bin", "makerom");
   const stampPath = join(cacheDirectory, ".stamp");
 
-  if (!existsSync(join(project, "makefile"))) {
+  const installedHead = existsSync(join(project, "makefile"))
+    ? await capture("git", ["rev-parse", "HEAD"], checkout)
+    : undefined;
+  if (installedHead?.exitCode !== 0 || installedHead?.stdout.trim() !== MAKEROM_REVISION) {
     if (!Bun.which("git")) {
       throw new Error("PocketJS 3ds: --cia needs git on PATH to fetch makerom.");
     }
     mkdirSync(cacheDirectory, { recursive: true });
     rmSync(checkout, { recursive: true, force: true });
-    console.log(`PocketJS 3ds: cloning ${MAKEROM_REPOSITORY} …`);
-    const clone = await capture("git", [
-      "clone",
-      "--depth",
-      "1",
-      MAKEROM_REPOSITORY,
-      checkout,
-    ]);
-    if (clone.exitCode !== 0) {
-      rmSync(checkout, { recursive: true, force: true });
-      throw new Error(
-        `PocketJS 3ds: could not clone ${MAKEROM_REPOSITORY} into ${checkout}.\n` +
-          (clone.stderr.trim() || clone.stdout.trim()) +
-          "\nmakerom is the only tool that builds a CIA and ships in neither " +
-          "devkitPro nor Homebrew. With no network, clone it by hand into that " +
-          "path and rerun; the build itself is offline.",
-      );
+    console.log(`PocketJS 3ds: fetching makerom ${MAKEROM_REVISION} …`);
+    const steps: ReadonlyArray<readonly [readonly string[], string]> = [
+      [["init", checkout], repository],
+      [["remote", "add", "origin", MAKEROM_REPOSITORY], checkout],
+      [["fetch", "--depth", "1", "origin", MAKEROM_REVISION], checkout],
+      [["checkout", "--detach", "FETCH_HEAD"], checkout],
+    ];
+    for (const [command, cwd] of steps) {
+      const result = await capture("git", command, cwd);
+      if (result.exitCode !== 0) {
+        rmSync(checkout, { recursive: true, force: true });
+        throw new Error(
+          `PocketJS 3ds: could not fetch makerom ${MAKEROM_REVISION} into ${checkout}.\n` +
+            (result.stderr.trim() || result.stdout.trim()) +
+            "\nmakerom is the only tool that builds a CIA and ships in neither " +
+            "devkitPro nor Homebrew. With no network, place that revision at " +
+            `${checkout} and rerun; the build itself is offline.`,
+        );
+      }
     }
   }
 
   const head = await capture("git", ["rev-parse", "HEAD"], checkout);
-  const stamp = `${imageId} ${head.exitCode === 0 ? head.stdout.trim() : "unknown"}`;
+  if (head.exitCode !== 0 || head.stdout.trim() !== MAKEROM_REVISION) {
+    throw new Error(`PocketJS 3ds: makerom checkout is not pinned to ${MAKEROM_REVISION}`);
+  }
+  const stamp = `${imageId} ${MAKEROM_REVISION}`;
   if (
     existsSync(binary) &&
     existsSync(stampPath) &&
@@ -713,6 +764,9 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
   const { rustup, toolchain } = await preflightRust();
   const { plan, planPath } = await loadBuildPlan(args);
   const inputs = extractHostBuildInputs(plan, { expectedTarget: TARGET_ID });
+  const capture = args.capture
+    ? captureDefines(process.env)
+    : { input: "", start: "", count: "" };
 
   // 1. guest bundle + pak
   console.log(`PocketJS 3ds: building app "${plan.app.output}" (${plan.app.framework})`);
@@ -756,7 +810,10 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
   // 3-4. everything that needs devkitARM
   const distributionRoot = `${repository}dist/3ds`;
   const quickJsDirectory = join(distributionRoot, "quickjs");
-  const buildDirectory = join(distributionRoot, "build");
+  // C objects, romfs staging and SMDH metadata are cacheable only within one
+  // resolved output. A shared directory can package app B with app A's older
+  // romfs files when their mtimes happen to precede the staging targets.
+  const buildDirectory = join(distributionRoot, "build", inputs.appOutput);
   mkdirSync(buildDirectory, { recursive: true });
   mkdirSync(args.packageDir, { recursive: true });
 
@@ -798,9 +855,9 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
     POCKETJS_SMDH_DESC: `PocketJS ${plan.app.title}`,
     POCKETJS_CAPTURE: args.capture ? "1" : "",
     // Explicit so a previous run's tape never lingers in the object cache.
-    POCKETJS_CAPTURE_INPUT: process.env.POCKETJS_CAPTURE_INPUT ?? "",
-    POCKETJS_CAP_START: process.env.POCKETJS_CAP_START ?? "",
-    POCKETJS_CAP_N: process.env.POCKETJS_CAP_N ?? "",
+    POCKETJS_CAPTURE_INPUT: capture.input,
+    POCKETJS_CAP_START: capture.start,
+    POCKETJS_CAP_N: capture.count,
     // The CIA goal is off unless POCKETJS_OUT_CIA names a file. Title, product
     // code and unique id are all derived from the resolved plan.
     POCKETJS_OUT_CIA: args.cia ? containerPathFor(ciaOutput, mounts) : "",
@@ -812,7 +869,7 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
 
   const notes = [args.capture ? "capture" : "", args.cia ? "cia" : ""].filter(Boolean);
   console.log(
-    `PocketJS 3ds: make (${CONTAINER_IMAGE}${notes.length > 0 ? `, ${notes.join(", ")}` : ""})`,
+    `PocketJS 3ds: make (${THREE_DS_CONTAINER_IMAGE}${notes.length > 0 ? `, ${notes.join(", ")}` : ""})`,
   );
   await runContainer(
     `make -j${availableParallelism()}`,

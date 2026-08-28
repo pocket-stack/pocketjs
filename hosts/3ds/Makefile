@@ -103,7 +103,10 @@ $(BUILD) $(ROMFS):
 $(BUILD)/vshader.shbin: $(SOURCE)/vshader.v.pica | $(BUILD)
 	$(PICASSO) -o $@ $<
 
-$(BUILD)/vshader_shbin.s $(BUILD)/vshader_shbin.h: $(BUILD)/vshader.shbin
+# bin2s writes both files in one invocation. `&:` tells parallel make they are
+# one grouped output; an ordinary multi-target rule can run this recipe twice
+# concurrently and race while truncating the same .s/.h files.
+$(BUILD)/vshader_shbin.s $(BUILD)/vshader_shbin.h &: $(BUILD)/vshader.shbin
 	cd $(BUILD) && $(BIN2S) -a 4 -H vshader_shbin.h vshader.shbin > vshader_shbin.s
 
 $(BUILD)/vshader_shbin.o: $(BUILD)/vshader_shbin.s
@@ -130,17 +133,40 @@ $(ELF): $(OBJECTS)
 	$(CC) $(LDFLAGS) $(OBJECTS) $(POCKETJS_CORE_LIB) $(POCKETJS_QUICKJS_DIR)/libquickjs.a \
 	  $(LIBPATHS) $(LIBS) -o $@
 
-$(ROMFS)/app.js: $(POCKETJS_APP_JS) | $(ROMFS)
-	cp $< $@
+# A prerequisite's pathname is not part of make's freshness model. Check the
+# bytes on every invocation so --skip-build or a replaced plan cannot reuse a
+# newer staging file that came from another artifact path; preserve the mtime
+# when content is unchanged so packaging remains incremental.
+.PHONY: romfs-inputs
+romfs-inputs:
 
-$(ROMFS)/app.pak: $(POCKETJS_APP_PAK) | $(ROMFS)
-	cp $< $@
+$(ROMFS)/app.js: $(POCKETJS_APP_JS) romfs-inputs | $(ROMFS)
+	@cp "$<" "$@.new"
+	@cmp -s "$@.new" "$@" || mv "$@.new" "$@"
+	@rm -f "$@.new"
+
+$(ROMFS)/app.pak: $(POCKETJS_APP_PAK) romfs-inputs | $(ROMFS)
+	@cp "$<" "$@.new"
+	@cmp -s "$@.new" "$@" || mv "$@.new" "$@"
+	@rm -f "$@.new"
 
 # 3dsxtool refuses to embed a RomFS without SMDH metadata, so one is always
-# built, from the app's own strings over the host's icon.
-$(SMDH): $(ICON) | $(BUILD)
-	$(SMDHTOOL) --create "$(POCKETJS_SMDH_TITLE)" "$(POCKETJS_SMDH_DESC)" \
-	  "$(POCKETJS_SMDH_AUTHOR)" $(ICON) $@
+# built, from the app's own strings over the host's icon. The strings affect
+# the artifact but are not files, so a content stamp invalidates the SMDH when
+# a manifest title/id changes. Recipes expand the environment in the shell,
+# inside quotes: manifest text never becomes shell syntax through make.
+SMDH_STAMP := $(BUILD)/smdh.stamp
+.PHONY: $(SMDH_STAMP).probe
+$(SMDH_STAMP).probe: | $(BUILD)
+	@printf '%s\n%s\n%s\n' "$$POCKETJS_SMDH_TITLE" "$$POCKETJS_SMDH_DESC" \
+	  "$$POCKETJS_SMDH_AUTHOR" > $(SMDH_STAMP).new
+	@cmp -s $(SMDH_STAMP).new $(SMDH_STAMP) || mv $(SMDH_STAMP).new $(SMDH_STAMP)
+	@rm -f $(SMDH_STAMP).new
+$(SMDH_STAMP): $(SMDH_STAMP).probe ;
+
+$(SMDH): $(ICON) $(SMDH_STAMP) | $(BUILD)
+	$(SMDHTOOL) --create "$$POCKETJS_SMDH_TITLE" "$$POCKETJS_SMDH_DESC" \
+	  "$$POCKETJS_SMDH_AUTHOR" $(ICON) $@
 
 $(OUT): $(ELF) $(SMDH) $(ROMFS)/app.js $(ROMFS)/app.pak
 	mkdir -p $(dir $(OUT))

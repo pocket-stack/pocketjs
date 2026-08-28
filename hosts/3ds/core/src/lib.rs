@@ -391,7 +391,16 @@ pub extern "C" fn ui_draw_list_len() -> usize {
 #[no_mangle]
 pub extern "C" fn ui_draw_hash() -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
-    let words = unsafe { core::slice::from_raw_parts(DRAW_PTR, DRAW_LEN) };
+    // from_raw_parts requires a non-null aligned pointer even at length zero;
+    // before the first draw (and after shutdown) the snapshot is deliberately
+    // null, so spell the empty case without constructing an invalid slice.
+    let words: &[u32] = unsafe {
+        if DRAW_LEN == 0 {
+            &[]
+        } else {
+            core::slice::from_raw_parts(DRAW_PTR, DRAW_LEN)
+        }
+    };
     for word in words {
         for byte in word.to_le_bytes() {
             hash ^= byte as u64;
@@ -497,17 +506,11 @@ pub extern "C" fn ui_feed_pak(ptr: *const u8, len: usize) -> u32 {
         } else if entry.key.starts_with("ui:font.") {
             fed += instance.load_font_atlas(blob) as u32;
         } else if let Some(name) = entry.key.strip_prefix("ui:img.") {
-            // IMG entry: 8-byte header {u16 w, u16 h, u8 psm, 3B pad} + pixels
-            // (framework/compiler/pak.ts encodeImageEntry).
-            let (Some(width), Some(height), Some(&psm), Some(pixels)) = (
-                read_u16(blob, 0),
-                read_u16(blob, 2),
-                blob.get(4),
-                blob.get(8..),
-            ) else {
-                continue;
-            };
-            let handle = instance.upload_texture(pixels, width as u32, height as u32, psm as u32);
+            // Keep pak-fed images on the same parser as the public
+            // uploadImgEntry op. The header's flags byte carries PackBits-RLE
+            // and bilinear-sampling semantics; re-parsing only width/height/
+            // psm here would silently turn those off on this host.
+            let handle = instance.upload_img_entry(blob);
             if handle >= 0 {
                 textures.push((String::from(name), handle));
                 fed += 1;
@@ -651,7 +654,11 @@ pub extern "C" fn ui_pak_sprite_columns(index: usize) -> u32 {
 
 #[no_mangle]
 pub extern "C" fn ui_pak_sprite_step(index: usize) -> u32 {
-    unsafe { PAK_SPRITES.get(index).map_or(0, |sprite| sprite.step as u32) }
+    unsafe {
+        PAK_SPRITES
+            .get(index)
+            .map_or(0, |sprite| sprite.step as u32)
+    }
 }
 
 // ---- DevTools (spec ops 18..22) --------------------------------------------

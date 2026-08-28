@@ -16,6 +16,9 @@ import {
   THREE_DS_VIEWPORT,
 } from "../tools/3ds-profile.ts";
 import {
+  MAKEROM_REVISION,
+  THREE_DS_CONTAINER_IMAGE,
+  captureDefines,
   ciaProcessName,
   ciaProductCode,
   ciaTitleId,
@@ -59,7 +62,7 @@ function diagnosticCodes(manifest: unknown): string[] {
 }
 
 describe("private Nintendo 3DS build profile", () => {
-  test("stays private and describes the top screen", () => {
+  test("stays private until the remaining host paths are covered", () => {
     expect(POCKET_TARGETS).not.toHaveProperty(THREE_DS_DEV_TARGET_ID);
     expect(THREE_DS_DEV_CONTRACTS.targets[THREE_DS_DEV_TARGET_ID]).toEqual({
       hostAbi: THREE_DS_DEV_HOST_ABI,
@@ -174,6 +177,70 @@ describe("private Nintendo 3DS build profile", () => {
     expect(qjs).toContain('JS_SetPropertyStr(context, ui, "__viewport", viewport)');
     expect(qjs).toContain("ui_viewport_width()");
     expect(qjs).toContain("ui_viewport_height()");
+  });
+
+  test("keeps bring-up controls out of the application input path", () => {
+    const main = readFileSync(
+      join(new URL("..", import.meta.url).pathname, "hosts/3ds/src/main.c"),
+      "utf8",
+    );
+    expect(main).not.toContain("gfx_debug_modes");
+    expect(main).not.toContain("hidKeysHeld");
+    expect(main).not.toContain("KEY_L");
+    expect(main).not.toContain("KEY_R");
+    expect(main).not.toContain("KEY_Y");
+  });
+
+  test("feeds pak images through the shared IMG-entry parser", () => {
+    const core = readFileSync(
+      join(new URL("..", import.meta.url).pathname, "hosts/3ds/core/src/lib.rs"),
+      "utf8",
+    );
+    const imageArm = core.slice(
+      core.indexOf('entry.key.strip_prefix("ui:img.")'),
+      core.indexOf('entry.key.strip_prefix("ui:sprite.")'),
+    );
+    expect(imageArm).toContain("instance.upload_img_entry(blob)");
+    expect(imageArm).not.toContain("instance.upload_texture(");
+  });
+
+  test("pins the device toolchain and rebuilds shell-safe SMDH metadata", () => {
+    expect(THREE_DS_CONTAINER_IMAGE).toMatch(
+      /^devkitpro\/devkitarm@sha256:[0-9a-f]{64}$/,
+    );
+    expect(MAKEROM_REVISION).toMatch(/^[0-9a-f]{40}$/);
+
+    const makefile = readFileSync(
+      join(new URL("..", import.meta.url).pathname, "hosts/3ds/Makefile"),
+      "utf8",
+    );
+    expect(makefile).toContain("SMDH_STAMP :=");
+    expect(makefile).toContain('"$$POCKETJS_SMDH_TITLE"');
+    expect(makefile).toContain('"$$POCKETJS_SMDH_DESC"');
+    expect(makefile).toContain('"$$POCKETJS_SMDH_AUTHOR"');
+    expect(makefile).not.toContain('"$(POCKETJS_SMDH_TITLE)"');
+    expect(makefile).toContain("$(ROMFS)/app.js: $(POCKETJS_APP_JS) romfs-inputs");
+    expect(makefile).toContain("$(ROMFS)/app.pak: $(POCKETJS_APP_PAK) romfs-inputs");
+    expect(makefile).toContain(
+      "$(BUILD)/vshader_shbin.s $(BUILD)/vshader_shbin.h &:",
+    );
+  });
+
+  test("defaults and validates capture defines before they reach make", () => {
+    expect(captureDefines({})).toEqual({ input: "", start: "0", count: "1" });
+    expect(
+      captureDefines({
+        POCKETJS_CAPTURE_INPUT: "0:0,4:0x20,8:0",
+        POCKETJS_CAP_START: "2",
+        POCKETJS_CAP_N: "3",
+      }),
+    ).toEqual({ input: "0:0,4:0x20,8:0", start: "2", count: "3" });
+    expect(() =>
+      captureDefines({ POCKETJS_CAPTURE_INPUT: '0:0";touch /tmp/pwned;"' }),
+    ).toThrow("frame:mask pairs");
+    expect(() => captureDefines({ POCKETJS_CAP_N: "0" })).toThrow(
+      "outside its supported range",
+    );
   });
 });
 

@@ -23,14 +23,6 @@ void gfx_shutdown(void);
  * on every frame a real app draws; non-zero means geometry is missing. */
 uint32_t gfx_dropped_vertices(void);
 
-/*
- * Hardware bring-up bisect (hosts/3ds debug builds only; capture builds never
- * call this). force_white binds the 8x8 white texture for every batch, taking
- * image and font texture objects out of the command stream; no_scissor never
- * touches the scissor registers. Both default to false.
- */
-void gfx_debug_modes(bool force_white, bool no_scissor);
-
 /* The batch and vertex counts of the most recently built frame. */
 uint32_t gfx_frame_commands(void);
 uint32_t gfx_frame_vertices(void);

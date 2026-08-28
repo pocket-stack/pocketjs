@@ -9,10 +9,12 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
 /**
  * Transitional Nintendo 3DS profile used only by `bun run 3ds`.
  *
- * It deliberately stays out of the production `POCKET_TARGETS` registry until
- * the citro3d host has passed the full hardware acceptance suite. The app owns
- * the 400x240 top screen: the PICA200 render target is that panel exactly, so
- * the only presentation is native at density 1.
+ * The CIA has passed a hardware smoke on a New 3DS LL. It deliberately stays
+ * out of the production `POCKET_TARGETS` registry while the host-specific
+ * suite still leaves the synthesized cursor, sprite, streamed-texture and
+ * large-atlas paths uncovered. The app owns the 400x240 top screen: the
+ * PICA200 render target is that panel exactly, so the only presentation is
+ * native at density 1.
  *
  * The touchscreen is the *bottom* screen (320x240) and is not advertised —
  * reporting its contacts as logical coordinates inside the top screen's space
