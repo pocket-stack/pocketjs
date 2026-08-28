@@ -21,6 +21,7 @@
 
 #include <3ds.h>
 #include <citro3d.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -301,6 +302,26 @@ static void boot_trace(const char *stage) {
   gspWaitForVBlank();
 }
 
+/*
+ * Frame-loop progress. printf only, never a swap or a VBlank wait: once
+ * C3D_FrameBegin has run, the GX queue belongs to citro3d, and boot_trace's
+ * present-by-hand would fight it. The console's screen is single-buffered, so
+ * a cache flush is all a line needs to reach the panel.
+ *
+ * The first two frames log every stage; after that a once-a-second heartbeat
+ * distinguishes "the loop is running but the top screen shows nothing" (a
+ * present problem, HOME still works) from "a call never returned" (the last
+ * stage line names it, HOME dead).
+ */
+static void run_trace(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  vprintf(format, args);
+  va_end(args);
+  putchar('\n');
+  gfxFlushBuffers();
+}
+
 #else
 #define boot_trace(stage) ((void)(stage))
 #endif
@@ -390,6 +411,9 @@ int main(void) {
   if (capture_buffer == NULL || capture_rgb == NULL) fail("capture buffer allocation failed");
   uint32_t frame = 0;
 #endif
+#ifndef POCKETJS_CAPTURE
+  uint32_t run_frame = 0;
+#endif
 
   while (aptMainLoop()) {
     hidScanInput();
@@ -409,13 +433,35 @@ int main(void) {
     ui_tick();
     size_t words = ui_draw();
 
+#ifndef POCKETJS_CAPTURE
+    bool tracing = run_frame < 2;
+    if (tracing) run_trace("f%lu guest ok, %lu words", (unsigned long)run_frame, (unsigned long)words);
+    if (tracing) run_trace("f%lu begin...", (unsigned long)run_frame);
+#endif
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+#ifndef POCKETJS_CAPTURE
+    if (tracing) run_trace("f%lu begin ok", (unsigned long)run_frame);
+#endif
     C3D_RenderTargetClear(target, C3D_CLEAR_ALL, 0x000000ff, 0);
     C3D_FrameDrawOn(target);
     /* C3D_FrameDrawOn resets the viewport, so this comes after it. */
     C3D_SetViewport(0, 0, VIEW_H, VIEW_W);
     gfx_render(ui_draw_list_ptr(), words);
+#ifndef POCKETJS_CAPTURE
+    if (tracing) run_trace("f%lu gpu queued", (unsigned long)run_frame);
+#endif
     C3D_FrameEnd(0);
+#ifndef POCKETJS_CAPTURE
+    if (tracing) run_trace("f%lu end ok", (unsigned long)run_frame);
+    else if (run_frame % 60 == 0) {
+      run_trace(
+        "f%lu alive, drop=%lu",
+        (unsigned long)run_frame,
+        (unsigned long)gfx_dropped_vertices()
+      );
+    }
+    run_frame += 1;
+#endif
 
 #ifdef POCKETJS_CAPTURE
     if (capture_wants(frame)) {
