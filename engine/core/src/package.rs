@@ -36,6 +36,23 @@ pub enum PackageError {
     BadUtf8,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuestError {
+    Package(PackageError),
+    MissingVariant,
+    HostAbiMismatch,
+    MissingIdentity,
+    MissingPlan,
+    MissingJavaScript,
+    JavaScriptNotTerminated,
+}
+
+impl From<PackageError> for GuestError {
+    fn from(value: PackageError) -> Self {
+        Self::Package(value)
+    }
+}
+
 #[derive(Debug)]
 pub struct Package<'a> {
     bytes: &'a [u8],
@@ -58,6 +75,16 @@ pub struct Identity<'a> {
     pub output: &'a str,
     pub id: &'a str,
     pub title: &'a str,
+}
+
+/// A filesystem package admitted for one native host. The package allocation
+/// must outlive these slices; native runtimes keep it until guest teardown.
+pub struct Guest<'a> {
+    pub js: &'a [u8],
+    pub pak: &'a [u8],
+    pub plan: &'a [u8],
+    pub package_hash: u64,
+    pub variant_hash: u64,
 }
 
 fn u32_at(bytes: &[u8], off: usize) -> Result<u32, PackageError> {
@@ -121,6 +148,13 @@ impl<'a> Package<'a> {
         self.variant_count
     }
 
+    /// The verified footer value. `parse(..., false)` has already compared it
+    /// with the bytes; embedded callers that skip verification use it only as
+    /// an artifact identity.
+    pub fn package_hash(&self) -> Result<u64, PackageError> {
+        u64_at(self.bytes, self.bytes.len() - 8)
+    }
+
     pub fn variant(&self, index: usize) -> Result<Variant<'a>, PackageError> {
         if index >= self.variant_count {
             return Err(PackageError::Truncated);
@@ -152,6 +186,46 @@ impl<'a> Package<'a> {
         }
         Ok(None)
     }
+}
+
+/// Parse a package and admit its guest payload for an exact target/host ABI.
+/// This is the shared boundary filesystem-loading hosts use before exposing
+/// any package bytes to QuickJS or the retained UI core.
+pub fn select_guest<'a>(
+    bytes: &'a [u8],
+    target: &str,
+    host_abi: u32,
+    skip_hash: bool,
+) -> Result<Guest<'a>, GuestError> {
+    let package = Package::parse(bytes, skip_hash)?;
+    let variant = package
+        .find_variant(target)?
+        .ok_or(GuestError::MissingVariant)?;
+    if variant.host_abi != host_abi {
+        return Err(GuestError::HostAbiMismatch);
+    }
+    if variant.identity()?.is_none() {
+        return Err(GuestError::MissingIdentity);
+    }
+    let plan = variant
+        .section(section::PLAN)?
+        .filter(|value| !value.is_empty())
+        .ok_or(GuestError::MissingPlan)?;
+    let js = variant
+        .section(section::JS)?
+        .filter(|value| !value.is_empty())
+        .ok_or(GuestError::MissingJavaScript)?;
+    if js.last() != Some(&0) {
+        return Err(GuestError::JavaScriptNotTerminated);
+    }
+    let pak = variant.section(section::PAK)?.unwrap_or(&[]);
+    Ok(Guest {
+        js,
+        pak,
+        plan,
+        package_hash: package.package_hash()?,
+        variant_hash: variant.variant_hash,
+    })
 }
 
 impl<'a> Variant<'a> {
@@ -244,5 +318,27 @@ mod tests {
         let mut bad = FIXTURE.to_vec();
         bad[0] ^= 0xff;
         assert_eq!(Package::parse(&bad, false).unwrap_err(), PackageError::BadMagic);
+    }
+
+    #[test]
+    fn admits_a_complete_guest_for_an_exact_host() {
+        let guest = select_guest(FIXTURE, "psp", 1, false).unwrap();
+        assert_eq!(guest.js.last(), Some(&0));
+        assert!(!guest.plan.is_empty());
+        assert_eq!(guest.pak[0], 10);
+        assert_ne!(guest.package_hash, 0);
+        assert_ne!(guest.variant_hash, 0);
+    }
+
+    #[test]
+    fn rejects_target_and_host_abi_drift() {
+        assert!(matches!(
+            select_guest(FIXTURE, "3ds-dev", 8, false),
+            Err(GuestError::MissingVariant)
+        ));
+        assert!(matches!(
+            select_guest(FIXTURE, "psp", 8, false),
+            Err(GuestError::HostAbiMismatch)
+        ));
     }
 }

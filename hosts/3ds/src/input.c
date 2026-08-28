@@ -32,6 +32,7 @@
 
 /* Full-deflection reading of the circle pad on both console revisions. */
 #define CIRCLE_PAD_RANGE 156
+#define RUNTIME_RELOAD_KEYS (KEY_L | KEY_R | KEY_X)
 
 static const struct {
   uint32_t key;
@@ -53,11 +54,21 @@ static const struct {
 
 int32_t input_buttons(void) {
   uint32_t held = hidKeysHeld();
+  if ((held & RUNTIME_RELOAD_KEYS) == RUNTIME_RELOAD_KEYS) {
+    held &= ~RUNTIME_RELOAD_KEYS;
+  }
   int32_t buttons = 0;
   for (size_t index = 0; index < sizeof KEY_MAP / sizeof KEY_MAP[0]; index += 1) {
     if (held & KEY_MAP[index].key) buttons |= KEY_MAP[index].button;
   }
   return buttons;
+}
+
+bool input_reload_requested(void) {
+  uint32_t held = hidKeysHeld();
+  uint32_t down = hidKeysDown();
+  return (held & RUNTIME_RELOAD_KEYS) == RUNTIME_RELOAD_KEYS &&
+         (down & RUNTIME_RELOAD_KEYS) != 0;
 }
 
 /* One axis to the PSP nub's 0..255 with 128 the centre. */

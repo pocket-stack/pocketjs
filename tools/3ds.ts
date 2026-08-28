@@ -15,6 +15,7 @@
 // one bind mount at /repo.
 //
 //   1. tools/build.ts        -> <outdir>/<output>.js + <outdir>/<output>.pak
+//   1b. pocket-package.ts    -> dist/3ds/<output>.pocket (also ROMFS recovery)
 //   2. cargo build --release -> hosts/3ds/core/target/armv6k-nintendo-3ds/release/
 //                               libpocketjs_3ds_core.a   (macOS)
 //   3. QuickJS               -> dist/3ds/quickjs/libquickjs.a  (container, cached)
@@ -41,8 +42,7 @@
 //
 //   POCKETJS_CORE_LIB      absolute path to libpocketjs_3ds_core.a
 //   POCKETJS_QUICKJS_DIR   directory holding quickjs.h and libquickjs.a
-//   POCKETJS_APP_JS        the guest bundle to embed
-//   POCKETJS_APP_PAK       the guest pak to embed
+//   POCKETJS_APP_POCKET    target-thinned recovery guest to embed
 //   POCKETJS_BUILD_DIR     scratch directory for objects, .shbin and the .elf
 //   POCKETJS_OUT_3DSX      the .3dsx path to write
 //   POCKETJS_SMDH_TITLE    application title  (3dsxtool --smdh metadata)
@@ -77,12 +77,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { availableParallelism, homedir } from "node:os";
-import { join, resolve as resolvePath } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
+import { encodePocketPackage } from "../contracts/spec/pocket-package.ts";
 import {
   extractHostBuildInputs,
   hostBuildEnvironment,
 } from "../framework/src/manifest/host-build-inputs.ts";
 import {
+  canonicalJson,
   verifyPlanHash,
   type ResolvedBuildPlan,
 } from "../framework/src/manifest/plan.ts";
@@ -90,6 +92,7 @@ import {
   THREE_DS_DEV_TARGET_ID,
   resolve3dsBuildPlan,
 } from "./3ds-profile.ts";
+import { makeVariant } from "./pocket-pack.ts";
 
 const repository = new URL("..", import.meta.url).pathname; // PocketJS/
 const hostDirectory = `${repository}hosts/3ds/`;
@@ -192,6 +195,8 @@ export interface ThreeDsArguments {
   /** Where the .3dsx lands. */
   readonly packageDir: string;
   readonly skipBuild: boolean;
+  /** Build the target-thinned guest package without rebuilding the native runtime. */
+  readonly pocketOnly: boolean;
   readonly capture: boolean;
   /** Also package the ELF as an installable CIA title. */
   readonly cia: boolean;
@@ -219,6 +224,7 @@ export function parse3dsArguments(
   let outputDir = `${root}dist/3ds/guest/`;
   let packageDir = `${root}dist/3ds`;
   let skipBuild = false;
+  let pocketOnly = false;
   let capture = false;
   let cia = false;
   let configFlagged = false;
@@ -229,6 +235,7 @@ export function parse3dsArguments(
   for (const a of argv) {
     if (a === "--capture") capture = true;
     else if (a === "--cia") cia = true;
+    else if (a === "--pocket-only") pocketOnly = true;
     else if (a === "--skip-build") skipBuild = true;
     else if (a.startsWith("--plan=")) planPath = resolvePath(a.slice("--plan=".length));
     else if (a.startsWith("--project-root=")) projectRoot = resolvePath(a.slice("--project-root=".length));
@@ -251,6 +258,7 @@ export function parse3dsArguments(
     outputDir,
     packageDir,
     skipBuild,
+    pocketOnly,
     capture,
     cia,
     configFlagged,
@@ -262,7 +270,7 @@ export function parse3dsArguments(
 
 const USAGE =
   "usage: bun tools/3ds.ts <app> [--plan=<resolved-plan.json>] [--project-root=<dir>] " +
-  "[--outdir=<dir>] [--package-outdir=<dir>] [--skip-build] [--capture] [--cia] [cargo args…]   " +
+  "[--outdir=<dir>] [--package-outdir=<dir>] [--skip-build] [--pocket-only] [--capture] [--cia] [cargo args…]   " +
   "e.g. bun tools/3ds.ts 3ds-demo --cia";
 
 export interface CaptureDefines {
@@ -739,13 +747,39 @@ function assert3dsPlan(plan: ResolvedBuildPlan, origin: string): ResolvedBuildPl
 
 async function loadBuildPlan(
   args: ThreeDsArguments,
-): Promise<{ plan: ResolvedBuildPlan; planPath: string }> {
+): Promise<{ plan: ResolvedBuildPlan; planPath: string; manifestPath: string }> {
   if (args.planPath) {
     if (args.configFlagged || !args.useConfig) {
       throw new Error("PocketJS 3ds: config overrides are forbidden with --plan");
     }
     const plan = (await Bun.file(args.planPath).json()) as ResolvedBuildPlan;
-    return { plan: assert3dsPlan(plan, args.planPath), planPath: args.planPath };
+    const checked = assert3dsPlan(plan, args.planPath);
+    const entry = resolvePath(args.projectRoot, checked.app.entry);
+    let directory = dirname(entry);
+    let manifestPath = "";
+    const boundary = resolvePath(args.projectRoot);
+    for (;;) {
+      const candidate = join(directory, "pocket.json");
+      if (existsSync(candidate)) {
+        manifestPath = candidate;
+        break;
+      }
+      if (directory === boundary || dirname(directory) === directory) break;
+      directory = dirname(directory);
+    }
+    if (!manifestPath) {
+      throw new Error(
+        `PocketJS 3ds: ${args.planPath} needs its source pocket.json between ${dirname(entry)} and ${boundary}; ` +
+          "the runtime package carries the admitted manifest verbatim",
+      );
+    }
+    const manifestPlan = resolve3dsBuildPlan(JSON.parse(readFileSync(manifestPath, "utf8")));
+    if (canonicalJson(manifestPlan) !== canonicalJson(checked)) {
+      throw new Error(
+        `PocketJS 3ds: ${args.planPath} has drifted from ${manifestPath}; regenerate the resolved plan before packaging`,
+      );
+    }
+    return { plan: checked, planPath: args.planPath, manifestPath };
   }
   // An app outside this repository is named relative to --project-root.
   const candidates = [
@@ -769,7 +803,7 @@ async function loadBuildPlan(
   const planPath = `${repository}.pocket/3ds/${plan.app.output}.plan.json`;
   mkdirSync(resolvePath(planPath, ".."), { recursive: true });
   writeFileSync(planPath, `${JSON.stringify(plan, null, 2)}\n`);
-  return { plan, planPath };
+  return { plan, planPath, manifestPath: manifest };
 }
 
 // ---------------------------------------------------------------------------
@@ -783,9 +817,10 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
     throw new Error(`PocketJS 3ds: the host is absent at ${hostDirectory}`);
   }
 
-  const imageId = await preflightContainer();
-  const { rustup, toolchain } = await preflightRust();
-  const { plan, planPath } = await loadBuildPlan(args);
+  if (args.pocketOnly && (args.capture || args.cia)) {
+    throw new Error("PocketJS 3ds: --pocket-only cannot be combined with --capture or --cia");
+  }
+  const { plan, planPath, manifestPath } = await loadBuildPlan(args);
   const inputs = extractHostBuildInputs(plan, { expectedTarget: TARGET_ID });
   const capture = args.capture
     ? captureDefines(process.env)
@@ -805,6 +840,37 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
       throw new Error(`PocketJS 3ds: the guest build did not produce ${artifact}`);
     }
   }
+
+  // A 3DS application update is a normal target-thinned `.pocket`: admitted
+  // manifest, resolved plan, compiled guest and target-flavoured pak. The same
+  // artifact is embedded as the runtime's immutable recovery guest and written
+  // beside the native binary for SD-card deployment.
+  mkdirSync(args.packageDir, { recursive: true });
+  const manifestBytes = new Uint8Array(readFileSync(manifestPath));
+  const guestPackage = encodePocketPackage({
+    manifest: manifestBytes,
+    variants: [
+      makeVariant({
+        target: TARGET_ID,
+        hostAbi: plan.target.hostAbi,
+        planJson: canonicalJson(plan),
+        identity: {
+          output: plan.app.output,
+          id: plan.app.id,
+          title: plan.app.title,
+        },
+        js: new Uint8Array(readFileSync(guestJavaScript)),
+        pak: new Uint8Array(readFileSync(guestPack)),
+      }),
+    ],
+  });
+  const pocketOutput = join(args.packageDir, `${inputs.appOutput}.pocket`);
+  writeFileSync(pocketOutput, guestPackage);
+  console.log(`output: ${pocketOutput} (${guestPackage.length} bytes, ${TARGET_ID} abi ${plan.target.hostAbi})`);
+  if (args.pocketOnly) return pocketOutput;
+
+  const imageId = await preflightContainer();
+  const { rustup, toolchain } = await preflightRust();
 
   // 2. the Rust core staticlib, on macOS
   console.log(`PocketJS 3ds: cargo build --release (${RUST_TARGET}, ${toolchain})`);
@@ -838,7 +904,6 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
   // romfs files when their mtimes happen to precede the staging targets.
   const buildDirectory = join(distributionRoot, "build", inputs.appOutput);
   mkdirSync(buildDirectory, { recursive: true });
-  mkdirSync(args.packageDir, { recursive: true });
 
   const mounts: Mount[] = [
     { hostPath: repository, containerPath: CONTAINER_REPOSITORY },
@@ -869,8 +934,7 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
     }),
     POCKETJS_CORE_LIB: containerPathFor(coreLibrary, mounts),
     POCKETJS_QUICKJS_DIR: containerPathFor(quickJsDirectory, mounts),
-    POCKETJS_APP_JS: containerPathFor(guestJavaScript, mounts),
-    POCKETJS_APP_PAK: containerPathFor(guestPack, mounts),
+    POCKETJS_APP_POCKET: containerPathFor(pocketOutput, mounts),
     POCKETJS_BUILD_DIR: containerPathFor(buildDirectory, mounts),
     POCKETJS_OUT_3DSX: containerPathFor(output, mounts),
     POCKETJS_SMDH_TITLE: plan.app.title,

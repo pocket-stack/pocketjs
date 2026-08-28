@@ -18,8 +18,7 @@
 #   POCKETJS_RASTER_DENSITY  raster samples per logical pixel
 #   POCKETJS_CORE_LIB        libpocketjs_3ds_core.a
 #   POCKETJS_QUICKJS_DIR     directory holding quickjs.h and libquickjs.a
-#   POCKETJS_APP_JS          guest bundle to embed
-#   POCKETJS_APP_PAK         guest pak to embed
+#   POCKETJS_APP_POCKET      target-thinned guest package to embed as recovery
 #   POCKETJS_BUILD_DIR       scratch for objects, the .shbin, the .elf, romfs
 #   POCKETJS_OUT_3DSX        the .3dsx to write
 #   POCKETJS_SMDH_TITLE      SMDH metadata
@@ -47,8 +46,7 @@ SOURCE := $(CURDIR)/src
 INCLUDE_DIR := $(CURDIR)/include
 BUILD := $(POCKETJS_BUILD_DIR)
 OUT := $(POCKETJS_OUT_3DSX)
-# 3dsxtool reads the guest out of a RomFS directory, so the two embedded files
-# are staged under one.
+# 3dsxtool reads the recovery guest out of a RomFS directory.
 ROMFS := $(BUILD)/romfs
 ICON ?= $(CURDIR)/icon.png
 CIA := $(POCKETJS_OUT_CIA)
@@ -95,7 +93,7 @@ LDFLAGS := -specs=3dsx.specs $(ARCH) -Wl,--gc-sections -Wl,-Map,$(BUILD)/pocketj
 LIBPATHS := -L$(DEVKITPRO)/libctru/lib
 LIBS := -lcitro3d -lctru -lm
 
-OBJECTS := $(BUILD)/main.o $(BUILD)/gfx.o $(BUILD)/qjs.o $(BUILD)/input.o $(BUILD)/vshader_shbin.o
+OBJECTS := $(BUILD)/main.o $(BUILD)/runtime.o $(BUILD)/gfx.o $(BUILD)/qjs.o $(BUILD)/input.o $(BUILD)/vshader_shbin.o
 ELF := $(BUILD)/pocketjs-3ds.elf
 SMDH := $(BUILD)/pocketjs-3ds.smdh
 
@@ -150,12 +148,17 @@ $(ELF): $(OBJECTS)
 .PHONY: romfs-inputs
 romfs-inputs:
 
-$(ROMFS)/app.js: $(POCKETJS_APP_JS) romfs-inputs | $(ROMFS)
-	@cp "$<" "$@.new"
-	@cmp -s "$@.new" "$@" || mv "$@.new" "$@"
-	@rm -f "$@.new"
+ROMFS_LAYOUT_STAMP := $(BUILD)/romfs-layout.stamp
+.PHONY: $(ROMFS_LAYOUT_STAMP).probe
+$(ROMFS_LAYOUT_STAMP).probe: | $(BUILD) $(ROMFS)
+	@changed=0; \
+	for stale in $(ROMFS)/app.js $(ROMFS)/app.pak; do \
+	  if test -e "$$stale"; then rm -f "$$stale"; changed=1; fi; \
+	done; \
+	if test $$changed -eq 1 || test ! -e $(ROMFS_LAYOUT_STAMP); then touch $(ROMFS_LAYOUT_STAMP); fi
+$(ROMFS_LAYOUT_STAMP): $(ROMFS_LAYOUT_STAMP).probe ;
 
-$(ROMFS)/app.pak: $(POCKETJS_APP_PAK) romfs-inputs | $(ROMFS)
+$(ROMFS)/app.pocket: $(POCKETJS_APP_POCKET) romfs-inputs $(ROMFS_LAYOUT_STAMP) | $(ROMFS)
 	@cp "$<" "$@.new"
 	@cmp -s "$@.new" "$@" || mv "$@.new" "$@"
 	@rm -f "$@.new"
@@ -178,7 +181,7 @@ $(SMDH): $(ICON) $(SMDH_STAMP) | $(BUILD)
 	$(SMDHTOOL) --create "$$POCKETJS_SMDH_TITLE" "$$POCKETJS_SMDH_DESC" \
 	  "$$POCKETJS_SMDH_AUTHOR" $(ICON) $@
 
-$(OUT): $(ELF) $(SMDH) $(ROMFS)/app.js $(ROMFS)/app.pak
+$(OUT): $(ELF) $(SMDH) $(ROMFS)/app.pocket $(ROMFS_LAYOUT_STAMP)
 	mkdir -p $(dir $(OUT))
 	$(THREEDSXTOOL) $(ELF) $@ --romfs=$(ROMFS) --smdh=$(SMDH)
 
@@ -209,7 +212,7 @@ $(CIA_STAMP): $(CIA_STAMP).probe ;
 # than Nintendo's retail ones, which is what Azahar installs. No banner is
 # passed — makerom needs one only for a title that plays an animated banner in
 # HOME Menu, and the SMDH already carries the icon and the title strings.
-$(CIA): $(ELF) $(SMDH) $(ROMFS)/app.js $(ROMFS)/app.pak $(RSF) $(CIA_STAMP)
+$(CIA): $(ELF) $(SMDH) $(ROMFS)/app.pocket $(ROMFS_LAYOUT_STAMP) $(RSF) $(CIA_STAMP)
 	mkdir -p $(dir $(CIA))
 	$(POCKETJS_MAKEROM) -f cia -o $@ -rsf $(RSF) -target t -exefslogo \
 	  -DAPP_TITLE="$(POCKETJS_CIA_TITLE)" \

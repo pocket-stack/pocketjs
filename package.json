@@ -219,6 +219,7 @@
     "vita:art:check": "bun tools/generate-vita-livearea.ts --check",
     "e2e:vita": "bun tests/e2e/vita3k.ts",
     "e2e:3ds": "bun tests/e2e/azahar.ts",
+    "e2e:3ds-runtime": "bun tests/e2e/azahar-runtime.ts",
     "hw": "bun tools/hw.ts",
     "dev": "bun tools/dev.ts",
     "wasm": "bun tools/wasm.ts",

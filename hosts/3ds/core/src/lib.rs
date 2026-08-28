@@ -27,6 +27,7 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use pocketjs_core::package::{select_guest, GuestError, PackageError};
 use pocketjs_core::spec;
 use pocketjs_core::Ui;
 
@@ -50,6 +51,20 @@ static mut AUX_DRAW_LEN: usize = 0;
 /// `ui.__sprites` (hosts/psp/src/pak.rs feeds the same two tables).
 static mut PAK_TEXTURES: Vec<(String, i32)> = Vec::new();
 static mut PAK_SPRITES: Vec<PakSprite> = Vec::new();
+
+/// Borrowed sections of one verified filesystem `.pocket`. The C runtime owns
+/// the package allocation and keeps it alive until the guest is torn down.
+#[repr(C)]
+pub struct PocketGuestPackage {
+    pub javascript: *const u8,
+    pub javascript_length: usize,
+    pub pak: *const u8,
+    pub pak_length: usize,
+    pub plan: *const u8,
+    pub plan_length: usize,
+    pub package_hash: u64,
+    pub variant_hash: u64,
+}
 
 struct PakSprite {
     name: String,
@@ -112,6 +127,59 @@ unsafe fn bytes<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
 #[inline]
 unsafe fn text<'a>(ptr: *const u8, len: usize) -> &'a str {
     core::str::from_utf8(bytes(ptr, len)).unwrap_or("")
+}
+
+fn package_error_code(error: GuestError) -> i32 {
+    match error {
+        GuestError::Package(PackageError::Truncated) => 1,
+        GuestError::Package(PackageError::BadMagic) => 2,
+        GuestError::Package(PackageError::BadVersion) => 3,
+        GuestError::Package(PackageError::HashMismatch) => 4,
+        GuestError::Package(PackageError::BadUtf8) => 5,
+        GuestError::MissingVariant => 6,
+        GuestError::HostAbiMismatch => 7,
+        GuestError::MissingIdentity => 8,
+        GuestError::MissingPlan => 9,
+        GuestError::MissingJavaScript => 10,
+        GuestError::JavaScriptNotTerminated => 11,
+    }
+}
+
+/// Verify a complete `.pocket` and select one exact target/ABI variant.
+/// Returns 0 on success; non-zero codes are stable for the C runtime's status
+/// and recovery files (12 is a bad pointer or non-UTF-8 target argument).
+#[no_mangle]
+pub unsafe extern "C" fn pocket_package_open(
+    ptr: *const u8,
+    len: usize,
+    target_ptr: *const u8,
+    target_len: usize,
+    host_abi: u32,
+    out: *mut PocketGuestPackage,
+) -> i32 {
+    if ptr.is_null() || len == 0 || target_ptr.is_null() || target_len == 0 || out.is_null() {
+        return 12;
+    }
+    let target = match core::str::from_utf8(bytes(target_ptr, target_len)) {
+        Ok(value) if !value.is_empty() => value,
+        _ => return 12,
+    };
+    match select_guest(bytes(ptr, len), target, host_abi, false) {
+        Ok(guest) => {
+            out.write(PocketGuestPackage {
+                javascript: guest.js.as_ptr(),
+                javascript_length: guest.js.len(),
+                pak: guest.pak.as_ptr(),
+                pak_length: guest.pak.len(),
+                plan: guest.plan.as_ptr(),
+                plan_length: guest.plan.len(),
+                package_hash: guest.package_hash,
+                variant_hash: guest.variant_hash,
+            });
+            0
+        }
+        Err(error) => package_error_code(error),
+    }
 }
 
 /// QuickJS encodes lone UTF-16 surrogates (a string sliced mid-emoji) as WTF-8

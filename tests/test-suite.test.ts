@@ -20,6 +20,17 @@ function unitTestFiles(): Set<string> {
 }
 
 describe("declared test suite", () => {
+  test("runs every Nintendo 3DS test in the CI unit stage", () => {
+    const declared = unitTestFiles();
+    const threeDsTests = readdirSync(join(repository, "tests"))
+      .filter((file) => /^3ds-.*\.test\.ts$/.test(file))
+      .map((file) => `tests/${file}`)
+      .sort();
+
+    expect(threeDsTests).not.toHaveLength(0);
+    expect(threeDsTests.filter((file) => !declared.has(file))).toEqual([]);
+  });
+
   test("runs every iPhone 2G test in the CI unit stage", () => {
     const declared = unitTestFiles();
     const iphone2gTests = readdirSync(join(repository, "tests"))

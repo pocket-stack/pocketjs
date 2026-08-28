@@ -28,6 +28,7 @@ import {
   ciaProductCode,
   ciaTitleId,
   ciaUniqueId,
+  parse3dsArguments,
 } from "../tools/3ds.ts";
 
 /** A guest app declaring the top screen exactly: 400x240 logical, native. */
@@ -245,6 +246,13 @@ describe("private Nintendo 3DS build profile", () => {
     expect(main).not.toContain("KEY_L");
     expect(main).not.toContain("KEY_R");
     expect(main).not.toContain("KEY_Y");
+
+    const input = readFileSync(
+      join(new URL("..", import.meta.url).pathname, "hosts/3ds/src/input.c"),
+      "utf8",
+    );
+    expect(input).toContain("RUNTIME_RELOAD_KEYS");
+    expect(input).toContain("held &= ~RUNTIME_RELOAD_KEYS");
   });
 
   test("feeds pak images through the shared IMG-entry parser", () => {
@@ -285,8 +293,11 @@ describe("private Nintendo 3DS build profile", () => {
     expect(makefile).toContain('"$$POCKETJS_SMDH_DESC"');
     expect(makefile).toContain('"$$POCKETJS_SMDH_AUTHOR"');
     expect(makefile).not.toContain('"$(POCKETJS_SMDH_TITLE)"');
-    expect(makefile).toContain("$(ROMFS)/app.js: $(POCKETJS_APP_JS) romfs-inputs");
-    expect(makefile).toContain("$(ROMFS)/app.pak: $(POCKETJS_APP_PAK) romfs-inputs");
+    expect(makefile).toContain(
+      "$(ROMFS)/app.pocket: $(POCKETJS_APP_POCKET) romfs-inputs",
+    );
+    expect(makefile).not.toContain("POCKETJS_APP_JS");
+    expect(makefile).not.toContain("POCKETJS_APP_PAK");
     expect(makefile).toContain(
       "$(BUILD)/vshader_shbin.s $(BUILD)/vshader_shbin.h &:",
     );
@@ -319,6 +330,15 @@ describe("private Nintendo 3DS build profile", () => {
     expect(() => captureDefines({ POCKETJS_CAP_N: "0" })).toThrow(
       "outside its supported range",
     );
+  });
+
+  test("supports a guest-only package build without native toolchains", () => {
+    expect(parse3dsArguments(["3ds-demo", "--pocket-only"])).toMatchObject({
+      app: "3ds-demo",
+      pocketOnly: true,
+      capture: false,
+      cia: false,
+    });
   });
 });
 

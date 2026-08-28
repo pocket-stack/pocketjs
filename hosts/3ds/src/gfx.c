@@ -461,10 +461,21 @@ static void sync_resources(void) {
     }
   }
 
+  size_t font_slots = ui_font_slot_count();
+  if (font_slots > font_capacity) {
+    FontTexture *grown = realloc(fonts, font_slots * sizeof *fonts);
+    if (grown != NULL) {
+      memset(grown + font_capacity, 0, (font_slots - font_capacity) * sizeof *grown);
+      fonts = grown;
+      font_capacity = font_slots;
+    } else {
+      font_slots = font_capacity;
+    }
+  }
   for (size_t slot = 0; slot < font_capacity; slot += 1) {
     FontTexture *entry = &fonts[slot];
     PocketFontAtlas atlas;
-    if (ui_font_atlas((uint32_t)slot, &atlas)) {
+    if (slot < font_slots && ui_font_atlas((uint32_t)slot, &atlas)) {
       if (entry->live && entry->coverage == atlas.coverage &&
           entry->glyph_count == atlas.glyph_count) {
         continue;
@@ -968,15 +979,11 @@ bool gfx_init(uint32_t logical_width, uint32_t logical_height) {
   };
   if (!upload_tiled(&white, &solid, NULL, 8, 8, 8, 8, false)) return false;
 
-  font_capacity = ui_font_slot_count();
-  fonts = calloc(font_capacity, sizeof *fonts);
-  if (fonts == NULL) return false;
-
   initialized = true;
   return true;
 }
 
-void gfx_shutdown(void) {
+void gfx_reset_resources(void) {
   if (!initialized) return;
   for (size_t slot = 0; slot < image_capacity; slot += 1) release_image(&images[slot]);
   for (size_t slot = 0; slot < font_capacity; slot += 1) release_font(&fonts[slot]);
@@ -986,6 +993,16 @@ void gfx_shutdown(void) {
   fonts = NULL;
   image_capacity = 0;
   font_capacity = 0;
+  vertex_count = 0;
+  command_count = 0;
+  dropped_vertices = 0;
+  dropped_commands = 0;
+  memset(surfaces, 0, sizeof surfaces);
+}
+
+void gfx_shutdown(void) {
+  if (!initialized) return;
+  gfx_reset_resources();
   C3D_TexDelete(&white);
   linearFree(vertices);
   vertices = NULL;

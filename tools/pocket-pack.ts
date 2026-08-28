@@ -20,7 +20,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { POCKET_TARGETS } from "../contracts/spec/platforms.ts";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
-import { canonicalJson } from "../framework/src/manifest/plan.ts";
+import { canonicalJson, type ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
+import {
+  THREE_DS_DEV_CONTRACTS,
+  THREE_DS_DEV_TARGET_ID,
+} from "./3ds-profile.ts";
 import {
   POCKET_SECTION,
   decodePocketPackage,
@@ -71,23 +75,47 @@ export function makeVariant(input: {
   return { target: input.target, hostAbi: input.hostAbi, sections };
 }
 
-async function compileTarget(manifestPath: string, target: string): Promise<string> {
+function resolveTarget(manifest: unknown, target: string) {
+  return validateAndResolveBuildPlan(
+    manifest,
+    { target },
+    target === THREE_DS_DEV_TARGET_ID ? THREE_DS_DEV_CONTRACTS : undefined,
+  );
+}
+
+async function compileTarget(
+  manifestPath: string,
+  target: string,
+  plan: ResolvedBuildPlan,
+): Promise<string> {
   const outdir = join(ROOT, ".pocket-build", target);
   mkdirSync(outdir, { recursive: true });
+  const command = target === THREE_DS_DEV_TARGET_ID
+    ? [
+        "bun",
+        "tools/build.ts",
+        `--plan=${join(outdir, "plan.json")}`,
+        "--project-root=.",
+        `--outdir=${relative(ROOT, outdir)}`,
+      ]
+    : [
+        "bun",
+        "tools/pocket.ts",
+        "compile",
+        "--target",
+        target,
+        "--manifest",
+        manifestPath,
+        "--project-root",
+        ".",
+        "--outdir",
+        relative(ROOT, outdir),
+      ];
+  if (target === THREE_DS_DEV_TARGET_ID) {
+    writeFileSync(join(outdir, "plan.json"), `${JSON.stringify(plan, null, 2)}\n`);
+  }
   const p = Bun.spawnSync(
-    [
-      "bun",
-      "tools/pocket.ts",
-      "compile",
-      "--target",
-      target,
-      "--manifest",
-      manifestPath,
-      "--project-root",
-      ".",
-      "--outdir",
-      relative(ROOT, outdir),
-    ],
+    command,
     { cwd: ROOT, stdout: "inherit", stderr: "inherit" },
   );
   if (p.exitCode !== 0) throw new Error(`pocket-pack: compile failed for ${target}`);
@@ -115,7 +143,7 @@ async function buildCommand(argv: string[]): Promise<void> {
   const requested = allTargets ? Object.keys(POCKET_TARGETS) : targets;
   const variants: PocketPackageVariant[] = [];
   for (const target of requested) {
-    const resolution = validateAndResolveBuildPlan(manifest, { target });
+    const resolution = resolveTarget(manifest, target);
     if (!resolution.ok) {
       const codes = resolution.diagnostics.map((d) => `${d.code}`).join(", ");
       if (allTargets) {
@@ -125,7 +153,7 @@ async function buildCommand(argv: string[]): Promise<void> {
       throw new Error(`pocket-pack: ${target} does not admit this manifest (${codes})`);
     }
     const plan = resolution.plan;
-    const outdir = await compileTarget(manifestPath, target);
+    const outdir = await compileTarget(manifestPath, target, plan);
     const js = new Uint8Array(readFileSync(join(outdir, `${plan.app.output}.js`)));
     const pakPath = join(outdir, `${plan.app.output}.pak`);
     const pak = existsSync(pakPath) ? new Uint8Array(readFileSync(pakPath)) : new Uint8Array(0);
@@ -198,12 +226,23 @@ function verifyCommand(file: string): void {
     // Re-run the admission the pack claims: the embedded manifest must
     // still resolve for the variant's target — platform review as a pure
     // function, on the artifact itself.
-    const resolution = validateAndResolveBuildPlan(manifest, { target: v.target });
+    const resolution = resolveTarget(manifest, v.target);
     if (!resolution.ok) {
       throw new Error(`verify: variant ${v.target} is no longer admitted by its own manifest`);
     }
     if (resolution.plan.target.hostAbi !== v.hostAbi) {
       throw new Error(`verify: variant ${v.target} hostAbi drifted`);
+    }
+    const embeddedPlan = findSection(v, POCKET_SECTION.plan);
+    if (!embeddedPlan) throw new Error(`verify: variant ${v.target} plan section is missing`);
+    let plan: unknown;
+    try {
+      plan = JSON.parse(new TextDecoder().decode(embeddedPlan));
+    } catch {
+      throw new Error(`verify: variant ${v.target} plan section is not JSON`);
+    }
+    if (canonicalJson(plan) !== canonicalJson(resolution.plan)) {
+      throw new Error(`verify: variant ${v.target} resolved plan drifted from its manifest`);
     }
     const js = findSection(v, POCKET_SECTION.js);
     if (!js || js[js.length - 1] !== 0) {

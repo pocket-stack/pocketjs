@@ -25,6 +25,9 @@ bool gfx_prepare_surface(
 );
 void gfx_finish_frame(void);
 void gfx_draw_surface(uint32_t surface);
+/* Retire every guest-owned image/font texture at a GPU-idle frame boundary.
+ * Shader, white texture and vertex arena remain process-owned. */
+void gfx_reset_resources(void);
 void gfx_shutdown(void);
 
 /* Vertices dropped because the frame overflowed the arena, cumulative. Zero
