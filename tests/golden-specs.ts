@@ -256,16 +256,17 @@ export const GOLDEN_SPECS: GoldenSpec[] = [
 export const THREE_DS_GOLDEN_SPECS: GoldenSpec[] = [
   {
     name: "3ds-demo",
-    frames: 24,
-    capture: [2, 12, 22],
-    // Frame 4 presses RIGHT (BTN.RIGHT = 0x20) and frame 8 releases it, so the
-    // frame-12 and frame-22 captures carry a native focus: variant the guest
-    // never re-rendered for. Edge detection needs the release.
-    input: (frame) => (frame >= 4 && frame < 8 ? 0x20 : 0),
-    // Hold the first bottom-screen tile, then release. Activation commits on
-    // release, so frame 12 proves auxiliary hit testing and the shared signal
-    // update on both surfaces.
-    touch: (frame) => (frame >= 6 && frame < 9 ? [{ id: 0, x: 60, y: 110 }] : []),
+    frames: 50,
+    capture: [2, 10, 20, 44],
+    input: () => 0,
+    // Drag upward across the bottom screen. Frame 10 captures finger-follow;
+    // release on frame 12 starts inertia, and later captures prove that the
+    // auxiliary VirtualList keeps re-windowing through the shared gesture and
+    // scroller contracts.
+    touch: (frame) =>
+      frame >= 5 && frame <= 11
+        ? [{ id: 0, x: 160, y: 210 - (frame - 5) * 30 }]
+        : [],
   },
 ];
 
