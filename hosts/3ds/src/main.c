@@ -413,6 +413,26 @@ int main(void) {
 #endif
 #ifndef POCKETJS_CAPTURE
   uint32_t run_frame = 0;
+  /*
+   * Hardware bisect, latched once from whatever is held while the app starts:
+   * L skips every draw (clear and present only), R draws everything with the
+   * white texture (no image or font texture objects), Y never touches the
+   * scissor registers. Nothing held is the full pipeline. One build answers
+   * four experiments; the bottom screen names the active one.
+   */
+  hidScanInput();
+  u32 debug_held = hidKeysHeld();
+  bool skip_render = (debug_held & KEY_L) != 0;
+  bool force_white = (debug_held & KEY_R) != 0;
+  bool no_scissor = (debug_held & KEY_Y) != 0;
+  gfx_debug_modes(force_white, no_scissor);
+  run_trace(
+    "mode:%s%s%s%s",
+    skip_render ? " [L no-draw]" : "",
+    force_white ? " [R white-tex]" : "",
+    no_scissor ? " [Y no-scissor]" : "",
+    !skip_render && !force_white && !no_scissor ? " [full]" : ""
+  );
 #endif
 
   while (aptMainLoop()) {
@@ -433,22 +453,58 @@ int main(void) {
     ui_tick();
     size_t words = ui_draw();
 
-#ifndef POCKETJS_CAPTURE
+#ifdef POCKETJS_CAPTURE
+    C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+#else
     bool tracing = run_frame < 2;
     if (tracing) run_trace("f%lu guest ok, %lu words", (unsigned long)run_frame, (unsigned long)words);
     if (tracing) run_trace("f%lu begin...", (unsigned long)run_frame);
-#endif
-    C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-#ifndef POCKETJS_CAPTURE
+    /*
+     * Watchdog in place of C3D_FRAME_SYNCDRAW's unbounded wait: SYNCDRAW never
+     * returns when the GPU hangs on the previous frame's command list, which
+     * reads as a dead console — HOME included — and ends in a forced power-off.
+     * Poll instead, and after three seconds report the hang as itself, with
+     * HOME kept alive by fail()'s park loop.
+     */
+    gspWaitForVBlank();
+    uint32_t waited = 0;
+    while (!C3D_FrameBegin(C3D_FRAME_NONBLOCK)) {
+      gspWaitForVBlank();
+      waited += 1;
+      if (waited == 180) {
+        char verdict[96];
+        snprintf(
+          verdict,
+          sizeof verdict,
+          "GPU HUNG executing frame %lu (%lu cmds, %lu verts)",
+          (unsigned long)(run_frame == 0 ? 0 : run_frame - 1),
+          (unsigned long)gfx_frame_commands(),
+          (unsigned long)gfx_frame_vertices()
+        );
+        fail(verdict);
+      }
+    }
     if (tracing) run_trace("f%lu begin ok", (unsigned long)run_frame);
 #endif
     C3D_RenderTargetClear(target, C3D_CLEAR_ALL, 0x000000ff, 0);
     C3D_FrameDrawOn(target);
     /* C3D_FrameDrawOn resets the viewport, so this comes after it. */
     C3D_SetViewport(0, 0, VIEW_H, VIEW_W);
+#ifdef POCKETJS_CAPTURE
     gfx_render(ui_draw_list_ptr(), words);
-#ifndef POCKETJS_CAPTURE
-    if (tracing) run_trace("f%lu gpu queued", (unsigned long)run_frame);
+#else
+    if (!skip_render) gfx_render(ui_draw_list_ptr(), words);
+    if (tracing) {
+      if (skip_render) run_trace("f%lu draws skipped", (unsigned long)run_frame);
+      else {
+        run_trace(
+          "f%lu gpu queued, %lu cmds %lu verts",
+          (unsigned long)run_frame,
+          (unsigned long)gfx_frame_commands(),
+          (unsigned long)gfx_frame_vertices()
+        );
+      }
+    }
 #endif
     C3D_FrameEnd(0);
 #ifndef POCKETJS_CAPTURE

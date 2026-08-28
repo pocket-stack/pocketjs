@@ -136,6 +136,10 @@ static uint32_t viewport_width;
 static uint32_t viewport_height;
 static bool initialized;
 
+/* Hardware bring-up bisect switches (gfx.h gfx_debug_modes). */
+static bool debug_force_white;
+static bool debug_no_scissor;
+
 // ---------------------------------------------------------------------------
 // word decoding
 // ---------------------------------------------------------------------------
@@ -291,6 +295,11 @@ static bool upload_tiled(
     }
   }
   C3D_TexUpload(texture, tiled);
+  /* C3D_TexUpload is a plain memcpy through the CPU's write-back cache, and
+   * the PICA samples physical memory: without a flush the GPU reads whatever
+   * was there before. Azahar never shows this because its texture reads go
+   * through the same emulated memory the memcpy wrote. */
+  GSPGPU_FlushDataCache(texture->data, (u32)texture->size);
   C3D_TexSetFilter(
     texture,
     linear ? GPU_LINEAR : GPU_NEAREST,
@@ -828,14 +837,16 @@ void gfx_render(const uint32_t *words, size_t length) {
   bool scissored = false;
   for (uint32_t index = 0; index < command_count; index += 1) {
     const Command *command = &commands[index];
-    if (command->texture != bound) {
-      C3D_TexBind(0, command->texture);
-      bound = command->texture;
+    C3D_Tex *wanted = debug_force_white ? &white : command->texture;
+    if (wanted != bound) {
+      C3D_TexBind(0, wanted);
+      bound = wanted;
     }
     bool full =
-      command->clip.x <= 0 && command->clip.y <= 0 &&
-      command->clip.x + command->clip.w >= (int32_t)viewport_width &&
-      command->clip.y + command->clip.h >= (int32_t)viewport_height;
+      debug_no_scissor ||
+      (command->clip.x <= 0 && command->clip.y <= 0 &&
+       command->clip.x + command->clip.w >= (int32_t)viewport_width &&
+       command->clip.y + command->clip.h >= (int32_t)viewport_height);
     if (full) {
       if (scissored) {
         C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
@@ -936,4 +947,17 @@ void gfx_shutdown(void) {
 
 uint32_t gfx_dropped_vertices(void) {
   return dropped_vertices;
+}
+
+void gfx_debug_modes(bool force_white, bool no_scissor) {
+  debug_force_white = force_white;
+  debug_no_scissor = no_scissor;
+}
+
+uint32_t gfx_frame_commands(void) {
+  return command_count;
+}
+
+uint32_t gfx_frame_vertices(void) {
+  return vertex_count;
 }
