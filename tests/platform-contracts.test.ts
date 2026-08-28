@@ -62,6 +62,29 @@ const syntheticTargetDefinitions = {
       "text.glyphs.baked",
     ],
   },
+  "dual-test": {
+    hostAbi: 8,
+    platform: "dual-test",
+    form: "takeover",
+    display: {
+      physicalViewport: [400, 240],
+      logicalViewports: [[400, 240]],
+      presentations: ["native"],
+      rasterDensity: 1,
+      auxiliary: {
+        physicalViewport: [320, 240],
+        logicalViewports: [[320, 240]],
+        presentations: ["native"],
+        rasterDensity: 1,
+      },
+    },
+    capabilities: [
+      "input.buttons",
+      "input.touch.auxiliary",
+      "display.auxiliary",
+      "text.glyphs.baked",
+    ],
+  },
 } as const satisfies Readonly<Record<string, TargetProfile<SyntheticCapabilityId>>>;
 
 const SYNTHETIC_TARGETS = defineTargetRegistry<
@@ -140,6 +163,24 @@ describe("pocket.json v2 schema", () => {
       code: "schema.enum",
       path: "/execution/classes/0",
       message: 'expected one of "guest", "aot"',
+    });
+  });
+
+  test("accepts a fixed auxiliary surface and rejects undeclared fields", () => {
+    const dual = structuredClone(portableInput) as Record<string, any>;
+    dual.app.surfaces = {
+      auxiliary: { fixed: { logical: [320, 240], presentation: "native" } },
+    };
+    expect(validatePocketManifest(dual).ok).toBe(true);
+
+    dual.app.surfaces.auxiliary.panel = "bottom";
+    const result = validatePocketManifest(dual);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual({
+      code: "schema.additionalProperty",
+      path: "/app/surfaces/auxiliary/panel",
+      message: "unknown property",
     });
   });
 });
@@ -475,7 +516,7 @@ describe("semantic resolution", () => {
     // note is dynamic-only. A new demo missing here fails the test on
     // purpose.
     const expected: Record<string, [boolean, boolean, boolean, boolean]> = {
-      "3ds-demo": [false, false, false, true], // built by the private 3ds-dev profile (400x240 native); macos-app also admits its fixed buttons+glyphs contract
+      "3ds-demo": [false, false, false, false], // requires the private 3ds-dev profile's auxiliary display and touch contracts
       "blackberry-classic-demo": [false, false, false, true], // built by the private blackberry-{qnx,android}-dev profiles; macos-app also admits its fixed 360x360 buttons+glyphs contract
       cafe: [true, true, false, true],
       cards: [true, true, false, true],
@@ -694,5 +735,124 @@ describe("semantic resolution", () => {
     if (!result.ok) return;
     expect(result.plan.target.hostAbi).toBe(2);
     expect(result.plan.features["input.touch"]).toBe(true);
+  });
+
+  test("resolves auxiliary display and touch as separate capabilities", () => {
+    const dual = structuredClone(portableInput) as Record<string, any>;
+    dual.app.viewport.logical = [400, 240];
+    dual.app.viewport.presentation = "native";
+    dual.app.surfaces = {
+      auxiliary: { fixed: { logical: [320, 240], presentation: "native" } },
+    };
+    dual.engine.capabilities.requires = [
+      "input.buttons",
+      "text.glyphs.baked",
+      "display.auxiliary",
+      "input.touch.auxiliary",
+    ];
+
+    const result = resolveBuildPlan(manifest(dual), { target: "dual-test" }, SYNTHETIC_CONTRACTS);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.surfaces).toEqual({
+      auxiliary: {
+        logical: [320, 240],
+        physical: [320, 240],
+        presentation: "native",
+        rasterDensity: 1,
+      },
+    });
+    expect(result.plan.features).toEqual({
+      "display.auxiliary": true,
+      "input.buttons": true,
+      "input.touch.auxiliary": true,
+      "text.glyphs.baked": true,
+    });
+    expect(result.plan.features).not.toHaveProperty("input.touch");
+    expect(verifyPlanHash(result.plan)).toBe(true);
+  });
+
+  test("enforces auxiliary surface declarations, dependencies and geometry", () => {
+    const base = structuredClone(portableInput) as Record<string, any>;
+    base.app.viewport.logical = [400, 240];
+    base.app.viewport.presentation = "native";
+
+    const missingSurface = structuredClone(base);
+    missingSurface.engine.capabilities.requires.push("display.auxiliary");
+    const missingResult = resolveBuildPlan(
+      manifest(missingSurface),
+      { target: "dual-test" },
+      SYNTHETIC_CONTRACTS,
+    );
+    expect(missingResult.ok).toBe(false);
+    if (!missingResult.ok) {
+      expect(missingResult.diagnostics.map((item) => item.code)).toContain(
+        "surface.auxiliaryDeclarationMismatch",
+      );
+    }
+
+    const touchWithoutDisplay = structuredClone(base);
+    touchWithoutDisplay.engine.capabilities.requires.push("input.touch.auxiliary");
+    const dependencyResult = resolveBuildPlan(
+      manifest(touchWithoutDisplay),
+      { target: "dual-test" },
+      SYNTHETIC_CONTRACTS,
+    );
+    expect(dependencyResult.ok).toBe(false);
+    if (!dependencyResult.ok) {
+      expect(dependencyResult.diagnostics.map((item) => item.code)).toContain(
+        "capability.dependency",
+      );
+    }
+
+    const wrongGeometry = structuredClone(base);
+    wrongGeometry.engine.capabilities.requires.push("display.auxiliary");
+    wrongGeometry.app.surfaces = {
+      auxiliary: { fixed: { logical: [400, 240], presentation: "native" } },
+    };
+    const geometryResult = resolveBuildPlan(
+      manifest(wrongGeometry),
+      { target: "dual-test" },
+      SYNTHETIC_CONTRACTS,
+    );
+    expect(geometryResult.ok).toBe(false);
+    if (!geometryResult.ok) {
+      expect(geometryResult.diagnostics.map((item) => item.code)).toEqual(
+        expect.arrayContaining(["surface.logicalUnsupported", "surface.nativeMismatch"]),
+      );
+    }
+  });
+
+  test("rejects target profiles whose auxiliary facts and capabilities drift", () => {
+    const missingFacts = definePlatformContractRegistry(
+      SYNTHETIC_CAPABILITIES,
+      defineTargetRegistry({
+        broken: {
+          ...syntheticTargetDefinitions["dual-test"],
+          display: {
+            physicalViewport: [400, 240],
+            logicalViewports: [[400, 240]],
+            presentations: ["native"],
+            rasterDensity: 1,
+          },
+        },
+      }),
+    );
+    expect(validatePlatformContractRegistry(missingFacts).map((item) => item.code)).toContain(
+      "registry.auxiliaryDisplayMismatch",
+    );
+
+    const touchWithoutDisplay = definePlatformContractRegistry(
+      SYNTHETIC_CAPABILITIES,
+      defineTargetRegistry({
+        broken: {
+          ...syntheticTargetDefinitions["vita-test"],
+          capabilities: ["input.touch.auxiliary"],
+        },
+      }),
+    );
+    expect(validatePlatformContractRegistry(touchWithoutDisplay).map((item) => item.code)).toContain(
+      "registry.auxiliaryTouchWithoutDisplay",
+    );
   });
 });

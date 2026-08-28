@@ -42,12 +42,15 @@ import { onCleanup } from "solid-js";
 import { simulationHz, virtualFrame } from "./clock.ts";
 import { resolveTouchHit } from "./input.ts";
 import type { NodeMirror } from "./renderer.ts";
-import { touches } from "./touch.ts";
+import { __allTouches } from "./touch.ts";
+import type { SurfaceId } from "./display.ts";
 
 export type GesturePhase = "down" | "move" | "up" | "cancel";
 
 /** A live view of one contact, valid during the frame it is delivered. */
 export interface GestureContact {
+  /** UI output whose logical coordinate space contains this contact. */
+  readonly surface: SurfaceId;
   /** Stable while the contact is down; ids may be reused after release. */
   readonly id: number;
   /** Current position, logical viewport px. */
@@ -86,6 +89,8 @@ export interface GestureRegion {
 }
 
 export interface GestureOptions {
+  /** Output to observe. Existing recognizers remain primary-only. */
+  surface?: SurfaceId;
   /** Omit for a whole-screen recognizer (lowest specificity, not lowest
    *  priority — priority is registration order). */
   region?: GestureRegion;
@@ -151,6 +156,7 @@ interface Track extends GestureContact {
   /** Seen in the current frame's snapshot (mark/sweep). */
   present: boolean;
   hit?: number;
+  surface: SurfaceId;
   id: number;
   x: number;
   y: number;
@@ -180,6 +186,7 @@ const tracks: Track[] = Array.from({ length: MAX_TRACKS }, (_, slot) => ({
   slot,
   used: false,
   present: false,
+  surface: "primary",
   id: 0,
   x: 0,
   y: 0,
@@ -217,13 +224,20 @@ function regionMatches(
   rec: Recognizer,
   x: number,
   y: number,
-  hitBox: { hit: NodeMirror | null | undefined; fact: number | undefined },
+  hitBox: {
+    hit: NodeMirror | null | undefined;
+    fact: number | undefined;
+    surface: SurfaceId;
+  },
 ): boolean {
+  if ((rec.opts.surface ?? "primary") !== hitBox.surface) return false;
   const region = rec.opts.region;
   if (!region) return true;
   const target = region.node?.();
   if (target) {
-    if (hitBox.hit === undefined) hitBox.hit = resolveTouchHit(x, y, hitBox.fact);
+    if (hitBox.hit === undefined) {
+      hitBox.hit = resolveTouchHit(x, y, hitBox.fact, hitBox.surface);
+    }
     const hit = hitBox.hit;
     if (hit) return withinSubtree(hit, target);
     // Miss (bare screen on a fact host, or no hit channel at all): the rect
@@ -257,10 +271,18 @@ function releaseTrack(t: Track): void {
   liveCount--;
 }
 
-function beginTrack(t: Track, id: number, x: number, y: number, fact: number | undefined): void {
+function beginTrack(
+  t: Track,
+  surface: SurfaceId,
+  id: number,
+  x: number,
+  y: number,
+  fact: number | undefined,
+): void {
   t.used = true;
   t.present = true;
   t.hit = fact;
+  t.surface = surface;
   t.id = id;
   t.x = x;
   t.y = y;
@@ -284,8 +306,13 @@ function beginTrack(t: Track, id: number, x: number, y: number, fact: number | u
 
   // Resolve owners in priority order (last-registered first); the down's hit
   // — the host fact, or at most one query — is shared across recognizers.
-  const hitBox: { hit: NodeMirror | null | undefined; fact: number | undefined } = {
+  const hitBox: {
+    hit: NodeMirror | null | undefined;
+    fact: number | undefined;
+    surface: SurfaceId;
+  } = {
     hit: undefined,
+    surface,
     fact,
   };
   for (let i = recognizers.length - 1; i >= 0; i--) {
@@ -420,7 +447,7 @@ function finishTrack(t: Track): void {
 /** One gesture frame. Called from the frame pump (index.ts) after
  *  __setTouches/__drainEffects and before app frame hooks. */
 export function __runGestures(): void {
-  const snap = touches();
+  const snap = __allTouches();
   if (snap.length === 0 && liveCount === 0) return;
 
   for (const t of tracks) t.present = false;
@@ -428,7 +455,7 @@ export function __runGestures(): void {
   for (const c of snap) {
     let found: Track | null = null;
     for (const t of tracks) {
-      if (t.used && t.id === c.id) {
+      if (t.used && t.surface === c.surface && t.id === c.id) {
         found = t;
         break;
       }
@@ -444,7 +471,7 @@ export function __runGestures(): void {
         break;
       }
     }
-    if (free) beginTrack(free, c.id, c.x, c.y, c.hit);
+    if (free) beginTrack(free, c.surface, c.id, c.x, c.y, c.hit);
   }
 
   // Up edges first (a released contact must not be re-recognized), then the

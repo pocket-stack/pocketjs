@@ -23,6 +23,14 @@ export interface HostBuildInputs {
     readonly presentation: PresentationMode;
     readonly rasterDensity: number;
   };
+  readonly surfaces?: {
+    readonly auxiliary: {
+      readonly logical: Viewport;
+      readonly physical: Viewport;
+      readonly presentation: PresentationMode;
+      readonly rasterDensity: number;
+    };
+  };
 }
 
 export interface ExtractHostBuildInputsOptions {
@@ -52,6 +60,17 @@ function hasHostInputShape(input: unknown): input is ResolvedBuildPlan {
     typeof input.app.title !== "string" || input.app.title.length === 0 ||
     typeof input.app.version !== "string" || input.app.version.length === 0
   ) return false;
+  if (input.surfaces !== undefined) {
+    if (!isRecord(input.surfaces) || !isRecord(input.surfaces.auxiliary)) return false;
+    const auxiliary = input.surfaces.auxiliary;
+    if (!isViewport(auxiliary.logical) || !isViewport(auxiliary.physical)) return false;
+    if (!PRESENTATION_MODES.includes(auxiliary.presentation as PresentationMode)) return false;
+    if (
+      !Number.isInteger(auxiliary.rasterDensity) ||
+      (auxiliary.rasterDensity as number) < 1 ||
+      (auxiliary.rasterDensity as number) > 255
+    ) return false;
+  }
   if (typeof input.app.output !== "string" || input.app.output.length === 0) return false;
   if (typeof input.target.id !== "string" || input.target.id.length === 0) return false;
   if (!Number.isInteger(input.target.hostAbi) || (input.target.hostAbi as number) < 1) return false;
@@ -112,6 +131,7 @@ export function extractHostBuildInputs(
       presentation: plan.viewport.presentation,
       rasterDensity: plan.viewport.rasterDensity,
     },
+    ...(plan.surfaces ? { surfaces: plan.surfaces } : {}),
   };
 }
 
@@ -135,5 +155,11 @@ export function hostBuildEnvironment(
     POCKETJS_PHYSICAL_HEIGHT: String(inputs.viewport.physical[1]),
     POCKETJS_PRESENTATION: inputs.viewport.presentation,
     POCKETJS_RASTER_DENSITY: String(inputs.viewport.rasterDensity),
+    POCKETJS_AUX_LOGICAL_WIDTH: inputs.surfaces ? String(inputs.surfaces.auxiliary.logical[0]) : "",
+    POCKETJS_AUX_LOGICAL_HEIGHT: inputs.surfaces ? String(inputs.surfaces.auxiliary.logical[1]) : "",
+    POCKETJS_AUX_PHYSICAL_WIDTH: inputs.surfaces ? String(inputs.surfaces.auxiliary.physical[0]) : "",
+    POCKETJS_AUX_PHYSICAL_HEIGHT: inputs.surfaces ? String(inputs.surfaces.auxiliary.physical[1]) : "",
+    POCKETJS_AUX_PRESENTATION: inputs.surfaces ? inputs.surfaces.auxiliary.presentation : "",
+    POCKETJS_AUX_RASTER_DENSITY: inputs.surfaces ? String(inputs.surfaces.auxiliary.rasterDensity) : "",
   };
 }

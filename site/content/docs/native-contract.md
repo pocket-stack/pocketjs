@@ -54,6 +54,8 @@ Node ids are generation-tagged positive `i32` values and reserve `0` for
 | 24 | `freeTexture` | `(handle) → void` | Optional host extension: release a generation-tagged texture handle; stale handles draw nothing. |
 | 25 | `uploadImgEntry` | `(blob) → handle \| -1` | Optional host extension: upload a complete IMG entry, including CLUT8 palette/RLE metadata. |
 | 26 | `setActive` | `(id, activeInt) → void` | Applies or clears the native `active:` style variant. Optional for legacy hosts. |
+| 45 | `hitTestAuxiliary` | `(x, y) → id` | Optional `display.auxiliary` query. Searches only painted nodes in auxiliary logical coordinates. |
+| 46 | `hitTestBoundsAuxiliary` | `(x, y) → id` | Bounds-only auxiliary query used to derive `input.touch.auxiliary` hit facts. |
 
 For the meaning of `PROP` ids, `ENUMS`, and how a `class` string becomes a `styleId`, see [Styling](/docs/styling/) and the [API reference](/docs/api/). For `animate`/`easing` semantics see [Animation](/docs/animation/).
 
@@ -139,10 +141,12 @@ and ABI and refuses to mount on a mismatched or pre-contract native host.
 working, but it cannot satisfy an embedded target contract.
 
 Every host drives frames through
-`globalThis.frame(buttons, analog?, touches?)`. Buttons use the shared PSP
+`globalThis.frame(buttons, analog?, touches?, hits?, touchSurfaces?)`. Buttons use the shared PSP
 bitmask, analog is `(x << 8) | y` with centered bytes on stickless hosts, and
-touch contacts are packed snapshots in logical coordinates. The runtime latches
-all three before app hooks, then performs input edge detection and the
+touch contacts are packed snapshots in logical coordinates. `hits` carries
+parallel down-edge hit facts; `touchSurfaces` uses `0` for primary and `1` for
+auxiliary, with omitted entries defaulting to primary. The runtime latches
+these inputs before app hooks, then performs input edge detection and the
 end-of-frame sweep. See [Input & focus](/docs/input-focus/) and
 [Platform contracts](/docs/platform-contracts/).
 
@@ -155,7 +159,7 @@ hosts perform the same logical steps under a fixed-step
 ```
 read host input                     buttons + optional analog/touch snapshot
   ↓
-frame(buttons, analog?, touches?)
+frame(buttons, analog?, touches?, hits?, touchSurfaces?)
                  ── JS ──►          advance virtual time, latch input, deliver
                                     queued effects, run app hooks + focus,
                                     then runSweep() (node reclamation) last
@@ -168,7 +172,8 @@ core.tick(N × 1/60)                 advance exact ticks for this virtual frame
 layout (if dirty)                   taffy re-run + text re-measure, only if a
                                     layout-dirtying prop changed
   ↓
-DrawList                            tree walk → flat Vec<u32> ops, CPU-clipped
+DrawList(s)                         one tree walk per resolved UI output →
+                                    flat Vec<u32> ops, CPU-clipped
   ↓
 backend acquire/render/present      DrawList → GE, GXM, WGPU, or software
 ```
@@ -186,14 +191,15 @@ Key properties:
   Commands from the outside world are delivered only at frame boundaries.
 - **Layout is conditional.** Only a change to a layout-dirtying prop (`LAYOUT_DIRTYING` in the spec — sizes, padding, flex props, `fontSlot`/`tracking`/`lineHeight`) re-runs taffy. Transform and color changes are paint-only. Prefer transforms in animation for this reason.
 - **Backends never define UI semantics.** The Rust core produces one DrawList
-  in 480×272 logical coordinates. The PSP GE consumes it at density 1; Vita
-  GXM consumes it at density 2 after the compiler has baked native-density
-  fonts, vectors, masks, and target-selected images.
+  for each resolved UI output in that output's logical coordinates. Single-screen
+  hosts consume the primary list. A host with an auxiliary display consumes a
+  second list after both roots have shared the same state update and resource
+  generation.
 
 In steady state — no reactive values changed — `frame()` emits **no** mutation
 ops, the sweep set is empty, and the only JS boundary crossing is the single
-`frame(buttons, analog?, touches?)` call itself. Everything downstream (tick,
-layout, draw) is Rust.
+`frame(buttons, analog?, touches?, hits?, touchSurfaces?)` call itself.
+Everything downstream (tick, layout, draw) is Rust.
 
 ## Node reclamation
 
@@ -255,7 +261,7 @@ The whole design converges on a small steady-state cost:
 
 | budget | target |
 |---|---|
-| FFI crossings per steady frame | **one** (`frame(buttons, analog?, touches?)`; no mutation ops when nothing changed) |
+| FFI crossings per steady frame | **one** (`frame(buttons, analog?, touches?, hits?, touchSurfaces?)`; no mutation ops when nothing changed) |
 | DrawList draw calls | **≤ ~40** `sceGuDrawArray` calls |
 | DrawList quads | **≤ ~2000** |
 | per-frame vertex bytes | **≈ 48 KB** from a per-frame bump pool (reset after `sceGuSync`) |

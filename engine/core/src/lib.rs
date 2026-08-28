@@ -228,7 +228,16 @@ struct TimelineInst {
     loop_frames: u16,
 }
 
-/// The retained UI core. One per host/screen.
+struct AuxiliarySurface {
+    root: i32,
+    layout: layout::LayoutEngine,
+    draw_list: DrawList,
+    touch_table: touch::HitTable,
+    inspect_drawn: Option<(f32, f32, f32, f32)>,
+}
+
+/// The retained UI core. One per AppInstance, with an optional independent
+/// auxiliary output root sharing the same resources and frame clock.
 pub struct Ui {
     tree: tree::Tree,
     styles: style::StyleTable,
@@ -236,6 +245,7 @@ pub struct Ui {
     anims: anim::Anims,
     timelines: Vec<TimelineInst>,
     layout: layout::LayoutEngine,
+    auxiliary: Option<AuxiliarySurface>,
     /// Generation-tagged texture slots (handles per spec.ts TEX_SLOT_BITS).
     textures: Vec<TexSlot>,
     /// LIFO free list of texture slots (freed most recently, reused first).
@@ -324,6 +334,7 @@ impl Ui {
             anims: anim::Anims::new(),
             timelines: Vec::new(),
             layout: layout::LayoutEngine::new(),
+            auxiliary: None,
             textures: Vec::new(),
             tex_free: Vec::new(),
             discs: draw::DiscCache::new(),
@@ -381,6 +392,71 @@ impl Ui {
         self.raster_revision = self.raster_revision.wrapping_add(1);
     }
 
+    fn mark_layout_dirty(&mut self) {
+        self.layout.dirty = true;
+        if let Some(auxiliary) = self.auxiliary.as_mut() {
+            auxiliary.layout.dirty = true;
+        }
+    }
+
+    fn mark_layout_style(&mut self, slot: u32) {
+        self.layout.mark_style(slot);
+        if let Some(auxiliary) = self.auxiliary.as_mut() {
+            auxiliary.layout.mark_style(slot);
+        }
+    }
+
+    /// Create the fixed auxiliary UI root, or resize the existing one. The
+    /// returned generation-tagged node id is a protected native root: callers
+    /// may insert children under it but cannot attach or destroy the root.
+    pub fn create_auxiliary_surface(&mut self, width: f32, height: f32) -> i32 {
+        let width = width.clamp(1.0, 32000.0);
+        let height = height.clamp(1.0, 32000.0);
+        if self.auxiliary.is_some() {
+            let root = self.auxiliary_surface_root();
+            if let Some(auxiliary) = self.auxiliary.as_mut() {
+                auxiliary.layout.viewport = (width, height);
+                auxiliary.layout.dirty = true;
+            }
+            if let Some(node) = self.tree.get_mut(root) {
+                tree::Node::put_entry(&mut node.overrides, spec::prop::WIDTH, width.to_bits());
+                tree::Node::put_entry(&mut node.overrides, spec::prop::HEIGHT, height.to_bits());
+            }
+            return root;
+        }
+        let root = self.tree.alloc(spec::NodeType::View as u8);
+        if root == 0 {
+            return 0;
+        }
+        if let Some(node) = self.tree.get_mut(root) {
+            tree::Node::put_entry(&mut node.overrides, spec::prop::WIDTH, width.to_bits());
+            tree::Node::put_entry(&mut node.overrides, spec::prop::HEIGHT, height.to_bits());
+            tree::Node::put_entry(
+                &mut node.overrides,
+                spec::prop::FLEX_DIR,
+                spec::FlexDir::Col as u32,
+            );
+        }
+        let mut surface_layout = layout::LayoutEngine::new();
+        surface_layout.viewport = (width, height);
+        self.auxiliary = Some(AuxiliarySurface {
+            root,
+            layout: surface_layout,
+            draw_list: DrawList::new(),
+            touch_table: touch::HitTable::default(),
+            inspect_drawn: None,
+        });
+        root
+    }
+
+    pub fn auxiliary_surface_root(&self) -> i32 {
+        self.auxiliary.as_ref().map_or(0, |surface| surface.root)
+    }
+
+    pub fn auxiliary_viewport(&self) -> Option<(f32, f32)> {
+        self.auxiliary.as_ref().map(|surface| surface.layout.viewport)
+    }
+
     // ---- tree ops ---------------------------------------------------------
 
     /// Create a detached node of `node_type` (spec::NodeType value).
@@ -395,7 +471,7 @@ impl Ui {
     /// Destroy `id` and its whole subtree; frees anim tracks; clears focus
     /// if the focused node was inside. Stale/unknown ids are no-ops.
     pub fn destroy_node(&mut self, id: i32) {
-        if id == spec::ROOT_ID || self.tree.resolve(id).is_none() {
+        if id == spec::ROOT_ID || id == self.auxiliary_surface_root() || self.tree.resolve(id).is_none() {
             return;
         }
         if self.focused != 0 && self.tree.is_in_subtree(id, self.focused) {
@@ -409,14 +485,17 @@ impl Ui {
             self.anims.kill_node(nid);
             self.tree.free_slot(slot);
         }
-        self.layout.dirty = true;
+        self.mark_layout_dirty();
     }
 
     /// Insert `child` under `parent` before `anchor` (0 = append). DOM move
     /// semantics: if `child` is attached anywhere it is unlinked first.
     pub fn insert_before(&mut self, parent: i32, child: i32, anchor: i32) {
+        if child == self.auxiliary_surface_root() {
+            return;
+        }
         if self.tree.insert_before(parent, child, anchor) {
-            self.layout.dirty = true;
+            self.mark_layout_dirty();
         }
     }
 
@@ -424,7 +503,7 @@ impl Ui {
     /// during reorder; the JS renderer sweep destroys still-detached nodes).
     pub fn remove_child(&mut self, parent: i32, child: i32) {
         if self.tree.remove_child(parent, child) {
-            self.layout.dirty = true;
+            self.mark_layout_dirty();
         }
     }
 
@@ -448,7 +527,7 @@ impl Ui {
         }
         self.retarget(slot, &old, was_initialized);
         self.restart_timelines(slot);
-        self.layout.mark_style(slot);
+        self.mark_layout_style(slot);
     }
 
     /// Set a single dynamic prop. `value` carries the payload per
@@ -468,7 +547,7 @@ impl Ui {
         tree::Node::remove_entry(&mut node.anim_values, prop);
         tree::Node::put_entry(&mut node.overrides, prop, bits);
         if spec::is_layout_dirtying(prop) {
-            self.layout.mark_style(slot);
+            self.mark_layout_style(slot);
         }
     }
 
@@ -499,7 +578,7 @@ impl Ui {
         run.clear();
         self.tree.collect_run(root_slot, &mut run);
         if was_empty != run.is_empty() {
-            self.layout.dirty = true;
+            self.mark_layout_dirty();
         } else if !run.is_empty() {
             // A text swap inside a FIXED cell (definite px width AND height
             // on the layout leaf) cannot move layout — the measure result is
@@ -512,7 +591,7 @@ impl Ui {
                 && r.height.is_finite()
                 && r.height >= 0.0;
             if !fixed {
-                self.layout.mark_style(root_slot);
+                self.mark_layout_style(root_slot);
             }
         }
     }
@@ -828,7 +907,7 @@ impl Ui {
         match style::StyleTable::parse(bytes) {
             Some(t) => {
                 self.styles = t;
-                self.layout.dirty = true;
+                self.mark_layout_dirty();
                 self.bump_raster_revision();
                 true
             }
@@ -841,7 +920,7 @@ impl Ui {
     pub fn load_font_atlas(&mut self, bytes: &[u8]) -> bool {
         let ok = self.fonts.load(bytes);
         if ok {
-            self.layout.dirty = true;
+            self.mark_layout_dirty();
             self.bump_raster_revision();
         }
         ok
@@ -886,7 +965,7 @@ impl Ui {
                 tree::Node::remove_entry(&mut node.anim_values, prop);
                 tree::Node::put_entry(&mut node.overrides, prop, to_bits);
                 if spec::is_layout_dirtying(prop) {
-                    self.layout.mark_style(slot);
+                    self.mark_layout_style(slot);
                 }
                 return -1;
             }
@@ -944,13 +1023,13 @@ impl Ui {
             let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
             self.tree.slots[slot as usize].focused = false;
             self.retarget(slot, &old, true);
-            self.layout.mark_style(slot);
+            self.mark_layout_style(slot);
         }
         if let Some(slot) = self.tree.resolve(target) {
             let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
             self.tree.slots[slot as usize].focused = true;
             self.retarget(slot, &old, true);
-            self.layout.mark_style(slot);
+            self.mark_layout_style(slot);
         }
     }
 
@@ -976,7 +1055,7 @@ impl Ui {
         let old = style::resolve(&self.tree.slots[slot as usize], &self.styles, true);
         self.tree.slots[slot as usize].active = active;
         self.retarget(slot, &old, true);
-        self.layout.mark_style(slot);
+        self.mark_layout_style(slot);
     }
 
     // ---- virtual cursor (spec ops 27..29, input.cursor capability) ---------
@@ -1004,6 +1083,48 @@ impl Ui {
         draw::hit_test_bounds(&self.tree, &self.styles, self.layout.viewport, x, y)
     }
 
+    pub fn hit_test_auxiliary(&mut self, x: f32, y: f32) -> i32 {
+        let Some(auxiliary) = self.auxiliary.as_mut() else { return 0 };
+        if auxiliary.layout.needs() {
+            layout::relayout_root(
+                &mut self.tree,
+                &self.styles,
+                &self.fonts,
+                &mut auxiliary.layout,
+                auxiliary.root,
+            );
+        }
+        draw::hit_test_root(
+            &self.tree,
+            &self.styles,
+            auxiliary.root,
+            auxiliary.layout.viewport,
+            x,
+            y,
+        )
+    }
+
+    pub fn hit_test_bounds_auxiliary(&mut self, x: f32, y: f32) -> i32 {
+        let Some(auxiliary) = self.auxiliary.as_mut() else { return 0 };
+        if auxiliary.layout.needs() {
+            layout::relayout_root(
+                &mut self.tree,
+                &self.styles,
+                &self.fonts,
+                &mut auxiliary.layout,
+                auxiliary.root,
+            );
+        }
+        draw::hit_test_bounds_root(
+            &self.tree,
+            &self.styles,
+            auxiliary.root,
+            auxiliary.layout.viewport,
+            x,
+            y,
+        )
+    }
+
     /// Resolve the touch hit facts for this frame's packed contacts (frame()
     /// argument 4; docs/TOUCH.md). A NEW contact id is bounds-hit ONCE
     /// against the committed layout and the node id is carried until the id
@@ -1011,41 +1132,35 @@ impl Ui {
     /// never issues a hit query on the touch path. Returns the number of
     /// entries written to `out` (parallel to `packed`, capped at 8).
     pub fn touch_hits(&mut self, packed: &[u32], out: &mut [i32; 8]) -> usize {
-        let n = packed.len().min(8);
-        let mut seen = [false; 8];
-        for i in 0..n {
-            let (id, x, y) = touch::decode(packed[i]);
-            let mut carried = None;
-            for s in 0..8 {
-                if self.touch_table.live[s] && self.touch_table.ids[s] == id {
-                    carried = Some(self.touch_table.hits[s]);
-                    seen[s] = true;
-                    break;
-                }
-            }
-            out[i] = match carried {
-                Some(h) => h,
-                None => {
-                    let h = self.hit_test_bounds(x, y);
-                    for s in 0..8 {
-                        if !self.touch_table.live[s] {
-                            self.touch_table.live[s] = true;
-                            self.touch_table.ids[s] = id;
-                            self.touch_table.hits[s] = h;
-                            seen[s] = true;
-                            break;
-                        }
-                    }
-                    h
-                }
-            };
+        if self.layout.needs() {
+            layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
         }
-        for s in 0..8 {
-            if self.touch_table.live[s] && !seen[s] {
-                self.touch_table.live[s] = false;
-            }
+        let screen = self.layout.viewport;
+        let tree = &self.tree;
+        let styles = &self.styles;
+        self.touch_table.resolve(packed, out, |x, y| {
+            draw::hit_test_bounds(tree, styles, screen, x, y)
+        })
+    }
+
+    pub fn touch_hits_auxiliary(&mut self, packed: &[u32], out: &mut [i32; 8]) -> usize {
+        let Some(auxiliary) = self.auxiliary.as_mut() else { return 0 };
+        if auxiliary.layout.needs() {
+            layout::relayout_root(
+                &mut self.tree,
+                &self.styles,
+                &self.fonts,
+                &mut auxiliary.layout,
+                auxiliary.root,
+            );
         }
-        n
+        let root = auxiliary.root;
+        let screen = auxiliary.layout.viewport;
+        let tree = &self.tree;
+        let styles = &self.styles;
+        auxiliary.touch_table.resolve(packed, out, |x, y| {
+            draw::hit_test_bounds_root(tree, styles, root, screen, x, y)
+        })
     }
 
     /// Bind the virtual cursor sprite (spec op setCursor): an uploaded
@@ -1116,7 +1231,7 @@ impl Ui {
                 tree::Node::put_entry(&mut node.anim_values, prop, value);
             }
             if spec::is_layout_dirtying(prop) {
-                self.layout.mark_style(slot);
+                self.mark_layout_style(slot);
             }
         }
         self.tick_timelines();
@@ -1196,27 +1311,29 @@ impl Ui {
                     }
                 }
             }
-            let node = &mut self.tree.slots[slot as usize];
-            for &(prop, value) in &writes {
-                let prev = tree::Node::find_entry(&node.anim_values, prop);
-                match value {
-                    Some(bits) => {
-                        if prev != Some(bits) {
-                            tree::Node::put_entry(&mut node.anim_values, prop, bits);
-                            if spec::is_layout_dirtying(prop) {
-                                self.layout.mark_style(slot);
+            let mut layout_changed = false;
+            {
+                let node = &mut self.tree.slots[slot as usize];
+                for &(prop, value) in &writes {
+                    let prev = tree::Node::find_entry(&node.anim_values, prop);
+                    match value {
+                        Some(bits) => {
+                            if prev != Some(bits) {
+                                tree::Node::put_entry(&mut node.anim_values, prop, bits);
+                                layout_changed |= spec::is_layout_dirtying(prop);
                             }
                         }
-                    }
-                    None => {
-                        if prev.is_some() {
-                            tree::Node::remove_entry(&mut node.anim_values, prop);
-                            if spec::is_layout_dirtying(prop) {
-                                self.layout.mark_style(slot);
+                        None => {
+                            if prev.is_some() {
+                                tree::Node::remove_entry(&mut node.anim_values, prop);
+                                layout_changed |= spec::is_layout_dirtying(prop);
                             }
                         }
                     }
                 }
+            }
+            if layout_changed {
+                self.mark_layout_style(slot);
             }
             i = end;
         }
@@ -1299,7 +1416,7 @@ impl Ui {
             // and layout build share one gate (Resolved::declares_transform
             // accumulated down identical recursions), so the rebuilt record
             // matches the repaint's expectation by construction.
-            self.layout.dirty = true;
+            self.mark_layout_dirty();
             layout::relayout(&mut self.tree, &self.styles, &self.fonts, &mut self.layout);
             let retry = draw::build(
                 &self.tree,
@@ -1334,6 +1451,76 @@ impl Ui {
         &self.draw_list
     }
 
+    /// Build the auxiliary output DrawList for the current frame. Returns
+    /// None until the host creates the auxiliary surface before guest mount.
+    pub fn draw_auxiliary(&mut self) -> Option<&DrawList> {
+        let auxiliary = self.auxiliary.as_mut()?;
+        if auxiliary.layout.needs() {
+            layout::relayout_root(
+                &mut self.tree,
+                &self.styles,
+                &self.fonts,
+                &mut auxiliary.layout,
+                auxiliary.root,
+            );
+        }
+        let (target, drawn, provider_stale) = draw::build_root(
+            &self.tree,
+            &self.styles,
+            &self.fonts,
+            self.frame,
+            auxiliary.root,
+            auxiliary.layout.viewport,
+            &mut self.textures,
+            &mut self.tex_free,
+            &mut self.discs,
+            self.raster_density,
+            &mut auxiliary.draw_list,
+            self.inspect_id,
+            auxiliary.inspect_drawn,
+            None,
+        );
+        let (mut target, mut drawn) = (target, drawn);
+        if provider_stale {
+            auxiliary.layout.dirty = true;
+            layout::relayout_root(
+                &mut self.tree,
+                &self.styles,
+                &self.fonts,
+                &mut auxiliary.layout,
+                auxiliary.root,
+            );
+            let retry = draw::build_root(
+                &self.tree,
+                &self.styles,
+                &self.fonts,
+                self.frame,
+                auxiliary.root,
+                auxiliary.layout.viewport,
+                &mut self.textures,
+                &mut self.tex_free,
+                &mut self.discs,
+                self.raster_density,
+                &mut auxiliary.draw_list,
+                self.inspect_id,
+                auxiliary.inspect_drawn,
+                None,
+            );
+            target = retry.0;
+            drawn = retry.1;
+            debug_assert!(!retry.2, "provider gate must be stable after re-decision");
+        }
+        auxiliary.inspect_drawn = drawn;
+        if target.is_some() {
+            self.inspect_rect = target;
+        }
+        Some(&auxiliary.draw_list)
+    }
+
+    pub fn current_auxiliary_draw_list(&self) -> Option<&DrawList> {
+        self.auxiliary.as_ref().map(|surface| &surface.draw_list)
+    }
+
     /// Install (or clear) a native text measurer (text::MeasureFn). Native-
     /// text backends (docs/BACKENDS.md) call this BEFORE the guest mounts:
     /// every text leaf's metrics change provider, so the layout tree is
@@ -1341,7 +1528,7 @@ impl Ui {
     /// unaffected.
     pub fn set_text_measure(&mut self, f: Option<text::MeasureFn>) {
         self.fonts.set_native_measure(f);
-        self.layout.dirty = true;
+        self.mark_layout_dirty();
     }
 
     /// Install (or clear) a native line wrapper (text::WrapFn) next to the

@@ -509,6 +509,8 @@ compose `View` with focus and overlay behavior:
 | `FocusGrid`      | 2-D grid focus navigation (`columns`, `wrap`).           |
 | `ActionHandler`  | Binds a button to a handler without rendering a node.    |
 | `Portal`         | Renders children into the overlay root.                  |
+| `AuxiliarySurface` | Renders children into the target's additional display root. |
+| `AuxiliaryPortal` | Renders children above the auxiliary application layer. |
 | `Modal`          | Backdrop + focus-trapped panel over the overlay.         |
 | `ActionBar`      | Docked bottom bar in the overlay layer.                  |
 | `Named`          | Tags its subtree with a [DevTools](/docs/devtools/) name (`<Named name="MessageCard">…`); renders no node. |
@@ -516,3 +518,10 @@ compose `View` with focus and overlay behavior:
 These are documented in full — with focus semantics and examples — on the
 [App shell](/docs/app-shell/) and [Input & focus](/docs/input-focus/) pages.
 The complete typed signatures live in the [API reference](/docs/api/).
+
+`AuxiliarySurface` requires a resolved `display.auxiliary` capability and a
+matching `app.surfaces.auxiliary.fixed` declaration. **Its children use the
+auxiliary display's logical size and do not affect primary layout.** State from
+Solid, Vue Vapor, or Octane remains shared because both trees run in one
+application instance. `AuxiliaryPortal` targets the auxiliary overlay root;
+ordinary `Portal` continues to target the primary overlay.

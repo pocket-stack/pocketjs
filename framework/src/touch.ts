@@ -3,6 +3,8 @@
 // for a Vita panel's sampling grid or the target raster density.
 
 export interface TouchContact {
+  /** UI output whose logical coordinate space contains this contact. */
+  readonly surface: "primary" | "auxiliary";
   /** Stable while this contact remains down; ids may be reused after release. */
   readonly id: number;
   /** Logical viewport X coordinate. */
@@ -29,7 +31,9 @@ const WIDE_COORD_MASK = (1 << WIDE_COORD_BITS) - 1;
 const WIDE_ID_SHIFT = WIDE_COORD_BITS * 2;
 const EMPTY: readonly TouchContact[] = Object.freeze([]);
 
-let snapshot: readonly TouchContact[] = EMPTY;
+let primarySnapshot: readonly TouchContact[] = EMPTY;
+let auxiliarySnapshot: readonly TouchContact[] = EMPTY;
+let allSnapshot: readonly TouchContact[] = EMPTY;
 
 /**
  * Internal host-frame hook.
@@ -41,34 +45,51 @@ let snapshot: readonly TouchContact[] = EMPTY;
 export function __setTouches(
   packed: readonly number[] | undefined,
   hits?: readonly number[],
+  surfaces?: readonly number[],
 ): void {
   if (!packed || packed.length === 0) {
-    snapshot = EMPTY;
+    primarySnapshot = EMPTY;
+    auxiliarySnapshot = EMPTY;
+    allSnapshot = EMPTY;
     return;
   }
-  snapshot = Object.freeze(
-    packed.slice(0, 8).map((value, index) => {
+  const all = packed.slice(0, 8).map((value, index) => {
       const wide = (value & WIDE_MARKER) !== 0;
       const coordBits = wide ? WIDE_COORD_BITS : LEGACY_COORD_BITS;
       const coordMask = wide ? WIDE_COORD_MASK : LEGACY_COORD_MASK;
       const idShift = wide ? WIDE_ID_SHIFT : LEGACY_ID_SHIFT;
       return Object.freeze({
+        surface: surfaces?.[index] === 1 ? "auxiliary" as const : "primary" as const,
         id: (value >>> idShift) & 0xff,
         x: value & coordMask,
         y: (value >>> coordBits) & coordMask,
         hit: hits?.[index],
       });
-    }),
-  );
+    });
+  allSnapshot = Object.freeze(all);
+  primarySnapshot = Object.freeze(all.filter((contact) => contact.surface === "primary"));
+  auxiliarySnapshot = Object.freeze(all.filter((contact) => contact.surface === "auxiliary"));
 }
 
 /** Front-panel contacts for the current frame, in logical viewport pixels. */
 export function touches(): readonly TouchContact[] {
-  return snapshot;
+  return primarySnapshot;
+}
+
+/** Auxiliary-output contacts for the current frame, in that surface's pixels. */
+export function auxiliaryTouches(): readonly TouchContact[] {
+  return auxiliarySnapshot;
+}
+
+/** Internal gesture stream across every simultaneously presented surface. */
+export function __allTouches(): readonly TouchContact[] {
+  return allSnapshot;
 }
 
 export function __resetTouches(): void {
-  snapshot = EMPTY;
+  primarySnapshot = EMPTY;
+  auxiliarySnapshot = EMPTY;
+  allSnapshot = EMPTY;
 }
 
 /** Test/capture helper matching the native frame wire format. */

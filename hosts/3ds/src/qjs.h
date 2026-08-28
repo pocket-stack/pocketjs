@@ -21,7 +21,13 @@ bool qjs_boot(
   const uint8_t *pack,
   size_t pack_length
 );
-bool qjs_frame(int32_t buttons, int32_t analog);
+bool qjs_frame(
+  int32_t buttons,
+  int32_t analog,
+  const uint32_t *touches,
+  const int32_t *hits,
+  size_t touch_count
+);
 const char *qjs_last_error(void);
 void qjs_shutdown(void);
 

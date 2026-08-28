@@ -1,4 +1,4 @@
-// apps/3ds-demo/app.tsx — the 400x240 top-screen demo for the 3ds-dev host.
+// apps/3ds-demo/app.tsx — dual-output acceptance demo for the 3ds-dev host.
 //
 // Everything on this screen is a check the host must pass, placed so a wrong
 // answer is visible in one look at the captured frame:
@@ -25,7 +25,8 @@
 // mis-sizes the first quad leaves uncleared VRAM showing around the fill.
 
 import { createSignal } from "solid-js";
-import { Image, Text, View } from "@pocketjs/framework/components";
+import { AuxiliarySurface, Image, Text, View } from "@pocketjs/framework/components";
+import { auxiliaryTouches } from "@pocketjs/framework/input";
 import { analogRaw, analogX, analogY, onFrame } from "@pocketjs/framework/lifecycle";
 
 /** Pad-well geometry: the dot travels +/- this many px from the well center. */
@@ -62,93 +63,158 @@ export default function ThreeDsDemo() {
   const [padX, setPadX] = createSignal(0);
   const [padY, setPadY] = createSignal(0);
   const [padRaw, setPadRaw] = createSignal(analogRaw());
+  const [bottomAction, setBottomAction] = createSignal("READY");
+  const [touchPoint, setTouchPoint] = createSignal("—");
   // Signals hold === equality, so a resting stick sets nothing and the tree
   // stays untouched for the whole run.
   onFrame(() => {
     setPadX(analogX());
     setPadY(analogY());
     setPadRaw(analogRaw());
+    const touch = auxiliaryTouches()[0];
+    setTouchPoint(touch ? `${touch.x},${touch.y}` : "—");
   });
   const total = () => counts().reduce((sum, n) => sum + n, 0);
   const bump = (i: number) =>
     setCounts((prev) => prev.map((n, j) => (j === i ? n + 1 : n)));
+  const bottomBump = (i: number) => {
+    bump(i);
+    setBottomAction(`TILE ${i + 1}`);
+  };
   const padLabel = () => `0x${padRaw().toString(16).padStart(4, "0")}`;
 
   return (
-    <View debugName="ThreeDsScreen" class="relative flex-col w-full h-full bg-slate-950 overflow-hidden">
-      {/* Edge ticks straddling the middle of each edge: (200, 120). */}
-      <View class="absolute left-[196] top-0 w-[8] h-[3] bg-slate-500" />
-      <View class="absolute left-[196] bottom-0 w-[8] h-[3] bg-slate-500" />
-      <View class="absolute left-0 top-[116] w-[3] h-[8] bg-slate-500" />
-      <View class="absolute right-0 top-[116] w-[3] h-[8] bg-slate-500" />
+    <>
+      <View debugName="ThreeDsScreen" class="relative flex-col w-full h-full bg-slate-950 overflow-hidden">
+        {/* Edge ticks straddling the middle of each edge: (200, 120). */}
+        <View class="absolute left-[196] top-0 w-[8] h-[3] bg-slate-500" />
+        <View class="absolute left-[196] bottom-0 w-[8] h-[3] bg-slate-500" />
+        <View class="absolute left-0 top-[116] w-[3] h-[8] bg-slate-500" />
+        <View class="absolute right-0 top-[116] w-[3] h-[8] bg-slate-500" />
 
-      {/* Corner brackets, one color each, drawn from the screen edge. */}
-      <View class="absolute left-0 top-0 w-[18] h-[3] bg-red-500" />
-      <View class="absolute left-0 top-0 w-[3] h-[18] bg-red-500" />
-      <View class="absolute right-0 top-0 w-[18] h-[3] bg-emerald-500" />
-      <View class="absolute right-0 top-0 w-[3] h-[18] bg-emerald-500" />
-      <View class="absolute left-0 bottom-0 w-[18] h-[3] bg-blue-500" />
-      <View class="absolute left-0 bottom-0 w-[3] h-[18] bg-blue-500" />
-      <View class="absolute right-0 bottom-0 w-[18] h-[3] bg-amber-500" />
-      <View class="absolute right-0 bottom-0 w-[3] h-[18] bg-amber-500" />
+        {/* Corner brackets, one color each, drawn from the screen edge. */}
+        <View class="absolute left-0 top-0 w-[18] h-[3] bg-red-500" />
+        <View class="absolute left-0 top-0 w-[3] h-[18] bg-red-500" />
+        <View class="absolute right-0 top-0 w-[18] h-[3] bg-emerald-500" />
+        <View class="absolute right-0 top-0 w-[3] h-[18] bg-emerald-500" />
+        <View class="absolute left-0 bottom-0 w-[18] h-[3] bg-blue-500" />
+        <View class="absolute left-0 bottom-0 w-[3] h-[18] bg-blue-500" />
+        <View class="absolute right-0 bottom-0 w-[18] h-[3] bg-amber-500" />
+        <View class="absolute right-0 bottom-0 w-[3] h-[18] bg-amber-500" />
 
-      <View debugName="Content" class="flex-col w-full h-full p-3 gap-2">
-        <View debugName="Header" class="flex-row items-center justify-between">
-          <View class="flex-row items-center gap-2">
-            <Image class="w-8 h-8 rounded-lg" src="logo.png" />
-            <View class="flex-col">
-              <Text class="text-base text-slate-50 font-bold tracking-wide">PocketJS on 3DS</Text>
-              <Text class="text-xs text-slate-400 tracking-wide">TOP SCREEN · PICA200</Text>
+        <View debugName="Content" class="flex-col w-full h-full p-3 gap-2">
+          <View debugName="Header" class="flex-row items-center justify-between">
+            <View class="flex-row items-center gap-2">
+              <Image class="w-8 h-8 rounded-lg" src="logo.png" />
+              <View class="flex-col">
+                <Text class="text-base text-slate-50 font-bold tracking-wide">PocketJS on 3DS</Text>
+                <Text class="text-xs text-slate-400 tracking-wide">TOP SCREEN · PICA200</Text>
+              </View>
             </View>
-          </View>
-          <View class="px-2 py-1 rounded-md border border-slate-600 bg-slate-900">
-            <Text class="text-sm text-emerald-400 font-bold">400 × 240</Text>
-          </View>
-        </View>
-
-        <View debugName="Middle" class="flex-row items-start gap-3">
-          <Image debugName="OrientKey" class="w-16 h-16" src="orient-key.svg" />
-
-          <View debugName="Score" class="flex-col items-start grow gap-1">
-            <Text class="text-xs text-slate-500 tracking-wide">PRESSES</Text>
-            <Text class="text-2xl text-slate-50 font-bold">{total()}</Text>
-            <View
-              class="px-2 py-1 rounded-md border border-slate-700 bg-slate-900 focus:bg-cyan-900 focus:border-cyan-400 transition-colors duration-150"
-              focusable
-              onPress={() => setCounts([0, 0, 0])}
-            >
-              <Text class="text-sm text-cyan-300 font-bold">RESET</Text>
+            <View class="px-2 py-1 rounded-md border border-slate-600 bg-slate-900">
+              <Text class="text-sm text-emerald-400 font-bold">400 × 240</Text>
             </View>
           </View>
 
-          <View debugName="Pad" class="flex-col items-center gap-1">
-            <View class="relative w-[72] h-[72] rounded-lg border border-slate-700 bg-slate-900">
-              <View class="absolute left-[33] top-[33] w-[6] h-[6] rounded-full bg-slate-700" />
+          <View debugName="Middle" class="flex-row items-start gap-3">
+            <Image debugName="OrientKey" class="w-16 h-16" src="orient-key.svg" />
+
+            <View debugName="Score" class="flex-col items-start grow gap-1">
+              <Text class="text-xs text-slate-500 tracking-wide">PRESSES</Text>
+              <Text class="text-2xl text-slate-50 font-bold">{total()}</Text>
               <View
-                class="absolute left-[31] top-[31] w-[10] h-[10] rounded-full bg-cyan-400"
-                style={{
-                  translateX: Math.round(padX() * PAD_TRAVEL),
-                  translateY: Math.round(padY() * PAD_TRAVEL),
-                }}
-              />
+                class="px-2 py-1 rounded-md border border-slate-700 bg-slate-900 focus:bg-cyan-900 focus:border-cyan-400 transition-colors duration-150"
+                focusable
+                onPress={() => setCounts([0, 0, 0])}
+              >
+                <Text class="text-sm text-cyan-300 font-bold">RESET</Text>
+              </View>
             </View>
-            <Text class="text-xs text-slate-400 tracking-wide">PAD {padLabel()}</Text>
+
+            <View debugName="Pad" class="flex-col items-center gap-1">
+              <View class="relative w-[72] h-[72] rounded-lg border border-slate-700 bg-slate-900">
+                <View class="absolute left-[33] top-[33] w-[6] h-[6] rounded-full bg-slate-700" />
+                <View
+                  class="absolute left-[31] top-[31] w-[10] h-[10] rounded-full bg-cyan-400"
+                  style={{
+                    translateX: Math.round(padX() * PAD_TRAVEL),
+                    translateY: Math.round(padY() * PAD_TRAVEL),
+                  }}
+                />
+              </View>
+              <Text class="text-xs text-slate-400 tracking-wide">PAD {padLabel()}</Text>
+            </View>
+          </View>
+
+          <View debugName="TileRow" class="flex-row gap-2">
+            {TILES.map((tile, i) => (
+              <View class={tile.cls} focusable onPress={() => bump(i)}>
+                <Text class="text-xs text-slate-400 tracking-wide">{tile.label}</Text>
+                <Text class={tile.value}>{counts()[i]}</Text>
+              </View>
+            ))}
+          </View>
+
+          <Text class="text-xs text-slate-500 tracking-wide">
+            D-PAD FOCUS · A CONFIRMS · CIRCLE PAD MOVES THE DOT
+          </Text>
+        </View>
+      </View>
+      <AuxiliarySurface>
+        <View
+          debugName="ThreeDsBottomScreen"
+          class="relative flex-col w-full h-full p-3 gap-2 bg-slate-900 overflow-hidden"
+        >
+          <View class="flex-row items-center justify-between">
+            <View class="flex-col">
+              <Text class="text-base text-slate-50 font-bold">AUXILIARY SURFACE</Text>
+              <Text class="text-xs text-cyan-300 tracking-wide">BOTTOM · TOUCH 320 × 240</Text>
+            </View>
+            <View class="px-2 py-1 rounded-md border border-slate-600 bg-slate-950">
+              <Text class="text-sm text-emerald-400 font-bold">{total()}</Text>
+            </View>
+          </View>
+
+          <Text class="text-xs text-slate-400 tracking-wide">
+            TAP A TILE · TOP-SCREEN COUNTERS UPDATE
+          </Text>
+
+          <View class="flex-row gap-2">
+            {TILES.map((tile, i) => (
+              <View
+                debugName={`BottomTile${i + 1}`}
+                class="flex-col items-center justify-center gap-1 w-[93] h-[76] rounded-lg border border-slate-600 bg-slate-800 active:bg-cyan-900 active:border-cyan-300"
+                focusable
+                onPress={() => bottomBump(i)}
+              >
+                <Text class="text-xs text-slate-300 tracking-wide">{tile.label}</Text>
+                <Text class={tile.value}>{counts()[i]}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View class="flex-row items-center justify-between">
+            <View class="flex-col">
+              <Text class="text-xs text-slate-500 tracking-wide">LAST ACTION</Text>
+              <Text class="text-sm text-amber-300 font-bold">{bottomAction()}</Text>
+            </View>
+            <View class="flex-col items-end">
+              <Text class="text-xs text-slate-500 tracking-wide">CONTACT</Text>
+              <Text class="text-sm text-cyan-300 font-bold">{touchPoint()}</Text>
+            </View>
+            <View
+              class="px-3 py-2 rounded-lg border border-slate-600 bg-slate-950 active:bg-red-900 active:border-red-300"
+              focusable
+              onPress={() => {
+                setCounts([0, 0, 0]);
+                setBottomAction("RESET");
+              }}
+            >
+              <Text class="text-sm text-red-300 font-bold">RESET</Text>
+            </View>
           </View>
         </View>
-
-        <View debugName="TileRow" class="flex-row gap-2">
-          {TILES.map((tile, i) => (
-            <View class={tile.cls} focusable onPress={() => bump(i)}>
-              <Text class="text-xs text-slate-400 tracking-wide">{tile.label}</Text>
-              <Text class={tile.value}>{counts()[i]}</Text>
-            </View>
-          ))}
-        </View>
-
-        <Text class="text-xs text-slate-500 tracking-wide">
-          D-PAD FOCUS · A CONFIRMS · CIRCLE PAD MOVES THE DOT
-        </Text>
-      </View>
-    </View>
+      </AuxiliarySurface>
+    </>
   );
 }

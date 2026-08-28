@@ -15,7 +15,13 @@ if (Bun.resolveSync("solid-js", import.meta.dir).endsWith("server.js")) {
 
 import { installHost, type Host, type HostOps } from "../framework/src/host.ts";
 import { render as publicRender } from "../framework/src/index.ts";
-import { expandTape, expandTapeTouch, fmt, type Tape } from "../framework/src/devtools.ts";
+import {
+  expandTape,
+  expandTapeTouch,
+  expandTapeTouchSurfaces,
+  fmt,
+  type Tape,
+} from "../framework/src/devtools.ts";
 import { touches, __packTouch } from "../framework/src/touch.ts";
 import { onFrame } from "../framework/src/lifecycle.ts";
 import {
@@ -420,6 +426,29 @@ describe("tape v2 touch track", () => {
   test("expandTapeTouch on a v1 tape is all undefined", () => {
     const tape: Tape = { v: 1, frames: 3, masks: [[0, 3]] };
     expect(expandTapeTouch(tape)).toEqual([undefined, undefined, undefined]);
+  });
+
+  test("v3 records and expands the parallel auxiliary-surface lane", () => {
+    mountApp(() => View({}));
+    const packed = __packTouch(3, 120, 80);
+    const frameWithSurface = (globalThis as {
+      frame?: (
+        buttons: number,
+        analog?: number,
+        touches?: readonly number[],
+        hits?: readonly number[],
+        surfaces?: readonly number[],
+      ) => void;
+    }).frame!;
+    frameWithSurface(0, undefined, [packed], [7], [1]);
+    frameWithSurface(0);
+    push({ t: "dumpTape" });
+    frame(0);
+    const tape = sent("tape")[0].tape as Tape;
+    expect(tape.v).toBe(3);
+    expect(tape.touch).toEqual([[0, [packed]]]);
+    expect(tape.touchSurfaces).toEqual([[0, [1]]]);
+    expect(expandTapeTouchSurfaces(tape)).toEqual([[1], undefined, undefined]);
   });
 });
 

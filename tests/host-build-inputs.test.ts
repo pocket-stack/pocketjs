@@ -60,6 +60,12 @@ describe("custom host build boundary", () => {
       POCKETJS_PHYSICAL_HEIGHT: "272",
       POCKETJS_PRESENTATION: "integer-fit",
       POCKETJS_RASTER_DENSITY: "1",
+      POCKETJS_AUX_LOGICAL_WIDTH: "",
+      POCKETJS_AUX_LOGICAL_HEIGHT: "",
+      POCKETJS_AUX_PHYSICAL_WIDTH: "",
+      POCKETJS_AUX_PHYSICAL_HEIGHT: "",
+      POCKETJS_AUX_PRESENTATION: "",
+      POCKETJS_AUX_RASTER_DENSITY: "",
     });
   });
 });

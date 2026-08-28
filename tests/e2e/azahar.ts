@@ -1,7 +1,7 @@
 // tests/e2e/azahar.ts — deterministic Nintendo 3DS E2E: build a capture .3dsx
 // per golden spec, boot it in Azahar against a per-run emulator user directory,
 // wait for the guest's completion marker, then byte-compare the decoded
-// 400x240 top-screen readbacks against tests/goldens/3ds/.
+// top- and bottom-screen readbacks against tests/goldens/3ds/.
 //
 //   bun run e2e:3ds               # compare against tests/goldens/3ds/
 //   UPDATE_3DS=1 bun run e2e:3ds  # regenerate goldens (then eyeball the PNGs)
@@ -37,7 +37,12 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { homedir } from "node:os";
 import { demoManifestFor } from "../../tools/demo-identity.ts";
 import { encodePNG } from "../png.ts";
-import { encodeThresholdInput, THREE_DS_GOLDEN_SPECS, type GoldenSpec } from "../golden-specs.ts";
+import {
+  encodeThresholdInput,
+  encodeTouchInput,
+  THREE_DS_GOLDEN_SPECS,
+  type GoldenSpec,
+} from "../golden-specs.ts";
 
 const ROOT = new URL("../..", import.meta.url).pathname;
 const OUT = `${ROOT}dist/e2e-3ds`;
@@ -56,6 +61,9 @@ const GOLDENS = `${ROOT}tests/goldens/3ds`;
 const W = 400;
 const H = 240;
 const RAW_BYTES = W * H * 4;
+const AUX_W = 320;
+const AUX_H = 240;
+const AUX_RAW_BYTES = AUX_W * AUX_H * 4;
 
 const TIMEOUT_MS = Number(process.env.E2E_AZAHAR_TIMEOUT_MS ?? 180_000);
 const LAUNCH_GRACE_MS = 20_000;
@@ -231,12 +239,12 @@ async function runAzahar(rom: string): Promise<void> {
  *  240 wide by 400 tall, column-major, and each RGBA8 word is stored A,B,G,R.
  *  Decoding it as a plain 400x240 image mismatches every pixel while looking
  *  almost right. */
-function decodeTopScreen(raw: Uint8Array): Uint8Array {
-  const rgba = new Uint8Array(RAW_BYTES);
-  for (let x = 0; x < W; x++) {
-    for (let y = 0; y < H; y++) {
-      const source = (x * H + (H - 1 - y)) * 4;
-      const destination = (y * W + x) * 4;
+function decodeScreen(raw: Uint8Array, width: number, height: number): Uint8Array {
+  const rgba = new Uint8Array(width * height * 4);
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      const source = (x * height + (height - 1 - y)) * 4;
+      const destination = (y * width + x) * 4;
       rgba[destination] = raw[source + 3];
       rgba[destination + 1] = raw[source + 2];
       rgba[destination + 2] = raw[source + 1];
@@ -258,11 +266,11 @@ function isNonFlat(rgba: Uint8Array): boolean {
 
 /** Prove the frame is the top screen's own 400x240 and not a 200x120 render
  *  with every pixel doubled. */
-function hasNativeDetail(rgba: Uint8Array): boolean {
-  for (let y = 0; y < H; y += 2) {
-    for (let x = 0; x < W; x += 2) {
-      const topLeft = (y * W + x) * 4;
-      for (const offset of [topLeft + 4, topLeft + W * 4, topLeft + W * 4 + 4]) {
+function hasNativeDetail(rgba: Uint8Array, width: number, height: number): boolean {
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const topLeft = (y * width + x) * 4;
+      for (const offset of [topLeft + 4, topLeft + width * 4, topLeft + width * 4 + 4]) {
         for (let channel = 0; channel < 4; channel++) {
           if (rgba[topLeft + channel] !== rgba[offset + channel]) return true;
         }
@@ -317,6 +325,9 @@ for (const spec of specs) {
       .env({
         ...process.env,
         POCKETJS_CAPTURE_INPUT: encodeThresholdInput(spec),
+        // The generic host tape uses semicolons. The 3DS build flag uses @ so
+        // the baked value remains one shell argument through Make.
+        POCKETJS_CAPTURE_TOUCH: encodeTouchInput(spec).replaceAll(";", "@"),
         POCKETJS_CAP_START: "0",
         POCKETJS_CAP_N: String(capN),
       })
@@ -343,46 +354,64 @@ for (const spec of specs) {
   }
 
   for (const frame of spec.capture) {
-    const label = `${spec.name}.${frame}`;
-    try {
-      // Structural guards run before any comparison, and in UPDATE mode too: a
-      // golden that is short, flat, or upscaled must never be recorded.
-      const rawPath = `${CAPTURE_DIR}/f${String(frame).padStart(4, "0")}.raw`;
-      if (!existsSync(rawPath)) throw new Error(`${label}: capture file missing`);
-      const raw = readFileSync(rawPath);
-      if (raw.byteLength !== RAW_BYTES) {
-        throw new Error(`${label}: expected ${RAW_BYTES} bytes (400x240 RGBA8), got ${raw.byteLength}`);
-      }
-      const rgba = decodeTopScreen(raw);
-      if (!isNonFlat(rgba)) throw new Error(`${label}: degenerate flat frame`);
-      if (!hasNativeDetail(rgba)) {
-        throw new Error(`${label}: frame contains only duplicated 2x2 pixels`);
-      }
+    for (const surface of [
+      { suffix: "", name: "top", width: W, height: H, bytes: RAW_BYTES },
+      { suffix: "aux-", name: "auxiliary", width: AUX_W, height: AUX_H, bytes: AUX_RAW_BYTES },
+    ] as const) {
+      const baseLabel = `${spec.name}.${frame}`;
+      const label = surface.name === "top" ? baseLabel : `${baseLabel}.${surface.name}`;
+      try {
+        // Structural guards run before any comparison, and in UPDATE mode too:
+        // a golden that is short, flat, or upscaled must never be recorded.
+        const rawPath =
+          `${CAPTURE_DIR}/${surface.suffix}f${String(frame).padStart(4, "0")}.raw`;
+        if (!existsSync(rawPath)) throw new Error(`${label}: capture file missing`);
+        const raw = readFileSync(rawPath);
+        if (raw.byteLength !== surface.bytes) {
+          throw new Error(
+            `${label}: expected ${surface.bytes} bytes ` +
+              `(${surface.width}x${surface.height} RGBA8), got ${raw.byteLength}`,
+          );
+        }
+        const rgba = decodeScreen(raw, surface.width, surface.height);
+        if (!isNonFlat(rgba)) throw new Error(`${label}: degenerate flat frame`);
+        if (!hasNativeDetail(rgba, surface.width, surface.height)) {
+          throw new Error(`${label}: frame contains only duplicated 2x2 pixels`);
+        }
 
-      const actual = encodePNG(rgba, W, H);
-      const golden = `${GOLDENS}/${label}.png`;
-      if (update) {
-        writeFileSync(golden, actual);
-        console.log(`WROTE ${label} (400x240 PICA200 readback)`);
+        const actual = encodePNG(rgba, surface.width, surface.height);
+        const golden = `${GOLDENS}/${label}.png`;
+        if (update) {
+          writeFileSync(golden, actual);
+          console.log(
+            `WROTE ${label} ` +
+              `(${surface.width}x${surface.height} ${surface.name} PICA200 readback)`,
+          );
+          passed++;
+          continue;
+        }
+        if (!existsSync(golden)) {
+          throw new Error(`${label}: golden missing (run with UPDATE_3DS=1 after visual review)`);
+        }
+        if (!actual.equals(readFileSync(golden))) {
+          writeFileSync(`${OUT}/${label}.actual.png`, actual);
+          const drift =
+            recordedStamp && recordedStamp !== buildStamp
+              ? ` — note: goldens came from ${recordedStamp}, this run is ${buildStamp}`
+              : "";
+          throw new Error(
+            `${label}: PNG bytes differ (see dist/e2e-3ds/${label}.actual.png)${drift}`,
+          );
+        }
+        console.log(
+          `PASS ${label} ` +
+            `(${surface.width}x${surface.height} ${surface.name} screen, byte-exact)`,
+        );
         passed++;
-        continue;
+      } catch (error) {
+        console.error(`FAIL ${(error as Error).message}`);
+        failed++;
       }
-      if (!existsSync(golden)) {
-        throw new Error(`${label}: golden missing (run with UPDATE_3DS=1 after visual review)`);
-      }
-      if (!actual.equals(readFileSync(golden))) {
-        writeFileSync(`${OUT}/${label}.actual.png`, actual);
-        const drift =
-          recordedStamp && recordedStamp !== buildStamp
-            ? ` — note: goldens came from ${recordedStamp}, this run is ${buildStamp}`
-            : "";
-        throw new Error(`${label}: PNG bytes differ (see dist/e2e-3ds/${label}.actual.png)${drift}`);
-      }
-      console.log(`PASS ${label} (400x240 top screen, byte-exact)`);
-      passed++;
-    } catch (error) {
-      console.error(`FAIL ${(error as Error).message}`);
-      failed++;
     }
   }
 }

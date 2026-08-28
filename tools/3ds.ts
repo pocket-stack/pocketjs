@@ -32,11 +32,9 @@
 // The contract with hosts/3ds/Makefile
 // ---------------------------------------------------------------------------
 // The Makefile runs in the container with CWD /repo/hosts/3ds and receives all
-// paths as container paths. It gets the twelve variables hostBuildEnvironment()
-// emits (POCKETJS_APP_OUTPUT, POCKETJS_EMBED_APP, POCKETJS_OUTPUT_DIR,
-// POCKETJS_TARGET, POCKETJS_HOST_ABI, POCKETJS_LOGICAL_WIDTH/HEIGHT,
-// POCKETJS_PHYSICAL_WIDTH/HEIGHT, POCKETJS_PRESENTATION,
-// POCKETJS_RASTER_DENSITY) — POCKETJS_TARGET and POCKETJS_HOST_ABI are the
+// paths as container paths. It gets the application, target, primary-display,
+// and auxiliary-display variables hostBuildEnvironment() emits —
+// POCKETJS_TARGET and POCKETJS_HOST_ABI are the
 // values the host must publish as ui.__host / ui.__hostAbi, so the C compile
 // derives -DPOCKETJS_TARGET_ID and -DPOCKETJS_HOST_ABI from them rather than
 // from literals — plus:
@@ -52,6 +50,7 @@
 //   POCKETJS_SMDH_DESC     application description
 //   POCKETJS_CAPTURE       "1" under --capture, "" otherwise
 //   POCKETJS_CAPTURE_INPUT scripted input tape ("frame:mask,…"), baked in
+//   POCKETJS_CAPTURE_TOUCH scripted bottom-screen touch tape, baked in
 //   POCKETJS_CAP_START     first frame to dump
 //   POCKETJS_CAP_N         how many frames to dump
 //
@@ -268,12 +267,13 @@ const USAGE =
 
 export interface CaptureDefines {
   readonly input: string;
+  readonly touch: string;
   readonly start: string;
   readonly count: string;
 }
 
 /**
- * Validate the three values compiled into a capture binary. Besides giving
+ * Validate the values compiled into a capture binary. Besides giving
  * direct `--capture` builds a complete 0..0 default window, the narrow grammar
  * keeps environment text from becoming C or shell syntax in the Makefile's
  * `-D` arguments.
@@ -282,6 +282,7 @@ export function captureDefines(
   environment: Readonly<Record<string, string | undefined>>,
 ): CaptureDefines {
   const input = environment.POCKETJS_CAPTURE_INPUT ?? "";
+  const touch = environment.POCKETJS_CAPTURE_TOUCH ?? "";
   const start = environment.POCKETJS_CAP_START ?? "0";
   const count = environment.POCKETJS_CAP_N ?? "1";
   const integer = "(?:0[xX][0-9a-fA-F]+|[0-9]+)";
@@ -291,18 +292,40 @@ export function captureDefines(
       "PocketJS 3ds: POCKETJS_CAPTURE_INPUT must be frame:mask pairs separated by commas",
     );
   }
-  const boundedDecimal = (name: string, value: string, allowZero: boolean): void => {
-    if (!/^[0-9]+$/.test(value)) {
-      throw new Error(`PocketJS 3ds: ${name} must be an unsigned decimal integer`);
-    }
-    const parsed = BigInt(value);
-    if (parsed > 0xffff_ffffn || (!allowZero && parsed === 0n)) {
-      throw new Error(`PocketJS 3ds: ${name} is outside its supported range`);
-    }
-  };
-  boundedDecimal("POCKETJS_CAP_START", start, true);
-  boundedDecimal("POCKETJS_CAP_N", count, false);
-  return { input, start, count };
+  const touchTape =
+    /^(?:[0-9]+:(?:-|[0-9]+,[0-9]+,[0-9]+))(?:@[0-9]+:(?:-|[0-9]+,[0-9]+,[0-9]+))*$/;
+  if (touch !== "" && !touchTape.test(touch)) {
+    throw new Error(
+      "PocketJS 3ds: POCKETJS_CAPTURE_TOUCH must be frame:- or frame:id,x,y entries separated by @",
+    );
+  }
+  for (const entry of touch === "" ? [] : touch.split("@")) {
+    const [frame, payload] = entry.split(":");
+    boundedCaptureInteger("POCKETJS_CAPTURE_TOUCH frame", frame!, true);
+    if (payload === "-") continue;
+    const [id, x, y] = payload!.split(",");
+    boundedCaptureInteger("POCKETJS_CAPTURE_TOUCH id", id!, true, 0xffn);
+    boundedCaptureInteger("POCKETJS_CAPTURE_TOUCH x", x!, true, 319n);
+    boundedCaptureInteger("POCKETJS_CAPTURE_TOUCH y", y!, true, 239n);
+  }
+  boundedCaptureInteger("POCKETJS_CAP_START", start, true);
+  boundedCaptureInteger("POCKETJS_CAP_N", count, false);
+  return { input, touch, start, count };
+}
+
+function boundedCaptureInteger(
+  name: string,
+  value: string,
+  allowZero: boolean,
+  maximum = 0xffff_ffffn,
+): void {
+  if (!/^[0-9]+$/.test(value)) {
+    throw new Error(`PocketJS 3ds: ${name} must be an unsigned decimal integer`);
+  }
+  const parsed = BigInt(value);
+  if (parsed > maximum || (!allowZero && parsed === 0n)) {
+    throw new Error(`PocketJS 3ds: ${name} is outside its supported range`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -766,7 +789,7 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
   const inputs = extractHostBuildInputs(plan, { expectedTarget: TARGET_ID });
   const capture = args.capture
     ? captureDefines(process.env)
-    : { input: "", start: "", count: "" };
+    : { input: "", touch: "", start: "", count: "" };
 
   // 1. guest bundle + pak
   console.log(`PocketJS 3ds: building app "${plan.app.output}" (${plan.app.framework})`);
@@ -856,6 +879,7 @@ export async function build3ds(argv: readonly string[]): Promise<string> {
     POCKETJS_CAPTURE: args.capture ? "1" : "",
     // Explicit so a previous run's tape never lingers in the object cache.
     POCKETJS_CAPTURE_INPUT: capture.input,
+    POCKETJS_CAPTURE_TOUCH: capture.touch,
     POCKETJS_CAP_START: capture.start,
     POCKETJS_CAP_N: capture.count,
     // The CIA goal is off unless POCKETJS_OUT_CIA names a file. Title, product

@@ -35,3 +35,48 @@ pub struct HitTable {
     pub(crate) hits: [i32; 8],
     pub(crate) live: [bool; 8],
 }
+
+impl HitTable {
+    pub(crate) fn resolve(
+        &mut self,
+        packed: &[u32],
+        out: &mut [i32; 8],
+        mut query: impl FnMut(f32, f32) -> i32,
+    ) -> usize {
+        let n = packed.len().min(8);
+        let mut seen = [false; 8];
+        for i in 0..n {
+            let (id, x, y) = decode(packed[i]);
+            let mut carried = None;
+            for (slot, seen_slot) in seen.iter_mut().enumerate() {
+                if self.live[slot] && self.ids[slot] == id {
+                    carried = Some(self.hits[slot]);
+                    *seen_slot = true;
+                    break;
+                }
+            }
+            out[i] = match carried {
+                Some(hit) => hit,
+                None => {
+                    let hit = query(x, y);
+                    for (slot, seen_slot) in seen.iter_mut().enumerate() {
+                        if !self.live[slot] {
+                            self.live[slot] = true;
+                            self.ids[slot] = id;
+                            self.hits[slot] = hit;
+                            *seen_slot = true;
+                            break;
+                        }
+                    }
+                    hit
+                }
+            };
+        }
+        for (slot, seen_slot) in seen.iter().enumerate() {
+            if self.live[slot] && !seen_slot {
+                self.live[slot] = false;
+            }
+        }
+        n
+    }
+}

@@ -5,11 +5,16 @@ import { POCKET_TARGETS } from "../contracts/spec/platforms.ts";
 import { POCKET_PACKAGE_TARGET_BYTES } from "../contracts/spec/pocket-package.ts";
 import { verifyPlanHash } from "../framework/src/manifest/plan.ts";
 import {
+  extractHostBuildInputs,
+  hostBuildEnvironment,
+} from "../framework/src/manifest/host-build-inputs.ts";
+import {
   validateAndResolveBuildPlan,
   validatePlatformContractRegistry,
 } from "../framework/src/manifest/resolve.ts";
 import {
   resolve3dsBuildPlan,
+  THREE_DS_AUXILIARY_VIEWPORT,
   THREE_DS_DEV_CONTRACTS,
   THREE_DS_DEV_HOST_ABI,
   THREE_DS_DEV_TARGET_ID,
@@ -51,6 +56,20 @@ function topScreenManifest(): Record<string, any> {
   };
 }
 
+function dualScreenManifest(): Record<string, any> {
+  const value = topScreenManifest();
+  value.engine.capabilities.requires.push(
+    "display.auxiliary",
+    "input.touch.auxiliary",
+  );
+  value.app.surfaces = {
+    auxiliary: {
+      fixed: { logical: THREE_DS_AUXILIARY_VIEWPORT, presentation: "native" },
+    },
+  };
+  return value;
+}
+
 function diagnosticCodes(manifest: unknown): string[] {
   const resolution = validateAndResolveBuildPlan(
     manifest,
@@ -73,11 +92,19 @@ describe("private Nintendo 3DS build profile", () => {
         logicalViewports: [THREE_DS_VIEWPORT],
         presentations: ["native"],
         rasterDensity: 1,
+        auxiliary: {
+          physicalViewport: THREE_DS_AUXILIARY_VIEWPORT,
+          logicalViewports: [THREE_DS_AUXILIARY_VIEWPORT],
+          presentations: ["native"],
+          rasterDensity: 1,
+        },
       },
       capabilities: [
         "input.analog.left",
         "input.buttons",
         "input.cursor",
+        "input.touch.auxiliary",
+        "display.auxiliary",
         "text.glyphs.baked",
       ],
     });
@@ -87,8 +114,9 @@ describe("private Nintendo 3DS build profile", () => {
   test("takes the next hostAbi in the registry-wide sequence", () => {
     // hostAbi is one sequence across every profile, private ones included:
     // 1 psp, 2 vita, 3 macos-widget, 4 symbian-e7-dev, 5 pocketbook,
-    // 6 iphone2g-dev. A collision would let a bundle mount on the wrong host.
-    expect(THREE_DS_DEV_HOST_ABI).toBe(7);
+    // 6 iphone2g-dev, 7 the original top-screen-only 3DS wire. A collision
+    // would let a bundle mount on the wrong host.
+    expect(THREE_DS_DEV_HOST_ABI).toBe(8);
     expect(
       Object.values(POCKET_TARGETS).map((profile) => profile.hostAbi),
     ).not.toContain(THREE_DS_DEV_HOST_ABI);
@@ -122,6 +150,34 @@ describe("private Nintendo 3DS build profile", () => {
     });
     expect(plan.app.entry).toBe("apps/3ds-demo/main.tsx");
     expect(verifyPlanHash(plan)).toBe(true);
+  });
+
+  test("resolves the bottom screen and its touch as an independent output", () => {
+    const plan = resolve3dsBuildPlan(dualScreenManifest());
+    expect(plan.surfaces).toEqual({
+      auxiliary: {
+        logical: THREE_DS_AUXILIARY_VIEWPORT,
+        physical: THREE_DS_AUXILIARY_VIEWPORT,
+        presentation: "native",
+        rasterDensity: 1,
+      },
+    });
+    expect(plan.features["display.auxiliary"]).toBe(true);
+    expect(plan.features["input.touch.auxiliary"]).toBe(true);
+    expect(plan.features).not.toHaveProperty("input.touch");
+    expect(
+      hostBuildEnvironment(extractHostBuildInputs(plan), {
+        outputDirectory: "/tmp/pocket-3ds",
+        embedApp: true,
+      }),
+    ).toMatchObject({
+      POCKETJS_AUX_LOGICAL_WIDTH: "320",
+      POCKETJS_AUX_LOGICAL_HEIGHT: "240",
+      POCKETJS_AUX_PHYSICAL_WIDTH: "320",
+      POCKETJS_AUX_PHYSICAL_HEIGHT: "240",
+      POCKETJS_AUX_PRESENTATION: "native",
+      POCKETJS_AUX_RASTER_DENSITY: "1",
+    });
   });
 
   test("rejects the 480x272 integer-fit corpus", () => {
@@ -204,6 +260,16 @@ describe("private Nintendo 3DS build profile", () => {
     expect(imageArm).not.toContain("instance.upload_texture(");
   });
 
+  test("keeps each display batch inside its own shared-arena range", () => {
+    const gfx = readFileSync(
+      join(new URL("..", import.meta.url).pathname, "hosts/3ds/src/gfx.c"),
+      "utf8",
+    );
+    expect(gfx).toContain("batch->command_first = command_count");
+    expect(gfx).toContain("uint32_t start = vertex_count;");
+    expect(gfx).not.toContain("uint32_t start = 0;");
+  });
+
   test("pins the device toolchain and rebuilds shell-safe SMDH metadata", () => {
     expect(THREE_DS_CONTAINER_IMAGE).toMatch(
       /^devkitpro\/devkitarm@sha256:[0-9a-f]{64}$/,
@@ -227,17 +293,29 @@ describe("private Nintendo 3DS build profile", () => {
   });
 
   test("defaults and validates capture defines before they reach make", () => {
-    expect(captureDefines({})).toEqual({ input: "", start: "0", count: "1" });
+    expect(captureDefines({})).toEqual({ input: "", touch: "", start: "0", count: "1" });
     expect(
       captureDefines({
         POCKETJS_CAPTURE_INPUT: "0:0,4:0x20,8:0",
+        POCKETJS_CAPTURE_TOUCH: "0:-@6:0,60,110@9:-",
         POCKETJS_CAP_START: "2",
         POCKETJS_CAP_N: "3",
       }),
-    ).toEqual({ input: "0:0,4:0x20,8:0", start: "2", count: "3" });
+    ).toEqual({
+      input: "0:0,4:0x20,8:0",
+      touch: "0:-@6:0,60,110@9:-",
+      start: "2",
+      count: "3",
+    });
     expect(() =>
       captureDefines({ POCKETJS_CAPTURE_INPUT: '0:0";touch /tmp/pwned;"' }),
     ).toThrow("frame:mask pairs");
+    expect(() =>
+      captureDefines({ POCKETJS_CAPTURE_TOUCH: "0:-@6:0,320,110" }),
+    ).toThrow("outside its supported range");
+    expect(() =>
+      captureDefines({ POCKETJS_CAPTURE_TOUCH: "0:-@6:0,60,110;touch /tmp/pwned" }),
+    ).toThrow("frame:- or frame:id,x,y");
     expect(() => captureDefines({ POCKETJS_CAP_N: "0" })).toThrow(
       "outside its supported range",
     );

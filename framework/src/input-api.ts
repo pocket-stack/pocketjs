@@ -1,7 +1,7 @@
 // Input/focus public API.
 
 export { BTN } from "../../contracts/spec/spec.ts";
-export { touches, type TouchContact } from "./touch.ts";
+export { auxiliaryTouches, touches, type TouchContact } from "./touch.ts";
 export {
   cursorX,
   cursorY,

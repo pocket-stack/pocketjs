@@ -12,17 +12,15 @@ import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.t
  * The CIA has passed a hardware smoke on a New 3DS LL. It deliberately stays
  * out of the production `POCKET_TARGETS` registry while the host-specific
  * suite still leaves the synthesized cursor, sprite, streamed-texture and
- * large-atlas paths uncovered. The app owns the 400x240 top screen: the
- * PICA200 render target is that panel exactly, so the only presentation is
- * native at density 1.
- *
- * The touchscreen is the *bottom* screen (320x240) and is not advertised —
- * reporting its contacts as logical coordinates inside the top screen's space
- * would be a lie. That needs a second-surface design, not a capability id.
+ * large-atlas paths uncovered. The app owns the 400x240 top screen and a
+ * simultaneous 320x240 auxiliary bottom-screen output. Both PICA200 targets
+ * are native at density 1. The resistive panel reports contacts only through
+ * input.touch.auxiliary.
  */
 export const THREE_DS_DEV_TARGET_ID = "3ds-dev";
-export const THREE_DS_DEV_HOST_ABI = 7;
+export const THREE_DS_DEV_HOST_ABI = 8;
 export const THREE_DS_VIEWPORT = [400, 240] as const;
+export const THREE_DS_AUXILIARY_VIEWPORT = [320, 240] as const;
 
 export const THREE_DS_DEV_CONTRACTS = definePlatformContractRegistry(
   POCKET_CAPABILITIES,
@@ -36,11 +34,19 @@ export const THREE_DS_DEV_CONTRACTS = definePlatformContractRegistry(
         logicalViewports: [THREE_DS_VIEWPORT],
         presentations: ["native"],
         rasterDensity: 1,
+        auxiliary: {
+          physicalViewport: THREE_DS_AUXILIARY_VIEWPORT,
+          logicalViewports: [THREE_DS_AUXILIARY_VIEWPORT],
+          presentations: ["native"],
+          rasterDensity: 1,
+        },
       },
       capabilities: [
         "input.analog.left",
         "input.buttons",
         "input.cursor",
+        "input.touch.auxiliary",
+        "display.auxiliary",
         "text.glyphs.baked",
       ],
     },

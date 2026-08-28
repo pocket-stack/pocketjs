@@ -39,8 +39,9 @@ import {
   type NodeMirror,
 } from "./renderer.ts";
 import { setOverlayRoot } from "./overlay.ts";
+import { mountAuxiliarySurface, unmountAuxiliarySurface } from "./display.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
-import { handleFrame, setHitRoot, setInputRoot } from "./input.ts";
+import { handleFrame, setAuxiliaryHitRoot, setHitRoot, setInputRoot } from "./input.ts";
 import { __runGestures, resetGestures } from "./gesture.ts";
 import { installTouchActivation } from "./touch-activation.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
@@ -223,6 +224,8 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     }
   }
 
+  const auxiliary = mountAuxiliarySurface(host.ops);
+
   // Live-viewport hosts publish their logical UI size as ui.__viewport (the
   // core root is already sized to it via Ui::set_viewport); PSP/web hosts omit
   // it and keep the 480x272 contract.
@@ -256,6 +259,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
 
   setInputRoot(appRoot);
   setHitRoot(rootMirror); // hit tests see the overlay layer too
+  setAuxiliaryHitRoot(auxiliary?.native ?? null);
   resetFrameHooks();
   resetGestures();
   // The default tap->press recognizer registers FIRST: every component
@@ -266,10 +270,16 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md): flight recorder +
   // debug channel; one branch per frame when no transport is connected.
   installFrameHandler(
-    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[], hits?: readonly number[]) => {
+    wrapFrameHandler((
+      buttons: number,
+      analog: number,
+      touches?: readonly number[],
+      hits?: readonly number[],
+      touchSurfaces?: readonly number[],
+    ) => {
       __advanceClock(); // virtual frame++, fire due after() timers
       __setAnalog(analog); // latch the nub before any app code reads it
-      __setTouches(touches, hits); // latch contacts + their host-resolved hit facts
+      __setTouches(touches, hits, touchSurfaces); // latch contacts + surface-specific hit facts
       runServicePumps(); // only modules with pending async work register here
       __drainEffects(); // frame-boundary deliveries enter the world first
       __runGestures(); // contact lifecycles resolve before app hooks read them
@@ -288,6 +298,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
     dispose(); // tears down reactivity only — universal keeps the nodes
     setInputRoot(null); // drops focus state (native focus dies with the nodes)
     setHitRoot(null);
+    setAuxiliaryHitRoot(null);
     setOverlayRoot(null);
     appLayer = null;
     overlayLayer = null;
@@ -295,6 +306,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
       child.parent = null;
       host.ops.destroyNode(child.id); // recursive native destroy
     }
+    unmountAuxiliarySurface(host.ops);
     runSweep(); // anything already detached this frame is garbage too
   };
 }

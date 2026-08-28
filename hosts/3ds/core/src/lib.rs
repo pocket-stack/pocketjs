@@ -42,6 +42,8 @@ static mut UI: Option<Ui> = None;
 /// cached by the caller across frames.
 static mut DRAW_PTR: *const u32 = core::ptr::null();
 static mut DRAW_LEN: usize = 0;
+static mut AUX_DRAW_PTR: *const u32 = core::ptr::null();
+static mut AUX_DRAW_LEN: usize = 0;
 
 /// `ui:img.<name>` and `ui:sprite.<name>` registrations from the last
 /// `ui_feed_pak`, in pak order. The host publishes them as `ui.__textures` /
@@ -131,6 +133,8 @@ fn clear_draw_snapshot() {
     unsafe {
         DRAW_PTR = core::ptr::null();
         DRAW_LEN = 0;
+        AUX_DRAW_PTR = core::ptr::null();
+        AUX_DRAW_LEN = 0;
     }
 }
 
@@ -174,6 +178,28 @@ pub extern "C" fn ui_viewport_width() -> u32 {
 #[no_mangle]
 pub extern "C" fn ui_viewport_height() -> u32 {
     ui().viewport().1 as u32
+}
+
+#[no_mangle]
+pub extern "C" fn ui_create_auxiliary_surface(width: f32, height: f32) -> i32 {
+    let root = ui().create_auxiliary_surface(width, height);
+    clear_draw_snapshot();
+    root
+}
+
+#[no_mangle]
+pub extern "C" fn ui_auxiliary_surface_root() -> i32 {
+    ui().auxiliary_surface_root()
+}
+
+#[no_mangle]
+pub extern "C" fn ui_auxiliary_viewport_width() -> u32 {
+    ui().auxiliary_viewport().map_or(0, |viewport| viewport.0 as u32)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_auxiliary_viewport_height() -> u32 {
+    ui().auxiliary_viewport().map_or(0, |viewport| viewport.1 as u32)
 }
 
 /// Optional C-side scratch allocation out of the Rust heap. The caller must
@@ -328,6 +354,37 @@ pub extern "C" fn ui_hit_test_bounds(x: f32, y: f32) -> i32 {
 }
 
 #[no_mangle]
+pub extern "C" fn ui_hit_test_auxiliary(x: f32, y: f32) -> i32 {
+    ui().hit_test_auxiliary(x, y)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_hit_test_bounds_auxiliary(x: f32, y: f32) -> i32 {
+    ui().hit_test_bounds_auxiliary(x, y)
+}
+
+#[no_mangle]
+pub extern "C" fn ui_touch_hits_auxiliary(
+    packed: *const u32,
+    length: usize,
+    out: *mut i32,
+    out_length: usize,
+) -> usize {
+    let contacts = if packed.is_null() || length == 0 {
+        &[]
+    } else {
+        unsafe { core::slice::from_raw_parts(packed, length.min(8)) }
+    };
+    let mut hits = [0i32; 8];
+    let count = ui().touch_hits_auxiliary(contacts, &mut hits);
+    let written = count.min(out_length);
+    if !out.is_null() && written > 0 {
+        unsafe { core::ptr::copy_nonoverlapping(hits.as_ptr(), out, written) };
+    }
+    written
+}
+
+#[no_mangle]
 pub extern "C" fn ui_set_cursor(texture: i32, hot_x: f32, hot_y: f32, width: f32, height: f32) {
     ui().set_cursor(texture, hot_x, hot_y, width, height);
 }
@@ -384,6 +441,32 @@ pub extern "C" fn ui_draw_list_ptr() -> *const u32 {
 #[no_mangle]
 pub extern "C" fn ui_draw_list_len() -> usize {
     unsafe { DRAW_LEN }
+}
+
+#[no_mangle]
+pub extern "C" fn ui_draw_auxiliary() -> usize {
+    let Some(draw_list) = ui().draw_auxiliary() else {
+        unsafe {
+            AUX_DRAW_PTR = core::ptr::null();
+            AUX_DRAW_LEN = 0;
+        }
+        return 0;
+    };
+    unsafe {
+        AUX_DRAW_PTR = draw_list.words.as_ptr();
+        AUX_DRAW_LEN = draw_list.words.len();
+        AUX_DRAW_LEN
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn ui_draw_auxiliary_list_ptr() -> *const u32 {
+    unsafe { AUX_DRAW_PTR }
+}
+
+#[no_mangle]
+pub extern "C" fn ui_draw_auxiliary_list_len() -> usize {
+    unsafe { AUX_DRAW_LEN }
 }
 
 /// FNV-1a64 over the last built word stream — the cheap frame identity the

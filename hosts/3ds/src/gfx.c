@@ -63,14 +63,14 @@
 #define PICA_TEX_MAX 1024u
 
 /*
- * A frame's whole geometry lives in one linear-memory bump arena. 24576
- * vertices is 864 KiB and roughly 4000 quads — an order of magnitude more
- * than a 400x240 screen of text and boxes emits. Overflow drops the rest of
- * the frame's geometry and is counted, never silent.
+ * Both outputs' geometry lives in one linear-memory bump arena. Build both
+ * batches before submitting either one: the GPU reads this arena
+ * asynchronously, so resetting it between screens would corrupt the first.
  */
-#define MAX_VERTICES 24576u
-#define MAX_COMMANDS 1024u
+#define MAX_VERTICES 32768u
+#define MAX_COMMANDS 2048u
 #define MAX_CLIP_DEPTH 64u
+#define MAX_SURFACES 2u
 
 typedef struct {
   float x, y;
@@ -88,6 +88,15 @@ typedef struct {
   uint32_t count;
   Clip clip;
 } Command;
+
+typedef struct {
+  uint32_t command_first;
+  uint32_t command_count;
+  uint32_t width;
+  uint32_t height;
+  C3D_Mtx projection;
+  bool prepared;
+} SurfaceBatch;
 
 typedef struct {
   C3D_Tex texture;
@@ -118,13 +127,14 @@ typedef struct {
 static DVLB_s *shader_blob;
 static shaderProgram_s shader_program;
 static int projection_uniform;
-static C3D_Mtx projection;
 
 static Vertex *vertices;
 static uint32_t vertex_count;
 static uint32_t dropped_vertices;
+static uint32_t dropped_commands;
 static Command commands[MAX_COMMANDS];
 static uint32_t command_count;
+static SurfaceBatch surfaces[MAX_SURFACES];
 
 static C3D_Tex white;
 static ImageTexture *images;
@@ -132,8 +142,6 @@ static size_t image_capacity;
 static FontTexture *fonts;
 static size_t font_capacity;
 
-static uint32_t viewport_width;
-static uint32_t viewport_height;
 static bool initialized;
 
 // ---------------------------------------------------------------------------
@@ -527,25 +535,34 @@ static void push_quad(
 }
 
 static void flush(C3D_Tex *texture, Clip clip, uint32_t *start) {
-  if (vertex_count > *start && command_count < MAX_COMMANDS) {
-    Command *command = &commands[command_count++];
-    command->texture = texture;
-    command->first = *start;
-    command->count = vertex_count - *start;
-    command->clip = clip;
+  if (vertex_count > *start) {
+    if (command_count < MAX_COMMANDS) {
+      Command *command = &commands[command_count++];
+      command->texture = texture;
+      command->first = *start;
+      command->count = vertex_count - *start;
+      command->clip = clip;
+    } else {
+      dropped_commands += 1;
+    }
   }
   *start = vertex_count;
 }
 
-static void build(const uint32_t *words, size_t length) {
-  vertex_count = 0;
-  command_count = 0;
+static void build(
+  const uint32_t *words,
+  size_t length,
+  uint32_t viewport_width,
+  uint32_t viewport_height
+) {
   Clip full = { 0, 0, (int32_t)viewport_width, (int32_t)viewport_height };
   Clip clip = full;
   Clip clip_stack[MAX_CLIP_DEPTH];
   uint32_t clip_depth = 0;
   C3D_Tex *texture = &white;
-  uint32_t start = 0;
+  /* Surfaces append into one shared arena. A batch starts at the current
+   * tail; starting at zero would replay earlier surfaces into this one. */
+  uint32_t start = vertex_count;
   size_t index = 0;
 
   while (index < length) {
@@ -775,7 +792,7 @@ static void build(const uint32_t *words, size_t length) {
  * and mirrored along the other, which only shows up when the clipped content
  * is not already the size of its window.
  */
-static bool apply_clip(Clip clip) {
+static bool apply_clip(Clip clip, uint32_t viewport_width, uint32_t viewport_height) {
   int32_t x0 = clip.x;
   int32_t y0 = clip.y;
   int32_t x1 = clip.x + clip.w;
@@ -797,19 +814,66 @@ static bool apply_clip(Clip clip) {
   return true;
 }
 
-void gfx_render(const uint32_t *words, size_t length) {
+void gfx_begin_frame(void) {
   if (!initialized) return;
   sync_resources();
-  build(words, length);
-  if (command_count == 0) return;
+  vertex_count = 0;
+  command_count = 0;
+  dropped_vertices = 0;
+  dropped_commands = 0;
+  memset(surfaces, 0, sizeof surfaces);
+}
+
+bool gfx_prepare_surface(
+  uint32_t surface,
+  const uint32_t *words,
+  size_t length,
+  uint32_t logical_width,
+  uint32_t logical_height
+) {
+  if (!initialized || surface >= MAX_SURFACES || logical_width == 0 || logical_height == 0) {
+    return false;
+  }
+  SurfaceBatch *batch = &surfaces[surface];
+  if (batch->prepared) return false;
+  uint32_t vertices_dropped_before = dropped_vertices;
+  uint32_t commands_dropped_before = dropped_commands;
+  batch->command_first = command_count;
+  batch->width = logical_width;
+  batch->height = logical_height;
+  Mtx_OrthoTilt(
+    &batch->projection,
+    0.0f,
+    (float)logical_width,
+    (float)logical_height,
+    0.0f,
+    0.0f,
+    1.0f,
+    true
+  );
+  build(words, length, logical_width, logical_height);
+  batch->command_count = command_count - batch->command_first;
+  batch->prepared = true;
+  return dropped_vertices == vertices_dropped_before &&
+         dropped_commands == commands_dropped_before;
+}
+
+void gfx_finish_frame(void) {
+  if (!initialized || vertex_count == 0) return;
 
   /* The arena is ordinary cached linear memory and the PICA reads main memory
-   * directly, so this frame's vertices have to be written back before any draw
-   * command can reference them. */
+   * directly. Flush once after BOTH outputs have been built, before either
+   * render target submits draws. */
   GSPGPU_FlushDataCache(vertices, vertex_count * sizeof *vertices);
+}
+
+void gfx_draw_surface(uint32_t surface) {
+  if (!initialized || surface >= MAX_SURFACES) return;
+  const SurfaceBatch *batch = &surfaces[surface];
+  if (!batch->prepared || batch->command_count == 0) return;
 
   C3D_BindProgram(&shader_program);
-  C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, projection_uniform, &projection);
+  C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, projection_uniform, &batch->projection);
   C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
   C3D_CullFace(GPU_CULL_NONE);
   C3D_AlphaBlend(
@@ -831,7 +895,8 @@ void gfx_render(const uint32_t *words, size_t length) {
 
   C3D_Tex *bound = NULL;
   bool scissored = false;
-  for (uint32_t index = 0; index < command_count; index += 1) {
+  uint32_t end = batch->command_first + batch->command_count;
+  for (uint32_t index = batch->command_first; index < end; index += 1) {
     const Command *command = &commands[index];
     C3D_Tex *wanted = command->texture;
     if (wanted != bound) {
@@ -840,15 +905,15 @@ void gfx_render(const uint32_t *words, size_t length) {
     }
     bool full =
       command->clip.x <= 0 && command->clip.y <= 0 &&
-      command->clip.x + command->clip.w >= (int32_t)viewport_width &&
-      command->clip.y + command->clip.h >= (int32_t)viewport_height;
+      command->clip.x + command->clip.w >= (int32_t)batch->width &&
+      command->clip.y + command->clip.h >= (int32_t)batch->height;
     if (full) {
       if (scissored) {
         C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
         scissored = false;
       }
     } else {
-      if (!apply_clip(command->clip)) continue;
+      if (!apply_clip(command->clip, batch->width, batch->height)) continue;
       scissored = true;
     }
     C3D_DrawArrays(GPU_TRIANGLES, (int)command->first, (int)command->count);
@@ -861,8 +926,8 @@ void gfx_render(const uint32_t *words, size_t length) {
 // ---------------------------------------------------------------------------
 
 bool gfx_init(uint32_t logical_width, uint32_t logical_height) {
-  viewport_width = logical_width;
-  viewport_height = logical_height;
+  (void)logical_width;
+  (void)logical_height;
 
   shader_blob = DVLB_ParseFile((u32 *)vshader_shbin, vshader_shbin_size);
   if (shader_blob == NULL) return false;
@@ -871,16 +936,6 @@ bool gfx_init(uint32_t logical_width, uint32_t logical_height) {
   C3D_BindProgram(&shader_program);
   projection_uniform = shaderInstanceGetUniformLocation(shader_program.vertexShader, "projection");
   if (projection_uniform < 0) return false;
-  Mtx_OrthoTilt(
-    &projection,
-    0.0f,
-    (float)logical_width,
-    (float)logical_height,
-    0.0f,
-    0.0f,
-    1.0f,
-    true
-  );
 
   /* The DrawList is screen space, so the vertex carries no depth: the shader
    * supplies a mid-range z from a constant rather than the buffer spending

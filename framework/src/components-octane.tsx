@@ -27,6 +27,7 @@ import {
   universalValue,
   type NodeMirror,
 } from "./renderer-octane.ts";
+import { getAuxiliarySurfaceRoots } from "./display.ts";
 
 export type { NodeMirror } from "./renderer-octane.ts";
 
@@ -259,6 +260,20 @@ export interface PortalProps {
 
 export function Portal(props: PortalProps) {
   const target = useMemo(() => overlayPortalTarget(), []);
+  return <>{createPortal(props.children, target)}</>;
+}
+
+export interface AuxiliarySurfaceProps {
+  children?: VNodeChild;
+}
+
+export function AuxiliarySurface(props: AuxiliarySurfaceProps) {
+  const target = useMemo(() => getAuxiliarySurfaceRoots().app, []);
+  return <>{createPortal(props.children, target)}</>;
+}
+
+export function AuxiliaryPortal(props: AuxiliarySurfaceProps) {
+  const target = useMemo(() => getAuxiliarySurfaceRoots().overlay, []);
   return <>{createPortal(props.children, target)}</>;
 }
 

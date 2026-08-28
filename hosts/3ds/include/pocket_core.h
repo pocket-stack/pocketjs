@@ -20,6 +20,10 @@ void ui_shutdown(void);
 void ui_set_viewport(float width, float height);
 uint32_t ui_viewport_width(void);
 uint32_t ui_viewport_height(void);
+int32_t ui_create_auxiliary_surface(float width, float height);
+int32_t ui_auxiliary_surface_root(void);
+uint32_t ui_auxiliary_viewport_width(void);
+uint32_t ui_auxiliary_viewport_height(void);
 uint8_t *ui_alloc(size_t length);
 void ui_free(uint8_t *bytes, size_t length);
 
@@ -64,6 +68,14 @@ void ui_set_focus(int32_t id);
 void ui_set_active(int32_t id, int32_t active);
 int32_t ui_hit_test(float x, float y);
 int32_t ui_hit_test_bounds(float x, float y);
+int32_t ui_hit_test_auxiliary(float x, float y);
+int32_t ui_hit_test_bounds_auxiliary(float x, float y);
+size_t ui_touch_hits_auxiliary(
+  const uint32_t *packed,
+  size_t length,
+  int32_t *out,
+  size_t out_length
+);
 void ui_set_cursor(int32_t texture, float hot_x, float hot_y, float width, float height);
 void ui_set_cursor_pos(float x, float y);
 int32_t ui_load_styles(const uint8_t *bytes, size_t length);
@@ -88,6 +100,9 @@ size_t ui_draw(void);
 const uint32_t *ui_draw_list_ptr(void);
 size_t ui_draw_list_len(void);
 uint64_t ui_draw_hash(void);
+size_t ui_draw_auxiliary(void);
+const uint32_t *ui_draw_auxiliary_list_ptr(void);
+size_t ui_draw_auxiliary_list_len(void);
 
 /*
  * Texture and font registries: how the C backend resolves a DrawList handle

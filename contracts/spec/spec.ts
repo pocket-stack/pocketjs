@@ -270,6 +270,13 @@ export const OP = {
   //                      texture semantics are involved. focusedInt is the
   //                      shell's focus fact consumed by the native compositor
   //                      for input and scheduling. handle < 0 clears.
+  // -- additional UI outputs (display.auxiliary capability) ----------------
+  hitTestAuxiliary: 45, // (x: f32, y: f32) -> topmost painted node id in the
+  //                      auxiliary output's logical coordinate space, or 0.
+  //                      Same semantics as hitTest; never searches primary.
+  hitTestBoundsAuxiliary: 46, // bounds-only twin for auxiliary touch facts.
+  //                      Same semantics as hitTestBounds; never searches
+  //                      primary. Hosts omit both ops without the capability.
 } as const;
 
 // ---------------------------------------------------------------------------

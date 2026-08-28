@@ -123,6 +123,52 @@
             "octane"
           ]
         },
+        "surfaces": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "auxiliary"
+          ],
+          "properties": {
+            "auxiliary": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "fixed"
+              ],
+              "properties": {
+                "fixed": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "logical",
+                    "presentation"
+                  ],
+                  "properties": {
+                    "logical": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "minItems": 2,
+                      "maxItems": 2
+                    },
+                    "presentation": {
+                      "enum": [
+                        "fill",
+                        "fit",
+                        "integer-fit",
+                        "native",
+                        "stretch"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "companions": {
           "type": "array",
           "items": {

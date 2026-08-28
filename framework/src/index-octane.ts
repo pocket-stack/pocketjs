@@ -27,6 +27,7 @@ import {
   type OctaneRenderRoot,
 } from "./renderer-octane.ts";
 import { setOverlayRoot } from "./overlay.ts";
+import { mountAuxiliarySurface, unmountAuxiliarySurface } from "./display.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-octane.tsx";
@@ -173,6 +174,7 @@ export function render(code: OctaneRenderRoot, opts: RenderOptions = {}): () => 
     }
   }
 
+  mountAuxiliarySurface(host.ops);
   const viewport = hostViewport(host.ops);
   const layerW = viewport?.w ?? SCREEN_W;
   const layerH = viewport?.h ?? SCREEN_H;
@@ -203,10 +205,16 @@ export function render(code: OctaneRenderRoot, opts: RenderOptions = {}): () => 
   resetEffects();
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md), same as the Solid path.
   installFrameHandler(
-    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[]) => {
+    wrapFrameHandler((
+      buttons: number,
+      analog: number,
+      touches?: readonly number[],
+      hits?: readonly number[],
+      touchSurfaces?: readonly number[],
+    ) => {
       __advanceClock();
       __setAnalog(analog);
-      __setTouches(touches);
+      __setTouches(touches, hits, touchSurfaces);
       runServicePumps();
       __drainEffects();
       // Octane schedules re-renders on the microtask queue; the sync boundary
@@ -233,6 +241,7 @@ export function render(code: OctaneRenderRoot, opts: RenderOptions = {}): () => 
       child.parent = null;
       host.ops.destroyNode(child.id);
     }
+    unmountAuxiliarySurface(host.ops);
     runSweep();
   };
 }

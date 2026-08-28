@@ -9,6 +9,12 @@
 #   POCKETJS_HOST_ABI        ABI number to publish as ui.__hostAbi
 #   POCKETJS_LOGICAL_WIDTH   guest viewport, baked into the host
 #   POCKETJS_LOGICAL_HEIGHT
+#   POCKETJS_AUX_LOGICAL_WIDTH
+#   POCKETJS_AUX_LOGICAL_HEIGHT
+#   POCKETJS_AUX_PHYSICAL_WIDTH
+#   POCKETJS_AUX_PHYSICAL_HEIGHT
+#   POCKETJS_AUX_PRESENTATION
+#   POCKETJS_AUX_RASTER_DENSITY
 #   POCKETJS_RASTER_DENSITY  raster samples per logical pixel
 #   POCKETJS_CORE_LIB        libpocketjs_3ds_core.a
 #   POCKETJS_QUICKJS_DIR     directory holding quickjs.h and libquickjs.a
@@ -21,6 +27,7 @@
 #   POCKETJS_SMDH_DESC
 #   POCKETJS_CAPTURE         "1" builds the deterministic e2e binary
 #   POCKETJS_CAPTURE_INPUT   baked input tape, "frame:mask,frame:mask"
+#   POCKETJS_CAPTURE_TOUCH   baked touch tape, "frame:id,x,y@frame:-"
 #   POCKETJS_CAP_START       first frame to dump
 #   POCKETJS_CAP_N           how many frames to dump
 #   POCKETJS_OUT_CIA         the .cia to write; empty leaves the goal off
@@ -70,6 +77,8 @@ CFLAGS := -Wall -Wextra -O2 -g -std=gnu11 -mword-relocations -ffunction-sections
   -DPOCKETJS_HOST_ABI=$(POCKETJS_HOST_ABI) \
   -DPOCKETJS_VIEW_W=$(POCKETJS_LOGICAL_WIDTH) \
   -DPOCKETJS_VIEW_H=$(POCKETJS_LOGICAL_HEIGHT) \
+  -DPOCKETJS_AUX_VIEW_W=$(POCKETJS_AUX_LOGICAL_WIDTH) \
+  -DPOCKETJS_AUX_VIEW_H=$(POCKETJS_AUX_LOGICAL_HEIGHT) \
   -DPOCKETJS_RASTER_DENSITY=$(POCKETJS_RASTER_DENSITY) \
   -I$(INCLUDE_DIR) -I$(BUILD) -I$(POCKETJS_QUICKJS_DIR) \
   -I$(DEVKITPRO)/libctru/include
@@ -77,6 +86,7 @@ CFLAGS := -Wall -Wextra -O2 -g -std=gnu11 -mword-relocations -ffunction-sections
 ifeq ($(POCKETJS_CAPTURE),1)
 CFLAGS += -DPOCKETJS_CAPTURE \
   -DPOCKETJS_CAPTURE_INPUT='"$(POCKETJS_CAPTURE_INPUT)"' \
+  -DPOCKETJS_CAPTURE_TOUCH='"$(POCKETJS_CAPTURE_TOUCH)"' \
   -DPOCKETJS_CAP_START=$(POCKETJS_CAP_START) \
   -DPOCKETJS_CAP_N=$(POCKETJS_CAP_N)
 endif

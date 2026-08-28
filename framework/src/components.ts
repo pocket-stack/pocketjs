@@ -18,6 +18,7 @@ import { pushButtonHandlerBlock, onButtonPress, onFrame, type ButtonPressOptions
 import { getOps, hostViewport } from "./host.ts";
 import { pushFocusGrid, pushFocusScope, type FocusGridOptions, type FocusScopeOptions } from "./input.ts";
 import { getOverlayRoot } from "./overlay.ts";
+import { getAuxiliarySurfaceRoots } from "./display.ts";
 import { View, type ViewProps } from "./primitives.ts";
 import {
   createElement,
@@ -220,6 +221,69 @@ export function Portal(props: PortalProps): SolidJSX.Element {
     if (host?.parent) detachNode(host.parent, host);
   });
 
+  return null;
+}
+
+export interface AuxiliarySurfaceProps {
+  children?: SolidJSX.Element | (() => SolidJSX.Element);
+}
+
+/** Mount children into the current AppInstance's auxiliary output. */
+export function AuxiliarySurface(props: AuxiliarySurfaceProps): SolidJSX.Element {
+  let host: NodeMirror | undefined;
+  let dispose: (() => void) | undefined;
+  onMount(() => {
+    const surface = getAuxiliarySurfaceRoots();
+    host = createElement("view");
+    setProp(
+      host,
+      "style",
+      {
+        width: surface.viewport.width,
+        height: surface.viewport.height,
+        overflow: ENUMS.Overflow.Hidden,
+      },
+      undefined,
+    );
+    insertNode(surface.app, host);
+    dispose = rendererRender(() => renderPortalChild(props.children) as NodeMirror, host);
+  });
+  onCleanup(() => {
+    dispose?.();
+    if (host?.parent) detachNode(host.parent, host);
+  });
+  return null;
+}
+
+/** Render overlay content above the auxiliary application layer. */
+export function AuxiliaryPortal(props: AuxiliarySurfaceProps): SolidJSX.Element {
+  let host: NodeMirror | undefined;
+  let dispose: (() => void) | undefined;
+  onMount(() => {
+    const surface = getAuxiliarySurfaceRoots();
+    host = createElement("view");
+    setProp(
+      host,
+      "style",
+      {
+        width: surface.viewport.width,
+        height: surface.viewport.height,
+        posType: ENUMS.PosType.Absolute,
+        insetT: 0,
+        insetR: 0,
+        insetB: 0,
+        insetL: 0,
+        hitPass: 1,
+      },
+      undefined,
+    );
+    insertNode(surface.overlay, host);
+    dispose = rendererRender(() => renderPortalChild(props.children) as NodeMirror, host);
+  });
+  onCleanup(() => {
+    dispose?.();
+    if (host?.parent) detachNode(host.parent, host);
+  });
   return null;
 }
 

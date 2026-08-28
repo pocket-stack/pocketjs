@@ -77,12 +77,15 @@ import { rootMirror } from "../framework/src/renderer.ts";
 import {
   ActionBar,
   ActionHandler,
+  AuxiliaryPortal,
+  AuxiliarySurface,
   FocusGrid,
   Modal,
   Portal,
   Text,
   View,
 } from "../framework/src/components.ts";
+import { getAuxiliarySurfaceRoots } from "../framework/src/display.ts";
 import {
   DeepZoom,
   type DeepZoomGesture,
@@ -1294,6 +1297,53 @@ describe("public render() (index.ts)", () => {
     expect(appLayer.children[0].children.length).toBe(1);
     expect(overlayLayer.children[0].children.length).toBe(1);
 
+    dispose();
+  });
+
+  test("AuxiliarySurface mounts under a host-owned independent root", () => {
+    host.ops.__auxiliarySurface = { root: 99, w: 320, h: 240 };
+    host.alive.add(99);
+    const dispose = publicRender(
+      () =>
+        View({
+          children: [
+            Text({ children: "primary" }),
+            AuxiliarySurface({ children: () => Text({ children: "auxiliary" }) }),
+          ],
+        }),
+      { ops: host.ops },
+    );
+
+    const surface = getAuxiliarySurfaceRoots();
+    expect(surface.native.id).toBe(99);
+    expect(surface.native.parent).toBeNull();
+    expect(surface.viewport).toEqual({ width: 320, height: 240 });
+    expect(surface.app.children).toHaveLength(1);
+    expect(surface.app.children[0].children).toHaveLength(1);
+    expect(rootMirror.children).toHaveLength(2);
+
+    host.clear();
+    dispose();
+    expect(host.of("destroyNode").some((call) => call[1] === 99)).toBe(false);
+  });
+
+  test("AuxiliaryPortal mounts above the independent auxiliary app layer", () => {
+    host.ops.__auxiliarySurface = { root: 99, w: 320, h: 240 };
+    host.alive.add(99);
+    const dispose = publicRender(
+      () =>
+        View({
+          children: [
+            AuxiliarySurface({ children: () => Text({ children: "app" }) }),
+            AuxiliaryPortal({ children: () => Text({ children: "overlay" }) }),
+          ],
+        }),
+      { ops: host.ops },
+    );
+
+    const surface = getAuxiliarySurfaceRoots();
+    expect(surface.app.children[0].children[0].children[0].text).toBe("app");
+    expect(surface.overlay.children[0].children[0].children[0].text).toBe("overlay");
     dispose();
   });
 

@@ -4,13 +4,14 @@
  * layout, and the PICA200 backend draws the DrawList.
  *
  * Frame order (docs/DESIGN.md, the shape hosts/psp/src/main.rs drives):
- * hidScanInput -> globalThis.frame(buttons, analog) -> drain jobs ->
- * ui_tick (fixed 1/60) -> ui_draw -> C3D_FrameBegin/Clear/FrameDrawOn/
- * SetViewport -> gfx_render -> C3D_FrameEnd.
+ * hidScanInput -> resolve bottom-screen touch -> globalThis.frame -> drain
+ * jobs -> ui_tick (fixed 1/60) -> build both DrawLists -> one C3D frame that
+ * draws the top and bottom targets.
  *
- * The app owns the whole 400x240 top screen (form "takeover"). The render
- * target is created ROTATED — 240 wide by 400 tall — and Mtx_OrthoTilt in
- * gfx.c keeps the guest's coordinates landscape.
+ * The app owns a 400x240 primary surface and a simultaneous 320x240 auxiliary
+ * surface. Both render targets are ROTATED, and Mtx_OrthoTilt in gfx.c keeps
+ * each surface's guest coordinates landscape. Touch belongs only to the
+ * auxiliary surface.
  *
  * Building with -DPOCKETJS_CAPTURE turns this into the deterministic e2e
  * binary: input comes from a baked tape instead of the hardware, the listed
@@ -42,8 +43,16 @@
 #ifndef POCKETJS_RASTER_DENSITY
 #error "POCKETJS_RASTER_DENSITY must come from the verified ResolvedBuildPlan"
 #endif
+#ifndef POCKETJS_AUX_VIEW_W
+#error "POCKETJS_AUX_VIEW_W must come from the verified ResolvedBuildPlan"
+#endif
+#ifndef POCKETJS_AUX_VIEW_H
+#error "POCKETJS_AUX_VIEW_H must come from the verified ResolvedBuildPlan"
+#endif
 #define VIEW_W POCKETJS_VIEW_W
 #define VIEW_H POCKETJS_VIEW_H
+#define AUX_VIEW_W POCKETJS_AUX_VIEW_W
+#define AUX_VIEW_H POCKETJS_AUX_VIEW_H
 #define CAPTURE_BYTES ((size_t)VIEW_W * VIEW_H * 4)
 
 /* contracts/spec/spec.ts ANALOG_CENTER. */
@@ -57,7 +66,8 @@
  */
 unsigned int __stacksize__ = 1024 * 1024;
 
-static C3D_RenderTarget *target;
+static C3D_RenderTarget *primary_target;
+static C3D_RenderTarget *auxiliary_target;
 
 static const u32 DISPLAY_TRANSFER_FLAGS =
   GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
@@ -108,6 +118,9 @@ static uint8_t *read_file(const char *path, size_t *length) {
 #ifndef POCKETJS_CAPTURE_INPUT
 #define POCKETJS_CAPTURE_INPUT ""
 #endif
+#ifndef POCKETJS_CAPTURE_TOUCH
+#define POCKETJS_CAPTURE_TOUCH ""
+#endif
 #ifndef POCKETJS_CAP_START
 #define POCKETJS_CAP_START 0
 #endif
@@ -125,6 +138,7 @@ static uint8_t *read_file(const char *path, size_t *length) {
 static u32 *capture_buffer;
 static u8 *capture_rgb;
 static const char CAPTURE_INPUT[] = POCKETJS_CAPTURE_INPUT;
+static const char CAPTURE_TOUCH[] = POCKETJS_CAPTURE_TOUCH;
 
 /* Read one unsigned value, decimal or 0x-prefixed hex, from [start, end). */
 static bool parse_uint(const char *text, size_t start, size_t end, uint32_t *out) {
@@ -198,6 +212,59 @@ static int32_t scripted_buttons(uint32_t frame) {
 }
 
 /*
+ * One resistive-panel contact, `frame:id,x,y@frame:-`, using the same
+ * threshold semantics as the button tape. The build tool bounds x/y to the
+ * physical 320x240 auxiliary panel before this text reaches C.
+ */
+static size_t scripted_touch(uint32_t frame, uint32_t *out) {
+  size_t length = sizeof CAPTURE_TOUCH - 1;
+  size_t index = 0;
+  bool found = false;
+  bool active = false;
+  uint32_t best_frame = 0;
+  uint32_t best_contact = 0;
+  while (index < length) {
+    size_t frame_start = index;
+    while (index < length && CAPTURE_TOUCH[index] != ':') index += 1;
+    if (index >= length) break;
+    size_t frame_end = index++;
+    size_t payload_start = index;
+    while (index < length && CAPTURE_TOUCH[index] != '@') index += 1;
+    size_t payload_end = index;
+    if (index < length) index += 1;
+
+    uint32_t at = 0;
+    if (!parse_uint(CAPTURE_TOUCH, frame_start, frame_end, &at) || at > frame ||
+        (found && at < best_frame)) {
+      continue;
+    }
+    found = true;
+    best_frame = at;
+    active = payload_end > payload_start && CAPTURE_TOUCH[payload_start] != '-';
+    if (!active) continue;
+
+    size_t first_comma = payload_start;
+    while (first_comma < payload_end && CAPTURE_TOUCH[first_comma] != ',') first_comma += 1;
+    size_t second_comma = first_comma + 1;
+    while (second_comma < payload_end && CAPTURE_TOUCH[second_comma] != ',') second_comma += 1;
+    uint32_t id = 0;
+    uint32_t x = 0;
+    uint32_t y = 0;
+    if (first_comma >= payload_end || second_comma >= payload_end ||
+        !parse_uint(CAPTURE_TOUCH, payload_start, first_comma, &id) ||
+        !parse_uint(CAPTURE_TOUCH, first_comma + 1, second_comma, &x) ||
+        !parse_uint(CAPTURE_TOUCH, second_comma + 1, payload_end, &y)) {
+      active = false;
+      continue;
+    }
+    best_contact = ((id & 0xffu) << 18) | ((y & 0x1ffu) << 9) | (x & 0x1ffu);
+  }
+  if (!found || !active) return 0;
+  *out = best_contact;
+  return 1;
+}
+
+/*
  * Read the render target back.
  *
  * NOT gfxGetFramebuffer after C3D_FrameEnd: that buffer has already been
@@ -221,15 +288,21 @@ static int32_t scripted_buttons(uint32_t frame) {
  * column-major — and each capture word is byte order A, B, G, R. The e2e
  * driver decodes with src[(x * 240 + (239 - y)) * 4] -> dst[y * 400 + x].
  */
-static bool capture_write(uint32_t frame) {
+static bool capture_write_surface(
+  C3D_RenderTarget *surface_target,
+  uint32_t width,
+  uint32_t height,
+  const char *prefix,
+  uint32_t frame
+) {
   /* C3D_FrameEnd only queues the frame. The colour buffer is not finished
    * until the GPU is, so wait before transferring it out. */
   gspWaitForVBlank();
   C3D_SyncDisplayTransfer(
-    (u32 *)target->frameBuf.colorBuf,
-    GX_BUFFER_DIM(VIEW_H, VIEW_W),
+    (u32 *)surface_target->frameBuf.colorBuf,
+    GX_BUFFER_DIM(height, width),
     (u32 *)capture_rgb,
-    GX_BUFFER_DIM(VIEW_H, VIEW_W),
+    GX_BUFFER_DIM(height, width),
     GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) |
       GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) |
       GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) |
@@ -240,7 +313,7 @@ static bool capture_write(uint32_t frame) {
   /* Widen B, G, R back into the A, B, G, R word the golden format states, so
    * the on-device format change costs the driver nothing. */
   uint8_t *out = (uint8_t *)capture_buffer;
-  for (size_t i = 0; i < (size_t)VIEW_W * VIEW_H; i += 1) {
+  for (size_t i = 0; i < (size_t)width * height; i += 1) {
     out[i * 4 + 0] = 0xff;
     out[i * 4 + 1] = capture_rgb[i * 3 + 0];
     out[i * 4 + 2] = capture_rgb[i * 3 + 1];
@@ -248,13 +321,14 @@ static bool capture_write(uint32_t frame) {
   }
 
   /* Named by the process-global frame counter, which is also what indexes the
-   * baked input tape: input at frame N and file fN are the same frame. */
+   * baked input tapes: input at frame N and both surface files are frame N. */
   char path[64];
-  snprintf(path, sizeof path, CAPTURE_DIR "/f%04lu.raw", (unsigned long)frame);
+  snprintf(path, sizeof path, CAPTURE_DIR "/%sf%04lu.raw", prefix, (unsigned long)frame);
   FILE *file = fopen(path, "wb");
   if (file == NULL) return false;
-  size_t written = fwrite(capture_buffer, 1, CAPTURE_BYTES, file);
-  return fclose(file) == 0 && written == CAPTURE_BYTES;
+  size_t bytes = (size_t)width * height * 4;
+  size_t written = fwrite(capture_buffer, 1, bytes, file);
+  return fclose(file) == 0 && written == bytes;
 }
 
 /* The sentinel the driver waits for. Written only after every requested frame
@@ -318,9 +392,23 @@ int main(void) {
   osSetSpeedupEnable(true);
   C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 
-  target = C3D_RenderTargetCreate(VIEW_H, VIEW_W, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
-  if (target == NULL) fail("C3D_RenderTargetCreate failed");
-  C3D_RenderTargetSetOutput(target, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
+  primary_target = C3D_RenderTargetCreate(
+    VIEW_H,
+    VIEW_W,
+    GPU_RB_RGBA8,
+    GPU_RB_DEPTH24_STENCIL8
+  );
+  auxiliary_target = C3D_RenderTargetCreate(
+    AUX_VIEW_H,
+    AUX_VIEW_W,
+    GPU_RB_RGBA8,
+    GPU_RB_DEPTH24_STENCIL8
+  );
+  if (primary_target == NULL || auxiliary_target == NULL) {
+    fail("C3D_RenderTargetCreate failed");
+  }
+  C3D_RenderTargetSetOutput(primary_target, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
+  C3D_RenderTargetSetOutput(auxiliary_target, GFX_BOTTOM, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
 
   if (R_FAILED(romfsInit())) fail("romfsInit failed: the .3dsx has no romfs");
 
@@ -334,6 +422,9 @@ int main(void) {
    * font atlases and images never transit the QuickJS heap. */
   ui_init(POCKETJS_RASTER_DENSITY);
   ui_set_viewport((float)VIEW_W, (float)VIEW_H);
+  if (ui_create_auxiliary_surface((float)AUX_VIEW_W, (float)AUX_VIEW_H) == 0) {
+    fail("auxiliary UI root allocation failed");
+  }
   if (pack != NULL) ui_feed_pak(pack, pack_length);
 
   if (!gfx_init(VIEW_W, VIEW_H)) fail("PICA200 backend failed to initialize");
@@ -353,20 +444,33 @@ int main(void) {
   while (aptMainLoop()) {
     hidScanInput();
 #ifdef POCKETJS_CAPTURE
-    /* The tape has no analog track: pin the stick to centre so scripted runs
-     * stay deterministic. */
+    /* The tapes have no analog track: pin the stick to centre so scripted
+     * runs stay deterministic. */
     int32_t buttons = scripted_buttons(frame);
     int32_t analog = ANALOG_CENTER;
+    uint32_t touch = 0;
+    size_t touch_count = scripted_touch(frame, &touch);
 #else
     int32_t buttons = input_buttons();
     int32_t analog = input_analog();
+    uint32_t touch = 0;
+    size_t touch_count = input_touch(&touch);
 #endif
 
-    if (!qjs_frame(buttons, analog)) fail(qjs_last_error());
+    int32_t touch_hit = 0;
+    size_t hit_count = ui_touch_hits_auxiliary(
+      touch_count > 0 ? &touch : NULL,
+      touch_count,
+      &touch_hit,
+      1
+    );
+    if (hit_count != touch_count) fail("auxiliary touch hit resolution failed");
+    if (!qjs_frame(buttons, analog, &touch, &touch_hit, touch_count)) fail(qjs_last_error());
     /* Animations always advance at the fixed 1/60 timestep; this host
      * presents at the same rate, so it is one tick per frame. */
     ui_tick();
     size_t words = ui_draw();
+    size_t auxiliary_words = ui_draw_auxiliary();
 
 #ifdef POCKETJS_CAPTURE
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
@@ -397,11 +501,29 @@ int main(void) {
       }
     }
 #endif
-    C3D_RenderTargetClear(target, C3D_CLEAR_ALL, 0x000000ff, 0);
-    C3D_FrameDrawOn(target);
+    gfx_begin_frame();
+    if (!gfx_prepare_surface(0, ui_draw_list_ptr(), words, VIEW_W, VIEW_H) ||
+        !gfx_prepare_surface(
+          1,
+          ui_draw_auxiliary_list_ptr(),
+          auxiliary_words,
+          AUX_VIEW_W,
+          AUX_VIEW_H
+        )) {
+      fail("PICA200 surface preparation failed");
+    }
+    gfx_finish_frame();
+
+    C3D_RenderTargetClear(primary_target, C3D_CLEAR_ALL, 0x000000ff, 0);
+    C3D_FrameDrawOn(primary_target);
     /* C3D_FrameDrawOn resets the viewport, so this comes after it. */
     C3D_SetViewport(0, 0, VIEW_H, VIEW_W);
-    gfx_render(ui_draw_list_ptr(), words);
+    gfx_draw_surface(0);
+
+    C3D_RenderTargetClear(auxiliary_target, C3D_CLEAR_ALL, 0x000000ff, 0);
+    C3D_FrameDrawOn(auxiliary_target);
+    C3D_SetViewport(0, 0, AUX_VIEW_H, AUX_VIEW_W);
+    gfx_draw_surface(1);
     C3D_FrameEnd(0);
 #ifndef POCKETJS_CAPTURE
     run_frame += 1;
@@ -412,7 +534,16 @@ int main(void) {
       /* A frame that overflowed the vertex arena is missing geometry, which
        * must never become a golden. */
       if (gfx_dropped_vertices() > 0) fail("vertex arena overflowed during capture");
-      if (!capture_write(frame)) fail("capture write failed");
+      if (!capture_write_surface(primary_target, VIEW_W, VIEW_H, "", frame) ||
+          !capture_write_surface(
+            auxiliary_target,
+            AUX_VIEW_W,
+            AUX_VIEW_H,
+            "aux-",
+            frame
+          )) {
+        fail("capture write failed");
+      }
       if (frame + 1 >= (uint32_t)POCKETJS_CAP_START + POCKETJS_CAP_N) {
         capture_done();
         /* Park: Azahar does not stop when the app returns from main, and a

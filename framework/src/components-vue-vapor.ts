@@ -14,6 +14,7 @@ import { pushButtonHandlerBlock, onButtonPress, onFrame, type ButtonPressOptions
 import { BTN } from "./input-api.ts";
 import { pushFocusGrid, pushFocusScope, type FocusGridOptions, type FocusScopeOptions } from "./input.ts";
 import { getOverlayRoot } from "./overlay.ts";
+import { getAuxiliarySurfaceRoots } from "./display.ts";
 import {
   createCommentNode,
   createElement,
@@ -414,6 +415,69 @@ export const Portal = definePocketVaporComponent((_props: PortalProps, { slots }
   });
   return state.marker;
 }, NO_FALLTHROUGH);
+
+export interface AuxiliarySurfaceProps {
+  children?: VNodeChild;
+}
+
+export const AuxiliarySurface = definePocketVaporComponent(
+  (_props: AuxiliarySurfaceProps, { slots }: { slots: SlotBag }) => {
+    const surface = getAuxiliarySurfaceRoots();
+    const marker = createCommentNode("auxiliary-surface");
+    const host = createElement("view");
+    setProp(
+      host,
+      "style",
+      {
+        width: surface.viewport.width,
+        height: surface.viewport.height,
+        overflow: ENUMS.Overflow.Hidden,
+      },
+      undefined,
+    );
+    insertNode(surface.app, host);
+    const root = createRenderRoot(host);
+    watchEffect(() => root.update(defaultBlock(slots)));
+    onScopeDispose(() => {
+      root.dispose();
+      if (host.parent) detachNode(host.parent, host);
+    });
+    return marker;
+  },
+  NO_FALLTHROUGH,
+);
+
+export const AuxiliaryPortal = definePocketVaporComponent(
+  (_props: AuxiliarySurfaceProps, { slots }: { slots: SlotBag }) => {
+    const surface = getAuxiliarySurfaceRoots();
+    const marker = createCommentNode("auxiliary-portal");
+    const host = createElement("view");
+    setProp(
+      host,
+      "style",
+      {
+        width: surface.viewport.width,
+        height: surface.viewport.height,
+        posType: ENUMS.PosType.Absolute,
+        insetT: 0,
+        insetR: 0,
+        insetB: 0,
+        insetL: 0,
+        hitPass: 1,
+      },
+      undefined,
+    );
+    insertNode(surface.overlay, host);
+    const root = createRenderRoot(host);
+    watchEffect(() => root.update(defaultBlock(slots)));
+    onScopeDispose(() => {
+      root.dispose();
+      if (host.parent) detachNode(host.parent, host);
+    });
+    return marker;
+  },
+  NO_FALLTHROUGH,
+);
 
 export interface ModalProps {
   class?: string;

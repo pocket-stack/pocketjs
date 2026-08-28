@@ -10,13 +10,14 @@ here. For conceptual walkthroughs see [Components](/docs/components/),
 | Import path | Exports |
 | --- | --- |
 | `@pocketjs/framework` | `mount`, `render`, host/runtime helpers, types |
-| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `CompositorSurface`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `Modal`, `ActionBar`, `Named`, `Grid`, `Lazy`, `Gallery`, `DeepZoom` (Solid) |
+| `@pocketjs/framework/components` | `View`, `Text`, `Image`, `Sprite`, `CompositorSurface`, `Screen`, `Focusable`, `FocusScope`, `FocusGrid`, `ActionHandler`, `Portal`, `AuxiliarySurface`, `AuxiliaryPortal`, `Modal`, `ActionBar`, `Named`, `Grid`, `Lazy`, `Gallery`, `DeepZoom` (Solid) |
 | `solid-js` | `createSignal`, `createEffect`, `createMemo`, `onMount`, `onCleanup`, `batch`, `untrack`, `Show`, `For`, `Index`, `Switch`, `Match` |
 | `vue` | `defineComponent`, `ref`, `computed`, `watchEffect`, `onMounted`, `onScopeDispose` |
 | `octane` | `useState`, `useEffect`, `useMemo`, `useRef`, `useLayoutEffect`, `useEffectEvent` |
 | `@pocketjs/framework/animation` | `animate`, `spring`, `cancelAnim` |
 | `@pocketjs/framework/lifecycle` | `onFrame`, `onButtonPress`, `analogX`, `analogY`, `analogRaw`, `createSpriteAnimation`, `pushButtonHandlerBlock` (Octane builds: `useFrame`, `useButtonPress`, `useSpriteAnimation`) |
-| `@pocketjs/framework/input` | `BTN`, `touches`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
+| `@pocketjs/framework/input` | `BTN`, `touches`, `auxiliaryTouches`, `focusNode`, `getFocused`, `pushFocusScope`, `pushFocusGrid` |
+| `@pocketjs/framework/display` | `auxiliaryViewport`, `hasAuxiliarySurface` |
 | `@pocketjs/framework/platform` | `platform`, `hasFeature` |
 | `@pocketjs/framework/clock` | `simulationHz`, `ticksPerFrame`, `virtualFrame`, `virtualNow`, `after` |
 | `@pocketjs/framework/effects` | `installEffectDriver`, `runEffect`, effect types |
@@ -290,6 +291,28 @@ function Portal(props: PortalProps): JSX.Element
 ```
 
 Renders `children` into the full-screen overlay root (above the app layer, `zIndex 1000`) instead of the local tree. Cleans up its host node on unmount.
+
+### `AuxiliarySurface`
+
+```ts
+interface AuxiliarySurfaceProps { children?: JSX.Element | (() => JSX.Element) }
+function AuxiliarySurface(props: AuxiliarySurfaceProps): JSX.Element
+```
+
+Renders `children` into the independent application layer of the resolved
+auxiliary display. The component requires `display.auxiliary`; mounting it
+without that capability throws. The application state and resource pool remain
+shared with the primary tree.
+
+### `AuxiliaryPortal`
+
+```ts
+function AuxiliaryPortal(props: AuxiliarySurfaceProps): JSX.Element
+```
+
+Renders children into the auxiliary display's overlay layer. Use it for
+content that must paint above the rest of `<AuxiliarySurface>`; ordinary
+`Portal` always targets the primary display.
 
 ### `Modal`
 
@@ -602,18 +625,25 @@ PSP button bitmask (identical on every host; web/Bun hosts remap keys).
 | `DOWN` | `0x0040` | `CROSS` | `0x4000` |
 | `LEFT` | `0x0080` | `SQUARE` | `0x8000` |
 
-### `touches`
+### `touches` and `auxiliaryTouches`
 
 ```ts
-interface TouchContact { readonly id: number; readonly x: number; readonly y: number }
+interface TouchContact {
+  readonly id: number;
+  readonly x: number;
+  readonly y: number;
+  readonly surface: "primary" | "auxiliary";
+}
 function touches(): readonly TouchContact[]
+function auxiliaryTouches(): readonly TouchContact[]
 ```
 
-Returns an immutable snapshot of the current front-panel contacts. Coordinates
-are always logical PocketJS pixels, independent of the target raster density;
-at most eight contacts are delivered. No active touch is an empty snapshot,
-not an unavailable API. Declare `input.touch` in `pocket.json` and guard an
-optional enhancement with `hasFeature("input.touch")`.
+Each function returns an immutable snapshot for one surface. Coordinates are
+logical pixels in that surface, independent of the target raster density; at
+most eight contacts are delivered across both snapshots. No active touch is an
+empty snapshot, not an unavailable API. Declare `input.touch` for `touches()`
+or `input.touch.auxiliary` plus `display.auxiliary` for
+`auxiliaryTouches()`. Guard optional enhancements with `hasFeature()`.
 
 ### `focusNode`
 

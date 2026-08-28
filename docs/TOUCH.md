@@ -9,7 +9,7 @@
 ```
 第 3 层   组件:Focusable / TextField / VirtualList          ← 90% 的应用停在这层
 第 2 层   手势代数:createGesture / createScroller           ← 自定义组件的作者才下来
-第 1 层   原始触点:touches()                                ← 你几乎永远不需要
+第 1 层   原始触点:touches() / auxiliaryTouches()           ← 你几乎永远不需要
 ```
 
 每往下一层,你对确定性和多模态降级承担更多责任;停在上层,这两件事是平台的。
@@ -100,6 +100,7 @@ createGesture({
 
 | 字段 | 含义 |
 |---|---|
+| `surface` | `primary` 或 `auxiliary`;决定坐标与命中树 |
 | `x, y` / `startX, startY` | 当前/落点位置(逻辑 px) |
 | `dx, dy` / `fdx, fdy` | 相对落点/本帧的位移 |
 | `vx, vy` | 速度,逻辑 px/虚拟秒 |
@@ -112,6 +113,9 @@ createGesture({
 优先级 = 注册顺序,后注册者优先(内层组件后挂载,天然赢外层)。
 `region.node` 圈定命中子树;不给 region 就是全屏识别器。速度和长按走
 虚拟时钟——30Hz 模拟测试与 60Hz 真机数值逐位一致。
+
+辅助显示上的识别器必须声明 `surface: "auxiliary"`。默认值是
+`"primary"`,因此现有单屏应用不会接收另一块显示的触点。
 
 ## 4. 自定义动力学表面:createScroller
 
@@ -148,7 +152,8 @@ bindDpadScroll(s, { active: () => focused() });   // PSP 降级,一行
 **事实**,不是 guest 发起的查询:宿主在触点**落下**的那一帧,对用户正在
 看的已提交画面做一次**按布局盒**的命中(spec op 42 的语义:纯布局容器
 认领自己的盒;行间隙也归列表),然后**随触点生命周期携带**(隐式捕获),
-经 `frame()` 第 4 参与触点并行送达。`GestureContact.hit` 就是它。
+经 `frame()` 第 4 参与触点并行送达;第 5 参标记每个触点的 surface。
+`GestureContact.hit` 和 `GestureContact.surface` 就是这两个事实。
 
 - 拖动期间零 FFI:命中永不重解析
 - 空的 overlay/portal 层标记 `hitPass`(自身对命中透明,内容照常认领)
@@ -189,8 +194,9 @@ onCleanup(pushTouchBlock());   // 挂上即屏蔽,清理即恢复;在途触点�
 
 - **sim journey**:`touchGlide(x0,y0,x1,y1,t0,t1)` 脚本化一记 fling,
   断言帧哈希逐字节复跑(tests/im-sim.test.ts Journey E 是范本)
-- **录/放**:`bun tools/tape.ts record --touch` 录 tape v2 稀疏触点轨道;
-  回放逐字节。命中事实**不录**——回放经查询回退确定性重解析
+- **录/放**:`bun tools/tape.ts record --touch` 对单屏仍生成 tape v2;
+  出现 auxiliary 触点时生成 tape v3 的稀疏 surface 轨道。命中事实
+  **不录**——回放经匹配 surface 的查询回退确定性重解析
 - **golden**:`GoldenSpec.touch(frame)` 让 e2e 在真渲染核上钉住
   "按住第 N 帧的按压高亮"这类按键 tape 表达不了的状态
 

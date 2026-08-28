@@ -63,6 +63,11 @@ export const rootMirror: NodeMirror = {
   domTag: "root",
 };
 
+// Host-created UI roots share the node arena with the primary root but are
+// not its children. The auxiliary display root is the first such root. Keep
+// them out of detached-node sweeping and treat them as connected boundaries.
+const nativeRoots = new Set<NodeMirror>([rootMirror]);
+
 const DOM_NODE = Symbol.for("pocketjs.native-node");
 const DOM_ELEMENT = 1;
 const DOM_TEXT = 3;
@@ -238,7 +243,7 @@ export function decorateNativeNode(node: NodeMirror): NodeMirror {
       get() {
         let current: NodeMirror | null = node;
         while (current) {
-          if (current === rootMirror) return true;
+          if (nativeRoots.has(current)) return true;
           current = current.parent;
         }
         return false;
@@ -359,7 +364,7 @@ export function retain(node: NodeMirror): void {
 /** Undo retain(); a still-detached node re-enters the next sweep. */
 export function release(node: NodeMirror): void {
   retained.delete(node);
-  if (node.parent === null && node !== rootMirror) sweepSet.add(node);
+  if (node.parent === null && !nativeRoots.has(node)) sweepSet.add(node);
 }
 
 function subtreeHasRetained(node: NodeMirror): boolean {
@@ -384,6 +389,7 @@ export function runSweep(): void {
   for (const node of sweepSet) {
     if (!node) continue;
     if (node.parent !== null) continue;
+    if (nativeRoots.has(node)) continue;
     if (subtreeHasRetained(node)) {
       keep.push(node);
       continue;
@@ -399,6 +405,36 @@ export function resetRendererState(): void {
   sweepSet.clear();
   retained.clear();
   rootMirror.children.length = 0;
+  nativeRoots.clear();
+  nativeRoots.add(rootMirror);
+}
+
+/** Mirror a root allocated by the native host before the guest mounts. */
+export function adoptNativeRoot(id: number, tag = "native-root"): NodeMirror {
+  if (!Number.isInteger(id) || id <= ROOT_ID) {
+    throw new Error(`PocketJS: invalid adopted native root id ${id}`);
+  }
+  const root = decorateNativeNode({
+    id,
+    type: NODE_TYPE.view,
+    parent: null,
+    children: [],
+    domNodeType: DOM_ELEMENT,
+    domTag: tag,
+  });
+  nativeRoots.add(root);
+  return root;
+}
+
+/** Forget a native root after its guest-owned children have been destroyed. */
+export function releaseNativeRoot(root: NodeMirror): void {
+  if (root === rootMirror) return;
+  if (root.children.length > 0) {
+    throw new Error("PocketJS: cannot release a native root with mounted children");
+  }
+  nativeRoots.delete(root);
+  sweepSet.delete(root);
+  retained.delete(root);
 }
 
 export function createElement(tag: string): NodeMirror {

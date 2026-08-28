@@ -3535,6 +3535,50 @@ fn touch_hit_facts_carry_from_the_down_frame() {
 }
 
 #[test]
+fn auxiliary_surface_isolates_layout_draw_and_touch_domains() {
+    let mut ui = Ui::new();
+    ui.set_viewport(400.0, 240.0);
+    let auxiliary_root = ui.create_auxiliary_surface(320.0, 240.0);
+    assert!(auxiliary_root > spec::ROOT_ID);
+    assert_eq!(ui.auxiliary_surface_root(), auxiliary_root);
+    assert_eq!(ui.auxiliary_viewport(), Some((320.0, 240.0)));
+
+    let primary = abs_box(&mut ui, spec::ROOT_ID, 10.0, 12.0, 80.0, 40.0);
+    let auxiliary = abs_box(&mut ui, auxiliary_root, 10.0, 12.0, 80.0, 40.0);
+    let red = abgr(220, 30, 20, 255);
+    let blue = abgr(20, 30, 220, 255);
+    ui.set_prop(primary, spec::prop::BG_COLOR, red as f64);
+    ui.set_prop(auxiliary, spec::prop::BG_COLOR, blue as f64);
+
+    let primary_words = ui.draw().words.clone();
+    let auxiliary_words = ui.draw_auxiliary().unwrap().words.clone();
+    validate_drawlist(&primary_words);
+    validate_drawlist(&auxiliary_words);
+    assert!(primary_words.contains(&red));
+    assert!(!primary_words.contains(&blue));
+    assert!(auxiliary_words.contains(&blue));
+    assert!(!auxiliary_words.contains(&red));
+
+    assert_eq!(ui.hit_test_bounds(20.0, 20.0), primary);
+    assert_eq!(ui.hit_test_bounds_auxiliary(20.0, 20.0), auxiliary);
+
+    let packed = [(3 << 18) | (20 << 9) | 20];
+    let mut primary_hits = [0i32; 8];
+    let mut auxiliary_hits = [0i32; 8];
+    assert_eq!(ui.touch_hits(&packed, &mut primary_hits), 1);
+    assert_eq!(ui.touch_hits_auxiliary(&packed, &mut auxiliary_hits), 1);
+    assert_eq!(primary_hits[0], primary);
+    assert_eq!(auxiliary_hits[0], auxiliary);
+
+    // Both native roots are permanent members of one tree but cannot be
+    // destroyed or nested into application content.
+    ui.destroy_node(auxiliary_root);
+    ui.insert_before(primary, auxiliary_root, 0);
+    assert_eq!(ui.auxiliary_surface_root(), auxiliary_root);
+    assert_eq!(ui.hit_test_bounds_auxiliary(20.0, 20.0), auxiliary);
+}
+
+#[test]
 fn touch_decode_reads_both_packings() {
     assert_eq!(crate::touch::decode((7 << 18) | (200 << 9) | 300), (7, 300.0, 200.0));
     assert_eq!(

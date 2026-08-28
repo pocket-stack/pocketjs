@@ -6,10 +6,9 @@
  * SQUARE sit, which keeps CIRCLE as confirm exactly as the PSP host and the
  * launcher expect.
  *
- * The touchscreen is deliberately not read. It is the BOTTOM screen (320x240)
- * while the UI renders on the top (400x240), so reporting its contacts as
- * logical coordinates in the top screen's space would be a lie; the 3DS
- * profile does not advertise input.touch.
+ * The touchscreen belongs to the BOTTOM auxiliary output (320x240). Its
+ * contact is delivered through input.touch.auxiliary and never appears in
+ * the primary input.touch snapshot.
  */
 
 #include "input.h"
@@ -74,4 +73,14 @@ int32_t input_analog(void) {
   hidCircleRead(&pad);
   /* The circle pad reads dy positive UP; the contract's Y is positive DOWN. */
   return (axis(pad.dx) << 8) | axis(-pad.dy);
+}
+
+size_t input_touch(uint32_t *packed) {
+  if (packed == NULL || (hidKeysHeld() & KEY_TOUCH) == 0) return 0;
+  touchPosition touch;
+  hidTouchRead(&touch);
+  /* touch.ts legacy lane: x:9, y:9, id:8. The resistive panel has one
+   * contact, so id 0 remains stable until KEY_TOUCH lifts. */
+  *packed = ((uint32_t)touch.py << 9) | (uint32_t)touch.px;
+  return 1;
 }

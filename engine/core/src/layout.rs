@@ -291,11 +291,11 @@ fn build(
 
 /// Copy rounded layout output back into the node tree (flat pass — layouts
 /// are parent-relative, so order does not matter; no per-node allocations).
-fn readback(tree: &mut Tree, taffy: &TaffyTree<MeasureCtx>) {
-    for node in tree.slots.iter_mut() {
-        if !node.alive {
-            continue;
-        }
+fn readback(tree: &mut Tree, taffy: &TaffyTree<MeasureCtx>, root_id: i32) {
+    let mut slots = Vec::new();
+    tree.collect_subtree(root_id, &mut slots);
+    for slot in slots {
+        let node = &mut tree.slots[slot as usize];
         match node.taffy {
             Some(nid) => {
                 if let Ok(l) = taffy.layout(nid) {
@@ -312,7 +312,13 @@ fn readback(tree: &mut Tree, taffy: &TaffyTree<MeasureCtx>) {
     }
 }
 
-fn compute(tree: &mut Tree, _fonts: &Fonts, eng: &mut LayoutEngine, root_nid: taffy::NodeId) {
+fn compute(
+    tree: &mut Tree,
+    _fonts: &Fonts,
+    eng: &mut LayoutEngine,
+    root_id: i32,
+    root_nid: taffy::NodeId,
+) {
     let _ = eng.taffy.compute_layout_with_measure(
         root_nid,
         Size {
@@ -329,7 +335,7 @@ fn compute(tree: &mut Tree, _fonts: &Fonts, eng: &mut LayoutEngine, root_nid: ta
             }
         },
     );
-    readback(tree, &eng.taffy);
+    readback(tree, &eng.taffy, root_id);
 }
 
 /// Relayout. STYLE-only dirt restyles the dirty nodes in the LIVE taffy tree
@@ -337,6 +343,19 @@ fn compute(tree: &mut Tree, _fonts: &Fonts, eng: &mut LayoutEngine, root_nid: ta
 /// layout-prop keyframe animations 60 Hz on the PSP); STRUCTURE dirt rebuilds
 /// the tree from scratch.
 pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut LayoutEngine) {
+    relayout_root(tree, styles, fonts, eng, spec::ROOT_ID);
+}
+
+/// Relayout one independent output root. Auxiliary roots share the arena and
+/// resource tables with the primary tree, but keep separate taffy state and
+/// viewport bounds.
+pub fn relayout_root(
+    tree: &mut Tree,
+    styles: &StyleTable,
+    fonts: &Fonts,
+    eng: &mut LayoutEngine,
+    root_id: i32,
+) {
     if !eng.dirty && eng.built {
         if eng.style_dirty.is_empty() {
             return;
@@ -346,6 +365,10 @@ pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut L
         let dirty = core::mem::take(&mut eng.style_dirty);
         for &slot in &dirty {
             if !tree.slots[slot as usize].alive {
+                continue;
+            }
+            let node_id = tree.slots[slot as usize].id(slot);
+            if !tree.is_in_subtree(root_id, node_id) {
                 continue;
             }
             let Some(nid) = tree.slots[slot as usize].taffy else {
@@ -377,17 +400,24 @@ pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut L
             let _ = eng.taffy.set_style(nid, to_taffy(&resolved));
         }
         if let Some(root_nid) = eng.root {
-            compute(tree, fonts, eng, root_nid);
+            compute(tree, fonts, eng, root_id, root_nid);
             return;
         }
         eng.dirty = true; // no built root (should not happen) — full rebuild
     }
     eng.taffy.clear();
     eng.style_dirty.clear();
-    for n in tree.slots.iter_mut() {
-        n.taffy = None;
+    let mut surface_slots = Vec::new();
+    tree.collect_subtree(root_id, &mut surface_slots);
+    for &slot in &surface_slots {
+        tree.slots[slot as usize].taffy = None;
     }
-    let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
+    let Some(root_slot) = tree.resolve(root_id) else {
+        eng.dirty = false;
+        eng.built = false;
+        eng.root = None;
+        return;
+    };
     let Some(root_nid) = build(tree, styles, fonts, &mut eng.taffy, root_slot, false) else {
         eng.dirty = false;
         eng.built = false;
@@ -397,7 +427,7 @@ pub fn relayout(tree: &mut Tree, styles: &StyleTable, fonts: &Fonts, eng: &mut L
     eng.root = Some(root_nid);
     eng.built = true;
     eng.dirty = false;
-    compute(tree, fonts, eng, root_nid);
+    compute(tree, fonts, eng, root_id, root_nid);
 }
 
 /// Smoke helper proving the pinned taffy feature set

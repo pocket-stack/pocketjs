@@ -66,9 +66,19 @@ export type ExecutionClass = (typeof EXECUTION_CLASSES)[number];
 /** The forms whose logical viewport is a runtime variable. */
 export const DYNAMIC_FORMS: readonly TargetForm[] = ["window", "widget"];
 
-export interface DisplayProfile {
+export interface FixedDisplayProfile {
   readonly physicalViewport: Viewport;
   readonly logicalViewports: readonly Viewport[];
+  readonly presentations: readonly PresentationMode[];
+  /**
+   * Target raster samples per logical pixel for baked text, vectors, masks,
+   * and target-selected image variants. This is a rendering contract, not an
+   * API capability or a promise that presentation scale has the same value.
+   */
+  readonly rasterDensity: number;
+}
+
+export interface DisplayProfile extends FixedDisplayProfile {
   /**
    * Present exactly when the target's form is dynamic (window/widget): any
    * logical size within [min, max] is admissible, and the host resizes the
@@ -83,13 +93,13 @@ export interface DisplayProfile {
     readonly max: Viewport;
     readonly acceptsFixed?: boolean;
   };
-  readonly presentations: readonly PresentationMode[];
   /**
-   * Target raster samples per logical pixel for baked text, vectors, masks,
-   * and target-selected image variants. This is a rendering contract, not an
-   * API capability or a promise that presentation scale has the same value.
+   * A simultaneously presented fixed-size UI output owned by the same
+   * AppInstance. Present only when the target advertises display.auxiliary.
+   * Its raster density matches the primary display until packages can carry
+   * per-surface raster asset variants.
    */
-  readonly rasterDensity: number;
+  readonly auxiliary?: FixedDisplayProfile;
 }
 
 export interface TargetProfile<C extends string = string> {
@@ -144,6 +154,10 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // is the fallback spelling on targets without it.
   "input.text",
   "input.touch",
+  // Touch contacts whose logical coordinates and hit facts belong to the
+  // auxiliary UI surface rather than the primary viewport. Requires
+  // display.auxiliary; it does not imply ordinary input.touch.
+  "input.touch.auxiliary",
   // A System UI can place installed Pocket applications into native
   // compositor surfaces. This describes the UI API, not the host's internal
   // scheduling implementation.
@@ -186,6 +200,10 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // window resizes and relayouts (framework resizeViewport). Console
   // targets never provide this — their viewport is a platform constant.
   "display.viewport.live",
+  // One fixed-size auxiliary UI output presented simultaneously with the
+  // primary viewport by the same AppInstance. This is not Pocket System
+  // application-surface composition.
+  "display.auxiliary",
   "text.glyphs.baked",
   // Codepoints outside the baked charset still render: the host extends
   // the font atlases at runtime (system-font rasterization + loadFontAtlas

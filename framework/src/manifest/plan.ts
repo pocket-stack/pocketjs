@@ -23,6 +23,16 @@ export interface ResolvedBuildPlanContent {
      *  size-locking from the plan, never by re-reading the manifest. */
     readonly policy: "fixed" | "dynamic";
   };
+  /** Additional resolved UI outputs. Omitted when the application did not
+   * declare display.auxiliary or its enhancement was unavailable. */
+  readonly surfaces?: {
+    readonly auxiliary: {
+      readonly logical: Viewport;
+      readonly physical: Viewport;
+      readonly presentation: PresentationMode;
+      readonly rasterDensity: number;
+    };
+  };
   /** Required APIs are true; enhancements reflect target availability. */
   readonly features: Readonly<Record<string, boolean>>;
   /** Companion service names from the manifest (app.companions): the exact

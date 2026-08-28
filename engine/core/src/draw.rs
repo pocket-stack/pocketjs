@@ -717,7 +717,18 @@ fn claims_hit(
 /// hit beats clicking whatever sits BEHIND visible 3D content.
 /// Returns the generation-tagged id, or 0.
 pub fn hit_test(tree: &Tree, styles: &StyleTable, screen: (f32, f32), x: f32, y: f32) -> i32 {
-    hit_point(tree, styles, screen, x, y, true)
+    hit_test_root(tree, styles, spec::ROOT_ID, screen, x, y)
+}
+
+pub fn hit_test_root(
+    tree: &Tree,
+    styles: &StyleTable,
+    root_id: i32,
+    screen: (f32, f32),
+    x: f32,
+    y: f32,
+) -> i32 {
+    hit_point(tree, styles, root_id, screen, x, y, true)
 }
 
 /// Topmost node at a logical point by LAYOUT BOX alone (spec op
@@ -727,11 +738,30 @@ pub fn hit_test(tree: &Tree, styles: &StyleTable, screen: (f32, f32), x: f32, y:
 /// semantics. Everything else (paint order, clips, transforms, opacity
 /// culling, 3D contexts) matches `hit_test` exactly.
 pub fn hit_test_bounds(tree: &Tree, styles: &StyleTable, screen: (f32, f32), x: f32, y: f32) -> i32 {
-    hit_point(tree, styles, screen, x, y, false)
+    hit_test_bounds_root(tree, styles, spec::ROOT_ID, screen, x, y)
 }
 
-fn hit_point(tree: &Tree, styles: &StyleTable, screen: (f32, f32), x: f32, y: f32, ink: bool) -> i32 {
-    let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
+pub fn hit_test_bounds_root(
+    tree: &Tree,
+    styles: &StyleTable,
+    root_id: i32,
+    screen: (f32, f32),
+    x: f32,
+    y: f32,
+) -> i32 {
+    hit_point(tree, styles, root_id, screen, x, y, false)
+}
+
+fn hit_point(
+    tree: &Tree,
+    styles: &StyleTable,
+    root_id: i32,
+    screen: (f32, f32),
+    x: f32,
+    y: f32,
+    ink: bool,
+) -> i32 {
+    let Some(root_slot) = tree.resolve(root_id) else { return 0 };
     let mut hit = 0i32;
     hit_walk(tree, styles, screen, root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), x, y, ink, &mut hit);
     hit
@@ -853,6 +883,43 @@ pub fn build(
     inspect_prev: Option<(f32, f32, f32, f32)>,
     cursor: Option<(u32, f32, f32, f32, f32)>,
 ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>, bool) {
+    build_root(
+        tree,
+        styles,
+        fonts,
+        frame,
+        spec::ROOT_ID,
+        screen,
+        textures,
+        tex_free,
+        discs,
+        raster_density,
+        dl,
+        inspect_id,
+        inspect_prev,
+        cursor,
+    )
+}
+
+/// Build one independent output root into its own DrawList while sharing the
+/// Ui resource tables and frame clock.
+#[allow(clippy::too_many_arguments)]
+pub fn build_root(
+    tree: &Tree,
+    styles: &StyleTable,
+    fonts: &Fonts,
+    frame: u64,
+    root_id: i32,
+    screen: (f32, f32),
+    textures: &mut Vec<crate::TexSlot>,
+    tex_free: &mut Vec<u32>,
+    discs: &mut DiscCache,
+    raster_density: u32,
+    dl: &mut DrawList,
+    inspect_id: i32,
+    inspect_prev: Option<(f32, f32, f32, f32)>,
+    cursor: Option<(u32, f32, f32, f32, f32)>,
+) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>, bool) {
     dl.words.clear();
     // DevTools (docs/DEVTOOLS.md): slot of the inspected node, u32::MAX = none.
     // Nodes inside a perspective subtree take the paint_3d path and are not
@@ -878,7 +945,9 @@ pub fn build(
         in_3d: false,
         provider_stale: false,
     };
-    let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
+    let Some(root_slot) = tree.resolve(root_id) else {
+        return (None, None, false);
+    };
     w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), false, dl);
     let provider_stale = w.provider_stale;
     let target = w.inspect_hit.map(|c| (c.x0, c.y0, c.x1 - c.x0, c.y1 - c.y0));

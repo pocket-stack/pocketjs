@@ -92,6 +92,42 @@ the runtime surface for computed feature ids and introspection. Capability ids
 are plain strings, not versioned tokens or permissions passed through
 application call graphs.
 
+### Additional display surfaces
+
+An application that uses a second fixed display declares both the API and its
+logical geometry. This example requires a 320×240 auxiliary surface with touch:
+
+```json
+{
+  "engine": {
+    "capabilities": {
+      "requires": ["display.auxiliary", "input.touch.auxiliary"]
+    }
+  },
+  "app": {
+    "surfaces": {
+      "auxiliary": {
+        "fixed": { "logical": [320, 240], "presentation": "native" }
+      }
+    }
+  }
+}
+```
+
+**`display.auxiliary` creates a second layout, draw, hit-test, and overlay
+domain inside the same application instance.** The primary and auxiliary trees
+share application state and resources, but neither tree participates in the
+other tree's layout or hit testing. Applications render auxiliary content with
+`<AuxiliarySurface>`.
+
+**`input.touch.auxiliary` reports contacts in auxiliary logical pixels and does
+not provide `input.touch`.** The resolver requires `display.auxiliary` whenever
+auxiliary touch is requested. A target profile must publish the auxiliary
+physical/logical display facts together with `display.auxiliary`; mismatched
+facts are rejected before an application is resolved. The current package
+format uses one raster asset density for both surfaces, so both display facts
+must declare the same `rasterDensity`.
+
 ## What a capability means
 
 A capability means:

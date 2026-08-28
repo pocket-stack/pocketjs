@@ -98,6 +98,8 @@ pub mod op {
     pub const HIT_TEST_BOUNDS: u8 = 42;
     pub const WRAP_TEXT: u8 = 43;
     pub const SET_COMPOSITOR_SURFACE: u8 = 44;
+    pub const HIT_TEST_AUXILIARY: u8 = 45;
+    pub const HIT_TEST_BOUNDS_AUXILIARY: u8 = 46;
 }
 
 /// Property ids (u8, stable, append-only). Groups:

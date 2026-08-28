@@ -262,6 +262,10 @@ export const THREE_DS_GOLDEN_SPECS: GoldenSpec[] = [
     // frame-12 and frame-22 captures carry a native focus: variant the guest
     // never re-rendered for. Edge detection needs the release.
     input: (frame) => (frame >= 4 && frame < 8 ? 0x20 : 0),
+    // Hold the first bottom-screen tile, then release. Activation commits on
+    // release, so frame 12 proves auxiliary hit testing and the shared signal
+    // update on both surfaces.
+    touch: (frame) => (frame >= 6 && frame < 9 ? [{ id: 0, x: 60, y: 110 }] : []),
   },
 ];
 

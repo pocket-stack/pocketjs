@@ -26,6 +26,7 @@ import {
   type NodeMirror,
 } from "./renderer-vue-vapor.ts";
 import { setOverlayRoot } from "./overlay.ts";
+import { mountAuxiliarySurface, unmountAuxiliarySurface } from "./display.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setInputRoot } from "./input.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.ts";
@@ -172,6 +173,7 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
     }
   }
 
+  mountAuxiliarySurface(host.ops);
   const viewport = hostViewport(host.ops);
   const layerW = viewport?.w ?? SCREEN_W;
   const layerH = viewport?.h ?? SCREEN_H;
@@ -202,10 +204,16 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   resetEffects();
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md), same as the Solid path.
   installFrameHandler(
-    wrapFrameHandler((buttons: number, analog: number, touches?: readonly number[]) => {
+    wrapFrameHandler((
+      buttons: number,
+      analog: number,
+      touches?: readonly number[],
+      hits?: readonly number[],
+      touchSurfaces?: readonly number[],
+    ) => {
       __advanceClock();
       __setAnalog(analog);
-      __setTouches(touches);
+      __setTouches(touches, hits, touchSurfaces);
       runServicePumps();
       __drainEffects();
       runFrameHooks(buttons);
@@ -228,6 +236,7 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
       child.parent = null;
       host.ops.destroyNode(child.id);
     }
+    unmountAuxiliarySurface(host.ops);
     runSweep();
   };
 }

@@ -67,6 +67,21 @@ contacts rather than prescribing tap, drag, or pinch semantics, so reusable
 gesture recognizers remain ordinary deterministic application code. Put
 `input.touch` in `enhances` when the same app must still build for PSP.
 
+Targets with a separate touch display expose `input.touch.auxiliary` instead:
+
+```ts
+import { auxiliaryTouches } from "@pocketjs/framework/input";
+
+const contact = auxiliaryTouches()[0];
+```
+
+**`touches()` contains only primary-surface contacts;
+`auxiliaryTouches()` contains only auxiliary-surface contacts.** Each contact's
+`surface` field is `"primary"` or `"auxiliary"`, and `x`/`y` stay in that
+surface's logical coordinate space. Touch activation and gestures resolve hits
+only against the matching surface tree. The two capability ids are independent:
+a bottom-screen touch panel does not imply that the primary display is touchable.
+
 ## Virtual cursor
 
 Targets that provide `input.cursor` can replace the d-pad focus walk with a
