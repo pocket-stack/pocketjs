@@ -13,6 +13,7 @@
 import { ANALOG_CENTER } from "../../contracts/spec/spec.ts";
 import type { HostOps } from "./host.ts";
 import { rootMirror, setTreeMutationHook, type NodeMirror } from "./native-tree.ts";
+import { getAuxiliarySurfaceRoots, hasAuxiliarySurface } from "./display.ts";
 
 export interface DevtoolsTransport {
   /** Ship one JSON line to the panel(s). */
@@ -573,7 +574,7 @@ function sendStats(): void {
   send({
     t: "stats",
     frame: state.frame,
-    nodes: countNodes(rootMirror),
+    nodes: countMountedNodes(),
     tapeLen: state.tapeLen,
     paused: state.paused,
   });
@@ -582,7 +583,7 @@ function sendStats(): void {
 function sendTree(): void {
   state.treeDirty = false;
   state.treeSentAt = state.frame;
-  send({ t: "tree", frame: state.frame, root: serializeNode(rootMirror) });
+  send({ t: "tree", frame: state.frame, root: serializeMountedTree() });
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +593,8 @@ function sendTree(): void {
 interface TreeNodeJson {
   i: number;
   t: string;
+  /** DevTools-only grouping node; it has no native node to inspect. */
+  v?: 1;
   n?: string;
   c?: string;
   x?: string;
@@ -646,12 +649,38 @@ function serializeNode(node: NodeMirror): TreeNodeJson {
   return out;
 }
 
+function namedSurfaceRoot(node: NodeMirror, name: string): TreeNodeJson {
+  const out = serializeNode(node);
+  if (!out.n) out.n = name;
+  return out;
+}
+
+function serializeMountedTree(): TreeNodeJson {
+  if (!hasAuxiliarySurface()) return serializeNode(rootMirror);
+  return {
+    i: 0,
+    t: "surfaces",
+    v: 1,
+    n: "Displays",
+    k: [
+      namedSurfaceRoot(rootMirror, "Primary display"),
+      namedSurfaceRoot(getAuxiliarySurfaceRoots().native, "Auxiliary display"),
+    ],
+  };
+}
+
 function countNodes(node: NodeMirror): number {
   let n = 1;
   forEachTreeChild(node, (child) => {
     n += countNodes(child);
   });
   return n;
+}
+
+function countMountedNodes(): number {
+  let count = countNodes(rootMirror);
+  if (hasAuxiliarySurface()) count += countNodes(getAuxiliarySurfaceRoots().native);
+  return count;
 }
 
 // ---------------------------------------------------------------------------

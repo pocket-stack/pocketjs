@@ -54,6 +54,43 @@ static bool ensure_directory(const char *path, char *error, size_t error_length)
   return false;
 }
 
+void runtime_failure_lineage_reset(PocketRuntimeFailureLineage *lineage) {
+  if (lineage == NULL) return;
+  memset(lineage, 0, sizeof *lineage);
+}
+
+static bool runtime_failure_lineage_contains(
+  const PocketRuntimeFailureLineage *lineage,
+  uint64_t hash
+) {
+  if (lineage == NULL || hash == 0) return false;
+  for (size_t index = 0; index < lineage->count; index += 1) {
+    if (lineage->hashes[index] == hash) return true;
+  }
+  return false;
+}
+
+bool runtime_failure_lineage_add(PocketRuntimeFailureLineage *lineage, uint64_t hash) {
+  if (lineage == NULL || hash == 0) return false;
+  if (runtime_failure_lineage_contains(lineage, hash)) return true;
+  if (lineage->count == POCKET_RUNTIME_FAILURE_CAPACITY) return false;
+  lineage->hashes[lineage->count++] = hash;
+  return true;
+}
+
+uint64_t runtime_recovery_hash(
+  const PocketRuntimeState *state,
+  const PocketRuntimeFailureLineage *lineage
+) {
+  if (state == NULL) return 0;
+  const uint64_t candidates[] = { state->active_hash, state->last_good_hash };
+  for (size_t index = 0; index < sizeof candidates / sizeof candidates[0]; index += 1) {
+    uint64_t hash = candidates[index];
+    if (hash != 0 && !runtime_failure_lineage_contains(lineage, hash)) return hash;
+  }
+  return 0;
+}
+
 bool runtime_storage_init(PocketRuntimeState *state, char *error, size_t error_length) {
   if (state == NULL) {
     set_error(error, error_length, "runtime state is null");

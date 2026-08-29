@@ -28,7 +28,7 @@ import {
 import { setOverlayRoot } from "./overlay.ts";
 import { mountAuxiliarySurface, unmountAuxiliarySurface } from "./display.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
-import { handleFrame, setInputRoot } from "./input.ts";
+import { handleFrame, setAuxiliaryHitRoot, setHitRoot, setInputRoot } from "./input.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.ts";
 import { __resetTouches, __setTouches } from "./touch.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
@@ -173,7 +173,7 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
     }
   }
 
-  mountAuxiliarySurface(host.ops);
+  const auxiliary = mountAuxiliarySurface(host.ops);
   const viewport = hostViewport(host.ops);
   const layerW = viewport?.w ?? SCREEN_W;
   const layerH = viewport?.h ?? SCREEN_H;
@@ -199,6 +199,8 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   overlayLayer = overlayRoot;
 
   setInputRoot(appRoot);
+  setHitRoot(rootMirror);
+  setAuxiliaryHitRoot(auxiliary?.native ?? null);
   resetFrameHooks();
   resetClock(); // clock policy + effect shell (docs/DETERMINISM.md), same as Solid
   resetEffects();
@@ -229,6 +231,8 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
     __resetTouches();
     dispose();
     setInputRoot(null);
+    setHitRoot(null);
+    setAuxiliaryHitRoot(null);
     setOverlayRoot(null);
     appLayer = null;
     overlayLayer = null;

@@ -443,14 +443,11 @@ static GuestChoice package_choice(
 static GuestChoice recovery_choice(
   const PocketRuntimeState *state,
   PocketRuntimePackage *embedded,
-  uint64_t excluded_a,
-  uint64_t excluded_b,
-  uint64_t excluded_c
+  PocketRuntimeFailureLineage *failures
 ) {
-  const uint64_t candidates[] = { state->active_hash, state->last_good_hash };
-  for (size_t index = 0; index < sizeof candidates / sizeof candidates[0]; index += 1) {
-    uint64_t hash = candidates[index];
-    if (hash == 0 || hash == excluded_a || hash == excluded_b || hash == excluded_c) continue;
+  for (;;) {
+    uint64_t hash = runtime_recovery_hash(state, failures);
+    if (hash == 0) break;
     char error[256] = {0};
     PocketRuntimePackage *package = runtime_package_load_hash(hash, error, sizeof error);
     if (package != NULL) {
@@ -460,6 +457,10 @@ static GuestChoice recovery_choice(
       return choice;
     }
     runtime_write_error("load-recovery", error);
+    if (!runtime_failure_lineage_add(failures, hash)) {
+      runtime_write_error("load-recovery", "recovery failure lineage exhausted");
+      break;
+    }
   }
   GuestChoice choice = package_choice(embedded, 0, state);
   if (choice.commit_on_accept) choice.next_last_good_hash = 0;
@@ -468,9 +469,11 @@ static GuestChoice recovery_choice(
 
 static GuestChoice startup_choice(
   PocketRuntimeState *state,
-  PocketRuntimePackage *embedded
+  PocketRuntimePackage *embedded,
+  PocketRuntimeFailureLineage *failures
 ) {
 #ifdef POCKETJS_CAPTURE
+  (void)failures;
   return package_choice(embedded, 0, state);
 #else
   char error[256] = {0};
@@ -494,7 +497,10 @@ static GuestChoice startup_choice(
     );
     if (active != NULL) return package_choice(active, state->active_hash, state);
     runtime_write_error("load-active", error);
-    return recovery_choice(state, embedded, state->active_hash, 0, 0);
+    if (!runtime_failure_lineage_add(failures, state->active_hash)) {
+      return package_choice(embedded, 0, state);
+    }
+    return recovery_choice(state, embedded, failures);
   }
   return package_choice(embedded, 0, state);
 #endif
@@ -504,12 +510,10 @@ static bool boot_with_recovery(
   GuestChoice *choice,
   PocketRuntimeState *state,
   PocketRuntimePackage *embedded,
+  PocketRuntimeFailureLineage *failures,
   char *fatal,
   size_t fatal_length
 ) {
-  uint64_t excluded_a = UINT64_MAX;
-  uint64_t excluded_b = UINT64_MAX;
-  uint64_t excluded_c = UINT64_MAX;
   /* pending + active + last-good + embedded recovery are four distinct
    * artifacts in the longest failure chain. */
   for (uint32_t attempt = 0; attempt < 4; attempt += 1) {
@@ -524,10 +528,11 @@ static bool boot_with_recovery(
     bool embedded_failed = choice->package == embedded;
     release_choice(choice, embedded);
     if (embedded_failed) return false;
-    if (excluded_a == UINT64_MAX) excluded_a = rejected;
-    else if (excluded_b == UINT64_MAX) excluded_b = rejected;
-    else excluded_c = rejected;
-    *choice = recovery_choice(state, embedded, excluded_a, excluded_b, excluded_c);
+    if (!runtime_failure_lineage_add(failures, rejected)) {
+      snprintf(fatal, fatal_length, "recovery failure lineage exhausted");
+      return false;
+    }
+    *choice = recovery_choice(state, embedded, failures);
   }
   snprintf(fatal, fatal_length, "guest recovery attempts exhausted");
   return false;
@@ -536,6 +541,7 @@ static bool boot_with_recovery(
 static void accept_guest(
   GuestChoice *choice,
   PocketRuntimeState *state,
+  PocketRuntimeFailureLineage *failures,
   uint32_t frame
 ) {
   if (!choice->commit_on_accept || choice->submitted_frames == 0) return;
@@ -552,6 +558,7 @@ static void accept_guest(
     fail(error);
   }
   choice->commit_on_accept = false;
+  runtime_failure_lineage_reset(failures);
   runtime_write_status(state, choice->package, "accepted");
   devserver_set_runtime(state, choice->package, "accepted", frame);
   devserver_report_install("accepted", accepted_hash, "first PICA command list retired");
@@ -588,6 +595,7 @@ static void recover_running_guest(
   GuestChoice *choice,
   PocketRuntimeState *state,
   PocketRuntimePackage *embedded,
+  PocketRuntimeFailureLineage *failures,
   uint32_t run_frame,
   const char *phase,
   const char *message
@@ -596,12 +604,15 @@ static void recover_running_guest(
   if (choice->package == embedded) fail(message);
   uint64_t rejected = choice->state_hash;
   bool candidate = choice->commit_on_accept;
+  if (!runtime_failure_lineage_add(failures, rejected)) {
+    fail("recovery failure lineage exhausted");
+  }
   begin_frame_wait(run_frame);
   teardown_guest();
   release_choice(choice, embedded);
-  *choice = recovery_choice(state, embedded, rejected, UINT64_MAX, UINT64_MAX);
+  *choice = recovery_choice(state, embedded, failures);
   char fatal[256] = {0};
-  if (!boot_with_recovery(choice, state, embedded, fatal, sizeof fatal)) fail(fatal);
+  if (!boot_with_recovery(choice, state, embedded, failures, fatal, sizeof fatal)) fail(fatal);
   devserver_set_runtime(state, choice->package, "recovered", run_frame);
   devserver_report_install(
     candidate ? "rejected" : "recovered",
@@ -617,6 +628,7 @@ static void install_candidate(
   GuestChoice *choice,
   PocketRuntimeState *state,
   PocketRuntimePackage *embedded,
+  PocketRuntimeFailureLineage *failures,
   PocketRuntimePackage *candidate,
   uint32_t *run_frame,
   char *error,
@@ -624,11 +636,12 @@ static void install_candidate(
 ) {
   uint64_t candidate_hash = candidate->guest.package_hash;
   begin_frame_wait(*run_frame);
-  accept_guest(choice, state, *run_frame);
+  accept_guest(choice, state, failures, *run_frame);
   teardown_guest();
   release_choice(choice, embedded);
+  runtime_failure_lineage_reset(failures);
   *choice = package_choice(candidate, candidate_hash, state);
-  if (!boot_with_recovery(choice, state, embedded, error, error_length)) fail(error);
+  if (!boot_with_recovery(choice, state, embedded, failures, error, error_length)) fail(error);
   if (choice->state_hash == candidate_hash) {
     if (choice->commit_on_accept) {
       devserver_set_runtime(state, choice->package, "candidate", *run_frame);
@@ -706,11 +719,13 @@ int main(void) {
     runtime_write_error("devserver-init", runtime_error);
   }
 #endif
-  GuestChoice guest = startup_choice(&runtime_state, embedded);
+  PocketRuntimeFailureLineage failures = {0};
+  GuestChoice guest = startup_choice(&runtime_state, embedded, &failures);
   if (!boot_with_recovery(
         &guest,
         &runtime_state,
         embedded,
+        &failures,
         runtime_error,
         sizeof runtime_error
       )) {
@@ -781,6 +796,7 @@ int main(void) {
           &guest,
           &runtime_state,
           embedded,
+          &failures,
           uploaded,
           &run_frame,
           runtime_error,
@@ -803,6 +819,7 @@ int main(void) {
           &guest,
           &runtime_state,
           embedded,
+          &failures,
           pending,
           &run_frame,
           runtime_error,
@@ -834,6 +851,7 @@ int main(void) {
         &guest,
         &runtime_state,
         embedded,
+        &failures,
         run_frame,
         "guest-frame",
         runtime_error
@@ -865,7 +883,7 @@ int main(void) {
     /* Reaching the next FrameBegin proves the candidate's first submitted list
      * retired without tripping the GPU watchdog. Only now does it become the
      * active generation on SD. */
-    accept_guest(&guest, &runtime_state, run_frame);
+    accept_guest(&guest, &runtime_state, &failures, run_frame);
 #endif
     gfx_begin_frame();
     if (!gfx_prepare_surface(0, ui_draw_list_ptr(), words, VIEW_W, VIEW_H) ||
@@ -884,6 +902,7 @@ int main(void) {
         &guest,
         &runtime_state,
         embedded,
+        &failures,
         run_frame + 1,
         "guest-render",
         "PICA200 surface preparation failed"

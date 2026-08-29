@@ -71,8 +71,11 @@ poll transport → flush outbox → (paused? maybe step : record + run frame)
 - **Flight recorder (always on, even with no transport):** every frame's mask
   goes into a `Uint16Array` ring (36 000 frames ≈ 10 min ≈ 72 KB). Any crash
   or "what just happened?" moment can be exported after the fact.
-- **Component tree:** serialized from the existing JS mirror tree
-  (`NodeMirror`), so reads never cross FFI. Semantic names come from
+- **Component tree:** serialized from the existing JS mirror roots
+  (`NodeMirror`), so reads never cross FFI. **A multi-display host reports the
+  primary and auxiliary roots together under one DevTools-only `Displays`
+  group; the native roots remain independent and node statistics cover both.**
+  Semantic names come from
   (a) a `debugName` prop on any host component and (b) the `<Named
   name="MessageCard">` wrapper (tags the mirror nodes it renders) — both
   first-class framework API, exported from `@pocketjs/framework`.

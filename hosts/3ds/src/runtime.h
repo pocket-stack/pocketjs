@@ -25,6 +25,23 @@ typedef struct {
   uint64_t last_good_hash;
 } PocketRuntimeState;
 
+/* One recovery episode can reject a staged candidate, the active package and
+ * last-good before selecting the embedded package (hash 0). Keep that lineage
+ * in memory until a recovered guest retires its first frame. */
+#define POCKET_RUNTIME_FAILURE_CAPACITY 3
+typedef struct {
+  uint64_t hashes[POCKET_RUNTIME_FAILURE_CAPACITY];
+  size_t count;
+} PocketRuntimeFailureLineage;
+
+void runtime_failure_lineage_reset(PocketRuntimeFailureLineage *lineage);
+bool runtime_failure_lineage_add(PocketRuntimeFailureLineage *lineage, uint64_t hash);
+/* Return the next non-failed stored package, or 0 for embedded ROMFS. */
+uint64_t runtime_recovery_hash(
+  const PocketRuntimeState *state,
+  const PocketRuntimeFailureLineage *lineage
+);
+
 /* Creates the runtime directories and loads the newest committed generation. */
 bool runtime_storage_init(PocketRuntimeState *state, char *error, size_t error_length);
 

@@ -354,11 +354,15 @@ function updatePinClass() {
       toggleRow(row, id);
       return;
     }
+    if (nodeById.get(id)?.v) return;
     pin(id);
   });
   rows.addEventListener("mouseover", (e) => {
     const row = e.target.closest(".row");
-    if (row) setHover(Number(row.dataset.id));
+    if (row) {
+      const id = Number(row.dataset.id);
+      setHover(nodeById.get(id)?.v ? null : id);
+    }
   });
   $("tree").addEventListener("mouseleave", () => setHover(null));
 }

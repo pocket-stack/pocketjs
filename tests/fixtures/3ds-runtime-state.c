@@ -93,6 +93,24 @@ int main(int argc, char **argv) {
   assert(runtime_storage_init(&accepted, error, sizeof error));
   assert(accepted.generation == 2);
   assert(accepted.active_hash == second_hash && accepted.last_good_hash == first_hash);
+
+  /* Consecutive runtime failures retain the whole episode: a staged
+   * candidate falls back to active, then last-good, then ROMFS (hash 0).
+   * Reset happens only after a recovered guest is accepted. */
+  const uint64_t candidate_hash = 0x123456789abcdef0ULL;
+  PocketRuntimeFailureLineage failures = {0};
+  assert(runtime_failure_lineage_add(&failures, candidate_hash));
+  assert(runtime_recovery_hash(&accepted, &failures) == second_hash);
+  assert(runtime_failure_lineage_add(&failures, second_hash));
+  assert(runtime_recovery_hash(&accepted, &failures) == first_hash);
+  assert(runtime_failure_lineage_add(&failures, first_hash));
+  assert(runtime_recovery_hash(&accepted, &failures) == 0);
+  assert(runtime_failure_lineage_add(&failures, first_hash));
+  assert(failures.count == 3);
+  runtime_failure_lineage_reset(&failures);
+  assert(failures.count == 0);
+  assert(runtime_recovery_hash(&accepted, &failures) == second_hash);
+
   PocketRuntimePackage *last_good = runtime_package_load_hash(first_hash, error, sizeof error);
   assert(last_good != NULL && last_good->guest.package_hash == first_hash);
   runtime_package_free(last_good);

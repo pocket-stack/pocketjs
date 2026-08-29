@@ -120,7 +120,10 @@ const SUITE: readonly Stage[] = [
     name: "octane smoke",
     prep: [["bun", "tools/build.ts", "hero-main", "--framework=octane"]],
     browser: true,
-    tests: ["tests/octane-smoke.test.ts"],
+    tests: [
+      "tests/octane-smoke.test.ts",
+      "tests/octane-auxiliary-input.test.ts",
+    ],
   },
   {
     name: "cafe sim (determinism)",
