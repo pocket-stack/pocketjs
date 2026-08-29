@@ -256,17 +256,24 @@ export const GOLDEN_SPECS: GoldenSpec[] = [
 export const THREE_DS_GOLDEN_SPECS: GoldenSpec[] = [
   {
     name: "3ds-demo",
-    frames: 50,
-    capture: [2, 10, 20, 44],
+    frames: 70,
+    capture: [2, 10, 20, 44, 56, 64],
     input: () => 0,
     // Drag upward across the bottom screen. Frame 10 captures finger-follow;
     // release on frame 12 starts inertia, and later captures prove that the
     // auxiliary VirtualList keeps re-windowing through the shared gesture and
-    // scroller contracts.
-    touch: (frame) =>
-      frame >= 5 && frame <= 11
-        ? [{ id: 0, x: 160, y: 210 - (frame - 5) * 30 }]
-        : [],
+    // scroller contracts. A second contact drags the right-edge scrubber from
+    // near the beginning to the end: frame 56 captures proportional seeking,
+    // and frame 64 proves the virtual window settled near section Z.
+    touch: (frame) => {
+      if (frame >= 5 && frame <= 11) {
+        return [{ id: 0, x: 160, y: 210 - (frame - 5) * 30 }];
+      }
+      if (frame >= 52 && frame <= 58) {
+        return [{ id: 1, x: 310, y: 82 + (frame - 52) * 22 }];
+      }
+      return [];
+    },
   },
 ];
 

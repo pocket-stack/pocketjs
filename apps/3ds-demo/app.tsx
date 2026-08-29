@@ -7,37 +7,95 @@
 // transform without laying out all rows.
 
 import { createSignal } from "solid-js";
-import { AuxiliarySurface, Image, Text, View } from "@pocketjs/framework/components";
+import {
+  AuxiliarySurface,
+  Image,
+  Text,
+  View,
+  type NodeMirror,
+} from "@pocketjs/framework/components";
+import { createGesture } from "@pocketjs/framework/gesture";
+import { createScroller } from "@pocketjs/framework/kinetics";
 import { analogRaw, analogX, analogY, onFrame } from "@pocketjs/framework/lifecycle";
 import { VirtualList } from "@pocketjs/framework/virtual-list";
 
 const PAD_TRAVEL = 26;
 const LIST_ROWS = 10_000;
-const ROW_HEIGHT = 48;
-const GROUPS = ["ALPHA", "BRAVO", "CHARLIE", "DELTA"] as const;
+const NAV_HEIGHT = 36;
+const SECTION_HEIGHT = 20;
+const LIST_TOP = NAV_HEIGHT + SECTION_HEIGHT;
+const LIST_HEIGHT = 240 - LIST_TOP;
+const ROW_HEIGHT = 38;
+const MAX_SCROLL = LIST_ROWS * ROW_HEIGHT - LIST_HEIGHT;
+const SCROLLBAR_PADDING = 6;
+const SCROLLBAR_THUMB_HEIGHT = 32;
+const SCROLLBAR_TRAVEL = LIST_HEIGHT - SCROLLBAR_PADDING * 2 - SCROLLBAR_THUMB_HEIGHT;
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const GIVEN_NAMES = [
+  "Avery",
+  "Chloe",
+  "Elliot",
+  "Harper",
+  "Jamie",
+  "Morgan",
+  "Riley",
+  "Taylor",
+] as const;
+const SURNAMES = [
+  "Adams",
+  "Bennett",
+  "Carter",
+  "Dawson",
+  "Ellis",
+  "Foster",
+  "Garcia",
+  "Hayes",
+  "Irwin",
+  "Jordan",
+  "Keller",
+  "Lewis",
+  "Morris",
+  "Nelson",
+  "Owens",
+  "Parker",
+  "Quinn",
+  "Reed",
+  "Sullivan",
+  "Turner",
+  "Underwood",
+  "Vaughn",
+  "Walker",
+  "Xavier",
+  "Young",
+  "Zimmerman",
+] as const;
+const PLACES = ["CUPERTINO", "BROOKLYN", "PORTLAND", "AUSTIN"] as const;
+
+function sectionForIndex(index: number): number {
+  return Math.max(
+    0,
+    Math.min(LETTERS.length - 1, Math.floor((index * LETTERS.length) / LIST_ROWS)),
+  );
+}
+
+function clampFraction(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
 
 function BottomRow(index: number) {
   const ordinal = String(index + 1).padStart(5, "0");
-  const value = String((index * 37 + 11) % 1000).padStart(3, "0");
+  const section = sectionForIndex(index);
+  const name = `${GIVEN_NAMES[(index * 5 + section) % GIVEN_NAMES.length]} ${SURNAMES[section]}`;
   return (
     <View
-      debugName={`VirtualRow${ordinal}`}
-      class={
-        index % 2 === 0
-          ? "flex-row items-center w-full h-full px-3 gap-3 bg-slate-950 border-b border-slate-800"
-          : "flex-row items-center w-full h-full px-3 gap-3 bg-slate-900 border-b border-slate-800"
-      }
+      debugName={`VirtualContact${ordinal}`}
+      class="relative flex-col justify-center w-full h-full pl-3 pr-6 bg-white"
     >
-      <View class="items-center justify-center w-8 h-8 rounded-lg bg-cyan-950 border border-cyan-800">
-        <Text class="text-xs text-cyan-300 font-bold">{String((index % 99) + 1).padStart(2, "0")}</Text>
-      </View>
-      <View class="flex-col grow gap-1">
-        <Text class="text-sm text-slate-100 font-bold">ROW {ordinal}</Text>
-        <Text class="text-xs text-slate-500 tracking-wide">
-          {GROUPS[index % GROUPS.length]} · VALUE {value}
-        </Text>
-      </View>
-      <Text class="text-xs text-slate-600">{ordinal}</Text>
+      <Text class="text-sm text-slate-900 font-bold">{name}</Text>
+      <Text class="text-xs text-slate-500 tracking-wide">
+        MOBILE · {PLACES[index % PLACES.length]}
+      </Text>
+      <View class="absolute left-3 right-0 bottom-0 h-[1] bg-slate-200" />
     </View>
   );
 }
@@ -46,6 +104,40 @@ export default function ThreeDsDemo() {
   const [padX, setPadX] = createSignal(0);
   const [padY, setPadY] = createSignal(0);
   const [padRaw, setPadRaw] = createSignal(analogRaw());
+  const [scrubbing, setScrubbing] = createSignal(false);
+  let scrollbarNode: NodeMirror | undefined;
+
+  const listScroller = createScroller({
+    max: () => MAX_SCROLL,
+    extent: () => LIST_HEIGHT,
+  });
+
+  const scrollFraction = () => clampFraction(listScroller.offset() / MAX_SCROLL);
+  const currentSection = () =>
+    LETTERS[sectionForIndex(Math.floor(listScroller.offset() / ROW_HEIGHT))];
+  const thumbY = () => SCROLLBAR_PADDING + scrollFraction() * SCROLLBAR_TRAVEL;
+  const scrubTo = (y: number) => {
+    const fraction = clampFraction(
+      (y - LIST_TOP - SCROLLBAR_PADDING - SCROLLBAR_THUMB_HEIGHT / 2) /
+        SCROLLBAR_TRAVEL,
+    );
+    listScroller.scrollTo(fraction * MAX_SCROLL, { immediate: true });
+  };
+
+  createGesture({
+    surface: "auxiliary",
+    region: { node: () => scrollbarNode },
+    axis: "y",
+    panSlop: 1,
+    onDown: (contact) => {
+      setScrubbing(true);
+      listScroller.stop();
+      scrubTo(contact.y);
+    },
+    onPanMove: (contact) => scrubTo(contact.y),
+    onUp: () => setScrubbing(false),
+    onCancel: () => setScrubbing(false),
+  });
 
   onFrame(() => {
     setPadX(analogX());
@@ -92,7 +184,7 @@ export default function ThreeDsDemo() {
             <View class="flex-col grow gap-1">
               <Text class="text-xs text-slate-500 tracking-wide">AUXILIARY PERFORMANCE TEST</Text>
               <Text class="text-2xl text-slate-50 font-bold">10,000 ROWS</Text>
-              <Text class="text-xs text-cyan-300 tracking-wide">VIRTUAL WINDOW · 48 PX ROWS</Text>
+              <Text class="text-xs text-cyan-300 tracking-wide">VIRTUAL WINDOW · 38 PX ROWS</Text>
             </View>
 
             <View debugName="Pad" class="flex-col items-center gap-1">
@@ -113,22 +205,63 @@ export default function ThreeDsDemo() {
           <View class="flex-col p-3 gap-1 rounded-lg border border-slate-700 bg-slate-900">
             <Text class="text-sm text-slate-100 font-bold">BOTTOM SCREEN: VIRTUAL LIST</Text>
             <Text class="text-xs text-slate-400 tracking-wide">
-              DRAG · RELEASE TO FLING · TOUCH AGAIN TO STOP
+              DRAG TO FLING · SCRUB RIGHT EDGE TO SEEK
             </Text>
           </View>
         </View>
       </View>
 
       <AuxiliarySurface>
-        <VirtualList
-          surface="auxiliary"
-          count={LIST_ROWS}
-          rowHeight={ROW_HEIGHT}
-          height={240}
-          overscan={ROW_HEIGHT}
-          focusRows={false}
-          renderRow={BottomRow}
-        />
+        <View debugName="Contacts" class="relative flex-col w-full h-full bg-white overflow-hidden">
+          <View
+            debugName="ContactsNavigation"
+            class="h-[36] flex-row items-center justify-between px-2 bg-gradient-to-b from-[#68b5ed] to-[#1475c4] border border-blue-800"
+          >
+            <View class="w-14">
+              <Text class="text-xs text-white font-bold">Groups</Text>
+            </View>
+            <Text class="text-base text-white font-bold">All Contacts</Text>
+            <View class="w-14 items-end">
+              <Text class="text-base text-white font-bold">+</Text>
+            </View>
+          </View>
+
+          <View
+            debugName="ContactsSection"
+            class="h-[20] flex-row items-center justify-between px-3 bg-[#dce6f1] border border-slate-300"
+          >
+            <Text class="text-xs text-blue-700 font-bold">{currentSection()}</Text>
+            <Text class="text-xs text-slate-500">10,000 CONTACTS</Text>
+          </View>
+
+          <VirtualList
+            surface="auxiliary"
+            controller={listScroller}
+            count={LIST_ROWS}
+            rowHeight={ROW_HEIGHT}
+            height={LIST_HEIGHT}
+            overscan={ROW_HEIGHT}
+            focusRows={false}
+            renderRow={BottomRow}
+          />
+
+          <View
+            debugName="ContactsScrollbar"
+            ref={(node) => (scrollbarNode = node)}
+            class="absolute right-0 top-[56] w-5 h-[184]"
+          >
+            <View class="absolute left-2 top-[6] w-1 h-[172] rounded-full bg-slate-300" />
+            <View
+              debugName="ContactsScrollbarThumb"
+              class={
+                scrubbing()
+                  ? "absolute left-[7] top-0 w-[6] h-8 rounded-full bg-blue-600 shadow"
+                  : "absolute left-[7] top-0 w-[6] h-8 rounded-full bg-slate-500 shadow"
+              }
+              style={{ translateY: thumbY() }}
+            />
+          </View>
+        </View>
       </AuxiliarySurface>
     </>
   );
