@@ -57,6 +57,8 @@ static size_t ctrl_input_length;
 static uint8_t tx_buffer[CTRL_OUT_BYTES];
 static size_t tx_length;
 static size_t tx_offset;
+static bool pong_pending;
+static uint8_t pong_payload[4];
 
 static char hello_cache[1024];
 static size_t hello_cache_length;
@@ -158,6 +160,7 @@ static void disconnect_client(void) {
   ctrl_input_length = 0;
   tx_length = 0;
   tx_offset = 0;
+  pong_pending = false;
   screenshot_requested = false;
   devserver_screenshot_cancel();
   if (upload_file != NULL && !upload_ready) close_upload();
@@ -504,6 +507,7 @@ static void accept_client(void) {
   ctrl_input_length = 0;
   tx_length = 0;
   tx_offset = 0;
+  pong_pending = false;
   client_last_rx_ms = osGetTime();
 }
 
@@ -624,7 +628,10 @@ static void handle_frame(uint8_t type, uint8_t flags, const uint8_t *payload, si
   }
   switch (type) {
     case POCKET_RUNTIME_MSG_PING:
-      if (length == 4) queue_frame(POCKET_RUNTIME_MSG_PONG, 0, payload, length);
+      if (length == sizeof pong_payload) {
+        memcpy(pong_payload, payload, sizeof pong_payload);
+        pong_pending = true;
+      }
       break;
     case POCKET_RUNTIME_MSG_CTRL:
       if (length <= POCKET_RUNTIME_MAX_CTRL_BYTES &&
@@ -818,6 +825,10 @@ static void send_client(void) {
     return;
   }
   if (!devserver_connected()) return;
+  if (pong_pending && tx_length == tx_offset &&
+      queue_frame(POCKET_RUNTIME_MSG_PONG, 0, pong_payload, sizeof pong_payload)) {
+    pong_pending = false;
+  }
   queue_screenshot_frame();
   if (tx_offset >= tx_length) return;
   ssize_t sent = send(client_fd, tx_buffer + tx_offset, tx_length - tx_offset, 0);

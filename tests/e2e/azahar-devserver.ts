@@ -245,6 +245,14 @@ try {
   console.log("PASS rejected an incorrect pairing token");
 
   client = await connectUntil();
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("native Runtime did not answer a heartbeat")), 6_000);
+    client!.once("pong", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+  console.log("PASS native Runtime returned a PONG on the authenticated connection");
   const statusPromise = client.waitForCtrl((message) => message.t === "runtime.status");
   await client.requestStatus();
   const status = await statusPromise;
@@ -299,7 +307,7 @@ try {
     throw new Error(`release guest was not restored: ${JSON.stringify(restoredEval)}`);
   }
   console.log(`PASS restored release guest ${hexHash(good)} without restarting Azahar`);
-  console.log("Azahar Pocket Runtime DevTools E2E: 6 passed, 0 failed");
+  console.log("Azahar Pocket Runtime DevTools E2E: 7 passed, 0 failed");
 } catch (error) {
   console.error(`FAIL 3DS Pocket Runtime DevTools: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;

@@ -172,7 +172,9 @@ menu supplies that address.
 client, and rediscovers the same paired device ID until it reconnects.** Panel
 commands and keyboard shortcuts are routed only to the current authenticated
 client. A client that receives no PONG for eight seconds is replaced even when
-the operating system has not reported the half-open TCP socket as closed.
+the operating system has not reported the half-open TCP socket as closed. The
+Runtime reserves the latest PONG until the bounded output queue can send it;
+bulk screenshot traffic cannot discard the heartbeat response.
 
 `push` builds and transfers the target-thinned `.pocket`, then waits for the
 device's **accepted-after-retired-frame** receipt. `probe` requests runtime
