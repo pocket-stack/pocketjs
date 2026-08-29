@@ -113,10 +113,10 @@ The shim needs only `{ send(line), recv() -> line | null }`:
   screen with its IP, pairing and connection state, generation, package hash,
   and counters.** The host replaces the bottom guest DrawList with its own menu
   DrawList and blocks guest input until the menu keys are released; it is not
-  an application capability. **The desktop `dev` session reconnects after a
-  Wi-Fi interruption and rediscovers the same pairing-derived device ID if its
-  DHCP address changed. `.pocket` updates and dual-screen RGB8 captures use
-  bounded binary frames on the same
+  an application capability. **The desktop `dev` command waits for a paired
+  Runtime, reconnects after a Wi-Fi interruption, and rediscovers the same
+  pairing-derived device ID if its DHCP address changed. `.pocket` updates and
+  dual-screen RGB8 captures use bounded binary frames on the same
   ordered TCP connection and never enter QuickJS.** The TCP and UDP listeners
   are absent when `sdmc:/pocketjs/runtime/dev.key` is absent. Package updates
   reuse the Runtime's target/ABI admission, immutable storage,

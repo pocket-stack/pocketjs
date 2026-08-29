@@ -72,6 +72,8 @@ if (!Number.isInteger(configuredPort) || configuredPort <= 0 || configuredPort >
   usage("--port is invalid");
 }
 const keyDirectory = join(ROOT, ".pocket", "3ds", "devices");
+const NO_RUNTIME_DISCOVERED =
+  "no Pocket Runtime discovered; open the 3DS dev menu for its IP and retry with --host";
 
 interface DeviceTarget {
   readonly host: string;
@@ -162,7 +164,7 @@ async function resolveTarget(): Promise<DeviceTarget> {
         .join(", ");
       throw new Error(`found ${list}, but no matching local pairing key; pair it once through ftpd`);
     }
-    throw new Error("no Pocket Runtime discovered; open the 3DS dev menu for its IP and retry with --host");
+    throw new Error(NO_RUNTIME_DISCOVERED);
   }
   if (paired.length > 1) {
     const list = paired
@@ -180,6 +182,26 @@ async function resolveTarget(): Promise<DeviceTarget> {
     token,
     deviceId: device.deviceId,
   };
+}
+
+async function waitForDevTarget(): Promise<DeviceTarget> {
+  let attempts = 0;
+  for (;;) {
+    try {
+      return await resolveTarget();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (explicitHost || detail !== NO_RUNTIME_DISCOVERED) {
+        throw error;
+      }
+      attempts += 1;
+      if (attempts === 1 || attempts % 12 === 0) {
+        const suffix = attempts === 1 ? "" : ` (${attempts} attempts)`;
+        console.error(`3ds-dev: waiting for paired Runtime discovery${suffix}`);
+      }
+      await Bun.sleep(750);
+    }
+  }
 }
 
 async function pair(): Promise<void> {
@@ -383,7 +405,7 @@ async function probe(): Promise<void> {
 }
 
 async function dev(): Promise<void> {
-  let target = await resolveTarget();
+  let target = await waitForDevTarget();
   const panelPort = Number(value("--panel-port") ?? process.env.PORT ?? 8130);
   const server = startDevServer({ port: panelPort, portRetries: 10 });
   const socket = new WebSocket(`ws://127.0.0.1:${server.port}/ws?role=device`);

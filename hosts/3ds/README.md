@@ -168,9 +168,10 @@ key. This keeps the pairing valid when DHCP changes the console's address.
 Pass `--host <device-ip>` when broadcast discovery is unavailable; the native
 menu supplies that address.
 
-**A running `dev` command replaces a disconnected TCP client and rediscovers
-the same paired device ID until it reconnects.** Panel commands and keyboard
-shortcuts are routed only to the current authenticated client.
+**`dev` waits when no paired Runtime is present, replaces a disconnected TCP
+client, and rediscovers the same paired device ID until it reconnects.** Panel
+commands and keyboard shortcuts are routed only to the current authenticated
+client.
 
 `push` builds and transfers the target-thinned `.pocket`, then waits for the
 device's **accepted-after-retired-frame** receipt. `probe` requests runtime
