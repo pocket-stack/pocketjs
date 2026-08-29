@@ -47,9 +47,11 @@
 #define DRAW_TRI 7u
 #define DRAW_TEX_TRI 8u
 
-/* contracts/spec/spec.ts GradDir. */
-#define GRAD_TO_BOTTOM 0u
-#define GRAD_TO_TOP 1u
+/* contracts/spec/spec.ts GradDir. ToTop is 0 and ToBottom is 1 — swapping the
+ * two inverts every vertical gradient, which the other backends cannot hit
+ * because they read the generated Rust enum. */
+#define GRAD_TO_TOP 0u
+#define GRAD_TO_BOTTOM 1u
 #define GRAD_TO_LEFT 2u
 #define GRAD_TO_RIGHT 3u
 
@@ -619,6 +621,7 @@ static void build(
           case GRAD_TO_RIGHT:
             colors[0] = from; colors[1] = to; colors[2] = to; colors[3] = from;
             break;
+          case GRAD_TO_BOTTOM:
           default:
             colors[0] = from; colors[1] = from; colors[2] = to; colors[3] = to;
             break;

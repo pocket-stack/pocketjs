@@ -5,6 +5,15 @@
 // auxiliary display is a 10,000-row VirtualList. Its viewport mounts only the
 // visible window plus overscan, while touch drag/fling changes the canvas
 // transform without laying out all rows.
+//
+// The auxiliary screen is 320 px wide — the classic iPhone width — but its
+// 3.02" panel runs ~133 ppi against the phone's ~165, so copying the phone's
+// pixel metrics 1:1 would draw everything a fifth larger than the phone drew
+// it. The contact list scales them by 0.82 instead, which is the same
+// PHYSICAL size and fits 5 rows on a 240 px screen: a 36 px navigation bar, a
+// 36 px search field that scrolls away as the table header, 36 px contact
+// rows at 16 px, and 18 px section headers that stick to the top of the table
+// until the next one pushes them off.
 
 import { createSignal } from "solid-js";
 import {
@@ -21,13 +30,19 @@ import { VirtualList } from "@pocketjs/framework/virtual-list";
 
 const PAD_TRAVEL = 26;
 const LIST_ROWS = 10_000;
+
+// Classic iPhone table metrics at 0.82. SLOT is the section-header height and
+// the VirtualList's uniform unit; a contact row and the search header each
+// span two slots, which is how an 18 px header and a 36 px row share one list.
+const SLOT = 18;
+const ROW_SLOTS = 2;
+const SEARCH_SLOTS = 2;
+const ROW_HEIGHT = SLOT * ROW_SLOTS;
+const SEARCH_HEIGHT = SLOT * SEARCH_SLOTS;
 const NAV_HEIGHT = 36;
-const SEARCH_HEIGHT = 36;
-const LIST_TOP = NAV_HEIGHT + SEARCH_HEIGHT;
+const LIST_TOP = NAV_HEIGHT;
 const LIST_HEIGHT = 240 - LIST_TOP;
-const INDEX_TOP = NAV_HEIGHT;
-const INDEX_HEIGHT = 240 - INDEX_TOP;
-const ROW_HEIGHT = 32;
+
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const GIVEN_NAMES = [
   "Avery",
@@ -67,17 +82,19 @@ const SURNAMES = [
   "Young",
   "Zimmerman",
 ] as const;
+
 interface ContactSection {
   letter: string;
   surname: string;
   contactStart: number;
   contactCount: number;
+  /** Slot holding this section's 18 px header; contacts follow, two slots each. */
   slotStart: number;
 }
 
 const CONTACT_SECTIONS: readonly ContactSection[] = (() => {
   let contactStart = 0;
-  let slotStart = 0;
+  let slotStart = SEARCH_SLOTS;
   return SURNAMES.map((surname, index) => {
     const contactCount = Math.floor(LIST_ROWS / LETTERS.length) +
       (index < LIST_ROWS % LETTERS.length ? 1 : 0);
@@ -89,14 +106,29 @@ const CONTACT_SECTIONS: readonly ContactSection[] = (() => {
       slotStart,
     };
     contactStart += contactCount;
-    slotStart += contactCount + 1;
+    slotStart += 1 + contactCount * ROW_SLOTS;
     return section;
   });
 })();
 
-const LIST_SLOTS = LIST_ROWS + CONTACT_SECTIONS.length;
-const MAX_SCROLL = LIST_SLOTS * ROW_HEIGHT - LIST_HEIGHT;
-const INDEX_STEP = INDEX_HEIGHT / CONTACT_SECTIONS.length;
+const LIST_SLOTS = SEARCH_SLOTS + LIST_ROWS * ROW_SLOTS + CONTACT_SECTIONS.length;
+const MAX_SCROLL = LIST_SLOTS * SLOT - LIST_HEIGHT;
+
+// A-Z index. 26 entries never fit 204 px at a readable size, so the strip
+// drops letters the way UITableView does and marks each gap with a dot. The
+// touch mapping stays continuous over all 26 sections.
+const INDEX_PITCH = 12;
+const INDEX_ENTRIES = (() => {
+  const fits = Math.floor((LIST_HEIGHT - 8) / INDEX_PITCH);
+  const count = fits % 2 === 1 ? fits : fits - 1; // start and end on a letter
+  const letters = (count + 1) / 2;
+  return Array.from({ length: count }, (_, entry) =>
+    entry % 2 === 0
+      ? LETTERS[Math.round((entry / 2) * (LETTERS.length - 1) / (letters - 1))]
+      : null,
+  );
+})();
+const INDEX_PAD = (LIST_HEIGHT - INDEX_ENTRIES.length * INDEX_PITCH) / 2;
 
 function sectionForSlot(slot: number): number {
   const bounded = Math.max(0, Math.min(LIST_SLOTS - 1, slot));
@@ -106,30 +138,66 @@ function sectionForSlot(slot: number): number {
   return 0;
 }
 
+/** The 18 px gradient bar carrying a section letter — in the table and pinned. */
+function SectionHeader(letter: () => string, debugName: string) {
+  return (
+    <View
+      debugName={debugName}
+      class="relative w-full h-[18] bg-gradient-to-b from-[#b7bec8] to-[#949ca8]"
+    >
+      <View class="absolute left-0 right-0 top-0 h-[1] bg-[#d2d7de]" />
+      <View class="absolute left-0 right-0 bottom-0 h-[1] bg-[#7b838e]" />
+      <Text class="absolute left-[8] top-[1] text-sm text-[#71798599] font-bold">{letter()}</Text>
+      <Text class="absolute left-[8] top-0 text-sm text-white font-bold">{letter()}</Text>
+    </View>
+  );
+}
+
+function SearchHeader() {
+  return (
+    <View
+      debugName="ContactsSearch"
+      class="relative w-full h-[36] bg-gradient-to-b from-[#cbcfd4] to-[#a6acb4]"
+    >
+      <View class="absolute left-0 right-0 top-0 h-[1] bg-[#e4e7ea]" />
+      <View class="absolute left-0 right-0 bottom-0 h-[1] bg-[#888e97]" />
+      <View class="absolute left-[6] top-[6] right-[20] h-[24] flex-row items-center pl-[7] gap-[4] rounded-[12] bg-white border border-[#9aa0a8]">
+        <View class="relative w-[9] h-[9]">
+          <View class="absolute left-0 top-0 w-[7] h-[7] rounded-full border border-[#8b9199]" />
+          <View
+            class="absolute left-[5] top-[7] w-[4] h-[1] bg-[#8b9199]"
+            style={{ rotate: 45 }}
+          />
+        </View>
+        <Text class="text-sm text-[#8b9199]">Search</Text>
+      </View>
+    </View>
+  );
+}
+
 function BottomRow(slot: number) {
+  if (slot < SEARCH_SLOTS) return slot === 0 ? SearchHeader() : null;
+
   const sectionIndex = sectionForSlot(slot);
   const section = CONTACT_SECTIONS[sectionIndex];
   if (slot === section.slotStart) {
-    return (
-      <View
-        debugName={`ContactSection${section.letter}`}
-        class="flex-row items-center w-full h-full pl-3 pr-6 bg-gradient-to-b from-[#d8dee3] to-[#aab5bd] border border-[#98a4ad]"
-      >
-        <Text class="text-base text-white font-bold">{section.letter}</Text>
-      </View>
-    );
+    return SectionHeader(() => section.letter, `ContactSection${section.letter}`);
   }
 
-  const contactIndex = section.contactStart + slot - section.slotStart - 1;
+  const withinSection = slot - section.slotStart - 1;
+  if (withinSection % ROW_SLOTS !== 0) return null; // the row's second slot
+
+  const contactIndex = section.contactStart + withinSection / ROW_SLOTS;
   const ordinal = String(contactIndex + 1).padStart(5, "0");
-  const name = `${GIVEN_NAMES[(contactIndex * 5 + sectionIndex) % GIVEN_NAMES.length]} ${section.surname}`;
+  const given = GIVEN_NAMES[(contactIndex * 5 + sectionIndex) % GIVEN_NAMES.length];
   return (
     <View
       debugName={`VirtualContact${ordinal}`}
-      class="relative flex-row items-center w-full h-full pl-3 pr-6 bg-white"
+      class="absolute left-0 right-0 top-0 h-[36] flex-row items-center pl-[8] pb-[4] gap-[4] bg-white"
     >
-      <Text class="text-base text-slate-950 font-bold">{name}</Text>
-      <View class="absolute left-3 right-0 bottom-0 h-[1] bg-slate-200" />
+      <Text class="text-base text-black">{given}</Text>
+      <Text class="text-base text-black font-bold">{section.surname}</Text>
+      <View class="absolute left-0 right-0 bottom-0 h-[1] bg-[#d0d0d3]" />
     </View>
   );
 }
@@ -146,15 +214,31 @@ export default function ThreeDsDemo() {
     extent: () => LIST_HEIGHT,
   });
 
-  const currentSectionIndex = () =>
-    sectionForSlot(Math.floor(listScroller.offset() / ROW_HEIGHT));
+  // The section header of the row at the top of the table stays pinned there
+  // until the next section's header reaches it and pushes it off.
+  const pinnedSection = () => {
+    const offset = listScroller.offset();
+    if (offset < SEARCH_HEIGHT) return -1;
+    return sectionForSlot(Math.floor(offset / SLOT));
+  };
+  const pinnedLetter = () => {
+    const index = pinnedSection();
+    return index < 0 ? "" : CONTACT_SECTIONS[index].letter;
+  };
+  const pinnedShift = () => {
+    const index = pinnedSection();
+    if (index < 0 || index >= CONTACT_SECTIONS.length - 1) return 0;
+    const nextTop = CONTACT_SECTIONS[index + 1].slotStart * SLOT - listScroller.offset();
+    return nextTop < SLOT ? nextTop - SLOT : 0;
+  };
+
   const sectionIndexForY = (y: number) => {
-    const fraction = Math.max(0, Math.min(0.999999, (y - INDEX_TOP) / INDEX_HEIGHT));
+    const fraction = Math.max(0, Math.min(0.999999, (y - LIST_TOP) / LIST_HEIGHT));
     return Math.floor(fraction * CONTACT_SECTIONS.length);
   };
   const jumpToSection = (y: number) => {
     const section = CONTACT_SECTIONS[sectionIndexForY(y)];
-    listScroller.scrollTo(section.slotStart * ROW_HEIGHT, { immediate: true });
+    listScroller.scrollTo(section.slotStart * SLOT, { immediate: true });
   };
 
   createGesture({
@@ -245,65 +329,72 @@ export default function ThreeDsDemo() {
       </View>
 
       <AuxiliarySurface>
-        <View debugName="Contacts" class="relative flex-col w-full h-full bg-white overflow-hidden">
+        <View debugName="Contacts" class="relative w-full h-full bg-white overflow-hidden">
+          <View debugName="ContactsTable" class="absolute left-0 right-0 top-[36] bottom-0">
+            <VirtualList
+              surface="auxiliary"
+              controller={listScroller}
+              count={LIST_SLOTS}
+              rowHeight={SLOT}
+              height={LIST_HEIGHT}
+              overscan={ROW_HEIGHT}
+              focusRows={false}
+              renderRow={BottomRow}
+            />
+
+            <View
+              class={pinnedSection() < 0 ? "hidden" : "absolute left-0 right-0 top-0 h-[18]"}
+              style={{ translateY: pinnedShift() }}
+            >
+              {SectionHeader(pinnedLetter, "PinnedSection")}
+            </View>
+          </View>
+
           <View
             debugName="ContactsNavigation"
-            class="relative h-[36] flex-row items-center justify-center bg-gradient-to-b from-[#c7d3df] to-[#58728d] border border-[#4a6077]"
+            class="absolute left-0 right-0 top-0 h-[36] bg-[#6d7e99]"
           >
-            <Text class="text-base text-white font-bold">All Contacts</Text>
-            <View class="absolute right-1 top-1 w-7 h-7 items-center justify-center rounded-md bg-gradient-to-b from-[#8299b0] to-[#435f7b] border border-[#354c63] shadow">
-              <Text class="text-base text-white font-bold">+</Text>
+            <View class="absolute left-0 right-0 top-0 h-[18] bg-gradient-to-b from-[#b2becf] to-[#8d9cb4]" />
+            <View class="absolute left-0 right-0 top-[18] h-[18] bg-gradient-to-b from-[#7d8ea8] to-[#66778f]" />
+            <View class="absolute left-0 right-0 top-0 h-[1] bg-[#ccd4df]" />
+            <View class="absolute left-0 right-0 bottom-0 h-[1] bg-[#3d4d64]" />
+
+            <Text class="absolute left-[62] right-[62] top-[7] text-center text-base text-[#3c4d6480] font-bold">All Contacts</Text>
+            <Text class="absolute left-[62] right-[62] top-[8] text-center text-base text-white font-bold">All Contacts</Text>
+
+            <View class="absolute left-[4] top-[6] w-[52] h-[24] rounded-[4] border border-[#3f4f66] bg-gradient-to-b from-[#9dabc0] via-[#7b8ca5] to-[#67788f]">
+              <View class="absolute left-[2] right-[2] top-[1] h-[1] bg-[#c8d1de80]" />
+              <Text class="absolute left-0 right-0 top-[3] text-center text-xs text-[#39495f80] font-bold">Groups</Text>
+              <Text class="absolute left-0 right-0 top-[4] text-center text-xs text-white font-bold">Groups</Text>
+            </View>
+
+            <View
+              debugName="ContactsAdd"
+              class="absolute right-[4] top-[6] w-[26] h-[24] rounded-[4] border border-[#3f4f66] bg-gradient-to-b from-[#9dabc0] via-[#7b8ca5] to-[#67788f]"
+            >
+              <View class="absolute left-[2] right-[2] top-[1] h-[1] bg-[#c8d1de80]" />
+              <View class="absolute left-[7] top-[10] w-[11] h-[3] bg-white" />
+              <View class="absolute left-[11] top-[6] w-[3] h-[11] bg-white" />
             </View>
           </View>
-
-          <View debugName="ContactsSearch" class="h-[36] pl-1 pr-6 py-1 bg-[#d1d6db]">
-            <View class="relative flex-row items-center w-full h-full px-2 gap-1 rounded-[14px] bg-white border border-slate-400 shadow">
-              <View class="relative w-4 h-4">
-                <View class="absolute left-0 top-0 w-3 h-3 rounded-full border border-slate-400" />
-                <View
-                  class="absolute left-[9] top-[10] w-[6] h-[1] bg-slate-400"
-                  style={{ rotate: 45 }}
-                />
-              </View>
-              <Text class="text-sm text-slate-400">Search</Text>
-            </View>
-          </View>
-
-          <VirtualList
-            surface="auxiliary"
-            controller={listScroller}
-            count={LIST_SLOTS}
-            rowHeight={ROW_HEIGHT}
-            height={LIST_HEIGHT}
-            overscan={ROW_HEIGHT}
-            focusRows={false}
-            renderRow={BottomRow}
-          />
 
           <View
             debugName="ContactsIndex"
             ref={(node) => (contactIndexNode = node)}
             class={
               indexing()
-                ? "absolute right-0 top-[36] w-5 h-[204] bg-[#cbd5e180]"
-                : "absolute right-0 top-[36] w-5 h-[204]"
+                ? "absolute right-0 top-[36] bottom-0 w-[20] rounded-[8] bg-[#9aa3ad99]"
+                : "absolute right-0 top-[36] bottom-0 w-[20]"
             }
           >
-            {CONTACT_SECTIONS.map((section, index) => (
+            {INDEX_ENTRIES.map((entry, index) => (
               <View
-                class="absolute right-0 w-5 items-center justify-center"
-                style={{ insetT: index * INDEX_STEP, height: INDEX_STEP }}
+                class="absolute right-0 w-[15] flex-row items-center justify-center"
+                style={{ insetT: INDEX_PAD + index * INDEX_PITCH, height: INDEX_PITCH }}
               >
-                <Text
-                  class={
-                    currentSectionIndex() === index
-                      ? "text-xs text-blue-800 font-bold"
-                      : "text-xs text-slate-600 font-bold"
-                  }
-                  style={{ scaleX: 0.5, scaleY: 0.5 }}
-                >
-                  {section.letter}
-                </Text>
+                {entry === null
+                  ? <View class="w-[3] h-[3] rounded-full bg-[#2f5288]" />
+                  : <Text class="text-xs text-[#2f5288]">{entry}</Text>}
               </View>
             ))}
           </View>

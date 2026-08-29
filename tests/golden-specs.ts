@@ -262,9 +262,11 @@ export const THREE_DS_GOLDEN_SPECS: GoldenSpec[] = [
     // Drag upward across the bottom screen. Frame 10 captures finger-follow;
     // release on frame 12 starts inertia, and later captures prove that the
     // auxiliary VirtualList keeps re-windowing through the shared gesture and
-    // scroller contracts. A second contact drags the right-edge A-Z index from
-    // near the beginning to the end: frame 56 captures section R selection,
-    // and frame 64 proves the virtual window settled at section Z.
+    // scroller contracts — and that the search header has scrolled away while
+    // the section header pins to the top of the table. A second contact drags
+    // the right-edge A-Z index (which starts below the 36 px navigation bar)
+    // from the first section to the last: frame 56 captures a mid-alphabet
+    // section, and frame 64 proves the virtual window settled at section Z.
     touch: (frame) => {
       if (frame >= 5 && frame <= 11) {
         return [{ id: 0, x: 160, y: 210 - (frame - 5) * 30 }];
