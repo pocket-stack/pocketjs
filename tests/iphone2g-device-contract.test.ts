@@ -119,7 +119,7 @@ describe("iPhone 2G device transport contract", () => {
     ]) {
       expect(() =>
         parseIPhone2GDeviceStatus(runtimeStatus(overrides), buildId),
-      ).toThrow("released touch and completed Hero action");
+      ).toThrow("released touch and a completed hero_tap action");
     }
     expect(() => assertIPhone2GStatusAdvanced(previous, previous)).toThrow(
       "status is stale",
@@ -421,13 +421,14 @@ describe("iPhone 2G device transport contract", () => {
     expect(toolSource).toContain('"guest_frames"');
     expect(toolSource).toContain('"touch_sequences"');
     expect(toolSource).toContain('"completed_touch_sequences"');
-    expect(toolSource).toContain('fields.action_name !== "hero_tap"');
+    expect(toolSource).toContain("fields.action_name !== expectedAction");
+    expect(toolSource).toContain('expectedAction: string = "hero_tap"');
     expect(toolSource).toContain('fields.touch_down !== "0"');
     expect(toolSource).toContain('fields.state !== "running"');
     expect(toolSource).toContain("assertDeviceProcessAlive");
     expect(toolSource).toContain("assertIPhone2GStatusAdvanced");
     expect(toolSource).toContain(
-      "runtime acceptance requires a released touch and completed Hero action",
+      "runtime acceptance requires a released touch and a completed ${expectedAction} action",
     );
   });
 
