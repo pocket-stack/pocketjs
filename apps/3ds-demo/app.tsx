@@ -22,14 +22,12 @@ import { VirtualList } from "@pocketjs/framework/virtual-list";
 const PAD_TRAVEL = 26;
 const LIST_ROWS = 10_000;
 const NAV_HEIGHT = 36;
-const SECTION_HEIGHT = 20;
-const LIST_TOP = NAV_HEIGHT + SECTION_HEIGHT;
+const SEARCH_HEIGHT = 36;
+const LIST_TOP = NAV_HEIGHT + SEARCH_HEIGHT;
 const LIST_HEIGHT = 240 - LIST_TOP;
-const ROW_HEIGHT = 38;
-const MAX_SCROLL = LIST_ROWS * ROW_HEIGHT - LIST_HEIGHT;
-const SCROLLBAR_PADDING = 6;
-const SCROLLBAR_THUMB_HEIGHT = 32;
-const SCROLLBAR_TRAVEL = LIST_HEIGHT - SCROLLBAR_PADDING * 2 - SCROLLBAR_THUMB_HEIGHT;
+const INDEX_TOP = NAV_HEIGHT;
+const INDEX_HEIGHT = 240 - INDEX_TOP;
+const ROW_HEIGHT = 32;
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const GIVEN_NAMES = [
   "Avery",
@@ -69,32 +67,68 @@ const SURNAMES = [
   "Young",
   "Zimmerman",
 ] as const;
-const PLACES = ["CUPERTINO", "BROOKLYN", "PORTLAND", "AUSTIN"] as const;
-
-function sectionForIndex(index: number): number {
-  return Math.max(
-    0,
-    Math.min(LETTERS.length - 1, Math.floor((index * LETTERS.length) / LIST_ROWS)),
-  );
+interface ContactSection {
+  letter: string;
+  surname: string;
+  contactStart: number;
+  contactCount: number;
+  slotStart: number;
 }
 
-function clampFraction(value: number): number {
-  return Math.max(0, Math.min(1, value));
+const CONTACT_SECTIONS: readonly ContactSection[] = (() => {
+  let contactStart = 0;
+  let slotStart = 0;
+  return SURNAMES.map((surname, index) => {
+    const contactCount = Math.floor(LIST_ROWS / LETTERS.length) +
+      (index < LIST_ROWS % LETTERS.length ? 1 : 0);
+    const section = {
+      letter: LETTERS[index],
+      surname,
+      contactStart,
+      contactCount,
+      slotStart,
+    };
+    contactStart += contactCount;
+    slotStart += contactCount + 1;
+    return section;
+  });
+})();
+
+const LIST_SLOTS = LIST_ROWS + CONTACT_SECTIONS.length;
+const MAX_SCROLL = LIST_SLOTS * ROW_HEIGHT - LIST_HEIGHT;
+const INDEX_STEP = INDEX_HEIGHT / CONTACT_SECTIONS.length;
+
+function sectionForSlot(slot: number): number {
+  const bounded = Math.max(0, Math.min(LIST_SLOTS - 1, slot));
+  for (let index = CONTACT_SECTIONS.length - 1; index >= 0; index--) {
+    if (bounded >= CONTACT_SECTIONS[index].slotStart) return index;
+  }
+  return 0;
 }
 
-function BottomRow(index: number) {
-  const ordinal = String(index + 1).padStart(5, "0");
-  const section = sectionForIndex(index);
-  const name = `${GIVEN_NAMES[(index * 5 + section) % GIVEN_NAMES.length]} ${SURNAMES[section]}`;
+function BottomRow(slot: number) {
+  const sectionIndex = sectionForSlot(slot);
+  const section = CONTACT_SECTIONS[sectionIndex];
+  if (slot === section.slotStart) {
+    return (
+      <View
+        debugName={`ContactSection${section.letter}`}
+        class="flex-row items-center w-full h-full pl-3 pr-6 bg-gradient-to-b from-[#d8dee3] to-[#aab5bd] border border-[#98a4ad]"
+      >
+        <Text class="text-base text-white font-bold">{section.letter}</Text>
+      </View>
+    );
+  }
+
+  const contactIndex = section.contactStart + slot - section.slotStart - 1;
+  const ordinal = String(contactIndex + 1).padStart(5, "0");
+  const name = `${GIVEN_NAMES[(contactIndex * 5 + sectionIndex) % GIVEN_NAMES.length]} ${section.surname}`;
   return (
     <View
       debugName={`VirtualContact${ordinal}`}
-      class="relative flex-col justify-center w-full h-full pl-3 pr-6 bg-white"
+      class="relative flex-row items-center w-full h-full pl-3 pr-6 bg-white"
     >
-      <Text class="text-sm text-slate-900 font-bold">{name}</Text>
-      <Text class="text-xs text-slate-500 tracking-wide">
-        MOBILE · {PLACES[index % PLACES.length]}
-      </Text>
+      <Text class="text-base text-slate-950 font-bold">{name}</Text>
       <View class="absolute left-3 right-0 bottom-0 h-[1] bg-slate-200" />
     </View>
   );
@@ -104,39 +138,38 @@ export default function ThreeDsDemo() {
   const [padX, setPadX] = createSignal(0);
   const [padY, setPadY] = createSignal(0);
   const [padRaw, setPadRaw] = createSignal(analogRaw());
-  const [scrubbing, setScrubbing] = createSignal(false);
-  let scrollbarNode: NodeMirror | undefined;
+  const [indexing, setIndexing] = createSignal(false);
+  let contactIndexNode: NodeMirror | undefined;
 
   const listScroller = createScroller({
     max: () => MAX_SCROLL,
     extent: () => LIST_HEIGHT,
   });
 
-  const scrollFraction = () => clampFraction(listScroller.offset() / MAX_SCROLL);
-  const currentSection = () =>
-    LETTERS[sectionForIndex(Math.floor(listScroller.offset() / ROW_HEIGHT))];
-  const thumbY = () => SCROLLBAR_PADDING + scrollFraction() * SCROLLBAR_TRAVEL;
-  const scrubTo = (y: number) => {
-    const fraction = clampFraction(
-      (y - LIST_TOP - SCROLLBAR_PADDING - SCROLLBAR_THUMB_HEIGHT / 2) /
-        SCROLLBAR_TRAVEL,
-    );
-    listScroller.scrollTo(fraction * MAX_SCROLL, { immediate: true });
+  const currentSectionIndex = () =>
+    sectionForSlot(Math.floor(listScroller.offset() / ROW_HEIGHT));
+  const sectionIndexForY = (y: number) => {
+    const fraction = Math.max(0, Math.min(0.999999, (y - INDEX_TOP) / INDEX_HEIGHT));
+    return Math.floor(fraction * CONTACT_SECTIONS.length);
+  };
+  const jumpToSection = (y: number) => {
+    const section = CONTACT_SECTIONS[sectionIndexForY(y)];
+    listScroller.scrollTo(section.slotStart * ROW_HEIGHT, { immediate: true });
   };
 
   createGesture({
     surface: "auxiliary",
-    region: { node: () => scrollbarNode },
+    region: { node: () => contactIndexNode },
     axis: "y",
     panSlop: 1,
     onDown: (contact) => {
-      setScrubbing(true);
+      setIndexing(true);
       listScroller.stop();
-      scrubTo(contact.y);
+      jumpToSection(contact.y);
     },
-    onPanMove: (contact) => scrubTo(contact.y),
-    onUp: () => setScrubbing(false),
-    onCancel: () => setScrubbing(false),
+    onPanMove: (contact) => jumpToSection(contact.y),
+    onUp: () => setIndexing(false),
+    onCancel: () => setIndexing(false),
   });
 
   onFrame(() => {
@@ -183,8 +216,8 @@ export default function ThreeDsDemo() {
 
             <View class="flex-col grow gap-1">
               <Text class="text-xs text-slate-500 tracking-wide">AUXILIARY PERFORMANCE TEST</Text>
-              <Text class="text-2xl text-slate-50 font-bold">10,000 ROWS</Text>
-              <Text class="text-xs text-cyan-300 tracking-wide">VIRTUAL WINDOW · 38 PX ROWS</Text>
+              <Text class="text-2xl text-slate-50 font-bold">10,000 CONTACTS</Text>
+              <Text class="text-xs text-cyan-300 tracking-wide">VIRTUAL CONTACTS · A-Z INDEX</Text>
             </View>
 
             <View debugName="Pad" class="flex-col items-center gap-1">
@@ -205,7 +238,7 @@ export default function ThreeDsDemo() {
           <View class="flex-col p-3 gap-1 rounded-lg border border-slate-700 bg-slate-900">
             <Text class="text-sm text-slate-100 font-bold">BOTTOM SCREEN: VIRTUAL LIST</Text>
             <Text class="text-xs text-slate-400 tracking-wide">
-              DRAG TO FLING · SCRUB RIGHT EDGE TO SEEK
+              DRAG LIST · SCRUB A-Z INDEX
             </Text>
           </View>
         </View>
@@ -215,29 +248,31 @@ export default function ThreeDsDemo() {
         <View debugName="Contacts" class="relative flex-col w-full h-full bg-white overflow-hidden">
           <View
             debugName="ContactsNavigation"
-            class="h-[36] flex-row items-center justify-between px-2 bg-gradient-to-b from-[#68b5ed] to-[#1475c4] border border-blue-800"
+            class="relative h-[36] flex-row items-center justify-center bg-gradient-to-b from-[#c7d3df] to-[#58728d] border border-[#4a6077]"
           >
-            <View class="w-14">
-              <Text class="text-xs text-white font-bold">Groups</Text>
-            </View>
             <Text class="text-base text-white font-bold">All Contacts</Text>
-            <View class="w-14 items-end">
+            <View class="absolute right-1 top-1 w-7 h-7 items-center justify-center rounded-md bg-gradient-to-b from-[#8299b0] to-[#435f7b] border border-[#354c63] shadow">
               <Text class="text-base text-white font-bold">+</Text>
             </View>
           </View>
 
-          <View
-            debugName="ContactsSection"
-            class="h-[20] flex-row items-center justify-between px-3 bg-[#dce6f1] border border-slate-300"
-          >
-            <Text class="text-xs text-blue-700 font-bold">{currentSection()}</Text>
-            <Text class="text-xs text-slate-500">10,000 CONTACTS</Text>
+          <View debugName="ContactsSearch" class="h-[36] pl-1 pr-6 py-1 bg-[#d1d6db]">
+            <View class="relative flex-row items-center w-full h-full px-2 gap-1 rounded-[14px] bg-white border border-slate-400 shadow">
+              <View class="relative w-4 h-4">
+                <View class="absolute left-0 top-0 w-3 h-3 rounded-full border border-slate-400" />
+                <View
+                  class="absolute left-[9] top-[10] w-[6] h-[1] bg-slate-400"
+                  style={{ rotate: 45 }}
+                />
+              </View>
+              <Text class="text-sm text-slate-400">Search</Text>
+            </View>
           </View>
 
           <VirtualList
             surface="auxiliary"
             controller={listScroller}
-            count={LIST_ROWS}
+            count={LIST_SLOTS}
             rowHeight={ROW_HEIGHT}
             height={LIST_HEIGHT}
             overscan={ROW_HEIGHT}
@@ -246,20 +281,31 @@ export default function ThreeDsDemo() {
           />
 
           <View
-            debugName="ContactsScrollbar"
-            ref={(node) => (scrollbarNode = node)}
-            class="absolute right-0 top-[56] w-5 h-[184]"
+            debugName="ContactsIndex"
+            ref={(node) => (contactIndexNode = node)}
+            class={
+              indexing()
+                ? "absolute right-0 top-[36] w-5 h-[204] bg-[#cbd5e180]"
+                : "absolute right-0 top-[36] w-5 h-[204]"
+            }
           >
-            <View class="absolute left-2 top-[6] w-1 h-[172] rounded-full bg-slate-300" />
-            <View
-              debugName="ContactsScrollbarThumb"
-              class={
-                scrubbing()
-                  ? "absolute left-[7] top-0 w-[6] h-8 rounded-full bg-blue-600 shadow"
-                  : "absolute left-[7] top-0 w-[6] h-8 rounded-full bg-slate-500 shadow"
-              }
-              style={{ translateY: thumbY() }}
-            />
+            {CONTACT_SECTIONS.map((section, index) => (
+              <View
+                class="absolute right-0 w-5 items-center justify-center"
+                style={{ insetT: index * INDEX_STEP, height: INDEX_STEP }}
+              >
+                <Text
+                  class={
+                    currentSectionIndex() === index
+                      ? "text-xs text-blue-800 font-bold"
+                      : "text-xs text-slate-600 font-bold"
+                  }
+                  style={{ scaleX: 0.5, scaleY: 0.5 }}
+                >
+                  {section.letter}
+                </Text>
+              </View>
+            ))}
           </View>
         </View>
       </AuxiliarySurface>
