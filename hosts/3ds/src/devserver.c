@@ -38,6 +38,7 @@
 
 static uint32_t *soc_buffer;
 static int server_fd = -1;
+static int discovery_fd = -1;
 static int client_fd = -1;
 static bool initialized;
 static bool authenticated;
@@ -47,6 +48,7 @@ static uint8_t handshake_ack[POCKET_RUNTIME_ACK_BYTES];
 static size_t handshake_ack_offset;
 static uint64_t client_last_rx_ms;
 static uint8_t pairing_token[POCKET_RUNTIME_TOKEN_BYTES];
+static uint64_t device_id;
 
 static uint8_t rx_buffer[RX_BYTES];
 static size_t rx_length;
@@ -93,6 +95,7 @@ static uint32_t auth_failures;
 static uint32_t uploads;
 static uint32_t screenshots;
 static uint32_t timeouts;
+static uint32_t discoveries;
 static uint32_t frame_commands;
 static uint32_t frame_vertices;
 static uint32_t frame_dropped_vertices;
@@ -108,6 +111,19 @@ static void set_error(char *out, size_t length, const char *format, ...) {
 
 static bool would_block(void) {
   return errno == EAGAIN || errno == EWOULDBLOCK;
+}
+
+static void format_ip(char out[16]) {
+  uint32_t ip = initialized ? gethostid() : 0;
+  snprintf(
+    out,
+    16,
+    "%lu.%lu.%lu.%lu",
+    (unsigned long)(ip & 0xff),
+    (unsigned long)((ip >> 8) & 0xff),
+    (unsigned long)((ip >> 16) & 0xff),
+    (unsigned long)((ip >> 24) & 0xff)
+  );
 }
 
 static void close_upload(void) {
@@ -183,6 +199,7 @@ static DevserverInitResult load_key(char *error, size_t error_length) {
     }
     pairing_token[index] = (uint8_t)((high << 4) | low);
   }
+  device_id = pocket_runtime_device_id(pairing_token);
   return DEVSERVER_READY;
 }
 
@@ -192,6 +209,7 @@ DevserverInitResult devserver_init(
   size_t error_length
 ) {
   if (initialized) return DEVSERVER_READY;
+  if (state != NULL) runtime_state = *state;
   DevserverInitResult key = load_key(error, error_length);
   if (key != DEVSERVER_READY) return key;
 
@@ -227,7 +245,16 @@ DevserverInitResult devserver_init(
     devserver_shutdown();
     return DEVSERVER_ERROR;
   }
-  if (state != NULL) runtime_state = *state;
+
+  discovery_fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (discovery_fd >= 0) {
+    setsockopt(discovery_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
+    if (bind(discovery_fd, (struct sockaddr *)&address, sizeof address) != 0 ||
+        !set_nonblocking(discovery_fd)) {
+      close(discovery_fd);
+      discovery_fd = -1;
+    }
+  }
   initialized = true;
   return DEVSERVER_READY;
 }
@@ -237,6 +264,8 @@ void devserver_shutdown(void) {
   close_upload();
   if (server_fd >= 0) close(server_fd);
   server_fd = -1;
+  if (discovery_fd >= 0) close(discovery_fd);
+  discovery_fd = -1;
   if (soc_buffer != NULL) {
     socExit();
     free(soc_buffer);
@@ -251,6 +280,26 @@ bool devserver_active(void) {
 
 bool devserver_connected(void) {
   return authenticated && client_fd >= 0;
+}
+
+void devserver_snapshot(DevserverSnapshot *out) {
+  if (out == NULL) return;
+  memset(out, 0, sizeof *out);
+  out->enabled = initialized;
+  out->discoverable = discovery_fd >= 0;
+  out->connected = devserver_connected();
+  format_ip(out->ip);
+  snprintf(out->phase, sizeof out->phase, "%s", runtime_phase);
+  out->port = POCKET_RUNTIME_WIRE_PORT;
+  out->host_abi = POCKETJS_HOST_ABI;
+  out->generation = runtime_state.generation;
+  out->running_hash = running_hash;
+  out->device_id = device_id;
+  out->connects = connects;
+  out->auth_failures = auth_failures;
+  out->timeouts = timeouts;
+  out->uploads = uploads;
+  out->screenshots = screenshots;
 }
 
 static bool queue_frame(uint8_t type, uint8_t flags, const uint8_t *payload, size_t length) {
@@ -327,21 +376,19 @@ void devserver_send_ctrl(const char *line, size_t length) {
 
 static void send_status(void) {
   char message[640];
-  uint32_t ip = gethostid();
+  char ip[16];
+  format_ip(ip);
   snprintf(
     message,
     sizeof message,
     "{\"t\":\"runtime.status\",\"phase\":\"%s\",\"target\":\"%s\",\"hostAbi\":%u,"
-    "\"ip\":\"%lu.%lu.%lu.%lu\",\"port\":%u,\"generation\":%lu,"
+    "\"ip\":\"%s\",\"port\":%u,\"generation\":%lu,"
     "\"active\":\"%016llx\",\"lastGood\":\"%016llx\",\"running\":\"%016llx\","
     "\"frame\":%lu}",
     runtime_phase,
     POCKETJS_TARGET_ID,
     (unsigned)POCKETJS_HOST_ABI,
-    (unsigned long)(ip & 0xff),
-    (unsigned long)((ip >> 8) & 0xff),
-    (unsigned long)((ip >> 16) & 0xff),
-    (unsigned long)((ip >> 24) & 0xff),
+    ip,
     (unsigned)POCKET_RUNTIME_WIRE_PORT,
     (unsigned long)runtime_state.generation,
     (unsigned long long)runtime_state.active_hash,
@@ -417,7 +464,7 @@ const char *devserver_debug_stats(void) {
     "\"gfx\":{\"commands\":%lu,\"vertices\":%lu,\"droppedVertices\":%lu},"
     "\"net\":{\"connected\":%s,\"rxBytes\":%llu,\"txBytes\":%llu,"
     "\"connects\":%lu,\"authFailures\":%lu,\"timeouts\":%lu,"
-    "\"uploads\":%lu,\"screenshots\":%lu}}",
+    "\"discoveries\":%lu,\"uploads\":%lu,\"screenshots\":%lu}}",
     POCKETJS_TARGET_ID,
     (unsigned)POCKETJS_HOST_ABI,
     (unsigned long long)running_hash,
@@ -433,6 +480,7 @@ const char *devserver_debug_stats(void) {
     (unsigned long)connects,
     (unsigned long)auth_failures,
     (unsigned long)timeouts,
+    (unsigned long)discoveries,
     (unsigned long)uploads,
     (unsigned long)screenshots
   );
@@ -457,6 +505,49 @@ static void accept_client(void) {
   tx_length = 0;
   tx_offset = 0;
   client_last_rx_ms = osGetTime();
+}
+
+static void poll_discovery(void) {
+  if (discovery_fd < 0) return;
+  for (uint32_t attempt = 0; attempt < 4; attempt += 1) {
+    uint8_t request[POCKET_RUNTIME_DISCOVERY_REQUEST_BYTES];
+    struct sockaddr_in sender;
+    socklen_t sender_length = sizeof sender;
+    ssize_t length = recvfrom(
+      discovery_fd,
+      request,
+      sizeof request,
+      0,
+      (struct sockaddr *)&sender,
+      &sender_length
+    );
+    if (length < 0 && would_block()) return;
+    if (length <= 0) return;
+    if (!pocket_runtime_is_discovery_request(request, (size_t)length)) continue;
+
+    uint8_t reply[POCKET_RUNTIME_DISCOVERY_REPLY_BYTES];
+    pocket_runtime_encode_discovery_reply(
+      reply,
+      POCKETJS_HOST_ABI,
+      POCKET_RUNTIME_WIRE_PORT,
+      devserver_connected() ? 1u : 0u,
+      runtime_state.generation,
+      runtime_state.active_hash,
+      device_id,
+      POCKETJS_TARGET_ID,
+      "PocketJS 3DS"
+    );
+    if (sendto(
+          discovery_fd,
+          reply,
+          sizeof reply,
+          0,
+          (struct sockaddr *)&sender,
+          sender_length
+        ) == (ssize_t)sizeof reply) {
+      discoveries += 1;
+    }
+  }
 }
 
 static bool append_ctrl_input(const uint8_t *bytes, size_t length) {
@@ -745,6 +836,7 @@ static void send_client(void) {
 
 void devserver_poll(void) {
   if (!initialized) return;
+  poll_discovery();
   accept_client();
   receive_client();
   if (client_fd >= 0 && osGetTime() - client_last_rx_ms > 15u * 1000u) {

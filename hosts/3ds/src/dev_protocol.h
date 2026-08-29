@@ -6,8 +6,13 @@
 #include <stdint.h>
 
 #define POCKET_RUNTIME_WIRE_MAGIC 0x54524b50u /* 'PKRT' little-endian */
+#define POCKET_RUNTIME_DISCOVERY_MAGIC 0x44524b50u /* 'PKRD' little-endian */
 #define POCKET_RUNTIME_WIRE_VERSION 1u
 #define POCKET_RUNTIME_WIRE_PORT 8131u
+#define POCKET_RUNTIME_DISCOVERY_REQUEST_BYTES 8u
+#define POCKET_RUNTIME_DISCOVERY_REPLY_BYTES 64u
+#define POCKET_RUNTIME_DISCOVERY_REQUEST 1u
+#define POCKET_RUNTIME_DISCOVERY_REPLY 2u
 #define POCKET_RUNTIME_TOKEN_BYTES 32u
 #define POCKET_RUNTIME_HELLO_BYTES 40u
 #define POCKET_RUNTIME_ACK_BYTES 24u
@@ -88,6 +93,21 @@ void pocket_runtime_encode_screenshot_begin(
   uint16_t auxiliary_height,
   uint32_t top_bytes,
   uint32_t auxiliary_bytes
+);
+uint64_t pocket_runtime_device_id(
+  const uint8_t token[POCKET_RUNTIME_TOKEN_BYTES]
+);
+bool pocket_runtime_is_discovery_request(const uint8_t *bytes, size_t length);
+void pocket_runtime_encode_discovery_reply(
+  uint8_t out[POCKET_RUNTIME_DISCOVERY_REPLY_BYTES],
+  uint16_t host_abi,
+  uint16_t port,
+  uint16_t flags,
+  uint32_t generation,
+  uint64_t active_hash,
+  uint64_t device_id,
+  const char *target,
+  const char *label
 );
 
 #endif

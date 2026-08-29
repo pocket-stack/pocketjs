@@ -13,6 +13,24 @@ typedef enum {
   DEVSERVER_ERROR = -1,
 } DevserverInitResult;
 
+typedef struct {
+  bool enabled;
+  bool discoverable;
+  bool connected;
+  char ip[16];
+  char phase[32];
+  uint16_t port;
+  uint16_t host_abi;
+  uint32_t generation;
+  uint64_t running_hash;
+  uint64_t device_id;
+  uint32_t connects;
+  uint32_t auth_failures;
+  uint32_t timeouts;
+  uint32_t uploads;
+  uint32_t screenshots;
+} DevserverSnapshot;
+
 /* Starts the paired LAN listener. A missing dev.key is an intentional
  * DISABLED state; malformed key or socket initialization is ERROR. */
 DevserverInitResult devserver_init(
@@ -26,6 +44,7 @@ void devserver_shutdown(void);
 void devserver_poll(void);
 bool devserver_active(void);
 bool devserver_connected(void);
+void devserver_snapshot(DevserverSnapshot *out);
 
 /* Pocket DevTools JSON-line transport exposed through ui.__dbg*. */
 size_t devserver_recv_ctrl(char *out, size_t capacity);

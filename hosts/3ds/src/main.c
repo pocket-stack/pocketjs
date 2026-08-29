@@ -33,6 +33,7 @@
 #include "pocket_core.h"
 #include "qjs.h"
 #include "devserver.h"
+#include "devmenu.h"
 #include "runtime.h"
 
 /* The guest viewport comes from the resolved build plan, never a literal. */
@@ -654,6 +655,10 @@ int main(void) {
    * extra cache, which the QuickJS guest feels directly. */
   osSetSpeedupEnable(true);
   C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
+#ifndef POCKETJS_CAPTURE
+  /* Debug UI must never make an otherwise admissible guest unbootable. */
+  (void)devmenu_init();
+#endif
 
   primary_target = C3D_RenderTargetCreate(
     VIEW_H,
@@ -742,6 +747,14 @@ int main(void) {
     size_t touch_count = scripted_touch(frame, &touch);
 #else
     devserver_poll();
+    if (input_devmenu_toggle_requested()) devmenu_toggle();
+    if (devmenu_visible() && input_devmenu_close_requested()) devmenu_hide();
+    if (devmenu_visible() && input_devmenu_screenshot_requested()) {
+      devmenu_set_notice(
+        devserver_request_screenshot() ? "SHOT QUEUED" : "NO DEV CLIENT"
+      );
+    }
+    bool devmenu_blocks_guest = input_devmenu_blocks_guest(devmenu_visible());
     uint64_t upload_hash = 0;
     if (devserver_take_upload(&upload_hash)) {
       PocketRuntimePackage *uploaded = NULL;
@@ -776,7 +789,7 @@ int main(void) {
         continue;
       }
     }
-    if (input_reload_requested()) {
+    if (!devmenu_blocks_guest && input_reload_requested()) {
       PocketRuntimePackage *pending = NULL;
       RuntimePendingResult result = runtime_prepare_pending(
         &pending,
@@ -798,10 +811,10 @@ int main(void) {
         continue;
       }
     }
-    int32_t buttons = input_buttons();
-    int32_t analog = input_analog();
+    int32_t buttons = devmenu_blocks_guest ? 0 : input_buttons();
+    int32_t analog = devmenu_blocks_guest ? ANALOG_CENTER : input_analog();
     uint32_t touch = 0;
-    size_t touch_count = input_touch(&touch);
+    size_t touch_count = devmenu_blocks_guest ? 0 : input_touch(&touch);
 #endif
 
     int32_t touch_hit = 0;
@@ -885,6 +898,9 @@ int main(void) {
     C3D_FrameDrawOn(auxiliary_target);
     C3D_SetViewport(0, 0, AUX_VIEW_H, AUX_VIEW_W);
     gfx_draw_surface(1);
+#ifndef POCKETJS_CAPTURE
+    devmenu_draw(auxiliary_target);
+#endif
     C3D_FrameEnd(0);
 #ifndef POCKETJS_CAPTURE
     guest.submitted_frames += 1;
@@ -963,6 +979,7 @@ int main(void) {
   runtime_package_free(embedded);
 #ifndef POCKETJS_CAPTURE
   devserver_shutdown();
+  devmenu_shutdown();
 #endif
   gfx_shutdown();
   romfsExit();

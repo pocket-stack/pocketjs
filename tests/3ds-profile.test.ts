@@ -253,6 +253,25 @@ describe("private Nintendo 3DS build profile", () => {
     );
     expect(input).toContain("RUNTIME_RELOAD_KEYS");
     expect(input).toContain("held &= ~RUNTIME_RELOAD_KEYS");
+    expect(input).toContain("RUNTIME_DEVMENU_KEYS");
+    expect(input).toContain("held &= ~RUNTIME_DEVMENU_KEYS");
+    expect(input).toContain("input_devmenu_blocks_guest");
+  });
+
+  test("keeps the development menu native and outside the guest capability surface", () => {
+    const root = new URL("..", import.meta.url).pathname;
+    const menu = readFileSync(join(root, "hosts/3ds/src/devmenu.c"), "utf8");
+    const main = readFileSync(join(root, "hosts/3ds/src/main.c"), "utf8");
+    const makefile = readFileSync(join(root, "hosts/3ds/Makefile"), "utf8");
+    expect(menu).toContain("C2D_SceneBegin(target)");
+    expect(menu).toContain("devserver_snapshot(&state)");
+    expect(menu).not.toMatch(/\bui_[a-z_]+\s*\(/);
+    expect(main).toContain("(void)devmenu_init()");
+    expect(main).not.toContain("native development menu failed to initialize");
+    expect(main.indexOf("gfx_draw_surface(1)")).toBeLessThan(
+      main.indexOf("devmenu_draw(auxiliary_target)"),
+    );
+    expect(makefile).toContain("-lcitro2d -lcitro3d");
   });
 
   test("feeds pak images through the shared IMG-entry parser", () => {

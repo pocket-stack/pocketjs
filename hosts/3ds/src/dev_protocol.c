@@ -137,3 +137,56 @@ void pocket_runtime_encode_screenshot_begin(
   pocket_runtime_write_u32(out + 16, top_bytes);
   pocket_runtime_write_u32(out + 20, auxiliary_bytes);
 }
+
+uint64_t pocket_runtime_device_id(
+  const uint8_t token[POCKET_RUNTIME_TOKEN_BYTES]
+) {
+  if (token == NULL) return 0;
+  uint64_t hash = 0xcbf29ce484222325ULL;
+  for (size_t index = 0; index < POCKET_RUNTIME_TOKEN_BYTES; index += 1) {
+    hash ^= token[index];
+    hash *= 0x100000001b3ULL;
+  }
+  return hash;
+}
+
+bool pocket_runtime_is_discovery_request(const uint8_t *bytes, size_t length) {
+  return bytes != NULL && length == POCKET_RUNTIME_DISCOVERY_REQUEST_BYTES &&
+         pocket_runtime_read_u32(bytes) == POCKET_RUNTIME_DISCOVERY_MAGIC &&
+         bytes[4] == POCKET_RUNTIME_WIRE_VERSION &&
+         bytes[5] == POCKET_RUNTIME_DISCOVERY_REQUEST &&
+         bytes[6] == 0 && bytes[7] == 0;
+}
+
+static void write_fixed_text(uint8_t *out, size_t length, const char *text) {
+  memset(out, 0, length);
+  if (text == NULL) return;
+  size_t text_length = strlen(text);
+  if (text_length >= length) text_length = length - 1;
+  memcpy(out, text, text_length);
+}
+
+void pocket_runtime_encode_discovery_reply(
+  uint8_t out[POCKET_RUNTIME_DISCOVERY_REPLY_BYTES],
+  uint16_t host_abi,
+  uint16_t port,
+  uint16_t flags,
+  uint32_t generation,
+  uint64_t active_hash,
+  uint64_t device_id,
+  const char *target,
+  const char *label
+) {
+  memset(out, 0, POCKET_RUNTIME_DISCOVERY_REPLY_BYTES);
+  pocket_runtime_write_u32(out, POCKET_RUNTIME_DISCOVERY_MAGIC);
+  out[4] = POCKET_RUNTIME_WIRE_VERSION;
+  out[5] = POCKET_RUNTIME_DISCOVERY_REPLY;
+  pocket_runtime_write_u16(out + 6, host_abi);
+  pocket_runtime_write_u16(out + 8, port);
+  pocket_runtime_write_u16(out + 10, flags);
+  pocket_runtime_write_u32(out + 12, generation);
+  pocket_runtime_write_u64(out + 16, active_hash);
+  pocket_runtime_write_u64(out + 24, device_id);
+  write_fixed_text(out + 32, 16, target);
+  write_fixed_text(out + 48, 16, label);
+}

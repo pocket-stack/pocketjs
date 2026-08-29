@@ -33,6 +33,9 @@
 /* Full-deflection reading of the circle pad on both console revisions. */
 #define CIRCLE_PAD_RANGE 156
 #define RUNTIME_RELOAD_KEYS (KEY_L | KEY_R | KEY_X)
+#define RUNTIME_DEVMENU_KEYS (KEY_L | KEY_R | KEY_SELECT)
+
+static bool devmenu_input_latched;
 
 static const struct {
   uint32_t key;
@@ -57,6 +60,9 @@ int32_t input_buttons(void) {
   if ((held & RUNTIME_RELOAD_KEYS) == RUNTIME_RELOAD_KEYS) {
     held &= ~RUNTIME_RELOAD_KEYS;
   }
+  if ((held & RUNTIME_DEVMENU_KEYS) == RUNTIME_DEVMENU_KEYS) {
+    held &= ~RUNTIME_DEVMENU_KEYS;
+  }
   int32_t buttons = 0;
   for (size_t index = 0; index < sizeof KEY_MAP / sizeof KEY_MAP[0]; index += 1) {
     if (held & KEY_MAP[index].key) buttons |= KEY_MAP[index].button;
@@ -69,6 +75,32 @@ bool input_reload_requested(void) {
   uint32_t down = hidKeysDown();
   return (held & RUNTIME_RELOAD_KEYS) == RUNTIME_RELOAD_KEYS &&
          (down & RUNTIME_RELOAD_KEYS) != 0;
+}
+
+bool input_devmenu_toggle_requested(void) {
+  uint32_t held = hidKeysHeld();
+  uint32_t down = hidKeysDown();
+  return (held & RUNTIME_DEVMENU_KEYS) == RUNTIME_DEVMENU_KEYS &&
+         (down & RUNTIME_DEVMENU_KEYS) != 0;
+}
+
+bool input_devmenu_close_requested(void) {
+  return (hidKeysDown() & (KEY_B | KEY_START)) != 0;
+}
+
+bool input_devmenu_screenshot_requested(void) {
+  return (hidKeysDown() & KEY_X) != 0;
+}
+
+bool input_devmenu_blocks_guest(bool menu_visible) {
+  if (menu_visible) {
+    devmenu_input_latched = true;
+    return true;
+  }
+  if (!devmenu_input_latched) return false;
+  if (hidKeysHeld() != 0) return true;
+  devmenu_input_latched = false;
+  return false;
 }
 
 /* One axis to the PSP nub's 0..255 with 128 the centre. */

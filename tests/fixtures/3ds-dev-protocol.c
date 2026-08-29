@@ -57,5 +57,30 @@ int main(void) {
   assert(pocket_runtime_read_u16(screenshot + 8) == 320);
   assert(screenshot[12] == POCKET_RUNTIME_SCREENSHOT_FORMAT_ROTATED_RGB8);
   assert(pocket_runtime_read_u32(screenshot + 16) == 400 * 240 * 3);
+
+  uint8_t discovery_request[POCKET_RUNTIME_DISCOVERY_REQUEST_BYTES] = {0};
+  pocket_runtime_write_u32(discovery_request, POCKET_RUNTIME_DISCOVERY_MAGIC);
+  discovery_request[4] = POCKET_RUNTIME_WIRE_VERSION;
+  discovery_request[5] = POCKET_RUNTIME_DISCOVERY_REQUEST;
+  assert(pocket_runtime_is_discovery_request(discovery_request, sizeof discovery_request));
+  assert(pocket_runtime_device_id(token) == 0xe6cb594c1a148ac5ULL);
+
+  uint8_t discovery[POCKET_RUNTIME_DISCOVERY_REPLY_BYTES];
+  pocket_runtime_encode_discovery_reply(
+    discovery,
+    8,
+    8131,
+    1,
+    3,
+    0xe01adc15327d4203ULL,
+    pocket_runtime_device_id(token),
+    "3ds-dev",
+    "PocketJS 3DS"
+  );
+  assert(pocket_runtime_read_u32(discovery) == POCKET_RUNTIME_DISCOVERY_MAGIC);
+  assert(discovery[5] == POCKET_RUNTIME_DISCOVERY_REPLY);
+  assert(pocket_runtime_read_u16(discovery + 8) == 8131);
+  assert(pocket_runtime_read_u64(discovery + 24) == 0xe6cb594c1a148ac5ULL);
+  assert(strcmp((const char *)discovery + 32, "3ds-dev") == 0);
   return 0;
 }

@@ -5,8 +5,13 @@
 // `.pocket` bytes and screenshots stay binary and never enter QuickJS.
 
 export const POCKET_RUNTIME_WIRE_MAGIC = 0x54524b50; // 'PKRT' little-endian
+export const POCKET_RUNTIME_DISCOVERY_MAGIC = 0x44524b50; // 'PKRD' little-endian
 export const POCKET_RUNTIME_WIRE_VERSION = 1;
 export const POCKET_RUNTIME_WIRE_PORT = 8131;
+export const POCKET_RUNTIME_DISCOVERY_REQUEST_BYTES = 8;
+export const POCKET_RUNTIME_DISCOVERY_REPLY_BYTES = 64;
+export const POCKET_RUNTIME_DISCOVERY_REQUEST = 1;
+export const POCKET_RUNTIME_DISCOVERY_REPLY = 2;
 export const POCKET_RUNTIME_TOKEN_BYTES = 32;
 export const POCKET_RUNTIME_HELLO_BYTES = 8 + POCKET_RUNTIME_TOKEN_BYTES;
 export const POCKET_RUNTIME_ACK_BYTES = 24;
@@ -57,8 +62,72 @@ export interface PocketRuntimeScreenshotBegin {
   readonly auxiliaryBytes: number;
 }
 
+export interface PocketRuntimeDiscovery {
+  readonly hostAbi: number;
+  readonly port: number;
+  readonly flags: number;
+  readonly generation: number;
+  readonly activeHash: bigint;
+  readonly deviceId: bigint;
+  readonly target: string;
+  readonly label: string;
+}
+
 function view(bytes: Uint8Array): DataView {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+
+function fixedText(bytes: Uint8Array): string {
+  const end = bytes.indexOf(0);
+  return new TextDecoder().decode(end < 0 ? bytes : bytes.subarray(0, end));
+}
+
+export function pocketRuntimeDeviceId(token: Uint8Array): bigint {
+  if (token.length !== POCKET_RUNTIME_TOKEN_BYTES) {
+    throw new Error(`Pocket Runtime token must be ${POCKET_RUNTIME_TOKEN_BYTES} bytes`);
+  }
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of token) {
+    hash ^= BigInt(byte);
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+  }
+  return hash;
+}
+
+export function encodePocketRuntimeDiscoveryRequest(): Uint8Array {
+  const bytes = new Uint8Array(POCKET_RUNTIME_DISCOVERY_REQUEST_BYTES);
+  const data = view(bytes);
+  data.setUint32(0, POCKET_RUNTIME_DISCOVERY_MAGIC, true);
+  data.setUint8(4, POCKET_RUNTIME_WIRE_VERSION);
+  data.setUint8(5, POCKET_RUNTIME_DISCOVERY_REQUEST);
+  return bytes;
+}
+
+export function decodePocketRuntimeDiscoveryReply(
+  bytes: Uint8Array,
+): PocketRuntimeDiscovery {
+  if (bytes.length !== POCKET_RUNTIME_DISCOVERY_REPLY_BYTES) {
+    throw new Error(`Pocket Runtime discovery reply must be ${POCKET_RUNTIME_DISCOVERY_REPLY_BYTES} bytes`);
+  }
+  const data = view(bytes);
+  if (data.getUint32(0, true) !== POCKET_RUNTIME_DISCOVERY_MAGIC ||
+      data.getUint8(4) !== POCKET_RUNTIME_WIRE_VERSION ||
+      data.getUint8(5) !== POCKET_RUNTIME_DISCOVERY_REPLY) {
+    throw new Error("Pocket Runtime discovery reply has the wrong identity");
+  }
+  const target = fixedText(bytes.subarray(32, 48));
+  const label = fixedText(bytes.subarray(48, 64));
+  if (!target) throw new Error("Pocket Runtime discovery reply has no target");
+  return {
+    hostAbi: data.getUint16(6, true),
+    port: data.getUint16(8, true),
+    flags: data.getUint16(10, true),
+    generation: data.getUint32(12, true),
+    activeHash: data.getBigUint64(16, true),
+    deviceId: data.getBigUint64(24, true),
+    target,
+    label,
+  };
 }
 
 export function encodePocketRuntimeHello(token: Uint8Array): Uint8Array {

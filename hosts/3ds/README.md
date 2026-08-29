@@ -28,8 +28,9 @@ core/                 pocketjs-3ds-core: the ui_* C ABI over pocketjs-core
 include/pocket_core.h the C header for the above
 src/main.c            process boot, reusable guest lifecycle, frame loop
 src/runtime.c         .pocket admission, immutable storage, active/rollback state
-src/devserver.c       paired non-blocking TCP pump, uploads, screenshots, receipts
+src/devserver.c       discovery, paired TCP pump, uploads, screenshots, receipts
 src/dev_protocol.c    byte-order-safe development wire encoding and admission
+src/devmenu.c         Runtime-owned bottom-screen development menu
 src/gfx.c             the DrawList -> citro3d walker
 src/qjs.c             QuickJS embedding: globalThis.ui -> ui_* calls
 src/input.c           3DS keys and circle pad -> the PSP BTN bitmask
@@ -115,7 +116,19 @@ without deleting the rejected package blob.
 
 ## In-process development connection
 
-Pocket Runtime listens on TCP port 8131 when this file exists:
+`L+R+SELECT` opens the **3DS host's native development menu** on the bottom
+screen. It shows the current IP and port, pairing or connection state, active
+generation, running package hash, update and screenshot counts, and transport
+errors. `X` requests a dual-screen screenshot from a connected client; `B` or
+`START` closes the menu.
+
+**The host draws this menu after the guest's bottom-screen DrawList and consumes
+all guest input while it is visible.** It reads a fixed native Runtime snapshot;
+it is not part of `globalThis.ui`, the guest input contract, or a published
+PocketJS capability. The input latch stays active until the keys used to close
+the menu have been released.
+
+Pocket Runtime listens on TCP and UDP port 8131 when this file exists:
 
 ```text
 sdmc:/pocketjs/runtime/dev.key
@@ -139,10 +152,20 @@ listener on a trusted LAN, and pass `--rotate` to `pair` after a key is exposed.
 After pairing, ftpd is not part of the development loop:
 
 ```sh
-bun run 3ds:dev push  --host <device-ip> --app 3ds-demo
-bun run 3ds:dev probe --host <device-ip>
-bun run 3ds:dev dev   --host <device-ip> --app 3ds-demo
+bun run 3ds:dev discover
+bun run 3ds:dev push  --app 3ds-demo
+bun run 3ds:dev probe
+bun run 3ds:dev dev   --app 3ds-demo
 ```
+
+**`discover`, `push`, `probe`, and `dev` do not require the 3DS IP.** The
+Runtime answers one fixed-size UDP discovery request with its target, ABI,
+TCP port, generation, active hash, and a stable ID derived from the pairing
+key. The reply never contains the key. The desktop tool matches that ID to a
+local key and then authenticates the TCP connection with the complete 32-byte
+key. This keeps the pairing valid when DHCP changes the console's address.
+Pass `--host <device-ip>` when broadcast discovery is unavailable; the native
+menu supplies that address.
 
 `push` builds and transfers the target-thinned `.pocket`, then waits for the
 device's **accepted-after-retired-frame** receipt. `probe` requests runtime

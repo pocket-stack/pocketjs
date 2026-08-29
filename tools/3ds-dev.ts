@@ -3,9 +3,10 @@
 // Pocket Runtime development loop for Nintendo 3DS.
 //
 //   bun tools/3ds-dev.ts pair  --host 192.168.8.102
-//   bun tools/3ds-dev.ts push  --host 192.168.8.102 --app 3ds-demo
-//   bun tools/3ds-dev.ts probe --host 192.168.8.102
-//   bun tools/3ds-dev.ts dev   --host 192.168.8.102 --app 3ds-demo
+//   bun tools/3ds-dev.ts discover
+//   bun tools/3ds-dev.ts push  --app 3ds-demo
+//   bun tools/3ds-dev.ts probe
+//   bun tools/3ds-dev.ts dev   --app 3ds-demo
 //
 // `pair` is the one-time ftpd step. Everything else talks directly to the
 // running Pocket Runtime over its authenticated TCP connection.
@@ -16,23 +17,27 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   POCKET_RUNTIME_WIRE_PORT,
   pocketPackageFooterHash,
+  pocketRuntimeDeviceId,
 } from "../contracts/spec/pocket-runtime-wire.ts";
 import { startDevServer } from "../hosts/web/server.ts";
 import {
   PocketRuntimeClient,
+  discoverPocketRuntimes,
   parsePocketRuntimeToken,
+  type DiscoveredPocketRuntime,
   type PocketRuntimeScreenshot,
 } from "./3ds-runtime-client.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const argv = Bun.argv.slice(2);
-const commands = new Set(["pair", "push", "probe", "dev"]);
+const commands = new Set(["pair", "discover", "push", "probe", "dev"]);
 const command = commands.has(argv[0] ?? "") ? argv.shift()! : "dev";
 
 function value(flag: string): string | undefined {
@@ -48,35 +53,129 @@ function usage(message?: string, exitCode = 1): never {
   if (message) console.error(`3ds-dev: ${message}`);
   console.error(`Usage:
   bun tools/3ds-dev.ts pair  --host <3ds-ip> [--ftp-port 5000] [--rotate]
-  bun tools/3ds-dev.ts push  --host <3ds-ip> [--app 3ds-demo | --package file.pocket]
-  bun tools/3ds-dev.ts probe --host <3ds-ip> [--out screenshot.png]
-  bun tools/3ds-dev.ts dev   --host <3ds-ip> [--app 3ds-demo] [--no-push] [--panel-port 8130]
+  bun tools/3ds-dev.ts discover
+  bun tools/3ds-dev.ts push  [--host <3ds-ip>] [--app 3ds-demo | --package file.pocket]
+  bun tools/3ds-dev.ts probe [--host <3ds-ip>] [--out screenshot.png]
+  bun tools/3ds-dev.ts dev   [--host <3ds-ip>] [--app 3ds-demo] [--no-push] [--panel-port 8130]
 
 The device must run Pocket Runtime for push/probe/dev. pair runs once while
-ftpd is open, then the final Runtime must be restarted to load dev.key.`);
+ftpd is open. Other commands discover a paired Runtime automatically; --host
+is an explicit fallback.`);
   process.exit(exitCode);
 }
 
 if (has("-h") || has("--help")) usage(undefined, 0);
-const host = value("--host") ?? process.env.POCKET_3DS_HOST ?? usage("--host is required");
-const port = Number(value("--port") ?? POCKET_RUNTIME_WIRE_PORT);
-if (!Number.isInteger(port) || port <= 0 || port > 65535) usage("--port is invalid");
-const safeDevice = `${host}-${port}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+const explicitHost = value("--host") ?? process.env.POCKET_3DS_HOST;
+const configuredPort = Number(value("--port") ?? POCKET_RUNTIME_WIRE_PORT);
+if (!Number.isInteger(configuredPort) || configuredPort <= 0 || configuredPort > 65535) {
+  usage("--port is invalid");
+}
 const keyDirectory = join(ROOT, ".pocket", "3ds", "devices");
-const keyPath = join(keyDirectory, `${safeDevice}.key`);
 
-function tokenFromDisk(): Uint8Array {
-  if (!existsSync(keyPath)) {
-    throw new Error(`device is not paired; run bun tools/3ds-dev.ts pair --host ${host}`);
+interface DeviceTarget {
+  readonly host: string;
+  readonly port: number;
+  readonly token: Uint8Array;
+  readonly deviceId: bigint;
+}
+
+function keyPathFor(host: string, port: number): string {
+  const safe = `${host}-${port}`.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  return join(keyDirectory, `${safe}.key`);
+}
+
+function tokenAt(path: string): Uint8Array {
+  return parsePocketRuntimeToken(readFileSync(path, "utf8"));
+}
+
+function tokenForDevice(deviceId: bigint): Uint8Array | null {
+  if (!existsSync(keyDirectory)) return null;
+  for (const name of readdirSync(keyDirectory).filter((entry) => entry.endsWith(".key")).sort()) {
+    try {
+      const token = tokenAt(join(keyDirectory, name));
+      if (pocketRuntimeDeviceId(token) === deviceId) return token;
+    } catch {
+      // A corrupt key is reported when selected explicitly; discovery skips it.
+    }
   }
-  return parsePocketRuntimeToken(readFileSync(keyPath, "utf8"));
+  return null;
+}
+
+function deviceIdText(deviceId: bigint): string {
+  return deviceId.toString(16).padStart(16, "0");
+}
+
+async function discoveredDevices(addresses?: readonly string[]): Promise<DiscoveredPocketRuntime[]> {
+  return await discoverPocketRuntimes({ port: configuredPort, addresses });
+}
+
+async function resolveTarget(): Promise<DeviceTarget> {
+  if (explicitHost) {
+    const path = keyPathFor(explicitHost, configuredPort);
+    if (existsSync(path)) {
+      const token = tokenAt(path);
+      return {
+        host: explicitHost,
+        port: configuredPort,
+        token,
+        deviceId: pocketRuntimeDeviceId(token),
+      };
+    }
+    const match = (await discoveredDevices([explicitHost])).find(
+      (device) => device.address === explicitHost,
+    );
+    const token = match ? tokenForDevice(match.deviceId) : null;
+    if (match && token) {
+      return {
+        host: match.address,
+        port: match.port,
+        token,
+        deviceId: match.deviceId,
+      };
+    }
+    throw new Error(`device is not paired; run bun run 3ds:dev pair --host ${explicitHost}`);
+  }
+
+  const devices = await discoveredDevices();
+  const paired = devices.flatMap((device) => {
+    const token = tokenForDevice(device.deviceId);
+    return token ? [{ device, token }] : [];
+  });
+  if (paired.length === 0) {
+    if (devices.length > 0) {
+      const list = devices
+        .map((device) => `${device.label || device.target} at ${device.address}`)
+        .join(", ");
+      throw new Error(`found ${list}, but no matching local pairing key; pair it once through ftpd`);
+    }
+    throw new Error("no Pocket Runtime discovered; open the 3DS dev menu for its IP and retry with --host");
+  }
+  if (paired.length > 1) {
+    const list = paired
+      .map(({ device }) => `${device.address} (${deviceIdText(device.deviceId)})`)
+      .join(", ");
+    throw new Error(`multiple paired Runtimes discovered: ${list}; select one with --host`);
+  }
+  const { device, token } = paired[0];
+  console.log(
+    `discovered ${device.label || device.target} ${device.address}:${device.port} — ${deviceIdText(device.deviceId)}`,
+  );
+  return {
+    host: device.address,
+    port: device.port,
+    token,
+    deviceId: device.deviceId,
+  };
 }
 
 async function pair(): Promise<void> {
+  const host = explicitHost ?? usage("pair requires --host while ftpd is running");
+  const port = configuredPort;
+  const keyPath = keyPathFor(host, port);
   mkdirSync(keyDirectory, { recursive: true });
   let token: Uint8Array;
   if (existsSync(keyPath) && !has("--rotate")) {
-    token = tokenFromDisk();
+    token = tokenAt(keyPath);
   } else {
     token = crypto.getRandomValues(new Uint8Array(32));
     writeFileSync(keyPath, `${Buffer.from(token).toString("hex")}\n`, { mode: 0o600 });
@@ -146,17 +245,37 @@ async function packagePath(): Promise<string> {
   return await buildPackage(value("--app") ?? "3ds-demo");
 }
 
-function createClient(): PocketRuntimeClient {
-  return new PocketRuntimeClient({ host, port, token: tokenFromDisk(), timeoutMs: 15_000 });
+function createClient(target: DeviceTarget): PocketRuntimeClient {
+  return new PocketRuntimeClient({
+    host: target.host,
+    port: target.port,
+    token: target.token,
+    timeoutMs: 15_000,
+  });
 }
 
-async function connect(client = createClient()): Promise<PocketRuntimeClient> {
+async function connect(
+  target: DeviceTarget,
+  client = createClient(target),
+): Promise<PocketRuntimeClient> {
   client.on("socketError", (error) => console.error(`3ds-dev: socket: ${String(error)}`));
   const ack = await client.connect();
   console.log(
-    `connected ${host}:${port} — abi ${ack.hostAbi}, generation ${ack.generation}, active ${ack.activeHash.toString(16).padStart(16, "0")}`,
+    `connected ${target.host}:${target.port} — abi ${ack.hostAbi}, generation ${ack.generation}, active ${ack.activeHash.toString(16).padStart(16, "0")}`,
   );
   return client;
+}
+
+async function discoverCommand(): Promise<void> {
+  const devices = await discoveredDevices();
+  if (devices.length === 0) throw new Error("no Pocket Runtime answered discovery");
+  for (const device of devices) {
+    const paired = tokenForDevice(device.deviceId) !== null;
+    console.log(
+      `${device.label || device.target}  ${device.address}:${device.port}  id ${deviceIdText(device.deviceId)}  ` +
+        `gen ${device.generation}  ${paired ? "paired" : "no local key"}`,
+    );
+  }
 }
 
 function hashOf(value: Record<string, unknown>): string {
@@ -187,7 +306,8 @@ async function pushWithClient(client: PocketRuntimeClient, path: string): Promis
 
 async function push(): Promise<void> {
   const path = await packagePath();
-  const client = await connect();
+  const target = await resolveTarget();
+  const client = await connect(target);
   try {
     await pushWithClient(client, path);
   } finally {
@@ -204,7 +324,8 @@ function screenshotPath(frame: number): string {
 }
 
 async function probe(): Promise<void> {
-  const client = await connect();
+  const target = await resolveTarget();
+  const client = await connect(target);
   try {
     const statusPromise = client.waitForCtrl((message) => message.t === "runtime.status");
     await client.requestStatus();
@@ -248,6 +369,7 @@ async function probe(): Promise<void> {
 }
 
 async function dev(): Promise<void> {
+  const target = await resolveTarget();
   const panelPort = Number(value("--panel-port") ?? process.env.PORT ?? 8130);
   const server = startDevServer({ port: panelPort, portRetries: 10 });
   const socket = new WebSocket(`ws://127.0.0.1:${server.port}/ws?role=device`);
@@ -255,7 +377,7 @@ async function dev(): Promise<void> {
     socket.onopen = () => resolveOpen();
     socket.onerror = () => rejectOpen(new Error("Pocket DevTools panel WebSocket failed to open"));
   });
-  const client = createClient();
+  const client = createClient(target);
   let currentPackage = value("--package") ? resolve(value("--package")!) : "";
 
   const forwardScreenshot = (screenshot: PocketRuntimeScreenshot) => {
@@ -284,7 +406,7 @@ async function dev(): Promise<void> {
   socket.onmessage = (event) => {
     if (typeof event.data === "string") void client.sendCtrl(event.data).catch(console.error);
   };
-  await connect(client);
+  await connect(target, client);
 
   const rebuild = async () => {
     currentPackage = value("--package") ? resolve(value("--package")!) : await buildPackage(value("--app") ?? "3ds-demo");
@@ -321,6 +443,7 @@ async function dev(): Promise<void> {
 
 try {
   if (command === "pair") await pair();
+  else if (command === "discover") await discoverCommand();
   else if (command === "push") await push();
   else if (command === "probe") await probe();
   else await dev();

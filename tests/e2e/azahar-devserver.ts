@@ -18,9 +18,14 @@ import {
   decodePocketPackage,
   encodePocketPackage,
 } from "../../contracts/spec/pocket-package.ts";
-import { pocketPackageFooterHash } from "../../contracts/spec/pocket-runtime-wire.ts";
+import {
+  pocketPackageFooterHash,
+  pocketRuntimeDeviceId,
+} from "../../contracts/spec/pocket-runtime-wire.ts";
 import {
   PocketRuntimeClient,
+  discoverPocketRuntimes,
+  type DiscoveredPocketRuntime,
   type PocketRuntimeScreenshot,
 } from "../../tools/3ds-runtime-client.ts";
 
@@ -118,7 +123,7 @@ async function connectUntil(overrideToken = token): Promise<PocketRuntimeClient>
     const client = new PocketRuntimeClient({
       host: "127.0.0.1",
       token: overrideToken,
-      timeoutMs: 1_000,
+      timeoutMs: 10_000,
     });
     try {
       await client.connect();
@@ -130,6 +135,19 @@ async function connectUntil(overrideToken = token): Promise<PocketRuntimeClient>
     }
   }
   throw new Error(`development socket did not accept a client: ${lastError}`);
+}
+
+async function discoverUntil(): Promise<DiscoveredPocketRuntime> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const devices = await discoverPocketRuntimes({
+      addresses: ["127.0.0.1"],
+      timeoutMs: 150,
+    });
+    if (devices.length > 0) return devices[0];
+    await Bun.sleep(100);
+  }
+  throw new Error("development runtime did not answer UDP discovery");
 }
 
 function withProbe(good: Uint8Array, marker: string): Uint8Array {
@@ -205,6 +223,17 @@ try {
   writeFixture();
   launch(rom);
 
+  const discovered = await discoverUntil();
+  if (discovered.target !== "3ds-dev" || discovered.hostAbi !== 8 ||
+      discovered.port !== 8131 || discovered.deviceId !== pocketRuntimeDeviceId(token)) {
+    throw new Error(`wrong discovery identity: ${JSON.stringify({
+      ...discovered,
+      activeHash: discovered.activeHash.toString(16),
+      deviceId: discovered.deviceId.toString(16),
+    })}`);
+  }
+  console.log(`PASS discovered paired Runtime ${discovered.address}:${discovered.port} without an IP argument`);
+
   const wrong = Uint8Array.from(token, (byte) => byte ^ 0xff);
   try {
     const rejected = await connectUntil(wrong);
@@ -270,7 +299,7 @@ try {
     throw new Error(`release guest was not restored: ${JSON.stringify(restoredEval)}`);
   }
   console.log(`PASS restored release guest ${hexHash(good)} without restarting Azahar`);
-  console.log("Azahar Pocket Runtime DevTools E2E: 5 passed, 0 failed");
+  console.log("Azahar Pocket Runtime DevTools E2E: 6 passed, 0 failed");
 } catch (error) {
   console.error(`FAIL 3DS Pocket Runtime DevTools: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;

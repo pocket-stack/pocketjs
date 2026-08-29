@@ -2,9 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createSocket } from "node:dgram";
 import { createServer, type Socket } from "node:net";
 import {
   POCKET_RUNTIME_ACK_BYTES,
+  POCKET_RUNTIME_DISCOVERY_MAGIC,
+  POCKET_RUNTIME_DISCOVERY_REPLY,
+  POCKET_RUNTIME_DISCOVERY_REPLY_BYTES,
   POCKET_RUNTIME_FRAME_HEADER_BYTES,
   POCKET_RUNTIME_MAX_FRAME_BYTES,
   POCKET_RUNTIME_MAX_CTRL_BYTES,
@@ -14,17 +18,20 @@ import {
   POCKET_RUNTIME_WIRE_MAGIC,
   PocketRuntimeFrameDecoder,
   decodePocketRuntimeAck,
+  decodePocketRuntimeDiscoveryReply,
   decodePocketRuntimeScreenshotBegin,
   encodePocketRuntimeFrame,
   encodePocketRuntimeHello,
   encodePocketRuntimePackageBegin,
   encodePocketRuntimePackageChunk,
   pocketPackageFooterHash,
+  pocketRuntimeDeviceId,
 } from "../contracts/spec/pocket-runtime-wire.ts";
 import {
   PocketRuntimeClient,
   combinePocketRuntimeScreens,
   decodePocketRuntimeSurface,
+  discoverPocketRuntimes,
 } from "../tools/3ds-runtime-client.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -38,6 +45,7 @@ describe("Nintendo 3DS Pocket Runtime wire", () => {
   test("keeps TypeScript and C protocol constants byte-exact", () => {
     const header = readFileSync(join(ROOT, "hosts/3ds/src/dev_protocol.h"), "utf8");
     expect(header).toContain("#define POCKET_RUNTIME_WIRE_MAGIC 0x54524b50u");
+    expect(header).toContain("#define POCKET_RUNTIME_DISCOVERY_MAGIC 0x44524b50u");
     expect(header).toContain("#define POCKET_RUNTIME_WIRE_PORT 8131u");
     expect(header).toContain("#define POCKET_RUNTIME_TOKEN_BYTES 32u");
     expect(header).toContain("#define POCKET_RUNTIME_MAX_FRAME_BYTES (64u * 1024u)");
@@ -45,6 +53,75 @@ describe("Nintendo 3DS Pocket Runtime wire", () => {
     expect(POCKET_RUNTIME_WIRE_MAGIC).toBe(0x54524b50);
     expect(POCKET_RUNTIME_TOKEN_BYTES).toBe(32);
     expect(POCKET_RUNTIME_MAX_CTRL_BYTES).toBe(16 * 1024);
+  });
+
+  test("identifies paired devices without exposing their token", () => {
+    const token = Uint8Array.from({ length: 32 }, (_, index) => index);
+    expect(pocketRuntimeDeviceId(token)).toBe(0xe6cb594c1a148ac5n);
+    const reply = new Uint8Array(POCKET_RUNTIME_DISCOVERY_REPLY_BYTES);
+    const data = new DataView(reply.buffer);
+    data.setUint32(0, POCKET_RUNTIME_DISCOVERY_MAGIC, true);
+    data.setUint8(4, 1);
+    data.setUint8(5, POCKET_RUNTIME_DISCOVERY_REPLY);
+    data.setUint16(6, 8, true);
+    data.setUint16(8, 8131, true);
+    data.setUint16(10, 1, true);
+    data.setUint32(12, 3, true);
+    data.setBigUint64(16, 0xe01adc15327d4203n, true);
+    data.setBigUint64(24, pocketRuntimeDeviceId(token), true);
+    reply.set(new TextEncoder().encode("3ds-dev"), 32);
+    reply.set(new TextEncoder().encode("PocketJS 3DS"), 48);
+    expect(decodePocketRuntimeDiscoveryReply(reply)).toEqual({
+      hostAbi: 8,
+      port: 8131,
+      flags: 1,
+      generation: 3,
+      activeHash: 0xe01adc15327d4203n,
+      deviceId: 0xe6cb594c1a148ac5n,
+      target: "3ds-dev",
+      label: "PocketJS 3DS",
+    });
+  });
+
+  test("discovers a Runtime over one UDP request/reply", async () => {
+    const server = createSocket("udp4");
+    const reply = new Uint8Array(POCKET_RUNTIME_DISCOVERY_REPLY_BYTES);
+    const data = new DataView(reply.buffer);
+    data.setUint32(0, POCKET_RUNTIME_DISCOVERY_MAGIC, true);
+    data.setUint8(4, 1);
+    data.setUint8(5, POCKET_RUNTIME_DISCOVERY_REPLY);
+    data.setUint16(6, 8, true);
+    data.setUint16(8, 8131, true);
+    data.setUint32(12, 9, true);
+    data.setBigUint64(24, 0x1234n, true);
+    reply.set(new TextEncoder().encode("3ds-dev"), 32);
+    reply.set(new TextEncoder().encode("PocketJS 3DS"), 48);
+    server.on("message", (request, remote) => {
+      expect(new DataView(request.buffer, request.byteOffset).getUint32(0, true)).toBe(
+        POCKET_RUNTIME_DISCOVERY_MAGIC,
+      );
+      server.send(reply, remote.port, remote.address);
+    });
+    await new Promise<void>((resolve) => server.bind(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (typeof address === "string") throw new Error("UDP fixture has no port");
+    try {
+      const devices = await discoverPocketRuntimes({
+        port: address.port,
+        addresses: ["127.0.0.1"],
+        timeoutMs: 50,
+      });
+      expect(devices).toHaveLength(1);
+      expect(devices[0]).toMatchObject({
+        address: "127.0.0.1",
+        port: 8131,
+        generation: 9,
+        deviceId: 0x1234n,
+        target: "3ds-dev",
+      });
+    } finally {
+      server.close();
+    }
   });
 
   test("authenticates an exact 32-byte pairing token and decodes the ack", () => {

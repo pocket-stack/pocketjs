@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createSocket } from "node:dgram";
 import { Socket } from "node:net";
 import {
   POCKET_RUNTIME_ACK_BYTES,
@@ -9,13 +10,16 @@ import {
   POCKET_RUNTIME_WIRE_PORT,
   PocketRuntimeFrameDecoder,
   decodePocketRuntimeAck,
+  decodePocketRuntimeDiscoveryReply,
   decodePocketRuntimeScreenshotBegin,
+  encodePocketRuntimeDiscoveryRequest,
   encodePocketRuntimeFrame,
   encodePocketRuntimeHello,
   encodePocketRuntimePackageBegin,
   encodePocketRuntimePackageChunk,
   pocketPackageFooterHash,
   type PocketRuntimeAck,
+  type PocketRuntimeDiscovery,
   type PocketRuntimeFrame,
   type PocketRuntimeScreenshotBegin,
 } from "../contracts/spec/pocket-runtime-wire.ts";
@@ -34,6 +38,64 @@ export interface PocketRuntimeClientOptions {
   readonly token: Uint8Array;
   readonly port?: number;
   readonly timeoutMs?: number;
+}
+
+export interface DiscoveredPocketRuntime extends PocketRuntimeDiscovery {
+  readonly address: string;
+}
+
+export interface PocketRuntimeDiscoveryOptions {
+  readonly port?: number;
+  readonly timeoutMs?: number;
+  readonly addresses?: readonly string[];
+}
+
+export async function discoverPocketRuntimes(
+  options: PocketRuntimeDiscoveryOptions = {},
+): Promise<DiscoveredPocketRuntime[]> {
+  const port = options.port ?? POCKET_RUNTIME_WIRE_PORT;
+  const timeoutMs = options.timeoutMs ?? 900;
+  const addresses = options.addresses ?? ["255.255.255.255", "127.0.0.1"];
+  const socket = createSocket("udp4");
+  const found = new Map<string, DiscoveredPocketRuntime>();
+  return await new Promise<DiscoveredPocketRuntime[]>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      socket.close();
+      if (error) reject(error);
+      else resolve([...found.values()].sort((a, b) => a.address.localeCompare(b.address)));
+    };
+    socket.on("message", (message, remote) => {
+      try {
+        const value = decodePocketRuntimeDiscoveryReply(new Uint8Array(message));
+        const key = value.deviceId.toString(16);
+        const current = found.get(key);
+        const candidate = {
+          ...value,
+          address: remote.address,
+        };
+        // One Runtime can answer through more than one local interface. Its
+        // pairing-derived ID is stable across DHCP changes, so keep one route
+        // and prefer a LAN address over loopback when both answer.
+        if (!current || (current.address === "127.0.0.1" && remote.address !== "127.0.0.1")) {
+          found.set(key, candidate);
+        }
+      } catch {
+        // Other UDP services may share the broadcast domain.
+      }
+    });
+    socket.once("error", (error) => finish(error));
+    socket.bind(0, "0.0.0.0", () => {
+      socket.setBroadcast(true);
+      const request = encodePocketRuntimeDiscoveryRequest();
+      for (const address of addresses) socket.send(request, port, address, () => {});
+      timer = setTimeout(() => finish(), timeoutMs);
+    });
+  });
 }
 
 type CtrlValue = Record<string, unknown>;

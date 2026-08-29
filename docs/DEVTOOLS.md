@@ -106,15 +106,21 @@ The shim needs only `{ send(line), recv() -> line | null }`:
   The same mailbox works under the PPSSPP GUI via the `ms0:` fallback path.
 - **Nintendo 3DS over Wi-Fi:** Pocket Runtime listens on a paired TCP
   connection. `bun run 3ds:dev pair --host <ip>` installs the one-time 32-byte
-  key through ftpd; `bun run 3ds:dev dev --host <ip> --app <app>` then bridges
-  the existing JSON-line control protocol directly to the panel. **`.pocket`
+  key through ftpd. After that, `bun run 3ds:dev dev --app <app>` discovers the
+  paired Runtime over UDP and bridges the existing JSON-line control protocol
+  directly to the panel. `--host <ip>` remains available when LAN broadcast is
+  unavailable. **`L+R+SELECT` opens a Runtime-owned menu on the 3DS bottom
+  screen with its IP, pairing and connection state, generation, package hash,
+  and counters.** The host draws it after the guest and blocks guest input until
+  the menu keys are released; it is not an application capability. **`.pocket`
   updates and dual-screen RGB8 captures use bounded binary frames on the same
-  ordered connection and never enter QuickJS.** The listener is absent when
-  `sdmc:/pocketjs/runtime/dev.key` is absent. Package updates reuse the
-  Runtime's target/ABI admission, immutable storage, retired-frame acceptance
-  and rollback path. **The pairing key authenticates but does not encrypt the
-  LAN connection. The channel updates `.pocket` guests; native `.3dsx` or CIA
-  host changes still require deployment and restart.**
+  ordered TCP connection and never enter QuickJS.** The TCP and UDP listeners
+  are absent when `sdmc:/pocketjs/runtime/dev.key` is absent. Package updates
+  reuse the Runtime's target/ABI admission, immutable storage,
+  retired-frame acceptance and rollback path. **The pairing key authenticates
+  but does not encrypt the LAN connection. The channel updates `.pocket`
+  guests; native `.3dsx` or CIA host changes still require deployment and
+  restart.**
 - **Native desktop (macOS et al., `pocket-ui-wgpu`):** the same file mailbox,
   minus the USB cable — `engine/crates/pocket-ui-wgpu/src/dbg.rs` is the
   std twin of the PSP transport. Probed once at `UiSurface::mount`: root =
