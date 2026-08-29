@@ -45,5 +45,8 @@ export function installTouchActivation(): GestureHandle {
     get panning() {
       return primary.panning || auxiliary.panning;
     },
+    get pinching() {
+      return primary.pinching || auxiliary.pinching;
+    },
   };
 }
