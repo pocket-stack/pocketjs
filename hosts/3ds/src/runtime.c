@@ -202,24 +202,46 @@ RuntimePendingResult runtime_prepare_pending(
   char *error,
   size_t error_length
 ) {
+  return runtime_prepare_file(POCKET_RUNTIME_PENDING, 0, out, error, error_length);
+}
+
+RuntimePendingResult runtime_prepare_file(
+  const char *path,
+  uint64_t expected_hash,
+  PocketRuntimePackage **out,
+  char *error,
+  size_t error_length
+) {
   if (out == NULL) {
-    set_error(error, error_length, "pending output is null");
+    set_error(error, error_length, "package output is null");
     return RUNTIME_PENDING_ERROR;
   }
   *out = NULL;
+  if (path == NULL || path[0] == '\0') {
+    set_error(error, error_length, "package staging path is empty");
+    return RUNTIME_PENDING_ERROR;
+  }
   struct stat info;
-  if (stat(POCKET_RUNTIME_PENDING, &info) != 0) {
+  if (stat(path, &info) != 0) {
     if (errno == ENOENT) return RUNTIME_PENDING_NONE;
-    set_error(error, error_length, "stat %s failed (%d)", POCKET_RUNTIME_PENDING, errno);
+    set_error(error, error_length, "stat %s failed (%d)", path, errno);
     return RUNTIME_PENDING_ERROR;
   }
 
-  PocketRuntimePackage *pending = runtime_package_load(
-    POCKET_RUNTIME_PENDING,
-    error,
-    error_length
-  );
+  PocketRuntimePackage *pending = runtime_package_load(path, error, error_length);
   if (pending == NULL) return RUNTIME_PENDING_ERROR;
+  if (expected_hash != 0 && pending->guest.package_hash != expected_hash) {
+    set_error(
+      error,
+      error_length,
+      "%s footer %016llx does not match declared %016llx",
+      path,
+      (unsigned long long)pending->guest.package_hash,
+      (unsigned long long)expected_hash
+    );
+    runtime_package_free(pending);
+    return RUNTIME_PENDING_ERROR;
+  }
 
   char destination[192];
   blob_path(pending->guest.package_hash, destination, sizeof destination);
@@ -236,8 +258,8 @@ RuntimePendingResult runtime_prepare_pending(
       return RUNTIME_PENDING_ERROR;
     }
     runtime_package_free(existing);
-    if (remove(POCKET_RUNTIME_PENDING) != 0) {
-      set_error(error, error_length, "remove duplicate pending package failed (%d)", errno);
+    if (remove(path) != 0) {
+      set_error(error, error_length, "remove duplicate staged package failed (%d)", errno);
       runtime_package_free(pending);
       return RUNTIME_PENDING_ERROR;
     }
@@ -245,8 +267,8 @@ RuntimePendingResult runtime_prepare_pending(
     set_error(error, error_length, "stat %s failed (%d)", destination, errno);
     runtime_package_free(pending);
     return RUNTIME_PENDING_ERROR;
-  } else if (rename(POCKET_RUNTIME_PENDING, destination) != 0) {
-    set_error(error, error_length, "commit pending package failed (%d)", errno);
+  } else if (rename(path, destination) != 0) {
+    set_error(error, error_length, "commit staged package failed (%d)", errno);
     runtime_package_free(pending);
     return RUNTIME_PENDING_ERROR;
   }

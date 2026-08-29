@@ -28,6 +28,8 @@ core/                 pocketjs-3ds-core: the ui_* C ABI over pocketjs-core
 include/pocket_core.h the C header for the above
 src/main.c            process boot, reusable guest lifecycle, frame loop
 src/runtime.c         .pocket admission, immutable storage, active/rollback state
+src/devserver.c       paired non-blocking TCP pump, uploads, screenshots, receipts
+src/dev_protocol.c    byte-order-safe development wire encoding and admission
 src/gfx.c             the DrawList -> citro3d walker
 src/qjs.c             QuickJS embedding: globalThis.ui -> ui_* calls
 src/input.c           3DS keys and circle pad -> the PSP BTN bitmask
@@ -96,9 +98,9 @@ package. Power loss before the generation marker leaves the previous generation
 active.
 
 `L+R+X` requests the same package check at a GPU-idle frame boundary. The full
-chord is removed from the application's button mask. This supports an emulator,
-direct SD writer or a future in-process transport; a separate 3DS ftpd cannot
-run concurrently with Pocket Runtime.
+chord is removed from the application's button mask. This supports an emulator
+or direct SD writer; a separate 3DS ftpd cannot run concurrently with Pocket
+Runtime.
 
 Runtime receipts are written to:
 
@@ -110,6 +112,58 @@ sdmc:/pocketjs/runtime/last-error.txt
 `status.txt` records the current generation, active hash, last-good hash,
 running package hash and source path. `last-error.txt` records the failed phase
 without deleting the rejected package blob.
+
+## In-process development connection
+
+Pocket Runtime listens on TCP port 8131 when this file exists:
+
+```text
+sdmc:/pocketjs/runtime/dev.key
+```
+
+Pair once while ftpd is running, then restart Pocket Runtime:
+
+```sh
+bun run 3ds:dev pair --host <device-ip> --ftp-port 5000
+```
+
+**The pairing command generates a random 32-byte key, stores the local copy
+under `.pocket/3ds/devices/`, uploads the device copy, and verifies the FTP
+readback byte for byte.** The Runtime does not open a listener without the key,
+and a client must prove the complete key before any command or package byte is
+accepted.
+
+**The key authenticates a client but does not encrypt the TCP stream.** Use the
+listener on a trusted LAN, and pass `--rotate` to `pair` after a key is exposed.
+
+After pairing, ftpd is not part of the development loop:
+
+```sh
+bun run 3ds:dev push  --host <device-ip> --app 3ds-demo
+bun run 3ds:dev probe --host <device-ip>
+bun run 3ds:dev dev   --host <device-ip> --app 3ds-demo
+```
+
+`push` builds and transfers the target-thinned `.pocket`, then waits for the
+device's **accepted-after-retired-frame** receipt. `probe` requests runtime
+status, native counters, the component tree, a live REPL evaluation, a console
+message, and a combined top/bottom PNG. `dev` keeps the DevTools panel attached;
+`r` rebuilds and pushes, `s` captures both screens, and `o` opens the panel.
+
+**One authenticated, ordered TCP connection carries every development
+message.** JSON frames contain only Pocket DevTools control and logs. Package
+and rotated RGB8 screenshot bytes use bounded binary frames, so bulk data never
+enters QuickJS or the application's capability surface. Uploads stream to
+`network-upload.pocket`; the existing package admission, immutable blob,
+GPU-idle cold-swap, acceptance, and rollback path remains the only route to an
+active guest.
+
+**The connection updates the guest `.pocket`, not the running `.3dsx` or CIA
+host binary.** A native host or ABI change still requires deploying a new
+`.3dsx`/CIA and restarting it; the embedded `.pocket` remains its final recovery
+guest. Keeping that boundary lets ordinary app, asset and resolved-plan changes
+use the in-process loop without letting a guest replace the process that admits
+and rolls it back.
 
 Two build-time facts are load-bearing:
 

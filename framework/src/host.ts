@@ -193,18 +193,18 @@ export interface HostOps {
   debugPause?(on: boolean | number): void;
   /** Arm exactly one tick while paused. */
   debugStep?(): void;
-  /** PSP mailbox transport (hosts/psp/src/dbg.rs); absent elsewhere. */
+  /** Native DevTools transport (PSP mailbox or paired 3DS TCP connection). */
   __dbgActive?(): boolean;
   __dbgPoll?(): string | undefined;
   __dbgSend?(line: string): void;
-  /** PSP on-demand screenshot: dump the displayed framebuffer to
-   *  pocketjs-dbg/shot.raw (bridge converts to PNG). → success. */
+  /** On-demand native screenshot. The host transports bulk pixels outside
+   *  the JSON control channel and its bridge converts them to PNG. */
+  __dbgShot?(): boolean;
   /** OP.debugStats — one JSON snapshot of device diagnostic counters
    *  (audio/vid/svc) plus build identity (app output name + FNV-1a64 of the
    *  embedded js+pak). Hosts without counters omit the op; the devtools
    *  "stats" message replies with data: null then. */
   debugStats?(): string;
-  __dbgShot?(): boolean;
 
   // -- app switching (spec ops 39..41, docs/LAUNCHER.md). Optional: only
   //    multi-app hosts (the launcher EBOOT, hosts/sim's launcher runner)

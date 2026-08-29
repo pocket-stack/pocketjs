@@ -220,6 +220,8 @@
     "e2e:vita": "bun tests/e2e/vita3k.ts",
     "e2e:3ds": "bun tests/e2e/azahar.ts",
     "e2e:3ds-runtime": "bun tests/e2e/azahar-runtime.ts",
+    "e2e:3ds-dev": "bun tests/e2e/azahar-devserver.ts",
+    "3ds:dev": "bun tools/3ds-dev.ts",
     "hw": "bun tools/hw.ts",
     "dev": "bun tools/dev.ts",
     "wasm": "bun tools/wasm.ts",

@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "devserver.h"
 #include "pocket_core.h"
 #include "quickjs.h"
 
@@ -73,6 +74,11 @@ typedef enum {
   HostDebugRectWH,
   HostDebugPause,
   HostDebugStep,
+  HostDebugStats,
+  HostDbgActive,
+  HostDbgPoll,
+  HostDbgSend,
+  HostDbgShot,
 } HostOperation;
 
 static JSRuntime *runtime;
@@ -82,6 +88,7 @@ static JSValue frame_function;
 static const uint8_t *installed_pack;
 static size_t installed_pack_length;
 static char last_error[512];
+static char debug_poll_buffer[32 * 1024];
 
 static void set_error(const char *message) {
   size_t length = message == NULL ? 0 : strlen(message);
@@ -394,6 +401,26 @@ static JSValue host_operation(
     case HostDebugStep:
       ui_debug_step();
       return JS_UNDEFINED;
+    case HostDebugStats:
+      return JS_NewString(ctx, devserver_debug_stats());
+    case HostDbgActive:
+      return JS_NewBool(ctx, devserver_active());
+    case HostDbgPoll: {
+      size_t length = devserver_recv_ctrl(debug_poll_buffer, sizeof debug_poll_buffer);
+      return length == 0
+        ? JS_UNDEFINED
+        : JS_NewStringLen(ctx, debug_poll_buffer, length);
+    }
+    case HostDbgSend:
+      if (argc < 1) return JS_UNDEFINED;
+      text = JS_ToCStringLen2(ctx, &text_length, argv[0], 0);
+      if (text != NULL) {
+        devserver_send_ctrl(text, text_length);
+        JS_FreeCString(ctx, text);
+      }
+      return JS_UNDEFINED;
+    case HostDbgShot:
+      return JS_NewBool(ctx, devserver_request_screenshot());
   }
   return JS_UNDEFINED;
 }
@@ -472,6 +499,11 @@ static void install_host(void) {
   add_operation(ui, "debugRectWH", 0, HostDebugRectWH);
   add_operation(ui, "debugPause", 1, HostDebugPause);
   add_operation(ui, "debugStep", 0, HostDebugStep);
+  add_operation(ui, "debugStats", 0, HostDebugStats);
+  add_operation(ui, "__dbgActive", 0, HostDbgActive);
+  add_operation(ui, "__dbgPoll", 0, HostDbgPoll);
+  add_operation(ui, "__dbgSend", 1, HostDbgSend);
+  add_operation(ui, "__dbgShot", 0, HostDbgShot);
 
   /* Framework-owned host identity, from the build's -D defines rather than
    * literals that can drift. Bundles refuse to mount when they disagree. */

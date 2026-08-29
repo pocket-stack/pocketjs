@@ -9,6 +9,8 @@
 
 #define POCKET_RUNTIME_ROOT "sdmc:/pocketjs/runtime"
 #define POCKET_RUNTIME_PENDING POCKET_RUNTIME_ROOT "/pending.pocket"
+#define POCKET_RUNTIME_UPLOAD POCKET_RUNTIME_ROOT "/network-upload.pocket"
+#define POCKET_RUNTIME_DEV_KEY POCKET_RUNTIME_ROOT "/dev.key"
 
 typedef struct {
   uint8_t *bytes;
@@ -51,6 +53,16 @@ typedef enum {
   RUNTIME_PENDING_READY = 1,
 } RuntimePendingResult;
 RuntimePendingResult runtime_prepare_pending(
+  PocketRuntimePackage **out,
+  char *error,
+  size_t error_length
+);
+/* Admit a completed transport-owned file and move it to immutable storage.
+ * expected_hash is the footer declared before transfer (0 skips that extra
+ * comparison). The source remains in place on any validation error. */
+RuntimePendingResult runtime_prepare_file(
+  const char *path,
+  uint64_t expected_hash,
   PocketRuntimePackage **out,
   char *error,
   size_t error_length

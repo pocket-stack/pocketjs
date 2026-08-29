@@ -102,5 +102,20 @@ int main(int argc, char **argv) {
   PocketRuntimePackage *invalid = NULL;
   assert(runtime_prepare_pending(&invalid, error, sizeof error) == RUNTIME_PENDING_ERROR);
   assert(invalid == NULL && exists(POCKET_RUNTIME_PENDING));
+
+  /* The transport-declared footer is an independent admission check. A
+   * mismatch remains inspectable at its staging path and creates no blob. */
+  const char *network = "sdmc:/pocketjs/runtime/network-upload.pocket";
+  write_package(network, 0x123456789abcdef0ULL, 1);
+  PocketRuntimePackage *mismatch = NULL;
+  assert(runtime_prepare_file(
+    network,
+    0xfedcba9876543210ULL,
+    &mismatch,
+    error,
+    sizeof error
+  ) == RUNTIME_PENDING_ERROR);
+  assert(mismatch == NULL && exists(network));
+  assert(strstr(error, "does not match declared") != NULL);
   return 0;
 }
