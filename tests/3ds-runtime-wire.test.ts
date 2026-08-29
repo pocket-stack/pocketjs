@@ -401,4 +401,55 @@ describe("Nintendo 3DS Pocket Runtime wire", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+
+  test("a persistent session replaces a half-open client that stops answering pings", async () => {
+    const token = Uint8Array.from({ length: 32 }, (_, index) => 32 - index);
+    const peers: Socket[] = [];
+    const server = createServer((socket) => {
+      peers.push(socket);
+      let hello = Buffer.alloc(0);
+      socket.on("data", (chunk: Buffer) => {
+        if (hello.length >= 40) return;
+        hello = Buffer.concat([hello, chunk]);
+        if (hello.length < 40) return;
+        const ack = new Uint8Array(POCKET_RUNTIME_ACK_BYTES);
+        const data = new DataView(ack.buffer);
+        data.setUint32(0, POCKET_RUNTIME_WIRE_MAGIC, true);
+        data.setUint8(4, 1);
+        data.setUint16(6, 8, true);
+        socket.write(ack);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test server has no TCP port");
+    const session = new PocketRuntimeSession({
+      retryDelayMs: 5,
+      createClient: () => new PocketRuntimeClient({
+        host: "127.0.0.1",
+        port: address.port,
+        token,
+        timeoutMs: 500,
+        heartbeatIntervalMs: 10,
+        heartbeatTimeoutMs: 30,
+      }),
+    });
+    try {
+      await session.start();
+      const reconnected = new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("half-open session did not reconnect")), 500);
+        session.once("reconnect", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+      await reconnected;
+      expect(session.connected).toBe(true);
+      expect(peers).toHaveLength(2);
+    } finally {
+      session.close();
+      for (const peer of peers) peer.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });

@@ -117,7 +117,8 @@ The shim needs only `{ send(line), recv() -> line | null }`:
   Runtime, reconnects after a Wi-Fi interruption, and rediscovers the same
   pairing-derived device ID if its DHCP address changed. `.pocket` updates and
   dual-screen RGB8 captures use bounded binary frames on the same
-  ordered TCP connection and never enter QuickJS.** The TCP and UDP listeners
+  ordered TCP connection and never enter QuickJS. A missing PONG closes a
+  half-open desktop socket after eight seconds.** The TCP and UDP listeners
   are absent when `sdmc:/pocketjs/runtime/dev.key` is absent. Package updates
   reuse the Runtime's target/ABI admission, immutable storage,
   retired-frame acceptance and rollback path. **The pairing key authenticates

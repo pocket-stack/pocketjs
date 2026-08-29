@@ -38,6 +38,8 @@ export interface PocketRuntimeClientOptions {
   readonly token: Uint8Array;
   readonly port?: number;
   readonly timeoutMs?: number;
+  readonly heartbeatIntervalMs?: number;
+  readonly heartbeatTimeoutMs?: number;
 }
 
 export interface DiscoveredPocketRuntime extends PocketRuntimeDiscovery {
@@ -128,12 +130,15 @@ export class PocketRuntimeClient extends EventEmitter {
   readonly port: number;
   readonly token: Uint8Array;
   readonly timeoutMs: number;
+  readonly heartbeatIntervalMs: number;
+  readonly heartbeatTimeoutMs: number;
   #socket: Socket | null = null;
   #decoder = new PocketRuntimeFrameDecoder();
   #handshake = new Uint8Array(0);
   #connected = false;
   #closed = false;
   #pingTimer: ReturnType<typeof setInterval> | null = null;
+  #lastPongMs = 0;
   #screenshot: {
     metadata: PocketRuntimeScreenshotBegin;
     top: Uint8Array;
@@ -148,6 +153,11 @@ export class PocketRuntimeClient extends EventEmitter {
     this.port = options.port ?? POCKET_RUNTIME_WIRE_PORT;
     this.token = options.token;
     this.timeoutMs = options.timeoutMs ?? 10_000;
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? 2_000;
+    this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 8_000;
+    if (this.heartbeatIntervalMs <= 0 || this.heartbeatTimeoutMs <= this.heartbeatIntervalMs) {
+      throw new Error("Pocket Runtime heartbeat timeout must exceed its positive interval");
+    }
   }
 
   get connected(): boolean {
@@ -210,11 +220,23 @@ export class PocketRuntimeClient extends EventEmitter {
       throw new Error(`Pocket Runtime rejected the pairing token (status ${ack.status})`);
     }
     this.#connected = true;
+    this.#lastPongMs = Date.now();
     this.#pingTimer = setInterval(() => {
+      if (Date.now() - this.#lastPongMs > this.heartbeatTimeoutMs) {
+        this.emit(
+          "heartbeatTimeout",
+          new Error(`Pocket Runtime did not answer a heartbeat within ${this.heartbeatTimeoutMs} ms`),
+        );
+        this.close();
+        return;
+      }
       const payload = new Uint8Array(4);
       new DataView(payload.buffer).setUint32(0, Date.now() >>> 0, true);
-      void this.sendFrame(POCKET_RUNTIME_MSG.ping, payload).catch(() => {});
-    }, 2_000);
+      void this.sendFrame(POCKET_RUNTIME_MSG.ping, payload).catch((error) => {
+        this.emit("socketError", error);
+        this.close();
+      });
+    }, this.heartbeatIntervalMs);
     return ack;
   }
 
@@ -372,6 +394,7 @@ export class PocketRuntimeClient extends EventEmitter {
         void this.sendFrame(POCKET_RUNTIME_MSG.pong, frame.payload).catch(() => {});
         return;
       case POCKET_RUNTIME_MSG.pong:
+        this.#lastPongMs = Date.now();
         this.emit("pong", frame.payload);
         return;
       case POCKET_RUNTIME_MSG.ctrl: {
@@ -507,6 +530,7 @@ export class PocketRuntimeSession extends EventEmitter {
       "protocolError",
       "unknownFrame",
       "pong",
+      "heartbeatTimeout",
       "socketError",
     ]) {
       client.on(event, forward(event));
