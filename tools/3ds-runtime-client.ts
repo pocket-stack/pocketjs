@@ -50,6 +50,11 @@ export interface PocketRuntimeDiscoveryOptions {
   readonly addresses?: readonly string[];
 }
 
+export interface PocketRuntimeSessionOptions {
+  readonly createClient: () => PocketRuntimeClient | Promise<PocketRuntimeClient>;
+  readonly retryDelayMs?: number;
+}
+
 export async function discoverPocketRuntimes(
   options: PocketRuntimeDiscoveryOptions = {},
 ): Promise<DiscoveredPocketRuntime[]> {
@@ -443,6 +448,116 @@ export class PocketRuntimeClient extends EventEmitter {
       default:
         this.emit("unknownFrame", frame);
     }
+  }
+}
+
+/**
+ * Keeps one logical DevTools attachment across replaceable TCP clients.
+ * A client still owns exactly one ordered connection; this session owns only
+ * desktop-side reconnect policy and never enters the Runtime or guest API.
+ */
+export class PocketRuntimeSession extends EventEmitter {
+  readonly retryDelayMs: number;
+  #createClient: PocketRuntimeSessionOptions["createClient"];
+  #client: PocketRuntimeClient | null = null;
+  #connecting: Promise<PocketRuntimeClient> | null = null;
+  #stopped = false;
+
+  constructor(options: PocketRuntimeSessionOptions) {
+    super();
+    this.#createClient = options.createClient;
+    this.retryDelayMs = options.retryDelayMs ?? 750;
+  }
+
+  get connected(): boolean {
+    return this.#client?.connected ?? false;
+  }
+
+  async start(): Promise<PocketRuntimeClient> {
+    if (this.#stopped) throw new Error("Pocket Runtime session is closed");
+    if (this.#client?.connected) return this.#client;
+    return await this.#connectOnce(false);
+  }
+
+  async requireClient(): Promise<PocketRuntimeClient> {
+    if (this.#stopped) throw new Error("Pocket Runtime session is closed");
+    if (this.#client?.connected) return this.#client;
+    return await this.#reconnect();
+  }
+
+  async sendCtrl(value: string | CtrlValue): Promise<void> {
+    const client = await this.requireClient();
+    await client.sendCtrl(value);
+  }
+
+  close(): void {
+    if (this.#stopped) return;
+    this.#stopped = true;
+    this.#client?.close();
+    this.#client = null;
+  }
+
+  async #connectOnce(reconnecting: boolean): Promise<PocketRuntimeClient> {
+    const client = await this.#createClient();
+    const forward = (event: string) => (...args: unknown[]) => this.emit(event, ...args);
+    for (const event of [
+      "screenshot",
+      "ctrlLine",
+      "ctrl",
+      "protocolError",
+      "unknownFrame",
+      "pong",
+      "socketError",
+    ]) {
+      client.on(event, forward(event));
+    }
+    client.once("close", () => {
+      if (this.#client !== client) return;
+      this.#client = null;
+      this.emit("disconnect");
+      if (!this.#stopped) void this.#reconnect().catch(() => {});
+    });
+
+    let ack: PocketRuntimeAck;
+    try {
+      ack = await client.connect();
+    } catch (error) {
+      client.close();
+      throw error;
+    }
+    if (this.#stopped) {
+      client.close();
+      throw new Error("Pocket Runtime session is closed");
+    }
+    if (!client.connected) {
+      client.close();
+      throw new Error("Pocket Runtime connection closed during its handshake");
+    }
+    this.#client = client;
+    this.emit(reconnecting ? "reconnect" : "connect", client, ack);
+    return client;
+  }
+
+  #reconnect(): Promise<PocketRuntimeClient> {
+    if (this.#connecting) return this.#connecting;
+    const task = (async () => {
+      while (!this.#stopped) {
+        this.emit("reconnectAttempt");
+        try {
+          return await this.#connectOnce(true);
+        } catch (error) {
+          if (this.#stopped) break;
+          this.emit("reconnectError", error instanceof Error ? error : new Error(String(error)));
+          await new Promise<void>((resolve) => setTimeout(resolve, this.retryDelayMs));
+        }
+      }
+      throw new Error("Pocket Runtime session is closed");
+    })();
+    this.#connecting = task;
+    void task.finally(() => {
+      if (this.#connecting === task) this.#connecting = null;
+    }).catch(() => {});
+    return task;
   }
 }
 

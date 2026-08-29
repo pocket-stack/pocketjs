@@ -29,6 +29,7 @@ import {
 import { startDevServer } from "../hosts/web/server.ts";
 import {
   PocketRuntimeClient,
+  PocketRuntimeSession,
   discoverPocketRuntimes,
   parsePocketRuntimeToken,
   type DiscoveredPocketRuntime,
@@ -107,6 +108,19 @@ function deviceIdText(deviceId: bigint): string {
 
 async function discoveredDevices(addresses?: readonly string[]): Promise<DiscoveredPocketRuntime[]> {
   return await discoverPocketRuntimes({ port: configuredPort, addresses });
+}
+
+async function rediscoverTarget(target: DeviceTarget): Promise<DeviceTarget> {
+  const match = (await discoveredDevices()).find((device) => device.deviceId === target.deviceId);
+  if (!match) {
+    throw new Error(`paired Runtime ${deviceIdText(target.deviceId)} did not answer discovery`);
+  }
+  return {
+    host: match.address,
+    port: match.port,
+    token: target.token,
+    deviceId: target.deviceId,
+  };
 }
 
 async function resolveTarget(): Promise<DeviceTarget> {
@@ -369,7 +383,7 @@ async function probe(): Promise<void> {
 }
 
 async function dev(): Promise<void> {
-  const target = await resolveTarget();
+  let target = await resolveTarget();
   const panelPort = Number(value("--panel-port") ?? process.env.PORT ?? 8130);
   const server = startDevServer({ port: panelPort, portRetries: 10 });
   const socket = new WebSocket(`ws://127.0.0.1:${server.port}/ws?role=device`);
@@ -377,7 +391,14 @@ async function dev(): Promise<void> {
     socket.onopen = () => resolveOpen();
     socket.onerror = () => rejectOpen(new Error("Pocket DevTools panel WebSocket failed to open"));
   });
-  const client = createClient(target);
+  let connectionAttempts = 0;
+  const session = new PocketRuntimeSession({
+    retryDelayMs: 750,
+    createClient: async () => {
+      if (connectionAttempts++ > 0 && !explicitHost) target = await rediscoverTarget(target);
+      return createClient(target);
+    },
+  });
   let currentPackage = value("--package") ? resolve(value("--package")!) : "";
 
   const forwardScreenshot = (screenshot: PocketRuntimeScreenshot) => {
@@ -390,8 +411,8 @@ async function dev(): Promise<void> {
     writeFileSync(output, screenshot.png);
     console.log(`screenshot ${output}`);
   };
-  client.on("screenshot", forwardScreenshot);
-  client.on("ctrlLine", (line: string) => {
+  session.on("screenshot", forwardScreenshot);
+  session.on("ctrlLine", (line: string) => {
     let rawNotice = false;
     try {
       const message = JSON.parse(line) as Record<string, unknown>;
@@ -403,14 +424,30 @@ async function dev(): Promise<void> {
     }
     if (!rawNotice && socket.readyState === WebSocket.OPEN) socket.send(line);
   });
+  session.on("socketError", (error) => console.error(`3ds-dev: socket: ${String(error)}`));
+  session.on("connect", (_client: PocketRuntimeClient, ack) => {
+    console.log(
+      `connected ${target.host}:${target.port} — abi ${ack.hostAbi}, generation ${ack.generation}, active ${ack.activeHash.toString(16).padStart(16, "0")}`,
+    );
+  });
+  session.on("disconnect", () => console.error("3ds-dev: runtime disconnected; reconnecting"));
+  session.on("reconnectError", (error) => {
+    console.error(`3ds-dev: reconnect waiting: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  session.on("reconnect", (client: PocketRuntimeClient, ack) => {
+    console.log(
+      `reconnected ${target.host}:${target.port} — abi ${ack.hostAbi}, generation ${ack.generation}, active ${ack.activeHash.toString(16).padStart(16, "0")}`,
+    );
+    void client.requestStatus().catch((error) => console.error(String(error)));
+  });
   socket.onmessage = (event) => {
-    if (typeof event.data === "string") void client.sendCtrl(event.data).catch(console.error);
+    if (typeof event.data === "string") void session.sendCtrl(event.data).catch(console.error);
   };
-  await connect(target, client);
+  await session.start();
 
   const rebuild = async () => {
     currentPackage = value("--package") ? resolve(value("--package")!) : await buildPackage(value("--app") ?? "3ds-demo");
-    await pushWithClient(client, currentPackage);
+    await pushWithClient(await session.requireClient(), currentPackage);
   };
   if (!has("--no-push")) await rebuild();
 
@@ -420,7 +457,7 @@ async function dev(): Promise<void> {
   const cleanup = () => {
     if (closed) return;
     closed = true;
-    client.close();
+    session.close();
     socket.close();
     server.stop();
     process.exit(0);
@@ -434,7 +471,7 @@ async function dev(): Promise<void> {
       const key = chunk.toString();
       if (key === "q" || key === "\x03") cleanup();
       if (key === "r") void rebuild().catch((error) => console.error(String(error)));
-      if (key === "s") void client.sendCtrl({ t: "screenshot" }).catch(console.error);
+      if (key === "s") void session.sendCtrl({ t: "screenshot" }).catch(console.error);
       if (key === "o") void $`open ${server.panelUrl}`.nothrow().quiet();
     });
   }

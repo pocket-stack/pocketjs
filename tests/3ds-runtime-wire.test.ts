@@ -29,6 +29,7 @@ import {
 } from "../contracts/spec/pocket-runtime-wire.ts";
 import {
   PocketRuntimeClient,
+  PocketRuntimeSession,
   combinePocketRuntimeScreens,
   decodePocketRuntimeSurface,
   discoverPocketRuntimes,
@@ -345,6 +346,58 @@ describe("Nintendo 3DS Pocket Runtime wire", () => {
     } finally {
       client.close();
       peer?.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  test("a persistent session replaces a disconnected TCP client", async () => {
+    const token = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+    const peers: Socket[] = [];
+    const server = createServer((socket) => {
+      peers.push(socket);
+      let hello = Buffer.alloc(0);
+      socket.on("data", (chunk: Buffer) => {
+        if (hello.length >= 40) return;
+        hello = Buffer.concat([hello, chunk]);
+        if (hello.length < 40) return;
+        const ack = new Uint8Array(POCKET_RUNTIME_ACK_BYTES);
+        const data = new DataView(ack.buffer);
+        data.setUint32(0, POCKET_RUNTIME_WIRE_MAGIC, true);
+        data.setUint8(4, 1);
+        data.setUint16(6, 8, true);
+        data.setUint32(8, peers.length, true);
+        socket.write(ack);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test server has no TCP port");
+    const session = new PocketRuntimeSession({
+      retryDelayMs: 10,
+      createClient: () => new PocketRuntimeClient({
+        host: "127.0.0.1",
+        port: address.port,
+        token,
+        timeoutMs: 500,
+      }),
+    });
+    try {
+      await session.start();
+      expect(session.connected).toBe(true);
+      const reconnected = new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("session did not reconnect")), 2_000);
+        session.once("reconnect", () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+      peers[0].destroy();
+      await reconnected;
+      expect(session.connected).toBe(true);
+      expect(peers).toHaveLength(2);
+    } finally {
+      session.close();
+      for (const peer of peers) peer.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });

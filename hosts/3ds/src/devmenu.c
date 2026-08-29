@@ -22,7 +22,9 @@ static uint32_t words[MENU_WORD_CAPACITY];
 static size_t word_count;
 static bool initialized;
 static bool visible;
-static char notice[32] = "READY";
+static bool link_state_known;
+static bool last_connected;
+static char notice[32] = "WAITING FOR CLIENT";
 
 /* Five-bit rows for 0-9 then A-Z. Lowercase input maps to uppercase so native
  * Runtime phases can be printed without carrying a second alphabet. */
@@ -140,6 +142,7 @@ static void text(
 bool devmenu_init(void) {
   initialized = true;
   visible = false;
+  link_state_known = false;
   return true;
 }
 
@@ -172,6 +175,16 @@ const uint32_t *devmenu_draw_list(size_t *length) {
 
   DevserverSnapshot state;
   devserver_snapshot(&state);
+  if (!link_state_known || state.connected != last_connected) {
+    snprintf(
+      notice,
+      sizeof notice,
+      "%s",
+      state.connected ? "CLIENT READY" : "WAITING FOR CLIENT"
+    );
+    last_connected = state.connected;
+    link_state_known = true;
+  }
   word_count = 0;
 
   const uint32_t white = ABGR(248, 250, 252, 255);
