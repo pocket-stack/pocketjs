@@ -1,10 +1,18 @@
 // apps/3ds-demo/app.tsx — dual-output acceptance demo for the 3ds-dev host.
 //
-// The primary display keeps only directly observable host facts: its fixed
-// 400x240 bounds, one rendered image, and the live circle-pad sample. The
-// auxiliary display is a 10,000-row VirtualList. Its viewport mounts only the
+// Two screens split one classic iPhone app. The auxiliary display holds the
+// Contacts list — a 10,000-row VirtualList whose viewport mounts only the
 // visible window plus overscan, while touch drag/fling changes the canvas
-// transform without laying out all rows.
+// transform without laying out all rows. The primary display holds the detail
+// card the phone had to push a whole screen to reach: tap a row and the card
+// changes, and it stays put while the list scrubs away underneath it. That
+// cross-surface flow is what the two outputs are for, and it exercises the
+// host the old diagnostic panel only described: two independent DrawLists, a
+// baked image, and touch that arrives on the auxiliary surface alone.
+//
+// The circle pad scrolls the list through the VirtualList's own d-pad
+// binding, which reads `analogY()` — no app code needed, which is why nothing
+// here samples the pad.
 //
 // The auxiliary screen is 320 px wide — the classic iPhone width — but its
 // 3.02" panel runs ~133 ppi against the phone's ~165, so copying the phone's
@@ -15,7 +23,7 @@
 // rows at 16 px, and 18 px section headers that stick to the top of the table
 // until the next one pushes them off.
 
-import { createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import {
   AuxiliarySurface,
   Image,
@@ -25,10 +33,8 @@ import {
 } from "@pocketjs/framework/components";
 import { createGesture } from "@pocketjs/framework/gesture";
 import { createScroller } from "@pocketjs/framework/kinetics";
-import { analogRaw, analogX, analogY, onFrame } from "@pocketjs/framework/lifecycle";
 import { VirtualList } from "@pocketjs/framework/virtual-list";
 
-const PAD_TRAVEL = 26;
 const LIST_ROWS = 10_000;
 
 // Classic iPhone table metrics at 0.82. SLOT is the section-header height and
@@ -81,6 +87,11 @@ const SURNAMES = [
   "Xavier",
   "Young",
   "Zimmerman",
+] as const;
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
 ] as const;
 
 interface ContactSection {
@@ -175,39 +186,112 @@ function SearchHeader() {
   );
 }
 
-function BottomRow(slot: number) {
-  if (slot < SEARCH_SLOTS) return slot === 0 ? SearchHeader() : null;
-
-  const sectionIndex = sectionForSlot(slot);
-  const section = CONTACT_SECTIONS[sectionIndex];
-  if (slot === section.slotStart) {
-    return SectionHeader(() => section.letter, `ContactSection${section.letter}`);
-  }
-
+/** Contact index a slot renders, or -1 for the search header, a section
+ *  header, or a contact row's second slot. */
+function contactAtSlot(slot: number): number {
+  if (slot < SEARCH_SLOTS || slot >= LIST_SLOTS) return -1;
+  const section = CONTACT_SECTIONS[sectionForSlot(slot)];
+  if (slot === section.slotStart) return -1;
   const withinSection = slot - section.slotStart - 1;
-  if (withinSection % ROW_SLOTS !== 0) return null; // the row's second slot
+  return withinSection % ROW_SLOTS === 0
+    ? section.contactStart + withinSection / ROW_SLOTS
+    : -1;
+}
 
-  const contactIndex = section.contactStart + withinSection / ROW_SLOTS;
+function givenNameFor(contactIndex: number, sectionIndex: number): string {
+  return GIVEN_NAMES[(contactIndex * 5 + sectionIndex) % GIVEN_NAMES.length];
+}
+
+function ContactRow(contactIndex: number, sectionIndex: number, selected: () => boolean) {
+  const section = CONTACT_SECTIONS[sectionIndex];
   const ordinal = String(contactIndex + 1).padStart(5, "0");
-  const given = GIVEN_NAMES[(contactIndex * 5 + sectionIndex) % GIVEN_NAMES.length];
+  const given = givenNameFor(contactIndex, sectionIndex);
   return (
     <View
       debugName={`VirtualContact${ordinal}`}
-      class="absolute left-0 right-0 top-0 h-[36] flex-row items-center pl-[8] pb-[4] gap-[4] bg-white"
+      class={
+        selected()
+          ? "absolute left-0 right-0 top-0 h-[36] flex-row items-center pl-[8] pb-[4] gap-[4] bg-gradient-to-b from-[#4c9bf5] to-[#0a63dd]"
+          : "absolute left-0 right-0 top-0 h-[36] flex-row items-center pl-[8] pb-[4] gap-[4] bg-white"
+      }
     >
-      <Text class="text-base text-black">{given}</Text>
-      <Text class="text-base text-black font-bold">{section.surname}</Text>
-      <View class="absolute left-0 right-0 bottom-0 h-[1] bg-[#d0d0d3]" />
+      <Text class={selected() ? "text-base text-white" : "text-base text-black"}>{given}</Text>
+      <Text class={selected() ? "text-base text-white font-bold" : "text-base text-black font-bold"}>
+        {section.surname}
+      </Text>
+      <View
+        class={
+          selected()
+            ? "absolute left-0 right-0 bottom-0 h-[1] bg-[#0a55c4]"
+            : "absolute left-0 right-0 bottom-0 h-[1] bg-[#d0d0d3]"
+        }
+      />
+    </View>
+  );
+}
+
+/** One grouped-cell field: bold label right-aligned in the gutter, value after. */
+function Field(label: string, value: () => string, link: boolean) {
+  return (
+    <View class="flex-row items-center w-full h-[32] pb-[3] gap-[8]">
+      <Text class="w-[58] text-right text-xs text-[#55677d] font-bold">{label}</Text>
+      <Text class={link ? "text-sm text-[#1b4fa8]" : "text-sm text-[#15181c]"}>{value()}</Text>
     </View>
   );
 }
 
 export default function ThreeDsDemo() {
-  const [padX, setPadX] = createSignal(0);
-  const [padY, setPadY] = createSignal(0);
-  const [padRaw, setPadRaw] = createSignal(analogRaw());
   const [indexing, setIndexing] = createSignal(false);
+  const [selected, setSelected] = createSignal(0);
   let contactIndexNode: NodeMirror | undefined;
+
+  // The card on the primary display. Every field is a pure function of the
+  // contact index, so a 10,000-record directory needs no stored rows.
+  const card = createMemo(() => {
+    const index = Math.max(0, Math.min(LIST_ROWS - 1, selected()));
+    let sectionIndex = 0;
+    for (let i = CONTACT_SECTIONS.length - 1; i >= 0; i--) {
+      if (index >= CONTACT_SECTIONS[i].contactStart) {
+        sectionIndex = i;
+        break;
+      }
+    }
+    const surname = CONTACT_SECTIONS[sectionIndex].surname;
+    const given = givenNameFor(index, sectionIndex);
+    // 555-0100..555-0199 is the range reserved for fictional numbers.
+    const line = (salt: number) => `555-01${String((index * salt + salt) % 100).padStart(2, "0")}`;
+    return {
+      given,
+      surname,
+      ordinal: String(index + 1).padStart(5, "0"),
+      mobile: `(415) ${line(7)}`,
+      home: `(415) ${line(13)}`,
+      work: `(212) ${line(29)}`,
+      email: `${given}@${surname}.com`.toLowerCase(),
+      birthday:
+        `${MONTHS[(index * 5 + 2) % 12]} ${1 + (index * 7) % 28}, 19${58 + (index * 3) % 40}`,
+    };
+  });
+
+  /** A tap anywhere on a contact's 36 px row selects it — the row's second
+   *  18 px slot is an empty view that claims the hit for the row above it. */
+  const selectSlot = (slot: number) => {
+    const direct = contactAtSlot(slot);
+    const index = direct >= 0 ? direct : contactAtSlot(slot - 1);
+    if (index >= 0) setSelected(index);
+  };
+
+  const renderSlot = (slot: number) => {
+    if (slot < SEARCH_SLOTS) return slot === 0 ? SearchHeader() : null;
+    const sectionIndex = sectionForSlot(slot);
+    const section = CONTACT_SECTIONS[sectionIndex];
+    if (slot === section.slotStart) {
+      return SectionHeader(() => section.letter, `ContactSection${section.letter}`);
+    }
+    const contactIndex = contactAtSlot(slot);
+    if (contactIndex < 0) return null; // the row's second slot
+    return ContactRow(contactIndex, sectionIndex, () => selected() === contactIndex);
+  };
 
   const listScroller = createScroller({
     max: () => MAX_SCROLL,
@@ -256,75 +340,70 @@ export default function ThreeDsDemo() {
     onCancel: () => setIndexing(false),
   });
 
-  onFrame(() => {
-    setPadX(analogX());
-    setPadY(analogY());
-    setPadRaw(analogRaw());
-  });
-
-  const padLabel = () => `0x${padRaw().toString(16).padStart(4, "0")}`;
-
   return (
     <>
-      <View debugName="ThreeDsScreen" class="relative flex-col w-full h-full bg-slate-950 overflow-hidden">
-        <View class="absolute left-[196] top-0 w-[8] h-[3] bg-slate-500" />
-        <View class="absolute left-[196] bottom-0 w-[8] h-[3] bg-slate-500" />
-        <View class="absolute left-0 top-[116] w-[3] h-[8] bg-slate-500" />
-        <View class="absolute right-0 top-[116] w-[3] h-[8] bg-slate-500" />
+      {/* Primary display: the detail card the phone reached by pushing a
+          screen. 400x240 at the same ~133 ppi as the touch screen, so it
+          keeps the auxiliary screen's 0.82 metrics — 16 px status bar, 36 px
+          navigation bar, 32 px grouped-cell fields. */}
+      <View debugName="ThreeDsScreen" class="relative w-full h-full bg-[#c5ccd3] overflow-hidden">
+        <View debugName="StatusBar" class="absolute left-0 right-0 top-0 h-[16] bg-gradient-to-b from-[#cbcfd4] to-[#8f959c]">
+          <View class="absolute left-0 right-0 bottom-0 h-[1] bg-[#6d737a]" />
+          <View class="absolute left-[6] top-[10] w-[3] h-[3] bg-[#23272c]" />
+          <View class="absolute left-[10] top-[8] w-[3] h-[5] bg-[#23272c]" />
+          <View class="absolute left-[14] top-[6] w-[3] h-[7] bg-[#23272c]" />
+          <View class="absolute left-[18] top-[4] w-[3] h-[9] bg-[#23272c]" />
+          <View class="absolute left-[22] top-[2] w-[3] h-[11] bg-[#23272c40]" />
+          <Text class="absolute left-[31] top-0 text-xs text-[#23272c]">PocketJS</Text>
+          <Text class="absolute left-0 right-0 top-0 text-center text-xs text-[#23272c] font-bold">9:41 AM</Text>
+          <View class="absolute left-[368] top-[4] w-[20] h-[9] rounded-[2] border border-[#23272c]" />
+          <View class="absolute left-[370] top-[6] w-[16] h-[5] bg-[#23272c]" />
+          <View class="absolute left-[389] top-[6] w-[2] h-[5] bg-[#23272c]" />
+        </View>
 
-        <View class="absolute left-0 top-0 w-[18] h-[3] bg-red-500" />
-        <View class="absolute left-0 top-0 w-[3] h-[18] bg-red-500" />
-        <View class="absolute right-0 top-0 w-[18] h-[3] bg-emerald-500" />
-        <View class="absolute right-0 top-0 w-[3] h-[18] bg-emerald-500" />
-        <View class="absolute left-0 bottom-0 w-[18] h-[3] bg-blue-500" />
-        <View class="absolute left-0 bottom-0 w-[3] h-[18] bg-blue-500" />
-        <View class="absolute right-0 bottom-0 w-[18] h-[3] bg-amber-500" />
-        <View class="absolute right-0 bottom-0 w-[3] h-[18] bg-amber-500" />
+        <View debugName="CardNavigation" class="absolute left-0 right-0 top-[16] h-[36] bg-[#6d7e99]">
+          <View class="absolute left-0 right-0 top-0 h-[18] bg-gradient-to-b from-[#b2becf] to-[#8d9cb4]" />
+          <View class="absolute left-0 right-0 top-[18] h-[18] bg-gradient-to-b from-[#7d8ea8] to-[#66778f]" />
+          <View class="absolute left-0 right-0 top-0 h-[1] bg-[#ccd4df]" />
+          <View class="absolute left-0 right-0 bottom-0 h-[1] bg-[#3d4d64]" />
 
-        <View debugName="Content" class="flex-col w-full h-full p-3 gap-3">
-          <View debugName="Header" class="flex-row items-center justify-between">
-            <View class="flex-row items-center gap-2">
-              <Image class="w-8 h-8 rounded-lg" src="logo.png" />
-              <View class="flex-col">
-                <Text class="text-base text-slate-50 font-bold tracking-wide">PocketJS on 3DS</Text>
-                <Text class="text-xs text-slate-400 tracking-wide">TOP SCREEN · PICA200</Text>
-              </View>
-            </View>
-            <View class="px-2 py-1 rounded-md border border-slate-600 bg-slate-900">
-              <Text class="text-sm text-emerald-400 font-bold">400 × 240</Text>
-            </View>
+          <Text class="absolute left-[62] right-[62] top-[7] text-center text-base text-[#3c4d6480] font-bold">Info</Text>
+          <Text class="absolute left-[62] right-[62] top-[8] text-center text-base text-white font-bold">Info</Text>
+
+          <View class="absolute right-[4] top-[6] w-[44] h-[24] rounded-[4] border border-[#3f4f66] bg-gradient-to-b from-[#9dabc0] via-[#7b8ca5] to-[#67788f]">
+            <View class="absolute left-[2] right-[2] top-[1] h-[1] bg-[#c8d1de80]" />
+            <Text class="absolute left-0 right-0 top-[3] text-center text-xs text-[#39495f80] font-bold">Edit</Text>
+            <Text class="absolute left-0 right-0 top-[4] text-center text-xs text-white font-bold">Edit</Text>
           </View>
+        </View>
 
-          <View debugName="Middle" class="flex-row items-center gap-3">
-            <Image debugName="OrientKey" class="w-16 h-16" src="orient-key.svg" />
-
-            <View class="flex-col grow gap-1">
-              <Text class="text-xs text-slate-500 tracking-wide">AUXILIARY PERFORMANCE TEST</Text>
-              <Text class="text-2xl text-slate-50 font-bold">10,000 CONTACTS</Text>
-              <Text class="text-xs text-cyan-300 tracking-wide">VIRTUAL CONTACTS · A-Z INDEX</Text>
-            </View>
-
-            <View debugName="Pad" class="flex-col items-center gap-1">
-              <View class="relative w-[72] h-[72] rounded-lg border border-slate-700 bg-slate-900">
-                <View class="absolute left-[33] top-[33] w-[6] h-[6] rounded-full bg-slate-700" />
-                <View
-                  class="absolute left-[31] top-[31] w-[10] h-[10] rounded-full bg-cyan-400"
-                  style={{
-                    translateX: Math.round(padX() * PAD_TRAVEL),
-                    translateY: Math.round(padY() * PAD_TRAVEL),
-                  }}
-                />
-              </View>
-              <Text class="text-xs text-slate-400 tracking-wide">PAD {padLabel()}</Text>
-            </View>
+        <View debugName="CardIdentity" class="absolute left-[14] top-[60] w-[130]">
+          <View class="w-[70] h-[70] p-[3] rounded-[4] bg-white border border-[#8f959d] shadow">
+            <Image debugName="ContactPhoto" class="w-[64] h-[64]" src="contact-photo.svg" />
           </View>
+          <Text class="absolute left-0 top-[78] text-sm text-[#3b4149]">{card().given}</Text>
+          <Text class="absolute left-0 top-[96] text-lg text-[#14181d] font-bold">{card().surname}</Text>
+          <Text class="absolute left-0 top-[126] text-xs text-[#6a727b]">
+            Record {card().ordinal} of 10,000
+          </Text>
+        </View>
 
-          <View class="flex-col p-3 gap-1 rounded-lg border border-slate-700 bg-slate-900">
-            <Text class="text-sm text-slate-100 font-bold">BOTTOM SCREEN: VIRTUAL LIST</Text>
-            <Text class="text-xs text-slate-400 tracking-wide">
-              DRAG LIST · SCRUB A-Z INDEX
-            </Text>
-          </View>
+        <View class="absolute left-[14] top-[205] w-[130] h-[26] items-center justify-center rounded-[8] bg-white border border-[#a4abb3]">
+          <Text class="text-sm text-[#1b4fa8] font-bold">Share Contact</Text>
+        </View>
+
+        <View debugName="CardPhones" class="absolute left-[154] top-[60] w-[232] h-[98] flex-col rounded-[8] bg-white border border-[#a4abb3] overflow-hidden">
+          {Field("mobile", () => card().mobile, false)}
+          <View class="w-full h-[1] bg-[#c9ced4]" />
+          {Field("home", () => card().home, false)}
+          <View class="w-full h-[1] bg-[#c9ced4]" />
+          {Field("work", () => card().work, false)}
+        </View>
+
+        <View debugName="CardDetails" class="absolute left-[154] top-[166] w-[232] h-[65] flex-col rounded-[8] bg-white border border-[#a4abb3] overflow-hidden">
+          {Field("email", () => card().email, true)}
+          <View class="w-full h-[1] bg-[#c9ced4]" />
+          {Field("birthday", () => card().birthday, false)}
         </View>
       </View>
 
@@ -339,7 +418,8 @@ export default function ThreeDsDemo() {
               height={LIST_HEIGHT}
               overscan={ROW_HEIGHT}
               focusRows={false}
-              renderRow={BottomRow}
+              renderRow={renderSlot}
+              onRowPress={selectSlot}
             />
 
             <View
