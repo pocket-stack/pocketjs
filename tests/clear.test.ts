@@ -13,8 +13,8 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { bootWorld, treeHasText, type SimWorld } from "../hosts/sim/sim.ts";
 import { __packTouch } from "../framework/src/touch.ts";
 import { KB_GAP, KB_H, KB_PAD, KB_ROW_H } from "../apps/clear/keyboard-metrics.ts";
+import { KB_LAYERS, type KbKey } from "../apps/clear/kb-layout.ts";
 import { ROW_H, SCREEN_H, SCREEN_W } from "../apps/clear/metrics.ts";
-import { layoutRows, OSK_LAYERS, type OskKeyDef } from "../framework/src/osk-layout.ts";
 
 const W = SCREEN_W;
 const H = SCREEN_H;
@@ -45,20 +45,28 @@ async function glide(x0: number, y0: number, x1: number, y1: number, frames: num
   await step();
 }
 
-/** Screen center of a key on the LOWER layer, from the app's own geometry. */
-function keyCenter(match: (key: OskKeyDef) => boolean): [number, number] {
-  const rows = layoutRows(OSK_LAYERS.lower, W - 2 * KB_PAD, KB_GAP);
+/** Screen center of a key on a layer, from the app's own geometry. */
+function keyCenterIn(layer: keyof typeof KB_LAYERS, match: (key: KbKey) => boolean): [number, number] {
+  const rows = KB_LAYERS[layer];
   for (let r = 0; r < rows.length; r++) {
-    for (const rect of rows[r]) {
-      if (match(rect.key)) {
+    for (const key of rows[r]) {
+      if (match(key)) {
         return [
-          Math.round(KB_PAD + rect.x + rect.w / 2),
+          Math.round(key.x + key.w / 2),
           Math.round(H - KB_H + KB_PAD + r * (KB_ROW_H + KB_GAP) + KB_ROW_H / 2),
         ];
       }
     }
   }
   throw new Error("clear test: key not found");
+}
+
+const keyCenter = (match: (key: KbKey) => boolean) => keyCenterIn("lower", match);
+
+async function tapKey(layer: keyof typeof KB_LAYERS, match: (key: KbKey) => boolean): Promise<void> {
+  const [x, y] = keyCenterIn(layer, match);
+  await tap(x, y);
+  await idle(3);
 }
 
 const rowCenterY = (index: number) => index * ROW_H + ROW_H / 2;
@@ -123,23 +131,23 @@ describe("Pocket Clear on the sim", () => {
 
   test("pull down creates a row and typing commits it", async () => {
     // ~230px of finger travel → ~100px displayed: past PULL_CREATE, short of
-    // PULL_BACK.
+    // PULL_BACK. (A bare "|" can't probe the caret: the symbols layer's pipe
+    // key is a literal "|" in the tree — assert through typed prefixes.)
     await glide(160, 60, 160, 290, 14);
     await idle(20);
-    // The editor is open on a fresh empty row: the caret renders alone.
-    expect(treeHasText(world.getTree(), "|")).toBe(true);
     const [qx, qy] = keyCenter((key) => key.ch === "q");
     await tap(qx, qy);
     await idle(5);
+    // The editor is open on the fresh row: the caret trails the typed glyph.
     expect(treeHasText(world.getTree(), "q|")).toBe(true);
-    const [ex, ey] = keyCenter((key) => key.action === "enter");
+    const [ex, ey] = keyCenter((key) => key.action === "return");
     await tap(ex, ey);
     await idle(20);
+    expect(treeHasText(world.getTree(), "q|")).toBe(false);
     expect(treeHasText(world.getTree(), "q")).toBe(true);
-    expect(treeHasText(world.getTree(), "|")).toBe(false);
   });
 
-  test("pinch two rows apart inserts between them", async () => {
+  test("pinch inserts a row; the keyboard walks its classic layers", async () => {
     // Two fingers on rows 1 and 2, diverging vertically.
     for (let f = 0; f <= 14; f++) {
       const spread = f * 4;
@@ -150,12 +158,24 @@ describe("Pocket Clear on the sim", () => {
     }
     await step();
     await idle(10);
-    // The insert opened the editor on the fresh row; cancel via the hide key.
-    expect(treeHasText(world.getTree(), "|")).toBe(true);
-    const [hx, hy] = keyCenter((key) => key.action === "hide");
-    await tap(hx, hy);
+    // The insert opened the editor on the fresh row. Exercise the classic
+    // layout end to end: one-shot shift (Z, then back on lower), the "123"
+    // layer (5), its in-place "#+=" toggle (€), and "ABC" home (m).
+    await tapKey("lower", (key) => key.action === "shift");
+    await tapKey("upper", (key) => key.ch === "Z");
+    await tapKey("lower", (key) => key.action === "num");
+    await tapKey("numbers", (key) => key.ch === "5");
+    await tapKey("numbers", (key) => key.action === "sym");
+    await tapKey("symbols", (key) => key.ch === "€");
+    await tapKey("symbols", (key) => key.action === "abc");
+    await tapKey("lower", (key) => key.ch === "m");
+    expect(treeHasText(world.getTree(), "Z5€m|")).toBe(true);
+    // Erase it all and commit the empty text: the fresh row is removed again
+    // (the iOS keyboard has no dismiss key).
+    for (let i = 0; i < 4; i++) await tapKey("lower", (key) => key.action === "backspace");
+    await tapKey("lower", (key) => key.action === "return");
     await idle(20);
-    expect(treeHasText(world.getTree(), "|")).toBe(false);
+    expect(treeHasText(world.getTree(), "Z5€m|")).toBe(false);
   });
 
   test("pull up past the end clears the done pile", async () => {

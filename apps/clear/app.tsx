@@ -337,12 +337,6 @@ export default () => {
       paintEditRow();
     },
     onEnter: () => closeEditor(true),
-    onHide: () => closeEditor(false),
-    onCaret(delta) {
-      if (!editing) return;
-      editCaret = Math.max(0, Math.min(editing.text.length, editCaret + delta));
-      paintEditRow();
-    },
   });
 
   // ------------------------------------------------------------- creation
@@ -791,9 +785,12 @@ export default () => {
   });
 
   // The keyboard claims its panel outright (registered last = top priority).
+  // Keys commit on the down edge; the key-cap popup lives until the lift.
   createGesture({
     region: { rect: () => kb.rect() },
     onDown: (c) => kb.pressAt(c.x, c.y, SCREEN_H),
+    onUp: () => kb.release(),
+    onCancel: () => kb.release(),
   });
 
   // ------------------------------------------------------------ frame pump
@@ -818,7 +815,9 @@ export default () => {
     if (topSwitchNode) jump(topSwitchNode, "opacity", 0);
     if (!listsParked) parkListsForPulldown();
     const pct = Math.min(1, pull / PULL_CREATE);
-    jump(flapNode, "rotateX", (1 - pct) * 90);
+    // NEGATIVE rotateX folds the top edge AWAY from the viewer (the engine's
+    // positive angle tips it toward the camera and the taper clips away).
+    jump(flapNode, "rotateX", (pct - 1) * 90);
     jump(flapNode, "opacity", pct / 2 + 0.5);
     flapText.value = pull >= PULL_CREATE ? "Release to Create Item" : "Pull to Create Item";
   }
@@ -970,7 +969,7 @@ export default () => {
               flapNode = node ?? null;
             }}
             class="absolute inset-0 flex-row items-center pl-3 bg-gradient-to-b from-[#f50018] to-[#e00016]"
-            style={{ originY: 0.5, rotateX: 90, opacity: 0 }}
+            style={{ originY: 0.5, rotateX: -90, opacity: 0 }}
           >
             <Text class="text-xl font-bold text-white">{flapText.value}</Text>
           </View>
