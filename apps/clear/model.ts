@@ -90,29 +90,50 @@ export function clearDone(list: TodoList): number {
   return before - list.todos.length;
 }
 
-/** The seed data doubles as the gesture manual, like the original demo. */
+/** The seed data doubles as the gesture manual. Lists and items match the
+ *  reference demo's defaults, with two changes: the pinch row documents the
+ *  working gesture (the reference shipped "Pinch is still WIP."), and the
+ *  credit list points back at the original and its author. */
 export function seedLists(): TodoList[] {
   return [
-    makeList("How to use", [
+    makeList("How to Use", [
       "Swipe right to complete",
       "Swipe left to delete",
-      "Tap a row to edit it",
-      "Hold a row to reorder",
-      "Pull down to add a task",
-      "Tap below the rows to add",
-      "Keep pulling to go back",
-      "Pull up to clear the done pile",
+      "Tap to edit",
+      "Long tap to reorder",
+      "Pull down to create new item",
+      "Or tap in empty space below",
+      "Pull down more to go back",
+      "Pull up to clear",
       "Pinch two rows apart to insert",
     ]),
-    makeList("Groceries", [
-      "Oolong tea",
-      "Rice and nori",
-      "Batteries for the iPod",
+    makeList("This is a demo", [
+      "About HTML5",
+      "Walk the dog",
+      "Read Node.js book",
+      "Make a game",
+      "Make a CMS",
+      "Wanna fork?",
+      "Fork me yo",
+      "Yeah",
+      "I've run out of stuff",
+      "OK Test",
+      "Moar test",
+      "Moar test",
+      "Moar test",
+      "Moar test",
     ]),
-    makeList("PocketJS", [
-      "Ship the gesture layer",
-      "Boot on the iPod touch",
-      "Capture a device frame",
+    makeList("By PocketJS + Vue Vapor", [
+      "Tribute to @youyuxi",
+      "clear.evanyou.me",
     ]),
+    makeList("Test", ["Test"]),
+    makeList("Test", ["Test"]),
+    makeList("Test", []),
+    makeList("Test", []),
+    makeList("Test", []),
+    makeList("Test", []),
+    makeList("Test", []),
+    makeList("Test", ["Test"]),
   ];
 }

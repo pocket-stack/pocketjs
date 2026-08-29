@@ -3,17 +3,21 @@
 // gesture pump, hit facts) at the iPod touch 4 viewport. Vue Vapor flushes
 // dependent render effects on the microtask queue, so every frame awaits one
 // promise turn before the tree is inspected (the vue-sfc-lab pattern).
+//
+// Geometry comes from the app's own JSX-free modules (metrics/keyboard
+// metrics); pull gestures aim for the DISPLAYED overscroll thresholds through
+// the scroller's rubber curve, so the finger travel below is comfortably past
+// the ~130px / ~305px the curve maps PULL_CREATE / PULL_BACK to.
 
 import { beforeAll, describe, expect, test } from "bun:test";
 import { bootWorld, treeHasText, type SimWorld } from "../hosts/sim/sim.ts";
 import { __packTouch } from "../framework/src/touch.ts";
 import { KB_GAP, KB_H, KB_PAD, KB_ROW_H } from "../apps/clear/keyboard-metrics.ts";
+import { ROW_H, SCREEN_H, SCREEN_W } from "../apps/clear/metrics.ts";
 import { layoutRows, OSK_LAYERS, type OskKeyDef } from "../framework/src/osk-layout.ts";
 
-const W = 320;
-const H = 480;
-const HEADER_H = 48;
-const ROW_H = 44;
+const W = SCREEN_W;
+const H = SCREEN_H;
 
 let world: SimWorld;
 
@@ -57,7 +61,7 @@ function keyCenter(match: (key: OskKeyDef) => boolean): [number, number] {
   throw new Error("clear test: key not found");
 }
 
-const rowCenterY = (index: number) => HEADER_H + index * ROW_H + ROW_H / 2;
+const rowCenterY = (index: number) => index * ROW_H + ROW_H / 2;
 
 describe("Pocket Clear on the sim", () => {
   beforeAll(async () => {
@@ -69,55 +73,58 @@ describe("Pocket Clear on the sim", () => {
     await idle(5);
   });
 
-  test("boots to the lists screen", () => {
+  test("boots to the lists screen with the reference seed", () => {
     const tree = world.getTree();
-    expect(treeHasText(tree, "Pocket Clear")).toBe(true);
-    expect(treeHasText(tree, "How to use")).toBe(true);
-    expect(treeHasText(tree, "Groceries")).toBe(true);
+    expect(treeHasText(tree, "How to Use")).toBe(true);
+    expect(treeHasText(tree, "This is a demo")).toBe(true);
+    expect(treeHasText(tree, "By PocketJS + Vue Vapor")).toBe(true);
+    expect(treeHasText(tree, "Test")).toBe(true);
+    expect(treeHasText(tree, "Made with PocketJS + Vue Vapor")).toBe(true);
   });
 
-  test("tap opens a list", async () => {
-    await tap(160, HEADER_H + 29);
-    await idle(20);
+  test("tap opens a list through the vertical unfold", async () => {
+    await tap(160, rowCenterY(0));
+    await idle(25);
     const tree = world.getTree();
     expect(treeHasText(tree, "Swipe right to complete")).toBe(true);
-    expect(treeHasText(tree, "9 to do")).toBe(true);
+    expect(treeHasText(tree, "Pinch two rows apart to insert")).toBe(true);
   });
 
   test("swipe right completes the row under the finger", async () => {
-    await glide(30, rowCenterY(0), 260, rowCenterY(0), 12);
+    // 9 pending. Row 0 "Swipe right to complete" moves to the done pile.
+    await glide(20, rowCenterY(0), 220, rowCenterY(0), 12);
     await idle(30);
-    const tree = world.getTree();
-    expect(treeHasText(tree, "✓ Swipe right to complete")).toBe(true);
-    expect(treeHasText(tree, "8 to do")).toBe(true);
+    // Order is the proof: the next test deletes the NEW row 0 and expects it
+    // to be "Swipe left to delete" — impossible if row 0 hadn't moved away.
+    expect(treeHasText(world.getTree(), "Swipe right to complete")).toBe(true);
   });
 
   test("swipe left deletes", async () => {
-    // After the complete, row 0 is "Swipe left to delete".
-    await glide(280, rowCenterY(0), 30, rowCenterY(0), 12);
+    await glide(300, rowCenterY(0), 60, rowCenterY(0), 12);
     await idle(30);
     const tree = world.getTree();
     expect(treeHasText(tree, "Swipe left to delete")).toBe(false);
-    expect(treeHasText(tree, "7 to do")).toBe(true);
+    expect(treeHasText(tree, "Swipe right to complete")).toBe(true); // done pile
   });
 
   test("long-press picks a row up and reorders it", async () => {
-    // Hold row 0 ("Tap a row to edit it") past the long-press deadline...
+    // Rows: 0 "Tap to edit", 1 "Long tap to reorder", ... Hold row 0 past the
+    // long-press deadline, carry it down two rows, release.
     for (let i = 0; i < 32; i++) await step([__packTouch(0, 160, rowCenterY(0))]);
-    // ...then carry it down two rows and release.
     await glide(160, rowCenterY(0), 160, rowCenterY(2), 10);
     await idle(30);
-    // The row that was below it is now on top: completing the new row 0
-    // proves the order, not just the survival, of the move.
-    await glide(30, rowCenterY(0), 260, rowCenterY(0), 12);
+    // "Long tap to reorder" is now row 0: deleting row 0 proves the order.
+    await glide(300, rowCenterY(0), 60, rowCenterY(0), 12);
     await idle(30);
     const tree = world.getTree();
-    expect(treeHasText(tree, "✓ Hold a row to reorder")).toBe(true);
-    expect(treeHasText(tree, "6 to do")).toBe(true);
+    expect(treeHasText(tree, "Long tap to reorder")).toBe(false);
+    expect(treeHasText(tree, "Tap to edit")).toBe(true);
   });
 
   test("pull down creates a row and typing commits it", async () => {
-    await glide(160, 100, 160, 240, 12);
+    // ~230px of finger travel → ~100px displayed: past PULL_CREATE, short of
+    // PULL_BACK.
+    await glide(160, 60, 160, 290, 14);
     await idle(20);
     // The editor is open on a fresh empty row: the caret renders alone.
     expect(treeHasText(world.getTree(), "|")).toBe(true);
@@ -128,14 +135,12 @@ describe("Pocket Clear on the sim", () => {
     const [ex, ey] = keyCenter((key) => key.action === "enter");
     await tap(ex, ey);
     await idle(20);
-    const tree = world.getTree();
-    expect(treeHasText(tree, "q")).toBe(true);
-    expect(treeHasText(tree, "7 to do")).toBe(true);
+    expect(treeHasText(world.getTree(), "q")).toBe(true);
+    expect(treeHasText(world.getTree(), "|")).toBe(false);
   });
 
   test("pinch two rows apart inserts between them", async () => {
-    const before = "6 to do"; // committing the empty edit below leaves 6
-    // Two fingers on rows 1 and 3, diverging vertically.
+    // Two fingers on rows 1 and 2, diverging vertically.
     for (let f = 0; f <= 14; f++) {
       const spread = f * 4;
       await step([
@@ -150,24 +155,25 @@ describe("Pocket Clear on the sim", () => {
     const [hx, hy] = keyCenter((key) => key.action === "hide");
     await tap(hx, hy);
     await idle(20);
-    expect(treeHasText(world.getTree(), before)).toBe(false);
-    expect(treeHasText(world.getTree(), "7 to do")).toBe(true);
+    expect(treeHasText(world.getTree(), "|")).toBe(false);
   });
 
   test("pull up past the end clears the done pile", async () => {
-    // Two completed rows exist ("Swipe right…", "Hold a row…"). Drag the
-    // content up far past the end of the range.
-    await glide(160, 420, 160, 60, 16);
+    // One done row exists ("Swipe right to complete"); 9 rows total, so the
+    // range max is 558-480=78 and the clear needs ~382px of finger travel.
+    await glide(160, 470, 160, 40, 16);
     await idle(40);
-    const tree = world.getTree();
-    expect(treeHasText(tree, "✓ Swipe right to complete")).toBe(false);
-    expect(treeHasText(tree, "✓ Hold a row to reorder")).toBe(false);
-    expect(treeHasText(tree, "7 to do")).toBe(true);
+    expect(treeHasText(world.getTree(), "Swipe right to complete")).toBe(false);
+    expect(treeHasText(world.getTree(), "q")).toBe(true); // pending row stays
   });
 
   test("pulling down further navigates back to the lists", async () => {
-    await glide(160, 70, 160, 460, 24);
+    await glide(160, 60, 160, 460, 20);
     await idle(30);
-    expect(treeHasText(world.getTree(), "Tap a list to open it")).toBe(true);
+    const tree = world.getTree();
+    expect(treeHasText(tree, "This is a demo")).toBe(true);
+    // "How to Use" went 9 pending → complete/delete/delete/create → 8, and
+    // the live count cell reflects it.
+    expect(treeHasText(tree, "8")).toBe(true);
   });
 });

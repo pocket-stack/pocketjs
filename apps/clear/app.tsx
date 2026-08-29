@@ -1,14 +1,21 @@
 // Pocket Clear — the classic gesture-driven todo list, rebuilt on the
 // PocketJS gesture layer in Vue Vapor JSX. Every interaction is a gesture:
 // swipe right to complete, swipe left to delete, tap to edit, long-press to
-// reorder, pull down to create (further to go back), pull up past the end to
-// clear the done pile, pinch two rows apart to insert between them.
+// reorder, pull down to create (twice as far to go back to the lists), pull
+// up past the end to clear the done pile, pinch two rows apart to insert.
+//
+// Layout model, straight from the reference demo: the screen root clips, and
+// each screen is a full-content-height CANVAS translated inside it — the
+// scroller drives the canvas, absolute 62px rows ride the canvas, and screen
+// switches are vertical canvas moves. The pull-to-create flap folds in real
+// 3D (rotateX under a perspective root); the swipe check/cross are drawn from
+// rotated bars, not glyphs.
 //
 // Rendering strategy: a fixed pool of row nodes mounted once. Data lives in
 // plain arrays (model.ts); after every mutation layout() re-assigns todos to
-// slots. Text and the done/lift looks ride per-slot refs; ALL motion
-// (translate/opacity/gradient colors/height) goes through jump()/animate()
-// on captured NodeMirrors — never through :style objects, whose reactive
+// slots. Text and the done look ride per-slot refs; ALL motion (translate/
+// opacity/rotation/gradient colors/height) goes through jump()/animate() on
+// captured NodeMirrors — never through :style objects, whose reactive
 // re-application would clobber in-flight tweens.
 
 import { onMounted, shallowRef } from "vue";
@@ -17,52 +24,57 @@ import { animate, jump } from "@pocketjs/framework/animation";
 import { onFrame } from "@pocketjs/framework/lifecycle";
 import { createGesture } from "@pocketjs/framework/gesture";
 import { createScroller } from "@pocketjs/framework/kinetics";
-import { reportAppAction } from "@pocketjs/framework/host";
+import { getOps, reportAppAction } from "@pocketjs/framework/host";
 import { after } from "@pocketjs/framework/clock";
 import {
   clearDone,
   insertTodo,
-  MAX_TODOS,
   movePending,
   ordered,
   pendingCount,
   removeTodo,
   seedLists,
   setDone,
+  MAX_TODOS,
   type Todo,
 } from "./model.ts";
 import {
   DONE_FROM,
+  DONE_TEXT,
   DONE_TO,
-  pendingRowColors,
+  GREEN_FROM,
+  GREEN_TO,
+  listRowColors,
+  todoRowColors,
 } from "./palette.ts";
+import {
+  OVERSCROLL,
+  PINCH_COMMIT,
+  PULL_BACK,
+  PULL_CLEAR,
+  PULL_CREATE,
+  ROW_H,
+  SCREEN_H,
+  SCREEN_W,
+  SWIPE_COMMIT,
+  SWITCH_MS,
+  TITLE_FONT_SLOT,
+} from "./metrics.ts";
 import { KB_H, makeKeyboard } from "./keyboard.tsx";
 
-const SCREEN_W = 320;
-const SCREEN_H = 480;
-const HEADER_H = 48;
-const ROW_H = 44;
-const VIEW_H = SCREEN_H - HEADER_H;
-const LISTS_TOP = HEADER_H + 1;
-const LIST_ROW_STRIDE = 57; // 56 px row + 1 px seam
+const VIEW_H = SCREEN_H;
 
 /** Off-canvas parking spot for unassigned row slots. */
 const PARKED_Y = 4000;
-
-/** Swipe travel that commits a complete/delete. */
-const SWIPE_COMMIT = 110;
-/** Rubber-band DISPLAY thresholds for the pull gestures (px of overscroll). */
-const PULL_CREATE = 44;
-const PULL_BACK = 78;
-const PULL_CLEAR = 36;
-const OVERSCROLL = 90;
-/** Pinch gap that commits an insert. */
-const PINCH_COMMIT = 30;
+/** Where the todos canvas rests while the lists screen owns the display. */
+const TODOS_PARKED_Y = SCREEN_H + 2 * ROW_H;
 
 interface RowSlot {
   node: NodeMirror | null;
   front: NodeMirror | null;
-  hint: NodeMirror | null;
+  check: NodeMirror | null;
+  cross: NodeMirror | null;
+  strike: NodeMirror | null;
   text: ReturnType<typeof shallowRef<string>>;
   done: ReturnType<typeof shallowRef<boolean>>;
   lift: ReturnType<typeof shallowRef<number>>;
@@ -73,34 +85,41 @@ interface RowSlot {
   busy: boolean;
   gradFrom: string;
   gradTo: string;
+  /** Measured title width (strike-through line length). */
+  textW: number;
+  textFor: string;
 }
 
 export default () => {
   const lists = seedLists();
+  const LISTS_H = lists.length * ROW_H;
   let activeIndex = 0;
-  let screenName: "lists" | "todos" = "lists";
+  let screenName: "lists" | "todos" | "switching" = "lists";
   let order: Todo[] = [];
   let contentH = 0;
   let actions = 0;
 
   const list = () => lists[activeIndex];
 
-  let listsNode: NodeMirror | null = null;
-  let todosNode: NodeMirror | null = null;
-  let viewportNode: NodeMirror | null = null;
-  let canvasNode: NodeMirror | null = null;
+  let listsCanvas: NodeMirror | null = null;
+  let todosCanvas: NodeMirror | null = null;
+  let flapNode: NodeMirror | null = null;
+  let topSwitchNode: NodeMirror | null = null;
   let previewNode: NodeMirror | null = null;
   let footerNode: NodeMirror | null = null;
+  const listRowNodes: (NodeMirror | null)[] = lists.map(() => null);
 
-  const titleText = shallowRef("");
-  const countText = shallowRef("");
-  const flapText = shallowRef("Pull down to add");
-  const listCounts = lists.map((l) => shallowRef(`${pendingCount(l)} to do`));
+  const flapText = shallowRef("Pull to Create Item");
+  const hasDone = shallowRef(false);
+  const listCounts = lists.map((l) => shallowRef(String(pendingCount(l))));
+  const listEmpty = lists.map((l) => shallowRef(pendingCount(l) === 0));
 
   const slots: RowSlot[] = Array.from({ length: MAX_TODOS }, () => ({
     node: null,
     front: null,
-    hint: null,
+    check: null,
+    cross: null,
+    strike: null,
     text: shallowRef(""),
     done: shallowRef(false),
     lift: shallowRef(0),
@@ -109,6 +128,8 @@ export default () => {
     busy: false,
     gradFrom: "",
     gradTo: "",
+    textW: 0,
+    textFor: "",
   }));
   const slotByTodo = new Map<number, RowSlot>();
 
@@ -124,7 +145,16 @@ export default () => {
     extent: () => VIEW_H,
     overscroll: OVERSCROLL,
   });
+  const listsScroller = createScroller({
+    max: () => Math.max(0, LISTS_H - VIEW_H),
+    extent: () => VIEW_H,
+    overscroll: OVERSCROLL,
+  });
   let paintedOffset = 0;
+  let paintedListsOffset = 0;
+  let paintedPull = 0;
+  /** Whether the lists canvas sits at its above-the-todos parking spot. */
+  let listsParked = false;
 
   function report(): void {
     actions += 1;
@@ -138,10 +168,8 @@ export default () => {
         slot.todoId = todo.id;
         slot.done.value = todo.done;
         slot.lift.value = 0;
-        if (slot.front) {
-          jump(slot.front, "translateX", 0);
-          jump(slot.front, "opacity", 1);
-        }
+        if (slot.node) jump(slot.node, "translateX", 0);
+        if (slot.front) jump(slot.front, "translateX", 0);
         slotByTodo.set(todo.id, slot);
         return slot;
       }
@@ -149,8 +177,12 @@ export default () => {
     throw new Error("clear: row pool exhausted");
   }
 
-  function slotLabel(todo: Todo): string {
-    return todo.done ? `✓ ${todo.text}` : todo.text;
+  function measureTitle(slot: RowSlot, text: string): number {
+    if (slot.textFor !== text) {
+      slot.textFor = text;
+      slot.textW = text === "" ? 0 : getOps().measureText(text, TITLE_FONT_SLOT);
+    }
+    return slot.textW;
   }
 
   /** Re-derive every slot from the model. Structural motion (row y, colors)
@@ -160,9 +192,11 @@ export default () => {
     order = ordered(current);
     contentH = order.length * ROW_H;
     const pending = pendingCount(current);
-    countText.value = `${pending} to do`;
-    if (canvasNode) jump(canvasNode, "height", Math.max(contentH, VIEW_H));
-    // The clear-done hint hides below the fold until an overscroll reveals it.
+    listCounts[activeIndex].value = String(pending);
+    listEmpty[activeIndex].value = pending === 0;
+    hasDone.value = order.length > pending;
+    if (todosCanvas) jump(todosCanvas, "height", Math.max(contentH, VIEW_H));
+    // The pull-to-clear hint hides below the fold until an overscroll reveals it.
     if (footerNode) jump(footerNode, "translateY", Math.max(contentH, VIEW_H));
 
     const seen = new Set<RowSlot>();
@@ -171,7 +205,7 @@ export default () => {
       const slot = slotByTodo.get(todo.id) ?? allocSlot(todo);
       seen.add(slot);
       slot.done.value = todo.done;
-      if (editing !== todo) slot.text.value = slotLabel(todo);
+      if (editing !== todo) slot.text.value = todo.text;
 
       const y = index * ROW_H;
       if (slot.node) {
@@ -183,7 +217,13 @@ export default () => {
       }
       slot.y = y;
 
-      const [from, to] = todo.done ? [DONE_FROM, DONE_TO] : pendingRowColors(index);
+      if (slot.strike && editing !== todo) {
+        jump(slot.strike, "width", measureTitle(slot, todo.text));
+        jump(slot.strike, "scaleX", todo.done ? 1 : 0);
+        jump(slot.strike, "bgColor", todo.done ? DONE_TEXT : "#ffffff");
+      }
+
+      const [from, to] = todo.done ? [DONE_FROM, DONE_TO] : todoRowColors(index, pending);
       if (slot.front && (from !== slot.gradFrom || to !== slot.gradTo)) {
         if (animated && slot.gradFrom !== "") {
           animate(slot.front, "gradFrom", from, { dur: 220, easing: "out" });
@@ -210,16 +250,22 @@ export default () => {
     slot.gradTo = "";
     slot.lift.value = 0;
     slot.text.value = "";
-    if (slot.node) jump(slot.node, "translateY", PARKED_Y);
+    if (slot.node) {
+      jump(slot.node, "translateY", PARKED_Y);
+      jump(slot.node, "translateX", 0);
+    }
     if (slot.front) {
       jump(slot.front, "translateX", 0);
       jump(slot.front, "opacity", 1);
     }
+    if (slot.check) jump(slot.check, "opacity", 0);
+    if (slot.cross) jump(slot.cross, "opacity", 0);
+    if (slot.strike) jump(slot.strike, "scaleX", 0);
   }
 
   /** Display index under a screen y, or -1 outside the rows. */
   function rowIndexAt(screenY: number): number {
-    const index = Math.floor((screenY - HEADER_H + scroller.offset()) / ROW_H);
+    const index = Math.floor((screenY + scroller.offset()) / ROW_H);
     return index >= 0 && index < order.length ? index : -1;
   }
 
@@ -232,6 +278,14 @@ export default () => {
     slot.text.value = `${t.slice(0, editCaret)}|${t.slice(editCaret)}`;
   }
 
+  function shadeRows(shaded: boolean): void {
+    const keep = editing ? slotByTodo.get(editing.id) : null;
+    for (const slot of slots) {
+      if (slot.todoId === -1 || slot.busy || !slot.front || slot === keep) continue;
+      animate(slot.front, "opacity", shaded ? 0.15 : 1, { dur: 200, easing: "out" });
+    }
+  }
+
   function openEditor(todo: Todo, wasNew: boolean): void {
     editing = todo;
     editWasNew = wasNew;
@@ -239,18 +293,24 @@ export default () => {
     editCaret = todo.text.length;
     kb.setOpen(true);
     paintEditRow();
+    shadeRows(true);
     const index = order.indexOf(todo);
-    const rowBottom = HEADER_H + index * ROW_H - scroller.offset() + ROW_H;
+    const rowBottom = index * ROW_H - scroller.offset() + ROW_H;
     const liftNeeded = Math.max(0, rowBottom - (SCREEN_H - KB_H));
-    if (viewportNode) animate(viewportNode, "translateY", -liftNeeded, { dur: 200, easing: "out" });
+    if (todosCanvas) {
+      animate(todosCanvas, "translateY", -scroller.offset() - liftNeeded, { dur: 200, easing: "out" });
+    }
   }
 
   function closeEditor(commit: boolean): void {
     const todo = editing;
     if (!todo) return;
+    shadeRows(false);
     editing = null;
     kb.setOpen(false);
-    if (viewportNode) animate(viewportNode, "translateY", 0, { dur: 200, easing: "out" });
+    if (todosCanvas) {
+      animate(todosCanvas, "translateY", -scroller.offset(), { dur: 200, easing: "out" });
+    }
     if (commit) {
       todo.text = todo.text.trim();
       if (todo.text === "") removeTodo(list(), todo);
@@ -295,33 +355,94 @@ export default () => {
   }
 
   // ------------------------------------------------------------ navigation
+  /** Park the lists canvas above the todos so a long pull drags it back in. */
+  function parkListsForPulldown(): void {
+    listsParked = true;
+    if (listsCanvas) jump(listsCanvas, "translateY", -(LISTS_H + ROW_H));
+    for (let i = 0; i < lists.length; i += 1) {
+      const node = listRowNodes[i];
+      if (node) {
+        jump(node, "translateY", i * ROW_H);
+        jump(node, "opacity", 1);
+      }
+    }
+    listsScroller.scrollTo(0, { immediate: true });
+    paintedListsOffset = 0;
+  }
+
   function openList(index: number): void {
     activeIndex = index;
-    titleText.value = list().title;
-    screenName = "todos";
+    screenName = "switching";
+    const loff = listsScroller.offset();
+    // The lists clear away vertically: the tapped row rides to the top edge
+    // and fades, rows above stack off the top, rows below drop off the bottom.
+    for (let i = 0; i < lists.length; i += 1) {
+      const node = listRowNodes[i];
+      if (!node) continue;
+      const screenTarget = i <= index ? (i - index) * ROW_H : SCREEN_H + (i - index) * ROW_H;
+      animate(node, "translateY", screenTarget + loff, { dur: SWITCH_MS, easing: "out" });
+    }
+    const tapped = listRowNodes[index];
+    if (tapped) animate(tapped, "opacity", 0, { dur: SWITCH_MS, easing: "out" });
+    // The todo stack starts squeezed at the tapped row's screen position and
+    // unfolds downward while the canvas rides to the top.
     scroller.scrollTo(0, { immediate: true });
+    paintedOffset = 0;
+    paintedPull = 0;
     layout(false);
-    if (listsNode) animate(listsNode, "translateX", -96, { dur: 240, easing: "out" });
-    if (todosNode) animate(todosNode, "translateX", 0, { dur: 240, easing: "out" });
+    for (const slot of slots) {
+      if (slot.todoId !== -1 && slot.node) jump(slot.node, "translateY", 0);
+    }
+    if (todosCanvas) {
+      jump(todosCanvas, "translateY", index * ROW_H - loff);
+      animate(todosCanvas, "translateY", 0, { dur: SWITCH_MS, easing: "out" });
+    }
+    for (const slot of slots) {
+      if (slot.todoId !== -1 && slot.node) {
+        animate(slot.node, "translateY", slot.y, { dur: SWITCH_MS, easing: "out" });
+      }
+    }
+    if (flapNode) jump(flapNode, "opacity", 0);
+    after(SWITCH_MS / 1000, () => {
+      screenName = "todos";
+      parkListsForPulldown();
+    });
     report();
   }
 
   function goBack(): void {
     if (editing) closeEditor(false);
-    screenName = "lists";
+    screenName = "switching";
     for (let i = 0; i < lists.length; i += 1) {
-      listCounts[i].value = `${pendingCount(lists[i])} to do`;
+      const pending = pendingCount(lists[i]);
+      listCounts[i].value = String(pending);
+      listEmpty[i].value = pending === 0;
     }
-    if (listsNode) animate(listsNode, "translateX", 0, { dur: 240, easing: "out" });
-    if (todosNode) animate(todosNode, "translateX", SCREEN_W + 20, { dur: 240, easing: "out" });
+    // Both canvases travel DOWN: the lists land from above, the todos drop
+    // off the bottom.
+    listsParked = false;
+    if (listsCanvas) animate(listsCanvas, "translateY", 0, { dur: SWITCH_MS, easing: "out" });
+    if (todosCanvas) animate(todosCanvas, "translateY", TODOS_PARKED_Y, { dur: SWITCH_MS, easing: "out" });
+    scroller.scrollTo(0, { immediate: true });
+    paintedOffset = 0;
+    paintedPull = 0;
+    if (flapNode) jump(flapNode, "opacity", 0);
+    if (topSwitchNode) jump(topSwitchNode, "opacity", 0);
+    listsScroller.scrollTo(0, { immediate: true });
+    paintedListsOffset = 0;
+    after(SWITCH_MS / 1000, () => {
+      screenName = "lists";
+    });
     report();
   }
 
   // ------------------------------------------------------------- gestures
   const inTodoList = () =>
     screenName === "todos" && !editing
-      ? { x: 0, y: HEADER_H, w: SCREEN_W, h: VIEW_H }
+      ? { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H }
       : null;
+  const inLists = () =>
+    screenName === "lists" ? { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H } : null;
 
   // Vertical pan: kinetic scroll + the three pull affordances.
   createGesture({
@@ -334,16 +455,21 @@ export default () => {
       const overTop = -off;
       const overBottom = off - Math.max(0, contentH - VIEW_H);
       if (overTop >= PULL_BACK) {
-        scroller.endDrag(0);
         goBack();
         return;
       }
       if (overTop >= PULL_CREATE) {
-        scroller.endDrag(0);
+        // Snap home (the reference shifts the canvas instantly too), then
+        // open the editor on the fresh top row.
+        scroller.scrollTo(0, { immediate: true });
+        paintedOffset = 0;
+        paintedPull = 0;
+        if (todosCanvas) jump(todosCanvas, "translateY", 0);
+        if (flapNode) jump(flapNode, "opacity", 0);
         createAt(0);
         return;
       }
-      if (overBottom >= PULL_CLEAR && order.some((todo) => todo.done)) {
+      if (overBottom >= PULL_CLEAR && hasDone.value) {
         scroller.endDrag(0);
         const removed = clearDone(list());
         if (removed > 0) {
@@ -360,24 +486,74 @@ export default () => {
   // Horizontal pan on a row: complete (right) / delete (left).
   let swipeSlot: RowSlot | null = null;
   let swipeTodo: Todo | null = null;
+  let swipeIndex = -1;
+  let swipeArmed = false;
+
+  /** 1:1 up to the commit bound, then damped to a third — the reference feel. */
+  function swipeDisplay(dx: number): number {
+    if (dx > SWIPE_COMMIT) return SWIPE_COMMIT + (dx - SWIPE_COMMIT) / 3;
+    if (dx < -SWIPE_COMMIT) return -SWIPE_COMMIT + (dx + SWIPE_COMMIT) / 3;
+    return dx;
+  }
+
+  /** Past the rightward bound the slider changes its mind: a pending row goes
+   *  green, a done row previews its restored position tint. */
+  function paintArmed(slot: RowSlot, todo: Todo, index: number, armed: boolean): void {
+    if (!slot.front) return;
+    if (armed) {
+      if (todo.done) {
+        slot.done.value = false;
+        const [from, to] = todoRowColors(Math.min(index, 7), 1);
+        jump(slot.front, "gradFrom", from);
+        jump(slot.front, "gradTo", to);
+      } else {
+        jump(slot.front, "gradFrom", GREEN_FROM);
+        jump(slot.front, "gradTo", GREEN_TO);
+      }
+    } else if (todo.done) {
+      slot.done.value = true;
+      jump(slot.front, "gradFrom", DONE_FROM);
+      jump(slot.front, "gradTo", DONE_TO);
+    } else {
+      jump(slot.front, "gradFrom", slot.gradFrom);
+      jump(slot.front, "gradTo", slot.gradTo);
+    }
+  }
+
   createGesture({
     axis: "x",
     region: { rect: inTodoList },
     onPanStart: (c) => {
-      const index = rowIndexAt(c.startY);
-      swipeTodo = index >= 0 ? order[index] : null;
+      swipeIndex = rowIndexAt(c.startY);
+      swipeTodo = swipeIndex >= 0 ? order[swipeIndex] : null;
       swipeSlot = swipeTodo ? (slotByTodo.get(swipeTodo.id) ?? null) : null;
+      swipeArmed = false;
     },
     onPanMove: (c) => {
-      if (!swipeSlot?.front || !swipeSlot.hint) return;
-      const dx = Math.max(-SCREEN_W, Math.min(SCREEN_W, c.dx));
-      jump(swipeSlot.front, "translateX", dx);
-      const armed = dx >= SWIPE_COMMIT || dx <= -SWIPE_COMMIT;
-      jump(
-        swipeSlot.hint,
-        "bgColor",
-        dx > 0 ? (armed ? "#2f9e44" : "#25432c") : armed ? "#d13438" : "#452a2e",
-      );
+      const slot = swipeSlot;
+      const todo = swipeTodo;
+      if (!slot?.front || !todo) return;
+      const raw = Math.max(-SCREEN_W, Math.min(SCREEN_W, c.dx));
+      const disp = swipeDisplay(raw);
+      jump(slot.front, "translateX", disp);
+      const rightO = Math.max(0, Math.min(1, raw / SWIPE_COMMIT));
+      const leftO = Math.max(0, Math.min(1, -raw / SWIPE_COMMIT));
+      if (slot.check) {
+        jump(slot.check, "opacity", raw > 0 ? (todo.done ? 1 - rightO : rightO) : 0);
+        jump(slot.check, "translateX", Math.max(0, disp - SWIPE_COMMIT));
+      }
+      if (slot.cross) {
+        jump(slot.cross, "opacity", leftO);
+        jump(slot.cross, "translateX", Math.min(0, disp + SWIPE_COMMIT));
+      }
+      if (slot.strike) {
+        jump(slot.strike, "scaleX", todo.done ? 1 - rightO : rightO);
+      }
+      const armed = raw >= SWIPE_COMMIT;
+      if (armed !== swipeArmed) {
+        swipeArmed = armed;
+        paintArmed(slot, todo, swipeIndex, armed);
+      }
     },
     onPanEnd: (c) => {
       const slot = swipeSlot;
@@ -385,8 +561,11 @@ export default () => {
       swipeSlot = null;
       swipeTodo = null;
       if (!slot?.front || !todo) return;
+      if (slot.check) animate(slot.check, "opacity", 0, { dur: 160, easing: "out" });
+      if (slot.cross) animate(slot.cross, "opacity", 0, { dur: 160, easing: "out" });
       if (c.dx >= SWIPE_COMMIT) {
         animate(slot.front, "translateX", 0, { dur: 180, easing: "out" });
+        swipeArmed = false;
         setDone(list(), todo, !todo.done);
         layout(true);
         report();
@@ -395,8 +574,9 @@ export default () => {
       if (c.dx <= -SWIPE_COMMIT) {
         slot.busy = true;
         parkAfterExit(slot);
-        animate(slot.front, "translateX", -SCREEN_W - 40, { dur: 180, easing: "out" });
-        animate(slot.front, "opacity", 0, { dur: 180, easing: "out" });
+        if (slot.node) {
+          animate(slot.node, "translateX", -(SCREEN_W + ROW_H), { dur: SWITCH_MS, easing: "out" });
+        }
         removeTodo(list(), todo);
         slotByTodo.delete(todo.id);
         slot.todoId = -1;
@@ -405,24 +585,45 @@ export default () => {
         return;
       }
       animate(slot.front, "translateX", 0, { dur: 160, easing: "out" });
+      if (slot.strike) jump(slot.strike, "scaleX", todo.done ? 1 : 0);
+      if (swipeArmed) {
+        swipeArmed = false;
+        paintArmed(slot, todo, swipeIndex, false);
+      }
     },
     onCancel: () => {
-      if (swipeSlot?.front) animate(swipeSlot.front, "translateX", 0, { dur: 160, easing: "out" });
+      const slot = swipeSlot;
+      const todo = swipeTodo;
       swipeSlot = null;
       swipeTodo = null;
+      if (!slot?.front || !todo) return;
+      animate(slot.front, "translateX", 0, { dur: 160, easing: "out" });
+      if (slot.check) animate(slot.check, "opacity", 0, { dur: 160, easing: "out" });
+      if (slot.cross) animate(slot.cross, "opacity", 0, { dur: 160, easing: "out" });
+      if (slot.strike) jump(slot.strike, "scaleX", todo.done ? 1 : 0);
+      if (swipeArmed) {
+        swipeArmed = false;
+        paintArmed(slot, todo, swipeIndex, false);
+      }
     },
   });
 
   function parkAfterExit(slot: RowSlot): void {
-    after(0.22, () => {
+    after(SWITCH_MS / 1000 + 0.02, () => {
       slot.busy = false;
       slot.y = PARKED_Y;
       slot.text.value = "";
-      if (slot.node) jump(slot.node, "translateY", PARKED_Y);
+      if (slot.node) {
+        jump(slot.node, "translateY", PARKED_Y);
+        jump(slot.node, "translateX", 0);
+      }
       if (slot.front) {
         jump(slot.front, "translateX", 0);
         jump(slot.front, "opacity", 1);
       }
+      if (slot.check) jump(slot.check, "opacity", 0);
+      if (slot.cross) jump(slot.cross, "opacity", 0);
+      if (slot.strike) jump(slot.strike, "scaleX", 0);
     });
   }
 
@@ -457,7 +658,7 @@ export default () => {
       dragSlot = slotByTodo.get(order[index].id) ?? null;
       if (dragSlot?.node) {
         dragSlot.lift.value = 30;
-        animate(dragSlot.node, "scale", 1.04, { dur: 120, easing: "out" });
+        animate(dragSlot.node, "scale", 1.05, { dur: 120, easing: "out" });
       }
     },
     onMove: (c) => {
@@ -496,16 +697,18 @@ export default () => {
     },
   });
 
-  // Tap: edit the row under the finger, or create at the end below the rows.
+  // Tap: edit the pending row under the finger; a done row or the empty
+  // space below creates at the end of the pending stack (the reference's
+  // collection tap).
   createGesture({
     region: { rect: inTodoList },
     onTap: (c) => {
       const index = rowIndexAt(c.y);
-      if (index >= 0) {
+      if (index >= 0 && !order[index].done) {
         openEditor(order[index], false);
         return;
       }
-      if (c.y - HEADER_H + scroller.offset() >= contentH) createAt(pendingCount(list()));
+      createAt(pendingCount(list()));
     },
   });
 
@@ -531,7 +734,7 @@ export default () => {
     onPinchStart: (p) => {
       pinchGap = Math.max(
         0,
-        Math.min(pendingCount(list()), Math.round((p.cy - HEADER_H + scroller.offset()) / ROW_H)),
+        Math.min(pendingCount(list()), Math.round((p.cy + scroller.offset()) / ROW_H)),
       );
       pinchRows(0);
     },
@@ -557,16 +760,21 @@ export default () => {
     },
   });
 
+  // Lists screen: kinetic scroll.
+  createGesture({
+    axis: "y",
+    region: { rect: inLists },
+    onPanStart: () => listsScroller.beginDrag(),
+    onPanMove: (c) => listsScroller.drag(-c.fdy),
+    onPanEnd: (c) => listsScroller.endDrag(-c.vy),
+    onCancel: () => listsScroller.endDrag(0),
+  });
+
   // Lists screen: tap a list to open it.
   createGesture({
-    region: {
-      rect: () =>
-        screenName === "lists"
-          ? { x: 0, y: LISTS_TOP, w: SCREEN_W, h: lists.length * LIST_ROW_STRIDE }
-          : null,
-    },
+    region: { rect: inLists },
     onTap: (c) => {
-      const index = Math.floor((c.y - LISTS_TOP) / LIST_ROW_STRIDE);
+      const index = Math.floor((c.y + listsScroller.offset()) / ROW_H);
       if (index >= 0 && index < lists.length) openList(index);
     },
   });
@@ -589,20 +797,53 @@ export default () => {
   });
 
   // ------------------------------------------------------------ frame pump
-  onFrame(() => {
-    scroller.step();
-    const off = scroller.offset();
-    if (off !== paintedOffset && canvasNode) {
-      paintedOffset = off;
-      jump(canvasNode, "translateY", -off);
+  /** The pull-down affordances: fold the flap through its first row height,
+   *  then hold it flat, then swap to the switch hint while the lists canvas
+   *  rides down into view. */
+  function paintPull(pull: number): void {
+    if (!flapNode) return;
+    if (pull <= 0) {
+      jump(flapNode, "opacity", 0);
+      if (topSwitchNode) jump(topSwitchNode, "opacity", 0);
+      if (!listsParked) parkListsForPulldown();
+      return;
     }
-    const pull = -off;
-    flapText.value =
-      pull >= PULL_BACK
-        ? "Release to go back"
-        : pull >= PULL_CREATE
-          ? "Release to add"
-          : "Pull down to add";
+    if (pull >= PULL_BACK) {
+      jump(flapNode, "opacity", 0);
+      if (topSwitchNode) jump(topSwitchNode, "opacity", 1);
+      listsParked = false;
+      if (listsCanvas) jump(listsCanvas, "translateY", pull - PULL_BACK - LISTS_H);
+      return;
+    }
+    if (topSwitchNode) jump(topSwitchNode, "opacity", 0);
+    if (!listsParked) parkListsForPulldown();
+    const pct = Math.min(1, pull / PULL_CREATE);
+    jump(flapNode, "rotateX", (1 - pct) * 90);
+    jump(flapNode, "opacity", pct / 2 + 0.5);
+    flapText.value = pull >= PULL_CREATE ? "Release to Create Item" : "Pull to Create Item";
+  }
+
+  onFrame(() => {
+    if (screenName === "todos") {
+      scroller.step();
+      const off = scroller.offset();
+      if (off !== paintedOffset && todosCanvas && !editing) {
+        paintedOffset = off;
+        jump(todosCanvas, "translateY", -off);
+      }
+      const pull = -off;
+      if (pull !== paintedPull) {
+        paintedPull = pull;
+        paintPull(pull);
+      }
+    } else if (screenName === "lists") {
+      listsScroller.step();
+      const loff = listsScroller.offset();
+      if (loff !== paintedListsOffset && listsCanvas) {
+        paintedListsOffset = loff;
+        jump(listsCanvas, "translateY", -loff);
+      }
+    }
   });
 
   onMounted(() => {
@@ -613,7 +854,7 @@ export default () => {
       jump(previewNode, "height", 0);
       jump(previewNode, "opacity", 0);
     }
-    if (footerNode) jump(footerNode, "translateY", 0);
+    if (footerNode) jump(footerNode, "translateY", VIEW_H);
   });
 
   // -------------------------------------------------------------- render
@@ -623,101 +864,152 @@ export default () => {
         nodeRef={(node) => {
           slot.node = node ?? null;
         }}
-        class="absolute left-0 right-0 top-0 h-11 overflow-hidden"
-        style={{ zIndex: slot.lift.value }}
+        class="absolute left-0 right-0 top-0 h-[62]"
+        style={{ zIndex: slot.lift.value, shadow: slot.lift.value ? 3 : 0 }}
       >
         <View
           nodeRef={(node) => {
-            slot.hint = node ?? null;
+            slot.check = node ?? null;
           }}
-          class="absolute inset-0 flex-row items-center justify-between px-5 bg-[#20242c]"
+          class="absolute left-0 top-0"
+          style={{ width: ROW_H, height: ROW_H, opacity: 0 }}
         >
-          <Text class="text-base text-white font-bold">✓</Text>
-          <Text class="text-base text-white font-bold">✕</Text>
+          <View class="absolute bg-[#ffffff]" style={{ insetL: 12, insetT: 32, width: 14, height: 7, rotate: 45 }} />
+          <View class="absolute bg-[#ffffff]" style={{ insetL: 20, insetT: 27, width: 28, height: 7, rotate: -45 }} />
+        </View>
+        <View
+          nodeRef={(node) => {
+            slot.cross = node ?? null;
+          }}
+          class="absolute right-0 top-0"
+          style={{ width: ROW_H, height: ROW_H, opacity: 0 }}
+        >
+          <View class="absolute bg-[#eb0017]" style={{ insetL: 15, insetT: 28, width: 32, height: 7, rotate: 45 }} />
+          <View class="absolute bg-[#eb0017]" style={{ insetL: 15, insetT: 28, width: 32, height: 7, rotate: -45 }} />
         </View>
         <View
           nodeRef={(node) => {
             slot.front = node ?? null;
           }}
-          class="absolute inset-0 flex-row items-center px-4 bg-gradient-to-b from-[#d32b3a] to-[#d5432f]"
+          class="absolute inset-0 bg-gradient-to-b from-[#f50018] to-[#e00016]"
         >
-          <Text class={slot.done.value ? "text-base text-[#5b6472]" : "text-base text-white"}>
-            {slot.text.value}
-          </Text>
+          <View class="absolute left-0 right-0 top-0 bg-[#ffffff12]" style={{ height: 1 }} />
+          <View class="absolute left-0 right-0 bottom-0 bg-[#0000001a]" style={{ height: 1 }} />
+          <View class="absolute inset-0 flex-row items-center pl-3">
+            <Text class={slot.done.value ? "text-xl font-bold text-[#666666]" : "text-xl font-bold text-white"}>
+              {slot.text.value}
+            </Text>
+          </View>
+          <View
+            nodeRef={(node) => {
+              slot.strike = node ?? null;
+            }}
+            class="absolute bg-[#ffffff]"
+            style={{ insetL: 12, insetT: 30, height: 2, width: 0, originX: -0.5, scaleX: 0 }}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  function renderListRow(title: string, i: number) {
+    const [from, to] = listRowColors(i, lists.length);
+    return (
+      <View
+        nodeRef={(node) => {
+          listRowNodes[i] = node ?? null;
+        }}
+        class="absolute left-0 right-0 top-0 h-[62]"
+        style={{ translateY: i * ROW_H }}
+      >
+        <View
+          class="absolute inset-0 bg-gradient-to-b from-[#1780f7] to-[#1780f7]"
+          style={{ gradFrom: from, gradTo: to }}
+        >
+          <View class="absolute left-0 right-0 top-0 bg-[#ffffff12]" style={{ height: 1 }} />
+          <View class="absolute left-0 right-0 bottom-0 bg-[#0000001a]" style={{ height: 1 }} />
+          <View class="absolute inset-0 flex-row items-center pl-3">
+            <Text class={listEmpty[i].value ? "text-xl font-bold text-[#ffffff80]" : "text-xl font-bold text-white"}>
+              {title}
+            </Text>
+          </View>
+          <View class="absolute right-0 top-0 bottom-0 items-center justify-center bg-[#ffffff26]" style={{ width: ROW_H }}>
+            <Text class={listEmpty[i].value ? "text-xl font-bold text-[#ffffff80]" : "text-xl font-bold text-white"}>
+              {listCounts[i].value}
+            </Text>
+          </View>
         </View>
       </View>
     );
   }
 
   return (
-    <View class="w-full h-full bg-[#0b0e13]">
+    <View class="w-full h-full bg-[#000000] overflow-hidden">
       <View
         nodeRef={(node) => {
-          listsNode = node ?? null;
+          todosCanvas = node ?? null;
         }}
-        class="absolute inset-0 flex-col bg-[#0b0e13]"
+        class="absolute left-0 right-0 top-0"
+        style={{ height: VIEW_H, translateY: TODOS_PARKED_Y }}
       >
-        <View class="h-12 justify-center items-center bg-[#11151d]">
-          <Text class="text-lg text-white font-bold">Pocket Clear</Text>
+        <View
+          nodeRef={(node) => {
+            topSwitchNode = node ?? null;
+          }}
+          class="absolute left-0 right-0 items-center justify-center"
+          style={{ translateY: -2 * ROW_H, height: ROW_H, opacity: 0 }}
+        >
+          <Text class="text-xl font-bold text-white">Switch to Lists</Text>
         </View>
-        {lists.map((l, i) => (
-          <View class="h-14 flex-row items-center justify-between px-4 bg-gradient-to-b from-[#2c3547] to-[#222a39]" style={{ marginT: 1 }}>
-            <Text class="text-base text-white">{l.title}</Text>
-            <Text class="text-sm text-[#8b96a8]">{listCounts[i].value}</Text>
+        <View
+          class="absolute left-0 right-0"
+          style={{ translateY: -ROW_H, height: ROW_H, perspective: 400 }}
+        >
+          <View
+            nodeRef={(node) => {
+              flapNode = node ?? null;
+            }}
+            class="absolute inset-0 flex-row items-center pl-3 bg-gradient-to-b from-[#f50018] to-[#e00016]"
+            style={{ originY: 0.5, rotateX: 90, opacity: 0 }}
+          >
+            <Text class="text-xl font-bold text-white">{flapText.value}</Text>
           </View>
-        ))}
-        <Text class="text-xs text-[#5b6472] text-center" style={{ marginT: 16 }}>
-          Tap a list to open it
-        </Text>
+        </View>
+        <View
+          nodeRef={(node) => {
+            previewNode = node ?? null;
+          }}
+          class="absolute left-0 right-0 top-0 bg-gradient-to-b from-[#f50018] to-[#e00016]"
+        />
+        <View
+          nodeRef={(node) => {
+            footerNode = node ?? null;
+          }}
+          class="absolute left-0 right-0 items-center justify-center"
+          style={{ height: 2 * ROW_H }}
+        >
+          <Text class={hasDone.value ? "text-xl font-bold text-white" : "text-xl font-bold text-[#333333]"}>
+            Pull to Clear
+          </Text>
+        </View>
+        {slots.map((slot) => renderRow(slot))}
       </View>
 
       <View
         nodeRef={(node) => {
-          todosNode = node ?? null;
+          listsCanvas = node ?? null;
         }}
-        class="absolute inset-0 flex-col bg-[#0b0e13]"
-        style={{ translateX: SCREEN_W + 20 }}
+        class="absolute left-0 right-0 top-0"
+        style={{ height: LISTS_H, zIndex: 1 }}
       >
-        <View class="h-12 flex-row items-center justify-between px-4 bg-[#11151d]">
-          <Text class="text-lg text-white font-bold">{titleText.value}</Text>
-          <Text class="text-xs text-[#8b96a8]">{countText.value}</Text>
-        </View>
         <View
-          nodeRef={(node) => {
-            viewportNode = node ?? null;
-          }}
-          class="flex-1 overflow-hidden"
+          class="absolute left-0 right-0 flex-col items-center justify-center"
+          style={{ translateY: -2.5 * ROW_H, height: ROW_H }}
         >
-          <View
-            nodeRef={(node) => {
-              canvasNode = node ?? null;
-            }}
-            class="absolute left-0 right-0 top-0"
-            style={{ height: VIEW_H }}
-          >
-            <View
-              class="absolute left-0 right-0 h-11 flex-row items-center justify-center bg-gradient-to-b from-[#b8202f] to-[#d32b3a]"
-              style={{ translateY: -ROW_H }}
-            >
-              <Text class="text-sm text-white">{flapText.value}</Text>
-            </View>
-            <View
-              nodeRef={(node) => {
-                previewNode = node ?? null;
-              }}
-              class="absolute left-0 right-0 top-0 bg-gradient-to-b from-[#d32b3a] to-[#d94b32]"
-            />
-            <View
-              nodeRef={(node) => {
-                footerNode = node ?? null;
-              }}
-              class="absolute left-0 right-0 h-10 justify-center items-center"
-            >
-              <Text class="text-xs text-[#5b6472]">Pull up to clear the done pile</Text>
-            </View>
-            {slots.map((slot) => renderRow(slot))}
-          </View>
+          <Text class="text-sm text-[#ffffff40] text-center">Made with PocketJS + Vue Vapor</Text>
+          <Text class="text-sm text-[#ffffff40] text-center">Original by Evan You, iOS app by Realmac</Text>
         </View>
+        {lists.map((l, i) => renderListRow(l.title, i))}
       </View>
 
       {kb.view}
