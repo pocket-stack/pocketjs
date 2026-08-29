@@ -60,11 +60,13 @@ export async function discoverPocketRuntimes(
   const found = new Map<string, DiscoveredPocketRuntime>();
   return await new Promise<DiscoveredPocketRuntime[]>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let retry: ReturnType<typeof setInterval> | null = null;
     let settled = false;
     const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      if (retry) clearInterval(retry);
       socket.close();
       if (error) reject(error);
       else resolve([...found.values()].sort((a, b) => a.address.localeCompare(b.address)));
@@ -92,7 +94,13 @@ export async function discoverPocketRuntimes(
     socket.bind(0, "0.0.0.0", () => {
       socket.setBroadcast(true);
       const request = encodePocketRuntimeDiscoveryRequest();
-      for (const address of addresses) socket.send(request, port, address, () => {});
+      const send = () => {
+        for (const address of addresses) socket.send(request, port, address, () => {});
+      };
+      send();
+      // UDP discovery is deliberately stateless. Repeating the tiny request
+      // inside the same bounded window tolerates one dropped Wi-Fi broadcast.
+      retry = setInterval(send, Math.max(20, Math.min(250, Math.floor(timeoutMs / 3))));
       timer = setTimeout(() => finish(), timeoutMs);
     });
   });

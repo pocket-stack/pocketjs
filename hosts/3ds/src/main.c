@@ -847,6 +847,12 @@ int main(void) {
     ui_tick();
     size_t words = ui_draw();
     size_t auxiliary_words = ui_draw_auxiliary();
+    const uint32_t *auxiliary_list = ui_draw_auxiliary_list_ptr();
+#ifndef POCKETJS_CAPTURE
+    if (devmenu_visible()) {
+      auxiliary_list = devmenu_draw_list(&auxiliary_words);
+    }
+#endif
 
     begin_frame_wait(
 #ifdef POCKETJS_CAPTURE
@@ -865,7 +871,7 @@ int main(void) {
     if (!gfx_prepare_surface(0, ui_draw_list_ptr(), words, VIEW_W, VIEW_H) ||
         !gfx_prepare_surface(
           1,
-          ui_draw_auxiliary_list_ptr(),
+          auxiliary_list,
           auxiliary_words,
           AUX_VIEW_W,
           AUX_VIEW_H
@@ -898,9 +904,6 @@ int main(void) {
     C3D_FrameDrawOn(auxiliary_target);
     C3D_SetViewport(0, 0, AUX_VIEW_H, AUX_VIEW_W);
     gfx_draw_surface(1);
-#ifndef POCKETJS_CAPTURE
-    devmenu_draw(auxiliary_target);
-#endif
     C3D_FrameEnd(0);
 #ifndef POCKETJS_CAPTURE
     guest.submitted_frames += 1;

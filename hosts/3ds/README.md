@@ -122,11 +122,12 @@ generation, running package hash, update and screenshot counts, and transport
 errors. `X` requests a dual-screen screenshot from a connected client; `B` or
 `START` closes the menu.
 
-**The host draws this menu after the guest's bottom-screen DrawList and consumes
-all guest input while it is visible.** It reads a fixed native Runtime snapshot;
-it is not part of `globalThis.ui`, the guest input contract, or a published
-PocketJS capability. The input latch stays active until the keys used to close
-the menu have been released.
+**While visible, the menu replaces the guest's bottom-screen DrawList with a
+host-owned DrawList and consumes all guest input.** It uses the same verified
+PICA200 backend as the guest and reads a fixed native Runtime snapshot; it is
+not part of `globalThis.ui`, the guest input contract, or a published PocketJS
+capability. The input latch stays active until the keys used to close the menu
+have been released.
 
 Pocket Runtime listens on TCP and UDP port 8131 when this file exists:
 

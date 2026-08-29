@@ -263,15 +263,15 @@ describe("private Nintendo 3DS build profile", () => {
     const menu = readFileSync(join(root, "hosts/3ds/src/devmenu.c"), "utf8");
     const main = readFileSync(join(root, "hosts/3ds/src/main.c"), "utf8");
     const makefile = readFileSync(join(root, "hosts/3ds/Makefile"), "utf8");
-    expect(menu).toContain("C2D_SceneBegin(target)");
+    expect(menu).toContain("const uint32_t *devmenu_draw_list");
+    expect(menu).toContain("#define DRAW_RECT 1u");
     expect(menu).toContain("devserver_snapshot(&state)");
     expect(menu).not.toMatch(/\bui_[a-z_]+\s*\(/);
     expect(main).toContain("(void)devmenu_init()");
     expect(main).not.toContain("native development menu failed to initialize");
-    expect(main.indexOf("gfx_draw_surface(1)")).toBeLessThan(
-      main.indexOf("devmenu_draw(auxiliary_target)"),
-    );
-    expect(makefile).toContain("-lcitro2d -lcitro3d");
+    expect(main).toContain("auxiliary_list = devmenu_draw_list(&auxiliary_words)");
+    expect(makefile).not.toContain("-lcitro2d");
+    expect(makefile).toContain("-lcitro3d");
   });
 
   test("feeds pak images through the shared IMG-entry parser", () => {

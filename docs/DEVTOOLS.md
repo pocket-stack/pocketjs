@@ -111,8 +111,9 @@ The shim needs only `{ send(line), recv() -> line | null }`:
   directly to the panel. `--host <ip>` remains available when LAN broadcast is
   unavailable. **`L+R+SELECT` opens a Runtime-owned menu on the 3DS bottom
   screen with its IP, pairing and connection state, generation, package hash,
-  and counters.** The host draws it after the guest and blocks guest input until
-  the menu keys are released; it is not an application capability. **`.pocket`
+  and counters.** The host replaces the bottom guest DrawList with its own menu
+  DrawList and blocks guest input until the menu keys are released; it is not
+  an application capability. **`.pocket`
   updates and dual-screen RGB8 captures use bounded binary frames on the same
   ordered TCP connection and never enter QuickJS.** The TCP and UDP listeners
   are absent when `sdmc:/pocketjs/runtime/dev.key` is absent. Package updates

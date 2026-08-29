@@ -223,6 +223,27 @@ describe("Nintendo 3DS Pocket Runtime wire", () => {
     expect(run.exitCode, run.stderr.toString()).toBe(0);
   });
 
+  test("the native menu emits one bounded rectangle-only DrawList", () => {
+    const directory = mkdtempSync(join(tmpdir(), "pocketjs-3ds-devmenu-"));
+    temporary.push(directory);
+    const binary = join(directory, "devmenu-test");
+    const compiler = Bun.which("cc");
+    expect(compiler).not.toBeNull();
+    const compile = Bun.spawnSync([
+      compiler!,
+      "-std=c11",
+      `-I${join(ROOT, "hosts/3ds/src")}`,
+      `-I${join(ROOT, "hosts/3ds/include")}`,
+      join(ROOT, "tests/fixtures/3ds-devmenu.c"),
+      join(ROOT, "hosts/3ds/src/devmenu.c"),
+      "-o",
+      binary,
+    ]);
+    expect(compile.exitCode, compile.stderr.toString()).toBe(0);
+    const run = Bun.spawnSync([binary]);
+    expect(run.exitCode, run.stderr.toString()).toBe(0);
+  });
+
   test("the client survives fragmented handshake, uploads, control, and screenshot frames", async () => {
     const token = Uint8Array.from({ length: 32 }, (_, index) => 255 - index);
     let peer: Socket | null = null;

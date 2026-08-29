@@ -91,7 +91,7 @@ endif
 
 LDFLAGS := -specs=3dsx.specs $(ARCH) -Wl,--gc-sections -Wl,-Map,$(BUILD)/pocketjs-3ds.map
 LIBPATHS := -L$(DEVKITPRO)/libctru/lib
-LIBS := -lcitro2d -lcitro3d -lctru -lm
+LIBS := -lcitro3d -lctru -lm
 
 OBJECTS := $(BUILD)/main.o $(BUILD)/runtime.o $(BUILD)/dev_protocol.o $(BUILD)/devserver.o $(BUILD)/devmenu.o $(BUILD)/gfx.o $(BUILD)/qjs.o $(BUILD)/input.o $(BUILD)/vshader_shbin.o
 ELF := $(BUILD)/pocketjs-3ds.elf
