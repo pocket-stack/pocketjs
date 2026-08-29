@@ -424,17 +424,26 @@ async function dev(): Promise<void> {
     }
     if (!rawNotice && socket.readyState === WebSocket.OPEN) socket.send(line);
   });
-  session.on("socketError", (error) => console.error(`3ds-dev: socket: ${String(error)}`));
+  let reconnectFailures = 0;
   session.on("connect", (_client: PocketRuntimeClient, ack) => {
     console.log(
       `connected ${target.host}:${target.port} — abi ${ack.hostAbi}, generation ${ack.generation}, active ${ack.activeHash.toString(16).padStart(16, "0")}`,
     );
   });
-  session.on("disconnect", () => console.error("3ds-dev: runtime disconnected; reconnecting"));
+  session.on("disconnect", () => {
+    reconnectFailures = 0;
+    console.error("3ds-dev: runtime disconnected; reconnecting");
+  });
   session.on("reconnectError", (error) => {
-    console.error(`3ds-dev: reconnect waiting: ${error instanceof Error ? error.message : String(error)}`);
+    reconnectFailures += 1;
+    if (reconnectFailures === 1 || reconnectFailures % 12 === 0) {
+      const detail = error instanceof Error ? error.message : String(error);
+      const attempts = reconnectFailures === 1 ? "" : ` (${reconnectFailures} attempts)`;
+      console.error(`3ds-dev: reconnect waiting: ${detail}${attempts}`);
+    }
   });
   session.on("reconnect", (client: PocketRuntimeClient, ack) => {
+    reconnectFailures = 0;
     console.log(
       `reconnected ${target.host}:${target.port} — abi ${ack.hostAbi}, generation ${ack.generation}, active ${ack.activeHash.toString(16).padStart(16, "0")}`,
     );
