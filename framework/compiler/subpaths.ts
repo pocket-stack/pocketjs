@@ -14,9 +14,12 @@
 // string resolves under every framework; an object resolves only under the
 // frameworks it lists, and pass 1 walks exactly what resolves — so widening
 // a row changes class-string collection and therefore styles.bin bytes.
-// gesture/kinetics/osk/virtual-list are declared solid-only for exactly that
-// reason: their npm export exists, but vue-vapor/octane builds must not
-// silently walk (or resolve) their Solid-flavored implementations.
+// osk/virtual-list are declared solid-only for exactly that reason: their
+// npm export exists, but vue-vapor/octane builds must not silently walk (or
+// resolve) their Solid-flavored implementations. gesture/kinetics keep their
+// recognizer/scroller machinery in framework-neutral core modules and list a
+// per-framework shim for solid and vue-vapor (octane still does not resolve
+// them).
 
 import type { PocketFramework } from "../src/config.ts";
 
@@ -67,7 +70,13 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   devtools: { file: "framework/src/devtools.ts" },
   effects: { file: "framework/src/effects.ts", aliases: TWINS },
   fs: { file: "framework/src/fs-api.ts", aliases: TWINS },
-  gesture: { file: { solid: "framework/src/gesture.ts" } },
+  gesture: {
+    file: {
+      solid: "framework/src/gesture.ts",
+      "vue-vapor": "framework/src/gesture.vue-vapor.ts",
+    },
+    aliases: ["vue-vapor"],
+  },
   host: { file: "framework/src/host.ts" },
   lifecycle: {
     file: {
@@ -79,7 +88,13 @@ export const SUBPATHS: Record<string, SubpathDecl> = {
   },
   hot: { file: "framework/src/hot.ts" },
   input: { file: "framework/src/input-api.ts", aliases: TWINS },
-  kinetics: { file: { solid: "framework/src/kinetics.ts" } },
+  kinetics: {
+    file: {
+      solid: "framework/src/kinetics.ts",
+      "vue-vapor": "framework/src/kinetics.vue-vapor.ts",
+    },
+    aliases: ["vue-vapor"],
+  },
   launcher: { file: "framework/src/launcher.ts" },
   manifest: { file: "framework/src/manifest/index.ts" },
   net: { file: "framework/src/net-api.ts", aliases: TWINS },

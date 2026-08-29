@@ -113,6 +113,20 @@ createGesture({
 `region.node` 圈定命中子树;不给 region 就是全屏识别器。速度和长按走
 虚拟时钟——30Hz 模拟测试与 60Hz 真机数值逐位一致。
 
+双指是同一个模型的延伸:`onPinchStart/Move/End` 观察同一识别器名下
+最早落下的两根未被认领的手指。**跨距(span)按识别器的 `axis` 投影——
+`"y"` 是 |ay−by|,整数;`"any"` 是欧氏距离,一次 IEEE 精确的
+`Math.sqrt`。** 跨距变化越过 `pinchSlop` 且大于质心位移时,pinch 一次
+认领两根手指(两指同向平移是滚动,不是捏合——质心项就是这个判据),
+每帧交付 `GesturePinch`:两指位置、质心、`span/startSpan/dspan/fdspan`。
+pinch 检查在单指 pan 认领之前跑,所以两指张开赢过它自己的滚动;任一
+手指抬起或被取消,`onPinchEnd` 带着最终几何收尾。
+
+手势层和动力学层是框架中立的(核心在 `gesture-core.ts` /
+`kinetics-core.ts`):Solid 与 Vue Vapor 各有一层薄壳,差别只是
+`createGesture` 挂接哪个作用域的清理钩子、offset 绑定 signal 还是
+shallowRef。Vue Vapor 入口跑同一个手势泵,收同样的命中事实。
+
 ## 4. 自定义动力学表面:createScroller
 
 VirtualList 不合身时(画布平移、carousel、缩放视口),物理引擎单独可用:

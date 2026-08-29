@@ -480,6 +480,7 @@ describe("semantic resolution", () => {
       cafe: [true, true, false, true],
       cards: [true, true, false, true],
       chrome: [true, true, false, true],
+      clear: [false, false, false, false], // admitted only by the private ipodtouch4-dev profile (fixed 320x480 portrait touch surface)
       cursor: [true, true, false, true],
       gallery: [true, true, false, true],
       hero: [true, true, true, true],

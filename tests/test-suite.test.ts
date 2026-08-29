@@ -85,4 +85,15 @@ describe("declared test suite", () => {
     expect(ipodtouchTests).not.toHaveLength(0);
     expect(ipodtouchTests.filter((file) => !declared.has(file))).toEqual([]);
   });
+
+  test("runs every iPod touch 4 test in the CI unit stage", () => {
+    const declared = unitTestFiles();
+    const ipodtouch4Tests = readdirSync(join(repository, "tests"))
+      .filter((file) => /^ipodtouch4-.*\.test\.ts$/.test(file))
+      .map((file) => `tests/${file}`)
+      .sort();
+
+    expect(ipodtouch4Tests).not.toHaveLength(0);
+    expect(ipodtouch4Tests.filter((file) => !declared.has(file))).toEqual([]);
+  });
 });

@@ -632,13 +632,12 @@ int pocket_runtime_boot(
 /* One guest turn (frame call + job drain), then `tick_count` core ticks. */
 static int run_frame(
   uint32_t buttons,
-  int touch_down,
-  int touch_x,
-  int touch_y,
-  int touch_hit,
+  const PocketRuntimeContact *contacts,
+  unsigned int contact_count,
   unsigned int tick_count
 ) {
   unsigned int tick;
+  unsigned int index;
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
   JSValue touch_array = JS_NewArray(context);
   JSValue hit_array = JS_NewArray(context);
@@ -649,23 +648,28 @@ static int run_frame(
     runtime_failed = 1;
     return 0;
   }
-  if (touch_down) {
-    uint32_t x = (uint32_t)(touch_x < 0 ? 0 : touch_x > 1023 ? 1023 : touch_x);
-    uint32_t y = (uint32_t)(touch_y < 0 ? 0 : touch_y > 1023 ? 1023 : touch_y);
+  if (contact_count > POCKET_RUNTIME_MAX_CONTACTS) {
+    contact_count = POCKET_RUNTIME_MAX_CONTACTS;
+  }
+  for (index = 0; index < contact_count; index += 1) {
+    const PocketRuntimeContact *contact = &contacts[index];
+    uint32_t id = (uint32_t)(contact->id & 0xff);
+    uint32_t x = (uint32_t)(contact->x < 0 ? 0 : contact->x > 1023 ? 1023 : contact->x);
+    uint32_t y = (uint32_t)(contact->y < 0 ? 0 : contact->y > 1023 ? 1023 : contact->y);
     uint32_t packed = x > 511 || y > 511
-      ? 0x80000000U | (y << 10) | x
-      : (y << 9) | x;
+      ? 0x80000000U | (id << 20) | (y << 10) | x
+      : (id << 18) | (y << 9) | x;
     if (JS_SetPropertyUint32(
           context,
           touch_array,
-          0,
+          index,
           JS_NewInt32(context, (int32_t)packed)
         ) < 0 ||
         JS_SetPropertyUint32(
           context,
           hit_array,
-          0,
-          JS_NewInt32(context, touch_hit)
+          index,
+          JS_NewInt32(context, contact->hit)
         ) < 0) {
       JS_FreeValue(context, hit_array);
       JS_FreeValue(context, touch_array);
@@ -697,16 +701,47 @@ static int run_frame(
   return 1;
 }
 
+/* The single-touch entries pack one id-0 contact, byte-identical on the wire. */
+static unsigned int single_contact(
+  PocketRuntimeContact *contact,
+  int touch_down,
+  int touch_x,
+  int touch_y,
+  int touch_hit
+) {
+  if (!touch_down) return 0;
+  contact->id = 0;
+  contact->x = touch_x;
+  contact->y = touch_y;
+  contact->hit = touch_hit;
+  return 1;
+}
+
 int pocket_runtime_tick(const PocketRuntimeInput *input) {
+  PocketRuntimeContact contact;
+  unsigned int count;
   if (input == 0) return 0;
-  return run_frame(
-    input->buttons,
+  count = single_contact(
+    &contact,
     input->touch_down,
     input->touch_x,
     input->touch_y,
-    input->touch_hit,
-    1
+    input->touch_hit
   );
+  return run_frame(input->buttons, &contact, count, 1);
+}
+
+int pocket_runtime_tick_contacts(const PocketRuntimeContactsInput *input) {
+  if (input == 0) return 0;
+  return run_frame(input->buttons, input->contacts, input->contact_count, 1);
+}
+
+int pocket_runtime_frame_contacts(
+  const PocketRuntimeContactsInput *input,
+  unsigned int tick_count
+) {
+  if (input == 0) return 0;
+  return run_frame(input->buttons, input->contacts, input->contact_count, tick_count);
 }
 
 int pocket_runtime_frame_ticks(
@@ -716,7 +751,9 @@ int pocket_runtime_frame_ticks(
   int touch_hit,
   unsigned int tick_count
 ) {
-  return run_frame(0, touch_down, touch_x, touch_y, touch_hit, tick_count);
+  PocketRuntimeContact contact;
+  unsigned int count = single_contact(&contact, touch_down, touch_x, touch_y, touch_hit);
+  return run_frame(0, &contact, count, tick_count);
 }
 
 int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit) {

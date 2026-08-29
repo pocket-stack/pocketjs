@@ -51,6 +51,7 @@ const SUITE: readonly Stage[] = [
       "tests/iphone2g-profile.test.ts",
       "tests/iphone4s-profile.test.ts",
       "tests/ipodtouch-profile.test.ts",
+      "tests/ipodtouch4-profile.test.ts",
       "tests/meizu-m8-profile.test.ts",
       "tests/blackberry-classic.test.ts",
       "tests/pocket-input.test.ts",
@@ -113,6 +114,12 @@ const SUITE: readonly Stage[] = [
     ],
     browser: true,
     tests: ["tests/vue-sfc-lab.test.ts"],
+  },
+  {
+    name: "clear journeys",
+    prep: [["bun", "tools/build.ts", "clear-main", "--framework=vue-vapor"]],
+    browser: true,
+    tests: ["tests/clear.test.ts"],
   },
   {
     name: "octane smoke",

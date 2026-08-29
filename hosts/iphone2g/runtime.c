@@ -210,14 +210,34 @@ static size_t g_framebuffer_length;
 static int32_t g_drawable_width;
 static int32_t g_drawable_height;
 
-static int g_touch_down;
+/*
+ * Touch contacts, one slot per finger, mirroring the modern host's slot table
+ * (engine/apple/apple/PocketSurfaceView.m). The slot index is the wire
+ * contact id; a released slot stays latched until it has been delivered in at
+ * least one guest frame, so a sub-frame tap still produces a down/up pair;
+ * and the bounds hit is resolved once at the down edge and carried for the
+ * contact's lifetime. `touch` stores the UITouch pointer purely as an
+ * identity key while the finger is down — it is never messaged. The 1.x
+ * GSEvent fallback has no per-finger identity and owns slot 0 alone.
+ */
+#define POCKET_TOUCH_SLOT_COUNT 8
+
+typedef struct {
+  id touch;
+  int live;
+  int ending;
+  int was_sent;
+  int needs_hit;
+  int hit;
+  int x;
+  int y;
+} PocketTouchSlot;
+
+static PocketTouchSlot g_touch_slots[POCKET_TOUCH_SLOT_COUNT];
+/* Most recent contact position and hit, kept for the acceptance record. */
 static int g_touch_x;
 static int g_touch_y;
-static int g_touch_hit;
 static int g_last_touch_hit;
-static int g_touch_needs_hit;
-static int g_touch_was_sent;
-static int g_touch_release_after_frame;
 static int g_touch_awaiting_completion;
 /*
  * Which path actually drew the last frame. This is recorded rather than
@@ -277,6 +297,15 @@ static unsigned long g_window_start_frame;
 static unsigned long g_window_frames;
 static unsigned long g_window_us;
 static unsigned long g_observed_action_sequence;
+
+static int touch_live_count(void) {
+  int count = 0;
+  int index;
+  for (index = 0; index < POCKET_TOUCH_SLOT_COUNT; index += 1) {
+    if (g_touch_slots[index].live) count += 1;
+  }
+  return count;
+}
 
 static size_t cstring_length(const char *text) {
   size_t length = 0;
@@ -339,7 +368,7 @@ static void write_acceptance_record(void) {
     g_guest_frames,
     g_touch_sequences,
     g_completed_touch_sequences,
-    g_touch_down,
+    touch_live_count(),
     g_touch_x,
     g_touch_y,
     g_last_touch_hit,
@@ -741,7 +770,7 @@ static int draw_framebuffer(CGContextRef context, CGRect bounds, CGRect dirty) {
   return 1;
 }
 
-static void update_touch_point(CGPoint point) {
+static void logical_touch_point(CGPoint point, int *out_x, int *out_y) {
   float local_x = point.x;
   float local_y = point.y;
   float view_width = g_content_frame.size.width;
@@ -752,6 +781,8 @@ static void update_touch_point(CGPoint point) {
   int logical_height = g_framebuffer_height == 0
     ? POCKET_LOGICAL_HEIGHT
     : (int)g_framebuffer_height;
+  int x;
+  int y;
 
   if (view_width <= 0.0f) {
     view_width = (float)logical_width;
@@ -760,21 +791,23 @@ static void update_touch_point(CGPoint point) {
     view_height = (float)logical_height;
   }
 
-  g_touch_x = (int)(local_x * (float)logical_width / view_width);
-  g_touch_y = (int)(local_y * (float)logical_height / view_height);
-  if (g_touch_x < 0) {
-    g_touch_x = 0;
-  } else if (g_touch_x >= logical_width) {
-    g_touch_x = logical_width - 1;
+  x = (int)(local_x * (float)logical_width / view_width);
+  y = (int)(local_y * (float)logical_height / view_height);
+  if (x < 0) {
+    x = 0;
+  } else if (x >= logical_width) {
+    x = logical_width - 1;
   }
-  if (g_touch_y < 0) {
-    g_touch_y = 0;
-  } else if (g_touch_y >= logical_height) {
-    g_touch_y = logical_height - 1;
+  if (y < 0) {
+    y = 0;
+  } else if (y >= logical_height) {
+    y = logical_height - 1;
   }
+  *out_x = x;
+  *out_y = y;
 }
 
-static int update_gsevent_location(id event) {
+static int update_gsevent_location(id event, int *out_x, int *out_y) {
   typedef CGPoint (*GSEventLocationFunction)(GSEventRef event);
   static GSEventLocationFunction function;
   static int resolved;
@@ -791,20 +824,7 @@ static int update_gsevent_location(id event) {
   point = function((GSEventRef)event);
   point.x -= g_content_frame.origin.x;
   point.y -= g_content_frame.origin.y;
-  update_touch_point(point);
-  return 1;
-}
-
-static int update_uitouch_location(id self, id touches) {
-  id touch;
-  if (touches == NULL) {
-    return 0;
-  }
-  touch = send_id(touches, "anyObject");
-  if (touch == NULL) {
-    return 0;
-  }
-  update_touch_point(send_point_object(touch, "locationInView:", self));
+  logical_touch_point(point, out_x, out_y);
   return 1;
 }
 
@@ -886,6 +906,18 @@ static BOOL send_bool_uint(id receiver, const char *selector, uint32_t target) {
     receiver,
     sel_registerName(selector),
     target
+  );
+}
+
+static unsigned long send_ulong(id receiver, const char *selector) {
+  return ((unsigned long (*)(id, SEL))objc_msgSend)(receiver, sel_registerName(selector));
+}
+
+static id send_id_ulong(id receiver, const char *selector, unsigned long value) {
+  return ((id (*)(id, SEL, unsigned long))objc_msgSend)(
+    receiver,
+    sel_registerName(selector),
+    value
   );
 }
 
@@ -1232,6 +1264,7 @@ static void invalidate_damaged_region(void) {
 }
 
 static void pocket_tick(id self, SEL command, id timer) {
+  PocketRuntimeContactsInput frame_input;
   int completed_touch;
   int delivered_touch;
   int reported_action;
@@ -1252,25 +1285,49 @@ static void pocket_tick(id self, SEL command, id timer) {
     return;
   }
 
-  if (g_touch_down && g_touch_needs_hit) {
-    g_touch_hit = pocket_runtime_hit_test_bounds((float)g_touch_x, (float)g_touch_y);
-    g_last_touch_hit = g_touch_hit;
-    g_touch_needs_hit = 0;
+  {
+    int index;
+    frame_input.buttons = 0;
+    frame_input.contact_count = 0;
+    for (index = 0; index < POCKET_TOUCH_SLOT_COUNT; index += 1) {
+      PocketTouchSlot *slot = &g_touch_slots[index];
+      PocketRuntimeContact *contact;
+      if (!slot->live && !slot->ending) continue;
+      if (slot->needs_hit) {
+        slot->hit = pocket_runtime_hit_test_bounds((float)slot->x, (float)slot->y);
+        g_last_touch_hit = slot->hit;
+        slot->needs_hit = 0;
+      }
+      contact = &frame_input.contacts[frame_input.contact_count];
+      contact->id = index;
+      contact->x = slot->x;
+      contact->y = slot->y;
+      contact->hit = slot->hit;
+      frame_input.contact_count += 1;
+    }
   }
-  delivered_touch = g_touch_down;
+  delivered_touch = frame_input.contact_count > 0;
   frame_started_us = now_us();
-  if (!pocket_runtime_frame(g_touch_down, g_touch_x, g_touch_y, g_touch_hit)) {
+  if (!pocket_runtime_frame_contacts(&frame_input, 2)) {
     fail_runtime(pocket_runtime_error());
     return;
   }
   present_started_us = now_us();
   g_guest_frames += 1;
-  if (delivered_touch) {
-    g_touch_was_sent = 1;
-  }
-  if (g_touch_release_after_frame) {
-    g_touch_down = 0;
-    g_touch_release_after_frame = 0;
+  {
+    int index;
+    for (index = 0; index < POCKET_TOUCH_SLOT_COUNT; index += 1) {
+      PocketTouchSlot *slot = &g_touch_slots[index];
+      if (slot->live) {
+        slot->was_sent = 1;
+      } else if (slot->ending) {
+        /* The release-latched contact has now been delivered once. */
+        slot->ending = 0;
+        slot->was_sent = 0;
+        slot->needs_hit = 0;
+        slot->hit = 0;
+      }
+    }
   }
   completed_touch = !delivered_touch && g_touch_awaiting_completion;
   if (completed_touch) {
@@ -1385,61 +1442,149 @@ static void pocket_draw_rect(id self, SEL command, CGRect rect) {
   g_composites += 1;
 }
 
-static void begin_touch(void) {
-  g_touch_down = 1;
+static PocketTouchSlot *touch_slot_for(id touch) {
+  int index;
+  if (touch == NULL) return NULL;
+  for (index = 0; index < POCKET_TOUCH_SLOT_COUNT; index += 1) {
+    PocketTouchSlot *slot = &g_touch_slots[index];
+    if (slot->live && slot->touch == touch) return slot;
+  }
+  return NULL;
+}
+
+static void touch_slot_begin(PocketTouchSlot *slot, id touch, int x, int y) {
+  slot->touch = touch;
+  slot->live = 1;
+  slot->ending = 0;
+  slot->was_sent = 0;
+  slot->x = x;
+  slot->y = y;
+  g_touch_x = x;
+  g_touch_y = y;
   g_touch_sequences += 1;
-  g_touch_was_sent = 0;
-  g_touch_release_after_frame = 0;
   g_touch_awaiting_completion = 0;
   if (g_state == POCKET_STATE_RUNNING) {
-    g_touch_hit = pocket_runtime_hit_test_bounds((float)g_touch_x, (float)g_touch_y);
-    g_last_touch_hit = g_touch_hit;
-    g_touch_needs_hit = 0;
+    slot->hit = pocket_runtime_hit_test_bounds((float)x, (float)y);
+    slot->needs_hit = 0;
+    g_last_touch_hit = slot->hit;
   } else {
-    g_touch_hit = 0;
-    g_touch_needs_hit = 1;
+    slot->hit = 0;
+    slot->needs_hit = 1;
   }
 }
 
-static void end_touch(void) {
-  if (!g_touch_down) {
-    return;
+static PocketTouchSlot *touch_slot_allocate(void) {
+  int index;
+  for (index = 0; index < POCKET_TOUCH_SLOT_COUNT; index += 1) {
+    PocketTouchSlot *slot = &g_touch_slots[index];
+    if (!slot->live && !slot->ending) return slot;
   }
-  g_touch_awaiting_completion = 1;
-  if (g_touch_was_sent) {
-    g_touch_down = 0;
-    g_touch_hit = 0;
-    g_touch_needs_hit = 0;
+  return NULL;
+}
+
+static void touch_slot_move(PocketTouchSlot *slot, int x, int y) {
+  slot->x = x;
+  slot->y = y;
+  g_touch_x = x;
+  g_touch_y = y;
+}
+
+static void touch_slot_end(PocketTouchSlot *slot, int x, int y) {
+  if (!slot->live) return;
+  touch_slot_move(slot, x, y);
+  slot->touch = NULL;
+  slot->live = 0;
+  if (touch_live_count() == 0) {
+    g_touch_awaiting_completion = 1;
+  }
+  if (slot->was_sent) {
+    slot->ending = 0;
+    slot->needs_hit = 0;
+    slot->hit = 0;
   } else {
-    /* Keep a very short tap alive until at least one 60 Hz guest frame. */
-    g_touch_release_after_frame = 1;
+    /* Keep a very short tap alive until at least one delivered guest frame. */
+    slot->ending = 1;
   }
 }
 
+/* The GSEvent fallback has one implicit finger; it owns slot 0 alone. */
 static void pocket_mouse_down(id self, SEL command, id event) {
+  int x;
+  int y;
   (void)self;
   (void)command;
-  if (update_gsevent_location(event)) {
-    begin_touch();
+  if (g_touch_slots[0].live || g_touch_slots[0].ending) {
+    return;
+  }
+  if (update_gsevent_location(event, &x, &y)) {
+    touch_slot_begin(&g_touch_slots[0], NULL, x, y);
   }
 }
 
 static void pocket_mouse_dragged(id self, SEL command, id event) {
+  int x;
+  int y;
   (void)self;
   (void)command;
-  if (g_touch_down) {
-    update_gsevent_location(event);
+  if (g_touch_slots[0].live && update_gsevent_location(event, &x, &y)) {
+    touch_slot_move(&g_touch_slots[0], x, y);
   }
 }
 
 static void pocket_mouse_up(id self, SEL command, id event) {
+  int x;
+  int y;
   (void)self;
   (void)command;
-  if (!g_touch_down) {
+  if (!g_touch_slots[0].live) {
     return;
   }
-  update_gsevent_location(event);
-  end_touch();
+  if (!update_gsevent_location(event, &x, &y)) {
+    x = g_touch_slots[0].x;
+    y = g_touch_slots[0].y;
+  }
+  touch_slot_end(&g_touch_slots[0], x, y);
+}
+
+typedef void (*PocketTouchVisitor)(id self, id touch, int x, int y);
+
+static void visit_touches(id self, id touches, PocketTouchVisitor visitor) {
+  id array;
+  unsigned long count;
+  unsigned long index;
+  if (touches == NULL) return;
+  array = send_id(touches, "allObjects");
+  if (array == NULL) return;
+  count = send_ulong(array, "count");
+  for (index = 0; index < count; index += 1) {
+    id touch = send_id_ulong(array, "objectAtIndex:", index);
+    int x;
+    int y;
+    if (touch == NULL) continue;
+    logical_touch_point(send_point_object(touch, "locationInView:", self), &x, &y);
+    visitor(self, touch, x, y);
+  }
+}
+
+static void visit_touch_began(id self, id touch, int x, int y) {
+  PocketTouchSlot *slot;
+  (void)self;
+  if (touch_slot_for(touch) != NULL) return;
+  slot = touch_slot_allocate();
+  if (slot == NULL) return;
+  touch_slot_begin(slot, touch, x, y);
+}
+
+static void visit_touch_moved(id self, id touch, int x, int y) {
+  PocketTouchSlot *slot = touch_slot_for(touch);
+  (void)self;
+  if (slot != NULL) touch_slot_move(slot, x, y);
+}
+
+static void visit_touch_ended(id self, id touch, int x, int y) {
+  PocketTouchSlot *slot = touch_slot_for(touch);
+  (void)self;
+  if (slot != NULL) touch_slot_end(slot, x, y);
 }
 
 static void pocket_touches_began(
@@ -1450,9 +1595,7 @@ static void pocket_touches_began(
 ) {
   (void)command;
   (void)event;
-  if (update_uitouch_location(self, touches)) {
-    begin_touch();
-  }
+  visit_touches(self, touches, visit_touch_began);
 }
 
 static void pocket_touches_moved(
@@ -1463,9 +1606,7 @@ static void pocket_touches_moved(
 ) {
   (void)command;
   (void)event;
-  if (g_touch_down) {
-    (void)update_uitouch_location(self, touches);
-  }
+  visit_touches(self, touches, visit_touch_moved);
 }
 
 static void pocket_touches_ended(
@@ -1476,10 +1617,7 @@ static void pocket_touches_ended(
 ) {
   (void)command;
   (void)event;
-  if (g_touch_down) {
-    (void)update_uitouch_location(self, touches);
-    end_touch();
-  }
+  visit_touches(self, touches, visit_touch_ended);
 }
 
 /*
@@ -1595,7 +1733,7 @@ static void launch_application(id self, id application) {
   copy_status_message("Starting embedded demo");
   write_acceptance_record();
   if (responds_to(g_view, "setMultipleTouchEnabled:")) {
-    send_void_bool(g_view, "setMultipleTouchEnabled:", NO);
+    send_void_bool(g_view, "setMultipleTouchEnabled:", YES);
   }
   if (responds_to(g_window, "makeKeyAndVisible")) {
     send_void_object(g_window, "addSubview:", g_view);

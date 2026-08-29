@@ -30,6 +30,34 @@ typedef struct {
 int pocket_runtime_tick(const PocketRuntimeInput *input);
 
 /*
+ * Multi-contact frame entry. `id` is the host's contact slot (0-255, stable
+ * while the finger stays down, reusable after release), `x`/`y` are logical
+ * pixels, and `hit` is the bounds hit resolved once at the contact's down
+ * edge (pocket_runtime_hit_test_bounds) or zero. Contacts pack into the
+ * frame() wire words — legacy x:9/y:9/id:8 below 512 logical pixels, the
+ * wide bit-31 form above — so a single id-0 contact is byte-identical to the
+ * single-touch entry points and every existing tape. The guest snapshot caps
+ * at eight contacts (framework/src/touch.ts).
+ */
+#define POCKET_RUNTIME_MAX_CONTACTS 8
+typedef struct {
+  int id;
+  int x;
+  int y;
+  int hit;
+} PocketRuntimeContact;
+typedef struct {
+  uint32_t buttons;
+  unsigned int contact_count;
+  PocketRuntimeContact contacts[POCKET_RUNTIME_MAX_CONTACTS];
+} PocketRuntimeContactsInput;
+int pocket_runtime_tick_contacts(const PocketRuntimeContactsInput *input);
+int pocket_runtime_frame_contacts(
+  const PocketRuntimeContactsInput *input,
+  unsigned int tick_count
+);
+
+/*
  * Legacy frame entry points for the original iPhone host, which presents at
  * 30 Hz and advances two core ticks per guest turn, and for the Windows CE
  * host's tick-count form. They pass an empty button mask. New hosts call
