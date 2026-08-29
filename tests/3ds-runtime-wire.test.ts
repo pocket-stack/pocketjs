@@ -247,13 +247,13 @@ describe("Nintendo 3DS Pocket Runtime wire", () => {
 
   test("the client survives fragmented handshake, uploads, control, and screenshot frames", async () => {
     const token = Uint8Array.from({ length: 32 }, (_, index) => 255 - index);
-    let peer: Socket | null = null;
+    const connection: { peer: Socket | null } = { peer: null };
     let incoming = new Uint8Array(0);
     let authenticated = false;
     const decoder = new PocketRuntimeFrameDecoder();
     const uploaded: Uint8Array[] = [];
     const server = createServer((socket) => {
-      peer = socket;
+      connection.peer = socket;
       socket.on("data", (chunk: Buffer) => {
         const joined = new Uint8Array(incoming.length + chunk.length);
         joined.set(incoming);
@@ -345,7 +345,7 @@ describe("Nintendo 3DS Pocket Runtime wire", () => {
       expect(image.png.subarray(1, 4).toString()).toBe("PNG");
     } finally {
       client.close();
-      peer?.destroy();
+      connection.peer?.destroy();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
