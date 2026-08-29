@@ -105,8 +105,6 @@ function header(active: string): string {
           <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 3l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <div class="menu-list">
-          <a href="https://pocketlab.build">Lab</a>
-          <a href="https://museum.pocketlab.build">Museum</a>
           <a href="/playground/">Playground</a>
           <a href="/changelog/">Changelog</a>
         </div>
@@ -128,10 +126,6 @@ const footer = `<footer class="foot">
         <a href="/playground/">Playground</a>
         <a href="/blog/">Blog</a>
         <a href="/changelog/">Changelog</a>
-      </span>
-      <span class="fgrp"><span class="fdot" aria-hidden="true">·</span>
-        <a href="https://pocketlab.build">Pocket Lab</a>
-        <a href="https://museum.pocketlab.build">Pocket Museum</a>
       </span>
       <span class="fgrp"><span class="fdot" aria-hidden="true">·</span>
         <a href="${GH}" target="_blank" rel="noreferrer">GitHub</a>

@@ -304,12 +304,34 @@ export function deriveIPhone2GGuestArtifacts(
   };
 }
 
+/** Apps admitted to the iPhone 2G flow and the action each one reports for
+ *  the on-glass acceptance receipt. Selected via POCKETJS_IPHONE2G_APP
+ *  (default: the demo). */
+const IPHONE2G_APP_ACTIONS: Record<string, string> = {
+  "iphone2g-demo": "hero_tap",
+  clear: "clear_gesture",
+};
+
+function iphone2gAppName(): string {
+  const app = process.env.POCKETJS_IPHONE2G_APP?.trim() || "iphone2g-demo";
+  if (!(app in IPHONE2G_APP_ACTIONS)) {
+    throw new Error(
+      `PocketJS iPhone 2G: unknown app '${app}' (POCKETJS_IPHONE2G_APP accepts: ${Object.keys(IPHONE2G_APP_ACTIONS).join(", ")})`,
+    );
+  }
+  return app;
+}
+
+function iphone2gExpectedAction(): string {
+  return IPHONE2G_APP_ACTIONS[iphone2gAppName()];
+}
+
 function iphone2gManifestPath(): string {
-  return join(repository, "apps/iphone2g-demo/pocket.json");
+  return join(repository, `apps/${iphone2gAppName()}/pocket.json`);
 }
 
 function iphone2gPlanPath(): string {
-  return join(repository, ".pocket/iphone2g/iphone2g-demo.plan.json");
+  return join(repository, `.pocket/iphone2g/${iphone2gAppName()}.plan.json`);
 }
 
 function iphone2gGuestOutputDirectory(): string {
@@ -1229,6 +1251,12 @@ function tunnelIsListening(): boolean {
   return probe.exitCode === 0;
 }
 
+/** Pin the usbmux tunnel to one device when several are attached. */
+function iphone2gUdidArgs(): string[] {
+  const udid = process.env.POCKETJS_IPHONE2G_UDID?.trim();
+  return udid ? ["-u", udid] : [];
+}
+
 async function withManagedTunnel<T>(
   operation: () => T | Promise<T>,
 ): Promise<T> {
@@ -1239,6 +1267,7 @@ async function withManagedTunnel<T>(
       iproxy,
       String(IPHONE2G_TOOLCHAIN.deployment.localPort),
       String(IPHONE2G_TOOLCHAIN.deployment.devicePort),
+      ...iphone2gUdidArgs(),
       "-s",
       "127.0.0.1",
     ],
@@ -1276,6 +1305,7 @@ function runTunnel(): never {
       iproxy,
       String(IPHONE2G_TOOLCHAIN.deployment.localPort),
       String(IPHONE2G_TOOLCHAIN.deployment.devicePort),
+      ...iphone2gUdidArgs(),
       "-s",
       "127.0.0.1",
     ],
@@ -2178,6 +2208,7 @@ function statusCounter(
 export function parseIPhone2GDeviceStatus(
   text: string,
   expectedBuildId: string,
+  expectedAction: string = "hero_tap",
 ): IPhone2GDeviceStatus {
   const lines = text.trim().split(/\r?\n/);
   const pairs = lines.map((line) => {
@@ -2223,14 +2254,14 @@ export function parseIPhone2GDeviceStatus(
     !countersAreValid ||
     !positiveAcceptanceCounters ||
     fields.touch_down !== "0" ||
-    fields.action_name !== "hero_tap" ||
+    fields.action_name !== expectedAction ||
     statusCounter(fields, "completed_touch_sequences") >
       statusCounter(fields, "touch_sequences") ||
     fields.state !== "running" ||
     fields.error !== ""
   ) {
     throw new Error(
-      "PocketJS iPhone 2G: runtime acceptance requires a released touch and completed Hero action",
+      `PocketJS iPhone 2G: runtime acceptance requires a released touch and a completed ${expectedAction} action`,
     );
   }
   return fields;
@@ -2278,7 +2309,10 @@ function readCurrentDeviceStatus(buildId: string): {
     );
   }
   const text = status.stdout.toString();
-  return { text, fields: parseIPhone2GDeviceStatus(text, buildId) };
+  return {
+    text,
+    fields: parseIPhone2GDeviceStatus(text, buildId, iphone2gExpectedAction()),
+  };
 }
 
 async function printDeviceStatus(): Promise<void> {

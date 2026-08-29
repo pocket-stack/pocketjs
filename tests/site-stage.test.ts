@@ -167,8 +167,8 @@ test("homepage ships the four-chapter landing", () => {
   const gen = readFileSync(ROOT + "tools/sponsors.ts", "utf8");
   expect(gen).toContain("includePrivate: false");
 
-  // Closing band: Pocket Lab, plus the two calls to action.
-  expect(home).toContain("https://pocketlab.build");
+  // Closing band: project provenance plus the remaining external call to action.
+  expect(home).toContain("Pocket Lab");
   expect(home).toContain("Star on GitHub");
   expect(home).toContain("See use cases");
 
@@ -230,29 +230,24 @@ test("every compatibility entry cites a receipt that resolves", () => {
   // Receipts, so they open in their own tab like the rest of the references.
   expect(readFileSync(ROOT + "site/assets/landing.js", "utf8")).toContain('[data-refs] a, .cgrid a');
 
-  // Keeping the hardware bootable is its own project, and the chapter says where.
-  expect(compat).toContain('<a class="olink" href="https://museum.pocketlab.build/"');
+  // Keeping the hardware bootable is its own project, without linking away.
+  expect(compat).toContain("Pocket Museum project repairs these machines");
 });
 
-test("the Pocket Lab family is one click away from every page", () => {
+test("Pocket Lab and Pocket Museum are not linked from the README or website", () => {
+  const readme = readFileSync(ROOT + "README.md", "utf8");
   const home = readFileSync(ROOT + "site/home.html", "utf8");
   const templates = readFileSync(ROOT + "site/templates.ts", "utf8");
+  for (const source of [readme, home, templates]) {
+    expect(source).not.toContain("https://pocketlab.build");
+    expect(source).not.toContain("https://museum.pocketlab.build");
+  }
   for (const source of [home, templates]) {
-    // Resources menu: the two sibling sites, in order.
-    expect(source).toMatch(
-      /<a href="https:\/\/pocketlab\.build">Lab<\/a>\s*\n\s*<a href="https:\/\/museum\.pocketlab\.build">Museum<\/a>/,
-    );
-    // Footer: the same pair in its own group rather than appended to a row of
-    // nine flat links.
-    expect(source).toMatch(
-      /<span class="fgrp"><span class="fdot" aria-hidden="true">·<\/span>\s*\n\s*<a href="https:\/\/pocketlab\.build">Pocket Lab<\/a>\s*\n\s*<a href="https:\/\/museum\.pocketlab\.build">Pocket Museum<\/a>/,
-    );
     // Every divider opens a group instead of trailing one, so a wrapped footer
     // never ends a line with a lone dot.
-    expect(source.match(/<span class="fdot"/g)).toHaveLength(2);
-    expect(source.match(/<span class="fgrp"><span class="fdot"/g)).toHaveLength(2);
-    expect(source.match(/<span class="fgrp">/g)).toHaveLength(3);
-    expect(source.match(/museum\.pocketlab\.build/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(source.match(/<span class="fdot"/g)).toHaveLength(1);
+    expect(source.match(/<span class="fgrp"><span class="fdot"/g)).toHaveLength(1);
+    expect(source.match(/<span class="fgrp">/g)).toHaveLength(2);
   }
   const chromeCss = readFileSync(ROOT + "site/assets/chrome.css", "utf8");
   expect(chromeCss).toContain(".foot .cols2 .fdot{");

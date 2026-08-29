@@ -9,9 +9,7 @@
 [Playground](https://pocketjs.dev/playground/) ·
 [Documentation](https://pocketjs.dev/docs/overview/) ·
 [Blog](https://pocketjs.dev/blog/) ·
-[Changelog](https://pocketjs.dev/changelog/) ·
-[Pocket Lab](https://pocketlab.build) ·
-[Pocket Museum](https://museum.pocketlab.build/)
+[Changelog](https://pocketjs.dev/changelog/)
 
 PocketJS is a portable application runtime that turns modern component code into
 native pixels across radically different hardware. Solid, Vue Vapor and Octane
@@ -256,8 +254,7 @@ See also: [Core concepts](https://pocketjs.dev/docs/concepts/) ·
 PocketJS has booted on every operating system below, on the real machine. What
 changes between them is one native submission layer, never the application, and
 each row links to the post or pull request that brought it up. Keeping the
-hardware bootable is its own work, tracked in
-[Pocket Museum](https://museum.pocketlab.build/).
+hardware bootable is its own work, tracked in Pocket Museum.
 
 | Operating system | Native submission layer | Receipt |
 | --- | --- | --- |
@@ -398,9 +395,8 @@ bun run site:build            # docs, playground, Stage, and landing build
 
 ## Project
 
-[Pocket Lab](https://pocketlab.build) is an independent, non-VC-backed
-organization built on this runtime, so that the joy of creating belongs to
-everyone. Development is funded by
+Pocket Lab is an independent, non-VC-backed organization built on this runtime,
+so that the joy of creating belongs to everyone. Development is funded by
 [sponsors](https://github.com/sponsors/doodlewind).
 
 ## Attribution

@@ -30,6 +30,8 @@ import { mountAuxiliarySurface, unmountAuxiliarySurface } from "./display.ts";
 import { registerStyles, resolveStyle } from "./styles.ts";
 import { handleFrame, setAuxiliaryHitRoot, setHitRoot, setInputRoot } from "./input.ts";
 import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.ts";
+import { __runGestures, resetGestures } from "./gesture.ts";
+import { installTouchActivation } from "./touch-activation.ts";
 import { __resetTouches, __setTouches } from "./touch.ts";
 import { __advanceClock, resetClock } from "./clock.ts";
 import { __drainEffects, resetEffects } from "./effects.ts";
@@ -124,6 +126,7 @@ export function resizeViewport(w: number, h: number): void {
       insetB: 0,
       insetL: 0,
       zIndex: 1000,
+      hitPass: 1,
     },
     undefined,
   );
@@ -191,6 +194,10 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
     insetB: 0,
     insetL: 0,
     zIndex: 1000,
+    // Self-transparent to hit testing (spec prop hitPass): the empty layer
+    // must not swallow bounds hit facts aimed at app content beneath it —
+    // portal/OSK content INSIDE it still claims normally.
+    hitPass: 1,
   });
   insertNode(rootMirror, appRoot);
   insertNode(rootMirror, overlayRoot);
@@ -199,9 +206,13 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   overlayLayer = overlayRoot;
 
   setInputRoot(appRoot);
-  setHitRoot(rootMirror);
+  setHitRoot(rootMirror); // hit tests see the overlay layer too
   setAuxiliaryHitRoot(auxiliary?.native ?? null);
   resetFrameHooks();
+  resetGestures();
+  // The default tap->press recognizer registers FIRST: every component
+  // gesture mounted after it wins priority (docs/TOUCH.md §0).
+  installTouchActivation();
   resetClock(); // clock policy + effect shell (docs/DETERMINISM.md), same as Solid
   resetEffects();
   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md), same as the Solid path.
@@ -215,9 +226,10 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
     ) => {
       __advanceClock();
       __setAnalog(analog);
-      __setTouches(touches, hits, touchSurfaces);
+      __setTouches(touches, hits, touchSurfaces); // latch contacts + surface-specific hit facts
       runServicePumps();
       __drainEffects();
+      __runGestures(); // contact lifecycles resolve before app hooks read them
       runFrameHooks(buttons);
       handleFrame(buttons);
       runSweep();
@@ -229,6 +241,7 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
   return () => {
     removeResizeViewportHook();
     __resetTouches();
+    resetGestures();
     dispose();
     setInputRoot(null);
     setHitRoot(null);

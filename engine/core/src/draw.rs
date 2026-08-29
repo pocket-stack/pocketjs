@@ -480,6 +480,16 @@ fn disc_texture(
     }
     let byte_len = (dim * dim * 4) as usize;
     let mut px = alloc::vec![0u8; byte_len];
+    // Solid white RGB everywhere (alpha carries coverage): bilinear sampling
+    // must never blend the fill toward black padding texels, or corners grow
+    // a dark fringe on light fills.
+    let mut i = 0;
+    while i < byte_len {
+        px[i] = 255;
+        px[i + 1] = 255;
+        px[i + 2] = 255;
+        i += 4;
+    }
     let c = raster_radius as f32; // disc center in raster pixels
     let rr = c * c;
     for y in 0..size {
@@ -498,9 +508,6 @@ fn disc_texture(
             }
             if covered > 0 {
                 let o = ((y * dim + x) * 4) as usize;
-                px[o] = 255;
-                px[o + 1] = 255;
-                px[o + 2] = 255;
                 px[o + 3] = ((covered * 255 + 8) / 16) as u8;
             }
         }
@@ -519,7 +526,13 @@ fn disc_texture(
             h: dim,
             psm: spec::psm::PSM_8888,
             palette: None,
-            linear: false,
+            // Linear: GL hosts sample the AA coverage smoothly under the
+            // fixed-function interpolators' sub-texel drift (SGX-class ES1.1
+            // parts turn NEAREST drift into staircased corners); at exact
+            // 1:1 texel alignment — every density-1 software raster — linear
+            // collapses to the nearest texel, so golden-pinned output is
+            // byte-identical.
+            linear: true,
             revision: 0,
         },
     );
