@@ -85,7 +85,7 @@ describe("Pocket Clear on the sim", () => {
     const tree = world.getTree();
     expect(treeHasText(tree, "How to Use")).toBe(true);
     expect(treeHasText(tree, "This is a demo")).toBe(true);
-    expect(treeHasText(tree, "By PocketJS + Vue Vapor")).toBe(true);
+    expect(treeHasText(tree, "PocketJS + Vue Vapor")).toBe(true);
     expect(treeHasText(tree, "Test")).toBe(true);
     expect(treeHasText(tree, "Made with PocketJS + Vue Vapor")).toBe(true);
   });

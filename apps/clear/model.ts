@@ -123,7 +123,7 @@ export function seedLists(): TodoList[] {
       "Moar test",
       "Moar test",
     ]),
-    makeList("By PocketJS + Vue Vapor", [
+    makeList("PocketJS + Vue Vapor", [
       "Tribute to @youyuxi",
       "clear.evanyou.me",
     ]),

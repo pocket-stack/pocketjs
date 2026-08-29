@@ -199,11 +199,18 @@ export default () => {
     // The pull-to-clear hint hides below the fold until an overscroll reveals it.
     if (footerNode) jump(footerNode, "translateY", Math.max(contentH, VIEW_H));
 
-    const seen = new Set<RowSlot>();
+    // Park stale slots BEFORE allocating: a list switch retires one list's
+    // rows and claims another's in the same pass, and the two together can
+    // exceed the pool (9 + 14 > 20 froze the device until this ordering).
+    const live = new Set<number>();
+    for (const todo of order) live.add(todo.id);
+    for (const slot of slots) {
+      if (slot.todoId !== -1 && !slot.busy && !live.has(slot.todoId)) parkSlot(slot);
+    }
+
     for (let index = 0; index < order.length; index += 1) {
       const todo = order[index];
       const slot = slotByTodo.get(todo.id) ?? allocSlot(todo);
-      seen.add(slot);
       slot.done.value = todo.done;
       if (editing !== todo) slot.text.value = todo.text;
 
@@ -235,10 +242,6 @@ export default () => {
         slot.gradFrom = from;
         slot.gradTo = to;
       }
-    }
-
-    for (const slot of slots) {
-      if (slot.todoId !== -1 && !seen.has(slot) && !slot.busy) parkSlot(slot);
     }
   }
 
@@ -873,8 +876,10 @@ export default () => {
           class="absolute left-0 top-0"
           style={{ width: ROW_H, height: ROW_H, opacity: 0 }}
         >
-          <View class="absolute bg-[#ffffff]" style={{ insetL: 12, insetT: 32, width: 14, height: 7, rotate: 45 }} />
-          <View class="absolute bg-[#ffffff]" style={{ insetL: 20, insetT: 27, width: 28, height: 7, rotate: -45 }} />
+          {/* Both strokes overshoot the valley center (23, 39.5) by half a
+              thickness so the rotated bars overlap into one clean joint. */}
+          <View class="absolute bg-[#ffffff]" style={{ insetL: 9.3, insetT: 31.3, width: 19, height: 7, rotate: 45 }} />
+          <View class="absolute bg-[#ffffff]" style={{ insetL: 15.3, insetT: 25.8, width: 35, height: 7, rotate: -45 }} />
         </View>
         <View
           nodeRef={(node) => {
