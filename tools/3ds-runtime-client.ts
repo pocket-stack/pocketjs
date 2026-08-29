@@ -54,19 +54,21 @@ export async function discoverPocketRuntimes(
   options: PocketRuntimeDiscoveryOptions = {},
 ): Promise<DiscoveredPocketRuntime[]> {
   const port = options.port ?? POCKET_RUNTIME_WIRE_PORT;
-  const timeoutMs = options.timeoutMs ?? 900;
+  const timeoutMs = options.timeoutMs ?? 4_000;
   const addresses = options.addresses ?? ["255.255.255.255", "127.0.0.1"];
   const socket = createSocket("udp4");
   const found = new Map<string, DiscoveredPocketRuntime>();
   return await new Promise<DiscoveredPocketRuntime[]>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let retry: ReturnType<typeof setInterval> | null = null;
+    let settle: ReturnType<typeof setTimeout> | null = null;
     let settled = false;
     const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
       if (retry) clearInterval(retry);
+      if (settle) clearTimeout(settle);
       socket.close();
       if (error) reject(error);
       else resolve([...found.values()].sort((a, b) => a.address.localeCompare(b.address)));
@@ -86,6 +88,14 @@ export async function discoverPocketRuntimes(
         if (!current || (current.address === "127.0.0.1" && remote.address !== "127.0.0.1")) {
           found.set(key, candidate);
         }
+        // Startup may need several seconds for SOC to become reachable. Once
+        // the first reply arrives, keep only a short window for other devices
+        // on the LAN instead of charging every command the startup timeout.
+        if (settle) clearTimeout(settle);
+        settle = setTimeout(
+          () => finish(),
+          Math.min(150, Math.max(10, Math.floor(timeoutMs / 2))),
+        );
       } catch {
         // Other UDP services may share the broadcast domain.
       }
