@@ -100,7 +100,7 @@ test("homepage ships the four-chapter landing", () => {
     at = next;
   }
   for (const verb of ["Modern DX", "Performance", "Architecture", "Ecosystem"]) {
-    expect(home).toContain(`<span class="verb metal lit">${verb}</span>`);
+    expect(home).toContain(`<span class="verb spectrum lit">${verb}</span>`);
   }
 
   // The effect timeline keeps its own panel class. A short class name shared
@@ -145,7 +145,7 @@ test("homepage ships the four-chapter landing", () => {
   // The sponsor gallery is generated from site/sponsors.json and thanks people
   // without asking for anything: avatars and a heading, no pitch, no tiers.
   expect(home).toContain('<div class="spon-gallery">{{SPONSOR_GALLERY}}</div>');
-  expect(home).toContain('<span class="verb metal lit">Sponsors</span>');
+  expect(home).toContain('<span class="verb spectrum lit">Sponsors</span>');
   const sponsorSection = home.slice(home.indexOf('id="sponsors"'), home.indexOf("<footer"));
   // one line of thanks and one way in; still no amounts and no tier ladder
   expect(sponsorSection).toContain("thanks to your support");
@@ -478,7 +478,7 @@ test("the icon family is rendered from one drawing and linked from every head", 
   const mask = readFileSync(ROOT + "site/assets/safari-pinned-tab.svg", "utf8");
   expect(mask).toContain('viewBox="0 0 16 16"');
   expect(mask).not.toContain("Gradient");
-  expect(mask).not.toContain("#0a0a0c");
+  expect(mask).not.toContain("#171226");
 
   const manifest = JSON.parse(readFileSync(ROOT + "site/assets/site.webmanifest", "utf8")) as {
     name: string;
@@ -513,17 +513,29 @@ test("the icon family is rendered from one drawing and linked from every head", 
   expect(svg).toContain("<svg");
 });
 
-test("public PocketJS icon surfaces keep the metal mark on a black backing", () => {
+test("public PocketJS icon surfaces keep the filled mark on the plum backing", () => {
   const favicon = readFileSync(ROOT + "site/assets/favicon.svg", "utf8");
-  const backing = '<rect width="32" height="32" rx="7" fill="#0a0a0c"/>';
+  const backing = '<rect width="32" height="32" rx="7" fill="#171226"/>';
+  const body = '<rect x="2" y="6" width="28" height="20" rx="6" fill="#ffd23f"/>';
   expect(favicon).toContain(backing);
-  expect(favicon.indexOf(backing)).toBeLessThan(favicon.indexOf('stroke="url(#pj-edge)"'));
+  expect(favicon).toContain(body);
+  expect(favicon.indexOf(backing)).toBeLessThan(favicon.indexOf(body));
+  // The mark carries one colour: the screen details are painted in the backing
+  // rather than stroked, which is what survives 16px.
+  expect(favicon).not.toContain("Gradient");
+  expect(favicon).not.toContain('stroke=');
 
   const readme = readFileSync(ROOT + "README.md", "utf8");
   expect(readme).toContain('src="./site/assets/favicon.svg"');
 
   const ogImage = readFileSync(ROOT + "site/assets/og-image.svg", "utf8");
-  expect(ogImage).toContain('<rect width="1200" height="630" fill="#05070d"/>');
+  expect(ogImage).toContain('<rect width="1200" height="630" fill="#171226"/>');
+
+  // The social card is rasterized from that SVG rather than committed by hand.
+  const gen = readFileSync(ROOT + "tools/icons.ts", "utf8");
+  expect(gen).toContain("og-image.svg");
+  const png = readFileSync(ROOT + "site/assets/og-image.png");
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 630]);
 });
 
 test("single-LOD web package rewrites every profile reference to a copied asset", () => {

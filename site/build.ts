@@ -739,7 +739,7 @@ function renderHome(): string {
 <meta name="twitter:title" content="${SITE_TITLE}">
 <meta name="twitter:description" content="${SITE_DESC}">
 <meta name="twitter:image" content="${OG_IMAGE_URL}">
-<meta name="theme-color" content="#05070d">
+<meta name="theme-color" content="#171226">
 ${ICON_LINKS}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -808,7 +808,7 @@ function renderForPage(page: { slug: string; title: string; desc: string }): str
 <meta name="twitter:title" content="${page.title} · PocketJS">
 <meta name="twitter:description" content="${page.desc}">
 <meta name="twitter:image" content="${OG_IMAGE_URL}">
-<meta name="theme-color" content="#05070d">
+<meta name="theme-color" content="#171226">
 ${ICON_LINKS}
 <link rel="stylesheet" href="/assets/home.css">
 </head>

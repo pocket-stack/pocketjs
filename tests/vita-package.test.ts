@@ -41,7 +41,10 @@ afterEach(() => {
   }
 });
 
-async function expectBlackIndexedPng(
+/** The plum brand ground the LiveArea artwork is composited on. */
+const GROUND = [23, 18, 38] as const;
+
+async function expectGroundedIndexedPng(
   path: string,
   expected: readonly [number, number],
 ): Promise<void> {
@@ -64,9 +67,15 @@ async function expectBlackIndexedPng(
     [0, image.height - 1],
     [image.width - 1, image.height - 1],
   ] as const;
+  // The ground has to reach every edge: a LiveArea that does not bleed shows
+  // the shell's own backdrop in the gap. Indexed quantisation can shift a
+  // channel by a step, so this compares against the ground with a tolerance.
   for (const [x, y] of corners) {
     const pixel = context.getImageData(x, y, 1, 1).data;
-    expect(Math.max(pixel[0]!, pixel[1]!, pixel[2]!)).toBeLessThanOrEqual(16);
+    for (let channel = 0; channel < 3; channel++) {
+      expect(Math.abs(pixel[channel]! - GROUND[channel]!)).toBeLessThanOrEqual(4);
+    }
+    expect(pixel[3]).toBe(255);
   }
 }
 
@@ -84,14 +93,14 @@ describe("PS Vita package identity", () => {
 });
 
 describe("PS Vita LiveArea assets", () => {
-  test("ships a complete black PocketJS LiveArea", async () => {
+  test("ships a complete PocketJS LiveArea on the brand ground", async () => {
     const assets = new Map(
       resolveVitaPackageAssets().map((asset) => [asset.destination, asset.source]),
     );
     expect([...assets.keys()]).toEqual(VITA_REQUIRED_SYSTEM_ASSETS.slice().sort());
-    await expectBlackIndexedPng(assets.get(VITA_SYSTEM_ASSET_PATHS.icon)!, [128, 128]);
-    await expectBlackIndexedPng(assets.get(VITA_SYSTEM_ASSET_PATHS.background)!, [840, 500]);
-    await expectBlackIndexedPng(assets.get(VITA_SYSTEM_ASSET_PATHS.startup)!, [280, 158]);
+    await expectGroundedIndexedPng(assets.get(VITA_SYSTEM_ASSET_PATHS.icon)!, [128, 128]);
+    await expectGroundedIndexedPng(assets.get(VITA_SYSTEM_ASSET_PATHS.background)!, [840, 500]);
+    await expectGroundedIndexedPng(assets.get(VITA_SYSTEM_ASSET_PATHS.startup)!, [280, 158]);
     expect(readFileSync(assets.get(VITA_SYSTEM_ASSET_PATHS.template)!, "utf8"))
       .toContain("<startup-image>startup.png</startup-image>");
   });

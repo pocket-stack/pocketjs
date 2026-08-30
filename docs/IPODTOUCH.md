@@ -76,9 +76,9 @@ observed brightness and idle-timer state.
 ## App icon
 
 `hosts/ipodtouch/Icon.svg` is the only authored icon source. It uses the Pocket
-homepage's `#05070d`, `#070a11`, and `#101827` dark surfaces with restrained
-`#60a5fa` and `#22d3ee` iOS 7-style ambient highlights. There is no baked outer
-frame; SpringBoard applies the installed rounded mask. The centered light mark
+homepage's `#171226`, `#1a1430`, and `#231b3b` plum surfaces with restrained
+`#ffd23f` and `#ff5f9e` iOS 7-style ambient highlights. There is no baked outer
+frame; SpringBoard applies the installed rounded mask. The centered mark
 preserves the exact compact Pocket geometry from `site/assets/favicon.svg`.
 `tools/ipodtouch-icon.ts` rasterizes that SVG into the
 57, 114, 120, and 180-pixel iOS PNG names and produces the opaque 4-inch launch

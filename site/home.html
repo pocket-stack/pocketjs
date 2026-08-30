@@ -2,15 +2,10 @@
   <div class="wrap">
     <a class="mark" href="#">
       <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
-        <defs>
-          <linearGradient id="pgn-edge" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#eef6ff"/><stop offset="0.38" stop-color="#b7c8e2"/><stop offset="0.58" stop-color="#7487a0"/><stop offset="0.78" stop-color="#aec0d6"/><stop offset="1" stop-color="#dbe8f6"/></linearGradient>
-          <linearGradient id="pgn-lens" x1="7" y1="13" x2="13" y2="19" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#e4edf8"/><stop offset="0.55" stop-color="#a7b8cf"/><stop offset="1" stop-color="#53677f"/></linearGradient>
-          <linearGradient id="pgn-bar" x1="16" y1="12" x2="24" y2="20" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#d7e3f1"/><stop offset="1" stop-color="#71849d"/></linearGradient>
-        </defs>
-        <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="url(#pgn-edge)" stroke-width="2.6" stroke-linejoin="round"/>
-        <circle cx="10" cy="16" r="3.1" fill="url(#pgn-lens)"/>
-        <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="url(#pgn-bar)"/>
-        <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="url(#pgn-bar)"/>
+        <rect x="2" y="6" width="28" height="20" rx="6" fill="#ffd23f"/>
+        <circle cx="10" cy="16" r="3.1" fill="#171226"/>
+        <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="#171226"/>
+        <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="#171226"/>
       </svg>
       <span class="nm">PocketJS</span>
     </a>
@@ -48,7 +43,7 @@
   <div class="wrap hero-in">
     <div class="col">
       <div class="plate">
-        <h1><span class="metal lit">UI runtime for<br>every kind of<br>computer</span></h1>
+        <h1><span class="spectrum lit">UI runtime for<br>every kind of<br>computer</span></h1>
         <span class="rail"></span>
       </div>
       <p class="sub">PocketJS is a portable application runtime that turns modern component code into
@@ -64,7 +59,7 @@
 <section class="sect" id="write">
   <div class="wrap">
     <div class="shead">
-      <span class="vwrap"><span class="verb metal lit">Modern DX</span><span class="vrail"></span></span>
+      <span class="vwrap"><span class="verb spectrum lit">Modern DX</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">solid · vue vapor · octane</span>
     </div>
     <p class="slede">Write components as you already do, in
@@ -195,7 +190,7 @@
 <section class="sect" id="motion">
   <div class="wrap">
     <div class="shead">
-      <span class="vwrap"><span class="verb metal lit">Motion</span><span class="vrail"></span></span>
+      <span class="vwrap"><span class="verb spectrum lit">Motion</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">compiled at build time</span>
     </div>
     <div class="cols" style="grid-template-columns:minmax(0,1fr) minmax(0,1.1fr)">
@@ -220,7 +215,7 @@
 <section class="sect" id="measured">
   <div class="wrap">
     <div class="shead">
-      <span class="vwrap"><span class="verb metal lit">Performance</span><span class="vrail"></span></span>
+      <span class="vwrap"><span class="verb spectrum lit">Performance</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">quickjs guest, rust core</span>
     </div>
     <p class="slede">Your app runs as a QuickJS guest on a Rust core that draws every pixel itself. With no
@@ -243,8 +238,8 @@
         <div class="sc-bar sc-zoomrow"><span></span>
           <svg class="sc-zoom" viewBox="0 0 100 14" preserveAspectRatio="none" aria-hidden="true">
             <defs><linearGradient id="sc-beam" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#4ef08a" stop-opacity=".30"/>
-              <stop offset="1" stop-color="#4ef08a" stop-opacity=".05"/>
+              <stop offset="0" stop-color="#ffd23f" stop-opacity=".30"/>
+              <stop offset="1" stop-color="#ffd23f" stop-opacity=".05"/>
             </linearGradient></defs>
             <polygon points="0,0 0.260,0 100,14 0,14" fill="url(#sc-beam)"/>
             <line x1="0.260" y1="0" x2="100" y2="14"/>
@@ -356,7 +351,7 @@
 <section class="sect" id="frame">
   <div class="wrap">
     <div class="shead">
-      <span class="vwrap"><span class="verb metal lit">Architecture</span><span class="vrail"></span></span>
+      <span class="vwrap"><span class="verb spectrum lit">Architecture</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">the frame contract</span>
     </div>
     <p class="slede">PocketJS makes <b>time the frame counter</b>: one <code>frame(buttons)</code> call is a
@@ -409,51 +404,51 @@
           <div class="ct">Which frame the same async task lands on, 60 runs each</div>
           <svg class="hist" viewBox="0 0 760 306" width="100%" role="img" font-family="IBM Plex Mono, ui-monospace, monospace"
        aria-label="Two histograms over 60 runs each. Wall clock: the delivery frame takes 22 distinct values from 140 to 164, tallest bar 6 runs, timing assertion passes 9 of 60. Frame clock: one bar at frame 144 holding all 60 runs, assertion passes 60 of 60.">
-    <rect x="28" y="10" width="332" height="286" fill="#0d1220" stroke="#b07d1c" stroke-opacity=".45"/>
-    <text x="194.0" y="42" fill="#f3f7fd" font-size="20" font-weight="600" text-anchor="middle">wall clock, 60 runs</text>
-    <text x="194.0" y="68" fill="#b07d1c" font-size="16" text-anchor="middle">22 outcomes &#183; assertion 9/60</text>
-    <rect x="46.7" y="207.3" width="10" height="24.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="80.8" y="207.3" width="10" height="24.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="92.2" y="182.7" width="10" height="49.3" fill="#b07d1c" rx="1.5"/>
-    <rect x="103.6" y="207.3" width="10" height="24.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="115.0" y="207.3" width="10" height="24.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="126.4" y="182.7" width="10" height="49.3" fill="#b07d1c" rx="1.5"/>
-    <rect x="137.8" y="158.0" width="10" height="74.0" fill="#b07d1c" rx="1.5"/>
-    <rect x="149.2" y="158.0" width="10" height="74.0" fill="#b07d1c" rx="1.5"/>
-    <rect x="160.5" y="182.7" width="10" height="49.3" fill="#b07d1c" rx="1.5"/>
-    <rect x="171.9" y="182.7" width="10" height="49.3" fill="#b07d1c" rx="1.5"/>
-    <rect x="183.3" y="158.0" width="10" height="74.0" fill="#b07d1c" rx="1.5"/>
-    <rect x="194.7" y="108.7" width="10" height="123.3" fill="#b07d1c" rx="1.5"/>
-    <rect x="206.1" y="158.0" width="10" height="74.0" fill="#b07d1c" rx="1.5"/>
-    <rect x="217.5" y="207.3" width="10" height="24.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="228.8" y="133.3" width="10" height="98.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="240.2" y="133.3" width="10" height="98.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="251.6" y="158.0" width="10" height="74.0" fill="#b07d1c" rx="1.5"/>
-    <rect x="263.0" y="133.3" width="10" height="98.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="274.4" y="207.3" width="10" height="24.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="285.8" y="133.3" width="10" height="98.7" fill="#b07d1c" rx="1.5"/>
-    <rect x="297.2" y="84.0" width="10" height="148.0" fill="#b07d1c" rx="1.5"/>
-    <rect x="319.9" y="133.3" width="10" height="98.7" fill="#b07d1c" rx="1.5"/>
-    <line x1="42" y1="232" x2="346" y2="232" stroke="#4a5e82"/>
-    <text x="51.7" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">140</text>
-    <text x="108.6" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">145</text>
-    <text x="165.5" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">150</text>
-    <text x="222.5" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">155</text>
-    <text x="279.4" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">160</text>
-    <text x="336.3" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">165</text>
-    <text x="194.0" y="284" fill="#7b8aa1" font-size="15" text-anchor="middle">tallest bar: 6 of 60 runs</text>
-    <rect x="412" y="10" width="332" height="286" fill="#0d1220" stroke="#4ef08a" stroke-opacity=".45"/>
-    <text x="578.0" y="42" fill="#f3f7fd" font-size="20" font-weight="600" text-anchor="middle">frame clock, 60 runs</text>
-    <text x="578.0" y="68" fill="#4ef08a" font-size="16" text-anchor="middle">1 outcome &#183; assertion 60/60</text>
-    <rect x="476.2" y="84.0" width="10" height="148.0" fill="#4ef08a" rx="1.5"/>
-    <line x1="426" y1="232" x2="730" y2="232" stroke="#4a5e82"/>
-    <text x="435.7" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">140</text>
-    <text x="492.6" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">145</text>
-    <text x="549.5" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">150</text>
-    <text x="606.5" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">155</text>
-    <text x="663.4" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">160</text>
-    <text x="720.3" y="256" fill="#7b8aa1" font-size="15" text-anchor="middle">165</text>
-    <text x="578.0" y="284" fill="#7b8aa1" font-size="15" text-anchor="middle">frame 144, every run, forever</text>
+    <rect x="28" y="10" width="332" height="286" fill="#231b3b" stroke="#ffd23f" stroke-opacity=".45"/>
+    <text x="194.0" y="42" fill="#fcf6ff" font-size="20" font-weight="600" text-anchor="middle">wall clock, 60 runs</text>
+    <text x="194.0" y="68" fill="#ffd23f" font-size="16" text-anchor="middle">22 outcomes &#183; assertion 9/60</text>
+    <rect x="46.7" y="207.3" width="10" height="24.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="80.8" y="207.3" width="10" height="24.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="92.2" y="182.7" width="10" height="49.3" fill="#ffd23f" rx="1.5"/>
+    <rect x="103.6" y="207.3" width="10" height="24.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="115.0" y="207.3" width="10" height="24.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="126.4" y="182.7" width="10" height="49.3" fill="#ffd23f" rx="1.5"/>
+    <rect x="137.8" y="158.0" width="10" height="74.0" fill="#ffd23f" rx="1.5"/>
+    <rect x="149.2" y="158.0" width="10" height="74.0" fill="#ffd23f" rx="1.5"/>
+    <rect x="160.5" y="182.7" width="10" height="49.3" fill="#ffd23f" rx="1.5"/>
+    <rect x="171.9" y="182.7" width="10" height="49.3" fill="#ffd23f" rx="1.5"/>
+    <rect x="183.3" y="158.0" width="10" height="74.0" fill="#ffd23f" rx="1.5"/>
+    <rect x="194.7" y="108.7" width="10" height="123.3" fill="#ffd23f" rx="1.5"/>
+    <rect x="206.1" y="158.0" width="10" height="74.0" fill="#ffd23f" rx="1.5"/>
+    <rect x="217.5" y="207.3" width="10" height="24.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="228.8" y="133.3" width="10" height="98.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="240.2" y="133.3" width="10" height="98.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="251.6" y="158.0" width="10" height="74.0" fill="#ffd23f" rx="1.5"/>
+    <rect x="263.0" y="133.3" width="10" height="98.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="274.4" y="207.3" width="10" height="24.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="285.8" y="133.3" width="10" height="98.7" fill="#ffd23f" rx="1.5"/>
+    <rect x="297.2" y="84.0" width="10" height="148.0" fill="#ffd23f" rx="1.5"/>
+    <rect x="319.9" y="133.3" width="10" height="98.7" fill="#ffd23f" rx="1.5"/>
+    <line x1="42" y1="232" x2="346" y2="232" stroke="#5b4e7d"/>
+    <text x="51.7" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">140</text>
+    <text x="108.6" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">145</text>
+    <text x="165.5" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">150</text>
+    <text x="222.5" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">155</text>
+    <text x="279.4" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">160</text>
+    <text x="336.3" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">165</text>
+    <text x="194.0" y="284" fill="#8e80ac" font-size="15" text-anchor="middle">tallest bar: 6 of 60 runs</text>
+    <rect x="412" y="10" width="332" height="286" fill="#231b3b" stroke="#ffd23f" stroke-opacity=".45"/>
+    <text x="578.0" y="42" fill="#fcf6ff" font-size="20" font-weight="600" text-anchor="middle">frame clock, 60 runs</text>
+    <text x="578.0" y="68" fill="#ffd23f" font-size="16" text-anchor="middle">1 outcome &#183; assertion 60/60</text>
+    <rect x="476.2" y="84.0" width="10" height="148.0" fill="#ffd23f" rx="1.5"/>
+    <line x1="426" y1="232" x2="730" y2="232" stroke="#5b4e7d"/>
+    <text x="435.7" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">140</text>
+    <text x="492.6" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">145</text>
+    <text x="549.5" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">150</text>
+    <text x="606.5" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">155</text>
+    <text x="663.4" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">160</text>
+    <text x="720.3" y="256" fill="#8e80ac" font-size="15" text-anchor="middle">165</text>
+    <text x="578.0" y="284" fill="#8e80ac" font-size="15" text-anchor="middle">frame 144, every run, forever</text>
 </svg>
           <p class="note sm">Same app, same awaited confirmation, same assertion. Driven by requestAnimationFrame
             against a wall clock it lands on <strong>22 different frames</strong>, and the timing assertion passes
@@ -478,7 +473,7 @@
 <section class="sect" id="beyond">
   <div class="wrap">
     <div class="shead">
-      <span class="vwrap"><span class="verb metal lit">Beyond 2D UI</span><span class="vrail"></span></span>
+      <span class="vwrap"><span class="verb spectrum lit">Beyond 2D UI</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">mount what the content needs</span>
     </div>
     <p class="slede">PocketJS is an application runtime with a game engine's architecture, so <b>a game and an
@@ -529,7 +524,7 @@
 <section class="sect" id="compat">
   <div class="wrap">
     <div class="shead">
-      <span class="vwrap"><span class="verb metal lit">Compatibility</span><span class="vrail"></span></span>
+      <span class="vwrap"><span class="verb spectrum lit">Compatibility</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">run on the metal, not emulated</span>
     </div>
     <p class="slede">PocketJS has booted on every operating system below, on the real machine, and
@@ -583,7 +578,7 @@
 <section class="sect" id="ecosystem">
   <div class="wrap">
     <div class="shead">
-      <span class="vwrap"><span class="verb metal lit">Ecosystem</span><span class="vrail"></span></span>
+      <span class="vwrap"><span class="verb spectrum lit">Ecosystem</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">shipped on the runtime</span>
     </div>
     <p class="slede">PocketJS carries complete applications on the machines this runtime was built for:
@@ -663,7 +658,7 @@
 <section class="sect" id="sponsors">
   <div class="wrap">
     <div class="shead">
-      <span class="vwrap"><span class="verb metal lit">Sponsors</span><span class="vrail"></span></span>
+      <span class="vwrap"><span class="verb spectrum lit">Sponsors</span><span class="vrail"></span></span>
       <span class="fill"></span><span class="hud">thank you</span>
     </div>
     <p class="slede">We can only develop PocketJS full-time thanks to your support.</p>
@@ -678,10 +673,10 @@
   <div class="wrap">
     <span class="mark">
       <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
-        <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="url(#pgn-edge)" stroke-width="2.6" stroke-linejoin="round"/>
-        <circle cx="10" cy="16" r="3.1" fill="url(#pgn-lens)"/>
-        <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="url(#pgn-bar)"/>
-        <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="url(#pgn-bar)"/>
+        <rect x="2" y="6" width="28" height="20" rx="6" fill="#ffd23f"/>
+        <circle cx="10" cy="16" r="3.1" fill="#171226"/>
+        <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="#171226"/>
+        <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="#171226"/>
       </svg>
       <span class="nm">PocketJS</span>
     </span>

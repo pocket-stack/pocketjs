@@ -109,10 +109,10 @@ describe("private iPhone 2G build profile", () => {
     ).toBe(true);
   });
 
-  test("ships a precomposed skeuomorphic metal SpringBoard icon", async () => {
+  test("ships a precomposed skeuomorphic SpringBoard icon", async () => {
     expect(
       createHash("sha256").update(readFileSync(ICON_PATH)).digest("hex"),
-    ).toBe("198a1c3768a028d825da6b1e2213434766ad1ed0fe9c4350f901440cad062a2f");
+    ).toBe("f97bf5aacf2b1646050cb473534a1305f3a7e166f46ea92973929a1bbecbd37c");
     const image = await loadImage(ICON_PATH);
     expect([image.width, image.height]).toEqual([59, 60]);
     const canvas = createCanvas(image.width, image.height);
@@ -121,15 +121,18 @@ describe("private iPhone 2G build profile", () => {
     const pixelAt = (x: number, y: number) =>
       Array.from(context.getImageData(x, y, 1, 1).data);
     const alphaAt = (x: number, y: number) => pixelAt(x, y)[3];
+    // SpringBoard on 1.x rounds nothing itself, so the artwork carries its own
+    // corners: transparent outside them, opaque everywhere inside.
     expect(alphaAt(0, 0)).toBe(0);
     expect(alphaAt(58, 0)).toBe(0);
     expect(alphaAt(0, 59)).toBe(0);
     expect(alphaAt(58, 59)).toBe(0);
     expect(alphaAt(29, 29)).toBe(255);
-    expect(pixelAt(10, 48)).toEqual([5, 5, 4, 255]);
-    expect(pixelAt(29, 0)).toEqual([176, 180, 188, 255]);
-    expect(pixelAt(29, 8)).toEqual([110, 109, 109, 255]);
-    expect(pixelAt(29, 29).slice(0, 3)).toEqual([249, 249, 249]);
+    // The three layers the era treatment is made of, sampled in from the edge:
+    // chrome bezel, plum enamel, then the arcade-yellow mark in the middle.
+    expect(pixelAt(29, 2)).toEqual([215, 217, 220, 255]);
+    expect(pixelAt(29, 52)).toEqual([28, 21, 48, 255]);
+    expect(pixelAt(29, 29)).toEqual([255, 212, 73, 255]);
   });
 
   test("the ES 1.1 pipeline enables the fixed-function state ES 2 gets from its shader", () => {

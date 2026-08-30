@@ -9,7 +9,7 @@ description: Append a PocketJS-branded, animated end card to a local video (scre
 
 Turns any local video into a shareable clip that ends on the PocketJS brand card.
 The card is built from the same visual system as `site/assets/og-image.svg` — dark
-`#05070d` field, faint blueprint grid, blue/cyan corner glows, the lens/viewfinder
+`#171226` field, faint blueprint grid, yellow/pink corner glows, the lens/viewfinder
 logo glyph, the wordmark, and the hero tagline. It is rendered by headless Chrome
 (full gradient/shadow/font fidelity; the site font stack falls back to system SF),
 then `ffmpeg` crossfades the source into the card and animates the text in.

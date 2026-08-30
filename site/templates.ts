@@ -45,7 +45,7 @@ export const ICON_LINKS = [
   `<link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152.png?v=${ICON_V}">`,
   `<link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120.png?v=${ICON_V}">`,
   '<meta name="apple-mobile-web-app-title" content="PocketJS">',
-  '<link rel="mask-icon" href="/safari-pinned-tab.svg" color="#4ef08a">',
+  '<link rel="mask-icon" href="/safari-pinned-tab.svg" color="#ffd23f">',
   '<link rel="manifest" href="/site.webmanifest">',
 ].join("\n");
 
@@ -174,7 +174,7 @@ export function renderPage(o: PageOpts): string {
 <meta name="twitter:title" content="${fullTitle}">
 <meta name="twitter:description" content="${desc}">
 <meta name="twitter:image" content="${OG_IMAGE_URL}">
-<meta name="theme-color" content="#05070d">
+<meta name="theme-color" content="#171226">
 ${ICON_LINKS}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -107,9 +107,9 @@ describe("private iPod touch 6 profile", () => {
     expect(source).toContain('id="ios7-background"');
     expect(source).toContain('id="ios7-highlight"');
     expect(source).toContain('id="pocket-ambient"');
-    expect(source).toContain('stop-color="#05070d"');
-    expect(source).toContain('stop-color="#60a5fa"');
-    expect(source).toContain('stop-color="#22d3ee"');
+    expect(source).toContain('stop-color="#171226"');
+    expect(source).toContain('stop-color="#ffd23f"');
+    expect(source).toContain('stop-color="#ff5f9e"');
     expect(source).toContain('data-brand-source="site/assets/favicon.svg"');
     expect(source).toContain('transform="translate(96 96) scale(26)"');
     expect(source).toContain('<circle cx="10" cy="16" r="3.1"');
