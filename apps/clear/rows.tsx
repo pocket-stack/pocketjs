@@ -4,7 +4,7 @@
 // motion goes through jump()/animate() — the only reactive state per slot is
 // its text, done-look and lift refs.
 
-import { shallowRef } from "vue";
+import { shallowRef, type ShallowRef } from "vue";
 import { Text, View, type NodeMirror } from "@pocketjs/framework/components";
 import { jump } from "@pocketjs/framework/animation";
 import { ROW_H } from "./metrics.ts";
@@ -20,7 +20,7 @@ export interface RowSlot {
   strike: NodeMirror | null;
   text: ReturnType<typeof shallowRef<string>>;
   done: ReturnType<typeof shallowRef<boolean>>;
-  lift: ReturnType<typeof shallowRef<number>>;
+  lift: ShallowRef<number>;
   todoId: number;
   /** Current resting y (display index * ROW_H). */
   y: number;

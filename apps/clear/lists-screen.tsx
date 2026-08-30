@@ -11,7 +11,7 @@ import { listRowColors } from "./palette.ts";
 import { ROW_H } from "./metrics.ts";
 
 export interface ListsScreen {
-  view: unknown;
+  view: JSX.Element;
   /** Full content height (rows only; the credit hangs above y 0). */
   height: number;
   canvas(): NodeMirror | null;

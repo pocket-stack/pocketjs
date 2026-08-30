@@ -44,7 +44,7 @@ export interface KeyboardHandlers {
 const LAYER_NAMES: readonly KbLayerName[] = ["lower", "upper", "numbers", "symbols"];
 
 export interface Keyboard {
-  view: unknown;
+  view: JSX.Element;
   /** Dock/undock the panel (animated). */
   setOpen(open: boolean): void;
   isOpen(): boolean;

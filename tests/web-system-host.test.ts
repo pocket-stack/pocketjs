@@ -25,6 +25,15 @@ async function resolvedWebSystem() {
   return result.plan;
 }
 
+/** The resolver hands back a deeply readonly plan. The rejection tests
+ *  deliberately corrupt a clone of one, so they need a writable view of it. */
+type Mutable<T> = T extends object ? { -readonly [K in keyof T]: Mutable<T[K]> } : T;
+type WebSystemPlan = Awaited<ReturnType<typeof resolvedWebSystem>>;
+
+async function corruptibleWebSystem(): Promise<Mutable<WebSystemPlan>> {
+  return structuredClone(await resolvedWebSystem()) as Mutable<WebSystemPlan>;
+}
+
 describe("browser Pocket System host", () => {
   test("focusing the canvas cannot move a double-click onto another surface", () => {
     let options: FocusOptions | undefined;
@@ -51,11 +60,11 @@ describe("browser Pocket System host", () => {
   });
 
   test("rejects child companions and artifact collisions at its trust boundary", async () => {
-    const companions = structuredClone(await resolvedWebSystem());
+    const companions = await corruptibleWebSystem();
     companions.applications[0].plan.companions = ["note"];
     expect(() => validateSystemPlan(companions)).toThrow("unsupported companions");
 
-    const collision = structuredClone(await resolvedWebSystem());
+    const collision = await corruptibleWebSystem();
     collision.applications[1].plan.app.output = collision.applications[0].plan.app.output;
     expect(() => validateSystemPlan(collision)).toThrow("duplicate or missing artifact output");
   });
