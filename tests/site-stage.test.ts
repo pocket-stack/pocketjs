@@ -513,17 +513,33 @@ test("the icon family is rendered from one drawing and linked from every head", 
   expect(svg).toContain("<svg");
 });
 
-test("public PocketJS icon surfaces keep the filled mark on the plum backing", () => {
+test("public PocketJS icon surfaces keep the arcade mark on the plum backing", () => {
   const favicon = readFileSync(ROOT + "site/assets/favicon.svg", "utf8");
   const backing = '<rect width="32" height="32" rx="7" fill="#171226"/>';
-  const body = '<rect x="2" y="6" width="28" height="20" rx="6" fill="#ffd23f"/>';
+  const shell = 'rx="6" fill="none" stroke="#ffd23f" stroke-width="2.6"';
   expect(favicon).toContain(backing);
-  expect(favicon).toContain(body);
-  expect(favicon.indexOf(backing)).toBeLessThan(favicon.indexOf(body));
-  // The mark carries one colour: the screen details are painted in the backing
-  // rather than stroked, which is what survives 16px.
+  expect(favicon).toContain(shell);
+  expect(favicon.indexOf(backing)).toBeLessThan(favicon.indexOf(shell));
+  // One flat hue per element, so the mark survives being scaled down: the
+  // shell is yellow, the screen dot and short key pink, the long key cyan.
   expect(favicon).not.toContain("Gradient");
-  expect(favicon).not.toContain('stroke=');
+  expect(favicon).toContain('<circle cx="10" cy="16" r="3.1" fill="#ff5f9e"/>');
+  expect(favicon).toContain('width="10" height="2.2" rx="1.1" fill="#3fd0e8"/>');
+  expect(favicon).toContain('width="6.5" height="2.2" rx="1.1" fill="#ff5f9e"/>');
+
+  // Every other surface draws the same four shapes rather than its own copy.
+  for (const file of [
+    "site/home.html",
+    "site/for/shell.html",
+    "site/templates.ts",
+    "site/assets/og-image.svg",
+    "hosts/ipodtouch/Icon.svg",
+    "hosts/iphone4s/Icon.svg",
+  ]) {
+    const source = readFileSync(ROOT + file, "utf8");
+    expect(source).toContain(shell);
+    expect(source).toContain('<circle cx="10" cy="16" r="3.1" fill="#ff5f9e"/>');
+  }
 
   const readme = readFileSync(ROOT + "README.md", "utf8");
   expect(readme).toContain('src="./site/assets/favicon.svg"');

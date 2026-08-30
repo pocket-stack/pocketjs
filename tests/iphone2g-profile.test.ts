@@ -112,7 +112,7 @@ describe("private iPhone 2G build profile", () => {
   test("ships a precomposed skeuomorphic SpringBoard icon", async () => {
     expect(
       createHash("sha256").update(readFileSync(ICON_PATH)).digest("hex"),
-    ).toBe("f97bf5aacf2b1646050cb473534a1305f3a7e166f46ea92973929a1bbecbd37c");
+    ).toBe("c53fd02ab1148674d33d36efa9b1d2eecc518cbe325ea2a2a0d47e3c295b019b");
     const image = await loadImage(ICON_PATH);
     expect([image.width, image.height]).toEqual([59, 60]);
     const canvas = createCanvas(image.width, image.height);
@@ -129,10 +129,10 @@ describe("private iPhone 2G build profile", () => {
     expect(alphaAt(58, 59)).toBe(0);
     expect(alphaAt(29, 29)).toBe(255);
     // The three layers the era treatment is made of, sampled in from the edge:
-    // chrome bezel, plum enamel, then the arcade-yellow mark in the middle.
+    // chrome bezel, plum enamel, then the arcade-yellow shell of the mark.
     expect(pixelAt(29, 2)).toEqual([215, 217, 220, 255]);
     expect(pixelAt(29, 52)).toEqual([28, 21, 48, 255]);
-    expect(pixelAt(29, 29)).toEqual([255, 212, 73, 255]);
+    expect(pixelAt(12, 30)).toEqual([255, 210, 63, 255]);
   });
 
   test("the ES 1.1 pipeline enables the fixed-function state ES 2 gets from its shader", () => {

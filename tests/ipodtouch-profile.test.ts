@@ -110,6 +110,7 @@ describe("private iPod touch 6 profile", () => {
     expect(source).toContain('stop-color="#171226"');
     expect(source).toContain('stop-color="#ffd23f"');
     expect(source).toContain('stop-color="#ff5f9e"');
+    expect(source).toContain('stroke="#ffd23f" stroke-width="2.6"');
     expect(source).toContain('data-brand-source="site/assets/favicon.svg"');
     expect(source).toContain('transform="translate(96 96) scale(26)"');
     expect(source).toContain('<circle cx="10" cy="16" r="3.1"');

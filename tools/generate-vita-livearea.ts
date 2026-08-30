@@ -2,6 +2,7 @@
 // canonical mark. Builds consume the committed PNG/XML files and do not
 // require ImageMagick; only intentional artwork updates run this script.
 
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import {
   cpSync,
   existsSync,
@@ -87,13 +88,23 @@ try {
   // supplies that ground itself, so the tile is dropped and the mark is
   // rasterized on transparency — no floodfill, and no seam where an
   // anti-aliased tile edge would have met the ground.
+  //
+  // ImageMagick composites and quantises below, but it does NOT rasterize the
+  // SVG: its rsvg delegate silently drops `fill="none"` strokes (and
+  // objectBoundingBox gradients), which loses the shell outright. resvg, via
+  // @napi-rs/canvas, is the same renderer the iOS icon bakers use.
   const bare = readFileSync(source, "utf8").replace(
     /\s*<rect width="32" height="32"[^>]*\/>/,
     "",
   );
-  const bareFile = join(temporary, "mark.svg");
-  writeFileSync(bareFile, bare);
-  run(["-background", "none", "-density", "1200", bareFile, "-trim", "+repage", mark]);
+  const MARK_PX = 1024;
+  const sized = bare.replace("<svg", `<svg width="${MARK_PX}" height="${MARK_PX}"`);
+  const rendered = await loadImage(Buffer.from(sized));
+  const surface = createCanvas(MARK_PX, MARK_PX);
+  surface.getContext("2d").drawImage(rendered, 0, 0, MARK_PX, MARK_PX);
+  writeFileSync(mark, surface.toBuffer("image/png"));
+  run([mark, "-trim", "+repage", mark]);
+
   render("icon0.png", 128, 128, "112x74");
   render("livearea/contents/startup.png", 280, 158, "196x118");
   render("livearea/contents/bg.png", 840, 500, "520x320");
