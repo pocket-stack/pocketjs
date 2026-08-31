@@ -1393,9 +1393,11 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //   TRI         (7 words):  op, xy0, xy1, xy2, color0, color1, color2 — one
 //                           CPU-clipped screen-space triangle (gouraud when the
 //                           corner colors differ, flat otherwise). The core
-//                           emits these only for ROTATED solid/gradient boxes
-//                           after Sutherland-Hodgman clipping; axis-aligned
-//                           content always uses RECT/GRAD_RECT.
+//                           emits these for ROTATED gradient boxes after
+//                           Sutherland-Hodgman clipping, and as a fan when a
+//                           clipped polygon somehow exceeds 8 vertices.
+//                           Axis-aligned content always uses RECT/GRAD_RECT;
+//                           ROTATED solid boxes use POLY.
 //   TEX_TRI     (12 words): op, texHandle, then 3 x { xy, u, v } (u/v = f32
 //                           bits, normalized 0..1), color (modulate;
 //                           0xFFFFFFFF = none). One CPU-clipped textured
@@ -1409,6 +1411,15 @@ export const FONT_FLAG_BOLD = 1 << 0;
 //                           perspective variation (projectively correct UVs
 //                           at every cell corner), so interior texture lines
 //                           do not kink at triangle diagonals.
+//   POLY        (3 + N):    op, N (3..=8), color, then N x xy — one
+//                           CPU-clipped screen-space convex polygon, one flat
+//                           colour, vertices CCW after raster setup. The core
+//                           emits these for ROTATED solid boxes and for
+//                           projected 3D faces after Sutherland-Hodgman
+//                           clipping. Coverage is 4×4 samples over the whole
+//                           polygon (interior run + boundary pixels) so a
+//                           box's shared diagonal is not an interior edge.
+//                           N > 8 falls back to a TRI fan.
 //   TEXT_RUN    (8 + ceil(n/4) words):
 //                           op,
 //                           word1: bits 0-7 fontSlot,
@@ -1455,6 +1466,7 @@ export const DRAW_OP = {
   texTri: 8,
   textRun: 9,
   surfaceQuad: 10,
+  poly: 11,
 } as const;
 
 // ---------------------------------------------------------------------------

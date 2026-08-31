@@ -198,10 +198,15 @@ fn decode_wh(word: u32) -> (i32, i32) {
     ((word & 0xffff) as i32, (word >> 16) as i32)
 }
 
+/// One slot per opcode, so the counts array is indexed by op code directly.
+/// Tied to the highest opcode rather than written out, because a bare literal
+/// is what silently went stale when SURFACE_QUAD took 10.
+const DRAW_OP_SLOTS: usize = spec::draw_op::POLY as usize + 1;
+
 /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
 /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
 /// balanced, only known ops. Returns per-op counts (indexed by op code).
-fn validate_drawlist(words: &[u32]) -> [u32; 11] {
+fn validate_drawlist(words: &[u32]) -> [u32; DRAW_OP_SLOTS] {
     let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
     let xy_ok = |w: u32| {
         let (x, y) = decode_xy(w);
@@ -213,7 +218,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
         let (w, h) = decode_wh(whw);
         assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
     };
-    let mut counts = [0u32; 11];
+    let mut counts = [0u32; DRAW_OP_SLOTS];
     let mut depth = 0i32;
     let mut i = 0usize;
     while i < words.len() {
@@ -280,6 +285,15 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
                 }
                 i += 12;
             }
+            spec::draw_op::POLY => {
+                let n = words[i + 1] as usize;
+                assert!((3..=8).contains(&n), "POLY vertex count {n} not in 3..=8");
+                assert!(i + 3 + n <= words.len(), "truncated POLY");
+                for k in 0..n {
+                    xy_ok(words[i + 3 + k]);
+                }
+                i += 3 + n;
+            }
             spec::draw_op::TEXT_RUN => {
                 // Native-text op: origin is f32 (exempt from the i16 clip
                 // guarantee), box width is finite and non-negative, and the
@@ -329,6 +343,10 @@ fn tex_tri_runs(words: &[u32]) -> Vec<(u32, usize)> {
             spec::draw_op::SCISSOR => { previous_was_tex_tri = false; i += 3; }
             spec::draw_op::SCISSOR_POP => { previous_was_tex_tri = false; i += 1; }
             spec::draw_op::TRI => { previous_was_tex_tri = false; i += 7; }
+            spec::draw_op::POLY => {
+                previous_was_tex_tri = false;
+                i += 3 + words[i + 1] as usize;
+            }
             spec::draw_op::TEXT_RUN => {
                 previous_was_tex_tri = false;
                 i += 8 + (words[i + 7] as usize).div_ceil(4);
@@ -577,12 +595,12 @@ fn fixed_dt_animation_is_deterministic() {
     for f in &a {
         validate_drawlist(f);
     }
-    // The rotated frames must actually exercise the TRI path.
-    let tri_frames = a
+    // The rotated frames must actually exercise the POLY path.
+    let poly_frames = a
         .iter()
-        .filter(|f| validate_drawlist(f)[spec::draw_op::TRI as usize] > 0)
+        .filter(|f| validate_drawlist(f)[spec::draw_op::POLY as usize] > 0)
         .count();
-    assert!(tri_frames > 0, "rotation should emit TRI ops");
+    assert!(poly_frames > 0, "rotation should emit POLY ops");
 }
 
 #[test]
@@ -712,7 +730,7 @@ fn drawlist_clip_invariant_offscreen_rects() {
     let words = ui.draw().words.clone();
     let counts = validate_drawlist(&words);
     assert!(counts[spec::draw_op::RECT as usize] > 0);
-    assert!(counts[spec::draw_op::TRI as usize] > 0, "rotated offscreen boxes clip into TRIs");
+    assert!(counts[spec::draw_op::POLY as usize] > 0, "rotated offscreen boxes clip into POLY");
     assert!(counts[spec::draw_op::GRAD_RECT as usize] > 0);
     // Find the gradient and check the endpoint re-interpolation: the rect
     // spans x 380..580, the clip keeps 380..480 = fractions 0.0..0.5, so the
@@ -733,6 +751,7 @@ fn drawlist_clip_invariant_offscreen_rects() {
                 i += 6;
             }
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             spec::draw_op::SCISSOR => i += 3,
@@ -813,6 +832,7 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
             spec::draw_op::RECT => i += 4,
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => {
                 corner_quads += 1;
@@ -984,6 +1004,7 @@ fn transparent_rounded_border_draws_an_outline_not_square_strips() {
             }
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             spec::draw_op::SCISSOR => i += 3,
@@ -1085,6 +1106,7 @@ fn overflow_hidden_emits_balanced_intersected_scissors() {
             spec::draw_op::RECT => i += 4,
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             _ => i += 1,
@@ -1115,6 +1137,7 @@ fn overflow_hidden_emits_balanced_intersected_scissors() {
             }
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             _ => i += 1,
@@ -1436,6 +1459,7 @@ fn zindex_orders_siblings_stably() {
             }
             spec::draw_op::GRAD_RECT => i += 6,
             spec::draw_op::TRI => i += 7,
+            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
             spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
             spec::draw_op::TEX_QUAD => i += 9,
             _ => i += 1,
@@ -2053,9 +2077,10 @@ fn perspective_subtree_emits_depth_sorted_tris() {
     ui.set_style(f, 1);
     ui.tick();
     let words = ui.draw().words.clone();
-    // A rotateY'd face must land on the TRI path (perspective projection).
+    // A rotateY'd face must land on the POLY path (perspective projection).
     let mut i = 0;
     let mut tris = 0;
+    let mut polys = 0;
     while i < words.len() {
         let op = words[i];
         i += match op {
@@ -2064,6 +2089,10 @@ fn perspective_subtree_emits_depth_sorted_tris() {
             x if x == spec::draw_op::TRI => {
                 tris += 1;
                 7
+            }
+            x if x == spec::draw_op::POLY => {
+                polys += 1;
+                3 + words[i + 1] as usize
             }
             x if x == spec::draw_op::GLYPH_RUN => {
                 let n = (words[i + 1] >> 16) as usize;
@@ -2074,7 +2103,8 @@ fn perspective_subtree_emits_depth_sorted_tris() {
             _ => 1, // SCISSOR_POP
         };
     }
-    assert!(tris >= 2, "expected projected face triangles, got {tris}");
+    assert_eq!(tris, 0, "flat 3D face must not fan into TRI");
+    assert!(polys >= 1, "expected projected face polygon, got {polys}");
 }
 
 #[test]
@@ -2160,6 +2190,7 @@ fn arc_primitive_emits_coverage_rects() {
             }
             x if x == spec::draw_op::GRAD_RECT => 6,
             x if x == spec::draw_op::TRI => 7,
+            x if x == spec::draw_op::POLY => 3 + words[i + 1] as usize,
             x if x == spec::draw_op::GLYPH_RUN => {
                 let c = (words[i + 1] >> 16) as usize;
                 3 + 2 * c
@@ -2171,6 +2202,597 @@ fn arc_primitive_emits_coverage_rects() {
     }
     // The half-ring rasterizes into many small coverage runs (not one box).
     assert!(rects > 20, "expected arc coverage runs, got {rects}");
+}
+
+// ---- POLY: convex coverage over a clipped rotated box ----------------------------
+
+fn place_box(ui: &mut Ui, w: f64, h: f64, x: f64, y: f64) -> i32 {
+    let n = ui.create_node(0);
+    ui.set_prop(n, spec::prop::WIDTH, w);
+    ui.set_prop(n, spec::prop::HEIGHT, h);
+    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(n, spec::prop::INSET_L, x);
+    ui.set_prop(n, spec::prop::INSET_T, y);
+    ui.insert_before(spec::ROOT_ID, n, 0);
+    n
+}
+
+/// Distinct R-channel values, and how many partial pixels have all eight
+/// neighbours non-background. That second count is the diagonal-seam
+/// regression: per-triangle coverage leaves it non-zero inside one box.
+/// Render the current DrawList into a fresh screen-sized RGBA buffer.
+fn raster_fb(ui: &mut Ui) -> alloc::vec::Vec<u8> {
+    let words = ui.draw().words.clone();
+    let mut fb = alloc::vec![0u8; spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4];
+    crate::raster::render(ui, &words, &mut fb);
+    fb
+}
+
+fn poly_luminance_stats(fb: &[u8]) -> (usize, u32) {
+    let w = spec::SCREEN_W as usize;
+    let h = spec::SCREEN_H as usize;
+    let mut seen = [false; 256];
+    let mut interior_partial = 0u32;
+    for y in 0..h {
+        for x in 0..w {
+            let v = fb[(y * w + x) * 4];
+            seen[v as usize] = true;
+            if v > 0 && v < 255 && x > 0 && y > 0 && x + 1 < w && y + 1 < h {
+                let nb = [
+                    (-1isize, -1),
+                    (0, -1),
+                    (1, -1),
+                    (-1, 0),
+                    (1, 0),
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                ];
+                if nb.iter().all(|&(dx, dy)| {
+                    fb[(((y as isize + dy) as usize) * w + (x as isize + dx) as usize) * 4] > 0
+                }) {
+                    interior_partial += 1;
+                }
+            }
+        }
+    }
+    (seen.iter().filter(|&&on| on).count(), interior_partial)
+}
+
+/// Word count for the op at `i`. Same lengths the rasterizer walks.
+fn draw_op_word_count(words: &[u32], i: usize) -> usize {
+    match words[i] {
+        spec::draw_op::RECT => 4,
+        spec::draw_op::GRAD_RECT => 6,
+        spec::draw_op::GLYPH_RUN => 3 + 2 * ((words[i + 1] >> 16) as usize),
+        spec::draw_op::TEX_QUAD | spec::draw_op::SURFACE_QUAD => 9,
+        spec::draw_op::SCISSOR => 3,
+        spec::draw_op::SCISSOR_POP => 1,
+        spec::draw_op::TRI => 7,
+        spec::draw_op::TEX_TRI => 12,
+        spec::draw_op::POLY => 3 + words[i + 1] as usize,
+        spec::draw_op::TEXT_RUN => 8 + (words[i + 7] as usize).div_ceil(4),
+        other => panic!("unknown draw op {other} at word {i}"),
+    }
+}
+
+fn find_poly(words: &[u32]) -> Option<(u32, Vec<u32>)> {
+    let mut i = 0usize;
+    while i < words.len() {
+        if words[i] == spec::draw_op::POLY {
+            let n = words[i + 1] as usize;
+            assert!((3..=8).contains(&n), "POLY vertex count {n} not in 3..=8");
+            return Some((words[i + 2], words[i + 3..i + 3 + n].to_vec()));
+        }
+        i += draw_op_word_count(words, i);
+    }
+    None
+}
+
+fn strip_poly_ops(words: &[u32]) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < words.len() {
+        let n = draw_op_word_count(words, i);
+        if words[i] != spec::draw_op::POLY {
+            out.extend_from_slice(&words[i..i + n]);
+        }
+        i += n;
+    }
+    out
+}
+
+/// Integer src-over matching `RgbaTarget::blend` (RGBA8, dest alpha forced 255).
+fn blend_rgba8(fb: &mut [u8], offset: usize, r: u32, g: u32, b: u32, a: u32) {
+    let o = offset * 4;
+    if a >= 255 {
+        fb[o] = r as u8;
+        fb[o + 1] = g as u8;
+        fb[o + 2] = b as u8;
+        fb[o + 3] = 255;
+        return;
+    }
+    if a == 0 {
+        return;
+    }
+    let ia = 255 - a;
+    let mix = |s: u32, d: u8| ((s * a + d as u32 * ia + 127) / 255) as u8;
+    fb[o] = mix(r, fb[o]);
+    fb[o + 1] = mix(g, fb[o + 1]);
+    fb[o + 2] = mix(b, fb[o + 2]);
+    fb[o + 3] = 255;
+}
+
+/// 4×4 coverage over a convex POLY using the same edge functions as
+/// `raster::poly`, without the interior-span shortcut. Pixel writes match
+/// `poly`: `hits == 16 && a >= 255` uses the `fill_opaque` equivalent,
+/// otherwise `blend(r, g, b, a * hits / 16)`; `hits == 0` is skipped.
+fn poly_4x4_oracle(fb: &mut [u8], color: u32, verts: &[u32]) {
+    const MAX: usize = 8;
+    const OFF: [i64; 4] = [-3, -1, 1, 3];
+    let n = verts.len();
+    if n < 3 || n > MAX {
+        return;
+    }
+    let r = color & 0xff;
+    let g = (color >> 8) & 0xff;
+    let b = (color >> 16) & 0xff;
+    let a = color >> 24;
+    if a == 0 {
+        return;
+    }
+    let stride = spec::SCREEN_W as i32;
+    let (clip_x0, clip_y0) = (0i32, 0i32);
+    let (clip_x1, clip_y1) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
+
+    let mut xs = [0i32; MAX];
+    let mut ys = [0i32; MAX];
+    let mut min_x = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut min_y = i32::MAX;
+    let mut max_y = i32::MIN;
+    for i in 0..n {
+        let (x, y) = decode_xy(verts[i]);
+        xs[i] = x;
+        ys[i] = y;
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+    }
+    min_x = min_x.max(clip_x0);
+    max_x = max_x.min(clip_x1);
+    min_y = min_y.max(clip_y0);
+    max_y = max_y.min(clip_y1);
+    if min_x >= max_x || min_y >= max_y {
+        return;
+    }
+
+    // Doubled screen coords. F(px,py) = c + dx·px + dy·py, wound so inside is F >= 0.
+    let mut vx = [0i64; MAX];
+    let mut vy = [0i64; MAX];
+    for i in 0..n {
+        vx[i] = 2 * xs[i] as i64;
+        vy[i] = 2 * ys[i] as i64;
+    }
+    let mut area = 0i64;
+    for i in 0..n {
+        let j = if i + 1 == n { 0 } else { i + 1 };
+        area += vx[i] * vy[j] - vx[j] * vy[i];
+    }
+    if area == 0 {
+        return;
+    }
+    let ccw = area > 0;
+
+    let mut e_c = [0i64; MAX];
+    let mut e_dx = [0i64; MAX];
+    let mut e_dy = [0i64; MAX];
+    for i in 0..n {
+        let (ia, ib) = if ccw {
+            (i, if i + 1 == n { 0 } else { i + 1 })
+        } else {
+            (if i + 1 == n { 0 } else { i + 1 }, i)
+        };
+        let (ax, ay, bx, by) = (vx[ia], vy[ia], vx[ib], vy[ib]);
+        let dx = -(by - ay);
+        let dy = bx - ax;
+        e_c[i] = -(dx * ax + dy * ay);
+        e_dx[i] = dx;
+        e_dy[i] = dy;
+    }
+
+    let mut step = [0i64; MAX];
+    for i in 0..n {
+        step[i] = 8 * e_dx[i];
+    }
+    let opaque = a >= 255;
+    let mut f0 = [0i64; MAX];
+    for row in min_y..max_y {
+        let sy = 2 * row as i64 + 1;
+        let sx = 2 * min_x as i64 + 1;
+        for i in 0..n {
+            f0[i] = 4 * (e_c[i] + e_dx[i] * sx + e_dy[i] * sy);
+        }
+        let span = max_x - min_x;
+        for col in 0..span {
+            let mut hits = 0u32;
+            for &oy in &OFF {
+                for &ox in &OFF {
+                    let mut inside = true;
+                    for e in 0..n {
+                        if f0[e] + step[e] * i64::from(col) + e_dx[e] * ox + e_dy[e] * oy < 0 {
+                            inside = false;
+                            break;
+                        }
+                    }
+                    if inside {
+                        hits += 1;
+                    }
+                }
+            }
+            if hits == 0 {
+                continue;
+            }
+            let offset = (row * stride + min_x + col) as usize;
+            if hits == 16 && opaque {
+                let o = offset * 4;
+                fb[o] = r as u8;
+                fb[o + 1] = g as u8;
+                fb[o + 2] = b as u8;
+                fb[o + 3] = 255;
+            } else {
+                blend_rgba8(fb, offset, r, g, b, a * hits / 16);
+            }
+        }
+    }
+}
+
+#[test]
+fn rotated_flat_box_emits_one_poly_gradient_stays_tri() {
+    let mut ui = Ui::new();
+    let flat = place_box(&mut ui, 80.0, 50.0, 100.0, 80.0);
+    ui.set_prop(flat, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(flat, spec::prop::ROTATE, 20.0);
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert_eq!(counts[spec::draw_op::POLY as usize], 1, "one POLY for the whole box");
+    assert_eq!(counts[spec::draw_op::TRI as usize], 0, "flat fill must not fan into TRI");
+
+    let mut ui = Ui::new();
+    let grad = place_box(&mut ui, 80.0, 50.0, 100.0, 80.0);
+    ui.set_prop(grad, spec::prop::GRAD_FROM, abgr(255, 0, 0, 255) as f64);
+    ui.set_prop(grad, spec::prop::GRAD_TO, abgr(0, 0, 255, 255) as f64);
+    ui.set_prop(grad, spec::prop::GRAD_DIR, spec::GradDir::ToRight as u32 as f64);
+    ui.set_prop(grad, spec::prop::ROTATE, 20.0);
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert!(counts[spec::draw_op::TRI as usize] >= 2, "rotated gradient still fans TRI");
+    assert_eq!(counts[spec::draw_op::POLY as usize], 0, "gradient must not emit POLY");
+}
+
+#[test]
+fn rotated_flat_box_raster_has_coverage_levels() {
+    let mut ui = Ui::new();
+    let n = place_box(&mut ui, 240.0, 160.0, 120.0, 56.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(n, spec::prop::ROTATE, 20.0);
+    ui.tick();
+    let fb = raster_fb(&mut ui);
+    let (levels, _) = poly_luminance_stats(&fb);
+    assert!(
+        levels > 2,
+        "4×4 coverage must produce more than binary edges, got {levels} levels"
+    );
+}
+
+#[test]
+fn rotated_flat_box_has_no_interior_partial_pixels() {
+    let mut ui = Ui::new();
+    let n = place_box(&mut ui, 240.0, 160.0, 120.0, 56.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(n, spec::prop::ROTATE, 20.0);
+    ui.tick();
+    let fb = raster_fb(&mut ui);
+    let (_, interior_partial) = poly_luminance_stats(&fb);
+    assert_eq!(
+        interior_partial, 0,
+        "coverage over the whole polygon must not leave a seam"
+    );
+}
+
+#[test]
+fn clipped_polygon_closes_against_the_screen_edge() {
+    let mut ui = Ui::new();
+    let n = place_box(&mut ui, 80.0, 60.0, 0.0, 80.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(n, spec::prop::TRANSLATE_X, -25.0);
+    ui.set_prop(n, spec::prop::ROTATE, 25.0);
+    ui.tick();
+    let words = ui.draw().words.clone();
+    let counts = validate_drawlist(&words);
+    assert_eq!(counts[spec::draw_op::POLY as usize], 1);
+    let mut i = 0usize;
+    let mut nverts = 0usize;
+    let mut on_edge = false;
+    while i < words.len() {
+        if words[i] == spec::draw_op::POLY {
+            nverts = words[i + 1] as usize;
+            for k in 0..nverts {
+                let (x, _) = decode_xy(words[i + 3 + k]);
+                if x == 0 {
+                    on_edge = true;
+                }
+            }
+            break;
+        }
+        i += match words[i] {
+            spec::draw_op::RECT => 4,
+            spec::draw_op::GRAD_RECT => 6,
+            spec::draw_op::TRI => 7,
+            spec::draw_op::POLY => 3 + words[i + 1] as usize,
+            spec::draw_op::GLYPH_RUN => 3 + 2 * ((words[i + 1] >> 16) as usize),
+            spec::draw_op::TEX_QUAD => 9,
+            spec::draw_op::TEX_TRI => 12,
+            spec::draw_op::SCISSOR => 3,
+            _ => 1,
+        };
+    }
+    assert!((3..=8).contains(&nverts), "clipped POLY N={nverts}");
+    assert!(on_edge, "clip against x=0 must leave a vertex on that edge");
+
+    let fb = raster_fb(&mut ui);
+    let w = spec::SCREEN_W as usize;
+    let h = spec::SCREEN_H as usize;
+    let mut edge_hits = 0u32;
+    let mut white = 0u32;
+    for y in 0..h {
+        if fb[y * w * 4] > 0 {
+            edge_hits += 1;
+        }
+        for x in 0..w {
+            if fb[(y * w + x) * 4] == 255 {
+                white += 1;
+            }
+        }
+    }
+    assert!(edge_hits > 0, "the clipped edge must paint x=0, not leave a hole");
+    assert!(white > 0, "the clipped polygon must still have an interior");
+    let (_, interior_partial) = poly_luminance_stats(&fb);
+    assert_eq!(interior_partial, 0, "clip must not open an interior seam");
+}
+
+#[test]
+fn rotated_3d_face_emits_poly_textured_still_tex_tri() {
+    let mut ui = Ui::new();
+    let pixels = alloc::vec![0xffu8; 8 * 8 * 4];
+    let tex = ui.upload_texture(&pixels, 8, 8, spec::psm::PSM_8888);
+    assert!(tex >= 0);
+
+    let stage = place_box(&mut ui, 200.0, 200.0, 40.0, 36.0);
+    ui.set_prop(stage, spec::prop::PERSPECTIVE, 400.0);
+
+    let face = ui.create_node(0);
+    ui.set_prop(face, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(face, spec::prop::WIDTH, 80.0);
+    ui.set_prop(face, spec::prop::HEIGHT, 80.0);
+    ui.set_prop(face, spec::prop::INSET_L, 20.0);
+    ui.set_prop(face, spec::prop::INSET_T, 20.0);
+    ui.set_prop(face, spec::prop::BG_COLOR, abgr(200, 200, 200, 255) as f64);
+    ui.set_prop(face, spec::prop::ROTATE_Y, 40.0);
+    ui.insert_before(stage, face, 0);
+
+    let card = ui.create_node(0);
+    ui.set_prop(card, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(card, spec::prop::WIDTH, 80.0);
+    ui.set_prop(card, spec::prop::HEIGHT, 80.0);
+    ui.set_prop(card, spec::prop::INSET_L, 110.0);
+    ui.set_prop(card, spec::prop::INSET_T, 20.0);
+    ui.set_prop(card, spec::prop::ROTATE_Y, 40.0);
+    ui.insert_before(stage, card, 0);
+
+    let img = ui.create_node(spec::NodeType::Image as u8);
+    ui.set_prop(img, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(img, spec::prop::WIDTH, 80.0);
+    ui.set_prop(img, spec::prop::HEIGHT, 80.0);
+    ui.set_image(img, tex);
+    ui.insert_before(card, img, 0);
+
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert!(
+        counts[spec::draw_op::POLY as usize] >= 1,
+        "solid 3D face must emit POLY, got {}",
+        counts[spec::draw_op::POLY as usize]
+    );
+    assert!(
+        counts[spec::draw_op::TEX_TRI as usize] > 0,
+        "textured 3D face must still emit TEX_TRI"
+    );
+}
+
+#[test]
+fn poly_row_spans_match_naive_4x4_sample_oracle() {
+    // Interior-span solving used to treat div_euclid as floor for s < 0
+    // (it ceils on a negative divisor) and handed one extra boundary
+    // column to fill_opaque. Counting interior partial pixels cannot
+    // catch that: the failure turns a partial pixel solid. This oracle
+    // compares every coverage sample instead.
+    let mut angles = Vec::new();
+    let mut deg = 0i32;
+    while deg < 360 {
+        angles.push(deg as f64);
+        deg += 7;
+    }
+    for extra in [45.0, 90.0, 135.0, 180.0] {
+        if !angles.iter().any(|&a| a == extra) {
+            angles.push(extra);
+        }
+    }
+
+    // (name, w, h, inset_l, inset_t, translate_x, translate_y).
+    // Edge/corner translates hang the 80×50 box past the viewport so
+    // Sutherland-Hodgman inserts clip-boundary vertices (N in 5..=8).
+    // all-edges is a covering quad whose four original vertices sit
+    // outside the screen, which is how N reaches 8.
+    let scenes: [(&str, f64, f64, f64, f64, f64, f64); 10] = [
+        ("center", 80.0, 50.0, 200.0, 110.0, 0.0, 0.0),
+        ("left", 80.0, 50.0, 200.0, 110.0, -230.0, 0.0),
+        ("right", 80.0, 50.0, 200.0, 110.0, 230.0, 0.0),
+        ("top", 80.0, 50.0, 200.0, 110.0, 0.0, -140.0),
+        ("bottom", 80.0, 50.0, 200.0, 110.0, 0.0, 140.0),
+        ("top-left", 80.0, 50.0, 200.0, 110.0, -230.0, -140.0),
+        ("top-right", 80.0, 50.0, 200.0, 110.0, 230.0, -140.0),
+        ("bottom-left", 80.0, 50.0, 200.0, 110.0, -230.0, 140.0),
+        ("bottom-right", 80.0, 50.0, 200.0, 110.0, 230.0, 140.0),
+        ("all-edges", 520.0, 320.0, -20.0, -24.0, 0.0, 0.0),
+    ];
+
+    let mut nvert_seen = [0u32; 9];
+    let mut compared = 0u32;
+    for &angle in &angles {
+        for &(clip_name, w, h, x, y, tx, ty) in &scenes {
+            // Fresh tree per case so a previous 520×320 layout cannot
+            // leak into the next 80×50 polygon.
+            let mut ui = Ui::new();
+            let n = place_box(&mut ui, w, h, x, y);
+            ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+            ui.set_prop(n, spec::prop::TRANSLATE_X, tx);
+            ui.set_prop(n, spec::prop::TRANSLATE_Y, ty);
+            ui.set_prop(n, spec::prop::ROTATE, angle);
+            ui.tick();
+
+            let words = ui.draw().words.clone();
+            let counts = validate_drawlist(&words);
+            let n_poly = counts[spec::draw_op::POLY as usize];
+            if n_poly == 0 {
+                // 0° stays axis-aligned: emit_box writes RECT, not POLY.
+                assert_eq!(
+                    angle % 360.0,
+                    0.0,
+                    "expected POLY at rotate={angle} clip={clip_name}"
+                );
+                continue;
+            }
+            assert_eq!(
+                n_poly, 1,
+                "one box must emit one POLY at rotate={angle} clip={clip_name}"
+            );
+            let (color, verts) = find_poly(&words).expect("POLY words");
+            nvert_seen[verts.len()] += 1;
+
+            let actual = raster_fb(&mut ui);
+            let rest = strip_poly_ops(&words);
+            let mut expected =
+                alloc::vec![0u8; spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4];
+            crate::raster::render(&ui, &rest, &mut expected);
+            poly_4x4_oracle(&mut expected, color, &verts);
+
+            if actual != expected {
+                let width = spec::SCREEN_W as usize;
+                let mut diffs = 0u32;
+                let mut first = None;
+                for i in 0..width * spec::SCREEN_H as usize {
+                    let a = &actual[i * 4..i * 4 + 4];
+                    let e = &expected[i * 4..i * 4 + 4];
+                    if a != e {
+                        diffs += 1;
+                        if first.is_none() {
+                            first = Some((
+                                i % width,
+                                i / width,
+                                [a[0], a[1], a[2], a[3]],
+                                [e[0], e[1], e[2], e[3]],
+                            ));
+                        }
+                    }
+                }
+                let (px, py, a, e) = first.unwrap();
+                panic!(
+                    "POLY span fill != 4×4 oracle at rotate={angle} clip={clip_name} nverts={} — {diffs} pixels differ; first ({px},{py}) actual={a:?} oracle={e:?}",
+                    verts.len()
+                );
+            }
+            compared += 1;
+        }
+    }
+
+    assert!(compared > 0, "oracle must have compared at least one POLY");
+    let clipped_high: u32 = (5..=8).map(|k| nvert_seen[k]).sum();
+    assert!(
+        clipped_high > 0,
+        "Sutherland-Hodgman clip cases must produce 5..=8-gon POLY, nvert histogram={nvert_seen:?}"
+    );
+}
+
+#[test]
+fn rotated_rounded_flat_box_emits_poly_not_tri_and_has_coverage() {
+    // Motions Modal30 is rounded-[999px] + rotate-28. draw.rs drops the
+    // radius on a non-axis-aligned box and emit_box writes POLY, not the
+    // axis-aligned disc TEX_QUAD path and not a TRI fan.
+    let mut ui = Ui::new();
+    let n = place_box(&mut ui, 240.0, 160.0, 120.0, 56.0);
+    ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(n, spec::prop::RADIUS, 999.0);
+    ui.set_prop(n, spec::prop::ROTATE, 28.0);
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert_eq!(counts[spec::draw_op::POLY as usize], 1, "rotated rounded box must emit POLY");
+    assert_eq!(counts[spec::draw_op::TRI as usize], 0, "flat fill must not fan into TRI");
+    assert_eq!(
+        counts[spec::draw_op::TEX_QUAD as usize], 0,
+        "rotation drops the baked-disc corner path"
+    );
+    let fb = raster_fb(&mut ui);
+    let (levels, interior_partial) = poly_luminance_stats(&fb);
+    assert!(
+        levels > 2,
+        "4×4 coverage must produce more than binary edges, got {levels} levels"
+    );
+    assert_eq!(
+        interior_partial, 0,
+        "coverage over the whole polygon must not leave a seam"
+    );
+}
+
+#[test]
+fn rotated_3d_solid_face_raster_has_coverage_levels() {
+    // Motions CubeFaces: perspective root + rotate-x/y solid faces project
+    // as Item3::Quad and emit POLY. Existing tests only check the op;
+    // this checks the rasterized coverage.
+    let mut ui = Ui::new();
+    let stage = place_box(&mut ui, 200.0, 200.0, 40.0, 36.0);
+    ui.set_prop(stage, spec::prop::PERSPECTIVE, 400.0);
+
+    let face = ui.create_node(0);
+    ui.set_prop(face, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
+    ui.set_prop(face, spec::prop::WIDTH, 80.0);
+    ui.set_prop(face, spec::prop::HEIGHT, 80.0);
+    ui.set_prop(face, spec::prop::INSET_L, 20.0);
+    ui.set_prop(face, spec::prop::INSET_T, 20.0);
+    ui.set_prop(face, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+    ui.set_prop(face, spec::prop::ROTATE_X, -40.0);
+    ui.set_prop(face, spec::prop::ROTATE_Y, 40.0);
+    ui.insert_before(stage, face, 0);
+
+    ui.tick();
+    let counts = validate_drawlist(&ui.draw().words.clone());
+    assert!(
+        counts[spec::draw_op::POLY as usize] >= 1,
+        "solid 3D face must emit POLY, got {}",
+        counts[spec::draw_op::POLY as usize]
+    );
+    assert_eq!(counts[spec::draw_op::TRI as usize], 0, "flat 3D face must not fan into TRI");
+    let fb = raster_fb(&mut ui);
+    let (levels, interior_partial) = poly_luminance_stats(&fb);
+    assert!(
+        levels > 2,
+        "4×4 coverage must produce more than binary edges, got {levels} levels"
+    );
+    assert_eq!(
+        interior_partial, 0,
+        "coverage over the whole polygon must not leave a seam"
+    );
 }
 
 // ---- DevTools ops (spec ops 18..22, docs/DEVTOOLS.md) ----------------------------

@@ -552,6 +552,24 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                 flush(GuPrimitive::Triangles, VTYPE_C, (count * 3) as i32, verts as *const c_void, bytes);
                 i = end;
             }
+            spec::draw_op::POLY if i + 3 <= n => {
+                // GE has no per-pixel coverage; a triangle fan is today's
+                // binary fill of the same convex polygon.
+                let nverts = words[i + 1] as usize;
+                let next = i + 3 + nverts;
+                if !(3..=8).contains(&nverts) || next > n {
+                    break;
+                }
+                let color = words[i + 2];
+                let bytes = nverts * core::mem::size_of::<VertC>();
+                let verts = pool_alloc(bytes) as *mut VertC;
+                for k in 0..nverts {
+                    let (x, y) = xy(words[i + 3 + k]);
+                    *verts.add(k) = VertC { color, x, y, z: 0, _pad: 0 };
+                }
+                flush(GuPrimitive::TriangleFan, VTYPE_C, nverts as i32, verts as *const c_void, bytes);
+                i = next;
+            }
             spec::draw_op::GLYPH_RUN if i + 3 <= n => {
                 let w1 = words[i + 1];
                 let slot = (w1 & 0xff) as u8;
