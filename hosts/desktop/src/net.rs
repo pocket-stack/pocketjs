@@ -4,7 +4,7 @@
 //! `hosts/desktop` already answers `svcOpen` from an allowlist and moves
 //! lines through two in-process queues, which is all the note editor needs
 //! because its companion IS the host. An app whose companion is a separate
-//! program — apps/term, whose daemon holds the PTYs — needs those queues fed
+//! program — Pocket Term, whose daemon holds the PTYs — needs those queues fed
 //! from a socket instead. That is this module: the same wire the console
 //! speaks (`hosts/3ds/src/svcwire.c`), the same codec
 //! (`pocketjs_core::wire`), so one companion serves a 3DS and a desktop

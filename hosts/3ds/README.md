@@ -231,18 +231,18 @@ golden runs deterministic — the Vita3K contract. A guest switch clears the
 guest-visible queues but keeps the TCP connection; a different app id in
 `svcOpen` restarts discovery.
 
-`apps/term` is the reference consumer: a terminal multiplexer whose Mac
-companion (`apps/term/host/serve.ts`, run it with Node) owns the PTYs and one
-authoritative `@xterm/headless` core per session and streams cell-grid
-snapshots + ordered row diffs to the device replica.
+[Pocket Term](https://github.com/pocket-stack/pocket-term) is the reference
+consumer, in its own repository: a terminal multiplexer whose Mac companion
+owns the PTYs and one authoritative libghostty core per session and streams
+cell-grid snapshots + ordered row diffs to the device replica.
 
 **The transport outlives the guest.** A hot-pushed `.pocket` restarts
 QuickJS, not this host, so the TCP connection and the companion's view of it
 both survive. A guest therefore re-introduces itself on its first frame
 (`svcOpen` rising edge → a fresh `hello`), and a companion must treat that
 hello as "this replica has loaded nothing" rather than as a new socket — the
-term companion re-sends its runtime font atlas there, without which the new
-guest draws blanks where the old one drew CJK.
+Pocket Term companion re-sends its runtime font atlas there, without which
+the new guest draws blanks where the old one drew CJK.
 
 ## ZL and ZR
 

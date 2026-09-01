@@ -543,8 +543,6 @@ describe("semantic resolution", () => {
       notifications: [true, true, false, true],
       settings: [true, true, false, true],
       stats: [true, true, false, true],
-      term: [false, false, false, false], // requires the private 3ds-dev profile's auxiliary display and touch contracts
-      "term-mirror": [false, false, false, true], // the term companion's read-only desktop window: baked glyphs + buttons, so macos-app (and linux-app) admit it
       "vue-sfc-lab": [true, true, false, true],
       zoomlab: [true, true, false, true],
     };

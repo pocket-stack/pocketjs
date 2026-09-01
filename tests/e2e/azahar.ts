@@ -84,7 +84,7 @@ const graphicsApi = process.env.E2E_AZAHAR_GRAPHICS_API ?? "0";
 // The 3DS top screen is 400x240; the stock 480x272 demo corpus does not fit it
 // on either axis and the resolver has no scaling fallback, so this driver runs
 // only the specs whose app declares the 400x240 native viewport.
-const DEFAULT_SPEC_NAMES = ["3ds-demo", "term"];
+const DEFAULT_SPEC_NAMES = ["3ds-demo"];
 
 // ---------------------------------------------------------------------------
 // Preflight

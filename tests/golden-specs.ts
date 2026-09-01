@@ -283,24 +283,6 @@ export const THREE_DS_GOLDEN_SPECS: GoldenSpec[] = [
       return [];
     },
   },
-  {
-    name: "term",
-    frames: 40,
-    capture: [2, 20, 30],
-    input: () => 0,
-    // Capture builds have no svc transport (svcOpen is compiled to false), so
-    // the top screen deterministically shows the connect overlay over the
-    // empty grid. The taps drive the touch keyboard's layer machine on the
-    // auxiliary screen: frame 20 is the lower layer at rest, a tap on ?123
-    // (bottom keyboard row, first key) lands on frames 24-25 and frame 30
-    // proves the symbol layer swapped in under the same key geometry.
-    touch: (frame) => {
-      if (frame >= 24 && frame <= 25) {
-        return [{ id: 0, x: 24, y: 227 }];
-      }
-      return [];
-    },
-  },
 ];
 
 export function encodeThresholdInput(spec: GoldenSpec): string {

@@ -50,10 +50,5 @@
       "@pocketjs/framework/octane/renderer": ["./framework/src/renderer-octane.ts"]
     }
   },
-  "include": ["framework", "apps", "tests", "contracts", "hosts/web"],
-  // apps/term/host is the term demo's companion daemon: it carries native
-  // dependencies (node-pty) installed only in that directory, and has its own
-  // tsconfig. Its dependency-free modules (grid/keys/wire) still typecheck
-  // here through the tests that import them.
-  "exclude": ["apps/term/host/serve.ts", "apps/term/host/node_modules"]
+  "include": ["framework", "apps", "tests", "contracts", "hosts/web"]
 }
