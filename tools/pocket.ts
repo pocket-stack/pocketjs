@@ -120,6 +120,7 @@ if (command === "compile") process.exit(0);
 
 interface TargetBackendContext {
   readonly plan: ResolvedBuildPlan;
+  readonly manifestPath: string;
   readonly planPath: string;
   readonly projectRoot: string;
   readonly outdir: string;
@@ -141,6 +142,20 @@ const targetBackends = {
         ...args,
       ],
       "PSP backend",
+    );
+  },
+  sf2000: async ({ manifestPath, planPath, projectRoot, outdir, args }) => {
+    await run(
+      [
+        Bun.which("bun") ?? "bun",
+        resolve(frameworkRoot, "tools/sf2000.ts"),
+        `--plan=${planPath}`,
+        `--manifest=${manifestPath}`,
+        `--project-root=${projectRoot}`,
+        `--outdir=${outdir}`,
+        ...args,
+      ],
+      "SF2000 backend",
     );
   },
   vita: async ({ planPath, projectRoot, outdir, args }) => {
@@ -172,6 +187,7 @@ const targetBackends = {
 
 await targetBackends[target as PocketTargetId]({
   plan,
+  manifestPath,
   planPath,
   projectRoot,
   outdir,

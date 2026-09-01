@@ -232,6 +232,7 @@ export type PocketCapabilityId = CapabilityId<typeof POCKET_CAPABILITIES>;
  */
 export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   readonly psp: TargetProfile<PocketCapabilityId>;
+  readonly sf2000: TargetProfile<PocketCapabilityId>;
   readonly vita: TargetProfile<PocketCapabilityId>;
   readonly pocketbook: TargetProfile<PocketCapabilityId>;
   readonly "macos-widget": TargetProfile<PocketCapabilityId>;
@@ -260,6 +261,22 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
       "audio.pcm",
       "text.glyphs.baked",
     ],
+  },
+  // Data Frog SF2000 running UniFrog: a software-rasterized RGB565
+  // libretro core loaded from /unifrog/cores/pocketjs.bin. The device is
+  // MIPS32r1 little-endian soft-float with no MMU; it does not share the PSP
+  // ABI even though both machines use 32-bit MIPS processors.
+  sf2000: {
+    hostAbi: 1,
+    platform: "sf2000",
+    form: "takeover",
+    display: {
+      physicalViewport: [320, 240],
+      logicalViewports: [[320, 240]],
+      presentations: ["native"],
+      rasterDensity: 1,
+    },
+    capabilities: ["input.buttons", "text.glyphs.baked"],
   },
   vita: {
     hostAbi: 2,

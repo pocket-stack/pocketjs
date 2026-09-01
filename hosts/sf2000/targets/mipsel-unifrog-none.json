@@ -1,0 +1,24 @@
+{
+  "arch": "mips",
+  "cpu": "mips32",
+  "crt-objects-fallback": "false",
+  "data-layout": "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64",
+  "features": "+soft-float,+noabicalls",
+  "linker": "rust-lld",
+  "linker-flavor": "gnu-lld",
+  "llvm-abiname": "o32",
+  "llvm-target": "mipsel-unknown-linux-gnu",
+  "metadata": {
+    "description": "UniFrog SF2000 (MIPS32r1 little-endian soft-float)",
+    "host_tools": false,
+    "std": false,
+    "tier": 3
+  },
+  "env": "gnu",
+  "os": "linux",
+  "panic-strategy": "abort",
+  "relocation-model": "static",
+  "target-family": ["unix"],
+  "target-pointer-width": 32,
+  "vendor": "unifrog"
+}

@@ -1,0 +1,28 @@
+TARGET ?= pocketjs_libretro_sf2000.a
+RUSTUP_TOOLCHAIN ?= nightly-2026-05-28
+CARGO ?= rustup run $(RUSTUP_TOOLCHAIN) cargo
+RUST_TARGET := targets/mipsel-unifrog-none.json
+RUST_TARGET_NAME := mipsel-unifrog-none
+RUST_ARCHIVE := target/$(RUST_TARGET_NAME)/release/libpocketjs_sf2000.a
+SDK ?=
+QUICKJS_COMPAT := $(abspath src/quickjs_compat.h)
+SDK_CPATH := $(abspath $(SDK))/include/hcrtos:$(abspath $(SDK))/include
+
+.PHONY: all clean
+
+all: $(TARGET)
+
+$(TARGET): Cargo.toml $(RUST_TARGET) $(shell find src -type f)
+	@test -d "$(SDK)/include" || { echo "missing UniFrog SDK headers: SDK=$(SDK)"; exit 1; }
+	CC_mipsel_unifrog_none="$(CC)" \
+	AR_mipsel_unifrog_none="$(AR)" \
+	CPATH="$(SDK_CPATH)" \
+	CFLAGS_mipsel_unifrog_none="-EL -march=mips32 -mtune=mips32 -msoft-float -mno-abicalls -fno-pic -G0 -include $(QUICKJS_COMPAT) -U__INT32_TYPE__ -U__UINT32_TYPE__ -D__INT32_TYPE__=int -D__UINT32_TYPE__=unsigned" \
+	$(CARGO) build --release --no-default-features --target $(RUST_TARGET) \
+		-Z json-target-spec \
+		-Z build-std=core,alloc \
+		-Z build-std-features=compiler-builtins-mem
+	cp $(RUST_ARCHIVE) $@
+
+clean:
+	rm -rf target $(TARGET)

@@ -1,6 +1,7 @@
 # dependency and platform noise
 node_modules/
 target/
+.deps/
 .DS_Store
 
 # pass-1 transform cache (content-hash keyed; safe to delete any time)

@@ -134,8 +134,21 @@ export function checkAppTypes(options: AppCheckOptions): AppCheckResult {
         );
     if (parsed) configDiagnostics.push(...parsed.errors);
 
+    // A clean checkout intentionally has no styles.generated.ts: pass 1 of
+    // tools/build.ts creates it after this preflight. Let TypeScript resolve
+    // that one generated module from memory so `pocket check` stays read-only
+    // and the first build does not depend on a stale previous app's styles.
+    const generatedStyles = resolve(import.meta.dir, "../src/styles.generated.ts");
+    const compilerHost = parsed ? ts.createCompilerHost(parsed.options) : undefined;
+    if (compilerHost && !existsSync(generatedStyles)) {
+      const source = "export const STYLE_IDS: Record<string, number> = {};\n";
+      const fileExists = compilerHost.fileExists.bind(compilerHost);
+      const readFile = compilerHost.readFile.bind(compilerHost);
+      compilerHost.fileExists = (file) => resolve(file) === generatedStyles || fileExists(file);
+      compilerHost.readFile = (file) => resolve(file) === generatedStyles ? source : readFile(file);
+    }
     const program = parsed
-      ? ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options })
+      ? ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options, host: compilerHost })
       : undefined;
     const diagnostics = [
       ...configDiagnostics,

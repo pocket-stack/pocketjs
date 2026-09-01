@@ -208,6 +208,7 @@ describe("platform registry", () => {
   test("production advertises only the truthful stock-host profiles", () => {
     expect(Object.keys(POCKET_TARGETS)).toEqual([
       "psp",
+      "sf2000",
       "vita",
       "pocketbook",
       "macos-widget",
@@ -223,6 +224,18 @@ describe("platform registry", () => {
       "audio.pcm",
       "text.glyphs.baked",
     ]);
+    expect(POCKET_TARGETS.sf2000).toEqual({
+      hostAbi: 1,
+      platform: "sf2000",
+      form: "takeover",
+      display: {
+        physicalViewport: [320, 240],
+        logicalViewports: [[320, 240]],
+        presentations: ["native"],
+        rasterDensity: 1,
+      },
+      capabilities: ["input.buttons", "text.glyphs.baked"],
+    });
     expect(POCKET_TARGETS.vita.capabilities).toEqual([
       "input.analog.left",
       "input.buttons",
@@ -542,6 +555,7 @@ describe("semantic resolution", () => {
       note: [false, false, true, true],
       notifications: [true, true, false, true],
       settings: [true, true, false, true],
+      "sf2000-demo": [false, false, false, true],
       stats: [true, true, false, true],
       "vue-sfc-lab": [true, true, false, true],
       zoomlab: [true, true, false, true],

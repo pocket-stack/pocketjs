@@ -1,0 +1,49 @@
+diff --git a/Makefile b/Makefile
+index ee68a3a..d01e861 100644
+--- a/Makefile
++++ b/Makefile
+@@ -458,8 +458,10 @@ BLUEMSX_SYSTEM_SOURCE_GIT := $(CORE_SOURCE_ROOT)/libretro-blueMSX-prosty/.git
+ BLUEMSX_SYSTEM_PACKAGE := $(OUT)/sdcard/bios
+ BLUEMSX_SYSTEM_STAMP := $(BLUEMSX_SYSTEM_PACKAGE)/.bluemsx-system.stamp
+ INTERNAL_CORE_PACKAGE_SPECS := \
+-	js2300:JS2300:js2300:js2300:js2300:js\|mjs\|ch8\|chip8:-:-
++	js2300:JS2300:js2300:js2300:js2300:js\|mjs\|ch8\|chip8:-:- \
++	pocketjs:POCKETJS:pocketjs:pocketjs:pocketjs:pocket:-:-
+ ALL_CORE_PACKAGE_SPECS := $(CORE_PACKAGE_SPECS) $(INTERNAL_CORE_PACKAGE_SPECS)
++POCKETJS_DIR ?= ../pocketjs/hosts/sf2000
+ CORE_BUILD_DEPS = $(CORES)/Makefile $(CORES)/manifest.mk $(CORE_REV_STAMP) $(TOOLCHAIN_STAMP)
+ # Release packaging ships every core; plain iteration builds skip the slow
+ # ones (SLOW_CORE_IDS in cores/manifest.mk). Defined before CORE_MAKE_ARGS
+@@ -508,6 +510,7 @@ LIBRETRO_CORE_VARS := $(EXTERNAL_LIBRETRO_CORE_VARS) $(INTERNAL_LIBRETRO_CORE_VA
+ LIBRETRO_CORE_IDS := $(foreach var,$(LIBRETRO_CORE_VARS),$($(var)_CORE_ID))
+ JS2300_CORE_LIB := $(BUILD)/core_modules/js2300_libretro_core.a
+ JS2300_CORE_SUPPORT_LIBS := $(LIBJS2300)
++POCKETJS_CORE_LIB := $(CORES)/output/pocketjs_libretro_sf2000.a
+ JS2300_CORE_OBJECTS := $(BUILD)/core_modules/js2300_libretro_core.o
+ EFFECTIVE_CORE_IDS := $(strip $(if $(CORE_IDS),$(CORE_IDS),$(if $(filter 1,$(CORE_BATCH_FAST)),$(FAST_CORE_IDS),$(LIBRETRO_CORE_IDS))))
+ SELECTED_CORE_LICENSE_SPECS := $(foreach spec,$(CORE_LICENSE_SPECS),$(if $(filter $(word 1,$(subst |, ,$(spec))),$(EFFECTIVE_CORE_IDS)),$(spec)))
+@@ -1280,6 +1283,14 @@ $(JS2300_CORE_LIB): $(JS2300_CORE_OBJECTS) | $(BUILD)
+ 	$(Q)rm -f $@
+ 	$(Q)$(AR) rcs $@ $^
+ 
++$(POCKETJS_CORE_LIB): FORCE | $(TOOLCHAIN_STAMP)
++	$(LOG_ECHO) "  CORE    pocketjs"
++	$(Q)mkdir -p $(dir $@)
++	$(Q)$(MAKE) -C "$(POCKETJS_DIR)" -f Makefile.libretro \
++		CC="$(CC)" AR="$(AR)" SDK="$(abspath $(SDK))" \
++		TARGET=pocketjs_libretro_sf2000.a
++	$(Q)cp "$(POCKETJS_DIR)/pocketjs_libretro_sf2000.a" $@
++
+ $(BUILD)/lvgl/%.o: $(LVGL_DIR)/src/%.c | $(BUILD)
+ 	$(LOG_ECHO) "  CC      $<"
+ 	$(Q)mkdir -p $(dir $@)
+@@ -1560,7 +1571,7 @@ $(foreach var,$(EXTERNAL_LIBRETRO_CORE_VARS),$(eval $(call CORE_ARCHIVE_RULE,$($
+ 
+ $(LIBRETRO_COMMON_LIB): $(CORE_BUILD_DEPS)
+ 	$(LOG_ECHO) "  CORELIB libretro-common"
+-	$(Q)$(MAKE) -C $(CORES) libretro-common $(CORE_MAKE_ARGS)
++	$(Q)$(MAKE) -C $(CORES) libretro-common $(CORE_MAKE_ARGS) CORE_IDS=
+ 	$(Q)test -s $@ && touch $@
+ 
+ $(CHD_SUPPORT_CORE_LIB): $(CORE_BUILD_DEPS)
+ 	$(Q)mkdir -p $(dir $@)

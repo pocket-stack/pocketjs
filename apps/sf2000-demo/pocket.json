@@ -1,0 +1,25 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.sf2000-demo",
+  "name": "pocketjs-sf2000-demo",
+  "title": "PocketJS: SF2000",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": ["input.buttons", "text.glyphs.baked"]
+    }
+  },
+  "app": {
+    "entry": "apps/sf2000-demo/main.tsx",
+    "output": "sf2000-demo",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [320, 240],
+        "presentation": "native"
+      }
+    }
+  }
+}
+
