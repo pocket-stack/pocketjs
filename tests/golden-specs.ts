@@ -327,6 +327,26 @@ export const THREE_DS_GOLDEN_SPECS: GoldenSpec[] = [
       return [];
     },
   },
+
+  {
+    name: "pocket-shell-applets",
+    app: "pocket-shell",
+    frames: 95,
+    capture: [40, 90],
+    // Open every applet from the dock, one tap per cell. The first tape only
+    // ever opened term, notes and about, so three applets reached a device
+    // for the first time here — and mounting one of them is what overflowed
+    // the guest's JS stack on hardware. Dock cells are 48 px wide from x=16
+    // in the bottom 40 px of the touch screen.
+    touch: (frame) => {
+      const taps = [6, 16, 26, 36, 46, 56];
+      const index = taps.indexOf(frame);
+      if (index >= 0) return [{ id: 0, x: 40 + index * 48, y: 222 }];
+      const held = taps.indexOf(frame - 1);
+      if (held >= 0) return [{ id: 0, x: 40 + held * 48, y: 222 }];
+      return [];
+    },
+  },
 ];
 
 export function encodeThresholdInput(spec: GoldenSpec): string {

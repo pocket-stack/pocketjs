@@ -159,6 +159,26 @@ accepts power-of-two images only, and the stage clips the padding under an
 overflow-hidden root. Three fit in 768 KB at 16 bits per pixel; `R + START`
 cycles them.
 
+## The depth budget
+
+**The 3DS spends its JS stack on JSX nesting depth, not node count**
+(`hosts/3ds/src/qjs.c`, `POCKETJS_JS_STACK_SIZE`). A QuickJS call frame is
+expensive and mounting descends the tree, so an applet sits at the bottom of
+a chain that already runs stage → windows → window chrome → content. Opening
+one `keys` window whose rows each carried a wrapper view with a `Show` inside
+overflowed the old 192 KiB budget mid-frame, and the runtime rolled the whole
+guest back to last-good — which, on a card that also holds Pocket Term, looks
+like the shell "turning into" another app.
+
+Two things came out of that. The host budget is now 384 KiB, which is what
+the sibling Pocket Term work already found it needed. And **a row here is an
+offset, not a node**: `Keys` and `Stats` render each column as its own flat
+pass of absolutely-positioned `Text` under the applet root, three levels
+deep, instead of a wrapper view per row. Prefer that shape for any new
+applet, and remember an emulator with a generous stack will not warn you —
+`tests/golden-specs.ts` has a `pocket-shell-applets` tape that opens every
+applet from the dock precisely because the first tape never did.
+
 ## Determinism
 
 The bar shows the RTC as `HH:MM`. `tests/e2e/azahar.ts` pins the emulator's

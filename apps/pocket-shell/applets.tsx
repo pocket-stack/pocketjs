@@ -254,22 +254,42 @@ function Keys(props: AppletProps) {
     return all.slice(scroll, scroll + rows());
   };
   const keysW = () => (props.w() >= 200 ? 84 : 64);
+  // A row is an offset, not a node. The 3DS spends its JS stack on JSX
+  // NESTING DEPTH rather than node count (hosts/3ds/src/qjs.c
+  // POCKETJS_JS_STACK_SIZE), and a wrapper View with a Show inside it put
+  // this applet two levels past what mounting inside a window could afford —
+  // opening one keys window overflowed the stack and the runtime rolled the
+  // whole guest back. Each column is therefore its own flat pass of
+  // absolutely-positioned Text, three levels deep in total.
   return (
     <View debugName="Keys" class="absolute inset-0 bg-[#1a1b26]">
       <Index each={view()}>
-        {(line, i) => (
-          <View class="absolute left-0 right-0 h-[13]" style={{ insetT: PAD + i * ROW_H }}>
-            <Show when={line().kind === "title"}>
-              <Text class="absolute left-[6] top-0 text-xs text-[#7aa2f7] font-bold">{line().keys}</Text>
-            </Show>
-            <Show when={line().kind === "row"}>
-              <Text class="absolute left-[6] top-0 text-xs text-[#c0caf5] font-bold">{line().keys}</Text>
-              <Text class="absolute top-0 text-xs text-[#a9b1d6]" style={{ insetL: 6 + keysW() }}>
-                {line().what}
-              </Text>
-            </Show>
-          </View>
-        )}
+        {(line, i) =>
+          line().kind === "gap" ? null : (
+            <Text
+              class={
+                line().kind === "title"
+                  ? "absolute left-[6] text-xs text-[#7aa2f7] font-bold"
+                  : "absolute left-[6] text-xs text-[#c0caf5] font-bold"
+              }
+              style={{ insetT: PAD + i * ROW_H }}
+            >
+              {line().keys}
+            </Text>
+          )
+        }
+      </Index>
+      <Index each={view()}>
+        {(line, i) =>
+          line().kind === "row" ? (
+            <Text
+              class="absolute text-xs text-[#a9b1d6]"
+              style={{ insetT: PAD + i * ROW_H, insetL: 6 + keysW() }}
+            >
+              {line().what}
+            </Text>
+          ) : null
+        }
       </Index>
     </View>
   );
@@ -293,14 +313,21 @@ function Stats(props: AppletProps) {
       ["layer", store.layer()],
     ];
   };
+  // Flat for the same reason as Keys: two passes of Text, no per-row wrapper.
   return (
     <View debugName="Stats" class="absolute inset-0 bg-[#1a1b26]">
       <Index each={rows()}>
         {(row, i) => (
-          <View class="absolute left-0 right-0 h-[13]" style={{ insetT: PAD + i * ROW_H }}>
-            <Text class="absolute left-[6] top-0 text-xs text-[#565f89]">{row()[0]}</Text>
-            <Text class="absolute left-[74] top-0 text-xs text-[#c0caf5]">{row()[1]}</Text>
-          </View>
+          <Text class="absolute left-[6] text-xs text-[#565f89]" style={{ insetT: PAD + i * ROW_H }}>
+            {row()[0]}
+          </Text>
+        )}
+      </Index>
+      <Index each={rows()}>
+        {(row, i) => (
+          <Text class="absolute left-[74] text-xs text-[#c0caf5]" style={{ insetT: PAD + i * ROW_H }}>
+            {row()[1]}
+          </Text>
         )}
       </Index>
     </View>
