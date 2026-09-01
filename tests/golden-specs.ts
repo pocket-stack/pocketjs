@@ -332,7 +332,9 @@ export const THREE_DS_GOLDEN_SPECS: GoldenSpec[] = [
     name: "pocket-shell-applets",
     app: "pocket-shell",
     frames: 95,
-    capture: [40, 90],
+    // Frame 7 lands inside the first dock tap, so it captures the pressed
+    // look a painted button needs on a panel with no hover.
+    capture: [7, 40, 90],
     // Open every applet from the dock, one tap per cell. The first tape only
     // ever opened term, notes and about, so three applets reached a device
     // for the first time here — and mounting one of them is what overflowed

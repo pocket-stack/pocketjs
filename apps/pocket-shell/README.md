@@ -130,7 +130,8 @@ Five workspaces exist from boot; nothing is persisted across launches (the
 
 - **term** — pocketsh, the shell's own `hyprctl`: `ls`, `open <app>`,
   `close [id]`, `focus <id>`, `ws [1-5]`, `layout [dwindle|scrolling]`,
-  `wall [next]`, `keys`, `fetch`, `date`, `uptime`, `echo`, `clear`. Plain
+  `wall [next]`, `tz [+8]`, `keys`, `fetch`, `date`, `uptime`, `echo`,
+  `clear`. Plain
   buttons: A enter, B backspace, X tab-complete, Y space, ↑↓ history, START
   clear; the circle pad scrolls. 12 px JetBrains Mono on a 7 px cell.
 - **clock** — the RTC at 36 px, the date, a seconds bar; A toggles 12 h.
@@ -178,6 +179,24 @@ deep, instead of a wrapper view per row. Prefer that shape for any new
 applet, and remember an emulator with a generous stack will not warn you —
 `tests/golden-specs.ts` has a `pocket-shell-applets` tape that opens every
 applet from the dock precisely because the first tape never did.
+
+## The clock
+
+**The RTC's epoch is sound; the console's breakdown of it is not.** On
+hardware `Date.now()` is monotonic and correct, but `getHours()`
+intermittently disagreed with that epoch by whole hours — applying the
+timezone on some reads and not others. Two adjacent frames rendered two
+different times, which is what "the clock flickers" turned out to be: not a
+rendering fault but two wrong readings alternating. Measured on the device,
+the big time text changed by ~1600 px between consecutive frames; after the
+fix it changes by zero.
+
+So nothing here calls a `Date` breakdown method. `civilFromEpoch` in
+`shell.ts` derives the whole civil date and time from the epoch by
+arithmetic, and the shell reads only that. The zone is sampled once at boot
+and accepted only if it looks like a real one (a whole quarter-hour within
+±14 h); a console that reports nothing usable shows UTC, and **`tz +8` in
+pocketsh states the offset the console could not**.
 
 ## Determinism
 

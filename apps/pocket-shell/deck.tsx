@@ -13,9 +13,10 @@
 // drag the gap between two windows to resize the split, and in the
 // scrolling layout drag the background to pan the strip.
 
-import { For, Index, Show } from "solid-js";
+import { createSignal, For, Index, Show } from "solid-js";
 import { Image, Text, View } from "@pocketjs/framework/components";
 import { createGesture } from "@pocketjs/framework/gesture";
+import { onFrame } from "@pocketjs/framework/lifecycle";
 import {
   BUTTON_GLYPH,
   chordFor,
@@ -95,9 +96,19 @@ type BodyMode = "launcher" | "chords" | "keyboard" | "map";
 function AppIcon(props: { app: AppId }) {
   switch (props.app) {
     case "term":
+      // The chevron is drawn as pixels, not typed and not rotated. `❯`
+      // (U+276F) is not in the baked face, so a Text rendered the placeholder
+      // box; and `-rotate-45` is not a utility this compiler accepts (only
+      // non-negative numbers parse), which would have made the whole class
+      // literal unknown and left the node unstyled.
       return (
-        <View class="w-[22] h-[22] rounded-[5] bg-[#24283b] border border-[#414868] items-center justify-center">
-          <Text class="text-xs text-[#9ece6a] font-bold">{"❯_"}</Text>
+        <View class="w-[22] h-[22] rounded-[5] bg-[#24283b] border border-[#414868]">
+          <View class="absolute left-[4] top-[5] w-[3] h-[3] bg-[#9ece6a]" />
+          <View class="absolute left-[6] top-[7] w-[3] h-[3] bg-[#9ece6a]" />
+          <View class="absolute left-[8] top-[9] w-[3] h-[3] bg-[#9ece6a]" />
+          <View class="absolute left-[6] top-[11] w-[3] h-[3] bg-[#9ece6a]" />
+          <View class="absolute left-[4] top-[13] w-[3] h-[3] bg-[#9ece6a]" />
+          <View class="absolute left-[12] top-[14] w-[6] h-[2] bg-[#9ece6a]" />
         </View>
       );
     case "clock":
@@ -118,18 +129,19 @@ function AppIcon(props: { app: AppId }) {
         </View>
       );
     case "keys":
+      // A keyboard: two rows of caps over a spacebar. The old icon stacked
+      // two flex rows in a container with no `flex-col` — the default
+      // direction here is ROW, so they sat side by side and read as one line
+      // of dots. Absolute placement says what it means.
       return (
-        <View class="w-[22] h-[22] rounded-[5] bg-[#bb9af7] items-center justify-center">
-          <View class="flex-row gap-[2]">
-            <View class="w-[4] h-[4] bg-[#1a1b26]" />
-            <View class="w-[4] h-[4] bg-[#1a1b26]" />
-            <View class="w-[4] h-[4] bg-[#1a1b26]" />
-          </View>
-          <View class="flex-row gap-[2] mt-[2]">
-            <View class="w-[4] h-[4] bg-[#1a1b26]" />
-            <View class="w-[4] h-[4] bg-[#1a1b26]" />
-            <View class="w-[4] h-[4] bg-[#1a1b26]" />
-          </View>
+        <View class="w-[22] h-[22] rounded-[5] bg-[#bb9af7]">
+          <View class="absolute left-[3] top-[5] w-[4] h-[3] rounded-[1] bg-[#1a1b26]" />
+          <View class="absolute left-[9] top-[5] w-[4] h-[3] rounded-[1] bg-[#1a1b26]" />
+          <View class="absolute left-[15] top-[5] w-[4] h-[3] rounded-[1] bg-[#1a1b26]" />
+          <View class="absolute left-[3] top-[10] w-[4] h-[3] rounded-[1] bg-[#1a1b26]" />
+          <View class="absolute left-[9] top-[10] w-[4] h-[3] rounded-[1] bg-[#1a1b26]" />
+          <View class="absolute left-[15] top-[10] w-[4] h-[3] rounded-[1] bg-[#1a1b26]" />
+          <View class="absolute left-[5] top-[15] w-[12] h-[3] rounded-[1] bg-[#1a1b26]" />
         </View>
       );
     case "stats":
@@ -149,9 +161,42 @@ function AppIcon(props: { app: AppId }) {
   }
 }
 
+/** A touch target's transient pressed look.
+ *
+ *  A physical button reports its own press; a painted one has to say so, and
+ *  on a resistive panel with no hover there is nothing else to tell you the
+ *  panel heard you. Every target here therefore darkens or inverts while the
+ *  finger is on it, and holds that for a few frames after release so a quick
+ *  tap is still visible. Ids are `kind:key` strings so one signal covers the
+ *  strip, the gutter, the dock, the chord rows and the launcher. */
+function createPressTracker(): {
+  is: (id: string) => boolean;
+  down: (id: string | null) => void;
+  release: () => void;
+} {
+  const [pressed, setPressed] = createSignal<string | null>(null);
+  let linger = 0;
+  onFrame(() => {
+    if (linger > 0 && --linger === 0) setPressed(null);
+  });
+  return {
+    is: (id) => pressed() === id,
+    down: (id) => {
+      linger = 0;
+      setPressed(id);
+    },
+    release: () => {
+      if (pressed() !== null) linger = PRESS_LINGER_FRAMES;
+    },
+  };
+}
+
+const PRESS_LINGER_FRAMES = 5;
+
 export function Deck(props: { store: ShellStore }) {
   const store = props.store;
   const keyPress = createKeyPress();
+  const press = createPressTracker();
 
   const bodyMode = (): BodyMode => {
     if (store.launcherOpen()) return "launcher";
@@ -169,11 +214,51 @@ export function Deck(props: { store: ShellStore }) {
   let columnHandle: ReturnType<typeof store.wm.columnEdgeAt> = null;
   let panning = false;
 
+  /** Which painted target a point is on, for the pressed look. */
+  const targetAt = (x: number, y: number): string | null => {
+    if (y < STRIP_H) {
+      if (x < PILL_W) return "pill:L";
+      if (x >= R_PILL_X) return "pill:R";
+      if (x >= BADGE_X && x < BADGE_X + BADGE_W) return "badge:layout";
+      const tab = tabAt(x);
+      return tab === null ? null : `tab:${tab}`;
+    }
+    if (y >= DOCK_Y) {
+      const index = Math.floor((x - DOCK_X) / DOCK_CELL);
+      return x >= DOCK_X && index >= 0 && index < APPS.length ? `dock:${index}` : null;
+    }
+    switch (bodyMode()) {
+      case "launcher": {
+        const col = Math.floor((x - LAUNCH_X) / LAUNCH_W);
+        const row = Math.floor((y - LAUNCH_Y) / LAUNCH_H);
+        if (x < LAUNCH_X || col < 0 || col >= LAUNCH_COLS || row < 0 || row > 1) return null;
+        const index = row * LAUNCH_COLS + col;
+        return index < APPS.length ? `launch:${index}` : null;
+      }
+      case "chords": {
+        const row = Math.floor((y - CHORD_ROWS_Y) / CHORD_ROW_H);
+        if (row < 0 || row > 3) return null;
+        return chordActionAt(x, y) === null ? null : `chord:${x < CHORD_COL_SPLIT ? "l" : "r"}${row}`;
+      }
+      case "map": {
+        for (const button of GUTTER_BUTTONS) {
+          if (within(x, y, { x: button.x, y: button.y, w: GUTTER_BTN_W, h: GUTTER_BTN_H })) {
+            return `gutter:${button.act}`;
+          }
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  };
+
   const reset = () => {
     pending = null;
     splitHandle = null;
     columnHandle = null;
     panning = false;
+    press.release();
     store.setDrag(null);
     store.setClosing(null);
   };
@@ -297,6 +382,7 @@ export function Deck(props: { store: ShellStore }) {
     longPressSeconds: CLOSE_HOLD_SECONDS,
     onDown: (c) => {
       pending = null;
+      press.down(targetAt(c.x, c.y));
       if (bodyMode() === "map" && within(c.x, c.y, MAP_RECT)) {
         const id = store.wm.windowAt(toStage(c.x, c.y));
         if (id !== null) pending = { id };
@@ -304,11 +390,13 @@ export function Deck(props: { store: ShellStore }) {
     },
     onTap: (c) => {
       pending = null;
+      press.release();
       if (c.y < STRIP_H) tapStrip(c.x);
       else if (c.y >= DOCK_Y) tapDock(c.x);
       else tapBody(c.x, c.y);
     },
     onLongPress: (c) => {
+      press.down(null);
       if (pending && bodyMode() === "map") {
         store.setClosing({ id: pending.id, over: false });
         store.say("");
@@ -317,6 +405,7 @@ export function Deck(props: { store: ShellStore }) {
       void c;
     },
     onPanStart: (c) => {
+      press.down(null);
       if (store.closing() || bodyMode() !== "map") return;
       const sp = toStage(c.x, c.y);
       if (pending) {
@@ -430,7 +519,9 @@ export function Deck(props: { store: ShellStore }) {
           class={
             lHeld()
               ? "absolute left-[2] top-[3] w-[24] h-[18] rounded-[4] bg-[#7aa2f7] items-center justify-center"
-              : "absolute left-[2] top-[3] w-[24] h-[18] rounded-[4] bg-[#24283b] items-center justify-center"
+              : press.is("pill:L")
+                ? "absolute left-[2] top-[3] w-[24] h-[18] rounded-[4] bg-[#3d4c63] items-center justify-center"
+                : "absolute left-[2] top-[3] w-[24] h-[18] rounded-[4] bg-[#24283b] items-center justify-center"
           }
         >
           <Text class={lHeld() ? "text-xs text-[#1a1b26] font-bold" : "text-xs text-[#565f89] font-bold"}>L</Text>
@@ -441,9 +532,11 @@ export function Deck(props: { store: ShellStore }) {
               class={
                 store.drag()?.overWs === i + 1
                   ? "absolute top-0 h-[24] items-center justify-center bg-[#9ece6a33]"
-                  : store.active() === i + 1
-                    ? "absolute top-0 h-[24] items-center justify-center bg-[#1a1b26]"
-                    : "absolute top-0 h-[24] items-center justify-center"
+                  : press.is(`tab:${i + 1}`)
+                    ? "absolute top-0 h-[24] items-center justify-center bg-[#3d4c63]"
+                    : store.active() === i + 1
+                      ? "absolute top-0 h-[24] items-center justify-center bg-[#1a1b26]"
+                      : "absolute top-0 h-[24] items-center justify-center"
               }
               style={{ insetL: TABS_X + i * TAB_W, width: TAB_W }}
             >
@@ -472,7 +565,11 @@ export function Deck(props: { store: ShellStore }) {
           )}
         </Index>
         <View
-          class="absolute top-[3] h-[18] rounded-[4] bg-[#24283b] items-center justify-center"
+          class={
+            press.is("badge:layout")
+              ? "absolute top-[3] h-[18] rounded-[4] bg-[#3d4c63] items-center justify-center"
+              : "absolute top-[3] h-[18] rounded-[4] bg-[#24283b] items-center justify-center"
+          }
           style={{ insetL: BADGE_X + 2, width: BADGE_W - 4 }}
         >
           <Text class="text-xs text-[#a9b1d6]">{store.layoutKind()}</Text>
@@ -481,7 +578,9 @@ export function Deck(props: { store: ShellStore }) {
           class={
             rHeld()
               ? "absolute right-[2] top-[3] w-[24] h-[18] rounded-[4] bg-[#7aa2f7] items-center justify-center"
-              : "absolute right-[2] top-[3] w-[24] h-[18] rounded-[4] bg-[#24283b] items-center justify-center"
+              : press.is("pill:R")
+                ? "absolute right-[2] top-[3] w-[24] h-[18] rounded-[4] bg-[#3d4c63] items-center justify-center"
+                : "absolute right-[2] top-[3] w-[24] h-[18] rounded-[4] bg-[#24283b] items-center justify-center"
           }
         >
           <Text class={rHeld() ? "text-xs text-[#1a1b26] font-bold" : "text-xs text-[#565f89] font-bold"}>R</Text>
@@ -553,9 +652,11 @@ export function Deck(props: { store: ShellStore }) {
               class={
                 button.act === "kbd" && !isTextApp(store.focusedApp())
                   ? "absolute w-[32] h-[22] rounded-[4] bg-[#1a1b26] items-center justify-center"
-                  : button.act === "kbd" && store.kbOpen()
+                  : press.is(`gutter:${button.act}`)
                     ? "absolute w-[32] h-[22] rounded-[4] bg-[#7aa2f7] items-center justify-center"
-                    : "absolute w-[32] h-[22] rounded-[4] bg-[#24283b] items-center justify-center"
+                    : button.act === "kbd" && store.kbOpen()
+                      ? "absolute w-[32] h-[22] rounded-[4] bg-[#7aa2f7] items-center justify-center"
+                      : "absolute w-[32] h-[22] rounded-[4] bg-[#24283b] items-center justify-center"
               }
               style={{ insetL: button.x, insetT: button.y }}
             >
@@ -563,7 +664,7 @@ export function Deck(props: { store: ShellStore }) {
                 class={
                   button.act === "kbd" && !isTextApp(store.focusedApp())
                     ? "text-xs text-[#414868]"
-                    : button.act === "kbd" && store.kbOpen()
+                    : press.is(`gutter:${button.act}`) || (button.act === "kbd" && store.kbOpen())
                       ? "text-xs text-[#1a1b26] font-bold"
                       : "text-xs text-[#a9b1d6]"
                 }
@@ -608,7 +709,14 @@ export function Deck(props: { store: ShellStore }) {
           </Text>
           <Index each={chordLeft()}>
             {(row, i) => (
-              <View class="absolute left-[8] h-[24] flex-row items-center gap-[6] overflow-hidden" style={{ insetT: CHORD_ROWS_Y - BODY_TOP + i * CHORD_ROW_H, width: CHORD_COL_SPLIT - 12 }}>
+              <View
+                class={
+                  press.is(`chord:l${i}`)
+                    ? "absolute left-[8] h-[24] flex-row items-center gap-[6] overflow-hidden rounded-[4] bg-[#3d4c63]"
+                    : "absolute left-[8] h-[24] flex-row items-center gap-[6] overflow-hidden"
+                }
+                style={{ insetT: CHORD_ROWS_Y - BODY_TOP + i * CHORD_ROW_H, width: CHORD_COL_SPLIT - 12 }}
+              >
                 <Show when={row().badge === "dpad"}>
                   <View class="w-[18] h-[18] rounded-[3] bg-[#292e42] items-center justify-center">
                     <Text class="text-xs text-[#c0caf5] font-bold">+</Text>
@@ -630,7 +738,14 @@ export function Deck(props: { store: ShellStore }) {
           </Index>
           <Index each={chordRight()}>
             {(row, i) => (
-              <View class="absolute h-[24] flex-row items-center gap-[6] overflow-hidden" style={{ insetL: CHORD_COL_SPLIT + 6, insetT: CHORD_ROWS_Y - BODY_TOP + i * CHORD_ROW_H, width: 320 - CHORD_COL_SPLIT - 12 }}>
+              <View
+                class={
+                  press.is(`chord:r${i}`)
+                    ? "absolute h-[24] flex-row items-center gap-[6] overflow-hidden rounded-[4] bg-[#3d4c63]"
+                    : "absolute h-[24] flex-row items-center gap-[6] overflow-hidden"
+                }
+                style={{ insetL: CHORD_COL_SPLIT + 6, insetT: CHORD_ROWS_Y - BODY_TOP + i * CHORD_ROW_H, width: 320 - CHORD_COL_SPLIT - 12 }}
+              >
                 <View class="w-[18] h-[18] rounded-full bg-[#292e42] items-center justify-center">
                   <Text class="text-xs text-[#c0caf5] font-bold">{row().badge}</Text>
                 </View>
@@ -652,9 +767,11 @@ export function Deck(props: { store: ShellStore }) {
             {(app, i) => (
               <View
                 class={
-                  store.launcherIndex() === i
-                    ? "absolute rounded-[6] bg-[#292e42] border border-[#7aa2f7]"
-                    : "absolute rounded-[6] bg-[#1a1b26]"
+                  press.is(`launch:${i}`)
+                    ? "absolute rounded-[6] bg-[#3d4c63] border border-[#7aa2f7]"
+                    : store.launcherIndex() === i
+                      ? "absolute rounded-[6] bg-[#292e42] border border-[#7aa2f7]"
+                      : "absolute rounded-[6] bg-[#1a1b26]"
                 }
                 style={{
                   insetL: LAUNCH_X + (i % LAUNCH_COLS) * LAUNCH_W,
@@ -692,7 +809,14 @@ export function Deck(props: { store: ShellStore }) {
               return false;
             };
             return (
-              <View class="absolute top-0 h-[40]" style={{ insetL: DOCK_X + i * DOCK_CELL, width: DOCK_CELL }}>
+              <View
+                class={
+                  press.is(`dock:${i}`)
+                    ? "absolute top-0 h-[40] bg-[#24283b]"
+                    : "absolute top-0 h-[40]"
+                }
+                style={{ insetL: DOCK_X + i * DOCK_CELL, width: DOCK_CELL }}
+              >
                 <View class="absolute left-[13] top-[3]">
                   <AppIcon app={app()} />
                 </View>

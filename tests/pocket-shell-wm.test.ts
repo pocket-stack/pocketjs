@@ -13,7 +13,19 @@ import {
   type Rect,
 } from "../apps/pocket-shell/wm.ts";
 import { CHORDS, chordFor, keySheet, labelFor, layerOf } from "../apps/pocket-shell/chords.ts";
-import { CLEAR, complete, formatClock, formatUptime, run, type ShellApi } from "../apps/pocket-shell/shell.ts";
+import {
+  CLEAR,
+  civilFromEpoch,
+  complete,
+  detectOffsetMinutes,
+  formatClock,
+  formatDate,
+  formatOffset,
+  parseOffset,
+  formatUptime,
+  run,
+  type ShellApi,
+} from "../apps/pocket-shell/shell.ts";
 import { BTN } from "../contracts/spec/spec.ts";
 
 type App = "term" | "clock" | "notes";
@@ -316,6 +328,7 @@ describe("chords", () => {
 describe("pocketsh", () => {
   function fakeApi(): { api: ShellApi; log: string[] } {
     const log: string[] = [];
+    let tz = 0;
     const api: ShellApi = {
       apps: () => ["term", "clock"],
       windows: () => [{ id: 1, app: "term", title: "term", ws: 1, focused: true }],
@@ -323,7 +336,7 @@ describe("pocketsh", () => {
       layout: () => "dwindle",
       wallpaper: () => "road",
       uptimeSeconds: () => 3725,
-      now: () => new Date(2000, 0, 1, 9, 41, 0),
+      now: () => civilFromEpoch(Date.UTC(2000, 0, 1, 9, 41, 0)),
       host: () => "3ds",
       open: (app) => (app === "clock" ? 2 : null),
       close: (id) => {
@@ -336,6 +349,11 @@ describe("pocketsh", () => {
         log.push(`layout ${layout}`);
       },
       nextWallpaper: () => "lake",
+      timezone: () => tz,
+      setTimezone: (minutes: number) => {
+        tz = minutes;
+        log.push(`tz ${minutes}`);
+      },
       keys: () => [{ title: "L", rows: [{ keys: "L + B", what: "close" }] }],
     };
     return { api, log };
@@ -363,10 +381,53 @@ describe("pocketsh", () => {
 
   test("completion and clock formatting", () => {
     expect(complete("la")).toEqual(["layout"]);
-    expect(complete("")).toHaveLength(14);
-    expect(formatClock(new Date(2000, 0, 1, 0, 5), false)).toBe("00:05");
-    expect(formatClock(new Date(2000, 0, 1, 13, 5), true)).toBe("01:05");
-    expect(formatClock(new Date(2000, 0, 1, 0, 5), true)).toBe("12:05");
+    expect(complete("")).toHaveLength(15);
+    const at = (h: number, m: number) => civilFromEpoch(Date.UTC(2000, 0, 1, h, m, 0));
+    expect(formatClock(at(0, 5), false)).toBe("00:05");
+    expect(formatClock(at(13, 5), true)).toBe("01:05");
+    expect(formatClock(at(0, 5), true)).toBe("12:05");
     expect(formatUptime(59)).toBe("0m 59s");
+  });
+
+  // The device's RTC epoch is sound but QuickJS's breakdown of it is not, so
+  // every displayed field comes from this arithmetic instead of Date methods.
+  test("civil time is derived from the epoch alone", () => {
+    const cases: [number, string, string][] = [
+      [Date.UTC(1970, 0, 1, 0, 0, 0), "Thu Jan 1 1970", "00:00"],
+      [Date.UTC(2000, 1, 29, 23, 59, 59), "Tue Feb 29 2000", "23:59"], // leap year
+      [Date.UTC(2026, 8, 2, 5, 24, 49), "Wed Sep 2 2026", "05:24"], // the reading on hardware
+      [Date.UTC(2100, 2, 1, 12, 0, 0), "Mon Mar 1 2100", "12:00"], // 2100 is not a leap year
+    ];
+    for (const [ms, date, clock] of cases) {
+      const civil = civilFromEpoch(ms);
+      expect(formatDate(civil)).toBe(date);
+      expect(formatClock(civil)).toBe(clock);
+    }
+    // Whole seconds, and the offset shifts the wall clock without touching the epoch.
+    expect(civilFromEpoch(Date.UTC(2026, 8, 2, 5, 24, 49)).second).toBe(49);
+    expect(formatClock(civilFromEpoch(Date.UTC(2026, 8, 2, 5, 24, 0), 8 * 60))).toBe("13:24");
+    expect(formatDate(civilFromEpoch(Date.UTC(2026, 8, 2, 23, 30, 0), 60))).toBe("Thu Sep 3 2026");
+  });
+
+  test("the operator can state the clock offset the console cannot", () => {
+    const { api } = fakeApi();
+    expect(run("tz", api)).toEqual(["UTC"]);
+    expect(run("tz +8", api)).toEqual(["clock is UTC+08:00"]);
+    expect(run("tz", api)).toEqual(["UTC+08:00"]);
+    expect(run("tz -5:30", api)).toEqual(["clock is UTC-05:30"]);
+    expect(run("tz 0", api)).toEqual(["clock is UTC"]);
+    expect(run("tz +7:07", api)[0]).toContain("try");
+    expect(run("tz 99", api)[0]).toContain("try");
+    expect(parseOffset("+05:45")).toBe(345);
+    expect(formatOffset(-330)).toBe("-05:30");
+  });
+
+  test("a nonsensical timezone reading is refused rather than frozen in", () => {
+    const ms = Date.UTC(2026, 8, 2, 5, 0, 0);
+    const local = (h: number, m = 0) => ({ getHours: () => h, getMinutes: () => m }) as Date;
+    expect(detectOffsetMinutes(ms, local(13))).toBe(8 * 60); // a real zone
+    expect(detectOffsetMinutes(ms, local(5))).toBe(0);
+    expect(detectOffsetMinutes(ms, local(6, 30))).toBe(90); // quarter-hour zones exist
+    expect(detectOffsetMinutes(ms, local(5, 7))).toBe(0); // 7 minutes is not a zone
   });
 });

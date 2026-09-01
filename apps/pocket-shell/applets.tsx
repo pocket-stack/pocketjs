@@ -143,8 +143,8 @@ function Clock(props: AppletProps) {
     return s && s.kind === "clock" ? s : null;
   };
   const time = () => formatClock(props.store.now(), state()?.hour12 ?? false);
-  const suffix = () => (state()?.hour12 ? (props.store.now().getHours() < 12 ? "am" : "pm") : "");
-  const seconds = () => props.store.now().getSeconds();
+  const suffix = () => (state()?.hour12 ? (props.store.now().hour < 12 ? "am" : "pm") : "");
+  const seconds = () => props.store.now().second;
   const big = () => props.w() >= 200 && props.h() >= 96;
   const mid = () => !big() && props.h() >= 56 && props.w() >= 110;
   return (

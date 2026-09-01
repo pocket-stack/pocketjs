@@ -12,7 +12,7 @@ import { BTN } from "@pocketjs/framework/input";
 import { analogX, analogY, onFrame } from "@pocketjs/framework/lifecycle";
 import { getOps } from "@pocketjs/framework";
 import { chordsOf, keySheet, layerOf, type ActionId, type Layer } from "./chords.ts";
-import { CLEAR, complete, run as runShell, type ShellApi } from "./shell.ts";
+import { CLEAR, civilFromEpoch, complete, detectOffsetMinutes, run as runShell, type CivilTime, type ShellApi } from "./shell.ts";
 import { WindowManager, WORKSPACES, type Placement, type Rect } from "./wm.ts";
 
 export type AppId = "term" | "clock" | "notes" | "keys" | "stats" | "about";
@@ -137,10 +137,22 @@ export function createShellStore() {
   const anims = new Map<number, Anim>();
   let ghosts: Ghost[] = [];
 
+  // The RTC's epoch is trustworthy; QuickJS's breakdown of it on this device
+  // is not (see civilFromEpoch). Read the zone once, then do the arithmetic.
+  const detectedOffset = (() => {
+    try {
+      const ms = Date.now();
+      return detectOffsetMinutes(ms, new Date(ms));
+    } catch {
+      return 0;
+    }
+  })();
+
+  const [offsetMinutes, setOffsetMinutes] = createSignal(detectedOffset);
   const [rev, setRev] = createSignal(0);
   const bump = () => setRev((r) => r + 1);
   const [frame, setFrame] = createSignal(0);
-  const [second, setSecond] = createSignal(0);
+  const [epochSecond, setEpochSecond] = createSignal(0);
   const [layer, setLayer] = createSignal<Layer>("plain");
   const [latchL, setLatchL] = createSignal(false);
   const [latchR, setLatchR] = createSignal(false);
@@ -206,10 +218,7 @@ export function createShellStore() {
     return wm.barVisible;
   });
   const kbVisible = createMemo(() => kbOpen() && isTextApp(focusedApp()));
-  const now = createMemo(() => {
-    second();
-    return new Date();
-  });
+  const now = createMemo<CivilTime>(() => civilFromEpoch(epochSecond() * 1000, offsetMinutes()));
 
   const placementOf = (id: number): Placement | undefined => placements().find((p) => p.id === id);
   const windowOf = (id: number) => wm.windows.get(id);
@@ -422,7 +431,7 @@ export function createShellStore() {
     layout: () => wm.workspace().layout,
     wallpaper: () => wallpaper(),
     uptimeSeconds,
-    now: () => new Date(),
+    now: () => civilFromEpoch(Date.now(), offsetMinutes()),
     host: () => getOps().__host ?? "3ds",
     open: (app) => (APPS.includes(app as AppId) ? open(app as AppId) : null),
     close: (id) => close(id ?? wm.workspace().focus),
@@ -440,6 +449,8 @@ export function createShellStore() {
       if (wm.workspace().layout !== kind) toggleLayout();
     },
     nextWallpaper,
+    timezone: () => offsetMinutes(),
+    setTimezone: (minutes) => setOffsetMinutes(minutes),
     keys: () => keySheet(wm.workspace().layout),
   };
 
@@ -576,7 +587,7 @@ export function createShellStore() {
     const nowSecond = Math.floor(Date.now() / 1000);
     if (nowSecond !== lastSecond) {
       lastSecond = nowSecond;
-      setSecond(nowSecond);
+      setEpochSecond(nowSecond);
       const stamp = Date.now();
       if (fpsStamp > 0) setFps(Math.round((fpsFrames * 1000) / Math.max(1, stamp - fpsStamp)));
       fpsStamp = stamp;
@@ -683,7 +694,7 @@ export function createShellStore() {
     rev,
     frame,
     frameCount,
-    second,
+    epochSecond,
     now,
     fps,
     uptimeSeconds,
@@ -704,6 +715,7 @@ export function createShellStore() {
     kbLayer,
     setKbLayer,
     wallpaper,
+    offsetMinutes,
     toast,
     say,
     drag,
