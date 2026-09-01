@@ -1,0 +1,30 @@
+[
+  {
+    "key": "ui:tile.zoom.0.0",
+    "file": "tiles/poster.0.bin"
+  },
+  {
+    "key": "ui:tile.zoom.0.1",
+    "file": "tiles/poster.1.bin"
+  },
+  {
+    "key": "ui:tile.zoom.0.2",
+    "file": "tiles/poster.2.bin"
+  },
+  {
+    "key": "ui:tile.zoom.0.3",
+    "file": "tiles/poster.3.bin"
+  },
+  {
+    "key": "ui:tile.zoom.1.0",
+    "file": "tiles/cells.0.bin"
+  },
+  {
+    "key": "ui:tile.zoom.1.1",
+    "file": "tiles/cells.1.bin"
+  },
+  {
+    "key": "ui:tile.zoom.1.2",
+    "file": "tiles/cells.2.bin"
+  }
+]

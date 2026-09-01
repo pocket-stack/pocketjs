@@ -1,0 +1,5 @@
+target/
+# Game data (copyrighted map/texture files) lives outside the repo; see README.
+examples/openstrike/assets/maps/
+examples/openstrike/assets/wads/
+*.png.tmp

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "asset": "iPod nano (2nd generation inspired)",
+  "source": {
+    "file": "source/ipod.blend",
+    "sha256": "2072e044d300140cf21ea9d2e428c4be62fe1b7dcf86a3ac197819741ef6b708",
+    "generator": "source/build_ipod.py"
+  },
+  "runtime_exporter": "export_runtime.py",
+  "derived_font_notice": "BFONT-LICENSE.txt",
+  "runtime_artifact": {
+    "file": "ipod-nano-2.glb",
+    "sha256": "5cfa2a22f0cd8c03f2309109542c407d2d3d05de797cf14e3396b7503287f510",
+    "bytes": 832508,
+    "triangles": 22303,
+    "runtime_vertices": 27708
+  },
+  "canonical": {
+    "units": "profile-scaled millimetres",
+    "up": "+Y",
+    "front": "+Z",
+    "target_width_mm": 40.0
+  },
+  "included_collections": [
+    "IPOD_BODY",
+    "IPOD_SCREEN",
+    "IPOD_WHEEL",
+    "IPOD_DETAILS"
+  ],
+  "excluded_collections": [
+    "IPOD_SCREEN_UI",
+    "STUDIO",
+    "LIGHTS",
+    "CAMERA"
+  ],
+  "references": [
+    {
+      "url": "https://support.apple.com/en-ca/112309",
+      "use": "physical dimensions and 176-by-132 display specification"
+    }
+  ]
+}

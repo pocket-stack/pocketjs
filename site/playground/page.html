@@ -1,0 +1,60 @@
+<section class="pg-wrap">
+  <div class="pg-toolbar">
+    <div class="pg-tb-left">
+      <span class="pg-tb-label">Demo</span>
+      <select id="pg-demo" aria-label="Choose a demo"></select>
+      <div class="pg-framework" role="tablist" aria-label="Framework">
+        <button class="pg-framework-btn is-active" type="button" role="tab" aria-selected="true" data-framework="solid">Solid</button>
+        <button class="pg-framework-btn" type="button" role="tab" aria-selected="false" data-framework="vue-vapor">Vue Vapor</button>
+        <button class="pg-framework-btn" type="button" role="tab" aria-selected="false" data-framework="octane">Octane</button>
+      </div>
+      <button id="pg-run" class="btn btn-primary">Run</button>
+      <button id="pg-reset" class="btn">Reset</button>
+    </div>
+    <div class="pg-tb-right">
+      <span id="pg-status" class="pg-status"></span>
+    </div>
+  </div>
+
+  <div class="pg-split">
+    <div class="pg-editor-pane">
+      <div id="pg-editor" class="pg-editor"></div>
+    </div>
+
+    <div class="pg-preview-pane">
+      <div class="w-full max-w-[720px]">
+        <figure class="pg-stage" data-pocket-stage data-playground-stage>
+          <div
+            class="pg-stage__viewport"
+            data-stage-viewport
+            tabindex="0"
+            role="group"
+            aria-label="Interactive 3D PSP running the live Playground example. Drag to rotate, click the device controls, or use the keyboard."
+            aria-describedby="pg-hint"
+          >
+            <canvas
+              class="pg-stage__canvas"
+              data-stage-canvas
+              aria-hidden="true"
+            ></canvas>
+            <canvas id="pg-canvas" class="pg-stage__screen" data-stage-screen width="480" height="272" aria-hidden="true"></canvas>
+            <div class="pg-stage__status" data-stage-status role="status" aria-live="polite">
+              <span class="pg-stage__status-dot" aria-hidden="true"></span>
+              Loading PSP model&hellip;
+            </div>
+          </div>
+          <figcaption class="pg-stage__credit">
+            PSP model by <a href="https://sketchfab.com/3d-models/playstation-portable-psp-eg02-b76c7f9158204a39929a9c97d0b813d0" target="_blank" rel="noreferrer">Dibad</a>
+            &middot; <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>
+          </figcaption>
+        </figure>
+      </div>
+      <pre id="pg-error" class="pg-error" hidden></pre>
+      <p class="pg-hint" id="pg-hint">
+        Edit the code — the preview recompiles live (Solid, Vue Vapor or Octane + Tailwind + baked fonts → a <code>.pak</code>,
+        rendered by the Rust core in WebAssembly). Click the PSP, then use its controls, or the
+        keyboard: arrows = d-pad · Z/Enter = ◯ · X = ✕ · A = ▢ · S = △.
+      </p>
+    </div>
+  </div>
+</section>

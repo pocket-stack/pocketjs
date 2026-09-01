@@ -1,0 +1,9 @@
+<script setup lang="ts">
+import { Text } from "@pocketjs/framework/vue-vapor/components";
+
+const message = "PocketJS";
+</script>
+
+<template>
+  <Text>{{ message }}</Text>
+</template>

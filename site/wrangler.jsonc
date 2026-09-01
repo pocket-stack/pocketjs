@@ -1,0 +1,22 @@
+{
+  // PocketJS site — an assets-only Worker (Workers Static Assets, no server
+  // script). Serves site/dist. Deploy from the repo root:
+  //   bunx wrangler deploy -c site/wrangler.jsonc
+  // `directory` is resolved relative to THIS file, so it points at site/dist.
+  "name": "pocketjs",
+  "compatibility_date": "2026-07-01",
+  "workers_dev": true,
+  "assets": {
+    "directory": "./dist",
+    // /docs/overview/ -> /docs/overview/index.html
+    "html_handling": "auto-trailing-slash",
+    // unknown paths -> the branded /404.html
+    "not_found_handling": "404-page"
+  },
+  // Custom domains (apex + www). The pocketjs.dev zone is active in this
+  // account; wrangler provisions the custom domain + edge cert on deploy.
+  "routes": [
+    { "pattern": "pocketjs.dev", "custom_domain": true },
+    { "pattern": "www.pocketjs.dev", "custom_domain": true }
+  ]
+}

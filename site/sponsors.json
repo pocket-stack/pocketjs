@@ -1,0 +1,101 @@
+{
+  "count": 16,
+  "sponsors": [
+    {
+      "login": "ZephyrCloudIO",
+      "name": "Zephyr Cloud IO",
+      "url": "https://github.com/ZephyrCloudIO",
+      "avatar": "/assets/sponsors/ZephyrCloudIO.png"
+    },
+    {
+      "login": "Brooooooklyn",
+      "name": "LongYinan",
+      "url": "https://github.com/Brooooooklyn",
+      "avatar": "/assets/sponsors/Brooooooklyn.png"
+    },
+    {
+      "login": "CoderSerio",
+      "name": "碳苯 Carbon",
+      "url": "https://github.com/CoderSerio",
+      "avatar": "/assets/sponsors/CoderSerio.png"
+    },
+    {
+      "login": "EYHN",
+      "name": "EYHN",
+      "url": "https://github.com/EYHN",
+      "avatar": "/assets/sponsors/EYHN.png"
+    },
+    {
+      "login": "Hengyu",
+      "name": "hengyu",
+      "url": "https://github.com/Hengyu",
+      "avatar": "/assets/sponsors/Hengyu.png"
+    },
+    {
+      "login": "hyfdev",
+      "name": "Yunfei He",
+      "url": "https://github.com/hyfdev",
+      "avatar": "/assets/sponsors/hyfdev.png"
+    },
+    {
+      "login": "jackeydou",
+      "name": "Yanlin",
+      "url": "https://github.com/jackeydou",
+      "avatar": "/assets/sponsors/jackeydou.png"
+    },
+    {
+      "login": "lawvs",
+      "name": "Whitewater",
+      "url": "https://github.com/lawvs",
+      "avatar": "/assets/sponsors/lawvs.png"
+    },
+    {
+      "login": "LlamaGenAI",
+      "name": "llamagen",
+      "url": "https://github.com/LlamaGenAI",
+      "avatar": "/assets/sponsors/LlamaGenAI.png"
+    },
+    {
+      "login": "pengx17",
+      "name": "Peng Xiao",
+      "url": "https://github.com/pengx17",
+      "avatar": "/assets/sponsors/pengx17.png"
+    },
+    {
+      "login": "Richeir",
+      "name": "Richeir",
+      "url": "https://github.com/Richeir",
+      "avatar": "/assets/sponsors/Richeir.png"
+    },
+    {
+      "login": "SitgesRun",
+      "name": "SitgesRun",
+      "url": "https://github.com/SitgesRun",
+      "avatar": "/assets/sponsors/SitgesRun.png"
+    },
+    {
+      "login": "ThaddeusJiang",
+      "name": "天海 原 / AMAMI Hara",
+      "url": "https://github.com/ThaddeusJiang",
+      "avatar": "/assets/sponsors/ThaddeusJiang.png"
+    },
+    {
+      "login": "wey-gu",
+      "name": "Wey Gu",
+      "url": "https://github.com/wey-gu",
+      "avatar": "/assets/sponsors/wey-gu.png"
+    },
+    {
+      "login": "Wh1isper",
+      "name": "Zhongsheng Ji",
+      "url": "https://github.com/Wh1isper",
+      "avatar": "/assets/sponsors/Wh1isper.png"
+    },
+    {
+      "login": "wong2",
+      "name": "wong2",
+      "url": "https://github.com/wong2",
+      "avatar": "/assets/sponsors/wong2.png"
+    }
+  ]
+}

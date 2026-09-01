@@ -1,0 +1,354 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* One design system. tokens.css holds the values, chrome.css the shared shell;
+   the @theme mapping below re-exports the same tokens as Tailwind utilities so
+   a docs page and the homepage cannot drift apart. */
+@import "./tokens.css";
+@import "./chrome.css" layer(components);
+
+/* Scan every place a class can appear (TS template strings, HTML, JS glue,
+   raw HTML embedded in blog/docs markdown). */
+@source "../**/*.{ts,html,js,md}";
+
+/* ---- theme: utilities resolve to the tokens, never to their own copies ---- */
+@theme inline {
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+  --font-px: var(--px);
+  --font-math: var(--math);
+
+  --color-ink: var(--bg);
+  --color-ink-2: var(--bg-2);
+  --color-surface: var(--panel);
+  --color-surface-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+
+  --color-fg: var(--ink);
+  --color-fg-2: var(--ink-2);
+  --color-muted: var(--muted);
+
+  --color-tint: var(--tint-2);
+  --color-tint-1: var(--tint-1);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-brand: var(--accent-3);
+  --color-brand-2: var(--accent);
+  --color-brand-3: var(--accent-3);
+
+  /* Docs chrome reaches for slate by name in a dozen places. The ground is
+     plum, so the scale is redefined here as the matching lavender ramp rather
+     than left as Tailwind's cool grey, which reads dirty over this bg. */
+  --color-slate-100: #fcf6ff;
+  --color-slate-200: #ded2f2;
+  --color-slate-300: var(--ink-2);
+  --color-slate-400: #ab9ccb;
+  --color-slate-500: var(--muted);
+  --color-slate-600: #6f6389;
+}
+
+/* ---- base: chrome.css sets the ground; this adds prose-only defaults ------ */
+@layer base {
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg);
+    background-image:
+      radial-gradient(ellipse 55% 34% at 50% -6%, rgba(var(--accent-rgb), 0.1), transparent),
+      radial-gradient(ellipse 58% 40% at 50% -4%, rgba(var(--accent-2-rgb), 0.06), transparent),
+      radial-gradient(ellipse 40% 30% at 90% 14%, rgba(var(--accent-3-rgb), 0.05), transparent);
+    color: var(--ink-2);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* the same fine horizontal grain the homepage sits behind */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 100;
+    background: repeating-linear-gradient(0deg, rgba(var(--shade-rgb), 0.10) 0 1px, transparent 1px 4px);
+  }
+  a { color: inherit; text-decoration: none; }
+  ::selection { background: color-mix(in oklab, var(--accent) 82%, transparent); color: #2a1b10; }
+}
+
+/* prose links carry the accent the rest of the system uses for references */
+@layer components {
+  .prose a { color: var(--accent-3); font-weight: 500; }
+  .prose a:hover { color: var(--accent); }
+  .prose :where(code):not(:where(pre *)) { color: var(--accent-2); }
+}
+
+/* ---- reusable brand bits -------------------------------------------------- */
+@utility text-gradient {
+  background: var(--spectrum);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@layer components {
+  .card {
+    border: 1px solid var(--color-line);
+    background: color-mix(in oklab, var(--color-surface) 70%, transparent);
+    border-radius: 0.9rem;
+  }
+
+  /* inline code + fenced blocks in prose and elsewhere */
+  .prose :where(code):not(:where(pre code)) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-line);
+    border-radius: 0.35rem;
+    padding: 0.12em 0.4em;
+    color: var(--color-brand-2);
+  }
+  .prose :where(code):not(:where(pre code))::before,
+  .prose :where(code):not(:where(pre code))::after {
+    content: none;
+  }
+  .prose pre {
+    background: var(--color-ink-2);
+    border: 1px solid var(--color-line);
+    border-radius: 0.7rem;
+  }
+  /* Shiki-highlighted docs code blocks (theme bg is inline; keep our chrome). */
+  .prose pre.shiki {
+    border: 1px solid var(--color-line);
+    border-radius: 0.7rem;
+    padding: 0.95rem 1.1rem;
+    max-width: 100%;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.65;
+  }
+  .prose pre.shiki code {
+    display: block;
+    min-width: max-content;
+    font-family: var(--font-mono);
+    background: transparent;
+    padding: 0;
+    border: 0;
+    color: inherit;
+  }
+  .prose :where(table) {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .prose :where(th, td) {
+    white-space: nowrap;
+  }
+
+  /* ---- handheld device frame (hero + playground) ------------------------- */
+  .pocket-screen canvas,
+  .pg-screen canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    outline: none;
+  }
+
+  /* ---- code sample card -------------------------------------------------- */
+  .code-card {
+    border: 1px solid var(--color-line);
+    border-radius: 0.85rem;
+    overflow: hidden;
+    background: var(--color-ink-2);
+  }
+  .code-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid var(--color-line);
+    background: color-mix(in oklab, var(--color-surface) 60%, transparent);
+  }
+  .code-head .dot {
+    height: 0.6rem;
+    width: 0.6rem;
+    border-radius: 999px;
+    background: var(--color-line-2);
+  }
+  .code-body {
+    margin: 0;
+    padding: 1.15rem 1.25rem;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--color-slate-300);
+  }
+  /* syntax tints (home.ts highlight + prose fences) */
+  .code-body .k, .tok-k { color: #c084fc; }
+  .code-body .s, .tok-s { color: #7dd3fc; }
+  .code-body .c, .tok-c { color: #64748b; font-style: italic; }
+  .code-body .t, .tok-t { color: #5eead4; }
+
+  /* ---- playground -------------------------------------------------------- */
+  .pg-wrap {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 3.5rem);
+    min-height: 540px;
+  }
+  .pg-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--color-line);
+    background: var(--color-ink-2);
+    flex-wrap: wrap;
+  }
+  .pg-tb-left { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .pg-tb-right { display: flex; align-items: center; gap: 0.9rem; }
+  .pg-tb-label { font-size: 0.78rem; font-weight: 600; color: var(--color-slate-500); }
+  #pg-demo {
+    background: var(--color-surface-2);
+    color: var(--color-slate-100);
+    border: 1px solid var(--color-line-2);
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+  }
+  .pg-framework {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.18rem;
+    border: 1px solid var(--color-line-2);
+    border-radius: 0.55rem;
+    background: var(--color-surface);
+  }
+  .pg-framework-btn {
+    border: 0;
+    border-radius: 0.4rem;
+    background: transparent;
+    color: var(--color-slate-400);
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 650;
+    line-height: 1;
+    padding: 0.45rem 0.65rem;
+  }
+  .pg-framework-btn.is-active {
+    color: #04121b;
+    background: linear-gradient(112deg, #eef3fa 0%, #d2dbe7 42%, #e8edf4 100%);
+  }
+  .pg-framework-btn:disabled {
+    cursor: not-allowed;
+    color: var(--color-slate-600);
+  }
+  .pg-status { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-slate-500); }
+  .pg-status[data-kind="ok"] { color: #34d399; }
+  .pg-status[data-kind="err"] { color: #f87171; }
+  .pg-status[data-kind="busy"] { color: var(--color-brand-2); }
+  .pg-split { flex: 1; display: grid; grid-template-columns: 1fr; min-height: 0; }
+  @media (min-width: 900px) { .pg-split { grid-template-columns: 1fr 1fr; } }
+  .pg-editor-pane { min-height: 0; border-bottom: 1px solid var(--color-line); overflow: hidden; }
+  @media (min-width: 900px) { .pg-editor-pane { border-bottom: 0; border-right: 1px solid var(--color-line); } }
+  .pg-editor { height: 100%; }
+  .pg-editor .cm-editor { height: 100%; }
+  .pg-editor .cm-editor.cm-focused { outline: none; }
+  .pg-preview-pane {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    background:
+      radial-gradient(42% 60% at 0% 8%, color-mix(in oklab, var(--color-brand-3) 7%, transparent), transparent 70%),
+      radial-gradient(36% 58% at 100% 12%, color-mix(in oklab, var(--color-brand-2) 4%, transparent), transparent 72%),
+      var(--color-ink);
+  }
+  .pg-error {
+    width: 100%; max-width: 620px; margin: 0; padding: 0.75rem 0.9rem;
+    background: color-mix(in oklab, #7f1d1d 30%, var(--color-ink-2));
+    border: 1px solid #b91c1c; border-radius: 0.6rem; color: #fecaca;
+    font-family: var(--font-mono); font-size: 0.72rem; white-space: pre-wrap;
+    overflow-x: auto; max-height: 220px; overflow-y: auto;
+  }
+  .pg-hint { max-width: 560px; text-align: center; font-size: 0.78rem; color: var(--color-slate-500); }
+  .pg-hint code { font-family: var(--font-mono); color: var(--color-brand-2); }
+
+  /* ---- docs layout ------------------------------------------------------- */
+  .doc-shell { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; width: 100%; max-width: 80rem; min-width: 0; margin: 0 auto; }
+  @media (min-width: 1000px) { .doc-shell { grid-template-columns: 250px minmax(0, 1fr); } }
+  .doc-nav {
+    display: none; padding: 2rem 1.25rem; border-right: 1px solid var(--color-line);
+    position: sticky; top: 3.5rem; align-self: start; max-height: calc(100vh - 3.5rem); overflow-y: auto;
+  }
+  @media (min-width: 1000px) { .doc-nav { display: block; } }
+  .doc-sec { margin-bottom: 1.4rem; }
+  .doc-sec-t { font-size: 0.78rem; font-weight: 600; color: var(--color-slate-500); margin-bottom: 0.5rem; }
+  .doc-nav a { display: block; padding: 0.3rem 0.6rem; border-radius: 0.4rem; font-size: 0.88rem; color: var(--color-slate-400); }
+  .doc-nav a:hover { color: var(--color-slate-100); background: var(--color-surface); }
+  .doc-nav a.on { color: var(--color-brand-2); background: color-mix(in oklab, var(--color-brand) 12%, transparent); font-weight: 600; }
+  .doc-body { width: 100%; min-width: 0; padding: 2.5rem 1.5rem 4rem; max-width: 52rem; }
+  @media (min-width: 1000px) { .doc-body { padding: 2.5rem 3rem 5rem; } }
+  .doc-content { min-width: 0; overflow-wrap: anywhere; }
+  .doc-pager { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--color-line); }
+  .doc-pager a { display: flex; flex-direction: column; padding: 0.75rem 1rem; border: 1px solid var(--color-line); border-radius: 0.6rem; font-size: 0.9rem; color: var(--color-slate-200); max-width: 48%; }
+  .doc-pager a:hover { border-color: var(--color-brand); }
+  .doc-pager a.next { text-align: right; margin-left: auto; }
+  .doc-pager span { font-size: 0.72rem; font-weight: 600; color: var(--color-slate-500); }
+  .doc-fw-code {
+    margin: 1.25rem 0;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .doc-fw-radio {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .doc-fw-tabs {
+    display: inline-flex;
+    gap: 0.15rem;
+    margin-bottom: -1px;
+    padding: 0.2rem;
+    border: 1px solid var(--color-line);
+    border-bottom: 0;
+    border-radius: 0.65rem 0.65rem 0 0;
+    background: var(--color-surface);
+  }
+  .doc-fw-tab {
+    border-radius: 0.45rem;
+    color: var(--color-slate-400);
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 650;
+    line-height: 1;
+    padding: 0.5rem 0.7rem;
+  }
+  .doc-fw-panel {
+    display: none;
+    min-width: 0;
+  }
+  .doc-fw-panel pre {
+    margin-top: 0;
+    border-top-left-radius: 0;
+  }
+  .doc-fw-radio-solid:checked ~ .doc-fw-tabs .doc-fw-tab-solid,
+  .doc-fw-radio-vue-vapor:checked ~ .doc-fw-tabs .doc-fw-tab-vue-vapor,
+  .doc-fw-radio-octane:checked ~ .doc-fw-tabs .doc-fw-tab-octane {
+    color: #04121b;
+    background: linear-gradient(112deg, #eef3fa 0%, #d2dbe7 42%, #e8edf4 100%);
+  }
+  .doc-fw-radio-solid:checked ~ .doc-fw-panels .doc-fw-panel-solid,
+  .doc-fw-radio-vue-vapor:checked ~ .doc-fw-panels .doc-fw-panel-vue-vapor,
+  .doc-fw-radio-octane:checked ~ .doc-fw-panels .doc-fw-panel-octane {
+    display: block;
+  }
+}

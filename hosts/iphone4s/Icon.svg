@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="590" height="600" viewBox="0 0 590 600">
+  <defs>
+    <linearGradient id="outer-chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.12" stop-color="#8f949c"/>
+      <stop offset="0.24" stop-color="#f7f8fa"/>
+      <stop offset="0.63" stop-color="#5f646b"/>
+      <stop offset="0.82" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#71767e"/>
+    </linearGradient>
+    <linearGradient id="outer-rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="0.34" stop-color="#555b63"/>
+      <stop offset="0.68" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#767b83"/>
+    </linearGradient>
+    <linearGradient id="enamel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a2f57"/>
+      <stop offset="0.18" stop-color="#231b3b"/>
+      <stop offset="0.58" stop-color="#171226"/>
+      <stop offset="1" stop-color="#1d1632"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="0.54" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+  </defs>
+
+  <!-- Transparent corners and a precomposed chrome bezel match the iPhone 2G artwork. -->
+  <rect x="13" y="13" width="564" height="574" rx="119" fill="#000000" opacity="0.55"
+        filter="url(#soft-shadow)"/>
+  <rect x="4" y="4" width="582" height="592" rx="126" fill="url(#outer-chrome)"/>
+  <rect x="13" y="13" width="564" height="574" rx="116" fill="none"
+        stroke="url(#outer-rim)" stroke-width="15"/>
+  <rect x="37" y="39" width="516" height="522" rx="91" fill="url(#enamel)"
+        stroke="#120e1f" stroke-width="8"/>
+  <rect x="48" y="50" width="494" height="500" rx="80" fill="none"
+        stroke="#ffffff" stroke-opacity="0.18" stroke-width="7"/>
+
+  <!-- Curved glass highlight is baked so UIPrerenderedIcon can remain enabled. -->
+  <path d="M65 76 Q295 32 525 76 L525 220 Q295 178 65 236 Z" fill="url(#glass)"/>
+  <path d="M72 82 Q295 45 518 82" fill="none" stroke="#ffffff"
+        stroke-opacity="0.45" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Pocket mark: the 32-unit drawing from site/assets/favicon.svg, mounted
+       rather than redrawn, so the retina icon cannot drift from the source. -->
+  <rect x="105" y="187" width="380" height="246" rx="88" fill="#000000" opacity="0.34"
+        filter="url(#soft-shadow)"/>
+  <g data-brand-source="site/assets/favicon.svg"
+     transform="translate(88.99 114.48) scale(12.8758)">
+    <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="#ffd23f" stroke-width="2.6" stroke-linejoin="round"/>
+    <circle cx="10" cy="16" r="3.1" fill="#ff5f9e"/>
+    <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="#3fd0e8"/>
+    <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="#ff5f9e"/>
+  </g>
+</svg>

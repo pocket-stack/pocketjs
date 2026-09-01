@@ -1,0 +1,53 @@
+name: Deploy pocketjs.dev
+
+# Publish the site to Cloudflare on every push to main (and on demand).
+# Requires two repo secrets: CLOUDFLARE_API_TOKEN (a scoped "Edit Cloudflare
+# Workers" token) and CLOUDFLARE_ACCOUNT_ID.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-pocketjs-dev
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # The site copies hosts/web/pocketjs.wasm (a gitignored build artifact), so
+      # CI must build it from engine/core/wasm first. Stable Rust is enough (no nightly
+      # features); wasm32-unknown-unknown is the target.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo + wasm target
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            engine/wasm/target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('engine/wasm/Cargo.toml', 'engine/core/Cargo.toml', 'engine/wasm/src/**', 'engine/core/src/**') }}
+          restore-keys: ${{ runner.os }}-wasm-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build site (wasm + launcher stage + docs + playground)
+        run: bun run site:build
+
+      - name: Deploy to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler deploy -c site/wrangler.jsonc

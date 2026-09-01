@@ -1,0 +1,104 @@
+name: Linux gpui host
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-linux.yml"
+      - "contracts/spec/**"
+      - "engine/core/**"
+      - "engine/crates/pocket-mod/**"
+      - "engine/crates/pocket-ui-surface/**"
+      - "engine/backends/gpui/**"
+      - "hosts/desktop/**"
+      - "hosts/web/app-instance.*"
+      - "hosts/web/system-engine.js"
+      - "hosts/web/wasm-ops.js"
+      - "framework/src/manifest/**"
+      - "tests/platform-contracts.test.ts"
+      - "tests/pocket-system.test.ts"
+      - "tests/web-system-host.test.ts"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/desktop-linux.yml"
+      - "contracts/spec/**"
+      - "engine/core/**"
+      - "engine/crates/pocket-mod/**"
+      - "engine/crates/pocket-ui-surface/**"
+      - "engine/backends/gpui/**"
+      - "hosts/desktop/**"
+      - "hosts/web/app-instance.*"
+      - "hosts/web/system-engine.js"
+      - "hosts/web/wasm-ops.js"
+      - "framework/src/manifest/**"
+      - "tests/platform-contracts.test.ts"
+      - "tests/pocket-system.test.ts"
+      - "tests/web-system-host.test.ts"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: linux-app build + X11 smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install gpui Linux dependencies
+        run: >-
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          clang cmake pkg-config libasound2-dev libfontconfig-dev libglib2.0-dev
+          libssl-dev libvulkan1 libwayland-dev libx11-xcb-dev
+          libxkbcommon-x11-dev libzstd-dev mesa-vulkan-drivers xvfb xauth
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            engine/backends/gpui
+            hosts/desktop
+            engine/wasm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      - name: Linux, web and System contract tests
+        run: bun test tests/platform-contracts.test.ts tests/pocket-system.test.ts tests/web-system-host.test.ts
+
+      - name: Resolve and build the note for linux-app
+        run: |
+          bun -e '
+          import { validateAndResolveBuildPlan } from "./framework/src/manifest/resolve.ts";
+          import { mkdirSync } from "node:fs";
+          const manifest = await Bun.file("apps/note/pocket.json").json();
+          const result = validateAndResolveBuildPlan(manifest, { target: "linux-app" });
+          if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+          mkdirSync(".pocket/linux-app", { recursive: true });
+          await Bun.write(".pocket/linux-app/note-main.plan.json", JSON.stringify(result.plan, null, 2) + "\n");'
+          bun tools/build.ts --plan=.pocket/linux-app/note-main.plan.json
+
+      - name: Rust format, lint and tests
+        run: |
+          cargo fmt --check --manifest-path hosts/desktop/Cargo.toml
+          cargo clippy --locked --manifest-path hosts/desktop/Cargo.toml -- -D warnings
+          cargo test --locked --manifest-path hosts/desktop/Cargo.toml
+
+      - name: Build linux-app release host
+        run: cargo build --release --locked --manifest-path hosts/desktop/Cargo.toml
+
+      - name: Launch linux-app under X11 with software Vulkan
+        env:
+          POCKETJS_DIST: ${{ github.workspace }}/dist
+        run: >-
+          timeout 30s xvfb-run -a hosts/desktop/target/release/pocket-desktop-host
+          --app note-main --title Note --viewport 720x480 --density 1
+          --native-text --companions note --editor --file /tmp/pocket-note.md
+          --quit-after 20

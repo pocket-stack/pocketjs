@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  /* Root font-size is rescaled by JS to (10px * scale) so every rem-based
+     dimension below tracks the video resolution. scale = min(W,H)/1080. */
+  :root { font-size: 10px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    background: #171226;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+
+  /* faint blueprint grid — matches pocketjs.dev og-image */
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.08) 1px, transparent 1px);
+    background-size: 12rem 12rem;
+  }
+  /* corner glows */
+  .glow-l {
+    position: absolute; inset: 0;
+    background: radial-gradient(76rem 90rem at 8% 0%, rgba(255,210,63,0.20), rgba(255,210,63,0.05) 58%, transparent 78%);
+  }
+  .glow-r {
+    position: absolute; inset: 0;
+    background: radial-gradient(68rem 86rem at 100% 6%, rgba(255,95,158,0.18), rgba(255,95,158,0.04) 62%, transparent 82%);
+  }
+
+  .stage {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 5.8rem; padding: 6rem;
+  }
+
+  /* logo lockup: glyph + wordmark */
+  .lockup { display: flex; align-items: center; gap: 3.4rem; }
+  .lockup svg { width: 13.2rem; height: 13.2rem; display: block;
+    filter: drop-shadow(0 1.6rem 3rem rgba(14,9,26,0.55)); }
+  .wordmark {
+    font-size: 9.2rem; font-weight: 700; letter-spacing: -0.01em;
+    color: #fcf6ff; white-space: nowrap;
+  }
+
+  /* hero tagline */
+  .tagline {
+    font-size: 13.2rem; font-weight: 800; letter-spacing: -0.02em;
+    line-height: 1.02; text-align: center; max-width: 92vw;
+    background: linear-gradient(100deg, #ffd23f 0%, #ff5f9e 52%, #3fd0e8 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .url {
+    position: absolute; bottom: 6.6rem; left: 0; right: 0;
+    text-align: center;
+    font-size: 3.2rem; font-weight: 500; letter-spacing: 0.02em;
+    color: #8e80ac;
+  }
+
+  /* ---- layer isolation: positions preserved via visibility ---- */
+  body[data-layer="logo"], body[data-layer="tag"], body[data-layer="url"] { background: transparent; }
+  body[data-layer="logo"] .grid, body[data-layer="tag"] .grid, body[data-layer="url"] .grid,
+  body[data-layer="logo"] .glow-l, body[data-layer="tag"] .glow-l, body[data-layer="url"] .glow-l,
+  body[data-layer="logo"] .glow-r, body[data-layer="tag"] .glow-r, body[data-layer="url"] .glow-r { visibility: hidden; }
+  body[data-layer="bg"] .lockup, body[data-layer="bg"] .tagline, body[data-layer="bg"] .url { visibility: hidden; }
+  body[data-layer="logo"] .tagline, body[data-layer="logo"] .url { visibility: hidden; }
+  body[data-layer="tag"]  .lockup,  body[data-layer="tag"]  .url { visibility: hidden; }
+  body[data-layer="url"]  .lockup,  body[data-layer="url"]  .tagline { visibility: hidden; }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow-l"></div>
+  <div class="glow-r"></div>
+
+  <div class="stage">
+    <div class="lockup">
+      <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="6" width="28" height="20" rx="6" fill="none" stroke="#ffd23f" stroke-width="2.6" stroke-linejoin="round"/>
+        <circle cx="10" cy="16" r="3.1" fill="#ff5f9e"/>
+        <rect x="16" y="12.6" width="10" height="2.2" rx="1.1" fill="#3fd0e8"/>
+        <rect x="16" y="17.2" width="6.5" height="2.2" rx="1.1" fill="#ff5f9e"/>
+      </svg>
+      <div class="wordmark" id="brand">PocketJS</div>
+    </div>
+
+    <div class="tagline" id="tagline">Bare Metal Modern Web</div>
+  </div>
+
+  <div class="url" id="url">pocketjs.dev</div>
+
+  <script>
+    var p = new URLSearchParams(location.search);
+    var scale = parseFloat(p.get('scale')) || 1;
+    document.documentElement.style.fontSize = (10 * scale) + 'px';
+    if (p.has('brand'))   document.getElementById('brand').textContent   = p.get('brand');
+    if (p.has('tagline')) document.getElementById('tagline').textContent = p.get('tagline');
+    if (p.has('url'))     document.getElementById('url').textContent     = p.get('url');
+    var layer = p.get('layer');
+    if (layer) document.body.dataset.layer = layer;
+  </script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+interface:
+  display_name: "PocketJS PSP Benchmark"
+  short_description: "Benchmark PocketJS demos on PPSSPP"
+  default_prompt: "Use $pocketjs-psp-benchmark to benchmark PocketJS demos in PPSSPP and report timing and memory headroom."

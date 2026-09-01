@@ -1,0 +1,8 @@
+# Repository Instructions
+
+- After completing and validating a code or documentation change, publish it as a draft pull request before treating the work as ready for review or merge.
+- If the user also asks to merge the change, open the draft pull request first, then mark it ready and merge it after the relevant checks pass.
+- Name pull requests (and the branch's primary commit) using the Conventional Commits format — `type(scope): summary`, e.g. `feat(gallery): …`, `fix: …`, `docs: …`, `refactor: …`.
+- Keep PocketJS examples explicit about API ownership: import PocketJS runtime, host components, lifecycle, input, and animation APIs from `@pocketjs/framework/*`; import Solid primitives and control flow directly from `solid-js`.
+- Pocket Vapor apps take incremental input only through the hardware-neutral `RelativeAxis`/`onAxisDelta` contract in `vapor/host/input.ts` — never device SDK concepts in app code, never crank motion encoded as fake buttons (details: `vapor/DESIGN.md` §5).
+- Documentation prose (`site/content/docs/`, `docs/`) states the mechanism directly and bolds concrete engineering facts, never slogans. No meta-framing of the concept system ("ontology", "philosophy", "N nouns and one relation"), no imported architecture jargon ("vertical slice", "algebra" for an API, "first-class citizen"), no personification or dramatic one-liners, no empty intensifiers ("simply", "elegant", "magic"). Register reference: `site/content/docs/architecture.md` and `site/content/docs/concepts.md`. The blog keeps its own separate voice (first-person essays); this rule is for reference documentation.

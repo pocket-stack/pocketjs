@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="828" height="796" viewBox="0 0 828 796" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+<rect width="828" height="796" fill="#0b1220"/>
+<text x="16" y="26" fill="#e2e8f0" font-size="15" font-weight="bold">PocketJS on PPSSPP — Solid vs Vue Vapor vs Octane</text>
+<text x="16" y="44" fill="#94a3b8" font-size="10">2026-07-30T00:48:05.365Z · 7 samples/app · PPSSPP 676724ee5e · pocketjs 4e097c0 · software renderer</text>
+<rect x="16" y="56" width="10" height="10" fill="#2c4f7c"/>
+<text x="30" y="65" fill="#e2e8f0" font-size="10">Solid</text>
+<rect x="126" y="56" width="10" height="10" fill="#42b883"/>
+<text x="140" y="65" fill="#e2e8f0" font-size="10">Vue Vapor</text>
+<rect x="236" y="56" width="10" height="10" fill="#e8590c"/>
+<text x="250" y="65" fill="#e2e8f0" font-size="10">Octane</text>
+<text x="16" y="84" fill="#cbd5e1" font-size="10">geomean — Vue Vapor/Solid: work 1.11x · boot 2.02x · size 2.41x   |   Octane/Solid: work 1.66x · boot 2.00x · size 2.96x</text>
+<text x="16" y="114" fill="#e2e8f0" font-size="12" font-weight="bold">Average frame work (lower is better)</text>
+<line x1="56" y1="290" x2="812" y2="290" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="293" fill="#64748b" font-size="8" text-anchor="end">0.0ms</text>
+<line x1="56" y1="252.5" x2="812" y2="252.5" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="255.5" fill="#64748b" font-size="8" text-anchor="end">4.1ms</text>
+<line x1="56" y1="215" x2="812" y2="215" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="218" fill="#64748b" font-size="8" text-anchor="end">8.1ms</text>
+<line x1="56" y1="177.5" x2="812" y2="177.5" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="180.5" fill="#64748b" font-size="8" text-anchor="end">12.2ms</text>
+<line x1="56" y1="140" x2="812" y2="140" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="143" fill="#64748b" font-size="8" text-anchor="end">16.3ms</text>
+<rect x="71" y="256.2251044996312" width="23" height="33.774895500368814" fill="#2c4f7c"/>
+<text x="82.5" y="253.2251044996312" fill="#94a3b8" font-size="7" text-anchor="middle">3.7ms</text>
+<rect x="97" y="256.69535283993116" width="23" height="33.30464716006884" fill="#42b883"/>
+<text x="108.5" y="253.69535283993116" fill="#94a3b8" font-size="7" text-anchor="middle">3.6ms</text>
+<rect x="123" y="229.77133021883452" width="23" height="60.22866978116547" fill="#e8590c"/>
+<text x="134.5" y="226.77133021883452" fill="#94a3b8" font-size="7" text-anchor="middle">6.5ms</text>
+<text x="110" y="304" fill="#cbd5e1" font-size="9" text-anchor="middle">hero</text>
+<rect x="179" y="245.52003934103763" width="23" height="44.479960658962376" fill="#2c4f7c"/>
+<text x="190.5" y="242.52003934103763" fill="#94a3b8" font-size="7" text-anchor="middle">4.8ms</text>
+<rect x="205" y="242.57868207523973" width="23" height="47.42131792476026" fill="#42b883"/>
+<text x="216.5" y="239.57868207523973" fill="#94a3b8" font-size="7" text-anchor="middle">5.1ms</text>
+<rect x="231" y="229.53159577083846" width="23" height="60.468404229161536" fill="#e8590c"/>
+<text x="242.5" y="226.53159577083846" fill="#94a3b8" font-size="7" text-anchor="middle">6.6ms</text>
+<text x="218" y="304" fill="#cbd5e1" font-size="9" text-anchor="middle">cards</text>
+<rect x="287" y="226.91295795426606" width="23" height="63.087042045733945" fill="#2c4f7c"/>
+<text x="298.5" y="223.91295795426606" fill="#94a3b8" font-size="7" text-anchor="middle">6.8ms</text>
+<rect x="313" y="215.87595279075487" width="23" height="74.12404720924513" fill="#42b883"/>
+<text x="324.5" y="212.87595279075487" fill="#94a3b8" font-size="7" text-anchor="middle">8.0ms</text>
+<rect x="339" y="204.7283009589378" width="23" height="85.27169904106219" fill="#e8590c"/>
+<text x="350.5" y="201.7283009589378" fill="#94a3b8" font-size="7" text-anchor="middle">9.2ms</text>
+<text x="326" y="304" fill="#cbd5e1" font-size="9" text-anchor="middle">stats</text>
+<rect x="395" y="256.09601671994096" width="23" height="33.90398328005901" fill="#2c4f7c"/>
+<text x="406.5" y="253.09601671994096" fill="#94a3b8" font-size="7" text-anchor="middle">3.7ms</text>
+<rect x="421" y="249.55864273420212" width="23" height="40.441357265797876" fill="#42b883"/>
+<text x="432.5" y="246.55864273420212" fill="#94a3b8" font-size="7" text-anchor="middle">4.4ms</text>
+<rect x="447" y="244.45967543643965" width="23" height="45.540324563560354" fill="#e8590c"/>
+<text x="458.5" y="241.45967543643965" fill="#94a3b8" font-size="7" text-anchor="middle">4.9ms</text>
+<text x="434" y="304" fill="#cbd5e1" font-size="9" text-anchor="middle">library</text>
+<rect x="503" y="226.9037373985739" width="23" height="63.096262601426105" fill="#2c4f7c"/>
+<text x="514.5" y="223.9037373985739" fill="#94a3b8" font-size="7" text-anchor="middle">6.8ms</text>
+<rect x="529" y="222.07216621588395" width="23" height="67.92783378411605" fill="#42b883"/>
+<text x="540.5" y="219.07216621588395" fill="#94a3b8" font-size="7" text-anchor="middle">7.4ms</text>
+<rect x="555" y="156.07142857142858" width="23" height="133.92857142857142" fill="#e8590c"/>
+<text x="566.5" y="153.07142857142858" fill="#94a3b8" font-size="7" text-anchor="middle">14.5ms</text>
+<text x="542" y="304" fill="#cbd5e1" font-size="9" text-anchor="middle">settings</text>
+<rect x="611" y="248.2954266043767" width="23" height="41.70457339562331" fill="#2c4f7c"/>
+<text x="622.5" y="245.2954266043767" fill="#94a3b8" font-size="7" text-anchor="middle">4.5ms</text>
+<rect x="637" y="233.74538972215393" width="23" height="56.25461027784607" fill="#42b883"/>
+<text x="648.5" y="230.74538972215393" fill="#94a3b8" font-size="7" text-anchor="middle">6.1ms</text>
+<rect x="663" y="162.40595033194" width="23" height="127.59404966805998" fill="#e8590c"/>
+<text x="674.5" y="159.40595033194" fill="#94a3b8" font-size="7" text-anchor="middle">13.8ms</text>
+<text x="650" y="304" fill="#cbd5e1" font-size="9" text-anchor="middle">notifications</text>
+<rect x="719" y="193.72817801819525" width="23" height="96.27182198180475" fill="#2c4f7c"/>
+<text x="730.5" y="190.72817801819525" fill="#94a3b8" font-size="7" text-anchor="middle">10.4ms</text>
+<rect x="745" y="194.1799852471109" width="23" height="95.8200147528891" fill="#42b883"/>
+<text x="756.5" y="191.1799852471109" fill="#94a3b8" font-size="7" text-anchor="middle">10.4ms</text>
+<rect x="771" y="170.85197934595527" width="23" height="119.14802065404473" fill="#e8590c"/>
+<text x="782.5" y="167.85197934595527" fill="#94a3b8" font-size="7" text-anchor="middle">12.9ms</text>
+<text x="758" y="304" fill="#cbd5e1" font-size="9" text-anchor="middle">music</text>
+<text x="16" y="342" fill="#e2e8f0" font-size="12" font-weight="bold">Boot to first frame (lower is better)</text>
+<line x1="56" y1="518" x2="812" y2="518" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="521" fill="#64748b" font-size="8" text-anchor="end">0.00s</text>
+<line x1="56" y1="480.5" x2="812" y2="480.5" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="483.5" fill="#64748b" font-size="8" text-anchor="end">0.40s</text>
+<line x1="56" y1="443" x2="812" y2="443" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="446" fill="#64748b" font-size="8" text-anchor="end">0.79s</text>
+<line x1="56" y1="405.5" x2="812" y2="405.5" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="408.5" fill="#64748b" font-size="8" text-anchor="end">1.19s</text>
+<line x1="56" y1="368" x2="812" y2="368" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="371" fill="#64748b" font-size="8" text-anchor="end">1.58s</text>
+<rect x="71" y="456.41698646784033" width="23" height="61.58301353215967" fill="#2c4f7c"/>
+<text x="82.5" y="453.41698646784033" fill="#94a3b8" font-size="7" text-anchor="middle">0.65s</text>
+<rect x="97" y="397.8289774783857" width="23" height="120.17102252161428" fill="#42b883"/>
+<text x="108.5" y="394.8289774783857" fill="#94a3b8" font-size="7" text-anchor="middle">1.27s</text>
+<rect x="123" y="399.41245256881473" width="23" height="118.58754743118529" fill="#e8590c"/>
+<text x="134.5" y="396.41245256881473" fill="#94a3b8" font-size="7" text-anchor="middle">1.25s</text>
+<text x="110" y="532" fill="#cbd5e1" font-size="9" text-anchor="middle">hero</text>
+<rect x="179" y="463.2268687947742" width="23" height="54.7731312052258" fill="#2c4f7c"/>
+<text x="190.5" y="460.2268687947742" fill="#94a3b8" font-size="7" text-anchor="middle">0.58s</text>
+<rect x="205" y="403.04997582892224" width="23" height="114.95002417107777" fill="#42b883"/>
+<text x="216.5" y="400.04997582892224" fill="#94a3b8" font-size="7" text-anchor="middle">1.21s</text>
+<rect x="231" y="407.7720281720592" width="23" height="110.22797182794078" fill="#e8590c"/>
+<text x="242.5" y="404.7720281720592" fill="#94a3b8" font-size="7" text-anchor="middle">1.16s</text>
+<text x="218" y="532" fill="#cbd5e1" font-size="9" text-anchor="middle">cards</text>
+<rect x="287" y="453.7540116094051" width="23" height="64.24598839059489" fill="#2c4f7c"/>
+<text x="298.5" y="450.7540116094051" fill="#94a3b8" font-size="7" text-anchor="middle">0.68s</text>
+<rect x="313" y="390.4061829677711" width="23" height="127.5938170322289" fill="#42b883"/>
+<text x="324.5" y="387.4061829677711" fill="#94a3b8" font-size="7" text-anchor="middle">1.34s</text>
+<rect x="339" y="384.07142857142856" width="23" height="133.92857142857142" fill="#e8590c"/>
+<text x="350.5" y="381.07142857142856" fill="#94a3b8" font-size="7" text-anchor="middle">1.41s</text>
+<text x="326" y="532" fill="#cbd5e1" font-size="9" text-anchor="middle">stats</text>
+<rect x="395" y="458.46458193145133" width="23" height="59.53541806854869" fill="#2c4f7c"/>
+<text x="406.5" y="455.46458193145133" fill="#94a3b8" font-size="7" text-anchor="middle">0.63s</text>
+<rect x="421" y="398.30913472400033" width="23" height="119.69086527599968" fill="#42b883"/>
+<text x="432.5" y="395.30913472400033" fill="#94a3b8" font-size="7" text-anchor="middle">1.26s</text>
+<rect x="447" y="401.4754206557043" width="23" height="116.52457934429573" fill="#e8590c"/>
+<text x="458.5" y="398.4754206557043" fill="#94a3b8" font-size="7" text-anchor="middle">1.23s</text>
+<text x="434" y="532" fill="#cbd5e1" font-size="9" text-anchor="middle">library</text>
+<rect x="503" y="456.88243533933036" width="23" height="61.11756466066964" fill="#2c4f7c"/>
+<text x="514.5" y="453.88243533933036" fill="#94a3b8" font-size="7" text-anchor="middle">0.64s</text>
+<rect x="529" y="395.0973002788784" width="23" height="122.90269972112162" fill="#42b883"/>
+<text x="540.5" y="392.0973002788784" fill="#94a3b8" font-size="7" text-anchor="middle">1.30s</text>
+<rect x="555" y="396.7054474807421" width="23" height="121.29455251925789" fill="#e8590c"/>
+<text x="566.5" y="393.7054474807421" fill="#94a3b8" font-size="7" text-anchor="middle">1.28s</text>
+<text x="542" y="532" fill="#cbd5e1" font-size="9" text-anchor="middle">settings</text>
+<rect x="611" y="458.484604298808" width="23" height="59.51539570119203" fill="#2c4f7c"/>
+<text x="622.5" y="455.484604298808" fill="#94a3b8" font-size="7" text-anchor="middle">0.63s</text>
+<rect x="637" y="398.3290621986207" width="23" height="119.67093780137931" fill="#42b883"/>
+<text x="648.5" y="395.3290621986207" fill="#94a3b8" font-size="7" text-anchor="middle">1.26s</text>
+<rect x="663" y="398.3290621986207" width="23" height="119.67093780137931" fill="#e8590c"/>
+<text x="674.5" y="395.3290621986207" fill="#94a3b8" font-size="7" text-anchor="middle">1.26s</text>
+<text x="650" y="532" fill="#cbd5e1" font-size="9" text-anchor="middle">notifications</text>
+<rect x="719" y="460.03173547123885" width="23" height="57.968264528761146" fill="#2c4f7c"/>
+<text x="730.5" y="457.03173547123885" fill="#94a3b8" font-size="7" text-anchor="middle">0.61s</text>
+<rect x="745" y="398.2457463761603" width="23" height="119.75425362383972" fill="#42b883"/>
+<text x="756.5" y="395.2457463761603" fill="#94a3b8" font-size="7" text-anchor="middle">1.26s</text>
+<rect x="771" y="399.85512718359576" width="23" height="118.14487281640424" fill="#e8590c"/>
+<text x="782.5" y="396.85512718359576" fill="#94a3b8" font-size="7" text-anchor="middle">1.25s</text>
+<text x="758" y="532" fill="#cbd5e1" font-size="9" text-anchor="middle">music</text>
+<text x="16" y="570" fill="#e2e8f0" font-size="12" font-weight="bold">Bundle size (lower is better)</text>
+<line x1="56" y1="746" x2="812" y2="746" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="749" fill="#64748b" font-size="8" text-anchor="end">0KiB</text>
+<line x1="56" y1="708.5" x2="812" y2="708.5" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="711.5" fill="#64748b" font-size="8" text-anchor="end">91KiB</text>
+<line x1="56" y1="671" x2="812" y2="671" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="674" fill="#64748b" font-size="8" text-anchor="end">182KiB</text>
+<line x1="56" y1="633.5" x2="812" y2="633.5" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="636.5" fill="#64748b" font-size="8" text-anchor="end">274KiB</text>
+<line x1="56" y1="596" x2="812" y2="596" stroke="#1e293b" stroke-width="1"/>
+<text x="50" y="599" fill="#64748b" font-size="8" text-anchor="end">365KiB</text>
+<rect x="71" y="703.6243464607264" width="23" height="42.3756535392736" fill="#2c4f7c"/>
+<text x="82.5" y="700.6243464607264" fill="#94a3b8" font-size="7" text-anchor="middle">103KiB</text>
+<rect x="97" y="641.7095711514584" width="23" height="104.29042884854162" fill="#42b883"/>
+<text x="108.5" y="638.7095711514584" fill="#94a3b8" font-size="7" text-anchor="middle">254KiB</text>
+<rect x="123" y="616.9376379943867" width="23" height="129.06236200561335" fill="#e8590c"/>
+<text x="134.5" y="613.9376379943867" fill="#94a3b8" font-size="7" text-anchor="middle">314KiB</text>
+<text x="110" y="760" fill="#cbd5e1" font-size="9" text-anchor="middle">hero</text>
+<rect x="179" y="703.4460646731372" width="23" height="42.553935326862785" fill="#2c4f7c"/>
+<text x="190.5" y="700.4460646731372" fill="#94a3b8" font-size="7" text-anchor="middle">103KiB</text>
+<rect x="205" y="641.3317261917255" width="23" height="104.66827380827458" fill="#42b883"/>
+<text x="216.5" y="638.3317261917255" fill="#94a3b8" font-size="7" text-anchor="middle">255KiB</text>
+<rect x="231" y="618.0755897647194" width="23" height="127.92441023528055" fill="#e8590c"/>
+<text x="242.5" y="615.0755897647194" fill="#94a3b8" font-size="7" text-anchor="middle">311KiB</text>
+<text x="218" y="760" fill="#cbd5e1" font-size="9" text-anchor="middle">cards</text>
+<rect x="287" y="701.4283484960298" width="23" height="44.571651503970166" fill="#2c4f7c"/>
+<text x="298.5" y="698.4283484960298" fill="#94a3b8" font-size="7" text-anchor="middle">108KiB</text>
+<rect x="313" y="639.3834756660887" width="23" height="106.61652433391139" fill="#42b883"/>
+<text x="324.5" y="636.3834756660887" fill="#94a3b8" font-size="7" text-anchor="middle">259KiB</text>
+<rect x="339" y="614.1377305510096" width="23" height="131.86226944899042" fill="#e8590c"/>
+<text x="350.5" y="611.1377305510096" fill="#94a3b8" font-size="7" text-anchor="middle">321KiB</text>
+<text x="326" y="760" fill="#cbd5e1" font-size="9" text-anchor="middle">stats</text>
+<rect x="395" y="701.5411799877248" width="23" height="44.458820012275204" fill="#2c4f7c"/>
+<text x="406.5" y="698.5411799877248" fill="#94a3b8" font-size="7" text-anchor="middle">108KiB</text>
+<rect x="421" y="639.0935669934773" width="23" height="106.90643300652263" fill="#42b883"/>
+<text x="432.5" y="636.0935669934773" fill="#94a3b8" font-size="7" text-anchor="middle">260KiB</text>
+<rect x="447" y="614.9829628998277" width="23" height="131.0170371001723" fill="#e8590c"/>
+<text x="458.5" y="611.9829628998277" fill="#94a3b8" font-size="7" text-anchor="middle">319KiB</text>
+<text x="434" y="760" fill="#cbd5e1" font-size="9" text-anchor="middle">library</text>
+<rect x="503" y="697.9518536380407" width="23" height="48.04814636195935" fill="#2c4f7c"/>
+<text x="514.5" y="694.9518536380407" fill="#94a3b8" font-size="7" text-anchor="middle">117KiB</text>
+<rect x="529" y="636.0860656668038" width="23" height="109.91393433319612" fill="#42b883"/>
+<text x="540.5" y="633.0860656668038" fill="#94a3b8" font-size="7" text-anchor="middle">267KiB</text>
+<rect x="555" y="612.0714285714286" width="23" height="133.92857142857142" fill="#e8590c"/>
+<text x="566.5" y="609.0714285714286" fill="#94a3b8" font-size="7" text-anchor="middle">326KiB</text>
+<text x="542" y="760" fill="#cbd5e1" font-size="9" text-anchor="middle">settings</text>
+<rect x="611" y="701.7845105356506" width="23" height="44.21548946434942" fill="#2c4f7c"/>
+<text x="622.5" y="698.7845105356506" fill="#94a3b8" font-size="7" text-anchor="middle">108KiB</text>
+<rect x="637" y="641.3024140960182" width="23" height="104.6975859039818" fill="#42b883"/>
+<text x="648.5" y="638.3024140960182" fill="#94a3b8" font-size="7" text-anchor="middle">255KiB</text>
+<rect x="663" y="618.032223924495" width="23" height="127.96777607550494" fill="#e8590c"/>
+<text x="674.5" y="615.032223924495" fill="#94a3b8" font-size="7" text-anchor="middle">311KiB</text>
+<text x="650" y="760" fill="#cbd5e1" font-size="9" text-anchor="middle">notifications</text>
+<rect x="719" y="704.4145684381488" width="23" height="41.585431561851244" fill="#2c4f7c"/>
+<text x="730.5" y="701.4145684381488" fill="#94a3b8" font-size="7" text-anchor="middle">101KiB</text>
+<rect x="745" y="640.9611088720299" width="23" height="105.03889112797012" fill="#42b883"/>
+<text x="756.5" y="637.9611088720299" fill="#94a3b8" font-size="7" text-anchor="middle">255KiB</text>
+<rect x="771" y="616.3425622979742" width="23" height="129.6574377020259" fill="#e8590c"/>
+<text x="782.5" y="613.3425622979742" fill="#94a3b8" font-size="7" text-anchor="middle">315KiB</text>
+<text x="758" y="760" fill="#cbd5e1" font-size="9" text-anchor="middle">music</text>
+</svg>

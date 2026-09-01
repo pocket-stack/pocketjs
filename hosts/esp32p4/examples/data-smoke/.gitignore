@@ -1,0 +1,4 @@
+target/
+.embuild/
+sdkconfig
+Cargo.lock

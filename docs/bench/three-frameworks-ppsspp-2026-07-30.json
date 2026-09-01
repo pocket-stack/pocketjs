@@ -1,0 +1,3697 @@
+{
+  "generated": "2026-07-30T00:48:05.365Z",
+  "samples": 7,
+  "frameworks": [
+    "solid",
+    "vue-vapor",
+    "octane"
+  ],
+  "ppsspp_revision": "676724ee5e",
+  "git_revision": "4e097c0",
+  "frame_budget_us": 16667,
+  "apps": {
+    "hero": {
+      "solid": {
+        "eval_us": {
+          "n": 7,
+          "mean": 319884,
+          "sd": 0,
+          "min": 319884,
+          "median": 319884,
+          "max": 319884
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 648975,
+          "sd": 0,
+          "min": 648975,
+          "median": 648975,
+          "max": 648975
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 17748,
+          "sd": 0,
+          "min": 17748,
+          "median": 17748,
+          "max": 17748
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 33367,
+          "sd": 0,
+          "min": 33367,
+          "median": 33367,
+          "max": 33367
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 2147,
+          "sd": 0,
+          "min": 2147,
+          "median": 2147,
+          "max": 2147
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 1,
+          "sd": 0,
+          "min": 1,
+          "median": 1,
+          "max": 1
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 396,
+          "sd": 0,
+          "min": 396,
+          "median": 396,
+          "max": 396
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 940,
+          "sd": 0,
+          "min": 940,
+          "median": 940,
+          "max": 940
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 178,
+          "sd": 0,
+          "min": 178,
+          "median": 178,
+          "max": 178
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 3663,
+          "sd": 0,
+          "min": 3663,
+          "median": 3663,
+          "max": 3663
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 31466,
+          "sd": 0,
+          "min": 31466,
+          "median": 31466,
+          "max": 31466
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 1005940,
+          "sd": 0,
+          "min": 1005940,
+          "median": 1005940,
+          "max": 1005940
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 231.09306542857135,
+          "sd": 6.974878198191363,
+          "min": 224.23966599999994,
+          "median": 229.61524999999983,
+          "max": 245.07287499999984
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 105534,
+          "sd": 0,
+          "min": 105534,
+          "median": 105534,
+          "max": 105534
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 464704,
+          "sd": 0,
+          "min": 464704,
+          "median": 464704,
+          "max": 464704
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17898240,
+          "sd": 0,
+          "min": 17898240,
+          "median": 17898240,
+          "max": 17898240
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 3079264,
+          "sd": 0,
+          "min": 3079264,
+          "median": 3079264,
+          "max": 3079264
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 14818976,
+          "sd": 0,
+          "min": 14818976,
+          "median": 14818976,
+          "max": 14818976
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 19995392,
+          "sd": 0,
+          "min": 19995392,
+          "median": 19995392,
+          "max": 19995392
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "vue-vapor": {
+        "eval_us": {
+          "n": 7,
+          "mean": 936522,
+          "sd": 0,
+          "min": 936522,
+          "median": 936522,
+          "max": 936522
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1266388,
+          "sd": 0,
+          "min": 1266388,
+          "median": 1266388,
+          "max": 1266388
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 17748,
+          "sd": 0,
+          "min": 17748,
+          "median": 17748,
+          "max": 17748
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 33367,
+          "sd": 0,
+          "min": 33367,
+          "median": 33367,
+          "max": 33367
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 2015,
+          "sd": 0,
+          "min": 2015,
+          "median": 2015,
+          "max": 2015
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 300,
+          "sd": 0,
+          "min": 300,
+          "median": 300,
+          "max": 300
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 163,
+          "sd": 0,
+          "min": 163,
+          "median": 163,
+          "max": 163
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 954,
+          "sd": 0,
+          "min": 954,
+          "median": 954,
+          "max": 954
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 178,
+          "sd": 0,
+          "min": 178,
+          "median": 178,
+          "max": 178
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 3612,
+          "sd": 0,
+          "min": 3612,
+          "median": 3612,
+          "max": 3612
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 23947,
+          "sd": 0,
+          "min": 23947,
+          "median": 23947,
+          "max": 23947
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 974168,
+          "sd": 0,
+          "min": 974168,
+          "median": 974168,
+          "max": 974168
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 292.2468511428572,
+          "sd": 4.021438878575413,
+          "min": 288.51066700000047,
+          "median": 291.0537919999997,
+          "max": 300.3538330000001
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 259729,
+          "sd": 0,
+          "min": 259729,
+          "median": 259729,
+          "max": 259729
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 461488,
+          "sd": 0,
+          "min": 461488,
+          "median": 461488,
+          "max": 461488
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17747456,
+          "sd": 0,
+          "min": 17747456,
+          "median": 17747456,
+          "max": 17747456
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 4876112,
+          "sd": 0,
+          "min": 4876112,
+          "median": 4876112,
+          "max": 4876112
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 12871344,
+          "sd": 0,
+          "min": 12871344,
+          "median": 12871344,
+          "max": 12871344
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 19844608,
+          "sd": 0,
+          "min": 19844608,
+          "median": 19844608,
+          "max": 19844608
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "octane": {
+        "eval_us": {
+          "n": 7,
+          "mean": 926958,
+          "sd": 0,
+          "min": 926958,
+          "median": 926958,
+          "max": 926958
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1249701,
+          "sd": 0,
+          "min": 1249701,
+          "median": 1249701,
+          "max": 1249701
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 20942,
+          "sd": 0,
+          "min": 20942,
+          "median": 20942,
+          "max": 20942
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 183517,
+          "sd": 0,
+          "min": 183517,
+          "median": 183517,
+          "max": 183517
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 4973,
+          "sd": 0,
+          "min": 4973,
+          "median": 4973,
+          "max": 4973
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 315,
+          "sd": 0,
+          "min": 315,
+          "median": 315,
+          "max": 315
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 163,
+          "sd": 0,
+          "min": 163,
+          "median": 163,
+          "max": 163
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 904,
+          "sd": 0,
+          "min": 904,
+          "median": 904,
+          "max": 904
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 175,
+          "sd": 0,
+          "min": 175,
+          "median": 175,
+          "max": 175
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 6532,
+          "sd": 0,
+          "min": 6532,
+          "median": 6532,
+          "max": 6532
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 176891,
+          "sd": 0,
+          "min": 176891,
+          "median": 176891,
+          "max": 176891
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 976312,
+          "sd": 0,
+          "min": 976312,
+          "median": 976312,
+          "max": 976312
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 290.67010128571434,
+          "sd": 10.573915024216635,
+          "min": 280.1736669999991,
+          "median": 288.43695800000023,
+          "max": 312.4987920000003
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 321422,
+          "sd": 0,
+          "min": 321422,
+          "median": 321422,
+          "max": 321422
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 461072,
+          "sd": 0,
+          "min": 461072,
+          "median": 461072,
+          "max": 461072
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17686016,
+          "sd": 0,
+          "min": 17686016,
+          "median": 17686016,
+          "max": 17686016
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 5128528,
+          "sd": 0,
+          "min": 5128528,
+          "median": 5128528,
+          "max": 5128528
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 12557488,
+          "sd": 0,
+          "min": 12557488,
+          "median": 12557488,
+          "max": 12557488
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 19783168,
+          "sd": 0,
+          "min": 19783168,
+          "median": 19783168,
+          "max": 19783168
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      }
+    },
+    "cards": {
+      "solid": {
+        "eval_us": {
+          "n": 7,
+          "mean": 304983,
+          "sd": 0,
+          "min": 304983,
+          "median": 304983,
+          "max": 304983
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 577211,
+          "sd": 0,
+          "min": 577211,
+          "median": 577211,
+          "max": 577211
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 17740,
+          "sd": 0,
+          "min": 17740,
+          "median": 17740,
+          "max": 17740
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 50118,
+          "sd": 0,
+          "min": 50118,
+          "median": 50118,
+          "max": 50118
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 1825,
+          "sd": 0,
+          "min": 1825,
+          "median": 1825,
+          "max": 1825
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 1,
+          "sd": 0,
+          "min": 1,
+          "median": 1,
+          "max": 1
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 194,
+          "sd": 0,
+          "min": 194,
+          "median": 194,
+          "max": 194
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 2370,
+          "sd": 0,
+          "min": 2370,
+          "median": 2370,
+          "max": 2370
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 433,
+          "sd": 0,
+          "min": 433,
+          "median": 433,
+          "max": 433
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 4824,
+          "sd": 0,
+          "min": 4824,
+          "median": 4824,
+          "max": 4824
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 38010,
+          "sd": 0,
+          "min": 38010,
+          "median": 38010,
+          "max": 38010
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 1011796,
+          "sd": 0,
+          "min": 1011796,
+          "median": 1011796,
+          "max": 1011796
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 278.32258928571383,
+          "sd": 3.9733726054402894,
+          "min": 269.7767499999991,
+          "median": 280.2273749999986,
+          "max": 280.9227920000012
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 105978,
+          "sd": 0,
+          "min": 105978,
+          "median": 105978,
+          "max": 105978
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 152784,
+          "sd": 0,
+          "min": 152784,
+          "median": 152784,
+          "max": 152784
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18209792,
+          "sd": 0,
+          "min": 18209792,
+          "median": 18209792,
+          "max": 18209792
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 2128480,
+          "sd": 0,
+          "min": 2128480,
+          "median": 2128480,
+          "max": 2128480
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 16081312,
+          "sd": 0,
+          "min": 16081312,
+          "median": 16081312,
+          "max": 16081312
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20306944,
+          "sd": 0,
+          "min": 20306944,
+          "median": 20306944,
+          "max": 20306944
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "vue-vapor": {
+        "eval_us": {
+          "n": 7,
+          "mean": 924898,
+          "sd": 0,
+          "min": 924898,
+          "median": 924898,
+          "max": 924898
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1211368,
+          "sd": 0,
+          "min": 1211368,
+          "median": 1211368,
+          "max": 1211368
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 17740,
+          "sd": 0,
+          "min": 17740,
+          "median": 17740,
+          "max": 17740
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 33434,
+          "sd": 0,
+          "min": 33434,
+          "median": 33434,
+          "max": 33434
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 1725,
+          "sd": 0,
+          "min": 1725,
+          "median": 1725,
+          "max": 1725
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 192,
+          "sd": 0,
+          "min": 192,
+          "median": 192,
+          "max": 192
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 333,
+          "sd": 0,
+          "min": 333,
+          "median": 333,
+          "max": 333
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 2457,
+          "sd": 0,
+          "min": 2457,
+          "median": 2457,
+          "max": 2457
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 433,
+          "sd": 0,
+          "min": 433,
+          "median": 433,
+          "max": 433
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 5143,
+          "sd": 0,
+          "min": 5143,
+          "median": 5143,
+          "max": 5143
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 29662,
+          "sd": 0,
+          "min": 29662,
+          "median": 29662,
+          "max": 29662
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 982160,
+          "sd": 0,
+          "min": 982160,
+          "median": 982160,
+          "max": 982160
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 347.89276185714306,
+          "sd": 10.466578415800912,
+          "min": 338.13900000000103,
+          "median": 346.22100000000137,
+          "max": 369.5412919999999
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 260670,
+          "sd": 0,
+          "min": 260670,
+          "median": 260670,
+          "max": 260670
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 151248,
+          "sd": 0,
+          "min": 151248,
+          "median": 151248,
+          "max": 151248
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18056704,
+          "sd": 0,
+          "min": 18056704,
+          "median": 18056704,
+          "max": 18056704
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 3656544,
+          "sd": 0,
+          "min": 3656544,
+          "median": 3656544,
+          "max": 3656544
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 14400160,
+          "sd": 0,
+          "min": 14400160,
+          "median": 14400160,
+          "max": 14400160
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20153856,
+          "sd": 0,
+          "min": 20153856,
+          "median": 20153856,
+          "max": 20153856
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "octane": {
+        "eval_us": {
+          "n": 7,
+          "mean": 879999,
+          "sd": 0,
+          "min": 879999,
+          "median": 879999,
+          "max": 879999
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1161606,
+          "sd": 0,
+          "min": 1161606,
+          "median": 1161606,
+          "max": 1161606
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 19429,
+          "sd": 0,
+          "min": 19429,
+          "median": 19429,
+          "max": 19429
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 183584,
+          "sd": 0,
+          "min": 183584,
+          "median": 183584,
+          "max": 183584
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 3424,
+          "sd": 0,
+          "min": 3424,
+          "median": 3424,
+          "max": 3424
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 136,
+          "sd": 0,
+          "min": 136,
+          "median": 136,
+          "max": 136
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 194,
+          "sd": 0,
+          "min": 194,
+          "median": 194,
+          "max": 194
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 2369,
+          "sd": 0,
+          "min": 2369,
+          "median": 2369,
+          "max": 2369
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 433,
+          "sd": 0,
+          "min": 433,
+          "median": 433,
+          "max": 433
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 6558,
+          "sd": 0,
+          "min": 6558,
+          "median": 6558,
+          "max": 6558
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 173698,
+          "sd": 0,
+          "min": 173698,
+          "median": 173698,
+          "max": 173698
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 980544,
+          "sd": 0,
+          "min": 980544,
+          "median": 980544,
+          "max": 980544
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 341.8119107142863,
+          "sd": 7.3565998094772675,
+          "min": 332.28812500000276,
+          "median": 341.7191249999996,
+          "max": 354.0565830000014
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 318588,
+          "sd": 0,
+          "min": 318588,
+          "median": 318588,
+          "max": 318588
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 151232,
+          "sd": 0,
+          "min": 151232,
+          "median": 151232,
+          "max": 151232
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17998592,
+          "sd": 0,
+          "min": 17998592,
+          "median": 17998592,
+          "max": 17998592
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 4376160,
+          "sd": 0,
+          "min": 4376160,
+          "median": 4376160,
+          "max": 4376160
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 13622432,
+          "sd": 0,
+          "min": 13622432,
+          "median": 13622432,
+          "max": 13622432
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20095744,
+          "sd": 0,
+          "min": 20095744,
+          "median": 20095744,
+          "max": 20095744
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      }
+    },
+    "stats": {
+      "solid": {
+        "eval_us": {
+          "n": 7,
+          "mean": 370940,
+          "sd": 0,
+          "min": 370940,
+          "median": 370940,
+          "max": 370940
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 677038,
+          "sd": 0,
+          "min": 677038,
+          "median": 677038,
+          "max": 677038
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 18703,
+          "sd": 0,
+          "min": 18703,
+          "median": 18703,
+          "max": 18703
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 66420,
+          "sd": 0,
+          "min": 66420,
+          "median": 66420,
+          "max": 66420
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 3045,
+          "sd": 0,
+          "min": 3045,
+          "median": 3045,
+          "max": 3045
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 1,
+          "sd": 0,
+          "min": 1,
+          "median": 1,
+          "max": 1
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 506,
+          "sd": 0,
+          "min": 506,
+          "median": 506,
+          "max": 506
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 2714,
+          "sd": 0,
+          "min": 2714,
+          "median": 2714,
+          "max": 2714
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 574,
+          "sd": 0,
+          "min": 574,
+          "median": 574,
+          "max": 574
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 6842,
+          "sd": 0,
+          "min": 6842,
+          "median": 6842,
+          "max": 6842
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 61762,
+          "sd": 0,
+          "min": 61762,
+          "median": 61762,
+          "max": 61762
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 995356,
+          "sd": 0,
+          "min": 995356,
+          "median": 995356,
+          "max": 995356
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 354.49605371428487,
+          "sd": 7.107087696529225,
+          "min": 345.01287500000035,
+          "median": 355.89645799999926,
+          "max": 365.8104999999996
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 111003,
+          "sd": 0,
+          "min": 111003,
+          "median": 111003,
+          "max": 111003
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 143872,
+          "sd": 0,
+          "min": 143872,
+          "median": 143872,
+          "max": 143872
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18213632,
+          "sd": 0,
+          "min": 18213632,
+          "median": 18213632,
+          "max": 18213632
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 2564768,
+          "sd": 0,
+          "min": 2564768,
+          "median": 2564768,
+          "max": 2564768
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 15648864,
+          "sd": 0,
+          "min": 15648864,
+          "median": 15648864,
+          "max": 15648864
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20310784,
+          "sd": 0,
+          "min": 20310784,
+          "median": 20310784,
+          "max": 20310784
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "vue-vapor": {
+        "eval_us": {
+          "n": 7,
+          "mean": 1034261,
+          "sd": 0,
+          "min": 1034261,
+          "median": 1034261,
+          "max": 1034261
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1344611,
+          "sd": 0,
+          "min": 1344611,
+          "median": 1344611,
+          "max": 1344611
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 19209,
+          "sd": 0,
+          "min": 19209,
+          "median": 19209,
+          "max": 19209
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 99786,
+          "sd": 0,
+          "min": 99786,
+          "median": 99786,
+          "max": 99786
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 2500,
+          "sd": 0,
+          "min": 2500,
+          "median": 2500,
+          "max": 2500
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 1333,
+          "sd": 0,
+          "min": 1333,
+          "median": 1333,
+          "max": 1333
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 719,
+          "sd": 0,
+          "min": 719,
+          "median": 719,
+          "max": 719
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 2912,
+          "sd": 0,
+          "min": 2912,
+          "median": 2912,
+          "max": 2912
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 574,
+          "sd": 0,
+          "min": 574,
+          "median": 574,
+          "max": 574
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 8039,
+          "sd": 0,
+          "min": 8039,
+          "median": 8039,
+          "max": 8039
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 95373,
+          "sd": 0,
+          "min": 95373,
+          "median": 95373,
+          "max": 95373
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 955872,
+          "sd": 0,
+          "min": 955872,
+          "median": 955872,
+          "max": 955872
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 437.61019642857093,
+          "sd": 4.187167576797892,
+          "min": 430.73812499999985,
+          "median": 437.87291699999696,
+          "max": 442.83387500000026
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 265522,
+          "sd": 0,
+          "min": 265522,
+          "median": 265522,
+          "max": 265522
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 143888,
+          "sd": 0,
+          "min": 143888,
+          "median": 143888,
+          "max": 143888
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18059008,
+          "sd": 0,
+          "min": 18059008,
+          "median": 18059008,
+          "max": 18059008
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 4694144,
+          "sd": 0,
+          "min": 4694144,
+          "median": 4694144,
+          "max": 4694144
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 13364864,
+          "sd": 0,
+          "min": 13364864,
+          "median": 13364864,
+          "max": 13364864
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20156160,
+          "sd": 0,
+          "min": 20156160,
+          "median": 20156160,
+          "max": 20156160
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "octane": {
+        "eval_us": {
+          "n": 7,
+          "mean": 1100489,
+          "sd": 0,
+          "min": 1100489,
+          "median": 1100489,
+          "max": 1100489
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1411368,
+          "sd": 0,
+          "min": 1411368,
+          "median": 1411368,
+          "max": 1411368
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 21231,
+          "sd": 0,
+          "min": 21231,
+          "median": 21231,
+          "max": 21231
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 350036,
+          "sd": 0,
+          "min": 350036,
+          "median": 350036,
+          "max": 350036
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 5190,
+          "sd": 0,
+          "min": 5190,
+          "median": 5190,
+          "max": 5190
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 263,
+          "sd": 0,
+          "min": 263,
+          "median": 263,
+          "max": 263
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 511,
+          "sd": 0,
+          "min": 511,
+          "median": 511,
+          "max": 511
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 2709,
+          "sd": 0,
+          "min": 2709,
+          "median": 2709,
+          "max": 2709
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 574,
+          "sd": 0,
+          "min": 574,
+          "median": 574,
+          "max": 574
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 9248,
+          "sd": 0,
+          "min": 9248,
+          "median": 9248,
+          "max": 9248
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 339229,
+          "sd": 0,
+          "min": 339229,
+          "median": 339229,
+          "max": 339229
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 961168,
+          "sd": 0,
+          "min": 961168,
+          "median": 961168,
+          "max": 961168
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 433.76170814285797,
+          "sd": 4.29063680605026,
+          "min": 425.6034579999978,
+          "median": 435.87833300000057,
+          "max": 438.50304099999994
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 328395,
+          "sd": 0,
+          "min": 328395,
+          "median": 328395,
+          "max": 328395
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 143872,
+          "sd": 0,
+          "min": 143872,
+          "median": 143872,
+          "max": 143872
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17996288,
+          "sd": 0,
+          "min": 17996288,
+          "median": 17996288,
+          "max": 17996288
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 5707616,
+          "sd": 0,
+          "min": 5707616,
+          "median": 5707616,
+          "max": 5707616
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 12288672,
+          "sd": 0,
+          "min": 12288672,
+          "median": 12288672,
+          "max": 12288672
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20093440,
+          "sd": 0,
+          "min": 20093440,
+          "median": 20093440,
+          "max": 20093440
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      }
+    },
+    "library": {
+      "solid": {
+        "eval_us": {
+          "n": 7,
+          "mean": 322146,
+          "sd": 0,
+          "min": 322146,
+          "median": 322146,
+          "max": 322146
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 627397,
+          "sd": 0,
+          "min": 627397,
+          "median": 627397,
+          "max": 627397
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 17943,
+          "sd": 0,
+          "min": 17943,
+          "median": 17943,
+          "max": 17943
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 72327,
+          "sd": 0,
+          "min": 72327,
+          "median": 72327,
+          "max": 72327
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 2207,
+          "sd": 0,
+          "min": 2207,
+          "median": 2207,
+          "max": 2207
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 58,
+          "sd": 0,
+          "min": 58,
+          "median": 58,
+          "max": 58
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 184,
+          "sd": 0,
+          "min": 184,
+          "median": 184,
+          "max": 184
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 983,
+          "sd": 0,
+          "min": 983,
+          "median": 983,
+          "max": 983
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 244,
+          "sd": 0,
+          "min": 244,
+          "median": 244,
+          "max": 244
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 3677,
+          "sd": 0,
+          "min": 3677,
+          "median": 3677,
+          "max": 3677
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 60921,
+          "sd": 0,
+          "min": 60921,
+          "median": 60921,
+          "max": 60921
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 996700,
+          "sd": 0,
+          "min": 996700,
+          "median": 996700,
+          "max": 996700
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 262.8228750000001,
+          "sd": 4.555651834587647,
+          "min": 255.7384579999998,
+          "median": 262.36649999999645,
+          "max": 269.61358299999847
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 110722,
+          "sd": 0,
+          "min": 110722,
+          "median": 110722,
+          "max": 110722
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 361424,
+          "sd": 0,
+          "min": 361424,
+          "median": 361424,
+          "max": 361424
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17996288,
+          "sd": 0,
+          "min": 17996288,
+          "median": 17996288,
+          "max": 17996288
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 2763168,
+          "sd": 0,
+          "min": 2763168,
+          "median": 2763168,
+          "max": 2763168
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 15233120,
+          "sd": 0,
+          "min": 15233120,
+          "median": 15233120,
+          "max": 15233120
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20093440,
+          "sd": 0,
+          "min": 20093440,
+          "median": 20093440,
+          "max": 20093440
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "vue-vapor": {
+        "eval_us": {
+          "n": 7,
+          "mean": 962198,
+          "sd": 0,
+          "min": 962198,
+          "median": 962198,
+          "max": 962198
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1261328,
+          "sd": 0,
+          "min": 1261328,
+          "median": 1261328,
+          "max": 1261328
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 18364,
+          "sd": 0,
+          "min": 18364,
+          "median": 18364,
+          "max": 18364
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 72838,
+          "sd": 0,
+          "min": 72838,
+          "median": 72838,
+          "max": 72838
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 1848,
+          "sd": 0,
+          "min": 1848,
+          "median": 1848,
+          "max": 1848
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 836,
+          "sd": 0,
+          "min": 836,
+          "median": 836,
+          "max": 836
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 308,
+          "sd": 0,
+          "min": 308,
+          "median": 308,
+          "max": 308
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 1148,
+          "sd": 0,
+          "min": 1148,
+          "median": 1148,
+          "max": 1148
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 244,
+          "sd": 0,
+          "min": 244,
+          "median": 244,
+          "max": 244
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 4386,
+          "sd": 0,
+          "min": 4386,
+          "median": 4386,
+          "max": 4386
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 72819,
+          "sd": 0,
+          "min": 72819,
+          "median": 72819,
+          "max": 72819
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 959344,
+          "sd": 0,
+          "min": 959344,
+          "median": 959344,
+          "max": 959344
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 335.6899105714287,
+          "sd": 7.442670161505714,
+          "min": 323.43841699999757,
+          "median": 334.74104100000113,
+          "max": 347.6093340000007
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 266244,
+          "sd": 0,
+          "min": 266244,
+          "median": 266244,
+          "max": 266244
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 359296,
+          "sd": 0,
+          "min": 359296,
+          "median": 359296,
+          "max": 359296
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17842944,
+          "sd": 0,
+          "min": 17842944,
+          "median": 17842944,
+          "max": 17842944
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 4769328,
+          "sd": 0,
+          "min": 4769328,
+          "median": 4769328,
+          "max": 4769328
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 13073616,
+          "sd": 0,
+          "min": 13073616,
+          "median": 13073616,
+          "max": 13073616
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 19940096,
+          "sd": 0,
+          "min": 19940096,
+          "median": 19940096,
+          "max": 19940096
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "octane": {
+        "eval_us": {
+          "n": 7,
+          "mean": 920423,
+          "sd": 0,
+          "min": 920423,
+          "median": 920423,
+          "max": 920423
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1227961,
+          "sd": 0,
+          "min": 1227961,
+          "median": 1227961,
+          "max": 1227961
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 19345,
+          "sd": 0,
+          "min": 19345,
+          "median": 19345,
+          "max": 19345
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 189096,
+          "sd": 0,
+          "min": 189096,
+          "median": 189096,
+          "max": 189096
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 3391,
+          "sd": 0,
+          "min": 3391,
+          "median": 3391,
+          "max": 3391
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 128,
+          "sd": 0,
+          "min": 128,
+          "median": 128,
+          "max": 128
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 191,
+          "sd": 0,
+          "min": 191,
+          "median": 191,
+          "max": 191
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 982,
+          "sd": 0,
+          "min": 982,
+          "median": 982,
+          "max": 982
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 244,
+          "sd": 0,
+          "min": 244,
+          "median": 244,
+          "max": 244
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 4939,
+          "sd": 0,
+          "min": 4939,
+          "median": 4939,
+          "max": 4939
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 177488,
+          "sd": 0,
+          "min": 177488,
+          "median": 177488,
+          "max": 177488
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 962048,
+          "sd": 0,
+          "min": 962048,
+          "median": 962048,
+          "max": 962048
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 323.9544108571416,
+          "sd": 3.2130469001188047,
+          "min": 318.80104199999914,
+          "median": 325.4444999999978,
+          "max": 326.67770899999596
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 326290,
+          "sd": 0,
+          "min": 326290,
+          "median": 326290,
+          "max": 326290
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 358864,
+          "sd": 0,
+          "min": 358864,
+          "median": 358864,
+          "max": 358864
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17783296,
+          "sd": 0,
+          "min": 17783296,
+          "median": 17783296,
+          "max": 17783296
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 5112832,
+          "sd": 0,
+          "min": 5112832,
+          "median": 5112832,
+          "max": 5112832
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 12670464,
+          "sd": 0,
+          "min": 12670464,
+          "median": 12670464,
+          "max": 12670464
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 19880448,
+          "sd": 0,
+          "min": 19880448,
+          "median": 19880448,
+          "max": 19880448
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      }
+    },
+    "settings": {
+      "solid": {
+        "eval_us": {
+          "n": 7,
+          "mean": 359238,
+          "sd": 0,
+          "min": 359238,
+          "median": 359238,
+          "max": 359238
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 644070,
+          "sd": 0,
+          "min": 644070,
+          "median": 644070,
+          "max": 644070
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 18517,
+          "sd": 0,
+          "min": 18517,
+          "median": 18517,
+          "max": 18517
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 66252,
+          "sd": 0,
+          "min": 66252,
+          "median": 66252,
+          "max": 66252
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 2184,
+          "sd": 0,
+          "min": 2184,
+          "median": 2184,
+          "max": 2184
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 91,
+          "sd": 0,
+          "min": 91,
+          "median": 91,
+          "max": 91
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 520,
+          "sd": 0,
+          "min": 520,
+          "median": 520,
+          "max": 520
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 3210,
+          "sd": 0,
+          "min": 3210,
+          "median": 3210,
+          "max": 3210
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 837,
+          "sd": 0,
+          "min": 837,
+          "median": 837,
+          "max": 837
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 6843,
+          "sd": 0,
+          "min": 6843,
+          "median": 6843,
+          "max": 6843
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 61630,
+          "sd": 0,
+          "min": 61630,
+          "median": 61630,
+          "max": 61630
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 995468,
+          "sd": 0,
+          "min": 995468,
+          "median": 995468,
+          "max": 995468
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 275.4057202857148,
+          "sd": 2.311875196573395,
+          "min": 272.4652919999935,
+          "median": 274.99812499999825,
+          "max": 278.51429199999984
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 119661,
+          "sd": 0,
+          "min": 119661,
+          "median": 119661,
+          "max": 119661
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 153632,
+          "sd": 0,
+          "min": 153632,
+          "median": 153632,
+          "max": 153632
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18195200,
+          "sd": 0,
+          "min": 18195200,
+          "median": 18195200,
+          "max": 18195200
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 2323264,
+          "sd": 0,
+          "min": 2323264,
+          "median": 2323264,
+          "max": 2323264
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 15871936,
+          "sd": 0,
+          "min": 15871936,
+          "median": 15871936,
+          "max": 15871936
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20292352,
+          "sd": 0,
+          "min": 20292352,
+          "median": 20292352,
+          "max": 20292352
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "vue-vapor": {
+        "eval_us": {
+          "n": 7,
+          "mean": 1003175,
+          "sd": 0,
+          "min": 1003175,
+          "median": 1003175,
+          "max": 1003175
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1295175,
+          "sd": 0,
+          "min": 1295175,
+          "median": 1295175,
+          "max": 1295175
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 18586,
+          "sd": 0,
+          "min": 18586,
+          "median": 18586,
+          "max": 18586
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 73498,
+          "sd": 0,
+          "min": 73498,
+          "median": 73498,
+          "max": 73498
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 2117,
+          "sd": 0,
+          "min": 2117,
+          "median": 2117,
+          "max": 2117
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 457,
+          "sd": 0,
+          "min": 457,
+          "median": 457,
+          "max": 457
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 549,
+          "sd": 0,
+          "min": 549,
+          "median": 549,
+          "max": 549
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 3400,
+          "sd": 0,
+          "min": 3400,
+          "median": 3400,
+          "max": 3400
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 842,
+          "sd": 0,
+          "min": 842,
+          "median": 842,
+          "max": 842
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 7367,
+          "sd": 0,
+          "min": 7367,
+          "median": 7367,
+          "max": 7367
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 69674,
+          "sd": 0,
+          "min": 69674,
+          "median": 69674,
+          "max": 69674
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 958608,
+          "sd": 0,
+          "min": 958608,
+          "median": 958608,
+          "max": 958608
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 341.3177735714281,
+          "sd": 5.090058420511954,
+          "min": 335.81899999999587,
+          "median": 341.51966600000014,
+          "max": 351.19087500000023
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 273734,
+          "sd": 0,
+          "min": 273734,
+          "median": 273734,
+          "max": 273734
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 152128,
+          "sd": 0,
+          "min": 152128,
+          "median": 152128,
+          "max": 152128
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18042624,
+          "sd": 0,
+          "min": 18042624,
+          "median": 18042624,
+          "max": 18042624
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 4377568,
+          "sd": 0,
+          "min": 4377568,
+          "median": 4377568,
+          "max": 4377568
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 13665056,
+          "sd": 0,
+          "min": 13665056,
+          "median": 13665056,
+          "max": 13665056
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20139776,
+          "sd": 0,
+          "min": 20139776,
+          "median": 20139776,
+          "max": 20139776
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "octane": {
+        "eval_us": {
+          "n": 7,
+          "mean": 981559,
+          "sd": 0,
+          "min": 981559,
+          "median": 981559,
+          "max": 981559
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1278228,
+          "sd": 0,
+          "min": 1278228,
+          "median": 1278228,
+          "max": 1278228
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 26219,
+          "sd": 0,
+          "min": 26219,
+          "median": 26219,
+          "max": 26219
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 216887,
+          "sd": 0,
+          "min": 216887,
+          "median": 216887,
+          "max": 216887
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 9350,
+          "sd": 0,
+          "min": 9350,
+          "median": 9350,
+          "max": 9350
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 697,
+          "sd": 0,
+          "min": 697,
+          "median": 697,
+          "max": 697
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 426,
+          "sd": 0,
+          "min": 426,
+          "median": 426,
+          "max": 426
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 3212,
+          "sd": 0,
+          "min": 3212,
+          "median": 3212,
+          "max": 3212
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 839,
+          "sd": 0,
+          "min": 839,
+          "median": 839,
+          "max": 839
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 14525,
+          "sd": 0,
+          "min": 14525,
+          "median": 14525,
+          "max": 14525
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 215284,
+          "sd": 0,
+          "min": 215284,
+          "median": 215284,
+          "max": 215284
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 964928,
+          "sd": 0,
+          "min": 964928,
+          "median": 964928,
+          "max": 964928
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 379.57042257142894,
+          "sd": 3.268806041619949,
+          "min": 374.6418330000015,
+          "median": 381.4907919999969,
+          "max": 382.5665829999998
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 333541,
+          "sd": 0,
+          "min": 333541,
+          "median": 333541,
+          "max": 333541
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 152112,
+          "sd": 0,
+          "min": 152112,
+          "median": 152112,
+          "max": 152112
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17982720,
+          "sd": 0,
+          "min": 17982720,
+          "median": 17982720,
+          "max": 17982720
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 6263600,
+          "sd": 0,
+          "min": 6263600,
+          "median": 6263600,
+          "max": 6263600
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 11719120,
+          "sd": 0,
+          "min": 11719120,
+          "median": 11719120,
+          "max": 11719120
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20079872,
+          "sd": 0,
+          "min": 20079872,
+          "median": 20079872,
+          "max": 20079872
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      }
+    },
+    "notifications": {
+      "solid": {
+        "eval_us": {
+          "n": 7,
+          "mean": 343251,
+          "sd": 0,
+          "min": 343251,
+          "median": 343251,
+          "max": 343251
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 627186,
+          "sd": 0,
+          "min": 627186,
+          "median": 627186,
+          "max": 627186
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 18711,
+          "sd": 0,
+          "min": 18711,
+          "median": 18711,
+          "max": 18711
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 64749,
+          "sd": 0,
+          "min": 64749,
+          "median": 64749,
+          "max": 64749
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 2134,
+          "sd": 0,
+          "min": 2134,
+          "median": 2134,
+          "max": 2134
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 153,
+          "sd": 0,
+          "min": 153,
+          "median": 153,
+          "max": 153
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 505,
+          "sd": 0,
+          "min": 505,
+          "median": 505,
+          "max": 505
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 1186,
+          "sd": 0,
+          "min": 1186,
+          "median": 1186,
+          "max": 1186
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 543,
+          "sd": 0,
+          "min": 543,
+          "median": 543,
+          "max": 543
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 4523,
+          "sd": 0,
+          "min": 4523,
+          "median": 4523,
+          "max": 4523
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 57273,
+          "sd": 0,
+          "min": 57273,
+          "median": 57273,
+          "max": 57273
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 995812,
+          "sd": 0,
+          "min": 995812,
+          "median": 995812,
+          "max": 995812
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 237.63422014285712,
+          "sd": 6.785305543227985,
+          "min": 232.19366699999955,
+          "median": 235.17991600000096,
+          "max": 251.42041600000084
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 110116,
+          "sd": 0,
+          "min": 110116,
+          "median": 110116,
+          "max": 110116
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 170688,
+          "sd": 0,
+          "min": 170688,
+          "median": 170688,
+          "max": 170688
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18187776,
+          "sd": 0,
+          "min": 18187776,
+          "median": 18187776,
+          "max": 18187776
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 2318688,
+          "sd": 0,
+          "min": 2318688,
+          "median": 2318688,
+          "max": 2318688
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 15869088,
+          "sd": 0,
+          "min": 15869088,
+          "median": 15869088,
+          "max": 15869088
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20284928,
+          "sd": 0,
+          "min": 20284928,
+          "median": 20284928,
+          "max": 20284928
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "vue-vapor": {
+        "eval_us": {
+          "n": 7,
+          "mean": 970731,
+          "sd": 0,
+          "min": 970731,
+          "median": 970731,
+          "max": 970731
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1261118,
+          "sd": 0,
+          "min": 1261118,
+          "median": 1261118,
+          "max": 1261118
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 19857,
+          "sd": 0,
+          "min": 19857,
+          "median": 19857,
+          "max": 19857
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 99969,
+          "sd": 0,
+          "min": 99969,
+          "median": 99969,
+          "max": 99969
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 2171,
+          "sd": 0,
+          "min": 2171,
+          "median": 2171,
+          "max": 2171
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 1447,
+          "sd": 0,
+          "min": 1447,
+          "median": 1447,
+          "max": 1447
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 696,
+          "sd": 0,
+          "min": 696,
+          "median": 696,
+          "max": 696
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 1253,
+          "sd": 0,
+          "min": 1253,
+          "median": 1253,
+          "max": 1253
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 531,
+          "sd": 0,
+          "min": 531,
+          "median": 531,
+          "max": 531
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 6101,
+          "sd": 0,
+          "min": 6101,
+          "median": 6101,
+          "max": 6101
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 89192,
+          "sd": 0,
+          "min": 89192,
+          "median": 89192,
+          "max": 89192
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 965656,
+          "sd": 0,
+          "min": 965656,
+          "median": 965656,
+          "max": 965656
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 288.7863215714273,
+          "sd": 2.9821184648367103,
+          "min": 285.98333399999683,
+          "median": 287.9293749999997,
+          "max": 293.4835000000021
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 260743,
+          "sd": 0,
+          "min": 260743,
+          "median": 260743,
+          "max": 260743
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 168960,
+          "sd": 0,
+          "min": 168960,
+          "median": 168960,
+          "max": 168960
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18038784,
+          "sd": 0,
+          "min": 18038784,
+          "median": 18038784,
+          "max": 18038784
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 3874672,
+          "sd": 0,
+          "min": 3874672,
+          "median": 3874672,
+          "max": 3874672
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 14164112,
+          "sd": 0,
+          "min": 14164112,
+          "median": 14164112,
+          "max": 14164112
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20135936,
+          "sd": 0,
+          "min": 20135936,
+          "median": 20135936,
+          "max": 20135936
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "octane": {
+        "eval_us": {
+          "n": 7,
+          "mean": 977445,
+          "sd": 0,
+          "min": 977445,
+          "median": 977445,
+          "max": 977445
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1261118,
+          "sd": 0,
+          "min": 1261118,
+          "median": 1261118,
+          "max": 1261118
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 27833,
+          "sd": 0,
+          "min": 27833,
+          "median": 27833,
+          "max": 27833
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 250250,
+          "sd": 0,
+          "min": 250250,
+          "median": 250250,
+          "max": 250250
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 10607,
+          "sd": 0,
+          "min": 10607,
+          "median": 10607,
+          "max": 10607
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 1025,
+          "sd": 0,
+          "min": 1025,
+          "median": 1025,
+          "max": 1025
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 517,
+          "sd": 0,
+          "min": 517,
+          "median": 517,
+          "max": 517
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 1156,
+          "sd": 0,
+          "min": 1156,
+          "median": 1156,
+          "max": 1156
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 530,
+          "sd": 0,
+          "min": 530,
+          "median": 530,
+          "max": 530
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 13838,
+          "sd": 0,
+          "min": 13838,
+          "median": 13838,
+          "max": 13838
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 235308,
+          "sd": 0,
+          "min": 235308,
+          "median": 235308,
+          "max": 235308
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 964008,
+          "sd": 0,
+          "min": 964008,
+          "median": 964008,
+          "max": 964008
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 314.9445059999988,
+          "sd": 5.261073684726514,
+          "min": 308.9733339999948,
+          "median": 313.312874999996,
+          "max": 324.7994580000013
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 318696,
+          "sd": 0,
+          "min": 318696,
+          "median": 318696,
+          "max": 318696
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 168960,
+          "sd": 0,
+          "min": 168960,
+          "median": 168960,
+          "max": 168960
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17980928,
+          "sd": 0,
+          "min": 17980928,
+          "median": 17980928,
+          "max": 17980928
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 5752096,
+          "sd": 0,
+          "min": 5752096,
+          "median": 5752096,
+          "max": 5752096
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 12228832,
+          "sd": 0,
+          "min": 12228832,
+          "median": 12228832,
+          "max": 12228832
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20078080,
+          "sd": 0,
+          "min": 20078080,
+          "median": 20078080,
+          "max": 20078080
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      }
+    },
+    "music": {
+      "solid": {
+        "eval_us": {
+          "n": 7,
+          "mean": 321359,
+          "sd": 0,
+          "min": 321359,
+          "median": 321359,
+          "max": 321359
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 610882,
+          "sd": 0,
+          "min": 610882,
+          "median": 610882,
+          "max": 610882
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 22209,
+          "sd": 0,
+          "min": 22209,
+          "median": 22209,
+          "max": 22209
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 70905,
+          "sd": 0,
+          "min": 70905,
+          "median": 70905,
+          "max": 70905
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 3297,
+          "sd": 0,
+          "min": 3297,
+          "median": 3297,
+          "max": 3297
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 103,
+          "sd": 0,
+          "min": 103,
+          "median": 103,
+          "max": 103
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 4388,
+          "sd": 0,
+          "min": 4388,
+          "median": 4388,
+          "max": 4388
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 2072,
+          "sd": 0,
+          "min": 2072,
+          "median": 2072,
+          "max": 2072
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 579,
+          "sd": 0,
+          "min": 579,
+          "median": 579,
+          "max": 579
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 10441,
+          "sd": 0,
+          "min": 10441,
+          "median": 10441,
+          "max": 10441
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 60603,
+          "sd": 0,
+          "min": 60603,
+          "median": 60603,
+          "max": 60603
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 1002548,
+          "sd": 0,
+          "min": 1002548,
+          "median": 1002548,
+          "max": 1002548
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 269.82855342856993,
+          "sd": 6.278372807318338,
+          "min": 264.55745800000295,
+          "median": 267.362291999998,
+          "max": 282.44558299999335
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 103566,
+          "sd": 0,
+          "min": 103566,
+          "median": 103566,
+          "max": 103566
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 159648,
+          "sd": 0,
+          "min": 159648,
+          "median": 159648,
+          "max": 159648
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18205184,
+          "sd": 0,
+          "min": 18205184,
+          "median": 18205184,
+          "max": 18205184
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 2361680,
+          "sd": 0,
+          "min": 2361680,
+          "median": 2361680,
+          "max": 2361680
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 15843504,
+          "sd": 0,
+          "min": 15843504,
+          "median": 15843504,
+          "max": 15843504
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20302336,
+          "sd": 0,
+          "min": 20302336,
+          "median": 20302336,
+          "max": 20302336
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "vue-vapor": {
+        "eval_us": {
+          "n": 7,
+          "mean": 963770,
+          "sd": 0,
+          "min": 963770,
+          "median": 963770,
+          "max": 963770
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1261996,
+          "sd": 0,
+          "min": 1261996,
+          "median": 1261996,
+          "max": 1261996
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 19813,
+          "sd": 0,
+          "min": 19813,
+          "median": 19813,
+          "max": 19813
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 79690,
+          "sd": 0,
+          "min": 79690,
+          "median": 79690,
+          "max": 79690
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 2448,
+          "sd": 0,
+          "min": 2448,
+          "median": 2448,
+          "max": 2448
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 2627,
+          "sd": 0,
+          "min": 2627,
+          "median": 2627,
+          "max": 2627
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 2619,
+          "sd": 0,
+          "min": 2619,
+          "median": 2619,
+          "max": 2619
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 2112,
+          "sd": 0,
+          "min": 2112,
+          "median": 2112,
+          "max": 2112
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 584,
+          "sd": 0,
+          "min": 584,
+          "median": 584,
+          "max": 584
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 10392,
+          "sd": 0,
+          "min": 10392,
+          "median": 10392,
+          "max": 10392
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 69615,
+          "sd": 0,
+          "min": 69615,
+          "median": 69615,
+          "max": 69615
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 973104,
+          "sd": 0,
+          "min": 973104,
+          "median": 973104,
+          "max": 973104
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 334.14941657143106,
+          "sd": 2.9597993491891095,
+          "min": 330.73283300000185,
+          "median": 333.2260830000014,
+          "max": 339.3883329999953
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 261593,
+          "sd": 0,
+          "min": 261593,
+          "median": 261593,
+          "max": 261593
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 158048,
+          "sd": 0,
+          "min": 158048,
+          "median": 158048,
+          "max": 158048
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 18048768,
+          "sd": 0,
+          "min": 18048768,
+          "median": 18048768,
+          "max": 18048768
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 3814784,
+          "sd": 0,
+          "min": 3814784,
+          "median": 3814784,
+          "max": 3814784
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 14233984,
+          "sd": 0,
+          "min": 14233984,
+          "median": 14233984,
+          "max": 14233984
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20145920,
+          "sd": 0,
+          "min": 20145920,
+          "median": 20145920,
+          "max": 20145920
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      },
+      "octane": {
+        "eval_us": {
+          "n": 7,
+          "mean": 949201,
+          "sd": 0,
+          "min": 949201,
+          "median": 949201,
+          "max": 949201
+        },
+        "boot_to_frame0_us": {
+          "n": 7,
+          "mean": 1245036,
+          "sd": 0,
+          "min": 1245036,
+          "median": 1245036,
+          "max": 1245036
+        },
+        "avg_frame_interval_us": {
+          "n": 7,
+          "mean": 24227,
+          "sd": 0,
+          "min": 24227,
+          "median": 24227,
+          "max": 24227
+        },
+        "max_frame_interval_us": {
+          "n": 7,
+          "mean": 216883,
+          "sd": 0,
+          "min": 216883,
+          "median": 216883,
+          "max": 216883
+        },
+        "avg_js_us": {
+          "n": 7,
+          "mean": 7407,
+          "sd": 0,
+          "min": 7407,
+          "median": 7407,
+          "max": 7407
+        },
+        "avg_jobs_us": {
+          "n": 7,
+          "mean": 588,
+          "sd": 0,
+          "min": 588,
+          "median": 588,
+          "max": 588
+        },
+        "avg_tick_us": {
+          "n": 7,
+          "mean": 2387,
+          "sd": 0,
+          "min": 2387,
+          "median": 2387,
+          "max": 2387
+        },
+        "avg_draw_us": {
+          "n": 7,
+          "mean": 1957,
+          "sd": 0,
+          "min": 1957,
+          "median": 1957,
+          "max": 1957
+        },
+        "avg_render_us": {
+          "n": 7,
+          "mean": 581,
+          "sd": 0,
+          "min": 581,
+          "median": 581,
+          "max": 581
+        },
+        "avg_work_us": {
+          "n": 7,
+          "mean": 12922,
+          "sd": 0,
+          "min": 12922,
+          "median": 12922,
+          "max": 12922
+        },
+        "max_work_us": {
+          "n": 7,
+          "mean": 202630,
+          "sd": 0,
+          "min": 202630,
+          "median": 202630,
+          "max": 202630
+        },
+        "stack_free_bytes": {
+          "n": 7,
+          "mean": 970240,
+          "sd": 0,
+          "min": 970240,
+          "median": 970240,
+          "max": 970240
+        },
+        "host_wall_ms": {
+          "n": 7,
+          "mean": 345.45292271428997,
+          "sd": 12.581537487827186,
+          "min": 332.765333000003,
+          "median": 342.19904200000747,
+          "max": 369.1567090000026
+        },
+        "bundle_bytes": {
+          "n": 7,
+          "mean": 322904,
+          "sd": 0,
+          "min": 322904,
+          "median": 322904,
+          "max": 322904
+        },
+        "pak_bytes": {
+          "n": 7,
+          "mean": 158720,
+          "sd": 0,
+          "min": 158720,
+          "median": 158720,
+          "max": 158720
+        },
+        "arena_capacity_bytes": {
+          "n": 7,
+          "mean": 17986816,
+          "sd": 0,
+          "min": 17986816,
+          "median": 17986816,
+          "max": 17986816
+        },
+        "arena_bump_bytes": {
+          "n": 7,
+          "mean": 5475280,
+          "sd": 0,
+          "min": 5475280,
+          "median": 5475280,
+          "max": 5475280
+        },
+        "arena_tail_free_bytes": {
+          "n": 7,
+          "mean": 12511536,
+          "sd": 0,
+          "min": 12511536,
+          "median": 12511536,
+          "max": 12511536
+        },
+        "arena_init_free_bytes": {
+          "n": 7,
+          "mean": 20083968,
+          "sd": 0,
+          "min": 20083968,
+          "median": 20083968,
+          "max": 20083968
+        },
+        "arena_configured_bytes": {
+          "n": 7,
+          "mean": 0,
+          "sd": 0,
+          "min": 0,
+          "median": 0,
+          "max": 0
+        }
+      }
+    }
+  },
+  "comparison": {
+    "baseline": "solid",
+    "bootstrap": 5000,
+    "geomean": {
+      "vue-vapor": {
+        "eval_us": {
+          "ratio": 2.9062648415739973,
+          "ci95": [
+            2.9062648415739973,
+            2.9062648415739973
+          ]
+        },
+        "boot_to_frame0_us": {
+          "ratio": 2.018635225409933,
+          "ci95": [
+            2.018635225409933,
+            2.018635225409933
+          ]
+        },
+        "avg_work_us": {
+          "ratio": 1.1140341813103078,
+          "ci95": [
+            1.1140341813103078,
+            1.1140341813103078
+          ]
+        },
+        "host_wall_ms": {
+          "ratio": 1.2454636535977417,
+          "ci95": [
+            1.2368628579104193,
+            1.254304543262986
+          ]
+        },
+        "bundle_bytes": {
+          "ratio": 2.4130484876558214,
+          "ci95": [
+            2.4130484876558214,
+            2.4130484876558214
+          ]
+        }
+      },
+      "octane": {
+        "eval_us": {
+          "ratio": 2.8763321229964163,
+          "ci95": [
+            2.8763321229964163,
+            2.8763321229964163
+          ]
+        },
+        "boot_to_frame0_us": {
+          "ratio": 2.0013300147951645,
+          "ci95": [
+            2.0013300147951645,
+            2.0013300147951645
+          ]
+        },
+        "avg_work_us": {
+          "ratio": 1.6643362454786572,
+          "ci95": [
+            1.6643362454786572,
+            1.6643362454786572
+          ]
+        },
+        "host_wall_ms": {
+          "ratio": 1.2740302400688606,
+          "ci95": [
+            1.263680595338537,
+            1.2841089128552317
+          ]
+        },
+        "bundle_bytes": {
+          "ratio": 2.9635712022264,
+          "ci95": [
+            2.9635712022264,
+            2.9635712022264
+          ]
+        }
+      }
+    },
+    "per_app": {
+      "eval_us": {
+        "hero": {
+          "solid": 319884,
+          "vue-vapor": 936522,
+          "octane": 926958
+        },
+        "cards": {
+          "solid": 304983,
+          "vue-vapor": 924898,
+          "octane": 879999
+        },
+        "stats": {
+          "solid": 370940,
+          "vue-vapor": 1034261,
+          "octane": 1100489
+        },
+        "library": {
+          "solid": 322146,
+          "vue-vapor": 962198,
+          "octane": 920423
+        },
+        "settings": {
+          "solid": 359238,
+          "vue-vapor": 1003175,
+          "octane": 981559
+        },
+        "notifications": {
+          "solid": 343251,
+          "vue-vapor": 970731,
+          "octane": 977445
+        },
+        "music": {
+          "solid": 321359,
+          "vue-vapor": 963770,
+          "octane": 949201
+        }
+      },
+      "boot_to_frame0_us": {
+        "hero": {
+          "solid": 648975,
+          "vue-vapor": 1266388,
+          "octane": 1249701
+        },
+        "cards": {
+          "solid": 577211,
+          "vue-vapor": 1211368,
+          "octane": 1161606
+        },
+        "stats": {
+          "solid": 677038,
+          "vue-vapor": 1344611,
+          "octane": 1411368
+        },
+        "library": {
+          "solid": 627397,
+          "vue-vapor": 1261328,
+          "octane": 1227961
+        },
+        "settings": {
+          "solid": 644070,
+          "vue-vapor": 1295175,
+          "octane": 1278228
+        },
+        "notifications": {
+          "solid": 627186,
+          "vue-vapor": 1261118,
+          "octane": 1261118
+        },
+        "music": {
+          "solid": 610882,
+          "vue-vapor": 1261996,
+          "octane": 1245036
+        }
+      },
+      "avg_work_us": {
+        "hero": {
+          "solid": 3663,
+          "vue-vapor": 3612,
+          "octane": 6532
+        },
+        "cards": {
+          "solid": 4824,
+          "vue-vapor": 5143,
+          "octane": 6558
+        },
+        "stats": {
+          "solid": 6842,
+          "vue-vapor": 8039,
+          "octane": 9248
+        },
+        "library": {
+          "solid": 3677,
+          "vue-vapor": 4386,
+          "octane": 4939
+        },
+        "settings": {
+          "solid": 6843,
+          "vue-vapor": 7367,
+          "octane": 14525
+        },
+        "notifications": {
+          "solid": 4523,
+          "vue-vapor": 6101,
+          "octane": 13838
+        },
+        "music": {
+          "solid": 10441,
+          "vue-vapor": 10392,
+          "octane": 12922
+        }
+      },
+      "host_wall_ms": {
+        "hero": {
+          "solid": 231.09306542857135,
+          "vue-vapor": 292.2468511428572,
+          "octane": 290.67010128571434
+        },
+        "cards": {
+          "solid": 278.32258928571383,
+          "vue-vapor": 347.89276185714306,
+          "octane": 341.8119107142863
+        },
+        "stats": {
+          "solid": 354.49605371428487,
+          "vue-vapor": 437.61019642857093,
+          "octane": 433.76170814285797
+        },
+        "library": {
+          "solid": 262.8228750000001,
+          "vue-vapor": 335.6899105714287,
+          "octane": 323.9544108571416
+        },
+        "settings": {
+          "solid": 275.4057202857148,
+          "vue-vapor": 341.3177735714281,
+          "octane": 379.57042257142894
+        },
+        "notifications": {
+          "solid": 237.63422014285712,
+          "vue-vapor": 288.7863215714273,
+          "octane": 314.9445059999988
+        },
+        "music": {
+          "solid": 269.82855342856993,
+          "vue-vapor": 334.14941657143106,
+          "octane": 345.45292271428997
+        }
+      },
+      "bundle_bytes": {
+        "hero": {
+          "solid": 105534,
+          "vue-vapor": 259729,
+          "octane": 321422
+        },
+        "cards": {
+          "solid": 105978,
+          "vue-vapor": 260670,
+          "octane": 318588
+        },
+        "stats": {
+          "solid": 111003,
+          "vue-vapor": 265522,
+          "octane": 328395
+        },
+        "library": {
+          "solid": 110722,
+          "vue-vapor": 266244,
+          "octane": 326290
+        },
+        "settings": {
+          "solid": 119661,
+          "vue-vapor": 273734,
+          "octane": 333541
+        },
+        "notifications": {
+          "solid": 110116,
+          "vue-vapor": 260743,
+          "octane": 318696
+        },
+        "music": {
+          "solid": 103566,
+          "vue-vapor": 261593,
+          "octane": 322904
+        }
+      }
+    }
+  }
+}
