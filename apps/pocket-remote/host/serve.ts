@@ -32,7 +32,7 @@ import {
   REMOTE_APP,
   REMOTE_PROTO,
 } from "../protocol.ts";
-import { hyprBatch, hyprDirectory, hyprDispatch, snapshot, STATE_EVENTS, watchEvents } from "./hypr.ts";
+import { hyprBatch, hyprDirectory, hyprDispatch, luaWindow, luaWorkspace, snapshot, STATE_EVENTS, watchEvents } from "./hypr.ts";
 import {
   pressKey,
   readLevels,
@@ -268,6 +268,16 @@ function sendMirror(conn: Conn): void {
 // commands
 // ---------------------------------------------------------------------------
 
+async function dispatchLogged(lua: string): Promise<void> {
+  const reply = await hyprDispatch(hyprDir, lua);
+  if (reply.trim() !== "ok") log(`dispatch ${lua}: ${reply.trim().split("\n")[0]}`);
+}
+
+async function batchLogged(luaDispatchers: string[]): Promise<void> {
+  const reply = await hyprBatch(hyprDir, luaDispatchers);
+  if (reply.trim() !== "ok") log(`batch ${luaDispatchers.join(" ")}: ${reply.trim().split("\n")[0]}`);
+}
+
 async function handle(conn: Conn, line: ClientLine): Promise<void> {
   if (line.t === "hello") {
     conn.device = typeof line.device === "string" ? line.device.slice(0, 40) : "device";
@@ -309,30 +319,30 @@ async function handle(conn: Conn, line: ClientLine): Promise<void> {
       return;
     }
     case "ws": {
-      const n = Number(line.n);
-      if (!Number.isInteger(n)) return;
-      await hyprDispatch(hyprDir, line.rel ? `workspace e${n >= 0 ? "+" : "-"}${Math.abs(n)}` : `workspace ${n}`);
+      const target = luaWorkspace(Number(line.n), line.rel === 1);
+      if (!target) return;
+      await dispatchLogged(`hl.dsp.focus({ workspace = ${target} })`);
       scheduleSnapshot();
       return;
     }
     case "win": {
-      const address = typeof line.a === "string" && /^0x[0-9a-f]+$/.test(line.a) ? line.a : null;
-      if (!address) return;
+      const window = typeof line.a === "string" ? luaWindow(line.a) : null;
+      if (!window) return;
       switch (line.op) {
         case "focus":
-          await hyprDispatch(hyprDir, `focuswindow address:${address}`);
+          await dispatchLogged(`hl.dsp.focus({ window = ${window} })`);
           break;
         case "close":
-          await hyprDispatch(hyprDir, `closewindow address:${address}`);
+          await dispatchLogged(`hl.dsp.window.close({ window = ${window} })`);
           break;
         case "swap":
           if (!["l", "r", "u", "d"].includes(line.dir)) return;
-          await hyprBatch(hyprDir, [`focuswindow address:${address}`, `swapwindow ${line.dir}`]);
+          await batchLogged([`hl.dsp.focus({ window = ${window} })`, `hl.dsp.window.swap({ direction = "${line.dir}" })`]);
           break;
         case "move": {
-          const n = Number(line.n);
-          if (!Number.isInteger(n) || n < 1 || n > 10) return;
-          await hyprDispatch(hyprDir, `movetoworkspacesilent ${n},address:${address}`);
+          const target = luaWorkspace(Number(line.n));
+          if (!target) return;
+          await dispatchLogged(`hl.dsp.window.move({ window = ${window}, workspace = ${target}, follow = false })`);
           break;
         }
       }

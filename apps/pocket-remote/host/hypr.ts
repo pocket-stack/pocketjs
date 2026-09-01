@@ -172,13 +172,27 @@ export async function hyprJson<T>(directory: string, command: string): Promise<T
   return JSON.parse(text) as T;
 }
 
-export async function hyprDispatch(directory: string, dispatch: string): Promise<string> {
-  return hyprRequest(directory, `dispatch ${dispatch}`);
+/** Run one dispatcher given as a Lua expression (`hl.dsp...`): the request
+ *  socket evaluates `hl.dispatch(<expr>)` and answers `ok`. */
+export async function hyprDispatch(directory: string, lua: string): Promise<string> {
+  return hyprRequest(directory, `dispatch ${lua}`);
 }
 
-/** Several dispatches in one round trip, in order. */
-export async function hyprBatch(directory: string, dispatches: string[]): Promise<string> {
-  return hyprRequest(directory, `[[BATCH]]${dispatches.map((d) => `dispatch ${d}`).join(";")}`);
+/** Several dispatchers in one round trip, in order, as one Lua chunk. */
+export async function hyprBatch(directory: string, luaDispatchers: string[]): Promise<string> {
+  return hyprRequest(directory, `eval ${luaDispatchers.map((d) => `hl.dispatch(${d})`).join(" ")}`);
+}
+
+/** Lua for a window target by address (validated: `0x` + hex only). */
+export function luaWindow(address: string): string | null {
+  return /^0x[0-9a-f]+$/.test(address) ? `"address:${address}"` : null;
+}
+
+/** Lua for a workspace target: an id, or a relative step `e+1`/`e-1`. */
+export function luaWorkspace(n: number, rel = false): string | null {
+  if (!Number.isInteger(n)) return null;
+  if (rel) return n === 0 ? null : `"e${n > 0 ? "+" : "-"}${Math.abs(n)}"`;
+  return n >= 1 && n <= 10 ? `"${n}"` : null;
 }
 
 export async function snapshot(directory: string): Promise<HostState> {

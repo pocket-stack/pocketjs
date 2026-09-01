@@ -102,6 +102,18 @@ known. Level drags update locally and send at most every three frames; host
 echoes are ignored for half a second after a release so the rail never
 snaps back on the way.
 
+## Hyprland's request socket speaks Lua
+
+Hyprland 0.5x (the Lua-config generation Omarchy 4 runs) evaluates
+`dispatch <text>` on `.socket.sock` as `hl.dispatch(<text>)`, so the old
+`dispatch workspace 1` grammar fails with a Lua parse error — from `hyprctl`
+too. **Every dispatcher in `actions.ts` is therefore a Lua constructor call**
+(`hl.dsp.focus({ workspace = "1" })`, `hl.dsp.window.close({ window =
+"address:0x…" })`), the same ones Omarchy's own bindings and scripts use. The
+daemon builds window and workspace targets only from validated pieces
+(`luaWindow`, `luaWorkspace`), so nothing off the wire can reach the Lua
+evaluator as code.
+
 ## The wire
 
 Spec ops 30–32 (`svcOpen`/`svcPoll`/`svcSend`) over the SVC WIRE (PKNT) TCP

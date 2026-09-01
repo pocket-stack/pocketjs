@@ -35,7 +35,7 @@ export function runDetached(argv: string[], log: Log): void {
 export async function runAction(action: ActionDef, hyprDir: string, log: Log): Promise<void> {
   if ("dispatch" in action.run) {
     const reply = await hyprDispatch(hyprDir, action.run.dispatch);
-    if (reply.trim() !== "ok") log(`dispatch ${action.run.dispatch}: ${reply.trim()}`);
+    if (reply.trim() !== "ok") log(`dispatch ${action.run.dispatch}: ${reply.trim().split("\n")[0]}`);
     return;
   }
   runDetached(action.run.exec, log);

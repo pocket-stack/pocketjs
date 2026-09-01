@@ -12,7 +12,7 @@ import {
 } from "../contracts/spec/spec.ts";
 import { ACTIONS, actionById, actionsOf, DOCK, PAD_PAGES } from "../apps/pocket-remote/actions.ts";
 import * as wire from "../apps/pocket-remote/host/wire.ts";
-import { buildState, parseEvent, type HyprClient, type HyprMonitor, type HyprWorkspace } from "../apps/pocket-remote/host/hypr.ts";
+import { buildState, luaWindow, luaWorkspace, parseEvent, type HyprClient, type HyprMonitor, type HyprWorkspace } from "../apps/pocket-remote/host/hypr.ts";
 import { paletteFrom, parseBrightnessctl, parseColorsToml, parsePactlVolume } from "../apps/pocket-remote/host/omarchy.ts";
 import {
   approach,
@@ -145,11 +145,15 @@ describe("pocket-remote actions", () => {
         expect(action.run.exec.length).toBeGreaterThan(0);
         for (const word of action.run.exec) expect(word).not.toMatch(/[|;&$`]/);
       } else {
-        expect(action.run.dispatch).toMatch(/^[a-z]+( .+)?$/);
+        // Hyprland 0.5x's socket evaluates `hl.dispatch(<lua>)`: every
+        // dispatcher is a constructor call under hl.dsp, balanced.
+        expect(action.run.dispatch).toMatch(/^hl\.dsp\.[a-z_.]+\(.*\)$/);
+        expect((action.run.dispatch.match(/\(/g) ?? []).length).toBe((action.run.dispatch.match(/\)/g) ?? []).length);
       }
     }
     expect(actionById("terminal")!.run).toEqual({ exec: ["omarchy-launch-terminal"] });
-    expect(actionById("close")!.run).toEqual({ dispatch: "killactive" });
+    expect(actionById("close")!.run).toEqual({ dispatch: "hl.dsp.window.close()" });
+    expect(actionById("wsNext")!.run).toEqual({ dispatch: 'hl.dsp.focus({ workspace = "e+1" })' });
     expect(actionById("layout")!.run).toEqual({ exec: ["omarchy-hyprland-workspace-layout-toggle"] });
     expect(actionById("play")!.run).toEqual({ exec: ["omarchy-shell", "media", "playPause"] });
     expect(actionsOf("media").length).toBe(4);
@@ -319,6 +323,19 @@ describe("pocket-remote hypr mirror", () => {
     const state = buildState(monitors, workspaces, many, null);
     expect(state.win.length).toBe(WINDOWS_MAX);
     expect(state.win[0]!.a).toBe("0x39");
+  });
+
+  test("window and workspace targets reach Lua only when well-formed", () => {
+    expect(luaWindow("0x55f90cb39300")).toBe('"address:0x55f90cb39300"');
+    expect(luaWindow('0x1" }) os.exit() --')).toBeNull();
+    expect(luaWindow("foot")).toBeNull();
+    expect(luaWorkspace(3)).toBe('"3"');
+    expect(luaWorkspace(0)).toBeNull();
+    expect(luaWorkspace(11)).toBeNull();
+    expect(luaWorkspace(1.5)).toBeNull();
+    expect(luaWorkspace(1, true)).toBe('"e+1"');
+    expect(luaWorkspace(-1, true)).toBe('"e-1"');
+    expect(luaWorkspace(0, true)).toBeNull();
   });
 
   test("parses socket2 event lines", () => {

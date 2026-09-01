@@ -22,7 +22,11 @@ export type ActionGroup =
 export type ActionRun =
   /** argv, spawned directly (no shell). */
   | { exec: string[] }
-  /** `hyprctl dispatch <...>` over the Hyprland socket. */
+  /** A Hyprland dispatcher as a Lua expression (Hyprland 0.5x's request
+   *  socket takes `dispatch <lua>` and evaluates `hl.dispatch(<lua>)`; the
+   *  old `dispatch workspace 1` grammar is gone). Constructors are the ones
+   *  Omarchy's own bindings use: hl.dsp.window.*, hl.dsp.focus(...),
+   *  hl.dsp.layout(...), hl.dsp.workspace.*, hl.dsp.group.*. */
   | { dispatch: string };
 
 export interface ActionDef {
@@ -117,32 +121,32 @@ export const ACTIONS: readonly ActionDef[] = [
   { id: "clipboard", label: "Clipboard", group: "launch", run: omarchy("omarchy-menu-clipboard") },
 
   // -- window ----------------------------------------------------------------
-  { id: "close", label: "Close", group: "window", run: dispatch("killactive"), hold: true },
-  { id: "fullscreen", label: "Full screen", group: "window", run: dispatch("fullscreen 0") },
-  { id: "maximize", label: "Full width", group: "window", run: dispatch("fullscreen 1") },
-  { id: "float", label: "Float", group: "window", run: dispatch("togglefloating") },
-  { id: "pseudo", label: "Pseudo", group: "window", run: dispatch("pseudo") },
-  { id: "split", label: "Split", group: "window", run: dispatch("togglesplit") },
+  { id: "close", label: "Close", group: "window", run: dispatch("hl.dsp.window.close()"), hold: true },
+  { id: "fullscreen", label: "Full screen", group: "window", run: dispatch('hl.dsp.window.fullscreen({ mode = "fullscreen" })') },
+  { id: "maximize", label: "Full width", group: "window", run: dispatch('hl.dsp.window.fullscreen({ mode = "maximized" })') },
+  { id: "float", label: "Float", group: "window", run: dispatch('hl.dsp.window.float({ action = "toggle" })') },
+  { id: "pseudo", label: "Pseudo", group: "window", run: dispatch("hl.dsp.window.pseudo()") },
+  { id: "split", label: "Split", group: "window", run: dispatch('hl.dsp.layout("togglesplit")') },
   { id: "pop", label: "Pop out", group: "window", run: omarchy("omarchy-hyprland-window-pop") },
-  { id: "group", label: "Group", group: "window", run: dispatch("togglegroup") },
-  { id: "cycle", label: "Next window", group: "window", run: dispatch("cyclenext") },
-  { id: "focusL", label: "Focus left", group: "window", run: dispatch("movefocus l") },
-  { id: "focusR", label: "Focus right", group: "window", run: dispatch("movefocus r") },
-  { id: "focusU", label: "Focus up", group: "window", run: dispatch("movefocus u") },
-  { id: "focusD", label: "Focus down", group: "window", run: dispatch("movefocus d") },
-  { id: "swapL", label: "Swap left", group: "window", run: dispatch("swapwindow l") },
-  { id: "swapR", label: "Swap right", group: "window", run: dispatch("swapwindow r") },
-  { id: "swapU", label: "Swap up", group: "window", run: dispatch("swapwindow u") },
-  { id: "swapD", label: "Swap down", group: "window", run: dispatch("swapwindow d") },
-  { id: "widen", label: "Wider", group: "window", run: dispatch("resizeactive 100 0") },
-  { id: "narrow", label: "Narrower", group: "window", run: dispatch("resizeactive -100 0") },
+  { id: "group", label: "Group", group: "window", run: dispatch("hl.dsp.group.toggle()") },
+  { id: "cycle", label: "Next window", group: "window", run: dispatch("hl.dsp.window.cycle_next()") },
+  { id: "focusL", label: "Focus left", group: "window", run: dispatch('hl.dsp.focus({ direction = "l" })') },
+  { id: "focusR", label: "Focus right", group: "window", run: dispatch('hl.dsp.focus({ direction = "r" })') },
+  { id: "focusU", label: "Focus up", group: "window", run: dispatch('hl.dsp.focus({ direction = "u" })') },
+  { id: "focusD", label: "Focus down", group: "window", run: dispatch('hl.dsp.focus({ direction = "d" })') },
+  { id: "swapL", label: "Swap left", group: "window", run: dispatch('hl.dsp.window.swap({ direction = "l" })') },
+  { id: "swapR", label: "Swap right", group: "window", run: dispatch('hl.dsp.window.swap({ direction = "r" })') },
+  { id: "swapU", label: "Swap up", group: "window", run: dispatch('hl.dsp.window.swap({ direction = "u" })') },
+  { id: "swapD", label: "Swap down", group: "window", run: dispatch('hl.dsp.window.swap({ direction = "d" })') },
+  { id: "widen", label: "Wider", group: "window", run: dispatch("hl.dsp.window.resize({ x = 100, y = 0, relative = true })") },
+  { id: "narrow", label: "Narrower", group: "window", run: dispatch("hl.dsp.window.resize({ x = -100, y = 0, relative = true })") },
 
   // -- workspace -------------------------------------------------------------
-  { id: "wsPrev", label: "Previous", group: "workspace", run: dispatch("workspace e-1") },
-  { id: "wsNext", label: "Next", group: "workspace", run: dispatch("workspace e+1") },
-  { id: "wsBack", label: "Former", group: "workspace", run: dispatch("workspace previous") },
-  { id: "scratchpad", label: "Scratchpad", group: "workspace", run: dispatch("togglespecialworkspace scratchpad") },
-  { id: "toScratchpad", label: "To scratchpad", group: "workspace", run: dispatch("movetoworkspacesilent special:scratchpad") },
+  { id: "wsPrev", label: "Previous", group: "workspace", run: dispatch('hl.dsp.focus({ workspace = "e-1" })') },
+  { id: "wsNext", label: "Next", group: "workspace", run: dispatch('hl.dsp.focus({ workspace = "e+1" })') },
+  { id: "wsBack", label: "Former", group: "workspace", run: dispatch('hl.dsp.focus({ workspace = "previous" })') },
+  { id: "scratchpad", label: "Scratchpad", group: "workspace", run: dispatch('hl.dsp.workspace.toggle_special("scratchpad")') },
+  { id: "toScratchpad", label: "To scratchpad", group: "workspace", run: dispatch('hl.dsp.window.move({ workspace = "special:scratchpad", follow = false })') },
   { id: "layout", label: "Layout", group: "workspace", run: omarchy("omarchy-hyprland-workspace-layout-toggle") },
 
   // -- toggle ----------------------------------------------------------------
