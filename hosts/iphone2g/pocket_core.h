@@ -58,6 +58,7 @@ int32_t ui_debug_rect_wh(void);
 void ui_debug_pause(int32_t paused);
 void ui_debug_step(void);
 const uint8_t *ui_render_incremental(void);
+int32_t ui_render_rgb565_incremental(uint16_t *framebuffer, size_t pixel_count);
 uint32_t ui_framebuffer_width(void);
 uint32_t ui_framebuffer_height(void);
 uint32_t ui_framebuffer_stride(void);

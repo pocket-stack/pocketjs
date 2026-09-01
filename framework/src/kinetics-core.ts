@@ -4,11 +4,9 @@
 //   tracking  finger-follow (gesture pan feeds drag deltas; out-of-bounds
 //             travel is rubber-banded with the classic iOS curve)
 //   fling     exponential decay from the release velocity
-//   spring    edge bounce-back — semi-implicit Euler with the engine's
-//             Spring constants (K=170, C=26), CARRYING the incoming velocity
-//             (a fling that crosses an edge keeps its momentum into the
-//             rubber band; this is the one place "spring with initial
-//             velocity" is needed, and it lives here, not in the core)
+//   spring    edge bounce-back or retargetable programmatic follow —
+//             semi-implicit Euler with the engine's Spring constants
+//             (K=170, C=26), carrying incoming velocity across retargets
 //   chase     per-frame ease toward a target — byte-for-byte the apps/im
 //             pump (0.3 of the remaining distance, snap under 0.6 px); the
 //             d-pad / stick-to-bottom mode
@@ -76,14 +74,21 @@ export interface Scroller {
   nudge(delta: number): void;
   /** Chase an absolute target (focus-follow, stick-to-bottom). */
   chaseTo(to: number): void;
+  /** Spring toward an absolute target. Repeated calls preserve velocity.
+   *  `overshootPx` adds a bounded approach point beyond the final target;
+   *  stiffness/damping default to the edge-spring constants. */
+  springTo(to: number, opts?: {
+    overshootPx?: number;
+    stiffness?: number;
+    damping?: number;
+  }): void;
   /** Shift offset AND every in-flight anchor by delta after a prepend, so
    *  backfill never moves what the user is looking at (the im rebase). */
   rebase(delta: number): void;
-  /** The position the scroller is heading to: the chase/tween target when
-   *  one is in flight, the current offset otherwise. */
+  /** The position the scroller is heading to: the chase/tween/spring final
+   *  target when one is in flight, the current offset otherwise. */
   intent(): number;
-  /** At the end of the range, judged on INTENT: the chase/tween target when
-   *  one is in flight, the position otherwise (the im at-bottom rule). */
+  /** At the end of the range, judged on INTENT rather than transient motion. */
   isAtEnd(slackPx?: number): boolean;
   /** Rest position a fling from `v` would reach (for snap functions). */
   projectFling(v: number): number;
@@ -147,7 +152,13 @@ export function createScrollerWith(cell: ScrollerCell, opts: ScrollerOptions): S
   let v = 0; // px per virtual second (fling/spring)
   let dragPos = 0; // unrubbered drag-space position while tracking
   let target = 0; // chase target
-  let springBound = 0; // the edge a spring is heading to
+  let springBound = 0; // current spring approach/rebound point
+  let springFinal = 0; // clamped public intent
+  let springDirection = 0; // approach direction, -1 / 0 / 1
+  let springOvershoot = 0;
+  let springReturning = false;
+  let springK = SPRING_K;
+  let springC = SPRING_C;
   let tweenFrom = 0;
   let tweenTo = 0;
   let tweenFrames = 1;
@@ -194,6 +205,17 @@ export function createScrollerWith(cell: ScrollerCell, opts: ScrollerOptions): S
     return pos + (v0 * TICK_DT * decay) / (1 - decay);
   }
 
+  function startEdgeSpring(bound: number): void {
+    springBound = bound;
+    springFinal = bound;
+    springDirection = 0;
+    springOvershoot = 0;
+    springReturning = false;
+    springK = SPRING_K;
+    springC = SPRING_C;
+    state = "spring";
+  }
+
   return {
     offset,
     velocity: () => v,
@@ -218,9 +240,8 @@ export function createScrollerWith(cell: ScrollerCell, opts: ScrollerOptions): S
       if (state !== "tracking") return;
       const m = opts.max();
       if (pos < 0 || pos > m) {
-        springBound = pos < 0 ? 0 : m;
         v = releaseVelocity;
-        state = "spring";
+        startEdgeSpring(pos < 0 ? 0 : m);
         return;
       }
       if (opts.snap) {
@@ -249,7 +270,13 @@ export function createScrollerWith(cell: ScrollerCell, opts: ScrollerOptions): S
     },
 
     scrollBy(delta: number, o?: { durMs?: number } | { immediate: true }): void {
-      const base = state === "tween" ? tweenTo : state === "chase" ? target : pos;
+      const base = state === "tween"
+        ? tweenTo
+        : state === "chase"
+          ? target
+          : state === "spring"
+            ? springFinal
+            : pos;
       this.scrollTo(base + delta, o);
     },
 
@@ -270,17 +297,56 @@ export function createScrollerWith(cell: ScrollerCell, opts: ScrollerOptions): S
       state = "chase";
     },
 
+    springTo(to: number, o?: {
+      overshootPx?: number;
+      stiffness?: number;
+      damping?: number;
+    }): void {
+      const final = clampRange(to);
+      const delta = final - pos;
+      const direction = delta < 0 ? -1 : delta > 0 ? 1 : 0;
+      const requested = o?.overshootPx ?? 0;
+      const approach = Number.isFinite(requested) && requested > 0 ? requested : 0;
+      const requestedK = o?.stiffness;
+      const requestedC = o?.damping;
+
+      if (state !== "spring" && state !== "fling") v = 0;
+      springFinal = final;
+      springDirection = direction;
+      springOvershoot = direction === 0 ? 0 : approach;
+      springReturning = false;
+      springK = requestedK !== undefined && Number.isFinite(requestedK) && requestedK > 0
+        ? requestedK
+        : SPRING_K;
+      springC = requestedC !== undefined && Number.isFinite(requestedC) && requestedC > 0
+        ? requestedC
+        : SPRING_C;
+      springBound = final + direction * springOvershoot;
+      if (springBound === pos && v === 0) {
+        state = "idle";
+        return;
+      }
+      state = "spring";
+    },
+
     rebase(delta: number): void {
       dragPos += delta;
       target += delta;
       springBound += delta;
+      springFinal += delta;
       tweenFrom += delta;
       tweenTo += delta;
       emit(pos + delta);
     },
 
     intent(): number {
-      return state === "chase" ? target : state === "tween" ? tweenTo : pos;
+      return state === "chase"
+        ? target
+        : state === "tween"
+          ? tweenTo
+          : state === "spring"
+            ? springFinal
+            : pos;
     },
 
     isAtEnd(slackPx = 1): boolean {
@@ -334,8 +400,7 @@ export function createScrollerWith(cell: ScrollerCell, opts: ScrollerOptions): S
           const m = opts.max();
           if (p < 0 || p > m) {
             // Carry the momentum into the edge spring mid-tick.
-            springBound = p < 0 ? 0 : m;
-            state = "spring";
+            startEdgeSpring(p < 0 ? 0 : m);
             continue;
           }
           if (v < FLING_MIN_V && v > -FLING_MIN_V) {
@@ -343,18 +408,35 @@ export function createScrollerWith(cell: ScrollerCell, opts: ScrollerOptions): S
             return;
           }
         } else {
-          const b = clampRange(springBound);
-          const a = SPRING_K * (b - p) - SPRING_C * v;
+          const b = springBound;
+          const a = springK * (b - p) - springC * v;
           v += a * TICK_DT;
           p += v * TICK_DT;
           const dist = b - p;
+          const crossedApproach = !springReturning && springOvershoot > 0 && (
+            springDirection > 0 ? p >= b : p <= b
+          );
+          if (crossedApproach) {
+            p = b;
+            v = 0;
+            springReturning = true;
+            springBound = springFinal;
+            continue;
+          }
           if (
             dist < SPRING_SETTLE_DIST &&
             dist > -SPRING_SETTLE_DIST &&
             v < SPRING_SETTLE_V &&
             v > -SPRING_SETTLE_V
           ) {
-            settle(b);
+            if (!springReturning && springOvershoot > 0) {
+              p = b;
+              v = 0;
+              springReturning = true;
+              springBound = springFinal;
+              continue;
+            }
+            settle(springFinal);
             return;
           }
         }
