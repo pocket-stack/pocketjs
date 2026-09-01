@@ -42,8 +42,8 @@ neither advertises a production capability from a build alone.
   v1-signed APK drives the same QuickJS bridge and Rust core through a JNI
   `armeabi-v7a` library. Both register at 720×720 physical, 360×360 logical at
   density 2, host ABI 9. First device run recorded on an SQC100-4 at
-  10.3.3.3216; the [port](/blog/blackberry-classic/) follows both routes onto
-  the same square screen.
+  10.3.3.3216; the [port write-up](/blog/blackberry-classic/) walks the QNX
+  route onto the square screen.
 - **A second backend class paints through gpui and measures text on the
   host.** The portable family (wgpu, software raster, PPA, GLES2) keeps
   executing the DrawList against compile-time baked font atlases.
