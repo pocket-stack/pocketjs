@@ -7,6 +7,7 @@ import {
   IPODTOUCH4_DEV_CONTRACTS,
   IPODTOUCH4_DEV_HOST_ABI,
   IPODTOUCH4_DEV_TARGET_ID,
+  IPODTOUCH4_LANDSCAPE_VIEWPORT,
   IPODTOUCH4_LOGICAL_VIEWPORT,
   IPODTOUCH4_PHYSICAL_VIEWPORT,
   IPODTOUCH4_RASTER_DENSITY,
@@ -24,7 +25,9 @@ import {
   deploymentAcquireLockCommand,
   deploymentInstallCommand,
   deploymentRenewLockCommand,
+  IPODTOUCH4_APPS,
   ipodtouch4DeploymentPaths,
+  selectIPodTouch4App,
 } from "../tools/ipodtouch4.ts";
 
 const repository = join(import.meta.dir, "..");
@@ -38,7 +41,7 @@ describe("private iPod touch 4 profile", () => {
       form: "takeover",
       display: {
         physicalViewport: IPODTOUCH4_PHYSICAL_VIEWPORT,
-        logicalViewports: [IPODTOUCH4_LOGICAL_VIEWPORT],
+        logicalViewports: [IPODTOUCH4_LOGICAL_VIEWPORT, IPODTOUCH4_LANDSCAPE_VIEWPORT],
         presentations: ["native"],
         rasterDensity: IPODTOUCH4_RASTER_DENSITY,
       },
@@ -64,6 +67,40 @@ describe("private iPod touch 4 profile", () => {
     expect(plan.app.output).toBe("clear-main");
     expect(plan.app.framework).toBe("vue-vapor");
     expect(verifyPlanHash(plan)).toBe(true);
+  });
+
+  test("resolves the landscape Pocket Remote plan on the same panel, turned", () => {
+    const manifest = JSON.parse(readFileSync(join(repository, "apps/pocket-remote/pocket.json"), "utf8"));
+    const plan = resolveIPodTouch4BuildPlan(manifest);
+    expect(plan.viewport).toEqual({
+      logical: IPODTOUCH4_LANDSCAPE_VIEWPORT,
+      physical: [IPODTOUCH4_PHYSICAL_VIEWPORT[1], IPODTOUCH4_PHYSICAL_VIEWPORT[0]],
+      presentation: "native",
+      rasterDensity: IPODTOUCH4_RASTER_DENSITY,
+      policy: "fixed",
+    });
+    expect(plan.app.output).toBe("pocket-remote-main");
+    expect(plan.app.framework).toBe("solid");
+    // A second app on the device needs its own bundle, executable, scheme and
+    // receipt paths; the network app compiles the svc wire in.
+    const remote = selectIPodTouch4App("pocket-remote");
+    const clear = selectIPodTouch4App(undefined);
+    expect(clear).toBe(IPODTOUCH4_APPS.clear);
+    expect(remote.svcWire).toBe(true);
+    expect(clear.svcWire).toBe(false);
+    for (const key of ["bundleId", "bundleName", "executable", "scheme", "receiptSlug"] as const) {
+      expect(remote[key]).not.toBe(clear[key]);
+    }
+    expect(() => selectIPodTouch4App("nope")).toThrow("unknown app");
+    const wrapper = readFileSync(join(repository, "hosts/ipodtouch4/runtime.c"), "utf8");
+    expect(wrapper).toContain("#ifndef POCKET_ACCEPTANCE_PATH");
+    const runtime = readFileSync(join(repository, "hosts/iphone2g/runtime.c"), "utf8");
+    expect(runtime).toContain("landscape = POCKET_LOGICAL_WIDTH > POCKET_LOGICAL_HEIGHT");
+    expect(runtime).toContain('sel_registerName("setTransform:")');
+    const guest = readFileSync(join(repository, "hosts/iphone2g/pocket_runtime.c"), "utf8");
+    expect(guest).toContain("#ifdef POCKET_SVC_WIRE");
+    expect(guest).toContain('add_host_operation(context, ui, "svcOpen", 1, HostSvcOpen)');
+    expect(guest).toContain("svcwire_pump();");
   });
 
   test("pins the device tuple and shares the validated 4S toolchain", () => {
