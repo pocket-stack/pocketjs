@@ -218,6 +218,7 @@
     "blackberry-android": "bun tools/blackberry-android.ts",
     "blackberry-qnx": "bun tools/blackberry-qnx.ts",
     "3ds": "bun tools/3ds.ts",
+    "nspire": "bun tools/nspire.ts",
     "vita:art": "bun tools/generate-vita-livearea.ts",
     "vita:art:check": "bun tools/generate-vita-livearea.ts --check",
     "e2e:vita": "bun tests/e2e/vita3k.ts",

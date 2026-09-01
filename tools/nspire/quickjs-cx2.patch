@@ -1,0 +1,47 @@
+diff --git a/libquickjs-sys/embed/quickjs/quickjs.c b/libquickjs-sys/embed/quickjs/quickjs.c
+index 39e334c..afc8bec 100644
+--- a/libquickjs-sys/embed/quickjs/quickjs.c
++++ b/libquickjs-sys/embed/quickjs/quickjs.c
+@@ -99,3 +99,4 @@ _Static_assert(_Alignof(JSValue) == 8, "Vita JSValue must be 8-byte aligned");
+ #endif
+-#if defined(__PSP__) || defined(__vita__)
++#if defined(__PSP__) || defined(__vita__) || \
++    defined(POCKETJS_NO_ATOMICS)
+ #undef CONFIG_ATOMICS
+@@ -2167,3 +2168,6 @@ static size_t js_def_malloc_usable_size(const void *ptr)
+ {
+-#if defined(__APPLE__)
++#if defined(POCKETJS_NO_MALLOC_USABLE_SIZE)
++    (void)ptr;
++    return 0;
++#elif defined(__APPLE__)
+     return malloc_size(ptr);
+@@ -7471,3 +7475,4 @@ static int find_line_num(JSContext *ctx, JSFunctionBytecode *b,
+     const uint8_t *p_end, *p;
+-    int new_line_num, line_num, pc, v, ret, new_col_num, col_num;
++    int new_line_num, line_num, pc, ret, new_col_num, col_num;
++    int32_t v;
+     uint32_t val;
+@@ -44891,3 +44896,4 @@ static JSValue js_parseInt(JSContext *ctx, JSValueConst this_val,
+     const char *str, *p;
+-    int radix, flags;
++    int32_t radix;
++    int flags;
+     JSValue ret;
+@@ -47304,3 +47310,4 @@ static int getTimezoneOffset(int64_t time)
+ #else
+-#if defined(__PSP__) || defined(__vita__)
++#if defined(__PSP__) || defined(__vita__) || \
++    defined(POCKETJS_FIXED_TIMEZONE)
+     (void)ti;
+@@ -53698,3 +53705,3 @@ static __exception int remainingElementsCount_add(JSContext *ctx,
+     JSValue val;
+-    int remainingElementsCount;
++    int32_t remainingElementsCount;
+ 
+@@ -53729,3 +53736,4 @@ static JSValue js_promise_all_resolve_element(JSContext *ctx,
+     JSValue ret, obj;
+-    int is_zero, index;
++    int is_zero;
++    int32_t index;
+ 

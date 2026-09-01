@@ -27,6 +27,10 @@ extern void pocket_host_boot_stage(int stage);
 #define REPORT_BOOT_STAGE(stage) ((void)(stage))
 #endif
 
+#ifndef POCKET_RUNTIME_JS_STACK_SIZE
+#define POCKET_RUNTIME_JS_STACK_SIZE (256 * 1024)
+#endif
+
 typedef enum {
   HostCreateNode,
   HostDestroyNode,
@@ -94,6 +98,34 @@ static void take_exception(JSContext *exception_context) {
   } else {
     set_error("QuickJS exception");
   }
+#if defined(POCKET_RUNTIME_INCLUDE_EXCEPTION_STACK)
+  JSValue stack = JS_GetPropertyStr(exception_context, exception, "stack");
+  if (!JS_IsException(stack) && !JS_IsUndefined(stack) && !JS_IsNull(stack)) {
+    size_t stack_length = 0;
+    const char *stack_text = JS_ToCStringLen2(
+      exception_context,
+      &stack_length,
+      stack,
+      0
+    );
+    if (stack_text != 0 && stack_length > 0) {
+      size_t used = strlen(last_error);
+      size_t available = sizeof(last_error) - used - 1;
+      if (available > 0) {
+        last_error[used++] = '\n';
+        available -= 1;
+        size_t copy_length = stack_length < available ? stack_length : available;
+        memcpy(last_error + used, stack_text, copy_length);
+        last_error[used + copy_length] = '\0';
+      }
+      JS_FreeCString(exception_context, stack_text);
+    }
+  } else if (JS_IsException(stack)) {
+    JSValue stack_error = JS_GetException(exception_context);
+    JS_FreeValue(exception_context, stack_error);
+  }
+  JS_FreeValue(exception_context, stack);
+#endif
   JS_FreeValue(exception_context, exception);
 }
 
@@ -561,7 +593,7 @@ int pocket_runtime_boot(
     return 0;
   }
   REPORT_BOOT_STAGE(4);
-  JS_SetMaxStackSize(runtime, 256 * 1024);
+  JS_SetMaxStackSize(runtime, POCKET_RUNTIME_JS_STACK_SIZE);
   context = JS_NewContext(runtime);
   if (context == 0) {
     set_error("QuickJS context allocation failed");
@@ -632,6 +664,7 @@ int pocket_runtime_boot(
 /* One guest turn (frame call + job drain), then `tick_count` core ticks. */
 static int run_frame(
   uint32_t buttons,
+  uint32_t analog,
   const PocketRuntimeContact *contacts,
   unsigned int contact_count,
   unsigned int tick_count
@@ -680,7 +713,7 @@ static int run_frame(
   }
   JSValue arguments[4] = {
     JS_NewUint32(context, buttons),
-    JS_NewInt32(context, POCKET_ANALOG_CENTER),
+    JS_NewUint32(context, analog),
     touch_array,
     hit_array,
   };
@@ -728,12 +761,34 @@ int pocket_runtime_tick(const PocketRuntimeInput *input) {
     input->touch_y,
     input->touch_hit
   );
-  return run_frame(input->buttons, &contact, count, 1);
+  return run_frame(input->buttons, POCKET_ANALOG_CENTER, &contact, count, 1);
+}
+
+int pocket_runtime_tick_analog(uint32_t buttons, uint32_t analog) {
+  return run_frame(buttons, analog, 0, 0, 1);
+}
+
+int pocket_runtime_set_diagnostic_text(const char *text) {
+  if (runtime == 0 || context == 0 || runtime_failed || JS_IsUndefined(global)) return 0;
+  JSValue value = JS_NewString(context, text == 0 ? "" : text);
+  if (JS_IsException(value) ||
+      JS_SetPropertyStr(context, global, "__pocketInputDiagnostic", value) < 0) {
+    take_exception(context);
+    runtime_failed = 1;
+    return 0;
+  }
+  return 1;
 }
 
 int pocket_runtime_tick_contacts(const PocketRuntimeContactsInput *input) {
   if (input == 0) return 0;
-  return run_frame(input->buttons, input->contacts, input->contact_count, 1);
+  return run_frame(
+    input->buttons,
+    POCKET_ANALOG_CENTER,
+    input->contacts,
+    input->contact_count,
+    1
+  );
 }
 
 int pocket_runtime_frame_contacts(
@@ -741,7 +796,13 @@ int pocket_runtime_frame_contacts(
   unsigned int tick_count
 ) {
   if (input == 0) return 0;
-  return run_frame(input->buttons, input->contacts, input->contact_count, tick_count);
+  return run_frame(
+    input->buttons,
+    POCKET_ANALOG_CENTER,
+    input->contacts,
+    input->contact_count,
+    tick_count
+  );
 }
 
 int pocket_runtime_frame_ticks(
@@ -753,7 +814,7 @@ int pocket_runtime_frame_ticks(
 ) {
   PocketRuntimeContact contact;
   unsigned int count = single_contact(&contact, touch_down, touch_x, touch_y, touch_hit);
-  return run_frame(0, &contact, count, tick_count);
+  return run_frame(0, POCKET_ANALOG_CENTER, &contact, count, tick_count);
 }
 
 int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit) {

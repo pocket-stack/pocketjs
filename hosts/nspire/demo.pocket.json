@@ -1,0 +1,28 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.nspire-demo",
+  "name": "pocketjs-nspire-demo",
+  "title": "PocketJS CX II Demo",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "text.glyphs.baked",
+        "input.buttons",
+        "input.analog.left"
+      ]
+    }
+  },
+  "app": {
+    "entry": "apps/hero/main.tsx",
+    "output": "nspire-demo",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [320, 240],
+        "presentation": "native"
+      }
+    }
+  }
+}

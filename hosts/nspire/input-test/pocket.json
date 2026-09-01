@@ -1,0 +1,28 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.nspire-input-test",
+  "name": "pocketjs-nspire-input-test",
+  "title": "PocketJS: CX II Input Test",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "text.glyphs.baked",
+        "input.buttons",
+        "input.analog.left"
+      ]
+    }
+  },
+  "app": {
+    "entry": "hosts/nspire/input-test/main.tsx",
+    "output": "nspire-input-test",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [320, 240],
+        "presentation": "native"
+      }
+    }
+  }
+}
