@@ -519,6 +519,12 @@ function unlink(node: NodeMirror): void {
 }
 
 export function insertNode(parent: NodeMirror, node: NodeMirror, anchor?: NodeMirror | null): void {
+  // DOM insertBefore(node, node) leaves the node where it is (the spec
+  // re-targets the reference child to node's next sibling). Solid's
+  // reconcileArrays issues exactly that call when two adjacent <For> items
+  // swap, so it has to be a no-op here too — unlinking first would make the
+  // node its own missing anchor.
+  if (anchor === node && node.parent === parent) return;
   const ops = getOps();
   unlink(node);
   sweepSet.delete(node);

@@ -84,7 +84,7 @@ const graphicsApi = process.env.E2E_AZAHAR_GRAPHICS_API ?? "0";
 // The 3DS top screen is 400x240; the stock 480x272 demo corpus does not fit it
 // on either axis and the resolver has no scaling fallback, so this driver runs
 // only the specs whose app declares the 400x240 native viewport.
-const DEFAULT_SPEC_NAMES = ["3ds-demo"];
+const DEFAULT_SPEC_NAMES = ["3ds-demo", "pocket-shell"];
 
 // ---------------------------------------------------------------------------
 // Preflight
@@ -168,6 +168,12 @@ function writeFixture(): void {
   set("frame_limit", "1000");
   set("use_disk_shader_cache", "false");
   set("check_for_update_on_start", "false");
+  // A guest that shows the RTC (Pocket Shell's bar and clock) must see the
+  // same time on every run: pin the emulated clock to 2000-01-01 00:00:00
+  // instead of the host's. It still advances with emulated time, so a
+  // minute-resolution display stays stable for the first 60 s of a run.
+  set("init_clock", "1");
+  set("init_time", "946684800");
   writeFileSync(CONFIG, config);
 }
 
