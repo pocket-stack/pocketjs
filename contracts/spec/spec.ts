@@ -277,6 +277,12 @@ export const OP = {
   hitTestBoundsAuxiliary: 46, // bounds-only twin for auxiliary touch facts.
   //                      Same semantics as hitTestBounds; never searches
   //                      primary. Hosts omit both ops without the capability.
+  // -- PocketRock system service bridge (Host ABI 10) ----------------------
+  pocketrockCall: 47, //   (service: string, method: string, payload: string)
+  //                      -> string. Synchronous bounded JSON RPC for native
+  //                      playback/library/queue/system and cold-realm
+  //                      launcher operations. Collection calls return at
+  //                      most 64 entries. Errors are JSON {error:{...}}.
 } as const;
 
 // ---------------------------------------------------------------------------

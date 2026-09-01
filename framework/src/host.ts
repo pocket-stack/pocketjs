@@ -110,6 +110,10 @@ export interface HostOps {
    * display.auxiliary; coordinates belong to its logical viewport. */
   hitTestAuxiliary?(x: number, y: number): number;
   hitTestBoundsAuxiliary?(x: number, y: number): number;
+  /** ABI 10 PocketRock service bridge. Arguments and return value are JSON
+   * strings so QuickJS/native ownership is explicit and every response can
+   * be bounded before it enters the guest heap. */
+  pocketrockCall?(service: string, method: string, payload: string): string;
   /** Bind the cursor sprite: an uploaded texture drawn topmost every frame,
    *  offset by its hotspot; never laid out, never hit-tested. tex < 0 hides
    *  it; w/h <= 0 draw at the texture's own pixel size. */

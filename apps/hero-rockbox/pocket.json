@@ -1,0 +1,24 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.hero.rockbox",
+  "name": "hero",
+  "title": "Hero",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": ["input.buttons", "text.glyphs.baked"]
+    }
+  },
+  "app": {
+    "entry": "apps/hero-rockbox/main.tsx",
+    "output": "hero",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [320, 240],
+        "presentation": "native"
+      }
+    }
+  }
+}

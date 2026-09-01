@@ -1,0 +1,33 @@
+name: PocketRock
+
+on:
+  pull_request:
+    paths:
+      - "apps/pocketrock/**"
+      - "contracts/**"
+      - "engine/**"
+      - "framework/**"
+      - "hosts/iphone2g/pocket_runtime.*"
+      - "hosts/rockbox/**"
+      - "tools/pocket*.ts"
+      - "tools/quickjs-bytecode.ts"
+      - "tools/rockbox.ts"
+      - ".github/pocketrock-lock.json"
+      - ".github/workflows/pocketrock.yml"
+  workflow_dispatch:
+
+jobs:
+  contracts-and-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bun tools/seed-styles.ts
+      - run: bun test tests/platform-contracts.test.ts tests/pocket-package.test.ts tests/rockbox-services.test.ts
+      - run: bun tools/rockbox.ts bootstrap
+      - run: make -C dist/rockbox/quickjs-rs/libquickjs-sys/embed/quickjs qjsc
+      - run: bun tools/pocket.ts build --target rockbox-ip6g --manifest apps/pocketrock/pocket.json --project-root . --outdir dist/pocketrock-shell
+      - run: bunx tsc --noEmit

@@ -194,6 +194,14 @@ export const POCKET_CAPABILITIES = defineCapabilityRegistry([
   // target appends the id to its profile only when its native host ships
   // the module.
   "data.fs",
+  // Native media-library/player services supplied by a Rockbox-backed host.
+  // The APIs are synchronous and JSON-bounded; collection reads paginate at
+  // no more than 64 entries per call (framework/src/rockbox-services.ts).
+  "media.playback",
+  "media.library",
+  "media.queue",
+  "device.system",
+  "launcher.native",
   // Copy/cut/paste round-trips with the OS clipboard.
   "host.clipboard",
   // The logical viewport is runtime-mutable: the app is told about live
@@ -238,6 +246,7 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
   readonly "macos-app": TargetProfile<PocketCapabilityId>;
   readonly "linux-app": TargetProfile<PocketCapabilityId>;
   readonly "web-app": TargetProfile<PocketCapabilityId>;
+  readonly "rockbox-ip6g": TargetProfile<PocketCapabilityId>;
 }>({
   psp: {
     hostAbi: 1,
@@ -410,6 +419,32 @@ export const POCKET_TARGETS = defineTargetRegistry<PocketCapabilityId, {
     roleCapabilities: {
       systemUI: ["ui.compositor-surfaces"],
     },
+  },
+  // PocketRock production firmware for the iPod Classic 6/7 generation.
+  // ABI 10 adds the bounded pocketrockCall service bridge and cold-realm
+  // launcher lifecycle. The physical framebuffer is the logical surface:
+  // no scaling, no safe-area inset, one RGB565 sample per logical pixel.
+  "rockbox-ip6g": {
+    hostAbi: 10,
+    platform: "rockbox",
+    form: "takeover",
+    display: {
+      physicalViewport: [320, 240],
+      logicalViewports: [[320, 240]],
+      presentations: ["native"],
+      rasterDensity: 1,
+    },
+    capabilities: [
+      "input.buttons",
+      "audio.pcm",
+      "data.fs",
+      "media.playback",
+      "media.library",
+      "media.queue",
+      "device.system",
+      "launcher.native",
+      "text.glyphs.baked",
+    ],
   },
 });
 

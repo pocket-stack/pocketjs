@@ -4,12 +4,16 @@
 //   bun pocket compile --target psp
 //   bun pocket build --target psp -- --release
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { checkAppTypes } from "../framework/compiler/app-check.ts";
 import type { PocketTargetId } from "../contracts/spec/platforms.ts";
 import { validateAndResolveBuildPlan } from "../framework/src/manifest/resolve.ts";
 import type { ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
+import { canonicalJson } from "../framework/src/manifest/plan.ts";
+import { encodePocketPackage } from "../contracts/spec/pocket-package.ts";
+import { makeVariant } from "./pocket-pack.ts";
+import { compilePocketRockBytecode } from "./quickjs-bytecode.ts";
 
 import { fileURLToPath } from "node:url";
 
@@ -166,6 +170,35 @@ const targetBackends = {
     console.log(
       `✓ PocketBook bundle ready in ${outdir} — cross-compile the host ` +
         `(hosts/pocketbook, cargo zigbuild) and copy both to the device.`,
+    );
+  },
+  "rockbox-ip6g": async ({ plan, projectRoot, outdir }) => {
+    const jsPath = resolve(outdir, `${plan.app.output}.js`);
+    const pakPath = resolve(outdir, `${plan.app.output}.pak`);
+    const bytecode = compilePocketRockBytecode(
+      frameworkRoot,
+      jsPath,
+      resolve(outdir, `${plan.app.output}.qjsc.c`),
+    );
+    const variant = makeVariant({
+      target: "rockbox-ip6g",
+      hostAbi: 10,
+      planJson: canonicalJson(plan),
+      identity: { output: plan.app.output, id: plan.app.id, title: plan.app.title },
+      js: new Uint8Array(readFileSync(jsPath)),
+      pak: existsSync(pakPath) ? new Uint8Array(readFileSync(pakPath)) : new Uint8Array(0),
+      bytecode,
+    });
+    const packagePath = resolve(outdir, `${plan.app.output}.pocket`);
+    writeFileSync(
+      packagePath,
+      encodePocketPackage({
+        manifest: new Uint8Array(readFileSync(manifestPath)),
+        variants: [variant],
+      }),
+    );
+    console.log(
+      `✓ PocketRock package ${packagePath} (${bytecode.length} byte bytecode; app root ${projectRoot})`,
     );
   },
 } satisfies Record<PocketTargetId, TargetBackend>;

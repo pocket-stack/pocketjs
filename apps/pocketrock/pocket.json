@@ -1,0 +1,33 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.pocketrock.shell",
+  "name": "pocketrock-shell",
+  "title": "PocketRock",
+  "version": "0.1.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "input.buttons",
+        "text.glyphs.baked",
+        "media.playback",
+        "media.library",
+        "media.queue",
+        "device.system",
+        "launcher.native"
+      ],
+      "enhances": ["data.fs", "audio.pcm"]
+    }
+  },
+  "app": {
+    "entry": "apps/pocketrock/app.tsx",
+    "output": "pocketrock-shell",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [320, 240],
+        "presentation": "native"
+      }
+    }
+  }
+}

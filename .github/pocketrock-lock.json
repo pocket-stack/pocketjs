@@ -1,0 +1,8 @@
+{
+  "rockbox": "420537c8643cc6ffc844115d2fca9e6129f7ce71",
+  "quickjs": "ba5bdd0dc013518768e76cd9e05cd30ed53dd35b",
+  "rust": "nightly-2026-07-02",
+  "armToolchain": "arm-none-eabi-gcc 9.5.0",
+  "target": "rockbox-ip6g",
+  "hostAbi": 10
+}

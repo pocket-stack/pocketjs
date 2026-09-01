@@ -190,6 +190,90 @@ describe("chase (im parity)", () => {
   });
 });
 
+describe("retargetable spring", () => {
+  test("approaches through a bounded overshoot and returns to the exact final target", () => {
+    const s = createScroller({ max: () => 1000 });
+    s.springTo(400, { overshootPx: 12 });
+    expect(s.intent()).toBe(400);
+    const t = trace(s);
+    expect(Math.max(...t)).toBeGreaterThan(400);
+    expect(Math.max(...t)).toBeLessThanOrEqual(412);
+    expect(t[t.length - 1]).toBe(400);
+  });
+
+  test("retargeting preserves velocity and never jumps the current offset", () => {
+    const s = createScroller({ max: () => 2000 });
+    s.springTo(300, { overshootPx: 12 });
+    s.step();
+    s.step();
+    const beforeOffset = s.offset();
+    const beforeVelocity = s.velocity();
+    s.springTo(900, { overshootPx: 12 });
+    expect(s.offset()).toBe(beforeOffset);
+    expect(s.velocity()).toBe(beforeVelocity);
+    expect(s.intent()).toBe(900);
+    expect(trace(s).at(-1)).toBe(900);
+  });
+
+  test("accepts stronger per-follow spring constants without changing defaults", () => {
+    const normal = createScroller({ max: () => 2000 });
+    const strong = createScroller({ max: () => 2000 });
+    normal.springTo(1000);
+    strong.springTo(1000, { stiffness: 480, damping: 44 });
+    normal.step();
+    strong.step();
+    expect(strong.offset()).toBeGreaterThan(normal.offset());
+    expect(trace(normal).at(-1)).toBe(1000);
+    expect(trace(strong).at(-1)).toBe(1000);
+  });
+
+  test("a reverse target brakes the preserved velocity before moving back", () => {
+    const s = createScroller({ max: () => 2000 });
+    s.springTo(1200, { overshootPx: 12 });
+    for (let i = 0; i < 5; i++) s.step();
+    const atReverse = s.offset();
+    expect(s.velocity()).toBeGreaterThan(0);
+    s.springTo(0, { overshootPx: 12 });
+    const t = trace(s);
+    expect(Math.max(...t)).toBeGreaterThan(atReverse);
+    expect(Math.min(...t)).toBeGreaterThanOrEqual(-12);
+    expect(t.at(-1)).toBe(0);
+  });
+
+  test("clamps final intent while permitting only the requested edge overshoot", () => {
+    const s = createScroller({ max: () => 100, initial: 50 });
+    s.springTo(999, { overshootPx: 12 });
+    expect(s.intent()).toBe(100);
+    const down = trace(s);
+    expect(Math.max(...down)).toBeLessThanOrEqual(112);
+    expect(down.at(-1)).toBe(100);
+
+    s.springTo(-999, { overshootPx: 12 });
+    expect(s.intent()).toBe(0);
+    const up = trace(s);
+    expect(Math.min(...up)).toBeGreaterThanOrEqual(-12);
+    expect(up.at(-1)).toBe(0);
+  });
+
+  test("30 Hz spring trajectory is the 60 Hz trajectory subsampled", () => {
+    withHz(60);
+    const s60 = createScroller({ max: () => 2000 });
+    s60.springTo(1000, { overshootPx: 12 });
+    const t60 = trace(s60);
+
+    withHz(30);
+    const s30 = createScroller({ max: () => 2000 });
+    s30.springTo(1000, { overshootPx: 12 });
+    const t30 = trace(s30);
+
+    for (let i = 0; i < t30.length; i++) {
+      const at60 = 2 * i + 1;
+      expect(t30[i]).toBe(t60[Math.min(at60, t60.length - 1)]);
+    }
+    expect(t30.at(-1)).toBe(t60.at(-1));
+  });
+});
+
 describe("tween + snap", () => {
   test("scrollTo lands exactly at the target after round(durMs·hz/1000) frames", () => {
     const s = createScroller({ max: () => 1000 });

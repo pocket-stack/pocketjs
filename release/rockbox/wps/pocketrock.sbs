@@ -1,0 +1,4 @@
+# PocketRock native list chrome: 36 px title bar, full-width content.
+%Vi(-,0,36,320,204,1)
+%V(0,0,320,36,1)%Vf(FFFFFF)%Vb(62738B)
+%acPocketRock

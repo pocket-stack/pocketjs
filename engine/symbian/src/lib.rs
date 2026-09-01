@@ -9,7 +9,8 @@
 //! QGLWidget owns the graphics context and calls the GLES2 entry points only
 //! while it is current. The software capture entry points return tightly
 //! packed, top-left-origin ARGB32 pixels; those pointers remain valid until
-//! the next capture, viewport change, init, or shutdown call.
+//! the next capture, viewport change, init, or shutdown call. Framebuffer-only
+//! hosts may instead render directly into host-owned RGB565 storage.
 
 #![cfg_attr(any(target_os = "none", feature = "bare-platform"), no_std)]
 #![cfg_attr(
@@ -159,6 +160,7 @@ static mut DAMAGE_BOUNDS: [i32; 4] = [0, 0, 0, 0];
 static mut FRAMEBUFFER_WIDTH: u32 = 0;
 static mut FRAMEBUFFER_HEIGHT: u32 = 0;
 static mut FRAMEBUFFER_STRIDE: u32 = 0;
+static mut FRAMEBUFFER_LENGTH: usize = 0;
 
 /// Stock cores have no application-specific native surface. A custom static
 /// library depends on this crate with default features disabled and exports
@@ -202,6 +204,7 @@ fn clear_framebuffer() {
         FRAMEBUFFER_WIDTH = 0;
         FRAMEBUFFER_HEIGHT = 0;
         FRAMEBUFFER_STRIDE = 0;
+        FRAMEBUFFER_LENGTH = 0;
     }
 }
 
@@ -667,11 +670,12 @@ fn framebuffer_geometry(instance: &Ui, scale: u32) -> Option<(usize, usize, usiz
     Some((width, height, byte_len))
 }
 
-fn remember_framebuffer_geometry(width: usize, height: usize) {
+fn remember_framebuffer_geometry(width: usize, height: usize, bytes_per_pixel: usize) {
     unsafe {
         FRAMEBUFFER_WIDTH = width as u32;
         FRAMEBUFFER_HEIGHT = height as u32;
-        FRAMEBUFFER_STRIDE = (width * 4) as u32;
+        FRAMEBUFFER_STRIDE = (width * bytes_per_pixel) as u32;
+        FRAMEBUFFER_LENGTH = width * height * bytes_per_pixel;
     }
 }
 
@@ -737,9 +741,64 @@ fn render_at_scale(scale: u32, incremental: bool) -> *const u8 {
             DAMAGE_BOUNDS = [0, 0, width as i32, height as i32];
         }
 
-        remember_framebuffer_geometry(width, height);
+        remember_framebuffer_geometry(width, height, 4);
         FRAMEBUFFER.as_ptr()
     }
+}
+
+/// Render incrementally into a caller-owned native RGB565 framebuffer.
+///
+/// Framebuffer-only hosts use this path to avoid allocating an intermediate
+/// ARGB surface and converting every pixel after each render. The buffer is
+/// tightly packed at the logical viewport size and remains owned by the host.
+#[no_mangle]
+pub extern "C" fn ui_render_rgb565_incremental(framebuffer: *mut u16, pixel_count: usize) -> i32 {
+    if framebuffer.is_null() {
+        return 0;
+    }
+    let instance = ui();
+    let Some((width, height, byte_len)) = framebuffer_geometry(instance, 1) else {
+        return 0;
+    };
+    let expected_pixels = byte_len / 4;
+    if pixel_count != expected_pixels {
+        return 0;
+    }
+    let draw_list: *const pocketjs_core::DrawList = instance.draw();
+    let instance_ref: &Ui = unsafe { &*(instance as *const Ui) };
+    let output = unsafe { core::slice::from_raw_parts_mut(framebuffer, pixel_count) };
+
+    unsafe {
+        DAMAGE_ATTEMPTS = DAMAGE_ATTEMPTS.wrapping_add(1);
+        match raster::render_scaled_rgb565_incremental(
+            instance_ref,
+            &(*draw_list).words,
+            output,
+            1,
+            &mut DAMAGE_TRACKER,
+            DamagePolicy::default(),
+        ) {
+            Ok(plan) => {
+                let bounds = plan.bounds();
+                DAMAGE_REGIONS = plan.region_count() as u32;
+                DAMAGE_PIXELS = plan.area();
+                DAMAGE_BOUNDS = [bounds.x0, bounds.y0, bounds.x1, bounds.y1];
+                if plan.is_full_redraw() {
+                    DAMAGE_FULL_REDRAWS = DAMAGE_FULL_REDRAWS.wrapping_add(1);
+                }
+            }
+            Err(_) => {
+                DAMAGE_FAILURES = DAMAGE_FAILURES.wrapping_add(1);
+                DAMAGE_REGIONS = 0;
+                DAMAGE_PIXELS = pixel_count as u64;
+                DAMAGE_BOUNDS = [0, 0, width as i32, height as i32];
+                raster::render_scaled_rgb565(instance_ref, &(*draw_list).words, output, 1);
+                DAMAGE_TRACKER.invalidate();
+            }
+        }
+        remember_framebuffer_geometry(width, height, 2);
+    }
+    1
 }
 
 /// Incremental-raster statistics, so a host can tell a working damage plan
@@ -829,7 +888,7 @@ pub extern "C" fn ui_framebuffer_stride() -> u32 {
 
 #[no_mangle]
 pub extern "C" fn ui_framebuffer_len() -> usize {
-    unsafe { FRAMEBUFFER.len() }
+    unsafe { FRAMEBUFFER_LENGTH }
 }
 
 #[cfg(test)]
@@ -867,6 +926,15 @@ mod tests {
         assert_eq!(ui_framebuffer_len(), 8);
         let pixels = unsafe { core::slice::from_raw_parts(framebuffer, 8) };
         assert_eq!(pixels, &[0x11, 0x22, 0x33, 0xff, 0x11, 0x22, 0x33, 0xff]);
+
+        let mut rgb565 = [0u16; 2];
+        assert_eq!(
+            ui_render_rgb565_incremental(rgb565.as_mut_ptr(), rgb565.len()),
+            1
+        );
+        assert_eq!(rgb565, [raster::pack_rgb565(0x33, 0x22, 0x11); 2]);
+        assert_eq!(ui_framebuffer_stride(), 4);
+        assert_eq!(ui_framebuffer_len(), 4);
         ui_shutdown();
     }
 }

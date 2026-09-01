@@ -214,6 +214,7 @@ describe("platform registry", () => {
       "macos-app",
       "linux-app",
       "web-app",
+      "rockbox-ip6g",
     ]);
     expect(validatePlatformContractRegistry(POCKET_PLATFORM_CONTRACTS)).toEqual([]);
     expect(POCKET_TARGETS.psp.capabilities).toEqual([
@@ -235,6 +236,28 @@ describe("platform registry", () => {
       logicalViewports: [[480, 272]],
       presentations: ["integer-fit"],
       rasterDensity: 2,
+    });
+    expect(POCKET_TARGETS["rockbox-ip6g"]).toEqual({
+      hostAbi: 10,
+      platform: "rockbox",
+      form: "takeover",
+      display: {
+        physicalViewport: [320, 240],
+        logicalViewports: [[320, 240]],
+        presentations: ["native"],
+        rasterDensity: 1,
+      },
+      capabilities: [
+        "input.buttons",
+        "audio.pcm",
+        "data.fs",
+        "media.playback",
+        "media.library",
+        "media.queue",
+        "device.system",
+        "launcher.native",
+        "text.glyphs.baked",
+      ],
     });
     // The PocketBook e-reader target: real touch, no nub/cursor, and the
     // same nominal 960×544 @2x surface as vita (the host integer-fits it
@@ -535,6 +558,7 @@ describe("semantic resolution", () => {
       "meizu-m8-demo": [false, false, false, false], // admitted only by the private meizu-m8-dev profile
       nsengine: [false, true, false, false], // targets the private ios-dev profile; vita shares its touch + integer-fit contract
       "ipod-nano": [false, false, false, false], // admitted by the package-shaped macos-embedded target
+      pocketrock: [false, false, false, false], // admitted only by the production rockbox-ip6g profile
       launcher: [true, true, false, true], // the Cover Flow deck (docs/LAUNCHER.md) is an ordinary console app
       library: [true, true, false, true],
       motions: [true, true, false, true],

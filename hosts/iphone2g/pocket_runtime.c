@@ -27,6 +27,10 @@ extern void pocket_host_boot_stage(int stage);
 #define REPORT_BOOT_STAGE(stage) ((void)(stage))
 #endif
 
+#ifndef POCKET_RUNTIME_JS_STACK_SIZE
+#define POCKET_RUNTIME_JS_STACK_SIZE (256 * 1024)
+#endif
+
 typedef enum {
   HostCreateNode,
   HostDestroyNode,
@@ -84,15 +88,30 @@ static void set_error(const char *message) {
 
 static void take_exception(JSContext *exception_context) {
   JSValue exception = JS_GetException(exception_context);
+  JSValue detail = JS_UNDEFINED;
   size_t length = 0;
-  const char *message = JS_ToCStringLen2(exception_context, &length, exception, 0);
+  const char *message = 0;
+  if (JS_IsObject(exception)) {
+    detail = JS_GetPropertyStr(exception_context, exception, "message");
+    if (!JS_IsException(detail) && !JS_IsUndefined(detail)) {
+      message = JS_ToCStringLen2(exception_context, &length, detail, 0);
+    }
+  }
+  if (message == 0 && !JS_IsException(detail)) {
+    message = JS_ToCStringLen2(exception_context, &length, exception, 0);
+  }
   if (message != 0) {
     size_t copy_length = length < sizeof(last_error) - 1 ? length : sizeof(last_error) - 1;
     memcpy(last_error, message, copy_length);
     last_error[copy_length] = '\0';
     JS_FreeCString(exception_context, message);
   } else {
-    set_error("QuickJS exception");
+    if (JS_IsNull(exception)) set_error("QuickJS out of memory");
+    else if (JS_IsUninitialized(exception)) set_error("QuickJS missing exception");
+    else set_error("QuickJS exception");
+  }
+  if (!JS_IsUndefined(detail) && !JS_IsException(detail)) {
+    JS_FreeValue(exception_context, detail);
   }
   JS_FreeValue(exception_context, exception);
 }
@@ -478,6 +497,21 @@ static int install_host(int width, int height) {
     JS_FreeValue(context, ui);
     return 0;
   }
+#ifdef POCKET_RUNTIME_POCKETROCK_CALL
+  {
+    extern JSValue pocket_runtime_pocketrock_call(
+      JSContext *, JSValueConst, int, JSValueConst *
+    );
+    JSValue call = JS_NewCFunction(
+      context, pocket_runtime_pocketrock_call, "pocketrockCall", 3
+    );
+    if (JS_IsException(call) ||
+        JS_SetPropertyStr(context, ui, "pocketrockCall", call) < 0) {
+      JS_FreeValue(context, ui);
+      return 0;
+    }
+  }
+#endif
 
   JSValue viewport = JS_NewObject(context);
   if (JS_IsException(viewport)) {
@@ -561,7 +595,7 @@ int pocket_runtime_boot(
     return 0;
   }
   REPORT_BOOT_STAGE(4);
-  JS_SetMaxStackSize(runtime, 256 * 1024);
+  JS_SetMaxStackSize(runtime, POCKET_RUNTIME_JS_STACK_SIZE);
   context = JS_NewContext(runtime);
   if (context == 0) {
     set_error("QuickJS context allocation failed");
@@ -629,9 +663,85 @@ int pocket_runtime_boot(
   return 1;
 }
 
+int pocket_runtime_boot_bytecode(
+  const uint8_t *bytecode,
+  size_t bytecode_length,
+  const uint8_t *pack,
+  size_t pack_length,
+  int width,
+  int height
+) {
+  clear_error();
+  pocket_runtime_shutdown();
+  REPORT_BOOT_STAGE(1);
+  reported_action_name[0] = '\0';
+  reported_action_value = 0;
+  reported_action_sequence = 0;
+  ui_init(POCKET_RASTER_DENSITY);
+  ui_set_viewport((float)width, (float)height);
+  runtime = JS_NewRuntime();
+  if (runtime == 0) {
+    set_error("QuickJS runtime allocation failed");
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  JS_SetMaxStackSize(runtime, POCKET_RUNTIME_JS_STACK_SIZE);
+  context = JS_NewContext(runtime);
+  if (context == 0) {
+    set_error("QuickJS context allocation failed");
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  global = JS_GetGlobalObject(context);
+  if (!install_host(width, height)) {
+    take_exception(context);
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  JSValue pack_value = JS_NewArrayBuffer(
+    context, (uint8_t *)pack, pack_length, 0, 0, 0
+  );
+  if (JS_IsException(pack_value) ||
+      JS_SetPropertyStr(context, global, "__pak", pack_value) < 0 ||
+      JS_SetPropertyStr(context, global, "__simHz", JS_NewInt32(context, 60)) < 0) {
+    take_exception(context);
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  JSValue object = JS_ReadObject(
+    context, bytecode, bytecode_length, JS_READ_OBJ_BYTECODE
+  );
+  if (JS_IsException(object)) {
+    take_exception(context);
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  JSValue result = JS_EvalFunction(context, object);
+  if (JS_IsException(result)) {
+    take_exception(context);
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  JS_FreeValue(context, result);
+  frame_function = JS_GetPropertyStr(context, global, "frame");
+  if (JS_IsException(frame_function) || !JS_IsFunction(context, frame_function)) {
+    if (JS_IsException(frame_function)) take_exception(context);
+    else set_error("bytecode did not install globalThis.frame");
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  if (!drain_jobs()) {
+    pocket_runtime_shutdown();
+    return 0;
+  }
+  REPORT_BOOT_STAGE(10);
+  return 1;
+}
+
 /* One guest turn (frame call + job drain), then `tick_count` core ticks. */
 static int run_frame(
   uint32_t buttons,
+  uint32_t analog,
   const PocketRuntimeContact *contacts,
   unsigned int contact_count,
   unsigned int tick_count
@@ -680,7 +790,7 @@ static int run_frame(
   }
   JSValue arguments[4] = {
     JS_NewUint32(context, buttons),
-    JS_NewInt32(context, POCKET_ANALOG_CENTER),
+    JS_NewUint32(context, analog),
     touch_array,
     hit_array,
   };
@@ -728,12 +838,30 @@ int pocket_runtime_tick(const PocketRuntimeInput *input) {
     input->touch_y,
     input->touch_hit
   );
-  return run_frame(input->buttons, &contact, count, 1);
+  return run_frame(input->buttons, POCKET_ANALOG_CENTER, &contact, count, 1);
+}
+
+int pocket_runtime_tick_analog(uint32_t buttons, uint32_t analog) {
+  return run_frame(buttons, analog, 0, 0, 1);
+}
+
+int pocket_runtime_frame_analog(
+  uint32_t buttons,
+  uint32_t analog,
+  unsigned int tick_count
+) {
+  return run_frame(buttons, analog, 0, 0, tick_count);
 }
 
 int pocket_runtime_tick_contacts(const PocketRuntimeContactsInput *input) {
   if (input == 0) return 0;
-  return run_frame(input->buttons, input->contacts, input->contact_count, 1);
+  return run_frame(
+    input->buttons,
+    POCKET_ANALOG_CENTER,
+    input->contacts,
+    input->contact_count,
+    1
+  );
 }
 
 int pocket_runtime_frame_contacts(
@@ -741,7 +869,13 @@ int pocket_runtime_frame_contacts(
   unsigned int tick_count
 ) {
   if (input == 0) return 0;
-  return run_frame(input->buttons, input->contacts, input->contact_count, tick_count);
+  return run_frame(
+    input->buttons,
+    POCKET_ANALOG_CENTER,
+    input->contacts,
+    input->contact_count,
+    tick_count
+  );
 }
 
 int pocket_runtime_frame_ticks(
@@ -753,7 +887,7 @@ int pocket_runtime_frame_ticks(
 ) {
   PocketRuntimeContact contact;
   unsigned int count = single_contact(&contact, touch_down, touch_x, touch_y, touch_hit);
-  return run_frame(0, &contact, count, tick_count);
+  return run_frame(0, POCKET_ANALOG_CENTER, &contact, count, tick_count);
 }
 
 int pocket_runtime_frame(int touch_down, int touch_x, int touch_y, int touch_hit) {
@@ -786,6 +920,11 @@ unsigned long pocket_runtime_action_sequence(void) {
 const uint8_t *pocket_runtime_render(void) {
   if (runtime == 0 || context == 0 || runtime_failed) return 0;
   return ui_render_incremental();
+}
+
+int pocket_runtime_render_rgb565(uint16_t *framebuffer, size_t pixel_count) {
+  if (runtime == 0 || context == 0 || runtime_failed) return 0;
+  return ui_render_rgb565_incremental(framebuffer, pixel_count) != 0;
 }
 
 unsigned long pocket_runtime_damage_attempts(void) {

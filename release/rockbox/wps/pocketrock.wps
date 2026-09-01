@@ -1,0 +1,12 @@
+# PocketRock native now-playing fallback.
+%wd
+%V(0,0,320,36,1)%Vf(FFFFFF)%Vb(62738B)
+%acNow Playing
+%V(12,52,296,22,1)%Vf(18202A)%Vb(F5F6F8)
+%s%?it<%it|%fn>
+%V(12,80,296,20,1)%Vf(687484)%Vb(F5F6F8)
+%s%?ia<%ia|Unknown Artist>
+%V(12,112,296,18,1)%Vf(18202A)%Vb(F5F6F8)
+%pb(0,7,296,4)
+%V(12,136,296,18,1)%Vf(687484)%Vb(F5F6F8)
+%al%pc%ar%pr

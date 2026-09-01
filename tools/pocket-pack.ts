@@ -36,6 +36,7 @@ import {
   type PocketPackageSection,
   type PocketPackageVariant,
 } from "../contracts/spec/pocket-package.ts";
+import { compilePocketRockBytecode } from "./quickjs-bytecode.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 
@@ -61,6 +62,7 @@ export function makeVariant(input: {
   js: Uint8Array;
   pak: Uint8Array;
   cover?: Uint8Array;
+  bytecode?: Uint8Array;
 }): PocketPackageVariant {
   // The js section carries the QuickJS NUL (zero-copy device eval rule).
   const js = new Uint8Array(input.js.length + 1);
@@ -72,6 +74,7 @@ export function makeVariant(input: {
     { kind: POCKET_SECTION.pak, bytes: input.pak },
   ];
   if (input.cover) sections.push({ kind: POCKET_SECTION.cover, bytes: input.cover });
+  if (input.bytecode) sections.push({ kind: POCKET_SECTION.bytecode, bytes: input.bytecode });
   return { target: input.target, hostAbi: input.hostAbi, sections };
 }
 
@@ -158,6 +161,13 @@ async function buildCommand(argv: string[]): Promise<void> {
     const pakPath = join(outdir, `${plan.app.output}.pak`);
     const pak = existsSync(pakPath) ? new Uint8Array(readFileSync(pakPath)) : new Uint8Array(0);
     const coverPath = join(ROOT, "apps/launcher/covers", `cover-${plan.app.output}.png`);
+    const bytecode = target === "rockbox-ip6g"
+      ? compilePocketRockBytecode(
+          ROOT,
+          join(outdir, `${plan.app.output}.js`),
+          join(outdir, `${plan.app.output}.qjsc.c`),
+        )
+      : undefined;
     variants.push(
       makeVariant({
         target,
@@ -167,9 +177,13 @@ async function buildCommand(argv: string[]): Promise<void> {
         js,
         pak,
         cover: existsSync(coverPath) ? new Uint8Array(readFileSync(coverPath)) : undefined,
+        bytecode,
       }),
     );
-    console.log(`  variant ${target}: js ${js.length}B pak ${pak.length}B`);
+    console.log(
+      `  variant ${target}: js ${js.length}B pak ${pak.length}B` +
+        (bytecode ? ` bytecode ${bytecode.length}B` : ""),
+    );
   }
   if (variants.length === 0) throw new Error("pocket-pack: no variant admitted — nothing to pack");
 
@@ -193,7 +207,9 @@ function inspectCommand(file: string): void {
   for (const v of pkg.variants) {
     const hash = fnv1a64(...v.sections.map((s) => s.bytes)).toString(16).padStart(16, "0");
     console.log(`  variant ${v.target} (abi ${v.hostAbi}) hash ${hash}`);
-    const names: Record<number, string> = { 1: "identity", 2: "plan", 3: "js", 4: "pak", 5: "cover" };
+    const names: Record<number, string> = {
+      1: "identity", 2: "plan", 3: "js", 4: "pak", 5: "cover", 6: "bytecode",
+    };
     for (const s of v.sections) {
       console.log(`    ${(names[s.kind] ?? `kind${s.kind}`).padEnd(8)} ${s.bytes.length}B`);
     }
@@ -247,6 +263,12 @@ function verifyCommand(file: string): void {
     const js = findSection(v, POCKET_SECTION.js);
     if (!js || js[js.length - 1] !== 0) {
       throw new Error(`verify: variant ${v.target} js section is not NUL-terminated`);
+    }
+    if (v.target === "rockbox-ip6g") {
+      const bytecode = findSection(v, POCKET_SECTION.bytecode);
+      if (!bytecode || bytecode.length === 0) {
+        throw new Error("verify: rockbox-ip6g bytecode section is missing");
+      }
     }
   }
   console.log(`verify: OK — footer hash, ${pkg.variants.length} variant(s) re-admitted`);

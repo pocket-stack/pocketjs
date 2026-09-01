@@ -100,6 +100,7 @@ pub mod op {
     pub const SET_COMPOSITOR_SURFACE: u8 = 44;
     pub const HIT_TEST_AUXILIARY: u8 = 45;
     pub const HIT_TEST_BOUNDS_AUXILIARY: u8 = 46;
+    pub const POCKETROCK_CALL: u8 = 47;
 }
 
 /// Property ids (u8, stable, append-only). Groups:
