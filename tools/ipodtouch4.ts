@@ -120,10 +120,12 @@ export const IPODTOUCH4_APPS: Readonly<Record<string, IPodTouch4App>> = {
 
 /**
  * Read an app that lives in another project: a JSON descriptor beside its
- * sources carrying the fields above (`manifest` relative to the descriptor).
- * The guest then builds with `--project-root` set to the descriptor's own
- * directory, so a product repository can own its app and its history while
- * the toolchain, the host and the deployment transaction stay here.
+ * sources carrying the fields above, plus an optional `projectRoot`
+ * (relative to the descriptor, default its own directory) that `manifest`
+ * and the manifest's own entry are resolved against. The guest then builds
+ * with `--project-root` set to it, so a product repository can own its app
+ * and its history while the toolchain, the host and the deployment
+ * transaction stay here.
  */
 export function readExternalIPodTouch4App(descriptorPath: string): IPodTouch4App {
   const file = resolvePath(descriptorPath);
@@ -133,10 +135,12 @@ export function readExternalIPodTouch4App(descriptorPath: string): IPodTouch4App
       throw new Error(`pocket ipodtouch4: ${file} is missing a string ${field}`);
     }
   }
-  const root = dirname(file);
+  // The project root is where the app's own manifest paths start from — the
+  // product repository, not necessarily the descriptor's directory.
+  const root = resolvePath(dirname(file), typeof parsed.projectRoot === "string" ? parsed.projectRoot : ".");
   const manifest = parsed.manifest as string;
   if (!existsSync(join(root, manifest))) {
-    throw new Error(`pocket ipodtouch4: ${file} names a manifest that is not there: ${manifest}`);
+    throw new Error(`pocket ipodtouch4: ${file} names a manifest that is not there: ${join(root, manifest)}`);
   }
   return {
     id: parsed.id as string,
